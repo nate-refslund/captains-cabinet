@@ -20,6 +20,9 @@
 # public). Lane keys, instrument names and the schema shape are live and
 # unchanged; the deployment's real direction text lives in the untracked
 # instance overlay.
+# EXCEPTION (Captain-ratified 2026-07-17): the org: apex block at the bottom
+# of this file is REAL ratified text, not neutralized — it is deliberately
+# generic (no personal/product data), so the TRACKED file carries it.
 
 directions:
   stephie:
@@ -78,3 +81,22 @@ directions:
   # stepnetwork: lane dormant by Captain ruling 2026-07-02 ("someone else is
   # doing this") — website mini-tasks + direction question parked as a future
   # lane decision. No direction authored; outcome stepnetwork-001 retires.
+
+# ── ORG APEX (Captain-ratified 2026-07-17; recorded in captain-decisions.md) ──
+# The direction ABOVE the lane directions. Text is deliberately generic (no
+# personal/product data) so the TRACKED file carries the real ratified text
+# (choice noted in the PR). Additive-safe: framework readers fold only the
+# `directions:` key (framework/acting/action_lane.py:232,297,541).
+org:
+  apex:
+    mission: >
+      Prove that one founder plus an AI org can run a real multi-product
+      business — run this portfolio so well, so autonomously, and so
+      auditably that the cabinet earns its public launch.
+    instruments:
+      - verified_outcomes_per_captain_minute   # org roll-up of the system-self instrument
+      - escalation_rate
+      - publication_gate_greens                # egg publication-gate green runs
+      - per_lane_instrument_rollup             # each lane's instruments, rolled up
+    bets: []       # the lanes carry the bets — apex holds none of its own
+    not_goals: []  # apex-level not-goals stay with the lane directions
