@@ -37,6 +37,18 @@ is MECHANICAL input on engine-minted ids — nothing about it needs judgment:
   grammar; the tapped card's keyboard swaps to one inert receipt row. The
   due-at tick's reconcile pass finishes the loop (grant → close, later →
   due_at +7d bump via the guarded 041 path).
+* KILL-SWITCH verbs (``ksh``/``ksr`` — the /killswitch control card's
+  ⏹ Halt / ▶ Resume buttons, captain-controls plan 2026-07-17) carry NO
+  payload by design: any argument on the wire is refused fail-closed before
+  anything runs. Execution is the POLLER's seam-injected door ONLY
+  (``ks_exec`` → ``cabinet/scripts/kill-switch.sh`` with telegram-provenance
+  ``CABINET_OFFICER``): with no seam this module REFUSES — importing
+  tap_wire never grants a process the flip, and the officer-side hook
+  refusal of deactivate (EVAL-001b) is a different door entirely, untouched
+  here. The card face is re-rendered from a FRESH status read after every
+  tap; a failed flip repaints LOUD (🚨 + the script's own words), never
+  silent. E-stop asymmetry preserved: this wire adds a captain door and
+  gates nothing new in front of ``activate``.
 * ``edit`` / ``undo`` verbs still relay to the Chair — an edit needs typed
   text; an undo rides the acted-registry reply grammar.
 
@@ -76,6 +88,8 @@ _TOASTS: dict = {
     ("ndg", None): "✓ Done — recording…",
     ("ndl", None): "⏰ Snoozed 7d",
     ("ndd", None): "✗ Dropping…",
+    ("ksh", None): "⏹ Halting everything…",
+    ("ksr", None): "▶ Resuming…",
 }
 
 #: Batch-control receipt labels for the tapped card's swapped keyboard.
@@ -83,6 +97,16 @@ _MARK_LABELS = {"brief": DEFER_TOAST, "snz": "😴 Snoozed", "now": "▶ Triage 
 
 #: Needs-verb receipt labels (the reminder card's swapped keyboard).
 _NEED_MARK_LABELS = {"ndg": "✓ Done", "ndl": "⏰ Snoozed 7d", "ndd": "✗ Dropped"}
+
+#: Kill-switch verb → the sanctioned script action it composes. The mapping is
+#: FIXED — a tap can never choose an action outside these two, and `status`
+#: (read-only) is the only other word the executor seam accepts poller-side.
+_KS_ACTION = {"ksh": "activate", "ksr": "deactivate"}
+
+#: Fallback keyboard-receipt labels when the full card repaint seam is absent
+#: or fails — still loud on failure, still never un-handles the tap.
+_KS_MARK_OK = {"ksh": "⏹ Halted", "ksr": "▶ Resumed"}
+_KS_MARK_FAIL = "🚨 FAILED — see the card"
 
 #: Door-denial codes that CONCLUDE the tap mechanically (no Chair relay):
 #: ritual → the card re-renders its typed-sign-off face; decided → the next
@@ -307,10 +331,87 @@ def _apply_need(verb: str, arg: str, data: str, *, message_id, wire,
     return out
 
 
+def _apply_killswitch(verb: str, arg: str, data: str, *, message_id,
+                      edit_markup, edit_text, ks_exec) -> dict:
+    """ksh / ksr → the emergency-stop flip through the POLLER's seam-injected
+    door (the /killswitch control card, captain-controls plan 2026-07-17).
+
+    Re-validation before anything runs: the verb already passed the
+    ``CB_VERBS`` allowlist in ``classify``; here the payload must be EMPTY —
+    minted kill-switch buttons carry none, so any argument (a spliced,
+    truncated, or hostile callback) fails closed to the relay floor without
+    touching the executor. ``ks_exec`` is the poller's binding to
+    ``kill-switch.sh`` (audit rows + read-back verification live in the
+    SCRIPT, with telegram-provenance ``CABINET_OFFICER``); with no seam this
+    process cannot flip anything — importing tap_wire is not a door.
+
+    The card face is re-rendered from a FRESH ``status`` read (never inferred
+    from the flip — a watchdog re-arm between the two calls must show).
+    Success ⇒ handled, no relay (no LLM in the loop). Failure ⇒ the card
+    repaints LOUD with the script's own words AND the bracket line still
+    relays (for a failed HALT the Chair is a legitimate fallback halter —
+    ``activate`` is unrestricted by design; a failed RESUME relay just gets
+    the officer-side hook refusal restated, which is the honest answer)."""
+    mode = f"killswitch:{verb}"
+    if arg:
+        return {"handled": False, "relay": True, "mode": mode,
+                "summary": "unexpected payload on a kill-switch button — "
+                           "refused (minted buttons carry none)"}
+    if ks_exec is None:
+        return {"handled": False, "relay": True, "mode": mode,
+                "summary": "kill-switch executor not wired in this process "
+                           "(poller-only door) — refused"}
+    action = _KS_ACTION[verb]
+    try:
+        rc, out = ks_exec(action)
+    except Exception as e:  # noqa: BLE001 — a broken executor must be LOUD
+        rc, out = 1, (f"kill-switch executor error "
+                      f"({type(e).__name__}) — NOT verified")
+    try:
+        s_rc, s_out = ks_exec("status")
+    except Exception as e:  # noqa: BLE001
+        s_rc, s_out = 2, f"status read failed ({type(e).__name__})"
+
+    from framework.comms.surface import killswitch_card as _kc
+    face = _kc.render(s_rc, s_out, action=action, action_rc=rc,
+                      action_out=out)
+    ok = rc == 0
+    first_line = str(out or "").strip().splitlines()[0] if str(out or "").strip() else ""
+    outcome = ("halted" if verb == "ksh" else "resumed") if ok \
+        else f"failed:{action}"
+    result = {"handled": ok, "relay": not ok, "mode": mode,
+              "outcome": outcome, "state": face["state"],
+              "summary": (f"{action} rc={rc}: {first_line}")[:200]}
+
+    marked = False
+    if message_id:
+        if edit_text is not None:
+            # Full standing-card repaint: fresh status line + the script's own
+            # report + live Halt/Resume buttons (the card stays the control).
+            try:
+                edit_text(int(message_id), face["text"], face["keyboard"])
+                marked = True
+            except Exception:
+                marked = False
+        if not marked and edit_markup is not None:
+            # Receipt floor: swap the keyboard for one inert state row —
+            # loud on failure. Receipt UX only; never un-handles the tap.
+            label = _KS_MARK_OK[verb] if ok else _KS_MARK_FAIL
+            try:
+                edit_markup(int(message_id),
+                            [[{"text": label,
+                               "callback_data": str(data)[:64]}]])
+                marked = True
+            except Exception:
+                marked = False
+    result["marked"] = marked
+    return result
+
+
 def apply_tap(data: str, *, message_id: "int | None" = None,
               now: "datetime | None" = None, census: "dict | None" = None,
-              adapter=None, ch=None, edit_markup=None, wire=None,
-              journal=None) -> dict:
+              adapter=None, ch=None, edit_markup=None, edit_text=None,
+              wire=None, journal=None, ks_exec=None) -> dict:
     """Mechanically apply ONE Captain tap. Returns
     ``{"handled", "relay", "mode", "summary", ...}`` — ``handled`` means the
     tap's semantics were fully applied server-side; ``relay`` means the
@@ -319,8 +420,11 @@ def apply_tap(data: str, *, message_id: "int | None" = None,
 
     Injectable seams (tests + the poller): ``census`` (a fresh census doc),
     ``adapter``/``ch`` (comms delivery + charter), ``edit_markup(message_id,
-    keyboard_rows)`` (the tapped-card keyboard receipt), ``wire`` and
-    ``journal`` (the verdict door's own seams). Never raises past its
+    keyboard_rows)`` (the tapped-card keyboard receipt),
+    ``edit_text(message_id, text, keyboard_rows)`` (the kill-switch card's
+    full standing repaint), ``wire`` and ``journal`` (the verdict door's own
+    seams), ``ks_exec(action) -> (rc, output)`` (the POLLER-ONLY kill-switch
+    door — absent means kill-switch taps are refused). Never raises past its
     boundary — a failure returns ``handled=False, relay=True`` so the caller
     falls back to the status-quo relay."""
     verb, arg, _toast = classify(data)
@@ -333,6 +437,11 @@ def apply_tap(data: str, *, message_id: "int | None" = None,
             # Typed follow-up / acted-registry grammar — the Chair's lane.
             return {"handled": False, "relay": True, "mode": f"chair:{verb}",
                     "summary": "needs the Chair (typed follow-up)"}
+        if verb in ("ksh", "ksr"):
+            # /killswitch control card → the poller's kill-switch.sh door.
+            return _apply_killswitch(verb, arg, data, message_id=message_id,
+                                     edit_markup=edit_markup,
+                                     edit_text=edit_text, ks_exec=ks_exec)
         if verb in ("ndg", "ndl", "ndd"):
             # captain-reminder one-tap card → the typed NEED-verb door.
             return _apply_need(verb, arg, data, message_id=message_id,

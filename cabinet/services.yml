@@ -373,6 +373,33 @@ services:
     schedule: { interval_s: 1800 }
     expected: "trigger XADD to cos every 30min"
     notes: self-labeled TEMPORARY backstop pending always-on Mini
+  - name: killswitch-watchdog
+    label: com.cabinet.killswitch-watchdog
+    kind: watchdog
+    command: python3.12 cabinet/scripts/killswitch-watchdog.py
+    schedule: { interval_s: 60 }
+    disabled: true
+    disabled_reason: "staged: captain-controls Phase 1 (docs/plans/captain-controls-no-terminal-2026-07-17.md) ships with the wave; the enable is a deploy step (remove this flag, generate-plists, load) — deliberate documented staging, not the W10 silent-unscheduling regression"
+    env: { CABINET_ENV: runtime }   # channel.send allow_sends() gate — the ONE captain notification per re-arm rides the frontdoor door; without the marker the send degrades to blocked-dev (loud in the summary line, never a silent blackhole)
+    expected: "one JSON summary line per 60s tick (action=noop-*|grace-pending|re-arm); switch INACTIVE while the ledger's newest arm lacks a sanctioned kill-switch.sh deactivation row at/after it, persisted past the ~90s ceremony grace → re-arm via `kill-switch.sh activate` (audit row actor=killswitch-watchdog, payload.via=kill-switch.sh) + ONE plain-English captain notification through framework/frontdoor/channel.py; sanctioned resumes are NEVER fought; unreachable redis / missing events dir = loud WARN + fail-safe no-op, never a guessed re-arm; FATAL line + exit 1 only when a due re-arm itself fails"
+    sunset: "retire if the kill switch moves off unauthenticated local Redis onto a control plane where an unattributed clear is structurally impossible (the raw-write backstop premise dies with the raw write)"
+    notes: >-
+      Captain-controls Phase 1 re-arm watchdog (ratified design
+      docs/plans/captain-controls-no-terminal-2026-07-17.md, "Raw-write
+      backstop"): local Redis has no auth, so a raw `DEL cabinet:killswitch`
+      bypassed the E-stop silently (the 2026-07-15→16 unattributable
+      clearing). E-stop asymmetry: this row only ever ACTIVATES — resuming
+      stays a captain ceremony. Provenance-keyed verdict, not row order:
+      sanctioned rows carry payload.via=kill-switch.sh; the staged
+      authority-transitions sweep's OBSERVED rows (actor authority-watch,
+      attribution=state-observed) describe a raw clear and sanction nothing,
+      so enabling that sweep can never mask this one. Grace (default 90s,
+      env CABINET_KILLSWITCH_REARM_GRACE_S) keyed to the newest arm row's id
+      in ~/Library/Application Support/cabinet/state/killswitch-watchdog.json
+      so an in-flight activate→deactivate ceremony is never fought and a new
+      episode restarts the clock. Tests:
+      cabinet/scripts/tests/test_killswitch_watchdog.py (disposable redis +
+      tmp CABINET_EVENT_LOG_DIR, the test_kill_switch_events.py idiom).
 
   # ── Surfaces ─────────────────────────────────────────────────────────────
   - name: dashboard

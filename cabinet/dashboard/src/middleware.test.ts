@@ -40,4 +40,22 @@ describe('middleware auth exemptions (production posture)', () => {
     expect(res.status).toBe(307)
     expect(res.headers.get('location')).toContain('/login')
   })
+
+  it('cookie-gates /vault (read-only vault browser is NOT in the static allowlist)', async () => {
+    const res = await middleware(req('/vault'))
+    expect(res.status).toBe(307)
+    expect(res.headers.get('location')).toContain('/login')
+  })
+
+  it('cookie-gates a deep /vault/... note path with no session', async () => {
+    const res = await middleware(req('/vault/decisions/some-note.md'))
+    expect(res.status).toBe(307)
+    expect(res.headers.get('location')).toContain('/login')
+  })
+
+  it('cookie-gates any would-be /api/vault/* endpoint (defense for a future API)', async () => {
+    const res = await middleware(req('/api/vault/list'))
+    expect(res.status).toBe(307)
+    expect(res.headers.get('location')).toContain('/login')
+  })
 })
