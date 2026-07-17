@@ -6,8 +6,8 @@ import './globals.css'
 export const viewport: Viewport = { themeColor: '#09090b' }
 
 export const metadata: Metadata = {
-  title: "Founder's Cabinet",
-  description: "Admin dashboard for the Founder's Cabinet",
+  title: "Captain's Cabinet",
+  description: "Admin dashboard for the Captain's Cabinet",
   appleWebApp: {
     capable: true,
     title: 'Cabinet',

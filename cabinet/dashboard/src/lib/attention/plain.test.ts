@@ -123,7 +123,7 @@ describe('plainCard rules', () => {
   it('escalation cards get decide-or-delegate buttons', () => {
     const e = plainCard(row({ kind: 'escalation' }), NOW)
     expect(e.buttons.approve).toBe("I'll decide")
-    expect(e.buttons.no).toBe('Ask the Chair')
+    expect(e.buttons.no).toBe('Ask the First Mate')
     const c = consequenceFor(row({ kind: 'escalation' }), 'approve')
     expect(c).toContain('Nothing runs yet')
   })

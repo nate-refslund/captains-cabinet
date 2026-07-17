@@ -54,9 +54,9 @@ describe('getDashboardConfig — consumer mode gate', () => {
 })
 
 describe('getOfficerConfig(role) — known roles', () => {
-  it('returns the CoS config with calm-composed prompt', () => {
+  it('returns the First Mate (CoS) config with calm-composed prompt', () => {
     const result = mod.getOfficerConfig('cos')
-    expect(result.title).toBe('Chief of Staff (CoS)')
+    expect(result.title).toBe('First Mate (CoS)')
     expect(result.botUsername).toBe('cabinet_cos_bot')
     expect(result.voicePrompt).toContain('calm')
   })

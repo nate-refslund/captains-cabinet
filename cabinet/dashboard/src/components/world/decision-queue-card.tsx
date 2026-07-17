@@ -11,7 +11,7 @@
  *
  * Data: GET /api/world/mailbox → pending cabinet:action:* cards (the
  * binder-wire proposal chains awaiting the Captain's verdict). Verdicts are
- * given in the Captain's Telegram binder (HQ Chair) — this card renders
+ * given in the Captain's Telegram binder (First Mate) — this card renders
  * truth and points there; it never grows approve/skip buttons.
  */
 import { useEffect, useState } from 'react'
@@ -106,8 +106,8 @@ export default function DecisionQueueCard({ onClose }: { onClose: () => void }) 
             </a>
           ) : (
             <p className="text-[10px] text-zinc-500">
-              verdicts are given in the Captain&apos;s Telegram binder (HQ
-              Chair) — the world renders this queue, never acts on it.
+              verdicts are given in the Captain&apos;s Telegram binder (First
+              Mate) — the world renders this queue, never acts on it.
             </p>
           )}
           <p className="break-all font-mono text-[10px] text-zinc-600">

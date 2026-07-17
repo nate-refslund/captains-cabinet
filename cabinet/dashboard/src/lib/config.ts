@@ -30,7 +30,7 @@ const mockConfig: Record<string, unknown> = {
       cro: 'onwK4e9ZLuTAKqWW03F9',
     },
     naturalize_prompts: {
-      cos: 'Speak as a calm, composed chief of staff. Brief and decisive.',
+      cos: 'Speak as a calm, composed first mate. Brief and decisive.',
       cto: 'Speak as a sharp, technical CTO. Concise and precise.',
       cpo: 'Speak as a thoughtful product leader. User-focused and strategic.',
       cro: 'Speak as a curious, analytical researcher. Data-driven and thorough.',
@@ -123,15 +123,15 @@ export interface OfficerConfig {
 
 const mockOfficerConfigs: Record<string, OfficerConfig> = {
   cos: {
-    title: 'Chief of Staff (CoS)',
+    title: 'First Mate (CoS)',
     botUsername: 'cabinet_cos_bot',
     voiceId: 'pFZP5JQG7iQjIQuC4Bku',
-    voicePrompt: 'Speak as a calm, composed chief of staff. Brief and decisive.',
+    voicePrompt: 'Speak as a calm, composed first mate. Brief and decisive.',
     voiceModel: 'eleven_turbo_v2_5',
     voiceStability: 0.5,
     voiceSpeed: 1.0,
     loopPrompt: 'Check triggers, process scheduled work, review pending Captain decisions.',
-    roleDefinition: '# Chief of Staff (CoS)\n\nYou are the Chief of Staff...',
+    roleDefinition: '# First Mate (CoS)\n\nYou are the First Mate...',
   },
   cto: {
     title: 'Chief Technology Officer (CTO)',

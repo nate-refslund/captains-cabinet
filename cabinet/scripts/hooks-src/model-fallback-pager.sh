@@ -7,7 +7,7 @@
 # LOUD — no silent fallback. This hook is the loud half: when the CLI emits a
 # Notification whose text says model fallback engaged, it
 #   1. stamps  cabinet:model-fallback:<officer>  in Redis (7d TTL, always), and
-#   2. pages the Captain via the HQ Chair bot (TELEGRAM_COS_TOKEN +
+#   2. pages the Captain via the First Mate bot (TELEGRAM_COS_TOKEN +
 #      CAPTAIN_TELEGRAM_ID — the cabinet Telegram plane, never the personal
 #      bot), debounced (default 30 min per officer,
 #      CABINET_FALLBACK_PAGE_DEBOUNCE_SECS overrides, 0 = page every time).
@@ -86,7 +86,7 @@ if command -v redis-cli >/dev/null 2>&1; then
 fi
 # Redis absent/down: stamp+debounce unavailable — still page (loud beats quiet).
 
-# --- 2) Page the Chair (HQ Chair bot plane) --------------------------------
+# --- 2) Page the First Mate (First Mate bot plane) -------------------------
 TOKEN="${TELEGRAM_COS_TOKEN:-}"
 CHAT_ID="${CAPTAIN_TELEGRAM_ID:-}"
 ENV_FILE="$CABINET_ROOT/cabinet/.env"

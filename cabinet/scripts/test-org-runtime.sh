@@ -67,7 +67,7 @@ fi
 
 python3 "$ORG" roles define \
   --role cos \
-  --name "Chief of Staff" \
+  --name "First Mate" \
   --charter "Translate Captain-ratified outcomes into verified organizational execution" \
   --current-focus "Outcome-to-OVI vertical slice" \
   --authority-level mission_orchestrator \

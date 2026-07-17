@@ -28,7 +28,7 @@ on-demand **consultants**.
 
 | Officer | Role | Domain |
 |---------|------|--------|
-| Chief of Staff (CoS) | Orchestrator | Captain comms, org management, briefings, hooks ownership, pipeline monitoring, infrastructure |
+| First Mate (CoS) | Orchestrator | Captain comms, org management, briefings, hooks ownership, pipeline monitoring, infrastructure |
 | Chief Technology Officer (CTO) | Engineering Lead | Codebase, architecture, deploys, infrastructure, captain decision logging |
 | Chief Research Officer (CRO) | Intelligence Lead | Research streams, pgvector storage, tech radar, research action pipeline |
 | Chief Product Officer (CPO) | Product Lead | Product backlog, specs, prioritization, UX, pipeline ownership, proactive product audits |

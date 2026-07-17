@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Redis Trigger Channel — MCP Channel plugin for Founder's Cabinet
+ * Redis Trigger Channel — MCP Channel plugin for Captain's Cabinet
  *
  * Subscribes to Redis Streams and pushes triggers into Claude Code
  * sessions instantly via MCP notifications. Replaces /loop polling.

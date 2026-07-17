@@ -25,9 +25,9 @@ describe('GET /api/health', () => {
 describe('manifest()', () => {
   it('returns the exact PWA manifest object', () => {
     expect(manifest()).toEqual({
-      name: "Founder's Cabinet",
+      name: "Captain's Cabinet",
       short_name: 'Cabinet',
-      description: "Admin dashboard for the Founder's Cabinet",
+      description: "Admin dashboard for the Captain's Cabinet",
       id: '/',
       start_url: '/',
       scope: '/',

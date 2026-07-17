@@ -132,7 +132,7 @@ reports exit code + these paths, nothing else.
 
 ## Dashboard bind status — honest, as of this build (2026-07-10, base 2d8f99d9)
 - The shell opens **no ports and no URLs** and never invokes `start-dashboard.sh`. Even
-  `hatch.sh --with-launchd` (the move-in this app can offer) deploys the Chair +
+  `hatch.sh --with-launchd` (the move-in this app can offer) deploys the First Mate +
   measurement-plane plists — **not** `com.cabinet.dashboard`.
 - When the dashboard IS brought up later (`deploy-mac.sh --all` / `--daemon dashboard`,
   or the forthcoming APP-FEEL hatch tail), the bind default is **all interfaces

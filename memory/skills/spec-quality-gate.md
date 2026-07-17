@@ -46,4 +46,4 @@ Every published spec has: clear problem statement with evidence, testable accept
 
 ## Origin
 
-Foundation skill — ships with the Founder's Cabinet.
+Foundation skill — ships with the Captain's Cabinet.

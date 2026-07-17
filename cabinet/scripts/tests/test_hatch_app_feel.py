@@ -133,7 +133,7 @@ def _run_tail(tmp_path: Path, *, clean_room="0", with_launchd="1",
 
 
 def _webloc(home: Path) -> Path:
-    return home / "Applications" / "Founder's Cabinet.webloc"
+    return home / "Applications" / "Captain's Cabinet.webloc"
 
 
 # ---------------------------------------------------------------------------

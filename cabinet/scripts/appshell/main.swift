@@ -183,7 +183,7 @@ func dialogMain(prefix: String) -> Int32 {
                 // never a reflex default-accept.
                 let confirm = ask(
                     "Confirm move-in (--with-launchd)",
-                    "Move-in runs hatch.sh --with-launchd: the engine deploys the Chair and the "
+                    "Move-in runs hatch.sh --with-launchd: the engine deploys the First Mate and the "
                     + "measurement-plane launch agents, and macOS will show a "
                     + "\u{201C}Background Items Added\u{201D} notification.\n\n"
                     + "Plain Hatch skips this — the engine then prints move-in as an errand note "

@@ -77,9 +77,9 @@ RISK_SENTENCES: dict[str, str] = {
     "a capability/resource is granted":
         "This gives the cabinet a new tool or access.",
     "a Chair judgment lands without you":
-        "If you don't answer, the Chair will decide this one.",
+        "If you don't answer, the First Mate will decide this one.",
     "the Chair is holding a judgment open":
-        "The Chair is waiting on you for this.",
+        "The First Mate is waiting on you for this.",
 }
 #: Fallbacks when the producer string is unknown (never echo it raw — it is
 #: org vocabulary; the exact text stays available behind Details).
@@ -121,7 +121,7 @@ BUTTON_LABELS: dict[str, list[str]] = {
     "action-proposal": ["✓ Approve", "✎ Change…", "✗ No"],
     "draft-outbound": ["Send it", "✎ Change…", "Don't send"],
     "need": ["Yes, allow", "Not now", "Never"],
-    "escalation": ["I'll decide", "Ask the Chair"],
+    "escalation": ["I'll decide", "Ask the First Mate"],
     "nudge": ["Triage now", "At next briefing", "Snooze 2h"],
     "acted": ["↩ Undo", "👍 Fine"],
 }
@@ -132,7 +132,7 @@ DOOR_BUTTONS: dict[str, dict[str, str]] = {
     "draft-outbound": {"approve": "Send it", "later": "Later", "no": "Don't send"},
     "need": {"approve": "Yes, allow", "later": "Not now", "no": "Never"},
     "escalation": {"approve": "I'll decide", "later": "Later",
-                   "no": "Ask the Chair"},
+                   "no": "Ask the First Mate"},
 }
 
 #: Kinds whose approve is a sign-off ritual — never a dashboard tap.
@@ -165,7 +165,7 @@ RESULTS: dict[str, str] = {
     "approved": "Approved — done.",
     "approved_underway": "Approved — under way.",
     "approved_delivery_failed":
-        "Your approval is recorded, but the follow-through hit an error — the Chair will finish it.",
+        "Your approval is recorded, but the follow-through hit an error — the First Mate will finish it.",
     "declined": "Noted — I won't do it.",
     "denied": "Okay — I won't do that without asking.",
     "deferred": "Parked — it comes back at the next briefing.",
@@ -179,12 +179,12 @@ CONSEQUENCE_TEMPLATES: dict[str, str] = {
         "Haven't read it? It's on this item's Telegram card — open that first.",
     "approve:need": "{risk} If you confirm, the cabinet gets this permission.",
     "approve:escalation":
-        "Nothing runs yet — this marks it as yours to decide. The Chair "
+        "Nothing runs yet — this marks it as yours to decide. The First Mate "
         "brings it to you in Telegram to settle.",
     "no": "Nothing happens — I record the no and stop suggesting it.",
     "no:draft-outbound": "The message is not sent.",
     "no:need": "The cabinet does not get this permission.",
-    "no:escalation": "The Chair settles it and tells you what it chose.",
+    "no:escalation": "The First Mate settles it and tells you what it chose.",
     "later": "Nothing happens now — it comes back at the next briefing.",
 }
 UNDO_TEMPLATES: dict[str, str] = {
@@ -212,7 +212,7 @@ COPY: dict[str, str] = {
     "updated_prefix": "Updated",
     "decisions_header": "Needs a decision",
     "decisions_empty": "Nothing here.",
-    "overflow_note": "more waiting — I've asked the Chair to sort them out.",
+    "overflow_note": "more waiting — I've asked the First Mate to sort them out.",
     "directions_header": "This week — no rush",
     "directions_empty": "Nothing here.",
     "confirm_yes": "Yes, do it",
@@ -224,7 +224,7 @@ COPY: dict[str, str] = {
     "details_sources": "Where this comes from",
     "details_typing": "Prefer typing? Send this in Telegram:",
     "open_telegram": "Open in Telegram ↗",
-    "answer_telegram": "Answer in Telegram (HQ Chair).",
+    "answer_telegram": "Answer in Telegram (First Mate).",
     "no_buttons": "To decide this one, answer on its Telegram message.",
     "footer_hint": "Tap a button to decide — or answer on the item's Telegram message.",
     "working": "Working…",
@@ -414,7 +414,7 @@ BANNED: dict[str, str] = {
     "undo-rate": "(hide it)",
     "opaque handle": "(never shown)",
     "untitled situation": "(no title)",
-    "t2": "the Chair asked you",
+    "t2": "the First Mate asked you",
 }
 
 _BANNED_RES: list[tuple[str, "re.Pattern[str]"]] = [

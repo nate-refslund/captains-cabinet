@@ -28,7 +28,7 @@
 
 roster:
   cos:
-    title: "Chief of Staff"
+    title: "First Mate"
     model: "claude-fable-5"
     capabilities: [logs_captain_decisions, reviews_specs, reviews_implementations, validates_deployments]
     authority_level: "captain_proxy"

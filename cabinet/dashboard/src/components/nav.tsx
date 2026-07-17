@@ -322,7 +322,7 @@ function NavChrome({
       {/* Mobile header */}
       <div className={`fixed top-0 left-0 right-0 z-50 flex items-center justify-between border-b border-zinc-800 px-4 py-3 md:hidden ${sidebarBg}`}>
         <div className="flex items-center gap-2">
-          <span className="text-lg font-bold text-white">Cabinet</span>
+          <span className="text-lg font-bold text-white">Captain&apos;s Cabinet</span>
           {projects && projects.length > 0 && (
             <span className="text-xs text-zinc-500">
               / {projects.find((p) => p.active)?.name || activeProject}
@@ -354,7 +354,7 @@ function NavChrome({
         {/* Logo */}
         <div className="flex h-14 items-center border-b border-zinc-800 px-6">
           <span className="text-lg font-bold text-white">
-            Founder&apos;s Cabinet
+            Captain&apos;s Cabinet
           </span>
         </div>
 

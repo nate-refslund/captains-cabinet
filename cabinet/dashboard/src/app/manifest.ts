@@ -7,9 +7,9 @@ import type { MetadataRoute } from 'next'
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Founder's Cabinet",
+    name: "Captain's Cabinet",
     short_name: 'Cabinet',
-    description: "Admin dashboard for the Founder's Cabinet",
+    description: "Admin dashboard for the Captain's Cabinet",
     id: '/',
     start_url: '/',
     scope: '/',
