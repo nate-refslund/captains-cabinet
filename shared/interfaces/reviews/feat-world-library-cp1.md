@@ -105,6 +105,21 @@ Escape closes via the shell handler.
 - Ledger: WORLD-LIBRARY-1 appended (status=done) + plan-doc §47; A13 +
   id-uniqueness + ledger-status-parity GREEN pre (331) and post (332).
 
+## Post-push fix (same day)
+
+The landing push's CI went RED on framework-tests:
+`test_vault_rename_ratchet::test_no_undeclared_product_brain_references`
+flagged the two lane test files. Verified classification: the routes test
+resets the DECLARED legacy `CABINET_PRODUCT_BRAIN_DIR` env alias (the
+`lib/vault.ts` back-compat matrix it exercises — same class as
+`vault-graph.test.ts`), and both files mock the live cabinet_memory
+`source_type=product_brain` ENUM VALUE in search-hit fixtures (DB row
+data, not a path — same class as `route.test.ts`). The lane clones never
+ran the ratchet with its files TRACKED — the exact unstaged-state-artifact
+class LIBRARY-P2-1 recorded on the search lane. Fix: two ALLOWED entries
+with reasons (shrink-only list); targeted ratchets re-run 12 passed /
+1 skipped; the follow-up push's CI is the authority.
+
 ## Residuals (owned in the runbook)
 
 Proper library building art (staged worksite marker until the asset forge

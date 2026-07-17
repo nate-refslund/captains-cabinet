@@ -153,6 +153,18 @@ ALLOWED = {
     "docs/runbooks/library-search-2026-07-17.md":
         "documents the source_type contract incl. the product_brain enum "
         "value (living runbook, not archived history)",
+    # --- world-Library card (2026-07-17): the world surface at parity with
+    # --- the /library reader — its route tests exercise the SAME legacy
+    # --- env-alias matrix the lib/vault.ts mirror declares, and its search
+    # --- fixtures carry the live cabinet_memory source_type enum value
+    # --- (drop alongside the vault.ts seam / the DB data migration above) --
+    "cabinet/dashboard/src/app/api/world/library/world-library-routes.test.ts":
+        "env-isolation fixture resets the declared legacy "
+        "CABINET_PRODUCT_BRAIN_DIR alias (same class as vault-graph.test.ts) "
+        "and fixture hit rows carry the live product_brain source_type value",
+    "cabinet/dashboard/src/lib/world/library-panel.test.ts":
+        "fixture hit rows carry the live cabinet_memory product_brain "
+        "source_type enum value (same class as search route.test.ts)",
     # --- docs that deliberately document the legacy aliases ----------------
     "vault/README.md":
         "documents the rename, the legacy aliases, and the ref-namespace call",
