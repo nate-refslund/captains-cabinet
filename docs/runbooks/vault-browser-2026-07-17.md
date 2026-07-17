@@ -1,14 +1,62 @@
-# Vault browser — read-only dashboard view (2026-07-17)
+# Vault browser — read-only dashboard view (2026-07-17) — a.k.a. THE LIBRARY
 
-The dashboard `/vault` route is a **read-only** browser over the cabinet's
-**org vault** — the `vault/` markdown corpus (architecture, decisions,
-incidents, designs, plans, the retired Library archive, any captain/org doc).
-It lists directories and renders notes as sanitized HTML in the browser. It is
-a filesystem reader: **no database, no vector store, no mutation.**
+The dashboard's **Library** (`/library`) is a **read-only** browser over the
+cabinet's **org vault** — the `vault/` markdown corpus (architecture,
+decisions, incidents, designs, plans, the retired Library archive, any
+captain/org doc). It lists directories and renders notes as sanitized HTML in
+the browser. It is a filesystem reader: **no database, no vector store, no
+mutation.**
 
-- Route: `cabinet/dashboard/src/app/(authenticated)/vault/[[...path]]/page.tsx`
-  (one catch-all server component: empty path → root listing, dir → listing,
-  file → rendered note).
+## Naming (Captain ruling, 2026-07-17)
+
+> "Keep the name Library — it fits the world; the vault is where it's kept,
+> the Library is where you read."
+
+The browser shipped at `/vault` and moved to `/library` the same day:
+
+- `/library` renders the browser (the reader RETURNED one day after the
+  Library **store** retired — the store stays retired; see
+  `library-retirement-2026-07-16.md`).
+- `/vault` is a **redirect alias** — `/vault/architecture.md` →
+  `/library/architecture.md` (segments re-percent-encoded; never an open
+  redirect; the example is a real tracked note, so the G6 docs sweep vouches
+  for it). Old deep links keep working.
+- Nav shows a single **Library** entry (both modes); the separate Vault entry
+  was dropped.
+- The old full-page retirement notice is now a collapsible **History** note
+  on the Library root (store retired 2026-07-16 · reader returned 2026-07-17 ·
+  content in the vault).
+- Legacy 1–2-segment extension-less `/library/...` deep links (retired
+  space/record id shapes) redirect to `/library`; note-shaped misses stay
+  generic 404s.
+
+## Surfaces
+
+- Route: `cabinet/dashboard/src/app/(authenticated)/library/[[...path]]/page.tsx`
+  (one catch-all server component: empty path → root listing + History note +
+  Browse|Graph tabs, dir → listing, file → rendered note + backlinks).
+  `/vault/[[...path]]/page.tsx` is the redirect stub.
+- Graph: `/library/graph` (`graph/page.tsx`, same address as the
+  pre-retirement Spec 045 graph) — the `[[wikilink]]` network over the
+  FILESYSTEM, built by `src/lib/vault-graph.ts` (confined walk on `listDir`,
+  edges from `parseWikilinksBounded` + `resolveNoteTarget`; deduped, no
+  self-loops, bounded: depth 8 / 20000 files / **32KB per-note parse cap** /
+  8MB corpus-wide parse budget; ~30s TTL cache). The parse itself carries
+  linear ReDoS guards (no-`]]` pre-guard + a 500-`[[`-starts cap in
+  `parseWikilinksBounded`) — pre-guard-less, a single planted 200KB note of
+  `[` cost ~16.5s of synchronous CPU on every cold build. Over-bound bodies
+  keep their node and skip their edges (graph flags `truncated`).
+  The server component serializes the data as props into the resurrected
+  `components/library/GraphCanvas.tsx` client canvas — **zero API routes,
+  zero fetch, zero DB**. Node click navigates to `/library/<path>`; the hover
+  tooltip label is HTML-escaped in `components/library/graph-tooltip.ts`
+  (float-tooltip renders string labels via innerHTML — frontmatter titles and
+  dir names must never reach it raw). NOTE: the
+  static `graph` segment shadows a top-level vault entry literally named
+  `graph` (none exists; deeper paths still reach the browser).
+- Backlinks: `components/library/BacklinksPanel.tsx` under each note — the
+  graph's edge list inverted (`getBacklinks`), grouped by top-level folder,
+  linking back into the Library.
 - Data layer: `cabinet/dashboard/src/lib/vault.ts` (root resolution +
   confinement + `listDir`/`readNote`/note index). The index keys each note by
   basename **and** by slug — slugified basename, slugified basename with the
@@ -23,15 +71,17 @@ a filesystem reader: **no database, no vector store, no mutation.**
 - Renderer: `cabinet/dashboard/src/components/vault/VaultMarkdown.tsx`
   (react-markdown + remark-gfm + rehype-sanitize). Headings get a `slugify()`
   `id` (assigned by the React component, after sanitize; slug chars only) so
-  `[[note#section]]` fragment links anchor.
-- Nav: `Vault` entry in `ADVANCED_NAV` (`src/lib/nav-config.ts`), Advanced mode
-  only. The retired `/library` notice links onward to `/vault`.
+  `[[note#section]]` fragment links anchor. Wikilinks rewrite to `/library/…`
+  hrefs (`vaultHref`); literal legacy `/vault/…` links in notes stay
+  recognized as internal (the alias 307s them).
+- Nav: single `Library` entry in BOTH `ADVANCED_NAV` and `CONSUMER_NAV`
+  (`src/lib/nav-config.ts`) since the 2026-07-17 naming ruling.
 
 ## What it reads — the ORG vault, never the personal vault
 
 Two vault resolvers exist in `framework/env.py`:
 
-| Resolver | Points at | Surfaced by `/vault`? |
+| Resolver | Points at | Surfaced by the Library? |
 |----------|-----------|------------------------|
 | `vault_dir()` | the **captain's personal** brain/Obsidian vault (on this box `~/obsidian/screenpipe-brain`) | **NEVER** |
 | `org_vault_dir()` | the **org** corpus = `<repo>/vault/` | **Yes** |
@@ -54,10 +104,11 @@ highest-consequence constraint of this view. To relocate the org vault, set
 
 ## Security posture
 
-- **Auth.** `/vault` (and any future `/api/vault/*`) sit under the
-  `(authenticated)` route group and are **not** in the middleware's static
-  allowlist, so the HMAC `cabinet_session` cookie gates them automatically —
-  unauthenticated requests 307 to `/login`. No new auth mechanism.
+- **Auth.** `/library`, the `/vault` alias, and any future `/api/vault/*` sit
+  under the `(authenticated)` route group and are **not** in the middleware's
+  static allowlist, so the HMAC `cabinet_session` cookie gates them
+  automatically — unauthenticated requests 307 to `/login` (the gate runs
+  BEFORE the alias redirect is computed). No new auth mechanism.
 - **Path confinement.** Every read goes through `resolveInVault()`:
   `path.resolve` normalizes `..`, then `fs.realpathSync` resolves symlinks, and
   a prefix-assert requires the result to stay under the realpath'd vault root.
@@ -73,24 +124,30 @@ highest-consequence constraint of this view. To relocate the org vault, set
   default `urlTransform` both strip `javascript:`/`vbscript:`/`data:` URLs.
 - **Wikilinks are internal-only.** `[[note]]` / `[[note#section]]` /
   `[[note|alias]]` resolve against a **confined** filesystem index (basename +
-  slug + frontmatter-title keys) and rewrite to internal `/vault/…` links;
+  slug + frontmatter-title keys) and rewrite to internal `/library/…` links;
   the resolved relpath is itself re-run through `resolveInVault`. Wikilinks
   inside code are left literal. Unresolved targets render as inert styled text —
   **no create affordance** (read-only). Never an external or `javascript:` href.
-- **Read-only / DB-free.** No write/edit/delete endpoints; MVP is pure server
-  components with zero new API routes. The vault modules import no `@/lib/db`,
-  no `pg`, and issue no `query(` — the retired Library vector store stays
-  retired.
+- **Read-only / DB-free.** No write/edit/delete endpoints; pure server
+  components with zero new API routes — the graph data crosses to the client
+  as serialized props, not a fetch. The reader modules import no `@/lib/db`,
+  no `pg`, no `@/lib/library`, and issue no `query(` — the retired Library
+  vector store stays retired.
+- **Graph/backlinks confinement.** The graph walk is built on `listDir`
+  (symlinks lstat-skipped, every entry re-confined), so a symlink-escape note
+  never becomes a node or an edge; traversal-shaped wikilink targets resolve
+  to null and produce no edge.
 
 ## Not in this wave (Phase 2)
 
 - Serving binary assets/images referenced by notes (images render broken; a
   confined, content-type-allowlisted asset route is Phase 2).
-- Backlinks panel, force-directed graph, wikilink hovercard previews,
-  full-text search, and repointing the Command Palette to a vault search.
-- **Tailscale phone exposure.** Reaching `/vault` from a phone over the tailnet
-  is a Phase-2 deployment concern; it inherits the same `cabinet_session` auth
-  and confinement — no route is exempted for it.
+- Wikilink hovercard previews, full-text search, and repointing the Command
+  Palette to a vault search. (The backlinks panel and force-directed graph
+  SHIPPED 2026-07-17 with the Library identity move — see Surfaces above.)
+- **Tailscale phone exposure.** Reaching the Library from a phone over the
+  tailnet is a Phase-2 deployment concern; it inherits the same
+  `cabinet_session` auth and confinement — no route is exempted for it.
 
 ## Tests
 
@@ -98,15 +155,37 @@ highest-consequence constraint of this view. To relocate the org vault, set
   negative controls, positive in-vault resolve, the fail-closed +
   never-reads-`vault_dir` root resolution, title/slug/export-prefix wikilink
   resolution, and the hostile-title-cannot-escape control.
+- `src/lib/vault-graph.test.ts` — nodes == fixture note count, edges match
+  wikilinks exactly (dedupe, no self-loops, ghosts inert), ★ symlink-escape
+  note never enters, traversal-shaped targets produce no edge, backlink
+  inversion, TTL-cache seams, empty-vault fail-closed, ★ edge-harvest bounds
+  (planted 200KB `[` note / many-starts note / over-32KB note all degrade to
+  node-without-edges with a fast build; in-bounds notes keep their edges).
 - `src/lib/vault-wikilinks.test.ts` — parse + internal-only rewrite, unresolved
   sentinel, hostile-target inertness, and code-awareness (inline + fenced
-  wikilinks stay literal; oversized-body guard).
+  wikilinks stay literal; oversized-body guard). Hrefs pin `/library/…`.
+  ★ `parseWikilinksBounded` ReDoS guards: the measured 200KB-`[` DoS case,
+  the trailing-`]]` variant, and the max-work case inside the guards all
+  timed under CI-safe bounds; differential parity with `parseWikilinks` on
+  real-shaped input; exactly-at-the-starts-cap bodies still parse.
+- `src/components/library/graph-tooltip.test.ts` — hover-tooltip XSS negative
+  controls: `<img onerror>` titles, `<script>` dirs, attribute-breakout
+  quotes, and a poisoned non-number degree all yield escaped text (the
+  tooltip string feeds float-tooltip's innerHTML branch).
 - `src/components/vault/vault-markdown.test.tsx` — XSS negative controls
   (`<script>`, `<img onerror>`, `javascript:`/`data:`/`vbscript:` URLs), heading
-  slug ids, exact `/vault` prefix, and the end-to-end code-span-literal check.
-- `vault-route.test.ts` (beside the route's `page.tsx`, in the `/vault` route
-  group) — source contract: read-only (no write fs calls / no mutation HTTP
-  verbs), DB-free.
-- `src/middleware.test.ts` — `/vault` with no cookie → 307 `/login`.
+  slug ids, exact `/library` prefix (+ legacy `/vault` stays internal), and the
+  end-to-end code-span-literal check.
+- `library-route.test.ts` (in the `/library` route group) — the superseded
+  contract WITH PROVENANCE (Captain ruling 2026-07-17): retired STORE stays
+  retired (whole route tree + reader modules DB-free), read-only source
+  contract (moved from the old `/vault` contract), the reader-returns asserts
+  (browser moved not duplicated; History note), zero-endpoint graph, legacy
+  deep-link redirects.
+- `vault-route.test.ts` (in the `/vault` route group) — the redirect alias:
+  root + deep + encoding parity with `vaultHref`, ★ no-open-redirect control,
+  stub-is-only-a-redirect source contract.
+- `src/middleware.test.ts` — `/vault` AND `/library` (+ deep paths, graph tab)
+  with no cookie → 307 `/login`.
 
 Run: `cd cabinet/dashboard && npm ci && npm test && npm run typecheck`.

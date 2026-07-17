@@ -76,9 +76,9 @@ describe('VaultMarkdown — dangerous URL protocols neutralized', () => {
 })
 
 describe('VaultMarkdown — link rendering contract', () => {
-  it('an internal /vault link renders via next/link with wikilink styling', () => {
-    const out = render('[a](/vault/decisions/n.md)')
-    expect(out).toContain('href="/vault/decisions/n.md"')
+  it('an internal /library link renders via next/link with wikilink styling', () => {
+    const out = render('[a](/library/decisions/n.md)')
+    expect(out).toContain('href="/library/decisions/n.md"')
     expect(out).toContain('wikilink-resolved')
   })
 
@@ -137,17 +137,32 @@ describe('VaultMarkdown — heading anchors (section fragments can land)', () =>
   })
 })
 
-describe('VaultMarkdown — /vault prefix is exact (no sibling capture)', () => {
-  it('a sibling path /vaultfoo is NOT rendered as an internal vault link', () => {
-    const out = render('[x](/vaultfoo)')
-    expect(out).not.toContain('href="/vaultfoo"')
+describe('VaultMarkdown — /library prefix is exact (no sibling capture)', () => {
+  // Prefix pins updated /vault→/library 2026-07-17 (Captain naming ruling:
+  // the reader is the Library; /vault stays a recognized-internal redirect
+  // alias, covered below).
+  it('a sibling path /libraryfoo is NOT rendered as an internal vault link', () => {
+    const out = render('[x](/libraryfoo)')
+    expect(out).not.toContain('href="/libraryfoo"')
     expect(out).not.toContain('wikilink-resolved')
   })
 
-  it('a real /vault/ path still renders as an internal link', () => {
+  it('a real /library/ path still renders as an internal link', () => {
+    const out = render('[x](/library/a/b.md)')
+    expect(out).toContain('href="/library/a/b.md"')
+    expect(out).toContain('wikilink-resolved')
+  })
+
+  it('a legacy /vault/ path stays an internal link (redirect alias keeps it working)', () => {
     const out = render('[x](/vault/a/b.md)')
     expect(out).toContain('href="/vault/a/b.md"')
     expect(out).toContain('wikilink-resolved')
+  })
+
+  it('a sibling path /vaultfoo is NOT internal either', () => {
+    const out = render('[x](/vaultfoo)')
+    expect(out).not.toContain('href="/vaultfoo"')
+    expect(out).not.toContain('wikilink-resolved')
   })
 })
 
@@ -160,6 +175,6 @@ describe('VaultMarkdown — end-to-end: code-span wikilink stays literal', () =>
     const out = renderToStaticMarkup(<VaultMarkdown markdown={processed} />)
     expect(out).not.toContain('__vault_unresolved__') // sentinel never shown
     expect(out).toContain('[[wikilinks]]') // code-span wikilink is literal
-    expect(out).toContain('href="/vault/notes/known.md"') // real one still links
+    expect(out).toContain('href="/library/notes/known.md"') // real one still links
   })
 })

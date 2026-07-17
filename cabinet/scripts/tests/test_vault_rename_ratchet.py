@@ -125,9 +125,34 @@ ALLOWED = {
     "cabinet/dashboard/src/lib/vault.test.ts":
         "pins the TS mirror's legacy env-alias/key/dir matrix (same class "
         "as test_gather_corpus.py)",
+    "cabinet/dashboard/src/lib/vault-graph.test.ts":
+        "env-isolation fixture clears the declared legacy "
+        "CABINET_PRODUCT_BRAIN_DIR alias so ambient env can't leak a stray "
+        "corpus into graph fixtures (same class as vault.test.ts above)",
     "docs/runbooks/vault-browser-2026-07-17.md":
         "documents the /vault root-resolution arms incl. the legacy aliases "
         "(living runbook, not archived history)",
+    # --- cabinet_memory source_type ENUM VALUE (Library search, 2026-07-17):
+    # --- 'product_brain' here is DB row data, not a directory — the CG-30
+    # --- hook writes vault notes AS source_type=product_brain, so the
+    # --- memory-search engine, its UI labels, tests and runbook must name
+    # --- the live enum value; renaming it is a DB data migration, not a
+    # --- file rename (drop these entries only with that migration) --------
+    "cabinet/dashboard/src/lib/memory-search.ts":
+        "org-knowledge SQL filter + libraryPath derivation name the live "
+        "cabinet_memory source_type enum value product_brain (vault-note rows)",
+    "cabinet/dashboard/src/lib/memory-search.test.ts":
+        "pins the product_brain source_type filter + libraryPath derivation",
+    "cabinet/dashboard/src/components/library/LibrarySearch.tsx":
+        "SOURCE_TYPE_LABELS maps the product_brain enum value to its badge "
+        "text ('vault note')",
+    "cabinet/dashboard/src/components/library/library-search.test.tsx":
+        "pins the product_brain badge-label mapping",
+    "cabinet/dashboard/src/app/api/library/search/route.test.ts":
+        "fixture hit rows carry the live product_brain source_type value",
+    "docs/runbooks/library-search-2026-07-17.md":
+        "documents the source_type contract incl. the product_brain enum "
+        "value (living runbook, not archived history)",
     # --- docs that deliberately document the legacy aliases ----------------
     "vault/README.md":
         "documents the rename, the legacy aliases, and the ref-namespace call",

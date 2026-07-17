@@ -1,5 +1,8 @@
 /**
- * vault-wikilinks.ts — internal-only wikilink support for the /vault browser.
+ * vault-wikilinks.ts — internal-only wikilink support for the Library
+ * (/library), the read-only vault reader (Captain naming ruling 2026-07-17:
+ * the vault is where it's kept, the Library is where you read; /vault
+ * redirects to /library).
  *
  * The three PURE parsers below (parseWikilinks, slugify, extractHeadings) are
  * COPIED VERBATIM from lib/wikilinks.ts (Spec 037; parseWikilinks:84,
@@ -69,6 +72,45 @@ export function parseWikilinks(markdown: string): ParsedWikilink[] {
   return results
 }
 
+// ============================================================
+// Bounded parse wrapper (vault-side ReDoS hardening — NOT part of the
+// verbatim mirror above; wikilinks.ts has no equivalent)
+// ============================================================
+
+/** More `[[` start positions than this marks a body pathological — real
+ *  notes carry orders of magnitude fewer links. Bounding the start count
+ *  bounds the regex engine's worst case to starts × body-length. */
+export const WIKILINK_MAX_STARTS = 500
+
+/**
+ * parseWikilinks with linear pre-guards (2026-07-17 review fix). The verbatim
+ * WIKILINK_REGEX is quadratic on adversarial bodies: every `[[` start
+ * position can rescan toward EOF (measured ~16.5s SYNCHRONOUS on 200KB of
+ * `[` — an event-loop-blocking DoS once the graph parses the whole corpus).
+ * Guards, all O(n):
+ *   1. bodies over `maxBytes` parse to [] (caller-declared budget);
+ *   2. no `]]` anywhere → no match is possible → [] (kills the pure-`[`
+ *      class outright, where every start scans to EOF and fails);
+ *   3. more than WIKILINK_MAX_STARTS `[[` positions → pathological → []
+ *      (bounds total regex work to starts × maxBytes even when a trailing
+ *      `]]` defeats guard 2).
+ * Pathological bodies therefore degrade to "no links harvested" — the same
+ * observable behavior as the pre-existing oversize skip. Real notes are
+ * untouched: bounded === plain parseWikilinks on them (differential-tested).
+ */
+export function parseWikilinksBounded(
+  markdown: string,
+  maxBytes: number
+): ParsedWikilink[] {
+  if (markdown.length > maxBytes) return []
+  if (!markdown.includes(']]')) return []
+  let starts = 0
+  for (let i = markdown.indexOf('[['); i !== -1; i = markdown.indexOf('[[', i + 1)) {
+    if (++starts > WIKILINK_MAX_STARTS) return []
+  }
+  return parseWikilinks(markdown)
+}
+
 /** github-slugger compatible deterministic slug. (wikilinks.ts:122) */
 export function slugify(text: string): string {
   return (
@@ -116,10 +158,13 @@ export function extractHeadings(markdown: string): ExtractedHeading[] {
  *  affordance (read-only). */
 export const VAULT_UNRESOLVED_HREF = '#__vault_unresolved__'
 
-/** Build an app-internal /vault href from a vault relpath (+ optional section
- *  slug). Each path segment is percent-encoded, so the href can never carry a
- *  literal `)` (which would break the surrounding markdown link) nor an
- *  injected protocol — it is ALWAYS a same-origin internal path. */
+/** Build an app-internal /library href from a vault relpath (+ optional
+ *  section slug) — the name stays `vaultHref` because the path addresses a
+ *  note IN the vault corpus; the Library route is where it is read (Captain
+ *  ruling 2026-07-17). Each path segment is percent-encoded, so the href can
+ *  never carry a literal `)` (which would break the surrounding markdown
+ *  link) nor an injected protocol — it is ALWAYS a same-origin internal
+ *  path. */
 export function vaultHref(relPath: string, sectionSlug?: string | null): string {
   const encoded = relPath
     .split('/')
@@ -129,7 +174,7 @@ export function vaultHref(relPath: string, sectionSlug?: string | null): string 
     .map((s) => encodeURIComponent(s).replace(/\(/g, '%28').replace(/\)/g, '%29'))
     .join('/')
   const hash = sectionSlug ? `#${sectionSlug}` : ''
-  return `/vault/${encoded}${hash}`
+  return `/library/${encoded}${hash}`
 }
 
 /** Escape markdown-significant characters in wikilink display text so an alias
@@ -144,10 +189,11 @@ function escapeLabel(text: string): string {
 export type WikilinkResolver = (target: string) => string | null
 
 /** Bodies larger than this are rendered WITHOUT wikilink rewriting (the raw
- *  `[[...]]` shows as literal text). Real notes are far smaller; the bound
- *  keeps the parse regex from backtracking for long on a pathological planted
- *  note (defense-in-depth — the wikilink surface is behind auth + confinement
- *  and only reads committed vault files). */
+ *  `[[...]]` shows as literal text). Real notes are far smaller. This size
+ *  cap alone does NOT tame the parse regex (200KB of `[` still cost ~16.5s);
+ *  the linear guards live in parseWikilinksBounded, which rewriteWikilinks
+ *  now parses through (defense-in-depth — the wikilink surface is behind
+ *  auth + confinement and only reads committed vault files). */
 const WIKILINK_REWRITE_MAX_BYTES = 200_000
 
 interface CodeRange {
@@ -251,21 +297,20 @@ function collectInlineCode(md: string, from: number, to: number, out: CodeRange[
 /**
  * Rewrite every [[wikilink]] in `markdown` to an ordinary internal markdown
  * link BEFORE react-markdown runs. Resolved targets become
- * `[alias](/vault/<relpath>#<section-slug>)`; unresolved targets become
+ * `[alias](/library/<relpath>#<section-slug>)`; unresolved targets become
  * `[alias](VAULT_UNRESOLVED_HREF)` (rendered as inert styled text). Never
  * emits an external or `javascript:` href.
  *
  * Wikilinks INSIDE code (fenced blocks or inline spans) are left LITERAL so
  * illustrative examples render verbatim — the internal sentinel never leaks
- * into displayed code. Oversized bodies skip rewriting entirely (see the bound).
+ * into displayed code. Oversized or pathological bodies skip rewriting
+ * entirely (parseWikilinksBounded returns [] for them — see its guards).
  */
 export function rewriteWikilinks(
   markdown: string,
   resolve: WikilinkResolver
 ): string {
-  if (markdown.length > WIKILINK_REWRITE_MAX_BYTES) return markdown
-
-  const links = parseWikilinks(markdown)
+  const links = parseWikilinksBounded(markdown, WIKILINK_REWRITE_MAX_BYTES)
   if (links.length === 0) return markdown
 
   const regions = computeCodeRegions(markdown)

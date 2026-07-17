@@ -1,87 +1,103 @@
-// /vault — source contract (2026-07-17).
+// /vault route — redirect-alias contract (supersedes the 2026-07-17 /vault
+// SOURCE contract that previously lived in this file).
 //
-// The vault browser is READ-ONLY and DB-FREE by construction. This test greps
-// the vault source (route + data layer + wikilinks + renderer) so neither
-// property can quietly regress:
-//   - no filesystem WRITE calls (writeFile/unlink/rm/mkdir/rename/…),
-//   - no mutation HTTP handlers (no POST/PUT/PATCH/DELETE exports); MVP adds
-//     zero API routes,
-//   - no database (no '@/lib/db', no pg, no query()) — keeps the retired
-//     vector store retired and clears the library-retirement ratchet,
-//   - no raw-HTML escape hatch (no rehype-raw, no dangerouslySetInnerHTML=).
+// PROVENANCE — Captain ruling 2026-07-17: "keep the name Library — it fits
+// the world; the vault is where it's kept, the Library is where you read."
+// The phase-1 vault browser MOVED to /library/[[...path]] (its read-only +
+// DB-free source contract moved with it into library-route.test.ts); /vault
+// is now a pure redirect alias so every old deep link keeps working:
+//
+//   /vault            → /library
+//   /vault/a/b.md     → /library/a/b.md   (segments re-percent-encoded)
+//
+// The stub renders nothing, reads nothing, and builds its target ONLY from
+// re-encoded path segments under the /library prefix — never from a query
+// string, header, or full URL — so it can never become an open redirect.
 
-import { describe, it, expect } from 'vitest'
-import { readFileSync, existsSync } from 'node:fs'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const SRC = join(HERE, '..', '..', '..') // → cabinet/dashboard/src
 
-const SOURCES = {
-  page: join(HERE, '[[...path]]', 'page.tsx'),
-  vaultLib: join(SRC, 'lib', 'vault.ts'),
-  wikilinks: join(SRC, 'lib', 'vault-wikilinks.ts'),
-  renderer: join(SRC, 'components', 'vault', 'VaultMarkdown.tsx'),
-}
+const { mockRedirect } = vi.hoisted(() => ({
+  mockRedirect: vi.fn((target: string) => {
+    // Real next/navigation redirect() throws — emulate so callers stop.
+    throw new Error(`REDIRECT:${target}`)
+  }),
+}))
 
-// Strip block comments before grepping so the contract checks ACTUAL CODE, not
-// the doc prose (these modules deliberately describe '@/lib/db' / query() /
-// dangerouslySetInnerHTML / rehype-raw in comments to explain why they are
-// absent). Our sources contain no `/*`/`*/` inside string or regex literals.
-function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, ' ')
-}
-const read = (p: string) => stripComments(readFileSync(p, 'utf-8'))
+vi.mock('next/navigation', () => ({ redirect: mockRedirect }))
 
-// Filesystem WRITE call shapes — matched as calls so read APIs (statSync,
-// readdirSync, readFileSync, realpathSync, lstatSync, existsSync) never trip.
-const WRITE_CALL =
-  /\b(writeFile|writeFileSync|unlink|unlinkSync|rmSync|rmdir|rmdirSync|mkdir|mkdirSync|rename|renameSync|appendFile|appendFileSync|copyFile|copyFileSync|truncate|createWriteStream)\s*\(/
+beforeEach(() => {
+  mockRedirect.mockClear()
+})
 
-describe('/vault source contract — read-only', () => {
-  for (const [name, path] of Object.entries(SOURCES)) {
-    it(`${name} makes no filesystem write calls`, () => {
-      expect(read(path)).not.toMatch(WRITE_CALL)
-    })
-  }
+const P = (path?: string[]) => Promise.resolve({ path })
 
-  it('the route exports no mutation HTTP handler', () => {
-    const src = read(SOURCES.page)
-    expect(src).not.toMatch(/export\s+(async\s+)?function\s+(POST|PUT|PATCH|DELETE)\b/)
-    expect(src).not.toMatch(/export\s+const\s+(POST|PUT|PATCH|DELETE)\b/)
+describe('/vault → /library redirect alias', () => {
+  it('root /vault redirects to /library', async () => {
+    const mod = await import('./[[...path]]/page')
+    await expect(mod.default({ params: P(undefined) })).rejects.toThrow(
+      'REDIRECT:/library'
+    )
+    expect(mockRedirect).toHaveBeenCalledWith('/library')
   })
 
-  it('there is NO /api/vault route surface (pure server components, zero endpoints)', () => {
-    expect(existsSync(join(SRC, 'app', 'api', 'vault'))).toBe(false)
+  it('a deep note path keeps working: /vault/decisions/n.md → /library/decisions/n.md', async () => {
+    const mod = await import('./[[...path]]/page')
+    await expect(
+      mod.default({ params: P(['decisions', 'n.md']) })
+    ).rejects.toThrow('REDIRECT:/library/decisions/n.md')
+  })
+
+  it('segments are re-percent-encoded (space, parens) — same encoding as vaultHref', async () => {
+    const mod = await import('./[[...path]]/page')
+    await expect(
+      mod.default({ params: P(['my note.md']) })
+    ).rejects.toThrow('REDIRECT:/library/my%20note.md')
+    await expect(mod.default({ params: P(['a(b).md']) })).rejects.toThrow(
+      'REDIRECT:/library/a%28b%29.md'
+    )
+  })
+
+  it('★ a decoded %2F inside a segment cannot fabricate an external target', async () => {
+    // Next decodes %2F%2Fevil.com into a single segment '//evil.com'.
+    // vaultHref splits on '/' and drops empty units, so the slashes COLLAPSE
+    // (they can never survive into a protocol-relative //host) and the
+    // target stays a same-origin /library path.
+    const mod = await import('./[[...path]]/page')
+    await expect(
+      mod.default({ params: P(['//evil.com']) })
+    ).rejects.toThrow('REDIRECT:/library/evil.com')
+    const target = mockRedirect.mock.calls[0][0]
+    expect(target.startsWith('/library/')).toBe(true)
+    expect(target).not.toMatch(/^\/\//) // never protocol-relative
+    expect(target).not.toContain('://') // never absolute-URL shaped
   })
 })
 
-describe('/vault source contract — DB-free', () => {
-  for (const [name, path] of Object.entries(SOURCES)) {
-    it(`${name} imports no database layer and issues no query`, () => {
-      const src = read(path)
-      expect(src).not.toContain('@/lib/db')
-      expect(src).not.toMatch(/from ['"]\.\/db['"]/)
-      expect(src).not.toMatch(/from ['"]pg['"]/)
-      expect(src).not.toMatch(/\bquery\s*\(/)
-    })
-  }
+describe('/vault stub — source contract (nothing but the redirect)', () => {
+  const source = readFileSync(join(HERE, '[[...path]]', 'page.tsx'), 'utf-8')
 
-  it('the wikilinks module does NOT import lib/wikilinks (which pulls in db)', () => {
-    // The pure parsers are COPIED, not imported, precisely to keep the vault
-    // graph free of the transitive @/lib/db import in lib/wikilinks.ts.
-    expect(read(SOURCES.wikilinks)).not.toMatch(/from ['"]@\/lib\/wikilinks['"]/)
-    expect(read(SOURCES.vaultLib)).not.toMatch(/from ['"]@\/lib\/wikilinks['"]/)
+  it('the browser truly MOVED: the stub reads no vault data and renders no markdown', () => {
+    expect(source).not.toContain('listDir')
+    expect(source).not.toContain('readNote')
+    expect(source).not.toContain('VaultMarkdown')
+    expect(source).not.toContain('@/lib/vault\'') // only vault-wikilinks (pure) allowed
   })
-})
 
-describe('/vault source contract — no raw-HTML escape hatch', () => {
-  it('the renderer never uses rehype-raw or dangerouslySetInnerHTML', () => {
-    const src = read(SOURCES.renderer)
-    expect(src).not.toMatch(/from ['"]rehype-raw['"]/)
-    expect(src).not.toMatch(/dangerouslySetInnerHTML\s*=/)
-    // Positive: it DOES sanitize.
-    expect(src).toContain('rehype-sanitize')
+  it('no DB, no fs, no mutation handlers', () => {
+    expect(source).not.toContain('@/lib/db')
+    expect(source).not.toContain('@/lib/library')
+    expect(source).not.toMatch(/from ['"]fs['"]|from ['"]node:fs['"]/)
+    expect(source).not.toMatch(/export\s+(async\s+)?function\s+(POST|PUT|PATCH|DELETE)\b/)
+  })
+
+  it('the target is built through vaultHref (re-encoded, /library-prefixed)', () => {
+    expect(source).toContain("from '@/lib/vault-wikilinks'")
+    expect(source).toContain('vaultHref')
+    expect(source).toContain("'/library'")
   })
 })
