@@ -392,13 +392,17 @@ def isolated_timezone_cache():
 
 
 class TestCaptainTimezone:
-    """The captain_timezone() resolver — launcher-DRIVEN, fail-closed to the
-    generic Central-European Europe/Berlin (CET/CEST) fallback.
+    """The captain_timezone() resolver — launcher-DRIVEN, fail-closed to UTC
+    with ONE loud stderr warn line (TZ unification, silent-defaults audit C,
+    2026-07-18; supersedes the old SILENT Europe/Berlin fallback — quiet-hours
+    + briefing-slot math shifts with this value, and the universal-base layer
+    ships no captain's geography).
 
-    screenpipe_adapter._captain_tz() resolves the 'today'-boundary timezone NAME
-    via this resolver, never a hand-read of platform.yml. On THIS deployment it
-    must return "Europe/Berlin" byte-for-byte, so the greeting-of-the-day
-    boundary is identical to the removed hand-reader."""
+    THE one timezone seam: the attention gate, the comms-surface engine, the
+    outcome-watchdog and the personal-source adapter all resolve the NAME via
+    this resolver (env CABINET_CAPTAIN_TZ wins at each consumer). On THIS
+    deployment it must still return "Europe/Berlin" byte-for-byte — from
+    platform.yml, no longer from a code default."""
 
     def test_reads_timezone_from_platform_yml(self, tmp_path, monkeypatch,
                                               isolated_timezone_cache):
@@ -418,14 +422,42 @@ class TestCaptainTimezone:
         env._captain_timezone_cache = None
         assert env.captain_timezone() == "Europe/Berlin"
 
-    def test_absent_config_falls_back_to_europe_berlin(self, tmp_path, monkeypatch,
-                                                       isolated_timezone_cache):
-        """No platform.yml / product.yml => the generic Europe/Berlin fallback —
-        the SAME default the removed hand-reader carried, never a crash."""
+    def test_absent_config_falls_back_to_utc_with_one_loud_warn(
+            self, tmp_path, monkeypatch, capsys, isolated_timezone_cache):
+        """No platform.yml / product.yml => UTC + exactly ONE stderr warn line
+        naming the fallback (never a crash, never silent — the documented
+        fail-safe). The cache suppresses repeats: the second call answers
+        from cache with NO second warn, even with a different default."""
         monkeypatch.setenv("CABINET_ROOT", str(tmp_path))  # empty tmp — no config
         env._captain_timezone_cache = None
-        assert env.captain_timezone() == "Europe/Berlin"
-        assert env.captain_timezone(default="UTC") == "Europe/Berlin"  # cached now
+        assert env.captain_timezone() == "UTC"
+        err = capsys.readouterr().err
+        assert "captain_timezone" in err and "UTC" in err
+        assert err.count("captain_timezone") == 1        # exactly one warn line
+        assert env.captain_timezone(default="Europe/Berlin") == "UTC"  # cached now
+        assert capsys.readouterr().err == ""             # cache => no repeat warn
+
+    def test_unloadable_zone_falls_back_to_utc_with_warn(
+            self, tmp_path, monkeypatch, capsys, isolated_timezone_cache):
+        """A configured name zoneinfo cannot load (typo'd IANA id) counts as
+        unconfigured: UTC + a warn NAMING the bad value — never a downstream
+        surprise where each consumer picks its own silent fail-safe."""
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml", "captain_timezone: Mars/Olympus_Mons\n")
+        env._captain_timezone_cache = None
+        assert env.captain_timezone() == "UTC"
+        err = capsys.readouterr().err
+        assert "Mars/Olympus_Mons" in err and "UTC" in err
+
+    def test_valid_zone_emits_no_warn(self, tmp_path, monkeypatch, capsys,
+                                      isolated_timezone_cache):
+        """The configured happy path stays SILENT — the loud line is reserved
+        for the fallback, so it means something when it appears."""
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml", "captain_timezone: Asia/Tokyo\n")
+        env._captain_timezone_cache = None
+        assert env.captain_timezone() == "Asia/Tokyo"
+        assert capsys.readouterr().err == ""
 
     def test_reads_nested_timezone_from_product_yml(self, tmp_path, monkeypatch,
                                                     isolated_timezone_cache):
@@ -465,6 +497,134 @@ class TestCaptainTimezone:
         monkeypatch.delenv("CABINET_ROOT", raising=False)
         env._captain_timezone_cache = None
         assert env.captain_timezone() == "Europe/Berlin"
+
+
+@pytest.fixture
+def isolated_briefing_times_cache():
+    """Clear the process-wide briefing-times cache for the test, then restore
+    the original so sibling tests are untouched — mirrors
+    isolated_timezone_cache."""
+    saved = env._briefing_times_cache
+    env._briefing_times_cache = None
+    try:
+        yield
+    finally:
+        env._briefing_times_cache = saved
+
+
+class TestBriefingTimes:
+    """The briefing_times() resolver — THE one source of truth for briefing
+    slots (silent-defaults audit C, 2026-07-18): the gate/engine env default,
+    generate-plists.py's StartCalendarInterval stamp, and the parity-pinned
+    services.yml + watchdog.yml mirrors all trace back to this key. Fleet
+    default 07:30/19:30 (matches the watchdog registry's _BRIEF_DEFAULTS)."""
+
+    def test_reads_quoted_list_from_platform_yml(self, tmp_path, monkeypatch,
+                                                 isolated_briefing_times_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml",
+                   'briefing_times: ["08:15", "20:45"]\n')
+        env._briefing_times_cache = None
+        assert env.briefing_times() == ("08:15", "20:45")
+
+    def test_reads_csv_string_form(self, tmp_path, monkeypatch,
+                                   isolated_briefing_times_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml",
+                   'briefing_times: "6:05, 18:20"\n')
+        env._briefing_times_cache = None
+        assert env.briefing_times() == ("06:05", "18:20")   # zero-padded canon
+
+    def test_unquoted_yaml_sexagesimal_is_rescued(self, tmp_path, monkeypatch,
+                                                  isolated_briefing_times_cache):
+        """The documented YAML-1.1 footgun: a bare time whose hour starts 1-9
+        loads as a sexagesimal int (19:30 → 1170), while a leading-zero 07:30
+        stays a string. The resolver rescues the ints as minutes-since-midnight
+        so a missing quote can never silently drop a slot or shift the schedule
+        (this fixture exercises the int path via 19:30)."""
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml",
+                   "briefing_times: [07:30, 19:30]\n")   # UNQUOTED on purpose
+        env._briefing_times_cache = None
+        assert env.briefing_times() == ("07:30", "19:30")
+
+    def test_invalid_entries_dropped_valid_kept(self, tmp_path, monkeypatch,
+                                                isolated_briefing_times_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml",
+                   'briefing_times: ["25:99", "not-a-time", "07:30", "07:30"]\n')
+        env._briefing_times_cache = None
+        assert env.briefing_times() == ("07:30",)   # deduped, invalid dropped
+
+    def test_present_but_nothing_valid_warns_and_defaults(
+            self, tmp_path, monkeypatch, capsys, isolated_briefing_times_cache):
+        """A key someone TRIED to set but got entirely wrong must not fall
+        back silently — one stderr warn, then the fleet default."""
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml", 'briefing_times: ["nope"]\n')
+        env._briefing_times_cache = None
+        assert env.briefing_times() == ("07:30", "19:30")
+        err = capsys.readouterr().err
+        assert "briefing_times" in err and "07:30,19:30" in err
+
+    def test_absent_key_defaults_silently(self, tmp_path, monkeypatch, capsys,
+                                          isolated_briefing_times_cache):
+        """No key at all = the fleet default IS the configuration — silent
+        (unlike captain_timezone, absence shifts nothing)."""
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))  # empty tmp — no config
+        env._briefing_times_cache = None
+        assert env.briefing_times() == ("07:30", "19:30")
+        assert capsys.readouterr().err == ""
+
+    def test_reads_nested_from_product_yml(self, tmp_path, monkeypatch,
+                                           isolated_briefing_times_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "product.yml",
+                   'product:\n  briefing_times: ["09:00", "21:15"]\n')
+        env._briefing_times_cache = None
+        assert env.briefing_times() == ("09:00", "21:15")
+
+    def test_platform_yml_wins_over_product_yml(self, tmp_path, monkeypatch,
+                                                isolated_briefing_times_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml", 'briefing_times: ["07:30", "19:30"]\n')
+        _write_cfg(tmp_path, "product.yml",
+                   'product:\n  briefing_times: ["09:00", "21:15"]\n')
+        env._briefing_times_cache = None
+        assert env.briefing_times() == ("07:30", "19:30")
+
+    def test_result_is_cached_process_wide(self, tmp_path, monkeypatch,
+                                           isolated_briefing_times_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml", 'briefing_times: ["08:15", "20:45"]\n')
+        env._briefing_times_cache = None
+        assert env.briefing_times() == ("08:15", "20:45")
+        _write_cfg(tmp_path, "platform.yml", 'briefing_times: ["01:01"]\n')  # ignored
+        assert env.briefing_times() == ("08:15", "20:45")
+
+    def test_this_checkout_matches_its_own_platform_yml(
+            self, monkeypatch, isolated_briefing_times_cache):
+        """Deployment-agnostic byte guard: whatever THIS checkout's
+        platform.yml declares (or the fleet default when it declares nothing)
+        is exactly what the resolver returns — the expectation is derived
+        from the on-disk YAML, never a hardcoded deployment literal."""
+        import yaml
+        monkeypatch.delenv("CABINET_ROOT", raising=False)
+        env._briefing_times_cache = None
+        cfg = os.path.join(os.path.dirname(__file__), "..", "..",
+                           "instance/config/platform.yml")
+        declared = None
+        if os.path.exists(cfg):
+            with open(cfg, encoding="utf-8") as fh:
+                declared = (yaml.safe_load(fh) or {}).get("briefing_times")
+        if declared is None:
+            expected = ("07:30", "19:30")
+        else:
+            expected = tuple(
+                s for s in (env._normalize_briefing_slot(v) for v in (
+                    declared.split(",") if isinstance(declared, str) else declared))
+                if s is not None)
+        assert env.briefing_times() == expected
 
 
 @pytest.fixture

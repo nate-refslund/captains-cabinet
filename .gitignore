@@ -99,9 +99,12 @@ instance/config/roster.yml
 # amendments ledger — written at RUNTIME by framework.attention.charter.amend
 # (first shipped writer: the cabinet-init quiet-hours question). Captain-
 # specific routing/quiet-hours rulings never enter the universal repo; the
-# tracked default is framework/attention/charter-default.yml.
+# tracked default is framework/attention/charter-default.yml and the tracked
+# commented twin is comms-charter.yml.example. The proposals sidecar is the
+# charter-amend verb's pending-card store (framework/frontdoor/charter_amend.py).
 instance/config/comms-charter.yml
 instance/config/comms-charter-amendments.jsonl
+instance/config/comms-charter-proposals.jsonl
 # Deployment-local (product/captain-agnostic foundation, 2026-07-14): the
 # concrete war-room census seed list — real product/personal items belong
 # here, never in the tracked seed-war-room.py (tracked twin: war-room-seed.yml.example)

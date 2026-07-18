@@ -29,9 +29,15 @@ mkdir -p "$TELEGRAM_STATE_DIR"
 # pacing next-briefing horizons) — without it the defer math falls back to
 # UTC and parks cards ~2h past the briefing the Captain meant (observed live
 # 2026-07-11: ride_briefing_until 19:30Z instead of 17:30Z). Same one-line
-# read as surface-pin-tick.sh; never source the config.
-CAPTAIN_TZ_LINE="$(grep '^captain_timezone:' "$REPO_ROOT/instance/config/platform.yml" 2>/dev/null | awk '{print $2}')"
-export CABINET_CAPTAIN_TZ="${CABINET_CAPTAIN_TZ:-${CAPTAIN_TZ_LINE:-Europe/Berlin}}"
+# read as surface-pin-tick.sh; never source the config. Final fallback = UTC,
+# LOUDLY (TZ unification 2026-07-18 — matches framework.env.captain_timezone()).
+# Quote-strip the awk value (tr -d) so a QUOTED captain_timezone can't leak
+# quotes into the env (ZoneInfo would reject the name → silent UTC).
+CAPTAIN_TZ_LINE="$(grep '^captain_timezone:' "$REPO_ROOT/instance/config/platform.yml" 2>/dev/null | awk '{print $2}' | tr -d "\"'")"
+if [ -z "${CABINET_CAPTAIN_TZ:-}" ] && [ -z "$CAPTAIN_TZ_LINE" ]; then
+  echo "start-inbound-poller: captain_timezone not set (instance/config/platform.yml) — falling back to UTC; defer/briefing-horizon math runs on UTC" >&2
+fi
+export CABINET_CAPTAIN_TZ="${CABINET_CAPTAIN_TZ:-${CAPTAIN_TZ_LINE:-UTC}}"
 
 # Localhost Redis for the gate's briefing-route enqueue when a tap re-tick
 # routes a card to the briefing (the intake backend's baked default is the

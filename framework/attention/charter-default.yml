@@ -9,7 +9,12 @@
 #
 # NO captain-specific values live here (launcher-agnostic). The Captain's
 # own routing/voice/budgets are an instance override, Captain-promptable in
-# one sentence (§4.7 amend ladder).
+# one sentence (§4.7 amend ladder): `charter: <sentence>` on the Captain
+# channel files a propose-only card (reply_binder.route_charter_amend →
+# frontdoor/charter_amend.py); `charter grant CHM-<id>` applies it with
+# §4.10.4 provenance. Tracked commented twin of this file:
+# instance/config/comms-charter.yml.example; runbook:
+# docs/runbooks/comms-charter-amend.md.
 version: 1
 
 verbosity: terse            # short cards; verbose only on Captain request

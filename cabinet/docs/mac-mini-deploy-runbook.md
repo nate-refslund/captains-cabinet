@@ -92,8 +92,22 @@ Verify: `bash cabinet/scripts/setup-mac.sh --check` returns exit 0.
    ```yaml
    captain_name: "<your-name>"
    captain_telegram_chat_id: <id>
-   captain_timezone: "Europe/Berlin"   # or your IANA timezone
+   captain_timezone: Europe/Berlin     # your IANA timezone (unquoted, like the
+                                       # shipped platform.yml; a quoted value
+                                       # also works — the wrappers strip quotes)
+   briefing_times: ["07:30", "19:30"]  # briefing slots — KEEP the quotes (an
+                                       # unquoted 19:30 is a YAML sexagesimal
+                                       # int); the plist, gate + watchdog mirror
+                                       # this key
    ```
+
+   > **Set the Mac's system timezone to match `captain_timezone`.** launchd
+   > fires the briefing schedule (`StartCalendarInterval`) in the MACHINE's
+   > local time, while `briefing_times` is Captain-local wall clock — if the two
+   > differ the briefings fire at the wrong hour and the watchdog false-alarms.
+   > Set it in System Settings → General → Date & Time, or
+   > `sudo systemsetup -settimezone Europe/Berlin`. `generate-plists.py` prints
+   > a loud warning at render time when the machine tz ≠ `captain_timezone`.
 4. Initialize the Captain triplet:
    ```bash
    bash cabinet/scripts/bootstrap-captain-triplet.sh
@@ -571,7 +585,7 @@ After deployment, the Captain sees:
 
 - Telegram DMs from officers — initially silent, then proactive as missions arrive
 - Weekly OVI snapshot DM (every Monday 08:00)
-- Briefing DMs at 07:00 + 19:00
+- Briefing DMs at 07:30 + 19:30 (instance/config/platform.yml `briefing_times`)
 - Daily cost summary DM
 - Founder-action items in the morning briefing if any are overdue
 - Role evolution + hat graduation + skill induction proposals as they're drafted

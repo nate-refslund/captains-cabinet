@@ -180,10 +180,29 @@ def _render_hash(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _captain_tz() -> ZoneInfo:
+    """The Captain's clock for quiet-hours/briefing-slot math. A LOADABLE env
+    ``CABINET_CAPTAIN_TZ`` wins (the launchd wrappers export it); an UNLOADABLE
+    env value (e.g. a wrapper's one-line read leaked YAML quotes:
+    ``'"Europe/Berlin"'``) falls THROUGH — never a silent UTC — to THE one
+    resolver ``framework.env.captain_timezone()`` (instance platform.yml
+    ``captain_timezone`` → LOUD UTC fallback). TZ unification 2026-07-18: this
+    used to fall to UTC silently while the wrappers fell to Europe/Berlin, so
+    the same item could hit different quiet-hours math depending on which
+    process asked."""
+    name = (os.environ.get("CABINET_CAPTAIN_TZ") or "").strip()
+    if name:
+        try:
+            return ZoneInfo(name)
+        except Exception:
+            # env present but unloadable — do NOT silently assume UTC; fall
+            # through to THE resolver so its loud warn fires and the configured
+            # platform.yml value still wins.
+            pass
+    from framework.env import captain_timezone
     try:
-        return ZoneInfo(os.environ.get("CABINET_CAPTAIN_TZ", "UTC"))
+        return ZoneInfo(captain_timezone())
     except Exception:
-        return ZoneInfo("UTC")
+        return ZoneInfo("UTC")   # tzdata fail-safe — the resolver already warned
 
 
 def _hhmm(t) -> int:
@@ -200,8 +219,21 @@ def _in_quiet_hours(now_local: datetime, qh: dict) -> bool:
 
 
 def _next_briefing(now_local: datetime) -> datetime:
-    times = [t.strip() for t in
-             os.environ.get("CABINET_BRIEFING_TIMES", "07:30,19:30").split(",") if t.strip()]
+    from framework.env import briefing_times, _normalize_briefing_slot
+    raw = (os.environ.get("CABINET_BRIEFING_TIMES") or "").strip()
+    times = []
+    if raw:
+        # Normalize every env token through the shared validator so an
+        # out-of-range slot (e.g. "25:99") is DROPPED — never fed to
+        # .replace(hour=26) below, which would raise ValueError and kill the
+        # gate (the try only guards _hhmm, not the replace).
+        times = [s for s in (_normalize_briefing_slot(t) for t in raw.split(",")) if s]
+    if not times:
+        # env unset, or set but no valid slot → ONE source of truth: instance
+        # platform.yml `briefing_times` (fleet default 07:30,19:30) — the same
+        # key generate-plists.py stamps the briefing plist from. Never the
+        # nonsense now+1day horizon a fully-invalid env used to yield.
+        times = list(briefing_times())
     cands = []
     for t in times:
         try:

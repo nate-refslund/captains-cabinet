@@ -210,6 +210,11 @@ services:
     kind: daemon
     command: bash cabinet/scripts/run-frontdoor-briefing.sh
     schedule:
+      # SOURCE OF TRUTH: instance/config/platform.yml `briefing_times` —
+      # generate-plists.py stamps StartCalendarInterval from that key (fleet
+      # default 07:30,19:30); this row is the documented no-config fallback
+      # MIRROR and loses on divergence. Keep it in sync — the parity suite
+      # (cabinet/scripts/tests/test_briefing_time_parity.py) fails on drift.
       calendar:
         - { hour: 7, minute: 30 }
         - { hour: 19, minute: 30 }

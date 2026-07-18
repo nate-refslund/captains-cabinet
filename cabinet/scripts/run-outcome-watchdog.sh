@@ -38,10 +38,16 @@ export REDIS_HOST="${REDIS_HOST:-localhost}"
 export REDIS_PORT="${REDIS_PORT:-6379}"
 
 # Captain timezone for the briefing-slot math (the registry asserts "delivered by
-# 07:30 + 19:30 LOCAL"). Sourced from platform.yml; fall back to the documented
-# default. Read ONLY this one line (never source the whole config).
-CAPTAIN_TZ_LINE="$(grep '^captain_timezone:' "$ROOT/instance/config/platform.yml" 2>/dev/null | awk '{print $2}')"
-export CABINET_CAPTAIN_TZ="${CABINET_CAPTAIN_TZ:-${CAPTAIN_TZ_LINE:-Europe/Berlin}}"
+# 07:30 + 19:30 LOCAL"). Sourced from platform.yml; final fallback = UTC,
+# LOUDLY (TZ unification 2026-07-18 — matches framework.env.captain_timezone()).
+# Read ONLY this one line (never source the whole config); quote-strip the awk
+# value (tr -d) so a QUOTED captain_timezone can't leak quotes into the env
+# (ZoneInfo would reject the name → silent UTC).
+CAPTAIN_TZ_LINE="$(grep '^captain_timezone:' "$ROOT/instance/config/platform.yml" 2>/dev/null | awk '{print $2}' | tr -d "\"'")"
+if [ -z "${CABINET_CAPTAIN_TZ:-}" ] && [ -z "$CAPTAIN_TZ_LINE" ]; then
+  echo "run-outcome-watchdog: captain_timezone not set (instance/config/platform.yml) — falling back to UTC; briefing-slot math runs on UTC" >&2
+fi
+export CABINET_CAPTAIN_TZ="${CABINET_CAPTAIN_TZ:-${CAPTAIN_TZ_LINE:-UTC}}"
 
 PY="${CABINET_PYTHON:-/opt/homebrew/bin/python3.12}"
 cd "$ROOT" || exit 1

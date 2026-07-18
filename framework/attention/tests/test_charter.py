@@ -2,10 +2,18 @@
 the provenance-laddered amend path. The default is conservative; captured
 content can never amend; the quiet-hours floor narrows only on Captain word."""
 import json
+from pathlib import Path
 
 import pytest
+import yaml
 
 from framework.attention import charter
+
+# Joined-segment house style (framework/channels/tests/test_manifests.py
+# precedent): the bare "instance" token would trip the layer-separation gate;
+# the tracked .example twin is repo source, addressed via the joined string.
+_EXAMPLE = (Path(__file__).resolve().parents[3]
+            / "instance/config" / "comms-charter.yml.example")
 
 
 def test_default_loads_and_self_validates():
@@ -27,6 +35,35 @@ def test_corrupt_instance_falls_back_to_default(tmp_path, monkeypatch, capsys):
 def test_missing_instance_is_default(tmp_path, monkeypatch):
     monkeypatch.setenv("CABINET_CHARTER_PATH", str(tmp_path / "nope.yml"))
     assert charter.load_charter()["_source"] == "default"
+
+
+def test_example_twin_validates_against_the_schema():
+    """The tracked .example twin (audit A/META) must itself be a valid
+    charter — a Captain who copies it verbatim gets a loadable override."""
+    doc = yaml.safe_load(_EXAMPLE.read_text(encoding="utf-8"))
+    charter.validate_charter(doc)
+
+
+def test_example_twin_is_value_identical_to_the_shipped_default():
+    """Twin parity (docs-track-code, mechanical): the .example ships the SAME
+    values as charter-default.yml, so copying it changes nothing until a dial
+    is edited — and a default change that forgets the twin fails HERE."""
+    doc = yaml.safe_load(_EXAMPLE.read_text(encoding="utf-8"))
+    default = {k: v for k, v in charter.load_default().items()
+               if k != "_source"}
+    assert doc == default
+
+
+def test_example_twin_copied_loads_as_override(tmp_path, monkeypatch):
+    """The loader picks up the override file: the .example copied to the
+    charter path IS the deployment charter (_source == 'override')."""
+    p = tmp_path / "comms-charter.yml"
+    p.write_text(_EXAMPLE.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setenv("CABINET_CHARTER_PATH", str(p))
+    ch = charter.load_charter()
+    assert ch["_source"] == "override"
+    assert {k: v for k, v in ch.items() if k != "_source"} == \
+        yaml.safe_load(_EXAMPLE.read_text(encoding="utf-8"))
 
 
 def test_valid_instance_loads_as_instance(tmp_path, monkeypatch):

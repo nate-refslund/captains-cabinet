@@ -20,7 +20,24 @@ captain_role: Head-of-Tech
 # Officers display times in this timezone, never UTC or ambiguous abbreviations.
 # Uses IANA timezone identifier (e.g., Europe/Berlin, America/New_York, Asia/Tokyo).
 # Scripts can resolve: TZ=<this value> date +%H:%M
+# If unset, framework.env.captain_timezone() falls back to UTC and says so
+# LOUDLY on stderr (quiet-hours + briefing-slot math shifts with this value).
 captain_timezone: Europe/Berlin       # CEST/CET — auto-adjusts for DST
+
+# Twice-daily briefing wall-clock slots (Captain-local "HH:MM" — KEEP THE
+# QUOTES: an unquoted time whose hour starts 1-9 like 19:30 is YAML sexagesimal
+# and loads as an int (1170), while a leading-zero 07:30 stays a string; the
+# resolver rescues the ints, but quoting every slot is the documented shape).
+# THE one source
+# of truth for briefing times (silent-defaults audit C, 2026-07-18):
+#   - cabinet/scripts/generate-plists.py stamps the frontdoor-briefing
+#     plist's StartCalendarInterval from this key;
+#   - the attention gate + comms-surface engine read it as the
+#     CABINET_BRIEFING_TIMES default (framework.env.briefing_times());
+#   - cabinet/services.yml's calendar row + instance/config/watchdog.yml's
+#     briefing: block are MIRRORS — keep them in sync (parity-pinned by
+#     cabinet/scripts/tests/test_briefing_time_parity.py).
+briefing_times: ["07:30", "19:30"]
 
 # Founder's Telegram chat ID — used by hooks to detect Captain conversations
 # Find yours: look at the chat_id field in incoming Telegram messages
@@ -183,7 +200,8 @@ communication:
   # minimal: Only DM critical/urgent findings, everything else in briefing
 
   briefing_frequency: 2x_daily   # 2x_daily | daily | weekly
-  # 2x_daily: Morning (07:00) + evening (19:00) briefings
+  # 2x_daily: Morning + evening briefings (the wall-clock slots come from
+  # `briefing_times` above — fleet default 07:30/19:30)
   # daily: Morning briefing only
   # weekly: One weekly summary (Monday morning)
 

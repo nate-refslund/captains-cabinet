@@ -348,3 +348,110 @@ def test_gate_briefing_item_renders_through_composer():
     rendered = composer.render_item(intake_item)
     assert "attention-gate" in rendered
     assert "briefing" in composer.compose([intake_item]).lower()
+
+
+def test_captain_tz_env_unset_resolves_via_platform_yml(tmp_path, monkeypatch):
+    """TZ unification (2026-07-18): with no CABINET_CAPTAIN_TZ the gate reads
+    THE one resolver (platform.yml captain_timezone) instead of silently
+    assuming UTC — quiet-hours math follows the Captain's declared clock."""
+    import framework.env as fenv
+    monkeypatch.delenv("CABINET_CAPTAIN_TZ", raising=False)
+    monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+    cfg = tmp_path / "instance/config"
+    cfg.mkdir(parents=True)
+    (cfg / "platform.yml").write_text(
+        "captain_timezone: America/New_York\n", encoding="utf-8")
+    saved = fenv._captain_timezone_cache
+    fenv._captain_timezone_cache = None
+    try:
+        assert str(gate._captain_tz()) == "America/New_York"
+    finally:
+        fenv._captain_timezone_cache = saved
+
+
+def test_next_briefing_env_unset_reads_platform_yml_slots(tmp_path, monkeypatch):
+    """SoT (2026-07-18): with no CABINET_BRIEFING_TIMES the gate's
+    next-briefing horizon comes from platform.yml `briefing_times` — the same
+    key generate-plists.py stamps the briefing plist from."""
+    import framework.env as fenv
+    monkeypatch.delenv("CABINET_BRIEFING_TIMES", raising=False)
+    monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+    cfg = tmp_path / "instance/config"
+    cfg.mkdir(parents=True)
+    (cfg / "platform.yml").write_text(
+        'briefing_times: ["06:45"]\n', encoding="utf-8")
+    saved = fenv._briefing_times_cache
+    fenv._briefing_times_cache = None
+    try:
+        nxt = gate._next_briefing(NOON)          # noon → tomorrow 06:45
+        assert (nxt.hour, nxt.minute) == (6, 45)
+    finally:
+        fenv._briefing_times_cache = saved
+
+
+def test_captain_tz_unloadable_env_falls_through_to_resolver(tmp_path, monkeypatch):
+    """P2 (fix 2026-07-18): a QUOTED env value (a wrapper's one-line read that
+    failed to strip YAML quotes, ``'"Europe/Berlin"'``) is UNLOADABLE — the gate
+    must NOT silently assume UTC; it falls through to THE resolver so the
+    configured platform.yml value still wins."""
+    import framework.env as fenv
+    monkeypatch.setenv("CABINET_CAPTAIN_TZ", '"Europe/Berlin"')   # quotes leaked
+    monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+    cfg = tmp_path / "instance/config"
+    cfg.mkdir(parents=True)
+    (cfg / "platform.yml").write_text(
+        "captain_timezone: America/New_York\n", encoding="utf-8")
+    saved = fenv._captain_timezone_cache
+    fenv._captain_timezone_cache = None
+    try:
+        assert str(gate._captain_tz()) == "America/New_York"
+    finally:
+        fenv._captain_timezone_cache = saved
+
+
+def test_captain_tz_unloadable_env_and_no_config_warns_utc(
+        tmp_path, monkeypatch, capsys):
+    """The fallthrough reaches the LOUD UTC path (never a silent UTC): an
+    unloadable env value + no platform.yml → UTC and the resolver's warn on
+    stderr."""
+    import framework.env as fenv
+    monkeypatch.setenv("CABINET_CAPTAIN_TZ", '"Europe/Berlin"')
+    monkeypatch.setenv("CABINET_ROOT", str(tmp_path))            # empty — no config
+    saved = fenv._captain_timezone_cache
+    fenv._captain_timezone_cache = None
+    try:
+        assert str(gate._captain_tz()) == "UTC"
+        assert "captain_timezone" in capsys.readouterr().err
+    finally:
+        fenv._captain_timezone_cache = saved
+
+
+def test_next_briefing_env_out_of_range_slot_does_not_crash(monkeypatch):
+    """P4b (fix 2026-07-18): an out-of-range env slot ("25:99") used to reach
+    now_local.replace(hour=26) and raise ValueError (the try only guarded
+    _hhmm). It is now dropped by the shared normalizer; a valid sibling in the
+    same env still counts."""
+    monkeypatch.setenv("CABINET_CAPTAIN_TZ", "UTC")
+    monkeypatch.setenv("CABINET_BRIEFING_TIMES", "25:99,08:15")
+    nxt = gate._next_briefing(NOON)              # noon → 08:15 tomorrow
+    assert (nxt.hour, nxt.minute) == (8, 15)
+
+
+def test_next_briefing_all_invalid_env_falls_to_resolver(tmp_path, monkeypatch):
+    """An env with NO valid slot falls back to the platform.yml source of truth,
+    never the old nonsense now+1day horizon."""
+    import framework.env as fenv
+    monkeypatch.setenv("CABINET_CAPTAIN_TZ", "UTC")
+    monkeypatch.setenv("CABINET_BRIEFING_TIMES", "25:99,not-a-time")
+    monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+    cfg = tmp_path / "instance/config"
+    cfg.mkdir(parents=True)
+    (cfg / "platform.yml").write_text(
+        'briefing_times: ["06:45"]\n', encoding="utf-8")
+    saved = fenv._briefing_times_cache
+    fenv._briefing_times_cache = None
+    try:
+        nxt = gate._next_briefing(NOON)          # noon → tomorrow 06:45
+        assert (nxt.hour, nxt.minute) == (6, 45)
+    finally:
+        fenv._briefing_times_cache = saved

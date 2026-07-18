@@ -55,7 +55,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from framework.env import captain_name  # noqa: E402
+from framework.env import captain_name, captain_timezone  # noqa: E402
 from framework.watchdog import registry  # noqa: E402
 from framework.watchdog.registry import CheckResult, Probe, Tier  # noqa: E402
 
@@ -74,7 +74,11 @@ COOLDOWN_KEY_PREFIX = "cabinet:watchdog:outcome:cooldown:"
 # enough that a persistently-broken outcome pings the Chair a few times a day,
 # not every cycle.
 COOLDOWN_S = int(os.environ.get("WATCHDOG_COOLDOWN_S", str(3 * 3600)))
-CAPTAIN_TZ = os.environ.get("CABINET_CAPTAIN_TZ", "Europe/Berlin")
+# Env wins (the run-outcome-watchdog.sh wrapper exports it); else THE one
+# resolver over instance platform.yml `captain_timezone` (LOUD UTC fallback) —
+# TZ unification 2026-07-18: this used to fall to Europe/Berlin while the
+# gate/engine fell to UTC.
+CAPTAIN_TZ = os.environ.get("CABINET_CAPTAIN_TZ") or captain_timezone()
 # Path to the meta-cognition lib (sourced for DRIFT-tier proposals).
 MC_LIB = str(_REPO_ROOT / "cabinet/scripts/meta-cognition/lib.sh")
 TRIGGERS_LIB = str(_REPO_ROOT / "cabinet/scripts/lib/triggers.sh")

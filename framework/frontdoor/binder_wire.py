@@ -1098,6 +1098,7 @@ def handle_captain_update(
     redis_set: Callable[[str, str], Any] | None = None,
     redis_del: Callable[[str], Any] | None = None,
     captain_verified: bool = True,
+    receipt_message_id: Optional[int] = None,
     capture_lesson: Callable[..., Any] | None = None,
     mark_need: Callable[..., Any] | None = None,
     rearm_canary: Callable[..., dict] | None = None,
@@ -1155,6 +1156,27 @@ def handle_captain_update(
             log(f"binder-wire: acted {acted.get('primary')} "
                 f"pid={str(acted.get('pid'))[:60]} verdict={acted.get('verdict')}")
             return acted
+
+        # --- §4.7 CHARTER-AMEND VERBS: `charter: <sentence>` / `charter grant
+        # CHM-<hex>` / `charter drop CHM-<hex>` (the amend path the charter
+        # default's header promises). Captain-verified only — the poller
+        # relays only CAPTAIN_TELEGRAM_ID here. PROPOSE-ONLY by construction:
+        # a request writes no charter bytes; a grant applies through
+        # charter.amend's schema-validated atomic path with §4.10.4
+        # provenance (quieten ⇒ chair trust; louder ⇒ THIS reply's
+        # receipt_message_id is the Captain provenance — the grant IS the
+        # provenance). TERMINAL on any match, refusals included (the refusal
+        # card is the answer — the reply must never fall through and record
+        # as a policy); None ⇒ byte-identical routing (collision corpus). ---
+        if captain_verified:
+            from framework.frontdoor import reply_binder
+            charter_res = reply_binder.route_charter_amend(
+                text, receipt_message_id=receipt_message_id,
+                present=present or _default_present, log=log)
+            if charter_res is not None:
+                log(f"binder-wire: charter {charter_res.get('charter')} -> "
+                    f"{charter_res.get('summary')}")
+                return charter_res
 
         # --- FI-4 NEEDS VERBS (SOV-6): grant/deny/later/snooze NEED-<hex> +
         # rearm <kind>. DARK behind CABINET_NEEDS_WIRED=1 and Captain-verified;

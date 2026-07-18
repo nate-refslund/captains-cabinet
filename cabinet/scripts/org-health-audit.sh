@@ -23,7 +23,14 @@ done
 # Per-Officer Health Metrics
 # ============================================================
 echo "=== Cabinet Organizational Health Audit ==="
-echo "Date: $(TZ=${CAPTAIN_TIMEZONE:-Europe/Berlin} date '+%Y-%m-%d %H:%M')"
+# Display clock: the fleet env contract CABINET_CAPTAIN_TZ wins (wrapper-driven
+# invocations inherit it); else the quote-stripped platform.yml one-liner (same
+# read as the launchd wrappers); else UTC. Display-only (TZ unification
+# 2026-07-18 — the old CAPTAIN_TIMEZONE knob was referenced nowhere else in the
+# tree and silently flipped a configured Berlin box to UTC).
+CAPTAIN_TZ_LINE="$(grep '^captain_timezone:' "$CABINET_ROOT/instance/config/platform.yml" 2>/dev/null | awk '{print $2}' | tr -d "\"'")"
+AUDIT_TZ="${CABINET_CAPTAIN_TZ:-${CAPTAIN_TZ_LINE:-UTC}}"
+echo "Date: $(TZ="$AUDIT_TZ" date '+%Y-%m-%d %H:%M')"
 echo "Officers: ${#OFFICERS[@]} (${OFFICERS[*]})"
 echo ""
 

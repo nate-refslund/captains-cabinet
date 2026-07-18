@@ -1272,7 +1272,14 @@ def main() -> int:
                     if not sp_marker and os.environ.get("CABINET_BINDER_WIRED") == "1":
                         try:
                             from framework.frontdoor import binder_wire
-                            wr = binder_wire.handle_captain_update(text, quoted_full, log=log)
+                            # receipt_message_id = THIS inbound DM's Telegram id:
+                            # on a LOUDER charter-amend grant it is the citable
+                            # Captain provenance (§4.10.4 — the grant IS the
+                            # provenance); 0 (absent) passes None so a louder
+                            # grant fails closed instead of forging a receipt.
+                            wr = binder_wire.handle_captain_update(
+                                text, quoted_full, log=log,
+                                receipt_message_id=mid or None)
                             if wr.get("handled"):
                                 binder_note = wr.get("summary", "")
                             else:

@@ -1,5 +1,5 @@
 ---
-description: Trigger a manual Cabinet briefing (morning 07:00 / evening 19:00). Compiles state across missions, OVI, founder-action items, recent decisions.
+description: Trigger a manual Cabinet briefing (scheduled slots come from platform.yml `briefing_times`, fleet default 07:30/19:30). Compiles state across missions, OVI, founder-action items, recent decisions.
 argument-hint: "[morning|evening|now]"
 allowed-tools: Bash
 ---

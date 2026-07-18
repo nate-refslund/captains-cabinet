@@ -48,8 +48,14 @@ export REDIS_HOST="${REDIS_HOST:-localhost}"
 # Captain timezone for the gate's quiet-hours math — without it the gate
 # falls back to UTC and quiet-routes daytime pacing cards (same fix as the
 # briefing wrapper, 2026-07-11). One-line read; never source the config.
-CAPTAIN_TZ_LINE="$(grep '^captain_timezone:' "$CABINET_ROOT/instance/config/platform.yml" 2>/dev/null | awk '{print $2}')"
-export CABINET_CAPTAIN_TZ="${CABINET_CAPTAIN_TZ:-${CAPTAIN_TZ_LINE:-Europe/Berlin}}"
+# Final fallback = UTC, LOUDLY (TZ unification 2026-07-18 — matches
+# framework.env.captain_timezone()). Quote-strip the awk value (tr -d) so a
+# QUOTED captain_timezone can't leak quotes into the env (→ silent UTC).
+CAPTAIN_TZ_LINE="$(grep '^captain_timezone:' "$CABINET_ROOT/instance/config/platform.yml" 2>/dev/null | awk '{print $2}' | tr -d "\"'")"
+if [ -z "${CABINET_CAPTAIN_TZ:-}" ] && [ -z "$CAPTAIN_TZ_LINE" ]; then
+  echo "surface-pin-tick: captain_timezone not set (instance/config/platform.yml) — falling back to UTC; quiet-hours math runs on UTC" >&2
+fi
+export CABINET_CAPTAIN_TZ="${CABINET_CAPTAIN_TZ:-${CAPTAIN_TZ_LINE:-UTC}}"
 
 cd "$CABINET_ROOT" || {
   echo "[$TIMESTAMP] surface-pin-tick.sh FATAL: cd $CABINET_ROOT failed" >&2

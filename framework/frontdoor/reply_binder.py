@@ -42,6 +42,9 @@ from framework.frontdoor import intake
 #   * throttle synonyms ("pause", "later", "all of them", "top 1") never
 #     touch the ledger — they re-pace the surface via pacing.on_control,
 #     exactly like the equivalent inline buttons.
+#   * charter verbs ("charter: <sentence>", "charter grant/drop CHM-<hex>")
+#     ride the §4.7 amend path below (route_charter_amend) — propose-only
+#     cards, applied on grant through the schema-validated charter.amend.
 #
 # Telegram text is UNTRUSTED: every synonym is an EXACT match on the whole
 # (whitespace-normalized) reply — free text never widens authority, and an
@@ -106,6 +109,122 @@ def route_plain_reply(reply_text: str, *, now=None, state: "dict | None" = None,
     return {"handled": True, "throttle": verb, "routing": routing}
 
 
+# ---------------------------------------------------------------------------
+# Charter-amend verbs (attention-gateway spec §4.7 — the one-sentence amend
+# path charter-default.yml's header promises). Same untrusted-text law as the
+# throttle synonyms: whole-message anchored grammars only, free text never
+# widens authority, and a matched verb is TERMINAL (even a refusal — the
+# refusal card is the answer; the reply must never fall through to bind()
+# where e.g. "charter: don't wake me for fyi" would mis-record a policy).
+#
+# PROPOSE-ONLY (autonomy law): `charter: <sentence>` files a card with the
+# rendered yaml diff and writes NO charter bytes; `charter grant CHM-<hex>`
+# applies it through charter_amend.grant → charter.amend (schema-validated,
+# atomic, §4.10.4 provenance: quieten ⇒ chair; louder ⇒ the grant reply's own
+# receipt_message_id IS the Captain provenance); `charter drop CHM-<hex>`
+# discards. Callers run route_charter_amend() before bind(), exactly like
+# route_plain_reply().
+# ---------------------------------------------------------------------------
+
+_CHARTER_REQ_RE = re.compile(r"^\s*charter\s*:\s*(.+?)\s*$",
+                             re.IGNORECASE | re.DOTALL)
+_CHARTER_GRANT_RE = re.compile(
+    r"^\s*charter\s+grant\s+chm[-_ ]?([0-9a-f]{8})\s*[.!]?\s*$", re.IGNORECASE)
+_CHARTER_DROP_RE = re.compile(
+    r"^\s*charter\s+drop\s+chm[-_ ]?([0-9a-f]{8})\s*(?:[:—-]\s*(.*))?$",
+    re.IGNORECASE | re.DOTALL)
+
+
+def charter_verb_of(reply_text: str) -> "tuple[str, str, str] | None":
+    """(verb, arg, tail) when the WHOLE reply is a charter verb, else None.
+
+    verb ∈ {"request", "grant", "drop"}; arg is the sentence (request) or the
+    normalized CHM-<hex8> id (grant/drop); tail is drop's optional why."""
+    t = str(reply_text or "")
+    m = _CHARTER_GRANT_RE.match(t)
+    if m:
+        return ("grant", "CHM-" + m.group(1).lower(), "")
+    m = _CHARTER_DROP_RE.match(t)
+    if m:
+        return ("drop", "CHM-" + m.group(1).lower(), (m.group(2) or "").strip())
+    m = _CHARTER_REQ_RE.match(t)
+    if m:
+        return ("request", m.group(1).strip(), "")
+    return None
+
+
+def route_charter_amend(reply_text: str, *,
+                        receipt_message_id: "int | None" = None,
+                        charter_path=None,
+                        present: "Callable[[str], Any] | None" = None,
+                        log: "Callable[[str], Any]" = lambda m: None) -> "dict | None":
+    """The charter-amend verb family → framework.frontdoor.charter_amend.
+
+    Returns None when the reply is NOT a charter verb (caller proceeds to
+    ``bind()``); else a TERMINAL result dict {"handled": True, "charter":
+    "proposed"|"applied"|"applied-noop"|"dropped"|"refused", "card": …,
+    "summary": …}. Refusals are fail-closed: nothing was written, and the
+    card carries the refusal reason (schema error / unknown id / missing
+    louder-grant receipt). ``receipt_message_id`` is the inbound Telegram id
+    of THIS reply — on a louder grant it becomes the Captain provenance.
+    ``present`` (injectable) receives the card; a present failure is logged,
+    never raised."""
+    v = charter_verb_of(reply_text)
+    if v is None:
+        return None
+    verb, arg, tail = v
+    from framework.frontdoor import charter_amend
+    try:
+        if verb == "request":
+            res = charter_amend.request(arg, charter_path=charter_path)
+            out = {"handled": True, "charter": "proposed",
+                   "amend_id": res["amend_id"],
+                   "classification": res["classification"],
+                   "card": res["card"],
+                   "summary": (f"charter {res['amend_id']} proposed "
+                               f"({res['classification']}) — propose-only, "
+                               f"`charter grant {res['amend_id']}` applies")}
+        elif verb == "grant":
+            res = charter_amend.grant(arg,
+                                      receipt_message_id=receipt_message_id,
+                                      charter_path=charter_path)
+            if res.get("applied"):
+                cls = res.get("classification")
+                prov = ("chair provenance (quieten auto-apply)"
+                        if cls == "quieten" else
+                        f"Captain provenance (grant receipt "
+                        f"{receipt_message_id})")
+                out = {"handled": True, "charter": "applied",
+                       "amend_id": arg, "classification": cls,
+                       "version": res.get("version"),
+                       "card": (f"✅ Charter amendment {arg} applied — "
+                                f"version {res.get('version')}, {prov}."),
+                       "summary": (f"charter {arg} applied v{res.get('version')} "
+                                   f"({cls}, {prov})")}
+            else:
+                out = {"handled": True, "charter": "applied-noop",
+                       "amend_id": arg,
+                       "card": (f"Charter amendment {arg}: "
+                                f"{res.get('note', 'already rules')}"),
+                       "summary": f"charter {arg} no-op — already rules"}
+        else:
+            charter_amend.drop(arg, tail, charter_path=charter_path)
+            out = {"handled": True, "charter": "dropped", "amend_id": arg,
+                   "card": f"🗑 Charter amendment {arg} dropped — nothing applied.",
+                   "summary": f"charter {arg} dropped"}
+    except (ValueError, OSError) as e:
+        # CharterError ⊂ ValueError: refuse honestly, nothing was written.
+        out = {"handled": True, "charter": "refused",
+               "card": f"⚠️ charter {verb}: refused — {e}",
+               "summary": f"charter {verb} refused: {str(e)[:160]}"}
+    if present is not None:
+        try:
+            present(out["card"])
+        except Exception as e:
+            log(f"reply-binder: charter card present failed: {e!r}")
+    return out
+
+
 def _noop_dispatch(routed, draft, proposal) -> None:
     """The gated no-op dispatch for this slice.
 
@@ -166,7 +285,8 @@ def bind(
     """
     # §3.6 plain-verb synonyms: a bare typed "no" rides the skip grammar so
     # tapped and typed replies land on the one authority path. (Throttle
-    # phrases never reach bind() — callers run route_plain_reply() first.)
+    # phrases and charter verbs never reach bind() — callers run
+    # route_plain_reply() and route_charter_amend() first.)
     reply_text = normalize_plain_reply(reply_text)
     routed = loop.route_captain_response(reply_text)
 

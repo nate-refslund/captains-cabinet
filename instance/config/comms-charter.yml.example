@@ -1,0 +1,193 @@
+# comms-charter.yml — the Captain's Comms Charter override (attention-gateway
+# spec §4.7). Copy to comms-charter.yml and edit: a present-and-valid copy
+# OVERRIDES the framework default (framework/attention/charter-default.yml)
+# WHOLESALE — there is no merge. Validation is fail-closed against
+# framework/schemas/comms-charter.schema.json: an invalid or unreadable
+# override is ignored loudly and the conservative framework default rules.
+# Env override CABINET_CHARTER_PATH wins over this path (tests/per-process).
+#
+# The copied file is deployment-local (gitignored) — this .example twin is the
+# tracked source. It ships with the SAME values as the framework default, so
+# copying it changes nothing until you edit a dial.
+#
+# One-sentence amendments (the §4.7 promise): reply on the Captain channel
+#   charter: <one sentence>          e.g. "charter: quiet hours 22:00 to 06:30"
+# — the binder renders the yaml diff on a propose-only card; `charter grant
+# CHM-<id>` applies it (quieten amendments ride chair provenance; anything
+# louder is applied with YOUR grant as the Captain provenance, §4.10.4).
+# Runbook: docs/runbooks/comms-charter-amend.md.
+version: 1
+
+# --- global voice dials ------------------------------------------------------
+# verbosity: terse | verbose — card length everywhere a class doesn't override.
+verbosity: terse
+# ack_style: silent-fyi (apply-and-FYI, no confirmation ping) | confirm-line
+# (one short confirmation line per applied action — one extra ping each time).
+ack_style: silent-fyi
+
+# --- war-room census (command-center C4) ------------------------------------
+attention_queue:
+  # Max decision cards the Decisions shelf renders; overflow files ONE
+  # consolidation need, never a hidden backlog.
+  decisions_render_cap: 7
+
+# --- world skin --------------------------------------------------------------
+world:
+  # Opening-camera hijack on landing: off | ping-now (only structural urgency
+  # steals the camera) | any.
+  muster_landing: ping-now
+
+# --- tiered-escalation gate (captain-surface §5.2) ---------------------------
+escalation:
+  # A "proof of exhaustion" needs at least this many distinct content words…
+  min_content_words: 4
+  # …and must not merely restate the ask (>= this keyword overlap = vacuous).
+  restate_overlap: 0.8
+
+# --- quiet hours -------------------------------------------------------------
+quiet_hours:
+  # 24h HH:MM, Captain timezone. start == end means quiet hours are DISABLED.
+  start: "21:00"
+  end: "07:00"
+  # THE FLOOR: the only classes that may ping during quiet hours. Every floor
+  # class is kind-matched (producer-attested) — never keyword-selected from
+  # captured text, so an email saying "today" can never wake the Captain.
+  # ASYMMETRY (§4.10.4): a chair amendment may only SHRINK this list
+  # (quieter); ADDING a class is louder and needs Captain provenance.
+  floor_classes: [infra-page, security-alert, captain-reminder]
+
+# --- classes -----------------------------------------------------------------
+# First matching class wins (top-to-bottom); match order per class: kind, then
+# keyword in title/subject/situation, then lane; no hit → the `default` class.
+# Per-class dials:
+#   route: direct-now | standing-card | next-briefing | weekly-rollup | mute
+#   silent: true = deliver without a notification ping
+#   reaction: ack-emoji variants the surface may stamp
+#   sla_minutes + fallback (mechanical-with-marker | hold-briefing): Chair-T2
+#     review deadline and what happens when it lapses
+#   budget: max_pings_per_day / demote_after_expiries / max_per_briefing /
+#     cooldown_days / max_open — per-class disturbance budgets
+#   show_injection_banner: charter-owned taint-banner visibility
+#   verbosity / template / urgency_override: optional per-class overrides
+classes:
+  # Producer-attested deadline emergencies (kind-matched only; generic time
+  # pressure rides the gate's structured deadline_iso path instead).
+  - id: deadline-critical
+    matchers: {kinds: ["deadline-critical"]}
+    route: direct-now
+    silent: false
+    reaction: ["⚡", "👀"]
+    sla_minutes: 10
+    fallback: mechanical-with-marker
+    show_injection_banner: false
+
+  # Infrastructure pages — on the quiet-hours floor.
+  - id: infra-page
+    matchers: {kinds: ["infra-page", "pager", "watchdog-alert"]}
+    route: direct-now
+    silent: false
+    reaction: ["🚨", "👀"]
+    sla_minutes: 10
+    fallback: mechanical-with-marker
+    show_injection_banner: false
+
+  # Security alerts — floor class, and the ONE class that shows the taint
+  # (injection) banner.
+  - id: security-alert
+    matchers: {kinds: ["security-alert", "quarantine-trip"]}
+    route: direct-now
+    silent: false
+    reaction: ["🚨"]
+    show_injection_banner: true
+
+  # The Captain's OWN due-at reminders — the fire time IS the Captain's chosen
+  # instant, so delivering at 03:00 is obeying him (floor placement carries
+  # Captain provenance, ruling 2026-07-17).
+  - id: captain-reminder
+    matchers: {kinds: ["captain-reminder"]}
+    route: direct-now
+    silent: false
+    reaction: ["⏰", "👀"]
+    sla_minutes: 10
+    fallback: mechanical-with-marker
+    show_injection_banner: false
+
+  # One editable standing card per situation; demotes after repeated expiries.
+  - id: action-card
+    matchers: {kinds: ["action-card"]}
+    route: standing-card
+    silent: true
+    reaction: ["👀", "👌"]
+    budget: {demote_after_expiries: 5}
+    show_injection_banner: false
+
+  - id: re-card
+    matchers: {kinds: ["re-card"]}
+    route: standing-card
+    silent: true
+    reaction: ["👀"]
+    show_injection_banner: false
+
+  - id: draft-card
+    matchers: {kinds: ["draft-card"]}
+    route: standing-card
+    silent: true
+    reaction: ["✍", "👀"]
+    show_injection_banner: false
+
+  # Scheduled briefings ping (they ARE the batch that quiet routing folds into).
+  - id: briefing
+    matchers: {kinds: ["briefing", "morning-brief", "evening-recap"]}
+    route: direct-now
+    silent: false
+    reaction: ["👀"]
+    show_injection_banner: false
+
+  # Calendar nudges: immediate but silent.
+  - id: meeting-ping
+    matchers: {kinds: ["meeting-ping", "calendar-reminder"]}
+    route: direct-now
+    silent: true
+    reaction: ["🗓", "👀"]
+    show_injection_banner: false
+
+  # The pacing engine's ONE standing triage card ("N decisions ready…") —
+  # direct-now so ask-first can ask off-cycle; NOT a floor class.
+  - id: triage-nudge
+    matchers: {kinds: ["triage-nudge"]}
+    route: direct-now
+    silent: false
+    reaction: ["👀"]
+    show_injection_banner: false
+
+  # Quiet tiers: fold into the next briefing.
+  - id: digest
+    matchers: {kinds: ["digest", "tell-digest"]}
+    route: next-briefing
+    silent: true
+    reaction: ["👀"]
+    show_injection_banner: false
+
+  - id: fyi
+    matchers: {kinds: ["fyi"], keywords: ["fyi"]}
+    route: next-briefing
+    silent: true
+    reaction: ["👀"]
+    show_injection_banner: false
+
+  # The "Noticed" advisor lane — briefing-route ONLY, budget-capped (a nudge
+  # that can wake the Captain is a design bug).
+  - id: advisory
+    matchers: {kinds: ["advisory"]}
+    route: next-briefing
+    silent: true
+    reaction: ["👀"]
+    budget: {max_per_briefing: 3, cooldown_days: 14, max_open: 7}
+    show_injection_banner: false
+
+  # Catch-all: batch into the next briefing (disturb-minimal default).
+  - id: default
+    route: next-briefing
+    silent: true
+    reaction: ["👀", "👌", "✍"]
+    show_injection_banner: false

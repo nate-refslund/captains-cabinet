@@ -354,7 +354,9 @@ def _load_watchdog_config() -> dict:
 _CFG = _load_watchdog_config()
 
 # Briefing schedule (Captain-local wall clock; instance/config/watchdog.yml —
-# mirrors the frontdoor-briefing schedule in cabinet/services.yml):
+# mirrors the one source of truth, platform.yml `briefing_times` — and its
+# services.yml calendar mirror — parity-pinned by
+# cabinet/scripts/tests/test_briefing_time_parity.py):
 BRIEF_AM_HOUR = _CFG["briefing"]["am_hour"]
 BRIEF_PM_HOUR = _CFG["briefing"]["pm_hour"]
 BRIEF_MINUTE = _CFG["briefing"]["minute"]

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 from pathlib import Path
 
 _DEV = "dev"
@@ -556,25 +557,35 @@ def lane_default(default: str = "") -> str:
 _captain_timezone_cache: "str | None" = None
 
 
-def captain_timezone(default: str = "Europe/Berlin") -> str:
-    """The Captain's IANA timezone NAME for this deployment — the resolver that
-    lifts the 'today'-boundary timezone OUT of the universal-base ``framework``
-    acting code (the personal-source adapter's ``_captain_tz``) into instance
-    config, so framework carries no hand-read of ``instance/config/platform.yml``.
+def captain_timezone(default: str = "UTC") -> str:
+    """The Captain's IANA timezone NAME for this deployment — THE one timezone
+    resolver (TZ unification, silent-defaults audit C, 2026-07-18): the
+    attention gate's quiet-hours/briefing-slot math, the comms-surface
+    engine's horizon clock, the outcome-watchdog's slot math and the
+    personal-source adapter's 'today' boundary all resolve through here, so
+    the framework can never disagree with itself about the Captain's clock
+    (the gate/engine used to fall to UTC while the launchd wrappers fell to
+    Europe/Berlin — two clocks, silently different quiet-hours math).
 
     Reads ``captain_timezone`` from ``instance/config/platform.yml`` (portfolio /
     live deployments), else ``instance/config/product.yml`` (single-product
     ``work`` deployments; also accepts a nested ``product.captain_timezone``),
-    exactly like ``captain_role()``. Any absence / parse failure / empty value
-    falls back to ``default`` — the generic Central-European ``Europe/Berlin``
-    (CET/CEST, DST-aware), the SAME fallback the removed hand-reader carried, so
-    the greeting-of-the-day boundary stays byte-identical. Returns a bare IANA
-    name string, never a tzinfo: the caller owns the name→zoneinfo lookup and
-    its own UTC fail-safe if the name is unloadable."""
+    exactly like ``captain_role()``. The configured name must load in
+    ``zoneinfo`` — an unloadable name counts as unconfigured. Absence / parse
+    failure / empty / unloadable falls back to ``default`` — **UTC**,
+    announced with ONE loud stderr warn line per process (the cache
+    suppresses repeats): quiet-hours and briefing-slot math SHIFTS with this
+    value, so the fallback must never be silent, and the universal-base layer
+    ships no captain's geography (product/captain-agnostic doctrine
+    2026-07-14 — supersedes the old silent ``Europe/Berlin`` fallback; a real
+    deployment sets the key, ``platform.yml.example`` ships it). Returns a
+    bare IANA name string, never a tzinfo: the caller owns the name→zoneinfo
+    lookup and its own UTC fail-safe if tzdata itself is unavailable."""
     global _captain_timezone_cache
     if _captain_timezone_cache is not None:
         return _captain_timezone_cache
-    tz = default
+    tz = ""
+    source = "instance/config/platform.yml"
     try:
         import yaml  # local: keep env.py import-light for the safety switches
         root = _cabinet_root()
@@ -593,11 +604,138 @@ def captain_timezone(default: str = "Europe/Berlin") -> str:
                 val = data["product"].get("captain_timezone")   # product.yml nests it
             if isinstance(val, str) and val.strip():
                 tz = val.strip()
+                source = rel
                 break
     except Exception:
+        tz = ""
+    warn = ""
+    if tz:
+        try:
+            from zoneinfo import ZoneInfo
+            ZoneInfo(tz)
+        except Exception:
+            warn = (f"framework.env: captain_timezone {tz!r} ({source}) is not "
+                    f"a loadable IANA zone — falling back to {default}; "
+                    f"quiet-hours + briefing-slot math runs on {default} until "
+                    "it is fixed")
+            tz = ""
+    if not tz:
+        if not warn:
+            warn = ("framework.env: captain_timezone is not set in "
+                    "instance/config/platform.yml — falling back to "
+                    f"{default}; quiet-hours + briefing-slot math runs on "
+                    f"{default} until it is configured")
+        print(warn, file=sys.stderr)
         tz = default
     _captain_timezone_cache = tz
     return tz
+
+
+# Cache: briefing_times is read once per process (same lifecycle as
+# captain_timezone). None ⇒ unresolved.
+_briefing_times_cache: "tuple[str, ...] | None" = None
+
+# The framework fleet default — the SAME slots the watchdog registry's
+# _BRIEF_DEFAULTS and the services.yml fallback-mirror row carry.
+_BRIEFING_TIMES_DEFAULT = ("07:30", "19:30")
+
+_HHMM_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
+
+
+def _normalize_briefing_slot(val) -> "str | None":
+    """One briefing slot → canonical zero-padded ``"HH:MM"``, else None.
+    Accepts ``"HH:MM"`` / ``"H:MM"`` strings and ints 0..1439: PyYAML loads a
+    bare (unquoted) time token whose hour starts 1-9 as a YAML-1.1 sexagesimal
+    int (``19:30`` → 1170); a leading-zero form like ``07:30`` stays a string.
+    Ints are rescued here as minutes-since-midnight, so a missing quote can
+    never silently drop or shift a slot."""
+    if isinstance(val, bool):
+        return None
+    if isinstance(val, int):
+        if 0 <= val < 24 * 60:
+            return f"{val // 60:02d}:{val % 60:02d}"
+        return None
+    if isinstance(val, str):
+        m = _HHMM_RE.match(val.strip())
+        if m:
+            hour, minute = int(m.group(1)), int(m.group(2))
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                return f"{hour:02d}:{minute:02d}"
+    return None
+
+
+def briefing_times(default: "tuple[str, ...]" = _BRIEFING_TIMES_DEFAULT) -> "tuple[str, ...]":
+    """The Captain's briefing wall-clock slots (``"HH:MM"``, Captain-local) —
+    THE one source of truth for briefing times (silent-defaults audit C,
+    2026-07-18). Read by: the attention gate + the comms-surface engine as
+    the ``CABINET_BRIEFING_TIMES`` env default, and by
+    ``cabinet/scripts/generate-plists.py`` to stamp the
+    ``com.cabinet.frontdoor-briefing`` StartCalendarInterval. Two surfaces
+    MIRROR it and are parity-pinned by
+    ``cabinet/scripts/tests/test_briefing_time_parity.py``: the calendar row
+    in ``cabinet/services.yml`` (the no-config fallback) and the ``briefing:``
+    block in ``instance/config/watchdog.yml`` (the watchdog keeps its own
+    no-PyYAML parser — survival contract — so it cannot import this
+    resolver).
+
+    Reads ``briefing_times`` from ``instance/config/platform.yml`` (else
+    ``product.yml``, also nested under ``product.``): a list of QUOTED
+    ``"HH:MM"`` strings or one CSV string ``"07:30,19:30"``. An unquoted time
+    token whose hour starts 1-9 is YAML-1.1 sexagesimal (PyYAML loads ``19:30``
+    as int 1170; a leading-zero ``07:30`` stays a string) — such ints are
+    rescued as minutes-since-midnight. Entries failing HH:MM validation are
+    dropped; a key that is present but yields NO valid slot warns once on
+    stderr and falls back to ``default``; an ABSENT key falls back silently
+    (07:30/19:30 IS the framework fleet default, matching the watchdog
+    registry's ``_BRIEF_DEFAULTS``). Order preserved, duplicates dropped."""
+    global _briefing_times_cache
+    if _briefing_times_cache is not None:
+        return _briefing_times_cache
+    raw = None
+    source = ""
+    try:
+        import yaml  # local: keep env.py import-light for the safety switches
+        root = _cabinet_root()
+        for rel in ("instance/config/platform.yml", "instance/config/product.yml"):
+            p = root / rel
+            try:
+                if not p.exists():
+                    continue
+                data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            val = data.get("briefing_times")
+            if val is None and isinstance(data.get("product"), dict):
+                val = data["product"].get("briefing_times")   # product.yml nests it
+            if val is not None:
+                raw = val
+                source = rel
+                break
+    except Exception:
+        raw = None
+    times: "list[str]" = []
+    if raw is not None:
+        if isinstance(raw, str):
+            items = raw.split(",")
+        elif isinstance(raw, (list, tuple)):
+            items = list(raw)
+        else:
+            items = [raw]
+        for item in items:
+            slot = _normalize_briefing_slot(item)
+            if slot is not None and slot not in times:
+                times.append(slot)
+        if not times:
+            print(f"framework.env: briefing_times in {source or 'instance config'} "
+                  f"has no valid HH:MM slot (got {repr(raw)[:80]}) — falling "
+                  f"back to {','.join(default)}; quote the slots — an unquoted "
+                  "H:MM whose hour starts 1-9 (e.g. 19:30) is a YAML "
+                  "sexagesimal int", file=sys.stderr)
+    result = tuple(times) if times else tuple(default)
+    _briefing_times_cache = result
+    return result
 
 
 # Cache: shared_env_path is read once per process (same lifecycle as

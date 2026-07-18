@@ -15,8 +15,13 @@
 # never blind the sweep itself.
 
 # Briefing delivery slots (Captain-local wall clock) + grace minutes before
-# the outcome is asserted. Mirrors the frontdoor-briefing schedule in
-# cabinet/services.yml — keep in sync if that cadence changes.
+# the outcome is asserted. MIRRORS the one source of truth —
+# instance/config/platform.yml `briefing_times` (which generate-plists.py
+# stamps into the frontdoor-briefing plist; cabinet/services.yml's calendar
+# row is the other mirror) — keep in sync if that cadence changes; the parity
+# suite (cabinet/scripts/tests/test_briefing_time_parity.py) fails on drift.
+# (This file keeps its own no-PyYAML parser — survival contract — so it
+# cannot read platform.yml itself.)
 briefing:
   am_hour: 7
   pm_hour: 19

@@ -40,6 +40,17 @@ instance/config/calendar.yml
 # absent at HEAD by design like the sibling instance config above.
 instance/config/egress.yml
 instance/config/outcomes-proposed.yml
+# Comms-Charter deployment override + its two runtime ledgers (charter
+# edit-path, 2026-07-18): the override is Captain/runtime-created (copy of
+# the TRACKED twin instance/config/comms-charter.yml.example, or written by
+# framework.attention.charter.amend); comms-charter-amendments.jsonl is
+# charter.amend's provenance ledger; comms-charter-proposals.jsonl is the
+# charter-amend verb's pending-card sidecar (framework/frontdoor/
+# charter_amend.py). All three gitignored by design; referenced by
+# docs/runbooks/comms-charter-amend.md.
+instance/config/comms-charter.yml
+instance/config/comms-charter-amendments.jsonl
+instance/config/comms-charter-proposals.jsonl
 # instance agent overlays — MOSTLY hatch/preset-created, but NOT all
 # untracked: instance/agents/cos.md and instance/agents/cos/mcp.json ARE
 # tracked at HEAD (git ls-tree). Enumerated (not instance/agents/*) because

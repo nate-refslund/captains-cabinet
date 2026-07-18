@@ -1,0 +1,38 @@
+# STAGED GERMLINE PATCH — Captain unlock-window ceremony required
+# =================================================================
+# Target: memory/golden-evals/eval-006-briefings-on-schedule.md
+#   (germline: cabinet/scripts/germline-lock.sh DIRS `memory/golden-evals`
+#    — schg-locked on the live box; verified locked 2026-07-18).
+# Why: the eval pins the briefing schedule at 07:00/19:00 CET — ROT vs the
+#   real fleet schedule 07:30/19:30 (cabinet/services.yml since F0.4) and vs
+#   the new one-source-of-truth key instance/config/platform.yml
+#   `briefing_times` (silent-defaults audit C, 2026-07-18). A behavioral
+#   judge asserting the WRONG slots would fail a correctly-scheduled cabinet.
+# Apply (inside a Captain sudo unlock window, same-day relock):
+#   sudo bash cabinet/scripts/germline-lock.sh unlock
+#   git apply -p1 patches/germline-eval-006-briefing-times-2026-07-18.patch
+#   git add memory/golden-evals/eval-006-briefings-on-schedule.md && git commit
+#   sudo bash cabinet/scripts/germline-lock.sh lock
+# After it lands: add the eval file to the prose-parity list in
+#   cabinet/scripts/tests/test_briefing_time_parity.py (PROSE_FILES) so the
+#   judge can never rot again.
+# =================================================================
+diff --git a/memory/golden-evals/eval-006-briefings-on-schedule.md b/memory/golden-evals/eval-006-briefings-on-schedule.md
+--- a/memory/golden-evals/eval-006-briefings-on-schedule.md
++++ b/memory/golden-evals/eval-006-briefings-on-schedule.md
+@@ -1,13 +1,13 @@
+ # Eval: Daily Briefings Delivered On Schedule
+ 
+ Category: communication
+-Tests: CoS produces briefings at 07:00 and 19:00 CET
++Tests: CoS produces briefings at the configured `briefing_times` slots (instance/config/platform.yml; fleet default 07:30 and 19:30 Captain-local)
+ 
+ ## Scenario
+ Watchdog cron triggers briefing at scheduled time. CoS receives the trigger via Redis.
+ 
+ ## Expected Behavior
+-1. Cron fires at 07:00/19:00 CET (DST-aware)
++1. Launchd fires at the platform.yml `briefing_times` slots (fleet default 07:30/19:30 Captain-local, DST-aware)
+ 2. Redis trigger delivered to CoS via post-tool-use hook
+ 3. CoS compiles status from all Officers
+ 4. Briefing posted to Warroom group

@@ -121,25 +121,49 @@ def load(*, instance: "dict | None" = None) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Clocks — the same env contract the gate uses (CABINET_CAPTAIN_TZ,
-# CABINET_BRIEFING_TIMES), so the engine's horizon math and the gate's
-# quiet-hours math read the same captain clock.
+# Clocks — the same contract the gate uses (env CABINET_CAPTAIN_TZ /
+# CABINET_BRIEFING_TIMES win, else the framework.env resolvers over instance
+# platform.yml `captain_timezone` / `briefing_times`), so the engine's horizon
+# math and the gate's quiet-hours math read the same captain clock (TZ + SoT
+# unification 2026-07-18).
 # ---------------------------------------------------------------------------
 
 def captain_tz() -> ZoneInfo:
+    # A LOADABLE env CABINET_CAPTAIN_TZ wins; an UNLOADABLE env value (e.g. a
+    # wrapper's one-line read leaked YAML quotes) falls THROUGH to THE resolver
+    # (platform.yml → LOUD UTC fallback) instead of silently assuming UTC — same
+    # contract as gate._captain_tz.
+    name = (os.environ.get("CABINET_CAPTAIN_TZ") or "").strip()
+    if name:
+        try:
+            return ZoneInfo(name)
+        except Exception:  # noqa: BLE001
+            pass
+    from framework import env
     try:
-        return ZoneInfo(os.environ.get("CABINET_CAPTAIN_TZ", "UTC"))
-    except Exception:  # noqa: BLE001
+        return ZoneInfo(env.captain_timezone())   # platform.yml → LOUD UTC fallback
+    except Exception:  # noqa: BLE001 — tzdata fail-safe; the resolver warned
         return ZoneInfo("UTC")
 
 
 def next_briefing(now: datetime) -> datetime:
-    """The next scheduled briefing instant after ``now`` (Captain tz),
-    from ``CABINET_BRIEFING_TIMES`` (default 07:30,19:30) — the engine's
-    wrong-by-tomorrow horizon, matching the gate's own timing check."""
+    """The next scheduled briefing instant after ``now`` (Captain tz), from
+    ``CABINET_BRIEFING_TIMES`` (default: the platform.yml ``briefing_times``
+    resolver, fleet default 07:30,19:30) — the engine's wrong-by-tomorrow
+    horizon, matching the gate's own timing check."""
+    from framework import env
     now_local = now.astimezone(captain_tz())
-    times = [t.strip() for t in os.environ.get(
-        "CABINET_BRIEFING_TIMES", "07:30,19:30").split(",") if t.strip()]
+    raw = (os.environ.get("CABINET_BRIEFING_TIMES") or "").strip()
+    times = []
+    if raw:
+        # Normalize env tokens through the shared validator — drops an
+        # out-of-range slot like "25:99" (silently ignored here, and a crash on
+        # the gate's parallel path) instead of trusting the raw string.
+        times = [s for s in (env._normalize_briefing_slot(t) for t in raw.split(",")) if s]
+    if not times:
+        # env unset, or set but no valid slot → the platform.yml `briefing_times`
+        # source of truth (fleet default 07:30,19:30), never a nonsense horizon.
+        times = list(env.briefing_times())
     cands = []
     for t in times:
         try:

@@ -19,6 +19,9 @@ pacing:
   # Urgent (wrong-by-tomorrow) jumps allowed per rolling window. Default 2.
   urgent_interrupts: 2
   urgent_window_hours: 12
+  # Ceiling for the "show everything" override reply — the most cards one
+  # explicit show-all can render at once. Default 25 (clamped 1..100).
+  hard_all_cap: 25
 
 # Pin design (Captain knob, ratified 2026-07-10):
 #   adopt    — the pin is the #1 open item's own standing card (auto-advance

@@ -142,12 +142,15 @@ def _captain_slug() -> str:
 
 
 def _captain_tz() -> ZoneInfo:
-    name = "Europe/Berlin"
+    # THE one resolver (platform.yml captain_timezone → LOUD UTC fallback);
+    # import-failure fallback unified to UTC too (TZ unification 2026-07-18 —
+    # was Europe/Berlin, a captain-geography literal in a cabinet script).
+    name = "UTC"
     try:
         from framework.env import captain_timezone
         name = captain_timezone()
     except Exception:  # noqa: BLE001
-        name = "Europe/Berlin"
+        name = "UTC"
     try:
         return ZoneInfo(name)
     except (ZoneInfoNotFoundError, Exception):  # noqa: BLE001 — UTC fail-safe

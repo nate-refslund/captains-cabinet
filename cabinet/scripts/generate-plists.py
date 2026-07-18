@@ -18,6 +18,14 @@ carried PATH all along.
 services stay in the manifest as fleet truth — e.g. draft-lane, superseded by
 the 2026-07-03 act-not-draft ruling — without being rendered or installed).
 
+Briefing-time source of truth (silent-defaults audit C, 2026-07-18): the
+com.cabinet.frontdoor-briefing row's StartCalendarInterval is stamped from
+instance/config/platform.yml `briefing_times` (framework.env.briefing_times;
+fleet default 07:30,19:30), NOT from the services.yml calendar row — that row
+stays as the documented no-config fallback mirror and loses on divergence
+(a provenance line is always printed; parity is pinned by
+cabinet/scripts/tests/test_briefing_time_parity.py).
+
 Security contract (Corridor-reviewed, binding):
   - service names validated ^[a-z0-9-]+$ BEFORE any filesystem path use
     (a malformed manifest cannot traverse paths);
@@ -58,6 +66,14 @@ import yaml
 NAME_RE = re.compile(r"^[a-z0-9-]+$")
 LABEL_RE = re.compile(r"^[a-z0-9.-]+$")  # L-1 (cp1 review): label forms the output filename
 PATH_ENV = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+# The briefing service whose StartCalendarInterval is stamped from the ONE
+# source of truth — instance/config/platform.yml `briefing_times` (via the
+# framework.env resolver; fleet default 07:30,19:30). The calendar row in
+# cabinet/services.yml stays as the documented no-config fallback MIRROR;
+# platform.yml wins whenever the two disagree (silent-defaults audit C,
+# 2026-07-18; parity pinned by cabinet/scripts/tests/test_briefing_time_parity.py).
+BRIEFING_LABEL = "com.cabinet.frontdoor-briefing"
 
 
 def repo_root() -> Path:
@@ -129,6 +145,119 @@ def validate_services(services) -> None:
         if duplicate_labels:
             parts.append(f"duplicate labels={duplicate_labels}")
         raise SystemExit("generate-plists: manifest identity collision: " + "; ".join(parts))
+
+
+def stamp_briefing_schedule(services) -> str:
+    """Overwrite the frontdoor-briefing row's calendar with the slots from the
+    ONE source of truth — platform.yml ``briefing_times`` via
+    ``framework.env.briefing_times()`` (fleet default 07:30,19:30 when the key
+    or the file is absent, so a clean-room render is unchanged).
+
+    ``framework`` is imported from THIS script's own repo checkout
+    (``parents[2]`` — the code root), while the RESOLVER reads its config
+    under ``CABINET_ROOT`` when set (the same root ``repo_root()`` honours),
+    so a test can point the manifest+config at a fixture root without needing
+    a framework/ copy there. Import/resolve failure falls back to the fleet
+    default — rendering must never crash on a half-provisioned box; the
+    stamped value is always printed (provenance), never silent.
+
+    Returns the one-line provenance notice ("" when no briefing row exists)."""
+    code_root = Path(__file__).resolve().parents[2]
+    times = None
+    try:
+        sys.path.insert(0, str(code_root))
+        try:
+            from framework.env import briefing_times
+            times = briefing_times()
+        finally:
+            try:
+                sys.path.remove(str(code_root))
+            except ValueError:
+                pass
+    except Exception as exc:  # noqa: BLE001 — resolver trouble must not kill rendering
+        print(f"generate-plists: briefing_times resolver unavailable ({exc}) — "
+              "stamping the fleet default 07:30,19:30", file=sys.stderr)
+        times = ("07:30", "19:30")
+    cal = []
+    for t in times:
+        h, m = t.split(":")
+        cal.append({"hour": int(h), "minute": int(m)})
+    for svc in services:
+        if svc.get("label") == BRIEFING_LABEL and not svc.get("disabled"):
+            old = (svc.get("schedule") or {}).get("calendar") \
+                if isinstance(svc.get("schedule"), dict) else None
+            svc["schedule"] = {"calendar": cal}
+            note = (f"{svc['name']}: StartCalendarInterval stamped from "
+                    f"platform.yml briefing_times → "
+                    + ",".join(f"{c['hour']:02d}:{c['minute']:02d}" for c in cal))
+            if old is not None and old != cal:
+                note += (f" (services.yml fallback row said {old!r} — "
+                         "platform.yml is the source of truth; re-sync the mirror)")
+            return note
+    return ""
+
+
+def _host_iana_tz() -> "str | None":
+    """Best-effort IANA name of the MACHINE clock. launchd fires
+    StartCalendarInterval in machine-local time, so a briefing schedule stamped
+    as Captain-local only fires at the right wall-clock hour when the two agree.
+    Resolves the ``/etc/localtime`` symlink (…/zoneinfo/Europe/Berlin); returns
+    None when it can't be read (never raises — this is a warning aid)."""
+    try:
+        lt = Path("/etc/localtime")
+        if lt.is_symlink():
+            target = os.readlink(lt)
+            marker = "zoneinfo/"
+            if marker in target:
+                return target.split(marker, 1)[1]
+    except Exception:  # noqa: BLE001 — best-effort; never break a render
+        return None
+    return None
+
+
+def _machine_tz_mismatch_warn(captain_tz: "str | None", host_tz: "str | None") -> str:
+    """The loud line when launchd's machine-local firing would desync the
+    Captain-local briefing slots, else "". Compares the two zones' CURRENT UTC
+    offset (not just the IANA name), so operationally-identical pairs like
+    Europe/Copenhagen and Europe/Berlin (both CET/CEST — the live box's real
+    pairing) do NOT false-alarm; only a genuine wall-clock divergence (e.g. a
+    UTC machine clock vs a Berlin Captain on a clean-room hatch) warns. Pure
+    inputs (both zone names injected) so the branch logic is unit-testable."""
+    if not captain_tz or not host_tz or captain_tz == host_tz:
+        return ""
+    try:
+        from datetime import datetime, timezone
+        from zoneinfo import ZoneInfo
+        now = datetime.now(timezone.utc)
+        if now.astimezone(ZoneInfo(host_tz)).utcoffset() == \
+                now.astimezone(ZoneInfo(captain_tz)).utcoffset():
+            return ""   # same wall clock now (e.g. Copenhagen == Berlin)
+    except Exception:  # noqa: BLE001 — can't prove equivalence → warn conservatively
+        pass
+    return (f"generate-plists: WARNING machine timezone {host_tz!r} != Captain "
+            f"timezone {captain_tz!r} — launchd fires briefings in "
+            f"machine-local time, so slots stamped Captain-local {captain_tz!r} "
+            f"will fire at the wrong wall-clock hour. Set the Mac's timezone "
+            f"to {captain_tz!r} (see cabinet/docs/mac-mini-deploy-runbook.md).")
+
+
+def _framework_captain_tz() -> "str | None":
+    """THE resolver's Captain-tz NAME, imported from this script's own code
+    checkout (``parents[2]``); None on any import/resolve trouble (the
+    machine-tz warning is best-effort and must never break a render)."""
+    code_root = Path(__file__).resolve().parents[2]
+    try:
+        sys.path.insert(0, str(code_root))
+        try:
+            from framework.env import captain_timezone
+            return captain_timezone()
+        finally:
+            try:
+                sys.path.remove(str(code_root))
+            except ValueError:
+                pass
+    except Exception:  # noqa: BLE001 — resolver trouble must not kill rendering
+        return None
 
 
 def _schedule_keys(svc):
@@ -277,6 +406,15 @@ def main() -> int:
         )
     services = load_services(root)
     validate_services(services)
+    briefing_note = stamp_briefing_schedule(services)
+    if briefing_note:
+        print(briefing_note)
+    # launchd fires the stamped calendar in the MACHINE's tz, but briefing_times
+    # is Captain-local — warn loudly (never fail) when they differ so a
+    # UTC-clocked hatch with a Berlin Captain doesn't fire briefings 2h off.
+    tz_warn = _machine_tz_mismatch_warn(_framework_captain_tz(), _host_iana_tz())
+    if tz_warn:
+        print(tz_warn, file=sys.stderr)
     # STRICT kind gate (lane-ops 2026-07-04): daemon/watchdog/cron render;
     # officer is deploy-mac.sh's; anything ELSE is a manifest typo and must
     # fail LOUDLY — the old `in ("daemon","watchdog")` filter silently dropped

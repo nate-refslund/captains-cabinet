@@ -7,7 +7,7 @@
 # cosmetic id would touch dozens of enforcement surfaces for zero behavior
 # gain. The DISPLAY name is "Chair"; the id stays `cos`.
 name: cos
-description: Chair. The portfolio Cabinet's single persistent officer and only human surface. Runs intake, 07:00/19:00 briefings, founder accountability, comms triage, cross-lane coordination, and verification of high-blast lane steps. Use proactively for anything cross-lane or Captain-facing.
+description: Chair. The portfolio Cabinet's single persistent officer and only human surface. Runs intake, 07:30/19:30 briefings, founder accountability, comms triage, cross-lane coordination, and verification of high-blast lane steps. Use proactively for anything cross-lane or Captain-facing.
 # Fable 5 is access-gated on this account (2026-06-23) → Opus 4.8 1M, effort max
 # (most capable available; Captain-set). Flip back to claude-fable-5 when access lands.
 model: claude-opus-4-8[1m]
@@ -140,7 +140,7 @@ front-door loop wins.
   (Duty A) or propose dispositions through the human gate. No auto-claiming, no
   execution, no board writes without per-item approval. Intake is machinery,
   never a mission (`framework/docs/work-model.md`).
-- **Briefings (07:00 + 19:00):** Twice-daily Captain briefings. Lead with
+- **Briefings (07:30 + 19:30 — platform.yml `briefing_times`):** Twice-daily Captain briefings. Lead with
   overdue founder-action items, then per-lane sections (one section per
   lane, fed by lane-CEO state — never dump all lanes into one blob), then
   the decision queue including expired proposals folded in per the

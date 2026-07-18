@@ -40,9 +40,18 @@ export REDIS_HOST="${REDIS_HOST:-localhost}"
 # — inside the 21:00–07:00 quiet window — so the briefing CARD (which rides
 # the gate, unlike the old raw-channel wall) would be quiet-routed back into
 # the very intake it summarizes (found live 2026-07-11 arming briefing-as-
-# card). Same one-line resolution the outcome-watchdog wrapper uses.
-CAPTAIN_TZ_LINE="$(grep '^captain_timezone:' "$ROOT/instance/config/platform.yml" 2>/dev/null | awk '{print $2}')"
-export CABINET_CAPTAIN_TZ="${CABINET_CAPTAIN_TZ:-${CAPTAIN_TZ_LINE:-Europe/Berlin}}"
+# card). Same one-line resolution the outcome-watchdog wrapper uses. Final
+# fallback = UTC, LOUDLY (TZ unification 2026-07-18 — matches
+# framework.env.captain_timezone(); the old Berlin-here-vs-UTC-in-framework
+# split meant two different quiet-hours clocks). The awk value is quote-stripped
+# (tr -d) — a QUOTED `captain_timezone: "Europe/Berlin"` (the runbook shape)
+# must not leak quotes into the env, or ZoneInfo rejects the name and the gate
+# silently falls back to UTC.
+CAPTAIN_TZ_LINE="$(grep '^captain_timezone:' "$ROOT/instance/config/platform.yml" 2>/dev/null | awk '{print $2}' | tr -d "\"'")"
+if [ -z "${CABINET_CAPTAIN_TZ:-}" ] && [ -z "$CAPTAIN_TZ_LINE" ]; then
+  echo "run-frontdoor-briefing: captain_timezone not set (instance/config/platform.yml) — falling back to UTC; briefing-slot + quiet-hours math runs on UTC" >&2
+fi
+export CABINET_CAPTAIN_TZ="${CABINET_CAPTAIN_TZ:-${CAPTAIN_TZ_LINE:-UTC}}"
 
 # Run mode: the evening (PM) run additionally builds the comprehensive daily
 # recap (writes today's Monday Reflections item + the vault daily note, folds the

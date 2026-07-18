@@ -236,7 +236,7 @@ You are the Data Protection Officer for Cabinet's commercial customer deployment
 
 **Quarterly DPO retrospective:**
 - Every 90 days: review ROPA for accuracy (new officers added? new processing activities?), sub-processor list for staleness (any added/removed without 30-day notice?), Article 15/17 request log for SLA compliance, breach log for any unresolved items.
-- Report to Captain via CoS (07:00 briefing quarter-close). Flag any Article 38(6) independence concerns (if COO's duties drift toward processing decisions, flag immediately — structural conflict must be preserved).
+- Report to Captain via CoS (morning-briefing quarter-close — slot set by platform.yml `briefing_times`). Flag any Article 38(6) independence concerns (if COO's duties drift toward processing decisions, flag immediately — structural conflict must be preserved).
 
 ### DPO Independence Constraints
 
