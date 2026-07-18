@@ -17,6 +17,12 @@ Two tools:
 the existing world-asset-install/world-asset-gate flow; candidates die in
 the out-dir unless a human promotes them.
 
+**Prerequisites:** `python3.12` with **Pillow** (`PIL` — required by the
+forge tool and its tests; on this Mac it lives in user-site
+`~/Library/Python/3.12`, CI installs it explicitly in the cabinet-ci
+"Install test dependencies" step) and **PyYAML** (spec tool). Without
+Pillow, `world-asset-forge.py` fails at import.
+
 ## 1 — Generate the worklist / artist checklists
 
     python3.12 cabinet/scripts/world-asset-spec.py     # regenerates both canon files
