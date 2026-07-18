@@ -56,6 +56,7 @@ import argparse
 import os
 import plistlib
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -319,6 +320,12 @@ def render(svc, root: Path, home: Path) -> dict:
 
 
 def lint(path: Path) -> bool:
+    # plutil is macOS-only; on Linux (CI runners, clean-room hatches) it is
+    # absent — treat "no linter available" as a pass so plist generation stays
+    # portable. The install path (deploy-mac.sh) runs on macOS where plutil
+    # exists and the lint is real.
+    if shutil.which("plutil") is None:
+        return True
     r = subprocess.run(["plutil", "-lint", str(path)], capture_output=True, text=True)
     return r.returncode == 0
 
