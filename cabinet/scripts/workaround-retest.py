@@ -67,6 +67,20 @@ instead of duplicating). This runner never edits the registry, never
 restarts/installs/upgrades anything, and never touches the network. Humans
 retire a row via a reviewed PR after the proposal is judged.
 
+ACTION SEAM (Captain law 2026-07-17): the retirement DISPOSITION is no
+longer a hardcoded v1 constant — it is asked of the autonomy-graded action
+seam (``framework/authority/action_mode.py``, THE law for autonomous-
+mutation modes) and stamped into the verdict + proposal row as
+``action_mode`` (+ ``captain_card``). Under guardian/earn_up the seam
+answers ``propose`` and behavior is IDENTICAL to v1. A future attested
+sovereign posture may answer ``go`` — acting on it would additionally
+require a Captain-PRE-ratified trivial class (``_PRERATIFIED_AUTO_CLASSES``,
+empty until a recorded ratification exists) and an applier that lives
+elsewhere; this runner files propose-only rows in every mode. Ring-0
+components (the claude binary, officer model routing — GATE 3) classify as
+Ring-0 categories, so their disposition is propose + captain-card under
+EVERY posture. Consult-the-seam can only tighten, never widen.
+
 Runtime outputs (all gitignored):
   cabinet/logs/workaround-retests.jsonl                — verdict journal
   shared/interfaces/workaround-retire-proposals.jsonl  — proposals ledger
@@ -603,13 +617,73 @@ def read_jsonl_last_wins(path: Path) -> dict:
     return out
 
 
+# --------------------------------------------------------------------------
+# Autonomy-graded action seam (Captain law 2026-07-17)
+# --------------------------------------------------------------------------
+# The retirement DISPOSITION is a function of the posture level, decided by
+# framework/authority/action_mode.py — THE law for autonomous-mutation
+# modes (doctrine: docs/runbooks/platform-adoption-gating.md, GATE 0/1/3).
+# Under guardian/earn_up the seam answers "propose" and this runner files
+# exactly the v1 propose-only proposal — byte-identical behavior. A future
+# attested sovereign posture may answer "go", but an ACT on that answer
+# additionally requires the Captain-PRE-ratified trivial class (GATE 1)
+# below, and no applier lives in this runner anyway: consult-the-seam can
+# only tighten. Ring-0 components (GATE 3: the claude binary, officer
+# model routing) map to Ring-0 categories, so the seam answers propose +
+# captain-card for them under EVERY posture, sovereign included.
+
+# Trivial change classes the Captain has PRE-ratified for auto-apply in
+# writing (GATE 1). EMPTY until such a recorded decision exists — adding an
+# entry REQUIRES citing that decision, and the test suite pins emptiness so
+# a silent widening goes red.
+_PRERATIFIED_AUTO_CLASSES: frozenset = frozenset()
+
+# Registry components whose retirement touches the Ring-0 plane (GATE 3).
+_RING0_COMPONENT_CATEGORY = {
+    "claude-code": "claude-binary",
+}
+
+
+def _retire_action(row: dict) -> dict:
+    """Action descriptor for retiring this row's workaround. No undo_handle
+    on purpose: this runner registers no undo mechanism, so even a future
+    act_then_tell posture rung degrades to propose here."""
+    component = None
+    parsed = parse_version_condition(str(row.get("version_condition", "")))
+    if parsed and parsed[0] == "comparator":
+        component = parsed[1]
+    return {
+        "ring": 2,
+        "reversibility": "reversible",  # a retirement reverts via the reviewed PR
+        "category": _RING0_COMPONENT_CATEGORY.get(component, "workaround-retire"),
+    }
+
+
+def disposition_mode(row: dict, posture: "str | None" = None) -> dict:
+    """``{"mode", "captain_card"}`` for this row's retirement disposition,
+    via the seam; fail-closed to propose on ANY import/resolve/shape
+    failure. ``posture`` is for hermetic tests — production passes None
+    (the live posture kernel, which never files needs from this read)."""
+    try:
+        seam_root = str(_SCRIPT_DIR.parents[1])
+        if seam_root not in sys.path:
+            sys.path.insert(0, seam_root)
+        from framework.authority.action_mode import MODES, action_decision
+        decision = action_decision(_retire_action(row), posture)
+        mode = decision.mode if decision.mode in MODES else "propose"
+        return {"mode": mode, "captain_card": bool(decision.captain_card)}
+    except Exception:
+        return {"mode": "propose", "captain_card": False}
+
+
 def proposal_id(workaround_id: str) -> str:
     raw = f"workaround-retire|{workaround_id}|{cabinet_id()}"
     return "WPROP-" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:8]
 
 
 def file_proposal(row: dict, verdict: dict, proposals_path: Path,
-                  delta_ref: str | None) -> dict:
+                  delta_ref: str | None,
+                  disposition: "dict | None" = None) -> dict:
     """PROPOSE ONLY: append a fingerprint-deduped retirement proposal.
     Re-filing the same fingerprint bumps count/last_seen (last-write-wins
     read semantics) instead of spamming distinct rows."""
@@ -623,6 +697,14 @@ def file_proposal(row: dict, verdict: dict, proposals_path: Path,
         "title": f"Retire workaround {row['id']} — retest reports fix_confirmed",
         "status": "proposed",
         "propose_only": True,
+        # Autonomy-graded action seam stamp (Captain law 2026-07-17): the
+        # DISPOSITION the seam allowed at filing time. The row still
+        # authorizes NOTHING (propose_only stays True in every mode):
+        # acting on a non-propose answer additionally requires the
+        # Captain-PRE-ratified trivial class (_PRERATIFIED_AUTO_CLASSES)
+        # and rides the staged deploy path — never this runner.
+        "action_mode": (disposition or {}).get("mode", "propose"),
+        "captain_card": bool((disposition or {}).get("captain_card", False)),
         "count": (int(prior.get("count", 0)) if prior else 0) + 1,
         "first_seen": (prior or {}).get("first_seen") or now,
         "last_seen": now,
@@ -763,7 +845,11 @@ def main(argv: list[str] | None = None) -> int:
             if verdict.get("refused"):
                 any_refused = True
             if (verdict["verdict"] == VERDICT_FIXED) and not args.no_propose:
-                proposal = file_proposal(row, verdict, proposals_path, delta_ref)
+                disposition = disposition_mode(row)
+                verdict["action_mode"] = disposition["mode"]
+                verdict["captain_card"] = disposition["captain_card"]
+                proposal = file_proposal(row, verdict, proposals_path, delta_ref,
+                                         disposition=disposition)
                 verdict["proposal_id"] = proposal["id"]
                 verdict["proposal_count"] = proposal["count"]
             append_jsonl(log_path, verdict)

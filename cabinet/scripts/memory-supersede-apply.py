@@ -40,6 +40,22 @@ Lifecycle (detect → soak → apply):
     marker block (never edit the ledger by hand: consumed-but-open
     pairs would be orphaned; they self-heal from their proposals-file
     stamps, but the ruling verb is the supported path).
+  * ACTION-SEAM OUTER GATE (Captain law 2026-07-17): even an ARMED soak
+    only acts when the autonomy-graded action seam
+    (``framework/authority/action_mode.py`` — THE law for
+    autonomous-mutation modes) answers an act mode for this organ's
+    apply action: ``go`` (sovereign), or ``act_tell`` (a future
+    act-then-tell posture rung — lawful here because ``--undo`` is this
+    organ's registered undo handle and the soak ledger is the receipt).
+    Today's guardian/earn_up postures answer ``propose``, so an armed
+    gate reads ``held-by-action-seam`` and every would-apply stays
+    RECORDED, never executed — Captain-granted pairs included (the
+    grant stays live on the needs ledger and executes once the posture
+    allows acting). The seam is an OUTER gate that may only TIGHTEN:
+    an act answer never bypasses soak/hold/veto (those still bind in
+    full), and ANY seam failure (import, resolve, shape) fail-closes
+    to ``propose``. Tests pin both directions: sovereign + unarmed
+    soak still refuses; guardian + armed soak still refuses.
   * HALF-SOAK CARD: once per soak window, at >= day 7, ONE Captain
     heads-up card is filed on the needs ledger (would-apply/cue counts
     + the arming date + the ``hold`` escape hatch) so time-based arming
@@ -363,6 +379,61 @@ def gate_state(entries: List[dict], mode: str, *, now=None,
     if st["days_into_soak"] is None or st["reversals"] > 0:
         return "soak"
     return "armed" if st["days_into_soak"] >= SOAK_DAYS else "soak"
+
+
+# ---------------------------------------------------------------------------
+# Autonomy-graded action seam — the OUTER gate (Captain law 2026-07-17)
+# ---------------------------------------------------------------------------
+# "Every autonomous mutation's mode is a FUNCTION of the posture level."
+# The seam (framework/authority/action_mode.py) answers propose|act_tell|go
+# for this organ's apply action; anything but an ACT mode holds an armed
+# gate at ``held-by-action-seam`` — a state no ``== "armed"`` check
+# matches, so the outer gate can only TIGHTEN the existing soak/hold/veto
+# law, never bypass it (an act answer changes nothing about those gates).
+
+# The apply action, described once. reversibility is honest: --undo re-nulls
+# exactly the pointer this organ set, and a reversal re-blocks arming — that
+# same verb is the REGISTERED undo handle act_tell requires. ring 2: the
+# runtime organ plane (no Ring-0 category; the seam would card those).
+_APPLY_ACTION = {
+    "ring": 2,
+    "reversibility": "reversible",
+    "category": "memory-supersede-apply",
+    "undo_handle": ("python3.12 cabinet/scripts/memory-supersede-apply.py "
+                    "--undo '<applied soak-ledger json line>'"),
+}
+
+# Seam answers that permit the EXISTING arming law to proceed. propose (or
+# any failure) holds. act_tell is lawful because _APPLY_ACTION presents the
+# registered undo handle; the seam itself refuses act_tell without one.
+_SEAM_ACT_MODES = ("go", "act_tell")
+
+
+def action_seam_disposition(posture: Optional[str] = None) -> dict:
+    """``{"mode", "captain_card"}`` for this organ's apply action, via the
+    autonomy-graded action seam. ``posture`` is for hermetic tests —
+    production passes None (live posture kernel; the seam resolves with
+    ``file_needs=False`` so this read never files needs). Fail-closed: ANY
+    import/resolve/shape failure is ``propose``. Never raises."""
+    try:
+        seam_root = str(_REPO_ROOT)
+        if seam_root not in sys.path:
+            sys.path.insert(0, seam_root)
+        from framework.authority.action_mode import MODES, action_decision
+        decision = action_decision(dict(_APPLY_ACTION), posture)
+        mode = decision.mode if decision.mode in MODES else "propose"
+        return {"mode": mode, "captain_card": bool(decision.captain_card)}
+    except Exception:  # noqa: BLE001 — a broken seam must hold, not crash
+        return {"mode": "propose", "captain_card": False}
+
+
+def seam_hold(state: str, disposition: dict) -> str:
+    """Apply the outer gate to a ``gate_state`` answer: ``armed`` without an
+    act-mode seam answer degrades to ``held-by-action-seam``; every other
+    state passes through untouched (the seam never widens hold/veto/soak)."""
+    if state == "armed" and disposition.get("mode") not in _SEAM_ACT_MODES:
+        return "held-by-action-seam"
+    return state
 
 
 def texts_hash(old_text: str, new_text: str) -> str:
@@ -740,8 +811,15 @@ def run_apply_pass(*, proposals_path: Optional[Path] = None,
                    fetch_rows_fn: Optional[Callable] = None,
                    file_need_fn: Optional[Callable] = None,
                    mark_need_fn: Optional[Callable] = None,
-                   dry_run: bool = False) -> dict:
+                   dry_run: bool = False,
+                   posture: Optional[str] = None) -> dict:
     """Consume new proposals + re-validate open items; soak or apply.
+
+    ``posture`` is hermetic test injection for the action-seam OUTER gate
+    (module docstring): production passes None and the seam resolves the
+    live posture itself. An armed gate additionally requires the seam to
+    answer an act mode (``go``/``act_tell``) or it reads
+    ``held-by-action-seam`` — recorded, never executed.
 
     Every processed proposal gets (a) a decision entry in the soak ledger
     (deduped: an identical repeat decision for the same pair appends
@@ -777,7 +855,10 @@ def run_apply_pass(*, proposals_path: Optional[Path] = None,
     mode = load_mode(config_path)
     entries = read_jsonl(spath)
     veto_nid = halfway_veto(needs_path)
-    state = gate_state(entries, mode, now=nowdt, vetoed=bool(veto_nid))
+    disposition = action_seam_disposition(posture)
+    state = seam_hold(
+        gate_state(entries, mode, now=nowdt, vetoed=bool(veto_nid)),
+        disposition)
 
     measurable = True
     if live_rows is None:
@@ -797,7 +878,8 @@ def run_apply_pass(*, proposals_path: Optional[Path] = None,
                "consumed": 0, "would_apply": 0, "applied": 0, "cue_cards": 0,
                "refused": 0, "blocked": 0, "measurable": measurable,
                "dry_run": dry_run, "halfway_card": None,
-               "veto_need": veto_nid}
+               "veto_need": veto_nid,
+               "action_mode": disposition["mode"]}
     if not measurable:
         return summary  # nothing classifiable — no stamps, no clock start
 
@@ -1096,18 +1178,23 @@ def run_resolve_reversals(note: str, *, soak_path: Optional[Path] = None,
 def build_report(*, proposals_path: Optional[Path] = None,
                  soak_path: Optional[Path] = None,
                  config_path: Optional[Path] = None,
-                 needs_path: Optional[Path] = None, now=None) -> dict:
+                 needs_path: Optional[Path] = None, now=None,
+                 posture: Optional[str] = None) -> dict:
     nowdt = _to_dt(now) or _now()
     mode = load_mode(config_path)
     entries = read_jsonl(soak_path or SOAK_PATH)
     st = soak_stats(entries, now=nowdt)
     veto_nid = halfway_veto(needs_path)
-    state = gate_state(entries, mode, now=nowdt, vetoed=bool(veto_nid))
+    disposition = action_seam_disposition(posture)
+    state = seam_hold(
+        gate_state(entries, mode, now=nowdt, vetoed=bool(veto_nid)),
+        disposition)
     props = compact_proposals(read_jsonl(proposals_path or PROPOSALS_PATH))
     latest = compact_soak(entries)
     counts = st["counts"]
     return {
         "mode": mode, "state": state, "veto_need": veto_nid,
+        "action_mode": disposition["mode"],
         "days_into_soak": (round(st["days_into_soak"], 2)
                            if st["days_into_soak"] is not None else None),
         "first_entry": st["first_entry"],
@@ -1135,11 +1222,13 @@ def render_report(rep: dict) -> str:
     day_str = f"{days:.1f}" if isinstance(days, (int, float)) else "-"
     veto = (f", captain-veto={rep['veto_need']}"
             if rep.get("veto_need") else "")
+    seam = (f", action-mode={rep['action_mode']}"
+            if rep.get("action_mode") else "")
     return "\n".join([
         "memory-supersession soak report",
         f"  posture: {rep['state']} (auto_apply={rep['mode']}, "
         f"soak day {day_str}/{SOAK_DAYS}, reverted={rep['reverted']}, "
-        f"unresolved-reversals={rep['reversals_unresolved']}{veto})",
+        f"unresolved-reversals={rep['reversals_unresolved']}{veto}{seam})",
         f"  proposals: {rep['proposals_total']} total / "
         f"{rep['proposals_consumed']} consumed / "
         f"{rep['proposals_pending']} pending",

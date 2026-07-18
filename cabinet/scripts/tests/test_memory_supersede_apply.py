@@ -197,7 +197,14 @@ class MarkRecorder:
 
 def _run(tmp_path, proposals, live, *, soak_rows=None, config=None, now=NOW,
          conn=None, conn_factory=None, need_fn=None, fetch=None,
-         needs_rows=None, mark_fn=None, dry_run=False):
+         needs_rows=None, mark_fn=None, dry_run=False, posture="sovereign"):
+    # posture defaults to SOVEREIGN (hermetic — explicitly injected, never
+    # the live ruling): these fixtures pin the organ's INNER law (soak
+    # clock, hold flag, veto, jaccard, liveness, caps...), and sovereign is
+    # the widest seam answer — an inner gate proven to hold under sovereign
+    # holds under every posture. The action-seam OUTER gate (Captain law
+    # 2026-07-17) has its own arms in TestActionSeamOuterGate with explicit
+    # narrower postures.
     ppath = tmp_path / "proposals.jsonl"
     if not ppath.exists() or proposals is not None:
         _write_jsonl(ppath, proposals or [])
@@ -217,7 +224,7 @@ def _run(tmp_path, proposals, live, *, soak_rows=None, config=None, now=NOW,
         proposals_path=ppath, soak_path=spath, config_path=cpath,
         needs_path=npath, now=now, live_rows=live, conn_factory=factory,
         fetch_rows_fn=fetch, file_need_fn=need, mark_need_fn=mark,
-        dry_run=dry_run)
+        dry_run=dry_run, posture=posture)
     return summary, ppath, spath, need
 
 
@@ -552,7 +559,7 @@ class TestIdempotency:
                                 needs_path=tmp_path / "needs-ledger.jsonl",
                                 now=NOW,
                                 live_rows=live, conn_factory=Boom(),
-                                file_need_fn=Recorder())
+                                file_need_fn=Recorder(), posture="sovereign")
         assert s2["consumed"] == 0
         assert len(_decisions(spath)) == n_dec          # no dup decisions
         assert len(ppath.read_text().splitlines()) == n_lines  # no dup stamps
@@ -573,7 +580,7 @@ class TestIdempotency:
                                 needs_path=tmp_path / "needs-ledger.jsonl",
                                 now=NOW,
                                 live_rows=live, conn_factory=lambda: conn,
-                                file_need_fn=Recorder())
+                                file_need_fn=Recorder(), posture="sovereign")
         assert s2["applied"] == 0
         assert len(conn.calls) == 1                     # still exactly one
 
@@ -601,7 +608,7 @@ class TestConsumption:
                                 needs_path=tmp_path / "needs-ledger.jsonl",
                                 now=NOW,
                                 live_rows=live, conn_factory=Boom(),
-                                file_need_fn=Recorder())
+                                file_need_fn=Recorder(), posture="sovereign")
         assert s2["pending"] == 0 and s2["consumed"] == 0
 
     def test_unmeasurable_store_consumes_nothing(self, tmp_path, monkeypatch):
@@ -840,7 +847,7 @@ class TestWindowlessProbe:
                                 needs_path=tmp_path / "needs-ledger.jsonl",
                                 now=NOW, live_rows=[], conn_factory=Boom(),
                                 fetch_rows_fn=lambda ids: None,
-                                file_need_fn=Recorder())
+                                file_need_fn=Recorder(), posture="sovereign")
         assert s2["blocked"] == 1
         assert len(_decisions(spath)) == 1
         # probe comes back, rows still live: the pair resolves and applies
@@ -851,7 +858,7 @@ class TestWindowlessProbe:
                                 now=NOW, live_rows=[],
                                 conn_factory=lambda: conn,
                                 fetch_rows_fn=lambda ids: probe_rows,
-                                file_need_fn=Recorder())
+                                file_need_fn=Recorder(), posture="sovereign")
         assert s3["applied"] == 1
         assert conn.calls == [(msa._APPLY_SQL, (2, 1))]
 
@@ -885,7 +892,7 @@ class TestReciprocalPairs:
             live_rows=[_live(2, new, ts=ts)], conn_factory=lambda: conn,
             fetch_rows_fn=lambda ids: [{**_live(1, old, ts=ts),
                                         "superseded_by": "2"}],
-            file_need_fn=Recorder())
+            file_need_fn=Recorder(), posture="sovereign")
         assert s2["applied"] == 0 and s2["refused"] == 1
         assert len(conn.calls) == 1              # no second store write
         latest = msa.compact_soak(msa.read_jsonl(spath))
@@ -915,7 +922,7 @@ class TestBlockedDbDegrade:
                                 needs_path=tmp_path / "needs-ledger.jsonl",
                                 now=NOW, live_rows=live,
                                 conn_factory=failing2,
-                                file_need_fn=Recorder())
+                                file_need_fn=Recorder(), posture="sovereign")
         assert failing2.called is True and s2["blocked"] == 1
         assert len(_decisions(spath)) == 1       # no ledger spam
         # driver lands: the SAME pair resolves and applies
@@ -925,7 +932,7 @@ class TestBlockedDbDegrade:
                                 needs_path=tmp_path / "needs-ledger.jsonl",
                                 now=NOW, live_rows=live,
                                 conn_factory=lambda: conn,
-                                file_need_fn=Recorder())
+                                file_need_fn=Recorder(), posture="sovereign")
         assert s3["applied"] == 1
         assert conn.calls == [(msa._APPLY_SQL, (2, 1))]
         latest = msa.compact_soak(msa.read_jsonl(spath))
@@ -1027,7 +1034,7 @@ class TestHalfSoakCard:
                            config_path=tmp_path / "nope.yml",
                            needs_path=tmp_path / "needs-ledger.jsonl",
                            now=NOW, live_rows=[], conn_factory=Boom(),
-                           file_need_fn=rec2)
+                           file_need_fn=rec2, posture="sovereign")
         assert self._halfway_calls(rec2) == []
 
     def test_not_before_day_seven(self, tmp_path):
@@ -1046,7 +1053,7 @@ class TestHalfSoakCard:
                                 config_path=tmp_path / "nope.yml",
                                 needs_path=tmp_path / "needs-ledger.jsonl",
                                 now=NOW, live_rows=[], conn_factory=Boom(),
-                                file_need_fn=rec)
+                                file_need_fn=rec, posture="sovereign")
         assert s2["halfway_card"] == "NEED-feedbeef"
         assert len(self._halfway_calls(rec)) == 1
 
@@ -1074,7 +1081,7 @@ class TestCueRetry:
                            config_path=tmp_path / "nope.yml",
                            needs_path=tmp_path / "needs-ledger.jsonl",
                            now=NOW, live_rows=live, conn_factory=Boom(),
-                           file_need_fn=rec)
+                           file_need_fn=rec, posture="sovereign")
         assert len(rec.calls) == 1
         d2 = msa.compact_soak(msa.read_jsonl(spath))["sup-cue00006"]
         assert d2["need_id"] == "NEED-feedbeef"
@@ -1084,7 +1091,7 @@ class TestCueRetry:
                            config_path=tmp_path / "nope.yml",
                            needs_path=tmp_path / "needs-ledger.jsonl",
                            now=NOW, live_rows=live, conn_factory=Boom(),
-                           file_need_fn=rec3)
+                           file_need_fn=rec3, posture="sovereign")
         assert rec3.calls == []
         decs = [r for r in msa.read_jsonl(spath)
                 if r.get("proposal_id") == "sup-cue00006"]
@@ -1331,7 +1338,7 @@ class TestBinderFlowEndToEnd:
                       mark_need_fn=real_mark)
         # run 1: the card lands OPEN on the real ledger — no execution
         conn = FakeConn({1: None})
-        s1 = msa.run_apply_pass(now=NOW, conn_factory=lambda: conn, **common)
+        s1 = msa.run_apply_pass(now=NOW, conn_factory=lambda: conn, **common, posture="sovereign")
         assert s1["cue_cards"] == 1 and s1["applied"] == 0
         nid = msa.compact_soak(msa.read_jsonl(spath))["sup-cue00001"][
             "need_id"]
@@ -1343,7 +1350,7 @@ class TestBinderFlowEndToEnd:
         assert row is not None
         assert msa.load_granted_pids(npath) == {"sup-cue00001": nid}
         # run 2: the approval executes, then the receipt closes the need
-        s2 = msa.run_apply_pass(now=NOW, conn_factory=lambda: conn, **common)
+        s2 = msa.run_apply_pass(now=NOW, conn_factory=lambda: conn, **common, posture="sovereign")
         assert s2["applied"] == 1 and conn.live[1] == 2
         final = [r for r in msa.read_jsonl(npath)
                  if r.get("id") == nid][-1]
@@ -1351,7 +1358,7 @@ class TestBinderFlowEndToEnd:
         assert final["marked_by"] == "system:memory-supersession"
         assert msa.load_granted_pids(npath) == {}    # stops growing
         # run 3: closed pair + closed need — nothing re-executes/re-cards
-        s3 = msa.run_apply_pass(now=NOW, conn_factory=Boom(), **common)
+        s3 = msa.run_apply_pass(now=NOW, conn_factory=Boom(), **common, posture="sovereign")
         assert s3["applied"] == 0 and s3["cue_cards"] == 0
         assert len(conn.calls) == 1                  # exactly one UPDATE ever
 
@@ -1379,7 +1386,7 @@ class TestHalfwayVetoBinds:
                       config_path=tmp_path / "nope.yml", needs_path=npath)
         # day 8: the halfway card files on the REAL needs ledger
         s1 = msa.run_apply_pass(now=NOW, live_rows=[], conn_factory=Boom(),
-                                file_need_fn=real_file, **common)
+                                file_need_fn=real_file, **common, posture="sovereign")
         nid = s1["halfway_card"]
         assert nid and nid.startswith("NEED-")
         assert msa.halfway_veto(npath) is None       # not vetoed yet
@@ -1396,7 +1403,7 @@ class TestHalfwayVetoBinds:
         rec2 = Recorder()
         s2 = msa.run_apply_pass(now=later, live_rows=live,
                                 conn_factory=lambda: conn,
-                                file_need_fn=rec2, **common)
+                                file_need_fn=rec2, **common, posture="sovereign")
         assert s2["state"] == "held-by-captain-veto"
         assert s2["veto_need"] == nid
         assert s2["applied"] == 0 and s2["would_apply"] == 1
@@ -1407,7 +1414,7 @@ class TestHalfwayVetoBinds:
         # while denied: never re-filed, marker never duplicated, still held
         s3 = msa.run_apply_pass(now=later + timedelta(days=7),
                                 live_rows=live, conn_factory=lambda: conn,
-                                file_need_fn=rec2, **common)
+                                file_need_fn=rec2, **common, posture="sovereign")
         assert s3["state"] == "held-by-captain-veto"
         assert s3["applied"] == 0 and conn.calls == []
         assert [c for c in rec2.calls
@@ -1421,7 +1428,7 @@ class TestHalfwayVetoBinds:
         assert msa.halfway_veto(npath) is None
         s4 = msa.run_apply_pass(now=later + timedelta(days=7),
                                 live_rows=live, conn_factory=lambda: conn,
-                                file_need_fn=rec2, **common)
+                                file_need_fn=rec2, **common, posture="sovereign")
         assert s4["state"] == "armed" and s4["applied"] == 1
         assert conn.calls == [(msa._APPLY_SQL, (2, 1))]
 
@@ -1439,7 +1446,7 @@ class TestHalfwayVetoBinds:
             config_path=tmp_path / "nope.yml", needs_path=npath, now=NOW,
             live_rows=[], conn_factory=Boom(),
             file_need_fn=lambda kind, **kw: needs.file_need(
-                kind, root=root, **kw))
+                kind, root=root, **kw), posture="sovereign")
         nid = s1["halfway_card"]
         assert needs.mark(nid, "approved_pending_apply", by="binder",
                           root=root) is not None
@@ -1452,7 +1459,7 @@ class TestHalfwayVetoBinds:
             proposals_path=ppath, soak_path=spath,
             config_path=tmp_path / "nope.yml", needs_path=npath,
             now=NOW + timedelta(days=7), live_rows=live,
-            conn_factory=lambda: conn, file_need_fn=Recorder())
+            conn_factory=lambda: conn, file_need_fn=Recorder(), posture="sovereign")
         assert s2["state"] == "armed" and s2["applied"] == 1
 
     def test_gate_state_vetoed_outranks_everything(self):
@@ -1621,3 +1628,139 @@ def test_live_instance_config_is_egg_scrubbed():
     assert twin.exists()
     cfg = yaml.safe_load(twin.read_text())
     assert cfg["auto_apply"] == "soak"      # fresh-captain default = ratified
+
+
+# --------------------------- autonomy-graded action seam (OUTER gate) -------
+# Captain law 2026-07-17: even an ARMED soak only acts when the action seam
+# (framework/authority/action_mode.py) answers an act mode for this organ's
+# apply action. The seam may only TIGHTEN — a "go" never bypasses the
+# soak/hold/veto law, and any narrower posture holds an armed gate. Postures
+# here are always explicit (hermetic; the live instance ruling is never read).
+
+
+class TestActionSeamOuterGate:
+    def _armed_pair(self, tmp_path, posture):
+        old, new = _toks(3, 4)
+        live = [_live(1, old), _live(2, new)]
+        conn = FakeConn({1: None})
+        s, _, spath, _ = _run(tmp_path, [_prop("sup-5ea10001", 1, 2)], live,
+                              soak_rows=ARMED_SEED, conn=conn,
+                              posture=posture)
+        return s, spath, conn
+
+    def test_guardian_holds_an_armed_soak(self, tmp_path):
+        # Yesterday's law would have applied here (day 15, zero reversals,
+        # config soak). Under the seam, guardian = propose: recorded, never
+        # executed — and the state string can satisfy no == "armed" check.
+        s, spath, conn = self._armed_pair(tmp_path, "guardian")
+        assert s["state"] == "held-by-action-seam"
+        assert s["action_mode"] == "propose"
+        assert s["applied"] == 0 and s["would_apply"] == 1
+        assert conn.calls == []                  # store never touched
+        by_pid = {d["proposal_id"]: d for d in _decisions(spath)}
+        assert by_pid["sup-5ea10001"]["decision"] == "would_apply"
+
+    def test_earn_up_holds_an_armed_soak(self, tmp_path):
+        s, _, conn = self._armed_pair(tmp_path, "earn_up")
+        assert s["state"] == "held-by-action-seam"
+        assert s["applied"] == 0 and conn.calls == []
+
+    def test_sovereign_armed_soak_still_applies(self, tmp_path):
+        # The seam permits; the EXISTING law then decides — and does apply.
+        s, _, conn = self._armed_pair(tmp_path, "sovereign")
+        assert s["state"] == "armed" and s["action_mode"] == "go"
+        assert s["applied"] == 1 and len(conn.calls) == 1
+
+    def test_sovereign_plus_unarmed_soak_still_refuses(self, tmp_path):
+        # THE tighten-only pin: a wide posture can never bypass the soak
+        # clock. Day 0, sovereign — records would_apply, applies nothing.
+        old, new = _toks(3, 4)
+        live = [_live(1, old), _live(2, new)]
+        conn = FakeConn({1: None})
+        s, _, spath, _ = _run(tmp_path, [_prop("sup-5ea10002", 1, 2)], live,
+                              conn=conn, posture="sovereign")
+        assert s["state"] == "soak" and s["action_mode"] == "go"
+        assert s["applied"] == 0 and s["would_apply"] == 1
+        assert conn.calls == []
+        by_pid = {d["proposal_id"]: d for d in _decisions(spath)}
+        assert by_pid["sup-5ea10002"]["decision"] == "would_apply"
+
+    def test_sovereign_plus_hold_config_still_holds(self, tmp_path):
+        old, new = _toks(3, 4)
+        live = [_live(1, old), _live(2, new)]
+        conn = FakeConn({1: None})
+        s, _, _, _ = _run(tmp_path, [_prop("sup-5ea10003", 1, 2)], live,
+                          soak_rows=ARMED_SEED, config="auto_apply: hold\n",
+                          conn=conn, posture="sovereign")
+        assert s["state"] == "hold"
+        assert s["applied"] == 0 and conn.calls == []
+
+    def test_seam_hold_never_widens_and_only_narrows_armed(self):
+        go = {"mode": "go", "captain_card": False}
+        act = {"mode": "act_tell", "captain_card": False}
+        ask = {"mode": "propose", "captain_card": False}
+        # Captain veto / hold / soak pass through UNTOUCHED whatever the seam
+        # says — the outer gate can only tighten, never lift.
+        for state in ("held-by-captain-veto", "hold", "soak"):
+            for disp in (go, act, ask, {}):
+                assert msa.seam_hold(state, disp) == state
+        # armed: act modes pass, anything else (or garbage) holds.
+        assert msa.seam_hold("armed", go) == "armed"
+        assert msa.seam_hold("armed", act) == "armed"
+        assert msa.seam_hold("armed", ask) == "held-by-action-seam"
+        assert msa.seam_hold("armed", {}) == "held-by-action-seam"
+        assert msa.seam_hold("armed", {"mode": "GO"}) == "held-by-action-seam"
+
+    def test_broken_seam_fails_closed_even_under_sovereign(
+            self, tmp_path, monkeypatch):
+        # An unimportable/raising seam must HOLD an armed gate, not crash
+        # and not fall open — posture cannot rescue a broken law module.
+        import types
+        stub = types.ModuleType("framework.authority.action_mode")
+
+        def _boom(*a, **k):
+            raise RuntimeError("seam down")
+        stub.action_decision = _boom
+        stub.MODES = frozenset({"propose", "act_tell", "go"})
+        monkeypatch.setitem(
+            sys.modules, "framework.authority.action_mode", stub)
+        assert msa.action_seam_disposition("sovereign") == {
+            "mode": "propose", "captain_card": False}
+        s, _, conn = self._armed_pair(tmp_path, "sovereign")
+        assert s["state"] == "held-by-action-seam"
+        assert s["applied"] == 0 and conn.calls == []
+
+    def test_disposition_fails_closed_on_garbage_posture(self):
+        assert msa.action_seam_disposition("Sovereign!!") == {
+            "mode": "propose", "captain_card": False}
+
+    def test_apply_action_descriptor_shape_pinned(self):
+        # ring 2 (runtime organ plane — never a Ring-0 category), honest
+        # reversibility, and the REGISTERED undo handle act_tell requires.
+        assert msa._APPLY_ACTION["ring"] == 2
+        assert msa._APPLY_ACTION["reversibility"] == "reversible"
+        assert msa._APPLY_ACTION["category"] == "memory-supersede-apply"
+        assert "--undo" in msa._APPLY_ACTION["undo_handle"]
+        # a Ring-0 category here would captain-card every disposition — the
+        # seam itself pins that; this pin keeps the descriptor honest.
+        assert msa.action_seam_disposition("sovereign")["captain_card"] is False
+
+    def test_report_and_render_carry_the_seam_verdict(self, tmp_path):
+        spath = tmp_path / "soak.jsonl"
+        _write_jsonl(spath, ARMED_SEED)
+        rep = msa.build_report(proposals_path=tmp_path / "p.jsonl",
+                               soak_path=spath,
+                               config_path=tmp_path / "nope.yml",
+                               needs_path=tmp_path / "needs-ledger.jsonl",
+                               now=NOW, posture="guardian")
+        assert rep["state"] == "held-by-action-seam"
+        assert rep["action_mode"] == "propose"
+        text = msa.render_report(rep)
+        assert "held-by-action-seam" in text
+        assert "action-mode=propose" in text
+        rep2 = msa.build_report(proposals_path=tmp_path / "p.jsonl",
+                                soak_path=spath,
+                                config_path=tmp_path / "nope.yml",
+                                needs_path=tmp_path / "needs-ledger.jsonl",
+                                now=NOW, posture="sovereign")
+        assert rep2["state"] == "armed" and rep2["action_mode"] == "go"
