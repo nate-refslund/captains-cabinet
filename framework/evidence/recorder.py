@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from .redaction import contains_secret_shape, sanitize
+from .signing import resolve_signer
 from .verifier import TRIAL_ID_RE, verify_trial
 
 EVENT_SCHEMA = "cabinet.evidence-event/v1"
@@ -255,7 +256,19 @@ class EvidenceRecorder:
         _secure_dir(self.root / "trials")
         _secure_dir(self.root / "purge-receipts")
         _secure_dir(self.root / "exports")
-        self._key = self._load_or_create_key()
+        # HP-1 signer seam: with no signing config (the default) this is a
+        # LocalKeySigner over the store's own key — byte-identical pre-seam
+        # behavior; a ceremony-armed broker config routes every signature
+        # through the out-of-process key holder, fail-closed (never a local
+        # fallback).  Threat model + residuals: framework/evidence/signing.py.
+        self._signer = resolve_signer(
+            self.root, key_loader=self._load_or_create_key, error_cls=EvidenceError
+        )
+        # Local-mode key handle for the captain-capability token seam
+        # (framework/evidence/__main__.py).  Broker custody deliberately
+        # leaves it None: token minting moves behind the broker user at the
+        # HP-1 deploy ceremony.
+        self._key = getattr(self._signer, "key", None)
         self._ensure_control()
         self.control()
         self.recover_purges()
@@ -310,7 +323,7 @@ class EvidenceRecorder:
     def _write_control(self, payload: dict[str, Any]) -> None:
         signed = {
             **payload,
-            "control_signature": _object_signature(self._key, "control", payload),
+            "control_signature": self._signer.object_signature("control", payload),
         }
         _atomic_json(self.root / "control.json", signed)
 
@@ -327,8 +340,7 @@ class EvidenceRecorder:
             raise EvidenceError("control_invalid", "Evidence controls are invalid.")
         supplied = value.get("control_signature")
         payload = {name: item for name, item in value.items() if name != "control_signature"}
-        expected = _object_signature(self._key, "control", payload)
-        if not isinstance(supplied, str) or not hmac.compare_digest(supplied, expected):
+        if not isinstance(supplied, str) or not self._signer.verify_object("control", payload, supplied):
             raise EvidenceError("control_signature", "Evidence controls failed integrity verification.")
         return value
 
@@ -441,8 +453,7 @@ class EvidenceRecorder:
                 )
             supplied = receipt.get("receipt_signature")
             payload = {key: value for key, value in receipt.items() if key != "receipt_signature"}
-            expected = _object_signature(self._key, "purge", payload)
-            if not isinstance(supplied, str) or not hmac.compare_digest(supplied, expected):
+            if not isinstance(supplied, str) or not self._signer.verify_object("purge", payload, supplied):
                 raise EvidenceError(
                     "purge_receipt_integrity",
                     "A matching evidence purge receipt failed verification; the trial remains closed.",
@@ -594,7 +605,7 @@ class EvidenceRecorder:
             "event_signature": event["signature"],
             "updated_at": _utc_now(),
         }
-        return {**payload, "anchor_signature": _object_signature(self._key, "anchor", payload)}
+        return {**payload, "anchor_signature": self._signer.object_signature("anchor", payload)}
 
     def _write_exact_event(self, trial: Path, event: dict[str, Any]) -> None:
         path = trial / "events.jsonl"
@@ -632,8 +643,9 @@ class EvidenceRecorder:
         supplied_hash = event.get("event_hash")
         unsigned = {name: value for name, value in event.items() if name not in {"event_hash", "signature"}}
         computed_hash = _digest(unsigned)
-        expected_signature = _event_signature(self._key, trial_id, int(event.get("sequence", 0)), computed_hash)
-        if supplied_hash != computed_hash or not hmac.compare_digest(str(event.get("signature", "")), expected_signature):
+        if supplied_hash != computed_hash or not self._signer.verify_event(
+            trial_id, int(event.get("sequence", 0)), computed_hash, str(event.get("signature", ""))
+        ):
             raise EvidenceError("pending_signature", "The evidence write-ahead signature is invalid.")
         self._trim_partial_tail(trial)
         result = verify_trial(self.root, trial_id, require_anchor=False)
@@ -752,7 +764,7 @@ class EvidenceRecorder:
             }
             event_hash = _digest(event)
             event["event_hash"] = event_hash
-            event["signature"] = _event_signature(self._key, context.trial_id, sequence, event_hash)
+            event["signature"] = self._signer.event_signature(context.trial_id, sequence, event_hash)
             _atomic_json(trial / "pending.json", {"schema": "cabinet.evidence-pending/v1", "event": event})
             self._write_exact_event(trial, event)
             _atomic_json(trial / "anchor.json", self._anchor(event))
@@ -1064,7 +1076,7 @@ class EvidenceRecorder:
         }
 
     def _signed_receipt(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return {**payload, "receipt_signature": _object_signature(self._key, "purge", payload)}
+        return {**payload, "receipt_signature": self._signer.object_signature("purge", payload)}
 
     def purge_trial(self, trial_id: str, *, confirmation: str, actor: str) -> dict[str, Any]:
         if actor != "captain":
@@ -1118,9 +1130,7 @@ class EvidenceRecorder:
                 raise EvidenceError("purge_receipt_integrity", "An evidence purge receipt is invalid.")
             supplied = receipt.get("receipt_signature")
             payload = {key: value for key, value in receipt.items() if key != "receipt_signature"}
-            if not isinstance(supplied, str) or not hmac.compare_digest(
-                supplied, _object_signature(self._key, "purge", payload)
-            ):
+            if not isinstance(supplied, str) or not self._signer.verify_object("purge", payload, supplied):
                 raise EvidenceError(
                     "purge_receipt_integrity",
                     "An evidence purge receipt failed integrity verification.",

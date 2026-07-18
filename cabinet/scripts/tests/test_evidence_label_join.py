@@ -52,9 +52,12 @@ _OFFICER = {"kind": "officer", "id": "tb-cos"}
 _COMPONENT = {"name": "testburg-exec", "version": "1"}
 
 # The label detail keys that ARE in the officer projection allow-list
-# (recorder.PROJECTION_ALLOWED_DETAIL) vs the ones that must stay redacted.
+# (recorder.PROJECTION_ALLOWED_DETAIL) vs the ones that must stay redacted
+# (label_channel = the HP-3 channel attestation — hash-covered in the store,
+# never officer-projected).
 _LABEL_DETAIL_SERVED = {"action", "result_code"}
-_LABEL_DETAIL_REDACTED = {"source", "basis", "jid", "session", "note"}
+_LABEL_DETAIL_REDACTED = {"source", "basis", "jid", "session", "note",
+                          "label_channel"}
 
 
 def _seed_producer_trial(rec: EvidenceRecorder, trial_id: str) -> str:

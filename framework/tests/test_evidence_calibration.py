@@ -74,14 +74,15 @@ def _seed_trial(rec: EvidenceRecorder, trial_id: str,
 def _label(store: Path, rec: EvidenceRecorder, journal: Path, trial_id: str,
            verdict: str, ts: str | None = None) -> dict:
     """Land a Captain label through the PRODUCTION path (write_label +
-    label_digest_record) and append the digest row to the scratch journal.
+    label_digest_record, channel-attested per HP-3 — the writer refuses
+    unattested contexts) and append the digest row to the scratch journal.
     `ts` overrides only the JOURNAL row's ts (the window filter's clock)."""
     cand = gr.classify_trial(gr._read_raw_events(store, trial_id))
     cand["trial_id"] = trial_id
     events = gr.write_label(rec, trial_id, verdict, "", cand,
-                            session="cal-test")
+                            session="cal-test", channel=gr.CHANNEL_TTY)
     digest = gr.label_digest_record("cal-test", trial_id, verdict, cand,
-                                    events)
+                                    events, channel=gr.CHANNEL_TTY)
     if ts is not None:
         digest["ts"] = ts
     gr._append_journal_line(journal, digest)
@@ -94,7 +95,8 @@ def _fake_digest(journal: Path, trial_id: str, verdict: str,
     gr._append_journal_line(journal, {
         "schema": ec.LABEL_DIGEST_SCHEMA, "ts": ts, "session": "cal-test",
         "trial_id": trial_id, "verdict": verdict, "basis": "self_asserted",
-        "event_ids": ["evd-fake"], "event_hashes": hashes,
+        "channel": gr.CHANNEL_TTY,  # attested CLAIM — the store re-check
+        "event_ids": ["evd-fake"], "event_hashes": hashes,  # must catch it
     })
 
 
@@ -511,7 +513,16 @@ def test_shadow_zero_callers_and_never_a_score():
                # The docs-sweep glob list names the report/series runtime
                # paths so the runbook may cite them — patterns, never a
                # consumer.
-               "cabinet/scripts/docs-sweep-allowlist.txt"}
+               "cabinet/scripts/docs-sweep-allowlist.txt",
+               # HP-3 (2026-07-18): the label-channel test drives the
+               # fail-closed pairing seams — a test, never a consumer.
+               "cabinet/scripts/tests/test_label_channel_auth.py",
+               # HP-1/2/3 integration docs (2026-07-18): the amendment
+               # contract and the deploy-ceremony hand-off name the module
+               # in prose (fail-closed pairing law, exit checks) — Captain
+               # documents, never consumers.
+               "docs/proposals/germline-amendment-evidence-hp-2026-07-17.md",
+               "docs/runbooks/evidence-hp-deploy.md"}
     needles = (b"evidence_calibration", b"evidence-calibration")
     hits: set[str] = set()
     for rel in _tracked_files(ROOT):

@@ -383,6 +383,7 @@ def test_proposals_non_amendments_archived_amendments_kept(export: Path):
             "germline-amendment-cosmetic-batch-2026-07-07.md",
             "germline-amendment-de-nate-2026-07-05.md",
             "germline-amendment-egress-launchd-owner-2026-07-15.md",
+            "germline-amendment-evidence-hp-2026-07-17.md",
             "germline-amendment-evidence-phase1-2026-07-16.md",
             "germline-amendment-evidence-phase2a-2026-07-17.md",
             "germline-amendment-evidence-phase2b-2026-07-17.md",

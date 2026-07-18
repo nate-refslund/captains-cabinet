@@ -651,3 +651,147 @@ class TestShadowProof:
         assert "HP-1" in text
         assert "necessary, not sufficient" in text
         assert "report-only" in text.lower()
+
+
+# ---------------------------------------------------------------------------
+# HP-2 — the independent-recompute third leg (evt-recompute day trials)
+# ---------------------------------------------------------------------------
+
+
+def _forge_recompute_event(store: Path, *, agreement: str,
+                           jid: str | None = None,
+                           row_sha: str | None = None) -> None:
+    """Append one recompute verification event the way the HP-2 verifier
+    writes them (public recorder API, own day trial) — by SHAPE, so this
+    proof consumes no module import (the join contract is the event bytes,
+    not code coupling)."""
+    rec = EvidenceRecorder(store)
+    trial_id = f"evt-recompute-{_today8()}"
+    detail: dict = {
+        "action": "recompute_verification",
+        "target": "act_ttl_ok",
+        "agreement": agreement,
+        "claim": "ok",
+        "rederived": "failed" if agreement == "disagree" else "ok",
+        "claim_sha256": "c" * 64,
+    }
+    if jid:
+        detail["jid"] = jid
+    if row_sha:
+        detail["row_sha256"] = row_sha
+    status = {"agree": "verified", "disagree": "unverified"}.get(
+        agreement, "skipped")
+    ctx = rec.trace(trial_id, surface="system")
+    rec.append(ctx, phase="verification", status=status,
+               actor={"kind": "system", "id": "evidence-recompute"},
+               component={"name": "evidence-recompute", "version": "1"},
+               detail=detail, links=[f"undo-journal:{jid}"] if jid else [])
+
+
+class TestRecomputeThirdLeg:
+    def test_agree_satisfies_third_leg_and_reaches_attestation(self, planes):
+        """HP-2: a recompute-agree event joined by jid satisfies signal 3
+        and the ladder advances to the attestation rung (production mirror
+        receipts are unattested today) — exactly the anchored-label arc."""
+        jid = "j-tb-rc"
+        _emit_fuel_row(0, refs=[f"undo-journal:{jid}"])
+        _fill_cell()
+        _forge_recompute_event(planes.store, agreement="agree", jid=jid)
+        report = _check(planes)
+        row = _only_row(report)
+        assert row["signals"]["third_leg"] == "independent_recompute"
+        assert row["verdict"] == "unknown:attestation_absent"
+        assert report["summary"]["recompute"] == {
+            "events": 1, "disagree_events": 0}
+
+    def test_agree_with_attested_receipt_is_grounded(self, planes):
+        """End to end: consistent planes + an attested receipt + a
+        recompute-agree third leg => grounded (the HP-2 deliverable —
+        recompute events SATISFY the third-leg signal)."""
+        jid = "j-tb-rc-g"
+        fuel = _fuel_row_kwargs(0, refs=[
+            f"evidence-trial:{_day_trial()}", f"undo-journal:{jid}"])
+        _hand_append(planes.events, fuel)
+        for i in range(1, 10):
+            _hand_append(planes.events, {
+                **_fuel_row_kwargs(i), "review": None, "refs": []})
+        _forge_receipt(planes.store, fuel, attested=True)
+        _forge_recompute_event(planes.store, agreement="agree", jid=jid)
+        row = _only_row(_check(planes))
+        assert row["verdict"] == "grounded", row
+        assert row["signals"]["third_leg"] == "independent_recompute"
+
+    def test_disagree_is_ungrounded_and_surfaced(self, planes):
+        jid = "j-tb-rc-d"
+        _emit_fuel_row(0, refs=[f"undo-journal:{jid}"])
+        _fill_cell()
+        _forge_recompute_event(planes.store, agreement="disagree", jid=jid)
+        report = _check(planes)
+        row = _only_row(report)
+        assert row["verdict"] == "ungrounded:recompute_contradicts_claim"
+        assert row["signals"]["third_leg"] == "recompute_disagree"
+        # an affirmative re-derivation conflict, NOT a tamper claim by
+        # itself (the raw artifacts may have legitimately moved)
+        assert row["tamper_shaped"] is False
+        assert row["would_withhold"] is True
+        assert report["summary"]["recompute"] == {
+            "events": 1, "disagree_events": 1}
+
+    def test_disagree_wins_over_agree_on_the_same_row(self, planes):
+        jid = "j-tb-rc-b"
+        _emit_fuel_row(0, refs=[f"undo-journal:{jid}"])
+        _fill_cell()
+        _forge_recompute_event(planes.store, agreement="agree", jid=jid)
+        _forge_recompute_event(planes.store, agreement="disagree", jid=jid)
+        row = _only_row(_check(planes))
+        assert row["verdict"] == "ungrounded:recompute_contradicts_claim"
+
+    def test_join_by_row_sha_when_no_jid(self, planes):
+        emitted = _emit_fuel_row(0)
+        _fill_cell()
+        _forge_recompute_event(
+            planes.store, agreement="agree",
+            row_sha=evidence_mirror._canonical_sha256(emitted))
+        row = _only_row(_check(planes))
+        assert row["signals"]["third_leg"] == "independent_recompute"
+
+    def test_anchored_label_outranks_recompute_disagree(self, planes):
+        """Anchored Captain labels stay ranked FIRST — a recompute
+        contradiction never demotes a Captain-labeled row's third leg
+        (the disagree stays weekly-review information in the verifier's
+        own report)."""
+        jid = "j-tb-rc-l"
+        _emit_fuel_row(0, refs=[f"undo-journal:{jid}"])
+        _fill_cell()
+        _forge_label(planes.store, _day_trial(), jid=jid,
+                     journal=planes.journal)
+        _forge_recompute_event(planes.store, agreement="disagree", jid=jid)
+        row = _only_row(_check(planes))
+        assert row["signals"]["third_leg"] == "human_label_row"
+        assert row["verdict"] != "ungrounded:recompute_contradicts_claim"
+
+    def test_absent_events_leave_the_report_byte_identical_shape(self, planes):
+        """Dark by default: zero recompute events => the pre-HP-2 verdict
+        strings verbatim and NO recompute block in the summary."""
+        _emit_fuel_row(0)
+        _fill_cell()
+        report = _check(planes)
+        row = _only_row(report)
+        assert row["verdict"] == "unknown:third_leg_absent"
+        assert row["signals"]["third_leg"] == "absent"
+        assert "recompute" not in report["summary"]
+        assert "recompute" not in report["weekly_line"]
+
+    def test_underivable_events_index_nothing(self, planes):
+        """An honest skip neither satisfies nor contradicts the third leg —
+        and renders no summary block (absence alone renders nothing)."""
+        jid = "j-tb-rc-u"
+        _emit_fuel_row(0, refs=[f"undo-journal:{jid}"])
+        _fill_cell()
+        _forge_recompute_event(planes.store,
+                               agreement="underivable:artifact-unavailable",
+                               jid=jid)
+        report = _check(planes)
+        row = _only_row(report)
+        assert row["verdict"] == "unknown:third_leg_absent"
+        assert "recompute" not in report["summary"]

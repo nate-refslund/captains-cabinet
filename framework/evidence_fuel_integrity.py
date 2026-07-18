@@ -400,6 +400,104 @@ def _has_unanchored_label(events: list[dict[str, Any]] | None) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Third leg (alternate) — the HP-2 independent recompute leg: verification
+# events a SEPARATE producer identity appends to its own ``evt-recompute-*``
+# day trials after re-deriving the outcome from raw artifacts (undo-journal
+# bytes, gate pack bytes, the ledger).  Honesty (A5/HP-1): a different
+# producer identity but the SAME OS user until HP-1 lands — corroboration
+# by re-derivation, not by trust-domain boundary.  Absent events leave every
+# existing verdict byte-identical (dark by default).
+# ---------------------------------------------------------------------------
+
+RECOMPUTE_ACTION = "recompute_verification"
+RECOMPUTE_TRIAL_CLASS = "recompute"
+
+#: Bound on the recompute-trial day scan (an extreme explicit ``--since``
+#: must not turn the join into an unbounded store probe; the default
+#: window is STATUS_MAX_AGE_DAYS and never comes near it).
+_RECOMPUTE_MAX_SCAN_DAYS = 400
+
+
+def _recompute_day_trials(day8: str) -> list[str]:
+    """Every recompute day-trial id for one day (base + chain segments) —
+    naming reused from the mirror (the join's single source of truth)."""
+    return [
+        evidence_mirror._trial_id(RECOMPUTE_TRIAL_CLASS, segment, day8)
+        for segment in range(evidence_mirror.MAX_CHAIN_SEGMENTS)
+    ]
+
+
+def _recompute_window_days(since: str, now: datetime) -> list[str]:
+    """Every yyyymmdd from (since-day − 1) through (today + 1), bounded.
+
+    Recompute events land in the verifier's OWN day trial on the day the
+    verifier RAN (wall clock) — for an outcome checked days after it
+    landed that is far from the row's ts, so the join scans the whole
+    report window, never ts-day ±1 (which would silently miss every
+    event minted after the TTL elapsed)."""
+    end = now + timedelta(days=1)
+    start: datetime | None = None
+    start_day = _day8(since)
+    if start_day is not None:
+        try:
+            start = datetime.strptime(start_day, "%Y%m%d").replace(
+                tzinfo=timezone.utc) - timedelta(days=1)
+        except ValueError:
+            start = None
+    if start is None or (end - start).days > _RECOMPUTE_MAX_SCAN_DAYS:
+        start = end - timedelta(days=_RECOMPUTE_MAX_SCAN_DAYS)
+    days: list[str] = []
+    cursor = start
+    while cursor.date() <= end.date():
+        days.append(cursor.strftime("%Y%m%d"))
+        cursor += timedelta(days=1)
+    return days
+
+
+def _recompute_index(reader: _StoreReader,
+                     trial_ids: list[str]) -> dict[str, Any]:
+    """jid / row_sha256 -> recompute verification entries from VERIFIED
+    trials only.  ``underivable:*`` events index nothing — an honest skip
+    neither satisfies nor contradicts the third leg."""
+    by_jid: dict[str, list[dict[str, Any]]] = {}
+    by_sha: dict[str, list[dict[str, Any]]] = {}
+    event_ids: set[str] = set()
+    disagree_ids: set[str] = set()
+    for trial_id in trial_ids:
+        state, events = reader.state(trial_id)
+        if state != "ok":
+            continue
+        for event in events:
+            detail = event.get("detail")
+            if not isinstance(detail, dict):
+                continue
+            if detail.get("action") != RECOMPUTE_ACTION:
+                continue
+            agreement = detail.get("agreement")
+            if agreement not in ("agree", "disagree"):
+                continue
+            event_id = str(event.get("event_id") or "")
+            entry = {
+                "trial_id": trial_id,
+                "event_id": event_id,
+                "agreement": agreement,
+                "target": detail.get("target"),
+            }
+            if event_id:
+                event_ids.add(event_id)
+                if agreement == "disagree":
+                    disagree_ids.add(event_id)
+            jid = detail.get("jid")
+            if isinstance(jid, str) and jid:
+                by_jid.setdefault(jid, []).append(entry)
+            sha = detail.get("row_sha256")
+            if isinstance(sha, str) and sha:
+                by_sha.setdefault(sha, []).append(entry)
+    return {"by_jid": by_jid, "by_sha": by_sha,
+            "events": len(event_ids), "disagree_events": len(disagree_ids)}
+
+
+# ---------------------------------------------------------------------------
 # Degradation triage — NOISE only with affirmative evidence.
 # ---------------------------------------------------------------------------
 
@@ -499,6 +597,7 @@ def _compute_cells(rows: list[dict[str, Any]]) -> dict[tuple, dict[str, Any]]:
 def _evaluate_row(row: dict[str, Any], *, reader: _StoreReader,
                   receipts: dict[str, dict[str, Any]],
                   labels: dict[str, Any],
+                  recompute: dict[str, Any],
                   degradations: list[dict[str, Any]],
                   cells: dict[tuple, dict[str, Any]]) -> dict[str, Any]:
     signals: dict[str, Any] = {
@@ -574,10 +673,27 @@ def _evaluate_row(row: dict[str, Any], *, reader: _StoreReader,
         anchored_by_jid = any(jid in labels["by_jid"] for jid in jids)
         anchored_on_trial = bool(
             last_claimed and labels["by_trial"].get(last_claimed))
+        recompute_hits = [
+            hit for jid in jids for hit in recompute["by_jid"].get(jid, ())]
+        if not recompute_hits:
+            recompute_hits = list(recompute["by_sha"].get(_row_sha256(row), ()))
         if anchored_by_jid:
             signals["third_leg"] = "human_label_row"
         elif anchored_on_trial:
             signals["third_leg"] = "human_label_trial"
+        elif any(h["agreement"] == "disagree" for h in recompute_hits):
+            # DISAGREE WINS (fail-closed): any recompute contradiction on
+            # this row's join keys surfaces, even next to a later agree —
+            # an affirmative re-derivation conflict is weekly-review
+            # information, never averaged away.  Not tamper-shaped by
+            # itself (the raw artifacts may have legitimately moved).
+            signals["third_leg"] = "recompute_disagree"
+            verdict = "ungrounded:recompute_contradicts_claim"
+        elif recompute_hits:
+            # HP-2: an independent re-derivation from raw artifacts agrees
+            # with the claimed outcome — the third leg is satisfied (ranked
+            # BELOW anchored Captain labels, above everything else).
+            signals["third_leg"] = "independent_recompute"
         else:
             trial_events = None
             if last_claimed is not None:
@@ -718,9 +834,21 @@ def check_fuel_integrity(
                    else _repo_root().joinpath(*evidence_mirror._MARKER_REL))
     degradations = _load_jsonl(marker_path)
 
+    # HP-2 third-leg join: recompute verification trials are scanned over
+    # the whole window's day range (the verifier writes on its RUN day).
+    # Zero fuel rows => zero scans; zero events => the empty index leaves
+    # every verdict byte-identical (dark by default).
+    recompute_trials: list[str] = []
+    if fuel_rows:
+        for day in _recompute_window_days(since, now):
+            for trial_id in _recompute_day_trials(day):
+                recompute_trials.append(trial_id)
+    recompute = _recompute_index(reader, recompute_trials)
+
     row_reports = [
         _evaluate_row(row, reader=reader, receipts=receipts, labels=labels,
-                      degradations=degradations, cells=cells)
+                      recompute=recompute, degradations=degradations,
+                      cells=cells)
         for row in fuel_rows
     ]
 
@@ -773,6 +901,15 @@ def check_fuel_integrity(
         "shadow": True,
         "honest_claim": HONEST_CLAIM,
     }
+    if recompute["events"]:
+        # Present ONLY when recompute verification events exist in the
+        # window — an absent block keeps the zero-events report
+        # byte-identical to the pre-HP-2 shape (dark by default). COUNTS,
+        # never rates (never-a-score).
+        summary["recompute"] = {
+            "events": recompute["events"],
+            "disagree_events": recompute["disagree_events"],
+        }
     report = {
         "schema": SCHEMA,
         "ts": summary["ts"],

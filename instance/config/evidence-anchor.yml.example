@@ -25,9 +25,13 @@
 # skips without a network attempt. Default: true.
 #telegram: true
 
-# Captain-label surfaces whose digests ride the daily anchor record (the
-# HP-3 precursor: label digests land off-store daily, so later label
-# authentication has an external anchor to check against). Repo-relative or
+# Captain-label surfaces whose digests ride the daily anchor record (HP-3:
+# label digests land off-store daily, and `evidence-anchor.py
+# --recount-labels` proves the label journal append-only against this
+# anchored history + cross-joins it with the store). Tamper-EVIDENT, not
+# tamper-proof: until the HP-1 key-isolation ceremony a same-OS-user can
+# forge store events and the un-anchored journal tail together; root can
+# forge everything. Repo-relative or
 # absolute; absent files are recorded as null digests. Default: the four
 # Captain-law ledgers plus the governance-review label journal below.
 #captain_label_files:

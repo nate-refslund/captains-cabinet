@@ -18,6 +18,11 @@ Design rules (whole-cabinet evidence design 2026-07-16, Phase 1 items 5+6):
   ``purge-receipts/*.json``. It NEVER opens ``.signing-key`` and never runs
   the verifier (verification advances watermarks — a side effect a read-only
   anchor job must not have).
+* The HP-3 label re-count (:func:`recount_labels`) additionally PARSES
+  event rows — read-only, for hash-membership joins only; payloads are
+  never exported, ``.signing-key`` is never opened, and the verifier is
+  still never run (the VERIFIED leg over the same join belongs to the
+  Phase-4 calibration shadow, which sanctions the watermark side effect).
 * Content-free export. Anchor records carry trial ids, sequence numbers,
   hashes, HMAC signatures' file digests, and counts — no event payloads.
 * No environment coupling. Every path is an explicit argument; this module
@@ -473,3 +478,289 @@ def receipt_text(
     skipped_text = ", ".join(skipped) if skipped else "none"
     lines.append(f"Record {digest}… · stored: {exported_text} · skipped: {skipped_text}")
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# HP-3 label re-count — append-only proof + store cross-join (read-only)
+# ---------------------------------------------------------------------------
+
+LABELS_JOURNAL_BASENAME = "governance-labels.jsonl"
+# Deliberate duplicates of the Captain CLI's literals (this module shares no
+# code with cabinet/scripts/governance-review.py by design — verifier-style);
+# pinned equal by cabinet/scripts/tests/test_label_channel_auth.py.
+LABEL_DIGEST_SCHEMA = "cabinet.governance-label-digest/v1"
+LABEL_ACTION_MARKER = "governance_review_label"
+LABEL_HUMAN_SOURCE = "verdict_human"
+LABEL_CHANNEL_JOURNAL_KEY = "channel"       # journal digest-row mirror key
+LABEL_CHANNEL_DETAIL_KEY = "label_channel"  # store-event detail key
+RECOUNT_SCHEMA = "cabinet.evidence-label-recount/v1"
+
+
+def _newline_prefix_digests(data: bytes) -> dict[str, int]:
+    """{sha256hex: byte_length} for every newline-boundary prefix of the
+    journal, the empty prefix and the whole file included.
+
+    collect_anchor records the journal's whole-file sha256 WITHOUT a byte
+    length, so append-only verification must scan candidate prefixes; label
+    journals are small and Captain-append-bounded (a hard per-session label
+    cap), so the scan is cheap. Journal lines are written newline-terminated
+    in one append each, so every historical anchor point is a newline
+    boundary; the whole-file digest is included as well so an anchor taken
+    against the exact current bytes always matches."""
+    digests: dict[str, int] = {hashlib.sha256(b"").hexdigest(): 0}
+    running = hashlib.sha256()
+    start = 0
+    while True:
+        cut = data.find(b"\n", start)
+        if cut == -1:
+            break
+        running.update(data[start:cut + 1])
+        digests.setdefault(running.copy().hexdigest(), cut + 1)
+        start = cut + 1
+    if start < len(data):
+        running.update(data[start:])
+        digests.setdefault(running.hexdigest(), len(data))
+    return digests
+
+
+def _purge_receipt_named(store_root: Path | str, trial_id: str) -> bool:
+    """Purge-receipt name check (check_anchor's rule, applied store-side):
+    a receipt file ``purge-<sha16(trial)>-*.json`` excuses a missing trial."""
+    receipts_dir = Path(store_root) / "purge-receipts"
+    if not receipts_dir.is_dir():
+        return False
+    prefix = ("purge-"
+              + hashlib.sha256(trial_id.encode("utf-8")).hexdigest()[:16]
+              + "-")
+    try:
+        return any(
+            path.name.startswith(prefix)
+            for path in receipts_dir.glob("purge-*.json")
+            if not path.is_symlink() and path.is_file())
+    except OSError:
+        return False
+
+
+def _parse_jsonl_dicts(data: bytes) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for raw in data.split(b"\n"):
+        if not raw.strip():
+            continue
+        try:
+            row = json.loads(raw)
+        except (UnicodeDecodeError, ValueError):
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
+
+
+def _raw_trial_events(store_root: Path | str,
+                      trial_id: str) -> list[dict[str, Any]] | None:
+    """Raw rows of one trial ledger; ``None`` when the trial dir is absent.
+
+    RAW means hash-membership data only: no signature check, no signing
+    key, no verifier (verify advances watermarks — a side effect this
+    read-only verb must not have). Detecting a FORGED-but-hash-consistent
+    store event is therefore out of scope here; the verified leg over the
+    same join is the calibration shadow's verify_pairs."""
+    if not _TRIAL_DIR_RE.fullmatch(trial_id):
+        return None
+    trial_dir = Path(store_root) / "trials" / trial_id
+    if trial_dir.is_symlink() or not trial_dir.is_dir():
+        return None
+    ledger = trial_dir / "events.jsonl"
+    try:
+        if ledger.is_symlink() or not ledger.is_file():
+            return []
+        data = ledger.read_bytes()
+    except OSError:
+        return []
+    return _parse_jsonl_dicts(data)
+
+
+def recount_labels(
+    journal_path: Path | str | None,
+    anchor_records: list[dict[str, Any]],
+    *,
+    store_root: Path | str | None = None,
+    journal_name: str = LABELS_JOURNAL_BASENAME,
+) -> dict[str, Any]:
+    """HP-3 re-count: prove the label journal append-only against the FULL
+    anchor history and cross-join it with the evidence store. Read-only
+    everywhere; returns a drill-style result (never raises on data trouble).
+
+    Two legs:
+
+    * APPEND-ONLY PROOF — every historically anchored sha256 of the journal
+      (``record.captain_labels[<journal_name>]`` across ``anchor_records``,
+      oldest first) must match some newline-boundary prefix of the CURRENT
+      journal, with matched prefix lengths monotonically nondecreasing over
+      anchor time. A digest with no matching prefix means rows were forged,
+      altered, or removed AFTER anchoring → ``label_journal_rewritten``. A
+      later anchor matching a SHORTER prefix than an earlier one →
+      ``label_journal_prefix_regression``. Journal gone while anchors carry
+      digests → ``label_journal_missing``.
+    * STORE CROSS-JOIN (skipped honestly when no store is given) — every
+      journal digest row's ``event_hashes`` must exist in its trial's raw
+      ledger (else ``label_journal_row_unbacked``; a purge receipt excuses a
+      purged trial), a row claiming a channel must match the store's
+      hash-covered ``detail.label_channel`` on every digest event (else
+      ``label_channel_mismatch``), and every in-store Captain label event
+      (``action=governance_review_label`` + ``source=verdict_human``) must
+      appear in some journal row (else ``store_label_unjournaled`` — either
+      a forged in-store label or the trace of a loudly-degraded journal
+      export; match it against that day's session transcript).
+
+    THREAT HONESTY: this is after-the-fact detection, not prevention. The
+    journal legs bind to the EXTERNAL anchor history, which a same-OS-user
+    forger cannot rewrite once exported off-box; but until HP-1 isolates
+    the signing key the same user can forge store events AND the not-yet-
+    anchored journal tail together, and root can forge everything
+    everywhere. The store leg reads RAW rows (hash membership only — never
+    the signing key, never the verifier)."""
+    findings: list[dict[str, Any]] = []
+    notes: list[str] = []
+    counts = {
+        "anchored_digests": 0, "prefix_matched": 0,
+        "journal_rows": 0, "digest_rows": 0,
+        "rows_store_backed": 0, "rows_excused_purged": 0,
+        "legacy_rows": 0,
+        "store_labels_seen": 0, "store_labels_journaled": 0,
+    }
+
+    data: bytes | None = None
+    if journal_path is None:
+        notes.append("journal_unconfigured")
+    else:
+        journal = Path(journal_path)
+        try:
+            if journal.is_symlink():
+                notes.append("journal_symlink_refused")
+            elif not journal.is_file():
+                notes.append("journal_absent")
+            else:
+                data = journal.read_bytes()
+        except OSError:
+            notes.append("journal_unreadable")
+
+    anchored: list[tuple[str, str]] = []
+    for record in anchor_records:
+        if not isinstance(record, dict):
+            continue
+        labels = record.get("captain_labels") or {}
+        digest = labels.get(journal_name) if isinstance(labels, dict) else None
+        if isinstance(digest, str) and digest:
+            anchored.append((str(record.get("generated_at") or ""), digest))
+    counts["anchored_digests"] = len(anchored)
+
+    if anchored and data is None:
+        findings.append({"kind": "label_journal_missing",
+                         "anchored_digests": len(anchored)})
+    elif data is not None:
+        boundaries = _newline_prefix_digests(data)
+        previous_length = -1
+        for generated_at, digest in anchored:
+            length = boundaries.get(digest)
+            if length is None:
+                findings.append({
+                    "kind": "label_journal_rewritten",
+                    "anchor_generated_at": generated_at,
+                    "anchored_sha256": digest,
+                })
+                continue
+            counts["prefix_matched"] += 1
+            if length < previous_length:
+                findings.append({
+                    "kind": "label_journal_prefix_regression",
+                    "anchor_generated_at": generated_at,
+                    "matched_length": length,
+                    "previous_length": previous_length,
+                })
+            previous_length = max(previous_length, length)
+
+    journal_rows = _parse_jsonl_dicts(data) if data is not None else []
+    counts["journal_rows"] = len(journal_rows)
+    digest_rows = [row for row in journal_rows
+                   if row.get("schema") == LABEL_DIGEST_SCHEMA]
+    counts["digest_rows"] = len(digest_rows)
+
+    store = Path(store_root) if store_root is not None else None
+    if store is None or store.is_symlink() or not (store / "trials").is_dir():
+        notes.append("store_cross_join_skipped")
+    else:
+        journaled_hashes: set = set()
+        for row in digest_rows:
+            for value in row.get("event_hashes") or []:
+                if isinstance(value, str):
+                    journaled_hashes.add(value)
+        events_cache: dict[str, Any] = {}
+        for row in digest_rows:
+            trial_id = str(row.get("trial_id") or "")
+            hashes = [h for h in (row.get("event_hashes") or [])
+                      if isinstance(h, str)]
+            if trial_id not in events_cache:
+                events_cache[trial_id] = _raw_trial_events(store, trial_id)
+            events = events_cache[trial_id]
+            if events is None:
+                if _purge_receipt_named(store, trial_id):
+                    counts["rows_excused_purged"] += 1
+                else:
+                    findings.append({"kind": "label_journal_row_unbacked",
+                                     "trial_id": trial_id,
+                                     "reason": "trial_missing"})
+                continue
+            trial_hashes = {e.get("event_hash") for e in events
+                            if isinstance(e.get("event_hash"), str)}
+            if not hashes or not set(hashes) <= trial_hashes:
+                findings.append({"kind": "label_journal_row_unbacked",
+                                 "trial_id": trial_id,
+                                 "reason": "event_hashes_missing"})
+                continue
+            counts["rows_store_backed"] += 1
+            if LABEL_CHANNEL_JOURNAL_KEY not in row:
+                counts["legacy_rows"] += 1  # pre-HP-3 row: honest, no claim
+            else:
+                claimed = row.get(LABEL_CHANNEL_JOURNAL_KEY)
+                by_hash = {
+                    e.get("event_hash"):
+                        (e.get("detail") or {}).get(LABEL_CHANNEL_DETAIL_KEY)
+                    for e in events if isinstance(e.get("detail"), dict)}
+                if any(by_hash.get(h) != claimed for h in hashes):
+                    findings.append({"kind": "label_channel_mismatch",
+                                     "trial_id": trial_id})
+
+        trials_dir = store / "trials"
+        for path in sorted(trials_dir.iterdir()):
+            if path.is_symlink() or not path.is_dir():
+                continue
+            if not _TRIAL_DIR_RE.fullmatch(path.name):
+                continue
+            if path.name in events_cache:
+                events = events_cache[path.name] or []
+            else:
+                events = _raw_trial_events(store, path.name) or []
+            for event in events:
+                detail = (event.get("detail")
+                          if isinstance(event.get("detail"), dict) else {})
+                if (detail.get("action") != LABEL_ACTION_MARKER
+                        or detail.get("source") != LABEL_HUMAN_SOURCE):
+                    continue
+                counts["store_labels_seen"] += 1
+                if event.get("event_hash") in journaled_hashes:
+                    counts["store_labels_journaled"] += 1
+                else:
+                    findings.append({
+                        "kind": "store_label_unjournaled",
+                        "trial_id": path.name,
+                        "sequence": event.get("sequence"),
+                    })
+
+    return {
+        "schema": RECOUNT_SCHEMA,
+        "generated_at": _utc_now(),
+        "ok": not findings,
+        "findings": findings,
+        "counts": counts,
+        "notes": notes,
+    }
