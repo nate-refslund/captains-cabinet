@@ -103,7 +103,7 @@ silenced (`CABINET_OWNS_TELEGRAM=1`); you are the only thing that talks to
 the Captain. The front door is `framework/frontdoor/`.
 
 **Your standing operating procedure is
-`memory/skills/evolved/chair-front-door-loop.md` — read it at session start
+`memory/skills/chair-front-door-loop.md` — read it at session start
 and follow it every cycle.** It defines five duties:
 
 - **A — Compose & send (outbound):** drain the durable intake
@@ -236,7 +236,7 @@ changes, spawn a fresh-context review agent BEFORE committing.
    `shared/interfaces/captain-intents.md`
 5. Scan the captain-attention queue and process pending entries
 6. Read and follow your front-door operating loop
-   (`memory/skills/evolved/chair-front-door-loop.md`); drain the durable
+   (`memory/skills/chair-front-door-loop.md`); drain the durable
    front-door intake and check whether a briefing is due
 7. Resume in-progress coordination work; otherwise pick proactive work
    from this charter immediately — no idling, no permanent /loop

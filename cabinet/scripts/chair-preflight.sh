@@ -37,15 +37,18 @@ else
   fail "Redis not reachable at ${REDIS_HOST:-localhost}"
 fi
 
-# 4: brain MCP rendered
+# 4: brain MCP (OPTIONAL — personal memory source; a captain-agnostic portfolio
+# Chair runs without it. .mcp.json ships no `brain` server and instance/ is
+# scrubbed from the egg, so a hard requirement false-fails every fresh hatch.)
 if grep -q '"brain"' "$ROOT/instance/config/extra-mcps.json" 2>/dev/null; then
   pass "brain MCP rendered (extra-mcps.json)"
 else
-  fail "brain MCP not in extra-mcps.json"
+  echo "  ➖ brain MCP not configured (optional personal memory source — add to instance/config/extra-mcps.json to enable brain-bridge)"
 fi
 
-# 5: operating-loop skill
-if [ -f "$ROOT/memory/skills/evolved/chair-front-door-loop.md" ]; then
+# 5: operating-loop skill (tracked resource — memory/skills/, not the gitignored
+# evolved/ dir, so a fresh clone actually ships it)
+if [ -f "$ROOT/memory/skills/chair-front-door-loop.md" ]; then
   pass "operating-loop skill present"
 else
   fail "chair-front-door-loop skill missing"
@@ -82,7 +85,7 @@ if [ "$bad" -eq 0 ]; then
   echo ""
   echo "    CABINET_ENV=runtime REDIS_HOST=localhost bash $LAUNCHER cos"
   echo ""
-  echo "It reads memory/skills/evolved/chair-front-door-loop.md as its operating loop."
+  echo "It reads memory/skills/chair-front-door-loop.md as its operating loop."
   echo "Watch the first interactive cycle (a real Telegram reply → orchestration)"
   echo "before leaving it running. Verify the launcher's flags first."
 else

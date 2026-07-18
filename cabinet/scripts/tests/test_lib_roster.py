@@ -45,6 +45,7 @@ roster:
         "kind": "officer",
         "command": "bash cabinet/scripts/start-officer-mac.sh widget-ceo",
         "schedule": "keepalive",
+        "on_demand": False,
         "expected": "redis heartbeat cabinet:heartbeat:widget-ceo",
     }]
 
@@ -67,6 +68,7 @@ roster:
         "kind": "officer",
         "command": "bash cabinet/scripts/start-officer-mac.sh cos",
         "schedule": "keepalive",
+        "on_demand": False,
         "expected": "redis heartbeat cabinet:heartbeat:cos (idle≠dead)",
         "notes": "sole Telegram voice",
     }]
@@ -132,5 +134,69 @@ def test_null_officer_entry_yields_generic_defaults(tmp_path):
         "kind": "officer",
         "command": "bash cabinet/scripts/start-officer-mac.sh cos",
         "schedule": "keepalive",
+        "on_demand": False,
         "expected": "redis heartbeat cabinet:heartbeat:cos",
     }]
+
+
+# ---------------------------------------------------------------------------
+# on_demand (roster `type`) — fresh-hatch #59: a consultant lane's missing
+# launchd job is EXPECTED (deploy-mac.sh guard_consultant never installs one),
+# so cabinet-doctor must SKIP it, not DEAD it. The flag rides the row.
+# ---------------------------------------------------------------------------
+
+def test_consultant_type_is_on_demand_but_keeps_keepalive(tmp_path):
+    root = _write_roster(tmp_path, """
+roster:
+  lane-a-ceo:
+    title: "Lane A CEO"
+    model: "claude-opus-4-8[1m]"
+    capabilities: [deploys_code]
+    authority_level: mission_executor
+    type: consultant
+""")
+    (row,) = lib_roster.officer_service_rows(root)
+    assert row["on_demand"] is True, row
+    # keepalive is retained so a --force-deployed consultant still gets tmux
+    # liveness; on_demand is what tells the doctor a MISSING job is expected.
+    assert row["schedule"] == "keepalive", row
+
+
+def test_fulltime_type_is_not_on_demand(tmp_path):
+    root = _write_roster(tmp_path, """
+roster:
+  cos:
+    title: Chair
+    model: m
+    capabilities: [a]
+    authority_level: captain_proxy
+    type: fulltime
+""")
+    (row,) = lib_roster.officer_service_rows(root)
+    assert row["on_demand"] is False, row
+
+
+def test_absent_type_defaults_to_not_on_demand(tmp_path):
+    # A slug with no `type:` at all must default to a full-time keepalive
+    # officer (the prior, only behavior) — never accidentally on-demand.
+    root = _write_roster(tmp_path, """
+roster:
+  cos:
+    title: Chair
+    model: m
+    capabilities: [a]
+    authority_level: captain_proxy
+""")
+    (row,) = lib_roster.officer_service_rows(root)
+    assert row["on_demand"] is False, row
+
+
+def test_on_demand_key_present_on_every_row(tmp_path):
+    # The doctor's TSV builder reads `on_demand` unconditionally; it must exist
+    # on every synthesized row (even minimal/null ones), never be absent.
+    root = _write_roster(tmp_path, "roster:\n  cos:\n  lane-a-ceo:\n    type: consultant\n")
+    rows = lib_roster.officer_service_rows(root)
+    assert all("on_demand" in r for r in rows), rows
+    by_name = {r["name"]: r for r in rows}
+    assert by_name["officer-cos"]["on_demand"] is False
+    assert by_name["officer-lane-a-ceo"]["on_demand"] is True

@@ -202,8 +202,11 @@ now = time.time()
 la = os.path.expanduser("~/Library/LaunchAgents")
 for s in services:
     name, label, kind = s["name"], s["label"], s.get("kind", "daemon")
+    # on_demand (roster type: consultant) rows are started per-trigger; the
+    # liveness loop SKIPs a not-loaded on-demand row instead of DEADing it.
+    od = "yes" if s.get("on_demand") else "no"
     if s.get("disabled"):
-        print(f"{name}\t{label}\t{kind}\tdisabled\t-\t-")
+        print(f"{name}\t{label}\t{kind}\tdisabled\t-\t-\t{od}")
         continue
     sched = s.get("schedule")
     if sched == "keepalive":
@@ -242,16 +245,20 @@ for s in services:
     if newest is not None:
         age = str(int(now - newest))
     installed = "yes" if os.path.exists(plist_path) else "no"
-    print(f"{name}\t{label}\t{kind}\t{stype}:{window}\t{age}\t{installed}")
+    print(f"{name}\t{label}\t{kind}\t{stype}:{window}\t{age}\t{installed}\t{od}")
 PYEOF
 )" || { dead "services — could not parse cabinet/services.yml (pyyaml under $PY)"; SVC_TSV=""; }
 
-while IFS=$'\t' read -r name label kind sched age installed; do
+while IFS=$'\t' read -r name label kind sched age installed on_demand; do
   [ -z "${name:-}" ] && continue
   if [ "$sched" = "disabled" ]; then skip "service $name — disabled in manifest"; continue; fi
   pid="$(printf '%s\n' "$LAUNCHCTL_SNAPSHOT" | awk -F'\t' -v l="$label" '$2==l {print $1}')"
   if [ -z "$pid" ]; then
-    dead "service $name — launchd job $label not loaded"
+    if [ "${on_demand:-no}" = "yes" ]; then
+      skip "service $name — on-demand consultant (not deployed; started per-trigger via start-officer-mac.sh, or deploy-mac.sh --force)"
+    else
+      dead "service $name — launchd job $label not loaded"
+    fi
     continue
   fi
   stype="${sched%%:*}"; window="${sched##*:}"
@@ -392,7 +399,16 @@ while IFS=$'\t' read -r layer server state; do
   if [ "$state" = "OK" ]; then
     ok "mcp $server ($layer) — env resolves"
   else
-    dead "mcp $server ($layer) — unresolved env: ${state#DEADVARS:} (not in cabinet/.env names, launcher set, or environment)"
+    # A SHIPPED base connector (.mcp.json / .mac-native) with a missing env is
+    # OPTIONAL on a local-only hatch (no cloud account) — WARN. A deliberately-
+    # wired overlay MCP (instance/config/extra-mcps.json) with a missing env is
+    # a real break the deployment introduced — DEAD. #58 fresh-hatch fix.
+    case "$layer" in
+      *extra-mcps.json)
+        dead "mcp $server ($layer) — unresolved env: ${state#DEADVARS:} (this deployment wired the MCP; set the env NAME in cabinet/.env)" ;;
+      *)
+        warn "mcp $server ($layer) — optional connector; env ${state#DEADVARS:} not set (set in cabinet/.env to enable; not required for a local-only hatch)" ;;
+    esac
   fi
 done <<< "$MCP_OUT"
 
@@ -454,9 +470,23 @@ done <<< "$SKILLS_OUT"
 # ============================================================
 SCOPE_OUT="$("$PY" - "$MCP_BASE" <<'PYEOF'
 import glob, json, os, re, sys, yaml
+from pathlib import Path
 scope = yaml.safe_load(open("cabinet/mcp-scope.yml"))
+# Fresh-hatch #58: assert grants only for agents THIS deployment actually
+# rostered (+ universal). mcp-scope.yml carries product-lane agents
+# (polads-ceo / stephie-ceo) as instance data; a portfolio hatch that does not
+# deploy a given lane must not be called RED for the dead grants of a lane it
+# never runs. Absent roster.yml (bare clone / CI) -> active empty -> gate OFF
+# = exact prior behavior (no regression).
+# (NB: keep this heredoc body free of a lone unbalanced single-quote — it
+# breaks the bash command-substitution paren scan even inside a quoted heredoc.)
+sys.path.insert(0, os.path.join(os.getcwd(), "cabinet", "scripts"))
+import lib_roster
+active = set(lib_roster.load_roster(Path(os.getcwd())).keys())
 granted = set()
 for agent, spec in (scope.get("agents") or {}).items():
+    if active and agent not in active:
+        continue          # non-deployed lane (product lane on a portfolio hatch) — not asserted
     for m in (spec or {}).get("mcps") or []:
         granted.add(str(m).lower())
 for m in scope.get("universal") or []:
@@ -498,7 +528,11 @@ while IFS=$'\t' read -r grant state; do
   elif printf '%s' "$PROFILE_CONNECTORS" | grep -q " $grant "; then
     warn "scope grant $grant — UNVERIFIABLE from disk (claude.ai profile connector)"
   else
-    dead "scope grant $grant — registered in no config layer (dead grant, same class as audit #3b)"
+    # A rostered agent granted a server registered in NO layer means that
+    # officer silently lacks that tool (degraded capability), not a broken
+    # fleet — WARN, not DEAD. #58 fresh-hatch fix. (Non-deployed lanes are
+    # already dropped upstream by the roster gate.)
+    warn "scope grant $grant — no registered server on this deployment (optional capability; wire it in instance/config/extra-mcps.json to enable)"
   fi
 done <<< "$SCOPE_OUT"
 

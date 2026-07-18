@@ -215,11 +215,28 @@ fi
 
 echo ""
 echo "=== Step 3: Install Python dependencies ==="
-if "$PYBIN" -m pip install --quiet pyyaml psycopg2-binary requests pytest 2>/dev/null; then
+# Stock Homebrew python@3.12 is PEP-668 externally-managed and REFUSES a bare
+# `pip install`. We retry ONCE with --break-system-packages (the house
+# fallback — it installs into the same interpreter's site-packages, keeping
+# python3.12 the ONE interpreter every plist/hook hardcodes; a venv would
+# orphan them), then hard-VERIFY by import and fail LOUD (surfacing pip's real
+# stderr, which the old `2>/dev/null` swallowed) if deps are still missing.
+PIP_DEPS=(pyyaml psycopg2-binary requests pytest)
+PIP_ERR="$("$PYBIN" -m pip install --quiet "${PIP_DEPS[@]}" 2>&1 1>/dev/null)" && PIP_RC=0 || PIP_RC=$?
+if [ "$PIP_RC" -ne 0 ]; then
+  # PEP 668: stock Homebrew python@3.12 is externally-managed and refuses the
+  # bare install. Retry into the same interpreter's site-packages with the
+  # documented override (keeps python3.12 as the one interpreter the fleet uses).
+  PIP_ERR="$("$PYBIN" -m pip install --break-system-packages --quiet "${PIP_DEPS[@]}" 2>&1 1>/dev/null)" && PIP_RC=0 || PIP_RC=$?
+fi
+if [ "$PIP_RC" -eq 0 ] && "$PYBIN" -c "import yaml, pytest, requests, psycopg2" 2>/dev/null; then
   ok "Python deps installed"
 else
-  # PEP 668 externally-managed Homebrew pythons refuse bare pip3 installs.
-  warn "python3.12 -m pip install failed — ensure deps yourself: python3.12 -m pip install pyyaml pytest requests psycopg2-binary"
+  # import-verify guards the case where pip returns 0 but a wheel (psycopg2-
+  # binary) failed to build; a total failure is a first-boot BLOCKER, not a warn.
+  fail "Python deps NOT installed ($PYBIN -m pip install failed even with --break-system-packages)"
+  printf '  pip stderr: %s\n' "$PIP_ERR" >&2      # surface the real reason (was swallowed by 2>/dev/null)
+  ISSUES+=("python deps missing — $PYBIN -m pip install --break-system-packages ${PIP_DEPS[*]}")
 fi
 
 echo ""

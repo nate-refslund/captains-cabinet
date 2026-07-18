@@ -295,7 +295,20 @@ log "Assembled safety boundaries → $RUNTIME_DIR/safety-boundaries.md"
 # (embed-seam provenance singleton) runs last; memory_embedding_stamp --if-absent writes
 # its one row right after the loop — first deploy only, an existing stamp is
 # never overwritten (R4 follow-up wiring, 2026-07-15).
-if [ -n "${NEON_CONNECTION_STRING:-}" ]; then
+# The work-store connection string may live ONLY in the cabinet/.env FILE:
+# the Mac-native provision-local-postgres.sh writes it there (set_env_key) and
+# never exports it, so on that path $NEON_CONNECTION_STRING is empty in the
+# process env and the whole schema-apply block below was silently skipped
+# (zero cabinet tables -> `relation "officer_tasks" does not exist` days later).
+# Derive it from .env when the env var is empty, using the same grep/cut the
+# sibling setup-mac.sh Step 3.5 uses (never `source`; tolerate a quoted value;
+# treat the result as a single quoted psql arg). #57 fresh-hatch fix.
+CONN="${NEON_CONNECTION_STRING:-}"
+if [ -z "$CONN" ] && [ -f "$CABINET_ROOT/cabinet/.env" ]; then
+  CONN="$(grep -E '^NEON_CONNECTION_STRING=' "$CABINET_ROOT/cabinet/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+  CONN="${CONN%\"}"; CONN="${CONN#\"}"   # tolerate a quoted value
+fi
+if [ -n "$CONN" ]; then
   for schema in \
     "$CABINET_ROOT/cabinet/sql/cabinet_memory.sql" \
     "$CABINET_ROOT/cabinet/sql/library.sql" \
@@ -313,7 +326,7 @@ if [ -n "${NEON_CONNECTION_STRING:-}" ]; then
     "$CABINET_ROOT/cabinet/sql/045-org-runtime-slice.sql" \
     "$CABINET_ROOT/cabinet/sql/046-embedding-meta.sql"; do
     if [ -f "$schema" ]; then
-      if psql "$NEON_CONNECTION_STRING" -q -f "$schema" > /dev/null 2>&1; then
+      if psql "$CONN" -q -f "$schema" > /dev/null 2>&1; then
         log "Applied framework schema (neon): $(basename "$schema")"
       else
         log "WARN: failed to apply $schema to Neon (Cabinet will still boot; fix before new records)"
@@ -342,14 +355,14 @@ if [ -n "${NEON_CONNECTION_STRING:-}" ]; then
 
   # Preset-specific schemas (Neon)
   if [ -f "$PRESET_DIR/schemas.sql" ]; then
-    if psql "$NEON_CONNECTION_STRING" -q -f "$PRESET_DIR/schemas.sql" > /dev/null 2>&1; then
+    if psql "$CONN" -q -f "$PRESET_DIR/schemas.sql" > /dev/null 2>&1; then
       log "Applied preset schema: $ACTIVE_PRESET/schemas.sql"
     else
       log "WARN: failed to apply preset schema"
     fi
   fi
 else
-  log "WARN: NEON_CONNECTION_STRING not set — skipping Neon schema application"
+  log "WARN: no work-store connection string in env or cabinet/.env — skipping Neon schema application"
 fi
 
 # Cabinet postgres schemas (internal) — additive migrations for Phase 1+

@@ -65,10 +65,12 @@ def load_roster(root: Path, roster_rel: str = DEFAULT_ROSTER_REL) -> dict[str, A
 def officer_service_rows(root: Path,
                          roster_rel: str = DEFAULT_ROSTER_REL) -> list[dict[str, Any]]:
     """Synthesizes the officer service-row shape (name/label/kind/command/
-    schedule/expected/[notes]) for every roster slug, in roster file order —
-    the exact shape cabinet/services.yml hand-authored per officer before
-    this change. Slugs are NOT validated against a naming pattern here;
-    roster.yml is deployment-local operator input, not external/untrusted."""
+    schedule/on_demand/expected/[notes]) for every roster slug, in roster file
+    order — the exact shape cabinet/services.yml hand-authored per officer
+    before this change, plus `on_demand` (derived from the per-slug `type`:
+    consultant => True; fulltime / absent => False). Slugs are NOT validated
+    against a naming pattern here; roster.yml is deployment-local operator
+    input, not external/untrusted."""
     roster = load_roster(root, roster_rel)
     rows: list[dict[str, Any]] = []
     for slug, fields in roster.items():
@@ -79,12 +81,19 @@ def officer_service_rows(root: Path,
                 f"roster.yml: officer '{slug}' must map to a dict of fields "
                 f"(title/model/capabilities/authority_level/...), got "
                 f"{type(fields).__name__}")
+        otype = str(fields.get("type") or "fulltime").lower()
         row = {
             "name": f"officer-{slug}",
             "label": f"com.cabinet.officer.{slug}",
             "kind": "officer",
             "command": f"bash cabinet/scripts/start-officer-mac.sh {slug}",
             "schedule": "keepalive",
+            # Consultants are started per-trigger — deploy-mac.sh's
+            # guard_consultant deliberately never installs a keepalive launchd
+            # job for them, so a missing job is EXPECTED, not DEAD (cabinet-
+            # doctor reads this flag and SKIPs instead of DEADing). keepalive
+            # stays so a --force-deployed consultant still gets tmux liveness.
+            "on_demand": otype == "consultant",
             "expected": fields.get("expected")
                        or f"redis heartbeat cabinet:heartbeat:{slug}",
         }

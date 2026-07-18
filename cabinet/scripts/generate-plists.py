@@ -66,6 +66,12 @@ import yaml
 
 NAME_RE = re.compile(r"^[a-z0-9-]+$")
 LABEL_RE = re.compile(r"^[a-z0-9.-]+$")  # L-1 (cp1 review): label forms the output filename
+# The launchd EnvironmentVariables PATH: a FIXED, captain-agnostic, ABSOLUTE
+# literal. It is cross-pinned to the dependency-radar registry service_path
+# (cabinet/config/dependency-radar.yml) + runbook by the tests, and the radar
+# validator requires absolute dirs — so a per-user ~/.local/bin (native-
+# installer `claude`) must NOT be baked here; it is prepended in the officer
+# WRAPPER below, where bash expands $HOME at boot (#60 fresh-hatch fix).
 PATH_ENV = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 # The briefing service whose StartCalendarInterval is stamped from the ONE
@@ -301,6 +307,13 @@ def render(svc, root: Path, home: Path) -> dict:
         raise ValueError(f"{name}: command must be a non-empty string")
     wrapper = (
         f"cd {root} && set -a && source cabinet/.env 2>/dev/null && set +a"
+        # Native-installer `claude` lives at ~/.local/bin; launchd does not
+        # expand $HOME and the baked EnvironmentVariables.PATH (PATH_ENV) stays
+        # a captain-agnostic absolute literal (cross-pinned to the dependency-
+        # radar registry). Prepend the per-user ~/.local/bin HERE, where bash
+        # expands $HOME at officer-boot time, so officers can find `claude`
+        # without drifting the radar's absolute service-PATH pin (#60).
+        f' && export PATH="$HOME/.local/bin:$PATH"'
         f" && REDIS_HOST=localhost exec {command}"
     )
     env = {"PATH": PATH_ENV}

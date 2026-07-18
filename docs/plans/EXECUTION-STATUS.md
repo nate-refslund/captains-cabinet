@@ -100,7 +100,7 @@ Q1 spine ✅ · Q2 outcomes = presented for confirm (see reply) · Q3 residue pu
 ## Label-UX items (from the first real Captain replies, 2026-07-03 ~00:30)
 
 - **First real replies traced end-to-end:** freeform draft answer → binder fail-closed (strict grammar, correct) → Chair; plain `send` → `reason=no-pid` (Captain replied to the CHAIR's argument message, not the ·pid· card) → relayed; the Chair independently HELD the Lena send (voided draft + legal/Paddle + never-lie) — validated against the vault: the Teams thread had moved on (Captain self-served), and the June proposals had already auto-expired per the 36h rule. Fail-closed behaved correctly at every layer.
-- **ITEM (small, next batch):** the Chair must include the `·pid·` when re-presenting/arguing about a draft, so a Captain `send` on the Chair's message binds — one line in `memory/skills/evolved/chair-front-door-loop.md` + binder already handles it.
+- **ITEM (small, next batch):** the Chair must include the `·pid·` when re-presenting/arguing about a draft, so a Captain `send` on the Chair's message binds — one line in `memory/skills/chair-front-door-loop.md` + binder already handles it.
 - **ITEM (plan A1 family, filed):** high-confidence freeform binding (the 3-way router maturation) — freeform answers currently never produce mechanical labels; design per grand-plan Phase 1 router with a confidence gate, never guess-among-multiple.
 - Poller observability shipped: every binder decline now logs `reason=` + `pid=` (commit 7fe8da11).
 
