@@ -19,8 +19,10 @@ must pass, or the gate fails (and the renderer must not load it):
 
 LimeZu packs are a Captain purchase (kickoff to-do 1; WORLD-E1-ASSETS
 ledger row) and are NEVER committed (commercial license) — the asset dir is
-gitignored, the manifest is tracked, and this gate runs wherever assets
-land. Exit 0 = all conformant (or manifest honestly empty), 1 = violation.
+gitignored except originals/ (owned commissioned art installed by
+world-asset-intake.py, license "owned — org-original", committable), the
+manifest is tracked, and this gate runs wherever assets land. Exit 0 = all
+conformant (or manifest honestly empty), 1 = violation.
 
 Usage: python3.12 cabinet/scripts/world-asset-gate.py [manifest.json]
 """
