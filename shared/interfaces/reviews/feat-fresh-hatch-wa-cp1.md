@@ -69,4 +69,24 @@ isolated HOME + closed Redis port), `test_load_preset_workstore_schema.py`, `tes
   (`test_evidence_seam_bypass_replay.py::...[evidence-access.sh]`) that fails identically on clean
   origin/master `8dced97b` — not introduced here.
 - `bash -n` clean on all 4 edited shells. layer-sep gate: 0 new violations. docs-sweep: 13 pass.
-  `git grep evolved/chair-front-door-loop` clean across all tracked files.
+  `git grep evolved/chair-front-door-loop` matches ONLY two benign self-references
+  (this artifact's prose + the guard test's own grep literal) — no functional referrer.
+
+## cp2 follow-up (post-review fix, feat/fresh-hatch-wa)
+
+Two claims in the cp1 "Verification" block above were optimistic and are corrected here:
+
+- **`cabinet/scripts/tests` was NOT fully green.** Beyond the pre-existing
+  `test_evidence_seam_bypass_replay[evidence-access.sh]` (env-only; green in CI), the NEW guard
+  `test_portfolio_chair_resources.py::test_no_tracked_referrer_points_at_the_gitignored_evolved_path`
+  failed deterministically — its `git grep` matched its own literal and this review artifact. CI runs
+  `pytest cabinet/scripts/tests -q`, so on land that would have flipped master CI green→red. Fixed:
+  the guard now excludes the test file and `shared/interfaces/reviews/` (git `:(exclude)` pathspecs);
+  teeth retained for any real script / agent-doc / config / plan referrer.
+- **The bare `git grep` is NOT "clean across all tracked files"** — it never could be, since this
+  artifact and the guard test legitimately contain the string. It is clean of *functional* referrers,
+  which is exactly what the guard now asserts.
+
+Also reworded the doctor §5 comment to drop the net-new product tokens (`polads-ceo`/`stephie-ceo`)
+from the product-agnostic `cabinet/` layer, and noted the roster gate is a no-op on a pristine hatch
+(product-lane grants stay off RED via the WARN-not-DEAD downgrade, not the gate).

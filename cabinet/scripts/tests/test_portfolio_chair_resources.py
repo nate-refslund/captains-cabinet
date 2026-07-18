@@ -36,8 +36,16 @@ def test_skill_is_tracked_at_the_canonical_path():
 
 
 def test_no_tracked_referrer_points_at_the_gitignored_evolved_path():
+    # A tracked *functional* referrer (script / agent-doc / config / plan) to
+    # the gitignored evolved/ path breaks a fresh clone, so it MUST trip this.
+    # Two benign self-matches are excluded — neither is a resource referrer:
+    #   * this test file itself, which must contain the grep literal to grep for it;
+    #   * shared/interfaces/reviews/ — FW-019 review artifacts are prose recording
+    #     the relocation history, not a path anything loads from.
     hits = subprocess.run(
-        ["git", "grep", "-lI", "evolved/chair-front-door-loop"],
+        ["git", "grep", "-lI", "evolved/chair-front-door-loop", "--",
+         ":(exclude)cabinet/scripts/tests/test_portfolio_chair_resources.py",
+         ":(exclude)shared/interfaces/reviews/"],
         cwd=REPO_ROOT, capture_output=True, text=True).stdout.strip()
     assert not hits, (
         "tracked files still reference the gitignored evolved/ skill path:\n"

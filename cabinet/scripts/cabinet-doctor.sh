@@ -474,10 +474,13 @@ from pathlib import Path
 scope = yaml.safe_load(open("cabinet/mcp-scope.yml"))
 # Fresh-hatch #58: assert grants only for agents THIS deployment actually
 # rostered (+ universal). mcp-scope.yml carries product-lane agents
-# (polads-ceo / stephie-ceo) as instance data; a portfolio hatch that does not
+# (e.g. a <product>-ceo lane) as instance data; a portfolio hatch that does not
 # deploy a given lane must not be called RED for the dead grants of a lane it
 # never runs. Absent roster.yml (bare clone / CI) -> active empty -> gate OFF
-# = exact prior behavior (no regression).
+# = exact prior behavior (no regression). NOTE: on a pristine hatch this gate is
+# a no-op (no roster.yml yet), so product-lane grants ARE still asserted here and
+# are kept off RED only by the WARN-not-DEAD downgrade in the else branch below;
+# the gate itself starts dropping non-deployed lanes once a roster.yml names them.
 # (NB: keep this heredoc body free of a lone unbalanced single-quote — it
 # breaks the bash command-substitution paren scan even inside a quoted heredoc.)
 sys.path.insert(0, os.path.join(os.getcwd(), "cabinet", "scripts"))
