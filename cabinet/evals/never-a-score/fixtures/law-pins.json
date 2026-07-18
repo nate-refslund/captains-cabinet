@@ -16,7 +16,9 @@
     {"path": "cabinet/evals/never-a-score/harness.py", "why": "this eval's scanner (defines the tokens it scans for)"},
     {"path": "cabinet/evals/never-a-score/fixtures/law-pins.json", "why": "this fixture"},
     {"path": "cabinet/evals/never-a-score/README.md", "why": "this eval's docs"},
-    {"path": "cabinet/scripts/tests/test_never_a_score_eval.py", "why": "this eval's CI tests"}
+    {"path": "cabinet/scripts/tests/test_never_a_score_eval.py", "why": "this eval's CI tests"},
+    {"path": "cabinet/scripts/runtime-provision.sh", "why": "INSTANCE_PERSISTENT_FILES names the series path only to wire the runtime-tree persistence symlink at provision time - plumbing so the report-only series survives releases; never read as a score"},
+    {"path": "docs/plans/fresh-instance-relaunch-manifest-2026-07-15.md", "why": "KEEP/DROP inventory doc naming the runtime series among regenerate-on-fresh-instance artifacts; a migration record, not a score consumer"}
   ],
   "projection": {
     "file": "framework/evidence/recorder.py",
