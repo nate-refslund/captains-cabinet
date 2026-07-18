@@ -6,9 +6,9 @@ It is Captain-gated the same way as its sibling
 live fleet, the live tree, or a secret is a "we do it together" step, run
 from the Captain's own session, never unattended.
 
-**Reversible.** The old instance is fully archived before anything is
-seeded or moved. Nothing here deletes the old checkout, its `instance/`
-data, or any officer's history — see §7 Rollback.
+**Reversible.** The old instance is fully archived before the cutover.
+Nothing here deletes or modifies the old checkout, its `instance/` data, or
+any officer's history — see Step 9 Rollback.
 
 ## 0. What "relaunch" means here, in plain terms
 
@@ -18,20 +18,28 @@ instance** on the already-built dev/runtime-split infrastructure
 (`docs/runbooks/dev-runtime-split-cutover.md`), and we're selective about
 what carries forward:
 
-- **Carried forward:** the vault (your searchable memory — conversations,
-  people, decisions), the officers' accumulated product knowledge
-  ("working notes" per role), the frozen set of real correction examples
-  used to test the system, and your secrets (API keys, etc.) — except the
-  Telegram bot token, which gets a fresh one.
-- **Left behind, on purpose:** every officer's earned trust level (starts
-  back at zero — the whole point of this relaunch is to re-earn it),
-  internal governance records (decision logs, rule ledgers), the current
-  hired roster (you re-hire who you want, nobody is pre-loaded), and the
-  simulated "world" state (starts fresh).
+- **Carried forward:** nothing is *seeded* into the fresh instance (Captain
+  100%-SCRATCH ruling, 2026-07-18 — the fresh instance inherits nothing). The
+  one thing that "carries" isn't copied at all: your external Obsidian vault
+  (searchable memory — conversations, people, decisions) stays exactly where
+  it is on disk, and the fresh instance RECONNECTS to it read-only through the
+  tracked screenpipe adapter (Step 5), never a seeded copy.
+- **Left behind, on purpose (everything else):** the officers' accumulated
+  product knowledge ("working notes" per role), the frozen correction-example
+  corpus, your secrets (API keys — re-entered fresh on the new box), every
+  officer's earned trust level (starts back at zero — the whole point of this
+  relaunch is to re-earn it), internal governance records (decision logs,
+  rule ledgers), the current hired roster (you re-hire who you want, nobody is
+  pre-loaded), and the simulated "world" state. All of it is preserved in the
+  pre-cutover archive (Step 2) as the restore net, but NONE of it is seeded
+  into the fresh instance — that is produced entirely by the fresh-hatch
+  defaults (Step 4).
 
-The full itemized list of what's carried vs. left behind, and why, is
-`docs/plans/fresh-instance-relaunch-manifest-2026-07-15.md`. This runbook
-is the step-by-step for actually doing it.
+The old itemized carry-vs-drop inventory is
+`docs/plans/fresh-instance-relaunch-manifest-2026-07-15.md` — now **superseded
+in part** by the 100%-SCRATCH ruling (see its dated header): every former
+KEEP-of-live-content row is DROP-from-seed now, preserved only in the Step 2
+archive. This runbook is the step-by-step for actually doing it.
 
 **Relationship to the dev/runtime-split cutover runbook:** that document
 is the one-time plumbing change (give the fleet its own clean checkout,
@@ -62,8 +70,8 @@ prompt. **[CAPTAIN + ME]** = we run it together, live-fleet impact.
 
 ### Step 1 — Quiesce the old fleet **[CAPTAIN + ME]**
 
-Nothing should be writing to the old instance while we archive and seed
-from it. If the kill switch is ON at this point (check fresh — see Step
+Nothing should be writing to the old instance while we archive it. If the
+kill switch is ON at this point (check fresh — see Step
 7.1's note; the manifest's own §5 records it was ACTIVE on 2026-07-15 and
 INACTIVE on a 2026-07-16 recheck, so don't assume either way), it already
 blocks officers from taking further actions, but that alone doesn't
@@ -85,7 +93,7 @@ This is a pause, not a teardown: the plists, the tmux sessions' history,
 and all instance data are untouched — Step 7's rollback restarts the same
 way `dev-runtime-split-cutover.md` Step 5 does.
 
-### Step 2 — Archive + seed **[ME]**, zero live-tree writes
+### Step 2 — Archive **[ME]**, zero live-tree writes
 
 ```bash
 LIVE=/Users/nate/captains-cabinet
@@ -96,35 +104,32 @@ bash "$LIVE/cabinet/scripts/relaunch-seed.sh" \
 ```
 
 What this does (see the script's own header comment for the full,
-authoritative list if this ever drifts):
+authoritative list if this ever drifts) — it **ARCHIVES ONLY; it seeds
+nothing**:
 
-1. **Archives the entire old `instance/` tree + `cabinet/.env`** (the real,
-   un-redacted secrets — this archive is the rollback safety net, so it
-   deliberately keeps the real token) to a timestamped file under your
-   home directory, plus a best-effort archive of
+1. **Archives the ENTIRE old-root tree** — the code, `.git`, the whole
+   `instance/` tree (org-brain/searchable memory + every lane's working
+   notes), `shared/interfaces/` (governance ledgers, world chronicle,
+   product-specs), and the real, un-redacted `cabinet/.env` (this archive is
+   the rollback safety net, so it deliberately keeps the real secrets) — to a
+   timestamped file under your home directory, excluding only regenerable
+   `__pycache__`/`*.pyc` noise. Plus a best-effort second member for
    `~/Library/Application Support/cabinet/` (the larger Mac-level state).
    **This archive contains real secrets — treat the file itself like a
    password, don't paste its contents anywhere.**
-2. **Writes the curated fresh seed** into `$RUNTIME/shared/` — only the
-   "carried forward" list from §0, with the Telegram token's value
-   replaced by a placeholder (chat id untouched). Nothing on the "left
-   behind" list is ever read by this step.
-3. Refuses to run at all (before touching anything) if you mistakenly
-   point it at the live tree itself, or at itself nested inside its own
-   read source — this is a hard, non-overridable safety check, not a flag
-   you can turn off.
+2. Refuses to run at all (before touching anything) if you mistakenly point
+   the archive path or runtime root at the live tree itself, or nested inside
+   its own read source — a hard, non-overridable safety check, not a flag you
+   can turn off. (A relative `--archive-path` is absolutized first, so it
+   can't sneak past that check by resolving into the old root.)
+
+It writes **NOTHING into `$RUNTIME`** — the fresh instance inherits nothing;
+its data is created entirely by the fresh hatch in Step 4. `--runtime-root` is
+passed only so this step and Step 3 name the same target.
 
 Run it with `--dry-run` first if you want to see the exact plan without
-writing anything. Re-running the real command is safe — it converges to
-the same result rather than piling up duplicates (a fresh archive file is
-the one exception: each run names a new one, on purpose).
-
-**Known gap, not fixed by this build:** the frozen regression-test corpus
-(`instance/fidelity/regression_corpus/`) gets captured into the seed for
-safekeeping, but `runtime-provision.sh` doesn't yet automatically carry
-that particular folder into a release. Either commit any new test cases to
-the branch before doing Step 3, or copy them into the release by hand
-afterward — flagged here rather than silently assumed to work.
+writing anything. Each run names a fresh archive file by default, so a re-run
+never overwrites a previous safety snapshot.
 
 ### Step 3 — Provision the release **[ME]**, zero live-tree writes
 
@@ -132,9 +137,11 @@ Same as `dev-runtime-split-cutover.md` Step 1 — that runbook's own
 instructions apply verbatim here (init the runtime root if this is the
 first time, provision the commit you chose, validate with the `--dry-run`
 proofs it already documents). One difference: skip that runbook's Step 2
-(it copies the OLD instance data wholesale) — Step 2 above already put the
-curated fresh seed in place, and `provision`'s own symlink step (called
-again here, idempotently) picks it up:
+(it copies the OLD instance data wholesale) — under the 100%-SCRATCH ruling
+we deliberately seed nothing, so there is nothing in `$RUNTIME/shared/` for
+`provision`'s own symlink step to pick up; the fresh instance's data is
+created by the hatch in Step 4, and `provision` here just lays down the
+pinned code checkout:
 
 ```bash
 RUNTIME=~/.cabinet/runtime
@@ -166,11 +173,11 @@ Notes:
   knows how to handle a checkout that ships its own tracked default config
   (it archives the tracked copy aside and generates fresh, same as any
   first-time hatch of this repo).
-- This step reads `instance/config/roster.yml` through the symlink Step 2
-  set up — since that file was on the "left behind" list, it doesn't exist
-  yet, so hatch generates a genuinely fresh, empty roster: no product CEOs
-  pre-hired. You re-hire whoever you want afterward, the normal way
-  (`cabinet/scripts/create-officer.sh`).
+- This step reads `instance/config/roster.yml` in the release's own tree —
+  since nothing seeded it (the whole "left behind" list is DROP-from-seed), it
+  doesn't exist yet, so hatch generates a genuinely fresh, empty roster: no
+  product CEOs pre-hired. You re-hire whoever you want afterward, the normal
+  way (`cabinet/scripts/create-officer.sh`).
 
 ### Step 5 — Connect the vault (screenpipe adapter), opt-in **[ME]**
 
@@ -191,8 +198,9 @@ external folder this relaunch never touches or copies) the moment it
 boots; no path needs to be typed in, since the adapter's default already
 points there. If you also want live screen/audio capture read through
 (not just the vault notes), confirm `SCREENPIPE_API_AUTH_KEY` is present
-by name in the seeded `cabinet/.env` — if it's absent, that one capability
-degrades quietly rather than failing anything else.
+by name in the fresh box's `cabinet/.env` (the one you populate on the new
+box in Step 7 — nothing is seeded here) — if it's absent, that one
+capability degrades quietly rather than failing anything else.
 
 ### Step 6 — Repoint launchd **[CAPTAIN + ME]** — the actual cutover moment
 
@@ -227,10 +235,12 @@ are deliberately reserved so a mistake can't cascade unattended.
    ```bash
    bash cabinet/scripts/kill-switch.sh deactivate
    ```
-2. **Rotate the Telegram bot token.** Talk to @BotFather, get a new token
-   for the Chair, and paste it into the seeded `cabinet/.env` in place of
-   the `__ROTATE_ME__` placeholder Step 2 left there. The chat id doesn't
-   change.
+2. **Set the Telegram bot token + re-enter secrets.** Nothing is seeded, so
+   the fresh box's `cabinet/.env` (at `$RUNTIME/shared/cabinet.env`) starts
+   empty — populate it on the new box. For the Chair, talk to @BotFather, get
+   a fresh token, and add it. The chat id is unchanged — look it up in the
+   Step 2 archive's `cabinet/.env` if you need it, but treat that archived
+   file like a password.
 3. **Re-lock the protected config files** on the fresh checkout (this Mac
    calls this "germline" locking — it's a filesystem-level protection so
    nobody, agent or human, can casually edit certain safety-relevant
@@ -270,26 +280,30 @@ for this relaunch specifically, confirm:
 Identical to `dev-runtime-split-cutover.md` Step 5: repoint launchd back
 at `/Users/nate/captains-cabinet` (the old dev tree, never modified by any
 step above), using the same three mechanisms in reverse. Then, if you also
-want the OLD instance data back exactly as it was (not just the code
-path): the Step 2 archive holds **two** components under two distinct
-prefixes (`instance` + `cabinet/.env` from the repo; `Application
-Support/cabinet` from the Mac-level state) — restore each to its own real
-location with its own `tar -xzf`, never both with a single `-C`, or the
-Application Support half lands nested inside the repo checkout instead of
-`~/Library/Application Support/`:
+want the OLD deployment back exactly as it was (not just the code path): the
+Step 2 archive holds **two** components under two distinct member prefixes —
+the ENTIRE old-root tree under its own basename (e.g. `captains-cabinet/...`,
+including `instance/`, `shared/interfaces/`, `.git`, and the real
+`cabinet/.env`), and `Application Support/cabinet` from the Mac-level state.
+Restore each to its own real location with its own `tar -xzf`, never both
+with a single `-C`, or the Application Support half lands nested inside the
+repo checkout instead of `~/Library/Application Support/`:
 
 ```bash
-tar -xzf <archive-path> -C /Users/nate/captains-cabinet instance cabinet/.env
+LIVE=/Users/nate/captains-cabinet
+tar -xzf <archive-path> -C "$(dirname "$LIVE")" "$(basename "$LIVE")"
 tar -xzf <archive-path> -C "$HOME/Library" "Application Support/cabinet"
 ```
 
-(the second line is a no-op if `--skip-appsupport-archive` was passed at
-Step 2, or `~/Library/Application Support/cabinet` simply didn't exist on
-this host at archive time — the archive won't have that member, and
-`tar -xzf` skips restoring what isn't there). Nothing above ever deleted or
-modified the original, so in the common case rollback is just "repoint
-launchd" — the archive is the belt-and-suspenders extra, not something you
-should need.
+(the first line restores the whole old-root tree in place — its member
+prefix is the old-root's basename, so extracting from the PARENT dir lands it
+back exactly where it was; the second line is a no-op if
+`--skip-appsupport-archive` was passed at Step 2, or `~/Library/Application
+Support/cabinet` simply didn't exist on this host at archive time — the
+archive won't have that member, and `tar -xzf` skips restoring what isn't
+there). Nothing above ever deleted or modified the original, so in the common
+case rollback is just "repoint launchd" — the archive is the
+belt-and-suspenders extra, not something you should need.
 
 ## 3. After relaunch — what's different
 
@@ -297,12 +311,12 @@ should need.
 |---|---|---|
 | Roster | Whatever was hired before | Empty — you re-hire deliberately |
 | Trust level per officer | Earned over time | Back to zero, re-earns from real behavior |
-| Vault / searchable memory | Connected | Connected (same vault, same history) |
-| Officer product knowledge | Present | Carried forward (the "working notes" per role) |
+| Vault / searchable memory | Connected | Connected read-only via the adapter (same external vault — reconnected, never seeded) |
+| Officer product knowledge | Present | Empty — fresh (old notes are in the archive only, not seeded) |
 | Internal governance records (decision logs, rule ledgers) | Accumulated | Empty — genuinely fresh |
 | Simulated "world" state | Accumulated | Fresh — old one is archived, not deleted |
-| Telegram bot | Old token | New token (Captain-rotated), same chat |
-| Secrets otherwise | — | Carried forward unchanged |
+| Telegram bot | Old token | New token (Captain-set on the fresh box), same chat |
+| Secrets otherwise | — | Re-entered on the fresh box (not carried; the archive keeps the old ones for rollback) |
 
 ## 4. Troubleshooting
 
@@ -314,7 +328,7 @@ additions:
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| A product CEO is already hired right after Step 4 | Something copied the old `roster.yml` forward instead of leaving it absent | Re-check Step 2 actually ran against this release's `$RUNTIME` (not an old one), and that `instance/config/roster.yml` isn't present anywhere in `$RUNTIME/shared/` before re-provisioning |
+| A product CEO is already hired right after Step 4 | A stray `roster.yml` is present in `$RUNTIME/shared/` from an earlier migration/seed (this archive-only relaunch never puts one there) | Confirm `instance/config/roster.yml` isn't present anywhere in `$RUNTIME/shared/`; if it is, remove it and re-provision so the fresh hatch's empty roster wins |
 | The Chair can't answer questions from the vault | Step 5's two `sources.yml` lines are missing, or `OBSIDIAN_VAULT_PATH` was overridden somewhere to a path that isn't the real vault | Re-check `instance/config/sources.yml` in `$RELEASE`; confirm no stray `OBSIDIAN_VAULT_PATH` env var is set anywhere in the officer's environment |
 
 ## 5. Command reference — condensed, paste-ready, NOT YET RUN
@@ -326,7 +340,7 @@ for p in ~/Library/LaunchAgents/com.cabinet.officer.*.plist; do
   launchctl bootout "gui/$(id -u)" "$p" 2>/dev/null || true
 done
 
-# Step 2 — archive + seed (zero live-tree writes)
+# Step 2 — archive only (zero live-tree writes; seeds nothing)
 LIVE=/Users/nate/captains-cabinet
 RUNTIME=~/.cabinet/runtime
 bash "$LIVE/cabinet/scripts/relaunch-seed.sh" --old-root "$LIVE" --runtime-root "$RUNTIME"
@@ -349,15 +363,15 @@ grep -q "adapter: flavor_a.screenpipe_source:ScreenpipeSource" "$RELEASE/instanc
 
 # Step 7 — Captain-only
 bash cabinet/scripts/kill-switch.sh deactivate                 # [CAPTAIN]
-# rotate the Telegram token via @BotFather, paste into $RUNTIME/shared/cabinet.env  [CAPTAIN]
+# set a fresh Telegram token via @BotFather + re-enter secrets into the (empty) $RUNTIME/shared/cabinet.env  [CAPTAIN]
 ( cd "$RELEASE" && sudo bash cabinet/scripts/germline-lock.sh lock && bash cabinet/scripts/germline-lock.sh status )
 bash "$RUNTIME/current/cabinet/scripts/cabinet-doctor.sh"
 
 # Step 8 — verify: follow docs/runbooks/dev-runtime-split-cutover.md Step 4 verbatim
 
 # Step 9 — rollback, only if Step 8 is red: follow docs/runbooks/dev-runtime-split-cutover.md
-# Step 5 verbatim; restore old instance data from the Step 2 archive only if truly needed
-# (two components, two distinct prefixes — restore each separately, never one -C for both):
-#   tar -xzf <archive-path> -C /Users/nate/captains-cabinet instance cabinet/.env
+# Step 5 verbatim; restore the OLD deployment from the Step 2 archive only if truly needed
+# (two components, two distinct member prefixes — restore each separately, never one -C for both):
+#   tar -xzf <archive-path> -C "$(dirname /Users/nate/captains-cabinet)" "$(basename /Users/nate/captains-cabinet)"
 #   tar -xzf <archive-path> -C "$HOME/Library" "Application Support/cabinet"
 ```

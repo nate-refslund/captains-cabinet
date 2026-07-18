@@ -62,13 +62,19 @@
 # commits. So `link_instance_data` (below) symlinks only the individually-
 # gitignored leaves (files, linked only once a shared/ copy already exists —
 # never fabricated from nothing) plus the handful of directories that are
-# ENTIRELY gitignored (state/, cache/, archive/, loop-prompts/,
-# roles/{active,archive,hats}, secrets/) — verified against .gitignore +
-# `git ls-files` at fix time, not guessed. instance/memory/ is the one
-# exception that is BOTH gitignored-in-bulk AND ships a tracked
-# tier2/<officer>/{,reflections/}.gitkeep skeleton — seeded into shared/
-# from the release's own tree the first time only, then symlinked whole
-# like any other wholly-gitignored directory thereafter. KEEP THIS LIST IN
+# bulk-gitignored (state/, cache/, archive/, loop-prompts/, secrets/, the
+# fresh-relaunch persistence additions evidence/ + onboarding/{formation,v2,
+# purge-receipts}, and roles/{active,archive,hats}) — verified against
+# .gitignore + `git ls-files` at fix time, not guessed. NOT "ENTIRELY"
+# gitignored: roles/{active,archive,hats}/ each ship a tracked `.gitkeep`
+# (negated in .gitignore) — the same seeded-class shape as instance/memory —
+# so replacing such a dir with a shared/ symlink shows an accepted deleted-
+# `.gitkeep` status line in the disposable release worktree, while the
+# directory's existence is preserved by the shared/ mkdir regardless.
+# instance/memory/ is the one leaf that additionally must SEED its tracked
+# tier2/<officer>/{,reflections/}.gitkeep skeleton into shared/ from the
+# release's own tree the first time only, then is symlinked whole like any
+# other bulk-gitignored directory thereafter. KEEP THIS LIST IN
 # LOCKSTEP WITH .gitignore — same discipline as germline-lock.sh's own
 # "keep in lockstep with pre-tool-use.sh §5" rule.
 #
@@ -203,8 +209,15 @@ swap_symlink() {
 # ---- instance-data linking (leaf-level — see file header "WHY LEAF-LEVEL,
 # NOT A WHOLE instance/ SYMLINK" for the full rationale/fix history) --------
 # Space-separated, not arrays (bash 3.2-safe; none of these paths contain
-# spaces). KEEP IN LOCKSTEP WITH .gitignore.
-INSTANCE_PERSISTENT_DIRS="instance/roles/active instance/roles/archive instance/roles/hats instance/loop-prompts instance/archive instance/state instance/cache instance/onboarding/formation secrets"
+# spaces). KEEP IN LOCKSTEP WITH .gitignore. The onboarding/{v2,purge-receipts}
+# + evidence/ entries are the fresh-relaunch persistence additions (post-cutover
+# data-loss fix): whole-dir symlinks so a deploy/rollback never strands a
+# lane-CEO's onboarding run or the Captain-owned evidence store on the old
+# slot. Deliberately EXCLUDES instance/onboarding/.onboarding-v2.lock — an
+# ephemeral run lock that must NOT carry across deploys (it lives in the
+# onboarding/ parent, not under the v2/ leaf, so symlinking v2/ cannot drag
+# it along).
+INSTANCE_PERSISTENT_DIRS="instance/roles/active instance/roles/archive instance/roles/hats instance/loop-prompts instance/archive instance/state instance/cache instance/onboarding/formation instance/onboarding/v2 instance/onboarding/purge-receipts instance/evidence secrets"
 # Gitignored in bulk but ships a tracked tier2/<officer>/{,reflections/}.gitkeep
 # skeleton — seeded into shared/ from the release's own tree once, then
 # symlinked whole like any PERSISTENT_DIRS entry thereafter.
@@ -213,8 +226,18 @@ INSTANCE_PERSISTENT_SEEDED_DIRS="instance/memory"
 # Symlinked ONLY when a shared/ copy already exists — never fabricated, so
 # a from-scratch runtime root leaves the path absent, same as a from-scratch
 # checkout (every consumer already has its own not-found guard for that,
-# e.g. deploy-mac.sh/cabinet-deploy.sh's roster_officers()).
-INSTANCE_PERSISTENT_FILES="instance/config/product.yml instance/config/active-project.txt instance/config/active-preset instance/config/roster.yml instance/config/publish-scan-patterns.local instance/config/extensions.yml instance/config/required-plugins.yml instance/config/extra-mcps.json instance/config/autonomy.yml instance/config/act-first-enabled .claude/settings.local.json shared/interfaces/action-lessons.yml shared/interfaces/falsifier-series.jsonl shared/interfaces/envelope-violations.jsonl shared/interfaces/charter-shadow-series.jsonl shared/interfaces/golden-eval-scalar.jsonl shared/interfaces/memory-supersession-proposals.jsonl shared/interfaces/needs-ledger.jsonl shared/interfaces/prediction-calibration.jsonl shared/interfaces/preference-pairs.jsonl shared/interfaces/world-chronicle.jsonl shared/interfaces/attention-queue.json"
+# e.g. deploy-mac.sh/cabinet-deploy.sh's roster_officers()). The germline
+# posture/trust-ladder/standing-grants leaves + the comms-charter override
+# and its amendment/proposal sidecars + the memory-supersession-soak /
+# workaround-retire / governance-labels / evidence-shadow-findings series are
+# here (fresh-relaunch persistence, post-cutover data-loss fix) so a deploy
+# or rollback never resets earned posture, the Captain's routing charter, or
+# those governance ledgers to a fresh checkout's blank state.
+# instance/config/act-first-surfaces.yml is DELIBERATELY ABSENT: it is
+# git-TRACKED, so linking it would SHADOW the release's own tracked copy —
+# the same "never shadow a tracked file" guard the wildcard block below
+# already applies to shared/interfaces/deployment-status.md.
+INSTANCE_PERSISTENT_FILES="instance/config/product.yml instance/config/active-project.txt instance/config/active-preset instance/config/roster.yml instance/config/publish-scan-patterns.local instance/config/extensions.yml instance/config/required-plugins.yml instance/config/extra-mcps.json instance/config/autonomy.yml instance/config/act-first-enabled .claude/settings.local.json shared/interfaces/action-lessons.yml shared/interfaces/falsifier-series.jsonl shared/interfaces/envelope-violations.jsonl shared/interfaces/charter-shadow-series.jsonl shared/interfaces/golden-eval-scalar.jsonl shared/interfaces/memory-supersession-proposals.jsonl shared/interfaces/needs-ledger.jsonl shared/interfaces/prediction-calibration.jsonl shared/interfaces/preference-pairs.jsonl shared/interfaces/world-chronicle.jsonl shared/interfaces/attention-queue.json instance/config/posture.yml instance/config/trust-ladder.yml instance/config/standing-grants.yml instance/config/comms-charter.yml instance/config/comms-charter-amendments.jsonl instance/config/comms-charter-proposals.jsonl shared/interfaces/memory-supersession-soak.jsonl shared/interfaces/workaround-retire-proposals.jsonl shared/interfaces/governance-labels.jsonl shared/interfaces/evidence-shadow-findings.jsonl"
 
 # link_instance_data <slot> <root> — the leaf-level linking pass. Called
 # unconditionally from cmd_provision (both on a fresh worktree checkout and

@@ -1,5 +1,20 @@
 # Fresh-Instance Relaunch — Seed Manifest (2026-07-15)
 
+> **SUPERSEDED IN PART by the Captain 100%-SCRATCH ruling, 2026-07-18.** The
+> fresh instance now inherits **NOTHING** — it is produced entirely by
+> `hatch.sh --defaults`, not by seeding old content. Every KEEP-of-live-content
+> classification below (§1b fidelity corpus, §1d secrets, §1e org-memory/
+> product-knowledge, the gitignored-KEEP leaves in §1f, and §3f product-specs)
+> is now **DROP-from-seed**, preserved only inside the pre-cutover
+> full-old-root archive that `relaunch-seed.sh` writes — that archive is the
+> **Flavor-B restore map** if a future ruling wants any of it back. `relaunch-
+> seed.sh` is archive-only; `runtime-provision.sh` still persists the
+> gitignored instance-data leaves across deploys, but nothing here seeds them
+> from the OLD instance. Rows below are kept verbatim as the record of what
+> existed and how it was classified under the earlier (curated-seed) ruling
+> (supersede-with-note, never delete). Live procedure:
+> `docs/runbooks/fresh-instance-relaunch.md`.
+
 **Status: MANIFEST ONLY — read-only inventory, no live paths touched.** Built
 in worktree `fresh-relaunch-prep` (branch `feat/fresh-relaunch-prep`, off
 `origin/master` @2f0253b7, merged `origin/feat/dev-runtime-split` @94f18967

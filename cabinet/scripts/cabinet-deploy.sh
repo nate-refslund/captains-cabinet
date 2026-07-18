@@ -55,11 +55,16 @@
 # CABINET_FORCE_TAKEOVER=1 needlessly; the symlink-string invocation keeps
 # it constant across every future deploy, which is also exactly what lets
 # launchd's plist ProgramArguments stay unchanged across deploys once the
-# real cutover points them at .../current. Per officer (read from
-# instance/config/roster.yml, same roster parser deploy-mac.sh already
-# uses, adapted verbatim): if a real LaunchAgent is loaded, `launchctl
-# kickstart -k` it (graceful, reuses the plist's own ProgramArguments —
-# never rewrites a plist); otherwise (sandbox, or pre-cutover) invoke
+# real cutover points them at .../current. Per officer (derived from
+# instance/config/roster.yml via the SAME lib_roster.officer_service_rows()
+# abstraction deploy-mac.sh uses — label-validated; consultants are filtered
+# out, on-demand not persistent): if a real LaunchAgent is loaded AND this is
+# the canonical live runtime root, `launchctl kickstart -k` it (graceful,
+# reuses the plist's own ProgramArguments — never rewrites a plist); on a
+# non-canonical scratch/rehearsal root a colliding live agent is reported and
+# SKIPPED (kickstart -k acts on the whole-host launchd, so a scratch deploy
+# must never reach it — the same CANONICAL_RUNTIME_ROOT confinement the redis
+# leg already uses); otherwise (sandbox, or pre-cutover) invoke
 # start-officer-mac.sh directly, honoring --dry-run.
 #
 # REDIS CONFINEMENT (2026-07-15 sandbox-confinement review, finding #1): the
@@ -242,17 +247,51 @@ health_gate() {
   return 0
 }
 
-# ---- roster parsing (mirrors deploy-mac.sh's roster_officers(), verbatim) ----
+# ---- roster parsing — derives the fleet via the shared
+# lib_roster.officer_service_rows() abstraction (label-validated), same as
+# deploy-mac.sh; consultants are filtered separately in restart_fleet. -------
+python_for_generator() {
+  local candidate="${CABINET_PYTHON:-/opt/homebrew/bin/python3.12}"
+  if command -v "$candidate" >/dev/null 2>&1; then
+    printf '%s\n' "$candidate"
+  elif command -v python3.12 >/dev/null 2>&1; then
+    command -v python3.12
+  elif command -v python3 >/dev/null 2>&1; then
+    command -v python3
+  else
+    echo "cabinet-deploy.sh: Python 3 is required to derive the officer fleet" >&2
+    return 1
+  fi
+}
+
 roster_officers() {
-  local roster="$1/instance/config/roster.yml"
+  local root="$1"
+  local roster="$root/instance/config/roster.yml"
   [ -f "$roster" ] || { echo "cabinet-deploy.sh: $roster not found — cannot derive the officer fleet" >&2; return 1; }
-  awk '
-    /^roster:[[:space:]]*$/ { in_roster=1; next }
-    in_roster && /^[^[:space:]#]/ { exit }
-    in_roster && /^  [a-z0-9-]+:[[:space:]]*$/ {
-      slug=$1; sub(/:$/,"",slug); print slug
-    }
-  ' "$roster"
+  local py
+  py="$(python_for_generator)" || return 1
+  # Shared abstraction: deploy-mac.sh, Cabinet Doctor, and the recovery drill
+  # all consume these same synthesized rows. Validate the label before
+  # returning a shell token (byte-mirror of deploy-mac.sh's own
+  # roster_officers() — the re.fullmatch allowlist gate Corridor flagged).
+  # lib_roster is imported from THIS slot's own cabinet/scripts (same "read
+  # the new slot, not the running one" discipline as the health gate).
+  "$py" - "$root" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+sys.path.insert(0, str(root / "cabinet" / "scripts"))
+import lib_roster
+
+for row in lib_roster.officer_service_rows(root):
+    label = str(row["label"])
+    match = re.fullmatch(r"com\.cabinet\.officer\.([a-z0-9-]+)", label)
+    if not match:
+        raise SystemExit(f"cabinet-deploy.sh: unsafe roster-derived officer label: {label!r}")
+    print(match.group(1))
+PY
 }
 
 restart_officer() {
@@ -267,6 +306,15 @@ restart_officer() {
       # instead of launchctl kickstart", which was only true when no live agent
       # of that label existed. Report, don't execute.
       echo "cabinet-deploy.sh: [dry-run] would kickstart live LaunchAgent $label (skipped)"
+    elif [ -z "$CANONICAL_RUNTIME_ROOT" ] || [ "$RUNTIME_ROOT" != "$CANONICAL_RUNTIME_ROOT" ]; then
+      # A non-canonical scratch/rehearsal --runtime-root must never
+      # SIGKILL+relaunch a LIVE LaunchAgent whose slug happens to collide:
+      # `kickstart -k` targets the HOST's launchd (gui/<uid>/<label> — a
+      # whole-host namespace), not anything confined to this scratch slot. Only
+      # the canonical/live runtime root (~/.cabinet/runtime) may touch live
+      # agents — the same CANONICAL_RUNTIME_ROOT confinement the health gate's
+      # redis leg already applies. Report + skip (same shape as --dry-run).
+      echo "cabinet-deploy.sh: [non-canonical runtime root] would kickstart live LaunchAgent $label (skipped)"
     else
       launchctl kickstart -k "gui/$(id -u)/$label"
       echo "cabinet-deploy.sh: kickstarted live LaunchAgent $label"
@@ -279,12 +327,34 @@ restart_officer() {
   fi
 }
 
+# is_consultant <slug> — true (0) when the current slot's role file marks
+# this officer officer_type: consultant. Consultants are on-demand sessions
+# (start-officer-mac.sh per trigger), so a persistent restart on every deploy
+# contradicts their lifecycle — restart_fleet SKIPS them. This is the
+# deploy-side mirror of deploy-mac.sh's guard_consultant refusal, using the
+# same `awk -F': *'` extraction. officer_service_rows() does NOT expose the
+# `type` field, so the role file is the authority here — exactly how
+# deploy-mac.sh splits label-derivation (lib_roster) from the consultant
+# check (role yaml).
+is_consultant() {
+  local slug="$1"
+  local role_yml="$RUNTIME_ROOT/current/instance/roles/active/$slug.yml"
+  [ -f "$role_yml" ] || return 1
+  local otype
+  otype="$(awk -F': *' '$1=="officer_type"{print $2; exit}' "$role_yml" | tr -d '[:space:]')"
+  [ "$otype" = "consultant" ]
+}
+
 restart_fleet() {
   local officers officer rc=0
   officers="$(roster_officers "$RUNTIME_ROOT/current")" || return 1
   [ -n "$officers" ] || { echo "cabinet-deploy.sh: roster parsed to an empty officer list — nothing to restart" >&2; return 0; }
   while IFS= read -r officer; do
     [ -n "$officer" ] || continue
+    if is_consultant "$officer"; then
+      echo "cabinet-deploy.sh: skipping $officer — officer_type: consultant (on-demand session, not a persistent restart)"
+      continue
+    fi
     restart_officer "$officer" || rc=1
   done <<< "$officers"
   return "$rc"
