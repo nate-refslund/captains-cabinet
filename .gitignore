@@ -247,6 +247,10 @@ shared/interfaces/attention-queue.json
 # may load it (WORLD-E1-ASSETS).
 cabinet/dashboard/public/world-assets/*
 !cabinet/dashboard/public/world-assets/manifest.json
+# …EXCEPT owned commissioned originals (world-asset-intake.py --promote;
+# license "owned — org-original"): org-owned art IS committable — only the
+# LimeZu commercial binaries stay ignored.
+!cabinet/dashboard/public/world-assets/originals/
 
 # World-aesthetic calibration corpus: LimeZu-derived showcase scenes +
 # Captain-rejected build screenshots are licensed/instance data — images

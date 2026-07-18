@@ -3,7 +3,7 @@
 **What this is (2026-07-17, Wave-3 asset-production machine):** the
 palette-agnostic production pipeline that mass-produces original owned
 sprite art the day the artist's Phase-0 master palette lands (~Aug 18–21).
-Two tools:
+Three tools:
 
 - `cabinet/scripts/world-asset-spec.py` — turns the world grammar
   (growth-ladders / morphology / show-grammar) into the canonical asset
@@ -12,6 +12,9 @@ Two tools:
 - `cabinet/scripts/world-asset-forge.py` — generates N sprite CANDIDATES
   per worklist entry via the PixelLab.ai API into a gitignored review
   directory, with full provenance sidecars.
+- `cabinet/scripts/world-asset-intake.py` — validates ARTIST-DELIVERED
+  sprite batches against the worklist and (explicit `--promote` only)
+  installs accepted originals with manifest rows (§8).
 
 **Acceptance law (verbatim):** the forge never ingests; human accept via
 the existing world-asset-install/world-asset-gate flow; candidates die in
@@ -123,3 +126,63 @@ nothing written; off-grid results written + flagged for human review) ·
   candidate) uses field names NOT re-verified against live docs — all
   payload builders are isolated in `_build_*_payload` for cheap
   correction. `/animate-with-text` and `/balance` are not wired yet.
+
+## 8 — Intake (artist delivery)
+
+`cabinet/scripts/world-asset-intake.py` is the RECEIVING half of the
+loop: the onboarded artist delivers a batch of transparent PNGs — one
+file per worklist entry, named `<entry-id>.png` (e.g.
+`ladder.firepit.campfire.bare_ground.png`) — into a local folder, and
+intake validates, reports, and (only on explicit `--promote`) installs.
+Deterministic throughout: no timestamps, no RNG, no network — reports and
+the test scene are byte-identical across reruns.
+
+    # report-only (default): validate + write reports, touch nothing else
+    python3.12 cabinet/scripts/world-asset-intake.py ~/deliveries/batch-01 \
+        --palette artist-master-strip.png --gate
+
+    # install accepted sprites + manifest rows, then gate the tree
+    python3.12 cabinet/scripts/world-asset-intake.py ~/deliveries/batch-01 \
+        --palette artist-master-strip.png --promote
+    python3.12 cabinet/scripts/world-asset-gate.py
+
+Validation per file (every failure carries an artist-readable reason —
+coordinates, color hexes, expected-vs-actual sizes):
+
+- filename stem must EXACTLY equal a worklist id (unknown ids get
+  did-you-mean suggestions); `covered_by` rows refuse (no new art — the
+  named family supplies it); `size: null` cross-refs refuse; `staged`
+  entries accept with an informational note.
+- PNG magic + IHDR before any pixel decode; dims must equal the entry's
+  `size` {w,h}; ANIMATED entries deliver ONE horizontal strip of
+  `frames` frames ⇒ expected file is `(w×frames) × h` (the install
+  `_sheetN` convention); 16px grid law.
+- alpha channel required (RGBA export); stray-halo scan: semi-transparent
+  pixels (alpha 1..254) touching fully-transparent ones are anti-aliased
+  fringe — more than `--halo-max` (default 8) fails, with coordinates.
+- `--palette STRIP.png`: exact-RGB membership over alpha>0 pixels;
+  off-palette colors reported as hex + count + first coordinate; more
+  than `--palette-max` (default 0) fails.
+
+Outputs land in `<delivery>/_intake/` (`--report-dir`): `report.json`
+(schema `cabinet.world.intake-report/v1`), `report.md`, and a
+deterministic `test-scene.png` conformance sheet (accepted sprites on a
+neutral gray checker — a conformance scene, not world art). `--gate`
+additionally runs `world-aesthetic-gate.py --mechanical` over the scene
+and folds the verdict in as INFORMATIONAL — the committed calibration is
+fitted to the outgoing LimeZu estate (§5), so conforming new-style art
+may honestly fail it until the Phase-0 style-bible recalibration.
+
+Promotion (`--promote`; REFUSES when any file failed unless
+`--promote-accepted-only`): accepted PNGs are copied VERBATIM (delivered
+bytes, no re-encode) into
+`cabinet/dashboard/public/world-assets/originals/<object>/<id>.png`
+(realpath-jailed) and upserted into the tracked manifest following the
+world-asset-install row conventions — content-addressed sha256,
+`license: "owned — org-original"`, batch tag in `pack`; the manifest's
+`version`/`_doc` are never touched by the tool. `originals/` is the ONE
+re-included (committable) subtree of the otherwise-gitignored asset dir:
+owned commissioned art ships in git, LimeZu binaries stay ignored. After
+any promote, run `python3.12 cabinet/scripts/world-asset-gate.py` (the
+tool prints the exact command). Exit codes: 0 all accepted · 1 any
+fix_needed (reports still written) · 2 usage / promote refusal.
