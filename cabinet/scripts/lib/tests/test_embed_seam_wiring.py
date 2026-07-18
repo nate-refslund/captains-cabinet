@@ -182,11 +182,13 @@ def test_stamp_wired_in_load_preset_neon_branch():
     )
     assert call, "stamp must run via subshell-sourced memory.sh in --if-absent mode"
     # The CALL sits inside the Neon branch: after the 046 list entry, before
-    # the keyless-else arm (comments may mention the names earlier).
+    # the keyless-else arm (comments may mention the names earlier). Anchor on
+    # the else-arm's stable ACTION phrase, not the env-var name — the fresh-hatch
+    # #57 fix reworded the lead-in to name both env AND cabinet/.env as sources.
     assert (
         text.index("046-embedding-meta.sql")
         < call.start()
-        < text.index("NEON_CONNECTION_STRING not set")
+        < text.index("skipping Neon schema application")
     )
     # Fail-soft: a stamp failure WARNs, never exits.
     assert "WARN: failed to stamp cabinet_embedding_meta" in text
