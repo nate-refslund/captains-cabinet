@@ -684,6 +684,15 @@ _REFERENCE_ALLOWLIST = {
     "cabinet/scripts/docs-sweep-allowlist.txt":
         "the docs-sweep glob list names the report's runtime path so the "
         "runbook may cite it — a pattern line, never a consumer",
+    "docs/proposals/germline-amendment-evidence-hp-2026-07-17.md":
+        "the HP-1/2/3 amendment contract (prose names the module and its "
+        "shadow law — a Captain document, never a consumer)",
+    "docs/runbooks/evidence-hp-deploy.md":
+        "the fresh-cabinet deploy-ceremony hand-off (prose cites the "
+        "enable steps and exit checks — never a consumer)",
+    "shared/interfaces/reviews/evidence-hp-preconditions-cp1.md":
+        "the FW-019 checkpoint review for the HP batch (prose records the "
+        "composed proofs — never a consumer)",
 }
 
 

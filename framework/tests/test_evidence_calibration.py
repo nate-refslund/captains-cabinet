@@ -516,7 +516,13 @@ def test_shadow_zero_callers_and_never_a_score():
                "cabinet/scripts/docs-sweep-allowlist.txt",
                # HP-3 (2026-07-18): the label-channel test drives the
                # fail-closed pairing seams — a test, never a consumer.
-               "cabinet/scripts/tests/test_label_channel_auth.py"}
+               "cabinet/scripts/tests/test_label_channel_auth.py",
+               # HP-1/2/3 integration docs (2026-07-18): the amendment
+               # contract and the deploy-ceremony hand-off name the module
+               # in prose (fail-closed pairing law, exit checks) — Captain
+               # documents, never consumers.
+               "docs/proposals/germline-amendment-evidence-hp-2026-07-17.md",
+               "docs/runbooks/evidence-hp-deploy.md"}
     needles = (b"evidence_calibration", b"evidence-calibration")
     hits: set[str] = set()
     for rel in _tracked_files(ROOT):
