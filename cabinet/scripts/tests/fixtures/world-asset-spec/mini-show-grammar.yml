@@ -1,0 +1,91 @@
+# Golden mini show-grammar fixture for test_world_asset_spec.py.
+# Carries every block spec-gen consumes, minimal: actor anims, idle program,
+# one group scene, weather with rain (sprite-bearing) + fog (no-art note),
+# construction phases + crew, one landed + one STAGED fauna species,
+# apprentices, killswitch lever, mailbox view, voyage cross-ref.
+version: 1
+vocab:
+  anims: [work, walk, idle]
+idle_program:
+  waypoints: [kettle, bookshelf]
+  dwell_ticks: 24
+  night_station: bunk
+  codex:
+    represents: "Officer session alive but no tool call in 5 min. Wander is verb-absence."
+    mechanism_path: "cabinet/scripts/hooks/post-tool-use.sh"
+    day0: "empty room after hours"
+group_scenes:
+  coordinating:
+    min_officers: 2
+    station: table
+    codex:
+      represents: "Two-plus officers coordinating — rendered as a table meeting."
+      mechanism_path: "cabinet/scripts/hooks/post-tool-use.sh"
+      day0: "empty table"
+weather:
+  precedence: [fog, rain, sun]
+  states:
+    fog:
+      signal: "telemetry degraded / unknown"
+      codex:
+        represents: "Grey-unmeasured made atmospheric."
+        mechanism_path: "cabinet/scripts/cabinet-doctor.sh"
+        day0: "clear"
+    rain:
+      signal: "elevated error / incident rate"
+      codex:
+        represents: "Real degradation makes rain."
+        mechanism_path: "cabinet/scripts/world-census.py"
+        day0: "no rain"
+  codex:
+    represents: "The sky is a health gauge."
+    mechanism_path: "cabinet/scripts/cabinet-doctor.sh"
+    day0: "sun, honestly earned"
+construction:
+  phases: {clearing: 0.25, raising: 0.75, finishing: 1.0}
+  crew_rule: "1 + tier(footprint, 4) seeded wright sprites"
+  codex:
+    represents: "Every growth rung earns itself on screen."
+    mechanism_path: "cabinet/scripts/world-census.py"
+    day0: "no sites — nothing has ever been built"
+fauna:
+  dog:
+    home: village
+    decorative: true
+    staged: false
+    codex:
+      represents: "Carries no data — exists for joy."
+      mechanism_path: "docs/plans/world-unified-spec-v2-2026-07-09.md"
+      day0: "asleep by the cottage door from the egg on"
+  cat:
+    home: wardroom_kettle_counter
+    decorative: true
+    staged: true
+    codex:
+      represents: "Carries no data — pets gratefully accepted."
+      mechanism_path: "docs/plans/world-unified-spec-v2-2026-07-09.md"
+      day0: "staged dark — arrives with its pack art"
+apprentices:
+  cap_per_officer: 3
+  codex:
+    represents: "Every human-shaped sprite corresponds to a real acting entity."
+    mechanism_path: "cabinet/scripts/hooks/post-tool-use.sh"
+    day0: "no apprentices — no crew has ever run"
+killswitch_lever:
+  placement: "Great House exterior wall, left of the door — far zoom renders a 6-px lever pin"
+  codex:
+    represents: "The single write the world can perform."
+    mechanism_path: "cabinet/scripts/kill-switch.sh"
+    day0: "lever up, never pulled"
+mailbox_view:
+  interaction: read_only
+  codex:
+    represents: "The crossroads mailbox is the world's face of the Captain's decision queue."
+    mechanism_path: "cabinet/dashboard/src/app/api/world/stream/route.ts"
+    day0: "flag down, empty box"
+voyage:
+  tacking_window_days: 14
+  codex:
+    represents: "The harbor boat's position tells the course story the outcomes ledger can honestly tell."
+    mechanism_path: "cabinet/scripts/world-port-calls.py"
+    day0: "rowboat at its jetty — nowhere sailed yet"

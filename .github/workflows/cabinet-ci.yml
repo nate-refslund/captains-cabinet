@@ -446,7 +446,11 @@ jobs:
           cache: pip
           cache-dependency-path: .github/workflows/cabinet-ci.yml
       - name: Install test dependencies
-        run: pip install pytest pyyaml jsonschema
+        # pillow: test_world_asset_forge.py (+ the forge script it
+        # module-loads) imports PIL; installed here so the forge tests GATE
+        # in the cabinet/scripts/tests step below instead of killing its
+        # collection (wave-3 2026-07-17; only user-site has PIL locally).
+        run: pip install pytest pyyaml jsonschema pillow
       # redis-tools: the redis-gated test guards probe via the redis-cli
       # BINARY (test_intake.py:32) — the service container alone leaves
       # them skipping (proven on a spike run: still skipped 23).

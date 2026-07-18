@@ -665,3 +665,99 @@ def test_probe_secret_output_is_redacted_in_journal_and_ledger(tmp_path):
     assert "stdout_tail" not in prop["evidence"]
     assert "stderr_tail" not in prop["evidence"]
     assert prop["evidence"]["stdout_sha256"] and prop["evidence"]["stdout_len"] > 0
+
+
+# ------------------------------------- autonomy-graded action seam ----------
+# Captain law 2026-07-17: the retirement DISPOSITION routes through
+# framework/authority/action_mode.py. Under guardian/earn_up behavior is
+# byte-identical v1 propose-only; the seam may only tighten. These arms pass
+# postures EXPLICITLY (hermetic — the live ruling is never load-bearing).
+
+
+def _seam_row(harness, cond="claude-tool > 1.0.0"):
+    return {"id": "WA-2026-07-17-seam-probe", "symptom": "s", "cause": "c",
+            "workaround": "w", "version_condition": cond,
+            "retest_cmd": "bash -c \"exit 1\"",
+            "owner_surface": "cabinet/scripts/workaround-retest.py",
+            "recorded": "2026-07-17"}
+
+
+def test_disposition_guardian_and_earn_up_are_propose(harness):
+    for posture in ("guardian", "earn_up"):
+        disp = harness.disposition_mode(_seam_row(harness), posture)
+        assert disp == {"mode": "propose", "captain_card": False}
+
+
+def test_disposition_sovereign_may_go_but_runner_stays_propose_only(harness):
+    disp = harness.disposition_mode(_seam_row(harness), "sovereign")
+    assert disp == {"mode": "go", "captain_card": False}
+    # ...and even a "go" answer files a propose-only row (GATE 1: no
+    # pre-ratified class exists; this runner has no applier at all):
+    verdict = {"verdict": "fix_confirmed", "sandboxed": False, "exit_code": 1}
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        ppath = Path(td) / "proposals.jsonl"
+        prop = harness.file_proposal(_seam_row(harness), verdict, ppath,
+                                     None, disposition=disp)
+        assert prop["propose_only"] is True
+        assert prop["status"] == "proposed"
+        assert prop["action_mode"] == "go"
+        assert prop["captain_card"] is False
+
+
+def test_disposition_ring0_component_is_captain_carded_every_posture(harness):
+    row = _seam_row(harness, cond="claude-code > 2.1.211")
+    for posture in ("guardian", "earn_up", "sovereign", "act_then_tell"):
+        disp = harness.disposition_mode(row, posture)
+        assert disp == {"mode": "propose", "captain_card": True}, posture
+
+
+def test_disposition_fails_closed_on_garbage_posture(harness):
+    disp = harness.disposition_mode(_seam_row(harness), "Sovereign!!")
+    assert disp == {"mode": "propose", "captain_card": False}
+
+
+def test_retire_action_descriptor_shape(harness):
+    d = harness._retire_action(_seam_row(harness))
+    assert d == {"ring": 2, "reversibility": "reversible",
+                 "category": "workaround-retire"}
+    assert "undo_handle" not in d  # no registered undo in this runner
+    d0 = harness._retire_action(_seam_row(harness, cond="claude-code > 2.1.211"))
+    assert d0["category"] == "claude-binary"
+
+
+def test_preratified_auto_classes_pinned_empty(harness):
+    # GATE 1 mutant pin: adding a class requires a RECORDED Captain
+    # ratification cited at the constant + updating this pin in the same
+    # reviewed change. A silent widening goes red here.
+    assert harness._PRERATIFIED_AUTO_CLASSES == frozenset()
+
+
+def test_fix_confirmed_rows_carry_action_mode_stamp(tmp_path):
+    # End-to-end (live posture resolution — assertion is posture-invariant:
+    # the stamp exists, is vocabulary-legal, and the row stays propose-only
+    # whatever posture the box is in).
+    reg = _write_registry(
+        tmp_path, _row("WA-2026-07-17-seamstamp", "bash -c \"exit 1\""))
+    rc, lines, paths = _run_cli(["--all"], tmp_path, registry=reg,
+                                repo_root=tmp_path)
+    assert rc == 0
+    assert lines[0]["verdict"] == "fix_confirmed"
+    assert lines[0]["action_mode"] in ("propose", "act_tell", "go")
+    assert isinstance(lines[0]["captain_card"], bool)
+    prop = json.loads(paths["proposals"].read_text().splitlines()[0])
+    assert prop["action_mode"] == lines[0]["action_mode"]
+    assert prop["propose_only"] is True
+    assert prop["status"] == "proposed"
+
+
+def test_still_needed_rows_carry_no_action_mode_stamp(tmp_path):
+    # The seam is consulted for DISPOSITIONS only — a still-needed verdict
+    # has nothing to dispose.
+    reg = _write_registry(
+        tmp_path, _row("WA-2026-07-17-seamnone", "bash -c \"exit 0\""))
+    rc, lines, _paths = _run_cli(["--all"], tmp_path, registry=reg,
+                                 repo_root=tmp_path)
+    assert rc == 0
+    assert lines[0]["verdict"] == "still_needed"
+    assert "action_mode" not in lines[0]

@@ -373,6 +373,7 @@ def test_proposals_non_amendments_archived_amendments_kept(export: Path):
     assert (proposals / "ARCHIVED-NOTE.md").is_file(), "R167: archived stub must ship"
     amendments = sorted(p.name for p in proposals.glob("germline-amendment-*.md"))
     assert amendments == [
+        "germline-amendment-action-mode-eval-2026-07-17.md",
         "germline-amendment-attention-transport-2026-07-09.md",
         "germline-amendment-brain-bridge-split-2026-07-07.md",
         "germline-amendment-cabinet-axes-2026-07-05.md",

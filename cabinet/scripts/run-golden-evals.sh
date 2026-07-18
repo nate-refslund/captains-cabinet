@@ -2142,6 +2142,41 @@ else
 fi
 
 # ------------------------------------------------------------------
+# EVAL-026-ACTION-MODE: autonomy-graded action seam matrix
+# ------------------------------------------------------------------
+# AUTONOMY-GRADED ACTION SEAM (Captain law 2026-07-17): every autonomous
+# mutation's mode is a FUNCTION of the posture level — propose-first/
+# earn-trust -> ASK; act-then-tell -> ACT with proven undo + receipt;
+# sovereign -> GO; Ring-0 ALWAYS Captain regardless; unknown anything ->
+# propose (fail-closed). The seam is framework/authority/action_mode.py;
+# the deterministic harness + pinned matrix fixtures live NON-GERMLINE at
+# cabinet/evals/action-mode/ (the eval BODY
+# memory/golden-evals/eval-026-action-mode-autonomy-seam.md is staged via
+# docs/proposals/germline-amendment-action-mode-eval-2026-07-17.md — the
+# golden-evals dir is schg-locked live). Every fixture arm passes its
+# posture explicitly, so this section never reads the live posture ruling.
+# Section id EVAL-026-ACTION-MODE (body series: 025 = never-a-score;
+# 002/023 unused). Fail-closed: a missing harness or missing/malformed
+# fixture is a FAIL, not a skip — only a missing python3 interpreter skips.
+log "EVAL-026-ACTION-MODE: autonomy-graded action seam matrix self-test"
+EV26AM_HARNESS="$CABINET_ROOT/cabinet/evals/action-mode/harness.py"
+EV26AM_PY="$(command -v python3.12 || command -v python3)"
+if [ ! -f "$EV26AM_HARNESS" ]; then
+  fail "action-mode harness missing at $EV26AM_HARNESS"
+elif [ -z "$EV26AM_PY" ]; then
+  skip "no python3 interpreter available for the action-mode harness"
+else
+  EV26AM_OUT=$("$EV26AM_PY" "$EV26AM_HARNESS" --self-test --repo-root "$CABINET_ROOT" 2>&1)
+  EV26AM_EC=$?
+  if [ "$EV26AM_EC" -eq 0 ]; then
+    EV26AM_SUMMARY=$(echo "$EV26AM_OUT" | grep "^ACTION-MODE-EVAL:" | head -1)
+    pass "action-mode seam matrix green (${EV26AM_SUMMARY:-all matrix arms hold})"
+  else
+    fail "action-mode seam matrix RED (exit=$EV26AM_EC): $(echo "$EV26AM_OUT" | grep -E "MISMATCH|ACTION-MODE-EVAL" | head -3 | tr '\n' '|')"
+  fi
+fi
+
+# ------------------------------------------------------------------
 # Summary
 # ------------------------------------------------------------------
 log ""
