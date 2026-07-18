@@ -229,7 +229,7 @@ INSTANCE_PERSISTENT_SEEDED_DIRS="instance/memory"
 # e.g. deploy-mac.sh/cabinet-deploy.sh's roster_officers()). The germline
 # posture/trust-ladder/standing-grants leaves + the comms-charter override
 # and its amendment/proposal sidecars + the memory-supersession-soak /
-# workaround-retire / governance-labels / evidence-shadow-findings series are
+# workaround-retire / governance-labels series are
 # here (fresh-relaunch persistence, post-cutover data-loss fix) so a deploy
 # or rollback never resets earned posture, the Captain's routing charter, or
 # those governance ledgers to a fresh checkout's blank state.
@@ -237,7 +237,10 @@ INSTANCE_PERSISTENT_SEEDED_DIRS="instance/memory"
 # git-TRACKED, so linking it would SHADOW the release's own tracked copy —
 # the same "never shadow a tracked file" guard the wildcard block below
 # already applies to shared/interfaces/deployment-status.md.
-INSTANCE_PERSISTENT_FILES="instance/config/product.yml instance/config/active-project.txt instance/config/active-preset instance/config/roster.yml instance/config/publish-scan-patterns.local instance/config/extensions.yml instance/config/required-plugins.yml instance/config/extra-mcps.json instance/config/autonomy.yml instance/config/act-first-enabled .claude/settings.local.json shared/interfaces/action-lessons.yml shared/interfaces/falsifier-series.jsonl shared/interfaces/envelope-violations.jsonl shared/interfaces/charter-shadow-series.jsonl shared/interfaces/golden-eval-scalar.jsonl shared/interfaces/memory-supersession-proposals.jsonl shared/interfaces/needs-ledger.jsonl shared/interfaces/prediction-calibration.jsonl shared/interfaces/preference-pairs.jsonl shared/interfaces/world-chronicle.jsonl shared/interfaces/attention-queue.json instance/config/posture.yml instance/config/trust-ladder.yml instance/config/standing-grants.yml instance/config/comms-charter.yml instance/config/comms-charter-amendments.jsonl instance/config/comms-charter-proposals.jsonl shared/interfaces/memory-supersession-soak.jsonl shared/interfaces/workaround-retire-proposals.jsonl shared/interfaces/governance-labels.jsonl shared/interfaces/evidence-shadow-findings.jsonl"
+# The report-only shadow-detector journal is intentionally NOT in this list:
+# regenerable detector output that a germline law bars any tracked surface
+# from naming (the CI shadow-grep proof enforces it) — so it is never linked.
+INSTANCE_PERSISTENT_FILES="instance/config/product.yml instance/config/active-project.txt instance/config/active-preset instance/config/roster.yml instance/config/publish-scan-patterns.local instance/config/extensions.yml instance/config/required-plugins.yml instance/config/extra-mcps.json instance/config/autonomy.yml instance/config/act-first-enabled .claude/settings.local.json shared/interfaces/action-lessons.yml shared/interfaces/falsifier-series.jsonl shared/interfaces/envelope-violations.jsonl shared/interfaces/charter-shadow-series.jsonl shared/interfaces/golden-eval-scalar.jsonl shared/interfaces/memory-supersession-proposals.jsonl shared/interfaces/needs-ledger.jsonl shared/interfaces/prediction-calibration.jsonl shared/interfaces/preference-pairs.jsonl shared/interfaces/world-chronicle.jsonl shared/interfaces/attention-queue.json instance/config/posture.yml instance/config/trust-ladder.yml instance/config/standing-grants.yml instance/config/comms-charter.yml instance/config/comms-charter-amendments.jsonl instance/config/comms-charter-proposals.jsonl shared/interfaces/memory-supersession-soak.jsonl shared/interfaces/workaround-retire-proposals.jsonl shared/interfaces/governance-labels.jsonl"
 
 # link_instance_data <slot> <root> — the leaf-level linking pass. Called
 # unconditionally from cmd_provision (both on a fresh worktree checkout and
