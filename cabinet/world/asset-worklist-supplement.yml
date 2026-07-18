@@ -1,0 +1,174 @@
+# =============================================================================
+# asset-worklist-supplement.yml — curated overlay for world-asset-spec.py
+# =============================================================================
+# DATA ONLY (no code, no bindings). The spec-gen tool derives every entry from
+# the REAL grammar files (growth-ladders.yml / morphology.yml /
+# show-grammar.yml); this file adds what the grammar deliberately does not
+# carry: the art brief's phase/district grouping, the "a ladder already
+# supplies this art" coverage map, human meanings per ladder, and canvas-size/
+# frame hints. VALUE edits here are Captain-tunable like every world-data
+# file; the spec-gen tool validates districts against its closed phase enum,
+# coverage targets against real ladder ids, and sizes against the 16-px grid.
+# Unknown keys warn (schema drift is never silent).
+#
+# Districts = the art brief phase order: village_core -> harbor ->
+# law_observatory_fields -> services -> ui_props, plus ship_estate (separate
+# section) — animation families need no district (own section).
+schema: cabinet.world.asset-worklist-supplement/v1
+version: 1
+
+districts:
+  ladders:
+    # Phase 1 — village core
+    great_house: village_core
+    officer_dwellings: village_core
+    flagpole: village_core
+    noticeboard: village_core
+    library: village_core
+    journal_desk: village_core
+    well: village_core
+    firepit: village_core
+    road: village_core
+    lantern_posts: village_core
+    posts_lit: village_core
+    # Phase 2 — harbor
+    quay: harbor
+    berths: harbor
+    cargo_stacks: harbor
+    warehouse: harbor
+    harbormaster_hut: harbor
+    lighthouse: harbor
+    lighthouse_lamp: harbor
+    lane_isles: harbor
+    # Phase 3 — law / observatory / fields
+    law_plot: law_observatory_fields
+    veto_plinth: law_observatory_fields
+    observatory: law_observatory_fields
+    field_plots: law_observatory_fields
+    outbuildings: law_observatory_fields
+    # Phase 4 — services
+    workshop: services
+    pens: services
+    water_store: services
+    composter: services
+    # Ship estate — separate section
+    harbor_boat: ship_estate
+  morphology:
+    memory_store: village_core
+    evolved_skills: services
+    consequence_ledger: law_observatory_fields
+    commits: services
+    captain_rules: law_observatory_fields
+    work_completed: law_observatory_fields
+    subagents_lifetime: village_core
+    tier2_reflections: village_core
+    golden_evals_delta: services
+    packs_inherited: harbor
+    cells_graduated: harbor
+    hats_earned: ui_props
+    org_posture: village_core
+    street_hq_floors: ui_props
+    island_land_radius: village_core
+    island_officer_houses: village_core
+    island_fields: law_observatory_fields
+    island_harbor_beacon: harbor
+    island_harbor_crates: harbor
+    island_services_mill_row: services
+    wardroom_bookshelf_fill: ui_props
+    wardroom_noticeboard_pins: ui_props
+    street_liveliness: ui_props
+    lighthouse_staged: harbor
+    lane_reef_buoys: harbor
+    mailbox_pending: ui_props
+    manor_chart_table: village_core
+    harbor_port_calls: harbor
+    lane_course_state: harbor
+    harbor_boat_voyage: ship_estate
+
+# Morphology entries whose sprite family a growth ladder ALREADY supplies —
+# marked covered_by:<ladder> instead of duplicating art (dual-view D7).
+coverage:
+  memory_store: library
+  evolved_skills: workshop
+  tier2_reflections: journal_desk
+  island_officer_houses: officer_dwellings
+  island_fields: field_plots
+  island_harbor_beacon: lighthouse
+  island_harbor_crates: cargo_stacks
+  cells_graduated: lighthouse_lamp
+  lighthouse_staged: lighthouse
+  lane_reef_buoys: lane_isles
+  harbor_boat_voyage: harbor_boat
+
+# One-liner meanings per ladder (the artist-facing "what is this thing").
+meanings:
+  great_house: "The Great House / manor — the org's seat; grows with lifetime sessions."
+  officer_dwellings: "One dwelling per defined officer role, birth-order slots on the west path."
+  flagpole: "Village flagpole — a pennant rises once the world chronicle has keyframes."
+  noticeboard: "Village noticeboard — appears with the chronicle (pins are texture, bound elsewhere)."
+  workshop: "Forge / workshop — the tool wall grows with evolved skills."
+  library: "The Library (Memory NE anchor) — wing mass grows with memory rows."
+  journal_desk: "Officer journal desk — stacks grow with tier-2 working notes."
+  well: "The village well — dug when the first self-improvement loop completes."
+  firepit: "Gathering firepit — the ring grows with completed self-improvement loops."
+  field_plots: "Tilled plots (Fields SE) — one per active system-self outcome."
+  outbuildings: "Farm outbuildings (coop / barn) — mass from lifetime commits since genesis."
+  law_plot: "Law plot fencing (Law N) — posts accrue with indexed captain rules."
+  veto_plinth: "Veto plinth — the stone appears at the first captain veto."
+  observatory: "Observatory — the dome rises as trust cells accumulate."
+  pens: "Service pens — yards grow with fleet service rows."
+  water_store: "Water store — bucket to tank tower with the memory embed queue."
+  composter: "Composter bays — one per disabled service row (honest waste, never hidden)."
+  quay: "The quay (Harbor S) — rowboat jetty to stone piers with lifetime commits."
+  berths: "Berths — one per active outcome window."
+  cargo_stacks: "Cargo stacks on the dock — crates rise with completed work items."
+  harbor_boat: "THE harbor boat — the org's vessel; class rises as outcomes are achieved."
+  warehouse: "Harbor warehouse — appears as outcomes are achieved."
+  harbormaster_hut: "Harbormaster hut — staffed once two or more roles are defined."
+  lighthouse: "THE lighthouse tower — grows as trust cells accumulate (the lamp is its own ladder)."
+  lighthouse_lamp: "The lighthouse LAMP — dark until the first graduated cell; the biggest visual event."
+  lantern_posts: "Street lighting posts — tiers with graduation transitions."
+  posts_lit: "Lit flames / glow on the lantern posts — one lit per graduated cell."
+  road: "The road — the egg's dirt path upgraded to cobble by real event traffic."
+  lane_isles: "Lane isles — one ring per product lane; reef buoy when retired."
+
+# Canvas-size hints (WxH, 16-px grid multiples) — longest-prefix match on
+# entry id; anything unlisted uses the class default (great 96x96,
+# quick 32x32) / section default.
+size_overrides:
+  ladder.lighthouse: 48x112
+  ladder.road: 16x16
+  ladder.lane_isles: 64x64
+  ladder.quay: 96x48
+  ladder.harbor_boat: 64x48
+  ladder.lantern_posts: 16x48
+  ladder.posts_lit: 16x16
+  ladder.lighthouse_lamp: 32x32
+  morph.island_land_radius: 16x16
+  morph.subagents_lifetime: 16x16
+  morph.work_completed: 16x16
+  morph.harbor_port_calls: 16x16
+  morph.lane_course_state: 16x16
+  morph.wardroom_noticeboard_pins: 16x16
+  morph.golden_evals_delta: 16x32
+  morph.org_posture: 16x48
+  morph.hats_earned: 16x32
+  morph.mailbox_pending: 16x32
+  morph.captain_rules: 64x32
+  morph.packs_inherited: 48x64
+  morph.island_services_mill_row: 96x96
+  morph.street_hq_floors: 96x32
+  morph.wardroom_bookshelf_fill: 32x48
+  anim.fauna.dog: 32x16
+
+# Animated-sprite hints (frame counts) — longest-prefix match on entry id.
+# Flame/glow families flicker; everything else defaults to static except the
+# animation section's own per-block defaults.
+animated:
+  ladder.posts_lit: 2
+  ladder.firepit: 2
+  ladder.lighthouse_lamp: 2
+
+# Curated additions beyond the grammar (none yet — entries here need at least
+# id, district, meaning).
+extra_entries: []

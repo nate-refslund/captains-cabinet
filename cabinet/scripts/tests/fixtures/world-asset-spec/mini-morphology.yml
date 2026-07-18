@@ -1,0 +1,37 @@
+# Golden mini morphology fixture for test_world_asset_spec.py.
+# Covers: a normal day-0 entry that a ladder covers (memory_store, via the
+# test supplement's coverage map), a scope:dark entry (hats_earned -> staged),
+# and a meta axis entry (era_vocabulary -> excluded from the checklist).
+version: 1
+entries:
+  - id: memory_store
+    represents: "Library main wing height — the org's memory row mass"
+    source_binding: "jq -r -s 'last | .memory_rows_total' shared/interfaces/world-chronicle.jsonl"
+    scope: org-global
+    tier: T0
+    replay: ledger
+    base: 80
+    codex:
+      represents: "Rows in cabinet_memory summed over source types."
+      mechanism_path: "cabinet/scripts/world-census.py"
+      day0: "empty shelves, sealed genome case"
+  - id: hats_earned
+    represents: "Hat racks in officer houses — earned role hats"
+    source_binding: "ls instance/roles/hats"
+    scope: dark
+    tier: T0
+    replay: none
+    codex:
+      represents: "role_hats organ exists but no hat has ever been earned."
+      mechanism_path: "instance/roles/hats"
+      day0: "empty racks"
+  - id: era_vocabulary
+    represents: "THE ERA AXIS — meta entry describing the vocabulary law"
+    source_binding: "grep -c -e 'weight:' cabinet/world/growth-ladders.yml"
+    scope: org-global
+    tier: T0
+    replay: ledger
+    codex:
+      represents: "The weighted era basket in growth-ladders.yml."
+      mechanism_path: "cabinet/world/growth-ladders.yml"
+      day0: "camp era — campfire/tent/torch/dirt vocabulary"

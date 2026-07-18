@@ -1,0 +1,46 @@
+# Golden mini growth-ladders fixture for test_world_asset_spec.py.
+# MUST pass the real cabinet/scripts/world-growth-validate.py (real metrics,
+# full era block). Covers: tier + count + flag modes, an era-dedupe repeat
+# word (flagpole pennant_cloth serves camp+hamlet), and a literal 'none' rung
+# (outbuildings rung 0 — skipped by spec-gen).
+schema: cabinet.world.growth-ladders/v1
+version: 1
+era:
+  names: [camp, hamlet, town, beyond_bay]
+  basket:
+    org_age_days:      {weight: 0.15, curve: linear, cap: 365, source: org_events_db}
+    org_events_total:  {weight: 0.25, curve: log10, cap: 10000000, source: census_keyframe}
+    outcomes_achieved: {weight: 0.25, curve: log2, cap: 16, source: outcomes_yml}
+    cells_graduated:   {weight: 0.20, curve: log2, cap: 16, source: census_keyframe}
+    active_lanes:      {weight: 0.15, curve: linear, cap: 8, source: outcomes_yml}
+  thresholds: {camp: 0.0, hamlet: 0.25, town: 0.55, beyond_bay: 0.80}
+  hysteresis: {advance_hold_evals: 2, demote_margin: 0.03}
+ladders:
+  flagpole:
+    metric: world_chronicle_keyframes
+    source: world_chronicle
+    verified: {value: 3, date: '2026-07-09'}
+    mode: flag
+    rungs: [bare_pole, pennant]
+    hysteresis_evals: 1
+    class: quick
+    vocab: {camp: pennant_cloth, hamlet: pennant_cloth, town: flag, beyond_bay: crested_flag}
+  outbuildings:
+    metric: commits_since_genesis
+    source: commits_ledger
+    verified: {value: 554, date: '2026-07-09'}
+    mode: tier
+    base: 64
+    rungs: [none, coop, small_barn]
+    hysteresis_evals: 2
+    class: great
+    vocab: {camp: leanto, hamlet: timber_shed, town: barn, beyond_bay: great_barn}
+  berths:
+    metric: outcomes_active
+    source: outcomes_yml
+    verified: {value: 6, date: '2026-07-09'}
+    mode: count
+    rungs: [none, berth_1, berths_2]
+    hysteresis_evals: 2
+    class: quick
+    vocab: {camp: mooring_post, hamlet: jetty_berth, town: stone_berth, beyond_bay: double_berth}
