@@ -69,3 +69,7 @@ expectations:
   # - evidence-store-invariants
   # - evidence-anchor-export-fresh
   # - evidence-shadow-detector-liveness
+  # HP-2 recompute liveness ships the same way (staged dark): the catalog
+  # row in framework/watchdog/registry.py lands at the enable ceremony
+  # together with uncommenting this id (unknown ids are ignored until then).
+  # - evidence-recompute-liveness

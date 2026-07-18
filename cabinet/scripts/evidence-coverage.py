@@ -297,6 +297,37 @@ SURFACES: list[dict[str, Any]] = [
         "design": "Ph4 item 2 — fuel-integrity shadow check (report-only)",
         "globs": ["framework/evidence_fuel_integrity.py"],
     },
+    {
+        "id": "signing-broker",
+        "kind": "infra",
+        # HP-1 (2026-07-17): out-of-process HMAC key custody daemon —
+        # imports ONLY the leaf framework/evidence/signing.py formats
+        # (hence the evidence_import detector hit); zero store reads or
+        # writes, zero org events, zero consumers.  Staged dark
+        # (services.yml row disabled:true); armed only by the Captain
+        # sudo deploy ceremony (docs/runbooks/evidence-signing-broker.md).
+        # Exact path on purpose — the next framework/evidence_*.py sibling
+        # must still trip the drift catch and be enumerated + reviewed.
+        "design": "HP-1 — signing-key custody broker (staged dark)",
+        "globs": ["framework/evidence_signing_broker.py"],
+    },
+    {
+        "id": "evidence-recompute",
+        "kind": "producer",
+        # HP-2 (whole-cabinet evidence design 2026-07-16 §2.3): independent
+        # recompute legs — re-derives fuel-bearing machine outcomes from RAW
+        # artifacts (undo-journal bytes, gate pack + patch bytes, the
+        # consequence ledger, org-event day files) and appends ONE
+        # verification event per checked outcome to its OWN evt-recompute
+        # day trials via the public recorder API (hence kind=producer, the
+        # governance-review precedent). Report-only shadow otherwise:
+        # nothing downstream may gate/score/act on its report or events —
+        # the fuel-integrity checker reads them as a report-only third-leg
+        # signal. Honest claim: same OS user until HP-1 — corroboration by
+        # re-derivation, never a trust-domain boundary.
+        "design": "HP-2 — independent recompute legs (own-trial producer, report-only)",
+        "globs": ["framework/evidence_recompute.py"],
+    },
 ]
 
 

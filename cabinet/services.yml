@@ -1089,6 +1089,76 @@ services:
       Weak-signal doctrine (B9): cluster findings are weak signals — the
       evidence-plane watchdog expectations ground in invariants, never in
       these patterns.
+  - name: evidence-signing-broker
+    label: com.cabinet.evidence-signing-broker
+    kind: daemon
+    command: python3.12 -m framework.evidence_signing_broker serve --config /etc/cabinet/evidence-signing-broker.yml
+    schedule: keepalive
+    disabled: true
+    disabled_reason: "staged: evidence-program HP-1 ships dark; the ONLY enable path is the OS-USER-SPLIT deploy ceremony (docs/runbooks/evidence-signing-broker.md — Captain sudo: create the broker service account, relocate the key, install a /Library/LaunchDaemons plist with UserName, load by hand). Explicitly NOT remove-flag+generate-plists: the generator renders same-user LaunchAgents, and a same-user broker is zero isolation — false comfort, not security."
+    expected: "keepalive daemon (post-ceremony only): Unix socket live at the configured path (0750 dir / 0660 group socket after the ceremony; 0700/0600 in same-user staging); one JSONL row per request appended to the broker-owned request log (ts/uid/identity/verb/ids/outcome — the independent second record); typed refusals on every non-conforming request; exit 2 + stderr line on missing peer-credential support, bad config, or unusable key"
+    sunset: "supersede when a hardware- or OS-keystore-backed signer replaces file-key custody, or if the evidence store itself moves out of officer-writable space — the broker exists to compensate for same-user key custody (HP-1)"
+    notes: >-
+      Evidence program HP-1 (whole-cabinet evidence design 2026-07-16
+      §2.3): out-of-process HMAC key custody for the evidence store.
+      Serves sign-event over event-hash-shaped payloads ONLY (the broker
+      builds the frozen preimage itself; arbitrary bytes are never MAC'd),
+      sign-object for the 'anchor' purpose with an exact payload schema
+      (control/purge/watermark minting refused — a strict tightening:
+      store birth, configuration and purges become broker-user/ceremony
+      operations), and boolean verify verbs that never return a MAC.
+      Kernel peer credentials (SO_PEERCRED / LOCAL_PEERCRED,
+      feature-detected, REQUIRED — no support means refuse to serve) map
+      uids to attested identities fixed at start; per-uid token-bucket
+      rate limit; same-(trial,sequence)-different-hash re-requests refused
+      loudly (history-rewrite shape) while identical triples stay
+      idempotent for crash recovery. The key never crosses the socket and
+      its path never appears in responses, logs, or errors. THREAT
+      HONESTY: HP-1 raises the forgery bar from same-OS-user to root —
+      root can still forge everything including this broker's log; the
+      residual is accepted and stated. Recorder-side wiring:
+      framework/evidence/signing.py (absent config = local mode =
+      byte-identical pre-seam behavior; broker mode is fail-closed, never
+      a silent local fallback). The independent verifier still reads the
+      store-root key until its own broker seam lands — the deploy ceremony
+      is BLOCKED on that follow-up (see the runbook precondition).
+  - name: evidence-recompute
+    label: com.cabinet.evidence-recompute
+    kind: cron
+    command: python3.12 cabinet/scripts/evidence-recompute.py
+    schedule: { calendar: [{hour: 6, minute: 5}] }   # daily 06:05 local — after the 05:50 shadow-detectors so anchor/calibration/detector surfaces are settled before re-derivation
+    disabled: true
+    disabled_reason: "staged: evidence-program HP-2 ships dark (shadow law — recompute reports only, nothing the minter reads); the Captain ceremony enables it (remove this flag, generate-plists, load; uncomment the evidence-recompute id in instance/config/watchdog.yml in the same step). Zero runtime behavior until enabled."
+    expected: "one weekly-review line/run on stdout (recompute: N checked (A agree, D disagree, U underivable; R recorded) — counts only, never rates) + JSONL lines appended to cabinet/logs/evidence-recompute-report.jsonl (outside both planes); ONE verification event per newly checked outcome appended to its OWN day trial evt-recompute-<yyyymmdd> in instance/evidence/v1 (agreement: agree|disagree|underivable:<reason>; re-runs dedup by claim_sha256); a single 'frozen — refusing to run' line + exit 0 while the judging-freeze marker instance/state/evidence-judging-freeze.json is present; exit 2 + stderr line on measurement error (pages the Chair via the watchdog error-marker floor)"
+    sunset: "trusted-core forward obligation (design §3 Phase-4 item 5): the moment recompute events may SATISFY the fuel third leg for actual minting (the enforce flip), this module either enters immutable-core.yml via the pending: procedure (a Captain ceremony) or its events keep being re-derived at consume time — supersede this row then; the report journal stays as the audit trail"
+    notes: >-
+      Evidence program HP-2 (whole-cabinet evidence design 2026-07-16 §2.3):
+      independent recompute legs for the three fuel-bearing machine outcome
+      kinds — act-lane ttl_ok/silent_revert labels re-derived from
+      undo-journal row bytes, gate verdicts re-derived from pack + archived
+      patch bytes (+ gh check-runs only where a pack names a commit;
+      gh absent = honest underivable, never a guess), graduation
+      transitions re-derived by re-running the germline graduation.evaluate
+      over the consequence ledger plus the org-mirror receipt sha
+      cross-check. The producer's claimed verdict is read only to COMPARE,
+      never as derivation input. READ-ONLY toward both planes except the
+      one sanctioned write: verification events on its OWN evt-recompute
+      day trials via the public recorder API under a process-attested
+      identity. Its new detail keys are UNREGISTERED in the germline
+      classification registry (read back producer-asserted, the fail-closed
+      default); promoting them to independently_established is a
+      ceremony-gated registry change queued in
+      docs/runbooks/evidence-recompute.md. SHADOW LAW: reports + events are
+      information (disagree lines feed the Captain's weekly review); the
+      fuel-integrity checker consumes the events as its third-leg signal in
+      REPORT-ONLY mode — nothing gates, blocks, scores, or acts on them.
+      HONEST CLAIM (every report line): a DIFFERENT producer identity but
+      the SAME OS user until HP-1 lands — independence comes from
+      re-deriving raw artifacts, never a trust-domain boundary; a same-user
+      attacker who forges the raw artifacts consistently still passes, and
+      root forges everything. The module path contains 'framework.evidence'
+      so the officer hook screen blocks officer-context execution by
+      construction.
   - name: transcript-digest
     label: com.cabinet.transcript-digest
     kind: cron

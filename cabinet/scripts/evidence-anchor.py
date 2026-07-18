@@ -32,9 +32,15 @@ Exit codes: 0 ok/skips · 1 evidence append failed · 2 integrity findings.
 Scheduled via cabinet/services.yml row ``evidence-anchor`` (staged; enabled
 at the Phase-1 ceremony).
 
+``--recount-labels`` (HP-3, opt-in — the daily run is byte-identical
+without it): prove the Captain label journal append-only against the FULL
+anchor history and cross-join it with the store (forged/removed journal
+rows, unjournaled in-store labels, channel-claim divergence). Read-only;
+exit 0 clean / 2 findings.
+
 Usage:
   python3.12 cabinet/scripts/evidence-anchor.py [--dry-run] [--json]
-      [--store PATH] [--check [FILE]]
+      [--store PATH] [--check [FILE]] [--recount-labels [FILE]]
 """
 from __future__ import annotations
 
@@ -51,18 +57,23 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from framework.evidence_anchor import (  # noqa: E402
+    LABELS_JOURNAL_BASENAME,
     build_digest_detail,
     check_anchor,
     collect_anchor,
     digest_trial_id,
     informational_changes,
     receipt_text,
+    recount_labels,
 )
 
 ANCHOR_FILE_NAME = "evidence-anchors.jsonl"
-# Captain-label surfaces anchored by default when present (HP-3 precursor:
-# label digests land off-store daily). Repo-relative; instance config may
-# override with `captain_label_files`.
+# Captain-label surfaces anchored by default when present (HP-3: label
+# digests land off-store daily and the --recount-labels verb re-counts the
+# journal against this anchored history — tamper-EVIDENT; until HP-1
+# isolates the signing key a same-OS-user can still forge store events and
+# the un-anchored journal tail together, and root can forge everything).
+# Repo-relative; instance config may override with `captain_label_files`.
 DEFAULT_LABEL_FILES = (
     "shared/interfaces/captain-vetoes.yml",
     "shared/interfaces/captain-decisions.md",
@@ -70,8 +81,9 @@ DEFAULT_LABEL_FILES = (
     "shared/interfaces/captain-intents.md",
     # Phase 3 (2026-07-17): per-label digests + session markers written by the
     # weekly governance review (cabinet/scripts/governance-review.py) — the
-    # HP-3 precursor's actual label journal. Content-free lines: trial ids,
-    # event ids/hashes, verdicts; never note text.
+    # actual label journal HP-3's re-count proves append-only. Content-free
+    # lines: trial ids, event ids/hashes, verdicts, channel attestation;
+    # never note text.
     "shared/interfaces/governance-labels.jsonl",
 )
 
@@ -128,13 +140,22 @@ def _trigger_archive_dir() -> Path:
 
 def _last_record(anchor_file: Path) -> dict | None:
     """Last valid JSON object line of the exported anchor journal."""
+    records = _all_records(anchor_file)
+    return records[-1] if records else None
+
+
+def _all_records(anchor_file: Path) -> list[dict]:
+    """EVERY valid JSON object line of the exported anchor journal, oldest
+    first — the full history the HP-3 label re-count verifies against
+    (--check needs only the last record; the append-only proof needs all)."""
     try:
         if anchor_file.is_symlink() or not anchor_file.is_file():
-            return None
+            return []
         lines = anchor_file.read_text(encoding="utf-8").splitlines()
     except OSError:
-        return None
-    for raw in reversed(lines):
+        return []
+    records: list[dict] = []
+    for raw in lines:
         raw = raw.strip()
         if not raw:
             continue
@@ -143,8 +164,8 @@ def _last_record(anchor_file: Path) -> dict | None:
         except ValueError:
             continue
         if isinstance(value, dict):
-            return value
-    return None
+            records.append(value)
+    return records
 
 
 def _git(repo_dir: Path, *argv: str) -> subprocess.CompletedProcess:
@@ -221,6 +242,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check", nargs="?", const="", metavar="FILE", default=None,
                         help="Check-only: verify the live store against the last "
                              "record in FILE (default: the configured anchor file)")
+    parser.add_argument("--recount-labels", nargs="?", const="", metavar="FILE",
+                        default=None,
+                        help="HP-3 re-count: prove the Captain label journal "
+                             "append-only against the FULL anchor history in "
+                             "FILE (default: the configured anchor file) and "
+                             "cross-join it with the store. Read-only; exit 2 "
+                             "on findings. Unused = the run is unchanged.")
     args = parser.parse_args(argv)
 
     repo_root = _REPO_ROOT
@@ -233,6 +261,19 @@ def main(argv: list[str] | None = None) -> int:
     # Digest the COMPLETED day (yesterday UTC): its files no longer grow, so
     # the recorded checksums are final and any later edit is tamper.
     ledger_date = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    if args.recount_labels is not None:
+        source = Path(args.recount_labels) if args.recount_labels else (
+            anchor_dir / ANCHOR_FILE_NAME if anchor_dir else None
+        )
+        records = _all_records(source) if source else []
+        journal = labels.get(LABELS_JOURNAL_BASENAME)
+        result = recount_labels(journal, records, store_root=store)
+        if source is None:
+            result["notes"] = list(result.get("notes") or []) + [
+                "anchor_history_unconfigured"]
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        return 0 if result["ok"] else 2
 
     if args.check is not None:
         source = Path(args.check) if args.check else (

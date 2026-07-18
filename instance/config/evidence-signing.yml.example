@@ -1,0 +1,46 @@
+# evidence-signing.yml — recorder-side signing-mode binding for the evidence
+# store (HP-1; framework/evidence/signing.py resolves this file at
+# <store_root>/../../config/evidence-signing.yml, which for the production
+# store instance/evidence/v1 is THIS directory). Copy to evidence-signing.yml
+# and uncomment ONLY at the deploy ceremony.
+#
+# THE DARK DEFAULT IS ABSENCE, NOT `mode: local`: with no file here the
+# recorder loads/creates the store's own .signing-key and signs in-process,
+# byte-identical to the pre-seam recorder. Scratch and test stores resolve
+# this path to a location that does not exist, so they are local-mode and
+# hermetic by construction.
+#
+# A file that is present but does not declare `mode: broker` is still local
+# mode. A file that declares broker mode with a dead or refusing socket is a
+# typed, FAIL-CLOSED evidence error — never a silent local fallback (a
+# fallback would be the downgrade attack: kill the daemon, forge locally).
+#
+# THREAT HONESTY: HP-1 raises the evidence-forgery bar from same-OS-user to
+# root. Root can still forge events, anchors, watermarks, the broker's
+# request log, and the key itself; a compromise of the broker user is a key
+# compromise. Those residuals are accepted and stated — external anchoring
+# (evidence-anchor) exists for after-the-fact detection. Before the ceremony
+# this file does not exist and cannot be immutability-locked (locks skip
+# absent paths): a same-user writer creating a bogus one buys evidence-plane
+# DENIAL (loud, fail-closed) or a redirect to an attacker socket — which
+# grants nothing beyond the same-user forgery power that already exists
+# without HP-1.
+#
+# THE REAL FILE IS BORN AT THE DEPLOY CEREMONY (Captain sudo,
+# docs/runbooks/evidence-signing-broker.md), root-owned, and added to the
+# germline lock set via the immutable-core pending: mechanism in the same
+# ceremony. Only this .example ships.
+
+# Signing mode: `broker` routes every recorder signature through the
+# out-of-process key holder (framework/evidence_signing_broker.py). Any
+# other value — or the key being absent — is local mode.
+#mode: broker
+
+# Unix socket served by the evidence-signing-broker daemon (~ expands).
+# Required in broker mode; broker mode without a socket is a typed refusal.
+#socket: /var/run/cabinet/evidence-signing.sock
+
+# Optional CLAIMED identity sent with every request. The broker checks the
+# claim against its kernel-attested peer-uid map and refuses a mismatch —
+# the claim can narrow, never widen.
+#identity: officer-core

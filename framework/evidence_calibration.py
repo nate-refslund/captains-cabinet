@@ -38,15 +38,22 @@ sanctioned read side effect (identical to `python3.12 -m framework.evidence
 verify`); no other store byte may change, and no output of this module ever
 lives inside the store.
 
-HONEST CLAIM (mandatory wording): Captain labels are token-gated but
-tamper-EVIDENT only, not tamper-proof, until HP-3 lands — in a same-UID
-deployment a process that can read the store signing key can forge the
-label channel; the per-pair re-count against journal digests plus the daily
-external anchor is the designed precursor, necessary but not sufficient.
-Uncalibrated strata are the EXPECTED launch state while label volume is
-thin (the per-session label cap is a code constant); pooling strata or
-lowering floors are the named wrong moves — the correct reading of a thin
-stratum is "no power there" (and in this batch, no power anywhere).
+HONEST CLAIM (mandatory wording): Captain labels are token-gated and
+channel-attested (HP-3: ``detail.label_channel``, fail-closed at the
+writer) but tamper-EVIDENT only, not tamper-proof, until HP-1 isolates the
+signing key — in a same-UID deployment a process that can read the key can
+forge the token, the channel field, and the label events themselves; root
+can forge everything. Pairing therefore EXCLUDES unattested labels
+(fail-closed: legacy pre-HP-3 rows tallied as ``legacy_unauthenticated``,
+unknown channel values as ``unauthenticated_channel`` — counted, never
+silently dropped, and never able to supersede an attested label),
+re-verifies the claimed channel against the STORE-read hash-covered events,
+and the external anchor's ``--recount-labels`` verb proves the journal
+append-only after the fact. Necessary, not sufficient. Uncalibrated strata
+are the EXPECTED launch state while label volume is thin (the per-session
+label cap is a code constant); pooling strata or lowering floors are the
+named wrong moves — the correct reading of a thin stratum is "no power
+there" (and in this batch, no power anywhere).
 
 SURFACES (Captain-facing ONLY — never-a-score): the status file lives at
 $CABINET_EVENT_LOG_DIR/evidence-calibration-status.json (the consequence
@@ -124,6 +131,24 @@ OUT_DIR_REL = "cabinet/logs"  # gitignored runtime dir; Captain-facing home
 # it the same way).
 LABELS_JOURNAL_REL = "shared/interfaces/governance-labels.jsonl"
 LABEL_DIGEST_SCHEMA = "cabinet.governance-label-digest/v1"
+# HP-3 channel-attestation vocabulary — a repeated literal for the same
+# reason as LABELS_JOURNAL_REL above (framework cannot import the dash-named
+# Captain CLI), PINNED equal to governance-review.py's
+# ATTESTED_LABEL_CHANNELS by cabinet/scripts/tests/test_label_channel_auth.py.
+# A label digest row is attested iff its additive ``channel`` key carries one
+# of these values; the STORE copy (``detail.label_channel``, hash-covered
+# inside the signed event) is re-verified per counted pair — the journal
+# claim alone is never trusted.
+ATTESTED_LABEL_CHANNELS = frozenset({"captain-token+tty",
+                                     "telegram-captain-dm"})
+LABEL_CHANNEL_JOURNAL_KEY = "channel"       # journal digest-row mirror key
+LABEL_CHANNEL_DETAIL_KEY = "label_channel"  # store-event detail key
+# Fail-closed exclusion buckets. CONDITIONAL counters: they appear in
+# totals/report only when nonzero, so a corpus with zero unattested labels
+# measures and renders byte-identically to the pre-HP-3 shape.
+BUCKET_LEGACY = "legacy_unauthenticated"            # `channel` key absent
+BUCKET_UNAUTHENTICATED = "unauthenticated_channel"  # present, unknown value
+BUCKET_CHANNEL_UNVERIFIED = "channel_unverified"    # store copy diverges
 # The Phase-4 detector findings journal (G1 coordination point — the map's
 # chosen name). Detector rows are weak signals; here they are only ever the
 # MACHINE LEG of a calibration pair, never ground truth (B9).
@@ -165,12 +190,18 @@ SHADOW_NOTE = (
     "score, or act."
 )
 HONESTY_NOTE = (
-    "Captain labels are token-gated but tamper-EVIDENT only (not "
-    "tamper-proof) until HP-3; every counted pair is re-verified against "
-    "the evidence store (verify green + digest event hashes present) and "
-    "label digests ride the daily external anchor. Uncalibrated strata are "
-    "the expected launch state while label volume is thin — the correct "
-    "reading is 'no power there', never a pooled or lowered floor."
+    "Captain labels are token-gated and channel-attested (HP-3) but "
+    "tamper-EVIDENT only, not tamper-proof, until HP-1 isolates the "
+    "signing key — a same-UID process that can read the key can forge the "
+    "token, the channel field, and the events themselves; root can forge "
+    "everything. Unattested labels are excluded from pairing and tallied "
+    "honestly (never silently dropped); every counted pair is re-verified "
+    "against the evidence store (verify green + digest event hashes "
+    "present + store-side channel match) and label digests ride the daily "
+    "external anchor, whose --recount-labels verb proves the journal "
+    "append-only after the fact. Uncalibrated strata are the expected "
+    "launch state while label volume is thin — the correct reading is 'no "
+    "power there', never a pooled or lowered floor."
 )
 LAUNCH_NOTE = (
     "LAUNCH STATE: no scoreable Captain labels yet — every stratum is "
@@ -245,8 +276,12 @@ def _read_jsonl_rows(path: Path) -> list[dict[str, Any]]:
 
 def read_label_digests(journal: Path) -> list[dict[str, Any]]:
     """Normalized Captain-label rows from the governance-labels journal:
-    {trial_id, ts, verdict, basis, event_ids, event_hashes}. Only
-    label-digest rows count (the journal also carries session markers)."""
+    {trial_id, ts, verdict, basis, event_ids, event_hashes, channel,
+    channel_present}. Only label-digest rows count (the journal also
+    carries session markers). ``channel``/``channel_present`` carry the
+    HP-3 attestation claim distinguishing a legacy pre-HP-3 row (key
+    absent) from a present-but-broken one — the pairing stage buckets on
+    exactly that distinction, fail-closed."""
     out: list[dict[str, Any]] = []
     for row in _read_jsonl_rows(journal):
         if row.get("schema") != LABEL_DIGEST_SCHEMA:
@@ -264,8 +299,24 @@ def read_label_digests(journal: Path) -> list[dict[str, Any]]:
                           if isinstance(e, str)],
             "event_hashes": [h for h in (row.get("event_hashes") or [])
                              if isinstance(h, str)],
+            "channel": row.get(LABEL_CHANNEL_JOURNAL_KEY),
+            "channel_present": LABEL_CHANNEL_JOURNAL_KEY in row,
         })
     return out
+
+
+def _label_attestation(row: dict[str, Any]) -> Optional[str]:
+    """HP-3 fail-closed bucket for one normalized label row: None when the
+    row claims an attested channel, else the exclusion-bucket name. The
+    journal claim alone never COUNTS a pair (verify_pairs re-checks the
+    channel against the store's hash-covered copy) — but an unattested
+    claim is already enough to EXCLUDE: a label without channel provenance
+    is not calibration ground truth."""
+    if not row.get("channel_present"):
+        return BUCKET_LEGACY
+    if row.get("channel") in ATTESTED_LABEL_CHANNELS:
+        return None
+    return BUCKET_UNAUTHENTICATED
 
 
 _AXIS_MAX_LEN = 120
@@ -391,11 +442,22 @@ def collect_stratum_pairs(
     supersedes; the since/until window filters on the HUMAN ts only (ISO
     strings compare lexicographically). The stratum comes from the MACHINE
     row (the detector's cluster key); the label's basis is recorded per pair
-    as data, not as a stratum."""
+    as data, not as a stratum.
+
+    HP-3 fail-closed attestation runs FIRST, before scoreability and before
+    the last-wins supersession: an unattested label (legacy pre-HP-3 row or
+    unknown channel value) is bucketed and dropped here, so it can neither
+    form a pair NOR shadow an attested older label on the same trial. The
+    buckets are conditional counters — absent from totals when zero — so an
+    all-attested corpus measures byte-identically."""
     humans: dict[str, dict[str, Any]] = {}
     label_counts = {"rows": len(labels), "scoreable": 0, "unscoreable": 0,
                     "windowed_out": 0}
     for row in sorted(labels, key=lambda r: r.get("ts", "")):
+        bucket = _label_attestation(row)
+        if bucket is not None:
+            label_counts[bucket] = label_counts.get(bucket, 0) + 1
+            continue
         if row["verdict"] not in _SCOREABLE:
             label_counts["unscoreable"] += 1
             continue
@@ -432,6 +494,10 @@ def collect_stratum_pairs(
             "basis": human.get("basis", ""),
             "event_ids": human.get("event_ids", []),
             "event_hashes": human.get("event_hashes", []),
+            # Only attested rows reach this point, so the claim is always
+            # an ATTESTED_LABEL_CHANNELS value; verify_pairs re-checks it
+            # against the store's hash-covered copy before counting.
+            "channel": human.get("channel"),
         })
 
     # Axes index over ALL normalized machine rows (not just the latest-per-
@@ -464,10 +530,15 @@ def verify_pairs(
     verifies green (public verifier) AND every event hash in its journal
     digest is present among the trial's events (read via the public
     recorder API — the read advances the first-verify watermark, the one
-    sanctioned side effect). Everything else is excluded and tallied:
-    store_unavailable / unverified / purged / digest_hashes_missing.
-    The store is never written and never healed: absent/symlinked store
-    roots are not touched at all."""
+    sanctioned side effect) AND the journal-claimed channel attestation
+    matches the store's hash-covered copy on every digest event (HP-3: the
+    journal claim is never trusted — ``detail.label_channel`` rides the
+    signed event, so a journal row claiming attestation over legacy or
+    foreign store events fails here). Everything else is excluded and
+    tallied: store_unavailable / unverified / purged /
+    digest_hashes_missing / channel_unverified (the last a conditional
+    counter — absent when zero). The store is never written and never
+    healed: absent/symlinked store roots are not touched at all."""
     excluded = {"store_unavailable": 0, "unverified": 0, "purged": 0,
                 "digest_hashes_missing": 0}
     if not pairs:
@@ -484,6 +555,7 @@ def verify_pairs(
         _evidence_plane())
     recorder = EvidenceRecorder(store_root)
     hashes_by_trial: dict[str, Optional[set]] = {}
+    channels_by_trial: dict[str, dict[str, Any]] = {}
     purged_trials: set = set()
     for trial_id in sorted({p["subject"] for p in pairs}):
         if not TRIAL_ID_RE.fullmatch(trial_id):
@@ -503,6 +575,12 @@ def verify_pairs(
         hashes_by_trial[trial_id] = {
             e.get("event_hash") for e in events
             if isinstance(e, dict) and e.get("event_hash")}
+        channels_by_trial[trial_id] = {
+            e["event_hash"]: (e.get("detail") or {}).get(
+                LABEL_CHANNEL_DETAIL_KEY)
+            for e in events
+            if isinstance(e, dict) and e.get("event_hash")
+            and isinstance(e.get("detail"), dict)}
 
     counted: list[dict[str, Any]] = []
     for pair in pairs:
@@ -516,8 +594,23 @@ def verify_pairs(
         if not digest_hashes or not set(digest_hashes) <= trial_hashes:
             excluded["digest_hashes_missing"] += 1
             continue
+        if not _channel_backed(pair, digest_hashes,
+                               channels_by_trial.get(pair["subject"]) or {}):
+            excluded[BUCKET_CHANNEL_UNVERIFIED] = (
+                excluded.get(BUCKET_CHANNEL_UNVERIFIED, 0) + 1)
+            continue
         counted.append(pair)
     return counted, excluded
+
+
+def _channel_backed(pair: dict[str, Any], digest_hashes: list,
+                    store_channels: dict[str, Any]) -> bool:
+    """HP-3/B1: the journal-claimed channel must appear VERBATIM in the
+    store's hash-covered copy on EVERY digest event. Fail-closed: a store
+    event with no ``label_channel`` (legacy) or a diverging value defeats
+    the claim — only writer-attested store bytes back a counted pair."""
+    claimed = pair.get("channel")
+    return all(store_channels.get(h) == claimed for h in digest_hashes)
 
 
 # ---------------------------------------------------------------------------
@@ -771,15 +864,31 @@ def render_report(status: dict[str, Any]) -> str:
         "outside window %s)" % (
             labels.get("rows", 0), labels.get("scoreable", 0),
             labels.get("unscoreable", 0), labels.get("windowed_out", 0)),
+    ]
+    # HP-3 honest count line — rendered ONLY when something was excluded
+    # (never silently; and byte-identical output on all-attested corpora).
+    unattested = (labels.get(BUCKET_LEGACY, 0)
+                  + labels.get(BUCKET_UNAUTHENTICATED, 0))
+    if unattested:
+        lines.append(
+            "- %d label(s) excluded: unauthenticated channel (legacy "
+            "pre-HP-3 %d, unknown channel value %d) — HP-3 fail-closed; "
+            "excluded from pairing, counted here, never silently dropped"
+            % (unattested, labels.get(BUCKET_LEGACY, 0),
+               labels.get(BUCKET_UNAUTHENTICATED, 0)))
+    lines += [
         "- detector flag rows: %s (unjoinable %s, unknown-verdict %s)" % (
             flags.get("rows", 0), flags.get("unjoinable", 0),
             flags.get("unscoreable", 0)),
         "- pairs: %s candidate -> %s counted (excluded: store_unavailable "
-        "%s, unverified %s, purged %s, digest_hashes_missing %s)" % (
+        "%s, unverified %s, purged %s, digest_hashes_missing %s%s)" % (
             totals.get("candidate_pairs", 0), totals.get("counted_pairs", 0),
             excluded.get("store_unavailable", 0),
             excluded.get("unverified", 0), excluded.get("purged", 0),
-            excluded.get("digest_hashes_missing", 0)),
+            excluded.get("digest_hashes_missing", 0),
+            (", channel_unverified %s"
+             % excluded.get(BUCKET_CHANNEL_UNVERIFIED, 0))
+            if excluded.get(BUCKET_CHANNEL_UNVERIFIED) else ""),
         "",
         "%s" % status.get("coverage_note", ""),
         "",

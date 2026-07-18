@@ -113,6 +113,13 @@ cabinet/logs/evidence-mirror-degradations.jsonl
 # Captain-facing output surface (nothing downstream reads it — shadow law).
 # Remove this entry if the checker's report writer dies.
 cabinet/logs/fuel-integrity-report.jsonl
+# HP-2 recompute shadow report — appended at runtime by
+# framework/evidence_recompute.py write_report() (report-only shadow);
+# gitignored under cabinet/logs like the fuel-integrity report above.
+# docs/runbooks/evidence-recompute.md names it BY DESIGN as the one
+# Captain-facing report surface (nothing downstream reads it — shadow law).
+# Remove this entry if the verifier's report writer dies.
+cabinet/logs/evidence-recompute-report.jsonl
 # tamper game-day drill outcome ledger — one row per drill run appended by
 # cabinet/scripts/evidence-tamper-drill.py (Phase 4, design §2.4 rehearsal);
 # gitignored under cabinet/logs; docs/runbooks/tamper-drill.md names the
@@ -165,3 +172,8 @@ cabinet/config/cua-driver-version.txt
 # Next.js build output of the dashboard (docs/runbooks/world-qa-verify.md
 # tells the operator to rm it) — never tracked.
 cabinet/dashboard/.next
+# Born at the HP-1 deploy ceremony (docs/runbooks/evidence-signing-broker.md
+# step 4: the Captain writes it root-owned via sudo, then germline-locks it
+# via the immutable-core pending: mechanism) — deliberately ABSENT before
+# the ceremony; only instance/config/evidence-signing.yml.example ships.
+instance/config/evidence-signing.yml

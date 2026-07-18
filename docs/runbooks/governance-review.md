@@ -67,11 +67,20 @@ an honest "unavailable" line on a deployment where the surface is not wired.
   `detail.action=governance_review_label`, `detail.source=verdict_human`,
   `detail.result_code` (`confirmed|wrong|unclear`), the **basis at label
   time**, `detail.jid` + `links=["undo-journal:<jid>"]` when the act-lane
-  join exists, and the session id. Of those detail keys exactly two are in
+  join exists, the session id, and (HP-3) the **channel attestation**
+  `detail.label_channel` — `"captain-token+tty"` on this ritual: the two
+  gates the CLI itself enforces (token match + live TTY), recorded
+  hash-covered inside the signed event. An unattestable context is refused
+  with a typed error before any store byte; `"telegram-captain-dm"` is
+  RESERVED (no Captain-DM label writer exists — any future one must attest
+  through `attest_telegram_channel()`, whose allowlist config-of-record is
+  `instance/config/platform.yml captain_telegram_chat_id`; unconfigured =
+  refuse, and the chat id itself never enters evidence, journal, or error
+  text). Of those detail keys exactly two are in
   the officer projection allow-list — `action` and `result_code` (a landed
   label is an ordinary record, not a secret) — while `source`, `basis`,
-  `jid`, `session` and the free-text `note` are NOT allow-listed and stay
-  redacted from every officer view (pinned by
+  `jid`, `session`, `label_channel` and the free-text `note` are NOT
+  allow-listed and stay redacted from every officer view (pinned by
   `cabinet/scripts/tests/test_evidence_label_join.py`).
 
 ## Phase-4 join contract
@@ -86,16 +95,23 @@ Phase-4 calibration pairs per trial id using judge-calibration polarity
 
 - **Labels journal** `shared/interfaces/governance-labels.jsonl` — one
   CONTENT-FREE digest line per label (`ts`, session, trial id, verdict,
-  basis, event ids + hashes — never note text) plus one
+  basis, `channel` attestation mirror, event ids + hashes — never note
+  text) plus one
   `session_complete` marker per run (the marker RAMP-5 later automates the
   REPORT_ONLY flip condition against). Gitignored runtime data.
-- **External anchor**: the journal is in `evidence-anchor.py`'s
-  `DEFAULT_LABEL_FILES`, so its sha256 rides the daily anchor record
-  (`record.captain_labels`) to the meta repo + Telegram — the HP-3
-  precursor (design §2.3): label digests land off-box, so later label
-  authentication has an external re-count source. Run
-  `python3.12 cabinet/scripts/evidence-anchor.py --json` after a session
-  for write-time anchoring, or let the daily job cover it.
+- **External anchor + re-count** (HP-3, design §2.3): the journal is in
+  `evidence-anchor.py`'s `DEFAULT_LABEL_FILES`, so its sha256 rides the
+  daily anchor record (`record.captain_labels`) to the meta repo +
+  Telegram; `python3.12 cabinet/scripts/evidence-anchor.py
+  --recount-labels` then proves the journal APPEND-ONLY against the full
+  anchor history and cross-joins it with the store — forged/altered/
+  removed journal rows (`label_journal_rewritten`,
+  `label_journal_row_unbacked`), in-store labels missing from the journal
+  (`store_label_unjournaled` — also the trace of a loudly-degraded
+  export; match against that day's transcript), and journal-vs-store
+  channel divergence (`label_channel_mismatch`) are named findings, exit
+  2. Run `python3.12 cabinet/scripts/evidence-anchor.py --json` after a
+  session for write-time anchoring, or let the daily job cover it.
 - **Session transcript** `shared/interfaces/governance-reviews/<session>.md`
   — the weekly review record (stations, verdicts, notes). Not in the store.
 
@@ -112,14 +128,23 @@ Phase-4 calibration pairs per trial id using judge-calibration polarity
   raw store paths), and the only officer evidence read remains
   `cabinet/scripts/evidence-read.sh`.
 
-## Honest limits (design §2.2 R2)
+## Honest limits (design §2.2 R2 / HP-3)
 
-Same-UID processes that can read the store signing key can derive the token,
-so this is tamper-EVIDENT labeling (token gate + external anchor digests),
-not tamper-proof. HP-1 (OS-user isolation) + HP-3 (fully authenticated,
-write-time-anchored label channel) are the end state; this ritual is HP-3's
-designed precursor and its labels become re-countable against the daily
-anchor from day one.
+HP-3 is in: every label carries a channel attestation, calibration pairs
+ONLY attested labels (legacy pre-HP-3 labels are excluded from new pairing
+runs and counted honestly, never silently), and the anchor re-count verb
+proves the journal append-only after the fact. What it is NOT: tamper-proof.
+Until HP-1 isolates the signing key, a same-UID process that can read the
+key can derive the token and forge the events, the channel field, and the
+not-yet-anchored journal tail together; root can forge everything
+everywhere. The attestation + re-count make forgery DETECTABLE against the
+off-box anchor history — they do not prevent it. Remaining ceremony items:
+the HP-1 key-isolation ceremony (the real boundary), an optional
+classification-registry promotion of `label_channel` (it is deliberately
+unregistered today — `classify_detail_key()` fail-closed-defaults it to
+producer-asserted, which is the honest class for a writer-asserted field),
+and any future telegram label writer (Captain-gated; must attest through
+the reserved resolver).
 
 ## Exit codes
 

@@ -19,8 +19,9 @@ lives next to "what happened". Each landed label also appends one
 CONTENT-FREE digest line to the Captain-owned labels journal
 (shared/interfaces/governance-labels.jsonl), which rides the daily external
 evidence anchor (cabinet/scripts/evidence-anchor.py DEFAULT_LABEL_FILES) —
-the HP-3 precursor: label digests land off-store, so later label
-authentication has an external anchor to re-count against (design §2.3).
+HP-3's external leg: label digests land off-store, and the anchor re-count
+verb (evidence-anchor.py --recount-labels) proves the journal append-only
+against the anchored history and cross-joins it with the store (design §2.3).
 
 PHASE-4 JOIN CONTRACT (why the label events look the way they do): the
 machine leg (undo-sweep reconciler) lands on the trial named by the journal
@@ -63,11 +64,16 @@ the only officer evidence read stays cabinet/scripts/evidence-read.sh. This
 script is additionally unusable from officer context because (a) it demands
 the Captain capability token, which officers cannot mint (grant-token and
 the signing key are both behind the same hook screens) and (b) labeling
-demands a live TTY. Honest limit (design §2.2 R2): in a same-UID deployment
-a process that can read the signing key can derive the token — this harness
-is tamper-EVIDENT labeling (token + external anchor digests), not
-tamper-proof; HP-3's fully authenticated label channel is the end state and
-this is its designed precursor.
+demands a live TTY. Honest limit (design §2.2 R2 / HP-3): every label now
+carries a channel-provenance attestation (detail.label_channel — the TTY
+path records "captain-token+tty"; "telegram-captain-dm" is reserved for a
+future Captain-DM writer gated on the platform.yml captain_telegram_chat_id
+allowlist), and calibration pairs ONLY attested labels. This is
+tamper-EVIDENT, not tamper-proof: until HP-1's key isolation a same-OS-user
+process that can read the signing key can derive the token and forge the
+channel field along with the events themselves, and root can forge
+everything. The external anchor re-count (evidence-anchor.py
+--recount-labels) is the after-the-fact detection leg.
 
 Read-only everywhere EXCEPT the designed Captain-token label write (the
 recorder append) and its two Captain-owned exports (labels journal +
@@ -162,6 +168,35 @@ HIGH_RISK_TOKENS = ("external", "send", "email", "message", "deploy", "push",
 _JUDGE_SOURCES = frozenset({"verdict_judge", "verdict_human"})
 _JUDGE_ACTIONS = frozenset({"undo_sweep_reconcile", LABEL_ACTION})
 
+# --- HP-3: label channel-provenance attestation (design §2.3, §2.8 B1) ------
+# The attestation VOCABULARY is fixed here (code constants, never argv/env);
+# the recordable facts are exactly the gates this CLI itself enforces:
+#   captain-token+tty    the Captain capability token matched THIS store's
+#                        signing key AND stdin was a live TTY — the two
+#                        gates main() enforces before any label write.
+#   telegram-captain-dm  RESERVED: no Captain-DM label writer exists yet
+#                        (deliberately — this TTY CLI is the only label
+#                        writer). attest_telegram_channel() below is the
+#                        sanctioned resolver any future wiring must call;
+#                        its allowlist config-of-record is
+#                        instance/config/platform.yml captain_telegram_chat_id.
+# The chat id itself is NEVER recorded — evidence detail, journal rows, and
+# error text carry only the fixed vocabulary string (no-secrets-in-detail).
+# The detail key stays UNREGISTERED in the germline classification registry:
+# classify_detail_key() fail-closed-defaults it to producer_asserted, which
+# is honest — registry promotion is a Captain ceremony line item.
+# THREAT HONESTY: attestation here is tamper-EVIDENT, not tamper-proof. It
+# stops nothing a same-OS-user forger can do until HP-1 (the token derives
+# from the readable signing key; the store accepts direct appends), and root
+# forges everything. What it buys TODAY: calibration fail-closed excludes
+# unattested labels, and the anchor re-count proves the journal append-only
+# after the fact.
+LABEL_CHANNEL_KEY = "label_channel"    # store-event detail key (redaction-safe)
+LABEL_CHANNEL_JOURNAL_KEY = "channel"  # journal digest-row mirror key
+CHANNEL_TTY = "captain-token+tty"
+CHANNEL_TELEGRAM = "telegram-captain-dm"
+ATTESTED_LABEL_CHANNELS = frozenset({CHANNEL_TTY, CHANNEL_TELEGRAM})
+
 _VERDICT_RESULT = {"right": "confirmed", "wrong": "wrong",
                    "unclear": "unclear"}
 _VERDICT_VERIFICATION_STATUS = {"right": "verified", "wrong": "unverified",
@@ -248,6 +283,84 @@ def require_captain_token(store: Path, args: argparse.Namespace) -> None:
             "The presented Captain capability token does not authorize this "
             "evidence store.",
         )
+
+
+# ---------------------------------------------------------------------------
+# HP-3 label-channel attestation (fail-closed resolvers; no new CLI flags)
+# ---------------------------------------------------------------------------
+
+def attest_tty_channel(*, token_ok: bool, stdin_tty: bool) -> str:
+    """The TTY channel attestation: BOTH gates this CLI enforces must have
+    passed. Returns the vocabulary value; an unattestable context gets a
+    typed refusal (fail-closed — it never reaches the label writer)."""
+    if token_ok and stdin_tty:
+        return CHANNEL_TTY
+    raise EvidenceError(
+        "label_channel_unattested",
+        "Label channel unattestable: the Captain-token gate and a live TTY "
+        "are both required for the TTY label channel.",
+    )
+
+
+def _configured_captain_chat_id(config_path: Path) -> Optional[int]:
+    """The telegram allowlist: platform.yml ``captain_telegram_chat_id``,
+    parsed strictly. None = unconfigured — absent/symlinked file,
+    unparseable YAML, missing key, or a placeholder/zero value (the
+    committed example ships "<YOUR-TELEGRAM-CHAT-ID>" and scrubbed
+    instances ship "0000000000"; neither may ever attest)."""
+    try:
+        if config_path.is_symlink() or not config_path.is_file():
+            return None
+        import yaml  # lazy: this CLI must not hard-depend on PyYAML
+
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 — any trouble reads as unconfigured
+        return None
+    if not isinstance(data, dict):
+        return None
+    try:
+        value = int(str(data.get("captain_telegram_chat_id")).strip())
+    except (TypeError, ValueError):
+        return None
+    return value or None  # zero placeholders = unconfigured, never attested
+
+
+def attest_telegram_channel(claimed_chat_id: Any,
+                            config_path: Optional[Path] = None) -> str:
+    """RESERVED channel resolver — no Captain-DM label writer exists yet
+    (this TTY CLI stays the only writer); any future wiring MUST attest
+    through here. Attests ONLY when the claimed sender id equals the
+    configured ``captain_telegram_chat_id`` (instance/config/platform.yml,
+    the allowlist config-of-record). Fail-closed dark default: an
+    unconfigured allowlist refuses — a deployment without it cannot attest
+    telegram while the TTY path keeps working. The chat id NEVER enters
+    evidence detail, journal rows, or error text — the recorded value is
+    CHANNEL_TELEGRAM only."""
+    if config_path is None:
+        config_path = _REPO_ROOT / "instance" / "config" / "platform.yml"
+    configured = _configured_captain_chat_id(Path(config_path))
+    if configured is None:
+        raise EvidenceError(
+            "label_channel_unconfigured",
+            "Telegram label channel refused: no captain_telegram_chat_id "
+            "allowlist is configured (platform.yml) — the TTY ritual "
+            "remains the only label path.",
+        )
+    try:
+        claimed = int(str(claimed_chat_id).strip())
+    except (TypeError, ValueError):
+        raise EvidenceError(
+            "label_channel_unattested",
+            "Telegram label channel refused: the claimed sender id is not "
+            "an id.",
+        ) from None
+    if claimed != configured:
+        raise EvidenceError(
+            "label_channel_mismatch",
+            "Telegram label channel refused: the sender is not the "
+            "configured Captain chat.",
+        )
+    return CHANNEL_TELEGRAM
 
 
 # ---------------------------------------------------------------------------
@@ -491,8 +604,18 @@ def present_trial(projection: dict[str, Any], cand: dict[str, Any]) -> str:
 
 def write_label(recorder: EvidenceRecorder, trial_id: str, verdict: str,
                 note: str, cand: dict[str, Any],
-                session: str) -> list[dict[str, Any]]:
+                session: str, *,
+                channel: Optional[str] = None) -> list[dict[str, Any]]:
     """Append the Captain's verdict to the trial via the germline recorder.
+
+    HP-3 fail-closed: ``channel`` must be an ATTESTED_LABEL_CHANNELS value
+    (minted by attest_tty_channel / attest_telegram_channel — never a
+    caller-invented string in spirit; the vocabulary set is the bar). An
+    unattested context is REFUSED with a typed error BEFORE any store
+    touch: a label without channel provenance is not calibration ground
+    truth and must never exist. The value rides the signed event as
+    ``detail.label_channel`` (hash-covered; NOT officer-projected —
+    recorder.PROJECTION_ALLOWED_DETAIL is unchanged).
 
     right   -> verification/verified  + outcome/succeeded
     wrong   -> verification/unverified + outcome/failed
@@ -508,6 +631,12 @@ def write_label(recorder: EvidenceRecorder, trial_id: str, verdict: str,
     test_evidence_label_join.py). Raises on failure — the Captain is
     present, and a silently lost label corrupts the calibration floor (the
     RECEIPT-class never-raise stance is for absent humans, not this TTY)."""
+    if channel not in ATTESTED_LABEL_CHANNELS:
+        raise EvidenceError(
+            "label_channel_unattested",
+            "Label write refused: no attested channel provenance (HP-3 "
+            "fail-closed — an unattested context never mints labels).",
+        )
     if valid_id_or_none(trial_id) is None:
         raise EvidenceError("trial_id_invalid",
                             "That trial id is not labelable.")
@@ -518,6 +647,7 @@ def write_label(recorder: EvidenceRecorder, trial_id: str, verdict: str,
         "result_code": result_code,
         "basis": cand.get("basis") or "self_asserted",
         "session": session,
+        LABEL_CHANNEL_KEY: channel,
     }
     jid = valid_id_or_none(str(cand.get("jid") or ""))
     links: list[str] = []
@@ -561,10 +691,21 @@ def _append_journal_line(journal: Path, record: dict[str, Any]) -> None:
 
 def label_digest_record(session: str, trial_id: str, verdict: str,
                         cand: dict[str, Any],
-                        events: list[dict[str, Any]]) -> dict[str, Any]:
+                        events: list[dict[str, Any]], *,
+                        channel: Optional[str] = None) -> dict[str, Any]:
     """One CONTENT-FREE per-label digest line (the external anchor's
-    re-count source, design B1/HP-3 precursor): ids, hashes, verdict, basis
-    — never the note text, never event content."""
+    re-count source, design B1/HP-3): ids, hashes, verdict, basis, and the
+    channel attestation — never the note text, never event content. The
+    additive ``channel`` mirror key lets the anchor re-count and the
+    calibration pairing bucket without opening the store; the STORE copy
+    (``detail.label_channel``, hash-covered and signed) stays authoritative
+    and is re-verified per pair. Fail-closed like write_label: an
+    unattested digest row is never minted."""
+    if channel not in ATTESTED_LABEL_CHANNELS:
+        raise EvidenceError(
+            "label_channel_unattested",
+            "Label digest refused: no attested channel provenance.",
+        )
     return {
         "schema": "cabinet.governance-label-digest/v1",
         "ts": _now_iso(),
@@ -572,6 +713,7 @@ def label_digest_record(session: str, trial_id: str, verdict: str,
         "trial_id": trial_id,
         "verdict": _VERDICT_RESULT[verdict],
         "basis": cand.get("basis"),
+        LABEL_CHANNEL_JOURNAL_KEY: channel,
         "event_ids": [e.get("event_id") for e in events],
         "event_hashes": [e.get("event_hash") for e in events],
     }
@@ -826,6 +968,12 @@ def main(argv: Optional[list] = None,
               "verdict_human events. Use --dry-run to inspect.", file=out)
         return 2
 
+    # HP-3: both gates passed (token above, TTY here) — attest the label
+    # channel ONCE for the session; every write_label/label_digest_record
+    # below is fail-closed on it. token_ok is True by control flow (the
+    # token gate raised otherwise); the TTY fact is passed as observed.
+    channel = attest_tty_channel(token_ok=True, stdin_tty=bool(isatty))
+
     stations_note = "skipped (--skip-stations)"
     if not args.skip_stations:
         stations_note = "rendered"
@@ -918,7 +1066,7 @@ def main(argv: Optional[list] = None,
                 note = ""
             try:
                 events = write_label(recorder, trial_id, verdict, note,
-                                     cand, session)
+                                     cand, session, channel=channel)
             except EvidenceError as exc:
                 if exc.code == "trial_purged":
                     print(f"  trial purged since sampling — legal skip "
@@ -947,7 +1095,7 @@ def main(argv: Optional[list] = None,
                 _append_journal_line(
                     Path(args.labels_journal),
                     label_digest_record(session, trial_id, verdict, cand,
-                                        events))
+                                        events, channel=channel))
             except OSError as exc:
                 export_degraded = True
                 print(f"  WARN: label digest export failed ({exc}) — the "

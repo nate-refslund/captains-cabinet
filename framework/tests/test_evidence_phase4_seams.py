@@ -11,10 +11,10 @@ against the REAL artifacts — never per-group mocks (integration law,
     triage verdicts noise|inconclusive) is consumed by G3's pairing and
     produces COUNTED, store-re-verified pairs with the right polarity
     (inconclusive⇒flag⇒wrong; noise⇒pass⇒confirmed).
-  * G4→G1+G2+G3 — while the judging-freeze marker is present all three
-    shadow services refuse to run: one plain line, rc 0, zero reads, zero
-    writes (the §2.4 tamper response's consumer contract, exercised
-    against the real modules).
+  * G4→G1+G2+G3 (+ the HP-2 recompute leg) — while the judging-freeze
+    marker is present every shadow service refuses to run: one plain
+    line, rc 0, zero reads, zero writes (the §2.4 tamper response's
+    consumer contract, exercised against the real modules).
   * Composed read-only law — one pass of all three services leaves the
     store byte-stable modulo the sanctioned first-verify watermark
     advance; a second composed pass is fully byte-identical; every report
@@ -38,6 +38,7 @@ from framework import evidence_calibration as ec
 from framework import evidence_detectors as ed
 from framework import evidence_freeze
 from framework import evidence_fuel_integrity as efi
+from framework import evidence_recompute as erc
 from framework.evidence.recorder import EvidenceRecorder
 from framework.measurement.eval_pattern_detector import _DEFAULT_MIN_OCCURRENCES
 from framework.onboarding.journey import EVIDENCE_REL  # the ONE store-root constant
@@ -78,9 +79,9 @@ def _label(store: Path, rec: EvidenceRecorder, journal: Path,
     cand = gr.classify_trial(gr._read_raw_events(store, trial_id))
     cand["trial_id"] = trial_id
     events = gr.write_label(rec, trial_id, verdict, "", cand,
-                            session="seam-test")
+                            session="seam-test", channel=gr.CHANNEL_TTY)
     digest = gr.label_digest_record("seam-test", trial_id, verdict, cand,
-                                    events)
+                                    events, channel=gr.CHANNEL_TTY)
     gr._append_journal_line(journal, digest)
     return digest
 
@@ -238,6 +239,16 @@ def test_freeze_marker_halts_all_three_services(tmp_path, capsys, monkeypatch):
                          "--out", str(fuel_out)]) == 0
         assert "frozen — refusing to run" in capsys.readouterr().out
         assert not fuel_out.exists()
+
+        # The HP-2 recompute leg refuses the same way (the fourth shadow
+        # service): rc 0, one plain line, report never created, zero store
+        # appends while frozen.
+        monkeypatch.setattr(erc, "_repo_root", lambda: tmp_path)
+        recompute_out = tmp_path / "cabinet" / "logs" / "recompute-frozen.jsonl"
+        assert erc.main(["--store", str(scenario["store"]),
+                         "--out", str(recompute_out)]) == 0
+        assert "frozen — refusing to run" in capsys.readouterr().out
+        assert not recompute_out.exists()
     finally:
         # Sanctioned drill-harness cleanup of a SCRATCH marker (uchg would
         # otherwise outlive the test and break tmp_path collection).
