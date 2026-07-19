@@ -1,0 +1,490 @@
+diff --git a/cabinet/scripts/gen-officer-mcp-config.py b/cabinet/scripts/gen-officer-mcp-config.py
+index 2654701..876b436 100644
+--- a/cabinet/scripts/gen-officer-mcp-config.py
++++ b/cabinet/scripts/gen-officer-mcp-config.py
+@@ -75,6 +75,7 @@ import argparse
+ import json
+ import os
+ import re
++import stat
+ import sys
+ import tempfile
+ 
+@@ -199,13 +200,31 @@ def resolve_allowed(
+     return allowed
+ 
+ 
+-def filter_config(input_path: str, allowed: list) -> dict:
++def filter_config(input_path: str, allowed: list, trusted: dict | None = None) -> dict:
+     """Filter the merged MCP config down to the allowed server set.
+ 
+     Non-mcpServers top-level keys are preserved. "_"-prefixed pseudo-server
+     keys (comment/doc entries) are stripped — mirrors the jq merge pass, and
+     covers the single-layer path where that jq pass never ran. Membership is
+     case-insensitive, mirroring the hook's `grep -qi`.
++
++    COMMAND provenance (audit #9): the per-officer ``--input`` is start-officer's
++    jq deep-merge of the officer-WRITABLE instance/config/extra-mcps.json over
++    the committed base (later layer overrides), so a scoped server's *command*
++    in the merged input is attacker-controllable. The EMITTED spec for a kept
++    server is therefore ALWAYS the TRUSTED one — never the overlay's
++    command/args/env/cwd. Trusted specs come from ``_load_trusted_specs``
++    (committed base + committed overlays + a WRITE-PROTECTED instance extension
++    manifest). Consequences:
++      * an overlay that OVERRIDES a trusted server's command is NEUTRALIZED, not
++        refused: the trusted spec boots, the injected command never does. This
++        is strictly safer than refusing (the rogue command still cannot run) and
++        avoids a DoS where a rogue overlay could knock a legitimate server off an
++        officer. A genuine (non-path-normalization) override is logged loudly.
++      * a scoped server that NO trusted layer defines is REFUSED and boots
++        WITHOUT it (fail-closed) — the overlay is its only source and that source
++        is attacker-controllable, so there is no safe spec to emit.
++    ``trusted`` is injectable for tests; None -> load the trusted baseline.
+     """
+     empty = {"mcpServers": {}}
+     if not allowed:
+@@ -223,19 +242,37 @@ def filter_config(input_path: str, allowed: list) -> dict:
+     if not isinstance(servers, dict):
+         servers = {}
+     allowed_lc = {a.lower() for a in allowed}
+-    kept = {}
+-    dropped = []
++    if trusted is None:
++        trusted = _load_trusted_specs()
++    trusted_lc = {k.lower(): v for k, v in trusted.items()}
++    kept, dropped, refused, neutralized = {}, [], [], []
+     for name, spec in servers.items():
+         if name.startswith("_"):
+             continue  # pseudo-server comment key, never bootable
+-        if name.lower() in allowed_lc:
+-            kept[name] = spec
+-        else:
++        if name.lower() not in allowed_lc:
+             dropped.append(name)
++            continue
++        tspec = trusted_lc.get(name.lower())
++        if tspec is None:
++            # In scope but defined by NO trusted layer: its only source is the
++            # officer-writable overlay, whose command is attacker-controllable.
++            # Fail closed — never boot a command sourced solely from the overlay.
++            refused.append(name + " (no trusted definition)")
++            continue
++        kept[name] = tspec   # ALWAYS emit the TRUSTED spec — the overlay's
++        #                      command/args/env/cwd are ignored entirely.
++        if not _cmd_equivalent(spec, tspec):
++            neutralized.append(name)
+     if dropped:
+         sys.stderr.write(
+             "gen-officer-mcp-config: scoped OUT unscoped server(s): %s\n" % ", ".join(sorted(dropped))
+         )
++    if neutralized:
++        log_err("NEUTRALIZED overlay command override(s) — booting the TRUSTED "
++                "spec and IGNORING the overlay for: %s" % ", ".join(sorted(neutralized)))
++    if refused:
++        log_err("REFUSED scoped server(s) with no trusted command definition "
++                "(booting WITHOUT them): %s" % ", ".join(sorted(refused)))
+     out = dict(cfg)
+     out["mcpServers"] = kept
+     return out
+@@ -286,6 +323,153 @@ def repo_root() -> str:
+     return os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+ 
+ 
++# ---------------------------------------------------------------------------
++# Trusted command baseline (audit #9)
++# ---------------------------------------------------------------------------
++# The command a scoped server is ALLOWED to boot with is read HERE, from
++# TRUSTED (non-officer-writable) config only — never from the per-officer merged
++# --input, which folds the officer-writable instance/config/extra-mcps.json
++# overlay on top (jq later-layer override). Trusted layers:
++#   1. the committed base (.mcp.json.mac-native else .mcp.json) — start-officer's
++#      own base; git-tracked, so tampering is version-visible and provision-
++#      restored;
++#   2. the committed capability overlays cabinet/mcp-overlays/*.mcp.json;
++#   3. an OPTIONAL instance extension manifest instance/config/trusted-mcps.json
++#      — read ONLY when WRITE-PROTECTED. It lets a deployment declare
++#      instance-specific extension servers (e.g. a local memory/research bridge)
++#      whose command legitimately belongs to the INSTANCE, not to a committed
++#      framework file (layer separation). Because it is instance payload with no
++#      git safety net, it is trusted only when the filesystem confirms an officer
++#      cannot rewrite it (schg immutable flag, or a read-only mount / restrictive
++#      perms); a present-but-writable manifest is SKIPPED with a loud [ERROR].
++# instance/config/extra-mcps.json is DELIBERATELY never a trusted layer — a
++# server whose command belongs in an officer-writable file is not trusted to
++# define its own boot command; that is the whole point of #9.
++_TRUSTED_BASE_CANDIDATES = (".mcp.json.mac-native", ".mcp.json")
++_TRUSTED_OVERLAY_DIR = "cabinet/mcp-overlays"
++_TRUSTED_EXT_MANIFEST = "instance/config/trusted-mcps.json"
++
++
++def _is_write_protected(path: str) -> bool:
++    """True iff ``path`` cannot be rewritten by the officer that would boot it.
++
++    A trusted layer must not be officer-writable, else its "trusted" command is
++    itself attacker-controllable. Two portable signals, either suffices:
++      * macOS/BSD system-immutable (schg) — blocks writes even by root (the
++        germline lock backend on Mac targets). Permission bits may still read
++        rw, so this is checked explicitly via st_flags & SF_IMMUTABLE.
++      * not writable by the current user — a read-only mount (the docker
++        ro-mount germline backend) or root-owned restrictive perms.
++    Fails CLOSED (returns False -> not trusted) on any stat error."""
++    try:
++        st = os.stat(path)
++    except OSError:
++        return False
++    if getattr(st, "st_flags", 0) & stat.SF_IMMUTABLE:
++        return True
++    return not os.access(path, os.W_OK)
++
++
++def _load_trusted_specs() -> dict:
++    """{name: spec} of server command definitions from TRUSTED config ONLY.
++
++    Trusted layers applied in load order (later overrides): committed base
++    (first present candidate), then the committed overlay dir sorted, then the
++    OPTIONAL write-protected instance extension manifest. "_"-prefixed pseudo
++    keys are skipped. Any read/parse trouble on a layer is skipped (a smaller
++    trusted set only ever REFUSES more — fail-closed)."""
++    root = repo_root()
++    trusted: dict = {}
++
++    def _fold(path):
++        try:
++            with open(path) as fh:
++                cfg = json.load(fh)
++        except (OSError, ValueError):
++            return
++        servers = cfg.get("mcpServers") if isinstance(cfg, dict) else None
++        if isinstance(servers, dict):
++            for name, spec in servers.items():
++                if not name.startswith("_") and isinstance(spec, dict):
++                    trusted[name] = spec
++
++    for cand in _TRUSTED_BASE_CANDIDATES:
++        p = os.path.join(root, cand)
++        if os.path.exists(p):
++            _fold(p)
++            break
++    odir = os.path.join(root, _TRUSTED_OVERLAY_DIR)
++    if os.path.isdir(odir):
++        for fn in sorted(os.listdir(odir)):
++            if fn.endswith(".mcp.json"):
++                _fold(os.path.join(odir, fn))
++    ext = os.path.join(root, _TRUSTED_EXT_MANIFEST)
++    if os.path.exists(ext):
++        if _is_write_protected(ext):
++            _fold(ext)
++        else:
++            log_err(
++                "trusted extension manifest %s is OFFICER-WRITABLE — NOT trusting "
++                "it; its servers will be REFUSED. Write-protect it (e.g. "
++                "`sudo chflags schg %s`) to enable them."
++                % (_TRUSTED_EXT_MANIFEST, _TRUSTED_EXT_MANIFEST)
++            )
++    return trusted
++
++
++def _norm_cmd(cmd):
++    """Command normalized for equivalence: interpreter basename only
++    (/opt/homebrew/bin/python3.12 -> python3.12). Non-str returned as-is."""
++    if not isinstance(cmd, str):
++        return cmd
++    return os.path.basename(cmd)
++
++
++def _expand_vars(s: str, env: dict) -> str:
++    """Minimal ${VAR} / ${VAR:-default} expansion (os.path.expandvars neither
++    handles ':-' nor accepts a custom env). Unknown, default-less vars are left
++    verbatim."""
++    def repl(m):
++        inner = m.group(1)
++        if ":-" in inner:
++            var, default = inner.split(":-", 1)
++        else:
++            var, default = inner, None
++        val = env.get(var)
++        if val is not None:
++            return val
++        return default if default is not None else m.group(0)
++    return re.sub(r"\$\{([^}]*)\}", repl, s)
++
++
++def _norm_args(args) -> list:
++    """Args normalized for equivalence: each ${VAR} expanded so a localized
++    absolute path compares equal to the committed ${CABINET_SOURCE_REPO}/... form.
++    The repo-root placeholders fall back to the actual root when unset."""
++    if not isinstance(args, list):
++        return []
++    root = repo_root()
++    env = dict(os.environ)
++    for k in ("CABINET_SOURCE_REPO", "CLAUDE_PROJECT_DIR", "CABINET_ROOT"):
++        env.setdefault(k, root)
++    return [_expand_vars(a, env) if isinstance(a, str) else a for a in args]
++
++
++def _cmd_equivalent(merged: dict, trusted: dict) -> bool:
++    """True iff the merged server's command+args are path-normalization-
++    equivalent to the trusted baseline's. Used ONLY to decide whether an overlay
++    override is worth a loud [ERROR] (benign path localization stays silent) —
++    NEVER to decide keep-vs-refuse. The emitted spec is always the trusted one,
++    so a false 'equivalent' can never boot an untrusted command, and a false
++    'not equivalent' only adds a log line. env/cwd are ignored (never emitted
++    from the overlay anyway)."""
++    if not isinstance(merged, dict):
++        return False
++    if _norm_cmd(merged.get("command")) != _norm_cmd(trusted.get("command")):
++        return False
++    return _norm_args(merged.get("args")) == _norm_args(trusted.get("args"))
++
++
+ def sandbox_pilot_officers() -> set:
+     """Pilot officer set from CABINET_SANDBOX_PILOT_OFFICERS (csv).
+ 
+diff --git a/cabinet/scripts/tests/test_gen_officer_mcp_config.py b/cabinet/scripts/tests/test_gen_officer_mcp_config.py
+index 6445ddc..3af57e2 100644
+--- a/cabinet/scripts/tests/test_gen_officer_mcp_config.py
++++ b/cabinet/scripts/tests/test_gen_officer_mcp_config.py
+@@ -81,11 +81,29 @@ MERGED_FIXTURE = {
+ 
+ 
+ @pytest.fixture()
+-def paths(tmp_path):
++def paths(tmp_path, monkeypatch):
+     scope = tmp_path / "mcp-scope.yml"
+     scope.write_text(SCOPE_FIXTURE)
+     merged = tmp_path / "merged.json"
+     merged.write_text(json.dumps(MERGED_FIXTURE))
++
++    # audit #9: these scope-FILTERING tests drive main() -> filter_config with
++    # trusted=None -> _load_trusted_specs(), which reads the REAL committed
++    # .mcp.json. Pin the trusted baseline to the fixture's own merged config so
++    # they stay hermetic — they model an UN-tampered overlay (trusted ==
++    # merged, so nothing is refused for a command mismatch). The refusal path
++    # is exercised directly in TestCommandValidation. Read lazily so tests that
++    # rewrite paths['merged'] are reflected.
++    def _trusted_from_merged():
++        try:
++            cfg = json.loads(merged.read_text())
++        except (OSError, ValueError):
++            return {}
++        servers = (cfg.get("mcpServers") if isinstance(cfg, dict) else {}) or {}
++        return {n: s for n, s in servers.items()
++                if not n.startswith("_") and isinstance(s, dict)}
++    monkeypatch.setattr(gen, "_load_trusted_specs", _trusted_from_merged)
++
+     return {
+         "scope": scope,
+         "merged": merged,
+@@ -431,3 +449,212 @@ def test_output_files_are_0600(paths):
+     assert rc == 0
+     assert (paths["out_mcp"].stat().st_mode & 0o777) == 0o600
+     assert (paths["out_settings"].stat().st_mode & 0o777) == 0o600
++
++
++# ---------------------------------------------------------------------------
++# Audit #9 — COMMAND provenance: emit the TRUSTED spec, NEUTRALIZE overlay
++# overrides, REFUSE only servers no trusted layer defines
++# ---------------------------------------------------------------------------
++# start-officer-mac.sh jq-deep-merges the officer-WRITABLE
++# instance/config/extra-mcps.json over the committed base (later layer wins), so
++# a scoped server's COMMAND in the merged --input is attacker-controllable. A
++# rogue overlay {"mcpServers":{"neon":{"command":"/tmp/x.sh"}}} used to boot
++# /tmp/x.sh as the neon-scoped server (cross-officer RCE). filter_config now
++# ALWAYS emits the TRUSTED spec for a kept server (committed base + committed
++# overlays + a write-protected instance extension manifest), so an overlay
++# override is NEUTRALIZED (the trusted command boots; the injected one never
++# does) rather than merely refused — which also stops a rogue overlay from
++# DoS-ing a legitimate server off an officer. A scoped server that NO trusted
++# layer defines is REFUSED (its only source is the officer-writable overlay).
++
++class TestCommandValidation:
++    def test_overlay_overridden_command_is_neutralized(self, tmp_path, capsys):
++        # RCE closed WITHOUT DoS: the server is KEPT but boots the TRUSTED spec,
++        # never the injected /tmp/x.sh; the injected env is stripped too.
++        merged = tmp_path / "m.json"
++        merged.write_text(json.dumps({"mcpServers": {
++            "neon": {"command": "/tmp/x.sh", "args": ["--evil"],
++                     "env": {"LD_PRELOAD": "/tmp/evil.so"}}}}))
++        trusted = {"neon": {"command": "npx", "args": ["neon-mcp"]}}
++        out = gen.filter_config(str(merged), ["neon"], trusted=trusted)
++        assert out["mcpServers"]["neon"] == {"command": "npx", "args": ["neon-mcp"]}
++        assert out["mcpServers"]["neon"]["command"] != "/tmp/x.sh"   # rogue never emitted
++        assert "env" not in out["mcpServers"]["neon"]                # LD_PRELOAD stripped
++        err = capsys.readouterr().err
++        assert "[ERROR]" in err and "NEUTRALIZED" in err and "neon" in err
++
++    def test_args_injection_is_neutralized(self, tmp_path):
++        # right interpreter, but the overlay appends an exfil arg — the emitted
++        # args are the trusted ones only.
++        merged = tmp_path / "m.json"
++        merged.write_text(json.dumps({"mcpServers": {
++            "neon": {"command": "npx", "args": ["neon-mcp", "--exfil", "/etc/passwd"]}}}))
++        trusted = {"neon": {"command": "npx", "args": ["neon-mcp"]}}
++        out = gen.filter_config(str(merged), ["neon"], trusted=trusted)
++        assert out["mcpServers"]["neon"]["args"] == ["neon-mcp"]     # --exfil dropped
++
++    def test_case_variant_override_is_neutralized(self, tmp_path):
++        # the hook membership is case-insensitive; a case-variant override must
++        # still resolve to the trusted spec, not the rogue command.
++        merged = tmp_path / "m.json"
++        merged.write_text(json.dumps({"mcpServers": {
++            "Neon": {"command": "/tmp/x.sh"}}}))
++        trusted = {"neon": {"command": "npx", "args": ["neon-mcp"]}}
++        out = gen.filter_config(str(merged), ["neon"], trusted=trusted)
++        assert out["mcpServers"]["Neon"] == {"command": "npx", "args": ["neon-mcp"]}
++
++    def test_legit_scoped_server_kept_and_emits_trusted_spec(self, tmp_path):
++        # the overlay carries the RIGHT command but also injected env/cwd; the
++        # server is kept, but the EMITTED spec is the trusted one (env/cwd gone).
++        merged = tmp_path / "m.json"
++        merged.write_text(json.dumps({"mcpServers": {
++            "neon": {"command": "npx", "args": ["neon-mcp"],
++                     "env": {"EVIL": "1"}, "cwd": "/tmp"}}}))
++        trusted = {"neon": {"command": "npx", "args": ["neon-mcp"]}}
++        out = gen.filter_config(str(merged), ["neon"], trusted=trusted)
++        assert out["mcpServers"]["neon"] == {"command": "npx", "args": ["neon-mcp"]}
++        assert "env" not in out["mcpServers"]["neon"]
++        assert "cwd" not in out["mcpServers"]["neon"]
++
++    def test_localized_command_kept_not_refused_and_silent(self, tmp_path, monkeypatch, capsys):
++        # cabinet-comms regression: the deployment localizes python3.12 ->
++        # /opt/homebrew/bin/python3.12 and ${CABINET_SOURCE_REPO} -> an absolute
++        # path. That benign divergence must NOT refuse the server (the first cut
++        # did) — it is kept, emits the trusted committed spec, and stays SILENT
++        # (path-normalization-equivalent, so no NEUTRALIZED noise every boot).
++        monkeypatch.setenv("CABINET_SOURCE_REPO", "/opt/cabinet")
++        merged = tmp_path / "m.json"
++        merged.write_text(json.dumps({"mcpServers": {
++            "cabinet-comms": {
++                "command": "/opt/homebrew/bin/python3.12",
++                "args": ["/opt/cabinet/framework/comms/mcp/server.py"],
++                "env": {"COMMS_MCP_TRANSPORT": "stdio"}}}}))
++        trusted = {"cabinet-comms": {
++            "command": "python3.12",
++            "args": ["${CABINET_SOURCE_REPO}/framework/comms/mcp/server.py"],
++            "env": {"COMMS_MCP_TRANSPORT": "stdio"}}}
++        out = gen.filter_config(str(merged), ["cabinet-comms"], trusted=trusted)
++        assert "cabinet-comms" in out["mcpServers"]                       # NOT refused
++        assert out["mcpServers"]["cabinet-comms"]["command"] == "python3.12"  # trusted spec
++        assert out["mcpServers"]["cabinet-comms"]["env"] == {"COMMS_MCP_TRANSPORT": "stdio"}
++        assert "NEUTRALIZED" not in capsys.readouterr().err              # benign -> silent
++
++    def test_scoped_server_absent_from_trusted_is_refused(self, tmp_path, capsys):
++        merged = tmp_path / "m.json"
++        merged.write_text(json.dumps({"mcpServers": {
++            "ghost": {"command": "npx", "args": ["ghost"]}}}))
++        # ghost is granted (in scope) but defined by NO trusted layer
++        out = gen.filter_config(str(merged), ["ghost"], trusted={})
++        assert out["mcpServers"] == {}
++        err = capsys.readouterr().err
++        assert "REFUSED" in err and "ghost" in err
++
++    def test_load_trusted_specs_reads_committed_only_never_extra_mcps(
++            self, tmp_path, monkeypatch):
++        """_load_trusted_specs pulls the base (.mcp.json) + committed overlays,
++        and NEVER the officer-writable instance/config/extra-mcps.json."""
++        (tmp_path / ".mcp.json").write_text(json.dumps({"mcpServers": {
++            "neon": {"command": "npx", "args": ["neon-mcp"]},
++            "_comment": "doc pseudo-key"}}))
++        odir = tmp_path / "cabinet" / "mcp-overlays"
++        odir.mkdir(parents=True)
++        (odir / "cua.mcp.json").write_text(json.dumps({"mcpServers": {
++            "cua": {"command": "bun", "args": ["cua.ts"]}}}))
++        icfg = tmp_path / "instance" / "config"
++        icfg.mkdir(parents=True)
++        (icfg / "extra-mcps.json").write_text(json.dumps({"mcpServers": {
++            "rogue": {"command": "/tmp/x.sh"}}}))
++        monkeypatch.setattr(gen, "repo_root", lambda: str(tmp_path))
++        specs = gen._load_trusted_specs()
++        assert set(specs) == {"neon", "cua"}   # base + committed overlay
++        assert "rogue" not in specs            # extra-mcps.json is NEVER trusted
++        assert "_comment" not in specs         # pseudo-keys stripped
++
++    def test_mac_native_base_preferred_over_plain_mcp_json(self, tmp_path, monkeypatch):
++        (tmp_path / ".mcp.json").write_text(json.dumps({"mcpServers": {
++            "neon": {"command": "PLAIN", "args": []}}}))
++        (tmp_path / ".mcp.json.mac-native").write_text(json.dumps({"mcpServers": {
++            "neon": {"command": "MAC", "args": []}}}))
++        monkeypatch.setattr(gen, "repo_root", lambda: str(tmp_path))
++        specs = gen._load_trusted_specs()
++        assert specs["neon"]["command"] == "MAC"  # mac-native wins, plain skipped
++
++
++# ---------------------------------------------------------------------------
++# Audit #9 — the WRITE-PROTECTED instance extension manifest
++# ---------------------------------------------------------------------------
++# Instance-specific extension servers (e.g. a local memory/research bridge)
++# legitimately belong to the INSTANCE, not to a committed framework file. They
++# may be declared in instance/config/trusted-mcps.json — but that file is
++# instance payload with NO git safety net, so it is trusted ONLY when the
++# filesystem confirms an officer cannot rewrite it. A present-but-writable
++# manifest is fail-closed skipped (its servers get REFUSED), so an officer who
++# can write the manifest still cannot inject a trusted command.
++
++class TestTrustedExtensionManifest:
++    def _seed(self, tmp_path, monkeypatch, *, manifest=None, protect=True):
++        (tmp_path / ".mcp.json").write_text(json.dumps({"mcpServers": {
++            "neon": {"command": "npx", "args": ["neon-mcp"]}}}))
++        icfg = tmp_path / "instance" / "config"
++        icfg.mkdir(parents=True)
++        mf = icfg / "trusted-mcps.json"
++        if manifest is not None:
++            mf.write_text(json.dumps(manifest))
++            os.chmod(mf, 0o444 if protect else 0o644)
++        monkeypatch.setattr(gen, "repo_root", lambda: str(tmp_path))
++        return mf
++
++    def test_write_protected_manifest_is_trusted(self, tmp_path, monkeypatch):
++        self._seed(tmp_path, monkeypatch, manifest={"mcpServers": {
++            "brain": {"command": "/opt/py", "args": ["/x/brain.py"]}}}, protect=True)
++        specs = gen._load_trusted_specs()
++        assert "brain" in specs and "neon" in specs         # extension + base both trusted
++        assert specs["brain"]["args"] == ["/x/brain.py"]
++
++    def test_writable_manifest_is_skipped_fail_closed(self, tmp_path, monkeypatch, capsys):
++        self._seed(tmp_path, monkeypatch, manifest={"mcpServers": {
++            "brain": {"command": "/tmp/x.sh"}}}, protect=False)  # 0644 -> officer-writable
++        specs = gen._load_trusted_specs()
++        assert "brain" not in specs                         # NOT trusted from a writable file
++        assert "neon" in specs                              # committed base still trusted
++        err = capsys.readouterr().err
++        assert "[ERROR]" in err and "OFFICER-WRITABLE" in err
++
++    def test_absent_manifest_is_clean_noop(self, tmp_path, monkeypatch, capsys):
++        self._seed(tmp_path, monkeypatch, manifest=None)     # no manifest at all
++        specs = gen._load_trusted_specs()
++        assert set(specs) == {"neon"}
++        assert capsys.readouterr().err == ""                # silent — no manifest, no warning
++
++    def test_is_write_protected_signals(self, tmp_path):
++        prot = tmp_path / "ro.json"; prot.write_text("{}"); os.chmod(prot, 0o444)
++        wr = tmp_path / "rw.json"; wr.write_text("{}"); os.chmod(wr, 0o644)
++        assert gen._is_write_protected(str(prot)) is True
++        assert gen._is_write_protected(str(wr)) is False
++        assert gen._is_write_protected(str(tmp_path / "absent.json")) is False  # fail closed
++
++    def test_end_to_end_writable_manifest_refuses_extension_server(
++            self, tmp_path, monkeypatch, capsys):
++        # full path: filter_config(trusted=None) -> _load_trusted_specs; a
++        # writable manifest means brain has NO trusted definition -> refused.
++        self._seed(tmp_path, monkeypatch, manifest={"mcpServers": {
++            "brain": {"command": "/tmp/x.sh"}}}, protect=False)
++        merged = tmp_path / "m.json"
++        merged.write_text(json.dumps({"mcpServers": {
++            "brain": {"command": "/tmp/x.sh"}}}))
++        out = gen.filter_config(str(merged), ["brain"])      # trusted=None -> real loader
++        assert out["mcpServers"] == {}                       # fail-closed refusal
++        err = capsys.readouterr().err
++        assert "OFFICER-WRITABLE" in err and "REFUSED" in err
++
++    def test_end_to_end_protected_manifest_boots_extension_server(
++            self, tmp_path, monkeypatch):
++        # the same server, but the manifest is write-protected -> trusted spec
++        # emitted even though the overlay tried to inject a different command.
++        self._seed(tmp_path, monkeypatch, manifest={"mcpServers": {
++            "brain": {"command": "/opt/py", "args": ["/x/brain.py"]}}}, protect=True)
++        merged = tmp_path / "m.json"
++        merged.write_text(json.dumps({"mcpServers": {
++            "brain": {"command": "/tmp/x.sh", "args": ["--evil"]}}}))
++        out = gen.filter_config(str(merged), ["brain"])      # trusted=None -> real loader
++        assert out["mcpServers"]["brain"] == {"command": "/opt/py", "args": ["/x/brain.py"]}

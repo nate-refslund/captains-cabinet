@@ -306,15 +306,22 @@ def render(svc, root: Path, home: Path) -> dict:
     if not isinstance(command, str) or not command.strip():
         raise ValueError(f"{name}: command must be a non-empty string")
     wrapper = (
-        f"cd {root} && set -a && source cabinet/.env 2>/dev/null && set +a"
+        # #51: a missing/malformed cabinet/.env must NOT abort the service.
+        # `;` (not `&&`) so the watchdog/doctor/monitors still boot and can
+        # REPORT the fault instead of dying silently before exec (the
+        # secret-needing services self-check — healthchecks-drill already
+        # guards on missing keys). The `[ -r cabinet/.env ]` guard skips a
+        # source that would error on an absent/locked file; the `2>/dev/null`
+        # swallows a malformed file's noise. `cd` failure still ABORTS.
+        f"cd {root} || exit 1; set -a; [ -r cabinet/.env ] && source cabinet/.env 2>/dev/null; set +a"
         # Native-installer `claude` lives at ~/.local/bin; launchd does not
         # expand $HOME and the baked EnvironmentVariables.PATH (PATH_ENV) stays
         # a captain-agnostic absolute literal (cross-pinned to the dependency-
         # radar registry). Prepend the per-user ~/.local/bin HERE, where bash
         # expands $HOME at officer-boot time, so officers can find `claude`
         # without drifting the radar's absolute service-PATH pin (#60).
-        f' && export PATH="$HOME/.local/bin:$PATH"'
-        f" && REDIS_HOST=localhost exec {command}"
+        f'; export PATH="$HOME/.local/bin:$PATH"'
+        f"; REDIS_HOST=localhost exec {command}"
     )
     env = {"PATH": PATH_ENV}
     for k, v in (svc.get("env") or {}).items():

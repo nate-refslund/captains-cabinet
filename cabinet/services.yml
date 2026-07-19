@@ -20,8 +20,11 @@
 #             hand-made plist shipped without PATH and FATAL'd hourly
 #             (launchd's minimal PATH has no /opt/homebrew/bin → no redis-cli).
 #   command:  repo-root-relative invocation, executed as
-#             /bin/bash -lc "cd $CABINET_ROOT && set -a && source cabinet/.env
-#             2>/dev/null && set +a && REDIS_HOST=localhost exec <command>"
+#             /bin/bash -lc "cd $CABINET_ROOT || exit 1; set -a;
+#             [ -r cabinet/.env ] && source cabinet/.env 2>/dev/null; set +a;
+#             export PATH=$HOME/.local/bin:$PATH; REDIS_HOST=localhost exec <command>"
+#             (`;` not `&&` so a missing/malformed cabinet/.env can NOT abort
+#             the service before exec — the watchdog/doctor still boot + report; #51)
 #   schedule: keepalive | {interval_s: N} | {calendar: [{hour: H, minute: M}|{minute: M}|{day: D, ...}, ...]}
 #             `day` (1-31, launchd Day) makes a calendar entry MONTHLY — added
 #             lane-supply 2026-07-05 for the fidelity-f1 row; generate-plists.py
@@ -420,6 +423,8 @@ services:
     kind: watchdog
     command: /opt/homebrew/bin/python3.12 cabinet/scripts/healthchecks-drill.py
     schedule: { calendar: [{weekday: 0, hour: 9, minute: 0}] }   # Sundays 09:00 local
+    disabled: true
+    disabled_reason: "screenpipe-hardwired personal-source monitor (drills com.screenpipe.pipe-watchdog) — cries wolf weekly on any box with no personal source bound (#52). Re-enable ONLY when instance/config/sources.yml binds a screenpipe/personal adapter (deploy --with-sensors): delete this line + regenerate + bootstrap the plist."
     expected: "drill-failed healthcheck pinged normally weekly (goes late ~9d if the drill dies; /fail = immediate alert)"
     notes: fires the external dead-man end-to-end (fail -> alert -> REAL kickstart recovery -> up); clears F0.10 debt (a) permanently
   - name: memory-worker
@@ -797,7 +802,8 @@ services:
     kind: cron
     command: python3.12 cabinet/scripts/check-brain-health.py
     schedule: { calendar: [{hour: 6, minute: 45}] }   # daily 06:45 local — right after the 06:00 screenpipe brain-health sensor run
-    disabled: false
+    disabled: true
+    disabled_reason: "screenpipe-hardwired personal-source monitor — reads ~/.screenpipe/state/brain_health.json and escalates 'sensor down' daily on any box with no personal source bound (#52). Re-enable ONLY when instance/config/sources.yml binds a screenpipe/personal adapter (deploy --with-sensors): flip to false + regenerate + bootstrap the plist."
     expected: "daily BRAIN_HEALTH_OK or BRAIN_HEALTH_ESCALATED log line; reads ~/.screenpipe/state/brain_health.json and escalates retrieval regression (frozen-core-14 p@1<0.90 / p@3<0.93 / leaks>0 / suppression re-mints>0, per eval-021 invariants) OR staleness (generated_ts >26h old — the sensor runs 06:00+18:00, so >26h means the sensor itself is down) as a Redis trigger to cos -> run the brain-audit skill"
     notes: >-
       Brain-quality Wave F hand-off (staged 2026-07-06 at

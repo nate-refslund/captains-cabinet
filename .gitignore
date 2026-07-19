@@ -208,6 +208,11 @@ cabinet/cache/*
 instance/config/extensions.yml
 instance/config/required-plugins.yml
 instance/config/extra-mcps.json
+# Trusted extension-MCP manifest (audit #9): the WRITE-PROTECTED source of
+# truth for extension servers' boot commands. Holds instance-absolute paths;
+# never commit it (the .example twin is tracked). See
+# designs/hook-patches/HANDBACK-fresh-hatch-wb-schg-7-9.md.
+instance/config/trusted-mcps.json
 .claude/project-config.json
 instance/config/autonomy.yml
 cabinet/launchd/generated/

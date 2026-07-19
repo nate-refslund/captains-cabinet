@@ -1,0 +1,10 @@
+{
+  "_comment": "TEMPLATE — copy to instance/config/trusted-mcps.json, list this deployment's extension MCP servers with their REAL boot commands, then WRITE-PROTECT the file (e.g. `sudo chflags schg instance/config/trusted-mcps.json`, or place it on a read-only mount / root-owned 0444). gen-officer-mcp-config.py (audit #9) trusts this manifest ONLY when the filesystem confirms an officer cannot rewrite it — a writable manifest is IGNORED fail-closed (its servers get REFUSED, with a loud [ERROR]). This is the trusted source for the boot command of extension servers that are otherwise declared only in the OFFICER-WRITABLE instance/config/extra-mcps.json, which is NEVER trusted. A server here must ALSO be granted to the officer in cabinet/mcp-scope.yml to boot; the emitted spec is always the one from THIS file, so any divergent command an attacker writes into extra-mcps.json is neutralized. Committed base/overlay servers (.mcp.json.mac-native, cabinet/mcp-overlays/) do NOT need an entry here — they are already trusted. This real file is gitignored and egg-scrubbed (instance payload); only this .example twin ships.",
+  "mcpServers": {
+    "example-local-bridge": {
+      "command": "/absolute/path/to/python3.12",
+      "args": ["/absolute/path/to/your/mcp/server.py"],
+      "env": { "SOME_NON_SECRET_FLAG": "value" }
+    }
+  }
+}

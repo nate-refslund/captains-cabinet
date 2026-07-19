@@ -547,4 +547,21 @@ if [ -x "$CABINET_ROOT/cabinet/scripts/audit-role-parity.sh" ]; then
   rm -f "$_rp_out"
 fi
 
+# 4. Measurement corpus seed (audit #27). The framework ships
+# framework/measurement/{role_evals,scenarios}/ EMPTY (egg row R006); the
+# runners discover an INSTANCE seed dir (instance/measurement/<kind>) so
+# per-role evals + org scenarios actually run. Without this copy the role-eval
+# runner returns [] forever and the scenario safety-gate passes vacuously.
+# Idempotent (cp -f overwrites); silent when a preset ships no measurement seed.
+for _mk in role_evals scenarios; do
+  _src="$PRESET_DIR/measurement/$_mk"
+  _dst="$CABINET_ROOT/instance/measurement/$_mk"
+  if [ -d "$_src" ]; then
+    mkdir -p "$_dst"
+    if cp -f "$_src"/*.py "$_dst"/ 2>/dev/null; then
+      log "Seeded measurement/$_mk from preset '$ACTIVE_PRESET'"
+    fi
+  fi
+done
+
 log "Preset '$ACTIVE_PRESET' loaded successfully"

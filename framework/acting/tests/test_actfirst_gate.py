@@ -1008,11 +1008,18 @@ def test_covered_evidence_refs_reads_acted_rows(monkeypatch, tmp_path):
                             action="action-card", refs=["6-Commitments/a.md"])
     r.emit_consequence(**prop)
     # an ACTED row on the canonical identity, evidence ref appended exactly as
-    # action_exec._emit_acted_consequence does
+    # action_exec._emit_acted_consequence does. Its ts MUST be now-relative, not
+    # a fixed calendar date: covered_evidence_refs() reads
+    # read_ledger(since=_covered_since()) — a rolling now-COVERED_WINDOW_D floor
+    # (14d default) — so a hardcoded past ts silently ages OUT of the window once
+    # wall-clock passes it, dropping the acted row and this ref (a date-boundary
+    # time-bomb, not order-dependence). Fresh ts keeps the row inside the window
+    # deterministically, mirroring the presented-card row's `now` above.
+    acted_at = (now - dt.timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     row = action_undo.new_row(pid="cov-1", cid="", step=1,
                               kind="monday_task_create", backend="monday",
                               lane="bakery", subject="acted situation",
-                              actor=r._ACTOR, executed_at="2026-07-05T01:00:00Z")
+                              actor=r._ACTOR, executed_at=acted_at)
     ev = action_undo.acted_event(None, row)
     ev["refs"] = list(ev.get("refs") or []) + ["6-Commitments/b.md"]
     r.emit_consequence(**ev)
