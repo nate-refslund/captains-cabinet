@@ -167,7 +167,11 @@ def _curl_method(command: str) -> str | None:
     """
     if not re.search(r"\bcurl\b", command):
         return None
-    m = re.search(r"(?:-X|--request)\s+([A-Za-z]+)", command)
+    # Tolerate the bundled short form (`-XDELETE`) and the `=` long form
+    # (`--request=PUT`), not just whitespace-separated (audit #7): `\s*` after
+    # -X, `[=\s]+` after --request. A bundled `-XDELETE` used to miss this
+    # regex, fall through to the body/GET default, and escape the ceiling.
+    m = re.search(r"(?:-X\s*|--request[=\s]+)([A-Za-z]+)", command)
     if m:
         return m.group(1).upper()
     if re.search(r"(?:-d|--data\b|--data-[\w-]+|-F\b|--form\b|-T\b|--upload-file)", command):
@@ -185,6 +189,23 @@ def _command_targets_remote(command: str) -> bool:
     if not urls:
         return False
     return not all(_LOCALHOST_RE.search(u) for u in urls)
+
+
+def _curl_targets_remote(command: str) -> bool:
+    """Conservative remote check for a curl MUTATION — fail to the ceiling (#7).
+
+    Only ever reached for a curl command (method is None otherwise), so the
+    "no-localhost => remote" default never touches non-curl commands. An
+    explicit non-local scheme-full URL -> remote; else a localhost token ->
+    local; else (a scheme-LESS host, no localhost marker, e.g.
+    ``curl -XPOST api.vendor.com/charge``) -> remote, so a scheme-less mutation
+    can't slip past the network_write ceiling into ``local_edit``."""
+    urls = _URL_RE.findall(command)
+    if urls and not all(_LOCALHOST_RE.search(u) for u in urls):
+        return True
+    if _LOCALHOST_RE.search(command):
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -285,7 +306,7 @@ def _classify_bash(command: str) -> str:
 
     # --- CEILING: network_write (live mutating HTTP verbs) ----------------
     method = _curl_method(cmd)
-    if method in ("POST", "PUT", "DELETE", "PATCH") and _command_targets_remote(cmd):
+    if method in ("POST", "PUT", "DELETE", "PATCH") and _curl_targets_remote(cmd):
         return {"POST": "mcp_post", "PATCH": "mcp_post",
                 "PUT": "mcp_put", "DELETE": "mcp_delete"}[method]
 
