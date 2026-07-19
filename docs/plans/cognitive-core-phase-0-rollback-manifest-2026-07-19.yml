@@ -1,0 +1,52 @@
+schema_version: cognitive-phase-rollback/v1
+phase: COG-0
+baseline_sha: 8f9c555d2064d55a159a53fcedd6df33434a9291
+remove:
+  - cabinet/config/cognitive-architecture-contract.yml
+  - cabinet/scripts/cognitive-architecture-census.py
+  - cabinet/scripts/cognitive-phase0-review-scope.py
+  - cabinet/scripts/cognitive-phase0-rollback-rehearsal.py
+  - cabinet/scripts/tests/test_cognitive_architecture_census.py
+  - cabinet/scripts/tests/test_cognitive_phase0_rollback.py
+  - cabinet/scripts/verify-cognitive-architecture.sh
+  - cabinet/scripts/verify-cognitive-phase0.sh
+  - docs/cognitive-core-foundry.md
+  - docs/plans/cognitive-core-phase-0-contract-2026-07-19.md
+  - docs/plans/cognitive-core-phase-0-rollback-manifest-2026-07-19.yml
+  - framework/evolution/__init__.py
+  - framework/evolution/contracts.py
+  - framework/evolution/tests/__init__.py
+  - framework/evolution/tests/test_contracts.py
+  - framework/schemas/cognitive-trajectory.schema.json
+  - framework/schemas/holdout-evaluation-receipt.schema.json
+  - shared/interfaces/reviews/codex-cognitive-foundry-masterplan-cp1.md
+restore_from_baseline:
+  - cabinet/scripts/egg-export-manifest.txt
+  - cabinet/scripts/null-hatch.sh
+  - cabinet/scripts/tests/test_egg_export.py
+retain_append_only:
+  - path: docs/plans/operative-egg-ledger-2026-07-07.yml
+    rows: [COG-0, COG-1, COG-2, COG-3, COG-4, COG-5, COG-6, COG-7, COG-8]
+    rollback_action: retain rows and append a dated rollback/supersession note; preserve allowed status vocabulary
+  - path: docs/plans/operative-egg-plan-2026-07-07.md
+    rows: [COG-0, COG-1, COG-2, COG-3, COG-4, COG-5, COG-6, COG-7, COG-8]
+    rollback_action: retain parity rows and append the same dated rollback/supersession note
+must_remain_unchanged:
+  - cabinet/services.yml
+  - framework/events/emitter.py
+  - framework/authority/classifier.py
+  - framework/policies/authority-matrix.yml
+  - framework/learning/gate.py
+  - framework/authority
+  - framework/evidence
+  - shared/interfaces/captain-vetoes.yml
+  - .layer-separation-baseline
+  - .layer-separation-allowlist
+rehearsal:
+  environment: scratch checkout of the landed Phase-0 commit
+  procedure:
+    - remove every remove path that exists
+    - restore every restore_from_baseline path from baseline_sha
+    - retain both operative surfaces and add matching rollback notes to COG-0 through COG-8
+    - run ledger id uniqueness, A13 parity, ledger-status-parity, the pre-phase compatibility floor, layer separation, docs sweep, and golden evals
+  success: the inverse diff contains only retained operative rows/notes relative to baseline and every unchanged/compatibility gate is green
