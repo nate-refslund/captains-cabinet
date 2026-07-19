@@ -322,6 +322,22 @@ if [ -d "$CABINET_ROOT/.claude/agents" ]; then
     "$CABINET_ROOT/.claude/agents/" \
     "$DEST_DIR/cabinet-state/claude-agents/"
 fi
+# The out-of-repo durable family under ~/Library/Application Support/cabinet
+# (events, feed, undo, ledger-backups, captain-inbound, telegram-state, state,
+# world). It lives OUTSIDE $CABINET_ROOT, so the rsyncs above never see it —
+# yet it holds the org's real operational history. Resolve the path EXACTLY as
+# the cabinet writes it (${CABINET_STATE_DIR:-$HOME/…}), so backup and runtime
+# can never disagree. EXCLUDE claude-config/ — it is ~280MB of regenerable
+# Claude Code session cache that ALSO carries raw auth tokens (.claude.json);
+# this dest is rsynced to the remote box over Tailscale, so credentials must
+# never ride along. The durable remainder is small (~14MB).
+CABINET_APP_SUPPORT="${CABINET_STATE_DIR:-$HOME/Library/Application Support/cabinet}"
+if [ -d "$CABINET_APP_SUPPORT" ]; then
+  rsync -a --delete \
+    --exclude='claude-config/' \
+    --exclude='*.pyc' --exclude='__pycache__' \
+    "$CABINET_APP_SUPPORT/" "$DEST_DIR/cabinet-state/app-support/"
+fi
 FS_FILES=$(find "$DEST_DIR/cabinet-state" -type f 2>/dev/null | wc -l | tr -d ' ')
 FS_SIZE=$(du -sh "$DEST_DIR/cabinet-state" 2>/dev/null | awk '{print $1}')
 echo "  → $FS_FILES files, $FS_SIZE"
