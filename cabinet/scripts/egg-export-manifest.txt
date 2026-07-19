@@ -114,6 +114,13 @@ delete cabinet/scripts/egg-export.sh
 delete cabinet/scripts/egg-publish-gate.sh
 delete cabinet/scripts/egg-export-manifest.txt
 delete cabinet/scripts/tests/test_egg_export.py
+# COG-0 private-side landing proof: these scripts bind the launching source
+# instance's baseline, operative ledger, review artifact, and rollback plan.
+# The enduring census/contracts ship below; historical phase tooling does not.
+delete cabinet/scripts/cognitive-phase0-review-scope.py
+delete cabinet/scripts/cognitive-phase0-rollback-rehearsal.py
+delete cabinet/scripts/verify-cognitive-phase0.sh
+delete cabinet/scripts/tests/test_cognitive_phase0_rollback.py
 delete docs/runbooks/egg-export-2026-07-10.md
 # PC-C launch-kit privacy (integration ruling 2026-07-10): docs/launch/ is
 # CG-7 PER-ITEM publication material (Show HN draft, business-model proposal,
@@ -316,6 +323,19 @@ expect-present docs/plans/ARCHIVED-NOTE.md
 expect-present docs/plans/cabinet-axes-spec-2026-07-05.md
 expect-present docs/plans/evolution-engine-spec-2026-07-05.md
 expect-present docs/plans/sovereign-build-spec-2026-07-04.md
+# COG-0: the living Cognitive Core contract and its import-inert validation
+# package are universal framework DNA. The dated implementation plan and
+# private review artifact archive out under the existing rules above.
+expect-present docs/cognitive-core-foundry.md
+expect-present cabinet/config/cognitive-architecture-contract.yml
+expect-present cabinet/scripts/cognitive-architecture-census.py
+expect-present cabinet/scripts/verify-cognitive-architecture.sh
+expect-present framework/evolution/__init__.py
+expect-present framework/evolution/contracts.py
+expect-present framework/evolution/tests/__init__.py
+expect-present framework/evolution/tests/test_contracts.py
+expect-present framework/schemas/cognitive-trajectory.schema.json
+expect-present framework/schemas/holdout-evaluation-receipt.schema.json
 # R167: dropped from the plans-archive keep-list (see R167 above) — the
 # coupling census now archives with the rest of docs/plans instance history.
 expect-absent docs/plans/source-adapter-boundary-2026-07-05.md
@@ -411,6 +431,10 @@ expect-absent cabinet/scripts/egg-export.sh
 expect-absent cabinet/scripts/egg-publish-gate.sh
 expect-absent cabinet/scripts/egg-export-manifest.txt
 expect-absent cabinet/scripts/tests/test_egg_export.py
+expect-absent cabinet/scripts/cognitive-phase0-review-scope.py
+expect-absent cabinet/scripts/cognitive-phase0-rollback-rehearsal.py
+expect-absent cabinet/scripts/verify-cognitive-phase0.sh
+expect-absent cabinet/scripts/tests/test_cognitive_phase0_rollback.py
 expect-absent docs/runbooks/egg-export-2026-07-10.md
 expect-absent docs/launch
 # APPSHELL-V05: the shell dev tooling must never ship (paired delete rows above).

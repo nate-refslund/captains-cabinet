@@ -1,0 +1,68 @@
+schema_version: cognitive-architecture-contract/v1
+baseline_sha: 8f9c555d2064d55a159a53fcedd6df33434a9291
+budgets:
+  central_event_types:
+    path: framework/events/emitter.py
+    symbol: VALID_EVENT_TYPES
+    maximum: 91
+  central_action_types:
+    path: framework/authority/classifier.py
+    symbol: ACTION_TYPES
+    maximum: 30
+  services_total:
+    path: cabinet/services.yml
+    maximum: 57
+  services_enabled:
+    path: cabinet/services.yml
+    maximum: 44
+  layer_debt_entries:
+    path: .layer-separation-baseline
+    maximum: 24
+  layer_allowlist_entries:
+    path: .layer-separation-allowlist
+    maximum: 19
+  framework_production_modules:
+    path: framework
+    maximum: 206
+  framework_production_noncomment_lines:
+    path: framework
+    maximum: 60067
+  named_compiler_modules:
+    path: framework
+    pattern: "*compiler*.py"
+    maximum: 1
+  duplicate_event_writer_sinks:
+    path: framework/events/emitter.py
+    symbol: emit
+    callee_prefix: _write_to_
+    maximum: 3
+temporary_allowances:
+  - phase: COG-0
+    budget: framework_production_modules
+    additional: 2
+    reason: import-inert trajectory contract package until structural compaction
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: COG-7 brings the production-module count below the pinned baseline
+  - phase: COG-0
+    budget: framework_production_noncomment_lines
+    additional: 1256
+    reason: externally attested trajectory and holdout validation until structural compaction
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: COG-7 brings production non-comment lines below the pinned baseline
+ownership:
+  authoritative_state: domain_transaction
+  cross_domain_delivery: transactional_outbox
+  world_model: rebuildable_projection
+  evidence: existing_evidence_plane
+  promotion: existing_gate_only
+declared_invariants:
+  - independent_physical_safety_enforcers
+  - no_global_database_bus_or_compiler
+  - no_self_minted_graduation_credit
+  - captain_rooted_objectives
+  - shadow_before_authority
+  - namespaced_operations_single_constitutional_effect
+enduring_architecture_gates:
+  - bash cabinet/scripts/verify-cognitive-architecture.sh

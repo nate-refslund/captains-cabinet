@@ -273,6 +273,49 @@ def test_plans_archived_with_stub(export: Path):
                         "sovereign-build-spec-2026-07-04.md"], leftover
 
 
+def test_cognitive_core_contract_survives_export(export: Path):
+    """COG-0 living doctrine and pure contracts are part of a fresh Cabinet."""
+    for rel in (
+        "docs/cognitive-core-foundry.md",
+        "cabinet/config/cognitive-architecture-contract.yml",
+        "cabinet/scripts/cognitive-architecture-census.py",
+        "cabinet/scripts/verify-cognitive-architecture.sh",
+        "framework/evolution/__init__.py",
+        "framework/evolution/contracts.py",
+        "framework/evolution/tests/__init__.py",
+        "framework/evolution/tests/test_contracts.py",
+        "framework/schemas/cognitive-trajectory.schema.json",
+        "framework/schemas/holdout-evaluation-receipt.schema.json",
+    ):
+        assert (export / rel).is_file(), f"COG-0 contract must ship: {rel}"
+
+    for rel in (
+        "cabinet/scripts/cognitive-phase0-review-scope.py",
+        "cabinet/scripts/cognitive-phase0-rollback-rehearsal.py",
+        "cabinet/scripts/verify-cognitive-phase0.sh",
+        "cabinet/scripts/tests/test_cognitive_phase0_rollback.py",
+    ):
+        assert not (export / rel).exists(), f"COG-0 private landing tool must not ship: {rel}"
+
+
+def test_cognitive_architecture_verifier_runs_inside_export(export: Path):
+    result = subprocess.run(
+        ["bash", "cabinet/scripts/verify-cognitive-architecture.sh"],
+        cwd=export,
+        env={
+            **os.environ,
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTEST_ADDOPTS": "-p no:cacheprovider",
+        },
+        text=True,
+        capture_output=True,
+        timeout=300,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "cognitive architecture verify: PASS" in result.stdout
+
+
 def test_testburg_fixture_ships(export: Path):
     tb = export / "cabinet" / "fixtures" / "testburg"
     for f in ("README.md", "generate.py", "config/product.yml"):

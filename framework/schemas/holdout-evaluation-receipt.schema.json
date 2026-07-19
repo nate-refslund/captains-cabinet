@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://captains-cabinet.invalid/schemas/holdout-evaluation-receipt-v1.json",
+  "title": "Oracle-owned aggregate holdout evaluation receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "cabinet_id",
+    "candidate_fingerprint",
+    "trajectory_fingerprint",
+    "suite_version",
+    "suite_digest",
+    "aggregate_verdict",
+    "threshold_vector",
+    "evaluated_at",
+    "attested_artifact_ref",
+    "classification"
+  ],
+  "properties": {
+    "schema_version": {"const": "holdout-evaluation-receipt/v1"},
+    "cabinet_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"},
+    "candidate_fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "trajectory_fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "suite_version": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"},
+    "suite_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "aggregate_verdict": {"enum": ["pass", "fail"]},
+    "threshold_vector": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 32,
+      "additionalProperties": {"type": "boolean"},
+      "propertyNames": {
+        "pattern": "^threshold:[a-z0-9][a-z0-9._-]{0,63}$"
+      }
+    },
+    "evaluated_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "attested_artifact_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "digest"],
+      "properties": {
+        "ref": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"},
+        "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "classification": {"const": "restricted"}
+  }
+}

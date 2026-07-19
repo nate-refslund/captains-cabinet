@@ -145,6 +145,7 @@ mods = [
     "framework.frontdoor.binder_wire", "framework.frontdoor.morning_synthesis",
     "framework.watchdog.registry", "framework.watchdog.check",
     "framework.authority.posture", "framework.authority.matrix",
+    "framework.evolution.contracts",
 ]
 for m in mods:
     importlib.import_module(m)
@@ -152,7 +153,8 @@ print("OK: %d framework CORE modules import under the null source" % len(mods))
 PY
 
 # --- stage 4/4 · null-path suite subset (meta-ratchets + resolver, no data dep)
-echo "null-hatch: [4/4] null-path suite subset (framework/sources + framework/tests)"
+echo "null-hatch: [4/4] null-path suite subset + enduring cognitive architecture gate"
 "$PY" -m pytest framework/sources framework/tests -q
+CABINET_PYTHON="$PY" bash cabinet/scripts/verify-cognitive-architecture.sh
 
 echo "null-hatch: PROOF 1 — NULL HATCH: PASS (egg boots with no captain data, no screenpipe, no instance source, adapters absent)"
