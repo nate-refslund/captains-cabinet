@@ -568,3 +568,23 @@ def test_grid_unit_size_hint_scales_to_pixels(monkeypatch, tmp_path, seam):
                      "--candidates", "1", "--out", str(out)])
     assert rc == 0
     assert seam[0]["payload"]["image_size"] == {"width": 32, "height": 32}
+
+
+def test_style_strength_sent_only_when_given_and_with_style_image():
+    """style_strength: absent by default (no regression), sent when passed —
+    and only alongside a style_image (meaningless without one)."""
+    import importlib.util
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location(
+        "waf_ss", Path(__file__).resolve().parents[1] / "world-asset-forge.py")
+    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+    # default None -> not sent, even with a style image
+    p0 = m._build_generate_payload("x", 32, 32, "STYLEB64", None, style_strength=None)
+    assert "style_strength" not in p0
+    assert p0["style_image"]["base64"] == "STYLEB64"
+    # given -> sent, when a style image exists
+    p1 = m._build_generate_payload("x", 32, 32, "STYLEB64", None, style_strength=70)
+    assert p1["style_strength"] == 70
+    # given but NO style image -> not sent (nothing to strengthen)
+    p2 = m._build_generate_payload("x", 32, 32, None, None, style_strength=70)
+    assert "style_strength" not in p2

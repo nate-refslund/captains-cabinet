@@ -283,7 +283,8 @@ def _actionable_api_error(e: ForgeHTTPStatusError) -> str:
 # ---------------------------------------------------------------- payloads
 def _build_generate_payload(prompt: str, w: int, h: int,
                             style_b64: str | None,
-                            palette_b64: str | None) -> dict:
+                            palette_b64: str | None,
+                            style_strength: int | None = None) -> dict:
     """generate-image-bitforge request. Pilot-proven fields; keep ALL field
     names in this one function for cheap correction."""
     payload: dict = {
@@ -294,6 +295,13 @@ def _build_generate_payload(prompt: str, w: int, h: int,
     }
     if style_b64:
         payload["style_image"] = {"type": "base64", "base64": style_b64}
+        # style_strength (0-100; API doc "50 = balanced") only bites WITH a
+        # style_image. Omitting it left the API at its uncontrolled default,
+        # so the LimeZu reference's influence was never tunable — the
+        # 2026-07-18 broad-calibration study's #1 finding. Sent only when a
+        # style_image exists; None => preserve prior default-behaviour.
+        if style_strength is not None:
+            payload["style_strength"] = style_strength
     if palette_b64:
         payload["color_image"] = {"type": "base64", "base64": palette_b64}
     return payload
@@ -801,7 +809,8 @@ def run(args: argparse.Namespace) -> int:
         payload = _build_generate_payload(
             job["prompt"], w, h,
             style["b64"] if style else None,
-            pal["b64"] if pal else None)
+            pal["b64"] if pal else None,
+            style_strength=args.style_strength)
         for n in range(1, args.candidates + 1):
             label = f"{jid} cand-{n}"
             try:
@@ -953,6 +962,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--style-image", help="prebuilt style PNG (auto-fit to "
                    "canvas when sizes differ — the API needs an exact "
                    "match)")
+    p.add_argument("--style-strength", type=int, default=None,
+                   help="bitforge style-transfer strength 0-100 (API doc: "
+                        "50=balanced). Only sent with a style image. DEFAULT "
+                        "None = do not send (preserves prior behaviour — the "
+                        "API's own default). Now controllable: the 2026-07-18 "
+                        "A/B found HIGHER strength DEGRADES object coherence "
+                        "with a multi-sprite --style-dir collage (imports "
+                        "collage noise) — keep it LOW, or pair a high value "
+                        "with a single-exemplar --style-image, not a collage.")
     p.add_argument("--palette", "--palette-image", dest="palette",
                    help="palette strip PNG: sent as API color_image AND "
                         "the post-quantize target")
