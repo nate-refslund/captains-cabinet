@@ -221,7 +221,7 @@ INSTANCE_PERSISTENT_DIRS="instance/roles/active instance/roles/archive instance/
 # Gitignored in bulk but ships a tracked tier2/<officer>/{,reflections/}.gitkeep
 # skeleton — seeded into shared/ from the release's own tree once, then
 # symlinked whole like any PERSISTENT_DIRS entry thereafter.
-INSTANCE_PERSISTENT_SEEDED_DIRS="instance/memory"
+INSTANCE_PERSISTENT_SEEDED_DIRS="instance/memory instance/fidelity"
 # Individual leaves inside an otherwise richly git-tracked directory.
 # Symlinked ONLY when a shared/ copy already exists — never fabricated, so
 # a from-scratch runtime root leaves the path absent, same as a from-scratch

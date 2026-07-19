@@ -284,6 +284,42 @@ def test_successful_same_day_rerun_atomically_replaces_snapshot(tmp_path: Path):
     assert not list((tmp_path / "backups").glob(".*.staging.*"))
 
 
+def test_backup_captures_app_support_durable_family_and_excludes_secret_cache(
+    tmp_path: Path,
+):
+    """The out-of-repo ~/Library/Application Support/cabinet durable family
+    (events/feed/undo/…) is backed up; the 280MB claude-config/ session cache —
+    which carries raw auth tokens and rides the remote rsync — is excluded."""
+    root = _instance(tmp_path)
+    fakebin = tmp_path / "bin"
+    fakebin.mkdir()
+    _fake_redis(fakebin)
+    # $HOME is tmp_path/home in _env; CABINET_STATE_DIR unset → the cabinet's
+    # own default. Seed one durable event and one secret-bearing cache file.
+    app = tmp_path / "home" / "Library" / "Application Support" / "cabinet"
+    (app / "events").mkdir(parents=True)
+    (app / "events" / "e1.json").write_text('{"ev":"real-history"}\n')
+    (app / "claude-config").mkdir(parents=True)
+    (app / "claude-config" / ".claude.json").write_text(
+        '{"oauthAccount":{"accessToken":"sk-SECRET-must-not-ship"}}\n'
+    )
+
+    result = _run(tmp_path, root, fakebin, "--no-pg")
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    snap = _snapshot(tmp_path)
+    assert (
+        snap / "cabinet-state/app-support/events/e1.json"
+    ).read_text() == '{"ev":"real-history"}\n'
+    # claude-config (secrets + regenerable bulk) must NOT be in the backup.
+    assert not (snap / "cabinet-state/app-support/claude-config").exists()
+    assert "sk-SECRET-must-not-ship" not in "".join(
+        p.read_text(errors="ignore")
+        for p in snap.rglob("*")
+        if p.is_file()
+    )
+
+
 def test_live_process_lock_refuses_concurrent_backup(tmp_path: Path):
     root = _instance(tmp_path)
     fakebin = tmp_path / "bin"
