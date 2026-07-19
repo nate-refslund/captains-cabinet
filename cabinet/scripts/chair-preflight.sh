@@ -61,11 +61,18 @@ else
   fail "framework.frontdoor import error"
 fi
 
-# 7: screenpipe silenced (one channel)
-if grep -q '^CABINET_OWNS_TELEGRAM=1' "$HOME/.screenpipe/pipes/_shared/.env" 2>/dev/null; then
+# 7: screenpipe silenced (OPTIONAL personal source — audit #52). screenpipe is
+# a personal capture pipe; a fresh / non-author box has no ~/.screenpipe at all,
+# so a hard requirement here false-FAILS preflight (NOT READY) on every stranger
+# hatch. Its absence is the normal fresh-hatch case, not a failure — only a
+# PRESENT-but-unsilenced screenpipe is a real two-channel Telegram conflict.
+# (Same optional-source shape as check #4 above.)
+if [ ! -e "$HOME/.screenpipe" ]; then
+  echo "  ➖ no screenpipe detected (optional personal source — no Telegram channel conflict)"
+elif grep -q '^CABINET_OWNS_TELEGRAM=1' "$HOME/.screenpipe/pipes/_shared/.env" 2>/dev/null; then
   pass "screenpipe DMs silenced (one channel)"
 else
-  fail "screenpipe NOT silenced (CABINET_OWNS_TELEGRAM != 1)"
+  fail "screenpipe present but NOT silenced (set CABINET_OWNS_TELEGRAM=1 to avoid double Telegram DMs)"
 fi
 
 # 8: recurring briefing scheduled
