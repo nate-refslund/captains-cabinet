@@ -766,8 +766,13 @@ redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" \
 # persist API credentials in tmux pane history.  BROKER_DIR is already 0700 and
 # the officer sandbox cannot read it; the launcher unlinks itself before exec.
 LAUNCH_SCRIPT="$(officer_env_write_one_shot_launcher "$BROKER_DIR" "$CLAUDE_CMD")"
+# env -i scrubs the environment, so PATH must carry ~/.local/bin explicitly:
+# Claude Code's native installer puts `claude` there by default, and launchd's
+# baked service PATH omits it (daemon plists fix this in their own wrapper —
+# generate-plists.py). Without it the officer boots and fails at move-in when it
+# cannot find `claude` (audit #60). $HOME/$PATH expand in THIS shell before env -i.
 if ! tmux new-session -d -s "$SESSION_NAME" -x 220 -y 50 -c "$REPO_ROOT" \
-    /usr/bin/env -i HOME="$HOME" PATH="$PATH" USER="${USER:-}" \
+    /usr/bin/env -i HOME="$HOME" PATH="$HOME/.local/bin:$PATH" USER="${USER:-}" \
     LOGNAME="${LOGNAME:-}" SHELL=/bin/bash \
     /bin/bash --noprofile --norc "$LAUNCH_SCRIPT"; then
   rm -f "$LAUNCH_SCRIPT"

@@ -255,7 +255,14 @@ def _run_scenario_evals_for_validation() -> tuple[bool, list[dict[str, Any]]]:
     relevant = []
     for category in ("role", "learning"):
         relevant.extend(run_all_scenarios(category=category))
-    all_passed = all(r.passed for r in relevant) if relevant else True
+    # FAIL CLOSED on zero relevant scenarios (audit #27, same discipline as the
+    # golden-eval shells gate #21 below): an unseeded preset makes
+    # run_all_scenarios() return [], and a "no scenarios -> pass" no-op lets the
+    # self-improvement validation gate report green WITHOUT measuring adaptation
+    # discipline. Zero scenarios is an unseeded/broken box, not a pass. Every
+    # shipping preset that runs this gate must carry a role/learning measurement
+    # seed (presets/*/measurement/scenarios/).
+    all_passed = all(r.passed for r in relevant) if relevant else False
     return all_passed, [r.to_dict() for r in relevant]
 
 

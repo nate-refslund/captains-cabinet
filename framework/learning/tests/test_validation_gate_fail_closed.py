@@ -103,3 +103,50 @@ def test_validation_gate_blocks_on_zero_shells(tmp_path, monkeypatch):
     ok, detail = sil._validation_gate()
     assert ok is False
     assert detail["golden_passed"] is False
+
+
+def test_zero_scenarios_fails_closed(monkeypatch):
+    """Audit #27 — no role/learning scenarios -> the scenario validation arm
+    fails CLOSED. Before the fix an unseeded preset (portfolio shipped no
+    measurement seed) made run_all_scenarios() return [] and the gate returned
+    a vacuous ``else True`` green WITHOUT measuring adaptation discipline. A
+    mutant reverting ``else False`` back to ``else True`` turns this red.
+    """
+    monkeypatch.setattr(sil, "run_all_scenarios", lambda category=None: [])
+    ok, results = sil._run_scenario_evals_for_validation()
+    assert ok is False
+    assert results == []
+
+
+def test_present_passing_scenarios_run_green(monkeypatch):
+    """Fail-closed must not over-block: a non-empty passing set validates green."""
+    class _R:
+        passed = True
+
+        def to_dict(self):
+            return {"passed": True}
+
+    monkeypatch.setattr(
+        sil, "run_all_scenarios",
+        lambda category=None: [_R()] if category == "role" else [])
+    ok, results = sil._run_scenario_evals_for_validation()
+    assert ok is True
+    assert len(results) == 1
+
+
+def test_failing_scenario_fails_gate(monkeypatch):
+    """A registered scenario that FAILS turns the gate False — real measurement,
+    not a rubber stamp."""
+    class _R:
+        def __init__(self, passed):
+            self.passed = passed
+
+        def to_dict(self):
+            return {"passed": self.passed}
+
+    monkeypatch.setattr(
+        sil, "run_all_scenarios",
+        lambda category=None: [_R(True), _R(False)] if category == "role" else [])
+    ok, results = sil._run_scenario_evals_for_validation()
+    assert ok is False
+    assert len(results) == 2
