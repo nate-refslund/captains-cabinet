@@ -75,6 +75,7 @@ import argparse
 import json
 import os
 import re
+import stat
 import sys
 import tempfile
 
@@ -199,13 +200,31 @@ def resolve_allowed(
     return allowed
 
 
-def filter_config(input_path: str, allowed: list) -> dict:
+def filter_config(input_path: str, allowed: list, trusted: dict | None = None) -> dict:
     """Filter the merged MCP config down to the allowed server set.
 
     Non-mcpServers top-level keys are preserved. "_"-prefixed pseudo-server
     keys (comment/doc entries) are stripped — mirrors the jq merge pass, and
     covers the single-layer path where that jq pass never ran. Membership is
     case-insensitive, mirroring the hook's `grep -qi`.
+
+    COMMAND provenance (audit #9): the per-officer ``--input`` is start-officer's
+    jq deep-merge of the officer-WRITABLE instance/config/extra-mcps.json over
+    the committed base (later layer overrides), so a scoped server's *command*
+    in the merged input is attacker-controllable. The EMITTED spec for a kept
+    server is therefore ALWAYS the TRUSTED one — never the overlay's
+    command/args/env/cwd. Trusted specs come from ``_load_trusted_specs``
+    (committed base + committed overlays + a WRITE-PROTECTED instance extension
+    manifest). Consequences:
+      * an overlay that OVERRIDES a trusted server's command is NEUTRALIZED, not
+        refused: the trusted spec boots, the injected command never does. This
+        is strictly safer than refusing (the rogue command still cannot run) and
+        avoids a DoS where a rogue overlay could knock a legitimate server off an
+        officer. A genuine (non-path-normalization) override is logged loudly.
+      * a scoped server that NO trusted layer defines is REFUSED and boots
+        WITHOUT it (fail-closed) — the overlay is its only source and that source
+        is attacker-controllable, so there is no safe spec to emit.
+    ``trusted`` is injectable for tests; None -> load the trusted baseline.
     """
     empty = {"mcpServers": {}}
     if not allowed:
@@ -223,19 +242,37 @@ def filter_config(input_path: str, allowed: list) -> dict:
     if not isinstance(servers, dict):
         servers = {}
     allowed_lc = {a.lower() for a in allowed}
-    kept = {}
-    dropped = []
+    if trusted is None:
+        trusted = _load_trusted_specs()
+    trusted_lc = {k.lower(): v for k, v in trusted.items()}
+    kept, dropped, refused, neutralized = {}, [], [], []
     for name, spec in servers.items():
         if name.startswith("_"):
             continue  # pseudo-server comment key, never bootable
-        if name.lower() in allowed_lc:
-            kept[name] = spec
-        else:
+        if name.lower() not in allowed_lc:
             dropped.append(name)
+            continue
+        tspec = trusted_lc.get(name.lower())
+        if tspec is None:
+            # In scope but defined by NO trusted layer: its only source is the
+            # officer-writable overlay, whose command is attacker-controllable.
+            # Fail closed — never boot a command sourced solely from the overlay.
+            refused.append(name + " (no trusted definition)")
+            continue
+        kept[name] = tspec   # ALWAYS emit the TRUSTED spec — the overlay's
+        #                      command/args/env/cwd are ignored entirely.
+        if not _cmd_equivalent(spec, tspec):
+            neutralized.append(name)
     if dropped:
         sys.stderr.write(
             "gen-officer-mcp-config: scoped OUT unscoped server(s): %s\n" % ", ".join(sorted(dropped))
         )
+    if neutralized:
+        log_err("NEUTRALIZED overlay command override(s) — booting the TRUSTED "
+                "spec and IGNORING the overlay for: %s" % ", ".join(sorted(neutralized)))
+    if refused:
+        log_err("REFUSED scoped server(s) with no trusted command definition "
+                "(booting WITHOUT them): %s" % ", ".join(sorted(refused)))
     out = dict(cfg)
     out["mcpServers"] = kept
     return out
@@ -284,6 +321,153 @@ _SANDBOX_DENY_REL = (
 def repo_root() -> str:
     """Repo root derived from this file's location (cabinet/scripts/..)."""
     return os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+
+
+# ---------------------------------------------------------------------------
+# Trusted command baseline (audit #9)
+# ---------------------------------------------------------------------------
+# The command a scoped server is ALLOWED to boot with is read HERE, from
+# TRUSTED (non-officer-writable) config only — never from the per-officer merged
+# --input, which folds the officer-writable instance/config/extra-mcps.json
+# overlay on top (jq later-layer override). Trusted layers:
+#   1. the committed base (.mcp.json.mac-native else .mcp.json) — start-officer's
+#      own base; git-tracked, so tampering is version-visible and provision-
+#      restored;
+#   2. the committed capability overlays cabinet/mcp-overlays/*.mcp.json;
+#   3. an OPTIONAL instance extension manifest instance/config/trusted-mcps.json
+#      — read ONLY when WRITE-PROTECTED. It lets a deployment declare
+#      instance-specific extension servers (e.g. a local memory/research bridge)
+#      whose command legitimately belongs to the INSTANCE, not to a committed
+#      framework file (layer separation). Because it is instance payload with no
+#      git safety net, it is trusted only when the filesystem confirms an officer
+#      cannot rewrite it (schg immutable flag, or a read-only mount / restrictive
+#      perms); a present-but-writable manifest is SKIPPED with a loud [ERROR].
+# instance/config/extra-mcps.json is DELIBERATELY never a trusted layer — a
+# server whose command belongs in an officer-writable file is not trusted to
+# define its own boot command; that is the whole point of #9.
+_TRUSTED_BASE_CANDIDATES = (".mcp.json.mac-native", ".mcp.json")
+_TRUSTED_OVERLAY_DIR = "cabinet/mcp-overlays"
+_TRUSTED_EXT_MANIFEST = "instance/config/trusted-mcps.json"
+
+
+def _is_write_protected(path: str) -> bool:
+    """True iff ``path`` cannot be rewritten by the officer that would boot it.
+
+    A trusted layer must not be officer-writable, else its "trusted" command is
+    itself attacker-controllable. Two portable signals, either suffices:
+      * macOS/BSD system-immutable (schg) — blocks writes even by root (the
+        germline lock backend on Mac targets). Permission bits may still read
+        rw, so this is checked explicitly via st_flags & SF_IMMUTABLE.
+      * not writable by the current user — a read-only mount (the docker
+        ro-mount germline backend) or root-owned restrictive perms.
+    Fails CLOSED (returns False -> not trusted) on any stat error."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return False
+    if getattr(st, "st_flags", 0) & stat.SF_IMMUTABLE:
+        return True
+    return not os.access(path, os.W_OK)
+
+
+def _load_trusted_specs() -> dict:
+    """{name: spec} of server command definitions from TRUSTED config ONLY.
+
+    Trusted layers applied in load order (later overrides): committed base
+    (first present candidate), then the committed overlay dir sorted, then the
+    OPTIONAL write-protected instance extension manifest. "_"-prefixed pseudo
+    keys are skipped. Any read/parse trouble on a layer is skipped (a smaller
+    trusted set only ever REFUSES more — fail-closed)."""
+    root = repo_root()
+    trusted: dict = {}
+
+    def _fold(path):
+        try:
+            with open(path) as fh:
+                cfg = json.load(fh)
+        except (OSError, ValueError):
+            return
+        servers = cfg.get("mcpServers") if isinstance(cfg, dict) else None
+        if isinstance(servers, dict):
+            for name, spec in servers.items():
+                if not name.startswith("_") and isinstance(spec, dict):
+                    trusted[name] = spec
+
+    for cand in _TRUSTED_BASE_CANDIDATES:
+        p = os.path.join(root, cand)
+        if os.path.exists(p):
+            _fold(p)
+            break
+    odir = os.path.join(root, _TRUSTED_OVERLAY_DIR)
+    if os.path.isdir(odir):
+        for fn in sorted(os.listdir(odir)):
+            if fn.endswith(".mcp.json"):
+                _fold(os.path.join(odir, fn))
+    ext = os.path.join(root, _TRUSTED_EXT_MANIFEST)
+    if os.path.exists(ext):
+        if _is_write_protected(ext):
+            _fold(ext)
+        else:
+            log_err(
+                "trusted extension manifest %s is OFFICER-WRITABLE — NOT trusting "
+                "it; its servers will be REFUSED. Write-protect it (e.g. "
+                "`sudo chflags schg %s`) to enable them."
+                % (_TRUSTED_EXT_MANIFEST, _TRUSTED_EXT_MANIFEST)
+            )
+    return trusted
+
+
+def _norm_cmd(cmd):
+    """Command normalized for equivalence: interpreter basename only
+    (/opt/homebrew/bin/python3.12 -> python3.12). Non-str returned as-is."""
+    if not isinstance(cmd, str):
+        return cmd
+    return os.path.basename(cmd)
+
+
+def _expand_vars(s: str, env: dict) -> str:
+    """Minimal ${VAR} / ${VAR:-default} expansion (os.path.expandvars neither
+    handles ':-' nor accepts a custom env). Unknown, default-less vars are left
+    verbatim."""
+    def repl(m):
+        inner = m.group(1)
+        if ":-" in inner:
+            var, default = inner.split(":-", 1)
+        else:
+            var, default = inner, None
+        val = env.get(var)
+        if val is not None:
+            return val
+        return default if default is not None else m.group(0)
+    return re.sub(r"\$\{([^}]*)\}", repl, s)
+
+
+def _norm_args(args) -> list:
+    """Args normalized for equivalence: each ${VAR} expanded so a localized
+    absolute path compares equal to the committed ${CABINET_SOURCE_REPO}/... form.
+    The repo-root placeholders fall back to the actual root when unset."""
+    if not isinstance(args, list):
+        return []
+    root = repo_root()
+    env = dict(os.environ)
+    for k in ("CABINET_SOURCE_REPO", "CLAUDE_PROJECT_DIR", "CABINET_ROOT"):
+        env.setdefault(k, root)
+    return [_expand_vars(a, env) if isinstance(a, str) else a for a in args]
+
+
+def _cmd_equivalent(merged: dict, trusted: dict) -> bool:
+    """True iff the merged server's command+args are path-normalization-
+    equivalent to the trusted baseline's. Used ONLY to decide whether an overlay
+    override is worth a loud [ERROR] (benign path localization stays silent) —
+    NEVER to decide keep-vs-refuse. The emitted spec is always the trusted one,
+    so a false 'equivalent' can never boot an untrusted command, and a false
+    'not equivalent' only adds a log line. env/cwd are ignored (never emitted
+    from the overlay anyway)."""
+    if not isinstance(merged, dict):
+        return False
+    if _norm_cmd(merged.get("command")) != _norm_cmd(trusted.get("command")):
+        return False
+    return _norm_args(merged.get("args")) == _norm_args(trusted.get("args"))
 
 
 def sandbox_pilot_officers() -> set:

@@ -341,6 +341,41 @@ class TestNetworkWrite:
         assert out in CEILING_ACTION_TYPES
         assert out != AMBIGUOUS
 
+    # --- audit #7: two escapes to local_edit are now closed --------------
+    @pytest.mark.parametrize("cmd,expected", [
+        # (a) bundled short form -XVERB — the whitespace-only regex missed it
+        ("curl -XDELETE https://api.monday.com/v2/items/1", "mcp_delete"),
+        ("curl -XPOST https://api.example.com/items -d x", "mcp_post"),
+        ("curl -XPUT https://h/x -d '{}'", "mcp_put"),
+        # (b) `--request=VERB` (equals long form)
+        ("curl --request=PUT https://h/x -d '{}'", "mcp_put"),
+        ("curl --request=DELETE https://h/x", "mcp_delete"),
+        # (c) scheme-LESS remote host — no https?:// URL, so the old URL-only
+        # remote check said "not remote" and the ceiling was skipped (paths kept
+        # free of spend keywords so this isolates the network_write class)
+        ("curl -X POST api.vendor.com/items -d amount=100", "mcp_post"),
+        ("curl -XDELETE api.vendor.com/things/1", "mcp_delete"),
+    ])
+    def test_bundled_and_schemeless_curl_mutations_hit_the_ceiling(self, cmd, expected):
+        out = classify_action("Bash", {"command": cmd})
+        assert out == expected, f"{cmd!r} escaped the network_write ceiling"
+        assert out in CEILING_ACTION_TYPES
+
+    @pytest.mark.parametrize("cmd", [
+        # negative controls: bundled/scheme-less LOCALHOST mutations stay local
+        "curl -XPOST http://localhost:3000/api -d '{}'",
+        "curl -XPOST 127.0.0.1:7471/x -d '{}'",
+        "curl -X DELETE http://127.0.0.1:8080/things/1",
+    ])
+    def test_localhost_curl_mutations_stay_local_edit(self, cmd):
+        out = classify_action("Bash", {"command": cmd})
+        assert out == "local_edit", f"{cmd!r} wrongly escalated to a ceiling"
+
+    def test_plain_curl_get_unchanged_not_ceiling(self):
+        # a plain GET (no -X, no body) is a read — never the mutation ceiling
+        out = classify_action("Bash", {"command": "curl https://api.example.com/data"})
+        assert out not in ("mcp_post", "mcp_put", "mcp_delete")
+
 
 # ===================================================================
 # credentials_grant (CEILING — positive classification) [FIX-7]

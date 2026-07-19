@@ -375,6 +375,7 @@ def test_proposals_non_amendments_archived_amendments_kept(export: Path):
     assert amendments == [
         "germline-amendment-action-mode-eval-2026-07-17.md",
         "germline-amendment-attention-transport-2026-07-09.md",
+        "germline-amendment-authority-security-2026-07-19.md",
         "germline-amendment-brain-bridge-split-2026-07-07.md",
         "germline-amendment-cabinet-axes-2026-07-05.md",
         "germline-amendment-candor-2026-07-10.md",
