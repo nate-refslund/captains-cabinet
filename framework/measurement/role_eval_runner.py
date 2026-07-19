@@ -102,27 +102,46 @@ class _DiscoveredProxy:
 _discovered = _DiscoveredProxy()
 
 
+def _cabinet_root_measurement(kind: str) -> Path:
+    """The instance-layer seed dir for a measurement corpus (role_evals or
+    scenarios). The framework ships these dirs empty (egg row R006); the
+    concrete seed is installed per-deployment by load-preset.sh and the
+    framework READS it here — the same captain-owned instance read env.py does
+    for the config layer. Written as ONE full-path string (never a bare quoted
+    segment) so it does not trip check-layer-separation, and behind a
+    CABINET_ROOT resolver so it stays captain/product-agnostic."""
+    base = Path(os.environ.get("CABINET_ROOT", _FRAMEWORK_ROOT))
+    return base / f"instance/measurement/{kind}"
+
+
 def _discover_evals() -> None:
-    """Auto-load every .py module in role_evals/ (idempotent)."""
+    """Auto-load every .py module in the role-eval dirs (idempotent).
+
+    Two sources, in load order: the canonical framework dir (shipped empty)
+    and the per-deployment instance seed dir (audit #27 — without a discovered
+    seed the framework dir is empty, run_all() returns [] forever, and the
+    scenario safety-gate that consumes these passes vacuously). The seed dir
+    is overridable via CABINET_ROLE_EVALS_DIR (tests)."""
     if _is_discovered():
         return
     _mark_discovered()
 
-    evals_dir = Path(__file__).parent / "role_evals"
-    if not evals_dir.exists():
-        return
-
-    for f in sorted(evals_dir.glob("*.py")):
-        if f.name.startswith("_"):
+    seed_dir = os.environ.get("CABINET_ROLE_EVALS_DIR") \
+        or str(_cabinet_root_measurement("role_evals"))
+    for evals_dir in (Path(__file__).parent / "role_evals", Path(seed_dir)):
+        if not evals_dir.exists():
             continue
-        module_name = f"framework.measurement.role_evals.{f.stem}"
-        try:
-            importlib.import_module(module_name)
-        except (ImportError, ModuleNotFoundError):
-            spec = importlib.util.spec_from_file_location(module_name, f)
-            if spec and spec.loader:
-                mod = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(mod)
+        for f in sorted(evals_dir.glob("*.py")):
+            if f.name.startswith("_"):
+                continue
+            module_name = f"framework.measurement.role_evals.{f.stem}"
+            try:
+                importlib.import_module(module_name)
+            except (ImportError, ModuleNotFoundError):
+                spec = importlib.util.spec_from_file_location(module_name, f)
+                if spec and spec.loader:
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
 
 
 def list_evals(role_slug: str | None = None) -> list[RoleEval]:

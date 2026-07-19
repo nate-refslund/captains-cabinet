@@ -204,6 +204,22 @@ trigger_send() {
   trigger_wake_officer "$target"
 }
 
+# Echo the OLDER (numerically smaller) of two Redis stream ids (<ms>-<seq>).
+# Used by #32 to clamp the ack-trim boundary to the exhaust-archive cursor so
+# the trim never runs AHEAD of the daily archive. A malformed operand loses to
+# the valid one (a bad cursor can only ever narrow, never widen, the trim).
+_min_stream_id() {
+  local a="$1" b="$2"
+  [[ "$a" =~ ^[0-9]+-[0-9]+$ ]] || { echo "$b"; return; }
+  [[ "$b" =~ ^[0-9]+-[0-9]+$ ]] || { echo "$a"; return; }
+  local ams="${a%-*}" aseq="${a#*-}" bms="${b%-*}" bseq="${b#*-}"
+  if [ "$ams" -lt "$bms" ] || { [ "$ams" -eq "$bms" ] && [ "$aseq" -le "$bseq" ]; }; then
+    echo "$a"
+  else
+    echo "$b"
+  fi
+}
+
 # Remove only the stream prefix that this consumer group has conclusively
 # processed.  MAXLEN is unsafe for consumer groups: it knows nothing about the
 # pending-entry list and can evict both an unacknowledged payload and a payload
@@ -212,6 +228,9 @@ trigger_send() {
 #   * the group's last-delivered id, when the PEL is empty.
 # XTRIM MINID removes entries strictly *older* than the boundary, retaining the
 # boundary itself.  Probe/parse failures fail safe by skipping the trim.
+# #32: the boundary is further CLAMPED to the exhaust-archive's durable cursor
+# (below) so the ACK-trim never erases entries the daily archive has not yet
+# read — the officer-ACK boundary races ahead of the 04:40 archive sweep.
 _trigger_trim_processed_prefix() {
   local stream="$1" group="$2"
   local boundary="" groups_info="" group_count="" only_group=""
@@ -245,6 +264,30 @@ _trigger_trim_processed_prefix() {
 
   if [[ ! "$boundary" =~ ^[0-9]+-[0-9]+$ ]] || [ "$boundary" = "0-0" ]; then
     return 0
+  fi
+
+  # #32: never trim AHEAD of the daily exhaust-archive. Clamp the boundary to
+  # the archive's durable per-stream cursor; if the archive has not recorded
+  # this stream (state missing/unreadable, or a corrupt cursor), fail SAFE by
+  # retaining the whole stream. CABINET_TRIGGER_TRIM_IGNORE_ARCHIVE=1 opts a
+  # deployment out (lean streams over the durable audit trail). The state path
+  # + stream name cross into python as argv — never interpolated into code.
+  if [ "${CABINET_TRIGGER_TRIM_IGNORE_ARCHIVE:-0}" != "1" ]; then
+    local _astate="${CABINET_EXHAUST_STATE:-$HOME/.cabinet/state/exhaust-archive.json}"
+    local _acur=""
+    if [ -r "$_astate" ]; then
+      # `|| true` keeps a missing/failed interpreter from tripping a caller's
+      # `set -e`; the try/except already makes python print "" on any error.
+      _acur=$(python3.12 -c 'import json,sys
+try:
+    print((json.load(open(sys.argv[1])).get("last_ids") or {}).get(sys.argv[2], ""))
+except Exception:
+    print("")' "$_astate" "$stream" 2>/dev/null || true)
+    fi
+    if [ -z "$_acur" ] || [[ ! "$_acur" =~ ^[0-9]+-[0-9]+$ ]]; then
+      return 0                                    # archive cursor unknown/corrupt -> retain all
+    fi
+    boundary=$(_min_stream_id "$boundary" "$_acur")   # older of officer-progress, archived cursor
   fi
 
   redis-cli -h "$TRIG_REDIS_HOST" -p "$TRIG_REDIS_PORT" \

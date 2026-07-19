@@ -32,7 +32,9 @@ _PRODUCTION_KEY = "cabinet:frontdoor:intake"
 
 _VALID_TIERS = {"ping-now", "batch", "fyi"}
 _REQUIRED_FIELDS = ("source", "kind", "ts", "payload")
-_MAXLEN = 1000  # XTRIM ~ ceiling so the stream stays lean.
+_MAXLEN = 1000  # documented lean-size ceiling. NOTE: no longer the ack() trim
+# mechanism — a blind MAXLEN evicts undelivered captain items under a
+# Telegram-dark backlog (#50/#33); ack() now uses _safe_trim's MINID boundary.
 
 
 def _default_stream_key() -> str:
@@ -271,6 +273,29 @@ class _RedisPyBackend:
         except Exception:
             pass
 
+    # --- MINID-safe trim surface (audit #50/#33) --------------------------
+    def xinfo_groups(self, key: str) -> list[dict]:
+        try:
+            return [dict(g) for g in self._c.xinfo_groups(key)]
+        except Exception:
+            return []
+
+    def xpending_min(self, key: str, group: str) -> "str | None":
+        """The oldest pending id for the group, or None when the PEL is empty."""
+        try:
+            summary = self._c.xpending(key, group)
+        except Exception:
+            return None
+        if isinstance(summary, dict):
+            return summary.get("min") or None
+        return None
+
+    def xtrim_minid(self, key: str, minid: str) -> None:
+        try:
+            self._c.xtrim(key, minid=minid, approximate=False)
+        except Exception:
+            pass
+
     def delete(self, key: str) -> None:
         try:
             self._c.delete(key)
@@ -383,11 +408,62 @@ class _RedisCliBackend:
         except Exception:
             pass
 
+    # --- MINID-safe trim surface (audit #50/#33) — mirrors triggers.sh ----
+    def xinfo_groups(self, key: str) -> list[dict]:
+        try:
+            out = self._run("XINFO", "GROUPS", key, raw=True)
+        except Exception:
+            return []
+        return _parse_cli_xinfo_groups(out)
+
+    def xpending_min(self, key: str, group: str) -> "str | None":
+        # XPENDING <key> <group> - + 1 -> first line is the oldest pending id
+        # (mirrors triggers.sh). Empty PEL -> no id line -> None.
+        try:
+            out = self._run("XPENDING", key, group, "-", "+", "1", raw=True)
+        except Exception:
+            return None
+        for line in out.splitlines():
+            tok = line.strip()
+            if _looks_like_id(tok):
+                return tok
+        return None
+
+    def xtrim_minid(self, key: str, minid: str) -> None:
+        try:
+            self._run("XTRIM", key, "MINID", minid)
+        except Exception:
+            pass
+
     def delete(self, key: str) -> None:
         try:
             self._run("DEL", key)
         except Exception:
             pass
+
+
+def _parse_cli_xinfo_groups(raw: str) -> list[dict]:
+    """Parse redis-cli --raw ``XINFO GROUPS`` into a list of per-group dicts.
+
+    --raw flattens the per-group RESP arrays into a single key/value stream;
+    each group begins at its ``name`` field, so ``name`` markers are the group
+    boundaries (same signal triggers.sh counts with ``$0 == "name"``). Only the
+    group COUNT and the FIRST group's ``name`` + ``last-delivered-id`` are ever
+    consumed by _safe_trim; parse defensively, any trouble -> []."""
+    lines = (raw or "").splitlines()
+    starts = [i for i, ln in enumerate(lines) if ln == "name"]
+    if not starts:
+        return []
+    groups: list[dict] = []
+    for gi, s in enumerate(starts):
+        end = starts[gi + 1] if gi + 1 < len(starts) else len(lines)
+        d: dict = {}
+        j = s
+        while j + 1 < end:
+            d[lines[j]] = lines[j + 1]
+            j += 2
+        groups.append(d)
+    return groups
 
 
 def _parse_cli_xread(raw: str, key: str) -> list[tuple[str, dict]]:
@@ -498,11 +574,37 @@ def drain_pending(*, stream_key: str | None = None,
     return [_rehydrate(mid, fields) for mid, fields in rows]
 
 
+def _safe_trim(backend, key: str) -> None:
+    """Trim ONLY the prefix this group has conclusively processed (#50/#33).
+
+    Blind MAXLEN is unsafe under a consumer group: it knows nothing about the
+    pending-entry list and can evict a NEVER-DELIVERED item (a Telegram-dark
+    backlog >MAXLEN would lose everything older than the newest ~MAXLEN,
+    including undelivered captain-bound items). The safe MINID boundary is the
+    oldest-pending id (PEL non-empty) else the group's last-delivered-id — the
+    same discipline as ``cabinet/scripts/lib/triggers.sh``. Skip when the
+    stream has != 1 group (a second reader may be unread at that boundary), and
+    any probe/parse failure no-ops (retain over risk of losing a captain item).
+    """
+    try:
+        groups = backend.xinfo_groups(key)
+    except Exception:
+        return
+    if len(groups) != 1 or groups[0].get("name") != _GROUP:
+        return
+    boundary = backend.xpending_min(key, _GROUP) or groups[0].get("last-delivered-id")
+    if boundary and boundary != "0-0":
+        backend.xtrim_minid(key, boundary)
+
+
 def ack(id: str | list[str], *, stream_key: str | None = None) -> int:
-    """XACK the given id(s); XTRIM the stream to stay lean. Returns count acked."""
+    """XACK the given id(s); MINID-trim the processed prefix. Returns count acked.
+
+    The trim is bounded to what the group has conclusively processed (#50/#33
+    — never a blind MAXLEN that could evict an undelivered captain item)."""
     key = _resolve_key(stream_key)
     ids = [id] if isinstance(id, str) else list(id)
     backend = _redis()
     acked = backend.xack(key, ids)
-    backend.xtrim(key, _MAXLEN)
+    _safe_trim(backend, key)
     return acked

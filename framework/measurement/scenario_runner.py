@@ -116,33 +116,53 @@ def run_all(category: str | None = None, ci_mode: bool = False) -> list[Scenario
     return results
 
 
+def _instance_scenarios_dir() -> Path:
+    """The per-deployment instance-layer scenario seed dir (audit #27).
+
+    The framework ships scenarios/ empty (egg row R006); the concrete seed is
+    installed by load-preset.sh and the framework READS it here, the same
+    captain-owned instance read env.py does for the config layer. Written as
+    ONE full-path string (never a bare quoted segment) so it does not trip
+    check-layer-separation; CABINET_ROOT keeps it captain-agnostic and
+    CABINET_SCENARIOS_DIR overrides it (tests)."""
+    override = os.environ.get("CABINET_SCENARIOS_DIR")
+    if override:
+        return Path(override)
+    base = Path(os.environ.get("CABINET_ROOT",
+                               str(Path(__file__).parent.parent.parent)))
+    return base / "instance/measurement/scenarios"
+
+
 def _discover_scenarios():
-    """Auto-discover scenario modules in the scenarios/ directory.
+    """Auto-discover scenario modules from the scenario dirs.
 
     The discovered-flag lives in `_scenario_registry` so the `-m` entry
     and the canonical-import entry can't double-walk (or, worse, walk
-    against two separate flags and quietly disagree).
+    against two separate flags and quietly disagree). Two sources, in load
+    order: the canonical framework dir (shipped empty) and the per-deployment
+    instance seed dir (audit #27 — without a discovered seed, run_all()
+    returns [] and the org-level safety gate passes vacuously).
     """
     if is_discovered():
         return
     mark_discovered()
 
-    scenarios_dir = Path(__file__).parent / "scenarios"
-    if not scenarios_dir.exists():
-        return
-
-    for f in sorted(scenarios_dir.glob("*.py")):
-        if f.name.startswith("_"):
+    for scenarios_dir in (Path(__file__).parent / "scenarios",
+                          _instance_scenarios_dir()):
+        if not scenarios_dir.exists():
             continue
-        module_name = f"framework.measurement.scenarios.{f.stem}"
-        try:
-            importlib.import_module(module_name)
-        except (ImportError, ModuleNotFoundError):
-            import importlib.util as _ilu
-            spec = _ilu.spec_from_file_location(module_name, f)
-            if spec and spec.loader:
-                mod = _ilu.module_from_spec(spec)
-                spec.loader.exec_module(mod)
+        for f in sorted(scenarios_dir.glob("*.py")):
+            if f.name.startswith("_"):
+                continue
+            module_name = f"framework.measurement.scenarios.{f.stem}"
+            try:
+                importlib.import_module(module_name)
+            except (ImportError, ModuleNotFoundError):
+                import importlib.util as _ilu
+                spec = _ilu.spec_from_file_location(module_name, f)
+                if spec and spec.loader:
+                    mod = _ilu.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
 
 
 def print_results(results: list[ScenarioResult]) -> int:

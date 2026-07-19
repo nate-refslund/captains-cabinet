@@ -1,0 +1,96 @@
+diff --git a/framework/authority/classifier.py b/framework/authority/classifier.py
+index 55cdc3ce..30ea190e 100644
+--- a/framework/authority/classifier.py
++++ b/framework/authority/classifier.py
+@@ -167,7 +167,11 @@ def _curl_method(command: str) -> str | None:
+     """
+     if not re.search(r"\bcurl\b", command):
+         return None
+-    m = re.search(r"(?:-X|--request)\s+([A-Za-z]+)", command)
++    # Tolerate the bundled short form (`-XDELETE`) and the `=` long form
++    # (`--request=PUT`), not just whitespace-separated (audit #7): `\s*` after
++    # -X, `[=\s]+` after --request. A bundled `-XDELETE` used to miss this
++    # regex, fall through to the body/GET default, and escape the ceiling.
++    m = re.search(r"(?:-X\s*|--request[=\s]+)([A-Za-z]+)", command)
+     if m:
+         return m.group(1).upper()
+     if re.search(r"(?:-d|--data\b|--data-[\w-]+|-F\b|--form\b|-T\b|--upload-file)", command):
+@@ -187,6 +191,23 @@ def _command_targets_remote(command: str) -> bool:
+     return not all(_LOCALHOST_RE.search(u) for u in urls)
+ 
+ 
++def _curl_targets_remote(command: str) -> bool:
++    """Conservative remote check for a curl MUTATION — fail to the ceiling (#7).
++
++    Only ever reached for a curl command (method is None otherwise), so the
++    "no-localhost => remote" default never touches non-curl commands. An
++    explicit non-local scheme-full URL -> remote; else a localhost token ->
++    local; else (a scheme-LESS host, no localhost marker, e.g.
++    ``curl -XPOST api.vendor.com/charge``) -> remote, so a scheme-less mutation
++    can't slip past the network_write ceiling into ``local_edit``."""
++    urls = _URL_RE.findall(command)
++    if urls and not all(_LOCALHOST_RE.search(u) for u in urls):
++        return True
++    if _LOCALHOST_RE.search(command):
++        return False
++    return True
++
++
+ # ---------------------------------------------------------------------------
+ # classify_action — the join key
+ # ---------------------------------------------------------------------------
+@@ -285,7 +306,7 @@ def _classify_bash(command: str) -> str:
+ 
+     # --- CEILING: network_write (live mutating HTTP verbs) ----------------
+     method = _curl_method(cmd)
+-    if method in ("POST", "PUT", "DELETE", "PATCH") and _command_targets_remote(cmd):
++    if method in ("POST", "PUT", "DELETE", "PATCH") and _curl_targets_remote(cmd):
+         return {"POST": "mcp_post", "PATCH": "mcp_post",
+                 "PUT": "mcp_put", "DELETE": "mcp_delete"}[method]
+ 
+diff --git a/framework/authority/tests/test_classifier.py b/framework/authority/tests/test_classifier.py
+index 0775468d..2ab33738 100644
+--- a/framework/authority/tests/test_classifier.py
++++ b/framework/authority/tests/test_classifier.py
+@@ -341,6 +341,41 @@ class TestNetworkWrite:
+         assert out in CEILING_ACTION_TYPES
+         assert out != AMBIGUOUS
+ 
++    # --- audit #7: two escapes to local_edit are now closed --------------
++    @pytest.mark.parametrize("cmd,expected", [
++        # (a) bundled short form -XVERB — the whitespace-only regex missed it
++        ("curl -XDELETE https://api.monday.com/v2/items/1", "mcp_delete"),
++        ("curl -XPOST https://api.example.com/items -d x", "mcp_post"),
++        ("curl -XPUT https://h/x -d '{}'", "mcp_put"),
++        # (b) `--request=VERB` (equals long form)
++        ("curl --request=PUT https://h/x -d '{}'", "mcp_put"),
++        ("curl --request=DELETE https://h/x", "mcp_delete"),
++        # (c) scheme-LESS remote host — no https?:// URL, so the old URL-only
++        # remote check said "not remote" and the ceiling was skipped (paths kept
++        # free of spend keywords so this isolates the network_write class)
++        ("curl -X POST api.vendor.com/items -d amount=100", "mcp_post"),
++        ("curl -XDELETE api.vendor.com/things/1", "mcp_delete"),
++    ])
++    def test_bundled_and_schemeless_curl_mutations_hit_the_ceiling(self, cmd, expected):
++        out = classify_action("Bash", {"command": cmd})
++        assert out == expected, f"{cmd!r} escaped the network_write ceiling"
++        assert out in CEILING_ACTION_TYPES
++
++    @pytest.mark.parametrize("cmd", [
++        # negative controls: bundled/scheme-less LOCALHOST mutations stay local
++        "curl -XPOST http://localhost:3000/api -d '{}'",
++        "curl -XPOST 127.0.0.1:7471/x -d '{}'",
++        "curl -X DELETE http://127.0.0.1:8080/things/1",
++    ])
++    def test_localhost_curl_mutations_stay_local_edit(self, cmd):
++        out = classify_action("Bash", {"command": cmd})
++        assert out == "local_edit", f"{cmd!r} wrongly escalated to a ceiling"
++
++    def test_plain_curl_get_unchanged_not_ceiling(self):
++        # a plain GET (no -X, no body) is a read — never the mutation ceiling
++        out = classify_action("Bash", {"command": "curl https://api.example.com/data"})
++        assert out not in ("mcp_post", "mcp_put", "mcp_delete")
++
+ 
+ # ===================================================================
+ # credentials_grant (CEILING — positive classification) [FIX-7]

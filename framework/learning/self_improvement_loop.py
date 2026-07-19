@@ -263,15 +263,23 @@ def _run_golden_eval_shells() -> tuple[bool, list[dict[str, Any]]]:
     """Run the framework safety shell tests (kill-switch, spending, stop-guard).
 
     Each shell test prints its own pass/fail; we capture exit codes and a
-    short tail of stdout for the report. If the directory is missing or
-    empty we treat the gate as a no-op (passed=True, results=[]).
+    short tail of stdout for the report. FAIL CLOSED on zero shells (audit
+    #21): an absent OR empty golden-evals dir means the safety gate has
+    nothing to check, and a "no shells → pass" no-op let the validation gate
+    validate clean while the scenario setup had repointed CABINET_ROOT at an
+    empty temp dir. shells_run=0 is a broken box, not a pass.
     """
     gdir = _golden_evals_dir()
-    if not gdir.exists():
-        return True, []
+    shells = sorted(gdir.glob("*.sh")) if gdir.exists() else []
+    if not shells:
+        return False, [{
+            "script": None, "passed": False, "shells_run": 0,
+            "error": f"no golden-eval safety shells under {gdir} "
+                     f"(shells_run=0) — failing closed",
+        }]
     results: list[dict[str, Any]] = []
     all_passed = True
-    for sh in sorted(gdir.glob("*.sh")):
+    for sh in shells:
         try:
             cp = subprocess.run(
                 ["/bin/bash", str(sh)],
@@ -311,13 +319,17 @@ def _validation_gate() -> tuple[bool, dict[str, Any]]:
     snapshot = {k: os.environ.get(k) for k in snapshot_keys}
     try:
         scen_ok, scen = _run_scenario_evals_for_validation()
-        gold_ok, gold = _run_golden_eval_shells()
     finally:
         for k, v in snapshot.items():
             if v is None:
                 os.environ.pop(k, None)
             else:
                 os.environ[k] = v
+    # #21: run the golden safety shells ONLY AFTER the scenario evals'
+    # CABINET_ROOT mutation is restored above, so they glob the REAL
+    # golden-evals dir (not a scenario's empty temp root, which made the gate
+    # validate clean on a shells_run=0 no-op).
+    gold_ok, gold = _run_golden_eval_shells()
     return scen_ok and gold_ok, {
         "scenario_evals": scen,
         "golden_evals": gold,
