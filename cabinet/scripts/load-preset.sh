@@ -292,8 +292,13 @@ log "Assembled safety boundaries → $RUNTIME_DIR/safety-boundaries.md"
 # 039 (adds the 'reminder' kind the Captain-arm stamps). R098: 044 is the sole
 # DDL adding embedded_at, which cabinet/dashboard/src/lib/library.ts INSERTs —
 # omitting it broke library record create/update on fresh-hatch DBs. 046
-# (embed-seam provenance singleton) runs last; memory_embedding_stamp --if-absent writes
-# its one row right after the loop — first deploy only, an existing stamp is
+# (embed-seam provenance singleton) runs last in the loop; the COG-1
+# identity-GUC step + 047 outbox DDL follow the loop as a discrete gated
+# block (identity ordered BEFORE 047 — see below; 047 is deliberately NOT a
+# loop member because its apply is conditional on the identity step, and the
+# matching cabinet-bootstrap.sh schema_apply_list addition is a recorded
+# COG-1 follow-up). memory_embedding_stamp --if-absent then writes
+# its one row — first deploy only, an existing stamp is
 # never overwritten (R4 follow-up wiring, 2026-07-15).
 # The work-store connection string may live ONLY in the cabinet/.env FILE:
 # the Mac-native provision-local-postgres.sh writes it there (set_env_key) and
@@ -333,6 +338,52 @@ if [ -n "$CONN" ]; then
       fi
     fi
   done
+
+  # ------------------------------------------------------------------
+  # COG-1 identity GUC + outbox DDL (cognitive-core-phase-1-contract-
+  # 2026-07-20.md §5.2/§8.2). ORDER IS LOAD-BEARING: the identity step runs
+  # BEFORE the outbox DDL so a fresh hatch can never reach the capture
+  # trigger's fail-closed identity RAISE on its first task write — which is
+  # also why the DDL apply below is GATED on the identity step succeeding.
+  # Identity value: CABINET_ID env (framework/missions/compiler.py
+  # convention, tracked default 'main'), falling back to cabinet/.env
+  # exactly like CONN above. The value lands in the DATABASE via
+  # ALTER DATABASE ... SET (binds at backend session start, survives
+  # pooling); it is never a tracked literal in any SQL/code file.
+  # Idempotent: re-running converges the DB setting to the environment's
+  # value (the env IS the identity authority on this box).
+  # 047 applies STRICT + single-transaction (-v ON_ERROR_STOP=1 -1) — unlike
+  # the fail-soft loop above: the capture trigger is live inside every
+  # officer_tasks transaction from the moment 047 lands (§5.1), so a PARTIAL
+  # apply on a fresh hatch could brick live task verbs while a fail-soft
+  # rc-0 logged "Applied" over the breakage. All-or-nothing: any statement
+  # failure routes rc!=0 to the WARN branch below and no partial-047 state
+  # can exist. 047 is fully idempotent, and the COG-1 harness
+  # (cabinet/scripts/tests/lib_cog1_harness.py apply_047) applies it in
+  # EXACTLY this mode on PG17 — the green suite is the evidence.
+  # ------------------------------------------------------------------
+  COG1_CABINET_ID="${CABINET_ID:-}"
+  if [ -z "$COG1_CABINET_ID" ] && [ -f "$CABINET_ROOT/cabinet/.env" ]; then
+    COG1_CABINET_ID="$(grep -E '^CABINET_ID=' "$CABINET_ROOT/cabinet/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+    COG1_CABINET_ID="${COG1_CABINET_ID%\"}"; COG1_CABINET_ID="${COG1_CABINET_ID#\"}"
+  fi
+  COG1_CABINET_ID="${COG1_CABINET_ID:-main}"
+  # Injection fence beneath the server-side format(%I/%L) quoting: the value
+  # must match the safe identity shape before it is interpolated anywhere.
+  if printf '%s' "$COG1_CABINET_ID" | grep -Eq '^[A-Za-z0-9_.-]{1,64}$'; then
+    if psql "$CONN" -q -c "DO \$cog1id\$ BEGIN EXECUTE format('ALTER DATABASE %I SET app.cabinet_id = %L', current_database(), '$COG1_CABINET_ID'); END \$cog1id\$;" > /dev/null 2>&1; then
+      log "Provisioned database identity GUC app.cabinet_id (COG-1 step, ordered before the outbox DDL)"
+      if psql "$CONN" -q -v ON_ERROR_STOP=1 -1 -f "$CABINET_ROOT/cabinet/sql/047-officer-tasks-outbox.sql" > /dev/null 2>&1; then
+        log "Applied framework schema (neon): 047-officer-tasks-outbox.sql"
+      else
+        log "WARN: failed to apply 047-officer-tasks-outbox.sql (outbox capture not installed; task verbs unaffected — fix and re-run preset load)"
+      fi
+    else
+      log "WARN: could not provision app.cabinet_id — SKIPPING 047-officer-tasks-outbox.sql so task writes never hit the fail-closed identity refusal (fix identity, re-run preset load)"
+    fi
+  else
+    log "WARN: CABINET_ID '$COG1_CABINET_ID' fails the safe shape ([A-Za-z0-9_.-], max 64) — SKIPPING the identity step AND 047-officer-tasks-outbox.sql"
+  fi
 
   # EMBED-SEAM stamp (R4 follow-up, 2026-07-15 — ends 046's dormant-ship):
   # ensure cabinet_embedding_meta records the provider/model/dims the store
