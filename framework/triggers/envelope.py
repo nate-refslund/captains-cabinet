@@ -377,10 +377,16 @@ def reporting_enabled() -> bool:
 def classify_fields(fields: dict) -> tuple[str, list[str]]:
     """Classify one outbound bus entry (flat field/value dict as XADDed).
 
-    * carries an "envelope" field → typed: parse JSON + validate() →
-      ("ok", []) or ("invalid", reasons)
+    FOUR-WAY since COG-1 (§4.1 — VERSION DISPATCH happens here, BEFORE the
+    v1 closed-set check, which would otherwise refuse every v2 envelope):
+
     * no "envelope" field → ("legacy_untyped", []) — grandfathered until the
       A12 gate per the A6 row rollback note; counted, never condemned.
+    * envelope JSON WITHOUT "schema_version" → v1: the FROZEN validate() →
+      ("ok", []) or ("invalid", reasons). No v1 semantic change.
+    * envelope JSON WITH "schema_version" → v2: validate_v2() →
+      ("ok", []) or ("invalid", reasons).
+    * non-str / non-JSON envelope field → ("invalid", reasons).
     """
     if "envelope" not in fields:
         return "legacy_untyped", []
@@ -391,7 +397,7 @@ def classify_fields(fields: dict) -> tuple[str, list[str]]:
         payload = json.loads(raw)
     except (ValueError, TypeError):
         return "invalid", ["envelope field: not valid JSON"]
-    ok, reasons = validate(payload)
+    ok, reasons = validate_any(payload)
     return ("ok", []) if ok else ("invalid", reasons)
 
 
@@ -549,3 +555,326 @@ def enforce(fields: Any) -> tuple[bool, str, list[str]]:
         ENFORCE_BLOCKED += 1
         return (True, verdict, reasons[:MAX_REASONS])
     return (False, verdict, reasons[:MAX_REASONS])
+
+
+# --------------------------------------------------------------------------
+# Envelope v2 (COG-1 §4 — cognitive-core-phase-1-contract-2026-07-20.md)
+# --------------------------------------------------------------------------
+# The module docstring above describes the v1 plane and is deliberately left
+# untouched (together with the whole v1 body — validate() is BYTE-FROZEN per
+# the COG-1 plan §4.1; the v2 red-team suite pins the region's exact bytes).
+# v2 doc lives here.
+#
+# v2 is the outbox-relay envelope for domain-namespaced events (pilot:
+# tasks.*). Version dispatch happens in classify_fields()/validate_any():
+# an envelope carrying "schema_version" is judged by validate_v2(); one
+# without it stays on the frozen v1 branch — so v1 traffic, its bounds and
+# its red-team suite are untouched, and a v2 envelope can never be refused
+# by v1's closed key set (§4.1).
+#
+# Field set (§4.2 — all fields, no sentinels): schema_version (exact
+# literal), event_id ULID (v1 ULID_RE, \Z anchor), event_type
+# <domain>.<name> resolved through the DOMAIN registry and NEVER a member of
+# the central VALID_EVENT_TYPES (the M4 vocabulary fence), occurred_at /
+# recorded_at in the single Phase-0 §3.3 UTC-second spelling (ordering
+# between them is DESCRIPTIVE — two clocks, skew never quarantines),
+# cabinet_id, scope_kind cabinet|lane|project with conditional
+# lane_id/project_id (missing levels ABSENT — never null, never inferred,
+# never sentinel: the Phase-0 SENTINEL_IDS vocabulary is refused on
+# cabinet_id/lane_id/project_id), producer, correlation_id uuid4-hex (B2.1,
+# framework/probes/correlation.py — adopted, not superseded), causation_id
+# ULID or absent, idempotency_key (the outbox row's SQL-unique key),
+# classification AS DATA ONLY (v1 TAINT_TIERS vocabulary; no join law —
+# CG-9(d) stays Captain-gated), payload_schema <domain>/<name>@<version>
+# resolved in the registry, and exactly one of payload / payload_ref
+# (payload_ref is validated-shape-reserved for later phases).
+#
+# Size bound: MAX_V2_ENVELOPE_BYTES below is v2-only and PROVISIONAL per
+# §4.3 — ratified by measurement before any enforce flip; the v2 suite
+# asserts measured max fixture size ×5 ≤ bound (v1's 16384 is untouched).
+# An over-bound envelope short-circuits registry/payload work (§6.1 poison
+# ordering: "payload over bound" and "unresolvable payload_schema" are
+# separate terminal classes).
+#
+# Fail directions (same two surfaces as v1): report_only() stays fail-open
+# census; validate_v2() never raises and fails CLOSED (invalid) on any
+# internal error — including a broken schema_registry import, which is LAZY
+# (house precedent: etl-common.py:20-23, intake.py:229) so a registry defect
+# can never break the v1 plane at import time. enforce()'s knobs
+# (CABINET_ENVELOPE_ENFORCE / CABINET_ENVELOPE_REPORT) govern v2 through
+# classify_fields() with no new switch — the §4.3 joint-knob blast radius is
+# accepted and stated in the plan.
+
+V2_SCHEMA_VERSION = "cabinet-envelope/v2"
+
+V2_REQUIRED_KEYS = ("schema_version", "event_id", "event_type", "occurred_at",
+                    "recorded_at", "cabinet_id", "scope_kind", "producer",
+                    "correlation_id", "idempotency_key", "classification",
+                    "payload_schema")
+V2_CONDITIONAL_KEYS = ("lane_id", "project_id", "payload", "payload_ref")
+V2_OPTIONAL_KEYS = ("causation_id",)
+V2_ENVELOPE_KEYS = (frozenset(V2_REQUIRED_KEYS)
+                    | frozenset(V2_CONDITIONAL_KEYS)
+                    | frozenset(V2_OPTIONAL_KEYS))
+
+# One scope dialect (foundry.md:52 = phase-0 contract §3.2 verbatim):
+# cabinet → no levels; lane → lane_id; project → lane_id + project_id.
+SCOPE_KINDS = ("cabinet", "lane", "project")
+_SCOPE_LEVELS = {"cabinet": frozenset(),
+                 "lane": frozenset({"lane_id"}),
+                 "project": frozenset({"lane_id", "project_id"})}
+
+# The Phase-0 sentinel vocabulary (framework/evolution/contracts.py
+# SENTINEL_IDS — duplicated as a literal to keep this module import-light;
+# the v2 suite pins equality so the two sets cannot drift).
+V2_SENTINEL_IDS = frozenset({"*", "default", "global", "none", "null",
+                             "unknown"})
+
+MAX_V2_ENVELOPE_BYTES = 32768   # provisional per §4.3 — see section comment
+MAX_PAYLOAD_REF_CHARS = 1024    # reserved reference locator bound
+
+# Single UTC-second spelling (Phase-0 §3.3; regex per contracts.py:344-355).
+_UTC_SECOND_RE = re.compile(
+    r"\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\Z")
+# uuid4-hex (B2.1 standard, framework/probes/correlation.py _CID_RE).
+_CORRELATION_ID_RE = re.compile(r"\A[0-9a-f]{32}\Z")
+# Domain-namespaced event type: <domain>.<name>, exactly one dot.
+_EVENT_TYPE_RE = re.compile(
+    r"\A[a-z][a-z0-9_-]{0,63}\.[a-z][a-z0-9_]{0,63}\Z")
+
+# Lazily-cached central enum (M4 fence). Populated on first v2 validation;
+# an import failure lands in validate_v2's belt → invalid (fail-closed for
+# typed v2 traffic; the v1 plane never touches this).
+_CENTRAL_EVENT_TYPES: Optional[frozenset] = None
+
+
+def _central_event_types() -> frozenset:
+    global _CENTRAL_EVENT_TYPES
+    if _CENTRAL_EVENT_TYPES is None:
+        from framework.events.emitter import VALID_EVENT_TYPES  # lazy import
+        _CENTRAL_EVENT_TYPES = frozenset(VALID_EVENT_TYPES)
+    return _CENTRAL_EVENT_TYPES
+
+
+def _check_ulid(reasons: list[str], payload: dict, key: str, *,
+                required: bool) -> None:
+    if key not in payload:
+        if required:
+            reasons.append(f"missing required key: {key}")
+        return
+    v = payload[key]
+    if not isinstance(v, str):
+        reasons.append(f"{key}: expected str, got {type(v).__name__}")
+    elif not ULID_RE.match(v):
+        reasons.append(f"{key}: not ulid-shaped (26-char Crockford base32)")
+
+
+def _check_utc_second(reasons: list[str], payload: dict, key: str) -> None:
+    if key not in payload:
+        reasons.append(f"missing required key: {key}")
+        return
+    v = payload[key]
+    if not isinstance(v, str):
+        reasons.append(f"{key}: expected str, got {type(v).__name__}")
+        return
+    if not _UTC_SECOND_RE.match(v):
+        reasons.append(f"{key}: not the canonical UTC-second spelling "
+                       f"(YYYY-MM-DDTHH:MM:SSZ)")
+        return
+    from datetime import datetime  # lazy: keeps the v1 import surface frozen
+    try:
+        datetime.fromisoformat(v[:-1] + "+00:00")
+    except ValueError:
+        reasons.append(f"{key}: not a real UTC datetime")
+
+
+def _check_vocabulary(reasons: list[str], payload: dict) -> None:
+    """event_type + payload_schema discipline via the domain registry (§4.4).
+    Only called under the size bound (§6.1 poison ordering)."""
+    et = payload.get("event_type")
+    et_wellformed = False
+    if "event_type" not in payload:
+        reasons.append("missing required key: event_type")
+    elif not isinstance(et, str):
+        reasons.append(f"event_type: expected str, got {type(et).__name__}")
+    elif not _EVENT_TYPE_RE.match(et):
+        reasons.append("event_type: not <domain>.<name> shaped")
+    elif et in _central_event_types():
+        # domain vocabulary NEVER rides the central enum (M4 fence)
+        reasons.append(f"event_type: {et[:64]!r} is a central "
+                       f"VALID_EVENT_TYPES member — domain events resolve "
+                       f"through the domain registry, never the central enum")
+    else:
+        et_wellformed = True
+
+    ps = payload.get("payload_schema")
+    if "payload_schema" not in payload:
+        reasons.append("missing required key: payload_schema")
+        return
+    if not isinstance(ps, str):
+        reasons.append(f"payload_schema: expected str, got {type(ps).__name__}")
+        return
+    from framework.triggers import schema_registry  # lazy import (see section comment)
+    try:
+        domain, name, version = schema_registry.parse_schema_id(ps)
+    except schema_registry.SchemaIdError:
+        reasons.append("payload_schema: not <domain>/<name>@<version> shaped")
+        return
+    try:
+        schema = schema_registry.resolve(domain, name, version)
+    except schema_registry.SchemaRegistryError:
+        reasons.append("payload_schema: does not resolve in the domain "
+                       "registry")
+        return
+    if et_wellformed and et not in schema.get(
+            schema_registry.EVENT_TYPES_KEY, []):
+        reasons.append("event_type: not declared by the resolved "
+                       "payload_schema")
+    inline = payload.get("payload")
+    if isinstance(inline, dict):
+        for issue in schema_registry.structural_issues(inline, schema)[:8]:
+            at = "payload" + issue.path[1:] if issue.path.startswith("$") \
+                else "payload"
+            reasons.append(f"{at}: {issue.message}")
+
+
+def validate_v2(payload: Any) -> tuple[bool, list[str]]:
+    """Validate a v2 envelope (COG-1 §4.2). Returns (ok, reasons).
+    NEVER raises.
+
+    Same discipline as v1: STRICT closed key set (any key outside
+    V2_ENVELOPE_KEYS is a violation); names-not-values reasons (key names,
+    type names, lengths, bounds, and truncated closed-enum candidates only —
+    never free-text values, never payload content). Fail direction: a v2
+    envelope this validator cannot cleanly judge is INVALID (fail-closed for
+    typed traffic — the belt below), while census reporting stays fail-open
+    in report_only() exactly as for v1.
+    """
+    reasons: list[str] = []
+    try:
+        if not isinstance(payload, dict):
+            return False, [f"envelope: expected dict, got {type(payload).__name__}"]
+
+        unknown = sorted(str(k) for k in set(payload) - V2_ENVELOPE_KEYS)
+        if unknown:
+            reasons.append(f"unknown keys: {', '.join(k[:24] for k in unknown[:8])}")
+
+        # schema_version — the exact literal, nothing else
+        sv = payload.get("schema_version")
+        if sv != V2_SCHEMA_VERSION:
+            shown = sv[:32] if isinstance(sv, str) else type(sv).__name__
+            reasons.append(f"schema_version: {shown!r} is not "
+                           f"{V2_SCHEMA_VERSION!r}")
+
+        # id discipline (§4.2 table — no third vocabulary)
+        _check_ulid(reasons, payload, "event_id", required=True)
+        _check_ulid(reasons, payload, "causation_id", required=False)
+        if "correlation_id" not in payload:
+            reasons.append("missing required key: correlation_id")
+        else:
+            cid = payload["correlation_id"]
+            if not isinstance(cid, str):
+                reasons.append(f"correlation_id: expected str, got "
+                               f"{type(cid).__name__}")
+            elif not _CORRELATION_ID_RE.match(cid):
+                reasons.append("correlation_id: not uuid4-hex "
+                               "(32 lowercase hex — B2.1 standard)")
+
+        # timestamps — canonical spelling only; occurred_at ≤ recorded_at is
+        # DESCRIPTIVE, never validated (two clocks — §4.2)
+        _check_utc_second(reasons, payload, "occurred_at")
+        _check_utc_second(reasons, payload, "recorded_at")
+
+        # bounded identity strings
+        _check_str(reasons, payload, "cabinet_id")
+        _check_str(reasons, payload, "producer")
+        _check_str(reasons, payload, "idempotency_key")
+
+        # sentinel refusal on identity/scope ids (closed known set — safe to
+        # echo; missing levels are ABSENT, never placeholders)
+        for key in ("cabinet_id", "lane_id", "project_id"):
+            v = payload.get(key)
+            if isinstance(v, str) and v in V2_SENTINEL_IDS:
+                reasons.append(f"{key}: sentinel id {v!r} refused "
+                               f"(missing levels are absent, never sentinels)")
+
+        # scope invariant (one scope dialect — §4.2)
+        scope = payload.get("scope_kind")
+        if "scope_kind" not in payload:
+            reasons.append("missing required key: scope_kind")
+        elif not isinstance(scope, str):
+            reasons.append(f"scope_kind: expected str, got {type(scope).__name__}")
+        elif scope not in SCOPE_KINDS:
+            reasons.append(f"scope_kind: {scope[:32]!r} not in {list(SCOPE_KINDS)}")
+        else:
+            required_levels = _SCOPE_LEVELS[scope]
+            for key in ("lane_id", "project_id"):
+                if key in required_levels:
+                    _check_str(reasons, payload, key)
+                elif key in payload:
+                    reasons.append(f"{key}: must be absent for scope_kind "
+                                   f"{scope!r} (missing levels absent, "
+                                   f"never inferred)")
+
+        # classification — DATA ONLY, the v1 taint-tier vocabulary (§4.2;
+        # no join law, no enforcement — CG-9(d) stays Captain-gated)
+        cls = payload.get("classification")
+        if "classification" not in payload:
+            reasons.append("missing required key: classification")
+        elif not isinstance(cls, str):
+            reasons.append(f"classification: expected str, got "
+                           f"{type(cls).__name__}")
+        elif cls not in TAINT_TIERS:
+            reasons.append(f"classification: {cls[:32]!r} not in "
+                           f"{list(TAINT_TIERS)}")
+
+        # payload xor payload_ref (exactly one — §4.2)
+        has_payload = "payload" in payload
+        has_ref = "payload_ref" in payload
+        if has_payload and has_ref:
+            reasons.append("payload/payload_ref: exactly one must be "
+                           "present, both found")
+        elif not has_payload and not has_ref:
+            reasons.append("payload/payload_ref: exactly one must be "
+                           "present, neither found")
+        if has_ref:
+            _check_str(reasons, payload, "payload_ref",
+                       max_chars=MAX_PAYLOAD_REF_CHARS)
+        if has_payload and not isinstance(payload.get("payload"), dict):
+            reasons.append(f"payload: expected object, got "
+                           f"{type(payload.get('payload')).__name__}")
+
+        # v2 size bound FIRST, then registry/payload work (§6.1 poison
+        # ordering: an over-bound envelope never burns registry cycles)
+        size = envelope_bytes(payload)
+        if size > MAX_V2_ENVELOPE_BYTES:
+            reasons.append(f"envelope: {size} bytes exceeds "
+                           f"{MAX_V2_ENVELOPE_BYTES}")
+        else:
+            _check_vocabulary(reasons, payload)
+
+        reasons = reasons[:MAX_REASONS]
+        return (len(reasons) == 0), reasons
+    except Exception as e:  # belt: validate_v2() NEVER raises (fail-closed)
+        return False, [f"validator internal error: {type(e).__name__}"][:MAX_REASONS]
+
+
+def validate_any(payload: Any) -> tuple[bool, list[str]]:
+    """The §4.1 VERSION-DISPATCHING doorway — producers and consumers judge
+    an envelope here. NEVER raises.
+
+    * dict carrying "schema_version" → validate_v2() (v2 branch)
+    * anything else → the FROZEN v1 validate() (v1 branch; non-dict inputs
+      keep v1's rejection semantics byte-for-byte)
+
+    This is the entry task-events-watch.py's _valid_envelope re-points at
+    (§3 disposition / §12.2 item 9 — the consumer wave): a consumer stuck on
+    raw validate() would poison-ACK 100% of v2 entries at cutover.
+    """
+    try:
+        is_v2 = isinstance(payload, dict) and "schema_version" in payload
+    except Exception:  # pragma: no cover — pathological dict subclass only
+        is_v2 = True   # suspect-typed → the stricter v2 judge (fail-closed)
+    if is_v2:
+        return validate_v2(payload)
+    return validate(payload)

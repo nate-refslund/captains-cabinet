@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "tasks/task-event@1 — officer_tasks outbox payload shape",
+  "description": "Domain-local payload schema for the COG-1 tasks pilot (docs/plans/cognitive-core-phase-1-contract-2026-07-20.md §4.4, §5.2). Fields mirror the officer_tasks_outbox immutable content projection (§9.3): the domain columns the capture trigger snapshots, minus ids/timestamps, which ride the envelope. Status vocabulary is the EFFECTIVE-status dialect of §6.1: raw officer_tasks statuses (queue|wip|done|cancelled) plus the 'blocked' overlay surfaced as status, plus '' for the INSERT-arm empty old_status. Resolved by framework/triggers/schema_registry.py; this file NEVER feeds the central VALID_EVENT_TYPES enum (M4).",
+  "x-cabinet-event-types": ["tasks.status_changed"],
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["task_id", "new_status", "actor"],
+  "properties": {
+    "task_id": {
+      "description": "officer_tasks.id (BIGINT, positive)",
+      "type": "integer",
+      "minimum": 1
+    },
+    "old_status": {
+      "description": "Effective status before the transition; null on the INSERT arm before mapping, '' after the §6.1 INSERT-arm mapping",
+      "enum": ["queue", "wip", "done", "cancelled", "blocked", "", null]
+    },
+    "new_status": {
+      "description": "Effective status after the transition (§6.1 mapping: blocked overlay surfaced as status)",
+      "enum": ["queue", "wip", "done", "cancelled", "blocked"]
+    },
+    "old_blocked": {
+      "description": "Raw blocked flag before the transition; null on the INSERT arm",
+      "type": ["boolean", "null"]
+    },
+    "new_blocked": {
+      "description": "Raw blocked flag after the transition",
+      "type": ["boolean", "null"]
+    },
+    "blocked_reason": {
+      "description": "Reason recorded when the row entered blocked; travels in the payload (§9.3)",
+      "type": ["string", "null"],
+      "maxLength": 1024
+    },
+    "actor": {
+      "description": "COALESCE(current_setting('app.cabinet_officer', TRUE), 'unknown') — the 038 actor sourcing (§5.1)",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "context_slug": {
+      "description": "officer_tasks.context_slug — domain payload, NEVER an org-scope level (§4.2: mapping contexts to lanes would be inference)",
+      "type": ["string", "null"],
+      "maxLength": 256
+    }
+  }
+}
