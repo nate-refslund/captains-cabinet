@@ -60,7 +60,7 @@ temporary_allowances:
     deletion_gate: COG-1 pilot retired or composed
   - phase: COG-1
     budget: framework_production_noncomment_lines
-    additional: 517
+    additional: 916
     reason: envelope-v2 validator, table-drain relay extension, and registry interface
     owner: cognitive-core-program
     sunset: '2027-01-19'
