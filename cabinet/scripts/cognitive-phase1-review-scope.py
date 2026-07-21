@@ -46,6 +46,9 @@ EXPECTED_SCOPE = frozenset({
     "shared/interfaces/reviews/feat-cog1-impl-cp1.md",
     "shared/interfaces/reviews/feat-cog1-impl-cp2.md",
     "shared/interfaces/reviews/feat-cog1-impl-cp3.md",
+    "shared/interfaces/reviews/feat-cog1-impl-cp4.md",
+    "shared/interfaces/reviews/feat-cog1-impl-cp5.md",
+    ".github/workflows/cabinet-ci.yml",
     # remove (W4 new: fencing §7 / parity §8.3 / replay-hash §9.3 — folded in by W5)
     "cabinet/scripts/cog1-replay-hash.py",
     "cabinet/scripts/tests/test_cog1_replay_hash.py",

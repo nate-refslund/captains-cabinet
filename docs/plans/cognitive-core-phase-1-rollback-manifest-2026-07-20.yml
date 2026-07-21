@@ -66,11 +66,14 @@ remove:
   - cabinet/scripts/tests/test_cognitive_phase1_rollback.py
   - docs/plans/cognitive-core-phase-1-rollback-manifest-2026-07-20.yml
   - shared/interfaces/reviews/cognitive-core-phase-1-review.md
+  - shared/interfaces/reviews/feat-cog1-impl-cp4.md
+  - shared/interfaces/reviews/feat-cog1-impl-cp5.md
 
 # --- code inverse: restore extended files from baseline_sha -------------------
 # Restoring these to baseline_sha reverts every COG-1 edit — INCLUDING removing
 # the COG-1 temporary_allowances rows from the contract yml (allowance_removal).
 restore_from_baseline:
+  - .github/workflows/cabinet-ci.yml
   - cabinet/config/cognitive-architecture-contract.yml
   - cabinet/cron/outbox-relay.sh
   - cabinet/scripts/load-preset.sh

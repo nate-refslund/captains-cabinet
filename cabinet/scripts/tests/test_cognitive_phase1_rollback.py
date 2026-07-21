@@ -54,6 +54,9 @@ REMOVE_W1_W3 = {
     "shared/interfaces/reviews/feat-cog1-impl-cp1.md",
     "shared/interfaces/reviews/feat-cog1-impl-cp2.md",
     "shared/interfaces/reviews/feat-cog1-impl-cp3.md",
+    # cp4/cp5 were minted by the W4/W5 commit step AFTER this file was authored
+    "shared/interfaces/reviews/feat-cog1-impl-cp4.md",
+    "shared/interfaces/reviews/feat-cog1-impl-cp5.md",
 }
 # W4 (fencing §7 / parity §8.3 / replay-hash §9.3) landed concurrently in this
 # shared tree; folded into the W5-owned manifest for a complete phase rollback
@@ -93,6 +96,8 @@ RESTORE_W5 = {
     "cabinet/scripts/task-events-watch.py",
     "cabinet/scripts/egg-export-manifest.txt",
     "cabinet/scripts/tests/test_egg_export.py",
+    # W6 (CI edit, own commit) — added when W6 landed after this file was authored
+    ".github/workflows/cabinet-ci.yml",
 }
 EXPECTED_RESTORE = RESTORE_W1_W3 | RESTORE_W4 | RESTORE_W5
 EXPECTED_RETAIN = {
@@ -252,9 +257,15 @@ def _digest_of(tree: Path) -> str:
 
 def _commit_all(wt: Path, msg: str) -> None:
     subprocess.run(["git", "-C", str(wt), "add", "-A"], check=True, capture_output=True, text=True)
-    subprocess.run(["git", "-C", str(wt), "-c", "user.email=t@t", "-c", "user.name=t",
-                    "-c", "commit.gpgsign=false", "commit", "-m", msg],
-                   check=True, capture_output=True, text=True)
+    # Tolerate an already-clean tree: after Commit-C the scope files are all
+    # committed, so the bootstrap copy produces no delta (the test predates
+    # that commit). Only commit when there is something staged.
+    staged = subprocess.run(["git", "-C", str(wt), "status", "--porcelain"],
+                            check=True, capture_output=True, text=True).stdout.strip()
+    if staged:
+        subprocess.run(["git", "-C", str(wt), "-c", "user.email=t@t", "-c", "user.name=t",
+                        "-c", "commit.gpgsign=false", "commit", "-m", msg],
+                       check=True, capture_output=True, text=True)
 
 
 def test_review_scope_binding_is_deterministic_and_has_teeth(tmp_path):
