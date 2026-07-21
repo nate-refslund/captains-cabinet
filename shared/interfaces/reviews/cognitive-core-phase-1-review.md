@@ -1,7 +1,7 @@
 # Cognitive Core Phase 1 (COG-1) — frozen post-implementation review (plan §12.3)
 
 Verdict: PASS
-Reviewed-Scope-Digest: 4f0dd91fd0d66e36f90ca251546cdf169eb5bd400378c56e57781303c31a33b2
+Reviewed-Scope-Digest: 99df7de11fca8458d4dc69f12832d4a5bc7bed839636e0f86358b765014088da
 Reviewed-Commit: 175ce93a06708f043bff58be969edf83a4840592 (advisory; frozen 4-cluster review inspected f62a3820, delta 175ce93a reviewed separately — see addendum)
 
 Reviewed 2026-07-21 against base 0bf60e698a148616bebc1676119913d11b272535 (which carries the attack-reviewed plan). Independent fresh-context review: four adversarial cluster reviews (envelope plane; DB/capture plane; relay plane; cutover/parity/governance plane) reconciled by a Fable 5 lead synthesizer that re-verified every contested byte claim and re-ran the load-bearing gates itself. No implementer self-reports were consumed; every verdict derives from the committed bytes of the 7-commit range, docs/plans/cognitive-core-phase-1-contract-2026-07-20.md (THE standard), and docs/cognitive-core-foundry.md.
@@ -113,3 +113,17 @@ PASS flip, mini-reviewed by a fresh Opus checker (verdict: approve, 7/7 checks):
 The Reviewed-Scope-Digest above binds the FINAL bytes (175ce93a). The four
 frozen clusters' evidence applies to f62a3820; the delta's three files were
 re-reviewed independently as above.
+
+## Addendum 2 — p95 environment-scoping re-bind (e8ed40ea + gate setter)
+
+Master CI exposed the §11.2 B1/B2 p95 bound as runner-noise-flaky (same bytes
+green on the branch run, red on the merge run: post p95 61ms vs 48ms bound on
+a noisy shared runner). Fix (fresh Opus mini-review: approve, semantics + truth
+table verified empirically): the assertion is environment-scoped — measurement
+and loud JSON record run everywhere; enforcement = controlled hardware (no CI
+env) or COG1_ENFORCE_P95=1, which verify-cognitive-phase1.sh now sets itself
+(the reviewer's over-claim note honored by strengthening the gate, not
+softening the comment). A CI bound-miss SKIPS visibly with the measured
+numbers, never passes silently. No threshold changed. Digest above re-bound to
+these final bytes; prior cluster evidence applies to the earlier freezes as
+recorded.
