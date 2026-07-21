@@ -337,6 +337,37 @@ def _is_transient_transport(exc: BaseException, scrubbed: str) -> bool:
     return "transport error" in s
 
 
+# --- SEC-3 killswitch (fail-closed) at the front-door transport --------------
+# The Captain's emergency stop must halt EVERY outbound send. We REUSE the one
+# killswitch reader in the codebase — action_exec's ``_killswitch_state`` over
+# ``_redis_get_strict`` (Redis ``GET cabinet:killswitch``) — instead of reading
+# the key here, so the front door and the action executor can NEVER disagree
+# about whether the stop is armed. Both an ACTIVE switch and an UNREACHABLE
+# control plane HALT (a missing safety switch is exposure, not ambiguity —
+# mirrors pre-tool-use.sh / SEC-3 in action_exec).
+_KILLSWITCH_REFUSED = "front-door send refused — killswitch %s (fail-closed)"
+
+
+def _killswitch_halted() -> "str | None":
+    """Return "active" | "unreachable" when the front door must fail CLOSED, else
+    None (clear).
+
+    Delegates to action_exec's single SEC-3 reader (imported lazily to avoid any
+    module-load cycle). ``_killswitch_state`` already maps a raising getter
+    (Redis down) to "unreachable"; the outer guard additionally fails closed if
+    the reader itself is unavailable — a killswitch that cannot be read is
+    treated as armed, never as a silent open door. Never raises."""
+    try:
+        from framework.frontdoor.action_exec import (
+            _killswitch_state,
+            _redis_get_strict,
+        )
+        state = _killswitch_state(_redis_get_strict)
+    except Exception:  # noqa: BLE001 — an unreadable killswitch fails CLOSED
+        return "unreachable"
+    return None if state == "clear" else state
+
+
 def _post_one(post, url: str, payload: dict, token: str, *, sleep=None,
               retry_plain_400: bool = True) -> tuple:
     """POST ONE message payload; sanitize, retry transient transport, fall back
@@ -366,6 +397,18 @@ def _post_one(post, url: str, payload: dict, token: str, *, sleep=None,
     token-bearing URL before they leave this function (``send`` is the trust
     boundary; this preserves it). ``sleep`` is injectable so tests run instantly.
     """
+    # SEC-3 killswitch (fail-closed) — THE single chokepoint. Every dict-payload
+    # front-door send funnels through _post_one (send / send_poll / send_draft /
+    # send_rich / edit_message / answer_callback / set_typing / pin / unpin /
+    # set_reaction), so an armed stop OR an unreachable control plane refuses
+    # ALL of them here, BEFORE any network side effect. Returned as an ok=False
+    # tuple — every caller already surfaces that as a structured refusal dict —
+    # so the halt never raises. (send_document uses the multipart transport and
+    # carries its own copy of this gate.)
+    _halt = _killswitch_halted()
+    if _halt:
+        return False, None, _KILLSWITCH_REFUSED % _halt
+
     # Resolve the backoff sleeper at CALL time (not as a bound default) so a test
     # patching ``channel.time.sleep`` is honored and the suite pays no real wait.
     if sleep is None:
@@ -1138,6 +1181,15 @@ def send_document(file_path: str, *, caption: str | None = None, http_post=None,
     chat_id = _captain_id()
     if not token or not chat_id:
         return {"status": "error", "sent": False, "error": "telegram not configured"}
+
+    # SEC-3 killswitch (fail-closed): send_document is the ONE front-door send on
+    # the multipart transport, so it bypasses _post_one and carries its own copy
+    # of the gate — checked BEFORE any disk read or network post (a halted
+    # document send does zero I/O). Same single reader as _post_one.
+    _halt = _killswitch_halted()
+    if _halt:
+        return {"status": "halted", "sent": False, "halted": "killswitch",
+                "killswitch": _halt, "error": _KILLSWITCH_REFUSED % _halt}
 
     try:
         with open(file_path, "rb") as fh:
