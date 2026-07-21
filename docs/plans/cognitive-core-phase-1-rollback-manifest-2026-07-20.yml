@@ -1,0 +1,132 @@
+schema_version: cognitive-phase-rollback/v1
+phase: COG-1
+# S0 pin (§12.1): origin/master at COG-1 implementation start == the parent of
+# the first implementation commit. The extended files restore here; restoring
+# cabinet/config/cognitive-architecture-contract.yml to it removes the COG-1
+# temporary_allowances rows (allowance_removal below). Self-ratified per the
+# 2026-07-07 full-autonomy grant.
+baseline_sha: 0bf60e698a148616bebc1676119913d11b272535
+
+# --- runtime inverses (§12.4 — each ONE command, no data surgery) ------------
+# COG-1 changes live runtime (capture is in-transaction from the 047 apply;
+# emission cuts over via the pointer), so unlike the import-inert Phase-0 this
+# manifest carries runtime inverses in addition to the code inverse.
+runtime_inverses:
+  - name: authority
+    command: bash cabinet/scripts/cog1-authority-flip.sh legacy
+    effect: legacy direct emit resumes; the relay returns to shadow-only (§8.5)
+    reversible_by: bash cabinet/scripts/cog1-authority-flip.sh outbox
+  - name: capture_emergency
+    command: bash cabinet/scripts/cog1-authority-flip.sh disarm
+    effect: >-
+      ALTER TABLE officer_tasks DISABLE TRIGGER trg_officer_tasks_outbox_capture
+      — covers the defective-trigger incident the authority flip cannot reach (a
+      dark drain makes the RELAY inert, never the trigger); table and rows intact
+    reversible_by: bash cabinet/scripts/cog1-authority-flip.sh enable
+  - name: drain
+    command: launchctl bootout gui/$(id -u)/com.cabinet.outbox-relay
+    effect: stops the table-drain relay daemon (pairs with the §8.2 arming step)
+    reversible_by: bash cabinet/scripts/deploy-mac.sh --daemon outbox-relay
+
+# --- code inverse: remove new COG-1 files -------------------------------------
+# The COG-1 footprint as of W5 (W1-W3 committed-new + W5 new). Pending waves
+# (§9.3 replay-hash tool; §7/§8.3/§9.4 edits) APPEND their new/modified files
+# here + re-freeze the digest when they land — cabinet/scripts/tests/
+# test_cognitive_phase1_rollback.py::test_manifest_covers_committed_cog1_footprint
+# is the ratchet that catches an un-extended manifest.
+remove:
+  - cabinet/scripts/tests/lib_cog1_harness.py
+  - cabinet/scripts/tests/test_cog1_outbox_capture.py
+  - cabinet/sql/047-officer-tasks-outbox.sql
+  - framework/outbox/tests/lib_relay_harness.py
+  - framework/outbox/tests/test_effective_mapping.py
+  - framework/outbox/tests/test_outbox_relay_wrapper.py
+  - framework/outbox/tests/test_relay_fencing.py
+  - framework/outbox/tests/test_relay_table_drain.py
+  - framework/schemas/domains/tasks/task-event.v1.json
+  - framework/triggers/schema_registry.py
+  - framework/triggers/tests/test_envelope_v2.py
+  - framework/triggers/tests/test_schema_registry.py
+  - shared/interfaces/reviews/feat-cog1-impl-cp1.md
+  - shared/interfaces/reviews/feat-cog1-impl-cp2.md
+  - shared/interfaces/reviews/feat-cog1-impl-cp3.md
+  # W4 (fencing §7 / parity §8.3 / replay-hash §9.3), folded in by the W5
+  # governance wave because this manifest is W5-owned and W4 cannot edit it —
+  # completeness for a correct phase rollback. If W4's file set changes, the
+  # completeness ratchet (test_manifest_covers_committed_cog1_footprint) flags it.
+  - cabinet/scripts/cog1-replay-hash.py
+  - cabinet/scripts/tests/test_cog1_replay_hash.py
+  - cabinet/scripts/tests/test_cog1_fencing.py
+  - cabinet/scripts/tests/test_cog1_parity.py
+  - cabinet/scripts/cog1-authority-flip.sh
+  - cabinet/scripts/verify-cognitive-phase1.sh
+  - cabinet/scripts/cognitive-phase1-review-scope.py
+  - cabinet/scripts/cognitive-phase1-rollback-rehearsal.py
+  - cabinet/scripts/tests/test_cog1_cutover.py
+  - cabinet/scripts/tests/test_cognitive_phase1_rollback.py
+  - docs/plans/cognitive-core-phase-1-rollback-manifest-2026-07-20.yml
+  - shared/interfaces/reviews/cognitive-core-phase-1-review.md
+
+# --- code inverse: restore extended files from baseline_sha -------------------
+# Restoring these to baseline_sha reverts every COG-1 edit — INCLUDING removing
+# the COG-1 temporary_allowances rows from the contract yml (allowance_removal).
+restore_from_baseline:
+  - cabinet/config/cognitive-architecture-contract.yml
+  - cabinet/cron/outbox-relay.sh
+  - cabinet/scripts/load-preset.sh
+  - framework/outbox/relay.py
+  - framework/triggers/envelope.py
+  - docs/plans/cognitive-core-phase-1-contract-2026-07-20.md
+  - cabinet/scripts/my-tasks.sh
+  - cabinet/scripts/task-events-watch.py
+  - cabinet/scripts/egg-export-manifest.txt
+  - cabinet/scripts/tests/test_egg_export.py
+  # W4 modified surfaces (§7 fencing discriminator; §8.3 parity-log reader) —
+  # folded in for completeness (see the remove-list W4 note above).
+  - cabinet/scripts/task_sync_runner.py
+  - cabinet/scripts/task-sync-drift-falsifier.py
+
+# --- allowance removal (§12.4) ------------------------------------------------
+allowance_removal:
+  path: cabinet/config/cognitive-architecture-contract.yml
+  action: >-
+    restoring this file from baseline_sha removes the two COG-1
+    temporary_allowances rows (framework_production_modules +1,
+    framework_production_noncomment_lines) in the SAME commit as the code
+    inverse — valid only once the module/line deltas are gone
+
+# --- append-only surfaces: retain rows, add a dated rollback note -------------
+retain_append_only:
+  - path: docs/plans/operative-egg-ledger-2026-07-07.yml
+    rows: [COG-0, COG-1, COG-2, COG-3, COG-4, COG-5, COG-6, COG-7, COG-8]
+    rollback_action: retain rows and append a dated rollback/supersession note; preserve allowed status vocabulary
+  - path: docs/plans/operative-egg-plan-2026-07-07.md
+    rows: [COG-0, COG-1, COG-2, COG-3, COG-4, COG-5, COG-6, COG-7, COG-8]
+    rollback_action: retain parity rows and append the same dated rollback/supersession note
+
+# --- surfaces COG-1 promised NOT to touch (§10.2 preserves Phase-0's promise) --
+must_remain_unchanged:
+  - cabinet/services.yml
+  - framework/events/emitter.py
+  - framework/authority/classifier.py
+  - framework/policies/authority-matrix.yml
+  - framework/learning/gate.py
+  - framework/authority
+  - framework/evidence
+  - shared/interfaces/captain-vetoes.yml
+  - .layer-separation-baseline
+  - .layer-separation-allowlist
+
+rehearsal:
+  environment: scratch git worktree of the landed COG-1 commit (the landed tree is never modified)
+  code_inverse_script: cabinet/scripts/cognitive-phase1-rollback-rehearsal.py
+  runtime_inverse_rehearsal: cabinet/scripts/tests/test_cog1_cutover.py
+  procedure:
+    - code inverse — remove every remove path, restore every restore_from_baseline path from baseline_sha, retain both operative surfaces with matching dated rollback notes; assert the inverse diff is exactly those two ledgers
+    - runtime inverse (authority) — flip outbox then legacy on a scratch pointer and confirm the fail-safe default (test_authority_flip_back_rehearsal)
+    - runtime inverse (capture) — disarm then enable the capture trigger against the W2 ephemeral PostgreSQL 17 harness, proving capture stops and resumes with no data surgery (test_disarm_enable_capture_inverse_rehearsal)
+    - run the pre-phase compatibility floor + census + layer separation + docs sweep + golden evals against the inverse tree
+  success: the inverse diff contains only retained operative rows/notes relative to baseline; every unchanged/compatibility gate is green; both runtime inverses round-trip
+  timing:
+    - disarm/enable rehearsed against the harness DB BEFORE the production 047 apply (§12.2 gate)
+    - the authority flip-back rehearsed BEFORE cutover eligibility; both re-verified at exit

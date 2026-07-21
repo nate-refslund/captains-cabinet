@@ -208,7 +208,14 @@ fi
 # The DB mutation already committed when this runs: a lost event must warn
 # (task_event_emit is fail-loud on stderr) but NEVER fail the verb. Missing
 # lib (deployment skew) degrades to a no-op, same stance as broadcast().
+#
+# COG-1 §8.4 authority pointer (byte-minimal consult): when it reads exactly
+# 'outbox' the relay owns the durable exhaust and this legacy direct XADD is
+# skipped. Absent/unreadable/any-other value => legacy (fail-safe: the direct
+# emit still fires). Default host-global path; CABINET_COG1_AUTHORITY overrides
+# for tests/scratch only. Literal is layer-legal here (cabinet/scripts).
 emit_event() {
+  [ "$(cat "${CABINET_COG1_AUTHORITY:-$HOME/.cabinet/state/cog1-authority}" 2>/dev/null)" = "outbox" ] && return 0
   type task_event_emit >/dev/null 2>&1 || return 0
   task_event_emit "$OFFICER_SLUG" "$CONTEXT_SLUG" "$@" || true
 }

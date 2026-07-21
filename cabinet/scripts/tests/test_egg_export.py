@@ -298,6 +298,49 @@ def test_cognitive_core_contract_survives_export(export: Path):
         assert not (export / rel).exists(), f"COG-0 private landing tool must not ship: {rel}"
 
 
+COG1_PHASE1_PRIVATE_TOOLS = (
+    "cabinet/scripts/cognitive-phase1-review-scope.py",
+    "cabinet/scripts/cognitive-phase1-rollback-rehearsal.py",
+    "cabinet/scripts/verify-cognitive-phase1.sh",
+    "cabinet/scripts/tests/test_cognitive_phase1_rollback.py",
+)
+
+
+def test_cognitive_phase1_egg_manifest_carries_exclusions():
+    """TDD gate (works pre-commit): the egg manifest must carry a `delete` and a
+    matching `expect-absent` directive for each COG-1 phase-1 private landing
+    tool — the same pattern the COG-0 rows established. Text-level so it binds
+    THIS wave's manifest edit, not a HEAD cut."""
+    manifest = (_SCRIPTS_DIR / "egg-export-manifest.txt").read_text(encoding="utf-8")
+    for rel in COG1_PHASE1_PRIVATE_TOOLS:
+        assert f"delete {rel}" in manifest, f"manifest missing delete rule: {rel}"
+        assert f"expect-absent {rel}" in manifest, f"manifest missing expect-absent rule: {rel}"
+
+
+def test_cognitive_phase1_private_landing_tools_excluded(export: Path):
+    """COG-1: the phase-1 verify twins + rollback rehearsal + rollback closure
+    test are THIS instance's private landing proof (they bind the launching
+    source instance's reviewed bytes and rollback plan) — excluded from the egg
+    exactly like their Phase-0 predecessors. The enduring cutover control ships.
+    Post-commit gate: skips until the tools are tracked at HEAD (the line-514
+    once-tracked pattern), because the egg is a `git archive HEAD` cut."""
+    ls_tree = subprocess.run(
+        ["git", "-C", str(_REPO_ROOT), "ls-tree", "--name-only", "HEAD",
+         "cabinet/scripts/cog1-authority-flip.sh"],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert ls_tree.returncode == 0, f"git ls-tree failed: {ls_tree.stderr}"
+    for rel in COG1_PHASE1_PRIVATE_TOOLS:
+        assert not (export / rel).exists(), f"COG-1 private landing tool must not ship: {rel}"
+    if not ls_tree.stdout.strip():
+        pytest.skip("cog1-authority-flip.sh not tracked at HEAD yet — the ship "
+                    "assertion activates in the commit that tracks the W5 files")
+    # the one-command cutover/rollback/disarm control is enduring operational
+    # tooling a fresh captain uses to arm and cut over their own pilot — it ships.
+    assert (export / "cabinet/scripts/cog1-authority-flip.sh").is_file(), \
+        "COG-1 cutover control must ship in the egg"
+
+
 def test_cognitive_architecture_verifier_runs_inside_export(export: Path):
     result = subprocess.run(
         ["bash", "cabinet/scripts/verify-cognitive-architecture.sh"],

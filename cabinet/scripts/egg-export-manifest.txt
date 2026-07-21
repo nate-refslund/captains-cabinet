@@ -121,6 +121,15 @@ delete cabinet/scripts/cognitive-phase0-review-scope.py
 delete cabinet/scripts/cognitive-phase0-rollback-rehearsal.py
 delete cabinet/scripts/verify-cognitive-phase0.sh
 delete cabinet/scripts/tests/test_cognitive_phase0_rollback.py
+# COG-1 private-side landing proof (same class as COG-0 above): the phase-1
+# verify twins + rollback rehearsal + rollback-closure test bind THIS launching
+# instance's reviewed bytes, baseline, and rollback plan. Historical phase
+# tooling does not ship; the enduring cutover control (cog1-authority-flip.sh),
+# 047 DDL, envelope v2, and schema registry are framework DNA that rides along.
+delete cabinet/scripts/cognitive-phase1-review-scope.py
+delete cabinet/scripts/cognitive-phase1-rollback-rehearsal.py
+delete cabinet/scripts/verify-cognitive-phase1.sh
+delete cabinet/scripts/tests/test_cognitive_phase1_rollback.py
 delete docs/runbooks/egg-export-2026-07-10.md
 # PC-C launch-kit privacy (integration ruling 2026-07-10): docs/launch/ is
 # CG-7 PER-ITEM publication material (Show HN draft, business-model proposal,
@@ -435,6 +444,11 @@ expect-absent cabinet/scripts/cognitive-phase0-review-scope.py
 expect-absent cabinet/scripts/cognitive-phase0-rollback-rehearsal.py
 expect-absent cabinet/scripts/verify-cognitive-phase0.sh
 expect-absent cabinet/scripts/tests/test_cognitive_phase0_rollback.py
+# COG-1 phase-1 private landing tools (paired delete rows above) — never ship.
+expect-absent cabinet/scripts/cognitive-phase1-review-scope.py
+expect-absent cabinet/scripts/cognitive-phase1-rollback-rehearsal.py
+expect-absent cabinet/scripts/verify-cognitive-phase1.sh
+expect-absent cabinet/scripts/tests/test_cognitive_phase1_rollback.py
 expect-absent docs/runbooks/egg-export-2026-07-10.md
 expect-absent docs/launch
 # APPSHELL-V05: the shell dev tooling must never ship (paired delete rows above).

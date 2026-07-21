@@ -43,8 +43,10 @@ SECURITY — every event field is UNTRUSTED data, never instructions:
     actor, context_slug, ts} is ever read; anything else (a rogue producer's
     ``title`` field included) is ignored by construction;
   * the entry's envelope must parse + pass framework.triggers.envelope
-    ``validate()`` — invalid entries are skipped (names-only stderr) and
-    ACKed as poison so they cannot wedge the group;
+    ``validate_any()`` — the COG-1 §4.1 VERSION-DISPATCHING doorway (v1 AND v2
+    accepted; a relay-emitted v2 envelope fails raw v1 ``validate()`` by
+    construction) — invalid entries are skipped (names-only stderr) and ACKed
+    as poison so they cannot wedge the group;
   * card text interpolates ONLY shape-validated tokens (numeric task_id,
     slug-shaped context/actor; anything else renders as "unknown") — free
     text from the bus never reaches a Captain surface, and needs.py
@@ -224,7 +226,12 @@ def _valid_envelope(fields: dict) -> bool:
         payload = json.loads(raw)
     except (ValueError, TypeError):
         return False
-    ok, _reasons = envelope.validate(payload)
+    # COG-1 §4.1/§3-disposition: route through the VERSION-DISPATCHING doorway
+    # (v1 AND v2 accepted), NOT raw v1 validate(). v1's closed-set check refuses
+    # every v2 envelope by construction, and this consumer poison-ACKs whatever
+    # it cannot validate — so raw validate() would silently discard 100% of
+    # relay-emitted v2 entries at cutover and blind the blocked_card lane.
+    ok, _reasons = envelope.validate_any(payload)
     return ok
 
 
