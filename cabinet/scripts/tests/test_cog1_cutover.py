@@ -59,7 +59,10 @@ UUID4_HEX = "0123456789abcdef0123456789abcdef"
 
 def run_flip(verb: str, *, pointer: Path | None = None,
              env_extra: dict | None = None) -> subprocess.CompletedProcess:
-    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin")}
+    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+           # harness rigs test POINTER SEMANTICS; the outbox-verb interlock
+           # (no live-target seam yet) has its own dedicated teeth test below.
+           "COG1_FLIP_I_KNOW_NO_LIVE_TARGET": "1"}
     if pointer is not None:
         env["CABINET_COG1_AUTHORITY"] = str(pointer)
     if env_extra:
@@ -110,7 +113,8 @@ def test_no_env_var_context_observes_flip_via_default_path(tmp_path):
     # itself carries no CABINET_COG1_AUTHORITY.
     home = tmp_path / "home"
     home.mkdir()
-    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(home)}
+    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(home),
+           "COG1_FLIP_I_KNOW_NO_LIVE_TARGET": "1"}
     r = subprocess.run(["bash", str(FLIP), "outbox"],
                        capture_output=True, text=True, env=env)
     assert r.returncode == 0, r.stderr
@@ -362,3 +366,32 @@ def test_consumer_valid_envelope_uses_version_dispatch():
     assert "validate_any(" in body, "_valid_envelope must call envelope.validate_any"
     assert "envelope.validate(" not in body, \
         "_valid_envelope must NOT call raw v1 validate() (poison-ACKs every v2 entry)"
+
+
+# ===========================================================================
+# §12.3 review F1 — the outbox-verb INTERLOCK (fail-closed until the §8.4
+# live-target seam lands): without the harness override the verb REFUSES so a
+# premature "one-command cutover" cannot darken cabinet:tasks:events.
+# ===========================================================================
+
+def test_outbox_verb_interlock_refuses_without_live_target_seam(tmp_path):
+    ptr = tmp_path / "cog1-authority"
+    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+           "CABINET_COG1_AUTHORITY": str(ptr)}
+    r = subprocess.run(["bash", str(FLIP), "outbox"],
+                       capture_output=True, text=True, env=env)
+    assert r.returncode == 64, (r.returncode, r.stderr)
+    assert "REFUSED" in r.stderr and "live-stream retarget seam" in r.stderr
+    assert not ptr.exists(), "interlock must refuse BEFORE writing the pointer"
+    # the override is the sanctioned harness door — with it, the pointer writes.
+    env["COG1_FLIP_I_KNOW_NO_LIVE_TARGET"] = "1"
+    r2 = subprocess.run(["bash", str(FLIP), "outbox"],
+                        capture_output=True, text=True, env=env)
+    assert r2.returncode == 0, r2.stderr
+    assert ptr.read_text().strip() == "outbox"
+    # legacy (the fail-safe direction) needs NO override — rollback is never gated.
+    del env["COG1_FLIP_I_KNOW_NO_LIVE_TARGET"]
+    r3 = subprocess.run(["bash", str(FLIP), "legacy"],
+                        capture_output=True, text=True, env=env)
+    assert r3.returncode == 0, r3.stderr
+    assert ptr.read_text().strip() == "legacy"

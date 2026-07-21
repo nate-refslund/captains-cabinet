@@ -5,8 +5,12 @@
 #
 # Verbs:
 #   outbox   CUTOVER: authority -> the outbox relay. my-tasks.sh emit_event
-#            reads the pointer and SKIPS its legacy direct XADD; the relay owns
-#            the durable tasks exhaust. (§8.4)
+#            reads the pointer and SKIPS its legacy direct XADD. NOT YET
+#            EXECUTABLE: the relay's live-stream retarget seam (§8.4 wrapper
+#            resolves the pointer and passes the target down) is a recorded
+#            pre-cutover follow-up — until it lands under re-review, this verb
+#            REFUSES (interlock below) so the live stream cannot be darkened.
+#            Override for harness rigs only: COG1_FLIP_I_KNOW_NO_LIVE_TARGET=1.
 #   legacy   ROLLBACK: authority -> the legacy direct emit; the relay returns to
 #            shadow-only. The one-command inverse of `outbox`. (§8.5)
 #   disarm   CAPTURE EMERGENCY inverse: DISABLE the officer_tasks capture
@@ -68,7 +72,18 @@ alter_trigger() {
 
 [ "$#" -eq 1 ] || usage
 case "$1" in
-  outbox) write_pointer outbox ;;
+  outbox)
+    # INTERLOCK (§12.3 review F1): the relay has no live-stream target seam yet
+    # (relay.py hardcodes the shadow stream). Flipping authority now would
+    # silence the legacy XADD while the relay keeps mirroring to shadow —
+    # cabinet:tasks:events goes dark. Refuse until the seam lands.
+    if ! grep -q "COG1_LIVE_STREAM_TARGET" "$(dirname "$0")/../../framework/outbox/relay.py" 2>/dev/null; then
+      if [ "${COG1_FLIP_I_KNOW_NO_LIVE_TARGET:-0}" != "1" ]; then
+        echo "cog1-authority-flip: REFUSED — the relay live-stream retarget seam (§8.4) is not implemented; 'outbox' would darken cabinet:tasks:events. See the COG-1 review artifact deferral (pre-cutover blocker). Harness override: COG1_FLIP_I_KNOW_NO_LIVE_TARGET=1." >&2
+        exit 64
+      fi
+    fi
+    write_pointer outbox ;;
   legacy) write_pointer legacy ;;
   disarm) alter_trigger DISABLE ;;
   enable) alter_trigger ENABLE ;;

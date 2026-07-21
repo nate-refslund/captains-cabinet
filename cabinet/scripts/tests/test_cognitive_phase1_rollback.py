@@ -189,6 +189,15 @@ def _git_name_status(rangespec: str) -> list[tuple[str, str]]:
 
 
 def test_manifest_covers_committed_cog1_footprint():
+    # Shallow CI checkouts (actions/checkout default) lack the baseline
+    # commit -> `git diff BASELINE..HEAD` exits 128. The ratchet enforces on
+    # every full clone (local batteries + the phase gate); skip honestly here.
+    probe = subprocess.run(
+        ["git", "-C", str(ROOT), "cat-file", "-e", BASELINE_SHA + "^{commit}"],
+        capture_output=True, text=True)
+    if probe.returncode != 0:
+        pytest.skip("baseline SHA absent (shallow checkout) — footprint ratchet "
+                    "runs on full clones")
     # Deterministic (no working-tree scan -> no other-wave interference): every
     # file COG-1 changed between baseline and HEAD is classified. A -> remove;
     # M -> restore or retain. A later wave that lands a file without extending
