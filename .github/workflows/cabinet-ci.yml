@@ -436,6 +436,36 @@ jobs:
         image: redis:7-alpine
         ports:
           - 6379:6379
+      # COG-1 §9.4: the DB-plane crash-matrix sims (framework/outbox/tests,
+      # framework/triggers/tests, cabinet/scripts/tests/test_cog1_*) GATE
+      # (fail, not skip) once CI declares Postgres present. S0 ground finding
+      # (binding, per 2026-07-07 grant): the production work store runs
+      # PostgreSQL 17.10, so this pin is MAJOR 17 — the plan text said 16, S0
+      # supersedes it, and lib_cog1_harness.py pins major 17 (skips anything
+      # else). Cloned from the redis service block above; postgres additionally
+      # needs POSTGRES_PASSWORD + a readiness probe (the job starts before the
+      # container is accepting connections otherwise).
+      postgres:
+        image: postgres:17
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      # COG1_PG_DSN is the harness-OWN opt-in (lib_cog1_harness.ci_service_dsn):
+      # its presence flips harness_available() true so the DB sims run against a
+      # scratch database created on this service (no initdb needed). KEYWORD
+      # conninfo, never a URI — conninfo() appends `dbname=<scratch>` and relies
+      # on libpq later-key-override (lib_cog1_harness.py:284). By design it is a
+      # distinct name from the live-store variables (NEON_CONNECTION_STRING /
+      # DATABASE_URL) the harness fences off, so the sims can never resolve the
+      # production store.
+      COG1_PG_DSN: "host=localhost port=5432 user=postgres password=postgres dbname=postgres"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
         with:
@@ -450,12 +480,19 @@ jobs:
         # module-loads) imports PIL; installed here so the forge tests GATE
         # in the cabinet/scripts/tests step below instead of killing its
         # collection (wave-3 2026-07-17; only user-site has PIL locally).
-        run: pip install pytest pyyaml jsonschema pillow
+        # psycopg2-binary (COG-1 §9.4): the relay drain + the DB-plane sims
+        # connect via psycopg2 — without it pg_available() stays false and the
+        # relay/outbox sims skip instead of gating.
+        run: pip install pytest pyyaml jsonschema pillow psycopg2-binary
       # redis-tools: the redis-gated test guards probe via the redis-cli
       # BINARY (test_intake.py:32) — the service container alone leaves
       # them skipping (proven on a spike run: still skipped 23).
-      - name: Install redis-cli
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq redis-tools
+      # postgresql-client (COG-1 §9.4, redis-tools precedent): the sim harness
+      # spawns `psql` against COG1_PG_DSN to apply the DDL chain and drive the
+      # kill rigs — the service container alone leaves the DB sims skipping,
+      # exactly the failure class redis-tools records above.
+      - name: Install redis-cli + psql client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq redis-tools postgresql-client
       # Collection census: the fidelity conftest silently collect_ignores 19
       # flavor-A-coupled modules (288 tests) when the retrodiction lib is
       # absent — true on every CI runner until plan A2.1 vendors it. This
