@@ -10,6 +10,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 export PYTEST_ADDOPTS="${PYTEST_ADDOPTS:-} -p no:cacheprovider"
+# The phase gate runs on controlled hardware: the §11.2 p95 bound is ENFORCED
+# here even under CI-like environments (the B1/B2 test skips-on-noise only
+# when CI is set AND this flag is not).
+export COG1_ENFORCE_P95=1
 REVIEW="shared/interfaces/reviews/cognitive-core-phase-1-review.md"
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "COG-1 verify: BLOCK — not a git work tree (this gate is source-instance only)" >&2; exit 1
