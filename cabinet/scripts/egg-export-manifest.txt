@@ -258,6 +258,18 @@ transform act-first-default
 # true, empty allow_hosts — already fail-closed by the twin's own doc
 # contract). Live enforced-egress ruling stays excluded per the delete above.
 transform egress-default
+# R017/R120-class, gate (b) null-hatch fix: instance/config/watchdog.yml is
+# read UNCONDITIONALLY by the Phase-4 evidence-detectors lens test (framework/
+# tests/, function test_catalog_rows_present_chair_tier_and_instance_dark),
+# and that suite runs INSIDE null-hatch.sh (gate b) against the export tree,
+# so the `delete instance/config/watchdog.yml` above (which strips this
+# deployment's live watchdog roster/pipe data) left every export gate-b RED
+# with a FileNotFoundError. Same treatment as egress-default: ship the
+# scrubbed .example twin's bytes (generic roster + pipe table + base
+# expectation rows + staged-dark Phase-4 ids) AS the file so a fresh egg
+# hatches with a safe generic default. Live watchdog data stays excluded per
+# the delete above.
+transform watchdog-default
 # R059: bin/ has zero tracked files (binaries rebuild on target via
 # build-calendar-helper.sh); the egg keeps an EMPTY bin/ mount point.
 transform bin-mount
@@ -311,6 +323,10 @@ expect-present instance/config/act-first-surfaces.yml.example
 # R120/R126-class (gate-b null-hatch fix): the materialized default, same
 # treatment as act-first-surfaces.yml above.
 expect-present instance/config/egress.yml
+# R017/R120-class (gate-b null-hatch fix): the scrubbed watchdog twin ships,
+# and the watchdog-default transform materializes the live file from it.
+expect-present instance/config/watchdog.yml.example
+expect-present instance/config/watchdog.yml
 expect-present instance/config/contexts/_default.yml
 expect-present instance/config/contexts/bakery-site.yml.example
 expect-present instance/config/contexts/newsletter.yml.example

@@ -61,6 +61,13 @@ everywhere the two differ.
       point (defaults to `origin/master`'s tip if you don't name one).
 - [ ] You've read the manifest doc once (§0 above) so the "why" behind
       each step below isn't a surprise.
+- [ ] **The NEW repo exists and is pushed BEFORE Step 3's
+      `runtime-provision.sh init`.** Set `$NEW_REPO_URL` (§5 Step 3) to the
+      fresh repo you created and pushed for this deployment — never the old
+      private repo. `init` clones/mirrors that remote and `provision` fetches
+      the commit you chose from it, so the repo must exist and the commit must
+      already be pushed there, or `init`/`provision` fail against an empty or
+      nonexistent remote.
 
 ## 2. Step-by-step
 
@@ -346,8 +353,12 @@ RUNTIME=~/.cabinet/runtime
 bash "$LIVE/cabinet/scripts/relaunch-seed.sh" --old-root "$LIVE" --runtime-root "$RUNTIME"
 
 # Step 3 — provision
+# NEW_REPO_URL: the fresh repo you created + pushed for this relaunch (§1
+# preconditions) — NOT the old private repo. Must exist and hold the commit
+# you provision below BEFORE `init` runs.
+NEW_REPO_URL=https://github.com/<your-org>/<your-cabinet-repo>.git
 bash "$LIVE/cabinet/scripts/runtime-provision.sh" init "$RUNTIME" \
-  --remote https://github.com/nate-refslund/captains-cabinet.git
+  --remote "$NEW_REPO_URL"
 bash "$LIVE/cabinet/scripts/runtime-provision.sh" provision "$RUNTIME" origin/master
 RELEASE=$(bash "$LIVE/cabinet/scripts/runtime-provision.sh" provision "$RUNTIME" origin/master | sed -n 's/^PROVISIONED_SLOT=//p')
 

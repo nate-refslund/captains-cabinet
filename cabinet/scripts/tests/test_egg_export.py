@@ -43,6 +43,7 @@ _INSTANCE_ALLOWED = (
     or rel == "instance/config/projects/_template.yml"
     or rel == "instance/config/act-first-surfaces.yml"  # R126: materialized from the twin
     or rel == "instance/config/egress.yml"  # gate-b fix: materialized from the twin
+    or rel == "instance/config/watchdog.yml"  # R017/R120-class gate-b fix: materialized from the twin (watchdog-default)
     or rel.startswith("instance/config/policies/")
     or rel.startswith("instance/config/posture-presets/")
     or rel == "instance/officer-skills/README.md"
