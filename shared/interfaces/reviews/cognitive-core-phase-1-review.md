@@ -1,7 +1,7 @@
 # Cognitive Core Phase 1 (COG-1) — frozen post-implementation review (plan §12.3)
 
 Verdict: PASS
-Reviewed-Scope-Digest: 99df7de11fca8458d4dc69f12832d4a5bc7bed839636e0f86358b765014088da
+Reviewed-Scope-Digest: 25c2f5e3276ef984e53a59fa9bceccc00f8f727408212105506c8b63d1a6c283
 Reviewed-Commit: 175ce93a06708f043bff58be969edf83a4840592 (advisory; frozen 4-cluster review inspected f62a3820, delta 175ce93a reviewed separately — see addendum)
 
 Reviewed 2026-07-21 against base 0bf60e698a148616bebc1676119913d11b272535 (which carries the attack-reviewed plan). Independent fresh-context review: four adversarial cluster reviews (envelope plane; DB/capture plane; relay plane; cutover/parity/governance plane) reconciled by a Fable 5 lead synthesizer that re-verified every contested byte claim and re-ran the load-bearing gates itself. No implementer self-reports were consumed; every verdict derives from the committed bytes of the 7-commit range, docs/plans/cognitive-core-phase-1-contract-2026-07-20.md (THE standard), and docs/cognitive-core-foundry.md.
@@ -127,3 +127,19 @@ softening the comment). A CI bound-miss SKIPS visibly with the measured
 numbers, never passes silently. No threshold changed. Digest above re-bound to
 these final bytes; prior cluster evidence applies to the earlier freezes as
 recorded.
+
+## Addendum 3 — F1 seam landed under §12.3 re-review (d2037352b8b680df9355824f968fbab5ef323ddb)
+
+The F1 binding conditions are now MET: the live-stream retarget seam (wrapper
+resolves the pointer, passes the target; relay shadow-hard-default with the
+COG1_LIVE_STREAM_TARGET landing marker), the end-to-end routing rig (sandbox
+redis, pointer=outbox provably lands entries on cabinet:tasks:events), and the
+shadow-stuck-relay mutant, all tests-first (red-proofs recorded in the build
+report). Fresh Opus re-review found 2 P1s — the new rig missing from the
+rollback-closure lockstep (machine-proven on a scratch commit) and the +26-line
+census delta lacking its paired allowance — both closed at root in the landing
+commit (3-surface lockstep; sanctioned allowance +26 measured, thresholds
+untouched). The flip-verb interlock self-releases by design; cutover is now
+MECHANICALLY executable and remains OPERATIONALLY gated by the §8.2 ladder
+(identity GUC → 047 apply → arming → mirror → ≥7-day clean+present parity
+soak). Digest above re-bound to these final bytes.
