@@ -26,7 +26,7 @@ from framework.evidence.verifier import verify_trial
 TRIAL = "REDACTION-001"
 
 # A structurally real (fake) bot token: numeric id, colon, 35-char secret.
-BOT_TOKEN = "123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-eo"
+BOT_TOKEN = "8123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-eo"
 BOT_SECRET = BOT_TOKEN.split(":", 1)[1]
 BOT_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 

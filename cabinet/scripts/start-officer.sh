@@ -236,7 +236,7 @@ if [ "$BOT_MODE" = "single_ceo" ]; then
     # FW-085 substrate gap #3 (token alias resolution): try project-level
     # token first, then cabinet-level fallback (CABINET_ID env), then plain
     # TELEGRAM_CEO_TOKEN. The cabinet-level form is the practical "single
-    # project per cabinet" pattern Captain uses (e.g. step-network = stephie).
+    # project per cabinet" pattern Captain uses (e.g. orchard = newsletter).
     _CEO_TOKEN_CANDIDATES=()
     if [ -n "$ACTIVE_SLUG" ]; then
       _SLUG_UPPER="$(echo "${ACTIVE_SLUG^^}" | tr "-" "_")"

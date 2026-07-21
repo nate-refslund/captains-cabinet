@@ -84,7 +84,7 @@ def _norm_path(p: str) -> str:
 
 def _norm_url(u: str) -> str:
     # Sentence punctuation binds to the match for pathless URLs too
-    # ("see https://polads.eu."), so strip it from the WHOLE url first.
+    # ("see https://newsletter.example."), so strip it from the WHOLE url first.
     u = u.rstrip(".,;:)")
     m = re.match(r"(https?)://([^/]+)(.*)", u, re.IGNORECASE)
     if not m:

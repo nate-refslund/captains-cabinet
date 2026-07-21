@@ -35,12 +35,12 @@ def _o(oid, status, lane=None):
 # ── lane_of (byte-mirror of the backtest rule) ──────────────────────────────
 
 def test_lane_of_explicit_lane_wins():
-    assert wpc.lane_of({"id": "outcome-polads-001", "lane": "system-self"}) == "system-self"
+    assert wpc.lane_of({"id": "outcome-bakery-001", "lane": "system-self"}) == "system-self"
 
 
 def test_lane_of_from_id():
-    assert wpc.lane_of({"id": "outcome-polads-003"}) == "polads"
-    assert wpc.lane_of({"id": "outcome-stephie-stepnetwork-001"}) == "stephie-stepnetwork"
+    assert wpc.lane_of({"id": "outcome-bakery-003"}) == "bakery"
+    assert wpc.lane_of({"id": "outcome-newsletter-orchard-001"}) == "newsletter-orchard"
     assert wpc.lane_of({"id": "outcome-world-onboarding-v1b-001"}) == "world-onboarding-v1b"
 
 
@@ -68,19 +68,19 @@ def test_outcome_statuses_non_dict_doc():
 
 def test_first_flip_date_wins():
     snaps = [
-        ("2026-06-10", _doc(_o("outcome-polads-003", "active"))),
-        ("2026-07-02", _doc(_o("outcome-polads-003", "achieved"))),
-        ("2026-07-09", _doc(_o("outcome-polads-003", "achieved"))),
+        ("2026-06-10", _doc(_o("outcome-bakery-003", "active"))),
+        ("2026-07-02", _doc(_o("outcome-bakery-003", "achieved"))),
+        ("2026-07-09", _doc(_o("outcome-bakery-003", "achieved"))),
     ]
     lanes = wpc.fold_port_calls(snaps)
-    assert lanes == {"polads": [{"date": "2026-07-02", "outcome_id": "outcome-polads-003"}]}
+    assert lanes == {"bakery": [{"date": "2026-07-02", "outcome_id": "outcome-bakery-003"}]}
 
 
 def test_never_achieved_never_stamps():
     snaps = [
-        ("2026-06-10", _doc(_o("outcome-polads-001", "active"))),
-        ("2026-07-02", _doc(_o("outcome-polads-001", "active"),
-                            _o("outcome-stepnetwork-001", "retired"))),
+        ("2026-06-10", _doc(_o("outcome-bakery-001", "active"))),
+        ("2026-07-02", _doc(_o("outcome-bakery-001", "active"),
+                            _o("outcome-orchard-001", "retired"))),
     ]
     assert wpc.fold_port_calls(snaps) == {}
 
@@ -97,18 +97,18 @@ def test_revert_then_reachieve_keeps_first_date():
 
 def test_multi_lane_grouping_and_sort():
     snaps = [
-        ("2026-07-02", _doc(_o("outcome-polads-003", "achieved"),
-                            _o("outcome-stephie-001", "achieved"))),
-        ("2026-07-10", _doc(_o("outcome-polads-003", "achieved"),
-                            _o("outcome-stephie-001", "achieved"),
-                            _o("outcome-polads-001", "achieved"))),
+        ("2026-07-02", _doc(_o("outcome-bakery-003", "achieved"),
+                            _o("outcome-newsletter-001", "achieved"))),
+        ("2026-07-10", _doc(_o("outcome-bakery-003", "achieved"),
+                            _o("outcome-newsletter-001", "achieved"),
+                            _o("outcome-bakery-001", "achieved"))),
     ]
     lanes = wpc.fold_port_calls(snaps)
-    assert lanes["polads"] == [
-        {"date": "2026-07-02", "outcome_id": "outcome-polads-003"},
-        {"date": "2026-07-10", "outcome_id": "outcome-polads-001"},
+    assert lanes["bakery"] == [
+        {"date": "2026-07-02", "outcome_id": "outcome-bakery-003"},
+        {"date": "2026-07-10", "outcome_id": "outcome-bakery-001"},
     ]
-    assert lanes["stephie"] == [{"date": "2026-07-02", "outcome_id": "outcome-stephie-001"}]
+    assert lanes["newsletter"] == [{"date": "2026-07-02", "outcome_id": "outcome-newsletter-001"}]
 
 
 def test_unattributable_lane_buckets_unknown():
@@ -120,15 +120,15 @@ def test_unattributable_lane_buckets_unknown():
 
 def test_build_artifact_shape_and_counts():
     lanes = {
-        "polads": [{"date": "2026-07-02", "outcome_id": "outcome-polads-003"}],
-        "stephie": [{"date": "2026-07-04", "outcome_id": "outcome-stephie-001"}],
+        "bakery": [{"date": "2026-07-02", "outcome_id": "outcome-bakery-003"}],
+        "newsletter": [{"date": "2026-07-04", "outcome_id": "outcome-newsletter-001"}],
     }
     art = wpc.build_artifact(lanes, generated_at="2026-07-17T00:00:00+00:00",
                              source_git_head="deadbeef")
     assert art["schema"] == "cabinet.world.port-calls/v1"
     assert art["port_calls_total"] == 2
     assert art["last_port_call_date"] == "2026-07-04"
-    assert list(art["lanes"]) == ["polads", "stephie"]  # sorted keys
+    assert list(art["lanes"]) == ["bakery", "newsletter"]  # sorted keys
     json.dumps(art)  # JSON-serializable
 
 

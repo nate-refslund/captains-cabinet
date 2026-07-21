@@ -979,7 +979,7 @@ def _discover_probe_target(monday_post: Callable, board: str) -> Dict[str, Any]:
     """Pick a board_status probe target the TARGET BOARD actually supports.
 
     2026-07-04 fix: the probe used to hardcode column id ``status``, which
-    board 5091706356 LACKS — Monday answered "This column ID doesn't exist for
+    the target board LACKS — Monday answered "This column ID doesn't exist for
     the board", so every weekly AND manual canary failed and the fail-closed
     freeze could never be lifted by a green run (freeze contract: no
     auto-unfreeze, action_undo.freeze:701). Discovery reads the board's own

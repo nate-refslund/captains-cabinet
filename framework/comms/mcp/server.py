@@ -17,9 +17,9 @@ is instance data resolved through ``framework.comms.get_channel`` — a clean-ro
 box binds the null adapter and every tool degrades to a no-op.
 
 Transport is chosen by ``COMMS_MCP_TRANSPORT`` (``stdio`` default). HTTP mode
-is FAIL-CLOSED: without ``COMMS_MCP_TOKEN`` set, every request is 401 — unlike
-the federation server's dev open-mode, because this surface reaches the
-Captain's own channel and must never be open by omission.
+is FAIL-CLOSED: without ``COMMS_MCP_TOKEN`` set, every request is 401 — this
+surface reaches the Captain's own channel and must never be open by omission
+(the federation server enforces the same fail-closed posture).
 """
 from __future__ import annotations
 
@@ -308,9 +308,9 @@ def run_stdio() -> None:
 def verify_bearer(auth_header: "str | None") -> bool:
     """True iff the Bearer token matches COMMS_MCP_TOKEN (constant-time).
 
-    FAIL-CLOSED: if COMMS_MCP_TOKEN is unset, EVERY request is refused. Unlike
-    the federation server's dev open-mode, this surface reaches the Captain's
-    channel, so an unconfigured http listener must be closed, never open.
+    FAIL-CLOSED: if COMMS_MCP_TOKEN is unset, EVERY request is refused. This
+    surface reaches the Captain's channel, so an unconfigured http listener must
+    be closed, never open (the federation server enforces the same posture).
     """
     want = os.environ.get("COMMS_MCP_TOKEN", "").strip()
     if not want:

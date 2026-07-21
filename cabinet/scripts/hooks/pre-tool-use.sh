@@ -2003,7 +2003,7 @@ fi
 #   gate-block → retry-commit workflow (same as FW-043).
 # Phase 2 (action regex): actual push-to-main-or-master / pr-merge pattern.
 # AND-composed so both must pass to trip the gate.
-# Action regex covers BOTH `main` (Sensed product repo) and `master`
+# Action regex covers BOTH `main` (example product repo) and `master`
 # (framework repo default) — CTO pushes to both.
 # FW-044 (2026-04-24): Phase 2b — unified positional regex.
 # Covers `gh api <DELETE> refs(/|%2[Ff])heads(/|%2[Ff])(main|master)` + branch-protection
@@ -2195,7 +2195,7 @@ if [ -d "$CONTEXTS_DIR" ] && [ -n "$SLUG_CACHE" ]; then
     fi
 
     # Cross-capacity enforcement: officer's capacity (from env) must match the context's.
-    # OFFICER_CAPACITY defaults to 'work' for the Sensed work preset. Phase 2 will read
+    # OFFICER_CAPACITY defaults to 'work' for the example work preset. Phase 2 will read
     # from preset.yml or per-officer config, not hardcoded default.
     OFFICER_CAPACITY="${OFFICER_CAPACITY:-work}"
     if [ "$OFFICER_CAPACITY" != "$CTX_CAPACITY" ]; then

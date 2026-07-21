@@ -214,7 +214,7 @@ def test_secret_shaped_values_in_reserved_keys_are_redacted_before_hashing(tmp_p
 
 def test_writer_side_patterns_do_not_widen_the_verify_time_scan():
     # Writer-side: the bare JWT and Slack token shapes are destroyed.
-    for value in (BARE_JWT, "xoxb-1234567890-abcdefghijkl"):
+    for value in (BARE_JWT, "xoxb-8123456789-abcdefghijkl"):
         clean, notes = sanitize_string(value)
         assert clean == "[REDACTED_SECRET]"
         assert "secret_value" in notes
@@ -222,7 +222,7 @@ def test_writer_side_patterns_do_not_widen_the_verify_time_scan():
     # already-stored v1 row keeps verifying byte-for-byte.  Widening it is a
     # ceremony that must re-baseline existing stores.
     assert contains_secret_shape(BARE_JWT) is False
-    assert contains_secret_shape("xoxb-1234567890-abcdefghijkl") is False
+    assert contains_secret_shape("xoxb-8123456789-abcdefghijkl") is False
     # Shared patterns still fire on both sides (sanity).
     assert contains_secret_shape("sk-" + "a" * 30) is True
 

@@ -59,9 +59,9 @@ def _build_old_root(base: Path) -> Path:
     (old / "cabinet" / ".env").write_text(
         f"SOME_SECRET={FAKE_SECRET}\nTELEGRAM_COS_TOKEN=abc123\n", encoding="utf-8"
     )
-    (old / "instance" / "memory" / "tier2" / "polads-ceo").mkdir(parents=True)
-    (old / "instance" / "memory" / "tier2" / "polads-ceo" / "working-notes.md").write_text(
-        "# polads-ceo working notes\n", encoding="utf-8"
+    (old / "instance" / "memory" / "tier2" / "bakery-ceo").mkdir(parents=True)
+    (old / "instance" / "memory" / "tier2" / "bakery-ceo" / "working-notes.md").write_text(
+        "# bakery-ceo working notes\n", encoding="utf-8"
     )
     (old / "instance" / "config").mkdir(parents=True)
     (old / "instance" / "config" / "extensions.yml").write_text("ext: []\n", encoding="utf-8")
@@ -71,7 +71,7 @@ def _build_old_root(base: Path) -> Path:
         "{}\n", encoding="utf-8"
     )
     (old / "shared" / "interfaces" / "product-specs").mkdir(parents=True)
-    (old / "shared" / "interfaces" / "product-specs" / "060-stephie-banner.md").write_text(
+    (old / "shared" / "interfaces" / "product-specs" / "060-newsletter-banner.md").write_text(
         "spec\n", encoding="utf-8"
     )
     (old / "shared" / "interfaces" / "world-chronicle.jsonl").write_text(
@@ -135,7 +135,7 @@ def test_archive_contains_vault_lanes_ledgers_secrets(tmp_path: Path, old_root: 
     with tarfile.open(archive, "r:gz") as tf:
         names = set(tf.getnames())
     # vault / org-brain memory + lane tier2 + governance ledger + real secret
-    assert f"{base}/instance/memory/tier2/polads-ceo/working-notes.md" in names
+    assert f"{base}/instance/memory/tier2/bakery-ceo/working-notes.md" in names
     assert f"{base}/shared/interfaces/world-chronicle.jsonl" in names
     assert f"{base}/cabinet/.env" in names
     # regenerable noise excluded
@@ -282,14 +282,14 @@ def _run_deploy(action: str, rt: Path, home: Path, extra_env: dict[str, str]) ->
     )
 
 
-ROSTER_TWO = "roster:\n  cos:\n    title: Chief of Staff\n  polads-ceo:\n    title: PolAds CEO\n"
+ROSTER_TWO = "roster:\n  cos:\n    title: Chief of Staff\n  bakery-ceo:\n    title: Bakery CEO\n"
 
 
 def test_restart_fleet_skips_consultant(tmp_path: Path):
     home = tmp_path
     slot = tmp_path / "slot"
     rt = tmp_path / "rt"
-    _make_slot(slot, ROSTER_TWO, {"cos": "standing", "polads-ceo": "consultant"})
+    _make_slot(slot, ROSTER_TWO, {"cos": "standing", "bakery-ceo": "consultant"})
     _make_runtime_root(rt, slot)
     _make_fake_launchctl(home / "shimbin")
     started_log = tmp_path / "started.log"
@@ -299,10 +299,10 @@ def test_restart_fleet_skips_consultant(tmp_path: Path):
         {"STARTED_LOG": str(started_log), "LAUNCHCTL_LOG": str(lc_log), "FAKE_PRINT_RC": "1"},
     )
     assert proc.returncode == 0, (proc.stdout, proc.stderr)
-    assert "skipping polads-ceo" in proc.stdout
+    assert "skipping bakery-ceo" in proc.stdout
     started = started_log.read_text(encoding="utf-8") if started_log.exists() else ""
     assert "START-OFFICER cos" in started
-    assert "polads-ceo" not in started, "consultant was restarted — guard failed"
+    assert "bakery-ceo" not in started, "consultant was restarted — guard failed"
 
 
 def test_non_canonical_root_never_kickstarts_live_agent(tmp_path: Path):

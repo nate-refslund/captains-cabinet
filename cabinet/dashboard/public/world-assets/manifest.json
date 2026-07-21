@@ -23717,8 +23717,8 @@
    }
   },
   {
-   "id": "portraits/portrait_polads-ceo",
-   "path": "portraits/portrait_polads-ceo.png",
+   "id": "portraits/portrait_bakery-ceo",
+   "path": "portraits/portrait_bakery-ceo.png",
    "w": 64,
    "h": 64,
    "grid": 16,
@@ -23730,12 +23730,12 @@
     "eyes": "Eyes 03.png",
     "hair": "Hairstyle 07 3.png",
     "accessory": "none",
-    "seed": "fnv1a(polads-ceo:<channel>)"
+    "seed": "fnv1a(bakery-ceo:<channel>)"
    }
   },
   {
-   "id": "portraits/portrait_polads-ceo_sheet",
-   "path": "portraits/portrait_polads-ceo_sheet.png",
+   "id": "portraits/portrait_bakery-ceo_sheet",
+   "path": "portraits/portrait_bakery-ceo_sheet.png",
    "w": 640,
    "h": 64,
    "grid": 16,
@@ -23747,12 +23747,12 @@
     "eyes": "Eyes 03.png",
     "hair": "Hairstyle 07 3.png",
     "accessory": "none",
-    "seed": "fnv1a(polads-ceo:<channel>)"
+    "seed": "fnv1a(bakery-ceo:<channel>)"
    }
   },
   {
-   "id": "portraits/portrait_stephie-ceo",
-   "path": "portraits/portrait_stephie-ceo.png",
+   "id": "portraits/portrait_newsletter-ceo",
+   "path": "portraits/portrait_newsletter-ceo.png",
    "w": 64,
    "h": 64,
    "grid": 16,
@@ -23764,12 +23764,12 @@
     "eyes": "Eyes 04.png",
     "hair": "Hairstyle 18 1.png",
     "accessory": "Accessory 15 Glasses 1.png",
-    "seed": "fnv1a(stephie-ceo:<channel>)"
+    "seed": "fnv1a(newsletter-ceo:<channel>)"
    }
   },
   {
-   "id": "portraits/portrait_stephie-ceo_sheet",
-   "path": "portraits/portrait_stephie-ceo_sheet.png",
+   "id": "portraits/portrait_newsletter-ceo_sheet",
+   "path": "portraits/portrait_newsletter-ceo_sheet.png",
    "w": 640,
    "h": 64,
    "grid": 16,
@@ -23781,7 +23781,7 @@
     "eyes": "Eyes 04.png",
     "hair": "Hairstyle 18 1.png",
     "accessory": "Accessory 15 Glasses 1.png",
-    "seed": "fnv1a(stephie-ceo:<channel>)"
+    "seed": "fnv1a(newsletter-ceo:<channel>)"
    }
   },
   {

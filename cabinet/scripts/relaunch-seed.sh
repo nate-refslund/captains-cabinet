@@ -15,7 +15,7 @@
 # it back.
 #
 # WHAT THIS DOES — two archive members, nothing else:
-#   1. The ENTIRE old-root tree (default /Users/nate/captains-cabinet) as ONE
+#   1. The ENTIRE old-root tree (default $HOME/captains-cabinet) as ONE
 #      member: code, .git, instance/ (the org-brain/searchable memory under
 #      instance/memory + every lane's tier2 knowledge), shared/interfaces/
 #      (governance ledgers, world chronicle, product-specs), and the real,
@@ -82,7 +82,7 @@ set -euo pipefail
 # The live tree — hardcoded, deliberately NOT overridable by any flag or
 # env var (an override here would defeat the one guarantee this script
 # exists to make). Matches hatch.sh's own similar non-negotiable constants.
-LIVE_TREE="/Users/nate/captains-cabinet"
+LIVE_TREE="${CABINET_LIVE_TREE:-$HOME/captains-cabinet}"
 
 usage() {
   cat <<'EOF'
@@ -96,7 +96,7 @@ rollback net and the Flavor-B restore source.
 
 Flags:
   --old-root <path>          Old instance root to read FROM (read-only,
-                              never written). Default: /Users/nate/captains-cabinet
+                              never written). Default: $HOME/captains-cabinet
   --runtime-root <path>      Where the fresh instance will later be
                               provisioned (runtime-provision.sh init). Parsed
                               and containment-guarded here; this archive-only

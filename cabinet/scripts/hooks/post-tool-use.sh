@@ -454,7 +454,7 @@ if has_capability "deploys_code" && [ "$TOOL_NAME" = "Bash" ]; then
   #
   # Tokenized-URL form: officers push with the full URL in place of "origin"
   # (see memory/reference_github_push_invocation.md + feedback_git_push_u_tokenized_url.md):
-  #   git push https://x-access-token:$PAT@github.com/STEP-Network/Sensed main
+  #   git push https://x-access-token:$PAT@github.com/example-org/example-product main
   # The regex therefore accepts `.*` between `git push` and the refspec
   # (instead of requiring a literal `origin`), gated by the earlier
   # framework-URL filter so cabinet master pushes still skip. Audit
@@ -481,7 +481,7 @@ if has_capability "deploys_code" && [ "$TOOL_NAME" = "Bash" ]; then
     :  # noop — --dry-run or short-form -n skip; [^&;] stops the scan at
     #   && / ; so a chained command's flag text doesn't falsely trip
     #   (COO M-4b + Sonnet adversary findings #1 + #2, 2026-04-21)
-  elif echo "$CMD" | grep -qE '(^|[^a-z0-9_-])git push[[:space:]]+(.*[[:space:]:])?(refs/heads/)?(main|master)([[:space:];]|$)|gh pr merge|pulls/[0-9]+/merge|curl.*STEP-Network/Sensed.*pulls/[0-9]+/merge'; then
+  elif echo "$CMD" | grep -qE '(^|[^a-z0-9_-])git push[[:space:]]+(.*[[:space:]:])?(refs/heads/)?(main|master)([[:space:];]|$)|gh pr merge|pulls/[0-9]+/merge|curl.*example-org/example-product.*pulls/[0-9]+/merge'; then
     # FW-047: suppress cross-officer trigger fan-out in test mode
     # (CABINET_HOOK_TEST_MODE=1 set by run-golden-evals.sh hook probes).
     # Production path unchanged — stdout REMINDER in block 6 still fires,
@@ -523,7 +523,7 @@ if has_capability "deploys_code" && [ "$TOOL_NAME" = "Bash" ]; then
   elif echo "$CMD" | grep -qE 'git push[^&;]*--dry-run|git push[[:space:]]+([^&;]*[[:space:]])?-n([[:space:]]|$)'; then
     :  # noop — --dry-run or short-form -n; skip verify-deploy reminder
     #   (COO M-4b + Sonnet adversary findings #1 + #2, 2026-04-21)
-  elif echo "$CMD" | grep -qE '(^|[^a-z0-9_-])git push[[:space:]]+(.*[[:space:]:])?(refs/heads/)?(main|master)([[:space:];]|$)|gh pr merge|pulls/[0-9]+/merge|curl.*STEP-Network/Sensed.*pulls/[0-9]+/merge'; then
+  elif echo "$CMD" | grep -qE '(^|[^a-z0-9_-])git push[[:space:]]+(.*[[:space:]:])?(refs/heads/)?(main|master)([[:space:];]|$)|gh pr merge|pulls/[0-9]+/merge|curl.*example-org/example-product.*pulls/[0-9]+/merge'; then
     echo "REMINDER: Poll Vercel deployment status before announcing. Run deploy-and-verify skill."
     echo "REMINDER: Update shared/interfaces/deployment-status.md with current deploy state."
   fi

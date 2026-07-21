@@ -1729,7 +1729,7 @@ def _eval_authority_matrix(
     #    malformed verdict strings — undefined never acts (Corridor
     #    invariant). With no posture config every cell resolves from the root
     #    (guardian) table and every block string here is byte-identical to
-    #    the legacy gate. NATE-DECISION (2026-07-04 germline batch):
+    #    the legacy gate. CAPTAIN-RULING (2026-07-04 germline batch):
     #    `classifier` (deploy_nonprod@graduated/eligible -> mechanical
     #    low-risk-deploy routing) deliberately STAYS collapsed here —
     #    deploy_nonprod keeps the earn-up posture and was NOT widened; wiring

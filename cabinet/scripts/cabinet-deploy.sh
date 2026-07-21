@@ -4,7 +4,7 @@
 # construction (a bad slot is simply never promoted) — Captain-approved
 # 2026-07-15 dev/runtime split (see docs/runbooks/dev-runtime-split-cutover.md
 # for the one-time migration this is built for; NOT executed by this build,
-# and this script never touches /Users/nate/captains-cabinet or the live
+# and this script never touches $HOME/captains-cabinet or the live
 # fleet directly — only whatever --runtime-root points at).
 #
 # Composes cabinet/scripts/runtime-provision.sh's primitives (this script

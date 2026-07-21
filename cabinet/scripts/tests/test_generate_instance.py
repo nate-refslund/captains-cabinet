@@ -945,17 +945,23 @@ class TestDefaultsFastLane:
 # ---------------------------------------------------------------------------
 
 class TestUniversality:
-    # DETECTOR PATTERN LIST (never relax/narrow): the launcher deployment's
-    # lane/org/name/host tokens, quoted here solely so the universality
-    # guard can prove the generated artifacts carry none of them.
-    # Chat-id token: the REAL launcher chat id was scrubbed from the public
-    # tree (2026-07-12) — the pattern now pins the tracked platform.yml
-    # placeholder (10 zeros), so generated artifacts can never echo the
-    # launcher's tracked config value either (defaults use "0000", answers
-    # carry their own id — neither matches a 10-zero run).
+    # DETECTOR PATTERN LIST (never relax/narrow): SYNTHETIC stand-ins for a
+    # launcher deployment's lane/org/name/host tokens, quoted here solely so
+    # the universality guard can prove the generated artifacts carry none of
+    # them. Per the R166 pattern externalization + scrub-wave-2 genericization
+    # (mirroring framework/tests/test_no_launcher_hardcode.py): this tracked
+    # test names NO real person/org/product — the real per-deployment literals
+    # live in the untracked instance/config/publish-scan-patterns.local the
+    # publish gate loads. The synthetic map matches the world-retarget lanes
+    # (bakery/newsletter products, orchard org, testburg captain, exampleco
+    # employer); demo-host stands for a launcher hostname.
+    # Chat-id token: a ten-zero placeholder id (the tracked platform.yml default
+    # shape), so generated artifacts can never echo a placeholder chat id
+    # (defaults use "0000", answers carry their own id — neither matches a
+    # ten-zero run); written "0" * 10 so this source carries no 9+-digit run.
     FORBIDDEN = [
-        r"\bpolads\b", r"\bstephie\b", r"\bstepnetwork\b", r"\bnate\b",
-        r"\bhq-macbook\b", r"0000000000", r"\bjfm\b",
+        r"\bbakery\b", r"\bnewsletter\b", r"\borchard\b", r"\btestburg\b",
+        r"\bdemo-host\b", "0" * 10, r"\bexampleco\b",
     ]
 
     @pytest.mark.parametrize("rel", [

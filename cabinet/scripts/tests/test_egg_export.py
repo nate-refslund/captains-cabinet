@@ -450,50 +450,24 @@ def test_framework_docs_dated_snapshots_archived(export: Path):
         assert (docs / keeper).is_file(), f"living doc must ship: {keeper}"
 
 
-def test_proposals_non_amendments_archived_amendments_kept(export: Path):
-    """R167 (personal-clean wave, 2026-07-15): fills the gap R146 named but
-    never implemented — the 22 docs/proposals/germline-amendment-*.md
-    FOUNDING AMENDMENTS (R031/R146: ratified, frozen constitutional record)
-    ship verbatim; every other file (addenda/activation runbooks, no
-    ratified ship requirement) archives with an ARCHIVED-NOTE.md stub."""
+def test_proposals_all_archived(export: Path):
+    """R167 + scrub-wave-2 reversal (2026-07-21, per 2026-07-07 full-autonomy
+    grant): docs/proposals/ archives out ENTIRELY at packaging. R167 first
+    shipped the germline-amendment-*.md FOUNDING AMENDMENTS verbatim; the
+    public-egg scrub reversed that — the amendments are the launching
+    deployment's dated ratified record (home paths, Captain name and
+    employer/product tokens throughout), source-instance-private history in
+    the SAME class as docs/plans (R145) and framework/docs (R162), and
+    rewording a dated record would falsify it. Only an ARCHIVED-NOTE.md stub
+    ships; nothing else from docs/proposals/ rides the egg."""
     proposals = export / "docs" / "proposals"
-    assert (proposals / "ARCHIVED-NOTE.md").is_file(), "R167: archived stub must ship"
+    note = proposals / "ARCHIVED-NOTE.md"
+    assert note.is_file(), "R167: archived stub must ship"
+    # reversed kept-pin: NO founding amendment ships anymore
     amendments = sorted(p.name for p in proposals.glob("germline-amendment-*.md"))
-    assert amendments == [
-        "germline-amendment-action-mode-eval-2026-07-17.md",
-        "germline-amendment-attention-transport-2026-07-09.md",
-        "germline-amendment-authority-security-2026-07-19.md",
-        "germline-amendment-brain-bridge-split-2026-07-07.md",
-        "germline-amendment-cabinet-axes-2026-07-05.md",
-        "germline-amendment-candor-2026-07-10.md",
-        "germline-amendment-constitution-retirement-2026-07-07.md",
-        "germline-amendment-context-resolver-2026-07-17.md",
-            "germline-amendment-cosmetic-batch-2026-07-07.md",
-            "germline-amendment-de-nate-2026-07-05.md",
-            "germline-amendment-egress-launchd-owner-2026-07-15.md",
-            "germline-amendment-evidence-hp-2026-07-17.md",
-            "germline-amendment-evidence-phase1-2026-07-16.md",
-            "germline-amendment-evidence-phase2a-2026-07-17.md",
-            "germline-amendment-evidence-phase2b-2026-07-17.md",
-            "germline-amendment-evidence-phase3-2026-07-17.md",
-            "germline-amendment-evidence-recorder-hardening-2026-07-15.md",
-            "germline-amendment-evidence-recorder-v1-2026-07-15.md",
-            "germline-amendment-gather-rewire-2026-07-07.md",
-        "germline-amendment-golden-evals-prune-2026-07-07.md",
-        "germline-amendment-host-grant-removal-2026-07-07.md",
-        "germline-amendment-instance-extract-2026-07-05.md",
-        "germline-amendment-killswitch-events-2026-07-17.md",
-        "germline-amendment-killswitch-send-eval-2026-07-21.md",
-            "germline-amendment-manifest-sunset-2026-07-07.md",
-            "germline-amendment-officer-security-boundary-2026-07-15.md",
-            "germline-amendment-policy-engine-pulldown-2026-07-07.md",
-        "germline-amendment-source-adapter-2026-07-05.md",
-        "germline-amendment-sovereign-posture-2026-07-05.md",
-        "germline-amendment-task-create-2026-07-03.md",
-        "germline-amendment-trigger-retention-2026-07-16.md",
-        "germline-amendment-trust-inversion-2026-07-04.md",
-        "germline-amendment-war-room-census-2026-07-10.md",
-    ], amendments
+    assert amendments == [], f"amendments must archive out, not ship: {amendments}"
+    # the non-amendment addenda/activation runbooks stay gone too (now subsumed
+    # by the blanket archive — kept as explicit provenance / no-regression pins)
     for gone in ("comms-mcp-activation-2026-07-09.md",
                  "germline-addendum-claude-code-audit-2026-07-07.md",
                  "germline-enforcement-fixes-2026-07-14-addendum.md",
@@ -502,21 +476,21 @@ def test_proposals_non_amendments_archived_amendments_kept(export: Path):
                  "germline-window-4-deferral-2026-07-10.md",
                  "germline-window-addendum-2026-07-07.md",
                  "sovereign-posture-activation-2026-07-09.md",
-                 # BC boot-pack staged package (memwave3 2026-07-15): plain
+                 # BC boot-pack + library-retirement staged packages: plain
                  # files directly under docs/proposals/ BY CONTRACT — a
                  # subdirectory would crash t_proposals_archive's rm -f loop
-                 # under set -e (leftover pin below also enforces no-subdir).
+                 # under set -e (the leftover pin below also enforces no-subdir).
                  "germline-session-start-digest-addendum-2026-07-15.md",
                  "germline-session-start-digest-2026-07-15.patch",
-                 # Library-retirement ceremony package (2026-07-16): same
-                 # shape — flat addendum doc + .patch under docs/proposals/,
-                 # archived out of the egg as instance ceremony history.
                  "germline-library-retirement-addendum-2026-07-16.md",
                  "germline-library-retirement-2026-07-16.patch"):
-        assert not (proposals / gone).exists(), f"R167: non-amendment proposal must not ship: {gone}"
-    # nothing else remains beyond the stub + the 20 amendments
+        assert not (proposals / gone).exists(), f"non-amendment proposal must not ship: {gone}"
+    # the stub is the ONLY thing left in docs/proposals/
     leftover = sorted(p.name for p in proposals.iterdir())
-    assert leftover == sorted(["ARCHIVED-NOTE.md"] + amendments), leftover
+    assert leftover == ["ARCHIVED-NOTE.md"], leftover
+    # the stub records that the amendments (and the rest) archived out
+    note_text = note.read_text(encoding="utf-8").lower()
+    assert "amendment" in note_text and "archived" in note_text, note_text
 
 
 def test_claude_egg_swap_once_template_tracked(export: Path):

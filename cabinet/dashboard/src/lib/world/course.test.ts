@@ -139,28 +139,28 @@ describe('laneCourseState — the reduced honest set', () => {
   })
 
   it('live-shape scenario (2026-07-17 ground truth): both lanes docked', () => {
-    // polads/stephie flipped 2026-07-02 → 15 days → window closed, both
+    // bakery/newsletter flipped 2026-07-02 → 15 days → window closed, both
     // hold active successors → docked_refitting (the honest current state).
     const out = laneCourseState({
-      directionLanes: ['stephie', 'polads', 'system-self'],
+      directionLanes: ['newsletter', 'bakery', 'system-self'],
       outcomeLanes: {
-        polads: rec({ ever: 3, active: 2, achieved: 1 }),
-        stephie: rec({ ever: 2, active: 1, achieved: 1 }),
-        stepnetwork: rec({ retired: 1 }),
+        bakery: rec({ ever: 3, active: 2, achieved: 1 }),
+        newsletter: rec({ ever: 2, active: 1, achieved: 1 }),
+        orchard: rec({ retired: 1 }),
         'system-self': rec({ active: 3 }),
         'world-onboarding-v1b': rec({ active: 1 }),
       },
-      declaredLanes: ['adhoc', 'captains-cabinet', 'personal', 'polads', 'sensed', 'stephie', 'stepnetwork', 'system-self'],
+      declaredLanes: ['adhoc', 'bakery', 'captains-cabinet', 'creamery', 'newsletter', 'orchard', 'personal', 'system-self'],
       portCalls: {
-        polads: [{ date: '2026-07-02', outcome_id: 'outcome-polads-003' }],
-        stephie: [{ date: '2026-07-02', outcome_id: 'outcome-stephie-001' }],
+        bakery: [{ date: '2026-07-02', outcome_id: 'outcome-bakery-003' }],
+        newsletter: [{ date: '2026-07-02', outcome_id: 'outcome-newsletter-001' }],
       },
       todayISO: '2026-07-17',
     })
-    expect(Object.keys(out).sort()).toEqual(['polads', 'stephie'])
-    expect(out.polads.state).toBe('docked_refitting')
-    expect(out.stephie.state).toBe('docked_refitting')
-    expect(out.polads.portCallDates).toEqual(['2026-07-02'])
+    expect(Object.keys(out).sort()).toEqual(['bakery', 'newsletter'])
+    expect(out.bakery.state).toBe('docked_refitting')
+    expect(out.newsletter.state).toBe('docked_refitting')
+    expect(out.bakery.portCallDates).toEqual(['2026-07-02'])
   })
 })
 
