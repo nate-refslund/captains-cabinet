@@ -79,16 +79,30 @@ if [ "$_drain_on" = "1" ]; then
     echo "outbox-relay FATAL: COG-1 authority pointer '$_ptr' exists but is unreadable (arming preflight failed)" >&2
     exit 72
   fi
+  # (c) STREAM TARGET resolution (§8.4 live-stream retarget seam): the WRAPPER
+  #     resolves the authority pointer VALUE and passes an EXPLICIT stream target
+  #     DOWN to the relay — the framework relay NEVER reads the pointer (layer
+  #     law). pointer=='outbox' => the LIVE tasks exhaust cabinet:tasks:events;
+  #     anything else (absent/legacy/other) => the SHADOW stream (fail-safe dark
+  #     default). Same default path + env override as my-tasks.sh emit_event's
+  #     consult (read above); the readable check already gated an unreadable file.
+  _stream_target="cabinet:tasks:events:shadow"
+  if [ "$(cat "$_ptr" 2>/dev/null)" = "outbox" ]; then
+    _stream_target="cabinet:tasks:events"
+  fi
 fi
 
 cd "$CABINET_ROOT"
 
 # Hand off to the pinned interpreter. If the env armed the drain but the flag
 # was not passed explicitly, inject it so the relay actually drains the table.
+# In drain mode, append the WRAPPER-resolved --stream-target (§8.4): the relay
+# accepts the target, never the pointer (layer law). Appended LAST so the
+# resolved value wins over any stray CLI target.
 if [ "$_drain_on" = "1" ]; then
   case " $* " in
-    *" --drain-tasks-outbox "*) exec "$PY" -m framework.outbox.relay "$@" ;;
-    *)                          exec "$PY" -m framework.outbox.relay --drain-tasks-outbox "$@" ;;
+    *" --drain-tasks-outbox "*) exec "$PY" -m framework.outbox.relay "$@" --stream-target "$_stream_target" ;;
+    *)                          exec "$PY" -m framework.outbox.relay --drain-tasks-outbox "$@" --stream-target "$_stream_target" ;;
   esac
 else
   exec "$PY" -m framework.outbox.relay "$@"
