@@ -307,7 +307,7 @@ def _configured_captain_chat_id(config_path: Path) -> Optional[int]:
     parsed strictly. None = unconfigured — absent/symlinked file,
     unparseable YAML, missing key, or a placeholder/zero value (the
     committed example ships "<YOUR-TELEGRAM-CHAT-ID>" and scrubbed
-    instances ship "0000000000"; neither may ever attest)."""
+    instances ship a ten-zero placeholder; neither may ever attest)."""
     try:
         if config_path.is_symlink() or not config_path.is_file():
             return None

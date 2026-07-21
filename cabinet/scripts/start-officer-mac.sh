@@ -328,7 +328,7 @@ SETTINGS_FLAG="--settings $OFFICER_SETTINGS_PATH"
 #   2. TELEGRAM_BOT_TOKEN_<OFFICER_UPPER>   legacy generator/docs name
 #   3. TELEGRAM_BOT_TOKEN                   bare name — safe to inherit here
 #      because this whole branch is gated on the telegram_bot capability
-# Hyphenated slugs (e.g. polads-ceo) map '-' -> '_' for the var name.
+# Hyphenated slugs (e.g. bakery-ceo) map '-' -> '_' for the var name.
 TELEGRAM_FLAG=""
 if [ "$HAS_TELEGRAM" = "true" ]; then
   OFFICER_UPPER=$(echo "$OFFICER" | tr '[:lower:]-' '[:upper:]_')
@@ -812,7 +812,7 @@ officer_boot_drive "$SESSION_NAME" "$BOOT_PROMPT"
 # (cabinet:triggers:<officer>) and carded work. With no recurring nudge an
 # officer does ONE boot burst then sits idle at the prompt forever, stranding
 # every trigger and carded decision behind it (observed 2026-06-24:
-# polads-ceo + stephie-ceo idle with 4 pending triggers + 4 captain-attention
+# bakery-ceo + newsletter-ceo idle with 4 pending triggers + 4 captain-attention
 # cards each). The fix: queue a `/loop 5m <prompt>` after the boot prompt so the
 # officer re-checks its triggers + intake + lane work on a cadence and stays
 # alive. Per-role prompt in cabinet/loop-prompts/<officer>.txt (gather-then-

@@ -115,7 +115,7 @@ class ActionProposal:
     subject: str              # stable slug — the dedup + ledger identity
     situation: str            # one-line human summary of WHY
     steps: tuple              # tuple[ActionStep] — the full chain, ONE card
-    lane: str                 # e.g. "polads" (PolAds-first per the ruling)
+    lane: str                 # e.g. "newsletter" (a product lane)
     evidence: tuple           # source refs (vault paths / note ids), audit trail
     confidence: float         # model's own 0..1 — recorded, never auto-acts in v1
     urgency: str = "batch"    # ping-now | batch

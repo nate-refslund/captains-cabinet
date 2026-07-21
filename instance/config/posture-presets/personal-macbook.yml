@@ -30,6 +30,6 @@ deployment_target: macbook       # schg attestation backend (macOS chflags)
 never_grant: []                  # risk classes this CAPTAIN never grants, in
                                  # any flavor/posture — grant rows in these
                                  # classes drop fail-closed + file ONE decision
-                                 # need per class. Nate's personal instance
+                                 # need per class. A personal instance
                                  # keeps ACT-AND-DRAFT with:
                                  #   never_grant: [external_comms]

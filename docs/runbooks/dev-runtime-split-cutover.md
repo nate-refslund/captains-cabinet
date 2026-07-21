@@ -11,7 +11,7 @@ dev checkout, the live `instance/` data, or any officer's history.
 ## 0. What this changes, in one paragraph
 
 Today, every officer's LaunchAgent runs `claude` out of
-`/Users/nate/captains-cabinet` — the same checkout you develop in, which
+`$HOME/captains-cabinet` — the same checkout you develop in, which
 routinely sits mid-edit on a feature branch with hundreds of uncommitted
 files. A save-in-progress is live in a running officer. This runbook moves
 the **fleet** onto its own clean, pinned checkout (a "fleet runtime tree")
@@ -191,7 +191,7 @@ Capture a baseline before touching anything, so "did the cutover cause this"
 is always answerable.
 
 ```bash
-LIVE=/Users/nate/captains-cabinet
+LIVE=$HOME/captains-cabinet
 SNAP=~/cabinet-cutover-snapshot-$(date -u +%Y%m%d-%H%M%S)
 mkdir -p "$SNAP"
 
@@ -289,7 +289,7 @@ This is a **copy**, never a move — the live tree's `instance/` and
 `cabinet/.env` are left exactly as they are, in place, untouched.
 
 ```bash
-LIVE=/Users/nate/captains-cabinet
+LIVE=$HOME/captains-cabinet
 RUNTIME=~/.cabinet/runtime
 
 # secrets: API keys, bot tokens, connection strings (names only — see
@@ -439,7 +439,7 @@ copy (not the live tree's):
 
 ```bash
 NEW=~/.cabinet/runtime/current
-sed "s|/Users/nate/captains-cabinet|$NEW|g" \
+sed "s|$HOME/captains-cabinet|$NEW|g" \
   "$NEW/cabinet/launchd/com.cabinet.officer.cos-inbound.plist" \
   > ~/Library/LaunchAgents/com.cabinet.officer.cos-inbound.plist
 launchctl bootout "gui/$(id -u)" ~/Library/LaunchAgents/com.cabinet.officer.cos-inbound.plist 2>/dev/null || true
@@ -451,7 +451,7 @@ launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.cabinet.officer.co
 3a-3c didn't reach and needs the same treatment before Step 4:
 
 ```bash
-grep -l "/Users/nate/captains-cabinet" ~/Library/LaunchAgents/com.cabinet.*.plist
+grep -l "$HOME/captains-cabinet" ~/Library/LaunchAgents/com.cabinet.*.plist
 # expect NO OUTPUT — any line printed here names an unrepointed plist
 ```
 
@@ -471,12 +471,12 @@ bash ~/.cabinet/runtime/current/cabinet/scripts/cabinet-doctor.sh        # exit 
 
 Also confirm by hand:
 
-- Step 3d's sweep (`grep -l "/Users/nate/captains-cabinet" ~/Library/
+- Step 3d's sweep (`grep -l "$HOME/captains-cabinet" ~/Library/
   LaunchAgents/com.cabinet.*.plist`) prints nothing, re-confirmed — this is
   the single check that catches all three mechanisms (3a/3b/3c) at once.
 - `launchctl print gui/$(id -u)/com.cabinet.officer.cos` shows the new path
-  in its working directory / program arguments (not `/Users/nate/captains-
-  cabinet`).
+  in its working directory / program arguments (not the old
+  `$HOME/captains-cabinet` dev tree).
 - `tmux capture-pane -t officer-cos -p | tail -5` shows a live, booted
   session (not a bare shell prompt, not "Not logged in").
 - `~/Library/Logs/cabinet/officer-cos.out.log` has fresh (last few seconds)
@@ -495,14 +495,14 @@ back at it" — the same three mechanisms as Step 3, run once each, pointed
 back at the dev tree:
 
 ```bash
-cd /Users/nate/captains-cabinet
+cd $HOME/captains-cabinet
 
 # 3a reversed
-CABINET_SOURCE_REPO=/Users/nate/captains-cabinet CABINET_ROOT=/Users/nate/captains-cabinet \
+CABINET_SOURCE_REPO=$HOME/captains-cabinet CABINET_ROOT=$HOME/captains-cabinet \
   bash cabinet/scripts/deploy-mac.sh --officer all
 
 # 3b reversed
-CABINET_ROOT=/Users/nate/captains-cabinet python3.12 cabinet/scripts/generate-plists.py
+CABINET_ROOT=$HOME/captains-cabinet python3.12 cabinet/scripts/generate-plists.py
 for p in cabinet/launchd/generated/*.plist; do
   [ -e "$p" ] || continue
   launchctl bootout "gui/$(id -u)" "$p" 2>/dev/null || true
@@ -529,7 +529,7 @@ already unhealthy before this runbook started).
 
 | | Before | After |
 |---|---|---|
-| launchd points at | `/Users/nate/captains-cabinet` (dev tree, on a feature branch, possibly 100s of dirty files) | `~/.cabinet/runtime/current` → a pinned, validated release |
+| launchd points at | `$HOME/captains-cabinet` (dev tree, on a feature branch, possibly 100s of dirty files) | `~/.cabinet/runtime/current` → a pinned, validated release |
 | Dev tree's job | development **and** production | development only |
 | Fleet updates via | `git checkout`/save in the dev tree (implicit, unreviewed) | `cabinet/scripts/cabinet-deploy.sh` (explicit: fetch → checkout a named commit → `cabinet-doctor.sh` health gate → graceful restart → automatic rollback if unhealthy) |
 | Instance data (`instance/`, `cabinet/.env`) lives at | inside the dev tree | `~/.cabinet/runtime/shared/` — persists across every future deploy untouched |
@@ -605,7 +605,7 @@ session that actually executes cutover day, run in one continuous shell so
 
 ```bash
 # Step 0 — snapshot
-LIVE=/Users/nate/captains-cabinet
+LIVE=$HOME/captains-cabinet
 SNAP=~/cabinet-cutover-snapshot-$(date -u +%Y%m%d-%H%M%S); mkdir -p "$SNAP"
 bash "$LIVE/cabinet/scripts/cabinet-doctor.sh" > "$SNAP/doctor-before.log" 2>&1
 bash "$LIVE/cabinet/scripts/verify-launchagents.sh" > "$SNAP/verify-before.log" 2>&1
@@ -645,30 +645,30 @@ for p in "$RUNTIME/current/cabinet/launchd/generated/"*.plist; do
   launchctl bootout "gui/$(id -u)" "$p" 2>/dev/null || true
   launchctl bootstrap "gui/$(id -u)" "$p"
 done
-sed "s|/Users/nate/captains-cabinet|$RUNTIME/current|g" \
+sed "s|$HOME/captains-cabinet|$RUNTIME/current|g" \
   "$RUNTIME/current/cabinet/launchd/com.cabinet.officer.cos-inbound.plist" \
   > ~/Library/LaunchAgents/com.cabinet.officer.cos-inbound.plist
 launchctl bootout "gui/$(id -u)" ~/Library/LaunchAgents/com.cabinet.officer.cos-inbound.plist 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.cabinet.officer.cos-inbound.plist
-grep -l "/Users/nate/captains-cabinet" ~/Library/LaunchAgents/com.cabinet.*.plist   # expect NO OUTPUT
+grep -l "$HOME/captains-cabinet" ~/Library/LaunchAgents/com.cabinet.*.plist   # expect NO OUTPUT
 
 # Step 4 — verify
 bash "$RUNTIME/current/cabinet/scripts/verify-launchagents.sh"
 bash "$RUNTIME/current/cabinet/scripts/cabinet-doctor.sh"
 
 # Step 5 — rollback, only if Step 4 is red
-( cd /Users/nate/captains-cabinet && \
-  CABINET_SOURCE_REPO=/Users/nate/captains-cabinet CABINET_ROOT=/Users/nate/captains-cabinet \
+( cd $HOME/captains-cabinet && \
+  CABINET_SOURCE_REPO=$HOME/captains-cabinet CABINET_ROOT=$HOME/captains-cabinet \
     bash cabinet/scripts/deploy-mac.sh --officer all )
-( cd /Users/nate/captains-cabinet && CABINET_ROOT=/Users/nate/captains-cabinet python3.12 cabinet/scripts/generate-plists.py )
-for p in /Users/nate/captains-cabinet/cabinet/launchd/generated/*.plist; do
+( cd $HOME/captains-cabinet && CABINET_ROOT=$HOME/captains-cabinet python3.12 cabinet/scripts/generate-plists.py )
+for p in $HOME/captains-cabinet/cabinet/launchd/generated/*.plist; do
   [ -e "$p" ] || continue
   launchctl bootout "gui/$(id -u)" "$p" 2>/dev/null || true
   launchctl bootstrap "gui/$(id -u)" "$p"
 done
-cp /Users/nate/captains-cabinet/cabinet/launchd/com.cabinet.officer.cos-inbound.plist ~/Library/LaunchAgents/
+cp $HOME/captains-cabinet/cabinet/launchd/com.cabinet.officer.cos-inbound.plist ~/Library/LaunchAgents/
 launchctl bootout "gui/$(id -u)" ~/Library/LaunchAgents/com.cabinet.officer.cos-inbound.plist 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.cabinet.officer.cos-inbound.plist
-bash /Users/nate/captains-cabinet/cabinet/scripts/verify-launchagents.sh
-bash /Users/nate/captains-cabinet/cabinet/scripts/cabinet-doctor.sh
+bash $HOME/captains-cabinet/cabinet/scripts/verify-launchagents.sh
+bash $HOME/captains-cabinet/cabinet/scripts/cabinet-doctor.sh
 ```

@@ -36,7 +36,7 @@ Doctrine baked in here (safety-spine §3 "undo honesty"):
     delete-if-created) ONLY while the file's sha256 still matches what the
     lane wrote; drift ⇒ dead-letter, never clobber. investigation_run is
     READ-ONLY (read_only_dispatch class) — no inverse, never through this
-    door; deploy_nonprod / draft_only stay unregistered (NATE-DECISION:
+    door; deploy_nonprod / draft_only stay unregistered (CAPTAIN-RULING:
     earn-up, see ``inverse_for``).
   - NO LLM anywhere in the reversal path — deterministic code only.
 
@@ -461,7 +461,7 @@ def inverse_for(kind: str, backend: str, payload: Optional[dict],
         # op ``none`` (act_first_eligible False), exactly like delegate_work.
         return {"op": "none",
                 "args": {"reason": "investigation_run is read-only — nothing to reverse"}}
-    # NATE-DECISION (2026-07-04): deploy_nonprod and draft_only are NOT widened
+    # CAPTAIN-RULING (2026-07-04): deploy_nonprod and draft_only are NOT widened
     # — Captain judgment keeps them on the earn-up ladder, so they deliberately
     # have NO registered inverse and fall through to op ``none`` (⇒ propose-
     # only) like every other unregistered kind. Do not add them here without a

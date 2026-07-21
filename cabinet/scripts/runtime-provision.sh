@@ -5,7 +5,7 @@
 # cutover.md for the one-time migration this enables, and cabinet-deploy.sh
 # for the ongoing `cabinet deploy` command built on these primitives).
 #
-# THIS SCRIPT NEVER TOUCHES /Users/nate/captains-cabinet or any live officer.
+# THIS SCRIPT NEVER TOUCHES $HOME/captains-cabinet or any live officer.
 # It only manages a separate <runtime_root> directory tree (recommended
 # default ~/.cabinet/runtime — see cabinet-deploy.sh) that launchd gets
 # repointed at ONLY by the cutover runbook, a deliberate later step.

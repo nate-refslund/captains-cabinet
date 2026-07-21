@@ -41,7 +41,7 @@ def test_all_capture_hooks_gate_on_the_tag_the_poller_emits():
     for h in CAPTURE_HOOKS:
         src = (HOOKS_DIR / h).read_text(encoding="utf-8")
         assert GATE_LITERAL in src, f"{h} no longer gates on {GATE_LITERAL!r} — seam contract broke"
-    assert GATE_LITERAL in _relay("hej Nate"), "poller stopped emitting the capture tag"
+    assert GATE_LITERAL in _relay("hej Captain"), "poller stopped emitting the capture tag"
 
 
 def test_hook_chat_id_gate_matches_when_ids_agree():
@@ -93,7 +93,7 @@ def test_quoted_tag_cannot_preempt_the_real_body_tag():
 def test_old_plain_line_format_would_NOT_capture():
     """Teeth: the pre-fix plain relay (no tag) is exactly what the hooks bail
     on — proving the seam was really dead and that reverting reopens it."""
-    old_plain = "\U0001F4E9 Captain DM (Telegram): hej Nate"
+    old_plain = "\U0001F4E9 Captain DM (Telegram): hej Captain"
     assert GATE_LITERAL not in old_plain
 
 

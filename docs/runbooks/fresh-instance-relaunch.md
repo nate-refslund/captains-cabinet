@@ -103,7 +103,7 @@ way `dev-runtime-split-cutover.md` Step 5 does.
 ### Step 2 — Archive **[ME]**, zero live-tree writes
 
 ```bash
-LIVE=/Users/nate/captains-cabinet
+LIVE=$HOME/captains-cabinet
 RUNTIME=~/.cabinet/runtime
 bash "$LIVE/cabinet/scripts/relaunch-seed.sh" \
   --old-root "$LIVE" \
@@ -152,7 +152,7 @@ pinned code checkout:
 
 ```bash
 RUNTIME=~/.cabinet/runtime
-LIVE=/Users/nate/captains-cabinet
+LIVE=$HOME/captains-cabinet
 bash "$LIVE/cabinet/scripts/runtime-provision.sh" provision "$RUNTIME" origin/master   # or your chosen commit
 RELEASE=$(bash "$LIVE/cabinet/scripts/runtime-provision.sh" provision "$RUNTIME" origin/master | sed -n 's/^PROVISIONED_SLOT=//p')
 ```
@@ -285,7 +285,7 @@ for this relaunch specifically, confirm:
 ### Step 9 — Rollback **[CAPTAIN + ME]** — same shape, reverse direction
 
 Identical to `dev-runtime-split-cutover.md` Step 5: repoint launchd back
-at `/Users/nate/captains-cabinet` (the old dev tree, never modified by any
+at `$HOME/captains-cabinet` (the old dev tree, never modified by any
 step above), using the same three mechanisms in reverse. Then, if you also
 want the OLD deployment back exactly as it was (not just the code path): the
 Step 2 archive holds **two** components under two distinct member prefixes —
@@ -297,7 +297,7 @@ with a single `-C`, or the Application Support half lands nested inside the
 repo checkout instead of `~/Library/Application Support/`:
 
 ```bash
-LIVE=/Users/nate/captains-cabinet
+LIVE=$HOME/captains-cabinet
 tar -xzf <archive-path> -C "$(dirname "$LIVE")" "$(basename "$LIVE")"
 tar -xzf <archive-path> -C "$HOME/Library" "Application Support/cabinet"
 ```
@@ -348,7 +348,7 @@ for p in ~/Library/LaunchAgents/com.cabinet.officer.*.plist; do
 done
 
 # Step 2 — archive only (zero live-tree writes; seeds nothing)
-LIVE=/Users/nate/captains-cabinet
+LIVE=$HOME/captains-cabinet
 RUNTIME=~/.cabinet/runtime
 bash "$LIVE/cabinet/scripts/relaunch-seed.sh" --old-root "$LIVE" --runtime-root "$RUNTIME"
 
@@ -383,6 +383,6 @@ bash "$RUNTIME/current/cabinet/scripts/cabinet-doctor.sh"
 # Step 9 — rollback, only if Step 8 is red: follow docs/runbooks/dev-runtime-split-cutover.md
 # Step 5 verbatim; restore the OLD deployment from the Step 2 archive only if truly needed
 # (two components, two distinct member prefixes — restore each separately, never one -C for both):
-#   tar -xzf <archive-path> -C "$(dirname /Users/nate/captains-cabinet)" "$(basename /Users/nate/captains-cabinet)"
+#   tar -xzf <archive-path> -C "$(dirname $HOME/captains-cabinet)" "$(basename $HOME/captains-cabinet)"
 #   tar -xzf <archive-path> -C "$HOME/Library" "Application Support/cabinet"
 ```

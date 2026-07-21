@@ -7,11 +7,11 @@
 #   - deep-dive-and-fix-before-escalating (HARD rule: deep-dive → fix → only then escalate)
 #
 # WHY THIS EXISTS (meta-rule `repeated-forgetting-means-change-the-mechanism`):
-# Nate has had to remind the Chair of these rules MULTIPLE times — "Monday key
+# the Captain has had to remind the Chair of these rules MULTIPLE times — "Monday key
 # dead"→worked, "Vercel 403"→worked, "promote access lacking"→an unbuilt
 # command. Each was a forwarded inference, not a verified root cause. Repeated
 # forgetting means the reminder mechanism is inadequate; the fix is to make the
-# check AUTOMATIC at the exact moment the Chair is about to escalate to Nate.
+# check AUTOMATIC at the exact moment the Chair is about to escalate to the Captain.
 #
 # WHAT IT CATCHES
 # The Chair sends Captain-facing messages by running a Bash command that pipes
@@ -174,7 +174,7 @@ HAYSTACK="$BODY"
 
 # ------------------------------------------------------------------
 # 4. Escalation / blocker keyword scan (case-insensitive, WHOLE-WORD anchored).
-#    These are the phrases that mean "I'm forwarding a doesn't-work to Nate"
+#    These are the phrases that mean "I'm forwarding a doesn't-work to the Captain"
 #    — exactly when the deep-dive rule must fire.
 #
 #    WHOLE-WORD on the bare nouns (token|access|rotate|expired|stuck|blocker|
@@ -235,7 +235,7 @@ LOG_LINE="$(jq -cn \
 #    Chair's next turn (additionalContext on PreToolUse — same mechanism as
 #    build-vs-buy-precheck.sh).
 # ------------------------------------------------------------------
-WARN="⚠️ DEEP-DIVE CHECK before escalating to Nate: (a) did you TEST the claim (auth the token / fetch the asset / check the date)? (b) can you self-serve via Chrome/computer-use (create account, pull API key, configure the dashboard)? (c) checked the decision trail? Escalate ONLY the genuine residual that ONLY Nate can do (a payment, a personal/legal call).
+WARN="⚠️ DEEP-DIVE CHECK before escalating to the Captain: (a) did you TEST the claim (auth the token / fetch the asset / check the date)? (b) can you self-serve via Chrome/computer-use (create account, pull API key, configure the dashboard)? (c) checked the decision trail? Escalate ONLY the genuine residual that ONLY the Captain can do (a payment, a personal/legal call).
 
 [Triggered by escalation/blocker language (\"${MATCHED_KW}\") in a Captain-facing send. Rules: verify-before-surfacing + deep-dive-and-fix-before-escalating (shared/interfaces/captain-patterns.md). Advisory only — the send is NOT blocked; if you have already deep-dived + verified + fixed and this is the genuine residual, proceed. Disable via CAPTAIN_ESCALATION_HOOK_ENABLED=0.]"
 

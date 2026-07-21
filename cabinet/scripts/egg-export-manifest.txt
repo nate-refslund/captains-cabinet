@@ -185,6 +185,23 @@ delete cabinet/scripts/pensionist/shots
 # specific brain/vault integration, not a framework skill any fresh Captain
 # needs — same instance-split class as instance/tools (CG-7 SCRUB) above.
 delete .claude/skills/brain-audit
+# RESIDUAL SCRUB (2026-07-21, per 2026-07-07 full-autonomy grant — publish-gate
+# real-value drive): three dated INSTANCE-history artifacts archive out of the
+# public egg (same class as docs/plans (R145) / docs/proposals (R167) / the
+# dated framework/docs (R162) that already leave). They stay tracked for the
+# source instance's private archive; they never ride a cut.
+#  - the one-night mini-hatch runbook (dated ceremony log — home paths +
+#    captain name throughout);
+#  - patches/ — 14 stale dated .patch artifacts (staged overlays already landed
+#    or superseded; several carry live lane/product tokens, e.g. lane_default);
+#  - the DOGFOOD-001 review bundle — this deployment's dogfooding evidence
+#    (redacted event stream + purge/verification receipts; its genesis-record
+#    all-zero hash is a shape the gate's fixed 40-zero mask cannot fully cover,
+#    and the bundle is checksum-sealed by its own SHA256SUMS so a source reword
+#    would falsify it — archive, don't edit).
+delete docs/runbooks/mini-hatch-tonight-2026-07-07.md
+delete patches
+delete docs/evidence/DOGFOOD-001-review-bundle
 
 # --- transforms (implemented in egg-export.sh, run in this order) ------------
 # R116: shared/interfaces ledgers ship as header contract + EMPTY body
@@ -455,6 +472,11 @@ expect-absent cabinet/scripts/verify-cognitive-phase1.sh
 expect-absent cabinet/scripts/tests/test_cognitive_phase1_rollback.py
 expect-absent docs/runbooks/egg-export-2026-07-10.md
 expect-absent docs/launch
+# RESIDUAL SCRUB (2026-07-21): the three archived-out dated instance artifacts
+# (paired delete rules above) never ship.
+expect-absent docs/runbooks/mini-hatch-tonight-2026-07-07.md
+expect-absent patches
+expect-absent docs/evidence/DOGFOOD-001-review-bundle
 # APPSHELL-V05: the shell dev tooling must never ship (paired delete rows above).
 expect-absent cabinet/scripts/appshell
 expect-absent cabinet/scripts/tests/test_appshell_build.py

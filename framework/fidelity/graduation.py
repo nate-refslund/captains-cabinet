@@ -10,7 +10,7 @@ precomputes here. See:
     + §1 Component-1 bars (the ONE reconciled bar).
 
 cell = (officer_actor_id, lane, action_type), e.g.
-  ("officer:cos", "polads", "internal_message").
+  ("officer:cos", "newsletter", "internal_message").
 
 state in {unmeasured, propose_only, eligible, graduated, demote}:
 
