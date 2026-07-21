@@ -51,6 +51,20 @@ temporary_allowances:
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: COG-7 brings production non-comment lines below the pinned baseline
+  - phase: COG-1
+    budget: framework_production_modules
+    additional: 1
+    reason: envelope-v2 dispatch and domain-local schema registry for the tasks outbox pilot
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: COG-1 pilot retired or composed
+  - phase: COG-1
+    budget: framework_production_noncomment_lines
+    additional: 916
+    reason: envelope-v2 validator, table-drain relay extension, and registry interface
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: COG-1 pilot retired or composed
 ownership:
   authoritative_state: domain_transaction
   cross_domain_delivery: transactional_outbox
