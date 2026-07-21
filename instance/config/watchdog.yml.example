@@ -1,0 +1,81 @@
+# =============================================================
+# instance/config/watchdog.yml — outcome-watchdog instance data (egg plan R017)
+# =============================================================
+# EXAMPLE / TEMPLATE. Copy to instance/config/watchdog.yml and edit for YOUR
+# deployment. The egg export ships THIS twin AS the live file (egg-export.sh
+# transform `watchdog-default`, mirroring the egress-default twin) so a fresh
+# cut always hatches with a safe, generic default; replace the roster + pipe
+# rows below with your own.
+#
+# framework/watchdog/registry.py keeps the MACHINERY (verify fns, tiers, the
+# router contract) and reads this file at import with a NARROW stdlib parser
+# (survival contract: no PyYAML) — so edit ONLY in the exact shapes used
+# below: top-level `section:` keys, 2-space `key: <int>` scalars under
+# briefing:, 2-space `- <slug>` list items, and 4-space `log:` /
+# `max_stale_s:` fields under a 2-space pipe name. Unknown lines are ignored
+# per-entry; a missing or unparseable file degrades to generic defaults
+# (briefing 07:30/19:30 +45m grace, EMPTY roster, EMPTY pipe table, ALL
+# expectations enabled) — a bad config can narrow the watchdog's inputs,
+# never blind the sweep itself.
+
+# Briefing delivery slots (Captain-local wall clock) + grace minutes before
+# the outcome is asserted. MIRRORS the one source of truth —
+# instance/config/platform.yml `briefing_times` (which generate-plists.py
+# stamps into the frontdoor-briefing plist; cabinet/services.yml's calendar
+# row is the other mirror) — keep in sync if that cadence changes; the parity
+# suite (cabinet/scripts/tests/test_briefing_time_parity.py) fails on drift.
+# (This file keeps its own no-PyYAML parser — survival contract — so it
+# cannot read platform.yml itself.) The values below are the framework's
+# generic default slots; adjust to your deployment's briefing cadence.
+briefing:
+  am_hour: 7
+  pm_hour: 19
+  minute: 30
+  grace_min: 45
+
+# Fulltime officers expected to reflect within 48h of doing work
+# (verify_officer_reflection). Keep in sync with the officer rows in
+# cabinet/services.yml (and instance/config/roster.yml). The slugs below
+# mirror the framework functional-seed roster (instance/config/
+# roster.yml.example) — replace them with your deployment's fulltime officer
+# slugs.
+fulltime_officers:
+  - cos
+  - cto
+  - cpo
+  - coo
+
+# Brain ingestion pipes: log filename under the brain state dir
+# (framework.env.state_dir()) + max staleness seconds. One row per ingestion
+# pipe this deployment runs; the threshold must exceed that pipe's real
+# cadence PLUS any host-sleep / work-hours gap — a threshold shorter than the
+# overnight window false-alarms every morning. An absent or EMPTY table means
+# "no pipe-freshness rows" (the generic default). The single row below is a
+# SHAPE EXAMPLE — replace the name/log/threshold with your own pipe, or delete
+# the block entirely if this deployment ingests nothing.
+pipe_freshness:
+  example-ingest-pipe:
+    log: example-ingest-pipe.log
+    max_stale_s: 54000     # ~15h: pipe cadence + overnight host-sleep gap
+
+# Expectation rows enabled on THIS deployment (registry catalog ids, in
+# check order). An absent or EMPTY list enables every catalog row — the
+# watchdog can be narrowed, never silently zeroed. Unknown ids are ignored.
+expectations:
+  - briefing-delivered
+  - officer-reflection
+  - captain-decisions-logged
+  - no-silent-cron-failure
+  - pipes-fresh
+  # Phase-4 evidence-plane rows ship STAGED DARK (shadow law — whole-cabinet
+  # evidence design 2026-07-16 §3 Phase 4): present in the framework catalog
+  # (framework/watchdog/registry.py), deliberately NOT enabled here. The
+  # Captain ceremony that arms the evidence-shadow-detectors service row in
+  # cabinet/services.yml uncomments these ids in the same step.
+  # - evidence-store-invariants
+  # - evidence-anchor-export-fresh
+  # - evidence-shadow-detector-liveness
+  # HP-2 recompute liveness ships the same way (staged dark): the catalog
+  # row in framework/watchdog/registry.py lands at the enable ceremony
+  # together with uncommenting this id (unknown ids are ignored until then).
+  # - evidence-recompute-liveness

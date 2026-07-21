@@ -43,6 +43,7 @@ _INSTANCE_ALLOWED = (
     or rel == "instance/config/projects/_template.yml"
     or rel == "instance/config/act-first-surfaces.yml"  # R126: materialized from the twin
     or rel == "instance/config/egress.yml"  # gate-b fix: materialized from the twin
+    or rel == "instance/config/watchdog.yml"  # R017/R120-class gate-b fix: materialized from the twin (watchdog-default)
     or rel.startswith("instance/config/policies/")
     or rel.startswith("instance/config/posture-presets/")
     or rel == "instance/officer-skills/README.md"
@@ -482,6 +483,7 @@ def test_proposals_non_amendments_archived_amendments_kept(export: Path):
         "germline-amendment-host-grant-removal-2026-07-07.md",
         "germline-amendment-instance-extract-2026-07-05.md",
         "germline-amendment-killswitch-events-2026-07-17.md",
+        "germline-amendment-killswitch-send-eval-2026-07-21.md",
             "germline-amendment-manifest-sunset-2026-07-07.md",
             "germline-amendment-officer-security-boundary-2026-07-15.md",
             "germline-amendment-policy-engine-pulldown-2026-07-07.md",

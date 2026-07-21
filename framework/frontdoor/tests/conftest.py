@@ -24,3 +24,21 @@ def _lessons_to_tmp(tmp_path, monkeypatch):
     # CABINET_FEED_DIR at a throwaway per-test dir so the journal stays hermetic.
     monkeypatch.setenv("CABINET_FEED_DIR", str(tmp_path / "feed"))
     yield
+
+
+@pytest.fixture(autouse=True)
+def _killswitch_clear(monkeypatch):
+    """Hermetic SEC-3 killswitch seam. channel.py now fails CLOSED on the send
+    path: a send with allow_sends() True consults action_exec's ONE killswitch
+    reader (``_redis_get_strict`` → Redis ``GET cabinet:killswitch``), and an
+    unreachable control plane HALTS (fail-closed). The suite has no Redis, so
+    default that reader to "clear" — every existing runtime-send test stays
+    green without knowing the gate exists. Same autouse-seam discipline as the
+    lessons/feed neutralizers above.
+
+    action_exec's killswitch/caps TESTS always inject their own ``redis_get``
+    and never use this default reader, so neutralizing it does not weaken them.
+    Tests that DO exercise the killswitch (test_channel_killswitch.py) override
+    this per-case — an in-test monkeypatch wins over this baseline."""
+    import framework.frontdoor.action_exec as _action_exec
+    monkeypatch.setattr(_action_exec, "_redis_get_strict", lambda _key: "")

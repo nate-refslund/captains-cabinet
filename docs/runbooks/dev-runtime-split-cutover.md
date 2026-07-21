@@ -170,6 +170,13 @@ Before starting, confirm:
       fails with a plain file-not-found — merge that branch first, or
       provision its exact sha explicitly instead of a bare `origin/master`
       that might predate it.
+- [ ] **The NEW repo exists and is pushed BEFORE `runtime-provision.sh init`
+      (Step 1).** Point `$NEW_REPO_URL` (defined in Step 1's block) at the
+      fresh repo you created for this deployment — not the old private one —
+      and confirm the commit you provision has actually been pushed there
+      first. `init --remote "$NEW_REPO_URL"` clones/mirrors that URL and
+      `provision` fetches from it, so an empty or nonexistent remote (or a sha
+      not yet pushed) fails the provision.
 
 ## 4. Step-by-step
 
@@ -213,8 +220,12 @@ ever disagree:
 
 ```bash
 RUNTIME=~/.cabinet/runtime
+# NEW_REPO_URL: the repo this deployment provisions from — the fresh repo you
+# created + pushed for this deployment (§3 preconditions), NOT the old private
+# repo. Must exist and hold the commit you provision below BEFORE `init` runs.
+NEW_REPO_URL=https://github.com/<your-org>/<your-cabinet-repo>.git
 bash "$LIVE/cabinet/scripts/runtime-provision.sh" init "$RUNTIME" \
-  --remote https://github.com/nate-refslund/captains-cabinet.git
+  --remote "$NEW_REPO_URL"
 bash "$LIVE/cabinet/scripts/runtime-provision.sh" provision "$RUNTIME" origin/master   # or an explicit sha
 # -> prints PROVISIONED_SHA=<sha> and PROVISIONED_SLOT=<path>; that path is $RELEASE below
 RELEASE=$(bash "$LIVE/cabinet/scripts/runtime-provision.sh" provision "$RUNTIME" origin/master | sed -n 's/^PROVISIONED_SLOT=//p')
@@ -233,11 +244,14 @@ script keeps `repo.git` directly under `$RUNTIME`, not under
 
 ```bash
 RUNTIME=~/.cabinet/runtime
+# NEW_REPO_URL: same fresh repo as the real script above (§3 preconditions) —
+# not the old private repo; must exist + be pushed before this runs.
+NEW_REPO_URL=https://github.com/<your-org>/<your-cabinet-repo>.git
 mkdir -p "$RUNTIME/shared/instance" "$RUNTIME/releases"
 
 # one persistent bare mirror — created once, fetched on every future deploy
 [ -d "$RUNTIME/repo.git" ] || \
-  git clone --mirror https://github.com/nate-refslund/captains-cabinet.git "$RUNTIME/repo.git"
+  git clone --mirror "$NEW_REPO_URL" "$RUNTIME/repo.git"
 git --git-dir="$RUNTIME/repo.git" fetch --prune
 
 TARGET_SHA=$(git --git-dir="$RUNTIME/repo.git" rev-parse master)   # or your named sha
@@ -599,8 +613,11 @@ tar -czf "$SNAP/instance-and-env-backup.tar.gz" -C "$LIVE" instance cabinet/.env
 
 # Step 1 — provision + validate (zero live impact) — via the real script
 RUNTIME=~/.cabinet/runtime
+# NEW_REPO_URL: the fresh repo you created + pushed for this deployment (§3
+# preconditions) — NOT the old private repo; must exist + hold the commit first.
+NEW_REPO_URL=https://github.com/<your-org>/<your-cabinet-repo>.git
 bash "$LIVE/cabinet/scripts/runtime-provision.sh" init "$RUNTIME" \
-  --remote https://github.com/nate-refslund/captains-cabinet.git
+  --remote "$NEW_REPO_URL"
 bash "$LIVE/cabinet/scripts/runtime-provision.sh" provision "$RUNTIME" origin/master
 RELEASE=$(bash "$LIVE/cabinet/scripts/runtime-provision.sh" provision "$RUNTIME" origin/master | sed -n 's/^PROVISIONED_SLOT=//p')
 CABINET_SOURCE_REPO="$RELEASE" CABINET_ROOT="$RELEASE" bash "$RELEASE/cabinet/scripts/start-officer-mac.sh" cos --dry-run

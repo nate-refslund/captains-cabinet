@@ -2177,6 +2177,40 @@ else
 fi
 
 # ------------------------------------------------------------------
+# EVAL-002-KILLSWITCH-SEND: the emergency stop halts the front-door SEND path
+# ------------------------------------------------------------------
+# Send-path twin of EVAL-001 (which pins the killswitch at the pre-tool-use
+# HOOK layer). EVAL-001 stops an officer's Bash/Write; this stops the officer's
+# outbound Telegram — together an armed stop halts both what the org DOES and
+# what it SAYS. Deterministic in-process harness (no network, no Redis,
+# no subprocess): it patches action_exec's ONE SEC-3 reader — the very reader
+# channel.py delegates to — and asserts every public send (send / send_poll /
+# send_draft / send_rich / edit_message / answer_callback / set_typing / pin /
+# unpin / set_reaction / send_document) REFUSES under active AND unreachable,
+# proceeds under clear, and routes through the single shared reader.
+# Eval BODY: memory/golden-evals/eval-002-killswitch-send-path.md (schg-locked
+# live; staged via docs/proposals/germline-amendment-killswitch-send-eval-2026-07-21.md).
+# Fail-closed: a missing harness is a FAIL, not a skip — only a missing python3
+# interpreter skips.
+log "EVAL-002-KILLSWITCH-SEND: front-door send path fails closed under the emergency stop"
+EV02KS_HARNESS="$CABINET_ROOT/cabinet/evals/killswitch-send/harness.py"
+EV02KS_PY="$(command -v python3.12 || command -v python3)"
+if [ ! -f "$EV02KS_HARNESS" ]; then
+  fail "killswitch-send harness missing at $EV02KS_HARNESS"
+elif [ -z "$EV02KS_PY" ]; then
+  skip "no python3 interpreter available for the killswitch-send harness"
+else
+  EV02KS_OUT=$("$EV02KS_PY" "$EV02KS_HARNESS" --self-test --repo-root "$CABINET_ROOT" 2>&1)
+  EV02KS_EC=$?
+  if [ "$EV02KS_EC" -eq 0 ]; then
+    EV02KS_SUMMARY=$(echo "$EV02KS_OUT" | grep "^KILLSWITCH-SEND-EVAL:" | head -1)
+    pass "front-door send path fails closed (${EV02KS_SUMMARY:-all sends refuse under active & unreachable})"
+  else
+    fail "killswitch send-path RED (exit=$EV02KS_EC): $(echo "$EV02KS_OUT" | grep -E "VIOLATION|KILLSWITCH-SEND-EVAL" | head -3 | tr '\n' '|')"
+  fi
+fi
+
+# ------------------------------------------------------------------
 # Summary
 # ------------------------------------------------------------------
 log ""

@@ -374,6 +374,25 @@ t_egress_default() {
   cp "$ex" "$OUT/instance/config/egress.yml"
 }
 
+# R017 + R120-class, gate (b) null-hatch fix: instance/config/watchdog.yml is
+# read UNCONDITIONALLY by the Phase-4 evidence-detectors lens test
+# (framework/tests/, function
+# test_catalog_rows_present_chair_tier_and_instance_dark — a plain
+# `.read_text()` of instance/config/watchdog.yml), and that suite runs INSIDE
+# null-hatch.sh (gate b) against the export tree. The R120-class delete above
+# removes this deployment's live watchdog data from the export, which
+# previously left NO file at that path at all — bricking gate (b) with a
+# FileNotFoundError exactly like the egress.yml case above. Same fix shape as
+# egress-default / act-first-default: ship the scrubbed .example twin's bytes
+# (generic roster, generic pipe table, the base expectation rows + the
+# staged-dark Phase-4 ids) AS the live file — a fresh egg gets a safe generic
+# default and edits it for its own deployment during hatch.
+t_watchdog_default() {
+  local ex="$OUT/instance/config/watchdog.yml.example"
+  [ -f "$ex" ] || { verify_fail "watchdog.yml.example missing — cannot materialize the shipped default"; return 0; }
+  cp "$ex" "$OUT/instance/config/watchdog.yml"
+}
+
 t_bin_mount() {
   mkdir -p "$OUT/bin"
   : > "$OUT/bin/.gitkeep"
@@ -486,6 +505,7 @@ t_instance_verify() {
       instance/config/projects/_template.yml) : ;;       # R125 keep
       instance/config/act-first-surfaces.yml) : ;;       # R126: materialized from the .example twin (act-first-default)
       instance/config/egress.yml) : ;;                   # R120/R126-class: materialized from the .example twin (egress-default, gate-b fix)
+      instance/config/watchdog.yml) : ;;                 # R017/R120-class: materialized from the .example twin (watchdog-default, gate-b fix)
       instance/config/policies/*) : ;;                   # R123 germ-keep
       instance/config/posture-presets/*) : ;;            # R122 germ-keep
       instance/officer-skills/README.md) : ;;            # surface doc
@@ -507,6 +527,7 @@ run_transform() {
     officer-skills-prune)   t_officer_skills_prune ;;
     act-first-default)      t_act_first_default ;;
     egress-default)         t_egress_default ;;
+    watchdog-default)       t_watchdog_default ;;
     bin-mount)              t_bin_mount ;;
     launchd-portable-only)  t_launchd_portable_only ;;
     claude-egg-swap)        t_claude_egg_swap ;;

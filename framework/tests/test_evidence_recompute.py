@@ -681,6 +681,10 @@ _REFERENCE_ALLOWLIST = {
         "runbook prose — the Captain-facing contract",
     "instance/config/watchdog.yml":
         "the staged-dark liveness id, commented out until the ceremony",
+    "instance/config/watchdog.yml.example":
+        "the shipped twin (egg-export's watchdog-default transform "
+        "materializes the live file from it) carries the same staged-dark "
+        "liveness id, commented out until the ceremony",
     "cabinet/scripts/docs-sweep-allowlist.txt":
         "the docs-sweep glob list names the report's runtime path so the "
         "runbook may cite it — a pattern line, never a consumer",
