@@ -43,8 +43,8 @@ COMMAND="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/nu
 # Forms covered:
 #   bash /opt/.../send-to-group.sh "msg"
 #   send-to-group.sh "msg"
-#   bash /opt/.../send-to-warroom.sh sensed "msg"
-#   send-to-warroom.sh sensed "msg"
+#   bash /opt/.../send-to-warroom.sh example-product "msg"
+#   send-to-warroom.sh example-product "msg"
 # Ignore unrelated Bash calls.
 if ! printf '%s' "$COMMAND" | grep -qE '(^|/| )(send-to-group|send-to-warroom)\.sh\b'; then
   exit 0

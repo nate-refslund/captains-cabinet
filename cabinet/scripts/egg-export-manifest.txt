@@ -215,15 +215,18 @@ transform plans-archive
 # contract docs (work-model.md — guide-referenced —, consequence-ledger.md,
 # outcome-watchdog.md) stay; an ARCHIVED-NOTE.md stub records the rule.
 transform framework-docs-archive
-# R167 (personal-clean wave, 2026-07-15): docs/proposals/*.md ship un-archived
-# today — the gap R146 named but never implemented ("non-amendment proposals
-# archive"). The 20 docs/proposals/germline-amendment-*.md FOUNDING AMENDMENTS
-# stay frozen/verbatim (R031/R146 — ratified constitutional record, same
-# class as LICENSE's copyright line; test_amendment_doc_lint.py's union check
-# still globs this exact pattern against the live tree even though that lint
-# itself no longer ships, per the LANE-C null-hatch fix above). The remaining
-# 8 non-amendment docs (addenda/activation runbooks, no ratified ship
-# requirement) archive with an ARCHIVED-NOTE.md stub, same shape as R145/R162.
+# R167 + scrub-wave-2 reversal (2026-07-21, per 2026-07-07 full-autonomy
+# grant): docs/proposals/ archives out ENTIRELY — only an ARCHIVED-NOTE.md
+# stub ships. R167 originally shipped the germline-amendment-*.md FOUNDING
+# AMENDMENTS verbatim; the public-egg scrub reversed that. The amendments are
+# the launching deployment's dated ratified record (home paths, Captain name,
+# employer/product tokens throughout) — source-instance-private history in the
+# SAME class as R145 (plans) and R162 (framework/docs), and rewording a dated
+# record would falsify it, so they archive rather than ship. They stay with
+# the source instance's private archive. test_amendment_doc_lint.py's union
+# check still globs this exact pattern against the LIVE tree even though that
+# lint itself no longer ships (per the LANE-C null-hatch fix above), so the
+# amendments keep their in-repo lint; they simply never ride the egg.
 transform proposals-archive
 # R159: CI branch triggers retarget to the export default branch (master) at
 # packaging time — until then CI keeps running on the live integration branch.
@@ -364,28 +367,13 @@ expect-present framework/schemas/holdout-evaluation-receipt.schema.json
 # R167: dropped from the plans-archive keep-list (see R167 above) — the
 # coupling census now archives with the rest of docs/plans instance history.
 expect-absent docs/plans/source-adapter-boundary-2026-07-05.md
-# R167: the 20 ratified founding-amendment docs ship verbatim; the 8
-# non-amendment addenda/activation runbooks archive with a stub.
+# R167 + scrub-wave-2 reversal (2026-07-21): docs/proposals/ archives out
+# ENTIRELY — the ARCHIVED-NOTE.md stub is the ONLY file that ships; no
+# founding amendment rides the egg. The glob covers every
+# germline-amendment-*.md at once (present and future), so this assertion
+# never rots as new amendments land upstream.
 expect-present docs/proposals/ARCHIVED-NOTE.md
-expect-present docs/proposals/germline-amendment-attention-transport-2026-07-09.md
-expect-present docs/proposals/germline-amendment-brain-bridge-split-2026-07-07.md
-expect-present docs/proposals/germline-amendment-cabinet-axes-2026-07-05.md
-expect-present docs/proposals/germline-amendment-candor-2026-07-10.md
-expect-present docs/proposals/germline-amendment-constitution-retirement-2026-07-07.md
-expect-present docs/proposals/germline-amendment-cosmetic-batch-2026-07-07.md
-expect-present docs/proposals/germline-amendment-de-nate-2026-07-05.md
-expect-present docs/proposals/germline-amendment-egress-launchd-owner-2026-07-15.md
-expect-present docs/proposals/germline-amendment-gather-rewire-2026-07-07.md
-expect-present docs/proposals/germline-amendment-golden-evals-prune-2026-07-07.md
-expect-present docs/proposals/germline-amendment-host-grant-removal-2026-07-07.md
-expect-present docs/proposals/germline-amendment-instance-extract-2026-07-05.md
-expect-present docs/proposals/germline-amendment-manifest-sunset-2026-07-07.md
-expect-present docs/proposals/germline-amendment-policy-engine-pulldown-2026-07-07.md
-expect-present docs/proposals/germline-amendment-source-adapter-2026-07-05.md
-expect-present docs/proposals/germline-amendment-sovereign-posture-2026-07-05.md
-expect-present docs/proposals/germline-amendment-task-create-2026-07-03.md
-expect-present docs/proposals/germline-amendment-trust-inversion-2026-07-04.md
-expect-present docs/proposals/germline-amendment-war-room-census-2026-07-10.md
+expect-absent docs/proposals/germline-amendment-*.md
 expect-absent docs/proposals/comms-mcp-activation-2026-07-09.md
 expect-absent docs/proposals/germline-addendum-claude-code-audit-2026-07-07.md
 expect-absent docs/proposals/germline-enforcement-fixes-2026-07-14-addendum.md

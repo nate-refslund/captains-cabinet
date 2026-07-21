@@ -827,14 +827,14 @@ def render_strip(timeline: dict, out_png: Path, compositor_dir: Path,
 
         # product isles offshore (per-lane rings) + retired reef buoy
         vbl = lads.get("lane_isles", {}).get("visible_by_lane", {}) or {}
-        anchors = {"polads": (32, SEA0 + 2), "stephie": (2, SEA0 + 2),
-                   "stepnetwork": (10, SEA0 + 3)}
+        anchors = {"bakery": (32, SEA0 + 2), "newsletter": (2, SEA0 + 2),
+                   "orchard": (10, SEA0 + 3)}
         for lane, (ix, iy) in anchors.items():
             r = vbl.get(lane)
             if r is None:
                 continue
             if r == 0:
-                if lane == "stepnetwork" and rec["date"] >= "2026-07-02":
+                if lane == "orchard" and rec["date"] >= "2026-07-02":
                     sc.ent(G.grey_buoy(), ix + 1.2, iy + 0.6, prop="prop")
                 continue
             G.isle_blob(sc, ix, iy, ix + 3, iy + 1, seedbase + "-isle-" + lane)

@@ -182,7 +182,7 @@ _ACTOR = {"kind": "officer", "id": "cos"}
 # The graduation cell key is (actor, lane, action_type). The lane component was
 # LLM free-text off the proposer, so ONE conceptual lane arrived under many
 # spellings across runs — the live ledger showed 5 spellings across 26 rows
-# ('Commitments', 'Commitments / Delivery', 'captain', 'polads-ceo', ...). That
+# ('Commitments', 'Commitments / Delivery', 'captain', 'newsletter-ceo', ...). That
 # FRAGMENTS verdict accumulation: two undos of the "same" lane land in two
 # different cells and never cluster, so the 2-wrong demotion never fires and the
 # 20-sample graduation floor is unreachable per cell. Fix: collapse the lane to
@@ -229,7 +229,7 @@ def _context_slugs() -> frozenset:
 
 def _slugify_lane(raw: str) -> str:
     """Deterministic kebab slug of a raw lane, with the officer-role suffixes
-    stripped ('polads-ceo' -> 'polads', 'comms-officer' -> 'comms'). Stable per
+    stripped ('newsletter-ceo' -> 'newsletter', 'comms-officer' -> 'comms'). Stable per
     input (same raw ⇒ same slug every run) — the fallback when the context enum
     can't be read, so lanes still de-fragment by spelling."""
     s = re.sub(r"[^a-z0-9]+", "-", str(raw or "").lower()).strip("-")
@@ -246,7 +246,7 @@ def _normalize_lane(raw: "str | None") -> str:
          that slug (longest slug first, deterministic);
       3. containment fuzzy (a slug contains / is contained by a token, min length
          4 both sides to avoid short-substring noise, longest slug first) → so
-         'polads-ceo' / 'PolAds delivery' → 'polads', 'cabinet' →
+         'newsletter-ceo' / 'Newsletter delivery' → 'newsletter', 'cabinet' →
          'captains-cabinet';
       4. no match → the STABLE default ('adhoc'), never a fresh string.
     When the context enum can't be read, degrade to _slugify_lane (still stable

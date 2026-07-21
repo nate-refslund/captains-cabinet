@@ -214,18 +214,49 @@ class TestKitContracts:
 
 
 # ---------------------------------------------------------------------------
-# Residue battery — the scanned trees ship to every fork.
-# Literals live here (ratchet precedent: framework/tests/
-# test_no_launcher_hardcode.py); word-bounded short tokens so common words
-# ("coordinate", "designate") never false-positive.
+# Residue battery — the scanned trees ship to every fork, so they must carry
+# zero mother-instance residue. The real name/employer/product/tooling tokens
+# are PER-DEPLOYMENT and never ride a public egg cut, so they load from the
+# untracked, gitignored instance/config/publish-scan-patterns.local (the same
+# per-captain file the publish gate + the fixture leak-audit use — R166) when
+# present (dev box + source-instance CI keep full teeth), else its shipped
+# synthetic template twin. The .local ``word:``/``sub:`` kinds preserve the
+# original word-bounded-vs-substring split (short/common tokens word-bounded so
+# "coordinate"/"designate" never false-positive; distinctive tokens substring);
+# the telegram-chat-id shape stays hardcoded — it is a captain-agnostic
+# STRUCTURAL pattern, not a real value. No real literal is tracked here.
 # ---------------------------------------------------------------------------
+_PATTERNS_LOCAL = REPO / "instance" / "config" / "publish-scan-patterns.local"
+_PATTERNS_EXAMPLE = REPO / "instance" / "config" / "publish-scan-patterns.local.example"
 
-_RESIDUE = re.compile(
-    r"\bnate\b|refslund|naref|\banders\b|kristoffer|polads|stephie|"
-    r"jobdanmark|\bjfm\b|jysk|stepnetwork|step network|screenpipe|"
-    r"obsidian|copenhagen|odense|skr(?:æ|ae)nten|upcloud|tailscale|"
-    r"telegram.{0,8}(?:chat|hq).{0,4}id",
-    re.IGNORECASE)
+
+def _load_scan_tokens() -> "tuple[list[str], list[str]]":
+    """(sub_tokens, word_tokens) from the per-deployment publish-scan file, else
+    its synthetic template twin, else empty. Plain file read (no import/eval)."""
+    src = _PATTERNS_LOCAL if _PATTERNS_LOCAL.is_file() else _PATTERNS_EXAMPLE
+    subs: list[str] = []
+    words: list[str] = []
+    if src.is_file():
+        for raw in src.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line.startswith("pattern "):
+                continue
+            kind, _, value = line[len("pattern "):].strip().partition(":")
+            if not value:
+                continue
+            (words if kind == "word" else subs if kind == "sub" else []).append(value)
+    return subs, words
+
+
+def _build_residue() -> "re.Pattern[str]":
+    subs, words = _load_scan_tokens()
+    alts = [re.escape(s) for s in subs] + [r"\b%s\b" % re.escape(w) for w in words]
+    # captain-agnostic STRUCTURAL shape (telegram chat/hq id refs) — always on.
+    alts.append(r"telegram.{0,8}(?:chat|hq).{0,4}id")
+    return re.compile("|".join(alts), re.IGNORECASE)
+
+
+_RESIDUE = _build_residue()
 
 # corridor/brain are personal-source PLUGIN ids: they must never be WIRED in
 # the kit. Plugin ids live on CONFIG surfaces (yml/json values), so the id

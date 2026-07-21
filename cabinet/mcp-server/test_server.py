@@ -184,11 +184,20 @@ def _start_http_server_inprocess() -> None:
     # /opt/founders-cabinet Docker default is extinct).
     srv.HTTP_PORT = TEST_PORT
 
-    # Patch PEERS_YML to a non-existent path so no peer secrets are loaded.
-    # This tests the "open mode" (no secrets configured) code path.
-    # In production, secrets come from peers.yml shared_secret_ref + env vars.
-    orig_peers_yml = srv.PEERS_YML
-    srv.PEERS_YML = Path("/nonexistent/peers-test.yml")
+    # Configure a real peer secret so the server runs in ENFORCED mode. The
+    # transport is fail-closed (no configured secret => 401 for every request),
+    # so the request tests must present a valid bearer. Write a throwaway
+    # peers.yml pointing at an env var and set that env var to TEST_SECRET;
+    # _http_post defaults its Authorization to "Bearer " + TEST_SECRET, so
+    # valid-bearer POSTs get 200 while missing/wrong-bearer POSTs get 401.
+    # (Was: PEERS_YML patched to a nonexistent path to exercise the old
+    # "open mode" — which the fail-closed transport now correctly denies.)
+    peers_path = Path("/tmp/peers-harness-fw005.yml")
+    peers_path.write_text(
+        "peers:\n  harness-peer:\n    shared_secret_ref: CABINET_MCP_HARNESS_SECRET\n"
+    )
+    os.environ["CABINET_MCP_HARNESS_SECRET"] = TEST_SECRET
+    srv.PEERS_YML = peers_path
 
     def _serve():
         try:
@@ -274,30 +283,24 @@ def test_http_identify() -> None:
 
 
 def test_http_missing_bearer() -> None:
-    """POST /mcp with no Authorization header.
-    In open mode (no secrets configured): → 200, tool executes.
-    In enforced mode (secrets configured): → 401."""
+    """POST /mcp with no Authorization header → 401. The in-process harness runs
+    in ENFORCED mode (a peer secret is configured), and a fail-closed transport
+    refuses an unauthenticated request."""
     code, body = _http_post("/mcp", rpc("tools/call", {"name": "identify", "arguments": {}}), auth=None)
-    # Test server is in open mode (PEERS_YML patched to nonexistent path → no secrets).
-    if code == 200:
-        ok("http: missing bearer in open mode → 200 (executes)")
-    elif code == 401:
-        ok("http: missing bearer with secrets configured → 401")
+    if code == 401:
+        ok("http: missing bearer → 401 (fail-closed)")
     else:
-        fail("http: missing bearer → 200 or 401", f"got {code}: {body}")
+        fail("http: missing bearer → 401 (fail-closed)", f"got {code}: {body}")
 
 
 def test_http_wrong_bearer() -> None:
-    """POST /mcp with wrong bearer.
-    In open mode: → 200 (open means any request passes).
-    In enforced mode: → 401."""
+    """POST /mcp with a wrong bearer → 401. Enforced mode: the presented token
+    does not match the configured peer secret."""
     code, body = _http_post("/mcp", rpc("tools/call", {"name": "identify", "arguments": {}}), auth="Bearer wrong-secret-xyz")
-    if code == 200:
-        ok("http: wrong bearer in open mode → 200 (open mode)")
-    elif code == 401:
-        ok("http: wrong bearer with secrets configured → 401")
+    if code == 401:
+        ok("http: wrong bearer → 401")
     else:
-        fail("http: wrong bearer → 200 or 401", f"got {code}: {body}")
+        fail("http: wrong bearer → 401", f"got {code}: {body}")
 
 
 def test_http_health_endpoint() -> None:
@@ -348,8 +351,10 @@ def test_http_notification_response() -> None:
 # ---------------------------------------------------------------
 
 def test_bearer_verify_no_secrets() -> None:
-    """When no secrets configured, verify_bearer allows all requests (open mode with warning).
-    This includes requests with no auth header at all — open mode = all through."""
+    """FAIL-CLOSED: with no peer secrets configured, verify_bearer DENIES every
+    request (returns False → 401) — a well-formed Bearer, a missing header, and
+    a non-Bearer prefix all fail. "No secret yet" must never mean "open to all";
+    the prior open-mode return-True was a latent network-reachable door."""
     sys.path.insert(0, str(SERVER.parent))
     import server as srv
     old_peers_yml = srv.PEERS_YML
@@ -358,18 +363,18 @@ def test_bearer_verify_no_secrets() -> None:
         result_any = srv.verify_bearer("Bearer anything")
         result_none = srv.verify_bearer(None)
         result_no_prefix = srv.verify_bearer("Token something")
-        if result_any is True:
-            ok("bearer: no secrets + any Bearer → True (open mode)")
+        if result_any is False:
+            ok("bearer: no secrets + any Bearer → False (fail-closed)")
         else:
-            fail("bearer: no secrets + any Bearer → True", f"got {result_any}")
-        if result_none is True:
-            ok("bearer: no secrets + None header → True (open mode)")
+            fail("bearer: no secrets + any Bearer → False (fail-closed)", f"got {result_any}")
+        if result_none is False:
+            ok("bearer: no secrets + None header → False (fail-closed)")
         else:
-            fail("bearer: no secrets + None header → True", f"got {result_none}")
-        if result_no_prefix is True:
-            ok("bearer: no secrets + non-Bearer prefix → True (open mode)")
+            fail("bearer: no secrets + None header → False (fail-closed)", f"got {result_none}")
+        if result_no_prefix is False:
+            ok("bearer: no secrets + non-Bearer prefix → False (fail-closed)")
         else:
-            fail("bearer: no secrets + non-Bearer prefix → True", f"got {result_no_prefix}")
+            fail("bearer: no secrets + non-Bearer prefix → False (fail-closed)", f"got {result_no_prefix}")
     finally:
         srv.PEERS_YML = old_peers_yml
 
@@ -404,6 +409,56 @@ def test_bearer_verify_with_secrets_enforcement() -> None:
         srv.PEERS_YML = old
         os.environ.pop("CABINET_TEST_SECRET_XYZ", None)
         tmp.unlink(missing_ok=True)
+
+
+def test_http_bind_loopback_default() -> None:
+    """run_http binds loopback 127.0.0.1 by DEFAULT (never all-interfaces
+    0.0.0.0); CABINET_MCP_HOST is the documented opt-out. Verified without
+    opening a real socket by capturing the bind tuple via a fake server."""
+    sys.path.insert(0, str(SERVER.parent))
+    import server as srv
+
+    # The module resolved HTTP_HOST from CABINET_MCP_HOST with a loopback default.
+    expected_default = os.environ.get("CABINET_MCP_HOST", "127.0.0.1").strip() or "127.0.0.1"
+    if srv.HTTP_HOST == expected_default:
+        ok("bind: HTTP_HOST resolves from CABINET_MCP_HOST (loopback default)")
+    else:
+        fail("bind: HTTP_HOST resolves from CABINET_MCP_HOST (loopback default)",
+             f"HTTP_HOST={srv.HTTP_HOST!r} expected {expected_default!r}")
+
+    captured: dict = {}
+
+    class _CaptureServer:
+        def __init__(self, addr, handler):
+            captured["addr"] = addr
+
+        def serve_forever(self):  # never blocks — run_http returns immediately
+            captured["served"] = True
+
+    orig_server = srv.ThreadingHTTPServer
+    orig_host = srv.HTTP_HOST
+    srv.ThreadingHTTPServer = _CaptureServer
+    try:
+        srv.HTTP_HOST = "127.0.0.1"
+        srv.run_http(0)
+        if captured.get("addr") == ("127.0.0.1", 0):
+            ok("bind: run_http binds the loopback default 127.0.0.1")
+        else:
+            fail("bind: run_http binds the loopback default 127.0.0.1", f"got {captured.get('addr')}")
+        if captured.get("addr", (None,))[0] != "0.0.0.0":
+            ok("bind: default bind is NOT all-interfaces 0.0.0.0")
+        else:
+            fail("bind: default bind is NOT all-interfaces 0.0.0.0", f"got {captured.get('addr')}")
+        captured.clear()
+        srv.HTTP_HOST = "0.0.0.0"
+        srv.run_http(0)
+        if captured.get("addr") == ("0.0.0.0", 0):
+            ok("bind: CABINET_MCP_HOST opt-out honored (binds 0.0.0.0 when asked)")
+        else:
+            fail("bind: CABINET_MCP_HOST opt-out honored (binds 0.0.0.0 when asked)", f"got {captured.get('addr')}")
+    finally:
+        srv.ThreadingHTTPServer = orig_server
+        srv.HTTP_HOST = orig_host
 
 
 def test_capacity_lookup_chain() -> None:
@@ -812,6 +867,8 @@ def run_unit_tests() -> None:
     print("\n-- bearer auth unit tests --")
     test_bearer_verify_no_secrets()
     test_bearer_verify_with_secrets_enforcement()
+    print("\n-- http bind hardening unit tests --")
+    test_http_bind_loopback_default()
     print("\n-- capacity lookup unit tests --")
     test_capacity_lookup_chain()
 

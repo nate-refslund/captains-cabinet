@@ -116,11 +116,28 @@ ok "onboarding block framework-neutral"
 
 # 8. Personal-residue battery (developer-specific): the preset ships to every
 # fork — zero mother-instance residue (names, employers, products, personal
-# tooling). Case-insensitive; word-bounded short tokens (\bnate\b — else
-# "coordinate"/"designate" false-positive); this script excludes itself
-# (it must carry the pattern to enforce it — the repo-level parity test
-# sweeps validate.sh too).
-residue_pattern='\bnate\b|refslund|naref|polads|stephie|jobdanmark|\bjfm\b|jysk|stepnetwork|step network|screenpipe|obsidian'
+# tooling). The real name/employer/product/tooling tokens are PER-DEPLOYMENT
+# and must never ride a public egg cut, so this shipped script tracks NO real
+# literal: it builds the residue pattern at runtime from the untracked,
+# gitignored per-captain publish-scan file (the SAME source the publish gate +
+# the fixture leak-audit use), falling back to the shipped synthetic template
+# twin on a fork that has not seeded one. word: tokens are word-bounded
+# (short/common — else "coordinate"/"designate" false-positive), sub: tokens are
+# substrings; the chat-id-shaped run below is a captain-agnostic STRUCTURAL
+# pattern that stays always-on. This script still excludes itself from the sweep
+# (the repo-level parity test sweeps validate.sh too, skipping this carrier line).
+REPO_ROOT="$(cd "$PRESET_DIR/../.." && pwd)"
+patterns_file="$REPO_ROOT/instance/config/publish-scan-patterns.local"
+[ -f "$patterns_file" ] || patterns_file="$REPO_ROOT/instance/config/publish-scan-patterns.local.example"
+residue_pattern='telegram.{0,8}(chat|hq).{0,4}id'
+if [ -f "$patterns_file" ]; then
+  while IFS= read -r pline || [ -n "$pline" ]; do
+    case "$pline" in
+      'pattern word:'?*) residue_pattern="${residue_pattern}|\\b${pline#pattern word:}\\b" ;;
+      'pattern sub:'?*)  residue_pattern="${residue_pattern}|${pline#pattern sub:}" ;;
+    esac
+  done < "$patterns_file"
+fi
 if residue_hits=$(grep -rniE "$residue_pattern" "$PRESET_DIR" --exclude-dir=__pycache__ --exclude=validate.sh 2>/dev/null); then
   fail "personal residue found:
 $residue_hits"

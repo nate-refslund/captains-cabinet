@@ -24,7 +24,7 @@
 # Add a new MCP: list it here under the relevant agents. The hook
 # re-reads on every cache-refresh cycle (same pattern as contexts).
 #
-# brain (2026-06-10): Nate's screenpipe brain bridge — vault search, person
+# brain (2026-06-10): the captain's screenpipe brain bridge — vault search, person
 # intel, commitments, queue_draft outbound gate, reasoning log. Declared in
 # instance/config/extensions.yml → rendered to instance/config/extra-mcps.json
 # (merged into every officer's .mcp.json at boot). Every hired officer gets
@@ -78,7 +78,7 @@ agents:
   # + .claude/rules/courses-of-action.md. telegram stays in-scope for warroom
   # broadcast only — lane CEOs are Telegram-dark (no bot, no Captain DM;
   # attention routes via the Chair's captain-attention queue).
-  polads-ceo:
+  bakery-ceo:
     mcps: [neon, vercel, make, telegram, brain, corridor, monday]
     rationale: >
       Lane CEO — engineering-grade scope for the lane plus
@@ -86,7 +86,7 @@ agents:
       Production deploys and external comms remain propose-only (hard
       ceiling) regardless of scope.
 
-  stephie-ceo:
+  newsletter-ceo:
     mcps: [neon, vercel, make, telegram, brain, corridor, monday]
     rationale: >
       Lane CEO — engineering-grade scope for the lane plus
@@ -94,7 +94,7 @@ agents:
       Production deploys and external comms remain propose-only (hard
       ceiling) regardless of scope.
 
-  # Comms Officer (portfolio/hq) — owns Nate's Outlook + Teams comms.
+  # Comms Officer (portfolio/hq) — owns the captain's Outlook + Teams comms.
   # Telegram-dark: surfaces ONLY through the Chair. Captain-approved (2026-06-24).
   comms-officer:
     mcps: [make, brain, telegram, monday]

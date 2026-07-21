@@ -52,13 +52,46 @@ sys.modules["world_chronicle"] = wch
 _spec.loader.exec_module(wch)
 
 # ── the leak-audit contract ──────────────────────────────────────────────────
-# Case-insensitive plain substrings: the captain's given/family names, the
-# employer/product domains, colleague first names, the corp account slug —
-# plus the home-directory prefix and a digit-run guard (telegram chat ids).
-BANNED_PATTERNS = [
-    "nate", "refslund", "stepnetwork", "jfmedier", "polads", "stephie",
-    "kristoffer", "ulrik", "solveig", "maria", "naref", "/users/nate",
-]
+# The authoritative real-value banned list is PER-DEPLOYMENT and must never
+# ride a public egg cut, so it lives ONLY in the untracked, gitignored
+# instance/config/publish-scan-patterns.local (the same per-captain file the
+# publish gate loads — R166). This tracked test names no real person: it loads
+# the token VALUES from that file when present (dev box + source-instance CI
+# keep full leak-audit teeth) and falls back to the shipped synthetic template
+# twin (…​.local.example) otherwise — so a public cut audits against synthetic
+# placeholders and can never carry a real name in tracked source. Semantics are
+# unchanged: case-insensitive PLAIN substrings (the substring trap is
+# deliberate — see the fixture README), sub/word directive kinds both fold to
+# substrings here (the gate word-bounds them; this list is the substring twin).
+# The 9+-digit-run guard for telegram-chat-id-shaped numbers stays structural
+# and always-on regardless of the token source.
+_PATTERNS_LOCAL = REPO / "instance" / "config" / "publish-scan-patterns.local"
+_PATTERNS_EXAMPLE = REPO / "instance" / "config" / "publish-scan-patterns.local.example"
+
+
+def _load_banned_patterns() -> list[str]:
+    """Real-value substrings for the leak audit, loaded (never hardcoded) from
+    the untracked per-deployment publish-scan patterns file, else its shipped
+    synthetic template twin. Parses the gate's own ``pattern <kind>:<value>``
+    directive lines — ``sub``/``word`` values fold to lowercase plain
+    substrings; ``id`` kinds and ``allow`` lines are the gate's concern, not
+    this substring audit. A missing source yields an empty list — an honest,
+    synthetic-only audit on a public cut, never a hardcoded real name in
+    tracked source. Plain file read (no import/eval of the data)."""
+    src = _PATTERNS_LOCAL if _PATTERNS_LOCAL.is_file() else _PATTERNS_EXAMPLE
+    out: list[str] = []
+    if src.is_file():
+        for raw in src.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line.startswith("pattern "):
+                continue
+            kind, _, value = line[len("pattern "):].strip().partition(":")
+            if kind in ("sub", "word") and value:
+                out.append(value.lower())
+    return out
+
+
+BANNED_PATTERNS = _load_banned_patterns()
 _DIGIT_RUN = re.compile(r"[0-9]{9,}")
 
 STORY_NOW = "2026-07-10T08:00:00Z"     # the fixture's fixed clock (README)
@@ -129,7 +162,7 @@ class TestLeakAudit:
             # YYYY-MM-DD date tokens are the one sanctioned digit shape in
             # fixture names; strip them, then flag ANY remaining 9+ digit
             # run once hyphens are joined — an id split by hyphens
-            # ("…-123456789.md") is still id-shaped and must not pass.
+            # ("…-1234-56789.md") joins to id-shaped and must not pass.
             undated = re.sub(r"\d{4}-\d{2}-\d{2}", "", rel)
             if _DIGIT_RUN.search(undated.replace("-", "")):
                 hits.append(f"{rel}: path carries an id-shaped digit run")

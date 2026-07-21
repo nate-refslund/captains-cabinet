@@ -558,7 +558,7 @@ rungs:
     assert T.ladder_rung_cap("bakery", cabinet_root=root) == "ive-done"
     assert T.ladder_rung_cap("newsletter", cabinet_root=root) == "ive-been-doing"
     # a lane the file defines nothing for stays at base (no lift).
-    assert T.ladder_rung_cap("jobdanmark", cabinet_root=root) == T.BASE_RUNG
+    assert T.ladder_rung_cap("catering", cabinet_root=root) == T.BASE_RUNG
 
 
 @pytest.mark.parametrize("rung,verdict", [

@@ -16,12 +16,16 @@ Transport selection:
                                    stdio NOT replacing it. Both transports serve
                                    the identical tool surface.
 
-HTTP bearer auth:
+HTTP bearer auth (fail-closed):
     Every HTTP request must carry:
         Authorization: Bearer <secret>
     The secret is read from the env var named by `shared_secret_ref` in
     peers.yml for the calling Cabinet. If the header is absent or wrong,
-    the server returns 401 — no tool execution occurs.
+    the server returns 401 — no tool execution occurs. If NO peer secret is
+    configured, the transport refuses every request (401) rather than opening
+    up — "no secret yet" never means "open to all". The listener also binds
+    loopback (127.0.0.1) by default; real cross-host federation is the explicit
+    CABINET_MCP_HOST opt-out, paired with peer secrets.
 
     To share a secret with a peer, both sides set the same env var name
     in shared_secret_ref and populate it in their .env files. Secret is
@@ -78,6 +82,14 @@ PROTOCOL_VERSION = "2024-11-05"
 # Transport config
 TRANSPORT = os.environ.get("CABINET_MCP_TRANSPORT", "stdio").strip().lower()
 HTTP_PORT = int(os.environ.get("CABINET_MCP_PORT", "7471"))
+# Bind host — loopback-only by DEFAULT (never all-interfaces). This surface
+# reaches the Captain's org control plane, so a fresh Cabinet must not expose
+# it to the network by accident. Real cross-host federation is the deliberate
+# opt-out: set CABINET_MCP_HOST=0.0.0.0 (or a specific tailnet/LAN address) AND
+# configure peer secrets first. Mirrors the dashboard's CC-LOOP ruling
+# (start-dashboard.sh: default 127.0.0.1 + CABINET_DASHBOARD_HOST opt-out) and
+# the start-cabinet-chrome.sh Corridor invariant "127.0.0.1 only — never 0.0.0.0".
+HTTP_HOST = os.environ.get("CABINET_MCP_HOST", "127.0.0.1").strip() or "127.0.0.1"
 
 # Redis connection — match the convention used by the rest of the repo
 # (post-tool-use.sh, officer-supervisor.sh, list-officers.sh etc.)
@@ -336,29 +348,33 @@ def _get_all_valid_secrets() -> list[str]:
 
 
 def verify_bearer(auth_header: str | None) -> bool:
-    """Return True if auth_header matches a configured peer secret.
+    """Return True ONLY if auth_header matches a configured peer secret.
 
-    Security rules:
+    FAIL-CLOSED security posture:
     - When peer secrets ARE configured: Bearer token must match one of them
       (hmac.compare_digest to prevent timing attacks). Missing or wrong token
       → False → caller returns 401.
     - When NO peer secrets are configured (fresh Cabinet, no shared_secret_ref
-      set in peers.yml or env vars): server is in "open mode" — all requests
-      are allowed with a loud warning on stderr. This covers the dev/bootstrap
-      case where the admin has not yet set up secrets.
+      set in peers.yml or env vars): DENY every request (return False → 401)
+      with a loud warning on stderr. An unauthenticated HTTP transport reaches
+      the Captain's org control plane, so "no secret yet" must never mean "open
+      to all" — the operator sets shared_secret_ref + its env var before the
+      HTTP surface serves anything. (This closes a latent open door: the prior
+      behavior ACCEPTED all requests in this state, which — paired with an
+      all-interfaces bind — was reachable from the network.)
 
     Returns False (not 401 directly) — caller decides HTTP response code.
     """
     valid_secrets = _get_all_valid_secrets()
     if not valid_secrets:
-        # No secrets configured: HTTP transport is open — log a warning on
-        # every request so the operator can see auth is not enforced.
+        # Fail closed: no secrets configured → refuse every request and tell the
+        # operator how to enable auth. Never an open door.
         sys.stderr.write(
             "[cabinet-mcp] WARNING: HTTP transport has no shared_secret_ref secrets "
-            "configured. All requests accepted. Set shared_secret_ref + env var in "
-            "peers.yml to enable bearer auth.\n"
+            "configured — refusing all requests (fail-closed). Set shared_secret_ref "
+            "+ its env var in peers.yml to enable bearer auth.\n"
         )
-        return True
+        return False
 
     # Secrets are configured — enforce bearer token.
     if not auth_header:
@@ -1321,15 +1337,21 @@ class CabinetMCPHandler(BaseHTTPRequestHandler):
 def run_http(port: int) -> None:
     """Start the HTTP server in the current thread (called from a daemon thread).
 
+    Binds HTTP_HOST — loopback 127.0.0.1 by DEFAULT, never all-interfaces. This
+    is defense-in-depth: even if peer-secret auth is misconfigured, an
+    accidental HTTP transport is not reachable from the network. Cross-host
+    federation is the explicit opt-out via CABINET_MCP_HOST (paired with peer
+    secrets). See the HTTP_HOST definition + start-dashboard.sh CC-LOOP ruling.
+
     Uses ThreadingHTTPServer so a slow tool handler (e.g. 2-second Redis timeout
     in tool_presence when a peer is down) does not serialize the entire server
     and block concurrent requests. Per Opus 4.7 pre-commit review — swapping
     HTTPServer → ThreadingHTTPServer is a one-line fix that prevents head-of-line
     blocking on any single blocking tool call.
     """
-    server = ThreadingHTTPServer(("0.0.0.0", port), CabinetMCPHandler)
+    server = ThreadingHTTPServer((HTTP_HOST, port), CabinetMCPHandler)
     sys.stderr.write(
-        f"[cabinet-mcp] HTTP transport listening on 0.0.0.0:{port} "
+        f"[cabinet-mcp] HTTP transport listening on {HTTP_HOST}:{port} "
         f"(POST /mcp, GET /health). Cabinet ID: {this_cabinet_id()}\n"
     )
     server.serve_forever()

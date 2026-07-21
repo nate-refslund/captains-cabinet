@@ -266,38 +266,43 @@ The undated LIVING contract docs ship here unchanged:
 EOF
 }
 
-# R167 (personal-clean wave, 2026-07-15): fills the gap R146 named but never
-# implemented — "non-amendment proposals (calendar runbooks etc.) archive."
-# The 18 docs/proposals/germline-amendment-*.md docs are ratified FOUNDING
-# AMENDMENTS (R031/R146: frozen constitutional record, same class as
-# LICENSE's copyright line — never reworded) and ship verbatim; every other
-# file in docs/proposals/ (addenda, activation runbooks — no ratified ship
-# requirement) is instance history and archives with a stub, same shape as
-# t_plans_archive / t_framework_docs_archive.
+# R167 + scrub-wave-2 reversal (2026-07-21, per 2026-07-07 full-autonomy
+# grant): docs/proposals/ archives out ENTIRELY at packaging — only an
+# ARCHIVED-NOTE.md stub ships. R167 originally kept the
+# docs/proposals/germline-amendment-*.md FOUNDING AMENDMENTS verbatim, but the
+# public-egg scrub reversed that: the amendments are the launching
+# deployment's dated ratified record — they carry its home paths, Captain name
+# and employer/product tokens throughout, and rewording a dated record would
+# falsify it. That makes them source-instance-private history in the SAME
+# class R145 (docs/plans) and R162 (framework/docs) already archive rather
+# than reword. The ratified constitutional record + design history stay with
+# the source deployment's private archive; the public egg ships none of it.
+# Every entry is rm -f'd (flat-file only by contract — a subdirectory would
+# abort the loop under set -e; the manifest's expect-absent glob + the test's
+# leftover-pin guard that invariant). test_amendment_doc_lint.py still globs
+# germline-amendment-*.md against the LIVE tree (that lint no longer ships,
+# per the LANE-C fix in the manifest), so the amendments keep their in-repo
+# lint; they simply never ride the egg.
 t_proposals_archive() {
-  local dir="$OUT/docs/proposals" entry base
+  local dir="$OUT/docs/proposals" entry
   [ -d "$dir" ] || { verify_fail "docs/proposals missing from archive cut"; return 0; }
   for entry in "$dir"/*; do
     [ -e "$entry" ] || continue
-    base="$(basename "$entry")"
-    case "$base" in
-      germline-amendment-*.md) : ;;   # ratified founding amendment — ships verbatim
-      *) rm -f "$entry" ;;
-    esac
+    rm -f "$entry"
   done
   cat > "$dir/ARCHIVED-NOTE.md" <<'EOF'
-# docs/proposals — non-amendment proposals archived at egg export (R146/R167)
+# docs/proposals — archived at egg export (R146/R167 + scrub-wave-2)
 
-R146 ratified that `docs/proposals/germline-amendment-*.md` docs ship as
-FOUNDING AMENDMENTS — a frozen constitutional record of how this instance's
-germline was amended over time (same class as LICENSE's copyright line:
-rewording would falsify a ratified decision). Every other file here (addenda,
-activation runbooks — no ratified ship requirement, and several cited the
-launching deployment's absolute paths / real employer domains) is instance
-history: archived out of the public egg at export time, same shape as
-docs/plans (R145) and framework/docs (R162).
+The launching deployment's proposal record — the ratified
+`germline-amendment-*.md` FOUNDING AMENDMENTS (how this instance's germline
+was amended over time) together with the non-amendment addenda and activation
+runbooks — is INSTANCE history: it cites that deployment's absolute paths,
+real employer/product domains, and its Captain by name, and as a set of dated
+ratified records rewording it would falsify it. It is archived out of the
+public egg at export time (same class as docs/plans (R145) and framework/docs
+(R162)) and stays with the source deployment's private archive.
 
-The founding amendments ship unchanged in this directory.
+Nothing from docs/proposals/ ships in the public egg beyond this stub.
 EOF
 }
 
