@@ -47,6 +47,8 @@ REMOVE_W1_W3 = {
     "framework/outbox/tests/test_outbox_relay_wrapper.py",
     "framework/outbox/tests/test_relay_fencing.py",
     "framework/outbox/tests/test_relay_table_drain.py",
+    # F1 seam rig (landed 2026-07-21 under §12.3 re-review)
+    "framework/outbox/tests/test_relay_live_target.py",
     "framework/schemas/domains/tasks/task-event.v1.json",
     "framework/triggers/schema_registry.py",
     "framework/triggers/tests/test_envelope_v2.py",

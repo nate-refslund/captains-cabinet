@@ -5,12 +5,15 @@
 #
 # Verbs:
 #   outbox   CUTOVER: authority -> the outbox relay. my-tasks.sh emit_event
-#            reads the pointer and SKIPS its legacy direct XADD. NOT YET
-#            EXECUTABLE: the relay's live-stream retarget seam (§8.4 wrapper
-#            resolves the pointer and passes the target down) is a recorded
-#            pre-cutover follow-up — until it lands under re-review, this verb
-#            REFUSES (interlock below) so the live stream cannot be darkened.
-#            Override for harness rigs only: COG1_FLIP_I_KNOW_NO_LIVE_TARGET=1.
+#            reads the pointer and SKIPS its legacy direct XADD; the cron wrapper
+#            (cabinet/cron/outbox-relay.sh) resolves the pointer and passes the
+#            LIVE stream target (cabinet:tasks:events) down to the relay (§8.4).
+#            EXECUTABLE once the live-stream retarget seam is present: the
+#            interlock below PROBES framework/outbox/relay.py for the seam's
+#            landing marker (the token COG1_LIVE_STREAM_TARGET) and SELF-RELEASES
+#            when it is found. If the seam is absent (or relay.py is missing) the
+#            verb fails CLOSED (exit 64) so the live stream cannot be darkened.
+#            Harness override (tokenless-relay rigs): COG1_FLIP_I_KNOW_NO_LIVE_TARGET=1.
 #   legacy   ROLLBACK: authority -> the legacy direct emit; the relay returns to
 #            shadow-only. The one-command inverse of `outbox`. (§8.5)
 #   disarm   CAPTURE EMERGENCY inverse: DISABLE the officer_tasks capture
@@ -73,10 +76,12 @@ alter_trigger() {
 [ "$#" -eq 1 ] || usage
 case "$1" in
   outbox)
-    # INTERLOCK (§12.3 review F1): the relay has no live-stream target seam yet
-    # (relay.py hardcodes the shadow stream). Flipping authority now would
-    # silence the legacy XADD while the relay keeps mirroring to shadow —
-    # cabinet:tasks:events goes dark. Refuse until the seam lands.
+    # INTERLOCK (§12.3 review F1): fail CLOSED unless the relay's live-stream
+    # retarget seam is present. The seam's landing marker is the token
+    # COG1_LIVE_STREAM_TARGET in relay.py; with the seam present this probe finds
+    # it and the verb proceeds (the wrapper then routes cabinet:tasks:events).
+    # Absent (or relay.py missing) -> flipping now would silence the legacy XADD
+    # while the relay stayed on shadow, darkening cabinet:tasks:events -> refuse.
     if ! grep -q "COG1_LIVE_STREAM_TARGET" "$(dirname "$0")/../../framework/outbox/relay.py" 2>/dev/null; then
       if [ "${COG1_FLIP_I_KNOW_NO_LIVE_TARGET:-0}" != "1" ]; then
         echo "cog1-authority-flip: REFUSED — the relay live-stream retarget seam (§8.4) is not implemented; 'outbox' would darken cabinet:tasks:events. See the COG-1 review artifact deferral (pre-cutover blocker). Harness override: COG1_FLIP_I_KNOW_NO_LIVE_TARGET=1." >&2

@@ -65,6 +65,32 @@ def _fake_py_no_psycopg2(tmp: Path) -> Path:
     return p
 
 
+def _fake_py_echo_argv(tmp: Path) -> Path:
+    """A stand-in 'python3.12' that PASSES the version + psycopg2 preflight, then
+    ECHOES the argv of the `-m framework.outbox.relay ...` invocation — so the
+    §8.4 stream target the wrapper RESOLVES and appends is observable without a
+    live DSN or redis."""
+    p = tmp / "echopy"
+    p.write_text(
+        "#!/bin/bash\n"
+        'if [ "$1" = "-c" ]; then\n'
+        '  case "$2" in\n'
+        "    *version_info*) exit 0 ;;\n"
+        "    *psycopg2*) exit 0 ;;\n"   # driver present -> preflight passes
+        "  esac\n"
+        "fi\n"
+        'echo "RELAY_ARGV: $*"\n'       # the -m relay hand-off: print the argv
+        "exit 0\n")
+    p.chmod(0o755)
+    return p
+
+
+def _relay_argv(stdout: str) -> str:
+    lines = [ln for ln in stdout.splitlines() if ln.startswith("RELAY_ARGV:")]
+    assert lines, f"fake python never reached the relay hand-off: {stdout!r}"
+    return lines[-1].strip()
+
+
 # ---------------------------------------------------------------------------
 # Static contract
 # ---------------------------------------------------------------------------
@@ -135,3 +161,68 @@ class TestWrapperBehaviour:
                  _clean_env(CABINET_COG1_AUTHORITY=str(missing_ptr)), tmp_path)
         assert r.returncode == 2, (r.returncode, r.stdout, r.stderr)
         assert "dsn" in (r.stdout + r.stderr).lower()
+
+
+# ---------------------------------------------------------------------------
+# §8.4 stream-target resolution — the WRAPPER resolves the pointer VALUE and
+# passes an EXPLICIT --stream-target DOWN (the relay never reads the pointer)
+# ---------------------------------------------------------------------------
+
+class TestWrapperStreamTargetStatic:
+    def test_wrapper_resolves_and_passes_stream_target(self):
+        text = WRAPPER.read_text()
+        assert "--stream-target" in text, "wrapper must pass the resolved target down"
+        # resolves the LIVE target on pointer=outbox, SHADOW otherwise.
+        assert "cabinet:tasks:events:shadow" in text
+        assert 'cat "$_ptr"' in text and '"outbox"' in text, \
+            "wrapper must resolve the target from the pointer VALUE"
+
+
+@_pytestmark_bash
+class TestWrapperStreamTargetResolution:
+    def test_pointer_outbox_passes_live_stream(self, tmp_path):
+        fake = _fake_py_echo_argv(tmp_path)
+        ptr = tmp_path / "cog1-authority"
+        ptr.write_text("outbox\n")
+        r = _run(["--drain-tasks-outbox"],
+                 _clean_env(CABINET_PYTHON=str(fake),
+                            CABINET_COG1_AUTHORITY=str(ptr)), tmp_path)
+        assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+        argv = _relay_argv(r.stdout)
+        assert "--stream-target cabinet:tasks:events" in argv
+        assert argv.endswith("cabinet:tasks:events"), \
+            "pointer=outbox must pass the LIVE stream, never shadow"
+
+    def test_pointer_legacy_passes_shadow_stream(self, tmp_path):
+        fake = _fake_py_echo_argv(tmp_path)
+        ptr = tmp_path / "cog1-authority"
+        ptr.write_text("legacy\n")
+        r = _run(["--drain-tasks-outbox"],
+                 _clean_env(CABINET_PYTHON=str(fake),
+                            CABINET_COG1_AUTHORITY=str(ptr)), tmp_path)
+        assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+        assert _relay_argv(r.stdout).endswith("cabinet:tasks:events:shadow"), \
+            "pointer=legacy must pass the SHADOW stream (dark default)"
+
+    def test_pointer_absent_fails_safe_to_shadow_stream(self, tmp_path):
+        fake = _fake_py_echo_argv(tmp_path)
+        missing = tmp_path / "nope" / "cog1-authority"
+        r = _run(["--drain-tasks-outbox"],
+                 _clean_env(CABINET_PYTHON=str(fake),
+                            CABINET_COG1_AUTHORITY=str(missing)), tmp_path)
+        assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+        assert _relay_argv(r.stdout).endswith("cabinet:tasks:events:shadow"), \
+            "absent pointer must fail safe to the SHADOW stream"
+
+    def test_near_miss_pointer_value_stays_shadow(self, tmp_path):
+        # exact-match discipline (mirrors my-tasks.sh emit_event): only the
+        # literal 'outbox' retargets; 'outboxx' is NOT a cutover.
+        fake = _fake_py_echo_argv(tmp_path)
+        ptr = tmp_path / "cog1-authority"
+        ptr.write_text("outboxx\n")
+        r = _run(["--drain-tasks-outbox"],
+                 _clean_env(CABINET_PYTHON=str(fake),
+                            CABINET_COG1_AUTHORITY=str(ptr)), tmp_path)
+        assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+        assert _relay_argv(r.stdout).endswith("cabinet:tasks:events:shadow"), \
+            "a near-miss pointer value must NOT retarget to live"

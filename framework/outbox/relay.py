@@ -19,9 +19,10 @@ order per row is claim -> committed event_id -> effect -> record:
      consumer dedupe key);
   3. build the v2 envelope (EFFECTIVE-status mapping), validate_v2 it, re-check
      cabinet_id (spoof backstop, terminal), then invoke the destination adapter
-     carrying the idempotency token (stream adapter = redis-cli XADD to the
-     SHADOW stream cabinet:tasks:events:shadow, value-compatible with
-     task_event_emit + a v2 envelope inside);
+     carrying the idempotency token (stream adapter = redis-cli XADD, value-
+     compatible with task_event_emit + a v2 envelope inside; its stream target
+     defaults to SHADOW cabinet:tasks:events:shadow and is retargeted to the LIVE
+     cabinet:tasks:events ONLY when the wrapper passes it down at cutover, §8.4);
   4. record dispatched_at. The table drain emits ZERO central-ledger events
      (§7 fence) — its only telemetry is the parity JSONL.
 
@@ -302,6 +303,17 @@ def dispatch_pending(actor: str = "outbox_relay") -> dict[str, int]:
 # ===========================================================================
 
 SHADOW_STREAM = "cabinet:tasks:events:shadow"
+
+# COG-1 F1 live-stream retarget seam (§8.4). The LIVE tasks exhaust — and the
+# landing-marker TOKEN the cog1-authority-flip.sh interlock probes for: its
+# presence in this module self-releases the fail-closed cutover interlock.
+# SHADOW stays the HARD DEFAULT everywhere. LAYER LAW: the framework relay NEVER
+# reads the authority pointer file — the cron WRAPPER (cabinet/cron/
+# outbox-relay.sh) resolves the pointer VALUE and passes this target DOWN only
+# at cutover (pointer=outbox). Anything else -> SHADOW. This is a stream-name
+# literal, never the pointer path.
+COG1_LIVE_STREAM_TARGET = "cabinet:tasks:events"
+
 MAX_ATTEMPTS = 5
 DEFAULT_CLAIM_TTL_SECONDS = 120
 DEFAULT_BATCH = 100
@@ -464,14 +476,18 @@ def register_table_adapter(destination: str, fn: TableAdapterFn) -> None:
     _TABLE_ADAPTERS[destination] = fn
 
 
-def _stream_adapter(fields: dict, *, idempotency_key: str) -> None:
-    """XADD to the SHADOW stream via a redis-cli argv subprocess (the exact
-    client task_event_emit uses; no shell, fixed argv). Value-compatible with
-    task_event_emit; the v2 envelope rides the `envelope` field. Redis failure
-    → RelayTransportError (transport class: retried, never terminal)."""
+def _stream_adapter(fields: dict, *, idempotency_key: str,
+                    stream_target: str = SHADOW_STREAM) -> None:
+    """XADD to `stream_target` via a redis-cli argv subprocess (the exact client
+    task_event_emit uses; no shell, fixed argv). Value-compatible with
+    task_event_emit; the v2 envelope rides the `envelope` field. `stream_target`
+    defaults to the SHADOW stream (dark by construction) — the retarget to
+    COG1_LIVE_STREAM_TARGET is passed DOWN by the wrapper at cutover (§8.4); the
+    relay never reads the pointer. Redis failure → RelayTransportError (transport
+    class: retried, never terminal)."""
     host = os.environ.get("REDIS_HOST", "127.0.0.1")
     port = os.environ.get("REDIS_PORT", "6379")
-    argv = ["redis-cli", "-h", host, "-p", str(port), "XADD", SHADOW_STREAM, "*"]
+    argv = ["redis-cli", "-h", host, "-p", str(port), "XADD", stream_target, "*"]
     for key in ("envelope", "task_id", "old_status", "new_status",
                 "actor", "context_slug", "ts"):
         argv += [key, str(fields.get(key, ""))]
@@ -481,13 +497,26 @@ def _stream_adapter(fields: dict, *, idempotency_key: str) -> None:
         raise RelayTransportError(f"redis-cli XADD could not run: {e}") from e
     if r.returncode != 0 or r.stderr.strip():
         raise RelayTransportError(
-            f"XADD to {SHADOW_STREAM} failed: {r.stderr.strip() or 'redis unreachable'}")
+            f"XADD to {stream_target} failed: {r.stderr.strip() or 'redis unreachable'}")
     if not re.match(r"^\d+-\d+$", r.stdout.strip()):
         raise RelayTransportError(
-            f"XADD to {SHADOW_STREAM} returned no entry id: {r.stdout.strip()[:80]!r}")
+            f"XADD to {stream_target} returned no entry id: {r.stdout.strip()[:80]!r}")
 
 
 register_table_adapter("stream", _stream_adapter)
+
+
+def _resolve_stream_adapter(stream_target: str) -> TableAdapterFn:
+    """Bind a resolved stream target into the stream adapter (§8.4 seam). The
+    cron WRAPPER resolves the authority pointer VALUE and passes `stream_target`
+    down; the relay NEVER reads the pointer file (LAYER LAW). SHADOW is the hard
+    default; only pointer=outbox yields COG1_LIVE_STREAM_TARGET. A distinct
+    module-level seam so a routing rig can monkeypatch it to prove the target
+    plumbing has teeth (the shadow-stuck mutant)."""
+    def bound(fields: dict, *, idempotency_key: str) -> None:
+        _stream_adapter(fields, idempotency_key=idempotency_key,
+                        stream_target=stream_target)
+    return bound
 
 
 # ---------------------------------------------------------------------------
@@ -670,6 +699,7 @@ def drain_tasks_outbox(
     claim_ttl_seconds: float = DEFAULT_CLAIM_TTL_SECONDS,
     max_attempts: int = MAX_ATTEMPTS,
     cabinet_id: str | None = None,
+    stream_target: str = SHADOW_STREAM,
     parity_log: Any = None,
     fault_hook=None,
     adapters: dict | None = None,
@@ -680,7 +710,11 @@ def drain_tasks_outbox(
     The Postgres driver import is LAZY here (module top stays stdlib-only —
     §9.4). Host identity for the spoof backstop resolves as cabinet_id arg →
     env CABINET_ID → the DB-level app.cabinet_id GUC; unresolvable → fail loud
-    (never dispatch unattributable rows)."""
+    (never dispatch unattributable rows).
+
+    `stream_target` (§8.4 seam): the stream the default adapter XADDs to; SHADOW
+    is the HARD DEFAULT (see COG1_LIVE_STREAM_TARGET). A caller `adapters` dict
+    is used as-is."""
     import psycopg2  # LAZY (etl-common.py:20-23 / intake.py:229 precedent)
 
     counts = {"claimed": 0, "dispatched": 0, "terminal": 0, "transient": 0}
@@ -692,7 +726,12 @@ def drain_tasks_outbox(
             raise RelayPreflightError(
                 "relay cannot resolve the cabinet identity (pass cabinet_id, set "
                 "CABINET_ID, or provision app.cabinet_id on the work store)")
-        adapters = adapters if adapters is not None else _TABLE_ADAPTERS
+        if adapters is None:
+            # Default (production) path: bind the resolved stream target into the
+            # stream adapter. The WRAPPER passed it down (§8.4); SHADOW is the
+            # hard default. A caller/harness `adapters` dict is used as-is.
+            adapters = dict(_TABLE_ADAPTERS)
+            adapters["stream"] = _resolve_stream_adapter(stream_target)
 
         rows = _claim_rows(conn, batch, claim_ttl_seconds)
         counts["claimed"] = len(rows)
@@ -734,6 +773,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--claim-ttl", type=float, default=DEFAULT_CLAIM_TTL_SECONDS)
     parser.add_argument("--max-attempts", type=int, default=MAX_ATTEMPTS)
     parser.add_argument("--cabinet-id", default=None)
+    parser.add_argument("--stream-target", default=SHADOW_STREAM,
+                        help="COG-1 §8.4: stream the table drain XADDs to; the cron "
+                             "wrapper resolves it from the pointer, relay never reads it. Default: SHADOW.")
     parser.add_argument("--parity-log", default=None)
     args = parser.parse_args(argv)
 
@@ -756,7 +798,7 @@ def main(argv: list[str] | None = None) -> int:
         counts = drain_tasks_outbox(
             dsn, batch=args.batch, claim_ttl_seconds=args.claim_ttl,
             max_attempts=args.max_attempts, cabinet_id=args.cabinet_id,
-            parity_log=parity_log)
+            stream_target=args.stream_target, parity_log=parity_log)
         if args.json:
             print(json.dumps(counts))
         else:

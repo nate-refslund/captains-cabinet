@@ -59,10 +59,12 @@ UUID4_HEX = "0123456789abcdef0123456789abcdef"
 
 def run_flip(verb: str, *, pointer: Path | None = None,
              env_extra: dict | None = None) -> subprocess.CompletedProcess:
-    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-           # harness rigs test POINTER SEMANTICS; the outbox-verb interlock
-           # (no live-target seam yet) has its own dedicated teeth test below.
-           "COG1_FLIP_I_KNOW_NO_LIVE_TARGET": "1"}
+    # These rigs test POINTER SEMANTICS against the REAL flip script + REAL
+    # relay.py. The §8.4 live-stream retarget seam is now PRESENT, so the
+    # `outbox` verb SELF-RELEASES (no COG1_FLIP_I_KNOW_NO_LIVE_TARGET override
+    # needed). The interlock LOGIC keeps its own dedicated teeth test below (run
+    # against a temporarily-tokenless relay.py copy).
+    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin")}
     if pointer is not None:
         env["CABINET_COG1_AUTHORITY"] = str(pointer)
     if env_extra:
@@ -113,8 +115,8 @@ def test_no_env_var_context_observes_flip_via_default_path(tmp_path):
     # itself carries no CABINET_COG1_AUTHORITY.
     home = tmp_path / "home"
     home.mkdir()
-    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(home),
-           "COG1_FLIP_I_KNOW_NO_LIVE_TARGET": "1"}
+    # No override: the seam is present, so the real `outbox` verb self-releases.
+    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(home)}
     r = subprocess.run(["bash", str(FLIP), "outbox"],
                        capture_output=True, text=True, env=env)
     assert r.returncode == 0, r.stderr
@@ -369,29 +371,69 @@ def test_consumer_valid_envelope_uses_version_dispatch():
 
 
 # ===========================================================================
-# §12.3 review F1 — the outbox-verb INTERLOCK (fail-closed until the §8.4
-# live-target seam lands): without the harness override the verb REFUSES so a
-# premature "one-command cutover" cannot darken cabinet:tasks:events.
+# §12.3 review F1 — the outbox-verb INTERLOCK, now that the §8.4 live-target
+# seam has LANDED. Two arms probed HONESTLY: (1) SEAM PRESENT — the real
+# relay.py carries the COG1_LIVE_STREAM_TARGET landing marker, so the verb
+# SELF-RELEASES (writes the pointer WITHOUT the harness override); (2) the
+# interlock LOGIC still has teeth — a temporarily-TOKENLESS relay.py copy makes
+# the same script fail CLOSED (exit 64, no write), so a future seam regression
+# can never silently darken cabinet:tasks:events.
 # ===========================================================================
 
-def test_outbox_verb_interlock_refuses_without_live_target_seam(tmp_path):
-    ptr = tmp_path / "cog1-authority"
-    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-           "CABINET_COG1_AUTHORITY": str(ptr)}
-    r = subprocess.run(["bash", str(FLIP), "outbox"],
-                       capture_output=True, text=True, env=env)
-    assert r.returncode == 64, (r.returncode, r.stderr)
-    assert "REFUSED" in r.stderr and "live-stream retarget seam" in r.stderr
-    assert not ptr.exists(), "interlock must refuse BEFORE writing the pointer"
-    # the override is the sanctioned harness door — with it, the pointer writes.
-    env["COG1_FLIP_I_KNOW_NO_LIVE_TARGET"] = "1"
-    r2 = subprocess.run(["bash", str(FLIP), "outbox"],
-                        capture_output=True, text=True, env=env)
-    assert r2.returncode == 0, r2.stderr
-    assert ptr.read_text().strip() == "outbox"
-    # legacy (the fail-safe direction) needs NO override — rollback is never gated.
-    del env["COG1_FLIP_I_KNOW_NO_LIVE_TARGET"]
-    r3 = subprocess.run(["bash", str(FLIP), "legacy"],
-                        capture_output=True, text=True, env=env)
+def _tokenless_flip_layout(tmp_path) -> Path:
+    """Build a scratch repo layout: a COPY of the flip script + a temporarily-
+    TOKENLESS copy of relay.py (the COG1_LIVE_STREAM_TARGET landing marker
+    stripped) at the exact relative path the interlock probes
+    ($0/../../framework/outbox/relay.py). Returns the flip-script copy. Proves
+    the fail-closed interlock LOGIC independent of the real (now-seamed) relay."""
+    scratch = tmp_path / "scratch"
+    (scratch / "cabinet" / "scripts").mkdir(parents=True)
+    (scratch / "framework" / "outbox").mkdir(parents=True)
+    flip_copy = scratch / "cabinet" / "scripts" / "cog1-authority-flip.sh"
+    flip_copy.write_text(FLIP.read_text(encoding="utf-8"), encoding="utf-8")
+    flip_copy.chmod(0o755)
+    real_relay = REPO / "framework" / "outbox" / "relay.py"
+    tokenless = real_relay.read_text(encoding="utf-8").replace(
+        "COG1_LIVE_STREAM_TARGET", "COG1_LIVE_STREAM_ABSENT")
+    (scratch / "framework" / "outbox" / "relay.py").write_text(
+        tokenless, encoding="utf-8")
+    return flip_copy
+
+
+def test_outbox_verb_interlock_seam_present_and_teeth_intact(tmp_path):
+    base_env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin")}
+
+    # ARM 1 — SEAM PRESENT (live): the real relay.py carries the marker, so the
+    # interlock SELF-RELEASES — `outbox` writes the pointer WITH NO override.
+    live_ptr = tmp_path / "live" / "cog1-authority"
+    r = subprocess.run(["bash", str(FLIP), "outbox"], capture_output=True,
+                       text=True, env={**base_env,
+                                       "CABINET_COG1_AUTHORITY": str(live_ptr)})
+    assert r.returncode == 0, ("seam present -> outbox must self-release", r.stderr)
+    assert live_ptr.read_text().strip() == "outbox"
+
+    # ARM 2 — INTERLOCK LOGIC STILL HAS TEETH: run a COPY of the flip against a
+    # temporarily-TOKENLESS relay.py -> it must STILL fail closed (exit 64, no
+    # pointer write) without the override.
+    flip_copy = _tokenless_flip_layout(tmp_path)
+    tl_ptr = tmp_path / "tokenless" / "cog1-authority"
+    tl_env = {**base_env, "CABINET_COG1_AUTHORITY": str(tl_ptr)}
+    r2 = subprocess.run(["bash", str(flip_copy), "outbox"],
+                        capture_output=True, text=True, env=tl_env)
+    assert r2.returncode == 64, (r2.returncode, r2.stderr)
+    assert "REFUSED" in r2.stderr and "live-stream retarget seam" in r2.stderr
+    assert not tl_ptr.exists(), "tokenless interlock must refuse BEFORE writing"
+    # the harness override opens the tokenless door (the sanctioned rig escape).
+    r3 = subprocess.run(["bash", str(flip_copy), "outbox"], capture_output=True,
+                        text=True, env={**tl_env,
+                                        "COG1_FLIP_I_KNOW_NO_LIVE_TARGET": "1"})
     assert r3.returncode == 0, r3.stderr
-    assert ptr.read_text().strip() == "legacy"
+    assert tl_ptr.read_text().strip() == "outbox"
+
+    # legacy (the fail-safe direction) is NEVER gated — no override, either script.
+    lg_ptr = tmp_path / "rollback" / "cog1-authority"
+    r4 = subprocess.run(["bash", str(FLIP), "legacy"], capture_output=True,
+                        text=True, env={**base_env,
+                                        "CABINET_COG1_AUTHORITY": str(lg_ptr)})
+    assert r4.returncode == 0, r4.stderr
+    assert lg_ptr.read_text().strip() == "legacy"
