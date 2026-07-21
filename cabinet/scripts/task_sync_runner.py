@@ -84,7 +84,14 @@ def run_sync(actor: str = "task_sync_runner") -> SyncResult:
         started_at=datetime.now(timezone.utc).isoformat(),
     )
 
+    # payload.kind discriminator (COG-1 §7 fence): these three emits SHARE the
+    # central outbox_queued/dispatched/failed vocabulary with the relay proper
+    # and the channels journal. Stamping kind='task_sync_telemetry' lets parity
+    # tooling and the legacy ledger drain fence out this writer family so no
+    # metric double-counts (the EVENT TYPES are UNCHANGED — no VALID_EVENT_TYPES
+    # edit; renames are Phase-7 compaction work).
     emit("outbox_queued", actor=actor, payload={
+        "kind": "task_sync_telemetry",
         "destination": destination,
         "payload": {"event": "task_sync_started", "destination": destination},
         "idempotency_key": f"task_sync_start_{result.started_at}",
@@ -96,6 +103,7 @@ def run_sync(actor: str = "task_sync_runner") -> SyncResult:
         result.errors.append(msg)
         result.finished_at = datetime.now(timezone.utc).isoformat()
         emit("outbox_failed", actor=actor, payload={
+            "kind": "task_sync_telemetry",
             "destination": destination,
             "error": msg,
             "terminal": False,
@@ -123,6 +131,7 @@ def run_sync(actor: str = "task_sync_runner") -> SyncResult:
 
     result.finished_at = datetime.now(timezone.utc).isoformat()
     emit("outbox_dispatched", actor=actor, payload={
+        "kind": "task_sync_telemetry",
         "destination": destination,
         "pulled": result.pulled,
         "pushed": result.pushed,
