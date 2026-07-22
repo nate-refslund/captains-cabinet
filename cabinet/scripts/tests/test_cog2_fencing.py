@@ -298,3 +298,222 @@ class TestScopedQueryNoForeignLeak:
         with pytest.raises(query.ScopeError):
             query.as_of(store, "observations/widget-1",
                         scope={"cabinet_id": "third"})
+
+
+# ===========================================================================
+# §7.2 read-only-by-construction cortex_ro role (G-F6) — the MISSING control.
+#
+# The §7.2 contract mandates a `cortex_ro` DB role: SELECT-only, grant list
+# ENUMERATED and minimal (officer_tasks_outbox, officer_tasks — nothing else),
+# provisioned by `cog2-rebuild.py --provision-ro` (idempotent SQL run by
+# harness/CI). This suite is the mechanical proof, against a REAL ephemeral
+# PG17 outbox:
+#   * SELECT on both enumerated tables SUCCEEDS as cortex_ro;
+#   * UPDATE and INSERT on both tables are REFUSED (42501 insufficient_privilege
+#     — both verbs, both tables where a write would matter);
+#   * the grant catalog matches the enumerated list EXACTLY — a THIRD-table
+#     grant OR any write grant makes the catalog assertion FAIL (the mutant the
+#     §7.2 catalog check exists to catch), and has_table_privilege corroborates
+#     zero EFFECTIVE privilege on any other table (covers PUBLIC/inheritance,
+#     not just direct grants);
+#   * --provision-ro is idempotent — a second run succeeds (no duplicate-role
+#     error) and the catalog is unchanged.
+#
+# Bootstrap mirrors the rebuild-determinism PG gate: start -> apply_base_chain
+# -> apply_identity_guc -> apply_047, then provision via the CLI subprocess (the
+# "run by harness/CI" contract). Skips without a PG17 toolchain + psycopg2.
+# ===========================================================================
+
+import importlib.util as _ilu  # noqa: E402
+import os as _os  # noqa: E402
+import subprocess as _subprocess  # noqa: E402
+
+
+def _load_mod(path, name):
+    spec = _ilu.spec_from_file_location(name, path)
+    mod = _ilu.module_from_spec(spec)
+    sys.modules[name] = mod
+    assert spec and spec.loader
+    spec.loader.exec_module(mod)
+    return mod
+
+
+# the relay harness re-exports EphemeralPG17 + pg_available (the DB-plane idiom,
+# loaded by path exactly as test_cog2_rebuild_determinism.py does).
+_HR = _load_mod(_ROOT + "/framework/outbox/tests/lib_relay_harness.py",
+                "lib_relay_harness_cog2fence")
+_REBUILD = _HERE.parent / "cog2-rebuild.py"
+_PG_SKIP = pytest.mark.skipif(not _HR.pg_available(), reason=_HR.PG_SKIP_REASON)
+_FORBIDDEN = set(_HR.H.FORBIDDEN_CHILD_ENV)
+
+_RO_TABLES = {"officer_tasks_outbox", "officer_tasks"}
+_ENUM_CATALOG = {(t, "SELECT") for t in _RO_TABLES}   # the §7.2 enumerated set
+
+
+def _child_env():
+    """A DB/redis-var-stripped child env (the determinism-suite discipline): the
+    provisioning subprocess can never inherit a live-store DSN."""
+    env = {k: v for k, v in _os.environ.items() if k not in _FORBIDDEN}
+    env.pop("COG2_OUTBOX_DSN", None)
+    return env
+
+
+def _provision_ro(dsn):
+    """The MANDATED provisioning path — cog2-rebuild.py --provision-ro as a
+    subprocess ("run by harness/CI"). Asserts a clean exit; returns the proc."""
+    r = _subprocess.run(
+        ["python3.12", str(_REBUILD), "--provision-ro", "--dsn", dsn],
+        capture_output=True, text=True, env=_child_env())
+    assert r.returncode == 0, f"provision-ro rc={r.returncode}\n{r.stderr}"
+    return r
+
+
+def _ro_conninfo(cluster):
+    """The admin scratch conninfo re-pointed to the cortex_ro LOGIN (libpq takes
+    the LAST user= key). The ephemeral cluster is trust-auth, so no password —
+    and cortex_ro is created without one (§7.2: no attribute beyond LOGIN)."""
+    return cluster.conninfo() + " user=cortex_ro"
+
+
+def _expect_denied(dsn, sql):
+    """Assert `sql` is REFUSED with SQLSTATE 42501 (insufficient_privilege). A
+    fresh autocommit connection per attempt keeps a denied statement from
+    poisoning a follow-on assertion."""
+    import psycopg2  # lazy — collection must not require the driver
+    conn = psycopg2.connect(dsn)
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            try:
+                cur.execute(sql)
+            except psycopg2.Error as exc:
+                assert exc.pgcode == "42501", (
+                    f"expected 42501 insufficient_privilege, got {exc.pgcode}: {exc}")
+                return
+            raise AssertionError(f"write was NOT refused under cortex_ro: {sql}")
+    finally:
+        conn.close()
+
+
+def _catalog(cluster):
+    """The cortex_ro TABLE-grant catalog as a {(table, privilege)} set, read as
+    the admin (the grantor sees role_table_grants). This IS the §7.2 catalog the
+    enumerated list must match EXACTLY."""
+    out = cluster.psql(
+        "SELECT table_name, privilege_type "
+        "FROM information_schema.role_table_grants "
+        "WHERE grantee = 'cortex_ro' ORDER BY table_name, privilege_type;").stdout
+    rows = set()
+    for line in out.splitlines():
+        line = line.strip()
+        if line:
+            table, priv = line.split("|", 1)
+            rows.add((table, priv))
+    return rows
+
+
+@_PG_SKIP
+class TestCortexRoReadOnly:
+    """§7.2 / G-F6: the read-only-by-construction cortex_ro role."""
+
+    @pytest.fixture(scope="class")
+    def cluster(self, tmp_path_factory):
+        c = _HR.EphemeralPG17(tmp_path_factory.mktemp("cog2rofence"),
+                              cabinet_id=_HR.CAB_ID)
+        try:
+            c.start()
+        except Exception as exc:  # noqa: BLE001
+            pytest.skip(f"could not start ephemeral PG17: {exc}")
+        try:
+            c.apply_base_chain()              # officer_tasks (+ officer_task_history)
+            c.apply_identity_guc(_HR.CAB_ID)
+            c.apply_047()                     # officer_tasks_outbox
+            _provision_ro(c.conninfo())       # the ADMIN dsn -> cortex_ro
+            yield c
+        finally:
+            c.stop()
+
+    # -- SELECT on the two enumerated tables SUCCEEDS as cortex_ro ---------
+
+    def test_select_on_enumerated_tables_succeeds(self, cluster):
+        import psycopg2
+        conn = psycopg2.connect(_ro_conninfo(cluster))
+        conn.autocommit = True
+        try:
+            with conn.cursor() as cur:
+                for table in sorted(_RO_TABLES):
+                    cur.execute(f"SELECT count(*) FROM {table}")
+                    assert cur.fetchone()[0] is not None
+        finally:
+            conn.close()
+
+    # -- UPDATE + INSERT on both tables are REFUSED (42501) ---------------
+
+    @pytest.mark.parametrize("sql", [
+        "UPDATE officer_tasks_outbox SET attempts = attempts + 1",
+        "INSERT INTO officer_tasks_outbox (idempotency_key, task_id, new_status, "
+        "actor) VALUES ('ro-probe', 1, 'wip', 'ro')",
+        "UPDATE officer_tasks SET title = title",
+        "INSERT INTO officer_tasks (officer_slug, title, status) "
+        "VALUES ('ro', 'ro-probe', 'queue')",
+    ])
+    def test_writes_are_refused(self, cluster, sql):
+        # both verbs (UPDATE + INSERT), both tables where a write would matter —
+        # each refused with insufficient_privilege, never silently accepted.
+        _expect_denied(_ro_conninfo(cluster), sql)
+
+    # -- the grant catalog matches the enumerated list EXACTLY ------------
+
+    def test_grant_catalog_is_exactly_enumerated(self, cluster):
+        # the mutant this exists to catch: a THIRD-table grant or a write grant
+        # would make this set differ from the enumerated {SELECT x2}. (The
+        # catalog-bite proof drives this exact comparison with an injected grant.)
+        catalog = _catalog(cluster)
+        assert catalog == _ENUM_CATALOG, (
+            f"cortex_ro catalog {sorted(catalog)} != "
+            f"enumerated {sorted(_ENUM_CATALOG)}")
+
+    def test_no_write_privilege_on_granted_tables(self, cluster):
+        # has_table_privilege corroborates the catalog on the two GRANTED tables:
+        # SELECT yes, every write verb no.
+        for table in sorted(_RO_TABLES):
+            assert cluster.one(
+                f"SELECT has_table_privilege('cortex_ro', '{table}', 'SELECT');"
+            ) == "t"
+            for verb in ("INSERT", "UPDATE", "DELETE", "TRUNCATE"):
+                assert cluster.one(
+                    f"SELECT has_table_privilege('cortex_ro', '{table}', '{verb}');"
+                ) == "f", f"cortex_ro must NOT have {verb} on {table}"
+
+    def test_no_privilege_on_any_other_table(self, cluster):
+        # a THIRD table (officer_task_history, minted by 038) — cortex_ro has NO
+        # effective privilege on it (has_table_privilege covers PUBLIC + role
+        # inheritance, not just direct grants), and it is absent from the direct
+        # grant catalog entirely.
+        assert cluster.one(
+            "SELECT has_table_privilege('cortex_ro', 'officer_task_history', "
+            "'SELECT');") == "f"
+        assert "officer_task_history" not in {t for (t, _p) in _catalog(cluster)}
+
+    def test_role_is_a_plain_login_not_privileged(self, cluster):
+        # §7.2: LOGIN, and NO other attribute — never superuser/createdb/
+        # createrole (a privileged role would defeat read-only-by-construction).
+        attrs = cluster.one(
+            "SELECT rolcanlogin::text || ',' || rolsuper::text || ',' || "
+            "rolcreatedb::text || ',' || rolcreaterole::text || ',' || "
+            "rolinherit::text FROM pg_roles WHERE rolname = 'cortex_ro';")
+        # rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, rolinherit
+        assert attrs == "true,false,false,false,false", attrs
+
+    # -- idempotency: a second provision succeeds, catalog unchanged ------
+
+    def test_provision_ro_is_idempotent(self, cluster):
+        before = _catalog(cluster)
+        assert before == _ENUM_CATALOG            # (sanity — first provision held)
+        r = _provision_ro(cluster.conninfo())     # SECOND run: no duplicate-role error
+        assert r.returncode == 0
+        assert _catalog(cluster) == before == _ENUM_CATALOG
+        # and it is STILL a SELECT-only login after the re-provision.
+        _expect_denied(_ro_conninfo(cluster),
+                       "INSERT INTO officer_tasks_outbox (idempotency_key, task_id, "
+                       "new_status, actor) VALUES ('ro-probe2', 2, 'wip', 'ro')")

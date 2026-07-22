@@ -251,9 +251,16 @@ def per_day_floor(lines: list[dict[str, Any]], *, today: Any, floor: int,
     min(floor, universe) cap parity_scan applies per cycle (see effective_floor
     below): a day that RAN but whose authoritative universe was smaller than the
     floor sampled everything available and is NOT a count-shortfall breach (F4).
-    A day with NO recorded frame (an absent day, or a zero-universe
-    error/unconfigured skeleton) keeps the FULL floor, so a dark/dead falsifier
-    still breaches.
+    A day with NO recorded frame (an absent day, or a zero-universe `error`
+    skeleton) keeps the FULL floor, so a dark/dead falsifier still breaches.
+
+    ONE exemption (F7): a day whose LAST verdict line is `unconfigured` (an
+    honest no-op — the cycle RAN and had no parity source to measure) is NOT a
+    floor breach. sampled=0/frame_size=0 there is a truthful "nothing to count",
+    not a dark day, so a stretch of honest unconfigured days cannot open the
+    first CONFIGURED day on a false floor-breach. An ABSENT day (no line at all)
+    and an `error` day (a CONFIGURED reader broke) are NOT exempt — a dead or
+    broken falsifier must still breach.
 
     Returns {windows: [(date, count, breach)], breach (any window — a diagnostic
     field only), latest_breach (the most-recent complete window — the value
@@ -261,12 +268,14 @@ def per_day_floor(lines: list[dict[str, Any]], *, today: Any, floor: int,
     today_d = _as_date(today)
     counts: dict[str, int] = {}
     frames: dict[str, int] = {}
+    last_status: dict[str, str] = {}
     for line in lines:
         date = str(line.get("date", ""))
         if len(date) == 10 and _as_date(date) < today_d:
             counts[date] = counts.get(date, 0) + int(line.get("sampled", 0) or 0)
             frames[date] = max(frames.get(date, 0),
                                int(line.get("frame_size", 0) or 0))
+            last_status[date] = str(line.get("status", ""))  # last line of the date wins
     present = sorted(counts)
     windows: list[tuple[str, int, bool]] = []
     if present:
@@ -278,10 +287,19 @@ def per_day_floor(lines: list[dict[str, Any]], *, today: Any, floor: int,
             key = day.isoformat()
             count = counts.get(key, 0)
             frame = frames.get(key, 0)
-            # cap the floor by that day's universe; a zero/absent frame keeps
-            # the full floor so a dark day is still a breach (not exempted).
-            effective = min(floor, frame) if frame else floor
-            windows.append((key, count, count < effective))
+            if last_status.get(key) == "unconfigured":
+                # Honest no-op day (cycle RAN, no parity source): sampled=0 here
+                # is a truthful "nothing to count", not a dark day — EXEMPT it
+                # (F7). Absent days (no line) and `error` days fall through to
+                # the full-floor check below: a dead/broken falsifier still
+                # breaches.
+                breach_window = False
+            else:
+                # cap the floor by that day's universe; a zero/absent frame keeps
+                # the full floor so a dark day is still a breach (not exempted).
+                effective = min(floor, frame) if frame else floor
+                breach_window = count < effective
+            windows.append((key, count, breach_window))
             day += dt.timedelta(days=1)
     breach = any(w[2] for w in windows)
     return {"windows": windows, "breach": breach,

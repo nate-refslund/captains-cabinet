@@ -584,3 +584,119 @@ class TestRebuildDeterminismOverPostgres:
         after = _sub_rebuild(dsn, 0)
         assert after["frontier"] == 6 and after["beliefs"] == 12
         assert after["hash"] != before["hash"]
+
+
+# ===========================================================================
+# F4 (unit-3 review backlog): the CONSEQUENCE stream folds deterministically
+# under the C-F3 hash-seed subprocess harness too — §8 sim 1's "consequence
+# JSONL" seed, ALONGSIDE the outbox triple above. The consequence adapter has
+# its own determinism-sensitive machinery (proto dedupe + supersession-chain
+# building + the contradiction post-pass, all set/dict-backed), so a hash-seed
+# leak there would be invisible to the outbox-only triple. Unlike that triple
+# this needs NO DB (the ledger is local JSONL, the consequence-seam idiom), so
+# it runs in the repo gate UNCONDITIONALLY — no PG17 toolchain required.
+# ===========================================================================
+
+# A pure fold-and-hash of the consequence stream, run as a subprocess so the
+# PYTHONHASHSEED varies per child (the C-F3 harness). Mirrors cog2-rebuild's
+# read -> fold -> chained_hash over consequence.iter_ledger_rows() instead of
+# the outbox: cog2-rebuild.py is the OUTBOX entry (--dsn); the consequence
+# stream is a separate legacy adapter with no DB, so the determinism proof
+# drives the fold path directly. argv: repo_root, trust_table_path; the ledger
+# dir rides CABINET_EVENT_LOG_DIR (the env consequence.py resolves).
+_CONSEQUENCE_FOLD_PROG = r"""
+import json, os, sys
+sys.path.insert(0, sys.argv[1])
+import yaml
+from framework.cortex import adapters, belief, engine
+from framework.fidelity import consequence
+tt = yaml.safe_load(open(sys.argv[2], encoding="utf-8")) or {}
+tt.setdefault("producers", {})
+protos = adapters.build_consequence_protos(list(consequence.iter_ledger_rows()))
+beliefs = engine.fold(protos, trust_table=tt)
+print(json.dumps({"hash": belief.chained_hash(beliefs), "beliefs": len(beliefs)},
+                 sort_keys=True))
+"""
+
+# the SHIPPED trust table (cabinet/config/cortex-source-trust.v1.yml) — a
+# production-faithful fold input carrying the consequence producer's ppm.
+_TRUST_TABLE_FILE = _HERE.parents[1] / "config" / "cortex-source-trust.v1.yml"
+
+
+def _sub_consequence_fold(event_log_dir, hashseed):
+    """Fold+hash the consequence ledger at `event_log_dir` in a child process
+    under an explicit PYTHONHASHSEED (DB/redis env stripped, exactly as the
+    outbox subprocess above does)."""
+    env = {k: v for k, v in os.environ.items() if k not in _FORBIDDEN}
+    env["PYTHONHASHSEED"] = str(hashseed)
+    env["CABINET_EVENT_LOG_DIR"] = str(event_log_dir)
+    env.pop("CABINET_SIM_MODE", None)          # env-free fold; explicit anyway
+    r = subprocess.run(
+        ["python3.12", "-c", _CONSEQUENCE_FOLD_PROG, _ROOT, str(_TRUST_TABLE_FILE)],
+        capture_output=True, text=True, env=env)
+    assert r.returncode == 0, f"rc={r.returncode}\n{r.stderr}"
+    return json.loads(r.stdout)
+
+
+def _crow(ts, action, subject, **extra):
+    """A schema-valid consequence event (mirrors the consequence-seam _row
+    pattern, test_cog2_consequence_seam.py)."""
+    row = {"ts": ts, "actor": {"kind": "officer", "id": "cos"}, "lane": "acting",
+           "action": action, "subject": subject, "refs": []}
+    row.update(extra)
+    return row
+
+
+def _cwrite_day(ledger_dir, date, rows):
+    """Append rows to consequence-events-<date>.jsonl (the consequence-seam
+    _write_day pattern)."""
+    path = Path(ledger_dir) / f"consequence-events-{date}.jsonl"
+    with open(path, "a") as handle:
+        for row in rows:
+            handle.write(json.dumps(row) + "\n")
+    return path
+
+
+class TestConsequenceRebuildDeterminism:
+    """§8 sim 1 for the consequence stream — pure, no DB, runs everywhere."""
+
+    def _seed(self, ledger_dir):
+        # a fixture that exercises the determinism-sensitive machinery: an
+        # enrichment supersession (task/1 asserted-head over a superseded
+        # original), a plain subject (task/2) PLUS its byte-identical
+        # double-emit dup (proto dedupe, F1), a second-day file (task/3), and a
+        # sim row (dropped unconditionally by the env-free fold).
+        a = _crow("2026-07-20T08:00:00Z", "task_status_move", "task/1")
+        a2 = _crow("2026-07-20T08:00:00Z", "task_status_move", "task/1",
+                   outcome={"status": "ok", "evidence": "done"})   # enrichment
+        b = _crow("2026-07-20T09:00:00Z", "label", "task/2")
+        sim = _crow("2026-07-20T09:30:00Z", "label", "task/SIM")
+        sim["sim"] = True
+        _cwrite_day(ledger_dir, "2026-07-20", [a, a2, b, dict(b), sim])
+        c = _crow("2026-07-21T08:00:00Z", "tier2_note", "task/3")
+        _cwrite_day(ledger_dir, "2026-07-21", [c])
+
+    def test_three_subprocesses_distinct_hashseeds_identical(self, tmp_path):
+        ledger = tmp_path / "events"
+        ledger.mkdir()
+        self._seed(ledger)
+        h0 = _sub_consequence_fold(ledger, 0)
+        h1 = _sub_consequence_fold(ledger, 1)
+        h2 = _sub_consequence_fold(ledger, 2)
+        # C-F3 for the consequence stream: three distinct hash seeds, one hash.
+        assert h0["hash"] == h1["hash"] == h2["hash"]
+        assert len(h0["hash"]) == 64
+        # task/1 (asserted head + superseded original) + task/2 + task/3 = 4:
+        # the byte-identical task/2 dup collapses, the sim row is dropped.
+        assert h0["beliefs"] == 4
+
+    def test_empty_ledger_is_deterministic_too(self, tmp_path):
+        # the degenerate frame (zero consequence files) still folds to a stable
+        # hash across hash seeds — the empty chained_hash is a fixed constant,
+        # never hash-seed sensitive.
+        ledger = tmp_path / "events"
+        ledger.mkdir()
+        h0 = _sub_consequence_fold(ledger, 0)
+        h1 = _sub_consequence_fold(ledger, 5)
+        assert h0["hash"] == h1["hash"] and len(h0["hash"]) == 64
+        assert h0["beliefs"] == 0

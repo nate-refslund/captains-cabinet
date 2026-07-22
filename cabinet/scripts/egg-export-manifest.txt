@@ -130,6 +130,15 @@ delete cabinet/scripts/cognitive-phase1-review-scope.py
 delete cabinet/scripts/cognitive-phase1-rollback-rehearsal.py
 delete cabinet/scripts/verify-cognitive-phase1.sh
 delete cabinet/scripts/tests/test_cognitive_phase1_rollback.py
+delete cabinet/scripts/verify-cognitive-phase2.sh
+# COG-2 phase-2 private landing proof (same class as COG-0/1 above): the
+# review-scope binder, rollback rehearsal, and rollback-closure test bind THIS
+# launching instance's reviewed bytes, baseline, and rollback plan — historical
+# phase tooling, never ships. The enduring Cortex CLIs + framework surface ride
+# the egg (expect-present below).
+delete cabinet/scripts/cognitive-phase2-review-scope.py
+delete cabinet/scripts/cognitive-phase2-rollback-rehearsal.py
+delete cabinet/scripts/tests/test_cognitive_phase2_rollback.py
 delete docs/runbooks/egg-export-2026-07-10.md
 # PC-C launch-kit privacy (integration ruling 2026-07-10): docs/launch/ is
 # CG-7 PER-ITEM publication material (Show HN draft, business-model proposal,
@@ -381,6 +390,29 @@ expect-present framework/evolution/tests/__init__.py
 expect-present framework/evolution/tests/test_contracts.py
 expect-present framework/schemas/cognitive-trajectory.schema.json
 expect-present framework/schemas/holdout-evaluation-receipt.schema.json
+# COG-2 (Cortex): the shadow temporal-epistemic world model is universal
+# framework DNA (contract §6 file table). The fold package, its
+# registry-resolved domain schemas, the versioned source-trust table, and the
+# enduring rebuild/hash/verifier/parity CLIs all ship. The runtime projection
+# cache (cabinet/cache/cortex/*) + parity verdict log (cabinet/logs/*) are
+# gitignored per-cabinet runtime data — verified ABSENT below (the archive cut
+# ships tracked files only). The phase-2 private landing tools (the verify twin,
+# review-scope, rollback-rehearsal, and rollback-closure test) archive out under
+# their own paired delete + expect-absent rows.
+expect-present framework/cortex/__init__.py
+expect-present framework/cortex/belief.py
+expect-present framework/cortex/engine.py
+expect-present framework/cortex/query.py
+expect-present framework/cortex/adapters.py
+expect-present framework/schemas/domains/cortex/belief.v1.json
+expect-present framework/schemas/domains/cortex/source-trust.v1.json
+expect-present framework/schemas/domains/observations/observation.v1.json
+expect-present cabinet/config/cortex-source-trust.v1.yml
+expect-present cabinet/scripts/cog2-rebuild.py
+expect-present cabinet/scripts/cog2-belief-hash.py
+expect-present cabinet/scripts/cog2-verifier.py
+expect-present cabinet/scripts/cog2-parity-falsifier.py
+expect-present cabinet/scripts/cog2-import-gate.py
 # R167: dropped from the plans-archive keep-list (see R167 above) — the
 # coupling census now archives with the rest of docs/plans instance history.
 expect-absent docs/plans/source-adapter-boundary-2026-07-05.md
@@ -470,6 +502,17 @@ expect-absent cabinet/scripts/cognitive-phase1-review-scope.py
 expect-absent cabinet/scripts/cognitive-phase1-rollback-rehearsal.py
 expect-absent cabinet/scripts/verify-cognitive-phase1.sh
 expect-absent cabinet/scripts/tests/test_cognitive_phase1_rollback.py
+expect-absent cabinet/scripts/verify-cognitive-phase2.sh
+# COG-2 phase-2 private landing tools (paired delete rows above) — never ship.
+expect-absent cabinet/scripts/cognitive-phase2-review-scope.py
+expect-absent cabinet/scripts/cognitive-phase2-rollback-rehearsal.py
+expect-absent cabinet/scripts/tests/test_cognitive_phase2_rollback.py
+# COG-2: the Cortex parity VERDICT LOG is per-cabinet runtime data — gitignored
+# under cabinet/logs/* (Spec 043 runtime-log idiom), so it never enters the
+# archive cut. Pinned absent defensively (the node_modules idiom): the export
+# FAILS LOUDLY if it ever rides. The projection cache under cabinet/cache/* is
+# gitignored the same way.
+expect-absent cabinet/logs/cog2-parity.jsonl
 expect-absent docs/runbooks/egg-export-2026-07-10.md
 expect-absent docs/launch
 # RESIDUAL SCRUB (2026-07-21): the three archived-out dated instance artifacts
