@@ -322,6 +322,17 @@ class TestScopedQueryNoForeignLeak:
 # Bootstrap mirrors the rebuild-determinism PG gate: start -> apply_base_chain
 # -> apply_identity_guc -> apply_047, then provision via the CLI subprocess (the
 # "run by harness/CI" contract). Skips without a PG17 toolchain + psycopg2.
+#
+# AUTH-AGNOSTIC by construction: the privilege tests NEVER open a cortex_ro
+# LOGIN. cortex_ro is provisioned with LOGIN but no password (§7.2: the
+# deployment supplies auth out-of-band), so a passwordless login only works on
+# the local trust-auth cluster and FAILS on CI's password-auth server. Instead
+# the role's privileges are exercised via `SET ROLE cortex_ro` on the ADMIN
+# (superuser) connection — a POST-login switch that is authenticated regardless
+# of auth method, and under which the superuser sheds its bypass so cortex_ro's
+# real SELECT-only grants are enforced. Catalog/attribute facts read as admin
+# (role_table_grants, has_table_privilege, pg_roles). No test does a live
+# cortex_ro connection.
 # ===========================================================================
 
 import importlib.util as _ilu  # noqa: E402
@@ -368,29 +379,29 @@ def _provision_ro(dsn):
     return r
 
 
-def _ro_conninfo(cluster):
-    """The admin scratch conninfo re-pointed to the cortex_ro LOGIN (libpq takes
-    the LAST user= key). The ephemeral cluster is trust-auth, so no password —
-    and cortex_ro is created without one (§7.2: no attribute beyond LOGIN)."""
-    return cluster.conninfo() + " user=cortex_ro"
-
-
-def _expect_denied(dsn, sql):
-    """Assert `sql` is REFUSED with SQLSTATE 42501 (insufficient_privilege). A
-    fresh autocommit connection per attempt keeps a denied statement from
-    poisoning a follow-on assertion."""
+def _expect_denied_as_ro(cluster, sql):
+    """Assert `sql` is REFUSED with SQLSTATE 42501 (insufficient_privilege) when
+    run AS cortex_ro — via SET ROLE on an autocommit ADMIN (superuser) connection,
+    never a cortex_ro LOGIN. This is the auth-agnostic core of the rewrite: SET
+    ROLE is a POST-login switch, so it can NEVER raise a login/password-auth FATAL
+    (the exact CI failure — cortex_ro has LOGIN but no password, and CI's server
+    is password-auth). A superuser sheds its privilege bypass under SET ROLE, so
+    cortex_ro's REAL grants are what gets enforced. Autocommit means the denied
+    statement does not poison a follow-on statement (no aborted-txn block)."""
     import psycopg2  # lazy — collection must not require the driver
-    conn = psycopg2.connect(dsn)
+    conn = psycopg2.connect(cluster.conninfo())   # admin dsn — always authenticated
     conn.autocommit = True
     try:
         with conn.cursor() as cur:
+            cur.execute("SET ROLE cortex_ro")
             try:
                 cur.execute(sql)
             except psycopg2.Error as exc:
                 assert exc.pgcode == "42501", (
                     f"expected 42501 insufficient_privilege, got {exc.pgcode}: {exc}")
-                return
-            raise AssertionError(f"write was NOT refused under cortex_ro: {sql}")
+            else:
+                raise AssertionError(f"write was NOT refused under cortex_ro: {sql}")
+            cur.execute("RESET ROLE")   # post-login switch back (conn discarded next)
     finally:
         conn.close()
 
@@ -436,14 +447,21 @@ class TestCortexRoReadOnly:
     # -- SELECT on the two enumerated tables SUCCEEDS as cortex_ro ---------
 
     def test_select_on_enumerated_tables_succeeds(self, cluster):
+        # AUTH-AGNOSTIC: exercise cortex_ro's privileges via SET ROLE on an admin
+        # (superuser) connection — NO cortex_ro LOGIN is opened, so the cluster's
+        # auth method (trust locally, PASSWORD in CI) is irrelevant. SET ROLE is a
+        # post-login switch applying cortex_ro's SELECT grants exactly; the
+        # superuser sheds its bypass under SET ROLE, so a real grant is required.
         import psycopg2
-        conn = psycopg2.connect(_ro_conninfo(cluster))
+        conn = psycopg2.connect(cluster.conninfo())   # admin dsn — always authed
         conn.autocommit = True
         try:
             with conn.cursor() as cur:
+                cur.execute("SET ROLE cortex_ro")
                 for table in sorted(_RO_TABLES):
                     cur.execute(f"SELECT count(*) FROM {table}")
                     assert cur.fetchone()[0] is not None
+                cur.execute("RESET ROLE")
         finally:
             conn.close()
 
@@ -460,7 +478,9 @@ class TestCortexRoReadOnly:
     def test_writes_are_refused(self, cluster, sql):
         # both verbs (UPDATE + INSERT), both tables where a write would matter —
         # each refused with insufficient_privilege, never silently accepted.
-        _expect_denied(_ro_conninfo(cluster), sql)
+        # Assumed via SET ROLE on the admin conn (no cortex_ro login) — see
+        # _expect_denied_as_ro; SET ROLE can never raise a login-auth error.
+        _expect_denied_as_ro(cluster, sql)
 
     # -- the grant catalog matches the enumerated list EXACTLY ------------
 
@@ -502,10 +522,14 @@ class TestCortexRoReadOnly:
             _provision_ro(cluster.conninfo())
         assert _catalog(cluster) == _ENUM_CATALOG, \
             "re-provision must converge the catalog back to the enumerated set"
-        # the injected INSERT is gone — cortex_ro is SELECT-only again.
-        _expect_denied(_ro_conninfo(cluster),
-                       "INSERT INTO officer_tasks_outbox (idempotency_key, task_id, "
-                       "new_status, actor) VALUES ('bite-probe', 7, 'wip', 'ro')")
+        # the injected INSERT grant is gone — cortex_ro is SELECT-only again.
+        # Corroborated via admin has_table_privilege (covers direct grants +
+        # PUBLIC + inheritance); no cortex_ro login needed, so it stays
+        # auth-agnostic like the rest of the catalog assertions.
+        assert cluster.one(
+            "SELECT has_table_privilege('cortex_ro', 'officer_tasks_outbox', "
+            "'INSERT');") == "f", \
+            "re-provision must strip the injected INSERT grant (SELECT-only again)"
 
     def test_no_write_privilege_on_granted_tables(self, cluster):
         # has_table_privilege corroborates the catalog on the two GRANTED tables:
@@ -532,6 +556,13 @@ class TestCortexRoReadOnly:
     def test_role_is_a_plain_login_not_privileged(self, cluster):
         # §7.2: LOGIN, and NO other attribute — never superuser/createdb/
         # createrole (a privileged role would defeat read-only-by-construction).
+        # This proves the LOGIN guarantee WITHOUT a live login: pg_roles read as
+        # admin shows cortex_ro CAN log in (rolcanlogin) and is otherwise a plain,
+        # non-privileged role. Whether a live cortex_ro connection actually
+        # authenticates is a DEPLOYMENT/auth concern — the deployment supplies the
+        # credential/pg_hba out-of-band (§7.2) — and is out of this suite's scope.
+        # The suite proves the role EXISTS with LOGIN and is SELECT-only, which is
+        # exactly what read-only-by-construction requires.
         attrs = cluster.one(
             "SELECT rolcanlogin::text || ',' || rolsuper::text || ',' || "
             "rolcreatedb::text || ',' || rolcreaterole::text || ',' || "
@@ -547,7 +578,11 @@ class TestCortexRoReadOnly:
         r = _provision_ro(cluster.conninfo())     # SECOND run: no duplicate-role error
         assert r.returncode == 0
         assert _catalog(cluster) == before == _ENUM_CATALOG
-        # and it is STILL a SELECT-only login after the re-provision.
-        _expect_denied(_ro_conninfo(cluster),
-                       "INSERT INTO officer_tasks_outbox (idempotency_key, task_id, "
-                       "new_status, actor) VALUES ('ro-probe2', 2, 'wip', 'ro')")
+        # and it is STILL SELECT-only after the re-provision — admin
+        # has_table_privilege (no cortex_ro login needed): SELECT yes, INSERT no.
+        assert cluster.one(
+            "SELECT has_table_privilege('cortex_ro', 'officer_tasks_outbox', "
+            "'SELECT');") == "t"
+        assert cluster.one(
+            "SELECT has_table_privilege('cortex_ro', 'officer_tasks_outbox', "
+            "'INSERT');") == "f"

@@ -2,7 +2,7 @@
 
 Verdict: PASS
 
-Reviewed-Scope-Digest: 4b6c6a206527fef58a1fff2eb80d0af15ec680f6da66510ef847ffc510eee255
+Reviewed-Scope-Digest: b38632b916bce9a5d0f353915ac0c17e6288879070f905773d6766830ee8ea7c
 Reviewed-Commit: <PLACEHOLDER — the unit-5 landing commit; orchestrator records post-commit (advisory, phase-1 precedent)>
 
 Reviewed 2026-07-22 against docs/plans/cognitive-core-phase-2-contract-2026-07-22.md rev 2 (THE standard — the post-attack revision whose A-*/C-*/O-*/G-* dispositions §14 pins) from rollback baseline b393f41b579c5ff4723f4502b006df58e9664cf1. Review construction: units 1–4 landed tests-first behind per-unit adversarial review checkpoints (the FW-019 artifacts for units 1–3 are themselves scope members, so this digest binds them); the unit-5 integration landing then took a fresh-context adversarial panel over the assembled phase surface, whose findings — including one real shadow-boundary escape — are the §4 register, ALL fixed tests-first inside this same landing. Every code verdict below was verified against the candidate's bytes (file:line cited); every measured number is quoted verbatim from the recorded transcripts of the verified M6 measurement run. No implementer self-report was consumed unverified.
