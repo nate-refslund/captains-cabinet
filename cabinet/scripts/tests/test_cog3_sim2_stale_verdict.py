@@ -16,6 +16,11 @@ WHAT SIM-2 ASSERTS (contract §11 row 2 + §6.4 test set):
     still present, value erased), NO graph-side mutation (derive is pure). [P3→P6]
   * a verdict_judge / verdict_gate / absent-source CONFIRM => caps at
     `observationally_supported`, NEVER `intervention_supported` (attack C-B2).
+  * (ruling R-A, §4.2 "assumptions REQUIRED non-empty for any edge deriving
+    above hypothesized") `observationally_supported` (P5) is itself a CEILING
+    that requires the edge's `assumptions` non-empty: an assumptionless confirm/
+    supporting edge derives P6 `hypothesized`, so every P5-landing seed here
+    declares assumptions, and an assumptionless machine-confirm is pinned at P6.
   * staleness is the §5.1(7) instrument's TWO-FENCED-QUERY diff (bound cutoff vs
     a declared `--now`), never a cached-view checker.
   * serve REFUSES states re-derived against a refolded store (mixed-epoch, §5.4).
@@ -32,10 +37,12 @@ FAILURE SIGNATURE (tests-first — `framework/objectives/` does NOT exist):
   * every contract cell imports `framework.objectives.*` FIRST in its body, so
     today it fails with `ModuleNotFoundError: No module named
     'framework.objectives'` — the honest absence-of-implementation signature.
-  * the staleness-CLI cell shells out to `cabinet/scripts/cog3-staleness.py`,
-    ABSENT today, so `subprocess` returns non-zero with "No such file or
-    directory" — the absence-of-CLI signature (contract §12.2: a clearly-absent
-    CLI is an accepted tests-first signature).
+  * the staleness cell BUILDS the graph first (the instrument reads the built
+    manifest for its bound-subject/bound-cutoff source), so today it too fails at
+    the absent `framework.objectives` module; the absent CLI
+    (`cabinet/scripts/cog3-staleness.py`) is documented separately by the
+    `test_staleness_cli_is_absent_today` self-check (contract §12.2: a clearly-
+    absent CLI is an accepted tests-first signature).
   * the `TestSim2SeedsAreReal` self-checks carry NO objectives import and PASS
     today — they prove every seed is real substrate output (a bad fixture would
     otherwise fail for the WRONG reason once the implementation lands).
@@ -149,10 +156,17 @@ def _direction_edge_bound_at(beliefs, sk, cutoff):
     whatever head resolves at `cutoff`, plus the served views at that cutoff.
     The structural fields are cutoff-INVARIANT; only the bound views (and their
     belief_id refs) change — the exact 'same edge, re-derived from the fenced
-    sub-history' shape (§4.2 epistemic-state-is-derived-never-stored)."""
+    sub-history' shape (§4.2 epistemic-state-is-derived-never-stored).
+
+    `assumptions` is NON-EMPTY (ruling R-A, §4.2 'REQUIRED non-empty for any edge
+    deriving above hypothesized'): observationally_supported (P5) is itself ABOVE
+    hypothesized, so the early-cutoff supporting head lands at P5 only WITH
+    declared assumptions — an assumptionless edge would derive P6 and this cell's
+    P5→P4 demotion narrative would not hold against a correct implementation."""
     views = tuple(L.views_for(beliefs, sk, cutoff=cutoff))
     edge = L.EdgeSpec(
-        authored=True, expected_effect="increase", assumptions=(),
+        authored=True, expected_effect="increase",
+        assumptions=("declared-confounder-and-selection",),   # R-A: P5 needs assumptions
         admissible_subjects=frozenset({sk}),
         join_spec=(),                              # observation edge — no verdict join
         evidence_bindings=tuple(L.BindingRef(v.subject_key, v.belief_id) for v in views),
@@ -279,13 +293,57 @@ def test_machine_or_absent_confirm_caps_at_observationally_supported(consequence
     assert result.state != L.STATE_INTERVENTION_SUPPORTED    # the C-B2 escape
 
 
+def test_assumptionless_machine_confirm_derives_p6_not_the_p5_ceiling(consequence_ledger):
+    # Ruling R-A (§4.2 "assumptions REQUIRED non-empty for any edge deriving above
+    # hypothesized" + §11 SIM-4 "assumption-free promotion above hypothesized"
+    # mutant): `observationally_supported` (P5) is a CEILING, not a guaranteed
+    # landing. A machine confirm (direction-supporting, never promotion fuel) with
+    # EMPTY assumptions cannot reach P5 either — it derives P6 `hypothesized`. Pairs
+    # with the cap cell above (assumptions=True => P5): assumptions gate the
+    # ceiling. Robust to the direction-reading subtlety: whether or not a bare
+    # confirm is read as direction-supporting, an assumptionless edge lands at P6.
+    states = _import_states()
+    cell = L.EdgeCell(assumptions=False, bindings=(
+        L.BindingSpec(role="verdict", verdict="confirmed", source="verdict_judge",
+                      tag="am"),))
+    edge, views = L.materialize(cell, consequence_ledger)
+    result = states.derive_edge_state(edge, views, L.CUTOFF)
+    assert result.state == L.STATE_HYPOTHESIZED, \
+        "R-A: an assumptionless machine confirm cannot reach the P5 ceiling => P6"
+    assert result.state != L.STATE_OBSERVATIONALLY_SUPPORTED
+    assert result.flags == frozenset()          # P6 carries no flag (not P1/P4)
+
+
 def test_staleness_instrument_reports_a_moved_subject(tmp_path):
-    # §5.1(7): the staleness instrument diffs TWO fenced as_of answers (bound
-    # cutoff vs a declared --now) per bound subject and reports a subject whose
-    # head MOVED. It is a separate CLI (never inside build_graph, never a cached
-    # view). TODAY the CLI is ABSENT => subprocess returns non-zero with "No such
-    # file" — the absence-of-CLI signature.
+    # §5.1(7) + §11 row 2 ("staleness ... flagged in the manifest"): the staleness
+    # instrument diffs TWO fenced as_of answers — each BOUND subject's bound cutoff
+    # vs a declared --now — and reports a subject whose fenced head MOVED. It is a
+    # separate CLI (never inside build_graph, never a cached view).
+    #
+    # It reads the BUILT graph-manifest for its (bound subject, bound cutoff)
+    # source, so the graph MUST be built FIRST — a bare empty objectives cache
+    # gives a correct instrument no bound subject to diff (it would error on the
+    # missing manifest or report nothing; the pre-fix cell asserted staleness over
+    # an unbuilt cache and could never pass a correct implementation). We build at
+    # the EARLY cutoff (the subject's head is the supporting obs there), then run
+    # staleness at a LATER --now (the superseding head is the head there) => the
+    # bound subject moved => stale.
+    #
+    # [ADAPTER-DEPENDENT, flagged like the divergence cell: the build binds the
+    #  superseded subject through the roots/adapter surface; if the final adapter
+    #  schema differs, T4 aligns the SEED — the FIRM contract is that a moved BOUND
+    #  subject is reported under `stale` AND named in the manifest staleness-flags
+    #  surface.]
+    #
+    # TODAY: build_graph's module is ABSENT => _import_graph() raises
+    # ModuleNotFoundError = the tests-first absence signature (the staleness CLI is
+    # also absent — pinned by test_staleness_cli_is_absent_today below).
+    graph = _import_graph()
     cortex, objectives, sk = _persist_two_cutoff_cortex(tmp_path / "cache")
+    roots = L.write_roots_yml(tmp_path, [{"slug": "ship-fast",
+                                          "statement": "ship reliably"}])
+    graph.build_graph(roots, objectives, L.SCOPE, _CUT_BEFORE_LATE)   # binds sk at the early head
+
     proc = subprocess.run(
         [sys.executable, str(_STALENESS_CLI),
          "--now", _CUT_AFTER_LATE, "--cache", str(objectives)],
@@ -294,8 +352,26 @@ def test_staleness_instrument_reports_a_moved_subject(tmp_path):
         f"§5.1(7) staleness instrument absent/failed (rc={proc.returncode}): "
         f"{proc.stderr.strip()[:200]}")
     report = json.loads(proc.stdout)
+
+    # (b) the two-fenced diff OUTPUT names the moved bound subject.
     stale_subjects = {e.get("subject_key") for e in report.get("stale", [])}
-    assert sk in stale_subjects, "§5.1(7): the moved subject must be flagged stale"
+    assert sk in stale_subjects, "§5.1(7): the moved bound subject must be flagged stale"
+
+    # (c) §11 row 2 "flagged in the manifest": the staleness run records the flags
+    # surface the contract names (§5.1(7) "the manifest staleness flags"). NARROWEST
+    # PIN: a `staleness_flags` / `stale_subjects` entry naming the moved subject —
+    # homed here in the instrument report (its output IS what feeds the manifest
+    # flags; T4 may additionally mirror it into graph-manifest.json). Tolerant of a
+    # [subject_key, …] or [{"subject_key": …}, …] shape.
+    raw = report.get("staleness_flags")
+    if raw is None:
+        raw = report.get("stale_subjects")
+    raw = raw or []
+    flagged = {e for e in raw if isinstance(e, str)}
+    flagged |= {e.get("subject_key") for e in raw if isinstance(e, dict)}
+    assert sk in flagged, (
+        "§11 row 2 / §5.1(7): the moved subject must appear in the manifest "
+        "staleness-flags surface (`staleness_flags`/`stale_subjects`)")
 
 
 def test_serve_refuses_states_derived_against_a_refolded_store(tmp_path):

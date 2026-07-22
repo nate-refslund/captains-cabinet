@@ -17,6 +17,14 @@ WHAT SIM-3 ASSERTS (contract §11 row 3):
       (c) producer/stream — a minted prediction lands ONLY in its own store,
           never the cortex store; `prediction` is not a belief kind (G-F4).
   * state / canonical graph unchanged by ANY prediction volume (N1 excludes them).
+  * the belief-vs-prediction id disjointness is pinned AT THE SCHEMAS
+    (edge.v1.json + prediction.v1.json jsonschema `pattern`s), not only the model
+    regexes (wall a strengthened).
+  * prediction SCORING lands ONLY in the predictions store (accuracy record; the
+    predictions-manifest chain grows; cortex + canonical graph bytes UNCHANGED);
+    a scored-accurate prediction NEVER changes an edge state on rebuild (the
+    scored→auto-evidence leg of the self-confirming loop); the accuracy record
+    keeps the pred- namespace (structurally unciteable as a belief).
   * counterfactual output lands ONLY under counterfactuals/<digest>/; canonical
     graph.jsonl + graph-manifest.json byte-identical after any branch build.
   * replay byte-reproduces per branch under the same epoch inputs.
@@ -30,9 +38,12 @@ NEGATIVE-CONTROL MUTANTS these cells fail (contract §11 row 3):
   manifest (the serve-REFUSE cell).
 
 FAILURE SIGNATURE (tests-first — `framework/objectives/` does NOT exist): every
-contract cell imports `framework.objectives.*` FIRST in its body, so today it
-fails with `ModuleNotFoundError: No module named 'framework.objectives'`. The
-`TestSim3SeedsAreReal` self-checks carry NO objectives import and PASS today.
+contract cell that drives the runtime imports `framework.objectives.*` FIRST in
+its body, so today it fails with `ModuleNotFoundError: No module named
+'framework.objectives'`. The schema-disjointness cell instead reads the objectives
+domain schemas (absent today) => FileNotFoundError — the same tests-first absence
+signature at the schema layer. The `TestSim3SeedsAreReal` self-checks carry NO
+objectives import and PASS today.
 
 PINNED API (narrowest plausible; flagged for the T4 implementer):
   model.BELIEF_ID_RE / model.PREDICTION_ID_RE — the two DISJOINT id patterns
@@ -46,6 +57,14 @@ PINNED API (narrowest plausible; flagged for the T4 implementer):
         cutoff, predicted_claim) -> a `pred-<digest>` id; appends to
         objectives_cache_dir/predictions/predictions.jsonl (§4.3), NEVER the
         cortex store.
+  counterfactual.score_prediction(objectives_cache_dir, prediction_id,
+        outcome_view) -> an accuracy record dict {accuracy_id (a `pred-<digest>`
+        id — the pred- namespace), prediction_id, …} APPENDED to
+        predictions/predictions.jsonl + advancing predictions-manifest.json (§4.3);
+        NEVER the cortex store, NEVER auto-promoted to evidence (the self-
+        confirming-loop wall). THIS is the pinned scoring surface (cache-dir first,
+        matching mint_prediction; outcome_view = the realized-outcome claim/view
+        the forecast is scored against).
   counterfactual.build_branch(roots_path, objectives_cache_dir, scope, cutoff,
         assumption_overrides) -> the branch dir objectives_cache_dir/
         counterfactuals/<digest>/ (digest = recorder digest of (cutoff,
@@ -81,6 +100,34 @@ import lib_cog3_fixtures as L  # noqa: E402  (NEVER framework.objectives here)
 _BELIEF_ID_RE = r"^[0-9a-f]{64}$"
 _PREDICTION_ID_RE = r"^pred-[0-9a-f]{64}$"
 _SYNTH_EDGE_ID = L.belief.digest(["edge", "counterfactual", "E"])   # 64-hex synthetic
+
+# The objectives domain schemas (contract §8, registry PATH). Absent today
+# (tests-first) => reading one raises FileNotFoundError = the honest absence
+# signature. THE PIN (documented once): the objectives id-namespace disjointness
+# (§4.2:81 / §4.3) is baked into these schema FILES as jsonschema `pattern`s —
+# edge.v1.json types evidence-binding ids to the belief-id pattern,
+# prediction.v1.json types its id to the pred- pattern — so the disjointness is
+# pinned AT THE SCHEMAS, not only the model regexes (wall a).
+_OBJECTIVES_SCHEMA_DIR = Path(_ROOT) / "framework" / "schemas" / "domains" / "objectives"
+
+
+def _schema_pattern_strings(schema):
+    """Every jsonschema `pattern` value anywhere in a schema doc (recursive), so
+    the disjointness assertion is robust to where the id typing is nested."""
+    found = set()
+
+    def walk(node):
+        if isinstance(node, dict):
+            for key, val in node.items():
+                if key == "pattern" and isinstance(val, str):
+                    found.add(val)
+                walk(val)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(schema)
+    return found
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +206,28 @@ def test_wall_schema_prediction_id_is_structurally_uncitable():
     assert re.fullmatch(model.BELIEF_ID_RE, sample)               # a real belief id does
 
 
+def test_schemas_bake_in_the_disjoint_id_namespaces():
+    # NIT / wall (a) STRENGTHENED (§4.2:81 / §4.3): the belief-vs-prediction id
+    # disjointness is pinned AT THE SCHEMAS, not only the model regexes above.
+    # edge.v1.json types evidence-binding ids to the belief-id pattern
+    # (^[0-9a-f]{64}$); prediction.v1.json types its id to the pred- pattern
+    # (^pred-[0-9a-f]{64}$). Schemas absent today => FileNotFoundError = the
+    # tests-first absence signature at the schema layer.
+    edge_schema = json.loads(
+        (_OBJECTIVES_SCHEMA_DIR / "edge.v1.json").read_text(encoding="utf-8"))
+    pred_schema = json.loads(
+        (_OBJECTIVES_SCHEMA_DIR / "prediction.v1.json").read_text(encoding="utf-8"))
+    edge_patterns = _schema_pattern_strings(edge_schema)
+    pred_patterns = _schema_pattern_strings(pred_schema)
+    assert _BELIEF_ID_RE in edge_patterns, \
+        "§4.2: edge.v1.json must type evidence-binding ids to the belief-id pattern"
+    assert _PREDICTION_ID_RE in pred_patterns, \
+        "§4.3: prediction.v1.json must type its id to the pred- pattern"
+    # disjoint by construction: the pred- pattern never types a belief-id slot.
+    assert _PREDICTION_ID_RE not in edge_patterns, \
+        "§4.2/§4.3: a pred- id must be structurally unciteable as evidence"
+
+
 def test_wall_store_resolution_prediction_ref_is_a_structural_build_failure(tmp_path):
     # WALL (b) STORE-RESOLUTION (§4.3/§5.1(3)): a `pred-` ref resolves in NO
     # verified cortex store's as_of closure, so an edge binding it is a structural
@@ -215,6 +284,86 @@ def test_prediction_volume_never_changes_the_canonical_graph(tmp_path):
     graph.build_graph(roots, objectives, L.SCOPE, L.CUTOFF)       # rebuild
 
     assert _canonical_bytes(objectives) == before                # byte-identical
+
+
+def test_scoring_a_prediction_lands_only_in_the_predictions_store(tmp_path):
+    # §4.3 / §11 row 3 ("prediction scoring lands in the prediction store only"):
+    # scoring a minted prediction appends an ACCURACY record to the predictions
+    # store (its chain grows) and touches NOTHING else — the cortex store bytes and
+    # the canonical graph bytes are unchanged. Bites a scorer that writes accuracy
+    # back into the cortex/evidence plane.
+    graph = _import_graph()
+    counterfactual = _import_counterfactual()
+    cortex, objectives, roots = _seed_cache(tmp_path / "cache")
+    graph.build_graph(roots, objectives, L.SCOPE, L.CUTOFF)
+    canonical_before = _canonical_bytes(objectives)
+    cortex_before = (cortex / "beliefs.jsonl").read_bytes()
+
+    pred_id = counterfactual.mint_prediction(
+        objectives, _SYNTH_EDGE_ID, {"assume": "no-confounding"},
+        L.CUTOFF, L.observed_effect_claim("increase"))
+    pred_store = objectives / "predictions" / "predictions.jsonl"
+    pred_manifest = objectives / "predictions" / "predictions-manifest.json"
+    lines_before = pred_store.read_text(encoding="utf-8").count("\n")
+    chain_before = pred_manifest.read_bytes() if pred_manifest.exists() else b""
+
+    counterfactual.score_prediction(objectives, pred_id,
+                                    L.observed_effect_claim("increase"))
+
+    # the accuracy record landed in the predictions store (the chain grew).
+    assert pred_store.read_text(encoding="utf-8").count("\n") > lines_before
+    assert pred_id in pred_store.read_text(encoding="utf-8")
+    assert pred_manifest.exists() and pred_manifest.read_bytes() != chain_before
+    # nothing else moved: cortex store + canonical graph byte-identical (§4.3/N1).
+    assert (cortex / "beliefs.jsonl").read_bytes() == cortex_before
+    assert _canonical_bytes(objectives) == canonical_before
+
+
+def test_scored_prediction_never_changes_edge_state_on_rebuild(tmp_path):
+    # §4.3 / §11 row 3 self-confirming-loop mutant (prediction → scored → auto-
+    # evidence → promotion): a scored-ACCURATE prediction must NEVER feed back as
+    # evidence. Epistemic state is compiled INTO the canonical graph (§5.4), so a
+    # rebuild after scoring that leaves the canonical bytes byte-identical proves
+    # no edge state changed. Bites the scored→auto-evidence leg directly (the
+    # prediction-volume cell above only MINTS; this one SCORES then rebuilds).
+    graph = _import_graph()
+    counterfactual = _import_counterfactual()
+    cortex, objectives, roots = _seed_cache(tmp_path / "cache")
+    graph.build_graph(roots, objectives, L.SCOPE, L.CUTOFF)
+    before = _canonical_bytes(objectives)
+
+    pred_id = counterfactual.mint_prediction(
+        objectives, _SYNTH_EDGE_ID, {"assume": "x"}, L.CUTOFF,
+        L.observed_effect_claim("increase"))
+    counterfactual.score_prediction(objectives, pred_id,
+                                    L.observed_effect_claim("increase"))   # ACCURATE
+    graph.build_graph(roots, objectives, L.SCOPE, L.CUTOFF)                # rebuild after scoring
+
+    assert _canonical_bytes(objectives) == before   # states identical — no auto-evidence
+
+
+def test_scored_accuracy_record_is_not_belief_shaped(tmp_path):
+    # §4.3 wall (a)+(c) tie-in: the accuracy record keeps the pred- namespace — it
+    # matches the prediction-id pattern and NOT the belief-id pattern, so it is
+    # structurally unciteable as evidence; scoring never writes the cortex store;
+    # and `prediction`/`accuracy` are not belief KINDS (no adapter stream carries
+    # them). Bites laundering the accuracy record back as a belief.
+    counterfactual = _import_counterfactual()
+    cortex, objectives, _roots = _seed_cache(tmp_path / "cache")
+    cortex_before = (cortex / "beliefs.jsonl").read_bytes()
+
+    pred_id = counterfactual.mint_prediction(
+        objectives, _SYNTH_EDGE_ID, {"assume": "x"}, L.CUTOFF,
+        L.observed_effect_claim("increase"))
+    record = counterfactual.score_prediction(objectives, pred_id,
+                                             L.observed_effect_claim("increase"))
+
+    acc_id = record["accuracy_id"]
+    assert re.fullmatch(_PREDICTION_ID_RE, acc_id)        # pred- namespace
+    assert not re.fullmatch(_BELIEF_ID_RE, acc_id)        # NOT a belief id (wall a)
+    assert record["prediction_id"] == pred_id             # bound to its forecast
+    assert (cortex / "beliefs.jsonl").read_bytes() == cortex_before   # cortex untouched
+    assert "prediction" not in L.belief.KINDS and "accuracy" not in L.belief.KINDS  # wall c
 
 
 def test_counterfactual_branch_isolates_output_and_leaves_canonical_byte_identical(tmp_path):
@@ -310,3 +459,15 @@ class TestSim3SeedsAreReal:
         # the prediction cells reference a synthetic edge id (predictions are
         # forecasts; the store does not require the edge to exist in the graph).
         assert re.fullmatch(_BELIEF_ID_RE, _SYNTH_EDGE_ID)
+
+    def test_scoring_outcome_view_seed_is_a_real_observed_effect_claim(self):
+        # the scoring cells score a forecast against a realized-outcome claim; that
+        # claim is the SAME observed_effect shape the cortex store seeds, so the
+        # scoring cells fail today ONLY for the absent implementation.
+        assert L.observed_effect_claim("increase") == {"observed_effect": "increase"}
+
+    def test_objectives_schema_dir_is_absent_today(self):
+        # documents the tests-first signature for the schema-disjointness cell: the
+        # objectives domain schemas do not exist yet, so that cell fails on the
+        # absent schema files (FileNotFoundError).
+        assert not _OBJECTIVES_SCHEMA_DIR.exists()

@@ -13,25 +13,33 @@ verdict whose causal join does not match the intervention NEVER promotes (§5.2b
 WHAT SIM-4 ASSERTS (contract §11 row 4):
   * causal edge to the OUTCOME never exceeds observationally_supported on ANY
     observational volume (P5 cap) — incl. confounded/Simpson-structured evidence.
-  * `instrument` is never a causal target (structural rejection) while `indicates`
-    (instrument→outcome) is a VALID non-causal trend edge.
-  * the §5.6 divergence_report carries the seeded instrument-vs-outcome opposition.
+  * `instrument` is never a causal target — enforced at BOTH limbs: the edge
+    SCHEMA (edge.v1.json) rejects an instrument-targeted causal edge, AND
+    build_graph fails STRUCTURALLY on one — while `indicates` (instrument→outcome)
+    is a VALID non-causal trend edge.
+  * the §5.6 divergence_report carries the seeded instrument-vs-outcome opposition
+    (over an outcome that ALSO TERMINATES A CAUSAL EDGE — the §5.6 join
+    precondition; the seed carries an intervention→outcome causal edge).
   * a recommendation cites (objective, evidence, uncertainty) and REFUSES
     "effective" without an intervention (tested) binding.
   * the mismatched-join verdict seed NEVER promotes (verified-join, §5.2b).
 
 NEGATIVE-CONTROL MUTANTS these cells fail (contract §11 row 4):
   volume-promotes state machine (the volume + Simpson cells); instrument-as-
-  causal-target accepted (the structural-target cell); assumption-free promotion
+  causal-target accepted (BOTH limbs — the edge-schema cell + the build cell);
+  assumption-free promotion
   above hypothesized (the assumption-free cell — never mints `tested`); naked-
   verdict recommendation (the recommendation cell); out-of-`admissible_subjects`
   binding builds successfully (the build-failure cell — must be structural);
   mismatched-join binding promotes (the join cell).
 
 FAILURE SIGNATURE (tests-first — `framework/objectives/` does NOT exist): every
-contract cell imports `framework.objectives.*` FIRST in its body, so today it
-fails with `ModuleNotFoundError: No module named 'framework.objectives'`. The
-`TestSim4SeedsAreReal` self-checks carry NO objectives import and PASS today.
+contract cell that drives the runtime imports `framework.objectives.*` FIRST in
+its body, so today it fails with `ModuleNotFoundError: No module named
+'framework.objectives'`. The edge-schema cell instead reads the (absent)
+objectives edge schema => FileNotFoundError — the same tests-first absence
+signature at the schema layer. The `TestSim4SeedsAreReal` self-checks carry NO
+objectives import and PASS today.
 
 PINNED API (narrowest plausible; flagged for the T4 implementer):
   states.derive_edge_state(edge, bound_views, cutoff) -> EdgeState(state, flags),
@@ -42,6 +50,12 @@ PINNED API (narrowest plausible; flagged for the T4 implementer):
         pair. The implementer may instead enforce this in graph.build_graph — the
         test pins the OBSERVABLE (a structured failure); BuildFailure is the one
         shared structural-failure class (re-exported from states — T3 layering note).
+  framework/schemas/domains/objectives/edge.v1.json (registry PATH; full
+        Draft-2020-12, enum/pattern-bearing) : REJECTS a causal-edge row whose
+        target kind is `instrument` — validated with jsonschema.Draft202012Validator
+        (the cortex schema-test cross-check idiom). And graph.build_graph over a
+        roots fixture expressing such an edge raises states.BuildFailure (the build
+        limb) — the two limbs of the instrument-as-causal-target mutant.
   graph.build_graph(roots_path, objectives_cache_dir, scope, cutoff)
         -> writes objectives_cache_dir/graph-manifest.json carrying a
         `divergence_report` LIST (display-only; §5.6). Reads the SIBLING cortex
@@ -79,6 +93,15 @@ import lib_cog3_fixtures as L  # noqa: E402  (NEVER framework.objectives here)
 # (decrease) on the shared dimension — the seeded opposition (:178).
 _INSTRUMENT_SK = "instrument/proxy-metric"
 _OUTCOME_SK = "outcome/real-goal"
+# The intervention whose CAUSAL edge terminates at the outcome — the §5.6 join
+# precondition ("the outcome ALSO terminates causal edges"); nit-aligned seed.
+_INTERVENTION_SK = "intervention/the-lever"
+
+# The objectives domain schemas (contract §8, registry PATH). Absent today
+# (tests-first) => reading one raises FileNotFoundError = the honest absence
+# signature. THE PIN: they are full Draft-2020-12 documents (enum/pattern-bearing),
+# validated with the reference engine (the cortex schema-test cross-check idiom).
+_OBJECTIVES_SCHEMA_DIR = Path(_ROOT) / "framework" / "schemas" / "domains" / "objectives"
 
 
 @pytest.fixture
@@ -130,7 +153,12 @@ def _stratified_supporting_edge(log_dir):
     proving strata are SURFACED in the claim bytes (§5.6 honest scope: strata are
     carried, not estimated). The direction reading still keys on observed_effect,
     so the edge is direction-supporting — and MUST cap at P5 (prevention), never
-    promote on the correlation. Returns (edge, bound_views)."""
+    promote on the correlation. Returns (edge, bound_views).
+
+    `assumptions` is NON-EMPTY (ruling R-A, §4.2): observationally_supported (P5)
+    is above hypothesized and requires declared assumptions, so the P5 cap is
+    demonstrated AT P5 — an assumptionless edge would derive P6 and mask the
+    Simpson-promotes mutant."""
     protos = []
     strata = [("region-a", "increase"), ("region-b", "increase"),
               ("region-c", "decrease")]                # Simpson: one stratum negative
@@ -150,7 +178,8 @@ def _stratified_supporting_edge(log_dir):
             bindings.append(L.BindingRef(v.subject_key, v.belief_id))
             admissible.add(v.subject_key)
     edge = L.EdgeSpec(
-        authored=True, expected_effect="increase", assumptions=(),
+        authored=True, expected_effect="increase",
+        assumptions=("declared-confounder-and-selection",),   # R-A: P5 needs assumptions
         admissible_subjects=frozenset(admissible), join_spec=(),
         evidence_bindings=tuple(bindings))
     return edge, tuple(views)
@@ -159,7 +188,11 @@ def _stratified_supporting_edge(log_dir):
 def _divergence_store(cache_root):
     """Persist a cortex store under cache_root/cortex seeding the §5.6 opposition:
     the instrument's head INCREASES while the outcome's head DECREASES on the
-    shared dimension. Returns (cortex_dir, objectives_dir)."""
+    shared dimension. An INTERVENTION observation is ALSO seeded (nit / §5.6 join
+    precondition): §5.6 only reports over an outcome that ALSO TERMINATES A CAUSAL
+    EDGE, so the seed carries the intervention whose causal edge terminates at the
+    outcome (the edge itself is adapter-authored from _divergence_roots). Returns
+    (cortex_dir, objectives_dir)."""
     protos = [
         L.observation_proto(_INSTRUMENT_SK, L.DIMENSION,
                             claim=L.observed_effect_claim("increase"),
@@ -167,6 +200,9 @@ def _divergence_store(cache_root):
         L.observation_proto(_OUTCOME_SK, L.DIMENSION,
                             claim=L.observed_effect_claim("decrease"),
                             seq=0, event_suffix="outc"),
+        L.observation_proto(_INTERVENTION_SK, L.DIMENSION,
+                            claim=L.observed_effect_claim("increase"),
+                            seq=0, event_suffix="interv"),
     ]
     beliefs = L.fold_beliefs(protos)
     cortex = cache_root / "cortex"
@@ -177,6 +213,83 @@ def _divergence_store(cache_root):
     return cortex, objectives
 
 
+def _divergence_roots(dir_path):
+    """A PROVISIONAL roots fixture for the §5.6 divergence seed: an objective
+    (hit-the-goal → the outcome), an INSTRUMENT with an `indicates` edge to the
+    outcome (the trend link §5.6 iterates), and an INTERVENTION with a CAUSAL edge
+    TERMINATING at the outcome (so the outcome ALSO terminates a causal edge — the
+    §5.6 join precondition; nit). The roots-adapter schema is provisional
+    (lib_cog3_fixtures.write_roots_yml note), so this local helper expresses the
+    nodes/edges directly. ADAPTER-DEPENDENT: T4 aligns the SEED to the final
+    adapter surface; the FIRM contract is the reported opposition over a
+    causal-terminating outcome. Plain text (no yaml dependency), import-inert."""
+    text = (
+        "# fixture divergence roots (COG-3 §5.6, provisional shape)\n"
+        "directions:\n"
+        "  - slug: hit-the-goal\n"
+        '    statement: "move the real outcome"\n'
+        "objectives:\n"
+        "  - slug: hit-the-goal\n"
+        f"    outcome: {_OUTCOME_SK}\n"
+        "nodes:\n"
+        f"  - {{kind: instrument, subject_key: {_INSTRUMENT_SK}}}\n"
+        f"  - {{kind: intervention, subject_key: {_INTERVENTION_SK}}}\n"
+        f"  - {{kind: outcome, subject_key: {_OUTCOME_SK}}}\n"
+        "indicates_edges:\n"
+        f"  - {{source: {_INSTRUMENT_SK}, target: {_OUTCOME_SK}, dimension: {L.DIMENSION}}}\n"
+        "causal_edges:\n"
+        f"  - source: {_INTERVENTION_SK}\n"
+        f"    target: {_OUTCOME_SK}          # causal edge TERMINATES at the outcome\n"
+        f"    dimension: {L.DIMENSION}\n"
+        "    expected_effect: increase\n")
+    path = Path(dir_path) / "directions.yml"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def _roots_with_instrument_causal_target(dir_path):
+    """A PROVISIONAL roots fixture expressing an ILLEGAL causal edge whose TARGET
+    is an instrument (§4.2: causal edges terminate on outcome/constraint ONLY).
+    ADAPTER-DEPENDENT (same disposition as _divergence_roots): T4 aligns the SEED;
+    the FIRM contract is that build_graph fails STRUCTURALLY on this edge."""
+    text = (
+        "# fixture roots with an ILLEGAL causal-to-instrument edge (COG-3 §4.2)\n"
+        "directions:\n"
+        "  - slug: hit-the-goal\n"
+        '    statement: "move the real outcome"\n'
+        "nodes:\n"
+        f"  - {{kind: instrument, subject_key: {_INSTRUMENT_SK}}}\n"
+        f"  - {{kind: intervention, subject_key: {_INTERVENTION_SK}}}\n"
+        "causal_edges:\n"
+        f"  - source: {_INTERVENTION_SK}\n"
+        f"    target: {_INSTRUMENT_SK}     # ILLEGAL: causal target is an instrument\n"
+        f"    dimension: {L.DIMENSION}\n"
+        "    expected_effect: increase\n")
+    path = Path(dir_path) / "directions.yml"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def _instrument_targeted_causal_edge_row():
+    """A §4.2 causal-edge RECORD whose target node kind is `instrument` — the
+    illegal shape a correct edge.v1.json must reject (causal edges terminate on
+    outcome/constraint ONLY). Best-effort per §4.2; the FIRM contract is the
+    rejection on the instrument target (the schema is absent today, so the exact
+    field shape does not affect the absence signature). Documented pin."""
+    return {
+        "edge_id": L.belief.digest(["edge", "instrument-target"]),
+        "source_node_id": L.belief.digest(["node", "intervention", "the-lever"]),
+        "target_node_id": L.belief.digest(["node", "instrument", "proxy-metric"]),
+        "target_kind": "instrument",           # <- the illegal causal target
+        "dimension": L.DIMENSION,
+        "expected_effect": "increase",
+        "admissible_subjects": [],
+        "evidence_bindings": [],
+        "assumptions": ["declared-confounder-and-selection"],
+        "uncertainty": "unknown",
+    }
+
+
 # ===========================================================================
 # CONTRACT CELLS — import framework.objectives FIRST => absence signature today.
 # ===========================================================================
@@ -184,9 +297,13 @@ def _divergence_store(cache_root):
 def test_no_observational_volume_promotes_the_causal_edge(consequence_ledger):
     # §5.2 P5 cap (SIM-4 volume mutant): 100 direction-supporting observations
     # stay observationally_supported — no VOLUME of observations mints
-    # intervention_supported. Bites the volume-promotes state machine.
+    # intervention_supported. Bites the volume-promotes state machine. The edge
+    # DECLARES assumptions (ruling R-A, §4.2 "assumptions REQUIRED non-empty for
+    # any edge deriving above hypothesized"), so the cap is demonstrated AT P5 —
+    # an assumptionless edge would derive P6 and hide the volume mutant.
     states = _import_states()
-    cell = L.EdgeCell(expected_effect="increase", bindings=_VOL_SUPPORTING)
+    cell = L.EdgeCell(expected_effect="increase", assumptions=True,
+                      bindings=_VOL_SUPPORTING)
     edge, views = L.materialize(cell, consequence_ledger)
     result = states.derive_edge_state(edge, views, L.CUTOFF)
     assert result.state == L.STATE_OBSERVATIONALLY_SUPPORTED  # §5.2 P5: the cap
@@ -268,6 +385,42 @@ def test_instrument_is_never_a_legal_causal_target():
     assert ("instrument", "outcome") in model.INDICATES_ALLOWED
 
 
+def test_edge_schema_rejects_an_instrument_causal_target():
+    # §4.2 / §11 row-4 mutant ('instrument-as-causal-target edge accepted'), SCHEMA
+    # limb: edge.v1.json must REJECT a causal edge terminating on an instrument.
+    # The helper-pin cell above only pins model.assert_legal_causal_target; the
+    # mutant survives if build_graph never calls the helper AND the schema doesn't
+    # gate target kinds — this cell + the build cell below close BOTH limbs.
+    # Validated with the reference Draft-2020-12 engine (the jsonschema cross-check
+    # idiom the cortex/registry schema tests use, framework/triggers/tests/
+    # test_schema_registry.py:301-354), loaded by the schema's registry PATH.
+    # Absent today => FileNotFoundError = the tests-first absence signature.
+    schema = json.loads(
+        (_OBJECTIVES_SCHEMA_DIR / "edge.v1.json").read_text(encoding="utf-8"))
+    jsonschema = pytest.importorskip("jsonschema")
+    row = _instrument_targeted_causal_edge_row()
+    errors = list(jsonschema.Draft202012Validator(schema).iter_errors(row))
+    assert errors, \
+        "§4.2: edge.v1.json must reject a causal edge whose target is an instrument"
+
+
+def test_build_rejects_an_instrument_targeted_causal_edge(tmp_path):
+    # §4.2 / §11 row-4 mutant, BUILD limb: build_graph over a fixture expressing a
+    # causal edge that TERMINATES on an instrument is a STRUCTURAL build failure
+    # (states.BuildFailure — the one shared structural-failure class), never a
+    # silent skip. Closes the second limb (build_graph never calls
+    # model.assert_legal_causal_target).
+    # [ADAPTER-DEPENDENT: the illegal edge is expressed through the roots/adapter
+    #  surface; if the final adapter schema differs, T4 aligns the SEED — the FIRM
+    #  contract is the structural failure. Flagged like the divergence cell.]
+    graph = _import_graph()
+    states = _import_states()
+    _cortex, objectives = _divergence_store(tmp_path / "cache")
+    roots = _roots_with_instrument_causal_target(tmp_path)
+    with pytest.raises(states.BuildFailure):
+        graph.build_graph(roots, objectives, L.SCOPE, L.CUTOFF)
+
+
 def test_divergence_report_is_a_display_only_manifest_surface(tmp_path):
     # §5.6: the build emits a `divergence_report` in graph-manifest.json — a FLAG
     # surface (list), display-only, NO state change, NO score. This pins the
@@ -275,8 +428,7 @@ def test_divergence_report_is_a_display_only_manifest_surface(tmp_path):
     # emits no such key). Content is asserted in the ADAPTER-DEPENDENT cell below.
     graph = _import_graph()
     cortex, objectives = _divergence_store(tmp_path / "cache")
-    roots = L.write_roots_yml(tmp_path, [{"slug": "hit-the-goal",
-                                          "statement": "move the real outcome"}])
+    roots = _divergence_roots(tmp_path)   # nit: outcome terminates a causal edge (§5.6)
     graph.build_graph(roots, objectives, L.SCOPE, L.CUTOFF)
     manifest = json.loads((objectives / "graph-manifest.json").read_text(encoding="utf-8"))
     assert isinstance(manifest.get("divergence_report"), list)   # §5.6 surface exists
@@ -293,8 +445,7 @@ def test_divergence_report_carries_the_seeded_opposition(tmp_path):
     #  entry is present — is the firm contract). Flagged in the wave report.]
     graph = _import_graph()
     cortex, objectives = _divergence_store(tmp_path / "cache")
-    roots = L.write_roots_yml(tmp_path, [{"slug": "hit-the-goal",
-                                          "statement": "move the real outcome"}])
+    roots = _divergence_roots(tmp_path)   # nit: outcome terminates a causal edge (§5.6)
     graph.build_graph(roots, objectives, L.SCOPE, L.CUTOFF)
     manifest = json.loads((objectives / "graph-manifest.json").read_text(encoding="utf-8"))
     report = manifest.get("divergence_report", [])
@@ -375,3 +526,12 @@ class TestSim4SeedsAreReal:
         assert instr[0].value == {"observed_effect": "increase"}
         assert outc[0].value == {"observed_effect": "decrease"}     # opposition real
         assert _INSTRUMENT_SK in by_sub and _OUTCOME_SK in by_sub
+        # nit: the intervention seed (§5.6 join precondition — the outcome ALSO
+        # terminates a causal edge) is real substrate too.
+        assert _INTERVENTION_SK in by_sub
+
+    def test_objectives_edge_schema_is_absent_today(self):
+        # documents the tests-first signature for the edge-schema cell: the
+        # objectives edge schema does not exist yet, so that cell fails on the
+        # absent schema file (FileNotFoundError).
+        assert not (_OBJECTIVES_SCHEMA_DIR / "edge.v1.json").exists()
