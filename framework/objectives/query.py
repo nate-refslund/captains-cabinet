@@ -73,7 +73,9 @@ def scorecard_view(dimensions: dict) -> ScorecardView:
         if not has_value:
             state, met = states.STATE_UNKNOWN, False   # unknown never passes (:239)
         elif floor is not None and value >= floor:
-            state, met = "observed", True
+            # INTERNAL token only in data/persistence (§5.2 "no second drifting
+            # enum") — the Captain word 'observed' lives ONLY in to_captain_word.
+            state, met = states.STATE_OBSERVATIONALLY_SUPPORTED, True
         else:
             state, met = states.STATE_HYPOTHESIZED, False
         cell: dict = {"floor": floor, "state": state}

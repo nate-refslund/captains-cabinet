@@ -70,10 +70,14 @@ def node_id(kind: str, subject_key: str) -> str:
     return digest([kind, subject_key])
 
 
-def edge_id(source_node_id: str, target_node_id: str, dimension: str) -> str:
-    """Digest of (source, target, dimension) — identity EXCLUDES content, so a
-    directional restatement is an honest content change on a stable edge (§4.2)."""
-    return digest([source_node_id, target_node_id, dimension])
+def edge_id(source_node_id: str, target_node_id: str, discriminator: str,
+            *, family: str) -> str:
+    """Digest of (family, source, target, discriminator) — identity EXCLUDES
+    content, so a directional restatement is an honest content change on a stable
+    edge (§4.2). `family` ('causal'/'relational') is prefixed into the digest so a
+    causal `dimension` string equal to a relation token (e.g. 'depends_on') can
+    never collide ids with a relational edge between the SAME two nodes."""
+    return digest([family, source_node_id, target_node_id, discriminator])
 
 
 def prediction_id(*parts: Any) -> str:
@@ -161,7 +165,8 @@ class CausalEdge:
 
     @property
     def edge_id(self) -> str:
-        return edge_id(self.source_node_id, self.target_node_id, self.dimension)
+        return edge_id(self.source_node_id, self.target_node_id, self.dimension,
+                       family="causal")
 
     def to_canonical_dict(self) -> dict:
         return {
@@ -189,7 +194,8 @@ class RelationalEdge:
 
     @property
     def edge_id(self) -> str:
-        return edge_id(self.source_node_id, self.target_node_id, self.relation)
+        return edge_id(self.source_node_id, self.target_node_id, self.relation,
+                       family="relational")
 
     def to_canonical_dict(self) -> dict:
         out = {"edge_id": self.edge_id, "source_node_id": self.source_node_id,

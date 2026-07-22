@@ -50,13 +50,14 @@
               "producer_key": {"type": "string"}
             }
           }
-        }
+        },
+        "dependentRequired": {"confidence": ["source_trust"]}
       }
     },
     "assumptions": {
-      "description": "Explicit confounding/selection assumptions (:108); REQUIRED non-empty for any edge deriving above hypothesized. DECLARATIONS (honesty surface) — never the verification mechanism",
+      "description": "Explicit confounding/selection assumptions (:108); REQUIRED non-empty for any edge deriving above hypothesized. DECLARATIONS (honesty surface) — never the verification mechanism. Each item is a non-empty string (minLength 1) so an empty placeholder cannot masquerade as a declared assumption",
       "type": "array",
-      "items": {"type": "string"}
+      "items": {"type": "string", "minLength": 1}
     },
     "uncertainty": {
       "description": "Explicit; absent = unknown, never 0",
@@ -77,6 +78,21 @@
         "required": ["target_kind", "expected_effect", "dimension"],
         "properties": {
           "target_kind": {"enum": ["outcome", "constraint"]}
+        }
+      }
+    },
+    {
+      "description": "A RELATIONAL edge (`relation` present) carries NO epistemic machinery — evidence_bindings, expected_effect, and assumptions are causal-only fields and must be ABSENT (§4.2: relational edges are separate typed edges with no epistemic machinery).",
+      "if": {
+        "required": ["relation"]
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {"required": ["evidence_bindings"]},
+            {"required": ["expected_effect"]},
+            {"required": ["assumptions"]}
+          ]
         }
       }
     }

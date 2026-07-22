@@ -77,7 +77,13 @@ def _verified_join(view, join_spec) -> bool:
     == 1) AND (i) the recorder digest recomputed from the claim's own
     (actor 'kind:id', action, subject, ts) identity equals the <identity-digest>
     suffix of its subject_key AND (ii) that (actor,action,subject) is in the edge's
-    join_spec. The join is MACHINE-CHECKED from the served bytes, never declared."""
+    join_spec. The join is MACHINE-CHECKED from the served bytes, never declared.
+
+    The two limbs fail DIFFERENTLY (§5.2b): a limb-(i) mismatch is a FORGED
+    subject/claim pairing — the claim is not the row its subject names — a
+    structural BuildFailure, never a silent demotion to direction fuel. A limb-(ii)
+    mismatch is HONEST evidence about a DIFFERENT intervention — merely non-verified
+    (returns False; the corpus's mismatched-join cells cap it at P5, never raise)."""
     provenance = getattr(view, "provenance", None) or {}
     if provenance.get("stream_rank") != _CONSEQUENCE_STREAM_RANK:
         return False
@@ -95,11 +101,17 @@ def _verified_join(view, join_spec) -> bool:
     action = value.get("action", "")
     subject = value.get("subject", "")
     ts = value.get("ts", "")
-    # limb (i): the subject_key must NAME the row it carries.
+    # limb (i): the subject_key must NAME the row it carries — a forged pairing is
+    # a STRUCTURAL build failure (§5.2b), never a silent demotion to direction fuel.
     recomputed = model.digest([actor_id, action, subject, ts])
     if subject_key[len(_CONSEQUENCE_PREFIX):] != recomputed:
-        return False
-    # limb (ii): the claim's identity must be an expected matcher of THIS edge.
+        raise BuildFailure(
+            f"forged consequence identity: subject_key {subject_key!r} does not "
+            f"name its own (actor,action,subject,ts) row (recomputed {recomputed!r})"
+            " — a claim that is not the row its subject names is a structural build "
+            "failure (§5.2b limb i)")
+    # limb (ii): the claim's identity must be an expected matcher of THIS edge — a
+    # miss here is honest evidence about a different intervention (non-verified).
     return (actor_id, action, subject) in set(join_spec)
 
 
@@ -161,9 +173,23 @@ def derive_edge_state(edge, bound_views, cutoff) -> EdgeState:
                 f"dangling evidence binding {ref.belief_id!r}: it does not resolve "
                 "in the as_of closure (§5.1(3), never a silent empty set)")
 
+    # stray-view guard: every bound view must be NAMED by an authored binding — an
+    # injected view no binding cites is unvalidated evidence, a structural build
+    # failure (§4.2/§5.1(3)). A zero-binding edge with empty bound_views still
+    # derives P6: the loop simply does not run.
+    binding_subjects = {ref.subject_key for ref in edge.evidence_bindings}
+    for view in bound_views:
+        if getattr(view, "subject_key", None) not in binding_subjects:
+            raise BuildFailure(
+                f"stray bound view {getattr(view, 'subject_key', None)!r}: no "
+                "authored binding of this edge names it (§4.2/§5.1(3))")
+
     join_spec = tuple(edge.join_spec)
     expected_effect = edge.expected_effect
-    assumptions_present = bool(edge.assumptions)
+    # an assumption is real only if a non-empty string survives strip — a
+    # placeholder like ("",) can never UNLOCK P3/P5 promotion (§4.2 honesty).
+    assumptions_present = any(
+        isinstance(a, str) and a.strip() for a in edge.assumptions)
 
     any_conflict = False
     any_human_confirm = False

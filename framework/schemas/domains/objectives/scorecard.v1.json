@@ -18,14 +18,13 @@
         "type": "number"
       },
       "state": {
-        "description": "The per-dimension derived epistemic state (:239)",
+        "description": "The per-dimension derived INTERNAL epistemic state (:239). Internal vocabulary ONLY — persisting the Captain word ('observed'/'tested'/'refuted') fails schema (§5.2 'no second drifting enum'); the Captain vocabulary appears solely at presentation via query.to_captain_word",
         "enum": [
           "unknown",
           "hypothesized",
           "observationally_supported",
           "intervention_supported",
-          "falsified",
-          "observed"
+          "falsified"
         ]
       },
       "evidence_binding_refs": {
