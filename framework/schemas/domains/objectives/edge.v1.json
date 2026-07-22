@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "objectives/edge@1 — causal + relational graph edge (COG-3)",
+  "description": "A causal edge (intervention -> outcome/constraint) or a relational edge (indicates/depends_on/conflicts_with/derives_from) in the shadow objective/value graph (docs/plans/cognitive-core-phase-3-contract-2026-07-22.md §4.2). edge_id is a digest of (source_node_id, target_node_id, dimension) — identity EXCLUDES content, so expected_effect + bindings are canonical-bytes CONTENT, not identity. STRUCTURAL WALL (SIM-4, :110): a causal edge terminates on outcome/constraint ONLY — an instrument node is NEVER a legal causal target; `indicates` (instrument->outcome) carries the trend link with no epistemic machinery. There is NO numeric edge weight anywhere (P12 ratchet). expected_effect is a closed enum {increase,decrease,maintain} — NEVER numeric, no magnitude. evidence_binding refs are typed to the belief-id digest pattern ^[0-9a-f]{64}$ so a prediction id (^pred-[0-9a-f]{64}$, prediction.v1.json) is structurally unciteable (§4.3). Epistemic state is NOT a stored field (derived at compile, §5.2). Registry-PATH-resolved but validated with jsonschema.Draft202012Validator (pattern/if/then are outside the closed-subset registry interpreter; the reference cross-check idiom at test_schema_registry.py:301-354).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["edge_id", "source_node_id", "target_node_id"],
+  "properties": {
+    "edge_id": {
+      "description": "Digest of (source_node_id, target_node_id, dimension) — identity excludes content",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_node_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "target_node_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "target_kind": {
+      "description": "The graph-owned node kind of the target. For a CAUSAL edge this is restricted to outcome/constraint (see allOf) — an instrument is never a legal causal target (:110)",
+      "type": "string"
+    },
+    "dimension": {
+      "description": "The outcome dimension the edge claims to move; adapter-pinned",
+      "type": "string"
+    },
+    "expected_effect": {
+      "description": "The edge's directional claim — a closed enum per dimension, NEVER numeric, no magnitude, no weight (§4.2). falsified + support/contradiction are defined mechanically against THIS field (§5.2)",
+      "enum": ["increase", "decrease", "maintain"]
+    },
+    "admissible_subjects": {
+      "description": "The closed set of cortex subject_keys this edge may bind — a binding whose subject_key is not in this set is a structural build failure (§4.2)",
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "evidence_bindings": {
+      "description": "Cortex belief-VIEW references carried as the FULL tuple (never a bare scalar). belief_id is typed to the belief-id digest pattern — a pred- id cannot validate",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["subject_key", "belief_id"],
+        "properties": {
+          "subject_key": {"type": "string"},
+          "belief_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "cutoff": {"type": "string"},
+          "evidence_ids": {"type": "array", "items": {"type": "string"}},
+          "confidence": {"type": "integer"},
+          "source_trust": {
+            "type": "object",
+            "required": ["table_version", "producer_key"],
+            "properties": {
+              "table_version": {"type": "integer"},
+              "producer_key": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "assumptions": {
+      "description": "Explicit confounding/selection assumptions (:108); REQUIRED non-empty for any edge deriving above hypothesized. DECLARATIONS (honesty surface) — never the verification mechanism",
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "uncertainty": {
+      "description": "Explicit; absent = unknown, never 0",
+      "type": "string"
+    },
+    "relation": {
+      "description": "Relational edge kind (no epistemic machinery). `indicates` (instrument->outcome) is the typed home for leading/lagging evidence (:106); conflicts stored symmetric + SORTED, never auto-resolved",
+      "enum": ["indicates", "depends_on", "conflicts_with", "derives_from"]
+    }
+  },
+  "allOf": [
+    {
+      "description": "A CAUSAL edge (no `relation` field) must declare expected_effect + dimension and terminate on outcome/constraint ONLY (SIM-4 structural wall).",
+      "if": {
+        "not": {"required": ["relation"]}
+      },
+      "then": {
+        "required": ["target_kind", "expected_effect", "dimension"],
+        "properties": {
+          "target_kind": {"enum": ["outcome", "constraint"]}
+        }
+      }
+    }
+  ]
+}
