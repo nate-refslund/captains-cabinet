@@ -81,15 +81,15 @@ temporary_allowances:
     deletion_gate: CI tolerance folded or COG-7 compaction
   - phase: COG-2
     budget: framework_production_modules
-    additional: 4
-    reason: COG-2 shadow temporal world model (Cortex) — the framework/cortex package (__init__/belief/engine/adapters). EXACT measured unit-1 delta (+4), NOT the §10 planning ceiling of 6 — the structural-compaction mutant gate (test_cognitive_architecture_census.py) requires zero headroom (observed==max) so any growth is caught, so each COG-2 unit bumps this allowance to its exact new running total rather than pre-allocating the ceiling; tightened to phase actual at done-flip (shrink-only)
+    additional: 5
+    reason: COG-2 shadow temporal world model (Cortex) — the framework/cortex package (__init__/belief/engine/adapters + UNIT 2 query.py). EXACT measured running total (+5 = unit-1's +4 plus unit-2's query.py), NOT the §10 planning ceiling of 6 — the structural-compaction mutant gate (test_cognitive_architecture_census.py) requires zero headroom (observed==max) so any growth is caught, so each COG-2 unit bumps this allowance to its exact new running total rather than pre-allocating the ceiling; tightened to phase actual at done-flip (shrink-only)
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: COG-7 compaction folds the projection, or the phase is superseded
   - phase: COG-2
     budget: framework_production_noncomment_lines
-    additional: 492
-    reason: COG-2 shadow temporal world model (Cortex) — belief record + pure deterministic fold + canonical hash (recorder dialect by identity) + tasks adapter. EXACT measured unit-1 delta (+492) via cognitive-architecture-census.py, NOT the §10 planning ceiling of 1800 — the structural-compaction mutant gate requires zero headroom (observed==max), so each COG-2 unit bumps this allowance to its exact new running total; tightened to phase actual at the ledger done-flip (shrink-only)
+    additional: 832
+    reason: COG-2 shadow temporal world model (Cortex) — unit 1 (belief record + pure fold + canonical hash + tasks adapter) plus UNIT 2 (envelope-file adapter §5.2a + as-of query API query.py + shared resolve_relationships/derive_status + belief_from_row). EXACT measured running total (+832 = unit-1's +492 plus unit-2's +340) via cognitive-architecture-census.py, NOT the §10 planning ceiling of 1800 — the structural-compaction mutant gate requires zero headroom (observed==max), so each COG-2 unit bumps this allowance to its exact new running total; tightened to phase actual at the ledger done-flip (shrink-only)
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: COG-7 compaction folds the projection, or the phase is superseded
