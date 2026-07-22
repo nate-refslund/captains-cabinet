@@ -21,9 +21,22 @@ import struct
 import zlib
 from pathlib import Path
 
+import pytest
+
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 _DASH = _REPO_ROOT / "cabinet" / "dashboard"
 _APP = _DASH / "src" / "app"
+_EGG_MANIFEST = _REPO_ROOT / "cabinet" / "scripts" / "egg-export-manifest.txt"
+
+# The egg-export manifest is PRIVATE-SIDE export tooling — it drives the export
+# and is itself stripped from the packaged egg. Absent on a clean/public
+# checkout, so the expect-present packaging rows cannot be asserted there; skip
+# loud + named. Present on the source instance ⇒ the check runs with full teeth.
+requires_egg_manifest = pytest.mark.skipif(
+    not _EGG_MANIFEST.is_file(),
+    reason="egg-export-manifest.txt absent — private-side export tooling, not "
+           "shipped in the egg; packaging-pin rows arm on the source instance",
+)
 
 _PNG_SIG = b"\x89PNG\r\n\x1a\n"
 
@@ -216,9 +229,9 @@ def test_health_namespace_is_closed_tripwire():
 # Egg packaging manifest rows
 # ---------------------------------------------------------------------------
 
+@requires_egg_manifest
 def test_egg_manifest_rows_sit_in_the_expect_present_block():
-    manifest = (_REPO_ROOT / "cabinet" / "scripts"
-                / "egg-export-manifest.txt").read_text(encoding="utf-8")
+    manifest = _EGG_MANIFEST.read_text(encoding="utf-8")
     lines = manifest.splitlines()
     absent_start = lines.index("expect-absent .git")
     gitleaks_row = lines.index("expect-present .gitleaks.toml")

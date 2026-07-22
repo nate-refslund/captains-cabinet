@@ -125,8 +125,8 @@ redacted read-only projection, while the Captain controls retention,
 diagnostics, checksummed export, and typed purge. Runbook and verified
 DOGFOOD-001 bundle: [`docs/runbooks/evidence-recorder-v1.md`](./docs/runbooks/evidence-recorder-v1.md).
 
-The low-floor → high-ceiling journey is in
-[`docs/plans/onboarding-v2-design-of-record-2026-07-14.md`](./docs/plans/onboarding-v2-design-of-record-2026-07-14.md).
+The low-floor → high-ceiling journey is captured in the onboarding v2
+design-of-record (an internal planning record, 2026-07-14).
 
 Officers start propose-first: everything consequential is proposed to you on Telegram until cells graduate on evidence. Expect to approve a lot in week one — that is the ramp working.
 

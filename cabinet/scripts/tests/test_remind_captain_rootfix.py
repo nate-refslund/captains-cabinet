@@ -23,10 +23,13 @@ from pathlib import Path
 _REPO = Path(__file__).resolve().parents[3]
 _SCRIPT = _REPO / "cabinet" / "scripts" / "remind-captain.sh"
 
-# A context slug tracked in the repo (git ls-files instance/config/contexts):
-# adhoc.yml ships with the tree, so the script-relative default root can
-# resolve it with ZERO env.
-_REPO_CONTEXT = "adhoc"
+# A context slug tracked in the repo (git ls-files instance/config/contexts).
+# _default.yml is the ALWAYS-shipped fallback context — it survives the egg
+# export (adhoc.yml and the per-product contexts are instance data, stripped),
+# so the script-relative default root resolves it with ZERO env on BOTH the
+# source instance and a clean/public checkout. Full teeth either way (the
+# property under test is root resolution, not which context is used).
+_REPO_CONTEXT = "_default"
 
 _FAKE_PSQL = r"""#!/bin/bash
 body="$(cat 2>/dev/null || true)"

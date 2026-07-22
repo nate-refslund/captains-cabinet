@@ -161,7 +161,18 @@ def test_routing_docs_point_knowledge_at_vault_not_library_mcp():
     claude-egg-swap). Neither may route Cabinet knowledge to an MCP server
     that no longer boots."""
     for rel in ROUTING_DOCS:
-        text = (REPO / rel).read_text()
+        p = REPO / rel
+        if (rel == "docs/templates/CLAUDE-egg.md" and not p.exists()
+                and (REPO / "CLAUDE.md").exists()):
+            # The egg export STRIPS this template and swaps it IN as the public
+            # egg's CLAUDE.md (egg-export.sh claude-egg-swap). On a clean/public
+            # checkout the template is absent, but its post-swap output — the
+            # shipped CLAUDE.md, already checked above — carries the identical
+            # routing invariant. The source instance ships the template ⇒ it is
+            # checked there (no tolerance fires). The invariant holds on BOTH
+            # trees; only the surface that carries it differs.
+            continue
+        text = p.read_text()
         assert "Library MCP" not in text, (
             f"{rel} still routes knowledge to the retired Library MCP — "
             "knowledge = the vault (product-brain/), recall = memory_search")

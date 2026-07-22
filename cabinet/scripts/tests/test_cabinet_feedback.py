@@ -357,11 +357,14 @@ def test_present_but_unextractable_gate_fails_closed(tmp_path):
     assert "bundle" not in out                     # nothing was built
 
 
+@gate_required
 def test_gate_present_but_patterns_file_missing_fails_closed(tmp_path):
     """R166: a private-side checkout (gate file present) without the
     captain-specific patterns file must REFUSE the bundle — the gate line
     now carries generic classes only, so proceeding would scrub nothing
-    personal."""
+    personal. Requires the gate file (egg-publish-gate.sh) to copy: it is
+    private-side prep, stripped from egg cuts (see gate_required); the
+    egg-shape 'gate absent' path is covered by the baseline-mode tests."""
     root = _mk_root(tmp_path, gate="real", patterns=None,
                     doctor_lines=("nominal",))
     home = _mk_home(tmp_path)

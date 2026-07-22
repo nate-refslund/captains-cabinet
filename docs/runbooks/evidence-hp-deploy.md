@@ -14,7 +14,7 @@ page is the bug.
 Design of record: whole-cabinet evidence design 2026-07-16 §2.3 (HP-1
 identity/key isolation, HP-2 independent recomputation, HP-3 authenticated
 Captain-label channel), §8 D1. Germline contract for the shipped bytes:
-`docs/proposals/germline-amendment-evidence-hp-2026-07-17.md`.
+the evidence-HP germline amendment (an internal proposal record, 2026-07-17).
 
 THREAT HONESTY (repeat it at the ceremony, not just here): HP-1 raises the
 evidence-forgery bar from same-OS-user to **root** — root can still forge

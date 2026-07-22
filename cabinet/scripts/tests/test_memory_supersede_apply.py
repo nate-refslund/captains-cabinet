@@ -56,6 +56,17 @@ import yaml
 
 _REPO = Path(__file__).resolve().parents[3]
 
+# The egg-export manifest is PRIVATE-SIDE export tooling — it drives the export
+# and is stripped from the packaged egg. Absent on a clean/public checkout, so
+# the scrub-row assertions below cannot be made there; skip loud + named. On the
+# source instance the manifest is present ⇒ the R120 scrub pin runs full-teeth.
+_EGG_MANIFEST = _REPO / "cabinet" / "scripts" / "egg-export-manifest.txt"
+requires_egg_manifest = pytest.mark.skipif(
+    not _EGG_MANIFEST.is_file(),
+    reason="egg-export-manifest.txt absent — private-side export tooling, not "
+           "shipped in the egg; the R120 scrub-row pin arms on the source instance",
+)
+
 
 def _load(name: str, fname: str):
     mod = sys.modules.get(name)
@@ -1614,13 +1625,13 @@ def test_exec_wrapper_kills_chained_tail_empirically():
     assert "DETECT-RAN" in out2.stdout and "APPLY-RAN" in out2.stdout
 
 
+@requires_egg_manifest
 def test_live_instance_config_is_egg_scrubbed():
     """R120: the tracked live instance config must be deleted by the egg
     manifest and its .example twin must ship — a new tracked
     instance/config file that skips the manifest turns the egg export RED
     (t_instance_verify: 'LIVE INSTANCE FILE SURVIVED THE PASS')."""
-    manifest = (_REPO / "cabinet" / "scripts" /
-                "egg-export-manifest.txt").read_text()
+    manifest = _EGG_MANIFEST.read_text()
     assert "\ndelete instance/config/memory-supersession.yml\n" in manifest
     assert ("\nexpect-present instance/config/"
             "memory-supersession.yml.example\n") in manifest

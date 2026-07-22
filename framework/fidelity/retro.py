@@ -80,6 +80,14 @@ for _p in (str(RETRO_PIPE_DIR), str(_SHARED_DIR), str(RETRO_PIPE_DIR.parent)):
 # require the lib. Deletes when plan A2.1 vendors the lib into framework/.
 class _RetroUnavailable:
     def __getattr__(self, attr):
+        # Honor the dunder contract: CPython's from-import machinery probes
+        # __path__ (hasattr in _handle_fromlist) and pickling/copy probe other
+        # dunders; those MUST raise AttributeError, not RuntimeError, or a plain
+        # `from framework.fidelity.retro import retro_available` crashes at import
+        # on a retro-less tree (the import-then-branch contract this module
+        # documents). Only real scoring-attribute misses raise the guidance error.
+        if attr.startswith("__") and attr.endswith("__"):
+            raise AttributeError(attr)
         raise RuntimeError(
             f"retrodiction lib not available (looked in {RETRO_PIPE_DIR}) — "
             f"attribute {attr!r} needs the personal-source adapter's retrodiction pipe "
@@ -123,6 +131,12 @@ if retro_available():
     LLM_MODEL = _retro.LLM_MODEL
 else:  # pragma: no cover - exercised only on lib-less installs (CI, flavor B)
     def __getattr__(name):  # PEP 562: module imports cleanly, surface fails loudly
+        # Dunder probes (import machinery's __path__, pickling, etc.) must raise
+        # AttributeError so `from framework.fidelity.retro import <name>` on a
+        # retro-less tree does not crash at import — the import-then-branch
+        # contract. Non-dunder scoring names still fail loudly via the stub.
+        if name.startswith("__") and name.endswith("__"):
+            raise AttributeError(name)
         return getattr(_retro, name)  # _RetroUnavailable raises with guidance
 
 __all__ = [

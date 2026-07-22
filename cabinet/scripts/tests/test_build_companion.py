@@ -51,6 +51,17 @@ MANIFEST = REPO / "cabinet" / "scripts" / "egg-export-manifest.txt"
 APP = REPO / "bin" / "Cabinet Companion.app"
 BIN = APP / "Contents" / "MacOS" / "cabinet-companion"
 
+# The egg-export manifest is PRIVATE-SIDE export tooling: it drives the export
+# (which packages the tree) and is itself stripped from the packaged egg. On a
+# clean/public checkout it is absent, so the packaging-pin rows it carries
+# cannot be asserted; skip loud + named. Present on the source instance ⇒ the
+# row check runs with full teeth (no skip fires there).
+requires_egg_manifest = pytest.mark.skipif(
+    not MANIFEST.is_file(),
+    reason="egg-export-manifest.txt absent — private-side export tooling, not "
+           "shipped in the egg; packaging-pin rows arm on the source instance",
+)
+
 # F1: the three dashboard bind variable names are DEAD on this surface. They
 # are assembled here by concatenation so the names appear in NO repo file —
 # not even this test.
@@ -172,6 +183,7 @@ def test_info_plist_contract():
     assert info["CFBundleShortVersionString"] == "0.6.0"
 
 
+@requires_egg_manifest
 def test_egg_manifest_rows():
     text = MANIFEST.read_text(encoding="utf-8")
     for row in (

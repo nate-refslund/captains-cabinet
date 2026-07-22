@@ -1,7 +1,7 @@
 # /killswitch Card Runbook — the emergency stop on the Captain's phone
 
-**Status: LIVE with the inbound poller** (Phase 1 of
-`docs/plans/captain-controls-no-terminal-2026-07-17.md`). The Captain sends
+**Status: LIVE with the inbound poller** (Phase 1 of the
+captain-controls-no-terminal plan, 2026-07-17). The Captain sends
 `/killswitch` to the officer bot; the POLLER — not the Chair, not any LLM —
 replies with the standing control card: a fresh switch-state line plus inline
 `[⏹ Halt] [▶ Resume]` buttons. Taps execute the sanctioned script and repaint

@@ -72,6 +72,22 @@ done
 
 LEDGER="$ROOT/docs/plans/operative-egg-ledger-2026-07-07.yml"
 PLAN="$ROOT/docs/plans/operative-egg-plan-2026-07-07.md"
+ARCHIVED_NOTE="$ROOT/docs/plans/ARCHIVED-NOTE.md"
+
+# ARTIFACT-ANCHORED TOLERANCE (public-CI, per 2026-07-07 full-autonomy grant):
+# the operative-egg ledger/plan pair is a source-instance artifact — the egg
+# export strips it (transform:plans-archive) and drops docs/plans/ARCHIVED-NOTE.md
+# where it pruned the plans tree. On such an export/clean tree the gate has
+# nothing to check, so it SKIPs LOUD and passes (exit 0); on a source tree the
+# pair is present and the gate runs with full teeth below. DOUBLE-KEY teeth: the
+# pair absent WITHOUT the archive marker is real source rot and still hard-fails
+# (exit 64) — a source instance that loses its ledger stays red. Detection is the
+# consumed artifact's absence paired with the export's OWN marker, never an env
+# flag or a second CI.
+if { [ ! -f "$LEDGER" ] || [ ! -f "$PLAN" ]; } && [ -f "$ARCHIVED_NOTE" ]; then
+  echo "SKIP source-instance gate: operative-egg ledger archived out of this tree at egg export (instance data; egg strips the ledger/plan pair and leaves docs/plans/ARCHIVED-NOTE.md; arms when the pair is present)"
+  exit 0
+fi
 [ -f "$LEDGER" ] || { echo "error: ledger not found: $LEDGER" >&2; exit 64; }
 [ -f "$PLAN" ]   || { echo "error: plan doc not found: $PLAN" >&2; exit 64; }
 

@@ -64,6 +64,18 @@ def test_expected_referrers_point_at_the_tracked_path():
         "docs/plans/EXECUTION-STATUS.md",
         "docs/plans/operative-egg-plan-2026-07-07.md",
     ):
+        # The egg export strips instance/* and archives docs/plans/*: a referrer
+        # that is not TRACKED in this tree can neither reference the skill nor
+        # need to. Detection = the file's own tracked-presence (git ls-files),
+        # so the source instance keeps full teeth on all six referrers while a
+        # clean/public checkout checks exactly the ones it still ships (the
+        # always-shipped preset twin + chair-preflight.sh among them). A tracked
+        # referrer that has DROPPED the skill reference is real rot and fails.
+        tracked = subprocess.run(
+            ["git", "ls-files", expected],
+            cwd=REPO_ROOT, capture_output=True, text=True).stdout.strip()
+        if not tracked:
+            continue
         assert expected in referrers, (expected, referrers)
 
 

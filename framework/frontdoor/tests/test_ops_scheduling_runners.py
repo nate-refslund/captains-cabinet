@@ -59,6 +59,11 @@ def _load_falsifier_report():
 @pytest.mark.parametrize("label", sorted(PLISTS))
 def test_plist_parses_and_matches_conventions(label):
     path = PLISTS[label]
+    if not path.exists():
+        pytest.skip(
+            f"{label}: deployment-pinned plist not shipped in the portable egg "
+            "(transform:launchd-portable-only strips the absolute-path plists; "
+            "present + full-teeth on the source tree, no template twin exists)")
     with open(path, "rb") as f:
         data = plistlib.load(f)
     live_prefix = _live_prefix()
@@ -89,6 +94,11 @@ def test_plist_parses_and_matches_conventions(label):
 
 
 def test_plist_cadences():
+    missing = sorted(lbl for lbl, p in PLISTS.items() if not p.exists())
+    if missing:
+        pytest.skip(
+            "deployment-pinned plists not shipped in the portable egg "
+            "(transform:launchd-portable-only): " + ", ".join(missing))
     with open(PLISTS["com.cabinet.undo-sweep"], "rb") as f:
         assert plistlib.load(f)["StartInterval"] == 3600          # hourly sweep
     with open(PLISTS["com.cabinet.actfirst-canary"], "rb") as f:

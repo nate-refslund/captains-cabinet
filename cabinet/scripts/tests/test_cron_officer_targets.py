@@ -28,10 +28,26 @@ _SEND_RE = re.compile(r"\btrigger_send\s+(\"?\$?\{?[A-Za-z_][A-Za-z0-9_-]*\}?\"?
 _DEFAULT_RE = re.compile(
     r"TARGET_OFFICER=\"\$\{[A-Z_]+:-([a-z][a-z0-9-]*)\}\"")
 
+# The documented runtime fallback roster: cabinet-spawn.sh uses this exact set
+# when instance/config/platform.yml carries no LIVE officers: block, and
+# platform.yml.example pins it in prose ("a LIVE officers: block REPLACES the
+# fallback roster (cos cto cpo coo cro)"). The egg export strips platform.yml
+# (instance data), so a clean/public checkout resolves the SAME fallback the
+# runtime would — the cron-target check keeps full teeth against it instead of
+# crashing on the absent file. The source instance ships a live block, so its
+# real roster is parsed there (this fallback never fires on source).
+_FALLBACK_ROSTER = frozenset({"cos", "cto", "cpo", "coo", "cro"})
+
 
 def live_roster() -> set[str]:
     """Officer keys from the LIVE (uncommented) officers: block. The spawn
-    parser greps inline-YAML lines, so we mirror that: `  key: { type: ...`."""
+    parser greps inline-YAML lines, so we mirror that: `  key: { type: ...`.
+
+    Mirrors the spawn parser's runtime resolution exactly: platform.yml absent
+    (egg-stripped instance data) OR present with no live officers block ⇒ the
+    documented fallback roster {cos cto cpo coo cro}."""
+    if not _PLATFORM.exists():
+        return set(_FALLBACK_ROSTER)
     roster: set[str] = set()
     in_block = False
     for line in _PLATFORM.read_text().splitlines():
@@ -44,7 +60,7 @@ def live_roster() -> set[str]:
                 roster.add(m.group(1))
             elif line.strip() and not line.startswith("#") and not line.startswith("  "):
                 in_block = False
-    return roster
+    return roster or set(_FALLBACK_ROSTER)
 
 
 def _literal_targets(text: str) -> list[str]:
