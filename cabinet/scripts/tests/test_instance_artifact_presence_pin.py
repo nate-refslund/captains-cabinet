@@ -53,6 +53,22 @@ EGG_STRIPPED_SOURCE_TRACKED = (
     "cabinet/launchd/com.cabinet.undo-sweep.plist",
     "cabinet/launchd/com.cabinet.actfirst-canary.plist",
     "cabinet/launchd/com.cabinet.falsifier-daily.plist",
+    # officer inbound-watchdog plist — stripped like the others, but NO test
+    # references the file (the framework hits are the label / redis key, not the
+    # plist), so the docs-sweep allowlist was its only net. Operational weight:
+    # cos-inbound is the officer inbound watchdog.
+    "cabinet/launchd/com.cabinet.officer.cos-inbound.plist",
+    # tracked-on-source, egg-stripped docs/evidence surfaces whose ONLY pre-PR
+    # net was the docs-sweep, now waived by the Lane-B allowlist rows — so this
+    # pin is their sole teeth surface (PR #171 teeth-review round 2). The four
+    # evidence review artifacts (shared/interfaces header-only transform), the
+    # DOGFOOD audit bundle, and the reference flavor's README:
+    "shared/interfaces/reviews/evidence-hp-preconditions-cp1.md",
+    "shared/interfaces/reviews/evidence-phase2-batch-b-cp1.md",
+    "shared/interfaces/reviews/evidence-phase3-review-surface-cp1.md",
+    "shared/interfaces/reviews/evidence-phase4-shadow-judge-cp1.md",
+    "docs/evidence/DOGFOOD-001-review-bundle/audit-report.md",
+    "instance/flavor-a/README.md",
 )
 
 requires_egg_manifest = pytest.mark.skipif(

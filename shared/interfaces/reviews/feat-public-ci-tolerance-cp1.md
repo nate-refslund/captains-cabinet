@@ -140,3 +140,14 @@ from 3× CI-red pre-PR to green post-PR).
 Result: the single-key class now has a hard source-tree backstop; a committed
 deletion of any masked artifact FAILs CI. Teeth invariant holds against present
 AND future committed rot.
+
+### Round-2b — pin family completed (re-verify)
+The re-verify mutation-closed Concerns 1-3 against bytes and named 7 more members
+of the SAME allowlist-masked class (the "4 review files" + 3 siblings) that the
+first pin missed: the 4 `shared/interfaces/reviews/evidence-*-cp1.md` review
+artifacts, `cabinet/launchd/com.cabinet.officer.cos-inbound.plist` (no test
+references the file — the docs-sweep allowlist was its only net; operational
+weight), `docs/evidence/DOGFOOD-001-review-bundle/audit-report.md`, and
+`instance/flavor-a/README.md`. All 7 verified present/tracked/allowlisted; added
+to `EGG_STRIPPED_SOURCE_TRACKED` (pin now 18 rows). Verified: 18 pass on source,
+a committed deletion of any row FAILs, 18 skip on a manifest-absent egg tree.
