@@ -169,6 +169,27 @@ def _conflict_sets(nodes, edges):
     return {sk: sorted(v) for sk, v in peers.items()}
 
 
+def _exposed_peer_lists(nodes, edges):
+    """For each node subject_key, its conflicts_with peers in the ORDER the store
+    EXPOSES them (graph.jsonl file order), read symmetrically (a peer is seen from
+    either endpoint). Unlike `_conflict_sets` this does NOT test-side sort — it
+    preserves the store's emitted order so an unstable/hash-order emission is
+    visible. Robust to BOTH a single canonical-orientation edge and both-direction
+    symmetric cross-links (COG-2 §5.5): the peer is recovered whichever way the
+    edge points."""
+    id_to_sk = {n["node_id"]: n["subject_key"] for n in nodes}
+    order = {n["subject_key"]: [] for n in nodes}
+    for e in edges:
+        if _relation(e) != "conflicts_with":
+            continue
+        s, t = _endpoint(e, "source"), _endpoint(e, "target")
+        s_sk, t_sk = id_to_sk.get(s), id_to_sk.get(t)
+        for owner, peer in ((s_sk, t_sk), (t_sk, s_sk)):
+            if owner in order and peer is not None and peer not in order[owner]:
+                order[owner].append(peer)
+    return order
+
+
 def _depends_on_pairs(nodes, edges):
     id_to_sk = {n["node_id"]: n["subject_key"] for n in nodes}
     out = set()
@@ -260,19 +281,46 @@ class TestConflictSymmetry:
         assert cs["objective/alpha"] == ["objective/beta", "objective/gamma"]
 
     def test_conflict_edges_stored_sorted(self, tmp_path):
-        # §4.2 SORTED: the stored conflicts_with edge endpoints are in sorted
-        # canonical order (a symmetric relation has one canonical orientation).
-        cache = _build(tmp_path, directions=_DIRECTIONS,
-                       objectives=_two_conflicting_objectives())
-        nodes, edges = _read_records(cache)
-        id_to_sk = {n["node_id"]: n["subject_key"] for n in nodes}
-        cw = [e for e in edges if _relation(e) == "conflicts_with"]
-        assert cw, "no conflicts_with edge was stored"           # §4.2 relation exists
-        for e in cw:
-            s_sk = id_to_sk.get(_endpoint(e, "source"))
-            t_sk = id_to_sk.get(_endpoint(e, "target"))
-            # canonical sorted orientation source<=target (§4.2 SORTED / COG-2 §5.5)
-            assert (s_sk, t_sk) == tuple(sorted((s_sk, t_sk)))
+        # §4.2 "conflicts stored symmetric + SORTED, never auto-resolved" (COG-2
+        # §5.5 "both rows, symmetric sorted cross-links"). RELAXED — the earlier
+        # over-pin is removed. The SORTED clause is a DETERMINISTIC-ORDERING
+        # guarantee, NOT a pin on ONE canonical edge orientation nor on a single
+        # sort key. This test accepts EITHER legitimate T4 choice and pins only
+        # the contract:
+        #   * a single canonical-orientation edge (source<=target) OR BOTH-
+        #     direction symmetric cross-links (COG-2 §5.5) — the symmetric/both-
+        #     sides guarantee is pinned direction-agnostically in the tests above;
+        #   * ordering by node_id OR by subject_key — both are stable keys.
+        # (An earlier revision asserted source<=target-by-subject_key on EVERY
+        # edge, which wrongly rejected both-direction storage AND over-fixed the
+        # sort key — the reviewer over-pin this rewrite closes.)
+        objs = [
+            {"slug": "alpha", "root_ref": "d-north", "conflicts_with": ["beta", "gamma"]},
+            {"slug": "beta", "root_ref": "d-north", "conflicts_with": ["alpha"]},
+            {"slug": "gamma", "root_ref": "d-north", "conflicts_with": ["alpha"]},
+        ]
+        c1 = _build(tmp_path, directions=_DIRECTIONS, objectives=objs, sub="s1")
+        c2 = _build(tmp_path, directions=_DIRECTIONS, objectives=objs, sub="s2")
+        nodes, edges = _read_records(c1)
+        peers1 = _exposed_peer_lists(nodes, edges)
+        peers2 = _exposed_peer_lists(*_read_records(c2))
+        assert peers1.get("objective/alpha"), "no conflicts_with edge was stored"  # relation exists
+        # DETERMINISM (the real SORTED pin): the exposed conflict ordering is
+        # byte-identical across two rebuilds — a stable, reproducible emission
+        # (§5.4/N1). Cross-seed determinism over the whole graph is owned by
+        # TestConflictedRebuildHashTriple's PYTHONHASHSEED subprocess triple.
+        assert peers1 == peers2, "conflict ordering not reproducible across rebuilds"
+        # ORDERED by a stable key: alpha's exposed peer set {beta,gamma} is in
+        # stable sorted order by SOME stable key — accept node_id OR subject_key;
+        # reject only an unordered (insertion/hash-order) emission.
+        sk_to_id = {n["subject_key"]: n["node_id"] for n in nodes}
+        alpha_peers = peers1["objective/alpha"]
+        assert len(alpha_peers) >= 2                              # non-vacuous ordering check
+        by_sk_sorted = alpha_peers == sorted(alpha_peers)
+        by_nid_sorted = ([sk_to_id[p] for p in alpha_peers]
+                         == sorted(sk_to_id[p] for p in alpha_peers))
+        assert by_sk_sorted or by_nid_sorted, \
+            f"conflict peers not in a stable sorted order (§4.2 SORTED): {alpha_peers}"
 
     def test_auto_resolving_builder_dropping_one_side_is_caught(self, tmp_path):
         # NEGATIVE CONTROL (§11 sim1 mutant "auto-resolving builder (drops one

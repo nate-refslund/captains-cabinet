@@ -34,15 +34,17 @@ error). The T4 implementation must satisfy these UNMODIFIED.
 
 T1-PINNED SURFACE (flagged for T4; integration reconciles names):
   graph.build_graph(roots_path, cache_dir, scope, cutoff) — pure build (§5.3).
-  graph.BuildFailure — the structural build-fold failure type (§4.1). The SAME
-      shared type T3 pinned as states.BuildFailure (one home, re-exported — see
-      the T3 layering note); referenced here via graph for the root-fold limb.
+  states.BuildFailure — the structural build-fold failure type (§4.1). Per the
+      2026-07-23 coordination ruling the CANONICAL home is
+      `framework.objectives.states.BuildFailure` (T3's pin — ONE home, not
+      re-exported via graph); this suite references it via `states` for the
+      root-fold limb.
   query.serve_objective(cache_dir, subject_key) -> Answer(state, flags) — the
       serve surface (§5.2/§5.4); orphaned is an ANSWER flag (§5.2).
 Integration points: (a) the objectives-input plumbing (provisional superset file,
 as in SIM-1); (b) serialized field names (tolerant reads); (c) the exact
 schema-rejection exception type for the presence limb (pinned only as "distinct
-from graph.BuildFailure", per N4).
+from states.BuildFailure", per N4).
 
 Provenance: authored per the 2026-07-07 full-autonomy grant + the 2026-07-20
 cognitive-masterplan continuous grant; Fable-5 two-tier law (test-authoring).
@@ -67,9 +69,12 @@ import lib_cog3_fixtures as F           # noqa: E402
 
 def _objectives():
     """Import indirection (contract §8). Raises ModuleNotFoundError today — the
-    honest tests-first absence signature; called first in every test body."""
-    from framework.objectives import graph, query
-    return graph, query
+    honest tests-first absence signature; called first in every test body.
+    Returns (graph, query, states): the fold+serve surfaces plus `states`, whose
+    canonical `BuildFailure` type the root-fold limbs assert against (2026-07-23
+    coordination ruling — states.BuildFailure is the ONE home)."""
+    from framework.objectives import graph, query, states
+    return graph, query, states
 
 
 # ===========================================================================
@@ -106,17 +111,45 @@ def _read_manifest(cache_dir):
     return json.loads((Path(cache_dir) / "graph-manifest.json").read_text(encoding="utf-8"))
 
 
+# §5.4 pinned epoch-tuple order (the roots_hash element is at index 1):
+#   (graph_builder_version, roots_hash, cortex_belief_store_hash,
+#    cortex_fold_epoch, trust_table_version, scope, cutoff)
+_EPOCH_ROOTS_HASH_INDEX = 1
+
+
 def _roots_hash(manifest):
-    """Read the roots_hash out of the epoch tuple, tolerant of nesting (§5.4
-    names roots_hash inside the epoch tuple)."""
-    epoch = manifest.get("epoch", manifest)
+    """Read the roots_hash out of the epoch tuple — STRICT, fail-LOUD. Accepts
+    ONLY the documented manifest shapes (§5.4) and pytest.fail()s on ANY other
+    shape.
+
+    This deliberately has NO fallback: an earlier revision returned
+    `json.dumps(manifest)` as the "hash" when no roots_hash key was found, which
+    made the epoch-bump assert vacuously green — two builds ALWAYS differ (each
+    records its own roots_path/cache_dir), so `h1 != h2` passed even if the
+    builder never bumped a real roots_hash. A fallback that can auto-pass is
+    worse than a loud failure, so this reader fails loudly instead."""
+    epoch = manifest.get("epoch")
+    # shape 1: epoch tuple recorded as a dict carrying roots_hash (§5.4).
     if isinstance(epoch, dict) and "roots_hash" in epoch:
         return epoch["roots_hash"]
+    # shape 2: epoch tuple recorded as an array/tuple — locate roots_hash by the
+    # PINNED §5.4 order (index 1), never by scanning for a hash-shaped value.
+    if isinstance(epoch, (list, tuple)):
+        if len(epoch) > _EPOCH_ROOTS_HASH_INDEX:
+            return epoch[_EPOCH_ROOTS_HASH_INDEX]
+        pytest.fail(
+            "graph-manifest.json 'epoch' is an array shorter than the §5.4 "
+            f"tuple (need index {_EPOCH_ROOTS_HASH_INDEX} = roots_hash): {epoch!r}")
+    # shape 3: top-level roots_hash key.
     if "roots_hash" in manifest:
         return manifest["roots_hash"]
-    # last resort: any value under a roots_hash-ish key anywhere in the manifest.
-    blob = json.dumps(manifest)
-    return blob  # equality of the whole manifest still detects a bump
+    # ANY other shape => LOUD failure, never a manifest-blob fallback that could
+    # let the epoch-bump assert pass vacuously.
+    pytest.fail(
+        "graph-manifest.json exposes no roots_hash in any documented §5.4 shape "
+        "(epoch dict with 'roots_hash', epoch array with roots_hash at index "
+        f"{_EPOCH_ROOTS_HASH_INDEX}, or top-level 'roots_hash'); keys="
+        f"{sorted(manifest)!r}")
 
 
 def _node_flags(node):
@@ -151,7 +184,7 @@ _DIRS_TWO = [{"slug": "d-north", "statement": "ship compliant"},
 # ---------------------------------------------------------------------------
 
 def _build(tmp_path, *, directions, objectives, sub="g", cutoff=F.CUTOFF):
-    graph, _query = _objectives()                        # guard: ModuleNotFoundError today
+    graph, _query, _states = _objectives()               # guard: ModuleNotFoundError today
     cache_dir = Path(tmp_path) / sub / "cache" / "objectives"
     cache_dir.mkdir(parents=True, exist_ok=True)
     roots_path = _write_input(Path(tmp_path) / sub, directions=directions,
@@ -166,7 +199,7 @@ def _build(tmp_path, *, directions, objectives, sub="g", cutoff=F.CUTOFF):
 
 class TestBuilderWritesNothingOutsideCache:
     def test_root_and_input_bytes_identical_after_build(self, tmp_path):
-        graph, _q = _objectives()                        # guard
+        graph, _q, _s = _objectives()                    # guard
         sub = Path(tmp_path) / "g"
         cache_dir = sub / "cache" / "objectives"
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -187,7 +220,7 @@ class TestBuilderWritesNothingOutsideCache:
         # files"): identical to the assertion above — any mutation of the root
         # bytes by the builder trips the byte-identity check. Distinct test so the
         # mutant is named explicitly.
-        graph, _q = _objectives()                        # guard
+        graph, _q, _s = _objectives()                    # guard
         sub = Path(tmp_path) / "g"
         cache_dir = sub / "cache" / "objectives"
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -216,6 +249,39 @@ class TestRootEditOrphansAnswerable:
         # §5.4: roots_hash is in the epoch tuple — a root edit is an honest bump.
         assert h1 != h2, "root edit did not bump the epoch roots_hash (§5.4)"
 
+    def test_identical_roots_hash_equal_across_rebuilds(self, tmp_path):
+        # EQUALITY CONTROL (kills the always-differs degeneration that let the
+        # bump assert pass vacuously): roots_hash is the WHOLE-FILE canonical hash
+        # of the root files (§4.1) — CONTENT only, never the cache_dir or
+        # roots_path. Two builds of byte-identical roots (distinct cache/roots
+        # paths) MUST yield the SAME roots_hash; a reader/builder that folded the
+        # manifest location in would make the epoch-bump assert meaningless.
+        c1, _r1 = _build(tmp_path, directions=_DIRS_TWO, objectives=self._obj(), sub="eq1")
+        c2, _r2 = _build(tmp_path, directions=_DIRS_TWO, objectives=self._obj(), sub="eq2")
+        assert _roots_hash(_read_manifest(c1)) == _roots_hash(_read_manifest(c2)), \
+            "identical roots produced different roots_hash — hash folds in location, not just content (§4.1)"
+
+    def test_root_text_edit_bumps_hash_but_does_not_orphan(self, tmp_path):
+        # NIT seed (coordination 2026-07-23): a root file EDITED IN PLACE — the
+        # statement text changed, the slug KEPT — is an honest roots_hash bump
+        # (whole-file hash, §4.1/§5.4), but its dependent is NOT orphaned, because
+        # the root SLUG still resolves. Orphaning must key on root-entry IDENTITY
+        # (slug), never on statement text (§9 r5).
+        d1 = [{"slug": "d-north", "statement": "ship compliant"},
+              {"slug": "d-south", "statement": "expand reach"}]
+        d2 = [{"slug": "d-north", "statement": "ship compliant"},
+              {"slug": "d-south", "statement": "expand reach — REWORDED, same slug"}]
+        c1, _r1 = _build(tmp_path, directions=d1, objectives=self._obj(), sub="te1")
+        c2, _r2 = _build(tmp_path, directions=d2, objectives=self._obj(), sub="te2")
+        # statement text changed => honest whole-file roots_hash bump (§4.1/§5.4).
+        assert _roots_hash(_read_manifest(c1)) != _roots_hash(_read_manifest(c2)), \
+            "in-place root text edit did not bump roots_hash (§4.1 whole-file hash)"
+        # ...but d-south's SLUG still resolves, so alpha is NOT orphaned. A builder
+        # that keyed orphaning on root TEXT would wrongly orphan it.
+        node = {n["subject_key"]: n for n in _read_nodes(c2)}["objective/alpha"]
+        assert "orphaned" not in _node_flags(node), \
+            "root text edit (slug kept) wrongly orphaned its dependent — orphaning must key on identity, not text (§9 r5)"
+
     def test_removed_root_flags_dependent_orphaned(self, tmp_path):
         _c1, _r1 = _build(tmp_path, directions=_DIRS_TWO, objectives=self._obj(), sub="o1")
         c2, _r2 = _build(tmp_path, directions=[_DIRS_TWO[0]], objectives=self._obj(), sub="o2")
@@ -229,7 +295,7 @@ class TestRootEditOrphansAnswerable:
     def test_orphaned_objective_is_served_answerable_with_flag(self, tmp_path):
         _c1, _r1 = _build(tmp_path, directions=_DIRS_TWO, objectives=self._obj(), sub="s1")
         c2, _r2 = _build(tmp_path, directions=[_DIRS_TWO[0]], objectives=self._obj(), sub="s2")
-        _graph, query = _objectives()
+        _graph, query, _states = _objectives()
         answer = query.serve_objective(str(c2), "objective/alpha")
         # §9 r5: orphaned subtrees remain ANSWERABLE (refusal would hide the
         # Captain's own root-edit signal) — an answer is returned...
@@ -257,23 +323,25 @@ class TestRootEditOrphansAnswerable:
 
 class TestTwoFailureLimbsDistinguished:
     def _raises(self, tmp_path, objective, sub):
-        """Build with one anomalous objective; return the raised exception."""
-        graph, _q = _objectives()                        # guard
+        """Build with one anomalous objective; return (states, exception). The
+        structural build-fold failure type is `states.BuildFailure` (2026-07-23
+        coordination ruling — T3's canonical home)."""
+        graph, _q, states = _objectives()                # guard
         cache_dir = Path(tmp_path) / sub / "cache" / "objectives"
         cache_dir.mkdir(parents=True, exist_ok=True)
         roots_path = _write_input(Path(tmp_path) / sub, directions=_DIRS_TWO,
                                   objectives=[objective])
         with pytest.raises(Exception) as ei:             # noqa: PT011 — type asserted below
             graph.build_graph(str(roots_path), str(cache_dir), dict(F.SCOPE), F.CUTOFF)
-        return graph, ei.value
+        return states, ei.value
 
     def test_rootless_objective_is_schema_rejection_not_fold_failure(self, tmp_path):
         # §4.1/:55/:100: root_ref PRESENCE is schema-enforced — a rootless
         # objective is a SCHEMA rejection, and per N4 that is NOT the fold's
         # structural failure. (Kills the "root-optional schema variant" mutant —
         # which would not raise at all.)
-        graph, exc = self._raises(tmp_path, {"slug": "alpha"}, sub="noroot")
-        assert not isinstance(exc, graph.BuildFailure), \
+        states, exc = self._raises(tmp_path, {"slug": "alpha"}, sub="noroot")
+        assert not isinstance(exc, states.BuildFailure), \
             "rootless objective raised the fold failure, not a schema rejection (§4.1/N4)"
 
     def test_dangling_root_ref_is_build_fold_failure(self, tmp_path):
@@ -281,39 +349,39 @@ class TestTwoFailureLimbsDistinguished:
         # exists in no build) is a build-FOLD structural failure in graph.py —
         # never a schema rejection. (Kills the "fold that accepts a dangling
         # root_ref" mutant.)
-        graph, exc = self._raises(
+        states, exc = self._raises(
             tmp_path,
             {"slug": "alpha", "root_ref": "d-north",
              "forged_root_node_id": "direction/" + "de" * 32},
             sub="dangling")
-        assert isinstance(exc, graph.BuildFailure), \
+        assert isinstance(exc, states.BuildFailure), \
             "dangling root_ref not a build-fold structural failure (§4.1/N4)"
 
     def test_roots_hash_mismatch_is_build_fold_failure(self, tmp_path):
         # §4.1(ii): a recorded roots_hash != the build's is a build-fold structural
         # failure. (Kills the "fold that skips the roots_hash epoch match" mutant.)
-        graph, exc = self._raises(
+        states, exc = self._raises(
             tmp_path,
             {"slug": "alpha", "root_ref": "d-north",
              "recorded_roots_hash": "0" * 64},
             sub="stalehash")
-        assert isinstance(exc, graph.BuildFailure), \
+        assert isinstance(exc, states.BuildFailure), \
             "stale recorded roots_hash not a build-fold structural failure (§4.1 ii)"
 
     def test_presence_and_resolvability_limbs_are_distinct_types(self, tmp_path):
         # §4.1/N4/G-M2 core: the TWO limbs are DISTINGUISHED — presence (schema)
         # and resolvability (fold) are different failure types, so the fold check
         # is "never called a schema rejection".
-        graph, schema_exc = self._raises(tmp_path, {"slug": "alpha"}, sub="d1")
-        _graph2, fold_exc = self._raises(
+        states, schema_exc = self._raises(tmp_path, {"slug": "alpha"}, sub="d1")
+        _states2, fold_exc = self._raises(
             tmp_path,
             {"slug": "alpha", "root_ref": "d-north",
              "forged_root_node_id": "direction/" + "ab" * 32},
             sub="d2")
         assert type(schema_exc) is not type(fold_exc), \
             "the presence and resolvability limbs collapsed to one type (§4.1/N4)"
-        assert isinstance(fold_exc, graph.BuildFailure) and not isinstance(
-            schema_exc, graph.BuildFailure)              # fold-limb only is BuildFailure
+        assert isinstance(fold_exc, states.BuildFailure) and not isinstance(
+            schema_exc, states.BuildFailure)             # fold-limb only is BuildFailure
 
 
 # ===========================================================================

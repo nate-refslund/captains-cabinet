@@ -257,3 +257,100 @@ class TestOviViewPerInstrumentOnly:
         for forbidden in ("composite_score", "composite", "weights", "weight"):
             assert forbidden not in blob, \
                 f"ovi_view emitted a forbidden aggregate: {forbidden} (attack C-M4)"
+
+
+# ===========================================================================
+# 6. Recommendation-record SHAPE (§4.4 :180 / §6.6 P12 "recommendation shape
+#    test" / §11 sim6 + row-4 SHAPE side). This is the record-shape assert the
+#    contract NAMES for SIM-6 (§4.4 "shape-tested (SIM-6, :180)") and was absent
+#    from the whole corpus. Every recommendation record carries the FULL tuple
+#    (objective_ref, evidence_refs, uncertainty, per-dimension scorecard); a
+#    MISSING field is a structural rejection; the scorecard element is the full
+#    vector (never a scalar); and an "effective" claim is REFUSED unless an
+#    intervention_supported edge stands behind it.
+#
+#    COORDINATION (2026-07-23): §11 row 4's recommendation assert has two sides —
+#    T2's SIM-4 asserts the REFUSAL side over the built graph ("recommendation
+#    emitting a naked verdict" mutant / REFUSES 'effective' without an
+#    intervention binding); THIS is the record-SHAPE side. Wording kept parallel.
+# ===========================================================================
+
+class TestRecommendationRecordShape:
+    """T1-PINNED SURFACE (flagged for T4 — THE API for a recommendation record):
+        query.recommendation_record(objective_ref, evidence_refs, uncertainty,
+                                    scorecard, *, claim=None) -> record
+    the narrowest plausible surface on the already-pinned query view (§4.4 / §8
+    query.py). A "structural rejection" is pinned as "raises SOME exception,
+    never returns a partial record" — the exact exception type is an integration
+    point (schema ValidationError / ValueError / TypeError all qualify), read via
+    pytest.raises(Exception) exactly as SIM-5's `_raises` does. Integration
+    points: (a) attr-vs-key exposure of the record (read via json blob); (b) how
+    effectiveness is asserted (a `claim`/verdict kwarg) — the STRUCTURAL pin is
+    'effective' ⇒ an intervention_supported edge must stand behind it."""
+
+    # evidence refs carry the derived edge state (§5.2); the default set reaches
+    # intervention_supported (the ONLY 'effective'-grade state, §5.2 P3).
+    _REFS = [{"subject_key": "tasks/t-1", "belief_id": "a" * 64,
+              "state": "intervention_supported"}]
+    _SCORECARD = {"cost": {"value": 0.9, "floor": 0.5, "state": "observed"},
+                  "reach": {"value": 0.8, "floor": 0.5, "state": "observed"}}
+
+    def _kwargs(self):
+        return {"objective_ref": "objective/alpha",
+                "evidence_refs": [dict(r) for r in self._REFS],
+                "uncertainty": 0.3,
+                "scorecard": {k: dict(v) for k, v in self._SCORECARD.items()}}
+
+    def _rec(self, query, **over):
+        kw = self._kwargs()
+        kw.update(over)
+        return query.recommendation_record(**kw)
+
+    def test_complete_record_is_accepted_and_carries_the_full_tuple(self, tmp_path):
+        # baseline so the rejection cases below are meaningful, not constant-raise:
+        # a COMPLETE record is accepted and carries every §4.4 :180 element.
+        query, _ovi = _objectives()                 # guard
+        rec = self._rec(query)
+        blob = json.dumps(rec, default=str)
+        for token in ("objective", "evidence", "uncertainty", "cost", "reach"):
+            assert token in blob, \
+                f"recommendation record dropped {token!r} from the (objective_ref, " \
+                f"evidence_refs, uncertainty, per-dimension scorecard) tuple (§4.4 :180)"
+
+    @pytest.mark.parametrize("drop", ["objective_ref", "evidence_refs",
+                                      "uncertainty", "scorecard"])
+    def test_missing_any_field_is_structural_rejection(self, tmp_path, drop):
+        # §4.4 :180: a recommendation record carries ALL of (objective_ref,
+        # evidence_refs, uncertainty, per-dimension scorecard). Dropping ANY one is
+        # a STRUCTURAL rejection — never a silently-partial record.
+        query, _ovi = _objectives()                 # guard
+        kw = self._kwargs()
+        kw.pop(drop)
+        with pytest.raises(Exception):              # noqa: PT011 — type is an integration point
+            query.recommendation_record(**kw)
+
+    def test_scorecard_element_is_the_full_vector_not_a_scalar(self, tmp_path):
+        # §4.4/N3: the scorecard element is the FULL per-dimension vector — a bare
+        # scalar scorecard is a structural rejection (no collapse-to-one-number).
+        query, _ovi = _objectives()                 # guard
+        with pytest.raises(Exception):              # noqa: PT011
+            self._rec(query, scorecard=0.86)        # a bare number is never a scorecard
+
+    def test_effective_claim_refused_without_intervention_supported_edge(self, tmp_path):
+        # §11 row 4 (SHAPE side; T2 SIM-4 owns the graph-refusal side): a record
+        # may claim "effective" ONLY with an intervention_supported edge behind it.
+        # Evidence that never reaches intervention_supported => the effective claim
+        # is REFUSED (structural), never a naked verdict (:180 / §5.2 P5 cap).
+        query, _ovi = _objectives()                 # guard
+        weak_refs = [{"subject_key": "tasks/t-1", "belief_id": "a" * 64,
+                      "state": "observationally_supported"}]
+        with pytest.raises(Exception):              # noqa: PT011
+            self._rec(query, evidence_refs=weak_refs, claim="effective")
+
+    def test_effective_claim_accepted_with_intervention_supported_edge(self, tmp_path):
+        # POSITIVE control (so the refusal above is the missing-edge discriminator,
+        # NOT a constant-raise on any `claim`): the SAME "effective" claim is
+        # ACCEPTED when an intervention_supported edge stands behind it (§5.2 P3).
+        query, _ovi = _objectives()                 # guard
+        rec = self._rec(query, claim="effective")   # _REFS carry intervention_supported
+        assert rec is not None
