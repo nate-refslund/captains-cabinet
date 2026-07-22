@@ -371,6 +371,100 @@ class TestWriteAndRehash:
 
 
 # ===========================================================================
+# read-SELECT contract (§8 sim 1): ORDER BY id string-pin (C-F4) + the
+# idempotency_key column fetched into provenance (F1)
+# ===========================================================================
+
+class TestReadSelectContract:
+    def test_select_sql_pins_order_by_id(self):
+        # contract §8 sim 1: the outbox read SELECT is string-pinned to carry
+        # ORDER BY id — the C-F4 physical-shuffle determinism pin. Dropping it
+        # reads in heap/physical order and loses shuffle-invariance.
+        assert "ORDER BY id" in adapters._SELECT_SQL
+        assert adapters._SELECT_SQL.rstrip().endswith("ORDER BY id")
+
+    def test_select_sql_fetches_idempotency_key(self):
+        # F1: the SELECT must fetch idempotency_key (047: NOT NULL UNIQUE) or it
+        # never reaches build_dispatch_fields and provenance.idempotency_key is
+        # silently NULL on every belief.
+        assert "idempotency_key" in adapters._SELECT_SQL
+
+    def test_idempotency_key_flows_into_provenance(self):
+        # F1 end-to-end (proto level): a row's idempotency_key appears verbatim
+        # in every proto's provenance (both the entity and observation belief).
+        row = _orow(1, 100, "wip", event_id="evt-1")
+        row["idempotency_key"] = "idem-000001"
+        protos = adapters._row_to_protos(row)
+        assert protos and all(
+            p["provenance"]["idempotency_key"] == "idem-000001" for p in protos)
+
+
+# ===========================================================================
+# fold dedupe is content-checked, not first-arrival-wins (F3)
+# ===========================================================================
+
+def _proto(claim, *, event_id="evt-1", ordinal=0,
+           producer="officer_tasks/outbox-relay", **over):
+    """A minimal proto-belief with a fixed identity tuple (kind, subject_key,
+    dimension, event_id, adapter_ordinal) — two calls collide by belief_id."""
+    p = {
+        "kind": "entity",
+        "subject_key": "tasks/100",
+        "dimension": "status",
+        "adapter_ordinal": ordinal,
+        "claim": claim,
+        "source_time": "2026-07-20T08:00:00Z",
+        "observation_time": "2026-07-20T08:00:00Z",
+        "provenance": {"event_id": event_id, "producer": producer,
+                       "stream_rank": 0, "intra_stream_seq": 1},
+        "claim_completeness": "inline",
+    }
+    p.update(over)
+    return p
+
+
+class TestFoldDedupeFailLoud:
+    def test_exact_duplicate_protos_collapse(self):
+        # identical content under one identity tuple -> one belief, no raise
+        # (the physical-duplication invariance the fold relies on).
+        beliefs = engine.fold([_proto({"status": "wip"}), _proto({"status": "wip"})],
+                              trust_table=TT)
+        assert len(beliefs) == 1
+
+    def test_divergent_content_identity_collision_raises(self):
+        # same identity tuple, DIVERGENT claim -> fail loud, never keep-first.
+        with pytest.raises(ValueError, match="divergent-content identity"):
+            engine.fold([_proto({"status": "wip"}), _proto({"status": "done"})],
+                        trust_table=TT)
+
+    def test_divergent_collision_is_order_independent(self):
+        # both arrival orders raise — the fold is deterministic, not order-keyed.
+        with pytest.raises(ValueError):
+            engine.fold([_proto({"status": "done"}), _proto({"status": "wip"})],
+                        trust_table=TT)
+
+
+# ===========================================================================
+# confidence: malformed ppm for a PRESENT producer fails loud (F4)
+# ===========================================================================
+
+class TestConfidenceFailLoud:
+    def test_malformed_ppm_for_present_producer_raises(self):
+        # a producer IN the table with a non-int / bool / <= 0 ppm is a trust
+        # table bug — fail loud, never silently degrade to unknown.
+        for bad in (0.9, "900000", 0, -5, True, None):
+            tt = {"table_version": 1, "producers": {"officer_tasks/outbox-relay": bad}}
+            with pytest.raises(ValueError):
+                engine.derive_confidence("officer_tasks/outbox-relay", tt)
+
+    def test_absent_producer_still_returns_none(self):
+        # the absent-producer path is unchanged: unknown, never a raise (F4).
+        conf, st = engine.derive_confidence("not/in/table", TT)
+        assert conf is None
+        assert st == {"table_version": 1, "producer_key": "not/in/table"}
+
+
+# ===========================================================================
 # PG-backed exit instrument (skips without a PG17 toolchain + psycopg2)
 # ===========================================================================
 

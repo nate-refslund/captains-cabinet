@@ -85,13 +85,26 @@ def eligible_rows(rows: list[dict], *, past_null: bool = False) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def derive_confidence(producer_key: str, trust_table: dict) -> tuple[Optional[int], dict]:
-    """(confidence_ppm_or_None, source_trust). Absent producer => absent
-    confidence (unknown), NEVER 0 (never-a-score). source_trust always carries
-    {table_version, producer_key}."""
+    """(confidence_ppm_or_None, source_trust). source_trust always carries
+    {table_version, producer_key}.
+
+    An ABSENT producer => absent confidence (unknown), NEVER 0 (never-a-score).
+    A producer that IS in the table but carries a malformed ppm (non-int, bool,
+    or <= 0) is a trust-table authoring bug and FAILS LOUD (F4): silently
+    mapping it to None would launder a broken table into a valid-looking
+    'no confidence' belief, indistinguishable from an honestly-absent producer."""
     table_version = int(trust_table["table_version"])
-    raw = trust_table.get("producers", {}).get(producer_key)
-    confidence = int(raw) if isinstance(raw, int) and not isinstance(raw, bool) and raw > 0 else None
-    return confidence, {"table_version": table_version, "producer_key": producer_key}
+    source_trust = {"table_version": table_version, "producer_key": producer_key}
+    producers = trust_table.get("producers", {})
+    if producer_key not in producers:
+        return None, source_trust            # absent producer => unknown (correct)
+    raw = producers[producer_key]
+    if not (isinstance(raw, int) and not isinstance(raw, bool) and raw > 0):
+        raise ValueError(
+            f"trust table (version {table_version}) has a malformed ppm for "
+            f"present producer {producer_key!r}: {raw!r} — expected a positive "
+            "int (fixed-point ppm)")
+    return int(raw), source_trust
 
 
 # ---------------------------------------------------------------------------
@@ -131,15 +144,36 @@ def fold(proto_beliefs: Iterable[dict], *, trust_table: dict,
     # belief_id (which embeds event_id + adapter_ordinal — physical duplication
     # of a source row collapses; the entity/observation pair of one event does
     # not, since adapter_ordinal differs).
+    #
+    # DEDUPE IS CONTENT-CHECKED, NOT FIRST-ARRIVAL-WINS (F3): two protos sharing
+    # the identity tuple must carry IDENTICAL content. An exact physical
+    # duplicate collapses silently (dup-invariance); a DIVERGENT-content
+    # collision is a real upstream duplicate-with-drift bug and FAILS LOUD
+    # rather than folding order-sensitively (silently keeping whichever arrived
+    # first). It is unreachable from the outbox (event_id is UNIQUE, and
+    # belief_id embeds event_id), but fold() is a public pure API, so the pure
+    # boundary defends the invariant itself. The signature excludes the mutable
+    # _arrival index and the just-minted belief_id.
     staged: list[dict] = []
-    seen: set[str] = set()
+    seen: dict[str, bytes] = {}
     for arrival, proto in enumerate(proto_beliefs):
         row = dict(proto)
         row["_arrival"] = arrival
-        row["belief_id"] = _mint_identity(row, identity)
-        if row["belief_id"] in seen:
-            continue
-        seen.add(row["belief_id"])
+        bid = _mint_identity(row, identity)
+        row["belief_id"] = bid
+        signature = _belief.canonical_bytes(proto)
+        prior = seen.get(bid)
+        if prior is not None:
+            if prior != signature:
+                raise ValueError(
+                    f"divergent-content identity collision for belief_id "
+                    f"{bid[:12]}…: two proto-beliefs share the identity tuple "
+                    "(kind, subject_key, dimension, event_id, adapter_ordinal) "
+                    "but differ in content — an upstream duplicate-with-drift "
+                    "bug (event_id is UNIQUE in production, so the outbox cannot "
+                    "produce this)")
+            continue  # exact duplicate -> collapse (physical-dup invariance)
+        seen[bid] = signature
         staged.append(row)
 
     # Group by (subject_key, dimension); resolve supersession within each group.

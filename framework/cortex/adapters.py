@@ -37,10 +37,13 @@ from framework.outbox.relay import build_dispatch_fields
 
 # The immutable-content projection needed to rebuild v2 + frontier, ORDER BY id
 # (fixed literals — no interpolation; the ORDER BY is the C-F4 physical-shuffle
-# determinism pin the gate string-checks).
+# determinism pin the gate string-checks). idempotency_key (047 DDL:
+# `idempotency_key TEXT NOT NULL UNIQUE`) is fetched so it flows through
+# build_dispatch_fields into provenance as the capture-stable secondary key
+# (§5.3) — omitting it silently NULLed provenance.idempotency_key (F1).
 _SELECT_SQL = (
-    "SELECT id, event_id, task_id, old_status, new_status, old_blocked, "
-    "new_blocked, blocked_reason, actor, context_slug, cabinet_id, "
+    "SELECT id, idempotency_key, event_id, task_id, old_status, new_status, "
+    "old_blocked, new_blocked, blocked_reason, actor, context_slug, cabinet_id, "
     "correlation_id, causation_id, occurred_at "
     "FROM officer_tasks_outbox ORDER BY id"
 )
