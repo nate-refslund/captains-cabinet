@@ -197,8 +197,22 @@ _ENVELOPE_KIND = "observation"
 
 def _envelope_scope_reason(env: dict, *, local_cabinet_id: str) -> Optional[str]:
     """Fail-closed scope check on a validated envelope: a refusal reason, or None
-    when local. Absent cabinet_id fails closed (absent is never local); a foreign
-    cabinet_id is refused (§7.4)."""
+    when the envelope is local AND not cross-cabinet-classified. A COMPLETE
+    standalone cross-cabinet fence (§7.4 / C-F19) owning THREE refusals so a
+    cross-cabinet envelope is quarantined at ingest, never folded:
+      * classification == "cross_cabinet" — a VALID taint tier (envelope
+        .TAINT_TIERS) that PASSES validate_any, so the validator never stops it;
+        a cross_cabinet envelope carrying a LOCAL cabinet_id would otherwise fold
+        into the local projection (the pinned leak). Refused REGARDLESS of
+        cabinet_id and checked FIRST (the most precise receipt reason); a NORMAL
+        local classification (system/officer/captain/external) is never rejected
+        here — it falls through to the cabinet_id axis.
+      * absent cabinet_id — absent is never local, fail closed.
+      * foreign cabinet_id — not the local cabinet."""
+    if env.get("classification") == "cross_cabinet":
+        return ("classification 'cross_cabinet' (a valid taint tier that passes "
+                "validate_any — the ingest fence owns its refusal; a cross-cabinet "
+                "belief never folds into the local projection)")
     cab = env.get("cabinet_id")
     if not isinstance(cab, str) or not cab:
         return "absent cabinet_id (absent is never local — fail closed)"
