@@ -81,15 +81,15 @@ temporary_allowances:
     deletion_gate: CI tolerance folded or COG-7 compaction
   - phase: COG-2
     budget: framework_production_modules
-    additional: 6
-    reason: COG-2 shadow temporal world model (Cortex) — the framework/cortex package + adapters (and, if the S0 purity check forces it, an extracted pure outbox builder). Phase module ceiling 6 (planning estimate 5 + 1 contingency, docs/plans/cognitive-core-phase-2-contract-2026-07-22.md §10); the unit-1 rebuild core lands +4 (__init__/belief/engine/adapters); tightened to measured actual at phase end (shrink-only)
+    additional: 4
+    reason: COG-2 shadow temporal world model (Cortex) — the framework/cortex package (__init__/belief/engine/adapters). EXACT measured unit-1 delta (+4), NOT the §10 planning ceiling of 6 — the structural-compaction mutant gate (test_cognitive_architecture_census.py) requires zero headroom (observed==max) so any growth is caught, so each COG-2 unit bumps this allowance to its exact new running total rather than pre-allocating the ceiling; tightened to phase actual at done-flip (shrink-only)
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: COG-7 compaction folds the projection, or the phase is superseded
   - phase: COG-2
     budget: framework_production_noncomment_lines
-    additional: 1800
-    reason: COG-2 shadow temporal world model (Cortex) — belief record + pure deterministic fold + canonical hash (recorder dialect) + tasks/envelope-file adapters + consequence iter_ledger_rows seam + query API + verifier/parity, across all framework deltas of the phase wherever they land (contract §10 ceiling 1800). Unit-1 rebuild core measures +469 via cognitive-architecture-census.py; the allowance is tightened to the measured phase actual at the ledger done-flip (shrink-only)
+    additional: 492
+    reason: COG-2 shadow temporal world model (Cortex) — belief record + pure deterministic fold + canonical hash (recorder dialect by identity) + tasks adapter. EXACT measured unit-1 delta (+492) via cognitive-architecture-census.py, NOT the §10 planning ceiling of 1800 — the structural-compaction mutant gate requires zero headroom (observed==max), so each COG-2 unit bumps this allowance to its exact new running total; tightened to phase actual at the ledger done-flip (shrink-only)
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: COG-7 compaction folds the projection, or the phase is superseded
