@@ -337,3 +337,35 @@ class TestEnvFreeFold:
         monkeypatch.setenv("CABINET_SIM_MODE", "1")         # even in sim mode
         beliefs = _fold()
         assert {b.claim["subject"] for b in beliefs} == {"task/1"}
+
+
+# ===========================================================================
+# F1 (review): duplicate-row dedupe — a double-emit retry within one second
+# (log_consequence stamps no nonce; ts is second-resolution) writes a
+# byte-identical row. The fold collapses it FIRST-OCCURRENCE-WINS (honoring
+# read_ledger's own collapse + sim-1's shuffle/dup-invariance) instead of
+# crashing the whole rebuild on the divergent-content identity guard.
+# ===========================================================================
+class TestDuplicateRowDedupe:
+
+    def test_byte_identical_dup_collapses_to_one_no_crash(self, ledger_dir):
+        r = _row("2026-07-20T03:00:00Z", "ship", "release-9")
+        _write_day(ledger_dir, "2026-07-20", [r, dict(r)])   # exact double-emit
+        protos = _protos()
+        assert len(protos) == 1
+        _fold()                                              # must not raise
+
+    def test_key_reordered_dup_collapses_to_one(self, ledger_dir):
+        r = _row("2026-07-20T03:00:00Z", "ship", "release-9")
+        reordered = dict(reversed(list(r.items())))          # same content, other order
+        _write_day(ledger_dir, "2026-07-20", [r, reordered])
+        assert len(_protos()) == 1
+
+    def test_dedupe_first_occurrence_deterministic(self, ledger_dir):
+        a = _row("2026-07-20T03:00:00Z", "ship", "release-9")
+        b = _row("2026-07-20T03:00:01Z", "ship", "release-9", outcome="ok")
+        _write_day(ledger_dir, "2026-07-20", [a, dict(a), b])  # dup of a, then b
+        p1, p2 = _protos(), _protos()
+        ids = lambda ps: [x["provenance"]["event_id"] for x in ps]
+        assert ids(p1) == ids(p2)                            # deterministic
+        assert len(p1) == 2                                  # a(first) + b, not 3

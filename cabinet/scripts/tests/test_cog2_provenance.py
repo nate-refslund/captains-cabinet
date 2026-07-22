@@ -226,3 +226,13 @@ class TestClaimDerivedIdentityMutant:
         # the STORE hash legitimately differs (claim content changed) — a
         # within-unit content change, not a determinism regression.
         assert belief.chained_hash(_fold(rows_live)) != belief.chained_hash(_fold(rows_purged))
+
+
+def test_row_missing_new_status_key_is_not_a_tombstone():
+    """F2 (review): a row MISSING the new_status key must NOT read as purged —
+    get() would coerce absence to None (a silent fabricated purge). Only an
+    explicit present-null new_status is a source-side tombstone."""
+    row = _outbox_row(1, "task-1", "done", event_id="evt-1")
+    del row["new_status"]
+    assert adapters._is_tombstone(row) is False
+    assert adapters._is_tombstone(_outbox_row(2, "t2", None, event_id="evt-2")) is True
