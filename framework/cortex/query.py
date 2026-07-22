@@ -44,6 +44,7 @@ cognitive-masterplan continuous grant.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
@@ -52,6 +53,13 @@ from framework.cortex import engine as _engine
 
 # Explicit zero-evidence sentinel (§5.6). NEVER a default/quality value.
 UNKNOWN = "unknown"
+
+# Canonical stored-timestamp shape (mirrors envelope.py _UTC_SECOND_RE). A cutoff
+# MUST match this — a legal-but-non-canonical ISO string (e.g. "+00:00" instead of
+# "Z", or fractional seconds) or garbage would fence OPEN (silently exclude/include
+# the wrong boundary), so a non-canonical cutoff is a HARD ERROR, not a silent
+# mis-fence. The denial-never-masquerades discipline applies to cutoffs too.
+_CANON_TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 # Scope tokens that are structurally not a resolvable local scope (mirrors the
 # envelope v2 sentinel vocabulary; kept local so query.py imports no validator).
@@ -185,6 +193,16 @@ def as_of(beliefs: Iterable[_belief.Belief], subject_key: str, *, scope,
     explicit unknown, or a HARD ERROR for an unresolvable scope."""
     beliefs = list(beliefs)
 
+    # 0. INPUT fence: a caller cutoff MUST be canonical YYYY-MM-DDTHH:MM:SSZ. A
+    # legal-but-non-canonical ISO ("...+00:00") or garbage would fence OPEN against
+    # the canonical stored timestamps — hard-error, never a silent mis-fence.
+    for _label, _cut in (("observation", observation), ("source", source)):
+        if _cut is not None and not _CANON_TS_RE.match(_cut):
+            raise ValueError(
+                f"{_label} cutoff {_cut!r} is not a canonical "
+                "YYYY-MM-DDTHH:MM:SSZ timestamp (a non-canonical cutoff fences "
+                "open — pin it or hard-error)")
+
     # 1. SCOPE gate (§7.4) — denial is a HARD ERROR, never empty-success.
     if not _scope_ok(scope):
         if scope_mode == "lenient":                # MUTANT: denial-as-ignorance
@@ -228,9 +246,24 @@ def as_of(beliefs: Iterable[_belief.Belief], subject_key: str, *, scope,
     views = tuple(sorted((_view(b, sup_by, sup, con, rederive=rederive)
                           for b in heads), key=lambda v: v.belief_id))
 
-    status = (UNKNOWN if not views
-              else _belief.STATUS_CONTRADICTED if len(views) > 1
-              else views[0].status)
+    # Result-level status is CONTRADICTION-driven, not head-COUNT-driven: multiple
+    # current heads are usually distinct DIMENSIONS/facets of one subject (queried
+    # with dimension=None — the outbox emits status + occurrence per task), each its
+    # own asserted head; that is not a contradiction. A contradiction is a view that
+    # carries a conflict_set (independent-lineage incompatible claims on ONE
+    # dimension). Multi-dimension aggregation rule (pinned): source_purged iff EVERY
+    # facet is purged, else asserted (>=1 live facet).
+    if not views:
+        status = UNKNOWN
+    elif any(v.conflict_set for v in views):
+        status = _belief.STATUS_CONTRADICTED
+    elif len(views) == 1:
+        status = views[0].status
+    else:
+        _facet_statuses = {v.status for v in views}
+        status = (_belief.STATUS_SOURCE_PURGED
+                  if _facet_statuses == {_belief.STATUS_SOURCE_PURGED}
+                  else _belief.STATUS_ASSERTED)
     return AsOfResult(subject_key=subject_key, dimension=dimension, status=status,
                       views=views, evidence_ids=evidence_ids)
 

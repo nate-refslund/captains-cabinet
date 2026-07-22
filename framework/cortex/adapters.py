@@ -245,6 +245,20 @@ def build_envelope_protos(envelopes, *, local_cabinet_id: str) -> tuple[list[dic
             refuse(line_index, "payload_ref envelope: no inline subject "
                    "(deref is never done)", env.get("event_id"))
             continue
+        payload = env["payload"]
+        subject = (payload.get(_ENVELOPE_SUBJECT_FIELD)
+                   if isinstance(payload, dict) else None)
+        if not isinstance(subject, str) or not subject:
+            # a VALIDATED envelope whose inline payload declares no pinned subject
+            # (e.g. the platform's own tasks/task-event@1 relay shape) cannot key a
+            # belief — refuse WITH A RECEIPT, never crash on the KeyError and abort
+            # the whole file (the fail-closed contract above; §7.4 / C-F19).
+            # Subject-declaring schemas (the `observations` seam) enforce it at
+            # validate_any, so this gate only fires for other-schema envelopes.
+            refuse(line_index, "inline payload declares no %r field — cannot key a "
+                   "belief (fold quarantines, never derefs)" % _ENVELOPE_SUBJECT_FIELD,
+                   env.get("event_id"))
+            continue
         protos.append(_envelope_to_proto(env, seq=line_index))
     return protos, receipts
 
