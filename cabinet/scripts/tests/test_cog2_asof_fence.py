@@ -290,3 +290,127 @@ class TestEnvelopeFileFailClosed:
         path = L.write_jsonl(tmp_path / "foreign.jsonl", [foreign])
         protos, receipts = adapters.read_envelope_file(path, local_cabinet_id="main")
         assert protos == [] and len(receipts) == 1
+
+
+# ===========================================================================
+# REVIEW FIX F6: a VALIDATED envelope whose payload declares no pinned subject
+# is quarantined-with-receipt, never a KeyError that aborts the whole file
+# ===========================================================================
+
+def _no_subject_envelope(seed):
+    """A VALID v2 envelope on the platform's own tasks/task-event@1 relay shape
+    — it passes validate_any but declares no `subject` field, so the
+    envelope-file adapter cannot key a belief from it."""
+    return {
+        "schema_version": "cabinet-envelope/v2", "event_id": L.make_ulid(seed),
+        "event_type": "tasks.status_changed", "occurred_at": S1, "recorded_at": O1,
+        "cabinet_id": "main", "scope_kind": "cabinet",
+        "producer": "officer_tasks/outbox-relay", "correlation_id": L.make_cid(seed),
+        "idempotency_key": f"task:{seed}:done", "classification": "system",
+        "payload_schema": "tasks/task-event@1",
+        "payload": {"task_id": seed, "new_status": "done", "actor": "cos"},
+    }
+
+
+class TestNoSubjectFieldQuarantine:
+    def test_validated_envelope_without_subject_is_quarantined_not_crashed(self, tmp_path):
+        good = L.envelope(seed=31, producer=L.PRIMARY, subject="widget-ok",
+                          state="ok", occurred_at=S1, recorded_at=O1)
+        path = L.write_jsonl(tmp_path / "nosub.jsonl",
+                             [good, _no_subject_envelope(88)])
+        protos, receipts = adapters.read_envelope_file(path, local_cabinet_id="main")
+        assert len(protos) == 1                        # the valid line STILL folds
+        assert protos[0]["subject_key"] == "observations/widget-ok"
+        assert len(receipts) == 1                      # the no-subject line refused
+        assert "subject" in receipts[0]["reason"]      # a subject-reason, not a crash
+
+    def test_no_subject_line_between_two_valid_lines_does_not_abort_the_file(self, tmp_path):
+        # the KeyError bug aborted the WHOLE file mid-iteration; prove both
+        # valid lines around the offender still fold.
+        a = L.envelope(seed=32, producer=L.PRIMARY, subject="widget-a", state="a",
+                       occurred_at=S1, recorded_at=O1)
+        b = L.envelope(seed=33, producer=L.PRIMARY, subject="widget-b", state="b",
+                       occurred_at=S1, recorded_at=O1)
+        path = L.write_jsonl(tmp_path / "sandwich.jsonl",
+                             [a, _no_subject_envelope(89), b])
+        protos, receipts = adapters.read_envelope_file(path, local_cabinet_id="main")
+        assert sorted(p["subject_key"] for p in protos) == \
+            ["observations/widget-a", "observations/widget-b"]
+        assert len(receipts) == 1
+
+
+# ===========================================================================
+# REVIEW FIX (cutoff): a non-canonical cutoff is a HARD ERROR (was fail-open)
+# ===========================================================================
+
+class TestCutoffValidation:
+    def test_noncanonical_iso_offset_cutoff_hard_errors(self, tmp_path):
+        # legal ISO, non-canonical ("+00:00" instead of "Z") — a string compare
+        # against canonical stored timestamps would fence OPEN. Hard-error.
+        beliefs = _seed_correction(tmp_path)
+        with pytest.raises(ValueError):
+            query.as_of(beliefs, SUBJECT, scope=MAIN,
+                        observation="2026-07-20T03:00:00+00:00")
+
+    def test_garbage_cutoff_hard_errors(self, tmp_path):
+        beliefs = _seed_correction(tmp_path)
+        with pytest.raises(ValueError):
+            query.as_of(beliefs, SUBJECT, scope=MAIN, observation="garbage")
+
+    def test_noncanonical_source_cutoff_hard_errors(self, tmp_path):
+        beliefs = _seed_correction(tmp_path)
+        with pytest.raises(ValueError):
+            query.as_of(beliefs, SUBJECT, scope=MAIN, source="2026-07-20")
+
+    def test_canonical_z_cutoff_still_fences(self, tmp_path):
+        beliefs = _seed_correction(tmp_path)
+        r = query.as_of(beliefs, SUBJECT, scope=MAIN, observation=T2)  # "...Z"
+        assert _state(r) == "open"                     # canonical cutoff unaffected
+
+
+# ===========================================================================
+# §8 sim 2 C-F9: out-of-order arrival — the fence keys on observation_time,
+# NOT on arrival/file-line (rowid) order (every other seed is arrival-monotone)
+# ===========================================================================
+
+class TestOutOfOrderArrivalFencesOnObservationTime:
+    def _seed(self, tmp_path):
+        # line 0 ARRIVES first but is OBSERVED late (recorded T4);
+        # line 1 ARRIVES last  but is OBSERVED early (recorded T2).
+        envs = [
+            L.envelope(seed=61, producer=L.PRIMARY, subject="widget-ooo",
+                       state="late-observed", occurred_at=S1, recorded_at=T4),
+            L.envelope(seed=62, producer=L.PRIMARY, subject="widget-ooo",
+                       state="early-observed", occurred_at=S1, recorded_at=T2),
+        ]
+        path = L.write_jsonl(tmp_path / "ooo.jsonl", envs)
+        protos, _ = adapters.read_envelope_file(path, local_cabinet_id="main")
+        return engine.fold(protos, trust_table=TT)
+
+    def test_early_observed_late_arrival_is_visible_at_early_cutoff(self, tmp_path):
+        beliefs = self._seed(tmp_path)
+        by_state = {b.claim["state"]: b for b in beliefs}
+        early, late = by_state["early-observed"], by_state["late-observed"]
+        # arrival/source order and observation order are INVERTED for this seed:
+        assert early.provenance["intra_stream_seq"] > late.provenance["intra_stream_seq"]
+        assert early.observation_time < late.observation_time
+        # as-of an observation cutoff between the two: ONLY the early-observed
+        # (late-ARRIVING) belief is visible — the fence follows observation_time.
+        r = query.as_of(beliefs, "observations/widget-ooo", scope=MAIN, observation=T3)
+        assert set(r.evidence_ids) == {early.belief_id}
+        assert late.belief_id not in r.evidence_ids
+        assert len(r.views) == 1 and r.views[0].value["state"] == "early-observed"
+
+    def test_an_arrival_order_fence_would_pick_the_wrong_belief(self, tmp_path):
+        # DEMONSTRATION that a rowid/arrival-order fence mutant BITES on this seed
+        # (no query seam added — that mutant needs a seq-typed cutoff, which is
+        # engine plumbing, deferred): an arrival fence keeps the FIRST-arriving
+        # beliefs (lowest intra_stream_seq) and so returns the LATE-observed one —
+        # the exact temporal leak the observation fence avoids.
+        beliefs = self._seed(tmp_path)
+        arrival_fenced = [b.claim["state"] for b in beliefs
+                          if b.provenance["intra_stream_seq"] <= 0]   # rowid MUTANT
+        assert arrival_fenced == ["late-observed"]                    # the WRONG one
+        correct = query.as_of(beliefs, "observations/widget-ooo", scope=MAIN,
+                              observation=T3)
+        assert correct.views[0].value["state"] == "early-observed"    # opposite => bites
