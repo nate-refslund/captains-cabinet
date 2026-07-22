@@ -356,9 +356,17 @@ def expect_build_failure():
 class BindingSpec:
     """One declarative binding in a step-3 cell. `role` selects the seam:
       * "verdict"     — a consequence belief carrying review.{verdict,source};
-                        feeds the verified-join / verdict axis (§5.2b).
+                        feeds the verified-join / verdict axis (§5.2b). With
+                        `verdict=None` (no review) it instead seeds a BARE
+                        consequence EXECUTION record: still verified-join-eligible
+                        (rank-1, identity matches, in join_spec) but carrying
+                        NEITHER a review NOR an observed_effect — hence
+                        direction-INERT (ruling R-B). It yields no P4/P5 direction
+                        predicate, so an edge bound to ONLY such records lands at
+                        P6 hypothesized (execution-happened is not effect-evidence).
       * "observation" — a cortex observation carrying `observed_effect`; feeds
-                        the direction axis (§5.2 direction predicates). Set
+                        the direction axis (§5.2 direction predicates), full
+                        movement enum {increase,decrease,maintain}. Set
                         `contested=True` to seed a two-producer conflict_set.
       * "purged"      — a source_purged observation (admissible() excludes it).
     Anomaly knobs: `join` ("match"|"mismatch") controls verified-join limb-(ii);
