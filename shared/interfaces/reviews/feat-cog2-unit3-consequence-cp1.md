@@ -91,3 +91,22 @@ purge arm here runs on the OUTBOX stream only.
 
 Provenance: authored + self-ratified per the 2026-07-07 full-autonomy grant + the
 2026-07-20 cognitive-masterplan continuous grant.
+
+## Review fixes + named gaps (post-adversarial-review, CONCERNS(4) no-blocker)
+- **F1 FIXED** — `build_consequence_protos` dedupes byte-identical / key-reordered
+  duplicate rows first-occurrence (on `_canonical` bytes, the event_id basis), so a
+  double-emit retry within one second no longer crashes the rebuild; honors
+  read_ledger collapse + sim-1 dup-invariance. Regression tests added
+  (TestDuplicateRowDedupe).
+- **F2 FIXED** — `_is_tombstone` requires the `new_status` key PRESENT with a null
+  value (key-absence is no longer a silent fabricated purge). Test added.
+- **F3 NAMED GAP (doc only)** — the live 047 DDL has `new_status TEXT NOT NULL`, so
+  the SQL-path source-purge tombstone is operationally UNREACHABLE without a
+  constraint-relaxing purge op that exists nowhere in-tree; the tombstone MODEL is
+  correctly pinned and the purge arm rides synthetic dicts. The operational purge
+  MECHANISM is a future gap (backlogged) — wire it when a real purge path lands.
+- **F4 DEFERRED (coverage)** — the checked-in determinism subprocess-triple seeds no
+  consequence JSONL (though the reviewer's 3-distinct-PYTHONHASHSEED probe proved
+  the consequence stream deterministic). Folding a consequence fixture into the repo
+  determinism gate is a coverage-completeness follow-up for unit 4/5 (backlogged) —
+  not a correctness gap (the property holds and is probe-proven).
