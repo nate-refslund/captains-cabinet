@@ -93,6 +93,13 @@ temporary_allowances:
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: COG-7 compaction folds the projection, or the phase is superseded
+  - phase: COG-3
+    budget: framework_production_noncomment_lines
+    additional: 7
+    reason: COG-3 wave-1 D1 precursor (contract §6.1) — the consequence cabinet_id stamp in framework/cortex/adapters.py (keyword-only local_cabinet_id threading + provenance stamp; the belief.py ENGINE_VERSION bump is net-zero non-comment). EXACT measured +7 (63493 vs 63486 base+allowances), 2026-07-22, via cognitive-architecture-census.py — the zero-headroom observed==max law means each COG-3 unit bumps this allowance to its exact new running total (the framework/objectives package wave adds its measured modules+lines here); tightened to phase actual at done-flip (shrink-only)
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: COG-7 compaction folds the graph, or the phase is superseded
 ownership:
   authoritative_state: domain_transaction
   cross_domain_delivery: transactional_outbox

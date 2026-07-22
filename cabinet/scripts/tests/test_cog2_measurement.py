@@ -227,7 +227,7 @@ def _measure_consequence(tmp: Path, n: int, trust: dict) -> dict:
     try:
         t0 = time.perf_counter()
         rows = list(consequence.iter_ledger_rows())
-        protos = adapters.build_consequence_protos(rows)
+        protos = adapters.build_consequence_protos(rows, local_cabinet_id="main")  # D1 §6.1
         beliefs = engine.fold(protos, trust_table=trust)
         fold_s = time.perf_counter() - t0
     finally:

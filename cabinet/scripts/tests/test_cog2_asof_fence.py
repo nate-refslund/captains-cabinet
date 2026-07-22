@@ -30,6 +30,7 @@ S0: interpreter python3.12. No DB — the envelope-file adapter reads a JSONL.
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -42,6 +43,7 @@ for _p in (str(_HERE), _ROOT):          # tests/ is a package: put it on the pat
         sys.path.insert(0, _p)
 
 from framework.cortex import adapters, belief, engine, query  # noqa: E402
+from framework.fidelity import consequence  # noqa: E402  (D1 §6.1 consequence seam)
 import lib_cog2_envelope as L  # noqa: E402
 
 TT = L.TRUST_TABLE
@@ -414,3 +416,124 @@ class TestOutOfOrderArrivalFencesOnObservationTime:
         correct = query.as_of(beliefs, "observations/widget-ooo", scope=MAIN,
                               observation=T3)
         assert correct.views[0].value["state"] == "early-observed"    # opposite => bites
+
+
+# ===========================================================================
+# D1 (§6.1) — consequence provenance carries the local cabinet_id stamp
+# ===========================================================================
+#
+# The serve filter keys in-scope beliefs on provenance.cabinet_id
+# (query.py:236); the consequence adapter minted FOUR-key provenance with no
+# cabinet_id (adapters.py:390-395), so EVERY consequence/<digest> subject
+# hard-ScopeError'd (query.py:238-245) and `tested` was vacuous. D1 stamps the
+# DECLARED local cabinet_id at proto-build — mirroring build_envelope_protos(*,
+# local_cabinet_id) (adapters.py:259) — so consequence subjects become servable
+# in-scope while the cross-cabinet fence stays intact. `test_cog2_asof_fence`
+# has the D1 cases i-iii (§8); case (iv) — the read_ledger() chain-head
+# equivalence — lives UNCHANGED in test_cog2_consequence_seam.py
+# (test_chain_heads_equal_read_ledger_survivors).
+
+_CONSEQUENCE_PRODUCER = "framework/fidelity/consequence"
+_CONSEQUENCE_TT = {"table_version": 1, "producers": {_CONSEQUENCE_PRODUCER: 850000}}
+
+
+def _crow(ts, action, subject, *, review=None, kind="officer", actor_id="cos"):
+    """A raw consequence-ledger row (the file-based seam iter_ledger_rows reads).
+    `review` rides along verbatim in the claim — the §5.2 evaluation surface."""
+    row = {"ts": ts, "actor": {"kind": kind, "id": actor_id}, "lane": "acting",
+           "action": action, "subject": subject, "refs": []}
+    if review is not None:
+        row["review"] = review
+    return row
+
+
+def _seed_consequence_ledger(ledger_dir, rows, date="2026-07-20"):
+    """Write raw rows to a day-file _safe_ledger_files/iter_ledger_rows consume."""
+    path = ledger_dir / f"consequence-events-{date}.jsonl"
+    with open(path, "a", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row) + "\n")
+    return path
+
+
+def _consequence_sk(row):
+    """The subject_key the adapter derives — 'consequence/' + digest of the
+    ledger's OWN ts-inclusive identity tuple (consequence._identity)."""
+    return "consequence/" + belief.digest(list(consequence._identity(row)))
+
+
+@pytest.fixture
+def consequence_ledger(tmp_path, monkeypatch):
+    """An isolated consequence-ledger dir wired through CABINET_EVENT_LOG_DIR
+    (the operator-set env consequence.py reads). Sim mode OFF."""
+    d = tmp_path / "events"
+    d.mkdir()
+    monkeypatch.setenv("CABINET_EVENT_LOG_DIR", str(d))
+    monkeypatch.delenv("CABINET_SIM_MODE", raising=False)
+    return d
+
+
+class TestD1ConsequenceCabinetStamp:
+    def test_i_stamped_consequence_subject_is_servable_in_local_scope(self, consequence_ledger):
+        # (i) POSITIVE: seeded ledger -> fold with the local cabinet_id ->
+        # as_of(consequence/<digest>, scope=local) returns status-bearing views
+        # whose .value carries the FULL row (the §5.2 evaluation surface).
+        row = _crow("2026-07-20T08:00:00Z", "ship", "release/9",
+                    review={"verdict": "confirmed", "source": "verdict_human"})
+        _seed_consequence_ledger(consequence_ledger, [row])
+        protos = adapters.read_consequence_protos(local_cabinet_id="main")
+        assert protos[0]["provenance"]["cabinet_id"] == "main"       # the D1 stamp
+        beliefs = engine.fold(protos, trust_table=_CONSEQUENCE_TT)
+        r = query.as_of(beliefs, _consequence_sk(row),
+                        scope={"cabinet_id": "main"}, observation=None)
+        assert len(r.views) == 1                                     # NOT a ScopeError
+        assert r.views[0].status == "asserted"                       # status-bearing
+        val = r.views[0].value                                       # the FULL row
+        assert val["review"]["verdict"] == "confirmed"
+        assert val["review"]["source"] == "verdict_human"
+        assert val["action"] == "ship" and val["subject"] == "release/9"
+
+    def test_ii_foreign_scope_still_scope_errors(self, consequence_ledger):
+        # (ii) FENCE INTACT: the stamp is LOCAL, never a wildcard — a foreign
+        # scope is still refused LOUDLY (denial never becomes ignorance).
+        row = _crow("2026-07-20T08:00:00Z", "ship", "release/9")
+        _seed_consequence_ledger(consequence_ledger, [row])
+        protos = adapters.read_consequence_protos(local_cabinet_id="main")
+        beliefs = engine.fold(protos, trust_table=_CONSEQUENCE_TT)
+        with pytest.raises(query.ScopeError):
+            query.as_of(beliefs, _consequence_sk(row),
+                        scope={"cabinet_id": "other-cabinet"}, observation=None)
+
+    def test_iii_unstamped_proto_reproduces_hard_scope_error(self, consequence_ledger):
+        # (iii) MUTANT: an old-shape proto WITHOUT the stamp reproduces today's
+        # hard-ScopeError (the fail-closed status quo) — proving the D1 stamp is
+        # load-bearing. Inject the mutant by stripping cabinet_id back to the
+        # pre-D1 four-key provenance.
+        row = _crow("2026-07-20T08:00:00Z", "ship", "release/9")
+        _seed_consequence_ledger(consequence_ledger, [row])
+        protos = adapters.read_consequence_protos(local_cabinet_id="main")
+        for p in protos:
+            p["provenance"].pop("cabinet_id", None)                  # the mutant
+        assert set(protos[0]["provenance"]) == {
+            "event_id", "producer", "stream_rank", "intra_stream_seq"}
+        beliefs = engine.fold(protos, trust_table=_CONSEQUENCE_TT)
+        with pytest.raises(query.ScopeError):
+            query.as_of(beliefs, _consequence_sk(row),
+                        scope={"cabinet_id": "main"}, observation=None)
+
+    def test_stamp_reflects_the_declared_parameter_not_a_literal(self, consequence_ledger):
+        # the stamp is the DECLARED local_cabinet_id parameter — NEVER a hardcoded
+        # 'main' literal and never an env read (A-M6): a non-'main' local cabinet
+        # stamps THAT id and is servable only under it (a 'main'-scoped query then
+        # ScopeError's). Bites a hardcoded-literal or env-read mutant.
+        row = _crow("2026-07-20T08:00:00Z", "ship", "release/9")
+        _seed_consequence_ledger(consequence_ledger, [row])
+        protos = adapters.read_consequence_protos(local_cabinet_id="acme-hq")
+        assert protos[0]["provenance"]["cabinet_id"] == "acme-hq"
+        beliefs = engine.fold(protos, trust_table=_CONSEQUENCE_TT)
+        served = query.as_of(beliefs, _consequence_sk(row),
+                             scope={"cabinet_id": "acme-hq"}, observation=None)
+        assert len(served.views) == 1
+        with pytest.raises(query.ScopeError):
+            query.as_of(beliefs, _consequence_sk(row),
+                        scope={"cabinet_id": "main"}, observation=None)

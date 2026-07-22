@@ -88,7 +88,10 @@ def _sk(row):
 
 
 def _protos(ledger_dir=None):
-    return adapters.build_consequence_protos(list(consequence.iter_ledger_rows()))
+    # D1 (§6.1): build_consequence_protos now requires the DECLARED local
+    # cabinet_id scope stamp (mirroring build_envelope_protos(*, local_cabinet_id)).
+    return adapters.build_consequence_protos(
+        list(consequence.iter_ledger_rows()), local_cabinet_id="main")
 
 
 def _fold(ledger_dir=None):

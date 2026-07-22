@@ -34,7 +34,10 @@ from framework.triggers import schema_registry
 
 # Bumping any of these is a hash EPOCH BUMP (§5.1 A-m13), never a determinism
 # regression — a new honest hash lineage.
-ENGINE_VERSION = "cortex-engine/1"
+# /2: D1 (§6.1) stamps local cabinet_id into consequence provenance -> belief
+# store bytes change -> honest epoch bump (belief IDENTITIES stay stable —
+# compute_belief_id excludes provenance except event_id, :77-87).
+ENGINE_VERSION = "cortex-engine/2"
 
 # Closed epistemic kind enum (foundry.md:89). Frozen per engine version.
 KINDS: frozenset[str] = frozenset({

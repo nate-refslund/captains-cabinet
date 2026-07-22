@@ -344,7 +344,9 @@ class TestConsequenceGapTaxonomy:
                     [_crow("2026-07-20T08:00:00Z", "ship", "rel/1"),
                      _crow("2026-07-20T09:00:00Z", "label", "rel/2")])
         triples = _ctriples()
-        beliefs = engine.fold(adapters.build_consequence_protos(triples), trust_table=CTT)
+        beliefs = engine.fold(
+            adapters.build_consequence_protos(triples, local_cabinet_id="main"),  # D1 §6.1
+            trust_table=CTT)
         manifest = engine.build_manifest(beliefs, trust_table=CTT, frontier=None,
                                          max_id=None, consequence_rows=triples)
         sc = manifest["seen_consequence"]
