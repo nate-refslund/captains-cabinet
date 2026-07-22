@@ -12,8 +12,8 @@
       "minimum": 1
     },
     "producer_key": {
-      "description": "Component/source identity — the adapter-declared producer set only, never an officer identity",
-      "enum": ["officer_tasks/outbox-relay"]
+      "description": "Component/source identity — the adapter-declared producer set only, never an officer identity. UNIT 2 adds the envelope-file adapter's declared producers (§5.2a). Later COG-2 units extend the enum as adapters land (consequence).",
+      "enum": ["officer_tasks/outbox-relay", "observations/primary", "observations/secondary"]
     }
   }
 }

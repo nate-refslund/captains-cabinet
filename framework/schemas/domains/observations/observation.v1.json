@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "observations/observation@1 — envelope-file belief seam payload",
+  "description": "A durable observation of a subject's state. The COG-2 envelope-file adapter (docs/plans/cognitive-core-phase-2-contract-2026-07-22.md §5.2a) folds validate_any-passing v2 envelopes carrying this payload into observation beliefs: subject_key := <payload_schema domain>/<payload.subject>, dimension := the payload_schema <domain>/<name>, kind := observation (all pinned mechanically, never heuristic content comparison). This is the two-axis (occurred_at vs recorded_at) + two-producer contradiction proof seam AND the shape a future envelope-durable source declares; NO production source emits it this phase (declared, §2). Resolved by framework/triggers/schema_registry.py; NEVER feeds the central VALID_EVENT_TYPES enum (M4).",
+  "x-cabinet-event-types": ["observations.recorded"],
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["subject", "state"],
+  "properties": {
+    "subject": {
+      "description": "The domain subject this observation is about; the adapter forms subject_key := observations/<subject> (a per-adapter pinned key, never free-text — the analogue of tasks/<task_id>)",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "state": {
+      "description": "The observed state — the claim content; two producers observing incompatible states for one subject is the contradiction fixture",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    }
+  }
+}

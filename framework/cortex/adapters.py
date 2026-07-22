@@ -131,3 +131,149 @@ def read_and_build(dsn: str, *, past_null: bool = False) -> tuple[list[dict], Op
     frontier = frontier_of(rows, past_null=past_null)
     max_id = max((int(r["id"]) for r in rows), default=None)
     return build_proto_beliefs(rows, past_null=past_null), frontier, max_id
+
+
+# ---------------------------------------------------------------------------
+# Envelope-file adapter (§5.2a) — the COG-2 UNIT 2 two-axis + contradiction seam
+# ---------------------------------------------------------------------------
+#
+# Production code (the general seam any future envelope-durable source uses),
+# with NO production feed this phase (§2). It folds validate_any-gated v2
+# envelope JSONL with INDEPENDENT occurred_at/recorded_at — the only real
+# two-clock path in the slice (the outbox is single-clock). Sims 2 and 3 ride
+# it, so their seeds traverse the SAME fold + query code as production streams
+# (no test-only ingest seam — C-F4/C-F9).
+#
+# Derivation, pinned mechanically per adapter (never heuristic content
+# comparison — §4):
+#   * subject_key := "<payload_schema domain>/<payload.subject>" (a future
+#     envelope-durable source declares a `subject` field — the analogue of the
+#     outbox's tasks/<task_id>; namespaced away from the outbox by the domain)
+#   * dimension  := the payload_schema "<domain>/<name>" ("payload_schema-
+#     declared" — every envelope on one schema shares a supersession/contradict
+#     dimension)
+#   * kind       := "observation" (an envelope-file belief records an observation)
+#   * source_time := occurred_at (valid time); observation_time := recorded_at
+#     (transaction time — the SECOND axis)
+#
+# FAIL-CLOSED ingest (§7.4 / C-F19): every line is validate_any-gated AND
+# cabinet-scoped; an invalid / absent-or-foreign-cabinet / payload_ref (no
+# inline subject) / malformed-JSON line is QUARANTINED with a receipt — never
+# silently skipped (silent skip is the pinned mutant failure). The full
+# cross-cabinet suite (sentinels, classification=cross_cabinet, receipt-to-file)
+# is the sim-7 unit; this adapter ships the fail-closed core.
+
+_ENVELOPE_STREAM_RANK = RANK_TABLE["envelope_file"]  # 2
+_ENVELOPE_SUBJECT_FIELD = "subject"
+_ENVELOPE_KIND = "observation"
+
+
+def _envelope_scope_reason(env: dict, *, local_cabinet_id: str) -> Optional[str]:
+    """Fail-closed scope check on a validated envelope: a refusal reason, or None
+    when local. Absent cabinet_id fails closed (absent is never local); a foreign
+    cabinet_id is refused (§7.4)."""
+    cab = env.get("cabinet_id")
+    if not isinstance(cab, str) or not cab:
+        return "absent cabinet_id (absent is never local — fail closed)"
+    if cab != local_cabinet_id:
+        return f"foreign cabinet_id {cab[:32]!r} (local is {local_cabinet_id[:32]!r})"
+    return None
+
+
+def _envelope_to_proto(env: dict, *, seq: int) -> dict:
+    """One validated, in-scope, inline-payload v2 envelope -> one observation
+    proto-belief. The two clocks are read straight off the envelope."""
+    from framework.triggers import schema_registry  # lazy: module stays import-inert
+    domain, name, _version = schema_registry.parse_schema_id(env["payload_schema"])
+    provenance = {
+        "event_id": env["event_id"],
+        "producer": env["producer"],
+        "stream_rank": _ENVELOPE_STREAM_RANK,
+        "intra_stream_seq": seq,
+        "cabinet_id": env["cabinet_id"],
+        "scope_kind": env["scope_kind"],
+        "correlation_id": env["correlation_id"],
+        "classification": env["classification"],
+        "payload_schema": env["payload_schema"],
+        "idempotency_key": env["idempotency_key"],
+    }
+    if env.get("causation_id"):
+        provenance["causation_id"] = env["causation_id"]
+    for level in ("lane_id", "project_id"):
+        if level in env:
+            provenance[level] = env[level]
+    return {
+        "kind": _ENVELOPE_KIND,
+        "subject_key": f"{domain}/{env['payload'][_ENVELOPE_SUBJECT_FIELD]}",
+        "dimension": f"{domain}/{name}",
+        "adapter_ordinal": 0,
+        "claim": dict(env["payload"]),
+        "source_time": env["occurred_at"],       # valid time
+        "observation_time": env["recorded_at"],   # transaction time — the 2nd axis
+        "provenance": provenance,
+        "claim_completeness": "inline",
+    }
+
+
+def build_envelope_protos(envelopes, *, local_cabinet_id: str) -> tuple[list[dict], list[dict]]:
+    """(protos, receipts) from ordered (line_index, parsed_envelope_or_None)
+    pairs. FAIL-CLOSED: validate_any + scope fence + inline-payload gate; each
+    refusal writes a receipt (never a silent skip). intra_stream_seq := the file
+    line index (deterministic source order for supersession)."""
+    from framework.triggers import envelope as _envelope  # lazy: import-inert top
+    protos: list[dict] = []
+    receipts: list[dict] = []
+
+    def refuse(line_index, reason, event_id=None):
+        receipts.append({"line": line_index, "reason": reason, "event_id": event_id})
+
+    for line_index, env in envelopes:
+        if not isinstance(env, dict):
+            refuse(line_index, "line is not a JSON object (malformed or non-object)")
+            continue
+        ok, reasons = _envelope.validate_any(env)
+        if not ok:
+            refuse(line_index, "; ".join(reasons[:4]) or "invalid envelope",
+                   env.get("event_id"))
+            continue
+        scope_reason = _envelope_scope_reason(env, local_cabinet_id=local_cabinet_id)
+        if scope_reason is not None:
+            refuse(line_index, scope_reason, env.get("event_id"))
+            continue
+        if "payload" not in env:
+            # payload_ref: the fold never derefs, so no inline subject to key on.
+            refuse(line_index, "payload_ref envelope: no inline subject "
+                   "(deref is never done)", env.get("event_id"))
+            continue
+        payload = env["payload"]
+        subject = (payload.get(_ENVELOPE_SUBJECT_FIELD)
+                   if isinstance(payload, dict) else None)
+        if not isinstance(subject, str) or not subject:
+            # a VALIDATED envelope whose inline payload declares no pinned subject
+            # (e.g. the platform's own tasks/task-event@1 relay shape) cannot key a
+            # belief — refuse WITH A RECEIPT, never crash on the KeyError and abort
+            # the whole file (the fail-closed contract above; §7.4 / C-F19).
+            # Subject-declaring schemas (the `observations` seam) enforce it at
+            # validate_any, so this gate only fires for other-schema envelopes.
+            refuse(line_index, "inline payload declares no %r field — cannot key a "
+                   "belief (fold quarantines, never derefs)" % _ENVELOPE_SUBJECT_FIELD,
+                   env.get("event_id"))
+            continue
+        protos.append(_envelope_to_proto(env, seq=line_index))
+    return protos, receipts
+
+
+def read_envelope_file(path, *, local_cabinet_id: str) -> tuple[list[dict], list[dict]]:
+    """Read a v2 envelope JSONL READ-ONLY and fold-prepare it (§5.2a). A
+    malformed line is quarantined, never a crash. Returns (protos, receipts)."""
+    import json
+    from pathlib import Path
+    envelopes = []
+    for line_index, raw in enumerate(Path(path).read_text(encoding="utf-8").splitlines()):
+        if not raw.strip():
+            continue
+        try:
+            envelopes.append((line_index, json.loads(raw)))
+        except ValueError:
+            envelopes.append((line_index, None))  # fail-closed: quarantined below
+    return build_envelope_protos(envelopes, local_cabinet_id=local_cabinet_id)

@@ -16,12 +16,14 @@ supersession is decided in the source's own total order
 against commit order under a long transaction. observation_time is a
 query-fence axis only (exercised by a later unit).
 
-Three MUTANT SEAMS (sim 1 negative controls) carry non-default values used ONLY
-by the gate test to prove each control bites; every default is the correct law:
-  * frontier_of(..., past_null=True)           — folds past a NULL event_id
-  * fold(..., supersession_order="arrival")    — keys supersession on arrival
-  * fold(..., supersession_order="observation_time")  — keys on the wrong axis
-  * fold(..., identity="fresh_ulid")           — mints a build-time id
+MUTANT SEAMS carry non-default values used ONLY by the gate tests to prove each
+negative control bites; every default is the correct law:
+  * frontier_of(..., past_null=True)           — folds past a NULL event_id (sim 1)
+  * fold(..., supersession_order="arrival")    — keys supersession on arrival (sim 1)
+  * fold(..., supersession_order="observation_time")  — keys on the wrong axis (sim 1)
+  * fold(..., identity="fresh_ulid")           — mints a build-time id (sim 1)
+  * fold(..., lineage="merged")                — one lineage per subject => SILENT LWW (sim 3)
+  * fold(..., lineage="correlation")           — lineage keyed on the chain, not the producer (sim 3)
 
 Provenance: authored per the 2026-07-07 full-autonomy grant + the 2026-07-20
 cognitive-masterplan continuous grant.
@@ -133,13 +135,88 @@ def _supersession_key(proto: dict, order: str):
     return (prov["stream_rank"], prov["intra_stream_seq"])
 
 
+def _lineage_key(item: dict, mode: str):
+    """The lineage a belief belongs to within a (subject_key, dimension) group
+    (§5.5). CORRECT: the producer — "same producer = same lineage by definition
+    here". Two MUTANT seams (sim 3 negative controls): "merged" collapses every
+    producer into ONE lineage (SILENT LWW — contradiction never fires); and
+    "correlation" keys on the correlation chain, which wrongly splits a
+    same-producer/disjoint-correlation pair into contradicting lineages (its
+    pinned verdict is supersedes, not contradicts)."""
+    prov = item["provenance"]
+    if mode == "merged":
+        return ""                                   # MUTANT: one lineage => LWW
+    if mode == "correlation":
+        return prov.get("correlation_id", "")       # MUTANT: chain, not producer
+    return prov["producer"]                         # CORRECT (§5.5)
+
+
+def derive_status(*, purged: bool, superseded_by, contradicts) -> str:
+    """The single derived status function, pinned priority (§4):
+    source_purged > superseded > contradicted > asserted. Computed once from
+    (purged, superseded_by?, contradicts≠∅) — never a double transition."""
+    if purged:
+        return _belief.STATUS_SOURCE_PURGED
+    if superseded_by is not None:
+        return _belief.STATUS_SUPERSEDED
+    if contradicts:
+        return _belief.STATUS_CONTRADICTED
+    return _belief.STATUS_ASSERTED
+
+
+def resolve_relationships(items: Iterable[dict], *, supersession_order: str = "source",
+                          lineage: str = "producer"):
+    """Pure cross-belief resolution shared by fold() AND the per-cutoff
+    re-derivation in query.py (C-F7). Each item carries belief_id, subject_key,
+    dimension, provenance (producer, stream_rank, intra_stream_seq[,
+    correlation_id]) [+ observation_time/_arrival only for the mutant orders].
+
+    Supersession runs WITHIN a lineage (default = producer, §5.5) by the source's
+    OWN order (default (stream_rank, intra_stream_seq) — NEVER observation_time,
+    A-B4). Independent CURRENT lineages on one (subject_key, dimension) cross-link
+    symmetrically — the contradiction post-pass (§5.5): a single-producer group
+    yields exactly one head (no contradiction, C-F10); a two-producer group
+    yields two heads that contradict. Returns (superseded_by, supersedes,
+    contradicts) keyed by belief_id."""
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for item in items:
+        groups.setdefault((item["subject_key"], item["dimension"]), []).append(item)
+
+    superseded_by: dict[str, Optional[str]] = {}
+    supersedes: dict[str, tuple[str, ...]] = {}
+    contradicts: dict[str, tuple[str, ...]] = {}
+    for key in sorted(groups):
+        lineages: dict[Any, list[dict]] = {}
+        for item in groups[key]:
+            lineages.setdefault(_lineage_key(item, lineage), []).append(item)
+        heads: list[str] = []
+        for lineage_id in sorted(lineages):
+            chain = sorted(lineages[lineage_id],
+                           key=lambda r: _supersession_key(r, supersession_order))
+            for i, item in enumerate(chain):
+                bid = item["belief_id"]
+                superseded_by[bid] = chain[i + 1]["belief_id"] if i + 1 < len(chain) else None
+                supersedes[bid] = (chain[i - 1]["belief_id"],) if i > 0 else ()
+                contradicts[bid] = ()
+            heads.append(chain[-1]["belief_id"])    # the lineage's current head
+        # Contradiction post-pass (§5.5): >1 independent current lineage on one
+        # (subject_key, dimension) => symmetric SORTED cross-links.
+        if len(heads) > 1:
+            for bid in heads:
+                contradicts[bid] = tuple(sorted(h for h in heads if h != bid))
+    return superseded_by, supersedes, contradicts
+
+
 def fold(proto_beliefs: Iterable[dict], *, trust_table: dict,
          supersession_order: str = "source",
-         identity: str = "deterministic") -> list[Belief]:
-    """Pure fold: dedupe -> per-(subject,dimension) supersession by source order
-    -> contradiction post-pass -> status -> confidence. Returns beliefs sorted
-    by belief_id (canonical order); full-refold-only (incremental arrival and
-    rebuild-from-zero are the same computation)."""
+         identity: str = "deterministic",
+         lineage: str = "producer") -> list[Belief]:
+    """Pure fold: dedupe -> per-lineage supersession by source order ->
+    contradiction post-pass -> status -> confidence. Returns beliefs sorted by
+    belief_id (canonical order); full-refold-only (incremental arrival and
+    rebuild-from-zero are the same computation). Supersession + contradiction run
+    through the SHARED resolve_relationships (the same derivation query.py re-runs
+    per cutoff — C-F7); lineage="merged"/"correlation" are its sim-3 mutant seams."""
     # Stamp arrival index (the mutant seam's key) and mint identity + dedupe by
     # belief_id (which embeds event_id + adapter_ordinal — physical duplication
     # of a source row collapses; the entity/observation pair of one event does
@@ -176,29 +253,14 @@ def fold(proto_beliefs: Iterable[dict], *, trust_table: dict,
         seen[bid] = signature
         staged.append(row)
 
-    # Group by (subject_key, dimension); resolve supersession within each group.
-    groups: dict[tuple[str, str], list[dict]] = {}
-    for row in staged:
-        groups.setdefault((row["subject_key"], row["dimension"]), []).append(row)
-
-    superseded_by: dict[str, Optional[str]] = {}
-    supersedes: dict[str, tuple[str, ...]] = {}
-    contradicts: dict[str, tuple[str, ...]] = {}
-    for key in sorted(groups):
-        chain = sorted(groups[key], key=lambda r: _supersession_key(r, supersession_order))
-        for i, row in enumerate(chain):
-            bid = row["belief_id"]
-            nxt = chain[i + 1]["belief_id"] if i + 1 < len(chain) else None
-            superseded_by[bid] = nxt
-            supersedes[bid] = (chain[i - 1]["belief_id"],) if i > 0 else ()
-            contradicts[bid] = ()
-        # Contradiction post-pass (§5.5): independent current lineages (>1 head)
-        # cross-link symmetrically. A single linear chain has exactly one head,
-        # so the tasks stream yields no contradictions (declared, C-F10).
-        heads = [r["belief_id"] for r in chain if superseded_by[r["belief_id"]] is None]
-        if len(heads) > 1:
-            for bid in heads:
-                contradicts[bid] = tuple(sorted(h for h in heads if h != bid))
+    # Supersession + contradiction, lineage-partitioned (§5.4/§5.5) — the SHARED
+    # derivation query.py re-runs per cutoff (C-F7). A single-producer group is
+    # one linear chain (one head, no contradiction — the tasks stream, C-F10);
+    # an independent second producer on one (subject_key, dimension) makes the
+    # len(heads) > 1 contradiction branch LIVE (unit 1 left it dead — the
+    # envelope-file two-producer seam is what reaches it).
+    superseded_by, supersedes, contradicts = resolve_relationships(
+        staged, supersession_order=supersession_order, lineage=lineage)
 
     beliefs: list[Belief] = []
     for row in staged:
@@ -207,14 +269,8 @@ def fold(proto_beliefs: Iterable[dict], *, trust_table: dict,
         confidence, source_trust = derive_confidence(
             row["provenance"]["producer"], trust_table)
         purged = bool(row.get("purged"))
-        if purged:
-            status = _belief.STATUS_SOURCE_PURGED
-        elif superseded_by[bid] is not None:
-            status = _belief.STATUS_SUPERSEDED
-        elif contradicts[bid]:
-            status = _belief.STATUS_CONTRADICTED
-        else:
-            status = _belief.STATUS_ASSERTED
+        status = derive_status(purged=purged, superseded_by=superseded_by[bid],
+                               contradicts=contradicts[bid])
         beliefs.append(Belief(
             belief_id=bid,
             kind=row["kind"],

@@ -19,3 +19,11 @@ producers:
   # UNIT 1 slice folds). 900000 ppm = 0.9: a co-committed domain outbox is a
   # high-trust first-party source, but not certainty.
   officer_tasks/outbox-relay: 900000
+  # COG-2 UNIT 2 — the envelope-file adapter's declared producer set (§5.2a).
+  # ADDITIVE (table_version stays 1): these keys are NEW, so no existing belief's
+  # confidence changes and the outbox's hash lineage is untouched — not an epoch
+  # bump in effect. No production source feeds the envelope-file adapter this
+  # phase; these are the two-axis + contradiction proof seam's producers.
+  # Component/source identities, never officer identities (G-F4 latch).
+  observations/primary: 800000
+  observations/secondary: 500000
