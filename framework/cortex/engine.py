@@ -299,12 +299,46 @@ def fold(proto_beliefs: Iterable[dict], *, trust_table: dict,
 # Storage boundary (§6) — atomic JSONL + fold manifest
 # ---------------------------------------------------------------------------
 
+_OUTBOX_STREAM_RANK = RANK_TABLE["officer_tasks_outbox"]  # 0
+
+
+def seen_intervals(beliefs: Iterable[Belief], *,
+                   stream_rank: int = _OUTBOX_STREAM_RANK) -> dict:
+    """The durable SEEN-SET (§8 sim 5, C-F14) the gap classifier regresses a
+    later fold against: the set of BIGSERIAL source ids this fold covered for
+    one stream, compressed to inclusive [lo, hi] intervals + genesis (min id).
+
+    Derived from the beliefs THEMSELVES — for the outbox (stream_rank 0) a
+    belief's provenance.intra_stream_seq IS the outbox row id (§5.2), so no extra
+    fold input is needed and a rebuild-from-zero reproduces the same seen-set.
+    Two beliefs per row (entity + observation) collapse to one id via the set.
+    A hole between intervals is a SEQUENCE HOLE, not yet a verdict — the gap
+    classifier decides benign (rollback-burned) vs breach (regression)."""
+    ids = sorted({int(b.provenance["intra_stream_seq"]) for b in beliefs
+                  if b.provenance.get("stream_rank") == stream_rank})
+    intervals: list[list[int]] = []
+    for i in ids:
+        if intervals and i == intervals[-1][1] + 1:
+            intervals[-1][1] = i
+        else:
+            intervals.append([i, i])
+    return {
+        "stream": "officer_tasks_outbox",
+        "stream_rank": stream_rank,
+        "genesis": ids[0] if ids else None,
+        "max_seen": ids[-1] if ids else None,
+        "count": len(ids),
+        "intervals": intervals,
+    }
+
+
 def build_manifest(beliefs: list[Belief], *, trust_table: dict,
                    frontier: Optional[int], max_id: Optional[int],
                    frontier_blockers: Optional[list] = None,
                    source_set: Optional[list[str]] = None) -> dict:
     """The fold manifest (§6). Carries the hash EPOCH TUPLE (A-m13) + frontier
-    lag + blockers; hashed separately from the belief store."""
+    lag + blockers + the outbox SEEN-SET intervals (the gap-regression baseline,
+    §8 sim 5); hashed separately from the belief store."""
     lag = (max_id - frontier) if (max_id is not None and frontier is not None) else None
     return {
         "schema_version": "cortex-fold-manifest/v1",
@@ -321,6 +355,7 @@ def build_manifest(beliefs: list[Belief], *, trust_table: dict,
         "max_id": max_id,
         "frontier_lag": lag,
         "frontier_blockers": frontier_blockers or [],
+        "seen": seen_intervals(beliefs),
     }
 
 
