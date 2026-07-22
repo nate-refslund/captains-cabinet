@@ -466,8 +466,10 @@ class TestSim3SeedsAreReal:
         # scoring cells fail today ONLY for the absent implementation.
         assert L.observed_effect_claim("increase") == {"observed_effect": "increase"}
 
-    def test_objectives_schema_dir_is_absent_today(self):
-        # documents the tests-first signature for the schema-disjointness cell: the
-        # objectives domain schemas do not exist yet, so that cell fails on the
-        # absent schema files (FileNotFoundError).
-        assert not _OBJECTIVES_SCHEMA_DIR.exists()
+    # RETIRED (integrator corpus adjudication, 2026-07-23): the tests-first-era
+    # guard `test_objectives_schema_dir_is_absent_today` asserted the objectives
+    # schema dir did NOT exist — its purpose (proving the disjointness cell failed
+    # only for absence) ended when wave-3 U1 landed the mandated schemas, at which
+    # point it contradicted test_schemas_bake_in_the_disjoint_id_namespaces
+    # (an unsatisfiable corpus self-contradiction). The absence-era signature it
+    # documented is preserved in the wave-2 landing records.

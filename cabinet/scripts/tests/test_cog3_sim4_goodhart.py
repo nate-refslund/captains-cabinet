@@ -530,8 +530,10 @@ class TestSim4SeedsAreReal:
         # terminates a causal edge) is real substrate too.
         assert _INTERVENTION_SK in by_sub
 
-    def test_objectives_edge_schema_is_absent_today(self):
-        # documents the tests-first signature for the edge-schema cell: the
-        # objectives edge schema does not exist yet, so that cell fails on the
-        # absent schema file (FileNotFoundError).
-        assert not (_OBJECTIVES_SCHEMA_DIR / "edge.v1.json").exists()
+    # RETIRED (integrator corpus adjudication, 2026-07-23): the tests-first-era
+    # guard `test_objectives_edge_schema_is_absent_today` asserted edge.v1.json
+    # did NOT exist — its purpose (proving the instrument-target schema cell
+    # failed only for absence) ended when wave-3 U1 landed the mandated schemas,
+    # at which point it contradicted test_edge_schema_rejects_an_instrument_causal_target
+    # (an unsatisfiable corpus self-contradiction). The absence-era signature it
+    # documented is preserved in the wave-2 landing records.
