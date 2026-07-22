@@ -81,7 +81,11 @@ def _is_tombstone(row: dict) -> bool:
     (the pure-path signal). The fold regenerates a source_purged stub — claim
     absent, identity + provenance intact (possible only because belief_id never
     embeds claim bytes, so identity survives the content loss)."""
-    return bool(row.get("purged")) or row.get("new_status") is None
+    # F2 (review): a row MISSING new_status is NOT a tombstone — only an explicit
+    # null new_status is (get() would read absence as None, a silent fabricated
+    # purge). Key-absence therefore falls through to a normal (non-purged) row.
+    return bool(row.get("purged")) or (
+        "new_status" in row and row["new_status"] is None)
 
 
 def _row_to_protos(row: dict) -> list[dict]:
@@ -390,11 +394,30 @@ def _consequence_row_to_proto(row: dict, seq: int) -> dict:
 
 def build_consequence_protos(ledger_rows) -> list[dict]:
     """Fold-prepare (file, line, row) triples from consequence.iter_ledger_rows()
-    into proto-beliefs. intra_stream_seq = the enumeration index over the
-    iterator's (file, line) order — a deterministic source order; within one
-    identity group it orders the enrichment supersession chain (later == head)."""
-    return [_consequence_row_to_proto(row, seq)
-            for seq, (_file, _line, row) in enumerate(ledger_rows)]
+    into proto-beliefs. intra_stream_seq = the enumeration index over the KEPT
+    (deduped) iterator order — a deterministic source order; within one identity
+    group it orders the enrichment supersession chain (later == head).
+
+    F1 (review): byte-identical (or key-reordered) DUPLICATE rows are collapsed
+    FIRST-OCCURRENCE-WINS on their canonical bytes — the SAME basis as the
+    synthetic event_id — so two rows that would mint one belief_id never reach the
+    fold with divergent intra_stream_seq (which the divergent-content guard would
+    turn into a rebuild-killing ValueError). This honors read_ledger()'s own
+    collapse and sim-1's shuffle/dup-invariance. A non-dup ledger is unchanged:
+    every row is kept and seq == the enumerate index. Reachable because
+    log_consequence stamps no nonce and ts is second-resolution, so a double-emit
+    retry within one second writes an exact-duplicate row."""
+    protos: list[dict] = []
+    seen: set[bytes] = set()
+    seq = 0
+    for _file, _line, row in ledger_rows:
+        canon = _canonical(row)
+        if canon in seen:
+            continue
+        seen.add(canon)
+        protos.append(_consequence_row_to_proto(row, seq))
+        seq += 1
+    return protos
 
 
 def read_consequence_protos() -> list[dict]:
