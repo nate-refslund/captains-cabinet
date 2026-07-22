@@ -195,6 +195,35 @@ class TestReverseBoundary:
                "import json\nfrom framework.objectives import model\n")
         assert gate.scan(tmp_path) == []
 
+    def test_dynamic_objectives_importing_action_plane_bites(self, tmp_path):
+        # THE reviewer's escape, reproduced exactly: a dynamic import_module of the
+        # action plane from inside framework/objectives/. Invisible to the AST
+        # static check (_action_plane_imports) — the dynamic complement must bite
+        # it, mirroring how the FORWARD direction treats literal import_module
+        # strings as mechanically reachable. RED with the reverse-direction id.
+        _write(tmp_path, "framework/objectives/sneaky.py",
+               "import importlib\n"
+               'c = importlib.import_module("framework.authority.classifier")\n')
+        assert "framework/objectives/sneaky.py" in _paths_for(
+            gate.scan(tmp_path), gate.RULE_OBJ_IMPORTS_ACTION)
+        # restore -> the clean tree folds green (no reverse violation lingers).
+        (tmp_path / "framework/objectives/sneaky.py").unlink()
+        assert gate.scan(tmp_path) == []
+
+    def test_dunder_import_of_action_plane_from_objectives_bites(self, tmp_path):
+        # the __import__ variant of the same escape is bitten too.
+        _write(tmp_path, "framework/objectives/sneaky2.py",
+               'm = __import__("framework.frontdoor.live")\n')
+        assert "framework/objectives/sneaky2.py" in _paths_for(
+            gate.scan(tmp_path), gate.RULE_OBJ_IMPORTS_ACTION)
+
+    def test_dynamic_action_reach_from_objectives_is_comment_safe(self, tmp_path):
+        # the _live_lines idiom: the same call inside a comment does NOT flag.
+        _write(tmp_path, "framework/objectives/note.py",
+               '# c = importlib.import_module("framework.authority.classifier")\n'
+               "import os\n")
+        assert gate.scan(tmp_path) == []
+
 
 # ===========================================================================
 # UNALLOWLISTED_OBJECTIVES_IMPORTER — the missions-consumes-the-graph escape

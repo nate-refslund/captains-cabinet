@@ -240,7 +240,13 @@ _DYNAMIC_CORTEX = re.compile(
 #                                    on a live line (dynamic-import backstop)
 #   FORBIDDEN_OBJECTIVES_IMPORTS_ACTION  a framework/objectives/ file imports the
 #                                    action plane (frontdoor/acting/authority) —
-#                                    the REVERSE direction (§6.5 "reverse")
+#                                    the REVERSE direction (§6.5 "reverse"). AST
+#                                    static import PLUS a narrow dynamic
+#                                    import_module/__import__ complement
+#                                    (_DYNAMIC_ACTION), so a literal
+#                                    import_module('framework.authority…') is
+#                                    mechanically reachable here too — the same
+#                                    standard the forward direction applies
 #   UNALLOWLISTED_OBJECTIVES_IMPORTER  a swept first-party file imports
 #                                    framework.objectives but is neither
 #                                    objectives-internal nor a curated cog3 reader
@@ -287,6 +293,20 @@ _BACKSTOP_OBJ = re.compile(
 _DYNAMIC_OBJ = re.compile(
     r"(?:import_module|__import__)\([ \t]*['\"]framework\.objectives"
     r"|(?:import_module|__import__)\([ \t]*['\"]\.objectives['\"][ \t]*,[ \t]*['\"]framework['\"]")
+# narrow dynamic reach from framework/objectives/ INTO the action plane — the
+# REVERSE-direction AST-blind complement (Check R). Exact mirror of _DYNAMIC_OBJ
+# with objectives -> the FORBIDDEN_TREES set (frontdoor/acting/authority): a
+# literal import_module/__import__('framework.frontdoor…' | 'framework.acting…' |
+# 'framework.authority…'), or the two-arg relative import_module('.authority',
+# 'framework') form. The forward direction already treats such literal
+# import_module strings as mechanically reachable (_BACKSTOP_OBJ + _DYNAMIC_OBJ);
+# this restores that symmetry for the reverse. SELF-FLAG-SAFE by the same idiom
+# _DYNAMIC_OBJ uses — the escaped `\(` means the contiguous `import_module(` /
+# `__import__(` call token never appears in scannable position in this file (and
+# Check R only ever scans framework/objectives/, never this gate under cabinet/).
+_DYNAMIC_ACTION = re.compile(
+    r"(?:import_module|__import__)\([ \t]*['\"]framework\.(?:frontdoor|acting|authority)"
+    r"|(?:import_module|__import__)\([ \t]*['\"]\.(?:frontdoor|acting|authority)['\"][ \t]*,[ \t]*['\"]framework['\"]")
 # the objectives cache-path data-plane token. ASSEMBLED (not a contiguous
 # literal) on purpose: unlike the cortex data-plane check (forbidden-trees only),
 # THIS sweep covers the full SWEEP_TREES — which includes this gate file itself —
@@ -471,6 +491,13 @@ def _dynamic_obj_hit(source: str) -> bool:
     return any(_DYNAMIC_OBJ.search(line) for line in _live_lines(source))
 
 
+def _dynamic_action_hit(source: str) -> bool:
+    """A narrow dynamic import_module/__import__ reach FROM framework/objectives/
+    into the action plane, comment-safe — the Check-R reverse-direction AST-blind
+    complement mirroring _dynamic_obj_hit."""
+    return any(_DYNAMIC_ACTION.search(line) for line in _live_lines(source))
+
+
 def _obj_dataplane_hit(source: str) -> bool:
     """A live-line reference to the objectives cache path — the non-covert
     data-plane read (an open()/Path of the graph store). Comment-safe."""
@@ -543,11 +570,16 @@ def scan(root) -> list[str]:
                 violations.add(f"{rel}:{RULE_UNALLOWLISTED}")
 
     # --- Check R (COG-3 reverse): framework/objectives/ may read the cortex,
-    #     never the action plane (frontdoor/acting/authority) -----------------
+    #     never the action plane (frontdoor/acting/authority). The AST static
+    #     check (_action_plane_imports) is complemented by the narrow dynamic
+    #     check (_dynamic_action_hit) so a literal import_module/__import__ of the
+    #     action plane is mechanically reachable here — the SAME standard the
+    #     forward direction applies (_BACKSTOP_OBJ + _DYNAMIC_OBJ); without it a
+    #     dynamic import_module('framework.authority.classifier') escaped green. -
     for path in _py_files(root / OBJECTIVES_INTERNAL.rstrip("/")):
         rel = _rel(root, path)
         src = _read(path)
-        if _action_plane_imports(src, rel):
+        if _action_plane_imports(src, rel) or _dynamic_action_hit(src):
             violations.add(f"{rel}:{RULE_OBJ_IMPORTS_ACTION}")
             flagged.add(rel)
 

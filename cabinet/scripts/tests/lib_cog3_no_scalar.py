@@ -6,10 +6,11 @@ framework/objectives/**.py and (when present) framework/schemas/domains/objectiv
 for the named scalar-leakage patterns, all green-by-vacuity while the package is
 absent:
 
-  SCALAR_ACCESSOR      a def named total / total_value / score / __float__ /
-                       composite / composite_score / aggregate / overall / fitness
-                       / … — a bare single-number valuation of node/edge/graph or a
-                       scorecard aggregation-to-one-number
+  SCALAR_ACCESSOR      a def — OR a lambda-assignment (`total_value = lambda …`) —
+                       named total / total_value / score / __float__ / composite /
+                       composite_score / aggregate / overall / fitness / … — a bare
+                       single-number valuation of node/edge/graph or a scorecard
+                       aggregation-to-one-number
   OVI_COMPOSITE        framework/objectives/ovi_view.py referencing composite_score
                        / composite / weights / weight — the per-instrument projection
                        structurally REFUSES any composite/weighted aggregate (attack C-M4)
@@ -92,6 +93,20 @@ def scalar_accessor_violations(root) -> list[str]:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 if node.name in FORBIDDEN_ACCESSOR_NAMES:
                     out.append(f"{rel}:{RULE_SCALAR}:{node.name}")
+            # lambda-assignment evasion: `total_value = lambda self: 1.0` /
+            # `__float__ = lambda self: ...` binds a scalar accessor without a
+            # def, so the def scan alone misses it. An Assign/AnnAssign to a
+            # forbidden accessor NAME whose value is a Lambda is the same bare
+            # single-number valuation — RED. (Dynamic construction still evades;
+            # per the G-m4 limitation the scan is the tripwire, not the definition.)
+            elif isinstance(node, ast.Assign) and isinstance(node.value, ast.Lambda):
+                for tgt in node.targets:
+                    if isinstance(tgt, ast.Name) and tgt.id in FORBIDDEN_ACCESSOR_NAMES:
+                        out.append(f"{rel}:{RULE_SCALAR}:{tgt.id}")
+            elif (isinstance(node, ast.AnnAssign) and isinstance(node.value, ast.Lambda)
+                    and isinstance(node.target, ast.Name)
+                    and node.target.id in FORBIDDEN_ACCESSOR_NAMES):
+                out.append(f"{rel}:{RULE_SCALAR}:{node.target.id}")
     return out
 
 

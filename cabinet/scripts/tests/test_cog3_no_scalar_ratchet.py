@@ -74,6 +74,22 @@ class TestScalarAccessor:
         assert any(x.endswith(f":{name}") for x in
                    R.scalar_accessor_violations(tmp_path)), name
 
+    def test_lambda_assigned_scalar_accessor_is_red(self, tmp_path):
+        # the lambda-assignment evasion the def-only scan missed: a scalar accessor
+        # bound as a lambda is NOT a FunctionDef, yet it is the same bare
+        # single-number valuation. RED SCALAR_ACCESSOR.
+        _write(tmp_path, "framework/objectives/sneaky.py",
+               "total_value = lambda self: 1.0\n")
+        v = R.scalar_accessor_violations(tmp_path)
+        assert any(x.endswith(":total_value") and R.RULE_SCALAR in x for x in v), v
+
+    def test_benign_assignment_folds_clean(self, tmp_path):
+        # anti-over-fencing: a non-accessor assignment (a list of names, not a
+        # lambda bound to a forbidden accessor) stays green.
+        _write(tmp_path, "framework/objectives/model.py",
+               "threshold_names = ['reversible', 'irreversible']\n")
+        assert R.scalar_accessor_violations(tmp_path) == []
+
     def test_ordinary_vector_methods_fold_clean(self, tmp_path):
         # anti-over-fencing: the legitimate vector surface (per-dimension access,
         # full-vector return) carries no scalar accessor.
