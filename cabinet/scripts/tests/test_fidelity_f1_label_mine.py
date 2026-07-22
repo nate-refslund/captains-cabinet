@@ -34,6 +34,19 @@ SERVICES_YML = _REPO_ROOT / "cabinet/services.yml"
 WRAPPER = _SCRIPTS_DIR / "run-fidelity-f1.sh"
 PLIST = _REPO_ROOT / "cabinet/launchd/com.cabinet.fidelity-f1.plist"
 
+# The checked-in plist carries the CONCRETE, deployment-pinned launchd payload;
+# the egg export strips it (launchd-portable-only transform — the portable egg
+# ships only *.template.plist). Absent on a clean/public checkout, so the
+# checked-in-payload assertion cannot run there; skip loud + named. The SOURCE
+# generator/services.yml pins (the other tests in this file) still cover the
+# schedule+knobs on both trees; the concrete plist arms on the source instance.
+requires_concrete_plist = pytest.mark.skipif(
+    not PLIST.is_file(),
+    reason="com.cabinet.fidelity-f1.plist absent — concrete deployment-pinned "
+           "plist not shipped in the portable egg (launchd-portable-only "
+           "transform); checked-in-payload pin arms on the source instance",
+)
+
 
 def _row() -> dict:
     data = yaml.safe_load(SERVICES_YML.read_text())
@@ -161,6 +174,7 @@ def test_wrapper_refuses_starved_scored_run_before_python(tmp_path: Path) -> Non
     assert "refusing context-starved scored run" in result.stderr
 
 
+@requires_concrete_plist
 def test_checked_in_plist_matches_weekly_label_mine() -> None:
     payload = plistlib.loads(PLIST.read_bytes())
     calendar = payload["StartCalendarInterval"]

@@ -842,9 +842,17 @@ def test_pipes_fresh_passes():
     assert res.ok is True
 
 
-def test_pipes_stale_fails():
+def test_pipes_stale_fails(tmp_path, monkeypatch):
     # 40h exceeds every cadence-aligned ceiling (max 28h for teams-graph since
     # the 2026-07-03 sleep-aware thresholds; 5h was the pre-change fixture).
+    # Pin a synthetic state dir so the stale branch runs with full teeth on ANY
+    # tree: the egg strips instance/config/platform.yml, so env.state_dir() (and
+    # thus PERSONAL_SOURCE_STATE_DIR) resolves "" there and verify_pipes_fresh
+    # short-circuits to the "nothing to watch" SKIP (registry.py:987) instead of
+    # exercising staleness. PIPE_FRESHNESS stays the real instance config (the
+    # probe mtimes below are faked, so no files need to exist) — this tests the
+    # detection LOGIC, never the instance's real state path.
+    monkeypatch.setattr(reg, "PERSONAL_SOURCE_STATE_DIR", str(tmp_path))
     now = dt.datetime(2026, 6, 29, 12, 0, tzinfo=dt.timezone.utc)
     old = (now - dt.timedelta(hours=40)).timestamp()
     mtimes = {f"{reg.PERSONAL_SOURCE_STATE_DIR}/{fn}": old

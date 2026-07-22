@@ -208,8 +208,19 @@ class TestRepoParity:
     def test_prose_surfaces_speak_declared_times_only(self):
         declared = set(declared_times())
         offenders = []
+        # The egg export strips instance/* prose; the preset twin
+        # (presets/portfolio/agents/cos.md, also in PROSE_FILES) carries the
+        # same briefing-time parity invariant, so an absent instance prose file
+        # on a clean/public checkout is tolerated — the invariant still runs
+        # full-teeth against the preset twin. The source instance ships
+        # instance/agents/cos.md ⇒ it is checked there (no tolerance fires). A
+        # missing NON-instance prose file (or an absent preset twin) is real
+        # rot and still fails loudly.
+        preset_twin = REPO_ROOT / "presets/portfolio/agents/cos.md"
         for rel in PROSE_FILES:
             p = REPO_ROOT / rel
+            if not p.exists() and rel.startswith("instance/") and preset_twin.exists():
+                continue
             assert p.exists(), f"{rel} is tracked prose — missing from checkout"
             for n, line in enumerate(
                     p.read_text(encoding="utf-8").splitlines(), 1):

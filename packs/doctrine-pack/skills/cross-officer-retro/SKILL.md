@@ -39,7 +39,7 @@ CoS runs this event-triggered: at 5 accumulated reflections across officers (`ca
 
 #### Part 1b: Anomaly-seeking on our own telemetry (Layer 2 — DETECT)
 
-This is the "the cabinet notices what's off about itself" capability (`framework/docs/meta-cognition-direction-2026-06-25.md`). After the record/coordination review, read the already-emitted telemetry and ask: **"what violates what I'd predict?"** — the question that *would have autonomously surfaced this session's stale-index bug*.
+This is the "the cabinet notices what's off about itself" capability (the meta-cognition direction, an internal framework design note, 2026-06-25). After the record/coordination review, read the already-emitted telemetry and ask: **"what violates what I'd predict?"** — the question that *would have autonomously surfaced this session's stale-index bug*.
 
 ```bash
 bash cabinet/scripts/meta-cognition/anomaly-scan.sh        # factual telemetry snapshot

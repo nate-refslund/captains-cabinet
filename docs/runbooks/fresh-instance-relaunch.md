@@ -35,8 +35,8 @@ what carries forward:
   into the fresh instance — that is produced entirely by the fresh-hatch
   defaults (Step 4).
 
-The old itemized carry-vs-drop inventory is
-`docs/plans/fresh-instance-relaunch-manifest-2026-07-15.md` — now **superseded
+The old itemized carry-vs-drop inventory is the fresh-instance relaunch
+manifest (an internal planning record, 2026-07-15) — now **superseded
 in part** by the 100%-SCRATCH ruling (see its dated header): every former
 KEEP-of-live-content row is DROP-from-seed now, preserved only in the Step 2
 archive. This runbook is the step-by-step for actually doing it.

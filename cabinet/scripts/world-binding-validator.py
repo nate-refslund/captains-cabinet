@@ -63,6 +63,23 @@ REPLAYS = ("ledger", "git", "none")
 TIMEOUT_S = 10
 
 
+def _data_optional() -> bool:
+    """CI/egg data-optional mode — the cabinet-ci.yml World-binding step sets
+    CABINET_WORLD_DATA_OPTIONAL=1; live boxes never do. It licenses SKIPs for
+    absent/unpopulated INSTANCE surfaces; on a live box (flag unset) the same
+    absence stays a hard FAIL (dead-pixel doctrine unchanged)."""
+    return os.environ.get("CABINET_WORLD_DATA_OPTIONAL") == "1"
+
+
+def _stripped_instance_path(rel: str) -> bool:
+    """True when a repo-relative path lives under instance/ — a per-deployment
+    artifact the egg export strips (only .example twins ship). In data-optional
+    mode an absent instance/ mechanism_path is missing INSTANCE DATA, not a
+    stale codex; a live box (flag unset) still FAILs a vanished instance path."""
+    norm = str(rel).replace("\\", "/").lstrip("./")
+    return norm == "instance" or norm.startswith("instance/")
+
+
 class Finding:
     def __init__(self, entry_id: str, level: str, message: str,
                  value: Optional[str] = None):
@@ -106,7 +123,15 @@ def check_schema(entry: Any) -> List[str]:
         mech = codex.get("mechanism_path")
         if isinstance(mech, str) and mech:
             mech_path = (_REPO_ROOT / mech)
-            if not mech_path.exists():
+            # class-b tolerance: an absent instance/ mechanism_path under the
+            # data-optional flag is a stripped instance artifact, not a stale
+            # codex (the egg export prunes instance/ to its .example twins). The
+            # entry's source_binding, reading the same absent instance surface,
+            # then SKIPs in the data-optional branch of validate(). A live box
+            # (flag unset) still FAILs a vanished mechanism_path; a missing
+            # FRAMEWORK path FAILs even under the flag (only instance/ is stripped).
+            if not mech_path.exists() and not (
+                    _data_optional() and _stripped_instance_path(mech)):
                 problems.append(
                     f"codex.mechanism_path does not exist: {mech} "
                     f"(moved/deleted mechanism = stale codex)")
@@ -161,6 +186,44 @@ def _missing_data_paths(args: List[str]) -> List[str]:
     return out
 
 
+def _sandbox_reject(args: List[str]) -> Optional[str]:
+    """Read-only sandbox admission — shared by execute_binding and the
+    data-optional count probe. Returns a rejection reason, or None when the argv
+    is admissible.
+
+    Metacharacter guard, TOKEN-level: execution is shell=False, so a `|` INSIDE
+    a quoted jq filter is inert data — but a STANDALONE metachar token means
+    someone wrote shell syntax expecting a pipe/redirect (and would go live if
+    anyone ever "simplified" to shell=True), and `$(`/backtick anywhere is never
+    legitimate in a read-only binding. Dot-commands (.shell/.system/.load/…) run
+    arbitrary shell + load extensions even under sqlite3 -readonly — they live
+    inside one quoted argv token the metachar guard misses, so refuse any token
+    LINE whose lstripped form starts '.'+alpha ('./relative/path' stays legal).
+    Every path argument must realpath-resolve inside the repo."""
+    prog = os.path.basename(args[0])
+    if prog not in ALLOWED_BINARIES:
+        return (f"binary '{prog}' not in read-only allowlist "
+                f"{ALLOWED_BINARIES}")
+    _STANDALONE_META = {"|", "||", ";", "&", "&&", ">", ">>", "<", "<<"}
+    for tok in args:
+        if tok in _STANDALONE_META:
+            return "shell metacharacters refused (shell=False sandbox)"
+        if "$(" in tok or "`" in tok:
+            return "shell metacharacters refused (shell=False sandbox)"
+    if prog == "sqlite3":
+        if "-readonly" not in args:
+            return "sqlite3 without -readonly refused"
+        for tok in args[1:]:
+            for line in tok.splitlines():
+                if re.match(r"\s*\.[A-Za-z]", line):
+                    return ("sqlite3 dot-command refused (never "
+                            "legitimate in a read-only binding)")
+    containment = _resolve_containment(args)
+    if containment:
+        return containment
+    return None
+
+
 def execute_binding(binding: str) -> Tuple[bool, str]:
     """Run one source_binding inside the sandbox. (ok, value_or_reason)."""
     try:
@@ -169,39 +232,9 @@ def execute_binding(binding: str) -> Tuple[bool, str]:
         return False, f"unparseable binding: {e}"
     if not args:
         return False, "empty binding"
-    prog = os.path.basename(args[0])
-    if prog not in ALLOWED_BINARIES:
-        return False, (f"binary '{prog}' not in read-only allowlist "
-                       f"{ALLOWED_BINARIES}")
-    # Metacharacter guard, TOKEN-level: execution is shell=False, so a `|`
-    # INSIDE a quoted jq filter is inert data — but a STANDALONE metachar
-    # token means someone wrote shell syntax expecting a pipe/redirect
-    # (and would go live if anyone ever "simplified" to shell=True), and
-    # `$(`/backtick anywhere is never legitimate in a read-only binding.
-    _STANDALONE_META = {"|", "||", ";", "&", "&&", ">", ">>", "<", "<<"}
-    for tok in args:
-        if tok in _STANDALONE_META:
-            return False, "shell metacharacters refused (shell=False sandbox)"
-        if "$(" in tok or "`" in tok:
-            return False, "shell metacharacters refused (shell=False sandbox)"
-    if prog == "sqlite3":
-        if "-readonly" not in args:
-            return False, "sqlite3 without -readonly refused"
-        # Dot-commands (.shell/.system/.load/.once/.import/.output/…) run
-        # arbitrary shell + load extensions even under -readonly — the
-        # metachar guard misses them because they live inside one quoted
-        # argv token with no standalone metacharacter. Refuse any token
-        # LINE whose lstripped form starts '.'+alpha: covers whole-token
-        # dot-commands AND a '.shell' smuggled behind a newline inside a
-        # SQL token. './relative/path' (dot + slash) stays legal.
-        for tok in args[1:]:
-            for line in tok.splitlines():
-                if re.match(r"\s*\.[A-Za-z]", line):
-                    return False, ("sqlite3 dot-command refused (never "
-                                   "legitimate in a read-only binding)")
-    containment = _resolve_containment(args)
-    if containment:
-        return False, containment
+    reason = _sandbox_reject(args)
+    if reason is not None:
+        return False, reason
     try:
         proc = subprocess.run(
             args, capture_output=True, text=True, timeout=TIMEOUT_S,
@@ -217,6 +250,78 @@ def execute_binding(binding: str) -> Tuple[bool, str]:
     if not out:
         return False, "empty output = dead pixel (cannot merge)"
     return True, out[:200]
+
+
+# ---- data-optional row-COUNT tolerance (class-a: existing-but-0-row surface) --
+# grep -c / wc emit the row count to stdout and (for grep) exit 1 on zero rows.
+# A count of 0 over a PRESENT instance surface that carries its own egg-export
+# emptied marker (e.g. the R116 comment on captain-rules-index.yaml) is an
+# unpopulated instance surface, not a dead pixel. The emptied-marker is the
+# DOUBLE-KEY: a framework surface counting 0 (no marker) still FAILs even under
+# the data-optional flag, so real rot keeps full teeth.
+_COUNT_INT_RE = re.compile(r"^\s*(\d+)")
+_EMPTIED_MARKER_RE = re.compile(
+    r"emptied\b.*\begg export\b|\begg export\b.*\bemptied\b|\bper R116\b",
+    re.IGNORECASE)
+
+
+def _is_count_binding(args: List[str]) -> bool:
+    """A read-only ROW/LINE count: `grep -c …` or `wc …`, whose numeric stdout
+    is meaningful even on a nonzero exit (grep -c prints 0 and exits 1 when the
+    surface has zero matching rows)."""
+    if not args:
+        return False
+    prog = os.path.basename(args[0])
+    if prog == "wc":
+        return True
+    if prog == "grep":
+        return any(a.startswith("-") and not a.startswith("--") and "c" in a[1:]
+                   for a in args[1:])
+    return False
+
+
+def _count_binding_value(binding: str) -> Optional[int]:
+    """Integer row-count for a COUNT binding, read from stdout regardless of exit
+    code. Returns None when the binding is not a clean count (unparseable,
+    non-count binary, sandbox-rejected, or no numeric stdout) so the caller falls
+    back to full-teeth execute_binding. Runs through the SAME sandbox as
+    execute_binding — no path escapes, no shell."""
+    try:
+        args = shlex.split(binding)
+    except ValueError:
+        return None
+    if not args or not _is_count_binding(args):
+        return None
+    if _sandbox_reject(args) is not None:
+        return None
+    try:
+        proc = subprocess.run(
+            args, capture_output=True, text=True, timeout=TIMEOUT_S,
+            cwd=_REPO_ROOT, shell=False)
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    m = _COUNT_INT_RE.match(proc.stdout or "")
+    return int(m.group(1)) if m else None
+
+
+def _count_surface_emptied_marker(args: List[str]) -> bool:
+    """DOUBLE-KEY for a zero-count SKIP: True when the counted surface FILE exists
+    and carries its own egg-export/instance emptied marker (the R116 comment on
+    an emptied index). A framework surface counting 0 has no such marker, so it
+    FAILs even under the data-optional flag — teeth against real rot preserved."""
+    for tok in args[1:]:
+        if tok.startswith("-") or not _PATH_TOKEN_RE.match(tok):
+            continue
+        p = _REPO_ROOT / tok
+        if not p.is_file():
+            continue
+        try:
+            head = p.read_text(encoding="utf-8", errors="replace")[:4096]
+        except OSError:
+            continue
+        if _EMPTIED_MARKER_RE.search(head):
+            return True
+    return False
 
 
 def validate(morphology_path: Path) -> List[Finding]:
@@ -248,15 +353,37 @@ def validate(morphology_path: Path) -> List[Finding]:
         # when the earlier pytest red was fixed). Live boxes do NOT set the
         # env var, so a vanished chronicle there stays a hard FAIL
         # (dead-pixel doctrine unchanged).
-        if os.environ.get("CABINET_WORLD_DATA_OPTIONAL") == "1":
+        if _data_optional():
             try:
-                miss = _missing_data_paths(shlex.split(entry["source_binding"]))
+                toks = shlex.split(entry["source_binding"])
             except ValueError:
-                miss = []
+                toks = []
+            miss = _missing_data_paths(toks) if toks else []
             if miss:
                 findings.append(Finding(
                     eid, "SKIP", f"data absent on this box: {', '.join(miss)[:120]}"))
                 continue
+            # class-a: a row-COUNT binding over a PRESENT but unpopulated instance
+            # surface (the egg's emptied captain-rules index: `grep -c '- id:'`
+            # returns 0 / exit 1). Zero rows on a surface that carries its own
+            # egg-export emptied marker is an unpopulated instance surface, not a
+            # dead pixel — correct for the egg AND for any fresh captain who has
+            # not yet populated it. n>0 renders live with teeth; n==0 WITHOUT the
+            # marker (or a non-count binding) falls through to execute_binding, so
+            # real rot (e.g. an emptied FRAMEWORK surface) stays a hard FAIL.
+            if _is_count_binding(toks):
+                n = _count_binding_value(entry["source_binding"])
+                if n is not None and n > 0:
+                    findings.append(Finding(eid, "OK", "binding live", str(n)))
+                    continue
+                if n == 0 and _count_surface_emptied_marker(toks):
+                    findings.append(Finding(
+                        eid, "SKIP",
+                        "instance surface unpopulated: 0 rows over an emptied "
+                        f"instance surface ({os.path.basename(toks[0])} count; "
+                        "egg export empties it per its own marker, a live box "
+                        "would FAIL)"))
+                    continue
         ok, value = execute_binding(entry["source_binding"])
         if ok:
             findings.append(Finding(eid, "OK", "binding live", value))

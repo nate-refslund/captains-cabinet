@@ -565,8 +565,8 @@ the per-class recording contract as written law:
   ops-consequence-scripts` — the named gaps are future waves;
   UNKNOWN-not-health, the Act layer is frozen over them (§2.4).
 - **Germline ceremony:** the 8 schg files this batch changes are listed
-  (exact union + same-day unlock→checkout→relock block) in
-  `docs/proposals/germline-amendment-evidence-phase2b-2026-07-17.md`;
+  (exact union + same-day unlock→checkout→relock block) in the evidence
+  phase-2b germline amendment (an internal proposal record, 2026-07-17);
   review artifact
   `shared/interfaces/reviews/evidence-phase2-batch-b-cp1.md`.
 
@@ -697,8 +697,8 @@ Captain decision (design §5 Q8 / D9).
   effect `verify` has always had, and is byte-stable at tip).
 - **Germline ceremony:** the 3 schg paths this batch changes (all inside
   the already-locked `framework/evidence/` dir cover) are listed with the
-  same-day unlock→checkout→relock block in
-  `docs/proposals/germline-amendment-evidence-phase3-2026-07-17.md`; review
+  same-day unlock→checkout→relock block in the evidence phase-3 germline
+  amendment (an internal proposal record, 2026-07-17); review
   artifact `shared/interfaces/reviews/evidence-phase3-review-surface-cp1.md`.
 
 ## Machine judge in shadow (Phase 4, 2026-07-17 — detect, never act)

@@ -197,6 +197,23 @@ def scan_scalar_references(
     return sorted(hits), violations
 
 
+def _archived_dormant(repo_root: Path, rel: str) -> bool:
+    """True when a missing allowlist target is DORMANT — archived out of this
+    tree at egg export — rather than stale. Signalled by an ARCHIVED-NOTE.md
+    marker in a SUBDIRECTORY ancestor of the missing path (the egg's
+    transform:plans-archive drops that marker where it prunes a plans/ tree). The
+    repo root itself is never treated as a marker directory, so a stray root-level
+    note could not blanket-dormant every missing file. A missing file with no
+    archive marker in its ancestry is real rename/deletion rot and stays flagged —
+    the source tree (no marker) keeps full staleness teeth."""
+    for parent in Path(rel).parents:
+        if str(parent) in (".", ""):
+            continue
+        if (repo_root / parent / "ARCHIVED-NOTE.md").is_file():
+            return True
+    return False
+
+
 def _projection_fn(recorder_path: Path) -> ast.FunctionDef:
     try:
         tree = ast.parse(recorder_path.read_text(encoding="utf-8"))
@@ -436,7 +453,15 @@ def run_self_test(fixtures_dir: Path, repo_root: Path) -> int:
     # C1: unsanctioned consumers of the report-only scalar series.
     checks += 1
     allowlist = {str(e["path"]) for e in fixture["scalar_reference_allowlist"]}
-    stale = sorted(p for p in allowlist if not (repo_root / p).is_file())
+    missing = sorted(p for p in allowlist if not (repo_root / p).is_file())
+    # Archive-aware staleness: a missing allowlist target whose path sits under a
+    # tree carrying ARCHIVED-NOTE.md (the egg export's archive marker, dropped by
+    # transform:plans-archive where it prunes a plans/ tree) is DORMANT — its doc
+    # was archived out of the egg, not renamed/deleted. A missing target with NO
+    # archive marker in its ancestry is real rot and stays RED, so the source
+    # (no marker) keeps full staleness teeth. This never relaxes the law scan
+    # (hits/violations below) — it only reclassifies an archived file-absence.
+    stale = [p for p in missing if not _archived_dormant(repo_root, p)]
     try:
         hits, violations = scan_scalar_references(
             repo_root, [str(t) for t in fixture["scalar_tokens"]], allowlist)

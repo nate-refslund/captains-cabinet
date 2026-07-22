@@ -58,7 +58,7 @@ broadcasts the thin pub/sub refresh ping, but writes NOTHING to
 see only `my-tasks.sh`-driven transitions: a task blocked from the dashboard
 UI files NO Captain card. Do not build anything that assumes stream
 completeness until dashboard emit parity lands — tracked as ledger row R171
-in `docs/plans/operative-egg-ledger-2026-07-07.yml` (emit the equivalent
+in the operative-egg planning ledger, 2026-07-07 (emit the equivalent
 enveloped entry from the dashboard mutation paths, or route them through the
 emitting CLI).
 

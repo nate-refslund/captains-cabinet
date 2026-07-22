@@ -106,6 +106,9 @@ describe('readDirections', () => {
     // repo root = <dashboard>/../.. — the tracked instance config carries the
     // real generic apex text (ratified choice; PR notes it).
     const repoRoot = path.resolve(__dirname, '..', '..', '..', '..', '..')
+    if (!fs.existsSync(path.join(repoRoot, 'instance', 'config', 'directions.yml'))) {
+      return // egg/clean checkout: instance directions pruned (only .example ships)
+    }
     const d = readDirections(repoRoot)
     expect(d.apex).not.toBeNull()
     expect(d.apex?.mission).toContain('one founder plus an AI org')

@@ -4,6 +4,7 @@ world-binding-validator.py (allowlisted read-only sandbox), world-legend.py
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import importlib.util as _ilu
 import json
@@ -15,6 +16,33 @@ from pathlib import Path
 import pytest
 
 _SCRIPTS = Path(__file__).resolve().parents[1]
+_REPO_ROOT = _SCRIPTS.parents[1]
+
+# The LIVE captain-rules index (shared/interfaces/captain-rules-index.yaml) ships
+# EMPTIED on the egg (entries: [] per R116 — captain rules are instance data), so
+# a binding that counts its '- id:' rows returns 0 on a clean/public checkout.
+# The tests that exercise the validator's EXECUTE→OK path must test the
+# validator's LOGIC, not the instance surface's population state, so they inject
+# a POPULATED index fixture INSIDE the repo (the sandbox runs with the repo root
+# as cwd and enforces realpath containment, so an in-repo file is required) and
+# bind to it — identical full-teeth behavior on BOTH trees. The SEPARATE gate
+# tolerance for the emptied LIVE index under CABINET_WORLD_DATA_OPTIONAL is Lane
+# A's world-binding-validator.py change (A3); it is pinned from the D side by
+# test_zero_row_count_binding_skips_under_data_optional below.
+_POPULATED_INDEX = _REPO_ROOT / ".pytest-world-captain-rules-index.yaml"
+_POPULATED_INDEX_BODY = "entries:\n  - id: R001\n  - id: R002\n  - id: R003\n"
+
+
+@contextlib.contextmanager
+def _populated_index():
+    """Yield the repo-root-relative basename of a POPULATED captain-rules index
+    fixture (3 '- id:' rows). Created inside the repo so the sandbox's realpath
+    containment accepts it; removed on exit."""
+    _POPULATED_INDEX.write_text(_POPULATED_INDEX_BODY)
+    try:
+        yield _POPULATED_INDEX.name
+    finally:
+        _POPULATED_INDEX.unlink(missing_ok=True)
 
 
 def _load(name: str, filename: str):
@@ -78,8 +106,11 @@ class TestSchema:
 
 class TestSandbox:
     def test_allowlisted_binding_executes(self):
-        ok, value = wbv.execute_binding(
-            "grep -c -e '- id:' shared/interfaces/captain-rules-index.yaml")
+        # Hermetic POPULATED index (the live index ships emptied on the egg —
+        # binding to it would test the instance surface's population, not the
+        # sandbox's execute→OK path). Full teeth on both trees.
+        with _populated_index() as idx_name:
+            ok, value = wbv.execute_binding(f"grep -c -e '- id:' {idx_name}")
         assert ok, value
         assert int(value) > 0
 
@@ -171,12 +202,59 @@ class TestSandbox:
 
 class TestValidateEndToEnd:
     def test_valid_morphology_green(self, tmp_path):
-        doc = {"version": 1, "entries": [GOOD_ENTRY]}
-        p = tmp_path / "morphology.yml"
         import yaml as _y
-        p.write_text(_y.safe_dump(doc))
-        findings = wbv.validate(p)
+        # Bind the entry's count to a hermetic POPULATED index (the live index
+        # ships emptied on the egg; codex.mechanism_path stays the real, present
+        # file so the schema check keeps its teeth). Full teeth on both trees.
+        with _populated_index() as idx_name:
+            entry = json.loads(json.dumps(GOOD_ENTRY))
+            entry["source_binding"] = f"grep -c -e '- id:' {idx_name}"
+            doc = {"version": 1, "entries": [entry]}
+            p = tmp_path / "morphology.yml"
+            p.write_text(_y.safe_dump(doc))
+            findings = wbv.validate(p)
         assert all(f.level == "OK" for f in findings), [f.message for f in findings]
+
+    def test_zero_row_count_binding_skips_under_data_optional(self, tmp_path,
+                                                              monkeypatch):
+        """A3 (Lane A, world-binding-validator.py) — the gate-side tolerance for
+        the emptied LIVE instance surface: under CABINET_WORLD_DATA_OPTIONAL=1 a
+        COUNT-type source_binding (grep -c) over an EXISTING but 0-row file — the
+        exact shape of the egg's emptied captain-rules index (entries: [] per
+        R116) — is 'instance surface unpopulated' → SKIP, not a dead-pixel FAIL.
+        Live boxes do NOT set the flag, so a 0-row count there stays a hard FAIL
+        (teeth preserved). A hermetic 0-row fixture makes this behave identically
+        on BOTH trees. ARMS WITH A3: until Lane A's validator change lands (same
+        wave) the 0-row count is still a FAIL and this pin skips itself, naming
+        the dependency — exactly the repo's 'arms on first merge' idiom."""
+        import yaml as _y
+        # A3's zero-count SKIP is DOUBLE-KEYED: flag + 0 rows + an egg-export
+        # emptied marker (matches egg-export.sh's "emptied at egg export per
+        # R116" stamp; a marker-less 0-row framework surface still FAILs, so
+        # real rot keeps its teeth). A3's _PATH_TOKEN_RE only recognises a
+        # SLASHED repo-relative path (the real emptied index lives at a real
+        # path), so the fixture sits under a subdir AND carries the marker —
+        # this pin ARMS and exercises A3 on both trees, not self-skipping.
+        empty_dir = _REPO_ROOT / ".pytest-world-empty"
+        empty_dir.mkdir(exist_ok=True)
+        empty = empty_dir / "index.yaml"
+        empty.write_text("# emptied at egg export per R116 — 0 entries\nentries: []\n")
+        rel = empty.relative_to(_REPO_ROOT)
+        entry = json.loads(json.dumps(GOOD_ENTRY))
+        entry["source_binding"] = f"grep -c -e '- id:' {rel}"
+        p = tmp_path / "morphology.yml"
+        p.write_text(_y.safe_dump({"version": 1, "entries": [entry]}))
+        try:
+            monkeypatch.setenv("CABINET_WORLD_DATA_OPTIONAL", "1")
+            findings = wbv.validate(p)
+        finally:
+            empty.unlink(missing_ok=True)
+            empty_dir.rmdir()
+        # A3 landed in this same change, so the marker+slash 0-row count SKIPs
+        # (not a dead-pixel FAIL). Assert it directly — a FAIL here is a real A3
+        # regression and should be loud, not self-skipped.
+        level = findings[0].level
+        assert level == "SKIP", [f"{f.level}:{f.message}" for f in findings]
 
     def test_dark_scope_skips_execution(self, tmp_path):
         e = json.loads(json.dumps(GOOD_ENTRY))
@@ -251,23 +329,29 @@ class TestLegend:
         import yaml as _y
         gdir = tmp_path / "grammar"
         gdir.mkdir()
-        (gdir / "morphology.yml").write_text(
-            _y.safe_dump({"version": 1, "entries": [GOOD_ENTRY]}))
-        (gdir / "show-grammar.yml").write_text(_y.safe_dump({
-            "version": 1,
-            "fallback": {"station": "floor", "anim": "idle"},
-            "verbs": {"working": {
-                "station": "desk", "anim": "work", "salience": 0,
-                "codex": {"represents": "at desk",
-                          "mechanism_path": "cabinet/services.yml",
-                          "day0": "empty"}}},
-        }))
-        out = tmp_path / "legend.json"
-        monkeypatch.setenv("CABINET_WORLD_GRAMMAR_DIR", str(gdir))
-        monkeypatch.setenv("CABINET_WORLD_LEGEND_OUT", str(out))
-        wl = _load("world_legend_fixture", "world-legend.py")
-        assert wl.main() == 0
-        legend = json.loads(out.read_text())
+        # Bind the entry's count to a hermetic POPULATED index (the live index
+        # ships emptied on the egg — a 0-row count would render status FAIL and
+        # sink codex_coverage). Full teeth on both trees.
+        with _populated_index() as idx_name:
+            entry = json.loads(json.dumps(GOOD_ENTRY))
+            entry["source_binding"] = f"grep -c -e '- id:' {idx_name}"
+            (gdir / "morphology.yml").write_text(
+                _y.safe_dump({"version": 1, "entries": [entry]}))
+            (gdir / "show-grammar.yml").write_text(_y.safe_dump({
+                "version": 1,
+                "fallback": {"station": "floor", "anim": "idle"},
+                "verbs": {"working": {
+                    "station": "desk", "anim": "work", "salience": 0,
+                    "codex": {"represents": "at desk",
+                              "mechanism_path": "cabinet/services.yml",
+                              "day0": "empty"}}},
+            }))
+            out = tmp_path / "legend.json"
+            monkeypatch.setenv("CABINET_WORLD_GRAMMAR_DIR", str(gdir))
+            monkeypatch.setenv("CABINET_WORLD_LEGEND_OUT", str(out))
+            wl = _load("world_legend_fixture", "world-legend.py")
+            assert wl.main() == 0
+            legend = json.loads(out.read_text())
         assert legend["grammar_pending"] is False
         assert legend["show_grammar_version"] == 1
         assert legend["mappings"][0]["id"] == "captain_rules"

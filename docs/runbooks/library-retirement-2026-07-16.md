@@ -24,7 +24,7 @@ remain storable, but only the cabinet_memory mirror is maintained.
 | `.mcp.json` + `.mcp.json.mac-native` | `library` MCP server **deregistered** (both layers lockstep). The server code stays at `cabinet/channels/library-mcp/` and runs standalone for archaeology. |
 | `cabinet/mcp-scope.yml` (germline, schg) | **Git-side content lands on master** in the CG-29 danglers diff — `library` dropped from every officer/scaffold grant + `universal:` (tree file, not schg in a clone; the grants were dangling-but-harmless since an unregistered server grants nothing). The schg LIVE inode syncs at the Captain window via checkout-from-master (CG-29 gate_cmd). |
 | Agent `tools:` grants | `mcp__library` removed from every **non-germline** agent frontmatter: `instance/agents/cos.md`, `presets/work/agents/{cos,cto,cpo,coo,cro}.md`, `presets/portfolio/agents/cos.md`, `presets/portfolio/agents/_lane-ceo.md.template` (ratcheted — resurrection-by-copy guard). The germline `.claude/settings.json` `permissions.allow` entry drops in the same CG-29 danglers diff (git side); the live inode syncs at the window (below). |
-| `CLAUDE.md` + `docs/templates/CLAUDE-egg.md` | "Systems each own one job" no longer routes Cabinet knowledge to the Library MCP: knowledge = the vault (`product-brain/`), recall = `memory_search` (ratcheted; the egg template becomes the public egg's `CLAUDE.md` at export). |
+| `CLAUDE.md` + the egg CLAUDE template | "Systems each own one job" no longer routes Cabinet knowledge to the Library MCP: knowledge = the vault (`product-brain/`), recall = `memory_search` (ratcheted; the egg template becomes the public egg's `CLAUDE.md` at export). |
 | Dashboard `/library` | Landing page is a read-only retirement notice; space/record/graph deep-links redirect to it. `/api/library/*` routes remain (records still storable; search is keyword-only). |
 | `cabinet/scripts/retire-library-export.py` | NEW one-shot export (below). |
 
@@ -111,10 +111,10 @@ remain storable, but only the cabinet_memory mirror is maintained.
   behavior change). ONE Captain sudo window (schg unlock, relock same day)
   then SYNCS the live inodes to master via `git checkout origin/master --`
   the three files — NOT an in-window patch/commit (the CG-27/CG-31
-  checkout-from-master precedent). Durable deliverables, in-repo:
-  `docs/proposals/germline-library-retirement-addendum-2026-07-16.md`
-  (ceremony note, master-first) +
-  `docs/proposals/germline-library-retirement-2026-07-16.patch` (kept as
+  checkout-from-master precedent). Durable deliverables, in the private
+  source repo: the germline library-retirement addendum (ceremony note,
+  master-first, 2026-07-16) + the germline library-retirement patch,
+  2026-07-16 (kept as
   the comment-only proof; the ratchet skips it once the mark lands). The
   `library` entry in `cabinet/scripts/lib/officer-env.py`'s per-server env
   map (germline too) is likewise dangling-but-harmless (the server never

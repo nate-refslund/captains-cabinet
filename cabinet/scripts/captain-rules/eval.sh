@@ -30,6 +30,28 @@ if [ ! -x "$QUERY_SH" ]; then
   exit 1
 fi
 
+# ARTIFACT-ANCHORED TOLERANCE (public-CI, per 2026-07-07 full-autonomy grant):
+# the captain-rules index is instance data — the egg export EMPTIES it (ships
+# `entries: []` with the R116 emptied-marker comment; a live deployment
+# regenerates it via cabinet/scripts/captain-rules/index.sh). With zero indexed
+# rows there is nothing to retrieve, so every fixture would FAIL on an empty
+# block. Skip LOUD and pass (exit 0) when the consumed index is absent OR carries
+# zero `- id:` rows — extends query.sh's existing "absent index -> exit 0, no
+# injection" idiom (query.sh:47-50) to the emptied state. Correct for the egg AND
+# for any fresh captain who has not yet populated rules; the eval ARMS the moment
+# the index is populated. A populated source index runs the full suite with teeth
+# (no marker fires there). Detection is the consumed artifact's row count, never
+# an env flag.
+INDEX_FILE="${INDEX_FILE:-$REPO_ROOT/shared/interfaces/captain-rules-index.yaml}"
+INDEX_ROWS=0
+if [ -f "$INDEX_FILE" ]; then
+  INDEX_ROWS="$(grep -cE '^[[:space:]]*- id:' "$INDEX_FILE" 2>/dev/null || true)"
+fi
+if [ ! -f "$INDEX_FILE" ] || [ "${INDEX_ROWS:-0}" -eq 0 ]; then
+  echo "[eval] SKIP: captain-rules index empty/absent — instance data (emptied at egg export per R116; a fresh instance populates via cabinet/scripts/captain-rules/index.sh); eval arms on populate"
+  exit 0
+fi
+
 if [ "$#" -gt 0 ]; then
   FIXTURES=("$@")
 else

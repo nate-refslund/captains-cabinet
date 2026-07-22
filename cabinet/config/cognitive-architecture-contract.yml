@@ -72,6 +72,13 @@ temporary_allowances:
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: killswitch gate folded or COG-7 compaction
+  - phase: relaunch-ci-tolerance
+    budget: framework_production_noncomment_lines
+    additional: 7
+    reason: public-CI artifact-anchored tolerance — fidelity/retro.py dunder-proxy AttributeError guard (stop _RetroUnavailable + PEP 562 module __getattr__ forwarding dunders) + frontdoor/actfirst_canary.py import-time→call-time board resolution (env.tasks_board() read at call, fail-closed on ''); both are latent-bug fixes that also let the fidelity/front-door suites pass on the artifact-stripped public tree; +7 measured 2026-07-22 via cognitive-architecture-census.py
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: CI tolerance folded or COG-7 compaction
 ownership:
   authoritative_state: domain_transaction
   cross_domain_delivery: transactional_outbox

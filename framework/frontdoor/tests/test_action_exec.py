@@ -145,9 +145,18 @@ def test_edit_defers_never_executes():
     assert spy.calls == []                         # nothing executed
 
 
-def test_free_text_board_hint_lands_on_default_board():
+def test_free_text_board_hint_lands_on_default_board(monkeypatch):
     """The LLM proposes board_hint free text; execution resolves it to the
     default Tasks board instead of failing the Captain's approve."""
+    # Pin a synthetic default board so this runs with full teeth on ANY tree:
+    # the egg export strips instance/config/platform.yml, so the import-time
+    # DEFAULT_TASKS_BOARD = env.tasks_board() resolves "" there and _resolve_board
+    # would fail-close the create. Overriding the module constant (rather than
+    # ACTION_LANE_DEFAULT_BOARD env) keeps the assertion below honest —
+    # _resolve_board falls back to it AND the test compares against it, so both
+    # sides track. Exercises the free-text→default resolution logic, never the
+    # instance's real board value.
+    monkeypatch.setattr(ax, "DEFAULT_TASKS_BOARD", "1")
     spy = MondaySpy()
     r = ax.deliver_action(
         "pid7", redis_get=_store([{"kind": "monday_task_create",

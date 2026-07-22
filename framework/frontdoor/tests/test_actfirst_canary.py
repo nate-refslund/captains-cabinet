@@ -6,6 +6,7 @@ import json
 
 import pytest
 
+from framework import env
 from framework.frontdoor import action_undo as au
 from framework.frontdoor import actfirst_canary as ac
 
@@ -22,6 +23,17 @@ def _hermetic(tmp_path, monkeypatch):
         monkeypatch.setattr(mod, "_default_redis_del", lambda *a, **k: None)
     monkeypatch.setattr(ac, "_default_redis_incr", lambda *a, **k: "1")
     monkeypatch.setattr(ac, "_default_redis_expire", lambda *a, **k: None)
+    # Synthetic tasks board so the canary create→verify→reverse runs with full
+    # teeth on ANY tree: the egg export strips instance/config/platform.yml, so
+    # env.tasks_board() resolves "" there and the executor fail-closes the
+    # create. Inject a valid numeric board (FakeMonday intercepts the call — the
+    # value only has to clear board.isdigit()). Reset the module-level resolve
+    # cache FIRST: env.tasks_board() checks its cache before the env var
+    # (env.py:332), and action_exec/actfirst import populate it at collection,
+    # so a bare setenv would be a no-op. Exercises the canary LOGIC on source
+    # too — never the instance's real board value.
+    monkeypatch.setattr(env, "_tasks_board_cache", None)
+    monkeypatch.setenv("CABINET_TASKS_BOARD", "1")
     yield
 
 

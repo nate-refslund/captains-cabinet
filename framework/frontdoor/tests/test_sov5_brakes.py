@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from framework import env
 from framework.frontdoor import action_undo as au
 from framework.frontdoor import actfirst_canary as ac
 
@@ -60,6 +61,14 @@ def _hermetic(tmp_path, monkeypatch):
         monkeypatch.setattr(mod, "_default_redis_del", lambda *a, **k: None)
     monkeypatch.setattr(ac, "_default_redis_incr", lambda *a, **k: "1")
     monkeypatch.setattr(ac, "_default_redis_expire", lambda *a, **k: None)
+    # Synthetic tasks board so the kind-scoped canary runs with full teeth on
+    # ANY tree (the egg strips platform.yml → env.tasks_board() "" → fail-closed
+    # create). CABINET_ROOT above already points at an empty tmp root, so a
+    # populated board must come from the env override; reset the resolve cache
+    # first since env.tasks_board() checks its cache before the env var
+    # (env.py:332). FakeMonday intercepts — "1" only has to clear board.isdigit().
+    monkeypatch.setattr(env, "_tasks_board_cache", None)
+    monkeypatch.setenv("CABINET_TASKS_BOARD", "1")
     yield
 
 

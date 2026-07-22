@@ -12,18 +12,37 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from framework import env  # instance-config path resolver (retro_pipe_dir); a
+                           # sibling of framework.fidelity and import-light — NOT
+                           # the fidelity package whose test siblings from-import
+                           # scoring names, so this stays collection-safe.
+
 
 def _retro_available() -> bool:
-    """Availability check WITHOUT importing framework.fidelity (whose siblings
-    from-import scoring names and would raise on a lib-less install before this
-    guard could act). Mirrors framework/fidelity/retro.py resolution exactly."""
-    d = Path(
-        os.environ.get(
-            "CABINET_RETRO_PIPE_DIR",
-            str(Path.home() / ".screenpipe" / "pipes" / "retrodiction"),
-        )
-    ).expanduser()
-    return (d / "lib.py").exists()
+    """Availability check WITHOUT importing framework.fidelity (whose test
+    siblings from-import scoring names and would raise on a lib-less install
+    before this guard could act). Resolves the retrodiction pipe dir through the
+    EXACT seam framework/fidelity/retro.py uses — CABINET_RETRO_PIPE_DIR override,
+    else framework.env.retro_pipe_dir() (instance/config/platform.yml), else the
+    ``_retrodiction-absent`` sentinel beside retro.py — so this collect-guard and
+    retro.py's runtime shim can never disagree. A hardcoded ~/.screenpipe default
+    made them diverge on a scrubbed/export tree sitting on a machine that HAS
+    ~/.screenpipe: guard True while retro.py's retro_available() was False ->
+    modules un-ignored, then crashing at import (17 collection errors + 16
+    runtime failures)."""
+    retro_dir = os.environ.get("CABINET_RETRO_PIPE_DIR") or env.retro_pipe_dir()
+    pipe_dir = (
+        Path(retro_dir).expanduser() if retro_dir
+        # Sentinel retro.py falls back to when nothing is configured:
+        # framework/fidelity/_retrodiction-absent. This conftest lives one dir
+        # deeper (tests/), so parent.parent lands on framework/fidelity/ — the
+        # byte-identical path retro.py resolves from its own __file__.
+        else Path(__file__).resolve().parent.parent / "_retrodiction-absent"
+    )
+    try:
+        return (pipe_dir / "lib.py").exists()
+    except OSError:  # unreadable (mode-000 null-hatch stand-in) ≡ absent — mirror
+        return False  # retro.py's _exists_unprivileged; never crash collection
 
 # Flavor-A coupling guard (2026-07-02, CI run 28618-484-301): the scoring engine
 # is imported from the screenpipe retrodiction pipe (framework/fidelity/retro.py)

@@ -97,8 +97,8 @@ seam every autonomous mutation asks before choosing its mode:
   golden eval EVAL-026-ACTION-MODE (deterministic harness
   `cabinet/evals/action-mode/harness.py` + pinned fixtures, wired into
   `cabinet/scripts/run-golden-evals.sh`; eval body staged for the
-  schg-locked `memory/golden-evals/` dir via
-  `docs/proposals/germline-amendment-action-mode-eval-2026-07-17.md`).
+  schg-locked `memory/golden-evals/` dir via the action-mode-eval germline
+  amendment (an internal proposal record, 2026-07-17)).
 
 ## Untrusted-content law (fetched release/changelog text)
 

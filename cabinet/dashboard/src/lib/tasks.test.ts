@@ -220,6 +220,8 @@ describe('validateContextSlug — regex + fs.access', () => {
   })
 
   it('resolves for adhoc + personal (all 3 real contexts)', async () => {
+    const slug = await firstRealContextSlug()
+    if (!slug) return // egg/clean checkout: lane contexts pruned — nothing to probe
     expect(await validateContextSlug('adhoc')).toBe('adhoc')
     expect(await validateContextSlug('personal')).toBe('personal')
   })
