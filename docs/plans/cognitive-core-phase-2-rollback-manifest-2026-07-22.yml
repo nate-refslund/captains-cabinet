@@ -1,0 +1,167 @@
+schema_version: cognitive-phase-rollback/v1
+phase: COG-2
+# S0 pin (§12.1): origin/master at COG-2 implementation start == the parent of
+# the first implementation commit (unit 1, 7f44a3ed) == the phase-2 contract
+# commit. The extended files restore here; restoring
+# cabinet/config/cognitive-architecture-contract.yml to it removes the COG-2
+# temporary_allowances rows (allowance_removal below). Self-ratified per the
+# 2026-07-07 full-autonomy grant + the 2026-07-20 cognitive-masterplan grant.
+baseline_sha: b393f41b579c5ff4723f4502b006df58e9664cf1
+
+# --- runtime inverses (§12.4 — each ONE command, no data surgery) ------------
+# COG-2 is shadow-only (contract Runtime posture): it writes NO authoritative
+# store, emits NO events, adds NO services.yml row, edits NO germline path, and
+# is imported by NO authority/action code. So unlike COG-1's live cutover the
+# runtime footprint is only a DISPOSABLE projection + an additive read-only DB
+# role + a read pointer that is `none` for the entire phase — every inverse is
+# safe by construction, never a careful ordered cutover.
+runtime_inverses:
+  - name: read_pointer
+    command: >-
+      echo none > ~/.cabinet/state/cog2-read-pointer
+    effect: >-
+      force the shadow read pointer to `none` — no consumer reads Cortex. The
+      pointer is `none` for the ENTIRE phase (§9 risk 8), so this is the
+      fail-safe default, not a cutover to invert; the shadow never becomes a
+      second authority
+    reversible_by: >-
+      (no forward cutover exists this phase — the read pointer never leaves
+      `none`; a later consumer-wiring phase owns any forward flip and its own
+      inverse)
+  - name: projection
+    command: rm -rf cabinet/cache/cortex
+    effect: >-
+      delete the disposable belief projection (beliefs.jsonl + the SQLite query
+      index + fold-manifest.json). ALWAYS SAFE BY CONSTRUCTION at a frozen
+      source state (§7.3 retention contract) — the projection is a pure function
+      of the authoritative sources and loses nothing on delete
+    reversible_by: >-
+      python3.12 cabinet/scripts/cog2-rebuild.py --dsn <outbox> --cache-dir cabinet/cache/cortex
+  - name: provision_ro
+    command: >-
+      psql "<outbox-admin-dsn>" -c 'DROP ROLE IF EXISTS cortex_ro'
+    effect: >-
+      drop the read-only shadow role (SELECT-only on officer_tasks_outbox +
+      officer_tasks, §7.2). Additive and idempotent, so the drop is clean and
+      no authoritative row is touched
+    reversible_by: python3.12 cabinet/scripts/cog2-rebuild.py --provision-ro
+
+# --- code inverse: remove new COG-2 files -------------------------------------
+# The COG-2 footprint: the committed units 1-4 (baseline_sha..HEAD "A") plus the
+# unit-5 landing wave (working-tree new files, committed in the landing commit).
+# cabinet/scripts/tests/test_cognitive_phase2_rollback.py::
+# test_manifest_covers_committed_cog2_footprint is the ratchet that catches an
+# un-extended manifest against the ACTUAL committed footprint.
+remove:
+  # Committed COG-2 footprint (units 1-4, baseline_sha..HEAD "A"):
+  - cabinet/config/cortex-source-trust.v1.yml
+  - cabinet/scripts/cog2-belief-hash.py
+  - cabinet/scripts/cog2-parity-falsifier.py
+  - cabinet/scripts/cog2-rebuild.py
+  - cabinet/scripts/cog2-verifier.py
+  - cabinet/scripts/tests/lib_cog2_envelope.py
+  - cabinet/scripts/tests/test_cog2_asof_fence.py
+  - cabinet/scripts/tests/test_cog2_consequence_seam.py
+  - cabinet/scripts/tests/test_cog2_contradiction.py
+  - cabinet/scripts/tests/test_cog2_corruption.py
+  - cabinet/scripts/tests/test_cog2_fencing.py
+  - cabinet/scripts/tests/test_cog2_parity.py
+  - cabinet/scripts/tests/test_cog2_provenance.py
+  - cabinet/scripts/tests/test_cog2_rebuild_determinism.py
+  - framework/cortex/__init__.py
+  - framework/cortex/adapters.py
+  - framework/cortex/belief.py
+  - framework/cortex/engine.py
+  - framework/cortex/query.py
+  - framework/schemas/domains/cortex/belief.v1.json
+  - framework/schemas/domains/cortex/source-trust.v1.json
+  - framework/schemas/domains/observations/observation.v1.json
+  - shared/interfaces/reviews/feat-cog2-unit1-rebuild-core-cp1.md
+  - shared/interfaces/reviews/feat-cog2-unit2-query-fence-cp1.md
+  - shared/interfaces/reviews/feat-cog2-unit3-consequence-cp1.md
+  # Unit-5 landing wave (working-tree new; committed in the landing commit).
+  # The §7.1 import gate + its test + the parity-wiring test + the phase-local
+  # verify twin + this phase's review-scope binder / rollback rehearsal /
+  # rollback-closure test / rollback manifest are all NEW COG-2 files.
+  - cabinet/scripts/cog2-import-gate.py
+  - cabinet/scripts/tests/test_cog2_import_gate.py
+  - cabinet/scripts/tests/test_cog2_measurement.py
+  - cabinet/scripts/tests/test_cog2_parity_wiring.py
+  - cabinet/scripts/verify-cognitive-phase2.sh
+  - cabinet/scripts/cognitive-phase2-review-scope.py
+  - cabinet/scripts/cognitive-phase2-rollback-rehearsal.py
+  - cabinet/scripts/tests/test_cognitive_phase2_rollback.py
+  - docs/plans/cognitive-core-phase-2-rollback-manifest-2026-07-22.yml
+  # the frozen post-implementation review (§12.3 lands it LATER; excluded from
+  # the review-scope digest, so it is the one remove path allowed absent now)
+  - shared/interfaces/reviews/cognitive-core-phase-2-review.md
+  - shared/interfaces/reviews/feat-cog2-unit5-complete-cp1.md
+
+# --- code inverse: restore extended files from baseline_sha -------------------
+# Restoring these to baseline_sha reverts every COG-2 edit — INCLUDING removing
+# the COG-2 temporary_allowances rows from the contract yml (allowance_removal).
+# consequence.py (additive iter_ledger_rows, §6), egg-export-manifest.txt +
+# test_egg_export.py (the O-B3 landing edits), evidence-coverage.py (cortex
+# detector reconcile), cabinet-doctor.sh (cortex health probe), and the
+# task-sync drift falsifier + its test (the §3 cog2-parity invocation) all
+# revert to their pre-COG-2 bytes.
+restore_from_baseline:
+  # Committed COG-2 edits (units 1-4, baseline_sha..HEAD "M"):
+  - cabinet/config/cognitive-architecture-contract.yml
+  - cabinet/scripts/evidence-coverage.py
+  - framework/fidelity/consequence.py
+  # Unit-5 edits (working-tree "M"; folded in for a complete phase rollback):
+  - cabinet/scripts/cabinet-doctor.sh
+  - cabinet/scripts/task-sync-drift-falsifier.py
+  - cabinet/scripts/egg-export-manifest.txt
+  - cabinet/scripts/tests/test_egg_export.py
+  - cabinet/scripts/tests/test_task_sync_drift_falsifier.py
+
+# --- allowance removal (§12.4) ------------------------------------------------
+allowance_removal:
+  path: cabinet/config/cognitive-architecture-contract.yml
+  action: >-
+    restoring this file from baseline_sha removes the two COG-2
+    temporary_allowances rows (framework_production_modules +5,
+    framework_production_noncomment_lines +1189) in the SAME commit as the code
+    inverse — valid only once the module/line deltas are gone
+
+# --- append-only surfaces: retain rows, add a dated rollback note -------------
+retain_append_only:
+  - path: docs/plans/operative-egg-ledger-2026-07-07.yml
+    rows: [COG-0, COG-1, COG-2, COG-3, COG-4, COG-5, COG-6, COG-7, COG-8]
+    rollback_action: retain rows and append a dated rollback/supersession note; preserve allowed status vocabulary
+  - path: docs/plans/operative-egg-plan-2026-07-07.md
+    rows: [COG-0, COG-1, COG-2, COG-3, COG-4, COG-5, COG-6, COG-7, COG-8]
+    rollback_action: retain parity rows and append the same dated rollback/supersession note
+
+# --- surfaces COG-2 promised NOT to touch (G-F2: Phase-0 ∪ Phase-1 union) -----
+# Cortex is shadow-only and touches NONE of these — so the rehearsal's per-path
+# `git diff --quiet baseline..HEAD` check passes; without this block the cloned
+# rehearsal's coverage test (the phase-1 :169 pattern) fails.
+must_remain_unchanged:
+  - cabinet/services.yml
+  - framework/events/emitter.py
+  - framework/authority/classifier.py
+  - framework/policies/authority-matrix.yml
+  - framework/learning/gate.py
+  - framework/authority
+  - framework/evidence
+  - shared/interfaces/captain-vetoes.yml
+  - .layer-separation-baseline
+  - .layer-separation-allowlist
+
+rehearsal:
+  environment: scratch git worktree of the landed COG-2 commit (the landed tree is never modified)
+  code_inverse_script: cabinet/scripts/cognitive-phase2-rollback-rehearsal.py
+  runtime_inverses_note: >-
+    the three runtime inverses are safe-by-construction and need no dedicated
+    rehearsal harness (unlike COG-1's authority cutover): the read pointer is
+    `none` all phase (nothing to flip back), the projection cache is a pure
+    rebuildable function of the sources (delete is lossless — §7.3), and
+    cortex_ro is an additive idempotent SELECT-only role (drop is clean).
+  procedure:
+    - code inverse — remove every remove path, restore every restore_from_baseline path from baseline_sha, retain both operative surfaces with matching dated rollback notes; assert the inverse diff is exactly those two ledgers
+    - run the A13 operative-ledger parity + ledger-status-parity + layer separation + docs sweep + the pre-phase compatibility floor + golden evals against the inverse tree
+    - restoring cabinet/config/cognitive-architecture-contract.yml from baseline_sha removes the two COG-2 temporary_allowances rows in the same commit (allowance_removal)
+  success: the inverse diff contains only retained operative rows/notes relative to baseline; every unchanged/compatibility gate is green

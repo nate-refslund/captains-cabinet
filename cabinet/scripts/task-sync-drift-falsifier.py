@@ -946,6 +946,71 @@ def run_cog1_parity(*, today: Any = None) -> int:
     return 0
 
 
+# ===========================================================================
+# COG-2 shadow parity (§8 sim 6) — the falsifier gains the cortex-parity read
+# ===========================================================================
+# cog2-parity-falsifier.py samples the AUTHORITATIVE side each cycle and
+# falsifies the cortex projection's "what do we believe about subject X, as of
+# now" claim (§8 sim 6, C-F16/17/18). Like the COG-1 read above, that cycle
+# rides THIS already-ENABLED nightly fleet row — NO new services.yml row
+# (contract §53 / G-F7: `git diff --quiet -- cabinet/config/services.yml` stays
+# clean).
+#
+# IMPORT BAN (C-F17, §7.1): the projection is queried as an EXTERNAL black box
+# and this drift falsifier imports NO cortex module. So the parity cycle is
+# invoked as a SUBPROCESS (the house interpreter + the sibling script), NEVER
+# imported — cog2-parity-falsifier.py's lazy framework reader stays inside the
+# CHILD's own process and never enters this module's import graph.
+
+
+def _cog2_falsifier_path() -> Path:
+    """The sibling parity falsifier, resolved by CODE location (next to this
+    file) — NOT via CABINET_ROOT, which only retargets the data/log root."""
+    return Path(__file__).resolve().parent / "cog2-parity-falsifier.py"
+
+
+def run_cog2_parity() -> int:
+    """Nightly COG-2 cortex shadow-parity cycle (§8 sim 6). Invokes the sibling
+    cog2-parity-falsifier.py as an EXTERNAL SUBPROCESS in its DEFAULT mode (one
+    parity cycle: sample the authoritative frame, compare to the projection,
+    append a verdict line, escalate a second-consecutive breach date) and
+    propagates its exit code — 0 ok/unconfigured, 1 breach/error. The subprocess
+    seam is load-bearing: it keeps this drift falsifier free of any cortex/
+    framework import (C-F17 import ban). A subprocess that cannot be LAUNCHED
+    (sibling absent / interpreter missing) is an honest no-op (exit 0), never a
+    false breach — exactly as run_cog1_parity no-ops when its pilot never armed.
+    But a CONFIGURED child that HANGS past the timeout ceiling is a STUCK
+    watchdog, not a launch failure: it exits 1 (loud), so a wedged reader can
+    never mute the watchdog behind a momentary green. The child owns its own
+    escalation ladder + logs; its output is forwarded so the nightly run stays
+    visible in one place."""
+    script = _cog2_falsifier_path()
+    timeout_s = _env_int("COG2_PARITY_SUBPROCESS_TIMEOUT_S", 300)
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script)],
+            capture_output=True, text=True, timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        # A CONFIGURED child HUNG past the ceiling is a STUCK watchdog, not a
+        # launch failure — be LOUD (exit 1), never a momentary green no-op. Log
+        # the timeout int ONLY; str(TimeoutExpired) embeds the child argv, so it
+        # is never interpolated into the message.
+        print(f"cog2-parity: ERROR parity subprocess timed out after {timeout_s}s "
+              "— treating as a loud breach", file=sys.stderr)
+        return 1
+    except OSError as exc:
+        # Cannot be LAUNCHED (sibling absent / interpreter missing) — an honest
+        # no-op (exit 0), never a false breach. type name ONLY (no argv/stderr).
+        print(f"cog2-parity: WARN parity subprocess not run: {type(exc).__name__}",
+              file=sys.stderr)
+        return 0
+    if result.stdout:
+        sys.stdout.write(result.stdout)
+    if result.stderr:
+        sys.stderr.write(result.stderr)
+    return result.returncode
+
+
 # ---------------------------------------------------------------------------
 # --probe (cabinet-doctor): pure file inspection
 # ---------------------------------------------------------------------------
@@ -1004,18 +1069,28 @@ def main(argv: list[str] | None = None) -> int:
                         help="COG-1 §8.3: read the outbox parity log, apply the "
                              "freshness floor + predicate, escalate on two "
                              "consecutive breach windows")
+    parser.add_argument("--cog2-parity", action="store_true",
+                        help="COG-2 §8 sim 6: run the cortex shadow-parity cycle "
+                             "(cog2-parity-falsifier.py) as a subprocess — "
+                             "sample the authoritative frame, compare the "
+                             "projection, escalate two consecutive breach dates")
     args = parser.parse_args(argv)
     if args.probe:
         return probe()
     if args.cog1_parity:
         return run_cog1_parity()
-    # Default nightly invocation runs BOTH the tracker-drift check AND the COG-1
-    # outbox-parity read (§8.3 — the falsifier "gains the parity-log read" on its
-    # existing enabled row; no services.yml edit). The COG-1 read is a clean
-    # no-op when the parity log is absent (the pilot's relay never armed here).
+    if args.cog2_parity:
+        return run_cog2_parity()
+    # Default nightly invocation runs the tracker-drift check AND the COG-1
+    # outbox-parity read (§8.3) AND the COG-2 cortex shadow-parity cycle (§8 sim
+    # 6) — each falsifier "gains the parity read" on this existing enabled row;
+    # no services.yml edit (byte-identical, G-F7). Both parity reads are clean
+    # no-ops when their source is absent/unconfigured (the pilot never armed
+    # here). COG-2 rides a subprocess so no cortex import enters this module.
     rc_drift = run()
     rc_cog1 = run_cog1_parity()
-    return rc_drift or rc_cog1
+    rc_cog2 = run_cog2_parity()
+    return rc_drift or rc_cog1 or rc_cog2
 
 
 if __name__ == "__main__":

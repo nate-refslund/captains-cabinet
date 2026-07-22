@@ -62,6 +62,20 @@ def _seed_root(tmp_path, monkeypatch, project_yaml: str | None) -> Path:
     monkeypatch.delenv("NEON_CONNECTION_STRING", raising=False)
     monkeypatch.delenv("TASK_SYNC_DRIFT_CANONICAL_JSON", raising=False)
     monkeypatch.delenv("TASK_SYNC_DRIFT_ATTENTION_SUBMIT", raising=False)
+    # test_end_to_end_subprocess_exit_0 spawns a REAL child that inherits
+    # os.environ; a dev box exporting either COG2 seam would arm the spawned
+    # cog2 parity child and flake it to rc=1. Scrub both so the child stays an
+    # honest unconfigured no-op.
+    monkeypatch.delenv("COG2_PARITY_DATA_JSON", raising=False)
+    monkeypatch.delenv("COG2_PARITY_CORTEX_CMD", raising=False)
+    # main() also runs the COG-2 shadow-parity SUBPROCESS on its default path.
+    # These drift/COG-1 tests do not exercise COG-2 (its wiring has dedicated
+    # coverage in test_cog2_parity_wiring.py), and a spawned child would falsely
+    # ERROR here — the fixture's tmp CABINET_ROOT has no framework/ on disk for
+    # the child's consequence reader. Neutralize it so the existing suite stays
+    # hermetic (no subprocess spawn) and focused. The real end-to-end subprocess
+    # test spawns its own process and is unaffected.
+    monkeypatch.setattr(tsd, "run_cog2_parity", lambda: 0)
     return root
 
 
@@ -478,3 +492,29 @@ class TestSampleRotation:
         assert tsd.main([]) == 0
         assert "WARN" in capsys.readouterr().err
         assert _ledger_lines(root)[0]["sampled"] == 1
+
+
+class TestCog2ParitySubprocess:
+    """run_cog2_parity() honesty split (2026-07-22 review): a CONFIGURED child
+    that HANGS past the timeout ceiling is LOUD (exit 1) — a momentary green
+    over a wedged reader would mute the watchdog. Only a genuine launch failure
+    (OSError: sibling absent / interpreter missing) stays an honest no-op
+    (exit 0). Hermetic — subprocess.run is patched, no child is ever spawned.
+    (_seed_root stubs run_cog2_parity itself, so these call the REAL function.)"""
+
+    def test_hung_child_past_the_ceiling_is_a_loud_exit_1(
+            self, monkeypatch, capsys):
+        def _boom(*a, **k):
+            raise subprocess.TimeoutExpired(cmd=["cog2"], timeout=300)
+        monkeypatch.setattr(tsd.subprocess, "run", _boom)
+        assert tsd.run_cog2_parity() == 1               # loud, not a green no-op
+        err = capsys.readouterr().err
+        assert "ERROR" in err and "timed out" in err
+
+    def test_launch_failure_stays_an_honest_no_op_exit_0(
+            self, monkeypatch, capsys):
+        def _boom(*a, **k):
+            raise FileNotFoundError("no interpreter")   # OSError launch failure
+        monkeypatch.setattr(tsd.subprocess, "run", _boom)
+        assert tsd.run_cog2_parity() == 0               # honest no-op
+        assert "WARN" in capsys.readouterr().err

@@ -1131,6 +1131,41 @@ case "$DR_PROBE" in
 esac
 
 # ============================================================
+# 15. cog2 cortex shadow-parity verdict (COG-2 §8 sim 6)
+# The nightly task-sync-drift row ALSO runs the COG-2 cortex shadow-parity
+# cycle (cog2-parity-falsifier.py, invoked as a subprocess from that SAME
+# row — no new services.yml row; byte-identical, G-F7). That cycle appends
+# one authoritative↔projection verdict line/run to
+# cabinet/logs/cog2-parity.jsonl (honest `unconfigured` lines while no cortex
+# projection is wired — today's live shape). This check reads ONLY that
+# ledger via the falsifier's --probe: pure file inspection — no store read,
+# no network, no framework import, no secret values. ESCALATION LADDER
+# (documented here, executed by the FALSIFIER — the doctor is read-only by
+# contract and never sends): a projection that stops matching the
+# authoritative record breaches; a SECOND consecutive breach DATE files ONE
+# captain card through the attention gateway and stamps `escalated` on the
+# verdict line — the card reaches the Captain from that organ, NEVER from
+# this probe. Never DEAD: a drifting projection is a quality finding (a
+# read-only shadow over authority), not dead config. Staleness rides the same
+# post-wake grace as the checks above (re_stale_verdict). NOSYNC = genuinely
+# no parity source on this box (no seam, no authoritative store reader, no
+# projection reader) — an honest green no-op; a CONFIGURED reader that FAILS
+# surfaces as ERROR, never a green NOSYNC (the falsifier enforces the split at
+# the source, exactly like the task-sync-drift row above).
+# ============================================================
+COG2_PROBE="$("$PY" cabinet/scripts/cog2-parity-falsifier.py --probe 2>/dev/null)"
+case "$COG2_PROBE" in
+  OK*)      ok "cog2-parity — latest cortex shadow-parity verdict passed (${COG2_PROBE#OK })" ;;
+  NOSYNC*)  ok "cog2-parity — honest no-op (${COG2_PROBE#NOSYNC }); no cortex projection / authoritative source configured on this box to measure, verdict line fresh" ;;
+  BREACH*)  warn "cog2-parity — PROJECTION DRIFT in latest verdict (${COG2_PROBE#BREACH }) — the cortex projection stopped matching the authoritative record; self-heal: rebuild the projection, then python3.12 cabinet/scripts/cog2-parity-falsifier.py (a passing line clears this AMBER); if the NEXT run still breaches the falsifier files the captain card — do NOT trust a stale belief read until it clears" ;;
+  ERROR*)   warn "cog2-parity — latest falsifier run errored (${COG2_PROBE#ERROR }) — a CONFIGURED reader broke (projection command or authoritative store read exited non-zero / emitted garbage); credential rot must never park this green — see cabinet/logs/cog2-parity.jsonl" ;;
+  NOFILE*)  re_stale_verdict "cog2-parity — no verdict ledger yet (the nightly parity cycle never ran — task-sync-drift row not installed?)" ;;
+  STALE*)   re_stale_verdict "cog2-parity — latest verdict stale (${COG2_PROBE#STALE }) — the nightly parity cycle is not running" ;;
+  BADLINE*) warn "cog2-parity — latest verdict line unparseable (ledger corrupt? see cabinet/logs/cog2-parity.jsonl)" ;;
+  *)        warn "cog2-parity — probe output unparseable: $COG2_PROBE" ;;
+esac
+
+# ============================================================
 # verdict + heartbeat
 # ============================================================
 TOTAL=$((N_OK + N_WARN + N_WAIVED + ${#DEAD[@]}))

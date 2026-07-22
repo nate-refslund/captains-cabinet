@@ -360,6 +360,120 @@ def test_cognitive_architecture_verifier_runs_inside_export(export: Path):
     assert "cognitive architecture verify: PASS" in result.stdout
 
 
+# COG-2 (Cortex) framework surface that must ride the egg — the fold package,
+# its registry-resolved schemas, the versioned trust table, and the enduring
+# rebuild/hash/verify/parity CLIs (contract §6 file table). All are framework
+# DNA a fresh Cabinet needs; none is instance-specific.
+COG2_CORTEX_SHIPPED = (
+    "framework/cortex/__init__.py",
+    "framework/cortex/belief.py",
+    "framework/cortex/engine.py",
+    "framework/cortex/query.py",
+    "framework/cortex/adapters.py",
+    "framework/schemas/domains/cortex/belief.v1.json",
+    "framework/schemas/domains/cortex/source-trust.v1.json",
+    "framework/schemas/domains/observations/observation.v1.json",
+    "cabinet/config/cortex-source-trust.v1.yml",
+    "cabinet/scripts/cog2-rebuild.py",
+    "cabinet/scripts/cog2-belief-hash.py",
+    "cabinet/scripts/cog2-verifier.py",
+    "cabinet/scripts/cog2-parity-falsifier.py",
+    "cabinet/scripts/cog2-import-gate.py",
+)
+
+# Runtime Cortex data that must NEVER ship: the parity VERDICT LOG is per-cabinet
+# runtime data, gitignored under cabinet/logs/* (the projection cache lives under
+# cabinet/cache/*). `git archive HEAD` ships tracked files only, so it never
+# enters the cut — the manifest's expect-absent is the defensive backstop.
+COG2_RUNTIME_ABSENT = ("cabinet/logs/cog2-parity.jsonl",)
+
+
+def test_cog2_cortex_manifest_carries_surface():
+    """TDD gate (works pre-commit, text-level): the egg manifest pins every
+    COG-2 cortex framework surface present and the runtime parity log absent —
+    the same expect-present/expect-absent idiom the COG-0 rows established.
+    Text-level so it binds THIS wave's manifest edit, not a HEAD cut."""
+    manifest = _MANIFEST.read_text(encoding="utf-8")
+    for rel in COG2_CORTEX_SHIPPED:
+        assert f"expect-present {rel}" in manifest, \
+            f"manifest missing expect-present rule: {rel}"
+    for rel in COG2_RUNTIME_ABSENT:
+        assert f"expect-absent {rel}" in manifest, \
+            f"manifest missing expect-absent rule: {rel}"
+
+
+def test_cog2_parity_log_is_gitignored():
+    """The Cortex parity verdict log is per-cabinet runtime data: gitignored
+    (cabinet/logs/*), so it never enters a `git archive HEAD` cut. Pinned at
+    the source — if the wildcard ever regresses this fails before the export
+    ever gets the chance to leak it."""
+    r = subprocess.run(
+        ["git", "-C", str(_REPO_ROOT), "check-ignore",
+         "cabinet/logs/cog2-parity.jsonl"],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert r.returncode == 0 and r.stdout.strip() == "cabinet/logs/cog2-parity.jsonl", \
+        f"cog2-parity.jsonl must be gitignored (runtime data): rc={r.returncode} out={r.stdout!r}"
+
+
+def test_cog2_cortex_surface_survives_export(export: Path):
+    """COG-2: the Cortex fold package, registry schemas, versioned trust table,
+    and enduring rebuild/hash/verify/parity CLIs are framework DNA a fresh
+    Cabinet ships; the runtime projection cache + parity verdict log are
+    gitignored runtime data and never ride the cut."""
+    for rel in COG2_CORTEX_SHIPPED:
+        assert (export / rel).is_file(), f"COG-2 cortex surface must ship: {rel}"
+    for rel in COG2_RUNTIME_ABSENT:
+        assert not (export / rel).exists(), f"COG-2 runtime data must not ship: {rel}"
+
+
+# COG-2 phase-2 PRIVATE landing tools: the phase-local verify twin, the
+# review-scope binder, the rollback rehearsal, and the rollback-closure test bind
+# THIS launching instance's reviewed bytes, baseline, and rollback plan — the
+# same private-side class as their Phase-0/1 predecessors. None ships.
+COG2_PHASE2_PRIVATE_TOOLS = (
+    "cabinet/scripts/verify-cognitive-phase2.sh",
+    "cabinet/scripts/cognitive-phase2-review-scope.py",
+    "cabinet/scripts/cognitive-phase2-rollback-rehearsal.py",
+    "cabinet/scripts/tests/test_cognitive_phase2_rollback.py",
+)
+
+
+def test_cognitive_phase2_egg_manifest_carries_exclusions():
+    """TDD gate (works pre-commit): the egg manifest must carry a `delete` and a
+    matching `expect-absent` directive for each COG-2 phase-2 private landing
+    tool — the same pattern the COG-0/1 rows established. Text-level so it binds
+    THIS wave's manifest edit, not a HEAD cut."""
+    manifest = _MANIFEST.read_text(encoding="utf-8")
+    for rel in COG2_PHASE2_PRIVATE_TOOLS:
+        assert f"delete {rel}" in manifest, f"manifest missing delete rule: {rel}"
+        assert f"expect-absent {rel}" in manifest, f"manifest missing expect-absent rule: {rel}"
+
+
+def test_cognitive_phase2_private_landing_tools_excluded(export: Path):
+    """COG-2: the phase-2 verify twin + review-scope binder + rollback rehearsal
+    + rollback-closure test are THIS instance's private landing proof (they bind
+    the launching source instance's reviewed bytes and rollback plan) — excluded
+    from the egg exactly like their Phase-0/1 predecessors. The enduring §7.1
+    shadow-boundary import gate ships. Post-commit gate: skips until the unit-5
+    tools are tracked at HEAD (the egg is a `git archive HEAD` cut)."""
+    ls_tree = subprocess.run(
+        ["git", "-C", str(_REPO_ROOT), "ls-tree", "--name-only", "HEAD",
+         "cabinet/scripts/cog2-import-gate.py"],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert ls_tree.returncode == 0, f"git ls-tree failed: {ls_tree.stderr}"
+    for rel in COG2_PHASE2_PRIVATE_TOOLS:
+        assert not (export / rel).exists(), f"COG-2 private landing tool must not ship: {rel}"
+    if not ls_tree.stdout.strip():
+        pytest.skip("cog2-import-gate.py not tracked at HEAD yet — the ship "
+                    "assertion activates in the commit that tracks the unit-5 files")
+    # the §7.1 shadow-boundary import gate is enduring operational tooling a
+    # fresh captain runs to prove Cortex stays read-only — it ships.
+    assert (export / "cabinet/scripts/cog2-import-gate.py").is_file(), \
+        "COG-2 shadow-boundary import gate must ship in the egg"
+
+
 def test_testburg_fixture_ships(export: Path):
     tb = export / "cabinet" / "fixtures" / "testburg"
     for f in ("README.md", "generate.py", "config/product.yml"):

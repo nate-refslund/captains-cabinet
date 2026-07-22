@@ -254,6 +254,28 @@ class TestSampleFloor:
         f = cp.per_day_floor(lines, today="2026-07-11", floor=3)
         assert f["latest_breach"] is True
 
+    def test_F7_unconfigured_days_are_exempt_from_the_floor(self):
+        # F7: a stretch of honest `unconfigured` days (the cycle RAN with no
+        # parity source — sampled=0/frame_size=0) is NOT a dark day and must not
+        # floor-breach. Before the fix, sampled=0 read as a full-floor miss, so
+        # the most-recent unconfigured day set latest_breach True and the first
+        # CONFIGURED run after the stretch opened on a false red.
+        lines = [{"date": d, "status": "unconfigured", "sampled": 0,
+                  "frame_size": 0}
+                 for d in ("2026-07-18", "2026-07-19", "2026-07-20")]
+        f = cp.per_day_floor(lines, today="2026-07-21", floor=3)
+        assert f["breach"] is False
+        assert f["latest_breach"] is False
+
+    def test_F7_error_day_is_not_exempt_and_still_breaches(self):
+        # the exemption is unconfigured-ONLY: an `error` day (a CONFIGURED reader
+        # broke — sampled=0/frame_size=0 too) keeps the FULL floor and breaches.
+        # Guards against an over-broad "any zero-frame day is exempt" fix.
+        lines = [{"date": "2026-07-20", "status": "error", "sampled": 0,
+                  "frame_size": 0}]
+        f = cp.per_day_floor(lines, today="2026-07-21", floor=3)
+        assert f["latest_breach"] is True
+
 
 # ===========================================================================
 # import ban (C-F17) — the falsifier imports NO framework.cortex.*
@@ -375,6 +397,29 @@ class TestRun:
         rc = cp.run(today="2026-07-22")
         assert rc == 1
         assert _ledger(root)[-1]["status"] == "error"
+
+    def test_F7_unconfigured_streak_then_clean_configured_is_ok(
+            self, tmp_path, monkeypatch):
+        # F7 end-to-end: a box that logged honest `unconfigured` no-ops for
+        # several days, then gets a parity source configured and runs a CLEAN
+        # cycle -> ok / exit 0. Before the fix the per-day floor treated the
+        # prior unconfigured days as full-floor dark days, so the FIRST real
+        # configured run opened on a guaranteed false BREACH (doctor AMBER).
+        root = _root(tmp_path, monkeypatch)
+        monkeypatch.setenv("COG2_PARITY_SAMPLE_FLOOR", "1")
+        path = root / "cabinet" / "logs" / "cog2-parity.jsonl"
+        path.write_text("".join(
+            json.dumps({"ts": f"2026-07-{d}T00:00:00Z", "date": f"2026-07-{d}",
+                        "status": "unconfigured", "sampled": 0,
+                        "frame_size": 0}) + "\n"
+            for d in ("18", "19", "20", "21")))     # contiguous honest no-ops
+        _seam(tmp_path, monkeypatch, {"t1": {"status": "done"}},
+              {"t1": {"status": "done"}})
+        rc = cp.run(today="2026-07-22")
+        assert rc == 0                                    # NOT a false breach
+        line = _ledger(root)[-1]
+        assert line["status"] == "ok"
+        assert line["day_floor_breach"] is False
 
 
 class TestEscalationLadder:
