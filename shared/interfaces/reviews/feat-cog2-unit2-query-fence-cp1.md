@@ -102,6 +102,52 @@ unknown law, §8 sim 2 temporal-fence, §8 sim 3 contradiction+unknown).
   importer. query.py/adapter import only own-package + (adapter) the allowlisted
   `framework.triggers.{envelope,schema_registry}`; import-inert at package level.
 
+## Review fixes (F2 / F6 / cutoff / C-F9 — cp1 adversarial review)
+
+The cp1 clean-room review returned **CONCERNS (2 must-fix, no blockers)**. Three
+CODE fixes landed (commit `663d5847`) + four negative-control/regression test
+groups pin them (11 new tests):
+
+- **F2 (must-fix) — result status is CONFLICT-driven, not head-COUNT-driven.**
+  query.py aggregated `len(views) > 1 => contradicted`, so a multi-DIMENSION
+  subject (the outbox emits status + occurrence per task) queried `dimension=None`
+  read as `contradicted`. Now: `contradicted` iff any view carries a
+  `conflict_set`; otherwise a multi-facet subject aggregates to `source_purged`
+  iff EVERY facet is purged, else `asserted`. Pinned by
+  `test_cog2_contradiction.py::TestMultiDimensionIsNotContradiction` (dimensionless
+  → asserted, 2 views, empty conflict_sets; dimension-scoped → one facet; a genuine
+  same-dimension conflict still → contradicted, both ways).
+
+- **F6 (must-fix) — a no-subject envelope is quarantined, not a file-aborting
+  crash.** `build_envelope_protos` did `env["payload"][subject]`, a KeyError on a
+  VALIDATED envelope whose schema declares no `subject` (the platform's own
+  tasks/task-event@1 relay shape) — aborting the whole file mid-iteration. Now it
+  refuses WITH A RECEIPT per its own fail-closed contract. Pinned by
+  `test_cog2_asof_fence.py::TestNoSubjectFieldQuarantine` (offender → receipt with
+  a subject-reason; the valid lines around it still fold).
+
+- **cutoff (should-fix) — a non-canonical cutoff is a HARD ERROR.** `as_of`
+  string-compares cutoffs against canonical stored timestamps; a legal-but-non-
+  canonical ISO (`+00:00` not `Z`) or garbage would fence OPEN. Now a cutoff must
+  match `YYYY-MM-DDTHH:MM:SSZ` or `ValueError`. Pinned by
+  `test_cog2_asof_fence.py::TestCutoffValidation`.
+
+- **C-F9 gate gap (reviewer) — the fence keys on observation_time, not arrival.**
+  Every prior sim-2 seed was arrival-monotone. A new seed inverts the two axes (a
+  belief that ARRIVES last but is OBSERVED first) and asserts the early-observed
+  late-arrival is visible as-of an early cutoff while the first-arrival is fenced
+  OUT — proving the fence is not an ingest-order proxy. Pinned by
+  `test_cog2_asof_fence.py::TestOutOfOrderArrivalFencesOnObservationTime`; an
+  arrival/rowid fence is demonstrated to pick the wrong belief in-test (a real
+  `fence_axis="arrival"` query seam needs a seq-typed cutoff — engine plumbing,
+  deferred and named).
+
+Post-fix: **83 COG-2 tests pass** (was 72; +11 review-fix tests — fence 25,
+contradiction 18, determinism 40). Census re-bumped: noncomment-lines 832→**856**
+(the +24 review-fix code lines; tests are not framework_production), modules
+unchanged at 5; observed==max (63153, 214). Evidence-coverage still reconciles;
+zero authority/action `framework.cortex` importers.
+
 ## Honesty declarations (per the foundry's own law)
 
 - **Two-axis fence is proven through the envelope-file adapter, not a production
