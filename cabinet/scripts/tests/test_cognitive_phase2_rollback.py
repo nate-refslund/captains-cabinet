@@ -80,6 +80,7 @@ REMOVE_COMMITTED = {
 REMOVE_UNIT5 = {
     "cabinet/scripts/cog2-import-gate.py",
     "cabinet/scripts/tests/test_cog2_import_gate.py",
+    "cabinet/scripts/tests/test_cog2_measurement.py",
     "cabinet/scripts/tests/test_cog2_parity_wiring.py",
     "cabinet/scripts/verify-cognitive-phase2.sh",
     "cabinet/scripts/cognitive-phase2-review-scope.py",

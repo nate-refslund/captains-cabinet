@@ -53,10 +53,14 @@ python3.12 -m pytest \
   cabinet/scripts/tests/test_cog2_consequence_seam.py \
   cabinet/scripts/tests/test_cog2_fencing.py \
   cabinet/scripts/tests/test_cog2_parity.py -q
-# COG-2 gate suites — DB group (EphemeralPG17; skip without the ephemeral harness)
+# COG-2 gate suites — DB group (EphemeralPG17; skip without the ephemeral harness).
+# Includes the M6 measurement gate (§8 / exit :172): with COG2_ENFORCE_P95=1 set
+# above, the bounded-history sim ASSERTS the as-of p95 / full-rebuild / store-size
+# ceilings on a quiet host — the real M6 tripwire (COG1_ENFORCE_P95 precedent).
 python3.12 -m pytest \
   cabinet/scripts/tests/test_cog2_rebuild_determinism.py \
-  cabinet/scripts/tests/test_cog2_corruption.py -q
+  cabinet/scripts/tests/test_cog2_corruption.py \
+  cabinet/scripts/tests/test_cog2_measurement.py -q
 # architecture census (--check: line / module / sink / service ceilings)
 python3.12 cabinet/scripts/cognitive-architecture-census.py --check
 # evidence-coverage reconcile (every detector hit enumerated)

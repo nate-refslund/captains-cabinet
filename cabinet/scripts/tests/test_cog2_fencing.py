@@ -466,12 +466,46 @@ class TestCortexRoReadOnly:
 
     def test_grant_catalog_is_exactly_enumerated(self, cluster):
         # the mutant this exists to catch: a THIRD-table grant or a write grant
-        # would make this set differ from the enumerated {SELECT x2}. (The
-        # catalog-bite proof drives this exact comparison with an injected grant.)
+        # would make this set differ from the enumerated {SELECT x2}. The
+        # catalog-bite proof (test_catalog_bite_proof_injected_grant_then_reconverge
+        # below) drives this exact comparison with an injected grant in-repo.
         catalog = _catalog(cluster)
         assert catalog == _ENUM_CATALOG, (
             f"cortex_ro catalog {sorted(catalog)} != "
             f"enumerated {sorted(_ENUM_CATALOG)}")
+
+    def test_catalog_bite_proof_injected_grant_then_reconverge(self, cluster):
+        # CATALOG-BITE PROOF (in-repo, was transcript-only): the grant-catalog
+        # comparison in test_grant_catalog_is_exactly_enumerated must actually
+        # BITE on BOTH axes when the enumerated set is violated — a THIRD-table
+        # grant and a WRITE-verb grant — and the idempotent provisioner must
+        # CONVERGE the catalog back. Injections run as the admin (the grantor);
+        # the finally re-provision keeps the class-scoped role clean for the other
+        # tests even if an assertion fails.
+        try:
+            # (a) third-table axis: SELECT on a table NOT in the enumerated set.
+            cluster.psql("GRANT SELECT ON officer_task_history TO cortex_ro;")
+            bitten_a = _catalog(cluster)
+            assert bitten_a != _ENUM_CATALOG, \
+                "the catalog comparison must BITE on an injected third-table grant"
+            assert ("officer_task_history", "SELECT") in bitten_a
+            # (b) write-verb axis: INSERT on an ENUMERATED table.
+            cluster.psql("GRANT INSERT ON officer_tasks_outbox TO cortex_ro;")
+            bitten_b = _catalog(cluster)
+            assert bitten_b != _ENUM_CATALOG, \
+                "the catalog comparison must BITE on an injected write-verb grant"
+            assert ("officer_tasks_outbox", "INSERT") in bitten_b
+        finally:
+            # REVOKE / re-provision: the provisioner REVOKEs ALL then re-grants
+            # only the enumerated SELECTs, so the catalog CONVERGES back exactly —
+            # the drift self-correction the §7.2 provisioning contract promises.
+            _provision_ro(cluster.conninfo())
+        assert _catalog(cluster) == _ENUM_CATALOG, \
+            "re-provision must converge the catalog back to the enumerated set"
+        # the injected INSERT is gone — cortex_ro is SELECT-only again.
+        _expect_denied(_ro_conninfo(cluster),
+                       "INSERT INTO officer_tasks_outbox (idempotency_key, task_id, "
+                       "new_status, actor) VALUES ('bite-probe', 7, 'wip', 'ro')")
 
     def test_no_write_privilege_on_granted_tables(self, cluster):
         # has_table_privilege corroborates the catalog on the two GRANTED tables:

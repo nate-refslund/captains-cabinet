@@ -35,8 +35,9 @@ RULES — one `<repo-relative-path>:<RULE>` per violation:
                                  import_module/__import__ of framework.cortex (C-F17 —
                                  the parity ground truth must never route through
                                  cortex's own adapters)
-  UNALLOWLISTED_CORTEX_IMPORTER  a module in framework/, cabinet/scripts, or a live
-                                 runtime surface (cabinet/admin-bot, cabinet/mcp-server)
+  UNALLOWLISTED_CORTEX_IMPORTER  a module in ANY swept first-party tree (framework/,
+                                 shared/, instance/, presets/, the cabinet code
+                                 subtrees + the repo-root conftest — see SWEEP_TREES)
                                  imports framework.cortex — statically or via a dynamic
                                  import_module — but is neither cortex-internal nor a
                                  curated cortex reader
@@ -64,12 +65,43 @@ its cache store inside a forbidden tree is treated as a coupling by design —
 authority/action code has no business referencing the shadow model, even in a
 docstring body.
 
-Residuals (§7.1 — accepted for this phase, read pointer `none`): a FULLY covert
-bypass whose module name never appears as a greppable literal — e.g. a runtime
-string-assembled `import_module('framework' + '.cortex')`, or a getattr/attribute
-walk — stays out of scope (no AST import node, no greppable token). The
-two-argument RELATIVE dynamic form (a dot-cortex name handed to import_module with
-a 'framework' package) is NO LONGER residual: it bites on the falsifier via the
+Sweep coverage (§7.1 — the closed bridge-escape): Check 3's SWEEP_TREES covers
+EVERY first-party importable Python tree, so a PLAIN greppable cortex import is
+never invisible, wherever it lives. A prior gap swept only framework/ +
+cabinet/{scripts,admin-bot,mcp-server}, omitting shared/, instance/, presets/,
+cabinet/{adapters,channels,companion} (and cabinet/{evals,fixtures}, the repo-root
+conftest.py): a stray `from framework.cortex import query` there exited rc=0,
+letting authority/action code reach the shadow model through a one-hop bridge
+(authority file -> `from shared.cortex_bridge import query`; the bridge ->
+`from framework.cortex import query`). Now the bridge file — living in a swept
+tree — is itself flagged, so the reach can never be silent.
+
+EXCLUDED trees (named per the fail-closed rule — none is an importable Python
+namespace, so no import statement can hide in them): the non-code top-level trees
+designs/, docs/, memory/, packs/, patches/, vault/ (design assets, markdown,
+data, asset packs, patch files, the Obsidian vault) and the cabinet non-code
+subtrees cache/, config/, cron/, dashboard/, deploy/, docs/, env/, launchd/,
+logs/, loop-prompts/, mcp-overlays/, migrations/, officer-skills/, runbooks/,
+sql/, starter-spaces/, tests/, world/ (data, config, plists, logs, SQL, assets,
+prompt/skill markdown). They carry NO .py today. If Python is ever added to any
+of them it MUST be added to SWEEP_TREES — the completeness-invariant test
+(test_every_first_party_py_is_on_scan_surface) fails loudly until it is, so this
+class of omission cannot recur silently.
+
+Residuals (§7.1 — accepted for this phase, read pointer `none`):
+(1) TRANSITIVE attribution. The gate is a per-file DIRECT-import detector, not a
+    transitive import-graph analyzer. A multi-hop chain (authority -> bridge_a ->
+    bridge_b -> cortex) is caught at whichever file LITERALLY imports cortex —
+    always a swept first-party file now — so the ultimate authority caller can
+    name no cortex token yet the reach is NEVER silent (the importing bridge is
+    flagged). What stays out of scope is only attribution: the gate flags the
+    importer, not every transitive caller upstream of it.
+(2) FULLY covert assembly. A bypass whose module name never appears as a greppable
+    literal — a runtime string-assembled `import_module('framework' + '.cortex')`,
+    or a getattr/attribute walk — stays out of scope (no AST import node, no
+    greppable token). Revisited when the read pointer flips off `none`.
+The two-argument RELATIVE dynamic form (a dot-cortex name handed to import_module
+with a 'framework' package) is NOT residual: it bites on the falsifier via the
 narrow dynamic ban and across the swept trees via the precise two-arg pattern.
 
 Usage:
@@ -116,9 +148,31 @@ ALLOWLIST_GLOBS = [
     "cabinet/scripts/tests/lib_cog2_*.py",
 ]
 
-# --- trees the global sweep (Check 3) scans for ANY stray cortex importer,
-# including the live runtime surfaces (admin bot + MCP server) --------------
-SWEEP_TREES = ["framework", "cabinet/scripts", "cabinet/admin-bot", "cabinet/mcp-server"]
+# --- trees the global sweep (Check 3) scans for ANY stray cortex importer -----
+# Must cover EVERY first-party importable Python tree so a plain
+# `from framework.cortex import x` is never invisible, wherever it lives — the
+# closed bridge-escape (a stray import in shared/instance/presets/cabinet-code
+# lanes used to slip the net; see §7.1). Audited to enumerate ALL first-party
+# .py in the repo (the completeness-invariant test guards 0-uncovered). The
+# empty namespaces (shared, cabinet/{adapters,channels,companion}) carry no .py
+# today but are swept as a forward-guard; conftest.py is the repo-root importable
+# pytest fence (a file, which _py_files handles). Non-code trees are excluded by
+# design — named in the §7.1 residual note above.
+SWEEP_TREES = [
+    "framework",          # the whole framework layer (authority/action + all)
+    "shared",             # first-party bridge/interface namespace (the escape route)
+    "instance",           # per-deployment instance code
+    "presets",            # shipped preset packs
+    "cabinet/scripts",    # build/verify/rebuild CLIs + cog2 tooling
+    "cabinet/admin-bot",  # live runtime surface
+    "cabinet/mcp-server", # live runtime surface
+    "cabinet/adapters",   # cabinet code lane (forward-guard)
+    "cabinet/channels",   # cabinet code lane (forward-guard)
+    "cabinet/companion",  # cabinet code lane (forward-guard)
+    "cabinet/evals",      # eval harnesses (importable python)
+    "cabinet/fixtures",   # fixture generators (importable python)
+    "conftest.py",        # repo-root pytest fence (imported at collection time)
+]
 
 RULE_FORBIDDEN = "FORBIDDEN_IMPORTS_CORTEX"
 RULE_TOKEN = "FORBIDDEN_CORTEX_TOKEN"

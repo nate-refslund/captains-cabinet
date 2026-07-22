@@ -18,8 +18,9 @@ gate names — each MUST bite:
   * a dynamic / data-plane bypass invisible to an AST walk — `open()` on the
     cortex cache path, or an `importlib.import_module("framework.cortex...")`
     string — caught by the grep backstop (C-F20).
-  * an UNALLOWLISTED importer anywhere in framework/ or cabinet/scripts that is
-    neither cortex-internal nor a curated cortex reader.
+  * an UNALLOWLISTED importer anywhere in a swept first-party tree (framework/,
+    shared/, instance/, presets/, the cabinet code subtrees, root conftest — see
+    SWEEP_TREES) that is neither cortex-internal nor a curated cortex reader.
 
 And the anti-over-fencing controls (must NOT flag): the real committed tree is
 clean ([]); a legitimate cortex reader on the allowlist (cog2-rebuild /
@@ -52,6 +53,19 @@ sys.modules["cog2_import_gate"] = gate
 _spec.loader.exec_module(gate)
 
 _IMPORT = "from framework.cortex import query  # leak\n"
+
+# the first-party importable trees added to SWEEP_TREES to close the bridge-escape
+# (a plain cortex import in any of these used to exit rc=0). Each must now bite.
+NEWLY_SWEPT_TREES = [
+    "shared",
+    "instance",
+    "presets",
+    "cabinet/adapters",
+    "cabinet/channels",
+    "cabinet/companion",
+    "cabinet/evals",
+    "cabinet/fixtures",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -349,3 +363,102 @@ class TestSweepTrees:
                "CACHE = 'beliefs'  # the cortex projection is read elsewhere\n"
                "def run():\n    return {'cortex': 0}\n")
         assert gate.scan(tmp_path) == []
+
+
+# ===========================================================================
+# BRIDGE-ESCAPE CLOSED — every first-party importable tree is swept, so a
+# plain cortex import is never invisible wherever it lives (§7.1)
+# ===========================================================================
+
+class TestBridgeEscapeClosed:
+    def test_newly_swept_trees_are_registered(self):
+        # the trees the escape slipped through must all be in SWEEP_TREES now.
+        for tree in NEWLY_SWEPT_TREES + ["conftest.py"]:
+            assert tree in gate.SWEEP_TREES, tree
+
+    @pytest.mark.parametrize("tree", NEWLY_SWEPT_TREES)
+    def test_stray_cortex_import_in_newly_swept_tree_bites(self, tmp_path, tree):
+        # THE fix: a plain `from framework.cortex import query` written into any
+        # previously-omitted first-party tree now bites (RULE_UNALLOWLISTED) — it
+        # is not forbidden-class, not the falsifier, but a stray reader.
+        rel = f"{tree}/leak.py"
+        _write(tmp_path, rel, _IMPORT)
+        assert rel in _paths_for(gate.scan(tmp_path), gate.RULE_UNALLOWLISTED), rel
+
+    def test_stray_cortex_import_in_root_conftest_bites(self, tmp_path):
+        # conftest.py is the repo-root importable pytest fence (loaded at
+        # collection time); a stray cortex import there must be visible too.
+        _write(tmp_path, "conftest.py", _IMPORT)
+        assert "conftest.py" in _paths_for(
+            gate.scan(tmp_path), gate.RULE_UNALLOWLISTED)
+
+    def test_two_hop_bridge_is_caught_at_the_bridge(self, tmp_path):
+        # The verified escape, now closed: authority/action code reaches the
+        # shadow model through a bridge in a (now-swept) first-party tree. The
+        # authority file names NO cortex token — it imports the bridge — so it is
+        # correctly NOT flagged (direct-import detector, not a transitive graph;
+        # the residual is attribution only). The BRIDGE, which literally imports
+        # framework.cortex, IS flagged in the swept shared/ tree, so the reach can
+        # never be silent.
+        _write(tmp_path, "framework/authority/act.py",
+               "from shared.cortex_bridge import query  # names no cortex token\n")
+        _write(tmp_path, "shared/cortex_bridge.py",
+               "from framework.cortex import query  # the real one-hop reach\n")
+        viol = gate.scan(tmp_path)
+        assert "shared/cortex_bridge.py" in _paths_for(
+            viol, gate.RULE_UNALLOWLISTED), viol
+        assert _rules_for(viol, "framework/authority/act.py") == set(), viol
+
+    def test_bare_cortex_word_in_newly_swept_tree_is_not_overfenced(self, tmp_path):
+        # narrowness: ordinary code in a newly-swept tree that merely mentions
+        # "cortex" as prose/data (no import) must NOT trip the sweep.
+        _write(tmp_path, "instance/flavor-a/thing.py",
+               "CFG = {'cortex': 'read elsewhere'}  # the cortex projection is shadow-only\n"
+               "def run():\n    return CFG\n")
+        _write(tmp_path, "presets/work/preset.py", "import os\n\nVALUE = 1\n")
+        assert gate.scan(tmp_path) == []
+
+    def test_dynamic_cortex_reach_in_newly_swept_tree_bites(self, tmp_path):
+        # the AST-blind dynamic form is caught in the newly-swept trees too.
+        _write(tmp_path, "cabinet/adapters/dyn.py",
+               "import importlib\n"
+               "m = importlib.import_module('framework.cortex.query')\n")
+        assert "cabinet/adapters/dyn.py" in _paths_for(
+            gate.scan(tmp_path), gate.RULE_UNALLOWLISTED)
+
+
+# ===========================================================================
+# ANTI-RECURRENCE — the sweep must enumerate EVERY first-party .py, so an
+# omitted code namespace (the escape's root cause) fails loudly, not silently
+# ===========================================================================
+
+class TestScanSurfaceCompleteness:
+    def test_every_first_party_py_is_on_scan_surface(self):
+        # The bridge-escape's root cause was a SWEEP_TREES that omitted importable
+        # trees. This pins the inverse invariant on the committed repo: every
+        # first-party .py must be enumerated by the gate's scan surface
+        # (SWEEP_TREES + the forbidden trees/files/falsifier), so no importable
+        # module can silently escape the cortex check. A new code namespace with
+        # no SWEEP_TREES entry fails HERE — before it can host an invisible import.
+        def _rels(base: str) -> set[str]:
+            b = _REPO / base
+            if b.is_dir():
+                return {p.relative_to(_REPO).as_posix()
+                        for p in b.rglob("*.py") if p.is_file()}
+            if b.is_file() and b.suffix == ".py":
+                return {b.relative_to(_REPO).as_posix()}
+            return set()
+
+        surface = (list(gate.SWEEP_TREES) + list(gate.FORBIDDEN_TREES)
+                   + list(gate.FORBIDDEN_FILES) + [gate.FALSIFIER])
+        scanned: set[str] = set()
+        for entry in surface:
+            scanned |= _rels(entry)
+
+        all_py = {p.relative_to(_REPO).as_posix()
+                  for p in _REPO.rglob("*.py")
+                  if p.is_file() and "__pycache__" not in p.parts}
+        uncovered = sorted(all_py - scanned)
+        assert uncovered == [], (
+            "first-party .py NOT on the gate scan surface — add its tree to "
+            f"SWEEP_TREES (silent-escape risk): {uncovered}")
