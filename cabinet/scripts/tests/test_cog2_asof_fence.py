@@ -37,8 +37,9 @@ import pytest
 
 _HERE = Path(__file__).resolve().parent
 _ROOT = str(_HERE.parents[2])
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
+for _p in (str(_HERE), _ROOT):          # tests/ is a package: put it on the path
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from framework.cortex import adapters, belief, engine, query  # noqa: E402
 import lib_cog2_envelope as L  # noqa: E402
