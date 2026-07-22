@@ -44,6 +44,7 @@ if _ROOT not in sys.path:
 
 from framework.cortex import adapters, belief, engine  # noqa: E402
 from framework.cortex import query as cortex_query  # noqa: E402
+from framework.fidelity import consequence  # noqa: E402
 
 
 def _load(path: str, name: str):
@@ -107,6 +108,38 @@ def _write(rows, cache_dir):
                                      frontier=max(ids), max_id=max(ids))
     engine.write_projection(beliefs, manifest, cache_dir)
     return manifest
+
+
+# --- consequence stream seeding (§8 sim 5 day-file deletion) -----------------
+# The consequence adapter reads the append-only JSONL ledger under
+# CABINET_EVENT_LOG_DIR; a day-file is one consequence-events-YYYY-MM-DD.jsonl.
+CTT = {"table_version": 1, "producers": {"framework/fidelity/consequence": 850000}}
+
+
+@pytest.fixture
+def cledger(tmp_path, monkeypatch):
+    d = tmp_path / "events"
+    d.mkdir()
+    monkeypatch.setenv("CABINET_EVENT_LOG_DIR", str(d))
+    monkeypatch.delenv("CABINET_SIM_MODE", raising=False)
+    return d
+
+
+def _crow(ts, action, subject, *, actor_id="cos"):
+    return {"ts": ts, "actor": {"kind": "officer", "id": actor_id}, "lane": "acting",
+            "action": action, "subject": subject, "refs": []}
+
+
+def _write_cday(ledger_dir, date, rows):
+    """Append rows to a consequence day-file (one UTC day per file)."""
+    with open(ledger_dir / f"consequence-events-{date}.jsonl", "a") as fh:
+        for r in rows:
+            fh.write(json.dumps(r) + "\n")
+
+
+def _ctriples():
+    """The raw (file, line, row) triples the consequence seen-set is built from."""
+    return list(consequence.iter_ledger_rows())
 
 
 # ===========================================================================
@@ -191,6 +224,31 @@ class TestServeTimeHashBinding:
         assert c2v.main(["verify", "--cache-dir", str(tmp_path)]) == 1
         assert "REFUSE" in capsys.readouterr().out
 
+    def test_toctou_rebuild_between_hash_and_serve_cannot_slip_bytes(
+            self, tmp_path, monkeypatch):
+        """F4 (C-F15 no-window): the serve path reads beliefs.jsonl EXACTLY ONCE,
+        so the nightly rebuild's own os.replace landing AFTER the hash cannot swap
+        in unhashed bytes. Race the read — the 1st read returns the intact (hashed)
+        rows; ANY 2nd read returns a poisoned variant a concurrent rebuild could
+        have written. The fixed one-read serve never performs that 2nd read, so
+        the poison is never served (the old two-read path would hash intact then
+        serve poison — this test fails on it: calls==2 and 'tasks/pwned' served)."""
+        _write(_sample_rows(), tmp_path)
+        intact = engine.read_beliefs_jsonl(tmp_path / "beliefs.jsonl")
+        poisoned = copy.deepcopy(intact)
+        poisoned[0] = {**poisoned[0], "subject_key": "tasks/pwned"}
+        calls = {"n": 0}
+
+        def racing(_path):
+            calls["n"] += 1
+            return intact if calls["n"] == 1 else poisoned
+
+        monkeypatch.setattr(engine, "read_beliefs_jsonl", racing)
+        served = cortex_query.load_beliefs_verified(tmp_path)
+        assert calls["n"] == 1                       # ONE read — no TOCTOU window
+        assert all(b.subject_key != "tasks/pwned" for b in served)
+        assert len(served) == 12                     # the verified rows, intact
+
 
 # ===========================================================================
 # gap taxonomy — seen-set regression (§8 sim 5, A-M9/C-F14)
@@ -273,6 +331,104 @@ class TestGapTaxonomy:
         assert c2v.classify_gaps(prior, current, frontier=6)["status"] == "breach"
         mutant = c2v.classify_gaps(prior, current, frontier=6, mode="forward_window")
         assert mutant["status"] == "ok"     # the below-frontier deletion is missed
+
+
+# ===========================================================================
+# consequence-stream gap taxonomy (§8 sim 5): a deleted day-file is a breach on
+# stable (file, line) coordinates — the ids-only seen-set structurally misses it
+# ===========================================================================
+
+class TestConsequenceGapTaxonomy:
+    def test_manifest_records_consequence_seen_set(self, cledger):
+        _write_cday(cledger, "2026-07-20",
+                    [_crow("2026-07-20T08:00:00Z", "ship", "rel/1"),
+                     _crow("2026-07-20T09:00:00Z", "label", "rel/2")])
+        triples = _ctriples()
+        beliefs = engine.fold(adapters.build_consequence_protos(triples), trust_table=CTT)
+        manifest = engine.build_manifest(beliefs, trust_table=CTT, frontier=None,
+                                         max_id=None, consequence_rows=triples)
+        sc = manifest["seen_consequence"]
+        assert sc["stream_rank"] == 1 and sc["count"] == 2
+        day = sc["files"]["consequence-events-2026-07-20.jsonl"]
+        assert day["intervals"] == [[1, 2]] and day["count"] == 2
+        # ADDITIVE: the default outbox-only rebuild carries NO consequence block.
+        assert "seen_consequence" not in engine.build_manifest(
+            beliefs, trust_table=CTT, frontier=None, max_id=None)
+
+    def test_consequence_day_file_deletion_is_a_breach(self, cledger):
+        # prior: two day-files (a day-file loss is a GAP, not a purge — §5.4b:
+        # the consequence domain has no purge mechanism this phase).
+        _write_cday(cledger, "2026-07-20",
+                    [_crow("2026-07-20T08:00:00Z", "ship", "rel/1"),
+                     _crow("2026-07-20T09:00:00Z", "label", "rel/2")])
+        _write_cday(cledger, "2026-07-21", [_crow("2026-07-21T08:00:00Z", "ship", "rel/3")])
+        prior = engine.consequence_seen(_ctriples())
+        (cledger / "consequence-events-2026-07-20.jsonl").unlink()   # delete a day
+        current = engine.consequence_seen(_ctriples())
+        verdict = c2v.classify_gaps({}, {}, prior_consequence=prior,
+                                    current_consequence=current)
+        assert verdict["status"] == "breach"
+        assert verdict["consequence"]["keyed"] == "file_line"
+        assert ("consequence-events-2026-07-20.jsonl"
+                in verdict["consequence"]["deleted_files"])
+        # detected, NEVER bridged with a fabricated belief.
+        assert "bridged" not in verdict and "fabricated" not in verdict
+
+    def test_consequence_row_deletion_shrinks_coverage_is_a_breach(self, cledger):
+        _write_cday(cledger, "2026-07-20",
+                    [_crow("2026-07-20T08:00:00Z", "ship", "rel/1"),
+                     _crow("2026-07-20T09:00:00Z", "label", "rel/2"),
+                     _crow("2026-07-20T10:00:00Z", "note", "rel/3")])
+        prior = engine.consequence_seen(_ctriples())
+        # drop the LAST row of the surviving day-file -> line coverage shrinks.
+        p = cledger / "consequence-events-2026-07-20.jsonl"
+        p.write_text("".join(p.read_text().splitlines(keepends=True)[:-1]))
+        current = engine.consequence_seen(_ctriples())
+        verdict = c2v.classify_gaps({}, {}, prior_consequence=prior,
+                                    current_consequence=current)
+        assert verdict["status"] == "breach"
+        assert verdict["consequence"]["regressed_lines"][
+            "consequence-events-2026-07-20.jsonl"] == [3]
+
+    def test_mutant_ids_only_seen_set_misses_day_file_deletion(self, cledger):
+        """IDS-ONLY seen-set (engine.consequence_seen key='seq') mirrors the
+        re-enumerated belief intra_stream_seq. A day-file deletion MASKED by an
+        append to another file renumbers the survivors into the SAME dense range,
+        so an id regression sees nothing — MISSED. The correct (file, line)
+        seen-set catches the same deletion (the day-20 basename vanishes)."""
+        _write_cday(cledger, "2026-07-20",
+                    [_crow("2026-07-20T08:00:00Z", "ship", "rel/1"),
+                     _crow("2026-07-20T09:00:00Z", "label", "rel/2"),
+                     _crow("2026-07-20T10:00:00Z", "note", "rel/3")])
+        _write_cday(cledger, "2026-07-21",
+                    [_crow("2026-07-21T08:00:00Z", "ship", "rel/4"),
+                     _crow("2026-07-21T09:00:00Z", "label", "rel/5"),
+                     _crow("2026-07-21T10:00:00Z", "note", "rel/6")])
+        prior_triples = _ctriples()
+        prior_good = engine.consequence_seen(prior_triples)
+        prior_ids = engine.consequence_seen(prior_triples, key="seq")
+        # delete day-20 AND append 3 rows to day-21 so the TOTAL count (the dense
+        # id range) is PRESERVED — the deletion is masked from an ids-only view.
+        (cledger / "consequence-events-2026-07-20.jsonl").unlink()
+        _write_cday(cledger, "2026-07-21",
+                    [_crow("2026-07-21T11:00:00Z", "ship", "rel/7"),
+                     _crow("2026-07-21T12:00:00Z", "label", "rel/8"),
+                     _crow("2026-07-21T13:00:00Z", "note", "rel/9")])
+        cur_triples = _ctriples()
+        assert len(cur_triples) == len(prior_triples) == 6      # count preserved
+        cur_good = engine.consequence_seen(cur_triples)
+        cur_ids = engine.consequence_seen(cur_triples, key="seq")
+        # CORRECT (file, line): the vanished day-20 basename is a breach.
+        good = c2v.classify_gaps({}, {}, prior_consequence=prior_good,
+                                 current_consequence=cur_good)
+        assert good["status"] == "breach"
+        assert ("consequence-events-2026-07-20.jsonl"
+                in good["consequence"]["deleted_files"])
+        # MUTANT ids-only: the dense range is unchanged -> no regression -> MISS.
+        mutant = c2v.classify_gaps({}, {}, prior_consequence=prior_ids,
+                                   current_consequence=cur_ids)
+        assert mutant["status"] == "ok"
+        assert mutant["consequence"]["keyed"] == "seq"
 
 
 # ===========================================================================

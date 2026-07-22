@@ -13,8 +13,10 @@ retention), §8 sim 5 (corruption + gap). Two operator instruments:
   gaps     Regress the current fold manifest's outbox SEEN-SET against a prior
            manifest (§8 sim 5). A hole never seen in either fold is a benign
            rollback-burned BIGSERIAL id; an id seen before and gone now is a
-           breach (seen-set regression); a genesis shift is a breach. The gap is
-           REPORTED, never bridged with a fabricated belief.
+           breach (seen-set regression); a genesis shift is a breach. The
+           CONSEQUENCE seen-set is regressed too, on stable (day-file basename,
+           line) coordinates — a deleted consequence day-file / row is a breach.
+           Every gap is REPORTED, never bridged with a fabricated belief.
 
 The pure classify_gaps() carries two documented mutant seams the §8 sim-5 gate
 drives (never production values): mode="hole_as_breach" (flags the benign hole)
@@ -58,9 +60,60 @@ def _expand(seen: dict) -> set[int]:
     return ids
 
 
+def _expand_lines(file_block: dict) -> set[int]:
+    """A consequence per-file block's inclusive [lo, hi] LINE intervals -> the
+    set of physical line numbers seen in that day-file."""
+    ids: set[int] = set()
+    for lo, hi in (file_block or {}).get("intervals", []) or []:
+        ids.update(range(int(lo), int(hi) + 1))
+    return ids
+
+
+def _classify_consequence(prior: Optional[dict], current: Optional[dict]) -> dict:
+    """Regress the CONSEQUENCE seen-set (§8 sim 5 day-file deletion; the C-F12
+    no-prune retention tripwire). A day-file basename present in the PRIOR
+    manifest and GONE now is a deleted day-file => BREACH; a surviving day-file
+    whose line coverage SHRANK is a deleted row => BREACH. Reported, NEVER
+    bridged with a fabricated belief.
+
+    Keyed on stable (file, line): a re-enumerated dense id — the IDS-ONLY
+    seen-set (engine.consequence_seen's seq mutant) — cannot express this. A
+    day-file deletion masked by an append renumbers into the same range, so an
+    id regression finds nothing and the deletion is MISSED (the negative
+    control). Handed such an ids-only block, this regresses its ids and, count
+    preserved, faithfully misses — which is exactly why the seen-set must key on
+    (file, line), never a re-enumerated id."""
+    prior = prior or {}
+    current = current or {}
+    if "files" in prior:
+        prior_files = prior.get("files", {}) or {}
+        current_files = current.get("files", {}) or {}
+        deleted_files = sorted(set(prior_files) - set(current_files))
+        regressed_lines: dict[str, list[int]] = {}
+        for name, pf in prior_files.items():
+            cf = current_files.get(name)
+            if cf is None:
+                continue                       # whole-file loss -> deleted_files
+            gone = sorted(_expand_lines(pf) - _expand_lines(cf))
+            if gone:
+                regressed_lines[name] = gone
+        breach = bool(deleted_files) or bool(regressed_lines)
+        return {"checked": True, "keyed": "file_line", "breach": breach,
+                "deleted_files": deleted_files, "regressed_lines": regressed_lines}
+    if "intervals" in prior:
+        # IDS-ONLY seen-set (the seq mutant): regress the dense index AS ids — a
+        # count-preserving day-file deletion leaves the range intact -> missed.
+        regressed = sorted(_expand(prior) - _expand(current))
+        return {"checked": True, "keyed": "seq", "breach": bool(regressed),
+                "regressions": regressed}
+    return {"checked": False, "keyed": None, "breach": False}
+
+
 def classify_gaps(prior_seen: dict, current_seen: dict, *,
                   frontier: Optional[int] = None,
-                  mode: str = "regression") -> dict:
+                  mode: str = "regression",
+                  prior_consequence: Optional[dict] = None,
+                  current_consequence: Optional[dict] = None) -> dict:
     """Classify the outbox id-sequence delta between two fold manifests' seen
     blocks (§8 sim 5). Returns {status, regressions, genesis_shift, benign_holes,
     …}. NEVER fabricates a bridging belief — it only reports.
@@ -101,6 +154,11 @@ def classify_gaps(prior_seen: dict, current_seen: dict, *,
     if mode == "hole_as_breach":
         breach = breach or bool(all_holes)
 
+    # Consequence stream (§8 sim 5): a deleted day-file / row is a SEEN-SET
+    # regression too, on stable (file, line) coordinates — never bridged.
+    consequence = _classify_consequence(prior_consequence, current_consequence)
+    breach = breach or consequence["breach"]
+
     return {
         "status": "breach" if breach else "ok",
         "regressions": regressions,
@@ -109,6 +167,7 @@ def classify_gaps(prior_seen: dict, current_seen: dict, *,
         "prior_genesis": prior_gen,
         "current_genesis": cur_gen,
         "mode": mode,
+        "consequence": consequence,
     }
 
 
@@ -122,6 +181,15 @@ def _scrub(value: Any, cap: int = 200) -> str:
     return clean[:cap] + ("…" if len(clean) > cap else "")
 
 
+def _int_or_none(value: Any) -> Optional[int]:
+    """Coerce a receipt's untrusted line field to a plain int, or None — a
+    non-int (str, float, junk) never rides raw into the quarantine JSONL."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def write_quarantine_receipts(receipts: list[dict], path) -> int:
     """Append ingest-fence refusal receipts to a quarantine JSONL (flock; the
     cabinet/logs/* gitignored ledger idiom). Each receipt's reason is scrubbed
@@ -133,7 +201,7 @@ def write_quarantine_receipts(receipts: list[dict], path) -> int:
     with open(path, "a", encoding="utf-8") as fh:
         fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
         for r in receipts:
-            line = {"line": r.get("line"),
+            line = {"line": _int_or_none(r.get("line")),
                     "reason": _scrub(r.get("reason", "")),
                     "event_id": _scrub(r.get("event_id"), cap=64)
                     if r.get("event_id") is not None else None}
@@ -168,9 +236,12 @@ def _cmd_verify(cache_dir: str) -> int:
 
 
 def _cmd_gaps(cache_dir: str, prior_manifest: str, frontier: Optional[int]) -> int:
-    current = _load_manifest(Path(cache_dir)).get("seen", {})
-    prior = json.loads(Path(prior_manifest).read_text(encoding="utf-8")).get("seen", {})
-    verdict = classify_gaps(prior, current, frontier=frontier)
+    current_m = _load_manifest(Path(cache_dir))
+    prior_m = json.loads(Path(prior_manifest).read_text(encoding="utf-8"))
+    verdict = classify_gaps(
+        prior_m.get("seen", {}), current_m.get("seen", {}), frontier=frontier,
+        prior_consequence=prior_m.get("seen_consequence"),
+        current_consequence=current_m.get("seen_consequence"))
     print(json.dumps(verdict, sort_keys=True))
     return 1 if verdict["status"] == "breach" else 0
 

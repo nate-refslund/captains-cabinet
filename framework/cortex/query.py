@@ -226,8 +226,15 @@ def as_of(beliefs: Iterable[_belief.Belief], subject_key: str, *, scope,
 
     subject_beliefs = [b for b in beliefs if b.subject_key == subject_key
                        and (dimension is None or b.dimension == dimension)]
+    # SERVE-SIDE BELT (sim 7, defense-in-depth): a cross_cabinet-tainted belief
+    # is NEVER served in-scope even if it carries a matching local cabinet_id —
+    # the exact shape the ingest fence (adapters._envelope_scope_reason) refuses.
+    # The invariant is enforced at BOTH boundaries; a belief that slipped past
+    # ingest still cannot be served here (a subject left with only such beliefs
+    # falls through to the cross-cabinet ScopeError below — fail closed).
     in_scope = [b for b in subject_beliefs
-                if b.provenance.get("cabinet_id") == cabinet_id]
+                if b.provenance.get("cabinet_id") == cabinet_id
+                and b.provenance.get("classification") != "cross_cabinet"]
     if subject_beliefs and not in_scope:
         # the subject exists ONLY in a foreign cabinet — a mismatch, HARD ERROR
         # (never silently coerced to unknown — that would leak cross-cabinet
@@ -290,13 +297,21 @@ def load_beliefs(jsonl_path) -> list:
             for row in _engine.read_beliefs_jsonl(jsonl_path)]
 
 
-def verify_store(cache_dir) -> str:
-    """Serve-time store-hash binding (C-F15). Re-derive the chained hash from the
-    RE-PARSED beliefs.jsonl rows (never the file byte stream — A-m11) and compare
-    it to fold-manifest.json's belief_store_hash. Return the verified hash on an
-    exact match; raise StoreCorruptError on ANY mismatch, or an unreadable /
-    malformed manifest or store. This runs BEFORE any belief is served, so a
-    corrupt canonical store is refused even if a disposable index is intact."""
+def _verified_rows(cache_dir) -> tuple[str, list[dict]]:
+    """The SINGLE-READ core of the serve-time store-hash binding (C-F15). Read
+    beliefs.jsonl EXACTLY ONCE, re-derive the chained hash from the RE-PARSED
+    rows (never the file byte stream — A-m11), bind it to fold-manifest.json's
+    belief_store_hash, and return (verified_hash, the EXACT verified rows).
+
+    F4 (TOCTOU no-window): the rows returned ARE the bytes that were hashed, so
+    the serve path builds Beliefs from THESE — never a SECOND filesystem read of
+    the same path. A two-read path (hash one read, serve another) has a window in
+    which the nightly rebuild's own os.replace (engine._atomic_write) lands
+    BETWEEN the reads, serving bytes that were never hashed; one read closes it.
+
+    Raises StoreCorruptError on ANY hash mismatch, or an unreadable / malformed
+    manifest or store (a non-dict row that TypeErrors in the hash re-derivation
+    is a malformed store, refused — never a traceback past the caller)."""
     cache_dir = Path(cache_dir)
     try:
         manifest = json.loads(
@@ -308,24 +323,40 @@ def verify_store(cache_dir) -> str:
     if not isinstance(expected, str) or not expected:
         raise StoreCorruptError("fold manifest carries no belief_store_hash")
     try:
-        rows = _engine.read_beliefs_jsonl(cache_dir / "beliefs.jsonl")
+        rows = _engine.read_beliefs_jsonl(cache_dir / "beliefs.jsonl")   # the ONE read
         actual = _belief.hash_canonical_rows(rows)
-    except (OSError, ValueError, KeyError) as exc:
+    except (OSError, ValueError, KeyError, TypeError) as exc:
         raise StoreCorruptError(
             f"belief store unreadable/malformed: {type(exc).__name__}") from None
     if actual != expected:
         raise StoreCorruptError(
             f"belief-store hash mismatch (manifest {expected[:12]}… vs store "
             f"{actual[:12]}…) — refuse to serve, rebuild-from-zero to recover")
-    return actual
+    return actual, rows
+
+
+def verify_store(cache_dir) -> str:
+    """Serve-time store-hash binding (C-F15). Re-derive the chained hash from the
+    RE-PARSED beliefs.jsonl rows (never the file byte stream — A-m11) and compare
+    it to fold-manifest.json's belief_store_hash. Return the verified hash on an
+    exact match; raise StoreCorruptError on ANY mismatch, or an unreadable /
+    malformed manifest or store. This runs BEFORE any belief is served, so a
+    corrupt canonical store is refused even if a disposable index is intact. The
+    verified read is SHARED with load_beliefs_verified — one read, no window."""
+    return _verified_rows(cache_dir)[0]
 
 
 def load_beliefs_verified(cache_dir, *, verify: bool = True) -> list:
     """The BOUND serve path (C-F15): verify the store hash against the manifest
-    BEFORE returning any belief. verify=False is the SELF-HEALING mutant seam —
-    it serves whatever bytes are on disk (corrupt or not), the §8 sim-5 negative
-    control the serve-time binding exists to kill."""
+    and serve the EXACT verified rows in ONE read (F4 no-window). verify=True
+    reads beliefs.jsonl exactly once via the shared verified-read core and builds
+    Beliefs from those verified rows — NEVER a second filesystem read, so a
+    rebuild's os.replace landing after the hash cannot slip unhashed bytes past
+    the binding. verify=False is the SELF-HEALING mutant seam — it serves
+    whatever bytes are on disk (corrupt or not), the §8 sim-5 negative control
+    the serve-time binding exists to kill."""
     cache_dir = Path(cache_dir)
-    if verify:
-        verify_store(cache_dir)
-    return load_beliefs(cache_dir / "beliefs.jsonl")
+    if not verify:
+        return load_beliefs(cache_dir / "beliefs.jsonl")
+    _hash, rows = _verified_rows(cache_dir)
+    return [_belief.belief_from_row(row) for row in rows]

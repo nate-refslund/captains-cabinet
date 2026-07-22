@@ -226,6 +226,34 @@ class TestSampleFloor:
         f = cp.per_day_floor(lines, today="2026-07-13", floor=3)
         assert f["breach"] is False
 
+    def test_F1_stale_old_day_does_not_poison_a_later_clean_day(self):
+        # F1: an old below-floor (asleep/stale) day is a diagnostic `breach`, but
+        # run() judges `latest_breach` (yesterday) — a clean recent day is NOT
+        # poisoned. Before the fix run() folded any(windows) -> permanent red.
+        lines = [{"date": "2026-07-10", "sampled": 0, "frame_size": 5},  # asleep
+                 {"date": "2026-07-11", "sampled": 6, "frame_size": 6},
+                 {"date": "2026-07-12", "sampled": 6, "frame_size": 6}]
+        f = cp.per_day_floor(lines, today="2026-07-13", floor=3)
+        assert f["breach"] is True            # the old 07-10 gap (diagnostic only)
+        assert f["latest_breach"] is False    # yesterday (07-12) clean -> recovers
+
+    def test_F4_below_frame_size_day_is_not_a_count_shortfall_breach(self):
+        # F4: a day whose authoritative universe was smaller than the floor
+        # sampled everything available -> NOT a breach by count-shortfall.
+        lines = [{"date": "2026-07-10", "sampled": 2, "frame_size": 2},
+                 {"date": "2026-07-11", "sampled": 2, "frame_size": 2}]
+        f = cp.per_day_floor(lines, today="2026-07-12", floor=3)
+        assert f["breach"] is False
+        assert f["latest_breach"] is False
+
+    def test_dark_sampler_with_a_real_universe_still_breaches(self):
+        # anti-regression on the frame cap: a day that had a real (>= floor)
+        # universe but sampled below floor IS a breach — the cap exempts only a
+        # genuinely small universe, never a dark/dead sampler.
+        lines = [{"date": "2026-07-10", "sampled": 0, "frame_size": 9}]
+        f = cp.per_day_floor(lines, today="2026-07-11", floor=3)
+        assert f["latest_breach"] is True
+
 
 # ===========================================================================
 # import ban (C-F17) — the falsifier imports NO framework.cortex.*
@@ -298,6 +326,56 @@ class TestRun:
         assert rc == 0
         assert _ledger(root)[-1]["status"] == "unconfigured"
 
+    def test_F1_stale_day_does_not_poison_a_later_clean_run(
+            self, tmp_path, monkeypatch):
+        # F1 end-to-end: seed an old below-floor (asleep) day + a clean yesterday,
+        # then run a clean today -> ok / exit 0. Before the fix the any()-fold
+        # over the 07-10 gap forced a permanent red on every later clean run.
+        root = _root(tmp_path, monkeypatch)
+        monkeypatch.setenv("COG2_PARITY_SAMPLE_FLOOR", "3")
+        path = root / "cabinet" / "logs" / "cog2-parity.jsonl"
+        path.write_text(
+            json.dumps({"ts": "2026-07-10T00:00:00Z", "date": "2026-07-10",
+                        "status": "breach", "sampled": 0, "frame_size": 5}) + "\n"
+            + json.dumps({"ts": "2026-07-11T00:00:00Z", "date": "2026-07-11",
+                          "status": "ok", "sampled": 6, "frame_size": 6}) + "\n")
+        auth = {f"t{i}": {"status": "done"} for i in range(6)}
+        _seam(tmp_path, monkeypatch, auth, dict(auth))
+        rc = cp.run(today="2026-07-12", sample_n=6)
+        assert rc == 0                                    # NOT poisoned by 07-10
+        line = _ledger(root)[-1]
+        assert line["status"] == "ok"
+        assert line["day_floor_breach"] is False
+
+    def test_F6_malformed_seam_is_a_loud_error_exit_1(
+            self, tmp_path, monkeypatch, capsys):
+        # F6: a configured-but-unreadable data source -> status:"error", exit 1
+        # (NEVER a silent green). Drives run()'s ValueError/JSONDecodeError arm,
+        # and the doctor --probe reads the ERROR token loudly.
+        root = _root(tmp_path, monkeypatch)
+        seam = tmp_path / "bad.json"
+        seam.write_text("{ this is not valid json")
+        monkeypatch.setenv("COG2_PARITY_DATA_JSON", str(seam))
+        rc = cp.run(today="2026-07-22")
+        assert rc == 1
+        assert _ledger(root)[-1]["status"] == "error"
+        capsys.readouterr()                       # drain run()'s stderr
+        assert cp.probe() == 0
+        assert capsys.readouterr().out.strip().startswith("ERROR ")
+
+    def test_F6_seam_missing_authoritative_is_a_loud_error(
+            self, tmp_path, monkeypatch):
+        # F6: a well-formed but mis-shaped seam (no 'authoritative' map) is a
+        # CONFIGURED failure -> _ConfiguredButFailing -> status:"error", exit 1
+        # (the other run() error arm; a configured reader must never fall to ok).
+        root = _root(tmp_path, monkeypatch)
+        seam = tmp_path / "noauth.json"
+        seam.write_text(json.dumps({"cortex": {"t1": {"status": "done"}}}))
+        monkeypatch.setenv("COG2_PARITY_DATA_JSON", str(seam))
+        rc = cp.run(today="2026-07-22")
+        assert rc == 1
+        assert _ledger(root)[-1]["status"] == "error"
+
 
 class TestEscalationLadder:
     def _seed(self, tmp_path, monkeypatch):
@@ -345,6 +423,53 @@ class TestEscalationLadder:
         assert cp.run(today=d3, sample_n=1, resample="memoryless") == 1
         assert _ledger(root)[-1]["escalated"] is None
         assert not rec.exists() or rec.read_text().strip() == ""  # zero cards
+
+    def test_F2_latest_open_breaches_skips_reader_outage_lines(self):
+        # F2 (C-F18): error/unconfigured skeletons carry open_breaches:[] — they
+        # must NOT wipe the sticky set from the last real breach verdict.
+        lines = [{"status": "breach", "open_breaches": ["s-x"]},
+                 {"status": "error", "open_breaches": []},
+                 {"status": "unconfigured", "open_breaches": []}]
+        assert cp._latest_open_breaches(lines) == ["s-x"]   # outages skipped
+
+    def test_F2_error_date_does_not_reset_the_breach_ladder(self):
+        # F2 (C-F18): a reader outage on the middle date neither escalates nor
+        # RESETS the ladder — d1's breach still counts across the d2 outage.
+        lines = [{"date": "2026-03-01", "status": "breach"},
+                 {"date": "2026-03-02", "status": "error"}]
+        prev, consecutive = cp._previous_date_breached(lines, "2026-03-03")
+        assert prev is True
+        assert consecutive == 1
+
+    def test_F2_breach_then_error_then_recovered_still_files_one_card(
+            self, tmp_path, monkeypatch):
+        # F2 end-to-end: an adversary kills the reader on the middle day
+        # (breach -> error -> breach). The outage must not wipe the sticky set or
+        # reset the ladder — the 2nd real breach date still fires exactly ONE
+        # captain card and re-flags the open breach.
+        root = _root(tmp_path, monkeypatch)
+        monkeypatch.setenv("COG2_PARITY_SAMPLE_FLOOR", "1")
+        rec = _stub_attention(tmp_path, monkeypatch)
+        good = tmp_path / "good.json"
+        good.write_text(json.dumps({
+            "authoritative": {"s-x": {"status": "wip"}, "s-y": {"status": "done"}},
+            "cortex": {"s-y": {"status": "done"}}}))        # s-x missing -> breach
+        bad = tmp_path / "bad.json"
+        bad.write_text("{ this is not valid json")          # reader outage
+        d1, d2, d3 = "2026-03-01", "2026-03-02", "2026-03-03"   # contiguous
+        monkeypatch.setenv("COG2_PARITY_DATA_JSON", str(good))
+        assert cp.run(today=d1, sample_n=2) == 1
+        assert _ledger(root)[-1]["escalated"] is None       # no prior date yet
+        monkeypatch.setenv("COG2_PARITY_DATA_JSON", str(bad))
+        assert cp.run(today=d2) == 1
+        assert _ledger(root)[-1]["status"] == "error"       # loud outage
+        monkeypatch.setenv("COG2_PARITY_DATA_JSON", str(good))
+        assert cp.run(today=d3, sample_n=2) == 1
+        last = _ledger(root)[-1]
+        assert last["status"] == "breach"
+        assert "s-x" in last["open_breaches"]               # re-flagged after outage
+        assert last["escalated"] == "card-filed"            # ladder survived outage
+        assert rec.read_text().count("\n") == 1             # exactly one card
 
 
 # ===========================================================================
@@ -415,6 +540,46 @@ class TestUntrustedText:
         # scrubbed or not, never reaches it.
         assert rec.exists()
         assert "rm -rf" not in rec.read_text()
+
+
+# ===========================================================================
+# F3 — a CONFIGURED consequence reader that fails is a LOUD error, not {}
+# ===========================================================================
+
+class TestConfiguredConsequenceReader:
+    def _inject_failing_consequence(self, monkeypatch):
+        """Register a fake framework.fidelity.consequence whose read_ledger
+        RAISES, so `from framework.fidelity import consequence` resolves to it
+        (credential/format rot, deterministic — no live event dir needed)."""
+        import types
+        fk_root = types.ModuleType("framework")
+        fk_fid = types.ModuleType("framework.fidelity")
+        fk_con = types.ModuleType("framework.fidelity.consequence")
+        fk_root.fidelity = fk_fid
+        fk_fid.consequence = fk_con
+
+        def _boom():
+            raise RuntimeError("consequence ledger unreadable (rot)")
+
+        fk_con.read_ledger = _boom
+        monkeypatch.setitem(sys.modules, "framework", fk_root)
+        monkeypatch.setitem(sys.modules, "framework.fidelity", fk_fid)
+        monkeypatch.setitem(sys.modules, "framework.fidelity.consequence", fk_con)
+
+    def test_F3_configured_reader_failure_raises_loud(self, tmp_path, monkeypatch):
+        _root(tmp_path, monkeypatch)
+        monkeypatch.setenv("CABINET_EVENT_LOG_DIR", str(tmp_path / "events"))
+        self._inject_failing_consequence(monkeypatch)
+        with pytest.raises(cp._ConfiguredButFailing) as exc:
+            cp._authoritative_from_consequence()
+        # the reason is INERT (exception class name only) — never a path/stderr.
+        assert "RuntimeError" in str(exc.value)
+
+    def test_F3_unconfigured_reader_is_silent_empty(self, tmp_path, monkeypatch):
+        _root(tmp_path, monkeypatch)   # CABINET_EVENT_LOG_DIR unset by _root
+        # env unset -> genuinely no consequence source -> honest {}, never raises
+        self._inject_failing_consequence(monkeypatch)   # even if a reader exists
+        assert cp._authoritative_from_consequence() == {}
 
 
 if __name__ == "__main__":

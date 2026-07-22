@@ -229,30 +229,59 @@ def _as_date(value: Any) -> dt.date:
     return dt.datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
 
 
-def per_day_floor(lines: list[dict[str, Any]], *, today: Any,
-                  floor: int) -> dict[str, Any]:
+# Bound the per-day window series (COG-1 precedent
+# task-sync-drift-falsifier.py:530): the soak is <= ~2 weeks, so 45 days of
+# lookback covers it without the series growing unboundedly across a long-lived
+# ledger. run() judges `latest_breach` (the most-recent complete day), NEVER
+# `any(windows)`, so one stale/dark/below-floor day cannot poison a LATER clean
+# day (the F1 permanent-poison fix).
+_FLOOR_LOOKBACK_DAYS = 45
+
+
+def per_day_floor(lines: list[dict[str, Any]], *, today: Any, floor: int,
+                  lookback_days: int = _FLOOR_LOOKBACK_DAYS) -> dict[str, Any]:
     """Per-day sample floor over the verdict ledger (task e). Each COMPLETE UTC
-    day strictly before `today` must carry >= floor sampled subjects; a day with
-    fewer — INCLUDING an ABSENT day inside the observed range (the falsifier
-    never ran / the projection went dark) — is a BREACH window, so a dead
-    falsifier cannot pass the soak vacuously. The current partial day is not
-    judged."""
+    day strictly before `today` (within `lookback_days`) must carry >= its
+    effective floor of sampled subjects; a day with fewer — INCLUDING an ABSENT
+    day inside the observed range (the falsifier never ran / the projection went
+    dark) — is a BREACH window, so a dead falsifier cannot pass the soak
+    vacuously. The current partial day is not judged.
+
+    The per-day floor is CAPPED by that day's recorded `frame_size` — the same
+    min(floor, universe) cap parity_scan applies per cycle (see effective_floor
+    below): a day that RAN but whose authoritative universe was smaller than the
+    floor sampled everything available and is NOT a count-shortfall breach (F4).
+    A day with NO recorded frame (an absent day, or a zero-universe
+    error/unconfigured skeleton) keeps the FULL floor, so a dark/dead falsifier
+    still breaches.
+
+    Returns {windows: [(date, count, breach)], breach (any window — a diagnostic
+    field only), latest_breach (the most-recent complete window — the value
+    run() actually judges)}."""
     today_d = _as_date(today)
     counts: dict[str, int] = {}
+    frames: dict[str, int] = {}
     for line in lines:
         date = str(line.get("date", ""))
         if len(date) == 10 and _as_date(date) < today_d:
             counts[date] = counts.get(date, 0) + int(line.get("sampled", 0) or 0)
+            frames[date] = max(frames.get(date, 0),
+                               int(line.get("frame_size", 0) or 0))
     present = sorted(counts)
     windows: list[tuple[str, int, bool]] = []
     if present:
-        start = _as_date(present[0])
+        start = max(_as_date(present[0]),
+                    today_d - dt.timedelta(days=lookback_days))
         end = today_d - dt.timedelta(days=1)
         day = start
         while day <= end:
             key = day.isoformat()
             count = counts.get(key, 0)
-            windows.append((key, count, count < floor))
+            frame = frames.get(key, 0)
+            # cap the floor by that day's universe; a zero/absent frame keeps
+            # the full floor so a dark day is still a breach (not exempted).
+            effective = min(floor, frame) if frame else floor
+            windows.append((key, count, count < effective))
             day += dt.timedelta(days=1)
     breach = any(w[2] for w in windows)
     return {"windows": windows, "breach": breach,
@@ -290,9 +319,15 @@ def _append_line(line: dict[str, Any], path: Path | None = None) -> None:
 
 
 def _latest_open_breaches(lines: list[dict[str, Any]]) -> list[str]:
-    """The open-breach carry from the most recent verdict line — the sticky set
-    the next cycle force-includes."""
+    """The open-breach carry from the most recent PARITY verdict line — the
+    sticky set the next cycle force-includes. error/unconfigured skeletons are
+    reader OUTAGES, not parity verdicts: they carry `open_breaches: []`, so
+    consuming one would WIPE the sticky set and let an adversary who kills the
+    reader on alternate days (breach→error→…) suppress the forced re-sampling
+    (C-F18). Skip them and read the last real verdict's carry instead."""
     for line in reversed(lines):
+        if line.get("status") in ("error", "unconfigured"):
+            continue
         if isinstance(line.get("open_breaches"), list):
             return [str(s) for s in line["open_breaches"]]
     return []
@@ -302,7 +337,10 @@ def _previous_date_breached(lines: list[dict[str, Any]], today: str
                             ) -> tuple[bool, int]:
     """(last distinct pre-today date ended in breach?, trailing-consecutive
     breach-date count). Same-day re-runs never escalate — they ARE the self-heal
-    attempt; an intervening ok DATE resets the ladder."""
+    attempt; an intervening ok DATE resets the ladder. An error/unconfigured
+    DATE is a reader OUTAGE — it neither escalates nor RESETS the ladder, so an
+    adversary cannot suppress escalation by killing the reader on the day
+    between two breaches (breach→error→breach still escalates; C-F18)."""
     by_date: dict[str, dict[str, Any]] = {}
     order: list[str] = []
     for line in lines:
@@ -314,10 +352,13 @@ def _previous_date_breached(lines: list[dict[str, Any]], today: str
         by_date[date] = line  # last line of that date wins
     consecutive = 0
     for date in reversed(order):
-        if by_date[date].get("status") == "breach":
+        status = by_date[date].get("status")
+        if status == "breach":
             consecutive += 1
+        elif status in ("error", "unconfigured"):
+            continue          # a reader outage neither escalates nor resets
         else:
-            break
+            break             # a genuine ok DATE resets the ladder
     return consecutive > 0, consecutive
 
 
@@ -423,8 +464,15 @@ _OUTBOX_SQL = (
 def _authoritative_from_consequence() -> dict[str, Any]:
     """Identity chains from the consequence ledger's OWN reader (the domain's
     reader — NOT a projection adapter). Lazy import so the module top stays
-    stdlib-only and the --probe path never touches framework. Best-effort:
-    absent event dir / any read hiccup → {} (the outbox frame still stands)."""
+    stdlib-only and the --probe path never touches framework.
+
+    CONFIGURED vs UNCONFIGURED (F3): the consequence domain is CONFIGURED iff
+    CABINET_EVENT_LOG_DIR is set. Unset → {} (genuinely no consequence source on
+    this box; the outbox frame still stands — an honest no-op). SET but the
+    reader breaks (import / read raises) → RAISE _ConfiguredButFailing, exactly
+    as loud as a psql / cortex-cmd failure: silently swallowing it to {} would
+    DELETE every cid: subject from the frame and un-stick live cid: breaches —
+    the credential-rot event this falsifier exists to catch."""
     if not os.environ.get("CABINET_EVENT_LOG_DIR"):
         return {}
     repo = str(_repo_root())
@@ -433,8 +481,9 @@ def _authoritative_from_consequence() -> dict[str, Any]:
     try:
         from framework.fidelity import consequence  # lazy, domain reader only
         rows = consequence.read_ledger()
-    except Exception:  # noqa: BLE001 — a ledger hiccup must not crash the frame
-        return {}
+    except Exception as exc:  # noqa: BLE001 — a CONFIGURED reader failure = loud
+        raise _ConfiguredButFailing(
+            f"consequence reader failed: {type(exc).__name__}") from None
     out: dict[str, Any] = {}
     for ev in rows:
         if not isinstance(ev, dict):
@@ -572,13 +621,17 @@ def run(*, today: Any = None, sample_n: int | None = None,
         floor=floor, sampling_frame=sampling_frame,
         ground_truth_source=ground_truth_source, resample=resample)
     day_floor = per_day_floor(prior, today=today_s, floor=floor)
+    # Judge the MOST-RECENT complete day only (latest_breach), never a fold over
+    # all history: an old stale/asleep/below-floor day must not poison a later
+    # clean day (F1). `breach` (any window) stays available as a diagnostic.
+    day_floor_breach = day_floor["latest_breach"]
 
-    breach = verdict["status"] == "breach" or day_floor["breach"]
+    breach = verdict["status"] == "breach" or day_floor_breach
     line = _skeleton("breach" if breach else "ok", today_s)
     line.update(sampled=verdict["sampled"], frame_size=verdict["frame_size"],
                 breaches=verdict["breaches"][:20],
                 open_breaches=verdict["open_breaches"],
-                floor_ok=verdict["floor_ok"], day_floor_breach=day_floor["breach"])
+                floor_ok=verdict["floor_ok"], day_floor_breach=day_floor_breach)
 
     if breach:
         prev_breached, consecutive = _previous_date_breached(prior, today_s)
@@ -591,7 +644,7 @@ def run(*, today: Any = None, sample_n: int | None = None,
     if breach:
         detail = (f"{len(verdict['breaches'])}/{verdict['sampled']} diverge"
                   if verdict["breaches"] else
-                  f"sample floor missed (day_floor={day_floor['breach']}, "
+                  f"sample floor missed (day_floor={day_floor_breach}, "
                   f"cycle_floor_ok={verdict['floor_ok']})")
         print(f"cog2-parity: BREACH {detail}; consecutive breach dates="
               f"{line['consecutive_breach_dates']}"
