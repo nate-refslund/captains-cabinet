@@ -378,20 +378,29 @@ def _consequence_identity(row: dict) -> tuple:
     return (actor_id, row.get("action", ""), row.get("subject", ""), row.get("ts", ""))
 
 
-def _consequence_row_to_proto(row: dict, seq: int) -> dict:
+def _consequence_row_to_proto(row: dict, seq: int, *, local_cabinet_id: str) -> dict:
     """One consequence row -> one observation/consequence proto-belief with
     deterministic synthetic provenance. seq is the (file, line) enumeration index
-    (source order) that orders the enrichment supersession chain."""
+    (source order) that orders the enrichment supersession chain. local_cabinet_id
+    is the DECLARED local scope stamp (D1 §6.1 — see the cabinet_id line below)."""
     identity = _consequence_identity(row)
     subject_key = f"{_CONSEQUENCE_DIMENSION}/{_digest(list(identity))}"
     # documented synthetic event_id: digest("consequence:" + canonical row bytes).
     event_id = _digest("consequence:" + _canonical(row).decode("utf-8"))
     ts = _parse_ts_or_absent(row.get("ts"))
+    # D1 (§6.1): stamp the local cabinet_id so the served subject passes the scope
+    # filter (query.py:236) — pre-D1 the four-key provenance carried none, so every
+    # consequence/<digest> subject hard-ScopeError'd (query.py:238-245) and `tested`
+    # was vacuous. A consequence row is an honest LOCAL observation by construction
+    # (iter_ledger_rows reads only local files behind _safe_ledger_files), so the
+    # stamp is the DECLARED local cabinet (mirroring build_envelope_protos(*,
+    # local_cabinet_id), :259) — never a row field, never an env read (A-M6).
     provenance = {
         "event_id": event_id,
         "producer": _CONSEQUENCE_PRODUCER,
         "stream_rank": _CONSEQUENCE_STREAM_RANK,
         "intra_stream_seq": seq,          # (file, line) order from iter_ledger_rows
+        "cabinet_id": local_cabinet_id,   # D1 (§6.1): local scope stamp
     }
     return {
         "kind": _CONSEQUENCE_KIND,
@@ -406,9 +415,11 @@ def _consequence_row_to_proto(row: dict, seq: int) -> dict:
     }
 
 
-def build_consequence_protos(ledger_rows) -> list[dict]:
+def build_consequence_protos(ledger_rows, *, local_cabinet_id: str) -> list[dict]:
     """Fold-prepare (file, line, row) triples from consequence.iter_ledger_rows()
-    into proto-beliefs. intra_stream_seq = the enumeration index over the KEPT
+    into proto-beliefs. local_cabinet_id is the DECLARED D1 (§6.1) scope stamp,
+    threaded verbatim to _consequence_row_to_proto (the build_envelope_protos(*,
+    local_cabinet_id) precedent, :259). intra_stream_seq = the enumeration index over the KEPT
     (deduped) iterator order — a deterministic source order; within one identity
     group it orders the enrichment supersession chain (later == head).
 
@@ -429,14 +440,17 @@ def build_consequence_protos(ledger_rows) -> list[dict]:
         if canon in seen:
             continue
         seen.add(canon)
-        protos.append(_consequence_row_to_proto(row, seq))
+        protos.append(_consequence_row_to_proto(row, seq,
+                                                local_cabinet_id=local_cabinet_id))
         seq += 1
     return protos
 
 
-def read_consequence_protos() -> list[dict]:
+def read_consequence_protos(*, local_cabinet_id: str) -> list[dict]:
     """Read the consequence ledger via its OWN history-preserving reader
     (consequence.iter_ledger_rows — the ONLY symbol imported from that module,
-    §7.1) and fold-prepare it. Lazy import keeps the module top import-inert."""
+    §7.1) and fold-prepare it. Lazy import keeps the module top import-inert.
+    local_cabinet_id is the DECLARED D1 (§6.1) scope stamp from the fold entry."""
     from framework.fidelity.consequence import iter_ledger_rows
-    return build_consequence_protos(iter_ledger_rows())
+    return build_consequence_protos(iter_ledger_rows(),
+                                    local_cabinet_id=local_cabinet_id)

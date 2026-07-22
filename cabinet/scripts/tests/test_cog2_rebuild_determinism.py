@@ -612,7 +612,7 @@ from framework.cortex import adapters, belief, engine
 from framework.fidelity import consequence
 tt = yaml.safe_load(open(sys.argv[2], encoding="utf-8")) or {}
 tt.setdefault("producers", {})
-protos = adapters.build_consequence_protos(list(consequence.iter_ledger_rows()))
+protos = adapters.build_consequence_protos(list(consequence.iter_ledger_rows()), local_cabinet_id="main")
 beliefs = engine.fold(protos, trust_table=tt)
 print(json.dumps({"hash": belief.chained_hash(beliefs), "beliefs": len(beliefs)},
                  sort_keys=True))
