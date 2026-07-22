@@ -1,0 +1,21 @@
+# cabinet/config/cortex-source-trust.v1.yml
+# COG-2 (Cortex) versioned source-trust table — a HASHED rebuild input (part of
+# the fold's hash epoch tuple, docs/plans/cognitive-core-phase-2-contract-2026-07-22.md
+# §5.1/§5.6). Confidence is derived STATICALLY at fold time from this table:
+# a belief's producer_key resolves to a fixed-point ppm integer, or — when the
+# producer is ABSENT from this table — the belief carries NO confidence
+# (unknown), never 0 (never-a-score, §5.6). Editing this file is an EPOCH BUMP:
+# it changes the honest hash lineage, never a determinism regression.
+#
+# NEVER-A-SCORE: these ppm values are source-trust weights (how much we trust a
+# producer's assertions), NOT a quality score of any officer/candidate. Keys are
+# component/source identities only (G-F4); an officer identity here is invalid.
+#
+# Provenance: authored per the 2026-07-07 full-autonomy grant + the 2026-07-20
+# cognitive-masterplan continuous grant (COG-2 UNIT 1).
+table_version: 1
+producers:
+  # The COG-1 officer_tasks transactional-outbox relay (the only producer this
+  # UNIT 1 slice folds). 900000 ppm = 0.9: a co-committed domain outbox is a
+  # high-trust first-party source, but not certainty.
+  officer_tasks/outbox-relay: 900000

@@ -79,6 +79,20 @@ temporary_allowances:
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: CI tolerance folded or COG-7 compaction
+  - phase: COG-2
+    budget: framework_production_modules
+    additional: 4
+    reason: COG-2 shadow temporal world model (Cortex) — the framework/cortex package (__init__/belief/engine/adapters). EXACT measured unit-1 delta (+4), NOT the §10 planning ceiling of 6 — the structural-compaction mutant gate (test_cognitive_architecture_census.py) requires zero headroom (observed==max) so any growth is caught, so each COG-2 unit bumps this allowance to its exact new running total rather than pre-allocating the ceiling; tightened to phase actual at done-flip (shrink-only)
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: COG-7 compaction folds the projection, or the phase is superseded
+  - phase: COG-2
+    budget: framework_production_noncomment_lines
+    additional: 492
+    reason: COG-2 shadow temporal world model (Cortex) — belief record + pure deterministic fold + canonical hash (recorder dialect by identity) + tasks adapter. EXACT measured unit-1 delta (+492) via cognitive-architecture-census.py, NOT the §10 planning ceiling of 1800 — the structural-compaction mutant gate requires zero headroom (observed==max), so each COG-2 unit bumps this allowance to its exact new running total; tightened to phase actual at the ledger done-flip (shrink-only)
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: COG-7 compaction folds the projection, or the phase is superseded
 ownership:
   authoritative_state: domain_transaction
   cross_domain_delivery: transactional_outbox

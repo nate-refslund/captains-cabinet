@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "cortex/source-trust@1 — the source-trust tuple carried on every belief",
+  "description": "docs/plans/cognitive-core-phase-2-contract-2026-07-22.md §4 (G-F4 producer-identity invariant). producer_key MUST be a source/component identity drawn from the adapter-declared producer set — an officer identity is structurally invalid (the never-a-score latch). Within the closed registry subset the enum IS the mechanical latch: an officer slug is not a member, so it fails validation. Later COG-2 units extend the enum as adapters land (consequence, envelope-file).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["table_version", "producer_key"],
+  "properties": {
+    "table_version": {
+      "description": "Version of the versioned trust table this confidence was derived under (epoch input)",
+      "type": "integer",
+      "minimum": 1
+    },
+    "producer_key": {
+      "description": "Component/source identity — the adapter-declared producer set only, never an officer identity",
+      "enum": ["officer_tasks/outbox-relay"]
+    }
+  }
+}

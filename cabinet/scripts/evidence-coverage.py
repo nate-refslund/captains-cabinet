@@ -298,6 +298,22 @@ SURFACES: list[dict[str, Any]] = [
         "globs": ["framework/evidence_fuel_integrity.py"],
     },
     {
+        "id": "cortex-projection-shadow",
+        "kind": "infra",
+        # COG-2 (2026-07-22): the shadow temporal world model's belief record
+        # imports the recorder's pure _canonical/_digest BY IDENTITY (contract
+        # "no second hashing dialect" / the recorded G-F5 coupling) — an
+        # evidence_import seam only, NOT an evidence producer or consumer.
+        # Cortex reads no store, writes no store, and is imported by no
+        # authority/action code (its own AST import gate lands in a later unit).
+        # Enumerated infra so the detector hit maps here instead of tripping
+        # drift; enumeration grants no power. Exact path on purpose — a future
+        # framework/cortex/* sibling that imports evidence must still trip the
+        # drift catch and be reviewed here.
+        "design": "COG-2 shadow world model — imports the recorder hash dialect only, report-only, zero store consumption",
+        "globs": ["framework/cortex/belief.py"],
+    },
+    {
         "id": "signing-broker",
         "kind": "infra",
         # HP-1 (2026-07-17): out-of-process HMAC key custody daemon —

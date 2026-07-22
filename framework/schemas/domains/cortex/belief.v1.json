@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "cortex/belief@1 — shadow temporal world-model belief record",
+  "description": "The Cortex belief record (docs/plans/cognitive-core-phase-2-contract-2026-07-22.md §4). Resolved via framework/triggers/schema_registry.py (closed Draft-2020-12 subset — no items/pattern keywords, so array-element shape is not validated here). identity = belief_id, a recorder-dialect digest of (kind, subject_key, dimension, provenance.event_id, adapter_ordinal); claim_digest is a STORED field, never identity. UNIT 1 validates the RECORD shape and the universal provenance minimum; the two-regime (legacy allowed-absent) provenance enforcement and the never-a-score query-shape guard land in later COG-2 units.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "belief_id",
+    "kind",
+    "subject_key",
+    "dimension",
+    "adapter_ordinal",
+    "provenance",
+    "source_trust",
+    "supersedes",
+    "contradicts",
+    "status",
+    "claim_completeness"
+  ],
+  "properties": {
+    "belief_id": {
+      "description": "Deterministic recorder-dialect digest of the identity tuple (never a build-time ULID)",
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64
+    },
+    "kind": {
+      "description": "Closed epistemic kind enum (foundry.md:89)",
+      "enum": [
+        "entity",
+        "relationship",
+        "resource",
+        "capability",
+        "commitment",
+        "constraint",
+        "risk",
+        "hypothesis",
+        "observation"
+      ]
+    },
+    "subject_key": {
+      "description": "Canonical domain-scoped subject key, e.g. tasks/<task_id> — pinned per adapter, never free-text",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "dimension": {
+      "description": "The claim dimension supersession and contradiction key on (tasks: status | occurrence) — pinned mechanically per adapter",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "adapter_ordinal": {
+      "description": "0-based index of this belief among the beliefs one adapter emits for one event (deterministic per adapter version)",
+      "type": "integer",
+      "minimum": 0
+    },
+    "claim": {
+      "description": "Canonical JSON claim (recorder dialect), schema-resolved; ABSENT (null) after a source purge",
+      "type": ["object", "null"]
+    },
+    "claim_digest": {
+      "description": "Recorder digest of the canonical claim bytes — a stored field, not identity; ABSENT (null) after a source purge",
+      "type": ["string", "null"]
+    },
+    "source_time": {
+      "description": "Valid time (outbox: occurred_at). Absent when unparseable per the parse-or-absent law",
+      "type": ["string", "null"]
+    },
+    "observation_time": {
+      "description": "Transaction time (outbox: occurred_at — axes degenerate, declared). Absent sorts before all present values",
+      "type": ["string", "null"]
+    },
+    "confidence": {
+      "description": "Provenance/source-trust-weighted uncertainty as a fixed-point ppm int, or ABSENT (null) = unknown — never 0, never a bare quality score",
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "maximum": 1000000
+    },
+    "source_trust": {
+      "description": "{table_version, producer_key}; producer_key is a component identity (never an officer) — see cortex/source-trust@1",
+      "type": "object"
+    },
+    "provenance": {
+      "description": "Universal minimum event_id + producer + stream_rank on EVERY belief; the v2 regime additionally carries the full envelope tuple",
+      "type": "object",
+      "required": ["event_id", "producer", "stream_rank"],
+      "properties": {
+        "event_id": {"type": "string", "minLength": 1},
+        "producer": {"type": "string", "minLength": 1},
+        "stream_rank": {"type": "integer", "minimum": 0}
+      }
+    },
+    "supersedes": {
+      "description": "Immediate within-subject+dimension predecessor belief_ids (sorted); supersession-without-erase",
+      "type": "array"
+    },
+    "superseded_by": {
+      "description": "The belief_id that superseded this one, or ABSENT (null) when current",
+      "type": ["string", "null"]
+    },
+    "contradicts": {
+      "description": "Symmetric cross-links to conflicting beliefs (sorted); never auto-resolved",
+      "type": "array"
+    },
+    "status": {
+      "description": "Derived, single-valued, priority source_purged > superseded > contradicted > asserted",
+      "enum": ["asserted", "superseded", "contradicted", "source_purged"]
+    },
+    "claim_completeness": {
+      "description": "inline | ref_only | purged — a payload_ref envelope yields ref_only; the fold never derefs",
+      "enum": ["inline", "ref_only", "purged"]
+    }
+  }
+}
