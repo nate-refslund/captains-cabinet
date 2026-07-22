@@ -27,3 +27,10 @@ producers:
   # Component/source identities, never officer identities (G-F4 latch).
   observations/primary: 800000
   observations/secondary: 500000
+  # COG-2 UNIT 3 — the consequence-ledger adapter's producer (§5.4). ADDITIVE
+  # (table_version stays 1): a NEW key, so no existing belief's confidence
+  # changes and the outbox/envelope hash lineages are untouched (not an epoch
+  # bump in effect). 850000 ppm = 0.85: the append-only, co-located consequence
+  # ledger is a high-trust first-party record, below the co-committed outbox
+  # relay (0.9). A module-path source identity, never an officer (G-F4 latch).
+  framework/fidelity/consequence: 850000
