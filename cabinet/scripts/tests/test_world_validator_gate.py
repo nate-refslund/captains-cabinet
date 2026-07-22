@@ -250,13 +250,10 @@ class TestValidateEndToEnd:
         finally:
             empty.unlink(missing_ok=True)
             empty_dir.rmdir()
+        # A3 landed in this same change, so the marker+slash 0-row count SKIPs
+        # (not a dead-pixel FAIL). Assert it directly — a FAIL here is a real A3
+        # regression and should be loud, not self-skipped.
         level = findings[0].level
-        if level == "FAIL":
-            pytest.skip(
-                "A3 not yet landed: world-binding-validator.py still FAILs a "
-                "0-row count under CABINET_WORLD_DATA_OPTIONAL. This pin arms "
-                "when Lane A's 0-row instance-surface tolerance merges (same "
-                "wave) — then a 0-row count SKIPs instead of dead-pixel FAILing.")
         assert level == "SKIP", [f"{f.level}:{f.message}" for f in findings]
 
     def test_dark_scope_skips_execution(self, tmp_path):

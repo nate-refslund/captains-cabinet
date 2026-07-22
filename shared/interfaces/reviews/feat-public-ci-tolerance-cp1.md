@@ -110,3 +110,33 @@ No tolerance skip fires on the source tree beyond the documented baseline
 on the source tree and asserts the SKIP-vs-FAIL boundary; A3 keeps a hard FAIL
 for any marker-less 0-row surface. Redis/pg/node-bound golden-evals, dashboard,
 MCP, clean-room, gitleaks, zizmor, null-hatch → proven by PR CI (the authority).
+
+### Round-2 teeth-review (Fable, adversarial) — CONCERNS(3) → addressed
+The adversarial review empirically confirmed ZERO tolerance-skips fire on the
+populated source tree (only baseline ceremony + a pre-existing OAuth e2e skip),
+CI green, and the core machinery (A3 double-key, A4 marker, ledger-parity,
+retro/canary, +7 census, D2 roster) sound. It raised 3 CONCERNS, all one class:
+single-key file-EXISTENCE tolerances can't tell "egg-stripped" from
+"source-committed-deletion", so they'd mask FUTURE committed rot of a real
+instance artifact (verified: `git rm instance/config/platform.yml` on source went
+from 3× CI-red pre-PR to green post-PR).
+
+**Fix (the review's own prescription — one file closes the class):**
+- Added `cabinet/scripts/tests/test_instance_artifact_presence_pin.py`: a
+  source-only presence pin keyed on the SAME `requires_egg_manifest`
+  discriminator (manifest present ⟺ source instance; stripped from the egg). It
+  asserts the egg-stripped-but-source-tracked family is present — the 6
+  instance/config reals (platform/outcomes/directions/sources/peers/task-watch),
+  instance/agents/cos.md, and the 4 content-pinned concrete plists (fidelity-f1,
+  undo-sweep, actfirst-canary, falsifier-daily). Verified: 11 pass on source; a
+  committed deletion FAILs that row (teeth restored); manifest-absent egg tree →
+  all 11 skip. Closes Concerns 1, 2, 3.
+- Corrected the docs-sweep-allowlist justification (the world-binding gate no
+  longer HARD-REQUIREs the instance reals on CI once the flag is set; the pin is
+  now the surface that keeps their teeth).
+- Dropped the now-dead "A3 not yet landed" self-skip branch in
+  test_world_validator_gate.py — A3 landed, so a FAIL there is a real regression
+  and asserts loudly.
+Result: the single-key class now has a hard source-tree backstop; a committed
+deletion of any masked artifact FAILs CI. Teeth invariant holds against present
+AND future committed rot.

@@ -79,8 +79,13 @@ instance/memory/*
 # private source keeps it tracked at HEAD. Living docs legitimately name the
 # LIVE path (the runtime writes/reads it), so the egg sweep needs the entry;
 # on the private source the file is present, so the sweep passes on
-# EXISTENCE and their death there is caught by the layer-sep + world-binding
-# + instance-loader gates that HARD-REQUIRE them. ENUMERATED, never
+# EXISTENCE and their death there is caught by
+# test_instance_artifact_presence_pin.py, which HARD-REQUIRES each on the
+# source instance. (That pin exists precisely because the world-binding
+# class-b + D2 roster tolerances treat these as data-optional under the egg-CI
+# CABINET_WORLD_DATA_OPTIONAL flag and no longer FAIL on their absence — so the
+# pin, not the world gate, is the surface that keeps their teeth on CI.)
+# ENUMERATED, never
 # instance/config/* or instance/flavor-a/* or shared/interfaces/reviews/* —
 # each of those dirs ALSO holds tracked files (config that ships in the egg;
 # 20-40 sibling provenance/code files under flavor-a and reviews) whose
