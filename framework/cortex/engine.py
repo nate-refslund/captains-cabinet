@@ -299,14 +299,117 @@ def fold(proto_beliefs: Iterable[dict], *, trust_table: dict,
 # Storage boundary (§6) — atomic JSONL + fold manifest
 # ---------------------------------------------------------------------------
 
+_OUTBOX_STREAM_RANK = RANK_TABLE["officer_tasks_outbox"]  # 0
+
+
+def seen_intervals(beliefs: Iterable[Belief], *,
+                   stream_rank: int = _OUTBOX_STREAM_RANK) -> dict:
+    """The durable SEEN-SET (§8 sim 5, C-F14) the gap classifier regresses a
+    later fold against: the set of BIGSERIAL source ids this fold covered for
+    one stream, compressed to inclusive [lo, hi] intervals + genesis (min id).
+
+    Derived from the beliefs THEMSELVES — for the outbox (stream_rank 0) a
+    belief's provenance.intra_stream_seq IS the outbox row id (§5.2), so no extra
+    fold input is needed and a rebuild-from-zero reproduces the same seen-set.
+    Two beliefs per row (entity + observation) collapse to one id via the set.
+    A hole between intervals is a SEQUENCE HOLE, not yet a verdict — the gap
+    classifier decides benign (rollback-burned) vs breach (regression)."""
+    ids = sorted({int(b.provenance["intra_stream_seq"]) for b in beliefs
+                  if b.provenance.get("stream_rank") == stream_rank})
+    intervals: list[list[int]] = []
+    for i in ids:
+        if intervals and i == intervals[-1][1] + 1:
+            intervals[-1][1] = i
+        else:
+            intervals.append([i, i])
+    return {
+        "stream": "officer_tasks_outbox",
+        "stream_rank": stream_rank,
+        "genesis": ids[0] if ids else None,
+        "max_seen": ids[-1] if ids else None,
+        "count": len(ids),
+        "intervals": intervals,
+    }
+
+
+def _compress_intervals(ids: list[int]) -> list[list[int]]:
+    """Compress a SORTED, de-duplicated int sequence to inclusive [lo, hi]
+    interval pairs — the seen-set's compact on-disk form."""
+    intervals: list[list[int]] = []
+    for i in ids:
+        if intervals and i == intervals[-1][1] + 1:
+            intervals[-1][1] = i
+        else:
+            intervals.append([i, i])
+    return intervals
+
+
+def consequence_seen(ledger_rows: Iterable[tuple], *, key: str = "file_line") -> dict:
+    """The durable CONSEQUENCE seen-set (§8 sim 5 / C-F14; the C-F12 retention
+    tripwire) the gap classifier regresses so a deleted consequence DAY-FILE (or
+    row) is DETECTED — never silently refolded into a fresh, self-consistent hash.
+
+    Unlike the outbox — a BIGSERIAL id stream whose ids ARE stable source
+    identity (seen_intervals) — a consequence row has NO source id: its
+    intra_stream_seq is a re-enumerated DENSE index a deletion silently
+    RENUMBERS. Its stable coordinate is (day-file basename, physical line) from
+    consequence.iter_ledger_rows(). A day-file deletion removes that basename
+    ENTIRELY — unmaskable by any append to another file; a row deletion shrinks a
+    surviving file's line coverage. Basenames only (the abs path is
+    machine-specific; consequence-events-YYYY-MM-DD.jsonl is date-derived +
+    deterministic, so a rebuild-from-zero reproduces the same seen-set).
+
+    ledger_rows are the (file, line, row) triples iter_ledger_rows yields (raw,
+    history-preserving, its own fences already applied).
+
+    MUTANT SEAM (gate-only, §8 sim-5 negative control): key="seq" builds the
+    IDS-ONLY seen-set — the re-enumerated dense index that MIRRORS the belief
+    intra_stream_seq, discarding (file, line). A day-file deletion masked by an
+    append to another file leaves that dense range UNCHANGED, so the classifier
+    sees no regression and MISSES the deletion — exactly why the seen-set must
+    key on stable (file, line) coordinates, never a re-enumerated id."""
+    triples = list(ledger_rows)
+    if key == "seq":
+        ids = list(range(len(triples)))            # MUTANT: dense re-enumeration
+        return {
+            "stream": "consequence",
+            "stream_rank": RANK_TABLE["consequence"],
+            "intervals": _compress_intervals(ids),
+            "genesis": ids[0] if ids else None,
+            "max_seen": ids[-1] if ids else None,
+            "count": len(ids),
+        }
+    per_file: dict[str, list[int]] = {}
+    for _file, line, _row in triples:
+        per_file.setdefault(Path(_file).name, []).append(int(line))
+    files: dict[str, dict] = {}
+    total = 0
+    for name in sorted(per_file):
+        lines = sorted(set(per_file[name]))
+        total += len(lines)
+        files[name] = {"intervals": _compress_intervals(lines), "count": len(lines)}
+    return {
+        "stream": "consequence",
+        "stream_rank": RANK_TABLE["consequence"],
+        "files": files,
+        "count": total,
+    }
+
+
 def build_manifest(beliefs: list[Belief], *, trust_table: dict,
                    frontier: Optional[int], max_id: Optional[int],
                    frontier_blockers: Optional[list] = None,
-                   source_set: Optional[list[str]] = None) -> dict:
+                   source_set: Optional[list[str]] = None,
+                   consequence_rows: Optional[Iterable[tuple]] = None) -> dict:
     """The fold manifest (§6). Carries the hash EPOCH TUPLE (A-m13) + frontier
-    lag + blockers; hashed separately from the belief store."""
+    lag + blockers + the outbox SEEN-SET intervals (the gap-regression baseline,
+    §8 sim 5); hashed separately from the belief store. When the consequence
+    stream is folded in, consequence_rows (the iter_ledger_rows (file, line, row)
+    triples) records a per-day-file seen-set so a deleted consequence day-file is
+    a detected gap — ADDITIVE + hash-independent (belief_store_hash is over the
+    beliefs, not the manifest), absent for the default outbox-only rebuild."""
     lag = (max_id - frontier) if (max_id is not None and frontier is not None) else None
-    return {
+    manifest = {
         "schema_version": "cortex-fold-manifest/v1",
         "epoch": {
             "engine_version": _belief.ENGINE_VERSION,
@@ -321,7 +424,11 @@ def build_manifest(beliefs: list[Belief], *, trust_table: dict,
         "max_id": max_id,
         "frontier_lag": lag,
         "frontier_blockers": frontier_blockers or [],
+        "seen": seen_intervals(beliefs),
     }
+    if consequence_rows is not None:
+        manifest["seen_consequence"] = consequence_seen(consequence_rows)
+    return manifest
 
 
 def _atomic_write(path: Path, data: str) -> None:
