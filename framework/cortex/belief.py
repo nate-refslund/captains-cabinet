@@ -185,3 +185,29 @@ def validate_belief(belief: Belief, *, root=None) -> tuple:
     issues += list(schema_registry.validate_payload(
         belief.source_trust, _SOURCE_TRUST_SCHEMA_ID, root=root))
     return tuple(issues)
+
+
+def belief_from_row(row: dict) -> Belief:
+    """Reconstruct a Belief from a canonical JSONL row dict (the query/serve
+    path — the inverse of to_canonical_dict). The frozen collections are
+    restored to tuples; a re-canonicalization of the result reproduces the
+    stored bytes (rows-not-bytes, A-m11)."""
+    return Belief(
+        belief_id=row["belief_id"],
+        kind=row["kind"],
+        subject_key=row["subject_key"],
+        dimension=row["dimension"],
+        adapter_ordinal=row["adapter_ordinal"],
+        claim=row.get("claim"),
+        claim_digest=row.get("claim_digest"),
+        source_time=row.get("source_time"),
+        observation_time=row.get("observation_time"),
+        confidence=row.get("confidence"),
+        source_trust=row["source_trust"],
+        provenance=row["provenance"],
+        status=row["status"],
+        claim_completeness=row["claim_completeness"],
+        supersedes=tuple(row.get("supersedes") or ()),
+        superseded_by=row.get("superseded_by"),
+        contradicts=tuple(row.get("contradicts") or ()),
+    )

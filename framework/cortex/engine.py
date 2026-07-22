@@ -133,6 +133,78 @@ def _supersession_key(proto: dict, order: str):
     return (prov["stream_rank"], prov["intra_stream_seq"])
 
 
+def _lineage_key(item: dict, mode: str):
+    """The lineage a belief belongs to within a (subject_key, dimension) group
+    (§5.5). CORRECT: the producer — "same producer = same lineage by definition
+    here". Two MUTANT seams (sim 3 negative controls): "merged" collapses every
+    producer into ONE lineage (SILENT LWW — contradiction never fires); and
+    "correlation" keys on the correlation chain, which wrongly splits a
+    same-producer/disjoint-correlation pair into contradicting lineages (its
+    pinned verdict is supersedes, not contradicts)."""
+    prov = item["provenance"]
+    if mode == "merged":
+        return ""                                   # MUTANT: one lineage => LWW
+    if mode == "correlation":
+        return prov.get("correlation_id", "")       # MUTANT: chain, not producer
+    return prov["producer"]                         # CORRECT (§5.5)
+
+
+def derive_status(*, purged: bool, superseded_by, contradicts) -> str:
+    """The single derived status function, pinned priority (§4):
+    source_purged > superseded > contradicted > asserted. Computed once from
+    (purged, superseded_by?, contradicts≠∅) — never a double transition."""
+    if purged:
+        return _belief.STATUS_SOURCE_PURGED
+    if superseded_by is not None:
+        return _belief.STATUS_SUPERSEDED
+    if contradicts:
+        return _belief.STATUS_CONTRADICTED
+    return _belief.STATUS_ASSERTED
+
+
+def resolve_relationships(items: Iterable[dict], *, supersession_order: str = "source",
+                          lineage: str = "producer"):
+    """Pure cross-belief resolution shared by fold() AND the per-cutoff
+    re-derivation in query.py (C-F7). Each item carries belief_id, subject_key,
+    dimension, provenance (producer, stream_rank, intra_stream_seq[,
+    correlation_id]) [+ observation_time/_arrival only for the mutant orders].
+
+    Supersession runs WITHIN a lineage (default = producer, §5.5) by the source's
+    OWN order (default (stream_rank, intra_stream_seq) — NEVER observation_time,
+    A-B4). Independent CURRENT lineages on one (subject_key, dimension) cross-link
+    symmetrically — the contradiction post-pass (§5.5): a single-producer group
+    yields exactly one head (no contradiction, C-F10); a two-producer group
+    yields two heads that contradict. Returns (superseded_by, supersedes,
+    contradicts) keyed by belief_id."""
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for item in items:
+        groups.setdefault((item["subject_key"], item["dimension"]), []).append(item)
+
+    superseded_by: dict[str, Optional[str]] = {}
+    supersedes: dict[str, tuple[str, ...]] = {}
+    contradicts: dict[str, tuple[str, ...]] = {}
+    for key in sorted(groups):
+        lineages: dict[Any, list[dict]] = {}
+        for item in groups[key]:
+            lineages.setdefault(_lineage_key(item, lineage), []).append(item)
+        heads: list[str] = []
+        for lineage_id in sorted(lineages):
+            chain = sorted(lineages[lineage_id],
+                           key=lambda r: _supersession_key(r, supersession_order))
+            for i, item in enumerate(chain):
+                bid = item["belief_id"]
+                superseded_by[bid] = chain[i + 1]["belief_id"] if i + 1 < len(chain) else None
+                supersedes[bid] = (chain[i - 1]["belief_id"],) if i > 0 else ()
+                contradicts[bid] = ()
+            heads.append(chain[-1]["belief_id"])    # the lineage's current head
+        # Contradiction post-pass (§5.5): >1 independent current lineage on one
+        # (subject_key, dimension) => symmetric SORTED cross-links.
+        if len(heads) > 1:
+            for bid in heads:
+                contradicts[bid] = tuple(sorted(h for h in heads if h != bid))
+    return superseded_by, supersedes, contradicts
+
+
 def fold(proto_beliefs: Iterable[dict], *, trust_table: dict,
          supersession_order: str = "source",
          identity: str = "deterministic") -> list[Belief]:
