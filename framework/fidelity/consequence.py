@@ -609,6 +609,57 @@ def read_ledger(since: str | None = None) -> list[dict[str, Any]]:
     return events
 
 
+def iter_ledger_rows(since: str | None = None):
+    """Yield every consequence row RAW as ``(file, line, row)`` — history-
+    preserving: NO last-write-wins collapse, NO ``(file, line)`` discard — in
+    ``_safe_ledger_files`` (filename) then line order.
+
+    This is the COG-2 Cortex seam (docs/plans/cognitive-core-phase-2-contract-
+    2026-07-22.md §3 / §5.1). The shadow world-model's consequence adapter folds
+    these rows into beliefs, where each identity-tuple group becomes an explicit
+    enrichment supersession chain ordered by ``(file, line)``. ``read_ledger()``
+    pre-collapses LWW and discards ``(file, line)`` — it cannot yield chains, so
+    this ADDITIVE iterator is the history-preserving reader the adapter consumes.
+    It reuses the module's OWN fences — ``_safe_ledger_files`` (the symlink fence)
+    and ``_is_consequence_row`` (the shape filter) — so zero filter logic is
+    cloned.
+
+    ENV-FREE (O-B2 / §5.1): a sim-marked row is ALWAYS dropped, UNCONDITIONALLY.
+    This iterator NEVER reads ``CABINET_SIM_MODE``, so no environment variable is
+    a fold input — the pure fold is deterministic regardless of the environment.
+    This deliberately differs from ``read_ledger``, whose sim drop is
+    env-sensitive (a sim process keeps sim rows); the pure fold must never let a
+    sim row in.
+
+    ADDITIVE: ``read_ledger()`` and every existing function are byte-unchanged;
+    this is a pure new reader. ``since`` keeps rows with ``ts >= since``
+    (inclusive), applied per raw row — enrichment rows carry their group's ts, so
+    this matches ``read_ledger``'s post-collapse ``since``.
+    """
+    log_dir = _consequence_log_dir()
+    if not log_dir.exists():
+        return
+    for log_file in _safe_ledger_files(log_dir):
+        with open(log_file) as f:
+            for lineno, line in enumerate(f, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    ev = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not _is_consequence_row(ev):
+                    continue
+                # Env-free (O-B2): a sim row NEVER enters the pure fold,
+                # regardless of CABINET_SIM_MODE — no env branch here.
+                if ev.get("sim"):
+                    continue
+                if since is not None and ev.get("ts", "") < since:
+                    continue
+                yield (str(log_file), lineno, ev)
+
+
 # [FIX-1 step 3] Sentinel cell-key component for a ledger row that carries NO
 # action_type (the unstamped / legacy default — action_type is an OPTIONAL
 # schema field). Unstamped rows are keyed under this fixed, VISIBLE sentinel
