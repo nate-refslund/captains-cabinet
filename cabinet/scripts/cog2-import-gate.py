@@ -15,6 +15,19 @@ that script only covers framework -> instance/presets coupling (per contract
 §3 / O-B6, the "layer-sep idiom" characterization is withdrawn; this gate is
 net-new).
 
+COG-3 EXTENSION (Phase-3 contract §6.5, additive + byte-compatible): the same
+gate now also fences the objectives graph (framework.objectives), a SECOND
+shadow model. Authority/action code may not import it (FORBIDDEN_IMPORTS_OBJECTIVES
+/ FORBIDDEN_OBJECTIVES_TOKEN); a framework/objectives/ file may not import the
+action plane (FORBIDDEN_OBJECTIVES_IMPORTS_ACTION — the reverse direction); any
+un-curated swept importer of framework.objectives REDs (UNALLOWLISTED_OBJECTIVES_IMPORTER
+— how framework/missions consuming the graph is caught); and a live reference
+to the objectives cache store anywhere in SWEEP_TREES REDs (FORBIDDEN_OBJECTIVES_DATAPLANE
+— the non-covert data-plane read the import sweep cannot see). This gate stays
+MODULE-granular; the narrow SYMBOL rule (which cortex names framework/objectives/
+may import) is a separate net-new AST pin (test_cog3_objectives_ast_pin.py). All
+COG-3 rules are green-by-vacuity until framework/objectives/ + the cog3 files land.
+
 Baseline-zero, shrink-only: the accepted-violation set is EMPTY. Any violation
 fails the gate. The forbidden surface only ever grows (a protection never
 shrinks); the allowlist is the curated set of legitimate cortex readers.
@@ -124,8 +137,17 @@ import sys
 from pathlib import Path
 
 CORTEX = "framework.cortex"
+# COG-3 (Phase-3 contract §6.5): the objectives graph is a SECOND shadow model
+# with the SAME both-directions boundary — the authority/action surface may not
+# import it, and it may read the cortex query surface but never the action plane.
+# Enforced beside the cortex rules below; the symbol-level narrowing (which
+# cortex symbols framework/objectives/ may import) is a SEPARATE net-new AST pin
+# (test_cog3_objectives_ast_pin.py) — this module gate is path-granular only.
+OBJECTIVES = "framework.objectives"
 
 # --- forbidden authority/action surface (§7.1 / M5) -------------------------
+# Also the ACTION-PLANE trees framework/objectives/ may NEVER import (§6.5
+# reverse direction): the graph reads the cortex, never frontdoor/acting/authority.
 FORBIDDEN_TREES = [
     "framework/frontdoor",
     "framework/acting",
@@ -208,6 +230,69 @@ _FALSIFIER_DYNAMIC = re.compile(
 _DYNAMIC_CORTEX = re.compile(
     r"(?:import_module|__import__)\([ \t]*['\"]framework\.cortex"
     r"|(?:import_module|__import__)\([ \t]*['\"]\.cortex['\"][ \t]*,[ \t]*['\"]framework['\"]")
+
+# ===========================================================================
+# COG-3 objectives boundary (contract §6.5) — additive, byte-compatible with
+# the cortex rules above. FOUR module-granular rules + one data-plane sweep:
+#   FORBIDDEN_IMPORTS_OBJECTIVES     a forbidden authority/action file imports
+#                                    framework.objectives (any spelling)
+#   FORBIDDEN_OBJECTIVES_TOKEN       a forbidden file NAMES framework.objectives
+#                                    on a live line (dynamic-import backstop)
+#   FORBIDDEN_OBJECTIVES_IMPORTS_ACTION  a framework/objectives/ file imports the
+#                                    action plane (frontdoor/acting/authority) —
+#                                    the REVERSE direction (§6.5 "reverse")
+#   UNALLOWLISTED_OBJECTIVES_IMPORTER  a swept first-party file imports
+#                                    framework.objectives but is neither
+#                                    objectives-internal nor a curated cog3 reader
+#                                    (this is how framework/missions importing the
+#                                    graph REDs — §6.2(5))
+#   FORBIDDEN_OBJECTIVES_DATAPLANE   a swept file names the objectives cache path
+#                                    on a live line (§6.5 bullet 6, C-M9): the
+#                                    non-covert data-plane read the import sweep
+#                                    cannot see, closed across the FULL SWEEP_TREES
+# The action-plane trees objectives may never import (reverse) are exactly the
+# FORBIDDEN_TREES set (frontdoor/acting/authority).
+ACTION_PLANE = tuple(t.replace("/", ".") for t in FORBIDDEN_TREES)
+
+# legitimate objectives readers (module-granular). framework/objectives/ reads
+# the cortex query surface AND itself; the cog3 CLIs/instruments read the graph.
+# cog3-ovi-parity.py is DELIBERATELY absent: the C-F17 falsifier analog (§6.5,
+# a separate later bullet) bans it from importing objectives internals, so it is
+# never a sanctioned objectives reader — leaving it off means any objectives
+# import from it REDs as UNALLOWLISTED, enforcing that ban at the module level.
+OBJECTIVES_INTERNAL = "framework/objectives/"
+ALLOWLIST_EXACT_OBJECTIVES = {
+    "cabinet/scripts/cog3-rebuild.py",       # rebuild CLI (owns roots injection)
+    "cabinet/scripts/cog3-graph-hash.py",    # hash instrument
+    "cabinet/scripts/cog3-staleness.py",     # staleness instrument (two fenced as_of)
+}
+ALLOWLIST_GLOBS_OBJECTIVES = [
+    "cabinet/scripts/tests/test_cog3_*.py",
+    "cabinet/scripts/tests/lib_cog3_*.py",
+]
+
+RULE_FORBIDDEN_OBJ = "FORBIDDEN_IMPORTS_OBJECTIVES"
+RULE_TOKEN_OBJ = "FORBIDDEN_OBJECTIVES_TOKEN"
+RULE_OBJ_IMPORTS_ACTION = "FORBIDDEN_OBJECTIVES_IMPORTS_ACTION"
+RULE_UNALLOWLISTED_OBJ = "UNALLOWLISTED_OBJECTIVES_IMPORTER"
+RULE_OBJ_DATAPLANE = "FORBIDDEN_OBJECTIVES_DATAPLANE"
+
+# backstop for FORBIDDEN trees: the objectives module ref (static OR dynamic
+# string) or the ordinary `from framework import objectives` spelling. The cache
+# path is NOT here — it is the data-plane sweep's job across ALL swept trees.
+_BACKSTOP_OBJ = re.compile(
+    r"framework[./]objectives"
+    r"|from[ \t]+framework[ \t]+import[^#]*\bobjectives\b")
+# narrow dynamic reach into framework.objectives (AST-blind complement, sweep).
+_DYNAMIC_OBJ = re.compile(
+    r"(?:import_module|__import__)\([ \t]*['\"]framework\.objectives"
+    r"|(?:import_module|__import__)\([ \t]*['\"]\.objectives['\"][ \t]*,[ \t]*['\"]framework['\"]")
+# the objectives cache-path data-plane token. ASSEMBLED (not a contiguous
+# literal) on purpose: unlike the cortex data-plane check (forbidden-trees only),
+# THIS sweep covers the full SWEEP_TREES — which includes this gate file itself —
+# so a contiguous literal here would self-flag. Nowhere in this module may the
+# path appear contiguously on a non-comment line (docstring bodies count).
+_OBJ_CACHE_TOKEN = "cabinet/cache/" + "objectives"
 
 
 def _is_cortex_module(name: str) -> bool:
@@ -331,6 +416,77 @@ def _is_allowlisted(rel: str) -> bool:
     return any(fnmatch.fnmatch(rel, glob) for glob in ALLOWLIST_GLOBS)
 
 
+# --- COG-3 objectives helpers (mirror the cortex idioms; reuse the generic
+#     relative-import resolver `_import_from_targets`) -----------------------
+
+def _is_objectives_module(name: str) -> bool:
+    """True iff `name` is framework.objectives or a submodule — never a mere
+    prefix like framework.objectivestools."""
+    return name == OBJECTIVES or name.startswith(OBJECTIVES + ".")
+
+
+def _is_action_plane_module(name: str) -> bool:
+    """True iff `name` is (a submodule of) the action plane the objectives graph
+    may never import: framework.frontdoor / framework.acting / framework.authority."""
+    return any(name == a or name.startswith(a + ".") for a in ACTION_PLANE)
+
+
+def _matching_imports(source: str, rel: str, predicate) -> list[str]:
+    """Every real-import target (AST — string literals never count) for which
+    `predicate(dotted_name)` holds. Catches `import X`, `from X import y`, the
+    `from pkg import name` alias spelling, and relative imports resolved against
+    `rel`'s package path (via `_import_from_targets`)."""
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return []
+    hits: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if predicate(alias.name):
+                    hits.append(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level and not rel:
+                continue
+            for target in _import_from_targets(node, rel):
+                if predicate(target):
+                    hits.append(target)
+    return hits
+
+
+def _objectives_imports(source: str, rel: str = "") -> list[str]:
+    return _matching_imports(source, rel, _is_objectives_module)
+
+
+def _action_plane_imports(source: str, rel: str = "") -> list[str]:
+    return _matching_imports(source, rel, _is_action_plane_module)
+
+
+def _backstop_obj_hit(source: str) -> bool:
+    return any(_BACKSTOP_OBJ.search(line) for line in _live_lines(source))
+
+
+def _dynamic_obj_hit(source: str) -> bool:
+    return any(_DYNAMIC_OBJ.search(line) for line in _live_lines(source))
+
+
+def _obj_dataplane_hit(source: str) -> bool:
+    """A live-line reference to the objectives cache path — the non-covert
+    data-plane read (an open()/Path of the graph store). Comment-safe."""
+    return any(_OBJ_CACHE_TOKEN in line for line in _live_lines(source))
+
+
+def _is_objectives_internal(rel: str) -> bool:
+    return rel.startswith(OBJECTIVES_INTERNAL)
+
+
+def _is_cog3_allowlisted(rel: str) -> bool:
+    if rel in ALLOWLIST_EXACT_OBJECTIVES:
+        return True
+    return any(fnmatch.fnmatch(rel, glob) for glob in ALLOWLIST_GLOBS_OBJECTIVES)
+
+
 def scan(root) -> list[str]:
     """Return the sorted list of `<rel-path>:<RULE>` violations under `root`.
     Empty list == shadow boundary intact."""
@@ -353,6 +509,13 @@ def scan(root) -> list[str]:
         if _backstop_hit(src):
             violations.add(f"{rel}:{RULE_TOKEN}")
             flagged.add(rel)
+        # COG-3: the SAME forbidden surface may not import the objectives graph.
+        if _objectives_imports(src, rel):
+            violations.add(f"{rel}:{RULE_FORBIDDEN_OBJ}")
+            flagged.add(rel)
+        if _backstop_obj_hit(src):
+            violations.add(f"{rel}:{RULE_TOKEN_OBJ}")
+            flagged.add(rel)
 
     # --- Check 2: the falsifier import ban (C-F17) --------------------------
     fpath = root / FALSIFIER
@@ -365,20 +528,62 @@ def scan(root) -> list[str]:
             flagged.add(rel)
 
     # --- Check 3: the global whitelist — any OTHER cortex importer ----------
+    # COG-3 broadening: framework/objectives/ and the cog3 CLIs/tests are
+    # LEGITIMATE cortex readers (the graph reads the cortex query surface), so
+    # they fold clean here — the narrow SYMBOL restriction on which cortex names
+    # they may import is the separate net-new AST pin, not this module gate.
     for tree in SWEEP_TREES:
         for path in _py_files(root / tree):
             rel = _rel(root, path)
-            if rel in flagged or _is_cortex_internal(rel) or _is_allowlisted(rel):
+            if (rel in flagged or _is_cortex_internal(rel) or _is_allowlisted(rel)
+                    or _is_objectives_internal(rel) or _is_cog3_allowlisted(rel)):
                 continue
             src = _read(path)
             if _cortex_imports(src, rel) or _dynamic_cortex_hit(src):
                 violations.add(f"{rel}:{RULE_UNALLOWLISTED}")
 
+    # --- Check R (COG-3 reverse): framework/objectives/ may read the cortex,
+    #     never the action plane (frontdoor/acting/authority) -----------------
+    for path in _py_files(root / OBJECTIVES_INTERNAL.rstrip("/")):
+        rel = _rel(root, path)
+        src = _read(path)
+        if _action_plane_imports(src, rel):
+            violations.add(f"{rel}:{RULE_OBJ_IMPORTS_ACTION}")
+            flagged.add(rel)
+
+    # --- Check O (COG-3): the objectives import sweep — any swept first-party
+    #     file importing framework.objectives that is not objectives-internal
+    #     nor a curated cog3 reader (this is how framework/missions REDs) ------
+    for tree in SWEEP_TREES:
+        for path in _py_files(root / tree):
+            rel = _rel(root, path)
+            if (rel in flagged or _is_objectives_internal(rel)
+                    or _is_cog3_allowlisted(rel)):
+                continue
+            src = _read(path)
+            if _objectives_imports(src, rel) or _dynamic_obj_hit(src):
+                violations.add(f"{rel}:{RULE_UNALLOWLISTED_OBJ}")
+
+    # --- Check D (COG-3, §6.5 bullet 6 / C-M9): the data-plane sweep — a live
+    #     reference to the objectives cache path anywhere in SWEEP_TREES, with
+    #     objectives-internal + cog3 readers allowlisted. Independent of the
+    #     import rules (a file may both import AND open the cache) so `flagged`
+    #     is NOT skipped here. ---------------------------------------------------
+    for tree in SWEEP_TREES:
+        for path in _py_files(root / tree):
+            rel = _rel(root, path)
+            if _is_objectives_internal(rel) or _is_cog3_allowlisted(rel):
+                continue
+            src = _read(path)
+            if _obj_dataplane_hit(src):
+                violations.add(f"{rel}:{RULE_OBJ_DATAPLANE}")
+
     return sorted(violations)
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="COG-2 shadow-boundary import gate (§7.1).")
+    parser = argparse.ArgumentParser(
+        description="COG-2/COG-3 shadow-boundary import gate (§7.1 cortex + §6.5 objectives).")
     parser.add_argument("--root", type=Path,
                         default=Path(__file__).resolve().parents[2],
                         help="repo root to scan (default: this script's repo).")
@@ -395,18 +600,19 @@ def main(argv: list[str] | None = None) -> int:
                          indent=2))
     elif violations:
         stream = sys.stdout if args.report else sys.stderr
-        print(f"[cog2-import-gate] {len(violations)} violation(s) — "
-              "authority/action code must not reach framework.cortex "
-              "(shadow boundary M5 / §7.1):", file=stream)
+        print(f"[cog2-import-gate] {len(violations)} violation(s) — the shadow "
+              "boundary is breached (authority/action code must not reach "
+              "framework.cortex or framework.objectives; the objectives graph "
+              "must not reach the action plane) — M5 / §7.1 / §6.5:", file=stream)
         for v in violations:
             print(f"  + {v}", file=stream)
         if not args.report:
             print("[cog2-import-gate] FAIL — remove the import/reference; the "
-                  "cortex projection is read ONLY through its rebuild/verify "
-                  "CLIs and tests.", file=sys.stderr)
+                  "cortex and objectives projections are read ONLY through their "
+                  "rebuild/verify CLIs and tests.", file=sys.stderr)
     else:
-        print("[cog2-import-gate] OK — no authority/action code imports "
-              "framework.cortex (shadow boundary intact).")
+        print("[cog2-import-gate] OK — no authority/action code imports the "
+              "cortex or objectives shadow models (shadow boundary intact).")
 
     if args.report:
         return 0
