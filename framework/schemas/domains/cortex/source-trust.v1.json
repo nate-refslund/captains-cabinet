@@ -12,8 +12,8 @@
       "minimum": 1
     },
     "producer_key": {
-      "description": "Component/source identity — the adapter-declared producer set only, never an officer identity. UNIT 2 adds the envelope-file adapter's declared producers (§5.2a). Later COG-2 units extend the enum as adapters land (consequence).",
-      "enum": ["officer_tasks/outbox-relay", "observations/primary", "observations/secondary"]
+      "description": "Component/source identity — the adapter-declared producer set only, never an officer identity. UNIT 2 adds the envelope-file adapter's declared producers (§5.2a); UNIT 3 adds the consequence-ledger adapter's producer (framework/fidelity/consequence, §5.4). A module-path source identity is not an officer identity (the G-F4 never-a-score latch holds).",
+      "enum": ["officer_tasks/outbox-relay", "observations/primary", "observations/secondary", "framework/fidelity/consequence"]
     }
   }
 }

@@ -32,6 +32,7 @@ from typing import Optional
 # Allowlisted framework imports only (reverse-gate G-F1): own package + the
 # relay's ONE pure builder. relay.build_dispatch_fields lazily imports
 # framework.triggers.envelope; no authority/action module is reachable.
+from framework.cortex.belief import canonical_bytes as _canonical, digest as _digest
 from framework.cortex.engine import RANK_TABLE, eligible_rows, frontier_of
 from framework.outbox.relay import build_dispatch_fields
 
@@ -71,15 +72,38 @@ def read_outbox_rows(dsn: str) -> list[dict]:
         conn.close()
 
 
+def _is_tombstone(row: dict) -> bool:
+    """A SOURCE-side tombstone (§5.4b, A-B3/C-F12): the outbox row's PAYLOAD
+    content is purged (new_status NULL'd) while its identity columns (id,
+    event_id, task_id, occurred_at, correlation_id, cabinet_id, idempotency_key)
+    survive. In the live 047 schema new_status is NOT NULL, so a NULL new_status
+    only ever arises post-purge; an explicit ``purged`` marker is also honored
+    (the pure-path signal). The fold regenerates a source_purged stub — claim
+    absent, identity + provenance intact (possible only because belief_id never
+    embeds claim bytes, so identity survives the content loss)."""
+    # F2 (review): a row MISSING new_status is NOT a tombstone — only an explicit
+    # null new_status is (get() would read absence as None, a silent fabricated
+    # purge). Key-absence therefore falls through to a normal (non-purged) row.
+    return bool(row.get("purged")) or (
+        "new_status" in row and row["new_status"] is None)
+
+
 def _row_to_protos(row: dict) -> list[dict]:
     """One eligible outbox row -> [entity proto (ordinal 0), observation proto
-    (ordinal 1)]. The v2 mapping is relay.build_dispatch_fields (drift-proof)."""
+    (ordinal 1)]. The v2 mapping is relay.build_dispatch_fields (drift-proof). A
+    TOMBSTONED row (§5.4b) still yields BOTH protos — with the claim ABSENT and
+    purged flagged — so the (claim-independent) belief_ids stay byte-stable and
+    the source_purged stub replaces the live belief in place. build_dispatch_fields
+    still resolves the surviving provenance (it reads only identity/scope columns,
+    all of which survive a payload purge), so the universal provenance minimum is
+    preserved on the stub."""
     # recorded_at is unused (axes degenerate); env["occurred_at"] is the
     # canonical UTC-second value the belief's two clocks both take.
     _flat, env = build_dispatch_fields(row, event_id=row["event_id"], recorded_at="")
     occ = env["occurred_at"]
     payload = env["payload"]
     subject = f"tasks/{int(row['task_id'])}"
+    purged = _is_tombstone(row)
 
     provenance = {
         "event_id": env["event_id"],
@@ -97,17 +121,20 @@ def _row_to_protos(row: dict) -> list[dict]:
         provenance["causation_id"] = env["causation_id"]
 
     def _proto(kind: str, dimension: str, ordinal: int, claim: dict) -> dict:
-        return {
+        proto = {
             "kind": kind,
             "subject_key": subject,
             "dimension": dimension,
             "adapter_ordinal": ordinal,
-            "claim": claim,
+            "claim": None if purged else claim,
             "source_time": occ,
             "observation_time": occ,
             "provenance": dict(provenance),
-            "claim_completeness": "inline",
+            "claim_completeness": "purged" if purged else "inline",
         }
+        if purged:
+            proto["purged"] = True
+        return proto
 
     entity_claim = {"status": payload["new_status"], "blocked": payload["new_blocked"]}
     return [
@@ -277,3 +304,125 @@ def read_envelope_file(path, *, local_cabinet_id: str) -> tuple[list[dict], list
         except ValueError:
             envelopes.append((line_index, None))  # fail-closed: quarantined below
     return build_envelope_protos(envelopes, local_cabinet_id=local_cabinet_id)
+
+
+# ---------------------------------------------------------------------------
+# Consequence-ledger adapter (§3/§5.4) — the COG-2 UNIT 3 legacy SEAM
+# ---------------------------------------------------------------------------
+#
+# The thin slice's ONE legacy adapter. It folds the append-only consequence
+# ledger — read RAW via consequence.iter_ledger_rows() (the ONLY symbol imported
+# from that module, reverse-import gate §7.1) — into observation beliefs on the
+# `consequence` dimension. What it proves is the SEAM (§2/A-m12), NOT cross-time
+# supersession: the ledger identity tuple is ts-INCLUSIVE, so the same
+# (actor, action, subject) at two ts is TWO subjects and never supersedes by
+# construction. Within ONE identity group an enrichment row (same tuple, later
+# (file, line)) supersedes the original — the ONLY supersession here.
+#
+# DETERMINISTIC SYNTHETIC PROVENANCE (§5.4): a legacy row has no event_id, so the
+# adapter mints one deterministically — digest("consequence:" + canonical row).
+# The subject_key digests the ledger's OWN ts-inclusive identity tuple so an
+# enrichment row shares the subject. LEGACY REGIME (A-M7): the row is not a v2
+# envelope and is NEVER forced through validate_any; the belief it yields
+# validates at the BELIEF level (universal provenance minimum + source_trust).
+
+_CONSEQUENCE_STREAM_RANK = RANK_TABLE["consequence"]  # 1
+_CONSEQUENCE_PRODUCER = "framework/fidelity/consequence"
+_CONSEQUENCE_DIMENSION = "consequence"
+_CONSEQUENCE_KIND = "observation"        # a consequence row records an observation
+
+
+def _parse_ts_or_absent(value) -> Optional[str]:
+    """Parse a ledger ts to the single canonical UTC-second spelling
+    YYYY-MM-DDTHH:MM:SSZ, or return None (honest ABSENCE) for anything
+    unparseable (C-F6). Unlike the cog1 _utc_second precedent it NEVER passes a
+    garbage string through — a non-timestamp yields absence, never a value that
+    would fence a query open."""
+    from datetime import datetime, timezone
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        dt = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _consequence_identity(row: dict) -> tuple:
+    """The ledger's OWN ts-INCLUSIVE identity tuple (actor, action, subject, ts)
+    — mirrors framework.fidelity.consequence._identity. The reverse-import gate
+    (§7.1) admits ONLY iter_ledger_rows from that module, so the tuple is
+    reconstructed inline; the seam-equivalence test (chain-heads ==
+    read_ledger survivors) is the standing drift tripwire."""
+    actor = row.get("actor")
+    if isinstance(actor, dict):
+        actor_id = f"{actor.get('kind')}:{actor.get('id')}"
+    else:
+        actor_id = f"{actor}:"           # defensive — non-dict actor never collides
+    return (actor_id, row.get("action", ""), row.get("subject", ""), row.get("ts", ""))
+
+
+def _consequence_row_to_proto(row: dict, seq: int) -> dict:
+    """One consequence row -> one observation/consequence proto-belief with
+    deterministic synthetic provenance. seq is the (file, line) enumeration index
+    (source order) that orders the enrichment supersession chain."""
+    identity = _consequence_identity(row)
+    subject_key = f"{_CONSEQUENCE_DIMENSION}/{_digest(list(identity))}"
+    # documented synthetic event_id: digest("consequence:" + canonical row bytes).
+    event_id = _digest("consequence:" + _canonical(row).decode("utf-8"))
+    ts = _parse_ts_or_absent(row.get("ts"))
+    provenance = {
+        "event_id": event_id,
+        "producer": _CONSEQUENCE_PRODUCER,
+        "stream_rank": _CONSEQUENCE_STREAM_RANK,
+        "intra_stream_seq": seq,          # (file, line) order from iter_ledger_rows
+    }
+    return {
+        "kind": _CONSEQUENCE_KIND,
+        "subject_key": subject_key,
+        "dimension": _CONSEQUENCE_DIMENSION,
+        "adapter_ordinal": 0,
+        "claim": dict(row),               # the surviving row == read_ledger survivor
+        "source_time": ts,                # valid time (degenerate: ts, parse-or-absent)
+        "observation_time": ts,           # transaction time (degenerate; C-F6)
+        "provenance": provenance,
+        "claim_completeness": "inline",
+    }
+
+
+def build_consequence_protos(ledger_rows) -> list[dict]:
+    """Fold-prepare (file, line, row) triples from consequence.iter_ledger_rows()
+    into proto-beliefs. intra_stream_seq = the enumeration index over the KEPT
+    (deduped) iterator order — a deterministic source order; within one identity
+    group it orders the enrichment supersession chain (later == head).
+
+    F1 (review): byte-identical (or key-reordered) DUPLICATE rows are collapsed
+    FIRST-OCCURRENCE-WINS on their canonical bytes — the SAME basis as the
+    synthetic event_id — so two rows that would mint one belief_id never reach the
+    fold with divergent intra_stream_seq (which the divergent-content guard would
+    turn into a rebuild-killing ValueError). This honors read_ledger()'s own
+    collapse and sim-1's shuffle/dup-invariance. A non-dup ledger is unchanged:
+    every row is kept and seq == the enumerate index. Reachable because
+    log_consequence stamps no nonce and ts is second-resolution, so a double-emit
+    retry within one second writes an exact-duplicate row."""
+    protos: list[dict] = []
+    seen: set[bytes] = set()
+    seq = 0
+    for _file, _line, row in ledger_rows:
+        canon = _canonical(row)
+        if canon in seen:
+            continue
+        seen.add(canon)
+        protos.append(_consequence_row_to_proto(row, seq))
+        seq += 1
+    return protos
+
+
+def read_consequence_protos() -> list[dict]:
+    """Read the consequence ledger via its OWN history-preserving reader
+    (consequence.iter_ledger_rows — the ONLY symbol imported from that module,
+    §7.1) and fold-prepare it. Lazy import keeps the module top import-inert."""
+    from framework.fidelity.consequence import iter_ledger_rows
+    return build_consequence_protos(iter_ledger_rows())
