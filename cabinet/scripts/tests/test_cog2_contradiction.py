@@ -280,3 +280,54 @@ class TestNeverAScoreRatchet:
         for field in ("value", "source_trust", "provenance", "status", "conflict_set"):
             assert hasattr(v, field)
         assert isinstance(v.source_trust, dict) and "producer_key" in v.source_trust
+
+
+# ===========================================================================
+# REVIEW FIX F2: a multi-DIMENSION subject (the outbox emits status + occurrence
+# per task) queried dimension=None is ASSERTED, not contradicted — the result
+# status is CONFLICT-driven, not head-COUNT-driven
+# ===========================================================================
+
+def _outbox_row(row_id, task_id, new_status, *, cabinet_id="main"):
+    """A synthetic officer_tasks_outbox row (the shape read_outbox_rows returns).
+    The tasks adapter expands it to TWO beliefs — entity(status) +
+    observation(occurrence) — a multi-dimension subject with ONE producer."""
+    return {
+        "id": row_id, "idempotency_key": f"idem-{row_id:08d}",
+        "event_id": f"evt-{row_id}", "task_id": task_id, "old_status": None,
+        "new_status": new_status, "old_blocked": None, "new_blocked": False,
+        "blocked_reason": None, "actor": "cos", "context_slug": "cog1",
+        "cabinet_id": cabinet_id, "correlation_id": f"corr{row_id:032d}",
+        "causation_id": None, "occurred_at": "2026-07-20T08:00:00Z",
+    }
+
+
+class TestMultiDimensionIsNotContradiction:
+    def test_two_dimensions_one_task_dimensionless_query_is_asserted(self):
+        # the tasks adapter emits status + occurrence for one task -> two
+        # dimensions, one subject, one producer.
+        protos = adapters.build_proto_beliefs([_outbox_row(1, 500, "wip")])
+        beliefs = engine.fold(protos, trust_table=TT)
+        assert sorted(b.dimension for b in beliefs) == ["occurrence", "status"]
+        r = query.as_of(beliefs, "tasks/500", scope=MAIN)      # dimension=None
+        assert r.status == "asserted"                          # NOT contradicted (F2)
+        assert len(r.views) == 2
+        assert all(v.status == "asserted" for v in r.views)
+        assert all(v.conflict_set == () for v in r.views)      # no conflict => no contradiction
+
+    def test_dimension_scoped_query_returns_that_facet_only(self):
+        # the same shape, queried with an explicit dimension, returns the ONE
+        # facet — asserted, single view (a facet is not a rival lineage).
+        protos = adapters.build_proto_beliefs([_outbox_row(2, 501, "done")])
+        beliefs = engine.fold(protos, trust_table=TT)
+        r = query.as_of(beliefs, "tasks/501", scope=MAIN, dimension="status")
+        assert r.status == "asserted" and len(r.views) == 1
+        assert r.views[0].dimension == "status"
+
+    def test_genuine_same_dimension_conflict_still_contradicts(self, tmp_path):
+        # regression the OTHER way: a real independent-lineage conflict on ONE
+        # dimension still aggregates to contradicted (the fix did not mute it).
+        beliefs = TestTwoProducerContradiction()._conflict(tmp_path)
+        r = query.as_of(beliefs, "observations/widget-9", scope=MAIN)
+        assert r.status == "contradicted"
+        assert any(v.conflict_set for v in r.views)
