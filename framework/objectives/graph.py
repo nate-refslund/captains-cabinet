@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,6 +31,16 @@ from framework.objectives import model, states
 from framework.cortex.query import as_of, load_beliefs_verified
 
 GRAPH_BUILDER_VERSION = "objectives-graph-builder/1"
+
+# Graph-owned canonical cutoff shape (§7.5 fail-closed). REPLICATED, not imported:
+# the §6.5 symbol pin admits only the seven cortex query-surface symbols, so the
+# cortex's private query._CANON_TS_RE is RED here — it is mirrored by VALUE, the
+# same idiom as states.HUMAN_VERDICT_SOURCE mirroring the consequence domain's
+# _REVIEW_SOURCES. A legal-but-non-canonical cutoff ("+00:00", fractional seconds,
+# or garbage) fences OPEN, so the build HARD-ERRORS on it at the _compile entry —
+# even when no as_of fires (empty store / no causal edges), which is the exact
+# fence-open hole cortex.as_of would otherwise be the only guard for.
+_CANON_CUTOFF_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 # known node kinds inferable from a `<kind>/<slug>` subject_key prefix (§4.1).
 _KIND_PREFIXES = frozenset({
@@ -265,6 +276,18 @@ def _cycles(node_ids, depends_edges):
 
 def _compile(roots_path, out_dir, cortex_dir, scope, cutoff, *,
              counterfactual, assumption_overrides):
+    # §5.1(2)/§7.5 fence-open guard: the ONE canonical build cutoff must be
+    # canonical HERE, at the entry — a non-canonical cutoff would fence OPEN in any
+    # branch where no as_of call fires (empty store / no causal edges), silently
+    # recording garbage in the epoch. Hard error, graph-owned (never the cortex's
+    # private regex). Covers the canonical build AND every counterfactual branch
+    # cutoff (both route through this one choke point).
+    if not isinstance(cutoff, str) or not _CANON_CUTOFF_RE.match(cutoff):
+        raise states.BuildFailure(
+            f"non-canonical build cutoff {cutoff!r}: a build cutoff must be a "
+            "canonical YYYY-MM-DDTHH:MM:SSZ timestamp (§5.1(2)/§7.5) — a "
+            "non-canonical cutoff fences OPEN, a hard error even when no as_of "
+            "fires")
     payload, is_json = _load_roots(roots_path)
     roots_hash = _roots_hash(roots_path)
     scope = dict(scope)
@@ -516,6 +539,17 @@ def _compile(roots_path, out_dir, cortex_dir, scope, cutoff, *,
             "scope": scope,
             "cutoff": cutoff,
         },
+        # §5.3 completeness: every build PARAMETER is recorded in the manifest,
+        # including the roots_path the CLI injects (§7.6). This is provenance only
+        # — build IDENTITY stays roots_hash (the content hash, in the epoch tuple);
+        # roots_path is deliberately OUTSIDE the epoch so it never enters identity.
+        "roots_path": str(roots_path),
+        # §5.4/C-F15: the chained rows-hash of the graph rows (re-parsed, sorted —
+        # the A-m11 discipline the epoch's cortex_belief_store_hash already uses).
+        # serve_graph re-derives this from graph.jsonl and REFUSES on mismatch, so a
+        # tampered/partial row can never serve silently (the manufactured-certainty
+        # class). Over the ROWS only — it cannot include the manifest that holds it.
+        "graph_rows_hash": _rows_chain(records),
         "divergence_report": divergence_report,
         "cycles": cycles,
         "bound_subjects": bound_subjects,
@@ -540,14 +574,45 @@ def _compile(roots_path, out_dir, cortex_dir, scope, cutoff, *,
 
 
 def build_graph(roots_path, cache_dir, scope, cutoff):
-    """The pure canonical build (§5.3). Reads the sibling cortex store
+    """The pure canonical build (§5.3). Requires a CANONICAL cutoff (hard error
+    otherwise — §7.5 fence-open guard). Reads the sibling cortex store
     (cache_dir/../cortex), derives every edge state at compile against the
     cutoff-fenced evidence, and writes canonical graph.jsonl + graph-manifest.json
-    under cache_dir. Writes NOTHING outside cache_dir (root bytes byte-identical
-    after build — §7.2/N4)."""
+    (which records every build parameter incl. roots_path, plus the graph_rows_hash
+    serve binds) under cache_dir. Writes NOTHING outside cache_dir (root bytes
+    byte-identical after build — §7.2/N4)."""
     cache_dir = Path(cache_dir)
     return _compile(roots_path, cache_dir, cache_dir.parent / "cortex", scope, cutoff,
                     counterfactual=False, assumption_overrides=None)
+
+
+def _read_graph_rows(cache_dir):
+    """Re-parse graph.jsonl into row dicts (empty when the file is absent)."""
+    rows = []
+    graph_path = Path(cache_dir) / "graph.jsonl"
+    if graph_path.exists():
+        for line in graph_path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                rows.append(json.loads(line))
+    return rows
+
+
+def _rows_chain(rows) -> str:
+    """The N1 chained hash over graph ROWS only (never the manifest that carries
+    it) — sorted by canonical bytes so it is seed-independent across the C-F3
+    subprocess triple (A-m11/§5.4). This is the value the manifest records as
+    graph_rows_hash; serve_graph re-derives + binds it (C-F15, §5.4)."""
+    chain = ""
+    for row in sorted(rows, key=model.canonical_bytes):
+        chain = model.digest([chain, row])
+    return chain
+
+
+def graph_rows_hash(cache_dir) -> str:
+    """Re-derive the rows-only chained hash from graph.jsonl on disk — the serve-
+    time binding value (§5.4/C-F15). A tampered/partial graph.jsonl no longer
+    reproduces the manifest's recorded graph_rows_hash, so serve_graph REFUSES."""
+    return _rows_chain(_read_graph_rows(cache_dir))
 
 
 def chained_graph_hash(cache_dir) -> str:
@@ -555,17 +620,8 @@ def chained_graph_hash(cache_dir) -> str:
     bytes — A-m11), sorted, so it is seed-independent across the C-F3 subprocess
     triple (§5.4)."""
     cache_dir = Path(cache_dir)
-    rows = []
-    graph_path = cache_dir / "graph.jsonl"
-    if graph_path.exists():
-        for line in graph_path.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                rows.append(json.loads(line))
-    rows.sort(key=model.canonical_bytes)
+    rows = _read_graph_rows(cache_dir)
     manifest_path = cache_dir / "graph-manifest.json"
     manifest = (json.loads(manifest_path.read_text(encoding="utf-8"))
                 if manifest_path.exists() else {})
-    chain = ""
-    for row in rows:
-        chain = model.digest([chain, row])
-    return model.digest([chain, manifest])
+    return model.digest([_rows_chain(rows), manifest])

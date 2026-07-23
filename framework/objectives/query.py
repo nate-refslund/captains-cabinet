@@ -9,12 +9,14 @@ of the others (no compensatory logic); an absent value is `unknown` and unknown
 NEVER passes a floor. Confidence rides WHOLE inside a binding's source_trust
 tuple, never as a bare number on the view (§5.5).
 
-SERVE SURFACE (U2): serve_graph binds the manifest epoch and REFUSES a
-counterfactual manifest OR a mixed-epoch store (live cortex store hash != the
-manifest's recorded cortex_belief_store_hash) — the C-F15 ServeRefused shape,
-§5.3/§5.4. serve_objective answers one objective (state + flags incl. orphaned);
-recommend cites the full provenance triple and refuses "effective" without an
-intervention_supported binding.
+SERVE SURFACE (U2): serve_graph binds the manifest epoch and REFUSES on any of
+three C-F15 limbs (§5.3/§5.4): a counterfactual manifest; a graph.jsonl that no
+longer reproduces the manifest's recorded graph_rows_hash (tampered/partial rows);
+or a mixed-epoch store (live cortex store hash != the manifest's recorded
+cortex_belief_store_hash — including the built-without-store null hole). All raise
+the C-F15 ServeRefused shape. serve_objective answers one objective (state + flags
+incl. orphaned); recommend cites the full provenance triple and refuses
+"effective" without an intervention_supported binding.
 
 Provenance: authored per the 2026-07-07 full-autonomy grant + the 2026-07-20
 cognitive-masterplan continuous grant; U1 (the derivation core) + U2 (serve).
@@ -25,7 +27,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from framework.objectives import states
+from framework.objectives import graph, states
 from framework.cortex.query import StoreCorruptError, load_beliefs_verified
 
 # ===========================================================================
@@ -141,10 +143,13 @@ def recommendation_record(objective_ref, evidence_refs, uncertainty, scorecard,
 
 class ServeRefused(Exception):
     """The serve surface refuses to bind a graph (C-F15 StoreCorruptError-shape
-    clone, §5.4): a manifest marked `counterfactual: true` (§5.3), OR a mixed-epoch
-    store whose live cortex belief-store hash != the manifest's recorded
-    `cortex_belief_store_hash`. Mixed-epoch answers are the dishonesty §5.5 forbids
-    — serve fails closed, never re-derives."""
+    clone, §5.4): a manifest marked `counterfactual: true` (§5.3); a graph.jsonl
+    that does not reproduce the manifest's `graph_rows_hash` (a tampered/partial
+    row store); OR a mixed-epoch store whose live cortex belief-store hash != the
+    manifest's recorded `cortex_belief_store_hash` (INCLUDING the built-without-
+    store hole: the manifest recorded null yet a live store now exists). Mixed-epoch
+    / unverified answers are the dishonesty §5.5 forbids — serve fails closed,
+    never re-derives."""
 
 
 @dataclass(frozen=True)
@@ -186,22 +191,43 @@ def _live_store_hash(cortex_dir):
 
 
 def serve_graph(objectives_cache_dir):
-    """Bind + serve the compiled graph. REFUSES (raises ServeRefused) a
-    `counterfactual: true` manifest (§5.3) or a mixed-epoch store whose live hash
-    != the manifest's `cortex_belief_store_hash` (§5.4). Compile-time states are
-    served labeled with the epoch — there is NO serve-time re-derivation."""
+    """Bind + serve the compiled graph. REFUSES (raises ServeRefused) on any of the
+    three C-F15 limbs (§5.3/§5.4): a `counterfactual: true` manifest; a graph.jsonl
+    that no longer reproduces the manifest's `graph_rows_hash` (tampered/partial
+    rows — the manufactured-certainty class); or a mixed-epoch store whose live hash
+    != the manifest's `cortex_belief_store_hash` — INCLUDING the built-without-store
+    hole (the manifest recorded no store hash yet a live store exists at serve
+    time). Compile-time states are served labeled with the epoch — there is NO
+    serve-time re-derivation."""
     d = Path(objectives_cache_dir)
     manifest = json.loads((d / "graph-manifest.json").read_text(encoding="utf-8"))
     if manifest.get("counterfactual") is True:
         raise ServeRefused("refusing to bind a counterfactual manifest (§5.3)")
+    # Rows-hash binding (C-F15 clone over the graph rows, §5.4): a tampered or
+    # partial graph.jsonl no longer reproduces the recorded chain — refuse, never
+    # serve unverified rows. Over the ROWS only; the manifest holds the expected.
+    recorded_rows = manifest.get("graph_rows_hash")
+    if recorded_rows is not None and graph.graph_rows_hash(d) != recorded_rows:
+        raise ServeRefused(
+            "graph rows-hash mismatch: graph.jsonl does not reproduce the "
+            "manifest's graph_rows_hash (tampered/partial store) — refuse to "
+            "serve (§5.4/C-F15)")
     epoch = manifest.get("epoch", {}) if isinstance(manifest, dict) else {}
     recorded = epoch.get("cortex_belief_store_hash")
-    if recorded is not None:
-        live = _live_store_hash(d.parent / "cortex")
-        if live != recorded:
+    live = _live_store_hash(d.parent / "cortex")
+    if recorded is None:
+        # Built-without-store None-hole (§5.4): the epoch recorded no cortex store,
+        # but a live store EXISTS at serve time — a mixed-epoch answer hides behind
+        # the null. Refuse explicitly instead of skipping the compare.
+        if live is not None:
             raise ServeRefused(
-                "mixed-epoch: live cortex store hash != the manifest's "
-                "cortex_belief_store_hash — refuse to serve (§5.4)")
+                "built-without-store: the graph epoch recorded no cortex store "
+                "(cortex_belief_store_hash null) but a live cortex store exists at "
+                "serve time — refuse mixed-epoch (§5.4)")
+    elif live != recorded:
+        raise ServeRefused(
+            "mixed-epoch: live cortex store hash != the manifest's "
+            "cortex_belief_store_hash — refuse to serve (§5.4)")
     return {"epoch": epoch, "records": _read_records(d), "manifest": manifest}
 
 
@@ -211,9 +237,9 @@ def serve_objective(cache_dir, subject_key):
     own root-edit signal); a never-authored subject answers explicit `unknown`."""
     for record in _read_records(cache_dir):
         if record.get("subject_key") == subject_key and not _is_edge_record(record):
+            # the orphaned flag travels in record["flags"] (the fold writes it there,
+            # graph.py:_compile) — there is no top-level `orphaned` key to consult.
             flags = set(record.get("flags") or [])
-            if record.get("orphaned"):
-                flags.add("orphaned")
             return Answer(state=record.get("state", states.STATE_UNKNOWN),
                           flags=frozenset(flags))
     return Answer(state=states.STATE_UNKNOWN, flags=frozenset())
