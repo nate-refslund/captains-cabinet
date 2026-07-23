@@ -52,6 +52,8 @@ EXPECTED_SCOPE = frozenset({
     # W4A sibling suite, joined at wave-4 integration (2026-07-23):
     "cabinet/scripts/tests/test_cog3_adapters.py",
     "cabinet/scripts/tests/test_cog3_census_wall.py",
+    # W4C exit-gate fixture battery, joined at wave-4c (2026-07-23):
+    "cabinet/scripts/tests/test_cog3_exit_fixtures.py",
     "cabinet/scripts/tests/test_cog3_import_gate.py",
     "cabinet/scripts/tests/test_cog3_no_scalar_ratchet.py",
     "cabinet/scripts/tests/test_cog3_objectives_ast_pin.py",

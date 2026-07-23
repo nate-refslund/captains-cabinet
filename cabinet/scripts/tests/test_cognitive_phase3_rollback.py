@@ -68,6 +68,9 @@ REMOVE_COMMITTED_FILES = {
     # sibling unit's suite, tracked after this constant was authored.
     "cabinet/scripts/tests/test_cog3_adapters.py",
     "cabinet/scripts/tests/test_cog3_census_wall.py",
+    # test_cog3_exit_fixtures.py added at wave-4c (2026-07-23): the exit-gate
+    # fixture battery (§11 tail + §2.4), tracked after this constant was authored.
+    "cabinet/scripts/tests/test_cog3_exit_fixtures.py",
     "cabinet/scripts/tests/test_cog3_import_gate.py",
     "cabinet/scripts/tests/test_cog3_no_scalar_ratchet.py",
     "cabinet/scripts/tests/test_cog3_objectives_ast_pin.py",
