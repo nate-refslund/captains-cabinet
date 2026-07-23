@@ -12,4 +12,6 @@ description = "Test fixtures with intentionally fake credentials"
 paths = [
   '''cabinet/dashboard/src/app/api/.*route\.test\.ts''',
   '''cabinet/scripts/lib/tests/test_compile_digest\.py''',
+  '''cabinet/scripts/tests/test_cog3_.*\.py''',
+  '''cabinet/scripts/tests/lib_cog3_.*\.py''',
 ]
