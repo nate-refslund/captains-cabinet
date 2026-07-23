@@ -7,6 +7,21 @@ phase: COG-1
 # 2026-07-07 full-autonomy grant.
 baseline_sha: 0bf60e698a148616bebc1676119913d11b272535
 
+# --- closed-range footprint seal (C1 retrofit, 2026-07-23) --------------------
+# The committed-footprint ratchet closes over a CLOSED range
+# baseline_sha..done_flip_sha, so it never sweeps LATER phases' commits into
+# the COG-1 footprint. The open-ended baseline_sha..HEAD range is the named
+# anti-pattern (BACKLOG :1551-1555; contract §16): once COG-2/COG-3/COG-4 land,
+# `git diff baseline..HEAD` includes their files (e.g. .gitleaks.toml, gained a
+# cog3 allowlist at 61e1f87a) and the un-extendable prior-phase manifest REDs on
+# a full clone. COG-1 is PARKED in-flight and was NEVER flipped to done (ledger
+# COG-1 note "Not implemented … OPENED 2026-07-20"), so there is no done-flip
+# commit; this SHA is the phase-1 FOOTPRINT SEAL — the last COG-1 landing commit
+# on master (1bcccff0, Merge #168 = the F1 live-target seam) — standing in for a
+# done-flip as the closed-range end. Derived from git history 2026-07-23
+# (baseline_sha..1bcccff0 = exactly the 44-file COG-1 footprint, zero strays).
+done_flip_sha: 1bcccff016a2e9996a5ea8d4a066db8ed261f179
+
 # --- runtime inverses (§12.4 — each ONE command, no data surgery) ------------
 # COG-1 changes live runtime (capture is in-transaction from the 047 apply;
 # emission cuts over via the pointer), so unlike the import-inert Phase-0 this
