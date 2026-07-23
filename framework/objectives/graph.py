@@ -215,6 +215,16 @@ def _first_belief_id(beliefs, subject_key, scope, cutoff):
     return result.views[0].belief_id if result.views else None
 
 
+def _bound_views_for(beliefs, subject_key, scope, cutoff):
+    """The served BeliefViews for one subject at the canonical cutoff (§5.1
+    defaults-only as_of) — the real bound evidence a causal edge's
+    evidence_subjects resolve to (W4A: the adapters emit the subject_keys, this ONE
+    cortex read path binds them). Empty when the store is empty."""
+    if not beliefs:
+        return []
+    return list(as_of(beliefs, subject_key, scope=scope, observation=cutoff).views)
+
+
 # ===========================================================================
 # Cycle detection (§11 sim1) — SCCs over depends_on, represented + flagged
 # ===========================================================================
@@ -399,19 +409,32 @@ def _compile(roots_path, out_dir, cortex_dir, scope, cutoff, *,
             record["floors"] = {cx["dimension"]: cx["floor"]}
         node_records.append(record)
 
-    # --- explicit provisional nodes (sim4 adapter surface) --------------------
+    # --- explicit provisional nodes (adapter surface) -------------------------
+    # W4A: an intervention node may carry a `join_spec` (the adapter-derived
+    # (actor,action,subject) matcher, §4.1); it is stored on the node record AND
+    # indexed by subject_key so the causal-edge loop can bind it into the edge's
+    # verified-join (§5.2b). The matcher is normalized to a tuple-of-tuples.
     node_kind_by_sk = {}
+    join_spec_by_sk = {}
     for nrec in node_records:
         node_kind_by_sk[nrec["subject_key"]] = nrec["kind"]
+    existing_sks = {n["subject_key"] for n in node_records}
     for dn in decl_nodes:
         kind = dn.get("kind")
         sk = dn.get("subject_key")
         if kind is None or sk is None:
             continue
         node_kind_by_sk[sk] = kind
-        if sk not in {n["subject_key"] for n in node_records}:
-            node_records.append({"node_id": model.node_id(kind, sk), "kind": kind,
-                                 "subject_key": sk})
+        js = dn.get("join_spec")
+        if js:
+            join_spec_by_sk[sk] = tuple(tuple(m) for m in js)
+        if sk not in existing_sks:
+            existing_sks.add(sk)
+            record = {"node_id": model.node_id(kind, sk), "kind": kind,
+                      "subject_key": sk}
+            if js:
+                record["join_spec"] = [list(m) for m in js]
+            node_records.append(record)
 
     def _kind_of(subject_key):
         if subject_key in node_kind_by_sk:
@@ -483,11 +506,25 @@ def _compile(roots_path, out_dir, cortex_dir, scope, cutoff, *,
         target_kind = _kind_of(tgt)
         # §4.2 SIM-4 structural rule: an instrument is never a legal causal target.
         model.assert_legal_causal_target(target_kind if target_kind else "unknown")
+        # W4A: resolve the adapter-emitted evidence_subjects through the ONE cortex
+        # read path (§5.1) into real bound views + binding refs; the source
+        # intervention's join_spec + the edge's assumptions/admissible_subjects
+        # complete the §5.2 EdgeView. An edge with no evidence_subjects binds
+        # nothing and derives P6 (the pre-W4A behavior, unchanged).
+        bound_views = []
+        evidence_bindings = []
+        for esk in ce.get("evidence_subjects", []) or []:
+            for view in _bound_views_for(beliefs, esk, scope, cutoff):
+                bound_views.append(view)
+                evidence_bindings.append(_Binding(view.subject_key, view.belief_id))
         derived = states.derive_edge_state(
-            _EdgeView(authored=True, expected_effect=ce.get("expected_effect", "maintain"),
-                      assumptions=(), admissible_subjects=frozenset(), join_spec=(),
-                      evidence_bindings=()),
-            (), cutoff)
+            _EdgeView(authored=True,
+                      expected_effect=ce.get("expected_effect", "maintain"),
+                      assumptions=tuple(ce.get("assumptions", []) or ()),
+                      admissible_subjects=frozenset(ce.get("admissible_subjects", []) or ()),
+                      join_spec=join_spec_by_sk.get(src, ()),
+                      evidence_bindings=tuple(evidence_bindings)),
+            tuple(bound_views), cutoff)
         edge_records.append({
             "edge_id": model.edge_id(_node_id_for(src), _node_id_for(tgt),
                                      ce.get("dimension", ""), family="causal"),
