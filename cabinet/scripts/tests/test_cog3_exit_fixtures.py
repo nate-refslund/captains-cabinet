@@ -407,3 +407,178 @@ def test_objectives_framework_carries_no_instance_product_tokens():
                 if tok in text:
                     hits.append((str(path.relative_to(_ROOT)), tok))
     assert hits == [], f"§9 r14: product tokens leaked into the objectives surface: {hits}"
+
+
+# ===========================================================================
+# SERVE-SURFACE UNIFORMITY (F1) — the WHOLE query surface binds + refuses
+# ===========================================================================
+#
+# F1 (COG-3 frozen-review ship-blocker): serve_objective and recommend read
+# graph.jsonl DIRECTLY, bypassing the three C-F15 REFUSE limbs that serve_graph
+# enforces — the fresh-context panel PROVED both ANSWERED on a counterfactual
+# manifest and on a rows-tampered cache. The fix routes ALL THREE public serve
+# functions through the ONE bound loader (query._load_bound); the module docstring
+# and §5.4/§5.3 pin serve-time binding on the WHOLE objectives query surface.
+#
+# This suite is the regression wall: for EACH of the three refusal limbs (tampered
+# rows / counterfactual manifest / mixed-epoch store) ALL THREE public serve
+# functions (serve_graph, serve_objective, recommend) must REFUSE. The fixture-1
+# software cache is BUILT ONCE end-to-end through the REAL CLI and REUSED — each
+# case works on an isolated COPY so a per-limb tamper never bleeds across. The
+# tamper setups mirror the panel's probes and the corpus idioms (sim2's cortex
+# refold for mixed-epoch, sim3's counterfactual manifest, the §5.4 rows-hash
+# binding for tampered rows). A pristine-cache positive control proves every serve
+# fn ANSWERS when bound — the refusals below are caused by the limb, not a broken
+# build (an always-red suite would prove nothing).
+
+# The fixture-1 objective the serve fns answer on a CLEAN cache — so the pre-fix
+# bypass ANSWERED here (returned a state / a record) and the fix turns it to a
+# refusal; a subject that would answer isolates the binding as the refusal cause.
+_F1_SUBJECT = "objective/faster-checkout"
+
+_SERVE_FNS = {
+    "serve_graph": lambda objectives: query.serve_graph(str(objectives)),
+    "serve_objective": lambda objectives: query.serve_objective(str(objectives), _F1_SUBJECT),
+    "recommend": lambda objectives: query.recommend(str(objectives), _F1_SUBJECT),
+}
+
+
+def _build_software_cache(cache_root, events_dir):
+    """Build the FIXTURE-1 software-product cache (sibling cortex + objectives)
+    end-to-end through the real cog3-rebuild.py CLI — the SAME seed as
+    test_fixture_software_product_cabinet. Returns cache_root (holding cortex/ +
+    objectives/)."""
+    cortex = cache_root / "cortex"
+    objectives = cache_root / "objectives"
+    base = cache_root.parent
+    rows = [
+        L.consequence_row("refactor", "checkout", verdict="confirmed",
+                          source="verdict_human", actor_kind="officer",
+                          actor_id="cto", ts=TS),
+        L.consequence_row("cache", "render", verdict="confirmed",
+                          source="verdict_judge", actor_kind="officer",
+                          actor_id="cto", ts=TS),
+    ]
+    obs = [
+        L.observation_proto("instrument/cache-hit-rate", "latency",
+                            claim=L.observed_effect_claim("increase"),
+                            seq=0, event_suffix="instr"),
+        L.observation_proto("outcome/page-render-time", "latency",
+                            claim=L.observed_effect_claim("decrease"),
+                            seq=0, event_suffix="outc"),
+    ]
+    _seed_cortex(cortex, events_dir, rows, obs)
+    roots = _write_json(base / "roots.yml", {
+        "directions": {"velocity": {"statement": "ship value faster"},
+                       "reliability": {"statement": "fewer defects in production"}},
+        "objectives": [{"slug": "faster-checkout", "root_ref": "velocity"}],
+    })
+    workgraph = _write_json(base / "workgraph.yml", {"tasks": [
+        {"task_id": 1, "actor": {"kind": "officer", "id": "cto"},
+         "action": "refactor", "subject": "checkout", "ts": TS,
+         "target": "outcome/checkout-latency", "dimension": "latency",
+         "expected_effect": "decrease", "assumptions": _ASSUMPTIONS},
+        {"task_id": 2, "actor": {"kind": "officer", "id": "cto"},
+         "action": "cache", "subject": "render", "ts": TS,
+         "target": "outcome/page-render-time", "dimension": "latency",
+         "expected_effect": "decrease", "assumptions": _ASSUMPTIONS},
+    ]})
+    missions = _write_json(base / "missions.yml", {"missions": [
+        {"slug": "checkout-latency", "dimension": "latency"},
+    ]})
+    products = _write_json(base / "products.yml", {"products": [
+        {"slug": "page-render-time", "dimension": "latency",
+         "instruments": ["cache-hit-rate"]},
+    ]})
+    proc = _run_cli(roots, objectives, workgraph=workgraph, missions=missions,
+                    products=products, hashseed=0)
+    assert proc.returncode == 0, proc.stderr
+    return cache_root
+
+
+@pytest.fixture(scope="module")
+def software_cache_pristine(tmp_path_factory):
+    """Build the fixture-1 software cache ONCE for the whole uniformity class
+    (F1 — "reuse the fixture-1 built cache"). tmp_path_factory is session-scoped so
+    it composes with this module-scoped fixture; the cortex seed reads
+    CABINET_EVENT_LOG_DIR only in THIS process (the CLI subprocess reads the
+    PERSISTED store), so we set it (and clear CABINET_SIM_MODE, matching events_dir)
+    around the build and restore the prior environment after."""
+    root = tmp_path_factory.mktemp("f1_uniformity")
+    cache_root = root / "cache"
+    events = root / "events"
+    events.mkdir()
+    saved = {k: os.environ.get(k) for k in ("CABINET_EVENT_LOG_DIR", "CABINET_SIM_MODE")}
+    os.environ["CABINET_EVENT_LOG_DIR"] = str(events)
+    os.environ.pop("CABINET_SIM_MODE", None)
+    try:
+        _build_software_cache(cache_root, events)
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+    return cache_root
+
+
+def _apply_uniformity_tamper(cache_root, limb):
+    """Reproduce the panel's F1 probe for ONE C-F15 limb on a COPY of the fixture-1
+    cache, and return the objectives dir the serve fns bind:
+
+      * "tampered_rows"  — append a row so graph.jsonl no longer reproduces the
+                           manifest's recorded graph_rows_hash (§5.4 rows-hash
+                           binding; the manufactured-certainty class).
+      * "counterfactual" — flip the served manifest's `counterfactual` flag true
+                           (the distinguishing mark of a counterfactual BRANCH
+                           manifest, §5.3 — serve refuses to bind it as canonical).
+      * "mixed_epoch"    — re-persist the SIBLING cortex with a DIFFERENT belief
+                           set so the live store hash != the manifest's recorded
+                           cortex_belief_store_hash (the sim2 refold idiom, §5.4)."""
+    objectives = cache_root / "objectives"
+    if limb == "tampered_rows":
+        with open(objectives / "graph.jsonl", "a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"tampered": "row"}) + "\n")
+    elif limb == "counterfactual":
+        man_path = objectives / "graph-manifest.json"
+        manifest = json.loads(man_path.read_text(encoding="utf-8"))
+        manifest["counterfactual"] = True
+        man_path.write_text(json.dumps(manifest), encoding="utf-8")
+    elif limb == "mixed_epoch":
+        drift = L.observation_proto("observation/f1-epoch-drift", L.DIMENSION,
+                                    claim=L.observed_effect_claim("increase"),
+                                    seq=0, event_suffix="f1-epoch-drift")
+        L.persist_cortex_store(cache_root / "cortex", L.fold_beliefs([drift]))
+    else:                                              # pragma: no cover — typo guard
+        raise ValueError(f"unknown limb {limb!r}")
+    return objectives
+
+
+class TestServeSurfaceUniformity:
+    """F1 regression wall: EVERY public serve entry point binds the manifest and
+    REFUSES on EVERY C-F15 limb — no per-objective / recommendation bypass."""
+
+    @pytest.mark.parametrize("fn_name", ["serve_graph", "serve_objective", "recommend"])
+    def test_serve_fn_answers_on_the_clean_bound_cache(
+            self, tmp_path, software_cache_pristine, fn_name):
+        # anti-no-op positive control: on the PRISTINE fixture-1 cache every serve
+        # fn BINDS and ANSWERS (never raises) — so the refusals below are caused by
+        # the limb, never a broken build. This is exactly the state the pre-fix
+        # bypass ANSWERED in for serve_objective / recommend.
+        work = tmp_path / "cache"
+        shutil.copytree(software_cache_pristine, work)
+        result = _SERVE_FNS[fn_name](work / "objectives")
+        assert result is not None
+
+    @pytest.mark.parametrize("limb", ["tampered_rows", "counterfactual", "mixed_epoch"])
+    @pytest.mark.parametrize("fn_name", ["serve_graph", "serve_objective", "recommend"])
+    def test_serve_fn_refuses_every_limb(
+            self, tmp_path, software_cache_pristine, limb, fn_name):
+        # THE F1 assertion: for each of the three C-F15 refusal limbs, EACH of the
+        # three public serve fns must raise ServeRefused. Pre-fix, serve_objective
+        # and recommend ANSWERED here (read graph.jsonl unbound) — the ship-blocker.
+        work = tmp_path / "cache"
+        shutil.copytree(software_cache_pristine, work)
+        objectives = _apply_uniformity_tamper(work, limb)
+        with pytest.raises(query.ServeRefused):
+            _SERVE_FNS[fn_name](objectives)

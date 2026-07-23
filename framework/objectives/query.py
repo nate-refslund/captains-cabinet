@@ -9,14 +9,16 @@ of the others (no compensatory logic); an absent value is `unknown` and unknown
 NEVER passes a floor. Confidence rides WHOLE inside a binding's source_trust
 tuple, never as a bare number on the view (§5.5).
 
-SERVE SURFACE (U2): serve_graph binds the manifest epoch and REFUSES on any of
-three C-F15 limbs (§5.3/§5.4): a counterfactual manifest; a graph.jsonl that no
-longer reproduces the manifest's recorded graph_rows_hash (tampered/partial rows);
-or a mixed-epoch store (live cortex store hash != the manifest's recorded
-cortex_belief_store_hash — including the built-without-store null hole). All raise
-the C-F15 ServeRefused shape. serve_objective answers one objective (state + flags
-incl. orphaned); recommend cites the full provenance triple and refuses
-"effective" without an intervention_supported binding.
+SERVE SURFACE (U2): the WHOLE surface binds through ONE loader (_load_bound) —
+serve_graph, serve_objective, AND recommend — so no entry point serves unbound
+rows (F1). It binds the manifest epoch and REFUSES on any of three C-F15 limbs
+(§5.3/§5.4): a counterfactual manifest; a graph.jsonl that no longer reproduces
+the manifest's recorded graph_rows_hash (tampered/partial rows); or a mixed-epoch
+store (live cortex store hash != the manifest's recorded cortex_belief_store_hash
+— including the built-without-store null hole). All raise the C-F15 ServeRefused
+shape. serve_objective answers one objective (state + flags incl. orphaned);
+recommend cites the full provenance triple and refuses "effective" without an
+intervention_supported binding.
 
 Provenance: authored per the 2026-07-07 full-autonomy grant + the 2026-07-20
 cognitive-masterplan continuous grant; U1 (the derivation core) + U2 (serve).
@@ -190,16 +192,19 @@ def _live_store_hash(cortex_dir):
     return manifest.get("belief_store_hash") if isinstance(manifest, dict) else None
 
 
-def serve_graph(objectives_cache_dir):
-    """Bind + serve the compiled graph. REFUSES (raises ServeRefused) on any of the
-    three C-F15 limbs (§5.3/§5.4): a `counterfactual: true` manifest; a graph.jsonl
+def _load_bound(cache_dir):
+    """The ONE bound load path for the WHOLE serve surface — serve_graph,
+    serve_objective, AND recommend route through here (F1), so no public entry
+    point can serve unbound rows. Binds the manifest epoch and REFUSES (raises
+    ServeRefused) on any of the three C-F15 limbs (§5.3/§5.4) BEFORE a single
+    record is read for serving: a `counterfactual: true` manifest; a graph.jsonl
     that no longer reproduces the manifest's `graph_rows_hash` (tampered/partial
-    rows — the manufactured-certainty class); or a mixed-epoch store whose live hash
-    != the manifest's `cortex_belief_store_hash` — INCLUDING the built-without-store
-    hole (the manifest recorded no store hash yet a live store exists at serve
-    time). Compile-time states are served labeled with the epoch — there is NO
-    serve-time re-derivation."""
-    d = Path(objectives_cache_dir)
+    rows — the manufactured-certainty class); or a mixed-epoch store whose live
+    cortex hash != the manifest's `cortex_belief_store_hash`, INCLUDING the
+    built-without-store hole (the manifest recorded no store hash yet a live store
+    exists at serve time). Returns (epoch, records, manifest) — compile-time states
+    labeled with the epoch; there is NO serve-time re-derivation."""
+    d = Path(cache_dir)
     manifest = json.loads((d / "graph-manifest.json").read_text(encoding="utf-8"))
     if manifest.get("counterfactual") is True:
         raise ServeRefused("refusing to bind a counterfactual manifest (§5.3)")
@@ -228,14 +233,28 @@ def serve_graph(objectives_cache_dir):
         raise ServeRefused(
             "mixed-epoch: live cortex store hash != the manifest's "
             "cortex_belief_store_hash — refuse to serve (§5.4)")
-    return {"epoch": epoch, "records": _read_records(d), "manifest": manifest}
+    return epoch, _read_records(d), manifest
+
+
+def serve_graph(objectives_cache_dir):
+    """Bind + serve the compiled graph through the shared bound loader
+    (_load_bound). REFUSES (raises ServeRefused) on any of the three C-F15 limbs
+    (§5.3/§5.4): a `counterfactual: true` manifest; a graph.jsonl that no longer
+    reproduces the manifest's `graph_rows_hash` (tampered/partial rows); or a
+    mixed-epoch store. Compile-time states are served labeled with the epoch —
+    there is NO serve-time re-derivation."""
+    epoch, records, manifest = _load_bound(objectives_cache_dir)
+    return {"epoch": epoch, "records": records, "manifest": manifest}
 
 
 def serve_objective(cache_dir, subject_key):
-    """Answer one objective (§5.2/§9 r5): its compiled state + answer flags. An
-    orphaned objective stays ANSWERABLE-with-flag (refusal would hide the Captain's
-    own root-edit signal); a never-authored subject answers explicit `unknown`."""
-    for record in _read_records(cache_dir):
+    """Answer one objective (§5.2/§9 r5): its compiled state + answer flags. Binds
+    through the shared loader FIRST (F1 — the three C-F15 REFUSE limbs guard the
+    per-objective surface too, never a bypass). An orphaned objective stays
+    ANSWERABLE-with-flag (refusal would hide the Captain's own root-edit signal); a
+    never-authored subject answers explicit `unknown`."""
+    _epoch, records, _manifest = _load_bound(cache_dir)
+    for record in records:
         if record.get("subject_key") == subject_key and not _is_edge_record(record):
             # the orphaned flag travels in record["flags"] (the fold writes it there,
             # graph.py:_compile) — there is no top-level `orphaned` key to consult.
@@ -246,11 +265,13 @@ def serve_objective(cache_dir, subject_key):
 
 
 def recommend(objectives_cache_dir, objective_ref):
-    """Build a recommendation for one objective from the compiled graph. Cites the
-    full provenance triple (objective_ref, evidence_refs, uncertainty, per-dimension
-    scorecard, :180) and REFUSES to call an outcome `effective` unless a causal edge
-    reached intervention_supported (§4.4/§5.2 P5 cap) — never a naked verdict."""
-    records = _read_records(objectives_cache_dir)
+    """Build a recommendation for one objective from the compiled graph. Binds
+    through the shared loader FIRST (F1 — the three C-F15 REFUSE limbs guard the
+    recommendation surface too). Cites the full provenance triple (objective_ref,
+    evidence_refs, uncertainty, per-dimension scorecard, :180) and REFUSES to call
+    an outcome `effective` unless a causal edge reached intervention_supported
+    (§4.4/§5.2 P5 cap) — never a naked verdict."""
+    _epoch, records, _manifest = _load_bound(objectives_cache_dir)
     node = None
     causal_states = []
     for record in records:
