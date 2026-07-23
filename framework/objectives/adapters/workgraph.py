@@ -16,9 +16,11 @@ mirrors that identity convention). Per task it emits:
     consequence subject (the fold resolves it through the ONE cortex read path).
 
 DIRECTION IS NEVER INVENTED (§4.2 / the wave brief): if the task carries no
-`expected_effect` (or no `target`), the adapter emits the intervention node but
-REFUSES the causal edge — a causal claim with no declared direction would be
-manufactured, so it is withheld rather than defaulted per-edge.
+`expected_effect`, no `target`, or no `dimension`, the adapter emits the
+intervention node but REFUSES the causal edge — a causal claim with no declared
+direction (or a schema-invalid `dimension: None`, which the fold would carry into
+the graph row) would be manufactured, so it is withheld rather than defaulted
+per-edge.
 
 CONSEQUENCE IDENTITY (§5.2b): the consequence subject_key is
 `consequence/<recorder-digest of (actor 'kind:id', action, subject, ts)>`,
@@ -46,8 +48,9 @@ def _actor_id(actor):
 def adapt(tasks):
     """Task-record list -> {nodes, causal_edges} fragment. Deterministic sorted
     order; a task with no `task_id` is skipped. A causal edge is emitted ONLY when
-    the task declares BOTH a direction (`expected_effect`) and a `target` outcome —
-    otherwise just the intervention node (direction never invented, §4.2)."""
+    the task declares a direction (`expected_effect`), a `target` outcome, AND a
+    `dimension` — otherwise just the intervention node (direction never invented, and
+    a `dimension: None` edge is schema-invalid, so it is withheld too, §4.2)."""
     nodes = []
     causal_edges = []
     for task in tasks or []:
@@ -63,8 +66,8 @@ def adapt(tasks):
                       "join_spec": [[actor_id, action, subject]]})
         effect = task.get("expected_effect")
         target = task.get("target")
-        if effect is None or target is None:
-            continue                           # REFUSE a directionless causal edge
+        if effect is None or target is None or task.get("dimension") is None:
+            continue                           # REFUSE a directionless/dimensionless edge
         consequence_sk = "consequence/" + model.digest([actor_id, action, subject, ts])
         causal_edges.append({
             "source": subject_key,

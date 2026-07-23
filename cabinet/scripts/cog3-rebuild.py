@@ -32,7 +32,7 @@ import yaml  # noqa: E402  (the CLI owns yaml — framework/objectives never doe
 
 from framework.objectives import graph  # noqa: E402
 from framework.objectives.adapters import (  # noqa: E402
-    assemble, mission_inputs, product_spec, workgraph)
+    AssemblyCollision, assemble, mission_inputs, product_spec, workgraph)
 
 # The default roots path lives HERE in the CLI (§7.6) — never inside framework.
 _DEFAULT_ROOTS = _REPO_ROOT / "instance" / "config" / "directions.yml"
@@ -42,21 +42,41 @@ _DEFAULT_CACHE = _REPO_ROOT / "cabinet" / "cache" / "objectives"
 def _load_records(path: str, key: str) -> list:
     """CLI-side yaml read of an adapter source file (§7.6: the CLI owns ALL file
     reading + yaml; adapters consume the parsed structures only). A `{key: [...]}`
-    mapping yields its list; a bare top-level list is used as-is."""
-    doc = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
-    if isinstance(doc, dict):
-        return doc.get(key, []) or []
-    return doc if isinstance(doc, list) else []
+    mapping yields its list (an explicit empty list is honored); a bare top-level
+    list is used as-is. A flag-passed file that carries NEITHER the expected
+    top-level key NOR a bare list is OPERATOR ERROR, never silence: hard-error
+    naming the key (so a `task:`/`tasks:` typo, or an empty file, can never masquerade
+    as a legitimately-empty adapter source)."""
+    doc = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    if isinstance(doc, list):
+        return doc
+    if isinstance(doc, dict) and key in doc:
+        return doc.get(key) or []
+    raise SystemExit(
+        f"cog3-rebuild: adapter source {path!r} has no top-level {key!r} key "
+        f"(expected a mapping with a {key!r} list, or a bare top-level list) — a "
+        f"flag-passed source that parses to no {key} is operator error, not silence")
 
 
 def _merge_adapter_sources(parsed: dict, *, workgraph_path, missions_path,
                            products_path) -> None:
     """W4A: run the workgraph/missions/products adapters on their CLI-parsed source
-    files and MERGE the assembled fragment into the roots-derived `parsed` (which
-    already carries the normalized `directions`). Default behavior — no flag — never
-    calls this, so the roots-only output is byte-for-byte backward compatible. An
-    absent source is DECLARED (never silent) via assemble's `declared_absent`."""
+    files and MERGE them with the roots-derived categories THROUGH THE ONE ASSEMBLY
+    LAW (`adapters.assemble`). The roots-derived `parsed` — the normalized
+    `directions` plus any objectives/outcomes/constraints/nodes/edges the roots file
+    itself declares — is passed as ONE MORE fragment, so the roots<->adapter merge
+    boundary is governed by the SAME collision law as the adapter<->adapter
+    boundary: a CONFLICTING duplicate (same node subject_key / edge (src,tgt,dim) /
+    slug identity, different content) raises AssemblyCollision (main exits non-zero)
+    instead of silently emitting TWO graph rows under one node_id; an IDENTICAL
+    duplicate is deduped to one; the output is deterministically sorted regardless of
+    source order. (Pre-fix this hand-concatenated the fragments onto the roots
+    categories with NO cross-check — the silent double-node_id corruption this
+    closes.) Default behavior — no flag — never calls this, so the roots-only output
+    is byte-for-byte backward compatible. An absent source is DECLARED (never silent)
+    in assemble's `declared_absent`."""
     fragments = {
+        "roots": parsed,
         "workgraph": (workgraph.adapt(_load_records(workgraph_path, "tasks"))
                       if workgraph_path else None),
         "mission_inputs": (mission_inputs.adapt(_load_records(missions_path, "missions"))
@@ -64,14 +84,19 @@ def _merge_adapter_sources(parsed: dict, *, workgraph_path, missions_path,
         "product_spec": (product_spec.adapt(_load_records(products_path, "products"))
                          if products_path else None),
     }
-    extra = assemble(fragments)
-    for category in ("objectives", "outcomes", "constraints", "nodes",
-                     "indicates_edges", "causal_edges"):
-        if extra.get(category):
-            parsed[category] = list(parsed.get(category) or []) + extra[category]
-    parsed["declared_absent"] = extra["declared_absent"]
+    # assemble reads ONLY the canonical category keys from each fragment (roots'
+    # sibling apex keys — `org`, … — are never read and pass through untouched) and
+    # returns every category merged+deduped+sorted plus `declared_absent`. Overwrite
+    # the category keys in place; the non-category roots keys are preserved.
+    parsed.update(assemble(fragments))
 
 
+# DELIBERATE DIVERGENCE (recorded): `framework.objectives.adapters.roots.adapt` is
+# the LIBRARY surface for objectives-key-bearing roots (an entry list -> directions +
+# rooted-objective fragment); `_normalize_roots` below is the PRODUCTION LANE — it
+# only reshapes the lane-keyed `directions:` mapping the real directions.yml carries,
+# and the CLI folds every OTHER canonical category via `_merge_adapter_sources`
+# (the adapter merge path), never through roots.adapt.
 def _normalize_roots(parsed: dict) -> None:
     """Reshape the Captain-direction roots into the canonical entry-list structure
     the pure fold reads — IN THE CLI, per the §7.6 layer law (the CLI owns yaml AND
@@ -126,8 +151,15 @@ def main(argv=None) -> int:
     # W4A: fold in the optional adapter sources (default — no flag — is untouched,
     # roots-only, backward compatible).
     if args.workgraph or args.missions or args.products:
-        _merge_adapter_sources(parsed, workgraph_path=args.workgraph,
-                               missions_path=args.missions, products_path=args.products)
+        try:
+            _merge_adapter_sources(parsed, workgraph_path=args.workgraph,
+                                   missions_path=args.missions,
+                                   products_path=args.products)
+        except AssemblyCollision as exc:
+            # two sources disagree about one graph element — the input is ill-formed;
+            # fail LOUD + non-zero rather than write a corrupt canonical artifact.
+            print(f"cog3-rebuild: adapter-source collision — {exc}", file=sys.stderr)
+            return 2
     cache = Path(args.cache)
     cache.mkdir(parents=True, exist_ok=True)
 

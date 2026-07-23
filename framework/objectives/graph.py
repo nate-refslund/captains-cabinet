@@ -594,6 +594,13 @@ def _compile(roots_path, out_dir, cortex_dir, scope, cutoff, *,
         "node_count": len(node_records),
         "edge_count": len(edge_records),
     }
+    # W4A (§2.2 blast isolation): the assembled objectives-input records WHICH adapter
+    # sources were DECLARED-absent; surface that durable fact at serve by copying it
+    # into the manifest. ADDITIVE + OUTSIDE the epoch tuple — provenance, never build
+    # identity (it never perturbs the epoch-mismatch REFUSE) — and written ONLY when
+    # present, so the default roots-only manifest stays byte-identical.
+    if payload.get("declared_absent") is not None:
+        manifest["declared_absent"] = payload["declared_absent"]
     if counterfactual:
         manifest["counterfactual"] = True
         manifest["assumption_overrides"] = assumption_overrides

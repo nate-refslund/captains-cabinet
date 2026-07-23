@@ -23,6 +23,7 @@ cognitive-masterplan continuous grant; W4A (the adapters package).
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -39,6 +40,24 @@ import lib_cog3_fixtures as L  # noqa: E402
 from framework.objectives import graph, query                      # noqa: E402
 from framework.objectives.adapters import (                        # noqa: E402
     assemble, AssemblyCollision, mission_inputs, product_spec, roots, workgraph)
+
+_CLI = Path(_ROOT) / "cabinet" / "scripts" / "cog3-rebuild.py"
+
+
+def _run_cli(roots_path, cache, *, products=None, workgraph_src=None, missions=None,
+             cutoff=L.CUTOFF):
+    """Run the real cog3-rebuild.py CLI (the production merge lane, §7.6) as a
+    subprocess and return the CompletedProcess — the honest end-to-end surface the
+    merge-boundary collision law must hold on."""
+    argv = [sys.executable, str(_CLI), "--roots", str(roots_path),
+            "--cache", str(cache), "--cutoff", cutoff]
+    if products is not None:
+        argv += ["--products", str(products)]
+    if workgraph_src is not None:
+        argv += ["--workgraph", str(workgraph_src)]
+    if missions is not None:
+        argv += ["--missions", str(missions)]
+    return subprocess.run(argv, capture_output=True, text=True)
 
 
 @pytest.fixture
@@ -115,6 +134,21 @@ def test_workgraph_refuses_a_causal_edge_when_direction_is_undeclared():
     assert frag["nodes"][0]["join_spec"] == [["cos:", "do", "x"]]
 
 
+def test_workgraph_refuses_a_causal_edge_when_dimension_is_undeclared():
+    # (nit a) a task with expected_effect + target but NO `dimension` would emit a
+    # schema-invalid "dimension": None causal edge (the fold carries it into the
+    # graph row). Treated like a missing direction: the adapter emits ONLY the
+    # intervention node and REFUSES the causal edge — adapters never invent a
+    # dimension, and no emitted causal edge carries a None dimension.
+    frag = workgraph.adapt([_keystone_task(dimension=None)])
+    assert frag["causal_edges"] == []
+    assert frag["nodes"][0]["subject_key"] == "tasks/42"
+    # discrimination: the SAME task WITH a dimension does emit the edge.
+    ok = workgraph.adapt([_keystone_task()])
+    assert len(ok["causal_edges"]) == 1
+    assert ok["causal_edges"][0]["dimension"] == L.DIMENSION
+
+
 # ===========================================================================
 # (3) mission_inputs adapter — outcome/constraint floors (§4.1)
 # ===========================================================================
@@ -159,7 +193,7 @@ def test_each_adapter_is_standalone_on_empty_input():
     assert product_spec.adapt([]) == {"outcomes": [], "nodes": [], "indicates_edges": []}
 
 
-def test_missing_product_adapter_is_declared_absent_never_silent():
+def test_missing_product_adapter_is_declared_absent_never_silent(tmp_path):
     # the missing-product-adapter foundry sim (§2.2): assembling with NO product
     # source SUCCEEDS with the absence DECLARED, and the present adapters intact.
     merged = assemble({
@@ -171,6 +205,17 @@ def test_missing_product_adapter_is_declared_absent_never_silent():
     assert merged["declared_absent"] == ["product_spec", "workgraph"]  # sorted, explicit
     assert merged["directions"] == [{"slug": "lane", "statement": "s"}]
     assert merged["outcomes"] == [{"slug": "o"}]
+
+    # (nit d) declared_absent is durable in the objectives-input but was invisible at
+    # serve; the build now copies it into graph-manifest.json (additive, OUTSIDE the
+    # epoch tuple). Prove it survives the build into the served manifest.
+    objectives = tmp_path / "cache" / "objectives"
+    objectives.mkdir(parents=True)
+    roots_path = tmp_path / "cache" / "objectives-input.json"
+    roots_path.write_text(json.dumps(merged), encoding="utf-8")
+    graph.build_graph(str(roots_path), str(objectives), L.SCOPE, L.CUTOFF)
+    manifest = json.loads((objectives / "graph-manifest.json").read_text(encoding="utf-8"))
+    assert manifest["declared_absent"] == ["product_spec", "workgraph"]
 
 
 # ===========================================================================
@@ -263,12 +308,43 @@ def test_keystone_human_confirm_without_assumptions_is_hypothesized(
 
 def test_keystone_is_deterministic_through_the_real_pipeline(
         tmp_path, consequence_ledger):
-    # the build over the assembled input reproduces byte-identical graph rows.
-    e1 = _run_keystone(tmp_path / "a", consequence_ledger,
-                       source="verdict_human", assumptions=True)
-    e2 = _run_keystone(tmp_path / "b", consequence_ledger,
-                       source="verdict_human", assumptions=True)
-    assert e1 == e2
+    # the build over the assembled input reproduces BYTE-IDENTICAL canonical
+    # artifacts — graph.jsonl AND graph-manifest.json — not merely an equal served
+    # edge. Two builds from ONE injected input into sibling out-dirs (shared cortex,
+    # shared roots file so roots_path is identical) must be byte-for-byte equal
+    # (§5.4 seed-independent chained hashing; A-M6 purity — no clock in the epoch).
+    cache_root = tmp_path / "cache"
+    cortex = cache_root / "cortex"
+    cortex.mkdir(parents=True)
+    row = L.consequence_row("ship", "feature-x", verdict="confirmed",
+                            source="verdict_human", actor_kind="officer",
+                            actor_id="cto", ts=L.EVIDENCE_TS)
+    L.seed_consequence_ledger(consequence_ledger, [row])
+    L.persist_cortex_store(cortex, L.fold_beliefs(L.consequence_protos()))
+
+    task = _keystone_task(assumptions=["declared-confounder-and-selection"])
+    merged = assemble({
+        "roots": None,
+        "workgraph": workgraph.adapt([task]),
+        "mission_inputs": mission_inputs.adapt([{"slug": "feature-x",
+                                                 "dimension": L.DIMENSION}]),
+        "product_spec": None,
+    })
+    roots_path = cache_root / "objectives-input.json"
+    roots_path.write_text(json.dumps(merged), encoding="utf-8")
+
+    out_a, out_b = cache_root / "objectives_a", cache_root / "objectives_b"
+    graph.build_graph(str(roots_path), str(out_a), L.SCOPE, L.CUTOFF)
+    graph.build_graph(str(roots_path), str(out_b), L.SCOPE, L.CUTOFF)
+
+    assert (out_a / "graph.jsonl").read_bytes() == (out_b / "graph.jsonl").read_bytes()
+    assert (out_a / "graph-manifest.json").read_bytes() \
+        == (out_b / "graph-manifest.json").read_bytes()
+    # and the served edge still lands where the pipeline promises (P3: a human
+    # confirm + assumptions) — the property the equal-edge check originally pinned.
+    served = query.serve_graph(str(out_a))
+    edges = [r for r in served["records"] if r.get("target_kind") and "state" in r]
+    assert len(edges) == 1 and edges[0]["state"] == L.STATE_INTERVENTION_SUPPORTED
 
 
 # ===========================================================================
@@ -308,3 +384,91 @@ def test_product_indicates_edge_survives_the_build(tmp_path):
             (objectives / "graph.jsonl").read_text(encoding="utf-8").splitlines() if x.strip()]
     assert any(r.get("relation") == "indicates" for r in rows)
     assert any(r.get("kind") == "instrument" for r in rows)
+
+
+# ===========================================================================
+# (9) the CLI roots<->adapter merge boundary — the ONE assembly law (MUST-FIX)
+# ===========================================================================
+#
+# The production merge lane is cog3-rebuild.py `_merge_adapter_sources`. Pre-fix it
+# hand-concatenated the adapter fragments onto the roots-derived categories with NO
+# collision check, so a roots-derived and an adapter-emitted item sharing one
+# identity but disagreeing on content produced TWO graph.jsonl rows under ONE
+# node_id at exit 0 — a silently corrupt canonical artifact. These pin the fix
+# THROUGH THE REAL CLI SUBPROCESS: a conflict fails loud + non-zero with no artifact;
+# an identical duplicate dedups to one row; and an operator-typo source key is a hard
+# error, never a silent empty adapter.
+
+def _write(path, text):
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_cli_merge_collision_between_roots_and_adapter_fails_loudly(tmp_path):
+    # MUST-FIX repro: roots-derived outcome 'feature-x' (dimension speed) + --products
+    # outcome 'feature-x' (dimension cost) => same slug, conflicting content. The
+    # shared assembly law makes this a LOUD non-zero failure with a clear message and
+    # NO corrupt graph.jsonl (pre-fix: exit 0, two rows under one node_id).
+    roots_f = _write(tmp_path / "roots.yml",
+                     'directions:\n  lane-a:\n    statement: "s"\n'
+                     "outcomes:\n  - slug: feature-x\n    dimension: speed\n")
+    products_f = _write(tmp_path / "products.yml",
+                        "products:\n  - slug: feature-x\n    dimension: cost\n"
+                        "    instruments: [lead-time]\n")
+    cache = tmp_path / "cache" / "objectives"
+    proc = _run_cli(roots_f, cache, products=products_f)
+    assert proc.returncode != 0, f"expected non-zero on collision; stdout={proc.stdout!r}"
+    assert "collision" in proc.stderr.lower(), proc.stderr
+    assert "feature-x" in proc.stderr, proc.stderr
+    # the corrupt canonical artifact was NEVER written (collision precedes the build).
+    assert not (cache / "graph.jsonl").exists()
+
+
+def test_cli_merge_identical_duplicate_builds_one_row(tmp_path):
+    # MUST-FIX companion: an IDENTICAL roots/adapter outcome ('feature-x', cost on
+    # both sides) is DEDUPED to ONE graph row, exit 0 — the same assembly law that
+    # rejects a conflict accepts a true duplicate (pre-fix: two identical rows,
+    # inflated node_count).
+    roots_f = _write(tmp_path / "roots.yml",
+                     'directions:\n  lane-a:\n    statement: "s"\n'
+                     "outcomes:\n  - slug: feature-x\n    dimension: cost\n")
+    products_f = _write(tmp_path / "products.yml",
+                        "products:\n  - slug: feature-x\n    dimension: cost\n"
+                        "    instruments: [lead-time]\n")
+    cache = tmp_path / "cache" / "objectives"
+    proc = _run_cli(roots_f, cache, products=products_f)
+    assert proc.returncode == 0, proc.stderr
+    rows = [json.loads(x) for x in
+            (cache / "graph.jsonl").read_text(encoding="utf-8").splitlines() if x.strip()]
+    fx = [r for r in rows if r.get("subject_key") == "outcome/feature-x"]
+    assert len(fx) == 1, fx                                   # deduped, not doubled
+    # node_count is honest — no duplicate node_id inflating it.
+    manifest = json.loads((cache / "graph-manifest.json").read_text(encoding="utf-8"))
+    node_ids = [r["node_id"] for r in rows if r.get("kind")]
+    assert len(node_ids) == len(set(node_ids)) == manifest["node_count"]
+
+
+def test_cli_adapter_source_with_wrong_top_level_key_is_a_hard_error(tmp_path):
+    # (nit b) a flag-passed source whose top-level key does not match (a `task:` vs
+    # `tasks:` typo) previously yielded an empty adapter SILENTLY. It is operator
+    # error: the CLI hard-errors non-zero, naming the expected key.
+    roots_f = _write(tmp_path / "roots.yml",
+                     'directions:\n  lane-a:\n    statement: "s"\n')
+    bad = _write(tmp_path / "wg.yml",                         # 'task:' (typo) not 'tasks:'
+                 "task:\n  - task_id: 1\n    action: do\n    subject: x\n")
+    cache = tmp_path / "cache" / "objectives"
+    proc = _run_cli(roots_f, cache, workgraph_src=bad)
+    assert proc.returncode != 0, proc.stdout
+    assert "tasks" in proc.stderr, proc.stderr
+    assert not (cache / "graph.jsonl").exists()
+
+
+def test_cli_default_no_flag_build_is_unchanged_and_omits_declared_absent(tmp_path):
+    # backward-compat: the default no-flag lane never calls the merge path, so the
+    # roots-only manifest carries NO declared_absent key (the additive field appears
+    # ONLY when the adapter merge ran). Builds green on the real production roots.
+    cache = tmp_path / "cache" / "objectives"
+    proc = _run_cli(Path(_ROOT) / "instance" / "config" / "directions.yml", cache)
+    assert proc.returncode == 0, proc.stderr
+    manifest = json.loads((cache / "graph-manifest.json").read_text(encoding="utf-8"))
+    assert "declared_absent" not in manifest
