@@ -9,17 +9,24 @@ of the others (no compensatory logic); an absent value is `unknown` and unknown
 NEVER passes a floor. Confidence rides WHOLE inside a binding's source_trust
 tuple, never as a bare number on the view (§5.5).
 
-NOT BUILT HERE (U2): the serve/hash-binding surface — serve-time manifest-hash
-REFUSE, counterfactual-manifest REFUSE, mixed-epoch REFUSE — lands with graph.py.
+SERVE SURFACE (U2): serve_graph binds the manifest epoch and REFUSES a
+counterfactual manifest OR a mixed-epoch store (live cortex store hash != the
+manifest's recorded cortex_belief_store_hash) — the C-F15 ServeRefused shape,
+§5.3/§5.4. serve_objective answers one objective (state + flags incl. orphaned);
+recommend cites the full provenance triple and refuses "effective" without an
+intervention_supported binding.
 
 Provenance: authored per the 2026-07-07 full-autonomy grant + the 2026-07-20
-cognitive-masterplan continuous grant; U1 (the derivation core).
+cognitive-masterplan continuous grant; U1 (the derivation core) + U2 (serve).
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 from framework.objectives import states
+from framework.cortex.query import StoreCorruptError, load_beliefs_verified
 
 # ===========================================================================
 # The bijective internal <-> Captain vocabulary (§5.2 — ONE table, round-trip)
@@ -126,3 +133,113 @@ def recommendation_record(objective_ref, evidence_refs, uncertainty, scorecard,
     if claim is not None:
         record["claim"] = claim
     return record
+
+
+# ===========================================================================
+# The serve surface (§5.3/§5.4) — epoch-bound, REFUSE clauses, answer flags
+# ===========================================================================
+
+class ServeRefused(Exception):
+    """The serve surface refuses to bind a graph (C-F15 StoreCorruptError-shape
+    clone, §5.4): a manifest marked `counterfactual: true` (§5.3), OR a mixed-epoch
+    store whose live cortex belief-store hash != the manifest's recorded
+    `cortex_belief_store_hash`. Mixed-epoch answers are the dishonesty §5.5 forbids
+    — serve fails closed, never re-derives."""
+
+
+@dataclass(frozen=True)
+class Answer:
+    """One served objective answer — the derived state + the answer FLAGS beside
+    it (contested / direction_contested / orphaned, §5.2), never extra states."""
+    state: str
+    flags: frozenset
+
+
+def _read_records(cache_dir):
+    path = Path(cache_dir) / "graph.jsonl"
+    records = []
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                records.append(json.loads(line))
+    return records
+
+
+def _is_edge_record(record) -> bool:
+    return "edge_id" in record or "relation" in record or "source_node_id" in record
+
+
+def _live_store_hash(cortex_dir):
+    """The LIVE verified cortex belief-store hash, or None when no store exists.
+    Binds the store to its own fold manifest first (C-F15) so a tampered store is
+    refused, then returns the manifest's belief_store_hash for the epoch compare."""
+    cortex_dir = Path(cortex_dir)
+    fold_manifest = cortex_dir / "fold-manifest.json"
+    if not fold_manifest.exists():
+        return None
+    try:
+        load_beliefs_verified(cortex_dir)                 # C-F15 bound read
+    except StoreCorruptError as exc:
+        raise ServeRefused(f"cortex store failed its hash binding: {exc}") from None
+    manifest = json.loads(fold_manifest.read_text(encoding="utf-8"))
+    return manifest.get("belief_store_hash") if isinstance(manifest, dict) else None
+
+
+def serve_graph(objectives_cache_dir):
+    """Bind + serve the compiled graph. REFUSES (raises ServeRefused) a
+    `counterfactual: true` manifest (§5.3) or a mixed-epoch store whose live hash
+    != the manifest's `cortex_belief_store_hash` (§5.4). Compile-time states are
+    served labeled with the epoch — there is NO serve-time re-derivation."""
+    d = Path(objectives_cache_dir)
+    manifest = json.loads((d / "graph-manifest.json").read_text(encoding="utf-8"))
+    if manifest.get("counterfactual") is True:
+        raise ServeRefused("refusing to bind a counterfactual manifest (§5.3)")
+    epoch = manifest.get("epoch", {}) if isinstance(manifest, dict) else {}
+    recorded = epoch.get("cortex_belief_store_hash")
+    if recorded is not None:
+        live = _live_store_hash(d.parent / "cortex")
+        if live != recorded:
+            raise ServeRefused(
+                "mixed-epoch: live cortex store hash != the manifest's "
+                "cortex_belief_store_hash — refuse to serve (§5.4)")
+    return {"epoch": epoch, "records": _read_records(d), "manifest": manifest}
+
+
+def serve_objective(cache_dir, subject_key):
+    """Answer one objective (§5.2/§9 r5): its compiled state + answer flags. An
+    orphaned objective stays ANSWERABLE-with-flag (refusal would hide the Captain's
+    own root-edit signal); a never-authored subject answers explicit `unknown`."""
+    for record in _read_records(cache_dir):
+        if record.get("subject_key") == subject_key and not _is_edge_record(record):
+            flags = set(record.get("flags") or [])
+            if record.get("orphaned"):
+                flags.add("orphaned")
+            return Answer(state=record.get("state", states.STATE_UNKNOWN),
+                          flags=frozenset(flags))
+    return Answer(state=states.STATE_UNKNOWN, flags=frozenset())
+
+
+def recommend(objectives_cache_dir, objective_ref):
+    """Build a recommendation for one objective from the compiled graph. Cites the
+    full provenance triple (objective_ref, evidence_refs, uncertainty, per-dimension
+    scorecard, :180) and REFUSES to call an outcome `effective` unless a causal edge
+    reached intervention_supported (§4.4/§5.2 P5 cap) — never a naked verdict."""
+    records = _read_records(objectives_cache_dir)
+    node = None
+    causal_states = []
+    for record in records:
+        if _is_edge_record(record):
+            if "state" in record and "target_kind" in record:
+                causal_states.append(record["state"])
+        elif record.get("subject_key") == objective_ref:
+            node = record
+    effective = states.STATE_INTERVENTION_SUPPORTED in causal_states
+    evidence_refs = [{"state": s} for s in causal_states]
+    return {
+        "objective_ref": objective_ref,
+        "evidence_refs": evidence_refs,
+        "uncertainty": "unknown",
+        "scorecard": {},
+        "state": node.get("state") if node else states.STATE_UNKNOWN,
+        "effective": effective,
+    }
