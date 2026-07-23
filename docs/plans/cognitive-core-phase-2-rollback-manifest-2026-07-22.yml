@@ -8,6 +8,19 @@ phase: COG-2
 # 2026-07-07 full-autonomy grant + the 2026-07-20 cognitive-masterplan grant.
 baseline_sha: b393f41b579c5ff4723f4502b006df58e9664cf1
 
+# --- closed-range footprint seal (C1 retrofit, 2026-07-23) --------------------
+# The committed-footprint ratchet closes over a CLOSED range
+# baseline_sha..done_flip_sha, so it never sweeps LATER phases' commits into the
+# COG-2 footprint. The open-ended baseline_sha..HEAD range is the named
+# anti-pattern (BACKLOG :1551-1555; contract §16): once COG-3/COG-4 landed,
+# `git diff baseline..HEAD` picked up their edits (e.g. .gitleaks.toml, modified
+# by cog3 wave 3 at 61e1f87a) and this un-extendable prior-phase manifest RED'd
+# on a full clone. done_flip_sha is the COG-2 DONE-FLIP commit — the ledger row
+# COG-2 → done ("phase-complete shipped") — the exact end of the COG-2 footprint.
+# Derived from git history 2026-07-23 (baseline_sha..754998f8 = exactly the
+# 46-file COG-2 footprint, zero strays).
+done_flip_sha: 754998f8174e8e092d3f14663d10ccf33dbb9861
+
 # --- runtime inverses (§12.4 — each ONE command, no data surgery) ------------
 # COG-2 is shadow-only (contract Runtime posture): it writes NO authoritative
 # store, emits NO events, adds NO services.yml row, edits NO germline path, and

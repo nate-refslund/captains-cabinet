@@ -22,6 +22,7 @@ def test_phase_0_inverse_manifest_is_closed_and_append_only_aware():
         "schema_version",
         "phase",
         "baseline_sha",
+        "done_flip_sha",
         "remove",
         "restore_from_baseline",
         "retain_append_only",
@@ -31,6 +32,9 @@ def test_phase_0_inverse_manifest_is_closed_and_append_only_aware():
     assert manifest["schema_version"] == "cognitive-phase-rollback/v1"
     assert manifest["phase"] == "COG-0"
     assert manifest["baseline_sha"] == "8f9c555d2064d55a159a53fcedd6df33434a9291"
+    # C1 retrofit (2026-07-23): the COG-0 done-flip, a documentation-only pin —
+    # phase-0 has no committed-footprint range ratchet (see the manifest note).
+    assert manifest["done_flip_sha"] == "5b82db4da26b7f9f8b957fac04c354d72059b923"
     all_paths = manifest["remove"] + manifest["restore_from_baseline"]
     assert len(all_paths) == len(set(all_paths))
     assert all(not Path(item).is_absolute() and ".." not in Path(item).parts for item in all_paths)
