@@ -139,6 +139,15 @@ delete cabinet/scripts/verify-cognitive-phase2.sh
 delete cabinet/scripts/cognitive-phase2-review-scope.py
 delete cabinet/scripts/cognitive-phase2-rollback-rehearsal.py
 delete cabinet/scripts/tests/test_cognitive_phase2_rollback.py
+delete cabinet/scripts/verify-cognitive-phase3.sh
+# COG-3 phase-3 private landing proof (same class as COG-0/1/2 above): the
+# review-scope binder, rollback rehearsal, and rollback-closure test bind THIS
+# launching instance's reviewed bytes, baseline, and rollback plan — historical
+# phase tooling, never ships. The enduring Objectives CLIs + framework surface
+# ride the egg (expect-present below).
+delete cabinet/scripts/cognitive-phase3-review-scope.py
+delete cabinet/scripts/cognitive-phase3-rollback-rehearsal.py
+delete cabinet/scripts/tests/test_cognitive_phase3_rollback.py
 delete docs/runbooks/egg-export-2026-07-10.md
 # PC-C launch-kit privacy (integration ruling 2026-07-10): docs/launch/ is
 # CG-7 PER-ITEM publication material (Show HN draft, business-model proposal,
@@ -413,6 +422,39 @@ expect-present cabinet/scripts/cog2-belief-hash.py
 expect-present cabinet/scripts/cog2-verifier.py
 expect-present cabinet/scripts/cog2-parity-falsifier.py
 expect-present cabinet/scripts/cog2-import-gate.py
+# COG-3 (Objectives): the shadow causal objective/value graph is universal
+# framework DNA (contract §8 file table). The import-inert package, its
+# registry-resolved domain schemas, and the enduring rebuild/hash/staleness/parity
+# CLIs all ship. The runtime projection cache (cabinet/cache/objectives/*) is
+# gitignored per-cabinet runtime data. The phase-3 private landing tools (verify
+# twin, review-scope, rollback-rehearsal, rollback-closure test) archive out under
+# their own paired delete + expect-absent rows. The blast-isolated adapters
+# package (framework/objectives/adapters/*) is built by a SIBLING wave-4 unit; it
+# is named here so the integrated egg ships it (the integrator reconciles any file
+# not yet present at landing).
+expect-present framework/objectives/__init__.py
+expect-present framework/objectives/model.py
+expect-present framework/objectives/graph.py
+expect-present framework/objectives/states.py
+expect-present framework/objectives/query.py
+expect-present framework/objectives/counterfactual.py
+expect-present framework/objectives/ovi_view.py
+# The blast-isolated adapters package ships (activated at wave-4 integration,
+# 2026-07-23, in the same tree that tracks the files — the sibling-deferred
+# commented rows from the W4B build are hereby ACTIVATED):
+expect-present framework/objectives/adapters/__init__.py
+expect-present framework/objectives/adapters/roots.py
+expect-present framework/objectives/adapters/workgraph.py
+expect-present framework/objectives/adapters/mission_inputs.py
+expect-present framework/objectives/adapters/product_spec.py
+expect-present framework/schemas/domains/objectives/node.v1.json
+expect-present framework/schemas/domains/objectives/edge.v1.json
+expect-present framework/schemas/domains/objectives/prediction.v1.json
+expect-present framework/schemas/domains/objectives/scorecard.v1.json
+expect-present cabinet/scripts/cog3-rebuild.py
+expect-present cabinet/scripts/cog3-graph-hash.py
+expect-present cabinet/scripts/cog3-staleness.py
+expect-present cabinet/scripts/cog3-ovi-parity.py
 # R167: dropped from the plans-archive keep-list (see R167 above) — the
 # coupling census now archives with the rest of docs/plans instance history.
 expect-absent docs/plans/source-adapter-boundary-2026-07-05.md
@@ -507,6 +549,11 @@ expect-absent cabinet/scripts/verify-cognitive-phase2.sh
 expect-absent cabinet/scripts/cognitive-phase2-review-scope.py
 expect-absent cabinet/scripts/cognitive-phase2-rollback-rehearsal.py
 expect-absent cabinet/scripts/tests/test_cognitive_phase2_rollback.py
+expect-absent cabinet/scripts/verify-cognitive-phase3.sh
+# COG-3 phase-3 private landing tools (paired delete rows above) — never ship.
+expect-absent cabinet/scripts/cognitive-phase3-review-scope.py
+expect-absent cabinet/scripts/cognitive-phase3-rollback-rehearsal.py
+expect-absent cabinet/scripts/tests/test_cognitive_phase3_rollback.py
 # COG-2: the Cortex parity VERDICT LOG is per-cabinet runtime data — gitignored
 # under cabinet/logs/* (Spec 043 runtime-log idiom), so it never enters the
 # archive cut. Pinned absent defensively (the node_modules idiom): the export

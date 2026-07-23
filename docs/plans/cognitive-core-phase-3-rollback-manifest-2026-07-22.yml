@@ -1,0 +1,185 @@
+schema_version: cognitive-phase-rollback/v1
+phase: COG-3
+# S0 pin (§12.1): origin/master at COG-3 implementation start == the parent of
+# the first implementation commit (wave 1, 83009ce1) == the phase-3 contract
+# commit (b2890f19, which added the contract doc + opened the COG-3 ledger row).
+# The extended files restore here; restoring
+# cabinet/config/cognitive-architecture-contract.yml to it removes the COG-3
+# temporary_allowances rows (allowance_removal below). Self-ratified per the
+# 2026-07-07 full-autonomy grant + the 2026-07-20 cognitive-masterplan grant.
+baseline_sha: b2890f19e1be2c4a267659e61f1bb8f216e57dca
+
+# --- runtime inverse (§12.4 — ONE command, no data surgery) ------------------
+# COG-3 (the "Objectives" causal graph) is shadow-only (contract §1 / §7.2): it
+# writes NO authoritative store, emits NO events, adds NO services.yml row, edits
+# NO germline path, is imported by NO authority/action code, and — UNLIKE COG-2 —
+# creates NO read-pointer file (§7.4: no pointer this phase; its mere existence is
+# a verify-cognitive-phase3.sh tripwire) and adds NO Postgres role (§2.1: no new
+# reads/roles; cortex_ro inherited transitively). So the ONLY runtime footprint is
+# a DISPOSABLE projection cache — every inverse is safe by construction.
+runtime_inverses:
+  - name: objectives_cache
+    command: rm -rf cabinet/cache/objectives
+    effect: >-
+      delete the disposable objectives projection cache — graph.jsonl +
+      graph-manifest.json + the objectives-index.sqlite3 AND the predictions/ +
+      counterfactuals/ subtrees. ALWAYS SAFE BY CONSTRUCTION (§7.3 delete-cache-
+      always-safe): the canonical graph is a pure function of the authoritative
+      roots + cortex store and loses nothing on delete; the ONE honest consequence
+      is forecast-history loss under predictions/ (§4.3 — expendable in shadow by
+      declaration, durable re-home is a named flip-time obligation) and each
+      counterfactuals/<digest>/ branch is separately replayable
+    reversible_by: >-
+      python3.12 cabinet/scripts/cog3-rebuild.py --cutoff <canonical-ts>
+      --cache cabinet/cache/objectives
+
+# --- code inverse: remove new COG-3 files -------------------------------------
+# The COG-3 footprint: the committed waves 1+3 (baseline_sha..HEAD "A") plus the
+# wave-4 phase-complete landing (working-tree new files, committed in the landing
+# commit). framework/objectives + framework/schemas/domains/objectives are named
+# as DIRECTORIES (wholesale) so the sibling-built adapters/ subtree
+# (framework/objectives/adapters/*, absent at THIS clone but present post-
+# integration) is deleted with the rest — the §12.4 "delete framework/objectives/"
+# instruction. cabinet/scripts/tests/test_cognitive_phase3_rollback.py::
+# test_manifest_covers_committed_cog3_footprint is the ratchet that catches an
+# un-extended manifest against the ACTUAL committed footprint (dir-prefix aware).
+remove:
+  # framework surface (DIRS — wholesale, incl. the sibling-built adapters/):
+  - framework/objectives
+  - framework/schemas/domains/objectives
+  # Committed COG-3 scripts + instruments (waves 1/2, baseline_sha..HEAD "A"):
+  - cabinet/scripts/cog3-rebuild.py
+  - cabinet/scripts/cog3-graph-hash.py
+  - cabinet/scripts/cog3-staleness.py
+  # Committed COG-3 tests-first corpus (wave 3, baseline_sha..HEAD "A"):
+  - cabinet/scripts/tests/lib_cog3_fixtures.py
+  - cabinet/scripts/tests/lib_cog3_import_ast.py
+  - cabinet/scripts/tests/lib_cog3_no_scalar.py
+  - cabinet/scripts/tests/test_cog3_adapters.py
+  - cabinet/scripts/tests/test_cog3_census_wall.py
+  - cabinet/scripts/tests/test_cog3_exit_fixtures.py
+  - cabinet/scripts/tests/test_cog3_import_gate.py
+  - cabinet/scripts/tests/test_cog3_no_scalar_ratchet.py
+  - cabinet/scripts/tests/test_cog3_objectives_ast_pin.py
+  - cabinet/scripts/tests/test_cog3_read_pointer.py
+  - cabinet/scripts/tests/test_cog3_sim1_objective_conflict.py
+  - cabinet/scripts/tests/test_cog3_sim2_stale_verdict.py
+  - cabinet/scripts/tests/test_cog3_sim3_counterfactual.py
+  - cabinet/scripts/tests/test_cog3_sim4_goodhart.py
+  - cabinet/scripts/tests/test_cog3_sim5_root_integrity.py
+  - cabinet/scripts/tests/test_cog3_sim6_no_scalar.py
+  - cabinet/scripts/tests/test_cog3_state_function.py
+  - cabinet/scripts/tests/test_cog3_verdict_vocab_tripwire.py
+  # Committed COG-3 review artifacts (waves 1/3 FW-019 batch proofs):
+  - shared/interfaces/reviews/feat-cog3-wave1-cp1.md
+  - shared/interfaces/reviews/feat-cog3-wave3-cp1.md
+  - shared/interfaces/reviews/feat-cog3-wave3-cp2.md
+  - shared/interfaces/reviews/feat-cog3-wave4-cp3.md
+  # Wave-4 phase-complete landing (working-tree new; committed in the landing
+  # commit): the parity falsifier + its suite, the M-measurement suite, the three
+  # phase-local twins, the rollback-closure test, and THIS rollback manifest.
+  - cabinet/scripts/cog3-ovi-parity.py
+  - cabinet/scripts/tests/test_cog3_ovi_parity.py
+  - cabinet/scripts/tests/test_cog3_measurement.py
+  - cabinet/scripts/verify-cognitive-phase3.sh
+  - cabinet/scripts/cognitive-phase3-review-scope.py
+  - cabinet/scripts/cognitive-phase3-rollback-rehearsal.py
+  - cabinet/scripts/tests/test_cognitive_phase3_rollback.py
+  - docs/plans/cognitive-core-phase-3-rollback-manifest-2026-07-22.yml
+  # the frozen post-implementation review (§12.3 lands it LATER; excluded from
+  # the review-scope digest, so it is the one remove path allowed absent now)
+  - shared/interfaces/reviews/cognitive-core-phase-3-review.md
+
+# --- code inverse: restore extended files from baseline_sha -------------------
+# Restoring these to baseline_sha reverts every COG-3 edit — INCLUDING removing
+# the COG-3 temporary_allowances rows from the contract yml (allowance_removal).
+# framework/cortex/adapters.py + belief.py carry the D1 cabinet_id stamp + the
+# honest ENGINE_VERSION/hash-epoch bump (§6.1); cog2-import-gate.py gained the
+# framework.objectives boundary rules (§6.5); the five test_cog2_* files were
+# updated for the D1 epoch bump; egg-export-manifest.txt + test_egg_export.py
+# carry the wave-4 O-B3 landing edits; .gitleaks.toml gained the cog3 test-path
+# fake-credential allowlist; and the contract doc carries the wave-3 build-time
+# adjudications — all revert to their pre-COG-3 bytes.
+restore_from_baseline:
+  # Committed COG-3 edits (waves 1/3, baseline_sha..HEAD "M"):
+  - framework/cortex/adapters.py
+  - framework/cortex/belief.py
+  - cabinet/scripts/cog2-import-gate.py
+  - cabinet/scripts/tests/test_cog2_asof_fence.py
+  - cabinet/scripts/tests/test_cog2_consequence_seam.py
+  - cabinet/scripts/tests/test_cog2_corruption.py
+  - cabinet/scripts/tests/test_cog2_measurement.py
+  - cabinet/scripts/tests/test_cog2_rebuild_determinism.py
+  - cabinet/config/cognitive-architecture-contract.yml
+  - .gitleaks.toml
+  - docs/plans/cognitive-core-phase-3-contract-2026-07-22.md
+  # Wave-4 edits to pre-existing files (working-tree "M"; folded in for a complete
+  # phase rollback):
+  - cabinet/scripts/egg-export-manifest.txt
+  - cabinet/scripts/tests/test_egg_export.py
+
+# --- allowance removal (§12.4) ------------------------------------------------
+allowance_removal:
+  path: cabinet/config/cognitive-architecture-contract.yml
+  action: >-
+    restoring this file from baseline_sha removes the two COG-3
+    temporary_allowances rows (framework_production_modules +7,
+    framework_production_noncomment_lines +1194) in the SAME commit as the code
+    inverse — valid only once the module/line deltas are gone
+
+# --- append-only surfaces: retain rows, add a dated rollback note -------------
+retain_append_only:
+  - path: docs/plans/operative-egg-ledger-2026-07-07.yml
+    rows: [COG-0, COG-1, COG-2, COG-3, COG-4, COG-5, COG-6, COG-7, COG-8]
+    rollback_action: retain rows and append a dated rollback/supersession note; preserve allowed status vocabulary
+  - path: docs/plans/operative-egg-plan-2026-07-07.md
+    rows: [COG-0, COG-1, COG-2, COG-3, COG-4, COG-5, COG-6, COG-7, COG-8]
+    rollback_action: retain parity rows and append the same dated rollback/supersession note
+
+# --- surfaces COG-3 promised NOT to touch (G-F2: Phase-0 ∪ 1 ∪ 2 union + the
+# COG-3-specific pins) --------------------------------------------------------
+# The Phase-0∪1∪2 protected-surface union PLUS the COG-3-specific untouched
+# surfaces: the mission compiler (byte-untouched + golden fixtures, §2.2), the
+# cortex belief schema (byte-untouched, §6.1), the legacy composite OVI (reused as
+# falsifier ground truth, never edited, §6.6), and the instance root files (read
+# via a CLI-injected path, never framework-resident — §7.6). COG-3 touches NONE of
+# these — so the rehearsal's per-path `git diff --quiet baseline HEAD` passes;
+# without this block the cloned rehearsal's coverage test fails.
+must_remain_unchanged:
+  - cabinet/services.yml
+  - framework/events/emitter.py
+  - framework/authority/classifier.py
+  - framework/policies/authority-matrix.yml
+  - framework/learning/gate.py
+  - framework/authority
+  - framework/evidence
+  - shared/interfaces/captain-vetoes.yml
+  - .layer-separation-baseline
+  - .layer-separation-allowlist
+  - framework/missions/compiler.py
+  - framework/schemas/domains/cortex/belief.v1.json
+  - framework/ovi/compute.py
+  - instance/config/directions.yml
+  - instance/config/outcomes.yml
+
+rehearsal:
+  environment: scratch git worktree of the landed COG-3 commit (the landed tree is never modified)
+  code_inverse_script: cabinet/scripts/cognitive-phase3-rollback-rehearsal.py
+  runtime_inverses_note: >-
+    the single runtime inverse is safe-by-construction and needs no dedicated
+    rehearsal harness (unlike COG-1's authority cutover): the objectives projection
+    cache is a pure rebuildable function of the roots + cortex store (delete is
+    lossless — §7.3), there is no read pointer this phase (§7.4) and no Postgres
+    role change (§2.1), so nothing needs a careful ordered cutover.
+  adapters_absence_note: >-
+    framework/objectives/adapters/ is built by a SIBLING wave-4 unit and may be
+    ABSENT at rehearsal time in this clone; the manifest names the
+    framework/objectives DIRECTORY wholesale so the inverse is correct
+    post-integration, and the rehearsal's remove step tolerates a declared path
+    being absent (noting it) rather than raising — so a rehearsal against a tree
+    without adapters/ still proves the inverse-diff shape.
+  procedure:
+    - code inverse — remove every remove path (a DIR entry deletes the whole subtree; an absent declared path is noted, not fatal), restore every restore_from_baseline path from baseline_sha, retain both operative surfaces with matching dated rollback notes; assert the inverse diff is exactly those two ledgers
+    - run the A13 operative-ledger parity + ledger-status-parity + layer separation + docs sweep on the inverse tree
+    - restoring cabinet/config/cognitive-architecture-contract.yml from baseline_sha removes the two COG-3 temporary_allowances rows in the same commit (allowance_removal)
+  success: the inverse diff contains only retained operative rows/notes relative to baseline; every unchanged/compatibility gate is green

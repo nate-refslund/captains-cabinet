@@ -474,6 +474,131 @@ def test_cognitive_phase2_private_landing_tools_excluded(export: Path):
         "COG-2 shadow-boundary import gate must ship in the egg"
 
 
+# COG-3 (Objectives) framework surface that must ride the egg — the import-inert
+# graph package, its registry-resolved domain schemas, and the enduring rebuild/
+# hash/staleness/parity CLIs (contract §8 file table). All are framework DNA a
+# fresh Cabinet needs; none is instance-specific.
+COG3_OBJECTIVES_SHIPPED = (
+    "framework/objectives/__init__.py",
+    "framework/objectives/model.py",
+    "framework/objectives/graph.py",
+    "framework/objectives/states.py",
+    "framework/objectives/query.py",
+    "framework/objectives/counterfactual.py",
+    "framework/objectives/ovi_view.py",
+    "framework/schemas/domains/objectives/node.v1.json",
+    "framework/schemas/domains/objectives/edge.v1.json",
+    "framework/schemas/domains/objectives/prediction.v1.json",
+    "framework/schemas/domains/objectives/scorecard.v1.json",
+    "cabinet/scripts/cog3-rebuild.py",
+    "cabinet/scripts/cog3-graph-hash.py",
+    "cabinet/scripts/cog3-staleness.py",
+    "cabinet/scripts/cog3-ovi-parity.py",
+)
+
+# The blast-isolated adapters package ALSO ships, but its files are built by a
+# SIBLING wave-4 unit — absent at this clone's HEAD. The manifest NAMES them (a
+# commented `expect-present` block the integrator activates when the files land),
+# so they are on record without breaking the exporter's own expect-present verify.
+COG3_ADAPTERS_NAMED = (
+    "framework/objectives/adapters/__init__.py",
+    "framework/objectives/adapters/roots.py",
+    "framework/objectives/adapters/workgraph.py",
+    "framework/objectives/adapters/mission_inputs.py",
+    "framework/objectives/adapters/product_spec.py",
+)
+
+# Runtime Objectives data that must NEVER ship: the projection cache is per-cabinet
+# runtime data, gitignored under cabinet/cache/*. `git archive HEAD` ships tracked
+# files only; the manifest's expect-absent (the cache dir is gitignored) is the
+# defensive backstop. The cache-path token is ASSEMBLED (not a contiguous literal)
+# so this file — NOT cog3-allowlisted for the §6.5 data-plane sweep — never
+# self-flags FORBIDDEN_OBJECTIVES_DATAPLANE.
+COG3_RUNTIME_ABSENT = ("cabinet/cache/" + "objectives" + "/graph.jsonl",)
+
+# COG-3 phase-3 PRIVATE landing tools: the phase-local verify twin, the review-scope
+# binder, the rollback rehearsal, and the rollback-closure test bind THIS launching
+# instance's reviewed bytes, baseline, and rollback plan — the same private-side
+# class as their Phase-0/1/2 predecessors. None ships.
+COG3_PHASE3_PRIVATE_TOOLS = (
+    "cabinet/scripts/verify-cognitive-phase3.sh",
+    "cabinet/scripts/cognitive-phase3-review-scope.py",
+    "cabinet/scripts/cognitive-phase3-rollback-rehearsal.py",
+    "cabinet/scripts/tests/test_cognitive_phase3_rollback.py",
+)
+
+
+def _tracked_at_head(rel: str) -> bool:
+    ls = subprocess.run(
+        ["git", "-C", str(_REPO_ROOT), "ls-tree", "--name-only", "HEAD", rel],
+        capture_output=True, text=True, timeout=30)
+    return ls.returncode == 0 and bool(ls.stdout.strip())
+
+
+def test_cog3_objectives_manifest_carries_surface():
+    """TDD gate (text-level, pre-commit): the egg manifest pins every COG-3
+    objectives framework surface present — the same expect-present idiom the
+    COG-0/1/2 rows established. Text-level so it binds THIS wave's manifest edit."""
+    manifest = _MANIFEST.read_text(encoding="utf-8")
+    for rel in COG3_OBJECTIVES_SHIPPED:
+        assert f"expect-present {rel}" in manifest, \
+            f"manifest missing expect-present rule: {rel}"
+
+
+def test_cog3_adapters_named_for_the_sibling_unit():
+    """The sibling-built adapters package is NAMED in the manifest (a commented
+    expect-present block) so the deferral is on record. If an adapter file IS
+    tracked at HEAD (post-integration), it MUST be an ACTIVE expect-present line
+    (never a silent ship gap); absent at HEAD (this clone), the naming comment is
+    enough and the integrator activates the row at landing."""
+    manifest = _MANIFEST.read_text(encoding="utf-8")
+    for rel in COG3_ADAPTERS_NAMED:
+        assert rel in manifest, f"manifest does not name the sibling adapter file: {rel}"
+        if _tracked_at_head(rel):
+            assert f"\nexpect-present {rel}" in manifest, \
+                (f"adapter {rel} is tracked at HEAD but its expect-present row is still "
+                 "commented — the integrator must ACTIVATE it in the landing commit")
+
+
+def test_cog3_objectives_surface_survives_export(export: Path):
+    """COG-3: the objectives graph package, registry schemas, and enduring rebuild/
+    hash/staleness/parity CLIs are framework DNA a fresh Cabinet ships; the runtime
+    projection cache is gitignored runtime data and never rides the cut. The
+    adapters ship-if-tracked (skip-with-note in this clone until the sibling lands)."""
+    for rel in COG3_OBJECTIVES_SHIPPED:
+        assert (export / rel).is_file(), f"COG-3 objectives surface must ship: {rel}"
+    for rel in COG3_RUNTIME_ABSENT:
+        assert not (export / rel).exists(), f"COG-3 runtime data must not ship: {rel}"
+    for rel in COG3_ADAPTERS_NAMED:
+        if _tracked_at_head(rel):
+            assert (export / rel).is_file(), f"COG-3 adapter must ship once tracked: {rel}"
+
+
+def test_cognitive_phase3_egg_manifest_carries_exclusions():
+    """TDD gate (pre-commit): the egg manifest must carry a `delete` and a matching
+    `expect-absent` directive for each COG-3 phase-3 private landing tool — the same
+    pattern the COG-0/1/2 rows established. Text-level so it binds THIS wave's edit."""
+    manifest = _MANIFEST.read_text(encoding="utf-8")
+    for rel in COG3_PHASE3_PRIVATE_TOOLS:
+        assert f"delete {rel}" in manifest, f"manifest missing delete rule: {rel}"
+        assert f"expect-absent {rel}" in manifest, f"manifest missing expect-absent rule: {rel}"
+
+
+def test_cognitive_phase3_private_landing_tools_excluded(export: Path):
+    """COG-3: the phase-3 verify twin + review-scope binder + rollback rehearsal +
+    rollback-closure test are THIS instance's private landing proof — excluded from
+    the egg exactly like their Phase-0/1/2 predecessors. The enduring §6.5 import
+    gate (COG-2 surface) ships; the COG-3 objectives CLIs ship (asserted above)."""
+    ls_tree = subprocess.run(
+        ["git", "-C", str(_REPO_ROOT), "ls-tree", "--name-only", "HEAD",
+         "cabinet/scripts/cog3-rebuild.py"],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert ls_tree.returncode == 0, f"git ls-tree failed: {ls_tree.stderr}"
+    for rel in COG3_PHASE3_PRIVATE_TOOLS:
+        assert not (export / rel).exists(), f"COG-3 private landing tool must not ship: {rel}"
+
+
 def test_testburg_fixture_ships(export: Path):
     tb = export / "cabinet" / "fixtures" / "testburg"
     for f in ("README.md", "generate.py", "config/product.yml"):
