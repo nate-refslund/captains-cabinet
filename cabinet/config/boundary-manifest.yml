@@ -119,6 +119,11 @@ rows:
       - framework/objectives/*                  # objectives-internal (COG-3 broadening)
       - cabinet/scripts/tests/test_cog3_*.py
       - cabinet/scripts/tests/lib_cog3_*.py
+      # COG-4 W3 u2 (§2.1/§8.3, the W1-u1 parked rows edit): the scheduler
+      # snapshot builder reads the cortex QUERY SURFACE only (the seven
+      # symbols — load_beliefs_verified-bound manifest read; symbol law in
+      # test_cog4_scheduler_ast_pin.py).
+      - framework/scheduler/*
     reverse_forbidden: null                     # cortex's own import law is not a row
     sweep: true
     falsifier_exact:
@@ -166,6 +171,11 @@ rows:
     allowlist_globs:
       - cabinet/scripts/tests/test_cog3_*.py
       - cabinet/scripts/tests/lib_cog3_*.py
+      # COG-4 W3 u2 (§2.1/§8.3, the W1-u1 parked rows edit): the scheduler
+      # snapshot builder reads the objectives PUBLIC SERVE SURFACE only
+      # (serve_graph/serve_objective/recommend/ServeRefused — never
+      # graph.jsonl; symbol law in test_cog4_scheduler_ast_pin.py).
+      - framework/scheduler/*
     reverse_forbidden:
       # the action plane, in the ACTION_PLANE order the suites pin.
       - framework/frontdoor
