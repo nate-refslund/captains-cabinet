@@ -71,4 +71,36 @@ single-member divergence per tuple member).
 - HEAD-bytes parse: all 6 committed fixture JSONs load clean from
   `git show HEAD:` bytes.
 
+## Landing-time addendum (2026-07-23, post-first-CI)
+
+PR CI round 1: gitleaks RED — one finding, `generic-api-key` on t3's
+fixture idempotency value at `test_cog4_organ_manifest.py:495` (the
+garden-rota key with a `-2026-07-23` date suffix appended; entropy 3.607 ≥
+the rule's 3.5 threshold; provably-synthetic garden-rota vocabulary, not a
+credential — the string is deliberately not quoted verbatim here, a first
+addendum draft that did quote it re-tripped the same rule on itself). Fix,
+two coordinated parts:
+
+1. **Root cause at HEAD:** value → `"garden-rota"` (entropy 3.096, below
+   threshold; semantics identical — the field's only constraint is
+   non-empty string; single occurrence repo-wide). Keeps the squash-merge
+   commit, the egg, and all future tree scans clean by construction.
+2. **Immutable introducing commit:** the t3 cherry-pick `3b1c75bc` is
+   already pushed and range scans (CI scans the PR commit range) still see
+   its diff; the branch is never force-rewritten (multi-writer push
+   protocol). Per `.gitleaksignore`'s own documented convention for exactly
+   this shape (the PR #139 precedent: fixed at HEAD, introducing commit
+   fingerprinted as a provably-fake fixture), one sha-pinned fingerprint
+   line is added for `3b1c75bc:…test_cog4_organ_manifest.py:generic-api-key:495`.
+   A `.gitleaks.toml` path allowlist was REJECTED (would permanently exempt
+   all cog4 test files from scanning).
+
+Wave-shape note: the fingerprint line touches one PRE-EXISTING governance
+file (`.gitleaksignore`, +1 line under its documented add-only convention).
+Corpus law §13 (no existing TEST/LIB files edited, no pinned-constant
+duplication) still holds untouched; the 18 corpus rows remain all-`A`.
+Post-fix: organ-manifest suite 43/2, full cog4 battery 380/35/0 unchanged;
+local gitleaks reproduction over the CI's exact commit range = 0 leaks
+(evidence in the fix commit).
+
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>

@@ -36,6 +36,15 @@ afad1add65d55287dd6097dd7557d2b499d0fe00:cabinet/dashboard/src/lib/world/hatch-s
 3d8a13f57a67ad7be51b5f144079e888f149cc7b:framework/evidence/tests/test_redaction.py:generic-api-key:174
 3d8a13f57a67ad7be51b5f144079e888f149cc7b:framework/evidence/tests/test_redaction.py:generic-api-key:175
 3d8a13f57a67ad7be51b5f144079e888f149cc7b:framework/evidence/tests/test_redaction.py:generic-api-key:278
+# COG-4 W2 landing (PR #185, 2026-07-23): t3's organ-manifest fixture
+# idempotency value — the garden-rota key with a date suffix tripped
+# generic-api-key (entropy 3.6). Provably fake (synthetic garden-rota
+# vocabulary in the corpus fixture builder, non-software by design).
+# De-entropied at HEAD in the landing fix commit (the PR #139 pattern);
+# the already-pushed introducing cherry-pick stays flagged in PR-range
+# scans and is never force-rewritten. No no-git twin needed: the egg/tree
+# bytes are clean post-fix.
+3b1c75bc68cf696399fa3d4830745e4d26dedca2:cabinet/scripts/tests/test_cog4_organ_manifest.py:generic-api-key:495
 # --- no-git twins (file:rule:line — no commit prefix) for the SAME fake
 # fixtures above, as seen by `gitleaks detect --no-git` over a fresh-cut egg
 # export (egg-publish-gate.sh gate (a) scans the export tree, not git — the

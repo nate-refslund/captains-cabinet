@@ -492,7 +492,7 @@ def _valid_v2_effect() -> dict:
         "effect_id": "eff-0001",
         "action_type": "investigation_run",
         "status": "proposed",
-        "idempotency_key": "garden-rota-2026-07-23",
+        "idempotency_key": "garden-rota",
         "domain_operation": {"organ": "garden-rota",
                              "operation": "garden/rota.compile"},
         "enforcement_descriptor": {
