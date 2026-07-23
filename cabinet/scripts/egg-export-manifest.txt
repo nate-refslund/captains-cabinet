@@ -459,6 +459,10 @@ expect-present cabinet/scripts/cog3-ovi-parity.py
 # other cog3 CLIs; its dated brief output is runtime data (gitignored
 # shared/interfaces/**/*.md) and never packages.
 expect-present cabinet/scripts/cog3-verdict-inbox.py
+# WR rider R3 (COG-4 §18): the weekly shadow-dividend reporter ships with the
+# other cog3 CLIs; a read-only serve-surface consumer whose dated report
+# output is runtime data (gitignored shared/interfaces/**/*.md), never packaged.
+expect-present cabinet/scripts/cog3-shadow-dividend.py
 # R167: dropped from the plans-archive keep-list (see R167 above) — the
 # coupling census now archives with the rest of docs/plans instance history.
 expect-absent docs/plans/source-adapter-boundary-2026-07-05.md

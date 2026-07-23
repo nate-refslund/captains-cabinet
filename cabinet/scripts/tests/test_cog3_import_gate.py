@@ -89,14 +89,17 @@ class TestConstants:
 
     def test_cog3_allowlist_covers_the_reader_clis_only(self):
         # the curated graph readers are exact entries (§6.5 "exact entries") —
-        # the three wave-1 instruments + the R1 verdict inbox (WR rider,
-        # BACKLOG :1559 — a serve-surface-only reader, grown 2026-07-23 in the
-        # same commit as the gate entry, the lockstep this pin exists to force)...
+        # the three wave-1 instruments + the two WR riders, each grown
+        # 2026-07-23 in lockstep with its gate entry (the lockstep this pin
+        # exists to force): the R1 verdict inbox (BACKLOG :1559 — a
+        # serve-surface-only reader) and the R3 shadow-dividend reporter
+        # (COG-4 §18 — a read-only serve-surface consumer)...
         assert gate.ALLOWLIST_EXACT_OBJECTIVES == {
             "cabinet/scripts/cog3-rebuild.py",
             "cabinet/scripts/cog3-graph-hash.py",
             "cabinet/scripts/cog3-staleness.py",
             "cabinet/scripts/cog3-verdict-inbox.py",
+            "cabinet/scripts/cog3-shadow-dividend.py",
         }
         # ...and the parity falsifier is DELIBERATELY absent (C-F17 analog: it
         # must import NO objectives internals, so it is never a sanctioned reader).
