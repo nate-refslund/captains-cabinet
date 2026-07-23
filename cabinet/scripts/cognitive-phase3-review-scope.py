@@ -49,6 +49,8 @@ EXPECTED_SCOPE = frozenset({
     "cabinet/scripts/tests/lib_cog3_fixtures.py",
     "cabinet/scripts/tests/lib_cog3_import_ast.py",
     "cabinet/scripts/tests/lib_cog3_no_scalar.py",
+    # W4A sibling suite, joined at wave-4 integration (2026-07-23):
+    "cabinet/scripts/tests/test_cog3_adapters.py",
     "cabinet/scripts/tests/test_cog3_census_wall.py",
     "cabinet/scripts/tests/test_cog3_import_gate.py",
     "cabinet/scripts/tests/test_cog3_no_scalar_ratchet.py",

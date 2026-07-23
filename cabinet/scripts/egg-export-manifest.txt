@@ -439,16 +439,14 @@ expect-present framework/objectives/states.py
 expect-present framework/objectives/query.py
 expect-present framework/objectives/counterfactual.py
 expect-present framework/objectives/ovi_view.py
-# SIBLING-DEFERRED (wave-4 adapters unit): the blast-isolated adapters package
-# ships too, but its files are built by a sibling unit and are NOT yet tracked at
-# THIS clone's HEAD — an `expect-present` for an absent file fails the exporter's
-# own verify, so these rows stay commented until the adapters land. The integrator
-# ACTIVATES them (uncomment) in the same landing commit that tracks the files:
-#   expect-present framework/objectives/adapters/__init__.py
-#   expect-present framework/objectives/adapters/roots.py
-#   expect-present framework/objectives/adapters/workgraph.py
-#   expect-present framework/objectives/adapters/mission_inputs.py
-#   expect-present framework/objectives/adapters/product_spec.py
+# The blast-isolated adapters package ships (activated at wave-4 integration,
+# 2026-07-23, in the same tree that tracks the files — the sibling-deferred
+# commented rows from the W4B build are hereby ACTIVATED):
+expect-present framework/objectives/adapters/__init__.py
+expect-present framework/objectives/adapters/roots.py
+expect-present framework/objectives/adapters/workgraph.py
+expect-present framework/objectives/adapters/mission_inputs.py
+expect-present framework/objectives/adapters/product_spec.py
 expect-present framework/schemas/domains/objectives/node.v1.json
 expect-present framework/schemas/domains/objectives/edge.v1.json
 expect-present framework/schemas/domains/objectives/prediction.v1.json
