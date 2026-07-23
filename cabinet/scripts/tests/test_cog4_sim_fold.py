@@ -34,6 +34,12 @@ per §7.2) lands — replace each guard body with the `run_real_arm` call named
 in its comment. The corpus is the executable spec: the implementation must
 satisfy these batteries UNMODIFIED (§13 — builders never edit tests;
 contradictions route to the integrator).
+DISCHARGED (integrator corpus surgery per §13 + the unit contradictions[]
+routes, W3 landing 2026-07-24): framework/scheduler landed in W3 u2 (d10f3e7f)
+— all 9 guarded arms converted to their live `run_real_arm` bodies
+(TestRealFoldSurfaceArms), and the armed-probe machinery got cwd isolation
+(the probe's inherited-cwd leak surfaced the moment the real tree landed; see
+lib_cog4_corpus.real_surface_import_probe's dated note).
 
 N1 (§1): identical combined artifact hash across 3 subprocess rebuilds under 3
 distinct PYTHONHASHSEED values from the SAME wake-snapshot (the C-F3 triple);
@@ -332,31 +338,21 @@ class TestArmedProbeMachinery:
 
 
 # ===========================================================================
-# REAL-SURFACE ARMS — vacuity-guarded until framework/scheduler lands (§13)
+# REAL-SURFACE ARMS — LIVE on the landed planner tree (W3 landing 2026-07-24)
 # ===========================================================================
 class TestRealFoldSurfaceArms:
+    # RETIRED vacuity skips, all 9 arms (integrator corpus surgery per §13 + the
+    # unit contradictions[] routes, W3 landing 2026-07-24): the guards' RETIREMENT
+    # CONDITION — "retire this skip when framework/scheduler/ lands (§7.2
+    # build_schedule)" — was discharged by W3 u2 (d10f3e7f, the shadow scheduler).
+    # The companion absence assertions tripped RED as designed; each arm body is now
+    # the documented one-line activation, the SAME battery the live reference tier
+    # (TestFoldBatteriesLiveOnReference) has proven since W2 — sims 1/2/4/7/8/13 +
+    # purity env/clock + the N1 PYTHONHASHSEED triple, now running against the REAL
+    # framework.scheduler.fold.build_schedule surface.
     @pytest.mark.parametrize("arm", sorted(C.REAL_ARMS))
-    def test_real_arm_is_armed_and_surface_absent(self, arm, tmp_path):
-        # VACUITY GUARD — RETIREMENT CONDITION: retire this skip when
-        # framework/scheduler/ lands (§7.2 build_schedule). Activation is one
-        # line — the SAME battery the live tier already proves:
-        #     C.run_real_arm("<arm>", tmp_path, repo=_REPO)
-        # The COMPANION assertion below fails the instant the planner tree
-        # lands, so this skip cannot silently persist (§13).
-        tree = _REPO / C.SCHEDULER_TREE_REL
-        assert not tree.exists(), (
-            f"{C.SCHEDULER_TREE_REL}/ has LANDED — retire this vacuity skip: "
-            f"run C.run_real_arm({arm!r}, tmp_path, repo=_REPO) per the "
-            "docstring RETIREMENT CONDITION")
-        # ARMED proof: the real import probe fails ModuleNotFound TODAY (the
-        # probe's two-way discrimination is proven in TestArmedProbeMachinery).
-        rc, stderr = C.real_surface_import_probe(str(_REPO))
-        assert rc != 0 and "No module named" in stderr, (rc, stderr)
-        pytest.skip(
-            f"VACUITY: {C.SCHEDULER_TREE_REL}/ absent this phase — the "
-            f"{arm} battery runs live on the reference fold "
-            "(TestFoldBatteriesLiveOnReference) and arms for the real "
-            "surface; retire when framework/scheduler lands.")
+    def test_real_arm_battery_green_on_the_landed_surface(self, arm, tmp_path):
+        C.run_real_arm(arm, tmp_path, repo=_REPO)
 
 
 # ===========================================================================
