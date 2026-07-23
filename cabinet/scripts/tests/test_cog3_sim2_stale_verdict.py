@@ -456,7 +456,10 @@ class TestSim2SeedsAreReal:
         assert (cortex / "fold-manifest.json").exists()
         assert objectives.is_dir()
 
-    def test_staleness_cli_is_absent_today(self):
-        # documents the tests-first signature for the CLI cell above: the
-        # instrument does not exist yet, so its cell fails on an absent CLI.
-        assert not _STALENESS_CLI.exists()
+    # RETIRED (integrator corpus adjudication, 2026-07-23): the tests-first-era
+    # guard `test_staleness_cli_is_absent_today` asserted cog3-staleness.py did
+    # NOT exist — its purpose (documenting the CLI cell's absence-era failure
+    # signature) ended when wave-3 U2 landed the §5.1(7)/§8-mandated instrument,
+    # at which point it contradicted test_staleness_instrument_reports_a_moved_subject
+    # (an unsatisfiable corpus self-contradiction; the U2 builder reported it and
+    # touched neither — the prime law held). Same pattern as the sim3/sim4 twins.
