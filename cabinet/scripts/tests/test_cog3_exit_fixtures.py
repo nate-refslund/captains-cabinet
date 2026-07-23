@@ -391,13 +391,19 @@ def test_objectives_framework_carries_no_instance_product_tokens():
     # fixtures above. The GLOBAL product-token gap stays known debt OUTSIDE this
     # phase (§9 r14 disposition) — this is the local closure.
     tokens = ["pol" + "ads", "step" + "hie", "job" + "danmark", "ref" + "slund"]
-    objdir = Path(_ROOT) / "framework" / "objectives"
+    # Reviewer nit closed at wave-4 integration (2026-07-23): the sweep also
+    # covers the phase's schema surface (framework/schemas/domains/objectives).
+    sweep_dirs = [
+        Path(_ROOT) / "framework" / "objectives",
+        Path(_ROOT) / "framework" / "schemas" / "domains" / "objectives",
+    ]
     hits = []
-    for path in sorted(objdir.rglob("*.py")):
-        if "__pycache__" in path.parts:
-            continue
-        text = path.read_text(encoding="utf-8", errors="ignore").lower()
-        for tok in tokens:
-            if tok in text:
-                hits.append((str(path.relative_to(objdir)), tok))
-    assert hits == [], f"§9 r14: product tokens leaked into framework/objectives: {hits}"
+    for objdir in sweep_dirs:
+        for path in sorted(objdir.rglob("*")):
+            if path.suffix not in {".py", ".json"} or "__pycache__" in path.parts:
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore").lower()
+            for tok in tokens:
+                if tok in text:
+                    hits.append((str(path.relative_to(_ROOT)), tok))
+    assert hits == [], f"§9 r14: product tokens leaked into the objectives surface: {hits}"
