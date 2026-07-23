@@ -6,13 +6,20 @@
 **Contract:** `docs/plans/cognitive-core-phase-3-contract-2026-07-22.md` rev 1 + build-time adjudications of record (R-A, R-B, schema idiom, §5.2b two limbs, wave-3/4 addenda).
 **Method:** every claim below is bound to bytes (`file:line`) or a run executed by this panel (`python3.12`; postgres@17 on PATH). No doc or comment was trusted un-run.
 
-Reviewed-Scope-Digest: e98fc026bae0fa4c579bf4deed8302da2ef26a4d855db7fe59e909f5650c9f63
+Reviewed-Scope-Digest: 78a7bf1800ebcfb47c1a4d813f0dac32b0ce5f8f52fadbe4cffe2b32d2283d6d
 (Re-bound at landing, 2026-07-23: after the freeze, two ADMINISTRATIVE commits joined the
 wave-4 cp3 FW-019 artifact to the three footprint surfaces (rollback manifest + review-scope
 tool + closure-test constant), which are themselves inside the reviewed scope — moving the
 digest from 6c800e12… . Zero reviewed BEHAVIOR bytes changed since the re-verified tip
 27e3c0f6: git diff 27e3c0f6..HEAD touches only review artifacts and those three footprint
 rows. The panel verdict stands.)
+(Re-frozen at COG-4 W1 landing, 2026-07-23 — a MECHANICAL-DELTA RE-REVIEW, not a restamp;
+digest moved e98fc026… → 78a7bf18… . Two in-scope surfaces changed: (1) `cog2-import-gate.py`
+converted to the boundary-manifest ENGINE (W1 u1) — byte-compat re-proven at integration
+against the post-WR pre-conversion gate; (2) the phase-3 rollback manifest + closure test +
+rehearsal gained the C1 closed-range retrofit (done_flip_sha anchor). The full claim-surface
+re-run and the verdict disposition are in the "COG-4 W1 landing re-freeze" section below.
+The panel verdict stands.)
 
 ---
 
@@ -129,5 +136,47 @@ Full battery `python3.12 -m pytest cabinet/scripts/tests/test_cog3_*.py cabinet/
 ## Must-fix list
 
 - **F1** — `serve_objective` + `recommend` must enforce (or route through) the three serve REFUSE limbs (`counterfactual: true`, rows-hash binding, mixed-epoch/null-hole), with a pinned mutant per entry, before the serve surface is treated as contract-complete. (`framework/objectives/query.py:234-245,248-271` at base) — **DISCHARGED** at tip `27e3c0f6` (fix commit `5bafa7db`): `_load_bound` routes all three entries, `TestServeSurfaceUniformity` pins 3 fns x 3 limbs + positive controls, re-verify probe 9/9 REFUSE / 3/3 ANSWER, battery 361 passed 2 skipped, `verify-cognitive-phase3.sh` READY_FOR_CI. No open must-fix items remain.
+
+---
+
+## COG-4 W1 landing re-freeze (2026-07-23 — administrative, mechanical-delta re-review)
+
+Integrator: fresh-context Fable W1 landing session (zero prior context w.r.t. every W1 unit;
+scratch full clone off post-WR `origin/master` 0d8a74d4). Scope changes since the last bind:
+
+25. **What changed in scope.** (1) `cabinet/scripts/cog2-import-gate.py` rewritten as the
+    declarative boundary-manifest ENGINE (W1 u1; rows in `cabinet/config/boundary-manifest.yml`
+    — the manifest itself is NOT in this review's scope, the gate file is). (2) The phase-3
+    rollback manifest gained `done_flip_sha: e7f95d5a…` (C1 closed-range seal; baseline..flip
+    = 65 paths, 50 A + 15 M, zero strays — ratchet-verified), the closure test gained the
+    lockstep const/assert + both-SHA shallow probe + closed range + key-set entry, and the
+    rehearsal re-anchored its scratch worktree + must-remain range from HEAD to the manifest's
+    `done_flip_sha` (at HEAD the append-only-only assertion was structurally red once COG-4
+    commits landed — the same open-range defect the ratchet closed).
+26. **Byte-compat re-proof (engine vs post-WR pre-conversion gate).** The old gate extracted
+    from `origin/master` 0d8a74d4 and the integrated engine run over the SAME tree in all 3
+    modes (check / `--report` / `--json`): outputs byte-identical, both empty, rc parity 0/0
+    in every mode. The WR rider CLIs (`cog3-verdict-inbox.py`, `cog3-shadow-dividend.py`)
+    carried into the objectives module row AND the objectives data-plane row (the
+    pre-conversion gate fed ONE exact set to checks O and D); the cortex row was deliberately
+    NOT widened (neither rider imports the cortex — narrower than the pre-conversion shared
+    skip set, protection-growing). Post-WR 5-member exact-set pin test
+    (`test_cog3_allowlist_covers_the_reader_clis_only`) green against the engine.
+27. **Claim-surface re-run on the integrated bytes.** Full battery `test_cog3_*.py` +
+    `test_cognitive_phase3_rollback.py` → **385 passed, 2 skipped** (= the frozen 361 + the
+    24 WR verdict-inbox/shadow-dividend tests added after the freeze; the SAME two declared
+    measure-only perf skips). `TestServeSurfaceUniformity` → **12/12** (all REFUSE cells).
+    Rollback rehearsal END-TO-END → **PASS** (29/29 compat floor green in the scratch tree at
+    the done-flip anchor; "only append-only operative history remains"). cog2 battery →
+    **280 passed, 3 skipped**. Census `--check` → exit 0 (zero-headroom held). Full
+    `cabinet/scripts/tests` sweep → **2824 passed, 17 skipped, 0 failed**.
+28. **Post-freeze gate.** `verify-cognitive-phase3.sh` run after this re-freeze commit on the
+    clean committed tree → **READY_FOR_CI, FULL GREEN** including the now-active
+    `--verify` byte binding and the rehearsal at the closed anchor (result recorded in the
+    W1 cp artifact `feat-cog4-w1-cp1.md` alongside this note's commit).
+
+Verdict unchanged: **PASS** — every re-run confirms the frozen claims hold on the integrated
+bytes; the engine conversion is proven byte-compatible; the closed-range retrofit makes the
+rollback gate green end-to-end for the first time since COG-4 commits landed.
 
 Verdict: PASS
