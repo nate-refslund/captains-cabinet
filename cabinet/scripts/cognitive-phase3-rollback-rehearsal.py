@@ -196,6 +196,13 @@ def main() -> int:
     args = parser.parse_args()
     manifest = yaml.safe_load(MANIFEST.read_text())
     baseline = manifest["baseline_sha"]
+    # C1 closed-range anchor (2026-07-23): the rehearsal reconstructs the tree AS
+    # IT STOOD AT THE COG-3 DONE-FLIP, not at HEAD. Anchored at HEAD, every
+    # later-phase commit (COG-4 …) leaks into the inverse diff and the
+    # append-only-only assertion below is structurally red on any advanced
+    # master — the same open-range defect the footprint ratchet closed
+    # (BACKLOG :1551-1555; contract §16).
+    done_flip = manifest["done_flip_sha"]
     retained_rows = manifest["retain_append_only"][0]["rows"]
     retained_paths = {entry["path"] for entry in manifest["retain_append_only"]}
     if retained_paths != EXPECTED_RETAINED:
@@ -203,7 +210,7 @@ def main() -> int:
 
     for rel in manifest["must_remain_unchanged"]:
         result = subprocess.run(
-            ["git", "diff", "--quiet", baseline, "HEAD", "--", rel],
+            ["git", "diff", "--quiet", baseline, done_flip, "--", rel],
             cwd=ROOT,
             check=False,
         )
@@ -212,7 +219,7 @@ def main() -> int:
 
     scratch = Path(tempfile.mkdtemp(prefix="cog3-rollback-")) / "tree"
     try:
-        run(["git", "worktree", "add", "--detach", str(scratch), "HEAD"], cwd=ROOT)
+        run(["git", "worktree", "add", "--detach", str(scratch), done_flip], cwd=ROOT)
         for rel in manifest["remove"]:
             remove_path(confined(scratch, rel), rel)
         for rel in manifest["restore_from_baseline"]:

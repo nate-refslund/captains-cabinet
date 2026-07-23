@@ -234,8 +234,10 @@ def test_manifest_covers_committed_cog2_footprint():
                         "ratchet runs on full clones")
     # Deterministic (no working-tree scan -> no other-wave interference): every
     # file COG-2 changed between baseline and the done-flip is classified.
-    # A -> remove; M -> restore or retain. A later COG-2 commit that lands a file
-    # without extending the manifest (and re-pinning the done-flip) trips this.
+    # A -> remove; M -> restore or retain. NOTE the closed range's honest limit:
+    # a later COG-2 commit lands OUTSIDE this range and is NOT auto-caught here —
+    # re-opening the phase means extending the manifest AND moving the done-flip
+    # pin forward, which re-opens classification to it.
     manifest = yaml.safe_load(ROLLBACK.read_text())
     remove = set(manifest["remove"])
     restore = set(manifest["restore_from_baseline"])

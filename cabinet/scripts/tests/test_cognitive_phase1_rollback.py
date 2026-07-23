@@ -215,8 +215,10 @@ def test_manifest_covers_committed_cog1_footprint():
                         "ratchet runs on full clones")
     # Deterministic (no working-tree scan -> no other-wave interference): every
     # file COG-1 changed between baseline and the footprint seal is classified.
-    # A -> remove; M -> restore or retain. A later COG-1 wave that lands a file
-    # without extending the manifest (and re-pinning the seal) trips this at once.
+    # A -> remove; M -> restore or retain. NOTE the closed range's honest limit:
+    # a later COG-1 wave lands OUTSIDE this range and is NOT auto-caught here —
+    # resuming the phase means extending the manifest AND moving the seal
+    # forward (re-pinning DONE_FLIP_SHA), which re-opens classification to it.
     manifest = yaml.safe_load(ROLLBACK.read_text())
     remove = set(manifest["remove"])
     restore = set(manifest["restore_from_baseline"])

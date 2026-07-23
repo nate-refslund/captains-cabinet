@@ -31,7 +31,8 @@ byte-verified present at tip:
 
 Contract §9.1 direction: "move to instance/deploy surface or delete; verify `deploy-mac.sh` renders
 from the template + roster." The `test_cog4_fleet_truth.py` conservation guard (a SEPARATE W1 unit,
-NOT this one) already pins the out-of-manifest set so nothing silently grows while this cleanup waits.
+NOT this one — u2, landing in this same wave PR) pins the out-of-manifest set so nothing silently
+grows while this cleanup waits.
 
 ## 2. Why it parked
 

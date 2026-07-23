@@ -47,6 +47,12 @@ REVIEW_ARTIFACT_REL = "shared/interfaces/reviews/cognitive-core-phase-3-review.m
 
 # S0 pin: the COG-3 phase-3 contract commit == the parent of wave 1 (83009ce1).
 BASELINE_SHA = "b2890f19e1be2c4a267659e61f1bb8f216e57dca"
+# C1 closed-range retrofit (2026-07-23): the footprint ratchet closes over
+# baseline_sha..DONE_FLIP_SHA, NOT the open-ended baseline_sha..HEAD (which now
+# sweeps COG-4 commits into the COG-3 range — the BACKLOG :1551-1555 defect).
+# This is the COG-3 DONE-FLIP commit (ledger COG-3 → done, phase-complete
+# shipped). Kept in lockstep with the manifest's done_flip_sha field.
+DONE_FLIP_SHA = "e7f95d5aeced91ea30a0099ea08820bf60a69706"
 
 # framework surface named as DIRS (wholesale — incl. the sibling-built adapters/).
 REMOVE_DIRS = {
@@ -149,6 +155,7 @@ def test_phase_3_manifest_is_closed_and_append_only_aware():
         "schema_version",
         "phase",
         "baseline_sha",
+        "done_flip_sha",
         "runtime_inverses",
         "remove",
         "restore_from_baseline",
@@ -160,6 +167,7 @@ def test_phase_3_manifest_is_closed_and_append_only_aware():
     assert manifest["schema_version"] == "cognitive-phase-rollback/v1"
     assert manifest["phase"] == "COG-3"
     assert manifest["baseline_sha"] == BASELINE_SHA
+    assert manifest["done_flip_sha"] == DONE_FLIP_SHA
     all_paths = manifest["remove"] + manifest["restore_from_baseline"]
     assert len(all_paths) == len(set(all_paths)), "remove/restore overlap or dup"
     assert all(not Path(p).is_absolute() and ".." not in Path(p).parts for p in all_paths)
@@ -258,19 +266,24 @@ def _git_name_status(rangespec: str) -> list[tuple[str, str]]:
 
 
 def test_manifest_covers_committed_cog3_footprint():
-    # Shallow CI checkouts lack the baseline commit -> `git diff BASELINE..HEAD`
-    # exits 128. The ratchet enforces on every full clone; skip honestly here.
-    probe = subprocess.run(
-        ["git", "-C", str(ROOT), "cat-file", "-e", BASELINE_SHA + "^{commit}"],
-        capture_output=True, text=True)
-    if probe.returncode != 0:
-        pytest.skip("baseline SHA absent (shallow checkout) — footprint ratchet "
-                    "runs on full clones")
+    # C1 CLOSED-RANGE ratchet: classify baseline_sha..DONE_FLIP_SHA (the COG-3
+    # done-flip), NOT the open-ended baseline_sha..HEAD. The open range swept
+    # later phases' commits (COG-4) into the COG-3 footprint and RED'd every
+    # full clone (BACKLOG :1551-1555; contract §16) — this closed range never can.
+    # Shallow CI checkouts (actions/checkout default) lack the old commits ->
+    # `git diff` exits 128; the ratchet enforces on every full clone; skip honestly.
+    for sha in (BASELINE_SHA, DONE_FLIP_SHA):
+        probe = subprocess.run(
+            ["git", "-C", str(ROOT), "cat-file", "-e", sha + "^{commit}"],
+            capture_output=True, text=True)
+        if probe.returncode != 0:
+            pytest.skip("baseline/done-flip SHA absent (shallow checkout) — footprint "
+                        "ratchet runs on full clones")
     manifest = yaml.safe_load(ROLLBACK.read_text())
     remove = set(manifest["remove"])
     restore = set(manifest["restore_from_baseline"])
     retain = {r["path"] for r in manifest["retain_append_only"]}
-    for status, path in _git_name_status(f"{BASELINE_SHA}..HEAD"):
+    for status, path in _git_name_status(f"{BASELINE_SHA}..{DONE_FLIP_SHA}"):
         if status == "A":
             assert _covered_by_remove(path, remove), \
                 f"COG-3-added file missing from manifest.remove: {path}"
