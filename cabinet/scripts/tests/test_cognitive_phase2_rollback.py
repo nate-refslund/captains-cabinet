@@ -43,6 +43,12 @@ REVIEW_ARTIFACT_REL = "shared/interfaces/reviews/cognitive-core-phase-2-review.m
 
 # S0 pin: the COG-2 phase-2 contract commit == the parent of unit 1 (7f44a3ed).
 BASELINE_SHA = "b393f41b579c5ff4723f4502b006df58e9664cf1"
+# C1 closed-range retrofit (2026-07-23): the footprint ratchet closes over
+# baseline_sha..DONE_FLIP_SHA, NOT the open-ended baseline_sha..HEAD (which now
+# sweeps COG-3/COG-4 commits into the COG-2 range — the BACKLOG :1551-1555
+# defect). This is the COG-2 DONE-FLIP commit (ledger COG-2 → done, phase-complete
+# shipped). Kept in lockstep with the manifest's done_flip_sha field.
+DONE_FLIP_SHA = "754998f8174e8e092d3f14663d10ccf33dbb9861"
 
 # The COMMITTED COG-2 footprint (units 1-4, baseline_sha..HEAD). Added -> remove;
 # modified -> restore. The completeness ratchet below re-derives this from git so
@@ -123,6 +129,7 @@ def test_phase_2_manifest_is_closed_and_append_only_aware():
         "schema_version",
         "phase",
         "baseline_sha",
+        "done_flip_sha",
         "runtime_inverses",
         "remove",
         "restore_from_baseline",
@@ -134,6 +141,7 @@ def test_phase_2_manifest_is_closed_and_append_only_aware():
     assert manifest["schema_version"] == "cognitive-phase-rollback/v1"
     assert manifest["phase"] == "COG-2"
     assert manifest["baseline_sha"] == BASELINE_SHA
+    assert manifest["done_flip_sha"] == DONE_FLIP_SHA
     all_paths = manifest["remove"] + manifest["restore_from_baseline"]
     assert len(all_paths) == len(set(all_paths)), "remove/restore overlap or dup"
     assert all(not Path(p).is_absolute() and ".." not in Path(p).parts for p in all_paths)
@@ -211,25 +219,30 @@ def _git_name_status(rangespec: str) -> list[tuple[str, str]]:
 
 
 def test_manifest_covers_committed_cog2_footprint():
-    # Shallow CI checkouts (actions/checkout default) lack the baseline commit ->
-    # `git diff BASELINE..HEAD` exits 128. The ratchet enforces on every full
-    # clone (local batteries + the phase gate); skip honestly here.
-    probe = subprocess.run(
-        ["git", "-C", str(ROOT), "cat-file", "-e", BASELINE_SHA + "^{commit}"],
-        capture_output=True, text=True)
-    if probe.returncode != 0:
-        pytest.skip("baseline SHA absent (shallow checkout) — footprint ratchet "
-                    "runs on full clones")
+    # C1 CLOSED-RANGE ratchet: classify baseline_sha..DONE_FLIP_SHA (the COG-2
+    # done-flip), NOT the open-ended baseline_sha..HEAD. The open range swept
+    # later phases' commits (COG-3/COG-4) into the COG-2 footprint and RED'd every
+    # full clone (BACKLOG :1551-1555; contract §16) — this closed range never can.
+    # Shallow CI checkouts (actions/checkout default) lack the old commits ->
+    # `git diff` exits 128; the ratchet enforces on every full clone; skip honestly.
+    for sha in (BASELINE_SHA, DONE_FLIP_SHA):
+        probe = subprocess.run(
+            ["git", "-C", str(ROOT), "cat-file", "-e", sha + "^{commit}"],
+            capture_output=True, text=True)
+        if probe.returncode != 0:
+            pytest.skip("baseline/done-flip SHA absent (shallow checkout) — footprint "
+                        "ratchet runs on full clones")
     # Deterministic (no working-tree scan -> no other-wave interference): every
-    # file COG-2 changed between baseline and HEAD is classified. A -> remove;
-    # M -> restore or retain. GREEN over units 1-4 now; once the unit-5 landing
-    # commit lands, its files ALSO appear here and are already covered (they are
-    # in the manifest + pinned by test_manifest_covers_unit5_working_tree_files).
+    # file COG-2 changed between baseline and the done-flip is classified.
+    # A -> remove; M -> restore or retain. NOTE the closed range's honest limit:
+    # a later COG-2 commit lands OUTSIDE this range and is NOT auto-caught here —
+    # re-opening the phase means extending the manifest AND moving the done-flip
+    # pin forward, which re-opens classification to it.
     manifest = yaml.safe_load(ROLLBACK.read_text())
     remove = set(manifest["remove"])
     restore = set(manifest["restore_from_baseline"])
     retain = {r["path"] for r in manifest["retain_append_only"]}
-    for status, path in _git_name_status(f"{BASELINE_SHA}..HEAD"):
+    for status, path in _git_name_status(f"{BASELINE_SHA}..{DONE_FLIP_SHA}"):
         if status == "A":
             assert path in remove, f"COG-2-added file missing from manifest.remove: {path}"
         elif status == "M":

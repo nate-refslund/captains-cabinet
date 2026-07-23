@@ -34,8 +34,8 @@ WHERE THINGS LAND (existing conventions, cited):
   * last-report state → `cabinet/cache/shadow-dividend/state.json` — the
     per-component runtime-cache convention (.gitignore `cabinet/cache/*` +
     `!cabinet/cache/.gitkeep`; precedent: `cabinet/cache/objectives/` =
-    cog3-rebuild.py's default graph cache, `cabinet/cache/scheduler/` = the
-    COG-4 contract §14.1 scheduler runtime dir). Holds ONLY the last report's
+    cog3-rebuild.py's default graph cache; the COG-4 contract §14.1 scheduler
+    runtime dir follows the same convention). Holds ONLY the last report's
     graph_rows_hash + counts — enough to say what changed, nothing more.
 
 Usage:
