@@ -88,11 +88,15 @@ class TestConstants:
             "framework.frontdoor", "framework.acting", "framework.authority")
 
     def test_cog3_allowlist_covers_the_reader_clis_only(self):
-        # the three graph readers are exact entries (§6.5 "exact entries")...
+        # the curated graph readers are exact entries (§6.5 "exact entries") —
+        # the three wave-1 instruments + the R1 verdict inbox (WR rider,
+        # BACKLOG :1559 — a serve-surface-only reader, grown 2026-07-23 in the
+        # same commit as the gate entry, the lockstep this pin exists to force)...
         assert gate.ALLOWLIST_EXACT_OBJECTIVES == {
             "cabinet/scripts/cog3-rebuild.py",
             "cabinet/scripts/cog3-graph-hash.py",
             "cabinet/scripts/cog3-staleness.py",
+            "cabinet/scripts/cog3-verdict-inbox.py",
         }
         # ...and the parity falsifier is DELIBERATELY absent (C-F17 analog: it
         # must import NO objectives internals, so it is never a sanctioned reader).

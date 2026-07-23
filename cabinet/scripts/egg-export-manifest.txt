@@ -455,6 +455,10 @@ expect-present cabinet/scripts/cog3-rebuild.py
 expect-present cabinet/scripts/cog3-graph-hash.py
 expect-present cabinet/scripts/cog3-staleness.py
 expect-present cabinet/scripts/cog3-ovi-parity.py
+# WR rider R1 (BACKLOG :1559): the verdict-inbox instrument ships with the
+# other cog3 CLIs; its dated brief output is runtime data (gitignored
+# shared/interfaces/**/*.md) and never packages.
+expect-present cabinet/scripts/cog3-verdict-inbox.py
 # R167: dropped from the plans-archive keep-list (see R167 above) — the
 # coupling census now archives with the rest of docs/plans instance history.
 expect-absent docs/plans/source-adapter-boundary-2026-07-05.md
