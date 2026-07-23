@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "objectives/prediction@1 — counterfactual prediction record (COG-3)",
+  "description": "A counterfactual prediction / forecast record (docs/plans/cognitive-core-phase-3-contract-2026-07-22.md §4.3) — an ORIGINAL record in its OWN store (cabinet/cache/objectives/predictions/), NOT a projection, EXCLUDED from N1 by name. prediction_id is pinned pred-<recorder-digest>: the `pred-` prefix makes the schema wall REAL — the belief-id pattern ^[0-9a-f]{64}$ (edge.v1.json evidence_bindings) and the prediction-id pattern ^pred-[0-9a-f]{64}$ are DISJOINT by construction, so a prediction id is structurally unciteable as evidence (wall a of the three independent walls). Scoring a prediction later yields a prediction-accuracy record that lands ONLY in this store — never auto-promoted to evidence. Registry-PATH-resolved but validated with jsonschema.Draft202012Validator (pattern is outside the closed-subset registry interpreter).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["prediction_id", "edge_id", "assumption_set", "cutoff", "predicted_claim", "made_at_epoch"],
+  "properties": {
+    "prediction_id": {
+      "description": "pred-<recorder-digest> — disjoint from the belief-id namespace by construction (§4.3)",
+      "type": "string",
+      "pattern": "^pred-[0-9a-f]{64}$"
+    },
+    "edge_id": {
+      "description": "The causal edge this prediction is about (belief-id-shaped digest)",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "assumption_set": {
+      "description": "The explicit assumption-override set of the counterfactual branch",
+      "type": "object"
+    },
+    "cutoff": {
+      "description": "The canonical cutoff the prediction was minted at",
+      "type": "string"
+    },
+    "predicted_claim": {
+      "description": "The predicted movement claim (e.g. {observed_effect: increase})",
+      "type": "object"
+    },
+    "made_at_epoch": {
+      "description": "The graph epoch tuple the prediction was minted under (recorded, not a projection)",
+      "type": ["array", "object", "string"]
+    }
+  }
+}

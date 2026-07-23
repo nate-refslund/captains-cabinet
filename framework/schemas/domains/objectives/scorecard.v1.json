@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "objectives/scorecard@1 — vector value surface, NEVER a scalar (COG-3)",
+  "description": "A vector scorecard (docs/plans/cognitive-core-phase-3-contract-2026-07-22.md §4.4, foundry :228-237): a mapping of named dimensions -> a per-dimension cell. There is NO aggregation function and NO aggregate property anywhere — no total, no composite, no weighted sum, no sort-by-fitness (P12 no-scalar ratchet; the query surface returns the full vector or nothing). One failed floor fails the vector regardless of the others (no compensatory logic). An absent `value` = unknown, and unknown NEVER passes a floor (:239 'missing evidence is unknown, never success'). Floors are per-dimension independent measures — NOT the forbidden aggregate. Registry-PATH-resolved but validated with jsonschema.Draft202012Validator.",
+  "type": "object",
+  "additionalProperties": {
+    "description": "One per-dimension cell (:228-237). Absent `value` => unknown state.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["floor"],
+    "properties": {
+      "value": {
+        "description": "The per-dimension measure; absent => unknown, never success",
+        "type": "number"
+      },
+      "floor": {
+        "description": "The independent per-dimension floor; unknown never passes it",
+        "type": "number"
+      },
+      "state": {
+        "description": "The per-dimension derived INTERNAL epistemic state (:239). Internal vocabulary ONLY — persisting the Captain word ('observed'/'tested'/'refuted') fails schema (§5.2 'no second drifting enum'); the Captain vocabulary appears solely at presentation via query.to_captain_word",
+        "enum": [
+          "unknown",
+          "hypothesized",
+          "observationally_supported",
+          "intervention_supported",
+          "falsified"
+        ]
+      },
+      "evidence_binding_refs": {
+        "description": "The FULL belief-view reference tuples backing this dimension (confidence rides WHOLE with source_trust, never a bare scalar; §5.5)",
+        "type": "array",
+        "items": {"type": "object"}
+      }
+    }
+  }
+}
