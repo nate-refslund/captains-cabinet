@@ -34,6 +34,7 @@ cognitive-masterplan continuous grant; wave-4 phase-complete.
 from __future__ import annotations
 
 import json
+import math
 import os
 import sys
 import time
@@ -60,7 +61,11 @@ _N_BEL = 60          # cortex observation beliefs (the fenced as_of source)
 _REBUILD_TRIALS = 3  # best-of-N min (noise floor); build_graph overwrites atomically
 _SERVE_QUERIES = 250  # >= 200 serve answers (nearest-rank p95 => 238th sorted)
 
-# ceilings (contract §8 / N1) — asserted ONLY under COG3_ENFORCE_P95=1
+# ceilings — apparatus-chosen CI-scale envelopes (the COG2_ENFORCE_P95 precedent),
+# NOT contract numbers: contract §8/§1 N1 is DETERMINISM-ONLY (identical chained
+# graph hash across the C-F3 seed triple + delete->rebuild-from-zero); it fixes no
+# wall-time or p95 bound. The two bounds below are picked from the observed
+# measurement with generous CI headroom and asserted ONLY under COG3_ENFORCE_P95=1.
 _CEIL_REBUILD_S = 2.0
 _CEIL_SERVE_P95_MS = 150.0
 
@@ -140,7 +145,11 @@ def _measure(tmp: Path) -> dict:
         assert answer.state, f"objective {subject} must resolve to a state"
     samples.sort()
     p50 = samples[len(samples) // 2] * 1000
-    p95 = samples[max(0, int(0.95 * len(samples)) - 1)] * 1000
+    # nearest-rank p95 (the convention line _SERVE_QUERIES states): rank =
+    # ceil(0.95*N), 0-indexed rank-1. For N=250 that is the 238th sorted sample
+    # (index 237) — reconciled to the comment (the prior int()-1 gave the 237th,
+    # off by one).
+    p95 = samples[max(0, math.ceil(0.95 * len(samples)) - 1)] * 1000
 
     return {
         "enforced": _ENFORCE,

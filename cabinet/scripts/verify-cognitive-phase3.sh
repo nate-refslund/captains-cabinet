@@ -52,6 +52,11 @@ if [ -e "$HOME/.cabinet/state/cog3-read-pointer" ]; then
   echo "[cog3-verify] no pointer file is created this phase (§7.4). Remove it; the flip is a later gated amendment." >&2
   exit 1
 fi
+# enduring architecture gate (COMPOSED, never a re-run of an earlier phase's
+# instance) — the phase-2 twin's :43 shape: evolution contract tests + census
+# self-tests + census --check + check-layer-separation.sh. The standalone census
+# --check below is KEPT (the phase-2 twin keeps both; census is idempotent).
+bash cabinet/scripts/verify-cognitive-architecture.sh
 # COG-3 rollback-manifest closure + review-scope teeth
 python3.12 -m pytest cabinet/scripts/tests/test_cognitive_phase3_rollback.py -q
 # ALL COG-3 gate + sim + apparatus suites (the step-0 gates, the six sims, the

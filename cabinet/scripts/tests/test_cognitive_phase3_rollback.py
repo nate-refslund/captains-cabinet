@@ -423,6 +423,43 @@ def test_rehearsal_runs_a13_assertion_on_inverse_tree():
     assert diff_idx < call_idx < parity_idx
 
 
+def test_rehearsal_asserts_pre_bump_refold_lineage_on_inverse_tree():
+    # §12.4 STATE INVERSE (contract :280 + §9 r1 :228 — named TWICE): the rehearsal
+    # must assert "a cortex refold under the pre-bump ENGINE_VERSION reproduces the
+    # prior hash lineage exactly". It discharges this by running the RESTORED
+    # determinism suite on the inverse tree — where belief.py is back at the pre-bump
+    # ENGINE_VERSION ("cortex-engine/1") and adapters.py is pre-D1. Exists + runs.
+    rehearsal = _load_rehearsal()
+    assert rehearsal.REFOLD_DETERMINISM_TEST == \
+        "cabinet/scripts/tests/test_cog2_rebuild_determinism.py"
+    # HONESTY PIN: the refold suite AND the pre-bump cortex bytes are ALL
+    # restore_from_baseline paths, so on the inverse tree the suite is the PRE-D1
+    # form folding against the PRE-bump belief.py/adapters.py — it asserts the
+    # pre-bump lineage, never HEAD's post-bump fold.
+    manifest = yaml.safe_load(ROLLBACK.read_text())
+    restore = set(manifest["restore_from_baseline"])
+    assert rehearsal.REFOLD_DETERMINISM_TEST in restore
+    assert "framework/cortex/belief.py" in restore       # the ENGINE_VERSION bump reverts
+    assert "framework/cortex/adapters.py" in restore      # the D1 cabinet_id stamp reverts
+    # WIRING: the refold step runs AFTER the code-inverse restore loop and AFTER the
+    # inverse-diff assertion (i.e. on the fully-restored inverse tree).
+    src = (ROOT / REHEARSAL_REL).read_text(encoding="utf-8")
+    restore_idx = src.index('for rel in manifest["restore_from_baseline"]:')
+    diff_idx = src.index("inverse diff is not append-only-only")
+    refold_idx = src.index(
+        'run(["python3.12", "-m", "pytest", REFOLD_DETERMINISM_TEST, "-q"], cwd=scratch)')
+    assert restore_idx < diff_idx < refold_idx
+    # RUNS: the invoked determinism suite is itself green (the mechanism the
+    # rehearsal drives). Run it standalone on the real tree — the cheap "it runs
+    # green" proof, mirroring the A13-closure-test standalone run. The full PRE-bump
+    # discharge on the inverse tree is exercised by the end-to-end rehearsal run
+    # (verify-cognitive-phase3.sh).
+    proc = subprocess.run(
+        ["python3.12", "-m", "pytest", rehearsal.REFOLD_DETERMINISM_TEST, "-q"],
+        cwd=ROOT, capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
 def test_rehearsal_declares_baseline_and_retained_surfaces():
     rehearsal = _load_rehearsal()
     assert rehearsal.EXPECTED_RETAINED == EXPECTED_RETAIN

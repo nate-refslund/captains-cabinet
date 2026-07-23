@@ -39,7 +39,9 @@ Verdict statuses / exit codes:
   ok       every legacy instrument matches the objectives projection      -> exit 0
   breach   >=1 instrument diverges / is absent on one side                -> exit 1
   error    the CONFIGURED view reader broke (non-zero / garbage / a
-           forbidden composite emission — attack C-M4)                    -> exit 1
+           forbidden composite emission — top-level OR a numeric aggregate
+           smuggled inside an instrument cell under a non-listed key —
+           attack C-M4)                                                   -> exit 1
 
 Modes:
   (default)  one parity run, print the verdict JSON, exit per status above
@@ -76,6 +78,17 @@ _DEFAULT_SAMPLE = {
 }
 # forbidden aggregate tokens — a per-instrument view may carry NONE (attack C-M4).
 _FORBIDDEN_AGGREGATE = ("composite_score", "composite", "weights", "weight")
+# the SOLE pinned per-instrument cell field: ovi_view.project emits
+# {name: {"value": measure}}. A numeric value under ANY other key INSIDE a cell is
+# an aggregate smuggled where the top-level token scan above can't name it (a
+# non-listed key like "rollup"/"total"/"score") — a loud error, never a silent
+# per-instrument match (attack C-M4).
+_PINNED_CELL_FIELDS = frozenset({"value"})
+
+
+def _is_number(value: object) -> bool:
+    # bools are ints in Python; a smuggled aggregate is a real number, never a flag.
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def _repo_root() -> Path:
@@ -165,7 +178,20 @@ def _projection(instruments: dict, cmd: list[str]) -> dict:
             raise _ViewFailed(f"ovi_view emitted a forbidden aggregate {token!r} (attack C-M4)")
     out = {}
     for name, cell in data.items():
-        out[name] = cell.get("value") if isinstance(cell, dict) else cell
+        if isinstance(cell, dict):
+            # a numeric value under any key beyond the pinned per-instrument field
+            # is a composite smuggled inside the cell (a non-listed key the token
+            # scan above cannot name) — loud error (attack C-M4).
+            smuggled = sorted(k for k, v in cell.items()
+                              if k not in _PINNED_CELL_FIELDS and _is_number(v))
+            if smuggled:
+                raise _ViewFailed(
+                    f"ovi_view smuggled a numeric aggregate under {smuggled!r} inside "
+                    f"instrument {name!r}, beyond the pinned {sorted(_PINNED_CELL_FIELDS)} "
+                    "field (attack C-M4)")
+            out[name] = cell.get("value")
+        else:
+            out[name] = cell
     return out
 
 

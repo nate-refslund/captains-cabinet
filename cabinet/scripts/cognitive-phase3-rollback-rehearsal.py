@@ -14,8 +14,25 @@ Like COG-2, COG-3 is SHADOW-ONLY: there is no authority cutover to rehearse. The
 single runtime inverse is safe by construction — the objectives projection cache
 is a lossless rebuildable function of the roots + cortex store (§7.3), there is
 NO read pointer this phase (§7.4) and NO Postgres role change (§2.1) — so this
-rehearsal covers the CODE inverse only (the manifest names the runtime inverse; it
+rehearsal covers the CODE inverse plus the STATE-INVERSE refold-lineage assert
+below (the manifest's runtime cache-delete inverse is safe-by-construction and
 needs no harness).
+
+STATE-INVERSE refold-lineage assert (§12.4 :280 + §9 r1 :228 — the contract names
+it TWICE): D1 (§6.1) stamps a local cabinet_id into consequence provenance, which
+bumped ENGINE_VERSION "cortex-engine/1" -> "/2" (an honest hash-epoch bump,
+A-m13). So the code inverse restores framework/cortex/belief.py (back to the
+PRE-BUMP "cortex-engine/1"), framework/cortex/adapters.py (pre-D1), AND
+cabinet/scripts/tests/test_cog2_rebuild_determinism.py — all to baseline_sha.
+Running that RESTORED determinism suite on the inverse tree IS the §12.4 assertion
+that "a cortex refold under the pre-bump ENGINE_VERSION reproduces the prior hash
+lineage exactly": it proves the pre-bump fold is deterministic across the C-F3
+seed triple AND reproduces under delete->rebuild-from-zero, asserted by the
+baseline's OWN determinism suite. Honest reach: no literal pre-bump store-hash
+string is pinned anywhere (§9 r1 — "no landed test pins a literal store hash"), so
+"reproduces the prior lineage" is the determinism + rebuild INVARIANT holding on
+the pre-bump bytes, not an equality against a frozen literal — which IS the
+operative meaning of the claim. Hard-fails red (run() raises on non-zero).
 
 DIR-WHOLESALE + ABSENCE TOLERANCE (§12.4, wave-4 brief): `framework/objectives`
 and `framework/schemas/domains/objectives` are removed as DIRECTORIES (rmtree),
@@ -56,6 +73,14 @@ ROLLBACK_SUFFIX = (
     " | ROLLBACK-REHEARSAL 2026-07-22: simulated supersession; "
     "COG-3 implementation bytes removed and history retained."
 )
+
+# §12.4 STATE-INVERSE refold-lineage assert (:280 + §9 r1 :228). This suite is a
+# restore_from_baseline path (so on the inverse tree it is the PRE-D1 form) and
+# folds against the RESTORED pre-bump belief.py/adapters.py; running it green ==
+# "a cortex refold under the pre-bump ENGINE_VERSION reproduces the prior hash
+# lineage" (the baseline's own C-F3 triple + delete->rebuild-from-zero). The
+# rollback closure test pins this constant + the restore-set membership.
+REFOLD_DETERMINISM_TEST = "cabinet/scripts/tests/test_cog2_rebuild_determinism.py"
 
 # The UNIVERSAL A13 assertion (ledger-id uniqueness + plan_ids==set(ids) parity)
 # — the SAME check the phase-0/1/2 verify gates run via their `<<'PY'` heredocs.
@@ -213,6 +238,15 @@ def main() -> int:
         run(["bash", "cabinet/scripts/check-layer-separation.sh"], cwd=scratch)
         run(["bash", "cabinet/scripts/docs-track-code-sweep.sh"], cwd=scratch)
         if not args.skip_compatibility:
+            # §12.4 STATE-INVERSE refold-lineage assert (:280 + §9 r1 :228): the
+            # code inverse above restored belief.py to the PRE-BUMP ENGINE_VERSION
+            # ("cortex-engine/1"), adapters.py to pre-D1, AND this determinism suite
+            # to baseline. Running the RESTORED suite on the inverse tree proves the
+            # pre-bump refold reproduces the prior hash lineage (deterministic across
+            # the C-F3 seed triple + delete->rebuild-from-zero) — asserted by the
+            # baseline's own suite. run() raises on red -> hard fail (module docstring
+            # states the honest reach: an invariant, not a literal-hash equality).
+            run(["python3.12", "-m", "pytest", REFOLD_DETERMINISM_TEST, "-q"], cwd=scratch)
             run(
                 [
                     "python3.12", "-m", "pytest",

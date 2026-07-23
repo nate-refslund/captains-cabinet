@@ -140,6 +140,34 @@ def test_composite_emitting_view_is_an_error(tmp_path):
     assert "composite" in verdict["note"].lower()
 
 
+def test_cell_smuggled_aggregate_is_an_error(tmp_path):
+    # THE per-cell C-M4 escape: a view keeps every per-instrument "value" matching
+    # the legacy but SMUGGLES a numeric aggregate INSIDE each cell under a NON-LISTED
+    # key ("rollup") — invisible to the top-level composite-token scan AND to the
+    # value extraction (which reads only "value"). The extended scan catches any
+    # numeric key beyond the pinned per-instrument field -> loud ERROR, never a
+    # silent green even though every "value" still matches.
+    cmd = _write_view_driver(tmp_path,
+        "import json, sys\n"
+        "inst = json.load(sys.stdin)\n"
+        "out = {k: {'value': v, 'rollup': sum(inst.values())} for k, v in inst.items()}\n"
+        "print(json.dumps(out))\n")
+    verdict = parity.run(cutoff="2026-07-21T00:00:00Z", window_days=7,
+                         sample_data=json.dumps(_RAW), view_cmd=cmd)
+    assert verdict["status"] == "error", verdict
+    assert "aggregate" in verdict["note"].lower() and "rollup" in verdict["note"]
+    # a NON-numeric extra key (a benign label) is NOT a smuggled aggregate — the scan
+    # is numeric-typed, so a string annotation still projects cleanly to green.
+    ok_cmd = _write_view_driver(tmp_path,
+        "import json, sys\n"
+        "inst = json.load(sys.stdin)\n"
+        "out = {k: {'value': v, 'unit': 'ratio'} for k, v in inst.items()}\n"
+        "print(json.dumps(out))\n")
+    ok = parity.run(cutoff="2026-07-21T00:00:00Z", window_days=7,
+                    sample_data=json.dumps(_RAW), view_cmd=ok_cmd)
+    assert ok["status"] == "ok", ok
+
+
 def test_broken_reader_is_an_error(tmp_path):
     # a CONFIGURED view reader that exits non-zero must never park the falsifier
     # green (credential/rot-style loud error), exit 1.
