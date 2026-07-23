@@ -13,8 +13,12 @@ tree):
     proven BITING on those fixtures in this run — dict-order tie-break (sim
     1), idle-spin (sim 2), cost-ignoring (sim 4), starvation-prone (sim 7),
     LWW/auto-resolve (sim 8), self-weight-update (sim 13), plus the A-M6
-    env-reading and datetime.now purity mutants. A gate without a biting
-    mutant is decoration (§12).
+    env-reading and datetime.now purity mutants, plus the two 2026-07-23
+    review-escape gate-integrity mutants — double-decision (BOTH a select and
+    a defer row for one op; set-based accounting certified it) and
+    cost-misreport (budget_units decoupled from the declared cost model; the
+    ceiling sum read clean). A gate without a biting mutant is decoration
+    (§12).
   * REAL-SURFACE arms are VACUITY-GUARDED: each carries (a) a COMPANION
     absence assertion that goes RED the instant `framework/scheduler/` lands
     (so the skip cannot silently persist — §13 law), (b) an ARMED proof that
@@ -163,6 +167,33 @@ class TestSim4CostSpikeMutant:
         with pytest.raises(AssertionError, match=_tag("[SIM4-CEILING]")):
             C.assert_sim4_cost_spike(C.corpus_runner("cost_ignore"),
                                      C.fixture_path("cost-spike"), tmp_path)
+
+
+# ===========================================================================
+# wellformed-battery gate integrity — the 2026-07-23 review-escape mutants
+# (each proven PASSING the pre-fix batteries by the reviewer; a gate without
+# a biting mutant is decoration, §12)
+# ===========================================================================
+class TestWellformedGateEscapeMutants:
+    def test_double_decision_mutant_is_caught(self, tmp_path):
+        # ESCAPE 1 (review variant v_double_decision): reference rows + a
+        # duplicated defer row for the top selected op — BOTH a select and a
+        # defer decision for one (organ, operation), self-consistent manifest.
+        # Set-based row accounting certified it; the exactly-one-row-per-
+        # eligible-op law REDs it on the burst battery.
+        with pytest.raises(AssertionError, match=_tag("[ROW-UNIQUE]")):
+            C.assert_sim1_burst(C.corpus_runner("double_decision"),
+                                C.fixture_path("burst"), tmp_path)
+
+    def test_cost_misreporting_mutant_is_caught(self, tmp_path):
+        # ESCAPE 2 (review variant v_zero_budget_units): selects EVERY
+        # affordable burst op (true cumulative cost 22 > ceiling 10) while
+        # reporting budget_units=0 per row and selected_units=0 — the
+        # [CEILING] sum reads 0 <= 10 and sim-4's reason checks stay green.
+        # The declared-cost binding REDs it on the burst battery.
+        with pytest.raises(AssertionError, match=_tag("[ROW-COST-DECLARED]")):
+            C.assert_sim1_burst(C.corpus_runner("cost_misreport"),
+                                C.fixture_path("burst"), tmp_path)
 
 
 # ===========================================================================

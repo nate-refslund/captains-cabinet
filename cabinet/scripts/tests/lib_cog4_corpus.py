@@ -66,6 +66,13 @@ THE CORPUS-PINNED SCHEDULE ARTIFACTS (§7.2/§6.3; written under cache_dir):
                             bytes — §7.2). Row fields: organ, operation,
                             subject, descriptor, decision ("select"|"defer"),
                             reason, budget_units, deps, tie_break_key.
+                            EXACTLY ONE row per eligible (organ, operation)
+                            ([ROW-UNIQUE]); budget_units == that op's
+                            snapshot-DECLARED cost_units ([ROW-COST-DECLARED])
+                            and budget.selected_units sums the SELECTED rows'
+                            declared costs ([BUDGET-DECLARED]) — the two
+                            2026-07-23 review-escape laws, each with its own
+                            biting mutant (double_decision, cost_misreport).
   schedule-manifest.json    {schema_version, epoch: {scheduler_version,
                             snapshot_hash, wake_input_hashes, scope, cutoff},
                             schedule_rows_hash (MANDATORY — §6.3: a manifest
@@ -89,6 +96,7 @@ cognitive-masterplan continuous grant (COG-4 contract §12/§13, W2 T1).
 """
 from __future__ import annotations
 
+import collections
 import copy
 import functools
 import hashlib
@@ -581,6 +589,51 @@ def mutant_fold_datetime_now(snap: dict, snapshot_hash: str):
     return rows, manifest
 
 
+def mutant_fold_double_decision(snap: dict, snapshot_hash: str):
+    """2026-07-23 review-escape mutant (ESCAPE 1, variant v_double_decision):
+    emits BOTH a select row AND a defer row for the same (organ, operation) —
+    the top selected op is decided twice. Every row is individually
+    well-formed and honestly costed, and the manifest recomputes over the
+    emitted rows (counts + rows-hash), so SET-based row accounting certifies
+    it — only the exactly-one-row-per-eligible-op law ([ROW-UNIQUE]) bites."""
+    rows, manifest = reference_fold(snap, snapshot_hash)
+    top = next((r for r in rows if r["decision"] == DECISION_SELECT), None)
+    if top is None:                    # no selected work: nothing to double
+        return rows, manifest
+    dup = dict(top)
+    dup["decision"] = DECISION_DEFER
+    dup["reason"] = REASON_BUDGET_EXHAUSTED
+    rows.append(dup)
+    rows.sort(key=lambda r: r["tie_break_key"])
+    manifest = _manifest(snap, snapshot_hash, rows, manifest["conflicts"],
+                         manifest["budget"]["selected_units"],
+                         "cog4-mutant-double-decision/1")
+    return rows, manifest
+
+
+def mutant_fold_cost_misreport(snap: dict, snapshot_hash: str):
+    """2026-07-23 review-escape mutant (ESCAPE 2, variant v_zero_budget_units):
+    decouples REPORTED costs from the snapshot's declared cost model — selects
+    EVERY affordable op (true cumulative cost may far exceed the ceiling)
+    while writing budget_units=0 per row and selected_units=0 in the manifest,
+    and still defers individually-spiked ops with the right reason (sim-4's
+    reason checks stay green). The planner-side [CEILING] sum reads 0 <=
+    ceiling, so only the declared-cost binding ([ROW-COST-DECLARED]) bites."""
+    ceiling = snap["budget"]["ceiling_units_per_wake"]
+    rows = []
+    for ctx in eligible_ops(snap):
+        if ctx["cost_units"] > ceiling:
+            row = _row(ctx, DECISION_DEFER, REASON_COST_CEILING)
+        else:
+            row = _row(ctx, DECISION_SELECT, REASON_SELECTED)
+        row["budget_units"] = 0
+        rows.append(row)
+    rows.sort(key=lambda r: r["tie_break_key"])
+    manifest = _manifest(snap, snapshot_hash, rows, [], 0,
+                         "cog4-mutant-cost-misreport/1")
+    return rows, manifest
+
+
 FOLDS = {
     "reference": reference_fold,
     "dict_order": mutant_fold_dict_order,
@@ -591,6 +644,8 @@ FOLDS = {
     "self_weight": mutant_fold_self_weight,
     "env_reading": mutant_fold_env_reading,
     "datetime_now": mutant_fold_datetime_now,
+    "double_decision": mutant_fold_double_decision,
+    "cost_misreport": mutant_fold_cost_misreport,
 }
 
 
@@ -716,8 +771,12 @@ def defer_rows(rows: list) -> list:
 # real arm = the same battery over real_runner() at retirement)
 # --------------------------------------------------------------------------
 def assert_schedule_wellformed(snap: dict, cache_dir: Path) -> None:
-    """§7.2 row tuple + §6.3 mandatory rows-hash + epoch completeness +
-    snapshot-record binding. Shared by every sim battery."""
+    """§7.2 row tuple + the EXACTLY-ONE-row-per-eligible-op law + the
+    declared-cost binding (rows and the manifest budget carry the snapshot's
+    DECLARED cost model — [CEILING] sums row costs, so this binding is what
+    makes the ceiling gate bite cost-misreporting folds) + §6.3 mandatory
+    rows-hash + epoch completeness + snapshot-record binding. Shared by every
+    sim battery."""
     rows, manifest = read_rows(cache_dir), read_manifest(cache_dir)
     for row in rows:
         missing = [f for f in ROW_FIELDS if f not in row]
@@ -725,11 +784,38 @@ def assert_schedule_wellformed(snap: dict, cache_dir: Path) -> None:
         assert row["decision"] in (DECISION_SELECT, DECISION_DEFER), row
         assert isinstance(row["reason"], str) and row["reason"], (
             f"[ROW-REASON] empty reason: {row}")
-    eligible = {(c["organ"], c["operation"]) for c in eligible_ops(snap)}
+    pool = eligible_ops(snap)
+    eligible = {(c["organ"], c["operation"]) for c in pool}
     emitted = {(r["organ"], r["operation"]) for r in rows}
     assert emitted == eligible, (
         f"[ROWSET] decision rows {sorted(emitted)} != eligible ops "
         f"{sorted(eligible)} (no invented work, no dropped work)")
+    # 2026-07-23 review ESCAPE 1: sets alone certify a fold double-emitting
+    # decisions. With [ROWSET] equality, len == len forces EXACTLY ONE
+    # select|defer row per eligible op.
+    dupes = sorted(op for op, n in collections.Counter(
+        (r["organ"], r["operation"]) for r in rows).items() if n > 1)
+    assert len(rows) == len(eligible), (
+        f"[ROW-UNIQUE] {len(rows)} decision rows over {len(eligible)} "
+        f"eligible ops — every eligible op yields EXACTLY ONE select|defer "
+        f"row (duplicated: {dupes})")
+    # 2026-07-23 review ESCAPE 2: [CEILING] sums the fold's OWN reported
+    # budget_units, so a fold writing 0s defeats it. Bind every row (and the
+    # manifest budget echo) to the snapshot's DECLARED cost model.
+    declared_cost = {(c["organ"], c["operation"]): c["cost_units"]
+                     for c in pool}
+    for row in rows:
+        identity = (row["organ"], row["operation"])
+        assert row["budget_units"] == declared_cost[identity], (
+            f"[ROW-COST-DECLARED] row {identity} reports budget_units="
+            f"{row['budget_units']} but the snapshot declares cost_units="
+            f"{declared_cost[identity]} — rows carry the snapshot's DECLARED "
+            "cost model, never fold-invented costs (§7.2)")
+    assert manifest["budget"]["selected_units"] == sum(
+        declared_cost[(r["organ"], r["operation"])]
+        for r in rows if r["decision"] == DECISION_SELECT), (
+        "[BUDGET-DECLARED] manifest budget.selected_units != the sum of the "
+        "SELECTED rows' snapshot-declared costs (honest accounting, §7.2)")
     assert MANIFEST_ROWS_HASH_KEY in manifest, (
         f"[ROWSHASH-PRESENT] manifest omits the MANDATORY {MANIFEST_ROWS_HASH_KEY} "
         "key (§6.3 — the absent-key limb REFUSES at serve; T2 sim-11)")
