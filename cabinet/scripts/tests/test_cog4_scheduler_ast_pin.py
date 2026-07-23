@@ -248,6 +248,7 @@ class TestSchedulerNoSubprocessNoSocket:
         "from os import system as s\ndef f():\n    return s('echo hi')\n",   # aliased
         "from os import execv\ndef f():\n    return execv('/bin/sh', ['sh'])\n",
         "from os import fork\ndef f():\n    return fork()\n",
+        "from os import *\ndef f():\n    return system('echo hi')\n",         # MF-R1 star-bind
     ])
     def test_from_os_import_exec_primitive_is_red(self, tmp_path, body):
         # MF1 (cp1 exec-pin gap): `from os import system|popen|exec*|spawn*|fork` statically
@@ -255,7 +256,9 @@ class TestSchedulerNoSubprocessNoSocket:
         # never see (`from os import system; system(cmd)`). It must RED at the import site,
         # symmetric to how `from subprocess import run` already REDs. The aliased `as s`
         # spelling REDs too — the ORIGINAL imported name is the exec primitive; asname is
-        # irrelevant. Without the lib fix these each scanned GREEN (the named §7.2 escape).
+        # irrelevant. MF-R1: `from os import *` binds EVERY exec name the same way (the last
+        # param) and REDs UNCONDITIONALLY — the subprocess/socket star form already RED, only
+        # os's evaded. Without the lib fixes these each scanned GREEN (the named §7.2 escape).
         _write(tmp_path, "framework/scheduler/fold.py", body)
         v = L.scheduler_subprocess_socket_violations(tmp_path)
         assert v, body

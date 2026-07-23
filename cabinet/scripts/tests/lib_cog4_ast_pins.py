@@ -31,8 +31,11 @@ disciplines:
    **kwargs splat is RED.
 3. scheduler_subprocess_socket_violations(root) — the no-subprocess/no-socket pin over
    the planner tree (§7.2: "no subprocess/os.system in the planner tree — AST pin; tests
-   use subprocess, the planner never does"). Importing subprocess/socket, or an
-   os.system/os.popen/os.exec*/os.spawn*/os.fork call, is RED.
+   use subprocess, the planner never does"). RED: importing subprocess/socket (incl. the
+   star form); an os.system/os.popen/os.exec*/os.spawn*/os.fork call (via `os` or an
+   `import os as <alias>` binding); a `from os import system|popen|exec*|spawn*|fork` bind
+   (a bare Name the Attribute check can't see); or `from os import *` (binds every exec
+   primitive — REDs unconditionally, regardless of any call site).
 4. dispatch_import_violations(root) — over cabinet/scripts/cog4-dispatch-shadow.py (the
    separate dispatcher, §7.3). Allowed: stdlib | `from framework.authority.policy_engine
    import <risk_of, resolve_verdict, read_cell_state, _act_with_undo_gap>` | `from
@@ -317,7 +320,17 @@ def _exec_violations_in_source(source: str, rel: str) -> list[str]:
             # asname is irrelevant — the ORIGINAL imported name is the exec primitive.
             elif node.level == 0 and node.module == "os":
                 for a in node.names:
-                    if a.name in FORBIDDEN_OS_CALL_ATTRS:
+                    if a.name == "*":
+                        # MF-R1: `from os import *` binds EVERY os name — incl. system/popen/
+                        # exec*/spawn*/fork — as a bare Name no Attribute check can see. The
+                        # subprocess/socket star form already REDs (whole module forbidden
+                        # above), but os's did not, since os itself is allowed and only its
+                        # exec ATTRS are. No legitimate planner code star-imports os, so the
+                        # STAR IMPORT ITSELF REDs UNCONDITIONALLY — regardless of any call
+                        # site (that choice is the tag's parenthetical).
+                        out.append(f"{rel}:{RULE_SCHED_EXEC}:from os import * "
+                                   "(star-import binds exec primitives; RED regardless of call site)")
+                    elif a.name in FORBIDDEN_OS_CALL_ATTRS:
                         out.append(f"{rel}:{RULE_SCHED_EXEC}:from os import {a.name}")
         elif isinstance(node, ast.Call):
             calls.append(node)
