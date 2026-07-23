@@ -1,0 +1,102 @@
+{
+  "budget": {
+    "ceiling_units_per_wake": 10
+  },
+  "budget_version": 1,
+  "capability_availability": {},
+  "cutoff": "2026-07-23T06:00:00Z",
+  "failure_history": {
+    "cellar-log": {
+      "recent_failures": [],
+      "wakes_waiting": 0
+    },
+    "night-watch": {
+      "recent_failures": [],
+      "wakes_waiting": 0
+    },
+    "seed-vault": {
+      "recent_failures": [],
+      "wakes_waiting": 0
+    }
+  },
+  "objectives_epoch": {
+    "epoch_note": "fixture-opaque"
+  },
+  "organ_health": {
+    "cellar-log": "pass",
+    "night-watch": "pass",
+    "seed-vault": "pass"
+  },
+  "organs": [
+    {
+      "operations": [
+        {
+          "cost_units": 2,
+          "deps": {
+            "capabilities": [],
+            "organs": []
+          },
+          "descriptor": {
+            "action_type": "investigation_run",
+            "capability": "watch/scan-grounds",
+            "ceiling": [],
+            "risk_class": "reversible",
+            "undo_contract": "none"
+          },
+          "operation": "watch/scan-grounds",
+          "subject": null,
+          "trigger_due": false,
+          "urgency": 700
+        }
+      ],
+      "organ": "night-watch",
+      "starvation_bound": null
+    },
+    {
+      "operations": [
+        {
+          "cost_units": 1,
+          "deps": {
+            "capabilities": [],
+            "organs": []
+          },
+          "descriptor": {
+            "action_type": "investigation_run",
+            "capability": "cellar/read-hygrometer",
+            "ceiling": [],
+            "risk_class": "reversible",
+            "undo_contract": "none"
+          },
+          "operation": "cellar/read-hygrometer",
+          "subject": null,
+          "trigger_due": false,
+          "urgency": 500
+        }
+      ],
+      "organ": "cellar-log",
+      "starvation_bound": null
+    },
+    {
+      "operations": [],
+      "organ": "seed-vault",
+      "starvation_bound": null
+    }
+  ],
+  "posture_version": 1,
+  "scheduler_policy": {
+    "default_starvation_bound": 4
+  },
+  "scheduler_policy_version": 3,
+  "schema_version": "cog4-wake-snapshot/v1",
+  "scope": "cabinet-fixture",
+  "trust_table_version": 1,
+  "wake_input_hashes": {
+    "capability_availability_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "cortex_belief_store_hash": "5f5c4ffefa96408946d304746148161dc534f41faad55e53a2cad724de3e21fb",
+    "failure_history_hash": "0de1302c2ab5a5b9c2281ae2548381cfd792931e075f7360a43a7bd0b246d041",
+    "objectives_graph_rows_hash": "2ae7d53759f5677b08d77485bc9122e35b18f3964a21fa9ed53418afb6e72aef",
+    "organ_health_hash": "f90b675f8489dcb6873d6644612d6895bec258414ce9cf2e48197b67c9aa0a3e",
+    "organ_registry_hash": "bc8460a33d2c408c4ffddbc1a03ac96e31dedd1345fb889a1047437d8b52b7aa",
+    "services_manifest_hash": "b2513a33448c54850248cccca707b9e48d03d2a6cb33a1cb3b35f9c6f3324e34"
+  }
+}

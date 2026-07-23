@@ -1,0 +1,288 @@
+{
+  "budget": {
+    "ceiling_units_per_wake": 10
+  },
+  "budget_version": 1,
+  "capability_availability": {
+    "soil-probe-kit": true
+  },
+  "cutoff": "2026-07-23T06:00:00Z",
+  "failure_history": {
+    "compost-monitor": {
+      "recent_failures": [],
+      "wakes_waiting": 0
+    },
+    "fence-walker": {
+      "recent_failures": [],
+      "wakes_waiting": 0
+    },
+    "harvest-census": {
+      "recent_failures": [],
+      "wakes_waiting": 0
+    },
+    "irrigation-audit": {
+      "recent_failures": [],
+      "wakes_waiting": 0
+    },
+    "library-index": {
+      "recent_failures": [],
+      "wakes_waiting": 0
+    },
+    "pantry-stock": {
+      "recent_failures": [],
+      "wakes_waiting": 0
+    },
+    "rota-planner": {
+      "recent_failures": [],
+      "wakes_waiting": 0
+    },
+    "soil-lab": {
+      "recent_failures": [],
+      "wakes_waiting": 0
+    }
+  },
+  "objectives_epoch": {
+    "epoch_note": "fixture-opaque"
+  },
+  "organ_health": {
+    "compost-monitor": "pass",
+    "fence-walker": "pass",
+    "harvest-census": "pass",
+    "irrigation-audit": "pass",
+    "library-index": "pass",
+    "pantry-stock": "pass",
+    "rota-planner": "pass",
+    "soil-lab": "pass"
+  },
+  "organs": [
+    {
+      "operations": [
+        {
+          "cost_units": 3,
+          "deps": {
+            "capabilities": [],
+            "organs": []
+          },
+          "descriptor": {
+            "action_type": "investigation_run",
+            "capability": "census/count-beds",
+            "ceiling": [],
+            "risk_class": "reversible",
+            "undo_contract": "none"
+          },
+          "operation": "census/count-beds",
+          "subject": "beds/inventory",
+          "trigger_due": true,
+          "urgency": 900
+        }
+      ],
+      "organ": "harvest-census",
+      "starvation_bound": null
+    },
+    {
+      "operations": [
+        {
+          "cost_units": 2,
+          "deps": {
+            "capabilities": [],
+            "organs": []
+          },
+          "descriptor": {
+            "action_type": "investigation_run",
+            "capability": "water/audit-lines",
+            "ceiling": [],
+            "risk_class": "reversible",
+            "undo_contract": "none"
+          },
+          "operation": "water/audit-lines",
+          "subject": null,
+          "trigger_due": true,
+          "urgency": 850
+        }
+      ],
+      "organ": "irrigation-audit",
+      "starvation_bound": null
+    },
+    {
+      "operations": [
+        {
+          "cost_units": 4,
+          "deps": {
+            "capabilities": [
+              "soil-probe-kit"
+            ],
+            "organs": []
+          },
+          "descriptor": {
+            "action_type": "investigation_run",
+            "capability": "soil/sample-ph",
+            "ceiling": [],
+            "risk_class": "reversible",
+            "undo_contract": "none"
+          },
+          "operation": "soil/sample-ph",
+          "subject": null,
+          "trigger_due": true,
+          "urgency": 800
+        }
+      ],
+      "organ": "soil-lab",
+      "starvation_bound": null
+    },
+    {
+      "operations": [
+        {
+          "cost_units": 3,
+          "deps": {
+            "capabilities": [],
+            "organs": []
+          },
+          "descriptor": {
+            "action_type": "investigation_run",
+            "capability": "rota/draft-week",
+            "ceiling": [],
+            "risk_class": "reversible",
+            "undo_contract": "none"
+          },
+          "operation": "rota/draft-week",
+          "subject": null,
+          "trigger_due": true,
+          "urgency": 750
+        }
+      ],
+      "organ": "rota-planner",
+      "starvation_bound": null
+    },
+    {
+      "operations": [
+        {
+          "cost_units": 2,
+          "deps": {
+            "capabilities": [],
+            "organs": []
+          },
+          "descriptor": {
+            "action_type": "investigation_run",
+            "capability": "pantry/tally-jars",
+            "ceiling": [],
+            "risk_class": "reversible",
+            "undo_contract": "none"
+          },
+          "operation": "pantry/tally-jars",
+          "subject": null,
+          "trigger_due": true,
+          "urgency": 700
+        }
+      ],
+      "organ": "pantry-stock",
+      "starvation_bound": null
+    },
+    {
+      "operations": [
+        {
+          "cost_units": 3,
+          "deps": {
+            "capabilities": [],
+            "organs": []
+          },
+          "descriptor": {
+            "action_type": "investigation_run",
+            "capability": "fence/walk-perimeter",
+            "ceiling": [],
+            "risk_class": "reversible",
+            "undo_contract": "none"
+          },
+          "operation": "fence/walk-perimeter",
+          "subject": null,
+          "trigger_due": true,
+          "urgency": 650
+        }
+      ],
+      "organ": "fence-walker",
+      "starvation_bound": null
+    },
+    {
+      "operations": [
+        {
+          "cost_units": 2,
+          "deps": {
+            "capabilities": [],
+            "organs": []
+          },
+          "descriptor": {
+            "action_type": "investigation_run",
+            "capability": "library/reindex-shelves",
+            "ceiling": [],
+            "risk_class": "reversible",
+            "undo_contract": "none"
+          },
+          "operation": "library/reindex-shelves",
+          "subject": null,
+          "trigger_due": true,
+          "urgency": 600
+        },
+        {
+          "cost_units": 2,
+          "deps": {
+            "capabilities": [],
+            "organs": []
+          },
+          "descriptor": {
+            "action_type": "investigation_run",
+            "capability": "library/prune-dupes",
+            "ceiling": [],
+            "risk_class": "reversible",
+            "undo_contract": "none"
+          },
+          "operation": "library/prune-dupes",
+          "subject": null,
+          "trigger_due": true,
+          "urgency": 550
+        }
+      ],
+      "organ": "library-index",
+      "starvation_bound": null
+    },
+    {
+      "operations": [
+        {
+          "cost_units": 1,
+          "deps": {
+            "capabilities": [],
+            "organs": []
+          },
+          "descriptor": {
+            "action_type": "investigation_run",
+            "capability": "compost/log-temp",
+            "ceiling": [],
+            "risk_class": "reversible",
+            "undo_contract": "none"
+          },
+          "operation": "compost/log-temp",
+          "subject": null,
+          "trigger_due": true,
+          "urgency": 500
+        }
+      ],
+      "organ": "compost-monitor",
+      "starvation_bound": null
+    }
+  ],
+  "posture_version": 1,
+  "scheduler_policy": {
+    "default_starvation_bound": 4
+  },
+  "scheduler_policy_version": 3,
+  "schema_version": "cog4-wake-snapshot/v1",
+  "scope": "cabinet-fixture",
+  "trust_table_version": 1,
+  "wake_input_hashes": {
+    "capability_availability_hash": "84f9507c8b067b6dfd0a06410014469e5e244005ed026b7acd54790fc988522c",
+    "cortex_belief_store_hash": "5f5c4ffefa96408946d304746148161dc534f41faad55e53a2cad724de3e21fb",
+    "failure_history_hash": "2cfd37c5142d5f4218bc09fc73b1360a7edf275144648c7827488165e7f6e689",
+    "objectives_graph_rows_hash": "2ae7d53759f5677b08d77485bc9122e35b18f3964a21fa9ed53418afb6e72aef",
+    "organ_health_hash": "3e217e20e507d6c73202e6b4748f739d73b09dd5f28dafb248e6872c80e47d11",
+    "organ_registry_hash": "f6d1b209d16d6144ac486e82404840ec82b8a61cf683df7145494d4f2c128c9f",
+    "services_manifest_hash": "b2513a33448c54850248cccca707b9e48d03d2a6cb33a1cb3b35f9c6f3324e34"
+  }
+}
