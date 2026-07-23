@@ -271,6 +271,14 @@ ALLOWLIST_EXACT_OBJECTIVES = {
     "cabinet/scripts/cog3-rebuild.py",       # rebuild CLI (owns roots injection)
     "cabinet/scripts/cog3-graph-hash.py",    # hash instrument
     "cabinet/scripts/cog3-staleness.py",     # staleness instrument (two fenced as_of)
+    # R1 verdict inbox (WR rider, BACKLOG :1559): reads the graph ONLY through
+    # the PUBLIC serve surface (query.serve_graph — every C-F15 REFUSE limb
+    # binds it) + the canonical state tokens/vocabulary; read-only instrument.
+    "cabinet/scripts/cog3-verdict-inbox.py",
+    # R3 rider (COG-4 §18 WR lane): the weekly shadow-dividend report — a
+    # read-only serve-surface consumer (serve_graph/serve_objective/recommend
+    # only; its own battery pins that it never opens the row store).
+    "cabinet/scripts/cog3-shadow-dividend.py",
 }
 ALLOWLIST_GLOBS_OBJECTIVES = [
     "cabinet/scripts/tests/test_cog3_*.py",

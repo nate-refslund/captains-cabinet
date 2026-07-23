@@ -591,6 +591,11 @@ _REFERENCE_ALLOWLIST = {
     "cabinet/scripts/docs-sweep-allowlist.txt":
         "the docs-sweep glob list names the journal's runtime path so the "
         "runbook may cite it — a pattern line, never a consumer",
+    "cabinet/scripts/cog3-shadow-dividend.py":
+        "WR rider R3 module docstring cites the findings journal FILENAME as "
+        "a where-things-land precedent for its own shared/interfaces report "
+        "path — prose in a docstring, never an import, never a consumer (its "
+        "battery + cog2-import-gate pin it to serve-surface reads only)",
 }
 
 
