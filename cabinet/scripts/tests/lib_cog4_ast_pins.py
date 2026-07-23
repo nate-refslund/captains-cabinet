@@ -290,24 +290,44 @@ def _exec_violations_in_source(source: str, rel: str) -> list[str]:
     except (SyntaxError, ValueError):
         return []
     out: list[str] = []
+    # names bound to the `os` module: the literal `os` ALWAYS counts (a bare os.system()
+    # is caught with or without a visible import — no regression), plus every `import os
+    # as <alias>` binding so os.<exec>() reached through an alias cannot evade the Call
+    # check below (the alias case the cp1 review named). Collected across a FULL walk
+    # before the call scan, so binding order in the AST never matters.
+    os_names: set[str] = {"os"}
+    calls: list[ast.Call] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 if _top(alias.name) in FORBIDDEN_EXEC_IMPORT_MODULES:
                     out.append(f"{rel}:{RULE_SCHED_EXEC}:import {alias.name}")
+                if alias.name == "os":
+                    os_names.add(alias.asname or "os")
         elif isinstance(node, ast.ImportFrom):
             # only absolute imports of the forbidden modules matter (a relative import
             # cannot reach the stdlib subprocess/socket).
             if node.level == 0 and node.module and _top(node.module) in FORBIDDEN_EXEC_IMPORT_MODULES:
                 out.append(f"{rel}:{RULE_SCHED_EXEC}:from {node.module} import "
                            f"{','.join(a.name for a in node.names) or '*'}")
+            # `from os import system|popen|exec*|spawn*|fork` is a FIRST-CLASS static
+            # import of a shell/exec primitive: the call site is then a bare Name the
+            # Attribute check below can never see, so it must RED HERE (§7.2 — the exact
+            # `from os import system`/`from os import popen` escape the cp1 review proved).
+            # asname is irrelevant — the ORIGINAL imported name is the exec primitive.
+            elif node.level == 0 and node.module == "os":
+                for a in node.names:
+                    if a.name in FORBIDDEN_OS_CALL_ATTRS:
+                        out.append(f"{rel}:{RULE_SCHED_EXEC}:from os import {a.name}")
         elif isinstance(node, ast.Call):
-            func = node.func
-            # os.system(...) / os.popen(...) / os.exec*/spawn*/fork(...) — the root name
-            # is `os` and the attribute is a shell/exec primitive.
-            if (isinstance(func, ast.Attribute) and func.attr in FORBIDDEN_OS_CALL_ATTRS
-                    and isinstance(func.value, ast.Name) and func.value.id == "os"):
-                out.append(f"{rel}:{RULE_SCHED_EXEC}:os.{func.attr}()")
+            calls.append(node)
+    # os.system(...) / <alias>.popen(...) / os.exec*/spawn*/fork(...) — the root name is a
+    # binding of the os module and the attribute is a shell/exec primitive.
+    for node in calls:
+        func = node.func
+        if (isinstance(func, ast.Attribute) and func.attr in FORBIDDEN_OS_CALL_ATTRS
+                and isinstance(func.value, ast.Name) and func.value.id in os_names):
+            out.append(f"{rel}:{RULE_SCHED_EXEC}:{func.value.id}.{func.attr}()")
     return out
 
 
