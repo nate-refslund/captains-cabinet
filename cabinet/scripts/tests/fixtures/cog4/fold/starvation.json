@@ -1,0 +1,150 @@
+{
+  "budget": {
+    "ceiling_units_per_wake": 8
+  },
+  "budget_version": 1,
+  "capability_availability": {},
+  "cutoff": "2026-07-23T06:00:00Z",
+  "failure_history": {
+    "ledger-audit": {
+      "recent_failures": [],
+      "wakes_waiting": 0
+    },
+    "press-run-a": {
+      "recent_failures": [],
+      "wakes_waiting": 0
+    },
+    "press-run-b": {
+      "recent_failures": [],
+      "wakes_waiting": 0
+    },
+    "press-run-c": {
+      "recent_failures": [],
+      "wakes_waiting": 0
+    }
+  },
+  "objectives_epoch": {
+    "epoch_note": "fixture-opaque"
+  },
+  "organ_health": {
+    "ledger-audit": "pass",
+    "press-run-a": "pass",
+    "press-run-b": "pass",
+    "press-run-c": "pass"
+  },
+  "organs": [
+    {
+      "operations": [
+        {
+          "cost_units": 5,
+          "deps": {
+            "capabilities": [],
+            "organs": []
+          },
+          "descriptor": {
+            "action_type": "investigation_run",
+            "capability": "ledger/tally-day",
+            "ceiling": [],
+            "risk_class": "reversible",
+            "undo_contract": "none"
+          },
+          "operation": "ledger/tally-day",
+          "subject": null,
+          "trigger_due": true,
+          "urgency": 800
+        }
+      ],
+      "organ": "ledger-audit",
+      "starvation_bound": 3
+    },
+    {
+      "operations": [
+        {
+          "cost_units": 6,
+          "deps": {
+            "capabilities": [],
+            "organs": []
+          },
+          "descriptor": {
+            "action_type": "investigation_run",
+            "capability": "press/run-batch-a",
+            "ceiling": [],
+            "risk_class": "reversible",
+            "undo_contract": "none"
+          },
+          "operation": "press/run-batch-a",
+          "subject": null,
+          "trigger_due": true,
+          "urgency": 950
+        }
+      ],
+      "organ": "press-run-a",
+      "starvation_bound": 9
+    },
+    {
+      "operations": [
+        {
+          "cost_units": 6,
+          "deps": {
+            "capabilities": [],
+            "organs": []
+          },
+          "descriptor": {
+            "action_type": "investigation_run",
+            "capability": "press/run-batch-b",
+            "ceiling": [],
+            "risk_class": "reversible",
+            "undo_contract": "none"
+          },
+          "operation": "press/run-batch-b",
+          "subject": null,
+          "trigger_due": true,
+          "urgency": 950
+        }
+      ],
+      "organ": "press-run-b",
+      "starvation_bound": 9
+    },
+    {
+      "operations": [
+        {
+          "cost_units": 6,
+          "deps": {
+            "capabilities": [],
+            "organs": []
+          },
+          "descriptor": {
+            "action_type": "investigation_run",
+            "capability": "press/run-batch-c",
+            "ceiling": [],
+            "risk_class": "reversible",
+            "undo_contract": "none"
+          },
+          "operation": "press/run-batch-c",
+          "subject": null,
+          "trigger_due": true,
+          "urgency": 950
+        }
+      ],
+      "organ": "press-run-c",
+      "starvation_bound": 9
+    }
+  ],
+  "posture_version": 1,
+  "scheduler_policy": {
+    "default_starvation_bound": 4
+  },
+  "scheduler_policy_version": 3,
+  "schema_version": "cog4-wake-snapshot/v1",
+  "scope": "cabinet-fixture",
+  "trust_table_version": 1,
+  "wake_input_hashes": {
+    "capability_availability_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "cortex_belief_store_hash": "5f5c4ffefa96408946d304746148161dc534f41faad55e53a2cad724de3e21fb",
+    "failure_history_hash": "c96dc00179b15084fb6dd6b3eb752dd50ed83741e08f48af60c83b90a7c9c0c2",
+    "objectives_graph_rows_hash": "2ae7d53759f5677b08d77485bc9122e35b18f3964a21fa9ed53418afb6e72aef",
+    "organ_health_hash": "db44ebe857933ea09d6c891a361ed0340007df5ff1910b0da74d3e7b32c63fa2",
+    "organ_registry_hash": "bc5658c592ef44355eb61e3007fe5ebea1de68e4e9de8b064667c35b99c55f47",
+    "services_manifest_hash": "b2513a33448c54850248cccca707b9e48d03d2a6cb33a1cb3b35f9c6f3324e34"
+  }
+}
