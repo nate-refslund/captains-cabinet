@@ -1,0 +1,350 @@
+# boundary-manifest.yml — THE declarative boundary law consumed by the generic
+# engine cabinet/scripts/cog2-import-gate.py (COG-4 contract §8, C2 conversion).
+#
+# Phases add ROWS here, never engine code (§8.2/§8.3). Every row ships with its
+# bite proven: cabinet/scripts/tests/test_cog4_boundary_rows.py GENERATES a
+# negative-control mutant from each row (scratch tree + forbidden import into a
+# fake importer file) and asserts the engine REDs with that row's rule id — so a
+# future row is load-bearing the commit it lands, even when its target trees do
+# not exist yet (the COG-4 rows below are exactly that: green-by-vacuity on the
+# committed tree, bite-proven in scratch).
+#
+# ROW SHAPE (contract §8.2 — kind selects the check shapes):
+#   token               module rows: the dotted module this row fences
+#                       (framework.cortex). data_plane rows: the cache-path
+#                       substring whose live-line mention is fenced.
+#   kind                module | data_plane
+#   forbidden_importers trees/files that may not import OR name the token —
+#                       the authority/action surface (AST walk + comment-safe
+#                       token backstop; rule_ids.forbidden_import /
+#                       rule_ids.forbidden_token). module rows only.
+#   internal_prefix     the token's own tree — always a legitimate reader.
+#   allowlist_exact     curated reader files (repo-relative, exact).
+#   allowlist_globs     curated reader patterns (fnmatch; * crosses /).
+#   reverse_forbidden   trees the internal_prefix tree may never import
+#                       (rule_ids.reverse) | null.
+#   sweep               true = every SWEEP_TREES file is checked for un-curated
+#                       imports of the token (rule_ids.unallowlisted; module
+#                       rows) / live-line token mentions (rule_ids.data_plane;
+#                       data_plane rows).
+#   rule_ids            check-shape -> violation rule id (the stable public ids
+#                       CI, suites and humans grep for).
+#   symbol_pin          DOCUMENTATION-ONLY pointer to the sibling AST pin that
+#                       carries the symbol-level law for this boundary (contract
+#                       §8.4). The engine stays MODULE-granular BY DESIGN and
+#                       never enforces symbols; a null means no sibling pin.
+#   falsifier_exact     (optional; module rows) files under a TOTAL import ban
+#                       for this token, however spelled — the C-F17 class
+#                       (rule_ids.falsifier). NARROW matching: these files may
+#                       carry the token word as data, only real imports RED.
+#   token_backstop_extra (optional; module rows) extra literal substrings OR'd
+#                       into the forbidden-surface token backstop — the §8.1
+#                       cortex cache-store quirk (that store has no repo-wide
+#                       data_plane row; its literal is fenced on the forbidden
+#                       surface only, exactly as pre-conversion).
+#   deliberately_absent (optional) files that MUST NOT appear in this row's
+#                       allowlists — the DELIBERATE-ABSENCE idiom (§8.3, the
+#                       cog2-import-gate.py:265-268 precedent): leaving a file
+#                       off the allowlist means any reach from it REDs as
+#                       un-curated. The engine fail-closes if such a file is
+#                       simultaneously allowlisted; the mutant harness proves
+#                       each absence bites.
+#
+# The engine loads this file FAIL-CLOSED: unknown keys, missing rule ids,
+# duplicate tokens/rule-ids, or a contradicted deliberate absence are hard
+# errors — a typo may never silently drop a protection.
+#
+# Provenance: COG-4 W1 C2 conversion (contract §8.1-§8.3), authored per the
+# 2026-07-07 full-autonomy grant + the 2026-07-20 cognitive-masterplan grant.
+
+schema: cabinet/boundary-manifest/v1
+
+# --- the global sweep surface (engine Check 3/O/D scope) ---------------------
+# Must cover EVERY first-party importable Python tree so a plain forbidden
+# import is never invisible, wherever it lives (the closed bridge-escape).
+# The completeness invariant test_every_first_party_py_is_on_scan_surface
+# (test_cog2_import_gate.py — kept verbatim through the C2 conversion) fails
+# loudly if a first-party .py exists outside this surface. Non-code trees are
+# excluded by design — enumerated in the engine docstring.
+sweep_trees:
+  - framework           # the whole framework layer (authority/action + all)
+  - shared              # first-party bridge/interface namespace (the escape route)
+  - instance            # per-deployment instance code
+  - presets             # shipped preset packs
+  - cabinet/scripts     # build/verify/rebuild CLIs + cog tooling
+  - cabinet/admin-bot   # live runtime surface
+  - cabinet/mcp-server  # live runtime surface
+  - cabinet/adapters    # cabinet code lane (forward-guard)
+  - cabinet/channels    # cabinet code lane (forward-guard)
+  - cabinet/companion   # cabinet code lane (forward-guard)
+  - cabinet/evals       # eval harnesses (importable python)
+  - cabinet/fixtures    # fixture generators (importable python)
+  - conftest.py         # repo-root pytest fence (imported at collection time)
+
+rows:
+  # ==========================================================================
+  # LEGACY ROWS — the nine pre-conversion rules of contract §8.1, converted
+  # byte-compatibly (engine-over-repo output identical; every §8.1 rule id
+  # preserved verbatim; every pre-conversion negative-control mutant still REDs
+  # — test_cog2_import_gate.py + test_cog3_import_gate.py re-prove this every
+  # run, untouched).
+  # ==========================================================================
+
+  # --- ROW 1: the cortex shadow model (COG-2 §7.1 / M5) ---------------------
+  # Carries FOUR of the nine §8.1 rules: checks 1 (AST + token backstop on the
+  # forbidden surface), 2 (falsifier total ban) and 3 (repo-wide sweep).
+  - token: framework.cortex
+    kind: module
+    forbidden_importers:
+      - framework/frontdoor                     # live front door + live-verb execution
+      - framework/acting                        # capture->action lanes and runners
+      - framework/authority                     # authority / grant / policy / classifier
+      - framework/fidelity/officer_runner.py    # the live officer runner (file)
+    internal_prefix: framework/cortex/
+    allowlist_exact:
+      # curated cortex readers — the cog2 CLIs...
+      - cabinet/scripts/cog2-rebuild.py         # rebuild CLI
+      - cabinet/scripts/cog2-belief-hash.py     # hash instrument
+      - cabinet/scripts/cog2-verifier.py        # shadow verifier (query-only reader)
+      # ...plus the COG-3 broadening (pre-conversion Check-3 skip set, byte-
+      # compat): the objectives family are legitimate cortex readers — the
+      # graph reads the cortex query surface (symbol law: see the objectives
+      # row's symbol_pin).
+      - cabinet/scripts/cog3-rebuild.py
+      - cabinet/scripts/cog3-graph-hash.py
+      - cabinet/scripts/cog3-staleness.py
+    allowlist_globs:
+      - cabinet/scripts/tests/test_cog2_*.py
+      - cabinet/scripts/tests/lib_cog2_*.py
+      - framework/objectives/*                  # objectives-internal (COG-3 broadening)
+      - cabinet/scripts/tests/test_cog3_*.py
+      - cabinet/scripts/tests/lib_cog3_*.py
+    reverse_forbidden: null                     # cortex's own import law is not a row
+    sweep: true
+    falsifier_exact:
+      # C-F17: the shadow-parity falsifier may import NO cortex module at all —
+      # and it legitimately carries "cortex" as DATA, so it gets the NARROW
+      # import-only matcher, never the broad token backstop.
+      - cabinet/scripts/cog2-parity-falsifier.py
+    token_backstop_extra:
+      # the cortex cache store, fenced on the forbidden surface only (§8.1 row
+      # 2 — deliberately NOT a repo-wide data_plane row, exactly as before).
+      - cabinet/cache/cortex
+    rule_ids:
+      forbidden_import: FORBIDDEN_IMPORTS_CORTEX
+      forbidden_token: FORBIDDEN_CORTEX_TOKEN
+      falsifier: FALSIFIER_IMPORTS_CORTEX
+      unallowlisted: UNALLOWLISTED_CORTEX_IMPORTER
+    symbol_pin: null
+
+  # --- ROW 2: the objectives shadow model (COG-3 §6.5) ----------------------
+  # Carries FOUR §8.1 rules: checks 1 (AST + token backstop), R (the REVERSE
+  # direction — the graph reads the cortex, never the action plane) and O (the
+  # repo-wide sweep; how framework/missions consuming the graph REDs).
+  - token: framework.objectives
+    kind: module
+    forbidden_importers:
+      - framework/frontdoor
+      - framework/acting
+      - framework/authority
+      - framework/fidelity/officer_runner.py
+    internal_prefix: framework/objectives/
+    allowlist_exact:
+      # EXACTLY the three curated graph-reader CLIs (test-pinned set equality,
+      # test_cog3_import_gate.py::test_cog3_allowlist_covers_the_reader_clis_only).
+      - cabinet/scripts/cog3-rebuild.py         # rebuild CLI (owns roots injection)
+      - cabinet/scripts/cog3-graph-hash.py      # hash instrument
+      - cabinet/scripts/cog3-staleness.py       # staleness instrument
+    allowlist_globs:
+      - cabinet/scripts/tests/test_cog3_*.py
+      - cabinet/scripts/tests/lib_cog3_*.py
+    reverse_forbidden:
+      # the action plane, in the ACTION_PLANE order the suites pin.
+      - framework/frontdoor
+      - framework/acting
+      - framework/authority
+    sweep: true
+    deliberately_absent:
+      # the C-F17 analog (pre-conversion cog2-import-gate.py:265-268): the OVI
+      # parity falsifier is never a sanctioned objectives reader — off the
+      # allowlist, so any objectives import from it REDs as UNALLOWLISTED.
+      - cabinet/scripts/cog3-ovi-parity.py
+    rule_ids:
+      forbidden_import: FORBIDDEN_IMPORTS_OBJECTIVES
+      forbidden_token: FORBIDDEN_OBJECTIVES_TOKEN
+      reverse: FORBIDDEN_OBJECTIVES_IMPORTS_ACTION
+      unallowlisted: UNALLOWLISTED_OBJECTIVES_IMPORTER
+    symbol_pin: cabinet/scripts/tests/test_cog3_objectives_ast_pin.py
+
+  # --- ROW 3: the objectives cache store (COG-3 §6.5 bullet 6 / C-M9) -------
+  # The ninth §8.1 rule: a live-line mention of the graph store ANYWHERE in
+  # SWEEP_TREES is the non-covert data-plane read the import sweep cannot see.
+  - token: cabinet/cache/objectives
+    kind: data_plane
+    internal_prefix: framework/objectives/
+    allowlist_exact:
+      - cabinet/scripts/cog3-rebuild.py
+      - cabinet/scripts/cog3-graph-hash.py
+      - cabinet/scripts/cog3-staleness.py
+    allowlist_globs:
+      - cabinet/scripts/tests/test_cog3_*.py
+      - cabinet/scripts/tests/lib_cog3_*.py
+    sweep: true
+    rule_ids:
+      data_plane: FORBIDDEN_OBJECTIVES_DATAPLANE
+    symbol_pin: null
+
+  # ==========================================================================
+  # COG-4 ROWS (contract §8.3) — added as ROWS, zero engine code. Their target
+  # trees do not exist yet; each row's bite is proven NOW by the generated
+  # scratch-tree mutants in test_cog4_boundary_rows.py.
+  # ==========================================================================
+
+  # --- ROW 4: the shadow scheduler (pure planner) ---------------------------
+  # forbidden_importers: the action plane may not read the planner (§8.3).
+  # reverse_forbidden: the planner tree reads cortex/objectives serve surfaces
+  # + the projection kernel + framework.organs + stdlib, NOTHING else (§8.4
+  # pin) — so the action plane AND fidelity/missions/ovi/learning/evolution
+  # are reverse-forbidden. (rule id says ACTION for the direction-class
+  # symmetry with the objectives row; the fenced set is wider, per §8.3.)
+  # DELIBERATE ABSENCE: cog4-organ-runner.py is NOT an allowlisted scheduler
+  # reader — the composed wake vehicle is scheduler-blind by construction
+  # (§9.5, MF-AC2); any scheduler import from the runner REDs. cog4-parity.py
+  # is likewise not a scheduler reader (its dual-plane sanction is organs +
+  # action plane only, §5.3).
+  - token: framework.scheduler
+    kind: module
+    forbidden_importers:
+      - framework/frontdoor
+      - framework/acting
+      - framework/authority
+      - framework/fidelity/officer_runner.py
+    internal_prefix: framework/scheduler/
+    allowlist_exact:
+      - cabinet/scripts/cog4-snapshot.py        # snapshot builder CLI (§7.1)
+      - cabinet/scripts/cog4-schedule.py        # fold/schedule builder CLI (§7.2)
+      - cabinet/scripts/cog4-dispatch-shadow.py # shadow dispatch comparator (§7.3)
+      - cabinet/scripts/cog4-measure.py         # measurement CLI (§10)
+    allowlist_globs:
+      - cabinet/scripts/tests/test_cog4_*.py
+      - cabinet/scripts/tests/lib_cog4_*.py
+    reverse_forbidden:
+      - framework/frontdoor
+      - framework/acting
+      - framework/authority
+      - framework/fidelity
+      - framework/missions
+      - framework/ovi
+      - framework/learning
+      - framework/evolution
+    sweep: true
+    deliberately_absent:
+      - cabinet/scripts/cog4-organ-runner.py
+    rule_ids:
+      forbidden_import: FORBIDDEN_IMPORTS_SCHEDULER
+      forbidden_token: FORBIDDEN_SCHEDULER_TOKEN
+      reverse: FORBIDDEN_SCHEDULER_IMPORTS_ACTION
+      unallowlisted: UNALLOWLISTED_SCHEDULER_IMPORTER
+    symbol_pin: cabinet/scripts/tests/test_cog4_scheduler_ast_pin.py  # W1 pins unit (§8.4)
+
+  # --- ROW 5: the organ registry/descriptor ---------------------------------
+  # allowlist = the scheduler CLI set + cog4-parity (THE one sanctioned
+  # dual-plane importer: organs public surface + action plane, §5.3/§8.3) +
+  # cog4-organ-runner (an allowlisted ORGANS reader — it loads registry +
+  # descriptor; it stays scheduler-blind via row 4/row 7 absence).
+  # reverse_forbidden: framework/organs holds NO action-plane import (MF-A1) —
+  # same fenced set as the scheduler row (§8.3).
+  - token: framework.organs
+    kind: module
+    forbidden_importers:
+      - framework/frontdoor
+      - framework/acting
+      - framework/authority
+      - framework/fidelity/officer_runner.py
+    internal_prefix: framework/organs/
+    allowlist_exact:
+      - cabinet/scripts/cog4-snapshot.py
+      - cabinet/scripts/cog4-schedule.py
+      - cabinet/scripts/cog4-dispatch-shadow.py
+      - cabinet/scripts/cog4-measure.py
+      - cabinet/scripts/cog4-parity.py          # the sanctioned dual-plane importer (§5.3)
+      - cabinet/scripts/cog4-organ-runner.py    # organs reader; scheduler-blind (§9.5)
+    allowlist_globs:
+      - cabinet/scripts/tests/test_cog4_*.py
+      - cabinet/scripts/tests/lib_cog4_*.py
+    reverse_forbidden:
+      - framework/frontdoor
+      - framework/acting
+      - framework/authority
+      - framework/fidelity
+      - framework/missions
+      - framework/ovi
+      - framework/learning
+      - framework/evolution
+    sweep: true
+    rule_ids:
+      forbidden_import: FORBIDDEN_IMPORTS_ORGANS
+      forbidden_token: FORBIDDEN_ORGANS_TOKEN
+      reverse: FORBIDDEN_ORGANS_IMPORTS_ACTION
+      unallowlisted: UNALLOWLISTED_ORGANS_IMPORTER
+    symbol_pin: cabinet/scripts/tests/test_cog4_parity_ast_pin.py  # W1 pins unit (§8.4)
+
+  # --- ROW 6: the projection kernel (C3, §6) --------------------------------
+  # IMPORTABLE by cortex/objectives/scheduler internals + their CLIs only
+  # (§8.3) — the kernel never becomes a general utility grab-bag. Kernel unit
+  # tests ride the test_cog4_* globs (the kernel is a COG-4 deliverable).
+  - token: framework.projection
+    kind: module
+    forbidden_importers:
+      - framework/frontdoor
+      - framework/acting
+      - framework/authority
+      - framework/fidelity/officer_runner.py
+    internal_prefix: framework/projection/
+    allowlist_exact:
+      - cabinet/scripts/cog2-rebuild.py
+      - cabinet/scripts/cog2-belief-hash.py
+      - cabinet/scripts/cog2-verifier.py
+      - cabinet/scripts/cog3-rebuild.py
+      - cabinet/scripts/cog3-graph-hash.py
+      - cabinet/scripts/cog3-staleness.py
+      - cabinet/scripts/cog4-snapshot.py
+      - cabinet/scripts/cog4-schedule.py
+      - cabinet/scripts/cog4-dispatch-shadow.py
+      - cabinet/scripts/cog4-measure.py
+    allowlist_globs:
+      - framework/cortex/*                      # first instantiation (adopts the kernel, §6.4)
+      - framework/objectives/*                  # second instantiation (§6.4)
+      - framework/scheduler/*                   # third instantiation (§6.3)
+      - cabinet/scripts/tests/test_cog4_*.py
+      - cabinet/scripts/tests/lib_cog4_*.py
+    reverse_forbidden: null                     # §8.3 names reverse rows for scheduler+organs only
+    sweep: true
+    rule_ids:
+      forbidden_import: FORBIDDEN_IMPORTS_PROJECTION
+      forbidden_token: FORBIDDEN_PROJECTION_TOKEN
+      unallowlisted: UNALLOWLISTED_PROJECTION_IMPORTER
+    symbol_pin: null
+
+  # --- ROW 7: the schedule store (data plane, §8.3) -------------------------
+  # Swept SWEEP_TREES-wide like the objectives store. DELIBERATE ABSENCE: the
+  # organ-runner may never touch the schedule store — a runner mention of this
+  # path REDs (the §9.5 invariance battery is this static row's behavioral
+  # twin).
+  - token: cabinet/cache/scheduler
+    kind: data_plane
+    internal_prefix: framework/scheduler/
+    allowlist_exact:
+      - cabinet/scripts/cog4-snapshot.py
+      - cabinet/scripts/cog4-schedule.py
+      - cabinet/scripts/cog4-dispatch-shadow.py
+      - cabinet/scripts/cog4-measure.py
+    allowlist_globs:
+      - cabinet/scripts/tests/test_cog4_*.py
+      - cabinet/scripts/tests/lib_cog4_*.py
+    sweep: true
+    deliberately_absent:
+      - cabinet/scripts/cog4-organ-runner.py
+    rule_ids:
+      data_plane: FORBIDDEN_SCHEDULER_DATAPLANE
+    symbol_pin: null

@@ -1,130 +1,112 @@
 #!/usr/bin/env python3.12
-"""cog2-import-gate.py — the COG-2 shadow-boundary import gate (contract §7.1).
+"""cog2-import-gate.py — the declarative boundary-manifest ENGINE (COG-4 §8).
 
-Mechanically enforces M5 ("zero calls from authority/action code"): NO module on
-the authority/action surface may import framework.cortex, and the shadow-parity
-falsifier may import NO cortex module at all (C-F17). Detection is a stdlib-`ast`
-import-graph walk (precise, string-literal-blind) PLUS a grep backstop that
-catches what an AST walk cannot — a dynamic `importlib.import_module(...)` or a
-data-plane `open("cabinet/cache/cortex/...")` bypass (C-F20).
+C2 CONVERSION (Phase-4 contract §8.1-§8.3, byte-compatible): this gate began as
+the COG-2 cortex shadow-boundary gate (contract §7.1 / M5), was extended IN
+PLACE by COG-3 with the objectives boundary (§6.5), and is now the GENERIC
+engine for `cabinet/config/boundary-manifest.yml` — every boundary is a declared
+ROW there; phases add rows, never engine code. The name, the CLI contract
+(check / --report / --json, exit 1 on breach), all nine pre-conversion rule ids,
+and the scan semantics are preserved byte-compatibly: engine-over-repo output ==
+pre-conversion output (both empty), and every pre-conversion negative-control
+mutant still REDs (test_cog2_import_gate.py + test_cog3_import_gate.py run
+unchanged; test_cog4_boundary_rows.py GENERATES a mutant per row so every
+future row ships with its bite proven).
 
-This mirrors the check-layer-separation.sh IDIOM (a tree scan, comment-safe
-filtering, report/check/json modes, exit 1 on any new breach) but expresses an
-INTRA-framework deny rule that check-layer-separation.sh structurally cannot —
-that script only covers framework -> instance/presets coupling (per contract
-§3 / O-B6, the "layer-sep idiom" characterization is withdrawn; this gate is
-net-new).
+This gate stays MODULE-granular BY DESIGN: the narrow SYMBOL rule (which names
+an importer may touch) is never expressed here — it lives in dedicated sibling
+AST pins (test_cog3_objectives_ast_pin.py and the COG-4 pins, contract §8.4);
+a row's `symbol_pin` field is a documentation-only pointer to that sibling,
+never enforcement.
 
-COG-3 EXTENSION (Phase-3 contract §6.5, additive + byte-compatible): the same
-gate now also fences the objectives graph (framework.objectives), a SECOND
-shadow model. Authority/action code may not import it (FORBIDDEN_IMPORTS_OBJECTIVES
-/ FORBIDDEN_OBJECTIVES_TOKEN); a framework/objectives/ file may not import the
-action plane (FORBIDDEN_OBJECTIVES_IMPORTS_ACTION — the reverse direction); any
-un-curated swept importer of framework.objectives REDs (UNALLOWLISTED_OBJECTIVES_IMPORTER
-— how framework/missions consuming the graph is caught); and a live reference
-to the objectives cache store anywhere in SWEEP_TREES REDs (FORBIDDEN_OBJECTIVES_DATAPLANE
-— the non-covert data-plane read the import sweep cannot see). This gate stays
-MODULE-granular; the narrow SYMBOL rule (which cortex names framework/objectives/
-may import) is a separate net-new AST pin (test_cog3_objectives_ast_pin.py). All
-COG-3 rules are green-by-vacuity until framework/objectives/ + the cog3 files land.
+FIVE CHECK SHAPES, driven entirely by row data (§8.2):
+  1 forbidden surface    a row's `forbidden_importers` (authority/action trees/
+                         files) may neither import the row token — ANY spelling:
+                         `import framework.cortex`, `from framework.cortex
+                         import x`, the ordinary `from framework import cortex`
+                         (alias name), a relative `from ..cortex import x` that
+                         RESOLVES to the token (AST walk; rule
+                         `rule_ids.forbidden_import`) — nor NAME it on a live
+                         line (comment-safe grep backstop incl. dynamic-import
+                         strings and the row's `token_backstop_extra` literals;
+                         rule `rule_ids.forbidden_token`).
+  2 falsifier ban        a row's `falsifier_exact` files may import NO module of
+                         the token, however spelled — static, alias, or dynamic
+                         import_module/__import__ (C-F17). NARROW matching only:
+                         these files legitimately carry the token word as DATA
+                         (rule `rule_ids.falsifier`).
+  R reverse direction    files under a row's `internal_prefix` may never import
+                         the row's `reverse_forbidden` trees — AST plus the
+                         narrow dynamic complement (rule `rule_ids.reverse`).
+  3 unallowlisted sweep  ANY file in the global `sweep_trees` that imports the
+                         token (AST or narrow dynamic import_module/__import__)
+                         but is neither row-internal nor a curated reader
+                         (rule `rule_ids.unallowlisted`).
+  D data-plane sweep     for `kind: data_plane` rows: a live line NAMING the
+                         store path substring anywhere in `sweep_trees`, with
+                         the row's internal tree + curated readers allowlisted —
+                         the non-covert read the import sweep cannot see
+                         (rule `rule_ids.data_plane`).
 
 Baseline-zero, shrink-only: the accepted-violation set is EMPTY. Any violation
 fails the gate. The forbidden surface only ever grows (a protection never
-shrinks); the allowlist is the curated set of legitimate cortex readers.
+shrinks); allowlists are the curated per-row reader sets. A file DELIBERATELY
+left off a row's allowlist (`deliberately_absent`) is a first-class protection:
+any reach from it REDs as un-curated, and the loader fail-closes if such a file
+is ever simultaneously allowlisted.
 
-RULES — one `<repo-relative-path>:<RULE>` per violation:
-  FORBIDDEN_IMPORTS_CORTEX       an authority/action module imports framework.cortex —
-                                 ANY spelling: `import framework.cortex`,
-                                 `from framework.cortex import x`, the ordinary
-                                 `from framework import cortex [as c]` (alias name), or
-                                 a relative `from ..cortex import x` / `from .. import
-                                 cortex` that RESOLVES to framework.cortex
-  FORBIDDEN_CORTEX_TOKEN         a forbidden-tree file names framework.cortex, the
-                                 `from framework import cortex` line, or the
-                                 cabinet/cache/cortex store on a live (non-comment)
-                                 line — the dynamic-import / data-plane backstop
-  FALSIFIER_IMPORTS_CORTEX       cog2-parity-falsifier.py reaches ANY cortex module —
-                                 static, `from framework import cortex`, or a dynamic
-                                 import_module/__import__ of framework.cortex (C-F17 —
-                                 the parity ground truth must never route through
-                                 cortex's own adapters)
-  UNALLOWLISTED_CORTEX_IMPORTER  a module in ANY swept first-party tree (framework/,
-                                 shared/, instance/, presets/, the cabinet code
-                                 subtrees + the repo-root conftest — see SWEEP_TREES)
-                                 imports framework.cortex — statically or via a dynamic
-                                 import_module — but is neither cortex-internal nor a
-                                 curated cortex reader
+FAIL-CLOSED LOADING: a missing/unparseable manifest, an unknown key, a missing
+or duplicate rule id, or a contradicted deliberate absence raises at load time
+— a typo can never silently drop a protection. Regex fragments built from row
+data are `re.escape`d (tokens are literals, never patterns).
 
-FORBIDDEN authority/action surface (§7.1 / M5 — the "frontdoor / acting /
-authority / action lanes / officer runners / live-verb scripts" set):
-  framework/frontdoor/**                  the live front door + live-verb execution
-  framework/acting/**                     capture->action lanes and their runners
-  framework/authority/**                  authority / grant / policy / classifier
-  framework/fidelity/officer_runner.py    the live officer runner
-Plus the special importer:
-  cabinet/scripts/cog2-parity-falsifier.py   (C-F17 — must import NO cortex)
-
-ALLOWLIST (legitimate framework.cortex readers — the only modules that may):
-  framework/cortex/**                     own package (internal)
-  cabinet/scripts/cog2-rebuild.py         rebuild CLI
-  cabinet/scripts/cog2-belief-hash.py     hash instrument
-  cabinet/scripts/cog2-verifier.py        shadow verifier (query-only reader)
-  cabinet/scripts/tests/test_cog2_*.py    the COG-2 test suites
-  cabinet/scripts/tests/lib_cog2_*.py     COG-2 test libraries
-
-The comment-safe filter (like check-layer-separation.sh) drops pure `#` comment
-lines and triple-quote delimiter lines; a live line NAMING the cortex module or
-its cache store inside a forbidden tree is treated as a coupling by design —
-authority/action code has no business referencing the shadow model, even in a
-docstring body.
-
-Sweep coverage (§7.1 — the closed bridge-escape): Check 3's SWEEP_TREES covers
-EVERY first-party importable Python tree, so a PLAIN greppable cortex import is
-never invisible, wherever it lives. A prior gap swept only framework/ +
-cabinet/{scripts,admin-bot,mcp-server}, omitting shared/, instance/, presets/,
-cabinet/{adapters,channels,companion} (and cabinet/{evals,fixtures}, the repo-root
-conftest.py): a stray `from framework.cortex import query` there exited rc=0,
-letting authority/action code reach the shadow model through a one-hop bridge
-(authority file -> `from shared.cortex_bridge import query`; the bridge ->
-`from framework.cortex import query`). Now the bridge file — living in a swept
-tree — is itself flagged, so the reach can never be silent.
+Sweep coverage (the closed bridge-escape): the manifest's `sweep_trees` covers
+EVERY first-party importable Python tree, so a PLAIN greppable forbidden import
+is never invisible, wherever it lives — a one-hop bridge (authority file ->
+`from shared.x_bridge import q`; the bridge -> the real import) is caught at
+the bridge, which lives in a swept tree.
 
 EXCLUDED trees (named per the fail-closed rule — none is an importable Python
-namespace, so no import statement can hide in them): the non-code top-level trees
-designs/, docs/, memory/, packs/, patches/, vault/ (design assets, markdown,
-data, asset packs, patch files, the Obsidian vault) and the cabinet non-code
-subtrees cache/, config/, cron/, dashboard/, deploy/, docs/, env/, launchd/,
-logs/, loop-prompts/, mcp-overlays/, migrations/, officer-skills/, runbooks/,
-sql/, starter-spaces/, tests/, world/ (data, config, plists, logs, SQL, assets,
-prompt/skill markdown). They carry NO .py today. If Python is ever added to any
-of them it MUST be added to SWEEP_TREES — the completeness-invariant test
-(test_every_first_party_py_is_on_scan_surface) fails loudly until it is, so this
-class of omission cannot recur silently.
+namespace, so no import statement can hide in them): the non-code top-level
+trees designs/, docs/, memory/, packs/, patches/, vault/ (design assets,
+markdown, data, asset packs, patch files, the Obsidian vault) and the cabinet
+non-code subtrees cache/, config/, cron/, dashboard/, deploy/, docs/, env/,
+launchd/, logs/, loop-prompts/, mcp-overlays/, migrations/, officer-skills/,
+runbooks/, sql/, starter-spaces/, tests/, world/ (data, config, plists, logs,
+SQL, assets, prompt/skill markdown). They carry NO .py today. If Python is ever
+added to any of them it MUST be added to the manifest's sweep_trees — the
+completeness-invariant test (test_every_first_party_py_is_on_scan_surface)
+fails loudly until it is, so this class of omission cannot recur silently.
 
-Residuals (§7.1 — accepted for this phase, read pointer `none`):
+Residuals (accepted pre-conversion, unchanged by it; revisited when the read
+pointer flips off `none`):
 (1) TRANSITIVE attribution. The gate is a per-file DIRECT-import detector, not a
-    transitive import-graph analyzer. A multi-hop chain (authority -> bridge_a ->
-    bridge_b -> cortex) is caught at whichever file LITERALLY imports cortex —
-    always a swept first-party file now — so the ultimate authority caller can
-    name no cortex token yet the reach is NEVER silent (the importing bridge is
-    flagged). What stays out of scope is only attribution: the gate flags the
-    importer, not every transitive caller upstream of it.
-(2) FULLY covert assembly. A bypass whose module name never appears as a greppable
-    literal — a runtime string-assembled `import_module('framework' + '.cortex')`,
-    or a getattr/attribute walk — stays out of scope (no AST import node, no
-    greppable token). Revisited when the read pointer flips off `none`.
-The two-argument RELATIVE dynamic form (a dot-cortex name handed to import_module
-with a 'framework' package) is NOT residual: it bites on the falsifier via the
-narrow dynamic ban and across the swept trees via the precise two-arg pattern.
+    transitive import-graph analyzer. A multi-hop chain is caught at whichever
+    file LITERALLY imports the token — always a swept first-party file — so the
+    reach is NEVER silent; only attribution of upstream callers is out of scope.
+(2) FULLY covert assembly. A bypass whose module name never appears as a
+    greppable literal (runtime string-assembly, getattr walks) has no AST import
+    node and no greppable token. The two-argument RELATIVE dynamic form
+    (a dot-name handed to import_module with a package) is NOT residual: every
+    row's narrow dynamic pattern covers it.
+
+CHECK ORDER (one deliberate normalization, no legacy-visible change): checks
+run 1, 2, R, 3, D. Pre-conversion code ran the reverse check between the two
+sweeps; because reverse rows only scan their own `internal_prefix` tree and
+sweeps always skip that tree for the same row, no input distinguishes the two
+orders for the legacy rows — normalizing R before ALL sweeps simply lets a
+reverse-flagged file skip un-curated sweep double-flagging uniformly.
 
 Usage:
-  python3.12 cabinet/scripts/cog2-import-gate.py            # check: exit 1 on breach
-  python3.12 cabinet/scripts/cog2-import-gate.py --report   # list all, exit 0
-  python3.12 cabinet/scripts/cog2-import-gate.py --json     # machine-readable
+  python3.12 cabinet/scripts/cog2-import-gate.py             # check: exit 1 on breach
+  python3.12 cabinet/scripts/cog2-import-gate.py --report    # list all, exit 0
+  python3.12 cabinet/scripts/cog2-import-gate.py --json      # machine-readable
   python3.12 cabinet/scripts/cog2-import-gate.py --root PATH # scan another tree
+  python3.12 cabinet/scripts/cog2-import-gate.py --manifest PATH  # alternate row law
 
-Provenance: authored + self-ratified per the 2026-07-07 full-autonomy grant +
-the 2026-07-20 cognitive-masterplan continuous grant.
+Provenance: COG-2 gate authored + extended per the 2026-07-07 full-autonomy
+grant; C2 engine conversion per the same grant + the 2026-07-20
+cognitive-masterplan continuous grant (COG-4 contract §8).
 """
 from __future__ import annotations
 
@@ -136,190 +118,317 @@ import re
 import sys
 from pathlib import Path
 
-CORTEX = "framework.cortex"
-# COG-3 (Phase-3 contract §6.5): the objectives graph is a SECOND shadow model
-# with the SAME both-directions boundary — the authority/action surface may not
-# import it, and it may read the cortex query surface but never the action plane.
-# Enforced beside the cortex rules below; the symbol-level narrowing (which
-# cortex symbols framework/objectives/ may import) is a SEPARATE net-new AST pin
-# (test_cog3_objectives_ast_pin.py) — this module gate is path-granular only.
-OBJECTIVES = "framework.objectives"
+import yaml
 
-# --- forbidden authority/action surface (§7.1 / M5) -------------------------
-# Also the ACTION-PLANE trees framework/objectives/ may NEVER import (§6.5
-# reverse direction): the graph reads the cortex, never frontdoor/acting/authority.
-FORBIDDEN_TREES = [
-    "framework/frontdoor",
-    "framework/acting",
-    "framework/authority",
-]
-FORBIDDEN_FILES = [
-    "framework/fidelity/officer_runner.py",
-]
-FALSIFIER = "cabinet/scripts/cog2-parity-falsifier.py"
+_HERE = Path(__file__).resolve()
+REPO_DEFAULT = _HERE.parents[2]
+MANIFEST_PATH = _HERE.parents[1] / "config" / "boundary-manifest.yml"
 
-# --- legitimate cortex readers ---------------------------------------------
-CORTEX_INTERNAL = "framework/cortex/"
-ALLOWLIST_EXACT = {
-    "cabinet/scripts/cog2-rebuild.py",
-    "cabinet/scripts/cog2-belief-hash.py",
-    "cabinet/scripts/cog2-verifier.py",
+MANIFEST_SCHEMA = "cabinet/boundary-manifest/v1"
+MODULE_KIND = "module"
+DATA_PLANE_KIND = "data_plane"
+
+_TOP_KEYS = {"schema", "sweep_trees", "rows"}
+_ROW_KEYS = {
+    "token", "kind", "forbidden_importers", "internal_prefix",
+    "allowlist_exact", "allowlist_globs", "reverse_forbidden", "sweep",
+    "rule_ids", "symbol_pin", "falsifier_exact", "token_backstop_extra",
+    "deliberately_absent",
 }
-ALLOWLIST_GLOBS = [
-    "cabinet/scripts/tests/test_cog2_*.py",
-    "cabinet/scripts/tests/lib_cog2_*.py",
-]
-
-# --- trees the global sweep (Check 3) scans for ANY stray cortex importer -----
-# Must cover EVERY first-party importable Python tree so a plain
-# `from framework.cortex import x` is never invisible, wherever it lives — the
-# closed bridge-escape (a stray import in shared/instance/presets/cabinet-code
-# lanes used to slip the net; see §7.1). Audited to enumerate ALL first-party
-# .py in the repo (the completeness-invariant test guards 0-uncovered). The
-# empty namespaces (shared, cabinet/{adapters,channels,companion}) carry no .py
-# today but are swept as a forward-guard; conftest.py is the repo-root importable
-# pytest fence (a file, which _py_files handles). Non-code trees are excluded by
-# design — named in the §7.1 residual note above.
-SWEEP_TREES = [
-    "framework",          # the whole framework layer (authority/action + all)
-    "shared",             # first-party bridge/interface namespace (the escape route)
-    "instance",           # per-deployment instance code
-    "presets",            # shipped preset packs
-    "cabinet/scripts",    # build/verify/rebuild CLIs + cog2 tooling
-    "cabinet/admin-bot",  # live runtime surface
-    "cabinet/mcp-server", # live runtime surface
-    "cabinet/adapters",   # cabinet code lane (forward-guard)
-    "cabinet/channels",   # cabinet code lane (forward-guard)
-    "cabinet/companion",  # cabinet code lane (forward-guard)
-    "cabinet/evals",      # eval harnesses (importable python)
-    "cabinet/fixtures",   # fixture generators (importable python)
-    "conftest.py",        # repo-root pytest fence (imported at collection time)
-]
-
-RULE_FORBIDDEN = "FORBIDDEN_IMPORTS_CORTEX"
-RULE_TOKEN = "FORBIDDEN_CORTEX_TOKEN"
-RULE_FALSIFIER = "FALSIFIER_IMPORTS_CORTEX"
-RULE_UNALLOWLISTED = "UNALLOWLISTED_CORTEX_IMPORTER"
-
-# grep backstop for the FORBIDDEN trees: the dotted module ref (static OR
-# dynamic string) or the cache-store path on a live line, PLUS the ordinary
-# `from framework import cortex` spelling — which names cortex only via the
-# imported NAME, so the dotted `framework.cortex` scan alone misses it.
-# Deliberately NOT a bare-word "cortex" scan — that noise would false-positive
-# on prose; C-F20's real vectors are the module import and the cache-path open().
-_BACKSTOP = re.compile(
-    r"framework[./]cortex"
-    r"|cabinet/cache/cortex"
-    r"|from[ \t]+framework[ \t]+import[^#]*\bcortex\b")
-# the falsifier's narrow ban (C-F17): it legitimately carries "cortex" as DATA
-# (dict keys, a _cortex_from_cmd reader), so the broad module/path scan would
-# over-fence it. Match only a REAL cortex import, however spelled: a dotted
-# `import/from framework.cortex` line, a dynamic import_module/__import__ of
-# framework.cortex, the `from framework import cortex` spelling, or a relative
-# '.cortex' module string (the two-arg import_module('.cortex','framework') form).
-_IMPORT_LINE = re.compile(r"^[ \t]*(import|from)[ \t]+framework\.cortex(\b|\.)")
-_FALSIFIER_DYNAMIC = re.compile(
-    r"(?:import_module|__import__)\([ \t]*['\"]framework\.cortex"
-    r"|from[ \t]+framework[ \t]+import[^#]*\bcortex\b"
-    r"|['\"]\.cortex['\"]")
-# the NARROW dynamic-import regex swept across SWEEP_TREES (Check 3): a dynamic
-# reach into framework.cortex that the AST walk cannot see — a direct
-# import_module/__import__('framework.cortex…'), or the two-arg relative
-# import_module('.cortex', 'framework'). Requires a real call site, so it stays
-# near-zero-false-positive (never the noisy bare-token backstop).
-_DYNAMIC_CORTEX = re.compile(
-    r"(?:import_module|__import__)\([ \t]*['\"]framework\.cortex"
-    r"|(?:import_module|__import__)\([ \t]*['\"]\.cortex['\"][ \t]*,[ \t]*['\"]framework['\"]")
-
-# ===========================================================================
-# COG-3 objectives boundary (contract §6.5) — additive, byte-compatible with
-# the cortex rules above. FOUR module-granular rules + one data-plane sweep:
-#   FORBIDDEN_IMPORTS_OBJECTIVES     a forbidden authority/action file imports
-#                                    framework.objectives (any spelling)
-#   FORBIDDEN_OBJECTIVES_TOKEN       a forbidden file NAMES framework.objectives
-#                                    on a live line (dynamic-import backstop)
-#   FORBIDDEN_OBJECTIVES_IMPORTS_ACTION  a framework/objectives/ file imports the
-#                                    action plane (frontdoor/acting/authority) —
-#                                    the REVERSE direction (§6.5 "reverse"). AST
-#                                    static import PLUS a narrow dynamic
-#                                    import_module/__import__ complement
-#                                    (_DYNAMIC_ACTION), so a literal
-#                                    import_module('framework.authority…') is
-#                                    mechanically reachable here too — the same
-#                                    standard the forward direction applies
-#   UNALLOWLISTED_OBJECTIVES_IMPORTER  a swept first-party file imports
-#                                    framework.objectives but is neither
-#                                    objectives-internal nor a curated cog3 reader
-#                                    (this is how framework/missions importing the
-#                                    graph REDs — §6.2(5))
-#   FORBIDDEN_OBJECTIVES_DATAPLANE   a swept file names the objectives cache path
-#                                    on a live line (§6.5 bullet 6, C-M9): the
-#                                    non-covert data-plane read the import sweep
-#                                    cannot see, closed across the FULL SWEEP_TREES
-# The action-plane trees objectives may never import (reverse) are exactly the
-# FORBIDDEN_TREES set (frontdoor/acting/authority).
-ACTION_PLANE = tuple(t.replace("/", ".") for t in FORBIDDEN_TREES)
-
-# legitimate objectives readers (module-granular). framework/objectives/ reads
-# the cortex query surface AND itself; the cog3 CLIs/instruments read the graph.
-# cog3-ovi-parity.py is DELIBERATELY absent: the C-F17 falsifier analog (§6.5,
-# a separate later bullet) bans it from importing objectives internals, so it is
-# never a sanctioned objectives reader — leaving it off means any objectives
-# import from it REDs as UNALLOWLISTED, enforcing that ban at the module level.
-OBJECTIVES_INTERNAL = "framework/objectives/"
-ALLOWLIST_EXACT_OBJECTIVES = {
-    "cabinet/scripts/cog3-rebuild.py",       # rebuild CLI (owns roots injection)
-    "cabinet/scripts/cog3-graph-hash.py",    # hash instrument
-    "cabinet/scripts/cog3-staleness.py",     # staleness instrument (two fenced as_of)
+# module-row-only mechanism keys (fail-closed: meaningless on data_plane rows)
+_MODULE_ONLY_KEYS = {
+    "forbidden_importers", "reverse_forbidden", "falsifier_exact",
+    "token_backstop_extra",
 }
-ALLOWLIST_GLOBS_OBJECTIVES = [
-    "cabinet/scripts/tests/test_cog3_*.py",
-    "cabinet/scripts/tests/lib_cog3_*.py",
-]
-
-RULE_FORBIDDEN_OBJ = "FORBIDDEN_IMPORTS_OBJECTIVES"
-RULE_TOKEN_OBJ = "FORBIDDEN_OBJECTIVES_TOKEN"
-RULE_OBJ_IMPORTS_ACTION = "FORBIDDEN_OBJECTIVES_IMPORTS_ACTION"
-RULE_UNALLOWLISTED_OBJ = "UNALLOWLISTED_OBJECTIVES_IMPORTER"
-RULE_OBJ_DATAPLANE = "FORBIDDEN_OBJECTIVES_DATAPLANE"
-
-# backstop for FORBIDDEN trees: the objectives module ref (static OR dynamic
-# string) or the ordinary `from framework import objectives` spelling. The cache
-# path is NOT here — it is the data-plane sweep's job across ALL swept trees.
-_BACKSTOP_OBJ = re.compile(
-    r"framework[./]objectives"
-    r"|from[ \t]+framework[ \t]+import[^#]*\bobjectives\b")
-# narrow dynamic reach into framework.objectives (AST-blind complement, sweep).
-_DYNAMIC_OBJ = re.compile(
-    r"(?:import_module|__import__)\([ \t]*['\"]framework\.objectives"
-    r"|(?:import_module|__import__)\([ \t]*['\"]\.objectives['\"][ \t]*,[ \t]*['\"]framework['\"]")
-# narrow dynamic reach from framework/objectives/ INTO the action plane — the
-# REVERSE-direction AST-blind complement (Check R). Exact mirror of _DYNAMIC_OBJ
-# with objectives -> the FORBIDDEN_TREES set (frontdoor/acting/authority): a
-# literal import_module/__import__('framework.frontdoor…' | 'framework.acting…' |
-# 'framework.authority…'), or the two-arg relative import_module('.authority',
-# 'framework') form. The forward direction already treats such literal
-# import_module strings as mechanically reachable (_BACKSTOP_OBJ + _DYNAMIC_OBJ);
-# this restores that symmetry for the reverse. SELF-FLAG-SAFE by the same idiom
-# _DYNAMIC_OBJ uses — the escaped `\(` means the contiguous `import_module(` /
-# `__import__(` call token never appears in scannable position in this file (and
-# Check R only ever scans framework/objectives/, never this gate under cabinet/).
-_DYNAMIC_ACTION = re.compile(
-    r"(?:import_module|__import__)\([ \t]*['\"]framework\.(?:frontdoor|acting|authority)"
-    r"|(?:import_module|__import__)\([ \t]*['\"]\.(?:frontdoor|acting|authority)['\"][ \t]*,[ \t]*['\"]framework['\"]")
-# the objectives cache-path data-plane token. ASSEMBLED (not a contiguous
-# literal) on purpose: unlike the cortex data-plane check (forbidden-trees only),
-# THIS sweep covers the full SWEEP_TREES — which includes this gate file itself —
-# so a contiguous literal here would self-flag. Nowhere in this module may the
-# path appear contiguously on a non-comment line (docstring bodies count).
-_OBJ_CACHE_TOKEN = "cabinet/cache/" + "objectives"
+# the dynamic-call token, spelled so THIS file never matches its own pattern
+# (the escaped `\(` means the contiguous call form never appears here — the
+# pre-conversion SELF-FLAG-SAFE idiom, kept).
+_DYN_CALL = r"(?:import_module|__import__)\("
 
 
-def _is_cortex_module(name: str) -> bool:
-    """True iff `name` is the shadow-model package framework.cortex or a
-    submodule of it — never a mere prefix like framework.cortextools."""
-    return name == CORTEX or name.startswith(CORTEX + ".")
+class ManifestError(ValueError):
+    """A boundary-manifest defect. ALWAYS fatal — the gate fails closed."""
 
+
+# ---------------------------------------------------------------------------
+# rows — validated + compiled from the yml (tokens are literals: re.escape'd)
+# ---------------------------------------------------------------------------
+# Plain __slots__ classes, deliberately NOT dataclasses: the existing suites
+# load this hyphen-named file via spec_from_file_location, sometimes WITHOUT a
+# sys.modules registration — under `from __future__ import annotations` the
+# dataclass machinery resolves string annotations through sys.modules[__module__]
+# and crashes in exactly that loader shape. Plain classes are loader-agnostic.
+
+class BoundaryRow:
+    """One validated + compiled manifest row. Immutable by convention."""
+
+    __slots__ = (
+        "token", "kind", "forbidden_importers", "internal_prefix",
+        "allowlist_exact", "allowlist_globs", "reverse_forbidden", "sweep",
+        "rule_ids", "symbol_pin", "falsifier_exact", "token_backstop_extra",
+        "deliberately_absent", "backstop", "dynamic", "falsifier_import_line",
+        "falsifier_dynamic", "reverse_modules", "reverse_dynamic",
+    )
+
+    def __init__(self, *, token, kind, forbidden_importers, internal_prefix,
+                 allowlist_exact, allowlist_globs, reverse_forbidden, sweep,
+                 rule_ids, symbol_pin, falsifier_exact, token_backstop_extra,
+                 deliberately_absent, backstop, dynamic, falsifier_import_line,
+                 falsifier_dynamic, reverse_modules, reverse_dynamic):
+        self.token = token
+        self.kind = kind
+        self.forbidden_importers = forbidden_importers
+        self.internal_prefix = internal_prefix
+        self.allowlist_exact = allowlist_exact
+        self.allowlist_globs = allowlist_globs
+        self.reverse_forbidden = reverse_forbidden
+        self.sweep = sweep
+        self.rule_ids = rule_ids
+        self.symbol_pin = symbol_pin
+        self.falsifier_exact = falsifier_exact
+        self.token_backstop_extra = token_backstop_extra
+        self.deliberately_absent = deliberately_absent
+        self.backstop = backstop
+        self.dynamic = dynamic
+        self.falsifier_import_line = falsifier_import_line
+        self.falsifier_dynamic = falsifier_dynamic
+        self.reverse_modules = reverse_modules
+        self.reverse_dynamic = reverse_dynamic
+
+    def is_module_of_token(self, name: str) -> bool:
+        """True iff `name` is the row token module or a submodule of it —
+        never a mere prefix (framework.cortextools is not framework.cortex)."""
+        return name == self.token or name.startswith(self.token + ".")
+
+    def is_reverse_module(self, name: str) -> bool:
+        return any(name == m or name.startswith(m + ".")
+                   for m in self.reverse_modules)
+
+    def is_internal(self, rel: str) -> bool:
+        return rel.startswith(self.internal_prefix)
+
+    def is_allowlisted(self, rel: str) -> bool:
+        if rel in self.allowlist_exact:
+            return True
+        return any(fnmatch.fnmatch(rel, g) for g in self.allowlist_globs)
+
+
+class BoundaryConfig:
+    """The loaded manifest: sweep surface + rows, in declaration order."""
+
+    __slots__ = ("manifest_path", "sweep_trees", "rows")
+
+    def __init__(self, *, manifest_path, sweep_trees, rows):
+        self.manifest_path = manifest_path
+        self.sweep_trees = sweep_trees
+        self.rows = rows
+
+    def module_rows(self) -> list[BoundaryRow]:
+        return [r for r in self.rows if r.kind == MODULE_KIND]
+
+    def data_plane_rows(self) -> list[BoundaryRow]:
+        return [r for r in self.rows if r.kind == DATA_PLANE_KIND]
+
+    def row_for_token(self, token: str) -> BoundaryRow:
+        for r in self.rows:
+            if r.token == token:
+                return r
+        raise ManifestError(f"no row declares token {token!r}")
+
+
+def _require(cond: bool, msg: str) -> None:
+    if not cond:
+        raise ManifestError(f"boundary-manifest: {msg}")
+
+
+def _str_list(row: dict, key: str, token: str) -> list[str]:
+    val = row.get(key) or []
+    _require(isinstance(val, list) and all(isinstance(x, str) and x for x in val),
+             f"row {token!r}: {key} must be a list of non-empty strings")
+    return val
+
+
+def _compile_module_patterns(token: str, extras: tuple[str, ...],
+                             has_falsifier: bool):
+    """Per-token regexes, built from ESCAPED literals only. For the legacy rows
+    these compile to byte-identical patterns to the pre-conversion constants
+    (_BACKSTOP, _DYNAMIC_CORTEX, _IMPORT_LINE, _FALSIFIER_DYNAMIC and the
+    objectives twins)."""
+    parts = token.split(".")
+    parent, name = ".".join(parts[:-1]), parts[-1]
+    e_token, e_parent, e_name = (re.escape(token), re.escape(parent),
+                                 re.escape(name))
+    # live-line backstop for the forbidden surface: the dotted/pathed module
+    # ref (static OR dynamic string), any extra literals (e.g. the cortex
+    # cache store), and the ordinary `from <parent> import <name>` spelling —
+    # which names the token only via the imported NAME. Deliberately NOT a
+    # bare-word scan (prose would false-positive).
+    backstop_alts = [rf"{e_parent}[./]{e_name}"]
+    backstop_alts += [re.escape(x) for x in extras]
+    backstop_alts.append(rf"from[ \t]+{e_parent}[ \t]+import[^#]*\b{e_name}\b")
+    backstop = re.compile("|".join(backstop_alts))
+    # the NARROW dynamic reach swept repo-wide: a real import_module/__import__
+    # call site on the token, or the two-arg relative form — near-zero
+    # false-positive, never a bare-token scan.
+    dynamic = re.compile(
+        rf"{_DYN_CALL}[ \t]*['\"]{e_token}"
+        rf"|{_DYN_CALL}[ \t]*['\"]\.{e_name}['\"][ \t]*,[ \t]*['\"]{e_parent}['\"]")
+    falsifier_import_line = falsifier_dynamic = None
+    if has_falsifier:
+        # the falsifier's narrow ban: ONLY a real import however spelled — a
+        # dotted import line, a dynamic call, the alias spelling, or a relative
+        # '.name' module string (the two-arg import_module form).
+        falsifier_import_line = re.compile(
+            rf"^[ \t]*(import|from)[ \t]+{e_token}(\b|\.)")
+        falsifier_dynamic = re.compile(
+            rf"{_DYN_CALL}[ \t]*['\"]{e_token}"
+            rf"|from[ \t]+{e_parent}[ \t]+import[^#]*\b{e_name}\b"
+            rf"|['\"]\.{e_name}['\"]")
+    return backstop, dynamic, falsifier_import_line, falsifier_dynamic
+
+
+def _compile_reverse(reverse_forbidden: tuple[str, ...]):
+    """Reverse-direction module set + the narrow dynamic complement. For the
+    objectives row this compiles byte-identically to the pre-conversion
+    _DYNAMIC_ACTION pattern."""
+    modules = tuple(t.replace("/", ".") for t in reverse_forbidden)
+    by_parent: dict[str, list[str]] = {}
+    for mod in modules:
+        parts = mod.split(".")
+        _require(len(parts) >= 2,
+                 f"reverse_forbidden entry {mod!r} must be tree-shaped (a/b)")
+        by_parent.setdefault(".".join(parts[:-1]), []).append(parts[-1])
+    branches = []
+    for parent, names in by_parent.items():
+        e_parent = re.escape(parent)
+        alt = "|".join(re.escape(n) for n in names)
+        branches.append(rf"{_DYN_CALL}[ \t]*['\"]{e_parent}\.(?:{alt})")
+        branches.append(
+            rf"{_DYN_CALL}[ \t]*['\"]\.(?:{alt})['\"][ \t]*,[ \t]*['\"]{e_parent}['\"]")
+    return modules, re.compile("|".join(branches))
+
+
+def _compile_row(raw: object) -> BoundaryRow:
+    _require(isinstance(raw, dict), f"row must be a mapping, got {type(raw)}")
+    unknown = set(raw) - _ROW_KEYS
+    _require(not unknown, f"row {raw.get('token')!r}: unknown keys {sorted(unknown)}")
+    token = raw.get("token")
+    _require(isinstance(token, str) and token, "row without a non-empty token")
+    kind = raw.get("kind")
+    _require(kind in (MODULE_KIND, DATA_PLANE_KIND),
+             f"row {token!r}: kind must be {MODULE_KIND}|{DATA_PLANE_KIND}")
+    _require("internal_prefix" in raw and isinstance(raw["internal_prefix"], str)
+             and raw["internal_prefix"].endswith("/"),
+             f"row {token!r}: internal_prefix must be a 'tree/' prefix")
+    _require(isinstance(raw.get("sweep"), bool), f"row {token!r}: sweep must be bool")
+    symbol_pin = raw.get("symbol_pin")
+    _require(symbol_pin is None or (isinstance(symbol_pin, str) and symbol_pin),
+             f"row {token!r}: symbol_pin must be a path or null")
+    rule_ids = raw.get("rule_ids")
+    _require(isinstance(rule_ids, dict) and rule_ids
+             and all(isinstance(k, str) and isinstance(v, str) and v
+                     for k, v in rule_ids.items()),
+             f"row {token!r}: rule_ids must be a non-empty str->str mapping")
+
+    forbidden = tuple(_str_list(raw, "forbidden_importers", token))
+    allow_exact = frozenset(_str_list(raw, "allowlist_exact", token))
+    allow_globs = tuple(_str_list(raw, "allowlist_globs", token))
+    rev_raw = raw.get("reverse_forbidden")
+    _require(rev_raw is None or isinstance(rev_raw, list),
+             f"row {token!r}: reverse_forbidden must be a list or null")
+    reverse = tuple(_str_list(raw, "reverse_forbidden", token)) if rev_raw else ()
+    falsifier = tuple(_str_list(raw, "falsifier_exact", token))
+    extras = tuple(_str_list(raw, "token_backstop_extra", token))
+    absent = tuple(_str_list(raw, "deliberately_absent", token))
+
+    # rule-id coverage is EXACT per mechanism — no orphan ids, no missing ids.
+    expected: set[str] = set()
+    if kind == MODULE_KIND:
+        _require("." in token, f"module row {token!r}: token must be dotted")
+        if forbidden:
+            expected |= {"forbidden_import", "forbidden_token"}
+        if falsifier:
+            expected.add("falsifier")
+        if reverse:
+            expected.add("reverse")
+        if raw["sweep"]:
+            expected.add("unallowlisted")
+    else:
+        present = _MODULE_ONLY_KEYS & set(raw)
+        _require(not present,
+                 f"data_plane row {token!r}: module-only keys {sorted(present)}")
+        _require(raw["sweep"] is True,
+                 f"data_plane row {token!r}: sweep must be true (a store row "
+                 "that sweeps nothing protects nothing)")
+        expected = {"data_plane"}
+    _require(set(rule_ids) == expected,
+             f"row {token!r}: rule_ids keys {sorted(rule_ids)} != required "
+             f"{sorted(expected)} for its declared mechanisms")
+
+    # a deliberate absence contradicted by the row's own allowlists is a
+    # manifest defect (the protection would silently not exist).
+    for path in absent:
+        _require(path not in allow_exact
+                 and not any(fnmatch.fnmatch(path, g) for g in allow_globs)
+                 and not path.startswith(raw["internal_prefix"]),
+                 f"row {token!r}: deliberately_absent {path!r} is allowlisted "
+                 "— the absence is the protection; remove one or the other")
+
+    backstop = dynamic = fal_line = fal_dyn = None
+    rev_modules: tuple[str, ...] = ()
+    rev_dyn = None
+    if kind == MODULE_KIND:
+        backstop, dynamic, fal_line, fal_dyn = _compile_module_patterns(
+            token, extras, bool(falsifier))
+        if reverse:
+            rev_modules, rev_dyn = _compile_reverse(reverse)
+
+    return BoundaryRow(
+        token=token, kind=kind, forbidden_importers=forbidden,
+        internal_prefix=raw["internal_prefix"], allowlist_exact=allow_exact,
+        allowlist_globs=allow_globs, reverse_forbidden=reverse,
+        sweep=raw["sweep"], rule_ids=dict(rule_ids), symbol_pin=symbol_pin,
+        falsifier_exact=falsifier, token_backstop_extra=extras,
+        deliberately_absent=absent, backstop=backstop, dynamic=dynamic,
+        falsifier_import_line=fal_line, falsifier_dynamic=fal_dyn,
+        reverse_modules=rev_modules, reverse_dynamic=rev_dyn)
+
+
+def load_config(manifest_path: Path | str = MANIFEST_PATH) -> BoundaryConfig:
+    """Parse + validate the boundary manifest, FAIL-CLOSED (ManifestError on
+    any defect — the gate never runs on a law it cannot fully trust)."""
+    manifest_path = Path(manifest_path)
+    _require(manifest_path.is_file(), f"manifest missing: {manifest_path}")
+    try:
+        doc = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:  # pragma: no cover - exercised via tests
+        raise ManifestError(f"boundary-manifest: unparseable yml: {exc}") from exc
+    _require(isinstance(doc, dict), "top level must be a mapping")
+    unknown = set(doc) - _TOP_KEYS
+    _require(not unknown, f"unknown top-level keys {sorted(unknown)}")
+    _require(doc.get("schema") == MANIFEST_SCHEMA,
+             f"schema must be {MANIFEST_SCHEMA!r}, got {doc.get('schema')!r}")
+    trees = doc.get("sweep_trees")
+    _require(isinstance(trees, list) and trees
+             and all(isinstance(t, str) and t for t in trees),
+             "sweep_trees must be a non-empty list of strings")
+    _require(len(set(trees)) == len(trees), "sweep_trees has duplicates")
+    raw_rows = doc.get("rows")
+    _require(isinstance(raw_rows, list) and raw_rows,
+             "rows must be a non-empty list")
+    rows = tuple(_compile_row(r) for r in raw_rows)
+    tokens = [r.token for r in rows]
+    _require(len(set(tokens)) == len(tokens), f"duplicate tokens in {tokens}")
+    all_ids = [rid for r in rows for rid in r.rule_ids.values()]
+    _require(len(set(all_ids)) == len(all_ids),
+             f"duplicate rule ids across rows in {sorted(all_ids)}")
+    return BoundaryConfig(manifest_path=manifest_path,
+                          sweep_trees=tuple(trees), rows=rows)
+
+
+# ---------------------------------------------------------------------------
+# file mechanics (unchanged from the pre-conversion engine)
+# ---------------------------------------------------------------------------
 
 def _import_from_targets(node: ast.ImportFrom, rel: str) -> list[str]:
     """Absolute dotted module(s) a `from ... import ...` statement binds.
@@ -352,33 +461,6 @@ def _import_from_targets(node: ast.ImportFrom, rel: str) -> list[str]:
     return targets
 
 
-def _cortex_imports(source: str, rel: str = "") -> list[str]:
-    """Every framework.cortex[.*] module reached by a REAL import statement
-    (AST — string literals never count). Catches `import framework.cortex`,
-    `from framework.cortex import x`, the ordinary `from framework import cortex`
-    (via the imported name), AND relative imports resolved against `rel`'s
-    package path. The §7.1 gate is exactly this walk; the grep backstops are
-    separate. Unparseable files yield []. A level>0 import with no `rel` context
-    cannot be resolved and is skipped (every real call site passes rel)."""
-    try:
-        tree = ast.parse(source)
-    except (SyntaxError, ValueError):
-        return []
-    hits: list[str] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if _is_cortex_module(alias.name):
-                    hits.append(alias.name)
-        elif isinstance(node, ast.ImportFrom):
-            if node.level and not rel:
-                continue
-            for target in _import_from_targets(node, rel):
-                if _is_cortex_module(target):
-                    hits.append(target)
-    return hits
-
-
 def _live_lines(source: str):
     """Yield lines that are neither a pure `#` comment nor a triple-quote
     delimiter line (the check-layer-separation.sh comment heuristic)."""
@@ -389,25 +471,6 @@ def _live_lines(source: str):
         if stripped.startswith('"""') or stripped.startswith("'''"):
             continue
         yield line
-
-
-def _backstop_hit(source: str) -> bool:
-    return any(_BACKSTOP.search(line) for line in _live_lines(source))
-
-
-def _import_line_hit(source: str) -> bool:
-    return any(_IMPORT_LINE.search(line) for line in source.splitlines())
-
-
-def _falsifier_dynamic_hit(source: str) -> bool:
-    """The falsifier's narrow dynamic/alias cortex ban, comment-safe (C-F17)."""
-    return any(_FALSIFIER_DYNAMIC.search(line) for line in _live_lines(source))
-
-
-def _dynamic_cortex_hit(source: str) -> bool:
-    """A narrow dynamic import_module/__import__ reach into framework.cortex,
-    comment-safe — the Check-3 sweep's AST-blind complement."""
-    return any(_DYNAMIC_CORTEX.search(line) for line in _live_lines(source))
 
 
 def _read(path: Path) -> str:
@@ -426,222 +489,217 @@ def _rel(root: Path, path: Path) -> str:
     return path.relative_to(root).as_posix()
 
 
-def _is_cortex_internal(rel: str) -> bool:
-    return rel.startswith(CORTEX_INTERNAL)
+class _FileFacts:
+    """Per-file scan facts, computed ONCE per scan() call: every real-import
+    target (AST — string literals never count; relative imports resolved
+    against the file's package path), the comment-safe live lines, and the raw
+    lines. Unparseable files yield zero imports (same as pre-conversion)."""
+
+    __slots__ = ("imports", "live", "raw")
+
+    def __init__(self, source: str, rel: str):
+        self.raw: tuple[str, ...] = tuple(source.splitlines())
+        self.live: tuple[str, ...] = tuple(_live_lines(source))
+        imports: list[str] = []
+        try:
+            tree = ast.parse(source)
+        except (SyntaxError, ValueError):
+            tree = None
+        if tree is not None:
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    imports.extend(alias.name for alias in node.names)
+                elif isinstance(node, ast.ImportFrom):
+                    if node.level and not rel:
+                        continue
+                    imports.extend(_import_from_targets(node, rel))
+        self.imports = tuple(imports)
 
 
-def _is_allowlisted(rel: str) -> bool:
-    if rel in ALLOWLIST_EXACT:
-        return True
-    return any(fnmatch.fnmatch(rel, glob) for glob in ALLOWLIST_GLOBS)
+# ---------------------------------------------------------------------------
+# the scan — five generic check shapes over the rows
+# ---------------------------------------------------------------------------
 
-
-# --- COG-3 objectives helpers (mirror the cortex idioms; reuse the generic
-#     relative-import resolver `_import_from_targets`) -----------------------
-
-def _is_objectives_module(name: str) -> bool:
-    """True iff `name` is framework.objectives or a submodule — never a mere
-    prefix like framework.objectivestools."""
-    return name == OBJECTIVES or name.startswith(OBJECTIVES + ".")
-
-
-def _is_action_plane_module(name: str) -> bool:
-    """True iff `name` is (a submodule of) the action plane the objectives graph
-    may never import: framework.frontdoor / framework.acting / framework.authority."""
-    return any(name == a or name.startswith(a + ".") for a in ACTION_PLANE)
-
-
-def _matching_imports(source: str, rel: str, predicate) -> list[str]:
-    """Every real-import target (AST — string literals never count) for which
-    `predicate(dotted_name)` holds. Catches `import X`, `from X import y`, the
-    `from pkg import name` alias spelling, and relative imports resolved against
-    `rel`'s package path (via `_import_from_targets`)."""
-    try:
-        tree = ast.parse(source)
-    except (SyntaxError, ValueError):
-        return []
-    hits: list[str] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if predicate(alias.name):
-                    hits.append(alias.name)
-        elif isinstance(node, ast.ImportFrom):
-            if node.level and not rel:
-                continue
-            for target in _import_from_targets(node, rel):
-                if predicate(target):
-                    hits.append(target)
-    return hits
-
-
-def _objectives_imports(source: str, rel: str = "") -> list[str]:
-    return _matching_imports(source, rel, _is_objectives_module)
-
-
-def _action_plane_imports(source: str, rel: str = "") -> list[str]:
-    return _matching_imports(source, rel, _is_action_plane_module)
-
-
-def _backstop_obj_hit(source: str) -> bool:
-    return any(_BACKSTOP_OBJ.search(line) for line in _live_lines(source))
-
-
-def _dynamic_obj_hit(source: str) -> bool:
-    return any(_DYNAMIC_OBJ.search(line) for line in _live_lines(source))
-
-
-def _dynamic_action_hit(source: str) -> bool:
-    """A narrow dynamic import_module/__import__ reach FROM framework/objectives/
-    into the action plane, comment-safe — the Check-R reverse-direction AST-blind
-    complement mirroring _dynamic_obj_hit."""
-    return any(_DYNAMIC_ACTION.search(line) for line in _live_lines(source))
-
-
-def _obj_dataplane_hit(source: str) -> bool:
-    """A live-line reference to the objectives cache path — the non-covert
-    data-plane read (an open()/Path of the graph store). Comment-safe."""
-    return any(_OBJ_CACHE_TOKEN in line for line in _live_lines(source))
-
-
-def _is_objectives_internal(rel: str) -> bool:
-    return rel.startswith(OBJECTIVES_INTERNAL)
-
-
-def _is_cog3_allowlisted(rel: str) -> bool:
-    if rel in ALLOWLIST_EXACT_OBJECTIVES:
-        return True
-    return any(fnmatch.fnmatch(rel, glob) for glob in ALLOWLIST_GLOBS_OBJECTIVES)
-
-
-def scan(root) -> list[str]:
+def scan(root, config: BoundaryConfig | None = None) -> list[str]:
     """Return the sorted list of `<rel-path>:<RULE>` violations under `root`.
-    Empty list == shadow boundary intact."""
+    Empty list == every declared boundary intact."""
+    cfg = config if config is not None else _CONFIG
     root = Path(root)
     violations: set[str] = set()
     flagged: set[str] = set()          # paths already given a specific rule
+    facts_cache: dict[str, _FileFacts] = {}
 
-    # --- Check 1: the forbidden authority/action surface --------------------
-    forbidden: list[Path] = []
-    for tree in FORBIDDEN_TREES:
-        forbidden += _py_files(root / tree)
-    for name in FORBIDDEN_FILES:
-        forbidden += _py_files(root / name)
-    for path in forbidden:
-        rel = _rel(root, path)
-        src = _read(path)
-        if _cortex_imports(src, rel):
-            violations.add(f"{rel}:{RULE_FORBIDDEN}")
-            flagged.add(rel)
-        if _backstop_hit(src):
-            violations.add(f"{rel}:{RULE_TOKEN}")
-            flagged.add(rel)
-        # COG-3: the SAME forbidden surface may not import the objectives graph.
-        if _objectives_imports(src, rel):
-            violations.add(f"{rel}:{RULE_FORBIDDEN_OBJ}")
-            flagged.add(rel)
-        if _backstop_obj_hit(src):
-            violations.add(f"{rel}:{RULE_TOKEN_OBJ}")
-            flagged.add(rel)
+    def facts_for(path: Path, rel: str) -> _FileFacts:
+        got = facts_cache.get(rel)
+        if got is None:
+            got = facts_cache[rel] = _FileFacts(_read(path), rel)
+        return got
 
-    # --- Check 2: the falsifier import ban (C-F17) --------------------------
-    fpath = root / FALSIFIER
-    if fpath.is_file():
-        rel = _rel(root, fpath)
-        src = _read(fpath)
-        if (_cortex_imports(src, rel) or _import_line_hit(src)
-                or _falsifier_dynamic_hit(src)):
-            violations.add(f"{rel}:{RULE_FALSIFIER}")
-            flagged.add(rel)
+    module_rows = cfg.module_rows()
 
-    # --- Check 3: the global whitelist — any OTHER cortex importer ----------
-    # COG-3 broadening: framework/objectives/ and the cog3 CLIs/tests are
-    # LEGITIMATE cortex readers (the graph reads the cortex query surface), so
-    # they fold clean here — the narrow SYMBOL restriction on which cortex names
-    # they may import is the separate net-new AST pin, not this module gate.
-    for tree in SWEEP_TREES:
-        for path in _py_files(root / tree):
-            rel = _rel(root, path)
-            if (rel in flagged or _is_cortex_internal(rel) or _is_allowlisted(rel)
-                    or _is_objectives_internal(rel) or _is_cog3_allowlisted(rel)):
+    # --- Check 1: each row's forbidden authority/action surface -------------
+    for row in module_rows:
+        for entry in row.forbidden_importers:
+            for path in _py_files(root / entry):
+                rel = _rel(root, path)
+                f = facts_for(path, rel)
+                if any(row.is_module_of_token(n) for n in f.imports):
+                    violations.add(f"{rel}:{row.rule_ids['forbidden_import']}")
+                    flagged.add(rel)
+                if any(row.backstop.search(l) for l in f.live):
+                    violations.add(f"{rel}:{row.rule_ids['forbidden_token']}")
+                    flagged.add(rel)
+
+    # --- Check 2: per-row falsifier total-import bans (C-F17) ---------------
+    for row in module_rows:
+        for fal in row.falsifier_exact:
+            fpath = root / fal
+            if not fpath.is_file():
                 continue
-            src = _read(path)
-            if _cortex_imports(src, rel) or _dynamic_cortex_hit(src):
-                violations.add(f"{rel}:{RULE_UNALLOWLISTED}")
+            rel = _rel(root, fpath)
+            f = facts_for(fpath, rel)
+            if (any(row.is_module_of_token(n) for n in f.imports)
+                    or any(row.falsifier_import_line.search(l) for l in f.raw)
+                    or any(row.falsifier_dynamic.search(l) for l in f.live)):
+                violations.add(f"{rel}:{row.rule_ids['falsifier']}")
+                flagged.add(rel)
 
-    # --- Check R (COG-3 reverse): framework/objectives/ may read the cortex,
-    #     never the action plane (frontdoor/acting/authority). The AST static
-    #     check (_action_plane_imports) is complemented by the narrow dynamic
-    #     check (_dynamic_action_hit) so a literal import_module/__import__ of the
-    #     action plane is mechanically reachable here — the SAME standard the
-    #     forward direction applies (_BACKSTOP_OBJ + _DYNAMIC_OBJ); without it a
-    #     dynamic import_module('framework.authority.classifier') escaped green. -
-    for path in _py_files(root / OBJECTIVES_INTERNAL.rstrip("/")):
-        rel = _rel(root, path)
-        src = _read(path)
-        if _action_plane_imports(src, rel) or _dynamic_action_hit(src):
-            violations.add(f"{rel}:{RULE_OBJ_IMPORTS_ACTION}")
-            flagged.add(rel)
-
-    # --- Check O (COG-3): the objectives import sweep — any swept first-party
-    #     file importing framework.objectives that is not objectives-internal
-    #     nor a curated cog3 reader (this is how framework/missions REDs) ------
-    for tree in SWEEP_TREES:
-        for path in _py_files(root / tree):
+    # --- Check R: reverse direction — a row's internal tree may never import
+    #     its reverse_forbidden trees (AST + the narrow dynamic complement) ---
+    for row in module_rows:
+        if not row.reverse_forbidden:
+            continue
+        for path in _py_files(root / row.internal_prefix.rstrip("/")):
             rel = _rel(root, path)
-            if (rel in flagged or _is_objectives_internal(rel)
-                    or _is_cog3_allowlisted(rel)):
-                continue
-            src = _read(path)
-            if _objectives_imports(src, rel) or _dynamic_obj_hit(src):
-                violations.add(f"{rel}:{RULE_UNALLOWLISTED_OBJ}")
+            f = facts_for(path, rel)
+            if (any(row.is_reverse_module(n) for n in f.imports)
+                    or any(row.reverse_dynamic.search(l) for l in f.live)):
+                violations.add(f"{rel}:{row.rule_ids['reverse']}")
+                flagged.add(rel)
 
-    # --- Check D (COG-3, §6.5 bullet 6 / C-M9): the data-plane sweep — a live
-    #     reference to the objectives cache path anywhere in SWEEP_TREES, with
-    #     objectives-internal + cog3 readers allowlisted. Independent of the
-    #     import rules (a file may both import AND open the cache) so `flagged`
-    #     is NOT skipped here. ---------------------------------------------------
-    for tree in SWEEP_TREES:
+    # --- the global sweep surface, enumerated once --------------------------
+    swept: list[tuple[str, Path]] = []
+    for tree in cfg.sweep_trees:
         for path in _py_files(root / tree):
-            rel = _rel(root, path)
-            if _is_objectives_internal(rel) or _is_cog3_allowlisted(rel):
+            swept.append((_rel(root, path), path))
+
+    # --- Check 3: per-row un-curated importer sweeps ------------------------
+    # A file already carrying a specific rule (flagged) is not double-flagged
+    # as merely un-curated; row-internal files and curated readers fold clean.
+    for row in module_rows:
+        if not row.sweep:
+            continue
+        for rel, path in swept:
+            if rel in flagged or row.is_internal(rel) or row.is_allowlisted(rel):
                 continue
-            src = _read(path)
-            if _obj_dataplane_hit(src):
-                violations.add(f"{rel}:{RULE_OBJ_DATAPLANE}")
+            f = facts_for(path, rel)
+            if (any(row.is_module_of_token(n) for n in f.imports)
+                    or any(row.dynamic.search(l) for l in f.live)):
+                violations.add(f"{rel}:{row.rule_ids['unallowlisted']}")
+
+    # --- Check D: data-plane store sweeps -----------------------------------
+    # Independent of `flagged` (a file may both import AND open a store).
+    for row in cfg.data_plane_rows():
+        for rel, path in swept:
+            if row.is_internal(rel) or row.is_allowlisted(rel):
+                continue
+            f = facts_for(path, rel)
+            if any(row.token in l for l in f.live):
+                violations.add(f"{rel}:{row.rule_ids['data_plane']}")
 
     return sorted(violations)
 
 
+# ---------------------------------------------------------------------------
+# module-level law + back-compat surface (derived from the manifest — the
+# pre-conversion constant names stay importable for the existing suites)
+# ---------------------------------------------------------------------------
+
+_CONFIG = load_config()
+
+_CORTEX_ROW = _CONFIG.row_for_token("framework.cortex")
+_OBJECTIVES_ROW = _CONFIG.row_for_token("framework.objectives")
+# the objectives store row, selected structurally (its token never appears
+# contiguously in this file — the assembled-token discipline, kept).
+_OBJ_DATAPLANE_ROW = next(
+    r for r in _CONFIG.data_plane_rows()
+    if r.internal_prefix == _OBJECTIVES_ROW.internal_prefix)
+
+CORTEX = _CORTEX_ROW.token
+OBJECTIVES = _OBJECTIVES_ROW.token
+
+SWEEP_TREES = list(_CONFIG.sweep_trees)
+FORBIDDEN_TREES = [e for e in _CORTEX_ROW.forbidden_importers
+                   if not e.endswith(".py")]
+FORBIDDEN_FILES = [e for e in _CORTEX_ROW.forbidden_importers
+                   if e.endswith(".py")]
+FALSIFIER = _CORTEX_ROW.falsifier_exact[0]
+
+CORTEX_INTERNAL = _CORTEX_ROW.internal_prefix
+ALLOWLIST_EXACT = set(_CORTEX_ROW.allowlist_exact)
+ALLOWLIST_GLOBS = list(_CORTEX_ROW.allowlist_globs)
+
+OBJECTIVES_INTERNAL = _OBJECTIVES_ROW.internal_prefix
+ALLOWLIST_EXACT_OBJECTIVES = set(_OBJECTIVES_ROW.allowlist_exact)
+ALLOWLIST_GLOBS_OBJECTIVES = list(_OBJECTIVES_ROW.allowlist_globs)
+ACTION_PLANE = tuple(t.replace("/", ".")
+                     for t in _OBJECTIVES_ROW.reverse_forbidden)
+
+RULE_FORBIDDEN = _CORTEX_ROW.rule_ids["forbidden_import"]
+RULE_TOKEN = _CORTEX_ROW.rule_ids["forbidden_token"]
+RULE_FALSIFIER = _CORTEX_ROW.rule_ids["falsifier"]
+RULE_UNALLOWLISTED = _CORTEX_ROW.rule_ids["unallowlisted"]
+RULE_FORBIDDEN_OBJ = _OBJECTIVES_ROW.rule_ids["forbidden_import"]
+RULE_TOKEN_OBJ = _OBJECTIVES_ROW.rule_ids["forbidden_token"]
+RULE_OBJ_IMPORTS_ACTION = _OBJECTIVES_ROW.rule_ids["reverse"]
+RULE_UNALLOWLISTED_OBJ = _OBJECTIVES_ROW.rule_ids["unallowlisted"]
+RULE_OBJ_DATAPLANE = _OBJ_DATAPLANE_ROW.rule_ids["data_plane"]
+
+
+def _is_allowlisted(rel: str) -> bool:
+    """Back-compat: membership in the cortex row's curated-reader set (the
+    pre-conversion Check-3 union of cog2 + cog3 readers, now declared on the
+    row itself)."""
+    return _CORTEX_ROW.is_allowlisted(rel)
+
+
+# ---------------------------------------------------------------------------
+# CLI (contract preserved: check / --report / --json, exit 1 on breach)
+# ---------------------------------------------------------------------------
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="COG-2/COG-3 shadow-boundary import gate (§7.1 cortex + §6.5 objectives).")
-    parser.add_argument("--root", type=Path,
-                        default=Path(__file__).resolve().parents[2],
+        description="Declarative boundary-manifest import gate (COG-4 §8; "
+                    "COG-2 §7.1 cortex + COG-3 §6.5 objectives + COG-4 rows).")
+    parser.add_argument("--root", type=Path, default=REPO_DEFAULT,
                         help="repo root to scan (default: this script's repo).")
+    parser.add_argument("--manifest", type=Path, default=MANIFEST_PATH,
+                        help="boundary manifest to enforce (default: the "
+                             "repo's cabinet/config/boundary-manifest.yml).")
     parser.add_argument("--report", action="store_true",
                         help="list every violation and exit 0.")
     parser.add_argument("--json", action="store_true",
                         help="emit machine-readable JSON.")
     args = parser.parse_args(argv)
 
-    violations = scan(args.root)
+    config = (_CONFIG if Path(args.manifest) == MANIFEST_PATH
+              else load_config(args.manifest))
+    violations = scan(args.root, config=config)
 
     if args.json:
         print(json.dumps({"violations": violations, "count": len(violations)},
                          indent=2))
     elif violations:
         stream = sys.stdout if args.report else sys.stderr
-        print(f"[cog2-import-gate] {len(violations)} violation(s) — the shadow "
-              "boundary is breached (authority/action code must not reach "
-              "framework.cortex or framework.objectives; the objectives graph "
-              "must not reach the action plane) — M5 / §7.1 / §6.5:", file=stream)
+        print(f"[cog2-import-gate] {len(violations)} violation(s) — a declared "
+              "boundary row is breached (row law: "
+              "cabinet/config/boundary-manifest.yml):", file=stream)
         for v in violations:
             print(f"  + {v}", file=stream)
         if not args.report:
-            print("[cog2-import-gate] FAIL — remove the import/reference; the "
-                  "cortex and objectives projections are read ONLY through their "
-                  "rebuild/verify CLIs and tests.", file=sys.stderr)
+            print("[cog2-import-gate] FAIL — remove the import/reference; "
+                  "fenced stores and shadow models are read ONLY through "
+                  "their curated CLIs and tests.", file=sys.stderr)
     else:
         print("[cog2-import-gate] OK — no authority/action code imports the "
               "cortex or objectives shadow models (shadow boundary intact).")
