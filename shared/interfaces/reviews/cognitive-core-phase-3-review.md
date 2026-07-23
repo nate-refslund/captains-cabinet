@@ -6,7 +6,13 @@
 **Contract:** `docs/plans/cognitive-core-phase-3-contract-2026-07-22.md` rev 1 + build-time adjudications of record (R-A, R-B, schema idiom, §5.2b two limbs, wave-3/4 addenda).
 **Method:** every claim below is bound to bytes (`file:line`) or a run executed by this panel (`python3.12`; postgres@17 on PATH). No doc or comment was trusted un-run.
 
-Reviewed-Scope-Digest: 6c800e12ee835a000210bd03c89a353fadf99ee0646e48215e364d937ebe92f9
+Reviewed-Scope-Digest: e98fc026bae0fa4c579bf4deed8302da2ef26a4d855db7fe59e909f5650c9f63
+(Re-bound at landing, 2026-07-23: after the freeze, two ADMINISTRATIVE commits joined the
+wave-4 cp3 FW-019 artifact to the three footprint surfaces (rollback manifest + review-scope
+tool + closure-test constant), which are themselves inside the reviewed scope — moving the
+digest from 6c800e12… . Zero reviewed BEHAVIOR bytes changed since the re-verified tip
+27e3c0f6: git diff 27e3c0f6..HEAD touches only review artifacts and those three footprint
+rows. The panel verdict stands.)
 
 ---
 

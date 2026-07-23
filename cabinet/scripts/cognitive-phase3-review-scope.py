@@ -70,6 +70,7 @@ EXPECTED_SCOPE = frozenset({
     "shared/interfaces/reviews/feat-cog3-wave1-cp1.md",
     "shared/interfaces/reviews/feat-cog3-wave3-cp1.md",
     "shared/interfaces/reviews/feat-cog3-wave3-cp2.md",
+    "shared/interfaces/reviews/feat-cog3-wave4-cp3.md",
     # remove — wave-4 landing wave new files MINUS the review artifact
     "cabinet/scripts/cog3-ovi-parity.py",
     "cabinet/scripts/tests/test_cog3_ovi_parity.py",

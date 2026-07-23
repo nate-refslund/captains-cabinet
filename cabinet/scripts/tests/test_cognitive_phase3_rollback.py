@@ -86,6 +86,7 @@ REMOVE_COMMITTED_FILES = {
     "shared/interfaces/reviews/feat-cog3-wave1-cp1.md",
     "shared/interfaces/reviews/feat-cog3-wave3-cp1.md",
     "shared/interfaces/reviews/feat-cog3-wave3-cp2.md",
+    "shared/interfaces/reviews/feat-cog3-wave4-cp3.md",
 }
 # The wave-4 landing NEW files (working-tree until the landing commit). Every
 # wave-4 new file is a remove; the review artifact lands later via §12.3.
