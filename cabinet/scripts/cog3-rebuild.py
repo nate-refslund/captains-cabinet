@@ -31,10 +31,45 @@ if str(_REPO_ROOT) not in sys.path:
 import yaml  # noqa: E402  (the CLI owns yaml — framework/objectives never does)
 
 from framework.objectives import graph  # noqa: E402
+from framework.objectives.adapters import (  # noqa: E402
+    assemble, mission_inputs, product_spec, workgraph)
 
 # The default roots path lives HERE in the CLI (§7.6) — never inside framework.
 _DEFAULT_ROOTS = _REPO_ROOT / "instance" / "config" / "directions.yml"
 _DEFAULT_CACHE = _REPO_ROOT / "cabinet" / "cache" / "objectives"
+
+
+def _load_records(path: str, key: str) -> list:
+    """CLI-side yaml read of an adapter source file (§7.6: the CLI owns ALL file
+    reading + yaml; adapters consume the parsed structures only). A `{key: [...]}`
+    mapping yields its list; a bare top-level list is used as-is."""
+    doc = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    if isinstance(doc, dict):
+        return doc.get(key, []) or []
+    return doc if isinstance(doc, list) else []
+
+
+def _merge_adapter_sources(parsed: dict, *, workgraph_path, missions_path,
+                           products_path) -> None:
+    """W4A: run the workgraph/missions/products adapters on their CLI-parsed source
+    files and MERGE the assembled fragment into the roots-derived `parsed` (which
+    already carries the normalized `directions`). Default behavior — no flag — never
+    calls this, so the roots-only output is byte-for-byte backward compatible. An
+    absent source is DECLARED (never silent) via assemble's `declared_absent`."""
+    fragments = {
+        "workgraph": (workgraph.adapt(_load_records(workgraph_path, "tasks"))
+                      if workgraph_path else None),
+        "mission_inputs": (mission_inputs.adapt(_load_records(missions_path, "missions"))
+                           if missions_path else None),
+        "product_spec": (product_spec.adapt(_load_records(products_path, "products"))
+                         if products_path else None),
+    }
+    extra = assemble(fragments)
+    for category in ("objectives", "outcomes", "constraints", "nodes",
+                     "indicates_edges", "causal_edges"):
+        if extra.get(category):
+            parsed[category] = list(parsed.get(category) or []) + extra[category]
+    parsed["declared_absent"] = extra["declared_absent"]
 
 
 def _normalize_roots(parsed: dict) -> None:
@@ -73,6 +108,12 @@ def main(argv=None) -> int:
                         help="local cabinet_id for the mandatory as_of scope")
     parser.add_argument("--cutoff", required=True,
                         help="the canonical build cutoff (one per build, §5.1)")
+    parser.add_argument("--workgraph", default=None,
+                        help="optional tasks/intervention source (yaml; W4A adapter)")
+    parser.add_argument("--missions", default=None,
+                        help="optional mission outcome/constraint source (yaml; W4A)")
+    parser.add_argument("--products", default=None,
+                        help="optional product instrument source (yaml; W4A adapter)")
     parser.add_argument("--json", action="store_true",
                         help="print the build result + chained graph hash as JSON")
     args = parser.parse_args(argv)
@@ -82,6 +123,11 @@ def main(argv=None) -> int:
     # Reshape the lane-keyed `directions:` mapping into the canonical entry list the
     # fold reads (§7.6 — the CLI owns the reshape, not framework/objectives).
     _normalize_roots(parsed)
+    # W4A: fold in the optional adapter sources (default — no flag — is untouched,
+    # roots-only, backward compatible).
+    if args.workgraph or args.missions or args.products:
+        _merge_adapter_sources(parsed, workgraph_path=args.workgraph,
+                               missions_path=args.missions, products_path=args.products)
     cache = Path(args.cache)
     cache.mkdir(parents=True, exist_ok=True)
 
