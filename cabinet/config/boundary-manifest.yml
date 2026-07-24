@@ -372,3 +372,106 @@ rows:
     rule_ids:
       data_plane: FORBIDDEN_SCHEDULER_DATAPLANE
     symbol_pin: null
+
+  # ==========================================================================
+  # COG-5 ROWS (Evolutionary Foundry, contract §10) — added as ROWS, zero
+  # engine code (the C2 engine shipped in COG-4). Their target modules do NOT
+  # exist yet (framework/evolution/ = __init__.py + contracts.py + tests only);
+  # each row's bite is proven NOW by the generated scratch-tree mutants in
+  # test_cog4_boundary_rows.py (generic, all rows) AND the COG-5 content pins in
+  # test_cog5_boundary_rows.py — green-by-vacuity on the committed tree,
+  # bite-proven in scratch (the §8.3 property). ROW 6 (framework.projection,
+  # :316-345) stays BYTE-UNTOUCHED — the deliberate ROW-6 non-extension: NO
+  # framework/evolution/* importer is allowlisted onto the kernel row, so an
+  # evolution import of framework.projection REDs as UNALLOWLISTED under the
+  # shipped engine (§5.1/§5.2/§10, rev-1 SF-4). The archive's kernel-law
+  # adoption is a stdlib REPLICA + parity tripwire, never a projection import.
+  # ==========================================================================
+
+  # --- ROW 8: the frozen holdout generator (§7.3 — league-invisible) --------
+  # framework.evolution.holdout_gen is importable by the holdout ORACLE CLI +
+  # its own tests ONLY (§7.2/§7.3). league/generator/arena/candidate/scorers/
+  # bench_factory are structurally BLIND — an unallowlisted import REDs. Sweep-
+  # only: the repo-wide sweep already fences EVERY importer except the curated
+  # readers, which is exactly "importable by the oracle + tests ONLY"; no
+  # forbidden-surface subset is needed (the action plane would RED via the same
+  # sweep). NARROW internal_prefix (framework/evolution/holdout_gen/): the
+  # sibling evolution modules are NOT holdout-internal, so their import of
+  # holdout_gen REDs — a framework/evolution/ prefix would make them internal
+  # and silently blind the invisibility protection. Symbol law (the importer
+  # side, at symbol granularity): test_cog5_holdout_ast_pin.py.
+  - token: framework.evolution.holdout_gen
+    kind: module
+    internal_prefix: framework/evolution/holdout_gen/
+    allowlist_exact:
+      - cabinet/scripts/cog5-holdout-oracle.py   # the ONLY sanctioned reader (§7.2)
+    allowlist_globs:
+      - cabinet/scripts/tests/test_cog5_holdout_*.py
+    reverse_forbidden: null
+    sweep: true
+    rule_ids:
+      unallowlisted: UNALLOWLISTED_HOLDOUT_GEN_IMPORTER
+    symbol_pin: cabinet/scripts/tests/test_cog5_holdout_ast_pin.py
+
+  # --- ROW 9: the immutable trajectory archive store (§5.2/§5.4/§10) --------
+  # data_plane: a live-line mention of the archive store root ANYWHERE in
+  # SWEEP_TREES is a candidate write path the import sweep cannot see. The store
+  # (shared/interfaces/foundry/archive) is written ONLY by the archive module +
+  # its optional emitter split, appended via the emitter by cog5-league, and
+  # sealed/restored by cog5-archive-restore (§5.2/§8.3). candidate/generator/
+  # arena are DELIBERATELY ABSENT — NO candidate write path, the §5.2 WALL made
+  # static: a store mention from any of them REDs. NARROW internal_prefix
+  # (framework/evolution/archive/) so the sibling modules are NOT store-internal
+  # (a framework/evolution/ prefix would make candidate/generator/arena internal
+  # and silently open the write path); the archive.py writer is allowlisted
+  # EXACTLY. This row also delivers §10's projection-store deny (direction:
+  # projections read the archive): cortex/objectives/scheduler are unallowlisted
+  # here, so any of them mentioning the store REDs. Token per the assembled-
+  # token discipline — never a contiguous literal in swept source.
+  - token: shared/interfaces/foundry/archive
+    kind: data_plane
+    internal_prefix: framework/evolution/archive/
+    allowlist_exact:
+      - framework/evolution/archive.py           # the sole in-package writer (§5.2)
+      - framework/evolution/emitter.py           # the optional emitter split (§11.1)
+      - cabinet/scripts/cog5-archive-restore.py  # seal + verified RESTORE (§5.2/sim 10)
+      - cabinet/scripts/cog5-league.py           # appends via the emitter only (§8.3)
+    allowlist_globs:
+      - cabinet/scripts/tests/test_cog5_*.py
+      - cabinet/scripts/tests/lib_cog5_*.py
+    sweep: true
+    deliberately_absent:
+      - framework/evolution/candidate.py
+      - framework/evolution/generator.py
+      - framework/evolution/arena.py
+    rule_ids:
+      data_plane: FORBIDDEN_ARCHIVE_DATAPLANE
+    symbol_pin: null
+
+  # --- ROW 10: the evolution package reverse boundary (§10) ------------------
+  # The shadow evolution lab may NEVER import the live-execution action lanes
+  # framework.frontdoor (live front door / live-verb execution) or
+  # framework.acting (capture->action lanes and runners) — the Foundry has no
+  # alternate promotion/apply path (§3 L48; gate.py + graduation.py schg-locked,
+  # §2.3/§17). A pure REVERSE row: an import of those trees from any
+  # framework/evolution/ file REDs. AUTHORITY IS DELIBERATELY NOT in
+  # reverse_forbidden — the evolution package legitimately reads authority's
+  # READ-ONLY vocabulary/policy constants (ACTION_TYPES / RISK_CLASSES; already
+  # imported by framework/evolution/tests/test_contracts.py:16-17, and the
+  # future scorers' policy-read joint, §6.2/§3). A module-granular row cannot
+  # carve authority.matrix/classifier out of authority.policy_engine, so per §10
+  # that read-surface joint is governed at SYMBOL level by a sibling AST pin
+  # (never a row), landing with its consuming modules. touches_ring0
+  # (framework.learning, gate.py:347 — generator refusal, §8.2) and the
+  # graduation/scorer read surface (framework.fidelity, §3) are likewise
+  # legitimate evolution reads, so learning/fidelity are also OUT of this row.
+  - token: framework.evolution
+    kind: module
+    internal_prefix: framework/evolution/
+    reverse_forbidden:
+      - framework/frontdoor
+      - framework/acting
+    sweep: false
+    rule_ids:
+      reverse: FORBIDDEN_EVOLUTION_IMPORTS_ACTION
+    symbol_pin: null

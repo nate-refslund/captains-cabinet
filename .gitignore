@@ -258,6 +258,17 @@ shared/interfaces/world/
 # 300s surface drain; PII-scrubbed runtime projection, never committed)
 shared/interfaces/attention-queue.json
 
+# COG-5 Evolutionary Foundry runtime data (§5.4 / rev-1 SF-2) — the immutable
+# trajectory archive segments + manifests + seals, and the league's own run
+# artifacts, land under shared/interfaces/foundry/ : append-only, per-cabinet
+# runtime data that must NEVER be tracked (the archive doubles as an R5 training
+# set — sealed, unbounded, never a git object; rollback = verified RESTORE, never
+# cache-delete). The egg cuts from git HEAD (tracked files only), so this never
+# reaches the export; R116's interfaces-header-only transform fail-closes on any
+# OTHER tracked file under shared/interfaces/ (belt and braces — no expect-absent
+# row is needed for untracked data).
+shared/interfaces/foundry/
+
 # Cabinet World assets (E1): LimeZu packs are commercial-licensed — binaries
 # NEVER committed. Only the content-addressed manifest is tracked; every
 # asset must pass cabinet/scripts/world-asset-gate.py before the renderer
