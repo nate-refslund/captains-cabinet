@@ -379,6 +379,43 @@ class TestFailClosed:
         assert r.returncode == 3
         assert "zero declared operations" in r.stderr
 
+    def test_flat_operation_id_is_setup_failure_exit3(self, tmp_path):
+        """The §4.3 namespace law, fail-CLOSED: a FLAT operation id (no '/')
+        would produce a record the W2 reference checker REDs as MALFORMED
+        (`record_errors` names the namespace law) — and a flat id can
+        literally collide with an ACTION_TYPES member ('local_edit' is one).
+        With organ-schema validation PARKED (germline window unopened),
+        nothing upstream enforces the grammar, so the CLI refuses at setup
+        (exit 3, no record) — the same R-A posture as zero declared
+        operations: exit 0 must never vouch for a record the N9 gate would
+        refuse."""
+        m = _garden_manifest()
+        m["domain_operations"] = ["flatop"]
+        m["descriptor"] = {"action_type": "investigation_run",
+                           "risk_class": "read_only_dispatch",
+                           "ceiling": [],
+                           "undo_contract": "none"}
+        m["idempotency"] = {"flatop": "k"}
+        d = _write_dir(tmp_path, "organs", [m])
+        out = tmp_path / "rec.json"
+        r = _run(["--manifest-dir", str(d), "--out", str(out)])
+        assert r.returncode == 3, r.stdout + r.stderr
+        assert "SETUP FAILURE" in r.stderr
+        assert "'flatop'" in r.stderr and "non-namespaced" in r.stderr
+        assert "'<domain>/<operation>'" in r.stderr
+        assert not out.exists()   # a refused run never writes a record
+        # the flat id REDs the W2 reference checker exactly as the CLI's
+        # refusal message claims — the mirror is real, not asserted prose
+        synthetic = {"schema": "cog4-parity-record/v1", "rows": [{
+            "operation": "flatop", "organ": m["name"],
+            "descriptor_path": {"risk_class": "read_only_dispatch",
+                                "ceiling": [], "undo_contract": "none",
+                                "shadow_verdict": "notify_after"},
+            "action_types_path": {"risk_class": "read_only_dispatch",
+                                  "ceiling": [], "undo_contract": "none",
+                                  "shadow_verdict": "notify_after"}}]}
+        assert any("namespaced" in e for e in REF.record_errors(synthetic))
+
     def test_garbage_ledger_line_is_setup_failure(self, tmp_path):
         d = _write_dir(tmp_path, "organs", [_garden_manifest()])
         ledger = tmp_path / "bad.jsonl"

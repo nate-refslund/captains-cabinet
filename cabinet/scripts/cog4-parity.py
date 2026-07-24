@@ -75,8 +75,14 @@ EXIT CODES: 0 — every operation resolved and ZERO divergent tuples (the N9
 parity law holds over this input set); 2 — divergent tuples and/or
 per-operation resolution failures (the list is printed; any divergence is a
 STRUCTURAL BUILD FAILURE, never a warning); 3 — setup failure (unreadable
-manifest dir / matrix / tool map / ledger, or zero declared operations — a
-vacuously green parity run is no evidence, the R-A non-empty idiom).
+manifest dir / matrix / tool map / ledger; zero declared operations — a
+vacuously green parity run is no evidence, the R-A non-empty idiom; or a
+non-namespaced FLAT operation id — the §4.3 namespace law, mirrored from the
+`test_cog4_parity.py` reference checker: a record carrying a flat id REDs
+there as MALFORMED, so exit 0 must never vouch for one, and with organ-schema
+validation PARKED (germline window) this comparator is the only guard on this
+path — a flat id can literally equal an ACTION_TYPES member, the exact
+collision the namespace grammar exists to prevent).
 
 WRITES: only `--out`. No cache dir, no clock or env reads of its own, no
 subprocess, no network. Layer law (§4.4): the manifest directory is
@@ -374,7 +380,12 @@ def _load_ledger_rows(path: str | None) -> list[dict]:
 def _declared_operations(manifests: list[dict]) -> list[str]:
     """The sorted union of declared operation ids. A present-but-mis-shaped
     declaration is a SETUP failure — enumeration over a malformed registry
-    would silently drop coverage."""
+    would silently drop coverage. A FLAT (non-namespaced) id is refused the
+    same way (the §4.3 namespace law, mirrored from the reference checker's
+    `record_errors`): the record it would produce REDs downstream as
+    MALFORMED, so producing it behind exit 0 is fail-open — and with
+    organ-schema validation PARKED (germline window unopened), nothing
+    upstream enforces the grammar for this comparator."""
     ops: set[str] = set()
     for manifest in manifests:
         declared = manifest.get("domain_operations")
@@ -385,6 +396,15 @@ def _declared_operations(manifests: list[dict]) -> list[str]:
             raise SetupError(
                 f"organ {manifest.get('name')!r}: domain_operations is not a "
                 "list of non-empty strings — cannot enumerate coverage")
+        flat = sorted(op for op in declared if "/" not in op)
+        if flat:
+            raise SetupError(
+                f"organ {manifest.get('name')!r}: non-namespaced operation "
+                f"id(s) {flat} — every declared id must be a "
+                "'<domain>/<operation>' id (§4.3 namespace law; the record a "
+                "flat id produces REDs under the test_cog4_parity.py "
+                "reference checker, and a flat id can collide with an "
+                "ACTION_TYPES member)")
         ops.update(declared)
     return sorted(ops)
 
