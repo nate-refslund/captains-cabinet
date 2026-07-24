@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: e2c35aa9303a9dac99f3649c8f250e1a5894e1920c44a63cde8ae64071c7929f
+Reviewed-Scope-Digest: 95e6ea8bf1288655a488342ea2675e515d7332829c2ff623664db5cd23a10c42
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
@@ -48,7 +48,11 @@ judge-calibration / preference-pairs / prediction-scorer locks re-anchored to th
 four files join restore_from_baseline + EXPECTED_SCOPE, the pair-extension that moved the digest), the
 evidence-proof allowlist row for this phase's rollback manifest (that proof file is out-of-phase, unbound
 by this digest), and the wave artifact's §6 addendum. Zero behavior bytes beyond that routed §13 surgery;
-the full twin re-ran green end-to-end after this second re-bind. The panel verdict stands.)
+the full twin re-ran green end-to-end after this second re-bind. The panel verdict stands. FINAL MOVE
+(2026-07-24, e2c35aa9… → the value above): the post-flip range-seal commit pinned the manifest's
+done_flip_sha to the ledger flip commit c58d4a57 (the §16 retirement condition, the phase-3 e7f95d5a
+retrofit shape) — a one-line YAML pin inside the scope; zero behavior bytes; the W6 merge dfb1a00e and the
+flip c58d4a57 each carried all 7 CI jobs green. The panel verdict stands.)
 
 ---
 
