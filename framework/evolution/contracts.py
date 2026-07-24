@@ -20,7 +20,13 @@ from typing import Any, Mapping
 
 SCHEMA_DIR = Path(__file__).resolve().parents[1] / "schemas"
 TRAJECTORY_SCHEMA = SCHEMA_DIR / "cognitive-trajectory.schema.json"
+TRAJECTORY_V2_SCHEMA = SCHEMA_DIR / "cognitive-trajectory.v2.schema.json"
 HOLDOUT_RECEIPT_SCHEMA = SCHEMA_DIR / "holdout-evaluation-receipt.schema.json"
+# The two trajectory versions BOTH carry schema_version (unlike the envelope's
+# absent-vs-present marker), so the version-dispatch marker is the exact literal
+# value — see structural_issues() / _is_v2_record().
+V1_SCHEMA_VERSION = "cognitive-trajectory/v1"
+V2_SCHEMA_VERSION = "cognitive-trajectory/v2"
 SENTINEL_IDS = frozenset({"*", "default", "global", "none", "null", "unknown"})
 SET_LIKE_KEYS = frozenset(
     {
@@ -238,7 +244,34 @@ def _structural_issues(record: Any, schema_path: Path) -> tuple[ValidationIssue,
     return tuple(sorted(set(_schema_errors(record, schema, schema))))
 
 
+def _is_v2_record(record: Any) -> bool:
+    """The version-dispatch marker test (the framework/triggers/envelope.py
+    validate_any idiom): True iff the record is a mapping whose schema_version is
+    EXACTLY the v2 literal. Everything else — the v1 literal, an absent or forged
+    version, a non-mapping — is NOT v2 and falls to the frozen v1 path."""
+    return (
+        isinstance(record, Mapping)
+        and record.get("schema_version") == V2_SCHEMA_VERSION
+    )
+
+
+def _structural_issues_v2(record: Any) -> tuple[ValidationIssue, ...]:
+    """Structural validation against the v2 Draft-2020-12 document — a distinct
+    seam (mirroring envelope.validate_v2) so the dispatch is provable: a v2
+    record must route HERE and a v1/forged record must never reach it."""
+    return _structural_issues(record, TRAJECTORY_V2_SCHEMA)
+
+
 def structural_issues(record: Any) -> tuple[ValidationIssue, ...]:
+    # VERSION DISPATCH decided FIRST — before the v1 closed-set check — cloning
+    # the framework/triggers/envelope.py classify-then-dispatch precedent
+    # (validate_any): a record carrying the v2 schema_version literal is judged
+    # by the v2 schema; EVERY other input (the v1 literal, an absent or forged
+    # version, a non-mapping) falls through to the FROZEN v1 path byte-for-byte —
+    # so a v2 record can never be refused by v1's const/closed-key set, and v1
+    # traffic (and every existing v1 test) is completely unchanged.
+    if _is_v2_record(record):
+        return _structural_issues_v2(record)
     return _structural_issues(record, TRAJECTORY_SCHEMA)
 
 

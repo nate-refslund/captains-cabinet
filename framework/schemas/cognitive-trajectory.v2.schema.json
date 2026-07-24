@@ -1,0 +1,398 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://captains-cabinet.invalid/schemas/cognitive-trajectory-v2.json",
+  "title": "Observation-only cognitive trajectory v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "trajectory_id",
+    "record_kind",
+    "authority_scope",
+    "execution_scope",
+    "started_at",
+    "decision_cutoff_at",
+    "completed_at",
+    "genome",
+    "intent",
+    "input_snapshots",
+    "spans",
+    "effects",
+    "machine_outcomes",
+    "human_verdicts",
+    "judge_observations",
+    "evaluation_basis",
+    "costs",
+    "run_attestation_ref",
+    "classification"
+  ],
+  "properties": {
+    "schema_version": {"const": "cognitive-trajectory/v2"},
+    "trajectory_id": {"$ref": "#/$defs/id"},
+    "record_kind": {"enum": ["live", "public_benchmark"]},
+    "authority_scope": {"$ref": "#/$defs/authorityScope"},
+    "execution_scope": {"$ref": "#/$defs/executionScope"},
+    "started_at": {"$ref": "#/$defs/timestamp"},
+    "decision_cutoff_at": {"$ref": "#/$defs/timestamp"},
+    "completed_at": {"$ref": "#/$defs/timestamp"},
+    "genome": {"$ref": "#/$defs/genome"},
+    "intent": {"$ref": "#/$defs/intent"},
+    "input_snapshots": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/inputSnapshot"}
+    },
+    "spans": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/span"}},
+    "effects": {"type": "array", "items": {"$ref": "#/$defs/effect"}},
+    "machine_outcomes": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/machineOutcome"}
+    },
+    "human_verdicts": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/humanVerdict"}
+    },
+    "judge_observations": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/judgeObservation"}
+    },
+    "evaluation_basis": {
+      "enum": ["machine_verifiable", "human_judgment", "mixed"]
+    },
+    "costs": {"$ref": "#/$defs/costs"},
+    "run_attestation_ref": {"$ref": "#/$defs/receiptRef"},
+    "classification": {
+      "enum": ["public", "internal", "confidential", "restricted"]
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+    },
+    "compatActionType": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "namespacedId": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+/[a-z0-9._-]+$"
+    },
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "receiptRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "digest"],
+      "properties": {
+        "ref": {"$ref": "#/$defs/id"},
+        "digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "authorityScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cabinet_id", "scope_kind"],
+      "properties": {
+        "cabinet_id": {"$ref": "#/$defs/id"},
+        "scope_kind": {"enum": ["cabinet", "lane", "project"]},
+        "lane_id": {"$ref": "#/$defs/id"},
+        "project_id": {"$ref": "#/$defs/id"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"scope_kind": {"const": "cabinet"}}},
+          "then": {
+            "not": {
+              "anyOf": [
+                {"required": ["lane_id"]},
+                {"required": ["project_id"]}
+              ]
+            }
+          }
+        },
+        {
+          "if": {"properties": {"scope_kind": {"const": "lane"}}},
+          "then": {
+            "required": ["lane_id"],
+            "not": {"required": ["project_id"]}
+          }
+        },
+        {
+          "if": {"properties": {"scope_kind": {"const": "project"}}},
+          "then": {"required": ["lane_id", "project_id"]}
+        }
+      ]
+    },
+    "executionScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "correlation_id", "causation_id"],
+      "properties": {
+        "run_id": {"$ref": "#/$defs/id"},
+        "correlation_id": {"$ref": "#/$defs/id"},
+        "causation_id": {"$ref": "#/$defs/id"}
+      }
+    },
+    "genome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_id",
+        "candidate_version",
+        "incumbent_id",
+        "incumbent_version",
+        "manifest_ref",
+        "component_refs"
+      ],
+      "properties": {
+        "candidate_id": {"$ref": "#/$defs/id"},
+        "candidate_version": {"$ref": "#/$defs/id"},
+        "incumbent_id": {"$ref": "#/$defs/id"},
+        "incumbent_version": {"$ref": "#/$defs/id"},
+        "manifest_ref": {"$ref": "#/$defs/receiptRef"},
+        "component_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/receiptRef"}
+        }
+      }
+    },
+    "intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["objective_refs", "constraint_refs"],
+      "properties": {
+        "objective_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/receiptRef"}
+        },
+        "constraint_refs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/receiptRef"}
+        }
+      }
+    },
+    "inputSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["snapshot_id", "artifact_ref", "maximum_content_time"],
+      "properties": {
+        "snapshot_id": {"$ref": "#/$defs/id"},
+        "artifact_ref": {"$ref": "#/$defs/receiptRef"},
+        "maximum_content_time": {"$ref": "#/$defs/timestamp"}
+      }
+    },
+    "span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "span_id",
+        "status",
+        "kind",
+        "causation_id",
+        "started_at",
+        "completed_at",
+        "genome_component_refs",
+        "model_refs",
+        "tool_refs",
+        "skill_refs",
+        "context_refs",
+        "input_refs",
+        "output_refs",
+        "confidence_ppm",
+        "costs"
+      ],
+      "properties": {
+        "span_id": {"$ref": "#/$defs/id"},
+        "parent_span_id": {"$ref": "#/$defs/id"},
+        "status": {"enum": ["completed", "failed", "aborted"]},
+        "kind": {
+          "enum": ["research", "retrieval", "planning", "decision", "tool", "verification"]
+        },
+        "causation_id": {"$ref": "#/$defs/id"},
+        "started_at": {"$ref": "#/$defs/timestamp"},
+        "completed_at": {"$ref": "#/$defs/timestamp"},
+        "genome_component_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/receiptRef"}
+        },
+        "model_refs": {"type": "array", "items": {"$ref": "#/$defs/receiptRef"}},
+        "tool_refs": {"type": "array", "items": {"$ref": "#/$defs/receiptRef"}},
+        "skill_refs": {"type": "array", "items": {"$ref": "#/$defs/receiptRef"}},
+        "context_refs": {"type": "array", "items": {"$ref": "#/$defs/receiptRef"}},
+        "input_refs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/receiptRef"}},
+        "output_refs": {"type": "array", "items": {"$ref": "#/$defs/receiptRef"}},
+        "prediction_ref": {"$ref": "#/$defs/receiptRef"},
+        "failure_receipt_ref": {"$ref": "#/$defs/receiptRef"},
+        "confidence_ppm": {"type": "integer", "minimum": 0, "maximum": 1000000},
+        "costs": {"$ref": "#/$defs/costs"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "completed"}}},
+          "then": {
+            "not": {"required": ["failure_receipt_ref"]},
+            "anyOf": [
+              {"properties": {"output_refs": {"minItems": 1}}},
+              {"required": ["prediction_ref"]}
+            ]
+          },
+          "else": {"required": ["failure_receipt_ref"]}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "tool"}}},
+          "then": {"properties": {"tool_refs": {"minItems": 1}}}
+        }
+      ]
+    },
+    "effect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "effect_id",
+        "action_type",
+        "domain_operation",
+        "enforcement_descriptor",
+        "status",
+        "idempotency_key",
+        "requested_at",
+        "decision_at",
+        "observed_at",
+        "classification_receipt_ref",
+        "authority_decision_ref",
+        "effect_receipt_ref",
+        "undo_receipt_ref"
+      ],
+      "properties": {
+        "effect_id": {"$ref": "#/$defs/id"},
+        "action_type": {"$ref": "#/$defs/compatActionType"},
+        "domain_operation": {"$ref": "#/$defs/domainOperation"},
+        "enforcement_descriptor": {"$ref": "#/$defs/enforcementDescriptor"},
+        "status": {"enum": ["proposed", "denied", "attempted", "verified", "failed", "reversed", "violation"]},
+        "idempotency_key": {"$ref": "#/$defs/id"},
+        "requested_at": {"$ref": "#/$defs/timestamp"},
+        "decision_at": {"$ref": "#/$defs/timestamp"},
+        "attempted_at": {"$ref": "#/$defs/timestamp"},
+        "observed_at": {"$ref": "#/$defs/timestamp"},
+        "classification_receipt_ref": {"$ref": "#/$defs/receiptRef"},
+        "authority_decision_ref": {"$ref": "#/$defs/receiptRef"},
+        "effect_receipt_ref": {"$ref": "#/$defs/receiptRef"},
+        "undo_receipt_ref": {"$ref": "#/$defs/receiptRef"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"enum": ["attempted", "verified", "failed", "reversed", "violation"]}}},
+          "then": {"required": ["attempted_at"]},
+          "else": {"not": {"required": ["attempted_at"]}}
+        }
+      ]
+    },
+    "domainOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["organ", "operation"],
+      "properties": {
+        "organ": {"type": "string", "minLength": 1},
+        "operation": {"$ref": "#/$defs/namespacedId"}
+      }
+    },
+    "enforcementDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capability", "action_type", "risk_class", "ceiling", "undo_contract"],
+      "properties": {
+        "capability": {"$ref": "#/$defs/namespacedId"},
+        "action_type": {"$ref": "#/$defs/compatActionType"},
+        "risk_class": {
+          "enum": [
+            "calendar_write",
+            "credentials_grant",
+            "deploy_nonprod",
+            "deploy_prod",
+            "draft_only",
+            "external_comms",
+            "internal_comms",
+            "network_write",
+            "pm_write",
+            "read_only_dispatch",
+            "reversible",
+            "secrets",
+            "spend"
+          ]
+        },
+        "ceiling": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "undo_contract": {
+          "type": "string",
+          "pattern": "^(none|delete_window\\([0-9]+\\)|journal:[A-Za-z0-9._:/-]+)$"
+        }
+      }
+    },
+    "machineOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome_id", "status", "causal_basis", "causal_ref", "measurement_started_at", "observed_at", "metric_ref", "receipt_ref"],
+      "properties": {
+        "outcome_id": {"$ref": "#/$defs/id"},
+        "status": {"enum": ["verified", "failed", "unknown"]},
+        "causal_basis": {"enum": ["intervention", "observational", "baseline", "correction"]},
+        "causal_ref": {"$ref": "#/$defs/receiptRef"},
+        "measurement_started_at": {"$ref": "#/$defs/timestamp"},
+        "observed_at": {"$ref": "#/$defs/timestamp"},
+        "metric_ref": {"$ref": "#/$defs/receiptRef"},
+        "value_ref": {"$ref": "#/$defs/receiptRef"},
+        "receipt_ref": {"$ref": "#/$defs/receiptRef"}
+      }
+    },
+    "humanVerdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdict_id", "verdict", "observed_at", "attestation_ref"],
+      "properties": {
+        "verdict_id": {"$ref": "#/$defs/id"},
+        "verdict": {"enum": ["approve", "reject", "edit", "abstain"]},
+        "observed_at": {"$ref": "#/$defs/timestamp"},
+        "attestation_ref": {"$ref": "#/$defs/receiptRef"}
+      }
+    },
+    "judgeObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observation_id", "observed_at", "verdict_ref", "receipt_ref"],
+      "properties": {
+        "observation_id": {"$ref": "#/$defs/id"},
+        "observed_at": {"$ref": "#/$defs/timestamp"},
+        "verdict_ref": {"$ref": "#/$defs/receiptRef"},
+        "receipt_ref": {"$ref": "#/$defs/receiptRef"}
+      }
+    },
+    "costs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tokens",
+        "tool_calls",
+        "latency_ms",
+        "external_spend_microunits",
+        "resource_receipt_ref"
+      ],
+      "properties": {
+        "tokens": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+        "tool_calls": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+        "latency_ms": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+        "external_spend_microunits": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+        "resource_receipt_ref": {"$ref": "#/$defs/receiptRef"}
+      }
+    }
+  }
+}
