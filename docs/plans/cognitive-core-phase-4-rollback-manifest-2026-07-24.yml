@@ -19,7 +19,14 @@ baseline_sha: de5d16c481beed835cf603e0398b997d0b44ae4f
 # at e7f95d5a, retrofitted 2026-07-23). RETIREMENT CONDITION: the landing
 # integrator replaces the sentinel with the real flip SHA in the flip commit;
 # until then the rehearsal anchors at HEAD and says so loudly.
-done_flip_sha: PENDING-DONE-FLIP
+# PINNED 2026-07-24 (the retirement condition discharged, the phase-3
+# retrofit shape — a commit cannot carry its own SHA, so the pin rides the
+# immediate follow-up commit): c58d4a57 = the ledger COG-4 -> done flip
+# commit (master; flip CI all 7 jobs green, run 30097336028). The range is
+# SEALED — the rehearsal anchors here permanently; later phases' commits
+# never enter this phase's inverse accounting (the BACKLOG :1551-1555
+# open-range defect stays never-inherited).
+done_flip_sha: c58d4a57134b4c4ab129a13bf6ad24fc9e36cb2c
 
 # --- runtime inverse (§16 — ONE command, no data surgery) ---------------------
 # COG-4 is SHADOW-ONLY (contract §1/§7): the scheduler holds no authority, the
