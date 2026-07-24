@@ -398,6 +398,10 @@ expect-present framework/evolution/contracts.py
 expect-present framework/evolution/tests/__init__.py
 expect-present framework/evolution/tests/test_contracts.py
 expect-present framework/schemas/cognitive-trajectory.schema.json
+# COG-4 W4 landing 2026-07-24: the v2 trajectory schema ships beside its v1
+# sibling — framework/evolution/contracts.py (expect-present above) hard-routes
+# v2 dispatch through this document, so an egg without it breaks at runtime.
+expect-present framework/schemas/cognitive-trajectory.v2.schema.json
 expect-present framework/schemas/holdout-evaluation-receipt.schema.json
 # COG-2 (Cortex): the shadow temporal-epistemic world model is universal
 # framework DNA (contract §6 file table). The fold package, its
@@ -463,6 +467,11 @@ expect-present cabinet/scripts/cog3-verdict-inbox.py
 # other cog3 CLIs; a read-only serve-surface consumer whose dated report
 # output is runtime data (gitignored shared/interfaces/**/*.md), never packaged.
 expect-present cabinet/scripts/cog3-shadow-dividend.py
+# COG-4 W4 landing 2026-07-24 (the R1/R3 rider precedent): the N9 parity
+# comparator ships with the other cog CLIs — the ONE sanctioned dual-plane
+# importer (§5.3); its cog4-parity-record.json output rides the W5/W6 pilot,
+# not this manifest.
+expect-present cabinet/scripts/cog4-parity.py
 # R167: dropped from the plans-archive keep-list (see R167 above) — the
 # coupling census now archives with the rest of docs/plans instance history.
 expect-absent docs/plans/source-adapter-boundary-2026-07-05.md

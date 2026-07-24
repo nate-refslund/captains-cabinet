@@ -60,3 +60,18 @@ framework/frontdoor/tests/test_actfirst_admission.py:generic-api-key:418
 framework/evidence/tests/test_redaction.py:generic-api-key:174
 framework/evidence/tests/test_redaction.py:generic-api-key:175
 framework/evidence/tests/test_redaction.py:generic-api-key:278
+# COG-4 W4 landing 2026-07-24: two generic-api-key FALSE POSITIVES on the
+# provably-fake garden-rota fixture idempotency_key in the trajectory-v2
+# battery (the digits in "garden-rota-week-30" crossed the entropy bar the
+# W2 twin never did). De-entropied at HEAD in the landing fix commit (the
+# PR #139 pattern); the already-pushed introducing cherry-pick stays flagged
+# in PR-range scans and is never force-rewritten. No no-git twin needed: the
+# egg/tree bytes are clean post-fix.
+0ac8db56ffdd0550645d1e2b3fc24da8311e2f18:cabinet/scripts/tests/test_cog4_trajectory_v2.py:generic-api-key:104
+0ac8db56ffdd0550645d1e2b3fc24da8311e2f18:cabinet/scripts/tests/test_cog4_trajectory_v2.py:generic-api-key:174
+# COG-4 W4 landing 2026-07-24 fix-2: the fix-1 commit's cp1-artifact addendum
+# quoted the de-entropied fixture literal beside its member name — the same
+# generic-api-key false positive, now in prose. Re-worded literal-free at
+# HEAD; the already-pushed introducing commit stays flagged in PR-range
+# scans and is never force-rewritten (same PR #139 pattern).
+065968b5e960a9b8a12f4aa7d71cd27bf370d35e:shared/interfaces/reviews/feat-cog4-w4-cp1.md:generic-api-key:88

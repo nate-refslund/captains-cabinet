@@ -46,6 +46,12 @@ moment the surface lands):
     framework/schemas/cognitive-trajectory.v2.schema.json lands (§5.5); then
     validate these fixtures against the REAL Draft-2020-12 document and assert
     contracts.py decides version dispatch before the v1 checks.
+    RETIRED to the LIVE arm (integrator corpus surgery per §13 + the unit
+    contradictions[] routes, W4 landing 2026-07-24): the W4 trajectory-v2
+    unit landed the schema + dispatch; the arm now binds the real document's
+    vocabulary/patterns to the transcribed reference laws and asserts the
+    version-first dispatch behaviorally; the FULL landed-surface battery is
+    test_cog4_trajectory_v2.py (the unit's designed retirement of this arm).
 
 S0: python3.12, no DB, no network, deterministic. Provenance: authored per the
 2026-07-07 full-autonomy grant + the 2026-07-20 cognitive-masterplan continuous
@@ -855,7 +861,8 @@ class TestTrajectoryV2Shapes:
 
 
 # ---------------------------------------------------------------------------
-# vacuity arms — the real germline pair + the real v2 schema
+# vacuity arms — the real germline pair (STILL ARMED: the CG-33 Captain window
+# is unopened) + the real v2 schema (LIVE since the W4 landing 2026-07-24)
 # ---------------------------------------------------------------------------
 class TestRealSurfacesVacuityArms:
     def test_real_germline_validator_arm(self):
@@ -894,23 +901,65 @@ class TestRealSurfacesVacuityArms:
             "validator above; retire when the window lands the edit.")
 
     def test_real_trajectory_v2_schema_arm(self):
-        """VACUITY GUARD — RETIREMENT CONDITION: retire this skip when
-        framework/schemas/cognitive-trajectory.v2.schema.json lands (§5.5); the
-        retired arm validates the fixture effects above against the REAL
-        Draft-2020-12 document (valid v2 effect PASSES; namespaced action_type
-        REDs) and asserts framework/evolution/contracts.py decides version
-        dispatch BEFORE the v1 checks. The COMPANION assertion REDs the moment
-        the schema lands, so the skip cannot silently persist."""
-        v2 = _REPO / _V2_TRAJECTORY_REL
-        assert not v2.exists(), (
-            f"{_V2_TRAJECTORY_REL} has LANDED — retire this vacuity skip and bind "
-            f"the fixtures to the real v2 schema per the docstring RETIREMENT "
-            f"CONDITION")
-        # v1 stays frozen and validator-only meanwhile (§5.5): the v1 const is
+        """LIVE v2-SCHEMA VALIDATION ARM (retired vacuity skip — integrator
+        corpus surgery per §13 + the unit contradictions[] routes, W4 landing
+        2026-07-24): the RETIREMENT CONDITION — "retire this skip when
+        framework/schemas/cognitive-trajectory.v2.schema.json lands (§5.5)" —
+        was discharged by the W4 trajectory-v2 unit; the companion absence
+        assertion tripped RED as designed. The arm now binds the REAL
+        Draft-2020-12 document + the landed contracts.py dispatch to the
+        reference laws proven on fixtures above: the fixture's valid effect
+        vocabulary PASSES the real document (compat action_type matches, the
+        two v2 additions are REQUIRED, the descriptor/domain-operation
+        vocabulary + grammars are byte-equal to the transcriptions); a
+        namespaced action_type REDs against the real never-overload pattern;
+        and framework/evolution/contracts.py decides version dispatch BEFORE
+        the v1 checks (a v2-tagged record is judged by the v2 document, never
+        refused on v1's schema_version const). The FULL landed-surface battery
+        — complete-record accept/reject table, forged-version + wiring-pin
+        mutants — is test_cog4_trajectory_v2.py, the W4 unit's designed
+        retirement of this arm. v1 stays frozen and validator-only (§5.5)."""
+        v2_path = _REPO / _V2_TRAJECTORY_REL
+        assert v2_path.is_file(), (
+            f"{_V2_TRAJECTORY_REL} vanished — the live v2-schema arm lost its "
+            f"subject")
+        doc = json.loads(v2_path.read_text(encoding="utf-8"))
+        assert doc["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+        assert doc["properties"]["schema_version"]["const"] == V2_CONST
+        eff = doc["$defs"]["effect"]
+        # the two v2 additions the reference checker demands are REQUIRED
+        assert "domain_operation" in eff["required"]
+        assert "enforcement_descriptor" in eff["required"]
+        # the fixture's valid effect PASSES; a namespaced action_type REDs —
+        # the same fixtures as the reference proofs above, judged by the REAL
+        # document's never-overload pattern
+        fixture = _valid_v2_effect()
+        assert v2_effect_errors(fixture) == []                # reference law
+        compat = re.compile(doc["$defs"]["compatActionType"]["pattern"])
+        assert compat.fullmatch(fixture["action_type"])       # real-document law
+        assert not compat.fullmatch("garden/water.plots")     # namespaced REDs
+        # the real descriptor/domain-operation surfaces equal the transcribed
+        # reference vocabulary — drift REDs this corpus honestly (module law)
+        ed = doc["$defs"]["enforcementDescriptor"]
+        assert set(ed["properties"]["risk_class"]["enum"]) == RISK_CLASS_ENUM
+        assert ed["properties"]["undo_contract"]["pattern"] == UNDO_PATTERN
+        assert doc["$defs"]["namespacedId"]["pattern"] == DOMAIN_OP_RE.pattern
+        assert set(eff["properties"]["status"]["enum"]) == set(STATUS_ENUM)
+        # contracts.py decides version dispatch BEFORE the v1 checks: the v2
+        # literal routes to the v2 seam, so a v2-tagged record's issues are v2
+        # judgments (its missing required members) and NEVER v1's
+        # schema_version const (the exact §5.5 misroute the mutant above
+        # demonstrates)
+        from framework.evolution import contracts as C
+        assert C.TRAJECTORY_V2_SCHEMA == v2_path
+        assert C._is_v2_record({"schema_version": V2_CONST}) is True
+        assert C._is_v2_record({"schema_version": V1_CONST}) is False
+        issues = C.structural_issues({"schema_version": V2_CONST})
+        assert issues, "a bare v2-tagged record must still fail v2's required set"
+        assert not any(i.path.endswith("schema_version") for i in issues), (
+            "a v2-tagged record was refused on schema_version — the v1 check "
+            "ran BEFORE the version dispatch (the §5.5 misroute)")
+        # v1 stays frozen and validator-only (§5.5): the v1 const is
         # byte-present and no v2 const has leaked into the v1 document
         v1_text = _V1_TRAJECTORY.read_text(encoding="utf-8")
         assert V1_CONST in v1_text and V2_CONST not in v1_text
-        pytest.skip(
-            f"VACUITY: {_V2_TRAJECTORY_REL} absent this phase-stage — v2 shape law "
-            f"proven on fixtures via the reference checkers above; retire when the "
-            f"v2 schema lands.")

@@ -26,6 +26,13 @@ VACUITY — retire when cabinet/scripts/cog4-parity.py lands (§13 law): the rea
 SKIP while the CLI is absent, each with a COMPANION assertion that the file does not exist
 so the skip cannot silently persist after the CLI lands. The scratch controls run NOW and
 prove the pin + closure bite.
+RETIREMENTS (integrator corpus surgery per §13 + the unit contradictions[] routes,
+W4 landing 2026-07-24): cabinet/scripts/cog4-parity.py landed (W4 v2, 9df66b12 +
+dc14c0e6) — both real-target vacuity guards are converted per their own RETIREMENT
+CONDITIONS: the import pin now runs the live parity_import_violations scan over the
+real file, and the closure arm RUNS the real CLI hermetically (runpy) and asserts
+its module closure excludes the executor doors. The scratch controls stay, proving
+the pin + closure machinery bites.
 
 S0: python3.12, no DB, no network. Provenance: authored per the 2026-07-07 full-autonomy
 grant + the 2026-07-20 cognitive-masterplan continuous grant.
@@ -59,17 +66,19 @@ def _write(root: Path, rel: str, body: str) -> Path:
 # the symbol-level import pin
 # ===========================================================================
 class TestParityImportPin:
-    def test_real_cli_is_armed_and_absent(self):
-        # VACUITY GUARD — RETIREMENT CONDITION: when cog4-parity.py lands, delete the skip
-        # and keep the green-by-vacuity assertion as the real pin. The companion absence
-        # assertion is the tripwire — it goes RED the instant the CLI lands.
+    # RETIRED vacuity skip (integrator corpus surgery per §13 + the unit
+    # contradictions[] routes, W4 landing 2026-07-24): the guard's RETIREMENT
+    # CONDITION — "when cog4-parity.py lands, delete the skip and keep the
+    # green-by-vacuity assertion as the real pin" — was discharged by W4 v2
+    # (9df66b12, the parity CLI). The companion absence assertion tripped RED as
+    # designed; the assertion below is now the REAL-FILE §8.4 symbol-level import
+    # pin over the landed comparator (the scratch-file controls below keep proving
+    # it bites).
+    def test_real_cli_scans_clean(self):
         cli = _REPO / L.PARITY_CLI_REL
-        assert not cli.exists(), (
-            f"{L.PARITY_CLI_REL} has LANDED — retire this vacuity skip and enable the "
-            "real-file scan per the docstring RETIREMENT CONDITION")
-        assert L.parity_import_violations(_REPO) == []       # green over the absent CLI
-        pytest.skip(f"VACUITY: {L.PARITY_CLI_REL} absent this phase — pin armed via "
-                    "scratch-file controls; retire when the parity CLI lands.")
+        assert cli.is_file(), (
+            f"{L.PARITY_CLI_REL} vanished — the real-file pin lost its subject")
+        assert L.parity_import_violations(_REPO) == []
 
     def test_sanctioned_dual_plane_surface_folds_clean(self, tmp_path):
         _write(tmp_path, L.PARITY_CLI_REL,
@@ -168,16 +177,50 @@ def _closure_after_import(module_name: str, forbidden_ns, extra_path: Path | Non
 
 
 class TestParityTransitiveClosure:
-    def test_real_cli_closure_armed_and_absent(self):
-        # VACUITY GUARD — RETIREMENT CONDITION: when cog4-parity.py lands, run it (subprocess
-        # / runpy) and assert its module closure excludes framework.acting/framework.frontdoor.
-        # The companion absence assertion is the tripwire while the CLI is absent.
+    # RETIRED vacuity skip (integrator corpus surgery per §13 + the unit
+    # contradictions[] routes, W4 landing 2026-07-24): the guard's RETIREMENT
+    # CONDITION — "when cog4-parity.py lands, run it (subprocess / runpy) and
+    # assert its module closure excludes framework.acting/framework.frontdoor" —
+    # was discharged by W4 v2 (9df66b12). The companion absence assertion tripped
+    # RED as designed; the arm below now RUNS the real CLI hermetically via runpy.
+    # An empty manifest dir takes the documented exit-3 zero-ops refusal AFTER the
+    # full §8.4 import surface is loaded (top-level imports + the registry load),
+    # so the run closure is honestly populated, never vacuous; the rc==0
+    # full-pipeline closure over fixture manifests lives in
+    # test_cog4_parity_cli.py::TestBoundaryLawsLive::
+    # test_hermetic_run_closure_excludes_executor_doors (the landed battery this
+    # arm's condition names).
+    def test_real_cli_run_closure_excludes_executor_doors(self, tmp_path):
         cli = _REPO / L.PARITY_CLI_REL
-        assert not cli.exists(), (
-            f"{L.PARITY_CLI_REL} has LANDED — retire this vacuity skip and assert its run "
-            "closure excludes the executor doors (framework.acting/framework.frontdoor)")
-        pytest.skip(f"VACUITY: {L.PARITY_CLI_REL} absent this phase — closure backstop "
-                    "armed via scratch controls; retire when the parity CLI lands.")
+        assert cli.is_file(), (
+            f"{L.PARITY_CLI_REL} vanished — the run-closure arm lost its subject")
+        empty = tmp_path / "organs-empty"
+        empty.mkdir()
+        out = tmp_path / "rec.json"
+        driver = (
+            "import sys, json, runpy\n"
+            f"sys.argv = ['cog4-parity.py', '--manifest-dir', {str(empty)!r}, "
+            f"'--out', {str(out)!r}]\n"
+            "rc = 0\n"
+            "try:\n"
+            f"    runpy.run_path({str(cli)!r}, run_name='__main__')\n"
+            "except SystemExit as e:\n"
+            "    rc = int(e.code or 0)\n"
+            f"FZ = {_PARITY_FORBIDDEN_NS!r}\n"
+            "doors = sorted(m for m in sys.modules "
+            "if any(m == f or m.startswith(f + '.') for f in FZ))\n"
+            "fw = sorted(m for m in sys.modules if m.startswith('framework.'))\n"
+            "print(json.dumps({'rc': rc, 'doors': doors, 'fw': fw}))\n"
+        )
+        r = subprocess.run([sys.executable, "-c", driver], cwd=str(_REPO),
+                           capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout.strip().splitlines()[-1])
+        assert payload["rc"] == 3, payload      # the zero-ops setup refusal — a REAL run
+        assert payload["fw"] != [], payload     # the import surface genuinely loaded
+        assert payload["doors"] == [], (
+            f"the comparator's run closure reached the executor doors: "
+            f"{payload['doors']}")
 
     def test_consequence_mutant_edge_following(self, tmp_path):
         # the exact COG-3 consequence-import mutant: importing framework.fidelity.consequence

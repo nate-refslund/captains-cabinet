@@ -33,6 +33,13 @@ guards (import pin, as_of defaults-only, no-subprocess/no-socket) and the
 transitive-closure guard's two landed legs are converted to their REAL-tree scans
 per their own RETIREMENT CONDITIONS; only the framework/organs closure leg remains
 absence-armed.
+W4 landing 2026-07-24 (per §13 + the unit contradictions[] routes, W4 landing
+2026-07-24): framework/organs landed (W4 u1, 1adbb33f) — the organs closure leg's
+vacuity guard is retired per its own RETIREMENT CONDITION: its skip is deleted and
+framework.organs + .registry + .descriptor are folded into _SCHED_LANDED_MODULES,
+so the real transitive-closure scan now covers ALL THREE protected trees; no
+absence-armed leg remains (the u1 battery's eight-tree closure proofs pre-proved
+the folded scan green).
 
 S0: python3.12, no DB, no network. Provenance: authored per the 2026-07-07 full-autonomy
 grant + the 2026-07-20 cognitive-masterplan continuous grant.
@@ -299,7 +306,9 @@ _SCHED_FORBIDDEN_NS = ("framework.authority", "framework.acting", "framework.fro
                        "framework.fidelity", "framework.missions", "framework.ovi")
 # the three protected trees this closure covers (§8.4). W3 landing 2026-07-24:
 # framework/projection (u1) + framework/scheduler (u2) LANDED — their modules are
-# enumerated below and REAL-scanned; framework/organs stays absence-armed.
+# enumerated below and REAL-scanned. W4 landing 2026-07-24: framework/organs
+# landed (W4 u1, 1adbb33f) — ALL THREE trees are now enumerated and REAL-scanned
+# (per §13 + the unit contradictions[] routes, W4 landing 2026-07-24).
 _SCHED_PROTECTED_TREES = ("framework/scheduler", "framework/organs", "framework/projection")
 _SCHED_PROTECTED_MODULES = ("framework.scheduler", "framework.organs", "framework.projection")
 # every module of the LANDED protected trees (import-inert __init__s mean the package
@@ -308,6 +317,7 @@ _SCHED_LANDED_MODULES = (
     "framework.projection", "framework.projection.kernel",
     "framework.scheduler", "framework.scheduler.fold", "framework.scheduler.model",
     "framework.scheduler.serve", "framework.scheduler.snapshot",
+    "framework.organs", "framework.organs.registry", "framework.organs.descriptor",
 )
 
 
@@ -340,8 +350,13 @@ class TestSchedulerTransitiveClosure:
     # (9f436c8d) and framework/scheduler in W3 u2 (d10f3e7f); the companion absence
     # assertions tripped RED as designed. Both landed legs now run the REAL
     # transitive-closure scan below (the same _closure_after_import machinery the
-    # consequence-import mutant fixture proves biting). The framework/organs leg is
-    # STILL ABSENT and keeps its armed vacuity guard unchanged.
+    # consequence-import mutant fixture proves biting).
+    # W4 landing 2026-07-24 (per §13 + the unit contradictions[] routes, W4 landing
+    # 2026-07-24): the THIRD leg discharged — framework/organs landed (W4 u1,
+    # 1adbb33f); its companion absence assertion tripped RED as designed, its skip
+    # leg (test_organs_tree_is_armed_and_absent) is DELETED per its own RETIREMENT
+    # CONDITION, and the organs modules are folded into _SCHED_LANDED_MODULES so
+    # the real closure scan below covers all three protected trees.
     def test_landed_trees_real_closure_is_clean(self):
         # the REAL backstop a static import scan cannot provide: subprocess-import
         # every module of the landed planner tree + the C3 kernel and assert the
@@ -352,23 +367,6 @@ class TestSchedulerTransitiveClosure:
             assert loaded == [], (
                 f"{mod}'s import closure reached the action/authority/fidelity "
                 f"planes: {loaded}")
-
-    def test_organs_tree_is_armed_and_absent(self):
-        # VACUITY GUARD (organs leg — unchanged by the W3 landing surgery) —
-        # RETIREMENT CONDITION: when framework/organs/ lands, delete this skip and
-        # fold its modules into _SCHED_LANDED_MODULES so the real closure scan above
-        # covers them. The companion assertion fails the instant the tree lands, so
-        # this skip cannot silently persist (§13).
-        assert not (_REPO / "framework/organs").exists(), (
-            "framework/organs/ has LANDED — retire this vacuity skip and fold the "
-            "organs modules into _SCHED_LANDED_MODULES per the RETIREMENT CONDITION")
-        # genuinely armed: over the absent tree the subprocess import raises
-        # ModuleNotFound (a vacuously clean closure) — it scans for real on landing.
-        rc, stderr, _ = _closure_after_import("framework.organs")
-        assert rc != 0 and "No module named" in stderr, (rc, stderr)
-        pytest.skip("VACUITY: framework/organs absent this phase — transitive-closure "
-                    "gate armed via the consequence-import fixture; retire the skip "
-                    "when framework/organs lands.")
 
     def test_consequence_mutant_loads_authority(self, tmp_path):
         # FIXTURE-TREE PROOF (the exact COG-3 consequence-import mutant): a scratch package
