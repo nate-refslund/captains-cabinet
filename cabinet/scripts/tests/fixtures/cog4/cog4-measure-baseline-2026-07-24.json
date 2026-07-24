@@ -5,7 +5,7 @@
     "samples": 25,
     "wall_clock": "measured tripwire (env-armed, declared skips) \u2014 bound = max(p95*1.25, p95+5s) for sub-10s rows"
   },
-  "note": "S0 baseline (contract \u00a710.1) \u2014 FROZEN. proxies are exact deterministic reproductions of the composed-manifest schedule; wall_clock_p95_s are the frozen S0 per-wake PLANNING wall-clock measurements (host-measured, `--mode plan`); the armed check (COG4_ENFORCE_BOUND=1) compares a FRESH p95 to wall_clock_bound(baseline), never re-derives it.",
+  "note": "S0 baseline (contract \u00a710.1) \u2014 FROZEN. proxies are exact deterministic reproductions of the composed-manifest schedule; wall_clock_p95_s are the frozen S0 per-wake PLANNING wall-clock measurements (host-measured, planning overhead only); the armed check (COG4_ENFORCE_BOUND=1) compares a FRESH p95 to wall_clock_bound(baseline), never re-derives it.",
   "pilot_organs": [
     "charter-shadow",
     "judge-calibration",

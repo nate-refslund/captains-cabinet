@@ -31,7 +31,7 @@ TWO METRIC CLASSES, at exactly the §10.5 honesty strength:
   * WALL-CLOCK (measured TRIPWIRE, env-armed — §10.5): per pilot organ, the
     per-wake PLANNING wall-clock — the composed-runner orchestration overhead
     COG-4 introduces (manifest load + validate + project), measured in-process
-    and hermetically (`--mode plan`, the default). The bound is the S0
+    and hermetically (planning overhead only). The bound is the S0
     floor-aware note `wall_clock_bound` — max(p95 x 1.25, p95 + 5s) for sub-10s
     rows — a SELF-CONTAINED copy pinned byte-equal to the corpus helper
     `lib_cog4_floors.wall_clock_bound` by the drift-tripwire
@@ -40,8 +40,9 @@ TWO METRIC CLASSES, at exactly the §10.5 honesty strength:
     armed (COG4_ENFORCE_BOUND=1 or --arm); unarmed runs record a DECLARED skip
     (§10.5). The absorbed projection scripts' OWN runtime is UNCHANGED by
     composition (the runner runs each organ's same absorbed command) and is
-    out of scope here; `--mode execute` is the deploy-host full-latency path
-    (times the real runner entrypoints — non-hermetic, never run in CI).
+    out of scope here; a deploy-host full-latency path (timing the real runner
+    entrypoints — non-hermetic, never in CI) is a possible FUTURE mode, NOT
+    implemented by this CLI.
 
 The dated S0 baseline artifact (tracked, the phase record — sibling of the N9
 `cog4-parity-record.json`): proxies (deterministic, reproduced EXACT by the
@@ -324,9 +325,10 @@ def build_baseline(organs_dir: Path, samples: int, s0_sha: str) -> dict:
         "note": ("S0 baseline (contract §10.1) — FROZEN. proxies are exact "
                  "deterministic reproductions of the composed-manifest "
                  "schedule; wall_clock_p95_s are the frozen S0 per-wake "
-                 "PLANNING wall-clock measurements (host-measured, `--mode "
-                 "plan`); the armed check (COG4_ENFORCE_BOUND=1) compares a "
-                 "FRESH p95 to wall_clock_bound(baseline), never re-derives it."),
+                 "PLANNING wall-clock measurements (host-measured, planning "
+                 "overhead only); the armed check (COG4_ENFORCE_BOUND=1) "
+                 "compares a FRESH p95 to wall_clock_bound(baseline), never "
+                 "re-derives it."),
         "measure_definition": {
             "proxies": "EXACT tolerance — measured > baseline is a regression",
             "wall_clock": ("measured tripwire (env-armed, declared skips) — "

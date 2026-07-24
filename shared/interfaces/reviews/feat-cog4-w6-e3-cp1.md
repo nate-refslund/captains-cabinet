@@ -33,11 +33,12 @@ Fable-for-execution allowed (2026-07-23), unit ran on Opus 4.8 1M.
 - **Wall-clock (measured tripwire, env-armed):** per pilot organ, the per-wake
   PLANNING wall-clock (manifest load + validate + project — the composed-runner
   orchestration overhead COG-4 introduces), measured in-process/hermetically
-  (`--mode plan`, default). Bound = `max(p95*1.25, p95+5s)` for sub-10s rows —
+  (planning overhead only). Bound = `max(p95*1.25, p95+5s)` for sub-10s rows —
   the S0 floor-aware note. The absorbed projection scripts' OWN runtime is
-  UNCHANGED by composition (same absorbed command) and out of scope;
-  `--mode execute` is the deploy-host full-latency path (non-hermetic, never
-  CI). Asserted ONLY when armed (COG4_ENFORCE_BOUND=1); unarmed = DECLARED skip.
+  UNCHANGED by composition (same absorbed command) and out of scope; a
+  deploy-host full-latency path (non-hermetic, never CI) is a possible FUTURE
+  mode, NOT implemented by this CLI. Asserted ONLY when armed
+  (COG4_ENFORCE_BOUND=1); unarmed = DECLARED skip.
 
 ## 3. The bound helper — self-contained, drift-pinned (not a test-lib import)
 
