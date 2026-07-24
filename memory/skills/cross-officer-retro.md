@@ -183,7 +183,7 @@ Cross-Officer coordination problems caught within 24h. Opportunities for improve
 ## Known Pitfalls
 
 - Reviewing records without looking for cross-Officer patterns — that's just individual reflection
-- Skipping the opportunity scan because "nothing new happened" — something always changed
+- Skipping the opportunity scan because "nothing new happened" — run the scan first; if it genuinely finds nothing, an empty result is valid (no evidence = no lesson, no write)
 - Picking the same process to challenge every retro — rotate
 - Over-engineering the "smarter" section — keep it to one focused question, not a redesign
 - Proposing changes without validation scenarios
@@ -198,7 +198,7 @@ Cross-Officer coordination problems caught within 24h. Opportunities for improve
 - Scenario 2: Opportunity scan finds new Vercel feature → proposes adoption to CTO
 - Scenario 3: "Smarter?" section challenges poll cadence → proposes 10min instead of 5min → validates token savings
 - Scenario 4: CRO brief tracking shows 80% actioned rate → CRO doing well, no change needed
-- Scenario 5: Clean retro with no failures → opportunity scan still produces one finding
+- Scenario 5: Clean retro with no failures → opportunity scan runs and legitimately finds nothing → record the empty result and move on (no manufactured finding)
 
 ## Origin
 
