@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 3ce64a36b37fffd5f1004f25e5282435a386610df2ac2ccbae6688f03e853538
+Reviewed-Scope-Digest: e2c35aa9303a9dac99f3649c8f250e1a5894e1920c44a63cde8ae64071c7929f
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
@@ -42,7 +42,13 @@ FW-019 batch proof + its own pair rows. Mechanical deltas only — ZERO behavior
 unarmed 689 passed 2 declared skips (ZERO failures — the designed interim discharged); rollback rehearsal
 PASS with the compose-revert arm ARMED (the 12-file sibling residue resolved); egg battery 58 passed 1
 declared skip; verify-cognitive-phase4.sh full green end-to-end after this re-bind. The panel verdict
-stands.)
+stands. MOVED AGAIN same day (2026-07-24, 3ce64a36… → the value above) by the first-PR-CI root-cause
+commit 429fa17b — the REMAINING e2-routed §6.4-6.7 sibling-suite re-anchors (charter-shadow /
+judge-calibration / preference-pairs / prediction-scorer locks re-anchored to the composed vehicle; these
+four files join restore_from_baseline + EXPECTED_SCOPE, the pair-extension that moved the digest), the
+evidence-proof allowlist row for this phase's rollback manifest (that proof file is out-of-phase, unbound
+by this digest), and the wave artifact's §6 addendum. Zero behavior bytes beyond that routed §13 surgery;
+the full twin re-ran green end-to-end after this second re-bind. The panel verdict stands.)
 
 ---
 
