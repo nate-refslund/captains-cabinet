@@ -157,6 +157,16 @@ delete cabinet/scripts/verify-cognitive-phase4.sh
 # out with the rest of docs/plans (R145).
 delete cabinet/scripts/cognitive-phase4-review-scope.py
 delete cabinet/scripts/cognitive-phase4-rollback-rehearsal.py
+# COG-5 W1 (§7.5.5 Stage-A INTERIM holdout freeze — honestly NOT Ring-0): until
+# the framework/policies/immutable-core.yml Ring-0 listing for holdout_gen.py
+# lands at a Captain germline-unlock window (§7.5 Stage B), the frozen holdout
+# generator ships NOWHERE — a hatched cabinet must never carry an UNPROTECTED
+# holdout generator (the O-B3 exclusion precedent). Vacuity-armed: holdout_gen.py
+# lands in W5, so this delete is a no-op until then (absent glob = no-op) and
+# becomes load-bearing the moment it lands. RETIRE at Stage B: when the Ring-0
+# listing lands, DELETE this rule + the paired expect-absent below and ADD an
+# expect-present (it then ships PROTECTED, framework DNA beside contracts.py).
+delete framework/evolution/holdout_gen.py
 # COG-4 W6 e3 landing 2026-07-24: the §10 measurement pre-prove bridge is the
 # same class — it BINDS the verify twin (deleted just above) + the S0 baseline,
 # proving out-of-band GREEN what the integrator's corpus surgery will assert.
@@ -627,6 +637,11 @@ expect-absent cabinet/scripts/verify-cognitive-phase4.sh
 # COG-4 phase-4 private landing tools (paired delete rows above) — never ship.
 expect-absent cabinet/scripts/cognitive-phase4-review-scope.py
 expect-absent cabinet/scripts/cognitive-phase4-rollback-rehearsal.py
+# COG-5 W1 (§7.5.5 Stage-A INTERIM — paired with the holdout delete above): the
+# export FAILS LOUDLY if an UNPROTECTED holdout_gen.py ever ships before the
+# Ring-0 listing lands (Stage B). Vacuity-armed (holdout_gen.py lands in W5);
+# RETIRE at Stage B (delete this + the paired delete, add expect-present).
+expect-absent framework/evolution/holdout_gen.py
 # COG-2: the Cortex parity VERDICT LOG is per-cabinet runtime data — gitignored
 # under cabinet/logs/* (Spec 043 runtime-log idiom), so it never enters the
 # archive cut. Pinned absent defensively (the node_modules idiom): the export

@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 95e6ea8bf1288655a488342ea2675e515d7332829c2ff623664db5cd23a10c42
+Reviewed-Scope-Digest: 093e586636ea40716d353508429439d099adc54e48b574aa1efa6860debe0ff6
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
@@ -52,7 +52,22 @@ the full twin re-ran green end-to-end after this second re-bind. The panel verdi
 (2026-07-24, e2c35aa9… → the value above): the post-flip range-seal commit pinned the manifest's
 done_flip_sha to the ledger flip commit c58d4a57 (the §16 retirement condition, the phase-3 e7f95d5a
 retrofit shape) — a one-line YAML pin inside the scope; zero behavior bytes; the W6 merge dfb1a00e and the
-flip c58d4a57 each carried all 7 CI jobs green. The panel verdict stands.)
+flip c58d4a57 each carried all 7 CI jobs green. The panel verdict stands. MOVED BY THE COG-5 W1 LANDING
+(2026-07-24, 95e6ea8bf1288655a488342ea2675e515d7332829c2ff623664db5cd23a10c42 → the value above): a
+NEXT-PHASE rows-only extension, sanctioned IN ADVANCE by the COG-5 contract §10 (+ §7.5 Stage A) — zero
+engine/behavior bytes. Exactly TWO in-scope paths moved vs the last binding (verified by diffing the
+resolved 85-entry scope over 70bca2ae..HEAD; the COG-5 contract doc + the operative ledger sit OUTSIDE this
+scope, and the parallel master doc-hygiene pair 21df33c9 moved ZERO in-scope paths): (1)
+`cabinet/config/boundary-manifest.yml` +103 lines — COG-5 ROWs 8/9/10 APPENDED (holdout_gen sweep /
+foundry-archive data-plane / evolution reverse); ROW 6 byte-untouched (the deliberate non-extension); the
+engine `cog2-import-gate.py` byte-untouched; (2) `cabinet/scripts/egg-export-manifest.txt` +15 lines — the
+§7.5.5 Stage-A INTERIM vacuity-armed holdout delete/expect-absent pair. Re-run at the landing on the merged
+bytes: the boundary harness `test_cog4_boundary_rows.py` (the generic per-row mutant generator — a biting
+mutant auto-generated per NEW row) + `test_cog5_boundary_rows.py` (content pins) 113 passed;
+`cog2-import-gate.py` rc0; the full `test_cog4_*` battery 702 passed 2 declared skips; armed
+`cog4-measure --check` within bound; `verify-cognitive-phase4.sh` full green end-to-end after this re-bind.
+A MECHANICAL-DELTA re-bind per the cp3 precedent, never a restamp: zero COG-4 claims are touched by rows
+APPENDED for the next phase. The panel verdict stands.)
 
 ---
 
