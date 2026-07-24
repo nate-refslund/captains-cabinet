@@ -2,7 +2,9 @@
 # role-evals-weekly.sh — Weekly role eval cron: run all evals, scan for
 # failure patterns that warrant role-charter evolution proposals, then
 # CLOSE THE LOOP by handing control to the self-improvement loop driver
-# which auto-applies validated learnings.
+# which validates learnings and — report-only by default (services.yml
+# REPORT_ONLY="1") — WITHHOLDS applies; it auto-applies gate-cleared
+# learnings ONLY when armed via REPORT_ONLY=0 (a Captain-gated switch).
 #
 # Phase 2 of the convergence plan + R8 (close the loop). Cadence: weekly
 # via launchd (see `cabinet/launchd/com.cabinet.role-evals-weekly.template.plist`).
@@ -21,9 +23,14 @@
 #   3. Hand off to `cabinet/cron/self-improvement-loop.sh` which:
 #         - drafts role evolution proposals from the patterns
 #         - runs the scenario + golden eval validation gate
-#         - AUTO-APPLIES validated proposals (no Captain wait — framework
-#           directive; the loop logs `captain_auto_ratified: true` for audit)
-#         - proposes + auto-applies hat graduations
+#         - REPORT-ONLY BY DEFAULT (services.yml REPORT_ONLY="1", audit-
+#           ratified soak): validated proposals are WITHHELD as would-apply,
+#           zero mutations. Auto-apply arms ONLY on an explicit REPORT_ONLY=0
+#           (a Captain-gated switch); even then it applies only what clears
+#           the validation gate — skeleton proposals stay
+#           pending_captain_approval (applied changes log
+#           `captain_auto_ratified: true` for audit)
+#         - proposes hat graduations (auto-applied only when armed)
 #         - induces + promotes draft skills
 #         - emits self_improvement_loop_completed bracketing the run
 #   4. Print a structured summary; logs flow to ~/Library/Logs/cabinet/
@@ -62,7 +69,7 @@ echo "=== Pattern detection (window=28d, min_occurrences=3) ==="
 python3 -m framework.measurement.eval_pattern_detector || true
 
 echo ""
-echo "=== Self-improvement loop (proposals → validate → auto-apply) ==="
+echo "=== Self-improvement loop (proposals → validate → report-only; auto-apply only when armed via REPORT_ONLY=0) ==="
 
 # Step 3: Close the loop. The driver handles its own failure modes; if it
 # returns non-zero we still exit 0 here so the LaunchAgent doesn't loop on
