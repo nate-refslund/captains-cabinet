@@ -137,11 +137,35 @@ def test_charter_arm_does_not_import_the_engine_under_evaluation():
 
 
 def test_services_row_is_scheduled():
+    """RE-ANCHORED 2026-07-24 (COG-4 W6 landing; routed surgery
+    feat-cog4-w6-e2-cp1.md §6.4): the dedicated charter-shadow row was
+    COMPOSED into the cog4-organ-runner wake vehicle (C4). Accept
+    dedicated-row OR composed-organ; in the composed state the enabled
+    runner row must NAME the manifest (§9.5 declared association), the
+    entrypoint must keep the CLI, and the §3 freshness tuple must derive —
+    deletion evidence continues from inside the runner."""
     services = yaml.safe_load(
         (_REPO / "cabinet" / "services.yml").read_text())["services"]
     rows = [s for s in services if s.get("name") == "charter-shadow"]
-    assert len(rows) == 1, "charter-shadow row lost — deletion evidence stops"
-    row = rows[0]
-    assert row["label"] == "com.cabinet.charter-shadow"
-    assert "charter-shadow.py" in row["command"]
-    assert row["schedule"]["calendar"] and not row.get("disabled")
+    if rows:  # dedicated-row state (pre-compose / post-rollback)
+        row = rows[0]
+        assert row["label"] == "com.cabinet.charter-shadow"
+        assert "charter-shadow.py" in row["command"]
+        assert row["schedule"]["calendar"] and not row.get("disabled")
+        return
+    runner_rows = [s for s in services if s.get("name") == "cog4-organ-runner"]
+    assert len(runner_rows) == 1, (
+        "charter-shadow row lost and no cog4-organ-runner composed row — "
+        "deletion evidence stops")
+    runner = runner_rows[0]
+    assert not runner.get("disabled"), "the composed wake vehicle is disabled"
+    manifest_rel = "cabinet/config/organs/charter-shadow.yml"
+    assert manifest_rel in (runner.get("organs") or []), (
+        "the runner row does not NAME the charter-shadow organ manifest "
+        "(§9.5 declared association) — deletion evidence stops")
+    man = yaml.safe_load((_REPO / manifest_rel).read_text())
+    assert "charter-shadow.py" in man["entrypoints"]["run"]
+    fn = man["freshness_needs"]
+    assert isinstance(fn["max_staleness_seconds"], int) \
+        and fn["max_staleness_seconds"] >= 1
+    assert fn["expected_output"]

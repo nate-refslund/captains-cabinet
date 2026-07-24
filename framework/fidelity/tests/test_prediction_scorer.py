@@ -130,12 +130,39 @@ class TestEmitter:
 
 
 def test_services_row_is_scheduled_daily():
+    """RE-ANCHORED 2026-07-24 (COG-4 W6 landing; routed surgery
+    feat-cog4-w6-e2-cp1.md §6.6): the dedicated prediction-calibration row
+    was COMPOSED into the cog4-organ-runner wake vehicle (C4). Accept
+    dedicated-row OR composed-organ; in the composed state "daily" binds as
+    the runner interval <= 86400s (actual 43200) with the manifest NAMED by
+    the enabled runner row and the scorer entrypoint kept — A10 stays
+    scheduled from inside the runner."""
+    repo = Path(ps.__file__).resolve().parents[2]
     services = yaml.safe_load(
-        (Path(ps.__file__).resolve().parents[2] / "cabinet/services.yml")
-        .read_text())["services"]
+        (repo / "cabinet/services.yml").read_text())["services"]
     rows = [s for s in services if s.get("name") == "prediction-calibration"]
-    assert len(rows) == 1, "prediction-calibration row lost — A10 unscheduled"
-    row = rows[0]
-    assert row["label"] == "com.cabinet.prediction-calibration"
-    assert "prediction_scorer" in row["command"]
-    assert row["schedule"]["calendar"], "must be a daily calendar row"
+    if rows:  # dedicated-row state (pre-compose / post-rollback)
+        row = rows[0]
+        assert row["label"] == "com.cabinet.prediction-calibration"
+        assert "prediction_scorer" in row["command"]
+        assert row["schedule"]["calendar"], "must be a daily calendar row"
+        return
+    runner_rows = [s for s in services if s.get("name") == "cog4-organ-runner"]
+    assert len(runner_rows) == 1, (
+        "prediction-calibration row lost and no cog4-organ-runner composed "
+        "row — A10 unscheduled")
+    runner = runner_rows[0]
+    assert not runner.get("disabled"), "the composed wake vehicle is disabled"
+    assert isinstance(runner["schedule"].get("interval_s"), int) \
+        and runner["schedule"]["interval_s"] <= 86400, (
+        "the composed vehicle must wake at least daily (the A10 cadence)")
+    manifest_rel = "cabinet/config/organs/prediction-calibration.yml"
+    assert manifest_rel in (runner.get("organs") or []), (
+        "the runner row does not NAME the prediction-calibration organ "
+        "manifest (§9.5 declared association) — A10 unscheduled")
+    man = yaml.safe_load((repo / manifest_rel).read_text())
+    assert "framework.fidelity.prediction_scorer" in man["entrypoints"]["run"]
+    fn = man["freshness_needs"]
+    assert isinstance(fn["max_staleness_seconds"], int) \
+        and fn["max_staleness_seconds"] >= 1
+    assert fn["expected_output"]

@@ -48,6 +48,14 @@
 #             generate-plists.py (never rendered into plists). New scheduled
 #             organs SHOULD carry one — an organ that cannot say when it should
 #             die is a hoarding candidate.
+#   organs:   COG-4 composed runner rows ONLY (W6-e2 2026-07-24): the EXPLICIT
+#             block list of organ-manifest paths this wake vehicle runs — the
+#             row→manifest association is DECLARED, never discovered (§9.5).
+#             Ignored by generate-plists.py; cabinet/scripts/
+#             cog4-organ-runner.py loads exactly these;
+#             framework/watchdog/registry.py::_parse_organ_manifests derives
+#             ONE freshness floor PER composed organ from each manifest's
+#             freshness_needs (§9.2 COUNT+TUPLE floor conservation).
 #   expected: the "fed + watched" floor (principle 7) — what the outcome-watchdog /
 #             dead-man asserts; a service without a met floor is DOWN even if green.
 #             Since lane-ops 2026-07-04 the outcome-watchdog DERIVES per-service
@@ -63,8 +71,10 @@
 #   heartbeat-watchdog (F0.12), memory-worker (B2.12), ledger-liveness (F0.7),
 #   probe-github/vercel/sentry/ci (B2.3-6), verifier (B2.7), mission-supervisor
 #   (B2.11), gate-runner/flywheel/dreaming/gate-drift-replay (B5 — judge-
-#   calibration shipped out of this set 2026-07-09, see its row below),
-#   cmp-lite (B6.4), executor under user cabinet-exec (B4.7).
+#   calibration shipped out of this set 2026-07-09; since 2026-07-24 it rides
+#   the cog4-organ-runner composed row, COG-4 W6-e2 — manifest under
+#   cabinet/config/organs/), cmp-lite (B6.4), executor under user cabinet-exec
+#   (B4.7).
 #
 # DELIBERATELY ABSENT — com.cabinet.gate-apply (sovereign amendment 2026-07-05,
 # D15): the germline code-apply root daemon ships DARK. Its plist lives at
@@ -311,23 +321,13 @@ services:
       (deploy-mac.sh / cabinet-bootstrap), same step as every other cron row.
 
   # ── Acting ───────────────────────────────────────────────────────────────
-  - name: draft-lane
-    label: com.cabinet.draft-lane
-    kind: daemon
-    disabled: true
-    command: bash cabinet/scripts/run-draft-lane.sh
-    schedule: { interval_s: 300 }
-    env: { CABINET_ENV: runtime }   # P3 one-door: see action-lane note
-    expected: "(parked — nothing asserted while disabled)"
-    notes: >-
-      PARKED 2026-07-04 (lane-ops), superseded by the Captain's act-not-draft
-      ruling (2026-07-03: the Captain owns ALL outbound comms; inbound becomes ACTION
-      proposals via the action-lane, not reply drafts). The LaunchAgents copy
-      is already sitting as com.cabinet.draft-lane.plist.disabled; this row is
-      the manifest-side park so the generator stops rendering it and the
-      watchdog stops expecting it. Cadence history: Captain Q10 2026-07-02
-      ruled 300s (docs previously claimed 2h). Re-enable = delete `disabled:`
-      + regenerate + Captain re-ruling.
+  # draft-lane RETIRED 2026-07-24 (COG-4 W6-e2, foundry §3 L61 evidence-gated:
+  # superseded by the Captain's 2026-07-03 act-not-draft ruling; disabled +
+  # quiet since 2026-07-04; reader inventory clean — evidence bundle in
+  # shared/interfaces/reviews/feat-cog4-w6-e2-cp1.md). Row + the hand-made
+  # cabinet/launchd/com.cabinet.draft-lane.plist deleted together; re-enable =
+  # revert that commit + Captain re-ruling (framework/acting/run_draft_lane.py
+  # itself stays — code compaction is Phase-7 work, not fleet truth).
 
   - name: mission-supervisor
     label: com.cabinet.mission-supervisor
@@ -464,22 +464,10 @@ services:
     schedule: { calendar: [{weekday: 1, hour: 7, minute: 15}] }   # Mondays 07:15 local
     expected: "weekly TI-7 journal-only create→verify→reverse canary per act-first kind; any failure freezes the kind (PAGE lines in log)"
     notes: runner sets its own PYTHONPATH + sources ~/.screenpipe/pipes/_shared/.env (no secrets in plist)
-  - name: prediction-calibration
-    label: com.cabinet.prediction-calibration
-    kind: watchdog
-    command: python3.12 -m framework.fidelity.prediction_scorer
-    schedule: { calendar: [{hour: 8, minute: 20}] }   # daily 08:20 local (after falsifier)
-    expected: "one JSON line/day appended to shared/interfaces/prediction-calibration.jsonl (idempotent per date) — Brier + calibration bins over acted cards' emitted confidence vs UNDO-3/binder ground truth"
-    notes: >-
-      W9 / ledger A10 (2026-07-09): the org emitted a confidence with every
-      action card and NEVER scored it. Report-only joiner — Redis
-      cabinet:action:* records (the predictions) x consequence ledger acted
-      rows (ttl_ok / silent_revert / binder verdicts, joined on the
-      correlation cid) -> Brier + per-bin calibration + per-lane series.
-      Pure measurement: nothing reads the series into a gate (promotion
-      mechanics stay defer-captain per D5/CG-10); it is the evidence chain
-      for judge-calibration and the prerequisite for EIG ordering. Read-only
-      except the one series append.
+  # prediction-calibration COMPOSED 2026-07-24 into the cog4-organ-runner row
+  # (COG-4 W6-e2 §9.2/§9.3): manifest cabinet/config/organs/
+  # prediction-calibration.yml carries the absorbed reality (W9 / ledger A10
+  # report-only Brier joiner); its freshness floor now derives per-organ.
   - name: falsifier-daily
     label: com.cabinet.falsifier-daily
     kind: watchdog
@@ -660,25 +648,14 @@ services:
       transition). Restart receipts come from heartbeat-watchdog.sh (the
       actor that kickstarts) and limit wakes from limit-reset-watchdog.sh —
       this sweep deliberately does not double-record those verbs.
-  - name: judge-calibration
-    label: com.cabinet.judge-calibration
-    kind: cron
-    command: python3.12 cabinet/scripts/judge-calibration.py
-    schedule: { calendar: [{hour: 5, minute: 35}] }   # daily 05:35 local — after the 04:30 regression-corpus refresh, before the 06:45 curator-health watch
-    expected: "daily measurement log line; judge-calibration-status.json in $CABINET_EVENT_LOG_DIR rewritten atomically on every successful measurement (including a below-bar one). Exit 1 = bar honestly NOT met (agreement <80% or <10 pairs — the EXPECTED state while verdict_human supply is thin; the failing proof keeps judge_verdicts_may_demote() False, which is the fail-closed floor working, NOT a service fault). Exit 2 = measurement error (nothing written; the old proof ages out on its own 14d clock) — that one is a real fault."
-    notes: >-
-      D5 step 1a (operative-egg-ledger row A2, lane alpha-additive — armed
-      2026-07-09, the report-only measurement everything else in the D5/CG-10
-      chain waits on; never started before this row). Deterministic and
-      OFFLINE (cabinet/scripts/judge-calibration.py header contract): measures
-      verdict_judge vs verdict_human agreement on rows ALREADY on the
-      consequence ledger — no LLM, no network, no credentials. Widens no
-      authority: verdict_judge fuel stays comment-only until CG-10 (CG-1
-      Option B, e76706f3) and the hard bar (>=80% over >=10 pairs,
-      JUDGE_HARD_BAR/MIN_PAIRS code constants) is deliberately not a flag.
-      Daily because the proof carries a 14-day max-age — a monthly cadence
-      could never keep it fresh. INSTALL SOURCE is the generate-plists.py
-      pipeline (same as memory-reconcile / self-improvement-loop).
+  # judge-calibration COMPOSED 2026-07-24 into the cog4-organ-runner row
+  # (COG-4 W6-e2 §9.2/§9.3): manifest cabinet/config/organs/
+  # judge-calibration.yml carries the absorbed reality — D5 step 1a (ledger
+  # row A2, armed 2026-07-09), deterministic + OFFLINE, and the exit contract
+  # encoded as health_proof.exit_codes (exit 1 = bar honestly NOT met, the
+  # fail-closed floor WORKING → honest_failure, healthy; exit 2 = real
+  # measurement fault). The 14-day proof max-age stays fresh at the runner's
+  # 43200s cadence (denser than the old daily slot).
 
   # ── Growth + hygiene organs (armed 2026-07-07) ─────────────────────────────
   # Two organs that existed but were NEVER scheduled: the R8 learning loop
@@ -691,7 +668,8 @@ services:
   # armed here: the rest of the future-B5 verdict-fuel set (gate-runner /
   # flywheel / dreaming / gate-drift-replay) stays in the B2+ comment block
   # until its wave ships it — judge-calibration LEFT that set 2026-07-09
-  # (armed above as the D5 step-1a report-only measurement, ledger row A2).
+  # (armed as the D5 step-1a report-only measurement, ledger row A2; since
+  # 2026-07-24 it rides the cog4-organ-runner composed row, COG-4 W6-e2).
   - name: self-improvement-loop
     label: com.cabinet.self-improvement-loop
     kind: cron
@@ -942,38 +920,50 @@ services:
       supported path). False-positive supersession is memory loss —
       instance/config/memory-supersession.yml auto_apply: hold keeps
       propose-only forever.
-  - name: preference-pairs
-    label: com.cabinet.preference-pairs
+  # ── COG-4 C4 composition — the organ-runner wake vehicle (W6-e2 2026-07-24) ─
+  # FIVE pure-projection/measurement rows composed into ONE fixed-wake row per
+  # the phase-4 contract §9.2/§9.3/§9.5: charter-shadow (was daily 05:10) +
+  # preference-pairs (was 05:20) + judge-calibration (was 05:35) + world-census
+  # (was 08:15) + prediction-calibration (was 08:20) — all daily, all
+  # idempotent-per-date, disjoint state ownership, no actor writes. The runner
+  # wakes TWICE daily (43200s — stricter than every absorbed daily cadence,
+  # §9.2 cadence law) and runs each organ per its manifest; the watchdog
+  # derives ONE freshness floor PER composed organ from the manifests'
+  # freshness_needs (registry._parse_organ_manifests), so the five floors
+  # survive composition at COUNT+TUPLE strength — a silent organ inside a live
+  # runner still trips its own floor. Scheduler-BLIND by construction (§9.5):
+  # the runner never observes the shadow schedule (boundary-manifest
+  # deliberate-absence rows + the test_cog4_organ_runner invariance battery).
+  # The old intra-day calendar ordering (e.g. census after the 08:05
+  # falsifier) is traded for the second daily wake: every composed script is
+  # idempotent per date and degrades cleanly on stale upstream inputs; the
+  # later wake refreshes what the earlier one missed.
+  - name: cog4-organ-runner
+    label: com.cabinet.cog4-organ-runner
     kind: cron
-    command: python3.12 -m framework.learning.preference_pairs
-    schedule: { calendar: [{hour: 5, minute: 20}] }   # daily 05:20 local — after charter-shadow
-    expected: "one summary line/run (mined= new= known=); new Captain correction verdicts + standing patterns land as pairs in shared/interfaces/preference-pairs.jsonl (append-only, stable pair_id skip-known)"
-    sunset: "supersede when a first-class preference-learning consumer (tuning/DPO or prompt-injection of pairs) replaces the raw store; expect LOW yield until verdict volume grows — that is the label economy's problem, not this organ's"
+    command: python3.12 cabinet/scripts/cog4-organ-runner.py
+    schedule: { interval_s: 43200 }   # 12h — <= every absorbed row's 86400s period (§9.2 cadence leg)
+    organs:
+      - cabinet/config/organs/charter-shadow.yml
+      - cabinet/config/organs/judge-calibration.yml
+      - cabinet/config/organs/prediction-calibration.yml
+      - cabinet/config/organs/preference-pairs.yml
+      - cabinet/config/organs/world-census.yml
+    sunset: "supersede when the COG-4 shadow scheduler earns schedule authority (the future pointer/adapter amendment) and organ wakes ride real schedules; decompose any single organ whose own kill criteria fire (each absorbed row's sunset moved into its organ manifest header — e.g. charter-shadow self-terminates on the Captain's deletion ruling, world-census on Cabinet World E-series sunset)"
+    expected: "behavior JSON per wake in the job log; per-organ receipts cabinet/cache/organs/<name>/last-run.json rewritten on every HEALTHY organ completion — the watchdog probes each composed organ's receipt against its manifest max_staleness (per-organ floors, never the shared runner log); judge-calibration exit 1 = honest below-bar measurement, classified healthy per its manifest exit_codes"
     notes: >-
-      Preference-pair miner (Rec, 2026-07-09): action-lessons.yml correction
-      verdicts (edit = verbatim captain_text preference; undo/never/rejected
-      = refrain preferences) joined to the consequence ledger for the
-      rejected-side subject, + captain-patterns.md standing entries with
-      provenance ([trust:*]) attached. Report-only accumulation
-      infrastructure like the action-lessons writer itself; captain_text
-      rides as INERT QUOTED DATA (SIE-1 contract) — nothing may obey it;
-      nothing reads the store into any gate.
-  - name: charter-shadow
-    label: com.cabinet.charter-shadow
-    kind: cron
-    command: python3.12 cabinet/scripts/charter-shadow.py
-    schedule: { calendar: [{hour: 5, minute: 10}] }   # daily 05:10 local — after the 04:40 exhaust-archive
-    expected: "one JSON line/day appended to shared/interfaces/charter-shadow-series.jsonl (idempotent per date) — charter-arm vs engine-arm agreement over the recorded policy.shadow_decision stream"
-    sunset: "self-terminating by design: once the Captain rules on the deletion question (either way), retire this row — the series exists to price that one decision"
-    notes: >-
-      Rec 3.3 (2026-07-09): prices the governance mass — a self-contained
-      ~40-line charter arm (destructive rm/db, .env writes, prod deploys)
-      replayed against the ENGINE decisions policy-shadow.py already records
-      in org_events. engine_only_blocks = what the 4.7k-LOC
-      matrix/posture/grants stack uniquely buys; the report's D9 deletion
-      case needs divergence <5% for a week. policy-shadow.py itself is
-      germline and untouched; the DELETION decision stays defer-captain —
-      this row only produces the evidence.
+      COG-4 W6-e2 compose (phase-4 contract §9.2/§9.3/§9.5; per the
+      2026-07-07 full-autonomy grant + the 2026-07-20 cognitive-masterplan
+      grant + the 2026-07-21 ownership-on-GO; evidence bundle in
+      shared/interfaces/reviews/feat-cog4-w6-e2-cp1.md). The five organ
+      manifests under cabinet/config/organs/ carry each absorbed row's
+      reality: command (entrypoints.run), outputs, idempotency, permissions,
+      cost/starvation declarations, and the health contract —
+      judge-calibration's exit-1-by-design rides
+      health_proof.exit_codes.honest_failure. Rollback = revert the compose
+      commit (atomic: rows + manifests + runner + registry floors land and
+      revert together — the §16 fleet inverse; rehearsed round-trip in the
+      wave artifact).
   - name: calendar-intake
     label: com.cabinet.calendar-intake
     kind: cron
@@ -1266,23 +1256,12 @@ services:
   # over unchanged pixels is pure noise. Do not add a service row for it;
   # ledger row WORLD-AESTHETIC-GATE owns its self-test, and
   # cabinet/scripts/world-aesthetic/README.md owns the integration contract.
-  - name: world-census
-    label: com.cabinet.world-census
-    kind: cron
-    command: python3.12 cabinet/scripts/world-census.py
-    schedule: { calendar: [{hour: 8, minute: 15}] }   # daily 08:15 local — after the 08:05 falsifier line so memory_ingestion is fresh for the day
-    expected: "one PII-free census keyframe/day appended to shared/interfaces/world-chronicle.jsonl (idempotent per date; closed int/enum schema enforced at write — CensusSchemaError refuses anything else); every un-censused day = PERMANENT replay fog for the file-count surfaces; cabinet-doctor probes chronicle staleness (>2d = DEAD)"
-    sunset: "apoptosis R10-class kill criteria: retire when the Cabinet World read-model is abandoned (E-series sunset) or a superseding keyframe writer owns the chronicle — evidence bar: 30 consecutive days with zero /world readers AND zero replay use. On retirement ARCHIVE world-chronicle.jsonl (append-only replay history), never truncate."
-    notes: >-
-      Cabinet World E0a (kickoff step 1; spec ~/cabinet-world-growth-design-
-      2026-07-07.md §2 Stage 1). Falsifier-series discipline: append-only,
-      flock, idempotent per date, ints/enums only. Fenced local reads ONLY:
-      sqlite3 -readonly over cabinet/cache/org-runtime.sqlite3 (constant SQL,
-      busy-retry, never projection tables), JSONL ledger line counts, git
-      rev-list --count, file counts, memory rows via the falsifier
-      memory_ingestion block (no DB creds in the census path). NO Redis —
-      live keys are Stage-5 overlay (E0b's plane), never morphology. Tests:
-      cabinet/scripts/tests/test_world_census.py.
+  # world-census COMPOSED 2026-07-24 into the cog4-organ-runner row (COG-4
+  # W6-e2 §9.2/§9.3): manifest cabinet/config/organs/world-census.yml carries
+  # the absorbed reality (Cabinet World E0a keyframe writer, fenced local
+  # reads, idempotent per date). cabinet-doctor's independent chronicle-
+  # staleness probe (>2d = DEAD) is unchanged — the chronicle keeps its daily
+  # keyframe from inside the runner.
   - name: world-chronicle
     label: com.cabinet.world-chronicle
     kind: daemon

@@ -148,6 +148,23 @@ delete cabinet/scripts/verify-cognitive-phase3.sh
 delete cabinet/scripts/cognitive-phase3-review-scope.py
 delete cabinet/scripts/cognitive-phase3-rollback-rehearsal.py
 delete cabinet/scripts/tests/test_cognitive_phase3_rollback.py
+delete cabinet/scripts/verify-cognitive-phase4.sh
+# COG-4 phase-4 private landing proof (same class as COG-0/1/2/3 above): the
+# verify twin, review-scope binder, and rollback rehearsal bind THIS launching
+# instance's reviewed bytes, baseline, and rollback plan — historical phase
+# tooling, never ships. The enduring scheduler/organs CLIs + framework surface
+# ride the egg (expect-present above); the phase-4 rollback manifest archives
+# out with the rest of docs/plans (R145).
+delete cabinet/scripts/cognitive-phase4-review-scope.py
+delete cabinet/scripts/cognitive-phase4-rollback-rehearsal.py
+# COG-4 W6 e3 landing 2026-07-24: the §10 measurement pre-prove bridge is the
+# same class — it BINDS the verify twin (deleted just above) + the S0 baseline,
+# proving out-of-band GREEN what the integrator's corpus surgery will assert.
+# The twin it references never ships, so this build-time bridge never ships;
+# the enduring §10 gate is the corpus test_cog4_measurement.py (rides the egg,
+# binds the baseline below). The measure CLI + the tracked baseline ride the
+# egg (expect-present below).
+delete cabinet/scripts/tests/test_cog4_measure_baseline.py
 delete docs/runbooks/egg-export-2026-07-10.md
 # PC-C launch-kit privacy (integration ruling 2026-07-10): docs/launch/ is
 # CG-7 PER-ITEM publication material (Show HN draft, business-model proposal,
@@ -483,6 +500,30 @@ expect-present cabinet/scripts/cog4-dispatch-shadow.py
 # test surface (regen-gated by cabinet/scripts/tests/test_cog4_parity_record
 # .py), packaged with the tests tree it anchors.
 expect-present cabinet/scripts/tests/fixtures/cog4/cog4-parity-record.json
+# COG-4 W6 e2 landing 2026-07-24 (the W5 precedent): the composed wake vehicle
+# ships with the fleet it serves — the cabinet/services.yml cog4-organ-runner
+# row names the CLI + the five tracked organ manifests it loads (§9.5 declared
+# association; §9.2 per-organ floors derive from these manifests). An egg
+# missing any of them ships a broken fleet row, so all six are pinned present.
+expect-present cabinet/scripts/cog4-organ-runner.py
+expect-present cabinet/config/organs/charter-shadow.yml
+expect-present cabinet/config/organs/judge-calibration.yml
+expect-present cabinet/config/organs/prediction-calibration.yml
+expect-present cabinet/config/organs/preference-pairs.yml
+expect-present cabinet/config/organs/world-census.yml
+# COG-4 W6 e3 landing 2026-07-24 (the cog4-parity-record precedent): the §10
+# latency/cost measurement CLI is an enduring scheduler-side CLI (rides the egg
+# with its siblings); its dated S0 baseline artifact is the tracked phase
+# record the corpus test_cog4_measurement.py real-pilot arm binds — an egg
+# missing it would break that shipped gate, so both are pinned present.
+expect-present cabinet/scripts/cog4-measure.py
+expect-present cabinet/scripts/tests/fixtures/cog4/cog4-measure-baseline-2026-07-24.json
+# COG-4 W6 landing 2026-07-24 (frozen-review P5 tidy): the two remaining cog4
+# CLIs pinned expect-present for consistency with the sibling rows above —
+# they already ship by default; this makes the promise explicit (the snapshot
+# builder + schedule projector, §6/§7 scheduler front-half).
+expect-present cabinet/scripts/cog4-snapshot.py
+expect-present cabinet/scripts/cog4-schedule.py
 # R167: dropped from the plans-archive keep-list (see R167 above) — the
 # coupling census now archives with the rest of docs/plans instance history.
 expect-absent docs/plans/source-adapter-boundary-2026-07-05.md
@@ -582,6 +623,10 @@ expect-absent cabinet/scripts/verify-cognitive-phase3.sh
 expect-absent cabinet/scripts/cognitive-phase3-review-scope.py
 expect-absent cabinet/scripts/cognitive-phase3-rollback-rehearsal.py
 expect-absent cabinet/scripts/tests/test_cognitive_phase3_rollback.py
+expect-absent cabinet/scripts/verify-cognitive-phase4.sh
+# COG-4 phase-4 private landing tools (paired delete rows above) — never ship.
+expect-absent cabinet/scripts/cognitive-phase4-review-scope.py
+expect-absent cabinet/scripts/cognitive-phase4-rollback-rehearsal.py
 # COG-2: the Cortex parity VERDICT LOG is per-cabinet runtime data — gitignored
 # under cabinet/logs/* (Spec 043 runtime-log idiom), so it never enters the
 # archive cut. Pinned absent defensively (the node_modules idiom): the export

@@ -831,6 +831,156 @@ def _parse_services_manifest(text: str) -> list[dict]:
     return entries
 
 
+# ── COG-4 §9.2 (MR3): per-organ derived floors for composed runner rows ─────
+# Composing N services.yml rows into one organ-runner row must NOT delete N
+# freshness floors: the runner row EXPLICITLY names its composed organ
+# manifests (a block-form `organs:` list, the §9.5 wake-row semantics), and
+# each named manifest's `freshness_needs` (`expected_output` artifact token +
+# `max_staleness_seconds`) derives ONE expectation PER composed organ,
+# asserted by the same no-silent-cron probe BESIDE the per-row expectations.
+# A silent organ inside a live runner therefore still trips ITS OWN floor
+# (the shared runner log stays fresh; the organ's receipt artifact does not).
+# STDLIB ONLY per the survival contract above — a narrow line-parser over
+# exactly the manifest shapes the phase-4 contract documents (top-level
+# `name:`, a `freshness_needs:` block with two flat keys); anything
+# unparseable degrades PER-ENTRY into a LOUD problem line (a composed organ
+# without a derivable floor is exactly the escape §9.2 exists to catch),
+# and never crashes the check. Reference twin:
+# cabinet/scripts/tests/lib_cog4_floors.derive_organ_expectations (the
+# conservation checker cross-checks this derivation on the same fixtures).
+
+def _derive_organ_expectation_from_text(text: str):
+    """Narrow-parse ONE organ manifest's text → ((name, expected_output,
+    max_staleness_seconds), errors). Mirrors the reference-twin strictness:
+    name required; `freshness_needs.max_staleness_seconds` an int >= 1;
+    `freshness_needs.expected_output` a non-empty token — a manifest that
+    cannot yield a floor returns errors, never a silent skip (§9.2)."""
+    name: Optional[str] = None
+    stale: Optional[int] = None
+    out: Optional[str] = None
+    in_fn = False
+    for raw in (text or "").splitlines():
+        line = raw.rstrip()
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        top = re.match(r"^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$", line)
+        if top:
+            key, val = top.group(1), top.group(2).split("#", 1)[0].strip()
+            in_fn = key == "freshness_needs"
+            if key == "name" and val:
+                name = val.strip("'\"")
+            continue
+        if in_fn:
+            km = re.match(r"^\s+([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$", line)
+            if not km:
+                continue
+            key, val = km.group(1), km.group(2).split("#", 1)[0].strip()
+            if key == "max_staleness_seconds":
+                try:
+                    stale = int(val)
+                except ValueError:
+                    stale = None
+            elif key == "expected_output":
+                out = val.strip("'\"") or None
+    errors: list[str] = []
+    label = name or "<unnamed organ manifest>"
+    if not name:
+        errors.append("organ manifest carries no non-empty name")
+    if stale is None or stale < 1:
+        errors.append(f"{label}: freshness_needs.max_staleness_seconds must "
+                      "be an integer >= 1 (no floor derivable — §9.2)")
+    if not out:
+        errors.append(f"{label}: freshness_needs.expected_output must be a "
+                      "non-empty token (no probe artifact — §9.2)")
+    if errors:
+        return None, errors
+    return (name, out, stale), []
+
+
+def _resolve_organ_artifact(token: str) -> str:
+    """The declared expected_output token → one probe path: absolute/`~` as
+    given (expanduser), else repo-root-relative — the same resolution class as
+    SERVICES_MANIFEST above. Never globs, never discovers."""
+    p = os.path.expanduser(token)
+    if os.path.isabs(p):
+        return p
+    return str(_cabinet_root() / p)
+
+
+def _parse_organ_manifests(services_text: str, read_text) -> tuple[list[dict], list[str]]:
+    """The §9.2 per-organ floor derivation over cabinet/services.yml: for
+    every NON-disabled row carrying a block-form `organs:` list (the composed
+    runner rows — the row→manifest association is DECLARED, §9.5), read each
+    named manifest via `read_text` (the Probe's file surface; absolute or
+    repo-root-relative path) and derive one expectation per composed organ.
+
+    Returns (entries, problems): entries are
+    {runner, organ, expected_output, max_staleness_s, manifest} dicts;
+    problems are LOUD per-entry derivation failures (an unreadable/unparseable
+    declared manifest is a lost floor, never a silent skip). Stdlib only
+    (survival contract); a manifest text shape this parser cannot read
+    surfaces as a problem for that entry and degrades nothing else."""
+    entries: list[dict] = []
+    problems: list[str] = []
+    cur_name: Optional[str] = None
+    cur_disabled = False
+    in_organs = False
+    declared: list[tuple[str, str]] = []   # (runner row name, manifest ref)
+    for raw in (services_text or "").splitlines():
+        line = raw.rstrip()
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        m = re.match(r"^  - name:\s*([A-Za-z0-9._-]+)\s*$", line)
+        if m:
+            cur_name = m.group(1)
+            cur_disabled = False
+            in_organs = False
+            continue
+        if cur_name is None:
+            continue
+        km = re.match(r"^    ([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$", line)
+        if km:
+            key, val = km.group(1), km.group(2).split("#", 1)[0].strip()
+            in_organs = key == "organs" and val == ""
+            if key == "disabled":
+                cur_disabled = val.lower() in ("true", "yes", "1")
+            continue
+        if in_organs:
+            im = re.match(r"^\s+-\s+(\S+)\s*$", line.split("#", 1)[0].rstrip())
+            if im and not cur_disabled:
+                declared.append((cur_name, im.group(1)))
+    # NOTE: a row whose `disabled:` key follows its `organs:` block would slip
+    # the guard above, so re-filter against the full row parse (belt+braces —
+    # the same text, the same narrow parser).
+    disabled_rows = {e["name"] for e in _parse_services_manifest(services_text)
+                     if e.get("disabled")}
+    for runner, ref in declared:
+        if runner in disabled_rows:
+            continue
+        path = _resolve_organ_artifact(ref)
+        try:
+            text = read_text(path)
+        except Exception:                                    # noqa: BLE001
+            text = None
+        if not text:
+            problems.append(
+                f"{runner}: declared organ manifest {ref!r} unreadable — its "
+                "composed floor CANNOT derive (§9.2; a lost floor is a page, "
+                "not a skip)")
+            continue
+        derived, errors = _derive_organ_expectation_from_text(text)
+        if derived is None:
+            problems.extend(f"{runner}: {err}" for err in errors)
+            continue
+        organ, out, stale = derived
+        entries.append({"runner": runner, "organ": organ,
+                        "expected_output": out, "max_staleness_s": stale,
+                        "manifest": ref})
+    return entries, problems
+
+
 def verify_no_silent_cron_failure(probe: "Probe") -> CheckResult:
     """OUTCOME: every service the fleet manifest declares is producing output
     within its cadence, not silently erroring, and actually loaded — with the
@@ -885,6 +1035,30 @@ def verify_no_silent_cron_failure(probe: "Probe") -> CheckResult:
                 problems.append(f"{name}: error marker {hit!r} in recent log tail "
                                 f"({path.rsplit('/', 1)[-1]})")
                 break
+
+    # Per-organ derived floors BESIDE the per-row expectations (COG-4 §9.2):
+    # composed runner rows declare their organ manifests; each composed organ's
+    # expected-output artifact must be fresher than its declared max_staleness.
+    # The runner row's OWN log floor + marker scan ran above like any row —
+    # these per-organ probes are what keeps N composed floors from collapsing
+    # into one shared runner log (a silent organ still trips its own floor).
+    organ_entries, organ_problems = _parse_organ_manifests(
+        probe.read_text(SERVICES_MANIFEST), probe.read_text)
+    problems.extend(organ_problems)
+    for oe in organ_entries:
+        artifact = _resolve_organ_artifact(oe["expected_output"])
+        mt = probe.file_mtime(artifact)
+        if mt is None:
+            problems.append(
+                f"{oe['organ']} (organ in {oe['runner']}): expected output "
+                f"absent at {artifact} (never produced / not installed?)")
+            continue
+        idle_s = now_epoch - mt
+        if idle_s > oe["max_staleness_s"]:
+            problems.append(
+                f"{oe['organ']} (organ in {oe['runner']}): output stale "
+                f"{idle_s / 3600:.1f}h (> {oe['max_staleness_s'] / 3600:.1f}h "
+                "declared floor) — the organ is silent inside a live runner")
 
     # launchctl surface — {} means "not observable here" (non-Mac host, test
     # stub, launchctl error): both launchd checks self-disable rather than

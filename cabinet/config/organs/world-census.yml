@@ -1,0 +1,56 @@
+# COG-4 C4 organ manifest — world-census (composed W6-e2, 2026-07-24).
+# REAL §4.2-shaped manifest derived from the absorbed cabinet/services.yml row
+# (kind cron, daily 08:15 calendar, command python3.12 cabinet/scripts/
+# world-census.py, one PII-free census keyframe/day appended to
+# shared/interfaces/world-chronicle.jsonl idempotent per date, closed int/enum
+# schema enforced at write — Cabinet World E0a; fenced local reads only, no
+# Redis, no DB creds in the census path). STRUCTURAL-READ POSTURE: schema
+# validation stays PARKED (docs/plans/cog4-w4-u1-organ-schema-validation-
+# PARKED-2026-07-24.md). PARITY-CLEAN (§4.3 N-d), matching the S0 pilot
+# fixture world-census.yml. expected_output = the runner-written per-organ
+# receipt (§9.2 probe law; see charter-shadow.yml header); cabinet-doctor's
+# independent chronicle-staleness probe (>2d = DEAD) is unchanged and stays
+# the artifact-level floor.
+name: world-census
+version: "1.0.0"
+kind: organ
+action_types: [investigation_run]
+risk_classes: [read_only_dispatch]
+undo_contract: none
+entrypoints:
+  run: "python3.12 cabinet/scripts/world-census.py"
+inputs: [org-runtime/sqlite-readonly, ledgers/jsonl-line-counts, git/rev-count]
+outputs: [shared/interfaces/world-chronicle.jsonl]
+domain_operations:
+  - census/rooms.count
+  - census/estate.survey
+descriptor:
+  action_type: investigation_run
+  risk_class: read_only_dispatch
+  ceiling: []
+  undo_contract: none
+permissions: [estate-state/read]
+idempotency:
+  census/rooms.count: "census-date"
+  census/estate.survey: "census-date"
+state_ownership:
+  - shared/interfaces/world-chronicle.jsonl
+  - cabinet/cache/organs/world-census/
+cost_model:
+  units_per_wake: 1
+starvation_bound:
+  max_wakes: 6
+freshness_needs:
+  max_staleness_seconds: 90000
+  expected_output: cabinet/cache/organs/world-census/last-run.json
+trigger_policy:
+  mode: periodic
+  parameters:
+    interval_s: 86400
+health_proof:
+  probe: "one PII-free census keyframe per day appended to the chronicle (idempotent per date; CensusSchemaError refuses anything else)"
+  expectation: ok
+fallback: skip
+dependencies:
+  organs: []
+  capabilities: [estate-state/read]

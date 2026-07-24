@@ -1,0 +1,74 @@
+# COG-4 C4 organ manifest — judge-calibration (composed W6-e2, 2026-07-24).
+# REAL §4.2-shaped manifest derived from the absorbed cabinet/services.yml row
+# (kind cron, daily 05:35 calendar, command python3.12 cabinet/scripts/
+# judge-calibration.py, status proof $CABINET_EVENT_LOG_DIR/
+# judge-calibration-status.json rewritten atomically on every successful
+# measurement including a below-bar one — D5 step 1a, ledger row A2, armed
+# 2026-07-09). STRUCTURAL-READ POSTURE: schema validation stays PARKED
+# (docs/plans/cog4-w4-u1-organ-schema-validation-PARKED-2026-07-24.md).
+# PARITY-CLEAN (§4.3 N-d), matching the S0 pilot fixture judge-calibration.yml
+# including the per-operation override (judge/status.rewrite → local_edit/
+# reversible) that exercises both parity legs' override-merge path.
+#
+# HONEST-FAILING HEALTH PROOF (the absorbed row's exit contract, encoded):
+#   exit 0 = bar met;
+#   exit 1 = bar honestly NOT met (agreement <80% or <10 pairs — the EXPECTED
+#            state while verdict_human supply is thin; the failing proof keeps
+#            judge_verdicts_may_demote() False, which is the fail-closed floor
+#            WORKING, not a service fault) → classified honest_failure: the
+#            runner treats the organ as HEALTHY and stamps its receipt;
+#   exit 2 = measurement error (nothing written; the old proof ages out on its
+#            own 14-day clock) → a REAL failure: fallback applies and the
+#            receipt is NOT stamped, so the per-organ floor trips on
+#            persistence.
+name: judge-calibration
+version: "1.0.0"
+kind: organ
+action_types: [investigation_run, local_edit]
+risk_classes: [read_only_dispatch, reversible]
+undo_contract: none
+entrypoints:
+  run: "python3.12 cabinet/scripts/judge-calibration.py"
+inputs: [consequence-ledger/verdict-pairs]
+outputs: [judge-calibration-status.json]
+domain_operations:
+  - judge/agreement.measure
+  - judge/status.rewrite
+descriptor:
+  action_type: investigation_run
+  risk_class: read_only_dispatch
+  ceiling: []
+  undo_contract: none
+  operations:
+    judge/status.rewrite:
+      action_type: local_edit
+      risk_class: reversible
+      undo_contract: "delete_window(86400)"
+permissions: [consequence-ledger/read, calibration-status/write]
+idempotency:
+  judge/agreement.measure: "measure-date"
+  judge/status.rewrite: "status-date"
+state_ownership:
+  - judge-calibration-status.json
+  - cabinet/cache/organs/judge-calibration/
+cost_model:
+  units_per_wake: 1
+starvation_bound:
+  max_wakes: 6
+freshness_needs:
+  max_staleness_seconds: 90000
+  expected_output: cabinet/cache/organs/judge-calibration/last-run.json
+trigger_policy:
+  mode: periodic
+  parameters:
+    interval_s: 86400
+health_proof:
+  probe: "judge-calibration-status.json rewritten atomically on every successful measurement (including a below-bar one); deterministic + OFFLINE (no LLM, no network, no credentials)"
+  expectation: ok
+  exit_codes:
+    ok: [0]
+    honest_failure: [1]
+fallback: skip
+dependencies:
+  organs: []
+  capabilities: [consequence-ledger/read]

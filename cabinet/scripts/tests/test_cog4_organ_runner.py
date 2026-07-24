@@ -18,10 +18,15 @@ WHAT RUNS LIVE NOW vs WHAT IS SKIPPED (the W1-u2 mergeability idiom, §13):
     with a real divergent mutant proven to FAIL in this run (schedule-READER,
     schedule-WRITER, manifest-DISCOVERY): a gate without a biting mutant is
     decoration (§12).
-  * SKIPPED — the arms that target the not-yet-built
-    `cabinet/scripts/cog4-organ-runner.py` carry vacuity skips with explicit
-    RETIREMENT CONDITIONS plus companion absence assertions that go RED the
-    moment the CLI lands (§13), so no skip can silently persist.
+  * RETIRED 2026-07-24 (W6 landing; per §13 + the routed contradictions,
+    feat-cog4-w6-e2-cp1.md §6.1-6.2) — the vacuity arms that targeted the
+    then-unbuilt `cabinet/scripts/cog4-organ-runner.py` are retired per their
+    own RETIREMENT CONDITIONS: the CLI landed in W6-e2 and the §9.5 battery
+    is BOUND to it in `test_cog4_organ_runner_real.py::TestRealRunnerCliBattery`
+    (real_cli_runner subprocess adapter feeding _check_invariance /
+    _check_cache_untouched / _check_declared_list from THIS file — imported,
+    never re-implemented; a corpus back-import would be circular, so the
+    binding lives there by design).
 
 SELF-CONTAINED BY LAW (LESSONS L1111): the tiny schedule-artifact writer below
 is local to this file — parallel W2 units never maintain shared pinned
@@ -37,7 +42,8 @@ token; no fenced literal appears here regardless).
 
 CORPUS LAW (§13): purely ADDITIVE — no existing test/lib file is edited;
 contradictions route to the integrator; retirement of the vacuity arms is the
-integrator's move when the runner CLI lands (W6).
+integrator's move when the runner CLI lands (W6). PERFORMED 2026-07-24 at the
+W6 landing (the edit above/below IS that integrator move).
 
 S0: python3.12, no DB, no network, no subprocess. Provenance: authored per the
 2026-07-07 full-autonomy grant + the 2026-07-20 cognitive-masterplan
@@ -59,9 +65,10 @@ for _p in (str(_HERE), str(_REPO)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-# The not-yet-built real target surface (vacuity arms below).
-_RUNNER_CLI_REL = "cabinet/scripts/cog4-organ-runner.py"
-_RUNNER_CLI = _REPO / _RUNNER_CLI_REL
+# The real target surface landed in W6-e2 (cabinet/scripts/cog4-organ-runner.py);
+# its §9.5 battery binding lives in test_cog4_organ_runner_real.py (see the
+# module docstring's RETIRED note — the former vacuity-arm constants are gone
+# with the arms).
 
 
 def _canon(obj) -> bytes:
@@ -307,42 +314,16 @@ class TestRunnerInvariance:
 
 
 # ===========================================================================
-# VACUITY ARMS — the real runner CLI (absent this phase; §13 law)
+# FORMER VACUITY ARMS — RETIRED 2026-07-24 (W6 landing; per §13 + the routed
+# contradictions, feat-cog4-w6-e2-cp1.md §6.1-6.2). The runner CLI landed in
+# W6-e2, tripping both companion absence assertions; per their RETIREMENT
+# CONDITIONS the §9.5 battery is bound to the real CLI in
+# test_cog4_organ_runner_real.py::TestRealRunnerCliBattery:
+#   * test_real_runner_invariance_battery  -> test_real_cli_invariance
+#     (real_cli_runner subprocess adapter through _check_invariance above)
+#   * test_real_runner_store_blindness     -> test_real_cli_leaves_schedule_
+#     cache_untouched + test_real_cli_declared_list_never_discovery
+#     (through _check_cache_untouched/_check_declared_list above)
+# The checkers stay HERE (single source); the binding file imports them —
+# the reverse import would be circular, so the retired arms leave no stub.
 # ===========================================================================
-
-def _absent_then_skip(arm_label, property_name):
-    """The W1-u2 idiom: the COMPANION absence assertion goes RED the moment the
-    CLI lands (so the skip cannot silently persist); until then the arm SKIPS
-    with its retirement condition."""
-    assert not _RUNNER_CLI.exists(), (
-        f"{_RUNNER_CLI_REL} has LANDED — retire this vacuity skip "
-        f"({arm_label}) and bind {property_name} to the real CLI per the "
-        "docstring RETIREMENT CONDITION (integrator move, §13)")
-    pytest.skip(f"VACUITY: {_RUNNER_CLI_REL} absent this phase — {arm_label} "
-                f"is pinned via the live fixture machinery ({property_name}); "
-                "retire when the runner CLI lands (W6).")
-
-
-class TestRealRunnerCliArms:
-    """Each arm targets the not-yet-built `cabinet/scripts/cog4-organ-runner.py`
-    (W6 composition unit). RETIREMENT CONDITION (every test below): retire the
-    skip when cabinet/scripts/cog4-organ-runner.py lands — bind the named
-    property to the real CLI (run it twice as a subprocess over the same
-    runner-row fixture, with and without a schedule artifact injected into its
-    cache dir) so the §9.5 battery runs against the landed vehicle. The
-    absence assertion is the tripwire that REDs on landing."""
-
-    def test_real_runner_invariance_battery(self):
-        """VACUITY — RETIREMENT CONDITION: retire when
-        cabinet/scripts/cog4-organ-runner.py lands; bind _check_invariance
-        (§9.5/§12 runner-invariance battery — byte-identical behavior with and
-        without the schedule artifact) to the real CLI."""
-        _absent_then_skip("runner-invariance battery", "_check_invariance")
-
-    def test_real_runner_store_blindness(self):
-        """VACUITY — RETIREMENT CONDITION: retire when
-        cabinet/scripts/cog4-organ-runner.py lands; bind _check_cache_untouched
-        + _check_declared_list to the real CLI (the §8.3 deliberate-absence
-        rows' behavioral twins)."""
-        _absent_then_skip("runner store-blindness + declared-list arms",
-                          "_check_cache_untouched/_check_declared_list")

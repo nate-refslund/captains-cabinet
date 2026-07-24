@@ -20,13 +20,14 @@ harness itself must be proven to bite NOW. The §9.2 named mutants, each proven:
   * duplicated probe artifact across two composed organs               -> RED
   * non-atomic compose (absorbed row still present after)              -> RED
 
-ONE vacuity arm (the W1-u2 idiom) — RETIREMENT CONDITION: retire the skip when
-`framework/watchdog/registry.py` gains `_parse_organ_manifests` (§9.2, MR3);
-the retired arm cross-checks the REAL derivation against
-`lib_cog4_floors.derive_organ_expectations` over these same fixture manifests
-(the reference twin law), then the compose gate binds the real function. The
-COMPANION hasattr assertion REDs the moment the function lands, so the skip
-cannot silently persist.
+ONE formerly-vacuity arm (the W1-u2 idiom) — RETIRED-LIVE 2026-07-24 at the W6
+landing (per §13 + the routed contradictions, feat-cog4-w6-e2-cp1.md §6.3):
+`framework/watchdog/registry.py` gained `_parse_organ_manifests` in W6-e2, so
+per its own RETIREMENT CONDITION the arm now cross-checks the REAL derivation
+against `lib_cog4_floors.derive_organ_expectations` over these same fixture
+manifests (the reference twin law) — the compose gate binds the real function.
+Deeper real-file bindings: test_cog4_organ_runner_real.py
+::TestRealDerivationCrossCheck (fixture dicts + the five live manifests).
 
 S0: python3.12, no DB, no network, deterministic. Provenance: authored per the
 2026-07-07 full-autonomy grant + the 2026-07-20 cognitive-masterplan continuous
@@ -36,8 +37,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-
-import pytest
 
 _HERE = Path(__file__).resolve().parent
 _REPO = _HERE.parents[2]
@@ -264,24 +263,56 @@ class TestFloorConservation:
 
 
 # ---------------------------------------------------------------------------
-# the vacuity arm — the REAL _parse_organ_manifests (W3/W6 watchdog edit)
+# the retired-live arm — the REAL _parse_organ_manifests (W3/W6 watchdog edit)
 # ---------------------------------------------------------------------------
 class TestRealParseOrganManifestsArm:
     def test_real_derivation_arm(self):
-        """VACUITY GUARD — RETIREMENT CONDITION: retire this skip when
-        framework/watchdog/registry.py gains `_parse_organ_manifests` (§9.2,
-        MR3); the retired arm cross-checks the REAL derivation against
+        """RETIRED-LIVE 2026-07-24 (W6 landing; per §13 + the routed
+        contradictions, feat-cog4-w6-e2-cp1.md §6.3): registry gained
+        `_parse_organ_manifests` in W6-e2, so per the original RETIREMENT
+        CONDITION this arm cross-checks the REAL derivation against
         lib_cog4_floors.derive_organ_expectations over the fixture manifests
-        above (same `(expected_output, max_staleness)` pairs), and the compose
-        gate then binds the real function. The COMPANION hasattr assertion
-        REDs the moment the function lands, so the skip cannot silently
-        persist (the W1-u2 idiom)."""
-        assert not hasattr(registry, "_parse_organ_manifests"), (
-            "framework/watchdog/registry.py has gained _parse_organ_manifests — retire "
-            "this vacuity skip and cross-check it against "
-            "lib_cog4_floors.derive_organ_expectations per the docstring RETIREMENT "
-            "CONDITION")
-        pytest.skip(
-            "VACUITY: registry._parse_organ_manifests absent this phase-stage — the "
-            "reference derivation + conservation checker are proven live above; retire "
-            "when the watchdog gains the per-organ floor parser.")
+        above — same `(expected_output, max_staleness)` pairs — binding the
+        real function the compose gate uses. The former hasattr companion is
+        INVERTED: the real function vanishing now REDs here."""
+        assert hasattr(registry, "_parse_organ_manifests"), (
+            "framework/watchdog/registry.py LOST _parse_organ_manifests — the "
+            "composed per-organ floors have no real derivation (§9.2, MR3)")
+        ref, ref_errors = FL.derive_organ_expectations(_good_organs())
+        assert ref_errors == []
+        # Serialize the fixture dicts into the manifest text shape the narrow
+        # parser documents, declare them on ONE enabled runner row, and run
+        # the REAL parser end-to-end (read_text = the Probe's file surface,
+        # fixture-backed in memory — no filesystem).
+        manifest_texts = {
+            f"organs/{m['name']}.yml": (
+                f"name: {m['name']}\n"
+                "kind: organ\n"
+                "freshness_needs:\n"
+                f"  max_staleness_seconds: "
+                f"{m['freshness_needs']['max_staleness_seconds']}\n"
+                f"  expected_output: {m['freshness_needs']['expected_output']}\n")
+            for m in _good_organs()}
+        services = (
+            "services:\n"
+            "  - name: organ-runner\n"
+            "    label: com.cabinet.organ-runner\n"
+            "    kind: cron\n"
+            "    schedule: { interval_s: 21600 }\n"
+            "    organs:\n"
+            + "".join(f"      - {rel}\n" for rel in sorted(manifest_texts)))
+
+        def read_text(path: str) -> str:
+            for rel, text in manifest_texts.items():
+                if str(path).endswith(rel):
+                    return text
+            return ""
+
+        entries, problems = registry._parse_organ_manifests(services, read_text)
+        assert problems == []
+        assert all(e["runner"] == "organ-runner" for e in entries)
+        derived = {e["organ"]: (e["expected_output"], e["max_staleness_s"])
+                   for e in entries}
+        assert derived == ref, (
+            f"real derivation {derived} != reference twin {ref} — the §9.2 "
+            "reference twin law is broken")

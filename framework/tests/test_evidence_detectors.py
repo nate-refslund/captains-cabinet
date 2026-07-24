@@ -596,6 +596,11 @@ _REFERENCE_ALLOWLIST = {
         "a where-things-land precedent for its own shared/interfaces report "
         "path — prose in a docstring, never an import, never a consumer (its "
         "battery + cog2-import-gate pin it to serve-surface reads only)",
+    "docs/plans/cognitive-core-phase-4-rollback-manifest-2026-07-24.yml":
+        "the COG-4 rollback manifest (W6-e1) names THIS proof file in its "
+        "out_of_phase_in_range retained rows — a path row in phase-rollback "
+        "accounting, never an import, never a consumer (allowlisted at the "
+        "W6 landing 2026-07-24)",
 }
 
 

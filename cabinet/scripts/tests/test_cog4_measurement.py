@@ -10,12 +10,11 @@ Four legs, at exactly the §10.5 honesty strength:
      reads the flag below — and the grep-style test asserts a CONSUMPTION
      pattern (environ read / shell export), never a doc mention. Scratch-tree
      controls prove the scanner bites.
-  2. VERIFY-TWIN ARM (vacuity, W1-u2 idiom) — RETIREMENT CONDITION: retire the
-     skip when `cabinet/scripts/verify-cognitive-phase4.sh` lands; the landed
-     arm asserts the twin consumes COG4_ENFORCE_BOUND (a twin landing WITHOUT
-     the flag REDs immediately — the §10.3 same-commit armed-consumer law; a
-     twin landing WITH it REDs the companion so the skip cannot silently
-     persist).
+  2. VERIFY-TWIN ARM (W1-u2 idiom) — RETIRED-LIVE 2026-07-24 at the W6 landing
+     (per §13 + the routed contradictions, test_cog4_measure_baseline.py §A):
+     the twin landed in W6-e1 and arms the flag live since W6-e3; per its own
+     RETIREMENT CONDITION the arm keeps exactly the first assertion — the twin
+     consumes COG4_ENFORCE_BOUND (the §10.3 same-commit armed-consumer law).
   3. DETERMINISTIC PROXIES (live, ALWAYS-ON — §10.5): tool/MCP activation
      counts + budget units are EXACT functions of the schedule artifact
      (§7.2 decision rows). Computed here from a seeded fixture schedule.jsonl;
@@ -26,11 +25,12 @@ Four legs, at exactly the §10.5 honesty strength:
      COG3_ENFORCE_P95 idiom). The bound formula is the S0 floor-aware note —
      max(p95 x 1.25, p95 + 5s) for sub-10s rows — encoded in
      `lib_cog4_floors.wall_clock_bound` and proven here; the seeded
-     inflated-p95 mutant REDs when armed. The REAL pilot baseline arm is
-     vacuity-guarded — RETIREMENT CONDITION: retire the skip when
-     `cabinet/scripts/cog4-measure.py` + the S0 baseline artifact land; the
-     landed arm binds the real pilot p95s to wall_clock_bound and the real
-     schedule-artifact proxies to the S0 baseline.
+     inflated-p95 mutant REDs when armed. The REAL pilot baseline arm —
+     RETIRED-LIVE 2026-07-24 at the W6 landing (per §13 + the routed
+     contradictions, test_cog4_measure_baseline.py §B): cog4-measure.py + the
+     dated S0 baseline artifact landed in W6-e3; per its own RETIREMENT
+     CONDITION the arm binds the real pilot p95s to wall_clock_bound and the
+     real schedule-artifact proxies to the S0 baseline (EXACT).
 
 S0: python3.12, no DB, no network, file-seeded, deterministic (no clock in any
 assertion). Provenance: authored per the 2026-07-07 full-autonomy grant + the
@@ -140,24 +140,19 @@ class TestAntiPhantomConsumer:
             "cabinet/scripts/consumer.py", "cabinet/scripts/twin.sh"}
 
     def test_verify_twin_arm(self):
-        """VACUITY GUARD — RETIREMENT CONDITION: retire this skip when
-        cabinet/scripts/verify-cognitive-phase4.sh lands; the retired arm keeps
-        exactly the first assertion below (the twin consumes COG4_ENFORCE_BOUND,
-        §10.3). While the twin is absent the arm skips; the COMPANION failure
-        goes RED the instant the twin appears, so the skip cannot silently
-        persist (the W1-u2 idiom)."""
+        """RETIRED-LIVE 2026-07-24 (W6 landing; per §13 + the routed
+        contradictions, test_cog4_measure_baseline.py §A): the verify twin
+        landed in W6-e1 — per the original RETIREMENT CONDITION this arm keeps
+        exactly the first assertion (the twin consumes COG4_ENFORCE_BOUND,
+        §10.3). The live-arming flip (unconditional export + the real --check
+        leg) is pinned out-of-band by
+        test_cog4_measure_baseline.py::TestVerifyTwinArm. A vanished twin
+        fails the read below LOUDLY."""
         twin = _REPO / _VERIFY_TWIN_REL
-        if twin.exists():
-            text = twin.read_text(encoding="utf-8")
-            assert _FLAG in text, (
-                f"{_VERIFY_TWIN_REL} has landed WITHOUT consuming {_FLAG} — the §10.3 "
-                f"same-commit armed-consumer law is violated (the phantom-M6 class)")
-            pytest.fail(
-                f"{_VERIFY_TWIN_REL} has LANDED (and carries {_FLAG}) — retire this "
-                f"vacuity skip per the docstring RETIREMENT CONDITION")
-        pytest.skip(
-            f"VACUITY: {_VERIFY_TWIN_REL} absent this phase — the flag's live consumer "
-            f"is this battery itself; retire the skip when the verify twin lands.")
+        text = twin.read_text(encoding="utf-8")
+        assert _FLAG in text, (
+            f"{_VERIFY_TWIN_REL} has landed WITHOUT consuming {_FLAG} — the §10.3 "
+            f"same-commit armed-consumer law is violated (the phantom-M6 class)")
 
 
 # ---------------------------------------------------------------------------
@@ -379,18 +374,42 @@ class TestWallClockTripwire:
             _WALL_FIXTURE_BASELINE) == []
 
     def test_real_pilot_measurement_arm(self):
-        """VACUITY GUARD — RETIREMENT CONDITION: retire this skip when
-        cabinet/scripts/cog4-measure.py + the S0 baseline artifact land (§10.1);
-        the retired arm loads the REAL pilot baseline, binds each row's measured
-        p95 to lib_cog4_floors.wall_clock_bound, and binds the real
-        schedule-artifact proxies to the S0 baseline. The COMPANION assertion
-        REDs the moment the measure CLI lands, so the skip cannot silently
-        persist (the W1-u2 idiom)."""
-        cli = _REPO / _MEASURE_CLI_REL
-        assert not cli.exists(), (
-            f"{_MEASURE_CLI_REL} has LANDED — retire this vacuity skip and bind the "
-            f"real pilot baseline per the docstring RETIREMENT CONDITION")
-        pytest.skip(
-            f"VACUITY: {_MEASURE_CLI_REL} + the S0 baseline artifact absent this "
-            f"phase-stage — the bound machinery is proven on fixtures above; retire "
-            f"when the measure CLI lands.")
+        """RETIRED-LIVE 2026-07-24 (W6 landing; per §13 + the routed
+        contradictions, test_cog4_measure_baseline.py §B): cog4-measure.py +
+        the dated S0 baseline artifact landed in W6-e3 — per the original
+        RETIREMENT CONDITION this arm loads the REAL pilot baseline, binds
+        each row's measured p95 to lib_cog4_floors.wall_clock_bound (via
+        wall_clock_violations above — the corpus fn IS the FL binding), and
+        binds the real schedule-artifact proxies to the S0 baseline (EXACT,
+        §10.2). Pre-proven out-of-band by test_cog4_measure_baseline.py; a
+        vanished CLI or baseline fails LOUDLY below."""
+        import importlib.util
+        cli_path = _REPO / _MEASURE_CLI_REL
+        assert cli_path.exists(), (
+            f"{_MEASURE_CLI_REL} VANISHED — the landed §10 measurement surface "
+            f"must stay (W6-e3)")
+        baseline_path = (_REPO / "cabinet" / "scripts" / "tests" / "fixtures"
+                         / "cog4" / "cog4-measure-baseline-2026-07-24.json")
+        assert baseline_path.exists(), (
+            "the tracked S0 baseline artifact VANISHED — no borrowed numbers "
+            "(§10.1)")
+        baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+        spec = importlib.util.spec_from_file_location(
+            "cog4_measure_cli_corpus_arm", str(cli_path))
+        cli = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cli)
+        organs_dir = _REPO / "cabinet" / "config" / "organs"
+        # the real schedule-artifact proxies, bound to the S0 baseline (the
+        # CORPUS fold — proxies_from_schedule_rows above — does the folding)
+        rows = cli.build_measurement_schedule(cli.load_organ_manifests(organs_dir))
+        measured_proxies = proxies_from_schedule_rows(rows)
+        assert measured_proxies == baseline["proxies"], (
+            "real composed-manifest proxies != the tracked S0 baseline — a "
+            "manifest changed without regenerating the baseline (§10.2 EXACT)")
+        assert proxy_bound_violations(measured_proxies, baseline["proxies"]) == []
+        # each pilot row's FRESH measured p95, bound to FL.wall_clock_bound
+        # via the corpus wall_clock_violations (floor-aware, §10.2)
+        measured = cli.measure_wall_clock(organs_dir, samples=cli.DEFAULT_SAMPLES)
+        assert set(measured) == set(baseline["wall_clock_p95_s"]), (
+            "measured pilot set != the baseline pilot set (no borrowed rows)")
+        assert wall_clock_violations(measured, baseline["wall_clock_p95_s"]) == []
