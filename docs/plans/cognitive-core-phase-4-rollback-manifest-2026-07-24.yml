@@ -153,6 +153,10 @@ remove:
   # e4 was a sub-threshold commit — no artifact exists, real footprint only):
   - shared/interfaces/reviews/feat-cog4-w6-e2-cp1.md
   - shared/interfaces/reviews/feat-cog4-w6-e3-cp1.md
+  # the landing wave's own FW-019 batch proof (added in the same commit that
+  # creates it — the phase-3 precedent: the wave-4 cp3 artifact rode the
+  # phase-3 manifest the same way):
+  - shared/interfaces/reviews/feat-cog4-w6-cp1.md
   # the frozen post-implementation review (§15 lands it at landing; excluded
   # from the review-scope digest, so it is the one remove path allowed absent)
   - shared/interfaces/reviews/cognitive-core-phase-4-review.md

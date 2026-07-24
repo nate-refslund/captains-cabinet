@@ -141,6 +141,9 @@ EXPECTED_SCOPE = frozenset({
     # e4 was sub-threshold — no artifact exists)
     "shared/interfaces/reviews/feat-cog4-w6-e2-cp1.md",
     "shared/interfaces/reviews/feat-cog4-w6-e3-cp1.md",
+    # remove — the landing wave's own FW-019 batch proof (same-commit with
+    # its creation; the phase-3 wave-4 cp3 precedent)
+    "shared/interfaces/reviews/feat-cog4-w6-cp1.md",
     # restore_from_baseline (the extended files)
     "cabinet/scripts/cog2-import-gate.py",
     "cabinet/config/cognitive-architecture-contract.yml",
