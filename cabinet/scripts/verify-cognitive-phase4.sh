@@ -11,12 +11,15 @@
 # here (each has its own verify twin). This gate is COG-4-scoped; the composed
 # enduring-architecture gate below is the cross-phase spine.
 #
-# INTERIM NOTE (W6-e1 landing): until the LANDING integrator performs the §13
-# corpus surgery, test_cog4_measurement.py::test_verify_twin_arm fails BY
-# DESIGN the moment this file exists (its companion assertion is the designed
-# flip signal; the retired arm keeps asserting this file consumes
-# COG4_ENFORCE_BOUND). Post-surgery the battery is green — this note describes
-# the unit-branch state only, never a reason to skip the battery.
+# INTERIM NOTE (W6-e3 landing): until the LANDING integrator performs the §13
+# corpus surgery, TWO test_cog4_measurement.py arms fail BY DESIGN now that the
+# §10 surface has landed — test_verify_twin_arm (this file consumes
+# COG4_ENFORCE_BOUND) and test_real_pilot_measurement_arm (cog4-measure.py + the
+# S0 baseline landed). Both companion assertions are the designed flip signals;
+# the retired arms bind the real twin-consumes-flag + real-pilot bounds. W6-e3
+# pre-proves BOTH out-of-band, GREEN, in test_cog4_measure_baseline.py (mirrors
+# test_cog4_parity_record.py). Post-surgery the battery is green — this note
+# describes the unit-branch state only, never a reason to skip the battery.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
@@ -30,23 +33,19 @@ if [ -n "$(git status --porcelain)" ]; then
   git status --porcelain >&2; exit 1
 fi
 # §10 armed-mode leg (N6, MR2 — the anti-phantom arm in test_cog4_measurement.py
-# keys on THIS consumer): COG4_ENFORCE_BOUND arms the wall-clock tripwire + the
-# real-pilot bound assertions. The cog4-measure CLI + the S0 baseline artifact
-# land in W6-e3 — until they exist, arming would assert bounds no artifact
-# backs, so the leg SKIPS WITH A LOUD NOTE instead of arming. RETIREMENT
-# CONDITION: self-retiring — the conditional flips to armed the commit
-# cabinet/scripts/cog4-measure.py lands (no edit here); the battery's own
-# vacuity arm REDs at that same commit until the integrator retires it, so the
-# skip cannot silently persist.
-if [ -f "cabinet/scripts/cog4-measure.py" ]; then
-  export COG4_ENFORCE_BOUND=1
-  echo "[cog4-verify] N6 armed: COG4_ENFORCE_BOUND=1 (cog4-measure.py present; wall-clock tripwire + real-pilot bounds asserted)"
-else
-  echo "[cog4-verify] NOTE — cabinet/scripts/cog4-measure.py absent (lands W6-e3): the"
-  echo "[cog4-verify] NOTE — COG4_ENFORCE_BOUND armed leg is SKIPPED; the deterministic"
-  echo "[cog4-verify] NOTE — proxies (activation counts, budget units) stay ALWAYS-ON in"
-  echo "[cog4-verify] NOTE — the battery (§10.5). Retires itself when the measure CLI lands."
-fi
+# keys on THIS consumer): the cog4-measure CLI + the S0 baseline artifact LANDED
+# in W6-e3, so COG4_ENFORCE_BOUND is ARMED LIVE (e1's file-existence deferral is
+# discharged — the same-commit armed-consumer law, §10.3). The export arms the
+# wall-clock tripwire in the pytest battery below; this leg additionally runs the
+# REAL measurement check against the tracked S0 baseline (deterministic proxies
+# EXACT always-on; wall-clock p95 <= the floor-aware bound when armed). A
+# regression fails the gate here, LOUD. (test_cog4_measurement.py's two vacuity
+# arms RED by design until the integrator's §13 corpus surgery — pre-proven
+# GREEN out-of-band in test_cog4_measure_baseline.py.)
+export COG4_ENFORCE_BOUND=1
+python3.12 cabinet/scripts/cog4-measure.py --check \
+  --baseline-file cabinet/scripts/tests/fixtures/cog4/cog4-measure-baseline-2026-07-24.json
+echo "[cog4-verify] N6 armed: COG4_ENFORCE_BOUND=1 (real-pilot proxies EXACT + wall-clock tripwire vs the S0 baseline)"
 # Frozen-review binding (§15): the integrator FREEZES the review at landing. If
 # it is not yet present, SKIP-with-loud-note (do NOT block) — the review-to-bytes
 # binding activates once the review lands (the phase-3 precedent: the twins land

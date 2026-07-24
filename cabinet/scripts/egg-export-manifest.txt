@@ -157,6 +157,14 @@ delete cabinet/scripts/verify-cognitive-phase4.sh
 # out with the rest of docs/plans (R145).
 delete cabinet/scripts/cognitive-phase4-review-scope.py
 delete cabinet/scripts/cognitive-phase4-rollback-rehearsal.py
+# COG-4 W6 e3 landing 2026-07-24: the §10 measurement pre-prove bridge is the
+# same class — it BINDS the verify twin (deleted just above) + the S0 baseline,
+# proving out-of-band GREEN what the integrator's corpus surgery will assert.
+# The twin it references never ships, so this build-time bridge never ships;
+# the enduring §10 gate is the corpus test_cog4_measurement.py (rides the egg,
+# binds the baseline below). The measure CLI + the tracked baseline ride the
+# egg (expect-present below).
+delete cabinet/scripts/tests/test_cog4_measure_baseline.py
 delete docs/runbooks/egg-export-2026-07-10.md
 # PC-C launch-kit privacy (integration ruling 2026-07-10): docs/launch/ is
 # CG-7 PER-ITEM publication material (Show HN draft, business-model proposal,
@@ -503,6 +511,13 @@ expect-present cabinet/config/organs/judge-calibration.yml
 expect-present cabinet/config/organs/prediction-calibration.yml
 expect-present cabinet/config/organs/preference-pairs.yml
 expect-present cabinet/config/organs/world-census.yml
+# COG-4 W6 e3 landing 2026-07-24 (the cog4-parity-record precedent): the §10
+# latency/cost measurement CLI is an enduring scheduler-side CLI (rides the egg
+# with its siblings); its dated S0 baseline artifact is the tracked phase
+# record the corpus test_cog4_measurement.py real-pilot arm binds — an egg
+# missing it would break that shipped gate, so both are pinned present.
+expect-present cabinet/scripts/cog4-measure.py
+expect-present cabinet/scripts/tests/fixtures/cog4/cog4-measure-baseline-2026-07-24.json
 # R167: dropped from the plans-archive keep-list (see R167 above) — the
 # coupling census now archives with the rest of docs/plans instance history.
 expect-absent docs/plans/source-adapter-boundary-2026-07-05.md

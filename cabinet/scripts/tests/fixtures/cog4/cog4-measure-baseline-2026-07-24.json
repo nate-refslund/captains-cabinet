@@ -1,0 +1,36 @@
+{
+  "date": "2026-07-24",
+  "measure_definition": {
+    "proxies": "EXACT tolerance \u2014 measured > baseline is a regression",
+    "samples": 25,
+    "wall_clock": "measured tripwire (env-armed, declared skips) \u2014 bound = max(p95*1.25, p95+5s) for sub-10s rows"
+  },
+  "note": "S0 baseline (contract \u00a710.1) \u2014 FROZEN. proxies are exact deterministic reproductions of the composed-manifest schedule; wall_clock_p95_s are the frozen S0 per-wake PLANNING wall-clock measurements (host-measured, `--mode plan`); the armed check (COG4_ENFORCE_BOUND=1) compares a FRESH p95 to wall_clock_bound(baseline), never re-derives it.",
+  "pilot_organs": [
+    "charter-shadow",
+    "judge-calibration",
+    "prediction-calibration",
+    "preference-pairs",
+    "world-census"
+  ],
+  "proxies": {
+    "activations": 5,
+    "activations_by_capability": {
+      "census/rooms.count": 1,
+      "charter/shadow.measure": 1,
+      "judge/agreement.measure": 1,
+      "prediction/brier.measure": 1,
+      "preference/corrections.mine": 1
+    },
+    "budget_units_total": 5
+  },
+  "s0_sha": "b4bc2c34bc5cc5dadd23b277a530ef03d8846ad1",
+  "schema": "cog4-measure-baseline/v1",
+  "wall_clock_p95_s": {
+    "charter-shadow": 0.0010573328472673893,
+    "judge-calibration": 0.0013286671601235867,
+    "prediction-calibration": 0.0010652500204741955,
+    "preference-pairs": 0.0010248329490423203,
+    "world-census": 0.0010020826011896133
+  }
+}
