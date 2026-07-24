@@ -3375,11 +3375,11 @@ entries:
     class: "additive"
     lane: "alpha-additive"
     wave: "-"
-    status: "todo"
+    status: "in-flight"
     gate_cmd: "phase-specific reviewed plan must pass real-corpus minimums plus known-bad/good, judge-only, proxy-overfit, leakage, escape, nondeterminism, corruption, lineage, and cost simulations"
-    note: "Not implemented. No league opens on synthetic-only evidence; trajectories are observation-only, arenas have no live credentials/writes, and the holdout exposes only oracle-attested aggregate receipts."
+    note: "Not implemented. No league opens on synthetic-only evidence; trajectories are observation-only, arenas have no live credentials/writes, and the holdout exposes only oracle-attested aggregate receipts. Contract of record: docs/plans/cognitive-core-phase-5-contract-2026-07-24.md (premise-check wf_fc493c16-a6a READY-TO-PLAN + attack UPHOLD-with-corrections; four-lens panel + rev-1 + independent MF-verify LAND)."
     rollback: "no-op until implementation starts; future Foundry remains unable to mutate live champions and its archive/pointers require independently rehearsed rollback"
-    last_update: "2026-07-19"
+    last_update: "2026-07-24"
   - id: "COG-6"
     title: "Evolutionary Foundry Phase 6 — atomic champion membrane, canary, breaker, earned promotion, and instant rollback"
     class: "additive"
@@ -3435,3 +3435,16 @@ entries:
     gate_cmd: "Captain sudo-unlock window: lock state re-verified fresh (germline-lock.sh status + ls -lO on both files) immediately before the edit -> sudo germline-lock.sh unlock -> apply the proposal's edit pair (schema: organ kind + fourteen organ-contract fields + journal:<id> undo grammar; validate-extension.sh: integer branch + required-when-organ ORGAN BLOCK) -> proposal §4 battery green (organ fixture OK on BOTH validator paths, named mutants RED, channel manifests unchanged-valid, AX suite + amendment lint green) -> SAME-DAY sudo germline-lock.sh lock + status + verify in the same session"
     note: "Filed 2026-07-23 AT COG-4 CONTRACT LANDING (maximum lead time — contract §4.5, MF-G1; NAMED Captain sudo-unlock handback, non-grantable). Proposal doc docs/proposals/germline-amendment-extension-manifest-organ-2026-07-23.md carries the COMPLETE proposed edit text for BOTH germline files (framework/schemas/extension-manifest.schema.json: kind gains organ + the §4.2 organ-contract fields incl. domain_operations namespaced ids, descriptor, freshness_needs, starvation_bound + undo grammar journal:<id>, schema STAYS draft-07 with additionalProperties:false; cabinet/scripts/validate-extension.sh: hand-rolled interpreter gains integer branch + the ORGAN BLOCK on both validator paths) plus the one-revert rollback, itself Captain-windowed (contract §16 code inverse). Contract of record: docs/plans/cognitive-core-phase-4-contract-2026-07-23.md §4.5 (route) / §4.2 (fields) / §4.3 (validation mechanics + mutants). PARK fallback: W4+ units build against the proposed text; if the window has not opened when W4 lands, every dependent organ-validation unit PARKS with a dated marker — schg is NEVER worked around (a recorded handback beats a workaround)."
     last_update: "2026-07-23"
+  # --- CG-34 COG-5 holdout-freeze germline amendment row (appended
+  #     2026-07-24 at COG-5 contract landing, per the 2026-07-07
+  #     full-autonomy grant + the Captain 2026-07-20 cognitive-masterplan
+  #     grant; the window itself is Captain-only, non-grantable) ---
+  - id: "CG-34"
+    title: "COG-5 holdout freeze — immutable-core.yml Ring-0 listing (framework/policies dir-cover)"
+    class: "germ-keep"
+    lane: "captain-gated"
+    wave: "CG"
+    status: "captain-gated"
+    gate_cmd: "Captain sudo-unlock window (BATCHABLE with the CG-33 extension-gate window — HANDBACKS item 19 — at the Captain's convenience: one window, the reviewed edits together, same-day relock): lock state re-verified fresh (germline-lock.sh status + ls -lO on framework/policies/) immediately before the edit -> sudo germline-lock.sh unlock -> apply the proposal's ONE files-class listing (framework/evolution/holdout_gen.py + pending: [germline-lock, hook-s5, hook-s5b, base-safety]) to framework/policies/immutable-core.yml -> proposal §7 gates A-D green (yaml parse + lockstep meta-test with the four pending xfails, gate-S0 refusal probe + non-listed-sibling negative control, amendment-doc lint) -> SAME-DAY sudo germline-lock.sh lock + status + verify in the same session"
+    note: "Filed 2026-07-24 AT COG-5 CONTRACT LANDING (maximum lead time — contract §7.5.1, MR1; NAMED Captain sudo-unlock handback, non-grantable). Proposal doc docs/proposals/germline-amendment-immutable-core-holdout-2026-07-24.md carries the COMPLETE proposed edit text: EXACTLY ONE files-class entry framework/evolution/holdout_gen.py with pending: flags for all four enforcement lists (SOV-C8 lockstep, the axes-amendment precedent) added to framework/policies/immutable-core.yml — germline by DIR-COVER (germline-lock.sh DIRS :145 whole-dir -R; the file's own EDIT DISCIPLINE header). Gate-S0 refusal (touches_ring0, gate.py:347) binds from the LISTING alone — every class, not just the locked ones — and does NOT wait on the pending wirings: this is Stage B of the contract §7.4 STAGED freeze truth ((iii)+(iv) true from the window onward, never earlier; the in-phase Stage-A interim posture — content-pin + invisibility rows + egg exclusion + sole-reader oracle — is honestly NOT Ring-0). Plus the one-revert rollback, itself Captain-windowed (a germline edit both ways — contract §16). Contract of record: docs/plans/cognitive-core-phase-5-contract-2026-07-24.md §7.4/§7.5. PARK fallback: W5+ freeze-verification units build against the proposed text; if the window has not opened when they land, each PARKS with a dated marker and the arming record carries holdout_freeze: pending-captain-window — schg is NEVER worked around (a recorded handback beats a workaround)."
+    last_update: "2026-07-24"
