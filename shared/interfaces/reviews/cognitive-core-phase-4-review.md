@@ -21,13 +21,28 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: d6625b82fc969ce9958e3eebcb96b58c4c6483cf5e3f14fb6cce8908f086ac6e
-(Binds the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE deliberately excludes the
-e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests, their out-of-band tests, the
-FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of the §16 rollback manifest +
-EXPECTED_SCOPE in the same commit — `resolve_scope()` fails closed on any one-sided edit, and the digest is
-re-bound at landing per the phase-3 precedent. The e2/e3 surfaces themselves WERE fully reviewed by this panel;
-only the mechanical digest scope awaits the pair-extension.)
+Reviewed-Scope-Digest: 3ce64a36b37fffd5f1004f25e5282435a386610df2ac2ccbae6688f03e853538
+(As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
+deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
+their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
+the §16 rollback manifest + EXPECTED_SCOPE in the same commit — `resolve_scope()` fails closed on any
+one-sided edit, and the digest is re-bound at landing per the phase-3 precedent. The e2/e3 surfaces
+themselves WERE fully reviewed by this panel; only the mechanical digest scope awaited the pair-extension.)
+(Re-bound at the W6 landing, 2026-07-24 — the cp3 precedent, a MECHANICAL-DELTA re-bind, not a restamp.
+The panel's original digest was d6625b82fc969ce9958e3eebcb96b58c4c6483cf5e3f14fb6cce8908f086ac6e, binding
+tip f62094f7. Four landing commits moved it: (1) 48028427 committed THIS artifact (excluded from the digest
+but named in the manifest remove list); (2) 93b26f74 the §13 corpus surgery — the panel's OWN named
+discharge of the 5 designed flip-arms, each retired-live per its retirement text, pre-proven green
+out-of-band by the panel-reviewed test_cog4_measure_baseline.py + test_cog4_organ_runner_real.py; (3)
+eefc9c11 the §16/EXPECTED_SCOPE pair-extension, which pulled the ALREADY-PANEL-REVIEWED e2/e3 surfaces into
+the digest scope (+ the P5 egg tidy rows; the L61 draft-lane plist DELETION declared as
+out_of_phase_in_range residue — a deleted-at-HEAD path cannot be digest-bound); (4) 5d1547c0 the wave
+FW-019 batch proof + its own pair rows. Mechanical deltas only — ZERO behavior bytes changed beyond the
+§13 corpus surgery itself. Re-verified on the final bytes: full battery armed 690 passed 1 declared skip /
+unarmed 689 passed 2 declared skips (ZERO failures — the designed interim discharged); rollback rehearsal
+PASS with the compose-revert arm ARMED (the 12-file sibling residue resolved); egg battery 58 passed 1
+declared skip; verify-cognitive-phase4.sh full green end-to-end after this re-bind. The panel verdict
+stands.)
 
 ---
 
