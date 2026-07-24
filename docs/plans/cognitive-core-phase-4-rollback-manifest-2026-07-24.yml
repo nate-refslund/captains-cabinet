@@ -58,6 +58,12 @@ runtime_inverses:
 # edits) are DELIBERATELY absent — the landing integrator extends this
 # manifest AND the review-scope twin in the same commit (the drift check
 # forces both together); see rehearsal.sibling_landing_note.
+# FOLDED at the W6 landing 2026-07-24 (the paragraph above is history): the
+# e2/e3 sibling rows sit below; the S0 baseline artifact rides the
+# fixtures/cog4 DIR entry (real footprint — the e3 builder placed it there);
+# NO tracked runner plist exists (generate-plists renders it at runtime, so
+# there is nothing to remove — real footprint only); the e2 draft-lane plist
+# DELETION is declared under out_of_phase_in_range note (c).
 remove:
   # framework surface (DIRS — wholesale):
   - framework/projection
@@ -133,6 +139,20 @@ remove:
   - cabinet/scripts/cognitive-phase4-rollback-rehearsal.py
   - shared/interfaces/reviews/feat-cog4-w6-e1-cp1.md
   - docs/plans/cognitive-core-phase-4-rollback-manifest-2026-07-24.yml
+  # W6-e2 compose surfaces (folded at the W6 landing 2026-07-24 per
+  # sibling_landing_note — the organ manifests DIR is wholesale, like the
+  # framework dirs above):
+  - cabinet/config/organs
+  - cabinet/scripts/cog4-organ-runner.py
+  - cabinet/scripts/tests/test_cog4_organ_runner_real.py
+  # W6-e3 measurement surfaces (folded at the W6 landing 2026-07-24; the
+  # tracked S0 baseline artifact rides the fixtures/cog4 DIR entry above):
+  - cabinet/scripts/cog4-measure.py
+  - cabinet/scripts/tests/test_cog4_measure_baseline.py
+  # sibling W6 FW-019 batch proofs (folded at the W6 landing 2026-07-24;
+  # e4 was a sub-threshold commit — no artifact exists, real footprint only):
+  - shared/interfaces/reviews/feat-cog4-w6-e2-cp1.md
+  - shared/interfaces/reviews/feat-cog4-w6-e3-cp1.md
   # the frozen post-implementation review (§15 lands it at landing; excluded
   # from the review-scope digest, so it is the one remove path allowed absent)
   - shared/interfaces/reviews/cognitive-core-phase-4-review.md
@@ -195,8 +215,9 @@ retain_append_only:
 
 # --- non-COG-4 work landed INSIDE the closed range: retained on rollback ------
 # The range baseline_sha..done_flip contains two commit families that are NOT
-# phase footprint; a COG-4 rollback keeps them (they appear in the rehearsal's
-# inverse diff by design — the honest closed-range accounting):
+# phase footprint, plus ONE declared deletion residue (c); a COG-4 rollback
+# keeps them (they appear in the rehearsal's inverse diff by design — the
+# honest closed-range accounting):
 # (a) the WR rider lane (commit 0d8a74d4; contract §18 — zero COG-4
 #     dependency, reads the SHIPPED COG-3 serve surface, must not gate any
 #     COG-4 wave), and
@@ -205,6 +226,17 @@ retain_append_only:
 #     phase-3 rehearsal anchor + the phase-3 review re-freeze — reverting
 #     these would RE-OPEN the open-range defect they fixed (BACKLOG
 #     :1551-1555); a rollback never un-fixes a prior phase.
+# (c) the W6-e2 L61 draft-lane retirement's hand-made plist DELETION (added at
+#     the W6 landing 2026-07-24): the retirement is EVIDENCE-GATED (L61
+#     bundle, feat-cog4-w6-e2-cp1.md §4) independent of scheduler correctness,
+#     so a COG-4 code rollback RETAINS the deletion. Coherent by construction:
+#     the fleet ROW rides the services.yml restore and was `disabled: true` at
+#     baseline — a disabled row derives no watchdog floor and loads no plist,
+#     so the restored tree needs no plist file. Re-hatching the draft lane is
+#     an L61-evidence decision, never an automatic rollback effect. (The plist
+#     cannot ride restore_from_baseline: the review-scope digest binds every
+#     scope path to a committed HEAD blob, and a deleted-at-HEAD path has
+#     none — declared residue is the honest mechanics.)
 out_of_phase_in_range:
   - path: cabinet/scripts/cog3-verdict-inbox.py
     provenance: 0d8a74d4 WR rider R1
@@ -263,6 +295,9 @@ out_of_phase_in_range:
   - path: shared/interfaces/reviews/cognitive-core-phase-3-review.md
     provenance: cee6741e W1 phase-3 re-freeze (digest re-bound)
     rollback_action: retain
+  - path: cabinet/launchd/com.cabinet.draft-lane.plist
+    provenance: b4bc2c34 W6-e2 L61 draft-lane retirement — DELETION residue, see section note (c)
+    rollback_action: retain the deletion (evidence-gated retirement survives a COG-4 code rollback)
 
 # --- surfaces COG-4 promised NOT to touch (§16 carve-out: the Phase-0∪1∪2∪3
 # protected union MINUS cabinet/services.yml + the COG-4-specific pins) -------
@@ -345,7 +380,14 @@ rehearsal:
     remove) + the test_egg_export.py phase-4 tuple (already covered by
     restore). Until then the rehearsal's strict inverse-diff equality IS the
     completeness ratchet: an un-extended manifest fails loudly on the first
-    sibling residue.
+    sibling residue. DISCHARGED at the W6 landing 2026-07-24: every listed
+    surface is folded into the remove list + EXPECTED_SCOPE in the same
+    commit, with three real-footprint deltas from this note's anticipations
+    — the S0 baseline artifact rides the fixtures/cog4 DIR remove entry
+    (the e3 builder placed it there); NO tracked runner plist exists
+    (generate-plists renders it at runtime — nothing to remove); the e2
+    draft-lane plist DELETION rides out_of_phase_in_range note (c) (a
+    deleted-at-HEAD path cannot be a digest-bound scope entry).
   compose_round_trip: >-
     the fleet inverse arm (§16) proves one compose-revert round-trip:
     VACUITY-ARMED until the W6-e2 compose lands — RETIREMENT CONDITION: the

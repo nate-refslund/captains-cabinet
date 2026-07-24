@@ -518,6 +518,12 @@ expect-present cabinet/config/organs/world-census.yml
 # missing it would break that shipped gate, so both are pinned present.
 expect-present cabinet/scripts/cog4-measure.py
 expect-present cabinet/scripts/tests/fixtures/cog4/cog4-measure-baseline-2026-07-24.json
+# COG-4 W6 landing 2026-07-24 (frozen-review P5 tidy): the two remaining cog4
+# CLIs pinned expect-present for consistency with the sibling rows above —
+# they already ship by default; this makes the promise explicit (the snapshot
+# builder + schedule projector, §6/§7 scheduler front-half).
+expect-present cabinet/scripts/cog4-snapshot.py
+expect-present cabinet/scripts/cog4-schedule.py
 # R167: dropped from the plans-archive keep-list (see R167 above) — the
 # coupling census now archives with the rest of docs/plans instance history.
 expect-absent docs/plans/source-adapter-boundary-2026-07-05.md

@@ -28,6 +28,10 @@ and e3 measurement (cog4-measure.py, S0 baseline artifact) surfaces land in
 sibling units of this same wave. The landing integrator extends the manifest
 AND EXPECTED_SCOPE here in the SAME commit — resolve_scope() fails closed on
 any one-sided edit ("scope drift"), which is the designed forcing function.
+DISCHARGED at the W6 landing 2026-07-24: the sibling rows sit in both sets
+below (the S0 baseline artifact rides the fixtures/cog4 DIR entry; no tracked
+runner plist exists; the e2 draft-lane plist DELETION is manifest
+out_of_phase_in_range residue — deleted-at-HEAD paths cannot be digest-bound).
 
 Digest = SHA-256 over sorted newline-joined "<mode> <sha> <path>" from
 `git ls-tree -r HEAD` (committed tree; mode-bearing; never working tree or index).
@@ -124,6 +128,19 @@ EXPECTED_SCOPE = frozenset({
     "cabinet/scripts/cognitive-phase4-rollback-rehearsal.py",
     "shared/interfaces/reviews/feat-cog4-w6-e1-cp1.md",
     "docs/plans/cognitive-core-phase-4-rollback-manifest-2026-07-24.yml",
+    # remove — W6-e2 compose + W6-e3 measurement sibling surfaces (folded at
+    # the W6 landing 2026-07-24 per the manifest's sibling_landing_note; the
+    # organs DIR is wholesale; the S0 baseline artifact rides the
+    # fixtures/cog4 DIR entry above)
+    "cabinet/config/organs",
+    "cabinet/scripts/cog4-organ-runner.py",
+    "cabinet/scripts/tests/test_cog4_organ_runner_real.py",
+    "cabinet/scripts/cog4-measure.py",
+    "cabinet/scripts/tests/test_cog4_measure_baseline.py",
+    # remove — sibling W6 FW-019 batch proofs (folded at the W6 landing;
+    # e4 was sub-threshold — no artifact exists)
+    "shared/interfaces/reviews/feat-cog4-w6-e2-cp1.md",
+    "shared/interfaces/reviews/feat-cog4-w6-e3-cp1.md",
     # restore_from_baseline (the extended files)
     "cabinet/scripts/cog2-import-gate.py",
     "cabinet/config/cognitive-architecture-contract.yml",
