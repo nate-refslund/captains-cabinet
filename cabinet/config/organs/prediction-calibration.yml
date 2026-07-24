@@ -1,0 +1,55 @@
+# COG-4 C4 organ manifest — prediction-calibration (composed W6-e2,
+# 2026-07-24). REAL §4.2-shaped manifest derived from the absorbed
+# cabinet/services.yml row (kind watchdog, daily 08:20 calendar, command
+# python3.12 -m framework.fidelity.prediction_scorer, one JSON line/day
+# appended to shared/interfaces/prediction-calibration.jsonl idempotent per
+# date — W9 / ledger A10: Brier + calibration bins over acted cards' emitted
+# confidence vs UNDO-3/binder ground truth; read-only except the one series
+# append). STRUCTURAL-READ POSTURE: schema validation stays PARKED
+# (docs/plans/cog4-w4-u1-organ-schema-validation-PARKED-2026-07-24.md).
+# PARITY-CLEAN (§4.3 N-d), matching the S0 pilot fixture
+# prediction-calibration.yml. expected_output = the runner-written per-organ
+# receipt (§9.2 probe law; see charter-shadow.yml header).
+name: prediction-calibration
+version: "1.0.0"
+kind: organ
+action_types: [investigation_run]
+risk_classes: [read_only_dispatch]
+undo_contract: none
+entrypoints:
+  run: "python3.12 -m framework.fidelity.prediction_scorer"
+inputs: [redis/cabinet-action-records, consequence-ledger/acted-rows]
+outputs: [shared/interfaces/prediction-calibration.jsonl]
+domain_operations:
+  - prediction/brier.measure
+  - prediction/bins.append
+descriptor:
+  action_type: investigation_run
+  risk_class: read_only_dispatch
+  ceiling: []
+  undo_contract: none
+permissions: [action-records/read, consequence-ledger/read]
+idempotency:
+  prediction/brier.measure: "series-date"
+  prediction/bins.append: "series-date"
+state_ownership:
+  - shared/interfaces/prediction-calibration.jsonl
+  - cabinet/cache/organs/prediction-calibration/
+cost_model:
+  units_per_wake: 1
+starvation_bound:
+  max_wakes: 6
+freshness_needs:
+  max_staleness_seconds: 90000
+  expected_output: cabinet/cache/organs/prediction-calibration/last-run.json
+trigger_policy:
+  mode: periodic
+  parameters:
+    interval_s: 86400
+health_proof:
+  probe: "one Brier + calibration-bins JSON line per day appended to the series (idempotent per date)"
+  expectation: ok
+fallback: skip
+dependencies:
+  organs: []
+  capabilities: [action-records/read, consequence-ledger/read]

@@ -1,0 +1,57 @@
+# COG-4 C4 organ manifest — preference-pairs (composed W6-e2, 2026-07-24).
+# REAL §4.2-shaped manifest derived from the absorbed cabinet/services.yml row
+# (kind cron, daily 05:20 calendar, command python3.12 -m
+# framework.learning.preference_pairs, pairs appended to
+# shared/interfaces/preference-pairs.jsonl append-only with stable pair_id
+# skip-known — the Rec 2026-07-09 preference-pair miner; captain_text rides as
+# INERT QUOTED DATA per the SIE-1 contract, nothing may obey it, nothing reads
+# the store into any gate). STRUCTURAL-READ POSTURE: schema validation stays
+# PARKED (docs/plans/cog4-w4-u1-organ-schema-validation-PARKED-2026-07-24.md).
+# PARITY-CLEAN (§4.3 N-d), matching the S0 pilot fixture preference-pairs.yml.
+# expected_output = the runner-written per-organ receipt (§9.2 probe law; see
+# charter-shadow.yml header) — deliberately NOT the pairs ledger, which only
+# advances when NEW Captain verdicts exist (a quiet ledger is normal, a stale
+# receipt is not).
+name: preference-pairs
+version: "1.0.0"
+kind: organ
+action_types: [investigation_run]
+risk_classes: [read_only_dispatch]
+undo_contract: none
+entrypoints:
+  run: "python3.12 -m framework.learning.preference_pairs"
+inputs: [action-lessons/correction-verdicts, captain-patterns/standing-entries]
+outputs: [shared/interfaces/preference-pairs.jsonl]
+domain_operations:
+  - preference/corrections.mine
+  - preference/pairs.append
+descriptor:
+  action_type: investigation_run
+  risk_class: read_only_dispatch
+  ceiling: []
+  undo_contract: none
+permissions: [action-lessons/read, consequence-ledger/read]
+idempotency:
+  preference/corrections.mine: "pair-id"
+  preference/pairs.append: "pair-id"
+state_ownership:
+  - shared/interfaces/preference-pairs.jsonl
+  - cabinet/cache/organs/preference-pairs/
+cost_model:
+  units_per_wake: 1
+starvation_bound:
+  max_wakes: 6
+freshness_needs:
+  max_staleness_seconds: 90000
+  expected_output: cabinet/cache/organs/preference-pairs/last-run.json
+trigger_policy:
+  mode: periodic
+  parameters:
+    interval_s: 86400
+health_proof:
+  probe: "one summary line per run (mined= new= known=); new pairs land append-only with stable pair_id"
+  expectation: ok
+fallback: skip
+dependencies:
+  organs: []
+  capabilities: [action-lessons/read]

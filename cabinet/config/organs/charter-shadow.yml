@@ -1,0 +1,59 @@
+# COG-4 C4 organ manifest — charter-shadow (composed W6-e2, 2026-07-24).
+# REAL §4.2-shaped manifest derived from the absorbed cabinet/services.yml row
+# (kind cron, daily 05:10 calendar, command python3.12 cabinet/scripts/
+# charter-shadow.py, series shared/interfaces/charter-shadow-series.jsonl,
+# idempotent per date). STRUCTURAL-READ POSTURE: schema validation of organ
+# manifests stays PARKED (docs/plans/cog4-w4-u1-organ-schema-validation-
+# PARKED-2026-07-24.md — the CG-33 germline window is unopened); loaders check
+# structure only and never claim schema validity. PARITY-CLEAN by construction:
+# declared risk_class + ceiling equal the matrix derivation for the declared
+# action_type (§4.3 N-d), matching the S0 pilot fixture
+# cabinet/scripts/tests/fixtures/cog4/pilot/charter-shadow.yml.
+# freshness_needs.expected_output is the runner-written per-organ receipt
+# (cabinet/cache/organs/<name>/last-run.json — the W2 floor-corpus shape):
+# rewritten on every HEALTHY completion, so a silent organ inside a live
+# runner still trips its own floor (§9.2 probe law). The real series artifact
+# stays declared under outputs.
+name: charter-shadow
+version: "1.0.0"
+kind: organ
+action_types: [investigation_run]
+risk_classes: [read_only_dispatch]
+undo_contract: none
+entrypoints:
+  run: "python3.12 cabinet/scripts/charter-shadow.py"
+inputs: [org-events/policy.shadow-decision]
+outputs: [shared/interfaces/charter-shadow-series.jsonl]
+domain_operations:
+  - charter/shadow.measure
+  - charter/series.append
+descriptor:
+  action_type: investigation_run
+  risk_class: read_only_dispatch
+  ceiling: []
+  undo_contract: none
+permissions: [org-events/read]
+idempotency:
+  charter/shadow.measure: "series-date"
+  charter/series.append: "series-date"
+state_ownership:
+  - shared/interfaces/charter-shadow-series.jsonl
+  - cabinet/cache/organs/charter-shadow/
+cost_model:
+  units_per_wake: 1
+starvation_bound:
+  max_wakes: 6
+freshness_needs:
+  max_staleness_seconds: 90000
+  expected_output: cabinet/cache/organs/charter-shadow/last-run.json
+trigger_policy:
+  mode: periodic
+  parameters:
+    interval_s: 86400
+health_proof:
+  probe: "one charter-arm vs engine-arm agreement JSON line per day appended to the series (idempotent per date)"
+  expectation: ok
+fallback: skip
+dependencies:
+  organs: []
+  capabilities: [org-events/read]

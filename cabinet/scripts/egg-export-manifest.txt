@@ -492,6 +492,17 @@ expect-present cabinet/scripts/cog4-dispatch-shadow.py
 # test surface (regen-gated by cabinet/scripts/tests/test_cog4_parity_record
 # .py), packaged with the tests tree it anchors.
 expect-present cabinet/scripts/tests/fixtures/cog4/cog4-parity-record.json
+# COG-4 W6 e2 landing 2026-07-24 (the W5 precedent): the composed wake vehicle
+# ships with the fleet it serves — the cabinet/services.yml cog4-organ-runner
+# row names the CLI + the five tracked organ manifests it loads (§9.5 declared
+# association; §9.2 per-organ floors derive from these manifests). An egg
+# missing any of them ships a broken fleet row, so all six are pinned present.
+expect-present cabinet/scripts/cog4-organ-runner.py
+expect-present cabinet/config/organs/charter-shadow.yml
+expect-present cabinet/config/organs/judge-calibration.yml
+expect-present cabinet/config/organs/prediction-calibration.yml
+expect-present cabinet/config/organs/preference-pairs.yml
+expect-present cabinet/config/organs/world-census.yml
 # R167: dropped from the plans-archive keep-list (see R167 above) — the
 # coupling census now archives with the rest of docs/plans instance history.
 expect-absent docs/plans/source-adapter-boundary-2026-07-05.md
