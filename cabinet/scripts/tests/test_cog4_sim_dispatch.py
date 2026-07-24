@@ -21,6 +21,17 @@ WHAT RUNS LIVE NOW vs WHAT IS SKIPPED (the W1-u2 mergeability idiom, §13):
     explicit RETIREMENT CONDITION in its docstring plus a companion absence
     assertion that goes RED the moment the CLI lands (§13: every vacuity guard
     carries its own retirement condition), so no skip can silently persist.
+    RETIREMENTS (integrator corpus surgery per §13 + the unit
+    contradictions[] routes, W5 landing 2026-07-24):
+    cabinet/scripts/cog4-dispatch-shadow.py landed (W5 x1, 7272db13) — all 10
+    TestRealDispatchCliArms companion absence assertions tripped RED as
+    designed and every arm is converted per its own RETIREMENT CONDITION: the
+    same scenario seeds and the same asserts, re-seeded onto REAL
+    kernel-shaped stores and run against the landed CLI (subprocess adapter
+    over its shadow-record output — `lib_cog4_dispatch_adapter`, a W5
+    test-side lib, not a sibling W2 corpus file, so L1111 self-containment
+    between parallel W2 units is intact). The fixture machinery, reference
+    tier and every biting mutant above stay LIVE and unchanged.
 
 SELF-CONTAINED BY LAW (LESSONS L1111): parallel W2 units never maintain shared
 pinned constants — all machinery, seeds and mutants live in this file; nothing
@@ -81,7 +92,11 @@ for _p in (str(_HERE), str(_REPO)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-# The not-yet-built real target surface (vacuity arms below).
+# The real-CLI adapter for the retired arms (W5 landing 2026-07-24 — module
+# docstring RETIREMENTS note; a W5 test-side lib, never a sibling W2 corpus).
+import lib_cog4_dispatch_adapter as A  # noqa: E402
+
+# The real target surface (landed W5 x1; bound by the retired arms below).
 _DISPATCH_CLI_REL = "cabinet/scripts/cog4-dispatch-shadow.py"
 _DISPATCH_CLI = _REPO / _DISPATCH_CLI_REL
 
@@ -1513,94 +1528,496 @@ class TestSevenPointThreeLimbOrder:
 
 
 # ===========================================================================
-# VACUITY ARMS — the real dispatch CLI (absent this phase; §13 law)
+# REAL-CLI ARMS — LIVE on the landed dispatcher (W5 landing 2026-07-24)
 # ===========================================================================
 
-def _absent_then_skip(sim_label, property_name):
-    """The W1-u2 idiom: the COMPANION absence assertion goes RED the moment the
-    CLI lands (so the skip cannot silently persist); until then the arm SKIPS
-    with its retirement condition."""
-    assert not _DISPATCH_CLI.exists(), (
-        f"{_DISPATCH_CLI_REL} has LANDED — retire this vacuity skip "
-        f"({sim_label}) and bind {property_name} to the real CLI per the "
-        "docstring RETIREMENT CONDITION (integrator move, §13)")
-    pytest.skip(f"VACUITY: {_DISPATCH_CLI_REL} absent this phase — {sim_label} "
-                f"is pinned via the live fixture machinery ({property_name}); "
-                "retire when the dispatch CLI lands.")
+def _real_seed(tmp_path, rows, manifests, *, snapshot=None,
+               live_overrides=None):
+    """The `_seed` shape onto the REAL kernel store (the retired arms' seam):
+    the SAME scenario content, built via the adapter's raw kernel-shaped
+    writer; the corpus fixture policy rides the adapter's
+    matrix_policy-shaped translation (wildcard verdict rows; undo_required ==
+    act_with_undo over a declared "none" undo_contract)."""
+    snapshot = snapshot or A.make_snapshot()
+    cache_dir = tmp_path / "cache" / "scheduler-real"
+    A.build_real_store(cache_dir, snapshot, rows)
+    live = A.make_live(snapshot, manifests, **(live_overrides or {}))
+    return cache_dir, live, manifests, A.fixture_policy()
+
+
+def _real_run(tmp_path, cache_dir, live, manifests, policy, **kw):
+    return A.run_cli(cache_dir, live, manifests, policy,
+                     tmp_path / "real-adapter", **kw)
 
 
 class TestRealDispatchCliArms:
-    """Each arm targets the not-yet-built `cabinet/scripts/cog4-dispatch-shadow.py`
-    (W5). RETIREMENT CONDITION (every test below): retire the skip when
-    cabinet/scripts/cog4-dispatch-shadow.py lands — bind the named _check_*
-    property to the real CLI (subprocess adapter over its shadow-record
-    output), so the same seeds/asserts/mutant-escapes run against the landed
-    dispatcher. The absence assertion is the tripwire that REDs on landing."""
+    # RETIRED vacuity skips, all 10 arms (integrator corpus surgery per §13 +
+    # the unit contradictions[] routes, W5 landing 2026-07-24): the guards'
+    # RETIREMENT CONDITION — "retire the skip when
+    # cabinet/scripts/cog4-dispatch-shadow.py lands — bind the named _check_*
+    # property to the real CLI (subprocess adapter over its shadow-record
+    # output), so the same seeds/asserts/mutant-escapes run against the landed
+    # dispatcher" — was discharged by W5 x1 (7272db13, the §7.3 dispatch-shadow
+    # CLI). The companion absence assertions (`_absent_then_skip`, deleted with
+    # the guards) tripped RED as designed; each arm body is now the documented
+    # activation: the SAME scenario seeds and the SAME asserts the reference
+    # tier above pins (sims 3/5/6/9/10/11/12/14/15 + the §7.3 order battery),
+    # re-seeded onto REAL kernel-shaped stores via `lib_cog4_dispatch_adapter`
+    # and run against the landed CLI. The mutant-escape negative controls stay
+    # where they always ran — against the reference variants above (a mutant is
+    # a reference divergence; the CLI is pinned by the positive properties).
+    # Pre-proven green out-of-band by test_cog4_dispatch_cli.py (W5 x1) before
+    # this surgery.
 
-    def test_real_cli_sim3_stale_organ(self):
-        """VACUITY — RETIREMENT CONDITION: retire when
-        cabinet/scripts/cog4-dispatch-shadow.py lands; bind _check_sim3 (§12
-        row 3) to the real CLI."""
-        _absent_then_skip("sim 3 (stale organ)", "_check_sim3")
+    def test_real_cli_sim3_stale_organ(self, tmp_path):
+        """LIVE (retired W5 landing): _check_sim3's seeds + asserts against
+        the real CLI (§12 row 3) — stale organ ⇒ refusal WITH the staleness
+        flag, NEVER would-dispatch; the fresh organ is unaffected."""
+        rows = [A.make_row("stale-organ", "collect"),
+                A.make_row("fresh-organ", "collect")]
+        manifests = {
+            "stale-organ": A.make_organ_manifest("stale-organ",
+                                                 max_staleness=3600),
+            "fresh-organ": A.make_organ_manifest("fresh-organ",
+                                                 max_staleness=3600)}
+        cache, live, manifests, policy = _real_seed(
+            tmp_path, rows, manifests,
+            live_overrides={"organ_output_age_seconds":
+                            {"stale-organ": 7200, "fresh-organ": 60}})
+        out = _real_run(tmp_path, cache, live, manifests, policy)
+        assert out.mode == "dispatch"
+        stale = _by_organ(out, "stale-organ")
+        assert stale["decision"] == "refused", stale
+        assert stale["staleness_flagged"] is True
+        assert stale["reason"].startswith("stale_organ:")
+        assert [r["organ"] for r in out.would_dispatch()] == ["fresh-organ"]
 
-    def test_real_cli_sim5_organ_crash(self):
-        """VACUITY — RETIREMENT CONDITION: retire when
-        cabinet/scripts/cog4-dispatch-shadow.py lands; bind the sim-5 fallback/
-        floor/exit-1 properties (§12 row 5) to the real CLI + the real floor
-        derivation."""
-        _absent_then_skip("sim 5 (organ crash)", "TestSim5OrganCrash properties")
+    def test_real_cli_sim5_organ_crash(self, tmp_path):
+        """LIVE (retired W5 landing): the sim-5 fallback/floor/exit-1
+        properties (§12 row 5) against the real CLI + the real
+        manifest-derived floors."""
+        rows = [A.make_row("crash-skip", "collect"),
+                A.make_row("crash-noop", "collect"),
+                A.make_row("crash-esc", "collect"),
+                A.make_row("healthy-organ", "collect")]
+        manifests = {
+            "crash-skip": A.make_organ_manifest("crash-skip",
+                                                fallback="skip"),
+            "crash-noop": A.make_organ_manifest("crash-noop",
+                                                fallback="safe_noop"),
+            "crash-esc": A.make_organ_manifest("crash-esc",
+                                               fallback="escalate"),
+            "healthy-organ": A.make_organ_manifest("healthy-organ")}
+        health = {
+            "crash-skip": {"probe_ran": False},                 # true crash
+            "crash-noop": {"probe_ran": True, "exit_code": 1},  # honest fail
+            "crash-esc": {"probe_ran": False},                  # true crash
+            "healthy-organ": {"probe_ran": True, "exit_code": 0}}
+        cache, live, manifests, policy = _real_seed(
+            tmp_path, rows, manifests,
+            live_overrides={"organ_health": health})
+        out = _real_run(tmp_path, cache, live, manifests, policy)
+        assert _by_organ(out, "crash-skip")["decision"] == "refused"
+        assert _by_organ(out, "crash-skip")["reason"] == \
+            "health_crashed:fallback_skip"
+        assert _by_organ(out, "crash-noop")["decision"] == "safe_noop"
+        assert _by_organ(out, "crash-esc")["decision"] == "escalation_flagged"
+        assert [r["organ"] for r in out.would_dispatch()] == ["healthy-organ"]
+        # the S0 exit-1 finding: RAN-and-exited-1 is `unhealthy` (positive
+        # evidence), never `crashed` (absence) — distinct in the record.
+        assert _by_organ(out, "crash-noop")["health"] == "unhealthy"
+        assert _by_organ(out, "crash-noop")["reason"] == \
+            "health_unhealthy:fallback_safe_noop"
+        assert _by_organ(out, "crash-skip")["health"] == "crashed"
+        # floors stay manifest-derived and health-INDEPENDENT (§12 row 5).
+        floors = {name: (m["freshness_needs"]["expected_output"],
+                         m["freshness_needs"]["max_staleness_seconds"])
+                  for name, m in manifests.items()}
+        assert set(floors) == {"crash-skip", "crash-noop", "crash-esc",
+                               "healthy-organ"}
 
-    def test_real_cli_sim6_dependency_failure(self):
-        """VACUITY — RETIREMENT CONDITION: retire when
-        cabinet/scripts/cog4-dispatch-shadow.py lands; bind _check_sim6 (§12
-        row 6) to the real CLI."""
-        _absent_then_skip("sim 6 (dependency failure)", "_check_sim6")
+    def test_real_cli_sim6_dependency_failure(self, tmp_path):
+        """LIVE (retired W5 landing): _check_sim6's seeds + asserts against
+        the real CLI (§12 row 6) — unavailable organ/capability dependencies
+        refuse with the explicit dependency in the reason; independent work
+        dispatches."""
+        rows = [A.make_row("dependent-organ", "aggregate",
+                           deps=("organ:upstream-organ",)),
+                A.make_row("cap-dependent", "fetch"),
+                A.make_row("independent", "collect")]
+        manifests = {
+            "dependent-organ": A.make_organ_manifest("dependent-organ"),
+            "cap-dependent": A.make_organ_manifest(
+                "cap-dependent", dependencies=("mcp:alpha-service",)),
+            "independent": A.make_organ_manifest("independent")}
+        cache, live, manifests, policy = _real_seed(
+            tmp_path, rows, manifests,
+            live_overrides={"organs_available":
+                            ["dependent-organ", "cap-dependent",
+                             "independent"],            # upstream ABSENT
+                            "capabilities_available": []})
+        out = _real_run(tmp_path, cache, live, manifests, policy)
+        organ_dep = _by_organ(out, "dependent-organ")
+        assert organ_dep["decision"] == "refused", organ_dep
+        assert organ_dep["reason"] == \
+            "dependency_unavailable:organ:upstream-organ"
+        cap_dep = _by_organ(out, "cap-dependent")
+        assert cap_dep["decision"] == "refused", cap_dep
+        assert cap_dep["reason"] == "dependency_unavailable:mcp:alpha-service"
+        assert [r["organ"] for r in out.would_dispatch()] == ["independent"]
 
-    def test_real_cli_sim9_unavailable_mcp(self):
-        """VACUITY — RETIREMENT CONDITION: retire when
-        cabinet/scripts/cog4-dispatch-shadow.py lands; bind _check_sim9 (§12
-        row 9) to the real CLI."""
-        _absent_then_skip("sim 9 (unavailable MCP)", "_check_sim9")
+    def test_real_cli_sim9_unavailable_mcp(self, tmp_path):
+        """LIVE (retired W5 landing): _check_sim9's seeds + asserts against
+        the real CLI (§12 row 9) — absent MCP ⇒ refusal naming the
+        capability; the record preserves the ORIGINAL capability + descriptor
+        (the anti-silent-substitution clause)."""
+        rows = [A.make_row("mcp-organ", "sync"),
+                A.make_row("plain-organ", "collect")]
+        manifests = {
+            "mcp-organ": A.make_organ_manifest(
+                "mcp-organ", permissions=("mcp:vault-read",)),
+            "plain-organ": A.make_organ_manifest("plain-organ")}
+        cache, live, manifests, policy = _real_seed(
+            tmp_path, rows, manifests,
+            live_overrides={"capabilities_available":
+                            ["mcp:other-available"]})
+        out = _real_run(tmp_path, cache, live, manifests, policy)
+        rec = _by_organ(out, "mcp-organ")
+        assert rec["decision"] == "refused", rec
+        assert rec["reason"] == "capability_unavailable:mcp:vault-read"
+        assert rec["capability"] == "mcp-organ/sync"
+        assert rec["descriptor"]["capability"] == "mcp-organ/sync"
+        assert [r["organ"] for r in out.would_dispatch()] == ["plain-organ"]
 
-    def test_real_cli_sim10_unauthorized_effect(self):
-        """VACUITY — RETIREMENT CONDITION: retire when
-        cabinet/scripts/cog4-dispatch-shadow.py lands; bind _check_sim10 (§12
-        row 10/N5) to the real CLI — whose verdicts then come from the REAL
-        read-only authority joint (§7.3(3))."""
-        _absent_then_skip("sim 10 (unauthorized effect)", "_check_sim10")
+    def test_real_cli_sim10_unauthorized_effect(self, tmp_path):
+        """LIVE (retired W5 landing): _check_sim10's seeds + asserts against
+        the real CLI (§12 row 10/N5) — the verdicts now come from the REAL
+        read-only authority joint (§7.3(3)) over the translated policy:
+        gated/propose/ceiling/undo-gap NEVER would-dispatch; the clean row
+        does."""
+        rows = [
+            A.make_row("gated-organ", "mutate", risk="fixture_gated"),
+            A.make_row("propose-organ", "draft", risk="fixture_propose"),
+            A.make_row("ceiling-organ", "spend", ceiling=("spending",)),
+            A.make_row("undo-gap-organ", "rewrite", risk="fixture_mutating",
+                       undo="none"),
+            A.make_row("clean-organ", "collect")]
+        manifests = {r["organ"]: A.make_organ_manifest(r["organ"])
+                     for r in rows}
+        cache, live, manifests, policy = _real_seed(tmp_path, rows, manifests)
+        out = _real_run(tmp_path, cache, live, manifests, policy)
+        expected = {
+            "gated-organ": "always_gated",
+            "propose-organ": "propose_only",
+            "ceiling-organ": "ceiling",
+            "undo-gap-organ": "undo_gap",
+        }
+        for organ, verdict in expected.items():
+            rec = _by_organ(out, organ)
+            assert rec["decision"] == "refused", (organ, rec)
+            assert rec["verdict"] == verdict
+            assert rec["reason"] == f"authority:{verdict}"
+        assert [r["organ"] for r in out.would_dispatch()] == ["clean-organ"]
 
-    def test_real_cli_sim11_forged_decision(self):
-        """VACUITY — RETIREMENT CONDITION: retire when
-        cabinet/scripts/cog4-dispatch-shadow.py lands; bind the sim-11 tamper +
-        absent-key seeds (§12 row 11/§6.3) to the real CLI over the kernel
-        schedule store."""
-        _absent_then_skip("sim 11 (forged scheduler decision)",
-                          "TestSim11ForgedDecision properties")
+    def test_real_cli_sim11_forged_decision(self, tmp_path):
+        """LIVE (retired W5 landing): the sim-11 tamper + absent-key seeds
+        (§12 row 11/§6.3) against the real CLI over the KERNEL schedule
+        store — the real chain bites on hand-edited row CONTENT; the absent
+        rows-hash key can never serve unbound rows (MANDATORY-PRESENT)."""
+        def fresh(tag):
+            rows = [A.make_row("organ-a", "collect"),
+                    A.make_row("organ-b", "report")]
+            manifests = {"organ-a": A.make_organ_manifest("organ-a"),
+                         "organ-b": A.make_organ_manifest("organ-b")}
+            root = tmp_path / tag
+            cache = root / "cache"
+            A.build_real_store(cache, A.make_snapshot(), rows)
+            live = A.make_live(A.make_snapshot(), manifests)
+            return root, cache, live, manifests
+        policy = A.fixture_policy()
+        # (a) hand-edited row content ⇒ SERVE refusal, nothing served.
+        root, cache, live, manifests = fresh("tamper")
+        rows_path = cache / "schedule.jsonl"
+        lines = rows_path.read_text(encoding="utf-8").splitlines()
+        assert '"budget_units":1' in lines[0]
+        lines[0] = lines[0].replace('"budget_units":1', '"budget_units":0')
+        rows_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        out = A.run_cli(cache, live, manifests, policy, root / "w")
+        assert out.mode == "serve_refused", (out.mode, out.reason)
+        assert out.reason == "rows_hash_mismatch"
+        assert out.records == [] and out.would_dispatch() == []
+        # (b) §6.3 MANDATORY-PRESENT: the rows-hash key removed ⇒ refusal.
+        root, cache, live, manifests = fresh("absent-key")
+        man_path = cache / "schedule-manifest.json"
+        manifest = json.loads(man_path.read_text(encoding="utf-8"))
+        del manifest["schedule_rows_hash"]
+        man_path.write_text(json.dumps(manifest, sort_keys=True),
+                            encoding="utf-8")
+        out = A.run_cli(cache, live, manifests, policy, root / "w")
+        assert out.mode == "serve_refused", (out.mode, out.reason)
+        assert out.reason == "rows_hash_key_absent"
+        assert out.records == [] and out.would_dispatch() == []
+        # (c) a snapshot record that no longer matches epoch.snapshot_hash.
+        root, cache, live, manifests = fresh("snap-tamper")
+        snap_path = cache / "snapshot.json"
+        snapshot = json.loads(snap_path.read_text(encoding="utf-8"))
+        snapshot["scope"] = "forged-scope"
+        snap_path.write_text(json.dumps(snapshot, sort_keys=True),
+                             encoding="utf-8")
+        out = A.run_cli(cache, live, manifests, policy, root / "w")
+        assert out.mode == "serve_refused"
+        assert out.reason == "snapshot_hash_mismatch"
 
-    def test_real_cli_sim12_budget_overflow(self):
-        """VACUITY — RETIREMENT CONDITION: retire when
-        cabinet/scripts/cog4-dispatch-shadow.py lands; bind _check_sim12 (§12
-        row 12/N4) to the real CLI."""
-        _absent_then_skip("sim 12 (budget overflow)", "_check_sim12")
+    def test_real_cli_sim12_budget_overflow(self, tmp_path):
+        """LIVE (retired W5 landing): _check_sim12's seeds + asserts against
+        the real CLI (§12 row 12/N4) — cumulative would-dispatch cost beyond
+        the remaining budget refuses the overflowing row even though planning
+        admitted it; refused rows consume no budget."""
+        rows = [A.make_row("organ-a", "collect", budget_units=3),
+                A.make_row("organ-b", "report", budget_units=3),
+                A.make_row("organ-c", "sweep", budget_units=5)]
+        manifests = {r["organ"]: A.make_organ_manifest(r["organ"])
+                     for r in rows}
+        cache, live, manifests, policy = _real_seed(
+            tmp_path, rows, manifests,
+            live_overrides={"remaining_budget": 7})
+        out = _real_run(tmp_path, cache, live, manifests, policy)
+        assert [r["organ"] for r in out.would_dispatch()] == \
+            ["organ-a", "organ-b"]
+        rec = _by_organ(out, "organ-c")
+        assert rec["decision"] == "refused", rec
+        assert rec["reason"] == "budget_overflow"
+        assert rec["limb"] == "budget"
+        assert rec["planner_admitted"] is True   # admitted — refused anyway
 
-    def test_real_cli_sim14_stale_snapshot(self):
-        """VACUITY — RETIREMENT CONDITION: retire when
-        cabinet/scripts/cog4-dispatch-shadow.py lands; bind the sim-14 mismatch
-        + null-hole seeds (§12 row 14/N3) to the real CLI."""
-        _absent_then_skip("sim 14 (stale-snapshot dispatch)",
-                          "TestSim14StaleSnapshot properties")
+    def test_real_cli_sim14_stale_snapshot(self, tmp_path):
+        """LIVE (retired W5 landing): the sim-14 mismatch + null-hole seeds
+        (§12 row 14/N3) against the real CLI — every moved wake-input family
+        refuses; a recorded null NEVER skips the compare (the objectives
+        `is not None and` hole stays closed); the symmetric live-null
+        refuses too."""
+        rows = [A.make_row("organ-a", "collect")]
+        manifests = {"organ-a": A.make_organ_manifest("organ-a")}
+        # (a) every wake-input family: moved live hash ⇒ stale_snapshot.
+        for family in A.WAKE_INPUT_KEYS:
+            root = tmp_path / f"mm-{family}"
+            cache = root / "cache"
+            A.build_real_store(cache, A.make_snapshot(), rows)
+            live = A.make_live(A.make_snapshot(), manifests)
+            live["wake_input_hashes"][family] = "moved-" + str(
+                live["wake_input_hashes"][family])
+            out = A.run_cli(cache, live, manifests, A.fixture_policy(),
+                            root / "w")
+            assert out.mode == "stale_snapshot", (family, out.mode)
+            assert out.reason == f"stale_snapshot:{family}"
+            assert out.would_dispatch() == []
+        # (b) recorded-null-but-live-exists refuses (the null hole).
+        snapshot = A.make_snapshot(
+            wake_input_hashes={"cortex_belief_store_hash": None})
+        cache, live, manifests, policy = _real_seed(
+            tmp_path, rows, manifests, snapshot=snapshot)
+        live["wake_input_hashes"]["cortex_belief_store_hash"] = \
+            "cortexhash-live-now"
+        out = _real_run(tmp_path, cache, live, manifests, policy)
+        assert out.mode == "stale_snapshot", (out.mode, out.reason)
+        assert out.reason == "stale_snapshot:cortex_belief_store_hash"
+        assert out.would_dispatch() == []
+        # (c) the symmetric hole: live None against a recorded value.
+        root = tmp_path / "live-null"
+        cache = root / "cache"
+        A.build_real_store(cache, A.make_snapshot(), rows)
+        live = A.make_live(A.make_snapshot(), manifests)
+        live["wake_input_hashes"]["organ_registry_hash"] = None
+        out = A.run_cli(cache, live, manifests, A.fixture_policy(),
+                        root / "w")
+        assert out.mode == "stale_snapshot"
+        assert out.reason == "stale_snapshot:organ_registry_hash"
 
-    def test_real_cli_sim15_restart_replay(self):
-        """VACUITY — RETIREMENT CONDITION: retire when
-        cabinet/scripts/cog4-dispatch-shadow.py lands; bind _check_sim15 (§12
-        row 15/§7.4) to the real CLI, plus the kernel N1 PYTHONHASHSEED triple
-        on the rebuilt schedule."""
-        _absent_then_skip("sim 15 (restart/replay)", "_check_sim15")
+    def test_real_cli_sim15_restart_replay(self, tmp_path):
+        """LIVE (retired W5 landing): _check_sim15's corrupt/missing-state
+        seeds (§12 row 15/§7.4) against the real CLI — the FIXED safe
+        schedule, NEVER permission — plus the kernel N1 PYTHONHASHSEED triple
+        on the rebuilt schedule (the real fold reproduces byte-identical
+        artifacts; the CLI dispatches identically over each rebuild)."""
+        manifests = {"organ-a": A.make_organ_manifest("organ-a")}
+        rows = [A.make_row("organ-a", "collect")]
+        snapshot = A.make_snapshot()
+        seeds = []
+        missing = tmp_path / "missing-store"
+        missing.mkdir()
+        seeds.append(("missing_store", missing))
+        corrupt_man = tmp_path / "corrupt-manifest"
+        A.build_real_store(corrupt_man, snapshot, rows)
+        (corrupt_man / "schedule-manifest.json").write_text(
+            "NOT-JSON{{{", encoding="utf-8")
+        seeds.append(("corrupt_manifest", corrupt_man))
+        corrupt_rows = tmp_path / "corrupt-rows"
+        A.build_real_store(corrupt_rows, snapshot, rows)
+        (corrupt_rows / "schedule.jsonl").write_text(
+            '{"organ": "organ-a", "trunc', encoding="utf-8")
+        seeds.append(("corrupt_rows", corrupt_rows))
+        corrupt_snap = tmp_path / "corrupt-snapshot"
+        A.build_real_store(corrupt_snap, snapshot, rows)
+        (corrupt_snap / "snapshot.json").write_text("], garbage",
+                                                    encoding="utf-8")
+        seeds.append(("corrupt_snapshot", corrupt_snap))
+        killed = tmp_path / "killed-mid-fold"
+        A.crashed_build(snapshot, rows, killed)
+        seeds.append(("mid_fold_kill", killed))
+        live = A.make_live(snapshot, manifests)
+        policy = A.fixture_policy()
+        for name, cache in seeds:
+            out = A.run_cli(cache, live, manifests, policy,
+                            tmp_path / f"w-{name}")
+            assert out.mode == "safe_fallback", (name, out.mode, out.reason)
+            assert out.safe_schedule == live["services_cadence"], name
+            assert out.would_dispatch() == [], (
+                f"{name}: fallback granted permission — §7.4 forbids "
+                "exactly this")
+        # the kernel N1 triple on the REBUILT schedule: three PYTHONHASHSEED
+        # values ⇒ ONE rows-hash and identical CLI outcomes per rebuild.
+        fixture = _HERE / "fixtures" / "cog4" / "fold" / "burst.json"
+        snap = json.loads(fixture.read_text(encoding="utf-8"))
+        hashes, outcomes = set(), []
+        for seed in ("0", "1", "2"):
+            cache = tmp_path / f"n1-cache-{seed}"
+            r = subprocess.run(
+                [sys.executable, "-c",
+                 "import sys\n"
+                 f"sys.path.insert(0, {str(_REPO)!r})\n"
+                 "from framework.scheduler.fold import build_schedule\n"
+                 f"build_schedule({str(fixture)!r}, {str(cache)!r})\n"],
+                capture_output=True, text=True,
+                env={"PATH": "/usr/bin:/bin", "PYTHONHASHSEED": seed})
+            assert r.returncode == 0, r.stderr
+            manifest = json.loads(
+                (cache / "schedule-manifest.json").read_text("utf-8"))
+            hashes.add(manifest["schedule_rows_hash"])
+            n1_live = {
+                "wake_input_hashes": dict(snap["wake_input_hashes"]),
+                "remaining_budget": 100, "wake_id": "wake-n1",
+                "organ_output_age_seconds": {},
+                "organ_health": {o["organ"]: {"probe_ran": True,
+                                              "exit_code": 0}
+                                 for o in snap["organs"]},
+                "organs_available": [o["organ"] for o in snap["organs"]],
+                "capabilities_available":
+                    sorted(snap["capability_availability"]),
+                "services_cadence": [],
+            }
+            n1_manifests = {o["organ"]: A.make_organ_manifest(o["organ"])
+                            for o in snap["organs"]}
+            out = A.run_cli(cache, n1_live, n1_manifests, policy,
+                            tmp_path / f"n1-w-{seed}")
+            assert out.mode == "dispatch"
+            outcomes.append(sorted(
+                (r2["organ"], r2["operation"], r2["decision"], r2["reason"])
+                for r2 in out.records))
+        assert len(hashes) == 1, hashes            # N1 determinism
+        assert outcomes[0] == outcomes[1] == outcomes[2]
 
-    def test_real_cli_six_limb_order(self):
-        """VACUITY — RETIREMENT CONDITION: retire when
-        cabinet/scripts/cog4-dispatch-shadow.py lands; bind the §7.3 order
-        battery (serve → staleness → authority → budget → freshness →
-        idempotency) to the real CLI's recorded limbs."""
-        _absent_then_skip("§7.3 six-limb order battery",
-                          "TestSevenPointThreeLimbOrder properties")
+    def test_real_cli_six_limb_order(self, tmp_path):
+        """LIVE (retired W5 landing): the §7.3 order battery bound to the
+        real CLI's recorded limbs (serve → staleness → authority → budget →
+        freshness → idempotency), incl. limb 6's SF1 re-derive law: a
+        row-carried forged 'fresh' key is refused anyway, a new wake derives
+        a new key and dispatches, an in-run duplicate replays."""
+        def one_row_seed(tag, row, *, live_overrides=None,
+                         shadow_replay=False):
+            manifests = {row["organ"]: A.make_organ_manifest(row["organ"])}
+            root = tmp_path / tag
+            cache = root / "cache"
+            A.build_real_store(cache, A.make_snapshot(), [row])
+            live = A.make_live(A.make_snapshot(), manifests,
+                               **(live_overrides or {}))
+            keys = ()
+            if shadow_replay:
+                keys = (A.derive_idempotency_key(
+                    row["organ"], row["operation"], live["wake_id"]),)
+            return root, cache, live, manifests, keys
+        policy = A.fixture_policy()
+        # limb 1 < 2: forged rows + a moved live hash ⇒ SERVE refusal wins.
+        root, cache, live, manifests, _k = one_row_seed(
+            "serve-first", A.make_row("organ-a", "collect"))
+        (cache / "schedule.jsonl").write_text(
+            json.dumps(A.make_row("forged-organ", "exfiltrate"),
+                       sort_keys=True, separators=(",", ":")) + "\n",
+            encoding="utf-8")
+        live["wake_input_hashes"]["organ_registry_hash"] = "moved-registry"
+        out = A.run_cli(cache, live, manifests, policy, root / "w")
+        assert out.mode == "serve_refused"
+        assert out.reason == "rows_hash_mismatch"
+        # limb 2 < 3..6: a stale snapshot refuses BEFORE any per-row limb.
+        root, cache, live, manifests, _k = one_row_seed(
+            "stale-first", A.make_row("gated-organ", "mutate",
+                                      risk="fixture_gated"))
+        live["wake_input_hashes"]["services_manifest_hash"] = \
+            "moved-services"
+        out = A.run_cli(cache, live, manifests, policy, root / "w")
+        assert out.mode == "stale_snapshot"
+        assert out.records == []
+        # limb 3 < 4: authority AND budget violated ⇒ refuses at AUTHORITY.
+        root, cache, live, manifests, _k = one_row_seed(
+            "auth-budget", A.make_row("both-organ", "mutate",
+                                      risk="fixture_gated",
+                                      budget_units=999),
+            live_overrides={"remaining_budget": 1})
+        out = A.run_cli(cache, live, manifests, policy, root / "w")
+        rec = _by_organ(out, "both-organ")
+        assert rec["limb"] == "authority", rec
+        assert rec["reason"] == "authority:always_gated"
+        # limb 4 < 5: budget AND freshness violated ⇒ refuses at BUDGET.
+        root, cache, live, manifests, _k = one_row_seed(
+            "budget-fresh", A.make_row("bf-organ", "collect",
+                                       budget_units=999),
+            live_overrides={"remaining_budget": 1,
+                            "organ_output_age_seconds":
+                            {"bf-organ": 99999}})
+        out = A.run_cli(cache, live, manifests, policy, root / "w")
+        assert _by_organ(out, "bf-organ")["limb"] == "budget"
+        # limb 5 < 6: freshness AND idempotency violated ⇒ FRESHNESS.
+        root, cache, live, manifests, keys = one_row_seed(
+            "fresh-idem", A.make_row("fi-organ", "collect"),
+            live_overrides={"organ_output_age_seconds":
+                            {"fi-organ": 99999}},
+            shadow_replay=True)
+        out = A.run_cli(cache, live, manifests, policy, root / "w",
+                        shadow_seed_keys=keys)
+        assert _by_organ(out, "fi-organ")["limb"] == "freshness"
+        # limb 3 < 6: authority AND idempotency violated ⇒ AUTHORITY.
+        root, cache, live, manifests, keys = one_row_seed(
+            "auth-idem", A.make_row("ai-organ", "mutate",
+                                    risk="fixture_gated"),
+            shadow_replay=True)
+        out = A.run_cli(cache, live, manifests, policy, root / "w",
+                        shadow_seed_keys=keys)
+        assert _by_organ(out, "ai-organ")["limb"] == "authority"
+        # limb 6 (SF1): replay refused; the key is RE-DERIVED per the
+        # manifest discipline (the row's forged 'fresh' key is ignored).
+        row = A.make_row("idem-organ", "collect",
+                         idempotency_key="planner-claimed-fresh-key")
+        root, cache, live, manifests, keys = one_row_seed(
+            "sf1", row, shadow_replay=True)
+        out = A.run_cli(cache, live, manifests, policy, root / "w",
+                        shadow_seed_keys=keys)
+        rec = _by_organ(out, "idem-organ")
+        assert rec["decision"] == "refused"
+        assert rec["reason"] == "idempotency_replay"
+        assert rec["limb"] == "idempotency"
+        # a NEW wake id derives a new key ⇒ dispatches.
+        live2 = dict(live, wake_id="wake-0002")
+        out2 = A.run_cli(cache, live2, manifests, policy, root / "w2",
+                         shadow_seed_keys=keys)
+        assert [r["organ"] for r in out2.would_dispatch()] == ["idem-organ"]
+        # in-run duplicate: the same (organ, operation) twice in one
+        # schedule ⇒ the second is an idempotency replay.
+        dup_rows = [A.make_row("idem-organ", "collect"),
+                    A.make_row("idem-organ", "collect")]
+        dup_cache = root / "dup-cache"
+        A.build_real_store(dup_cache, A.make_snapshot(), dup_rows)
+        live3 = A.make_live(A.make_snapshot(), manifests)
+        out3 = A.run_cli(dup_cache, live3, manifests, policy, root / "w3")
+        decisions = sorted(r["decision"] for r in out3.records)
+        assert decisions == ["refused", "would_dispatch"]
+        refused = [r for r in out3.records if r["decision"] == "refused"][0]
+        assert refused["reason"] == "idempotency_replay"

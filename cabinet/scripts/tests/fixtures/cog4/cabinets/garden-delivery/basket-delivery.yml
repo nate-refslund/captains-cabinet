@@ -1,0 +1,58 @@
+# COG-4 N8 fixture cabinet A — the delivery half of the community-garden +
+# delivery operation (COG-3 exit fixture #2, organ layer). §4.2 amendment
+# shape; the vocabulary sweep in test_cog4_exit_fixtures.py binds this file.
+name: basket-delivery
+version: "1.0.0"
+kind: organ
+action_types: [task_status_move, label, internal_message, external_message]
+risk_classes: [reversible, internal_comms, external_comms]
+undo_contract: "journal:route-ledger"
+entrypoints: {}
+inputs: [delivery/basket-list, delivery/street-plan]
+outputs: [delivery/route-ledger]
+domain_operations:
+  - delivery/route.replan
+  - delivery/crate.relabel
+  - delivery/household.note
+  - delivery/postcard.mail
+descriptor:
+  action_type: task_status_move
+  risk_class: reversible
+  ceiling: []
+  undo_contract: "journal:route-ledger"
+  operations:
+    delivery/crate.relabel:
+      action_type: label
+      undo_contract: none
+    delivery/household.note:
+      action_type: internal_message
+      risk_class: internal_comms
+      undo_contract: none
+    delivery/postcard.mail:
+      action_type: external_message
+      risk_class: external_comms
+      ceiling: [external_comms]
+      undo_contract: none
+permissions: [street-plan/read]
+idempotency:
+  delivery/route.replan: "round + morning"
+  delivery/crate.relabel: "crate-id"
+  delivery/household.note: "household + round"
+  delivery/postcard.mail: "household + week-of"
+state_ownership: [delivery/route-ledger]
+cost_model:
+  units_per_wake: 2
+freshness_needs:
+  max_staleness_seconds: 86400
+  expected_output: delivery/route-ledger
+trigger_policy:
+  mode: periodic
+  parameters:
+    interval_s: 43200
+health_proof:
+  probe: "the route-ledger tallies with the basket-list"
+  expectation: ok
+fallback: safe_noop
+dependencies:
+  organs: [garden-rota]
+  capabilities: [street-plan/read]

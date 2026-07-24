@@ -1,0 +1,58 @@
+# COG-4 N8 fixture cabinet C — the meal round of the neighbourhood care
+# operation. §4.2 amendment shape; the vocabulary sweep in test_cog4_exit_fixtures.py binds this file.
+name: meal-round
+version: "1.0.0"
+kind: organ
+action_types: [task_create, investigation_run, internal_message, external_email]
+risk_classes: [pm_write, read_only_dispatch, internal_comms, external_comms]
+undo_contract: "journal:meal-ledger"
+entrypoints: {}
+inputs: [care/visit-board, meals/larder-book]
+outputs: [meals/meal-ledger]
+domain_operations:
+  - meals/round.plan
+  - meals/larder.count
+  - meals/kitchen.note
+  - meals/donor.letter
+descriptor:
+  action_type: task_create
+  risk_class: pm_write
+  ceiling: []
+  undo_contract: "journal:meal-ledger"
+  operations:
+    meals/larder.count:
+      action_type: investigation_run
+      risk_class: read_only_dispatch
+      undo_contract: none
+    meals/kitchen.note:
+      action_type: internal_message
+      risk_class: internal_comms
+      undo_contract: none
+    meals/donor.letter:
+      action_type: external_email
+      risk_class: external_comms
+      ceiling: [external_comms]
+      undo_contract: none
+permissions: [meal-larder/read]
+idempotency:
+  meals/round.plan: "round + day"
+  meals/larder.count: "larder + dusk"
+  meals/kitchen.note: "kitchen + day"
+  meals/donor.letter: "donor + week-of"
+state_ownership: [meals/meal-ledger]
+cost_model:
+  units_per_wake: 2
+freshness_needs:
+  max_staleness_seconds: 86400
+  expected_output: meals/meal-ledger
+trigger_policy:
+  mode: periodic
+  parameters:
+    interval_s: 43200
+health_proof:
+  probe: "the meal-ledger covers every visit on the board"
+  expectation: ok
+fallback: safe_noop
+dependencies:
+  organs: [visit-rota]
+  capabilities: [meal-larder/read]

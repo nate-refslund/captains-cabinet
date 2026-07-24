@@ -1,0 +1,51 @@
+# COG-4 N8 fixture cabinet B — a harbourside goods-shed operation (physical
+# logistics; contract §12 N8 candidate domain "physical-logistics/warehouse").
+# §4.2 amendment shape; vocabulary swept clean by
+# test_cog4_exit_fixtures.py.
+name: quay-inventory
+version: "1.0.0"
+kind: organ
+action_types: [investigation_run, task_status_move]
+risk_classes: [read_only_dispatch, reversible]
+undo_contract: none
+entrypoints: {}
+inputs: [quay/berth-plan, quay/crate-tallies]
+outputs: [quay/stock-ledger]
+domain_operations:
+  - warehouse/shelf.stocktake
+  - warehouse/coldstore.reading
+  - warehouse/pallet.rotate
+descriptor:
+  action_type: investigation_run
+  risk_class: read_only_dispatch
+  ceiling: []
+  undo_contract: none
+  operations:
+    warehouse/pallet.rotate:
+      action_type: task_status_move
+      risk_class: reversible
+      undo_contract: "delete_window(7200)"
+permissions: [stock-ledger/read]
+idempotency:
+  warehouse/shelf.stocktake: "aisle + dusk"
+  warehouse/coldstore.reading: "chamber + hour"
+  warehouse/pallet.rotate: "pallet-id + shift"
+state_ownership: [quay/stock-ledger]
+cost_model:
+  units_per_wake: 1
+starvation_bound:
+  max_wakes: 4
+freshness_needs:
+  max_staleness_seconds: 43200
+  expected_output: quay/stock-ledger
+trigger_policy:
+  mode: periodic
+  parameters:
+    interval_s: 21600
+health_proof:
+  probe: "the stock-ledger columns tally with the shelf counts"
+  expectation: ok
+fallback: skip
+dependencies:
+  organs: []
+  capabilities: [stock-ledger/read]

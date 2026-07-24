@@ -1,0 +1,45 @@
+# COG-4 S0 pilot organ fixture — the world-census projection/measurement row
+# (contract §9.3 pilot set). Read-only census of world/estate state. §4.2 shape;
+# PARITY-CLEAN (declared members == matrix derivation for the declared
+# action_type, §4.3 N-d). Sibling of cabinets/ — the §12 N8 token sweep never
+# reaches it.
+name: world-census
+version: "1.0.0"
+kind: organ
+action_types: [investigation_run]
+risk_classes: [read_only_dispatch]
+undo_contract: none
+entrypoints: {}
+inputs: [census/estate-state]
+outputs: [census/tally]
+domain_operations:
+  - census/rooms.count
+  - census/estate.survey
+descriptor:
+  action_type: investigation_run
+  risk_class: read_only_dispatch
+  ceiling: []
+  undo_contract: none
+permissions: [estate-state/read]
+idempotency:
+  census/rooms.count: "census-date"
+  census/estate.survey: "census-date"
+state_ownership: [census/tally]
+cost_model:
+  units_per_wake: 1
+starvation_bound:
+  max_wakes: 6
+freshness_needs:
+  max_staleness_seconds: 86400
+  expected_output: census/tally
+trigger_policy:
+  mode: periodic
+  parameters:
+    interval_s: 86400
+health_proof:
+  probe: "the tally carries today's room and estate counts"
+  expectation: ok
+fallback: skip
+dependencies:
+  organs: []
+  capabilities: [estate-state/read]

@@ -1,0 +1,45 @@
+# COG-4 S0 pilot organ fixture — the preference-pairs projection/measurement
+# row (contract §9.3 pilot set). Read-only mining of Captain-correction verdicts
+# into preference pairs. §4.2 shape; PARITY-CLEAN (declared members == matrix
+# derivation for the declared action_type, the §4.3 N-d law). Sibling of
+# cabinets/ — the §12 N8 token sweep never reaches it.
+name: preference-pairs
+version: "1.0.0"
+kind: organ
+action_types: [investigation_run]
+risk_classes: [read_only_dispatch]
+undo_contract: none
+entrypoints: {}
+inputs: [preference/correction-verdicts]
+outputs: [preference/pairs-ledger]
+domain_operations:
+  - preference/corrections.mine
+  - preference/pairs.append
+descriptor:
+  action_type: investigation_run
+  risk_class: read_only_dispatch
+  ceiling: []
+  undo_contract: none
+permissions: [correction-verdicts/read]
+idempotency:
+  preference/corrections.mine: "pair-id"
+  preference/pairs.append: "pair-id"
+state_ownership: [preference/pairs-ledger]
+cost_model:
+  units_per_wake: 1
+starvation_bound:
+  max_wakes: 6
+freshness_needs:
+  max_staleness_seconds: 86400
+  expected_output: preference/pairs-ledger
+trigger_policy:
+  mode: periodic
+  parameters:
+    interval_s: 86400
+health_proof:
+  probe: "the pairs-ledger carries this run's mined summary line"
+  expectation: ok
+fallback: skip
+dependencies:
+  organs: []
+  capabilities: [correction-verdicts/read]
