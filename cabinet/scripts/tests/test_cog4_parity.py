@@ -21,6 +21,12 @@ This battery lands tests-first (W2):
     and that coverage spans the ENTIRE pilot set + the three fixture cabinets
     (§12 N9). The COMPANION absence assertions RED the moment either lands, so
     the skip cannot silently persist.
+    CONVERTED to RECORD-KEYED (integrator corpus surgery per §13 + the unit
+    contradictions[] routes, W4 landing 2026-07-24): the CLI landed in W4 v2
+    (9df66b12) while the tracked record DELIBERATELY rides the W5/W6 pilot +
+    fixture cabinets, so the original either-artifact companion pair would RED
+    on the CLI leg alone; the arm now keys on the RECORD — still armed, still
+    the N9 exit tripwire, retirement = the tracked record landing.
 
 Record shape (the reference the CLI must produce — two INDEPENDENT legs, §5.3:
 the ACTION_TYPES leg is never derived FROM the descriptor leg):
@@ -234,7 +240,8 @@ class TestParityCheckerLive:
 
 
 # ---------------------------------------------------------------------------
-# the real-artifact arm — vacuity-guarded until W5/W6 land the CLI + record
+# the real-artifact arm — vacuity-guarded until W5/W6 land the tracked record
+# (record-keyed since the W4 landing: the CLI landed in W4 v2)
 # ---------------------------------------------------------------------------
 def _tracked_records(repo: Path) -> list[Path]:
     """Every tracked cog4-parity-record.json in the working tree (the record's
@@ -244,23 +251,30 @@ def _tracked_records(repo: Path) -> list[Path]:
 
 class TestParityGateRealArtifact:
     def test_real_record_arm(self):
-        """VACUITY GUARD — RETIREMENT CONDITION: retire this skip when
-        cabinet/scripts/cog4-parity.py AND a tracked cog4-parity-record.json
-        land (W5/W6); the retired arm loads THE tracked record and asserts
-        record_errors == [] and divergent_rows == [] and coverage spans the
-        entire pilot set + the three §12 fixture cabinets (N9: any divergence
-        is a structural build failure). The two COMPANION assertions below RED
-        the moment either artifact appears, so the skip cannot silently
-        persist (the W1-u2 idiom)."""
+        """VACUITY GUARD, RECORD-KEYED (converted by integrator corpus surgery
+        per §13 + the unit contradictions[] routes, W4 landing 2026-07-24: the
+        CLI landed in W4 v2 (9df66b12) while the tracked record DELIBERATELY
+        rides the W5/W6 pilot + fixture cabinets, so the original
+        either-artifact companion pair would have gone RED on the CLI leg
+        alone; the arm now keys on the RECORD — still armed, still the N9 exit
+        tripwire) — RETIREMENT CONDITION: retire this skip when a tracked
+        cog4-parity-record.json lands (W5/W6); the retired arm loads THE
+        tracked record and asserts record_errors == [] and divergent_rows ==
+        [] and coverage spans the entire pilot set + the three §12 fixture
+        cabinets (N9: any divergence is a structural build failure). The
+        COMPANION assertions below RED the moment the record appears (or the
+        landed CLI vanishes), so the skip cannot silently persist (the W1-u2
+        idiom)."""
         cli = _REPO / _PARITY_CLI_REL
         records = _tracked_records(_REPO)
-        assert not cli.exists(), (
-            f"{_PARITY_CLI_REL} has LANDED — retire this vacuity skip and gate the "
-            f"real parity record per the docstring RETIREMENT CONDITION")
+        assert cli.exists(), (
+            f"{_PARITY_CLI_REL} VANISHED — the record-keyed arm presumes the "
+            f"landed W4 comparator; the N9 gate lost its record writer")
         assert records == [], (
             f"a {_RECORD_BASENAME} exists in the tree ({records}) — retire this "
             f"vacuity skip and gate it per the docstring RETIREMENT CONDITION")
         pytest.skip(
-            f"VACUITY: {_PARITY_CLI_REL} + {_RECORD_BASENAME} absent this phase-stage "
-            f"— the divergence checker is proven live on synthetic records above; "
-            f"retire when the parity CLI + record land.")
+            f"VACUITY: {_RECORD_BASENAME} absent this phase-stage (the record "
+            f"rides the W5/W6 pilot + fixtures; the CLI landed W4 v2) — the "
+            f"divergence checker is proven live on synthetic records above; "
+            f"retire when the tracked record lands.")
