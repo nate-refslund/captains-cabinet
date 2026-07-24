@@ -82,13 +82,22 @@ a future pass: the W3 projection/scheduler packages and W4 organs package
 ship by default (no delete rule touches them) but carry no expect-present
 anchors — consistent with the W3 landing's choice, left unchanged here.
 
-## Post-push CI fix (cp1 addendum, 2026-07-24)
+## Post-push CI fixes (cp1 addendum, 2026-07-24)
 
-PR-range gitleaks REDs on two generic-api-key false positives in v3's
-trajectory battery (the fake fixture `idempotency_key:
-"garden-rota-week-30"` — digits crossed the entropy bar). Fixed by the
-recorded house pattern (the PR #139 / organ-manifest:495 precedent):
-value de-entropied at HEAD to the W2 twin's `"garden-rota"` (schema
-$defs/id still satisfied; no test pins the value) + the introducing
-cherry-pick's two fingerprints appended to .gitleaksignore. No history
-rewrite; egg/tree bytes clean post-fix, so no no-git twins.
+FIX 1 — PR-range gitleaks REDs on two generic-api-key false positives in
+v3's trajectory battery: the fake garden-rota fixture idempotency member
+carried a dated week suffix whose digits crossed the entropy bar the W2
+twin never did. Fixed by the recorded house pattern (the PR #139 /
+organ-manifest:495 precedent): value de-entropied at HEAD to the W2 twin's
+plain organ name (schema $defs/id still satisfied; no test pins the value)
++ the introducing cherry-pick's two fingerprints appended to
+.gitleaksignore. No history rewrite; egg/tree bytes clean post-fix, so no
+no-git twins.
+
+FIX 2 — the FIX-1 commit's own addendum text quoted the flagged literal
+beside its member name, reproducing the secret-shaped pattern in THIS
+artifact (integrator's unforced error, on the record): the prose is
+re-worded literal-free at HEAD and the already-pushed introducing commit's
+fingerprint (065968b5, artifact line 88) is pinned in .gitleaksignore —
+same pattern, same no-rewrite law. Local full PR-range gitleaks scan
+verified clean before re-push.
