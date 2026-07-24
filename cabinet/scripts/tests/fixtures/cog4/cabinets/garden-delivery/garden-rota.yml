@@ -1,0 +1,49 @@
+# COG-4 N8 fixture cabinet A — community garden + delivery (the COG-3 exit
+# fixture #2 domain, EXTENDED with an organ/operation layer per contract §12
+# N8 / MR4). §4.2 amendment shape (proposal CG-33 text); the vocabulary sweep
+# in test_cog4_exit_fixtures.py binds this file.
+name: garden-rota
+version: "1.0.0"
+kind: organ
+action_types: [investigation_run]
+risk_classes: [read_only_dispatch]
+undo_contract: none
+entrypoints: {}
+inputs: [garden/bed-plan, garden/volunteer-signups]
+outputs: [garden/rota-board]
+domain_operations:
+  - garden/water.plots
+  - garden/mulch.spread
+  - garden/rota.compile
+descriptor:
+  action_type: investigation_run
+  risk_class: read_only_dispatch
+  ceiling: []
+  undo_contract: none
+  operations:
+    garden/rota.compile:
+      undo_contract: "delete_window(3600)"
+permissions: [rota-board/read]
+idempotency:
+  garden/water.plots: "bed-id + morning"
+  garden/mulch.spread: "bed-id + morning"
+  garden/rota.compile: "week-of"
+state_ownership: [garden/rota-board]
+cost_model:
+  units_per_wake: 1
+starvation_bound:
+  max_wakes: 6
+freshness_needs:
+  max_staleness_seconds: 604800
+  expected_output: garden/rota-board
+trigger_policy:
+  mode: periodic
+  parameters:
+    interval_s: 86400
+health_proof:
+  probe: "the rota-board is legible and every bed has a steward"
+  expectation: ok
+fallback: skip
+dependencies:
+  organs: []
+  capabilities: [rota-board/read]

@@ -1,0 +1,57 @@
+# COG-4 N8 fixture cabinet C — a neighbourhood care-visit rota (community
+# operations; contract §12 N8 candidate domain "care-rota/community-ops").
+# §4.2 amendment shape; vocabulary swept clean by
+# test_cog4_exit_fixtures.py.
+name: visit-rota
+version: "1.0.0"
+kind: organ
+action_types: [investigation_run, calendar_event_create, task_status_move]
+risk_classes: [read_only_dispatch, calendar_write, reversible]
+undo_contract: none
+entrypoints: {}
+inputs: [care/neighbour-list, care/volunteer-book]
+outputs: [care/visit-board]
+domain_operations:
+  - care/rota.compile
+  - care/rota.audit
+  - care/visit.assign
+  - care/visit.swap
+descriptor:
+  action_type: investigation_run
+  risk_class: read_only_dispatch
+  ceiling: []
+  undo_contract: none
+  operations:
+    care/visit.assign:
+      action_type: calendar_event_create
+      risk_class: calendar_write
+      undo_contract: "delete_window(86400)"
+    care/visit.swap:
+      action_type: task_status_move
+      risk_class: reversible
+      undo_contract: none
+permissions: [visit-board/read]
+idempotency:
+  care/rota.compile: "week-of"
+  care/rota.audit: "week-of"
+  care/visit.assign: "neighbour + day"
+  care/visit.swap: "round + day"
+state_ownership: [care/visit-board]
+cost_model:
+  units_per_wake: 1
+starvation_bound:
+  max_wakes: 3
+freshness_needs:
+  max_staleness_seconds: 604800
+  expected_output: care/visit-board
+trigger_policy:
+  mode: periodic
+  parameters:
+    interval_s: 86400
+health_proof:
+  probe: "the visit-board names a caller for every neighbour"
+  expectation: ok
+fallback: skip
+dependencies:
+  organs: []
+  capabilities: [visit-board/read]

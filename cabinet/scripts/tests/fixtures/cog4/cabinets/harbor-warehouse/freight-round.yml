@@ -1,0 +1,64 @@
+# COG-4 N8 fixture cabinet B — the freight round of the harbourside goods-shed
+# operation. §4.2 amendment shape; the vocabulary sweep in test_cog4_exit_fixtures.py binds this file.
+name: freight-round
+version: "1.0.0"
+kind: organ
+action_types: [investigation_run, task_status_move, label, internal_message, external_message]
+risk_classes: [read_only_dispatch, reversible, internal_comms, external_comms]
+undo_contract: none
+entrypoints: {}
+inputs: [quay/stock-ledger, freight/lorry-book]
+outputs: [freight/round-ledger]
+domain_operations:
+  - freight/lorry.manifest
+  - freight/bay.reshuffle
+  - freight/crate.restack
+  - freight/foreman.note
+  - freight/harbourmaster.notice
+descriptor:
+  action_type: investigation_run
+  risk_class: read_only_dispatch
+  ceiling: []
+  undo_contract: none
+  operations:
+    freight/bay.reshuffle:
+      action_type: task_status_move
+      risk_class: reversible
+      undo_contract: "journal:bay-ledger"
+    freight/crate.restack:
+      action_type: label
+      risk_class: reversible
+      undo_contract: none
+    freight/foreman.note:
+      action_type: internal_message
+      risk_class: internal_comms
+      undo_contract: none
+    freight/harbourmaster.notice:
+      action_type: external_message
+      risk_class: external_comms
+      ceiling: [external_comms]
+      undo_contract: none
+permissions: [berth-plan/read]
+idempotency:
+  freight/lorry.manifest: "lorry + tide"
+  freight/bay.reshuffle: "bay + shift"
+  freight/crate.restack: "crate-id + shift"
+  freight/foreman.note: "foreman + shift"
+  freight/harbourmaster.notice: "berth + week-of"
+state_ownership: [freight/round-ledger]
+cost_model:
+  units_per_wake: 2
+freshness_needs:
+  max_staleness_seconds: 86400
+  expected_output: freight/round-ledger
+trigger_policy:
+  mode: periodic
+  parameters:
+    interval_s: 43200
+health_proof:
+  probe: "the round-ledger matches the lorry-book departures"
+  expectation: ok
+fallback: escalate
+dependencies:
+  organs: [quay-inventory]
+  capabilities: [berth-plan/read]
