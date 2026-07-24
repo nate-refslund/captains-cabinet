@@ -491,7 +491,18 @@ class TestBoundaryLawsLive:
         """Self-discipline tripwire: this battery must never leave a
         cog4-parity-record.json inside the repo tree (the W2 real-artifact arm
         rglobs for the basename; a stray file would fire it for the wrong
-        reason). Runs last alphabetically-close to the others; cheap rglob."""
+        reason). Runs last alphabetically-close to the others; cheap rglob.
+
+        EXEMPTION (integrator corpus surgery per §13 + the unit
+        contradictions[] routes, W5 landing 2026-07-24): the ONE tracked
+        record at cabinet/scripts/tests/fixtures/cog4/cog4-parity-record.json
+        is the DELIBERATE N9 artifact landed by W5 x3 (ea9da8ad) — committed
+        cog4-parity.py output over the pilot + cabinet manifests, NOT battery
+        output — and is gated by test_cog4_parity.py + test_cog4_parity_record
+        .py. This law keeps biting for any OTHER repo-internal record: a stray
+        write anywhere else still REDs here."""
+        sanctioned = (_HERE / "fixtures" / "cog4"
+                      / "cog4-parity-record.json").resolve()
         strays = [p for p in _REPO.rglob("cog4-parity-record.json")
-                  if ".git" not in p.parts]
+                  if ".git" not in p.parts and p.resolve() != sanctioned]
         assert strays == [], strays

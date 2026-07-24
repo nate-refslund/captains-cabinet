@@ -18,6 +18,11 @@ real-target arm SKIPS while the CLI is absent, with a COMPANION assertion that t
 does not exist so the skip cannot silently persist after the CLI lands (the companion
 goes RED the instant the CLI appears). The scratch-file positive/negative controls run
 NOW and prove the scanner bites.
+RETIRED (integrator corpus surgery per §13 + the unit contradictions[] routes, W5
+landing 2026-07-24): cabinet/scripts/cog4-dispatch-shadow.py landed (W5 x1, 7272db13)
+— the real-target vacuity guard is converted per its own RETIREMENT CONDITION: the
+live dispatch_import_violations scan now runs over the REAL file. The scratch-file
+controls stay, proving the scanner keeps biting.
 
 S0: python3.12, no DB, no network. Provenance: authored per the 2026-07-07 full-autonomy
 grant + the 2026-07-20 cognitive-masterplan continuous grant.
@@ -46,17 +51,19 @@ def _write(root: Path, rel: str, body: str) -> Path:
 
 
 class TestDispatchImportPin:
-    def test_real_cli_is_armed_and_absent(self):
-        # VACUITY GUARD — RETIREMENT CONDITION: when cog4-dispatch-shadow.py lands, delete
-        # the skip and keep the green-by-vacuity assertion as the real pin. The companion
-        # absence assertion is the tripwire — it goes RED the moment the CLI lands.
+    # RETIRED vacuity skip (integrator corpus surgery per §13 + the unit
+    # contradictions[] routes, W5 landing 2026-07-24): the guard's RETIREMENT
+    # CONDITION — "when cog4-dispatch-shadow.py lands, delete the skip and keep the
+    # green-by-vacuity assertion as the real pin" — was discharged by W5 x1
+    # (7272db13, the dispatch-shadow CLI). The companion absence assertion tripped
+    # RED as designed; the assertion below is now the REAL-FILE §8.4 symbol-level
+    # import pin over the landed dispatcher (the scratch-file controls below keep
+    # proving it bites).
+    def test_real_cli_scans_clean(self):
         cli = _REPO / L.DISPATCH_CLI_REL
-        assert not cli.exists(), (
-            f"{L.DISPATCH_CLI_REL} has LANDED — retire this vacuity skip and enable the "
-            "real-file scan per the docstring RETIREMENT CONDITION")
-        assert L.dispatch_import_violations(_REPO) == []     # green over the absent CLI
-        pytest.skip(f"VACUITY: {L.DISPATCH_CLI_REL} absent this phase — pin armed via "
-                    "scratch-file controls; retire when the dispatch CLI lands.")
+        assert cli.is_file(), (
+            f"{L.DISPATCH_CLI_REL} vanished — the real-file pin lost its subject")
+        assert L.dispatch_import_violations(_REPO) == []
 
     def test_sanctioned_surface_folds_clean(self, tmp_path):
         _write(tmp_path, L.DISPATCH_CLI_REL,

@@ -27,6 +27,14 @@ This battery lands tests-first (W2):
     fixture cabinets, so the original either-artifact companion pair would RED
     on the CLI leg alone; the arm now keys on the RECORD — still armed, still
     the N9 exit tripwire, retirement = the tracked record landing.
+    RETIRED (integrator corpus surgery per §13 + the unit contradictions[]
+    routes, W5 landing 2026-07-24): the tracked record landed (W5 x3,
+    ea9da8ad — `cabinet/scripts/tests/fixtures/cog4/cog4-parity-record.json`,
+    the REAL cog4-parity.py output over the pilot set + all three fixture
+    cabinets). The record-keyed companion tripped RED as designed; the arm now
+    loads THE tracked record and gates it live per its own RETIREMENT
+    CONDITION (record_errors == [], divergent_rows == [], coverage exact via
+    `lib_cog4_parity_set` — the single source of the pilot+cabinet union).
 
 Record shape (the reference the CLI must produce — two INDEPENDENT legs, §5.3:
 the ACTION_TYPES leg is never derived FROM the descriptor leg):
@@ -240,8 +248,7 @@ class TestParityCheckerLive:
 
 
 # ---------------------------------------------------------------------------
-# the real-artifact arm — vacuity-guarded until W5/W6 land the tracked record
-# (record-keyed since the W4 landing: the CLI landed in W4 v2)
+# the real-artifact arm — LIVE on the tracked record (W5 landing 2026-07-24)
 # ---------------------------------------------------------------------------
 def _tracked_records(repo: Path) -> list[Path]:
     """Every tracked cog4-parity-record.json in the working tree (the record's
@@ -250,31 +257,43 @@ def _tracked_records(repo: Path) -> list[Path]:
 
 
 class TestParityGateRealArtifact:
+    # RETIRED vacuity skip (integrator corpus surgery per §13 + the unit
+    # contradictions[] routes, W5 landing 2026-07-24): the arm's RETIREMENT
+    # CONDITION — "retire this skip when a tracked cog4-parity-record.json
+    # lands (W5/W6); the retired arm loads THE tracked record and asserts
+    # record_errors == [] and divergent_rows == [] and coverage spans the
+    # entire pilot set + the three §12 fixture cabinets" — was discharged by
+    # W5 x3 (ea9da8ad, the N9 parity record over the pilot + the W5-x2
+    # cabinets). The record-keyed companion assertion tripped RED as designed;
+    # the arm below is now the LIVE N9 exit gate over the tracked artifact
+    # (any divergence is a structural build failure, never a warning).
+    # Pre-proven green out-of-band by test_cog4_parity_record.py (W5 x3),
+    # which also pins reproduction-from-manifests + hashseed determinism.
     def test_real_record_arm(self):
-        """VACUITY GUARD, RECORD-KEYED (converted by integrator corpus surgery
-        per §13 + the unit contradictions[] routes, W4 landing 2026-07-24: the
-        CLI landed in W4 v2 (9df66b12) while the tracked record DELIBERATELY
-        rides the W5/W6 pilot + fixture cabinets, so the original
-        either-artifact companion pair would have gone RED on the CLI leg
-        alone; the arm now keys on the RECORD — still armed, still the N9 exit
-        tripwire) — RETIREMENT CONDITION: retire this skip when a tracked
-        cog4-parity-record.json lands (W5/W6); the retired arm loads THE
-        tracked record and asserts record_errors == [] and divergent_rows ==
-        [] and coverage spans the entire pilot set + the three §12 fixture
-        cabinets (N9: any divergence is a structural build failure). The
-        COMPANION assertions below RED the moment the record appears (or the
-        landed CLI vanishes), so the skip cannot silently persist (the W1-u2
-        idiom)."""
         cli = _REPO / _PARITY_CLI_REL
-        records = _tracked_records(_REPO)
         assert cli.exists(), (
-            f"{_PARITY_CLI_REL} VANISHED — the record-keyed arm presumes the "
-            f"landed W4 comparator; the N9 gate lost its record writer")
-        assert records == [], (
-            f"a {_RECORD_BASENAME} exists in the tree ({records}) — retire this "
-            f"vacuity skip and gate it per the docstring RETIREMENT CONDITION")
-        pytest.skip(
-            f"VACUITY: {_RECORD_BASENAME} absent this phase-stage (the record "
-            f"rides the W5/W6 pilot + fixtures; the CLI landed W4 v2) — the "
-            f"divergence checker is proven live on synthetic records above; "
-            f"retire when the tracked record lands.")
+            f"{_PARITY_CLI_REL} VANISHED — the N9 gate lost its record writer")
+        records = _tracked_records(_REPO)
+        assert len(records) == 1, (
+            f"expected exactly ONE tracked {_RECORD_BASENAME}, found "
+            f"{records} — the retired arm loads THE record, singular")
+        import lib_cog4_parity_set as PSET  # the W5 single-source of the set
+        assert records == [PSET.RECORD_PATH], (
+            f"the tracked record moved: {records} != [{PSET.RECORD_PATH}]")
+        record = json.loads(records[0].read_text(encoding="utf-8"))
+        assert record_errors(record) == [], record_errors(record)
+        assert divergent_rows(record) == [], divergent_rows(record)
+        # N9 coverage: the ENTIRE pilot set + all three §12 fixture cabinets,
+        # organ set AND operation set both exact (single-sourced from the
+        # manifests the CLI itself reads).
+        rows = record["rows"]
+        organs = {r["organ"] for r in rows}
+        assert organs == PSET.EXPECTED_ORGANS, (
+            f"organ coverage {sorted(organs)} != expected "
+            f"{sorted(PSET.EXPECTED_ORGANS)}")
+        assert PSET.PILOT_ORGANS <= organs, "pilot set not fully covered"
+        assert PSET.CABINET_ORGANS <= organs, "a fixture cabinet is missing"
+        operations = {r["operation"] for r in rows}
+        assert operations == PSET.declared_operations(), (
+            "record operation set != the union declared by the manifests")
+        assert len(operations) == len(rows), "duplicate operation rows"

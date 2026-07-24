@@ -39,8 +39,11 @@ JSON via wildcard verdict rows — `fixture_policy()`:
   the declared `ceiling` member short-circuits (§5.2).
 
 SELF-CONTAINED BY LAW (L1111): mirrors the corpus seed vocabulary in ITS OWN
-constants; imports nothing from `test_cog4_sim_dispatch.py` and is imported
-by no W2 corpus file.
+constants; imports nothing from `test_cog4_sim_dispatch.py`. (Authored
+imported by no W2 corpus file; since the W5 landing 2026-07-24 the corpus's
+RETIRED TestRealDispatchCliArms import this adapter as their real-CLI binding
+— the L1111 concern, shared constants between parallel W2 units, stays
+intact: this is a W5 lib, not a sibling W2 corpus.)
 
 S0: python3.12, no DB, no network (subprocess runs the in-repo CLI only).
 Provenance: authored per the 2026-07-07 full-autonomy grant + the 2026-07-20

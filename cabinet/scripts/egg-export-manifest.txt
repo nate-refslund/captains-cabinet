@@ -472,6 +472,17 @@ expect-present cabinet/scripts/cog3-shadow-dividend.py
 # importer (§5.3); its cog4-parity-record.json output rides the W5/W6 pilot,
 # not this manifest.
 expect-present cabinet/scripts/cog4-parity.py
+# COG-4 W5 landing 2026-07-24 (the W4 precedent): the §7.3 dispatch-shadow
+# comparator ships with the other cog CLIs — the SEPARATE read-only
+# dispatcher (charter L116; §8.4 import-pinned, never an executor); its only
+# write is the shadow log (runtime data, never packaged).
+expect-present cabinet/scripts/cog4-dispatch-shadow.py
+# COG-4 W5 landing 2026-07-24: the tracked N9 parity record the W4 note above
+# promised (it rode the W5 pilot — landed W5 x3): committed cog4-parity.py
+# output over the pilot + cabinet manifests, zero divergent tuples; enduring
+# test surface (regen-gated by cabinet/scripts/tests/test_cog4_parity_record
+# .py), packaged with the tests tree it anchors.
+expect-present cabinet/scripts/tests/fixtures/cog4/cog4-parity-record.json
 # R167: dropped from the plans-archive keep-list (see R167 above) — the
 # coupling census now archives with the rest of docs/plans instance history.
 expect-absent docs/plans/source-adapter-boundary-2026-07-05.md
