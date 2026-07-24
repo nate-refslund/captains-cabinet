@@ -26,6 +26,13 @@ companion goes RED the moment framework/scheduler/ appears, forcing the skip's
 retirement and the real-tree scan's activation). The scratch-tree positive/negative
 controls run NOW and prove the scanners bite (a gate without a biting mutant is
 decoration — §12).
+RETIREMENTS (integrator corpus surgery per §13 + the unit contradictions[] routes,
+W3 landing 2026-07-24): framework/projection landed (W3 u1, 9f436c8d) and
+framework/scheduler landed (W3 u2, d10f3e7f) — the three scheduler-tree vacuity
+guards (import pin, as_of defaults-only, no-subprocess/no-socket) and the
+transitive-closure guard's two landed legs are converted to their REAL-tree scans
+per their own RETIREMENT CONDITIONS; only the framework/organs closure leg remains
+absence-armed.
 
 S0: python3.12, no DB, no network. Provenance: authored per the 2026-07-07 full-autonomy
 grant + the 2026-07-20 cognitive-masterplan continuous grant.
@@ -59,17 +66,17 @@ def _write(root: Path, rel: str, body: str) -> Path:
 # the symbol-level import pin
 # ===========================================================================
 class TestSchedulerImportPin:
-    def test_real_tree_is_armed_and_absent(self):
-        # VACUITY GUARD — RETIREMENT CONDITION: when framework/scheduler/ lands, delete
-        # the skip and keep the green-by-vacuity assertion as the real-tree pin. The
-        # companion assertion fails the instant the tree lands, so this cannot rot.
+    # RETIRED vacuity skip (integrator corpus surgery per §13 + the unit
+    # contradictions[] routes, W3 landing 2026-07-24): the guard's RETIREMENT
+    # CONDITION — "when framework/scheduler/ lands, delete the skip and keep the
+    # green-by-vacuity assertion as the real-tree pin" — was discharged by W3 u2
+    # (d10f3e7f, the shadow scheduler). The companion absence assertion tripped RED
+    # as designed; the assertion below is now the REAL-TREE symbol-level import pin
+    # over the landed planner tree (scratch-tree controls above keep proving it bites).
+    def test_real_tree_scans_clean(self):
         tree = _REPO / L.SCHEDULER_TREE_REL
-        assert not tree.exists(), (
-            f"{L.SCHEDULER_TREE_REL}/ has LANDED — retire this vacuity skip and enable "
-            "the real-tree scan per the docstring RETIREMENT CONDITION")
-        assert L.scheduler_import_violations(_REPO) == []   # green over the absent tree
-        pytest.skip(f"VACUITY: {L.SCHEDULER_TREE_REL}/ absent this phase — pin armed via "
-                    "scratch-tree controls; retire when the planner tree lands.")
+        assert tree.is_dir(), f"{L.SCHEDULER_TREE_REL}/ vanished — the real-tree pin lost its subject"
+        assert L.scheduler_import_violations(_REPO) == []
 
     def test_sanctioned_surface_folds_clean(self, tmp_path):
         _write(tmp_path, "framework/scheduler/fold.py",
@@ -155,16 +162,15 @@ class TestSchedulerImportPin:
 # the cloned defaults-only as_of pin (§3 — scheduler cortex reads inherit COG-3)
 # ===========================================================================
 class TestSchedulerAsOfDefaultsOnly:
-    def test_real_tree_is_armed_and_absent(self):
-        # VACUITY GUARD — RETIREMENT CONDITION: enable the real-tree as_of scan when
-        # framework/scheduler/ lands; companion absence assertion is the tripwire.
+    # RETIRED vacuity skip (integrator corpus surgery per §13 + the unit
+    # contradictions[] routes, W3 landing 2026-07-24): RETIREMENT CONDITION —
+    # "enable the real-tree as_of scan when framework/scheduler/ lands" — discharged
+    # by W3 u2 (d10f3e7f). The companion absence assertion tripped RED as designed;
+    # the assertion below is now the REAL-TREE §3 defaults-only as_of pin.
+    def test_real_tree_scans_clean(self):
         tree = _REPO / L.SCHEDULER_TREE_REL
-        assert not tree.exists(), (
-            f"{L.SCHEDULER_TREE_REL}/ has LANDED — retire this vacuity skip and enable "
-            "the real-tree as_of defaults-only scan")
+        assert tree.is_dir(), f"{L.SCHEDULER_TREE_REL}/ vanished — the real-tree pin lost its subject"
         assert L.scheduler_asof_default_violations(_REPO) == []
-        pytest.skip(f"VACUITY: {L.SCHEDULER_TREE_REL}/ absent this phase — as_of pin "
-                    "armed via scratch-tree controls; retire when the planner tree lands.")
 
     def test_canonical_read_folds_clean(self, tmp_path):
         _write(tmp_path, "framework/scheduler/fold.py",
@@ -204,16 +210,15 @@ class TestSchedulerAsOfDefaultsOnly:
 # the no-subprocess/no-socket pin (§7.2 — the pure planner never shells out)
 # ===========================================================================
 class TestSchedulerNoSubprocessNoSocket:
-    def test_real_tree_is_armed_and_absent(self):
-        # VACUITY GUARD — RETIREMENT CONDITION: enable the real-tree exec scan when
-        # framework/scheduler/ lands; companion absence assertion is the tripwire.
+    # RETIRED vacuity skip (integrator corpus surgery per §13 + the unit
+    # contradictions[] routes, W3 landing 2026-07-24): RETIREMENT CONDITION —
+    # "enable the real-tree exec scan when framework/scheduler/ lands" — discharged
+    # by W3 u2 (d10f3e7f). The companion absence assertion tripped RED as designed;
+    # the assertion below is now the REAL-TREE §7.2 no-subprocess/no-socket pin.
+    def test_real_tree_scans_clean(self):
         tree = _REPO / L.SCHEDULER_TREE_REL
-        assert not tree.exists(), (
-            f"{L.SCHEDULER_TREE_REL}/ has LANDED — retire this vacuity skip and enable "
-            "the real-tree no-subprocess/no-socket scan")
+        assert tree.is_dir(), f"{L.SCHEDULER_TREE_REL}/ vanished — the real-tree pin lost its subject"
         assert L.scheduler_subprocess_socket_violations(_REPO) == []
-        pytest.skip(f"VACUITY: {L.SCHEDULER_TREE_REL}/ absent this phase — exec pin "
-                    "armed via scratch-tree controls; retire when the planner tree lands.")
 
     def test_pure_planner_folds_clean(self, tmp_path):
         _write(tmp_path, "framework/scheduler/fold.py",
@@ -292,9 +297,18 @@ class TestSchedulerNoSubprocessNoSocket:
 # comparator which legally reaches authority.)
 _SCHED_FORBIDDEN_NS = ("framework.authority", "framework.acting", "framework.frontdoor",
                        "framework.fidelity", "framework.missions", "framework.ovi")
-# the three protected trees this closure covers (all absent this phase, §8.4).
+# the three protected trees this closure covers (§8.4). W3 landing 2026-07-24:
+# framework/projection (u1) + framework/scheduler (u2) LANDED — their modules are
+# enumerated below and REAL-scanned; framework/organs stays absence-armed.
 _SCHED_PROTECTED_TREES = ("framework/scheduler", "framework/organs", "framework/projection")
 _SCHED_PROTECTED_MODULES = ("framework.scheduler", "framework.organs", "framework.projection")
+# every module of the LANDED protected trees (import-inert __init__s mean the package
+# import alone would scan nothing — each submodule is closure-scanned in its own child).
+_SCHED_LANDED_MODULES = (
+    "framework.projection", "framework.projection.kernel",
+    "framework.scheduler", "framework.scheduler.fold", "framework.scheduler.model",
+    "framework.scheduler.serve", "framework.scheduler.snapshot",
+)
 
 
 def _closure_after_import(module_name: str, extra_path: Path | None = None):
@@ -318,25 +332,43 @@ def _closure_after_import(module_name: str, extra_path: Path | None = None):
 
 
 class TestSchedulerTransitiveClosure:
-    def test_real_trees_are_armed_and_absent(self):
-        # VACUITY GUARD — RETIREMENT CONDITION: when framework/scheduler/ (or organs/,
-        # projection/) lands, delete the skip and enable the real-tree closure scan —
-        # subprocess-import each protected package and assert its module closure excludes
-        # the action/authority/fidelity planes (_SCHED_FORBIDDEN_NS). The companion
-        # assertion fails the instant any protected tree lands, so this skip cannot silently
-        # persist (§13). Retire the skip when framework/scheduler lands.
-        for rel in _SCHED_PROTECTED_TREES:
-            assert not (_REPO / rel).exists(), (
-                f"{rel}/ has LANDED — retire this vacuity skip and enable the real-tree "
-                "transitive-closure scan per the docstring RETIREMENT CONDITION")
-        # genuinely armed: over the absent trees the subprocess import raises ModuleNotFound
-        # (a vacuously clean closure) — it scans for real the moment a tree lands.
-        for mod in _SCHED_PROTECTED_MODULES:
-            rc, stderr, _ = _closure_after_import(mod)
-            assert rc != 0 and "No module named" in stderr, (mod, rc, stderr)
-        pytest.skip("VACUITY: framework/scheduler|organs|projection absent this phase — "
-                    "transitive-closure gate armed via the consequence-import fixture; "
-                    "retire the skip when framework/scheduler lands.")
+    # RETIRED vacuity skip, CONVERTED in part (integrator corpus surgery per §13 +
+    # the unit contradictions[] routes, W3 landing 2026-07-24): the guard's
+    # RETIREMENT CONDITION — "when framework/scheduler/ (or organs/, projection/)
+    # lands, delete the skip and enable the real-tree closure scan" — was discharged
+    # for TWO of the three protected trees: framework/projection landed in W3 u1
+    # (9f436c8d) and framework/scheduler in W3 u2 (d10f3e7f); the companion absence
+    # assertions tripped RED as designed. Both landed legs now run the REAL
+    # transitive-closure scan below (the same _closure_after_import machinery the
+    # consequence-import mutant fixture proves biting). The framework/organs leg is
+    # STILL ABSENT and keeps its armed vacuity guard unchanged.
+    def test_landed_trees_real_closure_is_clean(self):
+        # the REAL backstop a static import scan cannot provide: subprocess-import
+        # every module of the landed planner tree + the C3 kernel and assert the
+        # closure loads ZERO forbidden-plane modules (_SCHED_FORBIDDEN_NS).
+        for mod in _SCHED_LANDED_MODULES:
+            rc, stderr, loaded = _closure_after_import(mod)
+            assert rc == 0, (mod, stderr)
+            assert loaded == [], (
+                f"{mod}'s import closure reached the action/authority/fidelity "
+                f"planes: {loaded}")
+
+    def test_organs_tree_is_armed_and_absent(self):
+        # VACUITY GUARD (organs leg — unchanged by the W3 landing surgery) —
+        # RETIREMENT CONDITION: when framework/organs/ lands, delete this skip and
+        # fold its modules into _SCHED_LANDED_MODULES so the real closure scan above
+        # covers them. The companion assertion fails the instant the tree lands, so
+        # this skip cannot silently persist (§13).
+        assert not (_REPO / "framework/organs").exists(), (
+            "framework/organs/ has LANDED — retire this vacuity skip and fold the "
+            "organs modules into _SCHED_LANDED_MODULES per the RETIREMENT CONDITION")
+        # genuinely armed: over the absent tree the subprocess import raises
+        # ModuleNotFound (a vacuously clean closure) — it scans for real on landing.
+        rc, stderr, _ = _closure_after_import("framework.organs")
+        assert rc != 0 and "No module named" in stderr, (rc, stderr)
+        pytest.skip("VACUITY: framework/organs absent this phase — transitive-closure "
+                    "gate armed via the consequence-import fixture; retire the skip "
+                    "when framework/organs lands.")
 
     def test_consequence_mutant_loads_authority(self, tmp_path):
         # FIXTURE-TREE PROOF (the exact COG-3 consequence-import mutant): a scratch package

@@ -10,26 +10,30 @@ NOT keyed on claim bytes — identity MUST survive a source-content purge, and
 event_id survives an outbox payload-NULL (§4, A-B3/C-F12). A build-time ULID
 is the pinned sim-1 mutant.
 
-CANONICAL DIALECT (G-F5): one dialect, one place. This module imports the
-FROZEN recorder's pure canonicalization (`framework.evidence.recorder._canonical`
-/ `_digest`) rather than minting a second hashing dialect — a deliberately
-recorded coupling to a private germline symbol whose standing tripwire is the
-recorder-vs-cortex byte-parity test. The chained hash re-parses and
-re-canonicalizes each row (never hashes file bytes — A-m11).
+CANONICAL DIALECT (G-F5): one dialect, one place. This module ROUTES its
+canonical bytes / digest / identity / chained-hash through the extracted
+projection kernel (`framework.projection.kernel`, COG-4 §6.4) — the stdlib
+replica of the frozen recorder dialect, byte-identical to the recorder (the
+standing tripwires: test_cog2_rebuild_determinism + test_cog4_kernel_parity).
+The chained hash re-parses each row (never hashes file bytes — A-m11).
 
 Provenance: authored per the 2026-07-07 full-autonomy grant + the 2026-07-20
 cognitive-masterplan continuous grant.
 """
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Optional
 
-# The single canonicalization dialect (private frozen-recorder symbols —
-# recorded coupling G-F5; byte-parity is the standing tripwire).
-from framework.evidence.recorder import _canonical as _recorder_canonical
-from framework.evidence.recorder import _digest as _recorder_digest
+# Store disciplines route through the ONE extracted projection kernel (COG-4
+# §6.4 adoption of §6.1 (a) canonical bytes + recorder-dialect digest, (b) the
+# content-excluded identity law, (c) the parameterized chained rows-hash). The
+# kernel replicates the recorder dialect in stdlib, byte-identical to
+# framework.evidence.recorder._canonical — the standing tripwires are
+# test_cog2_rebuild_determinism.TestCanonicalDialectParity (kernel==recorder)
+# and test_cog4_kernel_parity. One dialect, one place; no second hashing
+# dialect is minted here.
+from framework.projection import kernel as _kernel
 from framework.triggers import schema_registry
 
 # Bumping any of these is a hash EPOCH BUMP (§5.1 A-m13), never a determinism
@@ -65,22 +69,25 @@ _SOURCE_TRUST_SCHEMA_ID = "cortex/source-trust@1"
 
 
 def canonical_bytes(value: Any) -> bytes:
-    """The recorder-dialect canonical bytes: json.dumps(sort_keys, compact,
-    ensure_ascii=False) -> utf-8. Reused verbatim (G-F5), never re-implemented."""
-    return _recorder_canonical(value)
+    """The recorder-dialect canonical bytes (kernel-routed, §6.4 (a)): one
+    dialect, one place. Byte-identical to the frozen recorder's _canonical for
+    every serializable payload (the standing kernel==recorder tripwire)."""
+    return _kernel.canonical_bytes(value)
 
 
 def digest(value: Any) -> str:
-    """Recorder-dialect sha256 hexdigest of the canonical bytes."""
-    return _recorder_digest(value)
+    """Recorder-dialect sha256 hexdigest of the canonical bytes (kernel-routed)."""
+    return _kernel.digest(value)
 
 
 def compute_belief_id(kind: str, subject_key: str, dimension: str,
                       event_id: str, adapter_ordinal: int) -> str:
     """DETERMINISTIC identity (§4, rev 2): a recorder digest of the identity
     tuple — explicitly NOT the claim bytes (survives content purge). A dict
-    with named keys keeps the digest self-describing and reorder-proof."""
-    return digest({
+    with named keys keeps the digest self-describing and reorder-proof. Routed
+    through the kernel's identity law (§6.4 (b)) — a content-excluded digest,
+    never a build-time ULID."""
+    return _kernel.identity_digest({
         "kind": kind,
         "subject_key": subject_key,
         "dimension": dimension,
@@ -148,21 +155,24 @@ def canonical_row(belief: Belief) -> str:
 def chained_hash(beliefs: Iterable[Belief]) -> str:
     """The §5.1 chained SHA-256 over beliefs in belief_id order (canonical
     order — independent of fold-processing/arrival order by construction).
-
-        acc = sha256(SEED); for b in sorted(beliefs): acc = sha256(acc || row)
-
-    Re-canonicalizes each belief (rows, never file bytes — A-m11)."""
-    ordered = sorted(beliefs, key=lambda b: b.belief_id)
-    acc = hashlib.sha256(_BELIEF_HASH_SEED).digest()
-    for belief in ordered:
-        acc = hashlib.sha256(acc + canonical_bytes(belief.to_canonical_dict())).digest()
-    return acc.hex()
+    Kernel-routed (§6.4 (c)): the sha256-chain algebra, the frozen domain seed,
+    id-order; each belief's canonical dict is re-canonicalized by the kernel
+    (rows, never file bytes — A-m11)."""
+    # sorting the canonical dicts by belief_id == sorting the beliefs by
+    # belief_id (belief_id is unique and preserved in to_canonical_dict), so the
+    # chain input order — and thus the hash — is byte-identical to the prior
+    # inline sha256 loop.
+    return _kernel.chained_rows_hash(
+        (b.to_canonical_dict() for b in beliefs),
+        algebra=_kernel.ALGEBRA_SHA256_CHAIN, seed=_BELIEF_HASH_SEED,
+        order_key=lambda row: row["belief_id"])
 
 
 def hash_canonical_rows(rows: Iterable[dict]) -> str:
-    """Chained hash over already-parsed belief dicts (the JSONL-reader path).
-    Sorts each row's derived collections and re-canonicalizes so a re-read of
-    the store reproduces the fold-time hash iff the store is intact."""
+    """Chained hash over already-parsed belief dicts (the JSONL-reader path) —
+    kernel-routed (§6.4 (c)). Each row's derived collections are sorted (the
+    domain-side normalize, §6.2) and re-canonicalized so a re-read of the store
+    reproduces the fold-time hash iff the store is intact."""
     def _sorted_row(row: dict) -> dict:
         out = dict(row)
         if isinstance(out.get("supersedes"), list):
@@ -171,11 +181,9 @@ def hash_canonical_rows(rows: Iterable[dict]) -> str:
             out["contradicts"] = sorted(out["contradicts"])
         return out
 
-    ordered = sorted(rows, key=lambda r: r["belief_id"])
-    acc = hashlib.sha256(_BELIEF_HASH_SEED).digest()
-    for row in ordered:
-        acc = hashlib.sha256(acc + canonical_bytes(_sorted_row(row))).digest()
-    return acc.hex()
+    return _kernel.chained_rows_hash(
+        rows, algebra=_kernel.ALGEBRA_SHA256_CHAIN, seed=_BELIEF_HASH_SEED,
+        order_key=lambda row: row["belief_id"], normalize=_sorted_row)
 
 
 def validate_belief(belief: Belief, *, root=None) -> tuple:

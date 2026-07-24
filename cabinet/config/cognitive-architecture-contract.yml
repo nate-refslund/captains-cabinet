@@ -107,6 +107,20 @@ temporary_allowances:
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: COG-7 compaction folds the graph, or the phase is superseded
+  - phase: COG-4
+    budget: framework_production_modules
+    additional: 7
+    reason: COG-4 running total — W3 u1 C3 projection-kernel extraction +2 (framework/projection __init__ import-inert + kernel.py — the eight already-law-identical parts of the cortex/objectives instantiations per contract §6.1, stdlib-only per the §8.3 boundary row) plus W3 u2 the shadow scheduler +5 (framework/scheduler __init__ import-inert + model corpus-pinned vocabulary/validation/rows-hash + snapshot declared-input builder on the cortex/objectives serve surfaces + fold pure planner with the §7.5 O_EXCL writer lock + serve the ONE kernel-bound loader — §7.1-§7.2/§6.3). EXACT measured running total (233 vs 226 base), 2026-07-24, via cognitive-architecture-census.py — the zero-headroom observed==max law means each COG-4 unit bumps this allowance to its exact new running total, never a pre-allocated ceiling; tightened to phase actual at done-flip (shrink-only)
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: COG-7 compaction folds the scheduler/organ packages, or the phase is superseded
+  - phase: COG-4
+    budget: framework_production_noncomment_lines
+    additional: 973
+    reason: COG-4 running total — W3 u1 C3 kernel extraction +295 (framework/projection/kernel.py canonical bytes + recorder-dialect digest, content-excluded identity law, the parameterized chained rows-hash expressing BOTH shipped algebras, manifest envelope, O_EXCL+fsync+os.replace atomic write, verified single-read serve with the mandatory-present rows-hash limb + parameterized REFUSE-limb runner, canonical-cutoff validator, cache-delete rollback grammar; plus the import-inert __init__) plus W3 u2 the shadow scheduler +688 (framework/scheduler — model.py corpus-pinned vocabulary/ASCII canonical dialect/FILE-ORDER rows-hash/§7.1 hard-error snapshot validation + snapshot.py declared-input builder incl. the load_beliefs_verified-bound cortex manifest read and the serve_graph-only objectives read + fold.py the pure §7.2 planner with conflict/starvation/ceiling laws and the §7.5 O_EXCL writer lock + serve.py the ONE kernel-bound loader with the eight REFUSE limbs + the import-inert __init__) THEN W3 u3 cortex kernel-adoption −10 (framework/cortex belief + engine route their canonical-bytes/digest, identity, chained rows-hash, manifest envelope, atomic write and JSONL-reader disciplines through framework/projection/kernel under the byte-compat gate — store hashes/manifests/beliefs.jsonl byte-identical, full test_cog2_* green 283/283; the canonical-cutoff pattern stays a by-value replica in query.py per the test_cog4_kernel_store text-scan tripwire — NOT routed by reference — and the verified single-read serve-binding is PARKED per docs/plans/cog4-w3-u3-cortex-serve-adoption-park-2026-07-24.md pending a kernel read_rows parameter). EXACT measured running total (65985 vs 65012 base), 2026-07-24 W3 landing integration, via cognitive-architecture-census.py — the zero-headroom observed==max law means each COG-4 unit bumps this allowance to its exact new running total, never a pre-allocated ceiling; tightened to phase actual at done-flip (shrink-only)
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: COG-7 compaction folds the scheduler/organ packages, or the phase is superseded
 ownership:
   authoritative_state: domain_transaction
   cross_domain_delivery: transactional_outbox

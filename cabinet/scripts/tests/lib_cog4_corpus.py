@@ -723,10 +723,20 @@ def real_surface_import_probe(repo_str: str):
     """(returncode, stderr) of a child `import framework.scheduler.fold` —
     the ARMED proof for the vacuity guards: on the bare tree this fails with
     ModuleNotFoundError; the moment the tree lands it stops failing (and the
-    companion absence assertion has already gone RED)."""
+    companion absence assertion has already gone RED).
+
+    cwd ISOLATION (integrator corpus surgery per §13 + the u2 contradictions[]
+    route, W3 landing 2026-07-24): the child previously inherited the pytest
+    process cwd (the repo root); `python -c` places the cwd on sys.path, so the
+    instant framework/scheduler/ genuinely landed, a probe of a BARE scratch
+    root still resolved the REAL tree through the leaked cwd and answered
+    rc=0 — a probe defect (it must answer about repo_str ONLY), surfaced by
+    TestArmedProbeMachinery::test_probe_flips_when_the_surface_lands and
+    adjudicated a genuine defect, not a surface violation. cwd now pins to the
+    probed root, so both sys.path entries ('' and the insert) point at repo_str."""
     r = _run_child(
         f"import sys\nsys.path.insert(0, {repo_str!r})\n"
-        f"import {FOLD_MODULE}\n", hashseed=0)
+        f"import {FOLD_MODULE}\n", hashseed=0, cwd=repo_str)
     return r.returncode, r.stderr
 
 

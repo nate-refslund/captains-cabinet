@@ -32,13 +32,16 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import uuid
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
 from framework.cortex import belief as _belief
 from framework.cortex.belief import Belief, compute_belief_id, digest
+# Storage disciplines route through the extracted kernel (COG-4 §6.4): the
+# manifest envelope (d), the O_EXCL+fsync+os.replace atomic write (e), and the
+# rows-not-bytes JSONL reader (f). ENGINE_VERSION/epoch stay domain-side (§6.2).
+from framework.projection import kernel as _kernel
 
 # stream_rank enum — schema-frozen per engine version (§5.2). Part of the hash
 # epoch tuple; a new adapter is an epoch bump, never a determinism regression.
@@ -409,37 +412,40 @@ def build_manifest(beliefs: list[Belief], *, trust_table: dict,
     a detected gap — ADDITIVE + hash-independent (belief_store_hash is over the
     beliefs, not the manifest), absent for the default outbox-only rebuild."""
     lag = (max_id - frontier) if (max_id is not None and frontier is not None) else None
-    manifest = {
-        "schema_version": "cortex-fold-manifest/v1",
-        "epoch": {
+    # Kernel-routed envelope (§6.4 (d)): the {schema_version, epoch, <hash>,
+    # counts...} shape both shipped stores carry; epoch CONTENTS stay domain law
+    # (§6.2). sort_keys at write time makes key insertion order irrelevant, so
+    # the on-disk manifest bytes are byte-identical to the prior inline dict.
+    manifest = _kernel.manifest_envelope(
+        schema_version="cortex-fold-manifest/v1",
+        epoch={
             "engine_version": _belief.ENGINE_VERSION,
             "trust_table_version": int(trust_table["table_version"]),
             "rank_table": RANK_TABLE,
             "source_set": sorted(source_set or ["officer_tasks_outbox"]),
             "frontier": frontier,
         },
-        "belief_store_hash": _belief.chained_hash(beliefs),
-        "belief_count": len(beliefs),
-        "frontier": frontier,
-        "max_id": max_id,
-        "frontier_lag": lag,
-        "frontier_blockers": frontier_blockers or [],
-        "seen": seen_intervals(beliefs),
-    }
+        store_hash_key="belief_store_hash",
+        store_hash=_belief.chained_hash(beliefs),
+        counts={
+            "belief_count": len(beliefs),
+            "frontier": frontier,
+            "max_id": max_id,
+            "frontier_lag": lag,
+            "frontier_blockers": frontier_blockers or [],
+            "seen": seen_intervals(beliefs),
+        },
+    )
     if consequence_rows is not None:
         manifest["seen_consequence"] = consequence_seen(consequence_rows)
     return manifest
 
 
 def _atomic_write(path: Path, data: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex[:6]}.tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        handle.write(data)
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(tmp, path)
+    # Kernel-routed atomic write (§6.4 (e)): O_EXCL private tmp + fsync +
+    # os.replace (framework.projection.kernel.atomic_write) — a crash before the
+    # replace leaves the target byte-untouched; the replace itself is atomic.
+    _kernel.atomic_write(path, data)
 
 
 def write_projection(beliefs: list[Belief], manifest: dict, cache_dir: Path) -> dict:
@@ -458,13 +464,7 @@ def write_projection(beliefs: list[Belief], manifest: dict, cache_dir: Path) -> 
 
 def read_beliefs_jsonl(path: Path) -> list[dict]:
     """Parse a beliefs.jsonl back to row dicts (the rows-not-bytes verifier
-    path — A-m11). Refuses a malformed line (fail-loud, never a silent skip)."""
-    rows: list[dict] = []
-    for lineno, line in enumerate(Path(path).read_text(encoding="utf-8").splitlines(), 1):
-        if not line.strip():
-            continue
-        try:
-            rows.append(json.loads(line))
-        except ValueError as exc:
-            raise ValueError(f"beliefs.jsonl line {lineno} is not valid JSON") from exc
-    return rows
+    path — A-m11), fail-loud on a malformed line. Kernel-routed (§6.4 (f)): the
+    same single-pass JSONL reader; for a ``beliefs.jsonl`` path the malformed-
+    line message is byte-identical to the prior inline reader."""
+    return _kernel.read_jsonl_rows(path)
