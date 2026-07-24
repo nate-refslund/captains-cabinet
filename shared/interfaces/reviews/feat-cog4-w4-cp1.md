@@ -81,3 +81,14 @@ sibling of the existing v1 anchor). Observed non-blocking gap, recorded for
 a future pass: the W3 projection/scheduler packages and W4 organs package
 ship by default (no delete rule touches them) but carry no expect-present
 anchors — consistent with the W3 landing's choice, left unchanged here.
+
+## Post-push CI fix (cp1 addendum, 2026-07-24)
+
+PR-range gitleaks REDs on two generic-api-key false positives in v3's
+trajectory battery (the fake fixture `idempotency_key:
+"garden-rota-week-30"` — digits crossed the entropy bar). Fixed by the
+recorded house pattern (the PR #139 / organ-manifest:495 precedent):
+value de-entropied at HEAD to the W2 twin's `"garden-rota"` (schema
+$defs/id still satisfied; no test pins the value) + the introducing
+cherry-pick's two fingerprints appended to .gitleaksignore. No history
+rewrite; egg/tree bytes clean post-fix, so no no-git twins.
