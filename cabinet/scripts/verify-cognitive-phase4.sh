@@ -11,15 +11,13 @@
 # here (each has its own verify twin). This gate is COG-4-scoped; the composed
 # enduring-architecture gate below is the cross-phase spine.
 #
-# INTERIM NOTE (W6-e3 landing): until the LANDING integrator performs the §13
-# corpus surgery, TWO test_cog4_measurement.py arms fail BY DESIGN now that the
-# §10 surface has landed — test_verify_twin_arm (this file consumes
-# COG4_ENFORCE_BOUND) and test_real_pilot_measurement_arm (cog4-measure.py + the
-# S0 baseline landed). Both companion assertions are the designed flip signals;
-# the retired arms bind the real twin-consumes-flag + real-pilot bounds. W6-e3
-# pre-proves BOTH out-of-band, GREEN, in test_cog4_measure_baseline.py (mirrors
-# test_cog4_parity_record.py). Post-surgery the battery is green — this note
-# describes the unit-branch state only, never a reason to skip the battery.
+# INTERIM DISCHARGED (W6 landing 2026-07-24): the §13 corpus surgery is DONE —
+# every designed flip-arm (the two test_cog4_measurement.py arms, the
+# test_cog4_floor_conservation.py derivation arm, both
+# test_cog4_organ_runner.py runner arms) is retired-live per its own
+# RETIREMENT CONDITION, bound to the landed real surfaces (pre-proven
+# out-of-band in test_cog4_measure_baseline.py + test_cog4_organ_runner_real.py,
+# the parity-record mirror). The battery below runs with ZERO designed REDs.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
@@ -39,9 +37,9 @@ fi
 # wall-clock tripwire in the pytest battery below; this leg additionally runs the
 # REAL measurement check against the tracked S0 baseline (deterministic proxies
 # EXACT always-on; wall-clock p95 <= the floor-aware bound when armed). A
-# regression fails the gate here, LOUD. (test_cog4_measurement.py's two vacuity
-# arms RED by design until the integrator's §13 corpus surgery — pre-proven
-# GREEN out-of-band in test_cog4_measure_baseline.py.)
+# regression fails the gate here, LOUD. (test_cog4_measurement.py's two former
+# vacuity arms are retired-live since the 2026-07-24 W6 landing — they bind the
+# same real surfaces this leg runs.)
 export COG4_ENFORCE_BOUND=1
 python3.12 cabinet/scripts/cog4-measure.py --check \
   --baseline-file cabinet/scripts/tests/fixtures/cog4/cog4-measure-baseline-2026-07-24.json
