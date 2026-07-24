@@ -1,0 +1,368 @@
+schema_version: cognitive-phase-rollback/v1
+phase: COG-4
+# S0 pin (contract §16): origin/master at COG-4 implementation start == the
+# phase-4 contract-landing commit de5d16c4 (contract doc + germline amendment
+# proposal + CG row + ledger COG-4 todo->in-flight). Every restore below
+# restores to it; restoring cabinet/config/cognitive-architecture-contract.yml
+# to it removes the COG-4 temporary_allowances rows (allowance_removal below).
+# Authored W6-e1 2026-07-24. Self-ratified per the 2026-07-07 full-autonomy
+# grant + the 2026-07-20 cognitive-masterplan grant.
+baseline_sha: de5d16c481beed835cf603e0398b997d0b44ae4f
+
+# --- closed-range footprint seal (the C1 fix shape, born-closed) --------------
+# The footprint range is CLOSED: baseline_sha..done_flip_sha. The open-ended
+# baseline..HEAD range is the NAMED anti-pattern (BACKLOG :1551-1555; contract
+# §16): phase-1's open ratchet RED'd on full clones once later phases landed.
+# COG-4 does not inherit it — but the phase has NOT flipped yet, so
+# done_flip_sha is the C1-convention PLACEHOLDER below, pinned to the ledger
+# COG-4 -> done flip commit AT the flip (the same commit-class phase-3 pinned
+# at e7f95d5a, retrofitted 2026-07-23). RETIREMENT CONDITION: the landing
+# integrator replaces the sentinel with the real flip SHA in the flip commit;
+# until then the rehearsal anchors at HEAD and says so loudly.
+done_flip_sha: PENDING-DONE-FLIP
+
+# --- runtime inverse (§16 — ONE command, no data surgery) ---------------------
+# COG-4 is SHADOW-ONLY (contract §1/§7): the scheduler holds no authority, the
+# dispatcher executes nothing, and NO pointer file exists this phase —
+# ~/.cabinet/state/cog4-dispatch-pointer existing AT ALL is a
+# verify-cognitive-phase4.sh tripwire (§7.3; the COG-3 §7.4 idiom), so there is
+# no pointer to invert. The ONLY runtime footprint is the disposable scheduler
+# projection cache; the inverse is safe by construction.
+runtime_inverses:
+  - name: scheduler_cache
+    command: rm -rf cabinet/cache/scheduler
+    effect: >-
+      delete the disposable shadow-scheduler cache — snapshot.json +
+      schedule.jsonl + schedule-manifest.json + the shadow decision log.
+      ALWAYS SAFE BY CONSTRUCTION (§7.1-§7.2): the snapshot and schedule are
+      pure functions of DECLARED versioned inputs (cortex/objectives manifest
+      hashes, organ registry hash, services manifest hash, versioned
+      parameters — never env/clock), so delete->rebuild reproduces the
+      identical chained hash (the N1 gate). The ONE honest loss is the shadow
+      decision record (would_dispatch/refused rows) — expendable in shadow by
+      declaration (§16), stated here.
+    reversible_by: >-
+      python3.12 cabinet/scripts/cog4-snapshot.py --scope <scope> --cutoff
+      <canonical-ts> <declared-input flags> && python3.12
+      cabinet/scripts/cog4-schedule.py --snapshot <snapshot.json>
+
+# --- code inverse: remove new COG-4 files -------------------------------------
+# REAL FOOTPRINT ONLY (§16): every entry below exists in the committed tree at
+# authoring (W6-e1, 2026-07-24) except the frozen phase review (created at
+# landing — the ONE allowed-absent, the phase-3 precedent). The phase-3
+# manifest's phantom objectives-index.sqlite3 is the second named anti-pattern
+# — nothing here names an artifact no code builds. Sibling W6 surfaces that do
+# NOT exist yet (e2 compose: cog4-organ-runner.py + runner plist; e3
+# measurement: cog4-measure.py + the S0 baseline artifact; sibling FW-019
+# review artifacts; the integrator's corpus-surgery + test_egg_export.py
+# edits) are DELIBERATELY absent — the landing integrator extends this
+# manifest AND the review-scope twin in the same commit (the drift check
+# forces both together); see rehearsal.sibling_landing_note.
+remove:
+  # framework surface (DIRS — wholesale):
+  - framework/projection
+  - framework/scheduler
+  - framework/organs
+  # the v2 trajectory schema (v1 is byte-untouched and stays):
+  - framework/schemas/cognitive-trajectory.v2.schema.json
+  # C2 boundary-manifest rows (the engine file itself is a RESTORE below):
+  - cabinet/config/boundary-manifest.yml
+  # committed COG-4 CLIs (W3/W4/W5):
+  - cabinet/scripts/cog4-snapshot.py
+  - cabinet/scripts/cog4-schedule.py
+  - cabinet/scripts/cog4-dispatch-shadow.py
+  - cabinet/scripts/cog4-parity.py
+  # committed COG-4 corpus fixtures (DIR — wholesale: fold seeds, pilot
+  # manifests, the three non-software cabinets, the tracked N9 parity record):
+  - cabinet/scripts/tests/fixtures/cog4
+  # committed COG-4 tests-first corpus (W2) + libs:
+  - cabinet/scripts/tests/lib_cog4_ast_pins.py
+  - cabinet/scripts/tests/lib_cog4_corpus.py
+  - cabinet/scripts/tests/lib_cog4_dispatch_adapter.py
+  - cabinet/scripts/tests/lib_cog4_floors.py
+  - cabinet/scripts/tests/lib_cog4_parity_set.py
+  - cabinet/scripts/tests/test_cog4_boundary_rows.py
+  - cabinet/scripts/tests/test_cog4_dispatch_ast_pin.py
+  - cabinet/scripts/tests/test_cog4_dispatch_cli.py
+  - cabinet/scripts/tests/test_cog4_exit_fixtures.py
+  - cabinet/scripts/tests/test_cog4_fleet_truth.py
+  - cabinet/scripts/tests/test_cog4_floor_conservation.py
+  - cabinet/scripts/tests/test_cog4_kernel_parity.py
+  - cabinet/scripts/tests/test_cog4_kernel_store.py
+  - cabinet/scripts/tests/test_cog4_measurement.py
+  - cabinet/scripts/tests/test_cog4_organ_manifest.py
+  - cabinet/scripts/tests/test_cog4_organ_runner.py
+  - cabinet/scripts/tests/test_cog4_organs_package.py
+  - cabinet/scripts/tests/test_cog4_parity.py
+  - cabinet/scripts/tests/test_cog4_parity_ast_pin.py
+  - cabinet/scripts/tests/test_cog4_parity_cli.py
+  - cabinet/scripts/tests/test_cog4_parity_record.py
+  - cabinet/scripts/tests/test_cog4_scheduler_ast_pin.py
+  - cabinet/scripts/tests/test_cog4_scheduler_surface.py
+  - cabinet/scripts/tests/test_cog4_sim_dispatch.py
+  - cabinet/scripts/tests/test_cog4_sim_fold.py
+  - cabinet/scripts/tests/test_cog4_trajectory_v2.py
+  # COG-4 PARK markers (dated in-phase records; ledger notes retain history):
+  - docs/plans/cog4-w1-u3-officer-plist-cleanup-PARKED-2026-07-23.md
+  - docs/plans/cog4-w3-u3-cortex-serve-adoption-park-2026-07-24.md
+  - docs/plans/cog4-w3-u4-objectives-kernel-adoption-PARKED-2026-07-24.md
+  - docs/plans/cog4-w4-u1-organ-schema-validation-PARKED-2026-07-24.md
+  # committed COG-4 wave FW-019 batch proofs (the WR rider proofs are NOT
+  # here — the rider lane survives a COG-4 rollback, out_of_phase_in_range):
+  - shared/interfaces/reviews/feat-cog4-w1-cp1.md
+  - shared/interfaces/reviews/feat-cog4-w1-u1-cp1.md
+  - shared/interfaces/reviews/feat-cog4-w1-u2-cp1.md
+  - shared/interfaces/reviews/feat-cog4-w2-cp1.md
+  - shared/interfaces/reviews/feat-cog4-w2-t1-cp1.md
+  - shared/interfaces/reviews/feat-cog4-w2-t2-cp1.md
+  - shared/interfaces/reviews/feat-cog4-w2-t3-cp1.md
+  - shared/interfaces/reviews/feat-cog4-w3-cp1.md
+  - shared/interfaces/reviews/feat-cog4-w3-u1-cp1.md
+  - shared/interfaces/reviews/feat-cog4-w3-u2-cp1.md
+  - shared/interfaces/reviews/feat-cog4-w4-cp1.md
+  - shared/interfaces/reviews/feat-cog4-w4-v1-cp1.md
+  - shared/interfaces/reviews/feat-cog4-w4-v2-cp1.md
+  - shared/interfaces/reviews/feat-cog4-w4-v3-cp1.md
+  - shared/interfaces/reviews/feat-cog4-w5-cp1.md
+  - shared/interfaces/reviews/feat-cog4-w5-x1-cp1.md
+  - shared/interfaces/reviews/feat-cog4-w5-x2-cp1.md
+  - shared/interfaces/reviews/feat-cog4-w5-x3-cp1.md
+  # W6-e1 phase twins (this unit) + its FW-019 proof + THIS manifest:
+  - cabinet/scripts/verify-cognitive-phase4.sh
+  - cabinet/scripts/cognitive-phase4-review-scope.py
+  - cabinet/scripts/cognitive-phase4-rollback-rehearsal.py
+  - shared/interfaces/reviews/feat-cog4-w6-e1-cp1.md
+  - docs/plans/cognitive-core-phase-4-rollback-manifest-2026-07-24.yml
+  # the frozen post-implementation review (§15 lands it at landing; excluded
+  # from the review-scope digest, so it is the one remove path allowed absent)
+  - shared/interfaces/reviews/cognitive-core-phase-4-review.md
+
+# --- code inverse: restore extended files from baseline_sha -------------------
+# Restoring these to baseline_sha reverts every COG-4 edit — the W1 boundary
+# ENGINE conversion of cog2-import-gate.py (the yml rows above are deleted with
+# it), the W3 cortex kernel adoption (belief.py + engine.py routed through
+# framework/projection under the byte-compat gate — restore reverts to the
+# pre-adoption fold, hash lineage identical BY the byte-compat law), the W4
+# trajectory-v2 version dispatch in contracts.py, the W2/W4 .gitleaksignore
+# fixture rows, the egg-manifest COG-4 rows (W4/W5 expect-present + W6-e1
+# phase-twin exclusions), and the COG-4 allowance rows (allowance_removal).
+# RIDER OVERLAP (recorded): cog2-import-gate.py and egg-export-manifest.txt
+# ALSO carry WR rider edits (commit 0d8a74d4 — verdict-inbox/shadow-dividend
+# allowlist + egg rows); restoring to baseline reverts those rider rows too.
+# A REAL rollback therefore re-applies the rider allowlist + egg rows in a
+# follow-up commit (rehearsal.rider_interaction_note names them) — the rider
+# lane itself is retained (out_of_phase_in_range).
+# SIBLING-LANDING TOLERANCE (the phase-3 adapters_absence_note analog):
+# cabinet/services.yml, framework/watchdog/registry.py and
+# cabinet/scripts/tests/test_egg_export.py are baseline-identical at THIS
+# unit's authoring — the W6-e2 compose (services rows + per-organ floors) and
+# the landing integrator (egg phase-4 tuple) edit them in sibling/landing
+# commits of the SAME wave. Restoring a baseline-identical file is a safe
+# no-op; once the siblings land, the same rows revert their edits.
+restore_from_baseline:
+  - cabinet/scripts/cog2-import-gate.py
+  - cabinet/config/cognitive-architecture-contract.yml
+  - framework/cortex/belief.py
+  - framework/cortex/engine.py
+  - framework/evolution/contracts.py
+  - .gitleaksignore
+  - cabinet/scripts/egg-export-manifest.txt
+  - cabinet/scripts/tests/test_egg_export.py
+  - cabinet/services.yml
+  - framework/watchdog/registry.py
+
+# --- allowance removal (§11/§16) ----------------------------------------------
+allowance_removal:
+  path: cabinet/config/cognitive-architecture-contract.yml
+  action: >-
+    restoring this file from baseline_sha removes the COG-4
+    temporary_allowances rows (at W6-e1 authoring:
+    framework_production_modules running total 236 vs base 226 = +10;
+    framework_production_noncomment_lines running total 66409 vs base 65012 =
+    +1397 — sibling units may bump the running totals further before the
+    flip; the restore removes whatever the final rows say) in the SAME commit
+    as the code inverse — valid only once the module/line deltas are gone
+    (the framework/{projection,scheduler,organs} deletes above)
+
+# --- append-only surfaces: retain rows, add a dated rollback note -------------
+retain_append_only:
+  - path: docs/plans/operative-egg-ledger-2026-07-07.yml
+    rows: [COG-0, COG-1, COG-2, COG-3, COG-4, COG-5, COG-6, COG-7, COG-8]
+    rollback_action: retain rows and append a dated rollback/supersession note; preserve allowed status vocabulary
+  - path: docs/plans/operative-egg-plan-2026-07-07.md
+    rows: [COG-0, COG-1, COG-2, COG-3, COG-4, COG-5, COG-6, COG-7, COG-8]
+    rollback_action: retain parity rows and append the same dated rollback/supersession note
+
+# --- non-COG-4 work landed INSIDE the closed range: retained on rollback ------
+# The range baseline_sha..done_flip contains two commit families that are NOT
+# phase footprint; a COG-4 rollback keeps them (they appear in the rehearsal's
+# inverse diff by design — the honest closed-range accounting):
+# (a) the WR rider lane (commit 0d8a74d4; contract §18 — zero COG-4
+#     dependency, reads the SHIPPED COG-3 serve surface, must not gate any
+#     COG-4 wave), and
+# (b) the W1 prior-phase hardening (commit cee6741e): the C1 closed-range
+#     retrofit of the phase-0..3 rollback manifests/closure tests + the
+#     phase-3 rehearsal anchor + the phase-3 review re-freeze — reverting
+#     these would RE-OPEN the open-range defect they fixed (BACKLOG
+#     :1551-1555); a rollback never un-fixes a prior phase.
+out_of_phase_in_range:
+  - path: cabinet/scripts/cog3-verdict-inbox.py
+    provenance: 0d8a74d4 WR rider R1
+    rollback_action: retain
+  - path: cabinet/scripts/cog3-shadow-dividend.py
+    provenance: 0d8a74d4 WR rider R3
+    rollback_action: retain
+  - path: cabinet/scripts/tests/test_cog3_verdict_inbox.py
+    provenance: 0d8a74d4 WR rider R1
+    rollback_action: retain
+  - path: cabinet/scripts/tests/test_cog3_shadow_dividend.py
+    provenance: 0d8a74d4 WR rider R3
+    rollback_action: retain
+  - path: cabinet/scripts/tests/test_cog3_import_gate.py
+    provenance: 0d8a74d4 WR rider (allowlist coverage rows)
+    rollback_action: retain
+  - path: framework/tests/test_evidence_detectors.py
+    provenance: 0d8a74d4 WR rider R3
+    rollback_action: retain
+  - path: shared/interfaces/reviews/feat-cog4-wr-cp1.md
+    provenance: 0d8a74d4 WR rider FW-019 proof
+    rollback_action: retain
+  - path: shared/interfaces/reviews/feat-cog4-wr-r1-cp1.md
+    provenance: 0d8a74d4 WR rider FW-019 proof
+    rollback_action: retain
+  - path: shared/interfaces/reviews/feat-cog4-wr-r3-cp1.md
+    provenance: 0d8a74d4 WR rider FW-019 proof
+    rollback_action: retain
+  - path: docs/plans/cognitive-core-phase-0-rollback-manifest-2026-07-19.yml
+    provenance: cee6741e W1 C1 closed-range retrofit
+    rollback_action: retain
+  - path: docs/plans/cognitive-core-phase-1-rollback-manifest-2026-07-20.yml
+    provenance: cee6741e W1 C1 closed-range retrofit
+    rollback_action: retain
+  - path: docs/plans/cognitive-core-phase-2-rollback-manifest-2026-07-22.yml
+    provenance: cee6741e W1 C1 closed-range retrofit
+    rollback_action: retain
+  - path: docs/plans/cognitive-core-phase-3-rollback-manifest-2026-07-22.yml
+    provenance: cee6741e W1 C1 closed-range retrofit
+    rollback_action: retain
+  - path: cabinet/scripts/tests/test_cognitive_phase0_rollback.py
+    provenance: cee6741e W1 C1 closed-range retrofit
+    rollback_action: retain
+  - path: cabinet/scripts/tests/test_cognitive_phase1_rollback.py
+    provenance: cee6741e W1 C1 closed-range retrofit
+    rollback_action: retain
+  - path: cabinet/scripts/tests/test_cognitive_phase2_rollback.py
+    provenance: cee6741e W1 C1 closed-range retrofit
+    rollback_action: retain
+  - path: cabinet/scripts/tests/test_cognitive_phase3_rollback.py
+    provenance: cee6741e W1 C1 closed-range retrofit
+    rollback_action: retain
+  - path: cabinet/scripts/cognitive-phase3-rollback-rehearsal.py
+    provenance: cee6741e W1 C1 closed-range anchor fix
+    rollback_action: retain
+  - path: shared/interfaces/reviews/cognitive-core-phase-3-review.md
+    provenance: cee6741e W1 phase-3 re-freeze (digest re-bound)
+    rollback_action: retain
+
+# --- surfaces COG-4 promised NOT to touch (§16 carve-out: the Phase-0∪1∪2∪3
+# protected union MINUS cabinet/services.yml + the COG-4-specific pins) -------
+# services.yml is the ONE deliberate, recorded SUPERSESSION: every prior
+# manifest pins it byte-unchanged, but C4 composition EDITS it by charter — it
+# moved to restore_from_baseline above, and the superseding protections are
+# NAMED: (1) the §9.1 fleet-truth conservation test
+# (test_cog4_fleet_truth.py — no paper-shrink, row-less organ count must not
+# grow), (2) the §9.2 floor-conservation law at COUNT + TUPLE strength
+# (test_cog4_floor_conservation.py), (3) the §9.4/§11 census maxima-tighten
+# shrink-only gate (cognitive-architecture-census.py --check) — strictly
+# stronger than a byte-freeze for what the freeze protected. Its rehearsal
+# check is the compose-revert round-trip (fleet inverse) + those three gates
+# green, never a per-path diff.
+# GERMLINE PAIR (real state of record): the §4.5 Captain window NEVER OPENED —
+# the extension gate pair is BYTE-UNTOUCHED this phase (the W4 germline
+# micro-unit is PARKED, docs/plans/cog4-w4-u1-organ-schema-validation-
+# PARKED-2026-07-24.md), so both files sit HERE, not in restore. If the
+# window lands the edit before the done-flip, the integrator moves the pair
+# to restore_from_baseline with the §4.5 Captain-windowed-restore note (the
+# restore is itself a germline edit riding a Captain window).
+must_remain_unchanged:
+  - framework/events/emitter.py
+  - framework/authority/classifier.py
+  - framework/authority/matrix.py
+  - framework/authority/policy_engine.py
+  - framework/policies/authority-matrix.yml
+  - framework/learning/gate.py
+  - framework/authority
+  - framework/evidence
+  - shared/interfaces/captain-vetoes.yml
+  - .layer-separation-baseline
+  - .layer-separation-allowlist
+  - framework/missions/compiler.py
+  - framework/schemas/domains/cortex/belief.v1.json
+  - framework/ovi/compute.py
+  - instance/config/directions.yml
+  - instance/config/outcomes.yml
+  - framework/schemas/consequence-event.schema.json
+  - framework/schemas/cognitive-trajectory.schema.json
+  - framework/frontdoor/action_language.py
+  - cabinet/dashboard/src/components/receipts/action-language.ts
+  - framework/fidelity/graduation.py
+  - cabinet/scripts/tests/test_cog3_objectives_ast_pin.py
+  - framework/schemas/extension-manifest.schema.json
+  - cabinet/scripts/validate-extension.sh
+
+rehearsal:
+  environment: >-
+    scratch git worktree of the COG-4 done-flip commit (the landed tree is
+    never modified); while done_flip_sha is the PENDING-DONE-FLIP sentinel the
+    rehearsal anchors at HEAD and notes it loudly (C1 convention — the range
+    seals at the flip)
+  code_inverse_script: cabinet/scripts/cognitive-phase4-rollback-rehearsal.py
+  runtime_inverses_note: >-
+    the single runtime inverse is safe-by-construction and needs no dedicated
+    harness: the scheduler cache is a pure rebuildable function of declared
+    versioned inputs (delete is lossless bar the shadow decision log —
+    expendable in shadow by declaration), there is NO pointer file this phase
+    (its existence is a verify-twin tripwire, §7.3) and no Postgres role
+    change — nothing needs an ordered cutover.
+  rider_interaction_note: >-
+    restoring cabinet/scripts/cog2-import-gate.py and
+    cabinet/scripts/egg-export-manifest.txt to baseline reverts the WR rider
+    rows those files also carry (0d8a74d4: the verdict-inbox/shadow-dividend
+    objectives allowlist entries + their egg expect-present rows) while the
+    rider surface itself is retained — a REAL rollback re-applies exactly
+    those rider rows in a follow-up commit, or the retained rider tests
+    (test_cog3_import_gate.py coverage rows) go red. Named, not silent.
+  sibling_landing_note: >-
+    W6 sibling surfaces the landing integrator folds into THIS manifest (and
+    the review-scope twin's frozenset, in the same commit — the drift check
+    forces the pair) when they land: e2 compose — cabinet/scripts/
+    cog4-organ-runner.py (remove), its launchd runner plist (remove), the
+    services.yml row edits + framework/watchdog/registry.py per-organ floors
+    (already covered by restore rows above); e3 measurement —
+    cabinet/scripts/cog4-measure.py (remove) + the tracked S0 baseline
+    artifact (remove); sibling FW-019 review artifacts (remove); the
+    integrator corpus surgery on test_cog4_* files (already covered by
+    remove) + the test_egg_export.py phase-4 tuple (already covered by
+    restore). Until then the rehearsal's strict inverse-diff equality IS the
+    completeness ratchet: an un-extended manifest fails loudly on the first
+    sibling residue.
+  compose_round_trip: >-
+    the fleet inverse arm (§16) proves one compose-revert round-trip:
+    VACUITY-ARMED until the W6-e2 compose lands — RETIREMENT CONDITION: the
+    arm arms itself when cabinet/services.yml at the rehearsal anchor differs
+    from baseline OR cabinet/scripts/cog4-organ-runner.py exists at the
+    anchor; armed, it asserts the restored services.yml/registry.py are
+    byte-identical to baseline (round-trip complete), the runner CLI is
+    removed by the manifest, and the three superseding services.yml gates
+    (fleet-truth, floor-conservation, census --check) run green on the
+    forward tree. Unarmed it NOTE-skips loudly.
+  procedure:
+    - code inverse — remove every remove path (a DIR entry deletes the whole subtree; an absent declared path is noted, not fatal), restore every restore_from_baseline path from baseline_sha, retain both operative surfaces with matching dated rollback notes; assert the inverse diff is exactly the two retained ledgers plus the declared out_of_phase_in_range residue
+    - run the A13 operative-ledger parity + ledger-status-parity + layer separation + docs sweep on the inverse tree
+    - restoring cabinet/config/cognitive-architecture-contract.yml from baseline_sha removes the COG-4 temporary_allowances rows in the same commit (allowance_removal); the census --check arm on the inverse tree proves the removal is valid (module/line deltas gone)
+    - pre-adoption refold arm (the phase-3 pre-bump lesson, byte-compat analog) — run the UNMODIFIED cortex determinism suite on the inverse tree against the RESTORED pre-kernel belief.py/engine.py; the W3 adoption was byte-compat, so the pre-adoption fold reproduces the identical hash lineage, asserted by the suite
+    - compose-revert round-trip arm per compose_round_trip (vacuity-armed)
+  success: >-
+    the inverse diff contains only the retained operative rows/notes plus the
+    declared out-of-phase residue relative to baseline; every
+    unchanged/compatibility gate is green

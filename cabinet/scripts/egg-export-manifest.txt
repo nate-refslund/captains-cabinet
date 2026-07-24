@@ -148,6 +148,15 @@ delete cabinet/scripts/verify-cognitive-phase3.sh
 delete cabinet/scripts/cognitive-phase3-review-scope.py
 delete cabinet/scripts/cognitive-phase3-rollback-rehearsal.py
 delete cabinet/scripts/tests/test_cognitive_phase3_rollback.py
+delete cabinet/scripts/verify-cognitive-phase4.sh
+# COG-4 phase-4 private landing proof (same class as COG-0/1/2/3 above): the
+# verify twin, review-scope binder, and rollback rehearsal bind THIS launching
+# instance's reviewed bytes, baseline, and rollback plan — historical phase
+# tooling, never ships. The enduring scheduler/organs CLIs + framework surface
+# ride the egg (expect-present above); the phase-4 rollback manifest archives
+# out with the rest of docs/plans (R145).
+delete cabinet/scripts/cognitive-phase4-review-scope.py
+delete cabinet/scripts/cognitive-phase4-rollback-rehearsal.py
 delete docs/runbooks/egg-export-2026-07-10.md
 # PC-C launch-kit privacy (integration ruling 2026-07-10): docs/launch/ is
 # CG-7 PER-ITEM publication material (Show HN draft, business-model proposal,
@@ -582,6 +591,10 @@ expect-absent cabinet/scripts/verify-cognitive-phase3.sh
 expect-absent cabinet/scripts/cognitive-phase3-review-scope.py
 expect-absent cabinet/scripts/cognitive-phase3-rollback-rehearsal.py
 expect-absent cabinet/scripts/tests/test_cognitive_phase3_rollback.py
+expect-absent cabinet/scripts/verify-cognitive-phase4.sh
+# COG-4 phase-4 private landing tools (paired delete rows above) — never ship.
+expect-absent cabinet/scripts/cognitive-phase4-review-scope.py
+expect-absent cabinet/scripts/cognitive-phase4-rollback-rehearsal.py
 # COG-2: the Cortex parity VERDICT LOG is per-cabinet runtime data — gitignored
 # under cabinet/logs/* (Spec 043 runtime-log idiom), so it never enters the
 # archive cut. Pinned absent defensively (the node_modules idiom): the export
