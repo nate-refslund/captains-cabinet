@@ -155,6 +155,13 @@ EXPECTED_SCOPE = frozenset({
     "cabinet/scripts/tests/test_egg_export.py",
     "cabinet/services.yml",
     "framework/watchdog/registry.py",
+    # restore — the four sibling scheduling locks re-anchored to the composed
+    # vehicle by the W6 landing integrator surgery (e2 cp1 §6.4-6.7,
+    # 2026-07-24)
+    "cabinet/scripts/tests/test_charter_shadow.py",
+    "cabinet/scripts/tests/test_judge_calibration_scheduling.py",
+    "framework/learning/tests/test_preference_pairs.py",
+    "framework/fidelity/tests/test_prediction_scorer.py",
 })
 _DIGEST_RE = re.compile(r"^Reviewed-Scope-Digest: ([0-9a-f]{64})$", re.M)
 

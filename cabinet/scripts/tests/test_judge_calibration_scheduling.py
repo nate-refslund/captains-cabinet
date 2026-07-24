@@ -1,15 +1,22 @@
 """judge-calibration scheduling lock (W2 / ledger row A2, D5 step 1a).
 
 Grep-level, offline locks (yaml parse + render smoke; no launchctl, no
-network) pinning the 2026-07-09 arming of com.cabinet.judge-calibration:
+network) pinning the 2026-07-09 arming of judge calibration.
 
-  * cabinet/services.yml carries an ENABLED judge-calibration cron row that
-    runs the existing offline CLI (cabinet/scripts/judge-calibration.py) on a
-    daily calendar — the proof it maintains has a 14-day max-age, so any
-    cadence sparser than a few days can never keep it fresh;
-  * the row renders through generate-plists.py (the INSTALL SOURCE pipeline)
-    into a lintable plist dict — a manifest row that cannot render is exactly
-    the never-rendered retro-trigger failure mode this manifest documents;
+RE-ANCHORED 2026-07-24 (COG-4 W6 landing; routed surgery
+feat-cog4-w6-e2-cp1.md §6.7): the dedicated com.cabinet.judge-calibration
+row was COMPOSED into the cog4-organ-runner wake vehicle (C4). The lock's
+STATED INTENT — the 14-day proof stays fresh — now binds the composed
+vehicle:
+
+  * cabinet/services.yml carries an ENABLED cog4-organ-runner cron row on a
+    fixed interval <= 172800s (actual 43200) that NAMES the judge organ
+    manifest (§9.5 declared association); the manifest's entrypoint keeps
+    the existing offline CLI (cabinet/scripts/judge-calibration.py — the
+    OFFLINE / NO LLM head pins unchanged);
+  * the RUNNER row renders through generate-plists.py (the INSTALL SOURCE
+    pipeline) into a lintable plist dict — a manifest row that cannot render
+    is exactly the never-rendered retro-trigger failure mode;
   * the stale "NOT armed here: judge-calibration" comment is gone (the
     docs-track-code rule: the manifest must not claim the row is future work).
 
@@ -36,36 +43,46 @@ def _load_services() -> list[dict]:
 
 
 def _row() -> dict:
-    rows = [s for s in _load_services() if s.get("name") == "judge-calibration"]
+    """RE-ANCHORED to the composed vehicle (W6 landing 2026-07-24, §6.7):
+    the runner row is the schedulable unit; it must NAME the judge organ
+    manifest or the 14-day calibration clock stops."""
+    rows = [s for s in _load_services() if s.get("name") == "cog4-organ-runner"]
     assert rows, (
-        "cabinet/services.yml lost the judge-calibration row — D5 step 1a "
+        "cabinet/services.yml lost the cog4-organ-runner row — D5 step 1a "
         "(ledger A2) is unscheduled again and the 14-day calibration clock stops"
     )
-    assert len(rows) == 1, "duplicate judge-calibration rows"
-    return rows[0]
+    assert len(rows) == 1, "duplicate cog4-organ-runner rows"
+    row = rows[0]
+    assert "cabinet/config/organs/judge-calibration.yml" in (row.get("organs") or []), (
+        "the composed wake vehicle no longer NAMES the judge-calibration organ "
+        "manifest (§9.5 declared association) — the calibration clock stops"
+    )
+    return row
 
 
 def test_row_is_enabled_cron_on_daily_calendar() -> None:
     svc = _row()
-    assert svc.get("label") == "com.cabinet.judge-calibration"
+    assert svc.get("label") == "com.cabinet.cog4-organ-runner"
     assert svc.get("kind") == "cron"
-    assert not svc.get("disabled"), "judge-calibration row is disabled — not armed"
+    assert not svc.get("disabled"), "the composed runner row is disabled — not armed"
     sched = svc.get("schedule")
-    assert isinstance(sched, dict) and "calendar" in sched, (
-        f"expected a daily calendar schedule, got {sched!r}"
+    assert isinstance(sched, dict) and isinstance(sched.get("interval_s"), int), (
+        f"expected a fixed-interval schedule on the composed vehicle, got {sched!r}"
     )
-    for entry in sched["calendar"]:
-        assert "day" not in entry and "weekday" not in entry, (
-            "judge-calibration must run DAILY: the status proof expires after "
-            "14 days, so weekly/monthly rows let judge_verdicts_may_demote() "
-            f"flap on staleness alone (got calendar entry {entry!r})"
-        )
+    assert sched["interval_s"] <= 172800, (
+        "the composed vehicle wakes sparser than every 2 days: the status "
+        "proof expires after 14 days, so judge_verdicts_may_demote() would "
+        f"flap on staleness alone (interval_s={sched['interval_s']})"
+    )
 
 
 def test_row_runs_the_existing_offline_cli() -> None:
-    svc = _row()
-    assert "cabinet/scripts/judge-calibration.py" in svc["command"]
-    assert CLI.exists(), "the CLI the row schedules does not exist"
+    _row()  # the composed vehicle is armed and NAMES the judge manifest
+    man = yaml.safe_load(
+        (_REPO_ROOT / "cabinet/config/organs/judge-calibration.yml").read_text()
+    )
+    assert "cabinet/scripts/judge-calibration.py" in man["entrypoints"]["run"]
+    assert CLI.exists(), "the CLI the organ manifest schedules does not exist"
     # The CLI's own header contract: offline + deterministic. Pin the two
     # phrases so a future rewrite that adds network/LLM calls has to face
     # this lock (and the manifest row's no-credentials claim) consciously.
@@ -80,10 +97,10 @@ def test_row_renders_through_generate_plists() -> None:
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     pl = mod.render(_row(), Path("/repo"), Path("/home/x"))
-    assert pl["Label"] == "com.cabinet.judge-calibration"
-    assert "StartCalendarInterval" in pl
+    assert pl["Label"] == "com.cabinet.cog4-organ-runner"
+    assert "StartInterval" in pl
     assert any(
-        "judge-calibration.py" in a for a in pl["ProgramArguments"]
+        "cog4-organ-runner.py" in a for a in pl["ProgramArguments"]
     ), pl["ProgramArguments"]
 
 

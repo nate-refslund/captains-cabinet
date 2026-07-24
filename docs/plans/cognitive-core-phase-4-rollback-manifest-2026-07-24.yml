@@ -194,6 +194,14 @@ restore_from_baseline:
   - cabinet/scripts/tests/test_egg_export.py
   - cabinet/services.yml
   - framework/watchdog/registry.py
+  # W6 landing integrator surgery (feat-cog4-w6-e2-cp1.md §6.4-6.7, applied
+  # 2026-07-24): the four sibling scheduling locks re-anchored to the
+  # composed vehicle; restoring them re-arms the original dedicated-row
+  # locks together with the restored fleet rows above.
+  - cabinet/scripts/tests/test_charter_shadow.py
+  - cabinet/scripts/tests/test_judge_calibration_scheduling.py
+  - framework/learning/tests/test_preference_pairs.py
+  - framework/fidelity/tests/test_prediction_scorer.py
 
 # --- allowance removal (§11/§16) ----------------------------------------------
 allowance_removal:

@@ -115,12 +115,36 @@ class TestHarvest:
 
 
 def test_services_row_is_scheduled():
+    """RE-ANCHORED 2026-07-24 (COG-4 W6 landing; routed surgery
+    feat-cog4-w6-e2-cp1.md §6.5): the dedicated preference-pairs row was
+    COMPOSED into the cog4-organ-runner wake vehicle (C4). Accept
+    dedicated-row OR composed-organ; in the composed state the enabled
+    runner row must NAME the manifest (§9.5 declared association), the
+    entrypoint must keep the harvest module, and the freshness tuple must
+    derive — the harvest stays scheduled from inside the runner."""
     repo = Path(pp.__file__).resolve().parents[2]
     services = yaml.safe_load(
         (repo / "cabinet" / "services.yml").read_text())["services"]
     rows = [s for s in services if s.get("name") == "preference-pairs"]
-    assert len(rows) == 1, "preference-pairs row lost — harvest unscheduled"
-    row = rows[0]
-    assert row["label"] == "com.cabinet.preference-pairs"
-    assert "preference_pairs" in row["command"]
-    assert row["schedule"]["calendar"] and not row.get("disabled")
+    if rows:  # dedicated-row state (pre-compose / post-rollback)
+        row = rows[0]
+        assert row["label"] == "com.cabinet.preference-pairs"
+        assert "preference_pairs" in row["command"]
+        assert row["schedule"]["calendar"] and not row.get("disabled")
+        return
+    runner_rows = [s for s in services if s.get("name") == "cog4-organ-runner"]
+    assert len(runner_rows) == 1, (
+        "preference-pairs row lost and no cog4-organ-runner composed row — "
+        "harvest unscheduled")
+    runner = runner_rows[0]
+    assert not runner.get("disabled"), "the composed wake vehicle is disabled"
+    manifest_rel = "cabinet/config/organs/preference-pairs.yml"
+    assert manifest_rel in (runner.get("organs") or []), (
+        "the runner row does not NAME the preference-pairs organ manifest "
+        "(§9.5 declared association) — harvest unscheduled")
+    man = yaml.safe_load((repo / manifest_rel).read_text())
+    assert "framework.learning.preference_pairs" in man["entrypoints"]["run"]
+    fn = man["freshness_needs"]
+    assert isinstance(fn["max_staleness_seconds"], int) \
+        and fn["max_staleness_seconds"] >= 1
+    assert fn["expected_output"]

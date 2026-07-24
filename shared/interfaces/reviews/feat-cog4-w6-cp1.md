@@ -94,6 +94,38 @@ provenance chain live in the review artifact's dated administrative note.
 * N9 parity: real pilot manifests exit 0, zero divergent tuples (33/33
   operation tuples, record-gated).
 
+## 6. CI root-cause addendum (post-panel, 2026-07-24 — first PR run)
+
+The first PR CI run went red on SEVEN framework-suite tests OUTSIDE the
+panel's COG-4 battery scope — all designed/known classes, discharged in a
+follow-up commit (root-cause fixes, no gate skipped):
+
+1. **e2 cp1 §6 items 4-7 — the REMAINING routed sibling-suite surgery** (my
+   §3.2 wave-summary read them as already-landed; they were designed-red on
+   the unit branches, outside the panel's `test_cog4_*` battery, and are the
+   integrator's to apply): `test_charter_shadow.py::test_services_row_is_
+   scheduled` (§6.4), `test_preference_pairs.py::test_services_row_is_
+   scheduled` (§6.5), `test_prediction_scorer.py::test_services_row_is_
+   scheduled_daily` (§6.6), and the three `test_judge_calibration_
+   scheduling.py` row locks (§6.7) — each re-anchored EXACTLY per the routed
+   text (accept dedicated-row OR composed-organ; runner NAMES the manifest;
+   entrypoints keep the absorbed commands; judge interval <= 172800s; render
+   targets the runner row Label/StartInterval/ProgramArguments). The four
+   files join restore_from_baseline + EXPECTED_SCOPE (paired, same commit) —
+   restoring them re-arms the dedicated-row locks with the restored fleet.
+2. **Shadow-law grep** (the WR-rider evidence-detector proof's
+   zero-consumers test): the W6-e1 rollback manifest names that proof FILE
+   as an out_of_phase_in_range retained-path row — a path row in
+   phase-rollback accounting, never a consumer. Fixed the test's own
+   designed way: an allowlist row with the reason. (The recompute sibling
+   proof's grep was verified unaffected — different tokens; and THIS
+   artifact deliberately avoids spelling either grep token, or it would
+   itself become an offender.)
+
+Digest re-bound a second time in the same follow-up (the wave-artifact
+addendum + the restore/scope pair rows moved it); the review artifact's
+administrative note carries the final value + full provenance.
+
 Model: landing integrator on Fable 5 (the two-tier law — integration
 judgment). Per the 2026-07-07 full-autonomy grant + the 2026-07-20
 cognitive-masterplan continuous grant; fleet/runtime acts additionally per
