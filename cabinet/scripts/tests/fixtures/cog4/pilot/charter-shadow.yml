@@ -1,0 +1,48 @@
+# COG-4 S0 pilot organ fixture — the charter-shadow projection/measurement row
+# (contract §9.3 pilot set). A REAL read-only measurement service, NOT an N8
+# non-software cabinet: software vocabulary is honest here, and this dir is a
+# SIBLING of cabinets/ so the §12 N8 token sweep (scoped to cabinets/) never
+# touches it. §4.2 amendment shape (germline gate pair byte-untouched, window
+# unopened). PARITY-CLEAN by construction: the declared risk_class + ceiling
+# equal the matrix derivation for the declared action_type (the §4.3 N-d law),
+# so the descriptor leg and the ACTION_TYPES leg agree (N9).
+name: charter-shadow
+version: "1.0.0"
+kind: organ
+action_types: [investigation_run]
+risk_classes: [read_only_dispatch]
+undo_contract: none
+entrypoints: {}
+inputs: [charter/shadow-decision-stream]
+outputs: [charter/shadow-series]
+domain_operations:
+  - charter/shadow.measure
+  - charter/series.append
+descriptor:
+  action_type: investigation_run
+  risk_class: read_only_dispatch
+  ceiling: []
+  undo_contract: none
+permissions: [shadow-decision-stream/read]
+idempotency:
+  charter/shadow.measure: "series-date"
+  charter/series.append: "series-date"
+state_ownership: [charter/shadow-series]
+cost_model:
+  units_per_wake: 1
+starvation_bound:
+  max_wakes: 6
+freshness_needs:
+  max_staleness_seconds: 86400
+  expected_output: charter/shadow-series
+trigger_policy:
+  mode: periodic
+  parameters:
+    interval_s: 86400
+health_proof:
+  probe: "the shadow-series carries today's agreement line"
+  expectation: ok
+fallback: skip
+dependencies:
+  organs: []
+  capabilities: [shadow-decision-stream/read]
