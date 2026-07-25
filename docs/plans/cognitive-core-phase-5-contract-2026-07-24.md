@@ -19,7 +19,7 @@ Phase 5 makes the existing Gate capable of an **honest PASS without weakening it
 
 | id | exit clause (L198 verbatim) | mechanical gate |
 |---|---|---|
-| X1 | "ranked archive preserves every lineage/failure" | after the E1 run (sim 1): every generated candidate — winners, losers, failures, crashed runs — has an archive lineage row; a seeded candidate-drop mutant REDs (`test_cog5_archive_lineage.py`); chain verification green over the sealed run segments (§5) |
+| X1 | "ranked archive preserves every lineage/failure" | after the E1 run (sim 1): every generated candidate — winners, losers, failures, crashed runs — has an archive lineage row; a seeded candidate-drop mutant REDs (`test_cog5_sim_archive.py`); chain verification green over the sealed run segments (§5) |
 | X2 | "known-bad loses" | sim 2: the seeded regression-inducing candidate ranks below the incumbent baseline on machine-outcome dimensions and is admission-ineligible; scorer-ignores-machine-outcomes mutant REDs |
 | X3 | "judge-only cannot promote" | sim 4: a candidate winning ONLY on the LLM-judge dimension is promotion/admission-ineligible by the §9 vector-floor law; the judge-score-reaches-a-promotion-joint mutant REDs; the certainty-grammar tripwires (§9.3) stay green |
 | X4 | "proxy-overfit is caught by private/holdout divergence" | sim 5: a candidate overfit to the public split diverges on private/holdout aggregates; divergence emits a demote/withhold signal, never a silent average; divergence-ignoring aggregator mutant REDs |
