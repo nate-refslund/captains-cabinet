@@ -11,13 +11,19 @@ drift from the code, so this module binds the two halves:
 
 MARKER CONVENTION (surveyed at a1357829, not invented). The dominant in-code
 form is the uppercase word token, in three qualifier variants — bare
-"<TOKEN>:", "HONEST <TOKEN>:", "KNOWN <TOKEN>" — across 8 sites in 6 files.
-"DECLARED RESIDUAL" / "HONEST SCOPE" / "known limitation" have ZERO occurrences
-and were rejected. The lookarounds in MARKER_RE exclude identifiers that merely
-contain the word (_TEMPORARY_RESIDUALS in test_no_launcher_hardcode.py,
-RESIDUAL_NOTE in evidence-tamper-drill.py) — those are mechanisms, not
-declarations. The register's retirement field takes its name from the repo's
-existing RETIREMENT CONDITION idiom (56 uses).
+"<TOKEN>:", "HONEST <TOKEN>:", "KNOWN <TOKEN>". The tracked tree carries 21
+word-token sites in 11 files: 8 in 6 files inside the sweep surface below (the
+ones this gate binds), 11 in the operative ledger + plan pair, and 2 in frozen
+review artifacts. "DECLARED RESIDUAL" / "HONEST SCOPE" / "known limitation"
+have ZERO occurrences and were rejected. The lookarounds in MARKER_RE exclude
+identifiers that merely contain the word (_TEMPORARY_RESIDUALS in
+test_no_launcher_hardcode.py, RESIDUAL_NOTE in evidence-tamper-drill.py) —
+those are mechanisms, not declarations. The register's retirement field takes
+its name from the repo's existing RETIREMENT CONDITION idiom (42 uses / 24
+files).
+
+Counts are git-grep measured: BSD `grep -I` in a non-UTF-8 locale treats this
+repo's em-dash-heavy markdown as binary and silently skips 19 files.
 
 CHEAP + DETERMINISTIC: no network, no clock, no subprocess except one optional
 `git ls-files`. The sweep reads ~1900 tracked text files in well under a second
