@@ -106,6 +106,15 @@ DEFAULT_ROWS_PER_SEGMENT = 8
 DEFAULT_ANCHOR_EVERY = 4
 DEFAULT_CUTOFF = "2026-07-24T00:00:00Z"
 
+#: The fields `ReferenceArchive._prepare` STAMPS onto a row as it lands in the
+#: store. Every one of them is either the row's POSITION in the chain
+#: (`sequence`, `prev_hash`) or a pure DERIVATION of the rest of the row
+#: (`record_id` = the content-excluded identity, `row_hash` = the digest) — so
+#: removing them loses no content, which is what makes the dedup key's
+#: invariance under them safe rather than a weakening (see `dedupe_key`).
+CHAIN_FIELDS: frozenset[str] = frozenset(
+    {"sequence", "prev_hash", "record_id", "row_hash"})
+
 
 # ==========================================================================
 # stdlib REPLICAS of the kernel's physical disciplines (never imports)
@@ -273,14 +282,7 @@ class ReferenceArchive:
                                 sort_keys=True, indent=2) + "\n")
 
     def _commit(self, event: Mapping[str, Any]) -> None:
-        index = self.open_segment_index()
-        if len(self._segment_rows(index)) >= self.rows_per_segment:
-            self.seal_segment(index)
-            index += 1
-        append_exact_line(
-            self.segment_path(index),
-            json.dumps(event, ensure_ascii=False, sort_keys=True,
-                       separators=(",", ":")) + "\n")
+        self._append_only(event)
         if int(event["sequence"]) % self.anchor_every == 0:
             self.write_anchor(event)
         self._refresh_manifest()
@@ -299,6 +301,31 @@ class ReferenceArchive:
         cleared — the case a naive heal duplicates."""
         event = self._prepare(record)
         self._write_pending(event)
+        self._append_only(event)
+        self._refresh_manifest()
+        return event
+
+    def append_crashing_before_anchor(self, record: Mapping[str, Any]) -> dict[str, Any]:
+        """Simulate a crash in the REAL window INSIDE `_commit`, between
+        `append_exact_line` and `write_anchor`.
+
+        The durable state this leaves is exact: the row is on disk and
+        fsynced, no attestation was minted for it, the manifest was never
+        refreshed, and pending.json is still there. At an ON-CADENCE sequence
+        this is the state a heal that reconciles the row but forgets the
+        attestation leaves permanently unservable — which is why the battery's
+        heal arms are parametrised over the cadence position rather than
+        crashing at one arbitrary sequence.
+        """
+        event = self._prepare(record)
+        self._write_pending(event)
+        self._append_only(event)
+        return event
+
+    def _append_only(self, event: Mapping[str, Any]) -> None:
+        """The segment append alone — `_commit`'s first step, with none of the
+        obligations that follow it. Shared by the two crash fixtures so they
+        cannot drift from the real write path."""
         index = self.open_segment_index()
         if len(self._segment_rows(index)) >= self.rows_per_segment:
             self.seal_segment(index)
@@ -307,16 +334,20 @@ class ReferenceArchive:
             self.segment_path(index),
             json.dumps(event, ensure_ascii=False, sort_keys=True,
                        separators=(",", ":")) + "\n")
-        self._refresh_manifest()
-        return event
 
     # -- the exactly-once heal (recorder :625-670 shape) ------------------
     def heal(self) -> dict[str, Any] | None:
-        """Finish an interrupted append EXACTLY ONCE.
+        """Finish an interrupted append EXACTLY ONCE — and COMPLETELY.
 
         Returns the reconciled event when an unreconciled pending.json was
         found, and None when there was nothing to reconcile. The caller never
         infers an interruption from anything else.
+
+        "Exactly once" governs the ROW. "Completely" governs everything
+        `_commit` owes for that row: the periodic attestation and the manifest
+        counters. A heal that reconciled only the row would leave a legitimate
+        crash position (between the append and the anchor, at an on-cadence
+        sequence) permanently unservable — see the exactly-once limb below.
         """
         pending_path = self.root / PENDING_NAME
         if not pending_path.is_file():
@@ -342,6 +373,22 @@ class ReferenceArchive:
             # writing a second copy. This is the exactly-once limb.
             if rows[-1].get("row_hash") != event.get("row_hash"):
                 raise ArchiveError("pending_conflict")
+            if sequence % self.anchor_every == 0:
+                # THE INTERRUPTED ATTESTATION. `_commit` mints the anchor
+                # AFTER the segment append, so a crash in that window leaves a
+                # row that landed ON a cadence point with no attestation for
+                # it. Reconciling the row without also minting it hands back a
+                # store that is permanently ANCHOR_MISSING — `verify_archive`
+                # never ok, `safe_sequence` pinned to the last good seal, and
+                # every row past that seal unservable FOREVER. Finishing an
+                # interrupted append means finishing ALL of it.
+                #
+                # Idempotent by construction: the attestation is a pure
+                # function of the reconciled event, so when the crash landed
+                # LATER (anchor already written, pending not yet cleared) this
+                # rewrites byte-identical content through the same atomic
+                # replace.
+                self.write_anchor(event)
             self._refresh_manifest()
             pending_path.unlink(missing_ok=True)
             fsync_dir(self.root)
@@ -352,7 +399,16 @@ class ReferenceArchive:
     # -- anchors + seals --------------------------------------------------
     def write_anchor(self, event: Mapping[str, Any]) -> dict[str, Any]:
         """Periodic attestation over the chain head (recorder :599-608 shape,
-        minus the signer — signing is the recorder's, not the archive's)."""
+        minus the signer — signing is the recorder's, not the archive's).
+
+        UNSIGNED, and that bound is load-bearing rather than incidental: the
+        attestation is a pure digest over public fields, so minting one needs
+        NO SECRET and anyone able to write the store can also write a
+        self-consistent attestation for it. The anchor therefore defeats an
+        editor who does not re-mint it — never one who does (`remint_anchor`,
+        and the battery's declared known-limit arm). Closing that is exactly
+        what SIGNING would buy, and nothing weaker.
+        """
         payload = {
             "schema": "cog5-archive-anchor/1",
             "sequence": int(event["sequence"]),
@@ -435,10 +491,21 @@ def verify_archive(root: Path) -> dict[str, Any]:
                   periodic anchor (§5.2). Consulting them is what closes the
                   open-segment deletion: the manifest catches a tail edit that
                   did not also rewrite the manifest, and the anchor catches one
-                  that DID (an attestation written at a cadence point the
-                  editor cannot retroactively re-mint). Conversely the manifest
-                  covers the rows PAST the last anchor point, which the anchor
-                  by construction cannot see. Neither subsumes the other.
+                  that DID — the attestation was minted at a cadence point
+                  BEFORE the edit, and repairing the manifest does not touch
+                  it. Conversely the manifest covers the rows PAST the last
+                  anchor point, which the anchor by construction cannot see.
+                  Neither subsumes the other.
+
+    BOUNDED, NOT ABSOLUTE: the anchor is UNSIGNED here, so minting needs no
+    secret. An editor who ALSO re-mints the attestation over the shortened
+    chain produces a fully self-consistent store and is NOT caught. That is
+    the DECLARED KNOWN LIMIT of this reference model — pinned in the battery
+    by `test_known_limit_the_complete_editor_that_also_re_mints_the_anchor`,
+    and closable only by SIGNING the attestation (deliberately out of scope,
+    §5.2). What the layer claims is exactly what it delivers: it defeats every
+    editor that stops at the manifest, which is what makes it non-redundant
+    with the manifest — not unforgeability.
 
     The refusal boundary is deliberately unchanged by the store layer: a
     store-level finding flips `ok` to False, which pins `safe_sequence` to the
@@ -580,8 +647,15 @@ def _anchor_findings(root: Path, manifest: Mapping[str, Any], last_sequence: int
 
     `write_anchor` fires every `anchor_every` sequences and pins the chain head
     AT THAT POINT. That makes it the one detector a tail editor cannot satisfy
-    by rewriting the manifest: the attestation was minted before the edit and
+    by rewriting the MANIFEST: the attestation was minted before the edit and
     names a sequence the shrunken store no longer reaches.
+
+    Say the bound out loud rather than implying it is absolute: this
+    attestation is UNSIGNED, so minting one needs no secret. An editor who
+    ALSO re-mints it over the shortened chain escapes every check below. That
+    is a declared known limit of the reference model (pinned by the battery's
+    known-limit arm), and SIGNING — the recorder's, deliberately out of scope
+    here — is the only thing that would close it.
 
     Three named escapes, none of which the other layers see:
       ANCHOR_MISSING            — attestation due and absent (a store that
@@ -768,8 +842,12 @@ def repair_manifest_counters(root: Path) -> dict[str, Any]:
 
     This is what defeats the manifest layer, and it is why the periodic
     attestation is not redundant with it: the anchor was minted at a cadence
-    point BEFORE the edit and the editor cannot retroactively re-mint it
-    without also producing a chain the walk agrees with.
+    point BEFORE the edit, and repairing the manifest does not touch it.
+
+    That is the whole of the non-redundancy claim, and it does NOT claim the
+    anchor is unforgeable. `remint_anchor` below is the editor that goes one
+    step further and escapes — the declared known limit, pinned by the
+    battery's known-limit arm.
     """
     root = Path(root)
     manifest = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
@@ -786,6 +864,57 @@ def repair_manifest_counters(root: Path) -> dict[str, Any]:
                  json.dumps(manifest, ensure_ascii=False, sort_keys=True,
                             indent=2) + "\n")
     return manifest
+
+
+def remint_anchor(root: Path) -> dict[str, Any]:
+    """THE COMPLETE EDITOR'S SECOND TOOL: re-mint the attestation over what is
+    NOW on disk, at the shortened store's OWN cadence point.
+
+    This is not a forgery in the `corrupt_forge_anchor` sense — nothing here
+    lies. It is a perfectly well-formed attestation for the store as it now
+    stands, produced with nothing but public knowledge, because minting needs
+    NO SECRET in this model (`write_anchor` is a pure digest over public
+    fields; §5.2's shape "minus the signer").
+
+    Composed with `corrupt_drop_open_segment_tail` + `repair_manifest_counters`
+    it is the E4 editor: the store verifies CLEAN and the dropped row is
+    silently gone. That is the reference model's DECLARED KNOWN LIMIT, pinned
+    by `test_known_limit_the_complete_editor_that_also_re_mints_the_anchor` so
+    a reader cannot mistake this model for the real thing. A SIGNED anchor is
+    what would buy the difference.
+
+    Returns the attestation written, or the empty dict when the shortened
+    store no longer reaches its first cadence point (nothing to attest).
+    """
+    root = Path(root)
+    manifest = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
+    anchor_every = manifest.get("anchor_every")
+    if not isinstance(anchor_every, int) or isinstance(anchor_every, bool) \
+            or anchor_every <= 0:
+        anchor_every = DEFAULT_ANCHOR_EVERY
+    seg_dir = root / SEGMENT_DIR
+    rows: list[dict[str, Any]] = []
+    for index in sorted(int(p.stem.split("-")[1]) for p in seg_dir.glob("seg-*.jsonl")):
+        for line in (seg_dir / f"seg-{index:05d}.jsonl").read_text(
+                encoding="utf-8").splitlines():
+            if line.strip():
+                rows.append(json.loads(line))
+    point = (len(rows) // anchor_every) * anchor_every
+    if point < anchor_every:
+        (root / ANCHOR_NAME).unlink(missing_ok=True)
+        return {}
+    attested = rows[point - 1]
+    payload = {
+        "schema": "cog5-archive-anchor/1",
+        "sequence": point,
+        "chain_head": attested["row_hash"],
+        "cutoff_ts": attested.get("cutoff_ts", DEFAULT_CUTOFF),
+    }
+    anchor = {**payload, "anchor_hash": CORE.digest(payload)}
+    atomic_write(root / ANCHOR_NAME,
+                 json.dumps(anchor, ensure_ascii=False, sort_keys=True,
+                            indent=2) + "\n")
+    return anchor
 
 
 def corrupt_forge_anchor(root: Path, *, resign: bool = False) -> None:
@@ -1196,13 +1325,36 @@ def shadow_rows_with_p1_race() -> list[dict[str, Any]]:
     ]
 
 
+def strip_chain_fields(row: Mapping[str, Any]) -> dict[str, Any]:
+    """A row's CONTENT — what it says — with the chain stamps the store added
+    when it landed removed (`CHAIN_FIELDS`)."""
+    return {key: value for key, value in row.items() if key not in CHAIN_FIELDS}
+
+
 def dedupe_key(row: Mapping[str, Any], mode: str = "content", *,
                ordinal: int = 0) -> str:
     """The ingest's dedup key under each mode — ONE definition, so the keys
     derived from the TARGET STORE cannot drift from the keys derived from
-    incoming candidates (a drift there would silently re-admit everything)."""
+    incoming candidates (a drift there would silently re-admit everything).
+
+    CHAIN-FIELD INVARIANT, and that is what makes the "ONE definition" claim
+    hold when the target store is the DURABLE lineage archive rather than a
+    list held in memory. `ReferenceArchive.append` stamps `sequence`,
+    `prev_hash`, `record_id` and `row_hash` onto every row it takes, so a row
+    read back out of the store is not byte-identical to the row that went in.
+    Fingerprinting the row as-read would give it a different key from the same
+    fact arriving again — and the whole log would be re-admitted on every
+    cycle, which is precisely the MF-2 defect the store-seeded dedup exists to
+    close, re-entering through the durable door.
+
+    So the CONTENT key is taken over the row's content, with the store's own
+    stamps removed. It loses nothing: those four are position or derivation
+    (`CHAIN_FIELDS`), never content. The invariance is deliberately narrow —
+    change any content field and the key changes — so this is not a blunt
+    instrument that could collapse two genuinely different facts.
+    """
     if mode == "content":
-        return CORE.content_fingerprint(row)
+        return CORE.content_fingerprint(strip_chain_fields(row))
     if mode == "key":
         return str(row.get("idempotency_key"))
     if mode == "none":
@@ -1236,6 +1388,15 @@ def ingest_shadow_rows(rows: Iterable[Mapping[str, Any]], *,
     go through. `ShadowIngestor` below is the disciplined caller that holds
     the store across cycles; passing `store=()` is a genuine FIRST cycle, not
     an escape — an empty store has no fingerprints to key against.
+
+    THE STORE MAY BE THE DURABLE LINEAGE ARCHIVE, and the API says so rather
+    than hoping no caller tries it: rows read back from a `ReferenceArchive`
+    carry the chain stamps `append` added, and `dedupe_key` is invariant under
+    exactly those (`CHAIN_FIELDS`). So seeding from `serve_rows(archive_root)`
+    — or from a restored copy of it — admits each fact exactly once, the same
+    as seeding from the in-memory rows. Without that invariance the durable
+    path would silently re-admit the whole log every cycle while the in-memory
+    path looked correct.
 
     `dedupe="key"` and `dedupe="none"` are the NEGATIVE CONTROLS: keying on
     the idempotency key collapses two genuinely different facts (data loss);
@@ -1425,12 +1586,13 @@ __all__ = [
     "LEAGUE_CLI_REL", "ARCHIVE_ROOT_DEFAULT_REL", "SHADOW_CLI_REL",
     "SEGMENT_DIR", "MANIFEST_NAME", "ANCHOR_NAME", "PENDING_NAME",
     "DEFAULT_ROWS_PER_SEGMENT", "DEFAULT_ANCHOR_EVERY", "DEFAULT_CUTOFF",
+    "CHAIN_FIELDS", "strip_chain_fields",
     "fsync_dir", "atomic_write", "append_exact_line", "row_hash",
     "ArchiveError", "ReferenceArchive", "verify_archive", "serve_rows",
     "corrupt_truncate_tail", "corrupt_bitflip_row", "corrupt_forge_prev_hash",
     "corrupt_break_seal", "corrupt_drop_open_segment_tail",
     "corrupt_strip_manifest_declaration", "repair_manifest_counters",
-    "corrupt_forge_anchor", "corrupt_drop_anchor",
+    "corrupt_forge_anchor", "corrupt_drop_anchor", "remint_anchor",
     "seal_and_copy_out", "restore", "archive_report",
     "restore_dropping_row", "restore_reordering_rows",
     "kernel_would_miss_reorder",
