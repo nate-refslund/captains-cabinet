@@ -821,6 +821,60 @@ def handle_poll_answer(upd: dict, *, captain, inject, feed_append, log=log) -> N
                  "options": [int(o) for o in option_ids if isinstance(o, int)]})
 
 
+def record_captain_contact(redis_host: str, message_id: int, *,
+                           run=None, emit=None, now=None) -> None:
+    """Record that the Captain just reached this cabinet. Three independent,
+    individually-wrapped effects; none may ever block or fail receive.
+
+    1. ``cabinet:last-captain-msg-id`` — UNCHANGED. channel.send reads it to
+       attach reply_parameters. It holds an ID and keeps holding an ID.
+
+    2. ``cabinet:last-captain-msg-at`` — the timestamped SIBLING (ISO-8601 UTC).
+       The watchdog wanted exactly this and could not have it: at
+       framework/watchdog/registry.py's captain-decisions verify it says in as
+       many words that it would use the inbound key as a recency proxy "but that
+       key carries no timestamp", and falls back to a file-age heuristic marked
+       as a note rather than an alert. An id cannot express staleness no matter
+       who reads it, so the fix is a sibling, not a change: two keys, two jobs,
+       and reply-threading stays untouched.
+
+    3. The inbound Captain-contact dead-man (D1). THIS point — not bare offset
+       advance — is the honest inbound contact event: every caller is inside a
+       `from == captain` branch, whereas the offset advances for any stranger's
+       update, and a heartbeat on that would merely re-report that machinery is
+       alive. Machinery liveness is the signal already covered; CONTACT is the
+       one that was missing.
+
+    Seams (``run`` / ``emit`` / ``now``) exist so this is testable without Redis,
+    without tmux and without network — the behaviour it encodes is the whole
+    point of the inbound leg, so it must not be assertable only by reading the
+    source."""
+    run = run or subprocess.run
+    now_fn = now or (lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+    try:
+        run(["redis-cli", "-h", redis_host, "SET",
+             "cabinet:last-captain-msg-id", str(message_id)],
+            capture_output=True, timeout=10)
+    except Exception:
+        pass  # threading id is best-effort; never block receive
+    try:
+        run(["redis-cli", "-h", redis_host, "SET",
+             "cabinet:last-captain-msg-at", now_fn()],
+            capture_output=True, timeout=10)
+    except Exception:
+        pass  # recency stamp is best-effort; never block receive
+    try:
+        if emit is None:
+            from framework.liveness import deadman
+
+            emit, event = deadman.emit, deadman.EVENT_CAPTAIN_INBOUND
+        else:
+            event = "captain_inbound"
+        emit(event)
+    except Exception:
+        pass  # off-machine heartbeat must never cost an inbound DM
+
+
 def main() -> int:
     officer = sys.argv[1] if len(sys.argv) > 1 else "cos"
     up = officer.upper().replace("-", "_")
@@ -940,19 +994,16 @@ def main() -> int:
             pass  # read-ack is best-effort; never let it disrupt receive
 
     def set_last_captain_msg_id(message_id: int) -> None:
-        """Record the Captain's latest message_id so the Chair can thread its reply.
+        """Record the Captain's latest message_id so the Chair can thread its
+        reply, stamp the timestamped sibling that makes inbound silence
+        detectable, and emit the inbound contact heartbeat.
 
         channel.send reads cabinet:last-captain-msg-id to attach reply_parameters.
-        Degrade-safe: a redis-cli failure (missing binary, no server) is swallowed —
-        threading is a nicety, not a precondition for delivering the DM."""
-        try:
-            subprocess.run(
-                ["redis-cli", "-h", redis_host, "SET",
-                 "cabinet:last-captain-msg-id", str(message_id)],
-                capture_output=True, timeout=10,
-            )
-        except Exception:
-            pass  # threading id is best-effort; never block receive
+        Degrade-safe throughout: a redis-cli failure (missing binary, no server)
+        is swallowed — threading is a nicety, not a precondition for delivering
+        the DM. See record_captain_contact for what each effect means and why the
+        timestamp had to be a sibling rather than a change to the id key."""
+        record_captain_contact(redis_host, message_id)
 
     def record_recent_msg(message_id: int, text: str) -> None:
         """Push (id, text, ts) onto a bounded ring so the Chair can resolve ANY

@@ -246,6 +246,20 @@ CAPTAIN_DECISIONS = str(
     _cabinet_root() / "shared" / "interfaces" / "captain-decisions.md"
 )
 LAST_CAPTAIN_MSG_KEY = "cabinet:last-captain-msg-id"
+# The TIMESTAMPED sibling of the key above (ISO-8601 UTC), written at the same
+# instant by the inbound poller's set_last_captain_msg_id. It exists because the
+# id key CANNOT express staleness — the captain-decisions verify below wanted
+# exactly this signal and said so ("that key carries no timestamp"), then fell
+# back to a file-age heuristic. Two keys, two jobs: the id stays untouched for
+# its reply-threading consumer (framework/frontdoor/channel.py), and recency
+# reads from here. Absent on a fresh cabinet or a box whose poller predates the
+# stamp — every reader below MUST degrade to its prior behaviour on None rather
+# than treating "no key" as "no contact".
+LAST_CAPTAIN_MSG_AT_KEY = "cabinet:last-captain-msg-at"
+# Generous by intent: the Captain is ALLOWED to be quiet. A week of zero inbound
+# contact is the point at which "quiet Captain" and "dead inbound lane" stop
+# being worth distinguishing locally — both deserve a look.
+CAPTAIN_INBOUND_SILENCE_S = 7 * 86400
 # The Chair stamps this on EVERY briefing it delivers — including a MANUAL
 # delivery when the cron missed (observed value: "2026-06-29T06:29:35Z (manual —
 # cron miss)"). The OUTCOME is "the Captain got their briefing", delivered BY ANY MEANS —
@@ -629,13 +643,29 @@ def verify_captain_decisions_logged(probe: "Probe") -> CheckResult:
         return CheckResult(eid, True, "no dated decision headings yet — skip",
                           skipped=True)
     newest = max(dates)
-    # Is the cabinet still actively talking to the Captain? Use the inbound
-    # msg-id key freshness as a cheap "recent interaction" proxy — but that key
-    # carries no timestamp, so we fall back to a generous 7-day staleness floor:
-    # only flag if the newest logged decision is > 7 days old. That is a true
-    # structural lapse (a week of zero logged decisions), not normal quiet.
+    # Is the cabinet still actively talking to the Captain? This check WANTED
+    # that signal and could not have it: the inbound key carried a message id,
+    # not a timestamp, so an id could never express staleness and the code fell
+    # back to a bare 7-day file-age floor. The timestamped sibling now exists
+    # (LAST_CAPTAIN_MSG_AT_KEY, stamped by the inbound poller), so the check the
+    # author described can finally be written.
+    #
+    # What it buys: a week with no logged decisions is only a LAPSE if there were
+    # decisions to log. If the Captain has not said anything since the newest
+    # entry, an empty week is correct behaviour, not drift — flagging it trains
+    # the reader to ignore this signal. Fail direction is deliberate: an ABSENT
+    # key (fresh cabinet, or a poller predating the stamp) leaves the original
+    # behaviour byte-for-byte intact, so this can only ever remove false
+    # positives, never blind the check.
     age_days = (probe.now() - newest).total_seconds() / 86400.0
     if age_days > 7:
+        last_contact = _parse_iso(probe.redis_get(LAST_CAPTAIN_MSG_AT_KEY))
+        if last_contact is not None and last_contact <= newest:
+            return CheckResult(
+                eid, True,
+                f"newest captain-decisions.md entry is {age_days:.0f} days old "
+                f"({newest:%Y-%m-%d}) but there has been NO Captain contact "
+                f"since — nothing to log, so not a logging lapse", skipped=True)
         return CheckResult(
             eid, False,
             f"newest captain-decisions.md entry is {age_days:.0f} days old "
@@ -643,6 +673,50 @@ def verify_captain_decisions_logged(probe: "Probe") -> CheckResult:
             f"may have lapsed; verify recent Captain decisions were logged")
     return CheckResult(eid, True,
                       f"captain-decisions.md current (newest {newest:%Y-%m-%d})")
+
+
+def verify_captain_inbound_contact(probe: "Probe") -> CheckResult:
+    """OUTCOME: the Captain is still reaching this cabinet — inbound contact
+    within CAPTAIN_INBOUND_SILENCE_S.
+
+    SCOPE, STATED HONESTLY. This is the SECOND leg, not the detector. It reads a
+    local key written by the local poller and escalates to the Chair, so it
+    shares a failure domain with most of what it watches: if the box dies, or
+    launchd unloads the sweep, or the Chair is gone, this check dies with them
+    and reports nothing. It is worth having anyway because it covers a real and
+    distinct shape the off-machine watcher cannot attribute — poller dead while
+    the rest of the cabinet is fine — and it names the fault precisely when it
+    does fire.
+
+    The PRIMARY inbound detector is the off-machine dead-man
+    (framework/liveness/deadman.py, EVENT_CAPTAIN_INBOUND), which alarms on the
+    ABSENCE of a ping and therefore survives the outage that silences this row.
+    Do not read a green here as "inbound contact is monitored".
+
+    A missing key is SKIP, never a failure: on a fresh cabinet the Captain has
+    genuinely never written, and a never-contacted cabinet must not page anyone
+    on its first sweep."""
+    eid = "captain-inbound-contact"
+    raw = probe.redis_get(LAST_CAPTAIN_MSG_AT_KEY)
+    last = _parse_iso(raw)
+    if last is None:
+        return CheckResult(eid, True,
+                          "no inbound Captain-contact stamp yet — nothing to "
+                          "compare against (fresh cabinet, or the poller "
+                          "predates the stamp)", skipped=True)
+    age_s = (probe.now() - last).total_seconds()
+    if age_s > CAPTAIN_INBOUND_SILENCE_S:
+        return CheckResult(
+            eid, False,
+            f"no inbound message from the Captain for {age_s / 86400.0:.1f} days "
+            f"(last {last:%Y-%m-%d %H:%M}Z, floor "
+            f"{CAPTAIN_INBOUND_SILENCE_S / 86400.0:.0f}d) — either the inbound "
+            f"lane is broken (poller down, token/chat misconfigured) or the "
+            f"Captain has genuinely gone quiet; CHECK THE LANE FIRST, because "
+            f"this check cannot tell the two apart")
+    return CheckResult(eid, True,
+                      f"inbound Captain contact {age_s / 3600.0:.1f}h ago "
+                      f"({last:%Y-%m-%d %H:%M}Z)")
 
 
 # Cron/pipe silent-failure — a job whose log shows an error or that stopped
@@ -981,6 +1055,26 @@ def _parse_organ_manifests(services_text: str, read_text) -> tuple[list[dict], l
     return entries, problems
 
 
+# Finding severity, worst first — the sort key applied BEFORE truncation (X).
+# WHY THIS IS NOT COSMETIC: findings used to be truncated to the first eight in
+# APPEND order, and the not-loaded scan appends LAST. So in exactly the situation
+# the truncation exists for — a broad outage producing dozens of findings — the
+# line naming the CAUSE ("declared but not loaded in launchd") was always the
+# first casualty, while eight downstream staleness symptoms survived. Ordering by
+# severity first makes the surviving eight the useful eight.
+#
+# The ranking is causal, not alphabetical: a job launchd does not know about
+# cannot run at all; a job with no log anywhere has never run; a non-zero exit is
+# a run that failed; staleness and error markers are the symptoms those causes
+# produce downstream.
+_SEV_NOT_LOADED = 0     # declared/rostered but launchd has never heard of it
+_SEV_NO_LOG = 1         # no log at any known path — never ran / not installed
+_SEV_EXIT_NONZERO = 2   # the last completed run failed
+_SEV_STALE = 3          # loaded and running, but past its freshness floor
+_SEV_ORGAN = 4          # a composed organ inside a live runner went quiet
+_SEV_MARKER = 5         # an error marker in a recent log tail
+
+
 def verify_no_silent_cron_failure(probe: "Probe") -> CheckResult:
     """OUTCOME: every service the fleet manifest declares is producing output
     within its cadence, not silently erroring, and actually loaded — with the
@@ -999,7 +1093,11 @@ def verify_no_silent_cron_failure(probe: "Probe") -> CheckResult:
                if e.get("kind") != "officer" and not e.get("disabled")]
     officer_labels = {e.get("label") for e in entries if e.get("kind") == "officer"}
 
-    problems: list[str] = []
+    # (severity, text) pairs — sorted by severity before truncation (see the
+    # _SEV_* table above). The sort is STABLE, so within one severity the
+    # original append order (and therefore every existing message string) is
+    # preserved exactly.
+    problems: list[tuple[int, str]] = []
     for e in watched:
         name = e["name"]
         floor_s = _floor_for_entry(e)
@@ -1009,15 +1107,17 @@ def verify_no_silent_cron_failure(probe: "Probe") -> CheckResult:
 
         if floor_s is not None:
             if freshest is None:
-                problems.append(f"{name}: no log at any known path (never ran / "
-                                f"not installed?)")
+                problems.append((_SEV_NO_LOG,
+                                 f"{name}: no log at any known path (never ran / "
+                                 f"not installed?)"))
                 # No log → nothing to marker-scan either.
                 continue
             idle_s = now_epoch - freshest
             if idle_s > floor_s:
-                problems.append(
+                problems.append((
+                    _SEV_STALE,
                     f"{name}: log silent {idle_s / 3600:.1f}h "
-                    f"(> {floor_s / 3600:.1f}h floor) — stalled or not firing")
+                    f"(> {floor_s / 3600:.1f}h floor) — stalled or not firing"))
                 continue
 
         # Marker scan, windowed: only files written within the entry's floor
@@ -1032,8 +1132,9 @@ def verify_no_silent_cron_failure(probe: "Probe") -> CheckResult:
             tail = "\n".join(tail_lines)
             hit = next((mk for mk in JOB_ERROR_MARKERS if mk in tail), None)
             if hit:
-                problems.append(f"{name}: error marker {hit!r} in recent log tail "
-                                f"({path.rsplit('/', 1)[-1]})")
+                problems.append((_SEV_MARKER,
+                                 f"{name}: error marker {hit!r} in recent log tail "
+                                 f"({path.rsplit('/', 1)[-1]})"))
                 break
 
     # Per-organ derived floors BESIDE the per-row expectations (COG-4 §9.2):
@@ -1044,21 +1145,23 @@ def verify_no_silent_cron_failure(probe: "Probe") -> CheckResult:
     # into one shared runner log (a silent organ still trips its own floor).
     organ_entries, organ_problems = _parse_organ_manifests(
         probe.read_text(SERVICES_MANIFEST), probe.read_text)
-    problems.extend(organ_problems)
+    problems.extend((_SEV_ORGAN, p) for p in organ_problems)
     for oe in organ_entries:
         artifact = _resolve_organ_artifact(oe["expected_output"])
         mt = probe.file_mtime(artifact)
         if mt is None:
-            problems.append(
+            problems.append((
+                _SEV_ORGAN,
                 f"{oe['organ']} (organ in {oe['runner']}): expected output "
-                f"absent at {artifact} (never produced / not installed?)")
+                f"absent at {artifact} (never produced / not installed?)"))
             continue
         idle_s = now_epoch - mt
         if idle_s > oe["max_staleness_s"]:
-            problems.append(
+            problems.append((
+                _SEV_ORGAN,
                 f"{oe['organ']} (organ in {oe['runner']}): output stale "
                 f"{idle_s / 3600:.1f}h (> {oe['max_staleness_s'] / 3600:.1f}h "
-                "declared floor) — the organ is silent inside a live runner")
+                "declared floor) — the organ is silent inside a live runner"))
 
     # launchctl surface — {} means "not observable here" (non-Mac host, test
     # stub, launchctl error): both launchd checks self-disable rather than
@@ -1100,7 +1203,8 @@ def verify_no_silent_cron_failure(probe: "Probe") -> CheckResult:
                 continue
             status = ll[label].get("status")
             if status not in (0, None):
-                problems.append(f"{label}: last exit status {status}")
+                problems.append((_SEV_EXIT_NONZERO,
+                                 f"{label}: last exit status {status}"))
         # (d) declared-but-not-loaded: an enabled manifest row whose label
         # launchd doesn't know. THE memory-worker failure class — declared in
         # the fleet manifest, hooks feeding its queue, never scheduled. Also
@@ -1110,11 +1214,44 @@ def verify_no_silent_cron_failure(probe: "Probe") -> CheckResult:
         for e in watched:
             label = e.get("label")
             if label and label not in ll:
-                problems.append(f"{e['name']}: declared in services.yml but not "
-                                f"loaded in launchd ({label})")
+                problems.append((_SEV_NOT_LOADED,
+                                 f"{e['name']}: declared in services.yml but not "
+                                 f"loaded in launchd ({label})"))
+
+        # NOT DONE HERE — officer not-loaded (the roster mirror). The hole is
+        # real and confirmed: the manifest carries ZERO officer rows by design,
+        # and the exit-status scan above deliberately EXCLUDES the whole
+        # com.cabinet.officer.* prefix (session wrappers exit non-zero
+        # legitimately). Both are correct individually, but the manifest's own
+        # comment reasons from them that "zero rows here is already a covered
+        # case, not a gap" — and that inference is FALSE: an exclusion is not
+        # coverage. A booted-out officer (launchctl bootout REMOVES the label)
+        # appears in neither scan, so this watchdog is structurally blind to the
+        # death of the very Chair it escalates everything to. cabinet-doctor.sh
+        # already merges the roster before its per-row check; only this side is
+        # blind.
+        #
+        # Closing it requires comparing launchctl's view against a DECLARED
+        # officer set — there is no other mechanical shape, since a booted-out
+        # label simply vanishes. Doing that against FULLTIME_OFFICERS
+        # contradicts three existing fixtures in
+        # framework/watchdog/tests/test_registry.py, whose partial launchctl
+        # dicts model a fleet where the rostered officers carry no LaunchAgents
+        # and which assert res.ok is True:
+        #   test_cron_unrostered_officer_label_not_flagged
+        #   test_cron_running_job_prior_exit_status_ignored
+        #   test_cron_disabled_row_fully_excluded
+        # Those fixtures would each need officer labels added. That is a
+        # deliberate, recorded HANDBACK rather than a silent test edit — the
+        # fixtures may be encoding a real deployment truth (officers supervised
+        # outside launchd on some topologies), and resolving that is a ruling,
+        # not a refactor.
 
     if problems:
-        shown = problems[:8]
+        # Severity BEFORE truncation (X) — a stable sort, so message text and
+        # within-severity order are unchanged; only WHICH eight survive changes.
+        problems.sort(key=lambda p: p[0])
+        shown = [text for _sev, text in problems[:8]]
         more = len(problems) - len(shown)
         detail = "cabinet cron issues: " + "; ".join(shown)
         if more > 0:
@@ -1502,6 +1639,30 @@ _CATALOG: list[Expectation] = [
         cadence_s=24 * 3600,
         tier=Tier.ESCALATE_CHAIR,
         verify=verify_evidence_detector_liveness,
+    ),
+    # APPENDED AT THE END, and SHIPS STAGED DARK — the same convention the
+    # Phase-4 evidence rows use. Two reasons, both deliberate:
+    #   * position: the enable-order pins in test_registry.py read catalog[:5],
+    #     so a row inserted mid-catalog would silently redefine what those pins
+    #     assert. Appending leaves every existing pin meaning what it meant.
+    #   * dark: enabling it here would change the enabled-row COUNT, which those
+    #     same pins fix at 5. Arming is therefore a one-line instance-config
+    #     change (uncomment `captain-inbound-contact` in
+    #     instance/config/watchdog.yml), not a code change — see that file.
+    # The mechanism is fully built and tested either way; only the local
+    # SECOND-leg alert is dark. The PRIMARY inbound detector is the off-machine
+    # dead-man (framework/liveness/deadman.py), which is independent of this row
+    # and of this whole watchdog.
+    Expectation(
+        id="captain-inbound-contact",
+        what=f"{captain_name()} is still reaching this cabinet — an inbound "
+             f"message within {CAPTAIN_INBOUND_SILENCE_S // 86400}d. SECOND "
+             f"LEG only: the primary inbound detector is the off-machine "
+             f"dead-man, which alarms on the ABSENCE of a ping and so survives "
+             f"the outage that would silence this row.",
+        cadence_s=CAPTAIN_INBOUND_SILENCE_S,
+        tier=Tier.ESCALATE_CHAIR,
+        verify=verify_captain_inbound_contact,
     ),
 ]
 

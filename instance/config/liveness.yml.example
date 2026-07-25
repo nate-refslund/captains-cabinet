@@ -1,0 +1,75 @@
+# =============================================================
+# instance/config/liveness.yml — Captain-contact dead-man (D1)
+# =============================================================
+# EXAMPLE / TEMPLATE, and INERT AS SHIPPED. Copy to
+# instance/config/liveness.yml and fill in for YOUR deployment. With this file
+# absent — or present with the empty values below — framework/liveness/deadman.py
+# makes NO network call and returns no error. A fresh clone pings nothing.
+#
+# WHAT THIS IS FOR. Every other health signal in this tree is produced and
+# consumed inside the same failure domain, so the cabinet can only ever report
+# on itself: it can notice that MACHINERY stopped, never that CONTACT stopped.
+# This file wires the one detector that is outside that domain. The cabinet
+# pings a watcher you host elsewhere at the moment it actually talks to the
+# Captain; the WATCHER alarms when the pings stop. The outage is the trigger,
+# so the outage cannot suppress the alarm — which is exactly what a
+# launchd-scheduled check can never promise, because the outage class is
+# launchd-level.
+#
+# This is NOT a direct-to-Captain alert tier. Operational alerts still route to
+# the Chair (P-Alerts-To-Chair, framework/watchdog/registry.py Tier enum). This
+# is an ABSENCE detector living outside the lane, which is a different object.
+#
+# ACTIVATION IS A DEPLOYMENT STEP, NOT A CODE STEP. Registering an account with
+# a ping/dead-man service and pasting real slugs below is done by the operator
+# at hatch time. Nothing in the repo does it for you, and no default endpoint
+# ships here on purpose — a shipped default would silently phone a stranger's
+# host.
+#
+# PARSER CONTRACT. framework/liveness/deadman.py reads this with a NARROW
+# stdlib parser (survival contract: no PyYAML — a heartbeat that dies from a
+# missing dep is worse than none). Edit ONLY in the shapes used below:
+# top-level `key: value` scalars, and 2-space `key: value` entries under
+# `events:`. Unknown lines are ignored; an unparseable file degrades to INERT.
+# A bad config can only ever SILENCE this emitter, never redirect it.
+
+# Master switch. `false` makes every event inert regardless of the slugs below —
+# use it to park the detector without deleting your slugs.
+enabled: true
+
+# REQUIRED, and the multi-tenancy guard. N cabinets share one Mac Mini, so a
+# shared slug makes a DEAD instance indistinguishable from a QUIET one — the
+# precise confusion this detector exists to remove. An empty or malformed
+# `instance_id` keeps every event INERT even when the slugs below are filled in,
+# so a config copied between instances goes silent (reason `no-instance`) instead
+# of reporting a false all-clear on its neighbour's slug.
+# Shape: lowercase alphanumeric + hyphens, max 32 chars.
+instance_id: ""
+
+# Your watcher's base URL. http/https only. Each instance gets its OWN slugs
+# under `events:` below; the ping is a plain GET to `<base_url>/<slug>`.
+# Empty = inert.
+base_url: ""
+
+# Seconds before a heartbeat gives up. This runs INSIDE the Captain send path,
+# so it is deliberately short — a slow watcher must never delay a briefing.
+# Clamped to 1..30; a non-integer falls back to 3.
+timeout_s: 3
+
+# Per-event slugs. EMPTY = that event is inert (no call, no error). Fill in only
+# the events you have registered a watcher check for.
+events:
+  # Fires at the exact point an outbound message is CONFIRMED delivered to the
+  # Captain's transport — every chunk accepted, a real message id assigned.
+  # It does NOT fire on "queued", on a killswitch-refused send, or on a
+  # blocked-dev send, because none of those is contact.
+  # Suggested watcher period: ~1.5 days (two scheduled briefings a day, plus
+  # slack for one missed slot before anyone is woken up).
+  captain_outbound: ""
+
+  # Fires where the inbound poller advances its offset on a Captain message —
+  # i.e. the cabinet actually received something from the Captain.
+  # Suggested watcher period: ~7 days. The Captain is allowed to be quiet; a
+  # full week of silence means either the inbound lane died or the Captain
+  # vanished, and both are worth knowing.
+  captain_inbound: ""

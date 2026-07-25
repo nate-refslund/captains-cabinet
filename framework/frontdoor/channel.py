@@ -527,6 +527,38 @@ def _journal_out(row_fn) -> None:
               file=sys.stderr)
 
 
+def _contact_heartbeat_out() -> None:
+    """Emit the Captain-contact dead-man heartbeat (D1) — outbound leg.
+
+    THE PLACEMENT IS THE POINT. This fires at the one place in the tree where
+    outbound delivery is genuinely CONFIRMED: every chunk accepted by the
+    transport with a real message id assigned. It is unreachable from the
+    failure paths — a killswitch-refused send, a ``blocked-dev`` send, and a
+    partial multi-chunk failure all return BEFORE this line, so none of them can
+    launder itself into a heartbeat.
+
+    WHAT THE HEARTBEAT HONESTLY MEANS: "the Captain's transport accepted this
+    message." That is strictly stronger than the two producer-side artifacts the
+    watchdog has had to make do with (a marker the Chair stamps when it BELIEVES
+    it delivered, and a ``sent: True`` log line), and it is deliberately NOT a
+    claim that the Captain read or answered anything. Those three are different
+    facts and this codebase has historically collapsed them; the inbound leg is
+    what speaks to the Captain actually being there.
+
+    Best-effort in the strongest sense: the message is already out, so nothing
+    here may raise, and ``deadman.emit`` is contractually non-raising anyway.
+    Unconfigured deployments no-op silently (INERT by default). We stay quiet on
+    a failed ping too — the honest consequence is that the off-machine watcher
+    stops seeing pings and alarms, which is the correct outcome rather than a
+    log line nobody reads."""
+    try:
+        from framework.liveness import deadman
+
+        deadman.emit(deadman.EVENT_CAPTAIN_OUTBOUND)
+    except Exception:
+        pass  # the send SUCCEEDED; a heartbeat must never cost a delivered message
+
+
 # ---------------------------------------------------------------------------
 # Conservative Markdown → Telegram-HTML (opt-in via send(..., markdown=True)).
 # Everything is html.escape-d FIRST, so untrusted text can never inject markup;
@@ -704,6 +736,11 @@ def _send_impl(text: str, *, http_post=None, reply_to: int | None = None,
     # chunk landed; a journal failure never unmakes the delivery.
     _journal_out(lambda: _feed_row_out(
         text, "message", message_ids[-1] if message_ids else None, chat_id, feed_meta))
+
+    # D1 outbound dead-man: CONFIRMED delivery is the trigger. Placed after the
+    # last chunk landed and after journaling, so the heartbeat can only follow a
+    # real delivery — see _contact_heartbeat_out for why this exact line.
+    _contact_heartbeat_out()
 
     if multipart:
         return {"status": "sent", "sent": True, "chunks": len(chunks),

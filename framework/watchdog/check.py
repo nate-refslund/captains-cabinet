@@ -202,15 +202,29 @@ class RealProbe(Probe):
         exact key derivation, consumer-group creation, and the control-plane
         wake — rather than re-implementing XADD here and drifting from it.
 
+        Also records, on ``self._last_chair_delivery``, whether the Chair had a
+        LIVE consumer session at send time ("live" / "absent" / "unknown", from
+        triggers.sh::trigger_consumer_state). The return value keeps its old
+        meaning — "the trigger is durably on the stream" — because that is a real
+        and separate fact; the router reads the side channel to decide whether
+        the page can actually be READ. Two facts, two signals: collapsing them is
+        exactly the enqueued-is-delivered laundering this closes.
+
         In --dry-run (allow_side_effects=False) this is a no-op returning True so
         the routing logic is fully exercised without perturbing the live stream."""
         if not self._allow:
+            self._last_chair_delivery = "unknown"
             return True
+        self._last_chair_delivery = "unknown"
         try:
-            # OFFICER_NAME labels the trigger sender in the envelope.
+            # OFFICER_NAME labels the trigger sender in the envelope. The trailing
+            # printf reports the consumer state on STDOUT (trigger_send leaves
+            # stdout clean, so this is unambiguous) without disturbing the
+            # stderr-means-failure contract every other caller relies on.
             script = (
                 f'. "{TRIGGERS_LIB}" && '
-                f'OFFICER_NAME=outcome-watchdog trigger_send "{CHAIR_OFFICER}" "$WATCHDOG_MSG"'
+                f'OFFICER_NAME=outcome-watchdog trigger_send "{CHAIR_OFFICER}" "$WATCHDOG_MSG" && '
+                f'printf "CHAIR_DELIVERY=%s\\n" "${{TRIGGER_SEND_DELIVERY:-unknown}}"'
             )
             env = dict(os.environ)
             env["WATCHDOG_MSG"] = message
@@ -220,6 +234,11 @@ class RealProbe(Probe):
             env["PATH"] = "/opt/homebrew/bin:" + env.get("PATH", "")
             r = subprocess.run(["/bin/bash", "-c", script],
                                capture_output=True, text=True, timeout=20, env=env)
+            for line in (r.stdout or "").splitlines():
+                if line.startswith("CHAIR_DELIVERY="):
+                    state = line.split("=", 1)[1].strip()
+                    if state in ("live", "absent", "unknown"):
+                        self._last_chair_delivery = state
             # trigger_send writes to STDERR only on XADD failure; clean stderr =
             # success. A non-zero rc or any stderr → treat as not-enqueued.
             return r.returncode == 0 and not (r.stderr or "").strip()
@@ -306,6 +325,27 @@ def _receipts_allowed(probe) -> bool:
 # Router — given a CheckResult + its Expectation, take the tier's action with
 # anti-thrash dedup. Returns a one-line "what I did" string for the run report.
 # ─────────────────────────────────────────────────────────────────────────────
+def _chair_read_it(probe) -> bool:
+    """Was the Chair escalation delivered to something that can actually READ it?
+
+    ``trigger_chair`` returning True means the trigger is durably on the stream —
+    NOT that anyone is there. A cooldown burnt on an unread page is how a live
+    outage goes quiet for hours: the finding is suppressed for the cooldown
+    window while the only recipient is gone.
+
+    "absent" is the ONLY state that withholds the cooldown. "unknown" (no tmux to
+    observe with — Docker, CI, a remote box) keeps the pre-change behaviour,
+    because a detector that cannot see must not invent a verdict; and a stub
+    probe without the attribute reads as "unknown" via getattr, so every existing
+    test double is unaffected by construction."""
+    return getattr(probe, "_last_chair_delivery", "unknown") != "absent"
+
+
+_UNDELIVERED_NOTE = ("queued to the Chair's stream but NO live Chair consumer "
+                     "(enqueued is not delivered — cooldown deliberately NOT set, "
+                     "so this re-escalates next sweep)")
+
+
 def route_failure(probe: RealProbe, exp, result: CheckResult) -> str:
     tier = exp.tier
     cap = captain_name()  # launcher-agnostic: the Captain's display name for alert copy
@@ -338,6 +378,8 @@ def route_failure(probe: RealProbe, exp, result: CheckResult) -> str:
             ok = probe.trigger_chair(
                 f"OUTCOME-WATCHDOG: auto-fix for '{exp.id}' could not run — "
                 f"{result.detail}. Please handle (gather-then-decide; do not DM {cap}).")
+            if ok and not _chair_read_it(probe):
+                return f"auto-fix declined → escalation {_UNDELIVERED_NOTE}: {result.detail}"
             if ok:
                 probe.set_cooldown(exp.id, esc)
                 if _receipts_allowed(probe):
@@ -359,6 +401,8 @@ def route_failure(probe: RealProbe, exp, result: CheckResult) -> str:
             f"process may be 'green' while the OUTCOME did not happen."
         )
         ok = probe.trigger_chair(msg)
+        if ok and not _chair_read_it(probe):
+            return f"escalation {_UNDELIVERED_NOTE}: {result.detail}"
         if ok:
             probe.set_cooldown(exp.id, esc)
             if _receipts_allowed(probe):

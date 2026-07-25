@@ -45,7 +45,12 @@ fixture) fences:
         fixture-less test,
       - the captain-inbound archive (cabinet/scripts/
         officer-inbound-poller.py::archive_captain_dm,
-        CABINET_CAPTAIN_INBOUND_DIR — fenced at birth, 2026-07-17).
+        CABINET_CAPTAIN_INBOUND_DIR — fenced at birth, 2026-07-17),
+      - the Captain-contact dead-man (framework/liveness/deadman.py,
+        CABINET_LIVENESS_CONFIG — fenced at birth, 2026-07-25). The only
+        OUTBOUND member of this list: it would send a fake heartbeat to the
+        off-machine watcher rather than write a local file, and a fake
+        heartbeat SUPPRESSES a real outage alarm.
 
 Per-test isolation is NOT this file's job — suites keep their own
 tmp_path/monkeypatch fixtures, which run later and take precedence. This is
@@ -93,6 +98,20 @@ os.environ["CABINET_DRAFT_QUEUE_DIR"] = os.path.join(_SESSION_SANDBOX, "draft-qu
 os.environ["CABINET_EVIDENCE_DIR"] = os.path.join(_SESSION_SANDBOX, "evidence")
 os.environ["CABINET_CAPTAIN_INBOUND_DIR"] = os.path.join(
     _SESSION_SANDBOX, "captain-inbound")
+
+# Captain-contact dead-man (2026-07-25) — an OUTBOUND fence, not a write fence,
+# and the first of its kind here. framework/liveness/deadman.py fires from inside
+# channel.send and the inbound poller, so on a deployment that has configured
+# instance/config/liveness.yml a plain `pytest framework/` would ping the real
+# off-machine watcher with fabricated heartbeats — telling the watcher the
+# cabinet is talking to its Captain when it is running a test suite. That is
+# worse than the ledger leaks above: those polluted a record, this one would
+# suppress a genuine outage alarm. Point the config resolver at a path inside the
+# session sandbox that is never created, so every emit resolves `no-config` and
+# no request leaves the box. Unconditional for the same reason as the rest: an
+# officer session exports the live config path.
+os.environ["CABINET_LIVENESS_CONFIG"] = os.path.join(
+    _SESSION_SANDBOX, "liveness-absent.yml")
 
 # Bare-root collection sweep guard (2026-07-07): officers/ holds gitignored
 # runtime officer mirror checkouts (full-repo copies) — collecting them
