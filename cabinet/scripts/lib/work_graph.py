@@ -7,10 +7,16 @@ Used by the mission compiler and runtime to manage task dependencies.
 from __future__ import annotations
 
 import json
+import unicodedata
 from collections import defaultdict, deque
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 from typing import Optional
+
+
+# work-graph-complete.sh's fallback actor when no officer is named. Kept in
+# lockstep with that script's refusal for --status verified.
+UNATTRIBUTED_ACTOR = "system"
 
 
 class NodeStatus(Enum):
@@ -40,6 +46,71 @@ class WorkNode:
     rollback_note: str = ""
     budget_note: str = ""
     captain_attention_estimate: float = 0.0
+
+    def __post_init__(self) -> None:
+        # A node naming its own owner as its verifier is UNSATISFIABLE: no
+        # actor can be both != owner and == verifier, so it would compile
+        # clean and then be permanently unverifiable. Reject it at
+        # construction, which covers every path (compiler, from_json, direct).
+        # Only fires when BOTH are non-empty, so legacy nodes that simply have
+        # no verifier_role keep loading.
+        if self.verifier_role and self.assigned_role and (
+            normalize_role_name(self.verifier_role) == normalize_role_name(self.assigned_role)
+        ):
+            raise ValueError(
+                f"node {self.id!r} names its owner ({self.assigned_role}) as its own "
+                "verifier_role; no actor could ever verify it"
+            )
+
+
+def normalize_role_name(value) -> str:
+    """Fold a role name for comparison: NFKC, strip control/format chars, casefold.
+
+    Without this a one-keystroke difference (`Engineering` vs `engineering`)
+    read as two different roles and a self-verification was credited. NFKC also
+    folds fullwidth and other compatibility look-alikes; the control/format
+    filter removes zero-width characters, which `str.strip()` does not.
+
+    This defeats near-miss spellings ONLY. It does nothing against a caller who
+    deliberately types a different, real role name — see
+    verification_is_independent for what that check is and is not worth.
+    """
+    text = unicodedata.normalize("NFKC", str(value or ""))
+    return "".join(c for c in text if not unicodedata.category(c).startswith("C")).strip().casefold()
+
+
+def verification_is_independent(node: "WorkNode", actor) -> bool:
+    """True when `actor` may credit `node` with an independent verification.
+
+    Applies the rule the work-graph-complete skill has always stated in prose
+    but never enforced: "validators verify, executors complete."
+
+    WHAT THIS IS WORTH — do not overstate it. The actor is self-asserted by the
+    caller and every officer runs as the same OS user, so anyone able to emit an
+    event can name any actor. It stops the DEFAULTED, UNATTRIBUTED and
+    ACCIDENTAL cases — the routine ways work ends up marking its own homework
+    verified. It does NOT stop an officer who deliberately types another role's
+    name, and it is NOT authentication.
+
+    Three refusals: a blank actor (an unattributed verification is exactly the
+    unaccountable case); an actor equal to the node's own owner; an actor that
+    is not the node's declared verifier_role when it has one. A node with no
+    verifier_role keeps the weaker owner-only rule, so graphs written before
+    that field was populated stay loadable.
+
+    KNOWN GAP: a node with no assigned_role AND no verifier_role has no basis
+    for comparison, so any non-blank actor passes. _match_role_for_task can
+    leave assigned_role None when no capability keyword matches.
+    """
+    who = normalize_role_name(actor)
+    owner = normalize_role_name(node.assigned_role)
+    verifier = normalize_role_name(node.verifier_role)
+    # "system" is work-graph-complete.sh's unattributed fallback; that gate
+    # refuses it for --status verified, so the overlay must refuse it too or
+    # the two surfaces disagree about the same event.
+    if not who or who == UNATTRIBUTED_ACTOR:
+        return False
+    return who != owner and (not verifier or who == verifier)
 
 
 class WorkGraph:
@@ -202,6 +273,17 @@ class WorkGraph:
                     "status": n.status.value,
                     "verification_criteria": n.verification_criteria,
                     "verification_passed": n.verification_passed,
+                    # Mission Compiler v2 fields. These MUST round-trip:
+                    # verifier_role names who is allowed to verify this node,
+                    # so dropping it here silently erased the separation of
+                    # duties the runtime relies on (a serialized graph came
+                    # back with verifier_role=None and every field defaulted).
+                    "evidence_required": n.evidence_required,
+                    "verifier_role": n.verifier_role,
+                    "risk_level": n.risk_level,
+                    "rollback_note": n.rollback_note,
+                    "budget_note": n.budget_note,
+                    "captain_attention_estimate": n.captain_attention_estimate,
                 }
                 for n in self.nodes.values()
             ],
@@ -225,6 +307,17 @@ class WorkGraph:
                 status=NodeStatus(node_data["status"]),
                 verification_criteria=node_data.get("verification_criteria", []),
                 verification_passed=node_data.get("verification_passed"),
+                # Mission Compiler v2 fields — read back with the same
+                # defaults the dataclass declares, so a payload written
+                # before these keys existed still loads unchanged.
+                evidence_required=node_data.get("evidence_required") or "",
+                verifier_role=node_data.get("verifier_role"),
+                risk_level=node_data.get("risk_level") or "",
+                rollback_note=node_data.get("rollback_note") or "",
+                budget_note=node_data.get("budget_note") or "",
+                captain_attention_estimate=float(
+                    node_data.get("captain_attention_estimate") or 0.0
+                ),
             )
             graph.add_node(node)
 

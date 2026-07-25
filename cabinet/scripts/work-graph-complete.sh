@@ -10,10 +10,18 @@
 # without per-session reset.
 #
 # Usage:
-#   work-graph-complete.sh <node_id> [--status done|failed|verified] [--evidence FILE_OR_TEXT]
+#   work-graph-complete.sh <node_id> [--status done|failed|verified] [--evidence FILE_OR_TEXT] [--actor ROLE]
 #   work-graph-complete.sh outcome-launch-mvp-task-003 --status done --evidence /tmp/api-deploy.log
 #   work-graph-complete.sh acme-001-ci --status done --evidence "3 green staging runs"
 #   work-graph-complete.sh outcome-x-task-001 --status failed --evidence "Tests red on PR #42"
+#   work-graph-complete.sh outcome-x-task-001 --status verified --actor auditor --evidence /tmp/audit.log
+#
+# SEPARATION OF DUTIES: --status verified requires an attributed actor (--actor
+# or OFFICER_NAME; the "system" fallback is refused), and the compiler's status
+# overlay declines to credit a verification whose actor is the node's own owner
+# or is not the node's declared verifier_role. The actor is SELF-ASSERTED: this
+# stops the defaulted, unattributed and accidental cases, NOT an officer who
+# types another role's name. It is not authentication and must not be sold as such.
 #
 # <node_id> accepts BOTH work-graph id shapes (2026-07-05 fix — see the
 # resolution block below): compiler-generated "<outcome_id>-task-NNN" ids AND
@@ -24,7 +32,9 @@
 #   Exit 0 + emitted event = success. Exit non-zero = failure (see stderr).
 #
 # Environment:
-#   OFFICER_NAME       — actor for the emitted event (defaults to "system")
+#   OFFICER_NAME       — actor for the emitted event (defaults to "system";
+#                        --actor overrides it, and "system" is refused for
+#                        --status verified)
 #   CABINET_ROOT       — repo root (defaults to script's two-levels-up)
 #   OUTCOMES_FILE      — outcome declarations for node-id resolution
 #                        (defaults to $CABINET_ROOT/instance/config/outcomes.yml)
@@ -37,10 +47,11 @@ set -euo pipefail
 STATUS="done"
 EVIDENCE=""
 NODE_ID=""
+ACTOR_ARG=""
 
 usage() {
   cat <<'EOF' >&2
-Usage: work-graph-complete.sh <node_id> [--status done|failed|verified] [--evidence FILE_OR_TEXT]
+Usage: work-graph-complete.sh <node_id> [--status done|failed|verified] [--evidence FILE_OR_TEXT] [--actor ROLE]
 
 Records completion of a mission work-graph node.
 
@@ -52,10 +63,17 @@ Arguments:
 Options:
   --status done|failed|verified   Completion status (default: done)
   --evidence FILE_OR_TEXT         Path to evidence file, or inline evidence text
+  --actor ROLE                    Actor for the emitted event (overrides OFFICER_NAME).
+                                  For --status verified an attributed actor is required:
+                                  supply --actor or OFFICER_NAME (the "system" fallback is
+                                  refused). Validators verify, executors complete.
+                                  Self-asserted, so this separates duties -- it stops the
+                                  defaulted/unattributed cases, not a deliberate rename,
+                                  and it is not authentication.
   -h, --help                      Show this help
 
 Environment:
-  OFFICER_NAME       Actor for the emitted event (default: "system")
+  OFFICER_NAME       Actor for the emitted event (default: "system"; not accepted for --status verified)
   OUTCOMES_FILE      Outcomes file for node-id resolution (default: instance/config/outcomes.yml)
   DATABASE_URL       If set, also updates work_graph_nodes row
 EOF
@@ -83,6 +101,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --evidence=*)
       EVIDENCE="${1#--evidence=}"
+      ;;
+    --actor)
+      shift
+      [[ $# -gt 0 ]] || { echo "work-graph-complete: --actor requires a value" >&2; exit 2; }
+      ACTOR_ARG="$1"
+      ;;
+    --actor=*)
+      ACTOR_ARG="${1#--actor=}"
       ;;
     --)
       shift
@@ -212,7 +238,25 @@ fi
 
 # --- resolve actor (CABINET_ROOT already resolved above, before the node-id
 #     resolver that needs it) ---
-ACTOR="${OFFICER_NAME:-system}"
+ACTOR="${ACTOR_ARG:-${OFFICER_NAME:-system}}"
+
+# A verification must be ATTRIBUTED. The "system" fallback let a
+# `--status verified` land with no officer named at all, which is the
+# unaccountable case: nothing downstream can tell who checked the work.
+# `done`/`failed` keep the permissive fallback — an executor reporting its own
+# completion is legitimate and is what this script is mostly used for.
+#
+# NOTE ON STRENGTH: $OFFICER_NAME (and --actor) are self-supplied by the
+# caller and every officer runs as the same OS user, so this is separation of
+# duties, NOT authentication. It stops accidents and self-dealing; it does not
+# stop a determined caller from naming any actor it likes.
+# Fold before comparing: a bare literal test let "System" and "system " through.
+ACTOR_FOLDED="$(printf '%s' "$ACTOR" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+if [[ "$STATUS" == "verified" && ( -z "$ACTOR_FOLDED" || "$ACTOR_FOLDED" == "system" ) ]]; then
+  echo "work-graph-complete: --status verified requires an attributed actor" >&2
+  echo "  pass --actor <role> or set OFFICER_NAME; validators verify, executors complete" >&2
+  exit 2
+fi
 
 # --- map status to event_type ---
 case "$STATUS" in
