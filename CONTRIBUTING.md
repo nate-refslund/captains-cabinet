@@ -52,8 +52,11 @@ bash cabinet/scripts/run-golden-evals.sh
 ```
 
 Shell changes must pass `bash -n` and `shellcheck --severity=error` (CI
-enforces this for hooks, lib, and the scripts root). Match the surrounding
-style: `set -euo pipefail` in bash, `python3` for Python.
+enforces this for hooks, lib, the scripts root, and `cabinet/cron`). Match the
+surrounding style: `set -euo pipefail` in bash, `python3` for Python — except
+where errexit would swallow a diagnostic the caller reads via `$?` after a
+`var=$(...)` assignment, in which case use `set -uo pipefail` and say why in a
+comment (see `cabinet/cron/briefing.sh`).
 
 ## Commit conventions
 
