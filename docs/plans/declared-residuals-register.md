@@ -64,18 +64,21 @@ Reproduce: `git grep -o -e '<form>' a1357829 -- . | wc -l`
 The 21 word-token sites split three ways, and only the first group is bound by
 the gate:
 
-- **8 sites / 6 files in the SWEEP SURFACE** — the code and config declarations.
-  Every one has a row below (minus the two legacy exemptions).
+- **8 sites / 7 files in the SWEEP SURFACE** — the code and config declarations.
+  Every one has a row below (minus the two legacy exemptions). (Written as
+  6 files in the first cut; re-measured at landing — see the correction below.)
 - **11 sites / 2 files in the operative ledger + plan pair** — see "known
   limits"; that pair is a coordination surface with its own status/owner fields
   and its own A13 parity gate.
 - **2 sites / 2 files in frozen review artifacts** (`feat-config-rot-cp1.md:95`,
   `feat-relaunch-scrub2-cp1.md:92`; the second is a wave NAME, not a
-  declaration).
+  declaration). At `db180092` this is 9 / 4 — `feat-cog5-w2-t3-boundary-escape-cp1.md:147`
+  landed with W2, and 6 of the 9 are this register's OWN review artifact.
 
-The uppercase token appears in three qualifier forms — bare `RESIDUAL:`,
-`HONEST RESIDUAL:`, `KNOWN RESIDUAL` — so the convention is the **word token**,
-not a fixed prefix:
+The uppercase token appears in several qualifier forms — bare `RESIDUAL:`,
+`HONEST RESIDUAL:`, `KNOWN RESIDUAL`, and (added by later waves, see the
+re-measure below) `DECLARED RESIDUAL`, `DOCUMENTED RESIDUAL`, `RESIDUAL
+HONESTY` — so the convention is the **word token**, not a fixed prefix:
 
 ```
 (?<![A-Za-z0-9_])RESIDUALS?(?![A-Za-z0-9_])
@@ -85,6 +88,49 @@ The lookarounds are load-bearing: they exclude identifiers that merely contain
 the word (`_TEMPORARY_RESIDUALS` in `framework/tests/test_no_launcher_hardcode.py`,
 `RESIDUAL_NOTE` in `cabinet/scripts/evidence-tamper-drill.py`), which are
 mechanisms, not declarations.
+
+#### RE-MEASURED AT LANDING — `db180092`
+
+The survey above is anchored at `a1357829` and stays there, because it is the
+evidence for the CHOICE of marker. The tree it measured no longer exists, so the
+live numbers are restated here rather than left to rot. Same method, same
+regex, whole tracked tree:
+
+| | `a1357829` | `db180092` (+ this register) |
+|---|---|---|
+| word-token sites / files | 21 / 11 | **53 / 20** |
+| — in the SWEEP SURFACE | 8 / **7** (see correction) | **15 / 12** |
+| — operative ledger + plan pair | 11 / 2 | 11 / 2 (unchanged) |
+| — frozen review artifacts | 2 / 2 | 9 / 4 (6 are this branch's own artifact) |
+| — this register + its pin test | n/a | 18 / 2 (self-excluded by construction) |
+| `RETIREMENT CONDITION` | 42 / 24 | 71 / 33 |
+| `residual` (lowercase, prose) | 239 / 107 | 291 / 119 |
+
+**Correction to the original survey.** The `a1357829` sweep-surface FILE count
+was written as 6 and is 7 — `egg-export-manifest.txt` carries two of the eight
+sites, and counting it once was dropped somewhere between the sites tally and
+the files tally. The site count (8) was right, and no row, cite or assertion
+depended on the file count. It reconciles now: 11 files total = 7 sweep + 2
+operative + 2 frozen. Recorded rather than quietly overwritten, because "this
+register pins declarations, not truth" cuts both ways — the survey is a
+measurement and measurements get re-run.
+
+Two verdicts in the table above were CORRECT AT THE TIME and are now wrong as
+statements about the live tree — recorded here because a silently stale
+rejection is exactly the rot this file exists to catch:
+
+- `DECLARED RESIDUAL` was 0/0 and rejected as not-in-use. It is now the most
+  common qualifier in new code (6 / 5). Rejecting it as a fixed PREFIX was
+  still right: the word-token regex catches it unchanged, which is the whole
+  argument for choosing the token over a phrase.
+- `HONEST SCOPE` was 0/0 and rejected. It is now 12 / 4, adopted by COG-5 W2 as
+  a docstring SECTION name (`make_vector`'s block, which `RES-013` and
+  `RES-014` cite). It marks a scope discussion, not a single residual, so it is
+  still not the marker — but it is a good place to look for unregistered ones.
+
+The sweep surface grew 8 → 15. The two legacy exemptions were already in the 8;
+all seven new sites are declarations, and they are exactly what `RES-012`
+..`RES-015` register. That growth is what forced this landing to absorb them.
 
 `RETIREMENT CONDITION` is the repo's existing name for "what closes this" (42
 uses across 24 files, e.g. `cabinet/scripts/tests/test_cog5_league_ast_pin.py:22`),
@@ -198,10 +244,10 @@ test refuses a `retired` row whose marker is still in the tree.
 - **Closed:** everything that matters in shadow. Replay refusal is real for a single process (`idempotency_replay`, panel double-run probe); row-carried idempotency keys are never trusted (the key is re-derived); the log itself cannot corrupt — `append_shadow_log` takes an `O_EXCL` lock, writes an `O_EXCL` tmp, fsyncs and `os.replace`s, and losers fail LOUD.
 - **Open:** `replay_keys` are READ before that lock is taken (`cabinet/scripts/cog4-dispatch-shadow.py:858-863`, versus the lock at `:625-658`), so two dispatchers racing one log could each record `would_dispatch` for the SAME idempotency key.
 - **Why open:** zero effect surface exists this phase — nothing dispatched in shadow reaches the world, so a doubled `would_dispatch` RECORD is the entire blast radius. The review disposition is explicit: not ship-blocking in shadow, and it binds the future cutover amendment rather than this phase.
-- **Declared at:** `shared/interfaces/reviews/cognitive-core-phase-4-review.md:233`
+- **Declared at:** `shared/interfaces/reviews/cognitive-core-phase-4-review.md:320`
 - **Anchor:** `Shadow-log replay window`
 - **Retirement:** the cutover amendment REQUIRES read+check+append under one lock, and `cog4-dispatch-shadow.py` (or its cutover successor) implements it, before any dispatch becomes real. In the SAME commit as that amendment landing: flip this row to `retired` and record the implementing commit here. Until then this row is the carrier — the review artifact is digest-bound and frozen, so it cannot be updated in place.
-- **Note:** this residual is declared in a FROZEN review artifact and has no in-code marker. Registering it here is the only reason it survives a refactor of the dispatcher.
+- **Note:** this residual is declared in a FROZEN review artifact and has no in-code marker. Registering it here is the only reason it survives a refactor of the dispatcher. The cite moved `:233` → `:320` at this register's landing: two re-bind ceremonies (`fcad8e47`, `598868ed`) inserted an 88-line block at `:70`, ABOVE the findings table, leaving the P1 row byte-identical but 87 lines lower. Expect the same re-point at each future re-bind — the row is not drifting, the file is growing above it. This is the pin working: a frozen artifact cannot be updated in place, so the cite is the only thing that can move.
 
 ### RES-008 — COG-4 W1 u3: officer-plist instance leakage NOT cleaned up (PARKED)
 
@@ -247,21 +293,81 @@ test refuses a `retired` row whose marker is still in the tree.
 - **Anchor:** `organ SCHEMA VALIDATION parked (germline window unopened)`
 - **Retirement:** the Captain window lands the CG-33 edit (schema `kind` enum gains `organ` + the fourteen fields + the undo-grammar superset; the .sh gains the integer branch and ORGAN BLOCK; same-day relock; §4 battery green). Then (1) the W2 corpus vacuity arm retires per its own in-file RETIREMENT CONDITION, (2) a follow-up unit binds organ-manifest validation to the REAL `validate-extension.sh` on both paths and lands the AX organ-block checks — the registry KEEPS its structural-read posture and never becomes a second validator, (3) the marker is superseded in place with a dated note, and this row flips to `retired`. All in the SAME commit as (3).
 
-## Absorption — COG-5 W2 adds its rows AT LANDING
+### RES-012 — arena home confinement is expanduser-only; the `pwd` fallback still leaks the real home
 
-The in-flight COG-5 W2 wave carries its own declared residuals on UNLANDED
-branches (a fabricated-evidence custody channel; a `pwd`-fallback home-reach
-vector). This register does NOT reach into branches, and those rows are NOT
-here.
+- **Phase:** COG-5 W2 — sim-7 credential-file reach instrument (residual is W3-owned)
+- **Status:** open
+- **Closed:** the confinement mechanism is stated and proven, not assumed. HOME-UNSET provably does NOT confine — `Path.home()` calls `os.path.expanduser('~')`, which reads `os.environ['HOME']` first and falls back to `pwd.getpwuid(os.getuid()).pw_dir` when HOME is ABSENT, so scrubbing HOME leaves home resolving to the REAL home. The confined posture is therefore an EXPLICIT `HOME` override pointing INTO the arena workdir. Both arms bite: the unconfined mutant reaches every one of the four §4.4 planted classes and the detector names all four; the confined arm finds nothing while credentials ARE planted in a sibling harness home, so the empty finding set is a real discrimination. Twin safety fences refuse if the resolved home is the real `pwd` home or lies outside the caller-declared scratch root, and the instruments only ever stat PLANTED fixture files.
+- **Open:** a candidate calling `pwd.getpwuid()` directly still learns the real home path. The override confines `expanduser`-based resolution and nothing else.
+- **Why open:** closing it needs an OS-level fence, which is the W3 `framework/evolution/sandbox.py` harness — a surface that has not landed. Until it does, the probe REPORTS `pwd_home` and the corpus never claims full confinement.
+- **Declared at:** `cabinet/scripts/tests/lib_cog5_boundary_fixtures.py:192`, `cabinet/scripts/tests/test_cog5_arena_escape.py:202`
+- **Anchor:** `DECLARED RESIDUAL (honest, W3-owned): a HOME override confines`
+- **Retirement:** `framework/evolution/sandbox.py` lands (W3) and the sim-7 escape battery runs THROUGH the real harness, fencing home reach at the OS layer. That landing already REDs `test_sandbox_absent_companion` in `cabinet/scripts/tests/test_cog5_arena_escape.py`, whose failure text names this residual by name — so the forcing function exists independently of this row. In the SAME commit: delete BOTH declaration blocks, retire that vacuity companion pair, and flip this row to `retired`.
 
-**The W2 landing integrator adds them, in the landing commit**, starting at
-`RES-012`. Two things make that a forcing function rather than a hope:
+### RES-013 — a self-consistent fabricated replay map still reads as MACHINE custody
+
+- **Phase:** COG-5 W2 — sim-4 X6 derivation custody, fresh-context finding N1
+- **Status:** open
+- **Closed:** both channels the vector layer actually owns. The LABEL channel: there is structurally no derivation parameter — `assert_no_derivation_parameter` proves it over the real constructor signature, and a mutant constructor that DOES take one is shown to let a caller stamp `machine:replay_map` on the judge's number. The VALUE channel: a MACHINE dim carrying MACHINE evidence takes its number FROM that evidence, the caller's claim never enters the vector, and a declared number disagreeing with its own evidence stamps `DERIVATION_VALUE_MISMATCH`, which sits outside `MACHINE_DERIVATIONS` and dies at the floor exactly like a judge-sourced one.
+- **Open:** the EVIDENCE OBJECT is still the caller's. The stamp follows that object's TYPE, so a machine-SHAPED fabrication — a one-row `{"case-001": True}` map — earns `machine:replay_map` with no label forgery anywhere, and a fabricated map that AGREES with its own declared value still reads as machine custody.
+- **Why open:** binding a replay map to the identity of the frozen corpus that produced it is an UPSTREAM obligation — it belongs at the replay stage that mints the map, not at the vector layer — and contract §9.1 ratifies no such clause here. The declaration is explicit that the older, wider claim ("a caller can never NAME machine custody for a number it did not measure") was FALSE as written and was cut back to what the bytes deliver.
+- **Declared at:** `cabinet/scripts/tests/lib_cog5_scoring_fixtures.py:508`, `cabinet/scripts/tests/test_cog5_sim_scoring.py:339`
+- **Anchor:** `ratifies no such clause here. DECLARED RESIDUAL`
+- **Retirement:** a round binds replay maps to the identity of the frozen corpus at the stage that mints them, so a fabricated map can no longer earn `machine:replay_map`. `test_declared_residual_self_consistent_fabricated_evidence` flips by construction at that moment — its own message says so. In the SAME commit: delete the `HONEST SCOPE` (1) paragraph from `make_vector`, retire that pin arm and the scope note in `test_the_constructor_wall_no_caller_may_name_a_derivation`, and flip this row to `retired`.
+
+### RES-014 — the machine-value law is FIXTURE-TIER and cannot re-run at W6
+
+- **Phase:** COG-5 W2 — sim-4 X6 value channel, §9.1 pack boundary
+- **Status:** open
+- **Closed:** what DOES re-run at W6 against the real surface is named exactly, so nobody mistakes the gap for total absence: `assert_machine_floors_machine_derived` (the stamps), `assert_no_derivation_parameter` (the label channel, over the real constructor's signature) and `assert_derivation_refused` (the joint).
+- **Open:** `assert_machine_values_measured_from_evidence` holds at CONSTRUCTION only, because construction is the only place the evidence exists. It cannot re-derive a landed `scorers.py` pack's numbers.
+- **Why open:** a §9.1 pack carries `{value, kind, derivation}` and NOT its evidence, so re-running the law at W6 would need the pack to carry its evidence — an obligation §9.1 does not ratify. The declaration puts it in the same class as the keyed seal deliberately NOT shipped for the label channel: a known, stated tier boundary rather than an oversight.
+- **Declared at:** `cabinet/scripts/tests/lib_cog5_scoring_fixtures.py:516`
+- **Anchor:** `(the pack carrying its evidence). DECLARED RESIDUAL of`
+- **Retirement:** §9.1 is amended so a pack carries its evidence (or an evidence digest the vector layer can re-measure against), and `assert_machine_values_measured_from_evidence` joins the W6 re-run set over the real `scorers.py` surface. In the SAME commit: delete the `HONEST SCOPE` (2) paragraph from `make_vector`, and flip this row to `retired`.
+
+### RES-015 — the boundary import gate leaves a named undetectable set, including DECIDABLE forms not wired
+
+- **Phase:** COG-2 boundary engine — dynamic-form widening of `cabinet/scripts/cog2-import-gate.py`
+- **Status:** open
+- **Closed:** the dynamic-form BINDING surface, measured rather than asserted. Constant-foldable arguments, aliased import hooks in any binding order, the same three binding shapes on the builtin from either exporting module, and the two-argument relative form are all caught. Non-vacuity is accounted in the declaration: grafted onto the pre-fix engine (`766a98c3`, caches purged) the file collects 823 arms and 148 FAIL, all 148 of them added arms with no pre-existing arm regressing; against the fixed engine all 823 pass. `TestDocumentedResidual` pins the boundary from the other side — a genuinely runtime-computed argument must NOT be reported, because a scanner that guessed there would be lying.
+- **Open:** the engine docstring's named set. (a) a module name computed at runtime — a variable, parameter, call result, `%`/`.format()`/`.join()` assembly, table or env lookup, interpolated f-string field; (b) an attribute walk that never names a module as a string — getattr chains, `sys.modules[...]` indexing, `__dict__` traversal; (c) STILL-DECIDABLE forms deliberately not resolved: the builtin's `fromlist` and `level` parameters (both spellings), an alias chain deeper than one hop, a hook reached without a name binding (mapping subscript or getattr walk), and a concatenation nested past `_FOLD_MAX_DEPTH`.
+- **Why open:** (a) and (b) are not decidable without executing the program — runtime detection is the RUNTIME layer's job, not this gate's. (c) is a deliberate line, and the declaration gives the reason: the subscript/getattr surface is open-ended (any mapping or attribute expression can yield the hook) while a name binding is a closed, enumerable set. `fromlist`/`level` are simply not wired yet, and the declaration calls closing any of (c) a mechanical follow-up.
+- **Declared at:** `cabinet/scripts/tests/test_boundary_dynamic_forms.py:71`, `cabinet/scripts/tests/test_boundary_dynamic_forms.py:705`
+- **Anchor:** `RESIDUAL HONESTY. The engine docstring documents what remains undetectable`
+- **Retirement:** a follow-up wires the decidable (c) forms — at minimum `fromlist`/`level` on both `__import__` spellings, since `_import_from_targets` already computes the importing file's own package for the static form. In the SAME commit, per the declaration's own rule that the residual text and its tests move together: shrink the engine's residual list in `cabinet/scripts/cog2-import-gate.py`, move the matching `TestDocumentedResidual` arms, and either narrow this row's Open field to what genuinely remains undecidable or flip it to `retired` if nothing does.
+
+## Absorption — how a wave's residuals get here (COG-5 W2 done)
+
+The rule this section originally stated as a future obligation has now been
+executed once, so it is recorded as precedent rather than as a plan.
+
+**What happened.** This register was authored at `a1357829`, when COG-5 W2 was
+still on unlanded branches; it predicted two W2 residuals (a fabricated-evidence
+custody channel, a `pwd`-fallback home-reach vector) and assigned them to the W2
+landing integrator starting at `RES-012`. W2 landed FIRST — the register was the
+last branch of that group to land — so absorption happened at THIS landing
+instead, against `db180092`. Seven new marker sites were in the sweep surface and
+the pin test was RED until all seven had rows.
+
+**What that produced.** Four rows for seven sites, because two pairs are one
+residual declared twice (mechanism + its test-side restatement): `RES-012`
+(both predicted-`pwd` sites), `RES-013` (both fabricated-evidence sites),
+`RES-014` and `RES-015`. `RES-014` and `RES-015` were NOT predicted — `RES-015`
+comes from a different wave entirely (the widened boundary engine). That is the
+point: the sweep found what the prediction missed.
+
+**The standing rule for every future wave.** Two things make it a forcing
+function rather than a hope:
 
 - if the landed declarations carry the word token, the sweep sees them
   immediately and the pin test goes RED until each has a row;
 - if they do not, the integrator must still register them — a residual declared
   in prose is exactly the failure mode this file exists to stop. Reword the
   declaration to the token in the same commit and both halves bind.
+
+Order does not matter. Whichever lands last pays, and the gate names the exact
+`path:line` it is missing.
 
 ## Legacy exemptions — shrink-only
 
@@ -276,7 +382,8 @@ digest scope, and touching it would force a re-bind ceremony.
 ## Known limits of this register — stated, not hidden
 
 - **Lowercase prose declarations are NOT covered.** 239 lowercase uses of
-  "residual" span 107 files. Most describe channels already CLOSED, or
+  "residual" span 107 files (291 / 119 at `db180092` — the class grew, the
+  limit did not change). Most describe channels already CLOSED, or
   threat-model facts explicitly "accepted and stated". A few are genuinely open
   and unregistered — `cabinet/mcp-server/server.py:537` ("residual gap tracked
   for the Captain as a big-rock") is the clearest. They are not registered here
@@ -306,13 +413,20 @@ digest scope, and touching it would force a re-bind ceremony.
   `ledger:1689` is RES-002 restated. Promoting any of these is one commit:
   verify the ledger row's status, then add a row here.
 - **`RETIREMENT CONDITION` vacuity guards are deliberately NOT registered.**
-  There are 56, almost all in the COG-4/COG-5 test corpora. They are a
-  different class: each one already trips RED the moment its target lands, so
-  it CANNOT rot silently — it is its own forcing function. Duplicating them
-  here would add churn and collide with in-flight corpus surgery without adding
-  a single guarantee.
+  The token appears 42 times / 24 files at `a1357829` and 71 / 33 at
+  `db180092`, almost all in the COG-4/COG-5 test corpora, and most uses are
+  such a guard. (This bullet read "there are 56" — the pre-correction `grep -I`
+  number that the survey table already fixed to 42 and this line kept. Same
+  undercount, second home; corrected at landing.) They are a different class:
+  each one already trips RED the moment its target lands, so it CANNOT rot
+  silently — it is its own forcing function. Duplicating them here would add
+  churn and collide with in-flight corpus surgery without adding a single
+  guarantee.
 - **This register pins declarations, not truth.** It proves a declared residual
   still exists where it says it does and has a stated way to die. It cannot
-  prove the declaration was accurate when written. Rows above were each
-  re-verified against the bytes at `a1357829`; a later reader should do the
-  same before relying on one.
+  prove the declaration was accurate when written. `RES-001`..`RES-011` were
+  each re-verified against the bytes at `a1357829` and their cites re-checked
+  at `db180092`; `RES-012`..`RES-015` were verified against `db180092`. A later
+  reader should do the same before relying on one — and note that this landing
+  found two arithmetic errors in the register's own survey, so "re-verified"
+  means re-measured, not re-read.
