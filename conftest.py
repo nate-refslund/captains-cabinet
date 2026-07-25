@@ -46,6 +46,14 @@ fixture) fences:
       - the captain-inbound archive (cabinet/scripts/
         officer-inbound-poller.py::archive_captain_dm,
         CABINET_CAPTAIN_INBOUND_DIR — fenced at birth, 2026-07-17),
+      - the Captain's briefing-score store (cabinet/scripts/lib/
+        briefing_score.py, CABINET_BRIEFING_SCORES_DIR — fenced at birth,
+        2026-07-26). Append-only and tiny, but it is the ONLY record of what
+        the Captain thought of his briefings: a fabricated row there does not
+        pollute a log, it corrupts the one measurement the trial exists to
+        take. The knob relocates the whole instance-memory directory, so a
+        fenced run also reads the sandbox briefing archive rather than the
+        live one — no test can invent a score for a real briefing,
       - the Captain-contact dead-man (framework/liveness/deadman.py,
         CABINET_LIVENESS_CONFIG — fenced at birth, 2026-07-25). The only
         OUTBOUND member of this list: it would send a fake heartbeat to the
@@ -98,6 +106,8 @@ os.environ["CABINET_DRAFT_QUEUE_DIR"] = os.path.join(_SESSION_SANDBOX, "draft-qu
 os.environ["CABINET_EVIDENCE_DIR"] = os.path.join(_SESSION_SANDBOX, "evidence")
 os.environ["CABINET_CAPTAIN_INBOUND_DIR"] = os.path.join(
     _SESSION_SANDBOX, "captain-inbound")
+os.environ["CABINET_BRIEFING_SCORES_DIR"] = os.path.join(
+    _SESSION_SANDBOX, "instance-memory")
 
 # Captain-contact dead-man (2026-07-25) — an OUTBOUND fence, not a write fence,
 # and the first of its kind here. framework/liveness/deadman.py fires from inside
