@@ -37,10 +37,17 @@ directions:
   system-self:
     # Captain-owned like all directions; the org proposes outcomes against it.
     mission: >
-      A self-improving org that compounds: verified outcomes per Captain-minute
-      trending up, escalation rate trending down, evidence never starving.
+      A self-improving org that compounds: the Captain's minutes going to
+      decisions only he could make, every must-ask decision actually reaching
+      him, escalation noise trending down, evidence never starving.
     instruments:
-      - verified_outcomes_per_captain_minute
+      # Share of measured Captain minutes spent on decisions only he could
+      # make, with a must-ask floor that reads RED when a hard-ceiling action
+      # executed without his verdict — so UNDER-asking is a failure, not a win.
+      # Deliberately NOT "outcomes per Captain-minute": that wording rewards
+      # shrinking the denominator, i.e. cutting the founder out of his own
+      # company. Computed by cabinet/scripts/attention-well-spent.py.
+      - attention_well_spent
       - escalation_rate
       - autonomy_coverage        # % actions in graduated cells
       - repeat_incident_rate

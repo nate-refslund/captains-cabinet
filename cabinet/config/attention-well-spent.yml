@@ -1,0 +1,70 @@
+schema_version: attention-well-spent/v1
+# ATTENTION WELL SPENT — the Captain-facing north-star instrument.
+#
+# THE QUESTION IT ANSWERS: of the Captain's measured minutes, what share went
+# to decisions ONLY HE could make?
+#
+# It deliberately REPLACES the "verified outcomes per Captain-minute" wording,
+# which reads as "shrink the denominator" and is wired that way today:
+# framework/ovi/compute.py counts Captain-input events as `captain_attention_cost`
+# with direction `inverse` (framework/ovi/components.yml), so FEWER Captain
+# events mechanically score HIGHER; and cabinet/scripts/lib/org_runtime.py's
+# burden_index takes `--captain-attention-minutes` as a DECLARED input that
+# defaults to 0. Under that wording, going quiet is the winning move. Under
+# this one, going quiet is a FLOOR BREACH.
+#
+# REPORT-ONLY. This instrument is a monitoring + kill-criteria surface for the
+# Captain. It is NEVER an officer-visible score and NEVER an input to
+# generation or selection (ratified law: memory/golden-evals/eval-025-never-a-score.md,
+# cabinet/evals/never-a-score/). Nothing in framework/ or presets/ may read it.
+#
+# Every value below is a PUBLISHED CONSTANT, not a per-row declaration: no
+# actor can set its own contribution to the numerator or the denominator.
+
+# --- the measured denominator ------------------------------------------------
+# Captain minutes are derived from OBSERVED interactions on the ledgers, priced
+# by this published table. There is no flag, payload field, or CLI argument
+# anywhere that lets a producer declare its own minute cost.
+minute_costs:
+  # A real verdict at the approval gate (approved / edited / rejected): the
+  # Captain read the card and decided.
+  decided: 6
+  # A card that reached the queue and expired unanswered. It cost queue-time and
+  # produced nothing, so it is attention SPENT and never WELL spent. Pricing it
+  # above zero is what makes card-spam lower the share instead of being free.
+  expired: 1
+  # A Captain-authored org event outside the approval gate (goal declared,
+  # outcome ratified, boundary set, decision logged).
+  captain_event: 3
+
+# --- whose touches count as the Captain's ------------------------------------
+# Only these actor ids may contribute Captain minutes. An officer emitting a
+# captain_* event under its own actor id contributes nothing — the instrument
+# never takes an officer's word for who acted.
+captain_actors:
+  - captain
+
+# --- what counts as a verified outcome ---------------------------------------
+# An outcome is counted VERIFIED only on a probe, a counterparty, or the
+# Captain. An officer's own work_item_verified emit for its own completion is
+# self-attestation and counts ZERO, however high the declared value.
+#
+# A probe ref is a POINTER to an independently recorded artifact. Literal
+# prefixes only — never a config-supplied regex (a config regex over ledger
+# text is a ReDoS surface, and a literal prefix is the whole check we need).
+probe_ref_prefixes:
+  - "https://github.com/"      # a CI run / PR / commit URL
+  - "eval:"                    # a golden-eval / harness run id
+  - "probe:"                   # an explicitly registered probe id
+  - "run:"                     # a workflow run id
+probe_ref_min_length: 12       # a ref shorter than this is prose, not a pointer
+
+# --- verdict bars ------------------------------------------------------------
+# Kill criteria, not a score to optimise. The floor dominates: a breach is RED
+# whatever the share says.
+share_amber_below: 0.5
+
+# Silent-window rule — the reason under-asking cannot be optimised away by
+# doing nothing. A window in which the org executed at least this many actions
+# and the Captain was touched ZERO times is a floor breach, not a clean sheet.
+silent_window_min_actions: 1

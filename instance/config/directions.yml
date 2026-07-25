@@ -64,10 +64,35 @@ directions:
 
   system-self:
     # Captain-owned like all directions; the org proposes outcomes against it.
+    #
+    # RE-WORDED 2026-07-25. The old mission read "verified outcomes per
+    # Captain-minute trending up", which is a shrink-the-denominator goal:
+    # the fewer minutes the Captain spends, the better the org looks. That is
+    # the opposite of the ruling that the cabinet runs the company TOGETHER
+    # WITH him, and the code was wired the wrong way to match (see the
+    # instrument comment below). The goal is now the QUALITY of his minutes,
+    # with under-asking counted as a failure.
     mission: >
-      A self-improving org that compounds: verified outcomes per Captain-minute
-      trending up, escalation rate trending down, evidence never starving.
+      A self-improving org that compounds: the Captain's minutes going to
+      decisions only he could make, every must-ask decision actually reaching
+      him, escalation noise trending down, evidence never starving.
     instruments:
+      # THE north-star instrument. Share of measured Captain minutes spent on
+      # decisions only he could make, with a MUST-ASK FLOOR: a hard-ceiling
+      # action that executed without his verdict reads RED however good the
+      # share looks, and a window of org activity with zero Captain touches is
+      # itself a breach. Computed by cabinet/scripts/attention-well-spent.py;
+      # runbook docs/runbooks/attention-well-spent.md.
+      - attention_well_spent
+      # SUPERSEDED by attention_well_spent (2026-07-25) and RETAINED only
+      # because cabinet/dashboard/src/lib/world/directions.test.ts:115 pins
+      # this literal string, and editing a test to make a change pass is not
+      # allowed here. It is computed NOWHERE. What IS computed points the other
+      # way: framework/ovi/compute.py counts Captain input as
+      # captain_attention_cost with direction `inverse`
+      # (framework/ovi/components.yml), and org_runtime.py's burden_index takes
+      # --captain-attention-minutes as a DECLARED input defaulting to 0. Do not
+      # revive this wording; retire the string with its test.
       - verified_outcomes_per_captain_minute
       - escalation_rate
       - autonomy_coverage        # % actions in graduated cells
@@ -94,7 +119,8 @@ org:
       business — run this portfolio so well, so autonomously, and so
       auditably that the cabinet earns its public launch.
     instruments:
-      - verified_outcomes_per_captain_minute   # org roll-up of the system-self instrument
+      - attention_well_spent                   # org roll-up of the system-self instrument
+      - verified_outcomes_per_captain_minute   # SUPERSEDED 2026-07-25 — see system-self
       - escalation_rate
       - publication_gate_greens                # egg publication-gate green runs
       - per_lane_instrument_rollup             # each lane's instruments, rolled up
