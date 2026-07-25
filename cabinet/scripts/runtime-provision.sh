@@ -313,8 +313,32 @@ link_instance_data() {
     ln -sfn "$shared_abs" "$slot/$rel"
   done
 
+  # Resolve the live release once, for the adoption pass below.
+  local cur_rel=""
+  [ -L "$root/current" ] && cur_rel="$(cd "$root/current" 2>/dev/null && pwd)"
+
   for rel in $INSTANCE_PERSISTENT_FILES; do
     shared_abs="$root/shared/$rel"
+    # ADOPTION (2026-07-25, state-persistence preflight). A file CREATED at
+    # runtime lives in the live release, never in shared/ — so on its own the
+    # [ -e ] guard below made this list inert for exactly those files: it
+    # skipped them forever and every deploy discarded the file again, which is
+    # how trusted-mcps.json and war-room-seed.yml stayed lost even after being
+    # listed (measured — the fix was not complete without this). If shared/
+    # has no copy yet but the CURRENT release holds a real, untracked,
+    # non-symlink file, adopt it into shared/ so this release and every later
+    # one link to the same physical file.
+    #
+    # The tracked check is not optional: adopting a git-tracked file would
+    # SHADOW the release's own copy with a frozen snapshot, the same hazard
+    # the wildcard block guards against for deployment-status.md.
+    if [ ! -e "$shared_abs" ] && [ -n "$cur_rel" ] && \
+       [ -f "$cur_rel/$rel" ] && [ ! -L "$cur_rel/$rel" ] && \
+       ! git -C "$cur_rel" ls-files --error-unmatch "$rel" >/dev/null 2>&1; then
+      mkdir -p "$(dirname "$shared_abs")"
+      cp -p "$cur_rel/$rel" "$shared_abs"
+      echo "runtime-provision.sh: adopted $rel from the live release into shared/ (first persistence)"
+    fi
     [ -e "$shared_abs" ] || continue   # no prior instance-data yet — leave absent
     rel_dir="$(dirname "$slot/$rel")"
     mkdir -p "$rel_dir"

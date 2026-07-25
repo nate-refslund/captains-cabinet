@@ -278,6 +278,66 @@ def test_slot_mode_requires_shared(tmp_path):
     assert res.returncode == 2
 
 
+# ---- arm 4b: adoption — listing a FILE must actually make it persist -------
+# Measured 2026-07-25: adding a path to INSTANCE_PERSISTENT_FILES did NOT make
+# it persist. A file created at runtime lives in the live release, never in
+# shared/, so the `[ -e "$shared_abs" ] || continue` guard skipped it forever
+# and every deploy discarded it again. These arms drive the REAL script.
+
+PROVISION = os.path.join(REPO, "cabinet", "scripts", "runtime-provision.sh")
+
+
+def _runtime_root(tmp_path, tracked: bool):
+    """Build a real git repo + runtime root, run two real provisions."""
+    src = tmp_path / "src"
+    (src / "instance" / "config").mkdir(parents=True)
+    (src / "README.md").write_text("seed\n", encoding="utf-8")
+    if tracked:
+        (src / "instance" / "config" / "trusted-mcps.json").write_text(
+            "TRACKED-RELEASE-COPY\n", encoding="utf-8")
+    git = ["git", "-c", "user.name=t", "-c", "user.email=t@t"]
+    subprocess.run(["git", "init", "-q", str(src)], check=True)
+    subprocess.run(git + ["-C", str(src), "add", "-A"], check=True)
+    subprocess.run(git + ["-C", str(src), "commit", "-qm", "one"], check=True)
+    subprocess.run(git + ["-C", str(src), "commit", "-qm", "two", "--allow-empty"], check=True)
+    shas = subprocess.run(["git", "-C", str(src), "log", "--format=%H"],
+                          capture_output=True, text=True, check=True).stdout.split()
+    sha_b, sha_a = shas[0], shas[1]
+    root = tmp_path / "rt"
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+    subprocess.run(["bash", PROVISION, "init", str(root), "--remote", str(src)],
+                   capture_output=True, env=env)
+    subprocess.run(["bash", PROVISION, "provision", str(root), sha_a],
+                   capture_output=True, env=env, check=True)
+    # the cabinet writes the config at RUNTIME, inside the live release
+    live_cfg = root / "releases" / sha_a / "instance" / "config"
+    live_cfg.mkdir(parents=True, exist_ok=True)
+    (live_cfg / "trusted-mcps.json").write_text(
+        "RUNTIME-VALUE\n", encoding="utf-8")
+    subprocess.run(["bash", PROVISION, "promote", str(root), sha_a],
+                   capture_output=True, env=env, check=True)
+    subprocess.run(["bash", PROVISION, "provision", str(root), sha_b],
+                   capture_output=True, env=env, check=True)
+    return root / "releases" / sha_b / "instance" / "config" / "trusted-mcps.json"
+
+
+def test_runtime_created_config_is_adopted_and_survives_the_next_deploy(tmp_path):
+    """The property: would a deploy lose this? It must not."""
+    landed = _runtime_root(tmp_path, tracked=False)
+    assert landed.exists(), "the runtime-written config was LOST by the next deploy"
+    assert landed.read_text() == "RUNTIME-VALUE\n"
+    assert landed.is_symlink(), "it must be a symlink into shared/, not a fresh copy"
+
+
+def test_adoption_never_shadows_a_git_tracked_file(tmp_path):
+    """Opposite direction. Adopting a TRACKED file would freeze a snapshot over
+    the release's own copy — the deployment-status.md hazard. Must not fire."""
+    landed = _runtime_root(tmp_path, tracked=True)
+    assert not landed.is_symlink(), "a tracked file must never be shadowed by shared/"
+    # The release keeps its OWN tracked bytes — that is the point of the guard.
+    assert landed.read_text() == "TRACKED-RELEASE-COPY\n"
+
+
 # ---- arm 5: the live anti-drift gate --------------------------------------
 
 def test_real_repo_accounts_for_every_durable_path():
