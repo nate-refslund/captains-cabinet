@@ -57,8 +57,10 @@ validate_arming_record the moment the file exists).
 
 S0: interpreter python3.12; no DB, no network. Provenance: authored per the
 2026-07-07 full-autonomy grant + the 2026-07-20 cognitive-masterplan
-continuous grant (COG-5 §12/§13, W2 T2; Fable 5 — corpus authorship is
-judgment-tier work).
+continuous grant (COG-5 §12/§13, W2 T2 — corpus authorship is judgment-tier
+work). ORIGINAL BUILD (ab8fe00a): Fable 5. FIX ROUNDS (27197a63 crown-jewel
+circumventions; this round's five re-review notes): Opus 5, the program's
+primary model from 2026-07-25.
 """
 from __future__ import annotations
 

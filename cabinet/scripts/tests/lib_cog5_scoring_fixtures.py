@@ -52,10 +52,19 @@ CORPUS-PINNED VOCABULARY (the executable spec the implementation binds to):
                         evidence object it read — the caller passes EVIDENCE,
                         never a derivation label (the §6.2 chain-of-custody
                         shape lifted to the vector). A MACHINE dim whose
-                        derivation is judge-sourced, absent, or out-of-enum
-                        can NEVER satisfy a floor: the `kind` label alone is
-                        a self-declaration, and X6 binds the VALUE to machine
-                        evidence, not the label.
+                        derivation is judge-sourced, absent, out-of-enum, or
+                        VALUE-MISMATCHED can NEVER satisfy a floor: the `kind`
+                        label alone is a self-declaration, and X6 binds the
+                        VALUE to machine evidence, not the label. A machine
+                        dim's number is MEASURED from its evidence
+                        (measure_from_evidence), never taken on the caller's
+                        word — a declared number that disagrees with what its
+                        evidence actually says stamps
+                        `mismatch:value_not_measured_from_evidence` and dies
+                        at the floor. What the wall does NOT cover is stated
+                        verbatim in the HONEST SCOPE block at make_vector —
+                        read it before quoting this law: the EVIDENCE CHANNEL
+                        is still the caller's.
   provenance (§6.2)     CLOSED enum {real_live, real_mined, synthetic,
                         sim_replay}; stamped by the INGESTER from the named
                         source class — a row arriving with its own
@@ -99,14 +108,17 @@ S0: interpreter python3.12; no DB, no network (children are local
 subprocesses with explicit env).
 
 Provenance: authored per the 2026-07-07 full-autonomy grant + the 2026-07-20
-cognitive-masterplan continuous grant (COG-5 contract §12/§13, W2 T2;
-Fable 5 — corpus authorship is judgment-tier work).
+cognitive-masterplan continuous grant (COG-5 contract §12/§13, W2 T2 — corpus
+authorship is judgment-tier work). ORIGINAL BUILD (ab8fe00a): Fable 5. FIX
+ROUNDS (27197a63 crown-jewel circumventions; this round's five re-review
+notes): Opus 5, the program's primary model from 2026-07-25.
 """
 from __future__ import annotations
 
 import ast
 import hashlib
 import hmac
+import inspect
 import json
 import os
 import re
@@ -166,13 +178,22 @@ JUDGE_KIND = "judge"
 UNKNOWN = "unknown"                    # quarantine value — never averaged
 
 # §9.1/X6 DERIVATION enum (CLOSED): the evidence source a dim's number was
-# actually read from. Stamped by the constructor from the evidence OBJECT —
-# never nameable by the caller (the §6.2 custody shape, lifted to the vector).
+# actually read from. Stamped by the constructor from the evidence OBJECT, so
+# there is no LABEL parameter for a caller to name (the §6.2 custody shape,
+# lifted to the vector). PRECISELY: that closes the LABEL channel only — the
+# caller still chooses which evidence object to hand over, and the object's
+# TYPE decides the stamp. See the HONEST SCOPE block at make_vector for the
+# full statement of what this wall covers and what it leaves open.
 DERIVATION_KEY = "derivation"
 DERIVATION_GATE_RESULT = "machine:gate_result"      # a real rg.GateResult
 DERIVATION_REPLAY_MAP = "machine:replay_map"        # a real {case: bool} map
 DERIVATION_SCORER_TRIPLE = "machine:scorer_triple"  # the sim-8 triple outputs
 DERIVATION_JUDGE_LLM = "judge:llm_score"            # a judge/LLM number
+# ...and the custody BREACH stamp: a machine dim whose declared number is not
+# the number its own machine evidence yields. Deliberately OUTSIDE
+# MACHINE_DERIVATIONS so the existing fail-closed path refuses it with no new
+# plumbing at the joint (machine_derivation_violations → [FLOOR-DERIVATION]).
+DERIVATION_VALUE_MISMATCH = "mismatch:value_not_measured_from_evidence"
 MACHINE_DERIVATIONS = frozenset({DERIVATION_GATE_RESULT, DERIVATION_REPLAY_MAP,
                                  DERIVATION_SCORER_TRIPLE})
 JUDGE_DERIVATIONS = frozenset({DERIVATION_JUDGE_LLM})
@@ -403,22 +424,46 @@ class JudgeEvidence:
     score: float
 
 
-def derive_from_evidence(evidence: Any) -> Optional[str]:
-    """Classify the EVIDENCE OBJECT a dim's number was read from into the
-    closed derivation enum. Unrecognized/absent evidence derives None — and
-    None never satisfies a floor (fail closed: an unprovenanced number is
-    exactly as untrustworthy as a judge-sourced one)."""
+def _classify_evidence(evidence: Any) -> tuple[Optional[str], Any]:
+    """ONE read of an evidence object, yielding BOTH what it is (the closed
+    derivation enum) and what NUMBER it says. Stamp and measurement come from
+    the same classification by construction, so they can never disagree about
+    the object — two separate reads could drift apart, which is a hole of
+    exactly the kind this family exists to catch.
+
+    Unrecognized/absent evidence yields (None, None) — and None never
+    satisfies a floor (fail closed: an unprovenanced number is exactly as
+    untrustworthy as a judge-sourced one)."""
     if isinstance(evidence, _rg.GateResult):
-        return DERIVATION_GATE_RESULT
+        return DERIVATION_GATE_RESULT, len(evidence.regressed)
     if isinstance(evidence, JudgeEvidence):
-        return DERIVATION_JUDGE_LLM
+        return DERIVATION_JUDGE_LLM, evidence.score
     if isinstance(evidence, Mapping) and evidence and \
             all(isinstance(v, bool) for v in evidence.values()):
-        return DERIVATION_REPLAY_MAP
+        passed = sum(1 for v in evidence.values() if v is True)
+        return DERIVATION_REPLAY_MAP, passed / len(evidence)
     if isinstance(evidence, (list, tuple)) and evidence and \
             all(isinstance(o, str) for o in evidence):
-        return DERIVATION_SCORER_TRIPLE
-    return None
+        try:
+            return DERIVATION_SCORER_TRIPLE, quarantine_fold(list(evidence))
+        except ValueError:
+            # unparseable scorer output is not a number — quarantine, never
+            # crash the constructor (fail closed, the L239 posture).
+            return DERIVATION_SCORER_TRIPLE, UNKNOWN
+    return None, None
+
+
+def derive_from_evidence(evidence: Any) -> Optional[str]:
+    """The derivation STAMP an evidence object earns (see _classify_evidence)."""
+    return _classify_evidence(evidence)[0]
+
+
+def measure_from_evidence(evidence: Any) -> Any:
+    """The NUMBER an evidence object itself yields — a gate result's regressed
+    COUNT, a replay map's pass RATE, a scorer triple's quarantine fold. This is
+    what a machine dim's value must BE; a caller's declared number is a claim
+    checked against it, never the source (X6 binds the VALUE)."""
+    return _classify_evidence(evidence)[1]
 
 
 def make_vector(dims: Mapping[str, tuple[Any, str]],
@@ -427,23 +472,64 @@ def make_vector(dims: Mapping[str, tuple[Any, str]],
     """The §9.1 schema-SEPARATED scorer output: `vector` (floors-checkable)
     apart from `table_order` (presentation only).
 
-    CHAIN OF CUSTODY (X6, the §6.2 ingester shape lifted to the vector): each
-    dim's `derivation` is STAMPED HERE from the evidence OBJECT the caller
-    handed over — there is no derivation parameter, so a caller can never
-    NAME a machine derivation for a number it did not measure. A judge number
-    passed as a machine dim's evidence stamps `judge:llm_score` and dies at
-    the floor; evidence the constructor cannot classify stamps None and dies
-    the same way."""
+    CHAIN OF CUSTODY (X6, the §6.2 ingester shape lifted to the vector). Two
+    channels are closed here, and they are NOT the same channel:
+
+      * the LABEL channel — each dim's `derivation` is STAMPED from the
+        evidence OBJECT the caller handed over, and there is no derivation
+        parameter, so a caller cannot NAME a machine derivation. A judge
+        number passed as a machine dim's evidence stamps `judge:llm_score`
+        and dies at the floor; evidence the constructor cannot classify
+        stamps None and dies the same way.
+      * the VALUE channel — a MACHINE dim carrying MACHINE evidence takes its
+        number FROM that evidence (measure_from_evidence). A declared number
+        that disagrees with its own evidence is a custody breach: the vector
+        records the MEASUREMENT (the caller's claim never enters it) and
+        stamps DERIVATION_VALUE_MISMATCH, which is outside MACHINE_DERIVATIONS
+        and so dies at the floor exactly like a judge-sourced one.
+
+    HONEST SCOPE — what this wall does NOT cover (the claim that stood here
+    before, "there is no derivation parameter, so a caller can never NAME
+    machine custody for a number it did not measure", was FALSE as written,
+    and a docstring claiming what the bytes do not deliver is the failure
+    class this corpus exists to catch):
+
+      (1) THE EVIDENCE CHANNEL IS STILL THE CALLER'S. The stamp follows the
+          evidence object's TYPE, so a machine-SHAPED object fabricated by the
+          caller — a one-row `{"case-001": True}` map — stamps
+          `machine:replay_map` with no label forgery anywhere. Closing the
+          value channel means such a pack can no longer carry the judge's
+          number, but a fabricated map that AGREES with its own declared value
+          still reads as machine custody. Binding a replay map to the identity
+          of the frozen corpus that produced it is an UPSTREAM obligation (it
+          lives at the replay stage that mints the map, not at the vector
+          layer), and §9.1 ratifies no such clause here. DECLARED RESIDUAL,
+          pinned by test_declared_residual_self_consistent_fabricated_evidence
+          so it cannot rot back into a claim.
+      (2) THE VALUE LAW IS FIXTURE-TIER, NOT RE-RUNNABLE AT W6. It holds at
+          CONSTRUCTION, because that is the only place the evidence exists.
+          A §9.1 pack carries {value, kind, derivation} and NOT its evidence,
+          so `assert_machine_values_measured_from_evidence` cannot re-derive a
+          landed `scorers.py` pack's numbers without an obligation §9.1 does
+          not ratify (the pack carrying its evidence). DECLARED RESIDUAL of
+          the same class as the keyed seal deliberately NOT shipped for the
+          label channel. What DOES re-run at W6 against the real surface:
+          `assert_machine_floors_machine_derived` (the stamps),
+          `assert_no_derivation_parameter` (the label channel, over the real
+          constructor's signature) and `assert_derivation_refused` (the
+          joint)."""
     ev = dict(evidence or {})
+    vector: dict[str, Any] = {}
     for name, (value, kind) in dims.items():
         assert kind in (MACHINE_KIND, JUDGE_KIND), f"bad dim kind {kind!r}"
         assert value == UNKNOWN or isinstance(value, (int, float)), name
-    return {
-        "vector": {n: {"value": v, "kind": k,
-                       DERIVATION_KEY: derive_from_evidence(ev.get(n))}
-                   for n, (v, k) in dims.items()},
-        "table_order": float(table_order),
-    }
+        derivation, measured = _classify_evidence(ev.get(name))
+        if kind == MACHINE_KIND and derivation in MACHINE_DERIVATIONS:
+            if value != measured:
+                derivation = DERIVATION_VALUE_MISMATCH
+            value = measured        # the CLAIM never enters the vector
+        vector[name] = {"value": value, "kind": kind, DERIVATION_KEY: derivation}
+    return {"vector": vector, "table_order": float(table_order)}
 
 
 def candidate_vector(*, candidate_results: Mapping[str, bool],
@@ -487,9 +573,51 @@ def mutant_judge_number_into_machine_dim(*, judge_score: float,
     })
 
 
+def mutant_fabricated_evidence_for_a_machine_dim(*, judge_score: float,
+                                                 table_order: float = 0.0,
+                                                 ) -> dict[str, Any]:
+    """§12 sim-4 NEGATIVE CONTROL (X6, the EVIDENCE-CHANNEL arm — the escape
+    the targeted re-review proved was STILL open after the label channel was
+    closed): the scorer keeps the judge's number but hands the machine dim a
+    machine-SHAPED evidence object — ONE fabricated replay row — beside it.
+    No label is forged and no derivation parameter is used, so the stamp came
+    out `machine:replay_map` and the pack was admitted `(True, [])`.
+
+    With the value channel closed, the declared 0.99 no longer matches what
+    the fabricated map actually says (1/1), so the dim stamps
+    DERIVATION_VALUE_MISMATCH and dies at the floor.
+
+    `frozen_regressions` is deliberately HONEST here (a real gate result whose
+    regressed count the declared 0 matches): the mutant must fail for the ONE
+    reason under test, never for a second unrelated defect."""
+    return make_vector({
+        "frozen_pass_rate": (judge_score, MACHINE_KIND),
+        "frozen_regressions": (0, MACHINE_KIND),
+        "judge_score": (judge_score, JUDGE_KIND),
+    }, table_order=table_order, evidence={
+        "frozen_pass_rate": {"case-001": True},        # ONE fabricated row
+        "frozen_regressions": _rg.GateResult(outcome=_rg.OUTCOME_PASS),
+        "judge_score": JudgeEvidence(judge_score),
+    })
+
+
+def mutant_constructor_with_derivation_parameter(
+        dims: Mapping[str, tuple[Any, str]], table_order: float = 0.0,
+        derivation: Optional[Mapping[str, str]] = None) -> dict[str, Any]:
+    """§9.1 NEGATIVE CONTROL for the LABEL channel: the constructor this
+    family must never grow — one that lets the caller NAME each dim's
+    custody. `assert_no_derivation_parameter` must RED on it, or that battery
+    is decoration (§12)."""
+    labels = dict(derivation or {})
+    return {"vector": {n: {"value": v, "kind": k,
+                           DERIVATION_KEY: labels.get(n)}
+                       for n, (v, k) in dims.items()},
+            "table_order": float(table_order)}
+
+
 def machine_derivation_violations(pack: Mapping[str, Any]) -> list[str]:
     """Every MACHINE dim whose stamped derivation is not machine evidence —
-    judge-sourced, absent, or out-of-enum (fail closed)."""
+    judge-sourced, absent, out-of-enum, or value-mismatched (fail closed)."""
     bad: list[str] = []
     for name, dim in pack["vector"].items():
         if dim.get("kind") != MACHINE_KIND:
@@ -642,6 +770,49 @@ def assert_machine_floors_machine_derived(pack: Mapping[str, Any]) -> None:
         "from machine evidence — a scorer stamping a judge-derived (or "
         "unprovenanced) number as a machine dimension is the X6 escape the "
         "`kind` label alone cannot see (§9.1/§9.2)")
+
+
+def value_evidence_mismatches(pack: Mapping[str, Any]) -> list[str]:
+    """Every dim whose declared number disagreed with what its own machine
+    evidence said (stamped at construction)."""
+    return sorted(name for name, dim in pack["vector"].items()
+                  if dim.get(DERIVATION_KEY) == DERIVATION_VALUE_MISMATCH)
+
+
+def assert_machine_values_measured_from_evidence(pack: Mapping[str, Any]) -> None:
+    """[SIM4-X6-MEASURED] the VALUE channel of the custody law: a machine
+    dim's number must BE what its evidence says, not a number declared
+    alongside it. DISTINCT tag from [SIM4-X6-DERIVATION] on purpose — a
+    mismatch also trips the stamp battery (fail closed), and a shared tag
+    would let a mutant test for one law go green on the other firing.
+
+    SCOPE (see make_vector's HONEST SCOPE (2)): this is a FIXTURE-tier law,
+    enforced where the evidence exists — at construction. It is NOT part of
+    the W6 re-runnable set, because a §9.1 pack does not carry its
+    evidence."""
+    bad = value_evidence_mismatches(pack)
+    assert not bad, (
+        "[SIM4-X6-MEASURED] machine dim(s) " + str(bad) + " declared a number "
+        "their own machine evidence does not yield — a scorer that reads real "
+        "evidence and then reports a DIFFERENT number has machine custody in "
+        "name only (§9.1/§9.2)")
+
+
+def assert_no_derivation_parameter(*constructors: Callable) -> None:
+    """[SIM4-X6-NO-LABEL] the LABEL channel of the custody law, as a
+    re-runnable battery (promoted out of an inline test assert so integrator
+    surgery can point it at the REAL scorer/vector constructor at W6 — the
+    same promotion N4's table_order law got): no vector constructor may expose
+    a parameter through which a caller NAMES a dim's derivation. Custody is
+    stamped from evidence or it is not custody."""
+    for fn in constructors:
+        named = sorted(p for p in inspect.signature(fn).parameters
+                       if "derivation" in p.lower())
+        assert not named, (
+            f"[SIM4-X6-NO-LABEL] {getattr(fn, '__name__', fn)!r} exposes "
+            f"derivation parameter(s) {named} — a caller could then NAME "
+            "machine custody for a judge number, which is the X6 escape the "
+            "`kind` label alone cannot see (§9.1)")
 
 
 def assert_derivation_refused(eligible: bool, reasons: list[str]) -> None:
@@ -1531,7 +1702,8 @@ def assert_machine_class_vocab(artifact: Any) -> None:
         f"vocabulary (§9.3), in a value OR a key. Violations: {bad}")
 
 
-def assert_certainty_capped(row: Mapping[str, Any]) -> None:
+def assert_certainty_capped(row: Mapping[str, Any], *,
+                            source: Optional[str] = None) -> None:
     """[P5-CAP] a machine-class artifact's `certainty` must sit at or below
     the states.py P5 rung. The admissible set is DERIVED FROM BYTES
     (estate_certainty_ladder) — the states above the cap are precisely those
@@ -1539,11 +1711,17 @@ def assert_certainty_capped(row: Mapping[str, Any]) -> None:
     machine artifact carrying one has minted a human-channel claim. The
     Captain-vocabulary regex does NOT catch this: `intervention_supported` is
     a real states.py token whose Captain word is 'tested', and it contains
-    none of the banned words. Missing/unknown tokens fail closed."""
+    none of the banned words. Missing/unknown tokens fail closed.
+
+    `source` overrides the states.py bytes — the same injection seam
+    estate_certainty_ladder carries, so the [P5-LADDER] integrity guards below
+    can be ARMED against a genuinely broken states.py rather than asserted by
+    hand. Defaults to the real bytes; no caller passes it except the mutant
+    arms."""
     # NOTE the DISTINCT tag: the ladder-integrity failures below must never be
     # mistakable for a cap violation, or a mutant test matching [P5-CAP] would
     # go green on a broken scan (paid in the fix round's own mutation proof).
-    ladder = estate_certainty_ladder()
+    ladder = estate_certainty_ladder(source)
     assert ladder["above_cap"], (
         "[P5-LADDER] the ladder derivation found NO above-cap states — the "
         "scan went vacuous against states.py and would pass anything")
