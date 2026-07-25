@@ -58,7 +58,13 @@ assembled at runtime (belt and braces — the cog5 test globs ARE allowlisted
 on ROW 9). `cog2-import-gate.py` exit 0; `check-layer-separation.sh` OK
 (new=0).
 
-## Mutants — 14 negative controls, every one proven biting NOW
+## Mutants — 18 named negative-control escapes, every one proven biting NOW
+
+Exact count (a claim a reviewer can re-derive by grep): **12** `test_mutant_*`
+arms + **5** corruption injections parametrised into
+`test_each_corruption_is_detected` + **1** tampered write-ahead refusal. Four
+further record-shape refusal arms (fitness_claim, payload_ref, lineage-less
+row, invalid decision) are counted separately under §5.4 below.
 sim 1: archive drops a failed candidate (5 lineage rows vanish, chain still
 verifies — proving X1 must be a SEPARATE gate); rank order varies under
 PYTHONHASHSEED (**5 distinct orderings over 5 seeds**, not a probabilistic
