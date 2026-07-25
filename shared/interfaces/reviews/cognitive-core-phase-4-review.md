@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: d8d316b244e10156d45b3b46cff7bddb52bfbd526b736d1b7bb97745f1241eb2
+Reviewed-Scope-Digest: 6f04c4bc47876ba2152aceaf9cb7feb003c8cd1f7f498d0c0c3cb955937e1cae
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
@@ -109,6 +109,52 @@ docstrings describe and were ALREADY BLOCK on master 26d4cce2 before this branch
 f543dc1e vs 63f4643a, COG-1 25c2f5e3 vs 2fb7a390, COG-2, COG-3) — a pre-existing, by-design condition
 this landing neither improves nor worsens. COG-4 is the one LIVE binding, and it is the one re-bound
 here.)
+(MOVED BY THE CAPTAIN-CONTACT LIVENESS LANDING, 2026-07-25 — d8d316b2... -> the value above. Landed
+branch `feat/captain-contact-liveness` (PR #196, one commit db2a3346, merge 0830a076) over master
+32ff7384: the Captain-contact dead-man (D1), the honest queued-vs-delivered sender (D4-cheap), and
+severity-ordered watchdog findings (X). EXACTLY TWO in-scope paths moved, verified by intersecting the
+resolved 85-entry scope with `git diff --name-only 32ff7384..db2a3346` rather than by reading the diff:
+  (1) `cabinet/config/cognitive-architecture-contract.yml` — two `temporary_allowances` rows APPENDED
+      (`framework_production_modules` +2, `framework_production_noncomment_lines` +386) for the new
+      stdlib-only `framework/liveness` package. Declarative budget consumed by the census gate, not by
+      any COG-4 engine. Census re-measured on the merged bytes: PASS at 238<=238 and 66934<=66934 —
+      exact totals, zero headroom preserved, no maximum relaxed and no threshold touched.
+  (2) `framework/watchdog/registry.py` — the path named in this review's scope for its
+      `_parse_organ_manifests` surface. That function's body is BYTE-IDENTICAL on the merged bytes
+      (measured line-exact over its 71-line span, base vs merged), as is `_resolve_organ_artifact`.
+      What changed is its CALLER.
+A BEHAVIOR-DELTA RE-BIND, stated plainly rather than inheriting the MECHANICAL-DELTA formula from the
+re-binds above: `verify_no_silent_cron_failure` now tags every finding with a causal severity
+(`_SEV_NOT_LOADED` 0 .. `_SEV_MARKER` 5; organ findings are `_SEV_ORGAN` 4) and STABLY SORTS before the
+pre-existing 8-item truncation. Per-finding message TEXT is unchanged — measured, both organ literals
+byte-identical base vs merged — and so is finding MEMBERSHIP; what moves is ORDER, and therefore WHICH
+eight survive when more than eight findings exist. Differential run on this repo's own `_mini_probe`
+fixture (memory-worker unloaded + retro-trigger exit 127):
+    base   -> "...retro-trigger: last exit status 127; memory-worker: declared ... but not loaded ..."
+    merged -> "...memory-worker: declared ... but not loaded ...; retro-trigger: last exit status 127"
+Same set, same per-finding text, CAUSE first. That inversion is the point: the not-loaded scan appends
+LAST, so in exactly the broad-outage case the truncation exists for, the line naming the cause was
+always the first casualty. No COG-4 claim is retracted — the organ-floor detection logic and the
+reviewed property "a silent organ inside a live runner trips its own floor" are untouched; only the
+rendering order of a multi-finding detail string moved, and organ findings can now be displaced by
+strictly more-causal rows (not-loaded / no-log / non-zero-exit) and can now displace error-marker
+symptoms. Re-measured on the merged bytes, not inherited: `verify-cognitive-phase4.sh` full green
+end-to-end after this re-bind; census PASS; layer-sep new=0; `framework/` 6511 passed and
+`cabinet/scripts/tests` 4534 passed against a re-measured 32ff7384 baseline (6454 / 4523).
+WHAT WAS NOT DONE, stated plainly: this was NOT re-reviewed by a fresh frozen COG-4 panel. The branch
+carries its own adversarial fresh-context artifact,
+`shared/interfaces/reviews/feat-captain-contact-liveness-cp1.md`, whose residual section records the
+honest limit of that unit — the primary off-machine detector is INERT until an operator registers a
+watcher, so the branch ships the mechanism, not the activation.
+SIBLING BINDERS: `cabinet/config/cognitive-architecture-contract.yml` sits in the COG-0/1/2/3
+EXPECTED_SCOPEs too, so this landing moves those digests as well (COG-0 63f4643a -> 869b2db6, COG-1
+2fb7a390 -> 7f17308d, COG-2 59514d4a -> 7f4047d3, COG-3 61644fda -> 727b8fee). They are NOT re-bound
+and must not be: all four were ALREADY BLOCK on pre-merge master 32ff7384 — measured, not assumed, by
+running each verify twin there (recorded vs recomputed: COG-0 f543dc1e vs 63f4643a, COG-1 25c2f5e3 vs
+2fb7a390, COG-2 b38632b9 vs 59514d4a, COG-3 78a7bf18 vs 61644fda; all exit 1). COG-4 was the one
+binding GREEN on 32ff7384 (verify twin exit 0, recorded == recomputed == d8d316b2) and the only one
+this landing turned BLOCK, so it is the only one re-bound. This commit edits ONLY the digest-excluded
+review artifact, so the digest it records is stable under its own landing.)
 
 ---
 
