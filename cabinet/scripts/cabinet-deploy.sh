@@ -13,7 +13,8 @@
 #
 # FLOW (deploy, the default action):
 #   fetch -> resolve <ref> (default: master, i.e. the mirror's tracked
-#   origin/master) -> provision a new release slot at that commit -> STATE-
+#   origin/master) -> provision a new release slot at that commit -> RE-LINK
+#   instance data using the NEW slot's own runtime-provision.sh -> STATE-
 #   PERSISTENCE PREFLIGHT (would this release discard durable state?) ->
 #   HEALTH GATE against the new (not-yet-live) slot -> if healthy: promote (atomic
 #   current-symlink swap) -> gracefully restart officers -> if UNHEALTHY:
@@ -130,7 +131,8 @@ DOCTOR_REL="cabinet/scripts/cabinet-doctor.sh"          # relative to a slot roo
 usage() {
   cat <<'EOF'
 Usage: cabinet-deploy.sh [deploy|rollback|status] --runtime-root <path> [--ref <git-ref>] [--dry-run]
-  deploy (default)  fetch -> provision -> state-persistence preflight -> health-gate
+  deploy (default)  fetch -> provision -> re-link from the new slot's provisioner
+                    -> state-persistence preflight -> health-gate
                     -> promote -> restart officers
   rollback          swap current back to previous -> restart officers
   status            print current/previous sha + germline status + last log lines
@@ -402,16 +404,50 @@ do_deploy() {
   # not the running one" discipline as health_gate/roster_officers), and in
   # --slot mode it asserts against the real provisioned release rather than
   # trusting the lists to describe what actually happened.
-  local preflight="$slot/cabinet/scripts/state-persistence-preflight.py" py_pf
+  # RE-LINK FROM THE NEW SLOT'S OWN PROVISIONER, first (2026-07-25).
+  # This script is invoked as <runtime_root>/current/cabinet/scripts/
+  # cabinet-deploy.sh (see docs/runbooks/dev-runtime-split-cutover.md), so
+  # "$PROVISION" above is the OUTGOING release's copy — it cannot know about a
+  # persistence path the NEW release added, which is exactly how a path can be
+  # listed in the release being deployed and still not be carried into it. Same
+  # "read the new slot, not the running one" discipline this script already
+  # applies to the health gate, roster_officers and the preflight. Idempotent:
+  # cmd_provision reuses the slot by sha and just re-runs the linking pass.
+  local slot_provision="$slot/cabinet/scripts/runtime-provision.sh"
+  if [ -f "$slot_provision" ] && [ "$slot_provision" != "$PROVISION" ]; then
+    echo "cabinet-deploy.sh: re-running instance-data linking from the new release's own provisioner..."
+    if ! bash "$slot_provision" provision "$RUNTIME_ROOT" "$sha" >/dev/null; then
+      log_line "deploy FAILED sha=$sha slot=$slot reason=slot-provisioner-relink current=unchanged"
+      echo "cabinet-deploy.sh: DEPLOY ABORTED — the new release's own runtime-provision.sh failed." >&2
+      echo "cabinet-deploy.sh: 'current' left untouched." >&2
+      exit 1
+    fi
+  fi
+
+  local preflight="$slot/cabinet/scripts/state-persistence-preflight.py" py_pf pf_rc
   if [ -f "$preflight" ]; then
     py_pf="$(python_for_generator)" || exit 1
     echo "cabinet-deploy.sh: state-persistence preflight against $slot..."
-    if ! "$py_pf" "$preflight" --repo "$slot" --slot "$slot" --shared "$RUNTIME_ROOT/shared"; then
-      log_line "deploy FAILED sha=$sha slot=$slot reason=state-persistence-preflight current=unchanged"
-      echo "cabinet-deploy.sh: DEPLOY ABORTED — this release would DISCARD durable state." >&2
-      echo "cabinet-deploy.sh: 'current' left untouched. Fix the persistence lists in" >&2
-      echo "cabinet-deploy.sh: cabinet/scripts/runtime-provision.sh (or declare the path" >&2
-      echo "cabinet-deploy.sh: disposable, with a reason, in cabinet/config/state-persistence-policy.yml)." >&2
+    pf_rc=0
+    "$py_pf" "$preflight" --repo "$slot" --slot "$slot" \
+      --shared "$RUNTIME_ROOT/shared" --current "$RUNTIME_ROOT/current" || pf_rc=$?
+    if [ "$pf_rc" -ne 0 ]; then
+      log_line "deploy FAILED sha=$sha slot=$slot reason=state-persistence-preflight rc=$pf_rc current=unchanged"
+      # Exit 2 is "the checker could not establish the facts" (an unreadable
+      # policy, a missing PyYAML, an unparseable list). Reporting that as
+      # "would DISCARD durable state" sent people hunting a data-loss bug that
+      # did not exist — say which of the two actually happened.
+      if [ "$pf_rc" -eq 2 ]; then
+        echo "cabinet-deploy.sh: DEPLOY ABORTED — the state-persistence preflight COULD NOT VERIFY" >&2
+        echo "cabinet-deploy.sh: this release (see the CANNOT VERIFY line above). That is a broken or" >&2
+        echo "cabinet-deploy.sh: missing input to the checker, NOT a finding that state would be lost." >&2
+        echo "cabinet-deploy.sh: 'current' left untouched; fix the checker's inputs and re-run." >&2
+      else
+        echo "cabinet-deploy.sh: DEPLOY ABORTED — this release would DISCARD durable state." >&2
+        echo "cabinet-deploy.sh: 'current' left untouched. Fix the persistence lists in" >&2
+        echo "cabinet-deploy.sh: cabinet/scripts/runtime-provision.sh (or declare the path" >&2
+        echo "cabinet-deploy.sh: disposable, with a reason, in cabinet/config/state-persistence-policy.yml)." >&2
+      fi
       exit 1
     fi
   else

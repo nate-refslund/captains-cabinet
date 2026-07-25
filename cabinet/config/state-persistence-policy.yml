@@ -241,13 +241,17 @@ known_gap:
 # KNOWN LIMITATIONS — measured 2026-07-25, recorded so they are not rediscovered
 # as surprises. None of these are fixed by this policy file; each is reported.
 #
-# SEEDING CAVEAT (affects the whole shared/interfaces family). Nothing in the
-#   repo creates <runtime_root>/shared/shared/interfaces/, and the cutover
-#   runbook never mentions it. link_instance_data's wildcard blocks are
-#   discovery-only ("never from the release"), and the file loop skips any entry
-#   whose shared/ copy is absent. So on a runtime root built by the documented
-#   flow, the *.md block AND the ~20 shared/interfaces/*.{yml,jsonl} rows may all
-#   link nothing. Verify against the live runtime root before trusting them.
+# SEEDING CAVEAT — FIXED 2026-07-25, kept here as provenance. It used to read:
+#   "Nothing in the repo creates <runtime_root>/shared/shared/interfaces/ ...
+#   the wildcard blocks are discovery-only ... so the *.md block AND the ~20
+#   shared/interfaces/*.{yml,jsonl} rows may all link nothing." That was true
+#   AND it meant this file's `interfaces-md` wildcard row CERTIFIED a path that
+#   was being lost — captain-decisions.md and captain-patterns.md, the
+#   append-only Captain-law ledgers, were measured lost at exit 0. Every class in
+#   link_instance_data now ADOPTS from the outgoing release before it links (see
+#   the ADOPTION INVARIANT in runtime-provision.sh), so a wildcard destination
+#   seeds itself from whatever the live release actually holds. A `rule:` row
+#   here is therefore now a claim about linking AND about seeding.
 #
 # MATERIALIZATION GAP. No script recreates cabinet/loop-prompts/<role>.txt or
 #   cabinet/officer-skills/<officer>.txt after a deploy. No data is lost (both
