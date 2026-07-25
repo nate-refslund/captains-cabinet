@@ -81,6 +81,8 @@ HOLDOUT_TOKEN = "framework.evolution.holdout_gen"
 HOLDOUT_GEN_REL = "framework/evolution/holdout_gen.py"
 BENCH_FACTORY_REL = "framework/evolution/bench_factory.py"
 ORACLE_CLI_REL = "cabinet/scripts/cog5-holdout-oracle.py"
+# ROW 8's ONE sanctioned glob: the holdout content-pin sibling tests
+HOLDOUT_PIN_TEST_GLOB = "cabinet/scripts/tests/test_cog5_holdout_*.py"
 _IMMUTABLE_CORE = _REPO / "framework/policies/immutable-core.yml"
 _EGG_MANIFEST = _REPO / "cabinet/scripts/egg-export-manifest.txt"
 
@@ -241,7 +243,12 @@ class TestStageAHonesty:
         (test_cog5_holdout_pin.py), never re-keyed here."""
         listing_text = _IMMUTABLE_CORE.read_text(encoding="utf-8")
         if HOLDOUT_GEN_REL in listing_text:
-            return  # Stage B landed — gate-S0 refusal binds from the listing
+            pytest.skip(
+                "Stage B landed: immutable-core.yml now LISTS the holdout "
+                "module, so the gate-S0 refusal binds from the listing and the "
+                "Stage-A interim premise no longer applies (Stage B is strictly "
+                "stronger). Declared as a SKIP, not a silent pass, so the "
+                "Stage A -> B transition is visible in the skip report.")
         # Stage A: (a) the content-pin sibling test exists
         assert (_HERE / "test_cog5_holdout_pin.py").exists(), (
             "Stage-A control missing: the holdout content-pin sibling test")
@@ -256,6 +263,11 @@ class TestStageAHonesty:
         assert row.sweep is True
         assert set(row.allowlist_exact) == {ORACLE_CLI_REL}, (
             "ROW 8 sole-reader curation drifted while Stage-A interim")
+        # globs are a second curation surface: a widened pattern admits a
+        # reader without ever touching allowlist_exact, so pin it too.
+        assert set(row.allowlist_globs) == {HOLDOUT_PIN_TEST_GLOB}, (
+            "ROW 8 allowlist_globs drifted while Stage-A interim — a widened "
+            "glob smuggles a reader past the exact-list pin")
         # honesty: Stage A is NOT Ring-0 — the gate-S0 refusal is absent by
         # construction until the listing lands; asserting the listing's
         # ABSENCE here is the honest statement (no overclaim).

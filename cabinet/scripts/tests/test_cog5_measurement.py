@@ -121,7 +121,13 @@ class TestAntiPhantomConsumer:
         """§12.1.3: >=1 REAL consumer of the flag exists — live, no skip.
         THIS FILE is the designated corpus-commit consumer (the `_enforced`
         call-time environ read), so the invariant holds from the corpus
-        commit until the twin takes over as the primary consumer."""
+        commit until the twin takes over as the primary consumer.
+        HONESTY (W2 posture): this assertion is therefore SELF-SATISFYING
+        today — the corpus CARRIES the invariant rather than proving an
+        external surface reads the bound. The real guarantee is the twin-arm
+        pair below (absence companion + vacuity arm), which forces
+        verify-cognitive-phase5.sh to consume the flag AND read the baseline
+        artifact in the same commit that introduces it."""
         hits = _consuming_files(_REPO)
         assert hits, (
             f"{_FLAG} has NO real consumer under cabinet/scripts — the phantom "

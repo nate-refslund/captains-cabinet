@@ -24,6 +24,17 @@ proven to BITE on scratch fixtures):
     scrubbed candidate env observes ZERO credential-shaped names; the
     ENV-PASSTHROUGH mutant (planted fake credentials passed through) is
     caught by the same probe+detector pair;
+  - the §4.4 CREDENTIAL-FILE reach detector (row 7's fourth seed class — no
+    screenpipe dir, no OAuth cache, no .env, no keychain reach): a candidate
+    whose HOME is OVERRIDDEN into its arena workdir reaches none of the four
+    planted classes; the UNCONFINED mutant reaches all four and the detector
+    names each. The reproduced hole is pinned as its own arm: HOME-unset
+    alone does NOT confine (expanduser falls back to the pwd database), and
+    both shipped instruments — the name-keyed env detector and the
+    write-keyed X5 fence — are proven SILENT on the read-then-copy escape
+    the new detector names. Residual, declared not closed: the HOME override
+    binds expanduser only; a direct pwd.getpwuid() read is the W3 harness's
+    OS-layer fence to close;
   - the both-ways hooksPath law (gate.py:372-410 replicated): a hostile
     pre-commit hook does NOT execute under argv+env pinning; the
     HOOK-EXECUTION-NOT-DISABLED mutant executes it and the evidence
@@ -50,7 +61,11 @@ with a COMPANION absence assertion that REDs the moment the path lands):
   - REAL-HARNESS escape arm — retire when framework/evolution/sandbox.py
     lands (W3): run the sim-7 probes THROUGH the real harness (scrubbed env
     observed, egress blocked at the harness layer, workdir confinement,
-    euid/hooksPath laws) instead of against the reference instruments.
+    CREDENTIAL-FILE/home-reach confinement — the §4.4 path classes
+    unreachable AND the pwd-fallback residual fenced at the OS layer, not
+    merely via HOME — euid/hooksPath laws) instead of against the reference
+    instruments. The escape sim is NOT green while the harness can still
+    reach a credential file.
   - ARENA-RUN arm — retire when framework/evolution/arena.py lands (W6):
     drive a candidate through the real arena and assert the X5 fence +
     harness-holds-credentials custody end to end.
@@ -132,6 +147,121 @@ class TestEnvScrub:
         the detector keys on credential-shaped NAMES, not values."""
         assert B.lib_cog5_boundary_env_leak_findings(
             {"PATH": "/usr/bin", "LANG": "C", "ARENA_ROUND": "3"}) == []
+
+
+# ===========================================================================
+# sim 7 — the §4.4 CREDENTIAL-FILE seed class (home reach) + its mutant
+# ===========================================================================
+class TestHomeCredentialReach:
+    """Row 7's fourth seed class — 'credential files' (§4.4: no
+    ~/.screenpipe, no OAuth caches, no .env, no keychain reach). Every arm
+    below runs against PLANTED FIXTURE files under a scratch home; the
+    probe's twin safety fences refuse to resolve to the real home."""
+
+    def _scrubbed(self, overrides: dict[str, str]) -> dict[str, str]:
+        """The §4.4 allowlist scrub over a planted 'live harness env'."""
+        live = B.lib_cog5_boundary_planted_live_env(
+            {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "LANG": "C",
+             "HOME": os.environ.get("HOME", "/nonexistent")})
+        return B.lib_cog5_boundary_scrub_env(
+            live, allowlist=("PATH", "LANG"), overrides=overrides)
+
+    def test_home_unset_alone_does_not_confine_home(self, tmp_path):
+        """THE HOLE THIS FAMILY CLOSES, reproduced so it can never silently
+        return: the allowlist scrub removes HOME from the candidate env, but
+        `Path.home()` -> os.path.expanduser('~') falls back to the pwd
+        database when HOME is ABSENT — so home still resolves to the REAL
+        home, OUTSIDE the arena workdir. ABSENCE IS NOT CONFINEMENT.
+        PATH REASONING ONLY: nothing under the resolved home is stat-ed, and
+        the reach probe's real-home fence REFUSES to look."""
+        workdir = tmp_path / "arena-workdir"
+        workdir.mkdir()
+        env = B.lib_cog5_boundary_scrub_env(
+            B.lib_cog5_boundary_planted_live_env(
+                {"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                 "HOME": os.environ.get("HOME", "/nonexistent")}),
+            allowlist=("PATH",))
+        assert "HOME" not in env, "the scrub must drop HOME from the env"
+        seen = B.lib_cog5_boundary_home_resolution_probe(env)
+        assert seen["home_env"] is None          # …the scrub did its job…
+        assert seen["home_resolved"] == seen["pwd_home"]  # …pwd fallback wins
+        resolved = Path(seen["home_resolved"])
+        assert resolved != workdir and workdir not in resolved.parents, (
+            "HOME-unset left the candidate home OUTSIDE its arena workdir")
+        # and the safety fence refuses to stat a home it did not plant
+        with pytest.raises(ValueError, match="REFUSED"):
+            B.lib_cog5_boundary_home_reach_findings(env, tmp_path)
+
+    def test_confined_candidate_observes_no_credential_reach(self, tmp_path):
+        """POSITIVE ARM — the CONFINED posture: the scrub carries an EXPLICIT
+        `HOME` OVERRIDE pointing INTO the arena workdir (expanduser consults
+        HOME first and falls back to pwd only when it is ABSENT, so an
+        override confines what mere absence does not). Credentials ARE
+        planted in a sibling harness home, so the empty finding set is a real
+        discrimination, not an absence of anything to find.
+        DECLARED RESIDUAL (W3-owned): the override confines expanduser-based
+        resolution only — a candidate calling pwd.getpwuid() directly still
+        learns the real home path, so the probe REPORTS pwd_home and the
+        retirement condition binds the real harness to fence it at the OS
+        layer. The corpus never claims that residual is closed."""
+        workdir = tmp_path / "arena-workdir"
+        arena_home = workdir / "home"
+        arena_home.mkdir(parents=True)
+        planted_home = tmp_path / "harness-home"
+        planted_home.mkdir()
+        B.lib_cog5_boundary_plant_home_credentials(planted_home)
+        env = self._scrubbed({"HOME": str(arena_home)})
+        result = B.lib_cog5_boundary_home_reach_probe(env, tmp_path)
+        assert Path(result["home"]) == arena_home
+        assert B.lib_cog5_boundary_home_reach_findings(env, tmp_path) == []
+        # the residual is RECORDED, never claimed closed
+        assert not Path(result["pwd_home"]).is_relative_to(workdir)
+
+    def test_mutant_unconfined_candidate_reaches_planted_credentials(self, tmp_path):
+        """NEGATIVE CONTROL (§12 row 7 seed 'credential files'): the
+        UNCONFINED mutant — a harness that leaves the candidate's home
+        pointing at its OWN home instead of the arena's — reaches every
+        planted §4.4 class, and the detector names all four."""
+        planted_home = tmp_path / "harness-home"
+        planted_home.mkdir()
+        planted = B.lib_cog5_boundary_plant_home_credentials(planted_home)
+        assert len(planted) == len(B.LIB_COG5_BOUNDARY_HOME_CREDENTIAL_CLASSES)
+        env = self._scrubbed({"HOME": str(planted_home)})
+        findings = B.lib_cog5_boundary_home_reach_findings(env, tmp_path)
+        joined = "\n".join(findings)
+        for label, _rel in B.LIB_COG5_BOUNDARY_HOME_CREDENTIAL_CLASSES:
+            assert label in joined, (label, findings)
+        assert len(findings) == len(B.LIB_COG5_BOUNDARY_HOME_CREDENTIAL_CLASSES)
+
+    def test_shipped_instruments_are_blind_to_the_credential_read(self, tmp_path):
+        """WHY THIS FAMILY EXISTS (the review finding, pinned as a test): the
+        two shipped sim-7 instruments are STRUCTURALLY blind to a credential
+        READ. The env detector is name-keyed over the ENVIRONMENT (a file is
+        not an env var) and the X5 fence is write-keyed over the OUTSIDE tree
+        (a read that copies INWARD leaves the outside tree byte-identical).
+        Here the unconfined candidate copies every planted credential into
+        its arena workdir: BOTH shipped oracles report clean, and only the
+        new reach detector names the escape."""
+        planted_home = tmp_path / "harness-home"
+        planted_home.mkdir()
+        B.lib_cog5_boundary_plant_home_credentials(planted_home)
+        workdir = tmp_path / "arena-workdir"
+        workdir.mkdir()
+        env = self._scrubbed({"HOME": str(planted_home)})
+        before = B.lib_cog5_boundary_tree_fingerprint(planted_home)
+        findings = B.lib_cog5_boundary_home_reach_findings(
+            env, tmp_path, copy_into=workdir)
+        after = B.lib_cog5_boundary_tree_fingerprint(planted_home)
+        # the escape really happened: credentials now sit inside the workdir
+        assert sorted(p.name for p in workdir.iterdir()) == [
+            "dotenv.exfil", "keychain_dir.exfil", "oauth_cache.exfil",
+            "screenpipe_dir.exfil"]
+        # …yet BOTH shipped instruments are silent on it…
+        observed = B.lib_cog5_boundary_observe_env_via_subprocess(env)
+        assert B.lib_cog5_boundary_env_leak_findings(observed) == []
+        assert B.lib_cog5_boundary_outside_workdir_diff(before, after) == []
+        # …and the new detector names every class.
+        assert len(findings) == len(B.LIB_COG5_BOUNDARY_HOME_CREDENTIAL_CLASSES)
 
 
 # ===========================================================================
@@ -401,8 +531,9 @@ class TestVacuityArms:
         assert not (_REPO / SANDBOX_REL).exists(), (
             "sandbox.py LANDED — retire this vacuity arm: point the sim-7 "
             "escape battery at the real harness (scrubbed env observed, egress "
-            "blocked, workdir confinement, euid/hooksPath laws) per the "
-            "docstring RETIREMENT CONDITION.")
+            "blocked, workdir confinement, credential-file/home-reach "
+            "confinement incl. the pwd-fallback residual, euid/hooksPath laws) "
+            "per the docstring RETIREMENT CONDITION.")
 
     def test_real_harness_escape_arm_vacuity(self):
         """VACUITY SKIP — retire when framework/evolution/sandbox.py lands
