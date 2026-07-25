@@ -37,8 +37,8 @@ replaces each guard body with the SAME lib assert batteries run over the
 landed surface (the batteries are proven TODAY on the reference tier; the
 implementation must satisfy them UNMODIFIED — builders never edit corpus;
 contradictions route to the integrator). The t1 shared-core join guard
-(TestCorpusCoreJoin) retires when `lib_cog5_corpus.py` lands (W2 T1, same
-wave).
+(TestCorpusCoreJoin) retired AT THE W2 INTEGRATION LANDING: `lib_cog5_corpus.py`
+is in-tree, both arms are live assertions, and no skip remains at that seam.
 
 S0: interpreter python3.12; no DB, no network (children are local
 subprocesses with explicit env); the repo conftest fences every durable
@@ -78,30 +78,40 @@ def _tag(marker: str) -> str:
 # the t1-owned shared core — the parallel-wave join, guarded honestly
 # ===========================================================================
 class TestCorpusCoreJoin:
+    """RETIRED AT THE W2 INTEGRATION LANDING — the join happened, so both arms
+    are LIVE assertions (integrator corpus surgery per §13, discharging the
+    RETIREMENT CONDITION written into this class before the join).
+
+    What the two arms were pre-join: a vacuity `pytest.skip` while T1's
+    `lib_cog5_corpus.py` had not landed, plus a COMPANION absence assertion
+    that REDs the instant it did. Both are now unconditional: the sibling is
+    in-tree, so its presence is a STANDING property and a core that vanishes,
+    stops importing, or binds to some other file on `sys.path` REDs here
+    instead of silently reverting to a skip."""
+
     CORE_PATH = _HERE / "lib_cog5_corpus.py"
 
-    def test_core_absence_companion(self):
-        # COMPANION absence assertion (the mergeability pattern): REDs the
-        # instant W2 T1's shared core lands, so the sibling guard can never
-        # silently persist past the join.
-        if FIX.CORE is not None:
-            return  # live: the join happened and the import bound cleanly
-        assert not self.CORE_PATH.exists(), (
-            "lib_cog5_corpus.py EXISTS but did not import — the t1 core "
-            "landed broken or the join needs the guard retired: replace "
-            "TestCorpusCoreJoin with a live `FIX.CORE is not None` assert "
-            "(retirement per the module docstring).")
+    def test_core_is_joined_and_bound(self):
+        # was `test_core_absence_companion` (a pre-join-only arm: it asserted
+        # the core's ABSENCE and returned early once it landed). Stated
+        # positively now — T2's import guard is `except ModuleNotFoundError`,
+        # so a broken/renamed core binds CORE=None SILENTLY, which post-join is
+        # a regression and not a state this corpus may skip on.
+        assert FIX.CORE is not None, (
+            "lib_cog5_corpus.py did not import — T2's guarded import bound "
+            "CORE=None. The W2 join is LANDED, so this is a real regression, "
+            "never the pre-join state the retired guard tolerated.")
 
-    def test_core_join_guard(self):
-        """RETIREMENT CONDITION: retire this skip when
-        cabinet/scripts/tests/lib_cog5_corpus.py lands (W2 T1, same wave) —
-        replace with the live assertion `FIX.CORE is not None` (T2 imports
-        the core, never creates it — the W2 naming law, §13)."""
-        if FIX.CORE is not None:
-            assert self.CORE_PATH.exists()  # live join: import matches bytes
-            return
-        pytest.skip("t1 shared core lib_cog5_corpus.py not yet joined — "
-                    "vacuity guard; retire when it lands (W2 T1)")
+    def test_core_import_binds_the_bytes_on_disk(self):
+        # was `test_core_join_guard` (the skip limb is retired; its live limb
+        # only checked that the file exists). Strengthened to what the join
+        # actually has to mean: the module object T2 holds IS this file, not a
+        # same-named module shadowed from elsewhere on sys.path.
+        assert self.CORE_PATH.exists(), "the t1-owned shared core is missing"
+        assert Path(FIX.CORE.__file__).resolve() == self.CORE_PATH.resolve(), (
+            f"T2 imported lib_cog5_corpus from {FIX.CORE.__file__!r}, not the "
+            f"sibling-unit file at {self.CORE_PATH} — the cross-unit contract "
+            "T1 pins is being read from the wrong bytes")
 
 
 # ===========================================================================
@@ -317,8 +327,20 @@ class TestSim4JudgeOnly:
         # the §6.2 WALL shape lifted to the vector (mirror of
         # test_row_supplied_provenance_refuses): honest construction takes
         # EVIDENCE, never a derivation label — there is structurally no
-        # parameter through which a scorer could declare a machine
-        # derivation for a number it did not measure.
+        # parameter through which a scorer could NAME a derivation.
+        #
+        # SCOPE, stated exactly (integrator fold of the N1 stale echo): this
+        # is the LABEL channel and nothing more. The sentence that stood here
+        # ran on to "...for a number it did not measure", and N1 disproved
+        # that: the evidence OBJECT is still the caller's, so a machine-SHAPED
+        # fabrication earns machine custody with no label forgery anywhere.
+        # The VALUE channel (make_vector's measure-from-evidence law) is what
+        # answers "a number it did not measure", and even that leaves the
+        # self-consistent fabrication as a DECLARED RESIDUAL — pinned by
+        # test_declared_residual_self_consistent_fabricated_evidence and
+        # make_vector's own HONEST SCOPE block. A docstring claiming what the
+        # bytes do not deliver is the failure class this corpus exists to
+        # catch, so the claim is kept to the channel this test actually walls.
         #
         # N2 (re-review): this check used to sit INLINE over the fixture
         # constructors, so at W6 it would still have been checking fixture

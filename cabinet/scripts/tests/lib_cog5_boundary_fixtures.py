@@ -59,10 +59,13 @@ for _p in (str(REPO_ROOT), str(_HERE)):
         sys.path.insert(0, _p)
 
 # --------------------------------------------------------------------------
-# T1's shared corpus core — imported IF PRESENT (W2 runs t1/t2/t3 in
-# parallel; on a tree where t1 has not landed yet this stays None and the
-# integration probes skip SELF-ARMINGLY: they go live the moment t1's file
-# lands at integration, no retirement surgery needed).
+# T1's shared corpus core — imported from the sibling W2 unit. W2 ran
+# t1/t2/t3 in parallel and the integrator joined them; t1's file is IN-TREE,
+# so this binds and `_cog5_corpus is None` is no longer a tolerated state:
+# the integration probe in test_cog5_sim_boundary.py ASSERTS presence (its
+# self-arming skip was retired at the W2 integration landing, §13). The
+# guard is kept so a vanished core surfaces as that probe's named assertion
+# failure rather than a module-wide collection error.
 # --------------------------------------------------------------------------
 try:  # pragma: no cover - trivial import guard
     import lib_cog5_corpus as _cog5_corpus  # type: ignore[import-not-found]

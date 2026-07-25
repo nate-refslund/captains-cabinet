@@ -17,6 +17,16 @@ Contract: docs/plans/cognitive-core-phase-5-contract-2026-07-24.md
                record boundary from the UNSEALED open segment (no link
                breaks, no seal covers it, so neither the row nor the seal
                layer can see it).
+               BOUND ON THAT CLAIM (say it here, because this docstring is
+               the first thing a reader of this file sees): it holds against
+               a BARE deletion — an editor that removes the row and leaves
+               the store's own counters behind. It does NOT hold against a
+               COMPLETE editor that also rewrites the manifest and re-mints
+               the anchor over the shortened chain; that escape is real,
+               declared, and pinned by
+               `test_known_limit_the_complete_editor_that_also_re_mints_the_anchor`.
+               The store layer raises the cost of a silent deletion; it is
+               not a signature, and nothing here claims it is (E4).
   §12 sim 10 — lineage rollback: the independently rehearsed seal + RESTORE
                drill reproduces every chain head + row count, no lineage row
                lost. Mutants: a restore that drops or reorders a lineage row.
@@ -560,7 +570,8 @@ class TestSim9CorruptArchive:
     @pytest.mark.parametrize("crash", (
         lambda a, r: a.append_crashing_before_anchor(r),
         lambda a, r: a.append_crashing_after_commit(r),
-    ), ids=("crash-before-the-anchor", "crash-before-the-pending-clear"))
+    ), ids=("crash-before-the-anchor",
+            "crash-before-the-pending-clear-anchor-omitted"))
     @pytest.mark.parametrize("crash_at,on_cadence", ((2, False), (4, True)),
                              ids=("off-cadence", "on-cadence"))
     def test_pending_heal_is_exactly_once_after_a_lost_ack(

@@ -135,15 +135,17 @@ for _p in (str(_HERE), str(_REPO)):
         sys.path.insert(0, _p)
 
 # --------------------------------------------------------------------------
-# the t1-owned shared core — GUARDED import while the parallel T1 branch is
-# un-joined (W2 units build in parallel off the same master tip; the
-# integrator joins them). The guard is honest, not permanent: the sibling
-# test `test_cog5_sim_scoring.py::TestCorpusCoreJoin` carries the vacuity
-# skip + the COMPANION absence assertion that REDs the instant
-# lib_cog5_corpus.py lands, forcing the retirement (§13).
-# RETIREMENT CONDITION: when cabinet/scripts/tests/lib_cog5_corpus.py lands
-# (W2 T1), this except-arm dies naturally (the import binds); retire the
-# sibling guard per its docstring. T2 never creates the file.
+# the t1-owned shared core — imported from the sibling W2 unit. The parallel
+# branches built off one master tip and the integrator joined them; T1's
+# lib_cog5_corpus.py is IN-TREE, so this import binds and the except-arm is
+# now unreachable in a healthy checkout.
+# RETIREMENT DISCHARGED at the W2 integration landing: the sibling test
+# `test_cog5_sim_scoring.py::TestCorpusCoreJoin` no longer skips — both arms
+# are LIVE assertions (the core imported, and it bound to THESE bytes).
+# The except-arm is kept deliberately: it turns a vanished/renamed core into
+# that test's named assertion failure instead of a collection error that
+# takes the whole module down. It must never again be a silent skip. T2
+# imports the core and never creates it (the W2 naming law, §13).
 # --------------------------------------------------------------------------
 try:
     import lib_cog5_corpus as CORE  # noqa: F401  (t1-owned; presence proven at join)
@@ -561,14 +563,25 @@ def mutant_judge_number_into_machine_dim(*, judge_score: float,
     number over as the machine dim's evidence. Construction stamps the truth
     (`judge:llm_score`) and the floor predicate must refuse it. This is the
     exact repro the fresh-context review filed: a judge-derived value
-    satisfying a MACHINE floor while every `kind` label reads 'machine'."""
+    satisfying a MACHINE floor while every `kind` label reads 'machine'.
+
+    `frozen_regressions` is deliberately HONEST (a real gate result whose
+    regressed count the declared 0 matches) — the SAME discipline the sibling
+    `mutant_fabricated_evidence_for_a_machine_dim` already carried, applied
+    here by integrator surgery. It used to carry the judge's evidence too, so
+    the mutant was OVER-DETERMINED: two machine dims were bad at once, and
+    reverting the MF1 construction stamp ALONE no longer REDed
+    `test_mutant_judge_derived_number_on_a_machine_floor_REDS` — the value law
+    independently caught the revert via the second dim, MASKING it. The escape
+    under test is ONE machine floor fed the judge's number, so exactly one dim
+    models it and the bite isolates to the property being proven."""
     return make_vector({
         "frozen_pass_rate": (judge_score, MACHINE_KIND),
         "frozen_regressions": (0, MACHINE_KIND),
         "judge_score": (judge_score, JUDGE_KIND),
     }, table_order=table_order, evidence={
         "frozen_pass_rate": JudgeEvidence(judge_score),
-        "frozen_regressions": JudgeEvidence(judge_score),
+        "frozen_regressions": _rg.GateResult(outcome=_rg.OUTCOME_PASS),
         "judge_score": JudgeEvidence(judge_score),
     })
 

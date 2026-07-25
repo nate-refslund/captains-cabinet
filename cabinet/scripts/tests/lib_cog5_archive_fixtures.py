@@ -270,7 +270,19 @@ class ReferenceArchive:
 
     def append(self, record: Mapping[str, Any]) -> dict[str, Any]:
         """Write-ahead (pending.json) -> append -> anchor -> clear pending.
-        The write-ahead is what makes the heal exactly-once possible."""
+        The write-ahead is what makes the heal exactly-once possible.
+
+        HEAL-ON-OPEN IS THE CALLER'S OBLIGATION, and it is written down here
+        because the eventual `framework/evolution/archive.py` reads this model
+        as its reference. `append` does NOT call `heal()`: appending onto a
+        store whose last commit was interrupted OVERWRITES the unreconciled
+        pending.json, so the owed attestation is never minted and the store
+        sits ANCHOR_MISSING. Whoever opens a store reconciles it first —
+        `heal()` is idempotent and returns None when there is nothing to do,
+        so calling it on every open is always safe.
+        Bounded, deliberately: unlike the permanent unservability a
+        non-completing heal used to cause, this state is TRANSIENT — the next
+        on-cadence append mints an anchor and the store verifies again."""
         event = self._prepare(record)
         self._write_pending(event)
         self._commit(event)
@@ -298,7 +310,16 @@ class ReferenceArchive:
 
     def append_crashing_after_commit(self, record: Mapping[str, Any]) -> dict[str, Any]:
         """Simulate a crash AFTER the append but BEFORE pending.json was
-        cleared — the case a naive heal duplicates."""
+        cleared — the case a naive heal duplicates.
+
+        It OMITS the anchor, so at an on-cadence sequence this models a state
+        real `_commit` cannot reach: `_commit` mints the attestation BEFORE it
+        refreshes the manifest, so a genuine crash this late would already
+        have one. The divergence is strictly CONSERVATIVE (the heal is handed
+        strictly more to reconcile than reality can leave it), which is why it
+        stands; the parametrize id says `-anchor-omitted` so no reader mistakes
+        it for the real durable state. `append_crashing_before_anchor` is the
+        byte-exact pre-anchor window."""
         event = self._prepare(record)
         self._write_pending(event)
         self._append_only(event)

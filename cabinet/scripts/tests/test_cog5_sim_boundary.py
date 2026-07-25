@@ -367,25 +367,40 @@ class TestSyntheticNeverCounts:
 # ===========================================================================
 class TestSharedCorpusIntegration:
     def test_provenance_vocabulary_agrees_with_t1_core(self):
-        """SELF-ARMING (no retirement needed): skips while the t1-owned
-        lib_cog5_corpus.py has not landed (W2 runs t1/t2/t3 in parallel) and
-        goes LIVE automatically at integration. When live: if the shared
-        core exposes a provenance vocabulary under its expected names, it
-        must MATCH the §6.2 closed enum — a drift routes loud, never
-        silently forked."""
+        """ARMED AT THE W2 INTEGRATION LANDING (integrator corpus surgery,
+        §13). Pre-join this probe skipped self-armingly while the t1-owned
+        lib_cog5_corpus.py had not landed; t1 is in-tree, so the skip is
+        retired and the cross-unit agreement is a LIVE assertion: the shared
+        core's provenance vocabulary must MATCH the §6.2 closed enum, and a
+        drift routes loud rather than silently forking the two units.
+
+        Two silent-pass holes closed in the same surgery, both of which let
+        this probe report GREEN while proving nothing:
+          * `corpus is None` was a skip — now an assert (post-join it is a
+            regression, not a parallel-wave state);
+          * the old loop bound the FIRST name that existed and `break`, so a
+            divergent second name was never read and a core exposing NONE of
+            the three passed vacuously. Every name that exists is now checked,
+            and at least one must — which is exactly the order-independence
+            t1's own `test_provenance_exposed_under_every_probed_name` pins
+            from its side."""
         corpus = B.lib_cog5_boundary_corpus_module()
-        if corpus is None:
-            pytest.skip(
-                "t1-owned lib_cog5_corpus.py not yet landed (parallel W2 unit) — "
-                "this probe arms itself the moment t1's file lands at integration; "
-                "no retirement condition needed (import-guard, not vacuity).")
-        for attr in ("PROVENANCE", "LIB_COG5_CORPUS_PROVENANCE", "PROVENANCE_ENUM"):
-            vocab = getattr(corpus, attr, None)
-            if vocab is not None:
-                assert set(vocab) == set(B.LIB_COG5_BOUNDARY_PROVENANCE), (
-                    f"t1 corpus {attr} diverges from the §6.2 closed enum — "
-                    f"route to the integrator")
-                break
+        assert corpus is not None, (
+            "t1-owned lib_cog5_corpus.py did not import — the W2 join is "
+            "LANDED, so this is a real regression, never the pre-join state "
+            "the retired import-guard skip tolerated")
+        probed = {attr: getattr(corpus, attr, None)
+                  for attr in ("PROVENANCE", "LIB_COG5_CORPUS_PROVENANCE",
+                               "PROVENANCE_ENUM")}
+        present = {a: v for a, v in probed.items() if v is not None}
+        assert present, (
+            f"t1 corpus exposes NONE of {sorted(probed)} — the cross-unit "
+            "provenance contract has no readable surface; route to the "
+            "integrator (this used to pass vacuously)")
+        for attr, vocab in present.items():
+            assert set(vocab) == set(B.LIB_COG5_BOUNDARY_PROVENANCE), (
+                f"t1 corpus {attr} diverges from the §6.2 closed enum — "
+                f"route to the integrator")
 
 
 # ===========================================================================
