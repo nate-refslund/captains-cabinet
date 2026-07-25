@@ -223,7 +223,7 @@ describe('buildChartTableCard — free text lives ONLY in the authed card', () =
     expect(drift.grey).toBe(true)
     expect(drift.value).toBe(DRIFT_UNMEASURED_COPY)
     expect(DRIFT_UNMEASURED_COPY).toContain('unmeasured')
-    expect(DRIFT_UNMEASURED_COPY).toContain('org_events.product_slug')
+    expect(DRIFT_UNMEASURED_COPY).toContain('org_events.lane_slug')
   })
 
   it('uncharted apex renders grey honest absence', () => {

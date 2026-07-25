@@ -14,7 +14,7 @@ import { dockerExec } from '@/lib/docker'
 
 export interface ClaudeNativeTask {
   task_id: string
-  product_slug: string
+  lane_slug: string
   status: string // 'created' | 'completed'
   mission_id: string | null
   node_id: string | null

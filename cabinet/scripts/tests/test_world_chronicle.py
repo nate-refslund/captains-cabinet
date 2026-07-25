@@ -140,7 +140,7 @@ class TestPipelineOnFixtureEstate:
         con = sqlite3.connect(db)
         con.execute("""CREATE TABLE org_events (
             event_id TEXT PRIMARY KEY, event_type TEXT NOT NULL,
-            product_slug TEXT NOT NULL DEFAULT 'x',
+            lane_slug TEXT NOT NULL DEFAULT 'x',
             aggregate_type TEXT NOT NULL, aggregate_id TEXT NOT NULL DEFAULT 'a',
             actor TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'cli',
             payload_json TEXT NOT NULL DEFAULT '{}',

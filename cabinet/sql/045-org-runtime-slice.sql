@@ -1,11 +1,55 @@
 -- cabinet/sql/045-org-runtime-slice.sql
 -- Outcome-to-OVI vertical slice.
 --
--- Framework-level schema for the single-product organization runtime. The
+-- Framework-level schema for the organization runtime, keyed by LANE. The
 -- source of truth is `org_events`: every projection below must be rebuildable
 -- from append-only events. This file is idempotent and additive.
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- =============================================================
+-- LANE-KEY RENAME (2026-07-25): product_slug -> lane_slug.
+--
+-- The column never carried product data. Every row this repo has ever
+-- written holds the deployment's own lane key, and the dashboard says so in
+-- code (cabinet/dashboard/src/lib/world/course.ts). The old name was the
+-- last structural trace of a runtime built for ONE software product; a
+-- cabinet run by a law firm or a bakery keys the same rows by lane.
+--
+-- Guarded and idempotent. On a fresh database every statement below is a
+-- no-op. On a database created before the rename, each table's legacy
+-- column is renamed IN PLACE (a catalog-only operation: no rewrite, no data
+-- movement, and Postgres carries the rename into every dependent index,
+-- primary key and foreign key automatically), and the four indexes whose
+-- NAMES carried the old word are dropped so the definitions further down
+-- recreate them under their lane names.
+-- =============================================================
+DO $$
+DECLARE
+  t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY[
+    'org_events', 'captain_outcomes', 'missions', 'claude_native_tasks',
+    'org_roles', 'role_memory_bindings', 'role_eval_results',
+    'role_evolution_recommendations', 'role_hats', 'role_lineage_events',
+    'ovi_weeks', 'learning_digests'
+  ] LOOP
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = t AND column_name = 'product_slug')
+       AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = current_schema()
+                          AND table_name = t AND column_name = 'lane_slug')
+    THEN
+      EXECUTE format('ALTER TABLE %I RENAME COLUMN product_slug TO lane_slug', t);
+    END IF;
+  END LOOP;
+END $$;
+
+DROP INDEX IF EXISTS idx_org_events_product_created;
+DROP INDEX IF EXISTS idx_captain_outcomes_product_state;
+DROP INDEX IF EXISTS idx_org_roles_product_state;
+DROP INDEX IF EXISTS idx_learning_digests_product_week;
 
 -- =============================================================
 -- org_events: central append-only ledger
@@ -13,7 +57,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE TABLE IF NOT EXISTS org_events (
   event_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   event_type TEXT NOT NULL,
-  product_slug TEXT NOT NULL,
+  lane_slug TEXT NOT NULL,
   aggregate_type TEXT NOT NULL,
   aggregate_id TEXT NOT NULL,
   actor TEXT NOT NULL,
@@ -23,11 +67,11 @@ CREATE TABLE IF NOT EXISTS org_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_org_events_product_created
-  ON org_events(product_slug, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_org_events_lane_created
+  ON org_events(lane_slug, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_org_events_aggregate
-  ON org_events(product_slug, aggregate_type, aggregate_id, created_at DESC);
+  ON org_events(lane_slug, aggregate_type, aggregate_id, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_org_events_type
   ON org_events(event_type, created_at DESC);
@@ -54,7 +98,7 @@ CREATE TRIGGER trg_prevent_org_events_delete
 -- =============================================================
 CREATE TABLE IF NOT EXISTS captain_outcomes (
   outcome_id TEXT PRIMARY KEY,
-  product_slug TEXT NOT NULL,
+  lane_slug TEXT NOT NULL,
   title TEXT NOT NULL,
   metric_name TEXT NOT NULL,
   target_value NUMERIC NOT NULL,
@@ -69,13 +113,13 @@ CREATE TABLE IF NOT EXISTS captain_outcomes (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_captain_outcomes_product_state
-  ON captain_outcomes(product_slug, state, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_captain_outcomes_lane_state
+  ON captain_outcomes(lane_slug, state, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS missions (
   mission_id TEXT PRIMARY KEY,
   outcome_id TEXT NOT NULL REFERENCES captain_outcomes(outcome_id),
-  product_slug TEXT NOT NULL,
+  lane_slug TEXT NOT NULL,
   title TEXT NOT NULL,
   state TEXT NOT NULL CHECK (state IN ('compiled', 'in_progress', 'verified', 'superseded')),
   compiled_event_id UUID REFERENCES org_events(event_id),
@@ -130,7 +174,7 @@ CREATE TABLE IF NOT EXISTS work_graph_edges (
 -- Claude Code native task projection
 -- =============================================================
 CREATE TABLE IF NOT EXISTS claude_native_tasks (
-  product_slug TEXT NOT NULL,
+  lane_slug TEXT NOT NULL,
   task_id TEXT NOT NULL,
   session_id TEXT,
   transcript_path TEXT,
@@ -154,20 +198,20 @@ CREATE TABLE IF NOT EXISTS claude_native_tasks (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   completed_at TIMESTAMPTZ,
-  PRIMARY KEY (product_slug, task_id)
+  PRIMARY KEY (lane_slug, task_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_claude_native_tasks_mission
-  ON claude_native_tasks(product_slug, mission_id, node_id);
+  ON claude_native_tasks(lane_slug, mission_id, node_id);
 
 CREATE INDEX IF NOT EXISTS idx_claude_native_tasks_status
-  ON claude_native_tasks(product_slug, status, updated_at DESC);
+  ON claude_native_tasks(lane_slug, status, updated_at DESC);
 
 -- =============================================================
 -- Durable adaptive roles, hats, and mission assignments
 -- =============================================================
 CREATE TABLE IF NOT EXISTS org_roles (
-  product_slug TEXT NOT NULL,
+  lane_slug TEXT NOT NULL,
   role_slug TEXT NOT NULL,
   role_name TEXT NOT NULL,
   charter TEXT NOT NULL,
@@ -181,29 +225,29 @@ CREATE TABLE IF NOT EXISTS org_roles (
   latest_event_id UUID NOT NULL REFERENCES org_events(event_id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (product_slug, role_slug)
+  PRIMARY KEY (lane_slug, role_slug)
 );
 
-CREATE INDEX IF NOT EXISTS idx_org_roles_product_state
-  ON org_roles(product_slug, state, role_slug);
+CREATE INDEX IF NOT EXISTS idx_org_roles_lane_state
+  ON org_roles(lane_slug, state, role_slug);
 
 CREATE TABLE IF NOT EXISTS role_memory_bindings (
   binding_id TEXT PRIMARY KEY,
-  product_slug TEXT NOT NULL,
+  lane_slug TEXT NOT NULL,
   role_slug TEXT NOT NULL,
   memory_path TEXT NOT NULL,
   memory_kind TEXT NOT NULL DEFAULT 'tier2',
   bound_event_id UUID NOT NULL REFERENCES org_events(event_id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  FOREIGN KEY (product_slug, role_slug) REFERENCES org_roles(product_slug, role_slug)
+  FOREIGN KEY (lane_slug, role_slug) REFERENCES org_roles(lane_slug, role_slug)
 );
 
 CREATE INDEX IF NOT EXISTS idx_role_memory_bindings_role
-  ON role_memory_bindings(product_slug, role_slug, created_at DESC);
+  ON role_memory_bindings(lane_slug, role_slug, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS role_eval_results (
   eval_id TEXT PRIMARY KEY,
-  product_slug TEXT NOT NULL,
+  lane_slug TEXT NOT NULL,
   role_slug TEXT NOT NULL,
   mission_id TEXT REFERENCES missions(mission_id),
   hat_id TEXT,
@@ -213,19 +257,19 @@ CREATE TABLE IF NOT EXISTS role_eval_results (
   evidence TEXT NOT NULL,
   recorded_event_id UUID NOT NULL REFERENCES org_events(event_id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  FOREIGN KEY (product_slug, role_slug) REFERENCES org_roles(product_slug, role_slug)
+  FOREIGN KEY (lane_slug, role_slug) REFERENCES org_roles(lane_slug, role_slug)
 );
 
 CREATE INDEX IF NOT EXISTS idx_role_eval_results_role_created
-  ON role_eval_results(product_slug, role_slug, created_at DESC);
+  ON role_eval_results(lane_slug, role_slug, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_role_eval_results_hat
-  ON role_eval_results(product_slug, role_slug, hat_id)
+  ON role_eval_results(lane_slug, role_slug, hat_id)
   WHERE hat_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS role_evolution_recommendations (
   recommendation_id TEXT PRIMARY KEY,
-  product_slug TEXT NOT NULL,
+  lane_slug TEXT NOT NULL,
   role_slug TEXT NOT NULL,
   recommendation_type TEXT NOT NULL CHECK (
     recommendation_type IN (
@@ -239,26 +283,26 @@ CREATE TABLE IF NOT EXISTS role_evolution_recommendations (
   basis TEXT NOT NULL,
   recommended_event_id UUID NOT NULL REFERENCES org_events(event_id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  FOREIGN KEY (product_slug, role_slug) REFERENCES org_roles(product_slug, role_slug)
+  FOREIGN KEY (lane_slug, role_slug) REFERENCES org_roles(lane_slug, role_slug)
 );
 
 CREATE INDEX IF NOT EXISTS idx_role_evolution_recommendations_role_created
-  ON role_evolution_recommendations(product_slug, role_slug, created_at DESC);
+  ON role_evolution_recommendations(lane_slug, role_slug, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS role_hats (
   hat_id TEXT PRIMARY KEY,
-  product_slug TEXT NOT NULL,
+  lane_slug TEXT NOT NULL,
   role_slug TEXT NOT NULL,
   hat_name TEXT NOT NULL,
   purpose TEXT NOT NULL,
   state TEXT NOT NULL CHECK (state IN ('active', 'retired')) DEFAULT 'active',
   created_event_id UUID REFERENCES org_events(event_id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  FOREIGN KEY (product_slug, role_slug) REFERENCES org_roles(product_slug, role_slug)
+  FOREIGN KEY (lane_slug, role_slug) REFERENCES org_roles(lane_slug, role_slug)
 );
 
 CREATE INDEX IF NOT EXISTS idx_role_hats_role_state
-  ON role_hats(product_slug, role_slug, state);
+  ON role_hats(lane_slug, role_slug, state);
 
 CREATE TABLE IF NOT EXISTS mission_role_assignments (
   assignment_id TEXT PRIMARY KEY,
@@ -274,7 +318,7 @@ CREATE TABLE IF NOT EXISTS mission_role_assignments (
 
 CREATE TABLE IF NOT EXISTS role_lineage_events (
   lineage_id TEXT PRIMARY KEY,
-  product_slug TEXT NOT NULL,
+  lane_slug TEXT NOT NULL,
   role_slug TEXT NOT NULL,
   hat_id TEXT REFERENCES role_hats(hat_id),
   event_id UUID NOT NULL REFERENCES org_events(event_id),
@@ -282,26 +326,26 @@ CREATE TABLE IF NOT EXISTS role_lineage_events (
   note TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT fk_role_lineage_events_role
-    FOREIGN KEY (product_slug, role_slug) REFERENCES org_roles(product_slug, role_slug)
+    FOREIGN KEY (lane_slug, role_slug) REFERENCES org_roles(lane_slug, role_slug)
 );
 
 CREATE INDEX IF NOT EXISTS idx_role_lineage_role_created
-  ON role_lineage_events(product_slug, role_slug, created_at DESC);
+  ON role_lineage_events(lane_slug, role_slug, created_at DESC);
 
 DROP TRIGGER IF EXISTS trg_prevent_role_lineage_update ON role_lineage_events;
 DROP TRIGGER IF EXISTS trg_prevent_role_lineage_delete ON role_lineage_events;
 
 ALTER TABLE role_lineage_events
-  ADD COLUMN IF NOT EXISTS product_slug TEXT;
+  ADD COLUMN IF NOT EXISTS lane_slug TEXT;
 
 UPDATE role_lineage_events AS lineage
-   SET product_slug = events.product_slug
+   SET lane_slug = events.lane_slug
   FROM org_events AS events
- WHERE lineage.product_slug IS NULL
+ WHERE lineage.lane_slug IS NULL
    AND lineage.event_id = events.event_id;
 
 ALTER TABLE role_lineage_events
-  ALTER COLUMN product_slug SET NOT NULL;
+  ALTER COLUMN lane_slug SET NOT NULL;
 
 DO $$
 BEGIN
@@ -312,8 +356,8 @@ BEGIN
   ) THEN
     ALTER TABLE role_lineage_events
       ADD CONSTRAINT fk_role_lineage_events_role
-      FOREIGN KEY (product_slug, role_slug)
-      REFERENCES org_roles(product_slug, role_slug);
+      FOREIGN KEY (lane_slug, role_slug)
+      REFERENCES org_roles(lane_slug, role_slug);
   END IF;
 END $$;
 
@@ -410,7 +454,7 @@ CREATE TRIGGER trg_prevent_role_recommendation_delete
 -- OVI and learning-digest projections
 -- =============================================================
 CREATE TABLE IF NOT EXISTS ovi_weeks (
-  product_slug TEXT NOT NULL,
+  lane_slug TEXT NOT NULL,
   week_start DATE NOT NULL,
   verified_outcome_value NUMERIC NOT NULL,
   burden_index NUMERIC NOT NULL CHECK (burden_index > 0),
@@ -419,12 +463,12 @@ CREATE TABLE IF NOT EXISTS ovi_weeks (
   components JSONB NOT NULL DEFAULT '{}'::jsonb,
   published_event_id UUID REFERENCES org_events(event_id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (product_slug, week_start)
+  PRIMARY KEY (lane_slug, week_start)
 );
 
 CREATE TABLE IF NOT EXISTS learning_digests (
   digest_id TEXT PRIMARY KEY,
-  product_slug TEXT NOT NULL,
+  lane_slug TEXT NOT NULL,
   week_start DATE NOT NULL,
   title TEXT NOT NULL,
   content TEXT NOT NULL,
@@ -433,5 +477,5 @@ CREATE TABLE IF NOT EXISTS learning_digests (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_learning_digests_product_week
-  ON learning_digests(product_slug, week_start DESC);
+CREATE INDEX IF NOT EXISTS idx_learning_digests_lane_week
+  ON learning_digests(lane_slug, week_start DESC);

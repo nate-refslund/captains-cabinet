@@ -67,11 +67,11 @@ ignores unknown top-level keys; consumption rides new dedicated lib modules
    renewal-loop gap made visible). "Is crew actually working this lane this
    week" is **UNMEASURED** and never rendered as a state.
 4. **The drift gauge renders grey "unmeasured"** with the missing emitter
-   NAMED on the card: `org_events.product_slug` exists and is indexed but
+   NAMED on the card: `org_events.lane_slug` exists and is indexed but
    carries only `{captains-cabinet, default}` — no lane slug has ever been
    stamped; the census keyframe has no per-lane field; lane work lives in
    external repos. **Future emitter:** work-routing emitters stamp real
-   lane slugs into the already-indexed `product_slug` column, then
+   lane slugs into the already-indexed `lane_slug` column, then
    `world-census.py` gains per-lane int keys (int-only keys satisfy the
    census PII fence). Until then: grey, honest, named.
 5. **Replay stance = `git`** for the port-call stamps (the tasking text

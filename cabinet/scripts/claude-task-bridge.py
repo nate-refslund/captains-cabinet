@@ -19,7 +19,7 @@ from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR / "lib"))
 
-from org_runtime import DEFAULT_PRODUCT, Store, as_json, utc_now  # noqa: E402
+from org_runtime import DEFAULT_LANE, Store, as_json, utc_now  # noqa: E402
 
 
 SOURCE = "claude-task-hook"
@@ -156,8 +156,11 @@ def actor_for(data: dict[str, Any], task: dict[str, Any]) -> str:
     )
 
 
-def product_slug() -> str:
-    return first_text(os.environ.get("ORG_RUNTIME_PRODUCT"), os.environ.get("DEFAULT_PRODUCT"), DEFAULT_PRODUCT)
+def lane_slug() -> str:
+    # ENV VAR NAMES keep their pre-rename spelling so a running deployment
+    # keeps resolving; only the column and the constant were renamed.
+    return first_text(os.environ.get("ORG_RUNTIME_LANE"), os.environ.get("ORG_RUNTIME_PRODUCT"),
+                      os.environ.get("DEFAULT_PRODUCT"), DEFAULT_LANE)
 
 
 def missing_metadata(metadata: dict[str, str]) -> list[str]:
@@ -183,7 +186,7 @@ def metadata_message(missing: list[str]) -> str:
 
 def write_projection(
     store: Store,
-    product: str,
+    lane: str,
     task: dict[str, Any],
     event: dict[str, Any],
     status: str,
@@ -191,8 +194,8 @@ def write_projection(
 ) -> None:
     now = utc_now()
     existing = store.row(
-        "SELECT * FROM claude_native_tasks WHERE product_slug = ? AND task_id = ?",
-        (product, task["task_id"]),
+        "SELECT * FROM claude_native_tasks WHERE lane_slug = ? AND task_id = ?",
+        (lane, task["task_id"]),
     )
     existing_metadata = existing.get("metadata", {}) if existing else {}
     metadata = {**existing_metadata, **task["metadata"]}
@@ -211,13 +214,13 @@ def write_projection(
     store.conn.execute(
         """
         INSERT INTO claude_native_tasks
-          (product_slug, task_id, session_id, transcript_path, cwd, task_subject,
+          (lane_slug, task_id, session_id, transcript_path, cwd, task_subject,
            task_description, status, actor, teammate_name, team_name, mission_id,
            node_id, owner_role, acceptance_criteria, evidence_required, verifier_role,
            risk_level, metadata_json, created_event_id, completed_event_id, created_at,
            updated_at, completed_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(product_slug, task_id) DO UPDATE SET
+        ON CONFLICT(lane_slug, task_id) DO UPDATE SET
           session_id = excluded.session_id,
           transcript_path = excluded.transcript_path,
           cwd = excluded.cwd,
@@ -241,7 +244,7 @@ def write_projection(
           completed_at = excluded.completed_at
         """,
         (
-            product,
+            lane,
             task["task_id"],
             task["session_id"] or (existing.get("session_id") if existing else None),
             task["transcript_path"] or (existing.get("transcript_path") if existing else None),
@@ -285,7 +288,7 @@ def handle(data: dict[str, Any]) -> int:
         emit_system_message(message)
         return 0
 
-    product = product_slug()
+    lane = lane_slug()
     actor = actor_for(data, task)
     status = "completed" if event_name == "TaskCompleted" else "created"
     missing = missing_metadata(task["metadata"]) if status == "created" else []
@@ -310,14 +313,14 @@ def handle(data: dict[str, Any]) -> int:
     store = Store()
     event = store.append_event(
         f"claude_task.{status}",
-        product,
+        lane,
         "claude_native_task",
         task["task_id"],
         actor,
         payload,
         source=SOURCE,
     )
-    write_projection(store, product, task, event, status, actor)
+    write_projection(store, lane, task, event, status, actor)
 
     if missing:
         message = metadata_message(missing)

@@ -68,14 +68,14 @@ in the authed card (pinned by a source-scan vitest in `course.test.ts`).
    table), minus retired + instance-test lanes (already reef buoys).
    Undeclared pseudo-lanes (e.g. `world-onboarding-v1b`) get no course.
 6. **Honest drift verdict: MISSING** — "is crew actually working this lane
-   this week" is NOT claimable: `org_events.product_slug` exists and is
+   this week" is NOT claimable: `org_events.lane_slug` exists and is
    indexed but carries only `{captains-cabinet, default}` (no lane slug has
    ever been stamped; zero 7d `work_item_completed` rows per lane), the
    census keyframe has no per-lane field, and lane work lives in external
    repos. The drift gauge renders **grey "unmeasured"** with the exact copy
    pinned in `DRIFT_UNMEASURED_COPY`; the named future emitter: work-routing
    emitters stamp real lane slugs into the already-indexed
-   `org_events.product_slug` column, then `world-census.py` gains per-lane
+   `org_events.lane_slug` column, then `world-census.py` gains per-lane
    int keys (int-only keys satisfy the census PII fence).
 7. **Voyage** — boat position is a pure function of (course state, last
    port-call date, server-stamped `todayISO` from the engine route — the

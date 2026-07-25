@@ -424,7 +424,7 @@ entries:
     tier: T0
     replay: git
     codex:
-      represents: "The honest reduction, declared outright: docked_refitting = >=1 active outcome (an OPEN WINDOW in the ledger — a ledger claim, never a work claim); adrift = the lane holds a direction in directions.yml with zero active outcomes and is not retired (exactly the renewal-loop gap the directions contract header names); tacking = an achieved flip within TACKING_WINDOW_DAYS=14 (port-calls artifact) with an active successor window. Whether crew is ACTUALLY working the lane this week is UNMEASURED — no per-lane work signal exists (org_events.product_slug carries only captains-cabinet|default) — so the drift gauge renders grey unmeasured on the card, never a course state."
+      represents: "The honest reduction, declared outright: docked_refitting = >=1 active outcome (an OPEN WINDOW in the ledger — a ledger claim, never a work claim); adrift = the lane holds a direction in directions.yml with zero active outcomes and is not retired (exactly the renewal-loop gap the directions contract header names); tacking = an achieved flip within TACKING_WINDOW_DAYS=14 (port-calls artifact) with an active successor window. Whether crew is ACTUALLY working the lane this week is UNMEASURED — no per-lane work signal exists (org_events.lane_slug carries only captains-cabinet|default) — so the drift gauge renders grey unmeasured on the card, never a course state."
       mechanism_path: "instance/config/outcomes.yml"
       day0: "open water — no courses, no states"
   - id: harbor_boat_voyage

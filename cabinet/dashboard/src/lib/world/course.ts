@@ -13,7 +13,7 @@
  *   adrift           — the lane holds a direction with zero active outcomes
  *                      and is not retired: the renewal-loop gap made visible.
  * Whether crew is ACTUALLY working a lane this week is UNMEASURED (no
- * per-lane work signal exists — org_events.product_slug carries only
+ * per-lane work signal exists — org_events.lane_slug carries only
  * captains-cabinet|default) and renders grey on the card, never a state.
  *
  * PURE by doctrine: no clocks (todayISO arrives as server data through the
@@ -173,7 +173,7 @@ export interface ChartTableCard {
  * NAMED, the gauge never invents a reading). */
 export const DRIFT_UNMEASURED_COPY =
   'unmeasured — no per-lane work-distribution signal exists yet ' +
-  '(org_events.product_slug carries only captains-cabinet|default)'
+  '(org_events.lane_slug carries only captains-cabinet|default)'
 
 /**
  * Build the direction-chart card content (WHAT arrives separately as the

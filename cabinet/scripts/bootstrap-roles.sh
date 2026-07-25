@@ -109,7 +109,7 @@ if [ -z "$PRODUCT_SLUG" ]; then
   exit 1
 fi
 
-echo "[bootstrap-roles] product_slug=$PRODUCT_SLUG"
+echo "[bootstrap-roles] lane_slug=$PRODUCT_SLUG"
 echo "[bootstrap-roles] CABINET_ROOT=$CABINET_ROOT"
 
 # -----------------------------------------------------------------------------
@@ -125,8 +125,8 @@ mkdir -p "$ACTIVE_DIR"
 # `roles define` CLI path uses — appends a proper org_event (role.updated /
 # role.retired) + lineage row, then bumps the org_roles row. org_events is
 # append-only; never edit the ledger directly.
-#   org_roles_sync update <product_slug> <slug> <title> <caps_csv> <auth>
-#   org_roles_sync retire <product_slug> <slug>
+#   org_roles_sync update <lane_slug> <slug> <title> <caps_csv> <auth>
+#   org_roles_sync retire <lane_slug> <slug>
 org_roles_sync() {
   local op="$1" pslug="$2" slug="$3" title="${4:-}" caps="${5:-}" auth="${6:-}"
   OP="$op" PSLUG="$pslug" RSLUG="$slug" RTITLE="$title" RCAPS="$caps" RAUTH="$auth" \
@@ -142,7 +142,7 @@ pslug = os.environ["PSLUG"]
 slug = os.environ["RSLUG"]
 store = Store()
 row = store.row(
-    "SELECT * FROM org_roles WHERE product_slug = ? AND role_slug = ?", (pslug, slug)
+    "SELECT * FROM org_roles WHERE lane_slug = ? AND role_slug = ?", (pslug, slug)
 )
 if row is None:
     print(f"[bootstrap-roles] WARN {slug}: no org_roles row under product '{pslug}' — nothing to {op}")
@@ -169,7 +169,10 @@ if op == "update":
         raise SystemExit(0)
     new_version = int(row["version"]) + 1
     payload = {
-        "product_slug": pslug,
+        # Payload vocabulary follows the column (renamed 2026-07-25). Nothing
+        # reads this key; org_events is append-only, so rows written before
+        # the rename keep their original spelling untouched.
+        "lane_slug": pslug,
         "role_slug": slug,
         "old_version": row["version"],
         "new_version": new_version,
@@ -184,7 +187,7 @@ if op == "update":
         UPDATE org_roles
            SET role_name = ?, capabilities_json = ?, authority_level = ?,
                state = 'active', version = ?, latest_event_id = ?, updated_at = ?
-         WHERE product_slug = ? AND role_slug = ?
+         WHERE lane_slug = ? AND role_slug = ?
         """,
         (title, as_json(caps), auth, new_version, event["event_id"], now, pslug, slug),
     )
@@ -200,7 +203,7 @@ elif op == "retire":
         raise SystemExit(0)
     new_version = int(row["version"]) + 1
     payload = {
-        "product_slug": pslug,
+        "lane_slug": pslug,
         "role_slug": slug,
         "old_version": row["version"],
         "new_version": new_version,
@@ -214,7 +217,7 @@ elif op == "retire":
         """
         UPDATE org_roles
            SET state = 'retired', version = ?, latest_event_id = ?, updated_at = ?
-         WHERE product_slug = ? AND role_slug = ?
+         WHERE lane_slug = ? AND role_slug = ?
         """,
         (new_version, event["event_id"], now, pslug, slug),
     )
@@ -255,7 +258,7 @@ seed_role() {
 # org_roles + role_* events; this file is the operational view.
 slug: $slug
 title: $title
-product_slug: $PRODUCT_SLUG
+lane_slug: $PRODUCT_SLUG
 status: active
 model: $model
 officer_type: $otype
@@ -396,9 +399,12 @@ for role_yml in "$ACTIVE_DIR"/*.yml; do
     *" $slug "*) continue ;;   # in roster — keep
   esac
   if [ "$PRUNE" = "1" ]; then
-    # The yml's own product_slug wins (the row may have been seeded under a
-    # different active project than this run's).
-    yml_pslug="$(awk -F': *' '$1=="product_slug"{print $2; exit}' "$role_yml" | tr -d '[:space:]')"
+    # The yml's own lane key wins (the row may have been seeded under a
+    # different active project than this run's). product_slug is the
+    # pre-2026-07-25 spelling — role ymls written before the rename still
+    # carry it, and archiving them must keep retiring the right row.
+    yml_pslug="$(awk -F': *' '$1=="lane_slug"{print $2; exit}' "$role_yml" | tr -d '[:space:]')"
+    [ -n "$yml_pslug" ] || yml_pslug="$(awk -F': *' '$1=="product_slug"{print $2; exit}' "$role_yml" | tr -d '[:space:]')"
     yml_pslug="${yml_pslug:-$PRODUCT_SLUG}"
     mkdir -p "$ARCHIVE_DIR"
     mv "$role_yml" "$ARCHIVE_DIR/$slug.yml"

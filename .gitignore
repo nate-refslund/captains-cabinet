@@ -67,7 +67,7 @@ instance/memory/tier2/**/.session-state.json
 # Durable role state — seeded by cabinet/scripts/bootstrap-roles.sh on
 # first deployment (called from setup-mac.sh Step 5.5). Source of truth
 # is the script + presets/<active>/agents/. Do NOT commit the per-
-# deployment seeded YAML — they encode product_slug + auth level chosen
+# deployment seeded YAML — they encode lane_slug + auth level chosen
 # at activation time.
 instance/roles/active/*.yml
 instance/roles/archive/*.yml

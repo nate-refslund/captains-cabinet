@@ -206,11 +206,11 @@ import sqlite3
 import sys
 
 conn = sqlite3.connect(sys.argv[1])
-missing_product = conn.execute(
-    "SELECT COUNT(*) FROM role_lineage_events WHERE product_slug IS NULL OR product_slug = ''"
+missing_lane = conn.execute(
+    "SELECT COUNT(*) FROM role_lineage_events WHERE lane_slug IS NULL OR lane_slug = ''"
 ).fetchone()[0]
-if missing_product:
-    raise SystemExit(f"role lineage rows missing product_slug: {missing_product}")
+if missing_lane:
+    raise SystemExit(f"role lineage rows missing lane_slug: {missing_lane}")
 
 checks = [
     "UPDATE role_lineage_events SET note='mutated'",

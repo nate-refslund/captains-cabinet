@@ -166,6 +166,22 @@ RESERVED_SLUGS = {"cos", "cto", "cpo", "cro", "coo", "main", "_template"}
 
 ORG_SHAPES = ("portfolio", "functional", "custom")
 
+# The COMPANY shape — the three questions every business can answer, asked of
+# the org as a whole (top-level `company:`) and of each lane. They are the
+# FIRST conversation the cabinet has with its captain, and they deliberately
+# presume nothing: a consultancy, a household, a charity and a software shop
+# all answer all three. The ESTATE keys below (repos, task systems, boards,
+# database/hosting project names) are a FOLLOW-UP branch the interview only
+# opens when the answers describe building or running software — asking a
+# services business for its repos is the product-tool tell this shape exists
+# to remove. Both blocks stay optional so older answers files still generate.
+SHAPE_KEYS = (("does", "Does"), ("serves", "Serves"), ("owes", "Owes"))
+ESTATE_KEYS = ("repos", "task_system", "boards", "neon_project", "vercel_project")
+# Free text, so it may contain anything a captain types — every value is
+# scanned by _scan_for_secrets and every rendering goes through the YAML
+# escaping helpers (_indent_block for block scalars, _yaml_free for inline).
+SHAPE_MAX_LEN = 400
+
 # Secret shapes the generator refuses to persist anywhere. Config carries
 # env-var NAMES only; values live in the gitignored cabinet/.env.
 SECRET_PATTERNS = [
@@ -267,6 +283,33 @@ def _req(d: dict, key: str, where: str) -> object:
     return d[key]
 
 
+def _check_shape(block: object, where: str) -> None:
+    """Validate the optional company-shape answers (does / serves / owes) on
+    any answers block. Absent is fine everywhere — these questions exist to be
+    ASKED, and a captain who has not answered yet must still be able to
+    generate. A present answer must be a one-line string: a list or mapping
+    here means the interview mis-assembled the file, and a newline would break
+    out of the inline YAML scalars the project renderer writes."""
+    if block is None:
+        return
+    if not isinstance(block, dict):
+        raise GenerationError(f"{where} must be a mapping")
+    for key, _label in SHAPE_KEYS:
+        if key not in block or block[key] is None:
+            continue
+        value = block[key]
+        if not isinstance(value, str):
+            raise GenerationError(
+                f"{where}.{key} must be a single line of prose (got "
+                f"{type(value).__name__}) — say it the way you would say it aloud"
+            )
+        if "\n" in value or len(value) > SHAPE_MAX_LEN:
+            raise GenerationError(
+                f"{where}.{key} must be ONE line of at most {SHAPE_MAX_LEN} "
+                f"characters (got {len(value)}) — keep it to a sentence"
+            )
+
+
 def load_answers(path: Path) -> dict:
     if not path.is_file():
         raise GenerationError(
@@ -326,6 +369,12 @@ def load_answers(path: Path) -> dict:
     if not re.match(r"^[a-z0-9][a-z0-9.\[\]-]{0,63}$", model):
         raise GenerationError(f"cabinet.officer_model {model!r} has an unexpected shape")
 
+    # The company shape (optional block; absent = an older answers file, or a
+    # captain who has not answered yet). Free prose, one line each — validated
+    # for TYPE and LENGTH only, never for content: the whole point is that the
+    # captain describes the business in their own words.
+    _check_shape(answers.get("company"), "company")
+
     lanes = answers.get("lanes")
     if not isinstance(lanes, list) or not lanes:
         raise GenerationError("answers must declare at least one lane under lanes:")
@@ -356,6 +405,7 @@ def load_answers(path: Path) -> dict:
         boards = lane.get("boards") or []
         if not isinstance(boards, list):
             raise GenerationError(f"lanes[{i}].boards must be a list")
+        _check_shape(lane, f"lanes[{i}]")
 
     integrations = answers.get("integrations") or {}
     tg = integrations.get("telegram") or {}
@@ -464,16 +514,46 @@ def _indent_block(text: str, indent: str = "  ") -> str:
     return "\n".join(indent + line if line.strip() else line for line in text.strip().splitlines())
 
 
-def render_context(lane: dict) -> str:
+def shape_sentences(block: dict, fallback: dict | None = None) -> list[str]:
+    """The company-shape answers of one block, as sentences, in the captain's
+    own words. A lane that did not restate an answer inherits the company's
+    (a single-lane cabinet IS the business). Absent answers simply do not
+    appear — the description never invents a business it was not told about."""
+    fallback = fallback or {}
+    out = []
+    for key, label in SHAPE_KEYS:
+        value = str(block.get(key) or fallback.get(key) or "").strip()
+        if value:
+            out.append(f"{label}: {value.rstrip('.')}.")
+    return out
+
+
+def estate_sentence(lane: dict) -> str:
+    """The software-estate recital — repos and boards — emitted ONLY when the
+    lane actually declared an estate. A services or community lane declares
+    none, and its description must not carry an empty "(none declared)"
+    inventory: that recital is what made the seed surface read as a product
+    tool for orgs that ship no product."""
+    repos = ", ".join(str(r) for r in (lane.get("repos") or []) if str(r).strip())
+    boards = ", ".join(str(b) for b in (lane.get("boards") or []) if str(b).strip())
+    parts = ([f"repo(s) {repos}"] if repos else []) + ([f"task board(s) {boards}"] if boards else [])
+    return f"Software estate: {'; '.join(parts)}." if parts else ""
+
+
+def render_context(lane: dict, company: dict | None = None) -> str:
     name = lane["name"]
     slug = lane["slug"]
     capacity = lane.get("capacity", "work")
-    repos = ", ".join(str(r) for r in (lane.get("repos") or [])) or "(none declared)"
-    boards = ", ".join(str(b) for b in (lane.get("boards") or [])) or "(none declared)"
-    desc = lane.get("description") or (
-        f"{name} lane. Repo(s): {repos}. Task board(s): {boards}. "
-        f"Declared by cabinet-init for this instance; inactive until the "
-        f"Captain explicitly activates it."
+    shape = shape_sentences(lane, company or {})
+    estate = estate_sentence(lane)
+    undescribed = (
+        "Not described yet — re-run cabinet-init to say what this lane does, "
+        "who it serves, and what it owes them."
+    )
+    desc = lane.get("description") or " ".join(
+        [f"{name} lane."] + (shape or [undescribed]) + ([estate] if estate else [])
+        + ["Declared by cabinet-init for this instance; inactive until the "
+           "Captain explicitly activates it."]
     )
     return f"""# {MARKER} — lane context declaration (regenerate via
 # cabinet/scripts/generate-instance.py; answers in cabinet-init.answers.yml)
@@ -491,9 +571,13 @@ active: false
 """
 
 
-def render_project(lane: dict, integrations: dict) -> str:
+def render_project(lane: dict, integrations: dict, company: dict | None = None) -> str:
     name = lane["name"]
     slug = lane["slug"]
+    # The lane's one-line self-description: an explicit one_liner wins, else
+    # what the lane says it DOES (the company-shape answer), else its name.
+    one_liner = str(lane.get("one_liner") or "").strip() or str(
+        lane.get("does") or (company or {}).get("does") or "").strip()
     repos = [str(r) for r in (lane.get("repos") or [])]
     repo = repos[0] if repos else ""
     extra_repos = ""
@@ -551,7 +635,7 @@ def render_project(lane: dict, integrations: dict) -> str:
 
 product:
   name: {name}
-  description: {_yaml_free(lane.get('one_liner') or name + ' lane')}
+  description: {_yaml_free(one_liner or name + ' lane')}
   repo: {repo}
   repo_branch: {lane.get('repo_branch', 'main')}
   mount_path: /workspace/product   # mac-native checkout path decided at activation
@@ -930,7 +1014,8 @@ posture: {posture}
 EXAMPLE_ANSWERS = """\
 # instance/config/cabinet-init.answers.yml — cabinet-init interview answers.
 # Written by the cabinet-init skill; consumed by cabinet/scripts/generate-instance.py.
-# NAMES AND IDS ONLY — never tokens, keys, or connection strings (the
+# The captain's own PROSE (what the business does, who it serves, what it
+# owes) plus NAMES AND IDS — never tokens, keys, or connection strings (the
 # generator refuses values that look like secrets; real values go in the
 # gitignored cabinet/.env).
 version: 1
@@ -946,21 +1031,38 @@ cabinet:
   org_shape: portfolio           # portfolio | functional | custom
   officer_model: claude-opus-4-8[1m]
 
+# The COMPANY — the first conversation, and the one that presumes nothing.
+# Three questions any business can answer in its own words. A consultancy, a
+# family household, a charity and a software shop all answer all three.
+# Optional (an unanswered cabinet still generates), one line each.
+company:
+  does: We repair and service commercial coffee machines across the region.
+  serves: Cafes, offices and two hotel groups on service contracts.
+  owes: A same-week callout on every contract site, and parts warranty for a year.
+
 lanes:
-  - name: Acme Storefront
-    slug: acme-store
-    repos: ["acme/storefront"]   # org/name or URL; first repo becomes product.repo
+  # A lane is an area of work the cabinet runs. Same three questions per lane;
+  # a lane that does not restate one inherits the company's answer.
+  - name: Service Contracts
+    slug: service-contracts
+    does: Scheduled servicing and callouts for contract customers.
+    serves: The 40 sites on an annual contract.
+    owes: A same-week callout, and a written service record per visit.
+
+  # SOFTWARE ESTATE — a FOLLOW-UP branch, not a standard question. The
+  # interview only asks for these once a lane's answers describe building or
+  # running software; lanes that ship no software (like the one above) declare
+  # NONE of them, and the generator writes no empty inventory for them.
+  - name: Booking App
+    slug: booking-app
+    does: The customer booking and callout-tracking app.
+    serves: Contract customers booking their own callouts.
+    owes: Same-day booking confirmation.
+    repos: ["acme/booking-app"]  # org/name or URL; first repo becomes product.repo
     task_system: "plugin:dev-tasks"   # plugin:<name> | linear | github-issues | none
     boards: ["12345678"]       # board/team ids in the task system
-    neon_project: acme-store-db  # NAME only
-    vercel_project: storefront   # NAME only
-  - name: Acme Labs
-    slug: acme-labs
-    repos: ["acme/labs"]
-    task_system: linear
-    linear_team_key: labs
-    linear_workspace_url: https://linear.app/acme-labs
-    boards: ["labs"]
+    neon_project: acme-booking-db  # NAME only
+    vercel_project: booking        # NAME only
 
 # Guardian at init, always: propose-first everywhere, plus the hard ceiling
 # (secrets / spend / external comms / production deploys never resolve
@@ -1041,9 +1143,23 @@ cabinet:
   org_shape: portfolio           # one Chair + on-demand lane CEOs
   officer_model: {DEFAULT_MODEL}
 
+# The COMPANY — deliberately left BLANK, never guessed. Three questions any
+# business can answer; the zero-question lane asked none of them, so it
+# invents no answers. Fill them in (one line each) and re-run WITHOUT
+# --defaults, or run the cabinet-init interview, which asks them first.
+company:
+  does: ""                       # what this business does
+  serves: ""                     # who it serves
+  owes: ""                       # what it owes them
+
 lanes:
-  - name: {DEFAULTS_LANE_NAME}             # placeholder lane — rename to your first real product
+  - name: {DEFAULTS_LANE_NAME}             # placeholder lane — rename to your first real area of work
     slug: {DEFAULTS_LANE_SLUG}
+    does: ""                     # what this lane does
+    serves: ""                   # who it serves
+    owes: ""                     # what it owes them
+    # SOFTWARE ESTATE — only for lanes that build or run software; a lane that
+    # ships none leaves these out entirely.
     repos: []
     task_system: none
     boards: []
@@ -1192,6 +1308,7 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
     model = str(cabinet.get("officer_model", DEFAULT_MODEL))
     lanes = answers["lanes"]
     integrations = answers.get("integrations") or {}
+    company = answers.get("company") or {}
 
     # Inherited-instance signal: an existing platform.yml carrying a DIFFERENT
     # captain than the answers means this instance/ likely shipped from a
@@ -1237,11 +1354,11 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
     for lane in lanes:
         outputs.append((
             _instance_path(root, "config", "contexts", f"{lane['slug']}.yml"),
-            render_context(lane), "yaml",
+            render_context(lane, company), "yaml",
         ))
         outputs.append((
             _instance_path(root, "config", "projects", f"{lane['slug']}.yml"),
-            render_project(lane, integrations), "yaml",
+            render_project(lane, integrations, company), "yaml",
         ))
 
     if org_shape == "portfolio":

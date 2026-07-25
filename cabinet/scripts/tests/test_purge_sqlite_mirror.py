@@ -79,7 +79,7 @@ def _build_fixture(db_path: Path) -> None:
     for event_id, event_type, actor, payload in DROP_ROWS + KEEP_ROWS:
         store.append_event(
             event_type=event_type,
-            product_slug="captains-cabinet",
+            lane_slug="captains-cabinet",
             aggregate_type="work_item",
             aggregate_id=payload.get("task_ref") or payload.get("subject") or "unknown",
             actor=actor,
@@ -98,7 +98,7 @@ def _add_unparseable_row(db_path: Path, event_id: str = "u1") -> None:
     """
     conn = sqlite3.connect(str(db_path))
     conn.execute(
-        "INSERT INTO org_events (event_id, event_type, product_slug,"
+        "INSERT INTO org_events (event_id, event_type, lane_slug,"
         " aggregate_type, aggregate_id, actor, source, payload_json,"
         " supersedes_event_id, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
         (event_id, "work_item_completed", "captains-cabinet", "work_item",
@@ -118,13 +118,13 @@ def _add_fk_reference(db_path: Path, junk_event_id: str) -> None:
     """
     conn = sqlite3.connect(str(db_path))
     conn.execute(
-        "INSERT INTO captain_outcomes (outcome_id, product_slug, title,"
+        "INSERT INTO captain_outcomes (outcome_id, lane_slug, title,"
         " metric_name, target_value, state, proposed_by, created_at,"
         " updated_at) VALUES ('o1','captains-cabinet','t','m',1,'ratified',"
         "'captain','2026-06-18T15:00:00Z','2026-06-18T15:00:00Z')"
     )
     conn.execute(
-        "INSERT INTO missions (mission_id, outcome_id, product_slug, title,"
+        "INSERT INTO missions (mission_id, outcome_id, lane_slug, title,"
         " state, created_at, updated_at) VALUES ('m1','o1','captains-cabinet',"
         "'t','compiled','2026-06-18T15:00:00Z','2026-06-18T15:00:00Z')"
     )
@@ -345,7 +345,7 @@ class TestPurge:
         store = Store(path=db)
         for event_id, event_type, actor, payload in KEEP_ROWS:
             store.append_event(
-                event_type=event_type, product_slug="captains-cabinet",
+                event_type=event_type, lane_slug="captains-cabinet",
                 aggregate_type="work_item", aggregate_id="x", actor=actor,
                 payload=payload, source="framework", event_id=event_id,
             )
@@ -364,7 +364,7 @@ class TestPurge:
         store = Store(path=db)
         for event_id, event_type, actor, payload in KEEP_ROWS:
             store.append_event(
-                event_type=event_type, product_slug="captains-cabinet",
+                event_type=event_type, lane_slug="captains-cabinet",
                 aggregate_type="work_item", aggregate_id="x", actor=actor,
                 payload=payload, source="framework", event_id=event_id,
             )

@@ -19,7 +19,7 @@ Cards carry WHAT / WHY / PROOF-expected lines per the hatching design
 (docs/plans/world-onboarding-hatching-2026-07-09.md §4.2; interview
 seed-outcomes are superseded — the org earns proposals by deriving them).
 
-ONBOARD-2 — ``research_brief``: a genesis company/market/product brief into the
+ONBOARD-2 — ``research_brief``: a genesis company and market brief into the
 Library's genesis shelf (``instance/memory/library/genesis-research-brief.md``)
 WHEN the local ``claude`` CLI is present, authenticated, and the network is up
 — invoked via a FIXED argv (never a shell string), short timeout, graceful
@@ -234,12 +234,12 @@ def propose_outcome_cards(answers: dict, focus_text: str | None = None) -> list[
 
     cards.append({
         "id": "proposed-library-grounding",
-        "name": "The Library grounds the org: ratified company/market/product brief",
+        "name": "The Library grounds the org: ratified company and market brief",
         "lane": None,
         "what": (
             "The genesis research brief is reviewed by the Captain, corrected "
             "where wrong, and ratified into the Library as the org's baseline "
-            "understanding of its products and market."
+            "understanding of the business it is in and the market around it."
         ),
         "why": (
             "Gather-then-decide is org doctrine: an org that acts before it "
@@ -450,31 +450,33 @@ def run_genesis_proposal(root: Path | None = None, *, now: str | None = None) ->
 # ---------------------------------------------------------------------------
 # ONBOARD-2 — genesis research brief into the Library (or an honest IOU).
 # ---------------------------------------------------------------------------
+# The brief asks about a BUSINESS, never about presumed products — a
+# consultancy, a charity and a corner shop all hatch through this same prompt.
 def build_brief_prompt(answers: dict) -> str:
-    """The research-brief prompt — NAMES ONLY from the answers (lane names,
-    repo refs, org shape, cabinet id). Never env values, never addresses."""
+    """NAMES ONLY: lane names, their does/serves/owes words, repos, shape, id."""
     cabinet = answers.get("cabinet") or {}
     lanes = [ln for ln in (answers.get("lanes") or []) if isinstance(ln, dict)]
     lane_lines = []
     for lane in lanes:
         name = str(lane.get("name") or lane.get("slug") or "").strip()
-        repos = ", ".join(str(r) for r in (lane.get("repos") or []) if str(r).strip())
-        lane_lines.append(f"- {name}" + (f" (repos: {repos})" if repos else ""))
-    lanes_block = "\n".join(lane_lines) or "- (no product lanes declared yet)"
+        shape = {k: lane.get(k) for k in ("does", "serves", "owes")}
+        shape["repos"] = ", ".join(str(r) for r in (lane.get("repos") or []) if str(r).strip())
+        facts = "; ".join(f"{k}: {str(v).strip()}" for k, v in shape.items() if str(v or "").strip())
+        lane_lines.append(f"- {name}" + (f" ({facts})" if facts else ""))
+    lanes_block = "\n".join(lane_lines) or "- (no lanes declared yet)"
     return (
-        "You are the research organ of a newly hatched autonomous AI cabinet "
-        f"(deployment id: {cabinet.get('id') or 'unknown'}, org shape: "
-        f"{cabinet.get('org_shape') or 'unknown'}). Write a concise "
-        "company/market/product research brief (~600 words, markdown) for the "
-        "product lanes below.\n\nLanes:\n" + lanes_block + "\n\n"
-        "Cover per lane: what the product most plausibly is, the market it "
-        "sits in, adjacent competitors worth watching, and the 3 most valuable "
-        "open research questions the officers should answer first.\n"
-        "OUTPUT RULES: reply with the brief text itself — do not attempt to "
-        "write files or use tools.\n"
-        "HONESTY RULES: you have no live web access — mark every inference as "
-        "such, say 'unknown' where you do not know, and NEVER invent specific "
-        "facts (figures, customers, funding) about these particular products."
+        "You are the research organ of a newly hatched autonomous AI cabinet (deployment id: "
+        f"{cabinet.get('id') or 'unknown'}, org shape: {cabinet.get('org_shape') or 'unknown'}). "
+        "Write a concise company and market research brief (~600 words, markdown) for the "
+        "lanes of work below. Whatever this business is, take it as given — never assume it "
+        "builds or sells software.\n\nLanes:\n" + lanes_block + "\n\nCover per lane: what "
+        "that work most plausibly is, who it is for, the market or field it sits in, "
+        "adjacent organisations worth watching, and the 3 most valuable open research "
+        "questions the officers should answer first.\nOUTPUT RULES: reply with the brief "
+        "text itself — do not attempt to write files or use tools.\nHONESTY RULES: you "
+        "have no live web access — mark every inference as such, say 'unknown' where you "
+        "do not know, and NEVER invent specific facts (figures, customers, funding) about "
+        "this particular business."
     )
 
 

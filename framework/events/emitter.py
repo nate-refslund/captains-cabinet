@@ -439,11 +439,11 @@ def _write_to_db(event: dict[str, Any]) -> None:
     """Insert event into Postgres org_events table if DATABASE_URL is set.
 
     Column shape matches cabinet/sql/045-org-runtime-slice.sql (the canonical
-    production schema): event_id, event_type, product_slug, aggregate_type,
+    production schema): event_id, event_type, lane_slug, aggregate_type,
     aggregate_id, actor, source, payload, supersedes_event_id, created_at.
 
     F3 unification: the same event_id, aggregate_type, aggregate_id and
-    product_slug are used as the org_runtime.Store mirror, so an event has
+    lane_slug are used as the org_runtime.Store mirror, so an event has
     ONE authoritative id across JSONL, Postgres, and the Store SQLite.
 
     Note: parent_id (a framework-local field) is mapped to
@@ -455,7 +455,7 @@ def _write_to_db(event: dict[str, Any]) -> None:
         return
 
     agg_type, agg_id = _resolve_aggregate(event["event_type"], event["payload"])
-    product_slug = _resolve_product_slug()
+    lane_slug = _resolve_lane_slug()
 
     try:
         import psycopg2
@@ -463,14 +463,14 @@ def _write_to_db(event: dict[str, Any]) -> None:
         with conn.cursor() as cur:
             cur.execute(
                 """INSERT INTO org_events (
-                       event_id, event_type, product_slug, aggregate_type,
+                       event_id, event_type, lane_slug, aggregate_type,
                        aggregate_id, actor, source, payload,
                        supersedes_event_id, created_at
                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     event["id"],
                     event["event_type"],
-                    product_slug,
+                    lane_slug,
                     agg_type,
                     agg_id,
                     event["actor"],
@@ -605,8 +605,11 @@ def _resolve_aggregate(event_type: str, payload: dict[str, Any]) -> tuple[str, s
     return (agg_type, str(payload.get("id", "unknown")))
 
 
-def _resolve_product_slug() -> str:
-    """Resolve product_slug for the Store schema (env > active-project.txt > 'default')."""
+def _resolve_lane_slug() -> str:
+    """Resolve lane_slug for the Store schema (env > active-project.txt > 'default')."""
+    # The ENV KNOB keeps its legacy name: it is shared with framework.learning
+    # capability-gap routing, so renaming it is a separate, wider change than
+    # the 2026-07-25 column rename.
     slug = os.environ.get("CABINET_PRODUCT_SLUG")
     if slug:
         return slug
@@ -654,7 +657,7 @@ def _write_to_store(event: dict[str, Any]) -> None:
         # minted its own uuid → divergent ids across ledgers.
         store.append_event(
             event_type=event["event_type"],
-            product_slug=_resolve_product_slug(),
+            lane_slug=_resolve_lane_slug(),
             aggregate_type=agg_type,
             aggregate_id=agg_id,
             actor=event["actor"],

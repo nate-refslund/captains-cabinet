@@ -224,7 +224,7 @@ class TestEventTypes:
 from framework.events.emitter import (
     _event_log_dir,
     _resolve_aggregate,
-    _resolve_product_slug,
+    _resolve_lane_slug,
     _write_to_store,
     _AGGREGATE_MAP,
 )
@@ -290,7 +290,7 @@ class TestAggregateResolution:
 class TestProductSlugResolution:
     def test_env_var_wins(self, monkeypatch):
         monkeypatch.setenv("CABINET_PRODUCT_SLUG", "myproduct")
-        assert _resolve_product_slug() == "myproduct"
+        assert _resolve_lane_slug() == "myproduct"
 
     def test_active_project_file(self, monkeypatch, tmp_path):
         monkeypatch.delenv("CABINET_PRODUCT_SLUG", raising=False)
@@ -298,12 +298,12 @@ class TestProductSlugResolution:
         cfg = tmp_path / "instance" / "config"
         cfg.mkdir(parents=True)
         (cfg / "active-project.txt").write_text("alpha-project\n")
-        assert _resolve_product_slug() == "alpha-project"
+        assert _resolve_lane_slug() == "alpha-project"
 
     def test_default_when_nothing_set(self, monkeypatch):
         monkeypatch.delenv("CABINET_PRODUCT_SLUG", raising=False)
         monkeypatch.delenv("CABINET_ROOT", raising=False)
-        assert _resolve_product_slug() == "default"
+        assert _resolve_lane_slug() == "default"
 
     def test_empty_active_project_falls_back(self, monkeypatch, tmp_path):
         monkeypatch.delenv("CABINET_PRODUCT_SLUG", raising=False)
@@ -311,7 +311,7 @@ class TestProductSlugResolution:
         cfg = tmp_path / "instance" / "config"
         cfg.mkdir(parents=True)
         (cfg / "active-project.txt").write_text("   \n")  # whitespace only
-        assert _resolve_product_slug() == "default"
+        assert _resolve_lane_slug() == "default"
 
 
 class TestStoreMirrorGating:
@@ -390,7 +390,7 @@ class TestEventIdPassthrough:
         try:
             rows = conn.execute(
                 "SELECT event_id, event_type, actor, aggregate_type, "
-                "aggregate_id, product_slug, source FROM org_events"
+                "aggregate_id, lane_slug, source FROM org_events"
             ).fetchall()
         finally:
             conn.close()
@@ -405,7 +405,7 @@ class TestEventIdPassthrough:
     def test_store_mirror_propagates_resolved_fields(
         self, monkeypatch, tmp_path
     ):
-        """aggregate_type, aggregate_id, product_slug, source must propagate."""
+        """aggregate_type, aggregate_id, lane_slug, source must propagate."""
         import sqlite3
 
         db_path = tmp_path / "org-runtime-resolve.sqlite3"
@@ -423,16 +423,16 @@ class TestEventIdPassthrough:
         conn = sqlite3.connect(str(db_path))
         try:
             row = conn.execute(
-                "SELECT aggregate_type, aggregate_id, product_slug, source, "
+                "SELECT aggregate_type, aggregate_id, lane_slug, source, "
                 "event_type FROM org_events"
             ).fetchone()
         finally:
             conn.close()
 
-        agg_type, agg_id, product_slug, source, event_type = row
+        agg_type, agg_id, lane_slug, source, event_type = row
         assert agg_type == "work_item"
         assert agg_id == "outcome-001-task-007"
-        assert product_slug == "vertical-slice"
+        assert lane_slug == "vertical-slice"
         assert source == "framework"
         assert event_type == "work_item_completed"
 
@@ -456,7 +456,7 @@ class TestEventIdPassthrough:
         store = Store()
         event_a = store.append_event(
             event_type="role_created",
-            product_slug="p",
+            lane_slug="p",
             aggregate_type="role",
             aggregate_id="eng",
             actor="captain",
@@ -464,7 +464,7 @@ class TestEventIdPassthrough:
         )
         event_b = store.append_event(
             event_type="role_created",
-            product_slug="p",
+            lane_slug="p",
             aggregate_type="role",
             aggregate_id="ops",
             actor="captain",
@@ -493,7 +493,7 @@ class TestEventIdPassthrough:
         store = Store()
         result = store.append_event(
             event_type="role_created",
-            product_slug="p",
+            lane_slug="p",
             aggregate_type="role",
             aggregate_id="eng",
             actor="captain",
@@ -508,14 +508,14 @@ class TestPostgresSchemaAlignment:
 
     Pre-R4 bug: emitter wrote (id, event_type, actor, payload, parent_id,
     created_at) but 045-org-runtime-slice.sql defines (event_id, event_type,
-    product_slug, aggregate_type, aggregate_id, actor, source, payload,
+    lane_slug, aggregate_type, aggregate_id, actor, source, payload,
     supersedes_event_id, created_at). Live writes would fail.
     """
 
     REQUIRED_COLUMNS = {
         "event_id",
         "event_type",
-        "product_slug",
+        "lane_slug",
         "aggregate_type",
         "aggregate_id",
         "actor",
@@ -604,7 +604,7 @@ class TestPostgresSchemaAlignment:
         assert params[0] == event["id"]
         # Position 1 = event_type
         assert params[1] == "mission_created"
-        # Position 2 = product_slug
+        # Position 2 = lane_slug
         assert params[2] == "pg-test-product"
         # Position 3 = aggregate_type, Position 4 = aggregate_id
         assert params[3] == "mission"

@@ -4,6 +4,11 @@
 The production contract is the Postgres schema in cabinet/sql/045-*. This
 module uses SQLite for local/CI execution so the first branch can prove the
 whole loop without live Neon credentials.
+
+Every projection here is keyed by ``lane_slug`` — the deployment's own lane,
+whatever kind of work that lane is. The column was called ``product_slug``
+until 2026-07-25; it never held product data, and Store.migrate_lane_key
+renames it in place on any database written before then.
 """
 
 from __future__ import annotations
@@ -21,7 +26,20 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-DEFAULT_PRODUCT = "captains-cabinet"
+DEFAULT_LANE = "captains-cabinet"
+
+# Every table keyed by the lane slug. A HARDCODED tuple, never anything
+# derived from input: it is interpolated into DDL, where SQLite cannot
+# parameterise an identifier. Mirrors cabinet/sql/045-org-runtime-slice.sql.
+LANE_KEYED_TABLES = (
+    "org_events", "captain_outcomes", "missions", "claude_native_tasks",
+    "org_roles", "role_memory_bindings", "role_eval_results",
+    "role_evolution_recommendations", "role_hats", "role_lineage_events",
+    "ovi_weeks", "learning_digests",
+)
+# Indexes whose NAME carried the pre-rename word. Dropped once, then
+# recreated under their lane names by init_schema's own DDL.
+LEGACY_LANE_INDEXES = ("idx_org_events_product_created", "idx_org_roles_product_state")
 
 
 def repo_root() -> Path:
@@ -65,7 +83,36 @@ class Store:
         self.conn.row_factory = sqlite3.Row
         self.init_schema()
 
+    def migrate_lane_key(self) -> list[str]:
+        """Rename the pre-2026-07-25 ``product_slug`` column to ``lane_slug``
+        on any database written before the rename, and return the tables it
+        touched (empty on a fresh or already-migrated store).
+
+        MUST run before init_schema's DDL: the CREATE INDEX statements below
+        name ``lane_slug``, and on an un-migrated database they would fail.
+
+        ``ALTER TABLE ... RENAME COLUMN`` (SQLite >= 3.25, and 3.37+ ships
+        with the pinned interpreter) rewrites the column in place and carries
+        the new name into every index, trigger and foreign key that referenced
+        it — so no row is copied and no history is lost. That matters: this
+        store is the only place the org's event ledger has ever lived, and
+        org_events is append-only by trigger.
+        """
+        migrated = []
+        for table in LANE_KEYED_TABLES:
+            cols = {row[1] for row in self.conn.execute(f"PRAGMA table_info('{table}')")}
+            if "product_slug" in cols and "lane_slug" not in cols:
+                self.conn.execute(
+                    f"ALTER TABLE {table} RENAME COLUMN product_slug TO lane_slug")
+                migrated.append(table)
+        if migrated:
+            for index in LEGACY_LANE_INDEXES:
+                self.conn.execute(f"DROP INDEX IF EXISTS {index}")
+            self.conn.commit()
+        return migrated
+
     def init_schema(self) -> None:
+        self.migrate_lane_key()
         self.conn.executescript(
             """
             PRAGMA foreign_keys = ON;
@@ -73,7 +120,7 @@ class Store:
             CREATE TABLE IF NOT EXISTS org_events (
               event_id TEXT PRIMARY KEY,
               event_type TEXT NOT NULL,
-              product_slug TEXT NOT NULL,
+              lane_slug TEXT NOT NULL,
               aggregate_type TEXT NOT NULL,
               aggregate_id TEXT NOT NULL,
               actor TEXT NOT NULL,
@@ -82,10 +129,10 @@ class Store:
               supersedes_event_id TEXT REFERENCES org_events(event_id),
               created_at TEXT NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS idx_org_events_product_created
-              ON org_events(product_slug, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_org_events_lane_created
+              ON org_events(lane_slug, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_org_events_aggregate
-              ON org_events(product_slug, aggregate_type, aggregate_id, created_at DESC);
+              ON org_events(lane_slug, aggregate_type, aggregate_id, created_at DESC);
 
             CREATE TRIGGER IF NOT EXISTS prevent_org_events_update
             BEFORE UPDATE ON org_events
@@ -101,7 +148,7 @@ class Store:
 
             CREATE TABLE IF NOT EXISTS captain_outcomes (
               outcome_id TEXT PRIMARY KEY,
-              product_slug TEXT NOT NULL,
+              lane_slug TEXT NOT NULL,
               title TEXT NOT NULL,
               metric_name TEXT NOT NULL,
               target_value REAL NOT NULL,
@@ -119,7 +166,7 @@ class Store:
             CREATE TABLE IF NOT EXISTS missions (
               mission_id TEXT PRIMARY KEY,
               outcome_id TEXT NOT NULL REFERENCES captain_outcomes(outcome_id),
-              product_slug TEXT NOT NULL,
+              lane_slug TEXT NOT NULL,
               title TEXT NOT NULL,
               state TEXT NOT NULL CHECK (state IN ('compiled', 'in_progress', 'verified', 'superseded')),
               compiled_event_id TEXT REFERENCES org_events(event_id),
@@ -157,7 +204,7 @@ class Store:
             );
 
             CREATE TABLE IF NOT EXISTS claude_native_tasks (
-              product_slug TEXT NOT NULL,
+              lane_slug TEXT NOT NULL,
               task_id TEXT NOT NULL,
               session_id TEXT,
               transcript_path TEXT,
@@ -181,15 +228,15 @@ class Store:
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL,
               completed_at TEXT,
-              PRIMARY KEY (product_slug, task_id)
+              PRIMARY KEY (lane_slug, task_id)
             );
             CREATE INDEX IF NOT EXISTS idx_claude_native_tasks_mission
-              ON claude_native_tasks(product_slug, mission_id, node_id);
+              ON claude_native_tasks(lane_slug, mission_id, node_id);
             CREATE INDEX IF NOT EXISTS idx_claude_native_tasks_status
-              ON claude_native_tasks(product_slug, status, updated_at DESC);
+              ON claude_native_tasks(lane_slug, status, updated_at DESC);
 
             CREATE TABLE IF NOT EXISTS org_roles (
-              product_slug TEXT NOT NULL,
+              lane_slug TEXT NOT NULL,
               role_slug TEXT NOT NULL,
               role_name TEXT NOT NULL,
               charter TEXT NOT NULL,
@@ -203,27 +250,27 @@ class Store:
               latest_event_id TEXT NOT NULL REFERENCES org_events(event_id),
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL,
-              PRIMARY KEY (product_slug, role_slug)
+              PRIMARY KEY (lane_slug, role_slug)
             );
-            CREATE INDEX IF NOT EXISTS idx_org_roles_product_state
-              ON org_roles(product_slug, state, role_slug);
+            CREATE INDEX IF NOT EXISTS idx_org_roles_lane_state
+              ON org_roles(lane_slug, state, role_slug);
 
             CREATE TABLE IF NOT EXISTS role_memory_bindings (
               binding_id TEXT PRIMARY KEY,
-              product_slug TEXT NOT NULL,
+              lane_slug TEXT NOT NULL,
               role_slug TEXT NOT NULL,
               memory_path TEXT NOT NULL,
               memory_kind TEXT NOT NULL DEFAULT 'tier2',
               bound_event_id TEXT NOT NULL REFERENCES org_events(event_id),
               created_at TEXT NOT NULL,
-              FOREIGN KEY (product_slug, role_slug) REFERENCES org_roles(product_slug, role_slug)
+              FOREIGN KEY (lane_slug, role_slug) REFERENCES org_roles(lane_slug, role_slug)
             );
             CREATE INDEX IF NOT EXISTS idx_role_memory_bindings_role
-              ON role_memory_bindings(product_slug, role_slug, created_at DESC);
+              ON role_memory_bindings(lane_slug, role_slug, created_at DESC);
 
             CREATE TABLE IF NOT EXISTS role_eval_results (
               eval_id TEXT PRIMARY KEY,
-              product_slug TEXT NOT NULL,
+              lane_slug TEXT NOT NULL,
               role_slug TEXT NOT NULL,
               mission_id TEXT REFERENCES missions(mission_id),
               hat_id TEXT REFERENCES role_hats(hat_id),
@@ -233,17 +280,17 @@ class Store:
               evidence TEXT NOT NULL,
               recorded_event_id TEXT NOT NULL REFERENCES org_events(event_id),
               created_at TEXT NOT NULL,
-              FOREIGN KEY (product_slug, role_slug) REFERENCES org_roles(product_slug, role_slug)
+              FOREIGN KEY (lane_slug, role_slug) REFERENCES org_roles(lane_slug, role_slug)
             );
             CREATE INDEX IF NOT EXISTS idx_role_eval_results_role_created
-              ON role_eval_results(product_slug, role_slug, created_at DESC);
+              ON role_eval_results(lane_slug, role_slug, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_role_eval_results_hat
-              ON role_eval_results(product_slug, role_slug, hat_id)
+              ON role_eval_results(lane_slug, role_slug, hat_id)
               WHERE hat_id IS NOT NULL;
 
             CREATE TABLE IF NOT EXISTS role_evolution_recommendations (
               recommendation_id TEXT PRIMARY KEY,
-              product_slug TEXT NOT NULL,
+              lane_slug TEXT NOT NULL,
               role_slug TEXT NOT NULL,
               recommendation_type TEXT NOT NULL CHECK (
                 recommendation_type IN (
@@ -257,21 +304,21 @@ class Store:
               basis TEXT NOT NULL,
               recommended_event_id TEXT NOT NULL REFERENCES org_events(event_id),
               created_at TEXT NOT NULL,
-              FOREIGN KEY (product_slug, role_slug) REFERENCES org_roles(product_slug, role_slug)
+              FOREIGN KEY (lane_slug, role_slug) REFERENCES org_roles(lane_slug, role_slug)
             );
             CREATE INDEX IF NOT EXISTS idx_role_evolution_recommendations_role_created
-              ON role_evolution_recommendations(product_slug, role_slug, created_at DESC);
+              ON role_evolution_recommendations(lane_slug, role_slug, created_at DESC);
 
             CREATE TABLE IF NOT EXISTS role_hats (
               hat_id TEXT PRIMARY KEY,
-              product_slug TEXT NOT NULL,
+              lane_slug TEXT NOT NULL,
               role_slug TEXT NOT NULL,
               hat_name TEXT NOT NULL,
               purpose TEXT NOT NULL,
               state TEXT NOT NULL CHECK (state IN ('active', 'retired')) DEFAULT 'active',
               created_event_id TEXT REFERENCES org_events(event_id),
               created_at TEXT NOT NULL,
-              FOREIGN KEY (product_slug, role_slug) REFERENCES org_roles(product_slug, role_slug)
+              FOREIGN KEY (lane_slug, role_slug) REFERENCES org_roles(lane_slug, role_slug)
             );
 
             CREATE TABLE IF NOT EXISTS mission_role_assignments (
@@ -287,18 +334,18 @@ class Store:
 
             CREATE TABLE IF NOT EXISTS role_lineage_events (
               lineage_id TEXT PRIMARY KEY,
-              product_slug TEXT NOT NULL,
+              lane_slug TEXT NOT NULL,
               role_slug TEXT NOT NULL,
               hat_id TEXT REFERENCES role_hats(hat_id),
               event_id TEXT NOT NULL REFERENCES org_events(event_id),
               event_kind TEXT NOT NULL,
               note TEXT NOT NULL,
               created_at TEXT NOT NULL,
-              FOREIGN KEY (product_slug, role_slug) REFERENCES org_roles(product_slug, role_slug)
+              FOREIGN KEY (lane_slug, role_slug) REFERENCES org_roles(lane_slug, role_slug)
             );
 
             CREATE TABLE IF NOT EXISTS ovi_weeks (
-              product_slug TEXT NOT NULL,
+              lane_slug TEXT NOT NULL,
               week_start TEXT NOT NULL,
               verified_outcome_value REAL NOT NULL,
               burden_index REAL NOT NULL CHECK (burden_index > 0),
@@ -307,12 +354,12 @@ class Store:
               components_json TEXT NOT NULL DEFAULT '{}',
               published_event_id TEXT REFERENCES org_events(event_id),
               created_at TEXT NOT NULL,
-              PRIMARY KEY (product_slug, week_start)
+              PRIMARY KEY (lane_slug, week_start)
             );
 
             CREATE TABLE IF NOT EXISTS learning_digests (
               digest_id TEXT PRIMARY KEY,
-              product_slug TEXT NOT NULL,
+              lane_slug TEXT NOT NULL,
               week_start TEXT NOT NULL,
               title TEXT NOT NULL,
               content TEXT NOT NULL,
@@ -379,15 +426,15 @@ class Store:
         self.ensure_column("work_graph_nodes", "rollback_note", "TEXT NOT NULL DEFAULT ''")
         self.ensure_column("work_graph_nodes", "budget_note", "TEXT NOT NULL DEFAULT ''")
         self.ensure_column("work_graph_nodes", "captain_attention_estimate", "REAL NOT NULL DEFAULT 0")
-        self.ensure_column("role_lineage_events", "product_slug", "TEXT")
+        self.ensure_column("role_lineage_events", "lane_slug", "TEXT")
         self.conn.execute(
             """
             UPDATE role_lineage_events
-               SET product_slug = (
-                 SELECT product_slug FROM org_events
+               SET lane_slug = (
+                 SELECT lane_slug FROM org_events
                   WHERE org_events.event_id = role_lineage_events.event_id
                )
-             WHERE product_slug IS NULL
+             WHERE lane_slug IS NULL
             """
         )
         self.conn.executescript(
@@ -415,7 +462,7 @@ class Store:
     def append_event(
         self,
         event_type: str,
-        product_slug: str,
+        lane_slug: str,
         aggregate_type: str,
         aggregate_id: str,
         actor: str,
@@ -432,7 +479,7 @@ class Store:
         event = {
             "event_id": event_id or str(uuid.uuid4()),
             "event_type": event_type,
-            "product_slug": product_slug,
+            "lane_slug": lane_slug,
             "aggregate_type": aggregate_type,
             "aggregate_id": aggregate_id,
             "actor": actor,
@@ -444,14 +491,14 @@ class Store:
         self.conn.execute(
             """
             INSERT INTO org_events
-              (event_id, event_type, product_slug, aggregate_type, aggregate_id,
+              (event_id, event_type, lane_slug, aggregate_type, aggregate_id,
                actor, source, payload_json, supersedes_event_id, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 event["event_id"],
                 event_type,
-                product_slug,
+                lane_slug,
                 aggregate_type,
                 aggregate_id,
                 actor,
@@ -487,8 +534,12 @@ def print_json(value: Any) -> None:
     print(json.dumps(value, indent=2, sort_keys=True))
 
 
-def product_arg(args: argparse.Namespace) -> str:
-    return args.product_slug or os.environ.get("ORG_RUNTIME_PRODUCT", DEFAULT_PRODUCT)
+def lane_arg(args: argparse.Namespace) -> str:
+    """Resolve the lane key: flag, then env, then the default. ORG_RUNTIME_LANE
+    is the name; ORG_RUNTIME_PRODUCT is honored after it so a live deployment's
+    exported environment and launchd plists keep resolving across the rename."""
+    return (args.lane_slug or os.environ.get("ORG_RUNTIME_LANE")
+            or os.environ.get("ORG_RUNTIME_PRODUCT") or DEFAULT_LANE)
 
 
 def parse_capabilities(values: list[str] | None) -> list[str]:
@@ -510,34 +561,34 @@ def parse_capabilities(values: list[str] | None) -> list[str]:
     return sorted(dict.fromkeys(capabilities))
 
 
-def role_key(product_slug: str, role_slug: str) -> str:
-    return f"{product_slug}:{role_slug}"
+def role_key(lane_slug: str, role_slug: str) -> str:
+    return f"{lane_slug}:{role_slug}"
 
 
-def active_role(store: Store, product_slug: str, role_slug: str) -> dict[str, Any] | None:
+def active_role(store: Store, lane_slug: str, role_slug: str) -> dict[str, Any] | None:
     return store.row(
         """
         SELECT * FROM org_roles
-         WHERE product_slug = ? AND role_slug = ? AND state = 'active'
+         WHERE lane_slug = ? AND role_slug = ? AND state = 'active'
         """,
-        (product_slug, role_slug),
+        (lane_slug, role_slug),
     )
 
 
-def require_role(store: Store, product_slug: str, role_slug: str) -> dict[str, Any]:
+def require_role(store: Store, lane_slug: str, role_slug: str) -> dict[str, Any]:
     role = store.row(
-        "SELECT * FROM org_roles WHERE product_slug = ? AND role_slug = ?",
-        (product_slug, role_slug),
+        "SELECT * FROM org_roles WHERE lane_slug = ? AND role_slug = ?",
+        (lane_slug, role_slug),
     )
     if not role:
-        raise SystemExit(f"unknown role for {product_slug}: {role_slug}")
+        raise SystemExit(f"unknown role for {lane_slug}: {role_slug}")
     return role
 
 
-def require_active_role(store: Store, product_slug: str, role_slug: str) -> dict[str, Any]:
-    role = require_role(store, product_slug, role_slug)
+def require_active_role(store: Store, lane_slug: str, role_slug: str) -> dict[str, Any]:
+    role = require_role(store, lane_slug, role_slug)
     if role["state"] != "active":
-        raise SystemExit(f"role is not active for {product_slug}: {role_slug}")
+        raise SystemExit(f"role is not active for {lane_slug}: {role_slug}")
     return role
 
 
@@ -546,7 +597,7 @@ def cmd_event_append(args: argparse.Namespace) -> None:
     aggregate_id = args.aggregate_id or new_id(args.aggregate_type)
     event = store.append_event(
         args.type,
-        product_arg(args),
+        lane_arg(args),
         args.aggregate_type,
         aggregate_id,
         args.actor,
@@ -562,11 +613,11 @@ def cmd_event_list(args: argparse.Namespace) -> None:
     rows = store.rows(
         """
         SELECT * FROM org_events
-         WHERE product_slug = ?
+         WHERE lane_slug = ?
          ORDER BY created_at DESC
          LIMIT ?
         """,
-        (product_arg(args), args.limit),
+        (lane_arg(args), args.limit),
     )
     for row in rows:
         print(json.dumps(row, sort_keys=True))
@@ -585,18 +636,18 @@ def cmd_outcome_propose(args: argparse.Namespace) -> None:
         "unit": args.unit,
     }
     event = store.append_event(
-        "outcome.proposed", product_arg(args), "captain_outcome", outcome_id, args.actor, payload
+        "outcome.proposed", lane_arg(args), "captain_outcome", outcome_id, args.actor, payload
     )
     store.conn.execute(
         """
         INSERT INTO captain_outcomes
-          (outcome_id, product_slug, title, metric_name, target_value, current_value,
+          (outcome_id, lane_slug, title, metric_name, target_value, current_value,
            unit, state, proposed_by, proposed_event_id, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, 'proposed', ?, ?, ?, ?)
         """,
         (
             outcome_id,
-            product_arg(args),
+            lane_arg(args),
             args.title,
             args.metric_name,
             args.target_value,
@@ -620,7 +671,7 @@ def cmd_outcome_ratify(args: argparse.Namespace) -> None:
     payload = {"outcome_id": args.outcome_id, "ratified_by": args.ratified_by, "note": args.note}
     event = store.append_event(
         "outcome.ratified",
-        outcome["product_slug"],
+        outcome["lane_slug"],
         "captain_outcome",
         args.outcome_id,
         args.ratified_by,
@@ -645,8 +696,8 @@ def cmd_outcome_list(args: argparse.Namespace) -> None:
     store = Store()
     print_json(
         store.rows(
-            "SELECT * FROM captain_outcomes WHERE product_slug = ? ORDER BY updated_at DESC",
-            (product_arg(args),),
+            "SELECT * FROM captain_outcomes WHERE lane_slug = ? ORDER BY updated_at DESC",
+            (lane_arg(args),),
         )
     )
 
@@ -658,7 +709,7 @@ def cmd_mission_compile(args: argparse.Namespace) -> None:
         raise SystemExit(f"unknown outcome_id: {args.outcome_id}")
     if outcome["state"] != "ratified":
         raise SystemExit("mission compilation requires a ratified outcome")
-    require_active_role(store, outcome["product_slug"], args.owner_role)
+    require_active_role(store, outcome["lane_slug"], args.owner_role)
 
     now = utc_now()
     mission_id = args.mission_id or new_id("mission")
@@ -670,15 +721,15 @@ def cmd_mission_compile(args: argparse.Namespace) -> None:
         "nodes": [{"node_id": node_id, "title": args.node_title, "owner_role": args.owner_role}],
     }
     event = store.append_event(
-        "mission.compiled", outcome["product_slug"], "mission", mission_id, args.actor, payload
+        "mission.compiled", outcome["lane_slug"], "mission", mission_id, args.actor, payload
     )
     store.conn.execute(
         """
         INSERT INTO missions
-          (mission_id, outcome_id, product_slug, title, state, compiled_event_id, created_at, updated_at)
+          (mission_id, outcome_id, lane_slug, title, state, compiled_event_id, created_at, updated_at)
         VALUES (?, ?, ?, ?, 'compiled', ?, ?, ?)
         """,
-        (mission_id, args.outcome_id, outcome["product_slug"], args.title, event["event_id"], now, now),
+        (mission_id, args.outcome_id, outcome["lane_slug"], args.title, event["event_id"], now, now),
     )
     store.conn.execute(
         """
@@ -792,8 +843,8 @@ def cmd_mission_compile_plan(args: argparse.Namespace) -> None:
     nodes = normalized_plan_nodes(plan)
     edges = normalized_plan_edges(plan, nodes)
     for node in nodes:
-        require_active_role(store, outcome["product_slug"], node["owner_role"])
-        require_active_role(store, outcome["product_slug"], node["verifier_role"])
+        require_active_role(store, outcome["lane_slug"], node["owner_role"])
+        require_active_role(store, outcome["lane_slug"], node["verifier_role"])
 
     now = utc_now()
     mission_id = str(plan.get("mission_id") or args.mission_id or new_id("mission")).strip()
@@ -808,15 +859,15 @@ def cmd_mission_compile_plan(args: argparse.Namespace) -> None:
         "captain_attention_estimate": sum(float(node["captain_attention_estimate"]) for node in nodes),
     }
     event = store.append_event(
-        "mission.plan_compiled", outcome["product_slug"], "mission", mission_id, args.actor, payload
+        "mission.plan_compiled", outcome["lane_slug"], "mission", mission_id, args.actor, payload
     )
     store.conn.execute(
         """
         INSERT INTO missions
-          (mission_id, outcome_id, product_slug, title, state, compiled_event_id, created_at, updated_at)
+          (mission_id, outcome_id, lane_slug, title, state, compiled_event_id, created_at, updated_at)
         VALUES (?, ?, ?, ?, 'compiled', ?, ?, ?)
         """,
-        (mission_id, args.outcome_id, outcome["product_slug"], title, event["event_id"], now, now),
+        (mission_id, args.outcome_id, outcome["lane_slug"], title, event["event_id"], now, now),
     )
     for node in nodes:
         store.conn.execute(
@@ -926,7 +977,7 @@ def cmd_mission_complete(args: argparse.Namespace) -> None:
     }
     event = store.append_event(
         "work_graph.node_verified",
-        mission["product_slug"],
+        mission["lane_slug"],
         "work_graph_node",
         args.node_id,
         args.actor,
@@ -965,8 +1016,8 @@ def cmd_mission_complete(args: argparse.Namespace) -> None:
 
 def cmd_claude_tasks_list(args: argparse.Namespace) -> None:
     store = Store()
-    params: list[Any] = [product_arg(args)]
-    where = "WHERE product_slug = ?"
+    params: list[Any] = [lane_arg(args)]
+    where = "WHERE lane_slug = ?"
     if args.status:
         where += " AND status = ?"
         params.append(args.status)
@@ -986,22 +1037,22 @@ def cmd_claude_tasks_list(args: argparse.Namespace) -> None:
 
 def cmd_claude_tasks_show(args: argparse.Namespace) -> None:
     store = Store()
-    product_slug = product_arg(args)
+    lane_slug = lane_arg(args)
     task = store.row(
-        "SELECT * FROM claude_native_tasks WHERE product_slug = ? AND task_id = ?",
-        (product_slug, args.task_id),
+        "SELECT * FROM claude_native_tasks WHERE lane_slug = ? AND task_id = ?",
+        (lane_slug, args.task_id),
     )
     if not task:
-        raise SystemExit(f"unknown Claude native task for {product_slug}: {args.task_id}")
+        raise SystemExit(f"unknown Claude native task for {lane_slug}: {args.task_id}")
     events = store.rows(
         """
         SELECT * FROM org_events
-         WHERE product_slug = ?
+         WHERE lane_slug = ?
            AND aggregate_type = 'claude_native_task'
            AND aggregate_id = ?
          ORDER BY created_at
         """,
-        (product_slug, args.task_id),
+        (lane_slug, args.task_id),
     )
     print_json({"task": task, "events": events})
 
@@ -1011,7 +1062,12 @@ def cmd_claude_tasks_show(args: argparse.Namespace) -> None:
 # ---------------------------------------------------------------------------
 
 def _capability_gaps():
-    """Import the framework capability_gaps module (repo root on sys.path)."""
+    """Import the framework capability_gaps module (repo root on sys.path).
+
+    Its ``product_slug=`` parameter is deliberately NOT renamed with this
+    schema's column: capability gaps are a framework-side payload dimension
+    with their own env knob (CABINET_PRODUCT_SLUG), not a column of
+    045-org-runtime-slice.sql. Calls below keep its spelling."""
     import sys as _sys
     from pathlib import Path as _Path
     repo_root = str(_Path(__file__).resolve().parents[3])
@@ -1023,8 +1079,8 @@ def _capability_gaps():
 
 def cmd_gaps_list(args: argparse.Namespace) -> None:
     cg = _capability_gaps()
-    os.environ.setdefault("CABINET_PRODUCT_SLUG", product_arg(args))
-    gaps = cg.project_gaps(product_slug=product_arg(args))
+    os.environ.setdefault("CABINET_PRODUCT_SLUG", lane_arg(args))
+    gaps = cg.project_gaps(product_slug=lane_arg(args))
     if getattr(args, "status", None):
         gaps = [g for g in gaps if g["status"] == args.status]
     print_json(gaps)
@@ -1032,7 +1088,7 @@ def cmd_gaps_list(args: argparse.Namespace) -> None:
 
 def cmd_gaps_show(args: argparse.Namespace) -> None:
     cg = _capability_gaps()
-    for g in cg.project_gaps(product_slug=product_arg(args)):
+    for g in cg.project_gaps(product_slug=lane_arg(args)):
         if g["gap_id"] == args.gap_id:
             print_json(g)
             return
@@ -1043,28 +1099,28 @@ def cmd_gaps_propose(args: argparse.Namespace) -> None:
     cg = _capability_gaps()
     touches = [t.strip() for t in (args.touches or "").split(",") if t.strip()]
     ev = cg.propose_gap(args.gap_id, summary=args.summary, approach=args.approach,
-                        touches=touches, actor=args.actor, product_slug=product_arg(args))
+                        touches=touches, actor=args.actor, product_slug=lane_arg(args))
     print_json({"proposed": args.gap_id, "event_id": ev.get("id")})
 
 
 def cmd_gaps_approve(args: argparse.Namespace) -> None:
     cg = _capability_gaps()
     ev = cg.approve_gap(args.gap_id, actor=args.actor, note=args.note or "",
-                        product_slug=product_arg(args))
+                        product_slug=lane_arg(args))
     print_json({"approved": args.gap_id, "event_id": ev.get("id")})
 
 
 def cmd_gaps_decline(args: argparse.Namespace) -> None:
     cg = _capability_gaps()
     ev = cg.decline_gap(args.gap_id, reason=args.reason or "", actor=args.actor,
-                        product_slug=product_arg(args))
+                        product_slug=lane_arg(args))
     print_json({"declined": args.gap_id, "event_id": ev.get("id")})
 
 
 def cmd_gaps_resolve(args: argparse.Namespace) -> None:
     cg = _capability_gaps()
     ev = cg.resolve_gap(args.gap_id, resolution=args.resolution, actor=args.actor,
-                        product_slug=product_arg(args))
+                        product_slug=lane_arg(args))
     print_json({"resolved": args.gap_id, "resolution": args.resolution, "event_id": ev.get("id")})
 
 
@@ -1075,7 +1131,7 @@ def table_exists(store: Store, table: str) -> bool:
 
 def cmd_tasks_drift_report(args: argparse.Namespace) -> None:
     store = Store()
-    product_slug = product_arg(args)
+    lane_slug = lane_arg(args)
     legacy_tasks = []
     if table_exists(store, "officer_tasks"):
         legacy_tasks = store.rows(
@@ -1086,28 +1142,28 @@ def cmd_tasks_drift_report(args: argparse.Namespace) -> None:
              ORDER BY id DESC
              LIMIT ?
             """,
-            (product_slug, args.limit),
+            (lane_slug, args.limit),
         )
     nodes = store.rows(
         """
         SELECT n.node_id, n.title, n.owner_role, n.status, m.mission_id
           FROM work_graph_nodes n
           JOIN missions m ON m.mission_id = n.mission_id
-         WHERE m.product_slug = ?
+         WHERE m.lane_slug = ?
          ORDER BY n.created_at DESC, n.node_id
          LIMIT ?
         """,
-        (product_slug, args.limit),
+        (lane_slug, args.limit),
     )
     claude_tasks = store.rows(
         """
         SELECT task_id, task_subject, status, node_id, mission_id, owner_role
           FROM claude_native_tasks
-         WHERE product_slug = ?
+         WHERE lane_slug = ?
          ORDER BY updated_at DESC, task_id
          LIMIT ?
         """,
-        (product_slug, args.limit),
+        (lane_slug, args.limit),
     )
     node_ids = {node["node_id"] for node in nodes}
     claude_node_ids = {task["node_id"] for task in claude_tasks if task.get("node_id")}
@@ -1118,7 +1174,7 @@ def cmd_tasks_drift_report(args: argparse.Namespace) -> None:
     }
     print_json(
         {
-            "product_slug": product_slug,
+            "lane_slug": lane_slug,
             "legacy_tasks_table_present": table_exists(store, "officer_tasks"),
             "counts": {
                 "legacy_tasks": len(legacy_tasks),
@@ -1141,7 +1197,7 @@ def cmd_tasks_drift_report(args: argparse.Namespace) -> None:
 
 def insert_role_lineage(
     store: Store,
-    product_slug: str,
+    lane_slug: str,
     role_slug: str,
     event_id: str,
     event_kind: str,
@@ -1151,23 +1207,23 @@ def insert_role_lineage(
     store.conn.execute(
         """
         INSERT INTO role_lineage_events
-          (lineage_id, product_slug, role_slug, hat_id, event_id, event_kind, note, created_at)
+          (lineage_id, lane_slug, role_slug, hat_id, event_id, event_kind, note, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (new_id("lineage"), product_slug, role_slug, hat_id, event_id, event_kind, note, utc_now()),
+        (new_id("lineage"), lane_slug, role_slug, hat_id, event_id, event_kind, note, utc_now()),
     )
 
 
 def cmd_roles_define(args: argparse.Namespace) -> None:
     store = Store()
-    product_slug = product_arg(args)
-    if store.row("SELECT 1 FROM org_roles WHERE product_slug = ? AND role_slug = ?", (product_slug, args.role)):
-        raise SystemExit(f"role already defined for {product_slug}: {args.role}")
+    lane_slug = lane_arg(args)
+    if store.row("SELECT 1 FROM org_roles WHERE lane_slug = ? AND role_slug = ?", (lane_slug, args.role)):
+        raise SystemExit(f"role already defined for {lane_slug}: {args.role}")
 
     now = utc_now()
     capabilities = parse_capabilities(args.capability)
     payload = {
-        "product_slug": product_slug,
+        "lane_slug": lane_slug,
         "role_slug": args.role,
         "role_name": args.name,
         "charter": args.charter,
@@ -1180,22 +1236,22 @@ def cmd_roles_define(args: argparse.Namespace) -> None:
     }
     event = store.append_event(
         "role.defined",
-        product_slug,
+        lane_slug,
         "org_role",
-        role_key(product_slug, args.role),
+        role_key(lane_slug, args.role),
         args.actor,
         payload,
     )
     store.conn.execute(
         """
         INSERT INTO org_roles
-          (product_slug, role_slug, role_name, charter, current_focus, authority_level,
+          (lane_slug, role_slug, role_name, charter, current_focus, authority_level,
            capabilities_json, state, version, officer_session_slug, defined_event_id,
            latest_event_id, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
         """,
         (
-            product_slug,
+            lane_slug,
             args.role,
             args.name,
             args.charter,
@@ -1212,7 +1268,7 @@ def cmd_roles_define(args: argparse.Namespace) -> None:
     )
     insert_role_lineage(
         store,
-        product_slug,
+        lane_slug,
         args.role,
         event["event_id"],
         "role_defined",
@@ -1226,49 +1282,49 @@ def cmd_roles_list(args: argparse.Namespace) -> None:
     store = Store()
     print_json(
         store.rows(
-            "SELECT * FROM org_roles WHERE product_slug = ? ORDER BY state, role_slug",
-            (product_arg(args),),
+            "SELECT * FROM org_roles WHERE lane_slug = ? ORDER BY state, role_slug",
+            (lane_arg(args),),
         )
     )
 
 
 def cmd_roles_show(args: argparse.Namespace) -> None:
     store = Store()
-    product_slug = product_arg(args)
-    role = require_role(store, product_slug, args.role)
+    lane_slug = lane_arg(args)
+    role = require_role(store, lane_slug, args.role)
     memory = store.rows(
         """
         SELECT * FROM role_memory_bindings
-         WHERE product_slug = ? AND role_slug = ?
+         WHERE lane_slug = ? AND role_slug = ?
          ORDER BY created_at
         """,
-        (product_slug, args.role),
+        (lane_slug, args.role),
     )
     evals = store.rows(
         """
         SELECT * FROM role_eval_results
-         WHERE product_slug = ? AND role_slug = ?
+         WHERE lane_slug = ? AND role_slug = ?
          ORDER BY created_at
         """,
-        (product_slug, args.role),
+        (lane_slug, args.role),
     )
     recommendations = store.rows(
         """
         SELECT * FROM role_evolution_recommendations
-         WHERE product_slug = ? AND role_slug = ?
+         WHERE lane_slug = ? AND role_slug = ?
          ORDER BY created_at
         """,
-        (product_slug, args.role),
+        (lane_slug, args.role),
     )
     lineage = store.rows(
         """
         SELECT l.*, h.hat_name, h.purpose
           FROM role_lineage_events l
           LEFT JOIN role_hats h ON h.hat_id = l.hat_id
-         WHERE l.product_slug = ? AND l.role_slug = ?
+         WHERE l.lane_slug = ? AND l.role_slug = ?
          ORDER BY l.created_at
         """,
-        (product_slug, args.role),
+        (lane_slug, args.role),
     )
     print_json(
         {
@@ -1283,8 +1339,8 @@ def cmd_roles_show(args: argparse.Namespace) -> None:
 
 def cmd_roles_bind_memory(args: argparse.Namespace) -> None:
     store = Store()
-    product_slug = product_arg(args)
-    require_active_role(store, product_slug, args.role)
+    lane_slug = lane_arg(args)
+    require_active_role(store, lane_slug, args.role)
     memory_path = args.memory_path.strip()
     path = Path(memory_path)
     if not path.is_absolute():
@@ -1295,14 +1351,14 @@ def cmd_roles_bind_memory(args: argparse.Namespace) -> None:
     binding_id = args.binding_id or new_id("memory")
     payload = {
         "binding_id": binding_id,
-        "product_slug": product_slug,
+        "lane_slug": lane_slug,
         "role_slug": args.role,
         "memory_path": memory_path,
         "memory_kind": args.memory_kind,
     }
     event = store.append_event(
         "role.memory_bound",
-        product_slug,
+        lane_slug,
         "role_memory_binding",
         binding_id,
         args.actor,
@@ -1311,14 +1367,14 @@ def cmd_roles_bind_memory(args: argparse.Namespace) -> None:
     store.conn.execute(
         """
         INSERT INTO role_memory_bindings
-          (binding_id, product_slug, role_slug, memory_path, memory_kind, bound_event_id, created_at)
+          (binding_id, lane_slug, role_slug, memory_path, memory_kind, bound_event_id, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (binding_id, product_slug, args.role, memory_path, args.memory_kind, event["event_id"], utc_now()),
+        (binding_id, lane_slug, args.role, memory_path, args.memory_kind, event["event_id"], utc_now()),
     )
     insert_role_lineage(
         store,
-        product_slug,
+        lane_slug,
         args.role,
         event["event_id"],
         "memory_bound",
@@ -1330,17 +1386,17 @@ def cmd_roles_bind_memory(args: argparse.Namespace) -> None:
 
 def cmd_roles_record_eval(args: argparse.Namespace) -> None:
     store = Store()
-    product_slug = product_arg(args)
-    require_active_role(store, product_slug, args.role)
+    lane_slug = lane_arg(args)
+    require_active_role(store, lane_slug, args.role)
     if args.score < 0 or args.score > 1:
         raise SystemExit("score must be between 0 and 1")
     if args.mission_id:
         mission = store.row("SELECT * FROM missions WHERE mission_id = ?", (args.mission_id,))
-        if not mission or mission["product_slug"] != product_slug:
-            raise SystemExit(f"unknown mission_id for {product_slug}: {args.mission_id}")
+        if not mission or mission["lane_slug"] != lane_slug:
+            raise SystemExit(f"unknown mission_id for {lane_slug}: {args.mission_id}")
     if args.hat_id:
         hat = store.row("SELECT * FROM role_hats WHERE hat_id = ?", (args.hat_id,))
-        if not hat or hat["product_slug"] != product_slug or hat["role_slug"] != args.role:
+        if not hat or hat["lane_slug"] != lane_slug or hat["role_slug"] != args.role:
             raise SystemExit(f"unknown hat_id for role {args.role}: {args.hat_id}")
 
     eval_id = args.eval_id or new_id("eval")
@@ -1349,7 +1405,7 @@ def cmd_roles_record_eval(args: argparse.Namespace) -> None:
         passed = args.score >= 0.8
     payload = {
         "eval_id": eval_id,
-        "product_slug": product_slug,
+        "lane_slug": lane_slug,
         "role_slug": args.role,
         "mission_id": args.mission_id,
         "hat_id": args.hat_id,
@@ -1360,7 +1416,7 @@ def cmd_roles_record_eval(args: argparse.Namespace) -> None:
     }
     event = store.append_event(
         "role.eval_recorded",
-        product_slug,
+        lane_slug,
         "role_eval_result",
         eval_id,
         args.actor,
@@ -1369,13 +1425,13 @@ def cmd_roles_record_eval(args: argparse.Namespace) -> None:
     store.conn.execute(
         """
         INSERT INTO role_eval_results
-          (eval_id, product_slug, role_slug, mission_id, hat_id, eval_name, score,
+          (eval_id, lane_slug, role_slug, mission_id, hat_id, eval_name, score,
            passed, evidence, recorded_event_id, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             eval_id,
-            product_slug,
+            lane_slug,
             args.role,
             args.mission_id,
             args.hat_id,
@@ -1389,7 +1445,7 @@ def cmd_roles_record_eval(args: argparse.Namespace) -> None:
     )
     insert_role_lineage(
         store,
-        product_slug,
+        lane_slug,
         args.role,
         event["event_id"],
         "eval_recorded",
@@ -1400,33 +1456,33 @@ def cmd_roles_record_eval(args: argparse.Namespace) -> None:
     print_json({**payload, "event_id": event["event_id"]})
 
 
-def active_mission_assignment_count(store: Store, product_slug: str, role_slug: str) -> int:
+def active_mission_assignment_count(store: Store, lane_slug: str, role_slug: str) -> int:
     row = store.row(
         """
         SELECT COUNT(*) AS n
           FROM mission_role_assignments a
           JOIN missions m ON m.mission_id = a.mission_id
-         WHERE m.product_slug = ?
+         WHERE m.lane_slug = ?
            AND a.assigned_to_role = ?
            AND m.state IN ('compiled', 'in_progress')
         """,
-        (product_slug, role_slug),
+        (lane_slug, role_slug),
     )
     return int(row["n"] or 0)
 
 
-def role_recommendation(store: Store, product_slug: str, role_slug: str) -> tuple[str, str | None, str]:
+def role_recommendation(store: Store, lane_slug: str, role_slug: str) -> tuple[str, str | None, str]:
     latest = store.rows(
         """
         SELECT * FROM role_eval_results
-         WHERE product_slug = ? AND role_slug = ?
+         WHERE lane_slug = ? AND role_slug = ?
          ORDER BY created_at DESC, eval_id DESC
          LIMIT 3
         """,
-        (product_slug, role_slug),
+        (lane_slug, role_slug),
     )
     if len(latest) == 3:
-        if all(not item["passed"] for item in latest) and active_mission_assignment_count(store, product_slug, role_slug) == 0:
+        if all(not item["passed"] for item in latest) and active_mission_assignment_count(store, lane_slug, role_slug) == 0:
             return (
                 "retire_role_review",
                 None,
@@ -1440,7 +1496,7 @@ def role_recommendation(store: Store, product_slug: str, role_slug: str) -> tupl
         """
         SELECT hat_id, COUNT(*) AS n
           FROM role_eval_results
-         WHERE product_slug = ?
+         WHERE lane_slug = ?
            AND role_slug = ?
            AND hat_id IS NOT NULL
            AND passed = 1
@@ -1450,7 +1506,7 @@ def role_recommendation(store: Store, product_slug: str, role_slug: str) -> tupl
          ORDER BY n DESC, hat_id
          LIMIT 1
         """,
-        (product_slug, role_slug),
+        (lane_slug, role_slug),
     )
     if promote:
         return (
@@ -1464,13 +1520,13 @@ def role_recommendation(store: Store, product_slug: str, role_slug: str) -> tupl
 
 def cmd_roles_recommend(args: argparse.Namespace) -> None:
     store = Store()
-    product_slug = product_arg(args)
-    require_active_role(store, product_slug, args.role)
-    recommendation_type, hat_id, basis = role_recommendation(store, product_slug, args.role)
+    lane_slug = lane_arg(args)
+    require_active_role(store, lane_slug, args.role)
+    recommendation_type, hat_id, basis = role_recommendation(store, lane_slug, args.role)
     recommendation_id = args.recommendation_id or new_id("recommendation")
     payload = {
         "recommendation_id": recommendation_id,
-        "product_slug": product_slug,
+        "lane_slug": lane_slug,
         "role_slug": args.role,
         "recommendation_type": recommendation_type,
         "hat_id": hat_id,
@@ -1479,7 +1535,7 @@ def cmd_roles_recommend(args: argparse.Namespace) -> None:
     event_type = "role.retire_review_recommended" if recommendation_type == "retire_role_review" else "role.evolution_recommended"
     event = store.append_event(
         event_type,
-        product_slug,
+        lane_slug,
         "role_evolution_recommendation",
         recommendation_id,
         args.actor,
@@ -1488,13 +1544,13 @@ def cmd_roles_recommend(args: argparse.Namespace) -> None:
     store.conn.execute(
         """
         INSERT INTO role_evolution_recommendations
-          (recommendation_id, product_slug, role_slug, recommendation_type,
+          (recommendation_id, lane_slug, role_slug, recommendation_type,
            hat_id, basis, recommended_event_id, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             recommendation_id,
-            product_slug,
+            lane_slug,
             args.role,
             recommendation_type,
             hat_id,
@@ -1505,7 +1561,7 @@ def cmd_roles_recommend(args: argparse.Namespace) -> None:
     )
     insert_role_lineage(
         store,
-        product_slug,
+        lane_slug,
         args.role,
         event["event_id"],
         "retire_review_recommended" if recommendation_type == "retire_role_review" else "evolution_recommended",
@@ -1530,8 +1586,8 @@ def role_evolve_event_type(changed_fields: set[str]) -> str:
 
 def cmd_roles_evolve(args: argparse.Namespace) -> None:
     store = Store()
-    product_slug = product_arg(args)
-    role = require_active_role(store, product_slug, args.role)
+    lane_slug = lane_arg(args)
+    role = require_active_role(store, lane_slug, args.role)
     if not args.ratified_by or args.ratified_by.lower() != "captain":
         raise SystemExit("role evolution requires --ratified-by captain")
 
@@ -1561,7 +1617,7 @@ def cmd_roles_evolve(args: argparse.Namespace) -> None:
 
     new_version = int(role["version"]) + 1
     payload = {
-        "product_slug": product_slug,
+        "lane_slug": lane_slug,
         "role_slug": args.role,
         "old_version": role["version"],
         "new_version": new_version,
@@ -1571,9 +1627,9 @@ def cmd_roles_evolve(args: argparse.Namespace) -> None:
     }
     event = store.append_event(
         role_evolve_event_type(set(changes)),
-        product_slug,
+        lane_slug,
         "org_role",
-        role_key(product_slug, args.role),
+        role_key(lane_slug, args.role),
         args.actor,
         payload,
     )
@@ -1588,7 +1644,7 @@ def cmd_roles_evolve(args: argparse.Namespace) -> None:
                version = ?,
                latest_event_id = ?,
                updated_at = ?
-         WHERE product_slug = ? AND role_slug = ?
+         WHERE lane_slug = ? AND role_slug = ?
         """,
         (
             next_values["charter"],
@@ -1598,13 +1654,13 @@ def cmd_roles_evolve(args: argparse.Namespace) -> None:
             new_version,
             event["event_id"],
             now,
-            product_slug,
+            lane_slug,
             args.role,
         ),
     )
     insert_role_lineage(
         store,
-        product_slug,
+        lane_slug,
         args.role,
         event["event_id"],
         "role_evolved",
@@ -1619,7 +1675,7 @@ def cmd_roles_assign_hat(args: argparse.Namespace) -> None:
     mission = store.row("SELECT * FROM missions WHERE mission_id = ?", (args.mission_id,))
     if not mission:
         raise SystemExit(f"unknown mission_id: {args.mission_id}")
-    require_active_role(store, mission["product_slug"], args.role)
+    require_active_role(store, mission["lane_slug"], args.role)
     if args.node_id:
         node = store.row("SELECT * FROM work_graph_nodes WHERE node_id = ?", (args.node_id,))
         if not node:
@@ -1631,9 +1687,9 @@ def cmd_roles_assign_hat(args: argparse.Namespace) -> None:
     hat = store.row(
         """
         SELECT * FROM role_hats
-         WHERE product_slug = ? AND role_slug = ? AND hat_name = ? AND state = 'active'
+         WHERE lane_slug = ? AND role_slug = ? AND hat_name = ? AND state = 'active'
         """,
-        (mission["product_slug"], args.role, args.hat_name),
+        (mission["lane_slug"], args.role, args.hat_name),
     )
     if hat:
         hat_id = hat["hat_id"]
@@ -1642,20 +1698,20 @@ def cmd_roles_assign_hat(args: argparse.Namespace) -> None:
         hat_id = args.hat_id or new_id("hat")
         hat_payload = {"hat_id": hat_id, "role_slug": args.role, "hat_name": args.hat_name, "purpose": args.purpose}
         hat_event = store.append_event(
-            "role_hat.created", mission["product_slug"], "role_hat", hat_id, args.actor, hat_payload
+            "role_hat.created", mission["lane_slug"], "role_hat", hat_id, args.actor, hat_payload
         )
         hat_event_id = hat_event["event_id"]
         store.conn.execute(
             """
             INSERT INTO role_hats
-              (hat_id, product_slug, role_slug, hat_name, purpose, state, created_event_id, created_at)
+              (hat_id, lane_slug, role_slug, hat_name, purpose, state, created_event_id, created_at)
             VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
             """,
-            (hat_id, mission["product_slug"], args.role, args.hat_name, args.purpose, hat_event_id, now),
+            (hat_id, mission["lane_slug"], args.role, args.hat_name, args.purpose, hat_event_id, now),
         )
         insert_role_lineage(
             store,
-            mission["product_slug"],
+            mission["lane_slug"],
             args.role,
             hat_event_id,
             "hat_created",
@@ -1673,7 +1729,7 @@ def cmd_roles_assign_hat(args: argparse.Namespace) -> None:
     }
     event = store.append_event(
         "mission_role.assigned",
-        mission["product_slug"],
+        mission["lane_slug"],
         "mission_role_assignment",
         assignment_id,
         args.actor,
@@ -1689,7 +1745,7 @@ def cmd_roles_assign_hat(args: argparse.Namespace) -> None:
     )
     insert_role_lineage(
         store,
-        mission["product_slug"],
+        mission["lane_slug"],
         args.role,
         event["event_id"],
         "mission_assigned",
@@ -1702,18 +1758,18 @@ def cmd_roles_assign_hat(args: argparse.Namespace) -> None:
 
 def cmd_roles_show_lineage(args: argparse.Namespace) -> None:
     store = Store()
-    product_slug = product_arg(args)
-    require_role(store, product_slug, args.role)
+    lane_slug = lane_arg(args)
+    require_role(store, lane_slug, args.role)
     print_json(
         store.rows(
             """
             SELECT l.*, h.hat_name, h.purpose
               FROM role_lineage_events l
               LEFT JOIN role_hats h ON h.hat_id = l.hat_id
-             WHERE l.product_slug = ? AND l.role_slug = ?
+             WHERE l.lane_slug = ? AND l.role_slug = ?
              ORDER BY l.created_at
             """,
-            (product_slug, args.role),
+            (lane_slug, args.role),
         )
     )
 
@@ -1730,7 +1786,7 @@ def burden_index(args: argparse.Namespace) -> float:
     )
 
 
-def verified_value_for_week(store: Store, product_slug: str, week_start: str) -> float:
+def verified_value_for_week(store: Store, lane_slug: str, week_start: str) -> float:
     start = dt.date.fromisoformat(week_start)
     end = start + dt.timedelta(days=7)
     row = store.row(
@@ -1738,22 +1794,22 @@ def verified_value_for_week(store: Store, product_slug: str, week_start: str) ->
         SELECT COALESCE(SUM(n.verified_value), 0) AS total
           FROM work_graph_nodes n
           JOIN missions m ON m.mission_id = n.mission_id
-         WHERE m.product_slug = ?
+         WHERE m.lane_slug = ?
            AND n.status = 'verified'
            AND n.completed_at >= ?
            AND n.completed_at < ?
         """,
-        (product_slug, start.isoformat(), end.isoformat()),
+        (lane_slug, start.isoformat(), end.isoformat()),
     )
     return float(row["total"] or 0)
 
 
 def ovi_payload(args: argparse.Namespace, store: Store) -> dict[str, Any]:
-    product_slug = product_arg(args)
+    lane_slug = lane_arg(args)
     verified_value = (
         args.verified_value
         if args.verified_value is not None
-        else verified_value_for_week(store, product_slug, args.week_start)
+        else verified_value_for_week(store, lane_slug, args.week_start)
     )
     burden = burden_index(args)
     components = {
@@ -1765,7 +1821,7 @@ def ovi_payload(args: argparse.Namespace, store: Store) -> dict[str, Any]:
         "safety_debt": args.safety_debt,
     }
     return {
-        "product_slug": product_slug,
+        "lane_slug": lane_slug,
         "week_start": args.week_start,
         "verified_outcome_value": verified_value,
         "burden_index": burden,
@@ -1785,17 +1841,17 @@ def cmd_ovi_publish(args: argparse.Namespace) -> None:
     prior = store.row(
         """
         SELECT ovi FROM ovi_weeks
-         WHERE product_slug = ? AND week_start < ?
+         WHERE lane_slug = ? AND week_start < ?
          ORDER BY week_start DESC
          LIMIT 1
         """,
-        (payload["product_slug"], args.week_start),
+        (payload["lane_slug"], args.week_start),
     )
     trend = None if prior is None else payload["ovi"] - float(prior["ovi"])
     payload["trend_vs_prior"] = trend
     event = store.append_event(
         "ovi.week_published",
-        payload["product_slug"],
+        payload["lane_slug"],
         "ovi_week",
         args.week_start,
         args.actor,
@@ -1804,10 +1860,10 @@ def cmd_ovi_publish(args: argparse.Namespace) -> None:
     store.conn.execute(
         """
         INSERT INTO ovi_weeks
-          (product_slug, week_start, verified_outcome_value, burden_index, ovi,
+          (lane_slug, week_start, verified_outcome_value, burden_index, ovi,
            trend_vs_prior, components_json, published_event_id, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(product_slug, week_start) DO UPDATE SET
+        ON CONFLICT(lane_slug, week_start) DO UPDATE SET
           verified_outcome_value = excluded.verified_outcome_value,
           burden_index = excluded.burden_index,
           ovi = excluded.ovi,
@@ -1816,7 +1872,7 @@ def cmd_ovi_publish(args: argparse.Namespace) -> None:
           published_event_id = excluded.published_event_id
         """,
         (
-            payload["product_slug"],
+            payload["lane_slug"],
             args.week_start,
             payload["verified_outcome_value"],
             payload["burden_index"],
@@ -1869,7 +1925,7 @@ def cmd_digest_publish(args: argparse.Namespace) -> None:
     }
     event = store.append_event(
         "learning_digest.published",
-        product_arg(args),
+        lane_arg(args),
         "learning_digest",
         digest_id,
         args.actor,
@@ -1878,10 +1934,10 @@ def cmd_digest_publish(args: argparse.Namespace) -> None:
     store.conn.execute(
         """
         INSERT INTO learning_digests
-          (digest_id, product_slug, week_start, title, content, sanitized, published_event_id, created_at)
+          (digest_id, lane_slug, week_start, title, content, sanitized, published_event_id, created_at)
         VALUES (?, ?, ?, ?, ?, 1, ?, ?)
         """,
-        (digest_id, product_arg(args), args.week_start, args.title, content, event["event_id"], utc_now()),
+        (digest_id, lane_arg(args), args.week_start, args.title, content, event["event_id"], utc_now()),
     )
     store.conn.commit()
 
@@ -1896,7 +1952,11 @@ def cmd_digest_publish(args: argparse.Namespace) -> None:
 
 
 def add_common(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--product-slug", default=None)
+    # --lane-slug is the name; --product-slug is the pre-rename spelling kept
+    # as an ALIAS (same dest) so every existing caller — bootstrap-roles.sh,
+    # activate-project.sh, the dashboard fetchers, operator muscle memory —
+    # keeps working. Deleting the alias is a separate, callers-first change.
+    parser.add_argument("--lane-slug", "--product-slug", dest="lane_slug", default=None)
 
 
 def add_ovi_component_args(parser: argparse.ArgumentParser) -> None:

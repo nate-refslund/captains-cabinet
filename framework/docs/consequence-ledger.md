@@ -149,7 +149,7 @@ consequence event stays minimal and shared.
 
 ### 3. cabinet `org_events`
 
-Source shape: `{event_id, event_type, product_slug, aggregate_type,
+Source shape: `{event_id, event_type, lane_slug, aggregate_type,
 aggregate_id, actor, source, payload, supersedes_event_id, created_at}`.
 `org_events` stays the cabinet's **full organizational ledger** (missions,
 roles, hats, policy decisions — most of which are not "an action on the
@@ -157,7 +157,7 @@ captain's world"). The consequence ledger is the *behavioral subset*: when
 an officer or crew agent takes a gated or consequence-bearing action
 (queue a draft, close a board item, deploy, nudge), it emits ONE
 consequence event whose `refs[]` carries the `org_events` `event_id` for
-drill-down. `product_slug` → `lane`; `actor` → `{kind: "officer"|"crew",
+drill-down. `lane_slug` → `lane`; `actor` → `{kind: "officer"|"crew",
 id}`. Nothing is removed from `org_events`; the consequence event is the
 normalized projection the graduation math reads.
 

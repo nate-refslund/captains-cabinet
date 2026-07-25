@@ -1,6 +1,6 @@
 ---
 name: cabinet-init
-description: Onboarding interview for a new Cabinet deployment. Use when a captain sets up this repo for the first time (or adds/changes lanes) — interviews purpose-first (mission + focus letter), then for captain profile, lanes, org shape, autonomy posture, and seed outcomes, writes instance/config/cabinet-init.answers.yml, runs cabinet/scripts/generate-instance.py, and prints the exact activation steps. Idempotent on re-run. A zero-question fast lane exists for defaults-accepting hatches (generate-instance.py --defaults).
+description: Onboarding interview for a new Cabinet deployment. Use when a captain sets up this repo for the first time (or adds/changes lanes) — interviews purpose-first (mission + focus letter), then for captain profile, the company (what it does, who it serves, what it owes), lanes, org shape, autonomy posture, and seed outcomes, writes instance/config/cabinet-init.answers.yml, runs cabinet/scripts/generate-instance.py, and prints the exact activation steps. Works for any business, not only software ones — repos and task boards are a follow-up branch, asked only when a lane builds or runs software. Idempotent on re-run. A zero-question fast lane exists for defaults-accepting hatches (generate-instance.py --defaults).
 ---
 
 # Cabinet Init — the onboarding interview
@@ -60,7 +60,8 @@ re-run completes from it. The defaults it picks, exactly:
 | `captain.timezone` | `UTC` — placeholder, edit later |
 | `captain.telegram_chat_id` | `"0000"` — placeholder address (not a secret); set after the bot exists |
 | `cabinet` | `id: main` · `mode: single` · `org_shape: portfolio` · default `officer_model` |
-| `lanes` | one placeholder lane: `First Lane` / `first-lane`, no repos, no boards, `task_system: none` |
+| `company` | all three answers BLANK — the zero-question lane asked nothing, so it invents nothing |
+| `lanes` | one placeholder lane: `First Lane` / `first-lane`, blank does/serves/owes, no repos, no boards, `task_system: none` |
 | `autonomy` | `posture: propose_first` · `flavor: org` (OrgSource recall, no personal estate) · `target_posture: guardian` — explicitly consent-safe; nothing can scaffold sovereign |
 | `integrations` | `bot_token_env: TELEGRAM_COS_TOKEN` (env-var NAME only), no bot username yet |
 
@@ -163,14 +164,45 @@ Collect:
   classes that may still ping at night — is carried unchanged: this
   question can never widen it.
 
-### 2. Lanes
+### 2. The company, then its lanes
 
-A **lane** is a product/venture/area the Cabinet works (see
-`framework/docs/work-model.md` — products are lanes, not outcomes). Per lane:
+Ask what the business IS before asking what it owns. Three questions, in
+the captain's own words, and they presume nothing — a repair shop, a
+consultancy, a household, a charity and a software company all answer all
+three. Record them as a top-level `company:` block:
 
-- **Name** (human, e.g. `Acme Storefront`) and **slug** (kebab-case,
-  e.g. `acme-store` — becomes the context slug and the `<slug>-ceo`
-  role id).
+1. **Does** — "What does this business actually do?"
+2. **Serves** — "Who does it do that for?"
+3. **Owes** — "What does it owe them? What are you on the hook for —
+   deliveries, deadlines, callouts, filings, obligations?"
+
+Then the same three questions per **lane**. A lane is an area of work the
+Cabinet runs (see `framework/docs/work-model.md` — lanes are areas, not
+outcomes); a single-lane cabinet's lane simply IS the business, and any
+lane that does not restate an answer inherits the company's. Per lane:
+
+- **Name** (human, e.g. `Service Contracts`) and **slug** (kebab-case,
+  e.g. `service-contracts` — becomes the context slug and the
+  `<slug>-ceo` role id).
+- **does / serves / owes** — one line each, the captain's words. These
+  become the lane's context description, so the org's first read of
+  itself is the business, not an inventory.
+
+Do NOT ask about repos, boards, databases or hosting here. That is §2b,
+and it is a branch, not a standard question.
+
+### 2b. Software estate (BRANCH — ask only when the answers imply software)
+
+Open this branch for a lane ONLY when that lane's own answers describe
+**building or running software**. Most orgs have zero such lanes. Asking a
+cleaning company or a law practice for its repos and task boards is the
+single clearest tell that a tool was built for software teams and pointed
+at everybody else — do not do it, and do not record empty estate keys
+"for later" (the generator writes no inventory for a lane that declares
+none, and an empty one reads as a gap the org must fill).
+
+When the branch does open:
+
 - **Repo(s)** — `org/name` or URL; first repo becomes `product.repo`.
 - **Task system + board ids** — e.g. `plugin:dev-tasks` with board ids,
   `linear` with a team key, `github-issues`, or `none`. When the route
@@ -178,6 +210,10 @@ A **lane** is a product/venture/area the Cabinet works (see
   just a comment saying so (avoids duplicate adapters).
 - **Infra identifiers as NAMES only** — Neon project NAME, hosting
   project NAME. Never connection strings, never keys.
+
+If a lane's work is delivered by people rather than code, its estate is
+its people and its commitments — those are already captured by `serves`
+and `owes`, and no estate keys are written.
 
 ### 3. Org shape
 
@@ -373,13 +409,18 @@ placeholders only:
      purpose: <one sentence>                    #  the generator IGNORES this key
      success_90d: <one sentence>                #  (pinned by test) — only genesis
      never_touch: []                            #  reads it, to condition proposals
+   company:                                     # Phase 2 — the company shape.
+     does: <one line>                           #  What the business does.
+     serves: <one line>                         #  Who it serves.
+     owes: <one line>                           #  What it owes them.
    cabinet: {id, mode: single|multi, org_shape: portfolio|functional|custom, officer_model,
              preset}                             # preset OPTIONAL (§3b) — slug only,
                                                  #  e.g. developer; absent = shape default
    lanes:
-     - {name, slug, repos: [], task_system, boards: [],
-        neon_project, vercel_project,            # NAMES only
-        linear_team_key, linear_workspace_url}   # when task_system: linear
+     - {name, slug, does, serves, owes,          # §2 — one line each, captain's words
+        repos: [], task_system, boards: [],      # §2b ESTATE — software lanes ONLY;
+        neon_project, vercel_project,            #  NAMES only. OMIT them entirely
+        linear_team_key, linear_workspace_url}   #  when the lane ships no software
    autonomy: {posture: propose_first,            # fixed at init
               flavor: org,                       # org | personal (§4; also gates the
                                                  #  sources.yml recall binding — org emits
