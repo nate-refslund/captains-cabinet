@@ -124,13 +124,19 @@ now carries a **`derivation`** stamped BY THE CONSTRUCTOR from the evidence
 OBJECT it read (`rg.GateResult` → `machine:gate_result`; a `{case: bool}`
 replay map → `machine:replay_map`; the sim-8 triple outputs →
 `machine:scorer_triple`; a `JudgeEvidence` → `judge:llm_score`). There is no
-derivation PARAMETER, so a caller can never NAME machine custody for a number
-it did not measure — the wall shape of "a row arriving with its own
-provenance REFUSES". `admission_eligible` now refuses, fail-closed and BEFORE
-any floor is read, any machine dim on EITHER side whose derivation is
-judge-sourced, absent, or out-of-enum (`[FLOOR-DERIVATION]`), and the law is
-re-runnable at W6 surgery as `assert_machine_floors_machine_derived` /
-`assert_derivation_refused` (`[SIM4-X6-DERIVATION]`).
+derivation PARAMETER, so the LABEL channel is closed — the wall shape of "a
+row arriving with its own provenance REFUSES". `admission_eligible` now
+refuses, fail-closed and BEFORE any floor is read, any machine dim on EITHER
+side whose derivation is judge-sourced, absent, or out-of-enum
+(`[FLOOR-DERIVATION]`), and the law is re-runnable at W6 surgery as
+`assert_machine_floors_machine_derived` / `assert_derivation_refused`
+(`[SIM4-X6-DERIVATION]`).
+
+> **CORRECTED BY THE NOTES ROUND BELOW.** This section originally claimed the
+> constructor wall meant "a caller can never NAME machine custody for a number
+> it did not measure". That statement is FALSE as written and was disproved by
+> the targeted re-review — closing the label channel does not close the
+> evidence channel. See "N1 — the constructor wall's claim was false".
 
 New arms: `test_reference_scorer_binds_every_machine_dim_to_machine_evidence`
 · `test_the_constructor_wall_no_caller_may_name_a_derivation` ·
@@ -276,5 +282,165 @@ companion claim, and arming-record actuals — are deliberately NOT addressed in
 this round and remain open. Note **6** was already resolved (sim 7's full
 escape battery is unit T3's scope, not T2's).
 
+---
+
+# NOTES ROUND (cp1 notes) — the five non-blocking notes from the targeted re-review
+
+The targeted re-review of the fix round returned **SHIP**: both must-fixes are
+genuinely closed, all 9 revert groups bite, the AST ladder is proven
+byte-derived and fail-closed, and the deliberate non-ship of the keyed seal was
+judged CORRECT. None of that is reworked here. This round closes the five
+recorded gaps — one of which is a FALSE CLAIM in the corpus, and is the reason
+the round exists. Suites: **114 → 120 passed** (6 skipped, unchanged).
+
+## N1 — the constructor wall's claim was FALSE as written (the reason for this round)
+The lib and this artifact both claimed: *"there is no derivation PARAMETER, so
+a caller can never NAME machine custody for a number it did not measure."* The
+re-reviewer disproved it. The caller controls the `evidence` argument, and the
+evidence OBJECT'S TYPE fully determined the stamp, so a machine-SHAPED object
+handed in beside the judge's number stamped machine custody with **no label
+forgery at all**. Reproduced on this tree before the fix:
+
+```
+make_vector({"frozen_pass_rate": (0.99, MACHINE_KIND), ...},
+            evidence={"frozen_pass_rate": {"case-001": True}, ...})
+  -> stamped 'machine:replay_map'
+  -> assert_machine_floors_machine_derived(fake) PASSES
+  -> admission_eligible(fake, incumbent) == (True, [])
+```
+
+0.99 is the judge's number; the "replay map" is one fabricated row.
+
+**(a) The claim is corrected in BOTH the lib and this artifact.** A docstring
+claiming what the bytes do not deliver is the exact failure class this program
+keeps catching (§13 rule 1: docstrings are claims, run them). The lib now
+states the wall as TWO named channels plus a HONEST SCOPE block naming what
+stays open; the derivation-enum comment and the module-docstring vocabulary
+entry are corrected to match; the fix-round section above carries a correction
+banner rather than a silent edit.
+
+**(b) The fixture-tier hole is closed — the VALUE channel.** `make_vector` no
+longer accepts a machine dim's number on the caller's word: for a MACHINE dim
+carrying MACHINE evidence, the value is MEASURED from that evidence
+(`measure_from_evidence` — a gate result's regressed count, a replay map's
+passed/total, a scorer triple's quarantine fold), the pattern `candidate_vector`
+already demonstrated. A declared number that disagrees with its own evidence is
+a custody breach: the vector records the MEASUREMENT (the claim never enters
+it) and stamps `DERIVATION_VALUE_MISMATCH`, deliberately OUTSIDE
+`MACHINE_DERIVATIONS` so the existing fail-closed path refuses it with no new
+plumbing at the joint. Stamp and measurement now come from ONE classifier
+(`_classify_evidence`), so they can never drift apart.
+
+**(c) The negative control the re-reviewer named is armed.**
+`mutant_fabricated_evidence_for_a_machine_dim` — a one-row fabricated replay
+map beside a judge number — now REDs three ways: the joint refuses
+(`[FLOOR-DERIVATION]`), the stamp battery REDs (`[SIM4-X6-DERIVATION]`), and
+the value battery names why under its own distinct tag (`[SIM4-X6-MEASURED]`).
+Its other machine dim is deliberately HONEST so the mutant fails for the one
+reason under test.
+
+## N3 — the residual is now in the LIB, not only the artifact
+Mirroring the shape of the N2-custody `HONEST SCOPE` note, `make_vector` now
+carries its own HONEST SCOPE block naming **two declared residuals**:
+
+1. **The evidence channel is still the caller's.** A fabricated replay map that
+   AGREES with its own declared value still reads as machine custody. Binding a
+   replay map to the identity of the frozen corpus that produced it is an
+   UPSTREAM obligation (it lives at the replay stage that mints the map, not at
+   the vector layer) and §9.1 ratifies no clause for it here. Pinned by
+   `test_declared_residual_self_consistent_fabricated_evidence`, which asserts
+   the residual is real and instructs that the HONEST SCOPE paragraph be
+   retired in the same commit if a future round closes it — so the residual
+   cannot rot back into a claim.
+2. **The value law is FIXTURE-tier, not re-runnable at W6.** It holds at
+   CONSTRUCTION, the only place the evidence exists; a §9.1 pack carries
+   `{value, kind, derivation}` and NOT its evidence, so the check cannot be
+   re-derived against a landed `scorers.py` pack without an obligation §9.1
+   does not ratify. Same class as the keyed seal deliberately not shipped for
+   the label channel. What DOES re-run at W6:
+   `assert_machine_floors_machine_derived`, `assert_no_derivation_parameter`,
+   `assert_derivation_refused`.
+
+## N2 — the armed wall is now re-runnable
+The `inspect.signature` check sat INLINE in the test over the FIXTURE
+constructors, so at W6 it would still have been checking fixture code (N4's
+`table_order` law got the lib-battery promotion; this one did not). Promoted to
+**`assert_no_derivation_parameter(*constructors)`** (`[SIM4-X6-NO-LABEL]`),
+which integrator surgery points at the real scorer/vector constructor. Armed by
+its own biting mutant `mutant_constructor_with_derivation_parameter` — a
+constructor that DOES take derivation labels, whose forged stamp is provably
+invisible to the stamp battery, which is exactly why the wall must be a
+signature check.
+
+## N4 — `[P5-LADDER]` now has its paired `pytest.raises` arm
+It was the only new tag without one — proven non-vacuous by hand, unarmed in
+the corpus. `assert_certainty_capped` gains the same `source=` injection seam
+`estate_certainty_ladder` already carries, and
+`test_mutant_broken_ladder_scan_REDS[×2]` feeds a genuinely BROKEN
+`states.py`: (i) `source == HUMAN_VERDICT_SOURCE` → `source == "any"` (no rung
+is human-gated, the ladder derives an EMPTY above-cap set and would pass
+anything), and (ii) the P5 cap literal drifted. Each arm asserts the honest
+negative on the real bytes first, so a RED can only be the integrity guard.
+
+## N5 — trailer / provenance mismatch, reconciled
+Commit `27197a63` carries `Co-Authored-By: Claude Opus 5` while the three test
+files and this artifact's fix-round provenance claimed Fable 5. **The trailer is
+correct** — Opus 5 did the fix round (the program moved to Opus 5 as primary on
+2026-07-25; commits name the model that did the work, historical commits keep
+theirs). The in-file provenance lines were single statements covering whole
+files that now hold content from BOTH models, so each is now split by scope:
+original build `ab8fe00a` = Fable 5; fix rounds (`27197a63` + this notes round)
+= Opus 5. Both halves are true as written.
+
+## Methodology correction carried forward (re-reviewer, worth keeping)
+`git diff --stat origin/master...HEAD -- framework/ cabinet/scripts/*.py` does
+**NOT** return empty for a tests-only batch: git pathspec wildcards match `/`
+and recurse, so `cabinet/scripts/*.py` swallows `cabinet/scripts/tests/*.py`.
+Reproduced here — the naive form reports "3 files changed, 3429 insertions(+)"
+and reads as a framework delta that does not exist. Use
+`':(glob)cabinet/scripts/*.py'`, which stops at the slash and correctly returns
+empty. Future rounds should not re-pay this.
+
+## Verification (this tree, python3.12)
+- both suites → **120 passed, 6 skipped** (was 114/6; +6 tests). The 6 skips
+  are unchanged in IDENTITY and REASON, not merely in count: t1 shared-core
+  join · candidate · gate-arm-cli · scorers · league.py · arming record.
+- **Load-bearing proof (both directions, cache PURGED before every run, plus
+  `PYTHONDONTWRITEBYTECODE=1`):** 5 new revert cases + 4 spot-checks of the
+  previously verified groups, each proven green → REVERTED-RED → restored-green:
+  N1b whole value law 1/1 · N1b mismatch STAMP alone 1/1 · N2 signature check
+  1/1 · N4 ladder-vacuity guard 1/1 · N4 cap-drift guard 1/1 · SPOT MF1 joint
+  gate 3/3 · SPOT MF1 construction stamp 3/3 · SPOT MF2ii cap assert 3/3 ·
+  SPOT MF2ii byte-derived ladder 2/2.
+- **Finding paid in this round (defence in depth, recorded because it changed a
+  proof):** reverting the MF1 construction stamp ALONE no longer REDs
+  `test_mutant_judge_derived_number_on_a_machine_floor_REDS` — the new value law
+  independently catches that revert via the mutant's second machine dim. The
+  group still bites (the other 2 of its 3 tests RED), and reverting the stamp
+  and the value law TOGETHER REDs the third. A masked revert is not a dead
+  revert, but it must be reported as masked, not as biting.
+- `python3.12 cabinet/scripts/cog2-import-gate.py` → exit 0.
+- `bash cabinet/scripts/check-layer-separation.sh` → new=0 (baseline 24,
+  allowlist 19, current 43).
+- `python3.12 cabinet/scripts/cognitive-architecture-census.py` → exit 0,
+  observed==max, and its output is BYTE-IDENTICAL to the same script's output
+  on a pristine `origin/master` clone (diffed, not inferred).
+- full `python3.12 -m pytest cabinet/scripts/tests -q` (SERIAL, isolated
+  clone) → **3519 passed, 18 skipped** = master's 3399/12 baseline + this
+  unit's 120/6 EXACTLY. Delta vs the previous round: +6 passed, +0 skipped, no
+  collateral movement anywhere in the estate.
+- corpus purity: `git diff --name-status origin/master` → all four paths
+  status **A**, zero deletions on every path (§13 additive-only).
+- `ast.parse` over the three unit files read from the pushed commit's BYTES
+  (`git show <sha>:<path>`) → clean.
+
+## Still open after this round (stated plainly)
+Review notes **3, 5, 8, 9, 10, 11** from the ORIGINAL review remain out of
+scope and open (integrator to record), unchanged by this round. The two
+declared residuals in N3 above are deliberate, contract-grounded non-ships,
+not oversights.
+
 Provenance: authored per the 2026-07-07 full-autonomy grant + the 2026-07-20
-cognitive-masterplan continuous grant (COG-5 §12/§13, W2 T2, Fable 5).
+cognitive-masterplan continuous grant (COG-5 §12/§13, W2 T2). Original cp1
+batch: Fable 5. Fix round + this notes round: Opus 5 (the program's primary
+model from 2026-07-25).

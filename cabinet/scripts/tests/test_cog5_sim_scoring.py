@@ -43,8 +43,10 @@ wave).
 S0: interpreter python3.12; no DB, no network (children are local
 subprocesses with explicit env); the repo conftest fences every durable
 surface. Provenance: authored per the 2026-07-07 full-autonomy grant + the
-2026-07-20 cognitive-masterplan continuous grant (COG-5 §12/§13, W2 T2;
-Fable 5 — corpus authorship is judgment-tier work).
+2026-07-20 cognitive-masterplan continuous grant (COG-5 §12/§13, W2 T2 —
+corpus authorship is judgment-tier work). ORIGINAL BUILD (ab8fe00a): Fable 5.
+FIX ROUNDS (27197a63 crown-jewel circumventions; this round's five re-review
+notes): Opus 5, the program's primary model from 2026-07-25.
 """
 from __future__ import annotations
 
@@ -317,17 +319,109 @@ class TestSim4JudgeOnly:
         # EVIDENCE, never a derivation label — there is structurally no
         # parameter through which a scorer could declare a machine
         # derivation for a number it did not measure.
-        for fn in (FIX.make_vector, FIX.candidate_vector):
-            params = set(inspect.signature(fn).parameters)
-            assert not {p for p in params if "derivation" in p}, (
-                f"{fn.__name__} exposes a derivation parameter — the caller "
-                "could then NAME machine custody for a judge number")
+        #
+        # N2 (re-review): this check used to sit INLINE over the fixture
+        # constructors, so at W6 it would still have been checking fixture
+        # code. It is now a LIB battery — integrator surgery points it at the
+        # real scorer/vector constructor, the same promotion N4's table_order
+        # law got.
+        FIX.assert_no_derivation_parameter(FIX.make_vector, FIX.candidate_vector)
         # ...and handing judge evidence to a machine dim stamps the TRUTH:
         pack = FIX.make_vector(
             {"frozen_pass_rate": (0.99, FIX.MACHINE_KIND)},
             evidence={"frozen_pass_rate": FIX.JudgeEvidence(0.99)})
         assert pack["vector"]["frozen_pass_rate"][FIX.DERIVATION_KEY] == \
             FIX.DERIVATION_JUDGE_LLM
+
+    def test_mutant_constructor_naming_its_own_derivation_REDS(self):
+        # the promoted battery needs its own biting mutant or it is
+        # decoration (§12): a constructor that DOES take derivation labels
+        # lets the caller stamp `machine:replay_map` on the judge's number.
+        forged = FIX.mutant_constructor_with_derivation_parameter(
+            {"frozen_pass_rate": (0.99, FIX.MACHINE_KIND)},
+            derivation={"frozen_pass_rate": FIX.DERIVATION_REPLAY_MAP})
+        assert forged["vector"]["frozen_pass_rate"][FIX.DERIVATION_KEY] == \
+            FIX.DERIVATION_REPLAY_MAP, (
+            "fixture invariant: the mutant constructor must actually let the "
+            "caller name machine custody")
+        assert FIX.machine_derivation_violations(forged) == [], (
+            "fixture invariant: the forged LABEL is indistinguishable at the "
+            "stamp battery — which is exactly why the wall is a signature "
+            "check and not a value check")
+        with pytest.raises(AssertionError, match=_tag("[SIM4-X6-NO-LABEL]")):
+            FIX.assert_no_derivation_parameter(
+                FIX.mutant_constructor_with_derivation_parameter)
+
+    def test_machine_dim_values_are_measured_from_their_evidence(self):
+        # the VALUE channel (N1b): a machine dim's number IS what its evidence
+        # says. The reference scorer's pass rate equals the replay map's own
+        # passed/total and its regression count equals the gate result's own
+        # regressed length — not numbers reported alongside them.
+        for name, pack in _named_vectors().items():
+            FIX.assert_machine_values_measured_from_evidence(pack)
+        measured = FIX.make_vector({
+            "frozen_pass_rate": (0.5, FIX.MACHINE_KIND),
+        }, evidence={"frozen_pass_rate": {"a": True, "b": False}})
+        dim = measured["vector"]["frozen_pass_rate"]
+        assert dim["value"] == 0.5 and dim[FIX.DERIVATION_KEY] == \
+            FIX.DERIVATION_REPLAY_MAP
+        assert FIX.measure_from_evidence({"a": True, "b": False}) == 0.5
+        assert FIX.measure_from_evidence(
+            rg.GateResult(outcome=rg.OUTCOME_FAIL, regressed=["c1", "c2"])) == 2
+
+    def test_mutant_fabricated_evidence_for_a_machine_dim_REDS(self):
+        # THE escape the targeted re-review proved was STILL OPEN after the
+        # label channel closed: the caller controls the `evidence` argument,
+        # and the evidence OBJECT'S TYPE decided the stamp on its own. A
+        # machine-SHAPED object — one fabricated replay row — handed beside
+        # the judge's 0.99 stamped `machine:replay_map` with no label forgery,
+        # and admission_eligible returned (True, []). The docstring claiming
+        # this could not happen was FALSE; the value channel closes it.
+        vecs = _named_vectors()
+        fake = FIX.mutant_fabricated_evidence_for_a_machine_dim(judge_score=0.99)
+        rate = fake["vector"]["frozen_pass_rate"]
+        assert rate[FIX.DERIVATION_KEY] == FIX.DERIVATION_VALUE_MISMATCH, (
+            "fixture invariant: the fabricated map is machine-SHAPED, so the "
+            "stamp can only catch it via the value it fails to match")
+        assert fake["vector"]["frozen_regressions"][FIX.DERIVATION_KEY] == \
+            FIX.DERIVATION_GATE_RESULT, (
+            "fixture invariant: the mutant's OTHER machine dim is honest — it "
+            "must fail for the one reason under test")
+        assert 0.99 not in {d["value"] for n, d in fake["vector"].items()
+                            if n != "judge_score"}, (
+            "fixture invariant: the judge's number never enters the vector — "
+            "the recorded value is the measurement, not the claim")
+        # the joint refuses fail-closed, before any floor is read...
+        ok, reasons = FIX.admission_eligible(fake, vecs["incumbent"])
+        FIX.assert_derivation_refused(ok, reasons)
+        # ...the stamp battery REDs (the mismatch is out-of-enum custody)...
+        with pytest.raises(AssertionError,
+                           match=_tag("[SIM4-X6-DERIVATION]")):
+            FIX.assert_machine_floors_machine_derived(fake)
+        # ...and the value battery names WHY, under its own distinct tag.
+        with pytest.raises(AssertionError, match=_tag("[SIM4-X6-MEASURED]")):
+            FIX.assert_machine_values_measured_from_evidence(fake)
+
+    def test_declared_residual_self_consistent_fabricated_evidence(self):
+        # HONEST BOUNDARY, armed as a test so it cannot rot into a claim: a
+        # fabricated replay map whose declared value AGREES with it still
+        # reads as machine custody. The vector layer cannot see that the map
+        # is not the frozen corpus — that binding lives upstream, at the
+        # replay stage that mints the map, and §9.1 ratifies no clause for it
+        # here. Recorded verbatim in make_vector's HONEST SCOPE (1).
+        vecs = _named_vectors()
+        self_consistent = FIX.make_vector({
+            "frozen_pass_rate": (1.0, FIX.MACHINE_KIND),
+            "frozen_regressions": (0, FIX.MACHINE_KIND),
+        }, evidence={"frozen_pass_rate": {"case-001": True},
+                     "frozen_regressions": rg.GateResult(outcome=rg.OUTCOME_PASS)})
+        assert FIX.machine_derivation_violations(self_consistent) == []
+        ok, _ = FIX.admission_eligible(self_consistent, vecs["incumbent"])
+        assert ok is True, (
+            "this arm PINS the declared residual, it does not celebrate it: "
+            "if a future round binds replay maps to the frozen corpus, this "
+            "assert flips and the residual paragraph in make_vector's HONEST "
+            "SCOPE must be retired in the same commit")
 
     def test_mutant_judge_derived_number_on_a_machine_floor_REDS(self):
         # THE escape this arm closes (fresh-context review, must-fix 1): a
@@ -817,6 +911,30 @@ class TestVocabularyTripwires:
         row = FIX.make_league_row("cand-c", scored=0.6, ranked=1)
         FIX.assert_certainty_capped(row)
         assert row["certainty"] == FIX.P5_CAP
+
+    @pytest.mark.parametrize("old,new,why", (
+        ('source == HUMAN_VERDICT_SOURCE', 'source == "any"',
+         "no rung is human-gated any more, so the ladder derives an EMPTY "
+         "above-cap set and would pass any certainty"),
+        ('STATE_OBSERVATIONALLY_SUPPORTED = "observationally_supported"',
+         'STATE_OBSERVATIONALLY_SUPPORTED = "observationally_supported_v2"',
+         "the P5 cap token drifted out from under the corpus"),
+    ))
+    def test_mutant_broken_ladder_scan_REDS(self, old, new, why):
+        # N4 (re-review): [P5-LADDER] was the only new tag with no paired
+        # pytest.raises arm — proven non-vacuous by hand, unarmed in the
+        # corpus. Both integrity guards are now armed against a genuinely
+        # BROKEN states.py (fed through the same `source` seam the
+        # discriminator proof uses), not against a hand-made ladder dict.
+        real = (_REPO / FIX.STATES_REL).read_text(encoding="utf-8")
+        assert old in real, f"fixture invariant: {old!r} must exist to mutate"
+        mutated = real.replace(old, new)
+        # a HONEST row — the certainty is at the cap, so anything that REDs
+        # here is the ladder integrity guard and never a cap violation.
+        row = FIX.make_league_row("cand-l", scored=0.6, ranked=1)
+        FIX.assert_certainty_capped(row, source=real)      # honest negative
+        with pytest.raises(AssertionError, match=_tag("[P5-LADDER]")):
+            FIX.assert_certainty_capped(row, source=mutated)
 
     @pytest.mark.parametrize("state_name", ("STATE_INTERVENTION_SUPPORTED",
                                             "STATE_FALSIFIED"))
