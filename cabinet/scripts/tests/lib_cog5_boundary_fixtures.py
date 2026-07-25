@@ -167,6 +167,161 @@ def lib_cog5_boundary_observe_env_via_subprocess(
 
 
 # ==========================================================================
+# sim 7 — CREDENTIAL-FILE reach (§4.4's fourth row-7 seed class: "no
+# ~/.screenpipe, no OAuth caches, no .env, no keychain reach")
+#
+# WHY A SEPARATE INSTRUMENT: the two shipped sim-7 detectors are
+# STRUCTURALLY blind to a credential READ. `..._env_leak_findings` is
+# name-keyed over the ENVIRONMENT (a file on disk is not an env var), and
+# the X5 `..._outside_workdir_diff` fence is write-keyed over the OUTSIDE
+# tree (a read that copies INWARD leaves the outside tree byte-identical).
+# Reach therefore needs its own oracle.
+#
+# CONFINEMENT MECHANISM (stated explicitly because HOME-unset alone provably
+# does NOT confine): `Path.home()` calls os.path.expanduser('~'), which
+# consults os.environ['HOME'] FIRST and falls back to
+# pwd.getpwuid(os.getuid()).pw_dir when HOME is ABSENT. Scrubbing HOME out of
+# the allowlisted env therefore leaves home resolving to the REAL home
+# through the pwd database. The CONFINED posture is an EXPLICIT `HOME`
+# OVERRIDE pointing INTO the arena workdir (the same override seam the scrub
+# already uses for ARENA_WORKDIR_MARKER) — never mere absence.
+#
+# DECLARED RESIDUAL (honest, W3-owned): a HOME override confines
+# expanduser-based resolution only — a candidate calling pwd.getpwuid()
+# directly still learns the real home path. Closing that needs an OS-level
+# fence (the W3 framework/evolution/sandbox.py harness), so the probe REPORTS
+# `pwd_home` and the corpus never claims full confinement.
+#
+# SAFETY: TWIN FENCES inside the probe. It refuses if the resolved home is
+# the real pwd home, and refuses if the resolved home lies outside a
+# caller-declared SCRATCH root. These instruments are proven against PLANTED
+# FIXTURE files under a scratch home and MUST NEVER stat a real credential
+# path.
+# ==========================================================================
+LIB_COG5_BOUNDARY_HOME_CREDENTIAL_CLASSES: tuple[tuple[str, str], ...] = (
+    # names assembled at runtime (the file's assembled-token discipline)
+    ("screenpipe_dir", "." + "screen" + "pipe"),
+    ("oauth_cache", ".claude/." + "credent" + "ials.json"),
+    ("dotenv", "." + "env"),
+    ("keychain_dir", "Library/" + "Key" + "chains"),
+)
+
+_FIXTURE_FAKE = "fixture-fake-value-never-a-real-secret\n"
+
+_HOME_RESOLUTION_PROBE = (
+    "import json, os, pwd\n"
+    "from pathlib import Path\n"
+    "print(json.dumps({'home_env': os.environ.get('HOME'),\n"
+    "                  'home_resolved': str(Path.home()),\n"
+    "                  'pwd_home': pwd.getpwuid(os.getuid()).pw_dir}))\n"
+)
+
+_HOME_REACH_PROBE = (
+    "import json, os, pwd, shutil, sys\n"
+    "from pathlib import Path\n"
+    "allowed = Path(os.path.realpath(sys.argv[1]))\n"
+    "classes = json.loads(sys.argv[2])\n"
+    "copy_into = sys.argv[3] or None\n"
+    "home = Path.home()\n"
+    "resolved = Path(os.path.realpath(home))\n"
+    "real = Path(os.path.realpath(pwd.getpwuid(os.getuid()).pw_dir))\n"
+    "if resolved == real:\n"
+    "    print(json.dumps({'refused': str(resolved), 'why': 'real-home'}))\n"
+    "    raise SystemExit(0)\n"
+    "if resolved != allowed and allowed not in resolved.parents:\n"
+    "    print(json.dumps({'refused': str(resolved), 'why': 'outside-scratch'}))\n"
+    "    raise SystemExit(0)\n"
+    "reach, copied = [], []\n"
+    "for label, rel in classes:\n"
+    "    target = home / rel\n"
+    "    if not target.exists():\n"
+    "        continue\n"
+    "    reach.append([label, rel])\n"
+    "    if copy_into:\n"
+    "        dest = Path(copy_into) / (label + '.exfil')\n"
+    "        if target.is_dir():\n"
+    "            shutil.copytree(target, dest, dirs_exist_ok=True)\n"
+    "        else:\n"
+    "            shutil.copy2(target, dest)\n"
+    "        copied.append(str(dest))\n"
+    "print(json.dumps({'home': str(home), 'reach': reach, 'copied': copied,\n"
+    "                  'pwd_home': pwd.getpwuid(os.getuid()).pw_dir}))\n"
+)
+
+
+def lib_cog5_boundary_plant_home_credentials(home: Path) -> dict[str, Path]:
+    """Plant EXPLICITLY-FAKE fixture files at the four §4.4-named credential
+    path classes under a SCRATCH home (never the real one). Returns
+    class-label -> planted path. This is what an unconfined candidate reaches
+    — no real credential file is ever read, copied, or represented."""
+    planted: dict[str, Path] = {}
+    for label, rel in LIB_COG5_BOUNDARY_HOME_CREDENTIAL_CLASSES:
+        target = home / rel
+        if label.endswith("_dir"):
+            target.mkdir(parents=True, exist_ok=True)
+            (target / "fixture-marker.txt").write_text(_FIXTURE_FAKE, encoding="utf-8")
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(_FIXTURE_FAKE, encoding="utf-8")
+        planted[label] = target
+    return planted
+
+
+def lib_cog5_boundary_home_resolution_probe(
+    env: Mapping[str, str],
+) -> dict[str, Any]:
+    """Resolve `Path.home()` INSIDE a candidate-shaped subprocess and report
+    what it saw. PATH REASONING ONLY — nothing under the resolved home is
+    stat-ed, so this is safe to run against ANY env, including one whose home
+    escapes the arena (that is exactly the case it exists to expose)."""
+    cp = subprocess.run(
+        [sys.executable, "-c", _HOME_RESOLUTION_PROBE],
+        env=dict(env), capture_output=True, text=True, timeout=60, check=True,
+    )
+    return json.loads(cp.stdout)
+
+
+def lib_cog5_boundary_home_reach_probe(
+    env: Mapping[str, str],
+    scratch_root: Path,
+    copy_into: Path | None = None,
+) -> dict[str, Any]:
+    """Run the fenced candidate-shaped reach probe: resolve home, then test
+    reachability of every §4.4-named credential path class beneath it
+    (optionally COPYING each hit into `copy_into` — the read-then-exfiltrate
+    shape both shipped instruments miss). RAISES if either safety fence
+    fires: the probe never stats a real home."""
+    cp = subprocess.run(
+        [sys.executable, "-c", _HOME_REACH_PROBE, str(scratch_root),
+         json.dumps([list(c) for c in LIB_COG5_BOUNDARY_HOME_CREDENTIAL_CLASSES]),
+         str(copy_into) if copy_into is not None else ""],
+        env=dict(env), capture_output=True, text=True, timeout=60, check=True,
+    )
+    out = json.loads(cp.stdout)
+    if "refused" in out:
+        raise ValueError(
+            f"home-reach probe REFUSED ({out['why']}): resolved home "
+            f"{out['refused']!r} is not a planted scratch home under "
+            f"{str(scratch_root)!r} — these instruments run against FIXTURES "
+            f"only, never a real credential path")
+    return out
+
+
+def lib_cog5_boundary_home_reach_findings(
+    env: Mapping[str, str],
+    scratch_root: Path,
+    copy_into: Path | None = None,
+) -> list[str]:
+    """The §4.4 credential-file oracle: one NAMED finding per credential path
+    class the candidate can reach from its resolved home. A CONFINED
+    candidate (HOME overridden into the arena workdir) yields []; an
+    unconfined one names every planted class."""
+    result = lib_cog5_boundary_home_reach_probe(env, scratch_root, copy_into)
+    return [f"credential path reachable from candidate home: {label} ({rel})"
+            for label, rel in result["reach"]]
+
+
+# ==========================================================================
 # sim 7 — git hook-execution law (both-ways hooksPath pinning; gate.py
 # :372-410 replicated as fixture machinery, never imported)
 # ==========================================================================
