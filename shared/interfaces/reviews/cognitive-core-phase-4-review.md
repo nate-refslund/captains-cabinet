@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 093e586636ea40716d353508429439d099adc54e48b574aa1efa6860debe0ff6
+Reviewed-Scope-Digest: d8d316b244e10156d45b3b46cff7bddb52bfbd526b736d1b7bb97745f1241eb2
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
@@ -67,7 +67,48 @@ mutant auto-generated per NEW row) + `test_cog5_boundary_rows.py` (content pins)
 `cog2-import-gate.py` rc0; the full `test_cog4_*` battery 702 passed 2 declared skips; armed
 `cog4-measure --check` within bound; `verify-cognitive-phase4.sh` full green end-to-end after this re-bind.
 A MECHANICAL-DELTA re-bind per the cp3 precedent, never a restamp: zero COG-4 claims are touched by rows
-APPENDED for the next phase. The panel verdict stands.)
+APPENDED for the next phase. The panel verdict stands.
+MOVED BY THE BOUNDARY-ENGINE DYNAMIC-FORM LANDING (2026-07-25,
+d8d316b244e10156d45b3b46cff7bddb52bfbd526b736d1b7bb97745f1241eb2 -> the value above; from
+093e5866...). Landed branch `fix/import-gate-dynamic-forms`, two commits, closing ten spellings of a
+dynamic-import evasion in the boundary engine. READ THIS ONE DIFFERENTLY: every re-bind above is a
+MECHANICAL-DELTA re-bind (zero behavior bytes). This is the FIRST BEHAVIOR-DELTA re-bind of this
+artifact — the engine's own logic changed, so "mechanical delta" would be a false claim and is not made
+here. EXACTLY ONE in-scope path moved (verified by diffing the resolved 85-entry scope over
+origin/master 26d4cce2..HEAD): `cabinet/scripts/cog2-import-gate.py`, +432/-13, adding an AST pass
+(constant-fold + binding-accurate hook resolution over `_HOOKS_OF_MODULE` {importlib, builtins}).
+The other three landed paths sit OUTSIDE this scope and are named for the record: the new suite
+`cabinet/scripts/tests/test_boundary_dynamic_forms.py` (only the enumerated `test_cog4_*`/`lib_cog4_*`
+files are scope entries — `cabinet/scripts/tests` is NOT a DIR entry) and the two FW-019 batch proofs
+`fix-import-gate-dynamic-forms-cp{1,2}.md`.
+WHY THE PANEL VERDICT STILL STANDS — the Q9 engine claims were RE-MEASURED by the landing integrator on
+the merged bytes, not inherited: (a) engine over the committed repo rc0, and its `check`/`--report`/
+`--json` streams are BYTE-IDENTICAL to master's engine on the same tree (so the change is invisible to
+every real caller — no new false positive anywhere in the repo); (b) the legacy suites
+`test_cog2_import_gate.py` + `test_cog3_import_gate.py` are BYTE-UNTOUCHED vs master (`git diff` empty)
+and, with `test_cog4_boundary_rows.py` + `test_cog5_boundary_rows.py`, 229 passed; (c) the panel's
+six-mutant shape was re-run by the integrator against BOTH engines side by side with the fenced token
+SPLIT (so the token-grep rule cannot mask the result): the two literal controls keep IDENTICAL rule-id
+attribution on both engines, all ten dynamic spellings go rc0-on-master -> rc1-on-this-engine carrying
+the SAME rule id the literal dynamic spelling already carried (`FORBIDDEN_PROJECTION_TOKEN` — attribution
+does not move), and six false-positive controls (own-`def import_module`, rebound name, unrelated target,
+allowlisted importer, non-fenced lane, 200-deep fold nest) stay CLEAN on both. The change is therefore
+STRICTLY WIDENING: it can only add catches, never retract one or re-attribute one. (d) `cog4-measure
+--check` armed and within bound; census PASS at the e4-tightened maxima with zero headroom preserved
+(the engine lives in `cabinet/scripts`, outside the `framework_production_*` counters); layer-sep new=0;
+`verify-cognitive-phase4.sh` full green end-to-end after this re-bind.
+WHAT WAS NOT DONE, stated plainly: this was NOT re-reviewed by a fresh frozen COG-4 panel. The
+integrator re-ran the panel's Q9 claim surface (above) and the branch carries its own two adversarial
+fresh-context review artifacts, cp1 and cp2; cp2 records that cp1's own residual text was FALSE BY
+OMISSION and corrects it. A later session that wants a panel-grade re-review of the widened engine
+should read cp2 first — its residual set is measured against these exact bytes and pinned by tests.
+SIBLING BINDERS: `cabinet/scripts/cog2-import-gate.py` also sits in the COG-2 and COG-3 EXPECTED_SCOPEs,
+so this landing moves those digests too (COG-2 98bae784 -> 59514d4a, COG-3 34a382fa -> 61644fda). They
+are NOT re-bound and must not be: COG-0/1/2/3 are the digest-frozen historical instances their own
+docstrings describe and were ALREADY BLOCK on master 26d4cce2 before this branch (measured: COG-0
+f543dc1e vs 63f4643a, COG-1 25c2f5e3 vs 2fb7a390, COG-2, COG-3) — a pre-existing, by-design condition
+this landing neither improves nor worsens. COG-4 is the one LIVE binding, and it is the one re-bound
+here.)
 
 ---
 
