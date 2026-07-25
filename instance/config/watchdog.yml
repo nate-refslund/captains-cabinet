@@ -64,6 +64,17 @@ expectations:
   - briefing-delivered
   - officer-reflection
   - captain-decisions-logged
+  # Inbound Captain contact — the SECOND leg of the contact dead-man, shipped
+  # STAGED DARK like the Phase-4 rows below. Uncomment to arm. The PRIMARY
+  # inbound detector is the off-machine watcher configured in
+  # instance/config/liveness.yml: it alarms on the ABSENCE of a heartbeat and
+  # therefore survives the outage that would silence this row, so arming this
+  # one is an addition, never the thing that closes inbound silence. What it
+  # adds is attribution the external watcher cannot give — the inbound poller
+  # dead while the rest of the cabinet is healthy. Arm it only once the Chair
+  # is reliably reading its stream, since a quiet Captain and a broken lane
+  # look identical from here and both page the Chair.
+  # - captain-inbound-contact
   - no-silent-cron-failure
   - pipes-fresh
   # Phase-4 evidence-plane rows ship STAGED DARK (shadow law — whole-cabinet

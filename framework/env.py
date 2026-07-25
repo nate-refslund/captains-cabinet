@@ -1049,6 +1049,27 @@ def watchdog_config_path(default: str = "") -> str:
         return str(default)
 
 
+def liveness_config_path(default: str = "") -> str:
+    """The path to the Captain-contact dead-man's deployment table — the same
+    seam idiom as ``watchdog_config_path``, so ``framework/liveness`` carries no
+    instance path tokens.
+
+    Resolution order: the env override ``CABINET_LIVENESS_CONFIG`` (explicit
+    per-process, ``~``-expanded) → ``<root>/instance/config/liveness.yml`` →
+    the generic ``default`` (``""``) on any failure. Returns a PATH only: the
+    emitter owns its stdlib parse and its INERT fail-safe (survival contract),
+    so an absent/unreadable file — or ``""`` — simply means this deployment
+    pings nothing, which is the correct default for a fresh clone. Deliberately
+    uncached: a pure path computation, no yaml."""
+    env_override = (os.environ.get("CABINET_LIVENESS_CONFIG") or "").strip()
+    if env_override:
+        return os.path.expanduser(env_override)
+    try:
+        return str(_cabinet_root() / "instance/config/liveness.yml")
+    except Exception:
+        return str(default)
+
+
 def active_preset(default: str = "work") -> str:
     """The ACTIVE preset slug for this deployment — the resolver that lifts the
     ``instance/config/active-preset`` read OUT of universal-base ``framework``

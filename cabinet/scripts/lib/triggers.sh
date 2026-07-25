@@ -154,8 +154,48 @@ trigger_wake_officer() {
   disown 2>/dev/null || true
 }
 
+# Report whether a target officer has a LIVE consumer session — WITHOUT sending,
+# waking, or touching anything. Pure observation; echoes exactly one of:
+#   live     — a tmux session named officer-<target> exists (a consumer is there)
+#   absent   — tmux is available and that session does NOT exist
+#   unknown  — not observable here (no target, or no tmux: Docker/CI/remote box)
+#
+# WHY THIS EXISTS: "enqueued" was being scored as "delivered". trigger_send's
+# XADD is the DATA plane and it is durable, so a successful XADD is a real fact —
+# but it is NOT the fact callers were treating it as. The wake (the control plane
+# that turns a queued trigger into an actual turn within seconds) runs in a fully
+# detached subshell whose every exit path is discarded, so `tmux has-session`
+# failing — an officer that is simply GONE — was invisible to every caller.
+# The watchdog then set a multi-hour cooldown on an escalation nobody could read.
+# This function is the missing distinction: queued, versus queued to a live
+# consumer.
+#
+# `unknown` is deliberately NOT folded into `absent`: a box with no tmux (Docker's
+# single-session topology, CI) has consumers we cannot see from here, and claiming
+# they are dead would be the same over-claim in the other direction. Callers treat
+# `unknown` as "no evidence either way" and keep their prior behaviour.
+trigger_consumer_state() {
+  local target="${1:-}"
+  [ -n "$target" ] || { echo "unknown"; return 0; }
+  command -v tmux >/dev/null 2>&1 || { echo "unknown"; return 0; }
+  if tmux has-session -t "officer-${target}" 2>/dev/null; then
+    echo "live"
+  else
+    echo "absent"
+  fi
+}
+
 # Send a trigger to an officer
 # Usage: trigger_send <target_officer> "<message>"
+#
+# Exports TRIGGER_SEND_DELIVERY after a successful XADD — "live" | "absent" |
+# "unknown" per trigger_consumer_state. Callers that care whether the page can
+# actually be READ (the watchdog's escalation accounting) read that variable;
+# callers that only need durability ignore it and are byte-for-byte unaffected.
+# The RETURN CODE is deliberately unchanged (0 = durably queued, 1 = XADD
+# failed): an absent consumer is not a send failure, the trigger really is on the
+# stream, and changing rc here would break every existing callsite. Nothing is
+# written to stderr for an absent consumer for the same reason.
 trigger_send() {
   local target="$1" message="$2"
   local sender="${OFFICER_NAME:-unknown}"
@@ -194,6 +234,13 @@ trigger_send() {
   # durable "who was told what when" record is kept by the XADD data plane
   # (above) and the append-only trigger-archive JSONL (exhaust-archive.py);
   # grep answers audit questions without a paid Voyage embed per trigger.
+
+  # Honest-sender distinction (D4-cheap): record whether this trigger went to a
+  # LIVE consumer or merely onto a durable stream. Observed BEFORE the wake,
+  # because the wake detaches and discards its own verdict. This is the only
+  # place a caller can learn the difference.
+  TRIGGER_SEND_DELIVERY=$(trigger_consumer_state "$target")
+  export TRIGGER_SEND_DELIVERY
 
   # Control plane: wake the target's live session so this trigger becomes an
   # actual LLM turn within seconds. The XADD above is the durable data plane;

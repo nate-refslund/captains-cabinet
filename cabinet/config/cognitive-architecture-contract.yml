@@ -121,6 +121,20 @@ temporary_allowances:
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: COG-7 compaction folds the scheduler/organ packages, or the phase is superseded
+  - phase: captain-contact-liveness
+    budget: framework_production_modules
+    additional: 2
+    reason: Captain-contact dead-man (D1) — the framework/liveness package (__init__ import-inert + deadman.py, the off-machine heartbeat emitter). Stdlib-only and inert by default; it inlines its own urllib GET rather than importing the probe helpers, because the probes are themselves watched services and a detector that imports what it watches dies in the same event as the fault. EXACT measured running total (238 vs 236 base), 2026-07-25, via cognitive-architecture-census.py — the zero-headroom observed==max law means this is the exact new total, never a pre-allocated ceiling
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: COG-7 compaction folds the emitter into the projection kernel, or the off-machine watcher is superseded
+  - phase: captain-contact-liveness
+    budget: framework_production_noncomment_lines
+    additional: 386
+    reason: Captain-contact dead-man (D1) — framework/liveness/deadman.py (config resolution through the env seam, stdlib line-parser, resolve/emit with the instance-scoping + scheme + path-safe-slug guards) and its tests' production-side surface, plus framework/env.py liveness_config_path, framework/frontdoor/channel.py _contact_heartbeat_out fired at the CONFIRMED-delivery return, and framework/watchdog additions (registry.py LAST_CAPTAIN_MSG_AT_KEY + verify_captain_inbound_contact + the decisions-logged recency gate + severity-before-truncation ranking; check.py _chair_read_it so an undelivered page no longer burns a multi-hour cooldown). EXACT measured running total (66934 vs 66548 base), 2026-07-25, via cognitive-architecture-census.py
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: COG-7 compaction, or the contact dead-man folds into the evidence plane
 ownership:
   authoritative_state: domain_transaction
   cross_domain_delivery: transactional_outbox

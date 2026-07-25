@@ -348,6 +348,77 @@ assert "wake debounce: 1 winner per burst within TTL" "$WK_WINNERS" "1"
 redis-cli -h "$TRIG_REDIS_HOST" -p "$TRIG_REDIS_PORT" DEL "$WK_LOCK_KEY" >/dev/null 2>&1
 
 echo ""
+echo "=== trigger_consumer_state / TRIGGER_SEND_DELIVERY (enqueued != delivered) ==="
+# The honest-sender distinction. trigger_send's XADD is durable and its rc says
+# so — but the WAKE, the only thing that turns a queued trigger into a turn
+# within seconds, runs fully detached and discards every exit path. So an
+# officer that is simply GONE was invisible to every caller, and the watchdog
+# then bought hours of silence with a cooldown on a page nobody could read.
+CS_OFFICER="test-consumer-$$-$(date +%s)"
+CS_STREAM="cabinet:triggers:${CS_OFFICER}"
+
+# (a) No tmux session for this officer -> "absent" (tmux IS present in this env).
+if command -v tmux >/dev/null 2>&1; then
+  assert "consumer_state: no session -> absent" \
+    "$(trigger_consumer_state "$CS_OFFICER")" "absent"
+else
+  assert "consumer_state: no tmux -> unknown" \
+    "$(trigger_consumer_state "$CS_OFFICER")" "unknown"
+fi
+
+# (b) Empty target is never claimed dead — no target is not evidence of absence.
+assert "consumer_state: empty target -> unknown" \
+  "$(trigger_consumer_state "")" "unknown"
+
+# (c) A box with no tmux reports unknown, NOT absent. Claiming the consumer is
+# dead because we cannot see it is the same over-claim in the other direction
+# (Docker's single-session topology, CI).
+# PATH is emptied INSIDE the subshell, after triggers.sh is already sourced —
+# stripping it before the source would break the lib's own source-time sed/cut
+# and prove nothing. trigger_consumer_state itself needs only `command -v` and
+# the `echo` builtin, so this isolates exactly the "no tmux" condition.
+CS_NOTMUX=$( PATH=/nonexistent-for-this-probe; trigger_consumer_state some-officer )
+assert "consumer_state: no tmux binary -> unknown" "$CS_NOTMUX" "unknown"
+
+# (d) trigger_send EXPORTS the delivery state after a successful XADD, so a
+# caller can tell 'queued' from 'queued to a live consumer'.
+unset TRIGGER_SEND_DELIVERY
+OFFICER_NAME=cs-sender trigger_send "$CS_OFFICER" "delivery-state probe" >/dev/null 2>&1
+if command -v tmux >/dev/null 2>&1; then
+  assert "trigger_send exports TRIGGER_SEND_DELIVERY=absent for a dead officer" \
+    "$TRIGGER_SEND_DELIVERY" "absent"
+else
+  assert "trigger_send exports TRIGGER_SEND_DELIVERY=unknown without tmux" \
+    "$TRIGGER_SEND_DELIVERY" "unknown"
+fi
+
+# (e) The RETURN CODE and STDERR contract are unchanged — an absent consumer is
+# not a send failure (the trigger really is durably on the stream), and changing
+# either would break every existing callsite.
+unset TRIGGER_SEND_DELIVERY
+CS_ERR=$(OFFICER_NAME=cs-sender trigger_send "$CS_OFFICER" "rc probe" 2>&1 >/dev/null); CS_RC=$?
+assert "trigger_send rc still 0 when the consumer is absent" "$CS_RC" "0"
+assert "trigger_send stays silent on stderr when the consumer is absent" "$CS_ERR" ""
+
+# (f) ...and the payload really did land: durability is the fact rc reports.
+CS_LEN=$(redis-cli -h "$TRIG_REDIS_HOST" -p "$TRIG_REDIS_PORT" XLEN "$CS_STREAM" 2>/dev/null)
+assert "trigger_send still queues durably for an absent consumer" "$CS_LEN" "2"
+redis-cli -h "$TRIG_REDIS_HOST" -p "$TRIG_REDIS_PORT" DEL "$CS_STREAM" >/dev/null 2>&1
+
+# (g) A LIVE session reports live. Uses a real detached tmux session so the
+# happy path is proven, not assumed.
+if command -v tmux >/dev/null 2>&1; then
+  CS_LIVE="cs-live-$$"
+  if tmux new-session -d -s "officer-${CS_LIVE}" 'sleep 30' 2>/dev/null; then
+    assert "consumer_state: live session -> live" \
+      "$(trigger_consumer_state "$CS_LIVE")" "live"
+    tmux kill-session -t "officer-${CS_LIVE}" 2>/dev/null || true
+  else
+    printf "  [SKIP] live-session arm (tmux could not start a session here)\n"
+  fi
+fi
+
+echo ""
 echo "=== Summary ==="
 echo "PASS: $PASS | FAIL: $FAIL"
 if [ "$FAIL" -eq 0 ]; then
