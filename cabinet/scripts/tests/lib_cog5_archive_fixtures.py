@@ -103,6 +103,7 @@ MANIFEST_NAME = "manifest.json"
 ANCHOR_NAME = "anchor.json"
 PENDING_NAME = "pending.json"
 DEFAULT_ROWS_PER_SEGMENT = 8
+DEFAULT_ANCHOR_EVERY = 4
 DEFAULT_CUTOFF = "2026-07-24T00:00:00Z"
 
 
@@ -180,18 +181,31 @@ class ReferenceArchive:
     """Append-only JSONL segments with a SEQUENTIAL prev_hash chain, periodic
     anchor attestation, sealed segments, and a pending.json exactly-once
     heal. Every write goes through the recorder discipline; every
-    manifest-class artifact through the atomic-write replica."""
+    manifest-class artifact through the atomic-write replica.
+
+    The store DECLARES what it holds — `row_count`, `chain_head` and the
+    attestation cadence `anchor_every` in the manifest, plus the periodic
+    `anchor.json` — and `verify_archive` reads every one of them back. A
+    counter that is written and never read is not a detector."""
 
     def __init__(self, root: Path, *,
                  rows_per_segment: int = DEFAULT_ROWS_PER_SEGMENT,
-                 anchor_every: int = 4) -> None:
+                 anchor_every: int = DEFAULT_ANCHOR_EVERY) -> None:
         self.root = Path(root)
         self.rows_per_segment = int(rows_per_segment)
         self.anchor_every = int(anchor_every)
         (self.root / SEGMENT_DIR).mkdir(parents=True, exist_ok=True)
         if not (self.root / MANIFEST_NAME).exists():
             self._write_manifest({"segments": [], "seals": [],
-                                  "chain_head": CORE.ZERO_HASH, "row_count": 0})
+                                  "chain_head": CORE.ZERO_HASH, "row_count": 0,
+                                  "anchor_every": self.anchor_every})
+        elif self.manifest().get("anchor_every") != self.anchor_every:
+            # The attestation CADENCE is a declared property of the store, not
+            # an assumption the verifier makes — so it travels through the
+            # copy-out/RESTORE drill with the manifest.
+            manifest = self.manifest()
+            manifest["anchor_every"] = self.anchor_every
+            self._write_manifest(manifest)
 
     # -- manifest -------------------------------------------------------
     def _write_manifest(self, manifest: Mapping[str, Any]) -> None:
@@ -399,12 +413,36 @@ class ReferenceArchive:
 # verification — sim 9's four detections, each named
 # ==========================================================================
 def verify_archive(root: Path) -> dict[str, Any]:
-    """Full chain + seal verification.
+    """Full chain + seal + STORE-LEVEL verification.
 
     Returns {"ok", "findings", "verified_rows", "last_good_seal",
     "safe_sequence"} — `safe_sequence` is the highest sequence a disciplined
     reader may serve: the last good SEAL's last_sequence when anything beyond
     it is broken (§12 sim 9, "serve refuses beyond the last good seal").
+
+    THREE LAYERS, and each catches an escape the others cannot (the reason
+    none of them is decoration):
+
+      per-ROW   — BITFLIP / FORGED_PREV_HASH / SEQUENCE_GAP / TRUNCATED_TAIL.
+                  Blind to a row DELETED at a record boundary: no link breaks,
+                  the tail is still a whole record, and the sequence numbers
+                  that remain are self-consistent.
+      per-SEAL  — BROKEN_SEAL, both limbs. Covers only SEALED segments, so the
+                  open segment (where every fresh row lands) is unattested.
+      per-STORE — ROW_COUNT_MISMATCH / MANIFEST_HEAD_MISMATCH / ANCHOR_* .
+                  The store ALREADY writes these two independent counters —
+                  the manifest's declared row_count + chain_head, and the
+                  periodic anchor (§5.2). Consulting them is what closes the
+                  open-segment deletion: the manifest catches a tail edit that
+                  did not also rewrite the manifest, and the anchor catches one
+                  that DID (an attestation written at a cadence point the
+                  editor cannot retroactively re-mint). Conversely the manifest
+                  covers the rows PAST the last anchor point, which the anchor
+                  by construction cannot see. Neither subsumes the other.
+
+    The refusal boundary is deliberately unchanged by the store layer: a
+    store-level finding flips `ok` to False, which pins `safe_sequence` to the
+    last good SEAL — conservative, never over-serving.
     """
     root = Path(root)
     findings: list[str] = []
@@ -424,6 +462,9 @@ def verify_archive(root: Path) -> dict[str, Any]:
     verified_rows = 0
     last_good_seal: dict[str, Any] | None = None
     broken_at: int | None = None      # first bad sequence
+    walked_rows = 0                   # every row PARSED off disk, good or bad
+    last_sequence = 0                 # the last row's own sequence claim
+    hash_by_sequence: dict[int, str] = {}
 
     for index in indices:
         path = seg_dir / f"seg-{index:05d}.jsonl"
@@ -470,6 +511,10 @@ def verify_archive(root: Path) -> dict[str, Any]:
                     broken_at = expected_sequence
             else:
                 verified_rows += 1
+            walked_rows += 1
+            last_sequence = int(row.get("sequence", last_sequence))
+            if isinstance(row.get("row_hash"), str):
+                hash_by_sequence[last_sequence] = row["row_hash"]
             prev = row.get("row_hash", prev)
             expected_sequence = int(row.get("sequence", expected_sequence)) + 1
 
@@ -494,6 +539,32 @@ def verify_archive(root: Path) -> dict[str, Any]:
             elif broken_at is None:
                 last_good_seal = seal
 
+    # -- per-STORE: the two detectors the store already writes ---------------
+    # Both are computed and persisted on every commit (`_refresh_manifest`)
+    # and were, before this layer existed, never read back — which is exactly
+    # how a row deleted from the UNSEALED open segment verified clean.
+    declared_rows = manifest.get("row_count")
+    if not isinstance(declared_rows, int) or isinstance(declared_rows, bool):
+        findings.append(
+            f"ROW_COUNT_MISMATCH: manifest declares no usable row_count "
+            f"({declared_rows!r}); the store walks {walked_rows} rows")
+    elif declared_rows != walked_rows:
+        findings.append(
+            f"ROW_COUNT_MISMATCH: manifest declares {declared_rows} rows, the "
+            f"store walks {walked_rows}")
+
+    declared_head = manifest.get("chain_head")
+    walked_head = hash_by_sequence.get(last_sequence, CORE.ZERO_HASH) \
+        if walked_rows else CORE.ZERO_HASH
+    if declared_head != walked_head:
+        findings.append(
+            f"MANIFEST_HEAD_MISMATCH: manifest declares chain head "
+            f"{str(declared_head)[:12]}…, the store's last row carries "
+            f"{walked_head[:12]}…")
+
+    findings.extend(_anchor_findings(root, manifest, last_sequence,
+                                     hash_by_sequence))
+
     ok = not findings
     if ok:
         safe_sequence = expected_sequence - 1
@@ -501,6 +572,82 @@ def verify_archive(root: Path) -> dict[str, Any]:
         safe_sequence = int(last_good_seal["last_sequence"]) if last_good_seal else 0
     return {"ok": ok, "findings": findings, "verified_rows": verified_rows,
             "last_good_seal": last_good_seal, "safe_sequence": safe_sequence}
+
+
+def _anchor_findings(root: Path, manifest: Mapping[str, Any], last_sequence: int,
+                     hash_by_sequence: Mapping[int, str]) -> list[str]:
+    """§5.2's periodic ATTESTATION, read back at last.
+
+    `write_anchor` fires every `anchor_every` sequences and pins the chain head
+    AT THAT POINT. That makes it the one detector a tail editor cannot satisfy
+    by rewriting the manifest: the attestation was minted before the edit and
+    names a sequence the shrunken store no longer reaches.
+
+    Three named escapes, none of which the other layers see:
+      ANCHOR_MISSING            — attestation due and absent (a store that
+                                  stopped attesting, or a restore that dropped
+                                  the anchor on the floor).
+      ANCHOR_SEQUENCE_MISMATCH  — the store no longer stands where its own
+                                  attestation says it stood.
+      FORGED_ANCHOR             — the attestation LIES: either its anchor_hash
+                                  does not match its body (the crude forge), or
+                                  it is internally self-consistent but names a
+                                  chain head the walked chain never had (the
+                                  re-signed forge — only the anchor-vs-chain
+                                  limb catches that one, exactly as with seals).
+    """
+    findings: list[str] = []
+    anchor_every = manifest.get("anchor_every")
+    if not isinstance(anchor_every, int) or isinstance(anchor_every, bool) \
+            or anchor_every <= 0:
+        anchor_every = DEFAULT_ANCHOR_EVERY
+    anchor_path = Path(root) / ANCHOR_NAME
+    # The cadence point the store should currently stand attested at.
+    attest_point = (max(last_sequence, 0) // anchor_every) * anchor_every
+
+    if attest_point < anchor_every:
+        # No attestation is due yet. One being PRESENT means the store shrank
+        # below its own first cadence point.
+        if anchor_path.is_file():
+            findings.append(
+                f"ANCHOR_SEQUENCE_MISMATCH: an attestation exists but the "
+                f"store only reaches sequence {last_sequence}, below its "
+                f"first cadence point {anchor_every}")
+        return findings
+
+    if not anchor_path.is_file():
+        findings.append(
+            f"ANCHOR_MISSING: the store reaches sequence {last_sequence} but "
+            f"carries no {ANCHOR_NAME} attestation for sequence {attest_point}")
+        return findings
+    try:
+        anchor = json.loads(anchor_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        findings.append(f"FORGED_ANCHOR: {ANCHOR_NAME} is unreadable: {exc!r}")
+        return findings
+    if not isinstance(anchor, dict):
+        findings.append(f"FORGED_ANCHOR: {ANCHOR_NAME} is not an attestation "
+                        f"object")
+        return findings
+
+    body = {k: v for k, v in anchor.items() if k != "anchor_hash"}
+    if anchor.get("anchor_hash") != CORE.digest(body):
+        findings.append("FORGED_ANCHOR: anchor_hash does not match its body")
+        return findings
+    attested_sequence = anchor.get("sequence")
+    if attested_sequence != attest_point:
+        findings.append(
+            f"ANCHOR_SEQUENCE_MISMATCH: the attestation stands at sequence "
+            f"{attested_sequence!r}, the store's cadence point is "
+            f"{attest_point}")
+        return findings
+    walked = hash_by_sequence.get(attest_point)
+    if anchor.get("chain_head") != walked:
+        findings.append(
+            f"FORGED_ANCHOR: the attestation names chain head "
+            f"{str(anchor.get('chain_head'))[:12]}… at sequence "
+            f"{attest_point}, the walked chain carries {str(walked)[:12]}…")
+    return findings
 
 
 def serve_rows(root: Path, *, skip_verify: bool = False) -> list[dict[str, Any]]:
@@ -583,6 +730,89 @@ def corrupt_break_seal(root: Path, *, index: int = 0,
                                   indent=2) + "\n")
 
 
+def corrupt_drop_open_segment_tail(root: Path, *, rows: int = 1) -> int:
+    """THE ESCAPE THE PER-ROW AND PER-SEAL LAYERS CANNOT SEE: delete whole
+    records from the tail of the UNSEALED open segment, cleanly at a record
+    boundary.
+
+    Nothing local is disturbed — no link is broken (the deleted rows were the
+    only ones pointing forward), the file still ends on a newline so the
+    truncated-tail detector is silent, and no seal covers the open segment.
+    Only the store's own declared counters know the store is now short.
+    Returns the number of rows removed.
+    """
+    seg_dir = Path(root) / SEGMENT_DIR
+    index = max(int(p.stem.split("-")[1]) for p in seg_dir.glob("seg-*.jsonl"))
+    path = seg_dir / f"seg-{index:05d}.jsonl"
+    lines = [l for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    keep = lines[:max(len(lines) - int(rows), 0)]
+    path.write_text(("\n".join(keep) + "\n") if keep else "", encoding="utf-8")
+    return len(lines) - len(keep)
+
+
+def corrupt_strip_manifest_declaration(root: Path, *,
+                                       field: str = "row_count") -> None:
+    """A manifest that stops DECLARING one of its counters. Fail-closed: an
+    absent declaration must never read as agreement."""
+    path = Path(root) / MANIFEST_NAME
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest.pop(field, None)
+    atomic_write(path, json.dumps(manifest, ensure_ascii=False, sort_keys=True,
+                                  indent=2) + "\n")
+
+
+def repair_manifest_counters(root: Path) -> dict[str, Any]:
+    """THE THOROUGH EDITOR'S TOOL: recompute the manifest's declared
+    `row_count`/`chain_head` from what is NOW on disk, so the manifest agrees
+    with the shortened store.
+
+    This is what defeats the manifest layer, and it is why the periodic
+    attestation is not redundant with it: the anchor was minted at a cadence
+    point BEFORE the edit and the editor cannot retroactively re-mint it
+    without also producing a chain the walk agrees with.
+    """
+    root = Path(root)
+    manifest = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
+    seg_dir = root / SEGMENT_DIR
+    rows: list[dict[str, Any]] = []
+    for index in sorted(int(p.stem.split("-")[1]) for p in seg_dir.glob("seg-*.jsonl")):
+        for line in (seg_dir / f"seg-{index:05d}.jsonl").read_text(
+                encoding="utf-8").splitlines():
+            if line.strip():
+                rows.append(json.loads(line))
+    manifest["row_count"] = len(rows)
+    manifest["chain_head"] = rows[-1]["row_hash"] if rows else CORE.ZERO_HASH
+    atomic_write(root / MANIFEST_NAME,
+                 json.dumps(manifest, ensure_ascii=False, sort_keys=True,
+                            indent=2) + "\n")
+    return manifest
+
+
+def corrupt_forge_anchor(root: Path, *, resign: bool = False) -> None:
+    """Tamper the periodic attestation's chain head.
+
+    `resign=False` leaves `anchor_hash` stale (the crude forge, caught by the
+    anchor's own self-consistency limb). `resign=True` RECOMPUTES it over the
+    lie — an internally self-consistent attestation that no longer matches the
+    chain it claims to attest, which only the anchor-vs-chain limb can catch.
+    Both limbs are exercised so neither is decoration (the seal pattern).
+    """
+    path = Path(root) / ANCHOR_NAME
+    anchor = json.loads(path.read_text(encoding="utf-8"))
+    anchor["chain_head"] = "0" * 63 + "1"
+    if resign:
+        body = {k: v for k, v in anchor.items() if k != "anchor_hash"}
+        anchor["anchor_hash"] = CORE.digest(body)
+    atomic_write(path, json.dumps(anchor, ensure_ascii=False, sort_keys=True,
+                                  indent=2) + "\n")
+
+
+def corrupt_drop_anchor(root: Path) -> None:
+    """Delete the attestation outright — the shape a restore that forgets to
+    carry `anchor.json` produces."""
+    (Path(root) / ANCHOR_NAME).unlink(missing_ok=True)
+
+
 def _rewrite_row(root: Path, sequence: int,
                  transform: Callable[[dict[str, Any]], dict[str, Any]]) -> None:
     seg_dir = Path(root) / SEGMENT_DIR
@@ -620,7 +850,17 @@ def seal_and_copy_out(archive: ReferenceArchive, dest: Path) -> dict[str, Any]:
                      path.read_text(encoding="utf-8"))
     atomic_write(dest / MANIFEST_NAME,
                  (archive.root / MANIFEST_NAME).read_text(encoding="utf-8"))
+    _copy_anchor(archive.root, dest)
     return archive_report(archive.root)
+
+
+def _copy_anchor(src: Path, dest: Path) -> None:
+    """The ATTESTATION travels with the store. A copy-out/restore that left it
+    behind would hand over a store whose §5.2 attestation is simply missing —
+    which `verify_archive` now names (ANCHOR_MISSING) rather than tolerating."""
+    anchor = Path(src) / ANCHOR_NAME
+    if anchor.is_file():
+        atomic_write(Path(dest) / ANCHOR_NAME, anchor.read_text(encoding="utf-8"))
 
 
 def restore(copy_root: Path, new_root: Path) -> dict[str, Any]:
@@ -633,6 +873,7 @@ def restore(copy_root: Path, new_root: Path) -> dict[str, Any]:
                      path.read_text(encoding="utf-8"))
     atomic_write(new_root / MANIFEST_NAME,
                  (copy_root / MANIFEST_NAME).read_text(encoding="utf-8"))
+    _copy_anchor(copy_root, new_root)
     return archive_report(new_root)
 
 
@@ -955,12 +1196,46 @@ def shadow_rows_with_p1_race() -> list[dict[str, Any]]:
     ]
 
 
+def dedupe_key(row: Mapping[str, Any], mode: str = "content", *,
+               ordinal: int = 0) -> str:
+    """The ingest's dedup key under each mode — ONE definition, so the keys
+    derived from the TARGET STORE cannot drift from the keys derived from
+    incoming candidates (a drift there would silently re-admit everything)."""
+    if mode == "content":
+        return CORE.content_fingerprint(row)
+    if mode == "key":
+        return str(row.get("idempotency_key"))
+    if mode == "none":
+        return f"unique-{ordinal}-{uuid.uuid4().hex}"
+    raise ValueError(f"unknown dedupe mode {mode!r}")
+
+
 def ingest_shadow_rows(rows: Iterable[Mapping[str, Any]], *,
                        source_class: str = "sim",
-                       dedupe: str = "content") -> dict[str, Any]:
+                       dedupe: str = "content",
+                       store: Iterable[Mapping[str, Any]] = ()) -> dict[str, Any]:
     """§5.3 ingest: field-map the shadow `record_kind`, stamp provenance from
     the SOURCE CLASS, and dedupe by CONTENT FINGERPRINT — recording the
     duplication honestly rather than hiding it.
+
+    `store` is the rows ALREADY HELD BY THE TARGET STORE. §5.3 routes shadow
+    accrual through a PERIODIC organ manifest (§11.2), so re-reading a log
+    that is still accruing is the NORMAL cadence, not an edge case: cycle 2
+    necessarily re-presents every row cycle 1 already took. Dedup keyed only
+    within one call therefore re-admits the whole log every cycle.
+
+    WHY THE STORE AND NOT A CALLER-THREADED `seen` SET: this family already
+    paid for that answer. `shadow_append_racy` is the recorded P1 defect —
+    a caller deciding what to skip from a snapshot it holds OUTSIDE the
+    authority, and `shadow_append_folded` is the fix: derive the skip set from
+    the STORE, at use. A threaded `seen` set is process-lifetime state that a
+    restart silently empties (re-admitting the entire log) and that two
+    ingesters cannot share; the store is append-only, durable, and the single
+    authority on what has already been taken. So the dedup index is SEEDED
+    from the store's own rows, through the same `dedupe_key` the candidates
+    go through. `ShadowIngestor` below is the disciplined caller that holds
+    the store across cycles; passing `store=()` is a genuine FIRST cycle, not
+    an escape — an empty store has no fingerprints to key against.
 
     `dedupe="key"` and `dedupe="none"` are the NEGATIVE CONTROLS: keying on
     the idempotency key collapses two genuinely different facts (data loss);
@@ -969,17 +1244,12 @@ def ingest_shadow_rows(rows: Iterable[Mapping[str, Any]], *,
     ingested: list[dict[str, Any]] = []
     duplicates: list[dict[str, Any]] = []
     seen: dict[str, int] = {}
+    for ordinal, present in enumerate(store):
+        seen[dedupe_key(present, dedupe, ordinal=ordinal)] = 1
     for row in rows:
         mapped = CORE.map_shadow_record_kind(row)
         mapped = CORE.stamp_provenance(mapped, source_class)
-        if dedupe == "content":
-            key = CORE.content_fingerprint(mapped)
-        elif dedupe == "key":
-            key = str(mapped.get("idempotency_key"))
-        elif dedupe == "none":
-            key = f"unique-{len(ingested)}-{uuid.uuid4().hex}"
-        else:
-            raise ValueError(f"unknown dedupe mode {dedupe!r}")
+        key = dedupe_key(mapped, dedupe, ordinal=len(ingested))
         if key in seen:
             seen[key] += 1
             duplicates.append({"fingerprint": key, "occurrence": seen[key],
@@ -990,6 +1260,30 @@ def ingest_shadow_rows(rows: Iterable[Mapping[str, Any]], *,
     return {"ingested": ingested, "duplicates": duplicates,
             "counts": {"ingested": len(ingested),
                        "duplicates_recorded": len(duplicates)}}
+
+
+class ShadowIngestor:
+    """The §5.3/§11.2 PERIODIC ingest cycle, idempotent by construction.
+
+    Holds the target store across cycles and keys every cycle's dedup against
+    it, so re-reading an accruing shadow log admits each fact exactly once no
+    matter how many times the organ manifest fires. `duplicates` accumulates
+    the honest record of what was re-presented and refused.
+    """
+
+    def __init__(self, *, source_class: str = "sim",
+                 dedupe: str = "content") -> None:
+        self.source_class = source_class
+        self.dedupe = dedupe
+        self.rows: list[dict[str, Any]] = []
+        self.duplicates: list[dict[str, Any]] = []
+
+    def ingest(self, rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+        result = ingest_shadow_rows(rows, source_class=self.source_class,
+                                    dedupe=self.dedupe, store=self.rows)
+        self.rows.extend(result["ingested"])
+        self.duplicates.extend(result["duplicates"])
+        return result
 
 
 def conflating_field_map(shadow_row: Mapping[str, Any]) -> dict[str, Any]:
@@ -1130,18 +1424,22 @@ __all__ = [
     "ARCHIVE_MODULE_REL", "EMITTER_MODULE_REL", "RESTORE_CLI_REL",
     "LEAGUE_CLI_REL", "ARCHIVE_ROOT_DEFAULT_REL", "SHADOW_CLI_REL",
     "SEGMENT_DIR", "MANIFEST_NAME", "ANCHOR_NAME", "PENDING_NAME",
-    "DEFAULT_ROWS_PER_SEGMENT", "DEFAULT_CUTOFF",
+    "DEFAULT_ROWS_PER_SEGMENT", "DEFAULT_ANCHOR_EVERY", "DEFAULT_CUTOFF",
     "fsync_dir", "atomic_write", "append_exact_line", "row_hash",
     "ArchiveError", "ReferenceArchive", "verify_archive", "serve_rows",
     "corrupt_truncate_tail", "corrupt_bitflip_row", "corrupt_forge_prev_hash",
-    "corrupt_break_seal", "seal_and_copy_out", "restore", "archive_report",
+    "corrupt_break_seal", "corrupt_drop_open_segment_tail",
+    "corrupt_strip_manifest_declaration", "repair_manifest_counters",
+    "corrupt_forge_anchor", "corrupt_drop_anchor",
+    "seal_and_copy_out", "restore", "archive_report",
     "restore_dropping_row", "restore_reordering_rows",
     "kernel_would_miss_reorder",
     "E1_MIN_CANDIDATES", "E1_DEFAULT_CANDIDATES", "seeded_candidates",
     "eval_substrate", "score_candidate", "run_e1", "rank_from_results",
     "rerank_from_archive", "rerank_under_hashseeds", "fingerprint_tree",
     "chain_heads_prefix_preserved",
-    "shadow_rows_with_p1_race", "ingest_shadow_rows", "conflating_field_map",
+    "shadow_rows_with_p1_race", "dedupe_key", "ingest_shadow_rows",
+    "ShadowIngestor", "conflating_field_map",
     "shadow_append_folded", "shadow_append_racy", "read_log_keys",
     "shadow_cli_append_folds_read",
 ]

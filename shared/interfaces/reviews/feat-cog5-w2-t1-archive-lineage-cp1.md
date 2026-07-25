@@ -1,5 +1,15 @@
 # FW-019 checkpoint review — feat/cog5-w2-t1-archive-lineage cp1
 
+> **PARTLY SUPERSEDED by `feat-cog5-w2-t1-archive-lineage-cp2.md`.** A
+> fresh-context adversarial review returned three must-fixes against this
+> batch (a row deleted from the unsealed OPEN segment went undetected;
+> ingest dedup was per-call only; the anchor attestation was never read).
+> All three are closed in cp2. The counts below are the cp1 figures and are
+> now stale — cp2 carries the current ones: **27** named escapes (not 18),
+> **87 passed / 2 skipped** (not 63/2), sweep **3486/14**, and a
+> detector-mutation profile of **4/8/1/1/6/1** (not 3/2/1/1/3/1). Everything
+> else in this artifact still stands.
+
 COG-5 **W2 corpus unit T1 — ARCHIVE/LINEAGE family**. Branch
 `feat/cog5-w2-t1-archive-lineage` off `origin/master` a1357829. Contract
 `docs/plans/cognitive-core-phase-5-contract-2026-07-24.md` §12 sims 1/9/10 +
