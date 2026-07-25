@@ -49,6 +49,7 @@ Fable 5 — corpus authorship is judgment-tier work).
 from __future__ import annotations
 
 import inspect
+import os
 import re
 import sys
 from pathlib import Path
@@ -294,6 +295,88 @@ class TestSim4JudgeOnly:
         with pytest.raises(AssertionError, match=_tag("[SIM4-X3]")):
             FIX.assert_sim4_judge_only_ineligible(ok, reasons)
 
+    # ---- X6 at the VALUE, not the label (the derivation/custody arm) -----
+    def test_reference_scorer_binds_every_machine_dim_to_machine_evidence(self):
+        # the positive law: the reference scorer stamps each dim with the
+        # evidence source it actually read (replay map / gate result / judge),
+        # so a machine floor rests on machine EVIDENCE, not a self-declared
+        # `kind` label. Re-runnable against the real scorers.py at W6.
+        for name, pack in _named_vectors().items():
+            FIX.assert_machine_floors_machine_derived(pack)
+            vector = pack["vector"]
+            assert vector["frozen_pass_rate"][FIX.DERIVATION_KEY] == \
+                FIX.DERIVATION_REPLAY_MAP, name
+            assert vector["frozen_regressions"][FIX.DERIVATION_KEY] == \
+                FIX.DERIVATION_GATE_RESULT, name
+            assert vector["judge_score"][FIX.DERIVATION_KEY] == \
+                FIX.DERIVATION_JUDGE_LLM, name
+
+    def test_the_constructor_wall_no_caller_may_name_a_derivation(self):
+        # the §6.2 WALL shape lifted to the vector (mirror of
+        # test_row_supplied_provenance_refuses): honest construction takes
+        # EVIDENCE, never a derivation label — there is structurally no
+        # parameter through which a scorer could declare a machine
+        # derivation for a number it did not measure.
+        for fn in (FIX.make_vector, FIX.candidate_vector):
+            params = set(inspect.signature(fn).parameters)
+            assert not {p for p in params if "derivation" in p}, (
+                f"{fn.__name__} exposes a derivation parameter — the caller "
+                "could then NAME machine custody for a judge number")
+        # ...and handing judge evidence to a machine dim stamps the TRUTH:
+        pack = FIX.make_vector(
+            {"frozen_pass_rate": (0.99, FIX.MACHINE_KIND)},
+            evidence={"frozen_pass_rate": FIX.JudgeEvidence(0.99)})
+        assert pack["vector"]["frozen_pass_rate"][FIX.DERIVATION_KEY] == \
+            FIX.DERIVATION_JUDGE_LLM
+
+    def test_mutant_judge_derived_number_on_a_machine_floor_REDS(self):
+        # THE escape this arm closes (fresh-context review, must-fix 1): a
+        # judge number written into a machine dim satisfied a MACHINE floor
+        # because the floor law read the `kind` label and nothing bound the
+        # VALUE to machine evidence. The pack is machine-plausible — 0.99
+        # pass rate, zero regressions, `kind: machine` on both floor dims.
+        vecs = _named_vectors()
+        proxy = FIX.mutant_judge_number_into_machine_dim(judge_score=0.99)
+        assert all(d["kind"] == FIX.MACHINE_KIND
+                   for n, d in proxy["vector"].items()
+                   if n != "judge_score"), "fixture invariant"
+        assert proxy["vector"]["frozen_pass_rate"]["value"] > \
+            FIX.machine_dims(vecs["incumbent"])["frozen_pass_rate"], (
+            "fixture invariant: the judge number must CLEAR the machine floor "
+            "numerically — otherwise the refusal proves nothing")
+        # the joint refuses, citing the derivation (not merely a floor)...
+        ok, reasons = FIX.admission_eligible(proxy, vecs["incumbent"])
+        FIX.assert_derivation_refused(ok, reasons)
+        # ...and the standalone battery REDs on the same pack.
+        with pytest.raises(AssertionError,
+                           match=_tag("[SIM4-X6-DERIVATION]")):
+            FIX.assert_machine_floors_machine_derived(proxy)
+
+    def test_mutant_unprovenanced_machine_dim_REDS(self):
+        # fail-closed direction: a machine dim with NO derivation (evidence
+        # the constructor could not classify) is exactly as untrustworthy as
+        # a judge-derived one — absence never satisfies a floor (L239).
+        vecs = _named_vectors()
+        naked = FIX.make_vector({
+            "frozen_pass_rate": (0.99, FIX.MACHINE_KIND),
+            "frozen_regressions": (0, FIX.MACHINE_KIND),
+        })
+        assert naked["vector"]["frozen_pass_rate"][FIX.DERIVATION_KEY] is None
+        ok, reasons = FIX.admission_eligible(naked, vecs["incumbent"])
+        FIX.assert_derivation_refused(ok, reasons)
+        with pytest.raises(AssertionError,
+                           match=_tag("[SIM4-X6-DERIVATION]")):
+            FIX.assert_machine_floors_machine_derived(naked)
+
+    def test_a_laundered_incumbent_refuses_too(self):
+        # both sides of the joint are checked: a laundered INCUMBENT would
+        # otherwise let a real candidate "improve" over a judge number.
+        vecs = _named_vectors()
+        proxy = FIX.mutant_judge_number_into_machine_dim(judge_score=0.10)
+        ok, reasons = FIX.admission_eligible(vecs["improving"], proxy)
+        FIX.assert_derivation_refused(ok, reasons)
+        assert any("incumbent" in r for r in reasons)
+
     def test_mutant_promotion_joint_on_judge_evidence_REDS(self):
         # §9.2: machine/judge artifacts never promote a mission edge — the
         # reference predicate refuses; a predicate consuming the high league/
@@ -354,25 +437,40 @@ class TestSim8NondeterministicScorer:
             f"PYTHONHASHSEED runs (got {outs})")
         FIX.assert_sim8_quarantined(FIX.quarantine_fold(outs))
 
-    def test_quarantined_unknown_never_satisfies_a_floor(self):
+    def test_quarantined_unknown_never_satisfies_a_floor(self, tmp_path):
         # the L239 join: an `unknown` machine dim can never make a candidate
-        # eligible — quarantine composes with the §9.1 floor law.
+        # eligible — quarantine composes with the §9.1 floor law. The dim is
+        # honestly provenanced (the REAL triple-run outputs of the REAL
+        # nondeterministic scorer), so the refusal is the UNKNOWN law and not
+        # a missing-derivation artefact.
+        script = FIX.write_scorer(tmp_path, "nondet_scorer.py",
+                                  FIX.NONDET_SCORER_SRC)
+        triple = FIX.run_scorer_triple(script, tmp_path)
         vecs = _named_vectors()
         quarantined = FIX.make_vector({
-            "frozen_pass_rate": (FIX.UNKNOWN, FIX.MACHINE_KIND),
+            "frozen_pass_rate": (FIX.quarantine_fold(triple), FIX.MACHINE_KIND),
             "frozen_regressions": (0, FIX.MACHINE_KIND),
             "judge_score": (0.99, FIX.JUDGE_KIND),
-        })
+        }, evidence={
+            "frozen_pass_rate": triple,
+            "frozen_regressions": rg.GateResult(outcome=rg.OUTCOME_PASS),
+            "judge_score": FIX.JudgeEvidence(0.99)})
+        assert quarantined["vector"]["frozen_pass_rate"]["value"] == FIX.UNKNOWN
         ok, reasons = FIX.admission_eligible(quarantined, vecs["incumbent"])
         assert ok is False and any("[FLOOR-UNKNOWN]" in r for r in reasons)
+        assert not any("[FLOOR-DERIVATION]" in r for r in reasons), (
+            "fixture invariant: the quarantined dim IS machine-derived — it "
+            "fails the UNKNOWN law, not the custody law")
 
     def test_quarantined_scorer_never_outranks_known_evidence(self):
         vecs = dict(_named_vectors())
+        triple = ["0.117", "0.640", "0.902"]
         vecs["quarantined"] = FIX.make_vector({
             "frozen_pass_rate": (FIX.UNKNOWN, FIX.MACHINE_KIND),
             "frozen_regressions": (FIX.UNKNOWN, FIX.MACHINE_KIND),
             "judge_score": (0.99, FIX.JUDGE_KIND),
-        })
+        }, evidence={"frozen_pass_rate": triple, "frozen_regressions": triple,
+                     "judge_score": FIX.JudgeEvidence(0.99)})
         rank = FIX.rank_by_machine(vecs, incumbent="incumbent")
         assert rank[-1] == "quarantined", (
             "[SIM8-QUARANTINE] quarantined evidence sorts LAST — it can "
@@ -522,6 +620,67 @@ class TestArmingBattery:
             FIX.assert_arm_escape(workdir, outside_before=before,
                                   outside_after=FIX.snapshot_tree(outside))
 
+    def test_mutant_partial_credential_leak_REDS(self, tmp_path, monkeypatch):
+        # N7: the escape arm was ONE named canary, but the child env carried
+        # other vars — a harness leaking a DIFFERENT credential var would have
+        # sailed through. This mutant scrubs the canary and leaks
+        # ANTHROPIC_OAUTH_TOKEN instead; §4.4 is an allowlist law about the
+        # credential CLASS, so it must still RED.
+        monkeypatch.setenv(FIX.CANARY_ENV, "live-credential-fixture")
+        workdir = tmp_path / "candidate-workdir"
+        workdir.mkdir()
+        outside = tmp_path / "outside-live-tree"
+        outside.mkdir()
+        before = FIX.snapshot_tree(outside)
+        FIX.reference_arming_composition(
+            scratch_root=FIX.make_scratch_gate_root(tmp_path),
+            corpus_dir=self._corpus(tmp_path),
+            baseline=BASELINE, candidate=IMPROVING,
+            proposal={"id": "cand-partial-leak", "diff": FIX.FIXTURE_DIFF,
+                      "workdir": str(workdir)},
+            runner=FIX.make_partial_leak_mutant_runner(workdir))
+        env = FIX.observed_env(workdir, "S1_verify")
+        assert FIX.CANARY_ENV not in env, (
+            "fixture invariant: the canary is scrubbed, so the OLD single-name "
+            "assert would have passed this leak")
+        assert FIX.LEAK_ENV in env, "fixture invariant: the leak must land"
+        with pytest.raises(AssertionError, match=_tag("[ARM-ESCAPE]")):
+            FIX.assert_arm_escape(workdir, outside_before=before,
+                                  outside_after=FIX.snapshot_tree(outside))
+
+    def test_scrubbed_env_carries_no_credential_shaped_name(self, tmp_path,
+                                                            monkeypatch):
+        # the honest positive: the reference allowlist env survives the CLASS
+        # check (a pattern that flagged everything would be as useless as one
+        # that flagged nothing).
+        monkeypatch.setenv(FIX.CANARY_ENV, "live-credential-fixture")
+        workdir = tmp_path / "candidate-workdir"
+        workdir.mkdir()
+        FIX.reference_arming_composition(
+            scratch_root=FIX.make_scratch_gate_root(tmp_path),
+            corpus_dir=self._corpus(tmp_path),
+            baseline=BASELINE, candidate=IMPROVING,
+            proposal={"id": "cand-clean-env", "diff": FIX.FIXTURE_DIFF,
+                      "workdir": str(workdir)},
+            runner=FIX.make_scrubbed_runner(workdir))
+        env = FIX.observed_env(workdir, "S1_verify")
+        # the harness's explicit dict is {PATH, PYTHONHASHSEED} — but the OS
+        # injects locale vars BELOW it (macOS adds LC_CTYPE and
+        # __CF_USER_TEXT_ENCODING even to an explicit env), so an exact-set
+        # claim would be FALSE. That is precisely why the escape arm checks
+        # the credential CLASS and not an exact allowlist: the harness cannot
+        # honestly promise "only these two names reach the child".
+        assert {"PATH", "PYTHONHASHSEED"} <= set(env), (
+            f"the allowlist env lost its own vars: {sorted(env)}")
+        assert [n for n in env if FIX.CREDENTIAL_ENV_RE.search(n)] == [], (
+            f"a credential-shaped name reached the child: {sorted(env)}")
+        assert FIX.CANARY_ENV not in env and FIX.LEAK_ENV not in env
+        # non-vacuity: the LIVE env is far larger, so this is a real scrub and
+        # not an accident of an already-empty environment.
+        assert len(env) < len(os.environ), (
+            "the child env is not smaller than the live env — nothing was "
+            "actually scrubbed")
+
     def test_mutant_outside_writer_REDS(self, tmp_path, monkeypatch):
         monkeypatch.setenv(FIX.CANARY_ENV, "live-credential-fixture")
         workdir = tmp_path / "candidate-workdir"
@@ -584,6 +743,123 @@ class TestVocabularyTripwires:
                           "public cases; result attested; nothing protested")
         assert FIX.vocab_violations(row) == []
 
+    # ---- the KEY arm: the vocabulary is spoken by field names too --------
+    def test_captain_vocabulary_in_a_FIELD_NAME_REDS(self):
+        # the escape a values-only walk was blind to (must-fix 2i): a foundry
+        # artifact minting `{"tested": true, "falsified": false}` as KEYS says
+        # the Captain word just as loudly, and the tripwire stayed green.
+        row = FIX.mutant_league_row_captain_vocab_keys("cand-k", scored=0.9,
+                                                       ranked=1)
+        violations = FIX.vocab_violations(row)
+        assert len(violations) == 2 and all("<key>" in v for v in violations), (
+            f"fixture invariant: both KEYS must be seen ({violations})")
+        with pytest.raises(AssertionError, match=_tag("[VOCAB]")):
+            FIX.assert_machine_class_vocab(row)
+
+    def test_nested_captain_vocabulary_keys_are_seen_at_depth(self):
+        # the walk must reach keys inside nested mappings and lists, not just
+        # the top level (a scan that only sees depth 0 is the same hole).
+        row = FIX.make_league_row("cand-n", scored=0.5, ranked=1)
+        row["runs"] = [{"detail": {"falsified": False}}]
+        assert FIX.vocab_violations(row), "fixture invariant: depth must be seen"
+        with pytest.raises(AssertionError, match=_tag("[VOCAB]")):
+            FIX.assert_machine_class_vocab(row)
+
+    def test_machine_speak_keys_do_not_false_positive(self):
+        # the honest negative for the key walk: the reference row's own keys
+        # (candidate/scored/ranked/observed/fitness_claim/certainty) and
+        # near-miss words must never trip the scan.
+        row = FIX.make_league_row("cand-w", scored=0.7, ranked=2)
+        row["contested"] = True
+        row["attested_by"] = "harness"
+        assert FIX.vocab_violations(row) == []
+        FIX.assert_machine_class_vocab(row)
+
+    # ---- the P5 cap, bound to the states.py ladder -----------------------
+    def test_p5_cap_ladder_is_derived_from_the_states_bytes(self):
+        # the cap is READ from framework/objectives/states.py, never a
+        # hardcoded list: the states ABOVE it are exactly those
+        # derive_edge_state can reach only through human-verdict fuel.
+        ladder = FIX.estate_certainty_ladder()
+        assert ladder["cap"] == FIX.P5_CAP
+        assert ladder["human_fuel_flags"], (
+            "the scan found no human-verdict fuel flags — states.py:34-39 "
+            "names them as the ONLY promotion/refutation fuel")
+        assert FIX.P5_CAP in ladder["machine_reachable"]
+        assert ladder["above_cap"] and \
+            ladder["above_cap"] <= ladder["all_states"], (
+            "the above-cap set must be a non-empty subset of the real tokens")
+        # the two above-cap states are the human-only rungs; neither is
+        # reachable without human fuel, which is WHY the cap exists.
+        assert FIX.estate_constant(FIX.STATES_REL,
+                                   "STATE_INTERVENTION_SUPPORTED") in \
+            ladder["above_cap"]
+        assert FIX.estate_constant(FIX.STATES_REL, "STATE_FALSIFIED") in \
+            ladder["above_cap"]
+
+    def test_ladder_scan_is_a_discriminator_not_a_constant(self):
+        # vacuity proof (the probe-flip idiom): feed a MUTATED states.py in
+        # which the P2 rule no longer tests the human-fuel flag, and the
+        # derived sets must MOVE — otherwise the scan proves nothing.
+        real = (_REPO / FIX.STATES_REL).read_text(encoding="utf-8")
+        assert "    if any_human_wrong:" in real, "fixture invariant (P2 rule)"
+        mutated = real.replace("    if any_human_wrong:", "    if any_supporting:")
+        moved = FIX.estate_certainty_ladder(source=mutated)
+        base = FIX.estate_certainty_ladder(source=real)
+        falsified = FIX.estate_constant(FIX.STATES_REL, "STATE_FALSIFIED")
+        assert falsified in base["above_cap"], "fixture invariant"
+        assert falsified in moved["machine_reachable"] and \
+            falsified not in moved["above_cap"], (
+            "the ladder scan did not react to a changed guard — it is a "
+            "constant, not a read of the real rules")
+
+    def test_reference_rows_are_capped_at_p5(self):
+        row = FIX.make_league_row("cand-c", scored=0.6, ranked=1)
+        FIX.assert_certainty_capped(row)
+        assert row["certainty"] == FIX.P5_CAP
+
+    @pytest.mark.parametrize("state_name", ("STATE_INTERVENTION_SUPPORTED",
+                                            "STATE_FALSIFIED"))
+    def test_mutant_certainty_above_the_p5_cap_REDS(self, state_name):
+        # must-fix 2ii: an ABOVE-cap certainty passed both the vocabulary
+        # scan and the closed-row shape. `intervention_supported` is the
+        # sharp case — a real states.py P3 token whose Captain word is
+        # literally 'tested', carrying none of the banned words.
+        row = FIX.mutant_league_row_above_cap("cand-p", state_name=state_name,
+                                              scored=0.9, ranked=1)
+        assert row["certainty"] == FIX.estate_constant(FIX.STATES_REL,
+                                                       state_name), "invariant"
+        with pytest.raises(AssertionError, match=_tag("[P5-CAP]")):
+            FIX.assert_certainty_capped(row)
+        # ...and the cap now rides the closed-shape battery, so every
+        # row-validating caller inherits it.
+        with pytest.raises(AssertionError, match=_tag("[P5-CAP]")):
+            FIX.assert_league_row_closed_shape(row)
+
+    def test_mutant_intervention_supported_slips_the_vocabulary_scan(self):
+        # the exact reason the cap needs its OWN binding: the P3 token is
+        # invisible to the Captain-vocabulary regex, so the word scan can
+        # never be the cap's enforcement.
+        row = FIX.mutant_league_row_above_cap(
+            "cand-p", state_name="STATE_INTERVENTION_SUPPORTED",
+            scored=0.9, ranked=1)
+        assert FIX.vocab_violations(row) == [], (
+            "fixture invariant: the vocabulary scan is blind to this token — "
+            "that blindness IS the hole assert_certainty_capped closes")
+
+    @pytest.mark.parametrize("token", (None, "observed", "tested", "green"))
+    def test_certainty_outside_the_states_vocabulary_REDS(self, token):
+        # fail closed: an absent certainty, the Captain WORD ('observed' is
+        # the presentation word for P5, never the stored token), or any
+        # invented token are all refused — no second drifting enum (§5.2).
+        row = FIX.make_league_row("cand-o", scored=0.5, ranked=1)
+        if token is None:
+            del row["certainty"]
+        else:
+            row["certainty"] = token
+        with pytest.raises(AssertionError, match=_tag("[P5-CAP]")):
+            FIX.assert_certainty_capped(row)
+
     def test_sim2_extension_league_writes_verdict_human_REDS(self):
         # §9.3 arm (a): a foundry code path minting review.source
         # verdict_human is the machine speaking as the human channel.
@@ -593,6 +869,54 @@ class TestVocabularyTripwires:
                                                      ranked=1)
         with pytest.raises(AssertionError, match=_tag("[SIM2X-VH]")):
             FIX.assert_league_row_closed_shape(mutant)
+
+    def test_sim2_extension_forged_league_row_cannot_promote_REDS(self):
+        # N1: the two §9.3 arms were never COMPOSED — the minting battery
+        # REDs on a league row that mints review.source verdict_human, but
+        # the promotion predicate read `review.source` off any dict, so the
+        # forged row walked into the joint with the battery uncalled.
+        forged = FIX.mutant_league_row_verdict_human("cand-forge", scored=0.99,
+                                                     ranked=1)
+        assert forged["review"]["source"] == FIX.HUMAN_VERDICT_SOURCE, "invariant"
+        # (a) the minting battery still REDs on the forgery...
+        with pytest.raises(AssertionError, match=_tag("[SIM2X-VH]")):
+            FIX.assert_league_row_closed_shape(forged)
+        # (b) ...and the JOINT refuses it too: machine class never promotes.
+        assert FIX.reference_edge_promotion([forged]) is False
+        FIX.assert_no_promotion_without_human(
+            FIX.reference_edge_promotion([forged]))
+        # (c) the class-blind predicate (the shape before this fix) promotes
+        #     on the forgery — the named escape, proven biting.
+        assert FIX.mutant_promotes_on_forged_league_review([forged]) is True, (
+            "fixture invariant: the class-blind predicate must actually "
+            "promote on the forged row")
+        with pytest.raises(AssertionError, match=_tag("[SIM2X-LEAGUE-FUEL]")):
+            FIX.assert_no_promotion_without_human(
+                FIX.mutant_promotes_on_forged_league_review([forged]))
+
+    def test_composed_battery_runs_minting_and_joint_together(self):
+        # the composition itself, as a re-runnable battery: a CLEAN league row
+        # beside a real human verdict passes; the forged row REDs.
+        clean = FIX.make_league_row("cand-clean", scored=0.8, ranked=1)
+        FIX.assert_machine_class_never_promotes(
+            [clean], FIX.reference_edge_promotion([clean]))
+        forged = FIX.mutant_league_row_verdict_human("cand-forge", scored=0.99,
+                                                     ranked=1)
+        with pytest.raises(AssertionError, match=_tag("[SIM2X-VH]")):
+            FIX.assert_machine_class_never_promotes(
+                [forged], FIX.reference_edge_promotion([forged]))
+        # and the joint arm of the SAME battery bites when a predicate did
+        # promote on machine-class evidence.
+        with pytest.raises(AssertionError, match=_tag("[SIM2X-FORGED-VH]")):
+            FIX.assert_machine_class_never_promotes([clean], True)
+
+    def test_a_real_human_verdict_still_promotes(self):
+        # the honest negative for the class check: the human channel must not
+        # be broken by it — a non-machine-class human verdict still promotes.
+        human = [{"review": {"verdict": "confirmed",
+                             "source": FIX.HUMAN_VERDICT_SOURCE}}]
+        assert FIX.reference_edge_promotion(human) is True
+        assert FIX.is_machine_class_artifact(human[0]) is False
 
     def test_sim2_extension_promotes_on_league_score_REDS(self):
         # §9.3 arm (b): an edge/graduation predicate consuming a league score

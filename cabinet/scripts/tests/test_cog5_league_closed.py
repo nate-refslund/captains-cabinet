@@ -77,9 +77,19 @@ for _p in (str(_HERE), str(_REPO)):
 
 import lib_cog5_scoring_fixtures as FIX  # noqa: E402
 
+from framework.fidelity import regression_gate as rg  # noqa: E402
+
 
 def _tag(marker: str) -> str:
     return re.escape(marker)
+
+
+# the league joint consumes SCORER PACKS, so the §9.1 fixtures here are built
+# from the same REAL replay maps + REAL gate results the sim suite uses — a
+# machine dim is only a machine dim if it was MEASURED (X6 custody).
+IDS = FIX.case_ids(20)
+BASELINE = FIX.results_baseline(IDS, learned=15)            # 15/20 = 0.75
+IMPROVING = FIX.results_improving(BASELINE, "case-016")     # 16/20 = 0.80
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +176,74 @@ class TestProvenanceChainOfCustody:
         with pytest.raises(AssertionError, match=_tag("[LC-LAUNDER]")):
             FIX.assert_count_honest(laundered, accepted)
 
+    # ---- the REWRITE direction of the same wall (§6.2 says provenance can
+    # ---- never be SET *or* REWRITTEN; only SET was armed) ----------------
+    def test_ingestion_seals_the_custody_fields(self):
+        accepted, _ = FIX.ingest_rows(real_rows())
+        FIX.assert_custody_intact(accepted)
+        for row in accepted:
+            assert FIX.custody_intact(row) is True
+            assert isinstance(row[FIX.CUSTODY_SEAL_KEY], str)
+
+    def test_mutant_provenance_REWRITTEN_after_ingest_REDS(self):
+        # N2: a row whose provenance AND source_class are rewritten AFTER
+        # ingestion used to count, and assert_count_honest AGREED — it
+        # recomputed from the same mutated row, so the laundering was
+        # self-consistent. Custody is now bound at ingest, so the rewrite is
+        # detectable and the row stops counting.
+        accepted, _ = FIX.ingest_rows(real_rows() + synthetic_rows())
+        honest_before = FIX.count_toward_minimums(accepted)
+        rewritten = FIX.mutant_rewrite_after_ingest(accepted)
+        laundered_rows = [r for r in rewritten if not FIX.custody_intact(r)]
+        assert len(laundered_rows) >= FIX.REAL_TRAJECTORY_FLOOR, (
+            "fixture invariant: the rewrite must launder enough rows to CLEAR "
+            f"the §6.2 floor ({len(laundered_rows)} < "
+            f"{FIX.REAL_TRAJECTORY_FLOOR}) — otherwise the arm cannot tell a "
+            "working custody check from a floor that was never reached")
+        assert all(r["provenance"] == "real_mined"
+                   and r["source_class"] == "consequence_ledger"
+                   for r in laundered_rows), "fixture invariant"
+        # (a) the seal battery catches the rewrite by name...
+        with pytest.raises(AssertionError, match=_tag("[LC-CUSTODY]")):
+            FIX.assert_custody_intact(rewritten)
+        # (b) ...and the counting predicate refuses to count them, so the
+        #     rewrite buys the laundering NOTHING.
+        assert FIX.count_toward_minimums(rewritten) == honest_before
+
+    def test_mutant_counter_ignoring_custody_REDS(self):
+        # the counter-side escape: a counter that reads the provenance FIELD
+        # and never verifies the seal counts every rewritten row.
+        accepted, _ = FIX.ingest_rows(real_rows() + synthetic_rows())
+        rewritten = FIX.mutant_rewrite_after_ingest(accepted)
+        laundered = FIX.mutant_count_ignoring_custody(rewritten)
+        assert laundered["prompt/low"]["counted"] > \
+            FIX.count_toward_minimums(rewritten)["prompt/low"]["counted"], (
+            "fixture invariant: the custody-blind counter must actually inflate")
+        with pytest.raises(AssertionError, match=_tag("[LC-LAUNDER]")):
+            FIX.assert_count_honest(laundered, rewritten)
+
+    def test_rewritten_rows_cannot_open_the_league(self):
+        # the joint that matters: rewriting synthetic rows to look real must
+        # not reach the §6.2 floor through league_may_open.
+        accepted, _ = FIX.ingest_rows(synthetic_rows(25))
+        rewritten = FIX.mutant_rewrite_after_ingest(accepted)
+        record = FIX.good_arming_record()
+        record["open_conditions"] = {c: True for c in FIX.OPEN_CONDITIONS}
+        record["holdout_freeze"] = "landed"
+        assert FIX.league_may_open(record, rewritten) is False, (
+            "[LC-SYNTH-NEVER-OPENS] a post-ingest provenance rewrite must not "
+            "open the league — custody is bound at ingest (§6.2)")
+
+    def test_laundered_actuals_from_a_rewritten_corpus_REDS(self):
+        # the record-level composition: actuals computed by the custody-blind
+        # counter over a rewritten corpus disagree with the §6.2 predicate.
+        accepted, _ = FIX.ingest_rows(real_rows() + synthetic_rows())
+        rewritten = FIX.mutant_rewrite_after_ingest(accepted)
+        record = FIX.good_arming_record(
+            actuals=FIX.mutant_count_ignoring_custody(rewritten))
+        violations = FIX.validate_arming_record(record, rows=rewritten)
+        assert any("[LC-LAUNDER]" in v for v in violations)
+
     def test_mutant_trusting_ingester_launders_REDS(self):
         # the custody mutant: an ingester TRUSTING the row-supplied stamp
         # lets the generator row masquerade as real_live — the honest-count
@@ -232,6 +310,18 @@ class TestSyntheticNeverOpens:
         with pytest.raises(AssertionError, match=_tag("[LC-FITNESS]")):
             FIX.assert_league_row_closed_shape(row)
 
+    def test_closed_league_rows_are_capped_at_the_states_p5_rung(self):
+        # the closure property the row-shape battery now carries: a closed
+        # league row's certainty sits at or below P5, bound to the states.py
+        # ladder (read from bytes) — not to a word scan.
+        row = FIX.make_league_row("cand-cap", scored=0.6, ranked=1)
+        FIX.assert_league_row_closed_shape(row)
+        above = FIX.mutant_league_row_above_cap("cand-cap", scored=0.6, ranked=1)
+        assert FIX.vocab_violations(above) == [], (
+            "fixture invariant: the vocabulary scan is blind to the P3 token")
+        with pytest.raises(AssertionError, match=_tag("[P5-CAP]")):
+            FIX.assert_league_row_closed_shape(above)
+
     def test_row_missing_the_schema_required_field_REDS(self):
         row = FIX.make_league_row("cand-y", scored=0.5, ranked=2)
         del row["fitness_claim"]
@@ -296,16 +386,17 @@ class TestArmingRecordClosureFixture:
 # ===========================================================================
 class TestFitnessVectorLaw:
     def _packs(self):
-        incumbent = FIX.make_vector({
-            "frozen_pass_rate": (0.75, FIX.MACHINE_KIND),
-            "frozen_regressions": (0, FIX.MACHINE_KIND),
-            "judge_score": (0.55, FIX.JUDGE_KIND),
-        }, table_order=0.50)
-        contender = FIX.make_vector({
-            "frozen_pass_rate": (0.80, FIX.MACHINE_KIND),
-            "frozen_regressions": (0, FIX.MACHINE_KIND),
-            "judge_score": (0.40, FIX.JUDGE_KIND),
-        }, table_order=0.10)
+        # 0.75 vs 0.80, zero regressions on both — MEASURED from the real
+        # replay maps + the real predicate, so every machine dim carries a
+        # machine derivation (X6) and the floors are read from evidence.
+        incumbent = FIX.candidate_vector(
+            candidate_results=BASELINE,
+            gate_result=rg.GateResult(outcome=rg.OUTCOME_FAIL),
+            judge_score=0.55, table_order=0.50)
+        contender = FIX.candidate_vector(
+            candidate_results=IMPROVING,
+            gate_result=rg.evaluate_gate(IDS, BASELINE, IMPROVING),
+            judge_score=0.40, table_order=0.10)
         return incumbent, contender
 
     def test_schema_separates_vector_from_table_order(self):
@@ -334,11 +425,17 @@ class TestFitnessVectorLaw:
         ok, _ = FIX.admission_eligible(contender, incumbent)
         assert ok is True
 
+    def test_table_order_law_holds_as_a_reusable_battery(self):
+        # N4: the §9.1 structural law promoted out of an inline assert into a
+        # lib battery, so integrator surgery can re-run it against the REAL
+        # league/scorer joint instead of re-deriving it by hand.
+        incumbent, contender = self._packs()
+        FIX.assert_table_order_never_reaches_the_joint(contender, incumbent)
+
     def test_mutant_predicate_keying_on_table_order_REDS(self):
-        # §9.1's NAMED mutant: a predicate keying on table_order — the
-        # contender (machine-better, low table_order) gets refused and the
-        # incumbent-shaped high-scalar pack gets admitted; the structural
-        # same-answer law catches it.
+        # §9.1's NAMED mutant: a predicate keying on table_order — the same
+        # pack answers differently at 0.99 and 0.01, and the battery catches
+        # it (both directions: reference above passes, mutant here REDs).
         incumbent, contender = self._packs()
         high = {**contender, "table_order": 0.99}
         low = {**contender, "table_order": 0.01}
@@ -346,33 +443,42 @@ class TestFitnessVectorLaw:
             FIX.mutant_table_order_eligibility(low, incumbent), \
             "fixture invariant: the mutant must actually key on the scalar"
         with pytest.raises(AssertionError, match=_tag("[LC-TABLE-ORDER]")):
-            assert FIX.mutant_table_order_eligibility(high, incumbent) == \
-                FIX.mutant_table_order_eligibility(low, incumbent), (
-                "[LC-TABLE-ORDER] a predicate keying on table_order reaches "
-                "an admission joint on a presentation scalar — no scalar "
-                "reaches any promotion, admission, or graduation joint (§9.1)")
+            FIX.assert_table_order_never_reaches_the_joint(
+                contender, incumbent,
+                predicate=FIX.mutant_table_order_eligibility)
 
     def test_unknown_never_satisfies_a_floor_at_the_league_joint(self):
         incumbent, _ = self._packs()
+        # quarantined BUT honestly provenanced: the values came from the
+        # sim-8 triple-run outputs, so the refusal is the UNKNOWN law, never
+        # a missing-derivation artefact.
+        triple = ["0.117", "0.640", "0.902"]
         quarantined = FIX.make_vector({
             "frozen_pass_rate": (FIX.UNKNOWN, FIX.MACHINE_KIND),
             "frozen_regressions": (FIX.UNKNOWN, FIX.MACHINE_KIND),
             "judge_score": (0.99, FIX.JUDGE_KIND),
-        }, table_order=0.99)
+        }, table_order=0.99, evidence={
+            "frozen_pass_rate": triple, "frozen_regressions": triple,
+            "judge_score": FIX.JudgeEvidence(0.99)})
         ok, reasons = FIX.admission_eligible(quarantined, incumbent)
         assert ok is False and any("[FLOOR-UNKNOWN]" in r for r in reasons)
 
     def test_judge_dimension_never_satisfies_a_floor_here_either(self):
         # X6 at the league joint: machine-flat + judge-max stays ineligible
-        # (the sim-4 law re-asserted where the league consumes vectors).
+        # (the sim-4 law re-asserted where the league consumes vectors). The
+        # machine dims are MEASURED (baseline replay + real gate result), so
+        # the refusal is the improvement floor — not the derivation gate.
         incumbent, _ = self._packs()
-        judge_only = FIX.make_vector({
-            "frozen_pass_rate": (0.75, FIX.MACHINE_KIND),
-            "frozen_regressions": (0, FIX.MACHINE_KIND),
-            "judge_score": (0.99, FIX.JUDGE_KIND),
-        }, table_order=0.95)
-        ok, _reasons = FIX.admission_eligible(judge_only, incumbent)
+        judge_only = FIX.candidate_vector(
+            candidate_results=BASELINE,
+            gate_result=rg.GateResult(outcome=rg.OUTCOME_FAIL),
+            judge_score=0.99, table_order=0.95)
+        ok, reasons = FIX.admission_eligible(judge_only, incumbent)
         assert ok is False
+        assert any("[FLOOR-IMPROVEMENT]" in r for r in reasons), (
+            "the judge-max pack must be refused for the unmet MACHINE floor")
+        assert not any("[FLOOR-DERIVATION]" in r for r in reasons), (
+            "fixture invariant: this arm tests X6 at the floor, not custody")
 
 
 # ===========================================================================
