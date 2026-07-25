@@ -77,6 +77,16 @@ python3 "$ORG" roles define \
   --actor cos >/dev/null
 pass "durable CoS role defined"
 
+# 2026-07-26 (branch fix/self-verification-hole): separation of duties is now
+# ENFORCED — a node's owner may not verify its own work. This eval owned and
+# verified everything as `cos`, so it needs a real independent verifier role.
+python3 "$ORG" roles define \
+  --role auditor \
+  --name "Auditor" \
+  --charter "Independently verify work-graph nodes owned by other roles" \
+  --actor cos >/dev/null
+pass "independent verifier role defined"
+
 OUTCOME_JSON="$(python3 "$ORG" outcomes propose \
   --title "Improve Cabinet autonomy per Captain attention" \
   --metric-name verified_outcome_value \
@@ -93,6 +103,7 @@ MISSION_JSON="$(python3 "$ORG" missions compile "$OUTCOME_ID" \
   --title "Outcome-to-OVI vertical slice" \
   --node-title "Publish verified OVI and digest" \
   --owner-role cos \
+  --verifier-role auditor \
   --actor cos)"
 MISSION_ID="$(printf '%s' "$MISSION_JSON" | json_value '.mission_id')"
 NODE_ID="$(printf '%s' "$MISSION_JSON" | json_value '.nodes[0].node_id')"
@@ -107,10 +118,13 @@ python3 "$ORG" roles assign-hat \
   --actor cos >/dev/null
 pass "role hat assigned to mission"
 
+# 2026-07-26 (branch fix/self-verification-hole): verified by the node's declared
+# verifier, not its owner. `--actor cos` asserted the self-verification the
+# runtime now deliberately refuses; this exercises the intended path instead.
 python3 "$ORG" missions complete "$NODE_ID" \
   --verified-value 12 \
   --verification-summary "Fixture verified the runtime event path end to end" \
-  --actor cos >/dev/null
+  --actor auditor >/dev/null
 pass "work-graph node completed with verification"
 
 python3 "$ORG" ovi publish \
