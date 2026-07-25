@@ -193,6 +193,25 @@ class ScreenpipeDispatch:
         text = override_text or p.get("draft", "")
         addr = p.get("recipient_email", "")
         is_teams = (p.get("channel") or "").lower() == "teams"
+        # OUTBOUND IDENTITY (2026-07-25). This adapter sends through the
+        # captain's OWN mailbox/chat (msgraph /me/..., the shared send libs) —
+        # it has exactly one identity and cannot assume another. So a deployment
+        # that configured a distinct cabinet from-address
+        # (instance/config/outbound-identity.yml) gets a REFUSAL here, not a
+        # silent send under the captain's name: a from-address the transport
+        # cannot honour is a broken promise, and quietly falling back to the
+        # captain is precisely the identity confusion that config exists to end.
+        # Records with no `sender` block (or an empty from_address) are
+        # byte-identical to the previous path.
+        _sender = p.get("sender") or {}
+        _from = str((_sender or {}).get("from_address") or "").strip() \
+            if isinstance(_sender, dict) else ""
+        if _from:
+            return {"ok": False, "error": (
+                "outbound identity mismatch: this dispatch sends only as the "
+                "captain, but outbound-identity.yml requests from_address "
+                f"{_from!r} — refusing rather than sending under the captain's "
+                "name. Wire a transport for that address, or clear from_address.")}
         subject = (p.get("subject") or "").strip() or (
             f"Re: {p.get('last_subject')}".strip() if p.get("last_subject") else "Re: (din besked)")
         _load_shared_env()

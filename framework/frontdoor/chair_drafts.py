@@ -28,6 +28,7 @@ import subprocess
 import time
 from datetime import datetime, timezone
 
+from framework import outbound_identity
 from framework.frontdoor import channel
 from framework.sources import get_dispatch
 
@@ -48,18 +49,31 @@ def present_draft(person: str, channel_name: str, draft: str,
     Returns the pid. The Captain replies 'send' (or 'send <pid>') in the Chair chat to
     deliver, 'edit: <text>' to send his version, 'skip: <why>' to drop it.
 
-    The draft is signed via the dispatch (get_dispatch().ensure_signature —
-    Flavor-A: draft_lib.ensure_signature, idempotent, email only; a null/clean-room
-    dispatch returns it unchanged), so the SIGNED text is what is both shown and
-    stored for verbatim send.
+    OUTBOUND IDENTITY (2026-07-25): the draft is prepared through
+    ``framework.outbound_identity.prepare_outbound`` — the deployment's config
+    decides WHOSE sign-off closes it (the captain's own, via the dispatch's
+    ``ensure_signature``, only under an explicit ``mode: captain``; otherwise the
+    cabinet's own configured signature, which may be none at all) and the
+    machine-provenance disclosure is stamped either way. Absent/corrupt config
+    falls back to the safe side: cabinet identity, disclosure on. The PREPARED
+    text is what is both shown to the captain and stored for verbatim send, so
+    he approves the exact bytes the recipient will read.
     """
-    draft = get_dispatch().ensure_signature(draft, channel_name)
+    draft = outbound_identity.prepare_outbound(
+        draft, channel_name,
+        captain_signature=get_dispatch().ensure_signature)
     pid = hashlib.sha1(f"{person}{draft}{time.time()}".encode()).hexdigest()[:6]
     payload = {
         "slug": slug or person.lower().replace(" ", "-"),
         "person": person, "draft": draft, "channel": channel_name,
         "recipient_email": recipient_email, "subject": subject,
         "last_subject": subject, "why": why, "lane": "send-1to1-reply",
+        # The addressing a transport needs to send AS THE CABINET rather than as
+        # the captain (names only — credential_env is a variable NAME, never a
+        # value). Empty strings mean "not configured"; a dispatch that cannot
+        # honour a configured from_address must refuse, never silently fall back
+        # to the captain's mailbox.
+        "sender": outbound_identity.sender_headers(channel_name),
         # queued_ts anchors the verify-at-fire re-gather (fire_gate): "did the
         # captain reply on this thread AFTER this draft was queued?" needs the
         # queue moment as its clock (captain-surface §3.5, 2026-07-10).
@@ -136,6 +150,23 @@ def deliver_draft(pid: str, override_text: str = "", dry_run: bool = False,
         return {"ok": False, "cancelled": True,
                 "reason": verdict.get("captain_reason") or verdict.get("reason"),
                 "verify": verdict}
+
+    # OUTBOUND DISCLOSURE — the fail-closed egress check (2026-07-25). Whatever
+    # text is about to leave carries the machine-provenance line, including a
+    # captain `edit: <text>` override (which never passed through present_draft)
+    # and any draft written into the store by a path that bypassed it. Idempotent,
+    # so an already-prepared draft is byte-unchanged. Deliberately NOT wrapped in
+    # try/except: a stamp that somehow failed must stop the send, not leak an
+    # undisclosed message past a swallowed error.
+    # Blank text is left blank: there is nothing to send, so there is nothing to
+    # disclose, and manufacturing a message whose entire content is a disclosure
+    # would be a new outbound message rather than a safer one.
+    _out_chan = str(p.get("channel") or "")
+    if override_text:
+        if override_text.strip():
+            override_text = outbound_identity.stamp(override_text, _out_chan)
+    elif str(p.get("draft") or "").strip():
+        p["draft"] = outbound_identity.stamp(p.get("draft", ""), _out_chan)
 
     res = get_dispatch().deliver(record=p, override_text=override_text, dry_run=dry_run)
     if not isinstance(res, dict):

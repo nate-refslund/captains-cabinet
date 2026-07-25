@@ -1,0 +1,110 @@
+# =============================================================================
+# outbound-identity.yml.example — WHO the cabinet is to a human who is NOT you
+# =============================================================================
+#
+# Copy to instance/config/outbound-identity.yml and edit. Reader:
+# framework/outbound_identity.py. Every address below is an obvious placeholder
+# — never commit a real address to a shipped example.
+#
+# WHY THIS FILE EXISTS. Without it the cabinet has no identity of its own: it
+# closes outbound mail with YOUR signature and carries no machine-provenance
+# mark, so every message it sends reads — and legally counts — as written by
+# you personally. That was tolerable while the cabinet only ever wrote to you.
+# It is not tolerable now that it writes to real people.
+#
+# YOU DO NOT NEED THIS FILE TO BE SAFE. Absent, unreadable, symlinked,
+# unparseable, or malformed in any way, the reader falls back to the SAFE
+# DEFAULT and says so:
+#
+#     identity.mode  = cabinet     (your personal signature is NOT applied)
+#     disclosure     = enabled on every channel
+#     every address  = empty       (nothing is invented on your behalf)
+#
+# There is no partial parse. One bad key sends the WHOLE file back to that
+# default rather than half-configuring who the cabinet is. Delete the file to
+# return to the default at any time.
+
+version: 1
+
+# --- identity ----------------------------------------------------------------
+# Who the cabinet signs and sends as.
+identity:
+  # cabinet — the cabinet acts as ITSELF. Your personal signature is never
+  #           appended; the cabinet's own `signature` below is used instead
+  #           (and if you leave it empty, nothing is signed at all).
+  # captain — the cabinet acts as YOU: your adapter's own signature closes the
+  #           mail, exactly as it did before this file existed. The disclosure
+  #           line is STILL applied — a message sent under your name by a
+  #           machine says so.
+  mode: cabinet
+
+  # How the cabinet names itself. Free text; empty is fine.
+  display_name: "Cabinet (assistant to Jane Captain)"
+
+  # The cabinet's OWN sending address. Empty = not configured.
+  #
+  # IMPORTANT: setting this is a CLAIM that the transport can honour it. An
+  # adapter that cannot send from this address REFUSES the send rather than
+  # quietly falling back to your mailbox — a silent fallback would be exactly
+  # the confusion this file exists to remove. Leave it empty until the mailbox
+  # actually exists and the adapter is wired to it.
+  from_address: ""            # e.g. cabinet@example.com
+
+  # Where a human's reply should land. Empty = the transport's own default.
+  reply_to: ""                # e.g. jane.captain@example.com
+
+  # The NAME of the environment variable holding the cabinet's own sending
+  # credential. NAMES ONLY — never a secret value, in this or any other tracked
+  # file. Empty = the transport uses whatever credential it already has (which,
+  # today, is yours; see the note at the bottom).
+  credential_env: ""          # e.g. CABINET_OUTBOUND_TOKEN
+
+  # The cabinet's own sign-off, appended to outbound EMAIL only (chat channels
+  # are identified by the disclosure line instead). Multi-line is fine.
+  # Idempotent — never appended twice.
+  signature: ""
+  # signature: |
+  #   —
+  #   Cabinet
+  #   assistant to Jane Captain
+
+# --- disclosure --------------------------------------------------------------
+# The loud, human-legible machine-provenance line. This is the SAME obligation
+# the act-first Monday surfaces already carry ("🤖 cabinet:" on every
+# lane-created artifact), generalized to every channel that reaches a human who
+# is not you.
+disclosure:
+  # Turning this off is a deliberate act with real consequences: the people the
+  # cabinet writes to lose the only signal that a machine wrote to them.
+  enabled: true
+
+  # {captain} is substituted with your display name from platform.yml. Keep it
+  # short — it rides on every outbound message.
+  text: "🤖 Sent by an AI assistant acting for {captain}."
+
+  # append (default) or prepend.
+  placement: append
+
+  # Per-channel overrides. Anything NOT listed discloses — an unknown channel is
+  # treated as a stranger, not as you.
+  channels: {}
+  # channels:
+  #   email: true
+  #   teams: true
+
+  # Channels that ARE you — your own chat with the cabinet. Never stamped: you
+  # already know what your cabinet is. Everything else is a stranger.
+  captain_surfaces: []
+  # captain_surfaces:
+  #   - chair
+
+# =============================================================================
+# Known tension, stated plainly (not resolved by this file)
+# =============================================================================
+# instance/config/act-first-surfaces.yml carries a RATIFIED ruling that the
+# cabinet acts on the project-management estate using the Captain's own
+# full-privilege API token — "I want the cabinet to be able to act like me".
+# That ruling stands and this file does not touch it. What this file does is
+# make the alternative EXIST and be selectable for the COMMS estate, where the
+# audience is a human being rather than a board row. Pointing the two estates
+# at one identity is now a choice, not a default.

@@ -135,6 +135,20 @@ temporary_allowances:
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: COG-7 compaction, or the contact dead-man folds into the evidence plane
+  - phase: outbound-identity
+    budget: framework_production_modules
+    additional: 1
+    reason: 'Outbound identity separation (2026-07-25) — framework/outbound_identity.py, the ONE resolver for who the cabinet is when it reaches a human who is not the Captain (identity mode + from-address/reply-to/credential-env NAME/sign-off) and for the machine-provenance disclosure that generalizes the act-first board-artifact banner to every such channel. Stdlib at module scope with a lazy yaml import; fail-closed to cabinet identity + disclosure-on with no partial parse. A leaf module by design: the frontdoor draft seam, the Monday executor and the channel-adapter ledger all read ONE policy, so a second copy of the rule cannot drift away from the first. EXACT measured running total (239 vs 238 base), 2026-07-25, via cognitive-architecture-census.py — the zero-headroom observed==max law means this is the exact new total, never a pre-allocated ceiling'
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: COG-7 compaction folds the resolver into the projection kernel, or outbound identity is superseded by a transport that carries its own
+  - phase: outbound-identity
+    budget: framework_production_noncomment_lines
+    additional: 438
+    reason: 'Outbound identity separation (2026-07-25) — framework/outbound_identity.py (containment-probed config read, closed key sets, the whole-file refusal parser, the idempotent disclosure stamp keyed on the rendered line so a quoted glyph cannot suppress it, prepare_outbound, sender_headers, describe) plus the four wired seams: framework/frontdoor/chair_drafts.py present_draft composing identity+disclosure into the bytes the Captain approves and deliver_draft enforcing them fail-closed at the egress incl. a Captain edit override, framework/frontdoor/action_exec.py _apply_body_banner carrying the existing provenance banner onto Monday note bodies (a note on an item the lane did not create had only an opaque correlation id), and framework/channels/contract.py disclosure_state adding the disclosure_required/disclosed audit pair to the outbox ledger. EXACT measured running total (67372 vs 66934 base), 2026-07-25, via cognitive-architecture-census.py'
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: COG-7 compaction, or the disclosure obligation folds into the channel-adapter contract once its verbatim-body tests are re-adjudicated
 ownership:
   authoritative_state: domain_transaction
   cross_domain_delivery: transactional_outbox

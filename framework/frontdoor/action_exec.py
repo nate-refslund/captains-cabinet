@@ -333,6 +333,25 @@ def _apply_banner(title: str) -> str:
     return PROVENANCE_BANNER + t
 
 
+def _apply_body_banner(body: str) -> str:
+    """[RT-A1, extended 2026-07-25] The same loud banner on a lane-written note
+    BODY.
+
+    A created item carries the banner in its title, but a note posted onto an
+    item the lane did NOT create (``monday_task_update``) had only the opaque
+    correlation-id footer — a colleague reading that note saw a machine-readable
+    id and no human-legible statement that a machine wrote it. The obligation
+    ("every lane-created artifact carries a loud human-legible prefix + the cid
+    footer") always covered it; the code only implemented the title half.
+    Idempotent, and empty bodies stay empty (nothing is posted for them)."""
+    b = body or ""
+    if not b.strip():
+        return b
+    if b.startswith(PROVENANCE_BANNER.strip()):
+        return b
+    return PROVENANCE_BANNER + b
+
+
 def _resolve_board(payload: dict) -> str:
     """The numeric board id a monday_task_create/update lands on. Free-text hints
     (the LLM cannot know board ids) resolve to the default Tasks board — SINGLE
@@ -679,7 +698,7 @@ def _exec_monday_create(payload: dict, monday_post: Callable) -> dict:
         raise RuntimeError("monday create returned no item id")
     # [RT-A8] strip any @-mention/user-id token so the body can't notify/email a
     # human; the correlation footer (no @) is appended after and stays intact.
-    desc = _strip_mentions(str(payload.get("description") or ""))
+    desc = _apply_body_banner(_strip_mentions(str(payload.get("description") or "")))
     cid = str(payload.get("_cid") or "")
     if cid:
         # correlation footer (B2.1): makes the created item joinable to probe
@@ -708,9 +727,11 @@ def _exec_monday_update(payload: dict, monday_post: Callable) -> dict:
     applied = []
     note_update_id = None
     if setmap.get("description") or setmap.get("note") or payload.get("why"):
-        # [RT-A8] strip @-mention/user-id tokens from the note body.
-        body = _strip_mentions(
-            str(setmap.get("description") or setmap.get("note") or payload.get("why")))
+        # [RT-A8] strip @-mention/user-id tokens from the note body, then carry
+        # the loud provenance banner: this note lands on an item the lane did not
+        # create, so the body is the ONLY thing a colleague reads.
+        body = _apply_body_banner(_strip_mentions(
+            str(setmap.get("description") or setmap.get("note") or payload.get("why"))))
         upd = monday_post(
             "mutation($item: ID!, $body: String!) {"
             " create_update(item_id: $item, body: $body) { id } }",

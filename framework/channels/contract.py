@@ -407,11 +407,38 @@ class ChannelAdapter(abc.ABC):
                 "%s: %r is not a declared capability (capabilities: %s)"
                 % (self.name, capability, sorted(self.capabilities)))
 
+    # -- machine-provenance disclosure (audit) --------------------------------
+
+    def disclosure_state(self, body: str) -> "dict[str, bool]":
+        """Whether this channel OWES a machine-provenance disclosure, and whether
+        the body actually carries one (framework.outbound_identity).
+
+        OBSERVATION ONLY — this never rewrites the body. `send()` is contracted
+        to hand the transport the caller's bytes verbatim (pinned by
+        framework/channels/tests/test_contract.py, test_teams_outlook.py and
+        test_slack.py), so an adapter-layer stamp is not this seam's to make.
+        What it CAN do is make an undisclosed outbound message a visible ledger
+        fact instead of an invisible one: `disclosed=False` with
+        `disclosure_required=True` on an outbox row is the audit signal that the
+        composition layer above skipped its obligation. Never raises — a
+        disclosure lookup must not be able to break a send."""
+        try:
+            from framework import outbound_identity
+            # Resolve the policy ONCE and pass it down: a send journals through
+            # here twice (dispatched/failed), and each unbound lookup would
+            # re-read the config file.
+            ident = outbound_identity.load()
+            required = outbound_identity.requires_disclosure(self.name, ident)
+            present = outbound_identity.has_disclosure(body, self.name, ident)
+        except Exception:
+            return {"disclosure_required": False, "disclosed": False}
+        return {"disclosure_required": bool(required), "disclosed": bool(present)}
+
     # -- journaling -----------------------------------------------------------
 
     def _base_payload(self, recipient: str, body: str,
                       thread_id: Optional[str]) -> "dict[str, Any]":
-        return {
+        payload = {
             "kind": "channel_send",
             "channel": self.name,
             "recipient": recipient,
@@ -423,6 +450,8 @@ class ChannelAdapter(abc.ABC):
             "body_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
             "body_chars": len(body),
         }
+        payload.update(self.disclosure_state(body))
+        return payload
 
     def _journal_send(self, recipient: str, body: str,
                       thread_id: Optional[str], artifact_id: str) -> None:
