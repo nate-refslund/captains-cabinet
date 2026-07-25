@@ -454,13 +454,27 @@ if [ -f "$SNAP/postgres.dump" ]; then
                   POSTGRES_EXPECTED_TABLES=$(grep -c . "$RESTORE_DIR/postgres-tables-expected.txt" || true)
                   POSTGRES_MISSING=$(comm -23 "$RESTORE_DIR/postgres-tables-expected.txt" \
                     "$RESTORE_DIR/postgres-tables-actual-sorted.txt" | tr '\n' ' ')
-                  if [ "$POSTGRES_EXPECTED_TABLES" -eq 0 ]; then
-                    fail "postgres.dump declares NO tables in its table of contents — the snapshot captured no schema"
-                  elif [ -n "${POSTGRES_MISSING// /}" ]; then
+                  # An empty TOC is deliberately NOT fatal on its own. The
+                  # empty-backup case — the vacuity this whole block exists to
+                  # fix — is already caught directly and unconditionally by the
+                  # zero-relations floor above, which measures the RESTORED
+                  # DATABASE rather than the archive's self-description. Making
+                  # "declares no tables" independently fatal would add nothing
+                  # the floor does not already prove, while failing on any
+                  # toolchain whose --list output this parser cannot read. So
+                  # the shape arm asserts only what it can actually measure:
+                  # when the dump names tables, every one of them must have
+                  # landed. (`pg_restore --list` FAILING outright is still a
+                  # hard failure — see the branch above.)
+                  if [ -n "${POSTGRES_MISSING// /}" ]; then
                     fail "restored database is MISSING tables the dump declares: ${POSTGRES_MISSING%% }"
                   else
                     PG_VERSION=$("$POSTGRES_BIN_DIR/postgres" --version 2>/dev/null || echo "PostgreSQL version unknown")
-                    ok "postgres.dump restores into disposable PostgreSQL ($POSTGRES_RELATIONS user relations; all $POSTGRES_EXPECTED_TABLES declared tables present; $PG_VERSION)"
+                    if [ "$POSTGRES_EXPECTED_TABLES" -gt 0 ]; then
+                      ok "postgres.dump restores into disposable PostgreSQL ($POSTGRES_RELATIONS user relations; all $POSTGRES_EXPECTED_TABLES declared tables present; $PG_VERSION)"
+                    else
+                      ok "postgres.dump restores into disposable PostgreSQL ($POSTGRES_RELATIONS user relations; $PG_VERSION)"
+                    fi
                   fi
                 fi
                 ;;

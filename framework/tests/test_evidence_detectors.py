@@ -559,6 +559,12 @@ def test_detector_liveness_dark_frozen_stale_fresh(monkeypatch, tmp_path):
 # Wiring the weekly governance review later (a conscious, reviewed change)
 # must add cabinet/scripts/governance-review.py here in the same commit.
 _REFERENCE_ALLOWLIST = {
+    "cabinet/config/state-persistence-policy.yml":
+        "a path row in deploy-persistence accounting, never a consumer — "
+        "state-persistence-preflight.py derives its durable set from "
+        ".gitignore, so every ignored path needs an entry keyed by that exact "
+        "path; this row records WHY the journal is deliberately not persisted "
+        "across deploys (regenerable, report-only) and reads nothing",
     "framework/evidence_detectors.py": "the module itself",
     "framework/tests/test_evidence_detectors.py": "this proof",
     "cabinet/scripts/evidence-shadow-detectors.py": "the thin scheduled runner",
