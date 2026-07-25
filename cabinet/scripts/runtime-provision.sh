@@ -217,11 +217,41 @@ swap_symlink() {
 # ephemeral run lock that must NOT carry across deploys (it lives in the
 # onboarding/ parent, not under the v2/ leaf, so symlinking v2/ cannot drag
 # it along).
-INSTANCE_PERSISTENT_DIRS="instance/roles/active instance/roles/archive instance/roles/hats instance/loop-prompts instance/archive instance/state instance/cache instance/onboarding/formation instance/onboarding/v2 instance/onboarding/purge-receipts instance/evidence secrets"
+# The shared/interfaces/{foundry,world} + world-aesthetic corpus entries are the
+# state-persistence-preflight additions (2026-07-25): each is gitignored runtime
+# state with ZERO tracked content, so a whole-dir symlink shadows nothing.
+# foundry/ is the COG-5 sealed append-only trajectory archive whose own contract
+# says "rollback = verified RESTORE, never cache-delete"; world/ holds the
+# append-only chronicle series that services.yml orders ARCHIVED, never
+# truncated. corpus/{positive,negative} are the judge's taste-accumulation
+# frames — Captain approve/reject rulings on renders that no longer exist
+# anywhere, and _corpus.py integrity-checks every read, so a lost corpus is a
+# hard judge failure. They are linked at the SUBDIR level deliberately: the
+# corpus root holds a git-TRACKED manifest.json that a whole-dir link would
+# shadow (the same "never shadow a tracked file" rule as the wildcard block).
+INSTANCE_PERSISTENT_DIRS="instance/roles/active instance/roles/archive instance/roles/hats instance/loop-prompts instance/archive instance/state instance/cache instance/onboarding/formation instance/onboarding/v2 instance/onboarding/purge-receipts instance/evidence secrets shared/interfaces/foundry shared/interfaces/world cabinet/scripts/world-aesthetic/corpus/positive cabinet/scripts/world-aesthetic/corpus/negative"
 # Gitignored in bulk but ships a tracked tier2/<officer>/{,reflections/}.gitkeep
 # skeleton — seeded into shared/ from the release's own tree once, then
 # symlinked whole like any PERSISTENT_DIRS entry thereafter.
-INSTANCE_PERSISTENT_SEEDED_DIRS="instance/memory"
+#
+# The five 2026-07-25 additions are the state-persistence-preflight fix. Each is
+# gitignored in bulk but ships a tracked .gitkeep skeleton, so SEEDED (not plain
+# DIRS) is the correct home — the skeleton is copied into shared/ once, then the
+# dir is symlinked like any other. Every one of them was silently discarded on
+# EVERY deploy, with no error and a passing health gate:
+#   memory/skills/evolved  ratified Captain rules (captain-rules/ratify-rule.sh)
+#   memory/tier3           decision log, experience records, research archive
+#   memory/logs            the tool-call log
+#   cabinet/cache          org-runtime.sqlite3 (append-only DB trigger), the
+#                          chained-hash predictions store, COG-2 beliefs, COG-4
+#                          scheduler, and the purge undo archive — ORIGINAL
+#                          stores despite the directory's name, seeded once at
+#                          setup and never re-seeded per deploy
+#   cabinet/logs           append-only verdict series cabinet-doctor reads
+#                          ACROSS runs (retrieval-eval history, doctor-history,
+#                          task-sync drift, hook FP corpus) — losing them makes
+#                          the rolling-window health checks unmeasurable
+INSTANCE_PERSISTENT_SEEDED_DIRS="instance/memory memory/skills/evolved memory/tier3 memory/logs cabinet/cache cabinet/logs"
 # Individual leaves inside an otherwise richly git-tracked directory.
 # Symlinked ONLY when a shared/ copy already exists — never fabricated, so
 # a from-scratch runtime root leaves the path absent, same as a from-scratch
@@ -240,7 +270,18 @@ INSTANCE_PERSISTENT_SEEDED_DIRS="instance/memory"
 # The report-only shadow-detector journal is intentionally NOT in this list:
 # regenerable detector output that a germline law bars any tracked surface
 # from naming (the CI shadow-grep proof enforces it) — so it is never linked.
-INSTANCE_PERSISTENT_FILES="instance/config/product.yml instance/config/active-project.txt instance/config/active-preset instance/config/roster.yml instance/config/publish-scan-patterns.local instance/config/extensions.yml instance/config/required-plugins.yml instance/config/extra-mcps.json instance/config/autonomy.yml instance/config/act-first-enabled .claude/settings.local.json shared/interfaces/action-lessons.yml shared/interfaces/falsifier-series.jsonl shared/interfaces/envelope-violations.jsonl shared/interfaces/charter-shadow-series.jsonl shared/interfaces/golden-eval-scalar.jsonl shared/interfaces/memory-supersession-proposals.jsonl shared/interfaces/needs-ledger.jsonl shared/interfaces/prediction-calibration.jsonl shared/interfaces/preference-pairs.jsonl shared/interfaces/world-chronicle.jsonl shared/interfaces/attention-queue.json instance/config/posture.yml instance/config/trust-ladder.yml instance/config/standing-grants.yml instance/config/comms-charter.yml instance/config/comms-charter-amendments.jsonl instance/config/comms-charter-proposals.jsonl shared/interfaces/memory-supersession-soak.jsonl shared/interfaces/workaround-retire-proposals.jsonl shared/interfaces/governance-labels.jsonl"
+INSTANCE_PERSISTENT_FILES="instance/config/product.yml instance/config/active-project.txt instance/config/active-preset instance/config/roster.yml instance/config/publish-scan-patterns.local instance/config/extensions.yml instance/config/required-plugins.yml instance/config/extra-mcps.json instance/config/autonomy.yml instance/config/act-first-enabled .claude/settings.local.json shared/interfaces/action-lessons.yml shared/interfaces/falsifier-series.jsonl shared/interfaces/envelope-violations.jsonl shared/interfaces/charter-shadow-series.jsonl shared/interfaces/golden-eval-scalar.jsonl shared/interfaces/memory-supersession-proposals.jsonl shared/interfaces/needs-ledger.jsonl shared/interfaces/prediction-calibration.jsonl shared/interfaces/preference-pairs.jsonl shared/interfaces/world-chronicle.jsonl shared/interfaces/attention-queue.json instance/config/posture.yml instance/config/trust-ladder.yml instance/config/standing-grants.yml instance/config/comms-charter.yml instance/config/comms-charter-amendments.jsonl instance/config/comms-charter-proposals.jsonl shared/interfaces/memory-supersession-soak.jsonl shared/interfaces/workaround-retire-proposals.jsonl shared/interfaces/governance-labels.jsonl instance/config/trusted-mcps.json instance/config/war-room-seed.yml .claude/project-config.json bin/cabinet-calread"
+# The four trailing entries are the 2026-07-25 state-persistence-preflight fix.
+# trusted-mcps.json / war-room-seed.yml / .claude/project-config.json are
+# hand-authored local config whose every sibling was already on this list —
+# they were the lone omissions, and each was silently reset to absent on every
+# deploy. bin/cabinet-calread is here for a different reason: its bytes ARE
+# rebuildable from tracked Swift source, but the macOS Full Calendar Access TCC
+# grant is keyed to the ad-hoc signature's CDHASH, so ANY rebuild costs a
+# one-time Captain re-grant in System Settings. Carrying the built binary
+# preserves the CDHASH and therefore the grant. Listed as an individual FILE,
+# never a bin/ directory link — see the state-persistence policy's known_gap
+# row for why Cabinet Companion.app needs a design call first.
 
 # link_instance_data <slot> <root> — the leaf-level linking pass. Called
 # unconditionally from cmd_provision (both on a fresh worktree checkout and

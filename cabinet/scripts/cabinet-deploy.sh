@@ -13,8 +13,9 @@
 #
 # FLOW (deploy, the default action):
 #   fetch -> resolve <ref> (default: master, i.e. the mirror's tracked
-#   origin/master) -> provision a new release slot at that commit -> HEALTH
-#   GATE against the new (not-yet-live) slot -> if healthy: promote (atomic
+#   origin/master) -> provision a new release slot at that commit -> STATE-
+#   PERSISTENCE PREFLIGHT (would this release discard durable state?) ->
+#   HEALTH GATE against the new (not-yet-live) slot -> if healthy: promote (atomic
 #   current-symlink swap) -> gracefully restart officers -> if UNHEALTHY:
 #   leave 'current' exactly where it was, exit non-zero. No separate
 #   rollback branch is needed for a failed DEPLOY: a bad slot is simply
@@ -117,7 +118,8 @@
 # the cutover lands is ~/.cabinet/runtime (see the cutover runbook) — always
 # pass it explicitly until then.
 #
-# Exit codes: 0 success · 1 health-gate/operational failure · 64 usage error.
+# Exit codes: 0 success · 1 preflight/health-gate/operational failure · 64 usage
+# error.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -128,7 +130,8 @@ DOCTOR_REL="cabinet/scripts/cabinet-doctor.sh"          # relative to a slot roo
 usage() {
   cat <<'EOF'
 Usage: cabinet-deploy.sh [deploy|rollback|status] --runtime-root <path> [--ref <git-ref>] [--dry-run]
-  deploy (default)  fetch -> provision -> health-gate -> promote -> restart officers
+  deploy (default)  fetch -> provision -> state-persistence preflight -> health-gate
+                    -> promote -> restart officers
   rollback          swap current back to previous -> restart officers
   status            print current/previous sha + germline status + last log lines
 --runtime-root can also come from CABINET_DEPLOY_RUNTIME_ROOT. No default —
@@ -379,6 +382,46 @@ do_deploy() {
   printf '%s\n' "$prov_out"
   slot="$(printf '%s\n' "$prov_out" | sed -n 's/^PROVISIONED_SLOT=//p')"
   [ -n "$slot" ] || { echo "cabinet-deploy.sh: provision did not report a slot path — aborting" >&2; exit 1; }
+
+  # ---- state-persistence preflight (BLOCKING) --------------------------------
+  # Runs AFTER provision (so the slot's symlinks are in place) and BEFORE the
+  # health gate and promote, so a release that would discard durable state
+  # never becomes `current`.
+  #
+  # Why this gate exists: a release is a FRESH `git worktree`, which contains
+  # tracked files and nothing else. Every gitignored path — which is precisely
+  # the cabinet's accumulated state — survives only if runtime-provision.sh's
+  # lists symlink it into shared/. Those hand-maintained lists drifted from
+  # .gitignore and silently discarded ratified Captain rules, the tier-3
+  # decision log, the tool-call log and the append-only foundry archive. The
+  # health gate passed and nothing errored: the old release kept the only copy
+  # and `prune --keep 5` later rm -rf'd it. Absence of an error was never
+  # evidence the state carried.
+  #
+  # The checker is run from THIS SLOT's own tree (the same "read the new slot,
+  # not the running one" discipline as health_gate/roster_officers), and in
+  # --slot mode it asserts against the real provisioned release rather than
+  # trusting the lists to describe what actually happened.
+  local preflight="$slot/cabinet/scripts/state-persistence-preflight.py" py_pf
+  if [ -f "$preflight" ]; then
+    py_pf="$(python_for_generator)" || exit 1
+    echo "cabinet-deploy.sh: state-persistence preflight against $slot..."
+    if ! "$py_pf" "$preflight" --repo "$slot" --slot "$slot" --shared "$RUNTIME_ROOT/shared"; then
+      log_line "deploy FAILED sha=$sha slot=$slot reason=state-persistence-preflight current=unchanged"
+      echo "cabinet-deploy.sh: DEPLOY ABORTED — this release would DISCARD durable state." >&2
+      echo "cabinet-deploy.sh: 'current' left untouched. Fix the persistence lists in" >&2
+      echo "cabinet-deploy.sh: cabinet/scripts/runtime-provision.sh (or declare the path" >&2
+      echo "cabinet-deploy.sh: disposable, with a reason, in cabinet/config/state-persistence-policy.yml)." >&2
+      exit 1
+    fi
+  else
+    # Fail closed: a release old enough to predate the checker cannot prove it
+    # preserves state, and this gate must never be skippable by deleting it.
+    log_line "deploy FAILED sha=$sha slot=$slot reason=state-persistence-preflight-missing current=unchanged"
+    echo "cabinet-deploy.sh: DEPLOY ABORTED — $preflight is missing, so this release" >&2
+    echo "cabinet-deploy.sh: cannot prove it preserves durable state. 'current' left untouched." >&2
+    exit 1
+  fi
 
   echo "cabinet-deploy.sh: running the health gate against $slot (not yet live)..."
   if ! health_gate "$slot"; then

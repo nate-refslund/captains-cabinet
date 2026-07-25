@@ -179,6 +179,24 @@ jobs:
         # in PR diff). Script also runs locally as a pre-commit safety net.
         run: bash /opt/founders-cabinet/cabinet/scripts/check-layer-separation.sh
 
+      - name: State-persistence preflight (deploy would not lose state)
+        if: ${{ !cancelled() }}
+        # A release is a FRESH `git worktree`: it holds tracked files and
+        # nothing else, so every gitignored path — the cabinet's accumulated
+        # runtime state — survives a deploy ONLY if runtime-provision.sh's
+        # lists symlink it into shared/. Those hand-maintained lists drifted
+        # from .gitignore and silently discarded ratified Captain rules
+        # (memory/skills/evolved/), the tier-3 decision log, the tool-call log
+        # and the append-only foundry archive. Nothing errored; the health gate
+        # passed; the old release kept the only copy until prune rm -rf'd it.
+        #
+        # This gate DERIVES the durable set from .gitignore rather than adding
+        # a fourth hand-maintained list, and fails on any path that is neither
+        # carried nor declared disposable WITH A WRITTEN REASON. It runs here
+        # so drift is caught at review time; cabinet-deploy.sh runs the same
+        # checker in --slot mode against the real release before promote.
+        run: python3 /opt/founders-cabinet/cabinet/scripts/state-persistence-preflight.py --repo /opt/founders-cabinet
+
       - name: Shell unit tests — triggers.sh
         if: ${{ !cancelled() }}
         run: bash /opt/founders-cabinet/cabinet/scripts/test-triggers.sh

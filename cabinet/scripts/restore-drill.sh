@@ -417,9 +417,52 @@ if [ -f "$SNAP/postgres.dump" ]; then
             POSTGRES_RELATIONS=$(tr -d '[:space:]' < "$RESTORE_DIR/postgres-catalog-sanity.txt")
             case "$POSTGRES_RELATIONS" in
               ''|*[!0-9]*) fail "the catalog sanity query returned a non-numeric result" ;;
+              # NON-VACUITY FLOOR. This case arm used to be a bare `*)` — which
+              # made the whole Postgres check vacuous: `0` is a perfectly
+              # numeric answer, so a restore that produced an EMPTY DATABASE —
+              # precisely the outcome a disaster-recovery drill exists to
+              # catch — was reported as a clean pass ("0 user relations"). A
+              # backup that restores to nothing is not a backup.
+              0) fail "the restored database contains ZERO user relations — postgres.dump restored nothing" ;;
               *)
-                PG_VERSION=$("$POSTGRES_BIN_DIR/postgres" --version 2>/dev/null || echo "PostgreSQL version unknown")
-                ok "postgres.dump restores into disposable PostgreSQL ($POSTGRES_RELATIONS user relations; $PG_VERSION)"
+                # SHAPE, not just volume. A count alone still cannot tell a
+                # complete restore from a partial one, and any hardcoded
+                # expected count would be a magic number that rots. So compare
+                # against the snapshot's OWN table of contents: every table
+                # pg_restore says the archive contains must actually exist in
+                # the restored database. Self-calibrating per snapshot, and it
+                # fails closed — an unreadable/empty TOC is a failure, never a
+                # skipped check. (This mirrors what the Redis arm already does
+                # via verify_restored_redis_state's source/restored equality.)
+                if ! "$PG_RESTORE_BIN" --list "$SNAP/postgres.dump" \
+                  > "$RESTORE_DIR/postgres-dump-toc.txt" 2> "$RESTORE_DIR/postgres-toc.log"; then
+                  fail "could not read postgres.dump's table of contents — restore shape is unprovable"
+                elif ! "$POSTGRES_BIN_DIR/psql" --host="$POSTGRES_SOCKET" \
+                  --port="$POSTGRES_PORT" --username=postgres --dbname="$POSTGRES_DB" \
+                  --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 \
+                  --command="SELECT n.nspname||'.'||c.relname FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind IN ('r','p') AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname !~ '^pg_toast' ORDER BY 1;" \
+                  > "$RESTORE_DIR/postgres-tables-actual.txt" 2>> "$RESTORE_DIR/postgres-query.log"; then
+                  fail "could not enumerate the restored database's tables"
+                else
+                  # TOC rows read: "<id>; <tableoid> <oid> TABLE <schema> <name> <owner>".
+                  # "TABLE DATA" rows share field 4, so field 5 must not be DATA.
+                  awk '!/^;/ && $4 == "TABLE" && $5 != "DATA" { print $5 "." $6 }' \
+                    "$RESTORE_DIR/postgres-dump-toc.txt" | sort -u \
+                    > "$RESTORE_DIR/postgres-tables-expected.txt"
+                  sort -u "$RESTORE_DIR/postgres-tables-actual.txt" \
+                    > "$RESTORE_DIR/postgres-tables-actual-sorted.txt"
+                  POSTGRES_EXPECTED_TABLES=$(grep -c . "$RESTORE_DIR/postgres-tables-expected.txt" || true)
+                  POSTGRES_MISSING=$(comm -23 "$RESTORE_DIR/postgres-tables-expected.txt" \
+                    "$RESTORE_DIR/postgres-tables-actual-sorted.txt" | tr '\n' ' ')
+                  if [ "$POSTGRES_EXPECTED_TABLES" -eq 0 ]; then
+                    fail "postgres.dump declares NO tables in its table of contents — the snapshot captured no schema"
+                  elif [ -n "${POSTGRES_MISSING// /}" ]; then
+                    fail "restored database is MISSING tables the dump declares: ${POSTGRES_MISSING%% }"
+                  else
+                    PG_VERSION=$("$POSTGRES_BIN_DIR/postgres" --version 2>/dev/null || echo "PostgreSQL version unknown")
+                    ok "postgres.dump restores into disposable PostgreSQL ($POSTGRES_RELATIONS user relations; all $POSTGRES_EXPECTED_TABLES declared tables present; $PG_VERSION)"
+                  fi
+                fi
                 ;;
             esac
           fi
