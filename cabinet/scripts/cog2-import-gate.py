@@ -61,6 +61,17 @@ CONTIGUOUS literal on the call line. A second, AST-based pass
     are collected over a FULL walk BEFORE the call scan (so a call ABOVE its
     import still resolves), mirroring the COG-4 exec-pin idiom in
     cabinet/scripts/tests/lib_cog4_ast_pins.py.
+BOTH HOOK-EXPORTING MODULES are covered symmetrically, off the one
+`_HOOKS_OF_MODULE` table: `importlib` (which exports `import_module` AND its own
+public `__import__` — a distinct function object from the builtin's) and
+`builtins` (which exports `__import__`). So an aliased BUILTIN — `from builtins
+import __import__ as _b; _b('framework' + '.x.y')`, `import builtins as b;
+b.__import__(...)`, `_b = builtins.__import__; _b(...)` — resolves exactly like
+the importlib spellings. Binding the builtin explicitly is the same reach as
+calling the implicit one, so `from builtins import __import__` is read as a HOOK
+BINDING, never as a rebind that shadows it (before this table it was read as a
+shadow, which silently DISABLED builtin detection for the whole file — strictly
+worse than not knowing the spelling at all).
 The folded name/package pair is then resolved by the same stdlib rule the static
 walk uses for `from ..x import y`, so the two-argument RELATIVE form resolves
 through an alias too. Matching is BINDING-ACCURATE, not name-based: a file that
@@ -127,6 +138,12 @@ pointer flips off `none`):
       - an aliased import hook, in any binding order: `from importlib import
         import_module as _m`, `import importlib as il`, and the assignment
         `_im = importlib.import_module`;
+      - the SAME three binding shapes on the BUILTIN, from either module that
+        exports it: `from builtins import __import__ [as _b]`, `import builtins
+        [as b]` + `b.__import__(...)`, `_b = builtins.__import__`, and the
+        identical set spelled through `importlib.__import__`. `from builtins
+        import __import__` is a hook binding, not a shadow of the implicit
+        builtin;
       - the two-argument RELATIVE form (a dot-name handed to import_module with
         a package), which every row's narrow dynamic pattern already covered and
         which the folding pass now also resolves through an alias.
@@ -139,16 +156,28 @@ pointer flips off `none`):
       (b) an attribute walk that never names a module as a string: getattr
           chains, `sys.modules[...]` indexing, `__dict__` traversal.
       (c) STILL-DECIDABLE forms this pass deliberately does NOT resolve, listed
-          so nobody mistakes silence for coverage:
+          so nobody mistakes silence for coverage. Each is MEASURED against this
+          engine and pinned in TestDocumentedResidual, not assumed:
             - the builtin's `fromlist` and `level` parameters —
               `__import__('framework', globals(), locals(), ['x'])` reaches
               framework.x, and `__import__('x', globals(), locals(), [], 1)`
               reaches the caller package's x. Both are decidable (level needs
               the importing file's own package, which `_import_from_targets`
               already computes for the static form) and are simply not wired
-              yet;
+              yet. Same for the `importlib.__import__` spelling of them;
             - an alias chain deeper than one hop (`a = importlib.import_module;
-              b = a; b(...)`), which resolves conservatively to nothing;
+              b = a; b(...)`, or `from builtins import __import__ as _b; _c =
+              _b; _c(...)`), which resolves conservatively to nothing;
+            - a hook reached WITHOUT a name binding, so the call target is
+              neither a Name nor an Attribute on a Name: a mapping subscript
+              (`__builtins__['__import__'](...)`, `vars(builtins)[...]`,
+              `sys.modules['builtins'].__import__(...)`) or a getattr walk
+              (`getattr(builtins, '__import__')(...)`). The BINDING surface —
+              every `import`/`from`-import/one-hop-assignment spelling of both
+              hook-exporting modules — is now closed; this is the deliberate
+              line, because the subscript/getattr surface is open-ended (any
+              mapping or attribute expression can yield the hook) while a name
+              binding is a closed, enumerable set;
             - a concatenation nested past `_FOLD_MAX_DEPTH`.
       Closing any of (c) is a mechanical follow-up; until then it is documented,
       not hidden. Runtime detection remains the RUNTIME layer's job, not this
@@ -212,8 +241,20 @@ _DYN_CALL = r"(?:import_module|__import__)\("
 # (never followed by `(` in this source) so the SELF-FLAG-SAFE idiom above still
 # holds: the contiguous call form appears nowhere in this file.
 _IMPORTLIB_MODULE = "importlib"
+_BUILTINS_MODULE = "builtins"
 _IMPORT_MODULE_FUNC = "import_module"
 _BUILTIN_IMPORT = "__import__"
+# WHICH MODULE EXPORTS WHICH HOOK — the one table every binding spelling keys
+# off (`import X`, `from X import <hook>`, `Y = X.<hook>`), so the exporting
+# modules are handled SYMMETRICALLY and a new hook is one entry, not a branch.
+# `builtins` exports the builtin. `importlib` exports the module loader AND its
+# own public `__import__` (a DISTINCT function object from builtins' — verified
+# at runtime, not assumed; both are real hooks and both reach a fenced module).
+_HOOKS_OF_MODULE = {
+    _IMPORTLIB_MODULE: frozenset({_IMPORT_MODULE_FUNC, _BUILTIN_IMPORT}),
+    _BUILTINS_MODULE: frozenset({_BUILTIN_IMPORT}),
+}
+_HOOK_ATTRS = frozenset({_IMPORT_MODULE_FUNC, _BUILTIN_IMPORT})
 
 
 class ManifestError(ValueError):
@@ -673,18 +714,29 @@ def _dynamic_import_targets_from_nodes(nodes: list[ast.AST]) -> list[str]:
     `def import_module(...)`, or `importlib = SomeClass()`, is not misread as
     reaching importlib (it would NameError at runtime otherwise).
 
-    Recognised hook bindings:
-      * the importlib MODULE — `import importlib` / `import importlib.<sub>`
-        (both bind the top-level name) and `import importlib as X`. A dotted
-        `import importlib.util as Y` binds the SUBMODULE, which has no
-        import_module, so it is NOT a module binding.
-      * the CALLABLE — `from importlib import import_module [as X]`, an
-        assignment `X = <importlib-binding>.import_module`, an assignment
-        `X = __import__`, and the builtin `__import__` itself (always bound
-        unless the file shadows it).
+    Both HOOK-EXPORTING MODULES are handled symmetrically off `_HOOKS_OF_MODULE`
+    — `importlib` (which exports `import_module` AND its own public `__import__`,
+    a distinct function object from the builtin) and `builtins` (which exports
+    `__import__`). Recognised hook bindings, for each:
+      * the MODULE — `import <mod>` / `import <mod>.<sub>` (both bind the
+        top-level name) and `import <mod> as X`, called as `X.<hook>(...)`. A
+        dotted `import importlib.util as Y` binds the SUBMODULE, which exports
+        neither hook, so it is NOT a module binding.
+      * the CALLABLE — `from <mod> import <hook> [as X]`, an assignment
+        `X = <module-binding>.<hook>`, an assignment `X = __import__`, and the
+        builtin `__import__` itself (always bound unless the file shadows it).
+    Binding `builtins.__import__` explicitly is the SAME reach as calling the
+    implicit builtin, so the explicit spelling must never be read as a shadow of
+    it — `from builtins import __import__` is a hook binding, not a rebind.
     Assignment aliases resolve in one extra pass, so a chain deeper than
     `X = importlib.import_module` (e.g. an alias of an alias of an alias)
     stays undecided — conservative by construction, never a guess.
+
+    A hook reached WITHOUT a name binding — a mapping subscript
+    (`__builtins__['__import__']`, `vars(builtins)[...]`,
+    `sys.modules['builtins'].__import__`) or a getattr walk — is NOT resolved;
+    the call target is not a Name/Attribute-on-a-Name, so it stays residual and
+    is named as such in the module docstring.
 
     String LITERALS are never inspected — this is an AST call scan, so a test
     fixture that merely spells a call inside a string adds no target.
@@ -694,9 +746,9 @@ def _dynamic_import_targets_from_nodes(nodes: list[ast.AST]) -> list[str]:
     it, which is the safe direction for a boundary gate.
     """
     shadowed: set[str] = set()
-    mod_binds: set[str] = set()
-    hooks: dict[str, str] = {}                  # name -> "import_module"|"builtin"
-    deferred: list[tuple[str, str]] = []        # (bound name, importlib-binding)
+    mod_binds: dict[str, str] = {}              # bound name -> hook-exporting module
+    hooks: dict[str, str] = {}                  # name -> "import_module"|"__import__"
+    deferred: list[tuple[str, str, str]] = []   # (bound name, module binding, attr)
     calls: list[ast.Call] = []
 
     for node in nodes:
@@ -704,21 +756,21 @@ def _dynamic_import_targets_from_nodes(nodes: list[ast.AST]) -> list[str]:
             shadowed.update(_shadowing_names(node))
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name == _IMPORTLIB_MODULE:
-                    mod_binds.add(alias.asname or _IMPORTLIB_MODULE)
-                elif (alias.name.startswith(_IMPORTLIB_MODULE + ".")
-                      and alias.asname is None):
-                    mod_binds.add(_IMPORTLIB_MODULE)   # dotted import binds the root
+                root = alias.name.split(".", 1)[0]
+                if alias.name in _HOOKS_OF_MODULE:
+                    mod_binds[alias.asname or alias.name] = alias.name
+                elif root in _HOOKS_OF_MODULE and alias.asname is None:
+                    mod_binds[root] = root             # dotted import binds the root
                 elif alias.asname:
                     shadowed.add(alias.asname)         # any other module alias
                 else:
-                    shadowed.add(alias.name.split(".", 1)[0])
+                    shadowed.add(root)
         elif isinstance(node, ast.ImportFrom):
             for alias in node.names:
                 bound = alias.asname or alias.name
-                if (node.level == 0 and node.module == _IMPORTLIB_MODULE
-                        and alias.name == _IMPORT_MODULE_FUNC):
-                    hooks[bound] = _IMPORT_MODULE_FUNC
+                if (node.level == 0
+                        and alias.name in _HOOKS_OF_MODULE.get(node.module, ())):
+                    hooks[bound] = alias.name
                 else:
                     shadowed.add(bound)
         elif isinstance(node, (ast.Assign, ast.NamedExpr)):
@@ -727,10 +779,10 @@ def _dynamic_import_targets_from_nodes(nodes: list[ast.AST]) -> list[str]:
             names = [n for t in targets for n in _assign_target_names(t)]
             value = node.value
             if (isinstance(value, ast.Attribute)
-                    and value.attr == _IMPORT_MODULE_FUNC
+                    and value.attr in _HOOK_ATTRS
                     and isinstance(value.value, ast.Name)):
                 for n in names:
-                    deferred.append((n, value.value.id))
+                    deferred.append((n, value.value.id, value.attr))
             elif isinstance(value, ast.Name) and value.id == _BUILTIN_IMPORT:
                 for n in names:
                     hooks[n] = _BUILTIN_IMPORT
@@ -741,10 +793,10 @@ def _dynamic_import_targets_from_nodes(nodes: list[ast.AST]) -> list[str]:
 
     # the builtin is bound in every module unless the file shadows it
     hooks.setdefault(_BUILTIN_IMPORT, _BUILTIN_IMPORT)
-    mod_binds -= shadowed
-    for bound, src in deferred:                 # X = <importlib>.import_module
-        if src in mod_binds:
-            hooks[bound] = _IMPORT_MODULE_FUNC
+    mod_binds = {k: v for k, v in mod_binds.items() if k not in shadowed}
+    for bound, src, attr in deferred:           # X = <module binding>.<hook>
+        if attr in _HOOKS_OF_MODULE.get(mod_binds.get(src), ()):
+            hooks[bound] = attr
         else:
             shadowed.add(bound)
     hooks = {k: v for k, v in hooks.items() if k not in shadowed}
@@ -753,11 +805,11 @@ def _dynamic_import_targets_from_nodes(nodes: list[ast.AST]) -> list[str]:
     for call in calls:
         func = call.func
         if isinstance(func, ast.Attribute):
-            if not (func.attr == _IMPORT_MODULE_FUNC
-                    and isinstance(func.value, ast.Name)
-                    and func.value.id in mod_binds):
+            if not (isinstance(func.value, ast.Name)
+                    and func.attr in _HOOKS_OF_MODULE.get(
+                        mod_binds.get(func.value.id), ())):
                 continue
-            kind = _IMPORT_MODULE_FUNC
+            kind = func.attr
         elif isinstance(func, ast.Name):
             kind = hooks.get(func.id)
             if kind is None:
@@ -775,7 +827,10 @@ def _dynamic_import_targets_from_nodes(nodes: list[ast.AST]) -> list[str]:
             # positional is `globals` — reading it as a package would resolve a
             # module the program never imports. Keyed off the BINDING, not the
             # spelling, so `from importlib import import_module as __import__`
-            # is still treated as import_module.
+            # is still treated as import_module — and, the other way,
+            # `importlib.__import__` carries the BUILTIN signature (it is the
+            # builtin's semantics, not import_module's), so it correctly does
+            # NOT read a package here.
             pkg_node = (call.args[1] if len(call.args) > 1
                         else kwargs.get("package"))
             package = _fold_str(pkg_node)

@@ -16,11 +16,28 @@ A third form, found in adversarial review of the first cut, evaded too and is
 closed with them: the ASSIGNMENT binding `_im = importlib.import_module`, which
 is more idiomatic than either measured form.
 
-All three are now resolved by an AST pass (`_dynamic_import_targets`), whose
+THE BUILTIN'S OWN BINDINGS (a later independent probe, closed here). The first
+cut tracked bindings sourced from `importlib` only, so every aliased spelling of
+the BUILTIN hook evaded — measured against the holdout row, ten spellings in
+all: `from builtins import __import__ [as _b]`, `import builtins [as b]` +
+`b.__import__(...)`, `_b = builtins.__import__`, and the identical set through
+`importlib.__import__` (which is a real, public, SEPARATE function object from
+builtins' — pinned in TestBuiltinHookBindings rather than assumed).
+
+One of those was worse than a plain miss. `from builtins import __import__` —
+the explicit, legitimate spelling — was read as a REBIND, so it landed in the
+shadow set and switched OFF the implicit builtin hook for the whole file. A file
+that imported the hook honestly was therefore scanned MORE weakly than one that
+never mentioned it (`test_explicit_builtin_import_is_a_binding_not_a_shadow`
+pins that directly, against the bare-call control).
+
+All of these are now resolved by an AST pass (`_dynamic_import_targets`), whose
 alias tracking mirrors the COG-4 exec-pin idiom in lib_cog4_ast_pins.py
 (bindings collected over a FULL walk BEFORE the call scan, so binding order
 never matters), and which is BINDING-ACCURATE — a file defining its own
-`def import_module(...)` is not misread as reaching importlib.
+`def import_module(...)` is not misread as reaching importlib. Both
+hook-exporting modules key off ONE table (`_HOOKS_OF_MODULE`), so the two are
+handled symmetrically and neither can drift ahead of the other.
 
 EVIDENCE DISCIPLINE. Not every arm below is load-bearing, and this file does not
 pretend otherwise. The head-split forms evade a row's OWN dynamic pattern but
@@ -29,6 +46,20 @@ some trip a different legacy branch on some rows — notably the falsifier's bro
 vacuous (7/7 passing against the pre-fix engine). The load-bearing arms are
 TRUE_EVASION_IDS, and TestLegacyPatternEvasion PROVES they match none of the
 engine's still-present pre-change regexes rather than asserting it in prose.
+
+NON-VACUITY, MEASURED BOTH DIRECTIONS (the builtin arms). The first cut of this
+file shipped a vacuous falsifier class, so the claim is accounted here rather
+than asserted. Grafting THIS file onto the pre-fix engine (commit 766a98c3,
+caches purged) and running it: 823 arms collected, 463 pre-existing + 360 added,
+0 removed; 148 FAIL, and all 148 are added arms — no pre-existing arm regresses.
+The 148 split as 20 catch-arms for EACH of the seven builtin-binding forms (140)
+plus 8 form-independent arms. Against the fixed engine all 823 pass. The other
+212 added arms are GUARDS, not falsifiers, and pass both ways BY DESIGN: they
+assert absence (no false positive, documented residual) or a runtime premise, so
+they would fail only if the fix OVER-reached. TestLegacyPatternEvasion supplies
+the other half of the teeth — every builtin form is in TRUE_EVASION_IDS and is
+proven to match NONE of the engine's still-present pre-change regexes, so the
+148 failures cannot be passing for an incidental reason.
 
 SCOPE DISCIPLINE. This widens DYNAMIC-FORM detection ONLY. The gate stays
 MODULE-granular by design — nothing here asserts symbol-level enforcement, which
@@ -183,6 +214,60 @@ def _body_assign_alias(dotted: str) -> str:
             f"m = _im('{dotted[:-2]}' '{dotted[-2:]}')\n")
 
 
+# --- the BUILTIN's own bindings -------------------------------------------
+# Every one of these is spelled MID-SPLIT (the split falls inside the last
+# segment) so it matches none of the engine's legacy regexes — each is a
+# load-bearing true evasion, pinned in TestLegacyPatternEvasion.
+
+def _mid(dotted: str) -> str:
+    """The mid-split literal pair that reassembles `dotted` at runtime."""
+    return f"'{dotted[:-2]}' '{dotted[-2:]}'"
+
+
+def _body_builtins_from_alias(dotted: str) -> str:
+    """`from builtins import __import__ as _b` — the aliased BUILTIN binding,
+    the form the independent probe reported."""
+    return ("from builtins import __import__ as _b\n"
+            f"m = _b({_mid(dotted)})\n")
+
+
+def _body_builtins_from_plain(dotted: str) -> str:
+    """`from builtins import __import__`, no alias. The pre-fix collector read
+    this as a REBIND and shadowed the implicit builtin — so spelling the import
+    honestly made the file LESS visible to the gate than saying nothing."""
+    return ("from builtins import __import__\n"
+            f"m = __import__({_mid(dotted)})\n")
+
+
+def _body_builtins_module_attr(dotted: str) -> str:
+    return ("import builtins\n"
+            f"m = builtins.__import__({_mid(dotted)})\n")
+
+
+def _body_builtins_module_alias(dotted: str) -> str:
+    return ("import builtins as _b\n"
+            f"m = _b.__import__({_mid(dotted)})\n")
+
+
+def _body_builtins_assign_alias(dotted: str) -> str:
+    """`_b = builtins.__import__` — the assignment binding, on the builtin."""
+    return ("import builtins\n"
+            "_b = builtins.__import__\n"
+            f"m = _b({_mid(dotted)})\n")
+
+
+def _body_importlib_builtin_from_alias(dotted: str) -> str:
+    """importlib exports its OWN public `__import__` (a different function
+    object from builtins'), so the same binding shapes exist twice over."""
+    return ("from importlib import __import__ as _x\n"
+            f"m = _x({_mid(dotted)})\n")
+
+
+def _body_importlib_builtin_attr(dotted: str) -> str:
+    return ("import importlib\n"
+            f"m = importlib.__import__({_mid(dotted)})\n")
+
+
 EVADING_FORMS = [
     ("concat", _body_concat),
     ("fstring", _body_fstring),
@@ -193,14 +278,29 @@ EVADING_FORMS = [
     ("builtin_concat", _body_builtin_concat),
     ("midsplit_concat", _body_midsplit_concat),
     ("assign_alias", _body_assign_alias),
+    ("builtins_from_alias", _body_builtins_from_alias),
+    ("builtins_from_plain", _body_builtins_from_plain),
+    ("builtins_module_attr", _body_builtins_module_attr),
+    ("builtins_module_alias", _body_builtins_module_alias),
+    ("builtins_assign_alias", _body_builtins_assign_alias),
+    ("importlib_builtin_from_alias", _body_importlib_builtin_from_alias),
+    ("importlib_builtin_attr", _body_importlib_builtin_attr),
 ]
+
+# the builtin-binding form ids, as one group (used by the both-directions
+# non-vacuity arms and by TRUE_EVASION_IDS below).
+BUILTIN_BINDING_IDS = (
+    "builtins_from_alias", "builtins_from_plain", "builtins_module_attr",
+    "builtins_module_alias", "builtins_assign_alias",
+    "importlib_builtin_from_alias", "importlib_builtin_attr",
+)
 
 # the forms that evade EVERY legacy pattern for EVERY row — the honest core of
 # the change. The others evade the row's own dynamic/backstop patterns but some
 # happen to trip a different legacy branch on some rows (the falsifier's broad
 # `'.<name>'` alternative especially), so only these carry the load-bearing
 # "was genuinely missed before" claim. Pinned in TestLegacyPatternEvasion.
-TRUE_EVASION_IDS = ("midsplit_concat", "assign_alias")
+TRUE_EVASION_IDS = ("midsplit_concat", "assign_alias") + BUILTIN_BINDING_IDS
 
 _FORM_IDS = [name for name, _ in EVADING_FORMS]
 
@@ -303,6 +403,72 @@ class TestLegacyPatternEvasion:
         # load-bearing evidence, and TRUE_EVASION_IDS must exclude them.
         assert "concat" not in TRUE_EVASION_IDS
         assert "alias_func" not in TRUE_EVASION_IDS
+
+
+# ===========================================================================
+# the BUILTIN hook surface — the fifth evasion class, and its premises
+# ===========================================================================
+
+class TestBuiltinHookBindings:
+    """The builtin `__import__` is reachable through TWO exporting modules and
+    three binding shapes each. These arms pin the premises the engine's
+    `_HOOKS_OF_MODULE` table rests on, so the table is grounded in the runtime's
+    actual behaviour rather than in this author's belief about it."""
+
+    def test_importlib_exports_its_own_distinct_import_hook(self):
+        # THE premise for treating `importlib.__import__` as a hook at all. If
+        # a future CPython drops it or aliases it to the builtin, this arm says
+        # so and the table entry can be revisited deliberately.
+        import builtins as _b
+        import importlib as _il
+        assert hasattr(_il, "__import__")
+        assert callable(_il.__import__)
+        assert _il.__import__ is not _b.__import__      # genuinely separate
+        assert _il.__import__("json").__name__ == "json"
+
+    def test_builtins_module_exports_the_same_hook_the_bare_name_resolves_to(self):
+        import builtins as _b
+        assert _b.__import__ is __import__
+
+    @_row_param(SWEEP_ROWS)
+    def test_explicit_builtin_import_is_a_binding_not_a_shadow(self, tmp_path, row):
+        # THE sharpest arm in this file. Pre-fix, `from builtins import
+        # __import__` landed in the shadow set and switched OFF builtin
+        # detection — so the honest spelling was scanned WEAKER than silence.
+        # Both bodies below perform the identical import; both must RED.
+        bare = f"m = __import__({_mid(row.token)})\n"
+        explicit = _body_builtins_from_plain(row.token)
+        for label, body in (("bare", bare), ("explicit", explicit)):
+            _write(tmp_path, _STRAY, body)
+            assert _STRAY in _paths_for(gate.scan(tmp_path),
+                                        row.rule_ids["unallowlisted"]), \
+                (row.token, label, body)
+
+    @pytest.mark.parametrize("form_id", BUILTIN_BINDING_IDS)
+    def test_every_builtin_binding_shape_collects_its_target(self, form_id):
+        # unit level, independent of any row: the collector resolves the target.
+        body = dict(EVADING_FORMS)[form_id]("p.q.r")
+        assert gate._dynamic_import_targets(ast.parse(body)) == ["p.q.r"]
+
+    def test_both_exporting_modules_are_covered_by_one_table(self):
+        # the symmetry is STRUCTURAL, not a pair of hand-written branches — so
+        # neither module can silently drift ahead of the other.
+        assert gate._HOOKS_OF_MODULE == {
+            "importlib": frozenset({"import_module", "__import__"}),
+            "builtins": frozenset({"__import__"}),
+        }
+
+    def test_builtin_binding_still_reads_arg_two_as_globals_not_package(self):
+        # `importlib.__import__` carries the BUILTIN signature — its 2nd
+        # positional is `globals`. Reading it as a package would resolve a
+        # module the program never imports (a false positive).
+        assert gate._dynamic_import_targets(ast.parse(
+            "import builtins\nm = builtins.__import__('.b', 'a')\n")) == []
+        assert gate._dynamic_import_targets(ast.parse(
+            "import importlib\nm = importlib.__import__('.b', 'a')\n")) == []
+        # ...while import_module's 2nd positional IS a package (unchanged).
+        assert gate._dynamic_import_targets(ast.parse(
+            "import importlib\nm = importlib.import_module('.b', 'a')\n")) == ["a.b"]
 
 
 # ===========================================================================
@@ -474,6 +640,55 @@ class TestNoFalsePositives:
         assert gate.scan(tmp_path) == [], (row.token, label)
 
     @_row_param(SWEEP_ROWS)
+    def test_unrelated_module_via_every_builtin_binding_is_clean(self, tmp_path, row):
+        # the builtin spellings must not fire on a module NO row fences —
+        # otherwise closing the fifth evasion would buy a false-positive class.
+        _write(tmp_path, _STRAY,
+               "import builtins\n"
+               "import builtins as _bb\n"
+               "import importlib\n"
+               "from builtins import __import__ as _b\n"
+               "from importlib import __import__ as _x\n"
+               "_c = builtins.__import__\n"
+               "a = _b('os' + '.path')\n"
+               "b = builtins.__import__('js' 'on')\n"
+               "c = _bb.__import__('email' '.utils')\n"
+               "d = _c('collections' '.abc')\n"
+               "e = _x('text' 'wrap')\n"
+               "f = importlib.__import__('sh' 'lex')\n")
+        assert gate.scan(tmp_path) == [], row.token
+
+    @_row_param(SWEEP_ROWS)
+    def test_builtins_imported_for_unrelated_use_is_clean(self, tmp_path, row):
+        # `import builtins` is ordinary code (builtins.print, builtins.len).
+        # Adding it to the binding table must not make such a file suspicious.
+        _write(tmp_path, _STRAY,
+               "import builtins\n"
+               "def emit(x):\n"
+               "    return builtins.print(builtins.len(x))\n")
+        assert gate.scan(tmp_path) == [], row.token
+
+    @_row_param(SWEEP_ROWS)
+    @pytest.mark.parametrize("body_tpl,label", [
+        ("from builtins import __import__ as _b\ndef _b(n):\n    return n\n"
+         "x = _b({split})\n", "builtins alias rebound by a local def"),
+        ("import builtins\nbuiltins = object()\n"
+         "x = builtins.__import__({split})\n", "builtins name rebound"),
+        ("import builtins\n_b = builtins.__import__\n_b = str\n"
+         "x = _b({split})\n", "assigned builtin alias rebound"),
+        ("class B:\n    def __import__(self, n):\n        return n\n"
+         "builtins = B()\nx = builtins.__import__({split})\n",
+         "instance named builtins"),
+    ], ids=["alias_rebound", "name_rebound", "assign_rebound", "fake_builtins"])
+    def test_shadowed_builtin_bindings_do_not_flag(self, tmp_path, row,
+                                                   body_tpl, label):
+        # BINDING-ACCURATE on the builtin surface too: a file that never ends up
+        # holding the real hook performs no import, so the gate must stay quiet.
+        split = _mid(row.token)
+        _write(tmp_path, _STRAY, body_tpl.format(split=split))
+        assert gate.scan(tmp_path) == [], (row.token, label)
+
+    @_row_param(SWEEP_ROWS)
     def test_unrelated_attribute_call_named_like_the_hook_is_clean(self, tmp_path, row):
         # a method that merely SHARES the hook's name on an unrelated object is
         # not a dynamic import — the AST pass requires an importlib binding.
@@ -518,9 +733,30 @@ class TestDocumentedResidual:
         ("m = __import__('{parent}', globals(), locals(), ['{name}'])\n",
          "builtin fromlist"),
         ("import importlib\n"
+         "m = importlib.__import__('{parent}', globals(), locals(), "
+         "['{name}'])\n",
+         "importlib-builtin fromlist"),
+        ("import importlib\n"
          "a = importlib.import_module\nb = a\nm = b('{token}')\n",
          "two-hop alias chain"),
-    ], ids=["fromlist", "alias_chain"])
+        ("from builtins import __import__ as _b\n_c = _b\nm = _c({mid})\n",
+         "two-hop alias chain on the builtin"),
+        # --- hooks reached WITHOUT a name binding (the deliberate line) ------
+        # NOTE the mid-split argument: `sys.modules['builtins'].__import__`
+        # spells the hook contiguously, so a whole-token literal here would be
+        # caught by the LEGACY regex and the arm would assert the wrong thing.
+        ("m = __builtins__['__imp' 'ort__']({mid})\n",
+         "dunder-builtins subscript"),
+        ("import sys\nm = sys.modules['builtins'].__import__({mid})\n",
+         "sys.modules subscript"),
+        ("import builtins\nm = vars(builtins)['__imp' 'ort__']({mid})\n",
+         "vars() subscript"),
+        ("import builtins\n"
+         "m = getattr(builtins, '__imp' 'ort__')({mid})\n",
+         "getattr walk"),
+    ], ids=["fromlist", "importlib_fromlist", "alias_chain",
+            "alias_chain_builtin", "dunder_builtins", "sys_modules",
+            "vars_subscript", "getattr_walk"])
     def test_named_decidable_residuals_are_not_reported(self, tmp_path, row,
                                                         tpl, label):
         # residual (c) in the engine docstring: forms that ARE statically
@@ -530,7 +766,8 @@ class TestDocumentedResidual:
         # must move with it.
         parent, name = row.token.rsplit(".", 1)
         _write(tmp_path, _STRAY,
-               tpl.format(parent=parent, name=name, token=row.token))
+               tpl.format(parent=parent, name=name, token=row.token,
+                          mid=_mid(row.token)))
         viol = _rules_for(gate.scan(tmp_path), _STRAY)
         assert row.rule_ids["unallowlisted"] not in viol, (row.token, label)
 
@@ -669,6 +906,39 @@ class TestDynamicImportTargets:
                "f = _im('p' '.f')\n")
         assert sorted(self._targets(src)) == ["p.a", "p.b", "p.c", "p.d",
                                               "p.e", "p.f"]
+
+    def test_every_builtin_hook_spelling_collects(self):
+        # the builtins-side twin of test_every_hook_spelling_collects, covering
+        # BOTH exporting modules and all three binding shapes each.
+        src = ("import builtins\n"
+               "import builtins as b\n"
+               "import importlib\n"
+               "from builtins import __import__\n"
+               "from builtins import __import__ as _b\n"
+               "from importlib import __import__ as _x\n"
+               "_c = builtins.__import__\n"
+               "a = __import__('p.a')\n"
+               "b_ = b.__import__('p' '.b')\n"
+               "c = _b('p' + '.c')\n"
+               "d = _c(f'p' f'.d')\n"
+               "e = _x('p.e')\n"
+               "f = builtins.__import__('p.f')\n"
+               "g = importlib.__import__('p' '.g')\n")
+        assert sorted(self._targets(src)) == ["p.a", "p.b", "p.c", "p.d",
+                                              "p.e", "p.f", "p.g"]
+
+    @pytest.mark.parametrize("src", [
+        "m = __builtins__['__imp' 'ort__']('a.b')\n",
+        "import sys\nm = sys.modules['builtins'].__import__('a.b')\n",
+        "import builtins\nm = vars(builtins)['__imp' 'ort__']('a.b')\n",
+        "import builtins\nm = getattr(builtins, '__imp' 'ort__')('a.b')\n",
+    ], ids=["dunder_builtins", "sys_modules", "vars_subscript", "getattr_walk"])
+    def test_hook_without_a_name_binding_collects_nothing(self, src):
+        # documented residual (c): the call target is neither a Name nor an
+        # Attribute on a Name, so the pass declines rather than guessing. This
+        # is the DELIBERATE line — the name-binding surface is closed, the
+        # open-ended subscript/getattr surface is named instead.
+        assert self._targets(src) == []
 
     def test_walrus_argument_folds(self):
         assert self._targets("import importlib\n"
