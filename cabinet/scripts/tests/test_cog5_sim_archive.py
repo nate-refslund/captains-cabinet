@@ -10,13 +10,22 @@ Contract: docs/plans/cognitive-core-phase-5-contract-2026-07-24.md
                prev_hash, broken seal — each DETECTED; serve REFUSES beyond
                the last good seal; pending.json heal completes exactly-once.
                Mutant: a skip-verify reader serves past corruption.
+               Plus the per-STORE layer (`TestStoreLevelDetection`): the
+               counters the store already writes — the manifest's
+               row_count/chain_head and the §5.2 periodic anchor attestation
+               — are READ BACK, which is what catches a row deleted at a
+               record boundary from the UNSEALED open segment (no link
+               breaks, no seal covers it, so neither the row nor the seal
+               layer can see it).
   §12 sim 10 — lineage rollback: the independently rehearsed seal + RESTORE
                drill reproduces every chain head + row count, no lineage row
                lost. Mutants: a restore that drops or reorders a lineage row.
   §1 X1      — the E1 run produces no live mutation (observation-only).
   §5.3       — duplicate-tolerant ingest (dedupe by CONTENT FINGERPRINT, the
-               P1 race), the record_kind FIELD MAP, and the P1 lock-fold
-               rider property.
+               P1 race), keyed against the fingerprints ALREADY IN THE TARGET
+               STORE so the §11.2 periodic re-read of an accruing log admits
+               each fact exactly once; the record_kind FIELD MAP; and the P1
+               lock-fold rider property.
   §5.4/§6.2  — the archive record shape + the provenance counting predicate.
 
 "At least 20 candidates" is sim #1's PARAMETER, never the sim count (the
@@ -185,6 +194,58 @@ class TestSharedCoreContract:
                 [{"provenance": "real_mined", "source_class": spelling}]) == 1
         for spelling in ("sim", "sim_replay"):
             assert CORE.stamp_provenance({}, spelling)["provenance"] == "sim_replay"
+
+    def test_the_alias_fold_is_structurally_incapable_of_changing_meaning(self):
+        """THE RECORDED STRICTNESS ASYMMETRY, decided and pinned.
+
+        T1 ACCEPTS `sim_replay` as a source-class spelling; T3 REFUSES it
+        (`lib_cog5_boundary_stamp_provenance` raises on any class outside its
+        own lists). DELIBERATE, and NOT the vocabulary conflation §5.3
+        forbids:
+
+          * §5.3's conflation is between two DISJOINT vocabularies, where a
+            token of one is written into the OTHER's field and silently means
+            something else there (`record_kind` — pinned by
+            `record_kind_conflations`, which stays strict).
+          * This is a fold WITHIN one vocabulary (source class) onto a slug
+            that stamps the SAME provenance. It cannot mean anything else.
+
+        Why not simply refuse, matching T3: the spelling split is a RECORDED
+        cross-unit divergence routed to the integrator, and the contract pins
+        only the PROVENANCE enum — which both siblings already agree on.
+        Refusing here would unilaterally settle that divergence in T3's favour
+        on no authority. T1 is the JOIN point, the one place where refusing a
+        sibling's un-pinned spelling costs mergeability; T3 is not, so its
+        refusal is free and correct for T3. (Stated exactly: removing the
+        alias would not RED T2's suite today — T2 carries its own table and
+        imports this core only for presence-at-join — so the argument is the
+        integrator's authority, not a breakage claim.)
+
+        The strictness cost is bounded MECHANICALLY here: an alias whose key
+        is a provenance token may only target a slug that stamps that very
+        provenance. That structural rule is what makes the fold inert, and it
+        REDs if the table ever grows an entry that could launder.
+        """
+        def meaning_changing_aliases(table, source_map):
+            return sorted(
+                f"{key}->{target}" for key, target in table.items()
+                if key in CORE.PROVENANCE_ENUM and source_map.get(target) != key)
+
+        assert meaning_changing_aliases(CORE.SOURCE_CLASS_ALIASES,
+                                        CORE.SOURCE_CLASS_TO_PROVENANCE) == []
+        # the same predicate over a FORGED table, so it is not vacuous
+        assert meaning_changing_aliases({"real_live": "generator"},
+                                        CORE.SOURCE_CLASS_TO_PROVENANCE) == \
+            ["real_live->generator"]
+
+        # inert in the two ways that matter: identical rows, identical counts
+        row = {"candidate_id": "c1"}
+        assert (CORE.stamp_provenance(row, "sim_replay")
+                == CORE.stamp_provenance(row, "sim"))
+        for spelling in ("sim", "sim_replay"):
+            stamped = CORE.stamp_provenance(row, spelling)
+            assert CORE.count_toward_minimums([stamped]) == 0
+            assert CORE.provenance_violations([stamped]) == []
 
 
 # ===========================================================================
@@ -468,6 +529,226 @@ class TestSim9CorruptArchive:
 
 
 # ===========================================================================
+# sim 9 (store layer) — the counters the store already writes, READ BACK
+# ===========================================================================
+#: Findings produced by the per-STORE layer, as opposed to the per-ROW and
+#: per-SEAL layers. Used to prove which layer actually caught an escape.
+_STORE_LEVEL = ("ROW_COUNT_MISMATCH", "MANIFEST_HEAD_MISMATCH",
+                "ANCHOR_MISSING", "ANCHOR_SEQUENCE_MISMATCH", "FORGED_ANCHOR")
+
+
+class TestStoreLevelDetection:
+    """The archive writes two independent counters on every commit — the
+    manifest's `row_count`/`chain_head` and the periodic `anchor.json`
+    attestation (§5.2). Verification consults BOTH. These arms prove the
+    escape they close is real, and that each detector bites."""
+
+    def test_mutant_row_dropped_from_the_unsealed_open_segment(self, tmp_path):
+        """NEGATIVE CONTROL (sim 9) — THE escape the row and seal layers
+        cannot see: a whole record deleted at a record boundary from the
+        UNSEALED open segment.
+
+        No link breaks (the deleted row was the only one pointing forward),
+        the file still ends on a newline so the truncated-tail detector is
+        silent, the remaining sequences are contiguous, and no seal covers an
+        open segment. This arm asserts BOTH halves: that the row/seal layers
+        stay silent (so the escape is genuine, not a second spelling of an
+        existing detector) and that the store layer names it anyway.
+        """
+        archive, _ = _populated(tmp_path / "archive")
+        assert 2 not in {s["index"] for s in archive.manifest()["seals"]}, (
+            "precondition: the tail segment must be OPEN, or this arm proves "
+            "the seal layer rather than the store layer")
+        assert FIX.verify_archive(archive.root)["ok"], "precondition: clean"
+
+        removed = FIX.corrupt_drop_open_segment_tail(archive.root)
+        assert removed == 1
+        result = FIX.verify_archive(archive.root)
+
+        assert not result["ok"], "the open-segment row deletion was not detected"
+        assert any(f.startswith("ROW_COUNT_MISMATCH") for f in result["findings"]), (
+            f"expected the manifest's own row_count to catch it: "
+            f"{result['findings']}")
+        assert all(f.split(":")[0] in _STORE_LEVEL for f in result["findings"]), (
+            f"the row/seal layers were supposed to be BLIND to this escape — "
+            f"if one of them caught it, this arm is not testing what it says: "
+            f"{result['findings']}")
+        assert len(archive.rows()) == 23 and archive.manifest()["row_count"] == 24
+
+    def test_mutant_manifest_stops_declaring_its_row_count(self, tmp_path):
+        """NEGATIVE CONTROL: a manifest that simply omits the counter. An
+        absent declaration must FAIL CLOSED — reading it as agreement would
+        hand any tail editor a one-line bypass of the detector above."""
+        archive, _ = _populated(tmp_path / "archive")
+        FIX.corrupt_strip_manifest_declaration(archive.root, field="row_count")
+        result = FIX.verify_archive(archive.root)
+        assert not result["ok"], "an undeclared row_count read as agreement"
+        assert any(f.startswith("ROW_COUNT_MISMATCH") for f in result["findings"])
+
+    def test_mutant_manifest_head_stops_matching_the_last_row(self, tmp_path):
+        """NEGATIVE CONTROL: the manifest's declared chain head is the
+        detector that covers the rows PAST the last anchor cadence point,
+        which the attestation by construction cannot see."""
+        archive, _ = _populated(tmp_path / "archive")
+        manifest = archive.manifest()
+        manifest["chain_head"] = "0" * 63 + "1"
+        FIX.atomic_write(archive.root / FIX.MANIFEST_NAME,
+                         json.dumps(manifest, ensure_ascii=False,
+                                    sort_keys=True, indent=2) + "\n")
+        result = FIX.verify_archive(archive.root)
+        assert not result["ok"]
+        assert any(f.startswith("MANIFEST_HEAD_MISMATCH") for f in result["findings"])
+
+    def test_the_anchor_attests_the_walked_chain_at_its_cadence_point(self, tmp_path):
+        """§5.2's periodic attestation, shown to be a real claim about THIS
+        store: it stands at the last cadence point (a multiple of
+        `anchor_every`, not the last row) and names that row's chain head."""
+        archive, _ = _populated(tmp_path / "archive")
+        anchor = json.loads((archive.root / FIX.ANCHOR_NAME).read_text(
+            encoding="utf-8"))
+        rows = archive.rows()
+        cadence = (len(rows) // archive.anchor_every) * archive.anchor_every
+        assert anchor["sequence"] == cadence == 24
+        assert anchor["chain_head"] == rows[cadence - 1]["row_hash"]
+        assert archive.manifest()["anchor_every"] == archive.anchor_every
+        assert FIX.verify_archive(archive.root)["ok"]
+
+    def test_the_attestation_lags_the_tail_without_being_a_finding(self, tmp_path):
+        """The cadence is every N sequences, so rows past the last attestation
+        point are legitimately un-attested — the check must compare against
+        the CADENCE POINT, never the last row, or a normal store would RED."""
+        archive, _ = _populated(tmp_path / "archive")
+        for i in range(100, 102):                 # 24 -> 26, cadence stays 24
+            archive.append(_record(i))
+        anchor = json.loads((archive.root / FIX.ANCHOR_NAME).read_text(
+            encoding="utf-8"))
+        assert anchor["sequence"] == 24 < len(archive.rows()) == 26
+        assert FIX.verify_archive(archive.root)["ok"]
+
+    def test_mutant_tail_edit_that_also_rewrites_the_manifest(self, tmp_path):
+        """NEGATIVE CONTROL — the THOROUGH editor, and the reason the two
+        store detectors are not redundant: drop a row from the unsealed open
+        segment AND repair the manifest's counters so they agree with the
+        shortened store. The whole manifest layer now says nothing.
+
+        The periodic attestation still does: it was minted at a cadence point
+        BEFORE the edit, and the editor cannot retroactively re-mint it. This
+        arm asserts the anchor limb ALONE carries the detection."""
+        archive, _ = _populated(tmp_path / "archive")
+        FIX.corrupt_drop_open_segment_tail(archive.root)
+        repaired = FIX.repair_manifest_counters(archive.root)
+        assert repaired["row_count"] == 23, "precondition: the manifest agrees"
+
+        result = FIX.verify_archive(archive.root)
+        assert not result["ok"], (
+            "a tail edit that also rewrote the manifest verified CLEAN — the "
+            "attestation is not load-bearing")
+        assert [f for f in result["findings"]
+                if f.startswith("ANCHOR_SEQUENCE_MISMATCH")], result["findings"]
+        assert not any(f.startswith(("ROW_COUNT_MISMATCH",
+                                     "MANIFEST_HEAD_MISMATCH"))
+                       for f in result["findings"]), (
+            f"the manifest layer was supposed to be silenced by the repair, "
+            f"so this arm proves the ANCHOR: {result['findings']}")
+
+    def test_mutant_store_shrunk_below_its_first_attestation(self, tmp_path):
+        """NEGATIVE CONTROL: the same thorough edit against a store whose
+        cadence point is its FIRST one — the walk no longer reaches sequence
+        `anchor_every` at all, so there is no attested row left to compare.
+        An attestation that exists for a point the store cannot reach is
+        itself the finding; the check must not silently skip."""
+        archive = FIX.ReferenceArchive(tmp_path / "archive", rows_per_segment=8)
+        for i in range(5):
+            archive.append(_record(i))
+        assert (archive.root / FIX.ANCHOR_NAME).is_file()
+        FIX.corrupt_drop_open_segment_tail(archive.root, rows=3)   # 5 -> 2
+        FIX.repair_manifest_counters(archive.root)
+
+        result = FIX.verify_archive(archive.root)
+        assert not result["ok"], "a store below its own attestation read clean"
+        assert any(f.startswith("ANCHOR_SEQUENCE_MISMATCH")
+                   for f in result["findings"]), result["findings"]
+
+    @pytest.mark.parametrize("name,resign,limb", (
+        ("crude forge", False, "anchor_hash does not match"),
+        ("re-signed forge", True, "names chain head"),
+    ))
+    def test_mutant_forged_anchor(self, tmp_path, name, resign, limb):
+        """NEGATIVE CONTROL (§5.2): a lying attestation. The crude forge
+        leaves `anchor_hash` stale; the RE-SIGNED forge recomputes it over the
+        lie, so it is internally self-consistent and only the
+        anchor-vs-walked-chain limb can catch it. Both limbs are therefore
+        proven load-bearing — the seal pattern, applied to the attestation."""
+        archive, _ = _populated(tmp_path / "archive")
+        FIX.corrupt_forge_anchor(archive.root, resign=resign)
+        result = FIX.verify_archive(archive.root)
+        assert not result["ok"], f"{name} was not detected"
+        forged = [f for f in result["findings"] if f.startswith("FORGED_ANCHOR")]
+        assert forged, f"{name} detected, but not as FORGED_ANCHOR: {result['findings']}"
+        assert any(limb in f for f in forged), (
+            f"{name} was caught by the wrong limb: {forged}")
+
+    def test_mutant_anchor_dropped(self, tmp_path):
+        """NEGATIVE CONTROL: the attestation deleted outright — the shape a
+        copy-out or restore that forgets to carry `anchor.json` produces. An
+        absent attestation where one is due fails closed."""
+        archive, _ = _populated(tmp_path / "archive")
+        FIX.corrupt_drop_anchor(archive.root)
+        result = FIX.verify_archive(archive.root)
+        assert not result["ok"], "a missing attestation read as agreement"
+        assert any(f.startswith("ANCHOR_MISSING") for f in result["findings"])
+
+    def test_a_store_below_its_first_cadence_point_needs_no_attestation(self, tmp_path):
+        """The other direction, so the check cannot be satisfied by simply
+        always demanding an anchor: a young store that has not reached its
+        first cadence point verifies clean with no attestation at all."""
+        archive = FIX.ReferenceArchive(tmp_path / "archive", rows_per_segment=8)
+        for i in range(3):                        # < anchor_every (4)
+            archive.append(_record(i))
+        assert not (archive.root / FIX.ANCHOR_NAME).exists()
+        assert FIX.verify_archive(archive.root)["ok"]
+
+    @pytest.mark.parametrize("name,seal,corrupt", (
+        ("truncated tail", True, lambda a: FIX.corrupt_truncate_tail(a.root)),
+        ("bit-flipped row", True,
+         lambda a: FIX.corrupt_bitflip_row(a.root, sequence=20)),
+        ("forged prev_hash", True,
+         lambda a: FIX.corrupt_forge_prev_hash(a.root, sequence=20)),
+        ("broken seal", True, lambda a: FIX.corrupt_break_seal(a.root, index=0)),
+        ("re-signed seal forge", True,
+         lambda a: FIX.corrupt_break_seal(a.root, index=0, resign=True)),
+        ("dropped open-segment row", False,
+         lambda a: FIX.corrupt_drop_open_segment_tail(a.root)),
+        ("forged anchor", True,
+         lambda a: FIX.corrupt_forge_anchor(a.root, resign=True)),
+        ("dropped anchor", True, lambda a: FIX.corrupt_drop_anchor(a.root)),
+    ))
+    def test_safe_sequence_never_over_serves_at_any_corruption_position(
+            self, tmp_path, name, seal, corrupt):
+        """NON-REGRESSION on the refusal boundary (§12 sim 9): whatever the
+        corruption and whichever layer catches it, the disciplined reader
+        serves EXACTLY the last good seal's prefix and never one row more.
+        Adding store-level detectors must not loosen that — a detector that
+        made the reader serve further would be worse than no detector."""
+        archive, _ = _populated(tmp_path / "archive")
+        if seal:
+            archive.seal_open_segment()
+        assert FIX.verify_archive(archive.root)["ok"], "precondition: clean"
+        corrupt(archive)
+
+        result = FIX.verify_archive(archive.root)
+        assert not result["ok"], f"{name} was not detected"
+        expected = (int(result["last_good_seal"]["last_sequence"])
+                    if result["last_good_seal"] else 0)
+        assert result["safe_sequence"] == expected, (
+            f"{name}: safe_sequence {result['safe_sequence']} is not the last "
+            f"good seal's bound {expected}")
+        served = FIX.serve_rows(archive.root)
+        assert all(int(r["sequence"]) <= expected for r in served), (
+            f"{name}: the reader served past the last good seal")
+
+
+# ===========================================================================
 # sim 10 — lineage rollback (the independently rehearsed RESTORE)
 # ===========================================================================
 class TestSim10LineageRollback:
@@ -499,6 +780,24 @@ class TestSim10LineageRollback:
         assert after["row_count"] == before["row_count"]
         assert after["lineage_order"] == before["lineage_order"]
         assert after["ok"]
+
+    def test_the_restore_carries_the_attestation(self, tmp_path):
+        """The rollback drill reproduces the STORE, and §5.2's attestation is
+        part of it: a restore that left `anchor.json` behind would hand over a
+        store that can no longer prove where its chain stood. Both directions
+        — carried, the restore verifies; dropped, it fails closed."""
+        archive, _ = _populated(tmp_path / "archive")
+        FIX.seal_and_copy_out(archive, tmp_path / "copy")
+        restored = FIX.restore(tmp_path / "copy", tmp_path / "restored")
+        assert restored["ok"]
+        source_anchor = (archive.root / FIX.ANCHOR_NAME).read_text(encoding="utf-8")
+        for root in (tmp_path / "copy", tmp_path / "restored"):
+            assert (root / FIX.ANCHOR_NAME).read_text(encoding="utf-8") == source_anchor
+
+        FIX.corrupt_drop_anchor(tmp_path / "restored")
+        assert not FIX.verify_archive(tmp_path / "restored")["ok"], (
+            "a restore that dropped the attestation verified clean — the "
+            "carry is not load-bearing")
 
     def test_mutant_restore_drops_a_lineage_row(self, tmp_path):
         """NEGATIVE CONTROL (sim 10): a restore that loses one row. Both the
@@ -576,6 +875,53 @@ class TestIngestDuplicateTolerance:
         mutant = FIX.ingest_shadow_rows(rows, dedupe="none")
         assert mutant["counts"]["ingested"] == 4
         assert mutant["counts"]["duplicates_recorded"] == 0
+
+    def test_re_ingesting_an_accruing_log_admits_nothing_twice(self):
+        """§5.3/§11.2: shadow accrual is routed through a PERIODIC organ
+        manifest, so cycle 2 necessarily re-presents every row cycle 1 already
+        took — re-reading an accruing log is the normal cadence, not an edge
+        case. Dedup is therefore keyed against the fingerprints ALREADY IN THE
+        TARGET STORE: the second cycle admits nothing and records all four
+        re-presentations honestly."""
+        rows = FIX.shadow_rows_with_p1_race()
+        first = FIX.ingest_shadow_rows(rows)
+        assert first["counts"] == {"ingested": 3, "duplicates_recorded": 1}
+        second = FIX.ingest_shadow_rows(rows, store=first["ingested"])
+        assert second["counts"] == {"ingested": 0, "duplicates_recorded": 4}
+        assert all(d["fingerprint"].startswith("sha256:")
+                   for d in second["duplicates"])
+
+    def test_periodic_ingest_cycles_are_idempotent_by_construction(self):
+        """The disciplined caller: `ShadowIngestor` holds the target store
+        across cycles, so the cadence converges after the first one however
+        many times the organ manifest fires. Every fact is held exactly
+        once."""
+        rows = FIX.shadow_rows_with_p1_race()
+        ingestor = FIX.ShadowIngestor()
+        counts = [ingestor.ingest(rows)["counts"]["ingested"] for _ in range(4)]
+        assert counts == [3, 0, 0, 0], f"the cycle did not converge: {counts}"
+        assert len(ingestor.rows) == 3
+        assert len(ingestor.duplicates) == 1 + 4 * 3
+        decisions = sorted(r["decision"] for r in ingestor.rows if "decision" in r)
+        assert decisions == ["would_dispatch", "would_skip"]
+
+    def test_mutant_per_call_dedup_re_admits_the_whole_log_every_cycle(self):
+        """NEGATIVE CONTROL (§5.3): the escape this closes — a caller that
+        keys dedup only WITHIN one call. Under the expected cadence it
+        re-admits the entire log on every cycle, so the archive over-counts
+        without a single duplicate ever being recorded.
+
+        This is the same defect shape as `shadow_append_racy` below: a
+        decision taken from state held OUTSIDE the store of record. The store
+        is the authority in both cases."""
+        rows = FIX.shadow_rows_with_p1_race()
+        blind = [FIX.ingest_shadow_rows(rows) for _ in range(3)]
+        assert [r["counts"]["ingested"] for r in blind] == [3, 3, 3], (
+            "the per-call-only escape did not reproduce")
+        assert sum(r["counts"]["duplicates_recorded"] for r in blind) == 3
+        threaded = FIX.ShadowIngestor()
+        assert sum(threaded.ingest(rows)["counts"]["ingested"]
+                   for _ in range(3)) == 3 < 9
 
     def test_ingested_shadow_rows_are_stamped_secondary_not_countable(self):
         """The shadow log is a SECONDARY source (§5.3 trust order): its rows
