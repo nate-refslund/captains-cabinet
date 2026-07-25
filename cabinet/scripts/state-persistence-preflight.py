@@ -204,19 +204,22 @@ def covered_by_lists(unit: str, lists: dict[str, list[str]]) -> str | None:
 
 
 def check_slot(unit: str, slot: str, shared_root: str) -> str | None:
-    """Deploy-time arm: in a REAL provisioned release, does this path resolve
-    into the shared/ tree? Returns an error string, or None if it is safe."""
+    """Deploy-time arm: in a REAL provisioned release, is there durable content
+    sitting where the next deploy would discard it?
+
+    The question is "would a deploy LOSE this", so absence is not a failure: a
+    path nothing has written yet holds no state to lose, and several list
+    entries are legitimately absent until the cabinet first creates them. Only
+    real content inside the release worktree is a finding. Returns an error
+    string, or None if the path is safe.
+    """
     full = os.path.join(slot, unit)
-    probe, rel = full, ""
-    while not os.path.lexists(probe) and os.path.dirname(probe) > slot:
-        rel = os.path.join(os.path.basename(probe), rel)
-        probe = os.path.dirname(probe)
-    if not os.path.lexists(probe):
-        return "no component of this path exists in the release"
-    real = os.path.realpath(probe)
+    if not os.path.lexists(full):
+        return None                      # nothing there yet — nothing to lose
+    real = os.path.realpath(full)
     if real.startswith(os.path.realpath(shared_root) + os.sep):
-        return None
-    if os.path.islink(probe):
+        return None                      # resolves into shared/ — persisted
+    if os.path.islink(full):
         return f"symlinked OUTSIDE the shared tree -> {real}"
     return "lives inside the release worktree — the next deploy discards it"
 

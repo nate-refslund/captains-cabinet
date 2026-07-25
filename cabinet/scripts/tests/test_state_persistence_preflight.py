@@ -272,6 +272,18 @@ def test_slot_mode_flags_a_symlink_pointing_outside_the_shared_tree(tmp_path):
     assert "OUTSIDE the shared tree" in res.stderr
 
 
+def test_slot_mode_does_not_flag_a_path_nothing_has_written_yet(tmp_path):
+    """The question is 'would a deploy LOSE this', so absence is not loss.
+    Several list entries are legitimately absent until the cabinet first
+    creates them; flagging those would make every deploy fail for no reason."""
+    root = build_repo(tmp_path, "instance/state/\n", dirs="instance/state")
+    slot, shared = tmp_path / "slot", tmp_path / "shared"
+    (slot / "instance").mkdir(parents=True)   # parent exists, the path does not
+    shared.mkdir()
+    res = run(root, "--slot", str(slot), "--shared", str(shared))
+    assert res.returncode == 0, res.stdout + res.stderr
+
+
 def test_slot_mode_requires_shared(tmp_path):
     root = build_repo(tmp_path, "instance/state/\n", dirs="instance/state")
     res = run(root, "--slot", str(tmp_path))
