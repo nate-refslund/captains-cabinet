@@ -465,35 +465,66 @@ def _board_not_denied(board: str, kind: str, denylist: dict) -> bool:
 
 # --- SEC-3 killswitch + caps (fail-closed) -----------------------------------
 
+# 2026-07-25 ADVERSARIAL AUDIT — THE EMERGENCY STOP FAILED OPEN.
+# Every reader decided "the switch is clear" by testing `answer == "active"`.
+# redis-cli prints ERROR REPLIES ON STDOUT WITH EXIT 0, so `CONFIG SET
+# requirepass X` (NOAUTH), `ACL SETUSER default -get` (NOPERM), `LPUSH
+# cabinet:killswitch x` (WRONGTYPE) and any AOF replay (LOADING) each came back
+# as if the error TEXT were the key's value — and "not the literal string
+# active" read as CLEAR. One allowed command silently disabled the Captain's
+# stop while every surface reported INACTIVE. Absence of the word "active" is
+# not evidence of a clear switch.
+#
+# THE ONE READER is cabinet/scripts/hooks/killswitch-read.sh — schg-locked with
+# the hooks directory, shared with every hook and script. It PROVES the read (a
+# nonce-framed round trip a live AUTHENTICATED server must echo, so a silent or
+# shimmed redis-cli cannot pass as a clear switch) and consults the second
+# (filesystem marker) stop channel. Delegating rather than reimplementing is
+# what keeps this the ONE reader: one implementation, no drift, and this file
+# grows by nothing.
+#
+# _redis_get_strict stays the strict getter for OTHER keys (the daily cap
+# counters), because an errored cap read must not sum to $0 either. The error
+# anchor is line-start so a value merely CONTAINING the word cannot pose as an
+# error reply. It also finally honours REDIS_PORT — before this, on any
+# non-default port this reader and the hooks read DIFFERENT servers.
+_REDIS_ERR_RE = re.compile(r"^(NOAUTH|NOPERM|WRONGTYPE|LOADING|ERR|BUSY|MISCONF|READONLY|MASTERDOWN|EXECABORT|CLUSTERDOWN|TRYAGAIN|CROSSSLOT|NOSCRIPT|NOREPLICAS)\b|^\(error")
+_KS_READER = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "cabinet", "scripts", "hooks", "killswitch-read.sh")
+
+
 def _redis_get_strict(key: str) -> str:
-    """A Redis GET that RAISES on an unreachable control plane (so the killswitch
-    fails CLOSED — mirrors pre-tool-use.sh: a missing safety switch is exposure).
-    A non-zero redis-cli exit with a connection-shaped stderr is an outage, not
-    an empty key."""
-    host = os.environ.get("REDIS_HOST", "localhost")
-    proc = subprocess.run(["redis-cli", "-h", host, "GET", key],
-                          capture_output=True, text=True, timeout=10)
-    if proc.returncode != 0:
-        err = (proc.stderr or "").lower()
-        if not proc.stdout.strip() and ("connect" in err or "refused" in err
-                                        or "no route" in err or "timed out" in err
-                                        or err.strip()):
-            raise ConnectionError("redis unreachable: " + (proc.stderr or "")[:120])
-    out = proc.stdout.strip()
-    return "" if out in ("", "(nil)") else out
+    # RAISES on anything short of a definitive, authenticated answer, so the
+    # killswitch fails CLOSED. "" means PROVEN absent, never "could not tell".
+    if key == "cabinet:killswitch":
+        try:
+            out = subprocess.run(["bash", _KS_READER], capture_output=True,
+                                 text=True, timeout=15).stdout.split("\t", 1)[0].strip()
+        except Exception:
+            out = ""
+        if out in ("ACTIVE", "CLEAR"):
+            return "active" if out == "ACTIVE" else ""
+        raise ConnectionError("emergency stop unreadable: " + (out or "reader failed"))
+    proc = subprocess.run(["redis-cli", "-h", os.environ.get("REDIS_HOST", "localhost"), "-p",
+                           os.environ.get("REDIS_PORT", "6379"), "GET", key], capture_output=True, text=True, timeout=10)
+    out = (proc.stdout or "").strip()
+    if proc.returncode != 0 or _REDIS_ERR_RE.match(out):
+        raise ConnectionError("redis read unverifiable: " + (out or proc.stderr or "")[:120])
+    return "" if out == "(nil)" else out
 
 
 def _killswitch_state(getter: Callable) -> str:
-    """"active" | "clear" | "unreachable". Mirrors pre-tool-use.sh: the canonical
-    active value is the literal ``"active"``; a read that raises (Redis down) is
-    ``unreachable``. Both active and unreachable HALT execution (fail-closed)."""
+    # "active" | "clear" | "unreachable". THE INVERTED DEFAULT: only a
+    # definitive authenticated answer reads as clear, so a value that is neither
+    # `active` nor genuinely empty is `unreachable`, NOT clear. Both active and
+    # unreachable HALT execution (fail-closed).
     try:
         val = getter("cabinet:killswitch")
     except Exception:
-        return "unreachable"
+        val = None
     if val is None:
         return "unreachable"
-    return "active" if str(val).strip().lower() == "active" else "clear"
+    text = str(val).strip()
+    return "active" if text.lower() == "active" else ("clear" if text == "" else "unreachable")
 
 
 def _redis_incr(key: str, ttl_s: int) -> None:

@@ -10,6 +10,25 @@ REDIS_URL="${REDIS_URL:-redis://redis:6379}"
 REDIS_HOST=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f1)
 REDIS_PORT=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)
 
+# Read the switch through the ONE shared reader, not a raw GET (2026-07-25
+# audit). This script claims to test "the full kill switch escalation chain",
+# but comparing a raw `GET` to "active" is exactly the bug that let NOAUTH /
+# NOPERM / WRONGTYPE / LOADING disable the stop — so the drill would have
+# passed while the fleet was defeated. ks_value() maps the reader's verdict
+# back to the literal the assertions below already expect, and surfaces an
+# unverifiable switch as a LOUD mismatch rather than an empty (= clear) read.
+_KS_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/hooks" 2>/dev/null && pwd)/killswitch-read.sh"
+ks_value() {
+  if [ ! -r "$_KS_HELPER" ]; then echo "NO-READER"; return 0; fi
+  # shellcheck source=/dev/null
+  . "$_KS_HELPER" && killswitch_read
+  case "$KS_VERDICT" in
+    ACTIVE) echo "active" ;;
+    CLEAR)  echo "" ;;
+    *)      echo "UNVERIFIABLE: $KS_REASON" ;;
+  esac
+}
+
 LIVE=false
 [ "${1:-}" = "--live" ] && LIVE=true
 
@@ -43,7 +62,7 @@ echo ""
 # Test 1: Verify kill switch is currently OFF
 # ============================================================
 echo "1. Pre-flight checks"
-KS=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET cabinet:killswitch 2>/dev/null)
+KS=$(ks_value)
 test_step "Kill switch is currently off" "" "$KS"
 
 # ============================================================
@@ -53,7 +72,7 @@ echo ""
 echo "2. Activating kill switch"
 if [ "$LIVE" = true ]; then
   redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" SET cabinet:killswitch active > /dev/null 2>&1
-  KS=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET cabinet:killswitch 2>/dev/null)
+  KS=$(ks_value)
   test_step "Kill switch set to 'active'" "active" "$KS"
 else
   echo "  ⏭️  SKIPPED (dry run) — would SET cabinet:killswitch active"
@@ -68,7 +87,7 @@ echo ""
 echo "3. Verifying pre-tool-use hook behavior"
 if [ "$LIVE" = true ]; then
   # Simulate what the hook checks
-  KS=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET cabinet:killswitch 2>/dev/null)
+  KS=$(ks_value)
   test_step "pre-tool-use would read 'active'" "active" "$KS"
 
   # The hook exits 2 when kill switch is active (we can't run it directly
@@ -86,7 +105,7 @@ fi
 echo ""
 echo "4. Supervisor kill switch respect"
 if [ "$LIVE" = true ]; then
-  KS=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET cabinet:killswitch 2>/dev/null)
+  KS=$(ks_value)
   test_step "Supervisor would skip restarts (killswitch=$KS)" "active" "$KS"
 else
   echo "  ⏭️  SKIPPED (dry run)"
@@ -100,7 +119,7 @@ fi
 echo ""
 echo "5. Health check kill switch awareness"
 if [ "$LIVE" = true ]; then
-  KS=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET cabinet:killswitch 2>/dev/null)
+  KS=$(ks_value)
   test_step "Health check would skip further checks" "active" "$KS"
 else
   echo "  ⏭️  SKIPPED (dry run)"
@@ -115,7 +134,7 @@ echo ""
 echo "6. Deactivating kill switch"
 if [ "$LIVE" = true ]; then
   redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" DEL cabinet:killswitch > /dev/null 2>&1
-  KS=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET cabinet:killswitch 2>/dev/null)
+  KS=$(ks_value)
   test_step "Kill switch cleared" "" "$KS"
 else
   echo "  ⏭️  SKIPPED (dry run) — would DEL cabinet:killswitch"
@@ -129,7 +148,7 @@ fi
 echo ""
 echo "7. Post-deactivation state"
 if [ "$LIVE" = true ]; then
-  KS=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET cabinet:killswitch 2>/dev/null)
+  KS=$(ks_value)
   test_step "Kill switch is off (operations would resume)" "" "$KS"
 
   # Check officer expected states still set. Roster DERIVED, not hardcoded:

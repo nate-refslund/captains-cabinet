@@ -18,6 +18,10 @@ RUN useradd -m -s /bin/bash watchdog
 COPY scripts/health-check.sh /opt/watchdog/health-check.sh
 COPY scripts/token-refresh-watch.sh /opt/watchdog/token-refresh-watch.sh
 COPY scripts/kill-switch.sh /opt/watchdog/kill-switch.sh
+# The ONE emergency-stop reader. kill-switch.sh, health-check.sh and
+# test-escalation.sh all source it and REFUSE to report a switch they
+# cannot read, so shipping them without it would brick the watchdog.
+COPY scripts/hooks/killswitch-read.sh /opt/watchdog/hooks/killswitch-read.sh
 COPY scripts/cost-dashboard.sh /opt/watchdog/cost-dashboard.sh
 COPY scripts/test-escalation.sh /opt/watchdog/test-escalation.sh
 COPY cron/briefing.sh /opt/watchdog/briefing.sh

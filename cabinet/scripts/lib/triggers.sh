@@ -112,10 +112,19 @@ trigger_wake_officer() {
     tmux has-session -t "$session" 2>/dev/null || exit 0
 
     # Killswitch — do not nudge officers while the Cabinet is halted.
-    local _ks
-    _ks=$(redis-cli -h "$TRIG_REDIS_HOST" -p "$TRIG_REDIS_PORT" \
-      GET cabinet:killswitch 2>/dev/null)
-    [ "$_ks" = "active" ] && exit 0
+    # Reads through the ONE shared helper (2026-07-25 audit): comparing a raw
+    # GET to "active" treated NOAUTH/NOPERM/WRONGTYPE/LOADING error text as a
+    # clear switch, so triggers kept nudging officers through an armed stop.
+    # Anything short of a verified CLEAR stops the nudge.
+    local _ks_helper
+    _ks_helper="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../hooks" 2>/dev/null && pwd)/killswitch-read.sh"
+    if [ -r "$_ks_helper" ]; then
+      # shellcheck source=/dev/null
+      . "$_ks_helper" && killswitch_read
+      [ "$KS_VERDICT" = "CLEAR" ] || exit 0
+    else
+      exit 0   # no reader, no nudge
+    fi
 
     # Debounce: coalesce a burst into one wake. SET NX with a short TTL — if the
     # lock already exists a wake is already in flight/just fired, so skip. Best-

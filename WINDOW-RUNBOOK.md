@@ -25,8 +25,11 @@ git merge-tree "$(git merge-base origin/master origin/feat/germline-window-3)" \
 ( cd .claude/worktrees/germline-window-3 && \
   python3.12 -m pytest framework/acting/tests framework/tests/test_amendment_doc_lint.py -q && \
   bash -n cabinet/scripts/hooks/session-start.sh )
-# fleet quiet + kill switch state:
-redis-cli GET cabinet:killswitch
+# fleet quiet + kill switch state — through the ONE reader, never a raw GET:
+# a bare `redis-cli GET` reports a CLEAR switch whenever redis answers NOAUTH /
+# NOPERM / WRONGTYPE / LOADING, because redis-cli prints those on stdout with
+# exit 0 (2026-07-25 audit). Prints CLEAR / ACTIVE / INDETERMINATE + a reason.
+bash cabinet/scripts/hooks/killswitch-read.sh
 ```
 
 ## 1. Captain — OPEN the window (sudo, ~15s)

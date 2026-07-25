@@ -573,12 +573,41 @@ officer_sandbox_write_profile "$REPO_ROOT" "$SANDBOX_PROFILE" "$BROKER_DIR" "$BR
   "$EGRESS_KERNEL_ENFORCED" "$CABINET_OBSERVE_ONLY" "$SHARED_ENV_PATH" \
   "$CABINET_RUNTIME_STATE_DIR" "${OBSERVE_SOURCE_ROOTS[@]}"
 
+# SANDBOX RESOLUTION — ABSOLUTE PATH + BINARY VERIFICATION (2026-07-25 audit).
+# This used to be `command -v sandbox-exec` and a BARE-NAME invocation. The
+# officer is launched through `env -i ... PATH="$HOME/.local/bin:$PATH"` (see
+# the tmux new-session below), which puts an OFFICER-WRITABLE directory FIRST
+# on PATH. So an officer with Bash could write $HOME/.local/bin/sandbox-exec —
+# a shim that drops the `-f <profile>` argument and execs the agent — and the
+# NEXT restart would boot that officer completely UNSANDBOXED, with the
+# Captain-law/secret boundary silently gone. The sandbox is now invoked by its
+# absolute system path and that binary is verified before it is trusted:
+# a regular file, not a symlink, executable, and owned by root (on Darwin
+# /usr/bin is SIP-protected, so root ownership there is a strong guarantee).
+# Anything that fails the check is treated exactly like a missing sandbox —
+# the boot REFUSES rather than proceeding unconfined.
+SANDBOX_EXEC_BIN="${CABINET_SANDBOX_EXEC_BIN:-/usr/bin/sandbox-exec}"
+_sandbox_exec_trusted() {
+  local p="$1" owner
+  [ -n "$p" ] || return 1
+  case "$p" in /*) : ;; *) return 1 ;; esac   # absolute paths only
+  [ -f "$p" ] || return 1
+  [ -L "$p" ] && return 1
+  [ -x "$p" ] || return 1
+  [ "$(uname -s 2>/dev/null)" = "Darwin" ] || return 0
+  # GNU-first (`stat -c`) then BSD (`stat -f`): GNU `stat -f` SUCCEEDS printing
+  # filesystem info, so a BSD-first probe never falls through on Linux.
+  owner=$(stat -c '%u' "$p" 2>/dev/null || stat -f '%u' "$p" 2>/dev/null)
+  [ "$owner" = "0" ]
+}
+
 SANDBOX_CMD=""
-if command -v sandbox-exec >/dev/null 2>&1; then
+if _sandbox_exec_trusted "$SANDBOX_EXEC_BIN"; then
   printf -v _SANDBOX_Q '%q' "$SANDBOX_PROFILE"
-  SANDBOX_CMD="sandbox-exec -f $_SANDBOX_Q"
+  printf -v _SANDBOX_BIN_Q '%q' "$SANDBOX_EXEC_BIN"
+  SANDBOX_CMD="$_SANDBOX_BIN_Q -f $_SANDBOX_Q"
 elif [ "${CABINET_MAC_DRY_RUN:-0}" != "1" ]; then
-  echo "[ERROR] start-officer-mac.sh: sandbox-exec unavailable — refusing to boot without the Captain-law/secret boundary" >&2
+  echo "[ERROR] start-officer-mac.sh: no trusted sandbox-exec at $SANDBOX_EXEC_BIN (must be a root-owned, non-symlink executable) — refusing to boot without the Captain-law/secret boundary" >&2
   exit 78
 else
   # CI may exercise the Mac dry-run on Linux.  The real Mac boot path above is
