@@ -91,6 +91,29 @@ def _populated(root: Path, *, count: int = FIX.E1_DEFAULT_CANDIDATES,
     return archive, result
 
 
+def _assert_healed_store_is_servable(archive, sequence: int,
+                                     on_cadence: bool) -> None:
+    """A healed store is not merely INTACT — a disciplined reader must be able
+    to SERVE it, all of it.
+
+    This is the property a heal that reconciles only the ROW silently breaks:
+    the chain links, the exactly-once count and the manifest counters are all
+    correct, `verify_archive` still says ANCHOR_MISSING, `safe_sequence`
+    collapses to the last good seal, and `serve_rows` hands out nothing. So
+    every heal arm asserts servability, never just row identity.
+    """
+    result = FIX.verify_archive(archive.root)
+    assert result["ok"], (
+        f"a correctly-healed store does not verify at sequence {sequence}: "
+        f"{result['findings']}")
+    assert result["safe_sequence"] == sequence
+    assert ([int(r["sequence"]) for r in FIX.serve_rows(archive.root)]
+            == list(range(1, sequence + 1))), "the healed store served short"
+    assert (archive.root / FIX.ANCHOR_NAME).is_file() is on_cadence, (
+        "the attestation the interrupted commit owed must be present exactly "
+        "when the reconciled sequence lands on the cadence — no more, no less")
+
+
 def _record(index: int, **overrides):
     base = dict(
         candidate_id=f"cand-{index:03d}", run_id="run-1", sequence=0,
@@ -200,15 +223,26 @@ class TestSharedCoreContract:
 
         T1 ACCEPTS `sim_replay` as a source-class spelling; T3 REFUSES it
         (`lib_cog5_boundary_stamp_provenance` raises on any class outside its
-        own lists). DELIBERATE, and NOT the vocabulary conflation §5.3
-        forbids:
+        own lists). DELIBERATE — but the earlier justification was loose and
+        is corrected here.
 
-          * §5.3's conflation is between two DISJOINT vocabularies, where a
-            token of one is written into the OTHER's field and silently means
-            something else there (`record_kind` — pinned by
-            `record_kind_conflations`, which stays strict).
-          * This is a fold WITHIN one vocabulary (source class) onto a slug
-            that stamps the SAME provenance. It cannot mean anything else.
+        CONCEDED, because it is true: `sim_replay` IS a provenance token being
+        used as a source-class slug. Calling that "a fold within one
+        vocabulary" described the FOLD (source-slug -> source-slug) while
+        saying nothing about the TOKEN, and the token crossing from the
+        provenance vocabulary into the source-class one is structurally the
+        same shape `record_kind_conflations` forbids. So the shape is not the
+        defence.
+
+        THE DEFENCE IS THE HARM TEST, and it survives: this fold's OUTPUT is
+        provenance `sim_replay` — byte-identical to what T2's own table
+        produces for the same slug — so the token cannot mean anything other
+        than what it already means on both sides of the join. A conflation
+        harms by making a token mean something ELSE in its new field; here it
+        means exactly the same thing, and the arms below measure that rather
+        than assert it. And `record_kind_conflations`, which governs the
+        `record_kind` fields where the disjoint-vocabulary conflation actually
+        lives, is untouched by any of this and stays strict.
 
         Why not simply refuse, matching T3: the spelling split is a RECORDED
         cross-unit divergence routed to the integrator, and the contract pins
@@ -219,12 +253,24 @@ class TestSharedCoreContract:
         refusal is free and correct for T3. (Stated exactly: removing the
         alias would not RED T2's suite today — T2 carries its own table and
         imports this core only for presence-at-join — so the argument is the
-        integrator's authority, not a breakage claim.)
+        integrator's authority, not a breakage claim. MEASURED on the combined
+        tree: deleting the alias leaves T2 and T3 fully green and REDs only
+        T1's own two arms.)
 
         The strictness cost is bounded MECHANICALLY here: an alias whose key
         is a provenance token may only target a slug that stamps that very
-        provenance. That structural rule is what makes the fold inert, and it
-        REDs if the table ever grows an entry that could launder.
+        provenance. That structural rule is what makes this fold inert, and it
+        REDs if the table grows an entry that could launder.
+
+        HOW FAR THAT PREDICATE REACHES, honestly: `meaning_changing_aliases`
+        inspects only PROVENANCE-KEYED aliases, so it is what catches
+        `real_live -> generator`. The other laundering shapes — `arena ->
+        live_emission`, `sim -> live_emission` — are keyed on non-provenance
+        slugs and are caught instead by the pre-existing count-toward-minimum
+        arms (`test_synthetic_never_counts_toward_minimums` and friends), each
+        MEASURED RED. The guarantee is therefore SUITE-level, not
+        predicate-level, and the difference is worth naming: a future reader
+        who deletes those count arms would not be protected by this one.
         """
         def meaning_changing_aliases(table, source_map):
             return sorted(
@@ -481,37 +527,82 @@ class TestSim9CorruptArchive:
         assert any(r["sequence"] == 20 for r in mutant)
         assert not any(r["sequence"] == 20 for r in disciplined)
 
-    def test_pending_heal_completes_exactly_once_after_a_lost_append(self, tmp_path):
+    @pytest.mark.parametrize("crash_at,on_cadence", ((3, False), (4, True)),
+                             ids=("off-cadence", "on-cadence"))
+    def test_pending_heal_completes_exactly_once_after_a_lost_append(
+            self, tmp_path, crash_at, on_cadence):
         """Sim 9: a crash BETWEEN the write-ahead and the append. The heal
         finishes it once; a second heal is a no-op (returns None), and the
-        row count never moves twice."""
+        row count never moves twice.
+
+        Parametrised over the CADENCE POSITION alongside its sibling below.
+        This limb finishes the interrupted append through `_commit`, which
+        owes the periodic attestation whenever the reconciled sequence lands
+        on the cadence — so the on-cadence parameter is what proves the
+        obligation is discharged here rather than assumed.
+        """
         archive = FIX.ReferenceArchive(tmp_path / "archive", rows_per_segment=8)
-        archive.append(_record(1))
-        archive.append(_record(2))
-        archive.append_crashing(_record(3))
-        assert len(archive.rows()) == 2
+        for i in range(1, crash_at):
+            archive.append(_record(i))
+        archive.append_crashing(_record(crash_at))
+        assert len(archive.rows()) == crash_at - 1
         assert (archive.root / FIX.PENDING_NAME).exists()
+        assert (crash_at % archive.anchor_every == 0) is on_cadence, (
+            "the cadence parameters are mis-declared — this arm would prove "
+            "the wrong thing")
 
         assert archive.heal() is not None
-        assert len(archive.rows()) == 3
+        assert len(archive.rows()) == crash_at
         assert archive.heal() is None, "the heal was not exactly-once"
-        assert len(archive.rows()) == 3
-        assert FIX.verify_archive(archive.root)["ok"]
+        assert len(archive.rows()) == crash_at
+        _assert_healed_store_is_servable(archive, crash_at, on_cadence)
 
-    def test_pending_heal_is_exactly_once_after_a_lost_ack(self, tmp_path):
+    @pytest.mark.parametrize("crash", (
+        lambda a, r: a.append_crashing_before_anchor(r),
+        lambda a, r: a.append_crashing_after_commit(r),
+    ), ids=("crash-before-the-anchor", "crash-before-the-pending-clear"))
+    @pytest.mark.parametrize("crash_at,on_cadence", ((2, False), (4, True)),
+                             ids=("off-cadence", "on-cadence"))
+    def test_pending_heal_is_exactly_once_after_a_lost_ack(
+            self, tmp_path, crash, crash_at, on_cadence):
         """The harder limb: a crash AFTER the append but BEFORE pending.json
         was cleared. A naive heal would append a SECOND copy; the disciplined
-        one reconciles and writes nothing."""
+        one reconciles and writes nothing.
+
+        PARAMETRISED OVER THE CADENCE POSITION, and that is the whole point of
+        this arm's shape. `_commit` mints the periodic attestation AFTER the
+        segment append, so a crash in that window at an ON-CADENCE sequence
+        leaves a durable row whose attestation was never minted. A heal that
+        reconciles the row but does not mint it returns a store that is
+        permanently ANCHOR_MISSING: `verify_archive` never ok, `safe_sequence`
+        pinned to the last good seal (0 here — nothing is sealed yet), and the
+        disciplined reader serves NOTHING. A correctly-healed store, made
+        unservable forever.
+
+        This arm used to crash at sequence 2 only, which is OFF-cadence with
+        `anchor_every=4`, and therefore could not see that. It now covers both
+        cadence positions and both crash windows inside `_commit` — the true
+        pre-anchor state (`append_crashing_before_anchor`: nothing but the row
+        landed) and the later pre-pending-clear one. A test that only ever
+        crashes off-cadence is why the regression shipped; the on-cadence
+        parameters RED against a heal that does not mint.
+        """
         archive = FIX.ReferenceArchive(tmp_path / "archive", rows_per_segment=8)
-        archive.append(_record(1))
-        archive.append_crashing_after_commit(_record(2))
-        assert len(archive.rows()) == 2
+        for i in range(1, crash_at):
+            archive.append(_record(i))
+        crash(archive, _record(crash_at))
+        assert len(archive.rows()) == crash_at
         assert (archive.root / FIX.PENDING_NAME).exists()
+        assert (crash_at % archive.anchor_every == 0) is on_cadence, (
+            "the cadence parameters are mis-declared — this arm would prove "
+            "the wrong thing")
 
         assert archive.heal() is not None
-        assert len(archive.rows()) == 2, "the heal duplicated a committed row"
+        assert len(archive.rows()) == crash_at, "the heal duplicated a committed row"
         assert not (archive.root / FIX.PENDING_NAME).exists()
-        assert FIX.verify_archive(archive.root)["ok"]
+        assert archive.heal() is None, "the heal was not exactly-once"
+        assert len(archive.rows()) == crash_at
+        _assert_healed_store_is_servable(archive, crash_at, on_cadence)
 
     def test_pending_with_a_tampered_body_refuses(self, tmp_path):
         """A write-ahead record whose hash does not match its body is never
@@ -541,7 +632,11 @@ class TestStoreLevelDetection:
     """The archive writes two independent counters on every commit — the
     manifest's `row_count`/`chain_head` and the periodic `anchor.json`
     attestation (§5.2). Verification consults BOTH. These arms prove the
-    escape they close is real, and that each detector bites."""
+    escape they close is real, and that each detector bites.
+
+    They also pin where the layer STOPS: the attestation is unsigned, so an
+    editor who re-mints it escapes. That is declared, not hidden — see
+    `test_known_limit_the_complete_editor_that_also_re_mints_the_anchor`."""
 
     def test_mutant_row_dropped_from_the_unsealed_open_segment(self, tmp_path):
         """NEGATIVE CONTROL (sim 9) — THE escape the row and seal layers
@@ -632,8 +727,14 @@ class TestStoreLevelDetection:
         shortened store. The whole manifest layer now says nothing.
 
         The periodic attestation still does: it was minted at a cadence point
-        BEFORE the edit, and the editor cannot retroactively re-mint it. This
-        arm asserts the anchor limb ALONE carries the detection."""
+        BEFORE the edit, and repairing the manifest does not touch it. This
+        arm asserts the anchor limb ALONE carries the detection.
+
+        Bounded exactly, and NOT more: this catches an editor who stops at the
+        manifest. It does not catch one who also re-mints the attestation —
+        see `test_known_limit_the_complete_editor_that_also_re_mints_the_anchor`
+        immediately below, which pins that limit rather than leaving the claim
+        sounding absolute."""
         archive, _ = _populated(tmp_path / "archive")
         FIX.corrupt_drop_open_segment_tail(archive.root)
         repaired = FIX.repair_manifest_counters(archive.root)
@@ -650,6 +751,67 @@ class TestStoreLevelDetection:
                        for f in result["findings"]), (
             f"the manifest layer was supposed to be silenced by the repair, "
             f"so this arm proves the ANCHOR: {result['findings']}")
+
+    def test_known_limit_the_complete_editor_that_also_re_mints_the_anchor(
+            self, tmp_path):
+        """DECLARED KNOWN LIMIT of this reference model — pinned in the same
+        idiom as the unit's other declared residuals, so a future reader
+        cannot mistake the model for the real thing.
+
+        Minting an attestation here needs NO SECRET. `write_anchor` is a pure
+        digest over public fields (§5.2's shape "minus the signer" — SIGNING
+        is the recorder's, and is deliberately out of scope for this corpus).
+        So the COMPLETE editor — drop a tail row, repair the manifest
+        counters, AND re-mint the anchor over the shortened chain — produces a
+        fully self-consistent store: `verify_archive` returns ok, findings are
+        empty, and the lost row is silently gone.
+
+        What the anchor therefore buys, stated exactly: it defeats an editor
+        who does not re-mint it, which is every editor that only knows how to
+        repair the manifest (the arm above). It does not defeat one who does.
+        Closing that gap is what a SIGNED attestation would buy, and nothing
+        weaker — not another unsigned counter, which the same editor would
+        simply also repair.
+
+        This does NOT weaken the non-redundancy claim the arm above proves:
+        the manifest layer and the anchor layer still catch escapes the other
+        cannot, which was established by revert, not by this bound.
+
+        Both halves are asserted so this is a MEASUREMENT and not a
+        concession: without the re-mint the store is caught; with it, it is
+        not. Should the model ever gain a signer, the first half stays true
+        and the second half REDs — which is the point.
+
+        RETIREMENT CONDITION: when the archive's attestation gains a signer
+        (key material, or any secret an editor cannot reproduce), invert the
+        second half to `assert not FIX.verify_archive(root)["ok"]` and assert
+        the forged signature is named. A known-limit arm must never outlive
+        its reason.
+        """
+        archive, _ = _populated(tmp_path / "archive")
+        assert FIX.verify_archive(archive.root)["ok"], "precondition: clean"
+        lost = archive.rows()[-1]["record_id"]
+
+        FIX.corrupt_drop_open_segment_tail(archive.root)
+        FIX.repair_manifest_counters(archive.root)
+        caught = FIX.verify_archive(archive.root)
+        assert not caught["ok"] and any(
+            f.startswith("ANCHOR_SEQUENCE_MISMATCH") for f in caught["findings"]), (
+            f"the editor who stops at the manifest must still be caught, or "
+            f"this arm measures nothing: {caught['findings']}")
+
+        reminted = FIX.remint_anchor(archive.root)
+        assert reminted["sequence"] == 20, (
+            "precondition: the shortened store's own cadence point")
+        escaped = FIX.verify_archive(archive.root)
+        assert escaped["ok"] and escaped["findings"] == [], (
+            f"the complete editor was caught — if the model gained a signer, "
+            f"RETIRE this known-limit arm per its docstring: "
+            f"{escaped['findings']}")
+        served = FIX.serve_rows(archive.root)
+        assert len(served) == 23
+        assert lost not in {r["record_id"] for r in served}, (
+            "the whole point of the limit: the row is silently GONE")
 
     def test_mutant_store_shrunk_below_its_first_attestation(self, tmp_path):
         """NEGATIVE CONTROL: the same thorough edit against a store whose
@@ -922,6 +1084,81 @@ class TestIngestDuplicateTolerance:
         threaded = FIX.ShadowIngestor()
         assert sum(threaded.ingest(rows)["counts"]["ingested"]
                    for _ in range(3)) == 3 < 9
+
+    def test_re_seeding_from_the_DURABLE_archive_admits_nothing_twice(self, tmp_path):
+        """The same §5.3/§11.2 cadence, with the store that a real ingester
+        would actually hold: the DURABLE lineage archive, not a list in
+        memory.
+
+        `ReferenceArchive.append` stamps `sequence`/`prev_hash`/`record_id`/
+        `row_hash` onto every row it takes, so rows read back are not
+        byte-identical to the rows that went in. A dedup key computed over the
+        row as-read would differ from the key the same fact produces on
+        arrival, and the whole log would be re-admitted every cycle — MF-2's
+        defect re-entering through the durable door, while the in-memory path
+        kept looking correct. Measured before the fix: 3 ingested, not 0.
+
+        Nothing shipped composes these two surfaces today, so this was latent
+        rather than live — but `ingest_shadow_rows`'s own durability framing
+        invites exactly this composition, so the invariance is closed at the
+        dedup key and pinned here instead of left as a trap.
+        """
+        rows = FIX.shadow_rows_with_p1_race()
+        first = FIX.ingest_shadow_rows(rows)
+        assert first["counts"] == {"ingested": 3, "duplicates_recorded": 1}
+
+        archive = FIX.ReferenceArchive(tmp_path / "archive", rows_per_segment=8)
+        for row in first["ingested"]:
+            archive.append(row)
+        durable = FIX.serve_rows(archive.root)
+        assert len(durable) == 3
+        assert FIX.CHAIN_FIELDS <= set(durable[0]), (
+            "precondition: the durable rows must actually carry the chain "
+            "stamps, or this arm proves nothing")
+
+        assert FIX.ingest_shadow_rows(rows, store=durable)["counts"] == \
+            {"ingested": 0, "duplicates_recorded": 4}
+        # and through the rehearsed RESTORE, which is how a store comes back
+        restored_root = tmp_path / "restored"
+        FIX.restore(archive.root, restored_root)
+        assert FIX.ingest_shadow_rows(
+            rows, store=FIX.serve_rows(restored_root))["counts"] == \
+            {"ingested": 0, "duplicates_recorded": 4}
+
+    def test_the_dedup_key_is_chain_field_invariant_but_still_content_sensitive(
+            self, tmp_path):
+        """The invariance above, bounded — because a dedup key that ignores
+        fields is a WEAKENING unless the ignored set is exactly the store's
+        own stamps.
+
+        Two directions: the key must not move when the store stamps a row
+        (that is the round trip), and it must move when any CONTENT field
+        changes (so this can never collapse two genuinely different facts —
+        the very loss `dedupe="key"` is the negative control for).
+
+        `CHAIN_FIELDS` is checked against what `_prepare` ACTUALLY adds on a
+        real append, never asserted from memory, so the set cannot silently
+        drift away from the write path it describes.
+        """
+        archive = FIX.ReferenceArchive(tmp_path / "archive", rows_per_segment=8)
+        incoming = CORE.stamp_provenance(
+            CORE.map_shadow_record_kind(FIX.shadow_rows_with_p1_race()[0]), "sim")
+        landed = archive.append(incoming)
+        assert set(landed) - set(incoming) == set(FIX.CHAIN_FIELDS), (
+            "CHAIN_FIELDS no longer describes what the store stamps — "
+            "re-anchor it against `_prepare`")
+
+        assert FIX.dedupe_key(landed) == FIX.dedupe_key(incoming)
+        assert FIX.strip_chain_fields(landed) == incoming
+        # still content-sensitive, in every field the row actually says
+        for field, value in (("decision", "would_skip"),
+                             ("idempotency_key", "idem-0002"),
+                             ("wake_id", "wake-8"),
+                             ("provenance", "synthetic")):
+            assert FIX.dedupe_key({**landed, field: value}) != \
+                FIX.dedupe_key(landed), (
+                f"the dedup key ignored a change to content field {field!r} — "
+                f"it would collapse two different facts")
 
     def test_ingested_shadow_rows_are_stamped_secondary_not_countable(self):
         """The shadow log is a SECONDARY source (§5.3 trust order): its rows
