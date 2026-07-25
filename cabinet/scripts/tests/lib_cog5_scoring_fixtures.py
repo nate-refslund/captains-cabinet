@@ -41,23 +41,43 @@ CORPUS-PINNED VOCABULARY (the executable spec the implementation binds to):
                         regressed/improved — distinguishable from a
                         regression fail AND from an evaluation failure.
   score vector (§9.1)   {"vector": {dim: {"value": float|"unknown",
-                        "kind": "machine"|"judge"}}, "table_order": float}
+                        "kind": "machine"|"judge", "derivation": str|None}},
+                        "table_order": float}
                         — schema-SEPARATED: every eligibility predicate reads
                         `vector` only; `table_order` is presentation;
                         "unknown" never satisfies a floor (L239); judge dims
                         may rank, never satisfy a floor (X6).
+  derivation (X6/§9.1)  the EVIDENCE SOURCE each dim's number was actually
+                        read from, stamped by the CONSTRUCTOR from the
+                        evidence object it read — the caller passes EVIDENCE,
+                        never a derivation label (the §6.2 chain-of-custody
+                        shape lifted to the vector). A MACHINE dim whose
+                        derivation is judge-sourced, absent, or out-of-enum
+                        can NEVER satisfy a floor: the `kind` label alone is
+                        a self-declaration, and X6 binds the VALUE to machine
+                        evidence, not the label.
   provenance (§6.2)     CLOSED enum {real_live, real_mined, synthetic,
                         sim_replay}; stamped by the INGESTER from the named
                         source class — a row arriving with its own
                         `provenance` key REFUSES (chain-of-custody: candidate/
                         league/generator code can never set or rewrite it).
-                        ONLY real_live/real_mined rows from the NAMED real
-                        sources count toward the §6.2 minimums.
+                        SET *and* REWRITE are both covered: ingestion seals
+                        the custody fields under an ingester-plane key, so a
+                        post-ingest rewrite breaks the seal and stops
+                        counting. ONLY real_live/real_mined rows from the
+                        NAMED real sources, with an INTACT seal, count toward
+                        the §6.2 minimums.
   league rows (§6.3)    every league output while closed carries
                         `fitness_claim: "none"` (schema-required) and speaks
                         scored/ranked/observed — NEVER the Captain vocabulary
-                        (tested / falsified / "it worked"), never
-                        review.source verdict_human (§9.3 SIM-2 extension).
+                        (tested / falsified / "it worked") in a value OR a
+                        KEY, never review.source verdict_human (§9.3 SIM-2
+                        extension), and its `certainty` is capped at the
+                        states.py P5 rung: the states ABOVE the cap
+                        (intervention_supported / falsified) are reachable in
+                        `derive_edge_state` ONLY through human-verdict fuel,
+                        so a machine artifact claiming one is the machine
+                        speaking as the human channel.
   §6.2 minimums         real_trajectory_floor 10 (MIN_PAIRS), captain_label_
                         floor 10, judge_agreement_bar 0.80 (JUDGE_HARD_BAR),
                         judge_min_pairs 10, baseline_match_rate 0.083
@@ -85,11 +105,14 @@ Fable 5 — corpus authorship is judgment-tier work).
 from __future__ import annotations
 
 import ast
+import hashlib
+import hmac
 import json
 import os
 import re
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional
 
@@ -141,6 +164,18 @@ FLAT_REASON_FRAGMENT = "no frozen case improved"
 MACHINE_KIND = "machine"
 JUDGE_KIND = "judge"
 UNKNOWN = "unknown"                    # quarantine value — never averaged
+
+# §9.1/X6 DERIVATION enum (CLOSED): the evidence source a dim's number was
+# actually read from. Stamped by the constructor from the evidence OBJECT —
+# never nameable by the caller (the §6.2 custody shape, lifted to the vector).
+DERIVATION_KEY = "derivation"
+DERIVATION_GATE_RESULT = "machine:gate_result"      # a real rg.GateResult
+DERIVATION_REPLAY_MAP = "machine:replay_map"        # a real {case: bool} map
+DERIVATION_SCORER_TRIPLE = "machine:scorer_triple"  # the sim-8 triple outputs
+DERIVATION_JUDGE_LLM = "judge:llm_score"            # a judge/LLM number
+MACHINE_DERIVATIONS = frozenset({DERIVATION_GATE_RESULT, DERIVATION_REPLAY_MAP,
+                                 DERIVATION_SCORER_TRIPLE})
+JUDGE_DERIVATIONS = frozenset({DERIVATION_JUDGE_LLM})
 
 # §6.2 recorded minimums (derived from the estate's own constants; the
 # estate_constant() tripwires below bind these to the real bytes):
@@ -201,15 +236,115 @@ def estate_constant(rel_path: str, name: str) -> Any:
     raise AssertionError(f"{rel_path}: constant {name} not found")
 
 
+STATES_REL = "framework/objectives/states.py"
+
+
 def estate_grammar() -> dict[str, str]:
     """The REAL certainty-grammar tokens read from
     framework/objectives/states.py BYTES (AST, never an import — the
     objectives module row allowlists no cog5 importer, and this family
     needs the tokens, not the module; the boundary stays intact)."""
-    rel = "framework/objectives/states.py"
+    rel = STATES_REL
     return {
         "p5": estate_constant(rel, "STATE_OBSERVATIONALLY_SUPPORTED"),
         "human_source": estate_constant(rel, "HUMAN_VERDICT_SOURCE"),
+    }
+
+
+def _names_in(node: ast.AST) -> frozenset[str]:
+    """Every bare Name / attribute-tail identifier appearing in an expression."""
+    out: set[str] = set()
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Name):
+            out.add(sub.id)
+        elif isinstance(sub, ast.Attribute):
+            out.add(sub.attr)
+    return frozenset(out)
+
+
+def _guarded_returns(stmts: list[ast.stmt], guard: frozenset[str],
+                     out: list[tuple[ast.Return, frozenset[str]]]) -> None:
+    """Collect (Return, enclosing-guard-names). An `if` test guards its BODY
+    only; the else/elif branch inherits the OUTER guard (its own nested `if`
+    contributes its own test)."""
+    for st in stmts:
+        if isinstance(st, ast.If):
+            _guarded_returns(st.body, guard | _names_in(st.test), out)
+            _guarded_returns(st.orelse, guard, out)
+        elif isinstance(st, (ast.For, ast.While, ast.With, ast.Try)):
+            for field in ("body", "orelse", "finalbody", "handlers"):
+                block = getattr(st, field, None) or []
+                if field == "handlers":
+                    for handler in block:
+                        _guarded_returns(handler.body, guard, out)
+                else:
+                    _guarded_returns(block, guard, out)
+        elif isinstance(st, ast.Return):
+            out.append((st, guard))
+
+
+def estate_certainty_ladder(source: Optional[str] = None) -> dict[str, Any]:
+    """DERIVE the §9.3 P5 cap from framework/objectives/states.py BYTES — the
+    ladder is READ, never a hardcoded list (AST only; the objectives boundary
+    row allowlists no cog5 importer).
+
+    The derivation encodes the law states.py:237 states in its own comment —
+    P5 `observationally_supported` is "the CAP for all non-human-verdict
+    evidence": a state token is MACHINE-REACHABLE iff `derive_edge_state` has
+    at least one `return EdgeState(STATE_X, ...)` whose enclosing guards do
+    NOT test a human-verdict fuel flag (a flag assigned True inside a branch
+    whose test names HUMAN_VERDICT_SOURCE — states.py:34-39, "the ONLY
+    promotion fuel" / "the ONLY refutation fuel"). Everything else is ABOVE
+    THE CAP: reachable only through the human channel, so a machine-class
+    artifact claiming it is the machine speaking as the human.
+
+    `source` overrides the bytes (the discriminator proof feeds a mutated
+    states.py and watches the derived sets move — the scan must be a
+    discriminator, never a constant)."""
+    text = source if source is not None else \
+        (_REPO / STATES_REL).read_text(encoding="utf-8")
+    tree = ast.parse(text)
+
+    tokens: dict[str, str] = {}          # STATE_* name -> its literal token
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for tgt in node.targets:
+                if isinstance(tgt, ast.Name) and tgt.id.startswith("STATE_"):
+                    tokens[tgt.id] = ast.literal_eval(node.value)
+    fn = next((n for n in tree.body
+               if isinstance(n, ast.FunctionDef) and n.name == "derive_edge_state"),
+              None)
+    assert fn is not None, f"{STATES_REL}: derive_edge_state not found"
+
+    human_fuel: set[str] = set()
+    for node in ast.walk(fn):
+        if isinstance(node, ast.If) and "HUMAN_VERDICT_SOURCE" in _names_in(node.test):
+            for sub in node.body:
+                if isinstance(sub, ast.Assign):
+                    for tgt in sub.targets:
+                        if isinstance(tgt, ast.Name):
+                            human_fuel.add(tgt.id)
+
+    returns: list[tuple[ast.Return, frozenset[str]]] = []
+    _guarded_returns(fn.body, frozenset(), returns)
+    machine_reachable: set[str] = set()
+    for ret, guard in returns:
+        call = ret.value
+        if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+                and call.func.id == "EdgeState" and call.args):
+            continue
+        arg0 = call.args[0]
+        if not (isinstance(arg0, ast.Name) and arg0.id in tokens):
+            continue
+        if not (guard & human_fuel):
+            machine_reachable.add(tokens[arg0.id])
+    all_states = frozenset(tokens.values())
+    return {
+        "all_states": all_states,
+        "human_fuel_flags": frozenset(human_fuel),
+        "machine_reachable": frozenset(machine_reachable),
+        "above_cap": all_states - frozenset(machine_reachable),
+        "cap": tokens.get("STATE_OBSERVATIONALLY_SUPPORTED"),
     }
 
 
@@ -260,15 +395,53 @@ def results_known_bad(base: Mapping[str, bool], lose: str) -> dict[str, bool]:
 # --------------------------------------------------------------------------
 # §9.1 score vectors + machine-floor eligibility + ranking (+ their mutants)
 # --------------------------------------------------------------------------
+@dataclass(frozen=True)
+class JudgeEvidence:
+    """A judge/LLM score, as an EVIDENCE object. Wrapping it makes the
+    derivation classifiable: a bare float is indistinguishable from a machine
+    measurement, and that indistinguishability IS the X6 escape."""
+    score: float
+
+
+def derive_from_evidence(evidence: Any) -> Optional[str]:
+    """Classify the EVIDENCE OBJECT a dim's number was read from into the
+    closed derivation enum. Unrecognized/absent evidence derives None — and
+    None never satisfies a floor (fail closed: an unprovenanced number is
+    exactly as untrustworthy as a judge-sourced one)."""
+    if isinstance(evidence, _rg.GateResult):
+        return DERIVATION_GATE_RESULT
+    if isinstance(evidence, JudgeEvidence):
+        return DERIVATION_JUDGE_LLM
+    if isinstance(evidence, Mapping) and evidence and \
+            all(isinstance(v, bool) for v in evidence.values()):
+        return DERIVATION_REPLAY_MAP
+    if isinstance(evidence, (list, tuple)) and evidence and \
+            all(isinstance(o, str) for o in evidence):
+        return DERIVATION_SCORER_TRIPLE
+    return None
+
+
 def make_vector(dims: Mapping[str, tuple[Any, str]],
-                table_order: float = 0.0) -> dict[str, Any]:
+                table_order: float = 0.0,
+                evidence: Optional[Mapping[str, Any]] = None) -> dict[str, Any]:
     """The §9.1 schema-SEPARATED scorer output: `vector` (floors-checkable)
-    apart from `table_order` (presentation only)."""
+    apart from `table_order` (presentation only).
+
+    CHAIN OF CUSTODY (X6, the §6.2 ingester shape lifted to the vector): each
+    dim's `derivation` is STAMPED HERE from the evidence OBJECT the caller
+    handed over — there is no derivation parameter, so a caller can never
+    NAME a machine derivation for a number it did not measure. A judge number
+    passed as a machine dim's evidence stamps `judge:llm_score` and dies at
+    the floor; evidence the constructor cannot classify stamps None and dies
+    the same way."""
+    ev = dict(evidence or {})
     for name, (value, kind) in dims.items():
         assert kind in (MACHINE_KIND, JUDGE_KIND), f"bad dim kind {kind!r}"
         assert value == UNKNOWN or isinstance(value, (int, float)), name
     return {
-        "vector": {n: {"value": v, "kind": k} for n, (v, k) in dims.items()},
+        "vector": {n: {"value": v, "kind": k,
+                       DERIVATION_KEY: derive_from_evidence(ev.get(n))}
+                   for n, (v, k) in dims.items()},
         "table_order": float(table_order),
     }
 
@@ -278,14 +451,53 @@ def candidate_vector(*, candidate_results: Mapping[str, bool],
                      judge_score: float,
                      table_order: float = 0.0) -> dict[str, Any]:
     """The reference scorer: machine dims measured from the REAL replay maps
-    + the REAL gate result; the judge dim is ranking-only by construction."""
+    + the REAL gate result; the judge dim is ranking-only by construction.
+    Every dim's derivation is stamped from the evidence object actually read
+    (never declared) — the reference scorer's own custody proof."""
     total = len(candidate_results)
     passed = sum(1 for v in candidate_results.values() if v is True)
     return make_vector({
         "frozen_pass_rate": (passed / total, MACHINE_KIND),
         "frozen_regressions": (len(gate_result.regressed), MACHINE_KIND),
         "judge_score": (judge_score, JUDGE_KIND),
-    }, table_order=table_order)
+    }, table_order=table_order, evidence={
+        "frozen_pass_rate": candidate_results,
+        "frozen_regressions": gate_result,
+        "judge_score": JudgeEvidence(judge_score),
+    })
+
+
+def mutant_judge_number_into_machine_dim(*, judge_score: float,
+                                         table_order: float = 0.0,
+                                         ) -> dict[str, Any]:
+    """§12 sim-4 NEGATIVE CONTROL (X6, the DERIVATION arm): the same escape
+    built through the HONEST constructor — the scorer hands the judge's
+    number over as the machine dim's evidence. Construction stamps the truth
+    (`judge:llm_score`) and the floor predicate must refuse it. This is the
+    exact repro the fresh-context review filed: a judge-derived value
+    satisfying a MACHINE floor while every `kind` label reads 'machine'."""
+    return make_vector({
+        "frozen_pass_rate": (judge_score, MACHINE_KIND),
+        "frozen_regressions": (0, MACHINE_KIND),
+        "judge_score": (judge_score, JUDGE_KIND),
+    }, table_order=table_order, evidence={
+        "frozen_pass_rate": JudgeEvidence(judge_score),
+        "frozen_regressions": JudgeEvidence(judge_score),
+        "judge_score": JudgeEvidence(judge_score),
+    })
+
+
+def machine_derivation_violations(pack: Mapping[str, Any]) -> list[str]:
+    """Every MACHINE dim whose stamped derivation is not machine evidence —
+    judge-sourced, absent, or out-of-enum (fail closed)."""
+    bad: list[str] = []
+    for name, dim in pack["vector"].items():
+        if dim.get("kind") != MACHINE_KIND:
+            continue
+        derivation = dim.get(DERIVATION_KEY)
+        if derivation not in MACHINE_DERIVATIONS:
+            bad.append(f"{name}={derivation!r}")
+    return bad
 
 
 def machine_dims(pack: Mapping[str, Any]) -> dict[str, Any]:
@@ -298,9 +510,24 @@ def admission_eligible(pack: Mapping[str, Any],
     """The reference floor predicate (§9.1/X6): MACHINE floors only —
     zero frozen regressions AND strict machine improvement over the
     incumbent pass-rate; `unknown` never satisfies a floor; judge dims are
-    structurally invisible here; `table_order` is never read."""
-    mine, theirs = machine_dims(pack), machine_dims(incumbent)
+    structurally invisible here; `table_order` is never read.
+
+    X6 IS ABOUT THE VALUE, NOT THE LABEL: before any floor is read, every
+    machine dim on BOTH sides must carry a MACHINE derivation. A `kind:
+    machine` label is the scorer's own self-declaration — binding the floor
+    to it alone lets a scorer copy the judge's number into a machine dim and
+    satisfy the crown-jewel law with judge evidence. Judge-sourced, absent,
+    and out-of-enum derivations all refuse (fail closed)."""
     reasons: list[str] = []
+    for who, side in (("candidate", pack), ("incumbent", incumbent)):
+        for bad in machine_derivation_violations(side):
+            reasons.append(f"[FLOOR-DERIVATION] {who} machine dim {bad} is not "
+                           "derived from machine evidence — a machine FLOOR is "
+                           "satisfied by machine EVIDENCE, never by a dim that "
+                           "merely calls itself machine (X6/§9.1)")
+    if reasons:
+        return False, reasons
+    mine, theirs = machine_dims(pack), machine_dims(incumbent)
     for name in ("frozen_pass_rate", "frozen_regressions"):
         if mine.get(name) == UNKNOWN or theirs.get(name) == UNKNOWN:
             reasons.append(f"[FLOOR-UNKNOWN] {name} is quarantined 'unknown' — "
@@ -401,6 +628,48 @@ def assert_sim4_judge_only_ineligible(eligible: bool, reasons: list[str]) -> Non
     assert any("[FLOOR-IMPROVEMENT]" in r or "[FLOOR-UNKNOWN]" in r
                for r in reasons), (
         "[SIM4-X3] the refusal must cite the unmet MACHINE floor")
+
+
+def assert_machine_floors_machine_derived(pack: Mapping[str, Any]) -> None:
+    """[SIM4-X6-DERIVATION] the re-runnable form of the custody law: every
+    MACHINE dim in a scorer pack must be stamped with MACHINE evidence. Run
+    this over the real `scorers.py` output at W6 surgery — it is the arm that
+    stops a judge-derived number from ever reaching a machine floor, and it
+    holds without executing the eligibility predicate at all."""
+    bad = machine_derivation_violations(pack)
+    assert not bad, (
+        "[SIM4-X6-DERIVATION] machine dim(s) " + str(bad) + " are not derived "
+        "from machine evidence — a scorer stamping a judge-derived (or "
+        "unprovenanced) number as a machine dimension is the X6 escape the "
+        "`kind` label alone cannot see (§9.1/§9.2)")
+
+
+def assert_derivation_refused(eligible: bool, reasons: list[str]) -> None:
+    """[SIM4-X6-DERIVATION] the joint side of the same law: the predicate must
+    REFUSE, citing the derivation, before any floor is read."""
+    assert eligible is False, (
+        "[SIM4-X6-DERIVATION] a pack whose machine floors rest on judge-"
+        "derived or unprovenanced numbers must be admission-INELIGIBLE")
+    assert any("[FLOOR-DERIVATION]" in r for r in reasons), (
+        "[SIM4-X6-DERIVATION] the refusal must cite the DERIVATION, not merely "
+        "an unmet floor — the law is about where the number came from")
+
+
+def assert_table_order_never_reaches_the_joint(
+        pack: Mapping[str, Any], incumbent: Mapping[str, Any],
+        predicate: Callable = admission_eligible) -> None:
+    """[LC-TABLE-ORDER] the §9.1 structural law, as a re-runnable battery
+    (promoted out of an inline assert so integrator surgery can run it
+    against the REAL league/scorer joint): two packs identical except for the
+    presentation scalar must get the SAME answer. No scalar reaches any
+    promotion, admission, or graduation joint."""
+    high = {**pack, "table_order": 0.99}
+    low = {**pack, "table_order": 0.01}
+    assert predicate(high, incumbent) == predicate(low, incumbent), (
+        "[LC-TABLE-ORDER] a predicate keying on table_order reaches an "
+        "admission joint on a presentation scalar — `table_order` is display "
+        "ordering; no scalar reaches any promotion, admission, or graduation "
+        "joint (§9.1)")
 
 
 def assert_sim5_divergence_flagged(out: Mapping[str, Any]) -> None:
@@ -608,6 +877,13 @@ print("probe-ok")
 """
 
 CANARY_ENV = "COG5_T2_CANARY_SECRET"
+# §4.4 is an ALLOWLIST law, so the escape arm cannot be a single named canary:
+# a harness leaking some OTHER credential var would sail past a name check.
+# Credential-SHAPED variable NAMES (never values — nothing here reads or
+# records an env value) are refused as a class.
+CREDENTIAL_ENV_RE = re.compile(r"TOKEN|KEY|SECRET|PASSWORD|ANTHROPIC|OAUTH",
+                               re.IGNORECASE)
+LEAK_ENV = "ANTHROPIC_OAUTH_TOKEN"     # a NON-canary credential-shaped name
 
 
 def _run_probe_child(stage: str, workdir: Path, env: dict[str, str]) -> dict[str, Any]:
@@ -642,6 +918,20 @@ def make_passthrough_mutant_runner(workdir: Path) -> Callable[[str, dict], dict]
     def runner(stage: str, spec: dict[str, Any]) -> dict[str, Any]:
         del spec
         return _run_probe_child(stage, workdir, dict(os.environ))
+    return runner
+
+
+def make_partial_leak_mutant_runner(workdir: Path, leak_var: str = LEAK_ENV,
+                                    ) -> Callable[[str, dict], dict]:
+    """§12 escape NEGATIVE CONTROL (the §4.4 arm, PATTERN direction): a
+    harness that scrubs the environment but leaks ONE credential-shaped var
+    that is NOT the named canary. It defeats a single-name canary check and
+    must still RED — the allowlist law is about the class, not one name."""
+    def runner(stage: str, spec: dict[str, Any]) -> dict[str, Any]:
+        del spec
+        env = {"PATH": os.environ.get("PATH", ""), "PYTHONHASHSEED": "0",
+               leak_var: "leaked-credential-fixture"}
+        return _run_probe_child(stage, workdir, env)
     return runner
 
 
@@ -771,6 +1061,14 @@ def assert_arm_escape(workdir: Path, *, outside_before: frozenset[str],
             f"[ARM-ESCAPE] candidate-stage code OBSERVED the live credential "
             f"canary in {stage} — the harness must pass an explicit ALLOWLIST "
             "environment (§4.4), never the live env")
+        # the canary is one name; §4.4 is a CLASS law — any credential-shaped
+        # NAME reaching candidate-stage code is the same escape (values are
+        # never read or recorded, only names).
+        leaked = sorted(n for n in env if CREDENTIAL_ENV_RE.search(n))
+        assert not leaked, (
+            f"[ARM-ESCAPE] candidate-stage code OBSERVED credential-shaped env "
+            f"var(s) {leaked} in {stage} — the §4.4 allowlist admits no "
+            "credential-class name, canary or otherwise")
         assert "PATH" in env, "[ARM-ESCAPE] the allowlist env lost PATH"
     assert outside_before == outside_after, (
         "[ARM-ESCAPE] the outside-workdir diff must be EMPTY after a "
@@ -780,11 +1078,44 @@ def assert_arm_escape(workdir: Path, *, outside_before: frozenset[str],
 # --------------------------------------------------------------------------
 # §6.2 provenance: ingester (chain-of-custody), counting predicate, mutants
 # --------------------------------------------------------------------------
+CUSTODY_SEAL_KEY = "custody_seal"
+CUSTODY_FIELDS = ("source_class", "provenance", "stratum", "payload_ref")
+
+# The INGESTER-PLANE key. §6.2 says candidate/league/generator code can never
+# "set OR REWRITE" provenance; a stamp alone only covers SET, because nothing
+# stops a later writer from editing the field it already owns. Sealing the
+# custody fields under a key only the ingester holds makes a post-ingest
+# rewrite DETECTABLE, so the rewrite direction is armed too.
+# HONEST SCOPE: this models the plane boundary (§5.2 WALL) — it is not a
+# cryptographic defence against code running in this same process, and it is
+# not the physical guarantee. The physical counterpart is W2 T1's append-only
+# archive chain (§5.2 prev_hash/sequence/sealed segments). No assertion in
+# this family depends on the key's VALUE, so the suite stays deterministic.
+_INGEST_KEY = os.urandom(32)
+
+
+def _custody_seal(row: Mapping[str, Any], key: bytes) -> str:
+    payload = json.dumps({f: row.get(f) for f in CUSTODY_FIELDS}, sort_keys=True)
+    return hmac.new(key, payload.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def custody_intact(row: Mapping[str, Any]) -> bool:
+    """True iff the row still carries the seal the INGESTER bound over its
+    custody fields — i.e. neither `provenance` nor `source_class` (nor the
+    stratum/payload identity they were stamped for) changed after ingestion."""
+    seal = row.get(CUSTODY_SEAL_KEY)
+    if not isinstance(seal, str):
+        return False
+    return hmac.compare_digest(seal, _custody_seal(row, _INGEST_KEY))
+
+
 def ingest_rows(raw_rows: list[Mapping[str, Any]],
                 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """The reference archive INGESTER: provenance is stamped HERE from the
     named source class — never accepted from the row (the §5.2 WALL covers
-    the field). Returns (accepted, refused); refused rows never count."""
+    the field) — and the custody fields are SEALED under the ingester-plane
+    key so a later rewrite is detectable. Returns (accepted, refused);
+    refused rows never count."""
     accepted: list[dict[str, Any]] = []
     refused: list[dict[str, Any]] = []
     for raw in raw_rows:
@@ -800,20 +1131,74 @@ def ingest_rows(raw_rows: list[Mapping[str, Any]],
             continue
         row["provenance"] = SOURCE_CLASS_TO_PROVENANCE[source]
         assert row["provenance"] in PROVENANCE_ENUM
+        row[CUSTODY_SEAL_KEY] = _custody_seal(row, _INGEST_KEY)
         accepted.append(row)
     return accepted, refused
+
+
+def mutant_rewrite_after_ingest(rows: list[Mapping[str, Any]], *,
+                                as_source: str = "consequence_ledger",
+                                ) -> list[dict[str, Any]]:
+    """§6.2 NEGATIVE CONTROL (the REWRITE direction of the laundering
+    vector): league/generator code reaches into ALREADY-INGESTED rows and
+    rewrites BOTH `provenance` and `source_class` so every non-real row reads
+    as real. Nothing is re-ingested, so the stale seal no longer verifies —
+    which is exactly what makes the rewrite detectable rather than silent.
+    It launders EVERY non-real row (not a subset) so the laundered corpus
+    actually clears the §6.2 floor — a mutant that cannot reach the floor
+    could never prove the opening predicate holds."""
+    out: list[dict[str, Any]] = []
+    for raw in rows:
+        row = dict(raw)
+        if row.get("provenance") not in REAL_PROVENANCE:
+            row["source_class"] = as_source
+            row["provenance"] = SOURCE_CLASS_TO_PROVENANCE[as_source]
+        out.append(row)
+    return out
+
+
+def mutant_count_ignoring_custody(rows: list[Mapping[str, Any]],
+                                  ) -> dict[str, dict[str, int]]:
+    """§6.2 NEGATIVE CONTROL: a counter that reads the provenance FIELD and
+    never checks the seal — so a post-ingest rewrite counts."""
+    out: dict[str, dict[str, int]] = {}
+    for row in rows:
+        stratum = str(row.get("stratum", "unstrated"))
+        cell = out.setdefault(stratum, {"real_live": 0, "real_mined": 0,
+                                        "counted": 0})
+        if row.get("provenance") in REAL_PROVENANCE and \
+                row.get("source_class") in NAMED_REAL_SOURCES:
+            cell[row["provenance"]] += 1
+            cell["counted"] += 1
+    return out
+
+
+def assert_custody_intact(rows: list[Mapping[str, Any]]) -> None:
+    """[LC-CUSTODY] every corpus row must still carry the seal the ingester
+    bound at ingestion. A broken/absent seal means `provenance` or
+    `source_class` was set or REWRITTEN outside the ingester — §6.2's wall
+    covers rewrite as well as set."""
+    broken = sorted(str(r.get("payload_ref")) for r in rows
+                    if not custody_intact(r))
+    assert not broken, (
+        f"[LC-CUSTODY] row(s) {broken} carry a broken/absent ingest seal — "
+        "their provenance or source_class was set or REWRITTEN after "
+        "ingestion; candidate/league/generator code can do NEITHER (§6.2)")
 
 
 def mutant_ingest_trusting(raw_rows: list[Mapping[str, Any]],
                            ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """§6.2 NEGATIVE CONTROL (the laundering vector): an ingester that TRUSTS
-    a row-supplied provenance stamp."""
+    a row-supplied provenance stamp. Its ONLY defect is trust — it seals like
+    the reference ingester, so the laundering cannot hide behind a missing
+    seal; it surfaces where it really lives, at the counting predicate."""
     accepted: list[dict[str, Any]] = []
     for raw in raw_rows:
         row = dict(raw)
         row["provenance"] = row.get(
             "provenance",
             SOURCE_CLASS_TO_PROVENANCE.get(row.get("source_class"), "synthetic"))
+        row[CUSTODY_SEAL_KEY] = _custody_seal(row, _INGEST_KEY)
         accepted.append(row)
     return accepted, []
 
@@ -821,14 +1206,16 @@ def mutant_ingest_trusting(raw_rows: list[Mapping[str, Any]],
 def count_toward_minimums(rows: list[Mapping[str, Any]],
                           ) -> dict[str, dict[str, int]]:
     """The §6.2 counting predicate: ONLY real_live/real_mined rows ingested
-    from the NAMED real sources count. Per-stratum {real_live, real_mined,
-    counted} — synthetic/sim_replay never appear in `counted`."""
+    from the NAMED real sources — WITH AN INTACT INGEST SEAL — count.
+    Per-stratum {real_live, real_mined, counted}; synthetic/sim_replay never
+    appear in `counted`, and neither does a row whose custody fields were
+    rewritten after ingestion."""
     out: dict[str, dict[str, int]] = {}
     for row in rows:
         stratum = str(row.get("stratum", "unstrated"))
         cell = out.setdefault(stratum, {"real_live": 0, "real_mined": 0,
                                         "counted": 0})
-        if row.get("provenance") in REAL_PROVENANCE and \
+        if custody_intact(row) and row.get("provenance") in REAL_PROVENANCE and \
                 row.get("source_class") in NAMED_REAL_SOURCES:
             cell[row["provenance"]] += 1
             cell["counted"] += 1
@@ -853,16 +1240,21 @@ def mutant_count_all(rows: list[Mapping[str, Any]]) -> dict[str, dict[str, int]]
 def assert_count_honest(counts: Mapping[str, Mapping[str, int]],
                         rows: list[Mapping[str, Any]]) -> None:
     """[LC-LAUNDER] `counted` must equal the real_live+real_mined sum from
-    named real sources — a synthetic-marked row reaching the count REDs."""
+    named real sources WITH INTACT CUSTODY — a synthetic-marked row reaching
+    the count REDs, and so does a row whose provenance was rewritten after
+    ingestion (the recomputation refuses a broken seal, so a mutated row can
+    no longer make the battery agree with itself)."""
     for stratum, cell in counts.items():
         real = sum(1 for r in rows
                    if str(r.get("stratum", "unstrated")) == stratum
+                   and custody_intact(r)
                    and r.get("provenance") in REAL_PROVENANCE
                    and r.get("source_class") in NAMED_REAL_SOURCES)
         assert cell["counted"] == real == cell["real_live"] + cell["real_mined"], (
             f"[LC-LAUNDER] stratum {stratum!r}: counted={cell['counted']} but "
             f"only {real} rows are real_live/real_mined from NAMED real "
-            "sources — synthetic may never count toward a §6.2 minimum")
+            "sources with intact custody — synthetic (or rewritten) rows may "
+            "never count toward a §6.2 minimum")
 
 
 # --------------------------------------------------------------------------
@@ -978,6 +1370,30 @@ def mutant_league_row_verdict_human(candidate_id: str, **kw: Any) -> dict[str, A
     return row
 
 
+def mutant_league_row_above_cap(candidate_id: str,
+                                state_name: str = "STATE_INTERVENTION_SUPPORTED",
+                                **kw: Any) -> dict[str, Any]:
+    """§9.3 NEGATIVE CONTROL (the P5 cap arm): a league row claiming an
+    ABOVE-cap certainty. The default is the real states.py P3 token
+    `intervention_supported` — whose Captain word is literally 'tested' —
+    chosen because it slips past the Captain-vocabulary regex entirely: the
+    cap needs its own binding to the ladder, not a word scan."""
+    row = make_league_row(candidate_id, **kw)
+    row["certainty"] = estate_constant(STATES_REL, state_name)
+    return row
+
+
+def mutant_league_row_captain_vocab_keys(candidate_id: str,
+                                         **kw: Any) -> dict[str, Any]:
+    """§9.3 NEGATIVE CONTROL (the KEY arm): a foundry artifact minting the
+    Captain vocabulary as FIELD NAMES rather than values — invisible to a
+    values-only scan while saying the forbidden word just as loudly."""
+    row = make_league_row(candidate_id, **kw)
+    row["tested"] = True
+    row["falsified"] = False
+    return row
+
+
 def assert_league_row_closed_shape(row: Mapping[str, Any]) -> None:
     assert row.get("fitness_claim") == "none", (
         "[LC-FITNESS] every league output while closed carries "
@@ -987,17 +1403,47 @@ def assert_league_row_closed_shape(row: Mapping[str, Any]) -> None:
         "[SIM2X-VH] a foundry artifact minting review.source "
         "verdict_human REDs (§9.3 — the league can never speak as the human "
         "channel)")
+    # the cap rides the closed-shape battery so every row-validating caller
+    # gets it (it was previously only an inline assert against the reference
+    # row-maker, which sets the value itself — near-tautological).
+    assert_certainty_capped(row)
 
 
 # ---- §9.2/§9.3 promotion joint + vocabulary ------------------------------
+MACHINE_CLASS_MARKERS = frozenset({"fitness_claim", "league_score"})
+
+
+def is_machine_class_artifact(item: Any) -> bool:
+    """Structural machine-class identification (§9.3): a foundry/league
+    artifact is recognisable by its own schema — the closed-league
+    `fitness_claim` field, the machine-class speech keys
+    (scored/ranked/observed), or a declared league_score kind."""
+    if not isinstance(item, Mapping):
+        return False
+    keys = set(item)
+    return bool(keys & MACHINE_CLASS_MARKERS) or bool(keys & MACHINE_SPEAK) \
+        or item.get("kind") in MACHINE_CLASS_MARKERS
+
+
 def reference_edge_promotion(evidence: list[Mapping[str, Any]]) -> bool:
     """The reference mission-edge promotion predicate (§9.2): promotes ONLY
     on a human verdict; machine/league/judge artifacts may demote or
-    withhold, never promote."""
-    return any(
-        e.get("review", {}).get("verdict") == "confirmed"
-        and e.get("review", {}).get("source") == HUMAN_VERDICT_SOURCE
-        for e in evidence)
+    withhold, never promote.
+
+    CLASS BEFORE CONTENT: a machine-class artifact is skipped BEFORE its
+    `review` is read. Trusting any dict that merely carries
+    `review.source: verdict_human` means a forged league row — the very
+    artifact the §9.3 minting battery REDs on — walks straight into the
+    promotion joint, because the two laws were never composed. The forgery
+    must fail at the joint too, not only in a battery nobody calls."""
+    for item in evidence:
+        if is_machine_class_artifact(item):
+            continue        # may demote/withhold; NEVER promote (§9.2/§9.3)
+        review = item.get("review", {})
+        if review.get("verdict") == "confirmed" and \
+                review.get("source") == HUMAN_VERDICT_SOURCE:
+            return True
+    return False
 
 
 def mutant_promotes_on_league_score(evidence: list[Mapping[str, Any]]) -> bool:
@@ -1011,6 +1457,19 @@ def mutant_promotes_on_league_score(evidence: list[Mapping[str, Any]]) -> bool:
                for e in evidence)
 
 
+def mutant_promotes_on_forged_league_review(evidence: list[Mapping[str, Any]],
+                                            ) -> bool:
+    """§9.3 SIM-2 extension NEGATIVE CONTROL (the FORGERY arm): the
+    class-blind promotion predicate — it reads `review.source` off ANY dict,
+    so a league row that minted `verdict_human` promotes a mission edge. This
+    was the reference predicate's own shape before the class check; keeping
+    it as a named mutant pins the escape it used to allow."""
+    return any(
+        e.get("review", {}).get("verdict") == "confirmed"
+        and e.get("review", {}).get("source") == HUMAN_VERDICT_SOURCE
+        for e in evidence)
+
+
 def assert_no_promotion_without_human(promoted: bool) -> None:
     assert promoted is False, (
         "[SIM2X-LEAGUE-FUEL] no edge/graduation predicate may consume a "
@@ -1018,10 +1477,34 @@ def assert_no_promotion_without_human(promoted: bool) -> None:
         "(§9.2, the composite certainty law)")
 
 
+def assert_machine_class_never_promotes(evidence: list[Mapping[str, Any]],
+                                        promoted: bool) -> None:
+    """[SIM2X-FORGED-VH] the COMPOSED law (the two §9.3 SIM-2 arms run
+    together, which is the point — separately they leave a forged league row
+    minting `verdict_human` promoting a mission edge while the minting
+    battery sits uncalled): every league ROW in the evidence must survive the
+    closed-shape battery, AND the joint must not have promoted (bare
+    `{kind: league_score}` refs are evidence pointers, not rows — they are
+    machine-class for the joint, but carry no row schema to validate)."""
+    for item in evidence:
+        if isinstance(item, Mapping) and (
+                "fitness_claim" in item or (set(item) & MACHINE_SPEAK)):
+            assert_league_row_closed_shape(item)
+    assert promoted is False, (
+        "[SIM2X-FORGED-VH] a machine-class artifact fuelled a promotion — "
+        "league/benchmark/holdout artifacts may demote or withhold, never "
+        "promote, no matter what `review` they carry (§9.2/§9.3)")
+
+
 def vocab_violations(artifact: Any) -> list[str]:
-    """The §9.3 tripwire clone: walk a foundry artifact; every string value
+    """The §9.3 tripwire clone: walk a foundry artifact; every string
     carrying the Captain vocabulary (tested / falsified / 'it worked') is a
-    violation — machine artifacts speak scored/ranked/observed."""
+    violation — machine artifacts speak scored/ranked/observed.
+
+    KEYS COUNT AS SPEECH: a scan of string VALUES only is blind to a row that
+    mints the Captain vocabulary as FIELD NAMES (`{"tested": true,
+    "falsified": false}`) — the artifact says the forbidden word just as
+    loudly, and the tripwire stayed green. Keys and values are both walked."""
     found: list[str] = []
 
     def walk(node: Any, path: str) -> None:
@@ -1030,6 +1513,8 @@ def vocab_violations(artifact: Any) -> list[str]:
                 found.append(f"{path}: {node!r}")
         elif isinstance(node, Mapping):
             for k, val in node.items():
+                if isinstance(k, str) and _CAPTAIN_VOCAB_RE.search(k):
+                    found.append(f"{path}.<key>: {k!r}")
                 walk(val, f"{path}.{k}")
         elif isinstance(node, (list, tuple)):
             for i, val in enumerate(node):
@@ -1043,7 +1528,40 @@ def assert_machine_class_vocab(artifact: Any) -> None:
     assert not bad, (
         "[VOCAB] league/benchmark/holdout artifacts are MACHINE-CLASS: they "
         "speak scored/ranked/observed and cap at P5 — never the Captain "
-        f"vocabulary (§9.3). Violations: {bad}")
+        f"vocabulary (§9.3), in a value OR a key. Violations: {bad}")
+
+
+def assert_certainty_capped(row: Mapping[str, Any]) -> None:
+    """[P5-CAP] a machine-class artifact's `certainty` must sit at or below
+    the states.py P5 rung. The admissible set is DERIVED FROM BYTES
+    (estate_certainty_ladder) — the states above the cap are precisely those
+    `derive_edge_state` can reach only through human-verdict fuel, so a
+    machine artifact carrying one has minted a human-channel claim. The
+    Captain-vocabulary regex does NOT catch this: `intervention_supported` is
+    a real states.py token whose Captain word is 'tested', and it contains
+    none of the banned words. Missing/unknown tokens fail closed."""
+    # NOTE the DISTINCT tag: the ladder-integrity failures below must never be
+    # mistakable for a cap violation, or a mutant test matching [P5-CAP] would
+    # go green on a broken scan (paid in the fix round's own mutation proof).
+    ladder = estate_certainty_ladder()
+    assert ladder["above_cap"], (
+        "[P5-LADDER] the ladder derivation found NO above-cap states — the "
+        "scan went vacuous against states.py and would pass anything")
+    assert ladder["cap"] == P5_CAP and P5_CAP in ladder["machine_reachable"], (
+        f"[P5-LADDER] the P5 cap token drifted: states.py derives "
+        f"{ladder['cap']!r} (machine-reachable: "
+        f"{sorted(ladder['machine_reachable'])})")
+    token = row.get("certainty")
+    assert token in ladder["all_states"], (
+        f"[P5-CAP] certainty {token!r} is not a states.py internal state — a "
+        "machine-class row states its certainty in the estate's own closed "
+        "vocabulary or not at all (fail closed; §9.3/§5.2 'no second drifting "
+        f"enum'). Known: {sorted(ladder['all_states'])}")
+    assert token not in ladder["above_cap"], (
+        f"[P5-CAP] certainty {token!r} is ABOVE the P5 cap — states.py reaches "
+        "it ONLY through human-verdict fuel, so a league/benchmark/holdout "
+        "artifact claiming it is the machine speaking as the human channel. "
+        f"Machine artifacts cap at {P5_CAP!r} (§9.3)")
 
 
 # --------------------------------------------------------------------------
