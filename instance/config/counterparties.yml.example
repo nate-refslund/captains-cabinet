@@ -1,0 +1,66 @@
+# =============================================================
+# counterparties.yml.example — the framework-shippable TWIN
+# =============================================================
+# Copy to instance/config/counterparties.yml and describe YOUR counterparties.
+# The entry below is a PLACEHOLDER: consent ships `pending` — a fresh instance
+# must never arrive with a pre-consented party. Same law as peers.yml.example,
+# applied to people and organisations instead of peer Cabinets.
+#
+# A COUNTERPARTY is a party the org has a standing relationship with who is
+# NOT the Captain. The Captain is the authority root and is never listed here.
+#
+# Loaded by framework/channels/counterparty.py. Registry-as-DATA: it stamps
+# WHO a send went to into the audit ledger. It renders no authority verdict
+# and gates no send today — `outbound_permitted()` exists and is honest, but
+# nothing consults it yet (on a cabinet with no registry it answers False for
+# everyone, so wiring it into send() is a separate Captain-gated act).
+#
+# Schema per entry (the map key is the id):
+#   <id>                  — slug ^[a-z0-9][a-z0-9-]{0,63}$; this is the ONLY
+#                           name stamped into the ledger, so keep it opaque
+#                           enough for an audit record
+#   kind                  — person | org
+#   relationship          — customer | supplier | employee | contractor |
+#                           partner | advisor | regulator | other
+#   handles               — REQUIRED, non-empty list of addresses or opaque
+#                           chat/member ids. Case-folded on load, so
+#                           Ada@Acme.com and ada@acme.com are ONE party.
+#                           A handle claimed by two entries makes the WHOLE
+#                           file corrupt — a consent record may not guess.
+#   consent               — granted | pending | withdrawn. Ships `pending`.
+#                           Only the Captain moves an entry to `granted`.
+#                           `withdrawn` always beats scope.
+#                           (`unknown` is the ABSENCE answer for an
+#                           unregistered handle and may never be written here.)
+#   captain_scope         — REQUIRED mapping with exactly one key:
+#       channels          — the adapter names this party may be contacted on
+#                           (e.g. teams, outlook, slack). There is NO wildcard
+#                           by design. An EMPTY list is legal and means
+#                           "consented, but no channel authorized yet".
+#   display_name          — OPTIONAL, free text, for humans. NEVER journaled.
+#   notes                 — OPTIONAL, free text, for humans. NEVER journaled.
+#
+# FAIL-CLOSED: an unknown key, a wrong version, an off-vocabulary value, a
+# duplicate handle, or unparseable YAML loads as the EMPTY registry — every
+# recipient is then an unresolved party with `unknown` consent. One typo does
+# not best-effort-consent the rest of the file.
+#
+# The live instance/config/counterparties.yml is deployment-created and
+# untracked; only this placeholder twin is tracked, so no real person ever
+# enters the repo.
+
+version: 1
+
+counterparties:
+  example-counterparty:
+    display_name: Example Counterparty
+    kind: org
+    relationship: partner
+    handles:
+      - contact@example.invalid
+    consent: pending          # Captain flips to `granted` to enable contact
+    captain_scope:
+      channels: []            # add adapter names once the Captain scopes them
+    notes: >
+      Placeholder party — replace with your real counterparty and keep
+      consent `pending` until the Captain rules the relationship live.

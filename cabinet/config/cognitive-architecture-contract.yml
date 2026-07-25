@@ -135,6 +135,20 @@ temporary_allowances:
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: COG-7 compaction, or the contact dead-man folds into the evidence plane
+  - phase: counterparty-registry
+    budget: framework_production_modules
+    additional: 1
+    reason: the counterparty noun — framework/channels/counterparty.py, the fail-closed instance-config loader plus pure resolve/consent/permission/journal predicates for a party the org has a standing relationship with who is not the Captain (before it, a recipient was one bare string with no identity, consent or Captain-granted scope anywhere in the tree). ONE new module; the wiring into framework/channels/contract.py is additive and adds no module. EXACT measured running total (239 vs 238 base), 2026-07-25, via cognitive-architecture-census.py — the zero-headroom observed==max law means this allowance is the exact new total, never a pre-allocated ceiling
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: the registry folds into a single party/consent plane alongside instance/config/peers.yml, or COG-7 compaction absorbs it
+  - phase: counterparty-registry
+    budget: framework_production_noncomment_lines
+    additional: 356
+    reason: the counterparty noun — +323 framework/channels/counterparty.py (closed consent/kind/relationship vocabularies, the realpath-contained fail-closed YAML loader whose every malformation resolves to the EMPTY registry, whole-file corruption on one bad entry or a duplicate handle so a typo can never best-effort-consent its siblings, and the resolve/consent_of/outbound_permitted/journal_fields predicates) and +33 framework/channels/contract.py (the registry resolved once beside org_domains, the counterparty() accessor, and the three closed-vocabulary identity keys _base_payload now stamps into the audit ledger it already writes per send attempt — classify()/action_type_for()/send() behaviour byte-identical). EXACT measured running total (67290 vs 66934 base), 2026-07-25, via cognitive-architecture-census.py
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: the registry folds into a single party/consent plane alongside instance/config/peers.yml, or COG-7 compaction absorbs it
 ownership:
   authoritative_state: domain_transaction
   cross_domain_delivery: transactional_outbox

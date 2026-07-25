@@ -39,6 +39,20 @@ family — `outbox_dispatched` / `outbox_failed` — discriminated by
 (sha256 + length only); recipient/thread/audience are, for audit. A ledger
 write failure WARNs instead of raising: by then the send has already left,
 and re-raising would invite a retry (a duplicate outbound side effect).
+
+Counterparty identity: the journal ALSO carries who the recipient is —
+`counterparty_id` / `counterparty_consent` / `counterparty_relationship`,
+resolved through `framework.channels.counterparty` against the Captain's
+instance registry. Before that registry existed a recipient was one bare
+string, so the audit record could say a send happened but not to WHICH
+standing relationship. This is journaling ONLY: the registry renders no
+authority verdict here, `classify()` and `action_type_for()` are untouched
+(an org-domain address is exactly as `internal` as before), and no send is
+gated on consent — `counterparty.outbound_permitted` exists and is honest but
+nothing consults it, because on a cabinet with no registry it answers False
+for everyone. Only CLOSED-VOCABULARY identifiers are stamped (a slug id, a
+consent state, a relationship class); `display_name`/`notes` are free text and
+never leave the registry.
 """
 from __future__ import annotations
 
@@ -55,6 +69,7 @@ if str(_FRAMEWORK_ROOT) not in sys.path:
     sys.path.insert(0, str(_FRAMEWORK_ROOT))
 
 from framework.events.emitter import emit
+from framework.channels import counterparty as _counterparty
 
 # The audience vocabulary `classify()` resolves — feeds the authority
 # classifier's internal/external action_type split.
@@ -322,6 +337,7 @@ class ChannelAdapter(abc.ABC):
         org_domains: Optional[Iterable[str]] = None,
         root: str | Path | None = None,
         actor: str = "system",
+        counterparties: Optional[dict] = None,
     ) -> None:
         if not isinstance(self.name, str) or not self.name:
             raise ChannelConfigError("adapter must declare a non-empty name")
@@ -338,6 +354,14 @@ class ChannelAdapter(abc.ABC):
                 str(d).strip().lower() for d in org_domains)
         else:
             self._org_domains = load_org_domains(root)
+        # The Captain's counterparty registry, resolved ONCE (same lifecycle
+        # as org_domains). An explicit dict wins so tests/callers can pass a
+        # registry without materializing a config file; None loads from the
+        # instance layer and fail-closes to {} on anything malformed.
+        if counterparties is not None:
+            self._counterparties = dict(counterparties)
+        else:
+            self._counterparties = _counterparty.load_counterparties(root)
         self._actor = actor
 
     # -- classification -----------------------------------------------------
@@ -345,6 +369,20 @@ class ChannelAdapter(abc.ABC):
     @property
     def org_domains(self) -> "frozenset[str]":
         return self._org_domains
+
+    @property
+    def counterparties(self) -> dict:
+        """The resolved counterparty registry (read-only view by convention)."""
+        return self._counterparties
+
+    def counterparty(self, recipient: str):
+        """The registered `Counterparty` for `recipient`, or None.
+
+        Identity only — this NEVER changes `classify()`, `action_type_for()`
+        or any send path. A recipient with no registry entry is an honest
+        None, never a guessed party.
+        """
+        return _counterparty.resolve(recipient, self._counterparties)
 
     def classify(self, recipient: str) -> str:
         """internal|external per the instance org-domain config (fail-closed
@@ -411,7 +449,7 @@ class ChannelAdapter(abc.ABC):
 
     def _base_payload(self, recipient: str, body: str,
                       thread_id: Optional[str]) -> "dict[str, Any]":
-        return {
+        payload = {
             "kind": "channel_send",
             "channel": self.name,
             "recipient": recipient,
@@ -423,6 +461,12 @@ class ChannelAdapter(abc.ABC):
             "body_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
             "body_chars": len(body),
         }
+        # WHO the recipient is, not just what string was addressed. Closed
+        # vocabularies only (slug id / consent state / relationship class);
+        # an unregistered recipient stamps None + `unknown`, never a guess.
+        payload.update(
+            _counterparty.journal_fields(recipient, self._counterparties))
+        return payload
 
     def _journal_send(self, recipient: str, body: str,
                       thread_id: Optional[str], artifact_id: str) -> None:
