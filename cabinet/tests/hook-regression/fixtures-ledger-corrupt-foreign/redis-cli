@@ -1,0 +1,41 @@
+#!/bin/sh
+# Hermetic Redis stub: the spend ledger holds a corrupt value belonging to
+# ANOTHER officer, plus a healthy well-under-cap row for the calling officer.
+#
+# The calling officer must PROCEED. The cabinet-wide cap arm sums every
+# *_cost_micro field, so failing closed on any unreadable value would let one
+# bad field halt the entire fleet on every tool call — and the repair
+# (redis-cli HDEL) is itself a Bash call that same gate would be blocking, so
+# there would be no in-band recovery. A bare HSET also carries no TTL, making
+# the deadlock permanent. Any same-uid officer can write that field.
+#
+# Correct behaviour: exclude the unreadable field, warn loudly, and enforce the
+# cap on the readable remainder as a truthful lower bound.
+#
+# This arm exists so a future "harden everything" change cannot quietly turn
+# the shared-data path back into a cabinet-wide self-DoS.
+verb=""
+last=""
+skip=0
+for a in "$@"; do
+  if [ "$skip" = "1" ]; then skip=0; continue; fi
+  case "$a" in
+    -h|-p|-n|-a|--user|--pass) skip=1; continue ;;
+  esac
+  [ -z "$verb" ] && verb="$a"
+  last="$a"
+done
+
+case "$verb" in
+  HKEYS)
+    printf '%s\n' "someoneelse_cost_micro"
+    printf '%s\n' "cos_cost_micro"
+    ;;
+  HGET)
+    case "$last" in
+      someoneelse_cost_micro) printf '%s\n' "NOT-A-NUMBER" ;;
+      cos_cost_micro)         printf '%s\n' "1000" ;;
+    esac
+    ;;
+esac
+exit 0

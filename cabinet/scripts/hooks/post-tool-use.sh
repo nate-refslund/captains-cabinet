@@ -3,6 +3,44 @@
 # Logs the action and increments cost counters.
 # Claude Code passes JSON on stdin: { tool_name, tool_input, tool_response }
 
+# ============================================================
+# -1. DEPENDENCY PREFLIGHT — FAIL CLOSED ON A MISSING TOOL
+# ============================================================
+# This hook decides nothing — it is the audit log, the heartbeat and the
+# activity surface. But its failure mode was the same silent one as the
+# pre-hook's: with jq absent, TOOL_NAME/TOOL_INPUT/TOOL_OUTPUT all collapse to
+# empty, every log line records a tool call that looks like nothing happened,
+# and the hook still exits 0. A silently empty audit trail is worse than a
+# missing one, because the record looks complete.
+#
+# So this fails closed too. Note the asymmetry, and do not mistake it for
+# enforcement: a PostToolUse exit 2 does NOT undo the tool — the call has
+# already run. It surfaces the fault to the officer instead of writing a
+# hollow record. In practice the pre-hook's preflight has already blocked the
+# call before this can fire; this is the second wall, not the first.
+#
+# Scoped to what a CORRECT audit record needs. Deliberately excluded:
+# redis-cli (heartbeat/telemetry, degrades loudly elsewhere), git/stat/chmod/
+# wc/basename (cosmetic or best-effort), awk (already has an `|| echo`
+# fallback), perl (already correctly guarded at the one site that uses it —
+# the only pre-existing `command -v` guard in either hook).
+_CABINET_MISSING_DEPS=""
+for _dep in cat jq grep sed tr cut head date mkdir dirname; do
+  command -v "$_dep" > /dev/null 2>&1 \
+    || _CABINET_MISSING_DEPS="${_CABINET_MISSING_DEPS:+$_CABINET_MISSING_DEPS }$_dep"
+done
+if [ -z "$_CABINET_MISSING_DEPS" ]; then
+  _JQ_PROBE=$(printf '%s' '{"_preflight":"ok"}' | jq -r '._preflight' 2>/dev/null)
+  [ "$_JQ_PROBE" = "ok" ] || _CABINET_MISSING_DEPS="jq(present-but-non-functional)"
+fi
+if [ -n "$_CABINET_MISSING_DEPS" ]; then
+  echo "post-tool-use: FAILING CLOSED — missing or non-functional required tool(s): $_CABINET_MISSING_DEPS." >&2
+  echo "  The audit log, heartbeat and cost/activity records for this call could not be written correctly." >&2
+  echo "  Fix PATH (launchd hands daemons a minimal PATH — Homebrew's /opt/homebrew/bin is NOT on it) or install the tool." >&2
+  echo "  Diagnose with: bash cabinet/scripts/check-deps.sh" >&2
+  exit 2
+fi
+
 # Read JSON from stdin
 HOOK_INPUT=$(cat)
 TOOL_NAME=$(echo "$HOOK_INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
@@ -721,7 +759,8 @@ if [ "$TOOL_NAME" = "Bash" ]; then
 fi
 
 # Section 12 removed — session snapshots now triggered by context window
-# percentage (50/75/90%) in stop-hook.sh instead of blind tool-call count.
+# percentage (50/75/90%) in the Stop hook (session-stop.sh) instead of blind
+# tool-call count.
 
 # Always exit 0 — post-hooks should never block
 exit 0

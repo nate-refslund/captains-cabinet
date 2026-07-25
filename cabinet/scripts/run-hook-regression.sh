@@ -38,6 +38,11 @@ HARNESSES=(
   "germline-bash-write.sh"
   "evidence-access.sh"
   "evidence-pathnorm.sh"
+  # Runs the gates with a required binary removed from PATH. Every other
+  # harness here runs with a complete toolchain, which is exactly why the
+  # fail-open on a missing jq survived: CI installs jq, so CI was the one
+  # environment where it could not reproduce. Keep this one in the list.
+  "dependency-preflight.sh"
 )
 
 OVERALL_FAIL=0

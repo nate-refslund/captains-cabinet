@@ -178,7 +178,7 @@ test refuses a `retired` row whose marker is still in the tree.
 - **Closed:** the `/tmp` enforcement-CACHE poisoning vector in the pre-tool-use hook. The cap is recomputed from source YAML on every call into an unpredictable per-invocation `mktemp` file (random name, `O_EXCL`, 0600, written-read-deleted in-process), so no persistent trusted state remains for a same-UID officer to pre-plant or race.
 - **Open:** `instance/config/platform.yml` and `framework/defaults/spending-limits.yml` are themselves officer-writable — not schg-locked, not matched by the hook's `GERM_PATH_RE` — so a determined officer can still edit the SOURCE cap.
 - **Why open:** the declaration names it a SEPARATE finding needing its own captain-gated ledger row; source integrity for the spend/peers/contexts configs is a distinct exposure from the cache vector this patch closed. Closing it means putting two config files under the immutable-flag boundary, which only a Captain sudo window can do.
-- **Declared at:** `cabinet/scripts/hooks/pre-tool-use.sh:388`
+- **Declared at:** `cabinet/scripts/hooks/pre-tool-use.sh:464`
 - **Anchor:** `RESIDUAL (SEPARATE finding`
 - **Retirement:** a Captain unlock window brings `instance/config/platform.yml` and `framework/defaults/spending-limits.yml` under the schg set (`cabinet/scripts/germline-lock.sh` FILES[]) and into the hook's `GERM_PATH_RE`. In the SAME commit: delete this declaration block from `cabinet/scripts/hooks/pre-tool-use.sh`, and flip this row to `retired`.
 

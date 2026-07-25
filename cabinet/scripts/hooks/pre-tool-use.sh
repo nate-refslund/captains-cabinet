@@ -7,10 +7,101 @@
 # exit-2 echo path here to `>&2` for this reason — keep new paths the same way.
 # Claude Code passes JSON on stdin: { tool_name, tool_input }
 
+# ============================================================
+# -1. DEPENDENCY PREFLIGHT — FAIL CLOSED ON A MISSING TOOL
+# ============================================================
+# Every gate below dispatches on $TOOL_NAME, and $TOOL_NAME is produced by
+# `cat | jq`. If jq is absent or broken, both TOOL_NAME and TOOL_INPUT are
+# empty, no `case`/`if` arm matches, and the script falls through to its
+# closing `exit 0` = ALLOW. `vercel deploy --prod` sailed through with ZERO
+# bytes on stderr — the enforcement plane failed open, silently, on a missing
+# Homebrew package.
+#
+# The same class applies to every other unguarded binary here, not just jq:
+#   tr      — empties FILE_PATH/CMD_SQ, so the germline + captain-law write
+#             screens (§5/§5b/§5c) match nothing and every protected path is
+#             writable. The python3 fail-closed sentinels sit AFTER the tr
+#             step and are routed around by the empty value it produces.
+#   grep    — every gate is `... | grep -qE ...; then block`. Exit 127 reads
+#             as "no match" = allow, for §3, §4, §5a/b/c, §6, §7, §9, §10.
+#   sed     — with perl, builds CMD_STRIPPED, the arm that catches BARE
+#             `sudo` / `rm -rf /` / `docker` / `shutdown` in command position.
+#   perl    — same pipeline; also the §3 heredoc detector.
+#   awk     — computes the spend caps. Empty ⇒ `[ "" -gt 0 ]` is false ⇒ both
+#             cap blocks are skipped ⇒ unlimited spend. Also disables §5b's
+#             fail-closed read-allowlist backstop.
+#   date    — empties TODAY, collapsing the cost key to
+#             `cabinet:cost:tokens:daily:` which is always empty ⇒ $0 spent.
+#   cat/head/cut/mktemp/dirname — stdin ingest, §8 capacity, §10 peer consent,
+#             and CABINET_ROOT resolution degrade the same way.
+#
+# WHY THIS WAS NEVER CAUGHT: CI installs jq explicitly, so every gate test ran
+# in the one environment where this cannot happen. No test had ever run a gate
+# with a required binary removed from PATH.
+#
+# HONEST SCOPE — measured 2026-07-25 on the live Mac target (macOS 26.6): all
+# thirteen of these currently DO resolve under launchd's minimal PATH
+# (/usr/bin:/bin:/usr/sbin:/sbin); jq is Apple-shipped at /usr/bin/jq, not
+# Homebrew. So this is not a live outage today, and the guard is not fixing a
+# fire. What it fixes is that the failure mode is SILENT and TOTAL when it does
+# occur, and the conditions are ordinary:
+#   * a Linux/container target, or any image where these are not preinstalled
+#     (the repo ships Dockerfiles);
+#   * a shadowed or half-installed binary earlier on PATH — start-officer-mac.sh
+#     puts an officer-WRITABLE $HOME/.local/bin ahead of the system dirs;
+#   * Apple has deprecated the bundled perl and python3, so /usr/bin coverage
+#     is a wasting asset;
+#   * the precedent is already here — redis-cli and python3.12 ARE
+#     Homebrew-only on this box and resolve to nothing under that same minimal
+#     PATH, which is exactly how this class bit the repo before.
+# cabinet/scripts/check-deps.sh has meanwhile been logging MISSING at officer
+# boot for years — non-blocking, so nothing ever acted on it.
+#
+# This preflight uses ONLY bash builtins (command/printf/echo/[/exit) so it
+# cannot itself be defeated by the absence it is checking for. A control that
+# depends on the thing it validates is not a control.
+#
+# NOT in this list, deliberately:
+#   redis-cli — already fails CLOSED by design (§1 kill switch blocks
+#               state-changing tools when the control plane is unverifiable,
+#               and EVAL-001c pins reads staying open). Adding it here would
+#               convert that ratified posture into a total block and reduce
+#               availability. Its absence is safe; leave §1 to own it.
+_CABINET_MISSING_DEPS=""
+for _dep in cat jq grep sed awk tr cut head date mktemp dirname perl python3; do
+  command -v "$_dep" > /dev/null 2>&1 \
+    || _CABINET_MISSING_DEPS="${_CABINET_MISSING_DEPS:+$_CABINET_MISSING_DEPS }$_dep"
+done
+# Presence is not function: a half-installed or shadowed jq that exits non-zero
+# (or prints nothing) produces the identical empty-TOOL_NAME collapse. Probe it.
+if [ -z "$_CABINET_MISSING_DEPS" ]; then
+  _JQ_PROBE=$(printf '%s' '{"_preflight":"ok"}' | jq -r '._preflight' 2>/dev/null)
+  [ "$_JQ_PROBE" = "ok" ] || _CABINET_MISSING_DEPS="jq(present-but-non-functional)"
+fi
+if [ -n "$_CABINET_MISSING_DEPS" ]; then
+  echo "BLOCKED: pre-tool-use enforcement cannot run — missing or non-functional required tool(s): $_CABINET_MISSING_DEPS." >&2
+  echo "  Every policy gate in this hook dispatches on a jq-parsed tool name; without these the hook would allow ALL tool calls unchecked." >&2
+  echo "  Failing closed instead. Fix PATH (launchd hands daemons a minimal PATH — Homebrew's /opt/homebrew/bin is NOT on it) or install the tool, then retry." >&2
+  echo "  Diagnose with: bash cabinet/scripts/check-deps.sh" >&2
+  exit 2
+fi
+
 # Read JSON from stdin
 HOOK_INPUT=$(cat)
 TOOL_NAME=$(echo "$HOOK_INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
 TOOL_INPUT=$(echo "$HOOK_INPUT" | jq -c '.tool_input // {}' 2>/dev/null)
+
+# ---- MALFORMED-PAYLOAD FAIL-CLOSED ----------------------------------
+# Even with a working jq, an empty or malformed payload yields TOOL_NAME="",
+# which matches no gate arm and falls through to `exit 0`. Claude Code's
+# PreToolUse contract always supplies tool_name, so an empty one means the
+# payload is corrupt or truncated — a state in which this hook cannot make an
+# authorization decision and therefore must not grant one.
+if [ -z "$TOOL_NAME" ]; then
+  echo "BLOCKED: pre-tool-use received no parseable tool_name (empty or malformed hook payload)." >&2
+  echo "  Every policy gate keys off tool_name; an unparseable payload cannot be authorized. Failing closed." >&2
+  exit 2
+fi
 
 # REDIS CONNECTION RESOLUTION (B4 — Mac portability)
 # Honors REDIS_HOST + REDIS_PORT first; REDIS_URL only if neither is set.
@@ -331,7 +422,8 @@ fi
 #       surface, not disappear.
 #
 # Source of truth for realized spend: cabinet:cost:tokens:daily:$DATE HSET,
-# written by stop-hook.sh from API usage × model pricing (Fable 5 / Opus / Sonnet). Legacy
+# written by cabinet/scripts/hooks/session-stop.sh (the LIVE Stop hook; stop-hook.sh
+# is a twin wired to no event) from API usage × model pricing (Fable 5 / Opus / Sonnet). Legacy
 # cabinet:cost:daily:$DATE byte-count estimate is no longer consulted;
 # CTO's 14:18 2026-04-17 fix corrected the formula.
 #
@@ -516,8 +608,132 @@ if [ "$IS_TELEGRAM_COMMS" = "1" ] && [ "$TG_WHITELIST_ON" = "true" ]; then
   fi
 fi
 
+# -- Ledger integrity classification (spend-cap sensor fix) -----------
+# The caps are only as good as the ledger they read. Previously every failure
+# mode of that read was silently coerced to zero:
+#   v=${v:-0}; case "$v" in *[!0-9]*|'') v=0 ;; esac
+# so a missing key, an unreachable Redis, a nil field or outright garbage all
+# summed to "$0 spent today" — permanently under cap, with nothing on stderr.
+# The ledger's only live writer is session-stop.sh; if that writer breaks, the
+# cap does not tighten, it disappears. That is the failure this classification
+# makes loud.
+#
+# Classified ONCE here, then consumed by both cap arms below (also saves the
+# duplicate HKEYS round-trip the two arms used to make):
+#   unreachable — redis-cli exit != 0. Cannot know spend.
+#   absent      — Redis healthy, key not there. LEGITIMATE at the start of
+#                 every UTC day, before the first Stop event writes it.
+#   present     — fields exist; enforce normally.
+#
+# Why unreachable/absent WARN rather than block: §1 already owns the
+# control-plane-down posture, and EVAL-001c pins it — state-changing tools
+# fail closed there, reads stay open. Blocking here would silently overturn
+# that ratified contract and brick every read whenever Redis blips, and would
+# brick the whole cabinet daily at 00:00 UTC on the absent case. A CORRUPT
+# ledger is different: it is never legitimate, so it blocks (below).
+# Persistent absence — the dead-writer case — is caught out-of-band by
+# cabinet/scripts/check-cost-ledger-health.sh.
+_LEDGER_KEY="cabinet:cost:tokens:daily:$TODAY"
+
+# _ledger_sum <officer|cabinet> — sums matching *_cost_micro fields.
+# Echoes "<sum><TAB><corrupt-field-list>"; unreadable fields are EXCLUDED from
+# the sum and named in the list, so the sum is always a truthful LOWER BOUND of
+# realized spend rather than a silent zero.
+#
+# Callers treat the two modes differently ON PURPOSE — see the blast-radius note
+# at the call sites. A field that vanishes between HKEYS and HGET (empty result)
+# is a benign race counted as 0, so only genuine garbage lands in the list and
+# this cannot flake.
+#
+# Two numeric hazards are handled here, both pre-existing fail-opens:
+#   * `10#` forces base 10. Bare $((total + v)) parses a leading zero as OCTAL,
+#     so a real value like 08000000000 raised "value too great for base" and
+#     contributed 0 — $8,000 of spend silently vanishing under a cap.
+#   * >18 digits is treated as corrupt, not summed: 64-bit shell arithmetic
+#     wraps NEGATIVE on such a value, which would drag the total DOWN and could
+#     mask other officers' real spend.
+_ledger_sum() {
+  local mode="$1" total=0 corrupt="" fld v
+  while IFS= read -r fld; do
+    [ -z "$fld" ] && continue
+    case "$mode" in
+      officer)
+        case "$fld" in
+          "${OFFICER}_cost_micro"|"${OFFICER}_"*"_cost_micro") ;;
+          *) continue ;;
+        esac
+        ;;
+      cabinet)
+        case "$fld" in *_cost_micro) ;; *) continue ;; esac
+        ;;
+    esac
+    v=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGET "$_LEDGER_KEY" "$fld" 2>/dev/null)
+    [ -z "$v" ] && continue
+    case "$v" in
+      *[!0-9]*)
+        corrupt="${corrupt:+$corrupt }$fld=$v"
+        continue
+        ;;
+    esac
+    if [ "${#v}" -gt 18 ]; then
+      corrupt="${corrupt:+$corrupt }$fld=$v(absurd)"
+      continue
+    fi
+    total=$((total + 10#$v))
+  done <<EOF
+$_LEDGER_FIELDS
+EOF
+  printf '%s\t%s' "$total" "$corrupt"
+}
+
 # -- Main cap enforcement (contract a: explicit stderr on every block) --
 if [ "${_SKIP_MAIN_CAP:-0}" != "1" ]; then
+
+  # Read the ledger ONCE for both arms, and only when a cap could actually
+  # bite — with both caps at 0 (unlimited) this whole section is dead weight on
+  # a hook that runs per tool call.
+  if [ "${EFFECTIVE_PER_OFF_CAP_MICRO:-0}" -gt 0 ] 2>/dev/null \
+     || [ "${CABINET_CAP_MICRO:-0}" -gt 0 ] 2>/dev/null; then
+    _LEDGER_FIELDS=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HKEYS "$_LEDGER_KEY" 2>/dev/null)
+    _LEDGER_RC=$?
+    if [ "$_LEDGER_RC" -ne 0 ]; then
+      _LEDGER_STATE="unreachable"
+    elif [ -z "$_LEDGER_FIELDS" ]; then
+      _LEDGER_STATE="absent"
+    else
+      _LEDGER_STATE="present"
+    fi
+
+    # Both non-present states are DOCUMENTED-LEGITIMATE and would otherwise
+    # print on every single tool call — every call from 00:00 UTC until the
+    # day's first Stop event, and for the whole duration of any Redis blip.
+    # A line that common is a line operators learn to skip, which would blunt
+    # the one signal that also means "the ledger writer is dead". So it is
+    # rate-limited to once an hour per state. The durable sensor for a
+    # persistently empty ledger is out-of-band:
+    # cabinet/scripts/check-cost-ledger-health.sh, run from the daily
+    # cost-summary job.
+    if [ "$_LEDGER_STATE" != "present" ]; then
+      _WARN_KEY="cabinet:cost:ledger-warned:${_LEDGER_STATE}:$(date -u +%Y%m%d%H)"
+      # SETNX succeeds (returns 1) only for the first call in this hour.
+      # On the unreachable path this write also fails, so the warning prints —
+      # correct: a Redis outage should not be able to silence itself.
+      # SET..NX prints OK only for the first call in this hour, and prints
+      # NOTHING when the key already exists — but it ALSO prints nothing when
+      # Redis is unreachable, so emptiness alone cannot distinguish
+      # "already warned" from "could not rate-limit". Branch on the exit code:
+      # a failed rate-limit write must not be able to silence the warning.
+      _WARN_FIRST=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" SET "$_WARN_KEY" 1 EX 3600 NX 2>/dev/null)
+      _WARN_RC=$?
+      if [ "$_WARN_FIRST" = "OK" ] || [ "$_WARN_RC" -ne 0 ]; then
+        if [ "$_LEDGER_STATE" = "unreachable" ]; then
+          echo "pre-tool-use: WARN spend ledger unreadable (Redis unreachable at $REDIS_HOST:$REDIS_PORT) — daily caps NOT enforced for this call. State-changing tools are already blocked by the kill-switch gate; this warning exists so the gap is never silent." >&2
+        else
+          echo "pre-tool-use: WARN spend ledger $_LEDGER_KEY is empty — reading \$0 spent today. Legitimate before the day's first Stop event; if it persists, the ledger writer (cabinet/scripts/hooks/session-stop.sh) is dead and caps are not enforcing. Check: bash cabinet/scripts/check-cost-ledger-health.sh" >&2
+        fi
+      fi
+    fi
+  fi
 
   # Per-officer cap.
   #
@@ -527,18 +743,16 @@ if [ "${_SKIP_MAIN_CAP:-0}" != "1" ]; then
   # by HKEYS-scanning fields that start with `<officer>_` and end with
   # `_cost_micro`. One field in pre-pool, N fields in pool mode.
   if [ "$EFFECTIVE_PER_OFF_CAP_MICRO" -gt 0 ] 2>/dev/null; then
-    OFFICER_COST_MICRO=0
-    while IFS= read -r fld; do
-      [ -z "$fld" ] && continue
-      case "$fld" in
-        "${OFFICER}_cost_micro"|"${OFFICER}_"*"_cost_micro")
-          v=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGET "cabinet:cost:tokens:daily:$TODAY" "$fld" 2>/dev/null)
-          v=${v:-0}
-          case "$v" in *[!0-9]*|'') v=0 ;; esac
-          OFFICER_COST_MICRO=$((OFFICER_COST_MICRO + v))
-          ;;
-      esac
-    done < <(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HKEYS "cabinet:cost:tokens:daily:$TODAY" 2>/dev/null)
+    # OWN data: a corrupt field under THIS officer's prefix blocks THIS officer.
+    # Blast radius is one session and the officer can see it is their own row,
+    # so fail-closed is right here.
+    _LS=$(_ledger_sum officer)
+    OFFICER_COST_MICRO=${_LS%%	*}
+    _OFF_CORRUPT=${_LS#*	}
+    if [ -n "$_OFF_CORRUPT" ]; then
+      echo "pre-tool-use: BLOCKED — your own spend ledger row in $_LEDGER_KEY holds an unreadable value ($_OFF_CORRUPT). Realized spend cannot be determined, so the daily cap cannot be honoured; refusing rather than reading it as \$0. Repair: redis-cli -h $REDIS_HOST -p $REDIS_PORT HDEL $_LEDGER_KEY <field>" >&2
+      exit 2
+    fi
     case "$OFFICER_COST_MICRO" in *[!0-9]*|'') OFFICER_COST_MICRO=0 ;; esac
     if [ "$OFFICER_COST_MICRO" -ge "$EFFECTIVE_PER_OFF_CAP_MICRO" ] 2>/dev/null; then
       OFFICER_COST_USD=$(awk -v v="$OFFICER_COST_MICRO" 'BEGIN{printf "%.2f", v/1000000}')
@@ -552,17 +766,25 @@ if [ "${_SKIP_MAIN_CAP:-0}" != "1" ]; then
 
   # Cabinet-wide cap
   if [ "$CABINET_CAP_MICRO" -gt 0 ] 2>/dev/null; then
-    CABINET_COST_MICRO=0
-    while IFS= read -r fld; do
-      [ -z "$fld" ] && continue
-      case "$fld" in *_cost_micro)
-        v=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGET "cabinet:cost:tokens:daily:$TODAY" "$fld" 2>/dev/null)
-        v=${v:-0}
-        case "$v" in *[!0-9]*|'') v=0 ;; esac
-        CABINET_COST_MICRO=$((CABINET_COST_MICRO + v))
-        ;;
-      esac
-    done < <(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HKEYS "cabinet:cost:tokens:daily:$TODAY" 2>/dev/null)
+    # SHARED data: deliberately NOT fail-closed on a corrupt field.
+    # This arm sums EVERY officer's row, so blocking on any unreadable value
+    # would let one bad field — writable by any same-uid officer, and on a bare
+    # HSET it carries no TTL so it never expires — halt the entire fleet on
+    # every tool call. Worse, the repair (redis-cli HDEL) is itself a Bash call
+    # this gate would be blocking, leaving no in-band recovery: a one-field
+    # cabinet-wide deadlock. That trades a silent under-count for a total
+    # outage, which is the worse failure.
+    # So: exclude the unreadable field, say so loudly, and enforce the cap on
+    # the readable remainder. The sum is a truthful LOWER BOUND — if even that
+    # exceeds the cap the block below still fires, and a corrupt ledger is
+    # escalated out-of-band by cabinet/scripts/check-cost-ledger-health.sh.
+    _LS=$(_ledger_sum cabinet)
+    CABINET_COST_MICRO=${_LS%%	*}
+    _CAB_CORRUPT=${_LS#*	}
+    if [ -n "$_CAB_CORRUPT" ]; then
+      echo "pre-tool-use: WARN cabinet-wide spend ledger $_LEDGER_KEY holds unreadable value(s) ($_CAB_CORRUPT). Those fields are EXCLUDED, so the cabinet-wide total below is a lower bound and real spend may be higher. Not blocking on shared data — one bad field must not halt the fleet. Repair: redis-cli -h $REDIS_HOST -p $REDIS_PORT HDEL $_LEDGER_KEY <field>" >&2
+    fi
+    case "$CABINET_COST_MICRO" in *[!0-9]*|'') CABINET_COST_MICRO=0 ;; esac
     if [ "$CABINET_COST_MICRO" -ge "$CABINET_CAP_MICRO" ] 2>/dev/null; then
       CABINET_COST_USD=$(awk -v v="$CABINET_COST_MICRO" 'BEGIN{printf "%.2f", v/1000000}')
       CABINET_CAP_USD_PRINT=$(awk -v v="$CABINET_CAP_MICRO" 'BEGIN{printf "%.2f", v/1000000}')

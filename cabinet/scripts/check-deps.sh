@@ -19,6 +19,25 @@ REQUIRED_TOOLS=(
   "node:Node.js runtime — MCP server execution"
   "bun:Bun runtime — Channels plugin, Telegram bot"
   "npx:npm package runner — Playwright installs"
+  # ---- ENFORCEMENT-CRITICAL (added 2026-07-25) ----------------------------
+  # cabinet/scripts/hooks/{pre,post}-tool-use.sh hard-BLOCK (exit 2) when any
+  # of these is missing or non-functional, because without them the policy
+  # gates stop matching and the hook would allow every tool call unchecked.
+  # Both hooks tell the operator to "Diagnose with: check-deps.sh", so this
+  # list has to actually cover them — otherwise this script cheerfully prints
+  # "All required tools present" while the hook is blocking on one of them.
+  # Keep in lockstep with the preflight arrays in those two hooks.
+  "cat:reads the hook payload from stdin — enforcement preflight"
+  "grep:every positive-match policy gate — enforcement preflight"
+  "sed:command normalization for the prohibition detector — enforcement preflight"
+  "awk:spending-cap arithmetic — enforcement preflight"
+  "tr:path/command normalization for the germline write screens — enforcement preflight"
+  "cut:enforcement preflight"
+  "head:enforcement preflight"
+  "date:cost-ledger date key — enforcement preflight"
+  "mktemp:unpredictable per-call spending-limits cache — enforcement preflight"
+  "dirname:CABINET_ROOT resolution — enforcement preflight"
+  "perl:bare-command detection in the prohibition screen — enforcement preflight"
 )
 
 MISSING=()

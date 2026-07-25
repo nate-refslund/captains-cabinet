@@ -1,0 +1,56 @@
+#!/bin/sh
+# Hermetic Redis stub presenting an OVER-CAP spend ledger.
+#
+# Answers the cost-ledger reads ONLY for the correctly-dated key
+# cabinet:cost:tokens:daily:<UTC today>, with a value far above any configured
+# cap. A healthy hook must therefore BLOCK on the spending gate.
+#
+# That exact-key requirement is what makes this fixture a real detector rather
+# than a formality:
+#   * awk missing  -> PER_OFF_CAP_MICRO/CABINET_CAP_MICRO are empty, so
+#                     `[ "" -gt 0 ]` is false and BOTH cap blocks are skipped
+#                     entirely = unlimited spend.
+#   * date missing -> TODAY is empty, the key collapses to
+#                     "cabinet:cost:tokens:daily:", this stub does not answer
+#                     it, the sum is 0 and the cap reads as unhit.
+# Either way the pre-fix hook ALLOWS a call it should have blocked, which is
+# precisely the silent fail-open under test.
+#
+# Reachable everywhere else (exit 0, empty output) so the kill-switch gate sees
+# a healthy control plane and does not short-circuit the probe.
+verb=""
+last=""
+key=""
+argi=0
+skip=0
+for a in "$@"; do
+  if [ "$skip" = "1" ]; then skip=0; continue; fi
+  case "$a" in
+    -h|-p|-n|-a|--user|--pass) skip=1; continue ;;
+  esac
+  argi=$((argi + 1))
+  [ "$argi" = "1" ] && verb="$a"
+  [ "$argi" = "2" ] && key="$a"
+  last="$a"
+done
+
+TODAY=$(date -u +%Y-%m-%d 2>/dev/null)
+EXPECT="cabinet:cost:tokens:daily:${TODAY}"
+
+# Guard: if `date` itself is unavailable to this stub, refuse to answer rather
+# than accidentally matching an empty key and masking the very defect probed.
+[ -n "$TODAY" ] || exit 0
+
+case "$verb" in
+  HKEYS)
+    [ "$key" = "$EXPECT" ] && printf '%s\n' "cos_cost_micro"
+    ;;
+  HGET)
+    if [ "$key" = "$EXPECT" ]; then
+      case "$last" in
+        *_cost_micro) printf '%s\n' "999000000000" ;;
+      esac
+    fi
+    ;;
+esac
+exit 0

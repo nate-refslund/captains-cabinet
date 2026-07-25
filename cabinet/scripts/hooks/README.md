@@ -21,7 +21,19 @@ Bash hooks wired into Claude Code's lifecycle events (`UserPromptSubmit`, `PreTo
 | TaskCreated        | `claude-task-bridge.py`               | Records Claude Code native Tasks to `org_events` and warns when Cabinet metadata is missing |
 | TaskCompleted      | `claude-task-bridge.py`               | Records Claude Code native Task completion to `org_events` and updates `claude_native_tasks` |
 | PreCompact         | `pre-compact.sh`                      | Pre-compaction state snapshot |
-| Stop               | `stop-hook.sh`                        | Session-end cleanup |
+| Stop               | `session-stop.sh`                     | Never-stop-during-a-task guard, cost-ledger write (`cabinet:cost:tokens:daily:*` — the ONLY live writer, and the sole input to the spending caps), session-end observability |
+
+> **`stop-hook.sh` is NOT wired to any hook event.** It is a diverged twin of
+> `session-stop.sh` that still carries container-era `/opt/founders-cabinet`
+> paths and a `redis` Docker-DNS default; `.claude/settings.json` routes `Stop`
+> to `session-stop.sh` alone. This table claimed otherwise until 2026-07-25,
+> which is part of how golden EVAL-008 and
+> `memory/golden-evals/framework/fw-a14-stop-guard.sh` both ended up testing
+> the dead file while the live writer had no coverage at all. Both now target
+> `session-stop.sh`, and `cabinet/scripts/check-cost-ledger-health.sh` asserts
+> in the running system that the ledger is actually being written. If you are
+> about to point anything at `stop-hook.sh`, you almost certainly want
+> `session-stop.sh`.
 
 ## Captain-discipline soft-warn hooks (Spec 043)
 

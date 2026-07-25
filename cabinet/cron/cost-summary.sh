@@ -2,7 +2,8 @@
 # cost-summary.sh — Daily 23:00 Captain-timezone cost digest to HQ group.
 #
 # Reads per-officer daily cost from Redis HSET cabinet:cost:tokens:daily:<YYYY-MM-DD>
-# (populated by stop-hook.sh per-turn) and posts a reader-friendly digest.
+# (populated per-turn by cabinet/scripts/hooks/session-stop.sh — the LIVE Stop
+# hook; stop-hook.sh is a twin wired to no event) and posts a reader-friendly digest.
 #
 # Per Spec 064 v1.1 Checkpoint 7.7 + v1.1 CTO #5 (inline-quote not --stdin).
 
@@ -27,6 +28,34 @@ REDIS_PORT="${REDIS_PORT:-6379}"
 TZ_NAME=$(grep captain_timezone "$REPO_ROOT/instance/config/platform.yml" 2>/dev/null | awk '{print $2}')
 TZ_NAME="${TZ_NAME:-UTC}"
 TODAY=$(TZ="$TZ_NAME" date +%Y-%m-%d)
+
+# ---- Cost-ledger liveness (added 2026-07-25) --------------------------------
+# This digest, and far more importantly the daily spending caps in
+# pre-tool-use.sh, read cabinet:cost:tokens:daily:<date> and NOTHING else. An
+# empty key reads as "$0 spent today", so a dead writer does not tighten the
+# caps — it removes them, silently. A digest that prints "$0.00" for every
+# officer looks like a quiet day and looks identical to a broken ledger.
+#
+# Hosted here rather than as its own services.yml row on purpose: this is
+# already the scheduled cost consumer (daily 23:00, plist-only, no service
+# row), and cabinet/config/cognitive-architecture-contract.yml holds
+# services_total/services_enabled at a shrink-only budget that
+# cognitive-architecture-census.py --check enforces inside
+# verify-cognitive-phase*.sh. New periodic work composes into an existing
+# runner; it does not grow the service count.
+#
+# Advisory here by design: never let a health probe abort the digest.
+LEDGER_HEALTH_NOTE=""
+LEDGER_HEALTH_SCRIPT="$REPO_ROOT/cabinet/scripts/check-cost-ledger-health.sh"
+if [ -r "$LEDGER_HEALTH_SCRIPT" ]; then
+  if ! LEDGER_HEALTH_OUT=$(REDIS_HOST="$REDIS_HOST" REDIS_PORT="$REDIS_PORT" \
+        CABINET_ROOT="$REPO_ROOT" bash "$LEDGER_HEALTH_SCRIPT" 2>&1); then
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) cost-summary: COST LEDGER UNHEALTHY — spending caps may not be enforcing" >&2
+    printf '%s\n' "$LEDGER_HEALTH_OUT" >&2
+    LEDGER_HEALTH_NOTE=$(printf '%s' "$LEDGER_HEALTH_OUT" \
+      | grep -E '^[[:space:]]*\[FAIL\]' | head -2 | sed 's/^[[:space:]]*\[FAIL\][[:space:]]*//')
+  fi
+fi
 
 # Officer roster — derived from instance/roles/active/*.yml (seeded by
 # bootstrap-roles.sh) so the digest tracks the REAL roster (portfolio lane
@@ -64,6 +93,11 @@ if [ "${#OFFICERS[@]}" -eq 0 ]; then
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) cost-summary: no roster from instance/roles/active/ or .claude/agents/ — totals-only digest" >&2
 fi
 MSG="💰 Cabinet cost summary $TODAY"
+if [ -n "$LEDGER_HEALTH_NOTE" ]; then
+  # Surface it in the digest itself — a silent $0.00 day is exactly what a dead
+  # ledger looks like, so the reader must be told the numbers may not be real.
+  MSG="$MSG"$'\n'"⚠️ Cost ledger unhealthy — the figures below may be incomplete, and the daily spending caps read the same source:"$'\n'"$LEDGER_HEALTH_NOTE"
+fi
 
 TOTAL_MICRO=0
 # Empty-safe expansion (bash 3.2 + set -u): the totals-only branch above means

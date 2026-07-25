@@ -38,7 +38,7 @@ else
   REDIS_PORT="6379"
 fi
 # Export the RESOLVED endpoint so child hook invocations (EVAL-008's
-# stop-hook among them) write to the SAME Redis the suite asserts against.
+# session-stop among them) write to the SAME Redis the suite asserts against.
 # Without this, a hook's own `${REDIS_HOST:-redis}` default (Docker DNS)
 # fails silently on Mac and the eval false-fails — the same B4 class as
 # the suite-side default fixed above.
@@ -93,8 +93,8 @@ cleanup() {
   # overwrites cos_cost_micro on the very next tool call, so a poisoned value
   # self-heals within seconds. HDEL here would risk clobbering real wrapper data.
   redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" DEL cabinet:triggers:evaltest > /dev/null 2>&1
-  # EVAL-008: clean stop-hook test residue. HDEL both today's + yesterday's
-  # keys so a midnight-spanning eval (stop-hook wrote to yesterday's key,
+  # EVAL-008: clean session-stop test residue. HDEL both today's + yesterday's
+  # keys so a midnight-spanning eval (session-stop wrote to yesterday's key,
   # trap fires after 00:00 UTC) still cleans up correctly. The transcript
   # rm uses $$ scope — the glob could race against a concurrent eval run
   # and delete a peer's in-flight transcript, so we only rm this run's file.
@@ -389,21 +389,52 @@ else
 fi
 
 # ------------------------------------------------------------------
-# Eval 008: stop-hook cost-write integrity (FW-016 regression catcher)
+# Eval 008: cost-ledger write integrity (FW-016 regression catcher)
 # ------------------------------------------------------------------
-# stop-hook.sh writes per-turn cost data to cabinet:cost:tokens:daily:$DATE
-# HSET (FW-016). pre-tool-use.sh reads that HSET to enforce spending caps
-# (FW-002). If stop-hook silently stops writing — e.g. a jq upgrade breaks
-# the transcript parse, or the HSET pipeline loses a field — pre-tool-use
-# reads 0, every cap reads as unhit, and FW-002 silently fails open.
+# RETARGETED 2026-07-25 — THIS EVAL WAS WATCHING A DEAD FILE.
+#   Until now it exercised cabinet/scripts/hooks/stop-hook.sh, which is wired
+#   to NO hook event: .claude/settings.json routes "Stop" to session-stop.sh
+#   and nothing anywhere invokes stop-hook.sh (verified across settings*.json,
+#   all 39 launchd plists, CI, installers and the egg manifest — the only
+#   callers were this eval and fw-a14-stop-guard.sh). stop-hook.sh's own
+#   header has said so since 2026-07-07, and it still carries the container-era
+#   /opt/founders-cabinet paths and a `redis` Docker-DNS default that cannot
+#   resolve on the Mac target.
+#   So the tested writer was dead and THE LIVE WRITER HAD NO TEST AT ALL —
+#   the precise failure this eval was written to prevent, achieved by testing
+#   the wrong file. It would have gone on passing while the real ledger stayed
+#   empty and every spending cap read $0.
 #
-# This eval simulates one stop-hook invocation with a canned Fable 5
+# session-stop.sh writes per-turn cost data to cabinet:cost:tokens:daily:$DATE
+# (FW-016). pre-tool-use.sh reads that to enforce spending caps (FW-002). If
+# the writer silently stops — e.g. a jq upgrade breaks the transcript parse, or
+# the HINCRBY pipeline loses a field — pre-tool-use reads 0, every cap reads as
+# unhit, and FW-002 silently fails open.
+#
+# CABINET_HOOK_TEST_MODE is deliberately NOT set for this probe: session-stop.sh
+# skips the whole cost block under it, which would make this eval vacuous. That
+# flag exists to keep harnesses off production sinks, so dropping it obliges us
+# to close every sink it was covering. There are TWO, not one:
+#   * Redis — already closed structurally: this suite refuses to start unless
+#     REDIS_HOST/REDIS_PORT point at an ephemeral sandbox (see
+#     lib/evals-redis-sandbox.sh above).
+#   * The EVENT LEDGER — closed here by CABINET_EVENT_LOG_DIR. session-stop.sh
+#     section 2 calls framework/events/emitter.py, which appends a session_ended
+#     row to a DURABLE file under ~/Library/Application Support/cabinet/events/
+#     when that var is unset (emitter.py:344,354). The dead hook this eval used
+#     to target had no emitter call, so the retarget introduced this sink; since
+#     FW-025 runs the suite on every master push, an unisolated probe would
+#     dribble junk "evaltest" rows into the real event history indefinitely.
+# CABINET_STOP_GUARD_DISABLED=1 keeps section 1 out of the way so the probe
+# measures the cost write and nothing else.
+#
+# This eval simulates one session-stop invocation with a canned Fable 5
 # transcript (known token counts) and asserts the HSET fields populated
 # with the exact expected values. Any drift in the jq extraction, the
 # HINCRBY fields, or the COST_MICRO math flips the assertion.
 #
 # Canned Fable turn: input=1000, output=500, cache_write=200, cache_read=3000.
-# Expected cost_micro per stop-hook.sh Fable case (line ~52):
+# Expected cost_micro per session-stop.sh Fable case (line ~46):
 #   1000*10 + 500*50 + 200*12500/1000 + 3000*1000/1000
 # = 10000 + 25000 + 2500 + 3000 = 40500 microdollars.
 #
@@ -411,29 +442,29 @@ fi
 # live officers). HDEL cleanup in both the inline path and the EXIT trap.
 #
 # Scope — what this eval does NOT cover:
-#   * Sonnet/Opus pricing paths (stop-hook lines ~54-60) — officers run
+#   * Sonnet/Opus pricing paths (session-stop.sh lines ~48-53) — officers run
 #     Fable 5 per CLAUDE.md, so Fable is the primary drift surface.
 #     Extend with a second fixture if Sonnet/Opus becomes an officer model.
-#   * Unknown-model silent fallthrough to Sonnet pricing (stop-hook
+#   * Unknown-model silent fallthrough to Sonnet pricing (session-stop
 #     default case) — a new model family matching neither *fable* nor
 #     *opus* would silently use Sonnet (cheaper) pricing, under-reporting cost.
-#     Proper fix is a stderr warn in stop-hook for unrecognized models;
+#     Proper fix is a stderr warn in session-stop for unrecognized models;
 #     filed as a latent drift concern, not what this eval catches.
 #   * New-field schema additions (e.g. Claude Code adds a 6th usage
-#     field stop-hook should track) — the eval asserts the 5 known
+#     field session-stop should track) — the eval asserts the 5 known
 #     fields match; it won't detect that a new field exists and is
 #     being ignored. Field-rename drift DOES trip the eval (the rename
-#     makes stop-hook's jq return 0 → HSET value mismatches expected).
+#     makes session-stop's jq return 0 → HSET value mismatches expected).
 #   * Redis-down or jq-missing silent failure — those require preflight
-#     checks in stop-hook itself, not observable via this round-trip test.
+#     checks in session-stop itself, not observable via this round-trip test.
 #   * Cabinet-wide cap false-positive window — evaltest_cost_micro is
-#     briefly (~10ms between stop-hook HINCRBY and inline HDEL) visible
+#     briefly (~10ms between session-stop HINCRBY and inline HDEL) visible
 #     in the *_cost_micro sum that pre-tool-use.sh computes for the
 #     cabinet-wide cap. Blast radius: $0.054 extra in the sum.
 #     REVISITED 2026-04-21 (FW-025 shipped — evals now run on every
 #     master push): accepted as a known window. Mitigation via
 #     non-*_cost_micro-suffixed test field would require editing
-#     stop-hook.sh (which hardcodes `${OFFICER}_cost_micro` as the
+#     session-stop.sh (which hardcodes `${OFFICER}_cost_micro` as the
 #     pricing-derived output field and is the very target of this
 #     regression test — changing it defeats the test). Mitigation via
 #     pre-tool-use.sh exclusion list is out of scope for FW-025 and
@@ -450,13 +481,22 @@ fi
 # If someone genuinely creates an officer named "evaltest", the
 # cleanup trap's HDEL would clobber their real cost data. Convention
 # not enforcement; rename if you're hiring a 100th officer.
-log "EVAL-008: stop-hook cost-write integrity (FW-016 regression catcher)"
-STOP_HOOK="$CABINET_ROOT/cabinet/scripts/hooks/stop-hook.sh"
+log "EVAL-008: cost-ledger write integrity — LIVE Stop hook (FW-016 regression catcher)"
+# The LIVE writer. .claude/settings.json "Stop" -> this file. Do not point this
+# back at session-stop.sh: that file is wired to no event, so the eval would go
+# green while the real ledger stayed empty and every spending cap read $0.
+STOP_HOOK="$CABINET_ROOT/cabinet/scripts/hooks/session-stop.sh"
+# Guard the retarget itself: if the Stop wiring ever moves, fail loudly rather
+# than silently testing a file the runtime no longer calls.
+EV8_SETTINGS="$CABINET_ROOT/.claude/settings.json"
+if [ -f "$EV8_SETTINGS" ] && ! grep -q 'hooks/session-stop.sh' "$EV8_SETTINGS"; then
+  fail "EVAL-008 target drift: .claude/settings.json no longer wires hooks/session-stop.sh — this eval is testing a file the runtime may not call"
+fi
 if [ -f "$STOP_HOOK" ]; then
   # Pre-clean: HINCRBY accumulates, so prior residue would skew the test.
   # HDEL both today + yesterday to stay symmetric with the EXIT trap and
   # defend against a midnight-boundary flip between our pre-clean and
-  # stop-hook's internal TODAY compute.
+  # session-stop's internal TODAY compute.
   EVAL_PRE_TODAY=$(date -u +%Y-%m-%d)
   EVAL_PRE_YDAY=$(date -u -d 'yesterday' +%Y-%m-%d 2>/dev/null)
   for _EV_DT in "$EVAL_PRE_TODAY" "$EVAL_PRE_YDAY"; do
@@ -465,17 +505,22 @@ if [ -f "$STOP_HOOK" ]; then
       evaltest_input evaltest_output evaltest_cache_write evaltest_cache_read evaltest_cost_micro \
       > /dev/null 2>&1
   done
+  # Per-run event sink for the probe (see the CABINET_EVENT_LOG_DIR note above).
+  EVAL_EVENT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/eval008-events.XXXXXX" 2>/dev/null) \
+    || EVAL_EVENT_DIR="/tmp/eval008-events-$$"
+  mkdir -p "$EVAL_EVENT_DIR"
   EVAL_TX="/tmp/eval-transcript-$$.jsonl"
   cat > "$EVAL_TX" <<'EOT'
 {"type":"assistant","message":{"model":"claude-fable-5","usage":{"input_tokens":1000,"output_tokens":500,"cache_creation_input_tokens":200,"cache_read_input_tokens":3000}}}
 EOT
   echo "{\"session_id\":\"eval-session\",\"transcript_path\":\"$EVAL_TX\"}" \
-    | OFFICER_NAME=evaltest bash "$STOP_HOOK" > /dev/null 2>&1
-  # Post-read: stop-hook.sh line 82 computes TODAY=$(date -u +%Y-%m-%d) at
+    | OFFICER_NAME=evaltest CABINET_STOP_GUARD_DISABLED=1 \
+      CABINET_EVENT_LOG_DIR="$EVAL_EVENT_DIR" bash "$STOP_HOOK" > /dev/null 2>&1
+  # Post-read: session-stop.sh line ~77 computes TODAY=$(date -u +%Y-%m-%d) at
   # HINCRBY time — if the eval straddles 00:00 UTC between our pre-clean
-  # and stop-hook's write, the target key shifts by one day. Probe today
+  # and session-stop's write, the target key shifts by one day. Probe today
   # AND the pre-clean date and take whichever HSET has our write; pick a
-  # loud fail if neither does (real stop-hook breakage). Symmetric with
+  # loud fail if neither does (real session-stop breakage). Symmetric with
   # the trap-cleanup fix from the initial Sonnet review.
   EVAL_POST_TODAY=$(date -u +%Y-%m-%d)
   EVAL_KEY=""
@@ -488,7 +533,7 @@ EOT
     fi
   done
   if [ -z "$EVAL_KEY" ]; then
-    fail "stop-hook did not write evaltest_cost_micro to any expected date key (probed today=$EVAL_POST_TODAY, start=$EVAL_PRE_TODAY)"
+    fail "session-stop did not write evaltest_cost_micro to any expected date key (probed today=$EVAL_POST_TODAY, start=$EVAL_PRE_TODAY)"
   else
     ACTUAL_INPUT=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGET "$EVAL_KEY" evaltest_input 2>/dev/null)
     ACTUAL_OUTPUT=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGET "$EVAL_KEY" evaltest_output 2>/dev/null)
@@ -498,9 +543,9 @@ EOT
     if [ "$ACTUAL_INPUT" = "1000" ] && [ "$ACTUAL_OUTPUT" = "500" ] && \
        [ "$ACTUAL_CW" = "200" ] && [ "$ACTUAL_CR" = "3000" ] && \
        [ "$ACTUAL_COST" = "40500" ]; then
-      pass "stop-hook writes cost HSET correctly (all 5 fields, cost_micro=40500)"
+      pass "session-stop writes cost HSET correctly (all 5 fields, cost_micro=40500)"
     else
-      fail "stop-hook cost-write drift (input=$ACTUAL_INPUT/1000 output=$ACTUAL_OUTPUT/500 cache_write=$ACTUAL_CW/200 cache_read=$ACTUAL_CR/3000 cost_micro=$ACTUAL_COST/40500)"
+      fail "session-stop cost-write drift (input=$ACTUAL_INPUT/1000 output=$ACTUAL_OUTPUT/500 cache_write=$ACTUAL_CW/200 cache_read=$ACTUAL_CR/3000 cost_micro=$ACTUAL_COST/40500)"
     fi
     # Inline cleanup — HDEL the key we actually wrote to. Trap still sweeps
     # both dates on interrupt.
@@ -510,8 +555,9 @@ EOT
   fi
   redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" DEL "cabinet:cost:tokens:evaltest" > /dev/null 2>&1
   rm -f "$EVAL_TX"
+  [ -n "${EVAL_EVENT_DIR:-}" ] && rm -rf "$EVAL_EVENT_DIR"
 else
-  fail "stop-hook.sh not found at $STOP_HOOK"
+  fail "session-stop.sh not found at $STOP_HOOK"
 fi
 
 # ------------------------------------------------------------------

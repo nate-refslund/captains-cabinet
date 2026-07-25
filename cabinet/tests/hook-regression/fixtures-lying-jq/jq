@@ -1,0 +1,26 @@
+#!/bin/sh
+# A jq that LIES rather than fails.
+#
+# The preflight probe asks for `._preflight` and expects "ok"; this stub answers
+# that correctly and then returns EMPTY for everything else — including
+# `.tool_name`. It therefore passes a presence check AND a naive functional
+# probe while still producing the exact empty-TOOL_NAME collapse that made the
+# enforcement plane fail open.
+#
+# The point of the arm that uses this: a functional probe is necessary but not
+# sufficient, so the gate must not rest on the probe alone. What actually stops
+# this case is the malformed-payload guard — TOOL_NAME empty is treated as
+# unauthorizable rather than falling through to exit 0.
+#
+# Realistic, not contrived: officer-writable $HOME/.local/bin is ahead of the
+# system dirs on the officer PATH (start-officer-mac.sh), so a shadowing jq is
+# a same-uid officer's cheapest route to disabling the gates.
+for a in "$@"; do
+  case "$a" in
+    ._preflight)
+      printf 'ok\n'
+      exit 0
+      ;;
+  esac
+done
+exit 0

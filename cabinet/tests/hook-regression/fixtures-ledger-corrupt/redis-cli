@@ -1,0 +1,33 @@
+#!/bin/sh
+# Hermetic Redis stub presenting a CORRUPTED spend ledger.
+#
+# Reachable (exit 0 everywhere, so the kill-switch gate sees a healthy control
+# plane and does not short-circuit), kill-switch key absent, but the daily cost
+# ledger holds a non-numeric value. Before the ledger-integrity fix the hook
+# coerced that to 0 via `case "$v" in *[!0-9]*|'') v=0 ;;` and read "$0 spent
+# today" — permanently under cap. It must now refuse instead.
+#
+# The hook always calls `redis-cli -h HOST -p PORT VERB ...`, so skip the
+# connection flags to find the verb. Only the two commands the cap path issues
+# are answered; everything else returns empty with exit 0 like the plain fixture.
+verb=""
+last=""
+skip=0
+for a in "$@"; do
+  if [ "$skip" = "1" ]; then skip=0; continue; fi
+  case "$a" in
+    -h|-p|-n|-a|--user|--pass) skip=1; continue ;;
+  esac
+  [ -z "$verb" ] && verb="$a"
+  last="$a"
+done
+
+case "$verb" in
+  HKEYS) printf '%s\n' "cos_cost_micro" ;;
+  HGET)
+    case "$last" in
+      *_cost_micro) printf '%s\n' "NOT-A-NUMBER" ;;
+    esac
+    ;;
+esac
+exit 0
