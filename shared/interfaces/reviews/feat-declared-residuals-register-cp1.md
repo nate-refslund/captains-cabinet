@@ -30,10 +30,26 @@ so a new file archives out of the egg by construction (R145).
 
 ## Marker convention — the survey, and why nothing was invented
 
-Case-sensitive counts over the whole tree at `a1357829`:
+Case-sensitive `git grep` counts over the tracked tree at `a1357829`:
 `DECLARED RESIDUAL` 0 · `HONEST SCOPE` 0 · `known limitation`/`KNOWN LIMITATION`
-0 · uppercase `RESIDUAL` word token **8 sites / 6 files** · `RETIREMENT
-CONDITION` 56 · `PARKED` markers 4 · lowercase `residual` 208 / 88 files.
+0 · uppercase `RESIDUAL` word token **21 sites / 11 files** · `RETIREMENT
+CONDITION` 42 / 24 · `PARKED` markers 4 · lowercase `residual` 239 / 107.
+
+**Survey defect found and fixed inside this unit, recorded rather than quietly
+corrected.** The first pass used `grep -rI`, which on BSD grep in a non-UTF-8
+locale classifies this repo's em-dash-heavy markdown as BINARY and skips it —
+19 files vanished, and the counts came out 8/6, 56 and 208/88. Re-measured with
+`git grep` (locale-independent, tree-exact). The consequence was not cosmetic:
+the undercount hid 11 token sites in the operative ledger + plan pair, i.e. a
+whole second declaration surface. Those are now named individually in the
+register's "known limits" — including `ledger:2782`, which states RES-001's
+exposure WIDER than the code does (`peers.yml`/`contexts/*.yml` as well). RES-001
+still says only what the code declares; the wider statement is cited, not
+absorbed.
+
+The ledger pair is deliberately NOT swept: every parallel wave appends rows to
+it, so a sweep there would contend for the same bytes with in-flight waves every
+session, and its rows already carry `status` + owner + the A13 parity gate.
 
 The three zero-count candidates were rejected outright. The adopted marker is
 the uppercase word token, which already appears in three qualifier variants

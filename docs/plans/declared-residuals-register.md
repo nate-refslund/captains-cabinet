@@ -43,17 +43,35 @@ absent WITHOUT the archive marker ⇒ hard fail (source rot).
 
 ## Marker convention — surveyed, not invented
 
-Survey over the tree at `a1357829` (whole repo, case-sensitive):
+Survey over the **tracked tree at `a1357829`**, case-sensitive. Counts are
+`git grep`-measured, not `grep -r`: BSD `grep -I` in a non-UTF-8 locale
+classifies this repo's em-dash-heavy markdown as binary and silently skips 19
+files — the first pass of this very survey undercounted because of it, which is
+why the reproduction command is recorded here.
 
-| candidate form | occurrences | verdict |
+Reproduce: `git grep -o -e '<form>' a1357829 -- . | wc -l`
+
+| candidate form | occurrences / files | verdict |
 |---|---|---|
-| `DECLARED RESIDUAL` | 0 | not in use — rejected |
-| `HONEST SCOPE` | 0 | not in use — rejected |
-| `known limitation` / `KNOWN LIMITATION` | 0 | not in use — rejected |
-| `RESIDUAL` (uppercase word token) | **8 sites in 6 files** | **ADOPTED** |
-| `RETIREMENT CONDITION` (uppercase) | 56 | adopted as the row FIELD name |
+| `DECLARED RESIDUAL` | 0 / 0 | not in use — rejected |
+| `HONEST SCOPE` | 0 / 0 | not in use — rejected |
+| `known limitation` / `KNOWN LIMITATION` | 0 / 0 | not in use — rejected |
+| `RESIDUAL` (uppercase word token) | **21 / 11** | **ADOPTED** |
+| `RETIREMENT CONDITION` (uppercase) | 42 / 24 | adopted as the row FIELD name |
 | `PARKED` / PARK marker | 4 dated `docs/plans` markers | adopted as a declaration form |
-| `residual` (lowercase, prose) | 208 in 88 files | rejected as a marker (see limits) |
+| `residual` (lowercase, prose) | 239 / 107 | rejected as a marker (see limits) |
+
+The 21 word-token sites split three ways, and only the first group is bound by
+the gate:
+
+- **8 sites / 6 files in the SWEEP SURFACE** — the code and config declarations.
+  Every one has a row below (minus the two legacy exemptions).
+- **11 sites / 2 files in the operative ledger + plan pair** — see "known
+  limits"; that pair is a coordination surface with its own status/owner fields
+  and its own A13 parity gate.
+- **2 sites / 2 files in frozen review artifacts** (`feat-config-rot-cp1.md:95`,
+  `feat-relaunch-scrub2-cp1.md:92`; the second is a wave NAME, not a
+  declaration).
 
 The uppercase token appears in three qualifier forms — bare `RESIDUAL:`,
 `HONEST RESIDUAL:`, `KNOWN RESIDUAL` — so the convention is the **word token**,
@@ -68,9 +86,9 @@ the word (`_TEMPORARY_RESIDUALS` in `framework/tests/test_no_launcher_hardcode.p
 `RESIDUAL_NOTE` in `cabinet/scripts/evidence-tamper-drill.py`), which are
 mechanisms, not declarations.
 
-`RETIREMENT CONDITION` is the repo's existing name for "what closes this" (56
-uses, e.g. `cabinet/scripts/tests/test_cog5_league_ast_pin.py:22`), so this
-register's retirement field carries that name rather than a new one.
+`RETIREMENT CONDITION` is the repo's existing name for "what closes this" (42
+uses across 24 files, e.g. `cabinet/scripts/tests/test_cog5_league_ast_pin.py:22`),
+so this register's retirement field carries that name rather than a new one.
 
 ## Sweep surface
 
@@ -84,8 +102,12 @@ walk otherwise), excluding:
 - `cabinet/scripts/tests/test_declared_residuals_register.py` — the file that
   defines the marker cannot be a subject of it (the self-exclusion idiom
   `framework/tests/test_no_launcher_hardcode.py` uses for its own pattern list).
-- `docs/` — narrative planning prose. Rows CITE docs (the PARK markers below);
-  the sweep does not police prose.
+- `docs/` — narrative planning prose, including the operative ledger + plan
+  pair. Rows CITE docs (the PARK markers below); the sweep does not police
+  prose. The ledger exclusion is a deliberate call, not an oversight: every
+  parallel wave appends rows to it, so a sweep there would fight in-flight
+  waves for the same bytes every session, and its rows already carry `status`
+  and an owner plus the A13 parity gate. See "known limits".
 
 Everything in the sweep surface is bidirectionally bound: a marker there must
 have a row, and a row citing there must sit on a marker line.
@@ -253,8 +275,8 @@ digest scope, and touching it would force a re-bind ceremony.
 
 ## Known limits of this register — stated, not hidden
 
-- **Lowercase prose declarations are NOT covered.** 208 lowercase uses of
-  "residual" span 88 files. Most describe channels already CLOSED, or
+- **Lowercase prose declarations are NOT covered.** 239 lowercase uses of
+  "residual" span 107 files. Most describe channels already CLOSED, or
   threat-model facts explicitly "accepted and stated". A few are genuinely open
   and unregistered — `cabinet/mcp-server/server.py:537` ("residual gap tracked
   for the Captain as a big-rock") is the clearest. They are not registered here
@@ -262,6 +284,27 @@ digest scope, and touching it would force a re-bind ceremony.
   more than the code declares is worse than no row. Remediation for any of them
   is mechanical and one commit: reword the declaration to the word token, add a
   row.
+- **The operative ledger + plan pair carries 11 unregistered token sites.**
+  Found by the corrected survey and named here rather than left buried. They
+  are NOT rows because each already sits inside a ledger entry whose own
+  `status` field is authoritative and whose owner is named — asserting a status
+  here that I have not byte-verified would be exactly the over-claim this file
+  forbids. The open-looking ones, for whoever picks them up:
+  `operative-egg-ledger-2026-07-07.yml:1034` (a posture-presets comment still
+  names the Captain; dir is schg, routed to a handback) · `:1698` (whether CC
+  2.1.202 emits a Notification on real model-fallback engagement — needs one
+  observed live page) · `:2782` (**the same exposure as RES-001, stated wider**:
+  `platform.yml`/`peers.yml`/`contexts/*.yml` are officer-writable sources
+  needing their own lock — RES-001 states only what the CODE declares, which is
+  the narrower pair) · `:2843` (Captain first-name tokens + the real Chair bot
+  handle, recorded for follow-up rows) · `:2871` (on the R163 flag-(e)
+  worklist) · `:3194` and `operative-egg-plan-2026-07-07.md:921` (the same
+  finding: pre-existing DB-backed `/api/library/*` routes stay live beside the
+  zero-DB graph, routed to the SEARCH lane) · `:3220` (library building art,
+  runbook-tracked). `operative-egg-plan-2026-07-07.md:980` reads open but
+  `ledger:3243` records it RESOLVED (ceremony executed 2026-07-18), and
+  `ledger:1689` is RES-002 restated. Promoting any of these is one commit:
+  verify the ledger row's status, then add a row here.
 - **`RETIREMENT CONDITION` vacuity guards are deliberately NOT registered.**
   There are 56, almost all in the COG-4/COG-5 test corpora. They are a
   different class: each one already trips RED the moment its target lands, so
