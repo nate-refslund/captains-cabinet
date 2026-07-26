@@ -118,8 +118,12 @@ Unmutated harness re-run afterwards: GREEN.
   dissent is INVALID by contract; such a tension is surfaced AS a tension.
   Preference-guessing is unrepresentable (no "he would like X" output).
 - **Never-a-score respected.** Repeat counts are retro inputs, never
-  officer-visible scores; the new files name no `golden-eval-scalar` token, so
-  the EVAL-025 C1 consumer scan is untouched.
+  officer-visible scores; no new file references the report-only suite-scalar
+  series (by either of the two tokens EVAL-025 C1 scans for), so its consumer
+  allowlist is untouched. This paragraph originally quoted one of those
+  tokens verbatim and CI caught it — writing a guarded literal into a doc
+  trips the guard that polices it, and the fix is to reword rather than to
+  widen the allowlist for an incidental mention.
 - **Layer separation.** The pack, the harness and both fixtures name no
   person, product, lane, employer or deployment; fixture subjects are generic
   ("briefing length", "overnight pings").
