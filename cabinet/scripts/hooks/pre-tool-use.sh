@@ -743,15 +743,46 @@ if [ "${_SKIP_MAIN_CAP:-0}" != "1" ]; then
   # by HKEYS-scanning fields that start with `<officer>_` and end with
   # `_cost_micro`. One field in pre-pool, N fields in pool mode.
   if [ "$EFFECTIVE_PER_OFF_CAP_MICRO" -gt 0 ] 2>/dev/null; then
-    # OWN data: a corrupt field under THIS officer's prefix blocks THIS officer.
-    # Blast radius is one session and the officer can see it is their own row,
-    # so fail-closed is right here.
+    # OWN data: a corrupt field under THIS officer's prefix blocks THIS officer's
+    # STATE-CHANGING calls. Blast radius is one session and the officer can see
+    # it is their own row, so fail-closed is right for mutations.
+    #
+    # But the refusal is SCOPED, not blanket. A blanket refusal here was a
+    # targeted cross-officer denial of service: the ledger hash is writable by
+    # any same-uid officer, the field name carries the victim's prefix, and one
+    # `HSET <key> cto_cost_micro garbage` blocked EVERY cto call including Read.
+    # It also persisted — HINCRBY cannot overwrite a non-numeric field, so the
+    # poison survives to the UTC rollover — and the documented repair is itself
+    # a Bash call, so a blanket arm left the victim with no way to read, no way
+    # to report, and no way to be told what happened. Master blocks nobody here,
+    # so an unscoped arm would have shipped a NEW outage channel alongside the
+    # fix.
+    #
+    # The scope is §1's already-ratified control-plane posture, not a new one:
+    # state-changing/egress/spawn tools fail closed, the read/observe set stays
+    # open so the officer can inspect and report rather than go silently dark
+    # (§1 branch (b), pinned by EVAL-001c). The Captain-comms door needs nothing
+    # here: a Telegram whitelist call sets _SKIP_MAIN_CAP=1 above and never
+    # reaches this block. Same list as §1's READ/OBSERVE ALLOWLIST and §0a's —
+    # keep the three in step; the hook-regression arm
+    # `own-row-corrupt-*` pins this one behaviourally.
     _LS=$(_ledger_sum officer)
     OFFICER_COST_MICRO=${_LS%%	*}
     _OFF_CORRUPT=${_LS#*	}
     if [ -n "$_OFF_CORRUPT" ]; then
-      echo "pre-tool-use: BLOCKED — your own spend ledger row in $_LEDGER_KEY holds an unreadable value ($_OFF_CORRUPT). Realized spend cannot be determined, so the daily cap cannot be honoured; refusing rather than reading it as \$0. Repair: redis-cli -h $REDIS_HOST -p $REDIS_PORT HDEL $_LEDGER_KEY <field>" >&2
-      exit 2
+      case "$TOOL_NAME" in
+        # READ/OBSERVE ALLOWLIST (mirrors §1): no state-changing or egress
+        # side-effect, so the officer keeps sight of the situation — and of this
+        # very message — while the cap is unenforceable. Listed EXPLICITLY so
+        # the default arm below can stay fail-closed for everything else.
+        Read|Grep|Glob|LS|TodoWrite)
+          echo "pre-tool-use: WARN your own spend ledger row in $_LEDGER_KEY holds an unreadable value ($_OFF_CORRUPT). Your daily cap cannot be enforced, so state-changing tools are refused until it is repaired; read/observe tools and Telegram stay open. Repair (from ANY other officer's session, or the Captain's shell — this officer's own Bash is refused): redis-cli -h $REDIS_HOST -p $REDIS_PORT HDEL $_LEDGER_KEY <field>. If you did not write it, say so — the field carries your prefix but any same-uid session can set it." >&2
+          ;;
+        *)
+          echo "pre-tool-use: BLOCKED — your own spend ledger row in $_LEDGER_KEY holds an unreadable value ($_OFF_CORRUPT). Realized spend cannot be determined, so the daily cap cannot be honoured; refusing rather than reading it as \$0. Read/observe tools and Telegram remain available. Repair (from ANY other officer's session, or the Captain's shell — this officer's own Bash is refused): redis-cli -h $REDIS_HOST -p $REDIS_PORT HDEL $_LEDGER_KEY <field>" >&2
+          exit 2
+          ;;
+      esac
     fi
     case "$OFFICER_COST_MICRO" in *[!0-9]*|'') OFFICER_COST_MICRO=0 ;; esac
     if [ "$OFFICER_COST_MICRO" -ge "$EFFECTIVE_PER_OFF_CAP_MICRO" ] 2>/dev/null; then
