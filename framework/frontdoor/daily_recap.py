@@ -243,6 +243,17 @@ def _raw_llm(user_content: str, system: str,
             "-H", "content-type: application/json",
             "-d", json.dumps(body),
         ], capture_output=True, text=True, timeout=185)
+        # PAID CALL COUNTED (lane `api_direct`, 2026-07-26). ATTRIBUTION:
+        # launchd-scheduled (cabinet/launchd/com.cabinet.frontdoor-briefing.plist)
+        # — no officer, no session, so `svc:frontdoor-briefing`. The inner
+        # try/except is NOT redundant: without it an ImportError would be
+        # caught by the outer handler and turn a perfectly good recap into a
+        # silent None, i.e. metering would have broken the caller.
+        try:
+            from framework.cost.record_lane import record_anthropic
+            record_anthropic(r.stdout, "api_direct", "svc:frontdoor-briefing")
+        except Exception:  # noqa: BLE001
+            pass
         d = json.loads(r.stdout)
     except Exception:
         return None

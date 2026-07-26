@@ -41,6 +41,38 @@ def _record_cost(cost: Any) -> None:
         LAST_COST_USD = float(cost)
         TOTAL_COST_USD += float(cost)
 
+
+# LANE METER (2026-07-26). `claude -p` draws down the Max subscription pool
+# rather than a card, which is exactly why it was invisible: no API key, no
+# Stop hook, no invoice line. It is still finite capacity being spent, so it
+# gets its own lane rather than being folded into api_direct — mixing pool
+# draw with card spend would make both numbers meaningless.
+#
+# ATTRIBUTION: this module is the fidelity harness's LLM seam and has no
+# officer and no session. It defaults to the harness service; a caller that
+# knows its exact launchd job (e.g. `svc:fidelity-f1`) names itself through
+# CABINET_COST_PRINCIPAL. Never an officer.
+_LANE_PRINCIPAL_DEFAULT = "svc:fidelity-harness"
+
+
+def _lane_principal() -> str:
+    return os.environ.get("CABINET_COST_PRINCIPAL") or _LANE_PRINCIPAL_DEFAULT
+
+
+def _record_lane(raw_stdout: Any) -> None:
+    """Count one headless call. Counting only — never raises, never gates.
+
+    The cost, when there is one, comes from the CLI's own ``total_cost_usd``;
+    the parse lives in framework/cost/record_lane.py so this file never grows
+    a second copy of the envelope shape.
+    """
+    try:
+        from framework.cost.record_lane import (
+            record_subscription, subscription_cost_usd)
+        record_subscription(subscription_cost_usd(raw_stdout), _lane_principal())
+    except Exception:  # noqa: BLE001
+        pass
+
 # LEAK ISOLATION (verified 2026-06-19): `claude -p` is a full Claude Code agent
 # that auto-discovers BOTH (a) project context — CLAUDE.md, .remember/ session
 # buffer, SessionStart hooks from its cwd — and (b) user-global context —
@@ -119,6 +151,12 @@ def oauth_raw_llm(payload: str, system: str, max_tokens: int = 1500,
         )
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return None
+    # PAID CALL COUNTED. Recorded on any COMPLETED run, including a non-zero
+    # exit: the pool is drawn down by the work the CLI did, not by whether it
+    # returned cleanly. Unpriced — text output-format carries no
+    # total_cost_usd, and there is no honest way to reconstruct one here, so
+    # the lane shows a call with no dollar figure instead of a fabricated $0.
+    _record_lane(r.stdout)
     if r.returncode != 0:
         return None
     out = (r.stdout or "").strip()
@@ -155,6 +193,11 @@ def oauth_json_llm(payload: str, system: str, max_tokens: int = 400,
         )
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return None
+    # PAID CALL COUNTED, once, here — before every early return below. A judge
+    # call that exits non-zero or returns an is_error envelope still drew down
+    # the pool, and returning early without counting is precisely how this
+    # whole class of spend went missing in the first place.
+    _record_lane(r.stdout)
     if r.returncode != 0:
         return None
     try:
