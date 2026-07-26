@@ -1,7 +1,7 @@
 """Red-path coverage for the persona acceptance harness.
 
-The green path (all three personas pass) is exercised by
-test_journey.py::test_three_persona_evaluation_harness_is_executable. These
+The green path (every persona passes) is exercised by
+test_journey.py::test_persona_evaluation_harness_is_executable. These
 tests pin the FAILURE path so a vacuously-green acceptance gate — one that can
 never report failure — would be caught.
 """

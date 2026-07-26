@@ -1111,7 +1111,7 @@ def test_unencodable_source_path_is_a_clean_refusal(tmp_path):
     assert exc.value.code == "source_unencodable"
 
 
-def test_three_persona_evaluation_harness_is_executable():
+def test_persona_evaluation_harness_is_executable():
     proc = subprocess.run(
         [sys.executable, "-m", "framework.onboarding.evaluate_personas"],
         cwd=REPO,
@@ -1123,6 +1123,64 @@ def test_three_persona_evaluation_harness_is_executable():
     payload = json.loads(proc.stdout)
     assert payload["passed"] is True
     assert [row["persona"] for row in payload["results"]] == [
-        "software-product", "client-services", "community-nonprofit"
+        "software-product", "client-services", "community-nonprofit",
+        "enterprise-employee",
     ]
     assert all(row["elapsed_seconds"] < 5 for row in payload["results"])
+
+
+def _split_pair_estate(tmp_path: Path, filler: int) -> Path:
+    """A slice whose documented command and its refuting package.json are in
+    different top-level directories, as they always are when the wiki and the
+    service repo are separate systems."""
+    root = (tmp_path / "slice").resolve()
+    docs = root / "docs"
+    docs.mkdir(parents=True)
+    for i in range(filler):
+        (docs / f"page-{i:03d}.md").write_text(f"# Page {i}\n\nOrdinary wiki prose.\n", encoding="utf-8")
+    (docs / "zz-deploy-runbook.md").write_text(
+        "# Deploying\n\n- Run `npm run migrate:ledger` against staging.\n", encoding="utf-8"
+    )
+    repo = root / "repo"
+    repo.mkdir(parents=True)
+    (repo / "package.json").write_text('{"name":"svc","scripts":{"dev":"tsx"}}\n', encoding="utf-8")
+    return root
+
+
+def test_uncapped_window_finds_the_cross_directory_command_drift(tmp_path):
+    """Control arm: with both halves in the window the detector does fire."""
+    root = _split_pair_estate(tmp_path, filler=3)
+    manifest, entries = journey._scan_source(root, charter_hash="control")
+    assert manifest["truncated_by_limits"] is False
+    assert any(e["path"] == "repo/package.json" for e in entries)
+    assert journey._first_dividend(manifest, entries, "2026-07-26T00:00:00Z")["finding"]["kind"] == (
+        "software_command_drift"
+    )
+
+
+def test_capped_window_reports_a_clean_negative_it_did_not_earn(tmp_path, monkeypatch):
+    """The file cap is resolved by walk order, not relevance, so it can admit
+    one half of a cross-directory pair and drop the other.
+
+    Measured 2026-07-26 against a realistic employee-scale slice (2103 eligible
+    files, 12.6 MB): the cap admitted 200 files from a single top-level
+    directory, both orderings scored zero findings, and the card said it "did
+    not find ... a broken documented command" while exactly such a command sat
+    unopened in the folder. That negative is not one the sweep is entitled to.
+    Pinned so any coverage, ranking or disclosure fix flips a sensor.
+    """
+    monkeypatch.setattr(journey, "MAX_FILES", 3)
+    root = _split_pair_estate(tmp_path, filler=3)
+    manifest, entries = journey._scan_source(root, charter_hash="capped")
+    assert manifest["truncated_by_limits"] is True
+    # The stale command survives; the package.json that would refute it does not.
+    assert not any(e["path"] == "repo/package.json" for e in entries)
+    assert journey._command_drift(entries) == []
+    finding = journey._first_dividend(manifest, entries, "2026-07-26T00:00:00Z")["finding"]
+    assert finding["kind"] == "orientation_map"
+    assert "did not find" in finding["summary"]
+    # The operator-facing card carries no coverage or truncation signal at all.
+    assert "truncat" not in finding["summary"]
+    stats = manifest["scan_statistics"]
+    assert stats["candidate_files"] == stats["included_files"]
+    assert sum(stats["excluded"].values()) == 0
