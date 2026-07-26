@@ -85,9 +85,19 @@ def test_store_survives_a_deploy_per_the_actual_provisioning_script():
         "the Captain's scores")
 
 
-def test_store_is_not_in_a_home_a_deploy_discards():
-    """GUARD: SCORES_REL. memory/tier3/ is the trap next door — gitignored and
-    named by no INSTANCE_PERSISTENT_* list, so a deploy strands it."""
+def test_store_stays_co_located_with_the_briefing_archive():
+    """GUARD: SCORES_REL. The store sits beside the briefings it scores, under
+    instance/memory — never in top-level memory/. One directory means ONE env
+    knob (CABINET_BRIEFING_SCORES_DIR) fences the store AND the archive
+    together, so a fenced run can never score a real briefing.
+
+    This arm was authored as "memory/ is a home a deploy discards", which was
+    true against the base commit. The state-persistence preflight landed on
+    master while this branch was in flight and added memory/tier3 to
+    INSTANCE_PERSISTENT_SEEDED_DIRS, retiring that reason (integration note
+    2026-07-26). The assertion is unchanged: co-location is the reason that
+    still holds, and deploy-survival is pinned by the arm above against
+    runtime-provision.sh's real text."""
     assert not bs.SCORES_REL.startswith("memory/")
 
 

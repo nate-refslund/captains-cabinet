@@ -89,14 +89,24 @@ needed. `cabinet/scripts/lib/tests/test_briefing_score.py` asserts this
 against that script's real text, so a future edit to the persistence lists
 turns the suite red rather than silently stranding fourteen days of scores.
 
-Two nearby homes were rejected:
+Two nearby homes were rejected at authoring time, because against the base
+commit neither survived a deploy:
 
-- top-level **`memory/tier3/`** — gitignored and named by no
-  `INSTANCE_PERSISTENT_*` list, so a deploy strands it on the old slot;
+- top-level **`memory/tier3/`** — then named by no `INSTANCE_PERSISTENT_*`
+  list, so a deploy stranded it on the old slot;
 - a new **`shared/interfaces/*.jsonl`** series — its persistence list is
-  per-file, and `link_instance_data` only links a leaf that already exists in
-  the shared store, so the FIRST write of a brand-new series would land in the
-  slot and be lost at the next deploy.
+  per-file, and the loop then linked only a leaf that already existed in the
+  shared store, so the FIRST write of a brand-new series was lost.
+
+**Landing note, 2026-07-26.** The state-persistence preflight landed on master
+while this unit was in flight and closed both holes: `memory/tier3` joined
+`INSTANCE_PERSISTENT_SEEDED_DIRS`, and the per-file loop gained adoption of a
+runtime-created file. Neither rejected home is deploy-unsafe any more, so the
+two bullets above are the dated reason of record rather than a live warning.
+`instance/memory` remains the right home for the reason that did not change:
+it is co-located with the briefing archive this instrument scores, so one env
+knob fences both, and a whole-directory link needs no persistence-list edit at
+all.
 
 The briefing archive it scores, `instance/memory/briefings/`
 (`framework/frontdoor/run_briefing.py`), sits under the same surviving

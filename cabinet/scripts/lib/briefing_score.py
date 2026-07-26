@@ -33,18 +33,28 @@ reaches ``cabinet_projection`` or any officer read surface.
 
 WHERE THE DATA LIVES — and why it survives a deploy.
 ``instance/memory/briefing-scores.jsonl``. ``cabinet/scripts/runtime-provision.sh``
-links ``instance/memory`` as a WHOLE DIRECTORY (``INSTANCE_PERSISTENT_SEEDED_DIRS``,
-runtime-provision.sh:224) into the shared instance-data store, so every file
-under it — including one that did not exist when the release was cut —
-survives a deploy, a rollback and a slot swap with no edit to any persistence
-list. Two nearby homes do NOT survive and were rejected: top-level
-``memory/tier3/`` (gitignored, named by no ``INSTANCE_PERSISTENT_*`` list, so
-a deploy strands it on the old slot), and a new ``shared/interfaces/*.jsonl``
-series (its list is per-file AND ``link_instance_data`` only links a leaf a
-shared/ copy ALREADY has — the first write of a brand-new series would land
-in the slot and be lost at the next deploy). The archive it scores,
-``instance/memory/briefings/`` (``framework/frontdoor/run_briefing.py:48``),
-is co-located under the same surviving directory.
+links ``instance/memory`` as a WHOLE DIRECTORY (it is an entry in
+``INSTANCE_PERSISTENT_SEEDED_DIRS`` — named, never cited by line number, which
+rots on every concurrent landing) into the shared instance-data store, so
+every file under it — including one that did not exist when the release was
+cut — survives a deploy, a rollback and a slot swap with no edit to any
+persistence list. The archive it scores, ``instance/memory/briefings/``
+(``framework/frontdoor/run_briefing.py``), is co-located under that same
+surviving directory, so ONE env knob fences both (see TEST FENCE below) and
+neither can drift onto a different slot than the other.
+
+Two nearby homes were rejected at authoring time because neither then
+survived a deploy: top-level ``memory/tier3/`` (named by no
+``INSTANCE_PERSISTENT_*`` list) and a new ``shared/interfaces/*.jsonl``
+series (a per-file list whose loop linked only a leaf shared/ ALREADY held,
+so the first write of a brand-new series was lost). LANDING NOTE 2026-07-26:
+the state-persistence preflight that landed on master while this branch was
+in flight closed BOTH holes — ``memory/tier3`` joined the seeded-dirs list,
+and the per-file loop gained runtime-file adoption — so neither is
+deploy-unsafe any more, and those two sentences are kept only as the dated
+reason of record. The choice stands on the reason that did not change:
+co-location with the briefing archive, and a whole-directory link that needs
+no persistence-list edit at all.
 
 APPEND-ONLY. A re-score of the same briefing appends a correction; the
 summary takes the LAST row per briefing. Nothing in this file ever rewrites

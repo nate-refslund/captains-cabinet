@@ -95,3 +95,47 @@ one number per briefing, stored where a deploy cannot eat it, summarised on
 demand, with silence counted rather than dropped. It builds no pipeline, no
 dashboard and no north-star computation, and a test fails the suite if it ever
 gets a schedule.
+
+---
+
+## Landing note — independent integration pass, 2026-07-26
+
+Added at merge time by a DIFFERENT session (fresh context, Opus 5 (1M), zero
+priors on this branch), which is the independent lens the cp1 header correctly
+says it was not. Nothing above is rewritten — this section supersedes where it
+disagrees.
+
+**Verified independently, not taken on the builder's word:** both suites
+re-run green from a clean clone off `origin/master` (`298 passed` in the
+`cabinet/scripts/lib/tests` CI step, `4625 passed / 28 skipped` in
+`cabinet/scripts/tests`); both directories confirmed to be collected by real
+CI steps (`cabinet-ci.yml` lines 335 and 537), so the arms actually gate; the
+merge onto current master is conflict-free; `verify-cognitive-phase4.sh`
+measured `exit 0` both BEFORE and AFTER the merge, and phase0..3 return their
+unchanged pre-existing digests, so this landing moves no cognitive gate. The
+live store is not polluted by a test run (`instance/memory/briefing-scores.jsonl`
+absent after the full sweep) — the autouse fixture fences it even in the CI
+invocation, which runs from `cabinet/scripts/lib` and would not otherwise load
+the repo-root `conftest.py`.
+
+**One defect found by this pass, and fixed in the merge commit.** The
+rejected-home rationale had gone FALSE between authoring and landing. At the
+branch base `05871f12`, `INSTANCE_PERSISTENT_SEEDED_DIRS` was exactly
+`"instance/memory"` and the per-file loop was a bare
+`[ -e "$shared_abs" ] || continue` — so both rejections were true as written.
+PR #201 (state-persistence-preflight) then landed on master, adding
+`memory/tier3` to the seeded-dirs list and giving the per-file loop
+runtime-file adoption. That silently invalidated the stated reason on four
+surfaces (module docstring, test docstring + test NAME, runbook, and the
+bullet above). Corrected on all four, with the dated reason of record kept.
+The stale `runtime-provision.sh:224` line citation — correct at the base,
+wrong after the merge — is replaced by the variable name; line numbers rot on
+every concurrent landing.
+
+This is merge-induced doc rot, not a build defect: no behaviour changed, the
+load-bearing durability arm
+(`test_store_survives_a_deploy_per_the_actual_provisioning_script`) was true
+before and after, and `instance/memory` is still the correct home on the
+co-location reason that never depended on the other two.
+
+**Verdict: approve to land.**
