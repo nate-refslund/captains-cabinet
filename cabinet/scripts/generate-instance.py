@@ -18,6 +18,11 @@ Generated (org_shape: portfolio):
                                                 officer-supervisor.sh greps this file)
   instance/config/roster.yml                    roster snippet for
                                                 `bootstrap-roles.sh --roster instance/config/roster.yml`
+                                                — the HIRE record. Carries the
+                                                Chair plus ONLY those lane CEOs
+                                                the germline pair already
+                                                authorizes (see "Hiring is
+                                                authorization-gated" below).
   instance/config/posture.yml                   INERT posture RULING scaffold (only when
                                                 absent — an existing ruling is never
                                                 regenerated; sovereign amendment 2026-07-05)
@@ -54,6 +59,22 @@ Generated (org_shape: functional | custom): contexts + projects + captain keys
 only — the functional preset ships its own five-officer roster (default
 `bootstrap-roles.sh`, no --roster); custom shapes author agents/roster by hand.
 (active-project.txt is emitted for every shape.)
+
+Hiring is authorization-gated (roster-authz, 2026-07-26). An officer is only
+usable if cabinet/officer-capabilities.conf grants it capability rows AND
+cabinet/mcp-scope.yml lists it under `agents:` — without those, every
+capability-gated behavior is off and pre-tool-use.sh rejects every mcp__* call
+it makes. Both files are GERMLINE: this generator and hatch.sh never write
+them (hatch-lib/errands.sh errand 1, "Captain's hands only"). So the generator
+reads them as the authorization surface and ROSTERS ONLY WHAT THEY COVER. A
+lane whose CEO is not yet authorized still gets its context, project and agent
+file (all inert) and is recorded as PENDING in roster.yml + printed as
+paste-ready germline rows; the hatch completes Chair-only and GREEN, and
+re-running the generator after the Captain applies the rows hires the lane CEO.
+Before this gate the generator hired `<lane>-ceo` unconditionally, which the
+Captain was structurally forbidden to authorize inside the automated hatch —
+and framework/tests/test_roster_conf_lockstep.py then failed the deployment
+for the resulting lockout (a gate the hatch could not satisfy).
 
 Adopting a clone that ships another deployment's instance/ (--adopt): a fresh
 captain hatching from a clone that carries a PREVIOUS deployment's committed
@@ -184,6 +205,18 @@ SECRET_PATTERNS = [
 # section) — the conf file itself is germline; the captain adds rows there.
 CHAIR_CAPABILITIES = "[logs_captain_decisions, reviews_specs, reviews_implementations, validates_deployments]"
 LANE_CEO_CAPABILITIES = "[deploys_code, logs_captain_decisions]"
+
+# The AUTHORIZATION surface for a hire (roster-authz, 2026-07-26). Both are
+# germline — this generator and hatch.sh NEVER write them (hatch-lib/errands.sh
+# errand 1: "Captain's hands only") — so the generator READS them and hires
+# only officers they already cover. An officer rostered without a capability
+# row and an `agents:` row is a silent capability/MCP-scope lockout, and
+# framework/tests/test_roster_conf_lockstep.py fails the deployment for it.
+OFFICER_CONF_REL = "cabinet/officer-capabilities.conf"
+MCP_SCOPE_REL = "cabinet/mcp-scope.yml"
+# The coordinating officer id. Reserved (see RESERVED_SLUGS) so no lane can
+# shadow it; hatch.sh's own proof steps name it directly.
+CHAIR_SLUG = "cos"
 
 DEFAULT_MODEL = "claude-opus-4-8[1m]"
 
@@ -652,9 +685,12 @@ def render_agent(template_text: str, lane: dict, model: str) -> str:
         f"# {MARKER} — rendered from {LANE_CEO_TEMPLATE_REL};\n"
         f"# regenerate via cabinet/scripts/generate-instance.py (do not hand-edit\n"
         f"# this file back into a template).\n"
-        f"# Hire the role: list {lane['slug']}-ceo under agents: in\n"
-        f"# cabinet/mcp-scope.yml + add its rows to cabinet/officer-capabilities.conf\n"
-        f"# (germline files — propose to the Captain), then seed via\n"
+        f"# This role definition is INERT until the role is hired. To hire it:\n"
+        f"# list {lane['slug']}-ceo under agents: in cabinet/mcp-scope.yml + add its\n"
+        f"# rows to cabinet/officer-capabilities.conf (germline files — propose to\n"
+        f"# the Captain), then RE-RUN generate-instance.py (which is what adds it to\n"
+        f"# instance/config/roster.yml — the generator never rosters an officer those\n"
+        f"# two files do not authorize) and seed via\n"
         f"# bootstrap-roles.sh --roster instance/config/roster.yml.\n"
     )
     rendered = "---\n" + stamped + "\n".join(lines[body_start:])
@@ -682,9 +718,135 @@ def render_agent(template_text: str, lane: dict, model: str) -> str:
     return rendered
 
 
-def render_roster(lanes: list, model: str) -> str:
-    lane_blocks = []
+def _conf_officer_column(path: Path) -> set:
+    """Officer slugs in cabinet/officer-capabilities.conf's `officer:capability`
+    column. Mirrors framework.env.officers()'s documented parse (skip blank /
+    `#` / no-colon lines, take the text left of the first colon) rather than
+    importing it: env.officers() caches process-globally against a FIXED
+    resolved path, so it cannot be pointed at an arbitrary root. Same mirroring
+    rationale as framework/tests/test_roster_conf_lockstep.py's own parser."""
+    if not path.is_file():
+        return set()
+    out = set()
+    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        s = line.strip()
+        if not s or s.startswith("#") or ":" not in s:
+            continue
+        officer = s.split(":", 1)[0].strip()
+        if officer:
+            out.add(officer)
+    return out
+
+
+def _scope_agent_keys(path: Path) -> set:
+    """Hired-agent keys in cabinet/mcp-scope.yml's `agents:` mapping. A
+    `scaffolds:` entry is deliberately NOT authorization — that section means
+    "scope reserved, NOT hired" by the file's own contract."""
+    if not path.is_file():
+        return set()
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise GenerationError(
+            f"{path}: could not parse the MCP scope file ({exc}) — the hatch "
+            f"cannot tell which officers are authorized. Fix the YAML first."
+        )
+    agents = (data or {}).get("agents") or {}
+    return set(agents.keys()) if isinstance(agents, dict) else set()
+
+
+def authorized_officers(root: Path) -> set:
+    """The officer slugs THIS deployment can actually authorize: present in
+    cabinet/officer-capabilities.conf's officer column AND in
+    cabinet/mcp-scope.yml's `agents:` mapping.
+
+    Both are required, because each one alone is a silent lockout: no
+    capability row ⇒ every capability-gated behavior is off for that officer;
+    no `agents:` row ⇒ pre-tool-use.sh rejects every mcp__* call the officer's
+    session makes. framework/tests/test_roster_conf_lockstep.py asserts exactly
+    this pair over a live roster.yml.
+
+    Both files are GERMLINE — hatch.sh and this generator never write them
+    (cabinet/scripts/hatch-lib/errands.sh errand 1: "Captain's hands only").
+    So the generator reads them as the authorization surface and hires only
+    what they already cover; an absent file authorizes nothing (fail-closed —
+    inability to prove authorization is never permission)."""
+    return (_conf_officer_column(root / OFFICER_CONF_REL)
+            & _scope_agent_keys(root / MCP_SCOPE_REL))
+
+
+def split_lane_hires(root: Path, lanes: list) -> tuple:
+    """(hired, pending) lanes for `lanes`, in lane order.
+
+    `hired` lands in roster.yml (bootstrap-roles.sh seeds it, deploy-mac.sh
+    derives the fleet from it); `pending` is printed as paste-ready germline
+    rows and recorded as a comment block in roster.yml. Re-running the
+    generator after the Captain applies the rows promotes a pending lane CEO
+    to hired — the errand closes itself, and no errand ever blocks the hatch.
+
+    The Chair (`cos`) is not a lane hire: it is the cabinet's own coordinating
+    surface, named directly by hatch.sh's own proof steps, and every shipped
+    germline pair carries its rows. It is therefore always rostered — but when
+    BOTH germline files are present and neither authorizes it, that is a
+    stripped/broken authorization surface and the run REFUSES rather than
+    hiring a Chair the deployment cannot authorize."""
+    authorized = authorized_officers(root)
+    conf_path, scope_path = root / OFFICER_CONF_REL, root / MCP_SCOPE_REL
+    if (conf_path.is_file() and scope_path.is_file()
+            and CHAIR_SLUG not in authorized):
+        raise GenerationError(
+            f"the Chair ({CHAIR_SLUG}) is not authorized by this checkout's "
+            f"germline pair — it needs capability rows in {OFFICER_CONF_REL} "
+            f"AND an `agents:` entry in {MCP_SCOPE_REL}. Rostering it anyway "
+            f"would be a silent capability/MCP-scope lockout on the one "
+            f"officer the whole hatch depends on. Add the rows (Captain "
+            f"applies germline files), then re-run."
+        )
+    hired, pending = [], []
     for lane in lanes:
+        (hired if f"{lane['slug']}-ceo" in authorized else pending).append(lane)
+    return hired, pending
+
+
+def germline_rows_for(lane_slugs: list) -> str:
+    """Paste-ready germline rows that would authorize `lane_slugs`, exactly as
+    the two germline files want them. Printed for the Captain (errand 1) and
+    never written by this generator. `mcps: []` is deliberate: an empty scope
+    is fail-closed, and which servers a lane needs is the Captain's call."""
+    caps = [c.strip() for c in LANE_CEO_CAPABILITIES.strip("[] ").split(",")]
+    caps = [c for c in caps if c]
+    if not caps:
+        raise GenerationError(
+            "LANE_CEO_CAPABILITIES parsed to zero capabilities — the printed "
+            "germline rows would authorize nothing; fix the constant.")
+    lines = [f"  --- {OFFICER_CONF_REL} (append) ---"]
+    for slug in lane_slugs:
+        for cap in caps:
+            lines.append(f"  {slug}-ceo:{cap}")
+    lines.append(f"  --- {MCP_SCOPE_REL} (under the existing `agents:` key) ---")
+    for slug in lane_slugs:
+        lines.append(f"    {slug}-ceo:")
+        lines.append("      mcps: []            # add the servers THIS lane needs")
+        lines.append("      rationale: >")
+        lines.append("        Lane CEO — scope chosen by the Captain.")
+    return "\n".join(lines)
+
+
+def render_roster(lanes: list, model: str, root: Path) -> str:
+    """roster.yml — the HIRE record.
+
+    A lane CEO is emitted ONLY when the germline pair already authorizes it
+    (see authorized_officers). Hiring an officer with no capability row and no
+    MCP scope row is a silent capability/MCP-scope lockout — the bug class
+    framework/tests/test_roster_conf_lockstep.py exists to catch — and the
+    generator cannot fix it itself, because writing those two files is the
+    Captain's act. So it does not create the debt: unauthorized lanes are
+    recorded as PENDING (their context/project/agent files still generate,
+    inert), the Chair-only hatch completes green, and re-running after the
+    Captain pastes the rows hires them."""
+    hired, pending = split_lane_hires(root, lanes)
+    lane_blocks = []
+    for lane in hired:
         lane_blocks.append(
             f"""  {lane['slug']}-ceo:
     title: {lane['name']} CEO
@@ -697,13 +859,27 @@ def render_roster(lanes: list, model: str) -> str:
     # NOTE: keep ALL comments above the top-level `roster:` key — the
     # bootstrap-roles.sh awk parser closes the roster section on any
     # top-level line (including full-line comments).
+    pending_block = ""
+    if pending:
+        pending_lines = "\n".join(f"#   {lane['slug']}-ceo" for lane in pending)
+        pending_block = f"""
+#
+# PENDING AUTHORIZATION — generated but NOT hired by this roster:
+{pending_lines}
+# A lane CEO is hired only once BOTH germline files carry its rows
+# (cabinet/officer-capabilities.conf capability rows + cabinet/mcp-scope.yml
+# agents: entry). Hiring one without them is a silent capability/MCP-scope
+# lockout, so this generator refuses to create that debt — it never writes
+# germline files (the Captain applies them). The lane's context/project/agent
+# files ARE generated (inert). Paste the rows generate-instance.py printed,
+# then re-run it: the pending CEO moves into the roster below."""
     return f"""# {MARKER} — roster snippet for the portfolio shape.
 # Seed it:  bash cabinet/scripts/bootstrap-roles.sh --roster instance/config/roster.yml
 # Parser contract (bootstrap-roles.sh): 2-space role keys; 4-space
 # title/model/capabilities/authority_level fields; `type:` is read by
 # humans + the supervisor config and ignored by bootstrap. Capability
 # lists mirror cabinet/officer-capabilities.conf — add matching rows
-# there for every lane CEO (germline file: the Captain applies).
+# there for every lane CEO (germline file: the Captain applies).{pending_block}
 roster:
   cos:
     title: Chair
@@ -1260,7 +1436,7 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
             ))
         outputs.append((
             _instance_path(root, "config", "roster.yml"),
-            render_roster(lanes, model), "yaml",
+            render_roster(lanes, model, root), "yaml",
         ))
 
     platform_path = _instance_path(root, "config", "platform.yml")
@@ -1377,9 +1553,28 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
         print("      presets/developer/README.md; activate with")
         print("      echo developer > instance/config/active-preset)")
     if org_shape == "portfolio":
-        print("  2. PROPOSE germline edits to the Captain (Captain applies):")
-        print("     - cabinet/mcp-scope.yml: list each lane CEO under agents:")
-        print("     - cabinet/officer-capabilities.conf: add each lane CEO's rows")
+        _, pending_lanes = split_lane_hires(root, lanes)
+        if pending_lanes:
+            pending_slugs = [str(lane["slug"]) for lane in pending_lanes]
+            print("  2. OPTIONAL — nothing else here waits on it. NOT rostered "
+                  "(not hired):")
+            print(f"     {', '.join(s + '-ceo' for s in pending_slugs)}")
+            print("     Their lane files are generated and inert. They stay "
+                  "unhired until")
+            print(f"     BOTH germline files authorize them — a roster hire "
+                  f"without those")
+            print("     rows is a silent capability/MCP-scope lockout, so the "
+                  "generator")
+            print("     will not create it. To hire: PROPOSE these exact rows to "
+                  "the")
+            print("     Captain (germline = Captain applies), then re-run this "
+                  "generator.")
+            print(germline_rows_for(pending_slugs))
+        else:
+            print("  2. Germline authorization: every lane CEO already has its "
+                  "rows in")
+            print(f"     {OFFICER_CONF_REL} + {MCP_SCOPE_REL} — all rostered, "
+                  f"nothing to propose.")
         print("  3. Create the Chair bot via BotFather; put the TOKEN ONLY in")
         print(f"     cabinet/.env as {token_env}=... (canonical name:")
         print("     TELEGRAM_<OFFICER_UPPER>_TOKEN; config keeps TOKEN-TBD).")

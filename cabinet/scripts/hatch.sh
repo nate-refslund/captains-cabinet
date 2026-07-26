@@ -15,8 +15,10 @@
 #   2. instance generation   generate-instance.py [--defaults]
 #                            (inherited instance -> the rehearsed --adopt path)
 #   3. activation            active-preset + bootstrap-roles.sh + load-preset.sh
-#   4. proofs                P-a null-hatch.sh · P-b clean-room pytest subset ·
-#                            P-c dry renders · P-d kill-switch drill (--with-drill)
+#   4. proofs                roster-authz (every officer THIS hatch rostered is
+#                            authorized by the germline pair) · P-a null-hatch.sh ·
+#                            P-b clean-room pytest subset · P-c dry renders ·
+#                            P-d kill-switch drill (--with-drill)
 #   5. FIRST RECEIPT         first-briefing.sh --local (prints where it landed)
 #      + DEMO receipt        emit-demo-receipt.sh — one LABELED demo receipt
 #                            (real schema path + real renderer, NEVER
@@ -27,7 +29,13 @@
 #
 # GERMLINE steps (cabinet/mcp-scope.yml, cabinet/officer-capabilities.conf)
 # are NEVER automated — they print as numbered ERRAND NOTES for the human,
-# exactly like BotFather tokens and TCC clicks (design doc §3).
+# exactly like BotFather tokens and TCC clicks (design doc §3). And because
+# they are never automated, the hatch must never DEPEND on them: since
+# roster-authz (2026-07-26) generate-instance.py rosters a lane CEO only once
+# those two files already authorize it, so the chain below — including
+# [proof-a], whose lockstep gate fails any officer hired without those rows —
+# completes Chair-only with zero human errands. Applying the rows and re-running
+# the generator is how a lane CEO gets hired, always as a post-hatch act.
 #
 # CLEAN-ROOM CONTAINMENT (--clean-room; 2026-07-10 fix, PC-B verifier
 # follow-up (a)): CABINET_RUNTIME_DIR is exported into the run's scratch
@@ -226,37 +234,43 @@ emit_plan() {
   else
     echo " 6. [load-preset]   bash cabinet/scripts/load-preset.sh"
   fi
-  echo " 7. [proof-a]       bash cabinet/scripts/null-hatch.sh"
-  echo " 8. [proof-b]       $PY -m pytest framework/tests/test_clean_room.py \\"
+  echo " 7. [roster-authz]  $PY -m pytest framework/tests/test_roster_conf_lockstep.py -q"
+  echo "                    (every officer THIS hatch rostered has its capability rows in"
+  echo "                    cabinet/officer-capabilities.conf AND an agents: entry in"
+  echo "                    cabinet/mcp-scope.yml — no silent capability/MCP-scope lockout."
+  echo "                    Green by construction: generate-instance.py rosters only what"
+  echo "                    those germline files already authorize)"
+  echo " 8. [proof-a]       bash cabinet/scripts/null-hatch.sh"
+  echo " 9. [proof-b]       $PY -m pytest framework/tests/test_clean_room.py \\"
   echo "                      framework/tests/test_no_screenpipe_in_core.py \\"
   echo "                      framework/tests/test_no_launcher_hardcode.py -q"
-  echo " 9. [proof-c1]      bash cabinet/scripts/start-officer-mac.sh cos --dry-run"
-  echo "10. [proof-c2]      bash cabinet/scripts/deploy-mac.sh --officer cos --dry-run"
+  echo "10. [proof-c1]      bash cabinet/scripts/start-officer-mac.sh cos --dry-run"
+  echo "11. [proof-c2]      bash cabinet/scripts/deploy-mac.sh --officer cos --dry-run"
   if [ "$WITH_DRILL" = "1" ]; then
-    echo "11. [proof-d]       kill-switch drill: activate -> assert ACTIVE -> deactivate -> assert INACTIVE"
+    echo "12. [proof-d]       kill-switch drill: activate -> assert ACTIVE -> deactivate -> assert INACTIVE"
     echo "                    (REDIS_URL=\${REDIS_URL:-redis://localhost:6379}; halts a live fleet by design)"
   else
-    echo "11. [proof-d]       (skipped — enable with --with-drill; it writes the Redis kill switch)"
+    echo "12. [proof-d]       (skipped — enable with --with-drill; it writes the Redis kill switch)"
   fi
   echo "    -- stamp HATCH_PROOFS_DONE --"
-  echo "12. [first-receipt] bash cabinet/scripts/first-briefing.sh --local"
+  echo "13. [first-receipt] bash cabinet/scripts/first-briefing.sh --local"
   echo "                    then print where the briefing landed"
   echo "    -- stamp FIRST_RECEIPT_DONE; TTFR = proofs-done -> first-receipt --"
-  echo "13. [demo-receipt]  bash cabinet/scripts/emit-demo-receipt.sh"
+  echo "14. [demo-receipt]  bash cabinet/scripts/emit-demo-receipt.sh"
   echo "                    ONE labeled DEMO receipt (demo:true row built via the"
   echo "                    real schema path, rendered by the real receipt"
   echo "                    renderer — NEVER journaled: the live undo journal"
   echo "                    stays empty) -> instance/memory/demo-receipt.md"
   if [ "$WITH_LAUNCHD" = "1" ]; then
-    echo "14. [move-in]       bash cabinet/scripts/deploy-mac.sh --officer cos"
+    echo "15. [move-in]       bash cabinet/scripts/deploy-mac.sh --officer cos"
     echo "                    $PY cabinet/scripts/generate-plists.py"
     echo "                    plutil -lint + launchctl bootout (idempotent re-run) + bootstrap"
     echo "                    gui/\$(id -u) for each generated plist"
     echo "                    bash cabinet/scripts/health-check.sh"
   else
-    echo "14. [move-in]       DEFERRED (v0 default --no-launchd) — printed as an errand note"
+    echo "15. [move-in]       DEFERRED (v0 default --no-launchd) — printed as an errand note"
   fi
-  echo "15. [app-feel]      dashboard URL + Add-to-Dock hints; --with-launchd: probe + open + .webloc"
+  echo "16. [app-feel]      dashboard URL + Add-to-Dock hints; --with-launchd: probe + open + .webloc"
   echo ""
   echo "Flight recorder: per-step timings + stamps -> flight log; summary table,"
   echo "TTFR and total time print at the end."
@@ -679,6 +693,8 @@ run_step preset "select the active preset (runbook 4.1)" do_set_preset
 echo ""
 echo "NOTE: germline activation edits (runbook 4.2) are NOT automated — see the"
 echo "      numbered errand notes at the end (mcp-scope.yml + officer-capabilities.conf)."
+echo "      They are OPTIONAL: the roster hires only officers those two files"
+echo "      already authorize, so this chain completes without them."
 run_step roles "seed the durable roster (runbook 4.4)" do_bootstrap_roles
 if [ "$CLEAN_ROOM" = "1" ]; then
   run_step load-preset "assemble the runtime (clean-room: Redis marks -> unused port $CLEANROOM_REDIS_PORT)" \
@@ -689,6 +705,13 @@ else
 fi
 
 # 4. proofs (runbook step 5) — do not proceed past a red gate
+# roster-authz (2026-07-26) runs FIRST and against the LIVE tree this hatch just
+# wrote — it is a claim about THIS deployment's roster, not about the shipped
+# egg, so it cannot live inside null-hatch (whose sandbox deliberately carries
+# no deployment-local state). It fires the lockstep module's live arm, which
+# skips on a bare checkout and asserts here because roster.yml now exists.
+run_step roster-authz "roster authorization: every hired officer has capability + MCP-scope rows" \
+  "$PY" -m pytest framework/tests/test_roster_conf_lockstep.py -q
 run_step proof-a "P-a null-hatch gate (egg boots with NO captain data)" \
   bash cabinet/scripts/null-hatch.sh
 run_step proof-b "P-b clean-room ratchets (pytest subset)" \
