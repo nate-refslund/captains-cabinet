@@ -1,0 +1,5 @@
+key,title,status,assignee,sprint,points,updated
+LEDG-4462,Migrate settlement writes off the v1 router,In Progress,eng-kestrel,Sprint 42,8,2026-07-22
+LEDG-4471,Retire the ledger_dual_write flag,Done,eng-tern,Sprint 41,3,2026-06-02
+LEDG-4488,Add lag alerting for the reconcile job,Blocked,eng-kestrel,Sprint 42,5,2026-07-09
+LEDG-4501,Update the ledger-api on-call runbook,To Do,eng-briar,Sprint 42,2,2026-07-15

@@ -1,0 +1,10 @@
+{
+  "name": "ledger-api",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "test": "vitest run",
+    "lint": "eslint src",
+    "build": "tsc -p tsconfig.json"
+  }
+}
