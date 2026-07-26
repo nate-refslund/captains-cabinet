@@ -16,7 +16,12 @@
 # Hermetic by construction — safe on a LIVE deployment box:
 #   * the proof runs against a sandbox copy of the COMMITTED tree
 #     (`git archive HEAD`), never the working tree — on a clean checkout (CI)
-#     the two are identical, which is exactly the P1 acceptance condition;
+#     the two are identical, which is exactly the P1 acceptance condition.
+#     A gitless tree (a delivered egg, hatch.sh --clean-room's scratch export)
+#     is tar-copied and then pruned of everything the tree's own .gitignore
+#     names EXCEPT the shipped-ignored paths the export declares in
+#     cabinet/scripts/shipped-ignored-paths.txt, so both branches stage the
+#     same shipped content — see the STAGING PARITY note at the staging block;
 #   * HOME is redirected to a throwaway dir whose ~/.screenpipe is
 #     present-but-UNREADABLE (mode 000), so a latent screenpipe/vault read
 #     anywhere in framework CORE raises PermissionError LOUDLY instead of
@@ -68,10 +73,79 @@ mkdir -p "$EGG" "$WORK/home"
 # (minus VCS metadata) so the proof runs on the egg exactly as a stranger gets
 # it. The env scrub + unreadable ~/.screenpipe below still enforce the
 # clean-room premise regardless of export path.
+#
+# STAGING PARITY (roster-authz, 2026-07-26). The two branches used to stage
+# DIFFERENT trees: `git archive` ships tracked content only, while the plain
+# tar dragged in every deployment-local file the running deployment had
+# written — instance/config/roster.yml, active-preset, posture.yml, cabinet/.env,
+# logs. So the same proof reached different verdicts on the same content
+# depending only on whether .git existed, and the gitless branch (the one a
+# STRANGER's delivered egg and hatch.sh --clean-room both take) ran the
+# "boots with NO captain data" proof over a tree that had captain data in it.
+# That is how the roster/officer-conf lockstep gate could be red for every
+# stranger and green in every checkout at once. Fix: after the tar copy, prune
+# exactly what the tree's OWN shipped .gitignore ignores, using a throwaway
+# git index (deleted immediately). Derived, not a hand-listed set, so it
+# cannot rot away from .gitignore. Config is pinned to /dev/null so an ambient
+# global/system excludes file can never change what the proof stages. The one
+# thing .gitignore CANNOT answer — "is this ignored path force-tracked, i.e.
+# shipped?" — is answered by the export instead, via the keep-list seeded into
+# the throwaway index below.
 if git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   git -C "$REPO_ROOT" archive --format=tar HEAD | tar -xf - -C "$EGG"
 else
   tar -cf - -C "$REPO_ROOT" --exclude='./.git' . | tar -xf - -C "$EGG"
+  if ! command -v git >/dev/null 2>&1; then
+    echo "null-hatch: FAIL — gitless tree staging needs git to prune the" >&2
+    echo "  deployment-local files .gitignore names; without it the proof would" >&2
+    echo "  run over this deployment's own state and its verdict would be a lie." >&2
+    exit 1
+  fi
+  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
+    git -C "$EGG" -c core.excludesFile=/dev/null init -q
+  # SHIPPED-IGNORED KEEP-LIST (2026-07-26). ".gitignore names it" is NOT the
+  # same claim as "this deployment wrote it": a repo can FORCE-TRACK an ignored
+  # path (`git add -f`), and this one does — the dashboard officers pages
+  # (product source), the memory/tier3 structure, deployment-status.md. Those
+  # ship in `git archive HEAD`, so the git branch stages them; a fresh index in
+  # the copy calls them "others + ignored" and the prune below deleted them.
+  # Same content, two verdicts — the exact staging asymmetry this block exists
+  # to close, pointed the other way (over-pruning instead of under-pruning).
+  #
+  # The tree cannot recover the distinction, so the export ships the answer
+  # (egg-export.sh writes the list). Honour it by ADDING those paths to the
+  # throwaway index: an indexed path is no longer "other", so ls-files skips it
+  # AND --directory stops collapsing any directory that contains one. Paths go
+  # in literally via update-index --cacheinfo — `git add` would read them as
+  # pathspecs, and real paths here contain glob metacharacters (`[role]`).
+  # ABSENT list ⇒ nothing is seeded ⇒ byte-identical to the previous behavior.
+  _keeplist="$EGG/cabinet/scripts/shipped-ignored-paths.txt"
+  _kept=0
+  if [ -f "$_keeplist" ]; then
+    while IFS= read -r _keep || [ -n "$_keep" ]; do
+      case "$_keep" in ''|'#'*) continue ;; esac
+      [ -f "$EGG/$_keep" ] || continue
+      _blob="$(GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
+        git -C "$EGG" -c core.excludesFile=/dev/null \
+          hash-object -w -- "$EGG/$_keep")" || continue
+      GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
+        git -C "$EGG" -c core.excludesFile=/dev/null \
+          update-index --add --cacheinfo "100644,$_blob,$_keep" || continue
+      _kept=$((_kept + 1))
+    done < "$_keeplist"
+    echo "null-hatch: gitless staging honours $_kept shipped-ignored path(s) from ${_keeplist#"$EGG/"} (force-tracked content is shipped, not deployment-local)"
+  fi
+  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
+    git -C "$EGG" -c core.excludesFile=/dev/null \
+      ls-files -z --others --ignored --exclude-standard --directory \
+      > "$WORK/ignored.z"
+  # -0/-d '' is not portable; read NUL-separated paths in the shell instead.
+  while IFS= read -r -d '' _ig; do
+    [ -n "$_ig" ] || continue
+    rm -rf "${EGG:?}/$_ig"
+  done < "$WORK/ignored.z"
+  rm -rf "$EGG/.git"
+  echo "null-hatch: gitless staging pruned $(tr -cd '\0' < "$WORK/ignored.z" | wc -c | tr -d ' ') .gitignore'd path(s) — parity with the git-archive branch"
 fi
 
 export HOME="$WORK/home"

@@ -200,7 +200,7 @@ test refuses a `retired` row whose marker is still in the tree.
 - **Closed:** a `--clean-room` hatch run inside a git work tree whose `instance/config/platform.yml` is tracked with a real deployment config (>50 lines) is REFUSED, exit 64 — with the throwaway-export escape (`git archive HEAD | tar -x`) and an explicit `HATCH_ALLOW_TRACKED_INSTANCE=1` override documented in place.
 - **Open:** a plain, NON-clean-room hatch run from such a checkout still rewrites the tracked `platform.yml` in place.
 - **Why open:** the declaration states the scope decision outright — in-scope containment per hardening Brief 1 was clean-room only. It is a deliberate scope boundary, not an oversight.
-- **Declared at:** `cabinet/scripts/hatch.sh:61`
+- **Declared at:** `cabinet/scripts/hatch.sh:69`
 - **Anchor:** `KNOWN RESIDUAL SEAM (2026-07-11 verify`
 - **Retirement:** the guard is lifted out of the clean-room branch so every hatch path refuses to rewrite a tracked `platform.yml` (or hatch stops writing tracked instance config at all). In the SAME commit: delete this declaration block from `cabinet/scripts/hatch.sh`, extend the hatch regression suite with a non-clean-room arm, and flip this row to `retired`.
 

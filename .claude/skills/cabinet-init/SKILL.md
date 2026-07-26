@@ -417,7 +417,9 @@ placeholders only:
    `framework.env.org_vault_dir()`, `CABINET_ORG_VAULT_DIR`
    overrides, legacy `CABINET_PRODUCT_BRAIN_DIR` alias honored),
    `instance/config/roster.yml`
-   for `bootstrap-roles.sh --roster`,
+   for `bootstrap-roles.sh --roster` — the HIRE record, carrying the
+   Chair plus ONLY those lane CEOs both germline files already
+   authorize (see "Hiring is authorization-gated" below),
    `instance/config/active-project.txt` (first lane slug, only when
    absent — bootstrap-roles.sh needs it for the product slug and
    start-officer-mac.sh reads it for CABINET_LANE), and — only when
@@ -436,6 +438,23 @@ placeholders only:
    adapter by hand. An existing hand-authored sources.yml (no
    generated-by marker) is never clobbered.
 
+   **Hiring is authorization-gated** (roster-authz, 2026-07-26). An
+   officer is only usable when `cabinet/officer-capabilities.conf`
+   grants it capability rows AND `cabinet/mcp-scope.yml` lists it
+   under `agents:`; without both, every capability-gated behavior is
+   off for it and `pre-tool-use.sh` rejects every `mcp__*` call its
+   session makes. Both files are germline — neither this generator
+   nor `hatch.sh` may write them — so the generator READS them and
+   rosters only what they already cover. A lane whose CEO is not yet
+   authorized still gets its context, project and agent file (all
+   inert) and is recorded as PENDING in `roster.yml`, with the exact
+   rows printed for the captain to paste. Re-running the generator
+   after the captain applies them hires the lane CEO. This is why
+   step 2 below is OPTIONAL and blocks nothing: a fresh hatch
+   completes Chair-only and green.
+   `framework/tests/test_roster_conf_lockstep.py` is the gate that
+   fails any deployment whose roster names an unauthorized officer.
+
    It refuses path escapes, secret-shaped values, and clobbering
    hand-authored files, and validates every written YAML.
 
@@ -446,9 +465,16 @@ Relay the generator's printed list, expanded:
 1. `echo <preset> > instance/config/active-preset` (portfolio /
    work / developer / custom preset slug — developer is the OPTIONAL
    software product-kind kit, §3b).
-2. **Germline edits (propose to the captain; the captain applies):**
-   add each `<slug>-ceo` under `agents:` in `cabinet/mcp-scope.yml`
-   and add its capability rows to `cabinet/officer-capabilities.conf`.
+2. **Germline edits — OPTIONAL, blocks nothing (propose to the
+   captain; the captain applies):** add each un-hired `<slug>-ceo`
+   under `agents:` in `cabinet/mcp-scope.yml` and add its capability
+   rows to `cabinet/officer-capabilities.conf`, then re-run the
+   generator to HIRE it. Until then that lane CEO is generated but
+   not rostered — deliberately, so no officer is ever hired into a
+   silent capability/MCP-scope lockout. Relay the exact rows the
+   generator printed; do not invent an `mcps:` list (it prints
+   `mcps: []`, fail-closed — the servers a lane needs are the
+   captain's call).
 3. Bot token into `cabinet/.env` under the recorded env-var name
    (canonical `TELEGRAM_<OFFICER_UPPER>_TOKEN`, e.g.
    `TELEGRAM_COS_TOKEN`; config keeps `TOKEN-TBD`). Multi-cabinet
