@@ -148,9 +148,13 @@ function buildRequestBody(args: Args, context: string): object {
     model: advisorModel,
   };
 
-  // Add cache_control only when expected calls >= 3
+  // Add cache_control only when expected calls >= 3.
+  // TTL comes from the shared CACHE_TTL constant, which ALSO selects the
+  // pricing multiplier — see cacheWriteMultiplier(). Changing the TTL here
+  // therefore changes the price automatically instead of silently
+  // under-reporting by 1.6x, which is what a commented-only invariant would do.
   if (args.expectedCalls >= 3) {
-    advisorTool.cache_control = { type: "ephemeral", ttl: "5m" };
+    advisorTool.cache_control = { type: "ephemeral", ttl: CACHE_TTL };
   }
 
   return {
@@ -215,8 +219,21 @@ interface UsageSummary {
 //     OVER-reporting, because the cabinet stopped gating on spend
 //     (Captain 2026-07-26) and this is a watch, not a cap.
 // Rate provenance and the identical constants live in framework/cost/meter.py.
-const MULT_CACHE_WRITE_5M = 1.25;  // 5-minute TTL cache write (1-hour is 2.00x)
+const MULT_CACHE_WRITE_5M = 1.25;  // 5-minute TTL cache write
+const MULT_CACHE_WRITE_1H = 2.00;  // 1-hour TTL cache write
 const MULT_CACHE_READ = 0.10;      // cache hit
+
+// The ONE place this script's cache TTL is decided. It is read both by
+// buildRequestBody (the actual request) and by cacheWriteMultiplier (the
+// price), so the two cannot drift apart. The advisor usage envelope reports a
+// single cache_creation_input_tokens total with NO TTL split, so the multiplier
+// has to follow the REQUEST — which means this constant is the only honest
+// source for it.
+const CACHE_TTL: "5m" | "1h" = "5m";
+
+function cacheWriteMultiplier(): number {
+  return CACHE_TTL === "1h" ? MULT_CACHE_WRITE_1H : MULT_CACHE_WRITE_5M;
+}
 
 // [model-id substring, input $/MTok, output $/MTok]. First match wins, so more
 // specific families go first — mirrors meter.RATES key order.
@@ -252,18 +269,15 @@ function pricingFor(model: string): ModelPricing {
 
 // One response priced, in microdollars.
 //
-// Cache writes are charged at the 5m multiplier because this script pins
-// `ttl: "5m"` on the only cache_control it ever sets (buildRequestBody). If a
-// 1h TTL is ever introduced here, that arm must use MULT_CACHE_WRITE_1H — the
-// advisor usage envelope reports a single cache_creation_input_tokens total
-// with no TTL split, so the multiplier has to follow the REQUEST, not the
-// response.
+// Cache writes are charged at the multiplier matching CACHE_TTL — the same
+// constant buildRequestBody stamps on the request — so the price follows the
+// TTL by construction rather than by comment.
 function costMicro(p: ModelPricing, input: number, output: number,
                    cacheWrite: number, cacheRead: number): number {
   return Math.round(
     input * p.inputMicro +
     output * p.outputMicro +
-    cacheWrite * p.inputMicro * MULT_CACHE_WRITE_5M +
+    cacheWrite * p.inputMicro * cacheWriteMultiplier() +
     cacheRead * p.inputMicro * MULT_CACHE_READ
   );
 }

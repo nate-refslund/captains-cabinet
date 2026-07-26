@@ -336,8 +336,7 @@ def gather_loop_readout(*, now: Optional[str] = None,
     fixtured suites stay hermetic."""
     now_s = now or _now_iso()
     out: Dict[str, Any] = {"now": now_s, "kinds": {}, "undo": {},
-                           "falsifier": None, "series_len": 0, "spend": None,
-                           "errors": []}
+                           "falsifier": None, "series_len": 0, "errors": []}
     try:
         if ledger is None:
             from framework.fidelity.consequence import read_ledger
@@ -356,28 +355,12 @@ def gather_loop_readout(*, now: Optional[str] = None,
         out["undo"] = undo_rate_trend(ledger, now=now_s)
     except Exception as e:  # noqa: BLE001
         out["errors"].append(f"undo_trend: {str(e)[:120]}")
-    series: List[Dict[str, Any]] = []
     try:
         series = read_falsifier_series(series_path)
         out["series_len"] = len(series)
         out["falsifier"] = series[-1] if series else None
     except Exception as e:  # noqa: BLE001
         out["errors"].append(f"falsifier_series: {str(e)[:120]}")
-    try:
-        # Newest line that actually CARRIES a spend block — not simply the
-        # newest line. Every series row written before the spend snapshot
-        # shipped has no `spend` key, and lines older than the meter's own
-        # arrival never will; scanning back means the readout survives one
-        # missed daily run instead of going blank for a day. A dict without a
-        # date is not a day's figures, so it is skipped rather than rendered
-        # against the wrong date.
-        for doc in reversed(series if isinstance(series, list) else []):
-            sp = doc.get("spend") if isinstance(doc, dict) else None
-            if isinstance(sp, dict) and sp.get("date"):
-                out["spend"] = sp
-                break
-    except Exception as e:  # noqa: BLE001
-        out["errors"].append(f"spend: {str(e)[:120]}")
     return out
 
 
@@ -385,87 +368,12 @@ def _pct(v: Optional[float]) -> str:
     return "–" if v is None else f"{round(v * 100)}%"
 
 
-# Keep the spend line one line. Eight lanes exist; the tail of a sorted list is
-# noise on a line nobody is being asked to act on.
-_SPEND_MAX_LANES = 5
-
-
-def _dollars(micro: Optional[int]) -> Optional[str]:
-    """microdollars → "$12.34", or None when there is no figure. Never returns
-    "$0.00" for a missing value: an unpriced lane has no price, and printing a
-    zero would state one."""
-    try:
-        return f"${int(micro) / 1_000_000:,.2f}"
-    except (TypeError, ValueError):
-        return None
-
-
-def render_spend_line(spend: Optional[Dict[str, Any]]) -> str:
-    """One compact per-lane spend line, or "" when there is nothing to say.
-
-    INFORMATION, NOT AN ALERT (Captain, 2026-07-26). The spend caps are gone
-    and money is not the scarce resource — attention is. A big-but-normal week
-    must read as an ordinary line of telemetry and cost the Captain nothing:
-    no marker emoji, no threshold or budget language, no verdict, no ask. The
-    judgement about whether a number deserves attention belongs to the
-    watchdog's spend rows, which page the Chair; this line only says what the
-    day cost. If that ever tempts someone to add "⚠️" here, the anomaly rows
-    are the place for it.
-
-    Unpriced lanes (embeddings/rerank/tts/stt/websearch — meter.py knows no
-    rate for them) render as CALL COUNTS. "tts 42 calls" is true; "tts $0.00"
-    is a lie, and the meter exists because of a lie like that.
-
-    Degrades to "" — never an error, never a zero — on absent/!dict input, an
-    unparseable block, or a day with no figures at all. The readout contract is
-    that a readout failure never costs the digest."""
-    if not isinstance(spend, dict):
-        return ""
-    try:
-        parts: List[str] = []
-        total = _dollars(spend.get("total_cost_micro"))
-        if total is not None:
-            parts.append(f"officers {total}")
-
-        lanes = spend.get("lanes")
-        rows: List[tuple] = []
-        if isinstance(lanes, dict):
-            for lane, fig in lanes.items():
-                if not isinstance(fig, dict):
-                    continue
-                cost = fig.get("cost_micro")
-                try:
-                    calls = int(fig.get("calls") or 0)
-                except (TypeError, ValueError):
-                    calls = 0
-                money = _dollars(cost) if cost is not None else None
-                if money is not None:
-                    rows.append((1, int(cost), calls, str(lane),
-                                 f"{lane} {money}"))
-                elif calls > 0:
-                    rows.append((0, 0, calls, str(lane),
-                                 f"{lane} {calls:,} calls"))
-        # Priced lanes first (descending $), then unpriced by call volume, then
-        # name — a stable order, so the line reads the same shape every day.
-        rows.sort(key=lambda r: (-r[0], -r[1], -r[2], r[3]))
-        parts.extend(r[4] for r in rows[:_SPEND_MAX_LANES])
-        extra = len(rows) - _SPEND_MAX_LANES
-        if extra > 0:
-            parts.append(f"+{extra} more")
-        if not parts:
-            return ""
-        date = str(spend.get("date") or "?")
-        return f" · spend {date}: " + " · ".join(parts)
-    except Exception:  # noqa: BLE001
-        return ""
-
-
 def render_loop_readout(readout: Optional[Dict[str, Any]]) -> str:
     """Pure text for the 📈 LOOP section ("" when there is nothing measured —
     silence costs nothing, same rule as build_digest). One line per card kind,
-    one undo-trend line, one falsifier line, one spend line. Errors are NOT
-    rendered (no verdict on error — an unreadable metric must not masquerade
-    as a metric); they stay in the gather dict for telemetry."""
+    one undo-trend line, one falsifier line. Errors are NOT rendered (no
+    verdict on error — an unreadable metric must not masquerade as a metric);
+    they stay in the gather dict for telemetry."""
     if not readout:
         return ""
     lines: List[str] = []
@@ -508,10 +416,6 @@ def render_loop_readout(readout: Optional[Dict[str, Any]]) -> str:
             f"reversal_7d={_pct(fal.get('reversal_rate_7d'))} · cells "
             f"{fal.get('cells_accumulating')} accumulating / "
             f"{fal.get('cells_graduated')} graduated")
-
-    spend_line = render_spend_line(readout.get("spend"))
-    if spend_line:
-        lines.append(spend_line)
 
     if not lines:
         return ""

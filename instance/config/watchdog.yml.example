@@ -78,17 +78,6 @@ expectations:
   # - captain-inbound-contact
   - no-silent-cron-failure
   - pipes-fresh
-  # Spend anomaly rows (2026-07-26, after the Captain removed every spend
-  # cap). ENABLED, not staged dark: they carry no threshold and no budget —
-  # each one compares this cabinet's spend against this cabinet's OWN history
-  # and defaults to silence when it has too little of it, so a big-but-normal
-  # week costs the Chair nothing. spend-without-output is the one that
-  # matters (cost climbing while the 7d output window is empty = a runaway
-  # loop); meter-silent is the watch on the watch, since with no cap nothing
-  # else would notice a dead meter.
-  - spend-without-output
-  - spend-lane-anomaly
-  - meter-silent
   # Phase-4 evidence-plane rows ship STAGED DARK (shadow law — whole-cabinet
   # evidence design 2026-07-16 §3 Phase 4): present in the framework catalog
   # (framework/watchdog/registry.py), deliberately NOT enabled here. The

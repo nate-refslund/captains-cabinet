@@ -60,39 +60,7 @@ deployment's `watchdog.yml`):
 | `officer-reflection` | Each fulltime officer that did recent work reflected within 48h | escalate-chair | Reuses the same `cabinet:schedule:last-run:<o>:reflection` + `cabinet:last-experience:<o>` stamps the anomaly-scan reads. Idle officers (no recent work) are not expected to reflect. |
 | `captain-decisions-logged` | Relayed Captain decisions are logged to `captain-decisions.md` | drift | Soft backstop to the real-time post-tool-use enforcement: flags if the newest dated entry is >7 days old (a structural lapse). |
 | `no-silent-cron-failure` | The cabinet's own crons produce output and don't silently error | escalate-chair | Per watched job log: error-marker in the tail (`FATAL`, `Traceback`, `trigger NOT pushed`) OR stale past cadence. |
-| `pipes-fresh` | Brain ingestion pipes (msgraph/teams/embeddings) fresh | escalate-chair | Log mtimes only (no Graph poll). pipe-watchdog auto-heals stalls; a stale pipe surviving here = the heal didn't take. |
-| `spend-without-output` | Cost is not climbing while nothing is delivered | escalate-chair | Reads the daily falsifier series' `spend` block: fires only when the day's officer spend is ≥2× the trailing median of **delivering** days AND that line's 7-day output numerators (acted / approved / proactive cards / labels) are all zero. Spend alongside delivered work is never reported. |
-| `spend-lane-anomaly` | No paid lane is spending unlike **itself** | escalate-chair | Same series: a lane ≥20× the median of the days it actually billed, or a lane with no billing history at all that starts billing. Unpriced lanes (embeddings/rerank/tts/stt/websearch) are watched on call volume and reported as calls, never as dollars. |
-| `meter-silent` | The spend ledger is still recording while officers work | escalate-chair | `HGETALL cabinet:cost:tokens:daily:<UTC date>` vs the durable `cabinet:last-toolcall:<officer>` stamps. `None` (Redis unreadable) skips; `{}` or a zero total **with** officers who worked today is the alarm. |
-
-### The spend rows (2026-07-26) — what replaced the caps
-
-The Captain removed every spend cap, then refined the ruling: **do not build a
-dollar-threshold alarm.** Money is not the scarce resource — the work rides a
-flat subscription — Captain *attention* is. A big-but-normal spend week must be
-**silent**.
-
-So none of the three rows contains a dollar figure. Every trigger is relative to
-this cabinet's own history, and every row **defaults to silence**: too little
-history skips, an unreadable source skips, a raising reader skips. The shapes
-they watch are the ones a human should actually see — cost climbing while
-nothing ships (a runaway loop, which is exactly what removing the caps makes
-possible), one lane behaving unlike itself, and the meter itself going quiet.
-
-`meter-silent` is the watch on the watch: while a cap existed, a dead meter
-announced itself (the gate read zero and behaved oddly). With the caps gone
-nothing else reads that ledger, so a meter that stops writing would take the
-other two rows down with it, silently green.
-
-**Where the history comes from.** The Redis cost ledgers carry an 8-day TTL and
-cannot supply a trailing baseline, so `cabinet/scripts/falsifier-report.py`
-snapshots each day's figures into its existing daily line as a `spend` block
-(total + per-officer `cost_micro`, per-lane `cost_micro`/`calls`/`units`). The
-verifies read that **file**, which also keeps the independence law intact — the
-watchdog never imports `framework.cost`, `framework.fidelity` or
-`framework.frontdoor`, the very systems these rows watch. The same block renders
-one quiet informational line in the twice-daily briefing readout
-(`tell_digest.render_spend_line`): information, never an alert.
+| `pipes-fresh` | Brain ingestion pipes (msgraph/teams/embeddings) fresh | escalate-chair | Log mtimes only (no Graph poll). pipe-watchdog auto-heals stalls; a residual stale pipe here = the heal didn't take. |
 
 **To add an expectation:** append one `Expectation(...)` to `_CATALOG` in
 `registry.py` with a `verify` fn that takes the `Probe` and returns a
@@ -213,7 +181,7 @@ covers a watchdog that stops firing for any reason.
 
 ```bash
 # registry verifies + tiered routing (in-memory FakeProbe, no network)
-python3 -m pytest framework/watchdog/tests/ -q          # 103 tests
+python3 -m pytest framework/watchdog/tests/ -q          # 28 tests
 
 # dead-man's switch (fake redis)
 cd ~/.screenpipe/pipes/pipe-watchdog && python3 -m pytest test_deadman.py -q   # 5 tests

@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -731,9 +732,10 @@ def test_a_hostile_model_string_cannot_desync_the_hgetall_parser(plane, tmp_path
 
 @needs_redis
 def test_hgetall_tri_state_never_collapses(plane, dead_port, monkeypatch):
-    """Load-bearing for the `meter-silent` watchdog row: `None` SKIPS (no
-    observation available) while `{}` with officers who worked today is the
-    ALARM. Collapsing them either way silences a dead meter or cries wolf on
+    """`None` (no observation available) and `{}` (observed, genuinely empty)
+    are DIFFERENT answers and must never collapse into each other. Any future
+    reader of this ledger depends on the distinction: collapsing one way makes
+    a dead meter look like a quiet day, collapsing the other cries wolf on
     every Redis blip."""
     _point_meter_at(monkeypatch, plane.port)
     assert meter.hgetall("cabinet:cost:tokens:daily:1970-01-01") == {}
@@ -768,13 +770,22 @@ def test_record_lane_writes_the_documented_field_shape(plane, monkeypatch):
 
     key = meter.daily_lane_key()
     h = meter.hgetall(key)
+    # Exact shape, heartbeat included — an equality assertion (not a subset)
+    # so a silently-added or silently-dropped field fails here.
     assert h == {
         "advisor_calls": "2",
         "advisor_units": "7",
         "advisor__cos_calls": "2",
         "advisor_cost_micro": "1234",
         "advisor__cos_cost_micro": "1234",
+        "meter_last_ok": h.get("meter_last_ok", ""),
+        "meter_writes": "1",
     }
+    # The heartbeat is what makes "no spend" distinguishable from "dead meter":
+    # an empty ledger is ambiguous, an empty ledger with a stale stamp is not.
+    assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", h["meter_last_ok"])
+    # It must never be mistaken for spend by a `*_cost_micro` summer.
+    assert not any(f.endswith("_cost_micro") for f in ("meter_last_ok", "meter_writes"))
     assert 0 < int(plane.cli("TTL", key).stdout.strip()) <= 691200
 
     # Lanes are a SEPARATE ledger: folding them into the officer hash would
@@ -792,7 +803,8 @@ def test_unpriced_lane_records_calls_and_never_a_dollar_figure(plane, monkeypatc
     assert meter.record_lane("embeddings", "svc:brain", units=5000, calls=3) is True
     h = meter.hgetall(meter.daily_lane_key())
     assert h == {"embeddings_calls": "3", "embeddings_units": "5000",
-                 "embeddings__svc:brain_calls": "3"}
+                 "embeddings__svc:brain_calls": "3",
+                 "meter_last_ok": h.get("meter_last_ok", ""), "meter_writes": "1"}
     assert not [f for f in h if f.endswith("_cost_micro")], (
         "an unpriced lane must not materialize a cost field at all — a 0 there "
         "renders as $0.00 and reads as 'this lane is free'")

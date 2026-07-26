@@ -549,8 +549,22 @@ jobs:
       # spawns `psql` against COG1_PG_DSN to apply the DDL chain and drive the
       # kill rigs — the service container alone leaves the DB sims skipping,
       # exactly the failure class redis-tools records above.
-      - name: Install redis-cli + psql client
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq redis-tools postgresql-client
+      # redis-server (2026-07-27): framework/cost/tests/test_meter_redis.py
+      # stands up its OWN ephemeral server per test rather than sharing a
+      # service container, so redis-tools alone leaves all 29 of its arms
+      # SKIPPING — the same failure this step's own comment records above, and
+      # exactly the class it is meant to prevent. Those arms are the only
+      # coverage of the meter's entire persistence layer (watermark, atomic
+      # write, error-reply detection); skipped, the live meter is unobserved in
+      # CI while the suite reports green.
+      - name: Install redis-cli + redis-server + psql client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq redis-tools redis-server postgresql-client
+      # Prove the binary is actually usable, so a packaging change degrades to a
+      # loud failure here instead of silently re-skipping the arms above.
+      - name: Verify redis-server is runnable (spend-meter arms must GATE, not skip)
+        run: |
+          command -v redis-server
+          redis-server --version
       # Collection census: the fidelity conftest silently collect_ignores 19
       # flavor-A-coupled modules (288 tests) when the retrodiction lib is
       # absent — true on every CI runner until plan A2.1 vendors it. This

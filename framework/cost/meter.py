@@ -428,8 +428,44 @@ def record_lane(
         pairs.append(("%s__%s_cost_micro" % (lane, who), c))
     cmds = [["HINCRBY", key, field, str(val)] for field, val in pairs
             if not (val == 0 and field.endswith("_units"))]
+    cmds.extend(_heartbeat_commands(key))
     cmds.append(["EXPIRE", key, str(_LEDGER_TTL_S)])
-    return _redis_atomic(cmds)
+    ok = _redis_atomic(cmds)
+    if not ok:
+        # A metering failure must not break the caller, but it must not be
+        # SILENT either. Without this line a week of unreachable Redis records
+        # nothing and reads back as a week of zero spend — and with no cap left,
+        # nothing else is looking at this ledger. stderr lands in the callers'
+        # existing logs; no new surface is involved.
+        _warn("cost-meter: lane %r write FAILED (redis unreachable or ledger "
+              "unwritable) — %d call(s) NOT counted" % (lane, int(calls or 0)))
+    return ok
+
+
+def _warn(msg: str) -> None:
+    try:
+        import sys
+        print(msg, file=sys.stderr)
+    except Exception:
+        pass
+
+
+def _heartbeat_commands(key: str) -> list:
+    """Stamp WHEN this ledger was last successfully written.
+
+    The degenerate end of a spend ledger is indistinguishable from its healthy
+    end: an empty hash means "nobody spent anything" and ALSO means "the meter
+    has been dead for a week". Since the Captain removed the caps (2026-07-26)
+    nothing reads this ledger to gate on, so a dead meter had no consequence and
+    no symptom. A last-written stamp makes the difference OBSERVABLE to anyone
+    who reads the ledger — it decides nothing and interrupts nobody.
+    """
+    import datetime as _dt
+    now = _dt.datetime.now(_dt.timezone.utc)
+    return [
+        ["HSET", key, "meter_last_ok", now.strftime("%Y-%m-%dT%H:%M:%SZ")],
+        ["HINCRBY", key, "meter_writes", "1"],
+    ]
 
 
 def record_session_turn(
@@ -462,6 +498,7 @@ def record_session_turn(
         ("cost_micro", slice_.cost_micro),
     )
     cmds = [["HINCRBY", key, "%s_%s" % (prefix, dim), str(int(val))] for dim, val in dims]
+    cmds.extend(_heartbeat_commands(key))
     cmds.append(["EXPIRE", key, str(_LEDGER_TTL_S)])
     cmds.extend(_last_turn_commands(who, slice_))
     # One MULTI/EXEC: either the whole turn lands or none of it does, so a

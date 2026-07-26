@@ -34,8 +34,9 @@ def main(argv=None) -> int:
     officer = meter.safe_principal(args.officer)
     if officer == meter.UNATTRIBUTED:
         # An unattributed session still spent money, but writing it against a
-        # bogus field would corrupt per-officer accounting. Say so loudly; the
-        # meter-silent watchdog row is what catches a fleet-wide case.
+        # bogus field would corrupt per-officer accounting. Say so loudly on
+        # stderr rather than dropping it silently — with no spend cap left,
+        # nothing else is watching this ledger.
         print("cost-meter: SKIP — no usable officer identity (OFFICER_NAME=%r); "
               "turn NOT metered" % (args.officer,))
         return 0
