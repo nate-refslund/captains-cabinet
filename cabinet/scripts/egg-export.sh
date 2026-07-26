@@ -369,10 +369,22 @@ t_act_first_default() {
 # export tree. The R120 delete above (this Captain's real enforced-egress
 # ruling) previously left the export with NO file at that path at all,
 # bricking gate (b) exactly like the gate-apply.plist case above. Same fix
-# shape as act-first-default: ship the already-fail-closed .example twin's
-# bytes (enforce: true, empty allow_hosts) AS the live file — a fresh egg
-# gets a safe default and must apply its own allowlist during hatch, per the
-# R120 comment above.
+# shape as act-first-default: ship the .example twin's bytes AS the live file.
+#
+# THE TWIN'S POSTURE IS THE EGG'S POSTURE (Captain 2026-07-26). Until then the
+# twin carried `enforce: true` with an empty allow_hosts, so every stranger's
+# egg shipped a live enforcing override with only the framework floor (the
+# Claude API and the Captain control channel — see framework/defaults/
+# egress.yml) resolvable: their first REAL officer boot ran `egress-guard.sh
+# apply` and either 403'd every other host or, if the proxy could not be
+# verified, refused to boot (start-officer-mac.sh exit 78).
+# That contradicted framework/defaults/egress.yml, which documents its own
+# shipped promise as ALLOW ALL. The hatch never caught it because a dry render
+# skips `apply` (see cabinet/scripts/tests/test_egress_dry_run_asymmetry.py).
+# The twin now carries the framework default (`enforce: false`) and the egg
+# ships allow-all; a stranger opts INTO enforcement with one command,
+# `cabinet/scripts/egress-guard.sh enable`. Live enforced-egress ruling for
+# THIS deployment stays excluded per the R120 delete above.
 t_egress_default() {
   local ex="$OUT/instance/config/egress.yml.example"
   [ -f "$ex" ] || { verify_fail "egress.yml.example missing — cannot materialize the shipped default"; return 0; }

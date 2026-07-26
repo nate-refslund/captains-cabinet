@@ -26,7 +26,10 @@ cabinet/scripts/egress-guard.sh apply      # reconcile runtime to egress.yml (bo
 cabinet/scripts/egress-guard.sh stop       # stop runtime proxy/env; policy unchanged
 ```
 
-The generic framework default is **allow all**. This deployment pins
+The generic framework default is **allow all**, and since the Captain's
+2026-07-26 ruling a freshly hatched egg ships that same allow-all posture in
+its `instance/config/egress.yml` — enforcement is strictly **opt-in**, one
+command (`egress-guard.sh enable`). *This* deployment has opted in and pins
 `enforce: true`, `allow_product: false`, and no extra hosts, leaving only the
 Anthropic + Telegram framework floor. `apply` **fails closed** if it cannot
 attest the proxy.
@@ -232,12 +235,17 @@ sessions or arbitrary unsandboxed localhost services.
 1. **Inspect first.** `cabinet/scripts/egress-guard.sh dry-run` — see exactly
    which hosts would be allowed. The shipped floor + your `org_domains` is
    usually **not enough** for a working deployment: your MCPs need their hosts.
-2. **Add your MCP/tool hosts.** Copy `instance/config/egress.yml.example` to
-   `instance/config/egress.yml` and uncomment/add the hosts you use (table
-   below). Anything not listed is refused when enforcement is on.
-3. **Turn it on.** In a Captain unlock window, edit/enable and relock the same
-   day. If config is already true, `egress-guard.sh apply` reconciles runtime
-   without changing policy.
+2. **Add your MCP/tool hosts.** Edit `instance/config/egress.yml` (a hatched
+   egg already has one, carrying the allow-all default; on a checkout without
+   it, copy `instance/config/egress.yml.example`) and uncomment/add the hosts
+   you use (table below). Anything not listed is refused when enforcement is
+   on. Do this BEFORE step 3 — enabling with an empty list leaves only the
+   Anthropic + Telegram floor reachable.
+3. **Turn it on.** `cabinet/scripts/egress-guard.sh enable` — it sets
+   `enforce: true` and installs the proxy in one step. On an already-locked
+   deployment do it in a Captain unlock window and relock the same day. If
+   config is already true, `egress-guard.sh apply` reconciles runtime without
+   changing policy.
 4. **Restart every officer.** The launchers apply and load enforcement before
    each boot; old sessions cannot be retrofitted.
 5. **Verify.** `cabinet/scripts/egress-guard.sh status` shows `enforce: true`,

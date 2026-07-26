@@ -5,8 +5,12 @@
 #
 # SHIPPED DEFAULT = ALLOW ALL. `enforce: false` means NO restriction is
 # installed and officers reach the network exactly as they do today. Nothing
-# in this file changes behaviour until a captain sets `enforce: true` (via the
-# override twin instance/config/egress.yml.example during Captain provisioning).
+# in this file changes behaviour until a captain OPTS IN with one command:
+#   cabinet/scripts/egress-guard.sh enable
+# which sets `enforce: true` in the instance override and installs the proxy.
+# The egg ships that override (instance/config/egress.yml, materialized from
+# its .example twin) carrying THIS SAME allow-all posture — a stranger's egg
+# and this default agree by construction (Captain 2026-07-26).
 #
 # WHY THIS EXISTS
 #   Officers ingest untrusted content (email, web pages, Sentry issues) AND

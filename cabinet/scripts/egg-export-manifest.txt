@@ -80,8 +80,10 @@ delete instance/config/memory-supersession.yml
 # without it.
 delete instance/config/task-watch.yml
 # R120: enforced egress is deployment policy. The live file is intentionally
-# fail-closed for this Captain; a fresh commercial egg receives only the
-# documented .example twin and must apply its own allowlist during hatch.
+# fail-closed for THIS Captain; a fresh egg receives the documented .example
+# twin's bytes instead (see the egress-default transform below), which since
+# 2026-07-26 carry the framework's allow-all default rather than an enforcing
+# override the stranger never configured.
 delete instance/config/egress.yml
 # R120-class: comms-surface.yml landed as a live instance value on the
 # captain-surface work (its .example twin ships); rule is a no-op while the
@@ -319,9 +321,12 @@ transform act-first-default
 # deleting it above with no replacement left the export with nothing at that
 # path, and the lockstep test runs INSIDE null-hatch.sh (gate b) against the
 # export tree, so every export was gate-b RED. Same treatment as
-# act-first-default: ships the .example twin's bytes AS the file (enforce:
-# true, empty allow_hosts — already fail-closed by the twin's own doc
-# contract). Live enforced-egress ruling stays excluded per the delete above.
+# act-first-default: ships the .example twin's bytes AS the file. Captain
+# 2026-07-26 flipped that twin to the framework's documented allow-all default
+# (enforce: false) — shipping `enforce: true` with an empty allowlist gave
+# every stranger a network jail on first real officer boot. Enabling is one
+# opt-in command (egress-guard.sh enable). Live enforced-egress ruling stays
+# excluded per the delete above.
 transform egress-default
 # R017/R120-class, gate (b) null-hatch fix: instance/config/watchdog.yml is
 # read UNCONDITIONALLY by the Phase-4 evidence-detectors lens test (framework/
