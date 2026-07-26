@@ -73,10 +73,18 @@
 # directory's existence is preserved by the shared/ mkdir regardless.
 # instance/memory/ is the one leaf that additionally must SEED its tracked
 # tier2/<officer>/{,reflections/}.gitkeep skeleton into shared/ from the
-# release's own tree the first time only, then is symlinked whole like any
-# other bulk-gitignored directory thereafter. KEEP THIS LIST IN
+# release's own tree, then is symlinked whole like any other bulk-gitignored
+# directory. KEEP THIS LIST IN
 # LOCKSTEP WITH .gitignore — same discipline as germline-lock.sh's own
 # "keep in lockstep with pre-tool-use.sh §5" rule.
+#
+# EVERY class ADOPTS BEFORE IT LINKS (2026-07-25 — read the ADOPTION INVARIANT
+# above link_instance_data before changing any loop below). Listing a path is
+# not the same as carrying it: the state a list entry names lives in the LIVE
+# RELEASE, not in shared/, until something copies it there. A loop that only
+# mkdir's an empty shared/ dir and symlinks to it discards exactly the data the
+# entry was added to protect — and, when the slot being provisioned IS the live
+# release, its `rm -rf` destroys that data outright.
 #
 # A second, load-bearing side effect of sharing (not copying) the
 # gitignored leaves: schg (system-immutable, see germline-lock.sh) is an
@@ -217,11 +225,42 @@ swap_symlink() {
 # ephemeral run lock that must NOT carry across deploys (it lives in the
 # onboarding/ parent, not under the v2/ leaf, so symlinking v2/ cannot drag
 # it along).
-INSTANCE_PERSISTENT_DIRS="instance/roles/active instance/roles/archive instance/roles/hats instance/loop-prompts instance/archive instance/state instance/cache instance/onboarding/formation instance/onboarding/v2 instance/onboarding/purge-receipts instance/evidence secrets"
+# The shared/interfaces/{foundry,world} + world-aesthetic corpus entries are the
+# state-persistence-preflight additions (2026-07-25): each is gitignored runtime
+# state with ZERO tracked content, so a whole-dir symlink shadows nothing.
+# foundry/ is the COG-5 sealed append-only trajectory archive whose own contract
+# says "rollback = verified RESTORE, never cache-delete"; world/ holds the
+# append-only chronicle series that services.yml orders ARCHIVED, never
+# truncated. corpus/{positive,negative} are the judge's taste-accumulation
+# frames — Captain approve/reject rulings on renders that no longer exist
+# anywhere, and _corpus.py integrity-checks every read, so a lost corpus is a
+# hard judge failure. They are linked at the SUBDIR level deliberately: the
+# corpus root holds a git-TRACKED manifest.json that a whole-dir link would
+# shadow (the same "never shadow a tracked file" rule as the wildcard block).
+INSTANCE_PERSISTENT_DIRS="instance/roles/active instance/roles/archive instance/roles/hats instance/loop-prompts instance/archive instance/state instance/cache instance/onboarding/formation instance/onboarding/v2 instance/onboarding/purge-receipts instance/evidence secrets shared/interfaces/foundry shared/interfaces/world cabinet/scripts/world-aesthetic/corpus/positive cabinet/scripts/world-aesthetic/corpus/negative"
 # Gitignored in bulk but ships a tracked tier2/<officer>/{,reflections/}.gitkeep
-# skeleton — seeded into shared/ from the release's own tree once, then
-# symlinked whole like any PERSISTENT_DIRS entry thereafter.
-INSTANCE_PERSISTENT_SEEDED_DIRS="instance/memory"
+# skeleton — seeded into shared/ from the release's own tree, then
+# symlinked whole like any PERSISTENT_DIRS entry.
+#
+# The five 2026-07-25 additions are the state-persistence-preflight fix. Each is
+# gitignored in bulk but ships a tracked .gitkeep skeleton, so SEEDED (not plain
+# DIRS) is the correct home — accumulated data is adopted from the live release
+# first, the tracked skeleton then fills any gap, and the dir is symlinked like
+# any other. Every one of them was silently discarded on
+# EVERY deploy, with no error and a passing health gate:
+#   memory/skills/evolved  ratified Captain rules (captain-rules/ratify-rule.sh)
+#   memory/tier3           decision log, experience records, research archive
+#   memory/logs            the tool-call log
+#   cabinet/cache          org-runtime.sqlite3 (append-only DB trigger), the
+#                          chained-hash predictions store, COG-2 beliefs, COG-4
+#                          scheduler, and the purge undo archive — ORIGINAL
+#                          stores despite the directory's name, seeded once at
+#                          setup and never re-seeded per deploy
+#   cabinet/logs           append-only verdict series cabinet-doctor reads
+#                          ACROSS runs (retrieval-eval history, doctor-history,
+#                          task-sync drift, hook FP corpus) — losing them makes
+#                          the rolling-window health checks unmeasurable
+INSTANCE_PERSISTENT_SEEDED_DIRS="instance/memory memory/skills/evolved memory/tier3 memory/logs cabinet/cache cabinet/logs"
 # Individual leaves inside an otherwise richly git-tracked directory.
 # Symlinked ONLY when a shared/ copy already exists — never fabricated, so
 # a from-scratch runtime root leaves the path absent, same as a from-scratch
@@ -240,7 +279,104 @@ INSTANCE_PERSISTENT_SEEDED_DIRS="instance/memory"
 # The report-only shadow-detector journal is intentionally NOT in this list:
 # regenerable detector output that a germline law bars any tracked surface
 # from naming (the CI shadow-grep proof enforces it) — so it is never linked.
-INSTANCE_PERSISTENT_FILES="instance/config/product.yml instance/config/active-project.txt instance/config/active-preset instance/config/roster.yml instance/config/publish-scan-patterns.local instance/config/extensions.yml instance/config/required-plugins.yml instance/config/extra-mcps.json instance/config/autonomy.yml instance/config/act-first-enabled .claude/settings.local.json shared/interfaces/action-lessons.yml shared/interfaces/falsifier-series.jsonl shared/interfaces/envelope-violations.jsonl shared/interfaces/charter-shadow-series.jsonl shared/interfaces/golden-eval-scalar.jsonl shared/interfaces/memory-supersession-proposals.jsonl shared/interfaces/needs-ledger.jsonl shared/interfaces/prediction-calibration.jsonl shared/interfaces/preference-pairs.jsonl shared/interfaces/world-chronicle.jsonl shared/interfaces/attention-queue.json instance/config/posture.yml instance/config/trust-ladder.yml instance/config/standing-grants.yml instance/config/comms-charter.yml instance/config/comms-charter-amendments.jsonl instance/config/comms-charter-proposals.jsonl shared/interfaces/memory-supersession-soak.jsonl shared/interfaces/workaround-retire-proposals.jsonl shared/interfaces/governance-labels.jsonl"
+INSTANCE_PERSISTENT_FILES="instance/config/product.yml instance/config/active-project.txt instance/config/active-preset instance/config/roster.yml instance/config/publish-scan-patterns.local instance/config/extensions.yml instance/config/required-plugins.yml instance/config/extra-mcps.json instance/config/autonomy.yml instance/config/act-first-enabled .claude/settings.local.json shared/interfaces/action-lessons.yml shared/interfaces/falsifier-series.jsonl shared/interfaces/envelope-violations.jsonl shared/interfaces/charter-shadow-series.jsonl shared/interfaces/golden-eval-scalar.jsonl shared/interfaces/memory-supersession-proposals.jsonl shared/interfaces/needs-ledger.jsonl shared/interfaces/prediction-calibration.jsonl shared/interfaces/preference-pairs.jsonl shared/interfaces/world-chronicle.jsonl shared/interfaces/attention-queue.json instance/config/posture.yml instance/config/trust-ladder.yml instance/config/standing-grants.yml instance/config/comms-charter.yml instance/config/comms-charter-amendments.jsonl instance/config/comms-charter-proposals.jsonl shared/interfaces/memory-supersession-soak.jsonl shared/interfaces/workaround-retire-proposals.jsonl shared/interfaces/governance-labels.jsonl instance/config/trusted-mcps.json instance/config/war-room-seed.yml .claude/project-config.json bin/cabinet-calread"
+# The four trailing entries are the 2026-07-25 state-persistence-preflight fix.
+# trusted-mcps.json / war-room-seed.yml / .claude/project-config.json are
+# hand-authored local config whose every sibling was already on this list —
+# they were the lone omissions, and each was silently reset to absent on every
+# deploy. bin/cabinet-calread is here for a different reason: its bytes ARE
+# rebuildable from tracked Swift source, but the macOS Full Calendar Access TCC
+# grant is keyed to the ad-hoc signature's CDHASH, so ANY rebuild costs a
+# one-time Captain re-grant in System Settings. Carrying the built binary
+# preserves the CDHASH and therefore the grant. Listed as an individual FILE,
+# never a bin/ directory link — see the state-persistence policy's known_gap
+# row for why Cabinet Companion.app needs a design call first.
+
+# ---- adoption primitives (2026-07-25 fix; see ADOPTION INVARIANT below) ----
+#
+# THE BUG THESE EXIST TO KILL. Adding a path to a persistence list did NOT make
+# it persist. A directory of runtime state lives in the LIVE RELEASE, never in
+# shared/ — so the DIRS loop happily `mkdir -p`'d an EMPTY shared/ dir, symlinked
+# the new slot at it, and left the real data behind in the outgoing release for
+# `prune` to rm -rf. Worse, when cmd_provision reused the live slot by sha (a
+# routine redeploy with no new commits, or a retry after a failed health gate)
+# that same loop's `rm -rf "$slot/$rel"` deleted the live data OUTRIGHT.
+# Measured end-to-end 2026-07-25: 9 of 13 durable paths lost on a normal deploy
+# and 4 destroyed in place on a same-sha redeploy, both at exit 0.
+#
+# ADOPTION INVARIANT (the property every caller below relies on):
+#   before any `rm -rf "$slot/$rel"`, every UNTRACKED file beneath it has been
+#   copied into shared/ (or an identically-named file was already there).
+# Tracked files are recoverable from git by definition, so once that holds the
+# removal provably destroys no unique bytes. This is why _adopt_untracked is
+# called on the SLOT as well as on the outgoing release — the slot is the thing
+# being deleted, so it is the thing that must be proven safe to delete.
+
+# _adopt_untracked <src_root> <rel> <shared_abs> <label> [name_glob]
+#
+# Copy every untracked regular file under <src_root>/<rel> into <shared_abs>,
+# NEVER overwriting a file already present there (shared/ is the authoritative
+# physical store; a release copy never wins over it). No-op when the source is
+# absent or is already a symlink — that symlink is the steady state after any
+# previous provision, and following it would copy shared/ onto itself.
+#
+# Only UNTRACKED files are adopted: copying a git-tracked file into shared/ and
+# then symlinking the directory would SHADOW the release's own tracked copy with
+# a frozen snapshot — the same hazard the wildcard block guards against for
+# deployment-status.md.
+_adopt_untracked() {
+  local src_root="$1" rel="$2" shared_abs="$3" label="$4" glob="${5:-}"
+  local src tracked f sub n=0 nl
+  src="$src_root/$rel"
+  [ -d "$src" ] || return 0
+  [ -L "$src" ] && return 0
+  nl='
+'
+  tracked="$nl$(git -C "$src_root" ls-files -- "$rel" 2>/dev/null)$nl"
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    sub="${f#"$src/"}"
+    case "$tracked" in *"$nl$rel/$sub$nl"*) continue ;; esac
+    [ -e "$shared_abs/$sub" ] && continue
+    # A FAILED copy must abort the whole provision. Swallowing it (the obvious
+    # `cp ... || true` shape) would break the ADOPTION INVARIANT silently and
+    # leave the caller free to rm -rf the only remaining copy — the exact class
+    # of failure this whole fix exists to end. Fail closed and loudly instead.
+    if ! mkdir -p "$shared_abs/$(dirname "$sub")" 2>/dev/null ||
+       ! cp -p "$f" "$shared_abs/$sub" 2>/dev/null; then
+      echo "runtime-provision.sh: FATAL — could not adopt '$f' into '$shared_abs/$sub'." >&2
+      echo "  Aborting: the next step removes the release copy, so continuing would" >&2
+      echo "  destroy the only copy of this state. Fix the destination and re-run." >&2
+      exit 1
+    fi
+    n=$((n+1))
+  done <<EOF
+$(if [ -n "$glob" ]; then find "$src" -type f -name "$glob" 2>/dev/null; else find "$src" -type f 2>/dev/null; fi)
+EOF
+  [ "$n" -gt 0 ] && echo "runtime-provision.sh: adopted $n file(s) of runtime state from $label into shared/$rel"
+  return 0
+}
+
+# _seed_tracked <slot> <rel> <shared_abs> — copy this release's TRACKED skeleton
+# files under <rel> into shared/, never overwriting. SEEDED class only, and it
+# runs AFTER adoption so real accumulated data always beats a `.gitkeep`.
+_seed_tracked() {
+  local slot="$1" rel="$2" shared_abs="$3" f sub n=0
+  [ -d "$slot/$rel" ] || return 0
+  [ -L "$slot/$rel" ] && return 0
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    sub="${f#"$rel/"}"
+    [ -f "$slot/$f" ] || continue
+    [ -e "$shared_abs/$sub" ] && continue
+    mkdir -p "$shared_abs/$(dirname "$sub")"
+    cp -p "$slot/$f" "$shared_abs/$sub" 2>/dev/null && n=$((n+1))
+  done <<EOF
+$(git -C "$slot" ls-files -- "$rel" 2>/dev/null)
+EOF
+  [ "$n" -gt 0 ] && echo "runtime-provision.sh: seeded $n tracked skeleton file(s) into shared/$rel"
+  return 0
+}
 
 # link_instance_data <slot> <root> — the leaf-level linking pass. Called
 # unconditionally from cmd_provision (both on a fresh worktree checkout and
@@ -249,8 +385,16 @@ INSTANCE_PERSISTENT_FILES="instance/config/product.yml instance/config/active-pr
 link_instance_data() {
   local slot="$1" root="$2" rel shared_abs rel_dir f
 
+  # Resolve the live (outgoing) release once — every adoption pass below reads
+  # it. This is the release that holds the accumulated state on the very first
+  # provision after a path joins one of the lists.
+  local cur_rel=""
+  [ -L "$root/current" ] && cur_rel="$(cd "$root/current" 2>/dev/null && pwd)"
+
   for rel in $INSTANCE_PERSISTENT_DIRS; do
     shared_abs="$root/shared/$rel"
+    [ -n "$cur_rel" ] && _adopt_untracked "$cur_rel" "$rel" "$shared_abs" "the live release"
+    [ "$slot" != "$cur_rel" ] && _adopt_untracked "$slot" "$rel" "$shared_abs" "this release"
     mkdir -p "$shared_abs"
     rel_dir="$(dirname "$slot/$rel")"
     mkdir -p "$rel_dir"
@@ -260,11 +404,9 @@ link_instance_data() {
 
   for rel in $INSTANCE_PERSISTENT_SEEDED_DIRS; do
     shared_abs="$root/shared/$rel"
-    if [ ! -e "$shared_abs" ] && [ -d "$slot/$rel" ]; then
-      mkdir -p "$(dirname "$shared_abs")"
-      cp -R "$slot/$rel" "$shared_abs"
-      echo "runtime-provision.sh: seeded shared/$rel from this release's tracked skeleton (first-ever provision)"
-    fi
+    [ -n "$cur_rel" ] && _adopt_untracked "$cur_rel" "$rel" "$shared_abs" "the live release"
+    [ "$slot" != "$cur_rel" ] && _adopt_untracked "$slot" "$rel" "$shared_abs" "this release"
+    _seed_tracked "$slot" "$rel" "$shared_abs"
     mkdir -p "$shared_abs"
     rel_dir="$(dirname "$slot/$rel")"
     mkdir -p "$rel_dir"
@@ -274,6 +416,26 @@ link_instance_data() {
 
   for rel in $INSTANCE_PERSISTENT_FILES; do
     shared_abs="$root/shared/$rel"
+    # ADOPTION (2026-07-25, state-persistence preflight). A file CREATED at
+    # runtime lives in the live release, never in shared/ — so on its own the
+    # [ -e ] guard below made this list inert for exactly those files: it
+    # skipped them forever and every deploy discarded the file again, which is
+    # how trusted-mcps.json and war-room-seed.yml stayed lost even after being
+    # listed (measured — the fix was not complete without this). If shared/
+    # has no copy yet but the CURRENT release holds a real, untracked,
+    # non-symlink file, adopt it into shared/ so this release and every later
+    # one link to the same physical file.
+    #
+    # The tracked check is not optional: adopting a git-tracked file would
+    # SHADOW the release's own copy with a frozen snapshot, the same hazard
+    # the wildcard block guards against for deployment-status.md.
+    if [ ! -e "$shared_abs" ] && [ -n "$cur_rel" ] && \
+       [ -f "$cur_rel/$rel" ] && [ ! -L "$cur_rel/$rel" ] && \
+       ! git -C "$cur_rel" ls-files --error-unmatch "$rel" >/dev/null 2>&1; then
+      mkdir -p "$(dirname "$shared_abs")"
+      cp -p "$cur_rel/$rel" "$shared_abs"
+      echo "runtime-provision.sh: adopted $rel from the live release into shared/ (first persistence)"
+    fi
     [ -e "$shared_abs" ] || continue   # no prior instance-data yet — leave absent
     rel_dir="$(dirname "$slot/$rel")"
     mkdir -p "$rel_dir"
@@ -286,12 +448,34 @@ link_instance_data() {
   rm -f "${slot:?}/cabinet/.env"
   ln -sfn "$root/shared/cabinet.env" "$slot/cabinet/.env"
 
-  # Wildcard leaves — discovered from whatever already exists in shared/,
-  # never from the release (gitignored content is never present there right
-  # after a fresh worktree checkout of a real commit). A brand-new
-  # instance-data store has nothing to discover yet; that is correct — a
-  # fresh deployment has no captain ledgers or per-officer *-ceo.md files
-  # until something creates them.
+  # Wildcard leaves — discovered from whatever already exists in shared/.
+  #
+  # ADOPTION FIRST (2026-07-25 fix). Discovery-only was a hole, not a design:
+  # NOTHING seeds <runtime_root>/shared/shared/interfaces/, and the files these
+  # blocks carry are all CREATED AT RUNTIME inside the live release. So the
+  # policy certified shared/interfaces/**/*.md as "wildcard-linked" while the
+  # block discovered an empty (non-existent) directory and linked nothing.
+  # Measured 2026-07-25: captain-decisions.md and captain-patterns.md — the
+  # append-only Captain-law ledgers — were written into the live release and
+  # LOST by the next deploy, at exit 0, counted as covered. The same
+  # discovery-only hole applies to the *-ceo.md and .oauth-backup-* blocks, so
+  # all three adopt from the outgoing release before discovering.
+  if [ -n "$cur_rel" ]; then
+    _adopt_untracked "$cur_rel" "shared/interfaces" \
+      "$root/shared/shared/interfaces" "the live release" '*.md'
+    _adopt_untracked "$cur_rel" "instance/agents" \
+      "$root/shared/instance/agents" "the live release" '*-ceo.md'
+    # Root-level dotfile glob: matched directly rather than via find, so this
+    # never walks the whole release tree.
+    for f in "$cur_rel"/.oauth-backup-*.json; do
+      [ -f "$f" ] || continue
+      [ -L "$f" ] && continue
+      [ -e "$root/shared/$(basename "$f")" ] && continue
+      mkdir -p "$root/shared"
+      cp -p "$f" "$root/shared/$(basename "$f")" 2>/dev/null &&
+        echo "runtime-provision.sh: adopted $(basename "$f") from the live release into shared/"
+    done
+  fi
   if [ -d "$root/shared/instance/agents" ]; then
     for f in "$root/shared/instance/agents/"*-ceo.md; do
       [ -e "$f" ] || continue
@@ -542,7 +726,27 @@ cmd_prune() {
   done
   [ "${#candidates[@]}" -gt 0 ] || { echo "runtime-provision.sh: nothing to prune"; return 0; }
   local sorted i=0 rm_dir
-  sorted="$(for d in "${candidates[@]}"; do stat -f '%m %N' "$d" 2>/dev/null; done | sort -rn | awk '{print $2}')"
+  # `awk '{print $2}'` here would TRUNCATE any runtime root containing a space
+  # and hand the truncated prefix to `rm -rf` — strip only the leading mtime
+  # field instead, so the rest of the line survives verbatim.
+  #
+  # GNU-FIRST IS LOAD-BEARING, not stylistic. `-f` means "format string" to BSD
+  # stat and "file system" to GNU stat, so a BSD-first probe does not fail over
+  # on Linux the way an unknown flag would: it takes the GNU branch with
+  # directives that mean nothing there. Under this script's `set -euo pipefail`
+  # that non-zero status propagated out of the pipeline and prune EXITED 1
+  # having pruned nothing (measured on Linux: CI run 30183105928, the
+  # `test_prune_handles_a_runtime_root_containing_a_space` arm). Probing the
+  # GNU form first is the only order where each platform's real answer wins.
+  #
+  # A candidate whose mtime cannot be read at all is DROPPED from the list
+  # rather than defaulted, so it is never deleted. Prune keeping too much costs
+  # disk; prune deleting the wrong release is unrecoverable.
+  sorted="$(for d in "${candidates[@]}"; do
+              stat -c '%Y %n' "$d" 2>/dev/null ||
+              stat -f '%m %N' "$d" 2>/dev/null ||
+              true
+            done | sort -rn | sed 's/^[0-9]* //')"
   while IFS= read -r rm_dir; do
     [ -z "$rm_dir" ] && continue
     i=$((i+1))

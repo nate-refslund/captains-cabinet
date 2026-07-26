@@ -60,6 +60,12 @@ HISTORICAL_PREFIXES = (
 
 # The deliberate survivors: path -> why the token stays. SHRINK-ONLY.
 ALLOWED = {
+    "cabinet/config/state-persistence-policy.yml":
+        "structural mirror of .gitignore — state-persistence-preflight.py "
+        "DERIVES its durable set from .gitignore, so every ignored path needs "
+        "an entry keyed by that exact path. .gitignore still carries "
+        "product-brain/library-archive/ as cover for the legacy fallback arm "
+        "in retire-library-export.py; this row retires when that arm does",
     # --- live back-compat seams -------------------------------------------
     "framework/env.py":
         "org_vault_dir(): legacy CABINET_PRODUCT_BRAIN_DIR env alias, legacy "
