@@ -67,7 +67,19 @@ marker fails closed and refuses new officer boots.
   `cabinet-comms`; the child environment has no remote-MCP credentials.
 - Overlong `reply_current` text and unsupported reactions fail with zero
   Telegram requests; arbitrary/new-message sends remain blocked.
-- The authority resolver reports `earn_up`; spend caps are non-zero.
+- The authority resolver reports `earn_up`.
+- Spend is **uncapped, metered and anomaly-watched** — not capped. The Captain
+  removed every spend cap on 2026-07-26 and this instance's limit block reads
+  `unlimited`, so "caps are non-zero" is no longer a precondition and must not
+  be re-added as one; observe-only constrains AUTHORITY, and cost is watched
+  rather than gated. What has to be verified instead is that the watch is
+  alive: the Stop hook's meter is writing (`cost-meter:` lines in the officer
+  log, and the day's `cabinet:cost:tokens:daily:<UTC date>` hash gaining fields
+  as officers work), and the `meter-silent`, `spend-without-output` and
+  `spend-lane-anomaly` rows are enabled in the deployment's watchdog config. A
+  dead meter is the failure to catch here: with nothing gating on spend,
+  nothing else would notice. See `docs/cost-metering.md` and
+  `framework/docs/outcome-watchdog.md`.
 - Evidence projection, Cabinet Doctor, the bounded F1 canary with
   `F1_GATHER=1`, backup restore, and rollback drills are green and recorded
   before the 72-hour clock begins. The frozen regression-corpus fingerprint
@@ -89,7 +101,8 @@ marker fails closed and refuses new officer boots.
   success.
 - Restart retention is proved before the soak: with one synthetic trigger left
   pending under consumer `channel`, restart that officer without widening the
-  kill switch, observe-only posture, spend cap, or egress policy. The same
+  kill switch, observe-only posture, or egress policy (there is no spend cap to
+  widen — see the uncapped-and-metered precondition above). The same
   receipt ID must be re-delivered by startup ID-0 recovery, then exact-ID ACK
   must return 1 and pending must return to zero. Any PEL drop before XACK is a
   failed gate; never use `XGROUP DELCONSUMER` as restart cleanup.
