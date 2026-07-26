@@ -571,10 +571,42 @@ fi
 # 2. Instance overrides (take precedence). Also refresh the generated-copy
 # marker so the clobber guard above compares future targets against what the
 # loader ACTUALLY last wrote (the overlay), not the preset baseline.
+#
+# HIRED-GATED, same as step 1 (roster-authz, 2026-07-26). This loop used to
+# copy EVERY instance overlay regardless of mcp-scope.yml, which contradicted
+# this file's own stated single source of truth ("agents listed under `agents:`
+# are hired") and made .claude/agents/ — the boot-loadable surface — claim
+# officers the deployment never hired. It showed up the moment the generator
+# stopped rostering unauthorized lane CEOs: their inert instance/agents/ role
+# defs still landed here, and audit-role-parity.sh correctly reported "agent
+# file with NO active registry row" on an otherwise healthy fresh hatch. An
+# un-hired overlay is STAGED, not loaded. A previously-loaded copy is removed
+# only when it is provably the loader's own unmodified output (sha matches the
+# .gen.sha marker) — a hand-edited file is left in place and reported, the same
+# protection the clobber guard above gives.
 if [ -d "$CABINET_ROOT/instance/agents" ]; then
+  _overlay_hired="$(list_hired_agents)"
   for src in "$CABINET_ROOT/instance/agents"/*.md; do
     [ -f "$src" ] || continue
     basename=$(basename "$src")
+    slug="${basename%.md}"
+    if ! echo "$_overlay_hired" | grep -qx "$slug"; then
+      target="$AGENTS_DIR/$basename"
+      marker="$AGENTS_DIR/.$basename.gen.sha"
+      if [ -f "$target" ]; then
+        target_sha=$(shasum -a 256 "$target" | awk '{print $1}')
+        marker_sha=$(cat "$marker" 2>/dev/null || true)
+        if [ "$target_sha" = "$marker_sha" ]; then
+          rm -f "$target" "$marker"
+          log "Instance agent overlay NOT hired: $basename — removed the stale derived copy from .claude/agents/ (not listed under agents: in $MCP_SCOPE_FILE)"
+        else
+          log "WARN: $basename is not hired in $MCP_SCOPE_FILE, but .claude/agents/$basename differs from the last loader-generated copy — left in place (hand edits are never discarded). Delete it once you have salvaged the edits."
+        fi
+      else
+        log "Instance agent overlay staged, not loaded: $basename (not listed under agents: in $MCP_SCOPE_FILE — hire it there, then re-run generate-instance.py + load-preset.sh)"
+      fi
+      continue
+    fi
     cp "$src" "$AGENTS_DIR/$basename"
     shasum -a 256 "$AGENTS_DIR/$basename" | awk '{print $1}' > "$AGENTS_DIR/.$basename.gen.sha"
     log "Instance agent override: $basename"

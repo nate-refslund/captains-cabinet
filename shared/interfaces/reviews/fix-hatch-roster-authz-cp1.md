@@ -88,3 +88,41 @@ the primary fix.
 
 approve. No existing test, threshold or germline file was modified. Layer
 separation unchanged (new=0). Docs sweep green.
+
+---
+
+# Checkpoint 2 — load-preset overlay hire-gate
+
+Found by running the real chain: `hatch.sh --clean-room --defaults` on a
+gitless committed-bytes egg. The roster gate and null-hatch both pass, but
+`load-preset.sh` printed a NEW parity warning —
+`first-lane-ceo: hired agent file with NO active registry row` / `do NOT flip
+CABINET_BOOT_ROLES_ACTIVE=1` — on an otherwise healthy fresh hatch.
+
+Cause: load-preset step 1 (preset agents) is gated by `cabinet/mcp-scope.yml`
+`agents:` per the file's own stated single source of truth; step 2 (instance
+overlays) copied every `instance/agents/*.md` regardless. Invisible while the
+generator rostered every lane CEO; visible the moment it stopped.
+
+Fix: gate step 2 by the same hired set. An un-hired overlay is staged, not
+loaded. A previously-loaded copy is removed ONLY when its sha matches the
+`.gen.sha` marker (provably the loader's own unmodified output); a hand-edited
+file is preserved and reported — the same protection the existing clobber
+guard gives. `audit-role-parity.sh` itself is untouched (it was right).
+
+Evidence: 4/5 new arms fail against pre-change `load-preset.sh`, all 5 pass
+after; the 5th (`test_hired_overlay_still_wins`) is a stated non-regression
+guard. The fixture ships `instance/roles/active/` and a copy of
+`audit-role-parity.sh` at the scratch root, because without either the audit
+SKIPs and the parity assertion would pass vacuously — both traps were hit and
+fixed while writing the test. Existing load-preset + role-registry suites: 28
+passed. Re-ran the chain: warning gone, `[roster-authz]` ok, `[proof-a]` ok.
+
+Residual, NOT in scope and NOT caused by this branch: the fresh hatch now dies
+at `[proof-c1]` (`start-officer-mac.sh cos --dry-run`) with
+`cabinet/scripts/lib/officer-env.sh: line 32: _observe_arg[@]: unbound
+variable` under bash 3.2 `set -u`. Reproduced identically on pristine
+origin/master bytes with the same generated `.env`; none of the files in that
+code path are touched by this branch. That is the next wall a stranger hits.
+
+approve.
