@@ -187,7 +187,7 @@ def step(*, census: "dict | None" = None, now: "datetime | None" = None,
     from framework.comms import tools
     now = now or datetime.now(timezone.utc)
     cfg = cfg or _cfg.load()
-    if str(cfg.get("pin_mode") or "adopt") == "overview":
+    if str(cfg.get("pin_mode") or _cfg.DEFAULTS["pin_mode"]) == "overview":
         return overview_step(census=census, now=now, state=state, cfg=cfg,
                              adapter=adapter, ch=ch)
     persist = state is None

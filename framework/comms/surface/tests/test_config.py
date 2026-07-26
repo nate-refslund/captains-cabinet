@@ -11,7 +11,11 @@ def test_defaults_are_quiet_and_clean_room_safe(monkeypatch, tmp_path):
     assert cfg["mode"] == "ask-first"
     assert cfg["cap"] == 5
     assert cfg["dashboard_url"] == ""
-    assert cfg["briefing_card"] is False
+    # Captain ratified briefing-as-card TRUE on 2026-07-11 (one-voice reset).
+    # This pinned False until 2026-07-26, which is why the ratified experience
+    # never reached a fresh cabinet: the egg deletes the instance file that
+    # carried it. Pinned to the ratified value — it must still fail on drift.
+    assert cfg["briefing_card"] is True
 
 
 def test_instance_yaml_binds_via_the_env_seam(monkeypatch, tmp_path):
@@ -47,14 +51,44 @@ def test_corrupt_yaml_and_wild_values_fail_closed(monkeypatch, tmp_path):
     assert scfg.load()["cap"] == 1
 
 
-def test_pin_mode_defaults_to_adopt_and_fails_closed(monkeypatch, tmp_path):
+def test_pin_mode_defaults_to_overview_and_fails_closed(monkeypatch, tmp_path):
+    # Captain ratified pin_mode "overview" on 2026-07-10. This pinned "adopt"
+    # until 2026-07-26 — the ratified value lived only in the instance file the
+    # egg deletes, so a fresh cabinet got the pre-ruling pin. Pinned to the
+    # ratified design; a drift back to "adopt" must still fail here.
     monkeypatch.setenv("CABINET_SURFACE_CONFIG_PATH",
                        str(tmp_path / "absent.yml"))
-    assert scfg.load()["pin_mode"] == "adopt"      # foundation default
+    assert scfg.load()["pin_mode"] == "overview"   # foundation default
     p = tmp_path / "comms-surface.yml"
     p.write_text("pin_mode: sideways\n", encoding="utf-8")
     monkeypatch.setenv("CABINET_SURFACE_CONFIG_PATH", str(p))
-    assert scfg.load()["pin_mode"] == "adopt"      # unknown value → shipped
+    assert scfg.load()["pin_mode"] == "overview"   # unknown value → ratified
+
+
+def test_pin_mode_adopt_stays_selectable(monkeypatch, tmp_path):
+    """The original design is opt-in-able, not deleted — the flip of the
+    default (2026-07-26) must not strand a deployment that wants it back."""
+    p = tmp_path / "comms-surface.yml"
+    p.write_text("pin_mode: adopt\n", encoding="utf-8")
+    monkeypatch.setenv("CABINET_SURFACE_CONFIG_PATH", str(p))
+    assert scfg.load()["pin_mode"] == "adopt"
+    monkeypatch.setenv("CABINET_SURFACE_PIN_MODE", "overview")
+    assert scfg.load()["pin_mode"] == "overview"   # env still wins over file
+
+
+def test_explicit_briefing_card_false_is_honoured(monkeypatch, tmp_path):
+    """The documented opt-out must survive the ratified-true default. `or`
+    coalescing (pre-2026-07-26) treated an explicit falsy value as ABSENT, so
+    flipping the default would have silently re-armed the card for anyone who
+    wrote `briefing_card: false` — the literal value the .example twin ships."""
+    p = tmp_path / "comms-surface.yml"
+    p.write_text("briefing_card: false\n", encoding="utf-8")
+    monkeypatch.setenv("CABINET_SURFACE_CONFIG_PATH", str(p))
+    assert scfg.load()["briefing_card"] is False
+    monkeypatch.setenv("CABINET_BRIEFING_CARD", "0")
+    assert scfg.load()["briefing_card"] is False   # env opt-out too
+    monkeypatch.setenv("CABINET_BRIEFING_CARD", "1")
+    assert scfg.load()["briefing_card"] is True
 
 
 def test_pin_mode_overview_binds_from_yaml_and_env(monkeypatch, tmp_path):

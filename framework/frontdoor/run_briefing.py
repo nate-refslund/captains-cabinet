@@ -104,7 +104,9 @@ def _default_needs_you() -> "dict | None":
 #   * the "Needs you (N)" intake section is skipped — the same numbers render
 #     on the card and the pinned overview (one list, several skins).
 #
-# The classic text path is byte-identical when the knob is off (the default).
+# The classic text path is byte-identical when the knob is off. The knob is
+# ON by default since 2026-07-26 (Captain ratified it 2026-07-11; the value
+# had lived only in the instance file the egg deletes) — off is now opt-out.
 # ---------------------------------------------------------------------------
 
 def _briefing_card_mode() -> bool:
