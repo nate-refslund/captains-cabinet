@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 77df1746138bb26148bed68ccbed438e5291da65a7ac4ee1ec1002366f35880e
+Reviewed-Scope-Digest: 41a85f9eebde7c56082901ff94ca8be46bc1b303838c3fdb2ba684892d27b3c0
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
@@ -443,5 +443,37 @@ verify twin in a detached worktree there (all exit 1; recorded digests COG-0 f54
 COG-2 b38632b9, COG-3 78a7bf18). COG-4 was the one binding GREEN on 6079be4d (verify twin exit 0) and
 the only one this landing turned BLOCK, so it is the only one re-bound. This commit edits ONLY the
 digest-excluded review artifact, so the digest it records is stable under its own landing.)
+
+(RE-BOUND BY THE ARM-THE-CABINET LANDING REVIEW, 2026-07-26 — 77df1746138bb26148bed68ccbed438e5291da65a7ac4ee1ec1002366f35880e
+-> the value above. Mechanical, and the reason is stated before the claim: this binding was ALREADY
+BLOCK on origin/master before this branch existed. Master carries the ORIGINAL
+93839d991e56db1fe048e1df97774e1dd4b248f0071d90171979d38ab08109d4 while computing
+e7fccd9b622f479d1f098962778163725a88927fde1bb85394496463f2b2dbe4 (measured on master a55dea44,
+`verify-cognitive-phase4.sh` exit 1) — PR #210 moved an in-scope path and did not re-bind. This
+landing does not inherit that red; it closes it.
+EXACTLY TWO in-scope paths moved since the re-bind above, verified by intersecting the resolved
+85-entry scope with `git diff --name-only 9883f270..HEAD` rather than by reading the diff:
+  (1) `cabinet/config/cognitive-architecture-contract.yml` — the captain-availability dial's two
+      allowance rows (from master, PR #210) plus this review's own
+      `framework_production_noncomment_lines` 60155 -> 60164 re-pin (+9 measured), still
+      observed==max with zero headroom.
+  (2) `cabinet/scripts/egg-export-manifest.txt` — the availability dial's delete + expect-present
+      pair (from master, PR #210).
+NO COG-4 implementation path moved: not `framework/projection`, `framework/scheduler`,
+`framework/organs`, no organ manifest, no runner, no measurement surface, no fixture. The behavior
+this review's verdict covers is byte-untouched, so this is a scope-membership re-bind and NOT a
+behavior-delta re-bind like the entry above it.
+WHAT WAS NOT DONE, stated plainly: no fresh frozen COG-4 panel ran. What DID run, on the landed
+bytes: `verify-cognitive-phase4.sh` green end-to-end after this re-bind; census PASS at 54/50/67423
+observed==max; layer-sep new=0; import gate exit 0; golden evals 30/30; A13 ledger parity GREEN
+(353/353, 0 findings); null-hatch PASS; `framework/` 6573 passed / 25 skipped / 1 failed and
+`cabinet/scripts/tests` 4711 passed / 28 skipped — the single failure being the known pre-existing
+`test_retro_shim.py::test_reexports_constants`, identical to a re-measured origin/master a55dea44
+baseline (6573/25/1). The landing review's own findings — a role_slug traversal that let the ARMED
+loop rewrite an arbitrary tracked .yml, and a phantom journal row whose advertised inverse removes a
+capability the loop never granted — are fixed in this same branch with ten arms that fail against the
+pre-fix module.
+SIBLING BINDERS unchanged from the note above: COG-0/1/2/3 were already BLOCK on pre-change master and
+are NOT re-bound here.)
 
 Verdict: PASS
