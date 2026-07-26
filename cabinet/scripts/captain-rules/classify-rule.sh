@@ -24,6 +24,14 @@ RULE_BODY="${1:-}"
 REPO_ROOT="${REPO_ROOT:-/opt/founders-cabinet}"
 PROMPT_TEMPLATE="$REPO_ROOT/cabinet/scripts/captain-rules/classifier-prompt.md"
 
+# LANE METER (2026-07-26) — counting only, see cabinet/scripts/lib/cost-lane.sh.
+# Resolved SCRIPT-RELATIVE, not from REPO_ROOT: that default is the dead
+# container path (/opt/founders-cabinet), so keying the meter off it would make
+# this lane silently dark on the native Mac deployment.
+COST_LANE_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/cabinet/scripts/lib/cost-lane.sh"
+# shellcheck source=/dev/null
+. "$COST_LANE_LIB" 2>/dev/null || true
+
 if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
   echo "[classify-rule] ANTHROPIC_API_KEY not set — skip" >&2
   exit 0
@@ -59,6 +67,13 @@ RESPONSE="$(curl -sS --max-time 30 -X POST "https://api.anthropic.com/v1/message
   -H "x-api-key: $ANTHROPIC_API_KEY" \
   -H "anthropic-version: 2023-06-01" \
   -d "$REQUEST" 2>/dev/null)"
+
+# PAID CALL COUNTED (lane `api_direct`). Priced from the response's own usage
+# block by the one rate table in framework/cost/meter.py. Recorded BEFORE the
+# empty-response early exit so a failed classify still shows the call.
+printf '%s' "$RESPONSE" | cost_lane_record --lane api_direct \
+  --principal "${CABINET_COST_PRINCIPAL:-${OFFICER_NAME:-}}" \
+  --response - --response-kind anthropic 2>/dev/null || true
 
 [ -z "$RESPONSE" ] && exit 0
 

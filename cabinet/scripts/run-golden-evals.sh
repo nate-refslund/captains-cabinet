@@ -107,6 +107,10 @@ cleanup() {
       > /dev/null 2>&1
   done
   redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" DEL "cabinet:cost:tokens:evaltest" > /dev/null 2>&1
+  # Live-meter residue (EVAL-008 re-point 2026-07-26): the per-session watermark
+  # must go or the next run bills nothing, and the hook's session-ended marker.
+  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" DEL "cabinet:cost:wm:eval-session" \
+    "cabinet:session:ended:evaltest" > /dev/null 2>&1
   rm -f "/tmp/eval-transcript-$$.jsonl" 2>/dev/null
   # Last: tear down the ephemeral sandbox redis (no-op when the endpoint
   # was declared disposable). The key DELs above ran against the sandbox
@@ -519,13 +523,22 @@ fi
 # If someone genuinely creates an officer named "evaltest", the
 # cleanup trap's HDEL would clobber their real cost data. Convention
 # not enforcement; rename if you're hiring a 100th officer.
-log "EVAL-008: stop-hook cost-write integrity (FW-016 regression catcher)"
-STOP_HOOK="$CABINET_ROOT/cabinet/scripts/hooks/stop-hook.sh"
+log "EVAL-008: Stop-hook cost-write integrity (FW-016 regression catcher)"
+# RE-POINTED 2026-07-26 — this eval used to drive cabinet/scripts/hooks/stop-hook.sh,
+# which is wired to NO hook event. It was therefore pinning the arithmetic of a
+# DEAD twin while the live Stop path (.claude/settings.json → session-stop.sh →
+# `python3 -m framework.cost.record_turn`) went entirely unguarded. That is how
+# the live meter's 5x cache mispricing and its one-response-per-turn bug both
+# shipped past a green golden-eval suite. The fixture and every expected value
+# are UNCHANGED (the fable arm was the one arm the old table got right, and the
+# no-TTL-split fallback charges the same 5m multiplier) — only the target moved,
+# from the twin nothing runs to the hook that actually runs.
+STOP_HOOK="$CABINET_ROOT/cabinet/scripts/hooks/session-stop.sh"
 if [ -f "$STOP_HOOK" ]; then
   # Pre-clean: HINCRBY accumulates, so prior residue would skew the test.
   # HDEL both today + yesterday to stay symmetric with the EXIT trap and
   # defend against a midnight-boundary flip between our pre-clean and
-  # stop-hook's internal TODAY compute.
+  # the hook's internal TODAY compute.
   EVAL_PRE_TODAY=$(date -u +%Y-%m-%d)
   EVAL_PRE_YDAY=$(date -u -d 'yesterday' +%Y-%m-%d 2>/dev/null)
   for _EV_DT in "$EVAL_PRE_TODAY" "$EVAL_PRE_YDAY"; do
@@ -534,12 +547,18 @@ if [ -f "$STOP_HOOK" ]; then
       evaltest_input evaltest_output evaltest_cache_write evaltest_cache_read evaltest_cost_micro \
       > /dev/null 2>&1
   done
+  # The live meter carries a per-session WATERMARK so a turn is billed exactly
+  # once. Without deleting it, this eval passes on a clean box and silently
+  # bills NOTHING on every rerun — a green eval measuring an empty write.
+  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" DEL "cabinet:cost:wm:eval-session" > /dev/null 2>&1
   EVAL_TX="/tmp/eval-transcript-$$.jsonl"
   cat > "$EVAL_TX" <<'EOT'
 {"type":"assistant","message":{"model":"claude-fable-5","usage":{"input_tokens":1000,"output_tokens":500,"cache_creation_input_tokens":200,"cache_read_input_tokens":3000}}}
 EOT
+  # CABINET_ROOT is exported so the hook resolves framework.cost on PYTHONPATH
+  # from THIS tree rather than from its own three-levels-up guess.
   echo "{\"session_id\":\"eval-session\",\"transcript_path\":\"$EVAL_TX\"}" \
-    | OFFICER_NAME=evaltest bash "$STOP_HOOK" > /dev/null 2>&1
+    | CABINET_ROOT="$CABINET_ROOT" OFFICER_NAME=evaltest bash "$STOP_HOOK" > /dev/null 2>&1
   # Post-read: stop-hook.sh line 82 computes TODAY=$(date -u +%Y-%m-%d) at
   # HINCRBY time — if the eval straddles 00:00 UTC between our pre-clean
   # and stop-hook's write, the target key shifts by one day. Probe today
@@ -557,7 +576,7 @@ EOT
     fi
   done
   if [ -z "$EVAL_KEY" ]; then
-    fail "stop-hook did not write evaltest_cost_micro to any expected date key (probed today=$EVAL_POST_TODAY, start=$EVAL_PRE_TODAY)"
+    fail "session-stop did not write evaltest_cost_micro to any expected date key (probed today=$EVAL_POST_TODAY, start=$EVAL_PRE_TODAY)"
   else
     ACTUAL_INPUT=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGET "$EVAL_KEY" evaltest_input 2>/dev/null)
     ACTUAL_OUTPUT=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGET "$EVAL_KEY" evaltest_output 2>/dev/null)
@@ -567,9 +586,9 @@ EOT
     if [ "$ACTUAL_INPUT" = "1000" ] && [ "$ACTUAL_OUTPUT" = "500" ] && \
        [ "$ACTUAL_CW" = "200" ] && [ "$ACTUAL_CR" = "3000" ] && \
        [ "$ACTUAL_COST" = "40500" ]; then
-      pass "stop-hook writes cost HSET correctly (all 5 fields, cost_micro=40500)"
+      pass "LIVE Stop hook writes cost HSET correctly (all 5 fields, cost_micro=40500)"
     else
-      fail "stop-hook cost-write drift (input=$ACTUAL_INPUT/1000 output=$ACTUAL_OUTPUT/500 cache_write=$ACTUAL_CW/200 cache_read=$ACTUAL_CR/3000 cost_micro=$ACTUAL_COST/40500)"
+      fail "live Stop-hook cost-write drift (input=$ACTUAL_INPUT/1000 output=$ACTUAL_OUTPUT/500 cache_write=$ACTUAL_CW/200 cache_read=$ACTUAL_CR/3000 cost_micro=$ACTUAL_COST/40500)"
     fi
     # Inline cleanup — HDEL the key we actually wrote to. Trap still sweeps
     # both dates on interrupt.
@@ -577,10 +596,11 @@ EOT
       evaltest_input evaltest_output evaltest_cache_write evaltest_cache_read evaltest_cost_micro \
       > /dev/null 2>&1
   fi
-  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" DEL "cabinet:cost:tokens:evaltest" > /dev/null 2>&1
+  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" DEL "cabinet:cost:tokens:evaltest" \
+    "cabinet:cost:wm:eval-session" "cabinet:session:ended:evaltest" > /dev/null 2>&1
   rm -f "$EVAL_TX"
 else
-  fail "stop-hook.sh not found at $STOP_HOOK"
+  fail "session-stop.sh not found at $STOP_HOOK"
 fi
 
 # ------------------------------------------------------------------
