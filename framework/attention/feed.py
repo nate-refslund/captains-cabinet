@@ -214,6 +214,55 @@ def recent_feed(n: int = 50) -> list:
     return rows[-n:]
 
 
+def situation_key_for_message(telegram_message_id, *, scan_limit: int = 2000):
+    """The ``situation_key`` of the OUTBOUND row this Telegram message id was
+    sent as, or None.
+
+    WHY THIS EXISTS (2026-07-26). The Captain's TAPS — inline-keyboard
+    callbacks, message reactions, poll answers — were journaled with a
+    ``telegram_message_id`` and no ``situation_key``: measured on the live
+    feed, 0 of 21 taps carried one. So the only way to ask "what did he
+    actually engage with?" was to join taps back to sends through the message
+    id, and that join is lossy in practice — only 16 of those 21 taps matched
+    an outbound row at all, and only 6 of the matches carried a situation_key
+    to inherit. Every unmatched tap is a Captain action the org cannot
+    attribute to anything.
+
+    Stamping the key AT JOURNAL TIME makes the measurement durable: the join
+    is resolved once, while the sending row is still findable, instead of
+    being re-attempted forever against a feed that rolls.
+
+    Read-only and total: any failure returns None, because a tap must be
+    journaled whether or not it can be attributed. ``scan_limit`` bounds the
+    work — the newest rows are scanned first, and a send the Captain is
+    plausibly tapping is recent by construction.
+    """
+    try:
+        mid = int(telegram_message_id)
+    except (TypeError, ValueError):
+        return None
+    if not mid:
+        return None
+    try:
+        rows = [r for r in _read_all_rows() if _is_seq(r.get("seq"))]
+    except Exception:
+        return None
+    rows.sort(key=lambda r: r["seq"], reverse=True)
+    for row in rows[:max(0, int(scan_limit))]:
+        if row.get("direction") != "out":
+            continue
+        if row.get("telegram_message_id") != mid:
+            continue
+        key = row.get("situation_key")
+        if key:
+            return key
+        # An outbound row matched but carries no key: that send genuinely had
+        # no situation identity, so neither does the tap. Stop — a further
+        # match on the same id would be an edit of the same message.
+        return None
+    return None
+
+
 def _cursor_path(consumer_id: str) -> Path:
     """The cursor file for ``consumer_id``, with the traversal fence enforced —
     the id is a filename component, so anything outside ``[a-z0-9_-]`` (dots,

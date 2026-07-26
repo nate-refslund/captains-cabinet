@@ -247,3 +247,96 @@ class TestConfigPathSeam:
         monkeypatch.delenv(deadman.CONFIG_ENV, raising=False)
         assert deadman.config_path() == env.liveness_config_path()
         assert deadman.config_path().endswith("liveness.yml")
+
+
+# ---------------------------------------------------------------------------
+# status() — is the dead-man armed, and if not, why not (2026-07-26)
+#
+# An absence detector that is silently absent produces the SAME observable as
+# a dead cabinet: no pings. The arming state has to be askable.
+# ---------------------------------------------------------------------------
+
+
+def test_status_reports_unarmed_on_a_fresh_clone(tmp_path):
+    """A fresh clone pings nothing — and must SAY so rather than look healthy."""
+    st = deadman.status(config_path_override=str(tmp_path / "absent.yml"))
+    assert st["armed"] is False
+    assert st["instance_id"] is None
+    assert set(st["events"]) == set(deadman.KNOWN_EVENTS)
+    assert all(reason == "no-config" for reason in st["events"].values())
+
+
+def test_status_reports_armed_when_fully_configured(tmp_path):
+    p = tmp_path / "liveness.yml"
+    p.write_text(
+        "enabled: true\n"
+        "instance_id: hq-one\n"
+        "base_url: https://watcher.invalid\n"
+        "events:\n"
+        "  captain_outbound: abc-123\n"
+        "  captain_inbound: def-456\n", encoding="utf-8")
+    st = deadman.status(config_path_override=str(p))
+    assert st["armed"] is True
+    assert st["instance_id"] == "hq-one"
+    assert st["events"][deadman.EVENT_CAPTAIN_OUTBOUND] == "ready"
+    assert st["events"][deadman.EVENT_CAPTAIN_INBOUND] == "ready"
+
+
+def test_status_names_the_exact_reason_each_event_is_inert(tmp_path):
+    """Partially configured is the dangerous middle: one event live, one dead,
+    and nothing to tell them apart without this."""
+    p = tmp_path / "liveness.yml"
+    p.write_text(
+        "enabled: true\n"
+        "instance_id: hq-one\n"
+        "base_url: https://watcher.invalid\n"
+        "events:\n"
+        "  captain_outbound: abc-123\n", encoding="utf-8")
+    st = deadman.status(config_path_override=str(p))
+    assert st["armed"] is True          # one event IS live
+    assert st["events"][deadman.EVENT_CAPTAIN_OUTBOUND] == "ready"
+    assert st["events"][deadman.EVENT_CAPTAIN_INBOUND] == "no-slug"
+
+
+def test_status_reports_the_multi_tenancy_guard(tmp_path):
+    """Slugs filled in but no instance_id: inert, and the reason must say WHY
+    rather than reading as a configuration success."""
+    p = tmp_path / "liveness.yml"
+    p.write_text(
+        "enabled: true\n"
+        "base_url: https://watcher.invalid\n"
+        "events:\n"
+        "  captain_outbound: abc-123\n"
+        "  captain_inbound: def-456\n", encoding="utf-8")
+    st = deadman.status(config_path_override=str(p))
+    assert st["armed"] is False
+    assert st["instance_id"] is None
+    assert all(r == "no-instance" for r in st["events"].values())
+
+
+def test_status_reports_a_parked_detector(tmp_path):
+    p = tmp_path / "liveness.yml"
+    p.write_text(
+        "enabled: false\n"
+        "instance_id: hq-one\n"
+        "base_url: https://watcher.invalid\n"
+        "events:\n"
+        "  captain_outbound: abc-123\n", encoding="utf-8")
+    st = deadman.status(config_path_override=str(p))
+    assert st["armed"] is False
+    assert all(r == "disabled" for r in st["events"].values())
+
+
+def test_status_makes_no_network_call(tmp_path, monkeypatch):
+    """Offline by construction — status is a config question, not a probe."""
+    def _boom(url, timeout):
+        raise AssertionError(f"status() must never fetch (tried {url})")
+    monkeypatch.setattr(deadman, "_default_opener", _boom)
+    p = tmp_path / "liveness.yml"
+    p.write_text(
+        "enabled: true\n"
+        "instance_id: hq-one\n"
+        "base_url: https://watcher.invalid\n"
+        "events:\n"
+        "  captain_outbound: abc-123\n", encoding="utf-8")
+    assert deadman.status(config_path_override=str(p))["armed"] is True

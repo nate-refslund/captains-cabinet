@@ -26,13 +26,37 @@ components:
     default_range: [0, 1]
     derivation: "|outcomes_with_completion| / |outcomes_touched| (mission_created OR work_item_completed)"
 
-  - name: captain_attention_cost
-    description: "Captain interventions required (inverse: fewer = better)"
+  # ATTENTION WELL SPENT (Captain ruling 2026-07-25; polarity fixed 2026-07-26).
+  #
+  # WAS: `captain_attention_cost`, weight 0.20, direction INVERSE, range [0,20]
+  # — "Captain interventions required (fewer = better)". That treated the
+  # Captain as a cost to minimise, which is the formal opposite of working
+  # together with him. Measured consequence on the real ledger: the term read a
+  # perfect 1.00 in EVERY window — 7d, 30d and 365d — including a 7d window
+  # with 0.0 throughput and 0.0 verification. A week of delivering nothing and
+  # never once speaking to the Captain scored full marks on this term. The
+  # cabinet has emitted ZERO captain_* events in its entire life (0 of 43,894),
+  # so 1.00 was not a lucky reading — it was the only reading the term could
+  # ever produce.
+  #
+  # NOW: the share of the Captain's spent attention that went on decisions only
+  # he could make. Under-asking is a failure exactly as much as over-asking, so
+  # BOTH ends read 0.0 and only genuinely well-spent attention reads 1.0:
+  #   * no contact at all      -> 0.0  the org went quiet / decided for him
+  #   * contact, none of it his -> 0.0  the org spent his minutes on noise
+  #   * contact, all of it his  -> 1.0  every minute was a decision only he could make
+  # Silence is NOT safe and no longer scores as if it were.
+  #
+  # RIDER (standing, Captain 2026-07-25): OVI is a Captain-FACING instrument
+  # and must NEVER become a selection input. Enforced by
+  # framework/tests/test_ovi_never_a_selection_input.py.
+  - name: captain_attention_well_spent
+    description: "Share of spent Captain attention that went on decisions only he could make (0.0 when the org never asked at all — going quiet is a failure, not a win)"
     weight: 0.20
     source: events
-    direction: inverse
-    default_range: [0, 20]
-    derivation: "count(captain_decision_logged + captain_boundary_set + captain_outcome_ratified + captain_goal_declared in window)"
+    direction: normal
+    default_range: [0, 1]
+    derivation: "decisions / (decisions + captain_gate_bounced) in window, where decisions = count(captain_decision_logged + captain_boundary_set + captain_outcome_ratified + captain_goal_declared); 0.0 when there was NO Captain contact at all"
     legacy_db_query: "SELECT count(*) FROM decision_log WHERE decided_at > NOW() - interval '7 days'"
 
   - name: learning_rate
