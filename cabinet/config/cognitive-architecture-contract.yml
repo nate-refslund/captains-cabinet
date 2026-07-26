@@ -9,12 +9,23 @@ budgets:
     path: framework/authority/classifier.py
     symbol: ACTION_TYPES
     maximum: 30
+  # ── Fleet caps: ONE Captain-ruled bump, 2026-07-26, then re-pinned ─────────
+  # The COG-4 W6-e2/e4 tighten left both caps at observed==max with ZERO
+  # headroom BY DESIGN (52 rows / 40 enabled). The Captain's 2026-07-26
+  # arm-the-cabinet ruling turns on a batch of parked organs, which the caps
+  # correctly refuse. His ruling: ONE bump covering the WHOLE batch, set to
+  # exactly what the enabled set requires — no slack, no per-service bump, no
+  # temporary_allowances row — so the ratchet still bites at the new level and
+  # the next silent growth still REDs. Post-batch actuals, parse-verified with
+  # cognitive-architecture-census.py: 54 rows / 50 enabled / 4 parked
+  # (mission-supervisor, memory-curator-health, evidence-anchor,
+  # evidence-signing-broker). Shrink-only resumes from here.
   services_total:
     path: cabinet/services.yml
-    maximum: 52   # TIGHTENED 57->52 at the COG-4 W6-e2 compose (shrink-only; the growth-mutant gate needs observed==max zero headroom); §9.4 done-flip tighten CONFIRMED W6-e4 2026-07-24 — 52 is the final phase actual (no further shrink beyond e2), N7 machine-pinned 52<57
+    maximum: 54   # 52->54 (Captain ruling 2026-07-26): +2 NEW rows, the two COG-3 captain-report CLIs that never had a clock (cog3-verdict-inbox, cog3-shadow-dividend). observed==max, zero headroom. Was: TIGHTENED 57->52 at the COG-4 W6-e2 compose, §9.4 done-flip CONFIRMED W6-e4 2026-07-24, N7 machine-pinned 52<57.
   services_enabled:
     path: cabinet/services.yml
-    maximum: 40   # TIGHTENED 44->40 at the COG-4 W6-e2 compose (same zero-headroom law); §9.4 done-flip tighten CONFIRMED W6-e4 2026-07-24 — 40 is the final phase actual, N7 machine-pinned 40<44
+    maximum: 50   # 40->50 (Captain ruling 2026-07-26): +8 parked rows armed (research-sweep, backlog-refine, killswitch-watchdog, healthchecks-drill, officer-lifecycle-transitions, authority-transitions and the two shadow evidence rows — named in cabinet/services.yml, not here: their shadow-law reference proofs treat any unallowlisted mention as a consumer) +2 new rows. observed==max, zero headroom. Was: TIGHTENED 44->40 at the COG-4 W6-e2 compose, §9.4 done-flip CONFIRMED W6-e4 2026-07-24, N7 machine-pinned 40<44.
   layer_debt_entries:
     path: .layer-separation-baseline
     maximum: 24
@@ -26,7 +37,18 @@ budgets:
     maximum: 206
   framework_production_noncomment_lines:
     path: framework
-    maximum: 60067
+    # 60067 -> 60155 (+88 measured 2026-07-26 via cognitive-architecture-census.py).
+    # NOT a phase allowance and deliberately NOT a temporary_allowances row:
+    # this is the PERMANENT reversibility safeguard the Captain ordered when he
+    # armed the self-improvement loop's auto-apply — the application journal in
+    # framework/learning/self_improvement_loop.py (_journal_application + the
+    # pre-image capture and the four apply-site calls). An allowance would
+    # promise a deletion gate that will never fire; a maximum bump states the
+    # honest truth: the org grew a permanent organ, and the ratchet re-pins at
+    # the new level. Zero new MODULES (framework_production_modules unchanged
+    # at 206+allowances): the helper lives inside the existing module, and the
+    # revert CLI lives in cabinet/scripts/, outside this budget's path.
+    maximum: 60155
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
