@@ -429,6 +429,23 @@ def dated_paths() -> Dict[str, List[Path]]:
 
 # ── redis (subprocess redis-cli — fleet convention; no new deps) ────────────
 
+def _killswitch_verdict() -> str:
+    """CLEAR | ACTIVE | INDETERMINATE from cabinet/scripts/hooks/killswitch-read.sh
+    — the ONE emergency-stop reader. A reader that cannot run is INDETERMINATE,
+    never CLEAR: the world must never paint calm weather over a stop it failed
+    to read."""
+    helper_path = _REPO_ROOT / "cabinet" / "scripts" / "hooks" / "killswitch-read.sh"
+    if not helper_path.is_file():
+        return "INDETERMINATE"
+    try:
+        proc = subprocess.run(["bash", str(helper_path)], capture_output=True,
+                              text=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return "INDETERMINATE"
+    verdict = (proc.stdout or "").split("\t", 1)[0].strip()
+    return verdict if verdict in ("CLEAR", "ACTIVE", "INDETERMINATE") else "INDETERMINATE"
+
+
 def redis_cmd(*args: str, timeout: int = 10) -> Optional[str]:
     try:
         proc = subprocess.run(
@@ -536,8 +553,13 @@ def gather_presence(iid_high: int) -> Dict[str, Any]:
             heartbeats[slug] = int(ttl) if ttl is not None else None
         except ValueError:
             heartbeats[slug] = None
-    ks = redis_cmd("GET", "cabinet:killswitch")
-    killswitch_active = bool(ks) and ks not in ("", "0", "inactive", "(nil)")
+    # Emergency stop through the ONE shared reader (2026-07-25 audit). The old
+    # inline GET could not tell a cleared switch from an unreadable one; this
+    # helper does, and anything short of a verified CLEAR storms the world
+    # rather than painting it calm. It also consults the second (filesystem
+    # marker) stop channel, so a stop that survives a `DEL cabinet:killswitch`
+    # loop still shows up in the world and on the Captain's phone.
+    killswitch_active = _killswitch_verdict() != "CLEAR"
     return build_presence(activity, heartbeats, killswitch_active,
                           iid_high, _now_iso())
 

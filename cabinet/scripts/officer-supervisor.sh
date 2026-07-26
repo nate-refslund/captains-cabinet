@@ -67,10 +67,19 @@ while true; do
     done
   fi
 
-  # Check kill switch — don't restart if Cabinet is halted
-  KILLSWITCH=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET cabinet:killswitch 2>/dev/null)
-  if [ "$KILLSWITCH" = "active" ]; then
-    log "Kill switch active — skipping restart checks"
+  # Check kill switch — don't restart if Cabinet is halted. Through the ONE
+  # shared helper: a raw GET compared to "active" read NOAUTH/NOPERM/WRONGTYPE/
+  # LOADING error text as CLEAR, so the supervisor kept respawning officers
+  # through an armed stop (2026-07-25 audit). Anything but a verified CLEAR
+  # skips the restart pass.
+  _KS_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/hooks" 2>/dev/null && pwd)/killswitch-read.sh"
+  KS_VERDICT=INDETERMINATE; KS_REASON="killswitch helper unavailable"
+  if [ -r "$_KS_HELPER" ]; then
+    # shellcheck source=/dev/null
+    . "$_KS_HELPER" 2>/dev/null && killswitch_read
+  fi
+  if [ "$KS_VERDICT" != "CLEAR" ]; then
+    log "Emergency stop $KS_VERDICT ($KS_REASON) — skipping restart checks"
     continue
   fi
 

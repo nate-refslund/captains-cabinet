@@ -89,10 +89,18 @@ _rearm_officer() {
   [ -n "$prompt" ] || { log "skip $officer — empty loop-prompt"; return 1; }
 
   # Kill-switch guard — don't nudge officers while the Cabinet is halted.
-  local ks
-  ks=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET cabinet:killswitch 2>/dev/null)
-  if [ "$ks" = "active" ]; then
-    log "kill switch active — not re-arming $officer"
+  # Through the ONE shared helper (2026-07-25 audit): a raw GET compared to
+  # "active" read error text as a clear switch, so officers were re-armed
+  # through an armed stop. Anything but a verified CLEAR refuses the re-arm.
+  local _ks_helper
+  _ks_helper="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/hooks" 2>/dev/null && pwd)/killswitch-read.sh"
+  KS_VERDICT=INDETERMINATE; KS_REASON="killswitch helper unavailable"
+  if [ -r "$_ks_helper" ]; then
+    # shellcheck source=/dev/null
+    . "$_ks_helper" 2>/dev/null && killswitch_read
+  fi
+  if [ "$KS_VERDICT" != "CLEAR" ]; then
+    log "emergency stop $KS_VERDICT ($KS_REASON) — not re-arming $officer"
     return 1
   fi
 

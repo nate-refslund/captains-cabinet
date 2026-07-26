@@ -255,20 +255,93 @@ esac
 #       fail-closed. The wedge bound is preserved wherever -t is honored, and a
 #       real timeout/outage never matches the flag-error pattern so it still
 #       blocks.
-KILLSWITCH=$(redis-cli -t 1 -h "$REDIS_HOST" -p "$REDIS_PORT" GET cabinet:killswitch 2>/dev/null)
-KS_EXIT=$?
-if [ "$KS_EXIT" -ne 0 ]; then
-  KS_ERR=$(redis-cli -t 1 -h "$REDIS_HOST" -p "$REDIS_PORT" GET cabinet:killswitch 2>&1 >/dev/null)
-  if printf '%s' "$KS_ERR" | grep -qiE "unrecognized|unknown option|bad number of args|invalid option|ambiguous"; then
-    KILLSWITCH=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET cabinet:killswitch 2>/dev/null)
-    KS_EXIT=$?
+#   (d) INVERTED DEFAULT (2026-07-25 adversarial audit — the emergency stop
+#       FAILED OPEN). This block used to read `GET` itself and treat "the
+#       answer was not the literal string active" as CLEAR. Measured on redis
+#       8.8: NOAUTH (requirepass), NOPERM (`ACL SETUSER default -get`),
+#       WRONGTYPE (`LPUSH cabinet:killswitch x`) and LOADING all print their
+#       error text ON STDOUT AND EXIT 0 — so one allowed command silently
+#       disabled the Captain's stop while every status surface said INACTIVE.
+#       The read now lives in ONE shared helper (killswitch-read.sh, a sibling
+#       in this same schg-locked directory) which returns CLEAR / ACTIVE /
+#       INDETERMINATE, where only a DEFINITIVE AUTHENTICATED clear permits
+#       action. INDETERMINATE takes the same default-deny arm as an
+#       unreachable control plane below — a switch we cannot read is a switch
+#       we must assume is armed. Sourced by ABSOLUTE sibling path (not via
+#       PATH or CABINET_ROOT) so the helper cannot be shimmed; if it is
+#       missing or fails to load, the verdict stays INDETERMINATE.
+#       WHY THERE IS ALSO AN INLINE COPY: this hook is the ONE gate every
+#       officer tool call passes through, and it is deployed by copy in
+#       several places (the watchdog image, patched-tree harnesses). Making
+#       the most critical gate in the system depend on a second file being
+#       present would mean a partial copy either BRICKS the fleet (helper
+#       missing ⇒ everything INDETERMINATE ⇒ everything refused) or, worse,
+#       tempts a future fail-open fallback. So the sibling helper is the
+#       canonical source that every OTHER surface sources, and this hook
+#       carries an equivalent inline reader for when it is not there.
+#       cabinet/scripts/tests/test_killswitch_fail_closed.py runs BOTH against
+#       a real Redis across every failure state and asserts identical
+#       verdicts, so the twin cannot drift.
+KS_VERDICT=INDETERMINATE
+KS_REASON="killswitch helper unavailable"
+_KS_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/killswitch-read.sh"
+if [ -r "$_KS_HELPER" ]; then
+  # shellcheck source=/dev/null
+  . "$_KS_HELPER" 2>/dev/null && killswitch_read
+else
+  # --- inline twin of cabinet/scripts/hooks/killswitch-read.sh -------------
+  _ks_marker="${CABINET_ESTOP_MARKER:-$CABINET_ROOT/instance/config/estop}"
+  KS_VERDICT=""; KS_REASON=""
+  if [ -e "$_ks_marker" ] || [ -L "$_ks_marker" ]; then
+    if [ -f "$_ks_marker" ] && [ ! -L "$_ks_marker" ] \
+       && [ "$(tr -d '[:space:]' < "$_ks_marker" 2>/dev/null)" = "active" ]; then
+      KS_VERDICT=ACTIVE; KS_REASON="stop marker armed ($_ks_marker)"
+    else
+      KS_VERDICT=INDETERMINATE
+      KS_REASON="stop marker present but unreadable/unexpected content ($_ks_marker)"
+    fi
+  fi
+  if [ "$KS_VERDICT" != "ACTIVE" ]; then
+    _ks_n1=$(dd if=/dev/urandom bs=8 count=1 2>/dev/null | od -An -tx1 | tr -d ' \n')
+    _ks_n2=$(dd if=/dev/urandom bs=8 count=1 2>/dev/null | od -An -tx1 | tr -d ' \n')
+    if [ -z "$_ks_n1" ] || [ -z "$_ks_n2" ] || [ "$_ks_n1" = "$_ks_n2" ]; then
+      _ks_r=INDETERMINATE; _ks_rr="could not mint a read nonce"
+    else
+      _ks_probe=$(printf 'ECHO %s\nGET cabinet:killswitch\nECHO %s\n' "$_ks_n1" "$_ks_n2")
+      _ks_raw=$(printf '%s\n' "$_ks_probe" | redis-cli -t 2 -h "$REDIS_HOST" -p "$REDIS_PORT" 2>&1)
+      case "$(printf '%s' "$_ks_raw" | tr '[:upper:]' '[:lower:]')" in
+        *unrecognized\ option*|*unknown\ option*|*bad\ number\ of\ args*|*invalid\ option*|*ambiguous*)
+          _ks_raw=$(printf '%s\n' "$_ks_probe" | redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" 2>&1) ;;
+      esac
+      _ks_nl=$(printf '%s\n' "$_ks_raw" | wc -l | tr -d ' ')
+      if [ "$_ks_nl" != "3" ] \
+         || [ "$(printf '%s\n' "$_ks_raw" | sed -n '1p')" != "$_ks_n1" ] \
+         || [ "$(printf '%s\n' "$_ks_raw" | sed -n '3p')" != "$_ks_n2" ]; then
+        _ks_r=INDETERMINATE
+        _ks_rr="control plane at ${REDIS_HOST}:${REDIS_PORT} did not answer a verifiable read: $(printf '%s' "$_ks_raw" | tr '\n' ' ' | cut -c1-120)"
+      else
+        case "$(printf '%s\n' "$_ks_raw" | sed -n '2p')" in
+          active) _ks_r=ACTIVE; _ks_rr="cabinet:killswitch = active" ;;
+          "")     _ks_r=CLEAR;  _ks_rr="verified clear at ${REDIS_HOST}:${REDIS_PORT}" ;;
+          *)      _ks_r=INDETERMINATE; _ks_rr="cabinet:killswitch holds an unrecognised value" ;;
+        esac
+      fi
+    fi
+    if [ "$_ks_r" = "ACTIVE" ]; then
+      KS_VERDICT=ACTIVE; KS_REASON="$_ks_rr"
+    elif [ "$KS_VERDICT" = "INDETERMINATE" ] || [ "$_ks_r" = "INDETERMINATE" ]; then
+      KS_VERDICT=INDETERMINATE
+      [ -z "$KS_REASON" ] && KS_REASON="$_ks_rr"
+    else
+      KS_VERDICT=CLEAR; KS_REASON="$_ks_rr"
+    fi
   fi
 fi
-if [ "$KILLSWITCH" = "active" ]; then
+if [ "$KS_VERDICT" = "ACTIVE" ]; then
   echo "KILL SWITCH ACTIVE — all operations halted by Captain. Deactivation is Captain-side only: kill-switch.sh deactivate, or the dashboard governance toggle." >&2
   exit 2
 fi
-if [ "$KS_EXIT" -ne 0 ]; then
+if [ "$KS_VERDICT" != "CLEAR" ]; then
   case "$TOOL_NAME" in
     # NARROW COMMS ALLOWLIST (default-DENY carve-out): the Captain-facing
     # channel must stay live so an officer can report the outage instead of
@@ -297,14 +370,14 @@ if [ "$KS_EXIT" -ne 0 ]; then
     # is denied too, so no outbound-network side-effect/exfil channel stays
     # open during the halt (an ACTIVE killswitch already blocks these).
     Bash|Write|Edit|MultiEdit|NotebookEdit|Task|WebFetch|WebSearch|mcp__*)
-      echo "KILL SWITCH UNVERIFIABLE — Redis unreachable at $REDIS_HOST:$REDIS_PORT; state-changing tools, MCP servers, subagent spawns, and network-egress tools are halted until the control plane answers (read + Captain-comms tools still allowed)." >&2
+      echo "EMERGENCY STOP UNVERIFIABLE — treating as STOPPED ($KS_REASON); state-changing tools, MCP servers, subagent spawns, and network-egress tools are halted until the switch can be read (read + Captain-comms tools still allowed)." >&2
       exit 2
       ;;
     # FAIL-CLOSED DEFAULT: anything unrecognized — including an empty TOOL_NAME
     # (unparseable stdin) or a future native mutating tool — is REFUSED rather
     # than allowed while the kill switch is unverifiable.
     *)
-      echo "KILL SWITCH UNVERIFIABLE — Redis unreachable at $REDIS_HOST:$REDIS_PORT; tool '$TOOL_NAME' refused (fail-closed default) until the control plane answers (read + Captain-comms tools still allowed)." >&2
+      echo "EMERGENCY STOP UNVERIFIABLE — treating as STOPPED ($KS_REASON); tool '$TOOL_NAME' refused (fail-closed default) until the switch can be read (read + Captain-comms tools still allowed)." >&2
       exit 2
       ;;
   esac
@@ -471,10 +544,22 @@ TG_HOURLY_CAP=$(_cfg_get telegram_whitelist_hourly_cap 10)
 # per-invocation temp cache so no trusted-content file survives this call.
 [ -n "$SPENDING_CONFIG_CACHE" ] && rm -f "$SPENDING_CONFIG_CACHE"
 
-# Coerce non-numeric values to 0 (unlimited) rather than crash. If caps are
-# garbage, fail-open + warn.
-case "$PER_OFF_CAP_USD" in *[!0-9.]*|'') PER_OFF_CAP_USD=0 ;; esac
-case "$CABINET_CAP_USD" in *[!0-9.]*|'') CABINET_CAP_USD=0 ;; esac
+# Coerce non-numeric values rather than crash. FAIL-CLOSED DIRECTION
+# (2026-07-25 audit): a garbage cap used to coerce to 0, and 0 means UNLIMITED
+# — so corrupting one line of platform.yml removed the spend ceiling entirely
+# and nothing said so. A cap we cannot parse now falls back to the FRAMEWORK
+# DEFAULT (the same 75/300 floor _cfg_get uses when the cache is empty) and
+# warns; only a cap the Captain wrote as a literal numeric 0 disables a scope.
+case "$PER_OFF_CAP_USD" in
+  *[!0-9.]*|'')
+    echo "pre-tool-use: WARN daily_per_officer_usd is not numeric ('$PER_OFF_CAP_USD') — falling back to the \$75 framework default, NOT unlimited" >&2
+    PER_OFF_CAP_USD=75 ;;
+esac
+case "$CABINET_CAP_USD" in
+  *[!0-9.]*|'')
+    echo "pre-tool-use: WARN daily_cabinet_wide_usd is not numeric ('$CABINET_CAP_USD') — falling back to the \$300 framework default, NOT unlimited" >&2
+    CABINET_CAP_USD=300 ;;
+esac
 case "$COS_MULT" in *[!0-9.]*|'') COS_MULT=1 ;; esac
 case "$TG_HOURLY_CAP" in *[!0-9]*|'') TG_HOURLY_CAP=10 ;; esac
 
@@ -516,6 +601,71 @@ if [ "$IS_TELEGRAM_COMMS" = "1" ] && [ "$TG_WHITELIST_ON" = "true" ]; then
   fi
 fi
 
+# FAIL-CLOSED SPEND READ (2026-07-25 adversarial audit). One allowed command —
+# `redis-cli SET cabinet:cost:tokens:daily:<today> x` — made the HKEYS below
+# answer WRONGTYPE. redis-cli prints error replies on STDOUT WITH EXIT 0, so
+# the old `2>/dev/null` capture read that as "no cost fields", today's spend
+# summed to $0, and the cap could not trip again for the rest of the day. An
+# ERRORED spend reading is not $0.
+# Why failing closed here cannot brick a plain outage: reaching this line
+# already proves the control plane is live and authenticated (the killswitch
+# gate above refuses every mutating tool otherwise), so an error at this point
+# is a specific anomaly, not an unreachable Redis. The Captain-comms door also
+# stays open — Telegram tools set _SKIP_MAIN_CAP and never enter this block.
+_spend_reply_is_error() {
+  case "$1" in
+    NOAUTH\ *|NOPERM\ *|WRONGTYPE\ *|LOADING\ *|ERR\ *|BUSY\ *|MISCONF\ *|READONLY\ *|MASTERDOWN\ *|EXECABORT\ *|CLUSTERDOWN\ *|TRYAGAIN\ *|CROSSSLOT\ *|NOSCRIPT\ *|NOREPLICAS\ *|"(error"*)
+      return 0 ;;
+  esac
+  return 1
+}
+# The fail-closed spend read applies ONLY when the emergency stop itself read
+# CLEAR — i.e. the control plane is provably live and authenticated. When the
+# switch was UNVERIFIABLE the killswitch gate above has already made the safety
+# call for this invocation (mutating tools refused, read/observe + Captain-comms
+# deliberately allowed through so an officer can report the outage). Turning an
+# unreachable Redis into a spend BLOCK here would revoke that carve-out and take
+# the read tools down too — EVAL-001's redis-down arm pins exactly that.
+_spend_gate_can_fail_closed() { [ "${KS_VERDICT:-}" = "CLEAR" ]; }
+_spend_hkeys() {
+  _SPEND_FIELDS=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HKEYS "cabinet:cost:tokens:daily:$TODAY" 2>&1)
+  _SPEND_RC=$?
+  if { [ "$_SPEND_RC" -ne 0 ] || _spend_reply_is_error "$_SPEND_FIELDS"; } \
+     && ! _spend_gate_can_fail_closed; then
+    echo "pre-tool-use: WARN spend ledger unreadable while the emergency stop is ${KS_VERDICT:-unknown} — not enforcing the cap on this call (the killswitch gate above already ruled on it)" >&2
+    _SPEND_FIELDS=""
+    return 0
+  fi
+  if [ "$_SPEND_RC" -ne 0 ] || _spend_reply_is_error "$_SPEND_FIELDS"; then
+    echo "pre-tool-use: BLOCKED — daily spend ledger cabinet:cost:tokens:daily:$TODAY is UNREADABLE (rc=$_SPEND_RC: $(printf '%s' "$_SPEND_FIELDS" | tr '\n' ' ' | cut -c1-100)). An unreadable ledger is NOT \$0 — refusing rather than treating the cap as unlimited. Fix the key (it must be a HASH), then retry. Telegram tools still reach the Captain." >&2
+    exit 2
+  fi
+  return 0
+}
+_spend_hget() {
+  _SPEND_V=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGET "cabinet:cost:tokens:daily:$TODAY" "$1" 2>&1)
+  _SPEND_HG_RC=$?
+  if { [ "$_SPEND_HG_RC" -ne 0 ] || _spend_reply_is_error "$_SPEND_V"; } \
+     && ! _spend_gate_can_fail_closed; then
+    _SPEND_V=0
+    return 0
+  fi
+  if [ "$_SPEND_HG_RC" -ne 0 ] || _spend_reply_is_error "$_SPEND_V"; then
+    echo "pre-tool-use: BLOCKED — spend field '$1' unreadable ($(printf '%s' "$_SPEND_V" | tr '\n' ' ' | cut -c1-80)); refusing rather than counting it as \$0." >&2
+    exit 2
+  fi
+  # An ABSENT field is a genuine 0 (a race between HKEYS and HGET). A field
+  # that is present but non-numeric is corruption, not zero.
+  [ -z "$_SPEND_V" ] && { _SPEND_V=0; return 0; }
+  case "$_SPEND_V" in
+    *[!0-9]*)
+      if ! _spend_gate_can_fail_closed; then _SPEND_V=0; return 0; fi
+      echo "pre-tool-use: BLOCKED — spend field '$1' holds a non-numeric value; refusing rather than counting it as \$0." >&2
+      exit 2 ;;
+  esac
+  return 0
+}
+
 # -- Main cap enforcement (contract a: explicit stderr on every block) --
 if [ "${_SKIP_MAIN_CAP:-0}" != "1" ]; then
 
@@ -528,17 +678,18 @@ if [ "${_SKIP_MAIN_CAP:-0}" != "1" ]; then
   # `_cost_micro`. One field in pre-pool, N fields in pool mode.
   if [ "$EFFECTIVE_PER_OFF_CAP_MICRO" -gt 0 ] 2>/dev/null; then
     OFFICER_COST_MICRO=0
+    _spend_hkeys
     while IFS= read -r fld; do
       [ -z "$fld" ] && continue
       case "$fld" in
         "${OFFICER}_cost_micro"|"${OFFICER}_"*"_cost_micro")
-          v=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGET "cabinet:cost:tokens:daily:$TODAY" "$fld" 2>/dev/null)
-          v=${v:-0}
-          case "$v" in *[!0-9]*|'') v=0 ;; esac
-          OFFICER_COST_MICRO=$((OFFICER_COST_MICRO + v))
+          _spend_hget "$fld"
+          OFFICER_COST_MICRO=$((OFFICER_COST_MICRO + _SPEND_V))
           ;;
       esac
-    done < <(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HKEYS "cabinet:cost:tokens:daily:$TODAY" 2>/dev/null)
+    done <<EOF
+$_SPEND_FIELDS
+EOF
     case "$OFFICER_COST_MICRO" in *[!0-9]*|'') OFFICER_COST_MICRO=0 ;; esac
     if [ "$OFFICER_COST_MICRO" -ge "$EFFECTIVE_PER_OFF_CAP_MICRO" ] 2>/dev/null; then
       OFFICER_COST_USD=$(awk -v v="$OFFICER_COST_MICRO" 'BEGIN{printf "%.2f", v/1000000}')
@@ -553,16 +704,17 @@ if [ "${_SKIP_MAIN_CAP:-0}" != "1" ]; then
   # Cabinet-wide cap
   if [ "$CABINET_CAP_MICRO" -gt 0 ] 2>/dev/null; then
     CABINET_COST_MICRO=0
+    _spend_hkeys
     while IFS= read -r fld; do
       [ -z "$fld" ] && continue
       case "$fld" in *_cost_micro)
-        v=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGET "cabinet:cost:tokens:daily:$TODAY" "$fld" 2>/dev/null)
-        v=${v:-0}
-        case "$v" in *[!0-9]*|'') v=0 ;; esac
-        CABINET_COST_MICRO=$((CABINET_COST_MICRO + v))
+        _spend_hget "$fld"
+        CABINET_COST_MICRO=$((CABINET_COST_MICRO + _SPEND_V))
         ;;
       esac
-    done < <(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HKEYS "cabinet:cost:tokens:daily:$TODAY" 2>/dev/null)
+    done <<EOF
+$_SPEND_FIELDS
+EOF
     if [ "$CABINET_COST_MICRO" -ge "$CABINET_CAP_MICRO" ] 2>/dev/null; then
       CABINET_COST_USD=$(awk -v v="$CABINET_COST_MICRO" 'BEGIN{printf "%.2f", v/1000000}')
       CABINET_CAP_USD_PRINT=$(awk -v v="$CABINET_CAP_MICRO" 'BEGIN{printf "%.2f", v/1000000}')

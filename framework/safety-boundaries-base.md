@@ -52,7 +52,12 @@ When a limit is hit: pause non-critical work, alert the Captain, wait for acknow
 
 ## Kill Switch
 
-The kill switch is a Redis key: `cabinet:killswitch`
+The kill switch is a Redis key: `cabinet:killswitch`, read ONLY through
+`cabinet/scripts/hooks/killswitch-read.sh`, which reports CLEAR / ACTIVE /
+INDETERMINATE. Only a definitive, authenticated CLEAR permits action;
+INDETERMINATE (auth error, permission error, wrong type, loading, timeout,
+refused connection, unrecognised value) halts exactly like ACTIVE and is
+reported as STOPPED — CANNOT VERIFY, never as inactive.
 
 - When set to `"active"`, ALL agent operations halt immediately
 - The `pre-tool-use` hook checks this key before every tool execution

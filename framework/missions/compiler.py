@@ -34,7 +34,7 @@ _FRAMEWORK_ROOT = str(Path(__file__).parent.parent.parent)
 if _FRAMEWORK_ROOT not in sys.path:
     sys.path.insert(0, _FRAMEWORK_ROOT)
 
-from cabinet.scripts.lib.work_graph import WorkGraph, WorkNode, NodeStatus
+from cabinet.scripts.lib.work_graph import WorkGraph, WorkNode, NodeStatus, verification_is_independent
 from framework.events.emitter import emit, replay
 from framework.roles.lifecycle import list_roles, get_effective_capabilities
 
@@ -299,7 +299,18 @@ def _apply_status_from_events(graph: WorkGraph, outcome_id: str) -> int:
         # Track verification flag independently of status. A node may already
         # be DONE from a prior work_item_completed event when a subsequent
         # work_item_verified arrives; we still want to record the verification.
-        if event["event_type"] == "work_item_verified":
+        # SEPARATION OF DUTIES: a verification whose actor is the node's own
+        # owner (or is not its declared verifier_role) is DOWNGRADED to a plain
+        # completion. The status effect above still stands — that is exactly
+        # what a work_item_completed from the same owner would have produced,
+        # so nothing is escalated — but verification_passed is NOT set, so the
+        # node does not get to count itself independently verified. The actor
+        # is self-asserted: this stops the defaulted, unattributed and accidental
+        # cases, NOT an officer who types another role's name; not authentication.
+        # Non-raising by design: this replays historical events and must stay
+        # robust on logs written before the rule existed.
+        is_verified = event["event_type"] == "work_item_verified"
+        if is_verified and verification_is_independent(node, event.get("actor")):
             if node.verification_passed is not True:
                 node.verification_passed = True
                 if not status_changed:
@@ -382,6 +393,8 @@ def compile_outcome(
                 f"acceptance_criteria must be a string or list, got {type(ac).__name__}"
             )
 
+        # NOTE: WorkNode.__post_init__ rejects verifier_role == assigned_role
+        # (unsatisfiable: no actor is both != owner and == verifier).
         node = WorkNode(
             id=task_id,
             description=title,
@@ -401,6 +414,16 @@ def compile_outcome(
     # fall back to auto-inferred sequential dependencies on the string titles.
     has_explicit_deps = any("depends_on" in c for c in normalized)
     if has_explicit_deps:
+        # KNOWN HAZARD, deliberately NOT an error here. A single criterion
+        # carrying depends_on flips the WHOLE outcome into explicit mode, so
+        # any criterion without the key gets no inferred edge. That is
+        # load-bearing: `depends_on: []` plus un-annotated siblings is the
+        # documented way to express "these run in parallel" (see the
+        # ghost_outcomes_yml fixture in framework/missions/tests). It is also
+        # how a forgotten depends_on silently loses its ordering. The two are
+        # not mechanically distinguishable at this layer — separating them
+        # needs the outcomes SCHEMA to require depends_on explicitly, which is
+        # an owner decision, not a quiet compiler change.
         for i, crit in enumerate(normalized):
             to_id = crit.get("node_id") or _generate_task_id(outcome_id, i)
             for dep in crit.get("depends_on") or []:
@@ -415,10 +438,12 @@ def compile_outcome(
     else:
         titles = [c["title"] for c in normalized]
         dependencies = _infer_dependencies(titles)
+        # Index into the ids nodes were REGISTERED under. Re-deriving the auto
+        # id raised "Unknown node" for any criterion carrying an explicit
+        # node_id, making the documented sequential fallback unusable with them.
+        ids = [c.get("node_id") or _generate_task_id(outcome_id, i) for i, c in enumerate(normalized)]
         for from_idx, to_idx in dependencies:
-            from_id = _generate_task_id(outcome_id, from_idx)
-            to_id = _generate_task_id(outcome_id, to_idx)
-            graph.add_edge(from_id, to_id)
+            graph.add_edge(ids[from_idx], ids[to_idx])
 
     # Validate graph
     errors = graph.validate()

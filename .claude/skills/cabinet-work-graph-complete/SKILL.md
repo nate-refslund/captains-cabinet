@@ -32,6 +32,7 @@ Where:
 
   Find the id in the session-task-inject context or via `python3 -m framework.missions.supervisor --json --dry-run`.
 - `--status` is one of `done` (default), `failed`, or `verified`.
+- `--actor ROLE` names who is recording the event (overrides `OFFICER_NAME`). Optional for `done`/`failed`; **required for `verified`** — see "Don't" below.
 - `--evidence` is either a path to an evidence file (e.g., test output, deploy log) or inline text describing what was accomplished.
 
 The script emits the appropriate event (`work_item_completed`, `work_item_failed`, or `work_item_verified`) into the org ledger, which the compiler will overlay onto the work graph at the next session start so completed tasks don't re-inject. The mission supervisor's next tick (or a manual `/cabinet-route-tasks` push-nudge) then releases any downstream nodes whose dependencies are now satisfied.
@@ -52,5 +53,5 @@ Returns the emitted event UUID on stdout. Status message on stderr.
 ## Don't
 
 - Don't manually edit `mission_steps` or `work_graph_nodes` rows — the event ledger is the source of truth.
-- Don't fire `--status verified` on your own work — validators verify, executors complete.
+- Don't fire `--status verified` on your own work — validators verify, executors complete. **This is now enforced, not just asked**: `--status verified` requires an attributed actor (`--actor ROLE`, or `OFFICER_NAME`; the `system` fallback exits 2), and the compiler's status overlay refuses to credit a verification whose actor is the node's own owner, or is not the node's declared `verifier_role`. A refused verification still records completion — it just doesn't count as verified. The actor is self-asserted, so this separates duties; it is not authentication.
 - Don't include sensitive evidence (production credentials, raw PII) inline — pass a file path instead so the JSONL log doesn't keep secrets.

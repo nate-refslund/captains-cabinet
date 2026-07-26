@@ -1,4 +1,15 @@
 #!/bin/sh
-# Hermetic hook-harness Redis stub: reachable, kill-switch key absent.
-# It deliberately emits no value and exits successfully for every command.
-exit 0
+# Hermetic hook-harness Redis stub: a reachable, authenticated control plane
+# with the kill-switch key ABSENT.
+#
+# It must ANSWER THE READER'S FRAME, not merely stay silent. killswitch-read.sh
+# proves a read with a nonce sandwich on one round trip:
+#   ECHO <n1> / GET cabinet:killswitch / ECHO <n2>
+# and only accepts CLEAR when the reply is exactly 3 lines whose first and last
+# are the two fresh nonces. Silence is INDETERMINATE — which is correct, because
+# a server that cannot echo a nonce has not proven it read anything. This stub
+# therefore replays each ECHO argument and answers GET with an empty value
+# (= key absent). It is deliberately NOT permissive: it cannot fake an "active"
+# switch away, and any reader asking a question it does not answer still gets
+# the fail-closed verdict.
+while IFS= read -r l; do case "$l" in "ECHO "*) echo "${l#ECHO }";; *) echo "";; esac; done

@@ -103,7 +103,10 @@ dashboard area), the static-plist launch path ignores the `.env` port; the
 
 15s timer (5s tolerance), backoff to 60s while OFF; immediate poll on launch,
 menu open, after any actuation, and on wake. Per tick: ≤3 `redis-cli` spawns
-(PING + presence + doctor heartbeat) + 1 conditional (killswitch fallback),
+(PING + presence + doctor heartbeat) + 1 conditional killswitch fallback
+(which shells the ONE shared reader, cabinet/scripts/hooks/killswitch-read.sh,
+rather than a bare GET — an unreadable switch renders PAUSED "cannot verify",
+never "off"),
 each with a 2s app-enforced kill-timeout. The doctor NEVER runs on the poll
 loop — it is click-only. One `ProcessInfo.beginActivity(.background)` token is
 held for the app's lifetime (App Nap); if throttling happens anyway, the 120s
