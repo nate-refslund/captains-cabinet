@@ -22,6 +22,16 @@ pacing:
   # Ceiling for the "show everything" override reply — the most cards one
   # explicit show-all can render at once. Default 25 (clamped 1..100).
   hard_all_cap: 25
+  # Scale `cap` from the Captain's DECLARED availability when this file sets no
+  # cap of its own (Captain ruling 2026-07-26 — the availability dial; see
+  # instance/config/captain-availability.yml.example and docs/runbooks/
+  # captain-availability.md). Bands, minutes per day: <=10 -> 1 card,
+  # <=30 -> 2, <=120 -> 3, <=240 -> 4, above that the default 5.
+  # An UNKNOWN availability changes NOTHING (the default cap stands — nothing
+  # invents a budget), and a cap set above ALWAYS wins over the derivation.
+  # Default true; set false to pin the cap regardless of availability.
+  # Env: CABINET_SURFACE_AVAILABILITY_PACING.
+  availability_pacing: true
 
 # Pin design (Captain knob, ratified 2026-07-10):
 #   adopt    — the pin is the #1 open item's own standing card (auto-advance

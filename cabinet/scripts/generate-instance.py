@@ -187,6 +187,19 @@ RESERVED_SLUGS = {"cos", "cto", "cpo", "cro", "coo", "main", "_template"}
 
 ORG_SHAPES = ("portfolio", "functional", "custom")
 
+# Availability dial (Captain ruling 2026-07-26). The verb enum and its minute
+# bands come from framework.env — THE one source of truth — so a band change
+# never has to be mirrored here. The generator accepts EVERY canonical mode
+# (including `away`: a captain who is away at init has made a real declaration);
+# the interview's own question offers the narrower set it makes sense to ASK.
+# An ABSENT key stays absent: unknown is a legal state, never a default.
+_FRAMEWORK_ROOT = str(Path(__file__).resolve().parents[2])
+if _FRAMEWORK_ROOT not in sys.path:
+    sys.path.insert(0, _FRAMEWORK_ROOT)
+from framework import env as _fenv  # noqa: E402  (after the sys.path insert)
+
+AVAILABILITY_VERBS = frozenset(_fenv.availability_modes())
+
 # Secret shapes the generator refuses to persist anywhere. Config carries
 # env-var NAMES only; values live in the gitignored cabinet/.env.
 SECRET_PATTERNS = [
@@ -333,6 +346,20 @@ def load_answers(path: Path) -> dict:
             f"captain.telegram_chat_id {chat_id!r} must be a numeric chat id "
             f"(it is an address, never a token)"
         )
+    # OPTIONAL availability dial (Captain ruling 2026-07-26). ABSENT is a
+    # first-class answer meaning UNKNOWN — "the org does not know how much of
+    # the captain it is entitled to" — so this key is never defaulted or
+    # invented here. A PRESENT value must be one of the fixed verbs; a typo
+    # refuses loudly rather than silently stamping a budget nobody declared.
+    availability = captain.get("availability")
+    if availability is not None:
+        verb = str(availability).strip().lower()
+        if verb not in AVAILABILITY_VERBS:
+            raise GenerationError(
+                f"captain.availability {availability!r} must be one of "
+                f"{sorted(AVAILABILITY_VERBS)} (fixed verb enum) — omit the "
+                f"key entirely to leave availability unknown"
+            )
 
     cabinet = answers.get("cabinet") or {}
     org_shape = str(cabinet.get("org_shape", "portfolio"))
@@ -1048,6 +1075,19 @@ def render_platform(existing: str, answers: dict, lanes: list, org_shape: str,
     text = _set_top_level_key(text, "captain_name", _yaml_str(str(captain["name"])))
     text = _set_top_level_key(text, "captain_timezone", str(captain["timezone"]))
     text = _set_top_level_key(text, "captain_telegram_chat_id", f'"{captain["telegram_chat_id"]}"')
+    # Availability dial — stamped ONLY when the interview recorded an answer.
+    # No answer ⇒ no key ⇒ framework.env.captain_availability() resolves the
+    # honest UNKNOWN, and every consumer keeps its own conservative default.
+    # Writing a placeholder number here would be the 1/3-briefing failure: a
+    # value that pretends to be an answer nobody gave. A later phone ruling
+    # lands in instance/config/captain-availability.yml and OUTRANKS these keys,
+    # so a re-run of the generator can never demote what the captain re-dialled.
+    availability = str(captain.get("availability") or "").strip().lower()
+    if availability in AVAILABILITY_VERBS:
+        minutes = _fenv.availability_minutes_for_mode(availability)
+        text = _set_top_level_key(text, "captain_availability_minutes_per_day",
+                                  str(minutes))
+        text = _set_top_level_key(text, "captain_availability_mode", availability)
     # Org vault (knowledge corpus) dir — only when absent, and only when no
     # legacy product_brain_dir key is already present (the resolver honors the
     # legacy key AFTER the new one, so stamping org_vault_dir above a
@@ -1167,6 +1207,12 @@ captain:
   name: Ada                      # display name officers use
   timezone: Europe/Madrid        # IANA identifier
   telegram_chat_id: "12345678"   # numeric chat id (an address, not a secret)
+  availability: part_time        # OPTIONAL time budget the org fits into:
+                                 #   away | minimal | part_time | substantial |
+                                 #   full_time  (0 / 10 / 30 / 120 / 480 min per
+                                 #   day). OMIT the key to leave it UNKNOWN —
+                                 #   a legal state; adjust any time from the
+                                 #   phone with "availability 20m".
 
 cabinet:
   id: acme-hq                    # cabinet_id; 'main' for single-instance
@@ -1262,6 +1308,12 @@ captain:
   name: {captain_scalar}
   timezone: UTC                  # placeholder — set your IANA zone (e.g. Europe/Madrid)
   telegram_chat_id: "{DEFAULTS_CHAT_ID_PLACEHOLDER}"       # placeholder address (not a secret) — set your numeric chat id
+  # availability: DELIBERATELY ABSENT. Nobody was asked how much of their day
+  # the cabinet may use, so there is no answer to record — availability stays
+  # UNKNOWN, which is a legal state every consumer handles conservatively.
+  # A placeholder number here would be a value pretending to be an answer (the
+  # named failure of the 1/3-scored briefing). Set it whenever you like, from
+  # your phone: "availability 20m" / "availability part_time".
 
 cabinet:
   id: main                       # single-instance default

@@ -393,13 +393,19 @@ Order does not matter. Whichever lands last pays, and the gate names the exact
 
 ## Legacy exemptions — shrink-only
 
-Two marker sites in the sweep surface are NOT residuals and carry no row:
-`cabinet/scripts/egg-export-manifest.txt:233` and `:653`, both reading
-`RESIDUAL SCRUB` — they describe scrub rules already EXECUTED (2026-07-21), not
-open channels. They are exempted by exact `path:line` in the pin test with a
-hard maximum, so the list can shrink and never grow. Rewording them out of the
-sweep is blocked for a good reason: that file is inside the frozen COG-4 review
-digest scope, and touching it would force a re-bind ceremony.
+Two marker sites in the sweep surface are NOT residuals and carry no row: the
+two `RESIDUAL SCRUB` comment blocks in `cabinet/scripts/egg-export-manifest.txt`
+— they describe scrub rules already EXECUTED (2026-07-21), not open channels.
+They are exempted by exact `path:line` in the pin test (`LEGACY_EXEMPT` in
+`cabinet/scripts/tests/test_declared_residuals_register.py`, with a hard
+maximum) so the list can shrink and never grow. **The line numbers live only in
+that test, deliberately:** any row added to the manifest above a marker shifts
+its cite, and the test's own comment records each re-anchor with its cause
+(233→235 by the egg egress-default flip, 235→242 by the captain-availability
+dial). Quoting them here as well made this paragraph rot silently on the first
+such shift. Rewording the markers out of the sweep is blocked for a good reason:
+that file is inside the frozen COG-4 review digest scope, and changing marker
+TEXT would force a re-bind ceremony (adding unrelated manifest rows does not).
 
 ## Known limits of this register — stated, not hidden
 

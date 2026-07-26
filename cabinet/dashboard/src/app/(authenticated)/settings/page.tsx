@@ -1,4 +1,9 @@
-import { getGlobalConfig, getDashboardConfig, getConfig } from '@/lib/config'
+import {
+  getGlobalConfig,
+  getDashboardConfig,
+  getConfig,
+  getCaptainAvailability,
+} from '@/lib/config'
 import {
   ProductSection,
   VoiceSection,
@@ -42,6 +47,11 @@ export default function SettingsPage() {
   const rawConfig = getConfig() as Record<string, unknown>
   const timezone = (rawConfig.captain_timezone as string) || 'UTC'
 
+  // Availability is the Captain's declared time budget (ruling 2026-07-26).
+  // Read-only here for the same reason as Timezone — no platform.yml write
+  // action exists yet; the phone verb ("availability 20m") is the write path.
+  const availability = getCaptainAvailability()
+
   // Officer roles from the telegram.officers map — we show a read-only chip
   // roster in Consumer mode. Editing moves to Advanced.
   const telegram = (rawConfig.telegram as Record<string, unknown>) || {}
@@ -50,7 +60,7 @@ export default function SettingsPage() {
 
   return (
     <SettingsModeSwitch
-      consumerProps={{ config, officerRoles, timezone }}
+      consumerProps={{ config, officerRoles, timezone, availability }}
     >
       <AdvancedSettings config={config} />
     </SettingsModeSwitch>

@@ -54,6 +54,16 @@ fixture) fences:
         take. The knob relocates the whole instance-memory directory, so a
         fenced run also reads the sandbox briefing archive rather than the
         live one — no test can invent a score for a real briefing,
+      - the Captain's availability dial (cabinet/scripts/lib/
+        captain_availability.py + framework.env.captain_availability_path(),
+        CABINET_CAPTAIN_AVAILABILITY_FILE — fenced at birth, 2026-07-26, for
+        exactly the reason the score store was). It is the ONLY record of how
+        much of his day the cabinet may use: a fabricated row there does not
+        pollute a log, it tells the whole org it may spend time the Captain
+        never offered — and the pacing cap and the Captain-Seat emission bar
+        both read it. Pointing it at a path inside the sandbox that is never
+        created also makes every in-test resolve return the honest UNKNOWN
+        rather than inheriting the live deployment's declaration,
       - the Captain-contact dead-man (framework/liveness/deadman.py,
         CABINET_LIVENESS_CONFIG — fenced at birth, 2026-07-25). The only
         OUTBOUND member of this list: it would send a fake heartbeat to the
@@ -108,6 +118,8 @@ os.environ["CABINET_CAPTAIN_INBOUND_DIR"] = os.path.join(
     _SESSION_SANDBOX, "captain-inbound")
 os.environ["CABINET_BRIEFING_SCORES_DIR"] = os.path.join(
     _SESSION_SANDBOX, "instance-memory")
+os.environ["CABINET_CAPTAIN_AVAILABILITY_FILE"] = os.path.join(
+    _SESSION_SANDBOX, "captain-availability.yml")
 
 # Captain-contact dead-man (2026-07-25) — an OUTBOUND fence, not a write fence,
 # and the first of its kind here. framework/liveness/deadman.py fires from inside

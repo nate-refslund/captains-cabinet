@@ -109,6 +109,95 @@ export function getDashboardConfig(): DashboardConfig {
   }
 }
 
+/**
+ * Captain availability — the declared time budget (Captain ruling 2026-07-26).
+ *
+ * DISPLAY ONLY in this MVP: the dashboard reads it and shows it; editing still
+ * belongs to a platform.yml server action that does not exist yet (same
+ * tech-debt shape as Timezone). The phone verb is the write path today
+ * (`availability 20m`).
+ *
+ * Precedence MIRRORS framework.env.captain_availability() deliberately, so the
+ * dashboard cannot show a value the runtime does not use:
+ *   1. instance/config/captain-availability.yml — LAST valid entry (what he
+ *      re-dialled from his phone),
+ *   2. captain_availability_minutes_per_day / _mode in platform.yml (what
+ *      onboarding stamped; also visible via the merged product.yml),
+ *   3. null — UNKNOWN, a legal state. Rendered as an honest absence, never as
+ *      a zero or a made-up number.
+ */
+export interface CaptainAvailability {
+  minutesPerDay: number | null
+  mode: string | null
+  source: 'adjusted' | 'onboarding' | null
+  setAt: string | null
+}
+
+const AVAILABILITY_STORE_PATH =
+  process.env.CAPTAIN_AVAILABILITY_FILE || cabinetPath('instance/config/captain-availability.yml')
+const PLATFORM_PATH = process.env.PLATFORM_CONFIG_PATH || cabinetPath('instance/config/platform.yml')
+
+const UNKNOWN_AVAILABILITY: CaptainAvailability = {
+  minutesPerDay: null,
+  mode: null,
+  source: null,
+  setAt: null,
+}
+
+function readYamlMapping(file: string): Record<string, unknown> | null {
+  try {
+    const doc = yaml.load(fs.readFileSync(file, 'utf8'))
+    return doc && typeof doc === 'object' && !Array.isArray(doc)
+      ? (doc as Record<string, unknown>)
+      : null
+  } catch {
+    return null
+  }
+}
+
+function normalizeMinutes(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return null
+  if (value < 0 || value > 24 * 60) return null
+  return value
+}
+
+export function getCaptainAvailability(): CaptainAvailability {
+  const store = readYamlMapping(AVAILABILITY_STORE_PATH)
+  const entries = store?.entries
+  if (Array.isArray(entries)) {
+    for (let i = entries.length - 1; i >= 0; i -= 1) {
+      const row = entries[i]
+      if (!row || typeof row !== 'object' || Array.isArray(row)) continue
+      const r = row as Record<string, unknown>
+      const minutes = normalizeMinutes(r.minutes_per_day)
+      if (minutes === null) continue
+      return {
+        minutesPerDay: minutes,
+        mode: typeof r.mode === 'string' ? r.mode : null,
+        source: 'adjusted',
+        setAt: typeof r.at === 'string' ? r.at : null,
+      }
+    }
+  }
+  // The onboarding stamp: platform.yml first (the generator's target), then the
+  // merged product.yml getConfig() already reads.
+  const platform = readYamlMapping(PLATFORM_PATH) || {}
+  const merged = getConfig() as Record<string, unknown>
+  for (const src of [platform, merged]) {
+    const minutes = normalizeMinutes(src.captain_availability_minutes_per_day)
+    if (minutes === null) continue
+    return {
+      minutesPerDay: minutes,
+      mode: typeof src.captain_availability_mode === 'string'
+        ? src.captain_availability_mode
+        : null,
+      source: 'onboarding',
+      setAt: null,
+    }
+  }
+  return UNKNOWN_AVAILABILITY
+}
+
 export interface OfficerConfig {
   title: string
   botUsername: string
