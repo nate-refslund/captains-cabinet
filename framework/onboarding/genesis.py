@@ -52,6 +52,7 @@ import os
 import shutil
 import socket
 import subprocess
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -512,10 +513,46 @@ def _default_net_check(timeout: float = 4.0) -> bool:
         return False
 
 
-def _default_run(argv: list[str], *, timeout: int, cwd: str):
-    """Fixed-argv CLI invocation — never a shell string (Corridor pattern)."""
-    return subprocess.run(argv, capture_output=True, text=True,
-                          timeout=timeout, cwd=cwd)
+# ---------------------------------------------------------------------------
+# OPERATOR-CONTEXT ISOLATION for the genesis research brief.
+#
+# `claude -p` is a FULL Claude Code agent, not a bare completion: it
+# auto-discovers (a) PROJECT context — CLAUDE.md, .remember/, SessionStart
+# hooks, walking UP from its cwd — and (b) USER-GLOBAL context —
+# ~/.claude/CLAUDE.md plus the personal memory imports it @-includes.
+#
+# MEASURED 2026-07-26, before this fix: a clean-room hatch of the PUBLIC egg,
+# for a lane whose only name is the placeholder "First Lane" and which carries
+# no product metadata whatsoever, produced a brief naming the operator's real
+# employer and four real products that exist NOWHERE in the egg tree — and it
+# said so in its own words: "Inference from this deployment's ambient captain
+# context (not from lane config)". The artifact is then promoted as "the org's
+# baseline understanding of its products and market" and indexed into org
+# memory (source_type: research_brief), so every hatched cabinet silently
+# absorbed its operator's private notes as org truth.
+#
+# Both tiers are closed here, with the shape framework/fidelity/oauth_llm.py
+# already proved on this codebase (same two-tier leak, same repair):
+#   (a) PROJECT tier -> run from a CLEAN temp cwd. This is the ONLY lever that
+#       closes the ancestor walk: the instance root normally sits UNDER $HOME,
+#       so the walk reaches ~/.claude/CLAUDE.md from there. Nothing in the
+#       prompt needs the instance cwd — build_brief_prompt() is self-contained.
+#   (b) USER-GLOBAL tier -> `--setting-sources project,local` drops the `user`
+#       source (~/.claude/CLAUDE.md + memory + user settings).
+#
+# HOME IS DELIBERATELY LEFT INTACT, and a throwaway CLAUDE_CONFIG_DIR is
+# deliberately NOT used. Claude Code suffixes the OAuth keychain service name
+# with sha256(config-dir)[0:8] when CLAUDE_CONFIG_DIR is set, so a fresh config
+# home boots "Not logged in" (cabinet/scripts/start-officer-mac.sh documents
+# this; bin/cabinet-review.sh carries the same caveat about itself). Genesis
+# converts a non-zero rc into a written IOU, so that would not surface as an
+# error — it would silently and permanently downgrade the research organ to
+# "research brief queued". `--bare` is unusable for the same reason: it never
+# reads OAuth or the keychain. CLAUDE_CONFIG_DIR also cannot gate an ancestor
+# walk at all (declared residual RES-002), so it would not even fix the leak.
+# Fixed-argv CLI invocation — never a shell string (Corridor pattern).
+def _default_run(argv: list[str], *, timeout: int, cwd: str, env=None):
+    return subprocess.run(argv, capture_output=True, text=True, timeout=timeout, cwd=cwd, env=env)
 
 
 def _brief_text(status: str, body: str, *, now: str, reason: str | None = None) -> str:
@@ -552,17 +589,16 @@ def research_brief(root: Path | None = None, *, run_fn=None, net_check_fn=None,
                    now: str | None = None) -> dict:
     """ONBOARD-2: attempt the genesis research brief; honest IOU otherwise.
 
-    Success path: the local ``claude`` CLI invoked with the FIXED argv
-    ``[claude, '-p', prompt]`` (no shell, short timeout, cwd = the instance
-    root) writes its REAL output to ``instance/memory/library/
+    Success path: the local ``claude`` CLI on a FIXED argv (no shell, short
+    timeout), isolated from the operator per the OPERATOR-CONTEXT ISOLATION note
+    above ``_default_run``, writes its REAL output to ``instance/memory/library/
     genesis-research-brief.md`` with ``status: delivered`` provenance. ANY
-    failure — missing binary, network down, non-zero exit (e.g.
-    unauthenticated CLI), timeout, empty output — writes the honest IOU note
-    (``IOU_LINE``: "research brief queued — will be produced when officers
-    wake") with the failure named (names-not-values). Idempotent: a delivered
-    brief is never overwritten; an IOU is retried/upgraded on a later run.
-
-    Seams (tests): ``run_fn(argv, timeout=, cwd=)`` replaces the subprocess;
+    failure — missing binary, network down, non-zero exit (e.g. unauthenticated
+    CLI), timeout, empty output — writes the honest IOU note (``IOU_LINE``:
+    "research brief queued — will be produced when officers wake") with the
+    failure named (names-not-values). Idempotent: a delivered brief is never
+    overwritten; an IOU is retried/upgraded on a later run. Seams (tests):
+    ``run_fn(argv, timeout=, cwd=, env=)`` replaces the subprocess;
     ``net_check_fn()`` replaces the socket preflight; ``claude_path`` pins the
     binary ('auto' → shutil.which('claude'); None/'' → treated as missing).
     """
@@ -592,11 +628,18 @@ def research_brief(root: Path | None = None, *, run_fn=None, net_check_fn=None,
         return _iou("network unreachable")
 
     prompt = build_brief_prompt(answers)
-    argv = [resolved, "-p", prompt]
+    # OPERATOR-CONTEXT ISOLATION — see the note above _default_run. All three
+    # levers are load-bearing and none alone suffices: `--setting-sources`
+    # without `user` drops the user-global tier; an EMPTY temp cwd (never the
+    # instance root, which sits under $HOME) closes the CLAUDE.md ancestor walk
+    # plus .remember/hooks; the env filter stops a stray key billing
+    # pay-as-you-go. HOME is left INTACT — the keychain/OAuth is HOME-anchored.
+    argv = [resolved, "-p", prompt, "--setting-sources", "project,local"]
+    clean_env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
     run = run_fn or _default_run
     budget = timeout if timeout is not None else _brief_timeout()
     try:
-        proc = run(argv, timeout=budget, cwd=str(base))
+        proc = run(argv, timeout=budget, env=clean_env, cwd=tempfile.mkdtemp(prefix="genesis-clean-"))
     except subprocess.TimeoutExpired:
         return _iou(f"claude CLI timed out after {budget}s")
     except OSError as e:
