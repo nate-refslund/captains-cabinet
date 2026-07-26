@@ -376,3 +376,141 @@ class TestProjections(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestIgnoredIsNotRejected(unittest.TestCase):
+    """Ignoring a card and rejecting one are DIFFERENT EVIDENCE about
+    DIFFERENT failures — separated 2026-07-26.
+
+    Before this change the only demotion signal in the system was silence.
+    Measured on the live feed: 58 of 58 demote rows carried
+    ``demote_reason: card-expiry``. Every producer the org ever quieted was
+    quieted because nobody looked — and an explicit ``rejected``, the one
+    unambiguous over-ask signal, RESET the streak and so actively protected a
+    producer from ever being demoted.
+
+    Under the "attention well spent" ruling that is backwards: an expiry is
+    ambiguous (away from desk? channel down? bad timing?), while a repeated
+    explicit NO is about the producer and nothing else.
+    """
+
+    BAR = 5
+    CHARTER = {"classes": [
+        {"id": "action-card", "matchers": {"kinds": ["action-card"]},
+         "budget": {"demote_after_expiries": 5}}]}
+
+    def _row(self, i, decision):
+        return {"ts": f"2026-07-{i + 1:02d}T10:00:00Z",
+                "action": "action-card", "subject": f"s{i}",
+                "actor": {"kind": "officer", "id": "cos"}, "lane": "l",
+                "proposal": {"required": True, "decision": decision}}
+
+    def _seq(self, *decisions):
+        return [self._row(i, d) for i, d in enumerate(decisions)]
+
+    # --- the new, previously absent signal ---------------------------------
+
+    def test_consecutive_rejections_are_counted(self):
+        rows = self._seq("rejected", "rejected", "rejected")
+        self.assertEqual(q.rejection_streaks(rows), {"action-card": 3})
+
+    def test_five_explicit_rejections_now_demote(self):
+        """THE NEW PROTECTION. The Captain looked five times and said no five
+        times. Before this change that produced NO demotion whatsoever."""
+        rows = self._seq(*(["rejected"] * self.BAR))
+        self.assertEqual(q.demotions(rows, self.CHARTER),
+                         {"action-card": q.DEMOTE_REASON_REJECTION})
+
+    def test_four_rejections_do_not_demote(self):
+        rows = self._seq(*(["rejected"] * (self.BAR - 1)))
+        self.assertEqual(q.demotions(rows, self.CHARTER), {})
+
+    def test_an_expiry_does_not_reset_a_rejection_streak(self):
+        """THE SEPARATION ITSELF. Silence is not evidence that a repeatedly
+        rejected producer has improved — only the Captain actually USING a
+        card is. Mixing the two is what made ignoring and rejecting
+        interchangeable."""
+        rows = self._seq("rejected", "rejected", "expired",
+                         "rejected", "rejected", "rejected")
+        self.assertEqual(q.rejection_streaks(rows), {"action-card": 5})
+        self.assertEqual(q.demotions(rows, self.CHARTER),
+                         {"action-card": q.DEMOTE_REASON_REJECTION})
+
+    def test_a_usable_card_resets_the_rejection_streak(self):
+        for verdict in ("approved", "edited"):
+            with self.subTest(verdict=verdict):
+                rows = self._seq("rejected", "rejected", "rejected",
+                                 "rejected", verdict, "rejected")
+                self.assertEqual(q.rejection_streaks(rows), {"action-card": 1})
+                self.assertEqual(q.demotions(rows, self.CHARTER), {})
+
+    # --- the existing over-ask protection is PRESERVED, not traded away ----
+
+    def test_expiry_demotion_still_works_and_keeps_its_reason(self):
+        rows = self._seq(*(["expired"] * self.BAR))
+        self.assertEqual(q.demotions(rows, self.CHARTER),
+                         {"action-card": q.DEMOTE_REASON_EXPIRY})
+        self.assertEqual(q.demoted_kinds(rows, self.CHARTER), {"action-card"})
+
+    def test_expiry_below_bar_still_does_not_demote(self):
+        rows = self._seq(*(["expired"] * (self.BAR - 1)))
+        self.assertEqual(q.demotions(rows, self.CHARTER), {})
+
+    def test_demoted_kinds_stays_a_set_for_existing_callers(self):
+        rows = self._seq(*(["expired"] * self.BAR))
+        result = q.demoted_kinds(rows, self.CHARTER)
+        self.assertIsInstance(result, set)
+        self.assertEqual(result, {"action-card"})
+
+    def test_rejection_outranks_expiry_when_both_cross(self):
+        """The evidence that is actually about the PRODUCER wins the label."""
+        rows = self._seq(*(["rejected"] * self.BAR),
+                         *(["expired"] * self.BAR))
+        self.assertEqual(q.demotions(rows, self.CHARTER),
+                         {"action-card": q.DEMOTE_REASON_REJECTION})
+
+    # --- non-vacuity: the arms must fail against pre-change behaviour ------
+
+    def test_pre_change_behaviour_would_have_missed_every_rejection(self):
+        """The OLD logic, reconstructed: only ``expired`` incremented, and any
+        Captain verdict reset. Five straight rejections therefore produced a
+        streak of ZERO and no demotion at all — so the arms above cannot pass
+        against pre-change code."""
+        rows = self._seq(*(["rejected"] * self.BAR))
+        # what the old single-streak logic saw:
+        self.assertEqual(q.expiry_streaks(rows), {"action-card": 0})
+        # what it produces now:
+        self.assertEqual(q.demotions(rows, self.CHARTER),
+                         {"action-card": q.DEMOTE_REASON_REJECTION})
+
+    def test_degenerate_ends(self):
+        """No rows, no proposals, no charter bars — each must produce NO
+        demotion rather than an accidental one (or an accidental pass)."""
+        self.assertEqual(q.demotions([], self.CHARTER), {})
+        self.assertEqual(q.rejection_streaks([]), {})
+        self.assertEqual(q.demotions([{"ts": "2026-07-01T10:00:00Z",
+                                       "action": "action-card"}],
+                                     self.CHARTER), {})
+        self.assertEqual(q.demotions(self._seq(*(["rejected"] * 50)),
+                                     {"classes": []}), {})
+
+    def test_gate_journals_the_distinguishing_reason(self):
+        """The reason must reach the gate's decision, or the journal cannot
+        tell the two failures apart — which is how 58 of 58 live demote rows
+        came to read `card-expiry`."""
+        from framework.attention import gate
+        item = {"kind": "action-card", "subject": "s", "state": "open",
+                "confidence": 0.9}
+        rejected = gate.decide(
+            item, demoted_kinds={"action-card": q.DEMOTE_REASON_REJECTION})
+        expired = gate.decide(
+            item, demoted_kinds={"action-card": q.DEMOTE_REASON_EXPIRY})
+        self.assertEqual(rejected["action"], "briefing")
+        self.assertEqual(expired["action"], "briefing")
+        self.assertNotEqual(rejected["reason"], expired["reason"])
+        self.assertIn("captain-rejection", rejected["reason"])
+        self.assertIn("card-expiry", expired["reason"])
+        # legacy bare-set callers keep working, with the historical wording
+        legacy = gate.decide(item, demoted_kinds={"action-card"})
+        self.assertEqual(legacy["action"], "briefing")
+        self.assertEqual(legacy["reason"], "class-demoted-expiry-streak")

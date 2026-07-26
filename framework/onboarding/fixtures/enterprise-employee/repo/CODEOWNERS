@@ -1,0 +1,4 @@
+# Ownership for ledger-api. Kept in sync by hand.
+*                    @platform-core
+/src/ledger/         @platform-core @ledger-maintainers
+/docs/adr/           @platform-core

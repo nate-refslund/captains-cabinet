@@ -11,7 +11,7 @@ Usage:
     sample_data = {
         "task_throughput": 35,
         "outcome_progress": 0.7,
-        "captain_attention_cost": 5,
+        "captain_attention_well_spent": 0.8,
         "learning_rate": 20,
         "verification_pass_rate": 0.9,
     }
@@ -59,9 +59,17 @@ except ImportError:
 #   outcome_progress      = unique outcomes with at least one completed task
 #                            in window, divided by total outcomes touched in
 #                            window (defaults to 0 if no activity)
-#   captain_attention_cost = count(captain_decision_logged + captain_boundary_set
-#                            + captain_outcome_ratified in window) — anything
-#                            that required Captain input is attention cost
+#   captain_attention_well_spent
+#                         = decisions / (decisions + bounces) in window, where
+#                           decisions = the four captain_* decision events and
+#                           bounces = captain_gate_bounced (an escalation the
+#                           gate refused for lacking exhaustion proof — an ask
+#                           that should not have been made). 0.0 when there was
+#                           NO contact at all: going quiet is a failure, not a
+#                           free win. (Captain ruling 2026-07-25 "attention
+#                           WELL SPENT"; polarity fixed 2026-07-26 — was
+#                           captain_attention_cost, direction inverse, which
+#                           scored zero contact a perfect 1.00.)
 #   learning_rate         = count(experience_recorded in window) / window_days
 #                            — a real per-day RATE (§4.2 growth-metrics fix,
 #                            2026-07-09: the raw count silently rescaled with
@@ -75,12 +83,69 @@ except ImportError:
 
 _DEFAULT_WINDOW_DAYS = 7
 
+#: Captain contact that WAS a decision only he could make — the numerator of
+#: attention-well-spent. Each of these is the Captain exercising authority the
+#: org structurally cannot exercise for him.
 _ATTENTION_EVENT_TYPES: list[str] = [
     "captain_decision_logged",
     "captain_boundary_set",
     "captain_outcome_ratified",
     "captain_goal_declared",
 ]
+
+#: Captain attention the org spent BADLY: an escalation that reached the
+#: attention gate and was refused for lacking exhaustion proof ("the lane tried
+#: X, the Chair tried Y, this specifically needs you because Z"). It sits in the
+#: denominator only, so over-asking pushes the term down.
+#:
+#: HONEST LIMITATION, stated rather than hidden: the escalation gate is dark by
+#: default (``CABINET_ESCALATION_GATE=1``), so today this count is ~always 0 and
+#: the over-ask arm rarely fires in production. It is wired to a REAL, already
+#: registered event type with a real producer — not a dead twin — and it is
+#: exercised by tests in both directions. The under-ask arm below needs no
+#: producer at all and is live from the first computation.
+_ATTENTION_MISSPENT_EVENT_TYPES: list[str] = [
+    "captain_gate_bounced",
+]
+
+
+def attention_well_spent(decisions: int, misspent: int) -> float:
+    """The share of spent Captain attention that went on decisions only he
+    could make. PURE — no I/O, so the degenerate ends are directly testable.
+
+    Captain ruling 2026-07-25: the metric is **attention WELL SPENT**, which
+    makes UNDER-asking a failure exactly as much as over-asking. Both ends
+    therefore read 0.0, and only genuinely well-spent attention reads 1.0:
+
+    ==========================  ======  ====================================
+    situation                   reads   why
+    ==========================  ======  ====================================
+    no contact at all           0.0     the org went quiet, or decided on his
+                                        behalf. Silence is NOT safe. This is
+                                        the case that used to read 1.00.
+    no data / empty window      0.0     same reading, deliberately: an absent
+                                        signal must never be scored as a good
+                                        one. A quiet week is quiet whether the
+                                        cause is idleness or an outage, and
+                                        the composite's other four terms carry
+                                        delivery separately.
+    contact, none of it his     0.0     over-asking — his minutes were spent
+                                        on things the org should have closed.
+    contact, all of it his      1.0     every minute was a decision only he
+                                        could make.
+    mixed                       share   the honest fraction.
+    ==========================  ======  ====================================
+
+    Note the asymmetry is deliberate and is the whole point: the OLD term was
+    ``1 - normalize(count)``, so its best score was achieved by never making
+    contact. This one cannot be maximised by silence — silence is its minimum.
+    """
+    asks = int(decisions) + int(misspent)
+    if asks <= 0:
+        # THE DEGENERATE END THAT MATTERS. Was 1.00 (a perfect score for a week
+        # of never speaking to the Captain); is now 0.0.
+        return 0.0
+    return float(decisions) / float(asks)
 
 
 def _since_iso(window_days: int) -> str:
@@ -110,6 +175,8 @@ def gather_from_events(
     completed_events = replay(event_types=["work_item_completed"], since=since)
     verified_events = replay(event_types=["work_item_verified"], since=since)
     attention_events = replay(event_types=_ATTENTION_EVENT_TYPES, since=since)
+    misspent_events = replay(event_types=_ATTENTION_MISSPENT_EVENT_TYPES,
+                             since=since)
     learning_events = replay(event_types=["experience_recorded"], since=since)
     mission_events = replay(event_types=["mission_created"], since=since)
 
@@ -142,9 +209,12 @@ def gather_from_events(
     else:
         outcome_progress = 0.0
 
-    # captain_attention_cost — count of Captain-input events in the window
-    # (inverse direction in the OVI weighting: fewer is better)
-    captain_attention_cost = float(len(attention_events))
+    # captain_attention_well_spent — the SHARE of spent Captain attention that
+    # went on decisions only he could make. Already normalized to [0,1] by
+    # construction, direction `normal`. Reads 0.0 at BOTH failure ends
+    # (never asked / asked badly); see attention_well_spent() for the table.
+    captain_attention_well_spent_value = attention_well_spent(
+        len(attention_events), len(misspent_events))
 
     # learning_rate — experience records PER DAY (window-invariant rate; the
     # raw count masqueraded as a rate and rescaled with the window — §4.2 fix)
@@ -154,7 +224,7 @@ def gather_from_events(
     return {
         "task_throughput": task_throughput,
         "outcome_progress": outcome_progress,
-        "captain_attention_cost": captain_attention_cost,
+        "captain_attention_well_spent": captain_attention_well_spent_value,
         "learning_rate": learning_rate,
         "verification_pass_rate": verification_pass_rate,
     }
