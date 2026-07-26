@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 93839d991e56db1fe048e1df97774e1dd4b248f0071d90171979d38ab08109d4
+Reviewed-Scope-Digest: 60ab5575264c12afc2bec225e9a943c8762900c2a4fa8b8fbb1ad2971ece1e38
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
@@ -197,6 +197,45 @@ COG-2 b38632b9 vs 7f4047d3, COG-3 78a7bf18 vs 727b8fee; all exit 1). COG-4 was t
 f3914dde (verify twin exit 0, recorded == recomputed == 6f04c4bc) and the only one this landing turned
 BLOCK, so it is the only one re-bound. This commit edits ONLY the digest-excluded review artifact, so the
 digest it records is stable under its own landing.)
+
+(MOVED BY THE ATTENTION-WELL-SPENT LANDING, 2026-07-26 —
+93839d991e56db1fe048e1df97774e1dd4b248f0071d90171979d38ab08109d4 -> the value above. Landed branch
+`fix/attention-silence-ratchet` over master f07787fa: the cabinet was structurally biased toward going
+quiet and its own score rewarded it — the OVI attention term was weighted `direction: inverse`, reading a
+perfect 1.00 in EVERY window (7d/30d/365d) including a 7d window with 0.0 throughput and 0.0 verification.
+EXACTLY ONE in-scope path moved, verified by intersecting the resolved scope with
+`git diff --name-only origin/master..HEAD` (27 changed files, one of them in scope) rather than by reading
+the diff:
+  (1) `cabinet/config/cognitive-architecture-contract.yml` — ONE `temporary_allowances` row APPENDED
+      (`framework_production_noncomment_lines` +252, phase `attention-well-spent`) for the fix's framework
+      surface. Declarative budget consumed by the census gate, not by any COG-4 engine — the same class as
+      the captain-contact-liveness rows two re-binds above. Census re-measured on the branch bytes: PASS at
+      67186<=67186 — exact total, zero headroom preserved, no `maximum` relaxed and no threshold touched.
+      The row's own reason records the honest accounting: 209 of those 252 lines are docstring prose and
+      only 43 are executable code (measured, not estimated), and they were deliberately NOT reformatted
+      into `#` comments — which the counter ignores, and which would have bought back ~209 lines by moving
+      words sideways instead of shrinking anything.
+A MECHANICAL-DELTA re-bind per the cp3 precedent, never a restamp, and the claim is made here because it
+holds: ZERO COG-4 engine, organ, scheduler, projection or trajectory bytes are touched by this landing.
+The moved path is not a COG-4 surface; it is bound only because the census contract sits inside the
+declared scope. The four COG-4 §15 findings are untouched and none is re-derived. Re-measured on the
+branch bytes, not inherited: `verify-cognitive-phase4.sh` full green end-to-end after this re-bind;
+census PASS; layer-sep new=0; `cog2-import-gate.py` rc0; `null-hatch.sh` rc0; golden evals 30/30;
+`framework/` 6587 passed and `cabinet/scripts/tests` 4665 passed against a re-measured f07787fa baseline,
+with the one declared pre-existing red (`test_retro_shim.py::test_reexports_constants`) reproduced
+identically on pristine master.
+WHAT WAS NOT DONE, stated plainly: this was NOT re-reviewed by a fresh frozen COG-4 panel. The moved path
+is a declarative budget row, not the phase's claim surface, and the landing carries its own review
+artifact `shared/interfaces/reviews/fix-attention-silence-ratchet-cp1.md`.
+SIBLING BINDERS: `cabinet/config/cognitive-architecture-contract.yml` sits in the COG-1/2/3
+EXPECTED_SCOPEs too, so this landing moves those digests as well (COG-1 e0efb3cf -> 497909af, COG-2
+03a65104 -> 9fc88f5c, COG-3 6a7bc7fe -> 6a6aa580). They are NOT re-bound and must not be: all three were
+ALREADY BLOCK on pristine master f07787fa — measured, not assumed, by running each verify twin there
+(recorded vs recomputed: COG-1 25c2f5e3 vs e0efb3cf, COG-2 b38632b9 vs 03a65104, COG-3 78a7bf18 vs
+6a7bc7fe; all exit 1). COG-0 has a scope tool but NO review artifact on this tree, so it has no binding to
+move. COG-4 was the one binding GREEN on f07787fa (verify twin exit 0, recorded == recomputed ==
+93839d99) and the only one this landing turned BLOCK, so it is the only one re-bound. This commit edits
+ONLY the digest-excluded review artifact, so the digest it records is stable under its own landing.)
 
 ---
 
