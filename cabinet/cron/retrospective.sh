@@ -2,6 +2,18 @@
 # retrospective.sh — Triggers CoS to run a Cabinet retrospective
 # Runs every 3 days via cron
 
+# Shell hardening (2026-07-26, cron-CI wave): -u + pipefail, deliberately NOT
+# -e. The failure path below reads $? after `_send_err=$(...)`; errexit aborts
+# ON that assignment, before the diagnostic prints, so the log loses the error
+# markers the outcome-watchdog pages on (JOB_ERROR_MARKERS,
+# framework/watchdog/registry.py:753) while the exit code stays 1 — a failure
+# that reads as silence. Verified against a scratch Redis: -uo is
+# byte-identical to no flags in both success and failure modes, -euo deletes
+# the diagnostic every time. Same reasoning already documented in
+# cabinet/scripts/run-golden-evals.sh; same flags as cost-summary.sh /
+# heartbeat-watchdog.sh / limit-reset-watchdog.sh.
+set -uo pipefail
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CABINET_ROOT="${CABINET_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 # Source cabinet/.env (Telegram tokens etc.) if present — launchd/cron runs

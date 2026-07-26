@@ -147,7 +147,24 @@ jobs:
                        head -1 "$ff" 2>/dev/null | grep -qE '^#!.*bash' && echo "$ff"
                      done)
 
-      - name: shellcheck hooks + lib + scripts root (severity=error)
+      - name: Bash syntax check — cron
+        if: ${{ !cancelled() }}
+        # 15 scripts at cabinet/cron/*.sh (~1.8k lines) ran in NO CI step until
+        # 2026-07-26: every syntax-check glob above is rooted at
+        # cabinet/scripts, and the find-based step is `-mindepth 2` under that
+        # same root, so cabinet/cron was outside all four. That directory holds
+        # the Captain's briefing path (briefing.sh), the limit-reset watchdog
+        # and the self-improvement driver — a stray brace in any of them was a
+        # silent runtime-only failure. Own step (not folded into the find
+        # above) so a cron break stays step-attributable.
+        run: |
+          set -e
+          for f in /opt/founders-cabinet/cabinet/cron/*.sh; do
+            echo "bash -n $f"
+            bash -n "$f"
+          done
+
+      - name: shellcheck hooks + lib + scripts root + cron (severity=error)
         if: ${{ !cancelled() }}
         # FW-054: static analysis gate for the 12 hook + lib scripts.
         # FW-055: extended to cover the 57 root-level cabinet/scripts/*.sh files
@@ -158,12 +175,17 @@ jobs:
         # --severity=error catches genuine bugs (SC2064 trap-in-subshell,
         # SC2090 array-quoting, SC2094 read/write same file, etc.) without
         # noise from style warnings. ubuntu-latest has shellcheck pre-installed.
+        # Widened 2026-07-26 to the 15 cabinet/cron/*.sh files (the same blind
+        # spot the cron syntax step above closes). All 15 were verified clean at
+        # --severity=error AND --severity=warning before this widening, so the
+        # expanded surface is green on first run (the FW-055 precedent above).
         run: |
           shellcheck --version
           shellcheck --severity=error --shell=bash \
             /opt/founders-cabinet/cabinet/scripts/hooks/*.sh \
             /opt/founders-cabinet/cabinet/scripts/lib/*.sh \
-            /opt/founders-cabinet/cabinet/scripts/*.sh
+            /opt/founders-cabinet/cabinet/scripts/*.sh \
+            /opt/founders-cabinet/cabinet/cron/*.sh
 
       - name: Layer-separation gate (FINAL-C)
         if: ${{ !cancelled() }}
