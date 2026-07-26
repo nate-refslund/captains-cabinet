@@ -28,8 +28,9 @@ pacing:
 #              on engagement; the original shipped design).
 #   overview — ONE live standing overview card ("⚑ N need you" + top names
 #              when N≤5), pinned once and edited in place forever.
-# Default adopt; unknown values fall back to adopt.
-pin_mode: adopt
+# Default overview (the ratified design, and the framework default since
+# 2026-07-26); unknown values fall back to overview. Set adopt to opt out.
+pin_mode: overview
 
 # Deep-link base for "Open" buttons / "Details:" lines on cards. Empty (the
 # default) = cards render without links. https URLs also get link buttons;
@@ -37,6 +38,8 @@ pin_mode: adopt
 dashboard_url: ""
 
 # Send the 07:30/19:30 briefing as ONE card with a Triage control instead of
-# the classic text (needs the briefing runner wired to
-# framework.comms.surface.briefing_card.maybe_send). Default false.
-briefing_card: false
+# the classic (1/N)-chunked text. The briefing runner is wired to
+# framework.comms.surface.briefing_card.maybe_send. Captain-ratified true
+# 2026-07-11, and the framework default since 2026-07-26. Set false to opt
+# out and get the classic text briefing back.
+briefing_card: true

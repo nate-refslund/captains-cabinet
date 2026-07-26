@@ -5,11 +5,11 @@ plain headline, "N decisions ready", a Triage control — and the decisions
 themselves arrive as the paced single-decision cards (surface.pacing), never
 embedded in the briefing body.
 
-Foundation renderer + a dark-by-default send path: nothing calls
-``maybe_send`` until the deployment turns on ``briefing_card`` in
-``instance/config/comms-surface.yml`` (or ``CABINET_BRIEFING_CARD=1``) and
-the briefing runner is wired to it — this module adds NO scheduling and
-changes no existing briefing behavior by itself.
+Foundation renderer + the briefing send path. ``maybe_send`` gates on the
+``briefing_card`` knob, Captain-ratified TRUE by default since 2026-07-11;
+a deployment opts out with ``briefing_card: false`` in
+``instance/config/comms-surface.yml`` (or ``CABINET_BRIEFING_CARD=0``). This
+module adds NO scheduling of its own — the frontdoor briefing runner calls it.
 
 Identity: one card per briefing slot (``thread:comms-surface-briefing-
 <date>-<am|pm>``), so a re-run edits the same card instead of duplicating.
@@ -78,9 +78,9 @@ def render(headline: str, census: dict, *, now: "datetime | None" = None,
 def maybe_send(headline: str, *, census: "dict | None" = None,
                now: "datetime | None" = None, cfg: "dict | None" = None,
                adapter=None, ch=None) -> dict:
-    """Send the briefing card IF the deployment enabled briefing-as-card.
-    Disabled (the default) returns ``{"status": "disabled"}`` and touches
-    nothing — the classic briefing text path is unaffected."""
+    """Send the briefing card unless the deployment opted out of it. An
+    explicit opt-out returns ``{"status": "disabled"}`` and touches nothing —
+    the classic briefing text path is unaffected."""
     cfg = cfg or _cfg.load()
     if not cfg.get("briefing_card"):
         return {"status": "disabled"}

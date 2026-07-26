@@ -22,5 +22,8 @@ pacing:
 # composed long body (synthesis + recap + digest text + pipe items) is
 # ARCHIVED to instance/memory/briefings/ as data instead of riding Telegram
 # as a (1/N)-chunked wall. Decisions ride the paced single-decision cards.
-# Flip back to the classic text briefing by deleting this one key.
+# Since 2026-07-26 both ratifications ARE the framework defaults, so the two
+# keys here are explicit restatements, not overrides — this file no longer
+# changes behaviour. Flip back to the classic text briefing by SETTING this
+# key false (deleting it now yields the ratified default, which is true).
 briefing_card: true
