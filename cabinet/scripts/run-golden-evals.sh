@@ -187,60 +187,129 @@ fi
 # ------------------------------------------------------------------
 log "EVAL-003: Spending Limits"
 # FW-016: pre-tool-use.sh reads cabinet:cost:tokens:daily:$TODAY HGET
-# <role>_cost_micro (microdollars). The probe runs as OFFICER_NAME=cos,
+# <role>_cost_micro (microdollars). The probes run as OFFICER_NAME=cos,
 # whose EFFECTIVE cap is daily_per_officer_usd × coordinating_officer_multiplier
-# (contract c carve-out in pre-tool-use.sh) — so the planted value is
-# COMPUTED from the same platform.yml the hook reads (cap_micro × mult + 1,
-# i.e. exactly one micro-dollar over the effective cap) rather than a fixed
-# constant a large-enough cap could silently clear (false FAIL). Block
-# message → STDERR, not stdout — so capture with `2>&1 >/dev/null`.
+# (contract c carve-out in pre-tool-use.sh). Block messages go to STDERR, not
+# stdout — capture with `2>&1 >/dev/null`.
 #
-# When platform.yml sets daily_per_officer_usd: 0 (unlimited — the
-# Captain's own Cabinet default), pre-tool-use.sh skips the per-officer
-# cap block entirely. That's correct behavior, but means we cannot
-# exercise the gate. Detect this and skip rather than falsely fail.
-# 2026-07-03: read the SAME platform.yml the hook under test reads ($CABINET_ROOT),
-# not the Docker-era /opt path — on machines where /opt/founders-cabinet was a stale
-# or absent symlink this eval read a DIFFERENT deployment's caps than pre-tool-use.sh.
-EVAL_CAP_USD=$(awk '/^[[:space:]]*daily_per_officer_usd:/{gsub(/#.*/,""); print $2; exit}' "$CABINET_ROOT/instance/config/platform.yml" 2>/dev/null)
-case "$EVAL_CAP_USD" in *[!0-9.]*|'') EVAL_CAP_USD=0 ;; esac
-# 2026-07-03: BSD awk (macOS) cannot parse `print (expr)==0` (GNU-only) — the
-# check errored silently on Mac, emptied the result, and fell into the else
-# branch where the caps=0 hook correctly does not block -> false FAIL. This was
-# the local-vs-CI divergence. Portable form:
-if [ "$(awk -v v="$EVAL_CAP_USD" 'BEGIN{ if (v+0==0) print 1; else print 0 }')" = "1" ]; then
-  log "EVAL-003: skipping — daily_per_officer_usd=0 (unlimited) in platform.yml"
-  pass "Spending limit eval skipped cleanly when cap=unlimited"
+# REWRITTEN 2026-07-27. Two things were wrong with the previous version:
+#   1. Its single assertion was "the gate BLOCKS". The Captain removed all
+#      spend caps on 2026-07-26 (instance/config/platform.yml now reads
+#      `unlimited`), so that assertion is now literally the opposite of the
+#      ruling. The old arm is INVERTED below, not deleted.
+#   2. It read the cap out of the live platform.yml and, when that cap was 0,
+#      SKIPPED with a pass — so on the Captain's own Cabinet this eval had
+#      been scoring a green while exercising nothing at all.
+# The arms below are: (a) uncapped means uncapped, (b) the machinery still
+# blocks under an explicit numeric cap — which is what protects a forker, who
+# inherits the $75/$300 framework defaults — and (c) whatever the SHIPPED
+# config says, the gate agrees with it.
+#
+# Caps are controlled the only way the current hook allows: a synthetic
+# CABINET_ROOT holding just the two spend yamls. (Until 77422706 the hook
+# trusted an on-disk /tmp cache and tests planted caps there; that cache is
+# now rebuilt per invocation from the yaml and deleted, so a planted cache is
+# ignored. memory/golden-evals/framework/fw-002-spending-limits.sh carries the
+# full contract suite on the same mechanism.)
+EVAL_DATE=$(date -u +%Y-%m-%d)
+EVAL_KEY="cabinet:cost:tokens:daily:$EVAL_DATE"
+REAL_COST_MICRO=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGET "$EVAL_KEY" "cos_cost_micro" 2>/dev/null)
+EVAL_SPEND_DIR=$(mktemp -d "${TMPDIR:-/tmp}/eval003.XXXXXX" 2>/dev/null)
+
+# eval003_root <name> <per_officer_usd> <cabinet_wide_usd>  → echoes the root
+eval003_root() {
+  _e3r="$EVAL_SPEND_DIR/$1"
+  mkdir -p "$_e3r/instance/config" "$_e3r/framework/defaults" 2>/dev/null
+  printf 'spending_limits:\n  daily_per_officer_usd: %s\n  daily_cabinet_wide_usd: %s\n  coordinating_officer_multiplier: 3.0\n  telegram_whitelist_enabled: true\n  telegram_whitelist_hourly_cap: 10\n' \
+    "75" "300" > "$_e3r/framework/defaults/spending-limits.yml"
+  printf 'spending_limits:\n  daily_per_officer_usd: %s\n  daily_cabinet_wide_usd: %s\n  coordinating_officer_multiplier: 3.0\n  telegram_whitelist_enabled: true\n  telegram_whitelist_hourly_cap: 10\n' \
+    "$2" "$3" > "$_e3r/instance/config/platform.yml"
+  echo "$_e3r"
+}
+# The hook always comes from the REAL repo (a synthetic root holds config
+# only); resolve its path in a variable so no reader has to reason about
+# whether the CABINET_ROOT= prefix below rebinds it (it does not — a
+# command-prefix assignment applies to the child's environment, after the
+# command words have already been expanded).
+EVAL_HOOK="$CABINET_ROOT/cabinet/scripts/hooks/pre-tool-use.sh"
+eval003_probe() {  # eval003_probe <root> <cos_cost_micro> → EV3_EXIT / EV3_ERR
+  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HSET "$EVAL_KEY" "cos_cost_micro" "$2" > /dev/null 2>&1
+  EV3_ERR=$(echo '{"tool_name":"Bash","tool_input":{"command":"echo test"}}' \
+    | OFFICER_NAME=cos CABINET_ROOT="$1" bash "$EVAL_HOOK" 2>&1 >/dev/null)
+  EV3_EXIT=$?
+}
+
+if [ -z "$EVAL_SPEND_DIR" ]; then
+  fail "EVAL-003: could not mktemp a synthetic cabinet root — spend gate untested"
 else
-  # Plant one micro-dollar over the cos effective cap, mirroring the hook's
-  # own arithmetic (awk %.0f rounding at each step). Multiplier resolution
-  # mirrors the hook's config precedence: platform.yml → framework defaults
-  # (framework/defaults/spending-limits.yml) → 3.0 (_cfg_get's fallback).
-  # A garbage value coerces to 3.0 here (the hook coerces to 1) —
-  # overestimating is safe, the plant only gets larger and still trips the
-  # ≥-cap block.
-  EVAL_COS_MULT=$(awk '/^[[:space:]]*coordinating_officer_multiplier:/{gsub(/#.*/,""); print $2; exit}' "$CABINET_ROOT/instance/config/platform.yml" 2>/dev/null)
-  [ -z "$EVAL_COS_MULT" ] && EVAL_COS_MULT=$(awk '/^[[:space:]]*coordinating_officer_multiplier:/{gsub(/#.*/,""); print $2; exit}' "$CABINET_ROOT/framework/defaults/spending-limits.yml" 2>/dev/null)
-  case "$EVAL_COS_MULT" in *[!0-9.]*|'') EVAL_COS_MULT=3.0 ;; esac
-  EVAL_CAP_MICRO=$(awk -v v="$EVAL_CAP_USD" 'BEGIN{printf "%.0f", v*1000000}')
-  EVAL_PLANT_MICRO=$(awk -v c="$EVAL_CAP_MICRO" -v m="$EVAL_COS_MULT" 'BEGIN{printf "%.0f", c*m+1}')
-  EVAL_DATE=$(date -u +%Y-%m-%d)
-  EVAL_KEY="cabinet:cost:tokens:daily:$EVAL_DATE"
-  REAL_COST_MICRO=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGET "$EVAL_KEY" "cos_cost_micro" 2>/dev/null)
-  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HSET "$EVAL_KEY" "cos_cost_micro" "$EVAL_PLANT_MICRO" > /dev/null 2>&1
-  RESULT=$(echo '{"tool_name":"Bash","tool_input":{"command":"echo test"}}' | OFFICER_NAME=cos bash "$CABINET_ROOT/cabinet/scripts/hooks/pre-tool-use.sh" 2>&1 >/dev/null)
-  EXIT_CODE=$?
-  if [ "$EXIT_CODE" -eq 2 ] && echo "$RESULT" | grep -qE "BLOCKED.*officer=cos"; then
-    pass "Daily spending limit blocks when exceeded"
+  # -- Arm 1 (MACHINERY): an explicit numeric cap must still block. This is
+  # the arm that keeps EVAL-003 able to go red, and it is the behaviour a
+  # forker gets out of the box. cos at $226 vs $75 × 3.0 = $225 effective.
+  EV3_CAPPED=$(eval003_root capped 75 0)
+  eval003_probe "$EV3_CAPPED" "$((226 * 1000000))"
+  if [ "$EV3_EXIT" -eq 2 ] && echo "$EV3_ERR" | grep -qE "BLOCKED.*officer=cos"; then
+    pass "Spending limit blocks when an explicit numeric cap is exceeded"
   else
-    fail "Spending limit did not block (exit=$EXIT_CODE, stderr='$RESULT')"
+    fail "Spending limit did not block under an explicit \$75 cap (exit=$EV3_EXIT, stderr='$EV3_ERR')"
   fi
-  # Restore real value
-  if [ -n "$REAL_COST_MICRO" ] && [ "$REAL_COST_MICRO" != "(nil)" ]; then
-    redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HSET "$EVAL_KEY" "cos_cost_micro" "$REAL_COST_MICRO" > /dev/null 2>&1
+
+  # -- Arm 2 (THE RULING, 2026-07-26): uncapped means uncapped. This is the
+  # INVERSION of the old must-block arm. If the `unlimited` sentinel is ever
+  # dropped from the hook, `unlimited` falls back to the $75 framework floor
+  # and this arm goes red.
+  EV3_UNCAPPED=$(eval003_root uncapped unlimited unlimited)
+  eval003_probe "$EV3_UNCAPPED" "$((1000000 * 1000000))"
+  if [ "$EV3_EXIT" -eq 0 ]; then
+    pass "Uncapped Cabinet does not block a \$1,000,000 officer (Captain 2026-07-26)"
   else
-    redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HDEL "$EVAL_KEY" "cos_cost_micro" > /dev/null 2>&1
+    fail "Uncapped Cabinet blocked anyway (exit=$EV3_EXIT, stderr='$EV3_ERR')"
   fi
+
+  # -- Arm 3: the SHIPPED config and the gate must agree. Asserting a
+  # particular cap here would false-RED the day the Captain changes one, so
+  # this arm reads what is configured and asserts the matching behaviour.
+  EVAL_CAP_USD=$(awk '/^[[:space:]]*daily_per_officer_usd:/{gsub(/#.*/,""); print $2; exit}' "$CABINET_ROOT/instance/config/platform.yml" 2>/dev/null)
+  [ -z "$EVAL_CAP_USD" ] && EVAL_CAP_USD=$(awk '/^[[:space:]]*daily_per_officer_usd:/{gsub(/#.*/,""); print $2; exit}' "$CABINET_ROOT/framework/defaults/spending-limits.yml" 2>/dev/null)
+  case "$(printf '%s' "$EVAL_CAP_USD" | tr '[:upper:]' '[:lower:]')" in
+    unlimited|none|off|infinite|inf|0|0.0)
+      eval003_probe "$CABINET_ROOT" "$((1000000 * 1000000))"
+      if [ "$EV3_EXIT" -eq 0 ]; then
+        pass "Shipped platform.yml is uncapped ('$EVAL_CAP_USD') and the gate agrees"
+      else
+        fail "Shipped platform.yml says '$EVAL_CAP_USD' but the gate still blocked (exit=$EV3_EXIT, stderr='$EV3_ERR')"
+      fi
+      ;;
+    ''|*[!0-9.]*)
+      fail "Shipped daily_per_officer_usd is neither numeric nor an unlimited sentinel ('$EVAL_CAP_USD')"
+      ;;
+    *)
+      # Multiplier resolution mirrors the hook's config precedence:
+      # platform.yml → framework defaults → 3.0 (_cfg_get's fallback). A
+      # garbage value coerces to 3.0 here (the hook coerces to 1) —
+      # overestimating is safe, the plant only gets larger and still trips
+      # the ≥-cap block.
+      EVAL_COS_MULT=$(awk '/^[[:space:]]*coordinating_officer_multiplier:/{gsub(/#.*/,""); print $2; exit}' "$CABINET_ROOT/instance/config/platform.yml" 2>/dev/null)
+      [ -z "$EVAL_COS_MULT" ] && EVAL_COS_MULT=$(awk '/^[[:space:]]*coordinating_officer_multiplier:/{gsub(/#.*/,""); print $2; exit}' "$CABINET_ROOT/framework/defaults/spending-limits.yml" 2>/dev/null)
+      case "$EVAL_COS_MULT" in *[!0-9.]*|'') EVAL_COS_MULT=3.0 ;; esac
+      EVAL_CAP_MICRO=$(awk -v v="$EVAL_CAP_USD" 'BEGIN{printf "%.0f", v*1000000}')
+      EVAL_PLANT_MICRO=$(awk -v c="$EVAL_CAP_MICRO" -v m="$EVAL_COS_MULT" 'BEGIN{printf "%.0f", c*m+1}')
+      eval003_probe "$CABINET_ROOT" "$EVAL_PLANT_MICRO"
+      if [ "$EV3_EXIT" -eq 2 ] && echo "$EV3_ERR" | grep -qE "BLOCKED.*officer=cos"; then
+        pass "Shipped platform.yml caps at \$$EVAL_CAP_USD and the gate blocks over it"
+      else
+        fail "Shipped cap \$$EVAL_CAP_USD did not block one micro-dollar over (exit=$EV3_EXIT, stderr='$EV3_ERR')"
+      fi
+      ;;
+  esac
+
+  rm -rf "$EVAL_SPEND_DIR"
+fi
+
+# Restore real value
+if [ -n "$REAL_COST_MICRO" ] && [ "$REAL_COST_MICRO" != "(nil)" ]; then
+  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HSET "$EVAL_KEY" "cos_cost_micro" "$REAL_COST_MICRO" > /dev/null 2>&1
+else
+  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HDEL "$EVAL_KEY" "cos_cost_micro" > /dev/null 2>&1
 fi
 
 # ------------------------------------------------------------------

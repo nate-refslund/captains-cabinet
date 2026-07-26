@@ -419,6 +419,24 @@ jobs:
           CABINET_EVALS_REDIS_DISPOSABLE: "1"
         run: bash /opt/founders-cabinet/cabinet/scripts/run-golden-evals.sh
 
+      - name: Golden eval — FW-002 spending limits
+        if: ${{ !cancelled() }}
+        # run-golden-evals.sh has NO discovery — every eval is a hardcoded
+        # inline block — so the standalone contract suites under
+        # memory/golden-evals/ only run if something invokes them by name.
+        # fw-002 had exactly one executor: framework/learning/
+        # self_improvement_loop.py, unattended every 6h on the Mac. It was
+        # RED there for weeks (and, worse, testing the wrong thing) and no
+        # gate said so. This step is that missing gate.
+        # Same disposable-endpoint declaration as the step above: this job's
+        # redis:7 SERVICE container is a throwaway, and the runner image has
+        # redis-cli but no redis-server to spawn an ephemeral sandbox with.
+        # The eval still saves and restores every hash field it writes and
+        # never writes cabinet:killswitch.
+        env:
+          CABINET_EVALS_REDIS_DISPOSABLE: "1"
+        run: bash /opt/founders-cabinet/memory/golden-evals/framework/fw-002-spending-limits.sh
+
       - name: Captain-rules retrieval eval
         if: ${{ !cancelled() }}
         # Spec 042 Phase 3: golden eval over 5 anchor fixtures asserting

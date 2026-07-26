@@ -275,18 +275,64 @@ def test_stop_survives_a_del_loop_clearing_the_redis_key(plane):
 # DEFECT 3 — the spend gate must never read an error as $0 / unlimited
 # =========================================================================
 
+def _spend_root(tmp_path: Path, name: str, per_officer: str, cabinet_wide: str) -> Path:
+    """A synthetic CABINET_ROOT carrying only the caps under test.
+
+    The hook rebuilds its cap table from the yaml under CABINET_ROOT on every
+    call, so this is the only way to control the caps a probe runs against.
+    Pointing at the repo root instead makes the test read whatever the Captain
+    has configured that week — which is how the FW-002 golden eval came to
+    spend weeks asserting nothing."""
+    root = tmp_path / name
+    (root / "instance/config").mkdir(parents=True, exist_ok=True)
+    (root / "instance/config/platform.yml").write_text(
+        "spending_limits:\n"
+        f"  daily_per_officer_usd: {per_officer}\n"
+        f"  daily_cabinet_wide_usd: {cabinet_wide}\n")
+    return root
+
+
 @needs_redis
-def test_unreadable_spend_ledger_refuses_instead_of_reading_zero(plane):
+def test_unreadable_spend_ledger_refuses_instead_of_reading_zero(plane, tmp_path):
     """`SET cabinet:cost:tokens:daily:<today> x` made the gate's HKEYS answer
     WRONGTYPE; the old capture read that as 'no cost fields', today's spend
-    summed to $0, and the cap could not trip again all day."""
+    summed to $0, and the cap could not trip again all day.
+
+    The cap is set EXPLICITLY here. Reading it from the repo's platform.yml
+    would have made this arm evaporate the day the Captain uncapped spend
+    (2026-07-26): with no cap to enforce the hook never reaches the ledger
+    read at all, so the test would have been green on an unexercised
+    fail-closed path — a disabled sensor, not a pass."""
     plane.cli("DEL", "cabinet:killswitch")
     today = subprocess.run(["date", "-u", "+%Y-%m-%d"], capture_output=True,
                            text=True).stdout.strip()
     plane.cli("SET", f"cabinet:cost:tokens:daily:{today}", "x")
-    rc = plane.officer_bash(extra={"OFFICER": "cto"})
-    assert rc == 2, "an unreadable spend ledger must not read as $0"
+    root = _spend_root(tmp_path, "capped", "75", "0")
+    rc = plane.officer_bash(extra={"OFFICER": "cto", "CABINET_ROOT": str(root)})
+    assert rc == 2, (
+        "an unreadable spend ledger must not read as $0; "
+        f"hook allowed the call. stderr: {plane.last_stderr}")
     assert "UNREADABLE" in plane.last_stderr
+
+
+@needs_redis
+def test_uncapped_cabinet_does_not_block_on_an_unreadable_ledger(plane, tmp_path):
+    """The other half of the arm above, pinning the Captain's 2026-07-26
+    ruling: with spend UNCAPPED there is no ceiling to enforce, so the hook
+    must not read the ledger and must not refuse. If a future change makes an
+    unreadable ledger block an uncapped Cabinet, every officer goes dark over
+    a limit nobody set."""
+    plane.cli("DEL", "cabinet:killswitch")
+    today = subprocess.run(["date", "-u", "+%Y-%m-%d"], capture_output=True,
+                           text=True).stdout.strip()
+    plane.cli("SET", f"cabinet:cost:tokens:daily:{today}", "x")
+    root = _spend_root(tmp_path, "uncapped", "unlimited", "unlimited")
+    rc = plane.officer_bash(extra={"OFFICER": "cto", "CABINET_ROOT": str(root)})
+    assert rc == 0, (
+        "an uncapped Cabinet has no ceiling to enforce and must not refuse; "
+        f"stderr: {plane.last_stderr}")
+    assert "UNREADABLE" not in plane.last_stderr
+    assert "BLOCKED" not in plane.last_stderr
 
 
 @needs_redis
@@ -304,12 +350,7 @@ def test_garbage_cap_falls_back_to_the_framework_default_not_unlimited(plane, tm
     plane.cli("HSET", f"cabinet:cost:tokens:daily:{today}", "cto_cost_micro",
               str(500 * 1000 * 1000))
 
-    fake_root = tmp_path / "root"
-    (fake_root / "instance/config").mkdir(parents=True, exist_ok=True)
-    (fake_root / "instance/config/platform.yml").write_text(
-        "spending_limits:\n"
-        "  daily_per_officer_usd: not-a-number\n"
-        "  daily_cabinet_wide_usd: 0\n")
+    fake_root = _spend_root(tmp_path, "garbage-cap", "not-a-number", "0")
 
     rc = plane.officer_bash(extra={"OFFICER": "cto", "CABINET_ROOT": str(fake_root)})
     assert rc == 2, (
