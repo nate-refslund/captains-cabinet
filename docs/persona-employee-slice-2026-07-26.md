@@ -39,9 +39,9 @@ sits unopened in the folder.
 
 ## 1. What was built
 
-`framework/onboarding/fixtures/enterprise-employee/` — a fourth persona for
-the existing acceptance harness, deliberately shaped as an employee's slice of
-a large organisation rather than an owner's view of a whole business.
+`framework/onboarding/fixtures/enterprise-employee/` — a fourth estate for the
+existing persona harness, deliberately shaped as an employee's slice of a large
+organisation rather than an owner's view of a whole business.
 
 ```
 enterprise-employee/
@@ -77,7 +77,41 @@ duplicate, and that was predicted to produce a miss.
 
 **The fixture was not tuned.** Eight predictions were registered in writing
 before the first run; all eight landed on the first execution. No content was
-changed to produce a hit, and none should be. The fixture README says so.
+changed to produce a hit, and none should be. The fixture README says so, and
+`test_employee_estate_planted_cross_system_facts_are_all_present_but_unfound`
+asserts each planted join is still present in the bytes and still absent from
+the findings, so a later tuning edit trips a test.
+
+### Why the estate is not registered as a fourth acceptance persona
+
+It was, and the registration was reverted. This is worth recording, because the
+obstacle is structural rather than editorial and it will block the next person
+too.
+
+`framework/onboarding/evaluate_personas.py` is a framework **production**
+module: the census counts every `framework/**/*.py` outside a `tests` path.
+`framework_production_noncomment_lines` is pinned at **observed == max with
+zero headroom by design** — the structural-compaction mutant gate requires it,
+so that any growth is caught. Registering one persona costs one non-comment
+line, which reds the census.
+
+The contract provides `temporary_allowances` for exactly this, and an entry of
+`additional: 1` was written and verified green. But
+`cabinet/config/cognitive-architecture-contract.yml` is inside
+`EXPECTED_SCOPE` in `cabinet/scripts/cognitive-phase4-review-scope.py`, so
+editing it invalidates the `Reviewed-Scope-Digest` recorded in the frozen COG-4
+review artifact, and `verify-cognitive-phase4.sh` blocks with *"reviewed bytes
+!= tested bytes"*. Re-stamping that digest would record a review of bytes no
+reviewer saw, which is not a thing to do to make a test pass.
+
+So while the COG-4 review is frozen, **the framework production line count
+cannot change in either direction** — growth needs an allowance and shrink
+needs a tightened maximum, and both live in the frozen file. The estate is
+therefore exercised by `framework/onboarding/tests/test_journey.py`, which
+costs nothing (a tests path is excluded) and drives the same `journey.act`
+propose→ratify path the harness drives. Register it when the budget can move.
+The fixture directory itself was always free: 15 files of
+`.md`/`.json`/`.csv`/`.ts`/`.yaml`, and the census counts only `*.py`.
 
 ---
 
@@ -246,6 +280,10 @@ disclosure fix will flip the second.
   persona in the suite is therefore, by construction, one that produces a
   strong finding. That is a mild version of the bias this experiment was sent
   to look for, and it is worth fixing before more personas are added.
+- **The persona set cannot currently grow at all**, for the reason in §1: one
+  line against a zero-headroom budget whose contract is frozen under a review
+  digest. Whoever unfreezes COG-4 should register `enterprise-employee` in the
+  same window.
 
 ---
 
@@ -277,11 +315,34 @@ disclosure fix will flip the second.
 
 ```sh
 find . -name __pycache__ -type d -prune -exec rm -rf {} +
-PYTHONDONTWRITEBYTECODE=1 python3.12 -m framework.onboarding.evaluate_personas
 PYTHONDONTWRITEBYTECODE=1 python3.12 -m pytest framework/onboarding/tests/test_journey.py -q
 ```
 
-The four-persona harness prints machine-readable finding, citation and timing
-evidence per estate and exits 0. The cap behaviour in §5 is pinned by
-`test_uncapped_window_finds_the_cross_directory_command_drift` and
+The employee estate is driven through the real `journey.act` propose→ratify
+path by `test_employee_estate_yields_a_strong_cited_finding_through_the_real_journey`;
+the finding counts in §2 are pinned by
+`test_employee_estate_findings_are_dominated_by_single_source_markers`, the
+anti-tuning guard by
+`test_employee_estate_planted_cross_system_facts_are_all_present_but_unfound`,
+and the cap behaviour in §5 by
+`test_uncapped_window_finds_the_cross_directory_command_drift` plus
 `test_capped_window_reports_a_clean_negative_it_did_not_earn`.
+
+The harness output that produced §2's table, captured while the estate was
+briefly registered as a fourth persona (reverted for the reason in §1):
+
+```json
+{"persona": "enterprise-employee", "passed": true, "elapsed_seconds": 0.0454,
+ "finding_kind": "software_command_drift", "expected_kind": "software_command_drift",
+ "summary": "The documentation tells someone to run \u201cmigrate:ledger\u201d, but no package.json in the approved folder declares that script. ...",
+ "citations": [{"path": "docs/runbooks/deploy-ledger-api.md", "line": 8,
+   "excerpt": "- Run `npm run migrate:ledger` against staging and check the row counts.",
+   "sha256": "d39313480f46e8d315896247aab0cfb4bba4dfd14e1049bd611f554c51832a21"}],
+ "charter_hash": "73c167090be8cd38fad7c60f9b7be553b6222d04a544129081dd3726068c9cdf",
+ "manifest_hash": "198946d743114e71e06bf00b4055a7ee344ec0045bc3fb56c5cfbcbe7ab1d570"}
+```
+
+The other three personas were byte-identical across that registration —
+verified by running the pristine tree and the modified tree at the same
+filesystem path and diffing every field except wall-clock and the run-volatile
+`card_id` segment.

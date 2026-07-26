@@ -20,5 +20,16 @@ These are small, deterministic First Window estates, not polished demos.
   measurement; see docs/persona-employee-slice-2026-07-26.md. Do not
   "fix" this fixture by adding content the detectors can see.
 
+The first three estates are registered in `evaluate_personas.PERSONAS` and run
+by the acceptance harness. `enterprise-employee/` is NOT, and the reason is
+mechanical rather than editorial: `evaluate_personas.py` is a framework
+production module, `framework_production_noncomment_lines` is a census budget
+pinned at observed==max with zero headroom, and the contract file that would
+carry an allowance is frozen under the COG-4 review digest. Registering the
+estate costs one line and that line cannot be paid today. It is exercised
+instead by `tests/test_journey.py::test_employee_estate_*`, which drive the
+same `journey.act` path the harness drives and additionally pin the
+measurement. Register it when the budget can move.
+
 The evaluation requires a useful cited finding for every estate, while the
 detector priority deliberately differs by context.
