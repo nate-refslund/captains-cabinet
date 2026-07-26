@@ -127,16 +127,25 @@ green after each.
 
 ## Risks I am carrying forward, stated rather than buried
 
-- **`projection.ts` is a byte-identical copy of an UNLANDED parallel wave.** It
-  lives staged-but-uncommitted on the sibling `iso-port-projection` branch, and
-  the brief requires using its `groundDiamond`/`groundBox`/`groundOverlap`
-  rather than re-deriving a fourth notion of where a sprite stands. This branch
-  cannot compile or be tested without the file, so it is committed here as an
-  exact copy (verified with `diff`, no edits). If both branches land, an
-  add/add merge of identical blobs resolves cleanly; if that wave edits the file
-  first, the merge conflicts and **the resolution is to take theirs** — this
-  branch consumes three stable functions and owns none of it. Whoever merges
-  second should check that explicitly rather than assume.
+- **`projection.ts` is a copy of a parallel wave's file, not this branch's
+  work.** The brief requires using its `groundDiamond`/`groundBox`/
+  `groundOverlap` rather than re-deriving a fourth notion of where a sprite
+  stands, and this branch cannot compile or be tested without the file, so it is
+  committed here.
+
+  Handled explicitly rather than left as a merge hazard: the first commit took
+  the copy that was staged-but-uncommitted on `iso-port-projection`; by the time
+  this branch was verified that wave had **committed and refined** the file
+  (`iso-port-projection` @ `9d2722a8`). Comparing with comments stripped, the
+  executable code was identical — the divergence was doc comments only, and
+  theirs corrected a claim mine still carried (the old text cited a calibration
+  test that did not exist, so the tile constant was pinned by nothing). This
+  branch therefore adopted **their committed blob verbatim**: blob
+  `b30f27d6bb1b5801ce61ed685dae0840753f2542` on both branches, so an add/add
+  merge of identical blobs resolves with no conflict. `origin/master` does not
+  yet carry the file (checked at `a55dea44`). If that wave edits it again before
+  landing, **the resolution is still to take theirs** — this branch consumes
+  three stable functions and owns none of it.
 - **Determinism has a boundary and it is now written down** (`space.ts`): within
   one JS engine the layout is bit-identical, which is what the tests pin; across
   engines it is identical to the precision of `sin`/`cos`/`atan2`, which are

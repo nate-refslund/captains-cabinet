@@ -26,12 +26,18 @@
  * are ALREADY drawn in isometric; it is the GRID that projects, per object,
  * at placement. cameraTranslation() below is the only camera math.
  *
- * EXACTNESS (why the topdown rewire is a no-op): both tile sizes are powers
- * of two, so scaling by them is exact in IEEE-754 and commutes with rounding.
- * fl(fl(d·16)·z) == fl(d·fl(16·z)) and fl(fl(a/z)/16) == fl(a/fl(16·z)).
- * Every rewired call site therefore reproduces its old arithmetic bit for
- * bit — the world renders byte-identically, which is what makes the existing
- * suite a valid proof rather than a rough check.
+ * EXACTNESS (why the topdown rewire is a no-op): the TOP-DOWN tile is 16, a
+ * power of two, so multiplying by it is exact in IEEE-754 and every rewired
+ * call site reproduces its old arithmetic bit for bit. That is what makes the
+ * existing suite a valid proof of "nothing changed" rather than a rough check,
+ * and it is pinned by the bit-for-bit tests below.
+ *
+ * The ISO tile is 48x24 and is NOT a power of two — the distributive identity
+ * fl(fl(d·48)·z) == fl(d·fl(48·z)) fails on roughly a third of random inputs.
+ * That is harmless here and must not be mistaken for a problem: the iso path is
+ * new, so there is no legacy arithmetic for it to reproduce. What it does need
+ * is that half a tile is a whole pixel (24 and 12), because the iso kernel adds
+ * tile/2 terms; a fractional half-tile would place sprites off the pixel grid.
  *
  * PURE: no clocks, no RNG, no DOM (determinism ratchet #4).
  */
@@ -59,10 +65,13 @@ export interface TileSize {
 export const TOPDOWN_TILE: TileSize = { w: 16, h: 16 }
 
 /**
- * The isometric grid. 48×24 is MEASURED, not chosen: iso-layout.test.ts
- * projects every authored anchor × every era × every rung through
- * world-pack.json and reports the smallest tile size at which no two ground
- * diamonds overlap. See that test for the table this number comes from.
+ * The isometric grid. 48×24 is MEASURED, not chosen: projection.test.ts's
+ * calibration block projects every frame in the SHIPPED world-pack.json at a
+ * range of candidate tile sizes and asserts 48×24 is the smallest at which the
+ * largest structures' ground diamonds fit within one tile step. Change this
+ * constant and that test fails — which is the point. It previously cited a test
+ * file that did not exist, so the constant was pinned by nothing and could be
+ * set to the value the calibration had REJECTED with the suite still green.
  */
 export const ISO_TILE: TileSize = { w: 48, h: 24 }
 
@@ -195,9 +204,10 @@ export function projectionFor(kind: ProjectionKind): Projection {
  *    checks use; a fourth definition would produce a fourth bug."
  *
  * checks/world_checks.py ground_box() floors the depth at 6px; that floor is
- * part of the shared geometry and is reproduced here. iso-pack.test.ts pins
- * this function against the note string parsed out of the SHIPPED pack, so
- * the engine and the offline checks can never drift apart silently.
+ * part of the shared geometry and is reproduced here. projection.test.ts pins
+ * this function against the note string parsed out of the SHIPPED pack, so the
+ * engine and the offline checks cannot drift apart silently — the note is the
+ * contract, and a check that merely restates the code would guard nothing.
  */
 export function groundDiamond(dw: number, dh: number): { hw: number; depth: number } {
   return { hw: dw * 0.42, depth: Math.max(6, Math.min(dh * 0.55, dw * 0.55)) }
