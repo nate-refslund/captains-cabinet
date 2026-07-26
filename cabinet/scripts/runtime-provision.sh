@@ -338,8 +338,18 @@ _adopt_untracked() {
     sub="${f#"$src/"}"
     case "$tracked" in *"$nl$rel/$sub$nl"*) continue ;; esac
     [ -e "$shared_abs/$sub" ] && continue
-    mkdir -p "$shared_abs/$(dirname "$sub")"
-    cp -p "$f" "$shared_abs/$sub" 2>/dev/null && n=$((n+1))
+    # A FAILED copy must abort the whole provision. Swallowing it (the obvious
+    # `cp ... || true` shape) would break the ADOPTION INVARIANT silently and
+    # leave the caller free to rm -rf the only remaining copy — the exact class
+    # of failure this whole fix exists to end. Fail closed and loudly instead.
+    if ! mkdir -p "$shared_abs/$(dirname "$sub")" 2>/dev/null ||
+       ! cp -p "$f" "$shared_abs/$sub" 2>/dev/null; then
+      echo "runtime-provision.sh: FATAL — could not adopt '$f' into '$shared_abs/$sub'." >&2
+      echo "  Aborting: the next step removes the release copy, so continuing would" >&2
+      echo "  destroy the only copy of this state. Fix the destination and re-run." >&2
+      exit 1
+    fi
+    n=$((n+1))
   done <<EOF
 $(if [ -n "$glob" ]; then find "$src" -type f -name "$glob" 2>/dev/null; else find "$src" -type f 2>/dev/null; fi)
 EOF

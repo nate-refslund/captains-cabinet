@@ -499,6 +499,32 @@ def test_repeated_provisions_are_idempotent_and_never_lose_the_state(tmp_path):
         assert (new / rel).read_text() == "QUEUED\n", f"state lost re-provisioning {sha}"
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores the write permissions this arm relies on")
+def test_a_failed_adoption_aborts_instead_of_deleting_the_only_copy(tmp_path):
+    """The ADOPTION INVARIANT's own failure mode. If the copy into shared/ does
+    not succeed, continuing to the `rm -rf` would destroy the only copy — a
+    swallowed `cp ... || true` would have reintroduced this whole bug quietly.
+    The provision must fail loudly and the live release must be untouched."""
+    rel = "instance/state/officer-queue.jsonl"
+    root, live, _a, sha_b = _runtime_with_live_state(tmp_path, {rel: "QUEUED\n"})
+    # The destination itself, not its parent: the first provision already
+    # created shared/instance/state, so an unwritable PARENT would not stop a
+    # write into the existing child.
+    blocked = root / "shared" / "instance" / "state"
+    blocked.mkdir(parents=True, exist_ok=True)
+    blocked.chmod(0o500)                       # read+execute, NOT writable
+    try:
+        env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+        res = subprocess.run(["bash", PROVISION, "provision", str(root), sha_b],
+                             capture_output=True, text=True, env=env)
+        assert res.returncode != 0, "a failed adoption must abort the provision"
+        assert "FATAL" in res.stderr
+    finally:
+        blocked.chmod(0o755)
+    assert (live / rel).read_text() == "QUEUED\n", \
+        "the live release was modified despite the adoption failing"
+
+
 # ---- arm 4d: the outgoing-release arm — the property check_slot never asked --
 
 
