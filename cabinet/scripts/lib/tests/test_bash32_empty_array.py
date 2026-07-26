@@ -60,6 +60,111 @@ from pathlib import Path
 import pytest
 
 
+# ---------------------------------------------------------------------------
+# Tree listing — must work on the DELIVERED egg, which has no ``.git``.
+#
+# ``hatch.sh`` and ``null-hatch.sh`` both export with ``git archive HEAD |
+# tar -x`` (null-hatch falls back to a ``--exclude='./.git'`` tree copy), so
+# the artifact a stranger unpacks and runs this suite on is gitless. A listing
+# that shells out to ``git ls-files`` under ``check=True`` turns that into a
+# hard ERROR — the same shape that took ``bash cabinet/scripts/null-hatch.sh``
+# from exit 0 to exit 1 via the ratchet twin of this module.
+#
+# Pruned on the WALK path only (git already excludes them). Verified
+# 2026-07-26: no tracked file lives under any of these names, and
+# ``test_the_sandbox_copies_the_same_tree_without_git`` goes red the day that
+# changes.
+# ---------------------------------------------------------------------------
+_WALK_PRUNE = frozenset(
+    {
+        ".git", ".hg", ".svn",
+        "node_modules",
+        "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache",
+        ".venv", "venv",
+        ".next", "out", "dist", "build",
+        "pgdata", "redisdata",
+    }
+)
+
+
+# Ambient git-control env vars — a leaked GIT_DIR/GIT_WORK_TREE would point the
+# probe below at a DIFFERENT repository, making the listing mode depend on the
+# caller's environment rather than on the filesystem. Child process only.
+_GIT_ENV_OVERRIDES = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_COMMON_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_NAMESPACE",
+    "GIT_CEILING_DIRECTORIES",
+    "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+)
+
+
+def _git_env() -> dict[str, str]:
+    env = dict(os.environ)
+    for name in _GIT_ENV_OVERRIDES:
+        env.pop(name, None)
+    return env
+
+
+def _git_tracked_files(root: Path) -> list[Path] | None:
+    """Tracked files under ``root``, or ``None`` when git cannot answer FOR IT.
+
+    The toplevel comparison is not belt-and-braces. Unpack a gitless egg inside
+    some *other* checkout and ``git ls-files`` SUCCEEDS, listing the outer
+    repo's tracked files under this directory — i.e. none of them, exit 0. The
+    sandbox would come out EMPTY and the officer-boot assertion below would
+    fail with a mystery, or worse, some future caller would read the empty copy
+    as a clean result.
+    """
+    toplevel = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_git_env(),
+    )
+    if toplevel.returncode != 0 or not toplevel.stdout.strip():
+        return None
+    if Path(toplevel.stdout.strip()).resolve() != root.resolve():
+        return None
+    listing = subprocess.run(
+        ["git", "-C", str(root), "ls-files", "-z"],
+        capture_output=True,
+        check=False,
+        env=_git_env(),
+    )
+    if listing.returncode != 0:
+        return None
+    return [
+        root / raw.decode()
+        for raw in listing.stdout.split(b"\0")
+        if raw and (root / raw.decode()).is_file()
+    ]
+
+
+def _walked_files(root: Path) -> list[Path]:
+    """Filesystem fallback for a gitless tree — the delivered egg."""
+    found: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in _WALK_PRUNE)
+        for name in sorted(filenames):
+            path = Path(dirpath) / name
+            if path.is_file():
+                found.append(path)
+    return found
+
+
+def _tree_files(root: Path) -> list[Path]:
+    """Every shipped file under ``root`` — git listing when git can answer for
+    it, filesystem walk otherwise."""
+    tracked = _git_tracked_files(root)
+    return tracked if tracked is not None else _walked_files(root)
+
+
 BIN_BASH = "/bin/bash"
 ROOT = Path(__file__).resolve().parents[4]
 SHELL_LIB = ROOT / "cabinet" / "scripts" / "lib" / "officer-env.sh"
@@ -246,30 +351,81 @@ def test_bootstrap_roles_capability_args_survive_an_empty_capability_list():
 # --------------------------------------------------------------------------
 
 
-def _sandbox_repo(tmp_path: Path) -> Path:
-    """Materialise the tracked WORKING TREE into an isolated copy.
+def _sandbox_repo(tmp_path: Path, root: Path = ROOT) -> Path:
+    """Materialise the shipped WORKING TREE under ``root`` into an isolated copy.
 
     The working tree (not ``HEAD``) is the right source here: launchd executes
     the live checkout, so that is the thing whose bootability this asserts.
-    Only ``git ls-files`` paths are copied — no ``.git``, no untracked debris.
+    In a checkout only ``git ls-files`` paths are copied — no ``.git``, no
+    untracked debris; in a gitless export (the delivered egg) the same set is
+    reached by walking, since the export *is* the tracked tree.
+
+    The copy is always gitless, which makes it a usable ``root`` for a second
+    pass — that is how the walk path gets exercised on a git-having host.
     """
-    listing = subprocess.run(
-        ["git", "-C", str(ROOT), "ls-files", "-z"],
-        capture_output=True,
-        check=True,
-    ).stdout.split(b"\0")
     sandbox = tmp_path / "repo"
-    for raw in listing:
-        if not raw:
-            continue
-        rel = raw.decode()
-        src = ROOT / rel
-        if not src.is_file():
-            continue
-        dst = sandbox / rel
+    for src in _tree_files(root):
+        dst = sandbox / src.relative_to(root)
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
     return sandbox
+
+
+def _relative_files(base: Path) -> set[str]:
+    return {p.relative_to(base).as_posix() for p in base.rglob("*") if p.is_file()}
+
+
+def _require_boot_tools() -> None:
+    for tool in ("python3.12", "jq"):
+        if shutil.which(tool) is None:
+            pytest.skip(f"{tool} not on PATH — officer boot assembly needs it")
+
+
+def _dry_run_boot(sandbox: Path, scratch: Path) -> subprocess.CompletedProcess:
+    """Run proof-c1 against ``sandbox`` and hand back the raw result."""
+    # A dotenv must exist or the launcher skips credential projection entirely
+    # (the `if [ -f "cabinet/.env" ]` arm) and never enters the affected code.
+    (sandbox / "cabinet" / ".env").write_text("TELEGRAM_BOT_TOKEN=dry-run-only\n")
+    # Egress enforcement is an orthogonal runtime gate that wants a live proxy
+    # attested on the host; a hatch arms it before proof-c1 runs. Standing that
+    # up here would test the proxy, not the shell. Neutralised in the SANDBOX
+    # copy only — the tracked config is untouched.
+    (sandbox / "instance" / "config" / "egress.yml").write_text(
+        "enforce: false\nallow_product: false\nallow_hosts: []\n"
+    )
+
+    home = scratch / "home"
+    home.mkdir(parents=True, exist_ok=True)
+    env = {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "HOME": str(home),
+        "LANG": "en_US.UTF-8",
+        "TMPDIR": str(scratch),
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "CABINET_ROOT": str(sandbox),
+        "CABINET_SOURCE_REPO": str(sandbox),
+    }
+    return subprocess.run(
+        [BIN_BASH, str(sandbox / "cabinet" / "scripts" / "start-officer-mac.sh"),
+         "cos", "--dry-run"],
+        text=True,
+        capture_output=True,
+        check=False,
+        env=env,
+        cwd=str(sandbox),
+    )
+
+
+def _assert_officer_booted(result: subprocess.CompletedProcess) -> None:
+    assert "unbound variable" not in result.stderr, (
+        f"officer boot died on an empty-array expansion:\n{result.stderr}"
+    )
+    assert result.returncode == 0, (
+        f"officer boot assembly failed (exit {result.returncode}):\n"
+        f"--- stderr ---\n{result.stderr}\n--- stdout ---\n{result.stdout}"
+    )
+    # It assembled a real claude invocation, not an empty string.
+    assert "claude --model" in result.stdout, result.stdout
 
 
 def test_officer_boot_command_assembles_under_bin_bash(tmp_path: Path):
@@ -282,51 +438,51 @@ def test_officer_boot_command_assembles_under_bin_bash(tmp_path: Path):
     library this exits 2 at credential projection.
     """
     _requires_legacy_bash()
-    for tool in ("python3.12", "jq"):
-        if shutil.which(tool) is None:
-            pytest.skip(f"{tool} not on PATH — officer boot assembly needs it")
-
+    _require_boot_tools()
     sandbox = _sandbox_repo(tmp_path)
-    # A dotenv must exist or the launcher skips credential projection entirely
-    # (the `if [ -f "cabinet/.env" ]` arm) and never enters the affected code.
-    (sandbox / "cabinet" / ".env").write_text("TELEGRAM_BOT_TOKEN=dry-run-only\n")
-    # Egress enforcement is an orthogonal runtime gate that wants a live proxy
-    # attested on the host; a hatch arms it before proof-c1 runs. Standing that
-    # up here would test the proxy, not the shell. Neutralised in the SANDBOX
-    # copy only — the tracked config is untouched.
-    (sandbox / "instance" / "config" / "egress.yml").write_text(
-        "enforce: false\nallow_product: false\nallow_hosts: []\n"
+    _assert_officer_booted(_dry_run_boot(sandbox, tmp_path))
+
+
+def test_the_sandbox_copies_the_same_tree_without_git(tmp_path: Path):
+    """The sandbox must materialise from a GITLESS tree — the delivered egg.
+
+    Deliberately NOT gated on ``_requires_legacy_bash``: unlike every other
+    test here, this defect is interpreter-independent, so this arm is the one
+    that stays awake on CI (ubuntu, bash 5) where the rest honestly skip. That
+    matters — the git-only listing shipped precisely because no ubuntu job
+    could see it.
+
+    It also pins the walk against the git listing file-for-file, so portability
+    cannot be bought with lost coverage: an over-broad ``_WALK_PRUNE`` shows up
+    here as a missing file, not as a quietly smaller scan.
+    """
+    from_git = _sandbox_repo(tmp_path / "from-git")
+    assert not (from_git / ".git").exists(), "a tracked-files copy must be gitless"
+    assert _git_tracked_files(from_git) is None, (
+        "the copy still answers as a git repository, so the walk path was "
+        "never exercised"
     )
 
-    home = tmp_path / "home"
-    home.mkdir()
-    env = {
-        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-        "HOME": str(home),
-        "LANG": "en_US.UTF-8",
-        "TMPDIR": str(tmp_path),
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "CABINET_ROOT": str(sandbox),
-        "CABINET_SOURCE_REPO": str(sandbox),
-    }
-    result = subprocess.run(
-        [BIN_BASH, str(sandbox / "cabinet" / "scripts" / "start-officer-mac.sh"),
-         "cos", "--dry-run"],
-        text=True,
-        capture_output=True,
-        check=False,
-        env=env,
-        cwd=str(sandbox),
-    )
-    assert "unbound variable" not in result.stderr, (
-        f"officer boot died on an empty-array expansion:\n{result.stderr}"
-    )
-    assert result.returncode == 0, (
-        f"officer boot assembly failed (exit {result.returncode}):\n"
-        f"--- stderr ---\n{result.stderr}\n--- stdout ---\n{result.stdout}"
-    )
-    # It assembled a real claude invocation, not an empty string.
-    assert "claude --model" in result.stdout, result.stdout
+    from_walk = _sandbox_repo(tmp_path / "from-walk", root=from_git)
+
+    assert _relative_files(from_walk) == _relative_files(from_git)
+    # Non-vacuity: two identical EMPTY copies would satisfy the line above.
+    assert (from_walk / "cabinet" / "scripts" / "start-officer-mac.sh").is_file()
+    assert (from_walk / "cabinet" / "scripts" / "lib" / "officer-env.sh").is_file()
+
+
+def test_officer_boot_command_assembles_from_a_gitless_export(tmp_path: Path):
+    """proof-c1 on the artifact a STRANGER actually receives.
+
+    The egg has no ``.git``; a listing that requires one cannot even stage the
+    sandbox, so the boot property goes untested exactly where nobody has a
+    checkout to fall back on.
+    """
+    _requires_legacy_bash()
+    _require_boot_tools()
+    egg = _sandbox_repo(tmp_path / "egg")          # gitless by construction
+    sandbox = _sandbox_repo(tmp_path / "boot", root=egg)   # staged by the walk
+    _assert_officer_booted(_dry_run_boot(sandbox, tmp_path / "boot"))
 
 
 def test_start_officer_mac_uses_the_shell_options_these_guards_assume():

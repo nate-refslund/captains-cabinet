@@ -51,12 +51,24 @@ act — the default for a new finding is to fix the shell, not to widen the list
 
 The scanner is stdlib-only, read-only (source is ``read_text``-scanned, never
 imported or executed), and every regex is a static module constant.
+
+IT MUST RUN ON THE DELIVERED EGG, WHICH HAS NO ``.git``
+=======================================================
+The egg a stranger receives is gitless by construction: ``hatch.sh`` and
+``null-hatch.sh`` both export with ``git archive HEAD | tar -x`` (null-hatch
+falls back to a ``--exclude='./.git'`` tree copy for an already-gitless
+source).  So the file listing cannot *require* git — see
+``_tracked_shell_files`` for the two distinct ways git fails to answer and why
+each one falls through to a filesystem walk rather than raising or lying.
 """
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -163,30 +175,144 @@ def find_violations(source: str) -> list[tuple[str, int, str]]:
     return violations
 
 
-def _tracked_shell_files() -> list[Path]:
-    listing = subprocess.run(
-        ["git", "-C", str(ROOT), "ls-files", "-z"],
+# Directory names that are never part of the delivered source tree. Pruned on
+# the WALK path only — the git path is authoritative and excludes them already.
+# Verified 2026-07-26: NO tracked file lives under any of these names, so the
+# prune costs zero coverage today, and test_the_two_listings_agree_file_for_file
+# goes red the day that stops being true rather than letting the walk quietly
+# lose a file. They are pruned because a stranger's egg is a working directory:
+# `npm install` under any of the three tracked package.json trees would
+# otherwise drop thousands of vendored shell scripts into the scan and turn a
+# green gate red on third-party source.
+_WALK_PRUNE = frozenset(
+    {
+        ".git", ".hg", ".svn",                                  # VCS metadata
+        "node_modules",                                          # vendored JS
+        "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache",
+        ".venv", "venv",                                         # a stranger's virtualenv
+        ".next", "out", "dist", "build",                          # build output
+        "pgdata", "redisdata",                                    # docker volumes
+    }
+)
+
+
+def _is_shell_file(path: Path) -> bool:
+    """Suffix, else shebang. ONE predicate, shared by both listing modes.
+
+    Two copies of this rule would be two chances for the modes to disagree,
+    which is precisely the property ``test_the_two_listings_agree_file_for_file``
+    exists to hold.
+    """
+    if path.suffix in (".sh", ".bash"):
+        return True
+    try:
+        with path.open("rb") as handle:
+            first = handle.readline(200)
+    except OSError:
+        return False
+    return first.startswith(b"#!") and (b"bash" in first or first.strip() == b"#!/bin/sh")
+
+
+# Ambient git-control env vars. A leaked GIT_DIR/GIT_WORK_TREE would point the
+# probe below at a DIFFERENT repository, so which listing mode runs would depend
+# on the caller's environment instead of on the filesystem. Scrubbed for the
+# child process only — the parent env is never touched.
+_GIT_ENV_OVERRIDES = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_COMMON_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_NAMESPACE",
+    "GIT_CEILING_DIRECTORIES",
+    "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+)
+
+
+def _git_env() -> dict[str, str]:
+    env = dict(os.environ)
+    for name in _GIT_ENV_OVERRIDES:
+        env.pop(name, None)
+    return env
+
+
+def _git_shell_files(root: Path) -> list[Path] | None:
+    """Tracked shell under ``root``, or ``None`` when git cannot answer FOR IT.
+
+    Git fails to answer in two distinct ways and BOTH must fall through rather
+    than raise or lie:
+
+    * **No repository.** A delivered egg has no ``.git`` (see the module
+      docstring). ``git ls-files`` exits 128 there; under ``check=True`` that
+      became a ``CalledProcessError``, i.e. a hard test ERROR — a green gate
+      going red on the one artifact this ratchet most needs to scan. Measured:
+      it took ``bash cabinet/scripts/null-hatch.sh`` (hatch proof-a, the
+      ``null-hatch`` CI job, and the suite a stranger runs on the unpacked egg)
+      from exit 0 to exit 1 as its sole failure.
+    * **The wrong repository.** Unpack that egg inside some *other* checkout
+      and ``git ls-files`` SUCCEEDS — it lists the outer repo's tracked files
+      under this directory, i.e. none of them, exit 0. The scan would read zero
+      files and present itself as a clean tree. A silently empty sensor is
+      worse than a loud failure, so the toplevel is compared before the listing
+      is trusted.
+    """
+    toplevel = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
         capture_output=True,
-        check=True,
-    ).stdout.split(b"\0")
+        text=True,
+        check=False,
+        env=_git_env(),
+    )
+    if toplevel.returncode != 0 or not toplevel.stdout.strip():
+        return None
+    if Path(toplevel.stdout.strip()).resolve() != root.resolve():
+        return None
+    listing = subprocess.run(
+        ["git", "-C", str(root), "ls-files", "-z"],
+        capture_output=True,
+        check=False,
+        env=_git_env(),
+    )
+    if listing.returncode != 0:
+        return None
     found: list[Path] = []
-    for raw in listing:
+    for raw in listing.stdout.split(b"\0"):
         if not raw:
             continue
-        path = ROOT / raw.decode()
-        if not path.is_file():
-            continue
-        if path.suffix in (".sh", ".bash"):
+        path = root / raw.decode()
+        if path.is_file() and _is_shell_file(path):
             found.append(path)
-            continue
-        try:
-            with path.open("rb") as handle:
-                first = handle.readline(200)
-        except OSError:
-            continue
-        if first.startswith(b"#!") and (b"bash" in first or first.strip() == b"#!/bin/sh"):
-            found.append(path)
-    return found
+    return sorted(found)
+
+
+def _walk_shell_files(root: Path) -> list[Path]:
+    """Filesystem fallback for a gitless tree — a delivered egg or a stranger's.
+
+    Symlinked directories are listed but not descended (``os.walk`` default),
+    which matches git: it does not track through a directory symlink either.
+    """
+    found: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in _WALK_PRUNE)
+        for name in sorted(filenames):
+            path = Path(dirpath) / name
+            if path.is_file() and _is_shell_file(path):
+                found.append(path)
+    return sorted(found)
+
+
+def _tracked_shell_files(root: Path = ROOT) -> list[Path]:
+    """Every shell file in the delivered tree — git-tracked listing when git can
+    answer for ``root``, filesystem walk otherwise.
+
+    In a checkout "tracked" is literal. In a gitless export it means "shipped in
+    the tree", which is the same set by construction (the export IS the tracked
+    tree) — pinned file-for-file by
+    ``test_the_two_listings_agree_file_for_file``.
+    """
+    tracked = _git_shell_files(root)
+    return tracked if tracked is not None else _walk_shell_files(root)
 
 
 # ---------------------------------------------------------------------------
@@ -316,10 +442,29 @@ def test_scanner_catches_a_reset_to_empty_after_a_populated_declaration():
 
 
 def test_no_unguarded_empty_array_expansion_in_tracked_shell():
+    files = _tracked_shell_files()
+
+    # NON-VACUITY. An empty listing scans nothing and reports a clean tree, so
+    # the corpus is anchored on files that must exist for this ratchet to mean
+    # anything: the two the repair lives in, plus the gate that exports the
+    # gitless egg. A listing that misses them is reading the wrong tree, not
+    # finding a clean one.
+    rels = {path.relative_to(ROOT).as_posix() for path in files}
+    for anchor in (
+        "cabinet/scripts/lib/officer-env.sh",
+        "cabinet/scripts/bootstrap-roles.sh",
+        "cabinet/scripts/null-hatch.sh",
+    ):
+        assert anchor in rels, (
+            f"shell listing has {len(files)} file(s) and does not include "
+            f"{anchor} — the scan is reading the wrong tree, so a PASS here "
+            "would be vacuous"
+        )
+
     unexpected: list[str] = []
     seen: set[tuple[str, str]] = set()
 
-    for path in _tracked_shell_files():
+    for path in files:
         rel = path.relative_to(ROOT).as_posix()
         for name, lineno, text in find_violations(path.read_text(encoding="utf-8", errors="replace")):
             key = (rel, name)
@@ -357,3 +502,146 @@ def test_the_two_repaired_sites_use_the_safe_form():
 
     bootstrap = (ROOT / "cabinet/scripts/bootstrap-roles.sh").read_text(encoding="utf-8")
     assert '${cap_args[@]+"${cap_args[@]}"}' in bootstrap
+
+
+# ---------------------------------------------------------------------------
+# The gitless egg — the tree this ratchet is actually shipped to scan.
+#
+# `null-hatch.sh` (hatch proof-a, the `null-hatch` CI job, and the suite a
+# stranger runs on the unpacked egg) ALWAYS builds a gitless sandbox and runs
+# `pytest framework/sources framework/tests` inside it. So these arms exercise
+# THIS FILE, from disk, in a directory with no `.git` — the shape that turned
+# that gate red.
+# ---------------------------------------------------------------------------
+
+_RATCHET_REL = "framework/tests/test_bash32_empty_array_ratchet.py"
+_RATCHET_NODE = f"{_RATCHET_REL}::test_no_unguarded_empty_array_expansion_in_tracked_shell"
+
+
+def _materialise_gitless_egg(tmp_path: Path) -> Path:
+    """The delivered egg in miniature: the whole shell corpus, no ``.git``.
+
+    Only shell files and the harness the sub-run needs are copied — the corpus
+    is what the ratchet reads, and the ALLOWLIST staleness check needs every
+    allowlisted file present or it reports phantom stale entries.
+    """
+    egg = tmp_path / "egg"
+    for path in _tracked_shell_files():
+        dst = egg / path.relative_to(ROOT)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, dst)
+    # pytest.ini pins rootdir so the repo-root conftest fence still loads in the
+    # sub-run (see conftest.py — no pytest run may write the live audit ledger).
+    for rel in (_RATCHET_REL, "conftest.py", "pytest.ini"):
+        src = ROOT / rel
+        if src.is_file():
+            dst = egg / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+    assert not (egg / ".git").exists(), "the egg fixture must be gitless"
+    return egg
+
+
+def _run_ratchet_in(egg: Path) -> subprocess.CompletedProcess:
+    """Run the shipped ratchet from inside ``egg`` — no git anywhere above it."""
+    env = dict(os.environ)
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    return subprocess.run(
+        [sys.executable, "-m", "pytest", _RATCHET_NODE, "-q", "-p", "no:cacheprovider"],
+        cwd=str(egg),
+        text=True,
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+
+
+def test_the_ratchet_runs_green_in_a_gitless_export(tmp_path: Path):
+    """THE regression sensor: no git, still exit 0.
+
+    Against a ratchet that shells out to ``git ls-files`` under ``check=True``
+    this sub-run dies with ``CalledProcessError`` — which is exactly how
+    ``null-hatch.sh`` went from exit 0 to exit 1.
+    """
+    egg = _materialise_gitless_egg(tmp_path)
+    result = _run_ratchet_in(egg)
+    assert result.returncode == 0, (
+        "the ratchet cannot run in a tree with no .git — that is the "
+        "delivered egg, hatch proof-a and the null-hatch CI job:\n"
+        f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+    )
+
+
+def test_the_ratchet_keeps_its_teeth_in_a_gitless_export(tmp_path: Path):
+    """Portability must not cost detection: plant a real regression, expect red.
+
+    A fallback that quietly listed nothing would make the arm above green while
+    the ratchet guarded exactly zero files.
+    """
+    egg = _materialise_gitless_egg(tmp_path)
+    planted = egg / "cabinet" / "scripts" / "bash32-regression-probe.sh"
+    planted.write_text(
+        "#!/bin/bash\n"
+        "set -euo pipefail\n"
+        "probe_args=()\n"
+        '[ "${SOME_FLAG:-0}" = "1" ] && probe_args=(--flag)\n'
+        'printf "%s\\n" "${probe_args[@]}"\n',
+        encoding="utf-8",
+    )
+    result = _run_ratchet_in(egg)
+    assert result.returncode != 0, (
+        "the ratchet passed a tree containing a genuine unguarded empty-"
+        f"array expansion:\n{result.stdout}"
+    )
+    assert "bash32-regression-probe.sh" in result.stdout, (
+        "the ratchet went red without naming the planted regression — it "
+        "failed for some other reason, so this is not evidence of teeth:\n"
+        f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+    )
+    assert "probe_args" in result.stdout, result.stdout
+
+
+def test_the_two_listings_agree_file_for_file(tmp_path: Path):
+    """git-tracked listing == filesystem walk. No coverage traded for portability.
+
+    Also the live sensor on ``_WALK_PRUNE``: the day a tracked shell file lands
+    under a pruned directory name, the walk loses it and this goes red.
+
+    HONEST SKIP: inside a gitless export there is no git side to compare
+    against, and this module is run there — ``null-hatch.sh`` executes
+    ``pytest framework/sources framework/tests`` in its egg. Asserting a git
+    listing exists would make THIS arm the thing that turns that gate red,
+    which is the exact defect it was written to close. It has teeth in every
+    checkout, CI included, which is where a drift between the two modes would
+    be introduced in the first place.
+    """
+    from_git = _git_shell_files(ROOT)
+    if from_git is None:
+        # A skip is only honest when the tree GENUINELY has no repository. If a
+        # `.git` is sitting right there and git still would not answer, this arm
+        # has been disabled by something — ambient env, a broken git, a
+        # worktree oddity — and a quiet skip would hide it. Loud instead.
+        assert not (ROOT / ".git").exists(), (
+            f"{ROOT}/.git exists but git would not name it as the toplevel, so "
+            "the git side of this comparison vanished for a reason that is NOT "
+            "'this is a delivered egg'. Refusing to skip: that would retire "
+            "this sensor silently."
+        )
+        pytest.skip(
+            f"{ROOT} has no .git (a delivered egg is gitless by construction), "
+            "so there is no git listing to compare the walk against — the walk "
+            "is the only mode here. Skipped honestly rather than failed on a "
+            "premise this tree cannot satisfy."
+        )
+
+    egg = _materialise_gitless_egg(tmp_path)
+    assert _git_shell_files(egg) is None, (
+        "the egg fixture answered as a git repository, so the walk path was "
+        "never exercised"
+    )
+    walked = _tracked_shell_files(egg)
+
+    assert {p.relative_to(egg).as_posix() for p in walked} == {
+        p.relative_to(ROOT).as_posix() for p in from_git
+    }
+    assert len(walked) == len(from_git)
