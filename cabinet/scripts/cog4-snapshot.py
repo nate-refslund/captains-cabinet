@@ -167,3 +167,7 @@ def main(argv=None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+# CI TRIPWIRE PROOF (throwaway branch, PR #213): one comment byte inside the
+# frozen COG-4 review scope. Nothing else changes. If the new cognitive-phase4
+# job cannot see this, the job is decoration.
