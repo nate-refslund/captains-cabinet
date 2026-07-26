@@ -27,72 +27,40 @@ SESSION_ID=$(echo "$HOOK_INPUT" | jq -r '.session_id // "unknown"' 2>/dev/null)
 # decision:block JSON protocol stays clean). Officer-gated like the guard;
 # CABINET_HOOK_TEST_MODE=1 skips it (harnesses must not write production
 # cost keys — feedback_test_harness_production_sinks.md).
+# METER REWRITE (2026-07-26). The inline jq+bash arithmetic that used to live
+# here under-reported by a MEASURED 16.0x across 279 real transcripts. Three
+# independent faults, every one of them failing toward under-reporting:
+#
+#   1. `tail -100 | jq | tail -1` billed only the LAST assistant entry per Stop,
+#      but a response contains one API call per tool round-trip — a 30-call turn
+#      was billed as one. (4.4x of the gap.)
+#   2. Cache tokens were charged at 0.25x/0.02x of the input rate instead of the
+#      published 1.25x/0.1x. The `*fable*` arm directly above was correct, which
+#      is how the opus/sonnet arms survived review. (3.8x.)
+#   3. No concept of the 1-hour cache TTL (2.0x input); 100% of cache writes in
+#      real transcripts are the 1h flavour. (1.1x.)
+#   Plus: an unrecognized model fell through to the CHEAPEST row (Sonnet).
+#
+# Pricing now lives in exactly one place — framework/cost/meter.py — where the
+# cache rates are DERIVED from the input rate by multiplier, so the 5x error is
+# not expressible. Naive summing would have over-counted instead: the transcript
+# repeats one assistant entry per CONTENT BLOCK (821 entries / 352 real API
+# responses in a measured sample), so the parser dedupes by message.id and
+# carries a per-session watermark to bill each response exactly once.
+#
+# Metering is now a WATCH, not a gate: the Captain removed the spend cap on
+# 2026-07-26, so nothing here can refuse a call, and every failure mode is
+# best-effort + exit 0.
 if [ "$OFFICER" != "unknown" ] && [ "${CABINET_HOOK_TEST_MODE:-0}" != "1" ]; then
   TRANSCRIPT_PATH=$(echo "$HOOK_INPUT" | jq -r '.transcript_path // empty' 2>/dev/null)
   if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
-    # Last assistant entry with usage data; usage + model from the same turn.
-    LAST_ENTRY=$(tail -100 "$TRANSCRIPT_PATH" | jq -c 'select(.type == "assistant" and .message.usage != null) | {usage: .message.usage, model: .message.model}' 2>/dev/null | tail -1)
-
-    if [ -n "$LAST_ENTRY" ] && [ "$LAST_ENTRY" != "null" ]; then
-      INPUT_TOKENS=$(echo "$LAST_ENTRY" | jq -r '.usage.input_tokens // 0' 2>/dev/null)
-      OUTPUT_TOKENS=$(echo "$LAST_ENTRY" | jq -r '.usage.output_tokens // 0' 2>/dev/null)
-      CACHE_WRITE=$(echo "$LAST_ENTRY" | jq -r '.usage.cache_creation_input_tokens // 0' 2>/dev/null)
-      CACHE_READ=$(echo "$LAST_ENTRY" | jq -r '.usage.cache_read_input_tokens // 0' 2>/dev/null)
-      MODEL=$(echo "$LAST_ENTRY" | jq -r '.model // "unknown"' 2>/dev/null)
-
-      # Microdollars for integer math (rates: see stop-hook.sh provenance).
-      case "$MODEL" in
-        *fable*)
-          COST_MICRO=$(( INPUT_TOKENS * 10 + OUTPUT_TOKENS * 50 + CACHE_WRITE * 12500 / 1000 + CACHE_READ * 1000 / 1000 ))
-          ;;
-        *opus*)
-          COST_MICRO=$(( INPUT_TOKENS * 15 + OUTPUT_TOKENS * 75 + CACHE_WRITE * 3750 / 1000 + CACHE_READ * 300 / 1000 ))
-          ;;
-        *)
-          COST_MICRO=$(( INPUT_TOKENS * 3 + OUTPUT_TOKENS * 15 + CACHE_WRITE * 750 / 1000 + CACHE_READ * 60 / 1000 ))
-          ;;
-      esac
-
-      CONTEXT_TOKENS=$(( INPUT_TOKENS + CACHE_READ + CACHE_WRITE ))
-      CONTEXT_WINDOW=${CONTEXT_WINDOW_SIZE:-1000000}
-      CONTEXT_PCT=0
-      [ "$CONTEXT_WINDOW" -gt 0 ] 2>/dev/null && CONTEXT_PCT=$(( CONTEXT_TOKENS * 100 / CONTEXT_WINDOW ))
-
-      redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HSET "cabinet:cost:tokens:$OFFICER" \
-        last_input "$INPUT_TOKENS" \
-        last_output "$OUTPUT_TOKENS" \
-        last_cache_write "$CACHE_WRITE" \
-        last_cache_read "$CACHE_READ" \
-        last_cost_micro "$COST_MICRO" \
-        last_model "$MODEL" \
-        last_context_tokens "$CONTEXT_TOKENS" \
-        last_context_pct "$CONTEXT_PCT" \
-        last_updated "$TIMESTAMP" \
-        > /dev/null 2>&1
-      redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" EXPIRE "cabinet:cost:tokens:$OFFICER" 86400 > /dev/null 2>&1
-
-      # Daily totals (FW-072 pool-mode field scheme preserved: per-project
-      # fields when CABINET_ACTIVE_PROJECT is set, legacy fields otherwise —
-      # one HINCRBY per Stop per dimension, no double-count).
-      TODAY=$(date -u +%Y-%m-%d)
-      PROJ="${CABINET_ACTIVE_PROJECT:-}"
-      if [ -n "$PROJ" ]; then
-        FIELD_PREFIX="${OFFICER}_${PROJ}"
-      else
-        FIELD_PREFIX="${OFFICER}"
-      fi
-      redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HINCRBY "cabinet:cost:tokens:daily:$TODAY" \
-        "${FIELD_PREFIX}_input" "$INPUT_TOKENS" > /dev/null 2>&1
-      redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HINCRBY "cabinet:cost:tokens:daily:$TODAY" \
-        "${FIELD_PREFIX}_output" "$OUTPUT_TOKENS" > /dev/null 2>&1
-      redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HINCRBY "cabinet:cost:tokens:daily:$TODAY" \
-        "${FIELD_PREFIX}_cache_write" "$CACHE_WRITE" > /dev/null 2>&1
-      redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HINCRBY "cabinet:cost:tokens:daily:$TODAY" \
-        "${FIELD_PREFIX}_cache_read" "$CACHE_READ" > /dev/null 2>&1
-      redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HINCRBY "cabinet:cost:tokens:daily:$TODAY" \
-        "${FIELD_PREFIX}_cost_micro" "$COST_MICRO" > /dev/null 2>&1
-      redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" EXPIRE "cabinet:cost:tokens:daily:$TODAY" 172800 > /dev/null 2>&1
-    fi
+    _METER_OUT=$(PYTHONPATH="$CABINET_ROOT" REDIS_HOST="$REDIS_HOST" REDIS_PORT="$REDIS_PORT" \
+      python3 -m framework.cost.record_turn \
+        --transcript "$TRANSCRIPT_PATH" \
+        --session "$SESSION_ID" \
+        --officer "$OFFICER" \
+        --project "${CABINET_ACTIVE_PROJECT:-}" 2>&1)
+    [ -n "$_METER_OUT" ] && echo "$_METER_OUT" >&2
   fi
 fi
 
