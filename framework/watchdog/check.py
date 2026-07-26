@@ -84,6 +84,18 @@ MC_LIB = str(_REPO_ROOT / "cabinet/scripts/meta-cognition/lib.sh")
 TRIGGERS_LIB = str(_REPO_ROOT / "cabinet/scripts/lib/triggers.sh")
 
 
+# redis-cli prints error replies on STDOUT and still exits 0 (the same trap
+# framework/cost/meter.py documents). Any reply starting with one of these is an
+# error, never data — a reader that treats "WRONGTYPE …" as a hash value invents
+# a fact. Kept as a local literal: the watchdog imports nothing it watches, and
+# framework.cost is exactly what the spend rows watch.
+_ERR_PREFIXES = (
+    "NOAUTH ", "NOPERM ", "WRONGTYPE ", "LOADING ", "ERR ", "BUSY ", "MISCONF ",
+    "READONLY ", "MASTERDOWN ", "EXECABORT ", "CLUSTERDOWN ", "TRYAGAIN ",
+    "CROSSSLOT ", "NOSCRIPT ", "NOREPLICAS ", "(error",
+)
+
+
 def _redis(*args: str) -> str:
     """Run a redis-cli command, return stripped stdout, "" on any failure."""
     try:
@@ -153,6 +165,46 @@ class RealProbe(Probe):
     def redis_keys(self, pattern: str) -> list[str]:
         out = _redis("KEYS", pattern)
         return [k for k in out.splitlines() if k]
+
+    def redis_hgetall(self, key: str) -> Optional[dict]:
+        """HGETALL as {field: value}; None when NOT OBSERVABLE.
+
+        Deliberately does NOT go through ``_redis()``: that helper returns ""
+        on every failure, which would collapse "Redis is unreachable" into
+        "the hash is empty" — the exact conflation the spend rows must not
+        make (an empty spend ledger with active officers is an ALARM; an
+        unreachable Redis is a SKIP). So this reads the subprocess itself and
+        keeps the tri-state: dict / {} / None.
+
+        Four ways to be unobservable, all → None: the subprocess failed, a
+        non-zero rc, anything on stderr (redis-cli can print
+        "Could not connect" while still exiting 0), or a reply that is an
+        error string / an odd number of field-value lines (a desynced pair
+        stream is not a hash we can honestly read).
+
+        MEASURED 2026-07-26 against the real binary, because this is exactly
+        the class of thing that lies quietly: a refused connection gives
+        ``rc=1`` + "Could not connect …" on stderr → None, while a LIVE server
+        asked for a missing key gives ``rc=0`` + empty stdout → ``{}``. The
+        two are therefore distinguishable in practice, which is the only
+        reason meter-silent can treat an empty hash as evidence at all."""
+        try:
+            r = subprocess.run(
+                ["redis-cli", "-h", REDIS_HOST, "-p", REDIS_PORT, "--raw",
+                 "HGETALL", key],
+                capture_output=True, text=True, timeout=10,
+            )
+        except Exception:
+            return None
+        if r.returncode != 0 or (r.stderr or "").strip():
+            return None
+        lines = [ln for ln in (r.stdout or "").split("\n") if ln != ""]
+        if lines and any(lines[0].lstrip().startswith(p) for p in _ERR_PREFIXES):
+            return None
+        if len(lines) % 2:
+            return None
+        return {lines[i].strip(): lines[i + 1].strip()
+                for i in range(0, len(lines) - 1, 2)}
 
     def launchd_loaded(self, label: str) -> Optional[bool]:
         try:
