@@ -49,6 +49,45 @@ This reads real streams (tool-call volume by officer, stuck-loop repeats, hook-f
   ```
 - **Below-floor** surprise → a silent counter line under `anomaly-ledger.md` `## Counters` (recurrence across retros is itself a signal). Never pinged.
 
+#### Part 1c: Captain-Seat Review (Captain-ratified 2026-07-26)
+
+Parts 1–1b review OUR OWN records. This part reviews **HIS EXPERIENCE OF US** — the class self-review structurally cannot see, because self-attestation cannot see a blind spot. Ruling of record (`shared/interfaces/captain-decisions.md`, officer-note 2026-07-26): **the reviewer TAKES THE CAPTAIN'S PLACE — it IS the Captain for the exercise**, not an officer reading *about* him.
+
+**Step 1 — gather the evidence (read-only; the script judges nothing):**
+```bash
+bash cabinet/scripts/meta-cognition/captain-seat-pack.sh                    # last 14 days
+CAPTAIN_SEAT_WINDOW_DAYS=2 bash cabinet/scripts/meta-cognition/captain-seat-pack.sh   # since last retro
+```
+It prints what he was SENT, what he WROTE BACK, mechanical repetition counts, open-item dwell, and the health of the channels he relies on. It never fabricates: **an absent source prints as a measured absence** — a scoring or consumption loop that is not running is itself Captain-seat evidence.
+
+**Step 2 — relive the window as him.** Hand the pack — **and nothing else** — to a FRESH context with zero retro priors (its own subagent; the point is no inherited framing of what "went well"). It answers in FIRST PERSON as the Captain: *what did this window cost me? what did I have to say more than once? what waited on me longer than it should have? what was sent to me that I never touched or never valued?*
+
+**Emission bar — every part required:**
+- (a) it quotes an **artifact of his own** from the pack (his words, a number, a date);
+- (b) that artifact shows a **cost PAID INSIDE THE WINDOW**: something he had to say twice, something that waited on him too long, something sent to him he never acted on, a channel that lost or ignored his input, or a promise to him measurably not running. *A design improvement with no in-window paid cost is a FORBIDDEN output.*
+- (c) the claim is **falsifiable** ("ruled X on `<date>` and `<date>`; we still do Y") — never "he seems frustrated";
+- (d) it names **exactly ONE** mechanical change (a guard, a wiring fix, a deletion, a schedule);
+- (e) if that change adds a RULE, it states what the rule would **BAN** and whether he would plausibly want that ban. (Paid case: a 2026-07-25 contract banned tables; he wanted tables.)
+
+**Evidence boundary.** Claim only what the pack shows. A surface named but whose contents are not in the pack may be flagged as **absent evidence** — never asserted about.
+
+**A quiet, healthy window is the DESIRED state.** Channels fresh, queue short, nothing repeated or stalled ⇒ the correct output is exactly **NO FINDINGS**. Manufacturing findings from a healthy window is this part's **named failure** — the same failure class as flattery.
+
+**Cap and floor.** At most **3** findings, and only past the Part 1b confidence floor above; **0 is a normal result** — the floor decides how many, the cap is not the control. The reviewer's `ALSO CONSIDERED:` labels become **counters** in `anomaly-ledger.md` `## Counters`, never emitted items.
+
+**Routing** — the same sink as a Part 1b graduate, per-item Captain-gated (apply | edit | skip):
+```bash
+source cabinet/scripts/meta-cognition/lib.sh
+mc_emit_proposal detect "<the cost he paid, in his own cited words/number/date>" "<the falsifiable claim + the ONE mechanical fix (+ what a proposed rule would BAN)>"
+```
+A **skip is negative evidence**; a hypothesis skipped twice is **retired by supersession** and may not re-fire without new evidence.
+
+**Boundaries (non-negotiable).** The only legal output is an evidence-cited cost plus a mechanical fix. Preference-guessing is **unrepresentable** — there is no "he would like X" field, so approval-seeking cannot be emitted. A fix that would **soften, delay, or drop dissent is INVALID**: the candor law outranks this part, and such a tension is surfaced to him AS a tension. Repeat counts are **retro inputs, never officer-visible scores**.
+
+**Kill condition (standing, stated up front).** 4 consecutive retros with 0 applied findings, **or** a skip rate above 70% ⇒ **delete this part. Do not tune it.** A pass that measures annoyance must never become one.
+
+*Note:* reading the what-he-preferred pair store (`preference-pairs.jsonl`, built by `framework/learning/preference_pairs.py` and report-only until now) is ratified in the same 2026-07-26 officer-note — this part is its first reader.
+
 ### Part 2: Opportunity Scan (NEW)
 
 4. **Tool & feature scan:**

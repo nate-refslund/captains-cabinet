@@ -1,0 +1,76 @@
+{
+  "_note": "Pinned expectations for EVAL-027-CAPTAIN-SEAT. Every value here is a mechanical property of the Captain-seat evidence pack run against a committed fixture tree, or of the Part 1c skill contract. Inert data: compared, never executed.",
+
+  "repetition": {
+    "root": "repetition",
+    "taxonomy_counts": {"wrong-content": 2, "wrong-timing": 1},
+    "repeated_subjects": {"briefing length": 2}
+  },
+
+  "healthy": {
+    "root": "healthy",
+    "taxonomy_counts": {"wrong-content": 1, "wrong-timing": 1},
+    "repeated_subjects_line": "repeated subjects (count>1): (none)",
+    "absent_markers": [
+      ["instance/memory/briefings", "no briefing store on this deployment"],
+      ["shared/interfaces/falsifier-series.jsonl", "no attention/card series"],
+      ["shared/interfaces/captain-decisions.md", "no decisions ledger"],
+      ["shared/interfaces/captain-vetoes.yml", "no veto registry"],
+      ["shared/interfaces/preference-pairs.jsonl", "no preference-pair store"],
+      ["shared/interfaces/needs-ledger.jsonl", "no needs ledger"],
+      ["shared/interfaces/captain-patterns.md", "his standing-preference ledger"],
+      ["shared/interfaces/captain-intents.md", "his inferred-goals ledger"]
+    ],
+    "briefing_scoring_absent_substring": "briefing scoring: ABSENT ("
+  },
+
+  "contract_pin": {
+    "path": "memory/skills/cross-officer-retro.md",
+    "required": [
+      {
+        "why": "the ruling: the reviewer takes the Captain's place, it is not an officer reading about him",
+        "text": "the reviewer TAKES THE CAPTAIN'S PLACE"
+      },
+      {
+        "why": "the emission bar's load-bearing half: the cost must have been paid inside the window",
+        "text": "cost PAID INSIDE THE WINDOW"
+      },
+      {
+        "why": "the forbidden-output clause that stops the part degenerating into a design-idea generator",
+        "text": "A design improvement with no in-window paid cost is a FORBIDDEN output."
+      },
+      {
+        "why": "the healthy-window rule: silence is the desired result",
+        "text": "the correct output is exactly **NO FINDINGS**"
+      },
+      {
+        "why": "the named failure — manufacturing findings from a healthy window is the flattery class",
+        "text": "Manufacturing findings from a healthy window is this part's **named failure**"
+      },
+      {
+        "why": "the cap (floor decides how many; 3 is the ceiling)",
+        "text": "At most **3** findings"
+      },
+      {
+        "why": "a skip is negative evidence and a twice-skipped hypothesis is retired",
+        "text": "retired by supersession"
+      },
+      {
+        "why": "the candor law outranks this part — a fix that softens dissent is invalid",
+        "text": "soften, delay, or drop dissent is INVALID"
+      },
+      {
+        "why": "never-a-score: repeat counts are retro inputs, never officer-visible scores",
+        "text": "retro inputs, never officer-visible scores"
+      },
+      {
+        "why": "the kill condition, stated up front — delete rather than tune",
+        "text": "4 consecutive retros with 0 applied findings"
+      },
+      {
+        "why": "the kill condition's second trigger and its verdict",
+        "text": "delete this part. Do not tune it."
+      }
+    ]
+  }
+}

@@ -2177,6 +2177,47 @@ else
 fi
 
 # ------------------------------------------------------------------
+# EVAL-027-CAPTAIN-SEAT: the retro's Captain-seat pass (Part 1c)
+# ------------------------------------------------------------------
+# CAPTAIN-SEAT REVIEW (Captain ruling 2026-07-26): the retro gains a pass run
+# from the Captain's SEAT — the reviewer takes his place and reports what the
+# window COST him, evidence-cited or silent. Two halves must hold: the
+# deterministic evidence pack (cabinet/scripts/meta-cognition/
+# captain-seat-pack.sh) must COUNT the repetition it is shown and print an
+# absent store as a measured ABSENCE (never fabricate), and the judgment
+# half's contract (Part 1c of memory/skills/cross-officer-retro.md) must keep
+# its load-bearing clauses — the in-window-paid-cost rule, the NO FINDINGS
+# healthy-window rule, the kill condition. The harness + pinned fixtures live
+# NON-GERMLINE at cabinet/evals/captain-seat/ (the eval BODY
+# memory/golden-evals/eval-027-captain-seat-review.md is staged via
+# docs/proposals/germline-amendment-captain-seat-eval-2026-07-26.md — the
+# golden-evals dir is schg-locked live). Section id EVAL-027-CAPTAIN-SEAT
+# (body series: 026 = action-mode; 023 unused).
+# HERMETIC BY CONSTRUCTION: every pack run points CAPTAIN_SEAT_ROOT at a
+# committed fixture tree, rebuilds its own environment, and shadows redis-cli
+# with a stub that connects to nothing — this section can touch no live store,
+# no control plane and no network, regardless of how the suite resolved REDIS_*.
+# Fail-closed: a missing harness, missing pack script or missing/malformed
+# fixture is a FAIL, not a skip — only a missing python3 interpreter skips.
+log "EVAL-027-CAPTAIN-SEAT: Captain-seat evidence pack + Part 1c contract pins"
+EV27CS_HARNESS="$CABINET_ROOT/cabinet/evals/captain-seat/harness.py"
+EV27CS_PY="$(command -v python3.12 || command -v python3)"
+if [ ! -f "$EV27CS_HARNESS" ]; then
+  fail "captain-seat harness missing at $EV27CS_HARNESS"
+elif [ -z "$EV27CS_PY" ]; then
+  skip "no python3 interpreter available for the captain-seat harness"
+else
+  EV27CS_OUT=$("$EV27CS_PY" "$EV27CS_HARNESS" --self-test --repo-root "$CABINET_ROOT" 2>&1)
+  EV27CS_EC=$?
+  if [ "$EV27CS_EC" -eq 0 ]; then
+    EV27CS_SUMMARY=$(echo "$EV27CS_OUT" | grep "^CAPTAIN-SEAT-EVAL:" | head -1)
+    pass "Captain-seat pass holds (${EV27CS_SUMMARY:-arms + contract pins green})"
+  else
+    fail "Captain-seat pass RED (exit=$EV27CS_EC): $(echo "$EV27CS_OUT" | grep -E "MISMATCH|CAPTAIN-SEAT-EVAL" | head -3 | tr '\n' '|')"
+  fi
+fi
+
+# ------------------------------------------------------------------
 # EVAL-002-KILLSWITCH-SEND: the emergency stop halts the front-door SEND path
 # ------------------------------------------------------------------
 # Send-path twin of EVAL-001 (which pins the killswitch at the pre-tool-use

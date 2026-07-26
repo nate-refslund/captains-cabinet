@@ -15,6 +15,11 @@ bash cabinet/cron/retro-trigger.sh $ARGUMENTS
 Retro deliverables:
 
 - Cross-officer handoff quality audit (look for late triggers, ignored notifications)
+- Captain-Seat Review (Part 1c, Captain-ratified 2026-07-26): the read-only
+  evidence pack (`cabinet/scripts/meta-cognition/captain-seat-pack.sh`) handed
+  to a fresh context that relives the window AS the Captain — at most 3
+  findings, each citing an artifact of his own and a cost paid IN-WINDOW, each
+  naming one mechanical fix; a quiet, healthy window yields NO FINDINGS
 - Captain-intent ledger scan — append new latent goals to `shared/interfaces/captain-intents.md`
 - Skill promotion candidates (validated drafts → foundation)
 - Role evolution proposals (with Captain ratification required before apply)
