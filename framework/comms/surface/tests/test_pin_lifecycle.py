@@ -1,12 +1,25 @@
 """Pin lifecycle (§5): one pin, auto-advance on engagement, conservative
-replace, horizon fold, closed clears."""
+replace, horizon fold, closed clears.
+
+This file is the ADOPT design's suite. Adopt used to be the foundation
+default and was therefore inherited silently; the default flipped to the
+Captain-ratified "overview" on 2026-07-26, so adopt is now an explicit
+opt-in and is selected below. Every assertion in this file still tests
+exactly what it tested before — the selection moved, not the coverage."""
 from __future__ import annotations
 
 from datetime import timedelta
 
+import pytest
+
 from framework.comms.surface import pin_lifecycle as pin
 
 from .conftest import make_card, make_census
+
+
+@pytest.fixture(autouse=True)
+def _adopt_design(monkeypatch):
+    monkeypatch.setenv("CABINET_SURFACE_PIN_MODE", "adopt")
 
 
 def fresh():

@@ -40,7 +40,9 @@ def test_briefing_slot_identity_is_stable(day):
     assert a["subject"] == "Morning briefing"
 
 
-def test_maybe_send_is_dark_by_default(day, adapter, charter):
+def test_maybe_send_is_dark_when_explicitly_opted_out(day, adapter, charter):
+    # Was "dark by default" until 2026-07-26; the default is now the ratified
+    # TRUE (Captain 2026-07-11), so this pins the explicit OPT-OUT instead.
     census = make_census([make_card(1)])
     res = briefing_card.maybe_send("head", census=census, now=day,
                                    cfg={"briefing_card": False},

@@ -2,10 +2,10 @@
 
 Resolution order for every knob: env var → ``instance/config/comms-surface.yml``
 → hardcoded safe default. Fail-closed: an absent or corrupt instance file
-resolves to the defaults (ask-first, cap 5, no dashboard links) — a clean-room
-deployment gets a working, quiet surface with zero configuration. No launcher
-literals; the repo root comes from ``framework.env._cabinet_root`` (which
-honors ``CABINET_ROOT``).
+resolves to the defaults — ask-first, cap 5, no dashboard links, and the
+Captain-ratified briefing card + overview pin — so a clean-room deployment
+gets the ratified surface with zero configuration. No launcher literals; the
+repo root is ``framework.env._cabinet_root`` (which honors ``CABINET_ROOT``).
 
 The one Captain-confirmable knob from the master prompt (§4): ``mode`` —
 ``ask-first`` (default, recommended) vs ``auto-push``.
@@ -27,15 +27,25 @@ DEFAULTS = {
     "urgent_interrupts": 2,        # max urgent jumps per rolling window
     "urgent_window_hours": 12.0,   # the rolling window for urgent jumps
     "hard_all_cap": 25,            # ceiling for the "show everything" override
-    "briefing_card": False,        # briefing-as-card send path (dark until wired)
+    # Briefing-as-card: the 07:30/19:30 briefing arrives as ONE card (status +
+    # "N decisions ready" + a Triage control) instead of the chunked text wall.
+    # WIRED, not dark: frontdoor.run_briefing._briefing_card_mode() reads this
+    # and swaps the send path, and briefing_card.maybe_send() gates on it.
+    # Captain-ratified TRUE 2026-07-11 (one-voice reset). That ratification
+    # used to live only in instance/config/comms-surface.yml — which the egg
+    # deletes — so every fresh cabinet silently got the pre-ruling text wall.
+    "briefing_card": True,
     "dashboard_url": "",           # deep-link base; empty = no links (fail-closed)
     # Pin design (pin-recommendation doc, Captain-ratified 2026-07-10):
-    #   adopt    — the pin is the #1 item's own standing card (shipped mode)
+    #   adopt    — the pin is the #1 item's own standing card (the original
+    #              shipped mode; still selectable, still covered by tests)
     #   overview — ONE live standing overview card ("⚑ N need you" + top
     #              names when N≤5), edited in place, stays the pin.
-    # Foundation default stays "adopt" (the shipped behavior); the ratified
-    # instance value lives in instance/config/comms-surface.yml.
-    "pin_mode": "adopt",
+    # Captain ratified "overview" on 2026-07-10. Same story as briefing_card:
+    # the ratified value lived only in the instance file the egg deletes, so
+    # the DEFAULT is now the ratified design rather than this deployment's
+    # private override. An unknown value narrows here, to the ratified design.
+    "pin_mode": "overview",
 }
 
 _CAP_MIN, _CAP_MAX = 1, 7
@@ -95,7 +105,15 @@ def load(*, instance: "dict | None" = None) -> dict:
     pin_mode = str(pick("CABINET_SURFACE_PIN_MODE", "pin_mode")
                    or DEFAULTS["pin_mode"]).strip().lower()
     if pin_mode not in _PIN_MODES:
-        pin_mode = DEFAULTS["pin_mode"]   # unknown pin design falls back to shipped
+        pin_mode = DEFAULTS["pin_mode"]   # unknown pin design falls back to ratified
+    # An explicitly configured value must win even when it is FALSY. `or`
+    # coalescing was harmless while the default was False; against the
+    # ratified True it would swallow `briefing_card: false` — the documented
+    # opt-out, and the literal value the shipped .example twin carries — and
+    # silently re-arm the card a deployment just turned off. Absent (None) is
+    # the only thing that may fall through to the default.
+    bcard = pick("CABINET_BRIEFING_CARD", "briefing_card")
+    bcard = DEFAULTS["briefing_card"] if bcard is None else bcard
     return {
         "cap": cap,
         "mode": mode,
@@ -112,9 +130,7 @@ def load(*, instance: "dict | None" = None) -> dict:
             DEFAULTS["urgent_window_hours"], 1.0, 72.0),
         "hard_all_cap": int(_num(pick("CABINET_SURFACE_ALL_CAP", "hard_all_cap"),
                                  DEFAULTS["hard_all_cap"], 1, 100)),
-        "briefing_card": str(pick("CABINET_BRIEFING_CARD", "briefing_card")
-                             or DEFAULTS["briefing_card"]).strip().lower()
-        in ("1", "true", "yes", "on"),
+        "briefing_card": str(bcard).strip().lower() in ("1", "true", "yes", "on"),
         "dashboard_url": str(pick("CABINET_DASHBOARD_URL", "dashboard_url")
                              or DEFAULTS["dashboard_url"]).strip(),
     }

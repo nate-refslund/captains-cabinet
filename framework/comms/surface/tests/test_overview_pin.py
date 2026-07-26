@@ -155,10 +155,15 @@ def test_step_dispatches_on_the_knob(adapter, day, monkeypatch):
     census = make_census([make_card(1)])
     rep = pin.step(census=census, now=day, state={}, adapter=adapter)
     assert rep.get("mode") == "overview"
-    # default (adopt) path untouched when the knob is absent
-    monkeypatch.delenv("CABINET_SURFACE_PIN_MODE")
+    # adopt is still reachable — it is now the OPT-IN, not the default
+    # (default flipped to the ratified "overview" 2026-07-26)
+    monkeypatch.setenv("CABINET_SURFACE_PIN_MODE", "adopt")
     rep2 = pin.step(census=census, now=day, state={}, adapter=adapter)
     assert "mode" not in rep2 and "pinned" in rep2
+    # and with NO knob at all a stranger dispatches to overview
+    monkeypatch.delenv("CABINET_SURFACE_PIN_MODE")
+    rep3 = pin.step(census=census, now=day, state={}, adapter=adapter)
+    assert rep3.get("mode") == "overview"
 
 
 def test_knob_round_trip_retires_each_designs_pin(adapter, day, monkeypatch):
