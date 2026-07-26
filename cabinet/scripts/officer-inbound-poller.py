@@ -497,6 +497,63 @@ def killswitch_command_reply(*, api_post, chat_id, ks_run=run_kill_switch,
         return False
 
 
+# ---------------------------------------------------------------------------
+# /score — the 14-day briefing-value trial instrument (2026-07-26). The
+# Captain replies "/score 3" to the briefing he just got; this process records
+# it and confirms in one line. MECHANICAL for the same reason /killswitch is:
+# the Captain's control must not depend on an officer being awake to relay it,
+# and a value judgement he typed is data, not a conversation turn. Recording
+# is the LIBRARY's contract (cabinet/scripts/lib/briefing_score.py) — this
+# file owns no storage. Fails OPEN to the Chair relay on any error, so a
+# misfire relays the Captain's words instead of eating them.
+# ---------------------------------------------------------------------------
+_SCORE_LIB_DIR = os.path.join(_REPO_ROOT, "cabinet", "scripts", "lib")
+
+
+def _briefing_score_lib():
+    """Import the score library, putting cabinet/scripts/lib on sys.path.
+    Raises on failure — every caller here is inside a fail-open try."""
+    if _SCORE_LIB_DIR not in sys.path:
+        sys.path.insert(0, _SCORE_LIB_DIR)
+    import briefing_score  # noqa: PLC0415 — deliberate late import
+    return briefing_score
+
+
+def is_score_command(text: str) -> bool:
+    """True for an anchored ``/score <0-3> [note]``. Never mid-sentence, and
+    never true when the library is unavailable (→ the message relays)."""
+    try:
+        return _briefing_score_lib().parse_score_command(text) is not None
+    except Exception:  # noqa: BLE001 — unavailable library must not eat a msg
+        return False
+
+
+def score_command_reply(*, api_post, chat_id, text, log=log) -> bool:
+    """Record one Captain score and confirm it. Returns True when the score
+    is durably on disk AND the confirmation was sent; False lets the caller
+    fall open to the Chair relay so the command is never silently consumed.
+
+    Order is load-bearing: record FIRST, confirm second. A confirmation the
+    Captain can see must never outrun the row it claims was written."""
+    try:
+        bs = _briefing_score_lib()
+        parsed = bs.parse_score_command(text)
+        if parsed is None:
+            return False
+        row = bs.record(parsed["score"], note=parsed["note"],
+                        source="telegram")
+        where = row["briefing_id"] or "no archived briefing"
+        api_post("sendMessage", {
+            "chat_id": int(chat_id),
+            "text": (f"Scored {row['score']} — {bs.SCALE[row['score']]}.\n"
+                     f"Briefing: {where}")})
+        return True
+    except Exception as exc:  # noqa: BLE001 — fail-open to the Chair relay
+        log(f"score command failed (falling back to relay): "
+            f"{type(exc).__name__}: {exc}")
+        return False
+
+
 def _first_reaction_emoji(reactions) -> str:
     """First emoji from a ``new_reaction`` list (``[{type:'emoji', emoji:'👍'}]``)."""
     for r in reactions or []:
@@ -580,7 +637,10 @@ def archive_captain_dm(chat_id, message_id, text, *, kind="text", update_id=0,
     though they bypass the relay — they are Tier-0 anchor source material.
     /killswitch commands likewise archive (kind="killswitch") despite the
     mechanical card reply — an emergency-stop request is exactly the
-    utterance whose verbatim record must survive.
+    utterance whose verbatim record must survive. /score commands archive
+    (kind="score") for the same reason: the trial store keeps the NUMBER, this
+    archive keeps the words he attached to it, and a value judgement is worth
+    at least as much verbatim as a routine DM.
 
     Degrade-safe but LOUD: an archive failure never blocks delivery (a Captain
     message must reach the officer even with a broken disk), but it logs an
@@ -1274,6 +1334,28 @@ def main() -> int:
                     fa({"direction": "in", "kind": "killswitch-command",
                         "telegram_message_id": mid,
                         "card": "sent" if sent else "send-failed"})
+                    if not sent:
+                        deliver(text, quoted, "", mid=mid)
+                elif frm == str(captain) and is_score_command(text):
+                    # /score N → the briefing-value trial instrument, recorded
+                    # from THIS process (2026-07-26). Same mechanical shape as
+                    # /killswitch above and the same fail-open discipline: a
+                    # record-or-send failure relays the Captain's words to the
+                    # Chair rather than swallowing them.
+                    log(f"captain /score update_id={uid} -> trial instrument")
+                    mid = int(msg.get("message_id", 0))
+                    set_last_captain_msg_id(mid)
+                    record_recent_msg(mid, text)
+                    chat_dm = str((msg.get("chat") or {}).get("id") or frm)
+                    archive_captain_dm(chat_dm, mid, text, kind="score",
+                                       update_id=uid, tg_date=msg.get("date", 0),
+                                       quoted=quoted_full, officer=officer)
+                    sent = score_command_reply(api_post=api_post,
+                                               chat_id=captain, text=text,
+                                               log=log)
+                    fa({"direction": "in", "kind": "score-command",
+                        "telegram_message_id": mid,
+                        "recorded": "yes" if sent else "failed"})
                     if not sent:
                         deliver(text, quoted, "", mid=mid)
                 elif frm == str(captain) and text:
