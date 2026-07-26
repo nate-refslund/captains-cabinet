@@ -728,11 +728,25 @@ cmd_prune() {
   local sorted i=0 rm_dir
   # `awk '{print $2}'` here would TRUNCATE any runtime root containing a space
   # and hand the truncated prefix to `rm -rf` — strip only the leading mtime
-  # field instead, so the rest of the line survives verbatim. (The `stat -f`
-  # format is BSD-only; on GNU coreutils it fails and `sorted` is empty, so
-  # prune deletes nothing — fails open, byte-identical to master, and out of
-  # scope here.)
-  sorted="$(for d in "${candidates[@]}"; do stat -f '%m %N' "$d" 2>/dev/null; done | sort -rn | sed 's/^[0-9]* //')"
+  # field instead, so the rest of the line survives verbatim.
+  #
+  # GNU-FIRST IS LOAD-BEARING, not stylistic. `-f` means "format string" to BSD
+  # stat and "file system" to GNU stat, so a BSD-first probe does not fail over
+  # on Linux the way an unknown flag would: it takes the GNU branch with
+  # directives that mean nothing there. Under this script's `set -euo pipefail`
+  # that non-zero status propagated out of the pipeline and prune EXITED 1
+  # having pruned nothing (measured on Linux: CI run 30183105928, the
+  # `test_prune_handles_a_runtime_root_containing_a_space` arm). Probing the
+  # GNU form first is the only order where each platform's real answer wins.
+  #
+  # A candidate whose mtime cannot be read at all is DROPPED from the list
+  # rather than defaulted, so it is never deleted. Prune keeping too much costs
+  # disk; prune deleting the wrong release is unrecoverable.
+  sorted="$(for d in "${candidates[@]}"; do
+              stat -c '%Y %n' "$d" 2>/dev/null ||
+              stat -f '%m %N' "$d" 2>/dev/null ||
+              true
+            done | sort -rn | sed 's/^[0-9]* //')"
   while IFS= read -r rm_dir; do
     [ -z "$rm_dir" ] && continue
     i=$((i+1))

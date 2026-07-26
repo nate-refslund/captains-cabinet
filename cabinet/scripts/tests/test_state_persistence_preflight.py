@@ -647,6 +647,60 @@ def test_prune_handles_a_runtime_root_containing_a_space(tmp_path):
     assert (root / "releases" / sha_a).exists(), "prune deleted the LIVE release"
 
 
+# ---- arm 4h: prune's mtime probe must work on GNU coreutils too -------------
+
+
+def test_prune_orders_by_mtime_on_a_gnu_stat_platform(tmp_path):
+    """`-f` is BSD stat's FORMAT flag and GNU stat's FILE SYSTEM flag, so a
+    BSD-first probe does not fail over on Linux — it silently takes the GNU
+    branch with directives that mean nothing there. Under runtime-provision.sh's
+    `set -euo pipefail` that non-zero status propagated and prune exited 1
+    having pruned nothing (measured on Linux: CI run 30183105928).
+
+    The arm forces the GNU shape on any host by putting a coreutils-shaped
+    `stat` first on PATH: `-c` works, `-f` refuses the BSD directives exactly as
+    GNU does. It fails against the BSD-first order and passes against
+    GNU-first, on macOS and on Linux alike."""
+    src, sha_a, sha_b = _build_src(tmp_path)
+    root = tmp_path / "gnuroot"
+    shim_dir = tmp_path / "gnubin"
+    shim_dir.mkdir()
+    shim = shim_dir / "stat"
+    shim.write_text(textwrap.dedent("""\
+        #!/usr/bin/env python3
+        # Coreutils-shaped stat. `-c FMT path` honours %Y/%n; `-f` is FILE SYSTEM
+        # mode, where BSD's %m/%N are not directives, so it refuses.
+        import os, sys
+        a = sys.argv[1:]
+        if len(a) >= 3 and a[0] == "-c":
+            fmt, path = a[1], a[2]
+            st = os.stat(path)
+            out = fmt.replace("%Y", str(int(st.st_mtime))).replace("%n", path)
+            print(out)
+            sys.exit(0)
+        if len(a) >= 1 and a[0] == "-f":
+            sys.stderr.write("stat: invalid directive\\n")
+            sys.exit(1)
+        sys.exit(1)
+        """))
+    shim.chmod(0o755)
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1",
+               PATH=f"{shim_dir}{os.pathsep}{os.environ['PATH']}")
+    subprocess.run(["bash", PROVISION, "init", str(root), "--remote", str(src)],
+                   capture_output=True, env=env)
+    for action in (["provision", str(root), sha_a], ["provision", str(root), sha_b],
+                   ["promote", str(root), sha_a]):
+        subprocess.run(["bash", PROVISION, *action], capture_output=True,
+                       env=env, check=True)
+    res = subprocess.run(["bash", PROVISION, "prune", str(root), "--keep", "0"],
+                         capture_output=True, text=True, env=env)
+    assert res.returncode == 0, (
+        "prune failed on a GNU-stat platform:\n" + res.stdout + res.stderr)
+    assert not (root / "releases" / sha_b).exists(), \
+        "prune pruned nothing — the mtime probe produced no usable ordering"
+    assert (root / "releases" / sha_a).exists(), "prune deleted the LIVE release"
+
+
 # ---- arm 5: the live anti-drift gate --------------------------------------
 
 def test_real_repo_accounts_for_every_durable_path():
