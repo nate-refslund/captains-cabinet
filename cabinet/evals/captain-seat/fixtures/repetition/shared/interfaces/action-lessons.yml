@@ -1,0 +1,31 @@
+# FIXTURE — synthetic correction-verb store for EVAL-027-CAPTAIN-SEAT
+# (repetition arm). NOT a runtime file: it is read ONLY via
+# CAPTAIN_SEAT_ROOT pointed at this fixture tree, and it names no real
+# person, product, lane or deployment.
+#
+# Load-bearing property: the two rows below carry the SAME subject value
+# ("briefing length"), so the Captain-seat pack's repetition counter must
+# report that value with count 2. Deleting either row must turn the arm
+# RED (class-11: the arm fails against pre-change fixture state).
+#
+# Comment style note: this header deliberately avoids the literal
+# key-with-colon tokens the pack counts, because the pack counts them by
+# regex over the whole file — a comment mentioning one would be counted
+# as a row and the fixture would stop meaning what it says.
+next_id: 4
+lessons:
+  - id: 1
+    verdict: edit
+    taxonomy: wrong-content
+    subject: briefing length
+    captain_text: "too long — say it in three lines"
+  - id: 2
+    verdict: edit
+    taxonomy: wrong-content
+    subject: briefing length
+    captain_text: "still too long"
+  - id: 3
+    verdict: never
+    taxonomy: wrong-timing
+    subject: overnight pings
+    captain_text: "not before 07:00"

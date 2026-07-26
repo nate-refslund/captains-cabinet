@@ -1,0 +1,26 @@
+# FIXTURE — synthetic correction-verb store for EVAL-027-CAPTAIN-SEAT
+# (healthy arm). NOT a runtime file: read ONLY via CAPTAIN_SEAT_ROOT
+# pointed at this fixture tree; names no real person, product, lane or
+# deployment.
+#
+# Load-bearing property — the DEGENERATE end: the store EXISTS (so the
+# pack's repetition section actually runs) and every row's subject value
+# is DISTINCT, so the pack must report "(none)" rather than invent a
+# repetition. Present-but-boring, deliberately NOT absent: an absent
+# store would make the "reports none" assertion vacuous, which is the
+# sensor-tests-nothing failure this arm exists to prevent.
+#
+# Comment style note: this header deliberately avoids the literal
+# key-with-colon tokens the pack counts by regex over the whole file.
+next_id: 3
+lessons:
+  - id: 1
+    verdict: edit
+    taxonomy: wrong-content
+    subject: briefing length
+    captain_text: "trim it"
+  - id: 2
+    verdict: never
+    taxonomy: wrong-timing
+    subject: overnight pings
+    captain_text: "not before 07:00"
