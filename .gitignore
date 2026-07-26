@@ -152,6 +152,12 @@ instance/state/
 instance/cache/
 instance/memory/briefings/
 
+# The Captain's 0-3 briefing scores (cabinet/scripts/lib/briefing_score.py) —
+# append-only runtime data he typed, never a committed artifact. Lives under
+# instance/memory/ so runtime-provision.sh's whole-directory persistence link
+# carries it across deploys.
+instance/memory/briefing-scores.jsonl
+
 # Formation runs (Phase 3): per-run journals, IOU artifacts, flight logs,
 # and their _pre-adopt undo archives — runtime data, never committed
 instance/onboarding/formation/
