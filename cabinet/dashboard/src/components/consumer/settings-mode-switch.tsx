@@ -2,7 +2,7 @@
 
 import { useDashboardMode } from '@/hooks/use-dashboard-mode'
 import SettingsConsumer from '@/components/consumer/settings-consumer'
-import type { GlobalConfig } from '@/lib/config'
+import type { CaptainAvailability, GlobalConfig } from '@/lib/config'
 
 /**
  * Picks the Settings view based on dashboard mode.
@@ -23,6 +23,7 @@ export default function SettingsModeSwitch({
     config: GlobalConfig
     officerRoles: string[]
     timezone: string
+    availability: CaptainAvailability
   }
   children: React.ReactNode
 }) {

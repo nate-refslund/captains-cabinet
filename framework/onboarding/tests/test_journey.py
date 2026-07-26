@@ -1126,3 +1126,166 @@ def test_three_persona_evaluation_harness_is_executable():
         "software-product", "client-services", "community-nonprofit"
     ]
     assert all(row["elapsed_seconds"] < 5 for row in payload["results"])
+
+
+def _split_pair_estate(tmp_path: Path, filler: int) -> Path:
+    """A slice whose documented command and its refuting package.json are in
+    different top-level directories, as they always are when the wiki and the
+    service repo are separate systems."""
+    root = (tmp_path / "slice").resolve()
+    docs = root / "docs"
+    docs.mkdir(parents=True)
+    for i in range(filler):
+        (docs / f"page-{i:03d}.md").write_text(f"# Page {i}\n\nOrdinary wiki prose.\n", encoding="utf-8")
+    (docs / "zz-deploy-runbook.md").write_text(
+        "# Deploying\n\n- Run `npm run migrate:ledger` against staging.\n", encoding="utf-8"
+    )
+    repo = root / "repo"
+    repo.mkdir(parents=True)
+    (repo / "package.json").write_text('{"name":"svc","scripts":{"dev":"tsx"}}\n', encoding="utf-8")
+    return root
+
+
+def test_uncapped_window_finds_the_cross_directory_command_drift(tmp_path):
+    """Control arm: with both halves in the window the detector does fire."""
+    root = _split_pair_estate(tmp_path, filler=3)
+    manifest, entries = journey._scan_source(root, charter_hash="control")
+    assert manifest["truncated_by_limits"] is False
+    assert any(e["path"] == "repo/package.json" for e in entries)
+    assert journey._first_dividend(manifest, entries, "2026-07-26T00:00:00Z")["finding"]["kind"] == (
+        "software_command_drift"
+    )
+
+
+def test_capped_window_reports_a_clean_negative_it_did_not_earn(tmp_path, monkeypatch):
+    """The file cap is resolved by walk order, not relevance, so it can admit
+    one half of a cross-directory pair and drop the other.
+
+    Measured 2026-07-26 against a realistic employee-scale slice (2103 eligible
+    files, 12.6 MB): the cap admitted 200 files from a single top-level
+    directory, both orderings scored zero findings, and the card said it "did
+    not find ... a broken documented command" while exactly such a command sat
+    unopened in the folder. That negative is not one the sweep is entitled to.
+    Pinned so any coverage, ranking or disclosure fix flips a sensor.
+    """
+    monkeypatch.setattr(journey, "MAX_FILES", 3)
+    root = _split_pair_estate(tmp_path, filler=3)
+    manifest, entries = journey._scan_source(root, charter_hash="capped")
+    assert manifest["truncated_by_limits"] is True
+    # The stale command survives; the package.json that would refute it does not.
+    assert not any(e["path"] == "repo/package.json" for e in entries)
+    assert journey._command_drift(entries) == []
+    finding = journey._first_dividend(manifest, entries, "2026-07-26T00:00:00Z")["finding"]
+    assert finding["kind"] == "orientation_map"
+    assert "did not find" in finding["summary"]
+    # The operator-facing card carries no coverage or truncation signal at all.
+    assert "truncat" not in finding["summary"]
+    stats = manifest["scan_statistics"]
+    assert stats["candidate_files"] == stats["included_files"]
+    assert sum(stats["excluded"].values()) == 0
+
+
+def _employee_estate_dividend(tmp_path: Path) -> tuple[dict, list[dict]]:
+    """Drive the enterprise-employee estate through the REAL journey actions.
+
+    The fixture is deliberately not registered in evaluate_personas.PERSONAS:
+    that module is a framework production module, and
+    framework_production_noncomment_lines is a zero-headroom census budget whose
+    contract file is frozen under the COG-4 review digest, so the acceptance
+    persona set cannot grow by even one line today. Exercising the estate here
+    costs nothing (a tests path is excluded from the census) and still runs the
+    real product code path rather than a reimplementation.
+    """
+    source = estate(tmp_path, "enterprise-employee")
+    root = tmp_path / "root"
+    proposal = journey.act(
+        {
+            "action": "propose_window",
+            "action_id": "employee-estate-propose",
+            "surface": "test",
+            "source": str(source),
+            "purpose": "Find one thing that will bite me in the service I contribute to but do not own.",
+            "relationship_destination": "reversible",
+        },
+        root,
+        now="2026-07-26T12:00:00Z",
+    )
+    result = journey.act(
+        {
+            "action": "ratify_charter",
+            "action_id": "employee-estate-ratify",
+            "surface": "test",
+            "expected_revision": proposal["state"]["revision"],
+            "charter_hash": proposal["state"]["charter"]["hash"],
+        },
+        root,
+        now="2026-07-26T12:00:01Z",
+    )
+    _, entries = journey._scan_source(source, charter_hash="employee-estate")
+    return result["state"]["first_dividend"]["finding"], entries
+
+
+def test_employee_estate_yields_a_strong_cited_finding_through_the_real_journey(tmp_path):
+    finding, _ = _employee_estate_dividend(tmp_path)
+    assert finding["kind"] == "software_command_drift"
+    assert finding["quality"] == "strong"
+    assert finding["citations"][0]["path"] == "docs/runbooks/deploy-ledger-api.md"
+    assert "migrate:ledger" in finding["summary"]
+
+
+def test_employee_estate_findings_are_dominated_by_single_source_markers(tmp_path):
+    """The ingest-vs-aggregation measurement, kept in the suite.
+
+    Measured 2026-07-26 (docs/persona-employee-slice-2026-07-26.md): the estate
+    spans three simulated systems, yet only ONE of the four findings needs more
+    than one file, and every fact that exists only in the join between systems
+    is invisible. If a cross-source detector is ever added, this test SHOULD
+    fail — that is the signal that the vocabulary grew.
+    """
+    _, entries = _employee_estate_dividend(tmp_path)
+    findings = (
+        journey._command_drift(entries)
+        + journey._contradictions(entries)
+        + journey._risk_markers(entries)
+    )
+    kinds = sorted(f["kind"] for f in findings)
+    assert kinds == ["attention_marker", "attention_marker", "open_work_marker", "software_command_drift"]
+    # Not one conflicting_commitment, though the design doc says Deadline
+    # 2026-09-30 and the tracker says LEDG-4462 is due 2026-10-14: a CSV cell is
+    # not the `^label: value` prose shape the detector matches.
+    assert journey._contradictions(entries) == []
+    # Every marker finding cites exactly one file; only the drift needs a pair.
+    multi_file = [f for f in findings if f["kind"] == "software_command_drift"]
+    assert len(multi_file) == 1
+    # CODEOWNERS — the densest ownership file in any repo — is not even readable.
+    assert not any(e["path"].endswith("CODEOWNERS") for e in entries)
+
+
+def test_employee_estate_planted_cross_system_facts_are_all_present_but_unfound(tmp_path):
+    """Guards the fixture against being quietly tuned toward the detectors.
+
+    Each planted join is asserted PRESENT in the source bytes and ABSENT from
+    the findings. Deleting a planted fact to make the estate look cleaner, or
+    adding detector-visible bait, flips this test.
+    """
+    _, entries = _employee_estate_dividend(tmp_path)
+    text = {e["path"]: e["text"] for e in entries}
+    assert "ledger_dual_write=false" in text["docs/runbooks/ledger-api-oncall.md"]
+    assert "ledger_dual_write" not in text["repo/config/features.yaml"]
+    assert "Write down the manual replay procedure" in text["docs/incidents/2026-06-18-ledger-lag.md"]
+    assert "manual replay" not in text["tracker/my-open-tickets.csv"]
+    assert "eng-briar" in text["tracker/sprint-42-export.csv"]
+    # Substring chosen to sit inside one wrapped line of the roster.
+    assert "longer on any payments rotation" in text["docs/team/roster.md"]
+    assert "Deadline: 2026-09-30" in text["docs/design/ledger-migration-plan.md"]
+    assert "2026-10-14" in text["tracker/my-open-tickets.csv"]
+    assert "@payments-platform" in text["docs/runbooks/ledger-api-oncall.md"]
+    assert "@platform-core" in text["repo/README.md"]
+    findings = (
+        journey._command_drift(entries)
+        + journey._contradictions(entries)
+        + journey._risk_markers(entries)
+    )
+    cited = " ".join(c["excerpt"] for f in findings for c in f["citations"])
+    for unfound in ("ledger_dual_write", "eng-briar", "2026-09-30", "@payments-platform"):
+        assert unfound not in cited
