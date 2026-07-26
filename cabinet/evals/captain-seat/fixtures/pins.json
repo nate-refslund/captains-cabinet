@@ -4,7 +4,10 @@
   "repetition": {
     "root": "repetition",
     "taxonomy_counts": {"wrong-content": 2, "wrong-timing": 1},
-    "repeated_subjects": {"briefing length": 2}
+    "repeated_subjects": {"briefing length": 2},
+    "_availability_why": "the PRESENT end of the availability dial: the pack must report the LAST valid entry (20 min/day), not the first (120). The printed set_at AGE is deliberately unpinned — it is time-relative and would rot on a calendar boundary.",
+    "availability_line": "declared: 20 min/day  mode=part_time  source=adjusted",
+    "availability_set_at_substring": "set_at: 2026-01-09T18:30:00Z"
   },
 
   "healthy": {
@@ -19,7 +22,8 @@
       ["shared/interfaces/preference-pairs.jsonl", "no preference-pair store"],
       ["shared/interfaces/needs-ledger.jsonl", "no needs ledger"],
       ["shared/interfaces/captain-patterns.md", "his standing-preference ledger"],
-      ["shared/interfaces/captain-intents.md", "his inferred-goals ledger"]
+      ["shared/interfaces/captain-intents.md", "his inferred-goals ledger"],
+      ["instance/config/captain-availability.yml", "no declared availability — the org does not know how much of the captain it is entitled to"]
     ],
     "briefing_scoring_absent_substring": "briefing scoring: ABSENT ("
   },
@@ -70,6 +74,14 @@
       {
         "why": "the kill condition's second trigger and its verdict",
         "text": "delete this part. Do not tune it."
+      },
+      {
+        "why": "the availability dial (Captain ruling 2026-07-26): cost is judged RELATIVE to the declared budget, and an absent declaration is itself evidence",
+        "text": "Judge cost RELATIVE to the declared availability in the pack's AVAILABILITY section"
+      },
+      {
+        "why": "the balancing rule the dial exists to enforce — without it the reviewer would size the captain to the org",
+        "text": "The org fits the declared budget, never the reverse."
       }
     ]
   }

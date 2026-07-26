@@ -135,6 +135,20 @@ temporary_allowances:
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: COG-7 compaction, or the contact dead-man folds into the evidence plane
+  - phase: captain-availability-dial
+    budget: framework_production_modules
+    additional: 1
+    reason: Captain availability dial (Captain ruling 2026-07-26) — ONE new production module, framework/onboarding/availability.py (the interview question rendered from the live mode table + the fixed-verb apply that records the answer for the generator). The resolver itself (captain_availability / captain_availability_path / cabinet_init_answers_path / the mode table) EXTENDS framework/env.py and the pacing consumer EXTENDS framework/comms/surface/config.py — neither adds a module. EXACT measured running total (239 vs 238 base), 2026-07-26, via cognitive-architecture-census.py — the zero-headroom observed==max law means this is the exact new total, never a pre-allocated ceiling
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: the availability question folds into a single onboarding module, or COG-7 compaction
+  - phase: captain-availability-dial
+    budget: framework_production_noncomment_lines
+    additional: 392
+    reason: Captain availability dial (Captain ruling 2026-07-26) — framework/env.py (the canonical AVAILABILITY_MODES table, availability_modes/availability_minutes_for_mode/availability_mode_for_minutes, captain_availability_path, cabinet_init_answers_path, the precedence resolver captain_availability with its fail-closed per-row validator and the _availability_stamp YAML-datetime rescue, render_availability), framework/onboarding/availability.py (question rendered from the live table, fixed-verb apply, atomic answers write, skip==honest-absence), and framework/comms/surface/config.py (the availability_pacing knob + _availability_cap band derivation, unknown⇒unchanged). EXACT measured running total (67326 vs 66934 base), 2026-07-26, via cognitive-architecture-census.py
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: the dial's resolver folds into the projection kernel, or COG-7 compaction
   - phase: attention-well-spent
     budget: framework_production_noncomment_lines
     additional: 252

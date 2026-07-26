@@ -555,6 +555,65 @@ def score_command_reply(*, api_post, chat_id, text, log=log) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# availability — the Captain's declared time budget (Captain ruling 2026-07-26).
+# He types "availability 20m" / "availability away" / "availability ?" and this
+# process records it and confirms in one line. MECHANICAL for the same reason
+# /killswitch and /score are: a control he holds must not depend on an officer
+# being awake to relay it, and a budget he declared is data, not a conversation
+# turn. Storage is the LIBRARY's contract (cabinet/scripts/lib/
+# captain_availability.py) — this file owns none. Fails OPEN to the Chair relay
+# on any error, so a misfire relays his words instead of eating them.
+# ---------------------------------------------------------------------------
+def _captain_availability_lib():
+    """Import the availability library, putting cabinet/scripts/lib on
+    sys.path. Raises on failure — every caller here is inside a fail-open try."""
+    if _SCORE_LIB_DIR not in sys.path:
+        sys.path.insert(0, _SCORE_LIB_DIR)
+    import captain_availability  # noqa: PLC0415 — deliberate late import
+    return captain_availability
+
+
+def is_availability_command(text: str) -> bool:
+    """True for an anchored ``availability <value|?>``. Never mid-sentence, and
+    never true when the library is unavailable (→ the message relays)."""
+    try:
+        return _captain_availability_lib().parse_availability_command(text) is not None
+    except Exception:  # noqa: BLE001 — unavailable library must not eat a msg
+        return False
+
+
+def availability_command_reply(*, api_post, chat_id, text, log=log) -> bool:
+    """Record one availability ruling (or answer a query) and confirm it.
+    Returns True when the ruling is durably on disk AND the confirmation was
+    sent; False lets the caller fall open to the Chair relay so the command is
+    never silently consumed.
+
+    Order is load-bearing: record FIRST, confirm second. A confirmation he can
+    see must never outrun the row it claims was written."""
+    try:
+        ca = _captain_availability_lib()
+        parsed = ca.parse_availability_command(text)
+        if parsed is None:
+            return False
+        if parsed["kind"] == "query":
+            api_post("sendMessage", {"chat_id": int(chat_id),
+                                     "text": ca.render_current()})
+            return True
+        row = ca.record(parsed["minutes_per_day"], mode=parsed["mode"],
+                        source="telegram", text=parsed.get("text", ""))
+        api_post("sendMessage", {
+            "chat_id": int(chat_id),
+            "text": (f"Availability set: {row['minutes_per_day']} min/day "
+                     f"({row['mode']}).\n"
+                     "The org fits this budget — what reaches you scales to it.")})
+        return True
+    except Exception as exc:  # noqa: BLE001 — fail-open to the Chair relay
+        log(f"availability command failed (falling back to relay): "
+            f"{type(exc).__name__}: {exc}")
+        return False
+
+
+# ---------------------------------------------------------------------------
 # /missed — the UNDER-ASK verdict (2026-07-26). "You should have raised this,
 # and you didn't." Mechanical for exactly the same reasons as /score above.
 #
@@ -1431,6 +1490,28 @@ def main() -> int:
                                                chat_id=captain, text=text,
                                                log=log)
                     fa({"direction": "in", "kind": "score-command",
+                        "telegram_message_id": mid,
+                        "recorded": "yes" if sent else "failed"})
+                    if not sent:
+                        deliver(text, quoted, "", mid=mid)
+                elif frm == str(captain) and is_availability_command(text):
+                    # availability <value|?> → the Captain's declared time
+                    # budget, recorded from THIS process (2026-07-26). Same
+                    # mechanical shape as /score above and the same fail-open
+                    # discipline: a record-or-send failure relays his words to
+                    # the Chair rather than swallowing them.
+                    log(f"captain availability update_id={uid} -> dial")
+                    mid = int(msg.get("message_id", 0))
+                    set_last_captain_msg_id(mid)
+                    record_recent_msg(mid, text)
+                    chat_dm = str((msg.get("chat") or {}).get("id") or frm)
+                    archive_captain_dm(chat_dm, mid, text, kind="availability",
+                                       update_id=uid, tg_date=msg.get("date", 0),
+                                       quoted=quoted_full, officer=officer)
+                    sent = availability_command_reply(api_post=api_post,
+                                                      chat_id=captain, text=text,
+                                                      log=log)
+                    fa({"direction": "in", "kind": "availability-command",
                         "telegram_message_id": mid,
                         "recorded": "yes" if sent else "failed"})
                     if not sent:
