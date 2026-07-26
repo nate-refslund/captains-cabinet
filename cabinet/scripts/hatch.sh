@@ -634,6 +634,14 @@ if [ "$CLEAN_ROOM" = "1" ]; then
     echo "          clone tracks the same platform.yml and refuses identically):" >&2
     echo "            mkdir -p /tmp/hatch-scratch" >&2
     echo "            git -C \"$REPO_ROOT\" archive HEAD | tar -x -C /tmp/hatch-scratch" >&2
+    # The scratch export is gitless, so null-hatch.sh re-derives shipped-vs-local
+    # from .gitignore alone and would delete FORCE-TRACKED content (dashboard
+    # officers pages, memory/tier3, deployment-status.md) that git archive just
+    # shipped. egg-export.sh writes this list for the real egg; a hand-cut
+    # scratch has to write its own or the clean-room proof runs on a tree the
+    # export does not have.
+    echo "            git -C \"$REPO_ROOT\" ls-files -c -i --exclude-standard \\" >&2
+    echo "              > /tmp/hatch-scratch/cabinet/scripts/shipped-ignored-paths.txt" >&2
     echo "            cd /tmp/hatch-scratch" >&2
     echo "          (a scratch clone works too, but needs" >&2
     echo "          HATCH_ALLOW_TRACKED_INSTANCE=1 — safe there: it is throwaway)." >&2

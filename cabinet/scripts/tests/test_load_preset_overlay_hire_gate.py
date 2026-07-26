@@ -157,6 +157,62 @@ def test_hand_edited_copy_is_never_discarded(tmp_path):
     assert "left in place" in p.stderr
 
 
+def test_scope_read_failure_never_strips_a_hired_officer(tmp_path):
+    """The hire gate added a DESTRUCTIVE path to this step, and
+    list_hired_agents returns empty for two very different reasons: "nobody is
+    hired" and "I could not read the authorization file". Conflating them turns
+    a read failure into a silent de-hiring of everyone — the officer disappears
+    from the boot-loadable surface and the loader still reports success.
+
+    Step 1 already refuses to act on that condition (ERROR + skip); this pins
+    that step 2 does too. Absence of evidence is not evidence of absence when
+    the action is deletion."""
+    root = _scratch_root(tmp_path)
+    assert _run(root, tmp_path).returncode == 0
+    target = root / ".claude" / "agents" / "hired-lane-ceo.md"
+    assert target.is_file()
+
+    (root / "cabinet" / "mcp-scope.yml").unlink()
+    p = _run(root, tmp_path)
+    assert target.is_file(), (
+        "a read failure on the authorization file stripped a HIRED officer off "
+        f"the boot surface:\n{p.stderr}")
+    assert "cannot determine hired agents" in p.stderr, p.stderr
+
+
+def test_unreadable_agents_section_never_strips_a_hired_officer(tmp_path):
+    """Same guard, the other trigger: the file exists but yields no `agents:`
+    mapping (truncated, renamed section, edited by hand). Still a read failure,
+    still not a licence to delete."""
+    root = _scratch_root(tmp_path)
+    assert _run(root, tmp_path).returncode == 0
+    target = root / ".claude" / "agents" / "hired-lane-ceo.md"
+    assert target.is_file()
+
+    (root / "cabinet" / "mcp-scope.yml").write_text("cabinet: test\n")
+    p = _run(root, tmp_path)
+    assert target.is_file(), (
+        f"an empty/unparseable agents: section stripped a hired officer:\n{p.stderr}")
+    assert "cannot determine hired agents" in p.stderr, p.stderr
+
+
+def test_revocation_still_removes_the_stale_copy(tmp_path):
+    """Non-regression guard on the guard: a REAL un-hire (the file is readable
+    and simply no longer lists the officer) must still take the derived copy
+    down. The fix must distinguish 'not hired' from 'cannot tell', not collapse
+    both into 'do nothing'."""
+    root = _scratch_root(tmp_path)
+    assert _run(root, tmp_path).returncode == 0
+    target = root / ".claude" / "agents" / "hired-lane-ceo.md"
+    assert target.is_file()
+
+    scope = root / "cabinet" / "mcp-scope.yml"
+    scope.write_text(MCP_SCOPE.replace("  hired-lane-ceo:\n    mcps: []\n", ""))
+    p = _run(root, tmp_path)
+    assert not target.exists(), p.stderr
+    assert "removed the stale derived copy" in p.stderr
+
+
 def test_role_parity_is_clean_for_a_pending_lane(tmp_path):
     """The end-to-end consequence: with the un-hired overlay off the loadable
     surface, audit-role-parity.sh has nothing to report about it — a fresh

@@ -724,14 +724,38 @@ def _conf_officer_column(path: Path) -> set:
     `#` / no-colon lines, take the text left of the first colon) rather than
     importing it: env.officers() caches process-globally against a FIXED
     resolved path, so it cannot be pointed at an arbitrary root. Same mirroring
-    rationale as framework/tests/test_roster_conf_lockstep.py's own parser."""
+    rationale as framework/tests/test_roster_conf_lockstep.py's own parser.
+
+    REFUSES a padded row (leading or trailing whitespace), naming file and
+    line. This parser only *reads* authorization; the hooks that ENFORCE it are
+    line-anchored — post-tool-use.sh's has_capability() is
+    `grep -q "^${OFFICER}:${cap}$"` and pre-captain-dm.sh's gate is
+    `grep -qxF "${OFFICER}:captain_rules_retrieval"`. Both miss a padded row.
+    A lenient read here would therefore be MORE PERMISSIVE than the greps that
+    decide at runtime: the generator would hire the officer while every
+    capability gate stayed silently off — the exact silent lockout this whole
+    authorization gate exists to prevent, re-created one indent deep. Loud
+    beats silent, so a padded row is an error, not a slug."""
     if not path.is_file():
         return set()
     out = set()
-    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+    for lineno, line in enumerate(
+            path.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
         s = line.strip()
         if not s or s.startswith("#") or ":" not in s:
             continue
+        if line != s:
+            raise GenerationError(
+                f"{path}:{lineno}: capability row {line!r} is padded with "
+                f"whitespace. Rows in {OFFICER_CONF_REL} must start at column 0 "
+                f"and end at the capability, because the hooks that enforce "
+                f"capabilities match whole lines "
+                f"(post-tool-use.sh `grep -q \"^officer:capability$\"`, "
+                f"pre-captain-dm.sh `grep -qxF`). A padded row authorizes "
+                f"NOTHING at runtime, so reading it as authorization would hire "
+                f"an officer straight into a silent capability lockout. Strip "
+                f"the whitespace, then re-run."
+            )
         officer = s.split(":", 1)[0].strip()
         if officer:
             out.add(officer)
@@ -808,27 +832,55 @@ def split_lane_hires(root: Path, lanes: list) -> tuple:
     return hired, pending
 
 
+# Section delimiters inside the printed block. They are COMMENTS in both
+# target formats (`#` starts a comment in officer-capabilities.conf and in
+# YAML), so a Captain who pastes the block including its headers still gets a
+# valid file — the block is copy-paste all the way down, not copy-paste-then-
+# hand-edit. Tests split the block on these exact strings.
+CONF_ROWS_HEADER = f"# --- {OFFICER_CONF_REL} — append these rows ---"
+SCOPE_ROWS_HEADER = (f"# --- {MCP_SCOPE_REL} — add under the existing "
+                     f"'agents:' key ---")
+
+
 def germline_rows_for(lane_slugs: list) -> str:
     """Paste-ready germline rows that would authorize `lane_slugs`, exactly as
     the two germline files want them. Printed for the Captain (errand 1) and
     never written by this generator. `mcps: []` is deliberate: an empty scope
-    is fail-closed, and which servers a lane needs is the Captain's call."""
+    is fail-closed, and which servers a lane needs is the Captain's call.
+
+    INDENTATION IS THE CONTRACT, not cosmetics (fixed 2026-07-26; the first
+    cut of this function got both blocks wrong and the errand could not close
+    itself):
+
+    * conf rows start at COLUMN 0. cabinet/officer-capabilities.conf is not
+      YAML — the hooks that enforce capabilities match whole lines
+      (post-tool-use.sh `grep -q "^officer:capability$"`, pre-captain-dm.sh
+      `grep -qxF`). An indented row authorizes nothing at runtime, so a lane
+      pasted that way is hired with every capability gate silently OFF.
+    * mcp-scope keys sit at 2 spaces (siblings of the existing `agents:`
+      children) with their fields at 4. Printed one level deeper, the paste
+      nests the new officer INSIDE the previous agent's mapping — the lane is
+      still un-hired and its neighbour's scope is corrupted too.
+
+    cabinet/scripts/tests/test_generate_instance.py's paste-and-rerun arm
+    applies this block byte-for-byte and then re-runs the generator, so the
+    format is pinned by the errand actually closing, not by a substring."""
     caps = [c.strip() for c in LANE_CEO_CAPABILITIES.strip("[] ").split(",")]
     caps = [c for c in caps if c]
     if not caps:
         raise GenerationError(
             "LANE_CEO_CAPABILITIES parsed to zero capabilities — the printed "
             "germline rows would authorize nothing; fix the constant.")
-    lines = [f"  --- {OFFICER_CONF_REL} (append) ---"]
+    lines = [CONF_ROWS_HEADER]
     for slug in lane_slugs:
         for cap in caps:
-            lines.append(f"  {slug}-ceo:{cap}")
-    lines.append(f"  --- {MCP_SCOPE_REL} (under the existing `agents:` key) ---")
+            lines.append(f"{slug}-ceo:{cap}")
+    lines.append(SCOPE_ROWS_HEADER)
     for slug in lane_slugs:
-        lines.append(f"    {slug}-ceo:")
-        lines.append("      mcps: []            # add the servers THIS lane needs")
-        lines.append("      rationale: >")
-        lines.append("        Lane CEO — scope chosen by the Captain.")
+        lines.append(f"  {slug}-ceo:")
+        lines.append("    mcps: []            # add the servers THIS lane needs")
+        lines.append("    rationale: >")
+        lines.append("      Lane CEO — scope chosen by the Captain.")
     return "\n".join(lines)
 
 
@@ -1569,6 +1621,14 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
                   "the")
             print("     Captain (germline = Captain applies), then re-run this "
                   "generator.")
+            print("     Paste each block VERBATIM into the file its header "
+                  "names — the")
+            print("     indentation is load-bearing (the capability hooks match "
+                  "whole")
+            print("     lines; the scope keys must be siblings under `agents:`). "
+                  "The")
+            print("     headers are comments in both files, so pasting them is "
+                  "harmless.")
             print(germline_rows_for(pending_slugs))
         else:
             print("  2. Germline authorization: every lane CEO already has its "
