@@ -72,7 +72,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_SAMPLE = {
     "task_throughput": 30.0,
     "outcome_progress": 0.6,
-    "captain_attention_cost": 4.0,
+    "captain_attention_well_spent": 0.8,
     "learning_rate": 2.0,
     "verification_pass_rate": 0.85,
 }
