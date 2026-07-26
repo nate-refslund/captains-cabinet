@@ -29,7 +29,16 @@ officer_env_load_file() {
   fi
   local -a _observe_arg=()
   [ "${CABINET_OBSERVE_ONLY:-0}" = "1" ] && _observe_arg=(--observe-only)
-  if ! _rendered="$(python3.12 "$_OFFICER_ENV_PARSER" "$_file" --officer "$_officer" --project "$_project" --scope-file "$_scope_file" "${_observe_arg[@]}")"; then
+  # macOS ships /bin/bash 3.2 (licensing — it will never ship 4.x), and every
+  # officer launcher runs `set -euo pipefail`.  In 3.2 a plain "${arr[@]}" on an
+  # EMPTY array aborts with "unbound variable"; bash >= 4.4 allows it.  The
+  # array is empty on the DEFAULT (not observe-only) path, so the default path
+  # was the broken one and no env override could route around it.  The
+  # alternate-value form below expands to ZERO arguments when empty and to the
+  # flag when set.  "${_observe_arg[@]:-}" is NOT a valid substitute here: it
+  # expands to one EMPTY-STRING argument, which the parser's argparse rejects
+  # as an unrecognized positional (exit 2) — same failure, new disguise.
+  if ! _rendered="$(python3.12 "$_OFFICER_ENV_PARSER" "$_file" --officer "$_officer" --project "$_project" --scope-file "$_scope_file" ${_observe_arg[@]+"${_observe_arg[@]}"})"; then
     echo "[ERROR] officer environment parse failed for $_file — refusing to source it as shell code" >&2
     return 2
   fi
