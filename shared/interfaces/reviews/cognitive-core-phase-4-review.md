@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 60ab5575264c12afc2bec225e9a943c8762900c2a4fa8b8fbb1ad2971ece1e38
+Reviewed-Scope-Digest: a30366943126b05011435269b1f72335a4455bd8f0fbfd1518a426ab462c2df2
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
@@ -236,6 +236,39 @@ ALREADY BLOCK on pristine master f07787fa — measured, not assumed, by running 
 move. COG-4 was the one binding GREEN on f07787fa (verify twin exit 0, recorded == recomputed ==
 93839d99) and the only one this landing turned BLOCK, so it is the only one re-bound. This commit edits
 ONLY the digest-excluded review artifact, so the digest it records is stable under its own landing.)
+
+(RE-BOUND ON THE MASTER MERGE, 2026-07-27 —
+60ab5575264c12afc2bec225e9a943c8762900c2a4fa8b8fbb1ad2971ece1e38 -> the value above. The
+attention-well-spent branch was rebased onto master by merge rather than by rewrite, and master had moved
+f07787fa -> ac56ce78 under it.
+READ THIS ONE DIFFERENTLY FROM THE NOTE ABOVE: when that note was written, COG-4 was the one binding GREEN
+on f07787fa and this landing was the only thing turning it BLOCK. That is NO LONGER the starting
+condition. COG-4 is ALREADY BLOCK on master ac56ce78 — measured, not assumed: the verify twin run there
+exits 1 with recorded 93839d99 vs recomputed e7fccd9b, and the full `verify-cognitive-phase4.sh` on
+pristine ac56ce78 exits 1 on that same binding. The captain-availability-dial landing (PR #210, merge
+ac56ce78) appended two `temporary_allowances` rows to `cabinet/config/cognitive-architecture-contract.yml`
+— an in-scope path — and did not discharge the re-bind ceremony. So this commit re-binds the digest to the
+MERGED bytes and, as a side effect, clears a pre-existing BLOCK it did not cause. Recording that plainly
+rather than quietly inheriting the credit: one of the two deltas folded into this digest is not this
+branch's work.
+EXACTLY ONE in-scope path moved vs origin/master ac56ce78, verified by intersecting the resolved scope
+with `git diff --name-only origin/master..HEAD` (29 changed files, one in scope):
+`cabinet/config/cognitive-architecture-contract.yml` — now carrying BOTH landings' rows, master's two
+captain-availability-dial rows and this branch's one attention-well-spent row, reconciled by keeping both
+sides rather than taking either wholesale. Census re-measured on the merged bytes: PASS at 239<=239 and
+67578<=67578 — exact totals, zero headroom preserved, no maximum relaxed. This branch's row is unchanged
+at +252; only its recorded running total was re-measured (67186/66934 -> 67578/67326) because master's
+rows moved the base underneath it.
+STILL A MECHANICAL-DELTA re-bind, and the claim still holds: ZERO COG-4 engine, organ, scheduler,
+projection or trajectory bytes are touched by either landing folded here. Both are declarative budget rows
+consumed by the census gate. The four COG-4 §15 findings are untouched and none is re-derived.
+Re-measured on the merged bytes: `verify-cognitive-phase4.sh` full green end-to-end after this re-bind.
+SIBLING BINDERS: the contract yml sits in the COG-1/2/3 scopes too, so this landing moves those digests as
+well. They are NOT re-bound and must not be: all three were ALREADY BLOCK on pristine master ac56ce78 —
+measured by running each verify twin there, all exit 1 (recorded vs recomputed: COG-1 25c2f5e3/3e0e6a84,
+COG-2 b38632b9/04c276bb, COG-3 78a7bf18/218ba7dd). COG-0 has a scope tool but no review artifact on this
+tree, so it has no binding to move. This commit edits ONLY the digest-excluded review artifact, so the
+digest it records is stable under its own landing.)
 
 ---
 
