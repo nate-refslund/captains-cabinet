@@ -158,28 +158,45 @@ def _redis_hostport() -> Tuple[str, str]:
     return host, port
 
 
+def _killswitch_helper_verdict() -> Optional[str]:
+    """CLEAR | ACTIVE | INDETERMINATE from the ONE shared reader, or None when
+    the reader itself could not run.
+
+    2026-07-25 ADVERSARIAL AUDIT: this module used to run its own
+    ``redis-cli GET`` and map "not the literal string active" to "inactive".
+    redis-cli prints error replies ON STDOUT WITH EXIT 0, and the ``(error``
+    prefix this code guarded on only appears in INTERACTIVE mode — so NOAUTH
+    (requirepass), NOPERM (``ACL SETUSER default -get``), WRONGTYPE
+    (``LPUSH cabinet:killswitch x``) and LOADING all read as a cleared
+    emergency stop. The classification now lives in ONE schg-locked helper,
+    cabinet/scripts/hooks/killswitch-read.sh, which also consults the second
+    (filesystem marker) stop channel."""
+    helper = _REPO_ROOT / "cabinet" / "scripts" / "hooks" / "killswitch-read.sh"
+    if not helper.is_file():
+        return None
+    try:
+        proc = subprocess.run(["bash", str(helper)], capture_output=True,
+                              text=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    verdict = (proc.stdout or "").split("\t", 1)[0].strip()
+    return verdict if verdict in ("CLEAR", "ACTIVE", "INDETERMINATE") else None
+
+
 def observe_killswitch() -> Optional[str]:
     """'active' | 'inactive', or None when the control plane is unobservable.
 
-    Read-only GET.  Any transport error, non-zero exit, or redis error reply
-    is NO VERDICT — an unreachable Redis must never read as a deactivation
-    (the status verb's fail-closed cousin: it prints UNKNOWN/treat-as-ACTIVE;
-    we carry prior state instead of guessing either way)."""
-    host, port = _redis_hostport()
-    try:
-        proc = subprocess.run(
-            ["redis-cli", "-h", host, "-p", port, "GET", KILLSWITCH_KEY],
-            capture_output=True, text=True, timeout=10)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if proc.returncode != 0:
-        return None
-    value = proc.stdout.strip()
-    if value.startswith("(error"):
-        return None
-    if value == "(nil)":
-        value = ""
-    return "active" if value == "active" else "inactive"
+    NO VERDICT (None) covers every ambiguous outcome — transport error,
+    non-zero exit, redis error reply, unrecognised value, unreadable stop
+    marker, missing reader. An unreadable switch must never read as a
+    deactivation: the status verb prints STOPPED/CANNOT-VERIFY, and we carry
+    prior state rather than guessing either way."""
+    verdict = _killswitch_helper_verdict()
+    if verdict == "ACTIVE":
+        return "active"
+    if verdict == "CLEAR":
+        return "inactive"
+    return None
 
 
 def germline_lock_set(script: Path) -> Optional[Tuple[List[str], List[str]]]:

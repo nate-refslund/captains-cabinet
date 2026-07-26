@@ -113,11 +113,21 @@ for officer in "${OFFICERS[@]}"; do
   fi
 done
 
-# Check Redis kill switch state
-KILLSWITCH=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET cabinet:killswitch 2>/dev/null)
-if [ "$KILLSWITCH" = "active" ]; then
-  echo "[$TIMESTAMP] Kill switch is ACTIVE — skipping further checks"
+# Check the emergency stop through the ONE shared helper. Reporting only
+# "ACTIVE" and staying silent otherwise hid the 2026-07-25 failure mode, where
+# an unreadable switch (NOAUTH/NOPERM/WRONGTYPE/LOADING) looked exactly like a
+# clear one. An unverifiable stop is now said out loud.
+_KS_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/hooks" 2>/dev/null && pwd)/killswitch-read.sh"
+KS_VERDICT=INDETERMINATE; KS_REASON="killswitch helper unavailable"
+if [ -r "$_KS_HELPER" ]; then
+  # shellcheck source=/dev/null
+  . "$_KS_HELPER" 2>/dev/null && killswitch_read
 fi
+case "$KS_VERDICT" in
+  ACTIVE) echo "[$TIMESTAMP] Emergency stop is ACTIVE ($KS_REASON) — skipping further checks" ;;
+  CLEAR)  : ;;
+  *)      echo "[$TIMESTAMP] Emergency stop UNVERIFIABLE — treating as STOPPED ($KS_REASON)" ;;
+esac
 
 # Posture attestation status (sovereign amendment 2026-07-05) — LOG-ONLY,
 # never alerts: the resolution itself is fail-safe (anything ambiguous is

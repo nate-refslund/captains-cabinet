@@ -178,7 +178,7 @@ test refuses a `retired` row whose marker is still in the tree.
 - **Closed:** the `/tmp` enforcement-CACHE poisoning vector in the pre-tool-use hook. The cap is recomputed from source YAML on every call into an unpredictable per-invocation `mktemp` file (random name, `O_EXCL`, 0600, written-read-deleted in-process), so no persistent trusted state remains for a same-UID officer to pre-plant or race.
 - **Open:** `instance/config/platform.yml` and `framework/defaults/spending-limits.yml` are themselves officer-writable — not schg-locked, not matched by the hook's `GERM_PATH_RE` — so a determined officer can still edit the SOURCE cap.
 - **Why open:** the declaration names it a SEPARATE finding needing its own captain-gated ledger row; source integrity for the spend/peers/contexts configs is a distinct exposure from the cache vector this patch closed. Closing it means putting two config files under the immutable-flag boundary, which only a Captain sudo window can do.
-- **Declared at:** `cabinet/scripts/hooks/pre-tool-use.sh:388`
+- **Declared at:** `cabinet/scripts/hooks/pre-tool-use.sh:461`
 - **Anchor:** `RESIDUAL (SEPARATE finding`
 - **Retirement:** a Captain unlock window brings `instance/config/platform.yml` and `framework/defaults/spending-limits.yml` under the schg set (`cabinet/scripts/germline-lock.sh` FILES[]) and into the hook's `GERM_PATH_RE`. In the SAME commit: delete this declaration block from `cabinet/scripts/hooks/pre-tool-use.sh`, and flip this row to `retired`.
 
@@ -336,6 +336,17 @@ test refuses a `retired` row whose marker is still in the tree.
 - **Declared at:** `cabinet/scripts/tests/test_boundary_dynamic_forms.py:71`, `cabinet/scripts/tests/test_boundary_dynamic_forms.py:705`
 - **Anchor:** `RESIDUAL HONESTY. The engine docstring documents what remains undetectable`
 - **Retirement:** a follow-up wires the decidable (c) forms — at minimum `fromlist`/`level` on both `__import__` spellings, since `_import_from_targets` already computes the importing file's own package for the static form. In the SAME commit, per the declaration's own rule that the residual text and its tests move together: shrink the engine's residual list in `cabinet/scripts/cog2-import-gate.py`, move the matching `TestDocumentedResidual` arms, and either narrow this row's Open field to what genuinely remains undecidable or flip it to `retired` if nothing does.
+
+### RES-016 — the emergency stop still rides ONE channel, so a pre-armed clearing loop still wins
+
+- **Phase:** emergency-stop fail-closed fix (2026-07-25 adversarial audit), defect 2
+- **Status:** captain-gated
+- **Closed:** the stop no longer fails OPEN. Every reader now goes through one helper (`cabinet/scripts/hooks/killswitch-read.sh`) that reports CLEAR only on a definitive AUTHENTICATED read — a nonce-framed round trip a live server must echo — so NOAUTH, NOPERM, WRONGTYPE, LOADING, an unrecognised value, a silent `redis-cli` and a refused connection are all INDETERMINATE, and INDETERMINATE halts exactly like ACTIVE while being reported distinctly. The reader ALSO honours a second, filesystem stop channel (`instance/config/estop`, or `CABINET_ESTOP_MARKER`), and `kill-switch.sh deactivate` clears it.
+- **Open:** nothing ARMS the second channel automatically. `kill-switch.sh activate` writes only the Redis key, so the audit's pre-armed loop — `while :; do redis-cli DEL cabinet:killswitch; sleep 1; done` — still clears the stop within a second of every arming. The mechanism that defeats it is built and test-pinned (`cabinet/scripts/tests/test_killswitch_fail_closed.py::test_stop_survives_a_del_loop_clearing_the_redis_key` arms both channels by hand and proves the loop cannot clear them); it is not switched on.
+- **Why open:** arming a durable filesystem latch changes the emergency stop's CONTRACT rather than fixing a bug, and `cabinet/scripts/killswitch-watchdog.py` exists precisely to re-arm a switch that an unattributed raw `DEL` cleared — with a latch, that scenario stops being reachable through Redis alone, and the watchdog's tested semantics change with it. A latch is also a global side effect: when `activate` wrote the marker, every suite that arms the switch without a matching `deactivate` left the repo reading STOPPED for every later run. That is a governance decision and an operational one, not something to slip inside a fail-closed patch.
+- **Declared at:** `cabinet/scripts/kill-switch.sh:42`
+- **Anchor:** `DECLARED RESIDUAL (RES-016)`
+- **Retirement:** a Captain ruling arms the second channel. In the SAME commit: `kill-switch.sh activate` writes the marker BEFORE the Redis SET (so the stop is never half-armed) and reports each channel separately; `killswitch-watchdog.py` reads the REDIS channel alone (it polices that channel, and the shared helper grows a redis-only mode for it); every suite that arms the switch gets an isolated `CABINET_ESTOP_MARKER` so the latch cannot leak between tests; and this row flips to `retired`. HONEST LIMIT even then: a same-uid adversary can remove the marker too, so this raises cost rather than closing the class — genuinely closing it needs a channel the officer's uid cannot write (a root-owned path, or a Seatbelt deny-write on the marker in the officer profile).
 
 ## Absorption — how a wave's residuals get here (COG-5 W2 done)
 

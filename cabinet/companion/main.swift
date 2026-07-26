@@ -266,13 +266,34 @@ enum CompanionCore {
         [cli, "-h", Const.redisHost, "-p", Const.redisPort] + tail
     }
 
-    /// nil = read failed (exec error / timeout); false = key absent or ≠ "active".
+    /// nil = CANNOT TELL; true = stop armed; false = PROVEN clear.
+    ///
+    /// 2026-07-25 ADVERSARIAL AUDIT: this used to run its own `GET` and return
+    /// `stdout == "active"`, so every reply that was not that literal string
+    /// became a confident `false` — "the kill switch is off". redis-cli prints
+    /// error replies ON STDOUT WITH EXIT 0, so NOAUTH (requirepass), NOPERM
+    /// (`ACL SETUSER default -get`), WRONGTYPE (`LPUSH cabinet:killswitch x`)
+    /// and LOADING each made the Captain's phone report the stop as OFF while
+    /// the fleet kept working. The read now goes through the ONE shared reader,
+    /// cabinet/scripts/hooks/killswitch-read.sh, which reports CLEAR only on a
+    /// definitive AUTHENTICATED clear read and also consults the second
+    /// (filesystem marker) stop channel. Anything else is nil — and nil is
+    /// rendered as PAUSED/"cannot verify", never as "off" (§5 ladder).
     static func killswitchRead(root: String) -> Bool? {
-        guard let cli = redisCliPath() else { return nil }
-        let res = run(argv: redisArgv(cli, ["GET", "cabinet:killswitch"]),
-                      cwd: root, env: sanitizedEnv(root: root), timeout: Const.redisTimeout)
-        guard res.exitCode == 0, !res.timedOut else { return nil }
-        return res.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "active"
+        let helper = root + "/cabinet/scripts/hooks/killswitch-read.sh"
+        guard FileManager.default.isReadableFile(atPath: helper) else { return nil }
+        let res = run(argv: ["/bin/bash", helper], cwd: root,
+                      env: sanitizedEnv(root: root), timeout: Const.redisTimeout)
+        guard !res.timedOut else { return nil }
+        let verdict = res.stdout
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: "\t", maxSplits: 1)
+            .first.map(String.init) ?? ""
+        switch verdict {
+        case "ACTIVE": return true
+        case "CLEAR":  return false
+        default:       return nil
+        }
     }
 
     // ---- parsing ----
@@ -508,6 +529,16 @@ enum CompanionCore {
                             reason: "kill switch active — every officer halts on its next tool call",
                             officers: officers, rootValid: true, redisUp: true,
                             killswitchActive: true, doctorLine: doctorLine, takenAt: now)
+        }
+        if killswitch == nil {
+            // CANNOT VERIFY outranks everything below it, and renders as
+            // STOPPED — never as "off", never as a benign AMBER note. The
+            // Captain has to be able to tell "stopped" from "I cannot tell",
+            // and both mean nothing is permitted to act (2026-07-25 audit).
+            return Snapshot(state: .PAUSED,
+                            reason: "emergency stop UNVERIFIABLE — treating as STOPPED; the switch could not be read",
+                            officers: officers, rootValid: true, redisUp: true,
+                            killswitchActive: nil, doctorLine: doctorLine, takenAt: now)
         }
         if case .ok(let ts, .dead(let n)) = doctor {
             var reason = "doctor RED: \(n) dead check(s) (stamped \(iso(ts)))"

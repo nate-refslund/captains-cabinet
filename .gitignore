@@ -300,3 +300,6 @@ cabinet/scripts/world-aesthetic/judge/runs/
 # Both candidate roots covered: pre- and post-vault-rename trees.
 product-brain/library-archive/
 vault/library-archive/
+
+# Emergency-stop marker (second E-stop channel; runtime-written by kill-switch.sh)
+instance/config/estop
