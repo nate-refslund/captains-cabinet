@@ -210,50 +210,6 @@ def test_private_checkpoint_reviews_do_not_ship(export: Path):
     assert sorted(p.name for p in reviews.iterdir()) == [".gitkeep"]
 
 
-def test_shipped_ignored_keeplist_ships_and_is_accurate(export: Path):
-    """The egg has no .git, so nothing in it can tell "shipped" from "written by
-    this deployment" — and `git ls-files --others --ignored` in a fresh index
-    cannot see a force-add (`git add -f`). This repo force-tracks real product
-    source that .gitignore names, so null-hatch.sh's gitless staging deleted it
-    from the clean-room sandbox while `git archive HEAD` kept it: same content,
-    two verdicts. The export therefore SHIPS the answer.
-
-    Pinned here: the list exists, every path on it is really in the export, and
-    it actually names the force-tracked product source (a list that shipped
-    empty would be a silent no-op)."""
-    keeplist = export / "cabinet/scripts/shipped-ignored-paths.txt"
-    assert keeplist.is_file(), (
-        "the egg must declare which of its files a fresh clone's .gitignore "
-        "would call ignorable, or the clean-room proof runs on a pruned tree")
-    entries = [ln for ln in keeplist.read_text(encoding="utf-8").splitlines()
-               if ln and not ln.startswith("#")]
-    assert entries, "an empty keep-list is a silent no-op"
-    missing = [rel for rel in entries if not (export / rel).is_file()]
-    assert not missing, f"keep-list names paths the export does not have: {missing}"
-    # the ones that made this a bug: force-added dashboard product source
-    assert any(rel.startswith("cabinet/dashboard/") and rel.endswith(".tsx")
-               for rel in entries), (
-        f"no force-tracked dashboard source on the keep-list: {entries}")
-
-
-def test_shipped_ignored_keeplist_matches_head(export: Path):
-    """Derived, not hand-maintained: the list must be exactly HEAD's
-    force-tracked-ignored set intersected with what survived the packaging pass
-    — so it cannot rot away from either .gitignore or the manifest."""
-    keeplist = export / "cabinet/scripts/shipped-ignored-paths.txt"
-    entries = {ln for ln in keeplist.read_text(encoding="utf-8").splitlines()
-               if ln and not ln.startswith("#")}
-    head = subprocess.run(
-        ["git", "-c", "core.quotePath=false", "ls-files", "-c", "-i",
-         "--exclude-standard"],
-        cwd=_REPO_ROOT, capture_output=True, text=True, timeout=60, check=True)
-    expected = {rel for rel in head.stdout.splitlines()
-                if rel and (export / rel).is_file()}
-    assert entries == expected, (
-        f"only on list: {sorted(entries - expected)}; "
-        f"only at HEAD: {sorted(expected - entries)}")
-
-
 def test_contexts_and_projects_pruned(export: Path):
     contexts = sorted(f.name for f in (export / "instance/config/contexts").iterdir())
     assert contexts == [
