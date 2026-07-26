@@ -1,0 +1,19 @@
+# FIXTURE — inert data for EVAL-027-CAPTAIN-SEAT (the repetition arm). Compared,
+# never executed, never a live store.
+#
+# The PRESENT end of the availability dial: two entries, so the arm also proves
+# the pack takes the LAST valid row rather than the first. The `at` stamps are
+# fixed, so the eval pins only the declared line — the printed age is
+# time-relative and pinning it would rot on a calendar boundary.
+schema: cabinet.captain-availability/v1
+entries:
+  # captain text: availability substantial
+  - at: 2026-01-02T08:00:00Z
+    minutes_per_day: 120
+    mode: substantial
+    source: telegram
+  # captain text: availability 20m
+  - at: 2026-01-09T18:30:00Z
+    minutes_per_day: 20
+    mode: part_time
+    source: telegram

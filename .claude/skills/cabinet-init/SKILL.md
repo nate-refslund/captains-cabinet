@@ -162,6 +162,44 @@ Collect:
   attention gate treats as never-active). The quiet-hours floor — the
   classes that may still ping at night — is carried unchanged: this
   question can never widen it.
+- **Availability** — how much time a day the captain has for the
+  cabinet (Captain ruling 2026-07-26). Same reason quiet hours is
+  asked: a silent default is an invisible feature, and until this was
+  asked nothing knew the budget it was spending. **The org fits the
+  declared budget, never the reverse** — the Captain-Seat Review judges
+  every ask relative to it, and the comms surface paces from it. Render
+  the question from the LIVE mode table, never a hardcoded copy:
+
+  ```bash
+  python3.12 -m framework.onboarding.availability question
+  ```
+
+  It reads `framework.env.AVAILABILITY_MODES` and asks, e.g.: "How much
+  time a day do you have for the cabinet? … Options: minimal (about 10
+  minutes a day); part_time (about 30 minutes a day); substantial
+  (about 2 hours a day); full_time (the cabinet is my main seat)." Ask
+  it verbatim, then map the answer onto EXACTLY one verb — free text
+  never reaches the command line:
+
+  ```bash
+  python3.12 -m framework.onboarding.availability apply --choice part_time
+  python3.12 -m framework.onboarding.availability apply --choice skip
+  ```
+
+  `apply` records `captain.availability` in the answers file; the
+  generator stamps `captain_availability_minutes_per_day` +
+  `captain_availability_mode` into `instance/config/platform.yml` on
+  the next run. **`skip` (or an unclear answer) writes NOTHING** — the
+  value stays UNKNOWN, a legal documented state meaning "the org does
+  not know how much of the captain it is entitled to", and every
+  consumer keeps its own conservative default. NEVER invent a number to
+  fill the gap: a placeholder that pretends to be an answer is the named
+  failure here. The captain can set or change it any time from his phone
+  — `availability 20m` / `availability part_time` / `availability away`
+  / `availability ?` — which appends to
+  `instance/config/captain-availability.yml` and OUTRANKS the platform
+  key, so a later re-run of the interview can never demote his own
+  ruling.
 
 ### 2. Lanes
 
@@ -368,7 +406,12 @@ placeholders only:
 
    ```yaml
    version: 1
-   captain: {name, timezone, telegram_chat_id}
+   captain: {name, timezone, telegram_chat_id,
+             availability}                      # OPTIONAL time budget: away |
+                                                #  minimal | part_time |
+                                                #  substantial | full_time.
+                                                #  OMIT to leave UNKNOWN — never
+                                                #  a placeholder number
    mission:                                     # Phase 0 (purpose-first interview);
      purpose: <one sentence>                    #  the generator IGNORES this key
      success_90d: <one sentence>                #  (pinned by test) — only genesis

@@ -68,6 +68,8 @@ It prints what he was SENT, what he WROTE BACK, mechanical repetition counts, op
 
 **Step 2 — relive the window as him.** Hand the pack — **and nothing else** — to a FRESH context with zero retro priors (its own subagent; the point is no inherited framing of what "went well"). It answers in FIRST PERSON as the Captain: *what did this window cost me? what did I have to say more than once? what waited on me longer than it should have? what was sent to me that I never touched or never valued?*
 
+**Judge cost RELATIVE to the declared availability in the pack's AVAILABILITY section** (Captain ruling 2026-07-26): an ask that is fair at `full_time` is friction at minutes-a-day, so the same volume is a finding at one setting and nothing at another — and **an availability the pack reports as absent is itself pack evidence** (the org has been spending a budget it never asked for). The org fits the declared budget, never the reverse.
+
 **Emission bar — every part required:**
 - (a) it quotes an **artifact of his own** from the pack (his words, a number, a date);
 - (b) that artifact shows a **cost PAID INSIDE THE WINDOW**: something he had to say twice, something that waited on him too long, something sent to him he never acted on, a channel that lost or ignored his input, or a promise to him measurably not running. *A design improvement with no in-window paid cost is a FORBIDDEN output.*

@@ -9,6 +9,14 @@ repo root is ``framework.env._cabinet_root`` (which honors ``CABINET_ROOT``).
 
 The one Captain-confirmable knob from the master prompt (§4): ``mode`` —
 ``ask-first`` (default, recommended) vs ``auto-push``.
+
+AVAILABILITY-AWARE PACING (Captain ruling 2026-07-26). When the deployment has
+set NO cap of its own, the active-card cap scales from the Captain's declared
+time budget (``framework.env.captain_availability()``): away/minimal floors it,
+part-time and substantial narrow it, and an UNKNOWN budget changes nothing at
+all. An explicitly configured cap always wins — a configured value is a ruling,
+and the budget must never silently override one. ``availability_pacing: false``
+turns the derivation off entirely.
 """
 from __future__ import annotations
 
@@ -46,11 +54,42 @@ DEFAULTS = {
     # the DEFAULT is now the ratified design rather than this deployment's
     # private override. An unknown value narrows here, to the ratified design.
     "pin_mode": "overview",
+    # Availability-aware pacing (Captain ruling 2026-07-26): when the deployment
+    # has NOT set its own cap, scale it from the Captain's declared time budget
+    # (framework.env.captain_availability()). The org fits the declared budget,
+    # never the reverse — 146 cards chasing 2 approvals is what the un-scaled
+    # cap looked like. Set false to pin the cap regardless of availability.
+    # UNKNOWN availability changes NOTHING: the shipped cap stands, because a
+    # consumer must never invent a number for an answer nobody gave.
+    "availability_pacing": True,
 }
 
 _CAP_MIN, _CAP_MAX = 1, 7
 _MODES = ("ask-first", "auto-push")
 _PIN_MODES = ("adopt", "overview")
+
+#: minutes/day → active-card cap, smallest band first. The bands mirror
+#: ``framework.env.AVAILABILITY_MODES`` (away/minimal/part_time/substantial);
+#: anything above the last band keeps the shipped ``DEFAULTS["cap"]``. ONE knob
+#: on purpose — the frontdoor's expiry/TTL constants are deliberately untouched.
+_AVAILABILITY_CAP_BANDS = ((10, 1), (30, 2), (120, 3), (240, 4))
+
+
+def _availability_cap(default_cap: int) -> int:
+    """The cap the declared availability implies, or ``default_cap`` when
+    availability is UNKNOWN (or unreadable). Fail-safe: any error keeps the
+    shipped default, so a broken store can never widen or narrow the surface."""
+    try:
+        from framework import env
+        minutes = env.captain_availability().get("minutes_per_day")
+    except Exception:  # noqa: BLE001 — pacing must not depend on a config read
+        return default_cap
+    if minutes is None:
+        return default_cap             # unknown ⇒ unchanged, never invented
+    for band, cap in _AVAILABILITY_CAP_BANDS:
+        if minutes <= band:
+            return cap
+    return default_cap
 
 
 def _instance_file() -> Path:
@@ -97,8 +136,16 @@ def load(*, instance: "dict | None" = None) -> dict:
             return v
         return pac.get(yml_key, inst.get(yml_key))
 
-    cap = int(_num(pick("CABINET_SURFACE_CAP", "cap"),
-                   DEFAULTS["cap"], _CAP_MIN, _CAP_MAX))
+    # An EXPLICIT cap (env or instance file) always wins. Only when the
+    # deployment has said nothing does the declared availability decide — a
+    # configured cap is a ruling, and a budget must never silently override one.
+    raw_cap = pick("CABINET_SURFACE_CAP", "cap")
+    avail_pacing = pick("CABINET_SURFACE_AVAILABILITY_PACING", "availability_pacing")
+    avail_pacing = (DEFAULTS["availability_pacing"] if avail_pacing is None
+                    else str(avail_pacing).strip().lower() in ("1", "true", "yes", "on"))
+    cap_default = (_availability_cap(DEFAULTS["cap"]) if avail_pacing
+                   else DEFAULTS["cap"])
+    cap = int(_num(raw_cap, cap_default, _CAP_MIN, _CAP_MAX))
     mode = str(pick("CABINET_SURFACE_MODE", "mode") or DEFAULTS["mode"]).strip().lower()
     if mode not in _MODES:
         mode = DEFAULTS["mode"]      # unknown mode narrows to ask-first, never louder
@@ -133,6 +180,7 @@ def load(*, instance: "dict | None" = None) -> dict:
         "briefing_card": str(bcard).strip().lower() in ("1", "true", "yes", "on"),
         "dashboard_url": str(pick("CABINET_DASHBOARD_URL", "dashboard_url")
                              or DEFAULTS["dashboard_url"]).strip(),
+        "availability_pacing": avail_pacing,
     }
 
 

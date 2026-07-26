@@ -172,6 +172,53 @@ if nl.is_file():
 else:
     absent(nl, "no needs ledger")
 
+# --- D2. AVAILABILITY (the budget every cost is judged against) ---------
+# Read ROOT-RELATIVE and with no PyYAML dependency (this pack imports stdlib
+# only, and the eval points CAPTAIN_SEAT_ROOT at a fixture tree — importing
+# framework.env here would read the REAL deployment instead). Precedence
+# mirrors framework.env.captain_availability(): the adjustment store's LAST
+# valid entry, else the platform.yml onboarding stamp, else UNKNOWN. The store
+# is machine-written and always emits minutes_per_day, so a line-shaped read is
+# sufficient; a hand-mangled or mode-only row reads as absent here (the resolver
+# would derive the band's minutes) — the same fail-closed DIRECTION, and it can
+# only ever under-claim, never invent a budget.
+sec("AVAILABILITY — what he said he has")
+avail_store = root / "instance" / "config" / "captain-availability.yml"
+declared = None
+if avail_store.is_file():
+    entry = {}
+    for line in avail_store.read_text(errors="replace").splitlines():
+        m = re.match(r"\s*-\s*at:\s*(\S+)", line)
+        if m:
+            entry = {"at": m.group(1)}
+            continue
+        m = re.match(r"\s*(minutes_per_day|mode|source):\s*(\S+)", line)
+        if m and entry:
+            entry[m.group(1)] = m.group(2)
+        if entry.get("minutes_per_day"):
+            declared = dict(entry, origin="adjusted")
+if declared is None:
+    plat = root / "instance" / "config" / "platform.yml"
+    if plat.is_file():
+        txt = plat.read_text(errors="replace")
+        m = re.search(r"^captain_availability_minutes_per_day:\s*(\d+)", txt, re.MULTILINE)
+        if m:
+            declared = {"minutes_per_day": m.group(1), "origin": "onboarding"}
+            m2 = re.search(r"^captain_availability_mode:\s*(\S+)", txt, re.MULTILINE)
+            if m2:
+                declared["mode"] = m2.group(1)
+if declared:
+    print(f"declared: {declared['minutes_per_day']} min/day  "
+          f"mode={declared.get('mode', 'unstated')}  source={declared['origin']}")
+    if declared.get("at"):
+        age = age_days(declared["at"])
+        print(f"set_at: {declared['at']}" + (f" ({age}d ago)" if age is not None else ""))
+    print("judge every cost below against THIS budget — an ask that is fair at "
+          "full_time is friction at minutes-a-day.")
+else:
+    absent(avail_store, "no declared availability — the org does not know how "
+                        "much of the captain it is entitled to")
+
 # --- E. CHANNEL HEALTH (the loops he believes are running) --------------
 sec("E. CHANNEL HEALTH")
 for name, what in [

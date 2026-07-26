@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 _DEV = "dev"
@@ -736,6 +737,257 @@ def briefing_times(default: "tuple[str, ...]" = _BRIEFING_TIMES_DEFAULT) -> "tup
     result = tuple(times) if times else tuple(default)
     _briefing_times_cache = result
     return result
+
+
+# ---------------------------------------------------------------------------
+# Captain availability — THE declared time budget (Captain ruling 2026-07-26)
+# ---------------------------------------------------------------------------
+# The org fits the declared budget, never the reverse. Onboarding asks how much
+# of the Captain's day the cabinet gets; the answer is a first-class instance
+# value, adjustable later from the phone. Consumers (the Captain-Seat Review's
+# emission bar, the comms-surface pacing cap) judge cost RELATIVE to it.
+#
+# UNKNOWN IS A LEGAL STATE and means exactly: "the org does not know how much
+# of the Captain it is entitled to." A consumer must treat it CONSERVATIVELY —
+# keep its own shipped default — and must never invent a number to stand in
+# for an answer nobody gave. (The paid case is the 1/3-scored briefing: a
+# placeholder that pretends to be an answer is worse than an honest absence.)
+
+#: The canonical mode table: ``(mode, minutes_per_day, human label)``, ordered
+#: least→most available. THE one source of truth — the onboarding question, the
+#: Telegram verb's grammar and every renderer read it instead of restating the
+#: prose, so changing a band here changes every surface at once.
+#:
+#: ``full_time``'s 480 is the framework's stated reading of "a full working
+#: day"; a Captain who means something else states the number outright
+#: ("availability 6h"), which always wins over the band.
+AVAILABILITY_MODES: "tuple[tuple[str, int, str], ...]" = (
+    ("away", 0, "away — nothing but a genuine emergency reaches me"),
+    ("minimal", 10, "minimal — about 10 minutes a day"),
+    ("part_time", 30, "part-time — about 30 minutes a day"),
+    ("substantial", 120, "substantial — about 2 hours a day"),
+    ("full_time", 480, "full-time — the cabinet is my main seat"),
+)
+
+#: Upper bound for a declared budget: minutes in a day. A larger number is a
+#: typo, not a ruling, and is refused rather than clamped.
+AVAILABILITY_MAX_MINUTES = 24 * 60
+
+#: The unknown reading, returned whenever nothing is declared. Callers get the
+#: same key set in every state, so `result["minutes_per_day"] is None` is the
+#: ONE unknown test — never a missing key, never a KeyError.
+_AVAILABILITY_UNKNOWN = {"minutes_per_day": None, "mode": None,
+                         "source": None, "set_at": None}
+
+
+def availability_modes() -> "tuple[str, ...]":
+    """The fixed verb enum, in table order."""
+    return tuple(m for m, _minutes, _label in AVAILABILITY_MODES)
+
+
+def availability_minutes_for_mode(mode) -> "int | None":
+    """Minutes/day for a canonical mode, else None (an unknown verb is never
+    silently mapped onto a number)."""
+    want = str(mode if mode is not None else "").strip().lower()
+    for name, minutes, _label in AVAILABILITY_MODES:
+        if name == want:
+            return minutes
+    return None
+
+
+def availability_mode_for_minutes(minutes) -> "str | None":
+    """The mode BAND a minutes/day figure falls in, else None. The band is the
+    smallest table entry whose minutes are >= the figure (so 20 min/day reads
+    as part_time, not minimal); anything above the largest band reads as the
+    largest. Used for rendering only — a declared number is always the value."""
+    try:
+        n = int(minutes)
+    except (TypeError, ValueError):
+        return None
+    for name, band, _label in AVAILABILITY_MODES:
+        if n <= band:
+            return name
+    return AVAILABILITY_MODES[-1][0]
+
+
+def captain_availability_path() -> Path:
+    """The ADJUSTMENT store path — where a later ruling ("availability 20m" on
+    Telegram, or the dashboard once it can write) lands.
+
+    Sibling of ``comms_charter_path`` / ``comms_surface_path``: the
+    ``CABINET_CAPTAIN_AVAILABILITY_FILE`` env override wins (tests, and the
+    repo-root conftest's pytest fence), else
+    ``instance/config/captain-availability.yml`` under the deployment root.
+    Keeping the ``instance/`` reference HERE — the sanctioned layer-crossing
+    seam — is what the layer-separation gate expects."""
+    env_override = (os.environ.get("CABINET_CAPTAIN_AVAILABILITY_FILE") or "").strip()
+    if env_override:
+        return Path(env_override).expanduser()
+    return _cabinet_root() / "instance/config/captain-availability.yml"
+
+
+def cabinet_init_answers_path() -> Path:
+    """The cabinet-init ANSWERS file — the interview's own output and the
+    generator's input (``cabinet/scripts/generate-instance.py``, whose
+    ``--answers`` flag defaults to the same relative path).
+
+    Sibling of ``comms_charter_path``: ``CABINET_INIT_ANSWERS`` env override
+    wins (tests / a non-default interview run), else
+    ``instance/config/cabinet-init.answers.yml`` under the deployment root.
+    Exists so an onboarding module in ``framework/`` can record an answer
+    WITHOUT spelling an instance path of its own — this resolver is the
+    sanctioned crossing."""
+    env_override = (os.environ.get("CABINET_INIT_ANSWERS") or "").strip()
+    if env_override:
+        return Path(env_override).expanduser()
+    return _cabinet_root() / "instance/config/cabinet-init.answers.yml"
+
+
+# Cache: captain_availability is read once per process (same lifecycle as
+# briefing_times — config is stable under a running officer; a restart, or an
+# explicit cache reset in a test, re-reads). None ⇒ unresolved. The UNKNOWN
+# reading is a real resolved value and IS cached, so the sentinel is None.
+_captain_availability_cache: "dict | None" = None
+
+
+def _availability_entry(raw) -> "dict | None":
+    """One store/config row → a validated reading, else None.
+
+    A row must yield a usable minutes figure: an explicit
+    ``minutes_per_day`` (0..1440) wins, else the row's ``mode`` supplies the
+    band's minutes. A row with neither — or with an out-of-range number, or an
+    unknown mode and no number — is REFUSED, not repaired: a budget the org
+    cannot read must read as absent so the next-oldest ruling (or the honest
+    unknown) stands, never as a number nobody declared."""
+    if not isinstance(raw, dict):
+        return None
+    mode = raw.get("mode")
+    mode = str(mode).strip().lower() if isinstance(mode, str) and mode.strip() else None
+    if mode is not None and availability_minutes_for_mode(mode) is None:
+        mode = None                      # unknown verb: drop it, never guess
+    minutes = raw.get("minutes_per_day")
+    if isinstance(minutes, bool):        # bool is an int subclass — never a budget
+        minutes = None
+    if isinstance(minutes, (int, float)) and float(minutes).is_integer():
+        minutes = int(minutes)
+        if not 0 <= minutes <= AVAILABILITY_MAX_MINUTES:
+            minutes = None
+    else:
+        minutes = None
+    if minutes is None and mode is not None:
+        minutes = availability_minutes_for_mode(mode)
+    if minutes is None:
+        return None
+    return {"minutes_per_day": minutes, "mode": mode, "source": None,
+            "set_at": _availability_stamp(raw.get("at"))}
+
+
+def _availability_stamp(value) -> "str | None":
+    """One ``at:`` field → a UTC ISO ``...Z`` string, else None.
+
+    PyYAML loads an UNQUOTED ``2026-07-26T21:30:00Z`` as a ``datetime``, not a
+    string (the same YAML-retyping class the briefing-slot rescue handles), so a
+    naive isinstance-str check silently dropped every timestamp the phone verb
+    wrote. Both shapes are accepted; anything else is None rather than a
+    stringified repr."""
+    if isinstance(value, str):
+        return value.strip() or None
+    if isinstance(value, datetime):
+        at = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return at.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if isinstance(value, date):
+        return value.strftime("%Y-%m-%d")
+    return None
+
+
+def captain_availability() -> dict:
+    """How much of the Captain's day this cabinet is entitled to.
+
+    Returns ``{"minutes_per_day": int|None, "mode": str|None,
+    "source": "adjusted"|"onboarding"|None, "set_at": iso|None}`` — the same
+    keys in every state. ``minutes_per_day is None`` (and ``source is None``)
+    means UNKNOWN: nobody has declared a budget. Unknown is legal and
+    documented; a consumer keeps its own conservative default and never
+    substitutes a made-up figure.
+
+    Precedence, highest first:
+
+    1. the ADJUSTMENT store ``instance/config/captain-availability.yml``
+       (``captain_availability_path()``) — an append-only ``entries:`` list,
+       LATEST VALID ROW WINS. This is what the Telegram verb writes, so a
+       ruling from the Captain's phone always beats what onboarding stamped.
+    2. ``captain_availability_minutes_per_day`` (+ optional
+       ``captain_availability_mode``) in ``instance/config/platform.yml``, else
+       ``product.yml`` / nested ``product.`` — the value cabinet-init stamped.
+    3. all-None (unknown).
+
+    Never raises: an unreadable or malformed file counts as absent at that
+    level and the next level decides."""
+    global _captain_availability_cache
+    if _captain_availability_cache is not None:
+        return dict(_captain_availability_cache)
+
+    result = dict(_AVAILABILITY_UNKNOWN)
+    try:
+        import yaml  # local: keep env.py import-light for the safety switches
+
+        # (1) the adjustment store — latest valid entry wins.
+        store = captain_availability_path()
+        try:
+            if store.exists():
+                doc = yaml.safe_load(store.read_text(encoding="utf-8")) or {}
+                entries = doc.get("entries") if isinstance(doc, dict) else None
+                if isinstance(entries, list):
+                    for raw in reversed(entries):
+                        got = _availability_entry(raw)
+                        if got is not None:
+                            got["source"] = "adjusted"
+                            result = got
+                            break
+        except Exception:  # noqa: BLE001 — a corrupt store is an absent store
+            pass
+
+        # (2) the onboarding stamp in platform.yml / product.yml.
+        if result["minutes_per_day"] is None:
+            root = _cabinet_root()
+            for rel in ("instance/config/platform.yml", "instance/config/product.yml"):
+                p = root / rel
+                try:
+                    if not p.exists():
+                        continue
+                    data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+                except Exception:
+                    continue
+                if not isinstance(data, dict):
+                    continue
+                nested = data.get("product") if isinstance(data.get("product"), dict) else {}
+                minutes = data.get("captain_availability_minutes_per_day",
+                                   nested.get("captain_availability_minutes_per_day"))
+                mode = data.get("captain_availability_mode",
+                                nested.get("captain_availability_mode"))
+                got = _availability_entry({"minutes_per_day": minutes, "mode": mode})
+                if got is not None:
+                    got["source"] = "onboarding"
+                    result = got
+                    break
+    except Exception:  # noqa: BLE001 — no config read may break the resolver
+        result = dict(_AVAILABILITY_UNKNOWN)
+
+    _captain_availability_cache = dict(result)
+    return dict(result)
+
+
+def render_availability(reading: "dict | None" = None) -> str:
+    """One plain line for a reading — the shape every surface prints, so the
+    pack, the phone reply and the dashboard cannot describe the same value
+    three different ways."""
+    r = captain_availability() if reading is None else reading
+    if not r or r.get("minutes_per_day") is None:
+        return ("no declared availability — the org does not know how much of "
+                "the captain it is entitled to")
+    mode = r.get("mode") or availability_mode_for_minutes(r["minutes_per_day"])
+    return (f"{r['minutes_per_day']} min/day  mode={mode or 'unstated'}  "
+            f"source={r.get('source') or 'unknown'}")
 
 
 # Cache: shared_env_path is read once per process (same lifecycle as

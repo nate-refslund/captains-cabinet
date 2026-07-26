@@ -1254,3 +1254,237 @@ class TestActiveContext:
         assert env.active_context(officer="anyone",
                                   root=tmp_path / "missing",
                                   default="sentinel") == "sentinel"
+
+
+@pytest.fixture
+def isolated_availability_cache():
+    """Clear the process-wide availability cache for the test, then restore the
+    original so sibling tests are untouched — mirrors isolated_git_repos_cache."""
+    saved = env._captain_availability_cache
+    env._captain_availability_cache = None
+    try:
+        yield
+    finally:
+        env._captain_availability_cache = saved
+
+
+class TestCaptainAvailability:
+    """The captain_availability() resolver — the DECLARED time budget the org
+    fits into (Captain ruling 2026-07-26), instance-driven and fail-closed to a
+    documented UNKNOWN.
+
+    UNKNOWN is the load-bearing case: it means "the org does not know how much
+    of the captain it is entitled to", and every consumer must keep its own
+    conservative default rather than invent a number. These tests pin both ends
+    — a declared budget resolves exactly, and an undeclared one resolves to
+    all-None with the same key set, never a zero and never a guess."""
+
+    def _store(self, path, body: str):
+        path.write_text(body, encoding="utf-8")
+        return path
+
+    def test_all_none_when_nothing_is_declared(self, tmp_path, monkeypatch,
+                                               isolated_availability_cache):
+        """No store, no platform key ⇒ UNKNOWN, with every key present."""
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        monkeypatch.setenv("CABINET_CAPTAIN_AVAILABILITY_FILE",
+                           str(tmp_path / "absent.yml"))
+        env._captain_availability_cache = None
+        got = env.captain_availability()
+        assert got == {"minutes_per_day": None, "mode": None,
+                       "source": None, "set_at": None}
+
+    def test_reads_the_onboarding_stamp_from_platform_yml(
+            self, tmp_path, monkeypatch, isolated_availability_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        monkeypatch.setenv("CABINET_CAPTAIN_AVAILABILITY_FILE",
+                           str(tmp_path / "absent.yml"))
+        _write_cfg(tmp_path, "platform.yml",
+                   "captain_availability_minutes_per_day: 30\n"
+                   "captain_availability_mode: part_time\n")
+        env._captain_availability_cache = None
+        got = env.captain_availability()
+        assert got["minutes_per_day"] == 30
+        assert got["mode"] == "part_time"
+        assert got["source"] == "onboarding"
+        assert got["set_at"] is None
+
+    def test_mode_alone_supplies_the_bands_minutes(
+            self, tmp_path, monkeypatch, isolated_availability_cache):
+        """A stamped mode with no number is still a declaration: the band's
+        minutes are the declared value (never None, never invented)."""
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        monkeypatch.setenv("CABINET_CAPTAIN_AVAILABILITY_FILE",
+                           str(tmp_path / "absent.yml"))
+        _write_cfg(tmp_path, "platform.yml",
+                   "captain_availability_mode: minimal\n")
+        env._captain_availability_cache = None
+        got = env.captain_availability()
+        assert got["minutes_per_day"] == env.availability_minutes_for_mode("minimal")
+        assert got["mode"] == "minimal"
+
+    def test_reads_nested_stamp_from_product_yml(
+            self, tmp_path, monkeypatch, isolated_availability_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        monkeypatch.setenv("CABINET_CAPTAIN_AVAILABILITY_FILE",
+                           str(tmp_path / "absent.yml"))
+        _write_cfg(tmp_path, "product.yml",
+                   "product:\n  captain_availability_minutes_per_day: 120\n")
+        env._captain_availability_cache = None
+        assert env.captain_availability()["minutes_per_day"] == 120
+
+    def test_adjustment_store_beats_the_platform_stamp(
+            self, tmp_path, monkeypatch, isolated_availability_cache):
+        """THE precedence rule: a ruling from his phone outranks whatever
+        onboarding stamped, so a generator re-run cannot demote him."""
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml",
+                   "captain_availability_minutes_per_day: 480\n"
+                   "captain_availability_mode: full_time\n")
+        store = self._store(tmp_path / "avail.yml",
+                            "entries:\n"
+                            "  - at: 2026-07-26T21:30:00Z\n"
+                            "    minutes_per_day: 20\n"
+                            "    mode: part_time\n"
+                            "    source: telegram\n")
+        monkeypatch.setenv("CABINET_CAPTAIN_AVAILABILITY_FILE", str(store))
+        env._captain_availability_cache = None
+        got = env.captain_availability()
+        assert got["minutes_per_day"] == 20
+        assert got["source"] == "adjusted"
+        assert got["set_at"] == "2026-07-26T21:30:00Z"
+
+    def test_latest_valid_entry_wins(self, tmp_path, monkeypatch,
+                                     isolated_availability_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        store = self._store(tmp_path / "avail.yml",
+                            "entries:\n"
+                            "  - at: 2026-07-01T00:00:00Z\n"
+                            "    minutes_per_day: 120\n"
+                            "  - at: 2026-07-20T00:00:00Z\n"
+                            "    minutes_per_day: 10\n")
+        monkeypatch.setenv("CABINET_CAPTAIN_AVAILABILITY_FILE", str(store))
+        env._captain_availability_cache = None
+        assert env.captain_availability()["minutes_per_day"] == 10
+
+    def test_a_malformed_latest_entry_falls_back_to_the_last_valid_one(
+            self, tmp_path, monkeypatch, isolated_availability_cache):
+        """An unreadable row must not become a budget. It reads as absent so
+        the previous ruling stands — never a repaired or invented number."""
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        store = self._store(tmp_path / "avail.yml",
+                            "entries:\n"
+                            "  - at: 2026-07-01T00:00:00Z\n"
+                            "    minutes_per_day: 30\n"
+                            "  - at: 2026-07-20T00:00:00Z\n"
+                            "    minutes_per_day: 99999\n"
+                            "  - at: 2026-07-21T00:00:00Z\n"
+                            "    mode: not-a-real-mode\n")
+        monkeypatch.setenv("CABINET_CAPTAIN_AVAILABILITY_FILE", str(store))
+        env._captain_availability_cache = None
+        got = env.captain_availability()
+        assert got["minutes_per_day"] == 30
+        assert got["source"] == "adjusted"
+
+    def test_corrupt_store_falls_through_to_the_platform_stamp(
+            self, tmp_path, monkeypatch, isolated_availability_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml",
+                   "captain_availability_minutes_per_day: 30\n")
+        store = self._store(tmp_path / "avail.yml", "entries: [[[not yaml\n")
+        monkeypatch.setenv("CABINET_CAPTAIN_AVAILABILITY_FILE", str(store))
+        env._captain_availability_cache = None
+        got = env.captain_availability()
+        assert got["minutes_per_day"] == 30 and got["source"] == "onboarding"
+
+    def test_a_boolean_is_never_a_budget(self, tmp_path, monkeypatch,
+                                        isolated_availability_cache):
+        """bool is an int subclass in Python — `minutes_per_day: true` must
+        read as absent, not as 1 minute a day."""
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        monkeypatch.setenv("CABINET_CAPTAIN_AVAILABILITY_FILE",
+                           str(tmp_path / "absent.yml"))
+        _write_cfg(tmp_path, "platform.yml",
+                   "captain_availability_minutes_per_day: true\n")
+        env._captain_availability_cache = None
+        assert env.captain_availability()["minutes_per_day"] is None
+
+    def test_zero_is_a_real_declaration_not_an_absence(
+            self, tmp_path, monkeypatch, isolated_availability_cache):
+        """`away` is 0 min/day — a genuine ruling. The degenerate END of the
+        range must NOT be mistaken for "nothing declared"."""
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        store = self._store(tmp_path / "avail.yml",
+                            "entries:\n"
+                            "  - at: 2026-07-26T00:00:00Z\n"
+                            "    minutes_per_day: 0\n"
+                            "    mode: away\n")
+        monkeypatch.setenv("CABINET_CAPTAIN_AVAILABILITY_FILE", str(store))
+        env._captain_availability_cache = None
+        got = env.captain_availability()
+        assert got["minutes_per_day"] == 0 and got["mode"] == "away"
+        assert got["source"] == "adjusted"
+
+    def test_result_is_cached_process_wide(self, tmp_path, monkeypatch,
+                                          isolated_availability_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        store = tmp_path / "avail.yml"
+        self._store(store, "entries:\n  - {at: 2026-07-01T00:00:00Z, minutes_per_day: 30}\n")
+        monkeypatch.setenv("CABINET_CAPTAIN_AVAILABILITY_FILE", str(store))
+        env._captain_availability_cache = None
+        assert env.captain_availability()["minutes_per_day"] == 30
+        self._store(store, "entries:\n  - {at: 2026-07-02T00:00:00Z, minutes_per_day: 10}\n")
+        assert env.captain_availability()["minutes_per_day"] == 30  # cached
+
+    def test_caller_cannot_mutate_the_cache(self, tmp_path, monkeypatch,
+                                           isolated_availability_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        monkeypatch.setenv("CABINET_CAPTAIN_AVAILABILITY_FILE",
+                           str(tmp_path / "absent.yml"))
+        env._captain_availability_cache = None
+        first = env.captain_availability()
+        first["minutes_per_day"] = 999
+        assert env.captain_availability()["minutes_per_day"] is None
+
+    def test_mode_table_and_band_helpers_agree(self):
+        """The table is THE source of truth for every surface, so its helpers
+        must round-trip and an unknown verb must map to nothing."""
+        assert env.availability_modes() == ("away", "minimal", "part_time",
+                                            "substantial", "full_time")
+        for name, minutes, _label in env.AVAILABILITY_MODES:
+            assert env.availability_minutes_for_mode(name) == minutes
+            assert env.availability_mode_for_minutes(minutes) == name
+        assert env.availability_minutes_for_mode("not-a-mode") is None
+        assert env.availability_mode_for_minutes(20) == "part_time"
+        assert env.availability_mode_for_minutes(10_000) == "full_time"
+        assert env.availability_mode_for_minutes("nonsense") is None
+
+    def test_render_availability_names_the_absence_out_loud(
+            self, tmp_path, monkeypatch, isolated_availability_cache):
+        """The unknown line is quoted verbatim by the Captain-seat pack and the
+        phone reply — it must SAY the org does not know, not print a 0."""
+        text = env.render_availability({"minutes_per_day": None, "mode": None,
+                                        "source": None, "set_at": None})
+        assert text == ("no declared availability — the org does not know how "
+                        "much of the captain it is entitled to")
+        assert env.render_availability(
+            {"minutes_per_day": 20, "mode": "part_time",
+             "source": "adjusted", "set_at": None}) == \
+            "20 min/day  mode=part_time  source=adjusted"
+
+    def test_store_path_honors_the_env_override(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        monkeypatch.delenv("CABINET_CAPTAIN_AVAILABILITY_FILE", raising=False)
+        assert env.captain_availability_path() == \
+            tmp_path / "instance/config/captain-availability.yml"
+        monkeypatch.setenv("CABINET_CAPTAIN_AVAILABILITY_FILE",
+                           str(tmp_path / "elsewhere.yml"))
+        assert env.captain_availability_path() == tmp_path / "elsewhere.yml"
+
+    def test_answers_path_honors_the_env_override(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        monkeypatch.delenv("CABINET_INIT_ANSWERS", raising=False)
+        assert env.cabinet_init_answers_path() == \
+            tmp_path / "instance/config/cabinet-init.answers.yml"
+        monkeypatch.setenv("CABINET_INIT_ANSWERS", str(tmp_path / "a.yml"))
+        assert env.cabinet_init_answers_path() == tmp_path / "a.yml"
