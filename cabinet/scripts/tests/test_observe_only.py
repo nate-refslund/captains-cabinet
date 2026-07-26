@@ -29,10 +29,22 @@ def _hook(root: Path, tool: str, tool_input: dict, env: dict | None = None):
     # hermetic redis-cli that reports a reachable control plane with no active
     # kill switch. Tests that need another Redis behavior can still override
     # PATH through env.
+    #
+    # It must ANSWER the reader's frame, not just exit 0: killswitch-read.sh
+    # proves the read with a nonce sandwich (ECHO <n1> / GET key / ECHO <n2>)
+    # and treats an unanswered probe as INDETERMINATE == stopped, because
+    # redis-cli prints NOAUTH/NOPERM/WRONGTYPE/LOADING on stdout with exit 0.
+    # Replaying the ECHO argument and answering GET with an empty value is the
+    # honest "reachable, nothing armed" posture; it can never mask a real stop.
     fake_bin = root / ".test-bin"
     fake_bin.mkdir(exist_ok=True)
     fake_redis = fake_bin / "redis-cli"
-    fake_redis.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_redis.write_text(
+        "#!/bin/sh\n"
+        'while IFS= read -r l; do case "$l" in "ECHO "*) echo "${l#ECHO }";;'
+        ' *) echo "";; esac; done\n',
+        encoding="utf-8",
+    )
     fake_redis.chmod(0o755)
     hook_env = {
         **os.environ,

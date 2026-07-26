@@ -434,7 +434,17 @@ def test_deliver_then_reverse_end_to_end(monkeypatch):
     rec = {"lane": "bakery", "subject": "s", "cid": "c" * 32,
            "steps": [{"kind": "monday_task_create",
                       "payload": {"board_id": "9", "title": "t", "description": "d"}}]}
-    ax.deliver_action("pidI", redis_get=lambda k: json.dumps(rec),
+
+    # Answer the killswitch key SEPARATELY (the _ks_getter shape in
+    # test_action_exec.py). A getter that returns the action record for every
+    # key also answers `cabinet:killswitch` with a JSON blob — an unrecognised
+    # value, which the fail-closed reader correctly treats as a stop it cannot
+    # rule out, so delivery halts. "" is the honest "no stop armed"; the record
+    # still answers the action lookup exactly as before.
+    def _rget(k):
+        return "" if k == "cabinet:killswitch" else json.dumps(rec)
+
+    ax.deliver_action("pidI", redis_get=_rget,
                       monday_post=FakeMonday(), osascript=lambda c: "ok")
     fm = FakeMonday()
     res = au.reverse("pidI", monday_post=fm, osascript=lambda c: "ok", redis_del=_no_op_del)

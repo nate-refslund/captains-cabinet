@@ -157,12 +157,27 @@ def context_of(stdout: str) -> str:
 def _shim_bin(tmp_path: Path) -> Path:
     """PATH-prepended redis-cli shim: kill-switch / telemetry lookups inside
     pre-tool-use.sh short-circuit locally — hermetic even on a host running
-    the real cabinet redis."""
+    the real cabinet redis.
+
+    The shim ANSWERS the reader's frame rather than staying silent.
+    killswitch-read.sh proves its read with a nonce sandwich
+    (``ECHO <n1>`` / ``GET cabinet:killswitch`` / ``ECHO <n2>``) and only calls
+    the switch CLEAR when both fresh nonces come back around the value, because
+    redis-cli prints NOAUTH/NOPERM/WRONGTYPE/LOADING errors on stdout with exit
+    0 — so silence proves nothing. This shim replays each ECHO argument and
+    answers GET with an empty value (= key absent), which is the honest
+    "reachable, authenticated, no stop armed" posture these tests need. It is
+    not permissive: it cannot mask an armed switch, and a reader whose question
+    it fails to answer still fails closed."""
     bindir = tmp_path / "shimbin"
     if not bindir.is_dir():
         bindir.mkdir()
         shim = bindir / "redis-cli"
-        shim.write_text("#!/bin/sh\nexit 0\n")
+        shim.write_text(
+            "#!/bin/sh\n"
+            'while IFS= read -r l; do case "$l" in "ECHO "*) echo "${l#ECHO }";;'
+            ' *) echo "";; esac; done\n'
+        )
         shim.chmod(0o755)
     return bindir
 
