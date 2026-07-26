@@ -92,6 +92,16 @@ case "$REPORT" in
       # Never lose the window: if the renderer fails, the section still lands in
       # this job's log, and the failure is visible without killing the report.
       echo "cog3-captain-report[shadow-dividend]: WARN self-improvement section rc=$sec_rc — ${SECTION}" >&2
+      # ...but stderr alone is NOT the Captain's surface, and WARN is not in the
+      # watchdog's JOB_ERROR_MARKERS (framework/watchdog/registry.py:753), so a
+      # renderer failure would silently delete safeguard (b) of the arming
+      # ruling: the report still arrives, just without the one window onto what
+      # the armed loop applied to itself, and nothing pages. Say so IN the
+      # report, where he actually reads. Still exit 0 — a cosmetic renderer
+      # fault must not page, and must not lie either.
+      if [ -f "$REPORT_FILE" ]; then
+        printf '\n## Self-improvement — applied to itself\n\n**Unavailable this week.** The renderer failed (rc=%s), so what the armed learning loop applied to itself in this window is NOT shown below. Read it directly with `python3.12 cabinet/scripts/self-improvement-journal.py --list --since-days 7`; the job log carries the error.\n' "$sec_rc" >>"$REPORT_FILE"
+      fi
     elif [ -f "$REPORT_FILE" ]; then
       printf '\n%s\n' "$SECTION" >>"$REPORT_FILE"
     else
