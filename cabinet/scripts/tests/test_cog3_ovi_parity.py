@@ -52,7 +52,7 @@ parity = _load(_PARITY_REL, "cog3_ovi_parity")
 _RAW = {
     "task_throughput": 30.0,
     "outcome_progress": 0.6,
-    "captain_attention_cost": 4.0,
+    "captain_attention_well_spent": 0.8,
     "learning_rate": 2.0,
     "verification_pass_rate": 0.85,
 }

@@ -43,12 +43,22 @@ def isolated_env(tmp_path, monkeypatch):
 
 
 class TestHatGraduation:
-    def _emit_uses(self, role: str, hat: str, n: int, capabilities: list[str] | None = None):
+    def _emit_uses(self, role: str, hat: str, n: int,
+                   capabilities: list[str] | None = None,
+                   mission_offset: int = 0):
+        """``mission_offset`` (added 2026-07-26) makes a SECOND call produce
+        DISTINCT mission ids. Without it, two calls of n=3 emit missions
+        000/001/002 twice — 6 uses but only 3 distinct missions, below the
+        min_missions=5 bar. That is exactly how the old
+        ``test_ovi_regression_blocks_candidate`` passed vacuously: its
+        ``== []`` assertion was satisfied by the mission bar, so it never once
+        exercised the OVI gate it claimed to pin. Default 0 keeps every
+        existing caller byte-identical in behaviour."""
         for i in range(n):
             emit("role_hat_assigned", actor="cos", payload={
                 "role_slug": role,
                 "hat_slug": hat,
-                "mission_id": f"mission-{i:03d}",
+                "mission_id": f"mission-{i + mission_offset:03d}",
                 "capabilities": capabilities or [],
             })
 
@@ -88,17 +98,58 @@ class TestHatGraduation:
                     if (e.get("payload") or {}).get("status") == "pending_captain_approval"]
         assert len(proposed) == 1
 
-    def test_ovi_regression_blocks_candidate(self):
-        # Baseline snapshot (BEFORE any hat use)
+    def test_ovi_never_gates_a_candidate(self):
+        """INVERTED 2026-07-26 (was ``test_ovi_regression_blocks_candidate``).
+
+        This test used to assert the OPPOSITE — that an OVI composite drop
+        during a hat's use window BLOCKS its graduation. That behaviour was
+        unlawful under the standing Captain rider (2026-07-25): OVI is a
+        Captain-FACING instrument and must never be a selection input, and
+        promoting a hat to a permanent role capability is selection. The
+        assertion is inverted rather than deleted so the pin survives and now
+        holds the ruling instead of the defect: the exact event sequence that
+        used to block a candidate must now leave it untouched.
+
+        It was also never a working control — it failed OPEN with no in-window
+        snapshot and again with no baseline, and the live ledger has never held
+        a single ``ovi_snapshot_computed`` event. The wire is gone; the
+        whole-tree guard is
+        ``framework/tests/test_ovi_never_a_selection_input.py``.
+
+        And the old assertion was VACUOUS besides: measured 2026-07-26, with
+        BOTH ``ovi_snapshot_computed`` emits deleted it still passed, because
+        two ``_emit_uses(n=3)`` calls reused mission ids 000/001/002 and the
+        min_missions=5 bar produced the empty list on its own. It pinned the
+        mission bar while claiming to pin the OVI gate. This version uses
+        ``mission_offset`` so the candidate genuinely clears both use bars and
+        the OVI events are the ONLY thing that could still block it.
+        """
+        # The same OVI "regression" sequence that was supposed to produce a BLOCK.
         emit("ovi_snapshot_computed", actor="ovi", payload={"composite_score": 0.8})
-        # First three hat uses
         self._emit_uses("coo", "process-fixer", 3, capabilities=["fixes_processes"])
-        # Regression snapshot INSIDE the use window
         emit("ovi_snapshot_computed", actor="ovi", payload={"composite_score": 0.6})
-        # Three more uses (now total 6, meets min_uses)
-        self._emit_uses("coo", "process-fixer", 3, capabilities=["fixes_processes"])
-        # 0.8 baseline - 0.6 in-window = 0.2 > 0.02 threshold → blocked
-        assert graduation_candidates() == []
+        self._emit_uses("coo", "process-fixer", 3, capabilities=["fixes_processes"],
+                        mission_offset=3)
+
+        # 6 uses across 6 missions, and a 0.2 composite "regression" that the
+        # org may no longer look at: the candidate stands on USE EVIDENCE ALONE.
+        candidates = graduation_candidates()
+        assert len(candidates) == 1, (
+            "an OVI composite drop must NOT gate graduation — the value index "
+            "is Captain-facing and never a selection input")
+        assert candidates[0]["role_slug"] == "coo"
+        assert candidates[0]["hat_slug"] == "process-fixer"
+
+    def test_graduation_reads_no_ovi_symbol_at_all(self):
+        """The wire cannot be re-added quietly through this module's surface:
+        the helper that read the composite is GONE, not merely uncalled."""
+        from framework.roles import hat_graduation
+
+        assert not hasattr(hat_graduation, "_ovi_regression_during")
+        assert not hasattr(hat_graduation, "DEFAULT_OVI_REGRESSION_THRESHOLD")
+        with pytest.raises(TypeError):
+            # the OVI threshold is not a parameter any caller can reintroduce
+            graduation_candidates(ovi_threshold=0.02)
 
 
 # ---------------------------------------------------------------------------
