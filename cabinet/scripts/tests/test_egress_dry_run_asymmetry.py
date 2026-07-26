@@ -48,8 +48,16 @@ sandbox, but neutralises egress there with ``enforce: false`` under a comment
 claiming "a hatch arms it before proof-c1 runs". It does not. That false
 premise let the neutralisation stand in for provisioning nobody performed, and
 the class stayed invisible. (CI could not see it either: every CI job is
-ubuntu, and a stranger's egg ships ``enforce: true`` via the export's
-``egress-default`` transform.)
+ubuntu, and at the time a stranger's egg shipped ``enforce: true`` via the
+export's ``egress-default`` transform.)
+
+That last parenthetical is now HISTORY, and the fix above is why it still
+matters. Per the Captain's 2026-07-26 ruling the egg ships ``enforce: false``
+(allow all) and enforcement is opt-in via ``egress-guard.sh enable`` — see
+``test_egg_export.test_egress_default_is_the_scrubbed_twin``. So a fresh egg no
+longer walks into this arm by default. The asymmetry is still real and still
+guarded: any Captain who opts IN, on a Mac, re-enters exactly the state
+described above, and proof-c1 must keep rendering.
 """
 from __future__ import annotations
 

@@ -1,9 +1,13 @@
 # =============================================================
 # instance/config/egress.yml — enforced egress allowlist (per-deployment override)
 # =============================================================
-# EXAMPLE / TEMPLATE. Copy to instance/config/egress.yml to override the
-# framework default (framework/defaults/egress.yml). Instance values win over
-# the framework default: scalars (`enforce`, `proxy_port`, `allow_product`)
+# EXAMPLE / TEMPLATE **and the egg's shipped default**. Copy to
+# instance/config/egress.yml to override the framework default
+# (framework/defaults/egress.yml) — and note that the egg export materializes
+# THIS FILE'S BYTES as that live file (egg-export.sh `t_egress_default`), so
+# whatever stands here is what a fresh cabinet actually runs. Keep it matching
+# the framework default's ratified posture. Instance values win over the
+# framework default: scalars (`enforce`, `proxy_port`, `allow_product`)
 # replace the default; `allow_hosts` is UNIONED with the framework floor so the
 # control-plane hosts (api.anthropic.com, api.telegram.org) always survive.
 #
@@ -19,10 +23,21 @@
 # must be restarted: docs/runbooks/egress-allowlist.md.
 # =============================================================
 
-# Turn the allowlist ON for this deployment. The framework default is false =
-# allow all. Setting true installs the allowlisting proxy; the guard FAILS
-# CLOSED (errors non-zero, installs nothing) if it cannot verify the proxy.
-enforce: true
+# Master switch. false = allow all — NO restriction is installed and officers
+# reach the network exactly as an unconfigured box does. This is the RATIFIED
+# SHIPPED DEFAULT (Captain 2026-07-26: things that automatically HELP a
+# stranger are on by default; a control the stranger has not configured is not
+# one of them), and it matches framework/defaults/egress.yml.
+#
+# TO TURN ENFORCEMENT ON — one step, no file editing needed:
+#     cabinet/scripts/egress-guard.sh enable
+# which sets `enforce: true` here and installs the allowlisting proxy. Add your
+# hosts to allow_hosts below FIRST (see the table in
+# docs/runbooks/egress-allowlist.md) or anything outside the framework floor
+# will 403. `dry-run` previews the verdict without installing; `disable`
+# reverses. The guard FAILS CLOSED (errors non-zero, installs nothing) if it
+# cannot verify the proxy — enabling never silently leaves egress open.
+enforce: false
 
 # Local forward-proxy bind port (127.0.0.1). Inherit the default (8899) by
 # omitting this key. macOS requires a fixed 1–65535 port so launchd restart does

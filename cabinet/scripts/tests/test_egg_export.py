@@ -184,13 +184,37 @@ def test_act_first_default_is_the_scrubbed_twin(export: Path):
 
 def test_egress_default_is_the_scrubbed_twin(export: Path):
     """R120/R126-class + germline lockstep (gate-b null-hatch fix): the
-    shipped egress.yml must be BYTE-IDENTICAL to its .example twin (enforce:
-    true, empty allow_hosts — already fail-closed by the twin's own doc
-    contract) — never the live enforced-egress ruling."""
+    shipped egress.yml must be BYTE-IDENTICAL to its .example twin — never the
+    live enforced-egress ruling.
+
+    THE SHIPPED SCALAR IS PINNED TO ALLOW-ALL (Captain ruling 2026-07-26:
+    "flip it and leave the OPTION open for strangers to configure it
+    themselves ... things that automatically HELP strangers/captains should be
+    on by default").  Until that ruling the twin carried ``enforce: true`` with
+    an empty ``allow_hosts``, so every stranger's egg shipped a live ENFORCING
+    override they never configured: their first REAL officer boot ran
+    ``egress-guard.sh apply`` and got a jail resolving only the framework floor
+    (api.anthropic.com, api.telegram.org), or refused to boot outright when the
+    proxy could not be verified — while ``framework/defaults/egress.yml``
+    documented its own shipped promise as "SHIPPED DEFAULT = ALLOW ALL".  The
+    hatch never caught it because a dry render deliberately skips ``apply``
+    (see ``test_egress_dry_run_asymmetry``).  Enforcement is now strictly
+    opt-in, one command: ``cabinet/scripts/egress-guard.sh enable``.
+
+    Pinned on the ACTIVE scalar rather than substring presence, because the
+    twin's prose legitimately names ``enforce: true`` while telling a stranger
+    how to opt in.  This is STRICTLY STRONGER than the pre-ruling assertion: it
+    requires exactly one uncommented ``enforce:`` line and fixes its value, so
+    the egg shipping ANY other posture is still a red test.
+    """
     shipped = (export / "instance/config/egress.yml").read_bytes()
     twin = (export / "instance/config/egress.yml.example").read_bytes()
     assert shipped == twin
-    assert b"enforce: true" in shipped
+    active = [ln.strip() for ln in shipped.decode("utf-8").splitlines()
+              if ln.strip().startswith("enforce:")]
+    assert active == ["enforce: false"], (
+        "the egg must ship the ratified allow-all egress default "
+        f"(Captain 2026-07-26); active scalar(s) were {active!r}")
 
 
 def test_instance_contains_only_examples_and_structure(export: Path):

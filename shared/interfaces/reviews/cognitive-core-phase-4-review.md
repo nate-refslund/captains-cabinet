@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 6f04c4bc47876ba2152aceaf9cb7feb003c8cd1f7f498d0c0c3cb955937e1cae
+Reviewed-Scope-Digest: 93839d991e56db1fe048e1df97774e1dd4b248f0071d90171979d38ab08109d4
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
@@ -155,6 +155,48 @@ running each verify twin there (recorded vs recomputed: COG-0 f543dc1e vs 63f464
 binding GREEN on 32ff7384 (verify twin exit 0, recorded == recomputed == d8d316b2) and the only one
 this landing turned BLOCK, so it is the only one re-bound. This commit edits ONLY the digest-excluded
 review artifact, so the digest it records is stable under its own landing.)
+
+(MOVED BY THE EGG EGRESS-DEFAULT FLIP, 2026-07-26 —
+6f04c4bc47876ba2152aceaf9cb7feb003c8cd1f7f498d0c0c3cb955937e1cae -> the value above. Landed branch
+`fix/egg-egress-default` over master f3914dde, executing the Captain's 2026-07-26 ruling that the egg
+ship the framework's documented allow-all egress default with enforcement left as a one-command OPTION.
+EXACTLY TWO in-scope paths moved, verified by intersecting the resolved 85-entry scope with
+`git diff --name-only origin/master..HEAD` rather than by reading the diff:
+  (1) `cabinet/scripts/egg-export-manifest.txt` — COMMENT LINES ONLY. The `delete
+      instance/config/egress.yml` row and the `transform egress-default` row are byte-identical; only
+      their explanatory prose changed, to stop claiming the shipped twin is `enforce: true`. Zero
+      manifest semantics, zero rows added or removed, no expect-present/expect-absent rule touched.
+  (2) `cabinet/scripts/tests/test_egg_export.py` — one assertion in
+      `test_egress_default_is_the_scrubbed_twin` INVERTED under the ruling, plus its docstring. The
+      byte-identity assertion (`shipped == twin`) is untouched; what changed is the posture pinned on
+      top of it, and it was made STRICTLY STRONGER in the same edit: substring presence
+      (`b"enforce: true" in shipped`) became an exact match on the single active `enforce:` scalar, so
+      the egg shipping ANY unratified posture is still red. Substring matching would in fact have been
+      wrong post-flip, since the twin's prose legitimately names the enabling value while telling a
+      stranger how to opt in.
+A MECHANICAL-DELTA re-bind per the cp3 precedent, never a restamp, and — unlike the two BEHAVIOR-DELTA
+re-binds above — the claim is made here because it holds: ZERO COG-4 engine, organ, scheduler,
+projection or trajectory bytes are touched by this landing. Neither moved path is a COG-4 surface; they
+are bound only because the egg packaging manifest and its test sit inside the declared scope. The four
+COG-4 §15 findings are untouched and none is re-derived. Re-measured on the merged bytes, not inherited:
+`verify-cognitive-phase4.sh` full green end-to-end after this re-bind; the full `test_cog4_*` battery
+702 passed 2 declared skips; `test_cog4_boundary_rows.py` + `test_cog5_boundary_rows.py` 113 passed;
+`cog2-import-gate.py` rc0; the egg battery (`test_egg_export.py` + `test_egress_guard.py` +
+`test_egress_dry_run_asymmetry.py`) 108 passed 1 skip; census PASS at every maximum with zero headroom
+preserved — no maximum relaxed, no threshold touched, no `temporary_allowances` row added (this landing
+adds no framework Python at all); layer-sep new=0; `null-hatch.sh` rc0.
+WHAT WAS NOT DONE, stated plainly: this was NOT re-reviewed by a fresh frozen COG-4 panel. The two moved
+paths are the egg packaging contract, not the phase's claim surface, and the landing carries its own
+adversarial fresh-context review artifact for the branch.
+SIBLING BINDERS: both moved paths sit in the COG-0/1/2/3 EXPECTED_SCOPEs too (measured: each of the four
+scope tools names both), so this landing moves those digests as well (COG-0 dcf3b43d -> b454304d, COG-1
+16f7547a -> e0efb3cf, COG-2 7f4047d3 -> 03a65104, COG-3 727b8fee -> 6a7bc7fe). They are NOT re-bound and
+must not be: all four were ALREADY BLOCK on pristine master f3914dde — measured, not assumed, by running
+each verify twin there (recorded vs recomputed: COG-0 f543dc1e vs dcf3b43d, COG-1 25c2f5e3 vs 16f7547a,
+COG-2 b38632b9 vs 7f4047d3, COG-3 78a7bf18 vs 727b8fee; all exit 1). COG-4 was the one binding GREEN on
+f3914dde (verify twin exit 0, recorded == recomputed == 6f04c4bc) and the only one this landing turned
+BLOCK, so it is the only one re-bound. This commit edits ONLY the digest-excluded review artifact, so the
+digest it records is stable under its own landing.)
 
 ---
 

@@ -203,6 +203,8 @@ bash cabinet/scripts/deploy-mac.sh --all
 
 Pre-release: external PRs are not yet accepted. [`CONTRIBUTING.md`](./CONTRIBUTING.md) has the dev setup, test suites, and the gates the repo enforces on itself; vulnerability reporting and scope are in [`SECURITY.md`](./SECURITY.md).
 
+**Optional hardening — enforced egress.** Officers read untrusted content *and* hold outbound tools, so the cabinet ships an opt-in outbound allowlist. It is **off by default** (officers reach the network normally). To confine them to hosts you list: add your hosts to `instance/config/egress.yml`, then run `cabinet/scripts/egress-guard.sh enable` (`dry-run` previews it, `disable` reverses it). Coverage and honest residual risk: [`docs/runbooks/egress-allowlist.md`](./docs/runbooks/egress-allowlist.md).
+
 ## Credits
 
 - World/tile art by **LimeZu** ([limezu.itch.io](https://limezu.itch.io)), used under LimeZu's commercial license. The asset binaries are **not** in this repo and are never redistributed (gitignored) — purchasers install the packs locally; without them the world renders in placeholder-graphics mode.

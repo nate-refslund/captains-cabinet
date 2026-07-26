@@ -81,8 +81,12 @@ SWEEP_EXTS = frozenset({
 # because egg-export-manifest.txt sits inside the frozen COG-4 review digest
 # scope — editing it forces a re-bind ceremony.
 LEGACY_EXEMPT = {
-    ("cabinet/scripts/egg-export-manifest.txt", 233): "RESIDUAL SCRUB",
-    ("cabinet/scripts/egg-export-manifest.txt", 653): "RESIDUAL SCRUB",
+    # Line cites re-anchored 2026-07-26 (233 -> 235, 653 -> 658) by the egg
+    # egress-default flip, which added comment lines above both sites. The
+    # marker TEXT and the exempt SET are unchanged — this is a re-anchor, not
+    # a widening, and LEGACY_MAX stays 2.
+    ("cabinet/scripts/egg-export-manifest.txt", 235): "RESIDUAL SCRUB",
+    ("cabinet/scripts/egg-export-manifest.txt", 658): "RESIDUAL SCRUB",
 }
 LEGACY_MAX = 2
 
