@@ -40,6 +40,13 @@ instance/config/posture.yml
 instance/config/standing-grants.yml
 instance/config/cabinet-init.answers.yml
 instance/config/calendar.yml
+# the captain's DECLARED time budget (the availability dial, Captain ruling
+# 2026-07-26) — written at runtime by cabinet/scripts/lib/captain_availability.py
+# when he types "availability 20m" on his phone, gitignored as his own
+# declaration about his own day; only instance/config/captain-availability.yml.example
+# ships. docs/runbooks/captain-availability.md names the live path because the
+# precedence rule IS the path.
+instance/config/captain-availability.yml
 # per-deployment egress-allowlist override — created by egress-guard.sh enable
 # (else copied from the tracked twin instance/config/egress.yml.example);
 # absent at HEAD by design like the sibling instance config above.

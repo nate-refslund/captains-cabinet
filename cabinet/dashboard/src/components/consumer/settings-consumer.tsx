@@ -2,7 +2,7 @@
 
 import { EditableField } from '@/components/editable-field'
 import { updateProductConfig } from '@/actions/config'
-import type { GlobalConfig } from '@/lib/config'
+import type { CaptainAvailability, GlobalConfig } from '@/lib/config'
 
 /**
  * Settings Consumer subset (Spec 032 §5).
@@ -11,6 +11,11 @@ import type { GlobalConfig } from '@/lib/config'
  *  - Captain name (editable)
  *  - Timezone (read-only for now; editing timezone belongs to a platform.yml
  *    server action that doesn't exist yet — filed as tech-debt below)
+ *  - Availability: the Captain's declared time budget (ruling 2026-07-26 — the
+ *    org fits the declared budget, never the reverse). Read-only for the same
+ *    reason as Timezone; the phone verb ("availability 20m") is today's write
+ *    path, and an UNDECLARED budget renders as an honest absence rather than a
+ *    zero or a guess.
  *  - Officer list (read-only; editing moves to Advanced)
  *
  * The kill switch lives in the persistent header from PR 2 — not duplicated
@@ -21,14 +26,22 @@ import type { GlobalConfig } from '@/lib/config'
  * spending_limits block has no existing server-action writer. Adding one
  * is out of scope for PR 4 — filed as tech-debt.
  */
+function availabilityLabel(a: CaptainAvailability): string {
+  if (a.minutesPerDay === null) return 'Not set'
+  const band = a.mode ? ` (${a.mode.replace(/_/g, ' ')})` : ''
+  return `${a.minutesPerDay} min/day${band}`
+}
+
 export default function SettingsConsumer({
   config,
   officerRoles,
   timezone,
+  availability,
 }: {
   config: GlobalConfig
   officerRoles: string[]
   timezone: string
+  availability: CaptainAvailability
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
@@ -52,6 +65,19 @@ export default function SettingsConsumer({
             <span className="text-sm font-medium text-zinc-300">Timezone</span>
             <span className="text-sm text-zinc-500">{timezone}</span>
           </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-zinc-300">
+              Time for the cabinet
+            </span>
+            <span className="text-sm text-zinc-500">
+              {availabilityLabel(availability)}
+            </span>
+          </div>
+          <p className="text-xs text-zinc-600">
+            {availability.minutesPerDay === null
+              ? 'Nobody has said how much of your day the cabinet may use, so it keeps its quiet defaults. Set it from Telegram: "availability 20m".'
+              : 'The org fits this budget. Change it from Telegram: "availability 20m" — editing here lands with the platform settings action.'}
+          </p>
         </div>
       </div>
 
