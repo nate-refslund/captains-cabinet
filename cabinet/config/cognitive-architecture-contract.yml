@@ -135,6 +135,13 @@ temporary_allowances:
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: COG-7 compaction, or the contact dead-man folds into the evidence plane
+  - phase: onboarding-employee-persona
+    budget: framework_production_noncomment_lines
+    additional: 1
+    reason: 'ONE line: the fourth Onboarding v2 acceptance persona (enterprise-employee) registered in framework/onboarding/evaluate_personas.py PERSONAS. The direction gate ruled the cabinet must be valuable to someone who will never run a company, and the three existing estates are all owner-shaped; this registers an employee''s slice of a large org — a service they contribute to but do not own, a tracker export, a partial docs sync — as a standing acceptance requirement rather than a one-off report. The fixture (15 files) is .md/.json/.csv/.ts/.yaml so it adds ZERO to the census, which counts only *.py; the two cap regression tests live under framework/onboarding/tests/ and are excluded as a tests path. The entry is written on ONE line and its eight-line rationale as # comments precisely because comments are free where code is not under the zero-headroom law. EXACT measured running total (66935 vs 66934 base), 2026-07-26, via cognitive-architecture-census.py. See docs/persona-employee-slice-2026-07-26.md'
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: the persona set becomes fixture-directory-driven rather than a hardcoded dict, or COG-7 compaction
 ownership:
   authoritative_state: domain_transaction
   cross_domain_delivery: transactional_outbox

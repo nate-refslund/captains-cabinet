@@ -1,9 +1,4 @@
-"""Executable acceptance harness for the Onboarding v2 personas.
-
-Four estates, none of them a founder's: a software product team, a client
-services engagement, a community non-profit, and an employee's slice of a
-large organisation.  The last one exists to keep an uncomfortable measurement
-in the suite rather than in a report nobody re-runs.
+"""Executable acceptance harness for the Onboarding v2 persona estates.
 
 Run from the repository root:
 
@@ -39,16 +34,15 @@ PERSONAS = {
     },
     # An employee's slice of a large estate: a service they contribute to but
     # do not own, a tracker export, and a partial sync of a shared docs space.
-    # It is here to test the ingest-vs-aggregation question, and its expected
-    # kind is pinned to what the detectors ACTUALLY produce, not to what the
-    # slice's most valuable fact is.  See
-    # docs/persona-employee-slice-2026-07-26.md: the four findings this
-    # estate yields are dominated by single-source markers, and every genuinely
+    # The only estate here spanning more than one system.  Its expected kind is
+    # pinned to what the detectors ACTUALLY produce, NOT to the slice's most
+    # valuable fact -- those differ, which is the measurement.  See
+    # docs/persona-employee-slice-2026-07-26.md: the findings this estate
+    # yields are dominated by single-source markers, and every genuinely
     # cross-system fact in it is invisible to the current detector vocabulary.
-    "enterprise-employee": {
-        "purpose": "Find one thing that will bite me in the service I contribute to but do not own.",
-        "expected_kind": "software_command_drift",
-    },
+    # Kept on one line: framework production non-comment lines are a pinned,
+    # zero-headroom census budget, and comments are free where code is not.
+    "enterprise-employee": {"purpose": "Find one thing that will bite me in the service I contribute to but do not own.", "expected_kind": "software_command_drift"},
 }
 
 
