@@ -151,6 +151,23 @@ _TODO_RE = re.compile(r"<TODO:[^>]*>")
 # (evidence only, applies nothing; germline apply stays Captain-manual).
 _CODE_DIFF_KINDS = frozenset({"code_change", "code_diff"})
 
+# A role slug names ONE flat file in instance/roles/active/. lifecycle.load_role
+# and adapt_role both build `_roles_dir() / f"{slug}.yml"` with no traversal
+# guard, so a proposal carrying role_slug "../../../cabinet/config/<name>" made
+# adapt_role yaml-round-trip an ARBITRARY tracked .yml (comments destroyed,
+# `capabilities:` appended) — proven 2026-07-26 against the census contract in a
+# sandbox root. Harmless while REPORT_ONLY=1 held _apply_proposal dark; arming
+# auto-apply is what makes it live, so the armed write path refuses any slug
+# that is not plain. Graduation slugs come from hat FILENAMES and cannot carry a
+# separator, so this is the one reachable entry.
+_PLAIN_SLUG = re.compile(r"[a-z0-9][a-z0-9_-]*\Z")
+
+
+def _cap_is_new(role_slug: str, cap: str) -> bool:
+    """True when `cap` is genuinely absent from the role on disk RIGHT NOW."""
+    role = load_role(role_slug)
+    return bool(cap) and cap not in ((role or {}).get("capabilities") or [])
+
 
 def _resolve_posture_safe() -> str:
     """Lazy posture read — ANY failure answers guardian, so the no-config
@@ -443,6 +460,10 @@ def _apply_proposal(
     suggested = proposal["suggested_change"]
     kind = suggested.get("kind")
 
+    # Slug shape FIRST: load_role/adapt_role resolve `<slug>.yml` under the
+    # roles dir with no traversal guard (see _PLAIN_SLUG).
+    if not _PLAIN_SLUG.match(str(role_slug or "")):
+        return False, f"role_slug {role_slug!r} is not a plain slug"
     role = load_role(role_slug)
     if role is None:
         return False, f"role {role_slug} not loadable"
@@ -456,7 +477,12 @@ def _apply_proposal(
         if kind == "add_hat":
             tmpl = suggested.get("hat_template") or {}
             for cap in tmpl.get("capabilities", []):
-                if cap and not str(cap).startswith("<TODO"):
+                # _cap_is_new: adapt_role NO-OPs on a capability the role
+                # already has, but the journal row was written anyway — a
+                # phantom application whose "exact inverse" REMOVES a
+                # capability the loop never granted (proven 2026-07-26).
+                if (cap and not str(cap).startswith("<TODO")
+                        and _cap_is_new(role_slug, cap)):
                     adapt_role(
                         role_slug,
                         adaptation_type="capability_added",
@@ -500,7 +526,12 @@ def _apply_proposal(
                 )
         elif kind == "add_quality_hat":
             for cap in (suggested.get("hat_template") or {}).get("capabilities", []):
-                if cap and not str(cap).startswith("<TODO"):
+                # _cap_is_new: adapt_role NO-OPs on a capability the role
+                # already has, but the journal row was written anyway — a
+                # phantom application whose "exact inverse" REMOVES a
+                # capability the loop never granted (proven 2026-07-26).
+                if (cap and not str(cap).startswith("<TODO")
+                        and _cap_is_new(role_slug, cap)):
                     adapt_role(
                         role_slug,
                         adaptation_type="capability_added",
@@ -582,7 +613,8 @@ def _apply_hat_graduations(
             continue
         promoted_caps: list[str] = []
         for cap in c.get("capabilities_to_promote", []):
-            if not cap:
+            # Same phantom-row guard as the proposal path above.
+            if not cap or not _cap_is_new(role_slug, cap):
                 continue
             try:
                 adapt_role(

@@ -267,3 +267,85 @@ def test_cli_module_declares_the_measured_mutation_surface():
     src = (REPO_ROOT / "framework" / "learning" / "self_improvement_loop.py").read_text()
     assert "_route_code_diff_through_gate" in src
     assert "NEVER _apply_proposal" in src
+
+
+# ---------------------------------------------------------------------------
+# Landing-review findings, 2026-07-26 — two defects found by attacking the
+# armed apply path, fixed in the same commit. Both arms FAIL against the
+# pre-fix code (verified by reverting the fix), so neither is a vacuous pass.
+# ---------------------------------------------------------------------------
+
+def test_apply_refuses_a_role_slug_that_escapes_the_roles_dir(cab):
+    """`lifecycle.load_role`/`adapt_role` resolve `<slug>.yml` under the roles
+    dir with NO traversal guard, so before the fix a proposal carrying
+    role_slug='../../../cabinet/config/<name>' made the ARMED loop yaml-round-
+    trip an arbitrary tracked .yml — comments destroyed, `capabilities:`
+    appended. REPORT_ONLY=1 kept it dark; arming is what made it live."""
+    from framework.learning import self_improvement_loop as L
+    victim = cab / "cabinet" / "config" / "precious.yml"
+    victim.parent.mkdir(parents=True, exist_ok=True)
+    victim.write_text("budgets:\n  services_total:\n    maximum: 54\n")
+    before = victim.read_bytes()
+    applied, reason = L._apply_proposal(
+        {"proposal_id": "trav", "role_slug": "../../../cabinet/config/precious",
+         "suggested_change": {"kind": "add_hat",
+                              "hat_template": {"name": "h",
+                                               "capabilities": ["pwned"]}}},
+        "parent", "test", emit_fn=lambda *a, **k: {"id": "e"},
+        validation_skipped=True)
+    assert applied is False
+    assert "not a plain slug" in reason
+    assert victim.read_bytes() == before          # untouched, byte for byte
+    assert not _journal(cab).exists()             # and nothing journalled
+
+
+@pytest.mark.parametrize("slug", ["../evil", "a/b", "/etc/passwd", "..",
+                                  "Role", "role name", ""])
+def test_only_plain_slugs_reach_the_disk_writer(cab, slug):
+    from framework.learning import self_improvement_loop as L
+    applied, reason = L._apply_proposal(
+        {"proposal_id": "p", "role_slug": slug,
+         "suggested_change": {"kind": "add_hat",
+                              "hat_template": {"capabilities": ["c"]}}},
+        "parent", "test", emit_fn=lambda *a, **k: {"id": "e"},
+        validation_skipped=True)
+    assert applied is False
+    assert "not a plain slug" in reason
+
+
+def test_no_journal_row_for_a_capability_the_role_already_has(cab):
+    """`adapt_role` NO-OPs on a duplicate capability, but the journal row was
+    written anyway — a phantom application whose advertised "exact inverse"
+    REMOVES a capability the loop never granted. An operator running --undo on
+    it would strip roster-granted state. The journal must only record
+    applications that actually happened."""
+    from framework.learning import self_improvement_loop as L
+    role = cab / "instance" / "roles" / "active" / "testrole.yml"
+    before = role.read_bytes()
+    applied, reason = L._apply_proposal(
+        {"proposal_id": "dup", "role_slug": "testrole",
+         "suggested_change": {"kind": "add_hat",
+                              "hat_template": {"name": "h",
+                                               "capabilities": ["base_cap"]}}},
+        "parent", "test", emit_fn=lambda *a, **k: {"id": "e"},
+        validation_skipped=True)
+    assert role.read_bytes() == before            # nothing changed on disk
+    assert applied is False                       # so nothing was applied
+    assert not _journal(cab).exists()             # and nothing was journalled
+
+
+def test_hat_graduation_does_not_journal_a_duplicate_capability(cab):
+    """Same phantom-row guard on the graduation path, which is the one stage
+    that actually fires on this cabinet (every evolution.py proposal template
+    ships <TODO:> markers, so stage-1 apply needs a hand-completed YAML)."""
+    from framework.learning import self_improvement_loop as L
+    role = cab / "instance" / "roles" / "active" / "testrole.yml"
+    before = role.read_bytes()
+    applied = L._apply_hat_graduations(
+        [{"role_slug": "testrole", "hat_slug": "h", "uses": 9, "missions": 3,
+          "capabilities_to_promote": ["base_cap"]}],
+        "parent", "test", emit_fn=lambda *a, **k: {"id": "e"},
+        validation_skipped=True)
+    assert applied == []
+    assert role.read_bytes() == before
+    assert not _journal(cab).exists()

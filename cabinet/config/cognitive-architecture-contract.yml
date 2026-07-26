@@ -37,7 +37,13 @@ budgets:
     maximum: 206
   framework_production_noncomment_lines:
     path: framework
-    # 60067 -> 60155 (+88 measured 2026-07-26 via cognitive-architecture-census.py).
+    # 60067 -> 60164 (+97 measured 2026-07-26 via cognitive-architecture-census.py):
+    # +88 the application journal, +9 the two defects the landing review found
+    # by attacking the armed apply path and fixed in the same commit (a plain-
+    # slug guard — role_slug traversal made adapt_role rewrite an arbitrary
+    # tracked .yml — and _cap_is_new, which stops a phantom journal row whose
+    # advertised inverse would REMOVE a capability the loop never granted).
+    # Still ONE bump for the whole batch: nothing here has shipped yet.
     # NOT a phase allowance and deliberately NOT a temporary_allowances row:
     # this is the PERMANENT reversibility safeguard the Captain ordered when he
     # armed the self-improvement loop's auto-apply — the application journal in
@@ -48,7 +54,7 @@ budgets:
     # the new level. Zero new MODULES (framework_production_modules unchanged
     # at 206+allowances): the helper lives inside the existing module, and the
     # revert CLI lives in cabinet/scripts/, outside this budget's path.
-    maximum: 60155
+    maximum: 60164
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
