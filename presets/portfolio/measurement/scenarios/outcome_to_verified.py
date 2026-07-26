@@ -51,6 +51,17 @@ def _setup():
         "operations", "Operations", "Keep systems running reliably",
         capabilities=["monitors_systems", "manages_infra", "validates_deployments"],
     )
+    # 2026-07-26 (branch fix/self-verification-hole): separation of duties is now
+    # ENFORCED — the status overlay refuses to credit a verification whose actor
+    # owns the node. `operations` OWNS the email-verification node below, so
+    # verifying as `operations` was a self-verification. This role is the
+    # independent validator the scenario has always described; its slug and
+    # capability are absent from compiler._CAPABILITY_KEYWORDS, so it scores 0
+    # in _match_role_for_task and can never win ownership of a node.
+    create_role(
+        "quality", "Quality", "Independently verify work owned by other roles",
+        capabilities=["independent_verification"],
+    )
 
     outcome = {
         "id": "test-outcome-verified-001",
@@ -102,10 +113,14 @@ def _execute(context):
     # 3. Simulate the validator officer verifying each completed task.
     #    Emits work_item_verified, which the compiler also treats as DONE
     #    but with verification_passed=True.
+    #    2026-07-26 (branch fix/self-verification-hole): the validator is now
+    #    `quality`, a role that owns none of these nodes. This used to verify as
+    #    `operations`, which OWNS the email-verification node — a
+    #    self-verification the overlay now deliberately refuses to credit.
     for task_id in task_ids:
         emit(
             "work_item_verified",
-            actor="operations",
+            actor="quality",
             payload={
                 "task_id": task_id,
                 "outcome_id": outcome["id"],

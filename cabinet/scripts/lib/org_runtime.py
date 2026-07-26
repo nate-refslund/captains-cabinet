@@ -20,6 +20,11 @@ import uuid
 from pathlib import Path
 from typing import Any, Iterable
 
+# Sibling module in this same lib/ dir (org-runtime.py puts lib/ on sys.path).
+# Shared so the CLI gate and the compiler's event overlay fold role names the
+# SAME way — otherwise "Auditor" is refused by one and accepted by the other.
+from work_graph import normalize_role_name
+
 
 DEFAULT_PRODUCT = "captains-cabinet"
 
@@ -659,6 +664,11 @@ def cmd_mission_compile(args: argparse.Namespace) -> None:
     if outcome["state"] != "ratified":
         raise SystemExit("mission compilation requires a ratified outcome")
     require_active_role(store, outcome["product_slug"], args.owner_role)
+    require_active_role(store, outcome["product_slug"], args.verifier_role)
+    if args.verifier_role == args.owner_role:
+        raise SystemExit(
+            f"separation of duties: verifier_role may not equal owner_role ({args.owner_role})"
+        )
 
     now = utc_now()
     mission_id = args.mission_id or new_id("mission")
@@ -667,7 +677,12 @@ def cmd_mission_compile(args: argparse.Namespace) -> None:
         "mission_id": mission_id,
         "outcome_id": args.outcome_id,
         "title": args.title,
-        "nodes": [{"node_id": node_id, "title": args.node_title, "owner_role": args.owner_role}],
+        "nodes": [{
+            "node_id": node_id,
+            "title": args.node_title,
+            "owner_role": args.owner_role,
+            "verifier_role": args.verifier_role,
+        }],
     }
     event = store.append_event(
         "mission.compiled", outcome["product_slug"], "mission", mission_id, args.actor, payload
@@ -683,10 +698,10 @@ def cmd_mission_compile(args: argparse.Namespace) -> None:
     store.conn.execute(
         """
         INSERT INTO work_graph_nodes
-          (node_id, mission_id, title, owner_role, status, created_at)
-        VALUES (?, ?, ?, ?, 'queue', ?)
+          (node_id, mission_id, title, owner_role, verifier_role, status, created_at)
+        VALUES (?, ?, ?, ?, ?, 'queue', ?)
         """,
-        (node_id, mission_id, args.node_title, args.owner_role, now),
+        (node_id, mission_id, args.node_title, args.owner_role, args.verifier_role, now),
     )
     store.conn.commit()
     print_json({**payload, "state": "compiled", "event_id": event["event_id"]})
@@ -794,6 +809,14 @@ def cmd_mission_compile_plan(args: argparse.Namespace) -> None:
     for node in nodes:
         require_active_role(store, outcome["product_slug"], node["owner_role"])
         require_active_role(store, outcome["product_slug"], node["verifier_role"])
+        # normalized_plan_nodes already rejects an empty verifier_role via
+        # require_text; a verifier that IS the owner is the same hole wearing
+        # a name, so refuse it at compile time rather than at completion.
+        if node["verifier_role"] == node["owner_role"]:
+            raise SystemExit(
+                f"separation of duties: node {node['node_id']} names its owner "
+                f"({node['owner_role']}) as its own verifier"
+            )
 
     now = utc_now()
     mission_id = str(plan.get("mission_id") or args.mission_id or new_id("mission")).strip()
@@ -912,17 +935,68 @@ def cmd_mission_status(args: argparse.Namespace) -> None:
     print_json({"mission": mission, "nodes": nodes, "edges": edges, "assignments": assignments})
 
 
+def require_separation_of_duties(store: Store, product_slug: str, node: dict[str, Any], actor: str) -> str:
+    """Refuse a verification the actor is not entitled to record.
+
+    SCOPE — read this before trusting it. `actor` is a caller-supplied CLI
+    string and every officer runs as the same OS user, so this is NOT an
+    authentication boundary and MUST NOT be described as one: anyone who can
+    run the CLI can pass any actor name. What it buys is SEPARATION OF
+    DUTIES. It stops the DEFAULTED, UNATTRIBUTED and ACCIDENTAL cases — the
+    routine ways work ends up marking its own homework verified. It does NOT
+    stop an officer who deliberately types another role's name. Real
+    attribution needs a signed identity the caller cannot mint.
+
+    Three refusals, each closing a measured hole:
+      * unknown/inactive actor — an actor naming a role that does not exist
+        was previously accepted verbatim onto the event;
+      * actor == owner_role — the officer who did the work was the DEFAULT
+        verifier (`--actor` defaulted to "cos");
+      * actor != verifier_role — the node names who must verify it and that
+        column was never read.
+
+    LEGACY NODES: rows created before --verifier-role existed carry
+    verifier_role='' (the column default). Refusing those outright bricked
+    them — there is no set-verifier subcommand and a recompile mints new ids,
+    so the mission could never reach remaining==0. They therefore degrade to
+    the owner-only rule: any active role EXCEPT the owner may verify. That
+    still closes the self-verification hole for existing work.
+
+    Returns the verifier role ('' for a legacy node); raises SystemExit otherwise.
+    """
+    verifier = normalize_role_name(node["verifier_role"])
+    owner = normalize_role_name(node["owner_role"])
+    who = normalize_role_name(actor)
+    require_active_role(store, product_slug, actor)
+    if who == owner:
+        raise SystemExit(
+            f"separation of duties: {actor} owns {node['node_id']} and may not verify its own work"
+            + (f" (verifier_role is {node['verifier_role']})" if verifier else "")
+        )
+    if verifier and who != verifier:
+        raise SystemExit(
+            f"separation of duties: {node['node_id']} must be verified by "
+            f"{node['verifier_role']}, not {actor}"
+        )
+    return verifier
+
+
 def cmd_mission_complete(args: argparse.Namespace) -> None:
     store = Store()
     node = store.row("SELECT * FROM work_graph_nodes WHERE node_id = ?", (args.node_id,))
     if not node:
         raise SystemExit(f"unknown node_id: {args.node_id}")
     mission = store.row("SELECT * FROM missions WHERE mission_id = ?", (node["mission_id"],))
+    require_separation_of_duties(store, mission["product_slug"], node, args.actor)
     payload = {
         "node_id": args.node_id,
         "mission_id": node["mission_id"],
         "verified_value": args.verified_value,
         "verification_summary": args.verification_summary,
+        # Who claimed the verification, recorded distinctly from the node's
+        # owner. Self-asserted (see require_separation_of_duties): this is a
+        # duty-separation receipt, not proof of identity.
+        "verified_by": args.actor,
     }
     event = store.append_event(
         "work_graph.node_verified",
@@ -1920,7 +1994,13 @@ def build_parser() -> argparse.ArgumentParser:
             Examples:
               org-runtime.py outcomes propose --title "Improve autonomy" --metric-name verified_value --target-value 10
               org-runtime.py outcomes ratify outcome_abc --ratified-by captain
-              org-runtime.py missions compile outcome_abc --title "Autonomy slice" --node-title "Publish OVI"
+              org-runtime.py missions compile outcome_abc --title "Autonomy slice" --node-title "Publish OVI" --owner-role cos --verifier-role auditor
+              org-runtime.py missions complete node_abc --verified-value 12 --verification-summary "audited" --actor auditor
+
+            Verification separates duties: --verifier-role may not be the owner,
+            and `missions complete --actor` must be that verifier. The actor is a
+            self-asserted string: this stops the defaulted, unattributed and
+            accidental cases, NOT an officer who types another role's name.
             """
         ),
     )
@@ -1973,6 +2053,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--title", required=True)
     p.add_argument("--node-title", required=True)
     p.add_argument("--owner-role", default="cos")
+    # Required and distinct from --owner-role: work must not be creatable in
+    # an unverifiable state. This path used to INSERT work_graph_nodes with no
+    # verifier_role at all, leaving every node self-verifiable at completion.
+    p.add_argument("--verifier-role", required=True, help="role that must verify this node; may not be the owner")
     p.add_argument("--actor", default="cos")
     p.set_defaults(func=cmd_mission_compile)
     p = missions_sub.add_parser("compile-plan")
@@ -1991,7 +2075,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("node_id")
     p.add_argument("--verified-value", type=float, required=True)
     p.add_argument("--verification-summary", required=True)
-    p.add_argument("--actor", default="cos")
+    # No default. An unattributed verification must FAIL, never silently
+    # fall back to "cos" — the officer doing the work was the default verifier.
+    p.add_argument("--actor", required=True, help="verifier role; must match the node's verifier_role")
     p.set_defaults(func=cmd_mission_complete)
 
     claude_tasks = sub.add_parser("claude-tasks")

@@ -62,6 +62,17 @@ python3 "$ORG" roles define \
   --actor cos >/dev/null
 pass "inactive role fixture defined"
 
+# 2026-07-26 (branch fix/self-verification-hole): separation of duties is now
+# ENFORCED — a node's owner may not verify its own work, and every mission
+# compile must name a verifier distinct from its owner. This eval owned and
+# verified everything as `cos`, so it needs a real independent verifier role.
+python3 "$ORG" roles define \
+  --role auditor \
+  --name "Auditor" \
+  --charter "Independently verify work-graph nodes owned by other roles" \
+  --actor cos >/dev/null
+pass "independent verifier role defined"
+
 OUTCOME_JSON="$(python3 "$ORG" outcomes propose \
   --title "Make role identity durable across missions" \
   --metric-name verified_role_runtime_value \
@@ -71,17 +82,22 @@ OUTCOME_ID="$(printf '%s' "$OUTCOME_JSON" | json_value '.outcome_id')"
 python3 "$ORG" outcomes ratify "$OUTCOME_ID" --ratified-by captain --note "Role runtime fixture" >/dev/null
 pass "role-runtime outcome ratified"
 
+# 2026-07-26 (branch fix/self-verification-hole): --verifier-role is now required,
+# so this negative test must supply a VALID one — otherwise it would pass on the
+# missing-argument error instead of the undefined-owner refusal it names.
 expect_fail "undefined owner role cannot compile a mission" \
   python3 "$ORG" missions compile "$OUTCOME_ID" \
     --title "Should fail" \
     --node-title "No missing role owners" \
     --owner-role missing-role \
+    --verifier-role auditor \
     --actor cos
 
 MISSION_JSON="$(python3 "$ORG" missions compile "$OUTCOME_ID" \
   --title "Durable adaptive role vertical slice" \
   --node-title "Record role evidence and evolution" \
   --owner-role cos \
+  --verifier-role auditor \
   --actor cos)"
 MISSION_ID="$(printf '%s' "$MISSION_JSON" | json_value '.mission_id')"
 NODE_ID="$(printf '%s' "$MISSION_JSON" | json_value '.nodes[0].node_id')"
@@ -93,6 +109,7 @@ MISSION_2_JSON="$(python3 "$ORG" missions compile "$OUTCOME_ID" \
   --title "Node mismatch guard fixture" \
   --node-title "Do not assign across missions" \
   --owner-role cos \
+  --verifier-role auditor \
   --actor cos)"
 NODE_2_ID="$(printf '%s' "$MISSION_2_JSON" | json_value '.nodes[0].node_id')"
 
@@ -124,10 +141,13 @@ ASSIGN_JSON="$(python3 "$ORG" roles assign-hat \
 HAT_ID="$(printf '%s' "$ASSIGN_JSON" | json_value '.hat_id')"
 [ -n "$HAT_ID" ] && pass "temporary role hat assigned" || fail "hat assignment missing id"
 
+# 2026-07-26 (branch fix/self-verification-hole): verified by the node's declared
+# verifier, not its owner. `--actor cos` asserted the self-verification the
+# runtime now deliberately refuses; this exercises the intended path instead.
 python3 "$ORG" missions complete "$NODE_ID" \
   --verified-value 10 \
   --verification-summary "Fixture verified role identity, memory binding, eval evidence, and evolution eventing" \
-  --actor cos >/dev/null
+  --actor auditor >/dev/null
 pass "role-owned work graph node verified"
 
 python3 "$ORG" roles record-eval \
