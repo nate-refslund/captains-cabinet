@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 41a85f9eebde7c56082901ff94ca8be46bc1b303838c3fdb2ba684892d27b3c0
+Reviewed-Scope-Digest: 0305f77547e14563c1a8505c14336ec4e8993fbc133217ce81136f7e4c5c4ce5
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
@@ -547,5 +547,15 @@ capability the loop never granted — are fixed in this same branch with ten arm
 pre-fix module.
 SIBLING BINDERS unchanged from the note above: COG-0/1/2/3 were already BLOCK on pre-change master and
 are NOT re-bound here.)
+
+(MERGE RE-BIND, 2026-07-26: `fix/attention-silence-ratchet` (PR #211) landed on master while this
+branch was in review and re-bound this same digest to 41a85f9e...'s sibling
+a30366943126b05011435269b1f72335a4455bd8f0fbfd1518a426ab462c2df2. Two concurrent landings cannot both
+be right about one number, so it is recomputed over the MERGED tree rather than either side being
+picked: 0305f77547e14563c1a8505c14336ec4e8993fbc133217ce81136f7e4c5c4ce5. The digest line was the ONLY merge conflict in this
+artifact; both landings' notes above are preserved verbatim, neither overwritten. In-scope paths
+carried in by that merge: the census contract (its attention allowance) — no COG-4 implementation
+path, so this stays a scope-membership re-bind. `verify-cognitive-phase4.sh` exits 0 on the merged
+tree.)
 
 Verdict: PASS
