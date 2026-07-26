@@ -2,8 +2,17 @@
 
 Hermetic: tmp_path roots, injected run_fn/net_check_fn seams — no real
 subprocess, no network, no Redis, and never the checkout's own instance/.
+
+The one exception is the planted-canary arm at the bottom, which deliberately
+exercises the REAL ``_default_run`` subprocess against a STUB ``claude`` shell
+script under a FAKE $HOME — no network and no auth, but a real process, because
+the property under test (what the child can reach) is not observable through
+the injected seam.
 """
+import os
+import stat
 import subprocess
+from pathlib import Path
 
 import pytest
 import yaml
@@ -230,8 +239,9 @@ def test_brief_delivered_writes_real_cli_output(tmp_path):
     _write_answers(tmp_path)
     seen = {}
 
-    def run_fn(argv, *, timeout, cwd):
+    def run_fn(argv, *, timeout, cwd, env=None):
         seen["argv"], seen["timeout"], seen["cwd"] = argv, timeout, cwd
+        seen["env"] = env
         return _Proc(0, "## Acme Storefront\nPlausibly an e-commerce product.")
 
     out = genesis.research_brief(tmp_path, run_fn=run_fn,
@@ -242,10 +252,29 @@ def test_brief_delivered_writes_real_cli_output(tmp_path):
     body = (tmp_path / genesis.BRIEF_REL).read_text()
     assert "status: delivered" in body
     assert "Plausibly an e-commerce product." in body      # the REAL output
-    # fixed argv, no shell: [claude, -p, prompt]
+    # fixed argv, no shell: [claude, -p, prompt, --setting-sources project,local]
     assert seen["argv"][0] == "/usr/local/bin/claude"
-    assert seen["argv"][1] == "-p" and len(seen["argv"]) == 3
-    assert seen["cwd"] == str(tmp_path)
+    assert seen["argv"][1] == "-p" and len(seen["argv"]) == 5
+    # OPERATOR-CONTEXT ISOLATION (see genesis.py). These three assertions are
+    # the regression guard for a MEASURED leak: before the fix, a hatch of the
+    # public egg produced a brief naming the operator's real employer and four
+    # real products that exist nowhere in the egg tree.
+    assert seen["argv"][3] == "--setting-sources"
+    assert "user" not in seen["argv"][4].split(","), (
+        "the `user` setting source re-opens ~/.claude/CLAUDE.md + personal memory")
+    # cwd must NOT be the instance root: that root sits under $HOME, and the
+    # CLI's CLAUDE.md ancestor walk would climb from it to the operator's own.
+    assert seen["cwd"] != str(tmp_path)
+    assert Path(seen["cwd"]).is_dir()
+    assert not any(Path(seen["cwd"]).iterdir()), (
+        "the genesis cwd must be EMPTY — any CLAUDE.md/.remember/.claude in it "
+        "is auto-discovered project context")
+    # HOME intact (macOS keychain/OAuth is HOME-anchored — a fake HOME or a
+    # throwaway CLAUDE_CONFIG_DIR silently downgrades the organ to an IOU),
+    # ANTHROPIC_API_KEY stripped (never silently bill pay-as-you-go).
+    assert seen["env"]["HOME"] == os.environ["HOME"]
+    assert "ANTHROPIC_API_KEY" not in seen["env"]
+    assert "CLAUDE_CONFIG_DIR" not in seen["env"]
 
 
 def test_brief_prompt_carries_names_only():
@@ -256,15 +285,15 @@ def test_brief_prompt_carries_names_only():
 
 
 @pytest.mark.parametrize("case,run_fn,expected_reason", [
-    ("rc-nonzero", lambda a, *, timeout, cwd: _Proc(1, "", "please /login"),
+    ("rc-nonzero", lambda a, *, timeout, cwd, env=None: _Proc(1, "", "please /login"),
      "non-zero"),
-    ("empty-stdout", lambda a, *, timeout, cwd: _Proc(0, "   "), "no output"),
+    ("empty-stdout", lambda a, *, timeout, cwd, env=None: _Proc(0, "   "), "no output"),
     ("timeout",
-     lambda a, *, timeout, cwd: (_ for _ in ()).throw(
+     lambda a, *, timeout, cwd, env=None: (_ for _ in ()).throw(
          subprocess.TimeoutExpired(cmd="claude", timeout=timeout)),
      "timed out"),
     ("start-failure",
-     lambda a, *, timeout, cwd: (_ for _ in ()).throw(OSError("boom")),
+     lambda a, *, timeout, cwd, env=None: (_ for _ in ()).throw(OSError("boom")),
      "failed to start"),
 ])
 def test_brief_failures_write_honest_iou(tmp_path, case, run_fn, expected_reason):
@@ -282,7 +311,7 @@ def test_brief_failures_write_honest_iou(tmp_path, case, run_fn, expected_reason
 def test_brief_iou_when_cli_missing_without_invoking(tmp_path):
     _write_answers(tmp_path)
 
-    def must_not_run(argv, *, timeout, cwd):
+    def must_not_run(argv, *, timeout, cwd, env=None):
         raise AssertionError("CLI must not be invoked when the binary is absent")
 
     out = genesis.research_brief(tmp_path, run_fn=must_not_run,
@@ -293,7 +322,7 @@ def test_brief_iou_when_cli_missing_without_invoking(tmp_path):
 def test_brief_iou_when_network_down_without_invoking(tmp_path):
     _write_answers(tmp_path)
 
-    def must_not_run(argv, *, timeout, cwd):
+    def must_not_run(argv, *, timeout, cwd, env=None):
         raise AssertionError("CLI must not be invoked when the network is down")
 
     out = genesis.research_brief(tmp_path, run_fn=must_not_run,
@@ -305,17 +334,17 @@ def test_brief_iou_when_network_down_without_invoking(tmp_path):
 def test_brief_never_overwrites_delivered_but_upgrades_iou(tmp_path):
     _write_answers(tmp_path)
     # 1) an IOU lands first
-    genesis.research_brief(tmp_path, run_fn=lambda a, *, timeout, cwd: _Proc(1),
+    genesis.research_brief(tmp_path, run_fn=lambda a, *, timeout, cwd, env=None: _Proc(1),
                            net_check_fn=lambda: True, claude_path="/x/claude")
     assert "iou-queued" in (tmp_path / genesis.BRIEF_REL).read_text()
     # 2) a later successful run UPGRADES the IOU
     out = genesis.research_brief(
-        tmp_path, run_fn=lambda a, *, timeout, cwd: _Proc(0, "real brief"),
+        tmp_path, run_fn=lambda a, *, timeout, cwd, env=None: _Proc(0, "real brief"),
         net_check_fn=lambda: True, claude_path="/x/claude")
     assert out["status"] == "delivered"
     # 3) a further run never clobbers the delivered brief
     out2 = genesis.research_brief(
-        tmp_path, run_fn=lambda a, *, timeout, cwd: _Proc(0, "other text"),
+        tmp_path, run_fn=lambda a, *, timeout, cwd, env=None: _Proc(0, "other text"),
         net_check_fn=lambda: True, claude_path="/x/claude")
     assert out2["status"] == "already-delivered"
     assert "real brief" in (tmp_path / genesis.BRIEF_REL).read_text()
@@ -325,7 +354,7 @@ def test_brief_timeout_env_knob_is_honored(tmp_path, monkeypatch):
     _write_answers(tmp_path)
     seen = {}
 
-    def run_fn(argv, *, timeout, cwd):
+    def run_fn(argv, *, timeout, cwd, env=None):
         seen["timeout"] = timeout
         return _Proc(0, "brief")
 
@@ -340,7 +369,7 @@ def test_brief_timeout_malformed_env_falls_back_not_crashes(tmp_path, monkeypatc
     _write_answers(tmp_path)
     seen = {}
 
-    def run_fn(argv, *, timeout, cwd):
+    def run_fn(argv, *, timeout, cwd, env=None):
         seen["timeout"] = timeout
         return _Proc(0, "brief")
 
@@ -373,7 +402,7 @@ def test_genesis_intake_items_shape_and_content(tmp_path):
     (tmp_path / genesis.FOCUS_REL).write_text("Prove the store lane first.",
                                               encoding="utf-8")
     genesis.run_genesis_proposal(tmp_path)
-    genesis.research_brief(tmp_path, run_fn=lambda a, *, timeout, cwd: _Proc(1),
+    genesis.research_brief(tmp_path, run_fn=lambda a, *, timeout, cwd, env=None: _Proc(1),
                            net_check_fn=lambda: True, claude_path="/x/claude")
 
     items = genesis.genesis_intake_items(tmp_path, now="2026-07-10T00:00:00Z")
@@ -425,3 +454,122 @@ def test_contribute_fund_fyi_card_renders_once_and_propose_only(tmp_path):
     assert "Proposed outcome:" not in s
     # Asked once at GENESIS only — a bare root renders no ask at all.
     assert genesis.genesis_intake_items(tmp_path / "bare") == []
+
+
+# ---------------------------------------------------------------------------
+# OPERATOR-CONTEXT LEAK — the planted-canary arm.
+#
+# MEASURED 2026-07-26, on the real thing: a clean-room hatch of the PUBLIC egg,
+# for a lane whose only name is the placeholder "First Lane" and which carries
+# no product metadata at all, produced a research brief naming the operator's
+# real employer and four real products that exist NOWHERE in the egg tree. The
+# brief said so itself: "Inference from this deployment's ambient captain
+# context (not from lane config)". That artifact is promoted as "the org's
+# baseline understanding of its products and market" and indexed into org
+# memory, so every hatched cabinet absorbed its operator's private notes.
+#
+# WHY A STUB, AND WHAT IT FAITHFULLY MODELS. The property under test is what
+# the CHILD PROCESS can reach, which the injected run_fn seam cannot observe —
+# so this arm runs the REAL `_default_run` against a stub `claude` shell
+# script. The stub implements Claude Code's two DOCUMENTED discovery tiers and
+# nothing else, so the assertion is about the isolation contract rather than
+# about any CLI build:
+#   (a) PROJECT tier  — always walk UP from $PWD collecting CLAUDE.md.
+#   (b) USER-GLOBAL tier — load $HOME/.claude/CLAUDE.md ONLY when `user` is
+#       among --setting-sources (absent flag == all sources, the CLI default).
+# Modelling (b) as flag-conditional is the whole point: $HOME is deliberately
+# left INTACT by the fix (the macOS keychain/OAuth is HOME-anchored, so a fake
+# HOME or a throwaway CLAUDE_CONFIG_DIR silently downgrades the organ to an
+# IOU). Mere filesystem reachability of ~/.claude/CLAUDE.md is therefore NOT
+# the bug; loading it as a context source is.
+#
+# No network, no auth, no token spend: net_check_fn is stubbed and the fake
+# CLI exits 0 with its own text.
+# ---------------------------------------------------------------------------
+
+_CANARY = "CANARY-7f3a91-OPERATOR-EMPLOYER-DO-NOT-LEAK"
+
+_STUB_CLAUDE = r"""#!/bin/bash
+# Faithful stub of the two documented CLAUDE.md discovery tiers.
+sources="all"
+prev=""
+for a in "$@"; do
+  [ "$prev" = "--setting-sources" ] && sources="$a"
+  prev="$a"
+done
+echo "STUB-CWD=$PWD"
+echo "STUB-SOURCES=$sources"
+# (a) PROJECT tier: ancestor walk from $PWD, always active.
+d="$PWD"
+while [ -n "$d" ] && [ "$d" != "/" ]; do
+  [ -f "$d/CLAUDE.md" ] && cat "$d/CLAUDE.md"
+  [ -f "$d/.claude/CLAUDE.md" ] && cat "$d/.claude/CLAUDE.md"
+  d="$(dirname "$d")"
+done
+# (b) USER-GLOBAL tier: only when the `user` source is in scope.
+case ",$sources," in
+  *,user,*|*,all,*) [ -f "$HOME/.claude/CLAUDE.md" ] && cat "$HOME/.claude/CLAUDE.md" ;;
+esac
+echo "STUB-END"
+"""
+
+
+def _plant_canary_home(tmp_path):
+    """A fake $HOME carrying the canary in BOTH reachable positions, with the
+    instance root nested UNDER it — the real-world shape RES-002 names (the
+    cabinet lives under $HOME, so an ancestor walk from it climbs to the
+    operator's personal notes)."""
+    home = tmp_path / "home"
+    (home / ".claude").mkdir(parents=True)
+    (home / ".claude" / "CLAUDE.md").write_text(
+        f"# personal notes\nMy employer is {_CANARY}.\n", encoding="utf-8")
+    (home / "CLAUDE.md").write_text(
+        f"# personal notes\nMy employer is {_CANARY}.\n", encoding="utf-8")
+    root = home / "cabinet"
+    root.mkdir()
+    _write_answers(root)
+    stub = tmp_path / "bin" / "claude"
+    stub.parent.mkdir(parents=True)
+    stub.write_text(_STUB_CLAUDE, encoding="utf-8")
+    stub.chmod(stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return home, root, stub
+
+
+def test_genesis_cannot_read_a_planted_string_from_a_fake_home(tmp_path, monkeypatch):
+    """The regression guard: a genesis run must not be able to reach a canary
+    planted in the operator's personal CLAUDE.md."""
+    home, root, stub = _plant_canary_home(tmp_path)
+    monkeypatch.setenv("HOME", str(home))
+
+    out = genesis.research_brief(root, net_check_fn=lambda: True,
+                                 claude_path=str(stub),
+                                 now="2026-07-26T00:00:00Z")
+
+    assert out["status"] == "delivered", (
+        f"the stub CLI must succeed, else this arm proves nothing: {out}")
+    body = (root / genesis.BRIEF_REL).read_text(encoding="utf-8")
+    assert "STUB-END" in body, "the real subprocess path did not run"
+    assert _CANARY not in body, (
+        "OPERATOR CONTEXT LEAKED into the genesis research brief — the very "
+        "artifact promoted as the org's baseline understanding of its market")
+
+
+def test_the_canary_arm_is_not_vacuous(tmp_path, monkeypatch):
+    """NEGATIVE CONTROL. A sensor nobody has tried to defeat is an assumption.
+
+    Drive the SAME stub the pre-fix way — cwd = the instance root, no
+    --setting-sources — and the canary MUST come back. If this ever stops
+    leaking, the stub stopped modelling the discovery it exists to model, and
+    the arm above would be passing vacuously.
+    """
+    home, root, stub = _plant_canary_home(tmp_path)
+    monkeypatch.setenv("HOME", str(home))
+
+    proc = genesis._default_run([str(stub), "-p", "prompt"],
+                                timeout=30, cwd=str(root),
+                                env={**os.environ, "HOME": str(home)})
+
+    assert proc.returncode == 0
+    assert _CANARY in proc.stdout, (
+        "the pre-fix invocation no longer leaks the canary — the stub is not "
+        "modelling CLAUDE.md discovery any more, so the positive arm is vacuous")

@@ -189,7 +189,7 @@ test refuses a `retired` row whose marker is still in the tree.
 - **Closed:** officers boot from a dedicated config home with OAuth intact (`CLAUDE_SECURESTORAGE_CONFIG_DIR` set-to-empty federates the keychain item instead of duplicating it); the 58KB `@screenpipe-memories.md` dossier import does NOT load (external-includes gate unapproved in the fresh home); no credential or config assignment is typed into tmux pane history.
 - **Open:** the ~3KB BODY of the Captain's personal `~/.claude/CLAUDE.md` still loads via Claude Code's cwd ANCESTOR walk, because the repo lives under `$HOME`.
 - **Why open:** `CLAUDE_CONFIG_DIR` cannot gate an ancestor walk, and `CLAUDE_CODE_DISABLE_CLAUDE_MDS` was rejected — it would kill the repo's own cabinet-law `CLAUDE.md` too. The two real fixes are outside this layer.
-- **Declared at:** `cabinet/scripts/start-officer-mac.sh:474`
+- **Declared at:** `cabinet/scripts/start-officer-mac.sh:497`
 - **Anchor:** `KNOWN RESIDUAL (documented in the AUD-1 ledger row)`
 - **Retirement:** either (a) the Captain moves personal content behind imports on a non-ancestor path, or (b) an upstream ancestor-walk opt-out ships — both named in the AUD-1 note (`docs/plans/operative-egg-ledger-2026-07-07.yml`, row `AUD-1`). Whichever lands: delete this declaration block from `cabinet/scripts/start-officer-mac.sh`, update the AUD-1 note, and flip this row to `retired` in the SAME commit.
 
@@ -200,7 +200,7 @@ test refuses a `retired` row whose marker is still in the tree.
 - **Closed:** a `--clean-room` hatch run inside a git work tree whose `instance/config/platform.yml` is tracked with a real deployment config (>50 lines) is REFUSED, exit 64 — with the throwaway-export escape (`git archive HEAD | tar -x`) and an explicit `HATCH_ALLOW_TRACKED_INSTANCE=1` override documented in place.
 - **Open:** a plain, NON-clean-room hatch run from such a checkout still rewrites the tracked `platform.yml` in place.
 - **Why open:** the declaration states the scope decision outright — in-scope containment per hardening Brief 1 was clean-room only. It is a deliberate scope boundary, not an oversight.
-- **Declared at:** `cabinet/scripts/hatch.sh:61`
+- **Declared at:** `cabinet/scripts/hatch.sh:69`
 - **Anchor:** `KNOWN RESIDUAL SEAM (2026-07-11 verify`
 - **Retirement:** the guard is lifted out of the clean-room branch so every hatch path refuses to rewrite a tracked `platform.yml` (or hatch stops writing tracked instance config at all). In the SAME commit: delete this declaration block from `cabinet/scripts/hatch.sh`, extend the hatch regression suite with a non-clean-room arm, and flip this row to `retired`.
 

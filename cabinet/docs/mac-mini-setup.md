@@ -197,7 +197,9 @@ instance fresh. An existing `posture.yml` ruling is never touched.
 
 The generator writes: per-lane contexts + projects,
 `instance/agents/<lane>-ceo.md`, the managed captain keys + `officers:` block
-in `platform.yml`, `instance/config/roster.yml`,
+in `platform.yml`, `instance/config/roster.yml` (the HIRE record: the Chair
+plus only the lane CEOs both germline files already authorize; the rest are
+recorded as PENDING with paste-ready rows),
 `instance/config/active-project.txt` (first lane slug — `bootstrap-roles.sh`
 needs it), the inert posture scaffold, and (org flavor) the
 `sources.yml` OrgSource recall binding. Nothing activates by itself.
@@ -208,8 +210,11 @@ needs it), the inert posture scaffold, and (org flavor) the
 # 1. Preset
 echo portfolio > instance/config/active-preset    # or work/custom per your shape
 
-# 2. Germline edits (Captain applies): lane CEOs into cabinet/mcp-scope.yml
-#    agents: list + capability rows in cabinet/officer-capabilities.conf
+# 2. Germline edits (Captain applies) — OPTIONAL, nothing below waits on
+#    them: lane CEOs into cabinet/mcp-scope.yml agents: list, plus capability
+#    rows in cabinet/officer-capabilities.conf (both germline). The generator
+#    rosters a lane CEO ONLY once both files authorize it (roster-authz), so
+#    re-run generate-instance.py after applying the rows — that IS the hire.
 
 # 3. Chair bot token (BotFather) into cabinet/.env:
 #    TELEGRAM_COS_TOKEN=...           # canonical name; config keeps TOKEN-TBD

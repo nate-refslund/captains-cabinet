@@ -94,18 +94,51 @@ def acme_answers() -> dict:
     }
 
 
+# The AUTHORIZATION surface a deployment must carry before an officer can be
+# rostered (roster-authz): capability rows + an mcp-scope `agents:` entry.
+# Writing these two files is the Captain's act (they are germline), so the
+# generator only hires what they already cover — the Acme fixture below is a
+# deployment where the Captain ALREADY applied the rows for both lanes, which
+# is what makes the roster assertions in this file meaningful. The un-applied
+# case has its own tests in TestRosterAuthorizationGate.
+FIXTURE_OFFICER_CONF = """\
+# fictional Acme deployment — officer:capability rows
+cos:logs_captain_decisions
+cos:validates_deployments
+acme-store-ceo:deploys_code
+acme-store-ceo:logs_captain_decisions
+acme-labs-ceo:deploys_code
+acme-labs-ceo:logs_captain_decisions
+"""
+
+FIXTURE_MCP_SCOPE = """\
+cabinet: acme-hq
+agents:
+  cos:
+    mcps: [telegram]
+  acme-store-ceo:
+    mcps: [neon]
+  acme-labs-ceo:
+    mcps: [neon]
+"""
+
+
 @pytest.fixture()
 def cab_root(tmp_path: Path) -> Path:
-    """A minimal fake CABINET_ROOT with the REAL lane-CEO template."""
+    """A minimal fake CABINET_ROOT with the REAL lane-CEO template, and a
+    germline pair that authorizes the Chair + both Acme lane CEOs."""
     root = tmp_path / "cab"
     (root / "instance/config/contexts").mkdir(parents=True)
     (root / "instance/config/projects").mkdir(parents=True)
     (root / "instance/agents").mkdir(parents=True)
     (root / "presets/portfolio/agents").mkdir(parents=True)
+    (root / "cabinet").mkdir(parents=True)
     shutil.copy(
         _REPO_ROOT / "presets/portfolio/agents/_lane-ceo.md.template",
         root / "presets/portfolio/agents/_lane-ceo.md.template",
     )
+    (root / "cabinet/officer-capabilities.conf").write_text(FIXTURE_OFFICER_CONF)
+    (root / "cabinet/mcp-scope.yml").write_text(FIXTURE_MCP_SCOPE)
     (root / "instance/config/platform.yml").write_text(PLATFORM_FIXTURE)
     return root
 
@@ -313,6 +346,383 @@ class TestRosterBootstrapCompat:
         assert ceo["title"] == "Acme Storefront CEO"
         assert ceo["authority_level"] == "mission_executor"
         assert ceo["capabilities"] == ["deploys_code", "logs_captain_decisions"]
+
+
+# ---------------------------------------------------------------------------
+# Hiring is authorization-gated (roster-authz, 2026-07-26)
+#
+# The two files that make an officer usable — cabinet/officer-capabilities.conf
+# (capability rows) and cabinet/mcp-scope.yml (`agents:` entry) — are GERMLINE:
+# neither this generator nor hatch.sh may write them. Before this gate the
+# generator rostered `<lane>-ceo` for every lane regardless, so an automated
+# hatch produced a deployment whose every lane CEO was locked out of every
+# capability and every MCP server — and framework/tests/test_roster_conf_
+# lockstep.py then failed that deployment for it, a gate the hatch was
+# structurally forbidden to satisfy. The generator now rosters only what those
+# files already cover.
+# ---------------------------------------------------------------------------
+
+def _strip_authorization(root: Path, *slugs: str) -> None:
+    """Remove `slugs` from BOTH germline artifacts in a fixture root — i.e.
+    model a deployment where the Captain has not (yet) applied their rows."""
+    conf = root / "cabinet/officer-capabilities.conf"
+    conf.write_text("".join(
+        line for line in conf.read_text().splitlines(keepends=True)
+        if not any(line.startswith(f"{s}:") for s in slugs)))
+    scope_path = root / "cabinet/mcp-scope.yml"
+    scope = yaml.safe_load(scope_path.read_text())
+    for s in slugs:
+        scope["agents"].pop(s, None)
+    scope_path.write_text(yaml.safe_dump(scope, sort_keys=False))
+
+
+class TestRosterAuthorizationGate:
+    def test_unauthorized_lane_ceo_is_not_rostered(self, cab_root):
+        """The bug: a lane CEO with no capability rows and no MCP scope entry
+        must never be HIRED — that is a silent capability/MCP-scope lockout the
+        automated hatch cannot fix, because fixing it means writing germline."""
+        _strip_authorization(cab_root, "acme-labs-ceo")
+        run_gen(cab_root, acme_answers())
+        roster = yaml.safe_load(
+            (cab_root / "instance/config/roster.yml").read_text())["roster"]
+        assert set(roster) == {"cos", "acme-store-ceo"}
+
+    def test_unauthorized_lane_still_generates_its_inert_files(self, cab_root):
+        """Un-hired is not un-generated: the lane's context, project and role
+        definition still land (inert), so applying the germline rows later and
+        re-running is all it takes to hire."""
+        _strip_authorization(cab_root, "acme-labs-ceo")
+        run_gen(cab_root, acme_answers())
+        for rel in ("instance/config/contexts/acme-labs.yml",
+                    "instance/config/projects/acme-labs.yml",
+                    "instance/agents/acme-labs-ceo.md"):
+            assert (cab_root / rel).is_file(), f"missing {rel}"
+
+    def test_unauthorized_lane_is_recorded_as_pending_in_roster_yml(self, cab_root):
+        """The state must be legible in the file itself, above the `roster:`
+        key — bootstrap-roles.sh's awk parser closes the roster section on any
+        top-level line, so a trailing comment block would truncate the roster."""
+        _strip_authorization(cab_root, "acme-labs-ceo")
+        run_gen(cab_root, acme_answers())
+        text = (cab_root / "instance/config/roster.yml").read_text()
+        assert "PENDING AUTHORIZATION" in text
+        assert text.index("PENDING AUTHORIZATION") < text.index("\nroster:")
+        assert "acme-labs-ceo" in text.split("\nroster:")[0]
+        # and it still parses as the roster it claims to be
+        assert set(yaml.safe_load(text)["roster"]) == {"cos", "acme-store-ceo"}
+
+    def test_half_authorized_lane_ceo_is_not_rostered(self, cab_root):
+        """BOTH files are required. Capability rows without an mcp-scope entry
+        (or vice versa) is still a lockout — every mcp__* call the officer makes
+        is rejected by the pre-tool-use scope gate."""
+        scope_path = cab_root / "cabinet/mcp-scope.yml"
+        scope = yaml.safe_load(scope_path.read_text())
+        scope["agents"].pop("acme-labs-ceo")
+        scope_path.write_text(yaml.safe_dump(scope, sort_keys=False))
+        run_gen(cab_root, acme_answers())
+        roster = yaml.safe_load(
+            (cab_root / "instance/config/roster.yml").read_text())["roster"]
+        assert "acme-labs-ceo" not in roster
+
+    def test_scaffolds_entry_is_not_authorization(self, cab_root):
+        """mcp-scope.yml's own contract: `scaffolds:` means scope RESERVED, not
+        hired. Reading it as authorization would re-open the lockout."""
+        scope_path = cab_root / "cabinet/mcp-scope.yml"
+        scope = yaml.safe_load(scope_path.read_text())
+        scope["scaffolds"] = {"acme-labs-ceo": scope["agents"].pop("acme-labs-ceo")}
+        scope_path.write_text(yaml.safe_dump(scope, sort_keys=False))
+        run_gen(cab_root, acme_answers())
+        roster = yaml.safe_load(
+            (cab_root / "instance/config/roster.yml").read_text())["roster"]
+        assert "acme-labs-ceo" not in roster
+
+    def test_absent_germline_pair_authorizes_nothing(self, cab_root):
+        """Fail-closed: inability to PROVE authorization is never permission.
+        A partial tree with no germline pair hires the Chair (the coordinating
+        surface hatch.sh names directly) and no lane CEO."""
+        (cab_root / "cabinet/officer-capabilities.conf").unlink()
+        (cab_root / "cabinet/mcp-scope.yml").unlink()
+        run_gen(cab_root, acme_answers())
+        roster = yaml.safe_load(
+            (cab_root / "instance/config/roster.yml").read_text())["roster"]
+        assert set(roster) == {"cos"}
+
+    def test_unauthorized_chair_refuses_the_run(self, cab_root):
+        """A germline pair that is PRESENT but does not authorize the Chair is a
+        stripped authorization surface, not a partial tree — rostering the one
+        officer the whole hatch depends on anyway would be the worst version of
+        this bug, so the run refuses before writing anything."""
+        _strip_authorization(cab_root, "cos")
+        with pytest.raises(gi.GenerationError, match=r"Chair \(cos\) is not authorized"):
+            run_gen(cab_root, acme_answers())
+
+    def test_applying_the_rows_and_rerunning_hires(self, cab_root):
+        """The errand closes itself: the ONLY act between un-hired and hired is
+        the Captain applying the germline rows the generator printed, then
+        re-running it. No hatch step waits on that."""
+        _strip_authorization(cab_root, "acme-labs-ceo")
+        run_gen(cab_root, acme_answers())
+        assert "acme-labs-ceo" not in yaml.safe_load(
+            (cab_root / "instance/config/roster.yml").read_text())["roster"]
+
+        conf = cab_root / "cabinet/officer-capabilities.conf"
+        conf.write_text(conf.read_text()
+                        + "acme-labs-ceo:deploys_code\n"
+                          "acme-labs-ceo:logs_captain_decisions\n")
+        scope_path = cab_root / "cabinet/mcp-scope.yml"
+        scope = yaml.safe_load(scope_path.read_text())
+        scope["agents"]["acme-labs-ceo"] = {"mcps": []}
+        scope_path.write_text(yaml.safe_dump(scope, sort_keys=False))
+
+        run_gen(cab_root, acme_answers())
+        text = (cab_root / "instance/config/roster.yml").read_text()
+        assert set(yaml.safe_load(text)["roster"]) == {
+            "cos", "acme-store-ceo", "acme-labs-ceo"}
+        assert "PENDING AUTHORIZATION" not in text
+
+    def test_pending_rows_are_printed_paste_ready(self, cab_root):
+        """The Captain's errand is copy-paste, not authorship: the exact rows
+        for BOTH files, naming both files."""
+        _strip_authorization(cab_root, "acme-labs-ceo")
+        write_answers(cab_root, acme_answers())
+        res = run_cli(cab_root)
+        assert res.returncode == 0, res.stderr
+        assert "acme-labs-ceo:deploys_code" in res.stdout
+        assert "acme-labs-ceo:logs_captain_decisions" in res.stdout
+        assert "cabinet/officer-capabilities.conf" in res.stdout
+        assert "cabinet/mcp-scope.yml" in res.stdout
+        # a fully-authorized deployment gets NO paste errand — the whole point
+        # is that the errand exists only while something is actually un-hired
+        conf = cab_root / "cabinet/officer-capabilities.conf"
+        conf.write_text(conf.read_text()
+                        + "acme-labs-ceo:deploys_code\n"
+                          "acme-labs-ceo:logs_captain_decisions\n")
+        scope_path = cab_root / "cabinet/mcp-scope.yml"
+        scope = yaml.safe_load(scope_path.read_text())
+        scope["agents"]["acme-labs-ceo"] = {"mcps": []}
+        scope_path.write_text(yaml.safe_dump(scope, sort_keys=False))
+        res2 = run_cli(cab_root)
+        assert res2.returncode == 0, res2.stderr
+        assert "acme-labs-ceo:deploys_code" not in res2.stdout
+        assert "nothing to propose" in res2.stdout
+
+    def test_authorization_read_is_read_only(self, cab_root):
+        """The generator must never WRITE the germline files it reads — that is
+        the whole reason it has to gate instead of self-serve."""
+        conf = cab_root / "cabinet/officer-capabilities.conf"
+        scope = cab_root / "cabinet/mcp-scope.yml"
+        before = (conf.read_bytes(), scope.read_bytes())
+        _strip_authorization(cab_root, "acme-labs-ceo")
+        after_strip = (conf.read_bytes(), scope.read_bytes())
+        run_gen(cab_root, acme_answers())
+        assert (conf.read_bytes(), scope.read_bytes()) == after_strip
+        assert before != after_strip     # the helper really did change them
+
+
+# ---------------------------------------------------------------------------
+# The errand actually closes (paste-and-re-run, 2026-07-26)
+#
+# The gate above only helps if the Captain's errand can be COMPLETED. Two arms
+# already existed and neither connected printed text to applied text: one
+# asserted substrings in stdout, the other applied rows the test itself
+# constructed in correct format. Between them sat the real bug — the printed
+# block was mis-indented in BOTH files, so pasting it verbatim left the lane
+# un-hired with exit 0 and no diagnostic:
+#
+#   * conf rows printed indented, while the hooks that ENFORCE capabilities
+#     match whole lines (post-tool-use.sh `grep -q "^officer:capability$"`,
+#     pre-captain-dm.sh `grep -qxF`) — so even after the Captain hand-fixed the
+#     scope nesting, the lane was hired with every capability gate silently off;
+#   * mcp-scope keys printed one level too deep, so the paste nested the new
+#     officer INSIDE the previous agent's mapping — corrupting that neighbour's
+#     scope as well as failing to hire the new lane.
+#
+# These arms do the whole errand: run the CLI, apply what it PRINTED
+# byte-for-byte, re-run, and check the properties the two germline files exist
+# to deliver — hired in the roster, and matched by the enforcement greps
+# themselves (run as subprocesses, not re-implemented).
+# ---------------------------------------------------------------------------
+
+def _printed_germline_sections(stdout: str) -> tuple:
+    """(conf_header, conf_lines, scope_header, scope_lines) as PRINTED.
+
+    Read out of stdout only — by locating the two header lines that name the two
+    germline files, and ending the block at the next numbered `Next steps` item.
+    Deliberately independent of the generator's internals: a helper that asked
+    the module for the rows would re-introduce exactly the gap this class exists
+    to close (the old arms checked stdout substrings on one side and applied
+    test-authored rows on the other, so nothing connected printed to applied)."""
+    lines = stdout.splitlines()
+
+    def _header_at(needle: str) -> int:
+        hits = [i for i, ln in enumerate(lines) if needle in ln and "---" in ln]
+        assert len(hits) == 1, f"expected one {needle} header, got {hits}:\n{stdout}"
+        return hits[0]
+
+    conf_i = _header_at(gi.OFFICER_CONF_REL)
+    scope_i = _header_at(gi.MCP_SCOPE_REL)
+    assert conf_i < scope_i, stdout
+    end = len(lines)
+    for i in range(scope_i + 1, len(lines)):
+        if re.match(r"^\s*\d+\.\s", lines[i]):      # next "Next steps" item
+            end = i
+            break
+    return (lines[conf_i], lines[conf_i + 1:scope_i],
+            lines[scope_i], lines[scope_i + 1:end])
+
+
+class TestPrintedGermlineRowsCloseTheErrand:
+    @staticmethod
+    def _apply_printed_block(root: Path, stdout: str) -> tuple:
+        """Do exactly what the printed errand says: take each half of the block
+        the CLI PRINTED and append it, byte-for-byte, to the file that half's
+        header names. No reformatting — reformatting is the step that made the
+        older arms vacuous."""
+        conf_hdr, conf_rows, scope_hdr, scope_rows = _printed_germline_sections(stdout)
+        assert conf_rows and scope_rows, stdout
+        conf = root / "cabinet/officer-capabilities.conf"
+        conf.write_text(conf.read_text()
+                        + "\n".join(r for r in conf_rows if r.strip()) + "\n")
+        scope = root / "cabinet/mcp-scope.yml"
+        scope.write_text(scope.read_text()
+                         + "\n".join(r for r in scope_rows if r.strip()) + "\n")
+        return conf_hdr, scope_hdr
+
+    def test_pasting_the_printed_rows_hires_the_lane(self, cab_root):
+        """THE property: the errand closes itself. Print → paste verbatim →
+        re-run → hired. Before the indentation fix this run ended with the lane
+        still PENDING, exit 0, and no diagnostic."""
+        _strip_authorization(cab_root, "acme-labs-ceo")
+        write_answers(cab_root, acme_answers())
+        res = run_cli(cab_root)
+        assert res.returncode == 0, res.stderr
+        assert "PENDING AUTHORIZATION" in (
+            cab_root / "instance/config/roster.yml").read_text()
+
+        self._apply_printed_block(cab_root, res.stdout)
+
+        res2 = run_cli(cab_root, "--force")
+        assert res2.returncode == 0, res2.stderr
+        text = (cab_root / "instance/config/roster.yml").read_text()
+        assert set(yaml.safe_load(text)["roster"]) == {
+            "cos", "acme-store-ceo", "acme-labs-ceo"}, (
+            "pasting the generator's own printed rows did not hire the lane — "
+            f"the errand cannot be completed as written:\n{res.stdout}")
+        assert "PENDING AUTHORIZATION" not in text
+
+    def test_pasted_conf_rows_match_the_enforcement_greps(self, cab_root):
+        """Hired is not enough: the capability hooks are line-anchored, so a
+        row this parser accepts but `grep` does not is a hire straight into a
+        silent lockout. Runs the hooks' OWN grep invocations."""
+        _strip_authorization(cab_root, "acme-labs-ceo")
+        write_answers(cab_root, acme_answers())
+        res = run_cli(cab_root)
+        assert res.returncode == 0, res.stderr
+        self._apply_printed_block(cab_root, res.stdout)
+        conf = str(cab_root / "cabinet/officer-capabilities.conf")
+
+        # post-tool-use.sh has_capability(): grep -q "^${OFFICER}:${1}$"
+        assert subprocess.run(
+            ["grep", "-q", "^acme-labs-ceo:deploys_code$", conf]).returncode == 0, (
+            "the pasted capability row does not match post-tool-use.sh's "
+            "line-anchored capability grep — every capability-gated behaviour "
+            "would be silently off for this officer")
+        # pre-captain-dm.sh capability gate: grep -qxF "${OFFICER}:<cap>"
+        assert subprocess.run(
+            ["grep", "-qxF", "acme-labs-ceo:logs_captain_decisions",
+             conf]).returncode == 0, (
+            "the pasted capability row does not match pre-captain-dm.sh's "
+            "whole-line fixed-string gate")
+
+    def test_pasted_scope_rows_do_not_nest_under_the_previous_agent(self, cab_root):
+        """The paste must add a SIBLING key under `agents:`. Printed one level
+        deeper it landed inside the previous agent's mapping — un-hiring the new
+        lane and corrupting the neighbour's MCP scope at the same time."""
+        _strip_authorization(cab_root, "acme-labs-ceo")
+        write_answers(cab_root, acme_answers())
+        res = run_cli(cab_root)
+        assert res.returncode == 0, res.stderr
+        self._apply_printed_block(cab_root, res.stdout)
+
+        agents = yaml.safe_load(
+            (cab_root / "cabinet/mcp-scope.yml").read_text())["agents"]
+        assert "acme-labs-ceo" in agents, (
+            f"the pasted scope rows are not a direct child of `agents:`: {agents}")
+        assert agents["acme-store-ceo"] == {"mcps": ["neon"]}, (
+            "the paste corrupted the PREVIOUS agent's scope — it swallowed the "
+            f"new officer as one of its own keys: {agents['acme-store-ceo']}")
+        assert agents["acme-labs-ceo"]["mcps"] == []      # fail-closed default
+
+    def test_section_headers_are_harmless_comments_when_pasted(self, cab_root):
+        """A block is only paste-ready if a sloppy paste is safe too: selecting
+        a section INCLUDING its header must not corrupt the file it lands in.
+        Both headers are `#` comments, which both target formats ignore."""
+        _strip_authorization(cab_root, "acme-labs-ceo")
+        write_answers(cab_root, acme_answers())
+        res = run_cli(cab_root)
+        assert res.returncode == 0, res.stderr
+        conf_hdr, conf_rows, scope_hdr, scope_rows = _printed_germline_sections(
+            res.stdout)
+        conf = cab_root / "cabinet/officer-capabilities.conf"
+        scope = cab_root / "cabinet/mcp-scope.yml"
+        # headers deliberately NOT stripped
+        conf.write_text(conf.read_text() + "\n".join(
+            [conf_hdr, *(r for r in conf_rows if r.strip())]) + "\n")
+        scope.write_text(scope.read_text() + "\n".join(
+            [scope_hdr, *(r for r in scope_rows if r.strip())]) + "\n")
+        assert "acme-labs-ceo" in gi._conf_officer_column(conf)
+        assert "acme-labs-ceo" in yaml.safe_load(scope.read_text())["agents"]
+
+
+class TestConfParserRefusesPaddedRows:
+    """The generator's authorization VIEW must never be more permissive than
+    the greps that enforce it. A padded row is invisible to
+    post-tool-use.sh/pre-captain-dm.sh, so counting it as authorization hires an
+    officer into a silent capability lockout — the exact failure this whole gate
+    exists to prevent, one indent deep. Loud beats silent."""
+
+    def test_indented_row_is_refused_naming_file_and_line(self, cab_root):
+        conf = cab_root / "cabinet/officer-capabilities.conf"
+        bad_lineno = len(conf.read_text().splitlines()) + 1
+        conf.write_text(conf.read_text() + "  acme-labs-ceo:deploys_code\n")
+        with pytest.raises(gi.GenerationError) as exc:
+            gi._conf_officer_column(conf)
+        msg = str(exc.value)
+        assert f"officer-capabilities.conf:{bad_lineno}" in msg, msg
+        assert "column 0" in msg
+
+    def test_trailing_whitespace_row_is_refused(self, cab_root):
+        """Same hole, other end: `grep -q "^x:y$"` misses a trailing space too."""
+        conf = cab_root / "cabinet/officer-capabilities.conf"
+        conf.write_text(conf.read_text() + "acme-labs-ceo:deploys_code \n")
+        with pytest.raises(gi.GenerationError):
+            gi._conf_officer_column(conf)
+
+    def test_a_padded_row_never_hires(self, cab_root):
+        """End-to-end consequence: the run FAILS loudly rather than producing a
+        roster whose lane CEO no hook can authorize."""
+        _strip_authorization(cab_root, "acme-labs-ceo")
+        conf = cab_root / "cabinet/officer-capabilities.conf"
+        conf.write_text(conf.read_text()
+                        + "  acme-labs-ceo:deploys_code\n"
+                          "  acme-labs-ceo:logs_captain_decisions\n")
+        scope_path = cab_root / "cabinet/mcp-scope.yml"
+        scope = yaml.safe_load(scope_path.read_text())
+        scope["agents"]["acme-labs-ceo"] = {"mcps": []}
+        scope_path.write_text(yaml.safe_dump(scope, sort_keys=False))
+        write_answers(cab_root, acme_answers())
+        res = run_cli(cab_root)
+        assert res.returncode != 0, (
+            "a padded capability row was read as authorization:\n" + res.stdout)
+        assert "column 0" in (res.stdout + res.stderr)
+
+    def test_indented_comments_and_blank_lines_are_still_fine(self, cab_root):
+        """Non-regression: only actual ROWS are policed. Comments and blank
+        lines carry no authorization, so their indentation is nobody's
+        business."""
+        conf = cab_root / "cabinet/officer-capabilities.conf"
+        conf.write_text(conf.read_text() + "    # indented comment\n   \n")
+        assert "acme-store-ceo" in gi._conf_officer_column(conf)
 
 
 # ---------------------------------------------------------------------------

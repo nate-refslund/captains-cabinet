@@ -116,11 +116,34 @@ elif [ "${CABINET_MAC_DRY_RUN:-0}" != "1" ]; then
   fi
 fi
 if [ -f "$EGRESS_GUARD" ]; then
-  EGRESS_RUNTIME="$(bash "$EGRESS_GUARD" runtime-state)" || {
+  # DRY-RUN ASYMMETRY FIX (fresh-hatch blocker, 2026-07-26).  A dry render
+  # deliberately SKIPS `apply` above — and `apply` is the ONLY thing that ever
+  # creates $STATE_DIR/egress (egress-guard.sh acquire_apply_lock/install_enforce).
+  # Demanding an attested live proxy here therefore required the postcondition
+  # of a step this very block had just chosen not to run, so `hatch.sh`'s
+  # proof-c1 ("officer boot command assembly, zero side effects") died on every
+  # fresh hatch with "FAIL-CLOSED — runtime state directory is absent".
+  # The guard is CORRECT and is untouched: a REAL boot still refuses (exit 78).
+  # Only the dry render tolerates an unattested state — exactly as the
+  # `elif [ ... != "1" ]` arm eight lines below ALREADY does for the very next
+  # egress precondition (proxy env absent).  Deliberately NOT the Linux twin's
+  # shape (start-officer.sh:105 skips the whole block in dry-run): that would
+  # blind the dogfood sensor, which requires `egress_enforced=1` to still
+  # appear in DRY-RUN output after a manual `egress-guard.sh apply`
+  # (docs/runbooks/observe-only-dogfood.md).  So the call is still made and
+  # still reports 1 when enforcement really is live; only its FAILURE is
+  # downgraded, and only in dry-run.
+  if EGRESS_RUNTIME="$(bash "$EGRESS_GUARD" runtime-state)"; then
+    IFS=$'\t' read -r EGRESS_ENFORCE EGRESS_ENV_FILE <<< "$EGRESS_RUNTIME"
+  elif [ "${CABINET_MAC_DRY_RUN:-0}" = "1" ]; then
+    # Honest, not silent: EGRESS_ENFORCE/EGRESS_ENV_FILE keep their safe
+    # defaults (0 / empty), so egress_enforced=0 is reported rather than a
+    # reassuring fake 1.
+    echo "[WARN] start-officer-mac.sh: egress runtime state unattested (no proxy applied) — dry render continues, egress_enforced=0" >&2
+  else
     echo "[ERROR] start-officer-mac.sh: cannot resolve egress runtime state — refusing officer boot" >&2
     exit 78
-  }
-  IFS=$'\t' read -r EGRESS_ENFORCE EGRESS_ENV_FILE <<< "$EGRESS_RUNTIME"
+  fi
   if [ "$EGRESS_ENFORCE" = "1" ]; then
     EGRESS_KERNEL_ENFORCED=1
     if [ -f "$EGRESS_ENV_FILE" ]; then

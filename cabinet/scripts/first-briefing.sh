@@ -13,7 +13,10 @@
 #      (propose-only: status draft + captain_ratified false, staged in
 #      instance/config/outcomes-proposed.yml which the mission compiler never
 #      reads), and attempts the genesis research brief into the Library shelf
-#      (claude CLI, fixed argv, short timeout) — honest IOU note on any
+#      (claude CLI, fixed argv, short timeout, and isolated from the
+#      OPERATOR's own Claude context — clean temp cwd + `--setting-sources
+#      project,local`, so a hatched cabinet cannot absorb the person's
+#      personal ~/.claude/CLAUDE.md as org truth) — honest IOU note on any
 #      failure, never fake content.
 #   2. Local render: `python3.12 -m framework.frontdoor.run_briefing --now
 #      --local-render` composes ONE briefing from those genesis surfaces and

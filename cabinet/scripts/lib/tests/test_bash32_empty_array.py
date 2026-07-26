@@ -387,9 +387,19 @@ def _dry_run_boot(sandbox: Path, scratch: Path) -> subprocess.CompletedProcess:
     # (the `if [ -f "cabinet/.env" ]` arm) and never enters the affected code.
     (sandbox / "cabinet" / ".env").write_text("TELEGRAM_BOT_TOKEN=dry-run-only\n")
     # Egress enforcement is an orthogonal runtime gate that wants a live proxy
-    # attested on the host; a hatch arms it before proof-c1 runs. Standing that
-    # up here would test the proxy, not the shell. Neutralised in the SANDBOX
-    # copy only — the tracked config is untouched.
+    # attested on the host. Standing that up here would test the proxy, not the
+    # shell. Neutralised in the SANDBOX copy only — the tracked config is
+    # untouched.
+    #
+    # CORRECTED 2026-07-26: this comment used to claim "a hatch arms it before
+    # proof-c1 runs". It never did — `hatch.sh` contains ZERO occurrences of
+    # egress, and `apply` (the only thing that creates the runtime state dir)
+    # is deliberately skipped in a dry render. That false premise is exactly
+    # why the fresh-hatch egress failure stayed invisible to this suite: the
+    # neutralisation below silently stood in for provisioning nobody performed.
+    # The real repair is in start-officer-mac.sh (dry-run tolerates unattested
+    # egress; a REAL boot still refuses). Kept here so this module keeps
+    # testing the SHELL, which is its actual scope.
     (sandbox / "instance" / "config" / "egress.yml").write_text(
         "enforce: false\nallow_product: false\nallow_hosts: []\n"
     )

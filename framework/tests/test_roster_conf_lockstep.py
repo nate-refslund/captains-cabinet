@@ -45,9 +45,26 @@ cleanly — mirrors lib_roster.load_roster()'s own "absence is simply zero
 rows, never a hard error" contract. Hermetic tests below build a synthetic
 roster/conf/scope trio in tmp_path so the checking LOGIC itself is exercised
 on every run, live-roster.yml or not.
+
+THE DISABLED-SENSOR GAP, CLOSED (roster-authz, 2026-07-26). "The logic is
+exercised" was never the property that mattered — the property that mattered
+is "does the roster a HATCH produces pass this check?", and that arm skipped
+in CI and in every checkout (roster.yml is gitignored), so it could only ever
+fire inside a real hatch. It had never run. When it finally did, it failed:
+generate-instance.py hired `<lane>-ceo` for every lane while the two files
+that authorize an officer are germline — hatch.sh is structurally forbidden
+to write them — so the hatch produced a roster it was forbidden to satisfy
+and then gated on satisfying it. The generator is now authorization-gated
+(see its "Hiring is authorization-gated" docstring section), and
+test_generated_fresh_hatch_roster_is_fully_authorized below runs the REAL
+generator into a tmp deployment root and checks its roster against the REAL
+shipped conf pair — a representative fixture that fires on EVERY run, with no
+roster.yml in the checkout. That is the arm that would have caught this.
 """
 from __future__ import annotations
 
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -252,3 +269,103 @@ def test_live_roster_officer_set_covered_by_conf_and_scope():
         f"roster.yml officer(s) not fully covered by the germline conf pair: "
         f"{missing} — a hired officer with a missing row is a silent "
         f"capability/MCP-scope lockout; add the row to the named file(s)")
+
+
+# ---------------------------------------------------------------------------
+# THE ARM THAT FIRES IN CI — a representative fixture: the roster a real hatch
+# produces, checked against the REAL shipped conf pair. No roster.yml needed in
+# the checkout, so this can never go dark the way the live arm above did.
+# ---------------------------------------------------------------------------
+
+GENERATOR = _SCRIPTS_DIR / "generate-instance.py"
+LANE_CEO_TEMPLATE = _REPO_ROOT / "presets/portfolio/agents/_lane-ceo.md.template"
+
+_PLATFORM_SEED = """\
+captain_name: Placeholder
+captain_timezone: UTC
+captain_telegram_chat_id: "0000"
+"""
+
+
+def _stage_deployment_root(tmp_path: Path) -> Path:
+    """A minimal but FAITHFUL deployment root: the real lane-CEO template and
+    the REAL germline pair (the authorization surface), so the generator sees
+    exactly what a stranger's egg ships."""
+    root = tmp_path / "deployment"
+    (root / "instance/config").mkdir(parents=True)
+    (root / "presets/portfolio/agents").mkdir(parents=True)
+    (root / "cabinet").mkdir(parents=True)
+    shutil.copy(LANE_CEO_TEMPLATE,
+                root / "presets/portfolio/agents/_lane-ceo.md.template")
+    shutil.copy(OFFICER_CONF, root / "cabinet/officer-capabilities.conf")
+    shutil.copy(MCP_SCOPE, root / "cabinet/mcp-scope.yml")
+    (root / "instance/config/platform.yml").write_text(_PLATFORM_SEED,
+                                                       encoding="utf-8")
+    return root
+
+
+def _hatch_a_roster(tmp_path: Path) -> Path:
+    """Run the REAL generator's zero-question fast lane (what hatch.sh --defaults
+    runs) into a staged root; return that root. stdin is closed, so any prompt
+    would fail loudly rather than hang."""
+    root = _stage_deployment_root(tmp_path)
+    proc = subprocess.run(
+        [sys.executable, str(GENERATOR), "--root", str(root), "--defaults"],
+        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=180)
+    assert proc.returncode == 0, (
+        f"the fresh-hatch generator run failed — a hatch cannot even reach the "
+        f"roster:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}")
+    return root
+
+
+def test_generated_fresh_hatch_roster_is_fully_authorized(tmp_path):
+    """THE property: a fresh hatch must never hire an officer this repo's
+    germline pair cannot authorize.
+
+    The two authorizing files (cabinet/officer-capabilities.conf,
+    cabinet/mcp-scope.yml) are germline — hatch.sh is structurally forbidden to
+    write them (cabinet/scripts/hatch-lib/errands.sh: "Captain's hands only").
+    So a generator that hires a lane CEO unconditionally builds a deployment
+    that CANNOT pass the live arm above, and no human errand inside the hatch
+    can fix it. Before roster-authz this failed with
+    {'first-lane-ceo': [both files]}."""
+    root = _hatch_a_roster(tmp_path)
+    roster = lib_roster.load_roster(root)
+    assert roster, "the fresh hatch produced an EMPTY roster — deploy-mac.sh refuses that"
+    missing = _missing_from_conf_and_scope(roster, OFFICER_CONF, MCP_SCOPE)
+    assert missing == {}, (
+        f"a FRESH HATCH hires officer(s) this repo cannot authorize: {missing}. "
+        f"Every rostered officer needs capability rows in "
+        f"cabinet/officer-capabilities.conf AND an agents: entry in "
+        f"cabinet/mcp-scope.yml; both are germline (Captain applies), so the "
+        f"generator must not roster what they do not already cover.")
+
+
+def test_generated_fresh_hatch_rosters_the_chair():
+    """Sibling guard for the arm above: the shipped conf pair must authorize the
+    Chair. If it ever stops doing so, the generator refuses the hatch outright
+    rather than rostering an unauthorized Chair — this test names the cause at
+    its source instead of letting a stranger meet it at hatch time."""
+    assert "cos" in set(_conf_officers(OFFICER_CONF)) & set(_scope_agents(MCP_SCOPE)), (
+        "the shipped germline pair no longer authorizes the Chair (cos) — it "
+        "needs capability rows in cabinet/officer-capabilities.conf AND an "
+        "agents: entry in cabinet/mcp-scope.yml, or no hatch can roster it")
+
+
+def test_unauthorized_lane_ceo_is_generated_but_not_hired(tmp_path):
+    """The mechanism, end to end: the fast-lane placeholder lane's CEO is NOT in
+    the roster (this repo authorizes no `first-lane-ceo`), while its lane files
+    ARE generated — so the Captain can hire it later by adding the germline rows
+    and re-running, and nothing about the hatch waits on that errand."""
+    root = _hatch_a_roster(tmp_path)
+    roster = lib_roster.load_roster(root)
+    assert "cos" in roster, "the Chair must always be rostered"
+    assert "first-lane-ceo" not in roster, (
+        "an unauthorized lane CEO was hired — that is the silent "
+        "capability/MCP-scope lockout this module exists to prevent")
+    assert (root / "instance/agents/first-lane-ceo.md").is_file(), (
+        "the lane CEO's role definition must still be generated (inert) — "
+        "un-hired is not un-generated")
+    text = (root / "instance/config/roster.yml").read_text(encoding="utf-8")
+    assert "PENDING AUTHORIZATION" in text and "first-lane-ceo" in text, (
+        "roster.yml must record the un-hired lane CEO so the state is legible")
