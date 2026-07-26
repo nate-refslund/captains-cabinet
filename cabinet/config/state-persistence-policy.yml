@@ -144,6 +144,27 @@ disposable:
       framework/onboarding/journey.py :257-270. Already excluded by design and
       documented at runtime-provision.sh :214-219; the data it guards
       (instance/onboarding/{v2,formation,purge-receipts}) IS persisted.
+  - path: instance/config/estop
+    reason: >-
+      Emergency-stop filesystem marker — the second E-stop channel, written and
+      cleared on the live machine by kill-switch.sh. CARRYING IT WOULD BE A BUG,
+      not a fix. The shared reader treats this path's existence in ANY form as
+      not-CLEAR, and a symlink specifically as INDETERMINATE ("stop marker
+      present but not a regular file", killswitch-read.sh :123), which halts
+      every officer's every tool call; measured directly against _ks_marker_verdict
+      (absent -> CLEAR, symlink -> INDETERMINATE). A persistence symlink at this
+      path would therefore arm the emergency stop permanently, and `deactivate`'s
+      `rm -f "$ESTOP_MARKER"` (kill-switch.sh :117) removes the LINK while the
+      shared/ copy survives — so the next provision would re-create the halt and
+      the normal resume verb could never clear it. No learned state is lost: the
+      authoritative channel is the Redis key cabinet:killswitch, the verdict is
+      the OR of the two channels, and `activate` does not write this marker at
+      all today (declared residual RES-016, declared-residuals-register.md :340).
+      RESIDUAL, stated rather than hidden: once RES-016 arms the marker, a deploy
+      will drop the filesystem channel for the incoming release, so inside that
+      window the pre-armed `DEL cabinet:killswitch` loop the second channel
+      exists to defeat wins again. The fix for that is a re-arm step at provision
+      time driven by the Redis verdict, NEVER a symlink into shared/.
 
   # ---- materialized links: the CONTENT is persisted or tracked elsewhere ----
   # Both entries are safe from DATA loss but have a live materialization gap;
