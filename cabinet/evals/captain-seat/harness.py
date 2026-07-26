@@ -25,10 +25,15 @@ Three arms, all deterministic:
   A1  repetition   the pack, run against fixtures/repetition/ (an
                    action-lessons store carrying the SAME subject twice),
                    reports that subject with count 2 and the pinned
-                   per-taxonomy counts.
+                   per-taxonomy counts. Also the PRESENT end of the
+                   availability dial: that tree declares an availability in two
+                   entries and the pack must report the LATEST one (a
+                   first-entry read prints a different number and fails).
   A2  healthy      the pack, run against fixtures/healthy/ (every subject
                    distinct, the other stores absent), reports repetition
-                   "(none)" AND prints every absent store as an ABSENT line.
+                   "(none)" AND prints every absent store as an ABSENT line —
+                   including the availability dial, whose absence means "the org
+                   does not know how much of the captain it is entitled to".
                    This is the degenerate end: a quiet window must stay quiet
                    and honest, never fabricate.
   A3  contract-pin every pinned Part 1c clause is still present verbatim in
@@ -180,6 +185,20 @@ def _check_repetition(pack: Path, fixtures: Path, pins: dict,
         failures += _fail(
             "repetition arm: the pack must report the twice-corrected subject "
             f"with its count — want {want_rep} got {got_rep!r}")
+    # The availability dial's PRESENT end (Captain ruling 2026-07-26). The
+    # fixture store carries TWO entries, so this also pins latest-wins: a pack
+    # that reported the first row would print 120 min/day and fail here.
+    want_avail = spec["availability_line"]
+    if want_avail not in out:
+        failures += _fail(
+            "repetition arm: the declared availability must be reported as the "
+            f"budget every cost is judged against — expected line '{want_avail}' "
+            "(latest entry wins; a first-entry read prints a different number)")
+    want_set_at = spec["availability_set_at_substring"]
+    if want_set_at not in out:
+        failures += _fail(
+            "repetition arm: a declared availability must carry WHEN it was "
+            f"declared — expected '{want_set_at}'")
     return failures
 
 

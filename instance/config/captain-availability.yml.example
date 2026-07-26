@@ -1,0 +1,45 @@
+# captain-availability.yml — the Captain's availability dial (ADJUSTMENT store).
+#
+# WHAT THIS IS. How much of the captain's day the cabinet is entitled to, as a
+# number he declared. The rule it exists to enforce: THE ORG FITS THE DECLARED
+# BUDGET, NEVER THE REVERSE. Overflow does not pile up as asks — it routes
+# through the act-with-undo seam with receipts. Silence still never means
+# approval.
+#
+# THIS FILE IS MACHINE-WRITTEN. The Captain sets it from his phone —
+#   availability 20m           availability 2h         availability ?
+#   availability minimal | part_time | substantial | full_time | away
+# — and cabinet/scripts/lib/captain_availability.py appends one entry. There is
+# no need to hand-edit it; a hand-edit that breaks the shape reads as absent
+# (fail-closed to the next-oldest valid entry, then to platform.yml, then to
+# UNKNOWN), which is why the entries carry no free text as VALUES: the captain's
+# verbatim words ride along as an inert comment line only.
+#
+# PRECEDENCE (framework.env.captain_availability):
+#   1. this file — entries:, LATEST VALID ROW WINS (a phone ruling beats
+#      whatever onboarding stamped);
+#   2. captain_availability_minutes_per_day (+ optional
+#      captain_availability_mode) in instance/config/platform.yml;
+#   3. UNKNOWN — a legal, documented state meaning "the org does not know how
+#      much of the captain it is entitled to". Consumers keep their own
+#      conservative defaults and NEVER invent a number.
+#
+# The live file is gitignored (a captain's own declaration, never repo content),
+# carried across deploys by runtime-provision.sh, and deleted by the egg export
+# — a fresh cabinet starts UNKNOWN and asks at onboarding.
+
+schema: cabinet.captain-availability/v1
+
+# Append-only. Oldest first; the last valid row rules. Nothing rewrites a row —
+# a change is a new entry, so the history of what he said stays readable.
+entries:
+  # captain text: availability part_time
+  - at: 2026-07-26T09:00:00Z
+    minutes_per_day: 30
+    mode: part_time
+    source: telegram
+  # captain text: availability 20m
+  - at: 2026-07-26T21:30:00Z
+    minutes_per_day: 20
+    mode: part_time          # the BAND the number falls in (rendering only)
+    source: telegram
