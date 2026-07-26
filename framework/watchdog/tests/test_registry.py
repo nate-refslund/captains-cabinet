@@ -24,7 +24,7 @@ from framework.watchdog.registry import CheckResult, Probe, Tier
 # ─────────────────────────────────────────────────────────────────────────────
 class FakeProbe(Probe):
     def __init__(self, *, now=None, local=None, files=None, mtimes=None, redis=None,
-                 launchctl=None):
+                 launchctl=None, hashes=None):
         self._now = now or dt.datetime(2026, 6, 29, 16, 0, tzinfo=dt.timezone.utc)
         # default local = Europe/Berlin ~= UTC+2 in summer
         self._local = local or self._now.astimezone(
@@ -36,6 +36,13 @@ class FakeProbe(Probe):
         # matches the base-Probe default, so tests that don't care exercise
         # the self-disabled path exactly like a non-Mac host.
         self._launchctl = launchctl or {}
+        # Redis HASH surface, kept SEPARATE from `redis` (string keys) so the
+        # tri-state survives: an unlisted key reads as None ("not observable" —
+        # the base-Probe default, so every pre-existing test exercises the
+        # self-disabled path), while `hashes={key: {}}` is an affirmative
+        # "the hash exists and is empty". Collapsing those two is exactly what
+        # the meter-silent row must never do.
+        self._hashes = hashes or {}
         # side-effect capture
         self.triggers: list[str] = []
         self.drift: list[tuple[str, str]] = []
@@ -61,6 +68,9 @@ class FakeProbe(Probe):
 
     def redis_keys(self, pattern):
         return list(self._redis.keys())
+
+    def redis_hgetall(self, key):
+        return self._hashes.get(key)
 
     def launchd_loaded(self, label):
         return True
@@ -946,7 +956,7 @@ def test_full_run_with_fake_probe_routes_only_failures():
         redis={},  # no officer worked → reflection passes
     )
     report = check.run(probe=probe, dry_run=False)
-    assert report["checked"] == 5
+    assert report["checked"] == 8
     assert report["failed"] == 1
     assert probe.heartbeats == 1  # heartbeat stamped after sweep
     failed = [r for r in report["results"] if not r["ok"] and not r["skipped"]]
@@ -954,6 +964,14 @@ def test_full_run_with_fake_probe_routes_only_failures():
     assert "AUTO-FIX fired" in failed[0]["action"]
     # exactly one Chair trigger (the auto-fix re-trigger)
     assert len(probe.triggers) == 1
+    # The three spend rows have NO sources on this probe (no series file, no
+    # hash surface) — they must SKIP, never fail. An unobservable money watch
+    # that pages is the failure mode those rows are built to avoid.
+    spend = {r["id"]: r for r in report["results"]
+             if r["id"] in ("spend-without-output", "spend-lane-anomaly",
+                            "meter-silent")}
+    assert len(spend) == 3
+    assert all(r["skipped"] and r["ok"] for r in spend.values())
 
 
 def test_reflection_toolcall_counts_as_work_signal():
@@ -1053,18 +1071,32 @@ def test_watchdog_select_expectations_filters_and_never_blinds():
 
 
 def test_watchdog_this_deployment_enables_original_rows_phase4_dark():
-    """The committed instance config enables the five original catalog rows in
-    catalog order — the module-level EXPECTATIONS the checker sweeps stays at
-    5 (test_full_run_with_fake_probe pins checked == 5). The Phase-4
-    evidence-plane rows ship in the catalog but STAGED DARK on this
-    deployment (shadow law — whole-cabinet evidence design 2026-07-16 §3
-    Phase 4): commented in the instance enable-list until the Captain
-    ceremony arms them alongside the evidence-shadow-detectors service."""
+    """The committed instance config enables EXACTLY these ids, in this order —
+    the five original catalog rows plus the three spend-anomaly rows added
+    2026-07-26 when the Captain removed the spend caps (spend rows ship
+    enabled: they carry no threshold and default to silence, so there is no
+    ceremony to wait for). test_full_run_with_fake_probe pins checked == 8 to
+    match. Named explicitly rather than sliced positionally so appending a row
+    to the catalog can never silently redefine what this asserts.
+
+    The Phase-4 evidence-plane rows and captain-inbound-contact ship in the
+    catalog but STAGED DARK on this deployment (shadow law — whole-cabinet
+    evidence design 2026-07-16 §3 Phase 4): commented in the instance
+    enable-list until the Captain ceremony arms them alongside the
+    evidence-shadow-detectors service."""
     enabled = [e.id for e in reg.EXPECTATIONS]
     catalog = [e.id for e in reg._CATALOG]
-    assert enabled == catalog[:5]
-    assert len(reg.EXPECTATIONS) == 5
+    assert enabled == ["briefing-delivered", "officer-reflection",
+                       "captain-decisions-logged", "no-silent-cron-failure",
+                       "pipes-fresh", "spend-without-output",
+                       "spend-lane-anomaly", "meter-silent"]
+    assert len(reg.EXPECTATIONS) == 8
+    assert enabled[:5] == catalog[:5]      # original rows keep catalog order
     phase4 = {"evidence-store-invariants", "evidence-anchor-export-fresh",
               "evidence-shadow-detector-liveness"}
     assert phase4 <= set(catalog)          # shipped in the framework catalog
     assert not (phase4 & set(enabled))     # dark on this deployment (shadow)
+    # Every enabled spend row routes to the Chair — there is deliberately no
+    # direct-to-Captain tier, and money is the last thing that should get one.
+    for eid in ("spend-without-output", "spend-lane-anomaly", "meter-silent"):
+        assert reg.expectation_by_id(eid).tier is Tier.ESCALATE_CHAIR
