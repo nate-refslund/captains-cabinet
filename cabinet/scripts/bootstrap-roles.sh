@@ -286,6 +286,12 @@ EOF
   fi
 
   # Build --capability args (one flag per capability — CLI takes single value).
+  # The expansion below uses the bash-3.2-safe alternate-value form: macOS ships
+  # /bin/bash 3.2, where a plain "${cap_args[@]}" on an EMPTY array aborts this
+  # `set -euo pipefail` script with "unbound variable".  `caps` is validated
+  # non-empty by the roster reader before seed_role runs, so the empty case is
+  # currently unreachable — but the guard is one roster-parser change away from
+  # load-bearing, and the failure mode (hatch dies mid-roster-seed) is expensive.
   local cap_args=()
   local IFS=','
   for c in $caps; do
@@ -299,7 +305,7 @@ EOF
       --name "$title" \
       --charter "Bootstrap charter for $title. Refine via Captain ratification + role evolution proposals." \
       --authority-level "$auth" \
-      "${cap_args[@]}" \
+      ${cap_args[@]+"${cap_args[@]}"} \
       --state active \
       --actor bootstrap-roles.sh \
       >/dev/null 2>&1; then
