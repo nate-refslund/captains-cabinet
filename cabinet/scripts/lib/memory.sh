@@ -541,6 +541,20 @@ SQLEOF
 # Args: query, topk, pool_rows (newline-separated; 9 tab columns each, the 9th
 #       = rerank_text). Emits <=topk rows of the 8-column contract.
 # =============================================================
+# LANE METER GAP — `rerank` is NOT counted (2026-07-27).
+# The Voyage /v1/rerank curl lives inside the RANKING-BLOCK below, and every
+# byte of that region is pinned by cabinet/scripts/tests/fixtures/
+# memory-ranking.fingerprint. The only legitimate way to change it is
+# `retrieval-eval-nightly.sh --stamp`, which re-stamps ONLY from a run where
+# both retrieval-quality arms hold their floors — and that stamper is
+# store-local (needs NEON_CONNECTION_STRING + a Voyage key), so it cannot run
+# from a clean-room clone or from CI. Hand-editing the fingerprint hex would
+# convert a working guard into a disabled sensor wearing a green badge, which
+# is worse than an uncounted lane.
+# The `embeddings` lane IS counted (memory_get_embedding, above, outside the
+# block) and carries the far larger call volume.
+# FOLLOW-UP: instrument `rerank` in the SAME commit as a legitimate re-stamp,
+# on a box that has the store and the key.
 # RANKING-BLOCK-BEGIN (retrieval-eval fingerprint scope: the rerank stage,
 # the blended top-k cut, and the no-rerank seam. Any edit between these
 # markers requires a passing store-local eval re-stamp:
@@ -606,13 +620,6 @@ memory_rerank() {
       -d "$(jq -nc --arg q "$query" --argjson docs "$_docs_json" --argjson k "$topk" \
             --arg model "${EMBED_RERANK_MODEL:-rerank-2.5}" \
             '{query:$q, documents:$docs, model:$model, top_k:$k}')" 2>/dev/null)
-    # PAID CALL COUNTED (lane `rerank`, 2026-07-26). Recorded before the
-    # response is interpreted, so a rerank that errors or degrades to blended
-    # order still shows the call that was paid for. Unpriced by design —
-    # Voyage has no row in meter.RATES; units are Voyage's own billed tokens.
-    printf '%s' "$_resp" | cost_lane_record --lane rerank \
-      --principal "${CABINET_COST_PRINCIPAL:-${OFFICER_NAME:-}}" \
-      --response - --response-kind voyage 2>/dev/null || true
     # Voyage returns the ranking under .data (current API) or .results (older),
     # each element {index, relevance_score}. Accept either envelope and sort by
     # relevance_score DESC ourselves rather than trusting response order; .index

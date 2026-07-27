@@ -189,7 +189,7 @@ unattributed principal outright rather than corrupting per-officer accounting.
 | `api_direct` | yes | raw API calls from crons and hook callers |
 | `subscription` | yes | `claude -p` headless — rides the Max pool, not a card |
 | `embeddings` | no | vendor `/v1/embeddings` |
-| `rerank` | no | vendor `/v1/rerank` |
+| `rerank` | no | vendor `/v1/rerank` — **lane defined but NOT yet wired, see below** |
 | `tts` / `stt` | no | vendor speech |
 | `websearch` | no | metered search MCPs |
 
@@ -198,6 +198,26 @@ and vendor units, and every surface renders it as counts. A lane showing
 `1,240 calls (unpriced)` is true. A lane showing `$0.00` is a lie, and this
 meter exists because of a lie like that: a zero reads as "this lane is free",
 which is exactly the reading that let the old under-report survive.
+
+### Known gap: `rerank` is defined but not wired
+
+The Voyage `/v1/rerank` call in `cabinet/scripts/lib/memory.sh` sits inside the
+`RANKING-BLOCK` region pinned by
+`cabinet/scripts/tests/fixtures/memory-ranking.fingerprint`. Every byte of that
+region is guarded, and the only legitimate way to change it is
+`retrieval-eval-nightly.sh --stamp`, which re-stamps ONLY from a run where both
+retrieval-quality arms hold their floors. That stamper is store-local — it needs
+`NEON_CONNECTION_STRING` and a Voyage key — so it cannot run from a clean-room
+clone or from CI.
+
+The lane is therefore declared in `LANES` but has no call site. Hand-editing the
+fingerprint hex would have made this green by converting a working guard into a
+disabled sensor wearing a green badge; an honestly uncounted lane is the better
+of the two. `embeddings` IS counted (`memory_get_embedding`, outside the block)
+and carries the far larger call volume.
+
+**Follow-up:** wire `rerank` in the same commit as a legitimate re-stamp, on a
+box that has the store and the key.
 
 The corollary for anyone adding a lane: do not invent a rate to make the
 dashboard tidy. Add it as unpriced, or add a real row to `RATES`.
