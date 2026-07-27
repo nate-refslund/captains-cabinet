@@ -49,6 +49,8 @@ def evaluate(name: str) -> dict:
                 "source": str(source),
                 "purpose": spec["purpose"],
                 "relationship_destination": "reversible",
+                "ownership": "self",
+                "authority_basis": "acceptance fixture inside this checkout",
             },
             root,
             now="2026-07-14T12:00:00Z",

@@ -8,9 +8,16 @@ The first production slice is deliberately narrow and useful:
 
 1. capture a purpose and relationship *destination* (never an authority grant),
 2. propose a read-only First Window over one local folder,
-3. bind the exact scope and limits into an Orientation Charter,
+3. bind the exact scope, limits AND ownership class into an Orientation Charter,
 4. read only after the Captain ratifies that Charter hash,
 5. return one honest, source-cited First Dividend.
+
+OWNERSHIP IS A PRECONDITION, not a field.  ``propose_window`` refuses a source
+whose ownership class and authority basis the operator has not declared — see
+``framework.authority.ownership``, which also states plainly what the framework
+cannot enforce (the truth of the attestation).  Sources classified ``employer``
+or ``third_party`` are structurally observe-only and default to no-egress, and
+the record of each completed read SURVIVES a purge.
 
 All state stays below ``instance/onboarding/v2`` — a surface the mission
 compiler never reads.  Events are append-only, state/artifacts are atomic,
@@ -50,6 +57,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
+from framework.authority.ownership import (
+    ATTESTATION_LIMIT,
+    SENSITIVE_NAME_RE,
+    SENSITIVE_SUFFIXES,
+    SENSITIVITY_CLASSES,
+    OwnershipRefusal,
+    access_record,
+    egress_disposition,
+    open_ingest,
+    sensitivity_refusal,
+    source_permissions,
+)
 from framework.evidence import (
     ActLifecycle,
     EvidenceError,
@@ -59,6 +78,7 @@ from framework.evidence import (
 )
 
 SCHEMA = "cabinet.onboarding-journey/v2"
+ACCESS_RECORD_SCHEMA = "cabinet.source-access-record/v1"
 CARD_SCHEMA = "cabinet.onboarding-card/v1"
 CHARTER_SCHEMA = "cabinet.orientation-charter/v1"
 MANIFEST_SCHEMA = "cabinet.first-window-manifest/v1"
@@ -68,6 +88,11 @@ EVENT_SCHEMA = "cabinet.onboarding-event/v1"
 DATA_REL = "instance/onboarding/v2"
 LOCK_REL = "instance/onboarding/.onboarding-v2.lock"
 PURGE_RECEIPTS_REL = "instance/onboarding/purge-receipts"
+# The per-source access record SURVIVES the read it describes, so it lives
+# OUTSIDE the purged data directory (the purge-receipts precedent). Content-free
+# by construction: roots, hashes, counts and refusal classes — never excerpts —
+# so keeping the record after a purge does not keep the data.
+ACCESS_RECORDS_REL = "instance/onboarding/access-records"
 EVIDENCE_REL = "instance/evidence/v1"
 STATE_NAME = "state.json"
 EVENTS_NAME = "events.jsonl"
@@ -81,6 +106,16 @@ DESTINATIONS = {
     "sovereign": "Aim for broad autonomy after it is earned",
 }
 ORIENTATION_MODE = "observe_only"
+#: What a citation from a non-owned source renders as until it is approved.
+WITHHELD_EXCERPT = "[withheld: not the operator's content to send]"
+#: Plain-language rendering of the ownership class on the approval card. The
+#: operator approves what they can read, so the class they attested is shown
+#: back to them in words before the Charter hash is theirs to accept.
+OWNERSHIP_LABELS = {
+    "self": "mine",
+    "employer": "my employer's",
+    "third_party": "someone else's",
+}
 
 MAX_FILES = 200
 MAX_TOTAL_BYTES = 2 * 1024 * 1024
@@ -103,11 +138,10 @@ SKIP_DIRS = {
     "dist", "build", ".next", ".cache", "coverage", "__pycache__", ".venv",
     "venv", "target",
 }
-SENSITIVE_NAME_RE = re.compile(
-    r"(^|[._-])(\.env|secret|secrets|credential|credentials|token|tokens|"
-    r"private[-_]?key|id_rsa|id_ed25519)([._-]|$)", re.I
-)
-SENSITIVE_SUFFIXES = {".pem", ".key", ".p12", ".pfx", ".keystore"}
+# SENSITIVE_NAME_RE / SENSITIVE_SUFFIXES now live in
+# framework.authority.ownership beside the five sensitivity classes they used
+# to be the only member of, and are re-exported here byte-identically so the
+# scanner's historical credential behaviour is unchanged.
 SECRET_LINE_RES = (
     re.compile(r"(?i)\b(api[_ -]?key|secret|token|password|authorization|credential|private\s+key)\b"),
     re.compile(r"\b[0-9]{8,12}:[A-Za-z0-9_-]{30,}\b"),
@@ -376,6 +410,7 @@ def _finish_purge(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Idempotently complete a content-free purge intent."""
     data = _data_dir(root)
+    _annotate_access_records(root, receipt)
     if data.exists():
         shutil.rmtree(data)
     fresh = _fresh_state(str(receipt["purged_at"]), stage="purged")
@@ -398,7 +433,8 @@ def _finish_purge(
         "status": "completed",
         "note": (
             "State, events, manifests, charter, and derived excerpts were removed. "
-            "No source path or content is retained here."
+            "No source path or content is retained here. The content-free access "
+            "record of each completed read survives and now carries this receipt."
         ),
     }
     _atomic_json(receipt_path, completed)
@@ -507,6 +543,63 @@ def _event_for_action(root: Path, action_id: str | None) -> dict[str, Any] | Non
     return None
 
 
+def _egress_for_card(state: dict[str, Any], finding: dict[str, Any]) -> dict[str, Any]:
+    """Screen the First Dividend's outbound content by the source's ownership class.
+
+    The card is the ONE object every channel renders, so it is where the egress
+    gate has to bite: a citation's ``text`` is a verbatim line from the source,
+    and rendering it into Telegram ships that line to a third-party messenger.
+
+    GRADED, because a flat refusal here would be safety theatre. ``self`` and
+    ``employer`` content leaves (an employee reading their own view of their
+    employer's repo is the product at that altitude); the disposition is
+    recorded either way. ``third_party`` content — a client's, a customer's —
+    is WITHHELD, per item, until approved: paths, line numbers and counts still
+    render, so the operator can see exactly what exists and what it would take
+    to release it, but the borrowed words do not travel.
+    """
+    source = state.get("source") or {}
+    ownership = str(source.get("ownership") or "")
+    try:
+        disposition = egress_disposition(ownership)
+    except OwnershipRefusal:
+        # A journey persisted before the ownership ceiling existed carries no
+        # class. Unclassified is the STRICTEST case, never the loosest.
+        ownership, disposition = "unclassified", "per_item_approval"
+    approved = {str(i) for i in (state.get("egress_approved") or [])}
+    citations = [dict(c) for c in finding.get("citations") or []]
+    items = [
+        {"id": f"{c.get('path')}:{c.get('line')}", "ownership": ownership}
+        for c in citations
+    ]
+    withheld = 0
+    if disposition == "per_item_approval":
+        for citation, item in zip(citations, items):
+            if item["id"] in approved:
+                continue
+            citation["excerpt"] = WITHHELD_EXCERPT
+            citation["withheld_reason"] = "egress_refused_without_per_item_approval"
+            withheld += 1
+    summary = str(finding.get("summary") or "")
+    if withheld:
+        summary = (
+            f"I found something in {len(citations)} cited place(s), and I am not "
+            "sending the words themselves: this source is someone else's. Approve "
+            "the citation you want released, or reclassify the source."
+        )
+    return {
+        "summary": summary,
+        "citations": citations,
+        "disposition_block": {
+            "ownership": ownership,
+            "disposition": disposition,
+            "items": len(citations),
+            "withheld": withheld,
+            "approved": sorted(approved),
+        },
+    }
+
+
 def _card(state: dict[str, Any]) -> dict[str, Any]:
     stage = str(state["stage"])
     suffix = ""
@@ -554,8 +647,11 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
             title="Your First Window is ready for approval",
             body=(
                 f"Read-only access to “{source['label']}” for this purpose: {state['purpose']}. "
+                f"You told me this source is {OWNERSHIP_LABELS.get(str(source.get('ownership')), 'unclassified')} "
+                f"({source.get('authority_basis')}). "
                 f"I will inspect at most {MAX_FILES} supported text files ({MAX_TOTAL_BYTES // 1024 // 1024} MB total), "
-                "skip secrets, hidden/system folders, binaries, and every symlink, and make no changes. "
+                "skip secrets, personnel, pay, customer-personal, legal and corporate-finance files by name, "
+                "skip hidden/system folders, binaries, and every symlink, and make no changes. "
                 f"Charter fingerprint: {charter['hash'][:12]}."
             ),
             options=[
@@ -567,11 +663,13 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
     elif stage == "dividend_ready":
         dividend = state["first_dividend"]
         finding = dividend["finding"]
+        egress = _egress_for_card(state, finding)
+        common["egress"] = egress["disposition_block"]
         common.update(
             kind="first_dividend",
             title="I found something worth your attention" if finding["quality"] == "strong" else "Your first map is ready",
-            body=finding["summary"],
-            evidence=finding["citations"],
+            body=egress["summary"],
+            evidence=egress["citations"],
             options=[
                 {"action": "continue", "label": "See the locked next step"},
                 {"action": "pause", "label": "Pause here"},
@@ -676,7 +774,20 @@ def _validate_purpose(raw: Any) -> str:
     return purpose
 
 
-def _build_charter(source: Path, purpose: str, destination: str) -> dict[str, Any]:
+def _build_charter(
+    source: Path, purpose: str, destination: str, ingest: dict[str, Any]
+) -> dict[str, Any]:
+    """Bind scope, limits AND ownership into the hash the Captain approves.
+
+    ``ingest`` is the ingest ceiling's return (framework.authority.ownership.
+    open_ingest): the declared class, the recorded authority basis, the
+    permission block DERIVED from that class, and the attestation with its
+    honest limit. Ownership rides inside the hashed payload, so a charter
+    approved for the operator's own folder cannot be replayed against an
+    employer's without the fingerprint changing.
+    """
+    permission = dict(source_permissions(ingest["ownership"]))
+    permission.update(network=False, connectors=False, follow_symlinks=False)
     payload = {
         "schema": CHARTER_SCHEMA,
         "purpose": purpose,
@@ -690,14 +801,11 @@ def _build_charter(source: Path, purpose: str, destination: str) -> dict[str, An
             "kind": "folder",
             "root": str(source),
             "label": source.name or str(source),
+            "ownership": ingest["ownership"],
+            "authority_basis": ingest["authority_basis"],
         },
-        "permission": {
-            "read_only": True,
-            "writes_to_source": False,
-            "network": False,
-            "connectors": False,
-            "follow_symlinks": False,
-        },
+        "attestation": ingest["attestation"],
+        "permission": permission,
         "limits": {
             "max_files": MAX_FILES,
             "max_total_bytes": MAX_TOTAL_BYTES,
@@ -709,12 +817,20 @@ def _build_charter(source: Path, purpose: str, destination: str) -> dict[str, An
             "sensitive_names": True,
             "hidden_entries": True,
             "binary_files": True,
+            "sensitivity_classes": list(SENSITIVITY_CLASSES),
         },
         "retention": {
             "raw_file_contents": "not persisted",
             "derived_excerpts": "only cited, secret-redacted lines",
             "purge": "Captain may delete state, events, manifests, and derived excerpts",
+            "access_record": (
+                "a content-free per-source record (root, ownership class, "
+                "authority basis, charter and manifest hashes, entry count, "
+                "every refusal with its class) SURVIVES the purge and is "
+                "annotated with the purge receipt"
+            ),
         },
+        "attestation_limit": ATTESTATION_LIMIT,
     }
     return {"payload": payload, "hash": _hash(payload), "status": "pending"}
 
@@ -723,13 +839,20 @@ def _is_hidden_rel(rel: Path) -> bool:
     return any(part.startswith(".") for part in rel.parts)
 
 
+def _sensitivity_class(rel: Path) -> str | None:
+    """The sensitivity class this path refuses under, or None.
+
+    Delegates to the one vocabulary in framework.authority.ownership. The
+    credential arm is byte-identical to the detector this scanner always
+    carried; the five classes beside it — personnel, compensation, customer
+    PII, live legal matters, corporate finance — are new, and each refuses
+    under its OWN name so the manifest can say what it left behind.
+    """
+    return sensitivity_refusal(rel.as_posix())
+
+
 def _is_sensitive(rel: Path) -> bool:
-    name = rel.name
-    return (
-        bool(SENSITIVE_NAME_RE.search(name))
-        or rel.suffix.lower() in SENSITIVE_SUFFIXES
-        or any(SENSITIVE_NAME_RE.search(part) for part in rel.parts)
-    )
+    return _sensitivity_class(rel) is not None
 
 
 def _allowed_file(path: Path) -> bool:
@@ -782,7 +905,18 @@ def _scan_source(source: Path, charter_hash: str) -> tuple[dict[str, Any], list[
         "unreadable_or_raced": 0,
         "binary": 0,
     }
+    # Per-CLASS refusal counts. `sensitive_name` above is one bucket for six
+    # different reasons; a reviewer who cannot tell a skipped .env from a
+    # skipped payroll export cannot audit the sweep at all. Every sensitivity
+    # class is seeded at zero so an absent class reads as "nothing matched"
+    # rather than "never checked".
+    refused_by_class: dict[str, int] = {name: 0 for name in SENSITIVITY_CLASSES}
     candidates = 0
+
+    def _refuse_sensitive(rel: Path) -> None:
+        excluded["sensitive_name"] += 1
+        refused_by_class[str(_sensitivity_class(rel))] += 1
+
     for current, dirnames, filenames in os.walk(source, topdown=True, followlinks=False):
         current_path = Path(current)
         kept_dirs = []
@@ -797,7 +931,7 @@ def _scan_source(source: Path, charter_hash: str) -> tuple[dict[str, Any], list[
                 excluded["hidden"] += 1
                 continue
             if _is_sensitive(rel):
-                excluded["sensitive_name"] += 1
+                _refuse_sensitive(rel)
                 continue
             if child.is_symlink():
                 excluded["symlink"] += 1
@@ -816,7 +950,7 @@ def _scan_source(source: Path, charter_hash: str) -> tuple[dict[str, Any], list[
                 excluded["hidden"] += 1
                 continue
             if _is_sensitive(rel):
-                excluded["sensitive_name"] += 1
+                _refuse_sensitive(rel)
                 continue
             if not _allowed_file(path):
                 excluded["unsupported_type"] += 1
@@ -889,6 +1023,8 @@ def _scan_source(source: Path, charter_hash: str) -> tuple[dict[str, Any], list[
             "candidate_files": candidates,
             "included_files": len(manifest_files),
             "excluded": excluded,
+            "refused_by_sensitivity_class": refused_by_class,
+            "refusals_total": sum(refused_by_class.values()),
         },
     }
     manifest = {**manifest_payload, "manifest_hash": _hash(manifest_payload)}
@@ -1276,6 +1412,97 @@ def _purge(
     return {"ok": True, "purged": True, "state": fresh, "card": _card(fresh), "receipt": completed}
 
 
+def _open_ingest_or_refuse(
+    raw_ownership: Any, raw_basis: Any, now: str
+) -> dict[str, Any]:
+    """Run the ingest ceiling, translating its refusal into a JourneyError.
+
+    The refusal CODE is carried through unchanged (``ownership_unclassified``,
+    ``ownership_class_unknown``, ``authority_basis_required``,
+    ``authority_basis_too_long``) so a surface can key its help text on the
+    specific thing the operator has not answered yet.
+    """
+    try:
+        return open_ingest(raw_ownership, raw_basis, attested_at=now)
+    except OwnershipRefusal as exc:
+        raise JourneyError(exc.code, str(exc), detail=exc.detail) from exc
+
+
+def _write_access_record(
+    root: Path, state: dict[str, Any], manifest: dict[str, Any], *, now: str
+) -> Path:
+    """Persist the content-free per-source record of THIS read.
+
+    Written at ratification — the moment the read actually happens — and
+    deliberately outside the purgeable data directory. A purge annotates it
+    with its receipt rather than deleting it: an operator may delete what was
+    read, but the fact that a read occurred, against whose data and under what
+    claimed right, is the audit trail and does not belong to the read.
+    """
+    charter = state["charter"]
+    source = state["source"]
+    stats = manifest.get("scan_statistics") or {}
+    record = access_record(
+        schema=ACCESS_RECORD_SCHEMA,
+        source_root=str(source["root"]),
+        ownership=str(source["ownership"]),
+        authority_basis=str(source["authority_basis"]),
+        charter_hash=str(charter["hash"]),
+        manifest_hash=str(manifest["manifest_hash"]),
+        entry_count=int(manifest.get("file_count") or 0),
+        refusals=dict(stats.get("refused_by_sensitivity_class") or {}),
+        retention=str(charter["payload"]["retention"]["raw_file_contents"]),
+        recorded_at=now,
+    )
+    record["journey_id_hash"] = hashlib.sha256(
+        str(state["journey_id"]).encode("utf-8")
+    ).hexdigest()
+    record["other_exclusions"] = dict(stats.get("excluded") or {})
+    records_dir = root / ACCESS_RECORDS_REL
+    _secure_dir(records_dir)
+    path = records_dir / f"access-{record['charter_hash'][:16]}.json"
+    _atomic_json(path, record)
+    return path
+
+
+def _annotate_access_records(root: Path, receipt: dict[str, Any]) -> None:
+    """Stamp the purge receipt onto every surviving access record, and REDACT the root.
+
+    Two Captain-facing promises meet here and both are kept. The audit trail
+    must survive the read it describes — an operator may delete what was read,
+    but the fact that a read happened, against whose data and under what
+    claimed right, is not theirs to erase. And purge promises that no source
+    PATH is retained. So the record survives with its ownership class,
+    authority basis, hashes, counts and refusals intact, while the root itself
+    is replaced by its digest: still linkable to a later record of the same
+    folder, no longer a readable path.
+
+    Best effort: a record that cannot be re-read or re-written must never block
+    a purge (the rule the evidence plane already follows — the deletion the
+    Captain asked for wins over bookkeeping).
+    """
+    records_dir = root / ACCESS_RECORDS_REL
+    if not records_dir.is_dir():
+        return
+    for path in sorted(records_dir.glob("access-*.json")):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(record, dict):
+                continue
+            root_value = str(record.get("source_root") or "")
+            if root_value:
+                record["source_root_sha256"] = hashlib.sha256(
+                    root_value.encode("utf-8")
+                ).hexdigest()
+            record["source_root"] = None
+            record["source_root_redacted_by_purge"] = True
+            record["purge_receipt"] = str(receipt.get("action_id") or "")
+            record["purged_at"] = str(receipt.get("purged_at") or "")
+            _atomic_json(path, record)
+        except (OSError, ValueError):
+            continue
+
+
 def _act_core(
     request: dict[str, Any],
     root: Path | str | None = None,
@@ -1352,7 +1579,14 @@ def _act_core(
             destination = str(request.get("relationship_destination") or "reversible")
             if destination not in DESTINATIONS:
                 raise JourneyError("destination_invalid", "Choose earn, reversible, or sovereign as the trust destination.")
-            charter = _build_charter(source, purpose, destination)
+            # THE INGEST CEILING, before any charter exists. A source the
+            # operator cannot classify is refused here, not filed under a
+            # plausible default — the refusal is a recorded event like any
+            # other action, so "I could not say whose this was" survives.
+            ingest = _open_ingest_or_refuse(
+                request.get("ownership"), request.get("authority_basis"), ts
+            )
+            charter = _build_charter(source, purpose, destination, ingest)
             after = deepcopy(state)
             after.update(
                 stage="charter_pending",
@@ -1360,7 +1594,14 @@ def _act_core(
                 relationship_destination=destination,
                 orientation_mode=ORIENTATION_MODE,
                 access="not_granted",
-                source={"kind": "folder", "root": str(source), "label": source.name, "status": "proposed"},
+                source={
+                    "kind": "folder",
+                    "root": str(source),
+                    "label": source.name,
+                    "status": "proposed",
+                    "ownership": ingest["ownership"],
+                    "authority_basis": ingest["authority_basis"],
+                },
                 charter=charter,
                 first_dividend=None,
             )
@@ -1404,6 +1645,8 @@ def _act_core(
                     },
                 )
             dividend = _first_dividend(manifest, entries, ts)
+            # The record of the read outlives the read (and the purge).
+            _write_access_record(base, state, manifest, now=ts)
             after = deepcopy(state)
             after["stage"] = "dividend_ready"
             after["access"] = "active_read_only"

@@ -14,11 +14,32 @@ export type OnboardingAction =
   | 'undo'
   | 'purge'
 
+export type OwnershipClass = 'self' | 'employer' | 'third_party'
+
+/** How content from a source of a given ownership class may leave the machine. */
+export type EgressDisposition = 'allow' | 'record_and_allow' | 'per_item_approval'
+
 export interface OnboardingCitation {
   path: string
   line: number
   excerpt: string
   sha256: string
+  /** Set when the excerpt was withheld because the source is not the operator's. */
+  withheld_reason?: string
+}
+
+/**
+ * The egress verdict the core attaches to a dividend card. Surfaces RENDER it;
+ * they never decide it. `withheld` counts citations whose words the core
+ * replaced, so a surface can say how much is being held back without ever
+ * holding the withheld text itself.
+ */
+export interface OnboardingEgress {
+  ownership: string
+  disposition: EgressDisposition
+  items: number
+  withheld: number
+  approved: string[]
 }
 
 export interface OnboardingOption {
@@ -39,6 +60,7 @@ export interface OnboardingCard {
   status: string
   evidence: OnboardingCitation[]
   options: OnboardingOption[]
+  egress?: OnboardingEgress
 }
 
 export interface OnboardingState {
@@ -57,6 +79,8 @@ export interface OnboardingState {
     label: string
     status: string
     manifest_hash?: string
+    ownership?: OwnershipClass
+    authority_basis?: string
   }
   charter: null | {
     hash: string
@@ -94,6 +118,10 @@ export interface OnboardingActionRequest {
   source?: string
   purpose?: string
   relationship_destination?: 'earn' | 'reversible' | 'sovereign'
+  /** REQUIRED by propose_window. An unclassified source is refused, not defaulted. */
+  ownership?: OwnershipClass
+  /** REQUIRED by propose_window, for every class including `self`. */
+  authority_basis?: string
   charter_hash?: string
   confirmation?: string
 }

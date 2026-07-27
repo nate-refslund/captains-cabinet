@@ -177,7 +177,18 @@ budgets:
     # 2026-07-27 — adding one ignored path made it exit non-zero). It asks
     # whether a store SURVIVES A DEPLOY. This asks whether the org grew another
     # memory at all, which no gate asked before.
-    maximum: 96
+    #
+    # 96 -> 97 (2026-07-27): instance/onboarding/access-records/ — the per-source
+    # record of a completed read (root, ownership class, authority basis, charter
+    # and manifest hashes, entry count, every refusal with its class). A true
+    # positive of exactly the kind this pin is kept for, and a PERMANENT organ,
+    # so it is a maximum bump rather than a temporary_allowances row: an
+    # allowance would promise a deletion gate that will never fire. It is the
+    # one store that must SURVIVE the purge of the data it describes, so it sits
+    # outside instance/onboarding/v2/ and is carried by runtime-provision.sh's
+    # INSTANCE_PERSISTENT_DIRS. Content-free by construction (hashes and counts,
+    # never excerpts), and the purge redacts its root. Shrink-only resumes here.
+    maximum: 97
 temporary_allowances:
   - phase: bash-egress-fail-closed
     budget: framework_production_noncomment_lines
@@ -473,6 +484,63 @@ temporary_allowances:
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: COG-7 compaction folds the classifier into the projection kernel, or the recipient set becomes structurally typed (a list of parsed addresses carried on the action rather than a free-text field re-parsed at the gate, removing the multi-address channel entirely)
+  - phase: source-ownership-class
+    budget: framework_production_modules
+    additional: 1
+    reason: >-
+      per-source ownership class (2026-07-26 altitude direction gate, item 4 of
+      its resulting order). ONE new module, framework/authority/ownership.py —
+      the closed class set (self | employer | third_party) with refuse-on-
+      unclassified in both directions, the structural write predicate that takes
+      no override argument, the graded egress dispositions, the six sensitivity
+      classes that refuse by name (credentials, personnel, compensation,
+      customer_pii, legal, corporate_finance), and the content-free access-record
+      shape. A MODULE rather than a helper because THREE planes need it across a
+      layer boundary: framework/onboarding/journey.py (ingest ceiling + charter +
+      scan + record + card egress), cabinet/scripts/task_adapters/base.py
+      (structural read-only at adapter construction) and the dashboard surfaces
+      that ask the question. The merge candidate examined and refuted is
+      framework/authority/grants.py::CEILING_RISK_CLASSES — grants classify ACTS
+      against a signed authority root, this classifies SOURCES, and neither set
+      names a member of the other. EXACT measured running total (245 vs 244
+      base), 2026-07-27, via cognitive-architecture-census.py — the zero-headroom
+      observed==max law means this is the exact new total, never a pre-allocated
+      ceiling. Registered as an expansion row below, since an allowance cannot
+      buy a net-new member of a set the census can name.
+    owner: authority-plane
+    sunset: '2027-01-19'
+    deletion_gate: >-
+      the ownership class becomes a typed attribute of a source record carried by
+      the projection kernel (removing the free-standing classifier), or COG-7
+      compaction folds the authority plane's source-side classifiers together
+  - phase: source-ownership-class
+    budget: framework_production_noncomment_lines
+    additional: 585
+    reason: >-
+      per-source ownership class — framework/authority/ownership.py (the class
+      set and its two refusal codes, the authority-basis validator, the
+      structural write predicate and its raising twin, the graded egress
+      dispositions plus screen_egress/require_egress_allowed, the derived
+      permission block, the attestation carrying verified_by_framework: false,
+      the ingest ceiling open_ingest, the six sensitivity-class patterns with the
+      historical credential detector moved in beside them so the vocabulary has
+      ONE home, and the access-record builder) and framework/onboarding/
+      journey.py (the ingest ceiling on propose_window, ownership inside the
+      hashed Charter payload, per-class refusal counting in the scan, the
+      surviving access record with its purge-time root redaction, and the egress
+      verdict on the one card every surface renders). Docstrings are counted as
+      written: each function states the refusal it makes and why a default would
+      be the cabinet answering an authorization question on the operator's
+      behalf, and rewriting that into "#" comments to duck this counter would be
+      buying a number with the explanation a later reader needs. EXACT measured
+      running total (70239 vs 69654 base), 2026-07-27, via
+      cognitive-architecture-census.py
+    owner: authority-plane
+    sunset: '2027-01-19'
+    deletion_gate: >-
+      the ownership class becomes a typed attribute of a source record carried by
+      the projection kernel, or COG-7 compaction brings production non-comment
+      lines below the pinned baseline
 # ── The EXPANSION REGISTRY (two-model gate adjudication, 2026-07-27) ─────────
 # temporary_allowances above pay for MASS and ask only reason/owner/sunset —
 # declaration, not adjudication. That gap is measured, not theoretical: an
@@ -516,7 +584,28 @@ temporary_allowances:
 # cabinet/scripts/tests/test_cognitive_architecture_census.py are what keep an
 # empty registry from being an untested one — a registry never seen to reject
 # is not a registry.
-expansions: []
+expansions:
+  - member: framework/authority/ownership.py
+    member_class: framework_production_modules
+    gate_date: '2026-07-26'
+    models_run:
+      - Fable 5
+      - Opus 5
+    adjudication: docs/proposals/source-ownership-class-expansion-2026-07-26.md
+    merge_refuted: >-
+      framework/authority/grants.py::CEILING_RISK_CLASSES — that plane classifies
+      the ACT (which of six hard-ceiling risk classes an action falls in, and
+      whether the authority root signed a grant for it). This plane classifies
+      the SOURCE (whose data it is and under what right), and binds at moments
+      grants.py never sees: before a read, inside the Charter hash the Captain
+      approves, and at adapter construction under cabinet/scripts/. No risk class
+      names an estate and no ownership class names an act, so the sets do not
+      overlap. Folding it in would put a source classifier inside the enforcement
+      plane every officer action already routes through.
+    consumer: framework/onboarding/journey.py
+    provenance: >-
+      per 2026-07-07 full-autonomy grant + 2026-07-21 ownership-on-GO; direction
+      of record LAUNCH-DIRECTION-ALTITUDE-2026-07-26 (two blind arms)
 ownership:
   authoritative_state: domain_transaction
   cross_domain_delivery: transactional_outbox
