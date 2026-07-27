@@ -5,6 +5,23 @@
 REDIS_HOST="${REDIS_HOST:-redis}"
 REDIS_PORT="${REDIS_PORT:-6379}"
 
+# FAIL-CLOSED SPEND REPORTING (2026-07-26) — see cabinet/scripts/lib/plane-read.sh.
+# Until this date an unreachable control plane produced BOTH a false zero AND a
+# wrong innocent cause: `HGETALL 2>/dev/null` returned "", and the report said
+# "No cost data for today (stop-hook may not have fired yet)". Naming a benign
+# cause for a failure you did not diagnose is worse than silence — it tells the
+# reader to stop looking. Now: an unreadable plane says so and prints no figure.
+_CR_ROOT="${CABINET_SOURCE_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)}"
+PLANE_LIB="$_CR_ROOT/cabinet/scripts/lib/plane-read.sh"
+if [ -r "$PLANE_LIB" ]; then
+  # shellcheck disable=SC1090
+  . "$PLANE_LIB"
+fi
+if ! command -v plane_read_int >/dev/null 2>&1; then
+  echo "cost-report: FATAL — proven-read helper unavailable at $PLANE_LIB; refusing to report unverifiable cost figures" >&2
+  exit 2
+fi
+
 show_daily=false
 show_session=false
 TRANSCRIPT=""
@@ -35,22 +52,51 @@ if $show_daily; then
   echo "=== Daily Cost Report: $TODAY ==="
   echo ""
 
-  DATA=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGETALL "cabinet:cost:tokens:daily:$TODAY" 2>/dev/null)
+  # One field read, three outcomes. Sets CF_VALUE (never printed via a
+  # subshell — a $( ) capture would swallow the CR_UNAVAIL assignment and the
+  # report would silently continue past an unreadable field).
+  #   VALUE  -> CF_VALUE = the integer
+  #   ABSENT -> CF_VALUE = 0, PROVEN: the field is genuinely unset
+  #   else   -> rc 11 and CR_UNAVAIL set; the caller must abandon the report
+  cost_field() {
+    plane_read_int HGET "cabinet:cost:tokens:daily:$TODAY" "$1"
+    case "$PLANE_VERDICT" in
+      VALUE)  CF_VALUE="$PLANE_VALUE"; return 0 ;;
+      ABSENT) CF_VALUE=0;              return 0 ;;
+      *)      CF_VALUE=""; CR_UNAVAIL="$PLANE_REASON"; return 11 ;;
+    esac
+  }
 
-  if [ -z "$DATA" ]; then
-    echo "No cost data for today (stop-hook may not have fired yet)"
+  CR_UNAVAIL=""
+  CF_VALUE=""
+  plane_read_lines HGETALL "cabinet:cost:tokens:daily:$TODAY"
+  case "$PLANE_VERDICT" in
+    INDETERMINATE) CR_UNAVAIL="$PLANE_REASON" ;;
+    ABSENT)        DATA="" ;;
+    *)             DATA="$PLANE_VALUE" ;;
+  esac
+
+  if [ -n "$CR_UNAVAIL" ]; then
+    echo "COST DATA UNAVAILABLE — control plane unreachable at $(plane_endpoint_str)."
+    echo "No figures are shown because none could be sourced. This is NOT a zero-spend day."
+    echo "Detail: $CR_UNAVAIL"
+    echo ""
+    exit 3
+  elif [ -z "$DATA" ]; then
+    # Proven: a live server answered and today's hash is genuinely empty. The
+    # cause below is now an OBSERVATION about a verified-reachable plane, not a
+    # guess offered in place of a diagnosis.
+    echo "No cost data for today — control plane verified reachable at $(plane_endpoint_str), today's ledger is empty (no officer turn has been priced yet)"
   else
     # Parse into associative-like variables
     for officer in cto cos cpo cro coo; do
       if [ -n "$OFFICER" ] && [ "$officer" != "$OFFICER" ]; then continue; fi
 
-      input=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGET "cabinet:cost:tokens:daily:$TODAY" "${officer}_input" 2>/dev/null)
-      output=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGET "cabinet:cost:tokens:daily:$TODAY" "${officer}_output" 2>/dev/null)
-      cw=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGET "cabinet:cost:tokens:daily:$TODAY" "${officer}_cache_write" 2>/dev/null)
-      cr=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGET "cabinet:cost:tokens:daily:$TODAY" "${officer}_cache_read" 2>/dev/null)
-      cost=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGET "cabinet:cost:tokens:daily:$TODAY" "${officer}_cost_micro" 2>/dev/null)
-
-      input=${input:-0}; output=${output:-0}; cw=${cw:-0}; cr=${cr:-0}; cost=${cost:-0}
+      cost_field "${officer}_input"       || break; input="$CF_VALUE"
+      cost_field "${officer}_output"      || break; output="$CF_VALUE"
+      cost_field "${officer}_cache_write" || break; cw="$CF_VALUE"
+      cost_field "${officer}_cache_read"  || break; cr="$CF_VALUE"
+      cost_field "${officer}_cost_micro"  || break; cost="$CF_VALUE"
 
       if [ "$input" = "0" ] && [ "$output" = "0" ]; then continue; fi
 
@@ -66,9 +112,18 @@ if $show_daily; then
     # Sum per-officer costs directly
     total=0
     for officer in cto cos cpo cro coo; do
-      oc=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGET "cabinet:cost:tokens:daily:$TODAY" "${officer}_cost_micro" 2>/dev/null)
-      total=$(( total + ${oc:-0} ))
+      cost_field "${officer}_cost_micro" || break
+      total=$(( total + CF_VALUE ))
     done
+
+    # A read that went INDETERMINATE anywhere above invalidates the TOTAL —
+    # print the failure, never a partial sum dressed up as the day's spend.
+    if [ -n "$CR_UNAVAIL" ]; then
+      echo "TOTAL UNAVAILABLE — control plane became unreadable mid-report at $(plane_endpoint_str)."
+      echo "Detail: $CR_UNAVAIL"
+      echo ""
+      exit 3
+    fi
     echo "TOTAL: $(format_cost "$total")"
   fi
   echo ""
