@@ -68,6 +68,31 @@ BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]]
 RAMP_GRASS = ["#4E6B3C", "#5E7A46", "#6A8252", "#7A945C", "#8AA468"]
 RAMP_GRASS_DARK = ["#415C33", "#4E6B3C", "#5A7745", "#67854E"]
 RAMP_DIRT = ["#8A6A42", "#9C7A4E", "#AD8A5C", "#BC9A6C", "#C9A87A"]
+# THE ROAD LADDER'S OTHER TWO MATERIALS. growth-ladders.yml's `road` rungs are
+# dirt_path / dirt_worn / gravel_road / cobbled_road — MATERIALS, not sizes —
+# and until 2026-07-27 the renderer painted every lane as bare dirt because the
+# rung was being read as a width instead. Now that width belongs to the
+# destination's own traffic (iso-layout/lanes.ts), these are the only way the
+# road ladder reaches the frame at all: without them a real rung change would
+# move nothing, which is the "measured state cannot reach the frame" defect.
+#
+# BOTH RAMPS STAY INSIDE world_checks.ROAD_RGB's tolerance, and that is a
+# requirement rather than a coincidence: check_on_road judges a road from its
+# PIXELS, so a gravel that fell outside the classifier would turn the sensor
+# blind on every org past the dirt rungs. Gravel is RAMP_DIRT pulled a quarter
+# of the way to its own grey, which lands it between the dirt and cobble
+# families the check already knows. Each tone is within 17 of a ROAD_RGB entry —
+# the arm that proves it lives in world-capture/tests.
+#
+# WORN DIRT IS RAMP_DIRT WITH ITS HIGHLIGHTS TRODDEN OUT: the same hue over the
+# ramp's dark half, which is both what a walked-flat path looks like and the
+# only derivation that clears the WHARF. The first attempt darkened every stop
+# by 14, and iso-quay.test.ts caught it — the darkest tone landed 27.6 units
+# from the deck's FASCIA against a 40-unit bar, i.e. a cabinet whose roads had
+# reached the second rung would have had a quay that read as more road. Moving
+# the ramp was the fix; moving the bar would have been the defect.
+RAMP_DIRT_WORN = ["#8C6E4A", "#967650", "#A07E56", "#AA865D", "#B48E64"]
+RAMP_GRAVEL = ["#81694B", "#937958", "#A38966", "#B29976", "#C0A784"]
 RAMP_SAND = ["#CDB98C", "#D8C69C", "#E2D2AC", "#EBDCBB"]
 RAMP_SEA = ["#3E6E6B", "#48807C", "#54918C", "#61A099", "#6FAEA6"]
 RAMP_COBBLE_CELL = ["#8B8175", "#998F80", "#A79C8C", "#B4A997", "#C1B6A3", "#CEC3AF"]
@@ -202,6 +227,18 @@ def grass_dark(W, H, seed=8):
 
 def dirt(W, H, seed=5):
     return field(W, H, RAMP_DIRT, seed=seed, scale=0.012, octaves=4, contrast=1.1, block=2)
+
+
+def dirt_worn(W, H, seed=5):
+    """A dirt path that has been walked flat: same family, darker and tighter."""
+    return field(W, H, RAMP_DIRT_WORN, seed=seed, scale=0.016, octaves=4, contrast=1.2,
+                 block=2)
+
+
+def gravel(W, H, seed=5):
+    """Loose stone: dirt's warmth pulled toward grey, with a finer grain."""
+    return field(W, H, RAMP_GRAVEL, seed=seed, scale=0.030, octaves=5, contrast=1.35,
+                 block=1)
 
 
 def sand(W, H, seed=6):

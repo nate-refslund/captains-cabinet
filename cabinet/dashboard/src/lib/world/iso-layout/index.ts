@@ -82,14 +82,18 @@ import {
   buildLaneField,
   buildLanes,
   GREAT,
+  laneTrafficLadder,
+  laneWidthAt,
   LOT_LANES,
   SQUARE,
   type Lane,
+  type LaneDemand,
   type LaneField,
 } from './lanes'
 import { lotDoor, lotFlip, lotFor, lotsAlong, CIVIC_ANCHORS, type Lot } from './lots'
 import {
   grownField,
+  PAINT_KERB,
   paintField,
   paintRegions,
   POND,
@@ -204,6 +208,32 @@ export function countOf(state: LayoutState, obj: string): number {
 export function seniority(i: number, n: number): number {
   if (!Number.isFinite(i) || !Number.isFinite(n)) return 0
   return Math.max(0, Math.trunc(n) - 1 - Math.trunc(i))
+}
+
+/**
+ * The state, as the question ./lanes asks of it: does that place exist, and how
+ * much is it used?
+ *
+ * ONE DEFINITION, exported so nothing has to write a second one. The predicates
+ * are exactly the ones the STRUCTURE stage is gated on further down this file —
+ * `presentRung` for a tier ladder, a positive count for a count ladder — so a
+ * road to the library and the library itself cannot disagree about whether
+ * there is a library. A test that built its own demand would be free to drift
+ * from the composer it is testing.
+ *
+ * USAGE IS THE RUNG INDEX, and that is not a shortcut: era-engine resolves each
+ * ladder to `clamp(floor(log2(v/base + 1)))` and iso-scene.ts's layoutStateFrom
+ * writes exactly that into `counts` (`counts[name] = trunc(el.rung)`). So the
+ * log scaling a worn path needs is already applied by the ladder that owns the
+ * metric, and no second curve is invented at the roadside. An absent ladder
+ * answers 0 — the hairline, an honest unmeasured, never an interpolation.
+ */
+export function laneDemandFrom(state: LayoutState): LaneDemand {
+  return {
+    present: (obj) => presentRung(state, obj) || countOf(state, obj) > 0,
+    usage: (obj) => countOf(state, obj),
+    village: eraAtLeast(state.era, 'hamlet'),
+  }
 }
 
 // ── footprints ─────────────────────────────────────────────────────────────
@@ -664,8 +694,17 @@ export function composeLayout(
   // CLIPPED TO LAND at birth (compose.py:343) — every later stage samples this
   // network, so a lane that ran into the sea would carry the sea with it into
   // the clearance rules, the verge pass and the audit.
-  const carriageways = buildLanes(state.era, state.road, onLand)
+  //
+  // A LANE IS WORN BY THE PLACE AT ITS FAR END (see ./lanes). The predicates
+  // handed over are the SAME ones the structure stage is gated on, five stages
+  // down — `presentRung` for a tier ladder, a positive count for a count
+  // ladder — so the road to the library and the library itself can never
+  // disagree about whether there is a library. Reading anything else here
+  // would be a second state source for one fact.
+  const laneDemand = laneDemandFrom(state)
+  const carriageways = buildLanes(state.road, onLand, laneDemand)
   const laneKeys = new Set(carriageways.map((l) => l.key))
+  const laneWidthOf = new Map(carriageways.map((l) => [l.key, l.width]))
 
   // ---- 3. lots ------------------------------------------------------------
   // The separation book starts with the civic spots, which were never lane
@@ -703,6 +742,11 @@ export function composeLayout(
     works: 'east',
     fields: 'se',
     centre: 'main',
+  }
+  /** The usage rung of the place a lot group's carriageway serves. */
+  const laneUsage = (group: string): number => {
+    const ladder = laneTrafficLadder(LOT_GROUP_LANE[group])
+    return ladder === null ? 0 : laneDemand.usage(ladder)
   }
 
   // ---- 4. driveways -------------------------------------------------------
@@ -756,9 +800,19 @@ export function composeLayout(
   const driveways: Driveway[] = []
   const driveLanes: Lane[] = []
   for (const b of built) {
-    if (!laneKeys.has(LOT_GROUP_LANE[b.group])) continue
-    const d = driveway(lotDoor(b.lot), b.lot.road, state.road)
-    const lane = drivewayLane(d, `drive-${b.key}`, onLand)
+    const carriageway = LOT_GROUP_LANE[b.group]
+    if (!laneKeys.has(carriageway)) continue
+    // ITS OWN BUILDING'S USAGE, not the org's road rung — the same ladder that
+    // widened the carriageway it joins, one rung down for one door. Reading
+    // `state.road` here would leave a second width rule on the network,
+    // contradicting the lanes it feeds into.
+    const d = driveway(
+      lotDoor(b.lot),
+      b.lot.road,
+      laneUsage(b.group),
+      laneWidthOf.get(carriageway) ?? laneWidthAt(0)
+    )
+    const lane = drivewayLane(d, `drive-${b.key}`, onLand, state.road)
     // a drive with no on-land run is a drive that was entirely offshore; the
     // record would then describe paint that does not exist
     if (lane.runs.length === 0) continue
@@ -961,7 +1015,10 @@ export function composeLayout(
   // uncut wood, 129 of them under fully closed canopy and one fence run 188px
   // deep into it.
   const inWater = waterField(paint)
-  const onPaving = paintField(paint, ['plaza', 'crop', 'ploughed'])
+  // GROWN BY THE KERB, not the bare blob: the paint bleeds past its own
+  // boundary and a thing standing in the bleed is off the surface to the layout
+  // and on it to the frame (see PAINT_KERB).
+  const onPaving = grownField(paint, ['plaza', 'crop', 'ploughed'], PAINT_KERB)
   // ONE FIELD, built once and handed to every consumer: the clearing, the belt
   // and the scatter must agree on where the deck is, and two `rectField` calls
   // off the same rect is one call away from being two different rects.
@@ -1163,7 +1220,9 @@ export function composeLayout(
       works: roleAt('workshop'),
       fields: roleAt('outbuildings'),
       square: SQUARE,
-      dwellings: structures.filter((s) => s.role === 'officer_dwelling').map((s) => s.at),
+      dwellings: structures
+        .filter((s) => s.role === 'officer_dwelling')
+        .map((s) => ({ at: s.at, face: s.lot?.face ?? { x: 1, y: 0 } })),
       shoreAt: coast.cove ? (x: number) => shoreAt(coast, coast.cove!, x) : null,
       cove: coast.cove ? { x: coast.cove.x, y: coast.cove.y } : null,
     }),

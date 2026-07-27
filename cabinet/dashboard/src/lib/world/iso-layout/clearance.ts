@@ -388,7 +388,37 @@ export interface ClearOfLaneOptions {
   respectOccupants?: boolean
   /** Overlap fraction that counts as taken. */
   frac?: number
+  /** Kerb to keep, in layout px. Defaults to LANE_KERB. */
+  kerb?: number
 }
+
+/**
+ * THE KERB — how far clear of the carriageway a settled thing has to end up.
+ *
+ * FLUSH IS NOT CLEAR, and until 2026-07-27 the settle only ever asked for
+ * flush: `clearOfLane` stopped at the first spot where the ground diamond and
+ * the lane discs did not intersect, which can be one pixel. That was survivable
+ * only because the lanes were wide — a wide road pushes a building a long way
+ * before it clears, so the slack came for free. The moment lane width became a
+ * function of the destination's own traffic (see ./lanes), the network's
+ * quietest paths narrowed to 13px, buildings settled right against them, and
+ * the great house came to rest ON the junction it stands at: measured on the
+ * hamlet fixture, `check_on_road` named great_house, a flowerbed and a wood
+ * pile, all three of which the layout's own `footprintOnLane` called clear.
+ *
+ * They disagreed because they are two samplers of the same shape and they
+ * differ by a few pixels: the check probes the ground box at fx +/-0.5 and
+ * quantises the road to a 3px mask, this library probes the diamond at +/-0.55
+ * with no quantisation. Neither is wrong. A thing settled inside their
+ * disagreement is a coin toss, and asking for a kerb wider than the
+ * disagreement is what makes the answer stable — 5px covers both the 3px mask
+ * step and the ~4px the differing fx costs on the largest sprite.
+ *
+ * IT IS NOT A LOOSENED THRESHOLD. The gate is untouched; what changed is the
+ * placement, which now leaves a verge instead of stopping at the kerbstone —
+ * which is also what a building beside a road looks like.
+ */
+export const LANE_KERB = 5
 
 /**
  * Push a thing fully off the carriageway, onto ground nothing else is using
@@ -418,14 +448,19 @@ export function clearOfLane(
   const reach = opts.reach ?? 300
   const respect = opts.respectOccupants ?? true
   const frac = opts.frac ?? 0.16
-  if (!footprintOnLane(at, size, lanes)) return at
+  // THE SAME KERB ON BOTH TESTS. Asking for a verge only while searching, and
+  // for flush when deciding whether to search at all, would leave anything
+  // already sitting on the kerbstone exactly where it is — which is the case
+  // this exists for.
+  const kerb = opts.kerb ?? LANE_KERB
+  if (!footprintOnLane(at, size, lanes, kerb)) return at
   let fallback: Point | null = null
   let fallbackOverlap = Infinity
   for (let r = 8; r < reach; r += 7) {
     for (let i = 0; i < 16; i++) {
       const ang = (i * Math.PI * 2) / 16
       const p = { x: at.x + Math.cos(ang) * r, y: at.y + Math.sin(ang) * r * 0.66 }
-      if (!baseOnLand(onLand, p.x, p.y) || footprintOnLane(p, size, lanes)) continue
+      if (!baseOnLand(onLand, p.x, p.y) || footprintOnLane(p, size, lanes, kerb)) continue
       if (respect) {
         const overlap = maxGroundOverlap(p, size, occupied)
         if (overlap > frac) {

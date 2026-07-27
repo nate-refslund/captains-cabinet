@@ -353,6 +353,27 @@ export const PAINT_FEATHER: Readonly<Partial<Record<PaintKind, number>>> = {
 }
 
 /**
+ * THE KERB ON A PAINTED SURFACE — how far outside a region's blobs a thing has
+ * to stand before it counts as off it.
+ *
+ * FLUSH IS NOT CLEAR, the same lesson the lanes paid for (clearance.ts
+ * LANE_KERB). `paintField` tests the blob boundary exactly, while the
+ * rasteriser draws each blob with a blur and the stone therefore bleeds a
+ * pixel or two past it. Anything standing in the bleed is off the surface
+ * according to the layout and on it according to the frame — and
+ * `check_on_road` reads the frame. Measured on the hamlet fixture the day the
+ * lane widths became traffic-driven: `fallen_log@1052,1061`, at 1.02 blob radii
+ * from the plaza's edge, i.e. one percent outside a 161px ellipse, standing on
+ * painted flagstone.
+ *
+ * SIX PIXELS is the smallest round number wider than the 1px feather the plaza
+ * and the plots are drawn with, at the scale of the biggest blob (a 1% overrun
+ * on a 161px radius is ~1.6px). It buys a verge rather than relaxing anything:
+ * the gate is untouched and what moved is where things stand.
+ */
+export const PAINT_KERB = 6
+
+/**
  * All the ground regions for a world state.
  *
  * `fieldPlots` and `village` rather than the whole LayoutState: this module is

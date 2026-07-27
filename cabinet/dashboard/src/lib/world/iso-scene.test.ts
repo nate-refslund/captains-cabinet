@@ -349,6 +349,7 @@ describe('the painted lane band is the corridor the rules reserved', () => {
       key: 'probe',
       kind: 'main' as const,
       width: half * 2,
+      surface: 'gravel_road' as const,
       runs: [[{ x: 1000, y: 1000 }]],
     }
     const field = buildLaneField([lane])

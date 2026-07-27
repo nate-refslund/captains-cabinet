@@ -61,6 +61,8 @@ SURFACES = [
     ("sea", ground.sea, ground.RAMP_SEA),
     ("ploughed", ground.ploughed, ground.RAMP_PLOUGHED),
     ("crop_field", ground.crop_field, ground.RAMP_CROP),
+    ("dirt_worn", ground.dirt_worn, ground.RAMP_DIRT_WORN),
+    ("gravel", ground.gravel, ground.RAMP_GRAVEL),
 ]
 
 
@@ -112,11 +114,43 @@ def test_surfaces_land_in_the_class_the_checks_will_read_them_as():
     assert frac(ground.grass(240, 200), is_cultivated) < 0.15
     # Paving must read as stone, or a declared square can never be shown paved.
     assert frac(ground.cobble(160, 120), is_stone) > 0.5
-    # ...and a dirt lane must read as road to check_on_road's own table.
-    road = [(138, 106, 66), (156, 122, 78), (173, 138, 92), (188, 154, 108), (201, 168, 122)]
-    px = list(ground.dirt(160, 120).convert("RGB").getdata())
-    assert all(any(abs(p[i] - c[i]) < 17 for i in range(3)) for p in px for c in [
-        min(road, key=lambda c: sum((p[i] - c[i]) ** 2 for i in range(3)))])
+    # ...and EVERY ROAD MATERIAL must read as road to check_on_road's own table.
+    #
+    # ALL FOUR RUNGS, not just dirt. The road ladder's rungs became the lane's
+    # SURFACE on 2026-07-27 (iso-layout/lanes.ts: width is the destination's own
+    # traffic now), so an org past the dirt rungs paints its network in worn
+    # dirt, gravel or flagstone. A material outside `_is_roadish`'s tolerance
+    # would not look wrong — it would turn check_on_road BLIND on every mature
+    # org, which is the sensor-not-wired-to-the-control defect with the roads as
+    # its subject. This arm is the reason the two new ramps were chosen by
+    # pulling RAMP_DIRT toward grey rather than by eye.
+    road = [(138, 106, 66), (156, 122, 78), (173, 138, 92), (188, 154, 108),
+            (201, 168, 122), (139, 129, 117), (153, 143, 128), (167, 156, 140),
+            (180, 169, 151), (193, 182, 163)]
+
+    def roadish(p):
+        if p[1] > p[0] or p[2] > p[0]:
+            return False
+        return any(all(abs(p[i] - c[i]) < 17 for i in range(3)) for c in road)
+
+    for name, fn in [("dirt", ground.dirt), ("dirt_worn", ground.dirt_worn),
+                     ("gravel", ground.gravel), ("cobble", ground.cobble)]:
+        px = list(fn(160, 120).convert("RGB").getdata())
+        bad = {p for p in px if not roadish(p)}
+        assert not bad, f"{name} emits colours check_on_road cannot see as road: {sorted(bad)[:4]}"
+
+    # AND THE FOUR ARE TELLABLE APART. A material that renders as its
+    # predecessor is a rung that cannot reach the frame — the same silent
+    # failure one level up from the one above.
+    def mean(fn):
+        px = list(fn(160, 120).convert("RGB").getdata())
+        return tuple(sum(p[i] for p in px) / len(px) for i in range(3))
+
+    md, mw, mg = mean(ground.dirt), mean(ground.dirt_worn), mean(ground.gravel)
+    # worn dirt is DARKER than fresh dirt
+    assert sum(mw) < sum(md) - 20, f"dirt_worn {mw} is not darker than dirt {md}"
+    # gravel is GREYER: its red-blue spread is smaller than dirt's
+    assert (mg[0] - mg[2]) < (md[0] - md[2]) - 8, f"gravel {mg} is not greyer than dirt {md}"
 
 
 def test_the_mirror_is_identical_to_its_source():

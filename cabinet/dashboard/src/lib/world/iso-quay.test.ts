@@ -37,7 +37,7 @@ import {
   wharfPostRects,
   type DeckRect,
 } from './iso-quay'
-import { RAMPS, groundField } from './iso-terrain'
+import { RAMPS, ROAD_GROUND, groundField, type GroundClass } from './iso-terrain'
 
 const ENGINE = path.resolve(__dirname, '..', '..', 'components', 'world', 'engine-canvas.tsx')
 const RASTER = path.resolve(
@@ -110,14 +110,26 @@ describe('the quay is timber, not the road', () => {
     expect(jettyDeckRects({ x: 10, y: 10 }, { x: 10, y: 200 }, 0, 11)).toHaveLength(0)
   })
 
-  it('the deck material is NOT the lane material', () => {
+  it('the deck material is NOT the lane material, at ANY road rung', () => {
     // The lane's material is whatever the engine paints lanes with — read out
     // of the engine rather than assumed, so this comparison cannot go stale.
+    //
+    // FOUR MATERIALS NOW, NOT ONE. Since 2026-07-27 the road ladder's rung sets
+    // the lane's SURFACE rather than its width (iso-layout/lanes.ts), so the
+    // engine paints through ROAD_GROUND and a mature org's roads are gravel or
+    // flagstone. The old arm read one hardcoded 'dirt' out of the source; it
+    // would have gone green on a deck that was indistinguishable from every
+    // road the org will ever build once it stopped being a dirt track.
     const src = fs.readFileSync(ENGINE, 'utf8')
-    const laneCall = src.match(/paintClass\(lanes, '([a-z_]+)'/)
-    expect(laneCall, 'the engine no longer paints lanes through paintClass').toBeTruthy()
-    const laneClass = laneCall![1] as 'dirt'
-    expect(laneClass).toBe('dirt')
+    expect(src, 'the engine no longer paints lanes through paintClass')
+      .toMatch(/paintClass\(lanes, ROAD_GROUND\[surface\]/)
+    const roadClasses = [...new Set(Object.values(ROAD_GROUND))] as GroundClass[]
+    expect(roadClasses.length).toBeGreaterThan(3)
+    for (const laneClass of roadClasses) deckIsNotThe(laneClass)
+  })
+
+  /** The whole comparison, for one road material. */
+  function deckIsNotThe(laneClass: GroundClass): void {
 
     // 1. no deck tone IS a lane tone, and the two structural colours — the
     //    joints and the fascia, which are most of what the eye reads as
@@ -129,9 +141,16 @@ describe('the quay is timber, not the road', () => {
     //    because the still the Captain approved was drawn with it and the
     //    separation that makes a deck read as a deck is the one measured
     //    below — a darker surface broken by joints — not a novel hue.
-    const laneRamp = RAMPS[laneClass].map(rgb)
+    // cobble is the one road material whose palette is two ramps (base + cells)
+    const rampOf = (c: GroundClass): readonly number[] =>
+      c === 'cobble'
+        ? [...RAMPS.cobbleBase, ...RAMPS.cobbleCells]
+        : (RAMPS[({ dirt: 'dirt', dirt_worn: 'dirtWorn', gravel: 'gravel' } as const)[
+            c as 'dirt' | 'dirt_worn' | 'gravel'
+          ]] as readonly number[])
+    const laneRamp = rampOf(laneClass).map(rgb)
     for (const c of DECK_COLOURS) {
-      expect(RAMPS[laneClass], `deck colour ${c.toString(16)} IS a lane tone`).not.toContain(c)
+      expect(rampOf(laneClass), `deck colour ${c.toString(16)} IS a ${laneClass} tone`).not.toContain(c)
     }
     for (const c of [JOINT, FASCIA]) {
       for (const l of laneRamp) expect(dist(rgb(c), l)).toBeGreaterThan(40)
@@ -168,7 +187,7 @@ describe('the quay is timber, not the road', () => {
       expect(deckMean[ch]).toBeLessThan(laneMean[ch] - 12)
       expect(faceMean[ch], 'a board face is as light as the lane').toBeLessThan(laneMean[ch] - 12)
     }
-  })
+  }
 
   it('the deck reads as laid boards — a tone per board, and a joint under each', () => {
     const { grid, w, h, y0 } = paint(wharf)
@@ -363,7 +382,7 @@ describe('the engine paints the harbour and the square in the right order', () =
   })
 
   it('the lanes are laid BENEATH the paving, not over it', () => {
-    const lane = src.indexOf("paintClass(lanes, 'dirt'")
+    const lane = src.indexOf('paintClass(lanes, ROAD_GROUND[surface]')
     const plaza = src.indexOf("['plaza', 'cobble']")
     expect(lane, 'the lane paint call moved — re-point this arm').toBeGreaterThan(0)
     expect(plaza, 'the plaza paint loop moved — re-point this arm').toBeGreaterThan(0)

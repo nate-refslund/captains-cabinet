@@ -25,7 +25,7 @@
  *
  * PURE: no clocks, no unseeded randomness, no IO, no DOM.
  */
-import { clipToLand, laneCentreline, type Lane, ROAD_WIDTH } from './lanes'
+import { clipToLand, laneCentreline, laneWidthAt, type Lane } from './lanes'
 import { ISO_AXIS_SLOPE, type Point, type RoadRung } from './space'
 
 /**
@@ -58,14 +58,38 @@ export interface Driveway {
   width: number
 }
 
-/** compose.py:341 — `width=max(15, int(28*_rw))`: the drive follows the rung. */
-export function drivewayWidth(rung: RoadRung): number {
-  return Math.max(15, Math.trunc(28 * ROAD_WIDTH[rung]))
+/**
+ * How wide a drive is: ONE HOUSEHOLD'S WORTH OF THE CARRIAGEWAY'S TRAFFIC.
+ *
+ * It used to follow the org-wide road rung (compose.py:341,
+ * `max(15, int(28*_rw))`), and leaving it there after the lanes moved to the
+ * traffic model would have left a second width-from-rung rule contradicting the
+ * first — a busy library's drive and a forgotten dojo's the same, on a network
+ * where the roads themselves had stopped being.
+ *
+ * ONE RUNG BELOW its building's usage, because a drive is the last few metres
+ * to one door: the road carries everyone who visits the district, the drive
+ * carries whoever goes inside. CAPPED AT THE CARRIAGEWAY it joins, which is a
+ * physical fact rather than a taste — a drive wider than its road reads as the
+ * road being a spur off the drive.
+ */
+export function drivewayWidth(usageRung: number, carriageway: number): number {
+  return Math.min(carriageway, laneWidthAt(usageRung - 1))
 }
 
 /** One drive from a door to the road point its lot fronts. */
-export function driveway(door: Point, road: Point, rung: RoadRung): Driveway {
-  return { door, road, route: isoRoute(door, road), width: drivewayWidth(rung) }
+export function driveway(
+  door: Point,
+  road: Point,
+  usageRung: number,
+  carriageway: number
+): Driveway {
+  return {
+    door,
+    road,
+    route: isoRoute(door, road),
+    width: drivewayWidth(usageRung, carriageway),
+  }
 }
 
 /**
@@ -87,12 +111,15 @@ export function driveway(door: Point, road: Point, rung: RoadRung): Driveway {
 export function drivewayLane(
   d: Driveway,
   key: string,
-  onLand: (x: number, y: number) => boolean
+  onLand: (x: number, y: number) => boolean,
+  /** A drive is paved with whatever the org's roads are paved with. */
+  surface: RoadRung
 ): Lane {
   return {
     key,
     kind: 'driveway',
     width: d.width,
+    surface,
     runs: clipToLand(laneCentreline(d.route, 3), onLand),
   }
 }

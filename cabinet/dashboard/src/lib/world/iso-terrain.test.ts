@@ -190,11 +190,13 @@ describe('iso-terrain — the ground the reference computes', () => {
   })
 
   it('every ground class produces opaque pixels drawn only from its own ramp', () => {
-    const classes = ['grass', 'grass_dark', 'dirt', 'sand', 'sea', 'ploughed', 'crop'] as const
+    const classes = ['grass', 'grass_dark', 'dirt', 'dirt_worn', 'gravel', 'sand', 'sea', 'ploughed', 'crop'] as const
     const ramps: Record<string, readonly number[]> = {
       grass: RAMPS.grass,
       grass_dark: RAMPS.grassDark,
       dirt: RAMPS.dirt,
+      dirt_worn: RAMPS.dirtWorn,
+      gravel: RAMPS.gravel,
       sand: RAMPS.sand,
       sea: RAMPS.sea,
       ploughed: RAMPS.ploughed,

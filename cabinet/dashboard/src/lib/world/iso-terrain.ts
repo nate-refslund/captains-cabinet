@@ -50,6 +50,13 @@ export const RAMPS = {
   grass: [0x4e6b3c, 0x5e7a46, 0x6a8252, 0x7a945c, 0x8aa468],
   grassDark: [0x415c33, 0x4e6b3c, 0x5a7745, 0x67854e],
   dirt: [0x8a6a42, 0x9c7a4e, 0xad8a5c, 0xbc9a6c, 0xc9a87a],
+  // The road ladder's other two materials — see world-capture/ground.py, whose
+  // RAMP_DIRT_WORN and RAMP_GRAVEL these are the hex twin of. They exist
+  // because the road rung stopped setting lane WIDTH on 2026-07-27 (that is the
+  // destination's own traffic now, iso-layout/lanes.ts) and became the SURFACE
+  // instead; without them the org's road maturity has no way onto either frame.
+  dirtWorn: [0x8c6e4a, 0x967650, 0xa07e56, 0xaa865d, 0xb48e64],
+  gravel: [0x81694b, 0x937958, 0xa38966, 0xb29976, 0xc0a784],
   sand: [0xcdb98c, 0xd8c69c, 0xe2d2ac, 0xebdcbb],
   sea: [0x3e6e6b, 0x48807c, 0x54918c, 0x61a099, 0x6faea6],
   cobbleBase: [0x9a9084, 0xa79c8f, 0xb4a99a],
@@ -269,11 +276,34 @@ export type GroundClass =
   | 'grass'
   | 'grass_dark'
   | 'dirt'
+  | 'dirt_worn'
+  | 'gravel'
   | 'sand'
   | 'sea'
   | 'cobble'
   | 'ploughed'
   | 'crop'
+
+/**
+ * THE ROAD LADDER'S RUNG -> THE MATERIAL IT IS MADE OF.
+ *
+ * growth-ladders.yml `road.rungs` are dirt_path / dirt_worn / gravel_road /
+ * cobbled_road, and they are MATERIALS. Reading them as widths is what this
+ * table replaces (see iso-layout/lanes.ts): width is the destination's own
+ * traffic, surface is the org's road maturity, and those are two different true
+ * things. An unknown rung falls back to bare dirt, which is rung 0 and the
+ * honest answer for a road nobody has measured.
+ *
+ * world-capture/raster.py ROAD_TEXTURE is this same table on the offline side;
+ * the two renderers must agree or the still and the live page describe
+ * different worlds.
+ */
+export const ROAD_GROUND: Readonly<Record<string, GroundClass>> = {
+  dirt_path: 'dirt',
+  dirt_worn: 'dirt_worn',
+  gravel_road: 'gravel',
+  cobbled_road: 'cobble',
+}
 
 /**
  * One field per ground class, at the reference's own parameters
@@ -299,6 +329,12 @@ export function groundField(
       return terrainField(w, h, { ramp: RAMPS.grassDark, seed: seed + 8, scale: 0.0075, octaves: 4, contrast: 1.2, block, ox, oy })
     case 'dirt':
       return terrainField(w, h, { ramp: RAMPS.dirt, seed: seed + 5, scale: 0.012, octaves: 4, contrast: 1.1, block, ox, oy })
+    case 'dirt_worn':
+      return terrainField(w, h, { ramp: RAMPS.dirtWorn, seed: seed + 5, scale: 0.016, octaves: 4, contrast: 1.2, block, ox, oy })
+    case 'gravel':
+      // block 1, not the caller's: gravel is LOOSE STONE and its grain is the
+      // whole difference from packed dirt at this palette distance.
+      return terrainField(w, h, { ramp: RAMPS.gravel, seed: seed + 5, scale: 0.03, octaves: 5, contrast: 1.35, block: 1, ox, oy })
     case 'sand':
       return terrainField(w, h, { ramp: RAMPS.sand, seed: seed + 6, scale: 0.01, octaves: 4, contrast: 0.95, block, ox, oy })
     case 'sea':

@@ -377,7 +377,19 @@ export interface DrawPaint {
 export interface DrawLane {
   key: string
   kind: string
+  /** How much its destination is used (iso-layout/lanes.ts LANE_WIDTH_RUNGS). */
   width: number
+  /**
+   * What it is PAVED with — the org-wide road ladder's rung name.
+   *
+   * SHIPPED because the renderer has to PAINT it. Since 2026-07-27 the road
+   * rung no longer sets any lane's width (that is the destination's own
+   * traffic), so if the rasteriser kept painting every lane as bare dirt the
+   * road ladder would stop reaching the frame entirely and a real rung change
+   * would move nothing — the defect this whole library exists to make
+   * impossible.
+   */
+  surface: string
   runs: [number, number][][]
 }
 
@@ -426,7 +438,7 @@ export interface DrawList {
   jetty: { at: [number, number]; end: [number, number]; width: number } | null
   /** compose.py LAMP_AT — the glow's centre, or null when the lamp is dark. */
   lamp_at: [number, number] | null
-  /** Chimneys that smoke: [x, y, puffs, scale]. */
+  /** What is alight, at its flue: [x, y, puffs, scale]. See SMOKE_FLUES. */
   smokes: [number, number, number, number][]
   sprites: DrawSprite[]
 }
@@ -436,6 +448,74 @@ export interface EmittedFrame {
   draw: DrawList
   /** auditLayout's four arms — reported, so a capture never hides them. */
   audit: ReturnType<typeof auditLayout>
+}
+
+/**
+ * WHAT BURNS — the frames that may emit smoke, and where their flue is.
+ *
+ * SMOKE COMES FROM THE FIRE, NOT THE TENT (Captain, 2026-07-27). The camp
+ * frame put a plume over the canvas tent: `smokesOf` emitted for the ROLE
+ * `officer_dwelling` at every era, and at camp that role's art is `camp_tent`.
+ * A tent has no chimney. The campfire three tiles away has no flue either and
+ * was the only thing on the island actually alight.
+ *
+ * SO THE GATE IS THE ART, NOT THE ROLE. A role is era-agnostic — one
+ * `officer_dwelling` is a tent at camp, a chimneyed hut at hamlet, a cottage in
+ * town — so a role-keyed table cannot answer "does this thing have a flue?"
+ * without re-deriving the era, which is the pack's job. The frame is what is
+ * DRAWN, and whether the drawn sprite has a chimney is a fact about that
+ * sprite. Keying on it means the era gate comes free and correct.
+ *
+ * ALLOWLIST, and absence is the hard default: a frame not named here emits
+ * nothing. The alternative (a smokeless list) is open at the wrong end — every
+ * new shed the pack ships would smoke until someone remembered to add it.
+ *
+ * EVERY ENTRY WAS READ OFF THE SHIPPED ATLAS, 2026-07-27, by cropping the frame
+ * and looking at it. The offsets are the top band's own centroid in the
+ * sprite's box: `fx` from the box CENTRE as a fraction of width, `fy` up from
+ * the base as a fraction of height (a sprite is drawn bottom-centre at its
+ * point, so the flue is at `x + w*fx, y - h*fy`). Frames deliberately NOT here,
+ * with the reason, because the omissions are the whole point:
+ *   camp_tent, camp_leanto, camp_toolbox, camp_book_crate, camp_tarp_cache,
+ *   camp_signal_post — canvas, open sheds and posts; no flue in the art.
+ *   camp_log_cabin — a plain ridge, no chimney drawn on it.
+ *   cottage_a, town_hall, bay_wings, well_house — the topmost feature is a
+ *   roof ridge, a finial or a cupola, and none of them is a chimney.
+ *   barn, town_barn, bay_great_barn, chicken_coop, warehouse, town_warehouse,
+ *   bay_warehouse_row, harbormaster_hut, well, town_stone_well — no flue.
+ *   bay_workshop_hall — it HAS a stack, and the art already draws its own smoke
+ *   coming out of it; a second plume would be the same fire counted twice.
+ */
+export const SMOKE_FLUES: Readonly<
+  Record<string, { fx: number; fy: number; puffs: number; scale: number }>
+> = {
+  // OPEN FIRES — the flame IS the source, so the plume starts at the sprite's
+  // own top. These are the hearth ladder's four era arts.
+  camp_campfire: { fx: 0.01, fy: 1.0, puffs: 7, scale: 0.62 },
+  firepit: { fx: 0.044, fy: 1.0, puffs: 7, scale: 0.72 },
+  town_brazier: { fx: -0.02, fy: 1.0, puffs: 7, scale: 0.68 },
+  bay_plaza_hearth: { fx: -0.054, fy: 1.0, puffs: 8, scale: 0.85 },
+  // CHIMNEYS — dwellings, the great house, the forge, the library, the kiln.
+  officer_house_a: { fx: 0.097, fy: 1.0, puffs: 7, scale: 0.72 },
+  officer_house_b: { fx: -0.175, fy: 1.0, puffs: 7, scale: 0.72 },
+  officer_house_c: { fx: -0.14, fy: 1.0, puffs: 7, scale: 0.72 },
+  cottage_b: { fx: -0.16, fy: 1.0, puffs: 7, scale: 0.72 },
+  cottage_c: { fx: 0.184, fy: 1.0, puffs: 7, scale: 0.72 },
+  great_house: { fx: -0.122, fy: 1.0, puffs: 8, scale: 0.85 },
+  workshop: { fx: 0.138, fy: 1.0, puffs: 8, scale: 0.8 },
+  library: { fx: 0.14, fy: 0.926, puffs: 6, scale: 0.7 },
+  // The kiln is a FIRE with a stack, and it rides in the dressing rather than
+  // in `structures` — which is a fact about which list it lands in, not about
+  // what it is. smokesOf sweeps both for exactly this reason.
+  watermill_kiln: { fx: -0.013, fy: 0.953, puffs: 8, scale: 0.8 },
+  town_cottage: { fx: -0.198, fy: 1.0, puffs: 7, scale: 0.72 },
+  town_manor: { fx: 0.193, fy: 1.0, puffs: 8, scale: 0.85 },
+  town_workshop_hut: { fx: 0.223, fy: 1.0, puffs: 8, scale: 0.8 },
+  town_harbor_office: { fx: -0.273, fy: 1.0, puffs: 6, scale: 0.7 },
+  bay_townhouse: { fx: -0.226, fy: 1.0, puffs: 7, scale: 0.72 },
+  // Two chimneys in the art; the RIGHT one, because draw_smoke drifts +x and a
+  // plume off the left stack would blow back across its own roof.
+  bay_manor_estate: { fx: 0.242, fy: 1.0, puffs: 8, scale: 0.85 },
 }
 
 /** Sprites that stand on water and therefore cast nothing onto the ground. */
@@ -604,6 +684,7 @@ export function emitFrame(
       key: l.key,
       kind: l.kind,
       width: l.width,
+      surface: l.surface,
       runs: l.runs.map((run) => run.map(pt)),
     })),
     lane_squash: LANE_SQUASH,
@@ -613,7 +694,7 @@ export function emitFrame(
       ? { at: pt(h.jetty.at), end: pt(h.jetty.end), width: h.jetty.width }
       : null,
     lamp_at: layout.lighthouse?.lamp.at ? pt(layout.lighthouse.lamp.at) : null,
-    smokes: smokesOf(layout),
+    smokes: smokesOf(pack, layout),
     sprites,
   }
 
@@ -666,18 +747,35 @@ function gapsOf(pack: WorldPack, state: LayoutState): BlueprintState['gaps'] {
 }
 
 /**
- * Chimney smoke, hung off the dwellings and the great house.
+ * Smoke, hung off the things that are actually alight.
  *
- * A CONSEQUENCE OF SOMEONE LIVING THERE, so it is emitted for the structures
- * the state built and for nothing else — smoke over an empty lot is the same
- * class of lie as a driveway to unbuilt grass.
+ * A CONSEQUENCE OF SOMETHING BURNING, so it is emitted for the FRAME that was
+ * really drawn and for nothing else — smoke over an empty lot is the same class
+ * of lie as a driveway to unbuilt grass, and smoke over a tent is that lie one
+ * level finer: the building is real, the fire is not.
+ *
+ * IT SWEEPS THE DRESSING TOO. The kiln is a fire with a stack that happens to
+ * ride in `layout.dressing` because of how it is placed, not because of what it
+ * is; a sweep that only read `structures` would have to know that.
+ *
+ * The plume's own size travels with the flue: a campfire is not a manor's
+ * chimney, and one shared constant made every fire on the island the same fire.
  */
-function smokesOf(layout: Layout): [number, number, number, number][] {
+function smokesOf(pack: WorldPack, layout: Layout): [number, number, number, number][] {
   const out: [number, number, number, number][] = []
-  for (const s of layout.structures) {
-    if (s.role !== 'officer_dwelling' && s.role !== 'great_house') continue
-    out.push([i(s.at.x + s.size.w * 0.18), i(s.at.y - s.size.h * 0.92), 7, 0.85])
+  const burn = (kind: string, at: Point, size: Footprint) => {
+    const flue = SMOKE_FLUES[frameOfKind(pack, layout.state, kind)]
+    if (!flue) return
+    const drawn = drawSizeOf(pack, frameOfKind(pack, layout.state, kind)) ?? size
+    out.push([
+      i(at.x + drawn.w * flue.fx),
+      i(at.y - drawn.h * flue.fy),
+      flue.puffs,
+      flue.scale,
+    ])
   }
+  for (const s of layout.structures) burn(s.kind, s.at, s.size)
+  for (const d of layout.dressing) burn(d.kind, d.at, d.size)
   return out
 }
 

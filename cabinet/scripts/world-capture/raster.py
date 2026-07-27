@@ -315,16 +315,30 @@ def _lane_mask(W: int, H: int, lanes, squash: float) -> Image.Image:
     circle. check_on_road caught it on first contact — the painted road and the
     reserved road must be one surface or that class returns forever.
 
-    ONE mask rather than one per lane, because that is what they are: the layout
-    hands the clearance rules a single occupancy field, and painting them
-    separately would let two overlapping widths double-darken a junction.
+    ONE mask PER SURFACE, because the road ladder's rungs are materials and a
+    lane carries its own; within a surface it is still one mask, which is what
+    the layout means by handing the clearance rules a single occupancy field —
+    painting overlapping widths separately would double-darken a junction.
+
+    THE STEP IS BOUNDED BY THE SQUASHED RADIUS, NOT THE HALF-WIDTH, so the band
+    does not NECK between samples. It was the half-width until 2026-07-27, which
+    is 1/0.72 too coarse for a lane running down the screen: consecutive
+    ellipses reach `half*squash` in y but were stepped `half` apart, so the
+    union pinched to 0.72 of its width halfway between them and a vertical lane
+    painted as a chain of beads. The discs still overlapped — it was never a
+    hole — but 28% of necking is 1.8px on the 13px track the traffic model
+    starts every lane at, and that reads as beads rather than a path. Invisible
+    while every lane was 30-60px wide; measured on the camp frame the day a
+    destination's own traffic could put one at 13. iso-layout/lanes.ts
+    buildLaneField carries the identical bound, because the painted road and the
+    reserved road must be one surface.
     """
     m = Image.new("L", (W, H), 0)
     d = ImageDraw.Draw(m)
     for lane in lanes:
         half = max(0.5, lane["width"] / 2.0)
         ry = half * squash
-        spacing = max(2.0, min(half, 16.0))
+        spacing = max(2.0, min(ry, 16.0))
         for run in lane["runs"]:
             for i, a in enumerate(run):
                 pts = [a]
@@ -382,10 +396,27 @@ def build_ground(draw: dict, W: int, H: int, seed: int) -> Image.Image:
             canvas.paste(water, (0, 0),
                          ImageChops.multiply(_blob_mask(W, H, reg["blobs"], 1.0), land))
 
-    # lanes: dirt, clipped to land so a wobble can never paint a road on the sea
-    lanes = ImageChops.multiply(
-        _lane_mask(W, H, draw["lanes"], float(draw["lane_squash"])), land)
-    canvas.paste(ground.dirt(W, H, seed=seed + 5), (0, 0), lanes)
+    # LANES, PAINTED IN THE MATERIAL THE ROAD LADDER SAYS, clipped to land so a
+    # wobble can never paint a road on the sea.
+    #
+    # PER SURFACE, not one dirt mask for the lot. The road ladder's rungs are
+    # materials (dirt_path / dirt_worn / gravel_road / cobbled_road) and since
+    # 2026-07-27 they are the ONLY thing that rung controls — width belongs to
+    # each destination's own traffic now (iso-layout/lanes.ts). Painting them
+    # all as dirt would leave the org's road maturity with no way onto the
+    # frame, so a real rung change would move nothing and every check would
+    # still pass. Grouped rather than assumed uniform: the surface travels
+    # per-lane in the draw list, so a future network that paves its spine before
+    # its footpaths renders that way without touching this file.
+    by_surface: dict[str, list[dict]] = {}
+    for lane in draw["lanes"]:
+        by_surface.setdefault(lane.get("surface") or "dirt_path", []).append(lane)
+    for surface, group in sorted(by_surface.items()):
+        m = ImageChops.multiply(
+            _lane_mask(W, H, group, float(draw["lane_squash"])), land)
+        if not m.getbbox():
+            continue
+        canvas.paste(_road_texture(surface, W, H, seed), (0, 0), m)
 
     # the square, painted only over its own extent (flagstone is per-pixel)
     for reg in by_kind.get("plaza", []):
@@ -542,6 +573,43 @@ def apply_grade(canvas: Image.Image, W: int, H: int) -> Image.Image:
     canvas = ImageEnhance.Color(canvas).enhance(1.10)
     canvas = ImageEnhance.Contrast(canvas).enhance(1.07)
     return canvas
+
+
+# The road ladder's rung -> the surface it is made of (growth-ladders.yml
+# `road.rungs`). An unknown rung falls back to bare dirt, which is rung 0 and
+# the honest answer for a road nobody has measured.
+ROAD_TEXTURE = {
+    "dirt_path": "dirt",
+    "dirt_worn": "dirt_worn",
+    "gravel_road": "gravel",
+    "cobbled_road": "cobble",
+}
+
+
+def _road_texture(surface: str, W: int, H: int, seed: int) -> Image.Image:
+    """The material for a road rung, TILED rather than generated canvas-wide.
+
+    ONLY COBBLE IS TILED, and the asymmetry is the point. dirt, dirt_worn and
+    gravel are `field()` calls — image ops over the whole canvas, the same cost
+    as the grass under them. `ground.cobble` is per-pixel Python and its own
+    docstring says it is only affordable over the plaza's bounding box; over a
+    lane network that spans the canvas it is minutes of Python for paving 13px
+    wide. Tiling it repeats a cell pattern, which is invisible on a winding band
+    that narrow and would be plainly visible on the open square — so the square
+    keeps generating its own and only the roads tile.
+    """
+    fn = getattr(ground, ROAD_TEXTURE.get(surface, "dirt"))
+    if fn is not ground.cobble:
+        return fn(W, H, seed=seed + 5)
+    tw, th = min(W, 480), min(H, 480)
+    tile = fn(tw, th, seed=seed + 5)
+    if tw >= W and th >= H:
+        return tile
+    out = Image.new("RGB", (W, H))
+    for oy in range(0, H, th):
+        for ox in range(0, W, tw):
+            out.paste(tile, (ox, oy))
+    return out
 
 
 def draw_smoke(W, H, cx, cy, n, scale) -> Image.Image:

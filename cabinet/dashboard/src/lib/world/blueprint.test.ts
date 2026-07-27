@@ -17,6 +17,7 @@ import {
   justifiedFromState,
   packFootprints,
   resolveFrame,
+  SMOKE_FLUES,
   type WorldPack,
 } from './blueprint'
 import {
@@ -246,5 +247,114 @@ describe('layout — a building may not stand in the crop', () => {
       box.x0 > plaza[0] - plaza[2] * 1.6 && box.x1 < plaza[0] + plaza[2] * 1.6 &&
       box.y0 > plaza[1] - plaza[3] * 1.6 && box.y1 < plaza[1] + plaza[3] * 1.6
     expect(inside, 'the hearth belongs on the square').toBe(true)
+  })
+})
+
+describe('smoke comes from the fire, not the tent', () => {
+  /**
+   * THE SENSOR IS POSITIONAL, not a restatement of SMOKE_FLUES.
+   *
+   * Asking "is every smoke's frame in the table?" would be the tautology this
+   * file's header warns about — the emitter reads that table, so the answer is
+   * yes by construction and the arm can never fire. Instead this names, by
+   * hand, sprites whose ART HAS NO FLUE and asserts that no plume starts inside
+   * one of their boxes. That is a claim about the frame's geometry, which the
+   * emitter cannot satisfy by agreeing with itself.
+   *
+   * A sprite is drawn bottom-centre at (x, y), so its box is
+   * [x - w/2, y - h] .. [x + w/2, y]. The plume base is allowed a little slack
+   * ABOVE the roofline (a chimney pot sits proud of the sprite), which is why
+   * the y window reaches past y - h — a smokeless roof must be clear there too,
+   * since that is exactly where the tent's plume was.
+   */
+  const SMOKELESS: readonly string[] = [
+    'camp_tent',
+    'camp_leanto',
+    'camp_toolbox',
+    'camp_book_crate',
+    'camp_tarp_cache',
+    'camp_signal_post',
+    'camp_log_cabin',
+    'camp_bucket',
+    'cottage_a',
+    'town_hall',
+    'bay_wings',
+    'well',
+    'well_house',
+    'town_stone_well',
+    'barn',
+    'town_barn',
+    'bay_great_barn',
+    'chicken_coop',
+    'warehouse',
+    'town_warehouse',
+    'bay_warehouse_row',
+    'harbormaster_hut',
+    'lighthouse',
+    'camp_dark_cairn',
+  ]
+  /** How far above a roofline a plume may legitimately start. */
+  const FLUE_SLACK = 26
+
+  const offenders = (f: ReturnType<typeof fixture>) => {
+    const { blueprint: bp, draw } = frameFor(f)
+    const bad: string[] = []
+    for (const s of bp.sprites) {
+      if (!SMOKELESS.includes(s.n)) continue
+      for (const [sx, sy] of draw.smokes) {
+        if (sx < s.x - s.w / 2 || sx > s.x + s.w / 2) continue
+        if (sy < s.y - s.h - FLUE_SLACK || sy > s.y) continue
+        bad.push(`${f.name}: ${s.n}@${s.x},${s.y} smokes at ${sx},${sy}`)
+      }
+    }
+    return bad
+  }
+
+  it('nothing without a flue emits smoke, at camp or at hamlet', () => {
+    expect([...offenders(CAMP), ...offenders(HAMLET)]).toEqual([])
+  })
+
+  it('the camp frame smokes exactly once, over the campfire', () => {
+    // The Captain's frame: one officer under canvas, a campfire on the square.
+    // Before the fix this plume stood over `camp_tent` and the fire was cold.
+    const { blueprint: bp, draw } = frameFor(CAMP)
+    expect(draw.smokes).toHaveLength(1)
+    const fire = bp.sprites.find((s) => s.n === 'camp_campfire')!
+    const [sx, sy] = draw.smokes[0]
+    expect(Math.abs(sx - fire.x)).toBeLessThan(fire.w)
+    expect(sy).toBeGreaterThan(fire.y - fire.h - FLUE_SLACK)
+    expect(sy).toBeLessThanOrEqual(fire.y)
+  })
+
+  it('every hamlet plume stands over a sprite that has a flue', () => {
+    // The other direction: not just "nothing wrong smokes" but "everything that
+    // smokes is something". An orphan plume over open grass would pass the
+    // arm above and is just as much a lie.
+    const { blueprint: bp, draw } = frameFor(HAMLET)
+    expect(draw.smokes.length).toBeGreaterThan(3)
+    for (const [sx, sy] of draw.smokes) {
+      const host = bp.sprites.find(
+        (s) =>
+          s.n in SMOKE_FLUES &&
+          sx >= s.x - s.w / 2 && sx <= s.x + s.w / 2 &&
+          sy >= s.y - s.h - FLUE_SLACK && sy <= s.y
+      )
+      expect(host, `plume at ${sx},${sy} stands over nothing that burns`).toBeDefined()
+    }
+  })
+
+  it('the hearth burns at every era, and the dwellings only once housed', () => {
+    // ERA MAY NOT HIDE A COUNT: the fire is lit at camp and at hamlet both, and
+    // what changes is the art it burns in, not whether it burns.
+    for (const f of [CAMP, HAMLET]) {
+      const { blueprint: bp, draw } = frameFor(f)
+      const hearth = bp.sprites.find((s) => s.n === 'camp_campfire' || s.n === 'firepit')!
+      const lit = draw.smokes.some(
+        ([sx, sy]) =>
+          Math.abs(sx - hearth.x) < hearth.w &&
+          sy > hearth.y - hearth.h - FLUE_SLACK && sy <= hearth.y
+      )
+      expect(lit, `${f.name}: the hearth is drawn and cold`).toBe(true)
+    }
   })
 })

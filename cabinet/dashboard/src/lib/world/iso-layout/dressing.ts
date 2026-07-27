@@ -200,8 +200,20 @@ export interface DressCtx {
   fields: Point | null
   /** The village square (compose.py SQUARE). */
   square: Point
-  /** Officer lot centres that really got a dwelling, in row order. */
-  dwellings: Point[]
+  /**
+   * Officer lots that really got a dwelling, in row order, each with the unit
+   * vector from its road to its plot — WHICH WAY THE HOUSE LOOKS.
+   *
+   * The face is here because a yard prop belongs BEHIND the house. It used to
+   * be a bare point and the prop went at a fixed (+92, +26), which is the back
+   * garden for the row on one side of the street and the FRONT GARDEN for the
+   * row on the other. On the inner row that offset points at the village
+   * square, and once the street's width became a function of how many officers
+   * live on it (see ./lanes) the inner row moved toward the square and its
+   * timber landed on the paving: `check_on_road` named `wood_pile@1063,1065` on
+   * the hamlet fixture, standing on flagstone.
+   */
+  dwellings: { at: Point; face: Point }[]
   /** The cove's waterline sampler, and the cove centre — for the landing. */
   shoreAt: ((x: number) => number | null) | null
   cove: Point | null
@@ -570,13 +582,18 @@ export function dressDistricts(ctx: DressCtx): DressItem[] {
   )
 
   // ---- RESIDENTIAL (W): one yard prop per officer (compose.py:1068-1081) --
-  ctx.dwellings.forEach((c, i) => {
+  // BEHIND THE HOUSE, on the side away from the road it fronts: `face` points
+  // from the road to the plot, so following it further puts the woodpile in the
+  // back yard on BOTH rows. The reference's fixed (+92, +26) is kept as the
+  // magnitude — it is only the direction that was a coin toss.
+  ctx.dwellings.forEach((d, i) => {
+    const away = Math.hypot(d.face.x, d.face.y) > 0.01 ? d.face : { x: 1, y: 0 }
     keep(
       life(
         ['wood_pile', 'barrel_single', 'water_trough'][i % 3],
         'village_life',
-        { x: c.x + 92, y: c.y + 26 },
-        true
+        { x: d.at.x + away.x * 92, y: d.at.y + Math.abs(away.y) * 92 + 26 },
+        away.x < 0
       )
     )
   })

@@ -59,12 +59,17 @@ const ERAS: readonly Era[] = ['camp', 'hamlet', 'town', 'beyond_bay']
 function org(era: Era): LayoutState {
   switch (era) {
     case 'camp':
-      return {
-        era,
-        road: 'dirt_path',
-        stages: { great_house: 'camp_log_cabin' },
-        counts: { officer_dwellings: 1, great_house: 0 },
-      }
+      // A REAL HATCH, corrected 2026-07-27. It used to carry
+      // `great_house: 'camp_log_cabin'`, which is not a rung of the great_house
+      // ladder at all ([cottage, cottage_porch, second_gable, great_house]) —
+      // an invented rung, the same defect blueprint.test.ts pins the shipped
+      // fixtures against. It also made the arm below ("a HATCHED island is
+      // dominated by wood") measure a camp that had already built a hall, which
+      // stopped mattering only because a camp's road network used to be one
+      // track whatever it had built. Now that a path is worn by the place it
+      // leads to, a great house at camp buys a forecourt, and the fixture's
+      // claim and its name have to agree.
+      return { era, road: 'dirt_path', stages: {}, counts: { officer_dwellings: 1 } }
     case 'hamlet':
       return {
         era,
@@ -75,6 +80,11 @@ function org(era: Era): LayoutState {
           library: 'shelf',
           workshop: 'forge',
           outbuildings: 'shed',
+          // THE HARBOUR ROAD'S OWN LADDER. Added 2026-07-27: the main track's
+          // width is the quay's rung now, and an org that never mentions a quay
+          // is one whose harbour road nobody has walked — true, but not what
+          // this table means to say about a town.
+          quay: 'timber_jetty',
         },
         counts: {
           officer_dwellings: 3,
@@ -83,6 +93,7 @@ function org(era: Era): LayoutState {
           library: 1,
           workshop: 1,
           outbuildings: 1,
+          quay: 1,
         },
       }
     case 'town':
@@ -96,6 +107,7 @@ function org(era: Era): LayoutState {
           workshop: 'forge',
           outbuildings: 'barn',
           firepit: 'firepit',
+          quay: 'stone_quay_2',
         },
         counts: {
           officer_dwellings: 5,
@@ -105,6 +117,7 @@ function org(era: Era): LayoutState {
           workshop: 2,
           outbuildings: 2,
           well: 2,
+          quay: 2,
         },
       }
     case 'beyond_bay':
@@ -119,6 +132,7 @@ function org(era: Era): LayoutState {
           outbuildings: 'barn',
           firepit: 'firepit',
           lighthouse: 'lit_tower',
+          quay: 'stone_quay_4',
         },
         counts: {
           officer_dwellings: 6,
@@ -129,6 +143,7 @@ function org(era: Era): LayoutState {
           outbuildings: 3,
           well: 3,
           lighthouse: 3,
+          quay: 4,
         },
       }
   }

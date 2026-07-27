@@ -9,6 +9,8 @@
  * flat tile lattice would violate.
  */
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import {
   auditLayout,
   buildCoastline,
@@ -25,8 +27,10 @@ import {
   ISO_AXIS_SLOPE,
   isoRoute,
   LANE_SPECS,
+  LANE_WIDTH_RUNGS,
+  laneDemandFrom,
+  laneWidthAt,
   LAYOUT_SPACE,
-  laneWidth,
   LOT_LANES,
   LOT_SEPARATION,
   lotsAlong,
@@ -41,6 +45,7 @@ import {
   FURNITURE_MAX_TIMBER,
   RECORD_FRAMES,
   RING_BUILT_OVERLAP,
+  type Lane,
   type Layout,
   type LayoutState,
   type Point,
@@ -366,12 +371,31 @@ describe('coastline — a real shore with a carved cove', () => {
  */
 const LAND = () => true
 
-describe('lanes — the road is a rung, and the era gates the network', () => {
-  it('a camp has exactly ONE lane, and it runs to the water', () => {
+/** The state, as ./lanes asks it — the composer's own reading, never a copy. */
+const demand = (state: LayoutState) => laneDemandFrom(state)
+
+/** Every ladder any lane hangs off, at a rung, so the whole network is earned. */
+const FULL_NETWORK: LayoutState = {
+  era: 'hamlet',
+  road: 'gravel_road',
+  stages: {
+    great_house: 'great_house',
+    law_plot: 'wood_fence',
+    library: 'library_hall',
+    workshop: 'shed',
+    outbuildings: 'small_barn',
+    quay: 'timber_jetty',
+  },
+  counts: { officer_dwellings: 3 },
+}
+
+describe('lanes — a path is worn by traffic, not switched on by an era', () => {
+  it('a hatched island has the track to the water, and it runs to the water', () => {
+    // The landing is the ONE place open on day zero, so its road is too.
     const campCarriageways = camp.lanes.filter((l) => l.kind !== 'driveway')
-    expect(campCarriageways).toHaveLength(1)
-    expect(campCarriageways[0].key).toBe('main')
-    const runs = campCarriageways[0].runs
+    expect(campCarriageways.map((l) => l.key)).toContain('main')
+    const main = campCarriageways.find((l) => l.key === 'main')!
+    const runs = main.runs
     const last = runs[runs.length - 1]
     const end = last[last.length - 1]
     // It REACHES the water rather than crossing it: the control points run to
@@ -384,30 +408,282 @@ describe('lanes — the road is a rung, and the era gates the network', () => {
     expect(end.y).toBeGreaterThan(1100)
   })
 
-  it('a hamlet has the network', () => {
-    const village = hamlet.lanes.filter((l) => l.kind !== 'driveway')
-    expect(village.length).toBe(LANE_SPECS.length)
-    expect(village.length).toBeGreaterThan(5)
+  it('a lane exists ONLY when the place at its far end does', () => {
+    // THE DEFECT: `villageOnly` made all nine carriageways appear the instant
+    // the era index crossed a threshold — the largest pop-in on the frame, and
+    // against the world's own "no structure ever pops in" law. Each pair below
+    // differs by ONE ladder, so the arm names which lane that ladder wears.
+    const bare: LayoutState = { era: 'hamlet', road: 'gravel_road', stages: {}, counts: {} }
+    const keys = (s: LayoutState) =>
+      buildLanes(s.road, LAND, demand(s)).map((l) => l.key)
+    const base = keys(bare)
+    for (const [object, rung, lane] of [
+      ['library', 'library_hall', 'ne'],
+      ['workshop', 'shed', 'east'],
+      ['outbuildings', 'small_barn', 'se'],
+      ['quay', 'timber_jetty', null], // widens `main`, never creates it
+    ] as const) {
+      expect(base, `${lane ?? object} must not exist unmeasured`).not.toContain(lane)
+      const grown = keys({ ...bare, stages: { [object]: rung } })
+      if (lane !== null) expect(grown).toContain(lane)
+    }
+    // and a count ladder does it too: one officer wears the residential street
+    expect(base).not.toContain('west')
+    expect(keys({ ...bare, counts: { officer_dwellings: 1 } })).toContain('west')
   })
 
-  it('the road RUNG sets the width, monotonically', () => {
-    const widths = (['dirt_path', 'dirt_worn', 'gravel_road', 'cobbled_road'] as const).map((r) =>
-      laneWidth(62, r)
-    )
-    for (let i = 1; i < widths.length; i++) expect(widths[i]).toBeGreaterThan(widths[i - 1])
-    expect(drivewayWidth('cobbled_road')).toBeGreaterThan(drivewayWidth('dirt_path'))
+  it('the ERA STEP no longer hands the island a road network', () => {
+    // THE DEFECT, stated as the size of the jump: camp -> hamlet with nothing
+    // built used to go from 1 carriageway to 10 in one keyframe. What may still
+    // arrive with the village is the furniture-only districts, whose paths come
+    // with the furniture that makes them places.
+    const nothing = { stages: {}, counts: {} }
+    const camped = buildLanes('dirt_path', LAND,
+      demand({ era: 'camp', road: 'dirt_path', ...nothing })).map((l) => l.key)
+    const villaged = buildLanes('gravel_road', LAND,
+      demand({ era: 'hamlet', road: 'gravel_road', ...nothing })).map((l) => l.key)
+    expect(camped).toEqual(['main'])
+    expect(villaged.filter((k) => !camped.includes(k)).sort()).toEqual(['nw', 'sw'])
   })
 
-  it('era changes the network, rung changes only its width', () => {
-    const dirt = buildLanes('hamlet', 'dirt_path', LAND)
-    const cobble = buildLanes('hamlet', 'cobbled_road', LAND)
+  it('the network GROWS edge by edge rather than stepping', () => {
+    // The Captain's picture: the island is cleared, so the roads arrive one at
+    // a time with the buildings. Adding one ladder at a time must add at most
+    // one carriageway at a time and never remove one. `coastal` is allowed to
+    // ride along with `west`, because a link is not a destination — it is the
+    // second end of one that just arrived.
+    const ladders: [string, string, string][] = [
+      // ladder, a real rung of it, the lane that place wears
+      ['quay', 'timber_jetty', 'main'],       // already there — the landing is day zero
+      ['great_house', 'cottage', 'forecourt'],
+      ['library', 'library_hall', 'ne'],
+      ['workshop', 'shed', 'east'],
+      ['outbuildings', 'small_barn', 'se'],
+      ['law_plot', 'wood_fence', 'north'],
+      ['officer_dwellings', 'dwelling_1', 'west'],
+    ]
+    const stages: Record<string, string> = {}
+    const counts: Record<string, number> = {}
+    const at = () =>
+      buildLanes('gravel_road', LAND, demand({
+        era: 'hamlet', road: 'gravel_road', stages, counts,
+      })).map((l) => l.key)
+    let prev = at()
+    for (const [obj, rung, lane] of ladders) {
+      stages[obj] = rung
+      if (obj === 'officer_dwellings') counts[obj] = 1
+      const now = at()
+      for (const k of prev) expect(now, `${obj} removed ${k}`).toContain(k)
+      // NO BURST: one ladder buys at most one new carriageway, and `coastal` is
+      // exempt because a link is not a destination — it is the far end of one
+      // that has just arrived.
+      const added = now.filter((k) => !prev.includes(k) && k !== 'coastal')
+      expect(added.length, `${obj} added ${added.join()}`).toBeLessThanOrEqual(1)
+      // AND THE PLACE IS REACHABLE: building it must not leave it roadless.
+      expect(now, `${obj} built with no ${lane}`).toContain(lane)
+      prev = now
+    }
+  })
+
+  it('WIDTH follows the destination, and only the destination', () => {
+    // The two axes must be independent: the library's own rung widens the
+    // library's lane and moves nothing else. Under the old rule the org-wide
+    // road rung moved every width at once.
+    const at = (libraryRung: number) => {
+      const lanes = buildLanes('gravel_road', LAND, {
+        present: (o) => o === 'library' || o === 'workshop',
+        usage: (o) => (o === 'library' ? libraryRung : 1),
+        village: true,
+      })
+      return Object.fromEntries(lanes.map((l) => [l.key, l.width]))
+    }
+    const quiet = at(0)
+    const busy = at(5)
+    expect(busy.ne).toBeGreaterThan(quiet.ne)
+    expect(busy.east).toBe(quiet.east)
+    expect(quiet.ne).toBe(LANE_WIDTH_RUNGS[0])
+    expect(busy.ne).toBe(LANE_WIDTH_RUNGS[5])
+  })
+
+  it('a lane is BORN at the hairline, whatever the org road rung is', () => {
+    // "only a tiny/narrow path to begin with" (Captain 2026-07-27). A cobbled
+    // org does not hand a brand-new library a carriageway.
+    for (const road of ['dirt_path', 'cobbled_road'] as const) {
+      const lane = buildLanes(road, LAND, {
+        present: (o) => o === 'library',
+        usage: () => 0,
+        village: false,
+      }).find((l) => l.key === 'ne')!
+      expect(lane).toBeDefined()
+      expect(lane.width).toBe(LANE_WIDTH_RUNGS[0])
+    }
+  })
+
+  it('the ROAD RUNG sets the surface and nothing else', () => {
+    const same = demand(FULL_NETWORK)
+    const dirt = buildLanes('dirt_path', LAND, same)
+    const cobble = buildLanes('cobbled_road', LAND, same)
     expect(dirt.map((l) => l.key)).toEqual(cobble.map((l) => l.key))
+    expect(dirt.map((l) => l.width)).toEqual(cobble.map((l) => l.width))
     expect(dirt.map((l) => l.runs)).toEqual(cobble.map((l) => l.runs))
-    expect(cobble[0].width).toBeGreaterThan(dirt[0].width)
+    expect(new Set(dirt.map((l) => l.surface))).toEqual(new Set(['dirt_path']))
+    expect(new Set(cobble.map((l) => l.surface))).toEqual(new Set(['cobbled_road']))
+  })
+
+  it('the width ladder is monotone and starts at the paint floor', () => {
+    for (let i = 1; i < LANE_WIDTH_RUNGS.length; i++) {
+      expect(LANE_WIDTH_RUNGS[i]).toBeGreaterThan(LANE_WIDTH_RUNGS[i - 1])
+    }
+    // A width below the ground painter's floor is a lane that is declared and
+    // never drawn — a claim with no paint behind it.
+    expect(LANE_WIDTH_RUNGS[0]).toBe(13)
+    // out of range in BOTH directions lands on a real rung, never on undefined
+    expect(laneWidthAt(-3)).toBe(LANE_WIDTH_RUNGS[0])
+    expect(laneWidthAt(99)).toBe(LANE_WIDTH_RUNGS[LANE_WIDTH_RUNGS.length - 1])
+    expect(laneWidthAt(Number.NaN)).toBe(LANE_WIDTH_RUNGS[0])
+  })
+
+  it('a district nothing measures keeps a hairline forever', () => {
+    // The dojo and the crossroads have NO ladder in growth-ladders.yml, so no
+    // amount of org growth may widen them. An invented metric would be three
+    // false claims; the honest answer is the bottom rung, at every rung of
+    // everything else.
+    for (const usage of [0, 3, 7]) {
+      const lanes = buildLanes('cobbled_road', LAND, {
+        present: () => true,
+        usage: () => usage,
+        village: true,
+      })
+      for (const key of ['nw', 'sw', 'coastal']) {
+        const lane = lanes.find((l) => l.key === key)!
+        expect(lane.width, `${key} widened on a metric it does not have`).toBe(
+          LANE_WIDTH_RUNGS[0]
+        )
+      }
+    }
+  })
+
+  it('an unmeasured district has no lane at all until the village does', () => {
+    const camped = buildLanes('dirt_path', LAND, {
+      present: () => false,
+      usage: () => 0,
+      village: false,
+    })
+    expect(camped.map((l) => l.key)).toEqual(['main'])
+  })
+
+  it('a LINK lane needs both of the lanes it joins', () => {
+    // The shore path is a link, not a destination: nobody's errand ends
+    // halfway along it, so it exists only when both its ends are streets.
+    const withWest = buildLanes('gravel_road', LAND, {
+      present: (o) => o === 'officer_dwellings',
+      usage: () => 1,
+      village: true,
+    }).map((l) => l.key)
+    expect(withWest).toContain('west')
+    expect(withWest).toContain('sw') // village-entitled
+    expect(withWest).toContain('coastal')
+    const noWest = buildLanes('gravel_road', LAND, {
+      present: () => false,
+      usage: () => 0,
+      village: true,
+    }).map((l) => l.key)
+    expect(noWest).toContain('sw')
+    expect(noWest).not.toContain('west')
+    expect(noWest, 'a link with one end missing is not a path').not.toContain('coastal')
+  })
+
+  it('the lane a spur hangs off must exist too', () => {
+    // `north` leaves the great house's forecourt. Without a great house it
+    // would be a carriageway floating in grass with a junction at neither end.
+    const orphan = buildLanes('gravel_road', LAND, {
+      present: (o) => o === 'law_plot',
+      usage: () => 4,
+      village: true,
+    }).map((l) => l.key)
+    expect(orphan).not.toContain('north')
+    const joined = buildLanes('gravel_road', LAND, {
+      present: (o) => o === 'law_plot' || o === 'great_house',
+      usage: () => 4,
+      village: true,
+    }).map((l) => l.key)
+    expect(joined).toContain('north')
+  })
+
+  it('a drive is one household of its road, and never wider than it', () => {
+    for (const usage of [0, 2, 5, 7]) {
+      const carriageway = laneWidthAt(usage)
+      expect(drivewayWidth(usage, carriageway)).toBeLessThanOrEqual(carriageway)
+      expect(drivewayWidth(usage, carriageway)).toBeGreaterThanOrEqual(LANE_WIDTH_RUNGS[0])
+    }
+    expect(drivewayWidth(6, 999)).toBeGreaterThan(drivewayWidth(1, 999))
+  })
+
+  it('every traffic ladder a spec names is a real ladder in growth-ladders.yml', () => {
+    // A lane widening on a name nothing measures would be a switch wired to the
+    // empty set — the market-stall defect, one layer up. Read the law, do not
+    // restate it.
+    const yml = readFileSync(
+      join(process.cwd(), '..', 'world', 'growth-ladders.yml'), 'utf8')
+    for (const spec of LANE_SPECS) {
+      if (spec.to.at !== 'built' && spec.to.at !== 'landing') continue
+      expect(yml, `${spec.key}: no ladder ${spec.to.traffic}`)
+        .toContain(`\n  ${spec.to.traffic}:\n`)
+    }
+    for (const spec of LANE_SPECS) {
+      if (spec.to.at !== 'built') continue
+      for (const o of spec.to.objects) {
+        expect(yml, `${spec.key}: no ladder ${o}`).toContain(`\n  ${o}:\n`)
+      }
+    }
+  })
+
+  it('the narrowest lane does not NECK between its samples', () => {
+    // THE SQUASH BITES ON THE STEP, not just on the disc, and the first version
+    // of this arm asserted the wrong thing: it looked for a HOLE, there has
+    // never been one (the discs overlap at every step the code can produce), and
+    // it came back GREEN against the pre-fix spacing. What the coarse step
+    // really costs is WIDTH — a disc reaches `half` across but `half*0.72` down,
+    // so stepping a vertical run by `half` pinches the union to 0.72 of its
+    // width halfway between centres. On the 13px path this ladder starts every
+    // lane at that is 1.8px of necking, drawn as a chain of beads.
+    //
+    // A PIXEL is the bar, and it is a real one rather than a tuned one: at the
+    // narrowest rung the ladder has, the painted band may not lose a whole pixel
+    // of half-width between samples. The old step fails it (1.8px), the
+    // squashed step passes (0.87px).
+    const vertical: Lane = {
+      key: 'v',
+      kind: 'main',
+      width: LANE_WIDTH_RUNGS[0],
+      surface: 'dirt_path',
+      runs: [[{ x: 1000, y: 900 }, { x: 1000, y: 1100 }]],
+    }
+    const field = buildLaneField([vertical])
+    const half = LANE_WIDTH_RUNGS[0] / 2
+    /**
+     * The band's half-width in x at this y, BISECTED rather than walked: a
+     * fixed-step walk quantises the answer by its own step, and the whole
+     * quantity here is under two pixels.
+     */
+    const reachAt = (y: number) => {
+      let lo = 0
+      let hi = half + 2
+      for (let i = 0; i < 40; i++) {
+        const mid = (lo + hi) / 2
+        if (field.onLane(1000 + mid, y)) lo = mid
+        else hi = mid
+      }
+      return lo
+    }
+    let worst = half
+    for (let y = 950; y <= 1050; y += 0.25) worst = Math.min(worst, reachAt(y))
+    expect(half - worst, `the band necks by ${(half - worst).toFixed(2)}px`)
+      .toBeLessThan(1)
   })
 
   it('the lane field answers on/off the carriageway', () => {
-    const field = buildLaneField(buildLanes('hamlet', 'cobbled_road', LAND))
+    const field = buildLaneField(buildLanes('cobbled_road', LAND, demand(FULL_NETWORK)))
     // the village square is the head of the main street
     expect(field.onLane(1200, 1010)).toBe(true)
     // open meadow far from any lane
@@ -575,24 +851,30 @@ describe('driveways — an L on the two isometric ground axes', () => {
     }
   })
 
-  it('a camp gets NO drive — its dwelling fronts a road a camp does not have', () => {
-    // A drive is drawn to the lot's `road` point, which comes from the
-    // idealised lot-lane table and not from the network. At camp every district
-    // carriageway is gone, so the drive used to run to a road that is not
-    // there: measured, `drive-residential-0` ended at (709,802), on no lane.
-    expect(camp.driveways).toHaveLength(0)
-    expect(camp.lanes.filter((l) => l.kind === 'driveway')).toHaveLength(0)
+  it('a camp officer gets a street AND a drive — the road follows the tent', () => {
+    // THE MODEL CHANGED HERE, 2026-07-27, and this arm is the change. It used to
+    // read "a camp gets NO drive", which was true only because the residential
+    // street was gated on the ERA: one officer had a tent and no way to it. A
+    // path is worn by whoever walks it, so the officer's arrival wears both the
+    // street and the drive, at the narrowest rung the ladder has.
+    expect(camp.driveways).toHaveLength(1)
+    const drives = camp.lanes.filter((l) => l.kind === 'driveway')
+    expect(drives).toHaveLength(1)
+    const west = camp.lanes.find((l) => l.key === 'west')!
+    expect(west, 'the drive joins a street that has to exist').toBeDefined()
+    expect(drives[0].width).toBeLessThanOrEqual(west.width)
   })
 
-  it('...and the same state at HAMLET does get one — the gate is the era, not the count', () => {
-    // the negative twin: without it, "no drive at camp" would be satisfied by a
-    // build that never emits a drive for one dwelling at all
-    const oneDwelling = composeLayout(
-      { ...HAMLET, counts: { officer_dwellings: 1 } },
+  it('...and an EMPTY camp gets neither — nobody has walked anywhere yet', () => {
+    // The negative twin, and the one the old era gate was really protecting:
+    // a drive to a lot nobody has built on is a path to empty grass.
+    const empty = composeLayout(
+      { era: 'camp', road: 'dirt_path', stages: {}, counts: {} },
       'acme-corp',
       FAST
     )
-    expect(oneDwelling.driveways.length).toBeGreaterThan(0)
+    expect(empty.driveways).toHaveLength(0)
+    expect(empty.lanes.map((l) => l.key)).toEqual(['main'])
   })
 
   it('a drive exists only where the lane its lot fronts is part of this era', () => {
@@ -613,10 +895,26 @@ describe('driveways — an L on the two isometric ground axes', () => {
       const keys = new Set(l.lanes.filter((x) => x.kind !== 'driveway').map((x) => x.key))
       expect(keys.has('west')).toBe(true)
       expect(l.driveways.length).toBe(countOf(HAMLET, 'officer_dwellings') + 3)
-      const c = composeLayout(CAMP, seed, FAST)
-      expect(new Set(c.lanes.map((x) => x.key))).toEqual(new Set(['main']))
-      expect(c.driveways).toHaveLength(0)
+      // Every drive joins a carriageway that is REALLY IN THE NETWORK. The gate
+      // used to be the era; now it is the far end of the drive's own lane, and
+      // the case it still catches is a seed whose coastline clips that lane
+      // away entirely — a drive to a road the sea took.
+      for (const d of l.lanes.filter((x) => x.kind === 'driveway')) {
+        const group = d.key.replace(/^drive-/, '').replace(/-\d+$/, '')
+        const lane = { residential: 'west', memory: 'ne', works: 'east', fields: 'se' }[group]
+        expect(keys.has(lane!), `${seed}: ${d.key} joins a missing ${lane}`).toBe(true)
+      }
     }
+  })
+
+  it('a drive is dropped when the sea took the road it joins', () => {
+    // The gate, exercised: an island whose only land is the east district keeps
+    // the works spur and loses the residential street, so the officer row's
+    // drives cannot be drawn even though the dwellings are measured.
+    const eastOnly = (x: number, _y: number) => x > 1300
+    const lanes = buildLanes('gravel_road', eastOnly, demand(FULL_NETWORK)).map((l) => l.key)
+    expect(lanes).toContain('east')
+    expect(lanes).not.toContain('west')
   })
 })
 
@@ -635,7 +933,7 @@ describe('clearance — the ground diamond, and the road wins', () => {
     // the defect this exists to catch: sampling only the base row passed a
     // market stall standing squarely on a road the audit called clear
     const lanes = buildLaneField([
-      { key: 't', kind: 'main', width: 40, runs: [[{ x: 1000, y: 900 }, { x: 1200, y: 900 }]] },
+      { key: 't', kind: 'main', width: 40, surface: 'gravel_road', runs: [[{ x: 1000, y: 900 }, { x: 1200, y: 900 }]] },
     ])
     const size = { w: 150, h: 150 }
     // base BELOW the lane, but the diamond (depth ~82) reaches up onto it
@@ -698,7 +996,7 @@ describe('clearance — the ground diamond, and the road wins', () => {
 
 describe('scatter — a density field, and rejection at sampling time', () => {
   const coast = buildCoastline('acme-corp', LAYOUT_SPACE, { step: 8 })
-  const field = buildLaneField(buildLanes('hamlet', 'gravel_road', (x, y) => coast.landAt(x, y)))
+  const field = buildLaneField(buildLanes('gravel_road', (x, y) => coast.landAt(x, y), demand(FULL_NETWORK)))
   /**
    * THE FIELD THIS BLOCK USED TO DRIVE WAS `wildnessField`, AND IT IS GONE.
    *
@@ -738,7 +1036,7 @@ describe('scatter — a density field, and rejection at sampling time', () => {
 
   it('the density field is ZERO on a lane and in a clearing', () => {
     expect(timber(1200, 1010)).toBe(0)
-    const onMain = buildLanes('hamlet', 'gravel_road', (x, y) => coast.landAt(x, y))[0].runs[0][2]
+    const onMain = buildLanes('gravel_road', (x, y) => coast.landAt(x, y), demand(FULL_NETWORK))[0].runs[0][2]
     expect(timber(onMain.x, onMain.y)).toBe(0)
   })
 
@@ -789,7 +1087,7 @@ describe('scatter — a density field, and rejection at sampling time', () => {
    */
   it('an item whose DRAWN sprite fails a rule is dropped, not drawn', () => {
     const coast = buildCoastline('acme-corp', LAYOUT_SPACE, { step: 8 })
-    const lanes = buildLaneField(buildLanes('hamlet', 'gravel_road', (x, y) => coast.landAt(x, y)))
+    const lanes = buildLaneField(buildLanes('gravel_road', (x, y) => coast.landAt(x, y), demand(FULL_NETWORK)))
     const SZ: Record<string, { w: number; h: number }> = {
       plank_wide: { w: 200, h: 44 },
       post_tall: { w: 44, h: 200 },
@@ -1429,8 +1727,8 @@ describe('every painted mask is clipped to land', () => {
     ])
     // and the occupancy field does NOT bridge the gap: interpolating across it
     // would put the road back on the water the clip just removed
-    const cut = buildLaneField([{ key: 'c', kind: 'main', width: 40, runs: clipToLand(path, notInlet) }])
-    const whole = buildLaneField([{ key: 'c', kind: 'main', width: 40, runs: [path] }])
+    const cut = buildLaneField([{ key: 'c', kind: 'main', width: 40, surface: 'gravel_road', runs: clipToLand(path, notInlet) }])
+    const whole = buildLaneField([{ key: 'c', kind: 'main', width: 40, surface: 'gravel_road', runs: [path] }])
     expect(whole.onLane(300, 100)).toBe(true)
     expect(cut.onLane(300, 100)).toBe(false)
     // a lane wholly offshore is not a lane
@@ -1824,7 +2122,7 @@ describe('the seed SPACE, not five islands', () => {
     const size = { w: 150, h: 150 }
     const at = { x: 1000, y: 1000 }
     const lanes = buildLaneField([
-      { key: 'wall', kind: 'main', width: 200, runs: [[at]] },
+      { key: 'wall', kind: 'main', width: 200, surface: 'gravel_road', runs: [[at]] },
     ])
     expect(footprintOnLane(at, size, lanes)).toBe(true) // the search must engage
     // exactly two pockets of land within reach, and both are occupied — so the
@@ -1929,7 +2227,7 @@ describe('rules that were stated and never measured', () => {
     // so a lane kept as an empty husk would put a drive on a road that is not
     // there, which is the defect the era gate exists for.
     const eastOnly = (x: number, _y: number) => x > 1300
-    const lanes = buildLanes('hamlet', 'gravel_road', eastOnly)
+    const lanes = buildLanes('gravel_road', eastOnly, demand(FULL_NETWORK))
     expect(lanes.length).toBeGreaterThan(0) // not vacuous
     expect(lanes.map((l) => l.key)).not.toContain('west')
     expect(lanes.map((l) => l.key)).not.toContain('coastal')
@@ -1939,7 +2237,7 @@ describe('rules that were stated and never measured', () => {
     }
     // and with land everywhere the whole network survives, so the drop is the
     // land test rather than the era gate doing it
-    expect(buildLanes('hamlet', 'gravel_road', () => true)).toHaveLength(LANE_SPECS.length)
+    expect(buildLanes('gravel_road', () => true, demand(FULL_NETWORK))).toHaveLength(LANE_SPECS.length)
   })
 
   it('a drive with no on-land run is not emitted either', () => {

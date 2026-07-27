@@ -325,7 +325,7 @@ describe('the forest enclosure ring — the frame, not a gradient', () => {
         y: LAYOUT_SPACE.cy + Math.sin(a) * r * 0.92,
       })
     }
-    const road: Lane[] = [{ key: 'treeline', kind: 'coastal', width: 60, runs: [pts] }]
+    const road: Lane[] = [{ key: 'treeline', kind: 'coastal', width: 60, surface: 'gravel_road', runs: [pts] }]
     const withRoad = forestRing('acme-corp', ctxOf(hamlet, { lanes: buildLaneField(road) }))
     const noRoad = forestRing('acme-corp', ctxOf(hamlet, { lanes: buildLaneField([]) }))
     const field = buildLaneField(road)
@@ -378,7 +378,7 @@ describe('the forest enclosure ring — the frame, not a gradient', () => {
     }
     // 18px is not a contrived width: it is what the coastal lane really is at
     // the `dirt_worn` rung, which is the island the defect was measured on.
-    const narrow: Lane[] = [{ key: 'treeline', kind: 'coastal', width: 18, runs: [pts] }]
+    const narrow: Lane[] = [{ key: 'treeline', kind: 'coastal', width: 18, surface: 'gravel_road', runs: [pts] }]
     const field = buildLaneField(narrow)
     const big = { w: 150, h: 150 }
     const small = DEFAULT_FOOTPRINTS.fern_cluster

@@ -53,7 +53,7 @@ import {
   unmeasuredIssues,
   type IsoScene,
 } from '@/lib/world/iso-scene'
-import { groundField, seaTile, type GroundClass, type TerrainBuffer } from '@/lib/world/iso-terrain'
+import { groundField, ROAD_GROUND, seaTile, type GroundClass, type TerrainBuffer } from '@/lib/world/iso-terrain'
 import {
   deckStripRects,
   jettyDeckRects,
@@ -1295,10 +1295,11 @@ export default function EngineCanvas(props: EngineCanvasProps) {
        * whole mask scaled back down, which reproduces the union of ellipses
        * exactly rather than approximating it.
        */
-      function laneMask(scene: IsoScene): Graphics {
+      function laneMask(scene: IsoScene, only?: string): Graphics {
         const g = new PIXI.Graphics()
         const s = LANE_PAINT_SQUASH
         for (const lane of scene.layout.lanes) {
+          if (only !== undefined && lane.surface !== only) continue
           for (const run of lane.runs) {
             if (run.length < 2) continue
             g.moveTo(run[0].x, run[0].y / s)
@@ -1389,8 +1390,19 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         // side. compose.py:351/362 and world-capture/raster.py:388/391 both lay
         // the lanes first and the paving on top, and this path was the only one
         // of the three that did not.
+        // PAINTED IN THE MATERIAL THE ROAD LADDER SAYS, one mask per surface.
+        // The rung names (dirt_path / dirt_worn / gravel_road / cobbled_road)
+        // are materials, and since 2026-07-27 they are the ONLY thing that rung
+        // controls — a lane's width is its own destination's traffic now
+        // (iso-layout/lanes.ts). Painting the network as bare dirt here would
+        // leave the org's road maturity with no way onto the live frame while
+        // the offline still showed it, which is the two-renderers-one-world
+        // rule broken in the direction nobody would notice.
         const lanes = new PIXI.Container()
-        paintClass(lanes, 'dirt', seed, landExt, laneMask(scene))
+        const surfaces = [...new Set(scene.layout.lanes.map((l) => l.surface))].sort()
+        for (const surface of surfaces) {
+          paintClass(lanes, ROAD_GROUND[surface] ?? 'dirt', seed, landExt, laneMask(scene, surface))
+        }
         const landCut = rasterMask(coast.land, coast.mw, coast.mh, coast.step)
         lanes.addChild(landCut)
         lanes.mask = landCut

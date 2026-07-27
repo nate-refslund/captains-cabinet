@@ -50,7 +50,7 @@ each other; nothing told them about the plough.
 | `../../dashboard/src/lib/world/blueprint.ts` | Layout → the blueprint the checks read + an ordered draw list. Pure, no browser. |
 | `emit.ts` + `resolve-ts.mjs` | node CLI around it (node ≥ 22 strips the TypeScript itself). |
 | `live-state.ts` | `/api/world/engine` payload → a state fixture, through the SAME `engineStep` + `layoutStateFrom` the browser runs. Refuses an empty feed rather than emitting a hatch that looks measured. |
-| `ground.py` | the procedural ground: `terrain.py`'s ramps, Bayer dither, furrows, flagstone — with a dependency-free noise source. |
+| `ground.py` | the procedural ground: `terrain.py`'s ramps, Bayer dither, furrows, flagstone — with a dependency-free noise source. Two ramps are NOT `terrain.py`'s and say so in place: `RAMP_DIRT_WORN` and `RAMP_GRAVEL`, the road ladder's middle rungs, which had no material until lane WIDTH stopped following that rung (2026-07-27). |
 | `raster.py` | draws the frame, the ground layer and both id buffers; `--mutate` breaks one rule on purpose. |
 | `capture.py` | the one command: emit → raster → verify. |
 | `states/*.json` | world-state fixtures. Every rung is a real rung of that ladder in `cabinet/world/growth-ladders.yml`. |
