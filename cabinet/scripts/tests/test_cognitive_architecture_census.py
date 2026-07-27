@@ -748,6 +748,93 @@ def test_missing_set_pin_directory_is_an_error_not_zero(tmp_path: Path, relative
         census.inspect_repository(tree)
 
 
+@pytest.mark.parametrize("relative_path", ("cabinet/config/organs", ".claude/skills"))
+def test_set_pin_path_that_is_not_a_directory_is_an_error(tmp_path: Path, relative_path: str):
+    """The ADJACENT degenerate end the missing-directory arm does not reach.
+
+    `Path.rglob` over a regular file yields nothing, so a set-pin path that
+    EXISTS but is not a directory read zero and PASSED — the same disabled
+    sensor the arm above refuses, one step to the left. Proven by execution
+    2026-07-27 before the fix: organ_manifests 0 <= 5, claude_skills 0 <= 21,
+    census PASS.
+    """
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    shutil.rmtree(tree / relative_path)
+    (tree / relative_path).write_text("not a directory\n")
+
+    with pytest.raises(census.ContractError, match="is not a directory"):
+        census.inspect_repository(tree)
+
+
+@pytest.mark.parametrize("suffix", (".yaml", ".json", ".yml"))
+def test_organ_manifest_counts_every_runtime_spelling(tmp_path: Path, suffix: str):
+    """A pin narrower than the runtime it guards is an ESCAPE, not a pin.
+
+    `framework/organs/registry.py` declares MANIFEST_SUFFIXES = (".yml",
+    ".yaml", ".json") and `load_organ_manifests` loads every one of them out of
+    this directory, so a sixth organ named `.yaml` was a live registry member
+    and a derived watchdog floor while the census still read
+    `organ_manifests: 5 <= 5` (proven end to end on a committed tree,
+    2026-07-27). Every spelling must cross the ceiling.
+    """
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    clean = census.inspect_repository(tree)
+    over = clean["maximums"]["organ_manifests"] - clean["observed"]["organ_manifests"] + 1
+    assert over >= 1
+
+    for index in range(over):
+        (tree / f"cabinet/config/organs/phase0-spelling-{index}{suffix}").write_text(
+            f"organ: phase0-spelling-{index}\noperations: []\n"
+        )
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is False
+    assert "organ_manifests" in {failure["budget"] for failure in report["failures"]}
+    assert report["observed"]["organ_manifests"] > clean["maximums"]["organ_manifests"]
+
+
+def test_organ_manifest_spellings_track_the_runtime_loader():
+    """The contract's spelling list is DATA — bind it to its one declarer.
+
+    Left unbound, the loader could gain a fourth spelling and the pin would
+    silently stop covering the class while every other arm stayed green.
+    """
+
+    import re as _re
+
+    census = _load_module()
+    contract = census.load_contract(CONTRACT)
+    declared = set(contract["budgets"]["organ_manifests"]["pattern"])
+
+    source = (ROOT / "framework/organs/registry.py").read_text()
+    match = _re.search(r"MANIFEST_SUFFIXES\s*=\s*\(([^)]*)\)", source)
+    assert match is not None, "MANIFEST_SUFFIXES no longer resolvable"
+    suffixes = _re.findall(r'"([^"]+)"', match.group(1))
+    assert suffixes, "MANIFEST_SUFFIXES parsed empty"
+
+    assert declared == {f"*{suffix}" for suffix in suffixes}
+
+
+@pytest.mark.parametrize("bad", ([], "", ["*.yml", ""], ["*.yml", 3], 7))
+def test_set_pin_pattern_must_be_a_non_empty_spelling_set(tmp_path: Path, bad):
+    """An empty or mis-typed spelling list matches nothing and reads zero."""
+
+    census = _load_module()
+    import yaml
+
+    data = yaml.safe_load(CONTRACT.read_text())
+    data["budgets"]["organ_manifests"]["pattern"] = bad
+    path = tmp_path / "bad-pattern.yml"
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+
+    with pytest.raises(census.ContractError):
+        census.load_contract(path)
+
+
 def test_empty_durable_store_registry_is_an_error(tmp_path: Path):
     """The degenerate end: an emptied .gitignore must not certify zero stores."""
 
