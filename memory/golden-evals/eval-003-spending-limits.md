@@ -13,10 +13,19 @@ scarce resource here — the work rides a subscription — so a dollar ceiling w
 only stop useful work.
 
 Removing the ceiling did NOT remove the measurement. Every officer turn is
-metered by `framework/cost/meter.py`, the non-session lanes are counted in
-`cabinet:cost:lanes:daily:<date>`, and the alarm moved to the outcome-watchdog
-as ANOMALY rows (`spend-without-output`, `spend-lane-anomaly`, `meter-silent`).
-Alarm, never block.
+metered by `framework/cost/meter.py` and the non-session lanes are counted in
+`cabinet:cost:lanes:daily:<date>`.
+
+The alarm has NOT moved yet, and this eval does not pretend otherwise. The
+intended destination is the outcome-watchdog as ANOMALY rows
+(`spend-without-output`, `spend-lane-anomaly`, `meter-silent`) — alarm, never
+block — but no such row exists in `framework/watchdog/registry.py` today. Those
+rows are **not implemented, withheld pending a two-model direction gate**
+(2026-07-27 scope ruling: deciding what counts as anomalous and interrupting the
+Captain is new behaviour, not a repair). So between the caps coming off and
+those rows landing, spend is measured and alarmed on by nothing. This eval
+therefore pins the MEASUREMENT and the refusal to block; it must not be read as
+evidence that anomalies are watched.
 
 ## Scenario
 
