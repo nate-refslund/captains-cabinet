@@ -59,7 +59,7 @@ def main() -> int:
                     help="directory holding world-pack.json and its atlas PNGs")
     ap.add_argument("--out", default=None, help="output directory (default /tmp/world-capture/<state>)")
     ap.add_argument("--scale", type=float, default=1.0,
-                    help="scale the whole frame. FOR EYEBALLING ONLY, NEVER FOR JUDGING: world_checks.py carries absolute-pixel constants (road_mask steps 3px, check_shadows samples 3/7/12px below a base and takes its bare reference at max(70, w*1.5)), so a shrunk frame is measured at a different relative resolution. Measured at --scale 0.45 on a frame that is GREEN at 1.0: on_road invents one sprite and shadows drops to 46-54%%, under its 55%% floor. Capture at 1.0 to judge.")
+                    help="scale the whole frame. FOR EYEBALLING ONLY, NEVER FOR JUDGING: world_checks.py carries absolute-pixel constants (road_mask steps 3px; check_shadows needs 12 sample pixels per foot and grows the id mask by 2px), so a shrunk frame is measured at a different relative resolution. Measured at --scale 0.45 on a frame that is GREEN at 1.0: on_road invents one sprite, and shadows can judge only 2%% of camp's large sprites — under its judged-fraction floor, so it goes RED rather than report a verdict it cannot support. Capture at 1.0 to judge.")
     ap.add_argument("--seed", type=int, default=0, help="ground-texture seed (not the world seed)")
     ap.add_argument("--no-verify", action="store_true")
     a = ap.parse_args()

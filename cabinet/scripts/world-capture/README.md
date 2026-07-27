@@ -74,7 +74,9 @@ each other; nothing told them about the plough.
 - **Judge at scale 1.0.** `--scale` is for eyeballing. `world_checks.py` carries
   absolute-pixel constants, so a shrunk frame is measured at a different relative
   resolution: at `--scale 0.45`, a frame that is green at 1.0 invents an on-road
-  sprite and drops `shadows` to 46–54% against its 55% floor.
+  sprite, and `shadows` finds too few sample pixels per foot to judge — 2% of
+  camp's large sprites, which trips its judged-fraction floor and goes red rather
+  than reporting a verdict it cannot support.
 
 ## In CI
 

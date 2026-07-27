@@ -16,7 +16,7 @@ Each check returns (name, ok, detail, surfaces_covered).
 from __future__ import annotations
 import json, math, os, glob
 from collections import Counter
-from PIL import Image
+from PIL import Image, ImageChops, ImageFilter
 
 # ---------------------------------------------------------------- independent geometry
 # Re-derived here on purpose. If the compositor's notion of a ground footprint drifts,
@@ -996,51 +996,177 @@ def check_depth_order(render, bp, step=3, tol=1.5, max_report=8):
     return ("depth_order", ok, detail, {"depth_order", "occlusion"})
 
 
-def check_shadows(render, bp, min_frac=0.55, drop=3.0):
-    """A shadow is a LOCAL darkening, so it must be measured locally.
+def _bare_mask(ids, dil=2):
+    """Ground the id buffer says no sprite BODY reaches, grown by `dil` pixels.
 
-    Comparing the finished frame against the sprites-free ground layer measures the
-    golden-hour GRADE, not the shadow — the grade is applied after the ground layer is
-    written, and every sample came back brighter, not darker. Instead compare ground
-    beside a sprite's foot against bare ground further out, both post-grade, using the
-    id buffer to guarantee the reference really is bare.
+    The growth is not caution, it is the fringe: the id buffer only records alpha > 128,
+    so a sprite's own anti-aliased skirt (alpha 1..128) darkens the frame while reading
+    as bare here. Measured: without the growth a sprite's edge alone scores as a shadow
+    on frames that carry none. Shadows themselves peak at alpha 86 and so never enter
+    the id buffer — which is what makes the ground under one still readable as ground.
+    """
+    r, g, b = ids.split()
+    occ = ImageChops.lighter(ImageChops.lighter(r, g), b).point(lambda v: 255 if v else 0)
+    return occ.filter(ImageFilter.MaxFilter(2*dil + 1)).load()
+
+
+def _foot_ellipse(s):
+    """The patch of ground a sprite's shadow lies on: its base, not its body."""
+    x, y, w, h = s["x"], s["y"], s["w"], s["h"]
+    return x, y - 0.03*h, max(6.0, 0.42*w), max(4.0, 0.13*h)
+
+
+def _foot_stat(cx, cy, rx, ry, W, H, bare, gp, cp, lut, lit, step=2):
+    """Per-channel mean of (this frame's grade of the ground here) MINUS (the frame).
+
+    Positive = the finished frame is darker than its own grade of that exact ground
+    pixel, which is the only thing a cast shadow can be. Returns
+    (mean_per_channel, n_used, n_lit, n_wet, n_total) — never a verdict.
+    """
+    acc = [0.0, 0.0, 0.0]
+    n = nlit = nwet = tot = 0
+    for y in range(int(cy - ry), int(cy + ry) + 1, step):
+        if not (0 <= y < H): continue
+        for x in range(int(cx - rx), int(cx + rx) + 1, step):
+            if not (0 <= x < W): continue
+            if ((x - cx)/rx)**2 + ((y - cy)/ry)**2 > 1.0: continue
+            tot += 1
+            g = gp[x, y]
+            if _is_water(g): nwet += 1
+            if bare[x, y]: continue                 # a sprite body or its fringe
+            q = cp[x, y]
+            d = []
+            for c in range(3):
+                e = lut.get((c, g[c] >> 3))
+                if e is None: break
+                d.append(e - q[c])
+            if len(d) < 3: continue                 # ground tone never seen untouched
+            if max(d) < lit:                        # brighter in EVERY channel
+                nlit += 1
+                continue
+            for c in range(3): acc[c] += d[c]
+            n += 1
+    return ([a/n for a in acc] if n else None), n, nlit, nwet, tot
+
+
+def check_shadows(render, bp, min_frac=0.85, dark=4.0, judged_floor=0.40,
+                  lit=-2.0, lit_max=0.15, afloat=0.90, noise_max=0.15):
+    """Every sprite standing on ground darkens THAT GROUND, measured against the frame's
+    own grade of the SAME pixels — so the material under the sprite cannot testify.
+
+    THE DEFECT THIS REPLACES, and why it was structural. The old arm compared the ground
+    at a sprite's foot against bare ground on a ring max(70, w*1.5) out. Two different
+    PLACES, so it could not tell a cast shadow from a MATERIAL CHANGE: anything standing
+    on soil, planking or water beside bright grass scored as shadowed with no shadow
+    drawn. Measured on this branch with every shadow deleted (raster.py --mutate
+    no-shadows): camp 31/68 = 46%, hamlet 36/65 = 55% against its own 55% floor — green
+    on a frame with no shadows in it at all. The signal was 14-22 points riding on a
+    46-55 point noise floor, and the floor had drifted 46 -> 54 -> 55 across three
+    commits as boats moved off the pier into darker water.
+
+    WHAT IS COMPARED NOW. The sprites-free ground layer is written before the golden-hour
+    pass, so ground.png and the frame cannot be subtracted directly — the grade swamps
+    everything (measured elsewhere in this file: a raw difference fires on 100% of
+    sprite-free pixels). _grade_lut fits THIS frame's own transform from pixels no sprite
+    rect touches, and the comparison becomes: predicted-graded-ground at pixel p versus
+    the frame at pixel p. Same pixel, same material, both post-grade. On open ground that
+    residual is centred on -0.01 luminance (sd 1.4), so anything left is paint.
+
+    WHAT IS PAINTED AFTER THE GRADE, and so cannot be predicted from the ground at all:
+    the lighthouse glow and the chimney plumes. The glow LIFTS every channel, so foot
+    pixels that are brighter than their own grade in all three are set aside as
+    post-grade light, and a foot that is mostly such light is UNJUDGED rather than
+    guessed at (measured: 7 sprites at hamlet, 6 at camp, all of them the ring of
+    buildings round the lighthouse). A plume is the one confound left standing: it can
+    darken the ground it crosses, and a sprite under one scores as shadowed with no
+    shadow drawn. Measured on the shadow-deleted hamlet frame, that is 2 of 55 judged
+    sprites — 4% against an 85% floor, so it cannot carry a frame, and every dense
+    residual on that frame sits directly above a declared smoke anchor.
+
+    A COLOUR CLAUSE WAS TRIED AND DROPPED, recorded because the next author will think of
+    it too. Requiring the darkening to be positive in all three channels sounds like it
+    separates a shadow (blends toward a dark blue-grey) from a plume (pale, lifts blue).
+    Measured across all four frames it changed nothing on either shadow-deleted frame
+    (0% and 4% with it and without it — the plume's darkening is all-positive too) and
+    cost 5 true positives at hamlet, 100% -> 92%. A clause whose stated purpose is not
+    the thing it does is the defect this file exists to catch.
+
+    WHAT IS EXEMPT, and it is a measurement rather than a list: a foot whose ground is
+    >= 90% water is afloat, and a hull on the sea casts nothing. Measured separation on
+    these frames is total — the three boats sit at 1.00 wet, the next sprite in at 0.52 —
+    so the exemption cannot quietly widen onto land without that gap closing first.
+
+    THE CHECK MEASURES ITS OWN NOISE FLOOR EVERY RUN. Control patches of open ground,
+    far from every sprite rect, are put through the identical statistic; the fraction of
+    them that read as shadowed is the false-positive rate on this frame, it is printed in
+    the detail, and it is part of the verdict. That is the specific guard against how the
+    old arm died: a floor that creeps toward the threshold now goes red instead of green.
     """
     ids = _load_ids(render)
+    ground = os.path.splitext(render)[0] + ".ground.png"
     if ids is None:
-        return ("shadows", False, "no id buffer — cannot find bare ground to compare against", set())
-    f = Image.open(render).convert("RGB").load()
-    idp = ids.load()
-    im = Image.open(render); W, H = im.size
+        return ("shadows", False, "no id buffer — a shadow cannot be told from a sprite "
+                                  "body, so this is UNVERIFIABLE, not passed", set())
+    if not os.path.exists(ground):
+        return ("shadows", False, f"no ground layer at {ground} — nothing to compare the "
+                                  "frame against, UNVERIFIABLE, not passed", set())
+    FR = Image.open(render).convert("RGB"); cp = FR.load(); W, H = FR.size
+    G = Image.open(ground).convert("RGB"); gp = G.load()
+    if G.size != FR.size or ids.size != FR.size:
+        return ("shadows", False, f"buffers disagree on size (frame {FR.size}, ground "
+                                  f"{G.size}, ids {ids.size}) — UNVERIFIABLE", set())
+    ss = bp.get("sprites", [])
+    want = [s for s in ss if s["w"] >= 46 and s["h"] >= 46]
+    if not want:
+        return ("shadows", True, "no sprite large enough to carry a readable shadow — "
+                                 "UNJUDGED", set())
 
-    def lum_(p): return 0.299*p[0] + 0.587*p[1] + 0.114*p[2]
+    bare = _bare_mask(ids)
+    cov, S = _cover_grid(ss, W, H, pad=24)   # pad clears the blurred shadow's own spill
+    lut = _grade_lut(cp, gp, cov, S, W, H)
 
-    def bare_near(x, y, r):
-        out = []
-        for ang in (0.4, 1.2, 2.0, 2.8, 3.6, 4.4, 5.2, 6.0):
-            xx = int(x + math.cos(ang)*r); yy = int(y + math.sin(ang)*r*0.7)
-            if 0 <= xx < W and 0 <= yy < H and idp[xx, yy] == (0, 0, 0):
-                out.append(lum_(f[xx, yy]))
-        return out
+    def casts(m):
+        return m is not None and (0.299*m[0] + 0.587*m[1] + 0.114*m[2]) >= dark
 
-    want = [s for s in bp["sprites"] if s["w"] >= 46 and s["h"] >= 46]
-    cast, judged = 0, 0
+    cast, judged, why, misses = 0, 0, Counter(), []
     for s in want:
-        x, y, w = s["x"], s["y"], s["w"]
-        ref = bare_near(x, y, max(70, int(w*1.5)))
-        if len(ref) < 3: continue
-        base = sum(ref)/len(ref)
-        near = []
-        for fx in (-0.36, -0.14, 0.14, 0.36):
-            for dy in (3, 7, 12):
-                xx, yy = int(x + w*fx), int(y + dy)
-                if 0 <= xx < W and 0 <= yy < H and idp[xx, yy] == (0, 0, 0):
-                    near.append(lum_(f[xx, yy]))
-        if len(near) < 3: continue
+        cx, cy, rx, ry = _foot_ellipse(s)
+        m, n, nlit, nwet, tot = _foot_stat(cx, cy, rx, ry, W, H, bare, gp, cp, lut, lit)
+        if tot and nwet/tot >= afloat: why["afloat"] += 1; continue
+        if n < 12: why["thin"] += 1; continue
+        if nlit/(n + nlit) > lit_max: why["lit"] += 1; continue
         judged += 1
-        if sum(near)/len(near) < base - drop: cast += 1
-    if not judged:
-        return ("shadows", False, "no sprite had both a foot sample and a bare reference", set())
-    frac = cast/judged
-    return ("shadows", frac >= min_frac,
-            f"{cast}/{judged} large sprites darken the ground at their foot ({frac:.0%})",
-            {"shadows"})
+        if casts(m): cast += 1
+        else: misses.append(f"{s['n']}@{s['x']},{s['y']}")
+
+    # ---- the same statistic where nothing stands: this frame's false-positive rate
+    ctrl_rx, ctrl_ry = 45.0, 12.0
+    ctrl_hit = ctrl_n = 0
+    for gy in range(1, 12):
+        for gx in range(1, 16):
+            cx, cy = W*gx/16.0, H*gy/12.0
+            if cov[int(cy)//S][int(cx)//S]: continue          # too near a sprite
+            m, n, nlit, nwet, tot = _foot_stat(cx, cy, ctrl_rx, ctrl_ry, W, H,
+                                               bare, gp, cp, lut, lit)
+            if n < 12 or (tot and nwet/tot >= afloat): continue
+            ctrl_n += 1
+            if casts(m): ctrl_hit += 1
+    noise = ctrl_hit/ctrl_n if ctrl_n else None
+
+    jfrac = judged/len(want)
+    frac = cast/judged if judged else 0.0
+    thin = jfrac < judged_floor
+    noisy = noise is not None and noise > noise_max
+    blind = noise is None
+    ok = judged > 0 and frac >= min_frac and not thin and not noisy and not blind
+    detail = (f"{cast}/{judged} judged sprites darken their own ground ({frac:.0%}, "
+              f"floor {min_frac:.0%}); {len(want)-judged} unjudged "
+              f"({', '.join(f'{v} {k}' for k, v in sorted(why.items())) or 'none'}); "
+              f"noise floor {ctrl_hit}/{ctrl_n} control patches of open ground read as "
+              f"shadowed ({'n/a' if noise is None else f'{noise:.0%}'}, ceiling "
+              f"{noise_max:.0%})")
+    if misses: detail += f"; no shadow: {misses[:5]}"
+    if thin: detail += (f"; judged only {jfrac:.0%} of large sprites — under the "
+                        f"{judged_floor:.0%} floor, so a green here would mean nothing")
+    if blind: detail += "; NO control patch was measurable — noise floor UNKNOWN"
+    return ("shadows", ok, detail, {"shadows"})

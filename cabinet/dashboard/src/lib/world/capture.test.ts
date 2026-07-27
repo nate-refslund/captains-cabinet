@@ -157,11 +157,13 @@ const MUTATIONS: [string, string[], string][] = [
   //  the fixture it is run against]
   ['orphan-sprite', ['state_traceable'], 'hamlet'],  // a banner nothing entitles
   ['sprite-on-lane', ['on_road'], 'hamlet'],         // a building standing in the road
-  // ON THE CAMP FRAME, and the move is a measurement rather than a preference —
-  // see the noise-floor arm below. camp: 31/68 (46%) mutated against a 55%
-  // floor, which is a nine-point margin; hamlet reaches the floor on contrast
-  // alone.
+  // ON BOTH FIXTURES, and the second one is not redundant — see the arm below.
+  // This row used to run on camp ONLY because the arm could not fail on hamlet
+  // at all; check_shadows was rewritten (2026-07-27) to measure the frame
+  // against its own grade of the SAME ground pixels, and now scores camp
+  // 100% -> 0% and hamlet 100% -> 4% when the shadows are deleted.
   ['no-shadows', ['shadows'], 'camp'],               // sprites floating without a cast shadow
+  ['no-shadows', ['shadows'], 'hamlet'],             // ...and on the frame that used to fail open
   ['reverse-depth', ['depth_order'], 'hamlet'],      // far sprites painted over near ones
   ['unpaved-square', ['terrain'], 'hamlet'],         // a square declared and never paved
   ['ghost-sprite', ['paint_fidelity'], 'hamlet'],    // a declared sprite that leaves no mark
@@ -200,39 +202,37 @@ describe('the checks can fail — every arm, proven', () => {
   })
 
   /**
-   * A PINNED DEFECT, NOT A PASS — check_shadows is NOISE-LIMITED on the hamlet
-   * frame and this arm exists so that fact lives in the suite instead of in a
-   * report nobody re-reads.
+   * THE SENSOR MUST KNOW ITS OWN FALSE-POSITIVE RATE. This arm was a PINNED
+   * DEFECT until 2026-07-27: check_shadows scored a sprite as casting when the
+   * ground at its foot was darker than bare ground on a ring `max(70, w*1.5)`
+   * out — two different PLACES, so it could not tell a cast shadow from a
+   * MATERIAL CHANGE, and anything standing on water, soil or timber beside
+   * bright grass scored as shadowed with no shadow drawn. Its noise floor had
+   * drifted 46% -> 54% -> 55% across three commits into its own 55% threshold,
+   * and on the hamlet frame it went GREEN with every shadow deleted.
    *
-   * check_shadows scores a sprite as casting when the ground at its foot is
-   * darker than bare ground on a ring `max(70, w*1.5)` out. It cannot tell a
-   * shadow from a MATERIAL CHANGE, so anything standing on water, soil or
-   * timber next to bright grass scores as shadowed whether or not a shadow was
-   * drawn. Delete every shadow in the hamlet frame and it still scores 55%,
-   * which is exactly the check's own 55% floor: the sensor's noise floor has
-   * reached its threshold, so on that frame the check cannot go red.
+   * The rewrite compares the frame against THIS FRAME'S OWN GRADE of the SAME
+   * ground pixel, so the material never enters, and it puts control patches of
+   * open ground through the identical statistic every run so the floor is
+   * measured rather than assumed. Measured on both fixtures, shadows drawn vs
+   * `--mutate no-shadows`:
+   *   camp    104/104 = 100%  ->  0/98 =  0%
+   *   hamlet   65/65  = 100%  ->  2/55 =  4%   (the 2 stand under smoke plumes)
+   * against an 85% floor — a 15-point green margin and an 81-point red one,
+   * where the old arm had none at all.
    *
-   * Measured 2026-07-27 with `--mutate no-shadows` on three tree states:
-   *   40eff57e  33/71 = 46%  (red, nine points of margin)
-   *   2669f2fc  35/65 = 54%  (red by ONE sprite — the margin was already gone)
-   *   + the vessel berths in open water: 36/65 = 55%  (GREEN, fail-open)
-   * The world change that tipped it is correct and was verified by eye — two
-   * boats stopped standing on the pier and now float, and water reads darker
-   * than the land in their reference ring. The CHECK is what needs fixing (it
-   * has to compare like material with like, or judge only sprites that declare
-   * a shadow — the blueprint does not carry that flag today, so the fix reaches
-   * checks/world_checks.py and its mirror, which this branch does not own).
-   *
-   * WHEN THAT FIX LANDS THIS ARM GOES RED, and that is its whole purpose: move
-   * the `no-shadows` row above back to `hamlet` and delete this.
+   * SO THIS ARM NOW PINS THE PROPERTY, not the defect: the control-patch noise
+   * floor the check reports must stay near zero. If a later change lets the
+   * measurement fill up with noise again, this goes red BEFORE the check starts
+   * passing frames that have no shadows in them.
    */
-  it('PINNED: check_shadows cannot fail on the hamlet frame — noise floor = its own floor', TIMEOUT, () => {
-    const v = capture('hamlet', 'no-shadows')
-    expect(v.red, 'shadows still cannot fail on hamlet — see this arm’s docstring').toEqual([])
-    const shadows = v.results.find((r) => r.check === 'shadows')
-    expect(shadows?.ok).toBe(true)
-    // and the un-mutated frame is not carried by the same noise: it scores well
-    // clear of the floor WITH its shadows drawn.
-    expect(capture('hamlet').red).toEqual([])
+  it('check_shadows reports a near-zero noise floor on open ground', TIMEOUT, () => {
+    const shadows = capture('hamlet').results.find((r) => r.check === 'shadows')
+    expect(shadows?.ok, shadows?.detail).toBe(true)
+    const m = /noise floor (\d+)\/(\d+) control patches/.exec(shadows?.detail ?? '')
+    expect(m, `no noise floor reported: ${shadows?.detail}`).not.toBeNull()
+    const [hit, total] = [Number(m![1]), Number(m![2])]
+    expect(total, 'no control patch was measurable — the floor is UNKNOWN').toBeGreaterThan(4)
+    expect(hit / total, `control patches reading as shadowed: ${shadows?.detail}`).toBeLessThan(0.15)
   })
 })
