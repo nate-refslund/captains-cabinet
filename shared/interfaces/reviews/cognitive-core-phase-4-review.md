@@ -21,7 +21,15 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 8283a37fa0510756403837ee8139f8b606fc41f6516178b795b463610895c734
+Reviewed-Scope-Digest: a6bca4c395fcb460060f23b4fc05d722d848f4418e8a3dcf709692e37db1acd8
+(RE-BOUND repeatedly on 2026-07-27 — the census-shift-left, expansion-registry and
+census-set-pins landings each edited `cabinet/config/cognitive-architecture-contract.yml`,
+which sits in `restore_from_baseline` and is therefore digest-bound, and so did this
+branch's `recipient-exclusion-carve-backs` allowance row. NO COG-4 implementation byte
+changed by any of them: every edit is a budget/allowance row, and
+`framework/authority/classifier.py` remains in the manifest's `must_remain_unchanged`
+block against the pinned phase anchor, which the rollback rehearsal re-checks. The
+phase-4 findings below are unaffected.)
 (RE-BOUND 2026-07-27, `fix/propose-means-propose`, same commit as the change that
 moved the bytes — the re-bind-at-landing procedure this artifact already
 prescribes. Prior digest: `b8ee235e0c34bd2a…`. The moved file in scope is

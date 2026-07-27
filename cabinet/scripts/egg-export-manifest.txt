@@ -102,6 +102,15 @@ delete instance/config/captain-availability.yml
 # empty list, which is a legal documented state, so a fresh egg hatches holding
 # no dates and waits for its own captain to set one.
 delete instance/config/captain-dates.yml
+# R120-class: recipient-exclusions.yml is THIS captain's ruled carve-back on
+# his own org_domains (named addresses/subdomains that are NOT internal). The
+# .example twin ships; framework.env.recipient_policy() treats an absent file
+# as an empty denylist with `subdomain_matching: strict`, a legal documented
+# state, so a fresh egg hatches with no exclusions and the tight default
+# rather than inheriting a stranger's list. NO transform: unlike
+# act-first-surfaces there is nothing to re-materialize — absent IS the
+# shipped default.
+delete instance/config/recipient-exclusions.yml
 # R126: the LIVE ruled act-first file leaves (Captain rulings + board ids);
 # the act-first-default transform below re-materializes the scrubbed
 # framework-shippable twin in its place.

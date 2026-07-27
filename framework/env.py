@@ -273,6 +273,151 @@ def org_domains(default: "tuple[str, ...]" = ()) -> "tuple[str, ...]":
     return domains
 
 
+# The Captain's recipient EXCLUSION ruling — the carve-back on org_domains().
+# org_domains IS the allowlist ("which domains count as internal"); it has no
+# granularity below a domain and no way to say "not this one", so a listed
+# domain admits every address at it and (under `inherit`) every subdomain of
+# it, forever. This resolver is the one place an exclusion can be stated.
+# DENY_ALL_RECIPIENTS is the corruption sentinel: an exclusion file that EXISTS
+# but cannot be read is NEVER silently ignored — every recipient classifies
+# external until it is repaired (the act-first-surfaces contract, mirrored from
+# framework/frontdoor/action_exec.py's _DENY_ALL_SENTINEL).
+DENY_ALL_RECIPIENTS = "*"
+_RECIPIENT_EXCLUSIONS_REL = "instance/config/recipient-exclusions.yml"
+_RECIPIENT_EXCLUSIONS_MAX_BYTES = 1 << 20
+# Characters that make a deny value UNMATCHABLE against the tokens the
+# classifier compares (it splits a recipient field on [\s,;] and keeps every
+# other character glued), so a row carrying one would silently exclude nothing.
+_INERT_DENY_RE = re.compile(r"[\s,;<>]")
+_recipient_policy_cache: "dict | None" = None
+
+
+def _parse_recipient_exclusions(path: Path) -> dict:
+    """Parse the ruled exclusion file, RAISING on any content damage.
+
+    Damage is anything that could silently SHRINK the Captain's exclusion set:
+    a non-mapping document, a dropped ``denylist`` key, a ``denylist`` that is
+    not a list, a row that is not a mapping, a row carrying neither or both of
+    ``address``/``domain``, an empty value, or a value whose shape contradicts
+    its key (an ``address`` with no ``@``, a ``domain`` with one). An
+    explicitly empty ``denylist: []`` is the Captain's ruled posture, not
+    damage. ``why:`` is required by the file's documented convention and is
+    deliberately NOT enforced here — a forgotten ``why`` must not turn an
+    urgent exclusion into a deny-all outage (act-first-surfaces treats its own
+    ``why:`` the same way).
+
+    A MISSING ``subdomain_matching`` key is likewise not damage: it defaults to
+    ``strict``, the TIGHTER reading, so its absence can only narrow. That is
+    the asymmetry — a dropped key fails closed only where dropping it would
+    loosen. An unrecognized VALUE is damage and raises."""
+    import yaml  # local: keep env.py import-light for the safety switches
+
+    # NB: _Strict derives from SafeLoader, so `yaml.load(..., Loader=_Strict)`
+    # is safe_load plus two REFUSALS — it constructs no arbitrary types and a
+    # `!!python/` tag still raises (pinned by a test arm). It is not
+    # yaml.load's default unsafe loader.
+    class _Strict(yaml.SafeLoader):
+        """SafeLoader that refuses a repeated key and refuses aliases.
+
+        yaml.safe_load takes LAST-WINS on a duplicate mapping key with no
+        error, so appending a second `denylist: []` below a populated one
+        empties the Captain's exclusion set while every original row still
+        reads intact above it — the silent shrink this parser exists to
+        refuse, and the shape a careless append produces. Aliases are refused
+        for a different reason: this file is meant to be audited by eye, and
+        an exclusion list whose real content is assembled from anchors
+        elsewhere in the document cannot be."""
+
+        def compose_node(self, parent, index):
+            if self.check_event(yaml.events.AliasEvent):
+                raise ValueError("YAML aliases are not accepted here")
+            return super().compose_node(parent, index)
+
+        def construct_mapping(self, node, deep=False):
+            seen = set()
+            for key_node, _ in node.value:
+                key = self.construct_object(key_node, deep=deep)
+                if key in seen:
+                    raise ValueError("duplicate key %r" % (key,))
+                seen.add(key)
+            return super().construct_mapping(node, deep=deep)
+
+    raw = path.read_bytes()
+    if len(raw) > _RECIPIENT_EXCLUSIONS_MAX_BYTES:
+        # parsed at import of a germline module: an oversized file would stall
+        # every classification at startup. Refusing it fails CLOSED.
+        raise ValueError("recipient-exclusions.yml is implausibly large")
+    data = yaml.load(raw.decode("utf-8"), Loader=_Strict)
+    if not isinstance(data, dict):
+        raise ValueError("recipient-exclusions.yml is not a mapping")
+    if "denylist" not in data:
+        raise ValueError("recipient-exclusions.yml missing 'denylist' key")
+    rows = data["denylist"]
+    if rows is not None and not isinstance(rows, list):
+        raise ValueError("'denylist' is not a list")
+    deny: list = []
+    for row in (rows or []):
+        if not isinstance(row, dict):
+            raise ValueError("denylist row is not a mapping: %r" % (row,))
+        keys = [k for k in ("address", "domain") if k in row]
+        if len(keys) != 1:
+            raise ValueError("denylist row needs exactly one of address/domain")
+        val = row[keys[0]]
+        if not isinstance(val, str) or not val.strip():
+            raise ValueError("denylist row has an empty %s" % keys[0])
+        val = val.strip().lower()
+        if (keys[0] == "address") != ("@" in val):
+            raise ValueError("denylist %s has the wrong shape: %r" % (keys[0], val))
+        # A row that can never MATCH is worse than no row: the Captain reads
+        # his exclusion as live and it excludes nothing. The classifier
+        # compares against tokens split on [\s,;], so any value carrying a
+        # separator is inert; so is the display-name form pasted out of a mail
+        # client (`Nate <list@org>`); so is a domain written with a leading
+        # dot, which matches neither `dom == pat` nor `dom.endswith("." + pat)`.
+        # Refuse all three LOUDLY rather than silently accepting a dud.
+        if _INERT_DENY_RE.search(val) or val.startswith(".") or val.endswith("."):
+            raise ValueError("denylist %s can never match: %r" % (keys[0], val))
+        deny.append(val)
+    mode = data.get("subdomain_matching", "strict")
+    if not isinstance(mode, str):
+        raise ValueError("subdomain_matching must be a string, got %r" % (mode,))
+    mode = mode.strip().lower()   # a caps typo must not take the org to deny-all
+    if mode not in ("strict", "inherit"):
+        raise ValueError("unknown subdomain_matching %r" % (mode,))
+    return {"deny": tuple(deny), "subdomains": mode}
+
+
+def recipient_policy() -> dict:
+    """The recipient exclusion policy: ``{"deny": tuple, "subdomains": str}``.
+
+    ``deny`` entries are lowercased; one containing ``@`` is a full ADDRESS
+    (exact match), one without is a DOMAIN (matching it and every subdomain of
+    it — a broader deny is the safe direction). ``subdomains`` is ``strict``
+    (a recipient domain is internal only if it EXACTLY equals a listed
+    org_domain) or ``inherit`` (exact or any subdomain — the pre-2026-07-27
+    framework behaviour, now opt-in).
+
+    Reads ``instance/config/recipient-exclusions.yml`` under the deployment
+    root. File ABSENT ⇒ empty denylist. File PRESENT but unparseable or damaged
+    ⇒ ``{"deny": (DENY_ALL_RECIPIENTS,)}`` — fail CLOSED, every recipient
+    external until repaired. Never raises; cached like org_domains()."""
+    global _recipient_policy_cache
+    if _recipient_policy_cache is not None:
+        return _recipient_policy_cache
+    policy = {"deny": (), "subdomains": "strict"}
+    try:
+        path = _cabinet_root() / _RECIPIENT_EXCLUSIONS_REL
+        # lexists, not exists: a DANGLING symlink at this path is a file that
+        # is PRESENT and unreadable — damaged — not absent. exists() follows
+        # the link and would report absent, silently dropping the exclusions.
+        if os.path.lexists(path):
+            policy = _parse_recipient_exclusions(path)
+    except Exception:
+        policy = {"deny": (DENY_ALL_RECIPIENTS,), "subdomains": "strict"}
+    _recipient_policy_cache = policy
+    return policy
+
+
 def signal_tells(project: str = "", default: "dict | None" = None, *,
                  env_json: "str | None" = None) -> dict:
     """Per-lane TELLS for the verified-noise discriminator (``framework.frontdoor.
