@@ -9,12 +9,23 @@ budgets:
     path: framework/authority/classifier.py
     symbol: ACTION_TYPES
     maximum: 30
+  # ── Fleet caps: ONE Captain-ruled bump, 2026-07-26, then re-pinned ─────────
+  # The COG-4 W6-e2/e4 tighten left both caps at observed==max with ZERO
+  # headroom BY DESIGN (52 rows / 40 enabled). The Captain's 2026-07-26
+  # arm-the-cabinet ruling turns on a batch of parked organs, which the caps
+  # correctly refuse. His ruling: ONE bump covering the WHOLE batch, set to
+  # exactly what the enabled set requires — no slack, no per-service bump, no
+  # temporary_allowances row — so the ratchet still bites at the new level and
+  # the next silent growth still REDs. Post-batch actuals, parse-verified with
+  # cognitive-architecture-census.py: 54 rows / 50 enabled / 4 parked
+  # (mission-supervisor, memory-curator-health, evidence-anchor,
+  # evidence-signing-broker). Shrink-only resumes from here.
   services_total:
     path: cabinet/services.yml
-    maximum: 52   # TIGHTENED 57->52 at the COG-4 W6-e2 compose (shrink-only; the growth-mutant gate needs observed==max zero headroom); §9.4 done-flip tighten CONFIRMED W6-e4 2026-07-24 — 52 is the final phase actual (no further shrink beyond e2), N7 machine-pinned 52<57
+    maximum: 54   # 52->54 (Captain ruling 2026-07-26): +2 NEW rows, the two COG-3 captain-report CLIs that never had a clock (cog3-verdict-inbox, cog3-shadow-dividend). observed==max, zero headroom. Was: TIGHTENED 57->52 at the COG-4 W6-e2 compose, §9.4 done-flip CONFIRMED W6-e4 2026-07-24, N7 machine-pinned 52<57.
   services_enabled:
     path: cabinet/services.yml
-    maximum: 40   # TIGHTENED 44->40 at the COG-4 W6-e2 compose (same zero-headroom law); §9.4 done-flip tighten CONFIRMED W6-e4 2026-07-24 — 40 is the final phase actual, N7 machine-pinned 40<44
+    maximum: 50   # 40->50 (Captain ruling 2026-07-26): +8 parked rows armed (research-sweep, backlog-refine, killswitch-watchdog, healthchecks-drill, officer-lifecycle-transitions, authority-transitions and the two shadow evidence rows — named in cabinet/services.yml, not here: their shadow-law reference proofs treat any unallowlisted mention as a consumer) +2 new rows. observed==max, zero headroom. Was: TIGHTENED 44->40 at the COG-4 W6-e2 compose, §9.4 done-flip CONFIRMED W6-e4 2026-07-24, N7 machine-pinned 40<44.
   layer_debt_entries:
     path: .layer-separation-baseline
     maximum: 24
@@ -26,7 +37,24 @@ budgets:
     maximum: 206
   framework_production_noncomment_lines:
     path: framework
-    maximum: 60067
+    # 60067 -> 60164 (+97 measured 2026-07-26 via cognitive-architecture-census.py):
+    # +88 the application journal, +9 the two defects the landing review found
+    # by attacking the armed apply path and fixed in the same commit (a plain-
+    # slug guard — role_slug traversal made adapt_role rewrite an arbitrary
+    # tracked .yml — and _cap_is_new, which stops a phantom journal row whose
+    # advertised inverse would REMOVE a capability the loop never granted).
+    # Still ONE bump for the whole batch: nothing here has shipped yet.
+    # NOT a phase allowance and deliberately NOT a temporary_allowances row:
+    # this is the PERMANENT reversibility safeguard the Captain ordered when he
+    # armed the self-improvement loop's auto-apply — the application journal in
+    # framework/learning/self_improvement_loop.py (_journal_application + the
+    # pre-image capture and the four apply-site calls). An allowance would
+    # promise a deletion gate that will never fire; a maximum bump states the
+    # honest truth: the org grew a permanent organ, and the ratchet re-pins at
+    # the new level. Zero new MODULES (framework_production_modules unchanged
+    # at 206+allowances): the helper lives inside the existing module, and the
+    # revert CLI lives in cabinet/scripts/, outside this budget's path.
+    maximum: 60164
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
@@ -149,10 +177,17 @@ temporary_allowances:
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: the dial's resolver folds into the projection kernel, or COG-7 compaction
+  - phase: attention-well-spent
+    budget: framework_production_noncomment_lines
+    additional: 252
+    reason: 'Attention WELL SPENT (Captain ruling 2026-07-25) — the cabinet was structurally biased toward going quiet and its own score rewarded it: the OVI attention term was weighted direction=inverse, so it read a perfect 1.00 in EVERY window (7d/30d/365d) including a 7d window with 0.0 throughput and 0.0 verification, and zero captain_* events have ever been emitted (0 of 43,894) so 1.00 was the only reading it could produce. Lines: framework/ovi/compute.py attention_well_spent() + the misspent-event replay (the term is now decisions/(decisions+captain_gate_bounced), 0.0 at no-contact, so silence is the MINIMUM not the maximum); framework/roles/hat_graduation.py NET NEGATIVE — the OVI composite is no longer a promotion criterion (standing Captain rider: Captain-facing, never a selection input), replaced by framework/tests/test_ovi_never_a_selection_input.py which is a TEST and costs this budget nothing; framework/attention/queue.py rejection_streaks + demotions (ignoring a card and rejecting one were the same evidence — 58 of 58 live demote rows read card-expiry, and an explicit rejection RESET the streak, so silence was the only demotion signal); framework/attention/feed.py situation_key_for_message (21 Captain taps carried 0 situation keys); framework/frontdoor/action_lessons.py the `missed` under-ask verdict the Captain can reach as an anchored /missed; framework/liveness/deadman.py status() so an unarmed absence-detector is not silently indistinguishable from a dead cabinet. HONEST ACCOUNTING: 209 of these 252 lines are DOCSTRING prose (the house rule that every invariant carries its reason) and only 43 are executable code — measured, not estimated. They are NOT reformatted into # comments to duck this budget: the counter excludes comments, so that would have bought ~209 lines by moving words sideways, which is optimising the number rather than the thing. EXACT measured running total (67578 vs 67326 base), 2026-07-27, via cognitive-architecture-census.py — re-measured after merging origin/master ac56ce78, whose captain-availability-dial rows moved the base from 66934 to 67326; the +252 here is unchanged by that merge (the two landings touch disjoint files) — the zero-headroom observed==max law means this is the exact new total, never a pre-allocated ceiling'
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: COG-7 compaction, or the attention term folds into the per-instrument objectives view when the legacy OVI composite retires on its ruled SUNSET path
   - phase: captain-dates
     budget: framework_production_noncomment_lines
     additional: 208
-    reason: Captain dated commitments (Captain-Seat dry-run finding 1, 2026-07-26 — a captain-set date appeared in ZERO of the next twelve days of briefings). NO new module — framework/env.py gains the store resolver family (captain_dates_path, the CAPTAIN_DATE_STATUSES enum + id/ISO validators, _captain_date_iso with the PyYAML date-retyping rescue, the fail-closed per-row _captain_date_entry, the append-only latest-row-per-id fold captain_dates, captain_open_dates, and render_captain_date — the ONE line shape every surface prints, louder past due) and framework/frontdoor/morning_synthesis.py gains captain_date_items plus its gather_items leg (ONE briefing item carrying one line per open date, so the composer's five-item per-tier cap can never roll the Nth date into a count line; zero open dates emits nothing). EXACT measured running total (67534 vs 67326 base), 2026-07-27, via cognitive-architecture-census.py — the zero-headroom observed==max law means this is the exact new total, never a pre-allocated ceiling
+    reason: Captain dated commitments (Captain-Seat dry-run finding 1, 2026-07-26 — a captain-set date appeared in ZERO of the next twelve days of briefings). NO new module — framework/env.py gains the store resolver family (captain_dates_path, the CAPTAIN_DATE_STATUSES enum + id/ISO validators, _captain_date_iso with the PyYAML date-retyping rescue, the fail-closed per-row _captain_date_entry, the append-only latest-row-per-id fold captain_dates, captain_open_dates, and render_captain_date — the ONE line shape every surface prints, louder past due) and framework/frontdoor/morning_synthesis.py gains captain_date_items plus its gather_items leg (ONE briefing item carrying one line per open date, so the composer's five-item per-tier cap can never roll the Nth date into a count line; zero open dates emits nothing). EXACT measured running total (67883 vs 67675 base after merging the attention-well-spent and arm-the-cabinet landings; re-measured post-merge, +208 either way since the growth is this unit's own lines), 2026-07-27, via cognitive-architecture-census.py — the zero-headroom observed==max law means this is the exact new total, never a pre-allocated ceiling
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: the dates resolver folds into the projection kernel alongside the availability dial, or COG-7 compaction

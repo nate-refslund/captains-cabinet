@@ -253,15 +253,36 @@ def blast_for(steps: Iterable, *, kind: str = "",
 # H5 — expiry streaks → class demotion (wires budget.demote_after_expiries)
 # ---------------------------------------------------------------------------
 
+def _ordered_proposal_rows(ledger_rows: Iterable) -> list:
+    """Ledger rows carrying a proposal, folded in ts order."""
+    return sorted((r for r in ledger_rows if isinstance(r, dict)
+                   and isinstance(r.get("proposal"), dict)),
+                  key=lambda r: str(r.get("ts") or ""))
+
+
 def expiry_streaks(ledger_rows: Iterable) -> dict:
     """Per card kind (the ledger ``action`` string), the CURRENT consecutive
     run of decision=='expired' closures, reset by any real Captain verdict.
-    Rows folded in ts order; rows without a proposal are ignored."""
-    ordered = sorted((r for r in ledger_rows if isinstance(r, dict)
-                      and isinstance(r.get("proposal"), dict)),
-                     key=lambda r: str(r.get("ts") or ""))
+    Rows folded in ts order; rows without a proposal are ignored.
+
+    WHAT THIS EVIDENCE IS, AND IS NOT (2026-07-26). An expiry means NOBODY
+    LOOKED. It is genuinely ambiguous: the producer may be over-asking, or the
+    Captain was away, or the channel was down, or the card was badly timed.
+    Until 2026-07-26 this was the ONLY demotion signal in the system —
+    measured on the live feed, 58 of 58 demote rows carried
+    ``demote_reason: card-expiry``, i.e. every producer the org ever quieted
+    was quieted by SILENCE, never by the Captain saying no. Worse, an explicit
+    ``rejected`` RESET this streak, so the one unambiguous over-ask signal
+    actively PROTECTED a producer from demotion.
+
+    Both halves are preserved but no longer conflated: see
+    :func:`rejection_streaks` for the unambiguous half, and :func:`demotions`
+    for the reason-bearing verdict. A verdict still resets THIS streak — it
+    proves the channel works, so accumulated silence is stale evidence — but
+    the rejection is now re-classified rather than erased.
+    """
     streaks: dict = {}
-    for row in ordered:
+    for row in _ordered_proposal_rows(ledger_rows):
         action = str(row.get("action") or "")
         decision = (row.get("proposal") or {}).get("decision")
         if decision == "expired":
@@ -273,27 +294,109 @@ def expiry_streaks(ledger_rows: Iterable) -> dict:
     return streaks
 
 
-def demoted_kinds(ledger_rows: Iterable, charter: "dict | None" = None) -> set:
-    """Kinds whose expiry streak crossed their charter class's
-    ``budget.demote_after_expiries`` bar — the producers that must stop
-    regenerating pings (gate consumes this; spec §4.8 example bar = 5)."""
+def rejection_streaks(ledger_rows: Iterable) -> dict:
+    """Per card kind, the CURRENT consecutive run of decision=='rejected'
+    closures, reset by a USABLE card (``approved`` / ``edited``).
+
+    THIS is the unambiguous over-ask evidence, and until 2026-07-26 nothing in
+    the system counted it. The Captain looked, and said no — repeatedly. There
+    is no away-from-desk, broken-channel or bad-timing reading of that: the
+    producer is asking for the wrong thing.
+
+    An ``expired`` closure does NOT reset this streak. Silence is not evidence
+    that a rejected producer has improved — that conflation is exactly what
+    made ignoring and rejecting interchangeable. Only the Captain actually
+    USING a card (approving it, or editing it into something usable) proves
+    the producer is worth hearing from again.
+    """
+    streaks: dict = {}
+    for row in _ordered_proposal_rows(ledger_rows):
+        action = str(row.get("action") or "")
+        decision = (row.get("proposal") or {}).get("decision")
+        if decision == "rejected":
+            streaks[action] = streaks.get(action, 0) + 1
+        elif decision in ("approved", "edited"):
+            streaks[action] = 0
+    return streaks
+
+
+#: Feed/journal ``demote_reason`` values. ``card-expiry`` is the historical
+#: value and keeps its exact spelling (58 live rows carry it).
+DEMOTE_REASON_EXPIRY = "card-expiry"
+DEMOTE_REASON_REJECTION = "captain-rejection"
+
+
+def _demote_bars(charter: "dict | None") -> tuple:
+    """(expiry_bars, rejection_bars) keyed by kind, from the charter classes.
+
+    A class may set ``budget.demote_after_rejections`` explicitly; absent that
+    it inherits ``demote_after_expiries``. Deliberately NO new default constant
+    — the rejection path is a second, independent route to the SAME bar, not a
+    tuning knob nobody can defend.
+    """
+    expiry: dict = {}
+    rejection: dict = {}
+    for cls in (charter or {}).get("classes") or []:
+        budget = (cls or {}).get("budget") or {}
+        e_bar = budget.get("demote_after_expiries")
+        r_bar = budget.get("demote_after_rejections")
+        if not isinstance(r_bar, int) or r_bar <= 0:
+            r_bar = e_bar
+        for kind in ((cls.get("matchers") or {}).get("kinds") or []):
+            if isinstance(e_bar, int) and e_bar > 0:
+                expiry[str(kind)] = e_bar
+            if isinstance(r_bar, int) and r_bar > 0:
+                rejection[str(kind)] = r_bar
+    return expiry, rejection
+
+
+def demotions(ledger_rows: Iterable, charter: "dict | None" = None) -> dict:
+    """``{kind: reason}`` for every kind past a demote bar — the reason-bearing
+    form of :func:`demoted_kinds`.
+
+    TWO INDEPENDENT ROUTES, because ignoring a card and rejecting one are
+    different evidence about different failures:
+
+      * ``captain-rejection`` — he looked and said no, N times running.
+        Unambiguous over-asking. NEW 2026-07-26; nothing counted this before,
+        and a rejection used to RESET the only streak that existed.
+      * ``card-expiry`` — nobody looked, N times running. Ambiguous, and
+        preserved exactly as it was so the existing over-ask protection is not
+        weakened.
+
+    Rejection wins when a kind crosses both, because it is the evidence that
+    is actually about the producer rather than about the Captain's week.
+    """
     try:
         if charter is None:
             from framework.attention import charter as charter_mod
             charter = charter_mod.load_charter()
     except Exception:
-        return set()
-    bars: dict = {}
-    for cls in (charter or {}).get("classes") or []:
-        bar = ((cls or {}).get("budget") or {}).get("demote_after_expiries")
-        if not isinstance(bar, int) or bar <= 0:
-            continue
-        for kind in ((cls.get("matchers") or {}).get("kinds") or []):
-            bars[str(kind)] = bar
-    if not bars:
-        return set()
-    streaks = expiry_streaks(ledger_rows)
-    return {k for k, bar in bars.items() if streaks.get(k, 0) >= bar}
+        return {}
+    expiry_bars, rejection_bars = _demote_bars(charter)
+    if not expiry_bars and not rejection_bars:
+        return {}
+    rows = list(ledger_rows)
+    rejections = rejection_streaks(rows) if rejection_bars else {}
+    expiries = expiry_streaks(rows) if expiry_bars else {}
+    out: dict = {}
+    for kind, bar in expiry_bars.items():
+        if expiries.get(kind, 0) >= bar:
+            out[kind] = DEMOTE_REASON_EXPIRY
+    for kind, bar in rejection_bars.items():
+        if rejections.get(kind, 0) >= bar:
+            out[kind] = DEMOTE_REASON_REJECTION   # stronger evidence wins
+    return out
+
+
+def demoted_kinds(ledger_rows: Iterable, charter: "dict | None" = None) -> set:
+    """Kinds past their charter demote bar — the producers that must stop
+    regenerating pings (gate consumes this; spec §4.8 example bar = 5).
+
+    Back-compatible surface over :func:`demotions`; callers that need to know
+    WHY a kind was demoted (and every journal writer should) use that instead.
+    """
+    return set(demotions(ledger_rows, charter))
 
 
 # ---------------------------------------------------------------------------

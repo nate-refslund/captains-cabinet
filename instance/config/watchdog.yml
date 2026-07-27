@@ -77,15 +77,39 @@ expectations:
   # - captain-inbound-contact
   - no-silent-cron-failure
   - pipes-fresh
-  # Phase-4 evidence-plane rows ship STAGED DARK (shadow law — whole-cabinet
-  # evidence design 2026-07-16 §3 Phase 4): present in the framework catalog
-  # (framework/watchdog/registry.py), deliberately NOT enabled here. The
-  # Captain ceremony that arms the evidence-shadow-detectors service row in
-  # cabinet/services.yml uncomments these ids in the same step.
-  # - evidence-store-invariants
+  # Phase-4 evidence-plane rows shipped STAGED DARK (shadow law — whole-cabinet
+  # evidence design 2026-07-16 §3 Phase 4) and the Captain's 2026-07-26
+  # arm-the-cabinet ruling executed that ceremony for the two SHADOW rows
+  # (evidence-shadow-detectors + evidence-recompute are now enabled in
+  # cabinet/services.yml). Each id below is armed ONLY where arming it cannot
+  # cry wolf — the enable instruction said "uncomment these ids in the same
+  # step", and two of the four would page daily on a cabinet whose evidence
+  # plane was never activated:
+  #
+  #   * evidence-store-invariants — ARMED. verify_evidence_store_invariants
+  #     returns skipped=True when the store is not observable
+  #     (registry.py:1396), so an unactivated plane is silent by construction.
+  - evidence-store-invariants
+  #   * evidence-anchor-export-fresh — STAYS DARK: its producer, the
+  #     `evidence-anchor` service row, was NOT in the Captain's enable list and
+  #     is still parked. Arming a freshness floor over a surface nobody
+  #     produces is a manufactured page. Uncomment when evidence-anchor is
+  #     enabled (needs instance/config/evidence-anchor.yml — only .example
+  #     ships today).
   # - evidence-anchor-export-fresh
+  #   * evidence-shadow-detector-liveness — STAYS DARK UNTIL THE STORE EXISTS.
+  #     Its skip arm only covers "row disabled" (registry.py:1519); with the
+  #     row now ENABLED and no store at instance/evidence/v1 the detector
+  #     correctly writes NOTHING ("plane not activated; nothing to detect" —
+  #     the detector module's store-absent arm) and the never-appended-journal
+  #     arm would FAIL every single day. Uncomment in the same step that
+  #     activates the evidence store. (Module path spelled out only in the
+  #     services.yml row, which the shadow-law reference proof allowlists —
+  #     naming it here would trip that proof on prose.)
   # - evidence-shadow-detector-liveness
-  # HP-2 recompute liveness ships the same way (staged dark): the catalog
-  # row in framework/watchdog/registry.py lands at the enable ceremony
-  # together with uncommenting this id (unknown ids are ignored until then).
-  # - evidence-recompute-liveness
+  #   * evidence-recompute-liveness — ARMED as a forward-arm. NOTE (verified
+  #     2026-07-26): there is still NO catalog row for this id in
+  #     framework/watchdog/registry.py, so it is an ignored unknown id today
+  #     and covers nothing; it starts covering the moment the catalog row
+  #     lands, with no second config edit.
+  - evidence-recompute-liveness

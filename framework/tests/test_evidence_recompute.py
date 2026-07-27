@@ -783,13 +783,19 @@ class TestShadowProof:
             assert classify_detail_key(key) == PRODUCER_ASSERTED, key
             assert key not in PROJECTION_ALLOWED_DETAIL, key
 
-    def test_services_row_ships_disabled(self):
+    def test_services_row_is_armed_and_still_shadow(self):
+        """ARMED by the Captain's 2026-07-26 ceremony (it shipped
+        `disabled: true` staged-dark before that). The SHADOW LAW is what this
+        class exists to protect and it is unchanged by the arming: recompute
+        reports only, nothing the minter reads — pinned by the zero-consumer
+        proof above, which is untouched. This test now pins the ARMED shape:
+        no parking flag, still one command, still declaring shadow."""
         services = (REPO_ROOT / "cabinet" / "services.yml").read_text(
             encoding="utf-8")
         block = services.split("- name: evidence-recompute", 1)[1]
         block = block.split("- name: ", 1)[0]
-        assert "disabled: true" in block
-        assert "staged" in block.split("disabled_reason:", 1)[1][:200]
+        assert "disabled: true" not in block
+        assert "disabled_reason:" not in block
         assert "python3.12 cabinet/scripts/evidence-recompute.py" in block
         command_line = next(l for l in block.splitlines() if "command:" in l)
         assert "&&" not in command_line

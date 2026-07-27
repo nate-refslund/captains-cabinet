@@ -67,6 +67,16 @@ independently established by omission. That is deliberate for the dark wave.
 
 ## Deploy ceremony (Captain; the only enable path)
 
+**Steps 1-2 EXECUTED 2026-07-26** (Captain arm-the-cabinet ruling — the
+"recompute on" half of the self-improvement arming ruling). The row is enabled
+in `cabinet/services.yml` and `evidence-recompute-liveness` is uncommented in
+`instance/config/watchdog.yml`. Step 2's second half is **still open**: no
+catalog row for that id exists in `framework/watchdog/registry.py` yet, so the
+id is an ignored unknown today and covers nothing — it starts covering the
+moment the catalog row lands, with no second config edit. Steps 3-4 are
+unchanged and still Captain ceremonies. Shadow law is untouched by the enable:
+recompute reports only; nothing the minter reads.
+
 1. Remove `disabled: true` from the `evidence-recompute` row in
    `cabinet/services.yml`; run `generate-plists`; load the LaunchAgent.
 2. Uncomment `evidence-recompute-liveness` in `instance/config/watchdog.yml`
