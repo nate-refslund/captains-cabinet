@@ -220,7 +220,8 @@ emit_plan() {
     echo " 3. [gen]           $PY cabinet/scripts/generate-instance.py"
     echo "                    on inherited-instance refusal -> prints the exact --adopt command and stops"
   fi
-  echo " 4. [preset]        write instance/config/active-preset from the answers' org_shape"
+  echo " 4. [preset]        write instance/config/active-preset from the answers' cabinet.preset,"
+  echo "                    else from their org_shape"
   echo "                    (portfolio -> portfolio, functional -> work — the generator's own mapping;"
   echo "                    custom shapes = named handback, set the file yourself)"
   echo " 5. [roles]         bash cabinet/scripts/bootstrap-roles.sh --roster instance/config/roster.yml"
@@ -290,7 +291,7 @@ fi
 # script invocation(s) a human would re-run by hand. Static strings only.
 composite_cmd_hint() {
   case "$1" in
-    do_set_preset)      echo 'echo <portfolio|work> > instance/config/active-preset   # from answers org_shape: portfolio->portfolio, functional->work' ;;
+    do_set_preset)      echo 'echo <preset> > instance/config/active-preset   # answers cabinet.preset if declared, else org_shape: portfolio->portfolio, functional->work' ;;
     do_bootstrap_roles) echo 'bash cabinet/scripts/bootstrap-roles.sh [--roster instance/config/roster.yml]' ;;
     do_drill)           echo 'bash cabinet/scripts/kill-switch.sh activate|status|deactivate   # REDIS_URL=${REDIS_URL:-redis://localhost:6379}' ;;
     do_first_receipt)   echo 'bash cabinet/scripts/first-briefing.sh --local' ;;
@@ -385,6 +386,29 @@ do_set_preset() {
     echo "cannot derive the preset: $answers is missing and instance/config/active-preset is unset." >&2
     echo "Named handback — set it yourself, e.g.: echo portfolio > instance/config/active-preset" >&2
     return 1
+  fi
+  # An EXPLICIT cabinet.preset answer wins, exactly as generate-instance.py's
+  # own printed next-steps resolve it ("An explicit (validated) cabinet.preset
+  # answer wins; else the org_shape default"). Until 2026-07-27 this function
+  # read org_shape ONLY, so a hatch whose answers declared `preset: personal`
+  # silently got portfolio — the answer was accepted by the generator, printed
+  # in its next steps, and then discarded by the chain that runs them.
+  local explicit=""
+  explicit="$("$PY" -c '
+import re, sys, yaml
+a = yaml.safe_load(open(sys.argv[1])) or {}
+p = str(((a.get("cabinet") or {}).get("preset")) or "")
+# Shape-validate here too: this value becomes a path segment below.
+print(p if re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", p) else "")' "$answers")"
+  if [ -n "$explicit" ]; then
+    if [ ! -f "presets/$explicit/preset.yml" ]; then
+      echo "answers declare cabinet.preset '$explicit' but presets/$explicit/preset.yml is absent." >&2
+      echo "Named handback — populate that preset or fix the answers file, then re-run." >&2
+      return 1
+    fi
+    printf '%s\n' "$explicit" > instance/config/active-preset
+    echo "active-preset = $explicit (from answers cabinet.preset)"
+    return 0
   fi
   shape="$("$PY" -c '
 import sys, yaml

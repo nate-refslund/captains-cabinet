@@ -120,9 +120,17 @@ sources.yml emission rule (Wave-1 OrgSource, 2026-07-07): the answers'
     NullPersonalSource (zero hits). No `dispatch:` is emitted — get_dispatch()
     fail-closes to NullPersonalDispatch (draft-capture-only), correct for a box
     with no personal actuator estate.
-  * flavor == personal (Flavor-A): emit NOTHING — the captain's instance binds
-    its own adapter by hand (e.g. a screenpipe source), exactly today's
-    behavior; the generator never touches an existing binding.
+  * flavor == personal (Flavor-A): emit a generated-by-marked sources.yml
+    binding `framework.sources.local:LocalNotesSource` with a `local_root:`
+    pointing at the deployment's own notes folder. CHANGED 2026-07-27: this
+    used to emit NOTHING, which fail-closed the ONE flavor shaped for a
+    non-company operator to NullPersonalSource — available() False, search()
+    {"hits": []} — i.e. the personal preset shipped inert. A captain who
+    binds a richer personal adapter by hand still wins: the file is
+    marker-guarded like every other, so a hand-authored binding is REFUSED,
+    never clobbered. Still no `dispatch:` — the local adapter is structurally
+    read-only (framework/sources/local.py has no write side at all), so
+    writes stay draft-capture-only on both flavors.
 An existing sources.yml follows the standard marker convention: with the
 generated-by marker it is rewritten byte-identically; without it (hand-authored,
 e.g. a live Flavor-A binding) the run REFUSES rather than clobbering
@@ -250,6 +258,13 @@ POSTURE_TARGETS = frozenset({"guardian", "sovereign"})
 # _load_bound() reads `adapter: "<module>:<Class>"` and importlib-loads it;
 # framework/sources/ is one of its two trusted module trees.
 ORG_SOURCE_ADAPTER = "framework.sources.org:OrgSource"
+
+# The personal-box recall binding. Same resolver contract, different backend:
+# OrgSource reads cabinet_memory (needs a connection string + an embedding
+# provider), which a laptop with a notes folder has neither of, so binding it
+# there would fail-close to the same zero hits the null adapter gives. The
+# local adapter reads ONE declared folder and is structurally read-only.
+LOCAL_SOURCE_ADAPTER = "framework.sources.local:LocalNotesSource"
 
 # platform.yml key naming the org's knowledge-corpus dir — the cabinet VAULT
 # (vault/, Captain-ratified 2026-07-16; formerly product-brain/). Canonical
@@ -1010,6 +1025,43 @@ adapter: {ORG_SOURCE_ADAPTER}
 """
 
 
+def render_sources_personal(local_root: str) -> str:
+    """instance/config/sources.yml for a PERSONAL-flavor deployment.
+
+    Emitted since 2026-07-27: before this, `flavor: personal` emitted no
+    sources.yml at all, so the one flavor shaped for an operator who does not
+    run a company fail-closed to NullPersonalSource — zero recall on every
+    gather. `local_root:` is a deployment-root-relative path (never an
+    absolute machine path, so generated config stays relocatable), read by
+    framework.sources.local.resolve_root()."""
+    return f"""\
+# {MARKER} — personal-sensing seam binding for a PERSONAL-flavor deployment
+# (regenerate via cabinet/scripts/generate-instance.py; emitted because the
+# answers declare autonomy.flavor: personal — a personal box has no
+# cabinet_memory estate, so recall binds a folder of notes instead).
+#
+# framework.sources.get_source() reads `adapter: "<module>:<Class>"` from this
+# file, importlib-loads the module (framework/sources/ is a trusted adapter
+# tree), instantiates the class, and binds it as the PersonalSource framework
+# CORE queries. Without this file the deployment fail-closes to
+# NullPersonalSource — honest, but ZERO recall on every gather.
+adapter: {LOCAL_SOURCE_ADAPTER}
+
+# The ONE folder the adapter reads, relative to this deployment root (an
+# absolute path is honored too). Point it at your own notes/project folder.
+# Bounds are the adapter's, not this file's: text extensions only, a file cap,
+# a per-file byte cap, hidden dirs skipped, and every path realpath-jailed
+# inside this root (a symlink out of the folder is skipped, never followed).
+# CABINET_LOCAL_SOURCE_ROOT overrides this at runtime.
+local_root: {local_root}
+
+# No dispatch: binding, and it is not an omission. framework/sources/local.py
+# has NO write side — a folder pointed at material the operator does not own
+# can be recalled but never written back, and no setting here can change that.
+# get_dispatch() fail-closes to NullPersonalDispatch (draft-capture-only).
+"""
+
+
 def _set_top_level_key(text: str, key: str, value: str) -> str:
     """Replace `key: ...` at column 0, preserving a trailing comment; append if absent."""
     pattern = re.compile(rf"^{re.escape(key)}:[^\n#]*(?P<comment>#[^\n]*)?$", re.MULTILINE)
@@ -1244,9 +1296,11 @@ lanes:
 # 2026-07-05, `apply sovereign posture`): the generator renders an INERT
 # instance/config/posture.yml scaffold from the two optional keys below, and
 # nothing changes until the Captain locks it (germline-lock.sh lock).
-# flavor also gates the recall binding: org (the default) emits
-# instance/config/sources.yml binding framework.sources.org:OrgSource;
-# personal emits NO sources.yml (bind your own adapter by hand).
+# flavor also gates WHICH recall binding instance/config/sources.yml carries:
+# org (the default) binds framework.sources.org:OrgSource (the cabinet's own
+# memory estate); personal binds framework.sources.local:LocalNotesSource over
+# a declared notes folder, read-only. Both are emitted; a hand-authored
+# sources.yml is refused, never clobbered.
 autonomy:
   posture: propose_first
   flavor: org                    # org | personal (personal ⇒ guardian scaffold, always)
@@ -1562,19 +1616,24 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
                         org_vault=ORG_VAULT_DEFAULT), "yaml",
     ))
 
-    # Personal-sensing seam binding (module-docstring emission rule): an
-    # org-flavor deployment (autonomy.flavor != personal) gets the OrgSource
-    # binding so recall works out of the box; a personal/Flavor-A deployment
-    # binds its own adapter by hand — the generator emits nothing. The
-    # standard overwrite guard below protects a hand-authored sources.yml
-    # (no marker ⇒ refuse without --force).
+    # Personal-sensing seam binding (module-docstring emission rule). BOTH
+    # flavors now get a live binding: org boxes bind the cabinet's own memory
+    # estate (OrgSource), personal boxes bind a folder of notes
+    # (LocalNotesSource). Before 2026-07-27 the personal branch emitted
+    # nothing and that deployment fail-closed to NullPersonalSource — zero
+    # recall — which is why the personal preset shipped inert. The standard
+    # overwrite guard below still protects a hand-authored sources.yml (no
+    # marker ⇒ refuse without --force), so a captain's own richer adapter is
+    # never clobbered by this emission.
     flavor = str((answers.get("autonomy") or {}).get("flavor", "org"))
-    sources_emitted = flavor != "personal"
-    if sources_emitted:
-        outputs.append((
-            _instance_path(root, "config", "sources.yml"),
-            render_sources(), "yaml",
-        ))
+    sources_adapter = (ORG_SOURCE_ADAPTER if flavor != "personal"
+                       else LOCAL_SOURCE_ADAPTER)
+    sources_body = (render_sources() if flavor != "personal"
+                    else render_sources_personal(ORG_VAULT_DEFAULT))
+    outputs.append((
+        _instance_path(root, "config", "sources.yml"),
+        sources_body, "yaml",
+    ))
 
     # Posture scaffold (sovereign amendment 2026-07-05): rendered ONLY when
     # absent — an existing posture.yml is a Captain RULING (possibly ratified
@@ -1722,13 +1781,12 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
         print(f"  flavor: {f}) — INERT until the Captain ratifies by locking:")
         print("  edit basis/ruled_at, commit, then sudo bash cabinet/scripts/germline-lock.sh lock")
         print("  (unlocked/absent/mismatched always resolves guardian — today's rules).")
-    if sources_emitted:
-        print(f"  Recall: instance/config/sources.yml binds {ORG_SOURCE_ADAPTER} (org")
-        print("  flavor). No dispatch: binding — writes fail-close to draft-capture-only.")
-    else:
-        print("  Recall: no sources.yml emitted (autonomy.flavor: personal) — bind your")
-        print("  personal adapter by hand in instance/config/sources.yml; until then")
-        print("  officers fail-close to NullPersonalSource (zero recall).")
+    print(f"  Recall: instance/config/sources.yml binds {sources_adapter}")
+    print(f"  (autonomy.flavor: {flavor}). No dispatch: binding — writes fail-close to")
+    print("  draft-capture-only.")
+    if sources_adapter == LOCAL_SOURCE_ADAPTER:
+        print(f"  Point local_root: at your own notes folder (default: {ORG_VAULT_DEFAULT}/)")
+        print("  — the adapter reads it read-only and has no write side at all.")
     return written
 
 
