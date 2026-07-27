@@ -129,10 +129,34 @@ def _now(now: Any = None) -> datetime:
 # ---------------------------------------------------------------------------
 
 def needs_enabled(root: str | Path | None = None) -> bool:
-    """True iff needs may be filed: sovereign posture OR CABINET_NEEDS_WIRED=1
-    OR the instance/config/needs-wired flag file. False short-circuits every
-    filing seam ⇒ the guardian default world stays bit-identical."""
+    """True iff needs may be filed: sovereign posture OR live authority
+    enforcement OR CABINET_NEEDS_WIRED=1 OR the instance/config/needs-wired
+    flag file. False short-circuits every filing seam ⇒ the guardian default
+    world stays bit-identical.
+
+    THE MATRIX-ENFORCING DISJUNCT (2026-07-27, direction gate). This was a
+    no-op in guardian, which is WHY a withheld step left no trace: the fleet's
+    refusals were invisible and therefore un-actionable. The invariant that
+    no-op protects is "the guardian DEFAULT world is bit-identical" — and the
+    guardian default world is `CABINET_AUTHORITY_ENFORCING` unset, where the
+    authority matrix is skipped entirely and there are no matrix refusals to
+    record. Once that flag is on, this is by definition no longer the default
+    world: refusals happen in volume, and a durable record of them is exactly
+    what this ledger exists for. So the invariant is preserved and the blind
+    spot is closed. Filing grants NOTHING — it is an append to a runtime
+    ledger, never a widening.
+
+    NOT the `instance/config/authority-enforcing` FILE. That file is a
+    DIFFERENT, already-true switch: the Captain flipped it 2026-07-03 and its
+    own scope line reads "typed STATELESS policy set enforcing" — the set
+    `policy_shadow._LEGACY_ENFORCING_TYPES`, which EXCLUDES `authority_matrix`.
+    Treating it as the matrix trigger turns this seam on for every deployment
+    that has the file, i.e. all of them, and the guardian default world stops
+    being bit-identical. Six digest/gate parity tests catch exactly that.
+    """
     if os.environ.get("CABINET_NEEDS_WIRED") == "1":
+        return True
+    if os.environ.get("CABINET_AUTHORITY_ENFORCING") == "1":
         return True
     try:
         if (_root(root) / "instance" / "config" / "needs-wired").exists():
