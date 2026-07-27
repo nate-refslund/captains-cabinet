@@ -96,6 +96,12 @@ delete instance/config/comms-surface.yml
 # fresh egg hatches with no budget declared and ASKS at onboarding instead of
 # inheriting a stranger's.
 delete instance/config/captain-availability.yml
+# R120-class: captain-dates.yml holds THIS captain's own dated commitments
+# (Captain-Seat finding 1, 2026-07-26) — his calendar, nobody else's. The
+# .example twin ships; framework.env.captain_dates() treats an absent file as an
+# empty list, which is a legal documented state, so a fresh egg hatches holding
+# no dates and waits for its own captain to set one.
+delete instance/config/captain-dates.yml
 # R126: the LIVE ruled act-first file leaves (Captain rulings + board ids);
 # the act-first-default transform below re-materializes the scrubbed
 # framework-shippable twin in its place.
@@ -394,6 +400,11 @@ expect-present instance/config/egress.yml.example
 # deleted above, so this .example is the ONLY documentation a hatching stranger
 # gets of the store's shape and its precedence over the platform.yml key.
 expect-present instance/config/captain-availability.yml.example
+# The dated-commitment store's twin (Captain-Seat finding 1, 2026-07-26): the
+# live file is deleted above, so this .example is the ONLY documentation a
+# hatching stranger gets of the row shape, the append-only latest-row-per-id
+# fold, and what a `move` writes.
+expect-present instance/config/captain-dates.yml.example
 # R166: the synthetic template for the UNTRACKED captain-specific publish-scan
 # pattern file must ship — egg-side cabinet-feedback.sh reads the live twin
 # when the captain configures one (the live .local is untracked and can never

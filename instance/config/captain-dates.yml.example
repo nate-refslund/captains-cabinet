@@ -1,0 +1,83 @@
+# captain-dates.yml — dates the Captain set, on the org's books.
+#
+# WHAT THIS IS. Dated commitments the CAPTAIN declared, and the rule it exists
+# to enforce: A DATE HE SETS MUST BE IMPOSSIBLE FOR THE ORG TO FORGET. Every
+# open row rides EVERY briefing — with a countdown, and louder once it is past
+# due — until he replies `date done` or `date move`. Nothing here is derived,
+# inferred or scored: these are things he typed about his own calendar.
+#
+# WHY IT EXISTS. A captain-set release date once appeared in ZERO of the next
+# twelve days of briefings. The briefing surfaced dated promises he owed OTHER
+# people and dated follow-ups the ORG wrote down — a date HE declared had no
+# store, no resolver and no reader at all, so nothing could surface it.
+#
+# THIS FILE IS MACHINE-WRITTEN. The Captain sets it from his phone —
+#   date 2026-08-13 board review      dates
+#   date done board                   date move board 2026-09-01
+# — and cabinet/scripts/lib/captain_dates.py appends. There is no need to
+# hand-edit it; a hand-edit that breaks a row's shape reads as ABSENT, which
+# leaves the previous row for that id standing. That direction is deliberate: an
+# unreadable `done` row leaves the date OPEN and still visible, never silently
+# disappeared.
+#
+# READ BY framework.env.captain_dates() / captain_open_dates():
+#   * rows are APPEND-ONLY and the LATEST ROW PER id WINS, so `done` and `move`
+#     append rather than edit and the history of what he said stays readable;
+#   * a `move` writes TWO rows — the old id goes `moved`, and a fresh id carries
+#     the new date with `supersedes` naming the row it replaced;
+#   * the documented fallback is an EMPTY LIST: no store, an empty store or a
+#     corrupt store all read as "no dates declared", and consumers then render
+#     NOTHING (never a placeholder row).
+#
+# Fields: id (writer-minted handle) · at (when he said it, UTC) · date
+# (YYYY-MM-DD) · label (his words — the one free-text field, sanitized and
+# length-capped at the writer because the briefing prints it) · status
+# (open | done | moved) · source · supersedes (moves only).
+#
+# The live file is gitignored (a captain's own declaration, never repo content),
+# carried across deploys by runtime-provision.sh, and deleted by the egg export
+# — a fresh cabinet starts holding none of anyone's dates.
+
+schema: cabinet.captain-dates/v1
+
+# Append-only. Oldest first; per id, the last valid row rules.
+entries:
+  # captain text: date 2026-08-13 board review
+  - id: d-1a2b3c4d
+    at: 2026-07-27T09:00:00Z
+    date: 2026-08-13
+    label: "board review"
+    status: open
+    source: telegram
+  # captain text: date 2026-08-01 quarterly numbers
+  - id: d-5e6f7a8b
+    at: 2026-07-27T09:05:00Z
+    date: 2026-08-01
+    label: "quarterly numbers"
+    status: open
+    source: telegram
+  # captain text: date done quarterly
+  #   he closed it — the row above is HISTORY, this one is current state.
+  - id: d-5e6f7a8b
+    at: 2026-07-28T17:40:00Z
+    date: 2026-08-01
+    label: "quarterly numbers"
+    status: done
+    source: telegram
+  # captain text: date move board 2026-09-01
+  #   a move is TWO rows: the old id goes `moved`, and a new id carries the new
+  #   date with `supersedes` pointing back — so "what did he originally say, and
+  #   when did it change?" stays answerable.
+  - id: d-1a2b3c4d
+    at: 2026-07-29T08:15:00Z
+    date: 2026-08-13
+    label: "board review"
+    status: moved
+    source: telegram
+  - id: d-9c0d1e2f
+    at: 2026-07-29T08:15:00Z
+    date: 2026-09-01
+    label: "board review"
+    status: open
+    source: telegram
+    supersedes: d-1a2b3c4d

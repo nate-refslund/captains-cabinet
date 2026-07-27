@@ -64,6 +64,8 @@ It prints what he was SENT, what he WROTE BACK, mechanical repetition counts, op
 
 **Judge cost RELATIVE to the declared availability in the pack's AVAILABILITY section** (Captain ruling 2026-07-26): an ask that is fair at `full_time` is friction at minutes-a-day, so the same volume is a finding at one setting and nothing at another — and **an availability the pack reports as absent is itself pack evidence** (the org has been spending a budget it never asked for). The org fits the declared budget, never the reverse.
 
+**A date he set that the org stopped carrying is a paid cost, every time.** The pack's DATES section lists his open dates with `tracked_in_latest_briefing=yes|no`; **an open date the latest briefing does not carry means he had to hold it himself**, which is the in-window cost the emission bar asks for (the paid case: a captain-set release date appeared in zero of the next twelve days of briefings). An empty store is not a finding — he may simply have set no dates.
+
 **Emission bar — every part required:**
 - (a) it quotes an **artifact of his own** from the pack (his words, a number, a date);
 - (b) that artifact shows a **cost PAID INSIDE THE WINDOW**: something he had to say twice, something that waited on him too long, something sent to him he never acted on, a channel that lost or ignored his input, or a promise to him measurably not running. *A design improvement with no in-window paid cost is a FORBIDDEN output.*
