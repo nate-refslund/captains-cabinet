@@ -23,6 +23,7 @@ if str(_REPO_ROOT) not in sys.path:
 from framework.authority import grants as G
 from framework.authority import matrix as M
 from framework.authority import needs as N
+from framework.authority.classifier import CEILING_CLASS_ACTION_TYPES
 
 LOCKED = lambda p: True  # noqa: E731
 NOT_VETOED = lambda at: False  # noqa: E731
@@ -40,11 +41,23 @@ def _clean_env(monkeypatch, tmp_path):
 
 
 def grant_row(**over):
+    """A valid grant row.
+
+    `action_types` DERIVES from `risk_class` (2026-07-27) unless explicitly
+    given. Before the enum+class fence landed in `_row_error`, overriding only
+    `risk_class` left the external_comms default `["external_email"]` in place,
+    so `grant_row(risk_class="spend")` silently built a row pairing a comms
+    kind with the spend ceiling — the exact mismatch the fence now rejects, and
+    a shape `check()` would have MATCHED for a caller presenting that pair.
+    Derived from the classifier's ceiling map, never a second list here.
+    """
+    rc = over.get("risk_class", "external_comms")
+    default_at = sorted(CEILING_CLASS_ACTION_TYPES.get(rc, ["external_email"]))[:1]
     g = {
         "id": "GRANT-test1",
         "deployment": "main",
         "risk_class": "external_comms",
-        "action_types": ["external_email"],
+        "action_types": default_at,
         "lanes": ["bakery"],
         "scope": {"recipient_allowlist": ["*@testburg.example"],
                   "max_eur_per_day": 0, "vendor_allowlist": []},
@@ -204,7 +217,7 @@ def test_never_grant_files_one_decision_need_per_class(tmp_path, monkeypatch):
     write_posture(tmp_path, never_grant=["external_comms"])
     write_grants(tmp_path, [grant_row(),
                             grant_row(id="GRANT-test2",
-                                      action_types=["external_teams"])])
+                                      action_types=["external_message"])])
     assert G.load_grants(tmp_path, is_locked_fn=LOCKED) == []
     rows = [r for r in N.list_open(root=tmp_path)
             if r["action_type"] == "never_grant_refusal"]
@@ -402,29 +415,29 @@ def test_check_veto_registry_failure_narrows():
 
 def test_check_spend_hard_scope():
     g = grant_row(id="GRANT-spend", risk_class="spend",
-                  action_types=["vendor_payment"],
+                  action_types=["purchase"],
                   scope={"recipient_allowlist": [], "max_eur_per_day": 50,
                          "vendor_allowlist": []})
-    ok = check(risk_class="spend", action_type="vendor_payment", grants=[g],
+    ok = check(risk_class="spend", action_type="purchase", grants=[g],
                context={"amount_eur": 25})
     assert ok["granted"] is True
-    over = check(risk_class="spend", action_type="vendor_payment", grants=[g],
+    over = check(risk_class="spend", action_type="purchase", grants=[g],
                  context={"amount_eur": 51})
     assert over["granted"] is False and "hard-scope" in over["reason"]
-    blind = check(risk_class="spend", action_type="vendor_payment", grants=[g],
+    blind = check(risk_class="spend", action_type="purchase", grants=[g],
                   context={})
     assert blind["granted"] is False
 
 
 def test_check_vendor_hard_scope():
     g = grant_row(id="GRANT-prod", risk_class="deploy_prod",
-                  action_types=["deploy_prod"],
+                  action_types=["vercel_deploy_prod"],
                   scope={"recipient_allowlist": [], "max_eur_per_day": 0,
                          "vendor_allowlist": ["vercel"]})
-    ok = check(risk_class="deploy_prod", action_type="deploy_prod", grants=[g],
+    ok = check(risk_class="deploy_prod", action_type="vercel_deploy_prod", grants=[g],
                context={"vendor": "Vercel"})
     assert ok["granted"] is True
-    miss = check(risk_class="deploy_prod", action_type="deploy_prod",
+    miss = check(risk_class="deploy_prod", action_type="vercel_deploy_prod",
                  grants=[g], context={"vendor": "aws"})
     assert miss["granted"] is False
 
@@ -484,3 +497,73 @@ def test_shipped_example_rows_are_valid():
     assert data["grants"], "example must ship at least one row"
     for row in data["grants"]:
         assert G._row_error(row) is None
+
+
+# ---------------------------------------------------------------------------
+# action_types enum + class fence (2026-07-27)
+# ---------------------------------------------------------------------------
+
+def test_off_enum_action_type_is_line_dropped(tmp_path):
+    """A kind in NO enum can never be stamped by any executor, so a grant
+    naming one is dead on arrival while READING as granted. It is refused at
+    authoring time instead of silently never matching."""
+    write_posture(tmp_path)
+    write_grants(tmp_path, [grant_row(action_types=["totally_made_up"]),
+                            grant_row(id="GRANT-good", risk_class="spend")])
+    out = G.load_grants(tmp_path, is_locked_fn=LOCKED)
+    assert [g["id"] for g in out] == ["GRANT-good"]
+
+
+def test_wrong_ceiling_class_action_type_is_line_dropped(tmp_path):
+    """THE WIDENING SHAPE: check() filters risk_class and action_type
+    INDEPENDENTLY, so a row pairing one ceiling's class with another ceiling's
+    kind MATCHES a caller presenting that pair — a grant authored for comms
+    would authorise a secrets kind. Both members are real enum values, so only
+    the subset rule catches it."""
+    write_posture(tmp_path)
+    bad = grant_row(risk_class="external_comms", action_types=["secret_read"])
+    write_grants(tmp_path, [bad, grant_row(id="GRANT-good", risk_class="spend")])
+    out = G.load_grants(tmp_path, is_locked_fn=LOCKED)
+    assert [g["id"] for g in out] == ["GRANT-good"]
+
+
+def test_every_ceiling_class_default_row_is_legal():
+    """Anti-vacuity: the fence must ACCEPT a correctly-authored row for every
+    one of the six ceilings — a rule that rejected everything would also pass
+    the two arms above."""
+    for rc in sorted(G.CEILING_RISK_CLASSES):
+        assert G._row_error(grant_row(risk_class=rc)) is None, rc
+
+
+def test_ceiling_risk_classes_is_derived_not_relisted():
+    """CEILING_RISK_CLASSES must be DERIVED from the classifier's ceiling map,
+    not a second copy of the same six strings.
+
+    Set equality cannot see this property — master's hand-written frozenset
+    has the identical members, so an equality assertion passes on both trees
+    and proves nothing (that was this test's first version, and an adversarial
+    review caught it). The property is about the SOURCE, so the sensor reads
+    the source: the assignment's right-hand side must reference the
+    classifier's map, and must not be a literal set of strings.
+    """
+    import ast
+
+    tree = ast.parse(Path(G.__file__).read_text(encoding="utf-8"))
+    rhs = None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == "CEILING_RISK_CLASSES"
+                for t in node.targets):
+            rhs = node.value
+    assert rhs is not None, "CEILING_RISK_CLASSES assignment not found"
+    names = {n.id for n in ast.walk(rhs) if isinstance(n, ast.Name)}
+    assert "CEILING_CLASS_ACTION_TYPES" in names, (
+        "CEILING_RISK_CLASSES does not reference the classifier ceiling map — "
+        "it has drifted back to a hand-maintained second list")
+    literals = [n for n in ast.walk(rhs)
+                if isinstance(n, (ast.Set, ast.List, ast.Tuple))]
+    assert not literals, (
+        f"CEILING_RISK_CLASSES carries a literal collection {literals!r} — "
+        "the six class names are re-declared rather than derived")
+    # and the derivation must still agree with the map at run time
+    assert G.CEILING_RISK_CLASSES == frozenset(CEILING_CLASS_ACTION_TYPES)

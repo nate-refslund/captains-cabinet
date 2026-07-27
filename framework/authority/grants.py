@@ -56,13 +56,17 @@ from framework.authority.posture import (  # noqa: E402
     cabinet_id, cabinet_root, is_locked, load_posture_config, posture_path,
 )
 
-# The six hard-ceiling risk classes — grants are CEILINGS-ONLY. Static so the
-# kernel stays deterministic when the matrix is unreadable; pinned to the
-# shipped floor's `hard_ceiling` list by test_grants (drift = test failure).
-CEILING_RISK_CLASSES = frozenset({
-    "external_comms", "deploy_prod", "spend",
-    "secrets", "network_write", "credentials_grant",
-})
+from framework.authority.classifier import (  # noqa: E402
+    CEILING_CLASS_ACTION_TYPES,
+)
+
+# The six hard-ceiling risk classes — grants are CEILINGS-ONLY. DERIVED from
+# the classifier's own ceiling map (2026-07-27), not re-declared: this used to
+# be a hand-copied frozenset of the same six strings, i.e. a second list to
+# drift. It remains static-at-import (deterministic when the matrix is
+# unreadable) and is still pinned to the shipped floor's `hard_ceiling` by
+# test_grants.
+CEILING_RISK_CLASSES = frozenset(CEILING_CLASS_ACTION_TYPES)
 
 # ≤90d expiry horizon at grant time (FI-2; renewal auto-files a need).
 MAX_EXPIRY_HORIZON_DAYS = 90
@@ -258,6 +262,20 @@ def _row_error(g: Any) -> str | None:
                 f"(grants are ceilings-only)")
     if not _is_str_list(g["action_types"]):
         return "action_types must be a non-empty list of strings"
+    # ENUM + CLASS MEMBERSHIP (2026-07-27). Shape alone let a row name any
+    # string, so two defects were unreachable by validation: a kind that is in
+    # NO enum (a typo silently grants nothing while reading as granted), and —
+    # the one that widens — a kind belonging to a DIFFERENT ceiling. check()
+    # filters on the caller's risk_class AND action_type independently
+    # (:465-471), so a row pairing `risk_class: external_comms` with
+    # `action_types: [secret_read]` matches a caller presenting that mismatched
+    # pair. Derived from the classifier's ceiling map (the same ONE source
+    # CEILING_RISK_CLASSES above comes from) — never a second list.
+    legal = CEILING_CLASS_ACTION_TYPES.get(g["risk_class"], frozenset())
+    stray = sorted(set(g["action_types"]) - set(legal))
+    if stray:
+        return (f"action_types {stray} are not members of risk_class "
+                f"'{g['risk_class']}' (legal: {sorted(legal)})")
     if not _is_str_list(g["lanes"]) or "*" in g["lanes"]:
         # Narrowest-scope doctrine: never lane:'*' — name the lanes.
         return "lanes must be a non-empty list of named lanes (never '*')"
