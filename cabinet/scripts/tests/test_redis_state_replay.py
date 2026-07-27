@@ -40,9 +40,28 @@ class IsolatedRedis:
         )
         self.starts = 0
 
-    def cli(self, *args: str) -> subprocess.CompletedProcess[str]:
+    def cli(
+        self, *args: str, stdin_value: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        """Run redis-cli against this instance's private socket.
+
+        ``stdin_value`` appends ``-x``, which makes redis-cli read the LAST
+        argument from stdin instead of argv. Any value a production cabinet
+        stores can exceed Linux's MAX_ARG_STRLEN (32 pages = 128 KiB), which
+        caps a SINGLE argv member regardless of the ARG_MAX total: execve()
+        then fails with E2BIG ("Argument list too long") before redis-cli ever
+        opens the socket. macOS has no equivalent per-argument cap, so a large
+        value passed on argv makes the arm silently macOS-only — green on the
+        author's box, dead on every Linux runner. Production values never
+        cross an argv boundary, so this harness must not force them to.
+        """
+        command = ["redis-cli", "-s", str(self.socket)]
+        if stdin_value is not None:
+            command.append("-x")
+        command.extend(args)
         return subprocess.run(
-            ["redis-cli", "-s", str(self.socket), *args],
+            command,
+            input=stdin_value,
             capture_output=True,
             text=True,
             timeout=20,
@@ -269,7 +288,12 @@ def test_v3_sha256_handles_production_sized_values_without_lua_stack_overflow(
     redis = redis_factory(appendonly=False)
     key = "large-secret-key"
     value = "x" * (512 * 1024)
-    redis.cli("SET", key, value)
+    redis.cli("SET", key, stdin_value=value)
+    # The value must reach Redis WHOLE, or this arm silently degrades into a
+    # small-value test that can no longer overflow a Lua stack — the exact
+    # thing it exists to catch. Pin the stored length, not just the SET's
+    # exit code: `-x` truncating or appending would otherwise pass unnoticed.
+    assert int(redis.cli("STRLEN", key).stdout.strip()) == len(value)
     state = tmp_path / "large.state"
     redis.fingerprint(state)
 
