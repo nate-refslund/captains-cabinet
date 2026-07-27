@@ -168,6 +168,27 @@ const BLOB_PROBE_STEP = 5
 const BLOB_MIN_RADIUS = 8
 const BLOB_RIM_ANGLES = 512
 
+/**
+ * How much bigger than itself a blob must be clear, to be certified clear.
+ *
+ * DENSITY WAS NEVER THE PROBLEM — GRAZING WAS. This function samples the rim at
+ * 512 angles and the interior on a ~5px lattice, and an independent 90-angle
+ * probe in iso-layout.test.ts still found a point off land inside a blob this
+ * had just certified. Measured on seed `harbour`, crop plot 2: the blob's rim
+ * reaches y = 1175.99 and the raster cell boundary is y = 1176.00, so the two
+ * samplers land either side of an 8px cell edge and disagree by 0.01px. No
+ * finite angle count fixes that; both are honest samples of the same curve, and
+ * the curve genuinely grazes water.
+ *
+ * The fix is a MARGIN rather than more probes: the blob is tested at
+ * rx + MARGIN, ry + MARGIN and painted at rx, ry, so the painted rim sits a
+ * real distance inside the certified one and ANY sampler at any density agrees.
+ * 2px, because growing both semi-axes by m moves the true rim outward by at
+ * least m * min(rx,ry) / max(rx,ry), and no region here is flatter than 1:2 —
+ * so 2 buys at least 1px of genuine clearance. It can only paint less.
+ */
+const BLOB_LAND_MARGIN = 2
+
 function blobOnLand(
   c: Point,
   rx: number,
@@ -212,7 +233,8 @@ export function clipBlobToLand(
   let rx = b.rx
   let ry = b.ry
   for (let i = 0; i < 10; i++) {
-    if (blobOnLand(b.c, rx, ry, onLand, p)) {
+    // tested with the margin, kept without it — see BLOB_LAND_MARGIN
+    if (blobOnLand(b.c, rx + BLOB_LAND_MARGIN, ry + BLOB_LAND_MARGIN, onLand, p)) {
       return b.w === undefined ? { c: b.c, rx, ry } : { c: b.c, rx, ry, w: b.w }
     }
     rx *= 0.82
@@ -323,11 +345,12 @@ export function paintRegions(
   // Clip AFTER every draw, never instead of one: the rng stream must be
   // consumed in the reference's order whatever the coastline does, or a blob
   // that fell in the sea would reshape every blob after it.
-  const keep = (kind: PaintKind, blobs: Blob[], tone?: number) => {
+  const keep = (kind: PaintKind, blobs: Blob[], tone?: number): Blob[] => {
     const clipped = blobs
       .map((b) => clipBlobToLand(b, onLand, coast.step))
       .filter((b): b is Blob => b !== null)
     if (clipped.length > 0) out.push(tone === undefined ? { kind, blobs: clipped } : { kind, blobs: clipped, tone })
+    return clipped
   }
 
   // ---- broken meadow (compose.py:142-150) ---------------------------------
@@ -479,6 +502,19 @@ export function paintRegions(
   // water does not wait for an org to grow — and its own stream is what makes
   // that literally true rather than merely intended.
   const water: Blob[] = []
+  /**
+   * The pond and stream blobs THAT WERE ACTUALLY PAINTED, which is what the
+   * bank must ring.
+   *
+   * It used to grow the UNCLIPPED water, and the two clip independently: a bank
+   * blob starts 9px larger, so its shrink ladder lands on different radii and it
+   * can survive at a size where the water it rings was dropped altogether. That
+   * is a sand ring around water nobody painted — and planting.test.ts's
+   * "every bank blob centre is a water blob centre" caught it the moment the
+   * land certification got 2px stricter. Ringing the emitted water makes the
+   * property true by construction instead of by coincidence.
+   */
+  const keptWater: Blob[] = []
   {
     const rng = streamFor('pond')
     for (let i = 0; i < 14; i++) {
@@ -494,7 +530,7 @@ export function paintRegions(
         ry: r * 0.58,
       })
     }
-    keep('pond', water)
+    keptWater.push(...keep('pond', water))
   }
 
   // The outflow: 26 discs per leg, tapering 15 -> 12, exactly as the reference
@@ -515,7 +551,7 @@ export function paintRegions(
       }
       prev = step
     }
-    keep('stream', stream)
+    keptWater.push(...keep('stream', stream))
   }
 
   // The bank is the water grown by BANK_GROW; the renderer paints it first and
@@ -523,7 +559,7 @@ export function paintRegions(
   // past the shore even where the water it rings was itself clipped.
   keep(
     'pond_bank',
-    [...water, ...stream].map((b) => ({ c: b.c, rx: b.rx + BANK_GROW, ry: b.ry + BANK_GROW }))
+    keptWater.map((b) => ({ c: b.c, rx: b.rx + BANK_GROW, ry: b.ry + BANK_GROW }))
   )
 
   // ---- the calm value mottle (compose.py:378-386) -------------------------

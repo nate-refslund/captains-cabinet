@@ -145,7 +145,6 @@ function justifiedRoles(state: LayoutState): string[] {
   if (present('great_house')) out.push('great_house')
   if (present('well')) out.push('well')
   out.push('firepit') // ALWAYS_DRAWN: an unbuilt hearth is still a hearth
-  if (state.era !== 'camp' && present('market_stall')) out.push('market_stall')
   for (let i = 0; i < countOf(state, 'officer_dwellings'); i++) out.push('officer_dwelling')
   for (const obj of ['library', 'workshop', 'outbuildings']) if (present(obj)) out.push(obj)
   out.push('lighthouse') // ALWAYS_DRAWN: an unlit cairn is the drawing
@@ -796,7 +795,13 @@ describe('era gates CONTENT, not just size', () => {
     // opposite, because a measured field plot is a COUNT and era may never hide
     // one.
     expect(camp.paint.map((p) => p.kind)).not.toContain('plaza')
-    expect(camp.structures.map((s) => s.kind)).not.toContain('market_stall')
+    // THE STALL IS DRESSING, NOT A STRUCTURE (iso-layout/dressing.ts). Looking
+    // for it in `structures` would now pass for the wrong reason — it is not
+    // there at ANY era — so the arm asks the list that can actually hold one.
+    expect(camp.dressing.map((d) => d.kind)).not.toContain('market_stall')
+    // and the whole village-life class with it: a camp has no benches, no
+    // lamps, no market goods and no fowl (compose.py:523)
+    expect(camp.dressing.filter((d) => d.role === 'village_life')).toEqual([])
   })
 
   it('a camp WITH measured field plots draws them — era may not hide a count', () => {
@@ -819,8 +824,20 @@ describe('era gates CONTENT, not just size', () => {
 
   it('a hamlet has them', () => {
     expect(hamlet.paint.map((p) => p.kind)).toContain('plaza')
-    expect(hamlet.structures.map((s) => s.kind)).toContain('market_stall')
+    expect(hamlet.dressing.map((d) => d.kind)).toContain('market_stall')
     expect(hamlet.paint.map((p) => p.kind)).toContain('ploughed')
+    // AND THE STALL IS GATED ON THE ERA ALONE. It used to be gated on
+    // `isBuilt(state, 'market_stall')`, a ladder that does not exist in
+    // growth-ladders.yml — so the predicate was false on every state and this
+    // arm passed only because `structures` never contained the name it was
+    // asserting the absence of one test up. A hamlet with NO stages at all
+    // still has a market.
+    const bare = composeLayout(
+      { era: 'hamlet', road: 'gravel_road', stages: {}, counts: {} },
+      'acme-corp',
+      FAST
+    )
+    expect(bare.dressing.map((d) => d.kind)).toContain('market_stall')
   })
 
   it('a camp still has NATURE — an island is not empty because an org is young', () => {

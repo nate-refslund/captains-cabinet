@@ -158,6 +158,30 @@ export function walkInland(
   return null
 }
 
+/**
+ * Is a BASE POINT on land — the strict form, and the one every ring search uses.
+ *
+ * TWO PROBES, NOT ONE, and the second is the reason this function exists.
+ * `walkInland` tests (x, y-2) because the reference does: a base sitting exactly
+ * on the waterline row reads as land in a mask that was blurred and
+ * thresholded. The ring searches below tested (x, y) alone, so the two rules
+ * admitted a 2px band of shoreline that one of them called land and the other
+ * did not — and a structure landing in it is real: measured 2026-07-27 on seeds
+ * `beta` and `zeta`, the quayside warehouse settled with its base exactly on
+ * the waterline, `landAt(x, y)` false, and its keep-out disc was therefore
+ * derived from a point in the sea. The layout audit did not see it because it
+ * asks the (x, y-2) question.
+ *
+ * Requiring BOTH removes the band. It can only refuse spots, never invent them.
+ */
+export function baseOnLand(
+  onLand: (x: number, y: number) => boolean,
+  x: number,
+  y: number
+): boolean {
+  return onLand(x, y) && onLand(x, y - 2)
+}
+
 /** compose.py snap()'s margin: how much ground an anchor must clear each way. */
 export const SNAP_MARGIN = 70
 
@@ -318,7 +342,7 @@ export function clearOfLane(
     for (let i = 0; i < 16; i++) {
       const ang = (i * Math.PI * 2) / 16
       const p = { x: at.x + Math.cos(ang) * r, y: at.y + Math.sin(ang) * r * 0.66 }
-      if (!onLand(p.x, p.y) || footprintOnLane(p, size, lanes)) continue
+      if (!baseOnLand(onLand, p.x, p.y) || footprintOnLane(p, size, lanes)) continue
       if (respect) {
         const overlap = maxGroundOverlap(p, size, occupied)
         if (overlap > frac) {
@@ -372,7 +396,7 @@ export function clearOfRegions(
     for (let i = 0; i < 16; i++) {
       const ang = (i * Math.PI * 2) / 16
       const p = { x: at.x + Math.cos(ang) * r, y: at.y + Math.sin(ang) * r * 0.66 }
-      if (!onLand(p.x, p.y - 2) || footprintOnLane(p, size, lanes)) continue
+      if (!baseOnLand(onLand, p.x, p.y) || footprintOnLane(p, size, lanes)) continue
       const onRegion = maxGroundOverlap(p, size, regions)
       const shared = maxGroundOverlap(p, size, occupied)
       if (onRegion <= frac && shared <= frac) return p

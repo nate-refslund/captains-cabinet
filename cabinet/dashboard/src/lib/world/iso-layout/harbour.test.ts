@@ -805,10 +805,21 @@ describe('the region extents', () => {
         expect(f[1]).toBeCloseTo((y0 + y1) / 2, 6)
         expect(f[2]).toBeCloseTo((x1 - x0) / 2, 6)
         expect(f[3]).toBeCloseTo((y1 - y0) / 2, 6)
+        // CONTAINMENT IN THE EXTENT, WHICH IS A BOX — not in the ellipse
+        // INSCRIBED in it. This arm used to require every blob CENTRE inside
+        // the inscribed ellipse, which was only ever true because the plots
+        // were themselves ellipse-shaped: the blobs clustered near the middle.
+        // A plot is now a rhombus on the iso axes (paint.ts), so its corner
+        // blobs sit at the corners of the extent — outside the inscribed
+        // ellipse and correctly so. The property `regions.fields` actually
+        // promises is that it IS the extent of these blobs, which the four
+        // assertions above state exactly; asserting a shape on top of that was
+        // pinning the old silhouette, not the contract.
         for (const b of blobs) {
-          expect(((b.c.x - f[0]) / f[2]) ** 2 + ((b.c.y - f[1]) / f[3]) ** 2).toBeLessThanOrEqual(
-            1.000001
-          )
+          expect(b.c.x - b.rx).toBeGreaterThanOrEqual(x0 - 1e-6)
+          expect(b.c.x + b.rx).toBeLessThanOrEqual(x1 + 1e-6)
+          expect(b.c.y - b.ry).toBeGreaterThanOrEqual(y0 - 1e-6)
+          expect(b.c.y + b.ry).toBeLessThanOrEqual(y1 + 1e-6)
         }
       })
     }

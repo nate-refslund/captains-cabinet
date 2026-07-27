@@ -80,7 +80,13 @@ export const VILLAGE_LIFE_FRAMES: readonly string[] = [
   'barrel_single',
   'beehives',
   'bench',
-  'bush_round',
+  // bush_round is DELIBERATELY ABSENT and this comment is the reason: it is
+  // NATURE, on cabinet/scripts/world-capture/ambient-nature.txt, and an island
+  // has bushes whether or not anyone lives there. The hedgerows and frontages
+  // below still plant them — they just do not need an era entitlement to
+  // exist, and claiming one here would put morphology beside the measured
+  // things and make the difference invisible. blueprint.test.ts asserts nature
+  // is never state-justified, and it caught this the first time.
   'cart',
   'chart_table',
   'chicken',
