@@ -11,7 +11,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import signal
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -348,6 +351,92 @@ def _reason_token(policy: dict[str, Any]) -> str:
     return name.replace("-", "_")
 
 
+class _PolicyEvalTimeout(Exception):
+    """One typed-policy evaluation exceeded its wall-clock bound."""
+
+
+_EVAL_BUDGET_DEFAULT = 2.0
+# Ceiling on the configured budget. A hook runs on EVERY tool call, so an
+# absurd budget is indistinguishable from no budget; clamping keeps the
+# worst case a number someone has actually thought about.
+_EVAL_BUDGET_MAX = 60.0
+
+
+def _eval_budget() -> float:
+    """Seconds the typed-policy evaluation may take IN TOTAL. 0 disables it.
+
+    Non-finite is rejected explicitly, not merely non-numeric. `inf` parses
+    fine as a float and then makes `setitimer` raise OverflowError, which the
+    caller's blanket handler would turn into a silent fall-through to the
+    weaker regex shadow — i.e. the exact bypass this bound exists to deny, and
+    reachable by setting one environment variable. `0` (the documented way to
+    disable the bound) would have been SAFER than `inf`, which is the shape of
+    a degenerate-input defect.
+    """
+    raw = os.environ.get("CABINET_POLICY_EVAL_TIMEOUT", "")
+    if not raw:
+        return _EVAL_BUDGET_DEFAULT
+    try:
+        v = float(raw)
+    except ValueError:
+        return _EVAL_BUDGET_DEFAULT
+    if v != v or v in (float("inf"), float("-inf")):  # NaN or +/-inf
+        return _EVAL_BUDGET_DEFAULT
+    if v < 0:
+        return _EVAL_BUDGET_DEFAULT
+    return min(v, _EVAL_BUDGET_MAX)
+
+
+# Set only while a bounded call is in flight. A SIGALRM generated microseconds
+# before the timer is disarmed is still delivered afterwards; without this flag
+# that straggler either escapes as _PolicyEvalTimeout from an unrelated frame
+# (uncaught -> empty stdout -> the hook falls through to the bash floor) or,
+# once the previous disposition is restored, kills the process with signal 14.
+# Both were reproduced. The flag makes a late alarm a no-op instead.
+_EVAL_ALARM_ARMED = False
+
+
+def _raise_eval_timeout(signum: int, frame: Any) -> None:  # noqa: ARG001
+    if _EVAL_ALARM_ARMED:
+        raise _PolicyEvalTimeout()
+
+
+def _bounded(fn, budget: float, *args: Any):
+    """Run `fn(*args)` under a wall-clock bound, raising _PolicyEvalTimeout.
+
+    The bound is SIGALRM-based, which requires the main thread; off the main
+    thread (or on a platform without setitimer) it degrades to an unbounded
+    call rather than crashing. That degradation is safe HERE because the hook
+    always runs this single-threaded in its own process — but it is why the
+    regex fix in policy_engine is the actual fix and this is only the net.
+
+    Teardown order is load-bearing: DISARM the flag, then the timer, then
+    restore the handler. Any other order leaves a window in which a straggling
+    alarm is fatal or escapes.
+    """
+    global _EVAL_ALARM_ARMED
+    if budget <= 0 or threading.current_thread() is not threading.main_thread():
+        return fn(*args)
+    try:
+        prev = signal.signal(signal.SIGALRM, _raise_eval_timeout)
+    except (ValueError, AttributeError, OSError):
+        return fn(*args)
+    try:
+        _EVAL_ALARM_ARMED = True
+        signal.setitimer(signal.ITIMER_REAL, budget)
+        return fn(*args)
+    finally:
+        _EVAL_ALARM_ARMED = False
+        try:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+        except (ValueError, OSError):  # pragma: no cover
+            pass
+        try:
+            signal.signal(signal.SIGALRM, prev)
+        except (ValueError, OSError):  # pragma: no cover - restore is best effort
+            pass
+
+
 def _engine_decision(hook: dict[str, Any], officer: str) -> dict[str, Any] | None:
     """Route .decision through policy_engine.evaluate_policy() over the loaded
     typed policies (first-match-wins, mirroring the live main() loop). Returns
@@ -356,6 +445,25 @@ def _engine_decision(hook: dict[str, Any], officer: str) -> dict[str, Any] | Non
 
     Fail-safe: any exception → None (regex fallback). authority_matrix policies
     are skipped. A policiesless load (empty root) yields decision=allow.
+
+    TIMEOUT = FAIL CLOSED, deliberately (2026-07-27). The whole typed-policy
+    evaluation runs under ONE wall-clock budget — total, not per policy, since
+    eleven policies load and a per-policy bound would make the true worst case
+    eleven times the number the guarantee names — and a breach BLOCKS, naming
+    the policy that ran out of time. This is defence in depth, not the fix: the
+    fix is that the pattern which actually wedged (policy_engine._STMT_RUN, 52
+    of 80,307 recorded calls) no longer backtracks. Two reasons it must not fall
+    through to the regex shadow like every other exception here:
+      * A gate that cannot compute a verdict does not know the call is safe.
+        Allowing on "I don't know" is the fail-open this program treats as the
+        worst class of defect, and the enforcer is the worst place to have one.
+      * Falling through would make a slow regex a BYPASS PRIMITIVE: craft an
+        input that wedges the classifier and you are evaluated by the weaker
+        fallback instead. Fail-closed makes the same input a self-inflicted
+        refusal — loud, legible, and harmless to everyone else.
+    The cost is bounded and visible: an officer sees a named refusal instead of
+    a hook that hangs forever with nothing reporting it, which is what the live
+    hook does today.
     """
     if policy_engine is None:
         return None
@@ -372,13 +480,45 @@ def _engine_decision(hook: dict[str, Any], officer: str) -> dict[str, Any] | Non
     except Exception:  # noqa: BLE001 - shadow must never raise
         return None
 
+    budget = _eval_budget()
+    # TOTAL, not per-policy. Eleven policies load in the enforcing set, so a
+    # per-policy bound would make the real worst case 11x the number this
+    # claims to guarantee. Each evaluation gets whatever is left.
+    deadline = (time.monotonic() + budget) if budget > 0 else 0.0
+
+    def _timed_out(policy: dict) -> dict[str, Any]:
+        token = f"{_reason_token(policy)}_eval_timeout"
+        return {
+            "decision": "block",
+            "reason": token,
+            "reasons": [token],
+            "officer": officer,
+            "policy_version": "shadow-v1",
+            "detail": (
+                f"policy '{policy.get('name') or policy.get('type')}' did "
+                f"not finish within the {budget}s evaluation budget — refusing "
+                f"rather than guessing. Simplify or split the command."
+            ),
+        }
+
     try:
         for policy in policies:
             if not isinstance(policy, dict):
                 continue
             if policy.get("type") not in _LEGACY_ENFORCING_TYPES:
                 continue  # skip authority_matrix (shadow-only) + non-legacy
-            result = evaluate_policy(policy, tool_name, tool_input, officer)
+            if budget > 0:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return _timed_out(policy)
+            else:
+                remaining = 0.0
+            try:
+                result = _bounded(
+                    evaluate_policy, remaining, policy, tool_name, tool_input, officer
+                )
+            except _PolicyEvalTimeout:
+                return _timed_out(policy)
             if result:
                 token = _reason_token(policy)
                 return {
@@ -388,6 +528,21 @@ def _engine_decision(hook: dict[str, Any], officer: str) -> dict[str, Any] | Non
                     "officer": officer,
                     "policy_version": "shadow-v1",
                 }
+    except _PolicyEvalTimeout:
+        # A straggling alarm delivered outside the inner try. The armed-flag
+        # above makes this unreachable in principle; it is caught HERE anyway
+        # because the blanket handler below returns None, and "the bound fired
+        # so we fell back to the weaker matcher" is the one outcome this whole
+        # mechanism exists to prevent.
+        return {
+            "decision": "block",
+            "reason": "policy_eval_timeout",
+            "reasons": ["policy_eval_timeout"],
+            "officer": officer,
+            "policy_version": "shadow-v1",
+            "detail": ("typed policy evaluation exceeded its budget — refusing "
+                       "rather than guessing."),
+        }
     except Exception:  # noqa: BLE001 - shadow must never raise
         return None
 
