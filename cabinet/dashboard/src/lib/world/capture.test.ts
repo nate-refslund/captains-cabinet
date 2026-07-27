@@ -146,20 +146,46 @@ describe('the world, judged', () => {
  * them — every one of these was red on first execution and green with the
  * mutation removed.
  */
-const MUTATIONS: [string, string][] = [
-  ['orphan-sprite', 'state_traceable'],   // a bench no rung or count entitles
-  ['sprite-on-lane', 'on_road'],          // a building standing in the road
-  ['no-shadows', 'shadows'],              // sprites floating without a cast shadow
-  ['reverse-depth', 'depth_order'],       // far sprites painted over near ones
-  ['unpaved-square', 'terrain'],          // a square declared and never paved
-  ['ghost-sprite', 'paint_fidelity'],     // a declared sprite that leaves no mark
+const MUTATIONS: [string, string[], string][] = [
+  // [mutation, the arms that must go red — ALL of them, and no others,
+  //  the fixture it is run against]
+  ['orphan-sprite', ['state_traceable'], 'hamlet'],  // a banner nothing entitles
+  ['sprite-on-lane', ['on_road'], 'hamlet'],         // a building standing in the road
+  ['no-shadows', ['shadows'], 'hamlet'],             // sprites floating without a cast shadow
+  ['reverse-depth', ['depth_order'], 'hamlet'],      // far sprites painted over near ones
+  ['unpaved-square', ['terrain'], 'hamlet'],         // a square declared and never paved
+  ['ghost-sprite', ['paint_fidelity'], 'hamlet'],    // a declared sprite that leaves no mark
+  // THE ERA GATE ON VILLAGE LIFE, attacked. iso-layout/dressing draws benches,
+  // lamps, stalls and fowl only at hamlet and above, and blueprint.ts justifies
+  // that class only there — so the same bench that is entitled on the hamlet
+  // frame is an orphan on the camp one. This is the only mutation whose defect
+  // depends on WHICH frame it lands on, which is exactly the property under
+  // test: a gate nobody has tried to defeat is an assumption.
+  //
+  // TWO ARMS, and both are named rather than one being tolerated: the bench is
+  // unjustified (state_traceable) AND `bench` is floored at hamlet in
+  // world_checks.ERA_MIN (era). Two independent gates catching the same defect
+  // is the honest report; writing only one and accepting "at least this" would
+  // let a row pass on the wrong arm entirely.
+  ['camp-bench', ['state_traceable', 'era'], 'camp'],
 ]
 
 describe('the checks can fail — every arm, proven', () => {
-  for (const [mutation, arm] of MUTATIONS) {
-    it(`${mutation} turns ${arm} red, and only ${arm}`, TIMEOUT, () => {
-      const v = capture('hamlet', mutation)
-      expect(v.red, `${mutation} must be caught by exactly ${arm}`).toEqual([arm])
+  for (const [mutation, arms, fixture] of MUTATIONS) {
+    it(`${mutation} turns ${arms.join(' + ')} red on ${fixture}, and nothing else`, TIMEOUT, () => {
+      const v = capture(fixture, mutation)
+      expect([...v.red].sort(), `${mutation} must be caught by exactly ${arms}`).toEqual(
+        [...arms].sort()
+      )
     })
   }
+
+  // AND THE SAME MUTATION MUST *NOT* FIRE WHERE THE RULE PERMITS IT. Without
+  // this the camp-bench arm could be passing for the wrong reason — any red at
+  // all on a camp frame satisfies the row above. A bench at hamlet is real
+  // village life and the frame must stay green with it.
+  it('camp-bench is NOT a defect at hamlet, where a bench is entitled', TIMEOUT, () => {
+    const v = capture('hamlet', 'camp-bench')
+    expect(v.red).toEqual([])
+  })
 })

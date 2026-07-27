@@ -124,11 +124,41 @@ def scale_frame(bp: dict, draw: dict, s: float) -> None:
 def _mutate(name: str, bp: dict, draw: dict) -> str:
     W, H = bp["canvas"]
     if name == "orphan-sprite":
-        # A bench nobody measured: not entitled by any rung or count, and not on
-        # the ambient list. check_state_traceable must name it.
+        # A banner nobody measured: not entitled by any rung, count or era, and
+        # not on the ambient list. check_state_traceable must name it.
+        #
+        # IT USED TO BE A BENCH, and the day the dressing stage landed a bench
+        # at hamlet became a REAL entitlement (village life, era >= hamlet) — so
+        # this arm would have gone quietly green while still claiming to prove
+        # that orphans are caught. A mutation whose defect stops being a defect
+        # is a disabled sensor that still prints a pass. `posture_banner` is a
+        # frame the pack ships and NOTHING in blueprint.ts justifies at any era.
         at = bp.get("plaza") or [W // 2, H // 2, 10, 10]
-        s = {"n": "bench", "x": at[0], "y": at[1], "w": 60, "h": 60,
+        s = {"n": "posture_banner", "x": at[0], "y": at[1], "w": 60, "h": 60,
              "flip": False, "shadow": True}
+        draw["sprites"].append(s)
+        bp["sprites"].append({k: s[k] for k in ("n", "x", "y", "w", "h")})
+        return "state_traceable"
+    if name == "camp-bench":
+        # THE ERA GATE ON VILLAGE LIFE, from the other side. iso-layout/dressing
+        # draws benches, lamps, stalls and fowl only at hamlet and above
+        # (compose.py:523 "a camp is a camp"), and blueprint.ts justifies that
+        # whole class only at hamlet and above. A gate nobody has tried to
+        # defeat is an assumption: this stands a bench on a CAMP frame, where
+        # the class is empty, and check_state_traceable must name it. Run
+        # against the camp fixture — on hamlet a bench is entitled and this
+        # mutation is correctly not a defect at all.
+        #
+        # IT STANDS WHERE A TREE ALREADY STANDS (the frontmost nature sprite,
+        # offset clear of it), not at the canvas centre. The centre of this
+        # canvas is the main carriageway, so a bench dropped there fires
+        # `on_road` as well — and a mutation that trips a SECOND arm cannot show
+        # that the arm it names is the one doing the work. Nature is on land, off
+        # every lane and off the plough by construction, and the frontmost one is
+        # painted last so the bench also leaves a mark (no false paint_fidelity).
+        host = max(draw["sprites"], key=lambda q: q["y"])
+        s = {"n": "bench", "x": int(host["x"]) + 30, "y": int(host["y"]) + 24,
+             "w": 38, "h": 32, "flip": False, "shadow": True}
         draw["sprites"].append(s)
         bp["sprites"].append({k: s[k] for k in ("n", "x", "y", "w", "h")})
         return "state_traceable"
@@ -161,7 +191,7 @@ def _mutate(name: str, bp: dict, draw: dict) -> str:
 
 
 MUTATIONS = ["orphan-sprite", "sprite-on-lane", "no-shadows", "reverse-depth",
-             "unpaved-square", "ghost-sprite"]
+             "unpaved-square", "ghost-sprite", "camp-bench"]
 
 
 # ---------------------------------------------------------------- the atlas
