@@ -29,11 +29,19 @@
  * settle is DROPPED — a missing bush is invisible, a bush growing through a
  * roof is not.
  *
+ * NOTHING STANDS ON OPEN WATER (compose.py:530-539 and :870-883). Every anchor
+ * in this library is authored against the fixed compass layout while the island
+ * is a function of the org seed, so any anchor can be stranded offshore by a
+ * coastline that never saw it. Two ported rules close that: walkInland() for a
+ * thing being placed, snapInland() for an anchor other things are derived from.
+ * Both are the reference's, and placeOnGround() is the one door structures come
+ * through — so it either returns a point on land or returns null.
+ *
  * PURE: no clocks, no unseeded randomness, no IO, no DOM.
  */
 import { groundBox, groundOverlap, type PxBox } from '../projection'
 import type { LaneField } from './lanes'
-import type { Point } from './space'
+import { LAYOUT_SPACE, type Point } from './space'
 
 /** A sprite's drawn size in layout px — what the ground diamond derives from. */
 export interface Footprint {
@@ -96,6 +104,83 @@ export function groundTaken(
     if (groundOverlap(a, occupantBox(o)) > frac) return true
   }
   return false
+}
+
+/** Where "inland" is when nothing says otherwise: the island centre. */
+const ISLAND_CENTRE: Point = { x: LAYOUT_SPACE.cx, y: LAYOUT_SPACE.cy }
+
+/**
+ * Walk a sprite inland until it has ground under it (compose.py:530-539).
+ *
+ * The reference is explicit about why this is a walk and not a drop: dropping
+ * the sprite "silently deletes whole districts whenever the coastline moves".
+ * So it steps up to 45% of the way toward the island centre in 40 stations and
+ * takes the first one with land under the sprite's base — and returns null only
+ * when there is no ground within that reach, which is the reference's `return
+ * None` and means the thing does not exist rather than standing on the sea.
+ *
+ * The probe is (x, y-2), the reference's: a base sitting exactly on the
+ * waterline row reads as land in a mask that was blurred and thresholded, and
+ * the sprite is drawn UP the screen from its base.
+ */
+export function walkInland(
+  at: Point,
+  onLand: (x: number, y: number) => boolean,
+  toward: Point = ISLAND_CENTRE,
+  steps = 40,
+  reach = 0.45
+): Point | null {
+  if (onLand(at.x, at.y - 2)) return at
+  for (let t = 1; t <= steps; t++) {
+    const f = (t / steps) * reach
+    const x = at.x + (toward.x - at.x) * f
+    const y = at.y + (toward.y - at.y) * f
+    if (onLand(x, y - 2)) return { x, y }
+  }
+  return null
+}
+
+/**
+ * Pull an ANCHOR inland until it and its footprint sit on land (compose.py
+ * snap(), :870-883).
+ *
+ * The difference from walkInland is what is being moved: an anchor is a point
+ * other things are derived FROM — a district's keep-out disc, a lot's centre,
+ * the plot a drive is drawn to. It therefore has to clear a margin in every
+ * direction rather than merely have ground under one pixel, and it may travel
+ * the whole way to the centre rather than 45% of it.
+ *
+ * The reference's last resort is the island centre. That is only honest if the
+ * centre is itself land, so this checks rather than assumes: an island with no
+ * centre (a degenerate radius, a cove that ate the island) returns null and the
+ * caller decides, instead of handing back a point in the sea.
+ */
+export function snapInland(
+  at: Point,
+  onLand: (x: number, y: number) => boolean,
+  toward: Point = ISLAND_CENTRE,
+  margin = 70,
+  steps = 60
+): Point | null {
+  for (let t = 0; t <= steps; t++) {
+    const f = t / steps
+    const x = at.x + (toward.x - at.x) * f
+    const y = at.y + (toward.y - at.y) * f
+    if (
+      onLand(x, y) &&
+      onLand(x, y + margin) &&
+      onLand(x - margin, y) &&
+      onLand(x + margin, y) &&
+      onLand(x, y - margin)
+    ) {
+      // The reference rounds to whole pixels here because it is about to draw
+      // on a bitmap. This library is float layout space, and rounding moved a
+      // lot off the exact 168px separation it had just been relaxed to — a
+      // quantisation that breaks a measured invariant for no benefit.
+      return { x, y }
+    }
+  }
+  return onLand(toward.x, toward.y) ? { x: toward.x, y: toward.y } : null
 }
 
 export interface SettleOptions {
@@ -203,15 +288,25 @@ export interface PlaceOptions {
   dropIfBlocked?: boolean
   /** Skip the lane rule (fences deliberately gap where a lane crosses). */
   avoidLane?: boolean
+  /** Where the land walk heads: the island centre (compose.py ICX/ICY). */
+  inlandTo?: Point
 }
 
 /**
  * Settle one thing against both rules and report where it ended up, or null if
- * it must be dropped (compose.py place(), lines 547-560).
+ * it must be dropped (compose.py place(), lines 530-560).
  *
  * The interleave is the whole point: nudging a prop out of its neighbour could
  * push it back into the road, and clearing the road could push it into a
  * neighbour. Two rounds settle it, and the road gets the last word.
+ *
+ * THE LAND RULE BOOKENDS THE SETTLE, and the closing half is this port's, not
+ * the reference's. compose.py walks inland once, before the two rounds, and its
+ * _clear_of_props has no land test at all — so a prop pushed off a neighbour
+ * can be pushed straight back over the waterline and the reference draws it
+ * there. Re-testing afterwards is what turns "nothing stands on open water"
+ * from an intention into a property this function GUARANTEES: it returns a
+ * point on land, or it returns null and the caller draws nothing.
  */
 export function placeOnGround(
   at: Point,
@@ -222,7 +317,11 @@ export function placeOnGround(
   opts: PlaceOptions = {}
 ): Point | null {
   const strict = opts.strict ?? false
-  let p = at
+  const toward = opts.inlandTo ?? ISLAND_CENTRE
+  const frac = strict ? 0.04 : 0.1
+  const grounded = walkInland(at, onLand, toward)
+  if (!grounded) return null
+  let p = grounded
   let settled = true
   for (let round = 0; round < 2; round++) {
     const s = settleAgainstOccupants(p, size, occupied, {
@@ -233,8 +332,15 @@ export function placeOnGround(
     p = s.at
     settled = s.settled
     if (opts.avoidLane !== false) {
-      p = clearOfLane(p, size, lanes, onLand, occupied, { frac: strict ? 0.04 : 0.1 })
+      p = clearOfLane(p, size, lanes, onLand, occupied, { frac })
     }
+  }
+  if (!onLand(p.x, p.y - 2)) {
+    const back = walkInland(p, onLand, toward)
+    if (!back) return null
+    // the ring search only ever lands on ground, so this cannot undo the walk
+    p = opts.avoidLane === false ? back : clearOfLane(back, size, lanes, onLand, occupied, { frac })
+    if (!onLand(p.x, p.y - 2)) return null
   }
   if (opts.dropIfBlocked && !settled) return null
   return p

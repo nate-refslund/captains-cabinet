@@ -6,10 +6,17 @@
  * WHY A DENSITY FIELD AT ALL. Uniform scatter is what made the planting read
  * as random rather than as a place: the same spacing in the village square as
  * at the forest edge, which no real landscape has. Here density(x,y) in 0..1
- * sets the LOCAL exclusion radius, so growth thickens toward the treeline,
- * thins through the meadow and stops dead on paving and on the fields. That is
- * the ecotope idea from the settlement-generation literature and it is the
- * standard fix for exactly this symptom.
+ * sets the LOCAL exclusion radius, so growth thickens toward the treeline and
+ * thins through the meadow. That is the ecotope idea from the settlement-
+ * generation literature and it is the standard fix for exactly this symptom.
+ *
+ * WHAT A DENSITY FIELD CANNOT DO is stop anything. This docstring used to claim
+ * planting "stops dead on paving and on the fields"; it does not and cannot —
+ * at density 0 the exclusion radius is still rMax, which means "spaced far
+ * apart", never "not here". Measured against that claim, 72-80% of all planting
+ * stood inside a keep-out disc. Stopping is the `pick` predicate's job, and the
+ * caller composes it (see index.ts free()): the field decides how CROWDED an
+ * admissible spot is, the predicate decides whether it is admissible at all.
  *
  * REJECTION AT SAMPLING TIME. A candidate whose ground is already taken, or
  * whose ground diamond touches a lane, is REJECTED — never sampled badly and

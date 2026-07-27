@@ -14,6 +14,7 @@ import {
   buildCoastline,
   buildLaneField,
   buildLanes,
+  clipToLand,
   composeLayout,
   countOf,
   CIVIC_ANCHORS,
@@ -39,6 +40,7 @@ import {
   type LayoutState,
   type Point,
 } from './index'
+import { clipBlobToLand, snapInland, walkInland, waterField } from './index'
 import { groundBox, groundDiamond, groundOverlap } from '../projection'
 import { seededRng } from '../hash'
 
@@ -71,8 +73,58 @@ const CAMP: LayoutState = {
 const hamlet = composeLayout(HAMLET, 'acme-corp', FAST)
 const camp = composeLayout(CAMP, 'acme-corp', FAST)
 
+/** Seeds used wherever a property must hold for more than one island. */
+const SEEDS = ['acme-corp', 'harbour', 'lantern', 'captains-cabinet', 'zeta']
+
 function sizeOfItem(kind: string) {
   return DEFAULT_FOOTPRINTS[kind] ?? { w: 96, h: 96 }
+}
+
+/** Every lane sample, runs flattened — the whole painted centreline. */
+function laneSamples(l: Layout): { key: string; at: Point }[] {
+  return l.lanes.flatMap((lane) =>
+    lane.runs.flat().map((at) => ({ key: lane.key, at }))
+  )
+}
+
+/**
+ * The keep-out test in the reference's own metric (compose.py:1213), written
+ * here rather than imported so the arms measure the RULE's claim and not the
+ * rule's code.
+ */
+function insideDisc(l: Layout, p: Point): boolean {
+  return l.districts.some((d) => (p.x - d.at.x) ** 2 + ((p.y - d.at.y) * 1.35) ** 2 < d.r * d.r)
+}
+
+function insidePaint(l: Layout, kinds: string[], p: Point): boolean {
+  return l.paint.some(
+    (r) =>
+      kinds.includes(r.kind) &&
+      r.blobs.some((b) => ((p.x - b.c.x) / b.rx) ** 2 + ((p.y - b.c.y) / b.ry) ** 2 <= 1)
+  )
+}
+
+/**
+ * A blob's extent, sampled DENSELY and independently of the implementation's
+ * own sampling: 90 rim angles and a 7x7 interior grid, against the clip's 24
+ * angles and one interior ring. A sensor that probes exactly the points the
+ * control probes cannot detect anything between them.
+ */
+function blobExtentSamples(b: { c: Point; rx: number; ry: number }): Point[] {
+  const out: Point[] = [b.c]
+  for (let i = 0; i < 90; i++) {
+    const a = (i * Math.PI * 2) / 90
+    out.push({ x: b.c.x + Math.cos(a) * b.rx, y: b.c.y + Math.sin(a) * b.ry })
+  }
+  for (let ix = -3; ix <= 3; ix++) {
+    for (let iy = -3; iy <= 3; iy++) {
+      const fx = ix / 3
+      const fy = iy / 3
+      if (fx * fx + fy * fy > 1) continue
+      out.push({ x: b.c.x + fx * b.rx, y: b.c.y + fy * b.ry })
+    }
+  }
+  return out
 }
 
 /** The layout, minus the coastline raster, as a comparable value. */
@@ -115,6 +167,7 @@ describe('determinism — the law that replaces layout_fold', () => {
     const audit = auditLayout(real)
     expect(audit.onLane).toEqual([])
     expect(audit.stacked).toEqual([])
+    expect(audit.inWater).toEqual([])
     expect(real.structures.length).toBeGreaterThan(5)
     expect(real.scatter.length).toBeGreaterThan(30)
     expect(shape(composeLayout(HAMLET, 'acme-corp'))).toBe(shape(real))
@@ -194,14 +247,30 @@ describe('coastline — a real shore with a carved cove', () => {
 
 // ── lanes ──────────────────────────────────────────────────────────────────
 
+/**
+ * "The island is everywhere" — for arms about widths, keys and era gating,
+ * which are not about the coastline. Named rather than inlined so a reader can
+ * see at a glance which arms are running WITHOUT a real shore, and the arms
+ * that are about the shore all use a real coastline.
+ */
+const LAND = () => true
+
 describe('lanes — the road is a rung, and the era gates the network', () => {
   it('a camp has exactly ONE lane, and it runs to the water', () => {
     const campCarriageways = camp.lanes.filter((l) => l.kind !== 'driveway')
     expect(campCarriageways).toHaveLength(1)
     expect(campCarriageways[0].key).toBe('main')
-    const end = campCarriageways[0].path[campCarriageways[0].path.length - 1]
-    // it ends south of the village square, heading for the harbour
-    expect(end.y).toBeGreaterThan(1300)
+    const runs = campCarriageways[0].runs
+    const last = runs[runs.length - 1]
+    const end = last[last.length - 1]
+    // It REACHES the water rather than crossing it: the control points run to
+    // y=1360, which is inside the cove on every island, so the land clip is
+    // what decides where the track actually stops. Assert the shore, not the
+    // authored endpoint — that is the property "runs to the water" means once
+    // the coastline is a function of the seed.
+    expect(camp.coast.landAt(end.x, end.y)).toBe(true)
+    expect(camp.coast.landAt(end.x, end.y + 40)).toBe(false)
+    expect(end.y).toBeGreaterThan(1100)
   })
 
   it('a hamlet has the network', () => {
@@ -219,15 +288,15 @@ describe('lanes — the road is a rung, and the era gates the network', () => {
   })
 
   it('era changes the network, rung changes only its width', () => {
-    const dirt = buildLanes('hamlet', 'dirt_path')
-    const cobble = buildLanes('hamlet', 'cobbled_road')
+    const dirt = buildLanes('hamlet', 'dirt_path', LAND)
+    const cobble = buildLanes('hamlet', 'cobbled_road', LAND)
     expect(dirt.map((l) => l.key)).toEqual(cobble.map((l) => l.key))
-    expect(dirt.map((l) => l.path)).toEqual(cobble.map((l) => l.path))
+    expect(dirt.map((l) => l.runs)).toEqual(cobble.map((l) => l.runs))
     expect(cobble[0].width).toBeGreaterThan(dirt[0].width)
   })
 
   it('the lane field answers on/off the carriageway', () => {
-    const field = buildLaneField(buildLanes('hamlet', 'cobbled_road'))
+    const field = buildLaneField(buildLanes('hamlet', 'cobbled_road', LAND))
     // the village square is the head of the main street
     expect(field.onLane(1200, 1010)).toBe(true)
     // open meadow far from any lane
@@ -389,8 +458,53 @@ describe('driveways — an L on the two isometric ground axes', () => {
     expect(drives.length).toBeGreaterThan(0)
     const field = buildLaneField(hamlet.lanes)
     for (const d of drives) {
-      const mid = d.path[Math.floor(d.path.length / 2)]
+      const run = d.runs[0]
+      const mid = run[Math.floor(run.length / 2)]
       expect(field.onLane(mid.x, mid.y)).toBe(true)
+    }
+  })
+
+  it('a camp gets NO drive — its dwelling fronts a road a camp does not have', () => {
+    // A drive is drawn to the lot's `road` point, which comes from the
+    // idealised lot-lane table and not from the network. At camp every district
+    // carriageway is gone, so the drive used to run to a road that is not
+    // there: measured, `drive-residential-0` ended at (709,802), on no lane.
+    expect(camp.driveways).toHaveLength(0)
+    expect(camp.lanes.filter((l) => l.kind === 'driveway')).toHaveLength(0)
+  })
+
+  it('...and the same state at HAMLET does get one — the gate is the era, not the count', () => {
+    // the negative twin: without it, "no drive at camp" would be satisfied by a
+    // build that never emits a drive for one dwelling at all
+    const oneDwelling = composeLayout(
+      { ...HAMLET, counts: { officer_dwellings: 1 } },
+      'acme-corp',
+      FAST
+    )
+    expect(oneDwelling.driveways.length).toBeGreaterThan(0)
+  })
+
+  it('a drive exists only where the lane its lot fronts is part of this era', () => {
+    // What the gate actually promises, stated exactly. It is an ERA test, not a
+    // geometric one: at hamlet the district lanes exist and every built lot gets
+    // its drive; at camp they do not and none does.
+    //
+    // NOT PROMISED, and left open deliberately: that a drive's far end lands on
+    // painted cobble. The officer row fronts LOT_LANES.west — the idealised
+    // frontage line the reference walks lots along (compose.py:245) — which is
+    // NOT the same polyline as the painted `west` carriageway
+    // (compose.py:227). The reference has that gap too and paints those drives
+    // anyway; closing it moves the whole officer row, which is a direction
+    // call, not a fix. Asserting it here would be asserting a property the
+    // design does not have.
+    for (const seed of SEEDS) {
+      const l = composeLayout(HAMLET, seed, FAST)
+      const keys = new Set(l.lanes.filter((x) => x.kind !== 'driveway').map((x) => x.key))
+      expect(keys.has('west')).toBe(true)
+      expect(l.driveways.length).toBe(countOf(HAMLET, 'officer_dwellings') + 3)
+      const c = composeLayout(CAMP, seed, FAST)
+      expect(new Set(c.lanes.map((x) => x.key))).toEqual(new Set(['main']))
+      expect(c.driveways).toHaveLength(0)
     }
   })
 })
@@ -410,7 +524,7 @@ describe('clearance — the ground diamond, and the road wins', () => {
     // the defect this exists to catch: sampling only the base row passed a
     // market stall standing squarely on a road the audit called clear
     const lanes = buildLaneField([
-      { key: 't', kind: 'main', width: 40, path: [{ x: 1000, y: 900 }, { x: 1200, y: 900 }] },
+      { key: 't', kind: 'main', width: 40, runs: [[{ x: 1000, y: 900 }, { x: 1200, y: 900 }]] },
     ])
     const size = { w: 150, h: 150 }
     // base BELOW the lane, but the diamond (depth ~82) reaches up onto it
@@ -430,13 +544,13 @@ describe('clearance — the ground diamond, and the road wins', () => {
     // negative twin: place something on the main street with the rule OFF and
     // show the audit catches it, so the green above is a measurement
     const field = buildLaneField(hamlet.lanes)
-    const onStreet = { x: hamlet.lanes[0].path[2].x, y: hamlet.lanes[0].path[2].y }
+    const onStreet = { ...hamlet.lanes[0].runs[0][2] }
     expect(footprintOnLane(onStreet, { w: 150, h: 150 }, field)).toBe(true)
   })
 
   it('clearing the road never lands a thing on another thing', () => {
     const field = buildLaneField(hamlet.lanes)
-    const onStreet = { x: hamlet.lanes[0].path[2].x, y: hamlet.lanes[0].path[2].y }
+    const onStreet = { ...hamlet.lanes[0].runs[0][2] }
     const neighbour = { at: { x: onStreet.x + 90, y: onStreet.y + 20 }, size: { w: 150, h: 150 } }
     const p = placeOnGround(onStreet, { w: 150, h: 150 }, field, () => true, [neighbour], {
       strict: true,
@@ -473,7 +587,7 @@ describe('clearance — the ground diamond, and the road wins', () => {
 
 describe('scatter — a density field, and rejection at sampling time', () => {
   const coast = buildCoastline('acme-corp', LAYOUT_SPACE, { step: 8 })
-  const field = buildLaneField(buildLanes('hamlet', 'gravel_road'))
+  const field = buildLaneField(buildLanes('hamlet', 'gravel_road', (x, y) => coast.landAt(x, y)))
   const districts = [
     { at: { x: 1200, y: 1010 }, r: 300 },
     { at: { x: 1200, y: 800 }, r: 250 },
@@ -494,7 +608,7 @@ describe('scatter — a density field, and rejection at sampling time', () => {
 
   it('the density field is ZERO on a lane and in the village core', () => {
     expect(wildness(1200, 1010)).toBe(0)
-    const onMain = buildLanes('hamlet', 'gravel_road')[0].path[2]
+    const onMain = buildLanes('hamlet', 'gravel_road', (x, y) => coast.landAt(x, y))[0].runs[0][2]
     expect(wildness(onMain.x, onMain.y)).toBe(0)
   })
 
@@ -590,9 +704,27 @@ describe('scatter — a density field, and rejection at sampling time', () => {
 // ── era gates content ──────────────────────────────────────────────────────
 
 describe('era gates CONTENT, not just size', () => {
-  it('a camp has no plaza, no market and no field plots', () => {
+  it('a camp has no plaza and no market', () => {
+    // NAMED FOR WHAT IT CAN DETECT. This arm used to claim "...and no field
+    // plots" as well, and it could not fail for that reason: field plots are
+    // gated on `counts.field_plots` alone and the CAMP fixture omits the count,
+    // so the assertion passed on the fixture rather than on the code. The
+    // property is asserted properly by the count arm below — which asserts the
+    // opposite, because a measured field plot is a COUNT and era may never hide
+    // one.
     expect(camp.paint.map((p) => p.kind)).not.toContain('plaza')
     expect(camp.structures.map((s) => s.kind)).not.toContain('market_stall')
+  })
+
+  it('a camp WITH measured field plots draws them — era may not hide a count', () => {
+    const farmedCamp = composeLayout(
+      { ...CAMP, counts: { officer_dwellings: 1, field_plots: 3 } },
+      'acme-corp',
+      FAST
+    )
+    expect(farmedCamp.paint.map((p) => p.kind)).toContain('ploughed')
+    expect(farmedCamp.paint.filter((p) => p.kind !== 'pond')).toHaveLength(3)
+    // and the fixture camp, which has no such count, draws none
     expect(camp.paint.map((p) => p.kind)).not.toContain('ploughed')
   })
 
@@ -632,10 +764,14 @@ describe('era gates CONTENT, not just size', () => {
     // Assert the pond EXISTS first: it is clipped to land, so on an island
     // with no west meadow there is nothing to compare and the arm would pass
     // vacuously — which is a disabled sensor, not a green one.
+    // seed 'zeta' rather than 'acme-corp': the pond is clipped to land, and on
+    // acme-corp the west meadow is genuinely offshore, so there is no pond to
+    // compare. Picking a seed that HAS one is the difference between an arm and
+    // a vacuous pass — hence the toBeDefined() below.
     const pondOf = (n: number) =>
       composeLayout(
         { ...HAMLET, counts: { officer_dwellings: 3, field_plots: n } },
-        'acme-corp',
+        'zeta',
         FAST
       ).paint.find((p) => p.kind === 'pond')
     const bare = pondOf(0)
@@ -645,13 +781,46 @@ describe('era gates CONTENT, not just size', () => {
     expect(farmed).toEqual(bare)
   })
 
-  it('the pond is clipped to LAND — no puddle floating on the sea', () => {
-    for (const seed of ['acme-corp', 'harbour', 'lantern']) {
+  it('the pond is clipped to LAND ALONG ITS WHOLE EXTENT, not at its centre', () => {
+    // THE ARM THIS REPLACES WAS DEAD. It sampled blob CENTRES — the one
+    // quantity the old implementation special-cased — so it could not fail for
+    // the reason it named. Measured against that code: every centre was on
+    // land while 11 of 26 extent samples on seed acme-corp and 24 of 182 on
+    // seed lantern stood in open water. Sampling is 90 rim angles plus a 7x7
+    // interior grid, denser than and offset from the clip's own probe.
+    let ponds = 0
+    for (const seed of SEEDS) {
       const l = composeLayout(HAMLET, seed, FAST)
       const pond = l.paint.find((p) => p.kind === 'pond')
       if (!pond) continue
-      for (const b of pond.blobs) expect(l.coast.landAt(b.c.x, b.c.y)).toBe(true)
+      ponds++
+      for (const b of pond.blobs) {
+        for (const p of blobExtentSamples(b)) {
+          expect(l.coast.landAt(p.x, p.y)).toBe(true)
+        }
+      }
     }
+    // "no pond anywhere" would satisfy every assertion above without testing
+    // anything — which is the failure mode this whole arm was rewritten for
+    expect(ponds).toBeGreaterThan(2)
+  })
+
+  it('the extent sensor is STRICTLY STRONGER than the centre sensor it replaced', () => {
+    // Permanent proof that the fix to the sensor is a fix: build a blob whose
+    // centre is on land and whose rim is not, and show the two sensors
+    // disagree. Without this, "the pond is clipped" could quietly revert to
+    // being tested at its centre again and every arm would stay green.
+    const onLand = (x: number, _y: number) => x < 1000
+    const b = { c: { x: 960, y: 500 }, rx: 80, ry: 40 }
+    expect(onLand(b.c.x, b.c.y)).toBe(true) // the dead sensor passes it
+    expect(blobExtentSamples(b).every((p) => onLand(p.x, p.y))).toBe(false)
+    // and the clip refuses it at that size, shrinking it until it fits
+    const clipped = clipBlobToLand(b, onLand)
+    expect(clipped).not.toBeNull()
+    expect(clipped!.rx).toBeLessThan(b.rx)
+    expect(blobExtentSamples(clipped!).every((p) => onLand(p.x, p.y))).toBe(true)
+    // a blob with no land under it at all is DROPPED, not shrunk to a dot
+    expect(clipBlobToLand({ c: { x: 1400, y: 500 }, rx: 80, ry: 40 }, onLand)).toBeNull()
   })
 
   it('the audit measures the CALLER’s footprints, not a default table', () => {
@@ -671,7 +840,8 @@ describe('era gates CONTENT, not just size', () => {
     // that precondition rather than assuming a hand-picked offset still holds
     const field = buildLaneField(big.lanes)
     const east = big.lanes.find((l) => l.key === 'east')!
-    const anchor = east.path[Math.floor(east.path.length / 2)]
+    const eastRun = east.runs[0]
+    const anchor = eastRun[Math.floor(eastRun.length / 2)]
     let probe: Point | null = null
     for (let dy = 60; dy <= 200 && !probe; dy += 5) {
       const p = { x: anchor.x, y: anchor.y + dy }
@@ -703,6 +873,342 @@ describe('era gates CONTENT, not just size', () => {
     )
     expect(l.structures.map((s) => s.kind)).not.toContain('library')
     expect(l.structures.map((s) => s.kind)).not.toContain('workshop')
+  })
+})
+
+// ── nothing stands on open water ───────────────────────────────────────────
+
+describe('the land rule — nothing stands on open water', () => {
+  it('every structure in every era on every seed stands on land', () => {
+    for (const seed of SEEDS) {
+      for (const state of [HAMLET, CAMP]) {
+        const l = composeLayout(state, seed, FAST)
+        expect(l.structures.length).toBeGreaterThan(0) // not vacuous
+        for (const s of l.structures) {
+          expect({
+            seed,
+            kind: s.kind,
+            land: l.coast.landAt(s.at.x, s.at.y - 2),
+          }).toEqual({ seed, kind: s.kind, land: true })
+        }
+        expect(auditLayout(l).inWater).toEqual([])
+      }
+    }
+  })
+
+  it('every LOT and every district anchor ends on land', () => {
+    // A lot is not just where a sprite stands: it is what the door, the drive
+    // and the keep-out disc are derived from, so a lot in the sea puts a drive
+    // in the sea even when the building was walked inland. Measured before the
+    // snap: 13 of 80 seeds had a lot in open water.
+    for (const seed of SEEDS) {
+      const l = composeLayout(HAMLET, seed, FAST)
+      for (const lot of Object.values(l.lots).flat()) {
+        expect(l.coast.landAt(lot.c.x, lot.c.y)).toBe(true)
+      }
+      for (const d of l.districts) {
+        expect(l.coast.landAt(d.at.x, d.at.y)).toBe(true)
+      }
+    }
+  })
+
+  it('a SMALLER island strands every fixed anchor — and still nothing is drawn on water', () => {
+    // THE ARM THAT ACTUALLY BITES. On the reference ellipse the compass anchors
+    // happen to be inland on most seeds, so the arms above pass with the land
+    // rules deleted for four seeds out of five — a sensor that cannot detect
+    // the absence of the thing it names. Shrinking the island through the
+    // public `coastline.radii` option strands the anchors on EVERY seed, which
+    // is how the review reproduced it (hw=560 put four structures including the
+    // workshop in open sea, with the audit reporting clean).
+    // The small radii are not gratuitous: at hw<=360 the CIVIC anchors (square,
+    // well, market stall) are themselves offshore, and those are not lots and
+    // are not snapped — so they are the case that proves the land walk inside
+    // placeOnGround is load-bearing rather than belt-and-braces. Measured: at
+    // hw=300 on seed zeta all three civic anchors are in the sea and all ten
+    // structures still stand on land.
+    for (const hw of [800, 700, 560, 360, 300]) {
+      for (const seed of ['acme-corp', 'zeta']) {
+        const l = composeLayout(HAMLET, seed, {
+          coastline: { step: 4, radii: { hw, vh: Math.round((hw * 784) / 962) } },
+        })
+        // every measured building still exists — the rule moves things, it does
+        // not quietly delete the org's districts
+        expect(l.structures).toHaveLength(10)
+        for (const s of l.structures) {
+          expect({ hw, seed, kind: s.kind, land: l.coast.landAt(s.at.x, s.at.y - 2) }).toEqual({
+            hw,
+            seed,
+            kind: s.kind,
+            land: true,
+          })
+        }
+        expect(auditLayout(l).inWater).toEqual([])
+        for (const lot of Object.values(l.lots).flat()) {
+          expect(l.coast.landAt(lot.c.x, lot.c.y)).toBe(true)
+        }
+        for (const d of l.districts) expect(l.coast.landAt(d.at.x, d.at.y)).toBe(true)
+        for (const lane of l.lanes) {
+          for (const p of lane.runs.flat()) expect(l.coast.landAt(p.x, p.y)).toBe(true)
+        }
+      }
+    }
+  })
+
+  it('the walk goes INLAND and gives up rather than lying', () => {
+    // a half-plane of sea to the west; the centre is east of it
+    const onLand = (x: number, _y: number) => x > 1000
+    const walked = walkInland({ x: 900, y: 760 }, onLand, { x: 1200, y: 760 })
+    expect(walked).not.toBeNull()
+    expect(onLand(walked!.x, walked!.y)).toBe(true)
+    expect(walked!.x).toBeGreaterThan(900)
+    // 45% of the way is the reference's reach: from 300px out it cannot arrive
+    expect(walkInland({ x: 100, y: 760 }, onLand, { x: 1200, y: 760 })).toBeNull()
+    // and a thing already on land is not moved at all
+    const still = { x: 1500, y: 400 }
+    expect(walkInland(still, onLand, { x: 1200, y: 760 })).toEqual(still)
+  })
+
+  it('placeOnGround returns NULL rather than a point in the sea', () => {
+    const field = buildLaneField([])
+    const sea = () => false
+    expect(placeOnGround({ x: 400, y: 400 }, { w: 150, h: 150 }, field, sea, [])).toBeNull()
+    // the same call over land returns a point — so the null is the water rule
+    // and not an unrelated failure
+    expect(placeOnGround({ x: 400, y: 400 }, { w: 150, h: 150 }, field, LAND, [])).not.toBeNull()
+  })
+
+  it('snapInland clears a MARGIN, not just the point, and can refuse', () => {
+    const onLand = (x: number, _y: number) => x > 1000
+    const snapped = snapInland({ x: 900, y: 700 }, onLand, { x: 1400, y: 700 }, 70)
+    expect(snapped).not.toBeNull()
+    // the margin in every direction, which a bare point test would not give
+    for (const [dx, dy] of [[0, 0], [0, 70], [0, -70], [70, 0], [-70, 0]]) {
+      expect(onLand(snapped!.x + dx, snapped!.y + dy)).toBe(true)
+    }
+    // an island with no land at all cannot be snapped to, and saying so beats
+    // handing back the centre and calling it ground
+    expect(snapInland({ x: 900, y: 700 }, () => false, { x: 1400, y: 700 })).toBeNull()
+  })
+
+  it('the WATER audit can actually fail — a structure moved offshore trips it', () => {
+    // negative twin for the arms above: without it, `inWater: []` would also be
+    // what a broken audit that never looks at anything returns.
+    const sea = { x: 60, y: 60 }
+    expect(hamlet.coast.landAt(sea.x, sea.y)).toBe(false)
+    const drowned = {
+      ...hamlet,
+      structures: [{ kind: 'workshop', at: sea, flip: false, size: { w: 170, h: 170 } }],
+    }
+    expect(auditLayout(drowned).inWater).toEqual([{ kind: 'workshop', at: sea }])
+  })
+})
+
+// ── the painted surfaces are clipped to land ───────────────────────────────
+
+describe('every painted mask is clipped to land', () => {
+  it('no lane or drive sample stands in open water', () => {
+    // The measurement the review ran, as an arm: sampled every 6px along each
+    // run exactly as checks/world_checks.py:check_terrain samples a lane, with
+    // the same cove exemption (a harbour approach is allowed to reach the
+    // water). Before the clip, 37 of 80 seeds had at least one such sample.
+    const cove = { x: 1200, y: 1430, r: 300 }
+    for (const seed of SEEDS) {
+      for (const state of [HAMLET, CAMP]) {
+        const l = composeLayout(state, seed, FAST)
+        // not vacuous: a camp keeps 14-19 samples of its one clipped track,
+        // a hamlet 300+ across the network
+        expect(laneSamples(l).length).toBeGreaterThan(10)
+        for (const lane of l.lanes) {
+          for (const run of lane.runs) {
+            for (let i = 0; i + 1 < run.length; i++) {
+              const a = run[i]
+              const b = run[i + 1]
+              const steps = Math.floor(Math.hypot(b.x - a.x, b.y - a.y) / 6) + 1
+              for (let t = 0; t <= steps; t++) {
+                const x = a.x + ((b.x - a.x) * t) / steps
+                const y = a.y + ((b.y - a.y) * t) / steps
+                if (Math.hypot(x - cove.x, y - cove.y) <= cove.r) continue
+                expect({ seed, key: lane.key, land: l.coast.landAt(x, y) }).toEqual({
+                  seed,
+                  key: lane.key,
+                  land: true,
+                })
+              }
+            }
+          }
+        }
+      }
+    }
+  })
+
+  it('the clip CUTS rather than trims — a lane crossing an inlet is two runs', () => {
+    const path = [
+      { x: 100, y: 100 },
+      { x: 200, y: 100 },
+      { x: 300, y: 100 },
+      { x: 400, y: 100 },
+      { x: 500, y: 100 },
+    ]
+    const notInlet = (x: number, _y: number) => !(x > 250 && x < 350)
+    expect(clipToLand(path, notInlet)).toEqual([
+      [{ x: 100, y: 100 }, { x: 200, y: 100 }],
+      [{ x: 400, y: 100 }, { x: 500, y: 100 }],
+    ])
+    // and the occupancy field does NOT bridge the gap: interpolating across it
+    // would put the road back on the water the clip just removed
+    const cut = buildLaneField([{ key: 'c', kind: 'main', width: 40, runs: clipToLand(path, notInlet) }])
+    const whole = buildLaneField([{ key: 'c', kind: 'main', width: 40, runs: [path] }])
+    expect(whole.onLane(300, 100)).toBe(true)
+    expect(cut.onLane(300, 100)).toBe(false)
+    // a lane wholly offshore is not a lane
+    expect(clipToLand(path, () => false)).toEqual([])
+  })
+
+  it('the clip cuts on the SEGMENT, not just the station — a narrow channel still cuts', () => {
+    // Stations are ~16px apart, so testing only stations lets the line cross
+    // anything narrower than that, and both the renderer and the occupancy
+    // field then carry the road over it. Measured with station-only clipping:
+    // 1 of 80 seeds still bridged an inlet. Here every station is on land and
+    // only the 10px channel between two of them is not.
+    const path = [
+      { x: 100, y: 100 },
+      { x: 140, y: 100 },
+      { x: 160, y: 100 },
+      { x: 200, y: 100 },
+    ]
+    const channel = (x: number, _y: number) => !(x > 145 && x < 155)
+    expect(path.every((p) => channel(p.x, p.y))).toBe(true) // stations all on land
+    expect(clipToLand(path, channel)).toEqual([
+      [{ x: 100, y: 100 }, { x: 140, y: 100 }],
+      [{ x: 160, y: 100 }, { x: 200, y: 100 }],
+    ])
+  })
+
+  it('every painted blob — plaza, field and pond — is on land along its extent', () => {
+    for (const seed of SEEDS) {
+      const l = composeLayout(HAMLET, seed, FAST)
+      const kinds = l.paint.map((r) => r.kind)
+      expect(kinds).toContain('plaza')
+      expect(kinds).toContain('crop') // not vacuous: something is painted
+      for (const region of l.paint) {
+        for (const b of region.blobs) {
+          for (const p of blobExtentSamples(b)) {
+            expect({ seed, kind: region.kind, land: l.coast.landAt(p.x, p.y) }).toEqual({
+              seed,
+              kind: region.kind,
+              land: true,
+            })
+          }
+        }
+      }
+    }
+  })
+
+  it('a field plot with no land under it is DROPPED, not painted on the sea', () => {
+    // The seed the review found with a whole crop plot offshore is a moving
+    // target; assert the mechanism instead. The four plot anchors sit in the
+    // south-east, so an island whose east half is sea must lose plots rather
+    // than paint them — and the layout says so by emitting fewer regions.
+    const westOnly = composeLayout(HAMLET, 'acme-corp', {
+      ...FAST,
+      coastline: { step: 8, radii: { hw: 500, vh: 500 }, cove: null },
+    })
+    const fields = westOnly.paint.filter((p) => p.kind === 'crop' || p.kind === 'ploughed')
+    expect(fields.length).toBeLessThan(2)
+    // the same state on the full island paints both
+    expect(hamlet.paint.filter((p) => p.kind === 'crop' || p.kind === 'ploughed')).toHaveLength(2)
+  })
+})
+
+// ── the keep-out discs are an exclusion ────────────────────────────────────
+
+describe('a keep-out disc is an exclusion, not a density hint', () => {
+  it('nothing is planted inside a district disc', () => {
+    // Measured before the fix: 72-80% of every seed's planting stood inside a
+    // disc, including a full-size oak 26px from the great house.
+    for (const seed of SEEDS) {
+      const l = composeLayout(HAMLET, seed, FAST)
+      expect(l.scatter.length).toBeGreaterThan(30) // not vacuous
+      const inside = l.scatter.filter((s) => insideDisc(l, s.at))
+      expect({ seed, inside: inside.map((s) => s.kind) }).toEqual({ seed, inside: [] })
+    }
+  })
+
+  it('the disc test is LIVE — the village core is inside one', () => {
+    // negative twin: without this, "nothing inside a disc" would also pass if
+    // `districts` were empty or the metric never returned true
+    expect(hamlet.districts.length).toBeGreaterThan(4)
+    const gh = hamlet.structures.find((s) => s.kind === 'great_house')!
+    expect(insideDisc(hamlet, gh.at)).toBe(true)
+    expect(insideDisc(hamlet, { x: 60, y: 60 })).toBe(false)
+  })
+
+  it('nothing is planted on the plaza, in a field or in the pond', () => {
+    for (const seed of SEEDS) {
+      const l = composeLayout(HAMLET, seed, FAST)
+      const onPaint = l.scatter.filter((s) =>
+        insidePaint(l, ['plaza', 'crop', 'ploughed', 'pond'], s.at)
+      )
+      expect({ seed, onPaint: onPaint.map((s) => s.kind) }).toEqual({ seed, onPaint: [] })
+    }
+  })
+
+  it('the great house keeps its ground — no full-size tree at its door', () => {
+    for (const seed of SEEDS) {
+      const l = composeLayout(HAMLET, seed, FAST)
+      const gh = l.structures.find((s) => s.kind === 'great_house')!
+      // TWO POINTS, because they are not the same point and pretending they are
+      // would hide which rule is doing the work. The disc reserves the ANCHOR
+      // (the lot, 1200,800); the house is DRAWN 115px west of it, because the
+      // forecourt lane ends at the anchor and the road wins. So the disc arm is
+      // measured against the anchor, and the drawn house gets the weaker claim
+      // it can actually make.
+      const anchor = l.lots.centre[0].c
+      const toAnchor = Math.min(
+        ...l.scatter.map((s) => Math.hypot(s.at.x - anchor.x, (s.at.y - anchor.y) * 1.35))
+      )
+      expect(toAnchor).toBeGreaterThan(250) // its disc radius, in the disc metric
+      const toHouse = Math.min(
+        ...l.scatter.map((s) => Math.hypot(s.at.x - gh.at.x, s.at.y - gh.at.y))
+      )
+      // measured before the keep-out fix: 26-103px, i.e. a 150px oak touching
+      // the manor. After: 128-222px across these seeds.
+      expect(toHouse).toBeGreaterThan(120)
+      // and nothing shares its ground, which is the occupancy rule, not the disc
+      expect(groundTaken(gh.at, gh.size, l.scatter.map((s) => ({ at: s.at, size: s.size })), 0.05)).toBe(
+        false
+      )
+    }
+  })
+
+  it('the pond is water, and water is not a place to plant', () => {
+    const ponded = composeLayout(HAMLET, 'zeta', FAST)
+    const pondWater = waterField(ponded.paint)
+    const pond = ponded.paint.find((p) => p.kind === 'pond')!
+    expect(pondWater(pond.blobs[0].c.x, pond.blobs[0].c.y)).toBe(true)
+    expect(pondWater(60, 60)).toBe(false)
+    for (const s of ponded.scatter) expect(pondWater(s.at.x, s.at.y)).toBe(false)
+    // an island with no pond has no water field rather than a phantom one
+    expect(waterField([])(612, 1086)).toBe(false)
+  })
+
+  it('the pond keep-out disc COVERS the pond — which is why the water term is quiet', () => {
+    // Deleting the `inWater` term from free() leaves every arm above green: the
+    // pond lies wholly inside its own 190px district disc, so the disc is what
+    // is actually keeping trees out of the water today. That is a dependency,
+    // not a coincidence, and an undeclared dependency is how a rule gets
+    // deleted as "redundant" and takes a live guarantee with it. This arm is
+    // the declaration: if the pond ever grows past its disc — new blob radii, a
+    // moved anchor, an era gate on the disc — it goes red, and the water term
+    // becomes load-bearing at exactly that moment.
+    for (const seed of SEEDS) {
+      const l = composeLayout(HAMLET, seed, FAST)
+      const pond = l.paint.find((p) => p.kind === 'pond')
+      if (!pond) continue
+      for (const b of pond.blobs) {
+        for (const p of blobExtentSamples(b)) expect(insideDisc(l, p)).toBe(true)
+      }
+    }
   })
 })
 

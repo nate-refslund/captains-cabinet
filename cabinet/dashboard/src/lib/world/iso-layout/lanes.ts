@@ -23,6 +23,17 @@
  * thresholds the result, so the occupancy test here is the same family of
  * discs — same geometry, no bitmap.
  *
+ * THE NETWORK IS CLIPPED TO LAND (compose.py:343, `paths =
+ * ImageChops.darker(paths.filter(...), landmask)`). The control points are
+ * authored against the fixed compass layout and the island is a function of the
+ * org seed, so a lane can and does run off the shore — measured before this
+ * clip: 37 of 80 seeds had a lane or drive sample standing in open water. The
+ * reference intersects the road raster with the land mask before anything
+ * samples it; the equivalent without a bitmap is to cut the centreline into its
+ * on-land RUNS, which is why a Lane carries `runs` and not one `path`. A lane
+ * that crosses an inlet is two runs with a gap, exactly as the reference paints
+ * it. buildLanes therefore cannot be called without saying where the land is.
+ *
  * PURE: no clocks, no unseeded randomness (the wobble is a sine of position,
  * exactly as in the reference), no IO, no DOM.
  */
@@ -144,13 +155,22 @@ export const LOT_LANES: Record<string, readonly Point[]> = {
   main: [{ x: 1200, y: 1010 }, { x: 1200, y: 1140 }, { x: 1215, y: 1270 }, { x: 1200, y: 1360 }],
 }
 
-/** One painted lane: the wobbled centreline plus the width it is painted at. */
+/**
+ * One painted lane: the wobbled centreline, CLIPPED TO LAND, plus the width it
+ * is painted at.
+ *
+ * `runs` is the centreline cut into its on-land pieces — one run for a lane
+ * that never leaves the island, several for one that crosses an inlet, none at
+ * all for a lane whose whole extent is offshore on this seed. Every sample in
+ * every run stands on land; the painted band still has a width, so the renderer
+ * intersects the drawn surface with `coast.land` exactly as compose.py does.
+ */
 export interface Lane {
   key: string
   kind: LaneKind
   width: number
-  /** Dense centreline samples, ~16 layout px apart, wobble applied. */
-  path: Point[]
+  /** On-land runs of dense centreline samples, ~16 layout px apart. */
+  runs: Point[][]
 }
 
 /**
@@ -174,6 +194,60 @@ export function laneCentreline(points: readonly Point[], jitter = 9): Point[] {
     prev = p
   }
   return out
+}
+
+/**
+ * The step at which a lane SEGMENT is checked for land between its endpoints.
+ * 2px is the finest coastline raster this library builds (compose.py's STEP),
+ * and finer than the 6px at which checks/world_checks.py walks a lane — so a
+ * channel that the check can see is a channel this clip has already cut.
+ */
+const SEGMENT_PROBE_STEP = 2
+
+/**
+ * Cut a centreline into its on-land runs (compose.py:343's landmask clip).
+ *
+ * THE SEGMENTS ARE CHECKED, NOT JUST THE STATIONS. Testing only the ~16px
+ * stations leaves the line free to cross anything narrower than the gap between
+ * two of them, and both the renderer (which draws the polyline) and the
+ * occupancy field (which interpolates along it) then carry the road over that
+ * water. Measured with station-only clipping across 80 seeds: 79 clean, one
+ * seed still bridging an inlet. So a run continues only while the whole segment
+ * to the next station stays on land.
+ *
+ * A single-station run is KEPT rather than discarded: the reference paints a
+ * disc at every station, so one station on a spit of land does paint there, and
+ * dropping it would make the layout claim less road than the frame shows.
+ */
+export function clipToLand(
+  path: readonly Point[],
+  onLand: (x: number, y: number) => boolean
+): Point[][] {
+  const segmentOnLand = (a: Point, b: Point): boolean => {
+    const n = Math.ceil(hypot(b.x - a.x, b.y - a.y) / SEGMENT_PROBE_STEP)
+    for (let i = 1; i < n; i++) {
+      const t = i / n
+      if (!onLand(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)) return false
+    }
+    return true
+  }
+  const runs: Point[][] = []
+  let cur: Point[] = []
+  const cut = () => {
+    if (cur.length > 0) runs.push(cur)
+    cur = []
+  }
+  for (const p of path) {
+    if (!onLand(p.x, p.y)) {
+      cut()
+      continue
+    }
+    const prev = cur[cur.length - 1]
+    if (prev && !segmentOnLand(prev, p)) cut()
+    cur.push(p)
+  }
+  cut()
+  return runs
 }
 
 /** compose.py:209 — `max(13, int(w*_rw))`, the painted width for a rung. */
@@ -223,17 +297,23 @@ export function buildLaneField(lanes: readonly Lane[]): LaneField {
     // clearance rule then reports as clear ground. laneCentreline already
     // emits ~16px apart, but a Lane is a plain object anyone can construct,
     // and a hole here fails SILENTLY and only in one place on the map.
+    //
+    // RUN BY RUN, never across the gap between two runs: the gap is where the
+    // land clip cut the road out, and interpolating over it would put the
+    // occupancy field back on the water the clip just removed.
     const spacing = Math.max(2, Math.min(half, 16))
-    for (let i = 0; i < lane.path.length; i++) {
-      const a = lane.path[i]
-      add(a.x, a.y, half)
-      const b = lane.path[i + 1]
-      if (!b) continue
-      const len = hypot(b.x - a.x, b.y - a.y)
-      const n = Math.floor(len / spacing)
-      for (let s = 1; s < n; s++) {
-        const t = s / n
-        add(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, half)
+    for (const run of lane.runs) {
+      for (let i = 0; i < run.length; i++) {
+        const a = run[i]
+        add(a.x, a.y, half)
+        const b = run[i + 1]
+        if (!b) continue
+        const len = hypot(b.x - a.x, b.y - a.y)
+        const n = Math.floor(len / spacing)
+        for (let s = 1; s < n; s++) {
+          const t = s / n
+          add(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, half)
+        }
       }
     }
   }
@@ -272,19 +352,27 @@ export function buildLaneField(lanes: readonly Lane[]): LaneField {
 /**
  * The network an (era, rung) actually has. A camp keeps the single track to
  * the water; everything else is a consequence of there being a village.
+ *
+ * `onLand` is REQUIRED, not optional with a permissive default: a default of
+ * "everywhere is land" is how the land clip would go missing again on the one
+ * call site that forgot it, silently, and only on the seeds where it matters.
+ * A lane with no on-land run at all is dropped — a road wholly offshore is not
+ * a road.
  */
-export function buildLanes(era: Era, rung: RoadRung, specs: readonly LaneSpec[] = LANE_SPECS): Lane[] {
+export function buildLanes(
+  era: Era,
+  rung: RoadRung,
+  onLand: (x: number, y: number) => boolean,
+  specs: readonly LaneSpec[] = LANE_SPECS
+): Lane[] {
   const camp = era === 'camp'
   const out: Lane[] = []
   for (const spec of specs) {
     if (camp && spec.villageOnly) continue
-    out.push({
-      key: spec.key,
-      kind: spec.kind,
-      width: laneWidth(spec.width, rung),
-      // a camp's ONE track is a worn track, so it wobbles more, not less
-      path: laneCentreline(spec.points, camp ? 12 : 9),
-    })
+    // a camp's ONE track is a worn track, so it wobbles more, not less
+    const runs = clipToLand(laneCentreline(spec.points, camp ? 12 : 9), onLand)
+    if (runs.length === 0) continue
+    out.push({ key: spec.key, kind: spec.kind, width: laneWidth(spec.width, rung), runs })
   }
   return out
 }

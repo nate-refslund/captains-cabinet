@@ -35,6 +35,7 @@ import {
   footprintOnLane,
   groundTaken,
   placeOnGround,
+  snapInland,
   type Footprint,
   type Occupant,
 } from './clearance'
@@ -162,6 +163,17 @@ const FALLBACK_FOOTPRINT: Footprint = { w: 96, h: 96 }
  * compose.py:901-905 — the keep-out discs that stop scatter landing on a
  * district, and that suppress the wildness field around the village core.
  *
+ * A DISC IS AN EXCLUSION, NOT A DENSITY HINT. compose.py:1211-1213 gates its
+ * whole planting predicate on these discs — `free()` is false inside one, so
+ * the reference plants exactly nothing there. Feeding them only to the wildness
+ * field (which is what this port did until 2026-07-27) sets a local SPACING and
+ * nothing more: at wildness 0 the exclusion radius is still rMax, so trees keep
+ * arriving, just further apart. Measured on the old code, 72-80% of all planting
+ * stood inside a disc, a full-size oak stood 26px from the great house, and
+ * trees grew on the paved plaza and in the ploughed fields. The reference states
+ * the intent at :899-901: "the enclosure ring is meant to frame the village,
+ * not grow through it."
+ *
  * ERA-GATED, unlike the reference. A keep-out disc is not drawn, but it is
  * VISIBLE: it makes a bald patch in the planting. Reserving the works ridge on
  * an island that has no works yet would put a mown circle around nothing,
@@ -195,7 +207,13 @@ export interface Blob {
   ry: number
 }
 
-export type PaintKind = 'plaza' | 'ploughed' | 'crop' | 'pond' | 'meadow_dark'
+/**
+ * The regions this stage actually emits. `meadow_dark` was declared here and
+ * never produced — the reference's broken-meadow pass (compose.py:143-150, 70
+ * dark-grass blobs) is not ported — and a declared-but-unreachable member is a
+ * promise to the renderer that nothing keeps. It comes back when the pass does.
+ */
+export type PaintKind = 'plaza' | 'ploughed' | 'crop' | 'pond'
 
 export interface PaintRegion {
   kind: PaintKind
@@ -297,9 +315,16 @@ export function composeLayout(
   // ---- 1. coastline -------------------------------------------------------
   const coast = buildCoastline(numSeed, space, opts.coastline)
   const onLand = (x: number, y: number) => coast.landAt(x, y)
+  const inland: Point = { x: space.cx, y: space.cy }
+  /** compose.py snap(): an anchor other things derive from must be on land. */
+  const anchor = (p: Point): Point => snapInland(p, onLand, inland) ?? p
 
   // ---- 2. lanes -----------------------------------------------------------
-  const carriageways = buildLanes(state.era, state.road)
+  // CLIPPED TO LAND at birth (compose.py:343) — every later stage samples this
+  // network, so a lane that ran into the sea would carry the sea with it into
+  // the clearance rules, the verge pass and the audit.
+  const carriageways = buildLanes(state.era, state.road, onLand)
+  const laneKeys = new Set(carriageways.map((l) => l.key))
 
   // ---- 3. lots ------------------------------------------------------------
   // The separation book starts with the civic spots, which were never lane
@@ -307,46 +332,79 @@ export function composeLayout(
   // nothing downstream can rescue.
   const book: Point[] = [...CIVIC_ANCHORS]
   const residential = [
-    ...lotsAlong(LOT_LANES.west, 4, onLand, book, { side: -1, setback: 118 }),
+    ...lotsAlong(LOT_LANES.west, 4, onLand, book, { side: -1, setback: 118, inlandTo: inland }),
   ]
   book.push(...residential.map((l) => l.c))
   const residentialInner = lotsAlong(LOT_LANES.west, 2, onLand, book, {
     side: 1,
     setback: 104,
     spread: [0.24, 0.7],
+    inlandTo: inland,
   })
   book.push(...residentialInner.map((l) => l.c))
 
+  // The doctrine anchors stay authoritative — snap() only pulls one inland when
+  // THIS island has no ground under it, which is the case the reference wrote
+  // it for (compose.py:873-875: "any change to the island's radius can strand
+  // one offshore").
   const lots: Record<string, Lot[]> = {
     residential: [...residential, ...residentialInner],
-    memory: [lotFor({ x: 1640, y: 512 }, LOT_LANES.ne)],
-    works: [lotFor({ x: 1790, y: 800 }, LOT_LANES.east)],
-    fields: [lotFor({ x: 1660, y: 1056 }, LOT_LANES.se)],
-    centre: [lotFor(GREAT, LOT_LANES.main)],
+    memory: [lotFor(anchor({ x: 1640, y: 512 }), LOT_LANES.ne)],
+    works: [lotFor(anchor({ x: 1790, y: 800 }), LOT_LANES.east)],
+    fields: [lotFor(anchor({ x: 1660, y: 1056 }), LOT_LANES.se)],
+    centre: [lotFor(anchor(GREAT), LOT_LANES.main)],
+  }
+
+  /** Which carriageway each lot group fronts — a drive needs it to EXIST. */
+  const LOT_GROUP_LANE: Readonly<Record<string, string>> = {
+    residential: 'west',
+    memory: 'ne',
+    works: 'east',
+    fields: 'se',
+    centre: 'main',
   }
 
   // ---- 4. driveways -------------------------------------------------------
   // ONLY LOTS THAT WILL ACTUALLY BE BUILT GET A DRIVE — a path to empty grass
   // is a lie about what the org has.
-  const built: { key: string; obj: string; lot: Lot }[] = []
+  //
+  // AND ONLY WHERE THE ROAD IT JOINS EXISTS. A lot's `road` point is sampled
+  // from the IDEALISED lot lane, which is a table of control points and not the
+  // network: at camp every district carriageway is gone, so a drive was still
+  // being drawn from the one dwelling to a road that is not there — a gravel
+  // stub ending in open grass. That is the same lie as a path to an unbuilt
+  // plot, one level up. Measured before this gate: `composeLayout(CAMP,
+  // dwellings: 1)` emitted `drive-residential-0` whose road end (709,802) lay
+  // on no carriageway at all.
+  const built: { key: string; obj: string; lot: Lot; group: string }[] = []
   const dwellings = Math.min(countOf(state, 'officer_dwellings'), lots.residential.length)
   for (let i = 0; i < dwellings; i++) {
-    built.push({ key: `residential-${i}`, obj: 'officer_dwelling', lot: lots.residential[i] })
+    built.push({
+      key: `residential-${i}`,
+      obj: 'officer_dwelling',
+      lot: lots.residential[i],
+      group: 'residential',
+    })
   }
   for (const [key, obj] of [
     ['memory', 'library'],
     ['works', 'workshop'],
     ['fields', 'outbuildings'],
   ] as const) {
-    if (isBuilt(state, obj)) built.push({ key, obj, lot: lots[key][0] })
+    if (isBuilt(state, obj)) built.push({ key, obj, lot: lots[key][0], group: key })
   }
 
   const driveways: Driveway[] = []
   const driveLanes: Lane[] = []
   for (const b of built) {
+    if (!laneKeys.has(LOT_GROUP_LANE[b.group])) continue
     const d = driveway(lotDoor(b.lot), b.lot.road, state.road)
+    const lane = drivewayLane(d, `drive-${b.key}`, onLand)
+    // a drive with no on-land run is a drive that was entirely offshore; the
+    // record would then describe paint that does not exist
+    if (lane.runs.length === 0) continue
     driveways.push(d)
-    driveLanes.push(drivewayLane(d, `drive-${b.key}`))
+    driveLanes.push(lane)
   }
 
   // Carriageways and drives are ONE surface from here on. Splitting them would
@@ -362,16 +420,26 @@ export function composeLayout(
   const structures: Structure[] = []
   const put = (kind: string, at: Point, flip: boolean, lot?: Lot) => {
     const size = sizeOf(kind)
-    // Structures are STRICT and never dropped: a measured building that cannot
-    // find clear ground is a fact about the org, and deleting it would be a
-    // lie of omission. Decoration is the thing that gets dropped.
+    // Structures are STRICT and are not dropped for being crowded: a measured
+    // building that cannot find clear ground is a fact about the org, and
+    // deleting it would be a lie of omission. Decoration is what gets dropped.
+    //
+    // THE ONE THING THAT DOES DELETE A STRUCTURE IS WATER. compose.py:530-539
+    // walks a sprite inland and returns None when there is no ground within
+    // reach, and null here means the building is not emitted — because the
+    // alternative is a workshop standing in open sea, which is the one defect
+    // a viewer sees instantly from any zoom. It is also reported: auditLayout's
+    // water arm re-measures every emitted thing against the coastline.
     //
     // A structure WILL move off its compass anchor when its ground diamond
     // sits on a lane — the road wins, as it must, and the anchor's authority
     // is over which lot the building belongs to, not over the last hundred
     // pixels. The forecourt lane ends AT the great house's anchor, so the
     // great house is the routine case, not the exception.
-    const p = placeOnGround(at, size, laneField, onLand, occupied, { strict: true })
+    const p = placeOnGround(at, size, laneField, onLand, occupied, {
+      strict: true,
+      inlandTo: inland,
+    })
     if (!p) return
     occupied.push({ at: p, size })
     structures.push({ kind, at: p, flip, size, lot })
@@ -387,7 +455,13 @@ export function composeLayout(
 
   // ---- 7. scatter ---------------------------------------------------------
   const districts: District[] = [
-    ...DISTRICT_ANCHORS.filter((d) => village || !d.villageOnly).map((d) => ({ at: d.at, r: d.r })),
+    ...DISTRICT_ANCHORS.filter((d) => village || !d.villageOnly).map((d) => ({
+      // SNAPPED, like every other anchor: a disc centred in the sea reserves
+      // sea, and the planting it was meant to keep out of the village then
+      // arrives in the village.
+      at: anchor(d.at),
+      r: d.r,
+    })),
     // the GENERATED lots, which is where buildings actually land
     ...Object.values(lots).flat().map((l) => ({ at: l.c, r: 150 })),
   ]
@@ -407,6 +481,7 @@ export function composeLayout(
     occupied,
     districts,
     wildness,
+    inWater: waterField(paint),
     sizeOf,
     village,
     camp,
@@ -429,6 +504,88 @@ export function composeLayout(
 
 // ── stage helpers ──────────────────────────────────────────────────────────
 
+/**
+ * EVERY PAINTED MASK IS CLIPPED TO LAND — compose.py clips all four
+ * (`ImageChops.darker(m, landmask)`): paths :343, plaza :360, each field plot
+ * :374, pond :171. This port clipped only the pond, and only by testing its
+ * blob CENTRE, so ploughed soil and crop were painted onto open sea on most
+ * seeds (measured: 38-189 of 468 field-blob samples over water across five
+ * seeds; one seed had an entire crop plot offshore).
+ *
+ * A raster intersection keeps the on-land crescent of a blob. A blob here is an
+ * ellipse, not pixels, so the honest equivalent is to SHRINK it until its whole
+ * extent is on land and to DROP it when it cannot fit. Shrinking never paints
+ * water and never invents a shape the reference would not have painted; it can
+ * only paint less. The alternative — emitting the full ellipse and telling the
+ * renderer to clip — puts the land rule in a stage that has no test around it,
+ * which is how this defect got in.
+ *
+ * THE WHOLE ELLIPSE IS SAMPLED, not just its rim: a lattice at ~BLOB_PROBE_STEP
+ * px plus the rim at the same arc spacing. Rim-only sampling has a hole in the
+ * middle (a blob wide enough to straddle an inlet has water inside it its rim
+ * never sees), and a fixed number of rim angles has holes between them that
+ * grow with the blob — a 150px field plot probed at 24 angles skips 39px of arc
+ * at a time, and the coastline mask is quantised to the sampling step, so the
+ * gaps do not average out. The probe step is finer than the finest coastline
+ * raster this library will build.
+ */
+const BLOB_PROBE_STEP = 5
+const BLOB_MIN_RADIUS = 8
+
+function blobOnLand(
+  c: Point,
+  rx: number,
+  ry: number,
+  onLand: (x: number, y: number) => boolean
+): boolean {
+  if (!onLand(c.x, c.y)) return false
+  const n = Math.max(24, Math.ceil((2 * Math.PI * Math.max(rx, ry)) / BLOB_PROBE_STEP))
+  for (let i = 0; i < n; i++) {
+    const a = (i * Math.PI * 2) / n
+    if (!onLand(c.x + Math.cos(a) * rx, c.y + Math.sin(a) * ry)) return false
+  }
+  const sx = Math.max(1, Math.ceil(rx / BLOB_PROBE_STEP))
+  const sy = Math.max(1, Math.ceil(ry / BLOB_PROBE_STEP))
+  for (let ix = -sx; ix <= sx; ix++) {
+    for (let iy = -sy; iy <= sy; iy++) {
+      const fx = ix / sx
+      const fy = iy / sy
+      if (fx * fx + fy * fy > 1) continue
+      if (!onLand(c.x + fx * rx, c.y + fy * ry)) return false
+    }
+  }
+  return true
+}
+
+/** The blob that fits on land, or null when even a shrunken one does not. */
+export function clipBlobToLand(
+  b: Blob,
+  onLand: (x: number, y: number) => boolean
+): Blob | null {
+  let rx = b.rx
+  let ry = b.ry
+  for (let i = 0; i < 10; i++) {
+    if (blobOnLand(b.c, rx, ry, onLand)) return { c: b.c, rx, ry }
+    rx *= 0.82
+    ry *= 0.82
+    if (rx < BLOB_MIN_RADIUS || ry < BLOB_MIN_RADIUS) break
+  }
+  return null
+}
+
+/**
+ * compose.py:176-177 in_water() — the pond is water, and nothing is planted in
+ * water. Built from the painted pond region rather than from POND, so it is the
+ * water that was actually emitted (clipped, possibly absent) and not the water
+ * that was intended.
+ */
+export function waterField(paint: readonly PaintRegion[]): (x: number, y: number) => boolean {
+  const blobs = paint.filter((r) => r.kind === 'pond').flatMap((r) => r.blobs)
+  if (blobs.length === 0) return () => false
+  return (x, y) =>
+    blobs.some((b) => ((x - b.c.x) / b.rx) ** 2 + ((y - b.c.y) / b.ry) ** 2 <= 1)
+}
+
 /** compose.py:355-376 — the plaza and the tilled plots, as seeded blob sets. */
 function paintRegions(
   state: LayoutState,
@@ -442,6 +599,14 @@ function paintRegions(
   // pond, and the pond is morphology: water does not wait for an org to grow.
   const streamFor = (tag: string) => seededRng(fnv1a(`${seed}:paint:${tag}`))
   const out: PaintRegion[] = []
+  const onLand = (x: number, y: number) => coast.landAt(x, y)
+  // Clip AFTER every draw, never instead of one: the rng stream must be
+  // consumed in the reference's order whatever the coastline does, or a blob
+  // that fell in the sea would reshape every blob after it.
+  const keep = (kind: PaintKind, blobs: Blob[]) => {
+    const clipped = blobs.map((b) => clipBlobToLand(b, onLand)).filter((b): b is Blob => b !== null)
+    if (clipped.length > 0) out.push({ kind, blobs: clipped })
+  }
 
   // The square is PAVED only once there is a village to gather in it. A camp
   // has trodden grass, which is the absence of this region, not a smaller one.
@@ -458,7 +623,7 @@ function paintRegions(
         ry: r * 0.62,
       })
     }
-    out.push({ kind: 'plaza', blobs })
+    keep('plaza', blobs)
   }
 
   const plots = clamp(countOf(state, 'field_plots'), 0, FIELD_PLOTS.length)
@@ -477,7 +642,7 @@ function paintRegions(
         ry: plot.h,
       })
     }
-    out.push({ kind: plot.kind, blobs })
+    keep(plot.kind, blobs)
   }
 
   // The pond is morphology, not doctrine: it is there in every era, because
@@ -495,9 +660,16 @@ function paintRegions(
     // into the sea would read as a hole in the island. The seed decides where
     // the west meadow actually is, so on some islands the pond is smaller and
     // on some there is no room for one at all.
-    if (coast.landAt(c.x, c.y)) pondBlobs.push({ c, rx: r, ry: r * 0.58 })
+    //
+    // ALONG ITS WHOLE EXTENT, not at its centre. Testing the centre alone was
+    // the port's original clip and it is the shape of a dead sensor: the one
+    // quantity the code checks is the one quantity a test of it can never fail
+    // on. Measured on the old code, 11 of 26 pond samples on seed acme-corp and
+    // 24 of 182 on seed lantern stood in open water while every blob centre was
+    // on land.
+    pondBlobs.push({ c, rx: r, ry: r * 0.58 })
   }
-  if (pondBlobs.length > 0) out.push({ kind: 'pond', blobs: pondBlobs })
+  keep('pond', pondBlobs)
   return out
 }
 
@@ -508,6 +680,8 @@ interface PlantCtx {
   occupied: Occupant[]
   districts: District[]
   wildness: DensityField
+  /** compose.py in_water(): the pond that was actually painted. */
+  inWater: (x: number, y: number) => boolean
   sizeOf: (kind: string) => Footprint
   village: boolean
   camp: boolean
@@ -519,7 +693,32 @@ interface PlantCtx {
  */
 function plant(seed: number, ctx: PlantCtx): PlacedItem[] {
   const out: PlacedItem[] = []
-  const free = (x: number, y: number) => !ctx.laneField.nearLane(x, y, 34)
+  /**
+   * compose.py:1213 free(): `near_path(34) or in_water(x,y)` OR inside a
+   * keep-out disc. All three terms are HARD — this is the predicate `inner()`,
+   * `shore_band()` and the verge pass are each gated on, so the reference
+   * plants nothing inside a district, nothing on a lane and nothing in the
+   * pond. The disc term is the one this port lost; see DISTRICT_ANCHORS.
+   *
+   * The 1.35 vertical squash is the reference's and it is not decoration: a
+   * disc on the ground projects flattened on a 2:1 screen, so a circular test
+   * in screen space would reserve a tall oval nobody drew.
+   *
+   * HONEST NOTE ON THE WATER TERM: with today's constants it is REDUNDANT. The
+   * pond sits inside its own 190px keep-out disc, so deleting `inWater` here
+   * leaves every arm green — measured, not assumed. It is kept because the disc
+   * is doctrine (a district reservation, era-gated, movable) while the water is
+   * morphology, and because it is the reference's own rule; the test suite pins
+   * the dependency with an arm asserting the pond's disc still covers the pond,
+   * so the day the two part company the suite says so instead of the planting
+   * quietly arriving in the water.
+   */
+  const inDistrict = (x: number, y: number) =>
+    ctx.districts.some(
+      (d) => (x - d.at.x) ** 2 + ((y - d.at.y) * 1.35) ** 2 < d.r * d.r
+    )
+  const free = (x: number, y: number) =>
+    !ctx.laneField.nearLane(x, y, 34) && !ctx.inWater(x, y) && !inDistrict(x, y)
   const inner = (x: number, y: number) => ctx.coast.isInner(x, y) && free(x, y)
 
   const pass = (
@@ -568,9 +767,16 @@ function plant(seed: number, ctx: PlantCtx): PlacedItem[] {
 
   // A verge is a consequence of a road having sides worth dressing. A camp's
   // worn track through grass has none.
+  //
+  // compose.py's verge() is NOT free() — it wants to be near a lane, which
+  // free() forbids — but it carries the same disc and water terms, so verge
+  // dressing does not appear inside the square or in the pond either.
   if (ctx.village) {
     const verge = (x: number, y: number) =>
-      ctx.laneField.nearLane(x, y, 96) && !ctx.laneField.nearLane(x, y, 62)
+      ctx.laneField.nearLane(x, y, 96) &&
+      !ctx.laneField.nearLane(x, y, 62) &&
+      !ctx.inWater(x, y) &&
+      !inDistrict(x, y)
     pass('verge', VERGE_KINDS, verge, () => 0.7, 88, 130, 34)
   }
 
@@ -592,6 +798,7 @@ function plant(seed: number, ctx: PlantCtx): PlacedItem[] {
 export function auditLayout(layout: Layout): {
   onLane: { kind: string; at: Point }[]
   stacked: { a: string; b: string }[]
+  inWater: { kind: string; at: Point }[]
 } {
   const field = buildLaneField(layout.lanes)
   const onLane: { kind: string; at: Point }[] = []
@@ -616,7 +823,24 @@ export function auditLayout(layout: Layout): {
       }
     }
   }
-  return { onLane, stacked }
+  // NOTHING STANDS ON OPEN WATER, re-measured rather than trusted. The rules
+  // that place things now guarantee it, which is exactly why the audit has to
+  // check it independently: a guarantee with no sensor on it is an assumption,
+  // and this one was silently absent while a workshop stood in the sea.
+  //
+  // EACH CLASS IS PROBED THE WAY ITS OWN RULE PROBES IT. A structure's rule
+  // asks about (x, y-2) — the reference's, because a base exactly on the
+  // waterline row reads as land in a blurred, thresholded mask. Scatter's
+  // sampling rule asks about (x, y). Using one convention for both would report
+  // a defect against a rule that never made that claim.
+  const inWater: { kind: string; at: Point }[] = []
+  for (const s of layout.structures) {
+    if (!layout.coast.landAt(s.at.x, s.at.y - 2)) inWater.push({ kind: s.kind, at: s.at })
+  }
+  for (const s of layout.scatter) {
+    if (!layout.coast.landAt(s.at.x, s.at.y)) inWater.push({ kind: s.kind, at: s.at })
+  }
+  return { onLane, stacked, inWater }
 }
 
 export * from './space'

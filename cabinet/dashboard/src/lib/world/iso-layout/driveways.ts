@@ -25,7 +25,7 @@
  *
  * PURE: no clocks, no unseeded randomness, no IO, no DOM.
  */
-import { laneCentreline, type Lane, ROAD_WIDTH } from './lanes'
+import { clipToLand, laneCentreline, type Lane, ROAD_WIDTH } from './lanes'
 import { ISO_AXIS_SLOPE, type Point, type RoadRung } from './space'
 
 /**
@@ -47,7 +47,13 @@ export interface Driveway {
   door: Point
   /** Where it meets the carriageway. */
   road: Point
-  /** [door, elbow, road] — the L, on the two iso axes. */
+  /**
+   * [door, elbow, road] — the L, on the two iso axes. This is the RECORD of
+   * which door joins which road, not the painted surface: the surface is this
+   * drive's Lane in `layout.lanes`, which is clipped to land like every other
+   * lane. Paint the route directly and a drive whose elbow overhangs the shore
+   * is drawn on the sea.
+   */
   route: [Point, Point, Point]
   width: number
 }
@@ -72,7 +78,21 @@ export function driveway(door: Point, road: Point, rung: RoadRung): Driveway {
  * The drive is painted with jitter 3 (compose.py:307), not 9: a drive is a
  * short deliberate thing, and a wobble that reads as character on a lane reads
  * as a mistake on ten metres of gravel.
+ *
+ * CLIPPED TO LAND like any other lane, and for the same reason: compose.py
+ * paints drives into the same `paths` bitmap that is intersected with the land
+ * mask at :343. Measured before this clip, drive samples in open water were a
+ * third of the offending lanes.
  */
-export function drivewayLane(d: Driveway, key: string): Lane {
-  return { key, kind: 'driveway', width: d.width, path: laneCentreline(d.route, 3) }
+export function drivewayLane(
+  d: Driveway,
+  key: string,
+  onLand: (x: number, y: number) => boolean
+): Lane {
+  return {
+    key,
+    kind: 'driveway',
+    width: d.width,
+    runs: clipToLand(laneCentreline(d.route, 3), onLand),
+  }
 }

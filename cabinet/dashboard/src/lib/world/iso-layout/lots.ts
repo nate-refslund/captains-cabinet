@@ -26,9 +26,20 @@
  * including the fixed civic spots (square, well, stall) that were never
  * lane-derived at all.
  *
+ * A LOT IS AN ANCHOR, SO IT ENDS ON LAND. A lot is not merely a place a sprite
+ * stands: it is the point a building, its door, its drive and its keep-out disc
+ * are all derived from, so a lot in the sea puts a drive in the sea even when
+ * the building itself was walked inland. The reference pulls a lot in at
+ * emission (compose.py:281-282) and then pushes it for separation with no land
+ * test at all — measured, that left a lot in open water on 13 of 80 seeds. The
+ * fix is at the END of the pipeline, not the middle: whatever survives the
+ * separation relaxation is snapped inland before it is returned, so there is
+ * exactly one place that decides this and exactly one place to test.
+ *
  * PURE: no clocks, no unseeded randomness, no IO, no DOM.
  */
-import { hypot, type Point } from './space'
+import { snapInland } from './clearance'
+import { hypot, LAYOUT_SPACE, type Point } from './space'
 
 /** A plot: where it sits, the road point it fronts, and its facing. */
 export interface Lot {
@@ -89,6 +100,8 @@ export interface LotsAlongOptions {
   setback?: number
   /** Arc-length window the lots spread over. */
   spread?: [number, number]
+  /** Where "inland" is for the land snap — the island centre. */
+  inlandTo?: Point
 }
 
 /**
@@ -134,7 +147,16 @@ export function lotsAlong(
     }
     out.push({ c: { x: cx, y: cy }, road, face: { x: nx, y: ny } })
   }
-  return relax(out, taken)
+  const toward = opts.inlandTo ?? { x: LAYOUT_SPACE.cx, y: LAYOUT_SPACE.cy }
+  // The snap runs LAST, after the separation relaxation, because relaxation is
+  // what strands a lot: the pull-in at emission above is undone by the very
+  // next push. A lot that cannot be snapped (no island under it at all) is
+  // returned where it was rather than deleted — deleting it would remove a
+  // measured building silently, and auditLayout reports it instead.
+  return relax(out, taken).map((l) => ({
+    ...l,
+    c: snapInland(l.c, onLand, toward) ?? l.c,
+  }))
 }
 
 /**
@@ -154,6 +176,17 @@ export function lotsAlong(
  */
 const RELAX_ROUNDS = 12
 
+/**
+ * THE RELAXATION HAS NO LAND TEST, DELIBERATELY. One was written and then
+ * removed on measurement: refusing any push that would cross the waterline
+ * changed 47 of 80 measured layouts on a shrunken island and improved nothing
+ * measurable — the worst frontage drift was 207/218/277px with it and
+ * 207/216/277px without, and every lot ends on land either way because the snap
+ * runs afterwards. A branch that alters output while guarding no property is a
+ * control nothing can test, which is worse than no control: it reads as
+ * protection. The land invariant belongs to one place, snapInland, and one
+ * place is where it can be proven.
+ */
 function relax(lots: Lot[], taken: readonly Point[]): Lot[] {
   const cur = lots.map((l) => ({ ...l, c: { ...l.c } }))
   for (let round = 0; round < RELAX_ROUNDS; round++) {
