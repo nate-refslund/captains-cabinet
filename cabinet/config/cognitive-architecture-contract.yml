@@ -514,10 +514,11 @@ temporary_allowances:
       these runs must backtrack for the flag and path to match after them. The
       fail-closed evaluation timeout is defence in depth, not the fix, and
       lives in cabinet/ outside this budget. EXACT measured running total
-      (69456 vs 69455 base at be13f7a5, re-measured after merging origin/master,
-      whose census-set-pins and recipient-denylist landings moved the base from
-      69315; the +1 is unchanged by that merge since the growth is this unit's
-      own single line), 2026-07-27, via cognitive-architecture-census.py
+      (69655 vs 69654 base at 91faed1b, re-measured after EACH merge — 69316 vs
+      69315 at f77bcf45, then 69456 vs 69455 at be13f7a5 once census-set-pins and
+      recipient-denylist landed, then this once the shell-command-word-parser
+      landing moved it again; +1 every time, since the growth is this unit's own
+      single line), 2026-07-27, via cognitive-architecture-census.py
       — the zero-headroom observed==max law means this is the exact new total,
       never a pre-allocated ceiling
     owner: cognitive-core-program
