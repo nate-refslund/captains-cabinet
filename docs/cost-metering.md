@@ -285,9 +285,17 @@ connections but never answers, i.e. ~50s inside a Stop hook.
 **`hgetall()` returns a tri-state and callers must keep it apart:** a dict when
 the key was read, `{}` when the ledger genuinely exists-and-is-empty, and `None`
 when Redis could not be reached at all. `{}` with officers who worked today is
-an alarm (`meter-silent`); `None` is not an observation and must skip. Collapse
-them either way and you get a dead meter that stays green, or a false alarm on
-every Redis blip.
+alarm-worthy; `None` is not an observation and must skip. Collapse them either
+way and you get a dead meter that stays green, or a false alarm on every Redis
+blip.
+
+**No consumer draws that alarm today.** The `meter-silent` row that would is
+NOT IMPLEMENTED — withheld pending a two-model direction gate, because deciding
+what counts as anomalous and interrupting the Captain is new behaviour rather
+than a repair (scope ruling 2026-07-27). So this tri-state is currently a
+property the writer preserves for a reader that does not exist. Preserving it is
+still load-bearing: collapse it now and that row cannot be written later without
+re-plumbing every caller.
 
 ## 9. Tests
 
