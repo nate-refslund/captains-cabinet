@@ -20,17 +20,23 @@
  * returns a short polyline on a seed whose cove ate the south shore, and the
  * dock kit and the cranes skip the column.
  *
- * THREE ANCHORS CANNOT BE DROPPED and therefore DO fall back to a guessed y —
- * stated here rather than left for a reader to find, because the paragraph above
- * used to claim there were none. They are the jetty root (`?? cove.y - 140`) and
- * the warehouse and harbourmaster columns (`?? cove.y - 160`), each of which is
- * a single anchor the harbour is defined by rather than one of many. Two of the
- * three are then rescued downstream: the quayside sites are ANCHORS the caller
- * walks through placeOnGround, which drops a building it cannot ground. The
- * JETTY IS NOT — a guessed root is emitted as geometry. Measured 2026-07-27 over
- * 300 seeds: the fallback fires 0 times for all three, because buildHarbour has
- * already returned null when the cove has fewer than four land columns. It is
- * unreached rather than unreachable, and nothing currently senses it.
+ * THERE ARE NO GUESSED WATERLINES LEFT. Three anchors used to fall back to one
+ * — the jetty root (`?? cove.y - 140`) and the warehouse and harbourmaster
+ * columns (`?? cove.y - 160`) — because each is a single anchor the harbour is
+ * defined by rather than one of many, and dropping it would drop the thing. They
+ * now fall back to `nearestShoreY()`, the MEASURED waterline of the nearest
+ * sampled column, which is a real shore 12px away rather than an invented one.
+ * The jetty is stricter still: a guessed root was emitted as geometry, so it now
+ * refuses to exist at all when its own column has no land (see below).
+ *
+ * THE PIER IS ATTACHED TO THE SHORE, and that sentence is the whole of the fix
+ * the Captain's 2026-07-27 frame forced. The reference roots the finger pier 52px
+ * BELOW its column's waterline — out on the water — and gets away with it only
+ * where a deck happens to cover the gap. Measured across 80 seeds before the fix:
+ * 480 of 480 (era x rung x seed) put the root 52px out with no deck under it,
+ * which is a pier connected to nothing. The root is now its own column's
+ * waterline lifted onto the LAND side by SHORE_LIFT, so the pier starts exactly
+ * where the deck's upper edge does and walks out from there.
  *
  * THE DECK IS DRAWN, NOT STAMPED. quay.py exists because stamping a deck sprite
  * along the shore "piles overlapping slabs into a jumbled staircase". So this
@@ -133,6 +139,25 @@ export function shoreLine(
     if (sy !== null) out.push({ x, y: sy - SHORE_LIFT })
   }
   return out
+}
+
+/**
+ * The waterline of the nearest column that HAS one — the only fallback in this
+ * module, and a measured one.
+ *
+ * It exists for the anchors that cannot be dropped (the moorings' base row, the
+ * two quayside columns): where those used to substitute an authored offset from
+ * the cove's centre, they now take a real shore reading from up to half a sample
+ * step away. Takes the shore polyline, whose points are already lifted by
+ * SHORE_LIFT, and undoes the lift so callers get a WATERLINE and not a deck edge.
+ *
+ * Callers must have a non-empty polyline — buildHarbour has already returned
+ * null below four columns, so an empty one here is a caller bug, not a seed.
+ */
+export function nearestShoreY(shore: Point[], x: number): number {
+  let best = shore[0]
+  for (const p of shore) if (Math.abs(p.x - x) < Math.abs(best.x - x)) best = p
+  return best.y + SHORE_LIFT
 }
 
 // ── the quay ladder ────────────────────────────────────────────────────────
@@ -251,7 +276,12 @@ export interface Wharf {
 }
 
 export interface Jetty {
-  /** Root — where the pier leaves the shore. */
+  /**
+   * Root — where the pier leaves the LAND. Its own column's waterline, lifted
+   * onto the land side by SHORE_LIFT, so `coast.landAt(at)` is true on every
+   * pier this module emits and the planks meet the beach instead of starting
+   * out in the water. A pier that fails that is not emitted at all.
+   */
   at: Point
   length: number
   width: number
@@ -287,7 +317,11 @@ export interface Harbour {
   shore: Point[]
   /** null at an era or a rung that has built no deck. */
   wharf: Wharf | null
-  /** null when the `quay` ladder is unmeasured or on an empty rung. */
+  /**
+   * null when the `quay` ladder is unmeasured or on an empty rung — and also
+   * when the pier's own column has no land to root in, because a pier that
+   * reaches no shore is a lie about the island and a missing one is not.
+   */
   jetty: Jetty | null
   /** compose.py:1149-1152 — one per open outcome window (the `berths` count). */
   moorings: Point[]
@@ -400,27 +434,51 @@ export function buildHarbour(
   }
 
   // ---- the finger jetty --------------------------------------------------
-  // compose.py:1145-1148. The root's y comes from the waterline in the jetty's
-  // OWN column, not from the wharf's — the two are 104px apart and the cove
-  // shore falls away between them.
+  // compose.py:1145-1148, WITHOUT the reference's +52 root offset. The root's y
+  // comes from the waterline in the jetty's OWN column, not from the wharf's —
+  // the two are 104px apart and the cove shore falls away between them — and it
+  // sits on the LAND side of that waterline, by the same SHORE_LIFT the deck's
+  // upper edge uses. A pier is a thing you can walk onto.
+  //
+  // The reference's `js + 52` put the root 52px out on the water. On the offline
+  // island a stone wharf covered the gap; at a rung or an era that decks nothing
+  // it is the v12 defect verbatim — a pier with a strip of sea between it and
+  // the beach — and that is what the Captain saw in the first rendered frame
+  // from this module. Restoring the offset here is mutation MH28; MH30 is the
+  // on-land refusal below, which is the sensor rather than the null check.
   const jx = cove.x + 104
-  const js = shoreAt(coast, cove, jx) ?? cove.y - 140
+  const jShore = shoreAt(coast, cove, jx)
   const jLen = jettyLength(input.quay)
-  const jRoot: Point = { x: jx, y: js + 52 }
+  const jRoot: Point | null = jShore === null ? null : { x: jx, y: jShore - SHORE_LIFT }
   /**
-   * The seaward mooring point — the pier's end, or its ROOT when there is no
-   * pier. It is computed here rather than on the Jetty so the things moored off
-   * it do not vanish with it: the moorings below already derive from this
-   * column's waterline and not from the jetty object, and the org's own vessel
-   * is a fact about the org, not about the quay ladder. A boat with no pier
-   * lies at anchor in the cove, which is what a length of 0 puts it at.
+   * The waterline the harbour's FLOATING furniture is measured from: the jetty
+   * column's own where that column has land, and the nearest measured shore
+   * otherwise. The moorings and the org's vessel are counts and facts about the
+   * org, so they may not be deleted by a geometric accident in one column — but
+   * neither may they be hung off an invented y.
+   */
+  const waterBase = jShore ?? nearestShoreY(shore, jx)
+  /**
+   * The seaward mooring point — the pier's end, or the anchorage when there is
+   * no pier. Computed here rather than on the Jetty so the things moored off it
+   * do not vanish with it: a boat with no pier lies at anchor in the cove, which
+   * is what a length of 0 puts it at.
    */
   const jEnd: Point = {
-    x: jRoot.x + Math.sin(JETTY_ANGLE) * jLen,
-    y: jRoot.y + Math.cos(JETTY_ANGLE) * jLen * 0.86,
+    x: jx + Math.sin(JETTY_ANGLE) * jLen,
+    y: waterBase - SHORE_LIFT + Math.cos(JETTY_ANGLE) * jLen * 0.86,
   }
+  /**
+   * NO SHORE, NO PIER. A column with no land in the cove window cannot root one,
+   * and the honest output there is nothing at all: a missing pier says the
+   * harbour has none, while a floating pier says something false about the org
+   * AND about the island. `landAt` is asked rather than assumed because the root
+   * is the one anchor here that is emitted as drawn geometry — shoreAt's
+   * contract makes it land, and a rule this module states is a rule this module
+   * checks.
+   */
   const jetty: Jetty | null =
-    jLen > 0
+    jLen > 0 && jRoot !== null && coast.landAt(jRoot.x, jRoot.y)
       ? {
           at: jRoot,
           length: jLen,
@@ -437,7 +495,7 @@ export function buildHarbour(
   const berths = count(input.berths, 64)
   const moorings: Point[] = []
   for (let b = 0; b < berths; b++) {
-    moorings.push({ x: jx - 66 + (b % 2) * 152, y: js + 116 + Math.floor(b / 2) * 52 })
+    moorings.push({ x: jx - 66 + (b % 2) * 152, y: waterBase + 116 + Math.floor(b / 2) * 52 })
   }
 
   // ---- cargo and working clutter ----------------------------------------
@@ -517,7 +575,7 @@ export function buildHarbour(
   const warehouses = count(input.warehouses, 16)
   const warehouseSites: Point[] = []
   const whX = cove.x + WAREHOUSE_DX
-  const whS = shoreAt(coast, cove, whX) ?? cove.y - 160
+  const whS = shoreAt(coast, cove, whX) ?? nearestShoreY(shore, whX)
   for (let i = 0; i < warehouses; i++) {
     warehouseSites.push({
       x: whX + i * WAREHOUSE_STRIDE.x,
@@ -525,7 +583,7 @@ export function buildHarbour(
     })
   }
   const hmX = cove.x + HARBOURMASTER_DX
-  const hmS = shoreAt(coast, cove, hmX) ?? cove.y - 160
+  const hmS = shoreAt(coast, cove, hmX) ?? nearestShoreY(shore, hmX)
   const harbourmasterSite = input.harbourmaster ? { x: hmX, y: hmS - 8 } : null
 
   // ---- the working envelope ---------------------------------------------
@@ -547,14 +605,22 @@ export function buildHarbour(
   // indexed off the wrong base or a kit computed from the wrong origin.
   const xs = shore.map((p) => p.x)
   const ys = shore.map((p) => p.y)
-  const pierReach = 52 + jLen * 0.86
+  // The pier now leaves the shore ON the shore line rather than 52px out on the
+  // water, so its reach below the shore box is its run and nothing more. The
+  // constant that used to lead this term was the root offset; it went with it.
+  const pierReach = jLen * 0.86
   // The mooring row's own depth below the shore box, in the same terms: the
   // last row sits 116 + floor((berths-1)/2)*52 below its column's waterline,
   // that column can be the lowest in the box (+4 for SHORE_LIFT), and the box
   // already adds `depth` below the shore before `reach` is applied.
   const mooringReach =
     berths > 0 ? Math.max(0, 120 + Math.floor((berths - 1) / 2) * 52 - depth) : 0
-  const reach = Math.max(pierReach, mooringReach)
+  // The dock kit's own depth, which the old pier constant was quietly covering:
+  // its deepest member sits 14+dy below its column's waterline, and that column
+  // is not one of the sampled ones, so the shore box alone does not contain it.
+  // Read off the KIT TABLE, never off the emitted items — same rule as above.
+  const kitReach = Math.max(0, 14 + Math.max(...DOCK_KIT.map((k) => k.dy)) + SHORE_LIFT - depth)
+  const reach = Math.max(pierReach, mooringReach, kitReach)
   const extent: Rect = [
     Math.min(...xs) - HARBOUR_MARGIN,
     Math.min(...ys) - HARBOUR_MARGIN,

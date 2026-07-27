@@ -16,6 +16,7 @@ import {
   auditLayout,
   buildCoastline,
   composeLayout,
+  type Coastline,
   DEFAULT_FOOTPRINTS,
   LAYOUT_SPACE,
   type Layout,
@@ -30,6 +31,7 @@ import {
   lighthouseSite,
   quayDepth,
   shoreAt,
+  SHORE_LIFT,
   shoreLine,
   type Cove,
   type Harbour,
@@ -108,6 +110,55 @@ const inRect = (r: Rect, p: Point) => p.x >= r[0] && p.x <= r[2] && p.y >= r[1] 
 function pierOf(h: Harbour) {
   expect(h.jetty).not.toBeNull()
   return h.jetty as NonNullable<Harbour['jetty']>
+}
+
+/**
+ * A HAND-BUILT ISLAND — land from `shoreOf(x) - 600` down to `shoreOf(x)`, open
+ * water below it, and NO LAND AT ALL in a column where `shoreOf` returns null.
+ *
+ * It exists for the degenerate arms, which no real seed reaches: `buildHarbour`
+ * has already returned null before a cove is ruined enough to strip a column,
+ * so the branch that refuses to root a pier there would never be executed by a
+ * seeded fixture. A rule with no reachable case is a comment until something
+ * asks it.
+ *
+ * EVERY METHOD buildHarbour IS NOT SUPPOSED TO NEED THROWS. A stub that returns
+ * a plausible value for an unasked question is how a fixture starts asserting
+ * that the degenerate value is valid — so this one has no raster and no radial
+ * geometry, and says so by failing loudly if either is ever consulted.
+ */
+function fakeCoast(cove: Cove, shoreOf: (x: number) => number | null): Coastline {
+  const nope =
+    (name: string) =>
+    (): never => {
+      throw new Error(`fakeCoast has no ${name}: this fixture answers land questions only`)
+    }
+  const landAt = (x: number, y: number): boolean => {
+    const s = shoreOf(x)
+    return s !== null && y <= s && y > s - 600
+  }
+  return {
+    space: LAYOUT_SPACE,
+    seed: 0,
+    cove,
+    step: 1,
+    mw: 0,
+    mh: 0,
+    land: new Uint8Array(0),
+    beach: new Uint8Array(0),
+    landAt,
+    beachAt: nope('beach mask'),
+    groundAt: nope('groundAt'),
+    landEdge: nope('landEdge'),
+    edgeAt: nope('edgeAt'),
+    shoreY(x, yFrom, yTo) {
+      let last: number | null = null
+      for (let y = Math.floor(yFrom); y < Math.floor(yTo); y++) if (landAt(x, y)) last = y
+      return last
+    },
+    inShoreBand: nope('inShoreBand'),
+    isInner: nope('isInner'),
+  }
 }
 
 // ── the waterline: nothing floats ──────────────────────────────────────────
@@ -329,40 +380,64 @@ describe('the wharf', () => {
 
 describe('the finger jetty', () => {
   /**
-   * It WALKS OUT INTO DEEPER WATER — that is the whole point of a finger pier,
-   * and a jetty whose end is on land is one drawn from a guessed root rather
-   * than from the waterline in its own column.
+   * A PIER IS ATTACHED TO A SHORE — the arm the Captain's eye had to supply on
+   * 2026-07-27, when the first rendered frame from this module showed a timber
+   * jetty standing in open water with a strip of sea between it and the beach.
+   *
+   * The port carried compose.py:1148's `js + 52`, which roots the pier 52px
+   * BELOW its column's waterline. On the offline island a stone wharf covered
+   * that gap; here it was measured across 80 seeds at three rungs and both
+   * eras — 480 of 480 rooted out on the water with no deck under them, and the
+   * deepest wharf in the ladder still left the root 6px clear of its own front
+   * edge. Every numeric arm in this file was green throughout.
+   *
+   * So the rule is now stated as the eye sees it, at BOTH ERAS, because the era
+   * that shows it worst is the one that decks nothing:
+   *   - the root is on LAND, and so is the square end-cap the renderer draws
+   *     back along the pier's own axis (engine-canvas strokes at -> end with
+   *     `cap: 'square'`, so the planks reach width/2 past the root);
+   *   - the far end is in WATER, which is what makes it a pier and not a path.
    */
-  it('leaves the shore and ends in open water', () => {
+  it('roots on land and ends in open water, at every era and every rung', () => {
     for (const seed of [...SEEDS, ...WIDE]) {
-      const l = composeLayout(PORT, seed, FAST)
-      const h = l.harbour as Harbour
-      const j = pierOf(h)
-      const rootShore = shoreAt(l.coast, h.cove, j.at.x)
-      expect(rootShore).not.toBeNull()
-      // the root is BELOW its own column's waterline: on the water, at the deck
-      expect(j.at.y).toBeGreaterThan(rootShore as number)
-      expect(l.coast.landAt(j.end.x, j.end.y)).toBe(false)
-      // and the end is further out than the root, along the iso angle
-      expect(j.end.y).toBeGreaterThan(j.at.y)
-      expect(j.end.x).toBeGreaterThan(j.at.x)
+      for (const state of [PORT, CAMP, withState(CAMP, { stages: { quay: 'rowboat_jetty' } })]) {
+        const l = composeLayout(state, seed, FAST)
+        const h = l.harbour as Harbour
+        const j = pierOf(h)
+        expect(l.coast.landAt(j.at.x, j.at.y)).toBe(true)
+        // the drawn cap, half a pier-width back along the axis, is on land too:
+        // a root that merely touches the waterline still reads as detached.
+        const dx = j.end.x - j.at.x
+        const dy = j.end.y - j.at.y
+        const run = Math.hypot(dx, dy)
+        expect(
+          l.coast.landAt(j.at.x - (dx / run) * (j.width / 2), j.at.y - (dy / run) * (j.width / 2))
+        ).toBe(true)
+        // and it walks out into water, along the iso angle
+        expect(l.coast.landAt(j.end.x, j.end.y)).toBe(false)
+        expect(j.end.y).toBeGreaterThan(j.at.y)
+        expect(j.end.x).toBeGreaterThan(j.at.x)
+      }
     }
   })
 
   /**
    * ITS ROOT FOLLOWS THE WATERLINE, and this is the arm that says so rather
    * than the one above — which stayed GREEN when the root was taken from the
-   * cove's centre instead of the jetty's own column (mutation MH4). Both
-   * versions leave the end in water and the root below the shore, because the
-   * cove's centre is deep; the difference only shows in how the number RESPONDS
-   * to the island.
+   * cove's centre instead of the jetty's own column (mutation MH4). The
+   * difference only shows in how the number RESPONDS to the island.
    *
-   * So: the offset from the root's own column is the same on every island (a
-   * fixed 52px out onto the water), while the absolute y moves with the shore.
-   * A root read from a constant inverts both — same y everywhere, offset all
-   * over the place — and no single-island assertion can tell them apart.
+   * So: the offset from the root's own column is the same on every island — the
+   * deck's own SHORE_LIFT, on the land side of the waterline — while the
+   * absolute y moves with the shore. A root read from a constant inverts both:
+   * same y everywhere, offset all over the place, and no single-island
+   * assertion can tell them apart.
+   *
+   * The SIGN is the load-bearing half of it now. `-4` and `+52` are both fixed
+   * offsets from the right column, and the suite that asserted only "fixed"
+   * held the floating pier in place for four adversarial rounds.
    */
-  it('roots at a fixed offset from ITS column, so it moves with the island', () => {
+  it('roots at a fixed offset from ITS column, on the land side of it', () => {
     const offsets: number[] = []
     const absolutes: number[] = []
     for (const seed of [...SEEDS, ...WIDE]) {
@@ -374,8 +449,60 @@ describe('the finger jetty', () => {
       absolutes.push(j.at.y)
     }
     expect(new Set(offsets).size).toBe(1)
-    expect(offsets[0]).toBe(52)
+    expect(offsets[0]).toBe(-SHORE_LIFT)
+    expect(offsets[0]).toBeLessThan(0)
     expect(Math.max(...absolutes) - Math.min(...absolutes)).toBeGreaterThan(40)
+  })
+
+  /**
+   * NO SHORE, NO PIER — the degenerate end of the rule above.
+   *
+   * A missing pier is honest and a floating one is not, so a column with no land
+   * emits nothing rather than falling back to a guessed y (the reference's
+   * `?? CVY-140`, which this module carried until the same date). The things
+   * that FLOAT are not deleted with it: a mooring is an open outcome window and
+   * a count may not be lost to a geometric accident in one column.
+   *
+   * It runs on a HAND-BUILT island because no real seed reaches this branch —
+   * buildHarbour has already returned null before a cove is that ruined, which
+   * is exactly why the branch needs a fixture: a rule with no reachable case is
+   * a comment until something asks it. The stub throws on every method
+   * buildHarbour is not supposed to need, so it cannot answer a question it was
+   * never given an answer for.
+   */
+  it('refuses to root a pier in a column with no land, and keeps what floats', () => {
+    const cove: Cove = { x: 1200, y: 1430, r: 300 }
+    const flatY = cove.y - 40
+    const inputs = {
+      era: 'hamlet' as const,
+      quay: 'stone_quay_4',
+      berths: 4,
+      cargo: 1,
+      boat: true,
+      sizeOf: (k: string) => DEFAULT_FOOTPRINTS[k] ?? { w: 96, h: 96 },
+    }
+
+    // the pier's column (cove.x + 104) is open water; every other column is land
+    const notched = buildHarbour(
+      fakeCoast(cove, (x) => (x > cove.x + 60 && x < cove.x + 150 ? null : flatY)),
+      cove,
+      inputs
+    ) as Harbour
+    expect(notched).not.toBeNull()
+    expect(notched.jetty).toBeNull()
+    expect(notched.moorings.length).toBe(4)
+    // hung off a MEASURED waterline from a neighbouring column, not an invented
+    // one: the reference's fallback would have put them 140px ABOVE the cove's
+    // centre, which is 100px inland of this shore.
+    for (const m of notched.moorings) expect(m.y).toBeGreaterThan(flatY)
+    expect(notched.items.some((i) => i.kind === 'harbor_boat')).toBe(true)
+
+    // the same island WITH land in that column does build one — otherwise the
+    // arm is measuring the fixture rather than the rule
+    const whole = buildHarbour(fakeCoast(cove, () => flatY), cove, inputs) as Harbour
+    expect(whole.jetty).not.toBeNull()
+    expect(whole.jetty?.at.y).toBe(flatY - SHORE_LIFT)
+    expect(whole.jetty?.end.y).toBeGreaterThan(flatY)
   })
 })
 
