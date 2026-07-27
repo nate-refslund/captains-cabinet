@@ -197,6 +197,46 @@ class TestComms:
         )
         assert out == "internal_email"
 
+    # ---- ROUTING CHANNEL: a recipient field carries MANY addresses --------
+    # The ceiling short-circuit is risk_class-keyed, so a send that resolves
+    # to internal_comms never meets the external_comms ceiling at all. The
+    # predicate therefore has to be ALL-quantified: one outside address in the
+    # field is an outside send, wherever it sits in the string. Before this
+    # pin the predicate read only the LAST "@"-suffix of the whole field, so
+    # every case below resolved internal_* and — at sovereign posture,
+    # unmeasured confidence, day one — the gate ALLOWED it.
+    @pytest.mark.parametrize("recipient", [
+        "outsider@partner-external.example, bo@testburg.example",   # comma, internal last
+        "outsider@partner-external.example bo@testburg.example",    # space
+        "outsider@partner-external.example; bo@testburg.example",   # semicolon
+        "outsider@partner-external.example\nbo@testburg.example",   # newline
+        "a@x.example, b@y.example, c@z.example, bo@testburg.example",
+        "bo@testburg.example, outsider@partner-external.example",   # internal FIRST
+    ])
+    def test_multi_recipient_with_any_external_is_external(self, recipient):
+        out = classify_action(
+            "mcp__brain__queue_draft",
+            {"channel": "email", "recipient": recipient, "body": "x"},
+        )
+        assert out == "external_email", (
+            f"{recipient!r} reaches someone outside the org but classified "
+            f"{out!r} — off the external_comms ceiling")
+
+    @pytest.mark.parametrize("recipient", [
+        "bo@testburg.example",
+        "bo@testburg.example, otto@testburg-media.example",         # ALL internal
+        "bo@testburg.example otto@sub.testburg.example",            # subdomain
+        "BO@TESTBURG.EXAMPLE, OTTO@TESTBURG-MEDIA.EXAMPLE",         # casing
+    ])
+    def test_all_internal_recipients_stay_internal(self, recipient):
+        # The narrowing must not swallow the internal path whole: a field
+        # whose addresses are ALL at org domains still classifies internal.
+        out = classify_action(
+            "mcp__brain__queue_draft",
+            {"channel": "email", "recipient": recipient, "body": "x"},
+        )
+        assert out == "internal_email"
+
     def test_unknown_recipient_comms_is_external_failclosed(self):
         # A comms send with an unresolvable / missing recipient must NOT
         # silently fall to internal — external is the conservative comms
