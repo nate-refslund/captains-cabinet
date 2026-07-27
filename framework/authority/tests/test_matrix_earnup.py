@@ -109,7 +109,7 @@ class TestEarnUpNarrowsRejections:
         ("internal_comms", "graduated", "auto"),         # root auto_with_veto_window(3) < auto(5)
         ("internal_comms", "unmeasured", "classifier"),  # root propose_only(1) < classifier(2)
         ("deploy_nonprod", "unmeasured", "classifier"),  # root propose_only(1) < classifier(2)
-        ("draft_only", "eligible", "act_with_undo"),     # root propose_only(1) < act_with_undo(4)
+        ("draft_only", "eligible", "auto"),              # root notify_after(4) < auto(5)
     ])
     def test_widening_a_cell_beyond_root_raises(self, loaded, rc, state, verdict):
         d = _mutant(loaded)

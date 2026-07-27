@@ -161,6 +161,42 @@ _PACKAGES = {
         "any_of": (("do NOT re-paste", "reference only"),),
         "forbidden_lower": (),
     },
+    "draft-only-act-then-tell": {
+        "doc": "germline-amendment-draft-only-act-then-tell-2026-07-26.md",
+        "apply_token": '"apply draft act-then-tell"',
+        # CG-35 edit set: the verdict rows + the three comment-only modules.
+        # LANDED-then-ceremonied, so germline-lock.sh appears as the set that
+        # must stay byte-identical, never as an edited file.
+        "germline_files": (
+            "authority-matrix.yml", "matrix.py", "policy_engine.py",
+            "action_undo.py", "germline-lock.sh",
+        ),
+        "eval_coverage": None,
+        "rollback_re": r"\*\*One-revert rollback:\*\*(.*?)(?:\n---|\n## )",
+        "rollback_skip": (),
+        "rollback_extra": ("germline path SET",),
+        # no paste-ready ledger block: the ruling is recorded via the CG-35
+        # ledger row + this doc, not by re-pasting a captain-decisions entry
+        "blocks": (),
+        # the ruling · the widened cells · the walls that did NOT move · the
+        # scope refusals that make this narrow (posture ladder untouched,
+        # lock SET untouched, earn_up untouched) · the recorded open item
+        "anchors": (
+            "notify_after", "act-then-tell", "read_only_dispatch",
+            "external_comms", "always_gated", "_TRUST_FIRST_UNMEASURED",
+            "POSTURES", "earn_up", "CG-35", "non-grantable",
+        ),
+        "anchors_lower": (
+            "widens composing a draft",
+            "byte-identical",
+            "fail-closed to external",
+        ),
+        "flat_anchors": (),
+        "any_of": (("landed-then-ceremonied", "already landed on master"),),
+        # the superseded half of the 2026-07-04 ruling must not survive as a
+        # live claim anywhere in this package
+        "forbidden_lower": ("draft_only keeps the earn-up ladder",),
+    },
 }
 
 _PKG_IDS = sorted(_PACKAGES)
