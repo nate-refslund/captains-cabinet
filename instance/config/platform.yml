@@ -153,12 +153,21 @@ git_repos:
 #
 # Removing the cap did NOT remove the measurement, and that distinction is the
 # whole point. session-stop.sh still meters every turn, framework/cost/meter.py
-# still counts the non-session lanes, the briefing still carries a per-lane
-# line, and framework/watchdog/registry.py still alarms — but on ANOMALY
-# (spend with no output, a lane 20x its own trailing median, a lane that never
-# billed suddenly billing, a silent meter), never on amount. Alarm, never
-# block. The subscription's own limit is now the real ceiling; see
+# still counts the non-session lanes, and the briefing still carries a per-lane
+# line. The subscription's own limit is now the real ceiling; see
 # cabinet/cron/limit-reset-watchdog.sh.
+#
+# NOT YET TRUE, stated here so nobody reads the line above as coverage:
+# NOTHING alarms on spend. framework/watchdog/registry.py carries no spend,
+# cost or meter row (grep it), so with the caps off, an unmetered or runaway
+# lane is measured and then noticed by nobody. The anomaly rows that would
+# close this — spend with no output, a lane 20x its own trailing median, a
+# lane that never billed suddenly billing, a silent meter — are NOT
+# IMPLEMENTED, and were WITHHELD PENDING A TWO-MODEL DIRECTION GATE rather
+# than forgotten: per the 2026-07-27 scope ruling, deciding what counts as
+# anomalous and interrupting the Captain is new behaviour, not a repair, so it
+# does not ride a fix. Until one lands, the meter's liveness is a MANUAL check
+# (docs/runbooks/observe-only-dogfood.md).
 #
 # Background: FW-002 in shared/cabinet-framework-backlog.md; incident
 # 2026-04-17 — CoS bricked for ~15 min by silent over-cap block.
