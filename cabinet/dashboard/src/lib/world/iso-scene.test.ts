@@ -33,6 +33,7 @@ import {
   layoutStateFrom,
   NO_STATE_KINDS,
   packFootprintOf,
+  pickIsoSprite,
   resolveFrame,
 } from './iso-scene'
 import { projectionFor } from './projection'
@@ -355,5 +356,64 @@ describe('the painted lane band is the corridor the rules reserved', () => {
     const ry = reach(0, 1)
     expect(rx).toBeCloseTo(half, 3)
     expect(ry / rx).toBeCloseTo(LANE_PAINT_SQUASH, 4)
+  })
+})
+
+describe('the iso pick — the world answers when you click it', () => {
+  // THE ARM THIS REPLACES was `if (isIso) return { kind: 'ground' }` in
+  // engine-canvas: the whole iso world was inert, and its docstring said the
+  // world "carries no data" — true only because nothing had been written to
+  // answer. Every assertion below FAILS against that constant.
+  const state = stateFor('hamlet')
+  const scene = buildIsoScene(PACK, state, 'cabinet-pick')
+
+  it('picks the sprite whose ground diamond holds the point, not the one behind it', () => {
+    const measured = scene.sprites.filter((s) => s.role !== null)
+    expect(measured.length).toBeGreaterThan(10)
+    // A sprite's own base centre is the front vertex of its own diamond, so a
+    // pick there must return that sprite or one drawn IN FRONT of it (which is
+    // a real occlusion, not a miss) — never nothing, and never one behind.
+    let exact = 0
+    for (const s of measured) {
+      const hit = pickIsoSprite(scene, s.x, s.y - 1)
+      expect(hit).not.toBeNull()
+      if (hit!.id === s.id) exact++
+      else expect(hit!.depth).toBeGreaterThanOrEqual(s.depth)
+    }
+    // the overwhelming majority are unoccluded at their own base
+    expect(exact / measured.length).toBeGreaterThan(0.8)
+  })
+
+  it('skips decoration so a bush cannot answer for the building behind it', () => {
+    const decor = scene.sprites.filter((s) => s.role === null)
+    expect(decor.length).toBeGreaterThan(50)
+    for (const d of decor.slice(0, 40)) {
+      const hit = pickIsoSprite(scene, d.x, d.y - 1)
+      // whatever answers, it is never the decoration itself
+      if (hit) expect(hit.role).not.toBeNull()
+    }
+    // …and asking for decoration explicitly does return it
+    const withDecor = pickIsoSprite(scene, decor[0].x, decor[0].y - 1, {
+      includeDecorative: true,
+    })
+    expect(withDecor).not.toBeNull()
+  })
+
+  it('answers null on open sea — no phantom target off the island', () => {
+    expect(pickIsoSprite(scene, 40, 40)).toBeNull()
+    expect(pickIsoSprite(scene, 2360, 1720)).toBeNull()
+  })
+
+  it('the pointer conversion is the projection kernel run forward', () => {
+    // engine-canvas converts a TILE-space pointer to the LAYOUT PIXEL the
+    // sprites live in with proj.project(); this pins that the round trip is
+    // exact, because a pick one tile out is a card about the wrong building.
+    const proj = projectionFor('iso')
+    for (const s of scene.sprites.slice(0, 25)) {
+      const t = proj.unproject(s.x, s.y)
+      const back = proj.project(t.tx, t.ty)
+      expect(back.x).toBeCloseTo(s.x, 6)
+      expect(back.y).toBeCloseTo(s.y, 6)
+    }
   })
 })

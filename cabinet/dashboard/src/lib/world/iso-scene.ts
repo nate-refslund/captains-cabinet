@@ -38,8 +38,9 @@ import {
   type LayoutState,
   type RoadRung,
 } from './iso-layout'
+import { LANDING_FRAMES, VILLAGE_LIFE_FRAMES } from './iso-layout/dressing'
 import { eraOfFrame, frameFor, isEmptyRung, type IsoPack, type PackFrame } from './iso-pack'
-import { projectionFor, type ProjectionKind } from './projection'
+import { pointInGround, projectionFor, type ProjectionKind } from './projection'
 import type { WorldResolution } from './era-engine'
 
 const ERAS: readonly Era[] = ['camp', 'hamlet', 'town', 'beyond_bay']
@@ -72,7 +73,6 @@ const DWELLING_KINDS: ReadonlySet<string> = new Set<string>([...HOUSE_KINDS, CAM
  * resolving shows up as an issue instead of joining this set by accident.
  */
 export const NO_STATE_KINDS: ReadonlySet<string> = new Set([
-  'market_stall',
   'cargo_barrels',
   'crate_single',
   'rope_coil',
@@ -84,6 +84,15 @@ export const NO_STATE_KINDS: ReadonlySet<string> = new Set([
   'barrel_single',
   'mooring_post',
   'harbor_crane',
+  // THE DISTRICT DRESSING, imported rather than re-typed. Its two non-ladder
+  // classes carry no PACK object — nothing in resolve[] answers for a bench —
+  // but they are not un-entitled: blueprint.ts justifies village life at
+  // hamlet and above and the landing at every era, and check_state_traceable
+  // holds them to it. What "no state" means HERE is narrower than it looks: no
+  // (object, era, rung) row, so the kind draws itself. Re-typing the names
+  // would be a second list to keep in step with the one that decides.
+  ...VILLAGE_LIFE_FRAMES,
+  ...LANDING_FRAMES,
 ])
 
 /**
@@ -511,4 +520,45 @@ export function cameraClamp(
     x1: Math.max(...xs) + margin,
     y1: Math.max(...ys) + margin,
   }
+}
+
+/**
+ * THE ISO PICK — which sprite is under a layout-pixel point.
+ *
+ * It lives here, and not in the canvas closure, for the reason every other pure
+ * thing in this file does: a hit test buried inside a PixiJS `useEffect` cannot
+ * be run by a test, and the pick that shipped before this function was a
+ * one-line `return ground` whose docstring said the world "carries no data" —
+ * true only because nothing had been written to answer.
+ *
+ * FRONT TO BACK, which is the reverse of the depth sort `buildIsoScene` already
+ * applied, so the sprite the eye sees on top is the sprite the pointer gets.
+ *
+ * ON THE SHARED GROUND DIAMOND (../projection pointInGround), not on the sprite
+ * rectangle. A sprite's rectangle is its ART — a lighthouse is 200px tall and
+ * stands on a 54px diamond — so picking by rectangle would let a roof 150px up
+ * the screen answer for ground a person is standing on, and would make tall
+ * things swallow everything behind them. It is also the SAME geometry the
+ * placement rules cleared against and checks/world_checks.py judges; a fifth
+ * definition of where a sprite stands is the defect ./iso-layout/clearance.ts
+ * records paying for three times.
+ *
+ * DECORATION IS TRANSPARENT TO THE PICK. `role === null` is a sprite no state
+ * rule entitled — a tree, a barrel, a buoy — and it is SKIPPED rather than
+ * answered, so a bush in front of the library does not turn the library into
+ * bare ground. `wantsRole` lets the caller ask only for things with a card.
+ */
+export function pickIsoSprite(
+  scene: Pick<IsoScene, 'sprites'>,
+  px: number,
+  py: number,
+  opts: { includeDecorative?: boolean } = {}
+): IsoSprite | null {
+  const wantAll = opts.includeDecorative ?? false
+  for (let i = scene.sprites.length - 1; i >= 0; i--) {
+    const s = scene.sprites[i]
+    if (!wantAll && s.role === null) continue
+    if (pointInGround(px, py, s.x, s.y, s.dw, s.dh)) return s
+  }
+  return null
 }

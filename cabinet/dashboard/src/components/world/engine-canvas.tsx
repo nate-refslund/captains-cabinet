@@ -47,6 +47,7 @@ import { fnv1a } from '@/lib/world/hash'
 import { parsePack, type IsoPack } from '@/lib/world/iso-pack'
 import {
   buildIsoScene,
+  pickIsoSprite,
   LANE_PAINT_SQUASH,
   layoutStateFrom,
   type IsoScene,
@@ -1979,6 +1980,57 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         else drawDynamics(p) // …or the whole top-down dynamic layer is
       }
 
+      /**
+       * The iso pick: the scene's own sprites, front to back, on the SHARED
+       * ground diamond.
+       *
+       * WHY IT CANNOT REUSE ANYTHING ABOVE. Under iso a sprite's position is a
+       * layout PIXEL, not a tile: buildIsoSprites does `sp.position.set(s.x,
+       * s.y)` straight from composeLayout. `screenToWorld` returns TILES,
+       * because that is what the camera and the top-down world speak — so the
+       * one conversion here is `proj.project(tx, ty)`, which is the same kernel
+       * the camera projects with, run forward. project() is linear, so
+       * project(tile) is the absolute layout px of that tile and no camera term
+       * is needed twice.
+       *
+       * THE DIAMOND IS THE ONE IN ../lib/world/projection, the same geometry
+       * the placement rules cleared against and checks/world_checks.py judges —
+       * a fifth definition of where a sprite stands is the defect that file's
+       * header records paying for. Front to back is the reverse of the depth
+       * sort buildIsoScene already did, so the thing the eye sees on top is the
+       * thing the pointer gets.
+       *
+       * DECORATION DOES NOT ABSORB THE CLICK. A sprite with no state role — a
+       * tree, a barrel, a buoy — is skipped rather than answered, so a bush
+       * standing in front of the library does not turn the library into
+       * "ground". What answers is the front-most sprite that a STATE RULE
+       * entitled, and when nothing does, `ground` says so plainly.
+       */
+      function isoHitTarget(tx: number, ty: number): EngineTarget {
+        const scene = isoScene
+        const GROUND: EngineTarget = { kind: 'ground', id: 'ground' }
+        if (!scene) return GROUND
+        const px = proj.project(tx, ty)
+        const p = propsRef.current
+        const s = pickIsoSprite(scene, px.x, px.y)
+        if (!s) return GROUND
+        // the two stations that are their own card, not a building row
+        if (s.frame === 'mailbox') return { kind: 'mailbox', id: 'mailbox' }
+        if (s.frame === 'chart_table' && p.chartTable) {
+          return { kind: 'chart_table', id: 'chart-table' }
+        }
+        // A LADDER ROLE IS A BUILDING ROW BY ITS `element`, never by its id.
+        // The engine's building ids are its own; the ladder object is the name
+        // both sides already agree on (WorldBuilding.element), so the card that
+        // opens is about the same measurement the sprite drew.
+        const b = p.buildings.find((bb) => bb.element === s.role)
+        if (b) return { kind: 'building', id: b.id }
+        // A role the top-down building table has no row for is real and
+        // measured but has no card yet. Answering `ground` is the honest reply
+        // — better than opening a neighbour's card.
+        return GROUND
+      }
+
       function hitTarget(ev: MouseEvent): EngineTarget | null {
         const rect = app.canvas.getBoundingClientRect()
         const p = propsRef.current
@@ -1989,7 +2041,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         const w = screenToWorld(proj, ev.clientX - rect.left, ev.clientY - rect.top, p.camera, view)
         const wx = w.x
         const wy = w.y
-        // UNDER ISO THE PICK IS HONESTLY ABSENT, not approximated.
+        // UNDER ISO THE PICK IS ITS OWN, because the world is its own.
         //
         // Every target below is a tile-space tolerance against the TOP-DOWN
         // geometry — building bboxes, the crossroads mailbox, lane-site
@@ -1998,9 +2050,8 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         // pixel space. Running these tests against an iso pointer would open
         // the inspect card for whatever top-down building happened to occupy
         // the coordinate, which is a card asserting something false about the
-        // org. The ground fallback says "nothing here carries data", which is
-        // true of the iso path today and stops being true when pick.ts lands.
-        if (isIso) return { kind: 'ground', id: 'ground' }
+        // org. So the iso path answers from the SCENE it actually drew.
+        if (isIso) return isoHitTarget(wx, wy)
         // officers first (small, on top)
         if (LOD_RULES[lodTier(s)].officers) {
           for (const o of officerPositions(p)) {
