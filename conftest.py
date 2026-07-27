@@ -75,6 +75,16 @@ fixture) fences:
         days of briefings) this store exists to prevent. The path points
         inside the sandbox and is never created, so every in-test resolve
         returns the honest empty list,
+      - the proactive-card emission series (framework/frontdoor/
+        card_flatline.py::series_path(), CABINET_FALSIFIER_SERIES — fenced at
+        birth, 2026-07-27). The only READ fence in this list, and it is here
+        for the same reason the availability dial is: the channel-flatline
+        alarm reaches the Captain, so a pytest run must never be able to
+        JUDGE a live deployment's real emission history — nor to have its own
+        arms silently pass or fail on whatever that history happens to say
+        today. The path points inside the sandbox and is never created, so
+        every in-test resolve returns the honest "no series" and every arm
+        supplies its own fixture,
       - the Captain-contact dead-man (framework/liveness/deadman.py,
         CABINET_LIVENESS_CONFIG — fenced at birth, 2026-07-25). The only
         OUTBOUND member of this list: it would send a fake heartbeat to the
@@ -133,6 +143,8 @@ os.environ["CABINET_CAPTAIN_AVAILABILITY_FILE"] = os.path.join(
     _SESSION_SANDBOX, "captain-availability.yml")
 os.environ["CABINET_CAPTAIN_DATES_FILE"] = os.path.join(
     _SESSION_SANDBOX, "captain-dates.yml")
+os.environ["CABINET_FALSIFIER_SERIES"] = os.path.join(
+    _SESSION_SANDBOX, "falsifier-series.jsonl")
 
 # Captain-contact dead-man (2026-07-25) — an OUTBOUND fence, not a write fence,
 # and the first of its kind here. framework/liveness/deadman.py fires from inside

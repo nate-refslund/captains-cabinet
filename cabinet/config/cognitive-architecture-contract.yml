@@ -205,6 +205,20 @@ temporary_allowances:
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: the dates resolver folds into the projection kernel alongside the availability dial, or COG-7 compaction
+  - phase: channel-flatline-alarm
+    budget: framework_production_modules
+    additional: 1
+    reason: proactive-card channel-flatline alarm (Captain-Seat dry-run finding 2, 2026-07-26 — cards fell from ~146/week to zero for seven straight days with no alarm while briefings kept flowing). ONE new module, framework/frontdoor/card_flatline.py — the pure detector (series + current gates -> one verdict; crossing-row announce so the Captain is asked once per silent episode, recovery as the whole cooldown, and the four non-alarm states never-active / quiet-org / deliberate / unmeasured) plus read_gates and the two renderers. A MODULE rather than a helper inside tell_digest because BOTH delivery seams need it (the digest LOOP section and run_briefing's card headline — card mode archives the composed body, so the headline is the only surface the Captain sees) and so does the cabinet-side doctor probe, which must reach the verdict without importing the digest's live-ledger surface. No new durable store, no new services row, no new send. EXACT measured running total (244 vs 243 base), 2026-07-27, via cognitive-architecture-census.py — the zero-headroom observed==max law means this is the exact new total, never a pre-allocated ceiling
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: the channel-liveness verdict folds into the outcome-expectations registry or the projection kernel, or COG-7 compaction
+  - phase: channel-flatline-alarm
+    budget: framework_production_noncomment_lines
+    additional: 390
+    reason: proactive-card channel-flatline alarm (Captain-Seat dry-run finding 2) — framework/frontdoor/card_flatline.py (the pure evaluate state machine over the daily emission series, the zero-run walk that an unmeasured row BREAKS rather than extends, _org_active reading the series' own activity fields so a dead fleet is never misattributed to the card channel, the stdlib services-manifest parse that strips an inline ABSENCE-DISABLE comment before matching, the env-overridable series resolver the root conftest fences, and the ONE captain-facing sentence plus the doctor token grammar), framework/frontdoor/tell_digest.py (the flatline key on gather_loop_readout computed off the SAME series read, the leading LOOP line, and flatline_notice for callers holding no readout), and framework/frontdoor/run_briefing.py (_flatline_notice on the card headline). EXACT measured running total (69051 vs 68661 base), 2026-07-27, via cognitive-architecture-census.py
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: the channel-liveness verdict folds into the outcome-expectations registry, or COG-7 compaction
 ownership:
   authoritative_state: domain_transaction
   cross_domain_delivery: transactional_outbox

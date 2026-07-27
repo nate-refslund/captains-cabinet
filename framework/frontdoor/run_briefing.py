@@ -163,11 +163,31 @@ def _archive_send_fn(sink: dict):
     return _send
 
 
+def _flatline_notice() -> str:
+    """The channel-flatline question for the CARD headline, or "".
+
+    Card mode archives the composed body instead of sending it, so the digest's
+    📈 LOOP line — where this question normally rides — never reaches the
+    Captain on a card-mode deployment (and the knob is on by default). The
+    headline is the one thing that does. ONE engine-minted sentence, no item
+    payload text, no marker char; ``tell_digest.flatline_notice`` owns the
+    once-per-episode rule and the wording, so the two surfaces cannot drift.
+    Fail-open: an alarm must never cost the briefing card."""
+    try:
+        return tell_digest.flatline_notice()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _plain_headline(gather: dict, digest: "dict | None") -> str:
     """One plain sentence for the card: counts only, NEVER item payload text
     (untrusted pipe content must not ride the card surface — the full body
     lives in the archive file). Honest on an archive failure: content that
-    did not land on disk is reported as still queued, not as kept."""
+    did not land on disk is reported as still queued, not as kept.
+
+    Plus, when it fires, the channel-flatline question (``_flatline_notice``)
+    — the one captain-facing line that would otherwise land only in the
+    archived body nobody reads."""
     n = int(gather.get("drained") or 0)
     if n and gather.get("sent"):
         head = f"Gathered {n} update{'s' if n != 1 else ''} into today's notes (kept on file)"
@@ -185,7 +205,11 @@ def _plain_headline(gather: dict, digest: "dict | None") -> str:
     if acted:
         head += (f". {acted} thing{'s were' if acted != 1 else ' was'} done for "
                  f"you — reply `undo <n>` to reverse one")
-    return head + "."
+    head += "."
+    notice = _flatline_notice()
+    if notice:
+        head += f" ⚠️ {notice}"
+    return head
 
 
 def _default_briefing_card(headline: str) -> dict:
