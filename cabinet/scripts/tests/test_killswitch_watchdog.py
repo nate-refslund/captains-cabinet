@@ -14,6 +14,14 @@ non-runtime env ``allow_sends()`` is False, so the door answers
 ``blocked-dev`` with ZERO network (belt: TELEGRAM_API_BASE points at a dead
 local port).
 
+SAFETY (incident 2026-07-27): this file ACTIVATES a real emergency stop, so
+every child goes through ``lib_killswitch_fence``. Redirecting with REDIS_URL
+alone was not enough — the shared resolver prefers REDIS_HOST/REDIS_PORT and
+resolves the stop marker from CABINET_ROOT, all of which the officer plists
+export, so the fence pins every channel the resolver consults and then PROVES
+the redirection took by asking that resolver where it would go. It refuses to
+run rather than fall through to whatever it finds.
+
 UNIT tests hit the pure ``decide()`` seam directly — including the
 authority-transitions interplay: an OBSERVED (actor authority-watch,
 attribution=state-observed, no ``via``) deactivation row describes the raw
@@ -35,6 +43,13 @@ import pytest
 REPO = Path(__file__).resolve().parents[3]
 SWITCH = REPO / "cabinet/scripts/kill-switch.sh"
 WATCHDOG = REPO / "cabinet/scripts/killswitch-watchdog.py"
+
+_HERE = Path(__file__).resolve().parent
+for _p in (str(_HERE), str(REPO)):        # tests/ is a package: put it on the path
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+import lib_killswitch_fence as ksfence  # noqa: E402
 
 _HAVE_REDIS = all(shutil.which(t) for t in ("redis-server", "redis-cli"))
 needs_redis = pytest.mark.skipif(
@@ -75,28 +90,42 @@ def sandbox_redis(tmp_path):
     proc.kill()
 
 
+def _fenced_env(port, events_dir, base=None, extra=None):
+    """Child env with EVERY killswitch routing channel pinned at the sandbox.
+
+    Setting REDIS_URL alone is NOT a fence: ``_ks_endpoint`` in
+    hooks/killswitch-read.sh PREFERS REDIS_HOST/REDIS_PORT, and the officer
+    plists export exactly those — so on the runtime's normal environment these
+    tests drove ``kill-switch.sh activate`` against the LIVE control plane
+    (incident 2026-07-27). The stop marker went the same way via CABINET_ROOT,
+    and ``deactivate`` unlinks it. The fence derives the channel set from the
+    resolver and PROVES the redirection took, or refuses to run.
+    """
+    return ksfence.sandbox_env(
+        port,
+        marker=Path(events_dir).parent / "killswitch-estop-marker",
+        base=base, extra=extra)
+
+
 def _base_env(port, events_dir, state_file, grace_s):
     import os
-    env = dict(os.environ)
-    env.pop("CABINET_ENV", None)          # never runtime: the door must gate
-    env["REDIS_URL"] = f"redis://127.0.0.1:{port}"
-    env["CABINET_EVENT_LOG_DIR"] = str(events_dir)
-    env["CABINET_KILLSWITCH_WATCHDOG_STATE_FILE"] = str(state_file)
-    env["CABINET_KILLSWITCH_REARM_GRACE_S"] = str(grace_s)
-    # Fake creds so notify reaches the REAL channel door (which answers
-    # blocked-dev in non-runtime env, zero network); belt: dead API base.
-    env["TELEGRAM_COS_TOKEN"] = "test-token"
-    env["CAPTAIN_TELEGRAM_ID"] = "12345"
-    env["TELEGRAM_API_BASE"] = "http://127.0.0.1:9"
-    return env
+    base = dict(os.environ)
+    base.pop("CABINET_ENV", None)         # never runtime: the door must gate
+    return _fenced_env(port, events_dir, base=base, extra={
+        "CABINET_EVENT_LOG_DIR": str(events_dir),
+        "CABINET_KILLSWITCH_WATCHDOG_STATE_FILE": str(state_file),
+        "CABINET_KILLSWITCH_REARM_GRACE_S": str(grace_s),
+        # Fake creds so notify reaches the REAL channel door (which answers
+        # blocked-dev in non-runtime env, zero network); belt: dead API base.
+        "TELEGRAM_COS_TOKEN": "test-token",
+        "CAPTAIN_TELEGRAM_ID": "12345",
+        "TELEGRAM_API_BASE": "http://127.0.0.1:9",
+    })
 
 
 def _run_switch(action, port, events_dir, extra_env=None):
-    import os
-    env = dict(os.environ)
-    env["REDIS_URL"] = f"redis://127.0.0.1:{port}"
-    env["CABINET_EVENT_LOG_DIR"] = str(events_dir)
-    env.update(extra_env or {})
+    env = _fenced_env(port, events_dir, extra={
+        "CABINET_EVENT_LOG_DIR": str(events_dir), **(extra_env or {})})
     return subprocess.run(["bash", str(SWITCH), action], env=env,
                           capture_output=True, text=True, timeout=30)
 

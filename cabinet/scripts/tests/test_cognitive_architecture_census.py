@@ -973,20 +973,15 @@ def _rewrite_contract(tree: Path, expansions, *, lift_ceilings: bool = True) -> 
     planted member consumes (one event type, one non-comment line) by exactly
     one each. Both must move: the point of these arms is that the ONLY thing
     which can red the tree is the registry, never a zero-headroom ratchet
-    standing in for a check that is not actually running.
-
-    The LIVE tree's own expansion rows are PRESERVED and `expansions` is
-    appended to them. Replacing the list wholesale was correct only while the
-    live registry was empty: the first real row landing made every live surplus
-    member unregistered inside these fixtures, so the exact-failure-set arms
-    below started reporting the live member instead of the synthetic one — a
-    fixture failing on a state the registry exists to support. Appending keeps
-    every arm's teeth (proved by the negative control, which still reds on the
-    synthetic member alone) and stops the fixtures encoding "the registry is
-    never used" as an invariant."""
+    standing in for a check that is not actually running."""
 
     path = tree / "cabinet/config/cognitive-architecture-contract.yml"
     data = yaml.safe_load(path.read_text())
+    # APPEND, never replace (2026-07-27). The copied tree carries the real
+    # framework/, so every LIVE expansion member is present in it; dropping the
+    # live rows would make each of those members an unregistered surplus and
+    # every arm below would fail for a reason it does not name. Each arm still
+    # measures exactly its own synthetic row.
     data["expansions"] = list(data.get("expansions") or []) + list(expansions)
     if lift_ceilings:
         data["budgets"]["central_event_types"]["maximum"] += 1
@@ -1213,37 +1208,28 @@ def test_bijection_classes_are_pinned(tmp_path: Path):
     )
 
 
-def test_live_registry_carries_no_unregistered_surplus():
-    """Every surplus member in the LIVE tree is named by an adjudicated row.
+def test_live_registry_matches_the_live_surplus_exactly():
+    """INVERTED 2026-07-27: the registry stopped being empty.
 
-    The assertion used to be `all(not members ...)` — no surplus AT ALL — which
-    is a different and stricter claim than the name makes, and one the registry
-    is designed to make false: a member is registered by an `expansions` row,
-    not by being absent. It held only while `expansions` was empty, so the
-    first legitimate use of the mechanism would have turned it red. Rewritten
-    to the claim the name states, which is also the one with teeth: an
-    UNregistered surplus member is a failure, and the census reports it by that
-    exact reason string."""
+    The previous assertion — no surplus at all — was the honest state while the
+    registry held nothing, and it became literally wrong when the first
+    adjudicated expansion landed. Asserting the BIJECTION instead is strictly
+    stronger: an unregistered member still fails, and so does a row that outlives
+    the member it was written for, which the "empty" form could never catch.
+    """
 
     census = _load_module()
     report = census.inspect_repository(ROOT)
+    contract = census.load_contract(ROOT / "cabinet/config/cognitive-architecture-contract.yml")
 
     assert set(report["surplus_members"]) == set(census.BIJECTION_CLASSES)
-    unregistered = [
-        (failure["budget"], failure["member"])
-        for failure in report["failures"]
-        if failure.get("reason") == "unregistered set member"
-    ]
-    assert not unregistered, unregistered
-    registered = {
-        (row["member_class"], row["member"])
-        for row in census.load_contract(
-            ROOT / census.DEFAULT_CONTRACT)["expansions"]
-    }
-    for member_class, members in report["surplus_members"].items():
-        for member in members:
-            assert (member_class, member) in registered, (
-                f"{member_class} surplus member {member} has no expansion row")
+    registered: dict[str, set[str]] = {name: set() for name in census.BIJECTION_CLASSES}
+    for row in contract["expansions"]:
+        registered[row["member_class"]].add(row["member"])
+    assert {
+        name: set(members) for name, members in report["surplus_members"].items()
+    } == registered
+    assert report["ok"] is True, report["failures"]
 
 
 @pytest.mark.parametrize(

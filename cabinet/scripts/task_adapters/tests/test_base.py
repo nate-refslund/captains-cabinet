@@ -81,7 +81,8 @@ class TestGetAdapter:
 
     def test_github_issues_returns_adapter(self):
         adapter = get_adapter({
-            "tasks": {"system": "github-issues", "config": {"repo": "owner/repo"}}
+            "tasks": {"system": "github-issues", "ownership": "self",
+             "authority_basis": "my own tracker", "config": {"repo": "owner/repo"}}
         })
         assert adapter.destination == "github-issues"
         assert adapter.repo == "owner/repo"
@@ -98,7 +99,8 @@ class TestGetAdapter:
 
     def test_jira_returns_skeleton(self):
         adapter = get_adapter({
-            "tasks": {"system": "jira", "config": {
+            "tasks": {"system": "jira", "ownership": "self",
+             "authority_basis": "my own tracker", "config": {
                 "domain": "co", "email": "user@co", "project_key": "X"
             }}
         })
@@ -106,13 +108,15 @@ class TestGetAdapter:
 
     def test_linear_returns_skeleton(self):
         adapter = get_adapter({
-            "tasks": {"system": "linear", "config": {"team_id": "abc"}}
+            "tasks": {"system": "linear", "ownership": "self",
+             "authority_basis": "my own tracker", "config": {"team_id": "abc"}}
         })
         assert adapter.destination == "linear"
 
     def test_asana_returns_skeleton(self):
         adapter = get_adapter({
-            "tasks": {"system": "asana", "config": {
+            "tasks": {"system": "asana", "ownership": "self",
+             "authority_basis": "my own tracker", "config": {
                 "workspace_id": "w", "project_gid": "p"
             }}
         })
@@ -123,11 +127,15 @@ class TestAdapterContract:
     """Verify every adapter implements the abstract methods."""
 
     @pytest.mark.parametrize("config", [
-        {"tasks": {"system": "github-issues", "config": {"repo": "o/r"}}},
+        {"tasks": {"system": "github-issues", "ownership": "self",
+             "authority_basis": "my own tracker", "config": {"repo": "o/r"}}},
         # monday excluded — see TestGetAdapter.test_monday_raises_with_dev_tasks_message
-        {"tasks": {"system": "jira", "config": {"domain": "c", "email": "e", "project_key": "P"}}},
-        {"tasks": {"system": "linear", "config": {"team_id": "t"}}},
-        {"tasks": {"system": "asana", "config": {"workspace_id": "w", "project_gid": "p"}}},
+        {"tasks": {"system": "jira", "ownership": "self",
+             "authority_basis": "my own tracker", "config": {"domain": "c", "email": "e", "project_key": "P"}}},
+        {"tasks": {"system": "linear", "ownership": "self",
+             "authority_basis": "my own tracker", "config": {"team_id": "t"}}},
+        {"tasks": {"system": "asana", "ownership": "self",
+             "authority_basis": "my own tracker", "config": {"workspace_id": "w", "project_gid": "p"}}},
     ])
     def test_adapter_implements_abstract_methods(self, config):
         adapter = get_adapter(config)
@@ -207,21 +215,24 @@ class TestSkeletonsRaiseNotImplemented:
 
     def test_jira_pull_raises(self):
         adapter = get_adapter({
-            "tasks": {"system": "jira", "config": {"domain": "c", "email": "e", "project_key": "P"}}
+            "tasks": {"system": "jira", "ownership": "self",
+             "authority_basis": "my own tracker", "config": {"domain": "c", "email": "e", "project_key": "P"}}
         })
         with pytest.raises(NotImplementedError):
             adapter.pull()
 
     def test_linear_push_raises_with_archive_warning(self):
         adapter = get_adapter({
-            "tasks": {"system": "linear", "config": {"team_id": "t"}}
+            "tasks": {"system": "linear", "ownership": "self",
+             "authority_basis": "my own tracker", "config": {"team_id": "t"}}
         })
         with pytest.raises(NotImplementedError, match="read-only archive"):
             adapter.push(CanonicalTask(canonical_id="x", title="t"))
 
     def test_asana_delete_raises(self):
         adapter = get_adapter({
-            "tasks": {"system": "asana", "config": {"workspace_id": "w", "project_gid": "p"}}
+            "tasks": {"system": "asana", "ownership": "self",
+             "authority_basis": "my own tracker", "config": {"workspace_id": "w", "project_gid": "p"}}
         })
         with pytest.raises(NotImplementedError):
             adapter.delete("123")
