@@ -21,7 +21,27 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: e3675c7b4b1db4c20220bb9bf418baa5011ad6ae644fc05c181b5401933d0923
+Reviewed-Scope-Digest: deca1533428d8df83e6c0b53d96723620c8ae4f4285a943b9e352fc98c652671
+
+(RE-BOUND 2026-07-27, `fix/bijection-allowance-bypass`, same commit as the change
+that moved the bytes — the re-bind-at-landing procedure this artifact prescribes.
+Prior digest: `8bee10cdcd41994b…`. The one moved file in scope is
+`cabinet/config/cognitive-architecture-contract.yml`, and the move is COMMENT
+bytes plus one allowance `reason` string: the expansion-registry header now
+states what the census actually enforces after an adversarial review falsified
+its previous claim by execution. No budget maximum, no `additional`, no member
+and no expansion row changed — verified by loading both revisions and comparing
+the parsed budgets/allowances/expansions. NO COG-4 implementation byte changed;
+`framework/authority/classifier.py` remains in the manifest's
+`must_remain_unchanged` block against the pinned phase anchor, which the rollback
+rehearsal re-checks. The phase-4 findings below are unaffected. Re-bound a
+second time at the merge of `origin/master` b6a58b15, which had itself re-bound
+to `e3675c7b4b1db4c2…` for the `onboarding-three-entry-modes` row; the digest
+above is recomputed over the MERGED tree, since both sides moved the same one
+scope file.)
+
+
+
 (RE-BOUND repeatedly on 2026-07-27 — the census-shift-left, expansion-registry and
 census-set-pins landings each edited `cabinet/config/cognitive-architecture-contract.yml`,
 which sits in `restore_from_baseline` and is therefore digest-bound, and so did this

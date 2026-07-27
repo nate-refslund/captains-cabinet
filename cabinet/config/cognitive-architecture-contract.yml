@@ -705,8 +705,10 @@ temporary_allowances:
       names a member of the other. EXACT measured running total (245 vs 244
       base), 2026-07-27, via cognitive-architecture-census.py — the zero-headroom
       observed==max law means this is the exact new total, never a pre-allocated
-      ceiling. Registered as an expansion row below, since an allowance cannot
-      buy a net-new member of a set the census can name.
+      ceiling. Registered as an expansion row below, which is where a net-new
+      member belongs. This row is one of the eleven grandfathered by exact
+      (phase, budget, additional) triple in the census source: since 2026-07-27
+      an allowance may not name a bijection class at all.
     owner: authority-plane
     sunset: '2027-01-19'
     deletion_gate: >-
@@ -745,17 +747,38 @@ temporary_allowances:
 # temporary_allowances above pay for MASS and ask only reason/owner/sunset —
 # declaration, not adjudication. That gap is measured, not theoretical: an
 # expansion's line-mass once rode in under a fix-shaped brief as a routine
-# allowance row. So an allowance CANNOT buy a net-new member of any set the
-# census can name. Those go here, and the census holds the list to a BIJECTION
-# against cabinet/config/architecture-baseline-sets.yml:
+# allowance row. Net-new MEMBERS go here instead, and the census holds the list
+# to a BIJECTION against cabinet/config/architecture-baseline-sets.yml:
 #
 #     observed - baseline  ==  {row.member for row in expansions}
 #
 # per class, exactly and disjointly. Unregistered member -> RED. Row naming a
 # member that is not observed (the stale copy-paste) -> RED. Row naming a
-# baseline member (the laundering edit) -> RED. Two rows for one member ->
+# baseline member (the laundering edit) -> RED. A BASELINE name the tree does
+# not carry -> RED (the pre-loaded inventory). Two rows for one member ->
 # refused at load. Nothing here checks that a FILE EXISTS, because `touch`
 # passes that; a bijection cannot be faked at all.
+#
+# THE SENTENCE THAT USED TO SIT HERE WAS FALSE, and is kept as a correction
+# because it shipped in the public egg. It said "an allowance CANNOT buy a
+# net-new member of any set the census can name". An adversarial review
+# falsified it by EXECUTION on 2026-07-27: a genuinely net-new production module
+# landed at ok=True with no expansion row, paid for with ONE line in the
+# baseline file plus an ordinary allowance row — the twelfth on
+# framework_production_modules. Membership and count are two separate costs, and
+# only the count was named. What is true NOW:
+#   * no temporary_allowances row may name a bijection class at all — refused at
+#     contract load. The rows live when that refusal landed are grandfathered by
+#     exact (phase, budget, additional) triple in the census source, so a legacy
+#     row cannot be edited upward or duplicated either. A bijection class's
+#     count therefore grows only by raising its `maximum` above, visibly.
+#   * a baseline name with no tree member is RED, so an inventory cannot be
+#     pre-loaded in one commit and consumed in a later one.
+#   * NOT refused: a baseline line added in the SAME commit as the file it names
+#     still removes that file from the surplus. That residual costs a visible
+#     `maximum` raise and a false claim about the baseline snapshot; it is caught
+#     by reading the diff, not by the census. It is named here rather than left
+#     to read as covered.
 #
 # Every field is schema-refused when missing or empty:
 #   member         the exact member id — an event/action token, a service name,

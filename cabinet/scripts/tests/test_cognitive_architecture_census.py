@@ -148,18 +148,57 @@ def test_service_growth_mutant_fails_total_and_enabled_budgets(tmp_path: Path):
     assert {"services_total", "services_enabled"} <= failed
 
 
-def test_legitimate_shrink_stays_green(tmp_path: Path):
-    census = _load_module()
-    tree = _copy_census_tree(tmp_path)
+def _shrink_event_types(tree: Path) -> str:
     emitter = tree / "framework/events/emitter.py"
     text = emitter.read_text()
     assert '    "captain_goal_declared",\n' in text
     emitter.write_text(text.replace('    "captain_goal_declared",\n', "", 1))
+    return "captain_goal_declared"
+
+
+def test_legitimate_shrink_stays_green(tmp_path: Path):
+    """A real deletion is not punished as growth.
+
+    WIDENED 2026-07-27: the baseline must now DESCRIBE the tree — a name it
+    carries that the tree does not is the pre-loaded-inventory red — so a
+    legitimate shrink is green once the baseline line goes with the member. The
+    property under test is unchanged; the mirror edit is the new cost, and the
+    arm below proves the un-mirrored half reds instead of passing quietly.
+    """
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    dropped = _shrink_event_types(tree)
+    baseline_path = tree / "cabinet/config/architecture-baseline-sets.yml"
+    baseline = yaml.safe_load(baseline_path.read_text())
+    baseline["classes"]["central_event_types"].remove(dropped)
+    baseline_path.write_text(yaml.safe_dump(baseline, sort_keys=False))
 
     report = census.inspect_repository(tree)
 
-    assert report["ok"] is True
+    assert report["ok"] is True, report["failures"]
     assert report["observed"]["central_event_types"] < report["maximums"]["central_event_types"]
+
+
+def test_a_shrink_that_leaves_the_baseline_stale_is_red(tmp_path: Path):
+    """The other half of the arm above — the mirror edit is REQUIRED, not polite.
+
+    Without this the widened test would only prove that the mirrored shrink is
+    green, and a phantom check that silently tolerated the stale line would
+    still pass every arm.
+    """
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    dropped = _shrink_event_types(tree)
+
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is False
+    assert any(
+        failure.get("member") == dropped and "does not carry" in failure["reason"]
+        for failure in report["failures"]
+    )
 
 
 def test_later_static_reassignment_is_counted(tmp_path: Path):
@@ -251,6 +290,18 @@ def test_temporary_allowance_requires_owner_reason_sunset_and_deletion_gate(tmp_
 
 
 def _contract_with_allowance(tmp_path: Path, sunset: str) -> Path:
+    """A synthetic allowance for the two arithmetic arms below.
+
+    RE-POINTED 2026-07-27 from `central_action_types` to `claude_skills`. Both
+    arms test ALLOWANCE ARITHMETIC — one budget's effective maximum moves and
+    its siblings do not; an expired row reds even inside the base budget — and
+    neither has anything to do with which class was named. The fixture had to
+    move because a temporary allowance may no longer name a bijection class at
+    all, and a test fixture that names one would be encoding the refused shape
+    as valid. `claude_skills` is the closest legal analogue: a small counted set
+    pinned at observed==max, so both assertions keep their exact meaning.
+    """
+
     import yaml
 
     path = tmp_path / f"allowance-{sunset}.yml"
@@ -258,7 +309,7 @@ def _contract_with_allowance(tmp_path: Path, sunset: str) -> Path:
     data["temporary_allowances"].append(
         {
             "phase": "COG-1",
-            "budget": "central_action_types",
+            "budget": "claude_skills",
             "additional": 2,
             "reason": "bounded shadow pilot",
             "owner": "cognitive-core-program",
@@ -278,7 +329,8 @@ def test_live_allowance_raises_only_its_named_effective_budget(tmp_path: Path):
     )
 
     assert report["ok"] is True
-    assert report["maximums"]["central_action_types"] == 32
+    assert report["maximums"]["claude_skills"] == 23
+    assert report["maximums"]["organ_manifests"] == 5
     assert report["maximums"]["central_event_types"] == 91
 
 
@@ -291,7 +343,7 @@ def test_expired_allowance_fails_even_when_observed_is_within_base_budget(tmp_pa
 
     assert report["ok"] is False
     assert any(
-        failure["budget"] == "central_action_types"
+        failure["budget"] == "claude_skills"
         and failure["reason"] == "expired temporary allowance"
         for failure in report["failures"]
     )
@@ -1271,3 +1323,441 @@ def test_duplicate_service_names_fail_closed(tmp_path: Path):
 
     with pytest.raises(census.ContractError, match="duplicate service names"):
         census.inspect_repository(tree)
+
+
+# ── The allowance bypass, closed 2026-07-27 ──────────────────────────────────
+# An adversarial review proved BY EXECUTION that four shipped files asserted
+# something false: "an allowance CANNOT buy a net-new set member". It landed a
+# genuinely net-new production module at ok=True with `expansions` naming
+# nothing new, paying for it with ONE line in architecture-baseline-sets.yml
+# plus an ordinary temporary_allowances row. Membership and count are two
+# separate costs and the claim named only the count.
+#
+# Every arm below was run against the PRE-CHANGE census first and observed to
+# PASS there — a bypass arm that never fails on the broken code is a fixture
+# asserting the bypass, not a test of the fix.
+
+BYPASS_PROBE_MODULE = "framework/phase0_bypass_probe.py"
+
+
+def _allowance_row(phase: str, budget: str, additional: int) -> dict:
+    return {
+        "phase": phase,
+        "budget": budget,
+        "additional": additional,
+        "reason": "arm for the bijection-allowance refusal",
+        "owner": "orchestrator",
+        "sunset": "2027-01-19",
+        "deletion_gate": "the arm is deleted with the refusal it proves",
+    }
+
+
+def _write_contract(tmp_path: Path, data: dict) -> Path:
+    path = tmp_path / "mutant-contract.yml"
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+    return path
+
+
+def _live_bijection_rows(data: dict, census) -> list[dict]:
+    return [
+        row
+        for row in data["temporary_allowances"]
+        if row["budget"] in census.BIJECTION_CLASSES
+    ]
+
+
+def test_legacy_bijection_allowances_are_pinned_verbatim():
+    """The carve-out is CLOSED — a twelfth entry is the instrument being closed.
+
+    Pinned as (phase, budget, additional) triples rather than phase names: a
+    permit keyed on the name alone leaves the row editable, and bumping COG-3
+    from 12 to 13 would buy a module for one character.
+    """
+
+    census = _load_module()
+
+    assert census.LEGACY_BIJECTION_ALLOWANCES == frozenset(
+        {
+            ("COG-0", "framework_production_modules", 2),
+            ("COG-1", "framework_production_modules", 1),
+            ("COG-2", "framework_production_modules", 5),
+            ("COG-3", "framework_production_modules", 12),
+            ("COG-4", "framework_production_modules", 10),
+            ("captain-availability-dial", "framework_production_modules", 1),
+            ("captain-contact-liveness", "framework_production_modules", 2),
+            ("channel-flatline-alarm", "framework_production_modules", 1),
+            ("personal-preset-live", "framework_production_modules", 1),
+            ("source-ownership-class", "framework_production_modules", 1),
+            ("spend-meter-uncapped", "framework_production_modules", 4),
+        }
+    )
+    assert all(
+        budget in census.BIJECTION_CLASSES
+        for _, budget, _ in census.LEGACY_BIJECTION_ALLOWANCES
+    )
+
+
+def test_the_live_bijection_class_allowances_are_still_accepted():
+    """A fix that reds master for already-reviewed work is not a fix.
+
+    Also holds the carve-out to SHRINK-ONLY in both directions: the pin must
+    equal the live rows exactly, so deleting a row without deleting its permit
+    would leave a re-usable permit behind, and adding a row without amending
+    the permit is refused at load.
+    """
+
+    census = _load_module()
+    contract = census.load_contract(CONTRACT, as_of=date(2026, 7, 27))
+    live = [
+        (row["phase"], row["budget"], row["additional"])
+        for row in contract["temporary_allowances"]
+        if row["budget"] in census.BIJECTION_CLASSES
+    ]
+
+    assert len(live) == 11
+    assert len(set(live)) == len(live)
+    assert set(live) == set(census.LEGACY_BIJECTION_ALLOWANCES)
+
+
+@pytest.mark.parametrize(
+    "budget",
+    sorted(
+        {
+            "central_event_types",
+            "central_action_types",
+            "services_total",
+            "services_enabled",
+            "framework_production_modules",
+            "duplicate_event_writer_sinks",
+        }
+    ),
+)
+def test_a_new_allowance_on_a_bijection_class_is_refused_at_load(
+    tmp_path: Path, budget: str
+):
+    census = _load_module()
+    data = yaml.safe_load(CONTRACT.read_text())
+    data["temporary_allowances"].append(_allowance_row("phase0-new-row", budget, 1))
+
+    with pytest.raises(census.ContractError, match="names the bijection class"):
+        census.load_contract(_write_contract(tmp_path, data))
+
+
+def test_a_grandfathered_row_cannot_be_edited_upward(tmp_path: Path):
+    census = _load_module()
+    data = yaml.safe_load(CONTRACT.read_text())
+    rows = _live_bijection_rows(data, census)
+    assert rows, "no live bijection-class allowance to mutate"
+    rows[0]["additional"] += 1
+
+    with pytest.raises(census.ContractError, match="names the bijection class"):
+        census.load_contract(_write_contract(tmp_path, data))
+
+
+def test_a_grandfathered_row_cannot_be_copied(tmp_path: Path):
+    """The permit is consumed once. A verbatim copy is a second purchase."""
+
+    census = _load_module()
+    data = yaml.safe_load(CONTRACT.read_text())
+    rows = _live_bijection_rows(data, census)
+    assert rows, "no live bijection-class allowance to copy"
+    data["temporary_allowances"].append(dict(rows[0]))
+
+    with pytest.raises(census.ContractError, match="duplicates a grandfathered"):
+        census.load_contract(_write_contract(tmp_path, data))
+
+
+def test_an_allowance_on_a_mass_budget_is_still_accepted(tmp_path: Path):
+    """The refusal must bite on SETS only.
+
+    Without this arm the refusal could be over-broad — blocking the line-mass
+    allowance every landing legitimately writes — and every other arm would
+    still be green.
+    """
+
+    census = _load_module()
+    data = yaml.safe_load(CONTRACT.read_text())
+    data["temporary_allowances"].append(
+        _allowance_row("phase0-mass-row", "framework_production_noncomment_lines", 5)
+    )
+
+    contract = census.load_contract(
+        _write_contract(tmp_path, data), as_of=date(2026, 7, 27)
+    )
+
+    assert any(
+        row["phase"] == "phase0-mass-row" for row in contract["temporary_allowances"]
+    )
+
+
+@pytest.mark.parametrize(
+    "member_class",
+    sorted(
+        {
+            "central_event_types",
+            "central_action_types",
+            "services_total",
+            "services_enabled",
+            "framework_production_modules",
+            "duplicate_event_writer_sinks",
+        }
+    ),
+)
+def test_a_baseline_member_the_tree_does_not_carry_is_red(
+    tmp_path: Path, member_class: str
+):
+    """The pre-load half, which the allowance refusal does not reach.
+
+    `observed - baseline` silently ignores a baseline name with no tree member,
+    so the inventory could be written in one commit — moving no count and
+    reddening nothing — and consumed in a later one, each file arriving already
+    excused from the surplus.
+    """
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    clean = census.inspect_repository(tree)
+    assert clean["ok"] is True, clean["failures"]
+
+    path = tree / "cabinet" / "config" / "architecture-baseline-sets.yml"
+    data = yaml.safe_load(path.read_text())
+    data["classes"][member_class].append("phase0_phantom_preload")
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is False
+    assert {
+        (failure["budget"], failure["member"])
+        for failure in report["failures"]
+        if "does not carry" in failure["reason"]
+    } == {(member_class, "phase0_phantom_preload")}
+
+
+def test_removing_a_baseline_member_is_still_caught_as_surplus(tmp_path: Path):
+    """The remedy for a stale baseline line must stay a SAFE edit.
+
+    Deleting a line can only make the surplus larger, which is what makes the
+    hard red above affordable. This arm proves the direction: a deleted
+    baseline line reds as an unregistered member, never as green.
+    """
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    path = tree / "cabinet" / "config" / "architecture-baseline-sets.yml"
+    data = yaml.safe_load(path.read_text())
+    dropped = data["classes"]["central_event_types"].pop()
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is False
+    assert any(
+        failure.get("member") == dropped
+        and failure["reason"] == "unregistered set member"
+        for failure in report["failures"]
+    )
+
+
+def test_the_reproduced_bypass_no_longer_lands(tmp_path: Path):
+    """The review's exact reproduction, end to end.
+
+    A genuinely net-new production module, paid for with ONE baseline line and
+    an ordinary allowance row, and no new expansion row. On the pre-change
+    census this returned ok=True with zero failures.
+    """
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    (tree / BYPASS_PROBE_MODULE).write_text(
+        '"""Synthetic net-new production module."""\n\n\ndef probe() -> int:\n    return 1\n'
+    )
+
+    baseline_path = tree / "cabinet" / "config" / "architecture-baseline-sets.yml"
+    baseline = yaml.safe_load(baseline_path.read_text())
+    baseline["classes"]["framework_production_modules"].append(BYPASS_PROBE_MODULE)
+    baseline_path.write_text(yaml.safe_dump(baseline, sort_keys=False))
+
+    contract_path = tree / "cabinet" / "config" / "cognitive-architecture-contract.yml"
+    contract = yaml.safe_load(contract_path.read_text())
+    contract["temporary_allowances"].append(
+        _allowance_row("phase0-bypass-probe", "framework_production_modules", 1)
+    )
+    contract["temporary_allowances"].append(
+        _allowance_row(
+            "phase0-bypass-probe", "framework_production_noncomment_lines", 5
+        )
+    )
+    contract_path.write_text(yaml.safe_dump(contract, sort_keys=False))
+    assert BYPASS_PROBE_MODULE in baseline_path.read_text()
+    assert "phase0-bypass-probe" in contract_path.read_text()
+
+    with pytest.raises(census.ContractError, match="names the bijection class"):
+        census.inspect_repository(tree)
+
+
+# ── R3: the rename false positive, and its stated remedy ─────────────────────
+# A pure rename has ZERO net growth and still reds `unregistered set member` on
+# the new path. That friction is real and is not a defect; what WAS a defect is
+# that nothing shipped said which green path is correct, so the cheap one — a
+# hand edit to the baseline — would get normalised by routine work, eroding the
+# one input the whole gate rests on. The rule is now stated in the baseline
+# header: a rename is a PAIRED edit in the same commit, and a line is never
+# added for a member the tree does not already have. These arms pin both halves.
+
+
+def _rename_target(tree: Path, census) -> tuple[str, str]:
+    """A baseline production module that no expansion row names."""
+
+    baseline = yaml.safe_load(
+        (tree / "cabinet/config/architecture-baseline-sets.yml").read_text()
+    )["classes"]["framework_production_modules"]
+    contract = yaml.safe_load(
+        (tree / "cabinet/config/cognitive-architecture-contract.yml").read_text()
+    )
+    registered = {row["member"] for row in contract["expansions"]}
+    for member in sorted(baseline):
+        if member in registered:
+            continue
+        if (tree / member).is_file() and not member.endswith("__init__.py"):
+            return member, member[: -len(".py")] + "_renamed_probe.py"
+    raise AssertionError("no rename target available")
+
+
+def test_an_unpaired_rename_reds_as_an_unregistered_member(tmp_path: Path):
+    """The friction itself, pinned so the rule below has something to be about.
+
+    Zero net growth, and still red. If this ever stops being true the baseline
+    header's rename rule is describing a problem that no longer exists and must
+    be deleted rather than left to mislead.
+    """
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    clean = census.inspect_repository(tree)
+    assert clean["ok"] is True, clean["failures"]
+    old, new = _rename_target(tree, census)
+
+    (tree / old).rename(tree / new)
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is False
+    assert (
+        report["observed"]["framework_production_modules"]
+        == clean["observed"]["framework_production_modules"]
+    )
+    assert any(
+        failure.get("member") == new and failure["reason"] == "unregistered set member"
+        for failure in report["failures"]
+    )
+
+
+def test_a_paired_rename_edit_is_green(tmp_path: Path):
+    """The sanctioned remedy, proven to actually work.
+
+    A rule that names a remedy nobody tested is a rule that sends the next
+    author back to the instrument this unit closed.
+    """
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    clean = census.inspect_repository(tree)
+    old, new = _rename_target(tree, census)
+
+    (tree / old).rename(tree / new)
+    path = tree / "cabinet/config/architecture-baseline-sets.yml"
+    data = yaml.safe_load(path.read_text())
+    members = data["classes"]["framework_production_modules"]
+    members.remove(old)
+    members.append(new)
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is True, report["failures"]
+    assert (
+        report["observed"]["framework_production_modules"]
+        == clean["observed"]["framework_production_modules"]
+    )
+
+
+def test_a_rename_with_a_half_edited_baseline_is_red(tmp_path: Path):
+    """PAIRED means paired. Adding the new name while leaving the old one is
+    the pre-load shape wearing a rename's clothes."""
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    old, new = _rename_target(tree, census)
+
+    (tree / old).rename(tree / new)
+    path = tree / "cabinet/config/architecture-baseline-sets.yml"
+    data = yaml.safe_load(path.read_text())
+    data["classes"]["framework_production_modules"].append(new)  # add, do NOT remove
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is False
+    assert any(
+        failure.get("member") == old and "does not carry" in failure["reason"]
+        for failure in report["failures"]
+    )
+
+
+# ── R4: consumer disjointness survives a leading "./" ────────────────────────
+# The check was plain string equality, so two characters bought a
+# self-referencing consumer. Measured on the live contract before the fix:
+# `framework/authority/ownership.py` refused, `./framework/authority/ownership.py`
+# accepted at ok=True.
+
+
+def _tree_with_consumer(tmp_path: Path, consumer: str) -> Path:
+    tree = _copy_census_tree(tmp_path)
+    path = tree / "cabinet/config/cognitive-architecture-contract.yml"
+    data = yaml.safe_load(path.read_text())
+    assert data["expansions"], "no expansion row to point at"
+    data["expansions"][0]["consumer"] = consumer
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+    assert consumer in path.read_text()
+    return tree
+
+
+@pytest.mark.parametrize("prefix", ("", "./"))
+def test_a_consumer_naming_the_member_itself_is_refused(tmp_path: Path, prefix: str):
+    census = _load_module()
+    member = yaml.safe_load(CONTRACT.read_text())["expansions"][0]["member"]
+    tree = _tree_with_consumer(tmp_path, prefix + member)
+
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is False
+    assert any("consumer must READ the output" in f["reason"] for f in report["failures"])
+
+
+@pytest.mark.parametrize("prefix", ("", "./"))
+def test_a_consumer_naming_the_declaring_path_is_refused(tmp_path: Path, prefix: str):
+    census = _load_module()
+    contract = yaml.safe_load(CONTRACT.read_text())
+    declaring = contract["budgets"][contract["expansions"][0]["member_class"]]["path"]
+    tree = _tree_with_consumer(tmp_path, prefix + declaring)
+
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is False
+    assert any("consumer must READ the output" in f["reason"] for f in report["failures"])
+
+
+def test_a_genuine_consumer_is_still_accepted(tmp_path: Path):
+    """The normalisation must not swallow legitimate rows.
+
+    Without this arm an over-broad disjointness rule would red every real
+    expansion and every other arm here would still be green.
+    """
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is True, report["failures"]
+    assert not any("consumer" in f.get("reason", "") for f in report["failures"])
