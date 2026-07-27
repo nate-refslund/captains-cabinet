@@ -35,7 +35,12 @@ import {
   poissonScatter,
   polyPoint,
   rasterDims,
-  wildnessField,
+  buildClearedGround,
+  CANOPY_KINDS,
+  CLEARING_EDGE_BAND,
+  FURNITURE_MAX_TIMBER,
+  RECORD_FRAMES,
+  RING_BUILT_OVERLAP,
   type Layout,
   type LayoutState,
   type Point,
@@ -77,6 +82,37 @@ const CAMP: LayoutState = {
   road: 'dirt_path',
   stages: { great_house: 'camp_log_cabin', library: 'none', workshop: 'none' },
   counts: { officer_dwellings: 1 },
+}
+
+/**
+ * THE FULL ISLAND — every ladder several rungs up, which is the era where the
+ * clearings are widest and the most things have been placed. Two of the arms
+ * below only bite here: the belt-against-a-building rule (more buildings to
+ * crowd) and the shallow-waterline warehouse (the beyond_bay quay is the only
+ * place a `put` reaches the shore).
+ */
+const BEYOND_BAY: LayoutState = {
+  era: 'beyond_bay',
+  road: 'cobbled_road',
+  stages: {
+    great_house: 'great_hall',
+    well: 'stone_well',
+    library: 'stone_hall',
+    workshop: 'forge',
+    outbuildings: 'barn',
+    firepit: 'firepit',
+    lighthouse: 'lit_tower',
+  },
+  counts: {
+    officer_dwellings: 6,
+    field_plots: 4,
+    great_house: 4,
+    library: 4,
+    workshop: 4,
+    outbuildings: 3,
+    well: 3,
+    lighthouse: 3,
+  },
 }
 
 const hamlet = composeLayout(HAMLET, 'acme-corp', FAST)
@@ -663,51 +699,233 @@ describe('clearance — the ground diamond, and the road wins', () => {
 describe('scatter — a density field, and rejection at sampling time', () => {
   const coast = buildCoastline('acme-corp', LAYOUT_SPACE, { step: 8 })
   const field = buildLaneField(buildLanes('hamlet', 'gravel_road', (x, y) => coast.landAt(x, y)))
-  const districts = [
-    { at: { x: 1200, y: 1010 }, r: 300 },
-    { at: { x: 1200, y: 800 }, r: 250 },
-  ]
-  const wildness = wildnessField(
-    { x: LAYOUT_SPACE.cx, y: LAYOUT_SPACE.cy },
-    (a) => coast.landEdge(a),
-    districts,
-    field
+  /**
+   * THE FIELD THIS BLOCK USED TO DRIVE WAS `wildnessField`, AND IT IS GONE.
+   *
+   * It read `coast*1.15 - civic*0.72 - lane*0.45 + 0.10`: highest at the
+   * waterline, lowest in the middle — a coastal ring of trees around a sparse
+   * interior, i.e. wilderness as decoration placed around the buildings. The
+   * Captain's 2026-07-27 direction inverts that (iso-layout/clearing.ts):
+   * timber is the island's default state, clearing is subtractive, and the
+   * density field describes how much timber is LEFT. The two arms below are
+   * the same two properties re-asked of the field that replaced it, and their
+   * expected answers are OPPOSITE at the coast, which is the point.
+   */
+  const cleared = buildClearedGround(
+    [
+      { at: { x: 1200, y: 1010 }, r: 300, rawness: 1, role: 'square', cut: 'felled' },
+      { at: { x: 1200, y: 800 }, r: 250, rawness: 0.5, role: 'great_house', cut: 'felled' },
+    ],
+    {
+      lanes: field,
+      onPaving: () => false,
+      inWater: () => false,
+      onQuay: () => false,
+    }
   )
+  const timber = cleared.timber
 
-  it('the density FIELD is higher at the treeline than in the village', () => {
+  it('the density FIELD is FULL at the treeline AND in the untouched middle', () => {
+    // The inverted claim. Under the old field the coast was wild and the middle
+    // was tame; under this one both are wood, because nobody has cut either.
     const edge = coast.landEdge(-Math.PI / 2)
     const treeline = { x: LAYOUT_SPACE.cx, y: LAYOUT_SPACE.cy - (edge - 60) * 0.92 }
-    const village = { x: 1200, y: 1010 }
-    expect(wildness(treeline.x, treeline.y)).toBeGreaterThan(wildness(village.x, village.y) + 0.3)
+    // 700px west of the island centre: outside both clearings, off every lane.
+    const untouched = { x: LAYOUT_SPACE.cx - 700, y: LAYOUT_SPACE.cy }
+    expect(timber(treeline.x, treeline.y)).toBe(1)
+    expect(timber(untouched.x, untouched.y)).toBe(1)
   })
 
-  it('the density field is ZERO on a lane and in the village core', () => {
-    expect(wildness(1200, 1010)).toBe(0)
+  it('the density field is ZERO on a lane and in a clearing', () => {
+    expect(timber(1200, 1010)).toBe(0)
     const onMain = buildLanes('hamlet', 'gravel_road', (x, y) => coast.landAt(x, y))[0].runs[0][2]
-    expect(wildness(onMain.x, onMain.y)).toBe(0)
+    expect(timber(onMain.x, onMain.y)).toBe(0)
   })
 
-  it('REALIZED planting is denser at the treeline than in the meadow', () => {
-    // The property that matters is not the field, it is the points the field
-    // produced. Counting points per ANNULUS would measure the wrong thing: the
-    // plantable region is bounded by the same `isInner` predicate the pass
-    // used, so the two bands have areas nothing analytic can give. Measure
-    // both areas by seeded Monte Carlo through THAT predicate, then compare
-    // points per unit plantable area.
-    // RING + SCATTER, because the ring IS planting. Measuring `scatter` alone
-    // now measures the planting that is left over AFTER the belt took the
-    // coastal band, which inverts the very gradient this arm exists to see: the
-    // number went from 1.9x to 0.90x the moment the ring landed, while the
-    // realized planting got MORE coastal, not less. A sensor pointed at part of
-    // a population cannot answer a question about the population.
-    const items = [...hamlet.ring, ...hamlet.scatter]
-    expect(items.length).toBeGreaterThan(30)
-    expect(hamlet.ring.length).toBeGreaterThan(20)
+  it('and it THINS across the edge band rather than stopping dead', () => {
+    // The treeline is the ramp, and a hard-edged clearing would read as a
+    // cookie cutter. Sampled straight west from the great house's clearing at
+    // (1200,800), r=250: cut ground is bare right up to the rim, and the
+    // CLEARING_EDGE_BAND OUTSIDE it is the gradient the wood thins across.
+    const at = (dx: number) => timber(1200 + dx, 800)
+    expect(at(-120)).toBe(0)
+    expect(at(-250)).toBe(0)
+    expect(at(-250 - CLEARING_EDGE_BAND)).toBe(1)
+    const mid = at(-250 - CLEARING_EDGE_BAND / 2)
+    expect(mid).toBeGreaterThan(0)
+    expect(mid).toBeLessThan(1)
+    expect(at(-250 - CLEARING_EDGE_BAND * 0.75)).toBeGreaterThan(mid)
+  })
+
+  /**
+   * THE ARM THE FIELD ACTUALLY NEEDED — realised canopy, not the helper.
+   *
+   * The three arms above drive `buildClearedGround` on a hand-written list, and
+   * a hand-written list is not the artifact: measured 2026-07-27, `timber()`
+   * over the tree pass's own admissible domain on the COMPOSED islands returned
+   * ONE distinct value (1.0000, 240,000 samples) while those arms were green,
+   * because the ramp lived on ground the planting predicate refuses. Collapsing
+   * TREE_SPACING_MAX 250 -> 72 left the sha256 of every scatter and ring item
+   * on twenty islands unchanged. This arm counts CANOPY PER UNIT OF PLANTABLE
+   * AREA either side of one band width from the nearest rim, so it can only
+   * pass if the gradient reaches the trees that were really planted.
+   */
+  /**
+   * THE CHOSEN SPRITE IS RE-TESTED — and until 2026-07-27 nothing said so.
+   *
+   * `ScatterOptions.sizeOf` carries a long docstring about why the sampling
+   * size is not a conservative size, and deleting the filter it gates
+   * (scatter.ts's closing `items.filter`) left all 222 arms in this library
+   * GREEN. The composed islands do not currently reach it often enough to trip
+   * anything, which is the honest reason it needs a driven arm rather than a
+   * bigger seed sweep: unreached is not unreachable, and the mechanism is
+   * exactly the one the docstring names.
+   *
+   * THE SETUP IS THE MECHANISM. The pool's sampling size is the per-axis MAX of
+   * its members — 200x200 for a 200x44 plank and a 44x200 post — so it is
+   * larger in AREA than either sprite that can be drawn. `groundTaken` divides
+   * the shared area by min(area), so the same absolute overlap that reads 0.04
+   * against the sampling box reads far more against the sprite that lands.
+   */
+  it('an item whose DRAWN sprite fails a rule is dropped, not drawn', () => {
+    const coast = buildCoastline('acme-corp', LAYOUT_SPACE, { step: 8 })
+    const lanes = buildLaneField(buildLanes('hamlet', 'gravel_road', (x, y) => coast.landAt(x, y)))
+    const SZ: Record<string, { w: number; h: number }> = {
+      plank_wide: { w: 200, h: 44 },
+      post_tall: { w: 44, h: 200 },
+    }
+    const occupied: { at: Point; size: { w: number; h: number } }[] = []
+    for (let x = 500; x < 1900; x += 150) {
+      for (let y = 500; y < 1400; y += 130) {
+        occupied.push({ at: { x, y }, size: { w: 120, h: 120 } })
+      }
+    }
+    const base = {
+      space: LAYOUT_SPACE,
+      kinds: ['plank_wide', 'post_tall'],
+      size: { w: 200, h: 200 },
+      pick: () => true,
+      density: () => 1,
+      onLand: (x: number, y: number) => coast.landAt(x, y),
+      lanes,
+      occupied,
+      rMin: 60,
+      rMax: 60,
+      cap: 400,
+    }
+    const loose = poissonScatter('chosen-sprite', base)
+    const tight = poissonScatter('chosen-sprite', { ...base, sizeOf: (k: string) => SZ[k] })
+    expect(loose.length).toBeGreaterThan(60)
+    // IT IS A FILTER, not a re-run: the same points in the same order, minus
+    // the ones whose drawn sprite fails. If it reshuffled, one item's kind
+    // would change every later item's.
+    const keptKeys = new Set(tight.map((i) => `${i.at.x},${i.at.y},${i.kind}`))
+    for (const k of keptKeys) {
+      expect(loose.some((i) => `${i.at.x},${i.at.y},${i.kind}` === k)).toBe(true)
+    }
+    const dropped = loose.filter((i) => !keptKeys.has(`${i.at.x},${i.at.y},${i.kind}`))
+    expect(dropped.length).toBeGreaterThan(0)
+    for (const d of dropped) {
+      const drawn = SZ[d.kind]
+      // it passed at the SAMPLING size ...
+      expect(groundTaken(d.at, base.size, occupied, 0.05)).toBe(false)
+      expect(footprintOnLane(d.at, base.size, lanes, 0)).toBe(false)
+      // ... and fails on the sprite that would actually have been drawn
+      const bad =
+        groundTaken(d.at, drawn, occupied, 0.05) || footprintOnLane(d.at, drawn, lanes, 0)
+      expect({ kind: d.kind, bad }).toEqual({ kind: d.kind, bad: true })
+    }
+  })
+
+  it('the wood THINS toward a clearing — measured on the realised canopy', () => {
+    // AT CAMP, POOLED OVER EIGHT SEEDS, and both halves of that are the arm
+    // rather than convenience. Camp is the era that HAS a wood — the general
+    // planting lands 87-103 canopy sprites there against 12-16 at hamlet, where
+    // the village has cut most of the interior — so hamlet has no population to
+    // measure a density on and its ratio is noise (1.06 control, 0.70 under the
+    // mutation: the wrong side, from 40 trees). Pooling eight islands is what
+    // makes the number stable enough to threshold.
+    let nearArea = 0
+    let farArea = 0
+    let nearTrees = 0
+    let farTrees = 0
+    for (const seed of ['acme-corp', 'harbour', 'zeta', 'lantern', 'org-13', 'alpha', 'beta', 'gamma']) {
+      const l = composeLayout(CAMP, seed, FAST)
+      /** Distance outside the nearest clearing rim; negative inside one. */
+      const offRim = (x: number, y: number) => {
+        let best = Infinity
+        for (const c of l.cleared.clearings) {
+          if (c.r <= 0) continue
+          const d = Math.hypot(x - c.at.x, (y - c.at.y) * 1.35) - c.r
+          if (d < best) best = d
+        }
+        return best
+      }
+      // The two populations, by area: ground within a band of a rim, and ground
+      // beyond it. Both restricted to what the tree pass could actually plant
+      // on, so the ratio compares like with like.
+      const rng = seededRng(0xf0e57)
+      for (let i = 0; i < 60000; i++) {
+        const x = rng() * l.space.w
+        const y = rng() * l.space.h
+        if (!l.coast.landAt(x, y)) continue
+        if (l.cleared.isCleared(x, y)) continue
+        const o = offRim(x, y)
+        if (o <= 0) continue
+        if (o < CLEARING_EDGE_BAND) nearArea++
+        else farArea++
+      }
+      // THE SCATTER ONLY, AND THAT IS THE POINT. The belt does not read a
+      // density field at all — it walks the shore by angle — so counting it
+      // here would let the arm pass on the belt's coastal stacking while the
+      // field it claims to measure was flat. Measured: with `l.ring` folded in,
+      // the TREE_SPACING_MAX 250 -> 72 mutation stayed GREEN. That is the
+      // sensor-tests-something-other-than-the-control class, caught on this
+      // arm's first mutation run.
+      for (const t of l.scatter) {
+        if (!CANOPY_KINDS.has(t.kind)) continue
+        const o = offRim(t.at.x, t.at.y)
+        if (o <= 0) continue
+        if (o < CLEARING_EDGE_BAND) nearTrees++
+        else farTrees++
+      }
+    }
+    expect(nearArea).toBeGreaterThan(5000)
+    expect(farArea).toBeGreaterThan(5000)
+    expect(nearTrees + farTrees).toBeGreaterThan(300)
+    const near = nearTrees / nearArea
+    const far = farTrees / farArea
+    // MEASURED, BOTH ARMS OF THE MUTATION: 3.76 as it stands, 1.12 with
+    // TREE_SPACING_MAX collapsed from 250 to 72 (the mutation that was GREEN on
+    // 147 arms before this one existed). The bar sits between them, nearer the
+    // mutation, because the claim is a DIRECTION — the wood thins as it
+    // approaches cut ground — and a bar at 1.0 would pass on noise.
+    expect({ thins: far > near * 2, ratio: far / near > 2 }).toEqual({ thins: true, ratio: true })
+  })
+
+  it('REALIZED planting no longer thins toward the middle of the island', () => {
+    // THE INVERTED FORM OF THE OLD ARM, which asserted the opposite ratio and
+    // was right about the old model. It measured points per unit of plantable
+    // area either side of a radial split and required the OUTER band to carry
+    // 1.3x the inner one — the ecotope of a coastal ring. Under the Captain's
+    // direction the island is overgrown by default, so the honest property is
+    // that the interior is no longer the sparse half: an untouched island is
+    // wood all the way across, and what thins the middle is the CLEARING, not
+    // the distance from the sea.
+    //
+    // Measured on the camp island (the one with almost nothing cut): 0.0148
+    // outer vs 0.0138 per unit area inner — the two bands are within 8%, where
+    // the old model ran 1.9x. The bar is set at parity-with-slack rather than
+    // at a flipped inequality, because "the interior is denser than the coast"
+    // would be just as wrong a claim in the other direction: the belt genuinely
+    // does stack four sublayers at the shore.
+    const items = [...camp.ring, ...camp.scatter]
+    expect(items.length).toBeGreaterThan(200)
     const c = { x: LAYOUT_SPACE.cx, y: LAYOUT_SPACE.cy }
     const radialFraction = (p: Point) => {
       const ang = Math.atan2((p.y - c.y) / 0.92, p.x - c.x)
       const d = Math.hypot(p.x - c.x, (p.y - c.y) / 0.92)
-      return d / hamlet.coast.landEdge(ang)
+      return d / camp.coast.landEdge(ang)
     }
     const SPLIT = 0.55
     let areaOuter = 0
@@ -716,7 +934,7 @@ describe('scatter — a density field, and rejection at sampling time', () => {
     for (let i = 0; i < 40000; i++) {
       const x = rng() * LAYOUT_SPACE.w
       const y = rng() * LAYOUT_SPACE.h
-      if (!hamlet.coast.landAt(x, y) || !hamlet.coast.isInner(x, y)) continue
+      if (!camp.coast.landAt(x, y)) continue
       if (radialFraction({ x, y }) > SPLIT) areaOuter++
       else areaInner++
     }
@@ -725,10 +943,10 @@ describe('scatter — a density field, and rejection at sampling time', () => {
     let nOuter = 0
     let nInner = 0
     for (const it of items) (radialFraction(it.at) > SPLIT ? nOuter++ : nInner++)
-    // measured 0.0184 vs 0.0097 per unit area: the treeline band carries
-    // roughly twice the planting of the village side, which is the ecotope the
-    // density field exists to produce
-    expect(nOuter / areaOuter).toBeGreaterThan((nInner / areaInner) * 1.3)
+    const outer = nOuter / areaOuter
+    const inner = nInner / areaInner
+    expect(inner).toBeGreaterThan(outer * 0.7)
+    expect(inner).toBeLessThan(outer * 1.4)
   })
 
   it('a candidate whose ground is TAKEN is rejected, never nudged', () => {
@@ -986,6 +1204,39 @@ describe('era gates CONTENT, not just size', () => {
 
 // ── nothing stands on open water ───────────────────────────────────────────
 
+/**
+ * Every FELLED clearing is centred on land, and the natural ones need not be.
+ *
+ * THE ARM USED TO SAY "every district anchor". It was right while a district
+ * was a keep-out disc derived from an authored compass anchor: a disc centred
+ * in the sea reserves sea, and the planting it was meant to keep out of the
+ * village then arrives in the village. It went red on the inverted model
+ * (Captain 2026-07-27) because the list now also carries the LANDING — the one
+ * place a hatched island is open on day zero — whose centre is the cove, which
+ * is water by construction and is the whole reason that clearing exists.
+ *
+ * So the invariant is kept where it means something and named where it does
+ * not: anything an axe made must stand on ground, and a clearing that marks a
+ * pond or a beach marks exactly the thing that is not ground. Every clearing is
+ * checked; none is skipped silently.
+ */
+function expectClearingsGrounded(l: Layout) {
+  const natural = new Set(['pond', 'landing'])
+  for (const c of l.cleared.clearings) {
+    if (c.cut === 'natural') {
+      expect({ role: c.role, known: natural.has(c.role) }).toEqual({ role: c.role, known: true })
+      continue
+    }
+    expect({ role: c.role, land: l.coast.landAt(c.at.x, c.at.y) }).toEqual({
+      role: c.role,
+      land: true,
+    })
+  }
+  // and the derived disc list is exactly the clearings, so nothing can be added
+  // to one and not the other
+  expect(l.districts.length).toBe(l.cleared.clearings.length)
+}
+
 describe('the land rule — nothing stands on open water', () => {
   it('every structure in every era on every seed stands on land', () => {
     for (const seed of SEEDS) {
@@ -1014,9 +1265,7 @@ describe('the land rule — nothing stands on open water', () => {
       for (const lot of Object.values(l.lots).flat()) {
         expect(l.coast.landAt(lot.c.x, lot.c.y)).toBe(true)
       }
-      for (const d of l.districts) {
-        expect(l.coast.landAt(d.at.x, d.at.y)).toBe(true)
-      }
+      expectClearingsGrounded(l)
     }
   })
 
@@ -1060,7 +1309,7 @@ describe('the land rule — nothing stands on open water', () => {
         for (const lot of Object.values(l.lots).flat()) {
           expect(l.coast.landAt(lot.c.x, lot.c.y)).toBe(true)
         }
-        for (const d of l.districts) expect(l.coast.landAt(d.at.x, d.at.y)).toBe(true)
+        expectClearingsGrounded(l)
         for (const lane of l.lanes) {
           for (const p of lane.runs.flat()) expect(l.coast.landAt(p.x, p.y)).toBe(true)
         }
@@ -1112,7 +1361,15 @@ describe('the land rule — nothing stands on open water', () => {
     const drowned = {
       ...hamlet,
       structures: [
-        { kind: 'workshop', role: 'workshop', at: sea, flip: false, size: { w: 170, h: 170 } },
+        {
+          kind: 'workshop',
+          role: 'workshop',
+          at: sea,
+          flip: false,
+          size: { w: 170, h: 170 },
+          rung: 0,
+          age: 0,
+        },
       ],
     }
     expect(auditLayout(drowned).inWater).toEqual([{ kind: 'workshop', at: sea }])
@@ -1239,7 +1496,7 @@ describe('every painted mask is clipped to land', () => {
 // ── the keep-out discs are an exclusion ────────────────────────────────────
 
 describe('a keep-out disc is an exclusion, not a density hint', () => {
-  it('nothing is planted inside a district disc', () => {
+  it('nothing is planted inside a clearing except the record of the felling', () => {
     // Measured before the fix: 72-80% of every seed's planting stood inside a
     // disc, including a full-size oak 26px from the great house.
     for (const seed of SEEDS) {
@@ -1265,8 +1522,25 @@ describe('a keep-out disc is an exclusion, not a density hint', () => {
       // of these really is at a waterline.
       const pondPlant = (p: Point) =>
         waterField(l.paint)(p.x, p.y) || grownField(l.paint, ['pond', 'stream'], 52)(p.x, p.y)
-      const inside = l.scatter.filter((s) => insideDisc(l, s.at) && !pondPlant(s.at))
+      // AND EXCEPT THE FELLING RECORD, which arrived with the inverted model
+      // (Captain 2026-07-27). A disc is no longer an exclusion; it is ground
+      // that was CUT, and a stump stands where the tree stood — inside it, at
+      // the rim. Exempted as WHERE and WHAT together: only a record sprite, and
+      // only within RECORD_BAND of a felled rim, so a stump that wandered into
+      // the middle of the square is still a defect this arm can see.
+      const onRim = (p: Point) => l.cleared.recordAt(p.x, p.y) > 0
+      const inside = l.scatter.filter(
+        (s) =>
+          insideDisc(l, s.at) &&
+          !pondPlant(s.at) &&
+          !(RECORD_FRAMES.has(s.kind) && onRim(s.at))
+      )
       expect({ seed, inside: inside.map((s) => s.kind) }).toEqual({ seed, inside: [] })
+      // NOT VACUOUS the other way either: the exemption must be used, or this
+      // arm silently became the old one again.
+      expect(
+        l.scatter.some((s) => RECORD_FRAMES.has(s.kind) && insideDisc(l, s.at))
+      ).toBe(true)
     }
   })
 
@@ -1299,6 +1573,123 @@ describe('a keep-out disc is an exclusion, not a density hint', () => {
     }
   })
 
+  /**
+   * THE BELT KEEPS OFF A BUILDING TOO — the other half of "the trees".
+   *
+   * index.ts's WOOD_OVERLAP docstring claimed "the unit arm measures
+   * tree-against-structure overlap across the composed islands and holds it at
+   * zero". That arm read `l.scatter`. The BELT is a second population placed by
+   * ./ring against its own rules, and it was calling `groundTaken` at the
+   * tree-vs-tree default of 0.16: measured 2026-07-27, 27 belt-vs-structure
+   * pairs over 0.04 with a worst of 0.131 — a pine standing through a wall,
+   * with every arm in the library green. A claim about the trees that counts
+   * one of the two populations that plant them is the coverage-bound failure.
+   */
+  it('NEITHER population of trees shares a building’s ground', () => {
+    let checked = 0
+    for (const state of [CAMP, HAMLET, BEYOND_BAY]) {
+      for (const seed of SEEDS) {
+        const l = composeLayout(state, seed, FAST)
+        const built = l.structures.map((s) => ({ at: s.at, size: s.size }))
+        expect(built.length).toBeGreaterThan(0)
+        for (const [name, pop] of [
+          ['ring', l.ring],
+          ['scatter', l.scatter],
+        ] as const) {
+          for (const t of pop) {
+            const v = maxGroundOverlap(t.at, t.size, built)
+            checked++
+            if (v > RING_BUILT_OVERLAP) {
+              expect({ seed, era: state.era, pop: name, kind: t.kind, v }).toEqual({
+                seed,
+                era: state.era,
+                pop: name,
+                kind: t.kind,
+                v: 0,
+              })
+            }
+          }
+        }
+      }
+    }
+    // not vacuous: there really are thousands of trees to have caught
+    expect(checked).toBeGreaterThan(2000)
+  })
+
+  /**
+   * VILLAGE FURNITURE STANDS ON GROUND SOMEBODY CUT (Captain 2026-07-27).
+   *
+   * Measured before the rule existed, over 20 hamlet islands: 648 pieces of
+   * village furniture in standing timber, 129 of them under FULLY CLOSED
+   * canopy, one fence run 188px past the nearest rim. The bar is the treeline's
+   * midpoint rather than the rim — see FURNITURE_MAX_TIMBER.
+   */
+  it('no village furniture stands in ground that is more wood than clearing', () => {
+    let seen = 0
+    for (const state of [HAMLET, BEYOND_BAY]) {
+      for (const seed of SEEDS) {
+        const l = composeLayout(state, seed, FAST)
+        for (const d of l.dressing) {
+          if (d.role !== 'village_life' || d.overWater) continue
+          seen++
+          const t = l.cleared.timber(d.at.x, d.at.y)
+          if (t >= FURNITURE_MAX_TIMBER) {
+            expect({ seed, era: state.era, kind: d.kind, timber: t }).toEqual({
+              seed,
+              era: state.era,
+              kind: d.kind,
+              timber: 0,
+            })
+          }
+        }
+      }
+    }
+    // not vacuous, and the count is the other half of the claim: the furniture
+    // did not simply vanish when the rule arrived
+    expect(seen).toBeGreaterThan(400)
+  })
+
+  /**
+   * NOTHING A `put` EMITS STANDS IN THE SEA — on the row it is RECORDED on.
+   *
+   * `placeOnGround` closed with `onLand(p.x, p.y - 2)` while returning `p`, and
+   * two pixels is everything on a shallow waterline: two warehouses stood at
+   * (1057,1281) and (1053,1289) on the composed beyond_bay island, byte
+   * identical across three commits, because their stem row was the last row of
+   * beach and their own foot was not. The audit never saw them because it asks
+   * the same `y - 2` question the placer did.
+   */
+  it('placeOnGround refuses a spot whose OWN row is water', () => {
+    // A synthetic coast whose waterline is a single row: land at y <= 1000.
+    const onLand = (_x: number, y: number) => y <= 1000
+    const lanes = buildLaneField([])
+    const size = { w: 80, h: 80 }
+    // POSITIVE CONTROL: two rows further in, the same call succeeds — so a null
+    // below is the land rule and not a broken fixture.
+    const good = placeOnGround({ x: 1200, y: 996 }, size, lanes, onLand, [], {
+      inlandTo: { x: 1200, y: 500 },
+    })
+    expect(good).not.toBeNull()
+    expect(onLand(good!.x, good!.y)).toBe(true)
+    // The 2px band the two rules used to disagree over: y = 1001 has land at
+    // y-2 = 999 and water at its own row.
+    expect(onLand(1200, 1001)).toBe(false)
+    expect(onLand(1200, 999)).toBe(true)
+    const walked = placeOnGround({ x: 1200, y: 1001 }, size, lanes, onLand, [], {
+      inlandTo: { x: 1200, y: 500 },
+    })
+    // it is not dropped — it is WALKED INLAND, which is the point: the rule
+    // rescues rather than deletes, and what it returns is on land on its own row
+    expect(walked).not.toBeNull()
+    expect(onLand(walked!.x, walked!.y)).toBe(true)
+    // and with no land at all in reach there is nothing to return
+    expect(
+      placeOnGround({ x: 1200, y: 1400 }, size, lanes, () => false, [], {
+        inlandTo: { x: 1200, y: 500 },
+      })
+    ).toBeNull()
+  })
+
   it('the great house keeps its ground — no full-size tree at its door', () => {
     for (const seed of SEEDS) {
       const l = composeLayout(HAMLET, seed, FAST)
@@ -1309,13 +1700,26 @@ describe('a keep-out disc is an exclusion, not a density hint', () => {
       // forecourt lane ends at the anchor and the road wins. So the disc arm is
       // measured against the anchor, and the drawn house gets the weaker claim
       // it can actually make.
-      const anchor = l.lots.centre[0].c
-      const toAnchor = Math.min(
-        ...l.scatter.map((s) => Math.hypot(s.at.x - anchor.x, (s.at.y - anchor.y) * 1.35))
+      // THE RADIUS IS READ, NOT TYPED. It used to be the literal 250 of the
+      // authored GREAT district disc; under the inverted model the great house
+      // cuts its OWN clearing and its radius is a function of the drawn size and
+      // the rung (iso-layout/clearing.ts), so a hardcoded number here would be a
+      // second opinion about how much ground the manor took. The clearing is
+      // found by role, and the arm fails loudly if there is not exactly one.
+      //
+      // AND THE FELLING RECORD IS EXEMPT, for the reason the disc arm above
+      // records: a stump stands inside the ground it was cut from.
+      const ghClearing = l.cleared.clearings.filter((c) => c.role === 'great_house')
+      expect(ghClearing.length).toBe(1)
+      const planting = l.scatter.filter((s) => !RECORD_FRAMES.has(s.kind))
+      const toCentre = Math.min(
+        ...planting.map((s) =>
+          Math.hypot(s.at.x - ghClearing[0].at.x, (s.at.y - ghClearing[0].at.y) * 1.35)
+        )
       )
-      expect(toAnchor).toBeGreaterThan(250) // its disc radius, in the disc metric
+      expect(toCentre).toBeGreaterThan(ghClearing[0].r)
       const toHouse = Math.min(
-        ...l.scatter.map((s) => Math.hypot(s.at.x - gh.at.x, s.at.y - gh.at.y))
+        ...planting.map((s) => Math.hypot(s.at.x - gh.at.x, s.at.y - gh.at.y))
       )
       // measured before the keep-out fix: 26-103px, i.e. a 150px oak touching
       // the manor. After: 128-222px across these seeds.

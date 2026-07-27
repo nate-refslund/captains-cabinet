@@ -124,6 +124,79 @@ export function maxGroundOverlap(
   return worst
 }
 
+/**
+ * A spatial index over the occupancy book — the SAME answer as scanning it, in
+ * time that does not grow with the island's population.
+ *
+ * WHY IT EXISTS. Inverting the planting model multiplied the number of things
+ * standing on the island by roughly five (a closed canopy is hundreds of trees,
+ * not dozens), and every scatter candidate tests its ground against EVERY
+ * occupant. That is quadratic in the population and it turned a 30ms compose
+ * into seconds — a cost the tests pay 40 seeds at a time.
+ *
+ * IT MUST NOT CHANGE AN ANSWER, and the construction is what guarantees that
+ * rather than a hope: an occupant is filed under every cell its ground box
+ * touches, a query visits every cell the candidate's ground box touches, and
+ * two boxes that overlap necessarily share a cell. So the candidate set is a
+ * SUPERSET of the overlapping occupants and the same predicate then runs on it.
+ * The unit arm drives a random population through both paths and asserts the
+ * numbers are identical.
+ */
+export interface OccupancyIndex {
+  /** The worst ground-diamond overlap this spot has with anything indexed. */
+  maxOverlap(at: Point, size: Footprint): number
+  /** groundTaken against the index. */
+  taken(at: Point, size: Footprint, frac?: number): boolean
+  /** How many occupants were indexed — for tests and reports. */
+  readonly count: number
+}
+
+/** Cell size for the occupancy index, layout px. */
+const OCCUPANCY_CELL = 128
+
+export function buildOccupancyIndex(occupied: readonly Occupant[]): OccupancyIndex {
+  const cells = new Map<number, PxBox[]>()
+  const key = (gx: number, gy: number) => (gx + 4096) * 32768 + (gy + 4096)
+  const cellOf = (v: number) => Math.floor(v / OCCUPANCY_CELL)
+  for (const o of occupied) {
+    const b = occupantBox(o)
+    for (let gx = cellOf(b.x0); gx <= cellOf(b.x1); gx++) {
+      for (let gy = cellOf(b.y0); gy <= cellOf(b.y1); gy++) {
+        const k = key(gx, gy)
+        const bucket = cells.get(k)
+        if (bucket) bucket.push(b)
+        else cells.set(k, [b])
+      }
+    }
+  }
+  const worst = (at: Point, size: Footprint, stopAt: number): number => {
+    const a = groundBox(at.x, at.y, size.w, size.h)
+    let out = 0
+    // A box can be filed in several cells, so the same neighbour can be visited
+    // twice. That costs a repeated overlap computation and cannot change the
+    // maximum, so it is not deduped.
+    for (let gx = cellOf(a.x0); gx <= cellOf(a.x1); gx++) {
+      for (let gy = cellOf(a.y0); gy <= cellOf(a.y1); gy++) {
+        const bucket = cells.get(key(gx, gy))
+        if (!bucket) continue
+        for (const b of bucket) {
+          const v = groundOverlap(a, b)
+          if (v > out) {
+            out = v
+            if (out > stopAt) return out
+          }
+        }
+      }
+    }
+    return out
+  }
+  return {
+    maxOverlap: (at, size) => worst(at, size, Infinity),
+    taken: (at, size, frac = 0.16) => worst(at, size, frac) > frac,
+    count: occupied.length,
+  }
+}
+
 /** Where "inland" is when nothing says otherwise: the island centre. */
 const ISLAND_CENTRE: Point = { x: LAYOUT_SPACE.cx, y: LAYOUT_SPACE.cy }
 
@@ -148,12 +221,22 @@ export function walkInland(
   steps = 40,
   reach = 0.45
 ): Point | null {
-  if (onLand(at.x, at.y - 2)) return at
+  // BOTH ROWS, via baseOnLand — the walk used to test only (x, y-2), which is
+  // the reference's stem probe, while the point it RETURNS is (x, y) and every
+  // downstream consumer measures that. On a shallow waterline the two rows
+  // disagree over a 2px band, and a structure landing in it stands in the sea
+  // with its keep-out disc derived from water: measured 2026-07-27, two
+  // warehouses at (1057,1281) and (1053,1289) on the composed beyond_bay
+  // island, byte-identical across three commits. The ring searches below have
+  // asked both questions since baseOnLand was written; the walk had not, so the
+  // two rules admitted different ground. It can only refuse spots, never invent
+  // them, and the walk has 40 steps of reach to find a solid one instead.
+  if (baseOnLand(onLand, at.x, at.y)) return at
   for (let t = 1; t <= steps; t++) {
     const f = (t / steps) * reach
     const x = at.x + (toward.x - at.x) * f
     const y = at.y + (toward.y - at.y) * f
-    if (onLand(x, y - 2)) return { x, y }
+    if (baseOnLand(onLand, x, y)) return { x, y }
   }
   return null
 }
@@ -451,6 +534,17 @@ export interface PlaceOptions {
  * there. Re-testing afterwards is what turns "nothing stands on open water"
  * from an intention into a property this function GUARANTEES: it returns a
  * point on land, or it returns null and the caller draws nothing.
+ *
+ * AND IT TESTS THE POINT IT RETURNS, which it did not until 2026-07-27. The
+ * closing test read `onLand(p.x, p.y - 2)` — the foot two pixels up the
+ * sprite's stem — while the value RECORDED, drawn and re-measured by every
+ * downstream check is `p`. Two pixels is nothing on open coast and everything
+ * on a waterline that runs shallow: measured on the composed beyond_bay island,
+ * two warehouses stood in the sea at (1057,1281) and (1053,1289), byte
+ * identical across three commits, because their `y - 2` was the last row of
+ * beach and their own foot was not. Both rows are now required — the stem
+ * because that is the reference's own probe, and the foot because that is where
+ * the thing goes on the map.
  */
 export function placeOnGround(
   at: Point,
@@ -463,6 +557,19 @@ export function placeOnGround(
   const strict = opts.strict ?? false
   const toward = opts.inlandTo ?? ISLAND_CENTRE
   const frac = strict ? 0.04 : 0.1
+  /**
+   * SOLID GROUND: the base rule, `baseOnLand` — both the row the thing is
+   * recorded on and the reference's stem probe two rows up.
+   *
+   * IT CLOSES THE FUNCTION AND `walkInland` NOW OPENS IT WITH THE SAME RULE.
+   * The closing test used to be `onLand(p.x, p.y - 2)` while the value returned,
+   * drawn and re-measured by every downstream check is `p` — two pixels, which
+   * is nothing on open coast and everything on a shallow waterline. A closing
+   * test stricter than the walk that feeds it can only drop things it could
+   * have rescued, and dropping a measured building is a lie of omission (see
+   * `put` in ./index), so both ends ask the same question.
+   */
+  const solid = (x: number, y: number) => baseOnLand(onLand, x, y)
   const grounded = walkInland(at, onLand, toward)
   if (!grounded) return null
   let p = grounded
@@ -481,12 +588,12 @@ export function placeOnGround(
       p = clearOfLane(p, size, lanes, onLand, occupied, { frac })
     }
   }
-  if (!onLand(p.x, p.y - 2)) {
+  if (!solid(p.x, p.y)) {
     const back = walkInland(p, onLand, toward)
     if (!back) return null
     // the ring search only ever lands on ground, so this cannot undo the walk
     p = opts.avoidLane === false ? back : clearOfLane(back, size, lanes, onLand, occupied, { frac })
-    if (!onLand(p.x, p.y - 2)) return null
+    if (!solid(p.x, p.y)) return null
   }
   if (opts.dropIfBlocked && !settled) return null
   return p

@@ -22,12 +22,19 @@ import path from 'path'
 import {
   DECK_COLOURS,
   FASCIA,
+  JETTY_POST_STEP,
   JOINT,
   PLANK,
   PLANK_W,
+  POST_COLOURS,
+  POST_SIDE,
+  POST_STEP,
+  POST_TOP,
   deckStripRects,
   jettyDeckRects,
+  jettyPostRects,
   quayHash,
+  wharfPostRects,
   type DeckRect,
 } from './iso-quay'
 import { RAMPS, groundField } from './iso-terrain'
@@ -89,6 +96,8 @@ function meanOf(grid: Int32Array): number[] {
 
 const wharf = deckStripRects(SHORE, DEPTH, 3)
 const jetty = jettyDeckRects({ x: 1304, y: 1265 }, { x: 1328, y: 1392 }, 44, 11)
+const wharfPosts = wharfPostRects(SHORE, DEPTH, 5)
+const jettyPosts = jettyPostRects({ x: 1304, y: 1265 }, { x: 1328, y: 1392 }, 44, 11)
 
 describe('the quay is timber, not the road', () => {
   it('a wharf and a pier are actually drawn (the arms below are not vacuous)', () => {
@@ -209,6 +218,101 @@ describe('the quay is timber, not the road', () => {
     }
     expect(buttColumns.size, 'no butt joints between board ends').toBeGreaterThanOrEqual(4)
     expect(y0).toBeLessThan(1270)
+  })
+
+  /**
+   * THE PILINGS — the half of the quay the engine did not have.
+   *
+   * `world-capture/raster.py:418` has called `quay.posts` since it was written,
+   * so the approved offline still shows a wharf standing on legs; the engine
+   * drew only the deck surface. Measured on a fresh hamlet capture, 3 wharf and
+   * 6 jetty pilings were missing. These arms measure the pilings' geometry
+   * against the deck's, so a piling that stopped hanging below the deck — the
+   * one thing that makes the wharf read as built over water — fails.
+   */
+  it('the wharf stands on pilings, and they hang BELOW the deck', () => {
+    // not vacuous: the wharf here is 204px of shore at a 64px step
+    const heads = wharfPosts.filter((r) => r.color === POST_SIDE)
+    expect(heads.length).toBeGreaterThanOrEqual(3)
+    expect(wharfPosts.some((r) => r.color === POST_TOP)).toBe(true)
+    // degenerate ends: nothing, never a stub
+    expect(wharfPostRects([], DEPTH, 5)).toHaveLength(0)
+    expect(wharfPostRects(SHORE, 0, 5)).toHaveLength(0)
+    expect(wharfPostRects(SHORE, DEPTH, 5, 0)).toHaveLength(0)
+    // one piling per step along the wharf, and no two on the same column
+    const xs = heads.map((r) => r.x).sort((a, b) => a - b)
+    for (let i = 1; i < xs.length; i++) expect(xs[i] - xs[i - 1]).toBe(POST_STEP)
+    // EVERY shaft starts below the deck's own fascia in its column — that is
+    // what "the wharf stands on them" means, and painting them level with the
+    // deck would make them planks.
+    const deckBottom = new Map<number, number>()
+    for (const r of wharf) {
+      const b = r.y + r.h
+      for (let x = r.x; x < r.x + r.w; x++) {
+        deckBottom.set(x, Math.max(deckBottom.get(x) ?? -Infinity, b))
+      }
+    }
+    let checked = 0
+    for (const h of heads) {
+      const under = deckBottom.get(h.x + Math.floor(h.w / 2))
+      if (under === undefined) continue
+      checked++
+      expect(h.y + h.h).toBeGreaterThan(under)
+    }
+    expect(checked).toBeGreaterThanOrEqual(3)
+  })
+
+  it('the finger pier walks out on pairs of pilings', () => {
+    const shafts = jettyPosts.filter((r) => r.color === POST_SIDE)
+    // 129px of pier at a 46px step = 3 stations, two legs each
+    expect(shafts.length).toBe(6)
+    expect(shafts.length % 2).toBe(0)
+    expect(jettyPosts.some((r) => r.color === POST_TOP)).toBe(true)
+    expect(jettyPostRects({ x: 10, y: 10 }, { x: 10, y: 11 }, 44, 11)).toHaveLength(0)
+    expect(jettyPostRects({ x: 10, y: 10 }, { x: 10, y: 200 }, 0, 11)).toHaveLength(0)
+    // the legs stand at the pier's two side EDGES, never under its middle
+    const deckX: { lo: number; hi: number }[] = []
+    for (const r of jetty) deckX.push({ lo: r.x, hi: r.x + r.w })
+    for (const s of shafts) {
+      const cx = s.x + Math.floor(s.w / 2)
+      const rowMid = jetty.filter((r) => Math.abs(r.y - s.y) <= 1)
+      if (rowMid.length === 0) continue
+      const lo = Math.min(...rowMid.map((r) => r.x))
+      const hi = Math.max(...rowMid.map((r) => r.x + r.w))
+      const mid = (lo + hi) / 2
+      expect(Math.abs(cx - mid)).toBeGreaterThan((hi - lo) / 4)
+    }
+    // and they step along the pier at the reference's own pitch
+    const ys = [...new Set(shafts.map((r) => r.y))].sort((a, b) => a - b)
+    expect(ys.length).toBe(3)
+    for (let i = 1; i < ys.length; i++) {
+      expect(ys[i] - ys[i - 1]).toBeGreaterThan(JETTY_POST_STEP * 0.5)
+    }
+  })
+
+  it('a piling is not a plank and not the lane', () => {
+    // the two post tones are their own material: neither is a deck tone, and
+    // neither is a stop of the ground ramp the lanes are painted with
+    for (const c of POST_COLOURS) {
+      expect(DECK_COLOURS, `post colour ${c.toString(16)} IS a deck tone`).not.toContain(c)
+      expect(RAMPS.dirt, `post colour ${c.toString(16)} IS a lane tone`).not.toContain(c)
+    }
+  })
+
+  it('the engine draws the pilings the offline still already drew', () => {
+    const src = fs.readFileSync(ENGINE, 'utf8')
+    const start = src.indexOf('const hb = layout.harbour')
+    const end = src.indexOf('const rt = PIXI.RenderTexture.create', start)
+    const block = src.slice(start, end)
+    expect(block).toContain('wharfPostRects(')
+    expect(block).toContain('jettyPostRects(')
+    // AFTER the deck, so a post head sits under the front edge rather than on
+    // top of the boards
+    expect(block.indexOf('deckStripRects(')).toBeLessThan(block.indexOf('wharfPostRects('))
+    // and the mirror has been drawing them all along — if it ever stops, this
+    // port is alone again
+    const r = fs.readFileSync(RASTER, 'utf8')
+    expect(r).toContain('quay.posts(')
   })
 
   it('the deck stands ABOVE the water — a fascia lip under the front edge', () => {

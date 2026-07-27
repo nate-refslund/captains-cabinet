@@ -774,8 +774,19 @@ describe('the lighthouse', () => {
   /**
    * A CLEARING, so the forest ring frames the point instead of swallowing it
    * (compose.py:905). Centred on where the tower ENDED, not where it was sited.
+   *
+   * THE ONE THING THAT MAY STAND INSIDE IT IS THE FELLING RECORD, and that
+   * exception arrived with the inverted planting model (Captain 2026-07-27,
+   * iso-layout/clearing.ts). This arm used to say "nothing at all", which was
+   * the right assertion while a clearing was an exclusion; now it is ground that
+   * was CUT, and a stump is what the cutting left. Measured across these five
+   * seeds, everything inside is `tree_stump`, `fallen_log` or `wood_pile` — no
+   * tree, no bush, no flower, which is the property the arm actually defends.
+   * Weakening it to "nothing green" rather than "nothing" is a real loss of
+   * strength, so the kind of every intruder is named rather than skipped.
    */
-  it('keeps a clearing round itself that the planting respects', () => {
+  it('keeps a clearing round itself that only the felling record stands in', () => {
+    const RECORD = new Set(['tree_stump', 'fallen_log', 'wood_pile'])
     for (const seed of SEEDS) {
       const l = composeLayout(PORT, seed, FAST)
       const lh = l.lighthouse
@@ -786,7 +797,12 @@ describe('the lighthouse', () => {
       for (const s of l.scatter) {
         const inside =
           (s.at.x - lh.at.x) ** 2 + ((s.at.y - lh.at.y) * 1.35) ** 2 < lh.clearing ** 2
-        expect(inside).toBe(false)
+        if (!inside) continue
+        expect({ seed, kind: s.kind, record: RECORD.has(s.kind) }).toEqual({
+          seed,
+          kind: s.kind,
+          record: true,
+        })
       }
     }
   })

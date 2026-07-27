@@ -100,6 +100,15 @@ const camp = composeLayout(CAMP, 'acme-corp', FAST)
 const PONDY = 'harbour'
 const pondy = composeLayout(HAMLET, PONDY, FAST)
 
+/**
+ * The shore-band species, which the scatter also plants at the waterline.
+ *
+ * Excluded from the "the belt is outermost" comparison because they are NOT
+ * inland planting: the shore pass runs in the same band the belt does, so
+ * leaving them in would compare the belt against itself.
+ */
+const RING_ONLY_KINDS = new Set(['reeds', 'lilypads'])
+
 /** The reference's own frame: distance and bearing from the island centre. */
 function radial(p: Point): { d: number; deg: number } {
   const d = Math.hypot(p.x - LAYOUT_SPACE.cx, (p.y - LAYOUT_SPACE.cy) / 0.92)
@@ -132,7 +141,7 @@ function ctxOf(l: Layout, over: Partial<RingContext> = {}): RingContext {
 // ── the forest enclosure ring ──────────────────────────────────────────────
 
 describe('the forest enclosure ring — the frame, not a gradient', () => {
-  it('the belt is planted, and it is the larger half of the planting', () => {
+  it('the belt is planted, and it is the OUTERMOST band rather than the whole wood', () => {
     // Before the ring the island carried 41-68 items at hamlet and the coast was
     // bare. This is the count arm for that.
     //
@@ -144,12 +153,27 @@ describe('the forest enclosure ring — the frame, not a gradient', () => {
     // composed belt is 74-119 per hamlet island and the port's own added rules
     // cost 3.5 of that (see forestRing's rejection budget). Asserting against a
     // number nobody measured would be pinning this suite to a rumour.
+    //
+    // "THE LARGER HALF OF THE PLANTING" WAS THE OLD CLAIM AND IT IS NOW FALSE BY
+    // DESIGN (Captain 2026-07-27, iso-layout/clearing.ts). It was true because
+    // the interior was a sparse gradient — the belt WAS the island's canopy,
+    // which is exactly the wilderness-as-decoration model the direction inverts.
+    // The scatter now carries the wood as well as the meadow dressing and runs
+    // 108-137 items at hamlet against the belt's 114-122, so the honest property
+    // is the one this arm always meant: the belt is the OUTERMOST band, sitting
+    // further out than the planting behind it. Asserted as a radial comparison,
+    // which is what "the frame, not a gradient" is about, and which the old
+    // count could not distinguish from a big pile of meadow shrubs.
     for (const seed of SEEDS) {
       const l = composeLayout(HAMLET, seed, FAST)
       expect({ seed, enough: l.ring.length > 60 }).toEqual({ seed, enough: true })
-      expect({ seed, dominant: l.ring.length > l.scatter.length }).toEqual({
+      const meanRing = l.ring.reduce((s, r) => s + radialFraction(l, r.at), 0) / l.ring.length
+      const inland = l.scatter.filter((s) => !RING_ONLY_KINDS.has(s.kind))
+      const meanScatter =
+        inland.reduce((s, r) => s + radialFraction(l, r.at), 0) / Math.max(1, inland.length)
+      expect({ seed, outermost: meanRing > meanScatter + 0.12 }).toEqual({
         seed,
-        dominant: true,
+        outermost: true,
       })
     }
   })

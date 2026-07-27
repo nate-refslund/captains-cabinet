@@ -181,7 +181,17 @@ describe('iso-scene — the layout, dressed in the shipped pack', () => {
     // Nature is nature: it has no ladder and says so. Everything else with a
     // null role must be on the documented no-state list, so a role that
     // QUIETLY stops resolving cannot join it by accident.
-    const notNature = [...seen].filter((f) => !/^(tree_|bush_|fern_|flowers_|rock_|reeds|fallen_log|tree_stump)/.test(f))
+    //
+    // THE AUTHORITY IS cabinet/scripts/world-capture/ambient-nature.txt and this
+    // pattern was missing two of its names — `mushrooms` and `lilypads`. It went
+    // unnoticed because neither had ever landed on the four fixture islands; the
+    // inverted planting model (iso-layout/clearing.ts) reaches ground the old
+    // sparse interior never did, and mushrooms turned up on the first camp
+    // frame. A filter that only fires on the cases it has seen is a sensor with
+    // a hole in it, so the pattern is now the whole ambient set.
+    const notNature = [...seen].filter(
+      (f) => !/^(tree_|bush_|fern_|flowers_|rock_|reeds|fallen_log|tree_stump|mushrooms|lilypads)/.test(f)
+    )
     for (const f of notNature) expect(NO_STATE_KINDS.has(f), `${f} has no state and is not listed`).toBe(true)
   })
 

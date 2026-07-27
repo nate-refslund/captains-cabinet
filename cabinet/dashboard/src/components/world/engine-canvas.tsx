@@ -50,11 +50,17 @@ import {
   pickIsoSprite,
   LANE_PAINT_SQUASH,
   layoutStateFrom,
-  UNMEASURED_STATE_ISSUE,
+  unmeasuredIssues,
   type IsoScene,
 } from '@/lib/world/iso-scene'
 import { groundField, seaTile, type GroundClass, type TerrainBuffer } from '@/lib/world/iso-terrain'
-import { deckStripRects, jettyDeckRects, type DeckRect } from '@/lib/world/iso-quay'
+import {
+  deckStripRects,
+  jettyDeckRects,
+  jettyPostRects,
+  wharfPostRects,
+  type DeckRect,
+} from '@/lib/world/iso-quay'
 import {
   MOTTLE_TONES,
   PAINT_FEATHER,
@@ -1411,6 +1417,16 @@ export default function EngineCanvas(props: EngineCanvasProps) {
             ? deckStripRects(hb.wharf.shore, hb.wharf.depth, seed + 3)
             : []),
           ...(hb?.jetty ? jettyDeckRects(hb.jetty.at, hb.jetty.end, hb.jetty.width, seed + 11) : []),
+          // AND THE PILINGS, which the port did not have: raster.py:418 has
+          // called quay.posts since it was written, so the offline still showed
+          // a wharf standing on legs and the live engine showed a deck floating
+          // on the sea. Measured on a fresh hamlet capture: 3 wharf and 6 jetty
+          // pilings the engine never drew. They go AFTER the deck so a post
+          // head reads as sitting under the front edge.
+          ...(hb?.wharf && hb.wharf.shore.length > 1
+            ? wharfPostRects(hb.wharf.shore, hb.wharf.depth, seed + 5)
+            : []),
+          ...(hb?.jetty ? jettyPostRects(hb.jetty.at, hb.jetty.end, hb.jetty.width, seed + 11) : []),
         ]
         if (deckRects.length > 0) {
           // grouped by colour so the whole deck is a handful of fills rather
@@ -1529,11 +1545,12 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         // raised ONCE and then only again after a real resolution has arrived
         // and gone away, so a page that never authenticates badges once rather
         // than every poll.
-        if (!p.resolution) {
+        const unmeasured = unmeasuredIssues(p.resolution)
+        if (unmeasured.length > 0) {
           if (!isoUnmeasuredIssued) {
             isoUnmeasuredIssued = true
-            console.error('[world/engine] iso scene:', UNMEASURED_STATE_ISSUE)
-            propsRef.current.onIssues?.([UNMEASURED_STATE_ISSUE])
+            for (const i of unmeasured) console.error('[world/engine] iso scene:', i)
+            propsRef.current.onIssues?.(unmeasured)
           }
         } else {
           isoUnmeasuredIssued = false

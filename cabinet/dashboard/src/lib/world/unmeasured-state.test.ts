@@ -24,7 +24,7 @@
 import { describe, expect, it } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
-import { layoutStateFrom, UNMEASURED_STATE_ISSUE } from './iso-scene'
+import { layoutStateFrom, unmeasuredIssues, UNMEASURED_STATE_ISSUE } from './iso-scene'
 import type { WorldResolution } from './era-engine'
 
 const CANVAS = path.resolve(
@@ -76,22 +76,42 @@ describe('an unfed iso renderer says so', () => {
     })
   })
 
+  it('the DECISION to announce is a function, and it is right at both ends', () => {
+    // THE BEHAVIOURAL ARM, and the reason it exists. Until 2026-07-27 the whole
+    // guard was a source-text ratchet, and a mutation that disabled the branch
+    // — `if (false && !p.resolution)` — kept the matched text and came back
+    // GREEN on all four arms in this file. A ratchet tests a spelling; this
+    // tests the decision. `unmeasuredIssues` is what the canvas now calls.
+    expect(unmeasuredIssues(null)).toEqual([UNMEASURED_STATE_ISSUE])
+    expect(unmeasuredIssues(undefined)).toEqual([UNMEASURED_STATE_ISSUE])
+    const fed: WorldResolution = {
+      era: 'hamlet',
+      eraIndex: 0.44,
+      eraUnmeasured: [],
+      elements: {},
+    } as unknown as WorldResolution
+    expect(unmeasuredIssues(fed)).toEqual([])
+  })
+
   it('the canvas RAISES it on the issues channel when the resolution is null', () => {
     // A source ratchet, in the shape ratchets.test.ts already uses for the
-    // other loud-failure surfaces: the wiring lives inside a PixiJS closure
-    // that no unit test can enter, and a silent renderer is precisely the
-    // regression class this exists to stop.
+    // other loud-failure surfaces: the WIRING lives inside a PixiJS closure
+    // that no unit test can enter. It now checks only what a ratchet can
+    // honestly check — that the canvas asks the function above and hands its
+    // answer to the badge channel — and it pins the guard's EXACT form, so the
+    // `false &&` mutation that used to survive changes the text it matches.
     const src = fs.readFileSync(CANVAS, 'utf8')
     const block = src.slice(src.indexOf('function rebuildIsoStatics'))
-    const guard = block.indexOf('if (!p.resolution)')
-    expect(guard).toBeGreaterThan(-1)
-    const body = block.slice(guard, guard + 800)
+    const call = block.indexOf('const unmeasured = unmeasuredIssues(p.resolution)')
+    expect(call, 'the canvas no longer asks unmeasuredIssues').toBeGreaterThan(-1)
+    const body = block.slice(call, call + 800)
     expect({
-      badges: body.includes('onIssues?.([UNMEASURED_STATE_ISSUE])'),
+      guard: body.includes('if (unmeasured.length > 0) {'),
+      badges: body.includes('propsRef.current.onIssues?.(unmeasured)'),
       logs: body.includes('console.error'),
       // and it happens BEFORE the scene is composed, so the frame the reader
       // sees is never announced as measured
-      beforeCompose: guard < block.indexOf('buildIsoScene('),
-    }).toEqual({ badges: true, logs: true, beforeCompose: true })
+      beforeCompose: call < block.indexOf('buildIsoScene('),
+    }).toEqual({ guard: true, badges: true, logs: true, beforeCompose: true })
   })
 })

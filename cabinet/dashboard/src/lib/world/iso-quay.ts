@@ -53,6 +53,10 @@ export const PLANK: readonly number[] = [0x7a5838, 0x86623e, 0x926c46, 0x9e764e,
 export const JOINT = 0x5c422a
 /** The front lip that gives the deck thickness above the water. quay.py:15. */
 export const FASCIA = 0x684a2e
+/** A piling's shaft, standing in the water under the deck. quay.py:17 POSTSID. */
+export const POST_SIDE = 0x6c4e32
+/** The lit cap on a piling's head. quay.py:16 POSTTOP. */
+export const POST_TOP = 0x967048
 
 /** quay.py:25 — board width, in layout px. */
 export const PLANK_W = 13
@@ -64,6 +68,45 @@ export const FASCIA_DROP = 9
 export const JETTY_BOARD = 9
 /** quay.py:85 — the pier walks out with y squashed by the iso projection. */
 export const JETTY_Y_SQUASH = 0.86
+
+/**
+ * THE PILINGS — quay.py:68 `posts` and :93-97, the half of the quay the engine
+ * did not have.
+ *
+ * WHAT WAS MISSING (measured 2026-07-27 on a fresh hamlet capture): 3 wharf
+ * pilings and 6 jetty pilings that `world-capture/raster.py:418` has drawn
+ * since it was written and the live engine never did. The port took
+ * `deck_strip` and `jetty` and stopped at the deck surface, so the wharf stood
+ * on nothing — which is the same class of defect as the deck being painted with
+ * the road's material, one layer down: a structure over water that does not
+ * show what holds it up reads as pasted onto the sea.
+ *
+ * THEY ARE NOT PART OF THE DECK and are emitted by their own functions, so the
+ * deck's own arms (a tone per board, a joint under each, a fascia below every
+ * board in its column) keep measuring the deck and nothing else. A piling is
+ * BELOW the fascia by construction — that is what makes the wharf stand up —
+ * and folding it into `deckStripRects` would have put a POST_TOP pixel under
+ * the front edge in half the columns and quietly weakened the fascia arm.
+ */
+/** quay.py:68 — one piling every this far along the wharf. */
+export const POST_STEP = 64
+/** quay.py:68 — the first piling sits this far in from the wharf's west end. */
+export const POST_INSET = 18
+/** quay.py:74 — the shaft's half width; PIL's rectangle is corner-inclusive. */
+export const POST_HALF = 9
+/** quay.py:75 — how far the shaft drops below the deck's front edge. */
+export const POST_HEIGHT = 26
+/** quay.py:73 — the shaft's head sits this far under the fascia's own top. */
+export const POST_DROP = 8
+/** quay.py:76 — the cap ellipse's half height. */
+export const POST_CAP = 5
+/** quay.py:94 — a jetty stands on a pair of pilings every this many steps. */
+export const JETTY_POST_STEP = 46
+/** quay.py:96 — the jetty piling's half width and drop. */
+export const JETTY_POST_HALF = 6
+export const JETTY_POST_HEIGHT = 30
+/** quay.py:97 — the jetty cap ellipse's half height. */
+export const JETTY_POST_CAP = 4
 
 /** One axis-aligned fill. The whole deck is a list of these. */
 export interface DeckRect {
@@ -231,5 +274,102 @@ export function jettyDeckRects(
   return out
 }
 
+/**
+ * PIL's `ellipse` as scanline rects — the cap on a piling's head.
+ *
+ * The reference draws an ellipse and this renderer fills rects, so the cap is
+ * emitted one row at a time with the ellipse's own half-width at that row. It
+ * is the shape rather than an approximation of it: at 11 rows and 19px across,
+ * a rect-per-row IS the rasterisation PIL would produce to within a pixel.
+ */
+function capRects(cx: number, cy: number, rx: number, ry: number, color: number): DeckRect[] {
+  const out: DeckRect[] = []
+  for (let dy = -ry; dy <= ry; dy++) {
+    const half = Math.round(rx * Math.sqrt(Math.max(0, 1 - (dy / ry) ** 2)))
+    if (half <= 0) continue
+    out.push({ x: Math.round(cx - half), y: Math.round(cy + dy), w: 2 * half, h: 1, color })
+  }
+  return out
+}
+
+/**
+ * The wharf's pilings — quay.py:68 `posts`, called by raster.py:418.
+ *
+ * They hang BELOW the deck's fascia, standing in the water, which is what makes
+ * the wharf read as built over the sea rather than painted on it. Emitted
+ * separately from `deckStripRects` so the deck's own arms keep measuring the
+ * deck alone — see the PILINGS note above.
+ */
+export function wharfPostRects(
+  shore: readonly Point[],
+  depth: number,
+  seed: number,
+  step = POST_STEP
+): DeckRect[] {
+  const out: DeckRect[] = []
+  if (shore.length < 2 || depth <= 0 || step <= 0) return out
+  const xs = shore.map((p) => p.x)
+  const x0 = Math.ceil(Math.min(...xs))
+  const x1 = Math.floor(Math.max(...xs))
+  // `seed` is accepted because the reference takes one and raster.py passes
+  // `seed + 5`; the reference's own `posts` never reads it either. Named and
+  // unread beats dropped from the signature, which would make the two
+  // renderers' call sites diverge.
+  void seed
+  for (let x = x0 + POST_INSET; x < x1; x += step) {
+    const y = Math.round(topAt(shore, x) + depth + POST_DROP)
+    out.push({
+      x: x - POST_HALF,
+      y,
+      w: 2 * POST_HALF + 1,
+      h: POST_HEIGHT + 1,
+      color: POST_SIDE,
+    })
+    out.push(...capRects(x, y, POST_HALF, POST_CAP, POST_TOP))
+  }
+  return out
+}
+
+/**
+ * The finger pier's pilings — quay.py:93-97, the pairs that carry the jetty.
+ *
+ * One pair every JETTY_POST_STEP along the pier, at both side edges, so the
+ * pier walks out on legs instead of floating.
+ */
+export function jettyPostRects(
+  at: Point,
+  end: Point,
+  width: number,
+  seed: number
+): DeckRect[] {
+  const out: DeckRect[] = []
+  const length = Math.round(Math.hypot(end.x - at.x, end.y - at.y))
+  if (length <= 2 || width <= 0) return out
+  void seed
+  const angle = Math.atan2(end.x - at.x, Math.max(1e-6, end.y - at.y))
+  const dx = Math.sin(angle)
+  const dy = Math.cos(angle)
+  const half = width / 2
+  for (let s = 0; s < length; s += JETTY_POST_STEP) {
+    const px = at.x + dx * s
+    const py = Math.round(at.y + dy * s * JETTY_Y_SQUASH)
+    for (const sx of [-half, half]) {
+      const cx = Math.round(px + sx)
+      out.push({
+        x: cx - JETTY_POST_HALF,
+        y: py,
+        w: 2 * JETTY_POST_HALF + 1,
+        h: JETTY_POST_HEIGHT + 1,
+        color: POST_SIDE,
+      })
+      out.push(...capRects(cx, py, JETTY_POST_HALF, JETTY_POST_CAP, POST_TOP))
+    }
+  }
+  return out
+}
+
 /** Every colour a deck can be painted in — the material, as a set. */
 export const DECK_COLOURS: readonly number[] = [...PLANK, JOINT, FASCIA]
+
+/** The pilings' own two tones — timber below the deck, not deck surface. */
+export const POST_COLOURS: readonly number[] = [POST_SIDE, POST_TOP]

@@ -5,7 +5,15 @@
  * THE STAGE ORDER IS ITSELF A RULE (compose.py's docstring, "armature first"):
  *
  *   coastline -> lanes -> lots -> driveways -> ground paint -> structures ->
- *   forest ring -> scatter
+ *   CLEARING -> forest ring -> scatter
+ *
+ * THE ISLAND IS OVERGROWN AND CLEARING IS SUBTRACTIVE (Captain 2026-07-27, see
+ * ./clearing). Wilderness is the island's default state, not decoration placed
+ * around the buildings: every structure stands in ground that was CUT for it,
+ * the cut grows with the object's own rung, and what a viewer reads as the org
+ * maturing is the treeline receding. That is why `clearing` sits where it does
+ * in the order — it can only be computed once the structures have landed, and
+ * everything that plants is a function of what it left standing.
  *
  * Every arrow is load-bearing and each one was learned the expensive way:
  *   - lanes need the coastline, because a lot whose setback lands in the sea
@@ -51,6 +59,7 @@ import {
 } from './clearance'
 import { driveway, drivewayLane, type Driveway } from './driveways'
 import {
+  COUNT_GATED_BUILDINGS,
   dressDistricts,
   dressLanding,
   type DressItem,
@@ -91,15 +100,27 @@ import {
 import { forestRing, type RingItem } from './ring'
 import {
   poissonScatter,
-  wildnessField,
   type DensityField,
   type District,
   type ScatterItem,
 } from './scatter'
 import {
+  buildClearedGround,
+  CIVIC_ERA_SCALE,
+  clearingRadius,
+  FURNITURE_MAX_TIMBER,
+  rawnessOfEra,
+  rawnessOfRung,
+  structureClearings,
+  type Clearing,
+  type ClearedGround,
+  type CutBy,
+} from './clearing'
+import {
   clamp,
   emptyRung,
   eraAtLeast,
+  hypot,
   LAYOUT_SPACE,
   type Era,
   type LayoutSpace,
@@ -155,6 +176,34 @@ export function presentRung(state: LayoutState, obj: string): boolean {
 export function countOf(state: LayoutState, obj: string): number {
   const v = state.counts?.[obj]
   return v === undefined || !Number.isFinite(v) ? 0 : Math.max(0, Math.trunc(v))
+}
+
+/**
+ * How long the i-th of `n` identical things has stood, in rungs.
+ *
+ * WHY A COUNT LADDER NEEDS THIS AT ALL. `countOf(state, role)` is the visible
+ * rung index and it is what sizes a clearing and ages its rim (see ./clearing).
+ * For a TIER ladder that is the object's own maturity and it is exactly right.
+ * For a COUNT ladder — `officer_dwellings` runs none / dwelling_1 / dwellings_2
+ * — the number says how MANY exist, not how far any one of them has come, and
+ * the layout was reading it as rung 0 for every dwelling: six cabins that all
+ * look brand new, at every era, forever. Measured: the felling record's density
+ * stopped falling past `town` and rose again at `beyond_bay`, because half the
+ * rims on the island were pinned at rawness 1 by dwellings that were never new.
+ *
+ * The honest answer is in the count itself. Lots are filled in a fixed order, so
+ * the i-th dwelling was raised when the count reached i+1 and `n-1-i` officers
+ * have arrived since. The FIRST cabin is therefore the oldest — the widest
+ * clearing and the most settled edge — and the LAST one is brand new, with a
+ * small raw clearing. That is the Captain's own example rendered as data: "a new
+ * officer spawns and then starts chopping trees and building his/her cabin".
+ *
+ * It invents nothing: same count, same order, same answer forever, and growing
+ * from three officers to four AGES the three rather than reshuffling them.
+ */
+export function seniority(i: number, n: number): number {
+  if (!Number.isFinite(i) || !Number.isFinite(n)) return 0
+  return Math.max(0, Math.trunc(n) - 1 - Math.trunc(i))
 }
 
 // ── footprints ─────────────────────────────────────────────────────────────
@@ -294,43 +343,66 @@ const FALLBACK_FOOTPRINT: Footprint = { w: 96, h: 96 }
 // ── districts ──────────────────────────────────────────────────────────────
 
 /**
- * compose.py:901-905 — the keep-out discs that stop scatter landing on a
- * district, and that suppress the wildness field around the village core.
+ * THE AUTHORED CIVIC GROUND — the clearings that belong to no single building.
  *
- * A DISC IS AN EXCLUSION, NOT A DENSITY HINT. compose.py:1211-1213 gates its
- * whole planting predicate on these discs — `free()` is false inside one, so
- * the reference plants exactly nothing there. Feeding them only to the wildness
- * field (which is what this port did until 2026-07-27) sets a local SPACING and
- * nothing more: at wildness 0 the exclusion radius is still rMax, so trees keep
- * arriving, just further apart. Measured on the old code, 72-80% of all planting
- * stood inside a disc, a full-size oak stood 26px from the great house, and
- * trees grew on the paved plaza and in the ploughed fields. The reference states
- * the intent at :899-901: "the enclosure ring is meant to frame the village,
- * not grow through it."
+ * WHAT THESE WERE, AND WHAT THEY ARE NOW (Captain direction 2026-07-27, see
+ * ./clearing). This table was `DISTRICT_ANCHORS`: keep-out discs that stopped
+ * planting landing on a district (compose.py:901-905), i.e. exclusions carved
+ * out of a lawn. Under the inverted model the island is overgrown by default
+ * and these are CLEARED GROUND — the same geometry with the reason the other
+ * way round. They are open because somebody felled them, which is why they are
+ * the ground the felling record rims.
  *
- * ERA-GATED, unlike the reference. A keep-out disc is not drawn, but it is
- * VISIBLE: it makes a bald patch in the planting. Reserving the works ridge on
- * an island that has no works yet would put a mown circle around nothing,
- * which is precisely the "drawn but not traceable to a state rule" defect.
+ * WHAT LEFT THE TABLE, and this is the inversion in one list:
+ *   THE GREAT HOUSE, THE MEMORY LOT AND THE SIX AUTHORED DWELLING DISCS. A lot
+ *   nobody has built on is not open ground — it is forest, and it stays forest
+ *   until an officer arrives and cuts it. That is the whole of the Captain's
+ *   sentence about a new officer chopping trees, expressed as data: a clearing
+ *   now comes from a structure that EXISTS (structureClearings), so an unbuilt
+ *   lot has none. It also deletes the old "mown circle around nothing" defect
+ *   at its root rather than era-gating around it.
+ *   THE QUAYSIDE DISCS (warehouse 160, harbourmaster 110). Both are smaller
+ *   than the clearing their own structure now cuts, so they were a second
+ *   number saying the same thing less well.
+ *
+ * WHAT STAYED: the square, the law ground, the works ridge, the field terrace,
+ * the training yard, the observatory rise and the signals crossroads — each a
+ * civic ground the dressing stage furnishes but no single building owns — plus
+ * the pond, which is not a clearing at all (see `cut: 'natural'`).
+ *
+ * ERA-GATED, as before, and now for a stronger reason than "a bald patch is
+ * visible": a camp that has not cut the works ridge has TIMBER standing on it,
+ * and the era gate is what makes camp read as young rather than as empty.
  */
-const DISTRICT_ANCHORS: readonly { at: Point; r: number; villageOnly: boolean }[] = [
-  { at: GREAT, r: 250, villageOnly: false },
-  { at: SQUARE, r: 300, villageOnly: false },
-  { at: { x: 1200, y: 400 }, r: 240, villageOnly: true },
-  { at: { x: 1640, y: 512 }, r: 200, villageOnly: true },
-  { at: { x: 1830, y: 800 }, r: 290, villageOnly: true },
-  { at: { x: 1620, y: 1180 }, r: 300, villageOnly: true },
-  { at: { x: 700, y: 690 }, r: 150, villageOnly: true },
-  { at: { x: 612, y: 848 }, r: 150, villageOnly: true },
-  { at: { x: 668, y: 1006 }, r: 150, villageOnly: true },
-  { at: { x: 836, y: 760 }, r: 150, villageOnly: true },
-  { at: { x: 790, y: 928 }, r: 150, villageOnly: true },
-  { at: { x: 520, y: 700 }, r: 130, villageOnly: true },
-  { at: { x: 760, y: 470 }, r: 210, villageOnly: true },
-  { at: { x: 960, y: 372 }, r: 170, villageOnly: true },
-  { at: { x: 840, y: 1226 }, r: 150, villageOnly: true },
-  { at: { x: 612, y: 1086 }, r: 190, villageOnly: false }, // the pond: water, not doctrine
+const CIVIC_CLEARINGS: readonly {
+  at: Point
+  r: number
+  role: string
+  villageOnly: boolean
+  cut: CutBy
+}[] = [
+  { at: SQUARE, r: 300, role: 'square', villageOnly: false, cut: 'felled' },
+  { at: { x: 1200, y: 400 }, r: 240, role: 'law_ground', villageOnly: true, cut: 'felled' },
+  { at: { x: 1830, y: 800 }, r: 290, role: 'works_ridge', villageOnly: true, cut: 'felled' },
+  { at: { x: 1620, y: 1180 }, r: 300, role: 'field_terrace', villageOnly: true, cut: 'felled' },
+  { at: { x: 760, y: 470 }, r: 210, role: 'training_yard', villageOnly: true, cut: 'felled' },
+  { at: { x: 960, y: 372 }, r: 170, role: 'observatory_rise', villageOnly: true, cut: 'felled' },
+  { at: { x: 840, y: 1226 }, r: 150, role: 'signals_cross', villageOnly: true, cut: 'felled' },
+  // The pond is WATER, and water is not a clearing: no timber ever stood here,
+  // so it is a hole in the canopy with no stumps at its edge and no era term.
+  // Morphology, exactly like the coastline.
+  { at: { x: 612, y: 1086 }, r: 190, role: 'pond', villageOnly: false, cut: 'natural' },
 ]
+
+/**
+ * How much open ground the landing itself is.
+ *
+ * THE ONE EXCEPTION ON A HATCHED ISLAND. The Captain's picture is "landing on
+ * an island that hasn't been maintained" — dense wilderness everywhere except
+ * the point you came ashore at. That point is the cove, and it is open because
+ * it is a beach, not because anyone felled it: `natural`, rawness 0, no record.
+ */
+export const LANDING_CLEARING = 210
 
 // ── structures ─────────────────────────────────────────────────────────────
 
@@ -360,6 +432,24 @@ export interface Structure {
   size: Footprint
   /** The lot it stands on, when it has one. */
   lot?: Lot
+  /**
+   * HOW FAR ALONG this particular thing is — `countOf(state, role)`, its own
+   * ladder's visible rung index, and 0 for a member of a count ladder.
+   * ./clearing sizes its clearing by this.
+   */
+  rung: number
+  /**
+   * HOW LONG IT HAS STOOD, in rungs. Equal to `rung` for a tier ladder; for the
+   * i-th of n identical things off a count ladder it is `seniority(i, n)`.
+   * ./clearing ages its rim by this — see StructureCut for why one number could
+   * not do both jobs.
+   *
+   * CARRIED rather than re-derived, for the same reason PlacedItem carries its
+   * size: the caller knows something the reader cannot look up (which of six
+   * dwellings this is), and a consumer that recomputed it would be measuring a
+   * different world from the one the rules built.
+   */
+  age: number
 }
 
 // ── the layout ─────────────────────────────────────────────────────────────
@@ -433,7 +523,16 @@ export interface Layout {
    * exactly the property that distinguishes it.
    */
   dressing: DressItem[]
-  /** Keep-out discs, exported so the renderer can debug-draw the field. */
+  /**
+   * The cleared ground — what was cut, how raw its rim is, and how much timber
+   * is left. EMITTED rather than re-derived, for the same reason `regions` is:
+   * the renderer wants to shade the treeline and the checks want to ask whether
+   * a frame's canopy matches its era, and a second module computing "where the
+   * clearing is" would be a second answer to the question the planting already
+   * answered.
+   */
+  cleared: ClearedGround
+  /** Cleared discs, exported so the renderer can debug-draw the field. */
   districts: District[]
   /** null on an island carved with no cove: no bite, no harbour. */
   harbour: Harbour | null
@@ -453,9 +552,87 @@ export interface ComposeOptions {
 const NATURE_TREES = ['tree_oak', 'tree_oak', 'tree_oak_small', 'tree_birch', 'tree_willow']
 const NATURE_SHRUBS = ['bush_round', 'bush_flowering', 'fern_cluster']
 const NATURE_FLOWERS = ['flowers_white', 'flowers_yellow', 'flowers_pink']
-const NATURE_GROUND = ['rock_small', 'rock_cluster', 'tree_stump', 'fallen_log']
+/** Loose ground cover. The deadwood LEFT here on 2026-07-27 — see RECORD_KINDS. */
+const NATURE_GROUND = ['rock_small', 'rock_cluster']
 const SHORE_KINDS = ['reeds', 'rock_small', 'rock_cluster']
 const VERGE_KINDS = ['flowers_white', 'flowers_yellow', 'bush_round', 'rock_small']
+
+/**
+ * THE FELLING RECORD — what an axe leaves behind, at a clearing's rim.
+ *
+ * `tree_stump` and `fallen_log` used to ride in NATURE_GROUND, scattered at
+ * random through the interior at the same density as rocks. That is the exact
+ * reading the Captain's direction rejects: they are not ground cover, they are
+ * the record of the cut, and scattering them anywhere says nothing about where
+ * the treeline moved. `wood_pile` joins them at village and only at village —
+ * see the `felled` pass for the two independent checkers that floor it there.
+ */
+const RECORD_KINDS = ['tree_stump', 'fallen_log']
+
+/**
+ * How far inside the waterline the wood begins.
+ *
+ * Inside the belt's own outermost inset (22px, plus up to 26px of jitter), so
+ * the wood and the belt MEET rather than leaving a bare ribbon between them.
+ * Beyond it is beach, wind-shorn rock and the belt's business.
+ */
+const WOOD_FRINGE = 56
+
+/**
+ * The canopy's exclusion radius at full timber and at bare clearing.
+ *
+ * 72px against a 150px oak is a CLOSED CANOPY — crowns overlap, which is what a
+ * wood is and what the old 104px (against a density field that rarely rose
+ * above 0.3, so an effective ~240px) could never produce. The max is what the
+ * spacing opens to across a clearing's edge band, so the treeline thins out
+ * instead of stopping dead.
+ *
+ * THE CAP IS A CEILING, NOT A TARGET. It exists so a degenerate coastline
+ * cannot make the sampler run away; the number of trees on a real island is set
+ * by the spacing and by how much ground is left standing, which is the whole
+ * point. Re-measured 2026-07-27 over 8 seeds per era, belt and scatter
+ * together: camp 180-231 canopy sprites, hamlet 86-119, town 68-104,
+ * beyond_bay 53-96 — every one an order of magnitude inside the cap, so the cap
+ * is not what separates the eras. (The numbers this docstring used to carry,
+ * 430-500 and 300-360, no longer describe the composition and are corrected
+ * rather than kept: a claim the reader can disprove in one command teaches them
+ * to distrust the rest of the file.)
+ */
+const TREE_SPACING_MIN = 72
+const TREE_SPACING_MAX = 250
+const TREE_CAP = 620
+
+/**
+ * How much ground two trees may share — ring.ts's lesson, one level over.
+ *
+ * "Two buildings sharing a ground diamond are stacked and it is a defect; two
+ * trees 40px apart with interpenetrating canopies are a FOREST, and holding a
+ * belt to building-grade exclusivity thins it into a dotted line" (RING_SPACING).
+ * The wood is now the largest population on the island and it was being held to
+ * the scatter default of 0.05 — measured, that was the binding constraint on the
+ * canopy, not the Poisson radius.
+ *
+ * IT IS SAFE HERE BECAUSE THE CLEARING IS WHAT PROTECTS A BUILDING NOW, not this
+ * number. `wooded` refuses every point inside a clearing, and a clearing is at
+ * least CLEAR_BASE past a structure's half-width, so a tree cannot come near one
+ * however loose this is. The unit arm measures tree-against-structure overlap
+ * across the composed islands and holds it at zero, which is the sensor for that
+ * claim rather than the argument for it.
+ *
+ * AND IT COVERS THE SCATTER ONLY, which is half the trees. The BELT is a second
+ * population placed by ./ring against its own rules, and until 2026-07-27 no
+ * arm read it: measured then, 27 belt-vs-structure pairs over 0.04 with a worst
+ * of 0.131, because the belt was calling `groundTaken` at the tree-vs-tree
+ * default. Both halves are now measured, and the belt has its own strict bar
+ * (RING_BUILT_OVERLAP). A claim about "the trees" that only counts one of the
+ * two populations that plant them is the coverage-bound failure, not a pass.
+ */
+const WOOD_OVERLAP = 0.2
+
+/** The record's own spacing: stumps cluster, they do not space like oaks. */
+const RECORD_SPACING_MIN = 46
+const RECORD_SPACING_MAX = 200
+const RECORD_CAP = 130
 
 /**
  * Compose the whole layout for a world state.
@@ -540,7 +717,17 @@ export function composeLayout(
   // plot, one level up. Measured before this gate: `composeLayout(CAMP,
   // dwellings: 1)` emitted `drive-residential-0` whose road end (709,802) lay
   // on no carriageway at all.
-  const built: { key: string; obj: string; kind: string; lot: Lot; group: string }[] = []
+  const built: {
+    key: string
+    obj: string
+    kind: string
+    lot: Lot
+    group: string
+    /** Its own ladder's rung — 0 for a member of a count ladder. */
+    rung: number
+    /** How long this one has stood, in rungs — see `seniority`. */
+    age: number
+  }[] = []
   const dwellings = Math.min(countOf(state, 'officer_dwellings'), lots.residential.length)
   for (let i = 0; i < dwellings; i++) {
     const key = `residential-${i}`
@@ -550,6 +737,9 @@ export function composeLayout(
       kind: dwellingKind(numSeed, state.era, key),
       lot: lots.residential[i],
       group: 'residential',
+      // A COUNT LADDER MEMBER: no rung of its own, so it clears the baseline.
+      rung: 0,
+      age: seniority(i, dwellings),
     })
   }
   for (const [key, obj] of [
@@ -557,7 +747,10 @@ export function composeLayout(
     ['works', 'workshop'],
     ['fields', 'outbuildings'],
   ] as const) {
-    if (isBuilt(state, obj)) built.push({ key, obj, kind: obj, lot: lots[key][0], group: key })
+    if (isBuilt(state, obj)) {
+      const rung = countOf(state, obj)
+      built.push({ key, obj, kind: obj, lot: lots[key][0], group: key, rung, age: rung })
+    }
   }
 
   const driveways: Driveway[] = []
@@ -667,7 +860,11 @@ export function composeLayout(
     role: string,
     at: Point,
     flip: boolean,
-    lot?: Lot
+    lot?: Lot,
+    /** Defaults to the object's OWN ladder rung; see Structure.rung. */
+    rung: number = countOf(state, role),
+    /** Defaults to the rung, which is right for every tier ladder. */
+    age: number = rung
   ): Structure | null => {
     const size = sizeOf(kind)
     // Structures are STRICT and are not dropped for being crowded: a measured
@@ -696,9 +893,9 @@ export function composeLayout(
     // plot — the settle shoves a shoreline anchor into the sea and the land walk
     // returns it inland onto the soil it was pushed off — so the plot rule gets
     // the last word, exactly as the road does inside placeOnGround.
-    const cleared = clearOfRegions(p, size, plotGround, laneField, onLand, occupied)
-    occupied.push({ at: cleared, size })
-    const s: Structure = { kind, role, at: cleared, flip, size, lot }
+    const settled = clearOfRegions(p, size, plotGround, laneField, onLand, occupied)
+    occupied.push({ at: settled, size })
+    const s: Structure = { kind, role, at: settled, flip, size, lot, rung, age }
     structures.push(s)
     return s
   }
@@ -714,14 +911,26 @@ export function composeLayout(
   // `market_stall`), so the predicate was false on every state and the stall
   // could never draw. compose.py:966 gates it on the era alone.
   // ONE SPRITE PER LOT, not one sprite six times — see dwellingKind.
-  for (const b of built) put(b.kind, b.obj, b.lot.c, lotFlip(b.lot), b.lot)
+  for (const b of built) put(b.kind, b.obj, b.lot.c, lotFlip(b.lot), b.lot, b.rung, b.age)
 
   // The quayside buildings stand on LAND above the wharf (compose.py:1165-1176)
   // and go through the same door as every other building — so a warehouse on a
   // seed whose cove ate its shore is DROPPED, not floated.
   const quayside: Structure[] = []
-  for (const site of harbour?.warehouseSites ?? []) {
-    const s = put('warehouse', 'warehouse', site, false)
+  const warehouseSites = harbour?.warehouseSites ?? []
+  for (let i = 0; i < warehouseSites.length; i++) {
+    // Warehouses come off a COUNT ladder exactly as the dwellings do, so each
+    // clears the baseline, and the first shed on the quay is the old one while
+    // the newest still has raw stumps round it — see `seniority`.
+    const s = put(
+      'warehouse',
+      'warehouse',
+      warehouseSites[i],
+      false,
+      undefined,
+      0,
+      seniority(i, warehouseSites.length)
+    )
     if (s) quayside.push(s)
   }
   if (harbour?.harbourmasterSite) {
@@ -736,6 +945,129 @@ export function composeLayout(
   // at an authored bearing that half the seeds put inland.
   const lighthouse = placeLighthouse(state, coast, space, put)
 
+  // ---- 8a. the clearing ----------------------------------------------------
+  // THE ISLAND IS OVERGROWN AND THIS IS WHAT WAS CUT OUT OF IT (Captain
+  // 2026-07-27). Everything below plants against `timber` — what is LEFT — so
+  // this stage is the one that decides what the world looks like, and it can
+  // only run now, because a clearing belongs to a structure that landed.
+  //
+  // IT RUNS BEFORE THE DRESSING, which it did not until 2026-07-27, and the
+  // move is what lets the district furniture obey the model instead of merely
+  // being described by it. Its inputs are the paint (stage 5), the harbour
+  // (6), the structures (7) and the lighthouse (8) — never the dressing — so
+  // nothing is lost by asking the question earlier, and what is gained is that
+  // `dressSettle` can refuse a spot in standing timber. Measured before the
+  // move, over 20 hamlet islands: 648 pieces of village furniture stood in
+  // uncut wood, 129 of them under fully closed canopy and one fence run 188px
+  // deep into it.
+  const inWater = waterField(paint)
+  const onPaving = paintField(paint, ['plaza', 'crop', 'ploughed'])
+  // ONE FIELD, built once and handed to every consumer: the clearing, the belt
+  // and the scatter must agree on where the deck is, and two `rectField` calls
+  // off the same rect is one call away from being two different rects.
+  const onQuay = rectField(harbour?.wharf?.rect ?? null)
+  const civicScale = CIVIC_ERA_SCALE[state.era] ?? 1
+  const civicRawness = rawnessOfEra(state.era)
+  const clearings: Clearing[] = [
+    // EVERY STRUCTURE THAT WAS ACTUALLY BUILT, at the radius its own rung
+    // earned — and NOTHING for a lot nobody has built on, which is the whole
+    // inversion: an empty lot is forest until an officer arrives and cuts it.
+    // `s.rung` is the object's own visible rung index for a tier ladder and its
+    // seniority in the row for a count ladder (see Structure.rung).
+    ...structureClearings(
+      structures.map((s) => ({
+        at: s.at,
+        size: s.size,
+        role: s.role,
+        rung: s.rung,
+        age: s.age,
+      }))
+    ),
+    ...CIVIC_CLEARINGS.filter((d) => village || !d.villageOnly).map((d) => ({
+      // SNAPPED, like every other anchor: a clearing centred in the sea clears
+      // sea, and the timber it was meant to have felled is still standing in
+      // the village.
+      at: anchor(d.at),
+      // The civic grounds have no rung of their own, so the ERA is their
+      // measurement — a camp has a trodden gap where a town has a paved square.
+      // The pond is exempt because it is not a clearing: water is morphology
+      // and does not grow with the org.
+      r: d.cut === 'natural' ? d.r : d.r * civicScale,
+      rawness: d.cut === 'natural' ? 0 : civicRawness,
+      role: d.role,
+      cut: d.cut,
+    })),
+    // THE LIGHTHOUSE POINT (compose.py:905) — the belt frames the tower, it does
+    // not swallow it. Centred on where the tower actually ENDED, not on the site
+    // it was walked from: the structure rules may have moved it off a lane, and
+    // a clearing round the old spot would leave the tower in the trees and a
+    // bald circle beside it. It rides ALONGSIDE the lighthouse's own structure
+    // clearing rather than replacing it, so the union takes whichever is larger.
+    ...(lighthouse
+      ? [
+          {
+            at: lighthouse.at,
+            r: lighthouse.clearing,
+            rawness: rawnessOfRung(countOf(state, 'lighthouse')),
+            // (a tier ladder, so its rung IS its age)
+            role: 'lighthouse_point',
+            cut: 'felled' as CutBy,
+          },
+        ]
+      : []),
+    // THE COUNT-GATED OUTBUILDINGS — the windmill, the kiln and the coop.
+    //
+    // THEY ARE BUILDINGS THAT RIDE IN THE DRESSING, which is a fact about which
+    // list they land in and not about what they are, and it left them as the
+    // one built class with no ground of its own: measured 2026-07-27, 12 of
+    // them over 80 composed islands stood in standing timber, up to 60px
+    // outside the nearest rim. They cannot be dropped for it — each is a
+    // measured count and hiding one is the failure the state law names — so
+    // they get what every other built thing gets, a clearing.
+    //
+    // CENTRED ON THE AUTHORED SPOT, not on where the item settled, because the
+    // settle happens one stage later; the radius carries CLEAR_BASE past the
+    // sprite's half width, which is the slack that absorbs the settle. The
+    // offsets are read from the same exported table the dressing places from,
+    // so the two cannot drift apart.
+    ...COUNT_GATED_BUILDINGS.filter(
+      (b) => village && countOf(state, b.ladder) >= b.atLeast
+    ).map((b) => {
+      const base =
+        b.from === 'works'
+          ? (structures.find((s) => s.role === 'workshop')?.at ?? anchor({ x: 1830, y: 800 }))
+          : (structures.find((s) => s.role === 'outbuildings')?.at ?? anchor({ x: 1620, y: 1180 }))
+      return {
+        at: anchor({ x: base.x + b.dx, y: base.y + b.dy }),
+        // A COUNT LADDER, so each member clears the baseline — the same rule
+        // `structureClearings` applies to the dwellings and the warehouses.
+        r: clearingRadius(sizeOf(b.kind), 0),
+        rawness: rawnessOfRung(countOf(state, b.ladder) - b.atLeast),
+        role: b.kind,
+        cut: 'felled' as CutBy,
+      }
+    }),
+    // THE LANDING. The one place a hatched island is open on day zero, and it is
+    // open because it is a beach: natural, rawness 0, no felling record.
+    ...(coast.cove
+      ? [
+          {
+            at: { x: coast.cove.x, y: coast.cove.y },
+            r: LANDING_CLEARING,
+            rawness: 0,
+            role: 'landing',
+            cut: 'natural' as CutBy,
+          },
+        ]
+      : []),
+  ]
+  const cleared = buildClearedGround(clearings, {
+    lanes: laneField,
+    onPaving,
+    inWater,
+    onQuay,
+  })
+
   // ---- 8b. district dressing ----------------------------------------------
   // BEFORE the planting and AFTER every building, which is the only order that
   // works: a bench must lose to a warehouse and win against a fern. The ring
@@ -747,6 +1079,33 @@ export function composeLayout(
   // measured building that cannot find ground is a fact about the org and must
   // still be reported, while a barrel that cannot find ground is a barrel
   // nobody will miss.
+  /**
+   * VILLAGE FURNITURE STANDS ON GROUND SOMEBODY CUT — the Captain's model, as
+   * a placement rule rather than as a paragraph.
+   *
+   * A bench, a fence run, a water trough and a veg garden are the furniture of
+   * a settlement, and a settlement stands in a clearing. Authored offsets are a
+   * WISH (see the module header): the fields district wishes its fence to run
+   * 320-352px out from the barn, and at hamlet the ground that was cut for that
+   * farm is 174px across, so the outer sections of that wish are in the wood.
+   * They are DROPPED, exactly as a section that would stand on a carriageway is
+   * dropped — the fence stops at the treeline, and the gap it leaves IS the
+   * edge of the cleared field. As the org matures the clearing opens and the
+   * same authored run reaches further, which is the direction's own sentence:
+   * the enclosure grows because the treeline receded.
+   *
+   * THE BAR IS THE TREELINE'S MIDPOINT, not the rim — see FURNITURE_MAX_TIMBER
+   * for the measurement that made a hard rim wrong (it deleted a bench standing
+   * a tenth of a pixel outside its district).
+   *
+   * ONLY `village_life`. The ladder items — law_plot, composter, pens,
+   * observatory, the count-gated buildings — go through `ctx.settle` directly
+   * with their own role, and they are EXEMPT because dropping one would hide a
+   * count, which is the one thing the state law forbids outright. The landing
+   * is exempt for a different reason: `dressLanding` dresses a beach, and a
+   * beach is not timber that anyone felled (it is `cut: 'natural'`), so the
+   * cut-ground question is the wrong question there.
+   */
   const dressSettle: Settle = (kind, role, at, flip, dopts) => {
     const size = sizeOf(kind)
     const p = placeOnGround(at, size, laneField, onLand, [...occupied, ...plotGround], {
@@ -762,7 +1121,7 @@ export function composeLayout(
     // defect — so the test still runs, it just drops instead of moving. That
     // gap is the gate (compose.py fence_axis).
     if (dopts?.avoidLane === false && footprintOnLane(p, size, laneField)) return null
-    const cleared = clearOfRegions(p, size, plotGround, laneField, onLand, occupied)
+    const settledAt = clearOfRegions(p, size, plotGround, laneField, onLand, occupied)
     // THE PLOT RULE CAN UNDO THE SETTLE, so the settle is re-asserted after it.
     // clearOfRegions searches outward for ground that is off the plough AND
     // clear of neighbours, and when it finds neither it returns the least-bad
@@ -773,9 +1132,16 @@ export function composeLayout(
     // the one place the dressing is STRICTER than the buildings above it, and
     // deliberately: nothing is lost by not drawing a coop, and a coop inside a
     // kiln is a defect a viewer sees instantly.
-    if (dopts?.nudge !== false && maxGroundOverlap(cleared, size, occupied) > 0.1) return null
-    occupied.push({ at: cleared, size })
-    return { kind, role, at: cleared, flip, size, overWater: false }
+    if (dopts?.nudge !== false && maxGroundOverlap(settledAt, size, occupied) > 0.1) return null
+    // THE CUT-GROUND RULE, LAST, so it judges the spot the item actually takes
+    // rather than the one it asked for: the lane rule and the plot rule both
+    // move a piece of dressing, and a rule applied to the wish is a rule that
+    // does not hold. Refused BEFORE the occupancy book is written, so a dropped
+    // item reserves nothing — a phantom occupant is a hole a tree cannot fill.
+    if (role === 'village_life' && cleared.timber(settledAt.x, settledAt.y) >= FURNITURE_MAX_TIMBER)
+      return null
+    occupied.push({ at: settledAt, size })
+    return { kind, role, at: settledAt, flip, size, overWater: false }
   }
   const roleAt = (role: string): Point | null =>
     structures.find((s) => s.role === role)?.at ?? null
@@ -825,58 +1191,35 @@ export function composeLayout(
   // `dressSettle` (which does add to the book) is only ever called for the
   // items that stand on land.
 
-  // ---- 9. scatter ---------------------------------------------------------
-  const districts: District[] = [
-    ...DISTRICT_ANCHORS.filter((d) => village || !d.villageOnly).map((d) => ({
-      // SNAPPED, like every other anchor: a disc centred in the sea reserves
-      // sea, and the planting it was meant to keep out of the village then
-      // arrives in the village.
-      at: anchor(d.at),
-      r: d.r,
-    })),
-    // the GENERATED lots, which is where buildings actually land
-    ...Object.values(lots).flat().map((l) => ({ at: l.c, r: 150 })),
-    // THE LIGHTHOUSE CLEARING (compose.py:905) — the forest ring frames the
-    // point, it does not swallow the tower. Centred on where the tower actually
-    // ENDED, not on the site it was walked from: the structure rules may have
-    // moved it off a lane, and a clearing round the old spot would leave the
-    // tower in the trees and a bald circle beside it.
-    ...(lighthouse ? [{ at: lighthouse.at, r: lighthouse.clearing }] : []),
-    // compose.py:1171,1176 reserves the quayside buildings the same way
-    ...quayside.map((s) => ({ at: s.at, r: s.kind === 'warehouse' ? 160 : 110 })),
-  ]
-  const wildness = wildnessField(
-    { x: space.cx, y: space.cy },
-    // the MEMOISED edge: the field is sampled once per scatter candidate and
-    // landEdge walks the raster in 6px steps (compose.py caches it the same
-    // way, on the same 0.02-radian key)
-    (ang) => coast.edgeAt(ang),
-    districts,
-    laneField
-  )
+  // ---- 9. the book of built ground ----------------------------------------
+  const districts: District[] = cleared.districts
   // The dock kit occupies ground like anything else. It is not a structure (it
   // stands on a deck over water), but the half of it that lands on the shore
   // strip is real ground a reed must not grow through — and the scatter stage
   // rejects against `occupied` at sampling time, so the book is where it goes.
   for (const item of harbour?.items ?? []) occupied.push({ at: item.at, size: item.size })
+  // EVERYTHING A PERSON MADE, snapshotted before anything is planted. The
+  // timber passes hold themselves to a tighter ground rule against this book
+  // than against each other — see PlantCtx.builtGround.
+  const builtGround: readonly Occupant[] = [...occupied]
 
   // ---- 10. the forest enclosure ring --------------------------------------
   // MORPHOLOGY, not doctrine, so it stands in every era: an island has a
   // treeline whether or not anyone has landed on it, on the same argument that
   // keeps the pond at camp. What the ERA changes is where it may grow — at camp
-  // the village-only keep-out discs do not exist, so the belt is free to close
-  // over ground a hamlet would have reserved.
+  // almost nothing has been cut, so the belt is free to close over ground a
+  // town has since felled.
+  //
+  // IT IS NOT THE WHOLE FOREST ANY MORE, and that is the inversion. The belt
+  // used to be the island's canopy because the interior was a sparse gradient;
+  // now it is the OUTERMOST BAND of a wood that runs right across the landmass
+  // (see plant()'s timber passes). It keeps its own module because it is a
+  // different kind of thing — walked by angle in depth sublayers, so the shore
+  // reads as enclosed rather than as a lawn that happens to end.
   //
   // BEFORE the general planting and AFTER the structures: the belt takes the
-  // coastal band first (that is what makes it a belt rather than the outer tail
-  // of a gradient) and the six scatter passes then fill the meadow inside it
+  // coastal band first, and the timber passes then fill the interior behind it
   // against an occupancy book the ring has already written into.
-  const inWater = waterField(paint)
-  const onPaving = paintField(paint, ['plaza', 'crop', 'ploughed'])
-  // ONE FIELD, built once and handed to both planting stages: the belt and the
-  // scatter must agree on where the deck is, and two `rectField` calls off the
-  // same rect is one call away from being two different rects.
-  const onQuay = rectField(harbour?.wharf?.rect ?? null)
   const ring = forestRing(numSeed, {
     space,
     coast,
@@ -890,23 +1233,23 @@ export function composeLayout(
   })
   for (const item of ring) occupied.push({ at: item.at, size: item.size })
 
-  // ---- 11. scatter --------------------------------------------------------
+  // ---- 11. the standing timber, and the record of what was cut ------------
   const scatter = plant(numSeed, {
     space,
     coast,
     laneField,
     occupied,
-    districts,
-    wildness,
+    cleared,
+    builtGround,
     inWater,
     onPaving,
     // The plantable MARGIN around the water, which is wider than the painted
     // sand fringe — see grownField in ./paint for why the two differ.
     onBank: grownField(paint, ['pond', 'stream'], REED_MARGIN),
     // NOTHING IS PLANTED ON THE WHARF. This port's own term, on the same
-    // argument the paving term needed: a deck is a surface, and the keep-out
-    // discs do not reach it (the nearest is the square's, 400px north). The
-    // shore band runs along the waterline, which is exactly where the deck is.
+    // argument the paving term needed: a deck is a surface, and no clearing
+    // reaches it (the nearest is the square's, 400px north). The shore band
+    // runs along the waterline, which is exactly where the deck is.
     onQuay,
     sizeOf,
     village,
@@ -936,6 +1279,7 @@ export function composeLayout(
     ring,
     scatter,
     dressing,
+    cleared,
     districts,
     harbour,
     lighthouse,
@@ -1074,8 +1418,18 @@ interface PlantCtx {
   coast: Coastline
   laneField: LaneField
   occupied: Occupant[]
-  districts: District[]
-  wildness: DensityField
+  /** What was cut, how raw each rim is, and how much timber is left. */
+  cleared: ClearedGround
+  /**
+   * Everything a PERSON put on the island — structures, dressing, dock kit —
+   * as it stood before anything was planted.
+   *
+   * A SECOND, TIGHTER BOOK for the timber passes. The wood runs at a loose
+   * ground-overlap bar because a forest is trees standing in each other's
+   * canopies; a tree standing in a WALL is a defect at any bar. See
+   * ScatterOptions.strictOccupied for the willow that proved it.
+   */
+  builtGround: readonly Occupant[]
   /** compose.py in_water(): the pond and outflow that were actually painted. */
   inWater: (x: number, y: number) => boolean
   /** The paved square and the tilled plots that were actually painted. */
@@ -1090,21 +1444,33 @@ interface PlantCtx {
 }
 
 /**
- * compose.py:1240-1263 — the six planting passes, in order. Each pass reads
- * the occupancy the previous ones wrote, so a bush cannot land inside a tree.
+ * THE PLANTING PASSES — the standing timber first, then the record of what was
+ * cut, then the dressing that only a settled place has.
+ *
+ * Each pass reads the occupancy the previous ones wrote, so a bush cannot land
+ * inside a tree. The ORDER inside the timber block is deliberate: the canopy
+ * claims the ground, the felling record claims the rim before the understory
+ * can crowd it out, and the light-loving passes fill in behind both.
  */
 function plant(seed: number, ctx: PlantCtx): PlacedItem[] {
   const out: PlacedItem[] = []
   /**
-   * compose.py:1213 free(): `near_path(34) or in_water(x,y)` OR inside a
-   * keep-out disc. All three terms are HARD — this is the predicate `inner()`,
-   * `shore_band()` and the verge pass are each gated on, so the reference
-   * plants nothing inside a district, nothing on a lane and nothing in the
-   * pond. The disc term is the one this port lost; see DISTRICT_ANCHORS.
+   * NOTHING GROWS ON CUT GROUND. compose.py:1213 free() was
+   * `near_path(34) or in_water(x,y)` plus a keep-out disc; the disc term is now
+   * `cleared.isCleared`, which is the same geometry read the other way round —
+   * ground is bare because somebody felled it, not because a rule forbids
+   * planting there.
    *
-   * The 1.35 vertical squash is the reference's and it is not decoration: a
-   * disc on the ground projects flattened on a 2:1 screen, so a circular test
-   * in screen space would reserve a tall oval nobody drew.
+   * THE THREE SURFACE TERMS ARE REDUNDANT WITH `isCleared` TODAY, and they stay.
+   * `buildClearedGround` folds the paving, the water, the deck and the lane
+   * reach into `clearedAt`, so each `!ctx.…` below is currently implied. They
+   * are kept because they are the terms that were MEASURED to matter (9 items in
+   * a crop plot across 80 seeds; reeds and shore rocks on the deck), and because
+   * a redundancy that one edit to LANE_CLEAR_REACH would end is not a redundancy
+   * worth deleting. The one that is NOT redundant either way is the 34px lane
+   * rule, which is narrower than LANE_CLEAR_REACH and therefore never decides
+   * anything on its own — stated so nobody later reads it as the rule that keeps
+   * planting off the road.
    *
    * THE WATER TERM IS STILL QUIET, and the outflow did NOT change that — which
    * is worth writing down, because it was the obvious prediction and it is
@@ -1115,37 +1481,42 @@ function plant(seed: number, ctx: PlantCtx): PlacedItem[] {
    * effective: the outflow is 24-30px wide against meadow passes that space at
    * 58-104px, and the bank and lilypad passes have already written the margin
    * and the water into the occupancy book by the time those passes sample.
-   *
-   * So this stays a REDUNDANT rule, kept deliberately: it is the reference's own
-   * term, the disc above it is doctrine (era-gated, movable) while water is
-   * morphology, and three coincidences are not an invariant. What is NOT quiet
-   * is the identical term in ring.ts — deleting it there turns four arms red,
-   * because the belt walks the coastal band at a fixed angular step and does not
-   * care how narrow a river is.
-   *
-   * THE PAVING TERM IS NOT REDUNDANT, which is how it was found: the same
-   * incidental-coverage argument was made for the plaza and the plots, and it
-   * was false. 9 items across 80 seeds stood in a crop plot whose outer rim
-   * reaches past every disc (see paintField). Both terms now exist for the same
-   * reason, and only one of them is quiet.
-   *
-   * THE QUAY TERM IS THE SAME ARGUMENT AGAIN, and it is not quiet either: no
-   * keep-out disc reaches the wharf (the nearest is the square's, 400px north),
-   * and the SHORE BAND — the pass that plants reeds and shore rocks — is defined
-   * as the strip just inside the waterline, which is precisely where the deck
-   * is. Measured with the term dropped, reeds and shore rocks stand on the deck.
+   * What is NOT quiet is the identical term in ring.ts — deleting it there turns
+   * four arms red, because the belt walks the coastal band at a fixed angular
+   * step and does not care how narrow a river is.
    */
-  const inDistrict = (x: number, y: number) =>
-    ctx.districts.some(
-      (d) => (x - d.at.x) ** 2 + ((y - d.at.y) * 1.35) ** 2 < d.r * d.r
-    )
   const free = (x: number, y: number) =>
     !ctx.laneField.nearLane(x, y, 34) &&
     !ctx.inWater(x, y) &&
     !ctx.onPaving(x, y) &&
     !ctx.onQuay(x, y) &&
-    !inDistrict(x, y)
-  const inner = (x: number, y: number) => ctx.coast.isInner(x, y) && free(x, y)
+    !ctx.cleared.isCleared(x, y)
+
+  /**
+   * THE WOOD: everywhere on the island that nobody has cut.
+   *
+   * THIS IS THE INVERSION, in one predicate. It used to be `coast.isInner` —
+   * `d < landEdge - 190` — which confined the general planting to the deep
+   * interior while the density field made that interior the SPARSEST part of
+   * the island. An island whose trees are a coastal ring around a thin middle
+   * is wilderness-as-decoration, and the Captain's ruling is that wilderness is
+   * the island's default state. So the wood now runs from the belt right across
+   * the landmass, stopping only at the shore fringe, the water and the cut.
+   *
+   * WOOD_FRINGE, not 0: the last stretch before the waterline is beach and
+   * wind-shorn rock, and it belongs to the belt's outermost sublayer and the
+   * shore pass. 56px is inside the belt's own outermost inset (22 + up to 26 of
+   * jitter), so the two populations meet rather than leaving a bare ribbon.
+   */
+  const cx = ctx.space.cx
+  const cy = ctx.space.cy
+  const insetFrom = (inset: number) => (x: number, y: number) => {
+    const ang = Math.atan2((y - cy) / 0.92, x - cx)
+    const d = hypot(x - cx, (y - cy) / 0.92)
+    return d < ctx.coast.edgeAt(ang) - inset
+  }
+  const insideFringe = insetFrom(WOOD_FRINGE)
+  const wooded = (x: number, y: number) => insideFringe(x, y) && free(x, y)
 
   const pass = (
     tag: string,
@@ -1154,7 +1525,8 @@ function plant(seed: number, ctx: PlantCtx): PlacedItem[] {
     density: DensityField,
     rMin: number,
     rMax: number,
-    cap: number
+    cap: number,
+    frac?: number
   ) => {
     // compose.py:638-639 — sample against the LARGEST sprite in the set, not
     // the first. Sampling against a small one and then drawing a large one is
@@ -1175,6 +1547,15 @@ function plant(seed: number, ctx: PlantCtx): PlacedItem[] {
       rMin,
       rMax,
       cap,
+      frac,
+      // and the CHOSEN sprite is re-tested against both rules — see
+      // ScatterOptions.sizeOf for the measurement that made this necessary.
+      sizeOf: ctx.sizeOf,
+      // A LOOSE bar against other plants and a TIGHT one against anything a
+      // person built. Passed on EVERY pass, not only the loose ones: a rule
+      // that is only wired where it currently matters is a rule the next edit
+      // silently drops.
+      strictOccupied: ctx.builtGround,
     })
     for (const item of items) {
       const itemSize = ctx.sizeOf(item.kind)
@@ -1205,13 +1586,94 @@ function plant(seed: number, ctx: PlantCtx): PlacedItem[] {
   // rather than pads on grass.
   pass('lilypads', ['lilypads'], (x, y) => ctx.inWater(x, y), () => 0.9, 46, 78, 14)
 
-  pass('trees', NATURE_TREES, inner, ctx.wildness, 104, 300, 60)
-  pass('shrubs', NATURE_SHRUBS, inner, ctx.wildness, 62, 170, 110)
-  pass('flowers', NATURE_FLOWERS, inner, (x, y) => 1 - ctx.wildness(x, y) * 0.5, 58, 150, 90)
+  // ---- THE RECORD OF THE CLEARING ----------------------------------------
+  // Stumps, felled logs and (once there is somebody to stack it) sawn timber,
+  // at the BOUNDARY between cut ground and standing wood. Captain 2026-07-27:
+  // "the stumps, the felled logs and the woodpiles are then not decoration:
+  // they are the RECORD of that clearing, and they belong at the edge of each
+  // cleared area."
+  //
+  // NOT free()-GATED, deliberately, and for the same reason the bank and the
+  // verge passes are not: a stump stands where the tree stood, which is inside
+  // the ground that was cleared. free() forbids exactly that. The rim band is
+  // its own admissibility rule and it carries the surface terms itself.
+  //
+  // DENSITY IS `recordAt` = how close to a rim x how raw that rim is, so the
+  // pass thins as an org matures without anything era-gating it: a camp's one
+  // clearing was cut this week and is ringed with raw stumps, a beyond_bay
+  // town's clearings have had four rungs to grub theirs out and grow the edge
+  // over. It also goes to zero where two clearings merged, because the arc
+  // between them stopped being a boundary (RECORD_SWALLOWED_AT).
+  //
+  // WOOD_PILE ONLY AT VILLAGE, and that is not a taste call: check_era floors
+  // both wood_pile and crate_single at hamlet, and `wood_pile` is justified by
+  // the VILLAGE_LIFE class, so a woodpile on a camp frame is an orphan and
+  // check_state_traceable goes red. Sawn timber stacked in a pile is a
+  // settlement's output; a stump and a felled log are the cut itself, and both
+  // are on ambient-nature.txt, so both stand at every era.
+  const record = (x: number, y: number) =>
+    ctx.cleared.recordAt(x, y) > 0 &&
+    !ctx.laneField.nearLane(x, y, 34) &&
+    !ctx.inWater(x, y) &&
+    !ctx.onPaving(x, y) &&
+    !ctx.onQuay(x, y)
+  pass(
+    'felled',
+    ctx.village ? [...RECORD_KINDS, 'wood_pile'] : RECORD_KINDS,
+    record,
+    ctx.cleared.recordAt,
+    RECORD_SPACING_MIN,
+    RECORD_SPACING_MAX,
+    RECORD_CAP
+  )
+
+  // ---- THE STANDING TIMBER ------------------------------------------------
+  // The canopy at the tightest spacing of any pass: an island nobody has
+  // maintained is WOOD, and the trees are the thing the rest of the planting
+  // fills in around. `timber` is 1 across every acre nobody has cut, so the
+  // exclusion radius sits at TREE_SPACING_MIN there and opens out to
+  // TREE_SPACING_MAX across each clearing's edge band — which is what makes a
+  // clearing read as a thinning treeline rather than as a stamped circle.
+  //
+  // THAT BAND IS ON THE STANDING SIDE OF THE RIM, and it was on the cut side
+  // until 2026-07-27, where this pass could never reach it: `wooded` refuses
+  // every point `isCleared` accepts and the old field was non-zero on exactly
+  // that set, so `timber()` was the constant 1 over this pass's whole domain
+  // (240,000 samples, one distinct value) and TREE_SPACING_MAX decided nothing
+  // — collapsing it 250 -> 72 left twenty islands byte-identical. See
+  // CLEARING_EDGE_BAND. The arm that now holds it is "the wood THINS toward a
+  // clearing", which counts realised canopy per unit of plantable area either
+  // side of one band width.
+  //
+  // AFTER THE RECORD, and that order was MEASURED, not assumed. With the canopy
+  // first the rim band is full of oaks before the record pass samples, and
+  // sampling-time rejection then drops almost every stump: 3-6 record items per
+  // camp island against 30-40 with the order this way round. The rim is a thin
+  // annulus and the wood is everything else, so whichever pass goes first gets
+  // it — and the record is the smaller, more specific claim.
+  pass(
+    'trees',
+    NATURE_TREES,
+    wooded,
+    ctx.cleared.timber,
+    TREE_SPACING_MIN,
+    TREE_SPACING_MAX,
+    TREE_CAP,
+    WOOD_OVERLAP
+  )
+
+  // ---- WHAT GROWS UNDER AND BETWEEN THE TREES -----------------------------
+  pass('shrubs', NATURE_SHRUBS, wooded, ctx.cleared.timber, 62, 170, 190)
+  // Light reaches the ground where the canopy has been opened, so the flowers
+  // run the OTHER way to the timber — thickest against a clearing's edge,
+  // thinnest under closed canopy. The old field was `1 - wildness*0.5`, which
+  // meant the same thing about the old field and the opposite thing about the
+  // island: wildness was highest at the COAST, so flowers pooled inland.
+  pass('flowers', NATURE_FLOWERS, wooded, (x, y) => 1 - ctx.cleared.timber(x, y) * 0.65, 58, 150, 110)
   // Mushrooms and toadstool clumps are village-adjacent dressing in the
-  // reference's AMBIENT set; the rocks and deadwood are not. A camp keeps the
-  // deadwood, which is what an unworked island actually has lying around.
-  pass('ground', NATURE_GROUND.concat(ctx.camp ? [] : ['mushrooms']), inner, ctx.wildness, 104, 260, 40)
+  // reference's AMBIENT set; the rocks are not. The deadwood that used to ride
+  // in this pass moved to the felling record above, where it means something.
+  pass('ground', NATURE_GROUND.concat(ctx.camp ? [] : ['mushrooms']), wooded, ctx.cleared.timber, 104, 260, 40)
 
   // A verge is a consequence of a road having sides worth dressing. A camp's
   // worn track through grass has none.
@@ -1234,7 +1696,7 @@ function plant(seed: number, ctx: PlantCtx): PlacedItem[] {
       !ctx.inWater(x, y) &&
       !ctx.onPaving(x, y) &&
       !ctx.onQuay(x, y) &&
-      !inDistrict(x, y)
+      !ctx.cleared.isCleared(x, y)
     pass('verge', VERGE_KINDS, verge, () => 0.7, 88, 130, 34)
   }
 
@@ -1350,6 +1812,7 @@ export * from './lanes'
 export * from './lots'
 export * from './driveways'
 export * from './clearance'
+export * from './clearing'
 export * from './scatter'
 export * from './paint'
 export * from './ring'

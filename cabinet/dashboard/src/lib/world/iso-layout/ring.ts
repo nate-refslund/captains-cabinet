@@ -173,6 +173,27 @@ export const RING_MIN_RADIUS = 130
  */
 export const RING_SPACING = 30
 
+/**
+ * How much of a BUILT thing's ground a belt tree may share — the strict bar.
+ *
+ * THE BELT WAS RUNNING AT THE LOOSE ONE and nothing said so. `groundTaken`
+ * defaults to 0.16, which is the tree-against-tree bar; `ctx.occupied` at the
+ * one call site contains nothing but built ground (the structures, the
+ * dressing and the dock kit — the belt keeps its own members in `planted`),
+ * so that default was being applied to exactly the population it is wrong for.
+ * Measured 2026-07-27 across 20 composed islands: 27 belt-vs-structure pairs
+ * over 0.04, worst 0.131 of a house's ground diamond — a pine standing through
+ * a wall. index.ts:611-613 claimed "the unit arm ... holds it at zero", and
+ * that arm reads `l.scatter` only; the belt is a separate population placed by
+ * a separate module and no arm read it.
+ *
+ * 0.04 IS THE NUMBER THE REST OF THE LIBRARY ALREADY USES for anything against
+ * a building — placeOnGround's strict mode and ScatterOptions.strictFrac both
+ * — so this is the belt joining the existing rule rather than a new one. Cost,
+ * measured: 1.0 items per island (96.5 -> 95.5 at hamlet).
+ */
+export const RING_BUILT_OVERLAP = 0.04
+
 export interface RingItem extends ScatterItem {
   /** Which sublayer planted it — the renderer's depth cue, 0 = outermost. */
   layer: number
@@ -305,7 +326,7 @@ export function forestRing(seed: string | number, ctx: RingContext): RingItem[] 
       // ...and the standing rejection rules every placement in this library
       // obeys: the road wins, and a building's ground is a building's ground.
       if (footprintOnLane(at, size, ctx.lanes)) continue
-      if (groundTaken(at, size, ctx.occupied)) continue
+      if (groundTaken(at, size, ctx.occupied, RING_BUILT_OVERLAP)) continue
       if (crowded(x, y)) continue
 
       // THE SAMPLING SIZE IS NOT A CONSERVATIVE SIZE, and assuming it was is how
@@ -331,7 +352,7 @@ export function forestRing(seed: string | number, ctx: RingContext): RingItem[] 
       const flip = rng() < 0.5
       const itemSize = ctx.sizeOf(kind)
       if (footprintOnLane(at, itemSize, ctx.lanes)) continue
-      if (groundTaken(at, itemSize, ctx.occupied)) continue
+      if (groundTaken(at, itemSize, ctx.occupied, RING_BUILT_OVERLAP)) continue
       planted.push(at)
       out.push({ kind, at, flip, layer: li, size: itemSize })
     }

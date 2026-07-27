@@ -220,6 +220,24 @@ export const UNMEASURED_STATE_ISSUE =
   'The island is drawn at the HATCH BASELINE: camp, every ladder unbuilt. ' +
   'That is an honest zero, NOT a claim that the org is at camp.'
 
+/**
+ * What an iso frame must ANNOUNCE before it is composed — the decision, as a
+ * function instead of as three lines inside a PixiJS closure.
+ *
+ * IT IS PURE BECAUSE THE RATCHET COULD NOT SEE INSIDE THE CLOSURE. The arm that
+ * guarded the announcement was a source-text check for
+ * `onIssues?.([UNMEASURED_STATE_ISSUE])`, and a mutation that disabled the
+ * whole branch — `if (false && !p.resolution)` — left that text in place and
+ * came back GREEN on all four arms (measured 2026-07-27). A source ratchet
+ * cannot test a behaviour; it can only test a spelling. So the decision moves
+ * here where it can be driven, the ratchet keeps only the wiring question, and
+ * it now pins the guard's exact form so that inserting a `false &&` changes the
+ * text it matches.
+ */
+export function unmeasuredIssues(resolution: WorldResolution | null | undefined): string[] {
+  return resolution ? [] : [UNMEASURED_STATE_ISSUE]
+}
+
 export interface ResolvedFrame {
   frame: string
   trueArt: boolean
