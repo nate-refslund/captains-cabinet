@@ -36,9 +36,21 @@
  * separation relaxation is snapped inland before it is returned, so there is
  * exactly one place that decides this and exactly one place to test.
  *
+ * AND THE SNAP THEN HAS TO GIVE THE SEPARATION BACK. Every lot's snap heads for
+ * the SAME point — the island centre — so neighbouring lots converge as they
+ * come inland, and a rule that had just been relaxed to exactly 168px is undone
+ * by the step that follows it. Measured on the first version of this snap: 40 of
+ * 80 seeds ended under the 168px rule, worst 59.8px on org-62, and on org-13 two
+ * officer dwellings ended up sharing ground — a stacked pair the audit reported
+ * and no arm covered. So the snap is followed by a relaxation that may only move
+ * a lot to ground that still clears the snap's own margin. The land invariant is
+ * then preserved BY CONSTRUCTION (a lot starts on land and every accepted move
+ * lands on land) rather than by being the last step, which is what lets both
+ * rules hold at once instead of taking turns.
+ *
  * PURE: no clocks, no unseeded randomness, no IO, no DOM.
  */
-import { snapInland } from './clearance'
+import { clearsMargin, SNAP_MARGIN, snapInland } from './clearance'
 import { hypot, LAYOUT_SPACE, type Point } from './space'
 
 /** A plot: where it sits, the road point it fronts, and its facing. */
@@ -148,15 +160,23 @@ export function lotsAlong(
     out.push({ c: { x: cx, y: cy }, road, face: { x: nx, y: ny } })
   }
   const toward = opts.inlandTo ?? { x: LAYOUT_SPACE.cx, y: LAYOUT_SPACE.cy }
-  // The snap runs LAST, after the separation relaxation, because relaxation is
-  // what strands a lot: the pull-in at emission above is undone by the very
-  // next push. A lot that cannot be snapped (no island under it at all) is
-  // returned where it was rather than deleted — deleting it would remove a
-  // measured building silently, and auditLayout reports it instead.
-  return relax(out, taken).map((l) => ({
+  // The snap runs AFTER the separation relaxation, because relaxation is what
+  // strands a lot: the pull-in at emission above is undone by the very next
+  // push. A lot that cannot be snapped (no island under it at all) is returned
+  // where it was rather than deleted — deleting it would remove a measured
+  // building silently, and auditLayout reports it instead.
+  //
+  // The walk takes the FIRST station with ground under it, which is the least
+  // it can move — making it hunt for a station that also holds the separation
+  // rule was tried and is much worse: the first such station can be halfway to
+  // the island centre, and a lot teleported 440px to sit beside the great house
+  // on every seed. Minimum travel is the right rule for the walk; separation is
+  // repaired afterwards, where a bad move can be refused.
+  const snapped = relax(out, taken).map((l) => ({
     ...l,
     c: snapInland(l.c, onLand, toward) ?? l.c,
   }))
+  return relaxOnLand(snapped, taken, onLand)
 }
 
 /**
@@ -177,15 +197,13 @@ export function lotsAlong(
 const RELAX_ROUNDS = 12
 
 /**
- * THE RELAXATION HAS NO LAND TEST, DELIBERATELY. One was written and then
- * removed on measurement: refusing any push that would cross the waterline
- * changed 47 of 80 measured layouts on a shrunken island and improved nothing
- * measurable — the worst frontage drift was 207/218/277px with it and
- * 207/216/277px without, and every lot ends on land either way because the snap
- * runs afterwards. A branch that alters output while guarding no property is a
- * control nothing can test, which is worse than no control: it reads as
- * protection. The land invariant belongs to one place, snapInland, and one
- * place is where it can be proven.
+ * THE FIRST RELAXATION HAS NO LAND TEST, DELIBERATELY — it runs BEFORE the
+ * snap, so a lot it strands is a lot the snap then brings back, and a guard
+ * there would alter the output while guarding nothing (measured: 47 of 80
+ * layouts changed, worst frontage drift 207/218/277px with it against
+ * 207/216/277px without). The guard belongs to the relaxation that runs AFTER
+ * the snap, where it is the whole reason both invariants can hold at once —
+ * that one is relaxOnLand below.
  */
 function relax(lots: Lot[], taken: readonly Point[]): Lot[] {
   const cur = lots.map((l) => ({ ...l, c: { ...l.c } }))
@@ -203,6 +221,82 @@ function relax(lots: Lot[], taken: readonly Point[]): Lot[] {
       }
     }
     if (!moved) break
+  }
+  return cur
+}
+
+/**
+ * The separation repair that runs AFTER the snap. Two properties, both of them
+ * load-bearing and both provable rather than hoped for:
+ *
+ * ON LAND, BY CONSTRUCTION. A move is committed only if the destination is on
+ * land, so a lot that starts on land only ever steps onto land. "Every lot is
+ * on land" therefore survives a stage running after the snap, instead of
+ * depending on the snap being last.
+ *
+ * It spends the snap's 70px MARGIN, deliberately, and prefers not to: the full
+ * margin is tried first and a bare land test only when nothing else moves. The
+ * margin is snapInland's admission rule for an anchor arriving from the sea,
+ * not an invariant anything downstream asserts; two buildings sharing ground is
+ * a defect a viewer can see, and a lot 40px from the waterline is not — the
+ * building on it is walked inland by placeOnGround regardless. Measured with
+ * the margin held hard instead: the closest pair stalls at 67px because a lot
+ * on a shore strip has nowhere admissible to go, and a stacked pair survives.
+ *
+ * MONOTONE. A move is committed only if it strictly increases the moving lot's
+ * distance to its NEAREST neighbour. Only pairs involving that lot change, and
+ * after the move every one of them exceeds the distance the pass measured
+ * before it — so the closest pair in the whole set can only go up. The first
+ * version of this pass had neither test and was measurably worse than doing
+ * nothing: a push away from A landed on B, the push away from B landed back on
+ * A, and after the round budget it stopped mid-oscillation at 8.7px against the
+ * 59.8px it started from. A repair that can end worse than its input is not a
+ * repair, and a bounded loop is exactly where that hides.
+ *
+ * A lot with nowhere better to go does not move. That is the honest outcome for
+ * a genuinely over-subscribed shore: the pair stays close, auditLayout reports
+ * the stack, and no invariant is quietly traded for the other.
+ */
+function relaxOnLand(
+  lots: Lot[],
+  taken: readonly Point[],
+  onLand: (x: number, y: number) => boolean
+): Lot[] {
+  const cur = lots.map((l) => ({ ...l, c: { ...l.c } }))
+  const sep = (a: Point, b: Point) => hypot(a.x - b.x, (a.y - b.y) / 0.8)
+  const nearest = (p: Point, others: readonly Point[]) =>
+    others.reduce((m, o) => Math.min(m, sep(p, o)), Infinity)
+  // full margin first, bare land only if nothing moves — see the header
+  for (const margin of [SNAP_MARGIN, 0]) {
+    for (let round = 0; round < RELAX_ROUNDS; round++) {
+      let moved = false
+      for (let i = 0; i < cur.length; i++) {
+        const others = [...taken, ...cur.filter((_, j) => j !== i).map((l) => l.c)]
+        const before = nearest(cur[i].c, others)
+        if (before >= LOT_SEPARATION) continue
+        // push away from the closest offender — the one setting `before`
+        let worst: Point | null = null
+        let wd = Infinity
+        for (const o of others) {
+          const d = sep(cur[i].c, o)
+          if (d < wd) {
+            wd = d
+            worst = o
+          }
+        }
+        if (!worst) continue
+        const push = (LOT_SEPARATION - wd) / Math.max(1, wd)
+        const next = {
+          x: cur[i].c.x + (cur[i].c.x - worst.x) * push,
+          y: cur[i].c.y + (cur[i].c.y - worst.y) * push * 0.8,
+        }
+        if (!clearsMargin(next.x, next.y, onLand, margin)) continue
+        if (nearest(next, others) <= before) continue
+        cur[i].c = next
+        moved = true
+      }
+      if (!moved) break
+    }
   }
   return cur
 }

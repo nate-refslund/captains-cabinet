@@ -40,7 +40,15 @@ import {
   type LayoutState,
   type Point,
 } from './index'
-import { clipBlobToLand, snapInland, walkInland, waterField } from './index'
+import {
+  clearOfLane,
+  clipBlobToLand,
+  maxGroundOverlap,
+  paintField,
+  snapInland,
+  walkInland,
+  waterField,
+} from './index'
 import { groundBox, groundDiamond, groundOverlap } from '../projection'
 import { seededRng } from '../hash'
 
@@ -75,6 +83,46 @@ const camp = composeLayout(CAMP, 'acme-corp', FAST)
 
 /** Seeds used wherever a property must hold for more than one island. */
 const SEEDS = ['acme-corp', 'harbour', 'lantern', 'captains-cabinet', 'zeta']
+
+/**
+ * A WIDE seed set, for the properties five named islands cannot decide.
+ *
+ * Every defect this file has ever been re-opened for was found by a sweep and
+ * missed by SEEDS: the lot snap broke the 168px separation on 40 of 80 seeds
+ * and stacked two dwellings on org-13 while all five named seeds stayed clean,
+ * and nine scatter items stood in a crop plot on seeds nobody had composed.
+ * Five islands decide a property that is about the RULES; a property that is
+ * about the seed SPACE needs the space. These are cheap at step 8.
+ */
+const WIDE_SEEDS = Array.from({ length: 80 }, (_, i) => `org-${i}`)
+
+/** The state the sweeps run at: a full village, so every rule is in play. */
+const VILLAGE: LayoutState = {
+  era: 'hamlet',
+  road: 'gravel_road',
+  stages: {
+    great_house: 'timber_hall',
+    library: 'stone_hall',
+    workshop: 'forge',
+    outbuildings: 'barn',
+    well: 'stone_well',
+    market_stall: 'stall',
+    firepit: 'firepit',
+  },
+  counts: { officer_dwellings: 6, field_plots: 4 },
+}
+
+/** Closest pair of lot centres, in the rule's own y/0.8 metric. */
+function closestLotPair(l: Layout): number {
+  const cs = Object.values(l.lots).flat().map((lot) => lot.c)
+  let mn = Infinity
+  for (let a = 0; a < cs.length; a++) {
+    for (let b = a + 1; b < cs.length; b++) {
+      mn = Math.min(mn, Math.hypot(cs[a].x - cs[b].x, (cs[a].y - cs[b].y) / 0.8))
+    }
+  }
+  return mn
+}
 
 function sizeOfItem(kind: string) {
   return DEFAULT_FOOTPRINTS[kind] ?? { w: 96, h: 96 }
@@ -1209,6 +1257,233 @@ describe('a keep-out disc is an exclusion, not a density hint', () => {
         for (const p of blobExtentSamples(b)) expect(insideDisc(l, p)).toBe(true)
       }
     }
+  })
+})
+
+// ── the rules that five seeds cannot decide ────────────────────────────────
+
+describe('the seed SPACE, not five islands', () => {
+  it('the land snap does not undo the separation it runs after', () => {
+    // THE ARM THE REGRESSION NEEDED. Snapping a lot inland pulls it toward the
+    // island centre — and so does its neighbour's snap, so a row relaxed to
+    // exactly 168px closes up behind itself. Measured when the snap was added
+    // with no repair: 40 of 80 seeds under the rule, worst 59.8px, and two
+    // officer dwellings sharing ground on org-13. Every one of the five named
+    // seeds was clean, which is why the sweep is the sensor and not SEEDS.
+    //
+    // TWO NUMBERS, because one of them cannot see half the defect. Measured on
+    // this exact sweep, with each guard disabled in turn:
+    //
+    //                                     worst pair   seeds under the rule
+    //   as built                             67.2px            5 / 80
+    //   the repair pass removed              64.2px           42 / 80   <- the regression
+    //   its monotone test removed            42.2px            5 / 80
+    //   its second (bare-land) phase removed 67.2px           32 / 80
+    //
+    // The worst pair barely moves when the pass is deleted — a floor alone
+    // would have been a green tick over the defect it was written for — while
+    // the count moves 8x. And the count barely moves when the monotone test is
+    // deleted, while the worst pair collapses. Both, or neither works.
+    let worst = Infinity
+    let worstSeed = ''
+    let under = 0
+    for (const seed of WIDE_SEEDS) {
+      const l = composeLayout(VILLAGE, seed, FAST)
+      expect(Object.values(l.lots).flat().length).toBeGreaterThan(6) // not vacuous
+      const d = closestLotPair(l)
+      if (d < LOT_SEPARATION - 0.1) under++
+      if (d < worst) {
+        worst = d
+        worstSeed = seed
+      }
+    }
+    expect({ worstSeed, worstOk: worst > 60, under }).toEqual({
+      worstSeed,
+      worstOk: true,
+      under: expect.any(Number),
+    })
+    expect(under).toBeLessThanOrEqual(10)
+  })
+
+  it('no two structures share ground on ANY seed, not just the demo island', () => {
+    // auditLayout reported a stacked pair on org-13 for a whole review cycle
+    // while the only stacking arm composed one seed.
+    for (const seed of WIDE_SEEDS) {
+      const l = composeLayout(VILLAGE, seed, FAST)
+      expect(l.structures.length).toBeGreaterThan(6) // not vacuous
+      expect({ seed, stacked: auditLayout(l).stacked }).toEqual({ seed, stacked: [] })
+    }
+  })
+
+  it('the road-wins fallback takes the SLIGHTEST stack, not the first one', () => {
+    // clearOfLane may only fall back to shared ground when nothing is clear —
+    // and then it has to rank. Two occupants, one barely overlapping and one
+    // heavily: with the ring boxed in by lanes, the answer must be the light one.
+    const size = { w: 150, h: 150 }
+    const at = { x: 1000, y: 1000 }
+    const lanes = buildLaneField([
+      { key: 'wall', kind: 'main', width: 200, runs: [[at]] },
+    ])
+    expect(footprintOnLane(at, size, lanes)).toBe(true) // the search must engage
+    // exactly two pockets of land within reach, and both are occupied — so the
+    // ring cannot return anything clear and MUST rank its fallbacks
+    const EAST = { x: 1197, y: 1000 }
+    const WEST = { x: 803, y: 1000 }
+    const onLand = (x: number, y: number) =>
+      Math.hypot(x - EAST.x, y - EAST.y) < 15 || Math.hypot(x - WEST.x, y - WEST.y) < 15
+    const heavy = { at: EAST, size } //  the ring reaches this one FIRST
+    const light = { at: { x: WEST.x + 100, y: WEST.y }, size }
+    expect(maxGroundOverlap(EAST, size, [heavy])).toBeGreaterThan(0.9)
+    expect(maxGroundOverlap(WEST, size, [light])).toBeGreaterThan(0.16)
+    expect(maxGroundOverlap(WEST, size, [light])).toBeLessThan(0.5)
+    const landed = clearOfLane(at, size, lanes, onLand, [heavy, light], { reach: 400 })
+    // it took the west pocket: the lighter stack, not the one it met first
+    expect(maxGroundOverlap(landed, size, [heavy, light])).toBeLessThan(0.5)
+    expect(Math.abs(landed.x - WEST.x)).toBeLessThan(15)
+    // and it really is off the road, which is the constraint that wins
+    expect(footprintOnLane(landed, size, lanes)).toBe(false)
+  })
+
+  it('nothing is planted on the plaza or in a plot ACROSS THE SWEEP', () => {
+    // The five-seed arm above passed while nine shore-band items (reeds,
+    // rock_small, rock_cluster) stood in the east crop plot, whose outer rim
+    // reaches past every keep-out disc. The property was carried incidentally
+    // by the discs, and incidental coverage is not coverage.
+    for (const seed of WIDE_SEEDS) {
+      const l = composeLayout(VILLAGE, seed, FAST)
+      expect(l.paint.some((r) => r.kind === 'crop' || r.kind === 'ploughed')).toBe(true)
+      const on = l.scatter.filter((s) => insidePaint(l, ['plaza', 'crop', 'ploughed', 'pond'], s.at))
+      expect({ seed, on: on.map((s) => `${s.kind}@${s.at.x.toFixed(0)},${s.at.y.toFixed(0)}`) }).toEqual({
+        seed,
+        on: [],
+      })
+    }
+  })
+
+  it('paintField answers about the painted region, and is empty when nothing is painted', () => {
+    // negative twin for the term above: a predicate that returns false
+    // everywhere would also make the sweep pass
+    const l = composeLayout(VILLAGE, 'org-9', FAST)
+    const plots = paintField(l.paint, ['crop', 'ploughed'])
+    const b = l.paint.find((r) => r.kind === 'crop' || r.kind === 'ploughed')!.blobs[0]
+    expect(plots(b.c.x, b.c.y)).toBe(true)
+    expect(plots(60, 60)).toBe(false)
+    expect(paintField([], ['crop'])(1548, 1218)).toBe(false)
+    // and it is keyed on KIND — the pond is not a plot
+    expect(paintField(l.paint, ['crop', 'ploughed'])(612, 1086)).toBe(false)
+  })
+})
+
+// ── the rules that had no sensor at all ────────────────────────────────────
+
+describe('rules that were stated and never measured', () => {
+  it('a blob with WATER INSIDE IT is rejected even when its whole rim is land', () => {
+    // The clip probes a rim AND an interior lattice, and the interior half had
+    // no arm: deleting it left all 74 arms green. It is not decoration —
+    // replaying the clip over 84,336 (rim, interior) evaluations across seeds
+    // and island sizes, the interior was the deciding probe 13 times, on the
+    // default island (org-1 and org-3 ponds, org-2 ploughed, org-24 plaza).
+    // A lagoon is the shape that does it: land all the way round, water in the
+    // middle, which a rim-only test calls solid ground.
+    // A MOAT, not a lagoon: the centre has to be LAND, or the clip's separate
+    // centre test does the work and the lattice is still unmeasured. (Written
+    // as a lagoon first — it passed with the lattice deleted, which is the same
+    // dead-sensor shape this arm exists to close.)
+    const moat = (x: number, y: number) => {
+      const d = Math.hypot(x - 1000, y - 1000)
+      return d < 40 || (d > 120 && d < 300)
+    }
+    expect(moat(1000, 1000)).toBe(true) // centre: land
+    // the rim at r=200 is entirely on land, so a rim-only clip keeps it whole
+    for (let i = 0; i < 90; i++) {
+      const a = (i * Math.PI * 2) / 90
+      expect(moat(1000 + Math.cos(a) * 200, 1000 + Math.sin(a) * 200)).toBe(true)
+    }
+    const clipped = clipBlobToLand({ c: { x: 1000, y: 1000 }, rx: 200, ry: 200 }, moat)
+    // ...and the clip must not: the ring of water at 40<d<120 is inside it, so
+    // the blob is shrunk back inside the keep rather than painted over the moat
+    expect(clipped).not.toBeNull()
+    expect(clipped!.rx).toBeLessThan(40)
+    // measured independently of the clip's own probe, as the extent arms are
+    for (const p of blobExtentSamples(clipped!)) expect(moat(p.x, p.y)).toBe(true)
+    // the same blob on solid ground survives untouched, so the null is the
+    // interior probe and not an unrelated refusal
+    expect(clipBlobToLand({ c: { x: 1000, y: 1000 }, rx: 200, ry: 200 }, () => true)).toEqual({
+      c: { x: 1000, y: 1000 },
+      rx: 200,
+      ry: 200,
+    })
+    // and a blob with no land at all under it is DROPPED, so the shrink is not
+    // the only outcome this function has
+    expect(clipBlobToLand({ c: { x: 1000, y: 1000 }, rx: 200, ry: 200 }, () => false)).toBeNull()
+  })
+
+  it('a lane with NO on-land run is dropped, not emitted empty', () => {
+    // lanes.ts states it; nothing measured it. Reachable through the public
+    // radii option: measured 448 lane drops across the island sizes this suite
+    // already composes, and the drive gate below reads the surviving key set —
+    // so a lane kept as an empty husk would put a drive on a road that is not
+    // there, which is the defect the era gate exists for.
+    const eastOnly = (x: number, _y: number) => x > 1300
+    const lanes = buildLanes('hamlet', 'gravel_road', eastOnly)
+    expect(lanes.length).toBeGreaterThan(0) // not vacuous
+    expect(lanes.map((l) => l.key)).not.toContain('west')
+    expect(lanes.map((l) => l.key)).not.toContain('coastal')
+    for (const lane of lanes) {
+      expect(lane.runs.length).toBeGreaterThan(0)
+      for (const p of lane.runs.flat()) expect(eastOnly(p.x, p.y)).toBe(true)
+    }
+    // and with land everywhere the whole network survives, so the drop is the
+    // land test rather than the era gate doing it
+    expect(buildLanes('hamlet', 'gravel_road', () => true)).toHaveLength(LANE_SPECS.length)
+  })
+
+  it('a drive with no on-land run is not emitted either', () => {
+    // index.ts states it; nothing measured it. On a small island the officer
+    // row's drives run off the shore — measured 293 unemitted drives across the
+    // island sizes above. A Driveway with no painted run is a record of paint
+    // that does not exist.
+    const full = composeLayout(VILLAGE, 'acme-corp', FAST)
+    expect(full.driveways).toHaveLength(9)
+    let dropped = 0
+    for (const hw of [560, 460, 360]) {
+      for (const seed of ['acme-corp', 'zeta', 'org-3']) {
+        const l = composeLayout(VILLAGE, seed, {
+          coastline: { step: 8, radii: { hw, vh: Math.round((hw * 784) / 962) } },
+        })
+        dropped += 9 - l.driveways.length
+        // every drive that IS emitted has a run, and every sample is on land
+        for (const lane of l.lanes.filter((x) => x.kind === 'driveway')) {
+          expect(lane.runs.length).toBeGreaterThan(0)
+          for (const p of lane.runs.flat()) expect(l.coast.landAt(p.x, p.y)).toBe(true)
+        }
+      }
+    }
+    expect(dropped).toBeGreaterThan(0)
+  })
+
+  it('the water audit measures SCATTER too, not only structures', () => {
+    // The negative twin for the water audit injected a structure and never a
+    // scatter item, so blanking the scatter half left every arm green. Each
+    // half is probed by its own rule's convention — structures at y-2 (the
+    // reference's, for a base sitting on the waterline row), scatter at y —
+    // and both halves therefore need their own proof.
+    const sea = { x: 60, y: 60 }
+    expect(hamlet.coast.landAt(sea.x, sea.y)).toBe(false)
+    const drowned = {
+      ...hamlet,
+      structures: [],
+      scatter: [{ kind: 'tree_oak', at: sea, flip: false, size: { w: 150, h: 150 } }],
+    }
+    expect(auditLayout(drowned).inWater).toEqual([{ kind: 'tree_oak', at: sea }])
+    // and a scatter item on land is not reported, so it is the water test
+    const dry = {
+      ...hamlet,
+      structures: [],
+      scatter: [{ kind: 'tree_oak', at: { x: 1200, y: 800 }, flip: false, size: { w: 150, h: 150 } }],
+    }
+    expect(hamlet.coast.landAt(1200, 800)).toBe(true)
+    expect(auditLayout(dry).inWater).toEqual([])
   })
 })
 

@@ -482,6 +482,7 @@ export function composeLayout(
     districts,
     wildness,
     inWater: waterField(paint),
+    onPaving: paintField(paint, ['plaza', 'crop', 'ploughed']),
     sizeOf,
     village,
     camp,
@@ -580,7 +581,33 @@ export function clipBlobToLand(
  * that was intended.
  */
 export function waterField(paint: readonly PaintRegion[]): (x: number, y: number) => boolean {
-  const blobs = paint.filter((r) => r.kind === 'pond').flatMap((r) => r.blobs)
+  return paintField(paint, ['pond'])
+}
+
+/**
+ * Is this point inside a painted region of one of these kinds?
+ *
+ * A PAVED SQUARE AND A TILLED PLOT ARE SURFACES, NOT SPACING HINTS — the same
+ * argument the keep-out discs needed. Until 2026-07-27 nothing tested for them
+ * at all: the property "no tree on the plaza, no reed in the crop" was carried
+ * incidentally by whichever district disc happened to overlap the region, and
+ * it LEAKED wherever one did not. Measured across 80 seeds with the discs
+ * enforced: 9 shore-band items (reeds, rock_small, rock_cluster) standing in a
+ * crop plot, all of them on the east plot's outer rim at x>=1900, which lies
+ * outside every disc — and 2 of those survive at the production coastline step.
+ * The arm named for the property ran five seeds and passed over all nine.
+ *
+ * It is the port's own term, not the reference's: compose.py can afford to
+ * leave the plots to its KEEPOUT list because by planting time that list also
+ * carries every fenced plot, hedgerow and outbuilding it drew over them, none
+ * of which is ported. This layout emits the regions as data, so it can just say
+ * so — and a claim in a test name has to be a rule somewhere or it is decoration.
+ */
+export function paintField(
+  paint: readonly PaintRegion[],
+  kinds: readonly PaintKind[]
+): (x: number, y: number) => boolean {
+  const blobs = paint.filter((r) => kinds.includes(r.kind)).flatMap((r) => r.blobs)
   if (blobs.length === 0) return () => false
   return (x, y) =>
     blobs.some((b) => ((x - b.c.x) / b.rx) ** 2 + ((y - b.c.y) / b.ry) ** 2 <= 1)
@@ -682,6 +709,8 @@ interface PlantCtx {
   wildness: DensityField
   /** compose.py in_water(): the pond that was actually painted. */
   inWater: (x: number, y: number) => boolean
+  /** The paved square and the tilled plots that were actually painted. */
+  onPaving: (x: number, y: number) => boolean
   sizeOf: (kind: string) => Footprint
   village: boolean
   camp: boolean
@@ -712,13 +741,22 @@ function plant(seed: number, ctx: PlantCtx): PlacedItem[] {
    * the dependency with an arm asserting the pond's disc still covers the pond,
    * so the day the two part company the suite says so instead of the planting
    * quietly arriving in the water.
+   *
+   * THE PAVING TERM IS NOT REDUNDANT, which is how it was found: the same
+   * incidental-coverage argument was made for the plaza and the plots, and it
+   * was false. 9 items across 80 seeds stood in a crop plot whose outer rim
+   * reaches past every disc (see paintField). Both terms now exist for the same
+   * reason, and only one of them is quiet.
    */
   const inDistrict = (x: number, y: number) =>
     ctx.districts.some(
       (d) => (x - d.at.x) ** 2 + ((y - d.at.y) * 1.35) ** 2 < d.r * d.r
     )
   const free = (x: number, y: number) =>
-    !ctx.laneField.nearLane(x, y, 34) && !ctx.inWater(x, y) && !inDistrict(x, y)
+    !ctx.laneField.nearLane(x, y, 34) &&
+    !ctx.inWater(x, y) &&
+    !ctx.onPaving(x, y) &&
+    !inDistrict(x, y)
   const inner = (x: number, y: number) => ctx.coast.isInner(x, y) && free(x, y)
 
   const pass = (
@@ -776,6 +814,7 @@ function plant(seed: number, ctx: PlantCtx): PlacedItem[] {
       ctx.laneField.nearLane(x, y, 96) &&
       !ctx.laneField.nearLane(x, y, 62) &&
       !ctx.inWater(x, y) &&
+      !ctx.onPaving(x, y) &&
       !inDistrict(x, y)
     pass('verge', VERGE_KINDS, verge, () => 0.7, 88, 130, 34)
   }

@@ -99,11 +99,29 @@ export function groundTaken(
   occupied: readonly Occupant[],
   frac = 0.16
 ): boolean {
+  return maxGroundOverlap(at, size, occupied) > frac
+}
+
+/**
+ * The worst ground-diamond overlap this spot has with anything already standing
+ * — the same quantity groundTaken thresholds, before the threshold.
+ *
+ * It exists because "is this taken?" is the wrong question when NOTHING is
+ * free: clearOfLane's fallback then has to choose between spots that are all
+ * taken, and a boolean cannot rank them.
+ */
+export function maxGroundOverlap(
+  at: Point,
+  size: Footprint,
+  occupied: readonly Occupant[]
+): number {
   const a = groundBox(at.x, at.y, size.w, size.h)
+  let worst = 0
   for (const o of occupied) {
-    if (groundOverlap(a, occupantBox(o)) > frac) return true
+    const v = groundOverlap(a, occupantBox(o))
+    if (v > worst) worst = v
   }
-  return false
+  return worst
 }
 
 /** Where "inland" is when nothing says otherwise: the island centre. */
@@ -140,6 +158,33 @@ export function walkInland(
   return null
 }
 
+/** compose.py snap()'s margin: how much ground an anchor must clear each way. */
+export const SNAP_MARGIN = 70
+
+/**
+ * The ground test snapInland accepts a station on: the point AND its margin in
+ * every direction (compose.py:879-880).
+ *
+ * Exported because a second stage — the post-snap separation relaxation in
+ * lots.ts — has to move a lot only to ground the snap would also have taken,
+ * and two copies of that predicate is how the two stages drift into disagreeing
+ * about where land is.
+ */
+export function clearsMargin(
+  x: number,
+  y: number,
+  onLand: (x: number, y: number) => boolean,
+  margin = SNAP_MARGIN
+): boolean {
+  return (
+    onLand(x, y) &&
+    onLand(x, y + margin) &&
+    onLand(x - margin, y) &&
+    onLand(x + margin, y) &&
+    onLand(x, y - margin)
+  )
+}
+
 /**
  * Pull an ANCHOR inland until it and its footprint sit on land (compose.py
  * snap(), :870-883).
@@ -159,20 +204,14 @@ export function snapInland(
   at: Point,
   onLand: (x: number, y: number) => boolean,
   toward: Point = ISLAND_CENTRE,
-  margin = 70,
+  margin = SNAP_MARGIN,
   steps = 60
 ): Point | null {
   for (let t = 0; t <= steps; t++) {
     const f = t / steps
     const x = at.x + (toward.x - at.x) * f
     const y = at.y + (toward.y - at.y) * f
-    if (
-      onLand(x, y) &&
-      onLand(x, y + margin) &&
-      onLand(x - margin, y) &&
-      onLand(x + margin, y) &&
-      onLand(x, y - margin)
-    ) {
+    if (clearsMargin(x, y, onLand, margin)) {
       // The reference rounds to whole pixels here because it is about to draw
       // on a bitmap. This library is float layout space, and rounding moved a
       // lot off the exact 168px separation it had just been relaxed to — a
@@ -252,6 +291,14 @@ export interface ClearOfLaneOptions {
  * The `fallback` is the reference's and it matters: a spot that is off the
  * road but shares ground is remembered and used only if NOTHING fully clear
  * exists — because the road wins, and a slight stack beats a blocked lane.
+ *
+ * AND IT IS THE SLIGHTEST STACK AVAILABLE, not the first one the ring happened
+ * to find. Two neighbouring lots on a crowded shore ran the same deterministic
+ * ring search, both fell through to the fallback, and both took the same first
+ * off-road spot — two officer dwellings 5px apart on org-13, which auditLayout
+ * reported and no arm covered. "A slight stack beats a blocked lane" is only an
+ * argument for the SLIGHTEST one; ranking the candidates by shared ground costs
+ * one number and is what the sentence already claimed.
  */
 export function clearOfLane(
   at: Point,
@@ -266,14 +313,21 @@ export function clearOfLane(
   const frac = opts.frac ?? 0.16
   if (!footprintOnLane(at, size, lanes)) return at
   let fallback: Point | null = null
+  let fallbackOverlap = Infinity
   for (let r = 8; r < reach; r += 7) {
     for (let i = 0; i < 16; i++) {
       const ang = (i * Math.PI * 2) / 16
       const p = { x: at.x + Math.cos(ang) * r, y: at.y + Math.sin(ang) * r * 0.66 }
       if (!onLand(p.x, p.y) || footprintOnLane(p, size, lanes)) continue
-      if (respect && groundTaken(p, size, occupied, frac)) {
-        if (!fallback) fallback = p
-        continue
+      if (respect) {
+        const overlap = maxGroundOverlap(p, size, occupied)
+        if (overlap > frac) {
+          if (overlap < fallbackOverlap) {
+            fallbackOverlap = overlap
+            fallback = p
+          }
+          continue
+        }
       }
       return p
     }
