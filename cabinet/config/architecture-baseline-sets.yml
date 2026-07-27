@@ -1,0 +1,531 @@
+# architecture-baseline-sets.yml — the MEMBER sets the expansion registry
+# measures surplus against.
+# =============================================================================
+# Read by cabinet/scripts/cognitive-architecture-census.py together with
+# cabinet/config/cognitive-architecture-contract.yml. The contract pins how MANY
+# members each class may hold; this file pins WHICH members were already there.
+# The census requires, per class:
+#
+#     observed - baseline  ==  {row.member for row in contract.expansions}
+#
+# exactly and disjointly — a bijection, not a presence check. A net-new member
+# with no row is RED. A row naming a member that is not observed (the stale
+# copy-paste) is RED. A row naming a member that is already in the baseline (the
+# laundering edit) is RED. Two rows naming one member are refused outright.
+#
+# WHY A SNAPSHOT AND NOT A DERIVATION: the census must run in a gitless clean
+# hatch (its own docstring), so it cannot ask git what the tree looked like
+# before. The baseline is therefore data, hand-maintained, and deliberately
+# ships with NO regenerator script: a one-command "refresh the baseline" is
+# exactly the laundering path the registry exists to close, and the count
+# budgets in the contract are what stop a hand edit here from buying anything —
+# every class is pinned at observed==max with zero headroom, so adding a member
+# to this file WITHOUT raising the matching maximum still REDs the census.
+#
+# HONEST SCOPE — the members below were NOT adjudicated by this gate. They are
+# the tree as it stood when the registry landed; the registry makes no claim
+# about anything that predates it. It binds what comes next.
+#
+# NOT COVERED, and stated so no reader mistakes coverage for completeness:
+#   * framework_production_noncomment_lines is a MASS, not a set — growth inside
+#     an existing module is invisible here and stays on temporary_allowances.
+#   * named_compiler_modules is pinned at 1 with a declared invariant behind it
+#     (no_global_database_bus_or_compiler); a second one is already impossible.
+#   * layer_debt_entries / layer_allowlist_entries are the shrink-only ratchets
+#     owned by cabinet/scripts/check-layer-separation.sh.
+#
+# ONE FRICTION, so the next author is not surprised by it: this file NAMES every
+# framework module, which means a module living under a zero-consumers shadow
+# law (evidence_calibration, evidence_detectors, evidence_recompute today) trips
+# that law's whole-tree grep the moment it is listed here. The fix is the guard's
+# own sanctioned allowlist entry with a why — a member-name row in a data file is
+# never an import and never a consumer — added in the SAME landing as the module.
+# Never mangle a member id to dodge a grep: that buys a green with the data a
+# later reader needs, which is the same trade as reformatting docstrings into
+# comments to duck a line counter.
+#
+# Provenance: the 2026-07-27 two-model expansion-gate adjudication (Fable 5 +
+# Opus 5, blind, own clones), per the 2026-07-07 full-autonomy grant.
+schema_version: architecture-baseline-sets/v1
+# The tree this snapshot was taken from. Provenance only — the census is gitless
+# and never resolves it.
+snapshot_of: 0ab0cc2bbef586e71b142854f44b58b676a96678
+classes:
+  central_event_types:
+  - account_flow_surfaced
+  - cap_alarm
+  - capability_gap_approved
+  - capability_gap_classified
+  - capability_gap_declined
+  - capability_gap_merged
+  - capability_gap_proposed
+  - capability_gap_recorded
+  - capability_gap_resolved
+  - captain_boundary_set
+  - captain_decision_logged
+  - captain_gate_bounced
+  - captain_goal_declared
+  - captain_outcome_ratified
+  - digest_published
+  - doctor_verdict
+  - eval_failed
+  - eval_passed
+  - eval_run_started
+  - evidence_mirror_degraded
+  - experience_recorded
+  - fidelity_case_evaluated
+  - fidelity_case_labeled
+  - fidelity_case_leak_detected
+  - fidelity_case_scored
+  - germline_relock_observed
+  - germline_unlock_observed
+  - graduation_transition
+  - kill_switch_activated
+  - kill_switch_deactivated
+  - kind_frozen
+  - kind_unfrozen
+  - memory_claim_created
+  - memory_claim_superseded
+  - mission_activated
+  - mission_completed
+  - mission_created
+  - mission_failed
+  - need_approved
+  - need_denied
+  - need_escalated
+  - need_expired
+  - need_filed
+  - need_granted
+  - need_snoozed
+  - notification_received
+  - officer_limit_wake
+  - officer_restarted
+  - officer_session_compacted
+  - officer_session_ended
+  - officer_session_started
+  - outbox_dispatched
+  - outbox_failed
+  - outbox_queued
+  - ovi_snapshot_computed
+  - policy_blocked
+  - policy_evaluated
+  - policy_updated
+  - posture_cap_cleared
+  - posture_cap_narrowed
+  - posture_changed
+  - role_authority_changed
+  - role_capability_added
+  - role_capability_removed
+  - role_charter_changed
+  - role_created
+  - role_evolved
+  - role_hat_assigned
+  - role_hat_promoted
+  - role_hat_removed
+  - role_reactivated
+  - role_retired
+  - role_suspended
+  - self_improvement_loop_completed
+  - self_improvement_loop_started
+  - self_proposal_prepared
+  - session_ended
+  - session_started
+  - skill_promoted
+  - spending_limit_reached
+  - subagent_completed
+  - trust_rung_granted
+  - trust_rung_proposed
+  - watchdog_outcome_failed
+  - work_item_assigned
+  - work_item_completed
+  - work_item_created
+  - work_item_failed
+  - work_item_started
+  - work_item_unroutable
+  - work_item_verified
+  central_action_types:
+  - ambiguous
+  - billing
+  - board_status
+  - calendar_event_create
+  - draft_only
+  - env_write
+  - external_email
+  - external_message
+  - git_push_main
+  - git_push_nonmain
+  - internal_email
+  - internal_message
+  - investigation_run
+  - label
+  - local_edit
+  - mcp_delete
+  - mcp_post
+  - mcp_put
+  - oauth_grant
+  - officer_dispatch
+  - provision_paid
+  - purchase
+  - secret_read
+  - secret_write
+  - task_create
+  - task_status_move
+  - tier2_note
+  - token_grant
+  - vercel_deploy_preview
+  - vercel_deploy_prod
+  services_total:
+  - actfirst-canary
+  - action-lane
+  - apoptosis-sweep
+  - authority-transitions
+  - backlog-refine
+  - backup
+  - cabinet-doctor
+  - calendar-intake
+  - cog3-shadow-dividend
+  - cog3-verdict-inbox
+  - cog4-organ-runner
+  - cos-inbound
+  - dashboard
+  - dependency-radar
+  - due-at-reminder-tick
+  - evidence-anchor
+  - evidence-recompute
+  - evidence-shadow-detectors
+  - evidence-signing-broker
+  - exhaust-archive
+  - falsifier-daily
+  - fidelity-f1
+  - frontdoor-briefing
+  - graduation-transitions
+  - healthchecks-drill
+  - intake-surface
+  - killswitch-watchdog
+  - ledger-liveness
+  - limit-reset-watchdog
+  - memory-contradictions
+  - memory-curator-health
+  - memory-reconcile
+  - memory-supersede-apply
+  - memory-worker
+  - mission-supervisor
+  - officer-lifecycle-transitions
+  - officer-supervisor-mac
+  - outcome-watchdog
+  - probe-github
+  - probe-sentry
+  - probe-vercel
+  - regression-corpus
+  - research-sweep
+  - retrieval-eval
+  - retro-trigger
+  - self-improvement-loop
+  - status-sweep
+  - surface-pin
+  - task-sync
+  - task-sync-drift
+  - transcript-digest
+  - undo-sweep
+  - verifier
+  - world-chronicle
+  services_enabled:
+  - actfirst-canary
+  - action-lane
+  - apoptosis-sweep
+  - authority-transitions
+  - backlog-refine
+  - backup
+  - cabinet-doctor
+  - calendar-intake
+  - cog3-shadow-dividend
+  - cog3-verdict-inbox
+  - cog4-organ-runner
+  - cos-inbound
+  - dashboard
+  - dependency-radar
+  - due-at-reminder-tick
+  - evidence-recompute
+  - evidence-shadow-detectors
+  - exhaust-archive
+  - falsifier-daily
+  - fidelity-f1
+  - frontdoor-briefing
+  - graduation-transitions
+  - healthchecks-drill
+  - intake-surface
+  - killswitch-watchdog
+  - ledger-liveness
+  - limit-reset-watchdog
+  - memory-contradictions
+  - memory-reconcile
+  - memory-supersede-apply
+  - memory-worker
+  - officer-lifecycle-transitions
+  - officer-supervisor-mac
+  - outcome-watchdog
+  - probe-github
+  - probe-sentry
+  - probe-vercel
+  - regression-corpus
+  - research-sweep
+  - retrieval-eval
+  - retro-trigger
+  - self-improvement-loop
+  - status-sweep
+  - surface-pin
+  - task-sync
+  - task-sync-drift
+  - transcript-digest
+  - undo-sweep
+  - verifier
+  - world-chronicle
+  framework_production_modules:
+  - framework/acting/__init__.py
+  - framework/acting/action_lane.py
+  - framework/acting/draft_queue.py
+  - framework/acting/draft_reconcile.py
+  - framework/acting/fire_gate.py
+  - framework/acting/lane_dedup.py
+  - framework/acting/loop.py
+  - framework/acting/product_health.py
+  - framework/acting/run_action_lane.py
+  - framework/acting/run_draft_lane.py
+  - framework/acting/voice_charset.py
+  - framework/attention/__init__.py
+  - framework/attention/acted_overlay.py
+  - framework/attention/advisor.py
+  - framework/attention/charter.py
+  - framework/attention/escalation.py
+  - framework/attention/feed.py
+  - framework/attention/gate.py
+  - framework/attention/hygiene.py
+  - framework/attention/plain.py
+  - framework/attention/queue.py
+  - framework/attention/queue_card.py
+  - framework/attention/situation.py
+  - framework/attention/situations.py
+  - framework/attention/t2.py
+  - framework/attention/verdicts.py
+  - framework/authority/__init__.py
+  - framework/authority/action_mode.py
+  - framework/authority/classifier.py
+  - framework/authority/deploy_classifier.py
+  - framework/authority/grants.py
+  - framework/authority/lane.py
+  - framework/authority/matrix.py
+  - framework/authority/needs.py
+  - framework/authority/policy_engine.py
+  - framework/authority/posture.py
+  - framework/authority/veto.py
+  - framework/channels/__init__.py
+  - framework/channels/contract.py
+  - framework/channels/mocks.py
+  - framework/channels/outlook.py
+  - framework/channels/slack.py
+  - framework/channels/teams.py
+  - framework/comms/__init__.py
+  - framework/comms/adapters/__init__.py
+  - framework/comms/adapters/null.py
+  - framework/comms/adapters/telegram.py
+  - framework/comms/channel_adapter.py
+  - framework/comms/get_channel.py
+  - framework/comms/mcp/__init__.py
+  - framework/comms/mcp/server.py
+  - framework/comms/surface/__init__.py
+  - framework/comms/surface/briefing_card.py
+  - framework/comms/surface/config.py
+  - framework/comms/surface/decision_card.py
+  - framework/comms/surface/digest.py
+  - framework/comms/surface/engine.py
+  - framework/comms/surface/killswitch_card.py
+  - framework/comms/surface/links.py
+  - framework/comms/surface/overview_card.py
+  - framework/comms/surface/pacing.py
+  - framework/comms/surface/pin_lifecycle.py
+  - framework/comms/surface/tap_wire.py
+  - framework/comms/tools.py
+  - framework/cortex/__init__.py
+  - framework/cortex/adapters.py
+  - framework/cortex/belief.py
+  - framework/cortex/engine.py
+  - framework/cortex/query.py
+  - framework/cost/__init__.py
+  - framework/cost/meter.py
+  - framework/cost/record_lane.py
+  - framework/cost/record_turn.py
+  - framework/env.py
+  - framework/events/__init__.py
+  - framework/events/emitter.py
+  - framework/evidence/__init__.py
+  - framework/evidence/__main__.py
+  - framework/evidence/classification.py
+  - framework/evidence/dogfood.py
+  - framework/evidence/identity.py
+  - framework/evidence/lifecycle.py
+  - framework/evidence/policy.py
+  - framework/evidence/query.py
+  - framework/evidence/recorder.py
+  - framework/evidence/redaction.py
+  - framework/evidence/signing.py
+  - framework/evidence/verifier.py
+  - framework/evidence_anchor.py
+  - framework/evidence_calibration.py
+  - framework/evidence_detectors.py
+  - framework/evidence_freeze.py
+  - framework/evidence_fuel_integrity.py
+  - framework/evidence_mirror.py
+  - framework/evidence_recompute.py
+  - framework/evidence_signing_broker.py
+  - framework/evolution/__init__.py
+  - framework/evolution/contracts.py
+  - framework/fidelity/__init__.py
+  - framework/fidelity/aggregate.py
+  - framework/fidelity/benchmark.py
+  - framework/fidelity/consequence.py
+  - framework/fidelity/decision_cell.py
+  - framework/fidelity/fidelity_events.py
+  - framework/fidelity/graduation.py
+  - framework/fidelity/intent_report.py
+  - framework/fidelity/judge_calibration.py
+  - framework/fidelity/leakguard.py
+  - framework/fidelity/measure_intent.py
+  - framework/fidelity/oauth_llm.py
+  - framework/fidelity/officer_prompt.py
+  - framework/fidelity/officer_runner.py
+  - framework/fidelity/prediction_scorer.py
+  - framework/fidelity/regression_corpus_lib.py
+  - framework/fidelity/regression_gate.py
+  - framework/fidelity/retro.py
+  - framework/fidelity/run_e2e_smoke.py
+  - framework/fidelity/run_f1.py
+  - framework/fidelity/scorer.py
+  - framework/fidelity/sim_runner.py
+  - framework/fidelity/types.py
+  - framework/frontdoor/__init__.py
+  - framework/frontdoor/actfirst_canary.py
+  - framework/frontdoor/action_exec.py
+  - framework/frontdoor/action_language.py
+  - framework/frontdoor/action_lessons.py
+  - framework/frontdoor/action_reconcile.py
+  - framework/frontdoor/action_undo.py
+  - framework/frontdoor/attention_drain.py
+  - framework/frontdoor/binder_wire.py
+  - framework/frontdoor/calendar_delete.py
+  - framework/frontdoor/calendar_read.py
+  - framework/frontdoor/calendar_template.py
+  - framework/frontdoor/card_flatline.py
+  - framework/frontdoor/chair_drafts.py
+  - framework/frontdoor/channel.py
+  - framework/frontdoor/charter_amend.py
+  - framework/frontdoor/composer.py
+  - framework/frontdoor/daily_recap.py
+  - framework/frontdoor/intake.py
+  - framework/frontdoor/morning_synthesis.py
+  - framework/frontdoor/reply_binder.py
+  - framework/frontdoor/run_briefing.py
+  - framework/frontdoor/run_frontdoor.py
+  - framework/frontdoor/signal_discriminator.py
+  - framework/frontdoor/surface.py
+  - framework/frontdoor/tell_digest.py
+  - framework/frontdoor/tell_surface.py
+  - framework/frontdoor/veto_registry.py
+  - framework/hygiene/__init__.py
+  - framework/hygiene/apoptosis.py
+  - framework/learning/__init__.py
+  - framework/learning/apply_watch.py
+  - framework/learning/capability_gaps.py
+  - framework/learning/experience.py
+  - framework/learning/gate.py
+  - framework/learning/grant_seeker.py
+  - framework/learning/preference_pairs.py
+  - framework/learning/self_improvement_loop.py
+  - framework/learning/self_proposal.py
+  - framework/learning/skill_induction.py
+  - framework/learning/trust_ladder.py
+  - framework/liveness/__init__.py
+  - framework/liveness/deadman.py
+  - framework/measurement/__init__.py
+  - framework/measurement/_eval_registry.py
+  - framework/measurement/_scenario_registry.py
+  - framework/measurement/eval_pattern_detector.py
+  - framework/measurement/role_eval_runner.py
+  - framework/measurement/scenario_runner.py
+  - framework/missions/__init__.py
+  - framework/missions/compiler.py
+  - framework/missions/session_bridge.py
+  - framework/missions/standing_pull.py
+  - framework/missions/supervisor.py
+  - framework/objectives/__init__.py
+  - framework/objectives/adapters/__init__.py
+  - framework/objectives/adapters/mission_inputs.py
+  - framework/objectives/adapters/product_spec.py
+  - framework/objectives/adapters/roots.py
+  - framework/objectives/adapters/workgraph.py
+  - framework/objectives/counterfactual.py
+  - framework/objectives/graph.py
+  - framework/objectives/model.py
+  - framework/objectives/ovi_view.py
+  - framework/objectives/query.py
+  - framework/objectives/states.py
+  - framework/onboarding/__init__.py
+  - framework/onboarding/__main__.py
+  - framework/onboarding/availability.py
+  - framework/onboarding/evaluate_personas.py
+  - framework/onboarding/formation.py
+  - framework/onboarding/genesis.py
+  - framework/onboarding/journey.py
+  - framework/onboarding/onboard.py
+  - framework/onboarding/plan.py
+  - framework/onboarding/quiet_hours.py
+  - framework/onboarding/research.py
+  - framework/organs/__init__.py
+  - framework/organs/descriptor.py
+  - framework/organs/registry.py
+  - framework/outbox/__init__.py
+  - framework/outbox/relay.py
+  - framework/ovi/__init__.py
+  - framework/ovi/compute.py
+  - framework/probes/__init__.py
+  - framework/probes/correlation.py
+  - framework/probes/lib.py
+  - framework/probes/probe_ci.py
+  - framework/probes/probe_github.py
+  - framework/probes/probe_sentry.py
+  - framework/probes/probe_support.py
+  - framework/probes/probe_vercel.py
+  - framework/probes/run_verifier.py
+  - framework/probes/runner.py
+  - framework/probes/verifier.py
+  - framework/products/__init__.py
+  - framework/products/stack_detector.py
+  - framework/projection/__init__.py
+  - framework/projection/kernel.py
+  - framework/roles/__init__.py
+  - framework/roles/evolution.py
+  - framework/roles/hat_graduation.py
+  - framework/roles/lifecycle.py
+  - framework/scheduler/__init__.py
+  - framework/scheduler/fold.py
+  - framework/scheduler/model.py
+  - framework/scheduler/serve.py
+  - framework/scheduler/snapshot.py
+  - framework/sources/__init__.py
+  - framework/sources/base.py
+  - framework/sources/null.py
+  - framework/sources/org.py
+  - framework/sources/vault_signals.py
+  - framework/triggers/__init__.py
+  - framework/triggers/calendar_source.py
+  - framework/triggers/envelope.py
+  - framework/triggers/firing.py
+  - framework/triggers/registry.py
+  - framework/triggers/schema_registry.py
+  - framework/watchdog/__init__.py
+  - framework/watchdog/check.py
+  - framework/watchdog/receipts.py
+  - framework/watchdog/registry.py
+  duplicate_event_writer_sinks:
+  - _write_to_db
+  - _write_to_log
+  - _write_to_store

@@ -2,8 +2,10 @@
 # install-git-hooks.sh — One-time setup for forkers
 #
 # Activates in-tree git hooks:
-#   - pre-commit   — checkpoint-review gate (FW-019)
-#   - pre-push     — force-push refusal on master (FW-007)
+#   - pre-commit   — checkpoint-review gate, scope-digest bound (FW-019)
+#   - pre-push     — force-push refusal on master (FW-007) + layer separation
+#                    (FW-025b) + architecture census (FW-025c) + golden evals
+#                    (FW-025)
 #
 # Run once after cloning:
 #   bash cabinet/scripts/install-git-hooks.sh
