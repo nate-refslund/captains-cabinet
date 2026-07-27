@@ -26,9 +26,42 @@ def _load_module():
     return module
 
 
+def _python_only(directory: str, names: list[str]) -> set[str]:
+    """copytree filter: keep directories and *.py, drop everything else.
+
+    The census reads cabinet/scripts for exactly one thing — module-level
+    verdict vocabularies in production *.py — so the mutant tree needs nothing
+    else, and `tests` is dropped because the census excludes it by definition.
+    """
+
+    base = Path(directory)
+    return {
+        name
+        for name in names
+        if name in {"__pycache__", "tests"}
+        or (not (base / name).is_dir() and not name.endswith(".py"))
+    }
+
+
 def _copy_census_tree(tmp_path: Path) -> Path:
     dst = tmp_path / "gitless-cabinet"
     shutil.copytree(ROOT / "framework", dst / "framework")
+    # Set-pin source DIRS (2026-07-27 expansion gate): copied so a mutant can
+    # add a member the way a real landing would — a new manifest, a new skill
+    # directory, a new production module carrying a vocabulary. cabinet/scripts
+    # is copied .py-only (the census reads nothing else there) to keep ~8 MB
+    # per mutant out of every parametrized case.
+    for rel_dir in ("cabinet/config/organs", ".claude/skills"):
+        shutil.copytree(
+            ROOT / rel_dir,
+            dst / rel_dir,
+            ignore=shutil.ignore_patterns("__pycache__"),
+        )
+    shutil.copytree(
+        ROOT / "cabinet/scripts",
+        dst / "cabinet/scripts",
+        ignore=_python_only,
+    )
     for rel in (
         "cabinet/config/cognitive-architecture-contract.yml",
         "cabinet/config/architecture-baseline-sets.yml",
@@ -36,6 +69,8 @@ def _copy_census_tree(tmp_path: Path) -> Path:
         "cabinet/services.yml",
         ".layer-separation-baseline",
         ".layer-separation-allowlist",
+        ".claude/settings.json",
+        ".gitignore",
     ):
         source = ROOT / rel
         target = dst / rel
@@ -357,6 +392,432 @@ def test_non_boolean_disabled_flag_fails_closed(tmp_path: Path):
 
     with pytest.raises(census.ContractError, match="disabled must be boolean"):
         census.inspect_repository(tree)
+
+
+# ── SET PINS (expansion-gate adjudication of record, 2026-07-27 — D3) ────────
+# The mass budgets rglob framework/ and count *.py only, so cabinet/scripts/**,
+# cabinet/config/**, .claude/** and every non-.py file were free — and both
+# live expansion escapes landed in exactly those gaps. Each pin below gets a
+# GROWTH mutant proving it goes RED and a SHRINK arm proving a legitimate
+# removal stays green, because a pin that can only ratchet one way is a pin
+# nobody can ever pay down.
+#
+# EVERY arm derives its target and its SIZE from the tree it is handed, never
+# from a path or a count baked in here. That is not neatness: this suite also
+# runs INSIDE THE EXPORTED EGG (test_egg_export.py drives
+# verify-cognitive-architecture.sh through the export), and the egg deliberately
+# ships one skill fewer. A +1 growth mutant is VACUOUS in any tree that starts
+# below the ceiling — it passed there while proving nothing — and a shrink arm
+# that names a file the export strips dies on FileNotFoundError. Both were
+# caught by running this suite in the egg, and both are fixed by asking the
+# contract for the live headroom and growing by headroom + 1.
+
+
+def _grow_organ_manifests(tree: Path, count: int) -> None:
+    for index in range(count):
+        (tree / f"cabinet/config/organs/phase0-mutant-organ-{index}.yml").write_text(
+            f"organ: phase0-mutant-{index}\noperations: []\n"
+        )
+
+
+def _grow_claude_skills(tree: Path, count: int) -> None:
+    for index in range(count):
+        skill = tree / f".claude/skills/phase0-mutant-skill-{index}"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(f"# phase0 mutant skill {index}\n")
+
+
+def _grow_claude_hook_wirings(tree: Path, count: int) -> None:
+    path = tree / ".claude/settings.json"
+    data = json.loads(path.read_text())
+    event = sorted(data["hooks"])[0]
+    for index in range(count):
+        data["hooks"][event][0]["hooks"].append(
+            {"type": "command", "command": "bash", "args": [f"phase0-mutant-{index}.sh"]}
+        )
+    path.write_text(json.dumps(data, indent=2))
+
+
+def _write_mutant_vocabulary(path: Path, count: int) -> None:
+    members = ", ".join(f'"phase0_mutant_verdict_{index}"' for index in range(count))
+    path.write_text(f"MUTANT_VERDICTS = ({members},)\n")
+
+
+def _grow_framework_vocabulary(tree: Path, count: int) -> None:
+    _write_mutant_vocabulary(tree / "framework/phase0_mutant_vocab.py", count)
+
+
+def _grow_cabinet_script_vocabulary(tree: Path, count: int) -> None:
+    _write_mutant_vocabulary(tree / "cabinet/scripts/phase0_mutant_vocab.py", count)
+
+
+def _grow_durable_stores(tree: Path, count: int) -> None:
+    path = tree / ".gitignore"
+    added = "".join(f"\ninstance/phase0-mutant-store-{index}/" for index in range(count))
+    path.write_text(path.read_text() + added + "\n")
+
+
+GROWTH_MUTANTS = (
+    (_grow_organ_manifests, "organ_manifests"),
+    (_grow_claude_skills, "claude_skills"),
+    (_grow_claude_hook_wirings, "claude_hook_wirings"),
+    (_grow_framework_vocabulary, "framework_verdict_vocabulary_members"),
+    (_grow_cabinet_script_vocabulary, "cabinet_script_verdict_vocabulary_members"),
+    (_grow_durable_stores, "durable_store_units"),
+)
+
+
+@pytest.mark.parametrize(("mutate", "budget"), GROWTH_MUTANTS)
+def test_set_pin_growth_mutants_fail(tmp_path: Path, mutate, budget: str):
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+
+    clean = census.inspect_repository(tree)
+    assert clean["ok"] is True, clean["failures"]
+    over_the_ceiling = clean["maximums"][budget] - clean["observed"][budget] + 1
+    assert over_the_ceiling >= 1
+
+    mutate(tree, over_the_ceiling)
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is False
+    assert budget in {failure["budget"] for failure in report["failures"]}
+    assert report["observed"][budget] > clean["maximums"][budget]
+
+
+@pytest.mark.parametrize(("mutate", "budget"), GROWTH_MUTANTS)
+def test_growth_up_to_the_ceiling_is_still_green(tmp_path: Path, mutate, budget: str):
+    """The mutant must red because it CROSSED the ceiling, not because it
+    touched the file.
+
+    Fills the headroom exactly and requires green. Without this arm, a growth
+    mutant passing on a tree that starts below the ceiling would prove nothing —
+    which is exactly what happened inside the export before these arms derived
+    their size from the contract.
+    """
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    clean = census.inspect_repository(tree)
+    headroom = clean["maximums"][budget] - clean["observed"][budget]
+    if headroom == 0:
+        pytest.skip(f"{budget} has zero headroom in this tree — nothing to fill")
+
+    mutate(tree, headroom)
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is True, report["failures"]
+    assert report["observed"][budget] == report["maximums"][budget]
+
+
+def _unit_of(raw: str) -> str | None:
+    line = raw.strip()
+    if not line or line.startswith("#") or line.startswith("!"):
+        return None
+    pattern = line.rstrip("/").lstrip("/")
+    parts: list[str] = []
+    for segment in pattern.split("/"):
+        if any(char in segment for char in "*?["):
+            break
+        parts.append(segment)
+    return "/".join(parts) if parts else pattern
+
+
+def _shrink_first_vocabulary(census, root: Path) -> None:
+    """Collapse the first multi-member vocabulary the PIN ITSELF discovers.
+
+    Located through the census's own discovery rather than a hardcoded
+    file:symbol, so the arm survives any tree the suite is handed — including
+    an export that strips whichever module a literal would have named.
+    """
+
+    import ast
+    import re as _re
+
+    pattern = _re.compile("VERDICT")
+    for path in census._production_python_files(root):
+        found = census.vocabulary_members(path, pattern)
+        target = next((name for name, members in found.items() if len(members) > 1), None)
+        if target is None:
+            continue
+        parsed = ast.parse(path.read_text(), filename=str(path))
+        for statement in parsed.body:
+            if not isinstance(statement, ast.Assign):
+                continue
+            if target not in [t.id for t in statement.targets if isinstance(t, ast.Name)]:
+                continue
+            lines = path.read_text().splitlines(keepends=True)
+            path.write_text(
+                "".join(lines[: statement.lineno - 1])
+                + f'{target} = ("phase0_only_member",)\n'
+                + "".join(lines[statement.end_lineno :])
+            )
+            return
+    raise AssertionError(f"no multi-member verdict vocabulary under {root}")
+
+
+def _shrink_organ_manifests(census, tree: Path) -> None:
+    census._pattern_set(tree / "cabinet/config/organs", "*.yml")[0].unlink()
+
+
+def _shrink_claude_skills(census, tree: Path) -> None:
+    shutil.rmtree(census._pattern_set(tree / ".claude/skills", "SKILL.md")[0].parent)
+
+
+def _shrink_claude_hook_wirings(census, tree: Path) -> None:
+    path = tree / ".claude/settings.json"
+    data = json.loads(path.read_text())
+    for event in sorted(data["hooks"]):
+        for entry in data["hooks"][event]:
+            if entry["hooks"]:
+                entry["hooks"].pop()
+                path.write_text(json.dumps(data, indent=2))
+                return
+    raise AssertionError("no wired hook command to remove")
+
+
+def _shrink_framework_vocabulary(census, tree: Path) -> None:
+    _shrink_first_vocabulary(census, tree / "framework")
+
+
+def _shrink_cabinet_script_vocabulary(census, tree: Path) -> None:
+    _shrink_first_vocabulary(census, tree / "cabinet/scripts")
+
+
+def _shrink_durable_stores(census, tree: Path) -> None:
+    """Drop a gitignore line that is the SOLE declarer of its durability unit."""
+
+    path = tree / ".gitignore"
+    lines = path.read_text().splitlines(keepends=True)
+    counts: dict[str, int] = {}
+    for raw in lines:
+        unit = _unit_of(raw)
+        if unit is not None:
+            counts[unit] = counts.get(unit, 0) + 1
+    for index, raw in enumerate(lines):
+        unit = _unit_of(raw)
+        if unit is not None and counts[unit] == 1:
+            path.write_text("".join(lines[:index] + lines[index + 1 :]))
+            return
+    raise AssertionError("no sole-declarer gitignore line to remove")
+
+
+@pytest.mark.parametrize(
+    ("mutate", "budget"),
+    (
+        (_shrink_organ_manifests, "organ_manifests"),
+        (_shrink_claude_skills, "claude_skills"),
+        (_shrink_claude_hook_wirings, "claude_hook_wirings"),
+        (_shrink_framework_vocabulary, "framework_verdict_vocabulary_members"),
+        (_shrink_cabinet_script_vocabulary, "cabinet_script_verdict_vocabulary_members"),
+        (_shrink_durable_stores, "durable_store_units"),
+    ),
+)
+def test_set_pin_legitimate_shrink_stays_green(tmp_path: Path, mutate, budget: str):
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    before = census.inspect_repository(tree)["observed"][budget]
+
+    mutate(census, tree)
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is True, report["failures"]
+    assert report["observed"][budget] < before
+    assert report["observed"][budget] < report["maximums"][budget]
+
+
+def test_set_pin_budgets_have_zero_headroom():
+    """observed == maximum on every set pin, the law the whole census runs on.
+
+    Stated as its own arm because a pin landed with slack does not bite until
+    the slack is used up, and nothing else would notice.
+
+    SOURCE-INSTANCE ONLY, the same scoping the phase twins declare for
+    themselves. The exported egg is a DERIVED tree with declared deletions (it
+    strips a skill), so it sits legitimately below the ceiling and the law is
+    false there BY CONSTRUCTION — asserting it inside the export would be
+    asserting that the export is a defect.
+    """
+
+    if not (ROOT / ".git").exists():
+        pytest.skip("derived tree (no .git) — the zero-headroom law binds the source")
+
+    census = _load_module()
+    report = census.inspect_repository(ROOT)
+
+    for budget in (
+        "organ_manifests",
+        "claude_skills",
+        "claude_hook_wirings",
+        "framework_verdict_vocabulary_members",
+        "cabinet_script_verdict_vocabulary_members",
+        "durable_store_units",
+    ):
+        assert report["observed"][budget] == report["maximums"][budget], budget
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    (
+        '\nMUTANT_VERDICTS |= {"phase0_augmented"}\n',
+        '\nMUTANT_VERDICTS.add("phase0_call")\n',
+        "\nMUTANT_VERDICTS = _load_verdicts()\n",
+        '\nMUTANT_VERDICTS = frozenset(x for x in ("a", "b"))\n',
+        '\nMUTANT_VERDICT_A, MUTANT_VERDICT_B = "a", "b"\n',
+        "\ndel MUTANT_VERDICTS\n",
+    ),
+)
+def test_dynamic_or_mutated_satellite_vocabulary_fails_closed(tmp_path: Path, suffix: str):
+    """A vocabulary the census cannot read statically is an ERROR, not a zero.
+
+    Otherwise the cheapest way to grow a verdict set for free is to stop
+    declaring it as a literal — the same evasion `static_enum` already refuses
+    on the central enums.
+
+    Written into a NEW cabinet/scripts module deliberately: appending to a
+    framework module would also trip the zero-headroom line budget, and an arm
+    two budgets can satisfy proves neither.
+    """
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    (tree / "cabinet/scripts/phase0_mutant_vocab.py").write_text(
+        'MUTANT_VERDICTS = {"seed"}\n' + suffix
+    )
+
+    with pytest.raises(census.ContractError):
+        census.inspect_repository(tree)
+
+
+def test_unreadable_vocabulary_elsewhere_is_not_an_error(tmp_path: Path):
+    """The fail-closed rule is scoped to the NAMES the pin claims.
+
+    A dynamic module-level constant that is not a verdict vocabulary must not
+    take the whole census down — a gate that reds on unrelated code is a gate
+    that gets switched off.
+    """
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    (tree / "cabinet/scripts/phase0_mutant_unrelated.py").write_text(
+        "MUTANT_UNRELATED = sorted({'a', 'b'})\n"
+    )
+
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is True, report["failures"]
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        lambda data: data.pop("hooks"),
+        lambda data: data.update({"hooks": []}),
+        lambda data: data["hooks"].update({sorted(data["hooks"])[0]: {}}),
+        lambda data: data["hooks"][sorted(data["hooks"])[0]][0].pop("hooks"),
+        lambda data: data["hooks"][sorted(data["hooks"])[0]][0]["hooks"][0].pop("command"),
+    ),
+)
+def test_mangled_hook_wiring_is_an_error_not_a_smaller_count(tmp_path: Path, mutation):
+    """A pin that reads 0 on a mangled settings file rewards mangling it."""
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    path = tree / ".claude/settings.json"
+    data = json.loads(path.read_text())
+    mutation(data)
+    path.write_text(json.dumps(data, indent=2))
+
+    with pytest.raises(census.ContractError):
+        census.inspect_repository(tree)
+
+
+@pytest.mark.parametrize("relative_path", ("cabinet/config/organs", ".claude/skills"))
+def test_missing_set_pin_directory_is_an_error_not_zero(tmp_path: Path, relative_path: str):
+    """A contract path that silently reads zero is a DISABLED sensor.
+
+    Removing the whole class is a real decision; it must delete the budget row,
+    not quietly satisfy it forever.
+    """
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    shutil.rmtree(tree / relative_path)
+
+    with pytest.raises(census.ContractError, match="set-pin directory is missing"):
+        census.inspect_repository(tree)
+
+
+def test_empty_durable_store_registry_is_an_error(tmp_path: Path):
+    """The degenerate end: an emptied .gitignore must not certify zero stores."""
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    (tree / ".gitignore").write_text("# every store removed\n")
+
+    with pytest.raises(census.ContractError, match="durable-store units"):
+        census.inspect_repository(tree)
+
+
+def test_durable_store_units_collapse_globs_to_one_store(tmp_path: Path):
+    """Two globs under one directory are ONE store, the preflight's own rule.
+
+    Without this the pin would fire on every added glob and be switched off
+    inside a week — the failure mode the same gate refused for line mass.
+    """
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    path = tree / ".gitignore"
+    before = census.inspect_repository(tree)["observed"]["durable_store_units"]
+    existing = next(
+        (line for line in path.read_text().splitlines() if _unit_of(line) is not None),
+        None,
+    )
+    assert existing is not None
+    path.write_text(path.read_text() + f"\n{_unit_of(existing)}/*.phase0mutant\n")
+
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is True, report["failures"]
+    assert report["observed"]["durable_store_units"] == before
+
+
+def test_negated_gitignore_rule_is_not_a_store(tmp_path: Path):
+    """A negation re-includes a TRACKED file, which survives a fresh worktree."""
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    path = tree / ".gitignore"
+    before = census.inspect_repository(tree)["observed"]["durable_store_units"]
+    path.write_text(path.read_text() + "\n!instance/phase0-mutant-tracked.yml\n")
+
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is True, report["failures"]
+    assert report["observed"]["durable_store_units"] == before
+
+
+@pytest.mark.parametrize(
+    ("budget", "key"),
+    (
+        ("organ_manifests", "pattern"),
+        ("claude_skills", "pattern"),
+        ("framework_verdict_vocabulary_members", "symbol_pattern"),
+        ("cabinet_script_verdict_vocabulary_members", "symbol_pattern"),
+    ),
+)
+def test_set_pin_budget_requires_its_own_key(tmp_path: Path, budget: str, key: str):
+    census = _load_module()
+    import yaml
+
+    data = yaml.safe_load(CONTRACT.read_text())
+    data["budgets"][budget].pop(key)
+    path = tmp_path / f"missing-{budget}.yml"
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+
+    with pytest.raises(census.ContractError):
+        census.load_contract(path)
 
 
 def test_report_is_path_independent_for_explicit_as_of_date(tmp_path: Path):
