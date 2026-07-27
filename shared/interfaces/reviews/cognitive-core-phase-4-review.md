@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 7f05bdcfaa716f78a9fb638ab464d5fd41699a388e9c13107957fdc128ca7e35
+Reviewed-Scope-Digest: b6f6783e9cdfeacadc3b88e2acf8ca0201d41cce9e4faacefa206c3e05baa0af
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
@@ -682,3 +682,27 @@ BOTH rows, and the branch's own row was RE-MEASURED against the new base rather
 than carried (69116 vs 69051 at 91412878; +65 unchanged, since the growth is
 that unit's own lines). Still a MECHANICAL-DELTA re-bind: no reviewed BEHAVIOUR
 byte changed on either side of the merge.
+
+RE-BOUND BY THE WORLD-ART EGG ROW, 2026-07-27 —
+7f05bdcfaa716f78a9fb638ab464d5fd41699a388e9c13107957fdc128ca7e35 -> the value above. Branch
+`iso-port-composition`, commit f3705c46. EXACTLY ONE in-scope path moved,
+verified by resolving the 85-entry scope and diffing its 114 bound blobs across
+00beeb80..HEAD rather than by reading the diff:
+`cabinet/scripts/egg-export-manifest.txt`, which gains one `delete` row plus its
+comment and one `expect-absent` row, keeping the org's own iso world atlas
+(`public/world-assets/originals/iso`) out of the PUBLIC export until the Captain
+rules on redistributing commissioned art. The two `RESIDUAL SCRUB` legacy marker
+sites shifted with it (248 -> 264, 680 -> 697) and were re-anchored in
+`test_declared_residuals_register.py` in the next commit; the marker text and the
+exempt set are unchanged and LEGACY_MAX stays 2.
+
+A MECHANICAL-DELTA re-bind, and the claim is checkable rather than asserted: the
+manifest rows are export SHAPE, consumed only by `egg-export.sh`; no COG-4
+engine, gate, organ, scheduler or projection byte is touched, and no COG-4 claim
+in this review reads the egg manifest. RE-MEASURED on the committed tree:
+`verify-cognitive-phase4.sh` end-to-end green, and `pytest cabinet/scripts/tests`
+4781 passed / 28 skipped.
+
+WHAT WAS NOT DONE, stated plainly: no fresh COG-4 panel re-review, and no prose
+section of this review was edited — no reviewer saw new behaviour bytes, because
+none changed. The COG-0/1/2/3 twins are untouched and remain frozen-historical.
