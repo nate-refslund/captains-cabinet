@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: f86833c24817a4d080f52fef1ad5af7395ecc6c6e215980b2a026b1efcb79161
+Reviewed-Scope-Digest: e769d7bed17684eaed325264dd39254d01d3f30cacd81d7a8c8947c5aab1b20f
 
 
 

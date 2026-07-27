@@ -973,18 +973,15 @@ def _rewrite_contract(tree: Path, expansions, *, lift_ceilings: bool = True) -> 
     planted member consumes (one event type, one non-comment line) by exactly
     one each. Both must move: the point of these arms is that the ONLY thing
     which can red the tree is the registry, never a zero-headroom ratchet
-    standing in for a check that is not actually running.
-
-    The LIVE rows are PRESERVED and the synthetic ones APPENDED (2026-07-27).
-    Replacing the list wholesale was correct only while the registry was empty:
-    once a real expansion row exists, dropping it from the fixture leaves its
-    real member surplus-but-unregistered in the copied tree, and every arm
-    below starts reporting a second failure that has nothing to do with its
-    subject. The subject of these arms is the SYNTHETIC member; the live rows
-    are part of the tree being copied, exactly like the files they name."""
+    standing in for a check that is not actually running."""
 
     path = tree / "cabinet/config/cognitive-architecture-contract.yml"
     data = yaml.safe_load(path.read_text())
+    # APPEND, never replace (2026-07-27). The copied tree carries the real
+    # framework/, so every LIVE expansion member is present in it; dropping the
+    # live rows would make each of those members an unregistered surplus and
+    # every arm below would fail for a reason it does not name. Each arm still
+    # measures exactly its own synthetic row.
     data["expansions"] = list(data.get("expansions") or []) + list(expansions)
     if lift_ceilings:
         data["budgets"]["central_event_types"]["maximum"] += 1
@@ -1211,30 +1208,28 @@ def test_bijection_classes_are_pinned(tmp_path: Path):
     )
 
 
-def test_live_registry_carries_no_unregistered_surplus():
-    """The LIVE tree's surplus is exactly what the registry names.
+def test_live_registry_matches_the_live_surplus_exactly():
+    """INVERTED 2026-07-27: the registry stopped being empty.
 
-    INVERTED 2026-07-27: this asserted `not members` for every class, which is
-    "the registry is EMPTY", not "the registry is COMPLETE" — the two were
-    indistinguishable only while `expansions: []`. Under the real law
-    (`observed - baseline == the registered members`) an adjudicated expansion
-    is green and an unadjudicated one is red, and the assertion below is that
-    law rather than a proxy for it. `inspect_repository` reporting `ok` covers
-    the same ground from the other side, so both are asserted."""
+    The previous assertion — no surplus at all — was the honest state while the
+    registry held nothing, and it became literally wrong when the first
+    adjudicated expansion landed. Asserting the BIJECTION instead is strictly
+    stronger: an unregistered member still fails, and so does a row that outlives
+    the member it was written for, which the "empty" form could never catch.
+    """
 
     census = _load_module()
     report = census.inspect_repository(ROOT)
+    contract = census.load_contract(ROOT / "cabinet/config/cognitive-architecture-contract.yml")
 
     assert set(report["surplus_members"]) == set(census.BIJECTION_CLASSES)
-    registered: dict = {name: set() for name in census.BIJECTION_CLASSES}
-    contract = census.load_contract(
-        ROOT / "cabinet/config/cognitive-architecture-contract.yml")
+    registered: dict[str, set[str]] = {name: set() for name in census.BIJECTION_CLASSES}
     for row in contract["expansions"]:
         registered[row["member_class"]].add(row["member"])
-    assert {name: set(members) for name, members
-            in report["surplus_members"].items()} == registered
-    assert not [f for f in report["failures"]
-                if f.get("reason") == "unregistered set member"], report["failures"]
+    assert {
+        name: set(members) for name, members in report["surplus_members"].items()
+    } == registered
+    assert report["ok"] is True, report["failures"]
 
 
 @pytest.mark.parametrize(
