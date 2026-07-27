@@ -18,6 +18,7 @@ import os
 import re
 import shlex
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -69,6 +70,229 @@ try:  # pragma: no cover - exercised via the posture gate tests
     from framework.authority import needs as _needs  # noqa: E402
 except Exception:  # pragma: no cover - keep the engine importable if absent
     _needs = None  # type: ignore[assignment]
+
+
+# ---------------------------------------------------------------------------
+# PROPOSE vs GATE — the verdict distinction enforcement could not express
+# ---------------------------------------------------------------------------
+# THE DEFECT THIS CLOSES (direction gate 2026-07-27, arm A). `main()` exits 2
+# on ANY non-None result, so `propose_only` and `always_gated` were
+# OPERATIONALLY IDENTICAL: the vocabulary distinguished "above your bar, ask
+# and the chain proceeds without this step" from "hard ceiling, no auto path
+# exists", and enforcement collapsed both into one undifferentiated refusal.
+# Measured on the recorded corpus, that made the enforcing flip read as
+# 52,659 refusals (75.66%) when only 11,570 of them are ceilings.
+#
+# WHAT THIS IS NOT. It is NOT a widening. The step is withheld in BOTH cases —
+# a propose verdict still does not execute the tool, because the unclassified
+# bucket that dominates the propose set is byte-indistinguishable from its
+# hostile twins (`bash send-to-group.sh` wrapping a Telegram POST, `gh api -X
+# POST .../comments`, `python3 -c "...smtplib..."`). Anything that let a
+# propose verdict RUN would ship exactly the widening both arms of the
+# direction gate refused. Exit codes are therefore UNCHANGED and every
+# guardian message stays byte-identical (test_guardian_parity).
+#
+# WHAT CHANGES. The two outcomes become structurally distinguishable — a
+# VERDICT FIELD, never a substring match on prose — and a propose verdict
+# FILES A NEED, so the fleet's refusals become an enumerated, deduped list of
+# what it is being denied instead of vanishing. Counting them apart is what
+# lets the flip's residual be measured rather than guessed.
+#
+# WHY A `str` SUBCLASS. `evaluate_policy` returns `str | None` and ~100 call
+# sites and assertions depend on that (truthiness in main() and
+# policy-shadow.py, `.startswith`, `in`, print). A str subclass is byte-
+# identical to every one of them while carrying the field new consumers read,
+# so nothing is weakened to buy the distinction.
+# THREE kinds, not two, because two would MISREPORT the residual. The recorded
+# corpus splits the flip's 52,659 refusals into 11,570 ceilings, 3,465 genuine
+# below-the-bar cells, and 37,624 calls the classifier simply CANNOT SEE
+# (`action_type=ambiguous`). Calling that last group "propose" would dress an
+# unmeasured hole as a governed decision — the compliance-badge failure this
+# program keeps finding. It gets its own name and is counted on its own.
+try:  # pragma: no cover - exercised via the ceiling arms
+    from framework.authority.classifier import (  # noqa: E402
+        CEILING_CLASS_ACTION_TYPES as _CEILING_CLASS_ACTION_TYPES,
+    )
+    _CEILING_RISK_CLASSES = frozenset(_CEILING_CLASS_ACTION_TYPES)
+except Exception:  # pragma: no cover - absent classifier ⇒ trust the floor
+    _CEILING_RISK_CLASSES = frozenset()
+
+PROPOSE = "propose"            # above the autonomy bar — withheld, filed, grantable
+GATE = "gate"                  # hard ceiling / fail-closed — no auto path exists
+UNCLASSIFIED = "unclassified"  # the gate could not tell what this is — withheld
+
+
+class GateDecision(str):
+    """A gate block message that also carries its STRUCTURED verdict kind.
+
+    Behaves as the exact `str` it always was (truthy, comparable, formattable)
+    so no existing consumer changes; `.kind` is `PROPOSE` or `GATE` and
+    `.need_id` is the filed need when the propose path filed one.
+    """
+
+    __slots__ = ("kind", "need_id")
+
+    def __new__(cls, text: str, kind: str, need_id: str | None = None):
+        obj = super().__new__(cls, text)
+        obj.kind = kind          # type: ignore[attr-defined]
+        obj.need_id = need_id    # type: ignore[attr-defined]
+        return obj
+
+    def __getnewargs__(self) -> tuple[str, str, str | None]:
+        # Without this, copy/deepcopy/pickle raise TypeError (two required
+        # __new__ args) where a plain str round-tripped. No consumer copies a
+        # verdict today; a future caching/multiprocessing one would.
+        return (str(self), self.kind, self.need_id)
+
+
+def decision_kind(result: Any) -> str | None:
+    """The verdict kind of a gate result, or None for an allow / a plain str.
+
+    A plain `str` means a LEGACY typed policy (binary_block, destructive_rm, …)
+    produced it — those are unconditional blocks and are deliberately not
+    reclassified here.
+    """
+    return getattr(result, "kind", None)
+
+
+def authority_matrix_enforcing() -> bool:
+    """True iff the AUTHORITY MATRIX is live-enforcing.
+
+    Exactly `CABINET_AUTHORITY_ENFORCING=1` — the one trigger `main()` reads.
+
+    DELIBERATELY NOT the `instance/config/authority-enforcing` file. That file
+    is a different switch that is ALREADY TRUE (Captain, 2026-07-03 "flip it"),
+    and its own scope line says "typed STATELESS policy set enforcing" — the
+    set `policy_shadow._LEGACY_ENFORCING_TYPES`, which EXCLUDES
+    `authority_matrix`. The two names are one word apart and mean different
+    things; conflating them silently enables matrix-era behaviour on every
+    deployment that has the file, which is all of them.
+    """
+    return os.environ.get("CABINET_AUTHORITY_ENFORCING") == "1"
+
+
+# One filing per refused cell per hour. MEASURED, not guessed: `file_need`
+# costs ~102ms flat — not the ledger read, but `_emit` -> evidence_mirror ->
+# recorder.append -> verify_trial, which re-verifies the evidence trial on
+# every event (54k `contains_secret_shape` calls per filing). This gate runs
+# on EVERY tool call, and the recorded corpus says a live flip withholds
+# ~41k steps, so filing unconditionally would add ~100ms to each of them and
+# append a ledger row per refusal. The marker keeps the hot path at ONE stat
+# and the ledger at ~24 rows per cell per day; the true per-call counts live
+# in the shadow record, which already stores every verdict.
+_PROPOSE_REFILE_SECONDS = 3600
+
+
+def _propose_need_marker(need_id_value: str) -> str | None:
+    """Path of the rate-limit marker for a need id, or None if unresolvable.
+
+    Falls back to the needs kernel's OWN root resolver rather than giving up
+    when CABINET_ROOT is absent from this process: returning None disables
+    the rate limit silently, and an unlimited filing path costs ~46ms per
+    call instead of ~4ms. `pre-tool-use.sh` assigns CABINET_ROOT without
+    exporting it, so a hook host that does not export it would land exactly
+    there.
+    """
+    base = os.environ.get("CABINET_ROOT")
+    if not base and _needs is not None:
+        try:
+            base = str(_needs._root(None))
+        except Exception:
+            base = None
+    if not base:
+        return None
+    return os.path.join(
+        base, "shared", "interfaces", "needs-filed", need_id_value
+    )
+
+
+def _file_propose_need(
+    risk_class: str,
+    action_type: str,
+    lane: str | None,
+    officer: str,
+    why: str | None = None,
+) -> str | None:
+    """File the deduped `capability` need behind a propose verdict.
+
+    Reuses the ONE ledger the ceiling rows already file to (needs.py:1-9,
+    "every blocked-but-proceeding chain files its need HERE") rather than
+    minting a second store. NEVER raises and never blocks the gate: a broken
+    ledger must not change a verdict. Dedup is by content fingerprint, so a
+    risk_class/action_type/lane cell that is refused 37,000 times is ONE row
+    with a count, not 37,000 rows — and the marker above keeps even the
+    re-file cost off the hot path.
+
+    Returns the need id whether or not this call actually appended, so the
+    verdict always names the need the operator would look up.
+    """
+    if _needs is None:
+        return None
+    try:
+        nid = _needs.need_id("capability", risk_class, action_type, lane)
+    except Exception:
+        nid = None
+    marker = _propose_need_marker(nid) if nid else None
+    if marker:
+        try:
+            # abs(): a marker dated in the FUTURE would otherwise satisfy
+            # `delta < window` forever and permanently suppress this need's
+            # row. The marker is officer-writable runtime state, so a clock
+            # skew — or a touch -t 2036 — must degrade to "re-file", never to
+            # "never record again".
+            age = abs(time.time() - os.stat(marker).st_mtime)
+            if age < _PROPOSE_REFILE_SECONDS:
+                return nid  # filed recently — the hot path stops here
+        except OSError:
+            pass  # absent/unreadable ⇒ fall through and file
+    try:
+        filed = _needs.file_need(
+            "capability",
+            risk_class=risk_class,
+            action_type=action_type,
+            lane=lane,
+            why=why or (
+                f"officer gate withheld {risk_class}/{action_type} "
+                f"(lane {lane}): above the autonomy bar for this cell"
+            ),
+            unblocks=(
+                f"autonomous {action_type} for this lane without a per-item "
+                f"proposal"
+            ),
+            filed_by=f"policy_engine:{officer}",
+        )
+    except Exception:
+        return nid
+    if filed and marker:
+        try:
+            os.makedirs(os.path.dirname(marker), exist_ok=True)
+            with open(marker, "w"):
+                pass
+            os.utime(marker, None)
+        except OSError:
+            pass
+    return filed or nid
+
+
+def _propose(
+    text: str,
+    risk_class: str,
+    action_type: str,
+    lane: str | None,
+    officer: str,
+    why: str | None = None,
+) -> GateDecision:
+    """A propose-only block: byte-identical message, kind=PROPOSE, need filed.
+
+    `why` overrides the filed need's reason. The undo-plane gap uses it: that
+    refusal is NOT "grant me this capability" — the remedy is registering an
+    inverse or fixing the journal — and filing it under the capability wording
+    would ask the Captain to grant away a broken undo plane.
+    """
+    return GateDecision(
+        text, PROPOSE,
+        _file_propose_need(risk_class, action_type, lane, officer, why=why),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1917,13 +2141,22 @@ def _eval_authority_matrix(
     # 0. A merged floor that failed validation was quarantined by
     #    load_policies (D8) — fail CLOSED to propose-only, never evaluate it.
     if policy.get("_validation_failed"):
-        return f"PROPOSE-ONLY (authority matrix failed validation) — {message}"
+        # GATE, not PROPOSE: a corrupt matrix is the gate being UNABLE to
+        # decide, never "the officer is above their bar". Nothing here is
+        # grantable, so it must never be counted as a proposal.
+        return GateDecision(
+            f"PROPOSE-ONLY (authority matrix failed validation) — {message}",
+            GATE,
+        )
 
     # The shared classifier/lane resolver are imported at module load from
     # framework.authority. If absent (deployment without the framework on the
     # path), fail-safe to propose_only rather than crashing the gate.
     if classify_action is None or resolve_lane is None:
-        return f"PROPOSE-ONLY (classifier unavailable) — {message}"
+        # GATE for the same reason as the quarantine above — not grantable.
+        return GateDecision(
+            f"PROPOSE-ONLY (classifier unavailable) — {message}", GATE
+        )
 
     action_type = classify_action(tool_name, tool_input)
     risk_classes = policy.get("risk_classes")
@@ -1931,8 +2164,14 @@ def _eval_authority_matrix(
 
     # 1. Unknown / ambiguous / unmapped action_type -> fail-safe propose_only.
     if risk_class is None:
-        return (
-            f"PROPOSE-ONLY (unclassified action '{action_type}') — {message}"
+        # The 71.5% bucket. Its OWN kind: the classifier cannot see what this
+        # command does, which is not the same fact as "this is above the bar".
+        # One deduped need per (ambiguous, lane) records the blind spot.
+        _lane = resolve_lane()
+        return GateDecision(
+            f"PROPOSE-ONLY (unclassified action '{action_type}') — {message}",
+            UNCLASSIFIED,
+            _file_propose_need("unclassified", str(action_type), _lane, officer),
         )
 
     # Lane + posture resolve ONCE, above the ceiling short-circuit [SOV-3]
@@ -1947,6 +2186,30 @@ def _eval_authority_matrix(
     #    always_gated posture row, kernel unavailable — keeps the guardian
     #    strings BYTE-IDENTICAL.
     hard_ceiling = policy.get("hard_ceiling")
+    # FAIL-CLOSED ON A CEILING THE FLOOR FORGOT. A ceiling risk_class is a
+    # ceiling because of what it REACHES, not because a policy file happens to
+    # list it — so the canonical set (classifier.CEILING_CLASS_ACTION_TYPES,
+    # the one declared source the matrix already pins itself against) decides
+    # here, not the floor's own `hard_ceiling`. Without this, a floor whose
+    # list is missing/empty/mistyped sends every ceiling class down to the
+    # step-6 collapse where, since 2026-07-27, it is labelled PROPOSE and
+    # files a `capability` need reading "grant autonomous external_message for
+    # this lane" — putting *"grant me outbound comms"* on the Captain's deny
+    # surface, the exact inversion a change that softens refusals must not
+    # produce. `_validate_authority_floor` catches the shape only when
+    # `postures` is present, so the gate refuses it independently.
+    #
+    # NOTE the narrowness: an EMPTY `hard_ceiling` is legitimate for a matrix
+    # that declares no ceiling classes at all, and is used as such by the
+    # posture fixtures. Only a class the canonical set calls a ceiling, absent
+    # from the floor's list, is a corrupt floor.
+    if _CEILING_RISK_CLASSES and risk_class in _CEILING_RISK_CLASSES:
+        if not isinstance(hard_ceiling, list) or risk_class not in hard_ceiling:
+            return GateDecision(
+                f"GATED (hard ceiling: {risk_class}) — propose to Captain; "
+                f"no auto path.",
+                GATE,
+            )
     if isinstance(hard_ceiling, list) and risk_class in hard_ceiling:
         if posture in _POSTURE_TABLES:
             ceiling_verdict = resolve_verdict(
@@ -1979,25 +2242,30 @@ def _eval_authority_matrix(
                         res.get("reason") or "no matching standing grant"
                     ).replace("·", "")
                     if res.get("need_id"):
-                        return (
+                        return GateDecision(
                             f"GATED (standing_grant: {risk_class}) — {reason}; "
                             f"filed {res['need_id']} — the chain proceeds "
-                            f"without this step."
+                            f"without this step.",
+                            GATE,
+                            res["need_id"],
                         )
-                    return (
+                    return GateDecision(
                         f"GATED (standing_grant: {risk_class}) — {reason}; "
-                        f"the chain proceeds without this step."
+                        f"the chain proceeds without this step.",
+                        GATE,
                     )
                 # Kernel unavailable ⇒ the row degrades to plain always_gated
                 # (guardian strings below) — narrower, never wider.
         if risk_class == "external_comms":
-            return (
+            return GateDecision(
                 "GATED (hard ceiling: external_comms) — draft via queue_draft, "
-                "never auto."
+                "never auto.",
+                GATE,
             )
-        return (
+        return GateDecision(
             f"GATED (hard ceiling: {risk_class}) — propose to Captain; "
-            f"no auto path."
+            f"no auto path.",
+            GATE,
         )
 
     # 3. Read the LIVE per-cell graduation state (read_cell_state, un-stubbed
@@ -2068,9 +2336,15 @@ def _eval_authority_matrix(
         gap = _act_with_undo_gap(action_type)
         if gap is None:
             return None
-        return (
+        return _propose(
             f"PROPOSE-ONLY ({risk_class}, confidence={state}; act_with_undo "
-            f"verdict but {gap} for '{action_type}') — {message}"
+            f"verdict but {gap} for '{action_type}') — {message}",
+            risk_class, action_type, lane, officer,
+            why=(
+                f"undo plane unusable for {action_type} (lane {lane}): {gap}. "
+                f"This is an UNDO-PLANE defect, not a request for autonomy — "
+                f"the remedy is a registered inverse or a writable journal."
+            ),
         )
 
     # 5. auto_with_veto_window / notify_after — explicit allow-with-window
@@ -2112,9 +2386,12 @@ def _eval_authority_matrix(
     #    only legal on a posture ceiling row, resolved at step 2 above) —
     #    fail CLOSED to propose-only with the misplacement named, never allow.
     if verdict == "standing_grant":
-        return (
+        # D4 fail-closed on a MISPLACED verdict — a matrix defect, not a
+        # proposal. GATE so it can never be counted as grantable headroom.
+        return GateDecision(
             f"PROPOSE-ONLY (misplaced standing_grant verdict on "
-            f"'{risk_class}') — {message}"
+            f"'{risk_class}') — {message}",
+            GATE,
         )
 
     # 6. FAIL-SAFE collapse — any verdict not explicitly allowed above blocks
@@ -2128,7 +2405,10 @@ def _eval_authority_matrix(
     #    deploy_nonprod keeps the earn-up posture and was NOT widened; wiring
     #    the deploy classifier is a separate Captain-gated step.
     if verdict != "auto":
-        return f"PROPOSE-ONLY ({risk_class}, confidence={state}) — {message}"
+        return _propose(
+            f"PROPOSE-ONLY ({risk_class}, confidence={state}) — {message}",
+            risk_class, action_type, lane, officer,
+        )
 
     # 7. auto verdict -> allow. Reachable only for a cell the live graduation
     #    engine has actually graduated under the posture-selected table
@@ -2308,7 +2588,7 @@ def main() -> None:
     # / bash_write_to_path / tier2_isolation) are unaffected and still enforce.
     # This flag is independent of the legacy-engine enforcing flag; flipping it
     # is a later, Captain-approved cycle (design §7 Cycle 2).
-    authority_enforcing = os.environ.get("CABINET_AUTHORITY_ENFORCING", "0") == "1"
+    authority_enforcing = authority_matrix_enforcing()
 
     # Evaluate each policy
     for policy in policies:
