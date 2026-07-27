@@ -12,14 +12,6 @@ The first production slice is deliberately narrow and useful:
 4. read only after the Captain ratifies that Charter hash,
 5. return one honest, source-cited First Dividend.
 
-Entry into that slice is CLASSIFIED, not assumed (Captain ruling 2026-07-26):
-``entry_plan`` returns the opening move for whatever the operator has actually
-granted — sweep-and-assert with connectors, the human-shaped seed question plus
-discovery probes with only local/web reach, or the residual questions and a
-plain statement of what cannot be known with nothing at all — and it always
-returns a next step. See the ENTRY MODES section below for why that invariant
-is the point.
-
 All state stays below ``instance/onboarding/v2`` — a surface the mission
 compiler never reads.  Events are append-only, state/artifacts are atomic,
 actions are idempotent, and a process lock serializes cross-surface races.
@@ -89,116 +81,6 @@ DESTINATIONS = {
     "sovereign": "Aim for broad autonomy after it is earned",
 }
 ORIENTATION_MODE = "observe_only"
-
-# ── Three entry modes — "never a dead end" (Captain ruling, 2026-07-26) ───────
-# The welcome card used to offer exactly one move: choose a folder. An operator
-# with no folder to grant had no path at all, and the deep-orientation card was
-# terminal (pause/revoke/purge only). Both are dead ends, and a dead end is the
-# one outcome onboarding may never produce. So entry is CLASSIFIED from what the
-# operator has actually granted, and each class has its own opening move:
-#   connected  — sources are connected: sweep them, derive, and ASSERT with a
-#                citation the operator can correct. Never ask what the data
-#                answers.
-#   seeded     — nothing connected but local files and/or the web are reachable:
-#                ask the HUMAN-shaped question ("what do you do", "how can I
-#                best serve you") and treat the answer as a SEED for discovery,
-#                not as the data. A few words become search and sweep work.
-#   ungranted  — nothing at all: the residual questions, plus a plain statement
-#                of what this cabinet cannot know without access.
-ENTRY_PLAN_SCHEMA = "cabinet.onboarding-entry-plan/v1"
-ENTRY_MODE_CONNECTED = "connected"
-ENTRY_MODE_SEEDED = "seeded"
-ENTRY_MODE_UNGRANTED = "ungranted"
-ENTRY_MODES = (ENTRY_MODE_CONNECTED, ENTRY_MODE_SEEDED, ENTRY_MODE_UNGRANTED)
-GRANT_KEYS = ("connectors", "local_files", "web")
-
-# The human-shaped question. Deliberately NOT the org-shaped one: the residual
-# set below never asks what the company is, because at any altitude below
-# founder that answer is either obvious to the asker or not the operator's to
-# give — and because it teaches the operator that this is an interview.
-SEED_QUESTION = "What do you do, and how can I best serve you?"
-
-# The residual questionnaire — four questions, and none of them "what is your
-# company". Both blind arms of the 2026-07-26 direction gate produced "which of
-# these are yours to grant?" independently: it is UN-DERIVABLE BY CONSTRUCTION,
-# because the answer is not in the data at any level of access. Everything else
-# a sweep can reach is asserted with a citation and corrected, never asked.
-RESIDUAL_QUESTIONS = (
-    {
-        "id": "rights",
-        "prompt": "Which of these sources are yours to give me read access to?",
-        "why": "No amount of access answers this. Permission is not written in the data.",
-        "required": True,
-    },
-    {
-        "id": "salience",
-        "prompt": "Of everything I showed you, what actually matters to you this week?",
-        "why": "I can rank by structure. I cannot see which of it you care about right now.",
-        "required": True,
-    },
-    {
-        "id": "limits",
-        "prompt": "What must I never touch?",
-        "why": "A limit that is never stated is a limit I will find by crossing it.",
-        "required": True,
-    },
-    {
-        "id": "purpose",
-        "prompt": "A month from now, what should be true that is not true today?",
-        "why": "Purpose is a choice, not a fact — it is the one thing no sweep can read.",
-        "required": False,
-    },
-)
-
-# What a read-only sweep may honestly DERIVE, versus what it must ASK — the
-# 2026-07-26 adjudication, verbatim in effect. "partial" is the dangerous
-# middle: the half that is derivable is genuinely derivable, and the half that
-# is not is where fabrication happens, so both halves are stated.
-DERIVABLE = "derivable"
-PARTIALLY_DERIVABLE = "partial"
-NOT_DERIVABLE = "not_derivable"
-NEVER_DERIVABLE = "never"
-DERIVABILITY = {
-    "products": {
-        "verdict": DERIVABLE,
-        "note": "Given a read adapter, what is built is in the sources.",
-    },
-    "projects": {
-        "verdict": DERIVABLE,
-        "note": "Given a read adapter, in-flight work is in the sources.",
-    },
-    "tasks": {
-        "verdict": DERIVABLE,
-        "note": "Given a read adapter, open items are in the sources.",
-    },
-    "teams": {
-        "verdict": PARTIALLY_DERIVABLE,
-        "note": "Who works alongside whom is derivable as a collaboration graph.",
-        "cannot": (
-            "Roles, seniority and who decides are not in the data. If I stated "
-            "them I would be inventing them."
-        ),
-    },
-    "company": {
-        "verdict": PARTIALLY_DERIVABLE,
-        "note": "What is built, and in what stack, is derivable.",
-        "cannot": "A code repository cannot tell me how the business makes money.",
-    },
-    "customers": {
-        "verdict": NOT_DERIVABLE,
-        "cannot": (
-            "Nothing I can read names your customers — no mail, chat, calendar, "
-            "support or billing source is connected."
-        ),
-    },
-    "grant_rights": {
-        "verdict": NEVER_DERIVABLE,
-        "cannot": (
-            "Which sources are yours to grant is not written anywhere I can "
-            "read, at any level of access. It is the one thing I must ask."
-        ),
-    },
-}
 
 MAX_FILES = 200
 MAX_TOTAL_BYTES = 2 * 1024 * 1024
@@ -625,226 +507,6 @@ def _event_for_action(root: Path, action_id: str | None) -> dict[str, Any] | Non
     return None
 
 
-_SEED_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9+#._/-]{1,39}")
-# Ordinary English scaffolding a seed sentence is made of. Removing it is what
-# turns "I run payments integrations for a bank" into terms worth searching.
-_SEED_STOPWORDS = frozenset({
-    "a", "about", "all", "am", "an", "and", "any", "are", "as", "at", "be",
-    "been", "but", "by", "can", "day", "do", "does", "doing", "for", "from",
-    "get", "have", "help", "here", "how", "i", "if", "in", "is", "it", "its",
-    "just", "kind", "lot", "make", "me", "mostly", "much", "my", "of", "on",
-    "one", "or", "our", "out", "over", "really", "run", "so", "some", "still",
-    "that", "the", "their", "them", "then", "there", "these", "they", "thing",
-    "things", "this", "to", "up", "us", "very", "want", "was", "we", "well",
-    "what", "when", "where", "which", "who", "will", "with", "work", "working",
-    "would", "you", "your",
-})
-MAX_SEED_TERMS = 8
-MAX_SEED_PROBES = 6
-
-
-def _normalized_grants(raw: Any) -> dict[str, Any]:
-    """The three access facts entry classification turns on, fail-closed.
-
-    Anything absent, malformed or merely truthy-looking is NOT a grant: only a
-    literal ``True`` grants local/web, and only non-empty names grant
-    connectors. The default is therefore ``ungranted``, which is also the honest
-    state of a cabinet nobody has handed anything yet.
-    """
-    src = raw if isinstance(raw, dict) else {}
-    connectors = src.get("connectors")
-    if isinstance(connectors, str):
-        connectors = [connectors]
-    if isinstance(connectors, (list, tuple, set, frozenset)):
-        names = sorted({str(c).strip() for c in connectors if str(c).strip()})
-    else:
-        names = []
-    return {
-        "connectors": names,
-        "local_files": src.get("local_files") is True,
-        "web": src.get("web") is True,
-    }
-
-
-def entry_mode(grants: Any) -> str:
-    """Classify the entry into one of the three modes. Total by construction."""
-    normalized = _normalized_grants(grants)
-    if normalized["connectors"]:
-        return ENTRY_MODE_CONNECTED
-    if normalized["local_files"] or normalized["web"]:
-        return ENTRY_MODE_SEEDED
-    return ENTRY_MODE_UNGRANTED
-
-
-def _seed_terms(seed: Any) -> list[str]:
-    """Salient terms from a few words of free text — deterministic, no model.
-
-    First occurrence wins so the operator's own ordering survives, which is the
-    closest thing to salience available without asking a second question.
-    """
-    if not isinstance(seed, str) or not seed.strip():
-        return []
-    terms: list[str] = []
-    for match in _SEED_TOKEN_RE.finditer(seed):
-        token = match.group(0).strip("._/-")
-        if len(token) < 2 or token.lower() in _SEED_STOPWORDS:
-            continue
-        if not any(token.lower() == existing.lower() for existing in terms):
-            terms.append(token)
-        if len(terms) >= MAX_SEED_TERMS:
-            break
-    return terms
-
-
-def seed_probes(seed: Any, grants: Any) -> dict[str, Any]:
-    """A few words → the discovery work they justify. PROPOSALS, never runs.
-
-    This module makes no network call and opens no file outside a ratified
-    Charter, so what comes back is the PLAN — typed probes for whichever plane
-    holds egress or a ratified First Window to execute. A probe is emitted only
-    for a grant that exists: no web grant, no web probe. That is what stops the
-    seed question from becoming an interview whose answers go nowhere.
-    """
-    normalized = _normalized_grants(grants)
-    terms = _seed_terms(seed)
-    probes: list[dict[str, str]] = []
-    if terms:
-        joined = " ".join(terms[:4])
-        if normalized["web"]:
-            for query in (joined, f"{joined} how it works", f"{joined} common problems"):
-                probes.append({"kind": "web_search", "query": query})
-        if normalized["local_files"]:
-            for term in terms[:3]:
-                probes.append({"kind": "local_name_match", "pattern": f"*{term}*"})
-            probes.append({"kind": "local_name_match", "pattern": "README*"})
-    return {
-        "terms": terms,
-        "probes": probes[:MAX_SEED_PROBES],
-        "executable": bool(probes),
-    }
-
-
-def _cannot_know(mode: str) -> list[dict[str, str]]:
-    """What this cabinet cannot know, said plainly, for the given mode.
-
-    ``grant_rights`` is in EVERY mode: it is un-derivable by construction, so
-    connecting more sources never removes it. The rest appear only while the
-    access that would derive them is missing — claiming permanent blindness a
-    connector would fix is its own dishonesty.
-    """
-    subjects = ["grant_rights"]
-    if mode != ENTRY_MODE_CONNECTED:
-        subjects += ["products", "projects", "tasks", "teams", "company", "customers"]
-    else:
-        subjects += ["teams", "company", "customers"]
-    out: list[dict[str, str]] = []
-    for subject in subjects:
-        row = DERIVABILITY[subject]
-        statement = row.get("cannot")
-        if not statement:
-            statement = (
-                f"Without a source I can read, {subject.replace('_', ' ')} are "
-                "not something I can know."
-            )
-        out.append({"subject": subject, "verdict": row["verdict"], "statement": statement})
-    return out
-
-
-def entry_plan(grants: Any = None, *, seed: Any = None) -> dict[str, Any]:
-    """The opening move for whatever the operator has actually granted.
-
-    THE INVARIANT THIS EXISTS FOR: ``next_actions`` is never empty, in any of
-    the eight grant combinations. Onboarding may return "I cannot know that";
-    it may not return "there is nothing you can do here". ``propose_window`` is
-    the floor — a folder is the one grant an operator can always make — and
-    every mode carries the residual questions plus the honest cannot-know list
-    on top of its own opening move.
-    """
-    normalized = _normalized_grants(grants)
-    mode = entry_mode(normalized)
-    discovery = seed_probes(seed, normalized)
-    if mode == ENTRY_MODE_CONNECTED:
-        opening_move = "sweep_and_assert"
-        asks: tuple[dict[str, Any], ...] = tuple(
-            q for q in RESIDUAL_QUESTIONS if q["id"] != "salience"
-        )
-        question = None
-    elif mode == ENTRY_MODE_SEEDED:
-        opening_move = "seed_then_discover"
-        asks = tuple(q for q in RESIDUAL_QUESTIONS if q["id"] in {"rights", "limits"})
-        question = SEED_QUESTION
-    else:
-        opening_move = "residual_questions"
-        asks = RESIDUAL_QUESTIONS
-        question = SEED_QUESTION
-    next_actions = [{"action": "propose_window", "label": "Choose a folder I may read"}]
-    payload = {
-        "schema": ENTRY_PLAN_SCHEMA,
-        "mode": mode,
-        "opening_move": opening_move,
-        "grants": normalized,
-        "seed_question": question,
-        "questions": [deepcopy(q) for q in asks],
-        "discovery": discovery,
-        "cannot_know": _cannot_know(mode),
-        "next_actions": next_actions,
-    }
-    if not payload["next_actions"]:  # pragma: no cover — structurally unreachable
-        raise JourneyError("entry_dead_end", "Onboarding produced no next step.")
-    return payload
-
-
-def _entry_grants(state: dict[str, Any]) -> dict[str, Any]:
-    """The grants THIS journey can prove, read from its own state.
-
-    Exactly one is provable here today, and it is provable exactly: a source
-    whose status is ``ratified_read_only`` is a local-file grant the Captain
-    made and has not revoked. Connectors and web come from an explicit
-    ``entry_grants`` block when a surface supplies one, and are otherwise NOT
-    granted — the fail-closed direction, because over-claiming a grant is how a
-    cabinet reads something nobody gave it.
-    """
-    source = state.get("source")
-    ratified = isinstance(source, dict) and source.get("status") == "ratified_read_only"
-    supplied = state.get("entry_grants")
-    supplied = supplied if isinstance(supplied, dict) else {}
-    return _normalized_grants({
-        "connectors": supplied.get("connectors"),
-        "local_files": True if ratified else supplied.get("local_files"),
-        "web": supplied.get("web"),
-    })
-
-
-def _entry_body(plan: dict[str, Any]) -> str:
-    """The mode's opening move in the operator's words, plus what it cannot know.
-
-    The cannot-know line is not decoration: a cabinet that quietly omits the
-    limits of its own sight is the same failure as a sweep claiming a negative
-    it never earned, one surface up.
-    """
-    mode = plan["mode"]
-    if mode == ENTRY_MODE_CONNECTED:
-        opening = (
-            "You have connected sources, so I will read them first and tell you "
-            "what I found with a citation you can correct. I will not ask you "
-            "for anything they already answer."
-        )
-    elif mode == ENTRY_MODE_SEEDED:
-        opening = (
-            f"Nothing is connected yet, but I can look. {plan['seed_question']} "
-            "A sentence is enough — I will take it as a starting point and go "
-            "find out the rest, not as the answer."
-        )
-    else:
-        opening = (
-            "Nothing is connected and I cannot look anywhere yet, so I will not "
-            f"pretend to know your work. {plan['seed_question']} "
-            "Then give me one folder to read, and I will stop asking."
-        )
-    limits = " ".join(row["statement"] for row in plan["cannot_know"][:2])
-    return f"{opening} What I cannot know without access: {limits}"
-
-
 def _card(state: dict[str, Any]) -> dict[str, Any]:
     stage = str(state["stage"])
     suffix = ""
@@ -862,17 +524,16 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
         "options": [],
     }
     if stage == "welcome":
-        plan = entry_plan(_entry_grants(state))
         common.update(
             kind="first_window",
             title="Let me earn my first responsibility",
             body=(
-                _entry_body(plan)
-                + " Whatever you approve, I show you exactly what I would read first; "
-                "nothing is opened until you approve that Charter."
+                "Choose one folder and tell me what you want made easier. I will first show "
+                "you exactly what I would read. Nothing is opened until you approve that Charter."
             ),
-            entry=plan,
-            options=list(plan["next_actions"]),
+            options=[
+                {"action": "propose_window", "label": "Choose a folder"},
+            ],
         )
     elif stage == "purged":
         common.update(
@@ -906,21 +567,10 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
     elif stage == "dividend_ready":
         dividend = state["first_dividend"]
         finding = dividend["finding"]
-        coverage = dividend.get("coverage") or {}
-        # A strong finding still rode an incomplete window, and the operator
-        # cannot judge "is this the most important thing in there?" without
-        # knowing how much of "in there" was opened.
-        disclosure = ""
-        if finding["quality"] == "strong" and coverage and not coverage.get("complete"):
-            disclosure = (
-                f" I read {coverage.get('examined_files', 0)} of "
-                f"{coverage.get('eligible_files', 0)} supported files, most-informative "
-                "first; the rest were left unopened by the First Window limits."
-            )
         common.update(
             kind="first_dividend",
             title="I found something worth your attention" if finding["quality"] == "strong" else "Your first map is ready",
-            body=finding["summary"] + disclosure,
+            body=finding["summary"],
             evidence=finding["citations"],
             options=[
                 {"action": "continue", "label": "See the locked next step"},
@@ -930,7 +580,6 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
             ],
         )
     elif stage == "orientation_offered":
-        plan = entry_plan(_entry_grants(state))
         common.update(
             kind="deep_orientation",
             title="Deeper Orientation has not started",
@@ -938,14 +587,9 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
                 "A later, separately approved step could spend longer learning how your work fits together, "
                 "reflect back priorities and conflicts, suggest a useful AI team, and show concrete examples "
                 "of what each officer may observe, propose, or do. That work is disabled and has not started. "
-                "No new access or authority was granted. What I can do now instead: "
-                + _entry_body(plan)
+                "No new access or authority was granted."
             ),
-            entry=plan,
-            # ``propose_window`` is what stops this card being terminal. It was
-            # pause/revoke/purge only — three ways to stop and none to continue —
-            # so an operator who wanted to give MORE had to abandon onboarding.
-            options=list(plan["next_actions"]) + [
+            options=[
                 {"action": "pause", "label": "Pause here"},
                 {"action": "revoke", "label": "Revoke folder access"},
                 {"action": "purge", "label": "Delete onboarding data", "danger": True},
@@ -1092,59 +736,6 @@ def _allowed_file(path: Path) -> bool:
     return path.suffix.lower() in ALLOWED_SUFFIXES or path.name.lower() in ALLOWED_BASENAMES
 
 
-# ── Relevance ranking for the bounded read ───────────────────────────────────
-# Walk order is not relevance. Measured 2026-07-26 on an employee-scale slice
-# (docs/persona-employee-slice-2026-07-26.md §5): the alphabetical cap admitted
-# 200 of 2103 eligible files, ALL from one top-level directory, leaving the repo
-# and the tracker with zero coverage — "a cap resolved alphabetically is not a
-# budget, it is a coin flip". Bucket 0 is the sharpest case: ``_command_drift``
-# returns nothing AT ALL when no package.json is in the window, so a manifest
-# file that never fits is not a weaker result, it is a silently disabled
-# detector. Ranking is over path and name only — nothing is read to decide what
-# to read, so the ordering cannot be steered by file CONTENT.
-_RANK_MANIFEST_NAMES = frozenset({
-    "package.json", "pyproject.toml", "cargo.toml", "go.mod", "pom.xml",
-    "build.gradle", "composer.json", "gemfile", "makefile", "justfile",
-    "taskfile.yml", "taskfile.yaml", "docker-compose.yml", "docker-compose.yaml",
-    "requirements.txt", "setup.cfg", "procfile",
-})
-_RANK_ENTRY_STEMS = (
-    "readme", "contributing", "changelog", "todo", "roadmap", "claude",
-    "agents", "onboarding", "index", "overview",
-)
-_RANK_SIGNAL_TOKENS = (
-    "runbook", "deploy", "release", "oncall", "on-call", "incident",
-    "postmortem", "post-mortem", "migrat", "install", "setup",
-    "getting-started", "decision", "adr", "rfc", "spec", "plan", "todo",
-)
-_PROSE_SUFFIXES = frozenset({".md", ".mdx", ".rst", ".txt"})
-_CONFIG_SUFFIXES = frozenset({".json", ".yml", ".yaml", ".toml", ".csv", ".tsv"})
-
-
-def _relevance_key(rel: Path) -> tuple[int, int, int, str]:
-    """Rank one eligible path. Total, deterministic, content-blind.
-
-    Ties break on depth then path, so the order is stable across filesystems
-    and two runs over one tree produce byte-identical manifests.
-    """
-    name = rel.name.lower()
-    stem = name.rsplit(".", 1)[0] if "." in name else name
-    suffix = rel.suffix.lower()
-    posix = rel.as_posix().lower()
-    if name in _RANK_MANIFEST_NAMES:
-        bucket = 0
-    elif any(stem.startswith(entry) for entry in _RANK_ENTRY_STEMS):
-        bucket = 1
-    elif suffix in _PROSE_SUFFIXES:
-        bucket = 2
-    elif suffix in _CONFIG_SUFFIXES:
-        bucket = 3
-    else:
-        bucket = 4
-    signal = 0 if any(token in posix for token in _RANK_SIGNAL_TOKENS) else 1
-    return (bucket, signal, len(rel.parts), rel.as_posix())
-
-
 def _shannon_entropy(token: str) -> float:
     counts: dict[str, int] = {}
     for ch in token:
@@ -1177,17 +768,7 @@ def _citation(entry: dict[str, Any], line_no: int, line: str) -> dict[str, Any]:
 
 
 def _scan_source(source: Path, charter_hash: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Read a bounded, RELEVANCE-ORDERED slice of one folder, and count the rest.
-
-    Two passes, and the split is the whole point. Pass one stats the tree and
-    counts EVERY eligible file, including the ones the budget will not reach —
-    the old single pass stopped counting candidates the moment the cap tripped,
-    so a 2103-file estate reported ``candidate_files == included_files == 200``
-    with zero exclusions, a statistic that reads as complete coverage of a
-    200-file folder. Pass two reads the eligible set in relevance order until
-    the budget is spent, and what it could not reach is reported as
-    ``unexamined`` rather than disappearing.
-    """
+    entries: list[dict[str, Any]] = []
     total = 0
     truncated = False
     visited = 0  # every directory entry EXAMINED, so a huge tree of skipped files still terminates
@@ -1202,7 +783,6 @@ def _scan_source(source: Path, charter_hash: str) -> tuple[dict[str, Any], list[
         "binary": 0,
     }
     candidates = 0
-    eligible: list[tuple[tuple[int, int, int, str], Path, Path]] = []
     for current, dirnames, filenames in os.walk(source, topdown=True, followlinks=False):
         current_path = Path(current)
         kept_dirs = []
@@ -1226,7 +806,7 @@ def _scan_source(source: Path, charter_hash: str) -> tuple[dict[str, Any], list[
         dirnames[:] = kept_dirs
         for filename in sorted(filenames):
             visited += 1
-            if visited >= MAX_SCAN_ENTRIES:
+            if len(entries) >= MAX_FILES or total >= MAX_TOTAL_BYTES or visited >= MAX_SCAN_ENTRIES:
                 truncated = True
                 break
             path = current_path / filename
@@ -1251,78 +831,48 @@ def _scan_source(source: Path, charter_hash: str) -> tuple[dict[str, Any], list[
                     continue
                 resolved = path.resolve(strict=True)
                 resolved.relative_to(source)
-                # A file bigger than the PER-FILE ceiling is excluded on its own
-                # merits. Budget exhaustion is deliberately NOT counted here: a
-                # file the window simply ran out of room for was never too
-                # large, and filing it as such is how the loss hid.
-                if lst.st_size > MAX_FILE_BYTES:
+                if lst.st_size > MAX_FILE_BYTES or total + lst.st_size > MAX_TOTAL_BYTES:
+                    truncated = True
                     excluded["too_large"] += 1
                     continue
+                flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                fd = os.open(path, flags)
+                try:
+                    opened = os.fstat(fd)
+                    if (
+                        not stat.S_ISREG(opened.st_mode)
+                        or opened.st_size > MAX_FILE_BYTES
+                        or (opened.st_dev, opened.st_ino) != (lst.st_dev, lst.st_ino)
+                    ):
+                        excluded["unreadable_or_raced"] += 1
+                        continue
+                    with os.fdopen(fd, "rb", closefd=False) as fh:
+                        raw = fh.read(MAX_FILE_BYTES + 1)
+                finally:
+                    os.close(fd)
             except (OSError, RuntimeError, ValueError):
                 excluded["unreadable_or_raced"] += 1
                 continue
-            eligible.append((_relevance_key(rel), path, rel))
-        if visited >= MAX_SCAN_ENTRIES:
-            truncated = True
-            break
-    eligible.sort(key=lambda item: item[0])
-    eligible_count = len(eligible)
-    entries: list[dict[str, Any]] = []
-    reached = 0
-    for _key, path, rel in eligible:
-        reached += 1
-        if len(entries) >= MAX_FILES or total >= MAX_TOTAL_BYTES:
-            truncated = True
-            reached -= 1
-            break
-        try:
-            lst = path.lstat()
-            if not stat.S_ISREG(lst.st_mode) or lst.st_size > MAX_FILE_BYTES:
-                excluded["unreadable_or_raced"] += 1
-                continue
-            if total + lst.st_size > MAX_TOTAL_BYTES:
+            if len(raw) > MAX_FILE_BYTES or total + len(raw) > MAX_TOTAL_BYTES:
                 truncated = True
-                reached -= 1
-                break
-            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-            fd = os.open(path, flags)
-            try:
-                opened = os.fstat(fd)
-                if (
-                    not stat.S_ISREG(opened.st_mode)
-                    or opened.st_size > MAX_FILE_BYTES
-                    or (opened.st_dev, opened.st_ino) != (lst.st_dev, lst.st_ino)
-                ):
-                    excluded["unreadable_or_raced"] += 1
-                    continue
-                with os.fdopen(fd, "rb", closefd=False) as fh:
-                    raw = fh.read(MAX_FILE_BYTES + 1)
-            finally:
-                os.close(fd)
-        except (OSError, RuntimeError, ValueError):
-            excluded["unreadable_or_raced"] += 1
-            continue
-        if len(raw) > MAX_FILE_BYTES:
-            excluded["too_large"] += 1
-            continue
-        if total + len(raw) > MAX_TOTAL_BYTES:
+                excluded["too_large"] += 1
+                continue
+            if b"\x00" in raw[:4096]:
+                excluded["binary"] += 1
+                continue
+            text = raw.decode("utf-8", errors="replace")
+            digest = hashlib.sha256(raw).hexdigest()
+            entries.append({
+                "path": rel.as_posix(),
+                "bytes": len(raw),
+                "sha256": digest,
+                "text": text,
+                "lines": text.splitlines(),
+            })
+            total += len(raw)
+        if len(entries) >= MAX_FILES or total >= MAX_TOTAL_BYTES or visited >= MAX_SCAN_ENTRIES:
             truncated = True
-            reached -= 1
             break
-        if b"\x00" in raw[:4096]:
-            excluded["binary"] += 1
-            continue
-        text = raw.decode("utf-8", errors="replace")
-        digest = hashlib.sha256(raw).hexdigest()
-        entries.append({
-            "path": rel.as_posix(),
-            "bytes": len(raw),
-            "sha256": digest,
-            "text": text,
-            "lines": text.splitlines(),
-        })
-        total += len(raw)
-    unexamined = max(eligible_count - reached, 0)
     manifest_files = [
         {"path": e["path"], "bytes": e["bytes"], "sha256": e["sha256"]}
         for e in entries
@@ -1339,16 +889,6 @@ def _scan_source(source: Path, charter_hash: str) -> tuple[dict[str, Any], list[
             "candidate_files": candidates,
             "included_files": len(manifest_files),
             "excluded": excluded,
-        },
-        # The claim surface for every negative the dividend states. ``complete``
-        # is the ONLY thing that entitles the card to say "I did not find X" —
-        # anything else scopes the sentence to the files actually opened.
-        "coverage": {
-            "eligible_files": eligible_count,
-            "examined_files": len(manifest_files),
-            "unexamined_files": unexamined,
-            "complete": unexamined == 0 and not truncated,
-            "ordering": "relevance",
         },
     }
     manifest = {**manifest_payload, "manifest_hash": _hash(manifest_payload)}
@@ -1571,39 +1111,18 @@ def _first_dividend(manifest: dict[str, Any], entries: list[dict[str, Any]], now
             int(item["citations"][0]["line"]) if item["citations"] else 0,
         )
     )
-    coverage = manifest.get("coverage") or {}
-    complete = bool(coverage.get("complete"))
-    unexamined = int(coverage.get("unexamined_files") or 0)
     if findings:
         finding = findings[0]
     elif entries:
         first = entries[0]
-        # EARN THE NEGATIVE OR SCOPE IT. The old sentence claimed a global "did
-        # not find a broken documented command" over a window that had never
-        # opened most of the folder — measured false on an employee-scale slice
-        # while exactly such a command sat unread. A negative is only about the
-        # set actually examined, and when that set is a subset the card says so
-        # in the same breath rather than leaving the loss on a manifest field
-        # no operator reads.
-        if complete:
-            summary = (
-                f"I read all {manifest['file_count']} supported files in that folder and found no "
-                "contradiction, broken documented command, or explicit urgent marker. Nothing was "
-                "left unopened, so that negative covers the whole folder."
-            )
-        else:
-            summary = (
-                f"I read {manifest['file_count']} of {coverage.get('eligible_files', manifest['file_count'])} "
-                f"supported files, most-informative first, and found no contradiction, broken documented "
-                f"command, or explicit urgent marker IN WHAT I READ. {unexamined} eligible files were left "
-                "unopened by the First Window limits, so this is not a clean bill of health for the folder — "
-                "widen the window or point me at a narrower one and I will finish the job."
-            )
         finding = {
             "score": 10,
             "kind": "orientation_map",
             "quality": "orientation_only",
-            "summary": summary,
+            "summary": (
+                f"I mapped {manifest['file_count']} supported files but did not find a strong contradiction, broken documented command, "
+                "or explicit urgent marker. That is an honest orientation result, not a manufactured warning."
+            ),
             "citations": [_citation(first, 1, first["lines"][0] if first["lines"] else first["path"])],
         }
     else:
@@ -1621,10 +1140,6 @@ def _first_dividend(manifest: dict[str, Any], entries: list[dict[str, Any]], now
         "finding": finding,
         "detectors": ["software_command_drift", "conflicting_commitment", "attention_marker"],
         "raw_source_persisted": False,
-        # Carried on the dividend, not left on the manifest, because the
-        # dividend is what every surface renders — a coverage figure an
-        # operator never sees is not a disclosure.
-        "coverage": deepcopy(coverage),
     }
     return {**payload, "dividend_hash": _hash(payload)}
 

@@ -305,6 +305,52 @@ temporary_allowances:
       framework/authority/tests/test_classifier.py) — so folding both onto one
       predicate reclaims this surface; or COG-7 compaction brings production
       non-comment lines below the pinned baseline
+  - phase: onboarding-three-entry-modes
+    budget: framework_production_noncomment_lines
+    additional: 386
+    reason: >-
+      the three entry modes and the First Window's coverage honesty, both
+      inside framework/onboarding/journey.py. ZERO new modules
+      (framework_production_modules unchanged at 244) — the entry classifier
+      lives in the module that OWNS the entry surface rather than in a new file
+      wired back to it, which is the shape this program has twice paid for
+      (substrate built ahead of a consumer). WHAT THE LINES BUY, and each is
+      pinned by an arm that fails against the pre-change module. (1) ENTRY
+      MODES — the welcome card offered exactly one move, "choose a folder", so
+      an operator with no folder to grant had NO path at all, and the
+      deep-orientation card offered pause/revoke/purge, three ways to stop and
+      none to go on. Both were dead ends. entry_plan() classifies what has
+      actually been granted into connected / seeded / ungranted and returns a
+      non-empty next step in all eight grant combinations, with the residual
+      questionnaire (rights, salience, limits, purpose — none of them "what is
+      your company") and the derivability table stating, per subject, what a
+      sweep may assert with a citation versus what inferring would be
+      fabrication. (2) COVERAGE HONESTY — the sweep read files in ALPHABETICAL
+      walk order and then told the operator it "did not find a broken
+      documented command", a negative it never earned. Measured 2026-07-26 on
+      an employee-scale slice (docs/persona-employee-slice-2026-07-26.md §5):
+      200 of 2103 eligible files, all from ONE top-level directory, and the
+      statistic that should have revealed the loss concealed it — the scan
+      stopped counting candidates the moment the cap tripped, so
+      scan_statistics read candidate_files == included_files == 200 with zero
+      exclusions, indistinguishable from complete coverage. The scan is now two
+      passes: it counts the whole tree, reads in relevance order, and reports
+      what it could not reach. The three-file arm that used to pin the defect
+      now finds the cross-directory command drift the old ordering dropped.
+      +386 measured 2026-07-27 with cognitive-architecture-census.py against
+      master 91faed1b (69654, itself exactly at the pinned maximum) -> 70040.
+      Docstrings are counted as written: the scanner's states WHY the two-pass
+      split exists and what the old single pass concealed, and the entry
+      plan's states the never-a-dead-end invariant it is there to hold —
+      rewriting either into "#" comments would buy a smaller number by
+      deleting the reasoning that stops the next author reintroducing both.
+    owner: onboarding-plane
+    sunset: '2027-01-19'
+    deletion_gate: >-
+      the ordering inversion lands (lanes derivable, discovery artifact
+      consumed by genesis) and the entry classifier moves onto that shared
+      estate surface instead of carrying its own grant reader, or COG-7
+      compaction brings production non-comment lines below the pinned baseline
   - phase: COG-0
     budget: framework_production_modules
     additional: 2

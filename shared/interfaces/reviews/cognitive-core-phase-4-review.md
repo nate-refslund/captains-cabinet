@@ -21,15 +21,22 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: b35235598ae8ee6ee35b122fbaf763cd8f92d0ccf1d279f04ef3f55c75624293
+Reviewed-Scope-Digest: ab46f213abfec05b289041e9e3d50ba0a65d58149efe961e1dab8a4ec7d0949f
 (RE-BOUND repeatedly on 2026-07-27 — the census-shift-left, expansion-registry and
 census-set-pins landings each edited `cabinet/config/cognitive-architecture-contract.yml`,
 which sits in `restore_from_baseline` and is therefore digest-bound, and so did this
-branch's `recipient-exclusion-carve-backs` allowance row. NO COG-4 implementation byte
+branch's `recipient-exclusion-carve-backs` allowance row, and again for the
+`onboarding-three-entry-modes` allowance row (2026-07-27). NO COG-4 implementation byte
 changed by any of them: every edit is a budget/allowance row, and
 `framework/authority/classifier.py` remains in the manifest's `must_remain_unchanged`
 block against the pinned phase anchor, which the rollback rehearsal re-checks. The
-phase-4 findings below are unaffected.)
+phase-4 findings below are unaffected. MECHANICALLY VERIFIED for the last of these
+rather than asserted: `resolve_scope()` was intersected with `git diff --name-only`
+over that landing, and `cabinet/config/cognitive-architecture-contract.yml` is the
+ONLY digest-bound path it touches — the other ten are the onboarding entry-mode
+surface, its tests, its vendored snapshot and the dashboard, none of them in scope.
+A re-bind that moved an implementation byte would not be a mechanical delta and is
+not what this line records.)
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of

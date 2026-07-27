@@ -348,6 +348,44 @@ describe('rendered component — accessible shell', () => {
     expect(html).toContain('Test card title')
     expect(html).toContain('aria-live="polite"')
   })
+
+  // Three entry modes (Captain ruling 2026-07-26). The welcome card used to
+  // offer one move and name no alternative; when the core hands down an entry
+  // plan the surface has to SHOW the questions it cannot answer for itself,
+  // or the plan is data nobody reads.
+  it('renders the residual questions when the card carries an entry plan', () => {
+    const fixture = journeyFixture('welcome')
+    fixture.card.entry = {
+      schema: 'cabinet.onboarding-entry-plan/v1',
+      mode: 'ungranted',
+      opening_move: 'residual_questions',
+      grants: { connectors: [], local_files: false, web: false },
+      seed_question: 'What do you do, and how can I best serve you?',
+      questions: [
+        {
+          id: 'rights',
+          prompt: 'Which of these sources are yours to give me read access to?',
+          why: 'No amount of access answers this.',
+          required: true,
+        },
+      ],
+      discovery: { terms: [], probes: [], executable: false },
+      cannot_know: [
+        { subject: 'grant_rights', verdict: 'never', statement: 'Not in the data.' },
+      ],
+      next_actions: [{ action: 'propose_window', label: 'Choose a folder I may read' }],
+    }
+    scriptState({ journey: fixture })
+    const html = render()
+    expect(html).toContain('What I cannot work out for myself')
+    expect(html).toContain('yours to give me read access to')
+    expect(html).toContain('No amount of access answers this.')
+  })
+
+  it('renders no residual-question block when the card carries no entry plan', () => {
+    scriptState({ journey: journeyFixture('charter_pending') })
+    expect(render()).not.toContain('What I cannot work out for myself')
+  })
 })
 
 const component = fs.readFileSync(

@@ -281,6 +281,22 @@ export default function OnboardingJourneyCard({
 
           <p className={`mt-3 text-sm leading-6 ${muted}`}>{journey.card.body}</p>
 
+          {journey.card.entry && journey.card.entry.questions.length > 0 && (
+            <div className={`mt-4 rounded-lg border p-3 ${variant === 'world' ? 'border-stone-500/70 bg-amber-50/40' : 'border-zinc-700 bg-zinc-950'}`}>
+              <h3 className="text-sm font-semibold">
+                What I cannot work out for myself
+              </h3>
+              <ul className="mt-2 space-y-2 text-sm">
+                {journey.card.entry.questions.map((question) => (
+                  <li key={question.id}>
+                    {question.prompt}
+                    <span className={`block ${muted}`}>{question.why}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {journey.card.evidence.length > 0 && (
             <div className={`mt-4 rounded-lg border p-3 ${variant === 'world' ? 'border-stone-500/70 bg-amber-50/40' : 'border-zinc-700 bg-zinc-950'}`}>
               <h3 className="text-sm font-semibold">Receipt — where this came from</h3>

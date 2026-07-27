@@ -441,13 +441,25 @@ def test_secret_keyword_without_assignment_is_still_redacted(tmp_path):
 
 
 def test_empty_or_unremarkable_window_is_honest_not_manufactured(tmp_path):
+    """A negative over a folder read IN FULL is earned, and says so.
+
+    INVERTED 2026-07-27: the old wording ("did not find a strong …") was one
+    sentence for both cases — complete coverage and a truncated window — which
+    is how the unearned negative below got to sound identical to this earned
+    one. The claim is now scoped to what was actually read, so this arm pins
+    the COMPLETE half explicitly.
+    """
     source = tmp_path / "sources" / "calm"
     source.mkdir(parents=True)
     (source / "about.md").write_text("# About\n\nWe host a reading circle every Tuesday.\n")
     out = ratify(tmp_path, propose(tmp_path, source))
-    finding = out["state"]["first_dividend"]["finding"]
+    dividend = out["state"]["first_dividend"]
+    finding = dividend["finding"]
     assert finding["quality"] == "orientation_only"
-    assert "did not find a strong" in finding["summary"]
+    assert dividend["coverage"]["complete"] is True
+    assert dividend["coverage"]["unexamined_files"] == 0
+    assert "read all 1 supported files" in finding["summary"]
+    assert "covers the whole folder" in finding["summary"]
 
 
 def test_one_action_id_is_idempotent_across_surfaces(tmp_path):
@@ -1157,32 +1169,88 @@ def test_uncapped_window_finds_the_cross_directory_command_drift(tmp_path):
     )
 
 
-def test_capped_window_reports_a_clean_negative_it_did_not_earn(tmp_path, monkeypatch):
-    """The file cap is resolved by walk order, not relevance, so it can admit
-    one half of a cross-directory pair and drop the other.
+def test_capped_window_reads_by_relevance_and_keeps_the_cross_directory_join(tmp_path, monkeypatch):
+    """INVERTED 2026-07-27 — this arm used to pin the defect, by design.
 
-    Measured 2026-07-26 against a realistic employee-scale slice (2103 eligible
-    files, 12.6 MB): the cap admitted 200 files from a single top-level
-    directory, both orderings scored zero findings, and the card said it "did
-    not find ... a broken documented command" while exactly such a command sat
-    unopened in the folder. That negative is not one the sweep is entitled to.
-    Pinned so any coverage, ranking or disclosure fix flips a sensor.
+    It was written as ``test_capped_window_reports_a_clean_negative_it_did_not_
+    earn`` and its docstring said "pinned so any coverage, ranking or
+    disclosure fix flips a sensor". This is that flip. Measured 2026-07-26 on
+    an employee-scale slice (2103 eligible files, 12.6 MB): the alphabetical
+    cap admitted 200 files from a single top-level directory, scored zero
+    findings, and the card claimed it "did not find … a broken documented
+    command" while exactly such a command sat unopened.
+
+    Under relevance ordering the manifest file that REFUTES the documented
+    command is read first — ``_command_drift`` returns nothing at all without
+    one — so the same three-file budget now recovers the cross-directory join
+    that walk order dropped.
     """
     monkeypatch.setattr(journey, "MAX_FILES", 3)
     root = _split_pair_estate(tmp_path, filler=3)
     manifest, entries = journey._scan_source(root, charter_hash="capped")
     assert manifest["truncated_by_limits"] is True
-    # The stale command survives; the package.json that would refute it does not.
-    assert not any(e["path"] == "repo/package.json" for e in entries)
-    assert journey._command_drift(entries) == []
+    assert any(e["path"] == "repo/package.json" for e in entries)
+    assert [f["kind"] for f in journey._command_drift(entries)] == ["software_command_drift"]
+    finding = journey._first_dividend(manifest, entries, "2026-07-26T00:00:00Z")["finding"]
+    assert finding["kind"] == "software_command_drift"
+    # The statistic that used to read as full coverage now counts the whole tree.
+    stats = manifest["scan_statistics"]
+    assert stats["candidate_files"] > stats["included_files"]
+    coverage = manifest["coverage"]
+    assert coverage["complete"] is False
+    assert coverage["unexamined_files"] > 0
+    assert coverage["eligible_files"] > coverage["examined_files"]
+
+
+def test_a_truncated_window_never_states_a_negative_it_did_not_earn(tmp_path, monkeypatch):
+    """Ranking narrows the loss; it does not abolish it. Disclosure must.
+
+    A budget of one file cannot hold both halves of any join, so the honest
+    outcome here IS orientation-only — and the card has to say what it did not
+    look at instead of reporting a clean folder.
+    """
+    monkeypatch.setattr(journey, "MAX_FILES", 1)
+    root = _split_pair_estate(tmp_path, filler=3)
+    manifest, entries = journey._scan_source(root, charter_hash="one-file")
     finding = journey._first_dividend(manifest, entries, "2026-07-26T00:00:00Z")["finding"]
     assert finding["kind"] == "orientation_map"
-    assert "did not find" in finding["summary"]
-    # The operator-facing card carries no coverage or truncation signal at all.
-    assert "truncat" not in finding["summary"]
-    stats = manifest["scan_statistics"]
-    assert stats["candidate_files"] == stats["included_files"]
-    assert sum(stats["excluded"].values()) == 0
+    summary = finding["summary"]
+    assert "IN WHAT I READ" in summary
+    assert "left" in summary and "unopened" in summary
+    assert "covers the whole folder" not in summary
+    assert str(manifest["coverage"]["unexamined_files"]) in summary
+
+
+def test_coverage_is_complete_only_when_nothing_was_left_unopened(tmp_path):
+    """The degenerate end of the claim: an untruncated window earns the word.
+
+    ``complete`` is the ONLY thing entitling the card to a global negative, so
+    it is asserted in both directions against the same estate.
+    """
+    root = _split_pair_estate(tmp_path, filler=3)
+    manifest, _entries = journey._scan_source(root, charter_hash="uncapped")
+    coverage = manifest["coverage"]
+    assert coverage["complete"] is True
+    assert coverage["unexamined_files"] == 0
+    assert coverage["eligible_files"] == coverage["examined_files"] == manifest["file_count"]
+
+
+def test_relevance_ranking_is_stable_and_content_blind(tmp_path):
+    """Two runs over one tree must produce byte-identical manifests.
+
+    Ranking reads no file to decide what to read, so nothing inside a source
+    can steer which files the First Window opens.
+    """
+    root = _split_pair_estate(tmp_path, filler=4)
+    first, _ = journey._scan_source(root, charter_hash="stable")
+    second, _ = journey._scan_source(root, charter_hash="stable")
+    assert first == second
+    assert journey._relevance_key(Path("repo/package.json")) < journey._relevance_key(
+        Path("docs/page-000.md")
+    )
+    assert journey._relevance_key(Path("docs/zz-deploy-runbook.md")) < journey._relevance_key(
+        Path("docs/page-000.md")
+    )
 
 
 def _employee_estate_dividend(tmp_path: Path) -> tuple[dict, list[dict]]:
@@ -1289,3 +1357,253 @@ def test_employee_estate_planted_cross_system_facts_are_all_present_but_unfound(
     cited = " ".join(c["excerpt"] for f in findings for c in f["citations"])
     for unfound in ("ledger_dual_write", "eng-briar", "2026-09-30", "@payments-platform"):
         assert unfound not in cited
+
+
+# ── Three entry modes, and never a dead end (Captain ruling 2026-07-26) ───────
+# The tree used to serve NONE of them: the welcome card offered one move —
+# choose a folder — so an operator with no folder to grant had no path at all,
+# and the deep-orientation card was terminal. These arms pin the classification,
+# the residual set, the un-derivable question, and the invariant the unit exists
+# for: onboarding always returns a next step.
+
+_ALL_GRANT_COMBINATIONS = [
+    {"connectors": connectors, "local_files": local, "web": web}
+    for connectors in ([], ["tracker"])
+    for local in (False, True)
+    for web in (False, True)
+]
+
+
+@pytest.mark.parametrize("grants", _ALL_GRANT_COMBINATIONS)
+def test_every_grant_combination_produces_a_next_step(grants):
+    """THE invariant. Eight combinations, zero dead ends.
+
+    Not "usually" and not "for the shapes we thought of": the plan is total, so
+    the parametrization is the full cross product of the three grants.
+    """
+    plan = journey.entry_plan(grants)
+    assert plan["mode"] in journey.ENTRY_MODES
+    assert plan["opening_move"]
+    assert plan["next_actions"], f"dead end for {grants}"
+    assert all(action["action"] and action["label"] for action in plan["next_actions"])
+    assert plan["cannot_know"]
+
+
+@pytest.mark.parametrize(
+    "grants,expected",
+    [
+        ({}, journey.ENTRY_MODE_UNGRANTED),
+        (None, journey.ENTRY_MODE_UNGRANTED),
+        ({"local_files": True}, journey.ENTRY_MODE_SEEDED),
+        ({"web": True}, journey.ENTRY_MODE_SEEDED),
+        ({"connectors": ["tracker"]}, journey.ENTRY_MODE_CONNECTED),
+        ({"connectors": ["tracker"], "web": True}, journey.ENTRY_MODE_CONNECTED),
+    ],
+)
+def test_entry_mode_classification(grants, expected):
+    assert journey.entry_mode(grants) == expected
+
+
+@pytest.mark.parametrize(
+    "grants",
+    [
+        {"local_files": "yes"},
+        {"local_files": 1},
+        {"connectors": []},
+        {"connectors": ["", "   "]},
+        {"connectors": "not-a-list-but-a-name"},
+        "not-a-mapping",
+    ],
+)
+def test_a_grant_is_only_a_grant_when_it_is_literally_granted(grants):
+    """Fail-closed at the degenerate end: truthy is not granted.
+
+    ``"yes"``/``1`` are the shapes a careless surface sends, and reading a
+    source nobody gave is the failure this direction of the check prevents.
+    One exception is deliberate and asserted below: a bare connector NAME is a
+    real grant, because a name is not ambiguous.
+    """
+    mode = journey.entry_mode(grants)
+    if grants == {"connectors": "not-a-list-but-a-name"}:
+        assert mode == journey.ENTRY_MODE_CONNECTED
+    else:
+        assert mode == journey.ENTRY_MODE_UNGRANTED
+
+
+def test_the_residual_questionnaire_never_asks_what_your_company_is():
+    """Three required questions plus purpose, and none of them org-shaped.
+
+    Both blind arms of the 2026-07-26 gate produced "which of these are yours
+    to grant?" independently and NEITHER produced an org-structure question.
+    The forbidden list is the check, not a comment: a later author adding
+    "what does your company do" flips this arm.
+    """
+    ids = [q["id"] for q in journey.RESIDUAL_QUESTIONS]
+    assert ids == ["rights", "salience", "limits", "purpose"]
+    assert len([q for q in journey.RESIDUAL_QUESTIONS if q["required"]]) == 3
+    prompts = " ".join(q["prompt"].lower() for q in journey.RESIDUAL_QUESTIONS)
+    for org_shaped in (
+        "what is your company",
+        "what does your company",
+        "what industry",
+        "how big is your team",
+        "what is your role",
+        "who is your manager",
+        "what is your job title",
+    ):
+        assert org_shaped not in prompts
+    for question in journey.RESIDUAL_QUESTIONS:
+        assert question["prompt"].endswith("?")
+        assert question["why"]
+
+
+def test_the_right_to_grant_is_declared_underivable_at_every_altitude():
+    """It is not "hard to derive"; it is not in the data. Both must hold.
+
+    ``grant_rights`` therefore appears in the cannot-know list of EVERY mode,
+    including the fully connected one — connecting more sources never answers
+    it.
+    """
+    assert journey.DERIVABILITY["grant_rights"]["verdict"] == journey.NEVER_DERIVABLE
+    for grants in _ALL_GRANT_COMBINATIONS:
+        subjects = [row["subject"] for row in journey.entry_plan(grants)["cannot_know"]]
+        assert "grant_rights" in subjects
+    assert any(q["id"] == "rights" for q in journey.RESIDUAL_QUESTIONS)
+
+
+def test_a_sweep_may_assert_products_but_never_roles_or_the_business_model():
+    """The adjudicated derivability split, including the dangerous middle.
+
+    "partial" subjects carry BOTH halves — what is derivable and what would be
+    fabrication — because a verdict word alone lets the derivable half quietly
+    license the other.
+    """
+    assert journey.DERIVABILITY["products"]["verdict"] == journey.DERIVABLE
+    assert journey.DERIVABILITY["projects"]["verdict"] == journey.DERIVABLE
+    assert journey.DERIVABILITY["tasks"]["verdict"] == journey.DERIVABLE
+    assert journey.DERIVABILITY["customers"]["verdict"] == journey.NOT_DERIVABLE
+    for subject in ("teams", "company"):
+        row = journey.DERIVABILITY[subject]
+        assert row["verdict"] == journey.PARTIALLY_DERIVABLE
+        assert row["note"] and row["cannot"]
+    assert "inventing" in journey.DERIVABILITY["teams"]["cannot"]
+    assert "makes money" in journey.DERIVABILITY["company"]["cannot"]
+
+
+def test_connected_mode_does_not_ask_what_the_data_answers():
+    """Mode 1: sweep and assert. The salience question is the one exception —
+    what the operator CARES about this week is not in the data either."""
+    plan = journey.entry_plan({"connectors": ["tracker", "repo"]})
+    assert plan["opening_move"] == "sweep_and_assert"
+    assert plan["seed_question"] is None
+    assert [q["id"] for q in plan["questions"]] == ["rights", "limits", "purpose"]
+    assert plan["grants"]["connectors"] == ["repo", "tracker"]
+
+
+def test_seeded_mode_asks_the_human_question_and_turns_it_into_discovery():
+    """Mode 2: a few words become search and sweep work, not a stored answer."""
+    plan = journey.entry_plan(
+        {"local_files": True, "web": True},
+        seed="I run payments integrations for a mid-size bank",
+    )
+    assert plan["opening_move"] == "seed_then_discover"
+    assert plan["seed_question"] == journey.SEED_QUESTION
+    assert "how can I best serve you" in journey.SEED_QUESTION
+    discovery = plan["discovery"]
+    assert "payments" in [t.lower() for t in discovery["terms"]]
+    assert discovery["executable"] is True
+    kinds = {probe["kind"] for probe in discovery["probes"]}
+    assert kinds == {"web_search", "local_name_match"}
+
+
+@pytest.mark.parametrize(
+    "grants,expected_kinds",
+    [
+        ({"web": True}, {"web_search"}),
+        ({"local_files": True}, {"local_name_match"}),
+        ({}, set()),
+    ],
+)
+def test_a_probe_is_only_emitted_for_a_grant_that_exists(grants, expected_kinds):
+    """No web grant, no web probe. The plan never proposes work it may not do."""
+    discovery = journey.seed_probes("payments integrations for a bank", grants)
+    assert {probe["kind"] for probe in discovery["probes"]} == expected_kinds
+
+
+def test_a_seed_of_nothing_is_not_turned_into_discovery():
+    """Degenerate end: empty, whitespace and pure stopwords yield no probes and
+    no invented terms — the plan still returns a next step."""
+    for seed in (None, "", "   ", "i do a lot of things", 17):
+        discovery = journey.seed_probes(seed, {"web": True, "local_files": True})
+        assert discovery["terms"] == []
+        assert discovery["probes"] == []
+        assert discovery["executable"] is False
+    assert journey.entry_plan({"web": True}, seed="")["next_actions"]
+
+
+def test_ungranted_mode_says_plainly_what_it_cannot_know():
+    """Mode 3: the residual questions, and no pretending."""
+    plan = journey.entry_plan({})
+    assert plan["opening_move"] == "residual_questions"
+    assert [q["id"] for q in plan["questions"]] == ["rights", "salience", "limits", "purpose"]
+    subjects = {row["subject"] for row in plan["cannot_know"]}
+    assert {"grant_rights", "products", "customers", "teams", "company"} <= subjects
+    assert all(row["statement"] for row in plan["cannot_know"])
+
+
+def test_the_welcome_card_is_no_longer_a_single_locked_door(tmp_path):
+    """It offered exactly one move and named no alternative. Now it classifies.
+
+    A cabinet nobody has granted anything is in ``ungranted`` — the honest
+    default — so the first card asks the human-shaped question and states its
+    blindness instead of demanding a folder as the only way in.
+    """
+    card = journey.snapshot(tmp_path)["card"]
+    assert card["stage"] == "welcome"
+    assert card["entry"]["mode"] == journey.ENTRY_MODE_UNGRANTED
+    assert card["entry"]["schema"] == journey.ENTRY_PLAN_SCHEMA
+    assert journey.SEED_QUESTION in card["body"]
+    assert "cannot know" in card["body"]
+    assert [option["action"] for option in card["options"]] == ["propose_window"]
+
+
+def test_deep_orientation_is_no_longer_terminal(tmp_path):
+    """It offered pause, revoke and purge — three ways to stop, none to go on.
+
+    After a ratified First Window the operator HAS granted local files, so the
+    card now classifies as seeded, asks the human-shaped question, and carries
+    a forward move.
+    """
+    source = estate(tmp_path, "software-product")
+    ratified = ratify(tmp_path, propose(tmp_path, source))
+    assert ratified["state"]["source"]["status"] == "ratified_read_only"
+    out = journey.act(
+        {"action": "continue", "action_id": "continue-1", "surface": "dashboard"},
+        tmp_path,
+    )
+    card = out["card"]
+    assert card["stage"] == "orientation_offered"
+    actions = [option["action"] for option in card["options"]]
+    assert "propose_window" in actions
+    assert {"pause", "revoke", "purge"} <= set(actions)
+    assert card["entry"]["mode"] == journey.ENTRY_MODE_SEEDED
+    assert "has not started" in card["body"]
+
+
+def test_a_revoked_source_stops_counting_as_a_local_grant(tmp_path):
+    """The grant is read from state, so revoking it must change the mode.
+
+    Otherwise the plan would keep proposing sweep work over a folder the
+    operator took back.
+    """
+    source = estate(tmp_path, "software-product")
+    ratify(tmp_path, propose(tmp_path, source))
+    assert journey._entry_grants(journey.snapshot(tmp_path)["state"])["local_files"] is True
+    journey.act(
+        {"action": "revoke", "action_id": "revoke-1", "surface": "dashboard"},
+        tmp_path,
+    )
+    state = journey.snapshot(tmp_path)["state"]
+    assert state["source"]["status"] == "revoked"
+    assert journey._entry_grants(state)["local_files"] is False
+    assert journey.entry_plan(journey._entry_grants(state))["next_actions"]
