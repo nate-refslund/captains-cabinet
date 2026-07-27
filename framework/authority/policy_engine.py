@@ -157,10 +157,19 @@ def _strip_quotes_and_escapes(token: str) -> str:
 
 
 def _split_on_statement_seps(command: str) -> list[str]:
-    """Split a command string on ;, &&, ||, | respecting quoting.
+    """Split a command string on ;, &&, ||, |, NEWLINE respecting quoting.
 
     Returns a list of statement strings. Handles single quotes, double
     quotes, $'...' ANSI-C quotes, and backslash escapes.
+
+    NEWLINE joined the separator set on 2026-07-27. It was missing, so every
+    multi-line Bash command was analysed by its FIRST LINE ONLY — and this
+    function feeds the LIVE-enforcing binary_block and destructive_rm gates,
+    not just the shadow classifier. Measured on master: `sudo rm -rf /tmp/x`
+    BLOCKED, `ls\\nrm -rf /` and `ls\\nsudo systemctl stop x` ALLOWED. A
+    multi-line command is the normal shape of agent-written bash, so this one
+    fired by accident, not only under attack. Splitting more can only surface
+    MORE binaries to a blocklist — the direction is safe by construction.
     """
     statements: list[str] = []
     current: list[str] = []
@@ -201,6 +210,10 @@ def _split_on_statement_seps(command: str) -> list[str]:
             current.append(command[i : i + 2])
             i += 2
         # Statement separators
+        elif ch == "\n":
+            statements.append("".join(current))
+            current = []
+            i += 1
         elif ch == ";" or ch == "|" or ch == "&":
             # Check for && or ||
             if ch == "&" and i + 1 < n and command[i + 1] == "&":
@@ -381,8 +394,78 @@ def _tokenize_simple(statement: str) -> list[str]:
     return tokens
 
 
+# A redirection word: an optional fd number or '&', then <, <<, <<<, > or >>,
+# optionally '&' (for >&2), with the target either fused ('2>/tmp/echo') or in
+# the next token ('2> /tmp/echo').
+_REDIRECT_RE = re.compile(r"^(?:\d+|&)?(?:>>|>|<<<|<<|<)&?")
+
+# Emitted where the parser KNOWS it cannot see the program being run, so a
+# caller cannot mistake "I found nothing" for "nothing runs". Deliberately a
+# name no blocklist contains, so binary_block is unaffected; the locality
+# proof in classifier.py treats it as unprovable (its only consumer that
+# cares). Before this existed, `ls && bash /tmp/exfil.sh` extracted ['ls'] —
+# the shell-without-`-c` leg returned [] and the allowlisted SIBLING made the
+# whole command read as provably local.
+UNRESOLVED = "__unresolved_program__"
+# Emitted for an inline VAR=VAL prefix. These were silently skipped, so
+# `PATH=/tmp/evil ls` and `GIT_EXTERNAL_DIFF=/tmp/x git diff` extracted a
+# clean allowlisted name while rebinding what that name RESOLVES TO. Which
+# variable names are safe is precisely the hand-maintained list this design
+# refuses to ship, so every assignment is reported and the caller decides.
+ENV_ASSIGNMENT = "__env_assignment__"
+
+
+def _strip_redirections(tokens: list[str]) -> list[str]:
+    """Drop redirection operators and their target words.
+
+    A redirect target is a FILENAME and is never executed, but the tokenizer
+    leaves it glued to its operator, so `2>/tmp/echo sendmail -t` presented
+    `2>/tmp/echo` as the command word and `_strip_path` reduced it to `echo` —
+    an allowlisted name — while `sendmail`, the program that actually ran, was
+    never extracted at all. Verified against a real shell: `>/tmp/x echo HELLO`
+    runs echo and writes to /tmp/x. This also fixed the same bypass on the LIVE
+    binary_block gate, where `2>/tmp/ls sudo rm -rf /tmp/x` was ALLOWED.
+    """
+    out: list[str] = []
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        m = _REDIRECT_RE.match(tok)
+        if m:
+            # Bare operator -> the NEXT token is its target; fused -> already
+            # carries it. Either way nothing here is a program.
+            i += 2 if m.end() == len(tok) else 1
+            continue
+        out.append(tok)
+        i += 1
+    return out
+
+
 def _extract_from_statement(tokens: list[str]) -> list[str]:
     """Given tokenized words of a single statement, extract invoked binaries.
+
+    Strips redirections, reports any inline VAR=VAL prefix, then delegates.
+    The two concerns are peeled off HERE rather than inside the body so they
+    survive every recursive leg below (the body returns directly from a dozen
+    places; a marker appended inside it would be dropped by the next return).
+    """
+    if not tokens:
+        return []
+    tokens = _strip_redirections(tokens)
+    if not tokens:
+        return []
+
+    prefix: list[str] = []
+    i = 0
+    while i < len(tokens) and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[i]):
+        i += 1
+    if i:
+        prefix.append(ENV_ASSIGNMENT)
+    return prefix + _extract_command(tokens[i:])
+
+
+def _extract_command(tokens: list[str]) -> list[str]:
+    """The command-word walker: wrappers, shell -c, env, control keywords.
 
     Recursively handles wrappers, env prefixes, shell -c, etc.
     Returns a list of leaf-level binary names (path-stripped).
@@ -392,13 +475,6 @@ def _extract_from_statement(tokens: list[str]) -> list[str]:
 
     binaries: list[str] = []
     i = 0
-
-    # Skip leading VAR=VAL assignments (POSIX inline env)
-    while i < len(tokens) and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[i]):
-        i += 1
-
-    if i >= len(tokens):
-        return []
 
     # Skip shell negation operator
     if tokens[i] == "!":
@@ -503,8 +579,13 @@ def _extract_from_statement(tokens: list[str]) -> list[str]:
             return extract_invoked_binaries(tokens[i])
         # Shell without -c but with <<< (here-string) — already handled
         # by _split_on_statement_seps which extracts heredoc/here-string bodies.
-        # Shell without -c running a script file — the file is the "binary"
-        return []
+        # Shell without -c running a SCRIPT FILE: the file is the program and
+        # its contents are not visible from here. Report UNRESOLVED rather than
+        # [] (2026-07-27) — an empty return is indistinguishable from "nothing
+        # runs", and since extract_invoked_binaries CONCATENATES statements, an
+        # allowlisted sibling absorbed it: `ls && bash /tmp/exfil.sh` extracted
+        # exactly ['ls'].
+        return [UNRESOLVED]
 
     # Exec wrappers: skip flags, recurse into remaining args
     if cmd_word in EXEC_WRAPPERS:

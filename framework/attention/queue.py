@@ -123,6 +123,34 @@ def _load_policy():
     return matrix_policy(load_matrix())
 
 
+def _risk_class_map(pol: dict) -> dict:
+    """{action_type -> risk_class}, FENCED to the classifier's enum.
+
+    ONE builder for both consumers (2026-07-27) — this loop existed twice,
+    verbatim, which is the duplicate-source shape this repo removes on sight.
+
+    THE FENCE: the map is built from the POLICY, and `policy` is a caller
+    argument on both consumers. Without the fence a caller-supplied table can
+    introduce a risk_class row naming a kind `classify_action()` can never
+    emit; a step is then free to ASSERT that kind (steps carry a supplied
+    `action_type`/`kind` string — nothing re-derives it from the tool call)
+    and be resolved against a soft row. The kinds a step may assert are
+    exactly the ones the classifier produces. Derived from the classifier —
+    framework.attention already imports framework.authority, and re-listing
+    the enum here would be the second list. An unknown kind is simply absent
+    from the map, so it resolves None and the callers' existing fail-closed
+    legs ("gate" / the unclassified stamp) answer — no new branch.
+    """
+    from framework.authority.classifier import ACTION_TYPES, AMBIGUOUS
+    known = set(ACTION_TYPES) - {AMBIGUOUS}
+    out: dict = {}
+    for rc, spec in (pol.get("risk_classes") or {}).items():
+        for at in (spec or {}).get("action_types") or []:
+            if str(at) in known:
+                out[str(at)] = str(rc)
+    return out
+
+
 def make_resolve_step(*, policy: "dict | None" = None,
                       posture: "str | None" = None,
                       cell_state: str = "unmeasured") -> Callable:
@@ -138,10 +166,7 @@ def make_resolve_step(*, policy: "dict | None" = None,
         pol = policy if policy is not None else _load_policy()
         verdicts = pol.get("verdicts") or {}
         postures = pol.get("postures")
-        rc_of: dict = {}
-        for rc, spec in (pol.get("risk_classes") or {}).items():
-            for at in (spec or {}).get("action_types") or []:
-                rc_of[str(at)] = str(rc)
+        rc_of = _risk_class_map(pol)
         if posture is None:
             try:
                 from framework.authority.policy_engine import resolve_gate_posture
@@ -218,10 +243,7 @@ def blast_for(steps: Iterable, *, kind: str = "",
     stamp (class low, reach internal) — never raises."""
     try:
         pol = policy if policy is not None else _load_policy()
-        rc_of: dict = {}
-        for rc, spec in (pol.get("risk_classes") or {}).items():
-            for at in (spec or {}).get("action_types") or []:
-                rc_of[str(at)] = str(rc)
+        rc_of = _risk_class_map(pol)
         ceiling = set(pol.get("hard_ceiling") or [])
     except Exception:
         rc_of, ceiling = {}, set()

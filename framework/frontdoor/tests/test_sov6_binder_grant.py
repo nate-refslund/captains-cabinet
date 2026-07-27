@@ -41,7 +41,7 @@ def wired_root(tmp_path, monkeypatch):
 
 
 def _file_need(**over):
-    kw = dict(risk_class="spend", action_type="pay_invoice", lane="bakery",
+    kw = dict(risk_class="spend", action_type="purchase", lane="bakery",
               why="pay the Voyage invoice", filed_by="test",
               scope_hint={"amount_eur": 25})
     kw.update(over)
@@ -70,7 +70,7 @@ def test_grant_marks_approved_and_presents_machine_scope(wired_root):
     receipt = shown[0]
     # the one paste + the machine-effective scope — never the why prose
     assert f"grant-apply.sh {nid}" in receipt
-    assert "pay_invoice (spend)" in receipt and "max 25 EUR/day" in receipt
+    assert "purchase (spend)" in receipt and "max 25 EUR/day" in receipt
     assert "EVERYONE" not in receipt and "URGENT" not in receipt
     assert "nothing is live yet" in receipt.lower() or "pending apply" in receipt
 
@@ -400,9 +400,9 @@ def test_apply_refuses_bad_id_shape(wired_root):
 
 def test_apply_refuses_scope_mismatch(wired_root):
     """A tampered/widened proposed_grant_line (extra lane) cannot apply."""
-    nid = needs.need_id("standing_grant", "spend", "pay_invoice", "bakery")
+    nid = needs.need_id("standing_grant", "spend", "purchase", "bakery")
     wide = ('- {id: GRANT-%s, deployment: main, risk_class: spend, '
-            'action_types: ["pay_invoice"], lanes: ["bakery", "newsletter"], '
+            'action_types: ["purchase"], lanes: ["bakery", "newsletter"], '
             'scope: {recipient_allowlist: [], max_eur_per_day: 25, '
             'vendor_allowlist: []}, rate: {max_per_day: 1}, '
             'expires: 2026-09-20, granted_by: "Captain", '

@@ -3050,3 +3050,79 @@ class TestEarnUpLadderOverlay:
         assert result == (
             f"PROPOSE-ONLY (internal_comms, confidence=graduated) — {pol['message']}"
         )
+
+
+# ===================================================================
+# Parser bypasses of the LIVE-enforcing plane (2026-07-27)
+# ===================================================================
+
+class TestLiveBlocklistBypasses:
+    """binary_block and destructive_rm are in policy-shadow's
+    _LEGACY_ENFORCING_TYPES — unlike authority_matrix they BLOCK today. Two
+    parser defects let a trivial prefix walk straight past both, measured on
+    master before the fix:
+
+        BLOCKED  'sudo rm -rf /tmp/x'
+        ALLOWED  '2>/tmp/ls sudo rm -rf /tmp/x'     (redirect became the cmd word)
+        ALLOWED  'ls\\nrm -rf /'                     (newline was not a separator)
+
+    The newline half is the dangerous one in practice: a multi-line command is
+    the ordinary shape of agent-written bash, so it fired without an attacker.
+    """
+
+    BLOCKLIST = {
+        "name": "no-dangerous-binaries", "type": "binary_block",
+        "binaries": ["sudo", "docker", "systemctl", "shutdown", "reboot", "halt"],
+        "message": "System-level command not permitted",
+    }
+
+    @pytest.mark.parametrize("cmd", [
+        "sudo ls",
+        "2>/tmp/ls sudo ls",
+        ">/tmp/date sudo shutdown -h now",
+        "2>/tmp/echo sudo docker run x",
+        "ls\nsudo systemctl stop x",
+        "echo hi\nsudo reboot",
+        "cat f && sudo halt",
+        "ls\n\nsudo ls",
+    ])
+    def test_binary_block_is_not_prefix_bypassable(self, cmd):
+        assert evaluate_policy(self.BLOCKLIST, "Bash", {"command": cmd}, "cos"), \
+            f"{cmd!r} walked past the LIVE binary_block gate"
+
+    @pytest.mark.parametrize("cmd", [
+        "rm -rf /",
+        "ls\nrm -rf /",
+        "2>/tmp/ls rm -rf /",
+        "echo hi\nrm -rf /*",
+    ])
+    def test_destructive_rm_is_not_prefix_bypassable(self, cmd):
+        assert is_destructive_rm(cmd), \
+            f"{cmd!r} walked past the LIVE destructive_rm gate"
+
+    @pytest.mark.parametrize("cmd", [
+        "ls -la", "echo hi", "cat a > /tmp/out", "grep x f 2>/dev/null",
+        "rm -f /tmp/build/x", "rm -rf /tmp/build",
+    ])
+    def test_benign_commands_still_pass(self, cmd):
+        """Anti-vacuity: splitting on newline and dropping redirect words must
+        not turn ordinary commands into blocks."""
+        assert evaluate_policy(self.BLOCKLIST, "Bash", {"command": cmd}, "cos") is None
+        assert not is_destructive_rm(cmd)
+
+    def test_unresolved_sentinel_is_not_in_any_blocklist(self):
+        """The sentinels report parser blindness; they must not accidentally
+        BLOCK anything, or the fix would have changed the live gate's meaning
+        rather than its coverage."""
+        from framework.authority.policy_engine import ENV_ASSIGNMENT, UNRESOLVED
+        for sentinel in (UNRESOLVED, ENV_ASSIGNMENT):
+            assert sentinel not in self.BLOCKLIST["binaries"]
+        assert evaluate_policy(
+            self.BLOCKLIST, "Bash", {"command": "bash /tmp/x.sh"}, "cos") is None
+        assert evaluate_policy(
+            self.BLOCKLIST, "Bash", {"command": "FOO=1 ls"}, "cos") is None
+
+    def test_shell_script_run_is_reported_unresolved(self):
+        from framework.authority.policy_engine import UNRESOLVED
+        assert UNRESOLVED in extract_invoked_binaries("ls && bash /tmp/exfil.sh")
+        assert UNRESOLVED not in extract_invoked_binaries("bash -c 'sudo ls'")
