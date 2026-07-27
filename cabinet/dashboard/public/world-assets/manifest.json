@@ -24127,6 +24127,16 @@
    "sha256": "13cb111a79a8fd6d8919640b65ca16b4f016217e515bf9f62a128ecc0babb2d7",
    "pack": "LimeZu Modern Farm (16x16)",
    "license": "LimeZu commercial — do not redistribute"
+  },
+  {
+   "id": "originals/iso/atlas-0",
+   "path": "originals/iso/atlas-0.png",
+   "w": 2048,
+   "h": 2048,
+   "grid": 16,
+   "sha256": "425e9f93215cbc91ffe816c57c15065b4482756b907c644e8596ec977efb9843",
+   "pack": "Cabinet World iso pack — atlas-0 (designs/world-pack, PixelLab-generated)",
+   "license": "owned — org-original"
   }
  ]
 }
