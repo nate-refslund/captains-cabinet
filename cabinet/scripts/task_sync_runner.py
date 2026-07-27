@@ -25,7 +25,12 @@ _FRAMEWORK_ROOT = str(Path(__file__).parent.parent.parent)
 if _FRAMEWORK_ROOT not in sys.path:
     sys.path.insert(0, _FRAMEWORK_ROOT)
 
-from cabinet.scripts.task_adapters.base import get_adapter, SyncResult, CanonicalTask
+from cabinet.scripts.task_adapters.base import (
+    CanonicalTask,
+    ObserveOnlyTaskAdapter,
+    SyncResult,
+    get_adapter,
+)
 from framework.env import active_context
 from framework.events.emitter import emit
 
@@ -79,9 +84,14 @@ def run_sync(actor: str = "task_sync_runner") -> SyncResult:
     adapter = get_adapter(project_config)
     destination = adapter.destination
 
+    # An observe-only adapter is a DIFFERENT TYPE, so this reads the fact
+    # rather than a flag anyone can set (see task_adapters/base.py).
+    observe_only = isinstance(adapter, ObserveOnlyTaskAdapter)
     result = SyncResult(
         destination=destination,
         started_at=datetime.now(timezone.utc).isoformat(),
+        read_only=observe_only,
+        ownership=getattr(adapter, "ownership", None),
     )
 
     # payload.kind discriminator (COG-1 §7 fence): these three emits SHARE the
@@ -136,6 +146,8 @@ def run_sync(actor: str = "task_sync_runner") -> SyncResult:
         "pulled": result.pulled,
         "pushed": result.pushed,
         "errors": result.errors,
+        "read_only": result.read_only,
+        "ownership": result.ownership,
     })
     return result
 
@@ -163,6 +175,8 @@ def main(argv: list[str] | None = None) -> int:
         "destination": result.destination,
         "pulled": result.pulled,
         "pushed": result.pushed,
+        "read_only": result.read_only,
+        "ownership": result.ownership,
         "errors": result.errors,
         "started_at": result.started_at,
         "finished_at": result.finished_at,

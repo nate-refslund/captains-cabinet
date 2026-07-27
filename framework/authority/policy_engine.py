@@ -18,6 +18,7 @@ import os
 import re
 import shlex
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -72,6 +73,229 @@ except Exception:  # pragma: no cover - keep the engine importable if absent
 
 
 # ---------------------------------------------------------------------------
+# PROPOSE vs GATE — the verdict distinction enforcement could not express
+# ---------------------------------------------------------------------------
+# THE DEFECT THIS CLOSES (direction gate 2026-07-27, arm A). `main()` exits 2
+# on ANY non-None result, so `propose_only` and `always_gated` were
+# OPERATIONALLY IDENTICAL: the vocabulary distinguished "above your bar, ask
+# and the chain proceeds without this step" from "hard ceiling, no auto path
+# exists", and enforcement collapsed both into one undifferentiated refusal.
+# Measured on the recorded corpus, that made the enforcing flip read as
+# 52,659 refusals (75.66%) when only 11,570 of them are ceilings.
+#
+# WHAT THIS IS NOT. It is NOT a widening. The step is withheld in BOTH cases —
+# a propose verdict still does not execute the tool, because the unclassified
+# bucket that dominates the propose set is byte-indistinguishable from its
+# hostile twins (`bash send-to-group.sh` wrapping a Telegram POST, `gh api -X
+# POST .../comments`, `python3 -c "...smtplib..."`). Anything that let a
+# propose verdict RUN would ship exactly the widening both arms of the
+# direction gate refused. Exit codes are therefore UNCHANGED and every
+# guardian message stays byte-identical (test_guardian_parity).
+#
+# WHAT CHANGES. The two outcomes become structurally distinguishable — a
+# VERDICT FIELD, never a substring match on prose — and a propose verdict
+# FILES A NEED, so the fleet's refusals become an enumerated, deduped list of
+# what it is being denied instead of vanishing. Counting them apart is what
+# lets the flip's residual be measured rather than guessed.
+#
+# WHY A `str` SUBCLASS. `evaluate_policy` returns `str | None` and ~100 call
+# sites and assertions depend on that (truthiness in main() and
+# policy-shadow.py, `.startswith`, `in`, print). A str subclass is byte-
+# identical to every one of them while carrying the field new consumers read,
+# so nothing is weakened to buy the distinction.
+# THREE kinds, not two, because two would MISREPORT the residual. The recorded
+# corpus splits the flip's 52,659 refusals into 11,570 ceilings, 3,465 genuine
+# below-the-bar cells, and 37,624 calls the classifier simply CANNOT SEE
+# (`action_type=ambiguous`). Calling that last group "propose" would dress an
+# unmeasured hole as a governed decision — the compliance-badge failure this
+# program keeps finding. It gets its own name and is counted on its own.
+try:  # pragma: no cover - exercised via the ceiling arms
+    from framework.authority.classifier import (  # noqa: E402
+        CEILING_CLASS_ACTION_TYPES as _CEILING_CLASS_ACTION_TYPES,
+    )
+    _CEILING_RISK_CLASSES = frozenset(_CEILING_CLASS_ACTION_TYPES)
+except Exception:  # pragma: no cover - absent classifier ⇒ trust the floor
+    _CEILING_RISK_CLASSES = frozenset()
+
+PROPOSE = "propose"            # above the autonomy bar — withheld, filed, grantable
+GATE = "gate"                  # hard ceiling / fail-closed — no auto path exists
+UNCLASSIFIED = "unclassified"  # the gate could not tell what this is — withheld
+
+
+class GateDecision(str):
+    """A gate block message that also carries its STRUCTURED verdict kind.
+
+    Behaves as the exact `str` it always was (truthy, comparable, formattable)
+    so no existing consumer changes; `.kind` is `PROPOSE` or `GATE` and
+    `.need_id` is the filed need when the propose path filed one.
+    """
+
+    __slots__ = ("kind", "need_id")
+
+    def __new__(cls, text: str, kind: str, need_id: str | None = None):
+        obj = super().__new__(cls, text)
+        obj.kind = kind          # type: ignore[attr-defined]
+        obj.need_id = need_id    # type: ignore[attr-defined]
+        return obj
+
+    def __getnewargs__(self) -> tuple[str, str, str | None]:
+        # Without this, copy/deepcopy/pickle raise TypeError (two required
+        # __new__ args) where a plain str round-tripped. No consumer copies a
+        # verdict today; a future caching/multiprocessing one would.
+        return (str(self), self.kind, self.need_id)
+
+
+def decision_kind(result: Any) -> str | None:
+    """The verdict kind of a gate result, or None for an allow / a plain str.
+
+    A plain `str` means a LEGACY typed policy (binary_block, destructive_rm, …)
+    produced it — those are unconditional blocks and are deliberately not
+    reclassified here.
+    """
+    return getattr(result, "kind", None)
+
+
+def authority_matrix_enforcing() -> bool:
+    """True iff the AUTHORITY MATRIX is live-enforcing.
+
+    Exactly `CABINET_AUTHORITY_ENFORCING=1` — the one trigger `main()` reads.
+
+    DELIBERATELY NOT the `instance/config/authority-enforcing` file. That file
+    is a different switch that is ALREADY TRUE (Captain, 2026-07-03 "flip it"),
+    and its own scope line says "typed STATELESS policy set enforcing" — the
+    set `policy_shadow._LEGACY_ENFORCING_TYPES`, which EXCLUDES
+    `authority_matrix`. The two names are one word apart and mean different
+    things; conflating them silently enables matrix-era behaviour on every
+    deployment that has the file, which is all of them.
+    """
+    return os.environ.get("CABINET_AUTHORITY_ENFORCING") == "1"
+
+
+# One filing per refused cell per hour. MEASURED, not guessed: `file_need`
+# costs ~102ms flat — not the ledger read, but `_emit` -> evidence_mirror ->
+# recorder.append -> verify_trial, which re-verifies the evidence trial on
+# every event (54k `contains_secret_shape` calls per filing). This gate runs
+# on EVERY tool call, and the recorded corpus says a live flip withholds
+# ~41k steps, so filing unconditionally would add ~100ms to each of them and
+# append a ledger row per refusal. The marker keeps the hot path at ONE stat
+# and the ledger at ~24 rows per cell per day; the true per-call counts live
+# in the shadow record, which already stores every verdict.
+_PROPOSE_REFILE_SECONDS = 3600
+
+
+def _propose_need_marker(need_id_value: str) -> str | None:
+    """Path of the rate-limit marker for a need id, or None if unresolvable.
+
+    Falls back to the needs kernel's OWN root resolver rather than giving up
+    when CABINET_ROOT is absent from this process: returning None disables
+    the rate limit silently, and an unlimited filing path costs ~46ms per
+    call instead of ~4ms. `pre-tool-use.sh` assigns CABINET_ROOT without
+    exporting it, so a hook host that does not export it would land exactly
+    there.
+    """
+    base = os.environ.get("CABINET_ROOT")
+    if not base and _needs is not None:
+        try:
+            base = str(_needs._root(None))
+        except Exception:
+            base = None
+    if not base:
+        return None
+    return os.path.join(
+        base, "shared", "interfaces", "needs-filed", need_id_value
+    )
+
+
+def _file_propose_need(
+    risk_class: str,
+    action_type: str,
+    lane: str | None,
+    officer: str,
+    why: str | None = None,
+) -> str | None:
+    """File the deduped `capability` need behind a propose verdict.
+
+    Reuses the ONE ledger the ceiling rows already file to (needs.py:1-9,
+    "every blocked-but-proceeding chain files its need HERE") rather than
+    minting a second store. NEVER raises and never blocks the gate: a broken
+    ledger must not change a verdict. Dedup is by content fingerprint, so a
+    risk_class/action_type/lane cell that is refused 37,000 times is ONE row
+    with a count, not 37,000 rows — and the marker above keeps even the
+    re-file cost off the hot path.
+
+    Returns the need id whether or not this call actually appended, so the
+    verdict always names the need the operator would look up.
+    """
+    if _needs is None:
+        return None
+    try:
+        nid = _needs.need_id("capability", risk_class, action_type, lane)
+    except Exception:
+        nid = None
+    marker = _propose_need_marker(nid) if nid else None
+    if marker:
+        try:
+            # abs(): a marker dated in the FUTURE would otherwise satisfy
+            # `delta < window` forever and permanently suppress this need's
+            # row. The marker is officer-writable runtime state, so a clock
+            # skew — or a touch -t 2036 — must degrade to "re-file", never to
+            # "never record again".
+            age = abs(time.time() - os.stat(marker).st_mtime)
+            if age < _PROPOSE_REFILE_SECONDS:
+                return nid  # filed recently — the hot path stops here
+        except OSError:
+            pass  # absent/unreadable ⇒ fall through and file
+    try:
+        filed = _needs.file_need(
+            "capability",
+            risk_class=risk_class,
+            action_type=action_type,
+            lane=lane,
+            why=why or (
+                f"officer gate withheld {risk_class}/{action_type} "
+                f"(lane {lane}): above the autonomy bar for this cell"
+            ),
+            unblocks=(
+                f"autonomous {action_type} for this lane without a per-item "
+                f"proposal"
+            ),
+            filed_by=f"policy_engine:{officer}",
+        )
+    except Exception:
+        return nid
+    if filed and marker:
+        try:
+            os.makedirs(os.path.dirname(marker), exist_ok=True)
+            with open(marker, "w"):
+                pass
+            os.utime(marker, None)
+        except OSError:
+            pass
+    return filed or nid
+
+
+def _propose(
+    text: str,
+    risk_class: str,
+    action_type: str,
+    lane: str | None,
+    officer: str,
+    why: str | None = None,
+) -> GateDecision:
+    """A propose-only block: byte-identical message, kind=PROPOSE, need filed.
+
+    `why` overrides the filed need's reason. The undo-plane gap uses it: that
+    refusal is NOT "grant me this capability" — the remedy is registering an
+    inverse or fixing the journal — and filing it under the capability wording
+    would ask the Captain to grant away a broken undo plane.
+    """
+    return GateDecision(
+        text, PROPOSE,
+        _file_propose_need(risk_class, action_type, lane, officer, why=why),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Shell command parsing — the core innovation replacing ~700 lines of regex
 # ---------------------------------------------------------------------------
 
@@ -83,6 +307,15 @@ SHELL_CONTROL_KEYWORDS = frozenset({
     "case", "esac",
     "function", "!",
 })
+
+# The subset whose REMAINDER is not a command either. `for d in a b c` names a
+# LOOP VARIABLE and a word list; `case "$x" in` names a subject. Recursing past
+# the keyword resolved those to the "binaries" `d` and `$x` — the loop variable
+# of every `for` in the corpus (`f`, `x`, `p`, `i`, `o`, `d`) was being counted
+# as a program. Any real command inside the word list is a `$(...)`, which the
+# lexer already emits as its own statement, so returning nothing here drops no
+# execution.
+_NON_COMMAND_KEYWORDS = frozenset({"for", "select", "case", "in", "function"})
 
 # Wrapper binaries that execute their arguments (not introspection).
 # When encountered as the command word, we recurse into their arguments.
@@ -156,11 +389,219 @@ def _strip_quotes_and_escapes(token: str) -> str:
     return "".join(result)
 
 
-def _split_on_statement_seps(command: str) -> list[str]:
-    """Split a command string on ;, &&, ||, |, NEWLINE respecting quoting.
+def _skip_single_quoted(s: str, i: int) -> int:
+    """Index just past the closing `'` of the span opening at s[i]."""
+    j = s.find("'", i + 1)
+    return len(s) if j == -1 else j + 1
 
-    Returns a list of statement strings. Handles single quotes, double
-    quotes, $'...' ANSI-C quotes, and backslash escapes.
+
+def _skip_ansi_c_quoted(s: str, i: int) -> int:
+    """Index just past the closing `'` of a `$'...'` span opening at s[i]."""
+    j = i + 2
+    n = len(s)
+    while j < n:
+        if s[j] == "\\" and j + 1 < n:
+            j += 2
+        elif s[j] == "'":
+            return j + 1
+        else:
+            j += 1
+    return n
+
+
+def _skip_double_quoted(s: str, i: int, subs: "list[str]") -> int:
+    """Index just past the closing `"` of the span opening at s[i].
+
+    Bash does NOT end a double-quoted string at a `"` that sits inside an
+    embedded `$(...)`, `${...}` or backtick: `"a $(f "$b") c"` is ONE word.
+    The previous scanner ended the span at that inner quote and every
+    subsequent character was re-read in the wrong quoting state — which is
+    how `${REDIS_HOST:-localhost}` became a command word, and how `-p $`,
+    `null | head -1)` and `) :: $(grep …)` were manufactured out of the
+    remains of a `redis-cli` invocation. Nesting is therefore tracked here.
+
+    Command-substitution bodies found inside the span are appended to `subs`:
+    they really are executed, so they must still be analysed.
+    """
+    n = len(s)
+    j = i + 1
+    while j < n:
+        ch = s[j]
+        if ch == "\\" and j + 1 < n:
+            j += 2
+        elif ch == '"':
+            return j + 1
+        elif ch == "$" and j + 1 < n and s[j + 1] == "(":
+            j = _take_command_substitution(s, j, subs)
+        elif ch == "$" and j + 1 < n and s[j + 1] == "{":
+            j = _skip_parameter_expansion(s, j, subs)
+        elif ch == "`":
+            j = _take_backtick_substitution(s, j, subs)
+        else:
+            j += 1
+    return n
+
+
+def _matching_close(s: str, i: int, opener: str, closer: str) -> int:
+    """Index of the closer matching the opener at s[i], or len(s) if unclosed.
+
+    Quoting inside is respected, so `$(f ")")` closes at the LAST paren.
+    """
+    n = len(s)
+    depth = 0
+    j = i
+    while j < n:
+        ch = s[j]
+        if ch == "\\" and j + 1 < n:
+            j += 2
+            continue
+        if ch == "'":
+            j = _skip_single_quoted(s, j)
+            continue
+        if ch == '"':
+            j = _skip_double_quoted(s, j, [])
+            continue
+        if ch == opener:
+            depth += 1
+        elif ch == closer:
+            depth -= 1
+            if depth == 0:
+                return j
+        j += 1
+    return n
+
+
+def _take_command_substitution(s: str, i: int, subs: "list[str]") -> int:
+    """Record the body of the `$(...)` at s[i]; return the index past it.
+
+    `$((` is ARITHMETIC, not a command substitution: `$((NOW-START))` used to
+    yield the "command" `(NOW-START)`. Arithmetic invokes nothing, so it is
+    skipped whole.
+    """
+    if s.startswith("$((", i):
+        close = _matching_close(s, i + 1, "(", ")")
+        if close < len(s) and s.startswith("))", close - 1):
+            return close + 1
+        return close + 1
+    close = _matching_close(s, i + 1, "(", ")")
+    subs.append(s[i + 2:close])
+    return close + 1
+
+
+def _take_backtick_substitution(s: str, i: int, subs: "list[str]") -> int:
+    j = s.find("`", i + 1)
+    if j == -1:
+        subs.append(s[i + 1:])
+        return len(s)
+    subs.append(s[i + 1:j])
+    return j + 1
+
+
+def _skip_parameter_expansion(s: str, i: int, subs: "list[str]") -> int:
+    """Index past the `${...}` at s[i]. Its interior is a VARIABLE NAME plus a
+    word, never a command — `${REDIS_HOST:-localhost}` runs nothing.
+
+    `{` and `}` were unconditionally statement boundaries, so this construct
+    was split into a statement whose first word was the parameter name; 602
+    records resolved `REDIS_HOST:-localhost` as their command word. A default
+    value CAN contain a real substitution (`${x:-$(cmd)}`), so the interior is
+    re-scanned when — and only when — it holds one.
+    """
+    close = _matching_close(s, i + 1, "{", "}")
+    interior = s[i + 2:close]
+    if "$(" in interior or "`" in interior:
+        subs.append(interior)
+    return close + 1
+
+
+# A `{` opens a brace GROUP only as a standalone word: `{ cmd; }`. Fused
+# occurrences are data — `find . -exec cat {} \;` (the `{}` placeholder) was
+# split into three statements, one of which reduced to the "command" `;`.
+def _is_brace_group_open(s: str, i: int, at_word_start: bool) -> bool:
+    return at_word_start and (i + 1 >= len(s) or s[i + 1] in " \t\n")
+
+
+def _is_brace_group_close(s: str, i: int, at_word_start: bool, depth: int) -> bool:
+    # Only a brace group that was OPENED can be closed. Without the depth the
+    # `}` of `find . -exec cat {} \;` read as a group close, splitting the
+    # statement and leaving `\;` alone to reduce to the "command" `;`.
+    return at_word_start and depth > 0
+
+
+# A `#` starts a comment only at the beginning of a word: `curl http://x/#f`
+# and `${v#p}` are not comments. Comments were not stripped at all, so every
+# commented line became a statement and its first word became a "binary" —
+# `#`, `##` and `###` alone accounted for 1,134 records.
+_WORD_BREAK = " \t\n;&|(){}<>"
+
+
+def _shell_words(text: str) -> "list[str]":
+    """First-pass words of a statement, used only to answer questions ABOUT the
+    statement (its command word, whether a heredoc feeds a shell)."""
+    try:
+        return shlex.split(text, posix=True)
+    except ValueError:
+        return [_strip_quotes_and_escapes(t) for t in text.split()]
+
+
+# Programs whose standard input is NOT shell source. A heredoc body was ALWAYS
+# re-analysed as shell, so `cat >> notes.md <<'EOF'` fed markdown to the shell
+# parser and `python3.12 <<'PY'` fed Python to it — which is where whole
+# sentences ("COUNTERFACTUAL=Actively pull my lanes…"), `##`, `import` and
+# `.get` entered the resolver as command words.
+#
+# This is an ALLOWLIST, and the default is to KEEP SCANNING: an owner this set
+# does not name (including `sudo bash <<EOF`, `ssh host <<EOF`, an unresolved
+# owner, or no owner at all) still has its body analysed as shell, so the
+# live-enforcing binary_block / destructive_rm gates lose nothing. Membership
+# requires that the program cannot execute its stdin AS SHELL — the two groups
+# below are (a) inert filters that copy or match stdin, (b) interpreters of a
+# DIFFERENT language, whose bodies the shell parser could only ever misread
+# (and which are not provably-local binaries anyway, so their commands still
+# propose).
+_HEREDOC_DATA_CONSUMERS = frozenset({
+    # (a) inert filters — stdin is bytes to copy, match or transform
+    "cat", "tee", "grep", "egrep", "fgrep", "head", "tail", "wc", "sort",
+    "uniq", "tr", "cut", "nl", "rev", "fold", "column", "diff", "cmp",
+    "jq", "base64", "base32", "xxd", "od", "md5", "md5sum", "shasum",
+    "sha1sum", "sha256sum", "sha512sum", "cksum", "strings", "tac",
+    # (b) interpreters of another language — stdin is that language, not shell
+    "python", "python3", "python3.12", "python3.11", "python3.13",
+    "perl", "ruby", "node", "php", "lua", "tclsh", "osascript", "sqlite3",
+    "psql", "mysql", "redis-cli", "bc", "dc", "ed", "ex",
+    # (c) two more the corpus proved inert. `read -r -d '' MSG <<EOF` puts the
+    # body in a VARIABLE; `git commit -F - <<MSG` puts it in a commit message.
+    # No git subcommand reads stdin as shell source, so a message body was
+    # being parsed as commands and its prose counted as programs.
+    "read", "git",
+})
+
+
+def _heredoc_body_is_shell(owner_text: str) -> bool:
+    """Would a SHELL read this heredoc body? Unknown owner -> yes (fail closed).
+
+    The owner is resolved through the FULL extractor, not a single-statement
+    one: `cat <<EOF | bash` pipes the body into a shell, and asking only about
+    the command word `cat` answered "data" for a body that really is executed.
+    """
+    try:
+        names = [_strip_path(b) for b in extract_invoked_binaries(owner_text)]
+    except Exception:  # noqa: BLE001 - an unparseable owner proves nothing
+        return True
+    names = [n for n in names if n != ENV_ASSIGNMENT]
+    if not names:
+        return True
+    return not all(n in _HEREDOC_DATA_CONSUMERS for n in names)
+
+
+def _split_on_statement_seps(command: str) -> list[str]:
+    """Split a command string into the statements a shell would execute.
+
+    Returns statement strings: separators (`;` `;;` `&&` `||` `|` `|&` `&`
+    NEWLINE), subshell and brace-group boundaries, command substitutions,
+    backticks and heredoc bodies each yield their own. Quoting, `${...}`,
+    `$((...))`, comments and case patterns are understood so that text which
+    is NOT a command never reaches the caller AS a command.
 
     NEWLINE joined the separator set on 2026-07-27. It was missing, so every
     multi-line Bash command was analysed by its FIRST LINE ONLY — and this
@@ -168,213 +609,275 @@ def _split_on_statement_seps(command: str) -> list[str]:
     not just the shadow classifier. Measured on master: `sudo rm -rf /tmp/x`
     BLOCKED, `ls\\nrm -rf /` and `ls\\nsudo systemctl stop x` ALLOWED. A
     multi-line command is the normal shape of agent-written bash, so this one
-    fired by accident, not only under attack. Splitting more can only surface
-    MORE binaries to a blocklist — the direction is safe by construction.
+    fired by accident, not only under attack.
+
+    Rewritten as a quoting-aware lexer on 2026-07-27 (second defect, measured
+    over 39,797 recorded Bash commands): 347 distinct tokens that are not
+    programs were being resolved as command words. `&` was a separator even
+    inside the redirection `2>&1`, which alone made the digit `1` the command
+    word of 14,943 records — the single largest cause. The remaining causes
+    are documented on the helper that fixes each. Splitting is still only ever
+    ADDITIVE for a blocklist: a statement the shell would run is never
+    dropped, so binary_block and destructive_rm can only see more, never less.
     """
     statements: list[str] = []
     current: list[str] = []
+    subs: list[str] = []
+    pending: list[tuple[str, int]] = []
+    case_depth = 0
+    paren_depth = 0
+    brace_depth = 0
     i = 0
     n = len(command)
 
+    def flush(drop: bool = False) -> None:
+        nonlocal current, subs, case_depth
+        text = "".join(current).strip()
+        if text:
+            head = text.split(None, 1)[0]
+            if head == "case":
+                case_depth += 1
+            elif head == "esac" or text.strip() == "esac":
+                case_depth = max(0, case_depth - 1)
+            if not drop:
+                statements.append(text)
+        current = []
+        for body in subs:
+            # A substitution body is a full command LIST, so it is lexed in
+            # turn: appending it whole left `$(a | b)` as one statement and
+            # only `a` was ever resolved.
+            if body.strip():
+                statements.extend(_split_on_statement_seps(body))
+        subs = []
+
     while i < n:
         ch = command[i]
-        # Quoting: skip through quoted spans
+        prev = command[i - 1] if i else ""
+        at_word_start = (i == 0) or (prev in _WORD_BREAK)
+
+        # --- quoting: copied through verbatim, never a separator ------------
         if ch == "'":
-            j = command.find("'", i + 1)
-            if j == -1:
-                current.append(command[i:])
-                i = n
-            else:
-                current.append(command[i : j + 1])
-                i = j + 1
-        elif ch == '"':
-            j = i + 1
-            while j < n:
-                if command[j] == "\\" and j + 1 < n:
-                    j += 2
-                elif command[j] == '"':
-                    break
-                else:
-                    j += 1
-            current.append(command[i : j + 1])
-            i = j + 1
-        elif ch == "$" and i + 1 < n and command[i + 1] == "'":
-            j = command.find("'", i + 2)
-            if j == -1:
-                current.append(command[i:])
-                i = n
-            else:
-                current.append(command[i : j + 1])
-                i = j + 1
-        elif ch == "\\" and i + 1 < n:
-            current.append(command[i : i + 2])
-            i += 2
-        # Statement separators
-        elif ch == "\n":
-            statements.append("".join(current))
-            current = []
-            i += 1
-        elif ch == ";" or ch == "|" or ch == "&":
-            # Check for && or ||
-            if ch == "&" and i + 1 < n and command[i + 1] == "&":
-                statements.append("".join(current))
-                current = []
-                i += 2
-            elif ch == "|" and i + 1 < n and command[i + 1] == "|":
-                statements.append("".join(current))
-                current = []
-                i += 2
-            elif ch == "|":
-                statements.append("".join(current))
-                current = []
-                i += 1
-            elif ch == ";":
-                statements.append("".join(current))
-                current = []
-                i += 1
-            elif ch == "&":
-                # Background operator
-                statements.append("".join(current))
-                current = []
-                i += 1
-            else:
-                current.append(ch)
-                i += 1
-        # Subshell/brace group boundaries
-        elif ch in ("(", ")", "{", "}"):
-            statements.append("".join(current))
-            current = []
-            i += 1
-        # Backtick command substitution
-        elif ch == "`":
-            j = command.find("`", i + 1)
-            if j == -1:
-                current.append(command[i:])
-                i = n
-            else:
-                # Treat content of backticks as a separate statement
-                statements.append("".join(current))
-                current = []
-                statements.append(command[i + 1 : j])
-                i = j + 1
-        # $() command substitution
-        elif ch == "$" and i + 1 < n and command[i + 1] == "(":
-            # Find matching close paren (simple nesting)
-            depth = 1
-            j = i + 2
-            while j < n and depth > 0:
-                if command[j] == "(":
-                    depth += 1
-                elif command[j] == ")":
-                    depth -= 1
-                elif command[j] == "\\" and j + 1 < n:
-                    j += 1
-                elif command[j] == "'":
-                    k = command.find("'", j + 1)
-                    if k != -1:
-                        j = k
-                elif command[j] == '"':
-                    k = j + 1
-                    while k < n:
-                        if command[k] == "\\" and k + 1 < n:
-                            k += 2
-                        elif command[k] == '"':
-                            break
-                        else:
-                            k += 1
-                    j = k
-                j += 1
-            # Treat the substitution body as a separate statement to scan
-            statements.append("".join(current))
-            current = []
-            statements.append(command[i + 2 : j - 1] if j > i + 2 else "")
+            j = _skip_single_quoted(command, i)
+            current.append(command[i:j])
             i = j
-        # Heredoc detection: << WORD ... WORD
-        elif ch == "<" and i + 1 < n and command[i + 1] == "<":
-            # Detect heredoc: <<[-]WORD or <<[-]'WORD' or <<[-]"WORD"
-            hd_start = i + 2
-            # Skip optional dash for <<-
-            if hd_start < n and command[hd_start] == "-":
-                hd_start += 1
-            # Skip optional space
-            while hd_start < n and command[hd_start] == " ":
-                hd_start += 1
-            # Here-string <<<
-            if i + 2 < n and command[i + 2] == "<":
-                # Here-string: <<< 'content' or <<< content
-                # The content after <<< should be scanned as a statement.
-                hs_start = i + 3
-                while hs_start < n and command[hs_start] in (" ", "\t"):
-                    hs_start += 1
-                # Extract the here-string value
-                if hs_start < n and command[hs_start] in ("'", '"'):
-                    quote = command[hs_start]
-                    end = command.find(quote, hs_start + 1)
-                    if end == -1:
-                        hs_body = command[hs_start + 1 :]
-                        i = n
-                    else:
-                        hs_body = command[hs_start + 1 : end]
-                        i = end + 1
-                else:
-                    # Unquoted — goes to next whitespace or end
-                    end = hs_start
-                    while end < n and command[end] not in (" ", "\t", "\n", ";", "&", "|"):
-                        end += 1
-                    hs_body = command[hs_start:end]
-                    i = end
-                current.append(command[i - len(hs_body) - (3 if hs_start == i - len(hs_body) else 0): i])
-                # Add the here-string body as a separate statement to scan
-                statements.append(hs_body)
-                continue
-            # Proper heredoc
-            if hd_start < n:
-                # Get delimiter word (strip quotes if present)
-                delim_start = hd_start
-                if command[hd_start] in ("'", '"'):
-                    delim_end = command.find(command[hd_start], hd_start + 1)
-                    if delim_end == -1:
-                        delim_end = n
-                    delim = command[hd_start + 1 : delim_end]
-                    hd_start = delim_end + 1
-                else:
-                    delim_end = hd_start
-                    while delim_end < n and command[delim_end] not in (" ", "\t", "\n"):
-                        delim_end += 1
-                    delim = command[hd_start:delim_end]
-                    hd_start = delim_end
-                # Find the heredoc body between newlines
-                body_start = command.find("\n", hd_start)
-                if body_start != -1 and delim:
-                    body_end = command.find("\n" + delim, body_start + 1)
-                    if body_end == -1:
-                        # Try end-of-string
-                        if command.rstrip().endswith(delim):
-                            body_end = command.rstrip().rfind(delim)
-                            heredoc_body = command[body_start + 1 : body_end]
-                        else:
-                            heredoc_body = command[body_start + 1 :]
-                    else:
-                        heredoc_body = command[body_start + 1 : body_end]
-                    statements.append("".join(current))
-                    current = []
-                    statements.append(heredoc_body)
-                    # Skip past the end delimiter
-                    if body_end != -1:
-                        i = body_end + 1 + len(delim)
-                    else:
-                        i = n
-                    continue
-            current.append(command[i : i + 2])
+        elif ch == "$" and i + 1 < n and command[i + 1] == "'":
+            j = _skip_ansi_c_quoted(command, i)
+            current.append(command[i:j])
+            i = j
+        elif ch == '"':
+            j = _skip_double_quoted(command, i, subs)
+            current.append(command[i:j])
+            i = j
+        elif ch == "\\" and i + 1 < n:
+            current.append(command[i:i + 2])
             i += 2
+
+        # --- expansions -----------------------------------------------------
+        elif ch == "$" and i + 1 < n and command[i + 1] == "(":
+            j = _take_command_substitution(command, i, subs)
+            # The body is already its own statement; leaving its TEXT in the
+            # enclosing one let shlex split on the spaces inside it, so
+            # `MF=$(find ~/vault/3-People -name x)` resolved the command word
+            # `3-People`. One inert placeholder word keeps the enclosing
+            # statement's shape (`VAR=…` stays an assignment) while resolving
+            # to nothing a program could be named.
+            current.append(_SUBSTITUTION_WORD if not command.startswith("$((", i)
+                           else command[i:j])
+            i = j
+        elif ch == "$" and i + 1 < n and command[i + 1] == "{":
+            j = _skip_parameter_expansion(command, i, subs)
+            current.append(command[i:j])
+            i = j
+        elif ch == "(" and i + 1 < n and command[i + 1] == "(":
+            # `(( ))` arithmetic. Kept INSIDE the statement rather than made a
+            # boundary: `(( i++ ))` used to yield the "command" `i++`. As one
+            # span its command word is `((`, which the leaf guard reports as
+            # unresolved — the fail-closed answer.
+            close = _matching_close(command, i + 1, "(", ")")
+            end = min(close + 2, n)
+            span = command[i:end]
+            if "$(" in span or "`" in span:
+                subs.extend(_split_on_statement_seps(span[2:-2]))
+            current.append(span)
+            i = end
+        elif ch == "`":
+            j = _take_backtick_substitution(command, i, subs)
+            current.append(_SUBSTITUTION_WORD)
+            i = j
+
+        # --- comment --------------------------------------------------------
+        elif ch == "#" and at_word_start:
+            j = command.find("\n", i)
+            i = n if j == -1 else j
+
+        # --- heredoc / here-string ------------------------------------------
+        elif ch == "<" and i + 1 < n and command[i + 1] == "<":
+            if command.startswith("<<<", i):
+                i = _consume_here_string(command, i, subs)
+            else:
+                # `cmd <<EOF …` — the body does not start until the line ends,
+                # and the REST OF THE LINE is still part of the owner
+                # statement. Consuming it here swallowed the `| bash` of
+                # `cat <<EOF | bash`, which is exactly the owner that decides
+                # whether the body is shell.
+                i, entry = _register_heredoc(
+                    command, i, pending[-1][1] if pending else None)
+                if entry is not None:
+                    pending.append(entry)
+
+        # --- redirections whose operator contains `&` -----------------------
+        # `2>&1`, `>&2`, `&>file`, `>&file`, `|&`. `&` is a separator ONLY as
+        # the background operator; inside these it is part of the operator.
+        elif ch == "&" and i + 1 < n and command[i + 1] == ">":
+            current.append(command[i:i + 2])
+            i += 2
+        elif ch == "&" and prev == ">":
+            current.append(ch)
+            i += 1
+
+        # --- statement separators -------------------------------------------
+        elif ch == "\n":
+            if pending:
+                i = _release_heredocs(pending, current, statements, flush)
+            else:
+                flush()
+                i += 1
+        elif ch == ";":
+            flush()
+            i += 2 if command.startswith(";;", i) else 1
+        elif ch == "&":
+            flush()
+            i += 2 if command.startswith("&&", i) else 1
+        elif ch == "|":
+            if command.startswith("||", i):
+                flush()
+                i += 2
+            elif command.startswith("|&", i):
+                flush()
+                i += 2
+            else:
+                flush()
+                i += 1
+
+        # --- grouping --------------------------------------------------------
+        elif ch == "(" and at_word_start:
+            flush()
+            paren_depth += 1
+            i += 1
+        elif ch == ")":
+            if paren_depth > 0:
+                flush()
+                paren_depth -= 1
+            elif case_depth > 0:
+                # A case PATTERN (`polads-ceo)`), not a command. Bash never
+                # executes it; resolving it as a command word is how
+                # `[polads-ceo` and friends reached the resolver.
+                flush(drop=True)
+            else:
+                # Unbalanced: keep what came before rather than drop it.
+                flush()
+            i += 1
+        elif ch == "{" and _is_brace_group_open(command, i, at_word_start):
+            flush()
+            brace_depth += 1
+            i += 1
+        elif ch == "}" and _is_brace_group_close(command, i, at_word_start, brace_depth):
+            flush()
+            brace_depth -= 1
+            i += 1
         else:
             current.append(ch)
             i += 1
 
-    if current:
-        statements.append("".join(current))
-
+    if pending:
+        _release_heredocs(pending, current, statements, flush)
+    else:
+        flush()
     return [s.strip() for s in statements if s.strip()]
+
+
+def _consume_here_string(command: str, i: int, subs: "list[str]") -> int:
+    """`<<< value` — the value is scanned, as before."""
+    n = len(command)
+    hs = i + 3
+    while hs < n and command[hs] in (" ", "\t"):
+        hs += 1
+    if hs < n and command[hs] in ("'", '"'):
+        quote = command[hs]
+        end = command.find(quote, hs + 1)
+        body = command[hs + 1:] if end == -1 else command[hs + 1:end]
+        nxt = n if end == -1 else end + 1
+    else:
+        end = hs
+        while end < n and command[end] not in (" ", "\t", "\n", ";", "&", "|"):
+            end += 1
+        body = command[hs:end]
+        nxt = end
+    subs.append(body)
+    return nxt
+
+
+def _release_heredocs(pending, current, statements, flush) -> int:
+    """The owner line has ended: decide shell-vs-data ONCE, from the finished
+    owner statement, then emit the bodies and resume past the last terminator.
+    """
+    owner_text = "".join(current).strip()
+    is_shell = _heredoc_body_is_shell(owner_text) if owner_text else True
+    flush()
+    resume = 0
+    for body, after in pending:
+        resume = max(resume, after)
+        if is_shell and body.strip():
+            statements.extend(_split_on_statement_seps(body))
+    pending.clear()
+    return resume
+
+
+def _register_heredoc(command: str, i: int, prev_after: "int | None"):
+    """Parse the `<<[-]WORD` operator at command[i] WITHOUT consuming the rest
+    of its line. Returns (index just past the delimiter word, pending entry).
+
+    A pending entry is `(body, index_past_terminator)`. `prev_after` lets a
+    second heredoc on the same line start its body after the first one's
+    terminator, which is what a shell does.
+    """
+    n = len(command)
+    hd = i + 2
+    if hd < n and command[hd] == "-":
+        hd += 1
+    while hd < n and command[hd] == " ":
+        hd += 1
+    if hd >= n:
+        return i + 2, None
+
+    if command[hd] in ("'", '"'):
+        q = command[hd]
+        dend = command.find(q, hd + 1)
+        if dend == -1:
+            dend = n
+        delim = command[hd + 1:dend]
+        after = dend + 1
+    else:
+        dend = hd
+        while dend < n and command[dend] not in (" ", "\t", "\n"):
+            dend += 1
+        delim = command[hd:dend]
+        after = dend
+
+    body_start = command.find("\n", prev_after if prev_after is not None else after)
+    if not delim or body_start == -1:
+        return after, None
+
+    body_end = command.find("\n" + delim, body_start)
+    if body_end == -1:
+        stripped = command.rstrip()
+        body = (command[body_start + 1:stripped.rfind(delim)]
+                if stripped.endswith(delim) else command[body_start + 1:])
+        resume = n
+    else:
+        body = command[body_start + 1:body_end]
+        resume = body_end + 1 + len(delim)
+    return after, (body, resume)
 
 
 def _tokenize_simple(statement: str) -> list[str]:
@@ -413,6 +916,34 @@ UNRESOLVED = "__unresolved_program__"
 # variable names are safe is precisely the hand-maintained list this design
 # refuses to ship, so every assignment is reported and the caller decides.
 ENV_ASSIGNMENT = "__env_assignment__"
+
+# A command word that CANNOT name a program. The lexer above stops
+# manufacturing these, but a lexer is never finished, so the leaf reports
+# UNRESOLVED rather than inventing a binary out of punctuation, a digit, an
+# unexpanded `$VAR` or a fragment of prose. That is fail-closed twice over: the
+# locality proof cannot be passed by a token nobody can resolve, and no
+# blocklist entry is lost, since every blocklist entry IS a plausible name.
+# `.`, `:`, `[`, `[[` and `!` are real command words and stay.
+# Stands in for a command substitution inside the statement that CONTAINS it.
+# Chosen so shlex keeps it as one word and _is_program_word rejects it: the
+# value a substitution expands to is genuinely unresolvable, and its body is
+# analysed separately as its own statement.
+_SUBSTITUTION_WORD = "$()"
+
+_PROGRAM_WORD_COMMANDS = frozenset({".", ":", "[", "[[", "!"})
+_PROGRAM_NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.+@%-]*$")
+
+
+def _is_program_word(word: str) -> bool:
+    """Could this token be the name of a program? A bare `1`, `)`, `##`,
+    `$PY`, `((`, `REDIS_HOST:-localhost` or a sentence out of a heredoc
+    cannot, and 347 such tokens were reaching the resolver as command words.
+    """
+    if word in _PROGRAM_WORD_COMMANDS:
+        return True
+    if not word or word.isdigit() or word[-1] in ".-":
+        return False
+    return bool(_PROGRAM_NAME_RE.match(word))
 
 
 def _strip_redirections(tokens: list[str]) -> list[str]:
@@ -486,6 +1017,8 @@ def _extract_command(tokens: list[str]) -> list[str]:
     cmd_word = _strip_path(_strip_quotes_and_escapes(cmd_word_raw))
 
     # Shell control-flow keywords: skip and continue to next token
+    if cmd_word in _NON_COMMAND_KEYWORDS:
+        return []
     if cmd_word in SHELL_CONTROL_KEYWORDS:
         return _extract_from_statement(tokens[i + 1:])
 
@@ -674,8 +1207,8 @@ def _extract_command(tokens: list[str]) -> list[str]:
 
         return _extract_from_statement(tokens[i:])
 
-    # Leaf-level binary
-    binaries.append(cmd_word)
+    # Leaf-level binary — but only if it CAN be one.
+    binaries.append(cmd_word if _is_program_word(cmd_word) else UNRESOLVED)
     return binaries
 
 
@@ -810,6 +1343,52 @@ def _check_rm_in_tokens(tokens: list[str]) -> bool:
 # Bash write-to-path detection
 # ---------------------------------------------------------------------------
 
+# A run of command text that does not cross an UNQUOTED statement separator.
+#
+# WHY THIS SHAPE AND NOT THE OBVIOUS ONE. The obvious spelling is
+#     (?:[^;&|]|'[^']*'|"[^"]*")*
+# and it is CATASTROPHIC: `[^;&|]` also matches `'` and `"`, so every quoted
+# span can be tiled either as one alternative or character-by-character. Two of
+# those stars in one expression (Pattern 2 below) gave 2**(quote pairs)
+# decompositions to explore before the engine could report "no match" — 52 of
+# 80,307 recorded officer tool calls exceeded 1.5s, and the pre-tool-use hook
+# has no time bound, so an ordinary heredoc could pin the gate at 99% CPU
+# indefinitely. Measured: a 61-byte command took 1.6s, 73 bytes exceeded 10s.
+#
+# The rewrite below matches EXACTLY THE SAME LANGUAGE. Proof: in any tiling of
+# the old star, replace every quoted span that contains no separator by its
+# individual characters (each is a non-separator, so `[^;&|]` accepts it). What
+# survives is a sequence of separator-free runs joined by quoted spans that DO
+# contain a separator — which is precisely the form below. Conversely every
+# alternative below is accepted by the old star, since the quoted alternative is
+# a subset of `'[^']*'`. So neither direction gains or loses a string: the rule
+# is not narrowed, and a quoted `;` still cannot end a statement.
+#
+# TWO ambiguities had to die, not one. The obvious rewrite kills only the first
+# and is still exponential — it shipped in this file's first draft and a hostile
+# sweep broke it in 110 bytes:
+#   1. the quoted span must be REQUIRED to contain a separator, so a command
+#      with no separator at all cannot enter the inner group even once and the
+#      star degenerates to a single linear `[^;&|]*` scan;
+#   2. the span must anchor on its FIRST separator (`[^';&|]*` before the
+#      `[;&|]`, not `[^']*`). Written the loose way, a span holding s separators
+#      has s distinct parses, and that ambiguous unit sits inside the outer star
+#      — so `sed ` + `';;'`x26 costs s**k and wedges exactly like the original.
+#      Anchoring on the first separator leaves each span with ONE parse and
+#      matches the same set, since a span contains a separator iff it contains a
+#      first one.
+#
+# NOTE ON ATOMIC GROUPS: `(?>...)`/`*+` are NOT available. The hook invokes bare
+# `python3`, which is 3.9.6 on the deployment target (verified), and 3.9 raises
+# `re.error: unknown extension ?>`. They would also be WRONG here even where
+# supported — measured, not assumed: an atomic star cannot give ground, and both
+# runs must, so that the flag and then the path can match after them. Emulating
+# one with the 3.9-compatible `(?=(X))\1` idiom on the sibling `perl` pattern
+# made `perl-i/workspace/a/` stop matching — i.e. it silently NARROWED an
+# enforcing safety rule, which is the failure this whole comment exists to
+# prevent.
+_STMT_RUN = r"[^;&|]*(?:(?:'[^';&|]*[;&|][^']*'|\"[^\";&|]*[;&|][^\"]*\")[^;&|]*)*"
+
 # Patterns that indicate a bash command writes to a path
 _WRITE_PATTERNS = [
     # Pattern 1: redirect stdout/stderr to path (>, >>, >|)
@@ -817,7 +1396,7 @@ _WRITE_PATTERNS = [
     # Pattern 2: sed -i (inplace edit) with path as file arg
     # Single-dash -i (with optional suffix like .bak): -i, -i.bak, -Ei, -ni
     # Long form --in-place only. Excludes --posix, --regexp-extended etc.
-    r"sed\b(?:[^;&|]|'[^']*'|\"[^\"]*\")*(?:(?<![-])-[a-zA-Z]*i(?:\.[^\s]*)?(?:\s|$)|--in-place(?:=[^\s]*)?)(?:[^;&|]|'[^']*'|\"[^\"]*\")*\s[\"']?{path}",
+    r"sed\b" + _STMT_RUN + r"(?:(?<![-])-[a-zA-Z]*i(?:\.[^\s]*)?(?:\s|$)|--in-place(?:=[^\s]*)?)" + _STMT_RUN + r"\s[\"']?{path}",
     # Pattern 3: tee writing to path (exclude input redirects: < before path)
     r"tee\b[^;&|]*(?<!<)\s[\"']?{path}",
     # Pattern 4: cp/mv/rsync with path as last arg (destination)
@@ -829,6 +1408,19 @@ _WRITE_PATTERNS = [
     # Pattern 6: patch with path as file arg (exclude input redirects)
     r"patch\b[^;&|]*(?<!<)\s[\"']?{path}",
     # Pattern 7: perl -i (inplace edit) with path
+    # KNOWN RESIDUAL (RES-019): this one still backtracks superlinearly. The
+    # `[^\s]*` after the `i` and the `[^;&|]*` after it overlap on every
+    # non-space non-separator character, so their split point is free, and
+    # `re.search` restarts at every `perl`. Measured degree ~4: 601 bytes of
+    # `perl-i` repeats costs 2.5s and 1.2KB exceeds 5s. POLYNOMIAL, not
+    # exponential — unlike the sed pattern above it cannot be driven to hours
+    # from 110 bytes, and the pumped shapes are adversarial rather than
+    # accidental. NOT fixed in the same pass deliberately: the obvious repair
+    # (atomic-emulating the free star with the 3.9-compatible `(?=(X))\1`)
+    # was tried and NARROWED the rule — `perl-i/workspace/a/` stopped matching
+    # — and a fast matcher that misses a real write is a worse defect than a
+    # slow one. Contained meanwhile by the fail-closed evaluation timeout in
+    # cabinet/scripts/policy-shadow.py.
     r"perl\b[^;&|]*(?:-[^\sIi]*i[^\s]*|--in-place(?:=[^\s]*)?)[^;&|]*\s*[\"']?{path}",
     # Pattern 8: tar extract/create to path via -C or --directory
     # Handles: -C /path, -C/path (no space), -xC /path (bundled), --directory=/path,
@@ -1608,13 +2200,22 @@ def _eval_authority_matrix(
     # 0. A merged floor that failed validation was quarantined by
     #    load_policies (D8) — fail CLOSED to propose-only, never evaluate it.
     if policy.get("_validation_failed"):
-        return f"PROPOSE-ONLY (authority matrix failed validation) — {message}"
+        # GATE, not PROPOSE: a corrupt matrix is the gate being UNABLE to
+        # decide, never "the officer is above their bar". Nothing here is
+        # grantable, so it must never be counted as a proposal.
+        return GateDecision(
+            f"PROPOSE-ONLY (authority matrix failed validation) — {message}",
+            GATE,
+        )
 
     # The shared classifier/lane resolver are imported at module load from
     # framework.authority. If absent (deployment without the framework on the
     # path), fail-safe to propose_only rather than crashing the gate.
     if classify_action is None or resolve_lane is None:
-        return f"PROPOSE-ONLY (classifier unavailable) — {message}"
+        # GATE for the same reason as the quarantine above — not grantable.
+        return GateDecision(
+            f"PROPOSE-ONLY (classifier unavailable) — {message}", GATE
+        )
 
     action_type = classify_action(tool_name, tool_input)
     risk_classes = policy.get("risk_classes")
@@ -1622,8 +2223,14 @@ def _eval_authority_matrix(
 
     # 1. Unknown / ambiguous / unmapped action_type -> fail-safe propose_only.
     if risk_class is None:
-        return (
-            f"PROPOSE-ONLY (unclassified action '{action_type}') — {message}"
+        # The 71.5% bucket. Its OWN kind: the classifier cannot see what this
+        # command does, which is not the same fact as "this is above the bar".
+        # One deduped need per (ambiguous, lane) records the blind spot.
+        _lane = resolve_lane()
+        return GateDecision(
+            f"PROPOSE-ONLY (unclassified action '{action_type}') — {message}",
+            UNCLASSIFIED,
+            _file_propose_need("unclassified", str(action_type), _lane, officer),
         )
 
     # Lane + posture resolve ONCE, above the ceiling short-circuit [SOV-3]
@@ -1638,6 +2245,30 @@ def _eval_authority_matrix(
     #    always_gated posture row, kernel unavailable — keeps the guardian
     #    strings BYTE-IDENTICAL.
     hard_ceiling = policy.get("hard_ceiling")
+    # FAIL-CLOSED ON A CEILING THE FLOOR FORGOT. A ceiling risk_class is a
+    # ceiling because of what it REACHES, not because a policy file happens to
+    # list it — so the canonical set (classifier.CEILING_CLASS_ACTION_TYPES,
+    # the one declared source the matrix already pins itself against) decides
+    # here, not the floor's own `hard_ceiling`. Without this, a floor whose
+    # list is missing/empty/mistyped sends every ceiling class down to the
+    # step-6 collapse where, since 2026-07-27, it is labelled PROPOSE and
+    # files a `capability` need reading "grant autonomous external_message for
+    # this lane" — putting *"grant me outbound comms"* on the Captain's deny
+    # surface, the exact inversion a change that softens refusals must not
+    # produce. `_validate_authority_floor` catches the shape only when
+    # `postures` is present, so the gate refuses it independently.
+    #
+    # NOTE the narrowness: an EMPTY `hard_ceiling` is legitimate for a matrix
+    # that declares no ceiling classes at all, and is used as such by the
+    # posture fixtures. Only a class the canonical set calls a ceiling, absent
+    # from the floor's list, is a corrupt floor.
+    if _CEILING_RISK_CLASSES and risk_class in _CEILING_RISK_CLASSES:
+        if not isinstance(hard_ceiling, list) or risk_class not in hard_ceiling:
+            return GateDecision(
+                f"GATED (hard ceiling: {risk_class}) — propose to Captain; "
+                f"no auto path.",
+                GATE,
+            )
     if isinstance(hard_ceiling, list) and risk_class in hard_ceiling:
         if posture in _POSTURE_TABLES:
             ceiling_verdict = resolve_verdict(
@@ -1670,25 +2301,30 @@ def _eval_authority_matrix(
                         res.get("reason") or "no matching standing grant"
                     ).replace("·", "")
                     if res.get("need_id"):
-                        return (
+                        return GateDecision(
                             f"GATED (standing_grant: {risk_class}) — {reason}; "
                             f"filed {res['need_id']} — the chain proceeds "
-                            f"without this step."
+                            f"without this step.",
+                            GATE,
+                            res["need_id"],
                         )
-                    return (
+                    return GateDecision(
                         f"GATED (standing_grant: {risk_class}) — {reason}; "
-                        f"the chain proceeds without this step."
+                        f"the chain proceeds without this step.",
+                        GATE,
                     )
                 # Kernel unavailable ⇒ the row degrades to plain always_gated
                 # (guardian strings below) — narrower, never wider.
         if risk_class == "external_comms":
-            return (
+            return GateDecision(
                 "GATED (hard ceiling: external_comms) — draft via queue_draft, "
-                "never auto."
+                "never auto.",
+                GATE,
             )
-        return (
+        return GateDecision(
             f"GATED (hard ceiling: {risk_class}) — propose to Captain; "
-            f"no auto path."
+            f"no auto path.",
+            GATE,
         )
 
     # 3. Read the LIVE per-cell graduation state (read_cell_state, un-stubbed
@@ -1759,9 +2395,15 @@ def _eval_authority_matrix(
         gap = _act_with_undo_gap(action_type)
         if gap is None:
             return None
-        return (
+        return _propose(
             f"PROPOSE-ONLY ({risk_class}, confidence={state}; act_with_undo "
-            f"verdict but {gap} for '{action_type}') — {message}"
+            f"verdict but {gap} for '{action_type}') — {message}",
+            risk_class, action_type, lane, officer,
+            why=(
+                f"undo plane unusable for {action_type} (lane {lane}): {gap}. "
+                f"This is an UNDO-PLANE defect, not a request for autonomy — "
+                f"the remedy is a registered inverse or a writable journal."
+            ),
         )
 
     # 5. auto_with_veto_window / notify_after — explicit allow-with-window
@@ -1803,9 +2445,12 @@ def _eval_authority_matrix(
     #    only legal on a posture ceiling row, resolved at step 2 above) —
     #    fail CLOSED to propose-only with the misplacement named, never allow.
     if verdict == "standing_grant":
-        return (
+        # D4 fail-closed on a MISPLACED verdict — a matrix defect, not a
+        # proposal. GATE so it can never be counted as grantable headroom.
+        return GateDecision(
             f"PROPOSE-ONLY (misplaced standing_grant verdict on "
-            f"'{risk_class}') — {message}"
+            f"'{risk_class}') — {message}",
+            GATE,
         )
 
     # 6. FAIL-SAFE collapse — any verdict not explicitly allowed above blocks
@@ -1819,7 +2464,10 @@ def _eval_authority_matrix(
     #    deploy_nonprod keeps the earn-up posture and was NOT widened; wiring
     #    the deploy classifier is a separate Captain-gated step.
     if verdict != "auto":
-        return f"PROPOSE-ONLY ({risk_class}, confidence={state}) — {message}"
+        return _propose(
+            f"PROPOSE-ONLY ({risk_class}, confidence={state}) — {message}",
+            risk_class, action_type, lane, officer,
+        )
 
     # 7. auto verdict -> allow. Reachable only for a cell the live graduation
     #    engine has actually graduated under the posture-selected table
@@ -1999,7 +2647,7 @@ def main() -> None:
     # / bash_write_to_path / tier2_isolation) are unaffected and still enforce.
     # This flag is independent of the legacy-engine enforcing flag; flipping it
     # is a later, Captain-approved cycle (design §7 Cycle 2).
-    authority_enforcing = os.environ.get("CABINET_AUTHORITY_ENFORCING", "0") == "1"
+    authority_enforcing = authority_matrix_enforcing()
 
     # Evaluate each policy
     for policy in policies:

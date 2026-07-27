@@ -64,7 +64,175 @@ budgets:
     symbol: emit
     callee_prefix: _write_to_
     maximum: 3
+  # ── SET PINS — the surfaces the mass budgets are BLIND to ──────────────────
+  # Expansion-gate adjudication of record, 2026-07-27 (D3), two blind arms.
+  # Every budget above this line rglobs framework/ and counts *.py, so
+  # cabinet/scripts/** (1294 tracked files, 8.2% add-rate), cabinet/config/**,
+  # .claude/** and EVERY non-.py file cost ZERO — a blind spot this contract
+  # already recorded in its own words ("the new framework/schemas/
+  # cognitive-trajectory.v2.schema.json is JSON so the census — which counts
+  # only *.py — adds ZERO modules and ZERO lines for it"), and BOTH live
+  # expansion escapes landed inside it.
+  #
+  # The gate ruled SPLIT: NO line-mass budget in cabinet/scripts — one arm
+  # measured that it would false-positive daily, and a detector that fires on
+  # every routine change is disabled within a week, which is worse than a
+  # miss. What lands instead are SET pins on the classes both arms named
+  # independently: a new organ manifest, a new skill, a newly WIRED hook, a new
+  # verdict word, a new durable store. Each is DERIVED FROM THE TREE — the
+  # in-tree standard (state-persistence-preflight.py derives the durable set
+  # from .gitignore "rather than adding a fourth hand-maintained list"; the
+  # COG-4 fleet-truth pins re-derive from the tree and never trust a literal).
+  # A hand-maintained list is where this program's last three drift bugs came
+  # from.
+  #
+  # MEASURED FIRE RATES, per first-parent landing on master, 30 days to
+  # 2026-07-27 (601 landings) with the 7-day steady state (67 landings) beside
+  # it. A fire = the landing must bump the maximum here and say why.
+  #   organ_manifests                            0/601 = 0.00%   (7d 0.00%)
+  #   claude_hook_wirings                        0/601 = 0.00%   (7d 0.00%)
+  #   claude_skills                              2/601 = 0.33%   (7d 0.00%)
+  #   cabinet_script_verdict_vocabulary_members  6/601 = 1.00%   (7d 2.99%)
+  #   framework_verdict_vocabulary_members      14/601 = 2.33%   (7d 2.99%)
+  #   durable_store_units                       36/601 = 5.99%   (7d 7.46%)
+  # The last row is the loud one and is recorded as such rather than buried:
+  # it is the same band as the 8.2% add-rate the same gate REFUSED for
+  # cabinet/scripts line mass. It is kept for a stated reason — every one of
+  # those 36 fires was a genuinely NEW durable store (captain-dates, the
+  # availability dial, the evidence recorder, the foundry archive, the world
+  # chronicle …), i.e. true positives at a high rate, not false alarms on
+  # routine edits, which is exactly the distinction the cabinet/scripts refusal
+  # turned on. If it ever starts firing on non-stores, delete the row rather
+  # than widen it.
+  #
+  # ZERO HEADROOM, like every budget above: observed == maximum, so one unit of
+  # growth blocks. Shrink is always green.
+  organ_manifests:
+    path: cabinet/config/organs
+    # EVERY manifest spelling the runtime loads, not just the one in use:
+    # framework/organs/registry.py MANIFEST_SUFFIXES = (".yml", ".yaml",
+    # ".json") and load_organ_manifests reads each of them out of this
+    # directory. A "*.yml"-only pin was DEFEATED by execution 2026-07-27 —
+    # a sixth organ named .yaml, declared in cabinet/services.yml, loaded by
+    # the registry (6 manifests) and derived a floor in
+    # framework/watchdog/registry.py::_parse_organ_manifests (6 entries),
+    # while the census still read organ_manifests 5 <= 5. Widening stays a
+    # DATA edit; this list tracks MANIFEST_SUFFIXES.
+    pattern: ["*.yml", "*.yaml", "*.json"]
+    # An organ manifest IS a new scheduled decider — the composed runner reads
+    # this directory and derives one freshness floor per organ from it
+    # (framework/watchdog/registry.py _parse_organ_manifests). It was
+    # un-budgeted: organs are YAML, so they cost the module and line budgets
+    # nothing. Missing directory = ERROR, never 0 — and so is a path that
+    # exists but is NOT a directory (rglob over a regular file yields nothing,
+    # which read zero and passed until 2026-07-27). A contract path that
+    # silently reads zero is a disabled sensor.
+    maximum: 5
+  claude_skills:
+    path: .claude/skills
+    pattern: SKILL.md
+    # A skill is a decision surface every officer reads. Counted by their entry
+    # file so the set is derived from the tree, and so a directory of notes
+    # without a SKILL.md is not miscounted as a skill.
+    maximum: 21
+  claude_hook_wirings:
+    path: .claude/settings.json
+    # The WIRING, not the script on disk, is what makes a hook fire. Two hook
+    # FILES were added in the 30-day window and ZERO hook-wiring diffs landed,
+    # so this is a near-silent tripwire: it costs nothing until something wires
+    # a new always-on decider into every session. Counts hooks.<Event>[].hooks[]
+    # entries; a malformed or renamed section is an ERROR, never a smaller
+    # count.
+    maximum: 27
+  framework_verdict_vocabulary_members:
+    path: framework
+    symbol_pattern: VERDICT
+    # The SATELLITE vocabularies. central_event_types and central_action_types
+    # are pinned, but the under-ask verdict ("missed", framework/frontdoor/
+    # action_lessons.py) landed touching NEITHER — a new word the cabinet can
+    # say about the Captain, free. Discovery is by NAME across the production
+    # tree, so a vocabulary in a file this contract has never heard of is found
+    # on the run it lands; an unreadable or in-place-mutated vocabulary is an
+    # ERROR, because otherwise the way to grow one for free is to build it at
+    # import time.
+    maximum: 70
+  cabinet_script_verdict_vocabulary_members:
+    path: cabinet/scripts
+    symbol_pattern: VERDICT
+    # Same pin, pointed at the blind half. This is the ONE budget that reads
+    # cabinet/scripts, and deliberately not by mass: it counts words in a
+    # decision vocabulary, not lines.
+    maximum: 18
+  durable_store_units:
+    path: .gitignore
+    # A new durable store is a new organ of memory. .gitignore already IS the
+    # store registry — a release is a fresh git worktree, so every positively
+    # ignored path is exactly what the cabinet accumulates at runtime — and the
+    # unit is the deepest wildcard-free prefix, the same reduction
+    # cabinet/scripts/state-persistence-preflight.py already applies, so
+    # memory/logs/*.jsonl and memory/logs/*.log are ONE store. Raw line count
+    # was measured (38/39 touching commits) and rejected for the unit set.
+    # OVERLAP, stated rather than hidden: the preflight already fails closed on
+    # a new unaccounted unit and demands a written reason (proven by execution
+    # 2026-07-27 — adding one ignored path made it exit non-zero). It asks
+    # whether a store SURVIVES A DEPLOY. This asks whether the org grew another
+    # memory at all, which no gate asked before.
+    #
+    # 96 -> 97 (2026-07-27): instance/onboarding/access-records/ — the per-source
+    # record of a completed read (root, ownership class, authority basis, charter
+    # and manifest hashes, entry count, every refusal with its class). A true
+    # positive of exactly the kind this pin is kept for, and a PERMANENT organ,
+    # so it is a maximum bump rather than a temporary_allowances row: an
+    # allowance would promise a deletion gate that will never fire. It is the
+    # one store that must SURVIVE the purge of the data it describes, so it sits
+    # outside instance/onboarding/v2/ and is carried by runtime-provision.sh's
+    # INSTANCE_PERSISTENT_DIRS. Content-free by construction (hashes and counts,
+    # never excerpts), and the purge redacts its root. Shrink-only resumes here.
+    maximum: 97
 temporary_allowances:
+  - phase: propose-means-propose
+    budget: framework_production_noncomment_lines
+    additional: 194
+    reason: >-
+      the propose/gate/unclassified verdict split in the authority gate.
+      `main()` exited 2 on ANY non-None result, so `propose_only` ("above your
+      bar — ask, and the chain proceeds without this step") and `always_gated`
+      ("hard ceiling, no auto path exists") were OPERATIONALLY IDENTICAL: the
+      verdict vocabulary was richer than enforcement could express, which is
+      why the enforcing flip measured as an undifferentiated 52,659 refusals
+      (75.66%) when only 11,570 of them are ceilings. +186 measured 2026-07-27 (151 at first landing, +43 closing an adversarial review)
+      with cognitive-architecture-census.py against master f77bcf45 (69315,
+      itself exactly at the pinned maximum). The lines are: the GateDecision
+      str-subclass carrying a STRUCTURED verdict field (a str subclass because
+      ~100 call sites depend on `evaluate_policy` returning `str | None` —
+      nothing was weakened to buy the distinction), the propose-need filing
+      seam with its measured rate limit, the authority_enforcing() resolver,
+      and the needs_enabled() enforcing disjunct that closes the guardian
+      no-op. ZERO new modules (framework_production_modules unchanged at 244):
+      all of it lives inside the two existing authority modules. Docstrings
+      are counted as written — the reason a propose verdict still WITHHOLDS
+      the step (its dominant bucket is byte-indistinguishable from
+      send-to-group.sh, `gh api -X POST`, and `python3 -c "...smtplib..."`) is
+      the single most important thing a later reader must not lose, and
+      rewriting it into "#" comments to duck this counter would be buying a
+      number with the explanation that stops someone widening it by accident.
+      The +43 closes an adversarial pass: a ceiling risk_class the floor's
+      `hard_ceiling` omits, mistypes or drops now GATES on the CANONICAL set
+      (classifier.CEILING_CLASS_ACTION_TYPES) instead of falling through to
+      the propose collapse (it was filing "grant autonomous external_message" onto
+      the Captain's deny surface), a future-dated rate-limit marker degrades to
+      re-file instead of muting a need forever, the marker path falls back to
+      the needs kernel's own root resolver instead of silently disabling the
+      limit at ~46ms/call, an undo-plane gap files its OWN reason rather than
+      deduping onto a capability request, and GateDecision gained
+      __getnewargs__ so copy/pickle round-trip as a plain str always did.
+    owner: authority-plane
+    sunset: '2027-01-19'
+    deletion_gate: >-
+      the per-invocation Bash sub-decider lands and the `unclassified` kind
+      stops being the dominant verdict, so the split collapses back into the
+      matrix rows it was compensating for, or COG-7 compaction brings
+      production non-comment lines below the pinned baseline
   - phase: bash-egress-fail-closed
     budget: framework_production_noncomment_lines
     additional: 186
@@ -95,6 +263,102 @@ temporary_allowances:
       sanctioned-destination allowlist) and the locality proof is reduced to the
       classification it is, or COG-7 compaction brings production non-comment
       lines below the pinned baseline
+  - phase: shell-command-word-parser
+    budget: framework_production_noncomment_lines
+    additional: 199
+    reason: >-
+      the shell lexer in policy_engine.py rewritten so a token that is not a
+      program is never resolved as the command word. MEASURED over 39,797 real
+      recorded Bash commands (the PR-233 dry-run corpus, rebuilt read-only):
+      347 DISTINCT non-program tokens were reaching the resolver in 10,209
+      records; after the fix, 1 token in 1 record. Causes fixed, each pinned by
+      an arm that fails against the pre-change parser: `&` was a separator
+      inside the redirection `2>&1` (the digit `1` was the command word of
+      14,943 records); the double-quote scanner ended a span at a quote nested
+      inside `$( )`, desynchronising the rest of the command; `${VAR:-default}`
+      was split as a brace group; comments were never stripped; every heredoc
+      body was re-parsed as shell even when a `cat`, an interpreter, `read` or
+      `git commit -F -` consumed it; `$(( ))` arithmetic, `find -exec {} \;`,
+      case patterns and `for` loop variables all became command words. It also
+      CLOSES a pre-existing fail-open: 498 real records were classified
+      provably-local while invoking redis-cli, gh or launchctl inside `$( )`
+      in a double-quoted string, and `echo "$(sendmail -t)"` was provably
+      local on master. ZERO new modules (framework_production_modules
+      unchanged at 244) and zero new files: the lexer replaced the character
+      scanner in place. Docstrings are counted as written — each helper states
+      the token it stopped manufacturing and the corpus count behind it, which
+      is the evidence a later reader needs to tell a fix from a guess.
+    owner: authority-plane
+    sunset: '2027-01-19'
+    deletion_gate: >-
+      the authority matrix grows a local-execution risk class (the PR-233
+      dry-run's own recommendation), which removes the reason this parser must
+      carry the whole locality question, or COG-7 compaction brings production
+  - phase: recipient-exclusion-carve-backs
+    budget: framework_production_noncomment_lines
+    additional: 140
+    reason: >-
+      answers the Captain's 2026-07-27 "allowlist or/and denylist?" question.
+      The ALLOWLIST already existed and no second one was built: org_domains()
+      IS it, the framework ships none of its own, and it fails closed to EMPTY
+      so a stranger's cabinet treats every recipient as external. What it could
+      not express was an EXCEPTION, and that gap was reachable two ways with no
+      code and no config change. (1) ADDRESS: every address at a listed domain
+      is internal, so a distribution list or alias that fans out to
+      non-employees classified internal_comms — off the always-gated
+      external_comms ceiling — and no setting of org_domains can carve one
+      address out. (2) SUBDOMAIN: matching was `dom == d or
+      dom.endswith("." + d)`, so a bare listed domain claimed its ENTIRE
+      subdomain namespace, unboundedly and forever, including subdomains a
+      partner operates and subdomains that do not exist yet. FIX — two
+      carve-backs on the SAME one declared source, never a second way to BE
+      internal: a Captain-owned denylist (instance/config/
+      recipient-exclusions.yml, reusing the act-first-surfaces dialect — ruled
+      file, empty denylist default, why: per row) and `subdomain_matching`,
+      now `strict` by default with the old unbounded rule reachable as
+      `inherit` — a config line, not a code change. Both only ever REMOVE from
+      the internal set, so the direction-of-travel law the previous landing
+      established (the predicate can only move a recipient TOWARD the ceiling,
+      never away) survives and is now PROVEN, not asserted: a property arm
+      quantifies every expressible policy over the recipient corpus against a
+      frozen reimplementation of the pre-change predicate, and a mutant that
+      widens the allow side to a dotless suffix match turns it red. Corruption
+      is honest, copying the act-first contract: file ABSENT => empty denylist;
+      file PRESENT but damaged => EVERY recipient external until repaired.
+      +108 measured 2026-07-27 with cognitive-architecture-census.py against
+      master 0ab0cc2b (69315, itself exactly at the pinned maximum) -> 69423.
+      108 -> 140 in the same landing: an adversarial review DEFEATED the
+      fail-closed claim three ways and the fixes are all in the parser. A
+      duplicate `denylist:` key is last-wins under yaml.safe_load, so appending
+      one empties the exclusion set while every original row still reads intact
+      above it — a silent shrink, and the shape a careless append produces; a
+      dangling symlink read as ABSENT rather than damaged; and rows that parse
+      but can never MATCH (a value carrying an address separator, the
+      display-name form pasted out of a mail client, a domain written with a
+      leading dot) were accepted, so a Captain's exclusion could read live and
+      exclude nothing. Those 32 lines add a SafeLoader subclass refusing
+      duplicate keys and aliases (an exclusion list assembled from anchors
+      cannot be audited by eye), lexists over exists, a size bound on a file
+      parsed at import of a germline module, an inert-row refusal, and a
+      case-fold so a caps typo cannot take the whole org to deny-all.
+      ZERO new modules (244 unchanged): the resolver joins framework/env.py
+      beside org_domains and the predicate stays inside the existing
+      classifier. Docstrings are counted as written — they carry the two
+      attack shapes, the fail-closed contract, and the one thing this
+      mechanism cannot see (a delivery graph: an internal-looking address that
+      relays outward is invisible by construction), which is exactly the
+      reasoning a later reader needs and would be bought back with a smaller
+      number by rewriting it into "#" comments.
+    owner: authority-plane
+    sunset: '2027-01-19'
+    deletion_gate: >-
+      the two independent recipient classifiers are unified — framework/
+      channels/contract.py's classify_recipient still decides internal-vs-
+      external on its own, last-address-wins, from a different config file, and
+      is fenced today only by having no importer (the fence arm in
+      framework/authority/tests/test_classifier.py) — so folding both onto one
+      predicate reclaims this surface; or COG-7 compaction brings production
+      non-comment lines below the pinned baseline
   - phase: COG-0
     budget: framework_production_modules
     additional: 2
@@ -263,6 +527,178 @@ temporary_allowances:
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: COG-7 compaction folds the classifier into the projection kernel, or the recipient set becomes structurally typed (a list of parsed addresses carried on the action rather than a free-text field re-parsed at the gate, removing the multi-address channel entirely)
+  - phase: hook-redos
+    budget: framework_production_noncomment_lines
+    additional: 1
+    reason: >-
+      closes an AVAILABILITY defect in the enforcer, measured on the live
+      shadow record before anything was changed. The sed entry of
+      policy_engine._WRITE_PATTERNS — type bash_write_to_path, already in
+      policy-shadow's _LEGACY_ENFORCING_TYPES, so its verdict is a live
+      refusal — nested the ambiguous statement-run twice in one expression.
+      The negated class in that run also matches both quote characters, so
+      every quoted span is tileable two ways and answering "no match" costs
+      2**(quote pairs). Replaying the recorded shadow decisions, 52 of 80,307
+      real officer tool calls exceeded 1.5s inside this one policy, the
+      smallest an ordinary 889-byte heredoc; a 73-byte synthetic exceeds 10s
+      and a 61-byte one takes 1.6s. pre-tool-use.sh puts NO time bound on the
+      evaluation, so such a command pins the officer's own gate at 99% CPU
+      indefinitely with nothing reporting it. FIX — ONE named constant,
+      _STMT_RUN (+1 line), used for both occurrences, killing BOTH ambiguities:
+      the quoted alternative must CONTAIN a separator (so a separator-free
+      command degenerates to a single linear scan), AND it anchors on the FIRST
+      separator, without which a span holding s separators still has s parses
+      inside the outer star — a draft that fixed only the first was still
+      exponential and died in 110 bytes under a hostile sweep. A constant rather
+      than two inline copies precisely because a future editor fixing one and
+      missing the other is the duplicate-source bug this codebase keeps
+      deleting. The sibling perl pattern is NOT fixed here and is registered as
+      RES-019: it is polynomial rather than exponential, and the obvious repair
+      was measured to NARROW the rule.
+      EQUALITY IS PROVED IN BOTH DIRECTIONS, not assumed - rewrite every
+      separator-free quoted span of any old tiling as its individual
+      characters and exactly the new form remains; and every new alternative
+      is a subset of an old one. So the safety rule is not narrowed: a quoted
+      separator still cannot end a statement. Checked by exhaustive
+      enumeration (6,725,601 strings over a class-complete alphabet up to
+      length 8, plus the full pattern over 41,371 token compositions, 0
+      mismatches) and by replaying all 80,307 recorded calls through the real
+      evaluate_policy. Atomic groups were unavailable AND would have been
+      wrong: the hook invokes bare python3, which is 3.9.6 on the target, and
+      these runs must backtrack for the flag and path to match after them. The
+      fail-closed evaluation timeout is defence in depth, not the fix, and
+      lives in cabinet/ outside this budget. EXACT measured running total
+      (69849 vs 69848 base at 6e50570f, re-measured after EACH merge — 69316 vs
+      69315 at f77bcf45, 69456 vs 69455 at be13f7a5, 69655 vs 69654 at 91faed1b,
+      then this once propose-means-propose landed; +1 every time, since the growth
+      is this unit's own single line), 2026-07-27, via cognitive-architecture-census.py
+      — the zero-headroom observed==max law means this is the exact new total,
+      never a pre-allocated ceiling
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: bash_write_to_path stops matching command TEXT and matches a parsed invocation instead (the content-vs-action fix the same dry run flagged as finding 6.2), which removes the run-of-command-text construct entirely, or COG-7 compaction folds the write-path matcher into the projection kernel
+  - phase: source-ownership-class
+    budget: framework_production_modules
+    additional: 1
+    reason: >-
+      per-source ownership class (2026-07-26 altitude direction gate, item 4 of
+      its resulting order). ONE new module, framework/authority/ownership.py —
+      the closed class set (self | employer | third_party) with refuse-on-
+      unclassified in both directions, the structural write predicate that takes
+      no override argument, the graded egress dispositions, the six sensitivity
+      classes that refuse by name (credentials, personnel, compensation,
+      customer_pii, legal, corporate_finance), and the content-free access-record
+      shape. A MODULE rather than a helper because THREE planes need it across a
+      layer boundary: framework/onboarding/journey.py (ingest ceiling + charter +
+      scan + record + card egress), cabinet/scripts/task_adapters/base.py
+      (structural read-only at adapter construction) and the dashboard surfaces
+      that ask the question. The merge candidate examined and refuted is
+      framework/authority/grants.py::CEILING_RISK_CLASSES — grants classify ACTS
+      against a signed authority root, this classifies SOURCES, and neither set
+      names a member of the other. EXACT measured running total (245 vs 244
+      base), 2026-07-27, via cognitive-architecture-census.py — the zero-headroom
+      observed==max law means this is the exact new total, never a pre-allocated
+      ceiling. Registered as an expansion row below, since an allowance cannot
+      buy a net-new member of a set the census can name.
+    owner: authority-plane
+    sunset: '2027-01-19'
+    deletion_gate: >-
+      the ownership class becomes a typed attribute of a source record carried by
+      the projection kernel (removing the free-standing classifier), or COG-7
+      compaction folds the authority plane's source-side classifiers together
+  - phase: source-ownership-class
+    budget: framework_production_noncomment_lines
+    additional: 585
+    reason: >-
+      per-source ownership class — framework/authority/ownership.py (the class
+      set and its two refusal codes, the authority-basis validator, the
+      structural write predicate and its raising twin, the graded egress
+      dispositions plus screen_egress/require_egress_allowed, the derived
+      permission block, the attestation carrying verified_by_framework: false,
+      the ingest ceiling open_ingest, the six sensitivity-class patterns with the
+      historical credential detector moved in beside them so the vocabulary has
+      ONE home, and the access-record builder) and framework/onboarding/
+      journey.py (the ingest ceiling on propose_window, ownership inside the
+      hashed Charter payload, per-class refusal counting in the scan, the
+      surviving access record with its purge-time root redaction, and the egress
+      verdict on the one card every surface renders). Docstrings are counted as
+      written: each function states the refusal it makes and why a default would
+      be the cabinet answering an authorization question on the operator's
+      behalf, and rewriting that into "#" comments to duck this counter would be
+      buying a number with the explanation a later reader needs. EXACT measured
+      running total (70239 vs 69654 base), 2026-07-27, via
+      cognitive-architecture-census.py
+    owner: authority-plane
+    sunset: '2027-01-19'
+    deletion_gate: >-
+      the ownership class becomes a typed attribute of a source record carried by
+      the projection kernel, or COG-7 compaction brings production non-comment
+      lines below the pinned baseline
+# ── The EXPANSION REGISTRY (two-model gate adjudication, 2026-07-27) ─────────
+# temporary_allowances above pay for MASS and ask only reason/owner/sunset —
+# declaration, not adjudication. That gap is measured, not theoretical: an
+# expansion's line-mass once rode in under a fix-shaped brief as a routine
+# allowance row. So an allowance CANNOT buy a net-new member of any set the
+# census can name. Those go here, and the census holds the list to a BIJECTION
+# against cabinet/config/architecture-baseline-sets.yml:
+#
+#     observed - baseline  ==  {row.member for row in expansions}
+#
+# per class, exactly and disjointly. Unregistered member -> RED. Row naming a
+# member that is not observed (the stale copy-paste) -> RED. Row naming a
+# baseline member (the laundering edit) -> RED. Two rows for one member ->
+# refused at load. Nothing here checks that a FILE EXISTS, because `touch`
+# passes that; a bijection cannot be faked at all.
+#
+# Every field is schema-refused when missing or empty:
+#   member         the exact member id — an event/action token, a service name,
+#                  a framework module path, an emit() writer callee
+#   member_class   which set it joins (BIJECTION_CLASSES in the census)
+#   gate_date      when the direction gate ran
+#   models_run     the blind arms, >=2 and distinct — one model run twice is one
+#                  opinion and an echo
+#   adjudication   the written adjudication document (.md); bound to actually
+#                  NAME this member by
+#                  cabinet/scripts/tests/test_expansion_adjudication_binding.py
+#   merge_refuted  OPENS with a <path>::<symbol> anchor that resolves, then
+#                  prose. Both near-misses this program caught were answerable
+#                  by grep against a named symbol; prose alone is not an answer.
+#   consumer       a repository path that exists or a cabinet/services.yml name
+#                  that will READ the output — never the member itself and never
+#                  the file declaring it. Naming the consumer before adding the
+#                  producer is a paid lesson: this org held four durable
+#                  Captain-verdict stores with almost nothing learning from any.
+#   provenance     the grant or ruling the work was done under
+#
+# EMPTY IS THE HONEST STATE at landing: the baseline is the tree as it stood
+# when the registry landed, so there is no surplus to name. Nothing before it
+# was adjudicated by this gate and the registry claims nothing about it. The
+# permanent both-ways fixture arms in
+# cabinet/scripts/tests/test_cognitive_architecture_census.py are what keep an
+# empty registry from being an untested one — a registry never seen to reject
+# is not a registry.
+expansions:
+  - member: framework/authority/ownership.py
+    member_class: framework_production_modules
+    gate_date: '2026-07-26'
+    models_run:
+      - Fable 5
+      - Opus 5
+    adjudication: docs/proposals/source-ownership-class-expansion-2026-07-26.md
+    merge_refuted: >-
+      framework/authority/grants.py::CEILING_RISK_CLASSES — that plane classifies
+      the ACT (which of six hard-ceiling risk classes an action falls in, and
+      whether the authority root signed a grant for it). This plane classifies
+      the SOURCE (whose data it is and under what right), and binds at moments
+      grants.py never sees: before a read, inside the Charter hash the Captain
+      approves, and at adapter construction under cabinet/scripts/. No risk class
+      names an estate and no ownership class names an act, so the sets do not
+      overlap. Folding it in would put a source classifier inside the enforcement
+      plane every officer action already routes through.
+    consumer: framework/onboarding/journey.py
+    provenance: >-
+      per 2026-07-07 full-autonomy grant + 2026-07-21 ownership-on-GO; direction
+      of record LAUNCH-DIRECTION-ALTITUDE-2026-07-26 (two blind arms)
 ownership:
   authoritative_state: domain_transaction
   cross_domain_delivery: transactional_outbox

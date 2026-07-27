@@ -160,13 +160,20 @@ def test_live_values_absent_example_twins_present(export: Path):
     for live in ("platform.yml", "sources.yml", "directions.yml", "peers.yml",
                  "officer-emails.yml", "probes.yml", "warrooms.yml",
                  "outcomes.yml", "hq-instance.yml.draft",
-                 "authority-enforcing"):
+                 "authority-enforcing",
+                 # this captain's ruled carve-back on his own org_domains —
+                 # named addresses/subdomains that are NOT internal. Unlike
+                 # act-first-surfaces there is nothing to re-materialize:
+                 # ABSENT is the shipped default (empty denylist, strict
+                 # subdomain matching), so the twin alone ships.
+                 "recipient-exclusions.yml"):
         assert not (cfg / live).exists(), f"R120: live {live} must not ship"
     for twin in ("platform.yml.example", "sources.yml.example",
                  "directions.yml.example", "peers.yml.example",
                  "officer-emails.yml.example", "probes.yml.example",
                  "warrooms.yml.example", "roster.yml.example",
                  "egress.yml.example",
+                 "recipient-exclusions.yml.example",
                  "publish-scan-patterns.local.example",
                  "role-registry.md.example"):
         assert (cfg / twin).is_file(), f"R120/R166: {twin} must ship"
@@ -303,6 +310,7 @@ def test_cognitive_core_contract_survives_export(export: Path):
     for rel in (
         "docs/cognitive-core-foundry.md",
         "cabinet/config/cognitive-architecture-contract.yml",
+        "cabinet/config/architecture-baseline-sets.yml",
         "cabinet/scripts/cognitive-architecture-census.py",
         "cabinet/scripts/verify-cognitive-architecture.sh",
         "framework/evolution/__init__.py",
@@ -321,6 +329,24 @@ def test_cognitive_core_contract_survives_export(export: Path):
         "cabinet/scripts/tests/test_cognitive_phase0_rollback.py",
     ):
         assert not (export / rel).exists(), f"COG-0 private landing tool must not ship: {rel}"
+
+
+def test_expansion_registry_manifest_rows(export: Path):
+    """The expansion registry ships as framework DNA; only its source-side
+    adjudication binder is excluded, because the written adjudications it reads
+    live under docs/plans and docs/proposals, which archive out of the export.
+    Text-level on the manifest (binds THIS wave's edit) AND on the cut export
+    (binds the result), so neither half can drift alone."""
+    manifest = _MANIFEST.read_text(encoding="utf-8")
+    binder = "cabinet/scripts/tests/test_expansion_adjudication_binding.py"
+    assert "expect-present cabinet/config/architecture-baseline-sets.yml" in manifest
+    assert f"delete {binder}" in manifest
+    assert f"expect-absent {binder}" in manifest
+    assert (export / "cabinet/config/architecture-baseline-sets.yml").is_file()
+    assert not (export / binder).exists()
+    # the portable both-ways arms are the registry's only proof that it rejects
+    # anything, so a hatched cabinet must carry them
+    assert (export / "cabinet/scripts/tests/test_cognitive_architecture_census.py").is_file()
 
 
 COG1_PHASE1_PRIVATE_TOOLS = (

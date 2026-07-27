@@ -89,9 +89,14 @@ LEGACY_EXEMPT = {
     # atlas out of the public export — each time a delete row + comment above
     # the first site and an expect-present/expect-absent row + comment above the
     # second. The marker TEXT and the exempt SET are unchanged every time — these
-    # are re-anchors, not widenings, and LEGACY_MAX stays 2.
-    ("cabinet/scripts/egg-export-manifest.txt", 264): "RESIDUAL SCRUB",
-    ("cabinet/scripts/egg-export-manifest.txt", 697): "RESIDUAL SCRUB",
+    # are re-anchors, not widenings, and LEGACY_MAX stays 2. Re-anchored again
+    # 2026-07-27 (248 -> 258 -> 267, 680 -> 696 -> 705) by the expansion-registry
+    # manifest rows and then the recipient-exclusions delete row
+    # rows — same shape: a delete row + comment above the first site and an
+    # expect-present row + comment above the second. Marker TEXT and exempt SET
+    # unchanged.
+    ("cabinet/scripts/egg-export-manifest.txt", 283): "RESIDUAL SCRUB",
+    ("cabinet/scripts/egg-export-manifest.txt", 722): "RESIDUAL SCRUB",
 }
 LEGACY_MAX = 2
 

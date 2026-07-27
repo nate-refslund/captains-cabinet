@@ -443,6 +443,20 @@ jobs:
           CABINET_EVALS_REDIS_DISPOSABLE: "1"
         run: bash /opt/founders-cabinet/memory/golden-evals/framework/fw-002-spending-limits.sh
 
+      - name: Golden eval — FW-019 checkpoint review
+        if: ${{ !cancelled() }}
+        # Same blind spot as the FW-002 step above, found the same way
+        # (2026-07-27): run-golden-evals.sh has NO discovery, so this contract
+        # suite had ZERO executors anywhere — `git grep fw-019-checkpoint-review`
+        # returned the file, its own header, and a knowledge-classification row.
+        # The behaviour it pins (which artifacts satisfy the pre-commit
+        # checkpoint gate) was therefore unwatched the entire time the gate was
+        # forgeable by `touch`. This step is that missing gate.
+        # Hermetic: the eval copies the hook into its own mktemp git repo, needs
+        # no Redis, no network and no cabinet state, and writes nothing outside
+        # that directory.
+        run: bash /opt/founders-cabinet/memory/golden-evals/framework/fw-019-checkpoint-review.sh
+
       - name: Captain-rules retrieval eval
         if: ${{ !cancelled() }}
         # Spec 042 Phase 3: golden eval over 5 anchor fixtures asserting

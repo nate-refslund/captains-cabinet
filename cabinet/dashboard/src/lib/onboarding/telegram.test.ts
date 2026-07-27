@@ -72,16 +72,17 @@ describe('Telegram onboarding intent', () => {
     expect(isOnboardingIntent('please deploy the release')).toBe(false)
   })
 
-  it('renders the canonical card id and all three destination choices', () => {
+  it('renders the canonical card id and offers NO one-tap folder button', () => {
+    // INVERTED 2026-07-27 by the ownership ceiling. The three Documents
+    // buttons used to act. A tap cannot carry whose data the folder is, and
+    // the core refuses an unclassified source, so a button here would be a
+    // dead end that reads like an offer. The typed form is the only path.
     const message = formatTelegramOnboarding(WELCOME as never)
     expect(message.plain).toBe(true)
     expect(message.text).toContain(WELCOME.card.id)
     expect(message.text).toContain('destination, not an authority grant')
-    expect(message.buttons?.flat().map((button) => button.callback_data)).toEqual([
-      'onboard:documents:reversible',
-      'onboard:documents:earn',
-      'onboard:documents:sovereign',
-    ])
+    expect(message.text).toContain('mine, employer, or client')
+    expect(message.buttons?.flat() ?? []).toEqual([])
   })
 
   it('renders a purged journey as terminal and offers no stale action', () => {
@@ -112,17 +113,60 @@ describe('Telegram standalone journey', () => {
     expect(messages[0].text).toContain(WELCOME.card.id)
   })
 
-  it('turns the Documents button into the same canonical propose action', async () => {
-    await handleTelegramOnboardingCallback('onboard:documents:reversible', 'tg-2')
+  it('answers a legacy Documents callback with the question instead of acting', async () => {
+    // INVERTED 2026-07-27: acting on this callback would read a folder whose
+    // ownership class nobody declared. A stale button from an older message
+    // must not become an unclassified read.
+    const reply = await handleTelegramOnboardingCallback('onboard:documents:reversible', 'tg-2')
+    expect(applyMock).not.toHaveBeenCalled()
+    expect(reply[0].text).toContain('mine, employer, or client')
+  })
+
+  it('carries the declared ownership and basis into the canonical action', async () => {
+    await handleTelegramOnboarding(
+      '/onboard folder /Users/ada/work | find the next risk | employer: read access granted to my seat',
+      'tg-own'
+    )
     expect(applyMock).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'propose_window',
-        action_id: 'tg-2',
-        source: '~/Documents',
-        relationship_destination: 'reversible',
+        source: '/Users/ada/work',
+        purpose: 'find the next risk',
+        ownership: 'employer',
+        authority_basis: 'read access granted to my seat',
       }),
       'telegram'
     )
+  })
+
+  it('sends no ownership at all when the operator declared none', async () => {
+    // The surface must not invent a class to make the core accept the action;
+    // the core's refusal is the correct outcome.
+    await handleTelegramOnboarding('/onboard folder /Users/ada/work | find the next risk', 'tg-bare')
+    const [payload] = applyMock.mock.calls[0]
+    expect(payload.ownership).toBeUndefined()
+    expect(payload.authority_basis).toBeUndefined()
+  })
+
+  it('withholds nothing itself but renders the core egress verdict', () => {
+    const withheld = {
+      ...WELCOME,
+      card: {
+        ...WELCOME.card,
+        stage: 'dividend_ready',
+        evidence: [{ path: 'a/b.md', line: 4, excerpt: '[withheld]', sha256: 'x' }],
+        egress: {
+          ownership: 'third_party',
+          disposition: 'per_item_approval',
+          items: 1,
+          withheld: 1,
+          approved: [],
+        },
+      },
+    }
+    const message = formatTelegramOnboarding(withheld as never)
+    expect(message.text).toContain('holding back the words of 1 of 1')
+    expect(message.text).toContain('a/b.md:4')
   })
 
   it('accepts a custom folder and purpose without technical connector terms', async () => {
@@ -141,11 +185,16 @@ describe('Telegram standalone journey', () => {
   })
 
   it('can select earn-every-step from Telegram without granting authority', async () => {
-    await handleTelegramOnboardingCallback('onboard:documents:earn', 'tg-earn')
+    await handleTelegramOnboarding(
+      '/onboard documents | keep me ahead | mine: my own laptop | earn',
+      'tg-earn'
+    )
     expect(applyMock).toHaveBeenCalledWith(
       expect.objectContaining({
         source: '~/Documents',
         relationship_destination: 'earn',
+        ownership: 'self',
+        authority_basis: 'my own laptop',
       }),
       'telegram'
     )

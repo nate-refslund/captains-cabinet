@@ -1,0 +1,3124 @@
+{
+ "atlas_size": 2048,
+ "atlases": [
+  "atlas-0.png"
+ ],
+ "counts": {
+  "atlases": 1,
+  "frames": 163,
+  "objects": 24
+ },
+ "empty_rungs": [
+  "bare_ground",
+  "bare_pole",
+  "bare_wall",
+  "dark",
+  "first_post",
+  "none"
+ ],
+ "frames": {
+  "anchor": {
+   "anchor": [
+    21.5,
+    48
+   ],
+   "atlas": 0,
+   "dh": 48,
+   "dw": 43,
+   "h": 96,
+   "scale": 2,
+   "w": 86,
+   "x": 1817,
+   "y": 660
+  },
+  "barn": {
+   "anchor": [
+    79.5,
+    149
+   ],
+   "atlas": 0,
+   "dh": 149,
+   "dw": 159,
+   "h": 149,
+   "scale": 1,
+   "w": 159,
+   "x": 1802,
+   "y": 204
+  },
+  "barrel_single": {
+   "anchor": [
+    15.0,
+    37
+   ],
+   "atlas": 0,
+   "dh": 37,
+   "dw": 30,
+   "h": 74,
+   "scale": 2,
+   "w": 60,
+   "x": 1682,
+   "y": 878
+  },
+  "bay_archive_bureau": {
+   "anchor": [
+    27.5,
+    74
+   ],
+   "atlas": 0,
+   "dh": 74,
+   "dw": 55,
+   "h": 148,
+   "scale": 2,
+   "w": 111,
+   "x": 2,
+   "y": 376
+  },
+  "bay_compost_works": {
+   "anchor": [
+    37.0,
+    53
+   ],
+   "atlas": 0,
+   "dh": 53,
+   "dw": 74,
+   "h": 106,
+   "scale": 2,
+   "w": 148,
+   "x": 892,
+   "y": 660
+  },
+  "bay_container_rows": {
+   "anchor": [
+    36.5,
+    59
+   ],
+   "atlas": 0,
+   "dh": 59,
+   "dw": 73,
+   "h": 118,
+   "scale": 2,
+   "w": 147,
+   "x": 2,
+   "y": 660
+  },
+  "bay_crested_flag": {
+   "anchor": [
+    30.0,
+    185
+   ],
+   "atlas": 0,
+   "dh": 185,
+   "dw": 60,
+   "h": 185,
+   "scale": 1,
+   "w": 60,
+   "x": 1022,
+   "y": 2
+  },
+  "bay_great_barn": {
+   "anchor": [
+    90.5,
+    173
+   ],
+   "atlas": 0,
+   "dh": 173,
+   "dw": 181,
+   "h": 173,
+   "scale": 1,
+   "w": 181,
+   "x": 1738,
+   "y": 2
+  },
+  "bay_manor_estate": {
+   "anchor": [
+    93.0,
+    189
+   ],
+   "atlas": 0,
+   "dh": 189,
+   "dw": 186,
+   "h": 189,
+   "scale": 1,
+   "w": 186,
+   "x": 644,
+   "y": 2
+  },
+  "bay_observatory_dome": {
+   "anchor": [
+    60.0,
+    161
+   ],
+   "atlas": 0,
+   "dh": 161,
+   "dw": 120,
+   "h": 161,
+   "scale": 1,
+   "w": 120,
+   "x": 424,
+   "y": 204
+  },
+  "bay_plaza_hearth": {
+   "anchor": [
+    60.0,
+    96
+   ],
+   "atlas": 0,
+   "dh": 96,
+   "dw": 120,
+   "h": 96,
+   "scale": 1,
+   "w": 120,
+   "x": 1905,
+   "y": 660
+  },
+  "bay_post_kiosk": {
+   "anchor": [
+    22.5,
+    73
+   ],
+   "atlas": 0,
+   "dh": 73,
+   "dw": 45,
+   "h": 146,
+   "scale": 2,
+   "w": 90,
+   "x": 629,
+   "y": 376
+  },
+  "bay_stable_yard": {
+   "anchor": [
+    45.0,
+    67
+   ],
+   "atlas": 0,
+   "dh": 67,
+   "dw": 90,
+   "h": 134,
+   "scale": 2,
+   "w": 180,
+   "x": 1415,
+   "y": 376
+  },
+  "bay_steam_packet": {
+   "anchor": [
+    73.0,
+    120
+   ],
+   "atlas": 0,
+   "dh": 120,
+   "dw": 146,
+   "h": 120,
+   "scale": 1,
+   "w": 146,
+   "x": 1454,
+   "y": 526
+  },
+  "bay_stone_wall": {
+   "anchor": [
+    24.0,
+    27
+   ],
+   "atlas": 0,
+   "dh": 27,
+   "dw": 48,
+   "h": 54,
+   "scale": 2,
+   "w": 96,
+   "x": 290,
+   "y": 1040
+  },
+  "bay_tank_tower": {
+   "anchor": [
+    62.5,
+    174
+   ],
+   "atlas": 0,
+   "dh": 174,
+   "dw": 125,
+   "h": 174,
+   "scale": 1,
+   "w": 125,
+   "x": 1250,
+   "y": 2
+  },
+  "bay_terraced_field": {
+   "anchor": [
+    35.5,
+    54
+   ],
+   "atlas": 0,
+   "dh": 54,
+   "dw": 71,
+   "h": 108,
+   "scale": 2,
+   "w": 142,
+   "x": 609,
+   "y": 660
+  },
+  "bay_townhouse": {
+   "anchor": [
+    60.0,
+    198
+   ],
+   "atlas": 0,
+   "dh": 198,
+   "dw": 120,
+   "h": 198,
+   "scale": 1,
+   "w": 120,
+   "x": 132,
+   "y": 2
+  },
+  "bay_warehouse_row": {
+   "anchor": [
+    82.5,
+    165
+   ],
+   "atlas": 0,
+   "dh": 165,
+   "dw": 165,
+   "h": 165,
+   "scale": 1,
+   "w": 165,
+   "x": 257,
+   "y": 204
+  },
+  "bay_well_house": {
+   "anchor": [
+    71.5,
+    132
+   ],
+   "atlas": 0,
+   "dh": 132,
+   "dw": 143,
+   "h": 132,
+   "scale": 1,
+   "w": 143,
+   "x": 1840,
+   "y": 376
+  },
+  "bay_wings": {
+   "anchor": [
+    97.0,
+    190
+   ],
+   "atlas": 0,
+   "dh": 190,
+   "dw": 194,
+   "h": 190,
+   "scale": 1,
+   "w": 194,
+   "x": 448,
+   "y": 2
+  },
+  "bay_workshop_hall": {
+   "anchor": [
+    91.0,
+    155
+   ],
+   "atlas": 0,
+   "dh": 155,
+   "dw": 182,
+   "h": 155,
+   "scale": 1,
+   "w": 182,
+   "x": 816,
+   "y": 204
+  },
+  "beehives": {
+   "anchor": [
+    21.5,
+    38
+   ],
+   "atlas": 0,
+   "dh": 38,
+   "dw": 43,
+   "h": 76,
+   "scale": 2,
+   "w": 86,
+   "x": 986,
+   "y": 878
+  },
+  "bench": {
+   "anchor": [
+    19.0,
+    32
+   ],
+   "atlas": 0,
+   "dh": 32,
+   "dw": 38,
+   "h": 64,
+   "scale": 2,
+   "w": 76,
+   "x": 1357,
+   "y": 965
+  },
+  "boat_fishing": {
+   "anchor": [
+    41.5,
+    113
+   ],
+   "atlas": 0,
+   "dh": 113,
+   "dw": 83,
+   "h": 113,
+   "scale": 1,
+   "w": 83,
+   "x": 317,
+   "y": 660
+  },
+  "boat_packet": {
+   "anchor": [
+    65.0,
+    137
+   ],
+   "atlas": 0,
+   "dh": 137,
+   "dw": 130,
+   "h": 137,
+   "scale": 1,
+   "w": 130,
+   "x": 1173,
+   "y": 376
+  },
+  "boat_rowing": {
+   "anchor": [
+    44.0,
+    62
+   ],
+   "atlas": 0,
+   "dh": 62,
+   "dw": 88,
+   "h": 62,
+   "scale": 1,
+   "w": 88,
+   "x": 1513,
+   "y": 965
+  },
+  "bridge_plank": {
+   "anchor": [
+    46.0,
+    79
+   ],
+   "atlas": 0,
+   "dh": 79,
+   "dw": 92,
+   "h": 79,
+   "scale": 1,
+   "w": 92,
+   "x": 514,
+   "y": 878
+  },
+  "buoy": {
+   "anchor": [
+    19.0,
+    46
+   ],
+   "atlas": 0,
+   "dh": 46,
+   "dw": 38,
+   "h": 92,
+   "scale": 2,
+   "w": 77,
+   "x": 497,
+   "y": 780
+  },
+  "bush_flowering": {
+   "anchor": [
+    17.5,
+    35
+   ],
+   "atlas": 0,
+   "dh": 35,
+   "dw": 35,
+   "h": 71,
+   "scale": 2,
+   "w": 70,
+   "x": 255,
+   "y": 965
+  },
+  "bush_round": {
+   "anchor": [
+    16.0,
+    30
+   ],
+   "atlas": 0,
+   "dh": 30,
+   "dw": 32,
+   "h": 61,
+   "scale": 2,
+   "w": 65,
+   "x": 1757,
+   "y": 965
+  },
+  "camp_bare_pole": {
+   "anchor": [
+    8.0,
+    127
+   ],
+   "atlas": 0,
+   "dh": 127,
+   "dw": 16,
+   "h": 127,
+   "scale": 1,
+   "w": 16,
+   "x": 383,
+   "y": 526
+  },
+  "camp_book_crate": {
+   "anchor": [
+    51.0,
+    92
+   ],
+   "atlas": 0,
+   "dh": 92,
+   "dw": 102,
+   "h": 92,
+   "scale": 1,
+   "w": 102,
+   "x": 576,
+   "y": 780
+  },
+  "camp_bucket": {
+   "anchor": [
+    30.0,
+    58
+   ],
+   "atlas": 0,
+   "dh": 58,
+   "dw": 60,
+   "h": 58,
+   "scale": 1,
+   "w": 60,
+   "x": 64,
+   "y": 1040
+  },
+  "camp_bundles": {
+   "anchor": [
+    46.0,
+    66
+   ],
+   "atlas": 0,
+   "dh": 66,
+   "dw": 92,
+   "h": 66,
+   "scale": 1,
+   "w": 92,
+   "x": 906,
+   "y": 965
+  },
+  "camp_campfire": {
+   "anchor": [
+    35.0,
+    68
+   ],
+   "atlas": 0,
+   "dh": 68,
+   "dw": 70,
+   "h": 68,
+   "scale": 1,
+   "w": 70,
+   "x": 684,
+   "y": 965
+  },
+  "camp_carved_post": {
+   "anchor": [
+    21.0,
+    100
+   ],
+   "atlas": 0,
+   "dh": 100,
+   "dw": 42,
+   "h": 100,
+   "scale": 1,
+   "w": 42,
+   "x": 1476,
+   "y": 660
+  },
+  "camp_crate_desk": {
+   "anchor": [
+    40.5,
+    79
+   ],
+   "atlas": 0,
+   "dh": 79,
+   "dw": 81,
+   "h": 79,
+   "scale": 1,
+   "w": 81,
+   "x": 608,
+   "y": 878
+  },
+  "camp_dark_cairn": {
+   "anchor": [
+    44.0,
+    126
+   ],
+   "atlas": 0,
+   "dh": 126,
+   "dw": 88,
+   "h": 126,
+   "scale": 1,
+   "w": 88,
+   "x": 439,
+   "y": 526
+  },
+  "camp_flat_stone": {
+   "anchor": [
+    42.0,
+    57
+   ],
+   "atlas": 0,
+   "dh": 57,
+   "dw": 84,
+   "h": 57,
+   "scale": 1,
+   "w": 84,
+   "x": 126,
+   "y": 1040
+  },
+  "camp_forage_patch": {
+   "anchor": [
+    54.0,
+    76
+   ],
+   "atlas": 0,
+   "dh": 76,
+   "dw": 108,
+   "h": 76,
+   "scale": 1,
+   "w": 108,
+   "x": 1074,
+   "y": 878
+  },
+  "camp_leanto": {
+   "anchor": [
+    53.0,
+    95
+   ],
+   "atlas": 0,
+   "dh": 95,
+   "dw": 106,
+   "h": 95,
+   "scale": 1,
+   "w": 106,
+   "x": 117,
+   "y": 780
+  },
+  "camp_log_cabin": {
+   "anchor": [
+    64.0,
+    120
+   ],
+   "atlas": 0,
+   "dh": 120,
+   "dw": 128,
+   "h": 120,
+   "scale": 1,
+   "w": 128,
+   "x": 1602,
+   "y": 526
+  },
+  "camp_rowboat_jetty": {
+   "anchor": [
+    44.5,
+    75
+   ],
+   "atlas": 0,
+   "dh": 75,
+   "dw": 89,
+   "h": 75,
+   "scale": 1,
+   "w": 89,
+   "x": 1418,
+   "y": 878
+  },
+  "camp_signal_post": {
+   "anchor": [
+    35.5,
+    126
+   ],
+   "atlas": 0,
+   "dh": 126,
+   "dw": 71,
+   "h": 126,
+   "scale": 1,
+   "w": 71,
+   "x": 529,
+   "y": 526
+  },
+  "camp_stake_pen": {
+   "anchor": [
+    50.5,
+    73
+   ],
+   "atlas": 0,
+   "dh": 73,
+   "dw": 101,
+   "h": 73,
+   "scale": 1,
+   "w": 101,
+   "x": 1823,
+   "y": 878
+  },
+  "camp_star_post": {
+   "anchor": [
+    38.0,
+    130
+   ],
+   "atlas": 0,
+   "dh": 130,
+   "dw": 76,
+   "h": 130,
+   "scale": 1,
+   "w": 76,
+   "x": 146,
+   "y": 526
+  },
+  "camp_tarp_cache": {
+   "anchor": [
+    54.0,
+    80
+   ],
+   "atlas": 0,
+   "dh": 80,
+   "dw": 108,
+   "h": 80,
+   "scale": 1,
+   "w": 108,
+   "x": 325,
+   "y": 878
+  },
+  "camp_tent": {
+   "anchor": [
+    53.0,
+    83
+   ],
+   "atlas": 0,
+   "dh": 83,
+   "dw": 106,
+   "h": 83,
+   "scale": 1,
+   "w": 106,
+   "x": 91,
+   "y": 878
+  },
+  "camp_toolbox": {
+   "anchor": [
+    46.5,
+    100
+   ],
+   "atlas": 0,
+   "dh": 100,
+   "dw": 93,
+   "h": 100,
+   "scale": 1,
+   "w": 93,
+   "x": 1520,
+   "y": 660
+  },
+  "camp_torch": {
+   "anchor": [
+    25.0,
+    117
+   ],
+   "atlas": 0,
+   "dh": 117,
+   "dw": 50,
+   "h": 117,
+   "scale": 1,
+   "w": 50,
+   "x": 151,
+   "y": 660
+  },
+  "camp_waste_pit": {
+   "anchor": [
+    45.0,
+    73
+   ],
+   "atlas": 0,
+   "dh": 73,
+   "dw": 90,
+   "h": 73,
+   "scale": 1,
+   "w": 90,
+   "x": 1926,
+   "y": 878
+  },
+  "cargo_barrels": {
+   "anchor": [
+    22.0,
+    33
+   ],
+   "atlas": 0,
+   "dh": 33,
+   "dw": 44,
+   "h": 66,
+   "scale": 2,
+   "w": 88,
+   "x": 1000,
+   "y": 965
+  },
+  "cargo_crates": {
+   "anchor": [
+    21.5,
+    42
+   ],
+   "atlas": 0,
+   "dh": 42,
+   "dw": 43,
+   "h": 85,
+   "scale": 2,
+   "w": 86,
+   "x": 1731,
+   "y": 780
+  },
+  "cart": {
+   "anchor": [
+    19.5,
+    37
+   ],
+   "atlas": 0,
+   "dh": 37,
+   "dw": 39,
+   "h": 75,
+   "scale": 2,
+   "w": 79,
+   "x": 1509,
+   "y": 878
+  },
+  "chart_table": {
+   "anchor": [
+    48.0,
+    105
+   ],
+   "atlas": 0,
+   "dh": 105,
+   "dw": 96,
+   "h": 105,
+   "scale": 1,
+   "w": 96,
+   "x": 1042,
+   "y": 660
+  },
+  "chart_tent": {
+   "anchor": [
+    62.0,
+    111
+   ],
+   "atlas": 0,
+   "dh": 111,
+   "dw": 124,
+   "h": 111,
+   "scale": 1,
+   "w": 124,
+   "x": 402,
+   "y": 660
+  },
+  "chicken": {
+   "anchor": [
+    9.5,
+    30
+   ],
+   "atlas": 0,
+   "dh": 30,
+   "dw": 19,
+   "h": 60,
+   "scale": 2,
+   "w": 38,
+   "x": 1986,
+   "y": 965
+  },
+  "chicken_coop": {
+   "anchor": [
+    45.0,
+    85
+   ],
+   "atlas": 0,
+   "dh": 85,
+   "dw": 90,
+   "h": 85,
+   "scale": 1,
+   "w": 90,
+   "x": 1819,
+   "y": 780
+  },
+  "compost_bay": {
+   "anchor": [
+    24.0,
+    39
+   ],
+   "atlas": 0,
+   "dh": 39,
+   "dw": 48,
+   "h": 78,
+   "scale": 2,
+   "w": 97,
+   "x": 887,
+   "y": 878
+  },
+  "consequence_ledger": {
+   "anchor": [
+    22.5,
+    51
+   ],
+   "atlas": 0,
+   "dh": 51,
+   "dw": 45,
+   "h": 102,
+   "scale": 2,
+   "w": 90,
+   "x": 1267,
+   "y": 660
+  },
+  "cottage_a": {
+   "anchor": [
+    71.0,
+    132
+   ],
+   "atlas": 0,
+   "dh": 132,
+   "dw": 142,
+   "h": 132,
+   "scale": 1,
+   "w": 142,
+   "x": 2,
+   "y": 526
+  },
+  "cottage_b": {
+   "anchor": [
+    64.0,
+    124
+   ],
+   "atlas": 0,
+   "dh": 124,
+   "dw": 128,
+   "h": 124,
+   "scale": 1,
+   "w": 128,
+   "x": 711,
+   "y": 526
+  },
+  "cottage_c": {
+   "anchor": [
+    68.0,
+    122
+   ],
+   "atlas": 0,
+   "dh": 122,
+   "dw": 136,
+   "h": 122,
+   "scale": 1,
+   "w": 136,
+   "x": 1090,
+   "y": 526
+  },
+  "crab_pots": {
+   "anchor": [
+    21.5,
+    44
+   ],
+   "atlas": 0,
+   "dh": 44,
+   "dw": 43,
+   "h": 88,
+   "scale": 2,
+   "w": 86,
+   "x": 1276,
+   "y": 780
+  },
+  "crate_single": {
+   "anchor": [
+    21.0,
+    35
+   ],
+   "atlas": 0,
+   "dh": 35,
+   "dw": 42,
+   "h": 70,
+   "scale": 2,
+   "w": 84,
+   "x": 426,
+   "y": 965
+  },
+  "crop_rows": {
+   "anchor": [
+    58.5,
+    79
+   ],
+   "atlas": 0,
+   "dh": 79,
+   "dw": 117,
+   "h": 79,
+   "scale": 1,
+   "w": 117,
+   "x": 691,
+   "y": 878
+  },
+  "crop_wheat": {
+   "anchor": [
+    56.0,
+    90
+   ],
+   "atlas": 0,
+   "dh": 90,
+   "dw": 112,
+   "h": 90,
+   "scale": 1,
+   "w": 112,
+   "x": 843,
+   "y": 780
+  },
+  "dog_sleeping": {
+   "anchor": [
+    16.5,
+    23
+   ],
+   "atlas": 0,
+   "dh": 23,
+   "dw": 33,
+   "h": 46,
+   "scale": 2,
+   "w": 66,
+   "x": 650,
+   "y": 1040
+  },
+  "duck": {
+   "anchor": [
+    7.5,
+    15
+   ],
+   "atlas": 0,
+   "dh": 15,
+   "dw": 15,
+   "h": 30,
+   "scale": 2,
+   "w": 31,
+   "x": 718,
+   "y": 1040
+  },
+  "fallen_log": {
+   "anchor": [
+    21.5,
+    30
+   ],
+   "atlas": 0,
+   "dh": 30,
+   "dw": 43,
+   "h": 61,
+   "scale": 2,
+   "w": 86,
+   "x": 1824,
+   "y": 965
+  },
+  "fence_corner": {
+   "anchor": [
+    22.5,
+    43
+   ],
+   "atlas": 0,
+   "dh": 43,
+   "dw": 45,
+   "h": 87,
+   "scale": 2,
+   "w": 90,
+   "x": 1364,
+   "y": 780
+  },
+  "fence_run": {
+   "anchor": [
+    14.5,
+    24
+   ],
+   "atlas": 0,
+   "dh": 24,
+   "dw": 29,
+   "h": 48,
+   "scale": 2,
+   "w": 59,
+   "x": 527,
+   "y": 1040
+  },
+  "fern_cluster": {
+   "anchor": [
+    19.0,
+    37
+   ],
+   "atlas": 0,
+   "dh": 37,
+   "dw": 38,
+   "h": 74,
+   "scale": 2,
+   "w": 77,
+   "x": 1744,
+   "y": 878
+  },
+  "firepit": {
+   "anchor": [
+    56.5,
+    96
+   ],
+   "atlas": 0,
+   "dh": 96,
+   "dw": 113,
+   "h": 96,
+   "scale": 1,
+   "w": 113,
+   "x": 2,
+   "y": 780
+  },
+  "fish_barrel": {
+   "anchor": [
+    18.5,
+    36
+   ],
+   "atlas": 0,
+   "dh": 36,
+   "dw": 37,
+   "h": 73,
+   "scale": 2,
+   "w": 74,
+   "x": 2,
+   "y": 965
+  },
+  "fish_drying_rack": {
+   "anchor": [
+    50.5,
+    90
+   ],
+   "atlas": 0,
+   "dh": 90,
+   "dw": 101,
+   "h": 90,
+   "scale": 1,
+   "w": 101,
+   "x": 957,
+   "y": 780
+  },
+  "fishing_net": {
+   "anchor": [
+    22.5,
+    31
+   ],
+   "atlas": 0,
+   "dh": 31,
+   "dw": 45,
+   "h": 62,
+   "scale": 2,
+   "w": 91,
+   "x": 1603,
+   "y": 965
+  },
+  "flagpole": {
+   "anchor": [
+    25.0,
+    173
+   ],
+   "atlas": 0,
+   "dh": 173,
+   "dw": 50,
+   "h": 173,
+   "scale": 1,
+   "w": 50,
+   "x": 1921,
+   "y": 2
+  },
+  "flowerbed": {
+   "anchor": [
+    22.0,
+    36
+   ],
+   "atlas": 0,
+   "dh": 36,
+   "dw": 44,
+   "h": 73,
+   "scale": 2,
+   "w": 88,
+   "x": 78,
+   "y": 965
+  },
+  "flowers_pink": {
+   "anchor": [
+    14.5,
+    31
+   ],
+   "atlas": 0,
+   "dh": 31,
+   "dw": 29,
+   "h": 62,
+   "scale": 2,
+   "w": 59,
+   "x": 1696,
+   "y": 965
+  },
+  "flowers_white": {
+   "anchor": [
+    15.0,
+    30
+   ],
+   "atlas": 0,
+   "dh": 30,
+   "dw": 30,
+   "h": 60,
+   "scale": 2,
+   "w": 60,
+   "x": 2,
+   "y": 1040
+  },
+  "flowers_yellow": {
+   "anchor": [
+    15.0,
+    34
+   ],
+   "atlas": 0,
+   "dh": 34,
+   "dw": 30,
+   "h": 69,
+   "scale": 2,
+   "w": 60,
+   "x": 622,
+   "y": 965
+  },
+  "gate_arch": {
+   "anchor": [
+    21.0,
+    36
+   ],
+   "atlas": 0,
+   "dh": 36,
+   "dw": 42,
+   "h": 72,
+   "scale": 2,
+   "w": 85,
+   "x": 168,
+   "y": 965
+  },
+  "great_house": {
+   "anchor": [
+    98.0,
+    174
+   ],
+   "atlas": 0,
+   "dh": 174,
+   "dw": 196,
+   "h": 174,
+   "scale": 1,
+   "w": 196,
+   "x": 1377,
+   "y": 2
+  },
+  "harbor_crane": {
+   "anchor": [
+    41.5,
+    170
+   ],
+   "atlas": 0,
+   "dh": 170,
+   "dw": 83,
+   "h": 170,
+   "scale": 1,
+   "w": 83,
+   "x": 2,
+   "y": 204
+  },
+  "harbormaster_hut": {
+   "anchor": [
+    64.0,
+    119
+   ],
+   "atlas": 0,
+   "dh": 119,
+   "dw": 128,
+   "h": 119,
+   "scale": 1,
+   "w": 128,
+   "x": 1860,
+   "y": 526
+  },
+  "haystack": {
+   "anchor": [
+    22.5,
+    46
+   ],
+   "atlas": 0,
+   "dh": 46,
+   "dw": 45,
+   "h": 92,
+   "scale": 2,
+   "w": 90,
+   "x": 680,
+   "y": 780
+  },
+  "hedge_run": {
+   "anchor": [
+    22.5,
+    37
+   ],
+   "atlas": 0,
+   "dh": 37,
+   "dw": 45,
+   "h": 75,
+   "scale": 2,
+   "w": 90,
+   "x": 1590,
+   "y": 878
+  },
+  "jetty_plank": {
+   "anchor": [
+    46.5,
+    65
+   ],
+   "atlas": 0,
+   "dh": 65,
+   "dw": 93,
+   "h": 65,
+   "scale": 1,
+   "w": 93,
+   "x": 1187,
+   "y": 965
+  },
+  "journal_desk": {
+   "anchor": [
+    22.5,
+    43
+   ],
+   "atlas": 0,
+   "dh": 43,
+   "dw": 45,
+   "h": 86,
+   "scale": 2,
+   "w": 91,
+   "x": 1638,
+   "y": 780
+  },
+  "lamp_dark": {
+   "anchor": [
+    9.0,
+    63
+   ],
+   "atlas": 0,
+   "dh": 63,
+   "dw": 18,
+   "h": 127,
+   "scale": 2,
+   "w": 36,
+   "x": 401,
+   "y": 526
+  },
+  "lamp_lantern": {
+   "anchor": [
+    14.0,
+    65
+   ],
+   "atlas": 0,
+   "dh": 65,
+   "dw": 28,
+   "h": 130,
+   "scale": 2,
+   "w": 57,
+   "x": 224,
+   "y": 526
+  },
+  "laundry_line": {
+   "anchor": [
+    27.5,
+    46
+   ],
+   "atlas": 0,
+   "dh": 46,
+   "dw": 55,
+   "h": 93,
+   "scale": 2,
+   "w": 110,
+   "x": 385,
+   "y": 780
+  },
+  "law_post": {
+   "anchor": [
+    12.5,
+    51
+   ],
+   "atlas": 0,
+   "dh": 51,
+   "dw": 25,
+   "h": 102,
+   "scale": 2,
+   "w": 51,
+   "x": 1359,
+   "y": 660
+  },
+  "library": {
+   "anchor": [
+    94.0,
+    188
+   ],
+   "atlas": 0,
+   "dh": 188,
+   "dw": 188,
+   "h": 188,
+   "scale": 1,
+   "w": 188,
+   "x": 832,
+   "y": 2
+  },
+  "lighthouse": {
+   "anchor": [
+    64.0,
+    200
+   ],
+   "atlas": 0,
+   "dh": 200,
+   "dw": 128,
+   "h": 200,
+   "scale": 1,
+   "w": 128,
+   "x": 2,
+   "y": 2
+  },
+  "lilypads": {
+   "anchor": [
+    15.0,
+    24
+   ],
+   "atlas": 0,
+   "dh": 24,
+   "dw": 30,
+   "h": 48,
+   "scale": 2,
+   "w": 60,
+   "x": 588,
+   "y": 1040
+  },
+  "mailbox": {
+   "anchor": [
+    14.5,
+    54
+   ],
+   "atlas": 0,
+   "dh": 54,
+   "dw": 29,
+   "h": 108,
+   "scale": 2,
+   "w": 59,
+   "x": 753,
+   "y": 660
+  },
+  "market_goods": {
+   "anchor": [
+    24.0,
+    35
+   ],
+   "atlas": 0,
+   "dh": 35,
+   "dw": 48,
+   "h": 71,
+   "scale": 2,
+   "w": 97,
+   "x": 327,
+   "y": 965
+  },
+  "market_stall": {
+   "anchor": [
+    62.5,
+    105
+   ],
+   "atlas": 0,
+   "dh": 105,
+   "dw": 125,
+   "h": 105,
+   "scale": 1,
+   "w": 125,
+   "x": 1140,
+   "y": 660
+  },
+  "mooring_post": {
+   "anchor": [
+    14.0,
+    45
+   ],
+   "atlas": 0,
+   "dh": 45,
+   "dw": 28,
+   "h": 90,
+   "scale": 2,
+   "w": 56,
+   "x": 1060,
+   "y": 780
+  },
+  "mushrooms": {
+   "anchor": [
+    14.0,
+    33
+   ],
+   "atlas": 0,
+   "dh": 33,
+   "dw": 28,
+   "h": 67,
+   "scale": 2,
+   "w": 57,
+   "x": 847,
+   "y": 965
+  },
+  "noticeboard": {
+   "anchor": [
+    19.5,
+    55
+   ],
+   "atlas": 0,
+   "dh": 55,
+   "dw": 39,
+   "h": 111,
+   "scale": 2,
+   "w": 79,
+   "x": 528,
+   "y": 660
+  },
+  "observatory": {
+   "anchor": [
+    73.0,
+    144
+   ],
+   "atlas": 0,
+   "dh": 144,
+   "dw": 146,
+   "h": 144,
+   "scale": 1,
+   "w": 146,
+   "x": 721,
+   "y": 376
+  },
+  "officer_house_a": {
+   "anchor": [
+    70.0,
+    122
+   ],
+   "atlas": 0,
+   "dh": 122,
+   "dw": 140,
+   "h": 122,
+   "scale": 1,
+   "w": 140,
+   "x": 1228,
+   "y": 526
+  },
+  "officer_house_b": {
+   "anchor": [
+    63.0,
+    120
+   ],
+   "atlas": 0,
+   "dh": 120,
+   "dw": 126,
+   "h": 120,
+   "scale": 1,
+   "w": 126,
+   "x": 1732,
+   "y": 526
+  },
+  "officer_house_c": {
+   "anchor": [
+    68.0,
+    133
+   ],
+   "atlas": 0,
+   "dh": 133,
+   "dw": 136,
+   "h": 133,
+   "scale": 1,
+   "w": 136,
+   "x": 1702,
+   "y": 376
+  },
+  "posture_banner": {
+   "anchor": [
+    38.0,
+    107
+   ],
+   "atlas": 0,
+   "dh": 107,
+   "dw": 76,
+   "h": 107,
+   "scale": 1,
+   "w": 76,
+   "x": 814,
+   "y": 660
+  },
+  "potted_plant": {
+   "anchor": [
+    16.0,
+    45
+   ],
+   "atlas": 0,
+   "dh": 45,
+   "dw": 32,
+   "h": 90,
+   "scale": 2,
+   "w": 64,
+   "x": 1118,
+   "y": 780
+  },
+  "quay_deck": {
+   "anchor": [
+    54.0,
+    76
+   ],
+   "atlas": 0,
+   "dh": 76,
+   "dw": 108,
+   "h": 76,
+   "scale": 1,
+   "w": 108,
+   "x": 1184,
+   "y": 878
+  },
+  "reeds": {
+   "anchor": [
+    17.0,
+    46
+   ],
+   "atlas": 0,
+   "dh": 46,
+   "dw": 34,
+   "h": 92,
+   "scale": 2,
+   "w": 69,
+   "x": 772,
+   "y": 780
+  },
+  "rock_cluster": {
+   "anchor": [
+    19.0,
+    28
+   ],
+   "atlas": 0,
+   "dh": 28,
+   "dw": 38,
+   "h": 56,
+   "scale": 2,
+   "w": 76,
+   "x": 212,
+   "y": 1040
+  },
+  "rock_large": {
+   "anchor": [
+    56.0,
+    85
+   ],
+   "atlas": 0,
+   "dh": 85,
+   "dw": 112,
+   "h": 85,
+   "scale": 1,
+   "w": 112,
+   "x": 1911,
+   "y": 780
+  },
+  "rock_small": {
+   "anchor": [
+    18.0,
+    30
+   ],
+   "atlas": 0,
+   "dh": 30,
+   "dw": 36,
+   "h": 61,
+   "scale": 2,
+   "w": 72,
+   "x": 1912,
+   "y": 965
+  },
+  "rope_coil": {
+   "anchor": [
+    22.5,
+    45
+   ],
+   "atlas": 0,
+   "dh": 45,
+   "dw": 45,
+   "h": 90,
+   "scale": 2,
+   "w": 90,
+   "x": 1184,
+   "y": 780
+  },
+  "scarecrow": {
+   "anchor": [
+    17.0,
+    61
+   ],
+   "atlas": 0,
+   "dh": 61,
+   "dw": 34,
+   "h": 123,
+   "scale": 2,
+   "w": 69,
+   "x": 841,
+   "y": 526
+  },
+  "signpost": {
+   "anchor": [
+    15.5,
+    47
+   ],
+   "atlas": 0,
+   "dh": 47,
+   "dw": 31,
+   "h": 95,
+   "scale": 2,
+   "w": 62,
+   "x": 225,
+   "y": 780
+  },
+  "stone_steps": {
+   "anchor": [
+    17.0,
+    26
+   ],
+   "atlas": 0,
+   "dh": 26,
+   "dw": 34,
+   "h": 53,
+   "scale": 2,
+   "w": 68,
+   "x": 388,
+   "y": 1040
+  },
+  "stone_wall": {
+   "anchor": [
+    23.5,
+    33
+   ],
+   "atlas": 0,
+   "dh": 33,
+   "dw": 47,
+   "h": 66,
+   "scale": 2,
+   "w": 95,
+   "x": 1090,
+   "y": 965
+  },
+  "town_barn": {
+   "anchor": [
+    80.5,
+    148
+   ],
+   "atlas": 0,
+   "dh": 148,
+   "dw": 161,
+   "h": 148,
+   "scale": 1,
+   "w": 161,
+   "x": 115,
+   "y": 376
+  },
+  "town_brazier": {
+   "anchor": [
+    38.5,
+    80
+   ],
+   "atlas": 0,
+   "dh": 80,
+   "dw": 77,
+   "h": 80,
+   "scale": 1,
+   "w": 77,
+   "x": 435,
+   "y": 878
+  },
+  "town_compost_row": {
+   "anchor": [
+    30.5,
+    38
+   ],
+   "atlas": 0,
+   "dh": 38,
+   "dw": 61,
+   "h": 76,
+   "scale": 2,
+   "w": 122,
+   "x": 1294,
+   "y": 878
+  },
+  "town_cork_board": {
+   "anchor": [
+    20.5,
+    60
+   ],
+   "atlas": 0,
+   "dh": 60,
+   "dw": 41,
+   "h": 121,
+   "scale": 2,
+   "w": 82,
+   "x": 1370,
+   "y": 526
+  },
+  "town_cottage": {
+   "anchor": [
+    61.5,
+    154
+   ],
+   "atlas": 0,
+   "dh": 154,
+   "dw": 123,
+   "h": 154,
+   "scale": 1,
+   "w": 123,
+   "x": 1184,
+   "y": 204
+  },
+  "town_crate_stacks": {
+   "anchor": [
+    28.5,
+    50
+   ],
+   "atlas": 0,
+   "dh": 50,
+   "dw": 57,
+   "h": 100,
+   "scale": 2,
+   "w": 114,
+   "x": 1615,
+   "y": 660
+  },
+  "town_fenced_field": {
+   "anchor": [
+    31.0,
+    41
+   ],
+   "atlas": 0,
+   "dh": 41,
+   "dw": 62,
+   "h": 83,
+   "scale": 2,
+   "w": 124,
+   "x": 199,
+   "y": 878
+  },
+  "town_fenced_yard": {
+   "anchor": [
+    30.5,
+    43
+   ],
+   "atlas": 0,
+   "dh": 43,
+   "dw": 61,
+   "h": 87,
+   "scale": 2,
+   "w": 122,
+   "x": 1456,
+   "y": 780
+  },
+  "town_flag": {
+   "anchor": [
+    17.5,
+    147
+   ],
+   "atlas": 0,
+   "dh": 147,
+   "dw": 35,
+   "h": 147,
+   "scale": 1,
+   "w": 35,
+   "x": 278,
+   "y": 376
+  },
+  "town_fresnel_lamp": {
+   "anchor": [
+    42.0,
+    100
+   ],
+   "atlas": 0,
+   "dh": 100,
+   "dw": 84,
+   "h": 100,
+   "scale": 1,
+   "w": 84,
+   "x": 1731,
+   "y": 660
+  },
+  "town_hall": {
+   "anchor": [
+    84.0,
+    167
+   ],
+   "atlas": 0,
+   "dh": 167,
+   "dw": 168,
+   "h": 167,
+   "scale": 1,
+   "w": 168,
+   "x": 87,
+   "y": 204
+  },
+  "town_harbor_office": {
+   "anchor": [
+    66.0,
+    154
+   ],
+   "atlas": 0,
+   "dh": 154,
+   "dw": 132,
+   "h": 154,
+   "scale": 1,
+   "w": 132,
+   "x": 1309,
+   "y": 204
+  },
+  "town_manor": {
+   "anchor": [
+    96.0,
+    196
+   ],
+   "atlas": 0,
+   "dh": 196,
+   "dw": 192,
+   "h": 196,
+   "scale": 1,
+   "w": 192,
+   "x": 254,
+   "y": 2
+  },
+  "town_observatory_hut": {
+   "anchor": [
+    79.0,
+    151
+   ],
+   "atlas": 0,
+   "dh": 151,
+   "dw": 158,
+   "h": 151,
+   "scale": 1,
+   "w": 158,
+   "x": 1490,
+   "y": 204
+  },
+  "town_stone_well": {
+   "anchor": [
+    54.0,
+    135
+   ],
+   "atlas": 0,
+   "dh": 135,
+   "dw": 108,
+   "h": 135,
+   "scale": 1,
+   "w": 108,
+   "x": 1305,
+   "y": 376
+  },
+  "town_streetlight": {
+   "anchor": [
+    11.0,
+    76
+   ],
+   "atlas": 0,
+   "dh": 76,
+   "dw": 22,
+   "h": 153,
+   "scale": 2,
+   "w": 45,
+   "x": 1443,
+   "y": 204
+  },
+  "town_tank": {
+   "anchor": [
+    55.0,
+    157
+   ],
+   "atlas": 0,
+   "dh": 157,
+   "dw": 110,
+   "h": 157,
+   "scale": 1,
+   "w": 110,
+   "x": 546,
+   "y": 204
+  },
+  "town_warehouse": {
+   "anchor": [
+    91.0,
+    155
+   ],
+   "atlas": 0,
+   "dh": 155,
+   "dw": 182,
+   "h": 155,
+   "scale": 1,
+   "w": 182,
+   "x": 1000,
+   "y": 204
+  },
+  "town_wood_fence": {
+   "anchor": [
+    18.5,
+    39
+   ],
+   "atlas": 0,
+   "dh": 39,
+   "dw": 37,
+   "h": 79,
+   "scale": 2,
+   "w": 75,
+   "x": 810,
+   "y": 878
+  },
+  "town_workshop_hut": {
+   "anchor": [
+    78.0,
+    156
+   ],
+   "atlas": 0,
+   "dh": 156,
+   "dw": 156,
+   "h": 156,
+   "scale": 1,
+   "w": 156,
+   "x": 658,
+   "y": 204
+  },
+  "town_writing_desk": {
+   "anchor": [
+    23.5,
+    47
+   ],
+   "atlas": 0,
+   "dh": 47,
+   "dw": 47,
+   "h": 95,
+   "scale": 2,
+   "w": 94,
+   "x": 289,
+   "y": 780
+  },
+  "training_dummy": {
+   "anchor": [
+    15.5,
+    61
+   ],
+   "atlas": 0,
+   "dh": 61,
+   "dw": 31,
+   "h": 123,
+   "scale": 2,
+   "w": 62,
+   "x": 912,
+   "y": 526
+  },
+  "tree_birch": {
+   "anchor": [
+    30.0,
+    147
+   ],
+   "atlas": 0,
+   "dh": 147,
+   "dw": 60,
+   "h": 147,
+   "scale": 1,
+   "w": 60,
+   "x": 315,
+   "y": 376
+  },
+  "tree_blossom": {
+   "anchor": [
+    49.0,
+    128
+   ],
+   "atlas": 0,
+   "dh": 128,
+   "dw": 98,
+   "h": 128,
+   "scale": 1,
+   "w": 98,
+   "x": 283,
+   "y": 526
+  },
+  "tree_oak": {
+   "anchor": [
+    53.5,
+    125
+   ],
+   "atlas": 0,
+   "dh": 125,
+   "dw": 107,
+   "h": 125,
+   "scale": 1,
+   "w": 107,
+   "x": 602,
+   "y": 526
+  },
+  "tree_oak_big": {
+   "anchor": [
+    80.5,
+    174
+   ],
+   "atlas": 0,
+   "dh": 174,
+   "dw": 161,
+   "h": 174,
+   "scale": 1,
+   "w": 161,
+   "x": 1575,
+   "y": 2
+  },
+  "tree_oak_small": {
+   "anchor": [
+    14.0,
+    43
+   ],
+   "atlas": 0,
+   "dh": 43,
+   "dw": 28,
+   "h": 87,
+   "scale": 2,
+   "w": 56,
+   "x": 1580,
+   "y": 780
+  },
+  "tree_pine": {
+   "anchor": [
+    46.0,
+    147
+   ],
+   "atlas": 0,
+   "dh": 147,
+   "dw": 92,
+   "h": 147,
+   "scale": 1,
+   "w": 92,
+   "x": 377,
+   "y": 376
+  },
+  "tree_pine_small": {
+   "anchor": [
+    15.5,
+    51
+   ],
+   "atlas": 0,
+   "dh": 51,
+   "dw": 31,
+   "h": 102,
+   "scale": 2,
+   "w": 62,
+   "x": 1412,
+   "y": 660
+  },
+  "tree_stump": {
+   "anchor": [
+    18.0,
+    32
+   ],
+   "atlas": 0,
+   "dh": 32,
+   "dw": 36,
+   "h": 65,
+   "scale": 2,
+   "w": 73,
+   "x": 1282,
+   "y": 965
+  },
+  "tree_willow": {
+   "anchor": [
+    51.5,
+    134
+   ],
+   "atlas": 0,
+   "dh": 134,
+   "dw": 103,
+   "h": 134,
+   "scale": 1,
+   "w": 103,
+   "x": 1597,
+   "y": 376
+  },
+  "veg_garden": {
+   "anchor": [
+    27.0,
+    35
+   ],
+   "atlas": 0,
+   "dh": 35,
+   "dw": 54,
+   "h": 70,
+   "scale": 2,
+   "w": 108,
+   "x": 512,
+   "y": 965
+  },
+  "veto_plinth": {
+   "anchor": [
+    21.5,
+    42
+   ],
+   "atlas": 0,
+   "dh": 42,
+   "dw": 43,
+   "h": 85,
+   "scale": 2,
+   "w": 87,
+   "x": 2,
+   "y": 878
+  },
+  "warehouse": {
+   "anchor": [
+    98.0,
+    139
+   ],
+   "atlas": 0,
+   "dh": 139,
+   "dw": 196,
+   "h": 139,
+   "scale": 1,
+   "w": 196,
+   "x": 975,
+   "y": 376
+  },
+  "water_tank": {
+   "anchor": [
+    52.0,
+    140
+   ],
+   "atlas": 0,
+   "dh": 140,
+   "dw": 104,
+   "h": 140,
+   "scale": 1,
+   "w": 104,
+   "x": 869,
+   "y": 376
+  },
+  "water_trough": {
+   "anchor": [
+    22.0,
+    34
+   ],
+   "atlas": 0,
+   "dh": 34,
+   "dw": 44,
+   "h": 68,
+   "scale": 2,
+   "w": 89,
+   "x": 756,
+   "y": 965
+  },
+  "watermill_kiln": {
+   "anchor": [
+    75.0,
+    150
+   ],
+   "atlas": 0,
+   "dh": 150,
+   "dw": 150,
+   "h": 150,
+   "scale": 1,
+   "w": 150,
+   "x": 1650,
+   "y": 204
+  },
+  "well": {
+   "anchor": [
+    56.0,
+    123
+   ],
+   "atlas": 0,
+   "dh": 123,
+   "dw": 112,
+   "h": 123,
+   "scale": 1,
+   "w": 112,
+   "x": 976,
+   "y": 526
+  },
+  "well_house": {
+   "anchor": [
+    56.0,
+    114
+   ],
+   "atlas": 0,
+   "dh": 114,
+   "dw": 112,
+   "h": 114,
+   "scale": 1,
+   "w": 112,
+   "x": 203,
+   "y": 660
+  },
+  "wheelbarrow": {
+   "anchor": [
+    16.5,
+    24
+   ],
+   "atlas": 0,
+   "dh": 24,
+   "dw": 33,
+   "h": 49,
+   "scale": 2,
+   "w": 67,
+   "x": 458,
+   "y": 1040
+  },
+  "windmill": {
+   "anchor": [
+    82.0,
+    178
+   ],
+   "atlas": 0,
+   "dh": 178,
+   "dw": 164,
+   "h": 178,
+   "scale": 1,
+   "w": 164,
+   "x": 1084,
+   "y": 2
+  },
+  "wood_pile": {
+   "anchor": [
+    19.0,
+    32
+   ],
+   "atlas": 0,
+   "dh": 32,
+   "dw": 38,
+   "h": 64,
+   "scale": 2,
+   "w": 76,
+   "x": 1435,
+   "y": 965
+  },
+  "workshop": {
+   "anchor": [
+    78.0,
+    147
+   ],
+   "atlas": 0,
+   "dh": 147,
+   "dw": 156,
+   "h": 147,
+   "scale": 1,
+   "w": 156,
+   "x": 471,
+   "y": 376
+  }
+ },
+ "note": "Sprites are unscaled in the atlas and drawn at dw/dh, an INTEGER fraction of native, so the pixel grid survives. Anchor is the base centre. Ground footprint is a diamond of half-width dw*0.42 and depth min(dh*0.55, dw*0.55) \u2014 the same geometry the placement rules and the checks use; a fourth definition would produce a fourth bug.",
+ "projection": "isometric 2:1",
+ "resolve": {
+  "berths": {
+   "beyond_bay": {
+    "*": {
+     "frame": "mooring_post",
+     "true_art": true
+    }
+   },
+   "camp": {
+    "*": {
+     "frame": "mooring_post",
+     "true_art": true
+    }
+   },
+   "hamlet": {
+    "*": {
+     "frame": "mooring_post",
+     "true_art": true
+    }
+   },
+   "town": {
+    "*": {
+     "frame": "mooring_post",
+     "true_art": true
+    }
+   }
+  },
+  "cargo_stacks": {
+   "beyond_bay": {
+    "*": {
+     "frame": "bay_container_rows",
+     "true_art": true
+    }
+   },
+   "camp": {
+    "*": {
+     "frame": "camp_bundles",
+     "true_art": true
+    }
+   },
+   "hamlet": {
+    "*": {
+     "frame": "camp_bundles",
+     "true_art": true
+    },
+    "crates_high": {
+     "frame": "cargo_crates",
+     "true_art": true
+    },
+    "crates_low": {
+     "frame": "crate_single",
+     "true_art": true
+    },
+    "crates_mid": {
+     "frame": "cargo_crates",
+     "true_art": true
+    }
+   },
+   "town": {
+    "*": {
+     "frame": "town_crate_stacks",
+     "true_art": true
+    }
+   }
+  },
+  "composter": {
+   "beyond_bay": {
+    "*": {
+     "frame": "bay_compost_works",
+     "true_art": true
+    }
+   },
+   "camp": {
+    "*": {
+     "frame": "camp_waste_pit",
+     "true_art": true
+    }
+   },
+   "hamlet": {
+    "*": {
+     "frame": "compost_bay",
+     "true_art": true
+    }
+   },
+   "town": {
+    "*": {
+     "frame": "town_compost_row",
+     "true_art": true
+    }
+   }
+  },
+  "field_plots": {
+   "beyond_bay": {
+    "*": {
+     "frame": "bay_terraced_field",
+     "true_art": true
+    }
+   },
+   "camp": {
+    "*": {
+     "frame": "camp_forage_patch",
+     "true_art": true
+    }
+   },
+   "hamlet": {
+    "*": {
+     "frame": "crop_rows",
+     "true_art": true
+    }
+   },
+   "town": {
+    "*": {
+     "frame": "town_fenced_field",
+     "true_art": true
+    }
+   }
+  },
+  "firepit": {
+   "beyond_bay": {
+    "*": {
+     "frame": "bay_plaza_hearth",
+     "true_art": true
+    }
+   },
+   "camp": {
+    "*": {
+     "frame": "camp_campfire",
+     "true_art": true
+    }
+   },
+   "hamlet": {
+    "*": {
+     "frame": "camp_campfire",
+     "true_art": true
+    },
+    "gathering_circle": {
+     "frame": "firepit",
+     "true_art": true
+    },
+    "ring_seats": {
+     "frame": "firepit",
+     "true_art": true
+    },
+    "stone_ring": {
+     "frame": "firepit",
+     "true_art": true
+    }
+   },
+   "town": {
+    "*": {
+     "frame": "town_brazier",
+     "true_art": true
+    }
+   }
+  },
+  "flagpole": {
+   "beyond_bay": {
+    "*": {
+     "frame": "bay_crested_flag",
+     "true_art": true
+    }
+   },
+   "camp": {
+    "bare_pole": {
+     "frame": "camp_bare_pole",
+     "true_art": true
+    },
+    "pennant": {
+     "frame": "flagpole",
+     "true_art": true
+    }
+   },
+   "hamlet": {
+    "bare_pole": {
+     "frame": "camp_bare_pole",
+     "true_art": true
+    },
+    "pennant": {
+     "frame": "flagpole",
+     "true_art": true
+    }
+   },
+   "town": {
+    "*": {
+     "frame": "town_flag",
+     "true_art": true
+    }
+   }
+  },
+  "great_house": {
+   "beyond_bay": {
+    "*": {
+     "frame": "bay_manor_estate",
+     "true_art": true
+    }
+   },
+   "camp": {
+    "cottage": {
+     "frame": "camp_log_cabin",
+     "true_art": true
+    },
+    "cottage_porch": {
+     "frame": "camp_log_cabin",
+     "true_art": true
+    },
+    "great_house": {
+     "frame": "camp_log_cabin",
+     "true_art": true
+    },
+    "second_gable": {
+     "frame": "camp_log_cabin",
+     "true_art": true
+    }
+   },
+   "hamlet": {
+    "cottage": {
+     "frame": "cottage_a",
+     "true_art": true
+    },
+    "cottage_porch": {
+     "frame": "cottage_b",
+     "true_art": true
+    },
+    "great_house": {
+     "frame": "great_house",
+     "true_art": true
+    },
+    "second_gable": {
+     "frame": "great_house",
+     "true_art": true
+    }
+   },
+   "town": {
+    "*": {
+     "frame": "town_manor",
+     "true_art": true
+    }
+   }
+  },
+  "harbor_boat": {
+   "beyond_bay": {
+    "*": {
+     "frame": "bay_steam_packet",
+     "true_art": true
+    }
+   },
+   "camp": {
+    "*": {
+     "frame": "boat_rowing",
+     "true_art": true
+    }
+   },
+   "hamlet": {
+    "packet_boat": {
+     "frame": "boat_packet",
+     "true_art": true
+    },
+    "rowboat": {
+     "frame": "boat_rowing",
+     "true_art": true
+    },
+    "steam_packet": {
+     "frame": "bay_steam_packet",
+     "true_art": true
+    }
+   },
+   "town": {
+    "*": {
+     "frame": "boat_packet",
+     "true_art": true
+    }
+   }
+  },
+  "harbormaster_hut": {
+   "beyond_bay": {
+    "*": {
+     "frame": "town_harbor_office",
+     "true_art": true
+    }
+   },
+   "camp": {
+    "*": {
+     "frame": "camp_signal_post",
+     "true_art": true
+    }
+   },
+   "hamlet": {
+    "*": {
+     "frame": "harbormaster_hut",
+     "true_art": true
+    },
+    "signal_post": {
+     "frame": "camp_signal_post",
+     "true_art": true
+    }
+   },
+   "town": {
+    "*": {
+     "frame": "town_harbor_office",
+     "true_art": true
+    }
+   }
+  },
+  "journal_desk": {
+   "beyond_bay": {
+    "*": {
+     "frame": "bay_archive_bureau",
+     "true_art": true
+    }
+   },
+   "camp": {
+    "*": {
+     "frame": "camp_crate_desk",
+     "true_art": true
+    }
+   },
+   "hamlet": {
+    "archive_row": {
+     "frame": "journal_desk",
+     "true_art": true
+    },
+    "desk_papers": {
+     "frame": "camp_crate_desk",
+     "true_art": true
+    },
+    "journal_shelf": {
+     "frame": "journal_desk",
+     "true_art": true
+    },
+    "journal_stack": {
+     "frame": "journal_desk",
+     "true_art": true
+    }
+   },
+   "town": {
+    "*": {
+     "frame": "town_writing_desk",
+     "true_art": true
+    }
+   }
+  },
+  "lantern_posts": {
+   "beyond_bay": {
+    "*": {
+     "frame": "town_streetlight",
+     "true_art": true
+    }
+   },
+   "camp": {
+    "*": {
+     "frame": "camp_torch",
+     "true_art": true
+    }
+   },
+   "hamlet": {
+    "*": {
+     "frame": "lamp_dark",
+     "true_art": true
+    }
+   },
+   "town": {
+    "*": {
+     "frame": "town_streetlight",
+     "true_art": true
+    }
+   }
+  },
+  "law_plot": {
+   "beyond_bay": {
+    "*": {
+     "frame": "bay_stone_wall",
+     "true_art": true
+    }
+   },
+   "camp": {
+    "*": {
+     "frame": "camp_carved_post",
+     "true_art": true
+    }
+   },
+   "hamlet": {
+    "first_post": {
+     "frame": "camp_carved_post",
+     "true_art": true
+    },
+    "post_row": {
+     "frame": "camp_carved_post",
+     "true_art": true
+    },
+    "stone_fence": {
+     "frame": "stone_wall",
+     "true_art": true
+    },
+    "wood_fence": {
+     "frame": "fence_run",
+     "true_art": true
+    }
+   },
+   "town": {
+    "*": {
+     "frame": "town_wood_fence",
+     "true_art": true
+    }
+   }
+  },
+  "library": {
+   "beyond_bay": {
+    "*": {
+     "frame": "bay_wings",
+     "true_art": true
+    }
+   },
+   "camp": {
+    "*": {
+     "frame": "camp_book_crate",
+     "true_art": true
+    }
+   },
+   "hamlet": {
+    "book_crate": {
+     "frame": "camp_book_crate",
+     "true_art": true
+    },
+    "hall_wing": {
+     "frame": "library",
+     "true_art": true
+    },
+    "library_hall": {
+     "frame": "library",
+     "true_art": true
+    },
+    "second_wing": {
+     "frame": "library",
+     "true_art": true
+    },
+    "shelf_leanto": {
+     "frame": "camp_leanto",
+     "true_art": true
+    }
+   },
+   "town": {
+    "*": {
+     "frame": "town_hall",
+     "true_art": true
+    }
+   }
+  },
+  "lighthouse": {
+   "beyond_bay": {
+    "*": {
+     "frame": "lighthouse",
+     "true_art": true
+    }
+   },
+   "camp": {
+    "*": {
+     "frame": "camp_dark_cairn",
+     "true_art": true
+    }
+   },
+   "hamlet": {
+    "dark_cairn": {
+     "frame": "camp_dark_cairn",
+     "true_art": true
+    },
+    "stone_base": {
+     "frame": "camp_dark_cairn",
+     "true_art": true
+    },
+    "tower_full": {
+     "frame": "lighthouse",
+     "true_art": true
+    },
+    "tower_part": {
+     "frame": "lighthouse",
+     "true_art": true
+    }
+   },
+   "town": {
+    "*": {
+     "frame": "lighthouse",
+     "true_art": true
+    }
+   }
+  },
+  "noticeboard": {
+   "beyond_bay": {
+    "*": {
+     "frame": "bay_post_kiosk",
+     "true_art": true
+    }
+   },
+   "camp": {
+    "board": {
+     "frame": "noticeboard",
+     "true_art": true
+    }
+   },
+   "hamlet": {
+    "board": {
+     "frame": "noticeboard",
+     "true_art": true
+    }
+   },
+   "town": {
+    "*": {
+     "frame": "town_cork_board",
+     "true_art": true
+    }
+   }
+  },
+  "observatory": {
+   "beyond_bay": {
+    "*": {
+     "frame": "bay_observatory_dome",
+     "true_art": true
+    }
+   },
+   "camp": {
+    "*": {
+     "frame": "camp_star_post",
+     "true_art": true
+    }
+   },
+   "hamlet": {
+    "*": {
+     "frame": "chart_tent",
+     "true_art": true
+    },
+    "dome": {
+     "frame": "observatory",
+     "true_art": true
+    },
+    "dome_frame": {
+     "frame": "observatory",
+     "true_art": true
+    },
+    "star_post": {
+     "frame": "camp_star_post",
+     "true_art": true
+    }
+   },
+   "town": {
+    "*": {
+     "frame": "town_observatory_hut",
+     "true_art": true
+    }
+   }
+  },
+  "officer_dwellings": {
+   "beyond_bay": {
+    "*": {
+     "frame": "bay_townhouse",
+     "true_art": true
+    }
+   },
+   "camp": {
+    "*": {
+     "frame": "camp_tent",
+     "true_art": true
+    }
+   },
+   "hamlet": {
+    "*": {
+     "frame": "officer_house_a",
+     "true_art": true
+    }
+   },
+   "town": {
+    "*": {
+     "frame": "town_cottage",
+     "true_art": true
+    }
+   }
+  },
+  "outbuildings": {
+   "beyond_bay": {
+    "*": {
+     "frame": "bay_great_barn",
+     "true_art": true
+    }
+   },
+   "camp": {
+    "*": {
+     "frame": "camp_leanto",
+     "true_art": true
+    }
+   },
+   "hamlet": {
+    "barn_stable": {
+     "frame": "barn",
+     "true_art": true
+    },
+    "coop": {
+     "frame": "chicken_coop",
+     "true_art": true
+    },
+    "great_barn": {
+     "frame": "barn",
+     "true_art": true
+    },
+    "leanto": {
+     "frame": "camp_leanto",
+     "true_art": true
+    },
+    "small_barn": {
+     "frame": "barn",
+     "true_art": true
+    }
+   },
+   "town": {
+    "*": {
+     "frame": "town_barn",
+     "true_art": true
+    }
+   }
+  },
+  "pens": {
+   "beyond_bay": {
+    "*": {
+     "frame": "bay_stable_yard",
+     "true_art": true
+    }
+   },
+   "camp": {
+    "*": {
+     "frame": "camp_stake_pen",
+     "true_art": true
+    }
+   },
+   "hamlet": {
+    "*": {
+     "frame": "fence_corner",
+     "true_art": true
+    }
+   },
+   "town": {
+    "*": {
+     "frame": "town_fenced_yard",
+     "true_art": true
+    }
+   }
+  },
+  "veto_plinth": {
+   "beyond_bay": {
+    "*": {
+     "frame": "veto_plinth",
+     "true_art": true
+    }
+   },
+   "camp": {
+    "empty_plinth": {
+     "frame": "camp_flat_stone",
+     "true_art": true
+    },
+    "veto_stone": {
+     "frame": "camp_flat_stone",
+     "true_art": true
+    }
+   },
+   "hamlet": {
+    "empty_plinth": {
+     "frame": "veto_plinth",
+     "true_art": true
+    },
+    "veto_stone": {
+     "frame": "veto_plinth",
+     "true_art": true
+    }
+   },
+   "town": {
+    "*": {
+     "frame": "veto_plinth",
+     "true_art": true
+    }
+   }
+  },
+  "warehouse": {
+   "beyond_bay": {
+    "*": {
+     "frame": "bay_warehouse_row",
+     "true_art": true
+    }
+   },
+   "camp": {
+    "*": {
+     "frame": "camp_tarp_cache",
+     "true_art": true
+    }
+   },
+   "hamlet": {
+    "*": {
+     "frame": "warehouse",
+     "true_art": true
+    },
+    "tarp_cache": {
+     "frame": "camp_tarp_cache",
+     "true_art": true
+    }
+   },
+   "town": {
+    "*": {
+     "frame": "town_warehouse",
+     "true_art": true
+    }
+   }
+  },
+  "water_store": {
+   "beyond_bay": {
+    "*": {
+     "frame": "bay_tank_tower",
+     "true_art": true
+    }
+   },
+   "camp": {
+    "*": {
+     "frame": "camp_bucket",
+     "true_art": true
+    }
+   },
+   "hamlet": {
+    "barrel": {
+     "frame": "barrel_single",
+     "true_art": true
+    },
+    "bucket_empty": {
+     "frame": "camp_bucket",
+     "true_art": true
+    },
+    "bucket_full": {
+     "frame": "camp_bucket",
+     "true_art": true
+    },
+    "buckets_3": {
+     "frame": "camp_bucket",
+     "true_art": true
+    },
+    "tank": {
+     "frame": "water_tank",
+     "true_art": true
+    },
+    "tank_tower": {
+     "frame": "water_tank",
+     "true_art": true
+    }
+   },
+   "town": {
+    "*": {
+     "frame": "town_tank",
+     "true_art": true
+    }
+   }
+  },
+  "well": {
+   "beyond_bay": {
+    "*": {
+     "frame": "bay_well_house",
+     "true_art": true
+    }
+   },
+   "camp": {
+    "well": {
+     "frame": "camp_bucket",
+     "true_art": true
+    }
+   },
+   "hamlet": {
+    "well": {
+     "frame": "well",
+     "true_art": true
+    }
+   },
+   "town": {
+    "*": {
+     "frame": "town_stone_well",
+     "true_art": true
+    }
+   }
+  },
+  "workshop": {
+   "beyond_bay": {
+    "*": {
+     "frame": "bay_workshop_hall",
+     "true_art": true
+    }
+   },
+   "camp": {
+    "*": {
+     "frame": "camp_toolbox",
+     "true_art": true
+    }
+   },
+   "hamlet": {
+    "bare_wall": {
+     "frame": "camp_toolbox",
+     "true_art": true
+    },
+    "shed": {
+     "frame": "workshop",
+     "true_art": true
+    },
+    "shed_full_rack": {
+     "frame": "workshop",
+     "true_art": true
+    },
+    "tool_rack": {
+     "frame": "camp_toolbox",
+     "true_art": true
+    }
+   },
+   "town": {
+    "*": {
+     "frame": "town_workshop_hut",
+     "true_art": true
+    }
+   }
+  }
+ },
+ "schema": "cabinet.world.iso-pack/v1"
+}

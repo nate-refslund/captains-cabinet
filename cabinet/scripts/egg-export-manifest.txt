@@ -118,6 +118,15 @@ delete instance/config/captain-availability.yml
 # empty list, which is a legal documented state, so a fresh egg hatches holding
 # no dates and waits for its own captain to set one.
 delete instance/config/captain-dates.yml
+# R120-class: recipient-exclusions.yml is THIS captain's ruled carve-back on
+# his own org_domains (named addresses/subdomains that are NOT internal). The
+# .example twin ships; framework.env.recipient_policy() treats an absent file
+# as an empty denylist with `subdomain_matching: strict`, a legal documented
+# state, so a fresh egg hatches with no exclusions and the tight default
+# rather than inheriting a stranger's list. NO transform: unlike
+# act-first-surfaces there is nothing to re-materialize — absent IS the
+# shipped default.
+delete instance/config/recipient-exclusions.yml
 # R126: the LIVE ruled act-first file leaves (Captain rulings + board ids);
 # the act-first-default transform below re-materializes the scrubbed
 # framework-shippable twin in its place.
@@ -188,6 +197,16 @@ delete cabinet/scripts/verify-cognitive-phase4.sh
 # out with the rest of docs/plans (R145).
 delete cabinet/scripts/cognitive-phase4-review-scope.py
 delete cabinet/scripts/cognitive-phase4-rollback-rehearsal.py
+# Expansion registry (2026-07-27 two-model gate): the REGISTRY itself is
+# framework DNA and ships (contract + baseline sets + census + its portable
+# both-ways arms, expect-present below). Only this one source-side binder is
+# excluded: it reads the written adjudication DOCUMENT behind each expansion
+# row, and those live in docs/plans / docs/proposals, which archive out of the
+# export (R145 / R167). A shipped copy would red a hatched cabinet over a
+# document the export deliberately removed, and the hatched captain's only
+# repair would be to disable it. The binding gate runs where the adjudications
+# are: this source instance's CI, at the moment an expansion lands.
+delete cabinet/scripts/tests/test_expansion_adjudication_binding.py
 # COG-5 W1 (§7.5.5 Stage-A INTERIM holdout freeze — honestly NOT Ring-0): until
 # the framework/policies/immutable-core.yml Ring-0 listing for holdout_gen.py
 # lands at a Captain germline-unlock window (§7.5 Stage B), the frozen holdout
@@ -461,6 +480,10 @@ expect-present docs/plans/sovereign-build-spec-2026-07-04.md
 # private review artifact archive out under the existing rules above.
 expect-present docs/cognitive-core-foundry.md
 expect-present cabinet/config/cognitive-architecture-contract.yml
+# Expansion registry (2026-07-27 two-model gate): the census measures surplus
+# against these member sets, so a hatched cabinet without them cannot run its
+# own enduring architecture gate at all.
+expect-present cabinet/config/architecture-baseline-sets.yml
 expect-present cabinet/scripts/cognitive-architecture-census.py
 expect-present cabinet/scripts/verify-cognitive-architecture.sh
 expect-present framework/evolution/__init__.py
@@ -681,6 +704,8 @@ expect-absent cabinet/scripts/verify-cognitive-phase4.sh
 # COG-4 phase-4 private landing tools (paired delete rows above) — never ship.
 expect-absent cabinet/scripts/cognitive-phase4-review-scope.py
 expect-absent cabinet/scripts/cognitive-phase4-rollback-rehearsal.py
+# Expansion registry source-side binder (paired delete row above) — never ships.
+expect-absent cabinet/scripts/tests/test_expansion_adjudication_binding.py
 # COG-5 W1 (§7.5.5 Stage-A INTERIM — paired with the holdout delete above): the
 # export FAILS LOUDLY if an UNPROTECTED holdout_gen.py ever ships before the
 # Ring-0 listing lands (Stage B). Vacuity-armed (holdout_gen.py lands in W5);

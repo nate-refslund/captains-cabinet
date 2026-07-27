@@ -21,7 +21,30 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 807bad894caab9a4dc1ed9239dbe6cd19ef59d5c900949a2e8c155ed9469d709
+Reviewed-Scope-Digest: 9c1a8082d1d6348f345e3aad1faee87fef59e98d3538b08fe9c1f130dce5d68d
+
+
+
+(RE-BOUND repeatedly on 2026-07-27 — the census-shift-left, expansion-registry and
+census-set-pins landings each edited `cabinet/config/cognitive-architecture-contract.yml`,
+which sits in `restore_from_baseline` and is therefore digest-bound, and so did this
+branch's `recipient-exclusion-carve-backs` allowance row. NO COG-4 implementation byte
+changed by any of them: every edit is a budget/allowance row, and
+`framework/authority/classifier.py` remains in the manifest's `must_remain_unchanged`
+block against the pinned phase anchor, which the rollback rehearsal re-checks. The
+phase-4 findings below are unaffected.)
+(RE-BOUND 2026-07-27, `fix/propose-means-propose`, same commit as the change that
+moved the bytes — the re-bind-at-landing procedure this artifact already
+prescribes. Prior digest: `b8ee235e0c34bd2a…`. The moved file in scope is
+`framework/authority/policy_engine.py`: `_eval_authority_matrix` now returns a
+`GateDecision` carrying a structured verdict kind instead of a bare `str`, so
+`propose_only` and `always_gated` stop being operationally identical. The COG-4
+findings are unaffected — the change adds no organ, no scheduler surface and no
+serve surface, touches no COG-4 entry point, and is separately reviewed in
+`fix-propose-means-propose-cp1.md` with six per-ceiling arms and a corpus
+cross-check over 80,307 recorded calls. Exit codes and all guardian block
+strings are byte-identical, which is what keeps this re-bind mechanical rather
+than a re-review.)
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
@@ -604,6 +627,16 @@ passes in isolation under no load.
 SIBLING BINDERS unchanged: COG-0/1/2/3 were already BLOCK on pre-change master and are NOT re-bound
 here. This commit edits ONLY the digest-excluded review artifact, so the digest it records is stable
 under its own landing — verified by recomputing after the edit.)
+(RE-BOUND 2026-07-27, `fix/hook-redos`, same commit as the change that moved the
+bytes. The moved file in scope is `cabinet/config/cognitive-architecture-contract.yml`:
+ONE `temporary_allowances` row paying for the +1 framework line of
+`policy_engine._STMT_RUN`, the rewrite that removes catastrophic backtracking from
+the `sed -i` write pattern (52 of 80,307 recorded officer calls exceeded 1.5s in it,
+and the hook has no time bound). The COG-4 findings are unaffected — no organ, no
+scheduler surface, no serve surface, no COG-4 entry point. The landing's other two
+files, `framework/authority/policy_engine.py` and `cabinet/scripts/policy-shadow.py`,
+are not in EXPECTED_SCOPE. Reviewed in `fix-hook-redos-cp1.md`, with equality proved
+in both directions and re-checked over all 80,307 recorded calls: 0 verdict changes.)
 
 (MERGE RE-BIND, 2026-07-27: the spend-meter landing (PR #215) reached master while this branch was in
 CI and re-bound this same digest to 540c08fb.... Two concurrent landings cannot both be right about one
@@ -704,55 +737,3 @@ commit — this artifact is excluded from its own scope, so the amend is stable
 under itself. NOT done: no COG-0/1/2/3 twin was re-bound (frozen-historical,
 already BLOCK by design), and no prose section of this review was edited — no
 reviewer saw new bytes, because none of the reviewed bytes changed behaviour.
-
-RE-BOUND BY THE WORLD-ART EGG ROW, 2026-07-27 —
-7f05bdcfaa716f78a9fb638ab464d5fd41699a388e9c13107957fdc128ca7e35 -> the value above. Branch
-`iso-port-composition`, commit f3705c46. EXACTLY ONE in-scope path moved,
-verified by resolving the 85-entry scope and diffing its 114 bound blobs across
-00beeb80..HEAD rather than by reading the diff:
-`cabinet/scripts/egg-export-manifest.txt`, which gains one `delete` row plus its
-comment and one `expect-absent` row, keeping the org's own iso world atlas
-(`public/world-assets/originals/iso`) out of the PUBLIC export until the Captain
-rules on redistributing commissioned art. The two `RESIDUAL SCRUB` legacy marker
-sites shifted with it (248 -> 264, 680 -> 697) and were re-anchored in
-`test_declared_residuals_register.py` in the next commit; the marker text and the
-exempt set are unchanged and LEGACY_MAX stays 2.
-
-A MECHANICAL-DELTA re-bind, and the claim is checkable rather than asserted: the
-manifest rows are export SHAPE, consumed only by `egg-export.sh`; no COG-4
-engine, gate, organ, scheduler or projection byte is touched, and no COG-4 claim
-in this review reads the egg manifest. RE-MEASURED on the committed tree:
-`verify-cognitive-phase4.sh` end-to-end green, and `pytest cabinet/scripts/tests`
-4781 passed / 28 skipped.
-
-WHAT WAS NOT DONE, stated plainly: no fresh COG-4 panel re-review, and no prose
-section of this review was edited — no reviewer saw new behaviour bytes, because
-none changed. The COG-0/1/2/3 twins are untouched and remain frozen-historical.
-
-RE-BOUND ON THE MASTER MERGE, 2026-07-27 — the two notes above landed
-independently and BOTH ARE KEPT. `iso-port-composition` merged origin/master
-73c516ba (the recipient-all-internal-quantifier landing, PR #228) while carrying
-its own egg-manifest re-bind; each side had moved exactly one in-scope path and
-they are DIFFERENT paths — master's
-`cabinet/config/cognitive-architecture-contract.yml`, this branch's
-`cabinet/scripts/egg-export-manifest.txt` — so there is no semantic conflict, only
-a digest that had to be recomputed over the merged tree rather than carried from
-either side. Still a MECHANICAL-DELTA re-bind: no reviewed BEHAVIOUR byte changed
-on either side of the merge, and neither side's prose was edited.
-
-RE-BOUND ON THE SECOND MASTER MERGE, 2026-07-27 — same mechanism, third time,
-and ALL THREE NOTES ARE KEPT. `iso-port-composition` merged origin/master
-3a710183 (the bash-egress-fail-closed landing, PR #229). Master's side re-bound
-the same `Reviewed-Scope-Digest` line this branch had re-bound in 6b6784e2, so
-`git merge-tree` reported a CONTENT conflict on exactly that one line and on
-nothing else — the two sides' appended notes merged cleanly, which is what made
-the PR read CONFLICTING while nothing about the two changes actually disagreed.
-Master moved `framework/authority/{classifier,grants,policy_engine}.py` and
-their tests; this branch moved `cabinet/scripts/egg-export-manifest.txt`.
-DIFFERENT in-scope paths, no semantic conflict, and the resolution is neither
-side's value: the digest is recomputed over the MERGED tree with
-`cognitive-phase4-review-scope.py --print`, which is the only value that
-describes the bytes that now exist. Still a MECHANICAL-DELTA re-bind — the
-world/iso work this branch carries touches no COG-4 scope path (checked: zero
-`world`/`dashboard` entries in the 85-entry EXPECTED_SCOPE), and no reviewed
-BEHAVIOUR byte changed on either side of the merge.

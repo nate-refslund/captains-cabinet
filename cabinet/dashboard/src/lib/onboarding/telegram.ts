@@ -8,9 +8,65 @@ import {
 import type {
   OnboardingAction,
   OnboardingResponse,
+  OwnershipClass,
 } from './types'
 
 type RelationshipDestination = 'earn' | 'reversible' | 'sovereign'
+
+/**
+ * Telegram is an OUTBOUND channel: an excerpt rendered into a message is a
+ * verbatim line from the source shipped to a third-party messaging service.
+ * The core decides the egress verdict (framework/authority/ownership.py) and
+ * withholds the words of anything the operator does not own; this surface
+ * renders that verdict and must never reconstruct what was withheld.
+ */
+const OWNERSHIP_WORDS: Record<string, OwnershipClass> = {
+  mine: 'self',
+  my: 'self',
+  own: 'self',
+  self: 'self',
+  employer: 'employer',
+  work: 'employer',
+  employers: 'employer',
+  client: 'third_party',
+  customer: 'third_party',
+  theirs: 'third_party',
+  'third-party': 'third_party',
+  third_party: 'third_party',
+}
+
+const OWNERSHIP_SYNTAX =
+  'Add whose data it is and under what right, as the last segment:\n' +
+  '/onboard folder /full/path | what you want made easier | mine: my own laptop\n' +
+  'Use mine, employer, or client. I will not guess — an unclassified folder is refused.'
+
+/**
+ * Take a trailing `| <who>: <basis>` segment. Absent means ABSENT: this returns
+ * nothing rather than a plausible default, and the core then refuses with a
+ * code this surface turns back into the syntax line above.
+ */
+function takeOwnership(value: string): {
+  value: string
+  ownership?: OwnershipClass
+  authorityBasis?: string
+} {
+  const match = value.match(/\|\s*([A-Za-z][A-Za-z_-]*)\s*:\s*([^|]+?)\s*$/)
+  if (!match) return { value }
+  const ownership = OWNERSHIP_WORDS[match[1].toLowerCase()]
+  if (!ownership) return { value }
+  return {
+    value: value.slice(0, match.index).trim(),
+    ownership,
+    authorityBasis: match[2].trim(),
+  }
+}
+
+const OWNERSHIP_REFUSAL_CODES = new Set([
+  'ownership_unclassified',
+  'ownership_class_unknown',
+  'authority_basis_required',
+  'authority_basis_too_long',
+])
 
 export interface TelegramInlineButton {
   text: string
@@ -41,11 +97,12 @@ function buttonsFor(result: OnboardingResponse): TelegramInlineButton[][] {
   }
   if (stage === 'purged') return []
   if (stage === 'welcome') {
-    return [
-      [{ text: 'Documents · reversible (recommended)', callback_data: 'onboard:documents:reversible' }],
-      [{ text: 'Documents · earn every step', callback_data: 'onboard:documents:earn' }],
-      [{ text: 'Documents · broad autonomy later', callback_data: 'onboard:documents:sovereign' }],
-    ]
+    // The one-tap Documents buttons are GONE, deliberately. A tap cannot carry
+    // whose data the folder is, and the core refuses an unclassified source, so
+    // a button here would be a dead end that reads like an offer. The typed
+    // form in the welcome body is the only path, because the question has to be
+    // answered before anything is read.
+    return []
   }
   if (stage === 'dividend_ready') {
     return [
@@ -77,12 +134,22 @@ export function formatTelegramOnboarding(result: OnboardingResponse): TelegramOn
       lines.push(`• ${citation.path}:${citation.line} — ${citation.excerpt}`)
     }
   }
+  const egress = result.card.egress
+  if (egress && egress.withheld > 0) {
+    lines.push(
+      '',
+      `I am holding back the words of ${egress.withheld} of ${egress.items} citation(s): ` +
+        'this source is not yours to send. The file and line are above so you can open ' +
+        'them yourself, or reclassify the source if I have it wrong.'
+    )
+  }
   if (result.card.stage === 'welcome') {
     lines.push(
       '',
-      'Choose a Documents option below, or send:',
-      '/onboard folder /full/path | what you want made easier | reversible',
-      'The last word can be earn, reversible, or sovereign. It is a destination, not an authority grant.'
+      'Send:',
+      '/onboard folder /full/path | what you want made easier | mine: my own laptop',
+      'The last segment says whose data it is (mine, employer, or client) and under what right.',
+      'An optional final word — earn, reversible, or sovereign — sets a destination, not an authority grant.'
     )
   }
   if (result.card.stage === 'purged') {
@@ -162,8 +229,15 @@ function refusal(error: unknown): TelegramOnboardingMessage {
   const message = error instanceof OnboardingBridgeError
     ? error.message
     : 'The Cabinet could not complete that onboarding choice.'
+  // An ownership refusal is not a failure to explain away — it is a question
+  // the operator has not answered, so the reply carries the exact syntax that
+  // answers it instead of a generic "try again".
+  const code = error instanceof OnboardingBridgeError ? error.code : undefined
+  const tail = code && OWNERSHIP_REFUSAL_CODES.has(code)
+    ? `${OWNERSHIP_SYNTAX}\n\nSend /onboard to see the current card.`
+    : 'Send /onboard to see the current card.'
   return {
-    text: `${message}\n\nSend /onboard to see the current card.`,
+    text: `${message}\n\n${tail}`,
     plain: true,
   }
 }
@@ -179,20 +253,26 @@ export async function handleTelegramOnboarding(
     }
     if (/^documents(?:\s|$)/i.test(command)) {
       const selected = takeDestination(command.replace(/^documents/i, ''))
-      const purpose = selected.value.replace(/^\s*\|?\s*/, '').trim()
+      const owned = takeOwnership(selected.value)
+      const purpose = owned.value.replace(/^\s*\|?\s*/, '').trim()
       const result = await action('propose_window', actionId, {
         source: '~/Documents',
         purpose: purpose || 'Find one useful thing I may be missing.',
         relationship_destination: selected.destination,
+        ownership: owned.ownership,
+        authority_basis: owned.authorityBasis,
       })
       return [formatTelegramOnboarding(result)]
     }
     if (/^folder\s+/i.test(command)) {
       const selected = takeDestination(command.replace(/^folder\s+/i, ''))
-      const parsed = purposeAfterPipe(selected.value)
+      const owned = takeOwnership(selected.value)
+      const parsed = purposeAfterPipe(owned.value)
       const result = await action('propose_window', actionId, {
         ...parsed,
         relationship_destination: selected.destination,
+        ownership: owned.ownership,
+        authority_basis: owned.authorityBasis,
       })
       return [formatTelegramOnboarding(result)]
     }
@@ -233,10 +313,10 @@ export async function handleTelegramOnboardingCallback(
 ): Promise<TelegramOnboardingMessage[]> {
   const command = data.replace(/^onboard:/, '')
   if (command.startsWith('documents:')) {
-    const destination = command.slice('documents:'.length)
-    if (/^(earn|reversible|sovereign)$/.test(destination)) {
-      return handleTelegramOnboarding(`/onboard documents | | ${destination}`, actionId)
-    }
+    // A callback from a message sent before the ownership ceiling existed.
+    // Acting on it would read a folder whose class nobody declared, so it
+    // answers with the question instead.
+    return [{ text: OWNERSHIP_SYNTAX, plain: true }]
   }
   if (command === 'accept') return handleTelegramOnboarding('/onboard accept', actionId)
   if (command === 'continue') return handleTelegramOnboarding('/onboard continue', actionId)

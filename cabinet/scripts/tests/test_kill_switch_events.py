@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -25,6 +26,13 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[3]
 SCRIPT = REPO / "cabinet/scripts/kill-switch.sh"
+
+_HERE = Path(__file__).resolve().parent
+for _p in (str(_HERE), str(REPO)):        # tests/ is a package: put it on the path
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+import lib_killswitch_fence as ksfence  # noqa: E402
 
 _HAVE_REDIS = all(shutil.which(t) for t in ("redis-server", "redis-cli"))
 
@@ -57,11 +65,18 @@ def sandbox_redis(tmp_path):
 
 
 def _run(action, port, events_dir, extra_env=None):
-    import os
-    env = dict(os.environ)
-    env["REDIS_URL"] = f"redis://127.0.0.1:{port}"
-    env["CABINET_EVENT_LOG_DIR"] = str(events_dir)
-    env.update(extra_env or {})
+    """Drive the REAL kill-switch.sh with every routing channel sandboxed.
+
+    REDIS_URL alone was NOT a fence (incident 2026-07-27): the shared resolver
+    prefers REDIS_HOST/REDIS_PORT and takes the stop-marker path from
+    CABINET_ROOT — all exported by the officer plists — so ``dict(os.environ)``
+    let the live control plane win. lib_killswitch_fence pins every channel the
+    resolver consults and proves the redirection took before the child runs.
+    """
+    env = ksfence.sandbox_env(
+        port,
+        marker=Path(events_dir).parent / "killswitch-estop-marker",
+        extra={"CABINET_EVENT_LOG_DIR": str(events_dir), **(extra_env or {})})
     return subprocess.run(["bash", str(SCRIPT), action], env=env,
                           capture_output=True, text=True, timeout=30)
 

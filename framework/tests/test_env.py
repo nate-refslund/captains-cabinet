@@ -311,6 +311,186 @@ class TestOrgDomains:
         assert env.org_domains() == expected
 
 
+@pytest.fixture
+def isolated_recipient_policy_cache():
+    """Clear the process-wide recipient-policy cache for the test, then restore
+    it — mirrors isolated_org_domains_cache."""
+    saved = env._recipient_policy_cache
+    env._recipient_policy_cache = None
+    try:
+        yield
+    finally:
+        env._recipient_policy_cache = saved
+
+
+_DENY_ALL = {"deny": ("*",), "subdomains": "strict"}
+
+
+class TestRecipientPolicy:
+    """The recipient_policy() resolver — the Captain's carve-back on
+    org_domains, read from instance/config/recipient-exclusions.yml.
+
+    org_domains is the allowlist and has no granularity below a domain; this
+    resolver is the ONLY way to state an exception to it. Everything it can
+    express makes a recipient EXTERNAL (always gated), never internal.
+    Corruption fails CLOSED to the deny-all sentinel — an unreadable Captain
+    exclusion list is never silently ignored."""
+
+    def _policy(self, tmp_path, monkeypatch, body: "str | None"):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        if body is not None:
+            _write_cfg(tmp_path, "recipient-exclusions.yml", body)
+        env._recipient_policy_cache = None
+        return env.recipient_policy()
+
+    def test_absent_file_is_empty_denylist_and_strict(
+            self, tmp_path, monkeypatch, isolated_recipient_policy_cache):
+        """ABSENT ⇒ no exclusions; org_domains alone decides, as before this
+        file existed. `strict` is the shipped default, so a fresh hatch never
+        inherits an unbounded subdomain claim it did not ask for."""
+        assert self._policy(tmp_path, monkeypatch, None) == {
+            "deny": (), "subdomains": "strict"}
+
+    def test_empty_denylist_is_the_ruled_posture_not_damage(
+            self, tmp_path, monkeypatch, isolated_recipient_policy_cache):
+        assert self._policy(tmp_path, monkeypatch, "denylist: []\n") == {
+            "deny": (), "subdomains": "strict"}
+
+    def test_bare_denylist_key_is_the_ruled_posture(
+            self, tmp_path, monkeypatch, isolated_recipient_policy_cache):
+        assert self._policy(tmp_path, monkeypatch, "denylist:\n")["deny"] == ()
+
+    def test_rows_are_normalized_and_ordered(
+            self, tmp_path, monkeypatch, isolated_recipient_policy_cache):
+        got = self._policy(tmp_path, monkeypatch,
+                           "denylist:\n"
+                           "  - address: '  ALL-Staff@Acme.COM '\n"
+                           "    why: fans out\n"
+                           "  - domain: News.Acme.com\n"
+                           "    why: agency-run\n")
+        assert got["deny"] == ("all-staff@acme.com", "news.acme.com")
+
+    def test_missing_why_still_excludes(
+            self, tmp_path, monkeypatch, isolated_recipient_policy_cache):
+        """`why:` is a documented obligation, deliberately NOT a machine gate:
+        a forgotten why must never turn an urgent Captain exclusion into a
+        deny-all outage. The row still excludes — the safe direction."""
+        got = self._policy(tmp_path, monkeypatch,
+                           "denylist:\n  - address: x@acme.com\n")
+        assert got["deny"] == ("x@acme.com",)
+
+    def test_missing_subdomain_key_defaults_strict_not_damage(
+            self, tmp_path, monkeypatch, isolated_recipient_policy_cache):
+        """A dropped key fails closed only where dropping it would LOOSEN.
+        Absent subdomain_matching resolves to the tighter reading, so its
+        absence can only narrow — not damage."""
+        assert self._policy(tmp_path, monkeypatch,
+                            "denylist: []\n")["subdomains"] == "strict"
+
+    def test_inherit_is_reachable_by_config(
+            self, tmp_path, monkeypatch, isolated_recipient_policy_cache):
+        """The pre-2026-07-27 unbounded rule stays available as a CONFIG line,
+        never a code change."""
+        assert self._policy(tmp_path, monkeypatch,
+                            "subdomain_matching: inherit\ndenylist: []\n"
+                            )["subdomains"] == "inherit"
+
+    @pytest.mark.parametrize("body,damage", [
+        ("- just\n- a\n- list\n", "document is not a mapping"),
+        ("subdomain_matching: strict\n", "denylist key dropped entirely"),
+        ("denylist: 3\n", "denylist present but not a list"),
+        ("denylist:\n  - notamapping\n", "row is not a mapping"),
+        ("denylist:\n  - why: no selector\n", "row names neither address nor domain"),
+        ("denylist:\n  - address: a@x.com\n    domain: x.com\n", "row names both"),
+        ("denylist:\n  - address: '   '\n", "empty value"),
+        ("denylist:\n  - address: nodomainpart\n", "address with no @"),
+        ("denylist:\n  - domain: has@an.at\n", "domain carrying an @"),
+        ("denylist: []\nsubdomain_matching: loose\n", "unknown subdomain_matching"),
+        ("denylist: []\nsubdomain_matching: [strict]\n", "subdomain_matching not a string"),
+        ("denylist: [\n", "unparseable yaml"),
+        # --- silent-SHRINK shapes an adversarial review found accepted -----
+        ("denylist:\n  - address: a@x.com\n    why: w\ndenylist: []\n",
+         "DUPLICATE denylist key — yaml last-wins would empty the Captain's "
+         "list while every original row still reads intact above it"),
+        ("_seed: &a []\ndenylist: *a\n",
+         "YAML alias — an exclusion list assembled from anchors elsewhere in "
+         "the document cannot be audited by eye"),
+        # --- rows that parse but can never MATCH (a dud reads as live) -----
+        ("denylist:\n  - address: 'all-staff@acme.com,'\n", "trailing separator"),
+        ("denylist:\n  - address: 'Nate <all-staff@acme.com>'\n",
+         "display-name form pasted out of a mail client"),
+        ("denylist:\n  - address: 'a@x.com b@y.com'\n", "two addresses in one row"),
+        ("denylist:\n  - domain: '.news.acme.com'\n", "leading dot"),
+        ("denylist:\n  - domain: 'news.acme.com.'\n", "trailing dot"),
+    ])
+    def test_content_damage_fails_closed_to_deny_all(
+            self, tmp_path, monkeypatch, isolated_recipient_policy_cache,
+            body, damage):
+        """Every shape that could silently SHRINK the Captain's exclusion set
+        resolves to deny-all, so a damaged file gates EVERY recipient rather
+        than quietly excluding fewer. An explicitly empty denylist is the ruled
+        posture and is covered by its own test above."""
+        assert self._policy(tmp_path, monkeypatch, body) == _DENY_ALL, damage
+
+    def test_python_object_tags_are_refused(
+            self, tmp_path, monkeypatch, isolated_recipient_policy_cache):
+        """The parser uses `yaml.load` with a SafeLoader SUBCLASS, so it is
+        safe_load plus two refusals — never yaml.load's default unsafe loader.
+        Pinned, not assumed: a `!!python/` tag must still fail closed rather
+        than construct anything."""
+        assert self._policy(
+            tmp_path, monkeypatch,
+            "denylist: !!python/object/apply:os.system ['echo pwned']\n"
+        ) == _DENY_ALL
+
+    def test_oversized_file_fails_closed(
+            self, tmp_path, monkeypatch, isolated_recipient_policy_cache):
+        """Parsed at import of a germline module: an implausibly large file
+        must be refused rather than stall every classification at startup."""
+        body = "denylist: []\n# " + ("x" * (1 << 20))
+        assert self._policy(tmp_path, monkeypatch, body) == _DENY_ALL
+
+    def test_dangling_symlink_is_damaged_not_absent(
+            self, tmp_path, monkeypatch, isolated_recipient_policy_cache):
+        """A symlink to nothing is a file that is PRESENT and unreadable.
+        `Path.exists()` follows the link and reports absent, which would
+        silently drop the Captain's exclusions; lexists calls it damage."""
+        cfg = tmp_path / "instance/config"
+        cfg.mkdir(parents=True, exist_ok=True)
+        (cfg / "recipient-exclusions.yml").symlink_to(cfg / "gone.yml")
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        env._recipient_policy_cache = None
+        assert env.recipient_policy() == _DENY_ALL
+
+    def test_subdomain_matching_is_case_folded(
+            self, tmp_path, monkeypatch, isolated_recipient_policy_cache):
+        """A caps typo must not take the whole cabinet to deny-all with no
+        diagnostic — that is an outage bought for a shift key."""
+        assert self._policy(tmp_path, monkeypatch,
+                            "denylist: []\nsubdomain_matching: ' INHERIT '\n"
+                            )["subdomains"] == "inherit"
+
+    def test_result_is_cached_process_wide(
+            self, tmp_path, monkeypatch, isolated_recipient_policy_cache):
+        self._policy(tmp_path, monkeypatch, "denylist:\n  - domain: a.example\n")
+        _write_cfg(tmp_path, "recipient-exclusions.yml",
+                   "denylist:\n  - domain: b.example\n")
+        assert env.recipient_policy()["deny"] == ("a.example",)   # cached
+
+    def test_shipped_example_twin_parses_clean(
+            self, tmp_path, monkeypatch, isolated_recipient_policy_cache):
+        """The .example a stranger copies must itself satisfy the parser — a
+        twin that fails closed on arrival would gate every send on day one."""
+        twin = (Path(env.__file__).resolve().parents[1]
+                / "instance/config/recipient-exclusions.yml.example")
+        assert twin.is_file(), "the shippable twin must exist"
+        _write_cfg(tmp_path, "recipient-exclusions.yml",
+                   twin.read_text(encoding="utf-8"))
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        env._recipient_policy_cache = None
+        assert env.recipient_policy() == {"deny": (), "subdomains": "strict"}
+
+
 class TestTasksBoard:
     """The tasks_board() resolver — instance-DRIVEN, fail-closed to "".
 

