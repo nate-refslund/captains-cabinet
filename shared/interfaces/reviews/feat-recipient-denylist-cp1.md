@@ -2,7 +2,10 @@
 
 **Unit:** a Captain-owned carve-back on `org_domains` — a recipient denylist
 plus a bounded subdomain rule.
-**Branch:** `feat/recipient-denylist` · base `0ab0cc2b`
+**Branch:** `feat/recipient-denylist` · base `0ab0cc2b`, merged up to origin/master
+`45c004ac` mid-flight (the census-shift-left + expansion-registry landings — five
+overlapping files, two conflicts resolved by recomputation rather than by picking a
+side: the declared-residuals line pins and the phase-4 scope digest)
 **Model:** builder Opus 5; adversarial reviewer Opus 5, fresh context, own
 clone, blind to the builder's reasoning.
 **Method:** every claim below is bound to a command run this session. The
@@ -206,8 +209,8 @@ gated. Unifying the two is recorded as this allowance's deletion gate.
 
 | Gate | Master baseline | This branch |
 |---|---|---|
-| `pytest framework/ -q` | 1 failed / 6954 passed / 25 skipped | 1 failed / 6996 passed / 26 skipped — same single pre-existing red (`test_retro_shim.py::test_reexports_constants`); the 25-vs-26 skip count is one environment-sensitive arm (`test_journey.py:1098`, undecodable directory names) that flips run to run on master too |
-| `pytest cabinet/scripts/tests -q` | 1 failed / 4784 passed / 28 skipped | 0 failed / 4789 passed / 28 skipped — master's local red (`test_cog1_outbox_capture.py`, a wall-clock bound) did not fire this run |
+| `pytest framework/ -q` | 1 failed / 6954 passed / 25 skipped (pre-merge base) | 1 failed / 6997 passed / 25 skipped post-merge — same single pre-existing red (`test_retro_shim.py::test_reexports_constants`); the 25-vs-26 skip count is one environment-sensitive arm (`test_journey.py:1098`, undecodable directory names) that flips run to run on master too |
+| `pytest cabinet/scripts/tests -q` | 4785 passed / 28 skipped (post-merge run) | 1 failed / 4844 passed / 28 skipped — the one red is `test_cog1_outbox_capture.py::test_baselines_hold_the_bound`, a wall-clock bound that flakes only under full-sweep load: it fired on MASTER at this session's first baseline run, passes in isolation on both trees (24 passed, 51s each), and `classify_action` measures 1.24 µs/call, four orders of magnitude below the 12–14 ms p50/p95 the test bounds |
 | `check-layer-separation.sh` | baseline=24 allowlist=19 new=0 | same, new=0 |
 | `cognitive-architecture-census.py --check` | PASS | PASS — 69455 ≤ 69455, modules 244 unchanged |
 | `cog2-import-gate.py` | rc=0 | rc=0 |

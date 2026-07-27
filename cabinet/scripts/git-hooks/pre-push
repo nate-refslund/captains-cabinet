@@ -1,5 +1,6 @@
 #!/bin/bash
-# pre-push — master-push gates: FW-007 force-refusal + FW-025b layer-separation + FW-025 golden-evals
+# pre-push — master-push gates: FW-007 force-refusal + FW-025b layer-separation
+#            + FW-025c architecture census + FW-025 golden-evals
 #
 # Stops accidental destruction of master history in the shared working
 # tree. On 2026-04-17 an officer ran `git reset --hard origin/master`
@@ -42,7 +43,8 @@
 # Emergency escape hatch (rare, last-resort):
 #   git push --no-verify origin master
 # bypasses ALL client-side hooks — including FW-007 force-push refusal,
-# the FW-025b layer-separation gate, AND the FW-025 golden-eval gate. Use
+# the FW-025b layer-separation gate, the FW-025c architecture census, AND
+# the FW-025 golden-eval gate. Use
 # only when you're fixing a
 # broken stop-hook/eval that is itself blocking the fix push, or when
 # the eval suite's redis sandbox cannot start (redis-server binary
@@ -279,9 +281,65 @@ EOF
   return 0
 }
 
+# --- FW-025c: Cognitive-architecture census on master pushes ---
+# Shift-left of the census that already runs in CI (cabinet/scripts/
+# verify-cognitive-phase4.sh, the cognitive-phase4 required job) and in
+# cabinet/scripts/verify-cognitive-architecture.sh. Same script, same --check
+# flag, same working-tree scope — the ONLY change is that a push which would
+# breach an architecture budget is refused locally instead of going red on
+# master minutes later, where every other writer inherits the red.
+#
+# Why this one and not "more checks": the census is the repo's expansion
+# detector. Its budgets are pinned at ZERO HEADROOM (observed == max), so a
+# single new central event type, action type, service row, framework module or
+# framework line blocks until the growth is declared as a temporary_allowances
+# row with its reason, owner, sunset and deletion gate. It is fast (~1s),
+# read-only, stateless, needs no Redis or network, and never imports framework
+# modules (it parses source), so it is safe to run on every master push.
+#
+# HONEST LIMIT, stated because a gate nobody can see through is worse than no
+# gate: a fresh clone has core.hooksPath unset and .git/hooks/ holding samples
+# only, and doctrine tells every subagent to work in its own clone — so this
+# hook binds ZERO subagents by default. It catches honest mistakes from clones
+# that ran install-git-hooks.sh; the required CI checks remain the floor.
+#
+# Fail-closed exactly like FW-025b: a missing script, a missing interpreter, a
+# malformed contract and a real breach all block. An enforcement plane that
+# fails open on its own absence is the worst fail-open there is.
+run_census_gate() {
+  local census="$REPO_ROOT/cabinet/scripts/cognitive-architecture-census.py"
+  local py="${CABINET_PYTHON:-python3.12}"
+  if [ ! -f "$census" ]; then
+    echo "pre-push: BLOCKED — $census missing (FW-025c)" >&2
+    return 1
+  fi
+  if ! command -v "$py" >/dev/null 2>&1; then
+    echo "pre-push: BLOCKED — interpreter '$py' not on PATH; FW-025c census cannot run" >&2
+    echo "  set CABINET_PYTHON to the house interpreter, or install python3.12 (+ PyYAML)" >&2
+    return 1
+  fi
+  echo "pre-push: FW-025c — running the cognitive-architecture census before master push (~1s)..." >&2
+  if ! PYTHONDONTWRITEBYTECODE=1 "$py" "$census" --root "$REPO_ROOT" --check >&2; then
+    cat >&2 <<EOF
+pre-push: BLOCKED — the cognitive-architecture census failed (FW-025c). Either a
+  budget is breached or a temporary allowance has expired. The budgets sit at
+  zero headroom on purpose: growth is declared, not absorbed. Fix the growth, or
+  pay for it with a temporary_allowances row in
+    cabinet/config/cognitive-architecture-contract.yml
+  carrying the closed key set (phase, budget, additional, reason, owner, sunset,
+  deletion_gate). Docstrings are counted honestly — never reformat them into '#'
+  comments to duck the counter. Re-run to confirm:
+    python3.12 cabinet/scripts/cognitive-architecture-census.py --check
+EOF
+    return 1
+  fi
+  return 0
+}
+
 if [ -z "$BLOCK_REASON" ]; then
   if $PUSHES_MASTER; then
     run_layer_sep_gate || exit 1
+    run_census_gate || exit 1
     run_golden_evals_gate || exit 1
   fi
   exit 0
@@ -291,6 +349,7 @@ if is_announced; then
   echo "pre-push: $BLOCK_REASON allowed — announcement $FORCE_PUSH_ANNOUNCED present in $LOG_REL" >&2
   if $PUSHES_MASTER; then
     run_layer_sep_gate || exit 1
+    run_census_gate || exit 1
     run_golden_evals_gate || exit 1
   fi
   exit 0

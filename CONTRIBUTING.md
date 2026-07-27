@@ -89,14 +89,42 @@ These are in-tree git hooks (activated by `install-git-hooks.sh`) plus CI —
 fix root causes, never bypass a red gate:
 
 - **FW-019 — checkpoint review (pre-commit).** Commits over **300 changed
-  lines** require a fresh review artifact at
-  `shared/interfaces/reviews/<branch>-<sha>.md` — a real second-context review
-  of the diff, not a rubber stamp. `COMMIT_NO_REVIEW=1` exists strictly for
-  docs-only / trivial commits.
+  lines** require a review artifact at
+  `shared/interfaces/reviews/<branch>-cp<n>.md` — a real second-context review
+  of the diff, not a rubber stamp. The artifact must carry one line binding it
+  to the bytes being committed:
+
+  ```
+  Reviewed-Scope-Digest: <64-hex>
+  ```
+
+  Get it from the hook itself once everything is staged:
+
+  ```
+  bash cabinet/scripts/git-hooks/pre-commit --print-scope-digest
+  ```
+
+  It is a SHA-256 over the sorted `<mode> <sha> <path>` records of everything
+  staged outside `shared/interfaces/reviews/`, so a review copied from another
+  branch cannot satisfy it and a stale one stops satisfying it the moment the
+  code moves. Filename matching used to be the whole check, which meant `touch`
+  passed it. `COMMIT_NO_REVIEW=1` exists strictly for docs-only / trivial
+  commits.
 - **FW-007 — force-push refusal (pre-push).** No force-push to `master`;
   history rewrites need an announced, logged exception.
+- **FW-025b — layer separation on push (pre-push).** `framework/` must not
+  reference `instance/` or `presets/` beyond the committed baseline.
+- **FW-025c — architecture census on push (pre-push).** The budgets in
+  `cabinet/config/cognitive-architecture-contract.yml` sit at zero headroom, so
+  one new central event type, action type, service row or framework module
+  blocks the push until the growth is declared as a `temporary_allowances` row.
+  Same check CI runs — it just runs before the red instead of after it.
 - **FW-025 — golden evals on push (pre-push).** The behavioral eval suite runs
   over the working tree before a push lands.
+
+These hooks only bind clones that ran `install-git-hooks.sh` — a fresh clone
+has `core.hooksPath` unset. They catch honest mistakes; the required CI checks
+are the floor.
 
 ## Docs must track the code
 

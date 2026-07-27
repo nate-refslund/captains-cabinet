@@ -328,6 +328,50 @@ temporary_allowances:
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: COG-7 compaction folds the classifier into the projection kernel, or the recipient set becomes structurally typed (a list of parsed addresses carried on the action rather than a free-text field re-parsed at the gate, removing the multi-address channel entirely)
+# ── The EXPANSION REGISTRY (two-model gate adjudication, 2026-07-27) ─────────
+# temporary_allowances above pay for MASS and ask only reason/owner/sunset —
+# declaration, not adjudication. That gap is measured, not theoretical: an
+# expansion's line-mass once rode in under a fix-shaped brief as a routine
+# allowance row. So an allowance CANNOT buy a net-new member of any set the
+# census can name. Those go here, and the census holds the list to a BIJECTION
+# against cabinet/config/architecture-baseline-sets.yml:
+#
+#     observed - baseline  ==  {row.member for row in expansions}
+#
+# per class, exactly and disjointly. Unregistered member -> RED. Row naming a
+# member that is not observed (the stale copy-paste) -> RED. Row naming a
+# baseline member (the laundering edit) -> RED. Two rows for one member ->
+# refused at load. Nothing here checks that a FILE EXISTS, because `touch`
+# passes that; a bijection cannot be faked at all.
+#
+# Every field is schema-refused when missing or empty:
+#   member         the exact member id — an event/action token, a service name,
+#                  a framework module path, an emit() writer callee
+#   member_class   which set it joins (BIJECTION_CLASSES in the census)
+#   gate_date      when the direction gate ran
+#   models_run     the blind arms, >=2 and distinct — one model run twice is one
+#                  opinion and an echo
+#   adjudication   the written adjudication document (.md); bound to actually
+#                  NAME this member by
+#                  cabinet/scripts/tests/test_expansion_adjudication_binding.py
+#   merge_refuted  OPENS with a <path>::<symbol> anchor that resolves, then
+#                  prose. Both near-misses this program caught were answerable
+#                  by grep against a named symbol; prose alone is not an answer.
+#   consumer       a repository path that exists or a cabinet/services.yml name
+#                  that will READ the output — never the member itself and never
+#                  the file declaring it. Naming the consumer before adding the
+#                  producer is a paid lesson: this org held four durable
+#                  Captain-verdict stores with almost nothing learning from any.
+#   provenance     the grant or ruling the work was done under
+#
+# EMPTY IS THE HONEST STATE at landing: the baseline is the tree as it stood
+# when the registry landed, so there is no surplus to name. Nothing before it
+# was adjudicated by this gate and the registry claims nothing about it. The
+# permanent both-ways fixture arms in
+# cabinet/scripts/tests/test_cognitive_architecture_census.py are what keep an
+# empty registry from being an untested one — a registry never seen to reject
+# is not a registry.
+expansions: []
 ownership:
   authoritative_state: domain_transaction
   cross_domain_delivery: transactional_outbox
