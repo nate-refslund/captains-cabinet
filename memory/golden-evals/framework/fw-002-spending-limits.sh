@@ -135,9 +135,20 @@ if [ "${CABINET_EVALS_REDIS_DISPOSABLE:-}" = "1" ]; then
   fi
   command -v redis-cli > /dev/null 2>&1 \
     || { rm -rf "$TESTDIR"; infra_fail "redis-cli not found (endpoint declared disposable)"; }
-  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" PING 2>/dev/null | grep -q PONG \
-    || { rm -rf "$TESTDIR"; infra_fail "declared-disposable redis at $REDIS_HOST:$REDIS_PORT did not answer PING"; }
-  echo "fw-002: endpoint declared disposable — using $REDIS_HOST:$REDIS_PORT (fields saved + restored)"
+  # The declaration must prove itself, through the SAME helper the golden-eval
+  # runner uses (2026-07-27) — one dialect, not a second copy that drifts. It
+  # re-checks PING, refuses over an armed emergency stop, and requires the
+  # endpoint itself to carry the disposability marker, so an env var inherited
+  # from somewhere else can no longer bless a live control plane.
+  _FW002_SANDBOX_LIB="$REAL_ROOT/cabinet/scripts/lib/evals-redis-sandbox.sh"
+  [ -r "$_FW002_SANDBOX_LIB" ] \
+    || { rm -rf "$TESTDIR"; infra_fail "evals-redis-sandbox.sh not readable at $_FW002_SANDBOX_LIB — cannot verify the declared-disposable endpoint"; }
+  # shellcheck source=../../../cabinet/scripts/lib/evals-redis-sandbox.sh
+  . "$_FW002_SANDBOX_LIB"
+  export REDIS_HOST REDIS_PORT   # the helper reads the resolved endpoint
+  evals_redis_endpoint_is_disposable \
+    || { rm -rf "$TESTDIR"; infra_fail "declared-disposable redis at $REDIS_HOST:$REDIS_PORT did not prove it is a throwaway (see refusal above)"; }
+  echo "fw-002: endpoint PROVEN disposable — using $REDIS_HOST:$REDIS_PORT (fields saved + restored)"
 else
   REDIS_SERVER_BIN="$(command -v redis-server 2>/dev/null)"
   if [ -z "$REDIS_SERVER_BIN" ]; then
