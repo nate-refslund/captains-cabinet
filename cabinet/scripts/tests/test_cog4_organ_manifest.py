@@ -963,3 +963,88 @@ class TestRealSurfacesVacuityArms:
         # byte-present and no v2 const has leaked into the v1 document
         v1_text = _V1_TRAJECTORY.read_text(encoding="utf-8")
         assert V1_CONST in v1_text and V2_CONST not in v1_text
+
+
+# ---------------------------------------------------------------------------
+# LIVE-ARTIFACT ARM (2026-07-27) — the N-d reference validator, pointed at the
+# REAL organ dir instead of only at fixtures
+# ---------------------------------------------------------------------------
+# matrix_consistency_errors() above is the ONE checker that binds a declared
+# `action_type` to classifier.ACTION_TYPES. Until now every caller of it fed
+# hand-built dicts (TestMatrixConsistencyNd) or the synthetic fixture cabinets
+# under fixtures/cog4/ — so the shipped manifests in cabinet/config/organs/,
+# the ones an organ actually resolves its constitutional members from at run
+# time, were validated by NOTHING. A checker aimed at a twin is not coverage:
+# framework/organs/descriptor.py:150-154 states outright that "Vocabulary
+# membership is schema/AX law — deliberately NOT checked here", and the law it
+# defers to was never wired to the live bytes.
+#
+# It CANNOT be wired inside framework/organs/: boundary-manifest.yml row 5
+# forbids framework/organs/** from importing framework.authority
+# (FORBIDDEN_ORGANS_IMPORTS_ACTION, enforced by cabinet/scripts/cog2-import-gate.py
+# on the AST, on a live-line token backstop, and on dynamic import_module). So
+# the check lands where the boundary permits it and where the enum already
+# lives — here, cabinet-side, reusing the existing validator rather than
+# re-declaring the 30 members a second time.
+_ORGANS_DIR = _REPO / "cabinet" / "config" / "organs"
+
+
+def _live_descriptors():
+    """(label, descriptor) for every organ-level block AND per-operation
+    override in the real organ dir, with the override merged over its parent
+    exactly as descriptor.py:133-147 merges it."""
+    import yaml
+    out = []
+    for path in sorted(_ORGANS_DIR.glob("*.yml")):
+        man = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        desc = man.get("descriptor")
+        if not isinstance(desc, dict):
+            continue
+        base = {m: desc.get(m) for m in
+                ("action_type", "risk_class", "ceiling", "undo_contract")}
+        out.append((f"{path.name}:descriptor", dict(base)))
+        for cap, override in (desc.get("operations") or {}).items():
+            if not isinstance(override, dict):
+                continue
+            merged = dict(base)
+            merged.update({m: override[m] for m in
+                           ("action_type", "risk_class", "ceiling",
+                            "undo_contract") if m in override})
+            out.append((f"{path.name}:operations.{cap}", merged))
+    return out
+
+
+class TestLiveOrganDescriptorsAreEnumBound:
+    def test_the_real_dir_is_not_empty(self):
+        """Anti-vacuity: a glob that matches nothing would make every assertion
+        below pass over an empty set — the degenerate end this repo keeps
+        paying for. The five shipped organs are the floor."""
+        live = _live_descriptors()
+        assert len(live) >= 6, (
+            f"expected the 5 shipped organ descriptors + at least one "
+            f"per-operation override, found {len(live)}")
+
+    def test_every_live_descriptor_passes_the_nd_validator(self):
+        for label, desc in _live_descriptors():
+            errs = matrix_consistency_errors(desc)
+            assert errs == [], f"{label}: {errs}"
+
+    def test_an_off_enum_action_type_is_caught(self):
+        """The arm must FAIL on a mutant, or it proves nothing. An action_type
+        outside ACTION_TYPES is rejected — this is the exact defect the live
+        dir was never screened for."""
+        live = _live_descriptors()
+        mutant = dict(live[0][1])
+        mutant["action_type"] = "totally_made_up"
+        errs = matrix_consistency_errors(mutant)
+        assert any("not an ACTION_TYPES member" in e for e in errs), errs
+
+    def test_a_wrong_class_action_type_is_caught(self):
+        """A kind that IS in the enum but belongs to a different risk class is
+        rejected too — membership alone would let an organ self-declare a soft
+        class for a ceiling kind."""
+        live = _live_descriptors()
+        mutant = dict(live[0][1])
+        mutant["action_type"] = "external_email"     # external_comms, a ceiling
+        errs = matrix_consistency_errors(mutant)
+        assert errs, "a ceiling kind under a soft declared risk_class passed"

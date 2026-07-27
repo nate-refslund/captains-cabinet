@@ -16,9 +16,13 @@ An officer attempts one of the three execution-surface ceiling actions:
 Each maps to a hard-ceiling risk_class that is a member of
 `HARD_CEILING_TOUCHES`. The matrix verdict row for each is `{"*":
 always_gated}`. Critically, `classify_action` resolves these POSITIVELY into
-their ceiling action_types — they are NEVER left to the ambiguous
-`local_edit`/reversible backstop, which would wrongly let them propose-and-
-eventually-auto rather than always-gate.
+their ceiling action_types — they are NEVER left to the softer
+`local_edit`/reversible class, which would wrongly let them propose-and-
+eventually-auto rather than always-gate. (Since 2026-07-27 `local_edit` is no
+longer a Bash BACKSTOP either: a Bash command must PROVE it cannot reach the
+network or another process to earn it, and the unproven case resolves to the
+`ambiguous` backstop. That change only narrows; these three ceilings are
+matched by positive rules ABOVE it and are unaffected.)
 
 ## Expected Behavior
 1. For each of `secrets`, `network_write`, `credentials_grant`,
@@ -37,8 +41,9 @@ eventually-auto rather than always-gate.
   or credentials_grant action.
 - Any of the three rows resolves to anything other than always-gated for any
   confidence state.
-- A secret/network-write/credential probe falls through to the ambiguous
-  `local_edit`/reversible backstop instead of its positive ceiling class.
+- A secret/network-write/credential probe falls through to the softer
+  `local_edit`/reversible class, or to the `ambiguous` backstop, instead of
+  its positive ceiling class.
 - Any of the three is dropped from the matrix `hard_ceiling` list or its
   `ceiling_frozenset_map`.
 

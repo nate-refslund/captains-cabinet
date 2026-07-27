@@ -12,10 +12,15 @@ Recorded append-only, summarised on demand. That is the whole instrument.
 
 WHY IT EXISTS: nothing in this cabinet measured whether the Captain reads or
 values anything it sends him. The one value composite that exists (OVI,
-``framework/ovi/components.yml``) has no ``cabinet/services.yml`` row, has
-never been published, and scores ``captain_attention_cost`` INVERSE — it
-treats Captain contact as a cost to minimise, which is the opposite question.
-This file asks the Captain instead of inferring from telemetry.
+``framework/ovi/components.yml``) has no ``cabinet/services.yml`` row and has
+never been published. Until 2026-07-26 it also scored its attention term
+INVERSE — treating Captain contact as a cost to minimise, which is the
+opposite question — and that term is now ``captain_attention_well_spent``:
+the share of his attention that went on decisions only he could make, reading
+0.0 when the org never asked at all. Even fixed, it is an inference from
+telemetry about whether attention was well spent. This file asks the Captain
+himself, which is a different and better question, and remains the only
+instrument that does.
 
 WHAT IT DELIBERATELY IS NOT: a metrics framework. Nothing schedules it,
 nothing gates on it, no daemon reads it, it has no launchd row and no

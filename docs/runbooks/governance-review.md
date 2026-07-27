@@ -31,7 +31,12 @@ the refused path provably mutates nothing
 ## The five stations (printed time budgets)
 
 1. **Posture tile** (~1 min) — `posture-status.py` read-only JSON.
-2. **Cost vs caps** (~2 min) — `cost-report.sh` glance.
+2. **Cost vs this cabinet's own history** (~2 min) — `cost-report.sh` glance.
+   Not "vs caps": spend has been uncapped since 2026-07-26 and the meter is a
+   watch, not a gate. The question at this station is whether the shape looks
+   like the weeks before it, and whether the meter is writing at all — a
+   ledger that has gone quiet reads exactly like a cheap week. Background:
+   `docs/cost-metering.md`.
 3. **Graduation digest + pending petitions** (~2 min) — graduation
    transitions from the org-event day files; needs-ledger tail.
 4. **Receipts sample** (~2 min) — falsifier series tail, envelope

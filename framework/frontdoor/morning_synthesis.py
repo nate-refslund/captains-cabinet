@@ -3,7 +3,8 @@
 Pulls REAL current signals from the bound personal source — a neutral synthesis
 skeleton ENUMERATING the ``framework.sources.get_source()`` surfaces
 (``find_threads`` / ``briefing_commitments`` / ``deploy_health``) plus the
-instance-config-driven health and follow-up registers — and enqueues them as
+instance-config-driven health and follow-up registers and the Captain's own
+dated commitments (``framework.env.captain_open_dates``) — and enqueues them as
 intake items, so the Chair's send path weaves them into ONE unified message
 instead of N separate pings. The source adapter provides the signal (System 1),
 the cabinet composes the single voice (System 2).
@@ -20,7 +21,8 @@ import os
 import subprocess
 
 from framework.acting import product_health
-from framework.env import captain_name, signal_tells
+from framework.env import captain_name, render_captain_date, signal_tells
+from framework.env import captain_open_dates as env_captain_open_dates
 from framework.frontdoor import intake
 from framework.frontdoor import signal_discriminator as sd
 from framework.sources import get_source
@@ -228,6 +230,83 @@ def commitment_items(*, commitments: list | None = None, today: str | None = Non
             },
         })
     return items
+
+
+def captain_date_items(*, dates: list | None = None,
+                       today: str | None = None) -> list[dict]:
+    """The dates the CAPTAIN set → ONE intake item, or none at all.
+
+    THE FAILURE THIS EXISTS TO CLOSE (Captain-Seat dry run 2026-07-26, finding
+    1): he set a release date and it appeared in ZERO of the next twelve days of
+    briefings. ``commitment_items`` above surfaces dated promises he owes OTHER
+    people (from the personal-source adapter) and ``followup_items`` surfaces
+    dates the ORG wrote down — a date HE declared had no reader anywhere. Every
+    OPEN row now rides EVERY briefing until he replies ``date done`` or
+    ``date move``.
+
+    Shape: ONE item carrying one LINE PER OPEN DATE, rather than one item per
+    date. Two reasons, both mechanical: the composer caps non-ping-now tiers at
+    five items (``run_frontdoor._DEFAULT_MAX_PER_TIER``), so N date items would
+    let the sixth date silently roll into a count line — and the whole point of
+    the store is that a date he set cannot go quiet. One item is one line in that
+    budget no matter how many dates are open, and the lines inside it are NEVER
+    capped.
+
+    PAST DUE RENDERS LOUDER and FIRST: ``framework.env.render_captain_date``
+    leads an overdue line with ``OVERDUE by N days``, and overdue rows sort
+    ahead of upcoming ones. A passed date rendered like any other row is the
+    quietest possible version of the original failure.
+
+    HONEST EMPTY: zero open dates ⇒ zero items ⇒ zero lines. No header, no "none
+    today" placeholder — a placeholder pretending to be an answer is the named
+    failure this program already paid for.
+
+    Batch tier: this is a standing reminder, not an incident. ``dates`` /
+    ``today`` are injectable for tests (no store, no clock). Best-effort — the
+    resolver never raises, and a failure here yields no items rather than
+    blocking the briefing.
+    """
+    if dates is None:
+        try:
+            dates = env_captain_open_dates()
+        except Exception:
+            dates = []
+    today = today or _today()
+    rows = [d for d in (dates or [])
+            if isinstance(d, dict) and (d.get("date") or "").strip()
+            and (d.get("status") or "open") == "open"]
+    if not rows:
+        return []
+
+    # Plain date-ascending IS overdue-first: an overdue date is by definition
+    # earlier than today, and every upcoming one is later, so one sort key gives
+    # both "most overdue at the top" and "soonest first" below it. (An earlier
+    # draft carried a composite past-due-flag key; a mutation sweep showed it was
+    # provably equivalent, so it went.)
+    rows.sort(key=lambda d: (d.get("date") or ""))
+    overdue = [d for d in rows if (d.get("date") or "") < today]
+    lines = ["🗓 Dates you set — open until you reply `date done` or `date move`"]
+    for d in rows:
+        lines.append(f"• {render_captain_date(d, today=today)}  [{d.get('id')}]")
+    why = "dates you set yourself; nothing here is derived or inferred"
+    if overdue:
+        why = (f"{len(overdue)} of these is past its date"
+               if len(overdue) == 1 else
+               f"{len(overdue)} of these are past their date") + \
+              " — " + why
+    return [{
+        "source": "captain-date",
+        "kind": "dated-commitment",
+        "ts": _now_iso(),
+        "urgency_tier": "batch",
+        "payload": {"summary": "\n".join(lines)},
+        "context": {
+            "why": why,
+            "open": len(rows),
+            "overdue": len(overdue),
+            "ids": [d.get("id") for d in rows],
+        },
+    }]
 
 
 def _deploy_apps() -> list[str]:
@@ -480,7 +559,9 @@ def gather_items(*, hours: int = 72, limit: int = 6) -> list[dict]:
     (overdue / due-today) + Vercel deploy-health (failed/broken builds) + Sentry
     error-health (unresolved prod errors) + dated follow-ups whose check_from date
     has arrived (the "📌 Follow-ups due" content — gather-then-decide rule carried
-    inline). Each is best-effort + quiet when healthy.
+    inline) + the dates the CAPTAIN himself set (captain_date_items — every open
+    row, every briefing, until he closes or moves it). Each is best-effort +
+    quiet when healthy.
 
     NOTE on routing (done in enqueue_synthesis, not here): the two OPERATIONAL
     sources (deploy-health, sentry-health — see _OPERATIONAL_SOURCES) are split off
@@ -496,6 +577,11 @@ def gather_items(*, hours: int = 72, limit: int = 6) -> list[dict]:
     items += deploy_health_items()
     items += sentry_health_items()
     items += followup_items()
+    # LAST on purpose: items carry an increasing ``ts``, and the composer's
+    # per-tier cap shows the most RECENT items in full. Appending the Captain's
+    # own dates last puts them at the safe end of that cap — the one source in
+    # this list he declared himself is the one that must never be rolled up.
+    items += captain_date_items()
     return items
 
 

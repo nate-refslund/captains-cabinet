@@ -1,0 +1,50 @@
+# FIXTURE — inert data for EVAL-027-CAPTAIN-SEAT (the repetition arm). Compared,
+# never executed, never a live store.
+#
+# The PRESENT end of the dated-commitment store, and the arm that pins the whole
+# point of the DATES section: the store carries TWO open dates, and the fixture
+# briefing body beside this tree mentions ONE of them. So the pack must print
+#   tracked_in_latest_briefing=yes   for the one the briefing carries
+#   tracked_in_latest_briefing=NO    for the one it dropped
+# A pack that only listed the dates — or that assumed tracking — would print the
+# same two rows and fail here.
+#
+# It also pins the LATEST-ROW-PER-id fold: `d-cc333333` is closed by a second row
+# with the same id, so a reader that took the FIRST row would report three open
+# dates instead of two.
+#
+# The dates are fixed, so the eval pins the date + label + tracked column only —
+# the printed countdown is time-relative and pinning it would rot on a calendar
+# boundary.
+schema: cabinet.captain-dates/v1
+entries:
+  # captain text: date 2026-03-02 quarterly numbers
+  - id: d-aa111111
+    at: 2026-01-05T09:00:00Z
+    date: 2026-03-02
+    label: "quarterly numbers"
+    status: open
+    source: telegram
+  # captain text: date 2026-04-17 board review
+  - id: d-bb222222
+    at: 2026-01-06T09:00:00Z
+    date: 2026-04-17
+    label: "board review"
+    status: open
+    source: telegram
+  # captain text: date 2026-05-05 offsite
+  - id: d-cc333333
+    at: 2026-01-07T09:00:00Z
+    date: 2026-05-05
+    label: "offsite"
+    status: open
+    source: telegram
+  # captain text: date done offsite
+  #   the append-only fold: this row supersedes the one above, so `offsite` is
+  #   NOT an open date and must not appear in the open list.
+  - id: d-cc333333
+    at: 2026-01-08T11:20:00Z
+    date: 2026-05-05
+    label: "offsite"
+    status: done
+    source: telegram

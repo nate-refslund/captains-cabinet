@@ -122,6 +122,14 @@ instance/config/comms-charter-proposals.jsonl
 # is carried across deploys by runtime-provision.sh's INSTANCE_PERSISTENT_FILES
 # (losing it would silently return the org to UNKNOWN and re-widen pacing).
 instance/config/captain-availability.yml
+# Dates the captain SET — his dated commitments (Captain-Seat finding 1,
+# 2026-07-26). Written at RUNTIME by cabinet/scripts/lib/captain_dates.py when he
+# types "date 2026-08-13 board review" on his phone; read by
+# framework.env.captain_dates(). His own calendar, never repo content. Tracked
+# twin: captain-dates.yml.example; the file is carried across deploys by
+# runtime-provision.sh's INSTANCE_PERSISTENT_FILES (losing it would drop a date
+# he set out of every briefing — the exact failure the store exists to prevent).
+instance/config/captain-dates.yml
 # Deployment-local (product/captain-agnostic foundation, 2026-07-14): the
 # concrete war-room census seed list — real product/personal items belong
 # here, never in the tracked seed-war-room.py (tracked twin: war-room-seed.yml.example)

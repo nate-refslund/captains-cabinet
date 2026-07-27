@@ -112,10 +112,12 @@ export function getDashboardConfig(): DashboardConfig {
 /**
  * Captain availability — the declared time budget (Captain ruling 2026-07-26).
  *
- * DISPLAY ONLY in this MVP: the dashboard reads it and shows it; editing still
- * belongs to a platform.yml server action that does not exist yet (same
- * tech-debt shape as Timezone). The phone verb is the write path today
- * (`availability 20m`).
+ * READ side. The write side is `actions/config.ts::updateCaptainAvailability`
+ * (added 2026-07-27): it runs the store's own recorder inside the runtime, so a
+ * dashboard change is the same append to the same append-only file the phone
+ * verb writes. It is deliberately NOT a platform.yml edit — that file is a
+ * marker-managed generator output with one writer, and level 1 below is what
+ * the resolver actually serves.
  *
  * Precedence MIRRORS framework.env.captain_availability() deliberately, so the
  * dashboard cannot show a value the runtime does not use:
@@ -161,6 +163,24 @@ function normalizeMinutes(value: unknown): number | null {
   return value
 }
 
+/**
+ * One `at:` field → a UTC `…Z` string, else null.
+ *
+ * js-yaml types an UNQUOTED `2026-07-27T08:00:00Z` as a **Date**, not a string
+ * — exactly the YAML-retyping class `framework/env.py::_availability_stamp`
+ * handles — so the naive `typeof === 'string'` check this replaced dropped the
+ * timestamp of every row the recorder writes, and the Settings row could never
+ * say when the value was set. Both shapes are accepted; anything else is null
+ * rather than a stringified object.
+ */
+function normalizeStamp(value: unknown): string | null {
+  if (typeof value === 'string') return value.trim() || null
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().replace(/\.\d{3}Z$/, 'Z')
+  }
+  return null
+}
+
 export function getCaptainAvailability(): CaptainAvailability {
   const store = readYamlMapping(AVAILABILITY_STORE_PATH)
   const entries = store?.entries
@@ -175,7 +195,7 @@ export function getCaptainAvailability(): CaptainAvailability {
         minutesPerDay: minutes,
         mode: typeof r.mode === 'string' ? r.mode : null,
         source: 'adjusted',
-        setAt: typeof r.at === 'string' ? r.at : null,
+        setAt: normalizeStamp(r.at),
       }
     }
   }

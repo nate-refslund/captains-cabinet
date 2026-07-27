@@ -219,6 +219,78 @@ else:
     absent(avail_store, "no declared availability — the org does not know how "
                         "much of the captain it is entitled to")
 
+# --- D3. DATES HE SET (and whether the briefing still carries them) -----
+# The AVAILABILITY dial's sibling evidence: availability is how much of him the
+# org may spend, this is what he told the org to remember. Read ROOT-RELATIVE and
+# stdlib-only for the same reason (the eval points CAPTAIN_SEAT_ROOT at a fixture
+# tree; importing framework.env here would read the REAL deployment). Fold
+# mirrors framework.env.captain_dates(): rows are append-only, LATEST ROW PER id
+# WINS, so `date done` / `date move` append rather than edit.
+#
+# THE TRACKED COLUMN IS THE WHOLE POINT. The paid case (2026-07-26 dry run,
+# finding 1) was a captain-set release date absent from twelve days of briefings,
+# and the only way to SEE that is to check his date against what was actually
+# sent. tracked_in_latest_briefing=NO on an open row is a cost he paid inside the
+# window; a section that printed the dates but never checked delivery would be a
+# sensor pointed at the store instead of at the failure.
+sec("DATES HE SET — and whether the latest briefing still carries them")
+dates_store = root / "instance" / "config" / "captain-dates.yml"
+if dates_store.is_file():
+    folded, cur = {}, None
+    for line in dates_store.read_text(errors="replace").splitlines():
+        m = re.match(r"\s*-\s*id:\s*(\S+)\s*$", line)
+        if m:
+            cur = {"id": m.group(1)}
+            continue
+        m = re.match(r"\s*(at|date|label|status|source|supersedes):\s*(.+?)\s*$", line)
+        if m and cur is not None:
+            val = m.group(2)
+            if len(val) >= 2 and val[0] == '"' and val[-1] == '"':
+                val = val[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+            cur[m.group(1)] = val
+            if cur.get("date") and cur.get("label") and cur.get("status"):
+                folded[cur["id"]] = dict(cur)
+    open_rows = sorted((r for r in folded.values() if r.get("status") == "open"),
+                       key=lambda r: (r["date"], r["id"]))
+    # The latest briefing BODY: names are briefing-<UTC stamp>.md, so a name sort
+    # is a time sort. An absent store is reported as such — "cannot check" is a
+    # measured absence, never a silent "yes".
+    latest_body, latest_name = None, None
+    if bdir.is_dir():
+        files = sorted(f for f in bdir.iterdir() if f.is_file())
+        if files:
+            latest_name = files[-1].name
+            try: latest_body = files[-1].read_text(errors="replace")
+            except OSError: latest_body = None
+    print(f"open dates: {len(open_rows)}  (of {len(folded)} rows in the store)")
+    if latest_name:
+        print(f"latest briefing checked: {latest_name}")
+    else:
+        print("latest briefing checked: NONE — no briefing body on this "
+              "deployment, so tracking cannot be checked (that absence is "
+              "itself the finding)")
+    for r in open_rows:
+        if latest_body is None:
+            tracked = "tracked_in_latest_briefing=UNCHECKED"
+        elif r["label"] in latest_body:
+            tracked = "tracked_in_latest_briefing=yes"
+        else:
+            tracked = "tracked_in_latest_briefing=NO"
+        try:
+            delta = (datetime.strptime(r["date"], "%Y-%m-%d")
+                     .replace(tzinfo=timezone.utc) - now).days + 1
+            when = f"in {delta}d" if delta > 0 else (
+                "today" if delta == 0 else f"OVERDUE by {-delta}d")
+        except ValueError:
+            when = "unreadable date"
+        print(f"  {r['date']}  \"{r['label']}\"  {tracked}  [{r['id']}]  ({when})")
+    if open_rows:
+        print("a date he set that the latest briefing does not carry is a cost "
+              "he paid IN WINDOW — he had to hold it himself.")
+else:
+    absent(dates_store, "no dates on the org's books — nothing is holding a "
+                        "date the captain set")
+
 # --- E. CHANNEL HEALTH (the loops he believes are running) --------------
 sec("E. CHANNEL HEALTH")
 for name, what in [

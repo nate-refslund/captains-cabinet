@@ -12,7 +12,7 @@ shared/interfaces/falsifier-series.jsonl:
   {date, acted_7d, approved_7d, reversal_rate_7d, stamped_rows_total,
    cells_accumulating, cells_graduated, proactive_cards_7d,
    memory_ingestion, recall_drops, session_insert_failures,
-   labels_7d, time_to_graduation_days, cost_7d}
+   labels_7d, time_to_graduation_days, cost_7d, spend}
 
 Growth metrics (§4.2, 2026-07-09 — "verdict throughput is the gap", the
 egg-analysis verdict): labels_7d counts the week's raw label supply
@@ -29,6 +29,16 @@ ledger (cabinet:cost:tokens:daily:<date> hashes, live since 07-07 — fields
 window and divides by the week's label supply: cost_micro_per_label is the
 org's actual price of one unit of learning — the number EIG ordering needs.
 null when unmeasurable (no readable day / zero labels), never a silent 0.
+
+Durable spend history (2026-07-26, after the Captain removed every spend cap):
+`spend` snapshots THAT DAY's figures — total + per-officer cost_micro from the
+token hash, and per-lane cost_micro/calls/units from the SEPARATE lane hash
+(cabinet:cost:lanes:daily:<date>). Both Redis ledgers expire after 8 days, so
+without this snapshot nothing on the box remembers what a normal week costs and
+no anomaly detector has a trailing baseline to stand on. Money is not the scarce
+resource here (the work rides a subscription) — Captain ATTENTION is — so this
+is history for a relative comparison, never an input to a dollar threshold.
+`spend` is null when unmeasurable, and a null DAY is no evidence, never a zero.
 
 Memory-ingestion liveness (P1c, 2026-07-07): the capture hooks feeding
 cabinet_memory are best-effort exit-0 BY DESIGN (a hook must never fail the
@@ -198,6 +208,109 @@ def _cost_7d(now: dt.datetime,
         per_label = round(totals["cost_micro"] / labels_total)
     return {**totals, "days_measured": days_measured,
             "cost_micro_per_label": per_label}
+
+
+# Lane ledger field grammar (framework/cost/meter.py::record_lane): a lane rolls
+# up as `<lane>_cost_micro` / `_calls` / `_units`, and each principal adds
+# `<lane>__<principal>_cost_micro` / `__<principal>_calls`. The DOUBLE underscore
+# is what separates the two: splitting on a single "_" would fold every
+# per-principal row back into the lane total and double-count it.
+_LANE_DIMS = ("cost_micro", "calls", "units")
+
+
+def _parse_lane_fields(fields: Dict[str, str]) -> Dict[str, Dict[str, int]]:
+    """Lane rollups from one lanes-hash, per-principal rows excluded.
+
+    Returns {lane: {"cost_micro": int|absent, "calls": int, "units": int}}.
+    ``cost_micro`` is ABSENT (not 0) for an unpriced lane — meter.py records no
+    cost field when the vendor's price is unknown, and materialising a 0 here
+    would turn "we don't know what this costs" into "this is free", the exact
+    lie the meter exists to stop.
+    """
+    lanes: Dict[str, Dict[str, int]] = {}
+    for name, raw in (fields or {}).items():
+        for dim in _LANE_DIMS:
+            suffix = "_" + dim
+            if not name.endswith(suffix):
+                continue
+            lane = name[: -len(suffix)]
+            if "__" in lane:
+                break          # per-principal row — already inside the rollup
+            try:
+                val = int(raw)
+            except (TypeError, ValueError):
+                break          # unparseable value is not evidence of anything
+            lanes.setdefault(lane, {})[dim] = val
+            break
+    return lanes
+
+
+def _spend_block(now: dt.datetime,
+                 redis_hgetall: Optional[Callable[[str], Dict[str, str]]],
+                 ) -> Optional[Dict[str, Any]]:
+    """THAT DAY's spend, snapshotted into the durable series.
+
+    WHY THIS EXISTS: the Redis ledgers carry an 8-day TTL, so nothing on this
+    box remembers what last month cost. Any "is this spend abnormal?" question
+    needs a trailing baseline, and a baseline that evaporates weekly is not one.
+    This block is that history — one row per day, appended by the same daily job
+    that already computes ``cost_7d``, so it inherits its idempotence (a date is
+    never written twice) and needs no new schedule or surface.
+
+    Shape:
+      {"date", "total_cost_micro": int|None, "officers": {prefix: micro},
+       "lanes": {lane: {"cost_micro"?: int, "calls": int, "units": int}}|None}
+
+    NULL, NEVER A FAKE 0 (the file's standing convention): the whole block is
+    null when no reader was injected; ``total_cost_micro``/``officers`` are null
+    when the officer hash yielded no fields, and ``lanes`` is null when the lane
+    hash yielded none. Through this reader an empty ledger and an unreachable
+    Redis look identical, so "no figures came back" is the honest label for
+    both — and consumers must treat a null day as NO EVIDENCE rather than as a
+    zero. Distinguishing the two is NOT this snapshot's job; it belongs to a
+    ``meter-silent`` watchdog row that reads Redis directly and keeps HGETALL's
+    None-vs-{} tri-state. That row is NOT IMPLEMENTED — withheld pending a
+    two-model direction gate (2026-07-27 scope ruling) — so today nothing
+    downstream distinguishes an empty ledger from an unreachable one. The
+    tri-state is preserved here so that row can be written later without
+    re-plumbing this reader.
+
+    ``officers`` is keyed by the ledger PREFIX — ``<officer>`` or
+    ``<officer>_<project>`` — because meter.py joins the two with the same "_"
+    it uses before the dimension, so they cannot be split back apart here
+    without guessing. The prefix is what the ledger actually says; guessing
+    would invent an attribution.
+    """
+    date = now.strftime("%Y-%m-%d")
+    if redis_hgetall is None:
+        return None
+    try:
+        tok = redis_hgetall(f"cabinet:cost:tokens:daily:{date}") or {}
+    except Exception:
+        tok = {}
+    try:
+        lane_fields = redis_hgetall(f"cabinet:cost:lanes:daily:{date}") or {}
+    except Exception:
+        lane_fields = {}
+
+    officers: Optional[Dict[str, int]] = None
+    total: Optional[int] = None
+    if tok:
+        officers = {}
+        total = 0
+        for name, raw in tok.items():
+            if not name.endswith("_cost_micro"):
+                continue
+            try:
+                val = int(raw)
+            except (TypeError, ValueError):
+                continue
+            officers[name[: -len("_cost_micro")]] = val
+            total += val
+
+    lanes = _parse_lane_fields(lane_fields) if lane_fields else None
+    return {"date": date, "total_cost_micro": total, "officers": officers,
+            "lanes": lanes}
 
 
 def _default_redis_hgetall(key: str) -> Dict[str, str]:
@@ -434,6 +547,9 @@ def compute_line(ledger: List[Dict[str, Any]], *,
                       "outcome_resolved": outcome_resolved_7d},
         # §4.2 change-cost telemetry — what a unit of learning costs.
         "cost_7d": _cost_7d(now, redis_hgetall, labels_verdict_7d),
+        # Durable per-day spend history (the Redis ledgers expire in 8 days;
+        # this is the only trailing baseline an anomaly detector can stand on).
+        "spend": _spend_block(now, redis_hgetall),
         "time_to_graduation_days": {"cells": grad_days,
                                     "median": median_days},
         # P1c memory-ingestion liveness (compact; null = unmeasurable, {} =

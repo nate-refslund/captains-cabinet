@@ -169,8 +169,11 @@ services:
     label: com.cabinet.research-sweep
     kind: cron
     command: bash cabinet/cron/research-sweep.sh
-    disabled: true   # ABSENCE-DISABLE (cos 2026-07-10): produces research briefs nobody consumes while the Captain is dark (its own sunset premise — shared/interfaces/research-briefs/ is empty). Re-enable on the Captain's return: delete this line + regenerate, AND rename ~/Library/LaunchAgents/com.cabinet.research-sweep.plist.disabled -> .plist + bootstrap. (The old redis:6379 FATAL was already fixed in b761c256; disabling here is purely for unconsumed output.)
-    disabled_reason: "ABSENCE-DISABLE (cos 2026-07-10): unconsumed output while the Captain is dark; deliberate documented parking, NOT the W10 silent-unscheduling regression — re-enable steps in the comment above"
+    # RE-ENABLED 2026-07-26 (Captain ruling, arm-the-cabinet batch): the
+    # ABSENCE-DISABLE premise ("the Captain is dark") expired — he is back and
+    # ruling. The 2026-07-10 parking was class-(b) absence, never a defect.
+    # Deploy step: regenerate + rename ~/Library/LaunchAgents/
+    # com.cabinet.research-sweep.plist.disabled -> .plist + bootstrap.
     schedule: { calendar: [{hour: 9, minute: 5}, {hour: 15, minute: 5}] }  # twice daily local
     expected: "'Research sweep trigger pushed' log line per run; FATAL lines page via the no-silent-cron floor"
     sunset: "retire if research briefs go unconsumed 60d (backlog-refine reads shared/interfaces/research-briefs/) or a dedicated research seat returns"
@@ -184,8 +187,10 @@ services:
     label: com.cabinet.backlog-refine
     kind: cron
     command: bash cabinet/cron/backlog-refine.sh
-    disabled: true   # ABSENCE-DISABLE (cos 2026-07-10): backlog isn't worked while the Captain is dark; disabled alongside research-sweep (it reads the briefs). Re-enable on the Captain's return: delete this line + regenerate, AND rename ~/Library/LaunchAgents/com.cabinet.backlog-refine.plist.disabled -> .plist + bootstrap.
-    disabled_reason: "ABSENCE-DISABLE (cos 2026-07-10): backlog unworked while the Captain is dark; deliberate documented parking alongside research-sweep — re-enable steps in the comment above"
+    # RE-ENABLED 2026-07-26 (Captain ruling, arm-the-cabinet batch) alongside
+    # research-sweep — it reads the briefs that row produces. Deploy step:
+    # regenerate + rename ~/Library/LaunchAgents/
+    # com.cabinet.backlog-refine.plist.disabled -> .plist + bootstrap.
     schedule: { calendar: [{hour: 8, minute: 35}] }   # daily 08:35 local — after the 07:30 briefing
     expected: "'Backlog refinement trigger pushed' log line per run; FATAL lines page via the no-silent-cron floor"
     sunset: "retire if shared/backlog.md is superseded by the work-graph as the only backlog surface"
@@ -333,6 +338,7 @@ services:
     label: com.cabinet.mission-supervisor
     kind: daemon
     disabled: true
+    disabled_reason: "STAYS PARKED after the 2026-07-26 arm-the-cabinet re-review: this is NOT class-(b) 'nobody got to it'. Arming the push router while officers also PULL double-dispatches the same task, and there is NO claim primitive anywhere in the tree to prevent it (`git grep -n 'def claim\\|claim_task\\|work_item_claimed' framework/ cabinet/` = 0 hits). Wiring one reaches cabinet/scripts/hooks/session-task-inject.sh, which is inside the schg-locked hooks dir — a Captain unlock ceremony, not a small change. Re-enable path: land a claim primitive on the pull path first, then flip."
     command: bash cabinet/cron/mission-supervisor.sh
     schedule: { interval_s: 300 }
     expected: "(staged — nothing asserted while disabled)"
@@ -343,6 +349,11 @@ services:
       officers as Redis triggers every 5min). Officers currently PULL ready
       work; flipping this on is a Captain call, not an ops default. The
       cabinet-route-tasks skill remains the manual trigger meanwhile.
+      SECOND DEFECT found 2026-07-26 and left in place (the row is parked, so
+      fixing it here would be unverifiable churn): cabinet/cron/
+      mission-supervisor.sh invokes `python3 -m framework.missions.supervisor`
+      UNPINNED — under launchd that is the 3.9 system Python, and the framework
+      targets 3.12. Pin CABINET_PYTHON/python3.12 as part of any enable.
 
   # ── Watchdogs / supervision ──────────────────────────────────────────────
   - name: outcome-watchdog
@@ -386,8 +397,9 @@ services:
     kind: watchdog
     command: python3.12 cabinet/scripts/killswitch-watchdog.py
     schedule: { interval_s: 60 }
-    disabled: true
-    disabled_reason: "staged: captain-controls Phase 1 (docs/plans/captain-controls-no-terminal-2026-07-17.md) ships with the wave; the enable is a deploy step (remove this flag, generate-plists, load) — deliberate documented staging, not the W10 silent-unscheduling regression"
+    # ENABLED 2026-07-26 (Captain ruling, arm-the-cabinet batch): the
+    # captain-controls Phase 1 staging ceremony is executed. Deploy step:
+    # generate-plists + load.
     env: { CABINET_ENV: runtime }   # channel.send allow_sends() gate — the ONE captain notification per re-arm rides the frontdoor door; without the marker the send degrades to blocked-dev (loud in the summary line, never a silent blackhole)
     expected: "one JSON summary line per 60s tick (action=noop-*|grace-pending|re-arm); switch INACTIVE while the ledger's newest arm lacks a sanctioned kill-switch.sh deactivation row at/after it, persisted past the ~90s ceremony grace → re-arm via `kill-switch.sh activate` (audit row actor=killswitch-watchdog, payload.via=kill-switch.sh) + ONE plain-English captain notification through framework/frontdoor/channel.py; sanctioned resumes are NEVER fought; unreachable redis / missing events dir = loud WARN + fail-safe no-op, never a guessed re-arm; FATAL line + exit 1 only when a due re-arm itself fails"
     sunset: "retire if the kill switch moves off unauthenticated local Redis onto a control plane where an unattributed clear is structurally impossible (the raw-write backstop premise dies with the raw write)"
@@ -423,9 +435,17 @@ services:
     kind: watchdog
     command: /opt/homebrew/bin/python3.12 cabinet/scripts/healthchecks-drill.py
     schedule: { calendar: [{weekday: 0, hour: 9, minute: 0}] }   # Sundays 09:00 local
-    disabled: true
-    disabled_reason: "screenpipe-hardwired personal-source monitor (drills com.screenpipe.pipe-watchdog) — cries wolf weekly on any box with no personal source bound (#52). Re-enable ONLY when instance/config/sources.yml binds a screenpipe/personal adapter (deploy --with-sensors): delete this line + regenerate + bootstrap the plist."
-    expected: "drill-failed healthcheck pinged normally weekly (goes late ~9d if the drill dies; /fail = immediate alert)"
+    # ENABLED 2026-07-26 (Captain ruling, arm-the-cabinet batch) AFTER the
+    # personal-source re-point: the drill target moved off the Captain's
+    # screenpipe sensor (`pipe-watchdog-alive` / com.screenpipe.pipe-watchdog)
+    # onto the cabinet's OWN hourly dead-man (`ledger-liveness` /
+    # com.cabinet.ledger-liveness), env-overridable via
+    # CABINET_DRILL_TARGET_SLUG + CABINET_DRILL_TARGET_LABEL. #52's
+    # cries-wolf premise is closed twice: no personal source is referenced any
+    # more, and a credless box (no healthchecks keys in cabinet/.env) now logs
+    # DRILL_SKIP + exits 0 — the retrieval-eval credless idiom — instead of
+    # rc 1 every Sunday. Deploy step: generate-plists + bootstrap the plist.
+    expected: "drill-failed healthcheck pinged normally weekly (goes late ~9d if the drill dies; /fail = immediate alert); one DRILL_SKIP line + exit 0 on a box with no healthchecks credentials"
     notes: fires the external dead-man end-to-end (fail -> alert -> REAL kickstart recovery -> up); clears F0.10 debt (a) permanently
   - name: memory-worker
     label: com.cabinet.memory-worker
@@ -628,8 +648,9 @@ services:
     kind: cron
     command: python3.12 cabinet/scripts/emit-officer-lifecycle-transitions.py
     schedule: { interval_s: 600 }
-    disabled: true
-    disabled_reason: "staged: evidence program Phase 2 Batch B ships dark; the Batch B Captain ceremony enables it (remove this flag, generate-plists, load). Observe-only state-diff sweep — zero runtime behavior until enabled."
+    # ENABLED 2026-07-26 (Captain ruling, arm-the-cabinet batch): the Phase 2
+    # Batch B ceremony is executed. Observe-only state-diff sweep — append-only
+    # org events, zero actor writes. Deploy step: generate-plists + load.
     expected: "one JSON summary line per sweep; officer_session_started/officer_session_ended/officer_session_compacted org events on TRANSITIONS only (a quiet sweep emits nothing — transitions-only is the design, not staleness)"
     notes: >-
       Evidence program Phase 2 Batch B (whole-cabinet evidence design
@@ -675,8 +696,8 @@ services:
     kind: cron
     command: bash cabinet/cron/self-improvement-loop.sh
     schedule: { interval_s: 21600 }   # every 6h
-    env: { REPORT_ONLY: "1" }   # report-only until first weekly review — flip to 0 to arm auto-apply
-    expected: "REPORT-ONLY soak (audit-ratified 2026-07-07): every 6h the log shows the loop summary PLUS a 'REPORT-ONLY' block and one grep-able REPORT_ONLY_SUMMARY JSON line (would-apply proposal ids + validation results); self_improvement_loop_started/completed events carry report_only: true and a would_apply payload; ZERO mutations — no adapt_role, no proposal YAMLs, no drafts in memory/skills/evolved/. Validation still RUNS: a RED evaluated gate stays LOUD (exit 3 + FATAL stderr marker → watchdog pages, review fix 2026-07-07) and the golden shells are Mac-native + self-isolating (ephemeral redis, private cache/hook copies — zero live-state writes). Once REPORT_ONLY is flipped to \"0\" (re-render + reload required): auto-apply ONLY through the validation gate — skeleton TODO proposals stay pending_captain_approval on disk; skill induction writes drafts to memory/skills/evolved/, never auto-validates."
+    env: { REPORT_ONLY: "0" }   # ARMED 2026-07-26 (Captain ruling) — auto-apply on, through the validation gate; flip back to "1" to return to report-only soak
+    expected: "ARMED auto-apply (Captain ruling 2026-07-26): every 6h the log shows the loop summary; accepted proposals apply ONLY through the green validation gate; every application appends ONE row to cabinet/logs/self-improvement-applications.jsonl carrying what changed, why, the evidence it cited and its exact inverse — `python3.12 cabinet/scripts/self-improvement-journal.py --undo <application_id>` reverts any single application; the weekly shadow-dividend report carries a 'Self-improvement — applied to itself' section (cabinet/cron/cog3-captain-report.sh). Validation still RUNS and a RED evaluated gate stays LOUD (exit 3 + FATAL stderr marker → watchdog pages). MUTATION SURFACE, measured 2026-07-26 and unchanged by arming: role capability lists + a role's descriptive authority_level (instance/roles/active/*.yml), skill-draft status flips (memory/skills/evolved/, sovereign posture only), and proposal-YAML status stamps. CODE IS OUT OF REACH BY CONSTRUCTION — _is_code_diff_proposal routes every code_change/code_diff (and any non-empty `diff`) to framework.learning.gate.ratify, which produces an EVIDENCE PACK and applies nothing; germline apply stays Captain-manual. Flipping REPORT_ONLY back to \"1\" (re-render + reload) returns to zero-mutation soak."
     notes: >-
       R8 growth engine (framework.learning.self_improvement_loop) — the
       eval→pattern→proposal→gate→apply chain, never scheduled since it
@@ -781,7 +802,7 @@ services:
     command: python3.12 cabinet/scripts/check-brain-health.py
     schedule: { calendar: [{hour: 6, minute: 45}] }   # daily 06:45 local — right after the 06:00 screenpipe brain-health sensor run
     disabled: true
-    disabled_reason: "screenpipe-hardwired personal-source monitor — reads ~/.screenpipe/state/brain_health.json and escalates 'sensor down' daily on any box with no personal source bound (#52). Re-enable ONLY when instance/config/sources.yml binds a screenpipe/personal adapter (deploy --with-sensors): flip to false + regenerate + bootstrap the plist."
+    disabled_reason: "screenpipe-hardwired personal-source monitor — reads ~/.screenpipe/state/brain_health.json and escalates 'sensor down' daily on any box with no personal source bound (#52). Re-enable ONLY when instance/config/sources.yml binds a screenpipe/personal adapter (deploy --with-sensors): flip to false + regenerate + bootstrap the plist. STAYS PARKED after the 2026-07-26 arm-the-cabinet re-review: this is NOT class-(b). The proposed fix — re-point the parse off the personal sensor onto the cabinet's own memory-quality surface — lands on cabinet/logs/retrieval-eval-history.jsonl, which the ENABLED `retrieval-eval` row already writes nightly and which cabinet-doctor check 11 already reads (breach or >48h stale = WARN/AMBER, cabinet-doctor.sh:828-858). Enabling it would ship a SECOND pager on an already-watched signal. Retire or re-scope it instead; the row's own sunset logic applies."
     expected: "daily BRAIN_HEALTH_OK or BRAIN_HEALTH_ESCALATED log line; reads ~/.screenpipe/state/brain_health.json and escalates retrieval regression (frozen-core-14 p@1<0.90 / p@3<0.93 / leaks>0 / suppression re-mints>0, per eval-021 invariants) OR staleness (generated_ts >26h old — the sensor runs 06:00+18:00, so >26h means the sensor itself is down) as a Redis trigger to cos -> run the brain-audit skill"
     notes: >-
       Brain-quality Wave F hand-off (staged 2026-07-06 at
@@ -964,6 +985,47 @@ services:
       commit (atomic: rows + manifests + runner + registry floors land and
       revert together — the §16 fleet inverse; rehearsed round-trip in the
       wave artifact).
+
+  # ── COG-3 captain-facing reports (scheduled 2026-07-26, Captain ruling) ────
+  # Both CLIs shipped with the COG-3/WR lane and were never given a clock —
+  # read-only, serve-surface-only instruments producing artifacts nobody was
+  # generating. They are NOT organ-runner candidates: each takes a DECLARED
+  # `--now` canonical timestamp (the cog3-staleness A-m8 purity idiom — no
+  # clock read inside the CLI), and an organ manifest's `entrypoints.run` is a
+  # fixed tracked string with nowhere to inject one. The shared wrapper
+  # cabinet/cron/cog3-captain-report.sh stamps --now and is what these rows
+  # schedule. Both refuse LOUDLY (exit 2) on a tampered/counterfactual graph
+  # and exit 3 on a missing cache — a stale report is never written.
+  - name: cog3-verdict-inbox
+    label: com.cabinet.cog3-verdict-inbox
+    kind: cron
+    command: bash cabinet/cron/cog3-captain-report.sh verdict-inbox
+    schedule: { calendar: [{hour: 7, minute: 10}] }   # daily 07:10 local — before the 07:30 briefing, so the day's verdict asks are on the surface the briefing reads
+    expected: "one summary line/run; a TOP-N verdict-request brief at shared/interfaces/research-briefs/<YYYY-MM-DD>-verdict-inbox.md (the FW-033 significant-artifact dir backlog-refine already consumes); 'no objectives cache' is a SKIP line + exit 0 on a cabinet whose shadow graph was never built, never a page"
+    sunset: "retire when the verdict ask rides the needs ledger / briefing digest / World directly instead of a brief file, or when the objectives graph is retired"
+    notes: >-
+      R1 verdict inbox (BACKLOG :1559, phase-4 contract §18 WR lane): ranks
+      the pending claims where ONE human verdict buys the most certainty and
+      writes them as a plain-English brief. Read-only through the public
+      serve surface only (framework.objectives.query.serve_graph) — every
+      C-F15 REFUSE limb guards it, so a tampered row store or a mixed-epoch
+      cortex store writes NOTHING and exits 2.
+  - name: cog3-shadow-dividend
+    label: com.cabinet.cog3-shadow-dividend
+    kind: cron
+    command: bash cabinet/cron/cog3-captain-report.sh shadow-dividend
+    schedule: { calendar: [{weekday: 0, hour: 9, minute: 30}] }   # Sundays 09:30 local — the weekly review slot, after the 09:00 healthchecks drill
+    expected: "one summary line/run; a weekly report at shared/interfaces/cognitive/shadow-dividend-<YYYY-MM-DD>.md (orphans, instrument-vs-outcome divergences, pending human verdicts) with the 'Self-improvement — applied to itself' section appended by the wrapper; 'no objectives cache' is a SKIP line + exit 0, never a page"
+    sunset: "retire when the shadow objectives substrate either earns an authority flip (the dividend is then proven) or is itself retired"
+    notes: >-
+      R3 weekly shadow-dividend report (BACKLOG :1561, phase-4 contract §18
+      WR lane) — proves the substrate's dividend in words the Captain can
+      feel, before any authority flip. ALSO the Captain-visible window on the
+      armed self-improvement loop (ruling 2026-07-26 safeguard b): the
+      wrapper appends what the loop applied to itself in the last 7 days,
+      rendered from cabinet/logs/self-improvement-applications.jsonl by
+      cabinet/scripts/self-improvement-journal.py --weekly-section, so the
+      accepted risk window is INSPECTED weekly rather than assumed.
   - name: calendar-intake
     label: com.cabinet.calendar-intake
     kind: cron
@@ -1033,8 +1095,11 @@ services:
     kind: cron
     command: python3.12 cabinet/scripts/emit-authority-transitions.py
     schedule: { interval_s: 300 }
-    disabled: true
-    disabled_reason: "staged: evidence-program Phase 2 Batch B ships with the recording wave; the enable is a deploy step (remove this flag, generate-plists, load). Read-only observer + org-event appends — zero runtime behavior until enabled."
+    # ENABLED 2026-07-26 (Captain ruling, arm-the-cabinet batch): the Phase 2
+    # Batch B ceremony is executed. Read-only observer + org-event appends.
+    # Its OBSERVED rows sanction nothing (attribution=state-observed), so it
+    # can never mask the killswitch-watchdog enabled in the same batch.
+    # Deploy step: generate-plists + load.
     expected: "one summary JSON line per sweep (ts/observed/transitions/emitted); org events ONLY on control-plane transitions (kill_switch_activated/deactivated, germline_unlock_observed/germline_relock_observed, posture_changed) — a quiet sweep emits nothing"
     notes: >-
       Evidence program Phase 2 Batch B — R-1 authority/control-plane
@@ -1060,8 +1125,13 @@ services:
     kind: cron
     command: python3.12 cabinet/scripts/evidence-shadow-detectors.py
     schedule: { calendar: [{hour: 5, minute: 50}] }   # daily 05:50 local — after the 05:20 evidence-anchor and 05:35 judge-calibration so the day's integrity surfaces are settled before clustering
-    disabled: true
-    disabled_reason: "staged: evidence-program Phase 4 ships dark (shadow law — detect, never act); the Captain ceremony enables it (remove this flag, generate-plists, load; uncomment the evidence-* ids in instance/config/watchdog.yml in the same step). Read-only toward the store — zero runtime behavior until enabled."
+    # ENABLED 2026-07-26 (Captain ruling, arm-the-cabinet batch): the Phase 4
+    # shadow ceremony is executed; the evidence-* watchdog ids are uncommented
+    # in instance/config/watchdog.yml in the SAME commit. Store-absent is a
+    # first-class exit-0 path (verified on a clean clone: "no store at
+    # instance/evidence/v1 — evidence plane not activated"), so this row is
+    # safe on a box where the evidence plane was never activated.
+    # Deploy step: generate-plists + load.
     expected: "one JSON line/run appended to shared/interfaces/evidence-shadow-findings.jsonl (Captain-facing shadow findings: failure clusters + fail-open triage verdicts, counts only — never rates, never actor-keyed aggregates); a single 'frozen — refusing to run' line + exit 0 while the judging-freeze marker instance/state/evidence-judging-freeze.json is present; exit 2 + FATAL stderr line on measurement error (pages the Chair via the watchdog error-marker floor)"
     sunset: "supersede when Phase-5 wiring turns detector findings into repair-gate RepairRequests (whole-cabinet evidence design §3 Phase 5) — the shadow journal stays as the audit trail"
     notes: >-
@@ -1128,8 +1198,12 @@ services:
     kind: cron
     command: python3.12 cabinet/scripts/evidence-recompute.py
     schedule: { calendar: [{hour: 6, minute: 5}] }   # daily 06:05 local — after the 05:50 shadow-detectors so anchor/calibration/detector surfaces are settled before re-derivation
-    disabled: true
-    disabled_reason: "staged: evidence-program HP-2 ships dark (shadow law — recompute reports only, nothing the minter reads); the Captain ceremony enables it (remove this flag, generate-plists, load; uncomment the evidence-recompute id in instance/config/watchdog.yml in the same step). Zero runtime behavior until enabled."
+    # ENABLED 2026-07-26 (Captain ruling, arm-the-cabinet batch — the "recompute
+    # on" half of the self-improvement arming ruling): the HP-2 ceremony is
+    # executed and the evidence-recompute-liveness watchdog id is uncommented in
+    # instance/config/watchdog.yml in the SAME commit. Shadow law is UNCHANGED —
+    # recompute reports only; nothing the minter reads. Verified exit 0 on a
+    # clean clone before enabling. Deploy step: generate-plists + load.
     expected: "one weekly-review line/run on stdout (recompute: N checked (A agree, D disagree, U underivable; R recorded) — counts only, never rates) + JSONL lines appended to cabinet/logs/evidence-recompute-report.jsonl (outside both planes); ONE verification event per newly checked outcome appended to its OWN day trial evt-recompute-<yyyymmdd> in instance/evidence/v1 (agreement: agree|disagree|underivable:<reason>; re-runs dedup by claim_sha256); a single 'frozen — refusing to run' line + exit 0 while the judging-freeze marker instance/state/evidence-judging-freeze.json is present; exit 2 + stderr line on measurement error (pages the Chair via the watchdog error-marker floor)"
     sunset: "trusted-core forward obligation (design §3 Phase-4 item 5): the moment recompute events may SATISFY the fuel third leg for actual minting (the enforce flip), this module either enters immutable-core.yml via the pending: procedure (a Captain ceremony) or its events keep being re-derived at consume time — supersede this row then; the report journal stays as the audit trail"
     notes: >-

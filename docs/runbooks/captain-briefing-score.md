@@ -9,10 +9,14 @@ propose-only, no-launchd hatch because it is a file and a function.
 
 Nothing in this cabinet measured whether the Captain reads or values anything
 it sends him. The only value composite that exists — OVI
-(`framework/ovi/components.yml`) — has never been published, has no
-`services.yml` row, and scores `captain_attention_cost` **inverse**: it treats
-Captain contact as a cost to minimise, which is the opposite question. This
-instrument asks him instead of inferring from telemetry.
+(`framework/ovi/components.yml`) — has never been published and has no
+`services.yml` row. Until 2026-07-26 it also scored its attention term
+**inverse**, treating Captain contact as a cost to minimise, which is the
+opposite question; that term is now `captain_attention_well_spent` — the share
+of his attention spent on decisions only he could make, reading 0.0 when the
+org never asked at all. Even corrected it infers from telemetry. This
+instrument asks him, which is the only way to learn whether a briefing was
+worth reading.
 
 ## The scale
 

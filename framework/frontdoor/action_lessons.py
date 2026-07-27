@@ -53,9 +53,35 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 # instance relocation via CABINET_ACTION_LESSONS.
 _DEFAULT_LESSONS_FILE = _REPO_ROOT / "shared" / "interfaces" / "action-lessons.yml"
 
-_VERDICTS = ("undo", "edit", "never", "rejected")
+#: The Captain's correction verbs.
+#:
+#: ``missed`` (added 2026-07-26) is the ONLY one that is not a correction of
+#: something the org DID — it is "you should have raised this, and you didn't".
+#: Every other token here, and every token in the sibling vocabularies
+#: (``regression_corpus_lib.CORRECTION_KINDS`` = edit/skip/veto/undo/
+#: human_wrong; ``situations._CAPTAIN_DECISIONS`` = approved/edited/rejected),
+#: corrects an action the org took or a card it showed. A word-boundary sweep
+#: for false-negative / missed-escalation / should-have-asked / under-ask /
+#: regret across ``framework/`` and ``cabinet/`` returned ZERO hits before this
+#: change: the org could be told it was wrong to speak, and had no way to be
+#: told it was wrong to stay quiet.
+#:
+#: Under the "attention WELL SPENT" ruling (Captain 2026-07-25) under-asking is
+#: a failure exactly as much as over-asking, so it needs a name the Captain can
+#: say and the org can read back.
+_VERDICTS = ("undo", "edit", "never", "rejected", "missed")
+
+#: ``not-asked`` is the failure class for ``missed``: the org decided something
+#: on the Captain's behalf, or went quiet, where it should have brought him the
+#: decision. It is fixed by the VERB, never guessed from keywords — the other
+#: five classes all describe a card that existed, and here none did.
 _TAXONOMIES = ("wrong-target", "wrong-content", "wrong-timing",
-               "unwanted-kind", "other")
+               "unwanted-kind", "not-asked", "other")
+
+#: An under-ask has no proposal id, by definition — there was no card. This
+#: sentinel keeps the row shape total (every field always present) without
+#: inventing a fake proposal that a consumer might try to resolve.
+NO_PROPOSAL_PID = "no-card"
 
 _DEFAULT_HEADER = (
     "# action-lessons.yml — SIE-1 LESSON LEDGER (binder verdict seam)\n"
@@ -125,6 +151,12 @@ def classify_taxonomy(verdict: str, captain_text: str) -> str:
     kind-level veto (unwanted-kind), an ``edit`` rewrote the content
     (wrong-content), and a bare ``undo``/``rejected`` with no stated reason is
     honestly ``other`` — a guessed taxonomy would poison the falsifier."""
+    if verdict == "missed":
+        # Fixed by the VERB, before any keyword runs. The other five classes
+        # all describe a card that existed and was wrong in some way; an
+        # under-ask is the absence of the card, so a keyword like "wrong time"
+        # inside the Captain's sentence must not re-file it as wrong-timing.
+        return "not-asked"
     text = captain_text or ""
     if _TARGET_RE.search(text):
         return "wrong-target"
@@ -279,3 +311,80 @@ def capture_lesson(*, pid: str, verdict: str, captain_text: str,
     doc["next_id"] = _lesson_num(ref) + 1
     _save_doc(p, doc)
     return row
+
+
+# --- /missed — the UNDER-ASK verdict, reachable from the Captain's phone -------
+#
+# WHY THIS IS A COMMAND AND NOT A REPLY. Every other correction verb binds to a
+# card: the Captain quotes the message and says undo / edit: / never:. An
+# under-ask has NO card by definition — the whole failure is that nothing was
+# shown — so there is nothing to reply to. It has to be a thing he can say
+# cold, unprompted, from the phone.
+#
+# ANCHORED, and mechanically answered by the inbound poller from its own
+# process, the same shape as /killswitch and /score and for the same reason:
+# the Captain's controls must never wait on an officer being awake. "/missed"
+# inside a sentence is ordinary conversation and is left alone.
+
+_MISSED_RE = re.compile(r"^\s*/missed\b[ \t]*(.*)$", re.IGNORECASE | re.DOTALL)
+
+
+def parse_missed_command(text: str) -> Optional[Dict[str, str]]:
+    """Parse an anchored ``/missed <what you should have raised>``.
+
+    Returns ``{"what": <verbatim remainder>}``, or None when the text is not an
+    anchored /missed command (so the caller relays it as ordinary
+    conversation). A bare ``/missed`` with no words is REFUSED — returning None
+    rather than recording an empty lesson, because "you missed something" with
+    no something is not a lesson anything can learn from.
+    """
+    if not isinstance(text, str):
+        return None
+    m = _MISSED_RE.match(text)
+    if not m:
+        return None
+    what = (m.group(1) or "").strip()
+    if not what:
+        return None
+    return {"what": what}
+
+
+def record_missed(what: str, *, ts: Optional[str] = None,
+                  path: Optional[Path] = None) -> Dict[str, Any]:
+    """Record ONE under-ask: the Captain says the org should have raised
+    something and did not.
+
+    Lands as an ordinary lesson row (``verdict: missed``, ``taxonomy:
+    not-asked``) in the SAME ledger every other correction uses, which is a
+    deliberate choice — see WHAT ACTUALLY LEARNS below.
+
+    WHAT ACTUALLY LEARNS FROM THIS, stated honestly (measured 2026-07-26):
+    almost nothing in this cabinet learns from any Captain verdict. The
+    regression corpus (``regression_corpus_lib`` -> ``regression_gate``) is
+    harvested daily and read by the test suite alone — ``evaluate_gate`` has
+    zero production callers. The graduation/authority path computes a promotion
+    verdict and discards it, because the authority matrix is excluded from live
+    enforcement. The attention demotion path is live but is driven by the
+    Captain's NON-response, and a verdict there only cancels it.
+
+    THIS ledger is the single exception, and the reason this row lands here:
+    ``run_action_lane.load_lessons()`` reads the file and
+    ``action_lane.render_lessons()`` splices the rows into the proposer's
+    system prompt, so a correction genuinely changes what the org proposes
+    next. Honest limit: that consumer is a disabled lane on this machine today,
+    so the loop is architecturally real and operationally dark. Recording an
+    under-ask into any of the other three stores would have been building a
+    sink; this is the one place the row can ever be read back.
+    """
+    text = what if isinstance(what, str) else str(what or "")
+    if not text.strip():
+        raise LessonLedgerError("an under-ask needs a subject — refusing to "
+                                "record an empty 'missed' lesson")
+    return capture_lesson(pid=NO_PROPOSAL_PID, verdict="missed",
+                          captain_text=text, ts=ts, path=path)
+
+
+def missed_lessons(path: Optional[Path] = None) -> List[Dict[str, Any]]:
+    """Every recorded under-ask, oldest first — the readback surface."""
+    return [r for r in load_lessons(path=path)
+            if isinstance(r, dict) and r.get("verdict") == "missed"]

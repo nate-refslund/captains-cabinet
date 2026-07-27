@@ -18,6 +18,7 @@ from framework.ovi.compute import (
     compute_sample,
     normalize_value,
     determine_trend,
+    attention_well_spent,
     _load_components,
     gather_from_events,
 )
@@ -85,7 +86,8 @@ def real_sample_data():
     return {
         "task_throughput": 35,
         "outcome_progress": 0.7,
-        "captain_attention_cost": 5,
+        # 4 decisions only he could make, 1 refused over-ask -> 4/5
+        "captain_attention_well_spent": 0.8,
         "learning_rate": 20,
         "verification_pass_rate": 0.9,
     }
@@ -433,9 +435,16 @@ class TestRealComponents:
         assert 0.0 <= snapshot["composite_score"] <= 1.0
         assert len(snapshot["components"]) == 5
 
-        # Verify captain_attention_cost is inverse-normalized
-        # raw=5, range=[0,20], normalized=5/20=0.25, inverted=0.75
-        assert abs(snapshot["components"]["captain_attention_cost"] - 0.75) < 1e-3
+        # INVERTED 2026-07-26 (Captain ruling 2026-07-25 "attention WELL
+        # SPENT"). This assertion used to pin the INVERSE reading:
+        #     raw=5 interventions, range=[0,20] -> 0.25, inverted -> 0.75
+        # i.e. the fewer times the org spoke to the Captain, the better it
+        # scored, with ZERO contact scoring a perfect 1.00. The assertion is
+        # inverted rather than deleted so the pin survives and now holds the
+        # ruling: the term is a SHARE in [0,1], direction normal, passed
+        # through unchanged by normalize_value.
+        assert abs(
+            snapshot["components"]["captain_attention_well_spent"] - 0.8) < 1e-3
 
     def test_sample_with_real_components(self, real_components_path):
         """Sample mode works with the real components.yml."""
@@ -461,7 +470,11 @@ class TestGatherFromEvents:
         raw = gather_from_events()
         assert raw["task_throughput"] == 0.0
         assert raw["outcome_progress"] == 0.0
-        assert raw["captain_attention_cost"] == 0.0
+        # THE DEGENERATE END. An empty ledger used to make this term read a
+        # perfect 1.00 after inverse normalization — an idle org with zero
+        # Captain contact scored full marks. It now reads 0.0: going quiet is
+        # the failure, not the win.
+        assert raw["captain_attention_well_spent"] == 0.0
         assert raw["learning_rate"] == 0.0
         assert raw["verification_pass_rate"] == 0.0
 
@@ -511,14 +524,19 @@ class TestGatherFromEvents:
         raw = gather_from_events()
         assert raw["outcome_progress"] == 2.0 / 3.0
 
-    def test_captain_attention_cost(self, event_log_dir):
-        """All Captain-input events count toward attention cost (inverse metric)."""
+    def test_captain_attention_all_decision_bearing_reads_one(self, event_log_dir):
+        """INVERTED 2026-07-26 (was ``test_captain_attention_cost``, which
+        asserted these four events summed to a COST of 4.0 that the composite
+        then inverted — the org scored better the less it consulted him).
+
+        All four are decisions only the Captain could make, and nothing was
+        refused, so every minute of his attention was well spent: 4/4 = 1.0."""
         emit("captain_decision_logged", actor="cos", payload={"decision": "approve"})
         emit("captain_boundary_set", actor="captain", payload={"rule": "no-prod-deploys"})
         emit("captain_outcome_ratified", actor="captain", payload={"outcome_id": "outcome-x"})
         emit("captain_goal_declared", actor="captain", payload={"goal": "ship MVP"})
         raw = gather_from_events()
-        assert raw["captain_attention_cost"] == 4.0
+        assert raw["captain_attention_well_spent"] == 1.0
 
     def test_learning_rate(self, event_log_dir):
         """learning_rate is a per-DAY rate (§4.2 fix): count / window_days —
@@ -553,3 +571,155 @@ class TestGatherFromEvents:
         assert abs(snapshot["components"]["verification_pass_rate"] - 0.8) < 1e-3
         # outcome_progress = 1 progressed / 1 touched = 1.0
         assert abs(snapshot["components"]["outcome_progress"] - 1.0) < 1e-3
+
+
+# ---------------------------------------------------------------------------
+# Tests: ATTENTION WELL SPENT — the polarity fix and its degenerate ends
+# (Captain ruling 2026-07-25; landed 2026-07-26)
+# ---------------------------------------------------------------------------
+
+
+class TestAttentionWellSpent:
+    """The term used to be ``captain_attention_cost``, direction INVERSE, so
+    fewer Captain events scored higher and ZERO contact scored a perfect 1.00 —
+    measured on the real ledger at 7d, 30d AND 365d, including a 7d window with
+    0.0 throughput and 0.0 verification.
+
+    The ruling makes under-asking a failure exactly as much as over-asking, so
+    both ends must read 0.0. Every degenerate end below is its own assertion,
+    because the degenerate ends are the entire defect.
+    """
+
+    # --- the pure function: every end of the domain ------------------------
+
+    def test_no_contact_at_all_reads_zero_not_one(self):
+        """THE DEFECT, inverted into a pin. Zero Captain contact was the
+        term's BEST score (1.00); it is now its WORST (0.0)."""
+        assert attention_well_spent(0, 0) == 0.0
+
+    def test_no_data_reads_zero(self):
+        """An absent signal is never scored as a good one. 'No data' and 'went
+        quiet' are indistinguishable from the ledger's side, and the ruling
+        says a cabinet that goes quiet must score badly — so both read 0.0."""
+        assert attention_well_spent(0, 0) == 0.0
+
+    def test_all_contact_decision_bearing_reads_one(self):
+        """Every minute spent was a decision only he could make."""
+        assert attention_well_spent(5, 0) == 1.0
+
+    def test_contact_but_none_decision_bearing_reads_zero(self):
+        """OVER-asking still scores worst — the over-ask arm is preserved, not
+        traded away for the under-ask arm. Both failures read 0.0."""
+        assert attention_well_spent(0, 5) == 0.0
+
+    def test_mixed_contact_reads_the_honest_share(self):
+        assert attention_well_spent(3, 1) == 0.75
+        assert attention_well_spent(1, 3) == 0.25
+
+    def test_more_over_asking_never_raises_the_score(self):
+        """Monotonic in the right direction: adding refused asks can only
+        lower the share, never raise it."""
+        prev = attention_well_spent(4, 0)
+        for misspent in range(1, 6):
+            cur = attention_well_spent(4, misspent)
+            assert cur <= prev
+            prev = cur
+
+    def test_output_is_always_a_share_in_unit_range(self):
+        for decisions in range(0, 5):
+            for misspent in range(0, 5):
+                value = attention_well_spent(decisions, misspent)
+                assert 0.0 <= value <= 1.0
+
+    def test_silence_can_never_be_the_maximum(self):
+        """The structural property the old term violated: the score must not be
+        maximisable by making no contact. Silence is the MINIMUM, and the only
+        way to reach 1.0 is to actually bring the Captain decisions."""
+        silent = attention_well_spent(0, 0)
+        assert silent == 0.0
+        assert silent < attention_well_spent(1, 0)
+        assert all(attention_well_spent(d, m) >= silent
+                   for d in range(0, 4) for m in range(0, 4))
+
+    def test_pre_change_semantics_would_have_scored_silence_perfect(self):
+        """NON-VACUITY, both directions: this arm reconstructs the OLD formula
+        and shows it produced the OPPOSITE reading on the same input, so the
+        test cannot pass against pre-change behaviour."""
+        # The old term: raw = count of captain events, range [0,20], INVERSE.
+        old_at_zero_contact = normalize_value(0.0, 0, 20, "inverse")
+        assert old_at_zero_contact == 1.0          # a perfect score for silence
+        assert attention_well_spent(0, 0) == 0.0   # and what it reads now
+
+    # --- the component definition itself -----------------------------------
+
+    def test_components_yml_declares_the_term_normal_not_inverse(self,
+                                                                real_components_path):
+        """Polarity is pinned at the DEFINITION, not just in the code: flipping
+        components.yml back to ``inverse`` must RED even if compute.py is
+        untouched."""
+        components = _load_components(real_components_path)
+        by_name = {c["name"]: c for c in components}
+        assert "captain_attention_cost" not in by_name, (
+            "the inverse-signed attention COST term is gone for good — it "
+            "scored going quiet a perfect 1.00")
+        term = by_name["captain_attention_well_spent"]
+        assert term["direction"] == "normal"
+        assert term["default_range"] == [0, 1]
+        assert term["weight"] == 0.20
+
+    def test_weights_still_sum_to_one(self, real_components_path):
+        components = _load_components(real_components_path)
+        assert abs(sum(c["weight"] for c in components) - 1.0) < 1e-9
+
+    # --- end to end, against a ledger --------------------------------------
+
+    def test_quiet_and_delivering_nothing_scores_near_zero(self,
+                                                           event_log_dir,
+                                                           real_components_path):
+        """The real 7-day window, reproduced: nothing delivered, nothing
+        verified, nobody consulted. Was composite 0.2043 with the attention
+        term at a perfect 1.00; must now be ~0.0 with the term at 0.0."""
+        raw = gather_from_events()
+        snapshot = compute_ovi(raw, components_path=real_components_path,
+                               emit_event=False)
+        assert snapshot["components"]["captain_attention_well_spent"] == 0.0
+        assert snapshot["composite_score"] < 0.01
+
+    def test_delivering_work_while_never_asking_is_under_asking(
+            self, event_log_dir, real_components_path):
+        """UNDER-ASKING, the failure nothing used to detect: the org completed
+        a pile of work and never once brought the Captain a decision. The
+        attention term must read 0.0 — under the old inverse term this was the
+        single best-scoring state the cabinet could be in."""
+        for i in range(20):
+            emit("work_item_completed", actor="engineering", payload={
+                "task_id": f"outcome-x-task-{i:03d}", "outcome_id": "outcome-x"})
+        raw = gather_from_events()
+        assert raw["task_throughput"] == 20.0
+        assert raw["captain_attention_well_spent"] == 0.0
+        snapshot = compute_ovi(raw, components_path=real_components_path,
+                               emit_event=False)
+        assert snapshot["components"]["captain_attention_well_spent"] == 0.0
+
+    def test_refused_escalations_pull_the_share_down(self, event_log_dir):
+        """OVER-asking is wired to a real event type, not a dead twin: three
+        genuine decisions and one escalation the gate refused for lacking
+        exhaustion proof reads 3/4, not 1.0."""
+        emit("captain_decision_logged", actor="cos", payload={"decision": "a"})
+        emit("captain_boundary_set", actor="captain", payload={"rule": "b"})
+        emit("captain_outcome_ratified", actor="captain", payload={"outcome_id": "c"})
+        emit("captain_gate_bounced", actor="attention-gate",
+             payload={"subject": "s", "kind": "action-card",
+                      "reason": "no-exhaustion-proof", "missing": ["lane_tried"]})
+        raw = gather_from_events()
+        assert raw["captain_attention_well_spent"] == 0.75
+
+    def test_only_refused_escalations_reads_zero_end_to_end(self, event_log_dir):
+        """The pure over-ask end, through the ledger: the org spent his
+        attention and none of it was a decision only he could make."""
+        for i in range(3):
+            emit("captain_gate_bounced", actor="attention-gate",
+                 payload={"subject": f"s{i}", "kind": "action-card",
+                          "reason": "no-exhaustion-proof", "missing": ["lane_tried"]})
+        raw = gather_from_events()
+        assert raw["captain_attention_well_spent"] == 0.0

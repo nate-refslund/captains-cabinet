@@ -49,6 +49,20 @@ decide when that is safe). ``gather_loop_readout`` never raises — a readout
 failure must never cost the digest (fail-safe: no readout on error, never a
 blocked tell).
 
+CHANNEL-FLATLINE ALARM (2026-07-27, Captain-Seat dry-run finding 2): the same
+series the readout already parses also answers "is the proactive-card channel
+still speaking at all". It was not asked, and the answer was no — 146 cards a
+week fell to zero for seven straight days while briefings kept flowing, and
+``proactive_cards_7d`` was read into the readout and then never rendered. The
+readout now carries ``flatline`` (``framework.frontdoor.card_flatline``
+evaluates the series it already read — no second file read) and
+``render_loop_readout`` asks the Captain ONE question, on the crossing day of
+each silent episode only. Silence that is explained (a disabled producer row,
+an environment that does not send, a declared absence), an org that stopped
+acting entirely, and a channel that was never alive all render NOTHING — see
+that module for why each of those would otherwise turn this alarm into the
+noise it exists to detect.
+
 RECEIPT GRAMMAR — the "— why" clause (Wave B RECEIPTS, 2026-07-09): after
 ``_build_digest_text`` renders the legs, ``action_language.digest_with_why``
 appends each ACTED item's compact ``— why: …`` clause (the proposing card's
@@ -77,7 +91,7 @@ from framework.frontdoor import action_language, tell_surface
 __all__ = ["enqueue_digest", "assign_undo_indexes", "gather_acted_rows",
            "gather_self_rows", "gather_loop_readout", "render_loop_readout",
            "compute_card_rates", "undo_rate_trend", "read_falsifier_series",
-           "gather_needs_rows", "gather_gate_tell_rows"]
+           "gather_needs_rows", "gather_gate_tell_rows", "flatline_notice"]
 
 # The binder resolves indexes via cabinet:digest:<today|yesterday>; 48h TTL
 # matches both that lookback and the undo window itself.
@@ -336,7 +350,8 @@ def gather_loop_readout(*, now: Optional[str] = None,
     fixtured suites stay hermetic."""
     now_s = now or _now_iso()
     out: Dict[str, Any] = {"now": now_s, "kinds": {}, "undo": {},
-                           "falsifier": None, "series_len": 0, "errors": []}
+                           "falsifier": None, "series_len": 0,
+                           "flatline": None, "errors": []}
     try:
         if ledger is None:
             from framework.fidelity.consequence import read_ledger
@@ -355,13 +370,43 @@ def gather_loop_readout(*, now: Optional[str] = None,
         out["undo"] = undo_rate_trend(ledger, now=now_s)
     except Exception as e:  # noqa: BLE001
         out["errors"].append(f"undo_trend: {str(e)[:120]}")
+    series: List[Dict[str, Any]] = []
     try:
         series = read_falsifier_series(series_path)
         out["series_len"] = len(series)
         out["falsifier"] = series[-1] if series else None
     except Exception as e:  # noqa: BLE001
         out["errors"].append(f"falsifier_series: {str(e)[:120]}")
+    # Channel-flatline verdict off the SAME rows (no second read). Its own
+    # error arm: a broken alarm must cost the Captain a question, never the
+    # digest — so the verdict is simply absent and the reason lands in errors.
+    try:
+        from framework.frontdoor import card_flatline
+        out["flatline"] = card_flatline.evaluate(
+            series, gates=card_flatline.read_gates())
+    except Exception as e:  # noqa: BLE001
+        out["errors"].append(f"card_flatline: {str(e)[:120]}")
     return out
+
+
+def flatline_notice(*, series_path: Optional[Path] = None) -> str:
+    """The channel-flatline question as ONE line, or "" — for callers that
+    have no loop readout in hand (the briefing CARD headline, which is all the
+    Captain sees when the deployment runs in card mode and the composed body
+    is archived rather than sent).
+
+    Never raises, and reads only the series file: an alarm that can break the
+    briefing card is worse than the silence it reports. The default path comes
+    from ``card_flatline.series_path()`` (the env-overridable resolver the root
+    conftest fences), NOT this module's import-time constant — so a pytest run
+    reads the sandbox and can never judge a live deployment's history."""
+    try:
+        from framework.frontdoor import card_flatline
+        p = series_path if series_path is not None else card_flatline.series_path()
+        return card_flatline.render_line(card_flatline.evaluate(
+            read_falsifier_series(p), gates=card_flatline.read_gates()))
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def _pct(v: Optional[float]) -> str:
@@ -370,13 +415,26 @@ def _pct(v: Optional[float]) -> str:
 
 def render_loop_readout(readout: Optional[Dict[str, Any]]) -> str:
     """Pure text for the 📈 LOOP section ("" when there is nothing measured —
-    silence costs nothing, same rule as build_digest). One line per card kind,
-    one undo-trend line, one falsifier line. Errors are NOT rendered (no
-    verdict on error — an unreadable metric must not masquerade as a metric);
-    they stay in the gather dict for telemetry."""
+    silence costs nothing, same rule as build_digest). The channel-flatline
+    question first (crossing day of a silent episode only), then one line per
+    card kind, one undo-trend line, one falsifier line. Errors are NOT rendered
+    (no verdict on error — an unreadable metric must not masquerade as a
+    metric); they stay in the gather dict for telemetry."""
     if not readout:
         return ""
     lines: List[str] = []
+
+    # The channel-flatline question LEADS: a dead captain-facing channel
+    # outranks the rates of the one that still works. Rendered on the crossing
+    # day of an episode only (card_flatline.render_line owns that rule and the
+    # wording), so a standing silence never repeats itself into noise.
+    try:
+        from framework.frontdoor import card_flatline
+        notice = card_flatline.render_line(readout.get("flatline"))
+    except Exception:  # noqa: BLE001 — same law as the error keys above
+        notice = ""
+    if notice:
+        lines.append(f" · ⚠️ {notice}")
 
     kinds = readout.get("kinds") or {}
     for kind in sorted(kinds):

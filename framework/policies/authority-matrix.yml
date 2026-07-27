@@ -16,12 +16,15 @@
 #
 # FAIL-SAFE is the spine, in TWO postures since the trust-inversion ruling
 # (CAPTAIN-RULING 2026-07-03/04 earn-demotion, REINFORCED + VERIFIED 2026-07-04,
-# widened to the reversible beachhead by fix wave wsqzqfpt5):
-#   * EARN-UP rows (internal_comms, deploy_nonprod, draft_only): until F
+# widened to the reversible beachhead by fix wave wsqzqfpt5; draft_only crossed
+# from earn-up to act-and-tell by CAPTAIN-RULING 2026-07-26, "the act first,
+# except for emailing real people"):
+#   * EARN-UP rows (internal_comms, deploy_nonprod): until F
 #     provides a per-cell confidence score, the cell is propose_only.
 #   * TRUST-FIRST rows (reversible, pm_write, calendar_write → act_with_undo;
-#     read_only_dispatch → notify_after): trust is GRANTED at unmeasured and
-#     lost only on demotion EVIDENCE (demote → propose_only) — never pre-earned.
+#     read_only_dispatch, draft_only → notify_after): trust is GRANTED at
+#     unmeasured and lost only on demotion EVIDENCE (demote → propose_only) —
+#     never pre-earned.
 #     act_with_undo grants nothing by itself: the policy_engine allow-branch
 #     grants it ONLY when action_undo.py registers a deterministic inverse for
 #     the action_type AND the undo-journal path is reachable; otherwise the
@@ -47,14 +50,15 @@ policies:
       # wsqzqfpt5, per the EARN-DEMOTION ruling): exactly the four kinds whose
       # deterministic inverse the undo plane can register. draft_only and
       # investigation_run MOVED OUT the same day — draft_only to its own
-      # earn-up class (CAPTAIN-RULING: outbound-adjacent), investigation_run to
+      # earn-up class (CAPTAIN-RULING: outbound-adjacent; that class became
+      # act-and-tell on 2026-07-26 — see its verdicts row), investigation_run to
       # read_only_dispatch (read-only ⇒ no inverse exists or is needed, so
       # keeping it here would falsely claim reversibility-with-undo).
       reversible:
         action_types: [task_status_move, label, tier2_note, local_edit]
       read_only_dispatch:                                             # notify_after (read-only, act-and-tell)
         action_types: [investigation_run]
-      draft_only:                                                     # CAPTAIN-RULING 2026-07-04: NOT widened (earn-up kept)
+      draft_only:                                                     # notify_after (act-and-tell) — CAPTAIN-RULING 2026-07-26
         action_types: [draft_only]
       pm_write:                                                       # act_with_undo (reversible-with-undo)
         action_types: [task_create, board_status]
@@ -127,15 +131,24 @@ policies:
         propose_only: notify_after
         unmeasured: notify_after
         demote: propose_only
-      # CAPTAIN-RULING 2026-07-04: draft_only KEEPS the old reversible earn-up
-      # ladder (Captain judgment — a draft is outbound-ADJACENT: its content
-      # exists to leave the machine, so it earns autonomy rather than getting
-      # it granted; actual sending stays behind the external_comms ceiling).
+      # CAPTAIN-RULING 2026-07-26 ("the act first, except for emailing real
+      # people") SUPERSEDES the 2026-07-04 earn-up ladder on this row:
+      # COMPOSING a draft is act-and-tell from day one — notify_after at every
+      # non-demote state, mirroring read_only_dispatch above. The 2026-07-04
+      # reasoning (a draft is outbound-ADJACENT) is unchanged and is exactly
+      # why this is safe: adjacent is not outbound. A draft's content can only
+      # LEAVE the machine through external_comms, which stays always_gated in
+      # every posture and every confidence state, so this widens composing a
+      # draft and cannot widen delivering one. `graduated` carries notify_after
+      # rather than the old silent `auto` on purpose: for an outbound-adjacent
+      # class the notification IS the oversight surface, so no state may let a
+      # draft appear with no tell. Demotion evidence still lands on
+      # propose_only — the way down is unchanged.
       draft_only:
-        graduated: auto
-        eligible: propose_only
-        propose_only: propose_only
-        unmeasured: propose_only
+        graduated: notify_after
+        eligible: notify_after
+        propose_only: notify_after
+        unmeasured: notify_after
         demote: propose_only
       pm_write:                          # EARN-DEMOTION: trust granted, lost on evidence
         graduated: act_with_undo
@@ -220,12 +233,14 @@ policies:
           # sovereign posture axis. The posture table must cover the FULL
           # RISK_CLASSES enum, so the two new rows are added here MIRRORING
           # the root/guardian rows (fail-safe: read_only_dispatch is already
-          # act-and-tell — auto would drop the tell; draft_only keeps the
-          # CAPTAIN-RULING 2026-07-04 earn-up ladder — outbound-adjacent, a
-          # posture never silently widens a Captain-ruled row). Demote stays
-          # posture-invariant (propose_only) per §2.1.
+          # act-and-tell — auto would drop the tell; draft_only mirrors the
+          # root row's act-and-tell ladder per CAPTAIN-RULING 2026-07-26, and
+          # keeps notify_after rather than climbing to auto for the same
+          # reason — a posture never silently widens a Captain-ruled row, and
+          # dropping the tell on an outbound-adjacent class would be exactly
+          # that). Demote stays posture-invariant (propose_only) per §2.1.
           read_only_dispatch: { graduated: notify_after, eligible: notify_after, propose_only: notify_after, unmeasured: notify_after, demote: propose_only }
-          draft_only:        { graduated: auto, eligible: propose_only, propose_only: propose_only, unmeasured: propose_only, demote: propose_only }
+          draft_only:        { graduated: notify_after, eligible: notify_after, propose_only: notify_after, unmeasured: notify_after, demote: propose_only }
           pm_write:          { graduated: act_with_undo, eligible: act_with_undo, propose_only: act_with_undo, unmeasured: act_with_undo, demote: propose_only }
           calendar_write:    { graduated: act_with_undo, eligible: act_with_undo, propose_only: act_with_undo, unmeasured: act_with_undo, demote: propose_only }
           internal_comms:    { graduated: notify_after, eligible: notify_after, propose_only: notify_after, unmeasured: notify_after, demote: propose_only }

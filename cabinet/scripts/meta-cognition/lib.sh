@@ -180,27 +180,68 @@ MC_ACCRETION_KEY="${MC_ACCRETION_KEY:-cabinet:meta:accretion-count}"
 MC_ACCRETION_MARK_KEY="${MC_ACCRETION_MARK_KEY:-cabinet:meta:accretion-mark-at-last-harvest}"
 MC_ACCRETION_THRESHOLD="${MC_ACCRETION_THRESHOLD:-5}"
 
+# PROVEN READS (2026-07-26 fail-open sweep). These were
+# `redis-cli ... 2>/dev/null || echo 0` / `${cur:-0}`, so an unreachable
+# control plane made accretion-since-harvest exactly 0 — identical to "nothing
+# has accreted" — and the harvest threshold could never be crossed for as long
+# as the outage lasted, silently. The functions still ECHO an integer (every
+# caller does arithmetic on it), but they now RETURN non-zero when the value
+# could not be sourced, so a caller that cares can tell the difference, and the
+# reason lands on stderr where the watchdog's marker scan can see it.
+_mc_plane_lib() {
+  [ -n "${MC_PLANE_LOADED:-}" ] && return 0
+  local root="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." 2>/dev/null && pwd)}"
+  local lib="$root/cabinet/scripts/lib/plane-read.sh"
+  if [ -r "$lib" ]; then
+    # plane-read.sh resolves the endpoint from REDIS_HOST/REDIS_PORT; the
+    # meta-cognition vars are the authority here, so bind them across.
+    # shellcheck source=/dev/null
+    . "$lib" && MC_PLANE_LOADED=1
+  fi
+  command -v plane_read_int >/dev/null 2>&1
+}
+
 # Increment the accretion counter by N (default 1). Echoes the new value.
+# Returns 11 (and echoes 0) when the counter could not be sourced.
 mc_accretion_incr() {
   local by="${1:-1}"
-  command -v redis-cli >/dev/null 2>&1 || { echo 0; return 0; }
-  redis-cli -h "$MC_REDIS_HOST" -p "$MC_REDIS_PORT" INCRBY "$MC_ACCRETION_KEY" "$by" 2>/dev/null || echo 0
+  _mc_plane_lib || { echo 0; return 0; }
+  REDIS_HOST="$MC_REDIS_HOST" REDIS_PORT="$MC_REDIS_PORT" \
+    plane_read_int INCRBY "$MC_ACCRETION_KEY" "$by"
+  if [ "$PLANE_VERDICT" = "VALUE" ]; then printf '%s\n' "$PLANE_VALUE"; return 0; fi
+  echo "mc_accretion_incr: FATAL accretion counter unreadable ($PLANE_REASON)" >&2
+  echo 0; return 11
 }
 
 # Echo how much accretion has happened since the last harvest mark (>= 0).
+# Returns 11 (and echoes 0) when either side could not be sourced.
 mc_accretion_since_harvest() {
-  command -v redis-cli >/dev/null 2>&1 || { echo 0; return 0; }
+  _mc_plane_lib || { echo 0; return 0; }
   local cur mark
-  cur="$(redis-cli -h "$MC_REDIS_HOST" -p "$MC_REDIS_PORT" GET "$MC_ACCRETION_KEY" 2>/dev/null)"
-  mark="$(redis-cli -h "$MC_REDIS_HOST" -p "$MC_REDIS_PORT" GET "$MC_ACCRETION_MARK_KEY" 2>/dev/null)"
-  cur="${cur:-0}"; mark="${mark:-0}"
+  REDIS_HOST="$MC_REDIS_HOST" REDIS_PORT="$MC_REDIS_PORT" \
+    plane_read_int GET "$MC_ACCRETION_KEY"
+  case "$PLANE_VERDICT" in
+    VALUE)  cur="$PLANE_VALUE" ;;
+    ABSENT) cur=0 ;;
+    *)      echo "mc_accretion_since_harvest: FATAL accretion counter unreadable ($PLANE_REASON)" >&2; echo 0; return 11 ;;
+  esac
+  REDIS_HOST="$MC_REDIS_HOST" REDIS_PORT="$MC_REDIS_PORT" \
+    plane_read_int GET "$MC_ACCRETION_MARK_KEY"
+  case "$PLANE_VERDICT" in
+    VALUE)  mark="$PLANE_VALUE" ;;
+    ABSENT) mark=0 ;;
+    *)      echo "mc_accretion_since_harvest: FATAL harvest mark unreadable ($PLANE_REASON)" >&2; echo 0; return 11 ;;
+  esac
   echo $(( cur - mark ))
 }
 
 # Echo 1 if the harvest threshold has been crossed since the last harvest, else 0.
+# Returns 11 when the answer is UNKNOWN rather than "not crossed" — the caller
+# sees 0 either way, but a broken plane no longer looks like a quiet cabinet.
 mc_accretion_threshold_crossed() {
-  local since
-  since="$(mc_accretion_since_harvest)"
+  local since rc
+  since="$(mc_accretion_since_harvest)"; rc=$?
+  if [ "$rc" -ne 0 ]; then echo 0; return "$rc"; fi
   if [ "${since:-0}" -ge "${MC_ACCRETION_THRESHOLD}" ] 2>/dev/null; then echo 1; else echo 0; fi
 }
 

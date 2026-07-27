@@ -36,8 +36,8 @@ Doctrine baked in here (safety-spine §3 "undo honesty"):
     delete-if-created) ONLY while the file's sha256 still matches what the
     lane wrote; drift ⇒ dead-letter, never clobber. investigation_run is
     READ-ONLY (read_only_dispatch class) — no inverse, never through this
-    door; deploy_nonprod / draft_only stay unregistered (CAPTAIN-RULING:
-    earn-up, see ``inverse_for``).
+    door; deploy_nonprod (earn-up) and draft_only (notify_after tells, so
+    nothing outbound to reverse) stay unregistered — see ``inverse_for``.
   - NO LLM anywhere in the reversal path — deterministic code only.
 
 Stdlib-only, importable under system Python 3.9.6 (``from __future__`` +
@@ -461,12 +461,12 @@ def inverse_for(kind: str, backend: str, payload: Optional[dict],
         # op ``none`` (act_first_eligible False), exactly like delegate_work.
         return {"op": "none",
                 "args": {"reason": "investigation_run is read-only — nothing to reverse"}}
-    # CAPTAIN-RULING (2026-07-04): deploy_nonprod and draft_only are NOT widened
-    # — Captain judgment keeps them on the earn-up ladder, so they deliberately
-    # have NO registered inverse and fall through to op ``none`` (⇒ propose-
-    # only) like every other unregistered kind. Do not add them here without a
-    # Captain ruling. Hard-ceiling kinds (outbound comms, prod deploy, spend,
-    # secrets) must never appear in this registry at all.
+    # deploy_nonprod stays earn-up (CAPTAIN-RULING 2026-07-04); draft_only went
+    # act-and-tell (CAPTAIN-RULING 2026-07-26). BOTH deliberately have NO
+    # registered inverse and fall through to op ``none`` (⇒ propose-only):
+    # notify_after never consults the undo plane — its handle is the tell — and
+    # a composed draft has nothing outbound to reverse. Do not add either here
+    # without a Captain ruling. Hard-ceiling kinds never appear here at all.
     return {"op": "none", "args": {"reason": "unknown kind " + repr(kind)}}
 
 

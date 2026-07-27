@@ -35,7 +35,7 @@ def _verify(ctx, results):
     expected_names = {
         "task_throughput",
         "outcome_progress",
-        "captain_attention_cost",
+        "captain_attention_well_spent",
         "learning_rate",
         "verification_pass_rate",
     }

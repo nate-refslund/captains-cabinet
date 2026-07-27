@@ -62,8 +62,51 @@ fi
 # Threshold: 5 reflections since last retro
 THRESHOLD=5
 
-REFLECTIONS_NOW=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET "cabinet:reflections:count" 2>/dev/null || echo 0)
-LAST_RETRO_COUNT=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET "cabinet:reflections:count_at_last_retro" 2>/dev/null || echo 0)
+# PROVEN READS (2026-07-26 fail-open sweep). These were
+# `redis-cli ... 2>/dev/null || echo 0`, so an unreachable control plane made
+# REFLECTIONS_SINCE exactly 0 — indistinguishable from "no new reflections" —
+# and the retro silently never fired, for as long as the outage lasted, with
+# exit 0 and no log line. An unreadable counter is not a zero counter.
+#
+# The DECISION is unchanged (do not fire): reading the count is what decides
+# whether a retro is due, and firing one on an unknown count would be inventing
+# a rule. What changes is that the skip is now LOUD and carries a
+# JOB_ERROR_MARKERS token, so the outcome-watchdog's log-tail scan sees it.
+PLANE_LIB="$CABINET_ROOT/cabinet/scripts/lib/plane-read.sh"
+if [ -r "$PLANE_LIB" ]; then
+  # shellcheck source=/dev/null
+  . "$PLANE_LIB"
+fi
+if ! command -v plane_read_int > /dev/null 2>&1; then
+  echo "[$TIMESTAMP] retro-trigger.sh FATAL: proven-read helper missing at $PLANE_LIB — cannot source reflection counts, retro NOT fired" >&2
+  exit 1
+fi
+
+# Sets RETRO_COUNT in THIS shell — never via $( ), which would run the read in
+# a subshell and strand PLANE_REASON there (found by execution: the failure
+# path died on `PLANE_REASON: unbound variable` under set -u).
+RETRO_COUNT=0
+_retro_count() {   # $1 = key
+  plane_read_int GET "$1"
+  case "$PLANE_VERDICT" in
+    VALUE)  RETRO_COUNT="$PLANE_VALUE"; return 0 ;;
+    ABSENT) RETRO_COUNT=0;              return 0 ;;   # proven-unset counter = 0
+    *)      RETRO_COUNT=0;              return 11 ;;
+  esac
+}
+
+if _retro_count "cabinet:reflections:count"; then
+  REFLECTIONS_NOW="$RETRO_COUNT"
+else
+  echo "[$TIMESTAMP] retro-trigger.sh FATAL: control plane unreadable ($PLANE_REASON) — reflection count could not be sourced, retro NOT fired (this is NOT 'no new reflections')" >&2
+  exit 1
+fi
+if _retro_count "cabinet:reflections:count_at_last_retro"; then
+  LAST_RETRO_COUNT="$RETRO_COUNT"
+else
+  echo "[$TIMESTAMP] retro-trigger.sh FATAL: control plane unreadable ($PLANE_REASON) — last-retro count could not be sourced, retro NOT fired" >&2
+  exit 1
+fi
 
 REFLECTIONS_SINCE=$((REFLECTIONS_NOW - LAST_RETRO_COUNT))
 
@@ -72,8 +115,25 @@ REFLECTIONS_SINCE=$((REFLECTIONS_NOW - LAST_RETRO_COUNT))
 # ever writes — the floor clock was permanently at epoch 0. The retro task's
 # real name is cross-officer-retro; read it (legacy cos:retro as fallback for
 # any historical value).
-LAST_RETRO_TS=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET "cabinet:schedule:last-run:cos:cross-officer-retro" 2>/dev/null)
-[ -z "$LAST_RETRO_TS" ] && LAST_RETRO_TS=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET "cabinet:schedule:last-run:cos:retro" 2>/dev/null)
+#
+# PROVEN READS too (2026-07-26): an unreadable stamp used to yield "" -> `date`
+# fails -> LAST_RETRO_EPOCH=0 -> HOURS_SINCE_RETRO ~490000 -> the 48h safety
+# floor fires EVERY tick for the duration of the outage. A PROVEN-ABSENT stamp
+# keeping that epoch-0 "never ran, so fire the floor" behaviour is deliberate
+# and unchanged; an UNREADABLE one must not impersonate it.
+LAST_RETRO_TS=""
+plane_read GET "cabinet:schedule:last-run:cos:cross-officer-retro"
+case "$PLANE_VERDICT" in
+  VALUE)         LAST_RETRO_TS="$PLANE_VALUE" ;;
+  INDETERMINATE) echo "[$TIMESTAMP] retro-trigger.sh FATAL: control plane unreadable ($PLANE_REASON) — last-retro timestamp could not be sourced, retro NOT fired (refusing to let an unreadable stamp trip the 48h safety floor)" >&2; exit 1 ;;
+esac
+if [ -z "$LAST_RETRO_TS" ]; then
+  plane_read GET "cabinet:schedule:last-run:cos:retro"   # legacy key
+  case "$PLANE_VERDICT" in
+    VALUE)         LAST_RETRO_TS="$PLANE_VALUE" ;;
+    INDETERMINATE) echo "[$TIMESTAMP] retro-trigger.sh FATAL: control plane unreadable ($PLANE_REASON) — legacy last-retro timestamp could not be sourced, retro NOT fired" >&2; exit 1 ;;
+  esac
+fi
 LAST_RETRO_EPOCH=$(date -d "$LAST_RETRO_TS" +%s 2>/dev/null \
   || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$LAST_RETRO_TS" +%s 2>/dev/null \
   || echo 0)

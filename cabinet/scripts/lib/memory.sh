@@ -36,6 +36,13 @@ MEM_REDIS_HOST="${REDIS_HOST:-redis}"
 MEM_REDIS_PORT="${REDIS_PORT:-6379}"
 MEM_QUEUE_KEY="cabinet:memory:embed_queue"
 
+# LANE METER (2026-07-26). Voyage embed + rerank are paid calls that never
+# touch the Claude Code Stop hook, so they were invisible to every cost
+# surface. cost-lane.sh is counting only — it cannot gate, and its absence is
+# harmless (every call site is `|| true`). See cabinet/scripts/lib/cost-lane.sh.
+# shellcheck source=/dev/null
+. "$MEMORY_LIB_DIR/cost-lane.sh" 2>/dev/null || true
+
 # =============================================================
 # EMBED-SEAM (R4, 2026-07-12 — closes operative-egg-ledger:1938)
 # The embedding provider/model/dims are a NAMED SEAM so a fresh captain can
@@ -135,11 +142,25 @@ memory_get_embedding() {
   # keeps well under the limit with headroom for over-tokenization.
   text=$(echo "$text" | tr '\n' ' ' | cut -c1-32000)
   # Model comes from the EMBED-SEAM (EMBED_MODEL), defaulting to voyage-4-large.
-  curl -s --max-time 30 https://api.voyageai.com/v1/embeddings \
+  # The body is CAPTURED rather than piped straight into jq so the lane meter
+  # can read Voyage's own usage.total_tokens — the unit Voyage bills in —
+  # instead of guessing from the character count. Same bytes reach jq either
+  # way, and jq is still the last command, so the return value and this
+  # function's exit status are unchanged.
+  local _resp
+  _resp=$(curl -s --max-time 30 https://api.voyageai.com/v1/embeddings \
     -H "Authorization: Bearer $VOYAGE_API_KEY" \
     -H "Content-Type: application/json" \
-    -d "$(jq -n --arg text "$text" --arg model "${EMBED_MODEL:-voyage-4-large}" '{input: [$text], model: $model}')" \
-    | jq -r '.data[0].embedding | @json'
+    -d "$(jq -n --arg text "$text" --arg model "${EMBED_MODEL:-voyage-4-large}" '{input: [$text], model: $model}')")
+  # PAID CALL COUNTED. Unpriced by design: Voyage has no row in meter.RATES,
+  # so this records calls + billed tokens and leaves the dollar figure unset
+  # rather than inventing a rate. Every caller of memory_get_embedding —
+  # memory_embed, memory_search, library_search — is counted HERE, once; a
+  # second record at any of those sites would double-count the lane.
+  printf '%s' "$_resp" | cost_lane_record --lane embeddings \
+    --principal "${CABINET_COST_PRINCIPAL:-${OFFICER_NAME:-}}" \
+    --response - --response-kind voyage 2>/dev/null || true
+  printf '%s' "$_resp" | jq -r '.data[0].embedding | @json'
 }
 
 # =============================================================
@@ -520,6 +541,20 @@ SQLEOF
 # Args: query, topk, pool_rows (newline-separated; 9 tab columns each, the 9th
 #       = rerank_text). Emits <=topk rows of the 8-column contract.
 # =============================================================
+# LANE METER GAP — `rerank` is NOT counted (2026-07-27).
+# The Voyage /v1/rerank curl lives inside the RANKING-BLOCK below, and every
+# byte of that region is pinned by cabinet/scripts/tests/fixtures/
+# memory-ranking.fingerprint. The only legitimate way to change it is
+# `retrieval-eval-nightly.sh --stamp`, which re-stamps ONLY from a run where
+# both retrieval-quality arms hold their floors — and that stamper is
+# store-local (needs NEON_CONNECTION_STRING + a Voyage key), so it cannot run
+# from a clean-room clone or from CI. Hand-editing the fingerprint hex would
+# convert a working guard into a disabled sensor wearing a green badge, which
+# is worse than an uncounted lane.
+# The `embeddings` lane IS counted (memory_get_embedding, above, outside the
+# block) and carries the far larger call volume.
+# FOLLOW-UP: instrument `rerank` in the SAME commit as a legitimate re-stamp,
+# on a box that has the store and the key.
 # RANKING-BLOCK-BEGIN (retrieval-eval fingerprint scope: the rerank stage,
 # the blended top-k cut, and the no-rerank seam. Any edit between these
 # markers requires a passing store-local eval re-stamp:

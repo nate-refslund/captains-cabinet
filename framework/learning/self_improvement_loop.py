@@ -151,6 +151,23 @@ _TODO_RE = re.compile(r"<TODO:[^>]*>")
 # (evidence only, applies nothing; germline apply stays Captain-manual).
 _CODE_DIFF_KINDS = frozenset({"code_change", "code_diff"})
 
+# A role slug names ONE flat file in instance/roles/active/. lifecycle.load_role
+# and adapt_role both build `_roles_dir() / f"{slug}.yml"` with no traversal
+# guard, so a proposal carrying role_slug "../../../cabinet/config/<name>" made
+# adapt_role yaml-round-trip an ARBITRARY tracked .yml (comments destroyed,
+# `capabilities:` appended) — proven 2026-07-26 against the census contract in a
+# sandbox root. Harmless while REPORT_ONLY=1 held _apply_proposal dark; arming
+# auto-apply is what makes it live, so the armed write path refuses any slug
+# that is not plain. Graduation slugs come from hat FILENAMES and cannot carry a
+# separator, so this is the one reachable entry.
+_PLAIN_SLUG = re.compile(r"[a-z0-9][a-z0-9_-]*\Z")
+
+
+def _cap_is_new(role_slug: str, cap: str) -> bool:
+    """True when `cap` is genuinely absent from the role on disk RIGHT NOW."""
+    role = load_role(role_slug)
+    return bool(cap) and cap not in ((role or {}).get("capabilities") or [])
+
 
 def _resolve_posture_safe() -> str:
     """Lazy posture read — ANY failure answers guardian, so the no-config
@@ -237,6 +254,63 @@ def _proposals_dir() -> Path:
 
 def _golden_evals_dir() -> Path:
     return _cabinet_root() / "memory" / "golden-evals" / "framework"
+
+
+# ---------------------------------------------------------------------------
+# Application journal — SAFEGUARD (a) of the Captain's 2026-07-26 arming ruling
+# ---------------------------------------------------------------------------
+#
+# The Captain armed auto-apply (REPORT_ONLY=0) with the risk stated, so every
+# application must be individually REVERSIBLE and LOGGED: what changed, why,
+# the evidence it cited, and the exact inverse. One append-only JSONL row per
+# application; `cabinet/scripts/self-improvement-journal.py --undo <id>` is the
+# one-command revert. Runtime path (cabinet/logs/* is gitignored), OUTSIDE both
+# the event ledger and the evidence plane — this is an operator surface, not a
+# second source of truth. Journalling is BEST-EFFORT-LOUD: a write failure
+# prints and never aborts the application, because a half-applied loop is worse
+# than an unlogged one; the org events remain the durable record either way.
+
+JOURNAL_REL = "cabinet/logs/self-improvement-applications.jsonl"
+
+
+def _journal_path() -> Path:
+    return _cabinet_root() / JOURNAL_REL
+
+
+def _journal_application(
+    kind: str,
+    role_slug: str,
+    change: dict[str, Any],
+    undo: dict[str, Any],
+    proposal_id: str | None,
+    evidence: str | None,
+    rationale: str | None,
+    loop_id: str | None = None,
+) -> str | None:
+    """Append one reversible-application row. Returns its application_id."""
+    application_id = f"sia-{uuid.uuid4().hex[:12]}"
+    row = {
+        "application_id": application_id,
+        "applied_at": datetime.now(timezone.utc).isoformat(),
+        "loop_id": loop_id,
+        "proposal_id": proposal_id,
+        "role_slug": role_slug,
+        "kind": kind,              # what class of change was applied
+        "change": change,          # what changed (before/after values)
+        "evidence": evidence,      # the evidence it cited
+        "rationale": rationale,    # why
+        "undo": undo,              # the exact inverse, executable by the CLI
+        "reverted": False,
+    }
+    try:
+        path = _journal_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a") as f:
+            f.write(json.dumps(row, default=str) + "\n")
+    except Exception as e:  # noqa: BLE001
+        print(f"self-improvement: WARN application journal write failed: {e}")
+        return None
+    return application_id
 
 
 # ---------------------------------------------------------------------------
@@ -376,6 +450,7 @@ def _apply_proposal(
     actor: str,
     emit_fn: Any = emit,
     validation_skipped: bool = False,
+    loop_id: str | None = None,
 ) -> tuple[bool, str]:
     """Apply one concrete proposal to the role on disk.
 
@@ -385,16 +460,29 @@ def _apply_proposal(
     suggested = proposal["suggested_change"]
     kind = suggested.get("kind")
 
+    # Slug shape FIRST: load_role/adapt_role resolve `<slug>.yml` under the
+    # roles dir with no traversal guard (see _PLAIN_SLUG).
+    if not _PLAIN_SLUG.match(str(role_slug or "")):
+        return False, f"role_slug {role_slug!r} is not a plain slug"
     role = load_role(role_slug)
     if role is None:
         return False, f"role {role_slug} not loadable"
 
+    # Pre-image for the reversible-application journal (safeguard (a)): the
+    # inverse of an authority_change is only expressible against the value that
+    # was there BEFORE the write, and nothing downstream records it.
+    authority_before = role.get("authority_level")
     changes_applied: list[dict[str, Any]] = []
     try:
         if kind == "add_hat":
             tmpl = suggested.get("hat_template") or {}
             for cap in tmpl.get("capabilities", []):
-                if cap and not str(cap).startswith("<TODO"):
+                # _cap_is_new: adapt_role NO-OPs on a capability the role
+                # already has, but the journal row was written anyway — a
+                # phantom application whose "exact inverse" REMOVES a
+                # capability the loop never granted (proven 2026-07-26).
+                if (cap and not str(cap).startswith("<TODO")
+                        and _cap_is_new(role_slug, cap)):
                     adapt_role(
                         role_slug,
                         adaptation_type="capability_added",
@@ -405,6 +493,14 @@ def _apply_proposal(
                         approved_by="self_improvement_loop",
                     )
                     changes_applied.append({"capability_added": cap})
+                    _journal_application(
+                        "capability_added", role_slug,
+                        {"capability": cap, "hat": tmpl.get("name")},
+                        {"op": "capability_removed", "role_slug": role_slug, "capability": cap},
+                        proposal.get("proposal_id"),
+                        f"proposal {proposal['proposal_id']}",
+                        suggested.get("rationale"), loop_id,
+                    )
         elif kind == "expand_authority":
             scope = (suggested.get("authority_template") or {}).get("scope_to_add")
             if scope and not str(scope).startswith("<TODO"):
@@ -418,9 +514,24 @@ def _apply_proposal(
                     approved_by="self_improvement_loop",
                 )
                 changes_applied.append({"authority_change": scope})
+                _journal_application(
+                    "authority_change", role_slug,
+                    {"authority_level_before": authority_before,
+                     "authority_level_after": scope},
+                    {"op": "authority_change", "role_slug": role_slug,
+                     "authority_level": authority_before},
+                    proposal.get("proposal_id"),
+                    f"proposal {proposal['proposal_id']}",
+                    suggested.get("rationale"), loop_id,
+                )
         elif kind == "add_quality_hat":
             for cap in (suggested.get("hat_template") or {}).get("capabilities", []):
-                if cap and not str(cap).startswith("<TODO"):
+                # _cap_is_new: adapt_role NO-OPs on a capability the role
+                # already has, but the journal row was written anyway — a
+                # phantom application whose "exact inverse" REMOVES a
+                # capability the loop never granted (proven 2026-07-26).
+                if (cap and not str(cap).startswith("<TODO")
+                        and _cap_is_new(role_slug, cap)):
                     adapt_role(
                         role_slug,
                         adaptation_type="capability_added",
@@ -431,6 +542,14 @@ def _apply_proposal(
                         approved_by="self_improvement_loop",
                     )
                     changes_applied.append({"capability_added": cap})
+                    _journal_application(
+                        "capability_added", role_slug,
+                        {"capability": cap, "quality_hat": True},
+                        {"op": "capability_removed", "role_slug": role_slug, "capability": cap},
+                        proposal.get("proposal_id"),
+                        f"proposal {proposal['proposal_id']}",
+                        suggested.get("rationale"), loop_id,
+                    )
         else:
             return False, f"kind={kind} has no auto-apply handler"
     except Exception as e:  # noqa: BLE001
@@ -484,6 +603,7 @@ def _apply_hat_graduations(
     actor: str,
     emit_fn: Any = emit,
     validation_skipped: bool = False,
+    loop_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Promote each hat's capabilities to base capabilities on the role."""
     applied: list[dict[str, Any]] = []
@@ -493,7 +613,8 @@ def _apply_hat_graduations(
             continue
         promoted_caps: list[str] = []
         for cap in c.get("capabilities_to_promote", []):
-            if not cap:
+            # Same phantom-row guard as the proposal path above.
+            if not cap or not _cap_is_new(role_slug, cap):
                 continue
             try:
                 adapt_role(
@@ -509,6 +630,16 @@ def _apply_hat_graduations(
                     approved_by="self_improvement_loop",
                 )
                 promoted_caps.append(cap)
+                _journal_application(
+                    "capability_added", role_slug,
+                    {"capability": cap, "hat_slug": c.get("hat_slug"),
+                     "via": "hat_graduation"},
+                    {"op": "capability_removed", "role_slug": role_slug, "capability": cap},
+                    None,
+                    (f"hat used {c.get('uses')} times across "
+                     f"{c.get('missions')} missions without OVI regression"),
+                    "Hat graduation criteria met (R8 auto-apply)", loop_id,
+                )
             except Exception:  # noqa: BLE001
                 # adapt_role already idempotent for duplicate caps; ignore and continue
                 continue
@@ -558,6 +689,7 @@ def _auto_validate_skills(
     parent_event_id: str,
     actor: str,
     emit_fn: Any = emit,
+    loop_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """[SOV-8 §3 "skill promotion via CoS loop"] Sovereign, evals-green only:
     flip well-formed drafts to `status: validated` via
@@ -584,6 +716,15 @@ def _auto_validate_skills(
                 "notify_after tell)."
             ),
         })
+        _journal_application(
+            "skill_validated", p.stem,
+            {"skill_path": str(p), "status_before": "draft",
+             "status_after": "validated"},
+            {"op": "skill_status", "skill_path": str(p), "status": "draft"},
+            None, "validation evals green (sovereign posture)",
+            "Sovereign posture: draft auto-promoted to status: validated",
+            loop_id,
+        )
         validated.append({"skill_slug": p.stem, "skill_path": str(p)})
     return validated
 
@@ -819,7 +960,7 @@ def run_loop(
 
         applied, reason = _apply_proposal(
             proposal, parent_id, actor,
-            emit_fn=emit_fn, validation_skipped=skip_evals,
+            emit_fn=emit_fn, validation_skipped=skip_evals, loop_id=loop_id,
         )
         if applied:
             _stamp_proposal_status(Path(path), "auto_applied",
@@ -858,6 +999,7 @@ def run_loop(
                 hat_applied = _apply_hat_graduations(
                     hat_candidates, parent_id, actor,
                     emit_fn=emit_fn, validation_skipped=skip_evals,
+                    loop_id=loop_id,
                 )
 
     # Stage 3 — skill induction ---------------------------------------------
@@ -882,7 +1024,8 @@ def run_loop(
                 gate_ok, gate_detail = _validation_gate()
             if gate_ok:
                 skill_validated = _auto_validate_skills(
-                    drafted_paths, parent_id, actor, emit_fn=emit_fn)
+                    drafted_paths, parent_id, actor, emit_fn=emit_fn,
+                    loop_id=loop_id)
     else:
         # Dry-run / report-only: cluster without writing draft files —
         # memory/skills/evolved/ stays untouched until auto-apply is armed.
