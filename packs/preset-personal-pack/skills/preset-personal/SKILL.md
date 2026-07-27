@@ -21,8 +21,8 @@ captains-cabinet plugin / repo clone at `presets/personal/`:
 - `terminology.yml`, `constitution-addendum.md`, `safety-addendum.md`,
   `schemas.sql`, `README.md`
 
-**Read `presets/personal/README.md` FIRST** — it is the preset's maturity
-statement of record. If it still marks the preset as a placeholder for a
+**Read `presets/personal/README.md` FIRST** — it is the preset's statement of
+record (ACTIVE since 2026-07-27). If it were ever to mark the preset a placeholder for a
 later phase, do not activate it; the preset loader fails cleanly on an
 unpopulated preset, but the honest path is to check before switching.
 

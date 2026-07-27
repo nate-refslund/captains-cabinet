@@ -25,7 +25,20 @@ worth reading.
 | **0** | wouldn't read it |
 | **1** | read it, no value |
 | **2** | told me something I didn't know |
-| **3** | I'd act on it |
+| **3** | changed what I did next |
+
+Rung 3 was **"I'd act on it"** until 2026-07-27. It conflated how good the item
+was with whether the reader had the AUTHORITY to act on it. For an operator
+inside an organisation they do not run, the honest answer to an excellent
+briefing is often *"I can't act on that, it isn't mine"* — a permanent 2, with
+the ceiling set by the org chart instead of by the cabinet. *"Changed what I
+did next"* is reachable at every altitude and is still a number he typed about
+the cabinet's output, so the never-a-score exemption is untouched. There is
+deliberately no second, per-altitude rubric.
+
+The summary is **never comparable across operators** — the scale is
+self-referenced against one reader's own week — and it says so in its own
+output. `unscored` stays in the readout: an unscored briefing is probably a 0.
 
 ## How he scores one — the phone path
 

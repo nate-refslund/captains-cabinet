@@ -973,11 +973,21 @@ def _rewrite_contract(tree: Path, expansions, *, lift_ceilings: bool = True) -> 
     planted member consumes (one event type, one non-comment line) by exactly
     one each. Both must move: the point of these arms is that the ONLY thing
     which can red the tree is the registry, never a zero-headroom ratchet
-    standing in for a check that is not actually running."""
+    standing in for a check that is not actually running.
+
+    The LIVE tree's own expansion rows are PRESERVED and `expansions` is
+    appended to them. Replacing the list wholesale was correct only while the
+    live registry was empty: the first real row landing made every live surplus
+    member unregistered inside these fixtures, so the exact-failure-set arms
+    below started reporting the live member instead of the synthetic one — a
+    fixture failing on a state the registry exists to support. Appending keeps
+    every arm's teeth (proved by the negative control, which still reds on the
+    synthetic member alone) and stops the fixtures encoding "the registry is
+    never used" as an invariant."""
 
     path = tree / "cabinet/config/cognitive-architecture-contract.yml"
     data = yaml.safe_load(path.read_text())
-    data["expansions"] = expansions
+    data["expansions"] = list(data.get("expansions") or []) + list(expansions)
     if lift_ceilings:
         data["budgets"]["central_event_types"]["maximum"] += 1
         data["budgets"]["framework_production_noncomment_lines"]["maximum"] += 1
@@ -1204,13 +1214,36 @@ def test_bijection_classes_are_pinned(tmp_path: Path):
 
 
 def test_live_registry_carries_no_unregistered_surplus():
+    """Every surplus member in the LIVE tree is named by an adjudicated row.
+
+    The assertion used to be `all(not members ...)` — no surplus AT ALL — which
+    is a different and stricter claim than the name makes, and one the registry
+    is designed to make false: a member is registered by an `expansions` row,
+    not by being absent. It held only while `expansions` was empty, so the
+    first legitimate use of the mechanism would have turned it red. Rewritten
+    to the claim the name states, which is also the one with teeth: an
+    UNregistered surplus member is a failure, and the census reports it by that
+    exact reason string."""
+
     census = _load_module()
     report = census.inspect_repository(ROOT)
 
     assert set(report["surplus_members"]) == set(census.BIJECTION_CLASSES)
-    assert all(not members for members in report["surplus_members"].values()), (
-        report["surplus_members"]
-    )
+    unregistered = [
+        (failure["budget"], failure["member"])
+        for failure in report["failures"]
+        if failure.get("reason") == "unregistered set member"
+    ]
+    assert not unregistered, unregistered
+    registered = {
+        (row["member_class"], row["member"])
+        for row in census.load_contract(
+            ROOT / census.DEFAULT_CONTRACT)["expansions"]
+    }
+    for member_class, members in report["surplus_members"].items():
+        for member in members:
+            assert (member_class, member) in registered, (
+                f"{member_class} surplus member {member} has no expansion row")
 
 
 @pytest.mark.parametrize(

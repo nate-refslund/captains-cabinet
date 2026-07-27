@@ -1,30 +1,46 @@
 # presets/personal/preset.yml
-# Personal preset — coaching / life-operator shape.
+# Personal preset — ONE operator who owns a PROJECT, not a company.
 #
-# Captain's Cabinet running in personal capacity. Agents are coaches, not
-# officers. The warroom defaults to Captain DM rather than per-context
-# groups. Autonomy is consent-gated (no "execute without checking").
+# This is the altitude the north-star ruling of 2026-07-26 names as the
+# MAJORITY case: "a developer at a large software company doesn't get to run
+# the company, but the cabinet should help expanding the developer's
+# capability". Every other shipped preset stands up a C-suite —
+# cos/cto/cpo/cro/coo — for a company the operator does not run. This one ships
+# no C-suite at all, because there is no company under it.
 #
-# Phase 2 (2026-04-17) populated this from an empty placeholder. Scaffolds
-# ship per CD4; Captain hires via the hire-agent skill (CD7 hire-time
-# naming convention) when he stands up a live Personal Cabinet.
+# 2026-07-27: ACTIVATED. It had been a Phase-0 placeholder whose README forbade
+# `echo personal > instance/config/active-preset`, and `flavor: personal` emitted
+# no sources.yml, so recall fail-closed to NullPersonalSource. That made the one
+# configuration built for a non-company operator the one configuration that
+# shipped inert. Recall now binds framework.sources.local:LocalNotesSource.
 
 name: personal
 description: >
-  Coaching / life-operator shape. Agents as domain coaches (Physical Coach,
-  Mindfulness Coach), longitudinal memory schemas, consent-gated autonomy,
-  Captain DM as the default communication channel. Paired with the Cabinet
-  MCP for inter-Cabinet handoffs from Work Cabinet.
+  Single-operator shape at project/IC altitude. Three working roles —
+  Navigator (what to do next, and why), Librarian (context assembled from what
+  the operator already legitimately reads, cited and dated), Reviewer (fresh
+  eyes before the work meets anyone else) — plus two longitudinal coaches.
+  Recall binds a real local notes folder rather than the null source. Nothing
+  in this preset sends, deploys, spends, or writes into a system the operator
+  does not own.
 
 # Hire-time naming convention applies (Captain decision 2026-04-16 CD7).
 # The "personal" style defaults agents to human names like Alex or Ava.
-# Captain's CoS proposes 3 names per archetype at hire time; Captain picks.
+# The CoS proposes 3 names per archetype at hire time; the operator picks.
 naming_style: personal
 
 # Agent archetypes shipped scaffolded for this preset. SCAFFOLD only —
 # loader skips these until they appear in cabinet/mcp-scope.yml under
 # agents: (single-source-of-truth pattern per Phase 1 polish).
+#
+# NOT a C-suite, deliberately. A chief-of-anything implies a function with
+# people under it; this operator has neither, and shipping the org chart of a
+# company they do not run is the mismatch that made the first briefing read as
+# irrelevant.
 agent_archetypes:
+  - navigator           # Direction at project scope: what to do next, with the evidence for it
+  - librarian           # Context assembly + recall over the declared folder — the leverage role
+  - reviewer            # Fresh-context critic on the operator's own work, before anyone else sees it
   - physical-coach      # Longitudinal physical state: sleep, training, nutrition, recovery
   - mindfulness-coach   # Meditation, reflection, emotional awareness, consent-gated journaling
 
@@ -34,11 +50,24 @@ terminology:
   work_unit: practice
   output_store: shared_interfaces
   backlog: adhoc_inbox
+  scope_unit: project   # this operator's unit of ownership is a project — not a lane, not a company
 
 # Lower default autonomy. Personal-Cabinet agents ask before acting;
-# they do not execute independently on sensitive personal data.
+# they do not execute independently on sensitive personal data. Separately and
+# more fundamentally: the six hard ceilings (external comms, prod deploy,
+# spend, secrets, network write, credentials) are NOT THIS OPERATOR'S TO GRANT
+# when the resources belong to an employer. No autonomy setting manufactures
+# authority the operator does not hold, and no copy shipped with this preset
+# may suggest that it does.
 autonomy_level: consent_gated
 
-# Personal-capacity workspace (Phase 2+). No product repo mount;
-# instead, Captain's personal-data directory when he sets one.
+# Personal-capacity workspace. No product repo mount; the operator's own
+# project/notes directory instead.
 workspace_mount: /workspace/personal
+
+# Onboarding defaults — consumed by framework/onboarding
+# (plan.load_preset_defaults). Cabinet-NATIVE only: a shipped preset never
+# names a deployment's own tooling.
+onboarding:
+  cabinet_default_plugins: []
+  lane_mcps: [library]

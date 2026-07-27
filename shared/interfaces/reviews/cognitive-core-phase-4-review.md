@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: b35235598ae8ee6ee35b122fbaf763cd8f92d0ccf1d279f04ef3f55c75624293
+Reviewed-Scope-Digest: e79261581f23c7b5244da6fd607e2b586049d598a6ce4e73a7cbc33841ec8ca1
 (RE-BOUND repeatedly on 2026-07-27 — the census-shift-left, expansion-registry and
 census-set-pins landings each edited `cabinet/config/cognitive-architecture-contract.yml`,
 which sits in `restore_from_baseline` and is therefore digest-bound, and so did this
@@ -712,3 +712,27 @@ commit — this artifact is excluded from its own scope, so the amend is stable
 under itself. NOT done: no COG-0/1/2/3 twin was re-bound (frozen-historical,
 already BLOCK by design), and no prose section of this review was edited — no
 reviewer saw new bytes, because none of the reviewed bytes changed behaviour.
+
+RE-BOUND 2026-07-27 by the `feat/personal-preset-live` landing: b3523559… -> e7926158….
+ONE in-scope surface changed, `cabinet/config/cognitive-architecture-contract.yml`
+(it sits in `restore_from_baseline` and is therefore digest-bound), and the change
+is two `temporary_allowances` rows plus one `expansions` row paying for
+`framework/sources/local.py` — the local-folder PersonalSource that unblocks
+`presets/personal/`. NO COG-4 implementation byte changed: intersecting
+`git diff --name-only origin/master...HEAD` with the tool's resolved scope yields
+exactly the contract file. `cognitive-architecture-census.py` is PASS at
+observed == max (245 <= 245 modules, 69985 <= 69985 lines) with the expansion row
+registered. The digest was recomputed over the COMMITTED tree and folded into the
+same landing; this artifact is excluded from its own scope, so the edit is stable
+under itself.
+
+NOT done: the COG-0/1/2/3 twins were NOT re-bound, which is the state the
+`cognitive-phase4` CI job's own scope note already records ("the phase-0/1/2/3
+twins are the digest-frozen HISTORICAL instances their own docstrings describe,
+and all of them are already BLOCK on master by design"). Re-measured here on a
+clean clone of `origin/master` at 91faed1b, before this branch existed: phase 0
+f543dc1e -> 268e01b4, phase 1 25c2f5e3 -> 3168b0b1, phase 2 b3863291 ->
+ae79b6e2, phase 3 78a7bf18 -> fde71324, and phase 4 clean. Re-binding a frozen
+historical twin here would absorb earlier landings' drift under this one's name
+and bless bytes no reviewer on this branch has read, so they are left as they
+were.

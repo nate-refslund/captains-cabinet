@@ -199,13 +199,23 @@ class TestOrgSourcesEmission:
         assert (cab_root / "instance/config/sources.yml").read_bytes() == sources_before
         assert (cab_root / "instance/config/platform.yml").read_bytes() == platform_before
 
-    def test_personal_flavor_emits_no_sources_yml(self, cab_root):
-        """flavor == personal ⇒ the generator must NOT touch the sensing seam
-        — a Flavor-A captain binds their own adapter by hand."""
+    def test_personal_flavor_emits_a_live_local_binding(self, cab_root):
+        """INVERTED 2026-07-27. This arm used to assert the generator emits NO
+        sources.yml for flavor: personal. That assertion was literally correct
+        and was the reason the personal preset shipped inert: with no binding
+        the deployment fail-closes to NullPersonalSource (available() False,
+        search() -> no hits), so the ONE flavor shaped for an operator who does
+        not run a company had zero recall out of the box. It now binds the
+        read-only local-folder adapter, and still emits no dispatch."""
         answers = org_answers()
         answers["autonomy"]["flavor"] = "personal"
         run_cli_ok(cab_root, answers)
-        assert not (cab_root / "instance/config/sources.yml").exists()
+        src_path = cab_root / "instance/config/sources.yml"
+        assert src_path.is_file()
+        src = yaml.safe_load(src_path.read_text(encoding="utf-8"))
+        assert src["adapter"] == "framework.sources.local:LocalNotesSource"
+        assert src["local_root"] == "vault"
+        assert "dispatch" not in src
 
 
 # ---------------------------------------------------------------------------
