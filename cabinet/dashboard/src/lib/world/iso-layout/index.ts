@@ -1100,3 +1100,12 @@ export * from './clearance'
 export * from './scatter'
 export * from './paint'
 export * from './ring'
+// ./harbour was the one sibling missing from this list, and it is the one whose
+// types the Layout's own public surface is written in: `harbour: Harbour | null`,
+// `lighthouse: Lighthouse | null` and Regions' `Ellipse`/`Rect` could not be
+// NAMED by anything importing from './index'. tsc does not catch that — a
+// structurally-reachable type still checks — so the seam only shows the first
+// time a renderer tries to hold one in a variable. Found 2026-07-27 by asking
+// the compiler directly, in the same review that found the belt's size aliasing;
+// both are what two writers editing one barrel in one worktree look like.
+export * from './harbour'
