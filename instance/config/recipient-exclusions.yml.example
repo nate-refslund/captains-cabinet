@@ -1,0 +1,110 @@
+# =============================================================================
+# recipient-exclusions.yml.example — the framework-shippable TWIN
+# =============================================================================
+#
+# Copy to instance/config/recipient-exclusions.yml and have the Captain ratify
+# it. This example ships an EMPTY denylist: exclusions are CAPTAIN rulings,
+# never framework defaults. Ruling provenance belongs in the Captain ledger
+# (shared/interfaces/captain-decisions.md) — cite it from `why:`.
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# `org_domains:` in instance/config/platform.yml is ALREADY the allowlist of
+# what counts as internal, and the framework ships none of its own (absent
+# config ⇒ every recipient external). What it cannot express is an EXCEPTION.
+# A listed domain admits every address at it, so a distribution list or alias
+# that fans out to non-employees is internal by construction, and — before
+# 2026-07-27 — every subdomain of it was internal too, unboundedly and
+# forever, including subdomains that do not exist yet or are operated by
+# someone else. This file is the one place to say "not that one".
+#
+# The consumer is framework/authority/classifier.py `_is_internal_recipient`
+# (via framework/env.py `recipient_policy`). Everything here can only make a
+# recipient EXTERNAL — which is the always-gated ceiling, i.e. more Captain
+# approvals, never fewer. There is deliberately NO way to make a recipient
+# internal from this file; that is what org_domains is for.
+#
+# CORRUPTION-HONESTY CONTRACT (the consumer's fail-shape, do not weaken):
+#   * File ABSENT           ⇒ empty denylist (no exclusions; org_domains
+#                             alone decides, as it did before this file).
+#   * File PRESENT but
+#     UNPARSEABLE/DAMAGED   ⇒ EVERY recipient classifies external until
+#                             repaired — an unreadable Captain exclusion list
+#                             is NEVER silently ignored.
+#     "Damaged" means anything that could silently SHRINK the exclusion set: a
+#     non-mapping document, a dropped or non-list `denylist:` key, a row that
+#     is not a mapping, a row with neither or both of address/domain, an empty
+#     value, a value contradicting its key (an `address` with no `@`), or an
+#     unrecognized `subdomain_matching` value. An explicitly empty
+#     `denylist: []` is the ruled posture and stays valid.
+#
+#     Also refused, each found by attacking the first version of this parser:
+#       * a DUPLICATE `denylist:` key — YAML takes last-wins silently, so
+#         appending a second one empties your list while every original row
+#         still reads intact above it.
+#       * YAML anchors/aliases — an exclusion list whose real content is
+#         assembled from anchors elsewhere in the document cannot be audited
+#         by eye, which is the only thing this file is for.
+#       * a dangling symlink at this path — that is a file PRESENT and
+#         unreadable, i.e. damaged, not absent.
+#       * a row that parses but can NEVER MATCH, which would read live and
+#         exclude nothing: any value carrying whitespace/comma/semicolon or
+#         angle brackets (including `Nate <list@example.com>` pasted out of a
+#         mail client), and a domain written with a leading or trailing dot.
+#         Write the bare address or the bare domain, one per row.
+#       * a file over 1 MiB — it is parsed at startup and would stall every
+#         classification.
+#     `subdomain_matching` IS case-folded, so a caps typo cannot take the whole
+#     cabinet to deny-all.
+#
+# WHAT THIS CANNOT DO
+# -------------------
+# It cannot see a delivery graph. The classifier is handed a string of
+# addresses, never the mailboxes behind them. An internal-looking address that
+# relays, forwards or fans out to outsiders stays internal until a human
+# denylists it here by hand. Listing the ones you know of is the whole
+# mechanism — there is no detection.
+# =============================================================================
+
+version: 1
+status: unratified                # flips to `ruled` when the Captain ratifies
+ruled_at: ""
+
+# --- how a recipient domain matches an org_domains entry ---------------------
+#   strict  (DEFAULT, and what ships) — a recipient domain is internal only if
+#           it EXACTLY equals a listed org domain. A subdomain you want treated
+#           as internal gets its own line in org_domains. Safe by default: a
+#           domain you list never silently annexes subdomains you do not
+#           control, and never annexes ones created later.
+#   inherit — the pre-2026-07-27 framework behaviour: exact match OR any
+#           subdomain, unboundedly. Reachable here so a deployment that relies
+#           on it needs a config line, not a code change.
+#
+# MIGRATION, if you are moving an existing deployment onto this file: under
+# `strict`, recipients at subdomains of your listed domains flip from internal
+# to external, so they start requiring Captain approval. Nothing escapes — the
+# failure mode is approval noise, and it is loud and immediate. Fix it either
+# by adding the subdomain to org_domains (preferred: it is then a named,
+# auditable claim) or by setting `inherit` below (restores the old blanket).
+subdomain_matching: strict
+
+# =============================================================================
+# DENYLIST — Captain exclusions. EMPTY until the Captain rules.
+#
+# Each row carries EXACTLY ONE of:
+#   address: "list@example.com"   an exact address (must contain @)
+#   domain:  "partner.example.com" that domain AND every subdomain of it
+# plus a `why:` naming the ruling. `why` is a documented obligation, not a
+# machine gate — a row missing it still excludes, because a forgotten `why`
+# must never turn an urgent exclusion into a deny-all outage.
+#
+# Worked examples (delete these; they are illustration, not defaults):
+#   denylist:
+#     - address: "all-staff@example.com"
+#       why: "distribution list — fans out to contractors and board observers;
+#             a send here leaves the org. Captain ruling YYYY-MM-DD."
+#     - domain: "newsroom.example.com"
+#       why: "subdomain operated by an external agency since the YYYY sale.
+#             Captain ruling YYYY-MM-DD."
+# =============================================================================
+denylist: []

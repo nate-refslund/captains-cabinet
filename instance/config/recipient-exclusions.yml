@@ -1,0 +1,48 @@
+# =============================================================================
+# recipient-exclusions.yml — the Captain's carve-back on org_domains
+# =============================================================================
+# `org_domains:` in platform.yml decides what counts as internal. It has no way
+# to state an EXCEPTION: every address at a listed domain is internal, so an
+# alias or distribution list that fans out to non-employees is internal by
+# construction. This file is the one place to say "not that one".
+#
+# The full contract — row shapes, the damage rules, and what this mechanism
+# cannot see — is documented in recipient-exclusions.yml.example beside this
+# file. Read it before editing. Consumer: framework/authority/classifier.py
+# `_is_internal_recipient` via framework/env.py `recipient_policy`.
+#
+# EVERYTHING HERE ONLY EVER MAKES A RECIPIENT EXTERNAL, i.e. always gated for
+# Captain approval. There is no way to make a recipient internal from this
+# file; that is what org_domains is for.
+#
+# DAMAGE FAILS CLOSED: if this file exists but cannot be parsed, EVERY
+# recipient classifies external until it is repaired. An unreadable Captain
+# exclusion list is never silently ignored. That includes a DUPLICATE
+# `denylist:` key (YAML would take last-wins and silently empty your list),
+# YAML aliases, and a row that parses but can never match — write the bare
+# address or bare domain, no angle brackets, no separators, no leading dot.
+#
+# NOT PROTECTED FROM AGENTS, deliberately recorded: this file is neither in the
+# germline lock nor in the pre-tool-use hook's guarded paths — and neither is
+# instance/config/platform.yml, which holds the org_domains list this file
+# carves back. Editing that one loosens further than editing this one. Closing
+# the gap means a change to the germline set, which is a Captain ceremony;
+# until then, cabinet/scripts/tests/test_recipient_exclusions_posture.py turns
+# CI red if `subdomain_matching` moves off `strict`.
+# =============================================================================
+
+version: 1
+status: unratified                # flips to `ruled` when the Captain ratifies
+ruled_at: ""
+
+# strict  — a recipient domain is internal only if it EXACTLY equals a listed
+#           org domain; a subdomain you want internal gets its own org_domains
+#           line. This is the shipped default: a listed domain never silently
+#           annexes subdomains you do not control or that do not exist yet.
+# inherit — pre-2026-07-27 behaviour: exact match OR any subdomain, unbounded.
+subdomain_matching: strict
+
+# Rows carry EXACTLY ONE of `address:` (exact, must contain @) or `domain:`
+# (that domain and every subdomain of it), plus a `why:` naming the ruling.
+# Empty until the Captain rules.
+denylist: []

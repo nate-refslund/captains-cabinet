@@ -21,7 +21,17 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 05c20f79b5ddd32a2ca62ae99f8dc57247a74fdb85fa4e993a8e53f0da03f02b
+Reviewed-Scope-Digest: 431dfebac46aebf557b4bd2dc6d82c9570e509054cfb48fc31090ecd9f96226b
+(RE-BOUND 2026-07-27, same commit as the edit that moved it — the
+`recipient-exclusion-carve-backs` allowance row landing in
+`cabinet/config/cognitive-architecture-contract.yml`, which sits in
+`restore_from_baseline` and is therefore digest-bound. Was
+05c20f79b5ddd32a2ca62ae99f8dc57247a74fdb85fa4e993a8e53f0da03f02b. NO COG-4
+implementation byte changed: the allowance is a line-budget row for
+framework/authority + framework/env, both outside every COG-4 scope path, and
+`framework/authority/classifier.py` remains in the manifest's
+`must_remain_unchanged` block against the pinned phase anchor, which the
+rollback rehearsal re-checks. The phase-4 findings below are unaffected.)
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of

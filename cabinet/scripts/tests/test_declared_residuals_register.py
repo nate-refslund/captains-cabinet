@@ -88,8 +88,8 @@ LEGACY_EXEMPT = {
     # comment above the first site and an expect-present row + comment above the
     # second. The marker TEXT and the exempt SET are unchanged every time — these
     # are re-anchors, not widenings, and LEGACY_MAX stays 2.
-    ("cabinet/scripts/egg-export-manifest.txt", 248): "RESIDUAL SCRUB",
-    ("cabinet/scripts/egg-export-manifest.txt", 680): "RESIDUAL SCRUB",
+    ("cabinet/scripts/egg-export-manifest.txt", 257): "RESIDUAL SCRUB",
+    ("cabinet/scripts/egg-export-manifest.txt", 689): "RESIDUAL SCRUB",
 }
 LEGACY_MAX = 2
 
