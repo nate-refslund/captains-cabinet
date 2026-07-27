@@ -1594,3 +1594,170 @@ def test_the_reproduced_bypass_no_longer_lands(tmp_path: Path):
 
     with pytest.raises(census.ContractError, match="names the bijection class"):
         census.inspect_repository(tree)
+
+
+# ── R3: the rename false positive, and its stated remedy ─────────────────────
+# A pure rename has ZERO net growth and still reds `unregistered set member` on
+# the new path. That friction is real and is not a defect; what WAS a defect is
+# that nothing shipped said which green path is correct, so the cheap one — a
+# hand edit to the baseline — would get normalised by routine work, eroding the
+# one input the whole gate rests on. The rule is now stated in the baseline
+# header: a rename is a PAIRED edit in the same commit, and a line is never
+# added for a member the tree does not already have. These arms pin both halves.
+
+
+def _rename_target(tree: Path, census) -> tuple[str, str]:
+    """A baseline production module that no expansion row names."""
+
+    baseline = yaml.safe_load(
+        (tree / "cabinet/config/architecture-baseline-sets.yml").read_text()
+    )["classes"]["framework_production_modules"]
+    contract = yaml.safe_load(
+        (tree / "cabinet/config/cognitive-architecture-contract.yml").read_text()
+    )
+    registered = {row["member"] for row in contract["expansions"]}
+    for member in sorted(baseline):
+        if member in registered:
+            continue
+        if (tree / member).is_file() and not member.endswith("__init__.py"):
+            return member, member[: -len(".py")] + "_renamed_probe.py"
+    raise AssertionError("no rename target available")
+
+
+def test_an_unpaired_rename_reds_as_an_unregistered_member(tmp_path: Path):
+    """The friction itself, pinned so the rule below has something to be about.
+
+    Zero net growth, and still red. If this ever stops being true the baseline
+    header's rename rule is describing a problem that no longer exists and must
+    be deleted rather than left to mislead.
+    """
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    clean = census.inspect_repository(tree)
+    assert clean["ok"] is True, clean["failures"]
+    old, new = _rename_target(tree, census)
+
+    (tree / old).rename(tree / new)
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is False
+    assert (
+        report["observed"]["framework_production_modules"]
+        == clean["observed"]["framework_production_modules"]
+    )
+    assert any(
+        failure.get("member") == new and failure["reason"] == "unregistered set member"
+        for failure in report["failures"]
+    )
+
+
+def test_a_paired_rename_edit_is_green(tmp_path: Path):
+    """The sanctioned remedy, proven to actually work.
+
+    A rule that names a remedy nobody tested is a rule that sends the next
+    author back to the instrument this unit closed.
+    """
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    clean = census.inspect_repository(tree)
+    old, new = _rename_target(tree, census)
+
+    (tree / old).rename(tree / new)
+    path = tree / "cabinet/config/architecture-baseline-sets.yml"
+    data = yaml.safe_load(path.read_text())
+    members = data["classes"]["framework_production_modules"]
+    members.remove(old)
+    members.append(new)
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is True, report["failures"]
+    assert (
+        report["observed"]["framework_production_modules"]
+        == clean["observed"]["framework_production_modules"]
+    )
+
+
+def test_a_rename_with_a_half_edited_baseline_is_red(tmp_path: Path):
+    """PAIRED means paired. Adding the new name while leaving the old one is
+    the pre-load shape wearing a rename's clothes."""
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    old, new = _rename_target(tree, census)
+
+    (tree / old).rename(tree / new)
+    path = tree / "cabinet/config/architecture-baseline-sets.yml"
+    data = yaml.safe_load(path.read_text())
+    data["classes"]["framework_production_modules"].append(new)  # add, do NOT remove
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is False
+    assert any(
+        failure.get("member") == old and "does not carry" in failure["reason"]
+        for failure in report["failures"]
+    )
+
+
+# ── R4: consumer disjointness survives a leading "./" ────────────────────────
+# The check was plain string equality, so two characters bought a
+# self-referencing consumer. Measured on the live contract before the fix:
+# `framework/authority/ownership.py` refused, `./framework/authority/ownership.py`
+# accepted at ok=True.
+
+
+def _tree_with_consumer(tmp_path: Path, consumer: str) -> Path:
+    tree = _copy_census_tree(tmp_path)
+    path = tree / "cabinet/config/cognitive-architecture-contract.yml"
+    data = yaml.safe_load(path.read_text())
+    assert data["expansions"], "no expansion row to point at"
+    data["expansions"][0]["consumer"] = consumer
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+    assert consumer in path.read_text()
+    return tree
+
+
+@pytest.mark.parametrize("prefix", ("", "./"))
+def test_a_consumer_naming_the_member_itself_is_refused(tmp_path: Path, prefix: str):
+    census = _load_module()
+    member = yaml.safe_load(CONTRACT.read_text())["expansions"][0]["member"]
+    tree = _tree_with_consumer(tmp_path, prefix + member)
+
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is False
+    assert any("consumer must READ the output" in f["reason"] for f in report["failures"])
+
+
+@pytest.mark.parametrize("prefix", ("", "./"))
+def test_a_consumer_naming_the_declaring_path_is_refused(tmp_path: Path, prefix: str):
+    census = _load_module()
+    contract = yaml.safe_load(CONTRACT.read_text())
+    declaring = contract["budgets"][contract["expansions"][0]["member_class"]]["path"]
+    tree = _tree_with_consumer(tmp_path, prefix + declaring)
+
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is False
+    assert any("consumer must READ the output" in f["reason"] for f in report["failures"])
+
+
+def test_a_genuine_consumer_is_still_accepted(tmp_path: Path):
+    """The normalisation must not swallow legitimate rows.
+
+    Without this arm an over-broad disjointness rule would red every real
+    expansion and every other arm here would still be green.
+    """
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is True, report["failures"]
+    assert not any("consumer" in f.get("reason", "") for f in report["failures"])

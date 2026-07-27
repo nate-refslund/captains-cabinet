@@ -50,6 +50,14 @@ WHAT IS ENFORCED NOW, stated exactly so nothing reads as more than it is:
     the line the zero-headroom law is read from.
   * PRE-LOADING. A baseline name the tree does not carry is a failure, so an
     inventory cannot be written in one commit and consumed in a later one.
+  * RENAMES, which are a documented FALSE POSITIVE and not a defect. A pure
+    rename has zero net growth and still reds `unregistered set member` on the
+    new path. The sanctioned remedy is a PAIRED baseline edit — remove the old
+    member and add the new one in the SAME commit as the tree change — never an
+    expansion row, which asks for two blind arms and a written adjudication for
+    a move. The rule is stated in the baseline file's header, because friction
+    with no stated remedy is how routine baseline edits get normalised, and the
+    baseline is the one input this whole gate rests on.
   * NOT REFUSED, and the residual is named rather than relabelled: a baseline
     line added in the SAME commit as the file it names still removes that file
     from the surplus, and the bijection cannot tell the difference. That path
@@ -261,6 +269,18 @@ EXPECTED_ENDURING_ARCHITECTURE_GATES = frozenset(
 
 class ContractError(ValueError):
     """The architecture contract is malformed or internally inconsistent."""
+
+
+def _normalized_repo_path(value: str) -> str:
+    """`./x` and `x` name the SAME path; string equality says they do not.
+
+    Every disjointness comparison in this module goes through here. The
+    consumer check was plain `==` until 2026-07-27, so `./framework/x.py`
+    passed where `framework/x.py` was refused — a self-referencing consumer
+    bought with two characters, measured on the live contract.
+    """
+
+    return PurePosixPath(value.strip()).as_posix()
 
 
 def _confined_relative_path(value: str, what: str) -> str:
@@ -977,6 +997,21 @@ def _expansion_binding_failures(
     fleet manifest declares, and must be neither the member itself nor the file
     that declares it — "name the consumer before adding the producer" is not
     satisfied by the producer naming itself.
+
+    WHAT `consumer` IS, said plainly because the sentence above overclaims it:
+    an EXISTENCE-AND-DISJOINTNESS check, never a USE check. Nothing here reads
+    the named file, parses it, or asks whether it imports, calls or otherwise
+    consumes the member. Any path that exists in the tree satisfies it —
+    `.git/config` does, measured — as does any name in the fleet manifest. It
+    stops the producer from naming ITSELF, and stops the field being empty. A
+    real use check would have to resolve the member's public symbols and find a
+    reference to one of them; that is not what this does, and a reader who
+    believed otherwise would be trusting a check that was never written.
+
+    The disjointness half was ALSO defeatable until 2026-07-27: the comparison
+    was plain string equality, so `./framework/x.py` passed where
+    `framework/x.py` was refused. Both sides now normalise through
+    `_normalized_repo_path`.
     """
 
     failures: list[dict[str, Any]] = []
@@ -1002,8 +1037,12 @@ def _expansion_binding_failures(
                     "reason": f"merge_refuted symbol is absent from the file it names: {symbol}",
                 }
             )
-        consumer = expansion["consumer"].strip()
-        if consumer in {member, budgets[member_class]["path"]}:
+        consumer = _normalized_repo_path(expansion["consumer"])
+        forbidden = {
+            _normalized_repo_path(member),
+            _normalized_repo_path(budgets[member_class]["path"]),
+        }
+        if consumer in forbidden:
             failures.append(
                 {
                     "budget": member_class,
