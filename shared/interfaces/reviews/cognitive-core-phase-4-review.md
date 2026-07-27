@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 7434883e2719fbbafa5acddfc1413caac362a478356f8a49f1755709d2808a2c
+Reviewed-Scope-Digest: 9c1a8082d1d6348f345e3aad1faee87fef59e98d3538b08fe9c1f130dce5d68d
 
 
 
@@ -627,6 +627,16 @@ passes in isolation under no load.
 SIBLING BINDERS unchanged: COG-0/1/2/3 were already BLOCK on pre-change master and are NOT re-bound
 here. This commit edits ONLY the digest-excluded review artifact, so the digest it records is stable
 under its own landing — verified by recomputing after the edit.)
+(RE-BOUND 2026-07-27, `fix/hook-redos`, same commit as the change that moved the
+bytes. The moved file in scope is `cabinet/config/cognitive-architecture-contract.yml`:
+ONE `temporary_allowances` row paying for the +1 framework line of
+`policy_engine._STMT_RUN`, the rewrite that removes catastrophic backtracking from
+the `sed -i` write pattern (52 of 80,307 recorded officer calls exceeded 1.5s in it,
+and the hook has no time bound). The COG-4 findings are unaffected — no organ, no
+scheduler surface, no serve surface, no COG-4 entry point. The landing's other two
+files, `framework/authority/policy_engine.py` and `cabinet/scripts/policy-shadow.py`,
+are not in EXPECTED_SCOPE. Reviewed in `fix-hook-redos-cp1.md`, with equality proved
+in both directions and re-checked over all 80,307 recorded calls: 0 verdict changes.)
 
 (MERGE RE-BIND, 2026-07-27: the spend-meter landing (PR #215) reached master while this branch was in
 CI and re-bound this same digest to 540c08fb.... Two concurrent landings cannot both be right about one

@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import sys
 import tempfile
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -959,6 +961,212 @@ class TestBashWriteToPath:
             "cpo",
         )
         assert result is None
+
+
+# ===================================================================
+# 6b. WRITE-PATTERN BACKTRACKING (ReDoS) — availability of the gate
+# ===================================================================
+
+class TestWritePatternBacktracking:
+    """The write patterns must answer in bounded time on the EXPONENTIAL axes.
+
+    WHY THIS EXISTS. `bash_write_to_path` is in the live enforcing set and
+    pre-tool-use.sh puts NO time bound on it, so a pattern that backtracks
+    catastrophically does not merely run slowly — it wedges the officer's own
+    gate forever, at 99% CPU, with nothing reporting it. Measured on the real
+    shadow record: 52 of 80,307 recorded officer tool calls exceeded 1.5s in
+    the `sed` pattern alone, the smallest being an ordinary 889-byte heredoc.
+
+    These arms FAIL against the pre-fix pattern: at 24 quoted pairs the old
+    expression needs ~2**24 decompositions and does not finish in minutes,
+    while the rewritten one answers in microseconds. The 5s bound is therefore
+    a ~5-order-of-magnitude margin on those axes, not a tight timing assertion
+    — it does not flake on a loaded shared runner.
+
+    HONEST SCOPE, so the class name does not promise more than it checks. Two
+    ambiguities were closed: quote-tiling, and multiple separators inside one
+    quoted span. A THIRD axis is still polynomial and is NOT covered by the 5s
+    bound — the in-place-flag alternation's split point times the number of
+    `sed` occurrences, which reaches ~1s at 2.8KB and ~5s at 4.9KB. It measures
+    within 3% of master, so it is not a regression, but it is open: declared as
+    RES-019(a) and pinned below by `test_flag_alternation_axis_is_still_cubic`,
+    which asserts the CURRENT ceiling rather than a fixed one. That arm exists
+    so this class cannot quietly read as "bounded on all input".
+    """
+
+    POLICY = {
+        "name": "codebase-bash-write",
+        "type": "bash_write_to_path",
+        "path_pattern": "/workspace/[a-z0-9][a-z0-9-]*/",
+        "exempt_officers": ["cto"],
+        "message": "Only CTO can write via Bash",
+    }
+    BOUND_S = 5.0
+
+    @staticmethod
+    def _wedge(pairs: int) -> str:
+        """A command the OLD sed pattern cannot answer: many quoted spans that
+        `[^;&|]` can also tile character-by-character, and no path at the end so
+        every decomposition must be tried before reporting no-match."""
+        return "sed -i" + ("'a'" * pairs) + " /nope"
+
+    @staticmethod
+    def _wedge_multisep(spans: int, seps: int = 2) -> str:
+        """The SECOND pump, and the one that matters most here.
+
+        The first rewrite of this pattern killed the quote-tiling ambiguity and
+        was still exponential, because a quoted span holding s separators could
+        be split s ways and that unit sat inside the outer star. It survived
+        `'a;b'` (one separator per span) and died at 110 bytes on `';;'`. Any
+        future rewrite must be pumped with MORE THAN ONE separator per span or
+        the arm proves nothing.
+        """
+        return "sed " + ("'" + ";" * seps + "'") * spans + " X"
+
+    def _timed(self, command: str) -> float:
+        """Evaluate under a hard SIGALRM bound and return the elapsed seconds.
+
+        The bound is on the CALL, not merely asserted afterwards: against the
+        pre-fix pattern this input never returns, so a plain
+        measure-then-assert would hang the suite until CI's own timeout killed
+        it — a red that looks like infrastructure, not like this defect. With
+        the alarm the same input fails in BOUND_S with the reason attached.
+        """
+        def _fire(signum, frame):  # noqa: ARG001
+            raise AssertionError(
+                f"write-pattern evaluation exceeded {self.BOUND_S}s on a "
+                f"{len(command)}-byte command — catastrophic backtracking is "
+                f"back, and pre-tool-use.sh has no timeout to contain it"
+            )
+
+        previous = signal.signal(signal.SIGALRM, _fire)
+        start = time.monotonic()
+        try:
+            signal.setitimer(signal.ITIMER_REAL, self.BOUND_S)
+            check_bash_write_to_path(command, self.POLICY["path_pattern"])
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, previous)
+        return time.monotonic() - start
+
+    @pytest.mark.parametrize("pairs", [16, 20, 24])
+    def test_quoted_pair_flood_is_bounded(self, pairs):
+        elapsed = self._timed(self._wedge(pairs))
+        assert elapsed < self.BOUND_S, (
+            f"{pairs} quoted pairs took {elapsed:.2f}s — the write patterns are "
+            f"backtracking again, and the live hook has no timeout to catch it"
+        )
+
+    def test_growth_is_not_exponential(self):
+        """Doubling the hostile input must not explode the runtime.
+
+        The signature of the old defect was ~7x per two added quote pairs. A
+        flat ratio is the property that actually matters; the absolute bounds
+        above would still pass on a merely-slow pattern.
+        """
+        small = self._timed(self._wedge(12))
+        large = self._timed(self._wedge(24))
+        floor = 1e-4  # timer granularity — both arms are microseconds
+        assert large < max(small, floor) * 50 + 0.5, (
+            f"12 pairs={small:.6f}s but 24 pairs={large:.6f}s — superlinear "
+            f"growth means the ambiguous decomposition is back"
+        )
+
+    def test_long_separator_free_command_is_bounded(self):
+        """The live shape: a long quoted heredoc with no unquoted separator."""
+        body = " ".join(f"'chunk{i}'" for i in range(200))
+        elapsed = self._timed(f"sed -i {body} /tmp/not-a-workspace-path")
+        assert elapsed < self.BOUND_S, f"took {elapsed:.2f}s"
+
+    @pytest.mark.parametrize("spans,seps", [(26, 2), (20, 3), (16, 4), (32, 2)])
+    def test_multi_separator_quoted_spans_are_bounded(self, spans, seps):
+        """Several separators inside each quoted span — the second pump."""
+        elapsed = self._timed(self._wedge_multisep(spans, seps))
+        assert elapsed < self.BOUND_S, (
+            f"{spans} spans of {seps} separators took {elapsed:.2f}s — the "
+            f"quoted span is being parsed more than one way again"
+        )
+
+    @pytest.mark.parametrize("command", [
+        # shapes an officer could plausibly type, carrying repeated in-quote
+        # separators. Each of these wedged the first rewrite.
+        "sed -i.bak " + "-e 's/;;/;/g' " * 20 + "report.csv",
+        "sed -i " + "'a;b;c' " * 24,
+        "sed -i '' config.txt\n" + "echo 'step N; run; done'\n" * 24,
+    ])
+    def test_realistic_multi_separator_commands_are_bounded(self, command):
+        elapsed = self._timed(command)
+        assert elapsed < self.BOUND_S, f"took {elapsed:.2f}s on {len(command)} bytes"
+
+    def test_flag_alternation_axis_is_still_cubic(self):
+        """Pin the axis this fix did NOT close, so nobody re-discovers it.
+
+        Repeated `sed -i ` tokens make the flag alternation's split point free
+        and restart `re.search` at each occurrence. This is deliberately a
+        CHARACTERISATION arm, not an aspiration: it asserts the size at which
+        the shipped pattern is still comfortable AND that a modest input has
+        not silently become catastrophic. If a future rewrite closes the axis,
+        this arm keeps passing; if one makes it worse, it fails.
+        """
+        small = self._timed("sed -i x " * 100 + "/nope")
+        assert small < 1.0, (
+            f"900 bytes of repeated sed took {small:.2f}s — this axis was ~0.03s "
+            f"when RES-019(a) was written; it has regressed"
+        )
+        # And the honest ceiling: ~2.8KB is around a second on this axis today.
+        mid = self._timed("sed -i x " * 312 + "/nope")
+        assert mid < self.BOUND_S, f"2.8KB took {mid:.2f}s"
+
+    def test_multi_separator_growth_is_not_exponential(self):
+        small = self._timed(self._wedge_multisep(12, 2))
+        large = self._timed(self._wedge_multisep(32, 2))
+        floor = 1e-4
+        assert large < max(small, floor) * 50 + 0.5, (
+            f"12 spans={small:.6f}s but 32 spans={large:.6f}s — the in-span "
+            f"separator ambiguity is back"
+        )
+
+    # --- the rewrite must not have NARROWED the rule -----------------------
+    # Each of these is a real in-place write into the product workspace that
+    # the pattern caught before the rewrite and must still catch. A faster
+    # regex that misses a write is a worse defect than a slow one.
+
+    @pytest.mark.parametrize("command", [
+        "sed -i 's/old/new/' /workspace/product/file.txt",
+        # separator INSIDE quotes must not end the statement
+        "sed -i 's/a;b/c/' /workspace/product/file.txt",
+        "sed -i 's/a|b/c/' /workspace/product/file.txt",
+        "sed -i 's/a&b/c/' /workspace/product/file.txt",
+        'sed -i "s/a;b/c/" /workspace/product/file.txt',
+        # several quoted spans, separators in more than one of them
+        "sed -i -e 's/a;b/c/' -e 's/d|e/f/' /workspace/product/file.txt",
+        # suffix and long forms
+        "sed -i.bak 's/old/new/' /workspace/product/file.txt",
+        "sed --in-place 's/old/new/' /workspace/product/file.txt",
+        "sed --in-place=.bak 's/x/y/' /workspace/product/file.txt",
+        "sed -Ei 's/old/new/' /workspace/product/file.txt",
+        # sed reached in a later statement of the command line
+        "echo hi; sed -i 's/x/y/' /workspace/product/file.txt",
+        # unbalanced quote before the flag — still a write
+        "sed -i 's/x/y/ /workspace/product/file.txt",
+    ])
+    def test_still_blocks_real_writes(self, command):
+        assert evaluate_policy(self.POLICY, "Bash", {"command": command}, "cpo") \
+            is not None, f"NARROWED: no longer blocks {command!r}"
+
+    @pytest.mark.parametrize("command", [
+        # no in-place flag — sed writes to stdout, not the file
+        "sed -n 'p' /workspace/product/file.txt",
+        "sed 's/old/new/' /workspace/product/file.txt",
+        # in-place, but the target is outside the product workspace
+        "sed -i 's/old/new/' /tmp/file.txt",
+        # an unquoted separator really does end the statement: the -i belongs
+        # to the first command, the workspace path to a different one
+        "sed -i 's/x/y/' /tmp/a.txt; cat /workspace/product/file.txt",
+    ])
+    def test_still_allows_non_writes(self, command):
+        assert evaluate_policy(self.POLICY, "Bash", {"command": command}, "cpo") \
+            is None, f"WIDENED: now blocks {command!r}"
 
 
 # ===================================================================
