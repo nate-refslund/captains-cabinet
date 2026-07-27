@@ -665,6 +665,10 @@ class TestCliAndFreeze:
 # ---------------------------------------------------------------------------
 
 _REFERENCE_ALLOWLIST = {
+    # Expansion registry (2026-07-27): a future module under this same
+    # shadow law needs the identical one-line entry in its own landing.
+    "cabinet/config/architecture-baseline-sets.yml":
+        "the architecture baseline sets are the census's inventory of WHICH framework modules exist, so every module path is there by construction — a member-name row in a data file, never an import and never a consumer",
     "framework/evidence_recompute.py": "the module itself",
     "framework/tests/test_evidence_recompute.py": "this proof",
     "cabinet/scripts/evidence-recompute.py": "the thin scheduled runner",

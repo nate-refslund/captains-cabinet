@@ -522,7 +522,13 @@ def test_shadow_zero_callers_and_never_a_score():
                # in prose (fail-closed pairing law, exit checks) — Captain
                # documents, never consumers.
                "docs/proposals/germline-amendment-evidence-hp-2026-07-17.md",
-               "docs/runbooks/evidence-hp-deploy.md"}
+               "docs/runbooks/evidence-hp-deploy.md",
+               # Expansion registry (2026-07-27): the architecture baseline sets are
+               # the census's inventory of WHICH framework modules exist, so every
+               # module path is there by construction — a member-name row in a data
+               # file, never an import and never a consumer. A future module under a
+               # zero-consumers shadow law needs the same entry in its own landing.
+               "cabinet/config/architecture-baseline-sets.yml"}
     needles = (b"evidence_calibration", b"evidence-calibration")
     hits: set[str] = set()
     for rel in _tracked_files(ROOT):
