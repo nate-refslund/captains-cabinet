@@ -43,6 +43,35 @@ REQUIRED_BUDGETS = frozenset(
         "framework_production_noncomment_lines",
         "named_compiler_modules",
         "duplicate_event_writer_sinks",
+        # ── SET PINS (2026-07-27 expansion-gate adjudication, D3) ─────────────
+        # The mass budgets above rglob framework/ ONLY and count *.py ONLY, so
+        # cabinet/scripts/**, cabinet/config/**, .claude/** and every non-.py
+        # file cost ZERO — the contract recorded that blind spot in writing (a
+        # JSON schema file "adds ZERO modules and ZERO lines") and BOTH live
+        # expansion escapes landed inside it. The gate ruled SPLIT: no
+        # line-mass budget in cabinet/scripts (measured to false-positive
+        # daily, and a detector that fires on every routine change is disabled
+        # within a week — worse than a miss), but SET pins on the specific
+        # classes both blind arms named. Each counts a SET whose growth is a
+        # new scheduled decider, a new decision surface an officer reads, a
+        # new live hook, a new verdict word or a new durable store.
+        "organ_manifests",
+        "claude_skills",
+        "claude_hook_wirings",
+        "framework_verdict_vocabulary_members",
+        "cabinet_script_verdict_vocabulary_members",
+        "durable_store_units",
+    }
+)
+#: Budgets whose observed value is "files matching `pattern` under `path`".
+PATTERN_SET_BUDGETS = frozenset({"organ_manifests", "claude_skills"})
+#: Budgets whose observed value is "static members of every module-level
+#: declaration whose NAME matches `symbol_pattern`, across the production
+#: Python files under `path`".
+SYMBOL_SET_BUDGETS = frozenset(
+    {
+        "framework_verdict_vocabulary_members",
+        "cabinet_script_verdict_vocabulary_members",
     }
 )
 EXPECTED_TOP_KEYS = frozenset(
@@ -187,6 +216,241 @@ def _production_python_files(path: Path) -> list[Path]:
     )
 
 
+def _pattern_set(path: Path, pattern: str) -> list[Path]:
+    """Files matching `pattern` anywhere under `path`, DERIVED from the tree.
+
+    Never a hand-maintained list: a new organ manifest or a new skill is a new
+    file, and the pin reads the directory rather than a fourth list that can
+    drift away from it. Nested matches count — a manifest parked one directory
+    down is still a new decider.
+    """
+
+    if not path.exists():
+        raise ContractError(f"set-pin directory is missing: {path}")
+    return sorted(
+        candidate
+        for candidate in path.rglob(pattern)
+        if candidate.is_file() and "__pycache__" not in candidate.parts
+    )
+
+
+def _durable_store_units(path: Path) -> frozenset[str]:
+    """The durable-store SET, derived from `.gitignore` exactly as the deploy
+    preflight already derives it.
+
+    `.gitignore` IS the store registry: a fresh `git worktree` contains tracked
+    files and nothing else, so every positively-ignored path is precisely what
+    the cabinet accumulates at runtime and must be carried across a deploy.
+    `cabinet/scripts/state-persistence-preflight.py` reads it that way and says
+    why in its own words — it "does NOT add a fourth hand-maintained list", it
+    DERIVES the set. This pin reuses both of that reader's rules verbatim:
+    negations and comments are skipped (a negation only re-includes a TRACKED
+    file, which survives a fresh worktree by definition), and each pattern is
+    reduced to its durability UNIT — the deepest wildcard-free prefix, so
+    `memory/logs/*.jsonl` and `memory/logs/*.log` are ONE store, not two.
+
+    Counting raw lines instead was measured and rejected: 38 of the 39 commits
+    that touched `.gitignore` in 30 days would have fired, which is the daily
+    false-positive the same gate refused for cabinet/scripts line mass. Units
+    move only when a NEW store appears.
+    """
+
+    units: set[str] = set()
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or line.startswith("!"):
+            continue
+        pattern = line.rstrip("/").lstrip("/")
+        parts: list[str] = []
+        for segment in pattern.split("/"):
+            if any(char in segment for char in "*?["):
+                break
+            parts.append(segment)
+        units.add("/".join(parts) if parts else pattern)
+    if not units:
+        raise ContractError(f"{path} yielded no durable-store units")
+    return frozenset(units)
+
+
+def _claude_hook_wirings(path: Path) -> int:
+    """Count LIVE Claude-Code hook commands wired in a settings file.
+
+    The wiring — not the script on disk — is what makes a hook fire, so the
+    pin counts entries under `hooks.<Event>[].hooks[]`. Every shape is
+    validated: a malformed or renamed section must be an ERROR, never a
+    silently smaller count (a pin that reads 0 on a mangled file is a pin that
+    rewards mangling the file).
+    """
+
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise ContractError(f"claude settings is not valid JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ContractError("claude settings must be a JSON object")
+    hooks = data.get("hooks")
+    if not isinstance(hooks, dict):
+        raise ContractError("claude settings must declare a hooks mapping")
+    total = 0
+    for event, entries in sorted(hooks.items()):
+        if not isinstance(entries, list):
+            raise ContractError(f"claude hook event {event} must hold a list")
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                raise ContractError(f"claude hook entry {event}[{index}] must be a mapping")
+            commands = entry.get("hooks")
+            if not isinstance(commands, list):
+                raise ContractError(f"claude hook entry {event}[{index}] requires a hooks list")
+            for command in commands:
+                if not isinstance(command, dict) or not isinstance(command.get("command"), str):
+                    raise ContractError(
+                        f"claude hook command under {event} must declare a string command"
+                    )
+            total += len(commands)
+    return total
+
+
+def _static_vocabulary(node: ast.AST, names: dict[str, frozenset[Any]]) -> frozenset[Any]:
+    """Resolve a declared vocabulary to its member set without importing it.
+
+    Deliberately WIDER than `_eval_static`, which fails closed on a non-string
+    member because a central enum may only hold strings. A satellite verdict
+    vocabulary is a tuple here, a dict there, and one of them carries a None
+    member — so this resolver accepts any hashable literal, a dict's KEYS, and
+    a bare scalar (one member: three shipped verdict tokens are declared as
+    lone constants). Anything it cannot read statically RAISES: a vocabulary
+    built at import time would otherwise cost the pin nothing.
+    """
+
+    if isinstance(node, ast.Constant):
+        try:
+            hash(node.value)
+        except TypeError as exc:
+            raise ContractError("vocabulary member is not hashable") from exc
+        return frozenset({node.value})
+    if isinstance(node, (ast.Set, ast.List, ast.Tuple)):
+        members: set[Any] = set()
+        for element in node.elts:
+            members |= _static_vocabulary(element, names)
+        return frozenset(members)
+    if isinstance(node, ast.Dict):
+        keys: set[Any] = set()
+        for key in node.keys:
+            if key is None:
+                raise ContractError("vocabulary dict uses ** unpacking")
+            keys |= _static_vocabulary(key, names)
+        return frozenset(keys)
+    if isinstance(node, ast.Name) and node.id in names:
+        return names[node.id]
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _static_vocabulary(node.left, names) | _static_vocabulary(node.right, names)
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in {"frozenset", "set", "tuple", "list", "dict"}
+        and len(node.args) <= 1
+        and not node.keywords
+    ):
+        if not node.args:
+            return frozenset()
+        return _static_vocabulary(node.args[0], names)
+    raise ContractError(f"unsupported static vocabulary expression: {ast.dump(node)}")
+
+
+_VOCABULARY_MUTATORS = frozenset(
+    {
+        "add",
+        "append",
+        "clear",
+        "difference_update",
+        "discard",
+        "extend",
+        "intersection_update",
+        "pop",
+        "popitem",
+        "remove",
+        "setdefault",
+        "symmetric_difference_update",
+        "update",
+    }
+)
+
+
+def vocabulary_members(path: Path, symbol_pattern: re.Pattern[str]) -> dict[str, frozenset[Any]]:
+    """Every module-level vocabulary in `path` whose NAME matches the pattern.
+
+    Discovery is by NAME against the tree, so a vocabulary added in a file the
+    census has never heard of is found on the run it lands. Mutation is
+    refused for the same reason `static_enum` refuses it on the central enums:
+    an in-place `.add()` grows the vocabulary while the literal stays pinned.
+    """
+
+    tree = ast.parse(path.read_text(), filename=str(path))
+    names: dict[str, frozenset[Any]] = {}
+    found: dict[str, frozenset[Any]] = {}
+    for statement in tree.body:
+        if isinstance(statement, ast.AugAssign) and isinstance(statement.target, ast.Name):
+            if symbol_pattern.search(statement.target.id):
+                raise ContractError(
+                    f"vocabulary {statement.target.id} in {path} uses augmented mutation"
+                )
+        if isinstance(statement, ast.Delete):
+            for target in statement.targets:
+                if isinstance(target, ast.Name) and symbol_pattern.search(target.id):
+                    raise ContractError(f"vocabulary {target.id} in {path} is deleted")
+        if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call):
+            func = statement.value.func
+            if (
+                isinstance(func, ast.Attribute)
+                and isinstance(func.value, ast.Name)
+                and symbol_pattern.search(func.value.id)
+                and func.attr in _VOCABULARY_MUTATORS
+            ):
+                raise ContractError(
+                    f"vocabulary {func.value.id} in {path} uses mutating call {func.attr}"
+                )
+        if not isinstance(statement, (ast.Assign, ast.AnnAssign)):
+            continue
+        if isinstance(statement, ast.Assign):
+            targets = statement.targets
+            value_node = statement.value
+        else:
+            targets = [statement.target]
+            value_node = statement.value
+        if value_node is None:
+            continue
+        for target in targets:
+            if isinstance(target, (ast.Tuple, ast.List)):
+                for element in target.elts:
+                    if isinstance(element, ast.Name) and symbol_pattern.search(element.id):
+                        raise ContractError(
+                            f"vocabulary {element.id} in {path} is declared by unpacking"
+                        )
+                continue
+            if not isinstance(target, ast.Name):
+                continue
+            try:
+                resolved = _static_vocabulary(value_node, names)
+            except ContractError:
+                if symbol_pattern.search(target.id):
+                    raise
+                names.pop(target.id, None)
+                continue
+            names[target.id] = resolved
+            if symbol_pattern.search(target.id):
+                found[target.id] = resolved
+    return found
+
+
+def _vocabulary_member_count(root: Path, symbol_pattern: str) -> int:
+    pattern = re.compile(symbol_pattern)
+    return sum(
+        len(members)
+        for path in _production_python_files(root)
+        for members in vocabulary_members(path, pattern).values()
+    )
+
+
 def _static_prefixed_callees(path: Path, symbol: str, prefix: str) -> frozenset[str]:
     tree = ast.parse(path.read_text(), filename=str(path))
     target = next(
@@ -241,6 +505,18 @@ def load_contract(path: Path, *, as_of: date | None = None) -> dict[str, Any]:
             expected_keys.add("pattern")
             if not isinstance(budget.get("pattern"), str) or not budget["pattern"]:
                 raise ContractError("named_compiler_modules requires pattern")
+        if name in PATTERN_SET_BUDGETS:
+            expected_keys.add("pattern")
+            if not isinstance(budget.get("pattern"), str) or not budget["pattern"]:
+                raise ContractError(f"set pin {name} requires pattern")
+        if name in SYMBOL_SET_BUDGETS:
+            expected_keys.add("symbol_pattern")
+            if not isinstance(budget.get("symbol_pattern"), str) or not budget["symbol_pattern"]:
+                raise ContractError(f"set pin {name} requires symbol_pattern")
+            try:
+                re.compile(budget["symbol_pattern"])
+            except re.error as exc:
+                raise ContractError(f"set pin {name} symbol_pattern is not a regex") from exc
         if name == "duplicate_event_writer_sinks":
             expected_keys.update({"symbol", "callee_prefix"})
             if not isinstance(budget.get("symbol"), str) or not budget["symbol"].isidentifier():
@@ -364,6 +640,23 @@ def inspect_repository(
             writer_budget["callee_prefix"],
         )
     )
+    # ── SET PINS (D3) — the surfaces the mass budgets above cannot see ───────
+    # `.gitignore` is ALREADY the durable-store registry, so the store set is
+    # DERIVED from it rather than hand-maintained as a fourth list.
+    observed["durable_store_units"] = len(
+        _durable_store_units(root / budgets["durable_store_units"]["path"])
+    )
+    observed["claude_hook_wirings"] = _claude_hook_wirings(
+        root / budgets["claude_hook_wirings"]["path"]
+    )
+    for name in sorted(PATTERN_SET_BUDGETS):
+        observed[name] = len(
+            _pattern_set(root / budgets[name]["path"], budgets[name]["pattern"])
+        )
+    for name in sorted(SYMBOL_SET_BUDGETS):
+        observed[name] = _vocabulary_member_count(
+            root / budgets[name]["path"], budgets[name]["symbol_pattern"]
+        )
 
     failures: list[dict[str, Any]] = []
     maximums: dict[str, int] = {}

@@ -64,6 +64,109 @@ budgets:
     symbol: emit
     callee_prefix: _write_to_
     maximum: 3
+  # ── SET PINS — the surfaces the mass budgets are BLIND to ──────────────────
+  # Expansion-gate adjudication of record, 2026-07-27 (D3), two blind arms.
+  # Every budget above this line rglobs framework/ and counts *.py, so
+  # cabinet/scripts/** (1294 tracked files, 8.2% add-rate), cabinet/config/**,
+  # .claude/** and EVERY non-.py file cost ZERO — a blind spot this contract
+  # already recorded in its own words ("the new framework/schemas/
+  # cognitive-trajectory.v2.schema.json is JSON so the census — which counts
+  # only *.py — adds ZERO modules and ZERO lines for it"), and BOTH live
+  # expansion escapes landed inside it.
+  #
+  # The gate ruled SPLIT: NO line-mass budget in cabinet/scripts — one arm
+  # measured that it would false-positive daily, and a detector that fires on
+  # every routine change is disabled within a week, which is worse than a
+  # miss. What lands instead are SET pins on the classes both arms named
+  # independently: a new organ manifest, a new skill, a newly WIRED hook, a new
+  # verdict word, a new durable store. Each is DERIVED FROM THE TREE — the
+  # in-tree standard (state-persistence-preflight.py derives the durable set
+  # from .gitignore "rather than adding a fourth hand-maintained list"; the
+  # COG-4 fleet-truth pins re-derive from the tree and never trust a literal).
+  # A hand-maintained list is where this program's last three drift bugs came
+  # from.
+  #
+  # MEASURED FIRE RATES, per first-parent landing on master, 30 days to
+  # 2026-07-27 (601 landings) with the 7-day steady state (67 landings) beside
+  # it. A fire = the landing must bump the maximum here and say why.
+  #   organ_manifests                            0/601 = 0.00%   (7d 0.00%)
+  #   claude_hook_wirings                        0/601 = 0.00%   (7d 0.00%)
+  #   claude_skills                              2/601 = 0.33%   (7d 0.00%)
+  #   cabinet_script_verdict_vocabulary_members  6/601 = 1.00%   (7d 2.99%)
+  #   framework_verdict_vocabulary_members      14/601 = 2.33%   (7d 2.99%)
+  #   durable_store_units                       36/601 = 5.99%   (7d 7.46%)
+  # The last row is the loud one and is recorded as such rather than buried:
+  # it is the same band as the 8.2% add-rate the same gate REFUSED for
+  # cabinet/scripts line mass. It is kept for a stated reason — every one of
+  # those 36 fires was a genuinely NEW durable store (captain-dates, the
+  # availability dial, the evidence recorder, the foundry archive, the world
+  # chronicle …), i.e. true positives at a high rate, not false alarms on
+  # routine edits, which is exactly the distinction the cabinet/scripts refusal
+  # turned on. If it ever starts firing on non-stores, delete the row rather
+  # than widen it.
+  #
+  # ZERO HEADROOM, like every budget above: observed == maximum, so one unit of
+  # growth blocks. Shrink is always green.
+  organ_manifests:
+    path: cabinet/config/organs
+    pattern: "*.yml"
+    # An organ manifest IS a new scheduled decider — the composed runner reads
+    # this directory and derives one freshness floor per organ from it
+    # (framework/watchdog/registry.py _parse_organ_manifests). It was
+    # un-budgeted: organs are YAML, so they cost the module and line budgets
+    # nothing. Missing directory = ERROR, never 0 — a contract path that
+    # silently reads zero is a disabled sensor.
+    maximum: 5
+  claude_skills:
+    path: .claude/skills
+    pattern: SKILL.md
+    # A skill is a decision surface every officer reads. Counted by their entry
+    # file so the set is derived from the tree, and so a directory of notes
+    # without a SKILL.md is not miscounted as a skill.
+    maximum: 21
+  claude_hook_wirings:
+    path: .claude/settings.json
+    # The WIRING, not the script on disk, is what makes a hook fire. Two hook
+    # FILES were added in the 30-day window and ZERO hook-wiring diffs landed,
+    # so this is a near-silent tripwire: it costs nothing until something wires
+    # a new always-on decider into every session. Counts hooks.<Event>[].hooks[]
+    # entries; a malformed or renamed section is an ERROR, never a smaller
+    # count.
+    maximum: 27
+  framework_verdict_vocabulary_members:
+    path: framework
+    symbol_pattern: VERDICT
+    # The SATELLITE vocabularies. central_event_types and central_action_types
+    # are pinned, but the under-ask verdict ("missed", framework/frontdoor/
+    # action_lessons.py) landed touching NEITHER — a new word the cabinet can
+    # say about the Captain, free. Discovery is by NAME across the production
+    # tree, so a vocabulary in a file this contract has never heard of is found
+    # on the run it lands; an unreadable or in-place-mutated vocabulary is an
+    # ERROR, because otherwise the way to grow one for free is to build it at
+    # import time.
+    maximum: 70
+  cabinet_script_verdict_vocabulary_members:
+    path: cabinet/scripts
+    symbol_pattern: VERDICT
+    # Same pin, pointed at the blind half. This is the ONE budget that reads
+    # cabinet/scripts, and deliberately not by mass: it counts words in a
+    # decision vocabulary, not lines.
+    maximum: 18
+  durable_store_units:
+    path: .gitignore
+    # A new durable store is a new organ of memory. .gitignore already IS the
+    # store registry — a release is a fresh git worktree, so every positively
+    # ignored path is exactly what the cabinet accumulates at runtime — and the
+    # unit is the deepest wildcard-free prefix, the same reduction
+    # cabinet/scripts/state-persistence-preflight.py already applies, so
+    # memory/logs/*.jsonl and memory/logs/*.log are ONE store. Raw line count
+    # was measured (38/39 touching commits) and rejected for the unit set.
+    # OVERLAP, stated rather than hidden: the preflight already fails closed on
+    # a new unaccounted unit and demands a written reason (proven by execution
+    # 2026-07-27 — adding one ignored path made it exit non-zero). It asks
+    # whether a store SURVIVES A DEPLOY. This asks whether the org grew another
+    # memory at all, which no gate asked before.
+    maximum: 96
 temporary_allowances:
   - phase: bash-egress-fail-closed
     budget: framework_production_noncomment_lines
