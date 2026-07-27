@@ -1262,6 +1262,42 @@ def test_coverage_is_complete_only_when_nothing_was_left_unopened(tmp_path):
     assert coverage["eligible_files"] == coverage["examined_files"] == manifest["file_count"]
 
 
+def test_a_strong_finding_on_a_capped_window_discloses_coverage_on_the_CARD(tmp_path, monkeypatch):
+    """The operator-facing half of the coverage fix, which had NO sensor.
+
+    Added 2026-07-27 by the adversarial review of the three-entry-modes unit.
+    ``_first_dividend`` only scopes its wording on the orientation-only branch;
+    when a detector DOES fire, the finding summary is the detector's own
+    sentence and the sole coverage signal the operator ever sees is the
+    disclosure ``_card`` appends. That branch was measured vacuous — deleting
+    it whole left 290 onboarding tests green — so a confident strong finding
+    could again be presented over a window that never opened most of the
+    folder, which is the exact defect this unit exists to have fixed.
+
+    Both directions on one estate: capped window ⇒ the card states what it did
+    not open; complete window ⇒ it does not manufacture a caveat.
+    """
+    monkeypatch.setattr(journey, "MAX_FILES", 3)
+    capped = ratify(tmp_path / "capped", propose(tmp_path / "capped", _split_pair_estate(tmp_path / "capped", filler=3)))
+    dividend = capped["state"]["first_dividend"]
+    assert dividend["finding"]["quality"] == "strong"
+    assert dividend["coverage"]["complete"] is False
+    body = capped["card"]["body"]
+    assert dividend["finding"]["summary"] in body
+    assert (
+        f"I read {dividend['coverage']['examined_files']} of "
+        f"{dividend['coverage']['eligible_files']} supported files" in body
+    )
+    assert "left unopened by the First Window limits" in body
+
+    monkeypatch.setattr(journey, "MAX_FILES", 200)
+    whole = ratify(tmp_path / "whole", propose(tmp_path / "whole", _split_pair_estate(tmp_path / "whole", filler=3)))
+    whole_dividend = whole["state"]["first_dividend"]
+    assert whole_dividend["finding"]["quality"] == "strong"
+    assert whole_dividend["coverage"]["complete"] is True
+    assert "left unopened" not in whole["card"]["body"]
+
+
 def test_relevance_ranking_is_stable_and_content_blind(tmp_path):
     """Two runs over one tree must produce byte-identical manifests.
 
