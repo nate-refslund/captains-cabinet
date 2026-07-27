@@ -57,11 +57,19 @@ def test_two_lanes_yield_four_cards_all_draft():
 
 
 def test_card_count_band_is_two_to_four():
+    """INVERTED 2026-07-26 (ordering inversion, Captain ruling): a lane-less
+    deployment used to derive 2 cards — both of them org ceremony, and the
+    Captain's verdict on exactly that briefing was "the cards were
+    irrelevant". A cabinet that has been told nothing and has read nothing now
+    proposes the leftover-question card instead of saying nothing about the operator at
+    all, so 0 lanes derives 3. The 2-4 band itself is unchanged."""
     one_lane = {**ANSWERS, "lanes": ANSWERS["lanes"][:1]}
     no_lanes = {**ANSWERS, "lanes": []}
     many = {**ANSWERS, "lanes": ANSWERS["lanes"] * 3}   # 6 declared lanes
     assert len(genesis.propose_outcome_cards(one_lane)) == 3
-    assert len(genesis.propose_outcome_cards(no_lanes)) == 2
+    assert len(genesis.propose_outcome_cards(no_lanes)) == 3
+    ids = [c["id"] for c in genesis.propose_outcome_cards(no_lanes)]
+    assert ids[0] == "proposed-read-your-world"
     assert len(genesis.propose_outcome_cards(many)) == 4    # capped
 
 
@@ -573,3 +581,146 @@ def test_the_canary_arm_is_not_vacuous(tmp_path, monkeypatch):
     assert _CANARY in proc.stdout, (
         "the pre-fix invocation no longer leaks the canary — the stub is not "
         "modelling CLAUDE.md discovery any more, so the positive arm is vacuous")
+
+
+# ---------------------------------------------------------------------------
+# ONBOARD-1 — the ORDERING INVERSION: cards from what the cabinet READ
+# ---------------------------------------------------------------------------
+LANELESS = {**ANSWERS, "lanes": []}
+
+ESTATE_DOC = {
+    "schema": "cabinet.derived-estate/v1",
+    "deployment": "acme-hq",
+    "derived_at": "2026-07-26T00:00:00Z",
+    "sources": [{"id": "first-window", "kind": "local_folder",
+                 "root": "/granted", "ownership": "unclassified",
+                 "refusals": [{"reason": "sensitive_name", "count": 2}]}],
+    "entities": [
+        {"id": "storefront", "name": "storefront", "kind": "project",
+         "source_id": "first-window", "relative_path": "storefront",
+         "evidence": [{"path": "storefront/README.md", "sha256": "aa"}]},
+        {"id": "labs", "name": "labs", "kind": "project",
+         "source_id": "first-window", "relative_path": "labs",
+         "evidence": [{"path": "labs/pyproject.toml", "sha256": "bb"}]},
+    ],
+}
+
+
+def test_estate_entities_become_subject_cards_with_their_citation():
+    cards = genesis.propose_outcome_cards(LANELESS, estate=ESTATE_DOC)
+    subject = [c for c in cards if c["derived_from"] == "estate"]
+    assert [c["lane"] for c in subject] == ["storefront", "labs"]
+    assert "storefront/README.md" in subject[0]["why"]     # cited, not asserted
+    assert "reading your world, not by asking" in subject[0]["why"]
+    for card in cards:                                     # propose-only holds
+        assert card["status"] == "draft" and card["captain_ratified"] is False
+
+
+def test_declared_lanes_win_over_derived_entities():
+    """The Captain's own declaration outranks a derivation of the same thing —
+    and a derived entity never duplicates a declared lane's slug."""
+    answers = {**ANSWERS, "lanes": [{"name": "Storefront", "slug": "storefront"}]}
+    cards = genesis.propose_outcome_cards(answers, estate=ESTATE_DOC)
+    subject = [c for c in cards if c["derived_from"] in ("answers", "estate")]
+    assert [c["lane"] for c in subject] == ["storefront", "labs"]
+    assert subject[0]["derived_from"] == "answers"
+    assert len({c["id"] for c in cards}) == len(cards)
+
+
+def test_residual_card_asks_the_three_underivable_questions_not_the_company():
+    cards = genesis.propose_outcome_cards(LANELESS)
+    residual = next(c for c in cards if c["id"] == "proposed-read-your-world")
+    assert residual["derived_from"] == "residual"
+    why = residual["why"].lower()
+    assert "yours to grant" in why            # (a) authority
+    assert "matters to you this week" in why  # (b) salience
+    assert "never touch" in why               # (c) limits
+    assert "how i can best serve you" in why  # the seed question — never a dead end
+    # The question the system must never ask again.
+    for card in cards:
+        assert "what is your company" not in card["why"].lower()
+        assert "tell us what your company" not in card["what"].lower()
+
+
+def test_residual_card_distinguishes_read_nothing_from_found_nothing():
+    nothing_read = genesis.propose_outcome_cards(LANELESS)[0]["why"]
+    empty_estate = dict(ESTATE_DOC, entities=[])
+    read_found_none = genesis.propose_outcome_cards(
+        LANELESS, estate=empty_estate)[0]["why"]
+    assert "have not read anything" in nothing_read
+    assert "found nothing" in read_found_none
+
+
+# --- altitude reaches PROPOSED-CARD DERIVATION (or it is decoration) --------
+def _proofs(answers, **kw):
+    return [c["proof_expected"] for c in genesis.propose_outcome_cards(answers, **kw)]
+
+
+def test_altitude_reshapes_the_subject_proof_line():
+    low = {**ANSWERS, "mission": {"altitude": "contributor"}}
+    high = {**ANSWERS, "mission": {"altitude": "company"}}
+    low_proof = _proofs(low)[0]
+    high_proof = _proofs(high)[0]
+    assert low_proof != high_proof
+    # Low altitude: reach + proposal quality, never permission the operator
+    # does not hold (the six ceiling classes belong to their employer).
+    assert "written proposal" in low_proof and "owns the decision" in low_proof
+    assert "shipped change" not in low_proof
+    assert "shipped change" in high_proof
+
+
+@pytest.mark.parametrize("rung,proposal_shaped", [
+    ("contributor", True), ("project", True), ("team", True),
+    ("function", False), ("company", False),
+])
+def test_every_rung_maps_to_exactly_one_proof_shape(rung, proposal_shaped):
+    answers = {**ANSWERS, "mission": {"altitude": rung}}
+    assert ("written proposal" in _proofs(answers)[0]) is proposal_shaped
+
+
+def test_absent_or_unknown_altitude_derives_the_pre_altitude_cards():
+    """Unknown is a first-class answer: nobody was asked, so nothing changes."""
+    baseline = genesis.propose_outcome_cards(ANSWERS)
+    for mission in (None, {}, {"altitude": None}, {"altitude": "vice-president"}):
+        assert genesis.propose_outcome_cards({**ANSWERS, "mission": mission}) == baseline
+
+
+def test_estate_reaches_the_staging_file_and_is_recorded_as_provenance(tmp_path):
+    from framework.onboarding import estate as estate_mod
+    _write_answers(tmp_path, LANELESS)
+    estate_mod.write_estate(ESTATE_DOC, tmp_path)
+    out = genesis.run_genesis_proposal(tmp_path, now="2026-07-26T00:00:00Z")
+    assert out["status"] == "written" and out["cards"] == 4
+    doc = yaml.safe_load((tmp_path / genesis.PROPOSALS_REL).read_text())
+    assert estate_mod.ESTATE_REL in doc["derived_from"]
+    assert {r["derived_from"] for r in doc["outcomes"]} == {"estate", "system"}
+
+
+def test_a_foreign_estate_is_ignored_not_consumed(tmp_path):
+    """An artifact derived for another deployment must not feed this one's
+    cards — the same gate the generator applies to lanes: []."""
+    from framework.onboarding import estate as estate_mod
+    _write_answers(tmp_path, LANELESS)
+    estate_mod.write_estate(dict(ESTATE_DOC, deployment="someone-else"), tmp_path)
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-26T00:00:00Z")
+    doc = yaml.safe_load((tmp_path / genesis.PROPOSALS_REL).read_text())
+    assert [r["id"] for r in doc["outcomes"]][0] == "proposed-read-your-world"
+
+
+def test_estate_intake_item_shows_provenance_including_refusals(tmp_path):
+    from framework.onboarding import estate as estate_mod
+    _write_answers(tmp_path, LANELESS)
+    estate_mod.write_estate(ESTATE_DOC, tmp_path)
+    items = genesis.genesis_intake_items(tmp_path, now="2026-07-26T00:00:00Z")
+    card = next(i for i in items if i["kind"] == "genesis-estate")
+    summary = card["payload"]["summary"]
+    assert "1 source(s)" in summary and "2 entity(ies)" in summary
+    assert "2 refused" in summary           # silent skips destroy auditability
+    assert "unclassified" in summary
+    assert card["urgency_tier"] == "fyi"    # information; nothing acts on it
+
+
+def test_no_estate_artifact_means_no_estate_item(tmp_path):
+    _write_answers(tmp_path, LANELESS)
+    items = genesis.genesis_intake_items(tmp_path, now="2026-07-26T00:00:00Z")
+    assert not [i for i in items if i["kind"] == "genesis-estate"]

@@ -516,7 +516,32 @@ temporary_allowances:
 # cabinet/scripts/tests/test_cognitive_architecture_census.py are what keep an
 # empty registry from being an untested one — a registry never seen to reject
 # is not a registry.
-expansions: []
+  - phase: onboarding-ordering-inversion
+    budget: framework_production_modules
+    additional: 1
+    reason: 'Onboarding ordering inversion (Captain ruling 2026-07-26, direction gate adjudicated in docs/plans/onboarding-ordering-inversion-2026-07-26.md) — ONE new production module, framework/onboarding/estate.py: the derived-estate contract (schema, derivation from the ratified First Window, the usability gate lanes: [] rides, and the proposed-lane derivation). It is a SHARED contract with one producer (framework/onboarding/formation.py DISCOVERY_DONE) and two consumers (framework/onboarding/genesis.py and cabinet/scripts/generate-instance.py), so it cannot live inside any one of them without making the producer import a consumer. Every other change in the unit EXTENDS an existing file — formation.py, genesis.py, run_briefing.py, generate-instance.py, hatch.sh — and adds no module. EXACT measured running total (245 vs 244 base), 2026-07-27, via cognitive-architecture-census.py — the zero-headroom observed==max law means this is the exact new total, never a pre-allocated ceiling'
+    owner: cognitive-core-program
+    sunset: '2027-01-27'
+    deletion_gate: the estate contract folds into a single onboarding module when the ingest engine lands (gated on the employee-slice experiment), or COG-7 compaction
+  - phase: onboarding-ordering-inversion
+    budget: framework_production_noncomment_lines
+    additional: 617
+    reason: 'Onboarding ordering inversion (Captain ruling 2026-07-26) — framework/onboarding/estate.py (derive_estate from the ratified charter+manifest+dividend with the charter-binding check, the citable entity derivation, the per-source provenance record incl. every refusal with its reason, estate_is_usable, proposed_lanes with the self-ownership write-capability law, and both writers); framework/onboarding/formation.py (_run_discovery replacing the DISCOVERY_DONE IOU stub, REAL_STAMPS, the honest estimate lines, and _archive_discovery_outputs so undo supersedes the artifacts it produced); framework/onboarding/genesis.py (_low_altitude, _subject_proof, _estate_subject_cards, _residual_card, the estate parameter through propose_outcome_cards/write_proposals/_proposals_doc/run_genesis_proposal, and the genesis-estate provenance intake item); framework/frontdoor/run_briefing.py (docstring correction only — the "no estate to gather" line became literally false). HONEST ACCOUNTING: the majority of these lines are DOCSTRING prose carrying the reason for each invariant, per the house rule. They are NOT reformatted into # comments to duck this budget — the counter excludes comments, so that would be optimising the number instead of the thing. EXACT measured running total (70271 vs 69654 base), 2026-07-27, via cognitive-architecture-census.py'
+    owner: cognitive-core-program
+    sunset: '2027-01-27'
+    deletion_gate: the estate contract folds into a single onboarding module when the ingest engine lands, or COG-7 compaction
+expansions:
+  - member: framework/onboarding/estate.py
+    member_class: framework_production_modules
+    gate_date: '2026-07-26'
+    models_run:
+      - Fable 5 (arm A)
+      - Opus 5 (arm B)
+    adjudication: docs/plans/onboarding-ordering-inversion-2026-07-26.md
+    merge_refuted: framework/onboarding/formation.py::_run_discovery — the merge candidates were genesis.py and formation.py, and both are refuted by direction. formation PRODUCES the estate (_run_discovery) while genesis and cabinet/scripts/generate-instance.py CONSUME it; putting the contract inside either consumer would make the producer import a consumer, and putting it inside the producer would make the generator import the formation stage machine to read a schema.
+    consumer: cabinet/scripts/generate-instance.py
+    provenance: per 2026-07-07 full-autonomy grant + the 2026-07-26 north-star/altitude Captain rulings
+
 ownership:
   authoritative_state: domain_transaction
   cross_domain_delivery: transactional_outbox

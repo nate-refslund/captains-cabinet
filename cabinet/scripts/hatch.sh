@@ -111,6 +111,15 @@ Flags:
                        generate-instance.py --defaults, and auto-adopt when
                        the clone ships a previous deployment's instance/
                        (adoption archives aside, never deletes).
+  --altitude RUNG      The operator's rung, recorded as mission.altitude in
+                       the --defaults answers: contributor | project | team |
+                       function | company. It is not a title — it is what you
+                       can DECIDE, which bounds what a proposed outcome's
+                       proof can be. It selects the preset (step 4) and
+                       reshapes the genesis cards (step 13). Omit it and it
+                       stays UNKNOWN, which reproduces the pre-altitude hatch
+                       exactly. --defaults only; in the interview lane the
+                       rung is recorded as mission.altitude in the answers.
   --clean-room         Throwaway-HOME tolerant. Skips installs (setup-mac.sh
                        --check must find deps present), never touches launchd
                        or the live Redis (load-preset's expected-active marks
@@ -153,7 +162,7 @@ EOF
 
 # ---- flags -------------------------------------------------------------------
 DEFAULTS=0; CLEAN_ROOM=0; DRY_RUN=0; WITH_LAUNCHD=0; WITH_DRILL=0
-FLIGHT_LOG_ARG=""
+FLIGHT_LOG_ARG=""; ALTITUDE_ARG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --defaults)     DEFAULTS=1 ;;
@@ -163,6 +172,7 @@ while [ $# -gt 0 ]; do
     --no-launchd)   WITH_LAUNCHD=0 ;;   # the v0 default, accepted explicitly
     --with-drill)   WITH_DRILL=1 ;;
     --flight-log)   FLIGHT_LOG_ARG="${2:?--flight-log requires a path}"; shift ;;
+    --altitude)     ALTITUDE_ARG="${2:?--altitude requires a rung}"; shift ;;
     --help|-h)      usage; exit 0 ;;
     *) echo "hatch.sh: unknown flag '$1'" >&2; usage >&2; exit 64 ;;
   esac
@@ -220,7 +230,7 @@ emit_plan() {
     echo " 3. [gen]           $PY cabinet/scripts/generate-instance.py"
     echo "                    on inherited-instance refusal -> prints the exact --adopt command and stops"
   fi
-  echo " 4. [preset]        write instance/config/active-preset from the answers' org_shape"
+  echo " 4. [preset]        write instance/config/active-preset from generate-instance.py --print-preset"
   echo "                    (portfolio -> portfolio, functional -> work — the generator's own mapping;"
   echo "                    custom shapes = named handback, set the file yourself)"
   echo " 5. [roles]         bash cabinet/scripts/bootstrap-roles.sh --roster instance/config/roster.yml"
@@ -290,7 +300,7 @@ fi
 # script invocation(s) a human would re-run by hand. Static strings only.
 composite_cmd_hint() {
   case "$1" in
-    do_set_preset)      echo 'echo <portfolio|work> > instance/config/active-preset   # from answers org_shape: portfolio->portfolio, functional->work' ;;
+    do_set_preset)      echo 'echo "$(python3.12 cabinet/scripts/generate-instance.py --print-preset)" > instance/config/active-preset   # cabinet.preset > mission.altitude > org_shape' ;;
     do_bootstrap_roles) echo 'bash cabinet/scripts/bootstrap-roles.sh [--roster instance/config/roster.yml]' ;;
     do_drill)           echo 'bash cabinet/scripts/kill-switch.sh activate|status|deactivate   # REDIS_URL=${REDIS_URL:-redis://localhost:6379}' ;;
     do_first_receipt)   echo 'bash cabinet/scripts/first-briefing.sh --local' ;;
@@ -347,6 +357,9 @@ run_step() {
 do_generate_instance() {
   local gen_argv=("$PY" "cabinet/scripts/generate-instance.py")
   [ "$DEFAULTS" = "1" ] && gen_argv+=("--defaults")
+  # --altitude is a --defaults-only knob (the generator refuses it otherwise):
+  # in the interview lane the rung is recorded as mission.altitude instead.
+  [ -n "$ALTITUDE_ARG" ] && gen_argv+=("--altitude" "$ALTITUDE_ARG")
   local log="$HATCH_LOG_DIR/step-gen.log" rc=0
   run_step_soft gen "generate the instance (init fast-lane)" "${gen_argv[@]}" || rc=$?
   [ "$rc" -eq 0 ] && return 0
@@ -373,10 +386,13 @@ do_generate_instance() {
 }
 
 do_set_preset() {
-  # Mirrors the generator's OWN printed mapping (generate-instance.py next
-  # steps: portfolio -> portfolio, functional -> work). Derivation reads the
-  # answers file as data — no interview logic is reimplemented here.
-  local answers="instance/config/cabinet-init.answers.yml" shape="" preset=""
+  # ASKS THE GENERATOR, never re-derives. This used to mirror the generator's
+  # printed mapping by hand (portfolio -> portfolio, functional -> work) and
+  # had already drifted: it wrote `portfolio` even when the answers declared
+  # `cabinet.preset: developer`, and it could not see mission.altitude at all.
+  # `--print-preset` is the ONE resolution (generate-instance.resolve_preset),
+  # so altitude reaches the file that is actually written here.
+  local answers="instance/config/cabinet-init.answers.yml" preset="" rc=0
   if [ ! -f "$answers" ]; then
     if [ -s instance/config/active-preset ]; then
       echo "answers file absent; keeping existing active-preset ($(tr -d '[:space:]' < instance/config/active-preset))"
@@ -386,20 +402,14 @@ do_set_preset() {
     echo "Named handback — set it yourself, e.g.: echo portfolio > instance/config/active-preset" >&2
     return 1
   fi
-  shape="$("$PY" -c '
-import sys, yaml
-a = yaml.safe_load(open(sys.argv[1])) or {}
-print(str(((a.get("cabinet") or {}).get("org_shape")) or ""))' "$answers")"
-  case "$shape" in
-    portfolio)  preset="portfolio" ;;
-    functional) preset="work" ;;
-    *)
-      echo "org_shape '$shape' has no preset mapping (custom shape)." >&2
-      echo "Named handback — set instance/config/active-preset yourself, then re-run." >&2
-      return 1 ;;
-  esac
+  preset="$("$PY" cabinet/scripts/generate-instance.py --print-preset --answers "$answers")" || rc=$?
+  if [ "$rc" -ne 0 ] || [ -z "$preset" ]; then
+    echo "the generator could not resolve a preset for $answers (rc=$rc)." >&2
+    echo "Named handback — set instance/config/active-preset yourself, then re-run." >&2
+    return 1
+  fi
   printf '%s\n' "$preset" > instance/config/active-preset
-  echo "active-preset = $preset (from answers org_shape: $shape)"
+  echo "active-preset = $preset (resolved by generate-instance.py --print-preset)"
 }
 
 do_bootstrap_roles() {

@@ -90,21 +90,39 @@ def test_full_run_stamps_journals_and_stays_propose_only(tmp_path):
     assert [r["stage"] for r in rows] == list(_STAMPS)
     assert rows[0]["status"] == "open" and "call_cap=9" in rows[0]["note"]
     for row in rows[1:]:
-        assert row["status"] == "stub-iou"
-        assert "not yet built" in row["note"]      # honest IOU, no fake work
+        # INVERTED 2026-07-26 (ordering inversion): DISCOVERY_DONE derives the
+        # estate for real; every stage after it is still an honest IOU.
+        if row["stage"] == "DISCOVERY_DONE":
+            assert row["status"] == "derived"
+            assert "no new read" in row["note"]
+        else:
+            assert row["status"] == "stub-iou"
+            assert "not yet built" in row["note"]  # honest IOU, no fake work
 
-    # IOU artifacts + flight log exist in the run dir
+    # artifacts + flight log exist in the run dir
     rdir = tmp_path / "instance/onboarding/formation" / rid
-    assert (rdir / "discovery-IOU.md").is_file()
+    assert (rdir / "discovery.yml").is_file()      # derived, not an IOU
+    assert not (rdir / "discovery-IOU.md").exists()
     assert (rdir / "briefing-IOU.md").is_file()
     flight = (rdir / "flight.log").read_text()
     for stamp in _STAMPS:
         assert f"STAMP {stamp}" in flight
     assert "FLIGHT SUMMARY" in p.stdout
 
-    # NOTHING ACTIVATES: no compiler-readable surface was written
+    # NOTHING ACTIVATES: no compiler-readable surface was written.
+    # NARROWED 2026-07-26 from "instance/config does not exist" — DISCOVERY_DONE
+    # now writes the propose-only lanes proposal there, deliberately, so it sits
+    # beside the answers file the Captain ratifies it into. The invariant itself
+    # is unchanged and is now asserted by NAME rather than by a directory-absence
+    # proxy: the compiler's filename gate reads only outcomes.yml, the generator
+    # takes lanes ONLY from the answers file, and the EXACT set of config files
+    # this run may write is pinned so a future writer cannot slip a second one in.
     assert not (tmp_path / "instance/config/outcomes.yml").exists()
-    assert not (tmp_path / "instance/config").exists()
+    assert not (tmp_path / "instance/config/cabinet-init.answers.yml").exists()
+    config_dir = tmp_path / "instance/config"
+    assert sorted(f.name for f in config_dir.iterdir()) == ["lanes-proposed.yml"]
+    proposal = (config_dir / "lanes-proposed.yml").read_text()
+    assert "captain_ratified: false" in proposal
 
 
 def test_resume_skips_journaled_stages_and_appends_nothing_twice(tmp_path):
