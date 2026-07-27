@@ -83,13 +83,15 @@ SWEEP_EXTS = frozenset({
 LEGACY_EXEMPT = {
     # Line cites re-anchored 2026-07-26 (233 -> 235, 653 -> 658) by the egg
     # egress-default flip, again 2026-07-26 (235 -> 242, 658 -> 669) by the
-    # captain-availability-dial manifest rows, and again 2026-07-27 (242 -> 248,
-    # 669 -> 680) by the captain-dates manifest rows — each time a delete row +
-    # comment above the first site and an expect-present row + comment above the
+    # captain-availability-dial manifest rows, again 2026-07-27 (242 -> 248,
+    # 669 -> 680) by the captain-dates manifest rows, and again 2026-07-27
+    # (248 -> 264, 680 -> 697) by the world-art delete row that keeps the iso
+    # atlas out of the public export — each time a delete row + comment above
+    # the first site and an expect-present/expect-absent row + comment above the
     # second. The marker TEXT and the exempt SET are unchanged every time — these
     # are re-anchors, not widenings, and LEGACY_MAX stays 2.
-    ("cabinet/scripts/egg-export-manifest.txt", 248): "RESIDUAL SCRUB",
-    ("cabinet/scripts/egg-export-manifest.txt", 680): "RESIDUAL SCRUB",
+    ("cabinet/scripts/egg-export-manifest.txt", 264): "RESIDUAL SCRUB",
+    ("cabinet/scripts/egg-export-manifest.txt", 697): "RESIDUAL SCRUB",
 }
 LEGACY_MAX = 2
 
