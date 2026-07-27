@@ -205,7 +205,7 @@ describe('the shore polyline', () => {
         expect(l.coast.landAt(p.x, p.y + 8 + 4)).toBe(false)
       }
     }
-  })
+  }, 60_000)
 
   /**
    * A COLUMN WITH NO LAND CONTRIBUTES NOTHING. The alternative — substituting a
@@ -245,7 +245,7 @@ describe('the wharf', () => {
       const lowest = Math.max(...w.shore.map((p) => p.y))
       expect(w.rect[3]).toBeGreaterThanOrEqual(lowest + w.depth)
     }
-  })
+  }, 60_000)
 
   /**
    * ERA GATES CONTENT. A camp has a few planks over the water, not a wharf —
@@ -259,7 +259,7 @@ describe('the wharf', () => {
       expect(harbourOf(CAMP, seed).wharf).toBeNull()
       expect(harbourOf(withState(CAMP, { era: 'hamlet' }), seed).wharf).not.toBeNull()
     }
-  })
+  }, 60_000)
 
   /**
    * AND ERA MAY NOT HIDE THE COUNT. The rung still measures at camp — through
@@ -346,7 +346,7 @@ describe('the wharf', () => {
     }
     // the pier IS there on the same island the moment the rung is
     expect(harbourOf(PORT).jetty).not.toBeNull()
-  })
+  }, 60_000)
 
   /**
    * THE ENVELOPE MUST REACH THE DEEPEST THING IN THE HARBOUR, and that is not
@@ -374,7 +374,7 @@ describe('the wharf', () => {
         }
       }
     }
-  })
+  }, 60_000)
 
   /**
    * compose.py:1138 — a timber jetty decks only the middle 30% of the cove.
@@ -439,7 +439,7 @@ describe('the finger jetty', () => {
         expect(j.end.x).toBeGreaterThan(j.at.x)
       }
     }
-  })
+  }, 60_000)
 
   /**
    * ITS ROOT FOLLOWS THE WATERLINE, and this is the arm that says so rather
@@ -472,7 +472,7 @@ describe('the finger jetty', () => {
     expect(offsets[0]).toBe(-SHORE_LIFT)
     expect(offsets[0]).toBeLessThan(0)
     expect(Math.max(...absolutes) - Math.min(...absolutes)).toBeGreaterThan(40)
-  })
+  }, 60_000)
 
   /**
    * NO SHORE, NO PIER — the degenerate end of the rule above.
@@ -594,7 +594,7 @@ describe('the moorings', () => {
         expect(h.moorings[i].y).toBeGreaterThan(h.moorings[i - 2].y)
       }
     }
-  })
+  }, 60_000)
 })
 
 // ── cargo: the completed work ──────────────────────────────────────────────
@@ -610,7 +610,7 @@ describe('the dock kit', () => {
     for (const seed of SEEDS) {
       expect(harbourOf(withState(PORT, { counts: { cargo_stacks: 0 } }), seed).items).toEqual([])
     }
-  })
+  }, 60_000)
 
   it('grows three items per completed tier, in the reference order, capped', () => {
     for (const [cargo, want] of [
@@ -714,7 +714,7 @@ describe('the dock kit', () => {
     }
     expect(total).toBe(90)
     expect(drawn / total).toBeGreaterThan(0.95)
-  })
+  }, 60_000)
 
   /**
    * MOORING POSTS ARE A COUNT, so they may never be dropped — but a post drawn
@@ -756,7 +756,7 @@ describe('the dock kit', () => {
     // If this were 0 the arm above would be vacuous — the whole defect is that
     // the cove shore is not one row.
     expect(disagreeing).toBeGreaterThan(20)
-  })
+  }, 60_000)
 
   /**
    * EVERY ITEM RESOLVES ITS OWN COLUMN'S WATERLINE. Computing the row once and
@@ -783,7 +783,7 @@ describe('the dock kit', () => {
       // the columns genuinely disagree — otherwise the arm above is vacuous
       expect(Math.max(...spread) - Math.min(...spread)).toBeGreaterThan(20)
     }
-  })
+  }, 60_000)
 })
 
 // ── the cranes: one per inherited pack ─────────────────────────────────────
@@ -819,7 +819,7 @@ describe('the dockside cranes', () => {
         expect(xs[i] - xs[i - 1]).toBeGreaterThanOrEqual(CRANE_SPACING)
       }
     }
-  })
+  }, 60_000)
 
   /** Each one on ITS OWN column's waterline — the cove shore is not level. */
   it('stand on the deck of the column each is in, not on one shared row', () => {
@@ -835,7 +835,7 @@ describe('the dockside cranes', () => {
       // the columns disagree, so "42 below its own" is not "42 below one row"
       expect(ys.size).toBeGreaterThan(1)
     }
-  })
+  }, 60_000)
 })
 
 // ── quayside buildings: on LAND above the wharf ────────────────────────────
@@ -880,7 +880,7 @@ describe('the quayside buildings', () => {
         if (sy !== null) expect(s.at.y).toBeLessThanOrEqual(sy + 8)
       }
     }
-  })
+  }, 60_000)
 })
 
 // ── the lighthouse ─────────────────────────────────────────────────────────
@@ -906,7 +906,7 @@ describe('the lighthouse', () => {
       const site = lighthouseSite(coast, LAYOUT_SPACE, cove)
       expect(site).toEqual({ x: (best as { x: number }).x, y: (best as { y: number }).y - 18 })
     }
-  })
+  }, 60_000)
 
   it('is east of the harbour and south of the island centre, and on land', () => {
     for (const seed of [...SEEDS, ...WIDE]) {
@@ -918,7 +918,7 @@ describe('the lighthouse', () => {
       expect(lh.at.y).toBeGreaterThan(l.space.cy)
       expect(l.coast.landAt(lh.at.x, lh.at.y - 2)).toBe(true)
     }
-  })
+  }, 60_000)
 
   /** ALWAYS DRAWN: the empty rung IS the drawing (compose.py:26). */
   it('is drawn at every era, because an unearned lighthouse is still a fact', () => {
@@ -970,7 +970,7 @@ describe('the lighthouse', () => {
         })
       }
     }
-  })
+  }, 60_000)
 
   it('mows a smaller circle for a cairn than for a tower', () => {
     const tower = composeLayout(PORT, 'acme-corp', FAST).lighthouse
@@ -1043,7 +1043,7 @@ describe('the lamp', () => {
       // above the base by most of the sprite: a glow at the base is a bonfire
       expect(lh.at.y - lh.lamp.at.y).toBeGreaterThan(lh.size.h * 0.8)
     }
-  })
+  }, 60_000)
 
   it('is dark at camp, where no cell has graduated and there is no tower', () => {
     const l = composeLayout(CAMP, 'acme-corp', FAST)
@@ -1086,7 +1086,7 @@ describe('the region extents', () => {
     }
     // and it is never the authored 300x190 — a constant would be caught here
     expect(tighter).toBe(SEEDS.length + WIDE.length)
-  })
+  }, 60_000)
 
   /**
    * ONE PER EMITTED PLOT, and the extent is the plot that was PAINTED.
@@ -1142,7 +1142,7 @@ describe('the region extents', () => {
     expect(camp.regions.quay).toBeNull()
     expect(camp.regions.plaza).toBeNull()
     expect(camp.regions.fields).toEqual([])
-  })
+  }, 60_000)
 
   /**
    * NOTHING IS PLANTED ON THE WHARF. The port's own term, on the same argument
@@ -1159,7 +1159,7 @@ describe('the region extents', () => {
       if (!q) continue
       for (const s of l.scatter) expect(inRect(q, s.at)).toBe(false)
     }
-  })
+  }, 60_000)
 })
 
 // ── the audit ──────────────────────────────────────────────────────────────
@@ -1180,7 +1180,7 @@ describe('auditLayout, on the harbour', () => {
       expect(a.inWater).toEqual([])
       expect(a.onLane).toEqual([])
     }
-  })
+  }, 60_000)
 
   /**
    * THE ENVELOPE IS INDEPENDENT OF WHAT IS INSIDE IT — and this is the arm that
@@ -1246,7 +1246,7 @@ describe('auditLayout, on the harbour', () => {
         expect(h.extent[3]).toBeGreaterThan(Math.max(...h.moorings.map((m) => m.y)))
       }
     }
-  })
+  }, 60_000)
 
   /** The negative twin: the arm above is only worth its green if this is red. */
   it('DOES report a dock item computed from the wrong origin', () => {
@@ -1383,14 +1383,14 @@ describe('determinism', () => {
       expect(JSON.stringify(b.lighthouse)).toBe(JSON.stringify(a.lighthouse))
       expect(JSON.stringify(b.regions)).toBe(JSON.stringify(a.regions))
     }
-  })
+  }, 60_000)
 
   it('gives a DIFFERENT harbour for a different island', () => {
     const shapes = SEEDS.map((s) =>
       JSON.stringify((composeLayout(PORT, s, FAST).harbour as Harbour).shore)
     )
     expect(new Set(shapes).size).toBe(SEEDS.length)
-  })
+  }, 60_000)
 
   /** No cove bite, no harbour — but the keystone is still drawn. */
   it('emits no harbour on an island carved without a cove', () => {

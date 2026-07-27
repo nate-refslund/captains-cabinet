@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 9c1a8082d1d6348f345e3aad1faee87fef59e98d3538b08fe9c1f130dce5d68d
+Reviewed-Scope-Digest: dbdf515ca91c7f4c9d618b9029af44e8cb02e626123738c4df230dabf7f90300
 
 
 
@@ -737,3 +737,29 @@ commit — this artifact is excluded from its own scope, so the amend is stable
 under itself. NOT done: no COG-0/1/2/3 twin was re-bound (frozen-historical,
 already BLOCK by design), and no prose section of this review was edited — no
 reviewer saw new bytes, because none of the reviewed bytes changed behaviour.
+
+
+---
+
+## Re-bind 2026-07-27 (merge of origin/master into iso-port-composition)
+
+The gate blocked correctly — reviewed bytes were not tested bytes — and this records why
+the digest moved rather than quietly restamping it.
+
+Three of the 85 in-scope paths changed, and NONE of them by this branch. All three are
+master's own commits arriving through the merge, each already reviewed on its own PR:
+
+  cabinet/config/cognitive-architecture-contract.yml  — the expansion-gate set pins
+      (D3, 2026-07-27), adding budget arms for the surfaces the mass budgets are blind to
+  cabinet/scripts/egg-export-manifest.txt             — the recipient-exclusions and
+      expansion-registry rows
+  cabinet/scripts/tests/test_egg_export.py            — the matching assertion for the
+      recipient-exclusions twin
+
+Nothing in this branch's own work touches the COG-4 scope: it is the world layout, the
+renderer and the check harness. The digest is re-anchored over the merged tree so the
+binding again means "these exact bytes were reviewed", with the delta named above rather
+than absorbed silently.
+
+Recorded digest: dbdf515ca91c7f4c9d618b9029af44e8cb02e626123738c4df230dabf7f90300
+Previous:        9c1a8082d1d6348f345e3aad1faee87fef59e98d3538b08fe9c1f130dce5d68d
