@@ -76,8 +76,9 @@ class TestShippedFloor:
     def test_floor_covers_all_thirteen_risk_classes(self, loaded):
         # [GERM-2] +pm_write +calendar_write (act_with_undo classes).
         # 2026-07-04 trust-inversion split-outs: +read_only_dispatch
-        # (investigation_run, notify_after) +draft_only (earn-up kept,
-        # ADA-DECISION — outbound-adjacent) moved OUT of reversible.
+        # (investigation_run, notify_after) +draft_only (its own class,
+        # outbound-adjacent; earn-up until CAPTAIN-RULING 2026-07-26 moved it
+        # to notify_after) moved OUT of reversible.
         pol = M.matrix_policy(loaded)
         expected = {
             "reversible", "read_only_dispatch", "draft_only",
@@ -228,12 +229,14 @@ class TestVerdictShape:
             assert pol["verdicts"]["reversible"][state] == "act_with_undo", state
         assert pol["verdicts"]["reversible"]["demote"] == "propose_only"
         # read_only_dispatch mirrors the posture with notify_after (read-only,
-        # act-and-tell); draft_only keeps the old earn-up ladder verbatim.
+        # act-and-tell); draft_only joined it on CAPTAIN-RULING 2026-07-26
+        # (was the earn-up ladder auto@graduated / propose_only elsewhere).
         for state in ("unmeasured", "propose_only", "eligible", "graduated"):
             assert pol["verdicts"]["read_only_dispatch"][state] == "notify_after", state
         assert pol["verdicts"]["read_only_dispatch"]["demote"] == "propose_only"
-        assert pol["verdicts"]["draft_only"]["graduated"] == "auto"
-        assert pol["verdicts"]["draft_only"]["unmeasured"] == "propose_only"
+        for state in ("unmeasured", "propose_only", "eligible", "graduated"):
+            assert pol["verdicts"]["draft_only"][state] == "notify_after", state
+        assert pol["verdicts"]["draft_only"]["demote"] == "propose_only"
 
     def test_internal_comms_graduated_is_veto_window(self, loaded):
         pol = M.matrix_policy(loaded)
@@ -405,3 +408,177 @@ class TestActWithUndoNeverCeiling:
             assert "act_with_undo" not in set(pol["verdicts"][rc].values()), rc
         assert "pm_write" not in pol["hard_ceiling"]
         assert "calendar_write" not in pol["hard_ceiling"]
+
+
+# ---------------------------------------------------------------------------
+# 8. CAPTAIN-RULING 2026-07-26 — draft_only is act-and-tell, ceilings unmoved
+# ---------------------------------------------------------------------------
+# "the act first (except for emailing real people…)": COMPOSING a draft moved
+# off the earn-up ladder onto notify_after (act-then-tell) at every non-demote
+# state, in the root/guardian table AND the sovereign one. earn_up is
+# deliberately untouched (narrowing stays legal) and every hard ceiling is
+# untouched, so DELIVERING a draft is exactly as gated as it was.
+#
+# Arm 1 (TestDraftOnlyActThenTell) FAILS against pre-change code: the shipped
+# row was auto@graduated + propose_only at the other four.
+# Arm 2 (TestDraftWideningDidNotMoveTheCeilings) proves the walls held. It is
+# mutation-checked, not merely shape-asserted: each assertion is paired with a
+# synthetic matrix in which the wall IS moved, and the validator must reject
+# it — otherwise the arm could pass on a matrix that no longer enforces
+# anything (a sensor wired to nothing).
+
+_DRAFT_ACT_STATES = ("unmeasured", "propose_only", "eligible", "graduated")
+
+
+class TestDraftOnlyActThenTell:
+    """The ruling landed in BOTH tables that grant it, and nowhere else."""
+
+    def test_root_guardian_draft_only_is_notify_after(self, loaded):
+        pol = M.matrix_policy(loaded)
+        row = pol["verdicts"]["draft_only"]
+        for state in _DRAFT_ACT_STATES:
+            assert row[state] == "notify_after", state
+        assert row["demote"] == "propose_only"
+
+    def test_sovereign_draft_only_is_notify_after(self, loaded):
+        pol = M.matrix_policy(loaded)
+        row = pol["postures"]["sovereign"]["verdicts"]["draft_only"]
+        for state in _DRAFT_ACT_STATES:
+            assert row[state] == "notify_after", state
+        assert row["demote"] == "propose_only"
+
+    def test_draft_only_row_mirrors_read_only_dispatch(self, loaded):
+        # The two act-and-tell classes carry the SAME ladder — one rule to
+        # reason about, no per-class special case.
+        pol = M.matrix_policy(loaded)
+        for table in (pol["verdicts"], pol["postures"]["sovereign"]["verdicts"]):
+            assert table["draft_only"] == table["read_only_dispatch"]
+
+    def test_earn_up_draft_only_still_proposes(self, loaded):
+        # earn_up was NOT widened — the cautious start still proposes, which
+        # the narrows-validator permits (narrow-or-equal).
+        pol = M.matrix_policy(loaded)
+        row = pol["postures"]["earn_up"]["verdicts"]["draft_only"]
+        for state in _DRAFT_ACT_STATES + ("demote",):
+            assert row[state] == "propose_only", state
+
+    def test_draft_only_needs_no_registered_inverse(self, loaded):
+        # notify_after is NOT act_with_undo: the engine's undo-gap check never
+        # runs for it, so the row must not claim act_with_undo anywhere (that
+        # would silently demand an inverse draft_only deliberately lacks).
+        pol = M.matrix_policy(loaded)
+        for table in (pol["verdicts"], pol["postures"]["sovereign"]["verdicts"]):
+            assert "act_with_undo" not in set(table["draft_only"].values())
+
+
+class TestDraftWideningDidNotMoveTheCeilings:
+    """The hard ceilings are exactly where they were — proven, not assumed."""
+
+    def test_every_ceiling_row_is_always_gated_in_root(self, loaded):
+        pol = M.matrix_policy(loaded)
+        assert set(pol["hard_ceiling"]) == _HARD_CEILING_ROWS
+        for rc in _HARD_CEILING_ROWS:
+            assert pol["verdicts"][rc] == {"*": "always_gated"}, rc
+
+    def test_external_comms_never_acts_in_any_posture(self, loaded):
+        # The class that carries a real send. always_gated everywhere; the
+        # sovereign table may only narrow it to the CONDITIONAL standing_grant
+        # (grant-or-file-a-NEED), never to any act verdict.
+        pol = M.matrix_policy(loaded)
+        assert pol["verdicts"]["external_comms"] == {"*": "always_gated"}
+        for name, entry in pol["postures"].items():
+            cell = entry["verdicts"]["external_comms"]
+            assert set(cell) == {"*"}, name
+            assert cell["*"] in ("always_gated", "standing_grant"), name
+            assert cell["*"] not in ("auto", "notify_after",
+                                     "act_with_undo", "auto_with_veto_window")
+
+    def test_no_ceiling_or_prod_auto_still_holds(self, loaded):
+        assert M.no_ceiling_or_prod_auto(M.matrix_policy(loaded)) is True
+
+    def test_ceiling_coverage_still_complete(self, loaded):
+        pol = M.matrix_policy(loaded)
+        assert M.ceiling_members(pol) == set(HARD_CEILING_TOUCHES)
+
+    def test_send_action_types_stayed_on_the_ceiling(self, loaded):
+        # The widened class owns EXACTLY the one non-egress action_type. If a
+        # send kind ever drifted into draft_only it would inherit notify_after
+        # — this is the assertion that would catch it.
+        pol = M.matrix_policy(loaded)
+        assert pol["risk_classes"]["draft_only"]["action_types"] == ["draft_only"]
+        assert set(pol["risk_classes"]["external_comms"]["action_types"]) == {
+            "external_message", "external_email"}
+
+    def test_a_comms_call_classifies_by_recipient_not_by_draft_framing(self):
+        # THE send-path proof at the live classifier: `queue_draft` is the
+        # draft-shaped tool, yet an outside recipient classifies it into the
+        # external_comms CEILING. classify_action has no branch that returns
+        # "draft_only" at all, so no classifier-reachable path can wear the
+        # widened class to reach a real person.
+        from framework.authority.classifier import classify_action
+        for recipient, expected in (
+            ("client@example.org", "external_email"),
+            ("", "external_email"),  # unresolvable ⇒ fail-closed to external
+        ):
+            got = classify_action(
+                "mcp__brain__queue_draft",
+                {"channel": "email", "recipient": recipient, "body": "x"},
+            )
+            assert got == expected, (recipient, got)
+
+    # --- the mutation sensors: the walls are ENFORCED, not just shaped -----
+
+    def test_every_egress_action_type_sits_on_a_ceiling_row(self, loaded):
+        # THE wall this widening leans on: the gate's ceiling short-circuit is
+        # keyed on `risk_class in hard_ceiling`, so a send kind is gated only
+        # for as long as it MAPS to a ceiling class. Every outbound-comms kind
+        # the classifier can emit must therefore sit on a hard-ceiling row.
+        #
+        # KNOWN VALIDATOR GAP (pre-existing, present identically on master —
+        # this assertion is the sensor that covers it): validate_matrix checks
+        # that every action_type is mapped exactly once, but NOT which class it
+        # is mapped to, so relocating `external_email` into a non-ceiling class
+        # validates clean and would reach the notify_after allow-branch. Fixing
+        # that in the validator needs new framework production lines against a
+        # census budget already at its ceiling, so it is recorded in the CG-35
+        # amendment doc as an open item rather than silently closed here. A CI
+        # test is a real sensor for it: the floor is germline + schg-locked and
+        # load_policies REFUSES any preset/instance authority_matrix, so a
+        # direct edit of this file is the only channel, and it lands here.
+        from framework.authority.classifier import _EXTERNAL_COMMS
+        # Not vacuous at the degenerate end: an empty/shrunk egress set would
+        # make the loop below assert nothing at all.
+        assert _EXTERNAL_COMMS == {"external_message", "external_email"}
+        pol = M.matrix_policy(loaded)
+        ceiling = set(pol["hard_ceiling"])
+        placement = {
+            at: name
+            for name, rc in pol["risk_classes"].items()
+            for at in rc["action_types"]
+        }
+        for at in _EXTERNAL_COMMS:
+            assert placement[at] in ceiling, (at, placement[at])
+            assert placement[at] == "external_comms", at
+
+    def test_letting_external_comms_act_is_rejected(self, loaded):
+        for verdict in ("auto", "notify_after"):
+            d = copy.deepcopy(loaded)
+            M.matrix_policy(d)["verdicts"]["external_comms"] = {"*": verdict}
+            with pytest.raises(M.MatrixValidationError):
+                M.validate_matrix(d)
+
+    def test_letting_a_sovereign_ceiling_act_is_rejected(self, loaded):
+        d = copy.deepcopy(loaded)
+        posture = M.matrix_policy(d)["postures"]["sovereign"]["verdicts"]
+        posture["external_comms"] = {"*": "notify_after"}
+        with pytest.raises(M.MatrixValidationError):
+            M.validate_matrix(d)
+
+    def test_draft_only_demote_must_still_land_fail_safe(self, loaded):
+        # Demote is posture-invariant: drifting the sovereign row's demote off
+        # the root's is a hard error, so evidence still beats posture.
+        d = copy.deepcopy(loaded)
+        pol = M.matrix_policy(d)
+        pol["postures"]["sovereign"]["verdicts"]["draft_only"]["demote"] = "notify_after"
+        with pytest.raises(M.MatrixValidationError):
+            M.validate_matrix(d)
