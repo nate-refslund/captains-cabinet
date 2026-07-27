@@ -6,9 +6,26 @@ ONE NUMBER PER BRIEFING. The Captain scores the briefing he just got:
     0  wouldn't read it
     1  read it, no value
     2  told me something I didn't know
-    3  I'd act on it
+    3  changed what I did next
 
 Recorded append-only, summarised on demand. That is the whole instrument.
+
+RUNG 3 CHANGED 2026-07-27, from "I'd act on it" (adjudicated, altitude gate
+of record). "Act" conflates the QUALITY of the item with the operator's
+AUTHORITY over it. At founder altitude "act" means ratify an outcome; at
+employee altitude the honest answer to a genuinely excellent briefing is often
+"I can't act on that, it isn't mine" — a permanent 2, so the ceiling was set by
+org chart rather than by cabinet quality and the 2->3 transition could never
+fire. "Changed what I did next" is reachable at EVERY altitude, and it is
+still a thing the operator TYPED about the cabinet's output, so the
+never-a-score exemption below holds unchanged. Deliberately NOT built: a
+per-altitude rubric — a second scale is a second instrument nobody asked for,
+and this repo's own OVI history is the proof that composites drift from the
+question.
+
+NEVER COMPARABLE ACROSS OPERATORS. The scale is self-referenced against one
+reader's own week; two operators' medians measure two different worlds. The
+summary is a longitudinal read for ONE deployment and is rendered saying so.
 
 WHY IT EXISTS: nothing in this cabinet measured whether the Captain reads or
 values anything it sends him. The one value composite that exists (OVI,
@@ -116,7 +133,7 @@ SCALE = {
     0: "wouldn't read it",
     1: "read it, no value",
     2: "told me something I didn't know",
-    3: "I'd act on it",
+    3: "changed what I did next",
 }
 
 #: The phone grammar: ``/score <0-3> [note]`` (optional @botname suffix, an
@@ -385,6 +402,11 @@ def render_summary(s: dict) -> str:
     if s["malformed_rows"]:
         lines.append(f"{s['malformed_rows']} unreadable row(s) skipped.")
     lines.append("Scale: " + " · ".join(f"{k} {v}" for k, v in SCALE.items()))
+    # Printed every time, deliberately. The scale is self-referenced against
+    # ONE reader's own week, so a median here and a median on another
+    # deployment are not the same measurement — and a bare number invites
+    # exactly that comparison.
+    lines.append("Not comparable across operators — one reader, over time.")
     return "\n".join(lines)
 
 

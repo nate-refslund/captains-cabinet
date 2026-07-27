@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 1b60ed4000cd5c5f747cd64c9f5cf42df36a566bc2f8b4a44b7fce7419e21bfd
+Reviewed-Scope-Digest: e3675c7b4b1db4c20220bb9bf418baa5011ad6ae644fc05c181b5401933d0923
 (RE-BOUND repeatedly on 2026-07-27 — the census-shift-left, expansion-registry and
 census-set-pins landings each edited `cabinet/config/cognitive-architecture-contract.yml`,
 which sits in `restore_from_baseline` and is therefore digest-bound, and so did this
@@ -69,6 +69,14 @@ hand-picked digest from either parent records a tree that never existed. The
 digest line was again the only conflict here; every note is preserved. In-scope
 paths carried in by the merge: the census contract only. Census re-measured on
 the merged bytes: PASS, observed==max with zero headroom.)
+(MERGE RE-BIND #3, 2026-07-27, same branch: the personal-preset-live landing
+re-bound this digest while the branch was in CI. Recomputed over the merged
+committed tree, same reason and same mechanics as #1 and #2 — in-scope paths
+carried in by the merge: the census contract only; census re-measured on the
+merged bytes: PASS, observed==max with zero headroom. Three merge re-binds on
+one branch is not drift, it is a hot shared surface: every concurrent landing
+that pays line mass edits the same contract file, which is in this digest's
+restore_from_baseline set.)
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
@@ -761,3 +769,53 @@ commit — this artifact is excluded from its own scope, so the amend is stable
 under itself. NOT done: no COG-0/1/2/3 twin was re-bound (frozen-historical,
 already BLOCK by design), and no prose section of this review was edited — no
 reviewer saw new bytes, because none of the reviewed bytes changed behaviour.
+
+RE-BOUND 2026-07-27 by the `feat/personal-preset-live` landing: 3188bf08… -> 26528114….
+(First bound at b3523559… -> e7926158…; RE-MEASURED after merging origin/master,
+whose `fix/propose-means-propose` landing moved the same two in-scope files
+mid-flight. The merge kept BOTH allowance blocks — neither landing's row was
+dropped — and the branch census re-reads PASS at observed == max against every new
+baseline (6e50570f, then 8095ded9 after the hook-redos landing), with the module
+delta exactly +1/+331 each time, which is the check that the number measures
+this module and not a merge.)
+ONE in-scope surface changed, `cabinet/config/cognitive-architecture-contract.yml`
+(it sits in `restore_from_baseline` and is therefore digest-bound), and the change
+is two `temporary_allowances` rows plus one `expansions` row paying for
+`framework/sources/local.py` — the local-folder PersonalSource that unblocks
+`presets/personal/`. NO COG-4 implementation byte changed: intersecting
+`git diff --name-only origin/master...HEAD` with the tool's resolved scope yields
+exactly the contract file. `cognitive-architecture-census.py` is PASS at
+observed == max (245 <= 245 modules, 69985 <= 69985 lines) with the expansion row
+registered. The digest was recomputed over the COMMITTED tree and folded into the
+same landing; this artifact is excluded from its own scope, so the edit is stable
+under itself.
+
+NOT done: the COG-0/1/2/3 twins were NOT re-bound, which is the state the
+`cognitive-phase4` CI job's own scope note already records ("the phase-0/1/2/3
+twins are the digest-frozen HISTORICAL instances their own docstrings describe,
+and all of them are already BLOCK on master by design"). Re-measured here on a
+clean clone of `origin/master` at 91faed1b, before this branch existed: phase 0
+f543dc1e -> 268e01b4, phase 1 25c2f5e3 -> 3168b0b1, phase 2 b3863291 ->
+ae79b6e2, phase 3 78a7bf18 -> fde71324, and phase 4 clean. Re-binding a frozen
+historical twin here would absorb earlier landings' drift under this one's name
+and bless bytes no reviewer on this branch has read, so they are left as they
+were.
+
+RE-BOUND 2026-07-27 by the `feat/personal-preset-live` landing: 9c1a8082… -> 8bee10cd….
+ONE in-scope surface changed, `cabinet/config/cognitive-architecture-contract.yml`
+(`restore_from_baseline`, therefore digest-bound): two `temporary_allowances` rows
+plus one `expansions` row paying for `framework/sources/local.py`, the
+local-folder PersonalSource that unblocks `presets/personal/`. NO COG-4
+implementation byte changed — intersecting `git diff --name-only
+origin/master...HEAD` with the tool's resolved scope yields exactly that file.
+RE-MEASURED on every merge rather than carried: master moved four times while
+this branch was in flight, and the census re-reads PASS at observed == max
+against each new baseline with the module delta exactly +1/+331 every time
+(d7c66fe2 70434 -> 70765), which is the check that the number measures this
+module and not a merge. The concurrent `feat/source-ownership-class` landing
+edited the same contract and the same census tests; BOTH landings' allowance and
+expansion rows are kept (verified by set-difference against
+`origin/master`, zero rows lost), and this branch took master's census-test
+version wholesale — its bijection assertion is strictly stronger than the
+"no unregistered surplus" form this branch had written for the same defect, and
+it additionally catches a row that outlives its member.
