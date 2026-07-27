@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: d88940982ce3c002414295be3a49cbfda1a9b10bb8b412b2c03134939e6ecae8
+Reviewed-Scope-Digest: PLACEHOLDER
 (RE-BOUND repeatedly on 2026-07-27 — the census-shift-left, expansion-registry,
 census-set-pins, recipient-exclusion-carve-backs and hook-redos landings each edited
 `cabinet/config/cognitive-architecture-contract.yml`, which sits in `restore_from_baseline`

