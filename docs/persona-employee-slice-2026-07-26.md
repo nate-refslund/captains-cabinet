@@ -240,6 +240,25 @@ detector *does* fire when both halves are in the window, and a capped arm
 proving it does not and that the card says so cleanly. A coverage, ranking or
 disclosure fix will flip the second.
 
+> **FIXED 2026-07-27** (three-entry-modes unit). The second arm flipped, as
+> designed, and was inverted in place to
+> `test_capped_window_reads_by_relevance_and_keeps_the_cross_directory_join`.
+> Three changes in `journey._scan_source` / `journey._first_dividend`:
+> **(a)** the scan is two passes, so it counts the whole tree instead of
+> stopping at the cap — `candidate_files == included_files` with zero
+> exclusions is no longer reachable while files are being dropped;
+> **(b)** the bounded read is spent in **relevance order** (`_relevance_key`,
+> path-and-name only, never file content), and the manifest files that the
+> join detectors need are read first — `_command_drift` returns nothing at all
+> without a `package.json`, so a manifest file that never fit was a silently
+> disabled detector, not a weaker result;
+> **(c)** the negative is **earned or scoped** — the manifest and dividend
+> carry a `coverage` block, the sentence quoted above is only produced when
+> `coverage.complete` is true, and otherwise the card states how many eligible
+> files were left unopened. Ranking narrows the loss but cannot abolish it, so
+> the disclosure is the part that has to hold; that half is pinned separately
+> by `test_a_truncated_window_never_states_a_negative_it_did_not_earn`.
+
 ---
 
 ## 6. Answers to the four questions
@@ -326,7 +345,9 @@ anti-tuning guard by
 `test_employee_estate_planted_cross_system_facts_are_all_present_but_unfound`,
 and the cap behaviour in §5 by
 `test_uncapped_window_finds_the_cross_directory_command_drift` plus
-`test_capped_window_reports_a_clean_negative_it_did_not_earn`.
+`test_capped_window_reads_by_relevance_and_keeps_the_cross_directory_join`
+(named `test_capped_window_reports_a_clean_negative_it_did_not_earn` until the
+2026-07-27 fix inverted it — see the FIXED note in §5).
 
 The harness output that produced §2's table, captured while the estate was
 briefly registered as a fourth persona (reverted for the reason in §1):
