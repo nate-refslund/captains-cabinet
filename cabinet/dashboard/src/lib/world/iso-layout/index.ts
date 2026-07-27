@@ -43,6 +43,7 @@ import {
   clearOfRegions,
   footprintOnLane,
   groundTaken,
+  maxGroundOverlap,
   placeOnGround,
   snapInland,
   type Footprint,
@@ -50,10 +51,17 @@ import {
 } from './clearance'
 import { driveway, drivewayLane, type Driveway } from './driveways'
 import {
+  dressDistricts,
+  dressLanding,
+  type DressItem,
+  type Settle,
+} from './dressing'
+import {
   buildHarbour,
   CAIRN_CLEARING,
   lampPosition,
   lighthouseSite,
+  shoreAt,
   LIGHTHOUSE_CLEARING,
   rectContains,
   type Ellipse,
@@ -177,7 +185,9 @@ export const DEFAULT_FOOTPRINTS: Readonly<Record<string, Footprint>> = {
   workshop: { w: 170, h: 170 },
   officer_dwelling: { w: 150, h: 150 },
   outbuildings: { w: 150, h: 150 },
-  market_stall: { w: 150, h: 140 },
+  // market_stall moved to the dressing block below with the pack's own size —
+  // it is dressing now, not a building, and 150x140 was the manifest estimate
+  // for a sprite the pack ships at 125x105.
   well: { w: 140, h: 150 },
   firepit: { w: 130, h: 115 },
   // the harbour and the lighthouse (manifest.py:33-35, :72-85, :124-125,
@@ -230,6 +240,53 @@ export const DEFAULT_FOOTPRINTS: Readonly<Record<string, Footprint>> = {
   cottage_b: { w: 150, h: 150 },
   cottage_c: { w: 145, h: 145 },
   camp_tent: { w: 120, h: 120 },
+  // ---- the district dressing (./dressing), from world-pack.json's own dw/dh
+  // at the HAMLET vocabulary, which is the same convention every row above
+  // uses. The LADDER objects are keyed by OBJECT name because that is the key
+  // `sizeOf` is called with; blueprint.ts's OBJECT_OF_KIND then resolves the
+  // real era/rung art, and a pack-backed caller never reaches these numbers.
+  law_plot: { w: 29, h: 24 },
+  pens: { w: 45, h: 43 },
+  water_store: { w: 30, h: 37 },
+  composter: { w: 48, h: 39 },
+  noticeboard: { w: 39, h: 55 },
+  flagpole: { w: 50, h: 173 },
+  veto_plinth: { w: 43, h: 42 },
+  observatory: { w: 146, h: 144 },
+  journal_desk: { w: 45, h: 43 },
+  lantern_posts: { w: 18, h: 63 },
+  market_stall: { w: 125, h: 105 },
+  market_goods: { w: 48, h: 35 },
+  bench: { w: 38, h: 32 },
+  wheelbarrow: { w: 33, h: 24 },
+  chicken: { w: 19, h: 30 },
+  signpost: { w: 31, h: 47 },
+  lamp_dark: { w: 18, h: 63 },
+  lamp_lantern: { w: 28, h: 65 },
+  chart_table: { w: 96, h: 105 },
+  dog_sleeping: { w: 33, h: 23 },
+  law_post: { w: 25, h: 51 },
+  consequence_ledger: { w: 45, h: 51 },
+  fence_run: { w: 29, h: 24 },
+  chart_tent: { w: 124, h: 111 },
+  windmill: { w: 164, h: 178 },
+  watermill_kiln: { w: 150, h: 150 },
+  wood_pile: { w: 38, h: 32 },
+  water_trough: { w: 44, h: 34 },
+  scarecrow: { w: 34, h: 61 },
+  haystack: { w: 45, h: 46 },
+  cart: { w: 39, h: 37 },
+  veg_garden: { w: 54, h: 35 },
+  chicken_coop: { w: 90, h: 85 },
+  laundry_line: { w: 55, h: 46 },
+  beehives: { w: 43, h: 38 },
+  mailbox: { w: 29, h: 54 },
+  potted_plant: { w: 32, h: 45 },
+  flowerbed: { w: 44, h: 36 },
+  boat_rowing: { w: 88, h: 62 },
+  boat_fishing: { w: 83, h: 113 },
+  buoy: { w: 38, h: 46 },
+  well_house: { w: 112, h: 114 },
 }
 
 const FALLBACK_FOOTPRINT: Footprint = { w: 96, h: 96 }
@@ -366,6 +423,16 @@ export interface Layout {
    */
   ring: RingItem[]
   scatter: PlacedItem[]
+  /**
+   * The authored district furniture — see ./dressing.
+   *
+   * SEPARATE FROM `structures` AND FROM `scatter`, because it is neither. A
+   * structure is strict and is never dropped for being crowded; a scatter item
+   * is sampled by a density field and has no authored spot. Dressing is
+   * authored AND droppable, and folding it into either list would take away
+   * exactly the property that distinguishes it.
+   */
+  dressing: DressItem[]
   /** Keep-out discs, exported so the renderer can debug-draw the field. */
   districts: District[]
   /** null on an island carved with no cove: no bite, no harbour. */
@@ -641,9 +708,11 @@ export function composeLayout(
   }
   if (isBuilt(state, 'well')) put('well', 'well', { x: 1050, y: 970 }, false)
   if (isBuilt(state, 'firepit')) put('firepit', 'firepit', SQUARE, false)
-  if (village && isBuilt(state, 'market_stall')) {
-    put('market_stall', 'market_stall', { x: 1386, y: 958 }, false)
-  }
+  // THE MARKET STALL MOVED TO ./dressing, and the gate it moved off was wired
+  // to nothing: `isBuilt(state, 'market_stall')` asked a ladder that does not
+  // exist (cabinet/world/growth-ladders.yml has 29 ladders and no
+  // `market_stall`), so the predicate was false on every state and the stall
+  // could never draw. compose.py:966 gates it on the era alone.
   // ONE SPRITE PER LOT, not one sprite six times — see dwellingKind.
   for (const b of built) put(b.kind, b.obj, b.lot.c, lotFlip(b.lot), b.lot)
 
@@ -666,6 +735,95 @@ export function composeLayout(
   // WALKED from the coastline, so it moves with the island rather than sitting
   // at an authored bearing that half the seeds put inland.
   const lighthouse = placeLighthouse(state, coast, space, put)
+
+  // ---- 8b. district dressing ----------------------------------------------
+  // BEFORE the planting and AFTER every building, which is the only order that
+  // works: a bench must lose to a warehouse and win against a fern. The ring
+  // and the scatter both sample `occupied`, so pushing the dressing into that
+  // book here is what stops a tree growing through the market stall.
+  //
+  // Decoration is DROPPED rather than stacked (dropIfBlocked), which is the
+  // opposite of the structure rule directly above and deliberately so: a
+  // measured building that cannot find ground is a fact about the org and must
+  // still be reported, while a barrel that cannot find ground is a barrel
+  // nobody will miss.
+  const dressSettle: Settle = (kind, role, at, flip, dopts) => {
+    const size = sizeOf(kind)
+    const p = placeOnGround(at, size, laneField, onLand, [...occupied, ...plotGround], {
+      dropIfBlocked: true,
+      avoidLane: dopts?.avoidLane,
+      nudge: dopts?.nudge,
+      inlandTo: inland,
+    })
+    if (!p) return null
+    // A RUN THAT MAY NOT BE NUDGED OFF A LANE MUST BE DROPPED ON ONE. Turning
+    // `avoidLane` off removes the only rule that was keeping the section off
+    // the road, and a fence drawn across a carriageway is a real on-road
+    // defect — so the test still runs, it just drops instead of moving. That
+    // gap is the gate (compose.py fence_axis).
+    if (dopts?.avoidLane === false && footprintOnLane(p, size, laneField)) return null
+    const cleared = clearOfRegions(p, size, plotGround, laneField, onLand, occupied)
+    // THE PLOT RULE CAN UNDO THE SETTLE, so the settle is re-asserted after it.
+    // clearOfRegions searches outward for ground that is off the plough AND
+    // clear of neighbours, and when it finds neither it returns the least-bad
+    // compromise — which for the chicken coop was a 31% overlap with the
+    // watermill kiln, caught by check_stacking on the first frame that drew
+    // both. A structure has to be drawn anyway (it is a measured fact); a piece
+    // of dressing does not, so here the compromise is simply refused. This is
+    // the one place the dressing is STRICTER than the buildings above it, and
+    // deliberately: nothing is lost by not drawing a coop, and a coop inside a
+    // kiln is a defect a viewer sees instantly.
+    if (dopts?.nudge !== false && maxGroundOverlap(cleared, size, occupied) > 0.1) return null
+    occupied.push({ at: cleared, size })
+    return { kind, role, at: cleared, flip, size, overWater: false }
+  }
+  const roleAt = (role: string): Point | null =>
+    structures.find((s) => s.role === role)?.at ?? null
+  const dressing: DressItem[] = [
+    ...dressDistricts({
+      era: state.era,
+      village,
+      stageOf: (obj) => state.stages?.[obj],
+      countOf: (obj) => countOf(state, obj),
+      built: (obj) => presentRung(state, obj),
+      sizeOf,
+      settle: dressSettle,
+      anchor,
+      great: (() => {
+        const g = structures.find((s) => s.role === 'great_house')
+        return g ? { at: g.at, size: g.size } : null
+      })(),
+      lib: roleAt('library'),
+      works: roleAt('workshop'),
+      fields: roleAt('outbuildings'),
+      square: SQUARE,
+      dwellings: structures.filter((s) => s.role === 'officer_dwelling').map((s) => s.at),
+      shoreAt: coast.cove ? (x: number) => shoreAt(coast, coast.cove!, x) : null,
+      cove: coast.cove ? { x: coast.cove.x, y: coast.cove.y } : null,
+    }),
+    ...dressLanding({
+      era: state.era,
+      village,
+      stageOf: (obj) => state.stages?.[obj],
+      countOf: (obj) => countOf(state, obj),
+      built: (obj) => presentRung(state, obj),
+      sizeOf,
+      settle: dressSettle,
+      anchor,
+      great: null,
+      lib: null,
+      works: null,
+      fields: null,
+      square: SQUARE,
+      dwellings: [],
+      shoreAt: coast.cove ? (x: number) => shoreAt(coast, coast.cove!, x) : null,
+      cove: coast.cove ? { x: coast.cove.x, y: coast.cove.y } : null,
+    }),
+  ]
+  // The floating half of the landing occupies WATER, not ground, so it never
+  // enters the occupancy book — a buoy reserves nothing a tree could want, and
+  // `dressSettle` (which does add to the book) is only ever called for the
+  // items that stand on land.
 
   // ---- 9. scatter ---------------------------------------------------------
   const districts: District[] = [
@@ -777,6 +935,7 @@ export function composeLayout(
     structures,
     ring,
     scatter,
+    dressing,
     districts,
     harbour,
     lighthouse,

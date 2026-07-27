@@ -397,6 +397,19 @@ export interface PlaceOptions {
   avoidLane?: boolean
   /** Where the land walk heads: the island centre (compose.py ICX/ICY). */
   inlandTo?: Point
+  /**
+   * Push out of neighbours at all (compose.py place(nudge=)). Default true.
+   *
+   * FALSE IS FOR RUNS, and it is not an optimisation: a fence, a hedge or a
+   * lamp line is a SEQUENCE whose spacing is the whole point, and each section
+   * is a neighbour of the one before it. Settling them shoves every section
+   * away from its predecessor, so an authored 27px step comes out at 48px and
+   * a continuous fence draws as a dashed line of loose posts — measured on the
+   * first frame this dressing stage ever rendered. With the nudge off the run
+   * keeps its step and the lane/land rules still apply; a section that lands
+   * badly is dropped, which is what leaves a gate where a lane crosses.
+   */
+  nudge?: boolean
 }
 
 /**
@@ -431,13 +444,15 @@ export function placeOnGround(
   let p = grounded
   let settled = true
   for (let round = 0; round < 2; round++) {
-    const s = settleAgainstOccupants(p, size, occupied, {
-      overlap: strict ? 0.04 : 0.1,
-      tries: strict ? 60 : 30,
-      step: strict ? 30 : 19,
-    })
-    p = s.at
-    settled = s.settled
+    if (opts.nudge !== false) {
+      const s = settleAgainstOccupants(p, size, occupied, {
+        overlap: strict ? 0.04 : 0.1,
+        tries: strict ? 60 : 30,
+        step: strict ? 30 : 19,
+      })
+      p = s.at
+      settled = s.settled
+    }
     if (opts.avoidLane !== false) {
       p = clearOfLane(p, size, lanes, onLand, occupied, { frac })
     }

@@ -4,7 +4,7 @@
   "date": "2026-07-26",
   "index": 0.412,
   "note": "The approved-look reference state: a settled village with a working harbour. Mirrors designs/cabinet-world-state-today-2026-07-26.png.",
-  "provenance": "EVERY rung name below is a real rung of that ladder in cabinet/world/growth-ladders.yml, and every count is the ladder's own count. Inventing a rung would be inventing a measurement — which is the exact defect check_era's rung arm exists to catch, so a fixture that made it up would be turning the check off. `packs_inherited` carries no stage because it is not a ladder at all: it is a census count (cabinet/world/morphology.yml:178, harbour cranes = extension packs present).",
+  "provenance": "EVERY rung name below is a real rung of that ladder in cabinet/world/growth-ladders.yml, and every count is the ladder's own count. Inventing a rung would be inventing a measurement — which is the exact defect check_era's rung arm exists to catch, so a fixture that made it up would be turning the check off. `packs_inherited` carries no stage because it is not a ladder at all: it is a census count (cabinet/world/morphology.yml:178, harbour cranes = extension packs present). WIDENED 2026-07-27 (law_plot, veto_plinth, noticeboard, journal_desk, flagpole, observatory, pens, water_store, composter, lantern_posts, posts_lit, and the outbuildings count) for one reason: those ladders had NO PLACEMENT RULE AT ALL until iso-layout/dressing.ts, so the fixture could not have moved anything on the island and the first frame ever drawn was judged under-furnished against the approved still. Each rung is chosen the same way every rung already here was — a real rung name of that ladder, at the settled-village end of it — and NOT computed from the ladder's metric. This file is a STATE, not a census reading; saying so is the difference between a fixture and a claim about the org.",
   "state": {
     "era": "hamlet",
     "road": "gravel_road",
@@ -24,7 +24,18 @@
       "field_plots": "plots_3",
       "lighthouse": "tower_full",
       "lighthouse_lamp": "lit",
-      "quay": "timber_jetty"
+      "quay": "timber_jetty",
+      "law_plot": "wood_fence",
+      "veto_plinth": "empty_plinth",
+      "noticeboard": "board",
+      "journal_desk": "journal_shelf",
+      "flagpole": "pennant",
+      "observatory": "dome_frame",
+      "pens": "pen_2",
+      "water_store": "barrel",
+      "composter": "bays_2",
+      "lantern_posts": "posts_2",
+      "posts_lit": "lit_1"
     },
     "counts": {
       "officer_dwellings": 5,
@@ -32,7 +43,13 @@
       "berths": 4,
       "cargo_stacks": 2,
       "warehouse": 2,
-      "packs_inherited": 1
+      "packs_inherited": 1,
+      "outbuildings": 2,
+      "law_plot": 3,
+      "pens": 2,
+      "composter": 2,
+      "lantern_posts": 2,
+      "posts_lit": 1
     }
   }
 }

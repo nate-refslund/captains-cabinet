@@ -55,6 +55,7 @@ import {
   type LayoutState,
   type Point,
 } from './iso-layout'
+import { LANDING_FRAMES, VILLAGE_LIFE_FRAMES } from './iso-layout/dressing'
 
 // ── the shipped pack, as much of it as the bridge reads ────────────────────
 
@@ -103,6 +104,20 @@ const OBJECT_OF_KIND: Readonly<Record<string, string>> = {
   cargo_stacks: 'cargo_stacks',
   harbor_boat: 'harbor_boat',
   mooring_post: 'berths',
+  // The dressing's LADDER items (iso-layout/dressing.ts). Each is emitted under
+  // its OBJECT name precisely so the pack's (object, era, rung) table picks the
+  // art — a hamlet law plot is a fence run, a camp one is a carved post, and a
+  // layout that chose between them would be a second vocabulary table.
+  law_plot: 'law_plot',
+  pens: 'pens',
+  water_store: 'water_store',
+  composter: 'composter',
+  noticeboard: 'noticeboard',
+  flagpole: 'flagpole',
+  veto_plinth: 'veto_plinth',
+  observatory: 'observatory',
+  journal_desk: 'journal_desk',
+  lantern_posts: 'lantern_posts',
 }
 
 /**
@@ -198,7 +213,50 @@ export function justifiedFromState(pack: WorldPack, state: LayoutState): string[
   if (presentRung(state, 'library')) add('library')
   if (presentRung(state, 'workshop')) add('workshop')
   if (presentRung(state, 'outbuildings')) add('outbuildings')
-  if (eraAtLeast(era, 'hamlet') && presentRung(state, 'market_stall')) out.add('market_stall')
+
+  // ---- the district dressing (iso-layout/dressing.ts) ---------------------
+  // THE LADDER CLASS: each on its own rung, exactly like a building. Note this
+  // is `presentRung`, not `isBuilt` — an unmeasured ladder entitles nothing,
+  // and the always-drawn override belongs to the four objects above.
+  for (const object of [
+    'law_plot',
+    'pens',
+    'water_store',
+    'composter',
+    'noticeboard',
+    'flagpole',
+    'veto_plinth',
+    'observatory',
+    'journal_desk',
+    'lantern_posts',
+  ]) {
+    if (presentRung(state, object)) add(object)
+  }
+  // A LIT POST is the `posts_lit` count, and it has no resolve entry of its own
+  // (the pack has no `posts_lit` object): the art is the lantern, and the count
+  // is what entitles it. Nothing lights without a post to light.
+  if (countOf(state, 'posts_lit') > 0 && countOf(state, 'lantern_posts') > 0) {
+    out.add('lamp_lantern')
+  }
+  // THE COUNT-GATED BUILDINGS: a windmill says the fleet runs services, a kiln
+  // says more than one does, a coop says more than one outbuilding.
+  if (eraAtLeast(era, 'hamlet')) {
+    if (countOf(state, 'pens') >= 1) out.add('windmill')
+    if (countOf(state, 'pens') >= 2) out.add('watermill_kiln')
+    if (countOf(state, 'outbuildings') >= 2) out.add('chicken_coop')
+  }
+  // THE VILLAGE-LIFE CLASS: entitled by the ERA and nothing finer, which is the
+  // reference's own rule (compose.py:523 — "A camp is a camp: no benches, no
+  // flowerbeds, no street lamps, no market goods"). At camp this set is EMPTY,
+  // so any one of these names on a camp frame is an orphan and
+  // check_state_traceable goes red. That is the arm the `camp-bench` mutation
+  // proves, and it is the reason the list is a closed constant in dressing.ts
+  // rather than something derived from what the dressing pass happened to place.
+  if (eraAtLeast(era, 'hamlet')) for (const k of VILLAGE_LIFE_FRAMES) out.add(k)
+  // THE LANDING: at every era, camp included. A cabinet exists because somebody
+  // arrived, so the craft that brought them is as true on day zero as the
+  // treeline — see dressLanding in iso-layout/dressing.ts.
+  for (const k of LANDING_FRAMES) out.add(k)
 
   // The dwelling row: every art the era's variety pool may put on a lot. The
   // COUNT is what entitles them, so an org with no officers justifies none.
@@ -434,6 +492,23 @@ export function emitFrame(
   // rasteriser sorts a copy by base y. Re-ordering here would quietly make the
   // blueprint a claim about depth that nothing verified.
   for (const s of layout.structures) push(s.kind, s.at, s.flip, s.size)
+  // The dressing rides here, between the buildings and the harbour, because
+  // that is where composeLayout emits it. `overWater` decides the SHADOW and
+  // nothing else — a buoy casts nothing onto the sea, and the NO_SHADOW name
+  // list cannot answer that for a crate that happens to sit on a deck.
+  for (const d of layout.dressing) {
+    const n = frameOfKind(pack, state, d.kind)
+    const drawn = drawSizeOf(pack, n) ?? d.size
+    sprites.push({
+      n,
+      x: i(d.at.x),
+      y: i(d.at.y),
+      w: i(drawn.w),
+      h: i(drawn.h),
+      flip: d.flip,
+      shadow: !d.overWater && !NO_SHADOW.has(n),
+    })
+  }
   const h = layout.harbour
   if (h) {
     for (const item of h.items) push(item.kind, item.at, item.flip, item.size)

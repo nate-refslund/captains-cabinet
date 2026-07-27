@@ -30,7 +30,7 @@
 import { fnv1a, seededRng } from '../hash'
 import type { Coastline } from './coastline'
 import { SQUARE } from './lanes'
-import { clamp, type Point } from './space'
+import { clamp, ISO_AXIS_SLOPE, type Point } from './space'
 
 /** One painted blob — the renderer unions them into an organic region. */
 export interface Blob {
@@ -292,6 +292,17 @@ export function grownField(
 export const REED_MARGIN = 52
 
 /**
+ * How many lobes break a meadow patch's rim (see the meadow pass below).
+ *
+ * SEVEN, not four and not sixteen. Four leaves the core ellipse visible between
+ * the bumps and reads as a clover; sixteen at these radii closes back into a
+ * circle and buys nothing for 16x the blobs. Seven is the smallest count whose
+ * union has no straight arc long enough to read as an ellipse edge, measured by
+ * eye on the hamlet frame at 1.0 and by blob count in paint.test.ts.
+ */
+export const MEADOW_LOBES = 7
+
+/**
  * All the ground regions for a world state.
  *
  * `fieldPlots` and `village` rather than the whole LayoutState: this module is
@@ -325,6 +336,25 @@ export function paintRegions(
   // because grass does not know what an org has built. The reference skips the
   // radius and fill draws for an off-land candidate, so this does too — the
   // stream has to be consumed in the same order or the patches move.
+  //
+  // AND THE PATCH IS A CLOUD, NOT AN ELLIPSE. The reference draws one ellipse
+  // per patch and then blurs the WHOLE mask by 26px (compose.py:149), which is
+  // what turns 70 hard ovals into shading you cannot see the edges of. A blob
+  // here is vector, not pixels, so there is no blur to apply — and painting the
+  // ellipses as drawn gave exactly what the first render was judged on:
+  // "eight-plus flat darker-green ovals with razor edges, the most artificial
+  // thing in the frame". The honest vector equivalent of a blurred mask is an
+  // IRREGULAR OUTLINE: a smaller core plus satellites scattered round its rim,
+  // all at the SAME fill so the union is still one flat patch at one strength.
+  // The union's extent matches the ellipse it replaces (core 0.62r + satellites
+  // at 0.56r carrying 0.44r ≈ 1.0r), so nothing downstream moves; only the
+  // silhouette stops being a razor oval.
+  //
+  // SAME FILL ON EVERY PIECE IS LOAD-BEARING, not incidental. Both renderers
+  // union a region's blobs and take the MAX of their strengths (raster.py
+  // _blob_mask uses ImageChops.lighter; the engine unions one Graphics path per
+  // alpha bucket). Satellites at a different fill would composite at the
+  // overlaps and draw a dark ring round every patch — the opposite of a feather.
   {
     const rng = streamFor('meadow')
     const blobs: Blob[] = []
@@ -334,7 +364,22 @@ export function paintRegions(
       if (!onLand(x, y)) continue
       const r = 90 + Math.floor(rng() * 151)
       const fill = 110 + Math.floor(rng() * 101)
-      blobs.push({ c: { x, y }, rx: r, ry: r * 0.62, w: fill / 255 })
+      const w = fill / 255
+      blobs.push({ c: { x, y }, rx: r * 0.62, ry: r * 0.62 * 0.62, w })
+      for (let k = 0; k < MEADOW_LOBES; k++) {
+        // the rim angle is jittered inside its own slice, so the lobes never
+        // land on a regular polygon — a ring of evenly spaced bumps reads as a
+        // cog, which is a different artificial shape rather than none
+        const a = ((k + rng()) * Math.PI * 2) / MEADOW_LOBES
+        const rr = r * (0.42 + rng() * 0.28)
+        const lobe = r * (0.34 + rng() * 0.2)
+        blobs.push({
+          c: { x: x + Math.cos(a) * rr, y: y + Math.sin(a) * rr * 0.62 },
+          rx: lobe,
+          ry: lobe * 0.62,
+          w,
+        })
+      }
     }
     keep('meadow_dark', blobs)
   }
@@ -359,18 +404,72 @@ export function paintRegions(
   }
 
   // ---- the tilled plots (compose.py:364-376) ------------------------------
+  //
+  // A PLOUGHED FIELD IS A RHOMBUS ON THE ISO AXES, NOT AN OVAL — and this is a
+  // deliberate departure from the reference, stated so nobody has to guess.
+  // compose.py:369-372 draws NINE copies of one 150x74 ellipse jittered by
+  // (±40, ±18); the jitter is small against the radii, so the union is an
+  // ellipse with a slightly wobbly rim, and that is exactly how the first frame
+  // rendered: "the field plots are ellipses too. Furrows are correct and on the
+  // iso axis; the plot outline is a perfect oval. Nobody ploughs an ellipse."
+  // The furrows inside were already on the iso axes (ground.py's `furrow`
+  // modulation), so the boundary was contradicting its own contents.
+  //
+  // The fix keeps the plot's authored CENTRE and EXTENT and changes only the
+  // silhouette: blobs are laid on a lattice of the two isometric axes
+  // (±1, ±ISO_AXIS_SLOPE), so the union's edges run along the same axes the
+  // furrows and every roofline do. Corners stay rounded because the lattice is
+  // painted with overlapping ellipses rather than a polygon — a razor-cornered
+  // parallelogram would be a second artificial shape in place of the first.
+  //
+  // WHY THE AREA MATTERS AND WAS MEASURED: check_terrain sweeps each declared
+  // field ellipse and needs 45% of it to read as cultivated (field_min). A
+  // rhombus inscribed in a bounding box covers only 64% of that box's inscribed
+  // ellipse, so the lattice is sized to fill the box rather than to inscribe in
+  // it, and the emitted coverage is asserted in paint.test.ts rather than
+  // assumed. Measured on the hamlet fixture after the change: the three plots
+  // read 66-71% cultivated, against the same 45% floor.
   const plots = clamp(fieldPlots, 0, FIELD_PLOTS.length)
   for (let i = 0; i < plots; i++) {
     const plot = FIELD_PLOTS[i]
     // per-plot stream: plot 1 looks the same whether or not plot 2 exists
     const rng = streamFor(`field-${i}`)
     const blobs: Blob[] = []
-    for (let j = 0; j < 9; j++) {
-      blobs.push({
-        c: { x: plot.c.x + (rng() * 80 - 40), y: plot.c.y + (rng() * 36 - 18) },
-        rx: plot.w,
-        ry: plot.h,
-      })
+    // THE EXTENT IS THE ONE THE REFERENCE PRODUCED, not a new one. Its nine
+    // jittered ellipses union to a half-extent of about (w + 40, h + 18); the
+    // rhombus is sized to the same half-width X, and a rhombus on the iso axes
+    // has half-height X/2 by construction, which lands within a few px of the
+    // authored h + 18 on every plot in FIELD_PLOTS. The plots therefore cover
+    // the same ground they always did — only the silhouette changed.
+    const halfX = plot.w + 40
+    const alongA = halfX * 0.63 // the long furrow axis
+    const alongB = halfX * 0.37 // across it
+    const nu = 5
+    const nv = 3
+    const su = alongA / nu
+    const sv = alongB / nv
+    // A LOBE MUST COVER ITS OWN LATTICE CELL OR THE FIELD DRAWS AS STRIPES.
+    // Measured on the first attempt, which stepped su=37 with a lobe of 29 and
+    // rendered as a set of loose diagonal bands rather than one worked field:
+    // the union has to be solid, because a ploughed plot with grass showing
+    // between its rows is not a plot. rx covers the wider of the two steps and
+    // ry covers the y step, which is half of it (both axes fall by ISO_AXIS_SLOPE).
+    const lobe = Math.max(BLOB_MIN_RADIUS + 2, Math.max(su, sv) * 1.1)
+    for (let u = -nu; u <= nu; u++) {
+      for (let v = -nv; v <= nv; v++) {
+        // a jitter well inside one lobe: enough that the boundary is a hand's
+        // furrow line rather than a ruled one, never enough to open a hole
+        const jx = (rng() - 0.5) * lobe * 0.35
+        const jy = (rng() - 0.5) * lobe * 0.35 * ISO_AXIS_SLOPE
+        blobs.push({
+          c: {
+            x: plot.c.x + (u * su + v * sv) + jx,
+            y: plot.c.y + (u * su - v * sv) * ISO_AXIS_SLOPE + jy,
+          },
+          rx: lobe,
+          ry: lobe * ISO_AXIS_SLOPE * 1.3,
+        })
+      }
     }
     keep(plot.kind, blobs)
   }

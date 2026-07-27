@@ -376,6 +376,26 @@ export function buildIsoScene(
     })
   }
 
+  // ---- district dressing: the furniture the state entitles ----------------
+  // A dressing item's `role` is EITHER a ladder object (`law_plot`, `pens`,
+  // `noticeboard`, ...) or one of the two non-ladder classes iso-layout/dressing
+  // declares — `village_life` (era-entitled) and `landing` (entitled at every
+  // era). Only the first is a pack object, so the other two pass `object: null`
+  // and the kind draws itself, exactly as nature does. Handing `village_life`
+  // to the pack as an object would resolve to nothing and report an issue on
+  // every bench.
+  layout.dressing.forEach((d, i) => {
+    const isLadder = Boolean(pack.resolve[d.role])
+    pushSprite(sprites, issues, pack, era, state, {
+      id: `dr:${i}:${d.kind}`,
+      object: isLadder ? d.role : null,
+      kind: d.kind,
+      x: d.at.x,
+      y: d.at.y,
+      flip: d.flip,
+    })
+  })
+
   // ---- planting: the forest belt, then the meadow scatter ------------------
   // Nature has no state object and says so: `role: null` is what keeps
   // check_state_traceable honest instead of inventing a ladder for a tree.

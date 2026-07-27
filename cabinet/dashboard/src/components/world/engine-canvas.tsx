@@ -1252,13 +1252,35 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         // 2. the island itself
         paintClass(c, 'grass', seed, landExt, rasterMask(coast.land, coast.mw, coast.mh, coast.step))
         // 3. meadow shading — what the ground LOOKS like, not what it IS
+        //
+        // MAX, NOT SUM, and getting that wrong is visible. A blob's `w` is the
+        // reference's per-blob mask VALUE (compose.py:148 fill 110..210), so
+        // where two patches overlap the mask is the BRIGHTER of the two — which
+        // is what raster.py does (ImageChops.lighter) and what the offline
+        // still therefore shows. Painting one sprite per alpha bucket over the
+        // top of another composites instead: two 0.5 patches read 0.75, so
+        // every overlap draws a dark seam and the patches outline each other.
+        //
+        // The buckets are painted WEAKEST-FIRST at an INCREMENTAL alpha: bucket
+        // k gets the union of every blob at strength >= a_k, laid down at
+        // (a_k - a_{k-1}) / (1 - a_{k-1}). Compositing those in order lands on
+        // exactly a_k wherever a_k is the maximum, so the engine and the
+        // offline renderer agree by construction rather than by luck. Each
+        // union is ONE Graphics path, so blobs inside a bucket never
+        // double-count either.
         const meadow = regionsOf('meadow_dark')
         for (const r of meadow) {
-          // two alpha buckets: the reference varies each blob's fill 110..210
-          for (const band of [0.45, 0.8] as const) {
-            const blobs = r.blobs.filter((b) => ((b.w ?? 1) < 0.65) === (band === 0.45))
+          const bucket = (b: PaintBlob) => Math.round((b.w ?? 1) * 20) / 20
+          const levels = [...new Set(r.blobs.map(bucket))].sort((a, b) => a - b)
+          let below = 0
+          for (const level of levels) {
+            const blobs = r.blobs.filter((b) => bucket(b) >= level)
             if (blobs.length === 0) continue
-            paintClass(c, 'grass_dark', seed, blobExtent([{ ...r, blobs }]), blobMask(blobs), band)
+            const step = below >= 1 ? 0 : (level - below) / (1 - below)
+            if (step > 0.001) {
+              paintClass(c, 'grass_dark', seed, blobExtent([{ ...r, blobs }]), blobMask(blobs), step)
+            }
+            below = level
           }
         }
         // 4. mottle: three flat tones at the reference's own alphas
