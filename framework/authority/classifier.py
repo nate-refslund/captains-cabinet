@@ -126,10 +126,10 @@ ACTION_TYPES = frozenset(
 # framework.env.org_domains resolver reads instance/config/platform.yml), so
 # this universal-base classifier carries no launcher's domains. Fail-closed to
 # the EMPTY tuple: a generic deployment has no internal domains, so every
-# recipient classifies external (the conservative comms ceiling). The
-# _is_internal_recipient predicate below is UNCHANGED — only the domain SOURCE
-# moved to config; on this instance the resolver returns the same six domains
-# the hardcode had, so classification is byte-identical.
+# recipient classifies external (the conservative comms ceiling). This constant
+# is the ONE declared source of "internal" — _is_internal_recipient below adds
+# no second list; it only changed the QUANTIFIER over the addresses in a field
+# (any -> all), which narrows toward the ceiling.
 _INTERNAL_DOMAINS = env.org_domains()
 
 _DOTENV_RE = re.compile(r"(^|/)\.env(\.[\w.-]+)?$")
@@ -139,6 +139,9 @@ _DOTENV_RE = re.compile(r"(^|/)\.env(\.[\w.-]+)?$")
 # (a relative `.env.local` after a space must still register as secrets).
 _DOTENV_CMD_RE = re.compile(r"(?:^|[\s=\'\"/])\.env(?:\.[\w.-]+)?(?=$|[\s\'\";&|>)])")
 _LOCALHOST_RE = re.compile(r"(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])")
+# Address separators inside ONE recipient field — the only split points, so
+# every other character stays glued to its token (see _is_internal_recipient).
+_ADDR_SEP_RE = re.compile(r"[\s,;]+")
 _URL_RE = re.compile(r"https?://([^/\s'\"]+)")
 
 
@@ -168,11 +171,25 @@ def _recipient(tool_input: dict[str, Any]) -> str:
 
 
 def _is_internal_recipient(recipient: str) -> bool:
-    rec = recipient.strip().lower()
-    if not rec or "@" not in rec:
-        return False
-    domain = rec.rsplit("@", 1)[-1]
-    return any(domain == d or domain.endswith("." + d) for d in _INTERNAL_DOMAINS)
+    """True IFF the field names >=1 address and EVERY one is at an org domain.
+
+    ALL-quantified, not last-wins. A recipient field routinely carries several
+    addresses; the predicate used to `rsplit("@", 1)` the WHOLE field, so only
+    the final address decided, and `"outsider@x.com, nate@<org>"` resolved
+    internal_comms — off the always-gated external_comms ceiling — carrying the
+    outsider along. A crafted string alone reached it; no code change.
+
+    Split on address SEPARATORS only (whitespace/comma/semicolon). All other
+    punctuation stays glued to its token, so a display-name form
+    (`Nate <nate@<org>>` -> domain `<org>>`) still matches no domain and still
+    classifies external as before: this can only move a recipient TOWARD the
+    ceiling, never away.
+    """
+    addrs = [t for t in _ADDR_SEP_RE.split(recipient.strip().lower()) if "@" in t]
+    return bool(addrs) and all(
+        any(dom == d or dom.endswith("." + d) for d in _INTERNAL_DOMAINS)
+        for dom in (a.rsplit("@", 1)[-1] for a in addrs)
+    )
 
 
 def _curl_method(command: str) -> str | None:

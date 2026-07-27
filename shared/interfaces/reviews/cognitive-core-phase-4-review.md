@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: b6f6783e9cdfeacadc3b88e2acf8ca0201d41cce9e4faacefa206c3e05baa0af
+Reviewed-Scope-Digest: 50fbfff6985c3a412995ae2a3518af94636eb07f5424dbb47ca62741bcb70248
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
@@ -683,6 +683,28 @@ than carried (69116 vs 69051 at 91412878; +65 unchanged, since the growth is
 that unit's own lines). Still a MECHANICAL-DELTA re-bind: no reviewed BEHAVIOUR
 byte changed on either side of the merge.
 
+MOVED BY THE RECIPIENT-ALL-INTERNAL-QUANTIFIER LANDING (2026-07-27,
+7f05bdcfaa716f78a9fb638ab464d5fd41699a388e9c13107957fdc128ca7e35 -> the value
+above). MECHANICAL-DELTA re-bind: exactly ONE in-scope path moved,
+`cabinet/config/cognitive-architecture-contract.yml`, and the only change to it
+is one appended `temporary_allowances` row
+(`recipient-all-internal-quantifier`, framework_production_noncomment_lines
++13, 69116 -> 69129). No reviewed BEHAVIOUR byte changed: the branch's
+executable changes are all in `framework/authority/classifier.py` and
+`framework/authority/tests/test_classifier.py`, neither of which is in this
+scope — verified by intersecting `git diff --name-only origin/master...HEAD`
+against the tool's resolved scope, not by reading the diff (the intersection is
+exactly the contract file).
+
+RE-MEASURED, not assumed: the old digest above was recomputed over HEAD rather
+than carried from the previous re-bind note (master moved between them), and
+`cognitive-architecture-census.py` is PASS at observed == max (69129 <= 69129).
+The digest was recomputed over the COMMITTED tree and folded into the SAME
+commit — this artifact is excluded from its own scope, so the amend is stable
+under itself. NOT done: no COG-0/1/2/3 twin was re-bound (frozen-historical,
+already BLOCK by design), and no prose section of this review was edited — no
+reviewer saw new bytes, because none of the reviewed bytes changed behaviour.
+
 RE-BOUND BY THE WORLD-ART EGG ROW, 2026-07-27 —
 7f05bdcfaa716f78a9fb638ab464d5fd41699a388e9c13107957fdc128ca7e35 -> the value above. Branch
 `iso-port-composition`, commit f3705c46. EXACTLY ONE in-scope path moved,
@@ -706,3 +728,14 @@ in this review reads the egg manifest. RE-MEASURED on the committed tree:
 WHAT WAS NOT DONE, stated plainly: no fresh COG-4 panel re-review, and no prose
 section of this review was edited — no reviewer saw new behaviour bytes, because
 none changed. The COG-0/1/2/3 twins are untouched and remain frozen-historical.
+
+RE-BOUND ON THE MASTER MERGE, 2026-07-27 — the two notes above landed
+independently and BOTH ARE KEPT. `iso-port-composition` merged origin/master
+73c516ba (the recipient-all-internal-quantifier landing, PR #228) while carrying
+its own egg-manifest re-bind; each side had moved exactly one in-scope path and
+they are DIFFERENT paths — master's
+`cabinet/config/cognitive-architecture-contract.yml`, this branch's
+`cabinet/scripts/egg-export-manifest.txt` — so there is no semantic conflict, only
+a digest that had to be recomputed over the merged tree rather than carried from
+either side. Still a MECHANICAL-DELTA re-bind: no reviewed BEHAVIOUR byte changed
+on either side of the merge, and neither side's prose was edited.

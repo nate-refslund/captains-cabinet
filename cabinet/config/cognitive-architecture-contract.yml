@@ -226,6 +226,13 @@ temporary_allowances:
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: COG-7 compaction folds the authority validator into the projection kernel, or the ceiling mapping becomes structurally unrepresentable (risk_class carried as a typed attribute of the action_type enum rather than as a separate YAML mapping, removing the relocation channel entirely)
+  - phase: recipient-all-internal-quantifier
+    budget: framework_production_noncomment_lines
+    additional: 13
+    reason: 'closes the ROUTING half of the outbound ceiling, the channel the matrix-class-mapping-pin row explicitly left open ("the pin protects the matrix layer, not the classifier''s routing"). Reproduced by execution on master before changing anything: _is_internal_recipient took rsplit("@", 1) over the WHOLE recipient field, so only the LAST address decided internal-vs-external. A recipient field routinely carries several addresses, so "outsider@gmail.com, nate@<org-domain>" — and the space, semicolon and newline separated variants — classified internal_email, off the always-gated external_comms ceiling, keying the internal_comms row instead (guardian propose_only, sovereign notify_after = ALLOW at unmeasured confidence, day one). This needed NO code change and NO config change: the crafted recipient string alone reached it, which makes it strictly cheaper to exploit than the matrix relocation. FIX — the quantifier over the addresses in one field goes any -> ALL, against the SAME one declared source (_INTERNAL_DOMAINS, i.e. env.org_domains()); no second list is introduced and none is removed. Splitting is on address separators only ([\s,;]), so every other character stays glued to its token and the display-name form (Nate <nate@org>) still classifies external exactly as before — the predicate can only move a recipient TOWARD the ceiling, never away, so this is strictly narrowing. NO new module: framework/authority/classifier.py gains _ADDR_SEP_RE plus the all-quantified predicate and its docstring (+13). Docstrings are counted, not reformatted into # comments to duck the counter. EXACT measured running total (69129 vs 69116 base at 2e2322d9), 2026-07-27, via cognitive-architecture-census.py'
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: COG-7 compaction folds the classifier into the projection kernel, or the recipient set becomes structurally typed (a list of parsed addresses carried on the action rather than a free-text field re-parsed at the gate, removing the multi-address channel entirely)
 ownership:
   authoritative_state: domain_transaction
   cross_domain_delivery: transactional_outbox
