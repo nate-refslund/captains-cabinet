@@ -222,3 +222,27 @@ other half of the plane. The measurement above is unaffected (the dry run
 recomputes through the real gate), but the recorded field stays collapsed until
 that duplicate implementation is removed. And `authority-matrix-dryrun.py` has
 no test in any CI step, so the new counter and guards are unpinned.
+
+## 8. Final re-measurement, after master's shell-parser fix merged in
+
+`fix/shell-command-word-parser` landed on master while this branch was in CI
+and it changes `_is_provably_local`'s view of the corpus, so the split was
+re-measured on the merged tree (same 80,307-record corpus):
+
+| verdict kind | before the parser fix | after | Δ |
+|---|---:|---:|---:|
+| **`gate`** (terminal ceiling) | 11,570 (16.62%) | **11,570 (16.62%)** | **0** |
+| `propose` (above the bar) | 3,465 (4.98%) | **3,465 (4.98%)** | **0** |
+| `unclassified` | 37,624 (54.06%) | **37,549 (53.95%)** | −75 |
+| **total newly withheld** | 52,659 (75.66%) | **52,584 (75.55%)** | −75 |
+
+**`gate` and `propose` did not move by a single record; the entire delta landed
+in `unclassified`.** That is the behaviour the three-kind split was built to
+make visible: a classifier improvement should shrink the bucket that means "the
+gate cannot see what this is" and leave the two governed buckets untouched. It
+is also an independent check on the ceiling classification — a parser change
+large enough to reclassify 75 commands moved no ceiling and no below-bar cell.
+
+The conclusion is unchanged: **the flip is still not possible**, the residual is
+still ~54% unclassified, and the number a per-invocation sub-decider has to
+reach is still **16.62%**.
