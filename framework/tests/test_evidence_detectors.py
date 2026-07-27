@@ -566,6 +566,10 @@ def test_detector_liveness_dark_frozen_stale_fresh(monkeypatch, tmp_path):
 # Wiring the weekly governance review later (a conscious, reviewed change)
 # must add cabinet/scripts/governance-review.py here in the same commit.
 _REFERENCE_ALLOWLIST = {
+    # Expansion registry (2026-07-27): a future module under this same
+    # shadow law needs the identical one-line entry in its own landing.
+    "cabinet/config/architecture-baseline-sets.yml":
+        "the architecture baseline sets are the census's inventory of WHICH framework modules exist, so every module path is there by construction — a member-name row in a data file, never an import and never a consumer",
     "cabinet/config/state-persistence-policy.yml":
         "a path row in deploy-persistence accounting, never a consumer — "
         "state-persistence-preflight.py derives its durable set from "
