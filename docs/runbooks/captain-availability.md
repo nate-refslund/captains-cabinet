@@ -108,6 +108,10 @@ action.
 | `cabinet/scripts/meta-cognition/captain-seat-pack.sh` | prints the declared budget + `set_at` in its AVAILABILITY section | prints the measured absence line |
 | `framework/comms/surface/config.py` | scales the active-card `cap` (≤10 → 1, ≤30 → 2, ≤120 → 3, ≤240 → 4, else the shipped 5) when the deployment set no cap | shipped default, unchanged |
 
+Its sibling surface is `docs/runbooks/captain-dates.md` — the dates he SET, held
+on the org's books so a briefing cannot drop one. Availability is how much of him
+the org may spend; the dates store is what he told the org to remember.
+
 A configured `cap` (env or `instance/config/comms-surface.yml`) always wins — a
 configured value is a ruling. `availability_pacing: false` turns the derivation
 off entirely. The front-door expiry/TTL constants are deliberately untouched.

@@ -47,6 +47,12 @@ instance/config/calendar.yml
 # ships. docs/runbooks/captain-availability.md names the live path because the
 # precedence rule IS the path.
 instance/config/captain-availability.yml
+# the dates the captain SET (Captain-Seat finding 1, 2026-07-26) — written at
+# runtime by cabinet/scripts/lib/captain_dates.py when he types
+# "date 2026-08-13 <label>" on his phone, gitignored as his own calendar; only
+# instance/config/captain-dates.yml.example ships. docs/runbooks/captain-dates.md
+# names the live path because the append-only fold IS the path.
+instance/config/captain-dates.yml
 # per-deployment egress-allowlist override — created by egress-guard.sh enable
 # (else copied from the tracked twin instance/config/egress.yml.example);
 # absent at HEAD by design like the sibling instance config above.

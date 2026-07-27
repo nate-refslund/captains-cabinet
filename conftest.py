@@ -64,6 +64,17 @@ fixture) fences:
         both read it. Pointing it at a path inside the sandbox that is never
         created also makes every in-test resolve return the honest UNKNOWN
         rather than inheriting the live deployment's declaration,
+      - the Captain's dated commitments (cabinet/scripts/lib/
+        captain_dates.py + framework.env.captain_dates_path(),
+        CABINET_CAPTAIN_DATES_FILE — fenced at birth, 2026-07-27, for the
+        same reason as the two above). It is the ONLY record of the dates he
+        set, and the briefing renders every open row: a fabricated row there
+        would put a deadline nobody declared in front of the Captain twice a
+        day, and a test that DELETED a row would silently drop a real one —
+        which is the exact failure (a captain-set date absent from twelve
+        days of briefings) this store exists to prevent. The path points
+        inside the sandbox and is never created, so every in-test resolve
+        returns the honest empty list,
       - the Captain-contact dead-man (framework/liveness/deadman.py,
         CABINET_LIVENESS_CONFIG — fenced at birth, 2026-07-25). The only
         OUTBOUND member of this list: it would send a fake heartbeat to the
@@ -120,6 +131,8 @@ os.environ["CABINET_BRIEFING_SCORES_DIR"] = os.path.join(
     _SESSION_SANDBOX, "instance-memory")
 os.environ["CABINET_CAPTAIN_AVAILABILITY_FILE"] = os.path.join(
     _SESSION_SANDBOX, "captain-availability.yml")
+os.environ["CABINET_CAPTAIN_DATES_FILE"] = os.path.join(
+    _SESSION_SANDBOX, "captain-dates.yml")
 
 # Captain-contact dead-man (2026-07-25) — an OUTBOUND fence, not a write fence,
 # and the first of its kind here. framework/liveness/deadman.py fires from inside

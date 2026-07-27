@@ -28,12 +28,24 @@ Three arms, all deterministic:
                    per-taxonomy counts. Also the PRESENT end of the
                    availability dial: that tree declares an availability in two
                    entries and the pack must report the LATEST one (a
-                   first-entry read prints a different number and fails).
+                   first-entry read prints a different number and fails). And
+                   the PRESENT end of the DATED-COMMITMENT store: that tree
+                   holds three date rows, one CLOSED by a later same-id row, and
+                   a briefing body carrying exactly ONE of the two open labels —
+                   so the pack must report 2 open of 3, must print
+                   tracked_in_latest_briefing=yes for the carried date and NO for
+                   the dropped one, and must not re-surface the closed one. That
+                   NO is the paid case (a captain-set date absent from what he
+                   was actually sent) made mechanical.
   A2  healthy      the pack, run against fixtures/healthy/ (every subject
                    distinct, the other stores absent), reports repetition
                    "(none)" AND prints every absent store as an ABSENT line —
                    including the availability dial, whose absence means "the org
                    does not know how much of the captain it is entitled to".
+                   The dates store's degenerate end is pinned harder than a
+                   marker: the section must print the absence and NOTHING else —
+                   no count header, no row — because a placeholder pretending to
+                   be an answer is this program's named failure.
                    This is the degenerate end: a quiet window must stay quiet
                    and honest, never fabricate.
   A3  contract-pin every pinned Part 1c clause is still present verbatim in
@@ -199,6 +211,58 @@ def _check_repetition(pack: Path, fixtures: Path, pins: dict,
         failures += _fail(
             "repetition arm: a declared availability must carry WHEN it was "
             f"declared — expected '{want_set_at}'")
+    failures += _check_dates_present(out, spec)
+    return failures
+
+
+_DATES_HEADING = "=== DATES HE SET"
+
+
+def _dates_section(out: str) -> str:
+    """Just the DATES section, so an absence assertion cannot be satisfied (or
+    defeated) by text some other section happens to print."""
+    if _DATES_HEADING not in out:
+        return ""
+    tail = out.split(_DATES_HEADING, 1)[1]
+    return tail.split("\n=== ", 1)[0]
+
+
+def _check_dates_present(out: str, spec: dict) -> int:
+    """The PRESENT end of the dated-commitment store (Captain-Seat finding 1).
+
+    Three properties, each one a way the section could be a sensor pointed at
+    the wrong thing:
+      * the OPEN COUNT pins the latest-row-per-id fold (the fixture closes one of
+        its three rows with a second same-id row; a first-row reader says 3);
+      * the TRACKED COLUMN must differ between the two open dates — the fixture
+        briefing body carries one label and not the other, so a pack that assumed
+        tracking, or never opened the briefing, prints one value twice;
+      * the CLOSED label must NOT appear in the section at all (a `done` date is
+        history, and re-surfacing it would nag him about something he closed)."""
+    failures = 0
+    section = _dates_section(out)
+    if not section:
+        return _fail("repetition arm: the DATES section did not run at all — "
+                     "every assertion below would be vacuous")
+    for key in ("dates_open_line", "dates_briefing_line"):
+        want = spec[key]
+        if want not in section:
+            failures += _fail(
+                f"repetition arm: DATES section missing '{want}' — the open "
+                "count pins the latest-row-per-id fold and the briefing name "
+                "pins WHICH body the tracked column was checked against")
+    for want in spec["dates_rows"]:
+        if want not in section:
+            failures += _fail(
+                "repetition arm: DATES section must report each open date with "
+                "whether the latest briefing carries it — expected the row "
+                f"'{want}'")
+    gone = spec["dates_absent_label"]
+    if gone in section:
+        failures += _fail(
+            f"repetition arm: the closed date '{gone}' must NOT appear among "
+            "the open dates — a done row is history, and re-surfacing it would "
+            "nag him about something he already closed")
     return failures
 
 
@@ -236,6 +300,20 @@ def _check_healthy(pack: Path, fixtures: Path, pins: dict,
         failures += _fail(
             "healthy arm: an absent briefing-scoring loop must print as "
             f"ABSENT (looked for '{spec['briefing_scoring_absent_substring']}')")
+    # The dates store's DEGENERATE end. The absent_markers loop above pins the
+    # marker text; this pins that the section RAN and reported NOTHING ELSE — a
+    # section that printed an "open dates: 0" header, or invented a row, would
+    # be the placeholder-pretending-to-be-an-answer failure.
+    dates = _dates_section(out)
+    if not dates:
+        failures += _fail(
+            "healthy arm: the DATES section did not run — 'reports the absence' "
+            "would be vacuous")
+    elif "open dates:" in dates or "tracked_in_latest_briefing" in dates:
+        failures += _fail(
+            "healthy arm: an empty dates store must render as a measured "
+            "absence only — no count header and no rows (got: "
+            f"{dates.strip()[:200]!r})")
     return failures
 
 

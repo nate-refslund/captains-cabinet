@@ -668,6 +668,59 @@ def missed_command_reply(*, api_post, chat_id, text, log=log) -> bool:
         return False
 
 
+# ---------------------------------------------------------------------------
+# dates — the dated commitments HE set (Captain-Seat finding 1, 2026-07-26).
+# He types "date 2026-08-13 board review" / "dates" / "date done <sel>" /
+# "date move <sel> 2026-09-01" and this process records it and confirms in one
+# line. MECHANICAL for the same reason /killswitch, /score, availability and
+# /missed are: a date he sets must not depend on an officer being awake to write
+# it down — that is exactly how the paid case happened (a captain-set release
+# date absent from twelve days of briefings). Storage is the LIBRARY's contract
+# (cabinet/scripts/lib/captain_dates.py) — this file owns none. Fails OPEN to
+# the Chair relay on any error, so a misfire relays his words instead of eating
+# them; a selector that resolves to nothing (or to several rows) is NOT an error
+# and gets a precise mechanical answer instead.
+# ---------------------------------------------------------------------------
+def _captain_dates_lib():
+    """Import the dates library, putting cabinet/scripts/lib on sys.path.
+    Raises on failure — every caller here is inside a fail-open try."""
+    if _SCORE_LIB_DIR not in sys.path:
+        sys.path.insert(0, _SCORE_LIB_DIR)
+    import captain_dates  # noqa: PLC0415 — deliberate late import
+    return captain_dates
+
+
+def is_dates_command(text: str) -> bool:
+    """True for an anchored ``dates`` / ``date <arg>``. Never mid-sentence, and
+    never true when the library is unavailable (→ the message relays)."""
+    try:
+        return _captain_dates_lib().parse_dates_command(text) is not None
+    except Exception:  # noqa: BLE001 — unavailable library must not eat a msg
+        return False
+
+
+def dates_command_reply(*, api_post, chat_id, text, log=log) -> bool:
+    """Record one dates command (or list the open ones) and confirm it.
+    Returns True when the change is durably on disk AND the confirmation was
+    sent; False lets the caller fall open to the Chair relay so the command is
+    never silently consumed.
+
+    Order is load-bearing: record FIRST, confirm second. A confirmation he can
+    see must never outrun the row it claims was written."""
+    try:
+        cd = _captain_dates_lib()
+        parsed = cd.parse_dates_command(text)
+        if parsed is None:
+            return False
+        _code, msg = cd.apply_command(parsed, "telegram")
+        api_post("sendMessage", {"chat_id": int(chat_id), "text": msg})
+        return True
+    except Exception as exc:  # noqa: BLE001 — fail-open to the Chair relay
+        log(f"dates command failed (falling back to relay): "
+            f"{type(exc).__name__}: {exc}")
+        return False
+
+
 def _tap_situation_key(mid) -> "str | None":
     """The situation this tap belongs to, resolved from the send it answers.
 
@@ -769,7 +822,10 @@ def archive_captain_dm(chat_id, message_id, text, *, kind="text", update_id=0,
     utterance whose verbatim record must survive. /score commands archive
     (kind="score") for the same reason: the trial store keeps the NUMBER, this
     archive keeps the words he attached to it, and a value judgement is worth
-    at least as much verbatim as a routine DM.
+    at least as much verbatim as a routine DM. The availability dial
+    (kind="availability") and the dated-commitment verbs (kind="dates") archive
+    on the same rule: the store keeps the parsed VALUE, this archive keeps the
+    sentence he set it with.
 
     Degrade-safe but LOUD: an archive failure never blocks delivery (a Captain
     message must reach the officer even with a broken disk), but it logs an
@@ -788,7 +844,7 @@ def archive_captain_dm(chat_id, message_id, text, *, kind="text", update_id=0,
         "message_id": int(message_id),
         "update_id": int(update_id),
         "officer": officer or "",          # receiving bot's officer (multi-writer attribution)
-        "kind": kind,                      # text | file | file-error | onboarding | killswitch
+        "kind": kind,                      # text | file | file-error | onboarding | killswitch | score | availability | dates
         "text": text or "",               # the utterance, UNTRUNCATED
         "quoted": quoted or "",           # reply-to context, UNTRUNCATED
         "file_kind": file_kind or "",
@@ -1533,6 +1589,28 @@ def main() -> int:
                                                 chat_id=captain, text=text,
                                                 log=log)
                     fa({"direction": "in", "kind": "missed-command",
+                        "telegram_message_id": mid,
+                        "recorded": "yes" if sent else "failed"})
+                    if not sent:
+                        deliver(text, quoted, "", mid=mid)
+                elif frm == str(captain) and is_dates_command(text):
+                    # date <ISO> <label> | dates | date done <sel> | date move
+                    # <sel> <ISO> → the dates HE set, recorded from THIS process
+                    # (2026-07-27). Same mechanical shape as availability above
+                    # and the same fail-open discipline: a record-or-send failure
+                    # relays his words to the Chair rather than swallowing them.
+                    log(f"captain dates update_id={uid} -> dated commitments")
+                    mid = int(msg.get("message_id", 0))
+                    set_last_captain_msg_id(mid)
+                    record_recent_msg(mid, text)
+                    chat_dm = str((msg.get("chat") or {}).get("id") or frm)
+                    archive_captain_dm(chat_dm, mid, text, kind="dates",
+                                       update_id=uid, tg_date=msg.get("date", 0),
+                                       quoted=quoted_full, officer=officer)
+                    sent = dates_command_reply(api_post=api_post,
+                                               chat_id=captain, text=text,
+                                               log=log)
+                    fa({"direction": "in", "kind": "dates-command",
                         "telegram_message_id": mid,
                         "recorded": "yes" if sent else "failed"})
                     if not sent:

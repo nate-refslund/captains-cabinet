@@ -198,6 +198,13 @@ temporary_allowances:
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: COG-7 compaction folds the meter into the projection kernel, or the metering surface is absorbed by native platform cost telemetry
+  - phase: captain-dates
+    budget: framework_production_noncomment_lines
+    additional: 208
+    reason: Captain dated commitments (Captain-Seat dry-run finding 1, 2026-07-26 — a captain-set date appeared in ZERO of the next twelve days of briefings). NO new module — framework/env.py gains the store resolver family (captain_dates_path, the CAPTAIN_DATE_STATUSES enum + id/ISO validators, _captain_date_iso with the PyYAML date-retyping rescue, the fail-closed per-row _captain_date_entry, the append-only latest-row-per-id fold captain_dates, captain_open_dates, and render_captain_date — the ONE line shape every surface prints, louder past due) and framework/frontdoor/morning_synthesis.py gains captain_date_items plus its gather_items leg (ONE briefing item carrying one line per open date, so the composer's five-item per-tier cap can never roll the Nth date into a count line; zero open dates emits nothing). EXACT measured running total (68661 vs 68453 base after merging the attention-well-spent, arm-the-cabinet and spend-meter landings; re-measured after EACH merge, +208 every time since the growth is this unit's own lines), 2026-07-27, via cognitive-architecture-census.py — the zero-headroom observed==max law means this is the exact new total, never a pre-allocated ceiling
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: the dates resolver folds into the projection kernel alongside the availability dial, or COG-7 compaction
 ownership:
   authoritative_state: domain_transaction
   cross_domain_delivery: transactional_outbox
