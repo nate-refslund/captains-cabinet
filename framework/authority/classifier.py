@@ -400,21 +400,27 @@ def _classify_bash(command: str) -> str:
 # name nobody wrote down: a wrapper script, a rename, an unknown binary. It
 # also loses to the shell PARSER's own documented gaps, and that is the
 # decisive argument, because those gaps are MEASURED, not hypothetical.
-# `extract_invoked_binaries` (policy_engine.py:627) states them, and each one
-# resolves the command word to something that is not the real binary:
+# `extract_invoked_binaries` (framework/authority/policy_engine.py) states
+# them, and each one hides the real binary behind something else. Re-measured
+# 2026-07-27 after the lexer rewrite, so these are what the parser returns
+# TODAY, not what it once returned:
 #
-#     2>/dev/null curl https://x   -> ['null']      (leading-redirect prefix)
 #     sudo curl https://x          -> ['sudo']      (sudo is not a wrapper)
-#     echo x | xargs curl          -> ['xargs']     (dataflow-decoupled)
-#     A=curl; $A https://x         -> ['$A']        (variable indirection)
-#     $'curl' https://x            -> ['$curl']     (ANSI-C quoting)
+#     echo x | xargs curl          -> ['echo','xargs'] (dataflow-decoupled)
+#     A=curl; $A https://x         -> [assignment, UNRESOLVED] (indirection)
+#     $'curl' https://x            -> [UNRESOLVED]  (ANSI-C quoting)
 #     perl -e 'system("curl x")'   -> ['perl']      (interpreter shell-out)
 #     . /tmp/push.sh               -> ['.']         (dot-source)
+#     bash /tmp/push.sh            -> [UNRESOLVED]  (script file, unreadable)
+#
+# (`2>/dev/null curl https://x` was on this list as `['null']` and now resolves
+# to `['curl']`: redirect words stopped becoming command words in the first
+# hardening round.)
 #
 # Against a BLOCKLIST every one of those is a bypass: the extracted name is not
 # on the list, so the command is allowed. Against THIS allowlist every one of
-# them is caught, without naming a single sender: `null`, `sudo`, `xargs`,
-# `$A`, `$curl`, `perl` and `.` are all simply not provably-local binaries, so
+# them is caught, without naming a single sender: `sudo`, `xargs`, `perl`, `.`
+# and the UNRESOLVED sentinel are all simply not provably-local binaries, so
 # the command fails the proof and proposes. The parser's weakness stops being
 # a hole and becomes a conservative answer — which is the whole point of
 # inverting the default, and is why the fix is one flipped default rather than

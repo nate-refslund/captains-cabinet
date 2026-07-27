@@ -95,6 +95,38 @@ temporary_allowances:
       sanctioned-destination allowlist) and the locality proof is reduced to the
       classification it is, or COG-7 compaction brings production non-comment
       lines below the pinned baseline
+  - phase: shell-command-word-parser
+    budget: framework_production_noncomment_lines
+    additional: 199
+    reason: >-
+      the shell lexer in policy_engine.py rewritten so a token that is not a
+      program is never resolved as the command word. MEASURED over 39,797 real
+      recorded Bash commands (the PR-233 dry-run corpus, rebuilt read-only):
+      347 DISTINCT non-program tokens were reaching the resolver in 10,209
+      records; after the fix, 1 token in 1 record. Causes fixed, each pinned by
+      an arm that fails against the pre-change parser: `&` was a separator
+      inside the redirection `2>&1` (the digit `1` was the command word of
+      14,943 records); the double-quote scanner ended a span at a quote nested
+      inside `$( )`, desynchronising the rest of the command; `${VAR:-default}`
+      was split as a brace group; comments were never stripped; every heredoc
+      body was re-parsed as shell even when a `cat`, an interpreter, `read` or
+      `git commit -F -` consumed it; `$(( ))` arithmetic, `find -exec {} \;`,
+      case patterns and `for` loop variables all became command words. It also
+      CLOSES a pre-existing fail-open: 498 real records were classified
+      provably-local while invoking redis-cli, gh or launchctl inside `$( )`
+      in a double-quoted string, and `echo "$(sendmail -t)"` was provably
+      local on master. ZERO new modules (framework_production_modules
+      unchanged at 244) and zero new files: the lexer replaced the character
+      scanner in place. Docstrings are counted as written — each helper states
+      the token it stopped manufacturing and the corpus count behind it, which
+      is the evidence a later reader needs to tell a fix from a guess.
+    owner: authority-plane
+    sunset: '2027-01-19'
+    deletion_gate: >-
+      the authority matrix grows a local-execution risk class (the PR-233
+      dry-run's own recommendation), which removes the reason this parser must
+      carry the whole locality question, or COG-7 compaction brings production
+      non-comment lines below the pinned baseline
   - phase: COG-0
     budget: framework_production_modules
     additional: 2
