@@ -33,6 +33,7 @@ import {
   REED_MARGIN,
   RING_MIN_RADIUS,
   RING_SPACING,
+  rectField,
   ringAngleDeg,
   waterField,
   type Lane,
@@ -122,6 +123,7 @@ function ctxOf(l: Layout, over: Partial<RingContext> = {}): RingContext {
     occupied: [],
     inWater: () => false,
     onPaving: () => false,
+    onQuay: () => false,
     sizeOf: (k) => DEFAULT_FOOTPRINTS[k] ?? { w: 96, h: 96 },
     ...over,
   }
@@ -132,7 +134,16 @@ function ctxOf(l: Layout, over: Partial<RingContext> = {}): RingContext {
 describe('the forest enclosure ring — the frame, not a gradient', () => {
   it('the belt is planted, and it is the larger half of the planting', () => {
     // Before the ring the island carried 41-68 items at hamlet and the coast was
-    // bare; the reference draws 150-200. This is the count arm for that.
+    // bare. This is the count arm for that.
+    //
+    // THE FLOOR IS 60 AND NOT A REFERENCE FIGURE, deliberately. The line here
+    // used to read "the reference draws 150-200", which was an inherited claim
+    // with no measurement under it — compose.py's belt walks the same 4 layers
+    // at the same 4.4-7.2 degree step, so its candidate ceiling is the same ~250
+    // and its three rejection terms are the ones this port copied. Measured, the
+    // composed belt is 74-119 per hamlet island and the port's own added rules
+    // cost 3.5 of that (see forestRing's rejection budget). Asserting against a
+    // number nobody measured would be pinning this suite to a rumour.
     for (const seed of SEEDS) {
       const l = composeLayout(HAMLET, seed, FAST)
       expect({ seed, enough: l.ring.length > 60 }).toEqual({ seed, enough: true })
@@ -367,6 +378,52 @@ describe('the forest enclosure ring — the frame, not a gradient', () => {
     expect(items.length).toBeGreaterThan(40)
   })
 
+  /**
+   * THE BELT DOES NOT PLANT ON THE WHARF — and this arm exists because the
+   * composed layout cannot currently prove it either way.
+   *
+   * HONEST STATE OF THIS RULE, stated rather than implied by a green tick:
+   * measured over 240 composed islands (80 seeds x camp/hamlet/village), ZERO
+   * belt items land on the deck with the term and zero without it. The term is
+   * therefore green at the composed level, and the reason is a coincidence of
+   * two unrelated constants — the wharf spans cove.x +/- 360, the reference's
+   * south gap runs 58-122 degrees, and the wharf's east end lands at ~58.5
+   * degrees, half a degree inside a gap that exists to show the water at the
+   * harbour rather than to keep trees off a deck. Nothing links them.
+   *
+   * So the rule is driven DIRECTLY here instead: a synthetic deck laid across
+   * due north, which no gap covers and the belt's outer layers walk straight
+   * through. That makes this a live sensor on the RULE even while the composed
+   * layout does not reach it — unreached is not unreachable, and "no arm can
+   * fail" is the state this port keeps finding defects in.
+   *
+   * MUTATION (proven RED 2026-07-27): drop `|| ctx.onQuay(x, y)` from ring.ts
+   * and 20 belt items stand on the synthetic deck.
+   */
+  it('drops a belt candidate that lands on the wharf deck', () => {
+    const deg = 270 // due north — outside every gap arc
+    const ang = (deg * Math.PI) / 180
+    const r = hamlet.coast.edgeAt(ang) - RING_LAYERS[0].inset
+    const deck: [number, number, number, number] = [
+      LAYOUT_SPACE.cx + Math.cos(ang) * r - 260,
+      LAYOUT_SPACE.cy + Math.sin(ang) * r * 0.92 - 120,
+      LAYOUT_SPACE.cx + Math.cos(ang) * r + 260,
+      LAYOUT_SPACE.cy + Math.sin(ang) * r * 0.92 + 120,
+    ]
+    const onDeck = rectField(deck)
+    const without = forestRing('acme-corp', ctxOf(hamlet))
+    const on = without.filter((i) => onDeck(i.at.x, i.at.y))
+    // PREMISE: the belt really does walk through this rectangle, so the arm
+    // below is measuring a rule and not an empty region.
+    expect(on.length).toBeGreaterThan(8)
+
+    const with_ = forestRing('acme-corp', ctxOf(hamlet, { onQuay: onDeck }))
+    expect(with_.filter((i) => onDeck(i.at.x, i.at.y))).toEqual([])
+    // and it dropped them rather than moving them: the belt never nudges
+    expect(with_.length).toBeLessThan(without.length)
+    expect(with_.length).toBeGreaterThan(without.length - on.length - 6)
+  })
+
   it('nothing the belt plants stands on a lane or on a building — 80 islands', () => {
     // COVERAGE, not a new rule. The composed on-lane arms in iso-layout.test.ts
     // run on two islands; the size-aliasing above fires on about 2% of them and
@@ -420,6 +477,48 @@ describe('the forest enclosure ring — the frame, not a gradient', () => {
       }
     }
     expect(RING_LAYERS.flatMap((l) => l.kinds)).toContain('tree_pine')
+  })
+
+  /**
+   * A PROVENANCE LOCK on the sizes every spacing rule in this library measures
+   * against — and it is a change-detector, which is stated here rather than
+   * dressed up as a property.
+   *
+   * WHY IT EXISTS. DEFAULT_FOOTPRINTS claims to be manifest.py's generated size
+   * divided by scale_of(). Audited row by row on 2026-07-27, five of fifty rows
+   * contradicted that claim, and REVERTING all five left the whole suite green
+   * (164 arms): belt separation, ground overlap and lane clearance were all
+   * being enforced at the wrong distance with no sensor anywhere. A green
+   * mutation is either a redundant rule or a missing sensor, and this one was
+   * squarely the second.
+   *
+   * WHAT IT CANNOT DO, said plainly: manifest.py lives in another repository and
+   * cannot be read from a test here, so this arm cannot notice the SPRITE
+   * changing — only the table drifting from what was measured off it. The
+   * derivation is written into each line so the next edit has to re-derive
+   * rather than guess, and the real fix is the renderer passing the shipped
+   * pack's own sizes through `opts.footprintOf`, which is what the table's own
+   * docstring already says it is for.
+   */
+  it('carries the sizes manifest.py actually generates, for the five that drifted', () => {
+    // kind -> [generated w, generated h, scale_of() divisor]
+    const derivation: Record<string, [number, number, number]> = {
+      tree_birch: [125, 165, 1], // NATURE, not in HALF
+      tree_willow: [155, 155, 1], // NATURE, not in HALF
+      rock_cluster: [105, 95, 2], // in HALF
+      fallen_log: [120, 95, 2], // in HALF
+      mushrooms: [90, 90, 2], // in HALF
+      // three that were already right, so the arm is not only about the drift
+      tree_pine: [130, 175, 1],
+      tree_oak_small: [110, 110, 2],
+      bush_round: [95, 95, 2],
+    }
+    for (const [kind, [w, h, div]] of Object.entries(derivation)) {
+      expect({ kind, size: DEFAULT_FOOTPRINTS[kind] }).toEqual({
+        kind,
+        size: { w: Math.floor(w / div), h: Math.floor(h / div) },
+      })
+    }
   })
 
   it('the belt is MORPHOLOGY: a camp has one too, and a larger one', () => {

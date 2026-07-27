@@ -43,7 +43,13 @@
  *     returns 0 at camp whatever the rung says);
  *   - the JETTY's length still follows the rung at every era, so the
  *     measurement is never hidden — a camp that has shipped for a year has a
- *     longer finger pier over the water, and no deck.
+ *     longer finger pier over the water, and no deck;
+ *   - but NEITHER is built from a rung that does not exist. An org whose `quay`
+ *     ladder is unmeasured, or on an empty rung, gets no deck AND no pier
+ *     (`jetty` is null), where the reference's `WS.stage("quay") or
+ *     "rowboat_jetty"` builds the first rung out of the absence. That is a
+ *     porting DIVERGENCE and it is the same one the cargo block makes: era may
+ *     never hide a count, and no count may be invented from a missing one.
  *   - the MOORINGS, the CARGO, the WAREHOUSES and the CRANES are counts. They
  *     are not era-gated at all: a count is a fact about the org and era may
  *     never hide one. What era does to them is choose the sprite, which is the
@@ -59,7 +65,7 @@
  */
 import type { Footprint } from './clearance'
 import type { Coastline } from './coastline'
-import { clamp, hypot, type Era, type LayoutSpace, type Point } from './space'
+import { clamp, emptyRung, hypot, type Era, type LayoutSpace, type Point } from './space'
 
 // ── region extents, in the shapes the offline checks read ──────────────────
 
@@ -136,8 +142,15 @@ export function shoreLine(
  *
  * `rowboat_jetty` is 0 ON PURPOSE and is not a missing entry: the first rung of
  * the quay ladder is a couple of planks over the water, which is a jetty and not
- * a deck. A rung above the table (a ladder that grows a sixth stone rung) gets
+ * a deck. A rung ABOVE the table (a ladder that grows a sixth stone rung) gets
  * the deepest wharf rather than none — an unknown rung is more quay, never less.
+ *
+ * "UNKNOWN" AND "EMPTY" ARE NOT THE SAME UNKNOWN, and reading them as one was a
+ * defect measured 2026-07-27: `bare_ground` is not in this table either, and the
+ * more-quay-never-less rule handed an UNBUILT quay the deepest stone wharf in
+ * the ladder. An empty rung is now answered before the table is consulted (see
+ * quayDepth), so the rule keeps its meaning — a rung past the top is more quay —
+ * without applying it to a rung below the bottom.
  */
 export const QUAY_DEPTH: Readonly<Record<string, number>> = {
   rowboat_jetty: 0,
@@ -165,21 +178,38 @@ export const JETTY_ANGLE = 0.16
 /**
  * The deck depth an (era, rung) actually builds.
  *
- * A CAMP HAS NO WHARF. That is a content gate, the same kind as "a camp has no
- * paved square": a deck is a built surface and a camp is the era before the org
- * builds surfaces. It is NOT era hiding a measurement — the rung goes on driving
- * jettyLength() at every era, so a camp that has shipped for a long time shows
- * it as a longer pier over the water. Deleting this gate is mutation MH1.
+ * NO RUNG, NO QUAY. compose.py:1134 reads `WS.stage("quay") or "rowboat_jetty"`,
+ * which turns an unmeasured quay ladder into the ladder's first rung and builds
+ * from it. This port does not follow that line, on the same ground it already
+ * refused compose.py:1188's `max(1, 1 + cargo*3)` (see the cargo block below):
+ * an object with no rule over `state` behind it is exactly what
+ * check_state_traceable exists to catch, and "the ladder was never measured" is
+ * not a rule that builds anything. It is the difference between no data and
+ * zero, and only one of the two may be drawn.
+ *
+ * A CAMP HAS NO WHARF either. That is a content gate, the same kind as "a camp
+ * has no paved square": a deck is a built surface and a camp is the era before
+ * the org builds surfaces. It is NOT era hiding a measurement — the rung goes on
+ * driving jettyLength() at every era, so a camp that has shipped for a long time
+ * shows it as a longer pier over the water. Deleting this gate is mutation MH1.
  */
 export function quayDepth(era: Era, rung: string | null | undefined): number {
+  if (emptyRung(rung)) return 0
   if (era === 'camp') return 0
-  const key = rung ?? 'rowboat_jetty'
-  return QUAY_DEPTH[key] ?? QUAY_DEPTH_MAX
+  return QUAY_DEPTH[rung as string] ?? QUAY_DEPTH_MAX
 }
 
-/** compose.py:1147 — rung only, at every era. See quayDepth's note. */
+/**
+ * compose.py:1147 — rung only, at every era. See quayDepth's note.
+ *
+ * 0 MEANS THERE IS NO PIER, and buildHarbour emits no Jetty at all rather than a
+ * zero-length one: a pier of length 0 is not a shorter pier, it is a thing that
+ * does not exist, and handing the renderer a degenerate object to interpret is
+ * how the degenerate value gets drawn.
+ */
 export function jettyLength(rung: string | null | undefined): number {
-  return JETTY_LENGTH[rung ?? 'rowboat_jetty'] ?? JETTY_LENGTH_MAX
+  if (emptyRung(rung)) return 0
+  return JETTY_LENGTH[rung as string] ?? JETTY_LENGTH_MAX
 }
 
 // ── what the harbour emits ─────────────────────────────────────────────────
@@ -202,7 +232,20 @@ export interface Wharf {
    * so its exemption zone covers bare shore where no deck was drawn. An
    * exemption wider than the surface it exempts is a check turned down: every
    * sprite standing on that bare shore stops being judged for standing in the
-   * road. This rect covers the deck that exists.
+   * road. This rect spans the deck that exists, and no more of the shore.
+   *
+   * IT IS NOT THE DECK EXACTLY, and the difference is deliberate rather than
+   * sloppy: it is the deck's x span, but vertically it runs from 20px ABOVE the
+   * highest waterline in that span to 60px below the deck's own depth. The
+   * apron is what makes the exemption usable — a crate at the deck's landward
+   * edge, or a bollard at its seaward one, is on the wharf in every sense a
+   * viewer cares about. What that costs is measured rather than assumed: across
+   * 80 village islands the apron holds the 223 QUAYSIDE BUILDINGS (2 warehouses
+   * and a harbourmaster's hut per island) that stand on land above the deck, so
+   * those are exempt from check_on_road. That exemption cannot mask a defect
+   * this layout can produce — every one of them was placed by placeOnGround,
+   * which refuses a lane outright — but it is wider than the planks, and a
+   * reader is owed that rather than the word "deck".
    */
   rect: Rect
 }
@@ -244,7 +287,8 @@ export interface Harbour {
   shore: Point[]
   /** null at an era or a rung that has built no deck. */
   wharf: Wharf | null
-  jetty: Jetty
+  /** null when the `quay` ladder is unmeasured or on an empty rung. */
+  jetty: Jetty | null
   /** compose.py:1149-1152 — one per open outcome window (the `berths` count). */
   moorings: Point[]
   /** Cargo and working clutter; its extent follows completed work items. */
@@ -362,16 +406,29 @@ export function buildHarbour(
   const jx = cove.x + 104
   const js = shoreAt(coast, cove, jx) ?? cove.y - 140
   const jLen = jettyLength(input.quay)
-  const jetty: Jetty = {
-    at: { x: jx, y: js + 52 },
-    length: jLen,
-    width: jLen < 200 ? 44 : 58,
-    angle: JETTY_ANGLE,
-    end: {
-      x: jx + Math.sin(JETTY_ANGLE) * jLen,
-      y: js + 52 + Math.cos(JETTY_ANGLE) * jLen * 0.86,
-    },
+  const jRoot: Point = { x: jx, y: js + 52 }
+  /**
+   * The seaward mooring point — the pier's end, or its ROOT when there is no
+   * pier. It is computed here rather than on the Jetty so the things moored off
+   * it do not vanish with it: the moorings below already derive from this
+   * column's waterline and not from the jetty object, and the org's own vessel
+   * is a fact about the org, not about the quay ladder. A boat with no pier
+   * lies at anchor in the cove, which is what a length of 0 puts it at.
+   */
+  const jEnd: Point = {
+    x: jRoot.x + Math.sin(JETTY_ANGLE) * jLen,
+    y: jRoot.y + Math.cos(JETTY_ANGLE) * jLen * 0.86,
   }
+  const jetty: Jetty | null =
+    jLen > 0
+      ? {
+          at: jRoot,
+          length: jLen,
+          width: jLen < 200 ? 44 : 58,
+          angle: JETTY_ANGLE,
+          end: jEnd,
+        }
+      : null
 
   // ---- the moorings: ONE PER OPEN OUTCOME WINDOW -------------------------
   // compose.py:1149-1152. A real count, in two rows either side of the pier.
@@ -421,7 +478,7 @@ export function buildHarbour(
   if (input.boat) {
     items.push({
       kind: 'harbor_boat',
-      at: { x: jetty.end.x - 132, y: jetty.end.y - 6 },
+      at: { x: jEnd.x - 132, y: jEnd.y - 6 },
       flip: false,
       size: input.sizeOf('harbor_boat'),
       overWater: true,
@@ -472,9 +529,32 @@ export function buildHarbour(
   const harbourmasterSite = input.harbourmaster ? { x: hmX, y: hmS - 8 } : null
 
   // ---- the working envelope ---------------------------------------------
+  //
+  // THE DEEPEST THING IN A HARBOUR IS NOT ALWAYS THE PIER. The reach was the
+  // jetty's alone until 2026-07-27, and the mooring rows walk 52px further out
+  // per PAIR of open outcome windows, so a well-used harbour out-reaches its own
+  // finger pier: measured over 20 seeds at the top quay rung, `berths: 16` put 6
+  // mooring posts outside the envelope the harbour declares for itself and
+  // `berths: 24` put 150 — auditLayout's outsideHarbour arm reporting a defect
+  // that was the ENVELOPE's, not the moorings'. It went unseen because every
+  // fixture in the suite stopped at 6 berths, which is the value the state
+  // happened to carry; `count()` admits up to 64.
+  //
+  // BOTH TERMS ARE COMPUTED FROM INPUTS — the quay rung and the berth count —
+  // and not from the emitted positions. That distinction is the whole point of
+  // the envelope: a box fitted around the items it contains is a sensor that
+  // cannot fail, while a box derived from the inputs still catches a row
+  // indexed off the wrong base or a kit computed from the wrong origin.
   const xs = shore.map((p) => p.x)
   const ys = shore.map((p) => p.y)
-  const reach = 52 + jetty.length * 0.86
+  const pierReach = 52 + jLen * 0.86
+  // The mooring row's own depth below the shore box, in the same terms: the
+  // last row sits 116 + floor((berths-1)/2)*52 below its column's waterline,
+  // that column can be the lowest in the box (+4 for SHORE_LIFT), and the box
+  // already adds `depth` below the shore before `reach` is applied.
+  const mooringReach =
+    berths > 0 ? Math.max(0, 120 + Math.floor((berths - 1) / 2) * 52 - depth) : 0
+  const reach = Math.max(pierReach, mooringReach)
   const extent: Rect = [
     Math.min(...xs) - HARBOUR_MARGIN,
     Math.min(...ys) - HARBOUR_MARGIN,

@@ -134,7 +134,7 @@ export function clearOfDistricts(
 export const RING_MIN_RADIUS = 130
 
 /**
- * compose.py:941 `reserve(x, y, 30)` — the belt's own minimum trunk separation.
+ * The belt's own minimum trunk separation — a SAFETY RAIL, not a density lever.
  *
  * THIS IS NOT THE GROUND-DIAMOND RULE, and that is the point. Two buildings
  * sharing a ground diamond are stacked and it is a defect; two trees 40px apart
@@ -143,14 +143,33 @@ export const RING_MIN_RADIUS = 130
  * `groundTaken` at the standard 0.16 against the belt's own members: a full pine
  * needs ~92px of clearance, the belt's angular step gives 69-113px of arc, and
  * layer 1 (inset 78) sits inside layer 0's (inset 22) diamonds almost
- * everywhere — so the belt came out at 35-75 items where the reference draws
- * 150-200 and the depth sublayers largely cancelled each other.
+ * everywhere — so the belt came out at 35-75 items and the depth sublayers
+ * largely cancelled each other. The reference resolves that by never dropping:
+ * place() nudges a crowded tree up to 30 times and draws it wherever it ends up.
+ * This port may not nudge (see the header), so it needs SOME admission rule that
+ * is not the ground diamond, and 30px is it.
  *
- * The reference resolves it by never dropping: place() nudges a crowded tree up
- * to 30 times and draws it wherever it ends up. This port may not nudge (see the
- * header), so it takes the reference's OTHER number — the 30px reservation the
- * ring writes for itself — as the admission rule instead. Buildings still keep
- * their ground: the caller's occupancy book is tested with the strict rule.
+ * TWO CORRECTIONS TO WHAT THIS NUMBER USED TO CLAIM, both measured 2026-07-27:
+ *
+ *   IT IS NOT THE REFERENCE'S BELT RULE. compose.py:941 does call
+ *   `reserve(x, y, 30)` after planting each belt tree, but `_DISTRICTS` — the
+ *   list `clear_of_districts` reads — is snapshotted at compose.py:915, BEFORE
+ *   the ring loop runs. The belt's own reservations are invisible to the belt.
+ *   They are picked up by `AV = list(KEEPOUT)` at :1211, which gates the later
+ *   meadow SCATTER. So the number is the reference's, and its job there is
+ *   keeping the scatter off the belt; using it as the belt's own admission rule
+ *   is this port's repurposing, and calling it the reference's spacing was a
+ *   label the code could disprove.
+ *
+ *   IT BARELY DOES ANYTHING. Composed hamlet belt over 20 seeds: 96.5 items per
+ *   island at 30px, 97.2 at 1px — the whole rule rejects 0.8 candidates per
+ *   island. The angular step is coarse enough that neighbours are rarely within
+ *   30px to begin with. Anyone reaching for this constant to thicken the belt
+ *   should know it has no room in it; the belt's size comes from elsewhere (see
+ *   forestRing's rejection budget).
+ *
+ * Buildings still keep their ground: the caller's occupancy book is tested with
+ * the strict rule.
  */
 export const RING_SPACING = 30
 
@@ -171,6 +190,28 @@ export interface RingContext {
   inWater: (x: number, y: number) => boolean
   /** The painted plaza and tilled plots — nothing is planted on them either. */
   onPaving: (x: number, y: number) => boolean
+  /**
+   * The wharf deck that was actually built — a surface, like the plaza.
+   *
+   * ADDED 2026-07-27, and its mutation is GREEN, which is the reason to state
+   * what it is for rather than let a later reader assume it was measured. Across
+   * 240 composed islands (80 seeds x 3 states) NO belt item lands on the deck
+   * with or without this term, so today it removes nothing. It is here because
+   * the thing that keeps the belt off the deck is a COINCIDENCE OF TWO
+   * UNRELATED CONSTANTS: the wharf spans cove.x +/- SHORE_HALF_SPAN (360), and
+   * the reference's south gap runs 58-122 degrees. Measured in this frame, the
+   * wharf's east end sits at ~58.5 degrees — half a degree inside a gap edge
+   * that exists to show the water at the harbour, not to keep trees off a deck.
+   * Nothing links the two numbers, so the belt is one edit to either away from
+   * walking onto the wharf silently, and the shore band is exactly where the
+   * belt's outermost layer plants.
+   *
+   * The unit arm in planting.test.ts drives the term directly (a synthetic deck
+   * in an ungapped arc) so the RULE has a sensor even though the composed
+   * layout does not currently reach it — unreached is not unreachable, and a
+   * rule with no sensor at either level is the defect this port keeps finding.
+   */
+  onQuay: (x: number, y: number) => boolean
   sizeOf: (kind: string) => Footprint
   layers?: readonly RingLayer[]
 }
@@ -183,6 +224,29 @@ export interface RingContext {
  * book of what it has planted, so two trees in the same layer cannot land on
  * each other. It never mutates the caller's array: the layout stays a pure map
  * from (state, seed) to data.
+ *
+ * THE REJECTION BUDGET, measured 2026-07-27 over 20 composed hamlet islands, per
+ * island — because "the belt is thinner than the reference's" was an open
+ * question with no numbers under it, and this is where the belt's size actually
+ * comes from:
+ *
+ *   249.9 candidates   (4 layers x 360 degrees at a 4.4-7.2 degree step)
+ *    -82.1  in a gap arc          } all three are the REFERENCE'S OWN terms,
+ *    -47.4  inside a district     } with the reference's own constants
+ *    -20.6  within 40px of a lane }
+ *     -3.5  everything this port ADDED, in total:
+ *              1.3 pool footprint on a lane      0.8 belt spacing
+ *              0.7 pool ground taken             0.4 painted water/paving/quay
+ *              0.3 chosen sprite's ground taken  0.0 chosen sprite on a lane
+ *   = 96.5 planted
+ *
+ * So the belt's density is set by the gaps, the keep-out discs and the lanes —
+ * every one of them a number this port copied rather than chose. The port's own
+ * divergences (reject-instead-of-nudge, the extra surface terms, planting after
+ * the structures rather than before) cost THREE AND A HALF ITEMS an island. If
+ * the belt needs to be denser, the levers are the gap arcs, the district radii
+ * or the angular step, and each of those is a composition change that wants a
+ * render and the Captain's eye — not a rule this port added.
  */
 export function forestRing(seed: string | number, ctx: RingContext): RingItem[] {
   const numSeed = typeof seed === 'number' ? seed >>> 0 : fnv1a(seed)
@@ -230,12 +294,14 @@ export function forestRing(seed: string | number, ctx: RingContext): RingItem[] 
       if (!ctx.coast.landAt(x, y)) continue
       if (ctx.lanes.nearLane(x, y, 40)) continue
       if (!clearOfDistricts(x, y, ctx.districts)) continue
-      // ...and this port's two: painted water and paved/tilled surface, which
-      // the reference's ring predicate omits because its pond and its plots are
-      // covered incidentally by district discs it happens to have reserved.
-      // The outflow stream is not, and it runs through open west meadow the
-      // innermost layer reaches on most seeds.
-      if (ctx.inWater(x, y) || ctx.onPaving(x, y)) continue
+      // ...and this port's three: painted water, paved/tilled surface, and the
+      // wharf deck. The reference's ring predicate omits all three because its
+      // pond and its plots are covered incidentally by district discs it
+      // happens to have reserved. The outflow stream is not, and it runs
+      // through open west meadow the innermost layer reaches on most seeds; the
+      // deck is not either, and only the south gap's placement keeps the belt
+      // off it (see RingContext.onQuay, whose mutation is green today).
+      if (ctx.inWater(x, y) || ctx.onPaving(x, y) || ctx.onQuay(x, y)) continue
       // ...and the standing rejection rules every placement in this library
       // obeys: the road wins, and a building's ground is a building's ground.
       if (footprintOnLane(at, size, ctx.lanes)) continue

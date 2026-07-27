@@ -89,6 +89,7 @@ import {
 } from './scatter'
 import {
   clamp,
+  emptyRung,
   eraAtLeast,
   LAYOUT_SPACE,
   type Era,
@@ -116,17 +117,6 @@ export interface LayoutState {
   counts?: Readonly<Record<string, number | undefined>>
 }
 
-/** worldstate.py present(): rungs that mean "nothing is built here yet". */
-const EMPTY_RUNGS = new Set([
-  'none',
-  'bare_ground',
-  'bare_pole',
-  'bare_wall',
-  'empty_plinth',
-  'dark',
-  'dark_cairn',
-])
-
 /**
  * compose.py:26 — a handful of objects draw even at an empty rung, because the
  * empty rung IS the drawing (an unlit cairn is a lighthouse that has not been
@@ -150,9 +140,7 @@ export function isBuilt(state: LayoutState, obj: string): boolean {
  * is false there, which is what the lamp has to ask: a lamp needs a tower.
  */
 export function presentRung(state: LayoutState, obj: string): boolean {
-  const stage = state.stages?.[obj]
-  if (stage === null || stage === undefined) return false
-  return !EMPTY_RUNGS.has(stage)
+  return !emptyRung(state.stages?.[obj])
 }
 
 export function countOf(state: LayoutState, obj: string): number {
@@ -171,6 +159,16 @@ export function countOf(state: LayoutState, obj: string): number {
  * pack's own sizes through `opts.footprintOf`, because the pack is what draws.
  * A layout computed against a stale size puts the ground diamond in the wrong
  * place, and a wrong ground diamond is how props end up on the road.
+ *
+ * RE-DERIVED FROM manifest.py ENTRY BY ENTRY on 2026-07-27, because the sentence
+ * above was a claim nobody had checked and five rows contradicted it:
+ * tree_birch was 150x150 for a 125x165 sprite, tree_willow 150x150 for 155x155,
+ * and rock_cluster, fallen_log and mushrooms all carried the generic 47x45 of
+ * the small-nature block while manifest.py generates them at 105x95, 120x95 and
+ * 90x90 (all three are in HALF, so 52x47, 60x47 and 45x45). Every spacing
+ * number this library measures — belt separation, ground overlap, lane
+ * clearance — is computed against these, so a wrong row is not a cosmetic
+ * error: it is a rule enforcing the wrong distance and reporting that it did.
  */
 export const DEFAULT_FOOTPRINTS: Readonly<Record<string, Footprint>> = {
   great_house: { w: 200, h: 200 },
@@ -203,8 +201,8 @@ export const DEFAULT_FOOTPRINTS: Readonly<Record<string, Footprint>> = {
   barrel_single: { w: 45, h: 47 },
   tree_oak: { w: 150, h: 150 },
   tree_oak_small: { w: 55, h: 55 },
-  tree_birch: { w: 150, h: 150 },
-  tree_willow: { w: 150, h: 150 },
+  tree_birch: { w: 125, h: 165 },
+  tree_willow: { w: 155, h: 155 },
   bush_round: { w: 47, h: 47 },
   bush_flowering: { w: 47, h: 47 },
   fern_cluster: { w: 47, h: 47 },
@@ -212,10 +210,10 @@ export const DEFAULT_FOOTPRINTS: Readonly<Record<string, Footprint>> = {
   flowers_yellow: { w: 47, h: 45 },
   flowers_pink: { w: 47, h: 45 },
   rock_small: { w: 47, h: 45 },
-  rock_cluster: { w: 47, h: 45 },
-  mushrooms: { w: 47, h: 45 },
+  rock_cluster: { w: 52, h: 47 },
+  mushrooms: { w: 45, h: 45 },
   tree_stump: { w: 47, h: 45 },
-  fallen_log: { w: 47, h: 45 },
+  fallen_log: { w: 60, h: 47 },
   reeds: { w: 47, h: 55 },
   // the enclosure ring's conifers, and the pond's own plant (manifest.py
   // NATURE, at scale_of()'s 1 and 2 respectively)
@@ -654,6 +652,10 @@ export function composeLayout(
   // against an occupancy book the ring has already written into.
   const inWater = waterField(paint)
   const onPaving = paintField(paint, ['plaza', 'crop', 'ploughed'])
+  // ONE FIELD, built once and handed to both planting stages: the belt and the
+  // scatter must agree on where the deck is, and two `rectField` calls off the
+  // same rect is one call away from being two different rects.
+  const onQuay = rectField(harbour?.wharf?.rect ?? null)
   const ring = forestRing(numSeed, {
     space,
     coast,
@@ -662,6 +664,7 @@ export function composeLayout(
     occupied,
     inWater,
     onPaving,
+    onQuay,
     sizeOf,
   })
   for (const item of ring) occupied.push({ at: item.at, size: item.size })
@@ -683,7 +686,7 @@ export function composeLayout(
     // argument the paving term needed: a deck is a surface, and the keep-out
     // discs do not reach it (the nearest is the square's, 400px north). The
     // shore band runs along the waterline, which is exactly where the deck is.
-    onQuay: rectField(harbour?.wharf?.rect ?? null),
+    onQuay,
     sizeOf,
     village,
     camp,
@@ -789,7 +792,33 @@ function placeLighthouse(
   }
 }
 
-/** The bounding ellipse of a painted region — [cx,cy,rx,ry], or null if empty. */
+/**
+ * The bounding ellipse of a painted region — [cx,cy,rx,ry], or null if empty.
+ *
+ * IT IS THE ELLIPSE INSCRIBED IN THE BLOBS' BOUNDING BOX, so it is a SUPERSET
+ * of the paint, and that is a known limit rather than an oversight. Measured
+ * 2026-07-27 over 20 village islands by 2px lattice: 9.0% of the declared plaza
+ * ellipse and 3.5% of the average declared field ellipse is grass the paint
+ * never covered (worst island: 15.1% and 17.7%). check_on_road exempts anything
+ * inside these, so its exemption is that much wider than the surface.
+ *
+ * NOT FIXED, deliberately, for three reasons stated so the next reader can
+ * disagree with the reasoning rather than rediscover the number:
+ *   - the direction is safe for the OTHER consumer. check_terrain sweeps these
+ *     same ellipses for paving and cultivation, and a wider ellipse puts more
+ *     grass in the denominator — it can only make that check harder to pass,
+ *     never easier.
+ *   - nothing this layout produces can hide in the difference. The plaza and
+ *     every plot sit inside keep-out discs, so no planting pass reaches them at
+ *     all; the structures near the square go through placeOnGround, which
+ *     refuses a lane outright before the exemption is ever consulted.
+ *   - the honest alternative — shrinking each ellipse until it is contained in
+ *     the blob union — is a per-island lattice search on the compose path, paid
+ *     on every render, to tighten an exemption that currently exempts nothing
+ *     the checks would have caught.
+ * If a consumer ever stands something inside a region extent WITHOUT going
+ * through placeOnGround, this becomes a real hole and the search is worth it.
+ */
 export function ellipseOfRegion(region: PaintRegion | undefined): Ellipse | null {
   if (!region || region.blobs.length === 0) return null
   let x0 = Infinity
@@ -1084,7 +1113,9 @@ export function auditLayout(layout: Layout): {
     for (const c of h.cranes) {
       if (!inside(c)) outsideHarbour.push({ kind: 'harbor_crane', at: c })
     }
-    if (!inside(h.jetty.at) || !inside(h.jetty.end)) {
+    // The jetty is absent on an unmeasured quay ladder; an absent pier cannot
+    // be outside the envelope, and asking would be asserting against null.
+    if (h.jetty && (!inside(h.jetty.at) || !inside(h.jetty.end))) {
       outsideHarbour.push({ kind: 'jetty', at: h.jetty.end })
     }
   }

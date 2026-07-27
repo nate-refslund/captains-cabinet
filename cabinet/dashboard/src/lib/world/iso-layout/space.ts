@@ -104,6 +104,49 @@ export function eraAtLeast(era: Era, floor: Era): boolean {
 /** Road ladder rungs — the road IS a rung, and its width follows it. */
 export type RoadRung = 'dirt_path' | 'dirt_worn' | 'gravel_road' | 'cobbled_road'
 
+/**
+ * worldstate.py present() — the rung values that mean NOTHING IS BUILT HERE YET.
+ *
+ * ONE COPY, because two modules ask the question. index.ts asks it of every
+ * object's stage (`presentRung`), and harbour.ts asks it of the `quay` rung
+ * before it lays a plank. It lived only in index.ts until 2026-07-27, so the
+ * harbour could not ask at all: it read an absent quay rung as `rowboat_jetty`
+ * and drew a 96px pier for a quay that had never been measured, and it read a
+ * rung of `bare_ground` as an UNKNOWN rung and gave it the deepest wharf in the
+ * table. Both are the same defect — a drawn thing with no state behind it — and
+ * both came of the answer living in a module the harbour could not import.
+ *
+ * `empty_plinth` is in THIS set and is deliberately absent from
+ * checks/world_checks.py's EMPTY_RUNG. The two sets answer different questions
+ * and the difference is not drift: the offline check asks "may this SPRITE be
+ * drawn", and an empty plinth is a real object a viewer can see; this set asks
+ * "has this object BUILT anything", and an empty plinth has not. The objects
+ * whose empty rung IS the drawing carry that exception by name, one level up
+ * (index.ts ALWAYS_DRAWN).
+ */
+export const EMPTY_RUNGS: ReadonlySet<string> = new Set([
+  'none',
+  'bare_ground',
+  'bare_pole',
+  'bare_wall',
+  'empty_plinth',
+  'dark',
+  'dark_cairn',
+])
+
+/**
+ * True when a stage value means the object has built nothing yet.
+ *
+ * ABSENT AND EMPTY ARE THE SAME ANSWER HERE and that is deliberate: an object
+ * whose ladder the state never mentions has not been measured, and drawing the
+ * first rung of an unmeasured ladder is inventing a measurement. It is the
+ * distinction between "no data" and "zero", collapsed in the only direction
+ * that cannot fabricate.
+ */
+export function emptyRung(stage: string | null | undefined): boolean {
+  return stage === null || stage === undefined || EMPTY_RUNGS.has(stage)
+}
+
 /** Clamp to [lo,hi]; NaN clamps to `lo` so a bad input can never size a buffer. */
 export function clamp(v: number, lo: number, hi: number): number {
   if (!Number.isFinite(v)) return lo

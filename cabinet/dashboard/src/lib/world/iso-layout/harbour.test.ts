@@ -96,6 +96,20 @@ function harbourOf(state: LayoutState, seed = 'acme-corp'): Harbour {
 
 const inRect = (r: Rect, p: Point) => p.x >= r[0] && p.x <= r[2] && p.y >= r[1] && p.y <= r[3]
 
+/**
+ * The pier, ASSERTED to exist rather than non-null-asserted away.
+ *
+ * `jetty` became nullable when the harbour stopped building a pier out of an
+ * unmeasured quay ladder, and every fixture below that reaches for it does have
+ * a quay rung — so the honest form of `h.jetty!` is an assertion that fails
+ * loudly if the rung ever stops producing one. A bare `!` would turn that
+ * regression into a null-dereference inside whichever arm hit it first.
+ */
+function pierOf(h: Harbour) {
+  expect(h.jetty).not.toBeNull()
+  return h.jetty as NonNullable<Harbour['jetty']>
+}
+
 // ── the waterline: nothing floats ──────────────────────────────────────────
 
 describe('the shore polyline', () => {
@@ -188,8 +202,8 @@ describe('the wharf', () => {
     expect(jettyLength('stone_quay_5')).toBe(230)
     const fresh = harbourOf(withState(CAMP, { stages: { quay: 'rowboat_jetty' } }))
     const seasoned = harbourOf(CAMP)
-    expect(fresh.jetty.length).toBe(96)
-    expect(seasoned.jetty.length).toBe(230)
+    expect(pierOf(fresh).length).toBe(96)
+    expect(pierOf(seasoned).length).toBe(230)
     expect(seasoned.wharf).toBeNull()
   })
 
@@ -201,6 +215,94 @@ describe('the wharf', () => {
     expect(harbourOf(withState(PORT, { stages: { quay: 'rowboat_jetty' } })).wharf).toBeNull()
     // a sixth stone rung the ladder grows later: more quay, never none
     expect(harbourOf(withState(PORT, { stages: { quay: 'stone_quay_6' } })).wharf?.depth).toBe(54)
+  })
+
+  /**
+   * NO RUNG, NO QUAY — the state-traceability arm.
+   *
+   * compose.py:1134 reads `WS.stage("quay") or "rowboat_jetty"`, so an org whose
+   * quay ladder was never measured gets the ladder's FIRST RUNG built out of the
+   * absence: a 96px finger pier standing in the water with no rule behind it,
+   * which is precisely what check_state_traceable exists to catch. This port
+   * diverges, on the same ground it already refused compose.py:1188's
+   * `max(1, 1 + cargo*3)` crate.
+   *
+   * BOTH DIRECTIONS ARE ASSERTED, because a gate that answers "nothing" to
+   * everything is not a gate: a rung that IS present still builds its pier, and
+   * `rowboat_jetty` — the ladder's real first rung, which a freshly hatched org
+   * genuinely sits on — is the case that must keep its 96px.
+   *
+   * MUTATIONS (both proven RED, 2026-07-27):
+   *   - `jettyLength` without its emptyRung guard  -> jettyLength(undefined)
+   *     is 96, jettyLength('bare_ground') is 230, and every no-rung harbour
+   *     grows a pier again.
+   *   - `quayDepth` without its emptyRung guard    -> quayDepth('hamlet',
+   *     'bare_ground') is 54, the DEEPEST wharf in the table, because
+   *     `bare_ground` is not in QUAY_DEPTH and the unknown-rung rule read an
+   *     unbuilt quay as a rung past the top of the ladder.
+   */
+  it('builds neither deck nor pier from a quay rung that does not exist', () => {
+    // the ladder is unmeasured: no key at all, or an explicit null
+    for (const rung of [undefined, null]) {
+      expect(jettyLength(rung)).toBe(0)
+      expect(quayDepth('hamlet', rung)).toBe(0)
+      expect(quayDepth('camp', rung)).toBe(0)
+    }
+    // the ladder exists but has built nothing yet (worldstate.py present())
+    for (const rung of ['none', 'bare_ground', 'dark']) {
+      expect(jettyLength(rung)).toBe(0)
+      expect(quayDepth('hamlet', rung)).toBe(0)
+    }
+    // ...and a rung that IS a rung still builds, at both ends of the ladder
+    expect(jettyLength('rowboat_jetty')).toBe(96)
+    expect(quayDepth('hamlet', 'rowboat_jetty')).toBe(0) // planks, not a deck
+    expect(jettyLength('stone_quay_6')).toBe(230)
+    expect(quayDepth('hamlet', 'stone_quay_6')).toBe(54)
+
+    const noLadder = { ...PORT, stages: { ...PORT.stages, quay: undefined } }
+    for (const seed of SEEDS) {
+      const h = harbourOf(noLadder, seed)
+      expect(h.jetty).toBeNull()
+      expect(h.wharf).toBeNull()
+      // and the harbour is still a harbour: the things with their OWN ladders
+      // survive, because the quay's absence is not their absence
+      expect(h.moorings.length).toBe(6)
+      expect(h.warehouseSites.length).toBe(2)
+      expect(h.harbourmasterSite).not.toBeNull()
+      expect(h.shore.length).toBeGreaterThan(3)
+      // nothing it emits leaves the envelope just because the pier is gone
+      expect(auditLayout(composeLayout(noLadder, seed, FAST)).outsideHarbour).toEqual([])
+    }
+    // the pier IS there on the same island the moment the rung is
+    expect(harbourOf(PORT).jetty).not.toBeNull()
+  })
+
+  /**
+   * THE ENVELOPE MUST REACH THE DEEPEST THING IN THE HARBOUR, and that is not
+   * always the pier.
+   *
+   * Found 2026-07-27: `reach` was the jetty's alone, while the mooring rows walk
+   * 52px further out per PAIR of open outcome windows. Measured over 20 seeds at
+   * the top quay rung, `berths: 16` put 6 mooring posts outside the harbour's own
+   * declared envelope and `berths: 24` put 150 — auditLayout reporting a defect
+   * that belonged to the envelope, not to the moorings. It survived because every
+   * fixture in this file stopped at 6 berths; `count()` admits up to 64.
+   *
+   * MUTATION (proven RED): `const reach = pierReach` — 6 posts out at 16 berths,
+   * 150 at 24, and 342 with no quay rung at all.
+   */
+  it('declares an envelope that reaches its own mooring rows, at any berth count', () => {
+    for (const quay of ['stone_quay_4', undefined]) {
+      for (const berths of [2, 6, 16, 24, 64]) {
+        const st = { ...PORT, stages: { ...PORT.stages, quay }, counts: { ...PORT.counts, berths } }
+        for (const seed of SEEDS) {
+          const l = composeLayout(st, seed, FAST)
+          const h = l.harbour as Harbour
+          expect(h.moorings.length).toBe(berths)
+          expect(auditLayout(l).outsideHarbour).toEqual([])
+        }
+      }
+    }
   })
 
   /**
@@ -235,14 +337,15 @@ describe('the finger jetty', () => {
     for (const seed of [...SEEDS, ...WIDE]) {
       const l = composeLayout(PORT, seed, FAST)
       const h = l.harbour as Harbour
-      const rootShore = shoreAt(l.coast, h.cove, h.jetty.at.x)
+      const j = pierOf(h)
+      const rootShore = shoreAt(l.coast, h.cove, j.at.x)
       expect(rootShore).not.toBeNull()
       // the root is BELOW its own column's waterline: on the water, at the deck
-      expect(h.jetty.at.y).toBeGreaterThan(rootShore as number)
-      expect(l.coast.landAt(h.jetty.end.x, h.jetty.end.y)).toBe(false)
+      expect(j.at.y).toBeGreaterThan(rootShore as number)
+      expect(l.coast.landAt(j.end.x, j.end.y)).toBe(false)
       // and the end is further out than the root, along the iso angle
-      expect(h.jetty.end.y).toBeGreaterThan(h.jetty.at.y)
-      expect(h.jetty.end.x).toBeGreaterThan(h.jetty.at.x)
+      expect(j.end.y).toBeGreaterThan(j.at.y)
+      expect(j.end.x).toBeGreaterThan(j.at.x)
     }
   })
 
@@ -265,9 +368,10 @@ describe('the finger jetty', () => {
     for (const seed of [...SEEDS, ...WIDE]) {
       const l = composeLayout(PORT, seed, FAST)
       const h = l.harbour as Harbour
-      const sy = shoreAt(l.coast, h.cove, h.jetty.at.x) as number
-      offsets.push(h.jetty.at.y - sy)
-      absolutes.push(h.jetty.at.y)
+      const j = pierOf(h)
+      const sy = shoreAt(l.coast, h.cove, j.at.x) as number
+      offsets.push(j.at.y - sy)
+      absolutes.push(j.at.y)
     }
     expect(new Set(offsets).size).toBe(1)
     expect(offsets[0]).toBe(52)
@@ -350,8 +454,8 @@ describe('the dock kit', () => {
     const boat = has.items.find((i) => i.kind === 'harbor_boat')
     expect(boat).toBeDefined()
     expect(boat?.overWater).toBe(true)
-    expect(boat?.at.y).toBeCloseTo(has.jetty.end.y - 6, 6)
-    expect(boat?.at.x).toBeCloseTo(has.jetty.end.x - 132, 6)
+    expect(boat?.at.y).toBeCloseTo(pierOf(has).end.y - 6, 6)
+    expect(boat?.at.x).toBeCloseTo(pierOf(has).end.x - 132, 6)
 
     for (const rung of ['none', undefined]) {
       const not = harbourOf(withState(PORT, { stages: { harbor_boat: rung } }))
@@ -766,10 +870,25 @@ describe('auditLayout, on the harbour', () => {
    * MH19). A box defined by what it checks is a sensor that cannot fail, which
    * is the single defect class this directory keeps paying for.
    *
-   * The discriminator is how the box RESPONDS: it is a function of the cove,
-   * the shore and the quay rung, so holding those fixed and moving every count
-   * — berths, cargo, warehouses, packs — must not move it by a pixel. An
-   * items-fitted box tracks them all.
+   * The discriminator is how the box RESPONDS. It is a function of the cove,
+   * the shore, the quay rung and the berth COUNT — and of nothing else — so:
+   *
+   *   - moving cargo, warehouses and packs must not shift it by a pixel, even
+   *     though each one adds emitted things inside it. An items-fitted box
+   *     tracks all three.
+   *   - berths DOES move it, because the mooring rows walk 52px further out per
+   *     pair and the envelope has to reach its own deepest row (that term was
+   *     missing until 2026-07-27; see the berth-count arm above). So the arm
+   *     pins the RESPONSE instead of forbidding it: the sides and the top edge
+   *     never move, and the bottom edge moves by exactly the row stride. An
+   *     items-fitted box reproduces neither — its bottom edge would sit at the
+   *     last post rather than a margin below it, and its sides would follow the
+   *     dock kit.
+   *
+   * The distinction that makes this a live sensor: the envelope is derived from
+   * the INPUTS (rung, count), never from the emitted positions, so a mooring row
+   * indexed off the wrong base or a kit computed from the wrong origin still
+   * lands outside it — which is what the negative twin below measures.
    */
   it('measures the harbour against an envelope the harbour does not define', () => {
     for (const seed of SEEDS) {
@@ -779,15 +898,34 @@ describe('auditLayout, on the harbour', () => {
         }),
         seed
       )
+      // everything EXCEPT berths moved: the box may not notice
       const busy = harbourOf(
         withState(PORT, {
-          counts: { berths: 13, cargo_stacks: 9, warehouse: 3, packs_inherited: 9 },
+          counts: { berths: 0, cargo_stacks: 9, warehouse: 3, packs_inherited: 9 },
         }),
         seed
       )
       expect(busy.items.length).toBeGreaterThan(empty.items.length)
-      expect(busy.moorings.length).toBeGreaterThan(empty.moorings.length)
       expect(busy.extent).toEqual(empty.extent)
+
+      // BOTH REGIMES. Up to 6 berths the pier still reaches deeper than the last
+      // row, so the box must not move at all — that is the same
+      // count-invariance the old arm asserted, kept where it is still true.
+      const few = harbourOf(withState(PORT, { counts: { berths: 6 } }), seed)
+      expect(few.moorings.length).toBe(6)
+      expect(few.extent).toEqual(empty.extent)
+
+      // Past that the rows are the deepest thing in the harbour, and the box
+      // follows the ROW STRIDE — one 52px step per pair — while its sides and
+      // its top edge hold. 13 -> rows 0..6, 21 -> rows 0..10: four strides.
+      const many = harbourOf(withState(PORT, { counts: { berths: 13 } }), seed)
+      const more = harbourOf(withState(PORT, { counts: { berths: 21 } }), seed)
+      expect(more.extent.slice(0, 3)).toEqual(many.extent.slice(0, 3))
+      expect(more.extent[3] - many.extent[3]).toBe(52 * 4)
+      // and the deepest post is inside it, with the margin still to spare
+      for (const h of [few, many, more]) {
+        expect(h.extent[3]).toBeGreaterThan(Math.max(...h.moorings.map((m) => m.y)))
+      }
     }
   })
 
@@ -809,7 +947,7 @@ describe('auditLayout, on the harbour', () => {
 
     const strayJetty: Layout = {
       ...l,
-      harbour: { ...h, jetty: { ...h.jetty, end: { x: 40, y: 1700 } } },
+      harbour: { ...h, jetty: { ...pierOf(h), end: { x: 40, y: 1700 } } },
     }
     expect(auditLayout(strayJetty).outsideHarbour.length).toBe(1)
   })
