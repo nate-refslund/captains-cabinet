@@ -37,11 +37,15 @@ def _make_source(base: Path, *, children: bool = True) -> Path:
     return src
 
 
-def _ratified_journey(root: Path, src: Path) -> None:
+def _ratified_journey(root: Path, src: Path, *, ownership: str = "self") -> None:
+    """The ingest ceiling REFUSES an unclassified source, so every fixture
+    declares a class and its basis — exactly as an operator must."""
     proposal = journey.act({
         "action": "propose_window", "action_id": "e-propose", "surface": "test",
         "source": str(src), "purpose": "Find one release risk.",
         "relationship_destination": "reversible",
+        "ownership": ownership,
+        "authority_basis": "synthetic fixture folder created by this test",
     }, root, now="2026-07-26T00:00:00Z")
     journey.act({
         "action": "ratify_charter", "action_id": "e-ratify", "surface": "test",
@@ -68,14 +72,17 @@ def test_ratified_window_yields_one_cited_source_and_its_entities(tmp_path):
     assert doc["altitude"] == "contributor"
     assert len(doc["sources"]) == 1
     source = doc["sources"][0]
-    assert source["root"] == str(src)
+    assert source["source_root"] == str(src)   # the access-record field name
     assert source["read_only"] is True
     assert source["raw_contents_persisted"] is False
     assert source["charter_hash"] and source["manifest_hash"]
-    assert source["entries"] >= 4
-    # ASKED, never inferred — and the no-egress default is recorded, not implied.
-    assert source["ownership"] == "unclassified"
-    assert source["egress"] == "none"
+    assert source["entry_count"] >= 4
+    # ASKED at the ingest ceiling and bound into the charter hash — this module
+    # READS the answer rather than asking again or keeping a second vocabulary.
+    assert source["ownership"] == "self"
+    assert source["authority_basis"]
+    assert source["attestation_limit"]        # what the framework cannot verify
+    assert source["refusals_total"] == sum(source["refusals"].values())
 
     ids = {e["id"] for e in doc["entities"]}
     assert ids == {"storefront", "labs"}
@@ -119,7 +126,8 @@ def test_unratified_or_unbound_window_is_an_honest_empty(tmp_path):
     journey.act({
         "action": "propose_window", "action_id": "p1", "surface": "test",
         "source": str(src), "purpose": "Find one release risk.",
-        "relationship_destination": "reversible",
+        "relationship_destination": "reversible", "ownership": "self",
+        "authority_basis": "synthetic fixture folder created by this test",
     }, root, now="2026-07-26T00:00:00Z")
     doc = estate.derive_estate(root, answers=ANSWERS, now="2026-07-26T00:01:00Z")
     assert doc["sources"] == [] and doc["entities"] == []
@@ -197,8 +205,8 @@ def _doc_with_entity(ownership: str) -> dict:
 
 
 @pytest.mark.parametrize("ownership,write_capable", [
-    ("unclassified", False), ("employer", False), ("third_party", False),
-    ("self", True),
+    ("unclassified", False),   # legacy: a journey older than the ingest ceiling
+    ("employer", False), ("third_party", False), ("self", True),
 ])
 def test_only_self_owned_sources_propose_write_capable_lanes(ownership, write_capable):
     rows = estate.proposed_lanes(_doc_with_entity(ownership))
@@ -263,3 +271,18 @@ def test_load_estate_is_an_honest_empty_on_garbage(tmp_path):
     path.parent.mkdir(parents=True)
     path.write_text("::not: yaml: [\n", encoding="utf-8")
     assert estate.load_estate(tmp_path) == {}
+
+
+def test_an_employer_source_is_carried_and_proposes_read_only(tmp_path):
+    """End to end through the REAL journey: a source the operator declares as
+    their employer's rides the charter into the estate, and the lane derived
+    from it is proposed read-only — the decision is
+    framework.authority.ownership.writes_permitted, not a local `== self`."""
+    src = _make_source(tmp_path)
+    root = tmp_path / "root"
+    _ratified_journey(root, src, ownership="employer")
+    doc = estate.derive_estate(root, answers=ANSWERS, now="2026-07-26T00:01:00Z")
+    assert doc["sources"][0]["ownership"] == "employer"
+    rows = estate.proposed_lanes(doc)
+    assert rows and all(r["write_capable_proposal"] is False for r in rows)
+    assert all(r["task_system"] == "none" and r["repos"] == [] for r in rows)

@@ -110,20 +110,28 @@ decision it changed.
 * **Provenance survives the read**, per source: root, ownership class, charter
   hash, manifest hash, entry count, and EVERY refusal with its reason. Silent
   skips destroy auditability, so the count is rendered even when it is zero.
-* **Ownership is ASKED, never inferred.** `ownership` defaults to
-  `unclassified`, and only a source classified `self` yields a write-capable
-  lane proposal. Everything else proposes `task_system: none` and no repos, so
-  ratifying it cannot point a write-capable adapter at an estate the operator
-  does not own. That is the write-back danger (`cabinet/scripts/task_adapters/
+* **Ownership is ASKED, never inferred — and asked once, by somebody else.**
+  The sibling source-ownership landing put the ingest ceiling in
+  `framework/authority/ownership.py` and bound the declared class and its
+  authority basis INTO the charter hash the Captain approves. This unit
+  reconciled onto it rather than keeping a second vocabulary: the estate reads
+  the class off the charter, rides `access_record` for the per-source record
+  shape, and asks `writes_permitted` — the same function the task adapters
+  route through — whether a derived lane may be proposed write-capable.
+  Anything that is not the operator's own proposes `task_system: none` and no
+  repos, so ratifying it cannot point a write-capable adapter at an estate they
+  do not own. That is the write-back danger (`cabinet/scripts/task_adapters/
   base.py` — *"canonical wins … the next sync overwrites the external
-  change"*) closed at the one surface this unit builds.
+  change"*) closed at this surface too. `unclassified` survives only as the
+  marker for a journey persisted before that ceiling existed, and is treated as
+  non-owned.
 * **Undo takes its effects with it.** `undo_run` supersede-archives the derived
   estate and the lanes proposal along with the run, when they carry that run's
   id. An undo that leaves its effect in place is not an undo.
 * **NOT claimed:** the framework cannot verify the truth of an ownership
-  attestation, and **no egress gate keys on the ownership class yet**. The
-  class is recorded and the question is forced; that is the enforceable
-  boundary and it is stated rather than implied.
+  attestation. The class is recorded, the question is forced, and the record
+  carries `attestation_limit` saying so in its own words; that is the
+  enforceable boundary and it is stated rather than implied.
 * **NOT built:** any ingest engine, and any new connector. The gate ruled that
   the sweep and its consumer land as ONE unit, and that the employee-slice
   experiment settles whether cross-system ingest beats single-system reads

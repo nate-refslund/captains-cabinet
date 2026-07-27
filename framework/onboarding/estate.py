@@ -37,14 +37,17 @@ manifest hash, the entry count, and EVERY refusal with its reason (silent
 skips destroy auditability). The journey persists no raw contents, so this
 document is paths, hashes and counts — never file bodies.
 
-OWNERSHIP IS ASKED, NEVER INFERRED. ``ownership`` defaults to
-``unclassified`` — "which of these sources are yours to grant?" is
-un-derivable by construction, because the answer is not in the data. What the
-framework CAN do it does here: it records the class, and it refuses to propose
-a write-capable lane for anything not classified ``self`` (proposed lanes
-carry ``task_system: none`` and no repos until the operator declares
-ownership). What it CANNOT do — verify the truth of an attestation — is
-stated rather than implied; no egress gate keyed on this class exists yet.
+OWNERSHIP IS ASKED, NEVER INFERRED — and asked exactly once, by somebody
+else. The class and its authority basis are declared at the ingest ceiling and
+bound INTO the charter hash the Captain approves
+(``framework.authority.ownership`` → ``journey._build_charter``), so this
+module READS them off the charter rather than asking a second time or keeping
+a second vocabulary. ``writes_permitted`` decides whether a derived lane may be
+proposed write-capable; a source that is not the operator's own proposes
+``task_system: none`` and no repos. ``unclassified`` appears only for a journey
+persisted BEFORE that ceiling existed, and it is treated as non-owned. What the
+framework CANNOT do — verify the truth of an attestation — is stated rather
+than implied.
 
 ALTITUDE. ``mission.altitude`` (the operator's rung: contributor ... company)
 is carried onto the document for provenance and read by genesis for card
@@ -60,6 +63,12 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+from framework.authority.ownership import (
+    OWNERSHIP_CLASSES,
+    access_record,
+    writes_permitted,
+)
+
 SCHEMA = "cabinet.derived-estate/v1"
 LANES_PROPOSED_SCHEMA = "cabinet.lanes-proposed/v1"
 GENERATED_MARKER = "generated-by: framework.onboarding.estate"
@@ -70,8 +79,11 @@ LANES_PROPOSED_REL = "instance/config/lanes-proposed.yml"
 JOURNEY_DIR_REL = "instance/onboarding/v2"
 
 ALTITUDES = ("contributor", "project", "team", "function", "company")
-OWNERSHIP_CLASSES = ("self", "employer", "third_party", "unclassified")
-DEFAULT_OWNERSHIP = "unclassified"
+# The ownership vocabulary has ONE home (framework.authority.ownership); a
+# second copy here would be a second answer to the same question. `unclassified`
+# is NOT a class — it is the legacy marker for a journey persisted before the
+# ingest ceiling existed, and it is non-owned like everything that is not `self`.
+LEGACY_UNCLASSIFIED = "unclassified"
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 _RESERVED_SLUGS = frozenset({"cos", "cto", "cpo", "cro", "coo", "main", "_template"})
@@ -204,40 +216,59 @@ def _entities_from_manifest(manifest: dict, source_id: str) -> list:
     return entities
 
 
-def _source_row(charter: dict, manifest: dict, ownership: str) -> dict:
+def _source_row(charter: dict, manifest: dict, now: str) -> dict:
+    """One source row, riding the canonical per-source access record.
+
+    ``access_record`` is the shape that must SURVIVE the read it describes, so
+    the estate does not invent a second one: it carries the record verbatim and
+    adds only what the estate itself needs (a stable id for entity references,
+    the byte total, and whether the scan hit its limits). Ownership and
+    authority basis come off the CHARTER — the hash the Captain approved — not
+    from a fresh question."""
     payload = charter.get("payload") if isinstance(charter.get("payload"), dict) else {}
     source = payload.get("source") if isinstance(payload.get("source"), dict) else {}
     stats = manifest.get("scan_statistics")
     excluded = stats.get("excluded") if isinstance(stats, dict) else None
-    refusals = ([{"reason": k, "count": int(v)} for k, v in sorted(excluded.items()) if v]
-                if isinstance(excluded, dict) else [])
-    return {
-        "id": "first-window",
-        "kind": "local_folder",
-        "root": str(source.get("root") or ""),
-        "label": str(source.get("label") or manifest.get("source_label") or ""),
-        # Asked, never inferred. `unclassified` is the honest default and it
-        # is load-bearing below: only `self` earns a write-capable proposal.
-        "ownership": ownership,
-        "authority_basis": "",
-        # Recorded intent, NOT an enforced gate — no egress path keys on this
-        # field yet. Saying so here is the difference between a control and a
-        # claim.
-        "egress": "none",
-        "read_only": True,
-        "charter_hash": str(charter.get("hash") or ""),
-        "manifest_hash": str(manifest.get("manifest_hash") or ""),
-        "entries": int(manifest.get("file_count") or 0),
-        "bytes": int(manifest.get("total_bytes") or 0),
-        "truncated_by_limits": bool(manifest.get("truncated_by_limits")),
-        "refusals": refusals,
-        "raw_contents_persisted": False,
-    }
+    refusals = {k: int(v) for k, v in (excluded or {}).items() if v} \
+        if isinstance(excluded, dict) else {}
+    declared = str(source.get("ownership") or "")
+    ownership = declared if declared in OWNERSHIP_CLASSES else LEGACY_UNCLASSIFIED
+    retention = "paths, hashes and counts only; no file contents persisted"
+    if ownership in OWNERSHIP_CLASSES:
+        record = access_record(
+            schema=SCHEMA, source_root=str(source.get("root") or ""),
+            ownership=ownership,
+            authority_basis=str(source.get("authority_basis") or ""),
+            charter_hash=str(charter.get("hash") or ""),
+            manifest_hash=str(manifest.get("manifest_hash") or ""),
+            entry_count=int(manifest.get("file_count") or 0),
+            refusals=refusals, retention=retention, recorded_at=now,
+        )
+    else:
+        # A journey persisted before the ingest ceiling existed. Recorded
+        # honestly rather than back-filled with a plausible class, and treated
+        # as non-owned everywhere below.
+        record = {
+            "schema": SCHEMA, "source_root": str(source.get("root") or ""),
+            "ownership": LEGACY_UNCLASSIFIED, "authority_basis": "",
+            "charter_hash": str(charter.get("hash") or ""),
+            "manifest_hash": str(manifest.get("manifest_hash") or ""),
+            "entry_count": int(manifest.get("file_count") or 0),
+            "refusals": dict(sorted(refusals.items())),
+            "refusals_total": sum(refusals.values()),
+            "retention": retention, "recorded_at": now, "purge_receipt": None,
+        }
+    row = {"id": "first-window", "kind": "local_folder",
+           "label": str(source.get("label") or manifest.get("source_label") or ""),
+           "bytes": int(manifest.get("total_bytes") or 0),
+           "truncated_by_limits": bool(manifest.get("truncated_by_limits")),
+           "read_only": True, "raw_contents_persisted": False}
+    row.update(record)
+    return row
 
 
 def derive_estate(root: Path | None = None, *, answers: dict | None = None,
-                  run_id: str | None = None, now: str | None = None,
-                  ownership: str | None = None) -> dict:
+                  run_id: str | None = None, now: str | None = None) -> dict:
     """Structure the ratified First Window into the derived-estate document.
 
     A source row is emitted ONLY when the charter is ``ratified`` AND the
@@ -252,13 +283,13 @@ def derive_estate(root: Path | None = None, *, answers: dict | None = None,
     charter = _read_json(jdir / "orientation-charter.json")
     manifest = _read_json(jdir / "first-window-manifest.json")
     dividend = _read_json(jdir / "first-dividend.json")
-    own = ownership if ownership in OWNERSHIP_CLASSES else DEFAULT_OWNERSHIP
+    ts = _utc_now_iso(now)
 
     sources, entities, finding = [], [], None
     ratified = str(charter.get("status") or "") == "ratified"
     bound = bool(charter.get("hash")) and manifest.get("charter_hash") == charter.get("hash")
     if ratified and bound:
-        row = _source_row(charter, manifest, own)
+        row = _source_row(charter, manifest, ts)
         sources.append(row)
         entities = _entities_from_manifest(manifest, row["id"])
         item = dividend.get("finding") if isinstance(dividend.get("finding"), dict) else None
@@ -278,7 +309,7 @@ def derive_estate(root: Path | None = None, *, answers: dict | None = None,
         "schema": SCHEMA,
         "deployment": str(((answers or {}).get("cabinet") or {}).get("id") or ""),
         "derived_by": "framework.onboarding.formation:DISCOVERY_DONE",
-        "derived_at": _utc_now_iso(now),
+        "derived_at": ts,
         "run_id": run_id or "",
         "altitude": altitude_of(answers) or "",
         "declared_purpose": purpose,
@@ -357,14 +388,15 @@ def estate_is_usable(doc: dict, deployment: str | None = None) -> tuple:
 def proposed_lanes(doc: dict) -> list:
     """Estate entities → PROPOSED lane rows (never activated by anything).
 
-    Structural read-only for anything not operator-owned: a lane whose source
-    is not classified ``self`` is proposed with ``task_system: none`` and no
-    repos, so ratifying it can never point a write-capable adapter at an
-    estate the operator does not own. That is the write-back danger closed at
+    Structural read-only for anything not operator-owned: the decision is
+    ``framework.authority.ownership.writes_permitted`` — the same function the
+    task adapters route through — so a lane whose source is not the operator's
+    is proposed with ``task_system: none`` and no repos, and ratifying it can
+    never point a write-capable adapter at an estate they do not own. That is the write-back danger closed at
     the one surface this unit builds — ``task_adapters/base.py``'s "canonical
     wins" pointed at a corporate tracker is an agent overwriting a colleague's
     edits in a system the operator has no authority over."""
-    owners = {str(s.get("id")): str(s.get("ownership") or DEFAULT_OWNERSHIP)
+    owners = {str(s.get("id")): str(s.get("ownership") or LEGACY_UNCLASSIFIED)
               for s in (doc.get("sources") or []) if isinstance(s, dict)}
     rows = []
     for ent in (doc.get("entities") or []):
@@ -373,7 +405,8 @@ def proposed_lanes(doc: dict) -> list:
         slug = str(ent.get("id") or "")
         if not _SLUG_RE.match(slug) or slug in _RESERVED_SLUGS:
             continue
-        owned = owners.get(str(ent.get("source_id"))) == "self"
+        klass = owners.get(str(ent.get("source_id")), LEGACY_UNCLASSIFIED)
+        owned = klass in OWNERSHIP_CLASSES and writes_permitted(klass)
         rows.append({
             "name": str(ent.get("name") or slug)[:79],
             "slug": slug,
@@ -385,7 +418,7 @@ def proposed_lanes(doc: dict) -> list:
                 "relative_path": ent.get("relative_path"),
                 "evidence": ent.get("evidence") or [],
             },
-            "ownership": owners.get(str(ent.get("source_id")), DEFAULT_OWNERSHIP),
+            "ownership": klass,
             "write_capable_proposal": owned,
         })
     return rows
