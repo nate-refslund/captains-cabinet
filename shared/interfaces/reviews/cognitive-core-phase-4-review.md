@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 0305f77547e14563c1a8505c14336ec4e8993fbc133217ce81136f7e4c5c4ce5
+Reviewed-Scope-Digest: 540c08fbef048256b2f9bfcb4d6ce7e49cd246e73463c5e9cedf71221e026372
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
@@ -535,6 +535,7 @@ verify twin in a detached worktree there (all exit 1; recorded digests COG-0 f54
 COG-2 b38632b9, COG-3 78a7bf18). COG-4 was the one binding GREEN on 6079be4d (verify twin exit 0) and
 the only one this landing turned BLOCK, so it is the only one re-bound. This commit edits ONLY the
 digest-excluded review artifact, so the digest it records is stable under its own landing.)
+RE-BOUND AFTER MERGING origin/master 888255b6 (2026-07-27, 0305f77547e14563c1a8505c14336ec4e8993fbc133217ce81136f7e4c5c4ce5 -> the value above): the merge brought a concurrent landing's own re-bind of this same artifact, so the two digest lines conflicted textually while BOTH landings' in-scope deltas were additive and disjoint. Resolved by recomputing over the MERGED committed tree rather than by picking a side — a hand-picked digest from either parent would have recorded a tree that never existed. Still a MECHANICAL-DELTA re-bind, never a restamp: ZERO COG-4 engine, organ, scheduler, projection or trajectory bytes are touched by this branch; its only in-scope path remains cabinet/config/cognitive-architecture-contract.yml (the two census allowance rows). Census re-measured on the merged bytes; verify-cognitive-phase4.sh re-run green after this re-bind.)
 
 (RE-BOUND BY THE ARM-THE-CABINET LANDING REVIEW, 2026-07-26 — 77df1746138bb26148bed68ccbed438e5291da65a7ac4ee1ec1002366f35880e
 -> the value above. Mechanical, and the reason is stated before the claim: this binding was ALREADY
