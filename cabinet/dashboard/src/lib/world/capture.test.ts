@@ -128,10 +128,18 @@ describe('the world, judged', () => {
     const v = capture('camp')
     expect(v.results.filter((r) => !r.ok).map((r) => `${r.check}: ${r.detail}`)).toEqual([])
     expect(v.results).toHaveLength(12)
-    // The camp frame declares no square and no plots, so the era floor table is
-    // the only surface that can be judged there — and it can, which is why this
-    // frame is the one that reaches zero unchecked surfaces.
-    expect(v.unchecked).toEqual([])
+    // THIS LIST GREW ON 2026-07-27, AND THE GROWTH IS THE FIX. It used to be []
+    // — the camp frame was reporting full coverage on the strength of three arms
+    // that never ran. A camp declares no square and no plots, and draws no
+    // lighthouse at all, so check_terrain's plaza and field sweeps and
+    // check_light's lamp arm have no subject to look at. They now say UNJUDGED
+    // and decline the surface instead of buying it inside a coarser claim
+    // (`terrain` used to bundle plaza and fields; `lamp` used to be claimed on
+    // the strength of state saying 'dark' with no tower to sample).
+    //
+    // An honest zero stays green — all twelve arms pass on this frame — but the
+    // coverage line now says which three surfaces this frame cannot speak for.
+    expect(v.unchecked).toEqual(['fields', 'lamp', 'plaza'])
   })
 
   it('hamlet: all twelve invariants pass on a real frame', TIMEOUT, () => {
@@ -143,6 +151,11 @@ describe('the world, judged', () => {
     // and REFUSES to claim the surface rather than print a zero that reads like
     // evidence. Asserting [] here would be asserting a coverage this frame does
     // not have.
+    //
+    // The hamlet frame DOES declare a square and three plots and DOES draw the
+    // lighthouse, so the plaza/fields/lamp surfaces split out on 2026-07-27 are
+    // all really judged here — which is why this list did not move while camp's
+    // grew to three.
     expect(v.unchecked).toEqual(['era'])
   })
 })

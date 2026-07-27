@@ -68,9 +68,27 @@ each other; nothing told them about the plough.
   orphan.
 - **`layers` is filled by whatever paints.** Paint order includes shadows and only
   the rasteriser knows it; a guess would be a sensor wired to the wrong artifact.
-- **Every arm is proven to fail.** Six mutations, each breaking one rule, each
-  asserted to turn exactly one check red — `orphan-sprite`, `sprite-on-lane`,
-  `no-shadows`, `reverse-depth`, `unpaved-square`, `ghost-sprite`.
+- **Every arm is proven to fail.** Seven mutations, each breaking one rule, each
+  asserted to turn exactly the named check(s) red and nothing else —
+  `orphan-sprite`, `sprite-on-lane`, `no-shadows`, `reverse-depth`,
+  `unpaved-square`, `ghost-sprite`, `camp-bench`.
+- **A check that could not run has not passed** (2026-07-27). `check_shadows` was
+  found green on a frame with every shadow deleted, and the audit that followed
+  found the same shape in eight more arms: three globbed an assets directory, so
+  an absent one made the loop never run and each reported "0 problems"; five more
+  passed over an empty list, a missing state key or zero contested pixels. Every
+  arm now separates a **missing input** (no ground layer, no assets dir, no id
+  buffer, no `state.justified`) — which is RED and claims no surface — from an
+  **absent subject** (no lanes at camp, no lamp with no tower, no plaza declared),
+  which stays green, says UNJUDGED, and declines its surface so the coverage line
+  keeps reporting it. Where the absence is itself a defect — a built settlement
+  with no lanes, a blueprint with no sprites — it is red. And every counting arm
+  prints its denominator and goes red under a floor.
+- **The coverage line grew, and that was the fix.** Splitting `terrain` into
+  `terrain` / `plaza` / `fields` and refusing the `lamp` claim on a frame with no
+  tower moved the camp capture from "0 unchecked" to three — the camp frame never
+  did verify a square, a plot or a lamp. An honest zero stays green; a silent hole
+  must not.
 - **Judge at scale 1.0.** `--scale` is for eyeballing. `world_checks.py` carries
   absolute-pixel constants, so a shrunk frame is measured at a different relative
   resolution: at `--scale 0.45`, a frame that is green at 1.0 invents an on-road
@@ -81,8 +99,10 @@ each other; nothing told them about the plough.
 ## In CI
 
 - `cabinet/dashboard/src/lib/world/capture.test.ts` — composes both fixtures,
-  renders, runs all twelve invariants, then the six mutations. It **fails rather
+  renders, runs all twelve invariants, then the mutation rows. It **fails rather
   than skips** without python + Pillow; a skipped world check is a disabled sensor.
+  It also pins each fixture's unchecked-surface list, so a surface can never be
+  quietly re-claimed by an arm that stopped looking at it.
 - `cabinet/dashboard/src/lib/world/blueprint.test.ts` — the blueprint contract,
   the era-vocabulary resolution, and a 40-seed sweep asserting no structure
   stands in a tilled plot.

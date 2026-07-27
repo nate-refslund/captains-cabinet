@@ -26,12 +26,18 @@ import world_checks as C
 # bundled several distinct claims, which let a check claim the whole bundle while
 # verifying one part of it — the proposed depth check would have claimed "draw order and
 # occlusion" while its order arm was dead code. Split so a claim is provable.
+# Split again 2026-07-27 for the same reason: `terrain` bundled the ground/coast/water
+# sweeps with the plaza and field masks, so a frame that declared NO square and NO plots
+# still bought the whole bundle — the camp capture was reporting zero unchecked surfaces
+# on the strength of two arms that never ran.
 SURFACES = {
     "art":         "sprite quality — opacity, cut-offs, palette, residual ground slab",
     "placement":   "where things stand — roads, stacking, floating, clearance",
     "roads":       "the lane network itself",
     "state":       "every drawn thing traceable to a real measurement",
-    "terrain":     "ground, coastline, water, field and plaza masks",
+    "terrain":     "ground, coastline and water — the island's own shape",
+    "plaza":       "the paved square: declared where it is drawn, and drawn where declared",
+    "fields":      "declared plots really are cultivated ground",
     "grade":       "exposure, contrast, saturation — the frame not washed out",
     "lamp":        "the lighthouse lamp lit iff a cell has graduated",
     "era":         "vocabulary matches the era; nothing from a future rung",
@@ -68,7 +74,14 @@ def load_palette():
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--render", required=True)
-    ap.add_argument("--assets", default="/tmp/isoframe/assets")
+    # THE DEFAULT USED TO BE A FIXED PATH (/tmp/isoframe/assets), and that was a
+    # fail-open with a wide blast radius: a capture whose art lived anywhere else had
+    # three of the twelve arms sweeping a stranger's directory — or, when it did not
+    # exist at all, sweeping nothing and reporting "0 problems" three times. The art of
+    # a capture sits beside its frame, so that is what this resolves to; the arms
+    # themselves now go RED on a directory that does not hold this frame's sprites.
+    ap.add_argument("--assets", default=None,
+                    help="art directory (default: <render dir>/assets)")
     ap.add_argument("--blueprint", default=None)
     ap.add_argument("--json", default=None)
     ap.add_argument("--allow-ambient", default=None,
@@ -80,18 +93,26 @@ def main() -> int:
         print(f"NO BLUEPRINT at {bp_path} — a render without its layout data cannot be checked")
         return 2
     bp = json.loads(Path(bp_path).read_text())
+    assets = a.assets or str(Path(a.render).resolve().parent / "assets")
+    # Comment lines were being loaded as allowed sprite names. Harmless while nobody
+    # counted them — no sprite is called "# One name per line" — but check_state_traceable
+    # now prints the size of this set, and a printed number has to be true.
     allowed = set()
     if a.allow_ambient and os.path.exists(a.allow_ambient):
-        allowed = {l.strip() for l in open(a.allow_ambient) if l.strip()}
+        allowed = {l.strip() for l in open(a.allow_ambient)
+                   if l.strip() and not l.lstrip().startswith("#")}
 
+    # The three asset arms take the blueprint too: they resolve the art of the sprites
+    # THIS frame declares rather than globbing whatever is in the directory, which is
+    # what makes an absent or wrong directory red instead of an empty loop.
     results = []
     results.append(C.check_on_road(a.render, bp))
     results.append(C.check_stacking(a.render, bp))
-    results.append(C.check_sprite_opacity(a.assets))
-    results.append(C.check_sprite_cutoff(a.assets))
-    results.append(C.check_palette(a.assets, load_palette()))
+    results.append(C.check_sprite_opacity(assets, bp))
+    results.append(C.check_sprite_cutoff(assets, bp))
+    results.append(C.check_palette(assets, bp, load_palette()))
     results.append(C.check_state_traceable(bp, bp.get("state", {}), allowed))
-    results.append(C.check_paint_fidelity(a.render, bp, a.assets))
+    results.append(C.check_paint_fidelity(a.render, bp, assets))
     results.append(C.check_era(bp, bp.get("state", {})))
     results.append(C.check_light(a.render, bp, bp.get("state", {})))
     results.append(C.check_terrain(a.render, bp, bp.get("state", {})))
