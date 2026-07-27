@@ -167,6 +167,12 @@ shared/interfaces/tech-radar.md
 shared/interfaces/gate-apply-watch.jsonl
 # world census daemon output (cabinet-doctor check 9 reads it at runtime).
 shared/interfaces/world-chronicle.jsonl
+# daily falsifier telemetry series, appended one line/day at runtime by
+# cabinet/scripts/falsifier-report.py (gitignored under shared/interfaces);
+# carried across deploys by runtime-provision.sh INSTANCE_PERSISTENT_FILES.
+# docs/runbooks/card-flatline-alarm.md names the live path because the
+# channel-flatline verdict is read OFF that file and nowhere else.
+shared/interfaces/falsifier-series.jsonl
 # dated world chronicle files (docs cite the chronicle-YYYY-MM-DD.jsonl shape).
 shared/interfaces/world/*
 
