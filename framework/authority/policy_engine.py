@@ -1506,10 +1506,10 @@ def _eval_authority_matrix(
                                      after-notification is enforced by the
                                      downstream deferred-send + consequence
                                      machinery, not by a pre-tool-use block.
-                                     notify_after (sovereign tables, D4) also
-                                     emits the gate tell the digest renders —
-                                     the gate returns None so no acted_row
-                                     exists; the org_event IS the record.
+                                     notify_after (root + posture tables, D4)
+                                     also emits the gate tell the digest
+                                     renders — the gate returns None so no
+                                     acted_row exists; the org_event IS it.
       * anything else (propose_only, always_gated, classifier, a MISPLACED
         standing_grant on a non-ceiling row, unknown)
                                   -> propose-only (fail-safe collapse).
@@ -1690,15 +1690,18 @@ def _eval_authority_matrix(
     #    deferred-send veto window (veto_window_minutes, matrix Component 5 —
     #    internal_comms@graduated, where "the notification IS the veto
     #    handle"); notify_after acts immediately and tells the Captain after
-    #    (the read_only_dispatch posture, e.g. investigation_run — read-only,
-    #    so no inverse is needed or checked). The window / notification is
-    #    enforced by the downstream deferred-send + consequence machinery, NOT
-    #    by a pre-tool-use exit-2 — so at THIS gate both resolve to allow.
-    #    Only cells the Captain-ratified germline matrix maps to these
-    #    verdicts can reach here; hard ceilings were short-circuited at step 2
-    #    and can never resolve to an act verdict. notify_after (present in
-    #    sovereign tables per D4 — guardian carries none) additionally EMITS
-    #    the gate tell: the gate returns None so no acted_row exists; the
+    #    — read_only_dispatch (investigation_run: read-only) and, since
+    #    CAPTAIN-RULING 2026-07-26, draft_only (composing a draft, which is
+    #    outbound-ADJACENT; delivering one stays behind the external_comms
+    #    ceiling). Neither needs or gets an inverse check: notify_after's
+    #    oversight handle is the tell, not the undo journal. The window /
+    #    notification is enforced by the downstream deferred-send + consequence
+    #    machinery, NOT by a pre-tool-use exit-2 — so at THIS gate both resolve
+    #    to allow. Only cells the Captain-ratified germline matrix maps to
+    #    these verdicts can reach here; hard ceilings were short-circuited at
+    #    step 2 and can never resolve to an act verdict. notify_after (present
+    #    in the root/guardian table AND the sovereign one per D4) additionally
+    #    EMITS the gate tell: the gate returns None so no acted_row exists; the
     #    org_event is what the digest renders.
     if verdict == "auto_with_veto_window":
         return None

@@ -485,7 +485,19 @@ jobs:
   # absent — fix tracked in docs/plans/EXECUTION-STATUS.md.
   framework-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 15 -> 25 (2026-07-27). This job had grown to within SECONDS of its own
+    # guard and started killing runs whose every step had already succeeded —
+    # a false red, which is the worst signal a gate can emit. Measured, not
+    # guessed: master 19d1c2e1 ran 14m49s (run 30231881685) and the very next
+    # branch run took 14m57s (run 30235086502) and was cancelled at the
+    # boundary with all 15 steps green, the whole delta being 5s of slower
+    # container init and 6s of slower apt — the two pytest steps were a net
+    # ONE SECOND faster than master's. Nothing here weakens an assertion: every
+    # suite still runs and still gates; the wall-clock number was a runner
+    # guard riding on ~10s of headroom, which the shared-runner variance law
+    # says will flake. When the honest fix arrives (splitting cabinet/scripts/
+    # tests, 11m13s of the 14m49s, into its own job), bring this back down.
+    timeout-minutes: 25
     # SPIKE (hardening loop 2026-07-11): redis service closes 23 of 24 runtime
     # skips; the 5 sovereign tests need the germline hook rc=0 on a fresh empty
     # redis — unproven on a runner, hence branch-spike before master.
@@ -549,28 +561,78 @@ jobs:
       # spawns `psql` against COG1_PG_DSN to apply the DDL chain and drive the
       # kill rigs — the service container alone leaves the DB sims skipping,
       # exactly the failure class redis-tools records above.
-      # KNOWN GAP, deliberately left open (2026-07-27):
-      # framework/cost/tests/test_meter_redis.py stands up its OWN ephemeral
-      # server per test, so with redis-tools alone all 29 of its arms SKIP —
-      # the meter's entire persistence layer (watermark, atomic write,
-      # error-reply detection) is unobserved in CI while the suite reports
-      # green. That is the same "a skipped test is a disabled sensor" class
-      # this step's comment above records.
+      # redis-server at the PRODUCTION major, from Redis Ltd's own archive and
+      # NOT Ubuntu's (2026-07-27 — discharges the KNOWN GAP recorded here).
       #
-      # Installing `redis-server` here WAS tried and reverted in the same
-      # branch. Ubuntu ships 7.0.15; four version-sensitive suites in
-      # cabinet/scripts/tests (test_redis_backup_e2e, test_redis_state_replay
-      # x3) exercise Redis-8 behaviour and had been silently skipping for want
-      # of the binary. Installing it made them RUN and FAIL — measured: all
-      # four pass locally against Redis 8.8.0 and fail against CI's 7.0.15.
-      # Weakening them to go green was refused, and fixing four unrelated
-      # Redis suites is its own unit of work.
-      # FOLLOW-UP: either provision redis-server >= 8 for this job (both the
-      # meter arms and those four suites then gate), or have those suites
-      # declare their minimum Redis version so they skip for a stated reason
-      # instead of for a missing binary.
-      - name: Install redis-cli + psql client
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq redis-tools postgresql-client
+      # The gap: framework/cost/tests/test_meter_redis.py stands up its OWN
+      # ephemeral server per test, so with redis-tools alone all 29 of its arms
+      # SKIP — the meter's entire persistence layer (watermark, atomic write,
+      # error-reply detection) unobserved in CI while the suite reports green.
+      # A skipped test is a disabled sensor, not a pass.
+      #
+      # Installing the binary was tried once and reverted, because it armed 74
+      # dormant tests and 4 of them failed. Those 4 have now been split by
+      # actual cause, which the earlier note got wrong by lumping them:
+      #   * THREE are genuine 7.0.15-vs-8.8 semantics (test_redis_backup_e2e;
+      #     test_redis_state_replay's two XAUTOCLAIM arms — 7.0.15 does not
+      #     create a consumer on a claim-nothing XAUTOCLAIM, 8.8 does). Only a
+      #     version bump fixes these; that is this step.
+      #   * ONE was NOT version-sensitive at all: the 512 KiB value crossed
+      #     execve as a single argv member, over Linux's MAX_ARG_STRLEN
+      #     (131072), so it failed on Linux at ANY Redis version and passed on
+      #     macOS at any version. Fixed separately and already landed (PR #220,
+      #     value moved to stdin via `-x`). A version bump alone would have
+      #     left it red.
+      #
+      # Why the production major rather than Ubuntu's 7.0.15: production is a
+      # brew-installed, deliberately UNPINNED redis currently at 8.8, and
+      # cabinet/scripts/lib/redis-state.sh:146 fingerprints Redis-8.8-only
+      # sparse arrays via ARINFO/ARNEXT. On a 7.x runner that production code
+      # path cannot execute AT ALL — three arms feature-probe COMMAND INFO
+      # ARSET and skip — while the arms that DO run measure semantics
+      # production never sees. Arming a sensor pointed at the wrong version is
+      # not coverage. Measured on one machine, same tree, only PATH varying:
+      # cabinet/scripts/tests is 0 failed / 28 skipped on 8.8.0 and 3 failed /
+      # 33 skipped on 7.0.15.
+      #
+      # STILL OPEN, deliberately and separately: the `ci` and `cognitive-phase4`
+      # jobs pin `redis:7` SERVICE containers, and framework-tests' own service
+      # container is redis:7-alpine. Those serve tests that dial 127.0.0.1:6379
+      # rather than spawning a binary — a different mechanism, different jobs,
+      # its own blast radius — so they are not bumped here. The parity gap is
+      # wider than this one step and is not closed by it.
+      - name: Install redis-cli + redis-server 8 + psql client
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client curl gpg lsb-release
+          curl -fsSL https://packages.redis.io/gpg \
+            | sudo gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
+          codename="$(lsb_release -cs)"
+          printf 'deb [signed-by=%s] %s %s main\n' \
+            /usr/share/keyrings/redis-archive-keyring.gpg \
+            https://packages.redis.io/deb "${codename}" \
+            | sudo tee /etc/apt/sources.list.d/redis.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq redis-tools redis-server
+      # Prove the binary is usable AND is the production major, so either a
+      # packaging change or a silent downgrade to Ubuntu's 7.x degrades to a
+      # loud failure here instead of re-skipping the meter arms or quietly
+      # re-measuring 7.x semantics. Floating within major 8 is deliberate: it
+      # mirrors production's unpinned brew formula rather than inventing a
+      # parity the real deployment does not have.
+      - name: Verify redis-server is runnable and matches production major
+        run: |
+          set -euo pipefail
+          command -v redis-server
+          redis-server --version
+          major="$(redis-server --version | sed -E 's/^.*v=([0-9]+)\..*$/\1/')"
+          if [ "${major}" -lt 8 ]; then
+            echo "redis-server major ${major} < 8: CI would measure semantics" \
+                 "production never runs, and redis-state.sh's ARINFO/ARNEXT" \
+                 "array fingerprinting could not execute here at all." >&2
+            exit 1
+          fi
       # Collection census: the fidelity conftest silently collect_ignores 19
       # flavor-A-coupled modules (288 tests) when the retrodiction lib is
       # absent — true on every CI runner until plan A2.1 vendors it. This

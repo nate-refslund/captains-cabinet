@@ -7,7 +7,15 @@
     "repeated_subjects": {"briefing length": 2},
     "_availability_why": "the PRESENT end of the availability dial: the pack must report the LAST valid entry (20 min/day), not the first (120). The printed set_at AGE is deliberately unpinned — it is time-relative and would rot on a calendar boundary.",
     "availability_line": "declared: 20 min/day  mode=part_time  source=adjusted",
-    "availability_set_at_substring": "set_at: 2026-01-09T18:30:00Z"
+    "availability_set_at_substring": "set_at: 2026-01-09T18:30:00Z",
+    "_dates_why": "the PRESENT end of the dated-commitment store. The fixture holds three date rows, one of which a later same-id row CLOSES, so the open count pins the latest-row-per-id fold; and the fixture briefing body mentions exactly ONE of the two open labels, so the tracked column must differ between them. The printed countdown is deliberately unpinned — it is time-relative and would rot on a calendar boundary.",
+    "dates_open_line": "open dates: 2  (of 3 rows in the store)",
+    "dates_briefing_line": "latest briefing checked: briefing-20260110-073000Z.md",
+    "dates_rows": [
+      "2026-03-02  \"quarterly numbers\"  tracked_in_latest_briefing=yes  [d-aa111111]",
+      "2026-04-17  \"board review\"  tracked_in_latest_briefing=NO  [d-bb222222]"
+    ],
+    "dates_absent_label": "offsite"
   },
 
   "healthy": {
@@ -23,7 +31,8 @@
       ["shared/interfaces/needs-ledger.jsonl", "no needs ledger"],
       ["shared/interfaces/captain-patterns.md", "his standing-preference ledger"],
       ["shared/interfaces/captain-intents.md", "his inferred-goals ledger"],
-      ["instance/config/captain-availability.yml", "no declared availability — the org does not know how much of the captain it is entitled to"]
+      ["instance/config/captain-availability.yml", "no declared availability — the org does not know how much of the captain it is entitled to"],
+      ["instance/config/captain-dates.yml", "no dates on the org's books — nothing is holding a date the captain set"]
     ],
     "briefing_scoring_absent_substring": "briefing scoring: ABSENT ("
   },
@@ -82,6 +91,14 @@
       {
         "why": "the balancing rule the dial exists to enforce — without it the reviewer would size the captain to the org",
         "text": "The org fits the declared budget, never the reverse."
+      },
+      {
+        "why": "the dated-commitment store (Captain-Seat finding 1): an open date the latest briefing does not carry is the in-window paid cost, and the reviewer must read the tracked column as evidence rather than as trivia",
+        "text": "an open date the latest briefing does not carry means he had to hold it himself"
+      },
+      {
+        "why": "the silence half of the same clause — an empty dates store must not become a manufactured finding",
+        "text": "An empty store is not a finding"
       }
     ]
   }

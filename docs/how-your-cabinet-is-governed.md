@@ -26,8 +26,13 @@ can resolve to "auto".
 ## Postures: guardian, earn_up, sovereign
 
 A posture picks which column of that matrix your deployment runs under.
-**guardian** (the hatch default, and what an absent file means) is
-propose-first everywhere autonomy hasn't been proven. **earn_up** is
+**guardian** (the hatch default, and what an absent file means) trusts the
+work that can be taken back: anything with a deterministic undo acts from day
+one, and read-only investigation plus **composing a draft** act and then tell
+you. It proposes first everywhere else until autonomy is proven, and it drops
+any class back to proposing the moment the evidence says so. Composing a
+draft is not sending it — a message to a real person outside the org is
+external comms, which waits for you at every confidence level. **earn_up** is
 stricter still: everything starts at propose-only and autonomy exists only
 where you grant it on the trust ladder. **sovereign** is the widest and can
 only be activated by you, deliberately: the ruling file must be edited,

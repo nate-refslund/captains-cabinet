@@ -990,6 +990,213 @@ def render_availability(reading: "dict | None" = None) -> str:
             f"source={r.get('source') or 'unknown'}")
 
 
+# ---------------------------------------------------------------------------
+# Captain dates — DATED COMMITMENTS HE SET (Captain-Seat finding 1, 2026-07-26)
+# ---------------------------------------------------------------------------
+# A DATE THE CAPTAIN SETS MUST BE IMPOSSIBLE FOR THE ORG TO FORGET. The paid
+# case: he set a release date, and it appeared in ZERO of the next twelve days
+# of briefings — nothing in the org held it, so nothing could surface it. The
+# briefing already renders commitments the Captain owes OTHER people (from the
+# personal-source adapter) and dated follow-ups the ORG wrote down; a date HE
+# declared had no store, no resolver and no reader at all.
+#
+# This resolver is the sibling of captain_availability(): one path owned here so
+# writer and readers cannot drift, module-cached like every other config read,
+# and NEVER raising. The documented fallback is an EMPTY LIST — "no dates
+# declared", which is a legal state and means exactly that. An unreadable or
+# malformed store also reads as empty at that level, so a broken file can never
+# invent a deadline.
+#
+# APPEND-ONLY, LATEST ROW PER id WINS. `date done`/`date move` append a new row
+# carrying the same id and a later status rather than editing history, so what
+# he said and when stays readable. A move ALSO appends a fresh id whose
+# ``supersedes`` names the row it replaced.
+
+#: The status enum. ``open`` = the org still owes him this date; ``done`` = he
+#: closed it; ``moved`` = superseded by a later row (whose ``supersedes`` points
+#: back here). A row with any other word is REFUSED, not repaired — which fails
+#: in the SAFE direction: an unreadable ``done`` leaves the date OPEN and still
+#: visible, never silently disappeared.
+CAPTAIN_DATE_STATUSES: "tuple[str, ...]" = ("open", "done", "moved")
+
+#: Label cap. The label is the only field carrying his free text as a VALUE (it
+#: is what the briefing prints), so it is length-capped at the writer and
+#: re-capped here — a reader that trusted an unbounded field would let one
+#: message dominate a briefing.
+CAPTAIN_DATE_LABEL_MAX = 120
+
+#: Ids are writer-minted handles, never free text: they ride phone replies and
+#: prefix-selectors, so the shape is pinned here and validated on read.
+_CAPTAIN_DATE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+_CAPTAIN_DATE_ISO_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
+
+
+def captain_dates_path() -> Path:
+    """The dated-commitment store — where ``date 2026-08-13 <label>`` lands.
+
+    Sibling of ``captain_availability_path``: the ``CABINET_CAPTAIN_DATES_FILE``
+    env override wins (tests, and the repo-root conftest's pytest fence), else
+    ``instance/config/captain-dates.yml`` under the deployment root. Keeping the
+    ``instance/`` reference HERE — the sanctioned layer-crossing seam — is what
+    the layer-separation gate expects."""
+    env_override = (os.environ.get("CABINET_CAPTAIN_DATES_FILE") or "").strip()
+    if env_override:
+        return Path(env_override).expanduser()
+    return _cabinet_root() / "instance/config/captain-dates.yml"
+
+
+# Cache: same lifecycle as _captain_availability_cache — read once per process,
+# cleared explicitly by a writer (cabinet/scripts/lib/captain_dates.py) or a
+# test. None ⇒ unresolved; the EMPTY LIST is a real resolved value and IS
+# cached, so the sentinel has to be None.
+_captain_dates_cache: "list | None" = None
+
+
+def _captain_date_iso(value) -> "str | None":
+    """One ``date:`` field → a ``YYYY-MM-DD`` string, else None.
+
+    PyYAML loads an unquoted ``2026-08-13`` as a ``datetime.date``, not a string
+    (the same YAML-retyping class ``_availability_stamp`` handles), so a naive
+    isinstance-str check would silently drop every date the phone verb wrote.
+    Both shapes are accepted; a string must be a real calendar date — ``month:
+    13`` is refused rather than carried as text nothing can compare."""
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, str):
+        m = _CAPTAIN_DATE_ISO_RE.match(value.strip())
+        if not m:
+            return None
+        try:
+            return date(int(m.group(1)), int(m.group(2)),
+                        int(m.group(3))).isoformat()
+        except ValueError:
+            return None
+    return None
+
+
+def _captain_date_entry(raw) -> "dict | None":
+    """One store row → a validated entry, else None.
+
+    A row must carry a usable id, a real calendar date, a non-empty label and a
+    known status. A row missing any of those is REFUSED, not repaired: a date
+    the org cannot read must read as ABSENT so an earlier valid row for the same
+    id still stands, never as a deadline nobody set. (Direction matters: a
+    refused ``done`` row leaves the date open and visible — the failure mode this
+    whole store exists to prevent is a date going quiet, so every refusal errs
+    toward still showing it.)"""
+    if not isinstance(raw, dict):
+        return None
+    rid = raw.get("id")
+    rid = rid.strip() if isinstance(rid, str) else None
+    if not rid or not _CAPTAIN_DATE_ID_RE.match(rid):
+        return None
+    when = _captain_date_iso(raw.get("date"))
+    if when is None:
+        return None
+    label = raw.get("label")
+    if isinstance(label, (int, float)) and not isinstance(label, bool):
+        label = str(label)                # an all-digit label YAML retyped
+    label = label.strip()[:CAPTAIN_DATE_LABEL_MAX] if isinstance(label, str) else ""
+    if not label:
+        return None
+    status = raw.get("status")
+    status = status.strip().lower() if isinstance(status, str) else ""
+    if status not in CAPTAIN_DATE_STATUSES:
+        return None
+    supersedes = raw.get("supersedes")
+    supersedes = supersedes.strip() if isinstance(supersedes, str) else ""
+    if supersedes and not _CAPTAIN_DATE_ID_RE.match(supersedes):
+        supersedes = ""
+    source = raw.get("source")
+    source = source.strip()[:40] if isinstance(source, str) else ""
+    return {"id": rid, "date": when, "label": label, "status": status,
+            "set_at": _availability_stamp(raw.get("at")),
+            "source": source or None, "supersedes": supersedes or None}
+
+
+def captain_dates() -> list:
+    """Every dated commitment the Captain has declared, folded to current state.
+
+    Returns a list of ``{"id", "date", "label", "status", "set_at", "source",
+    "supersedes"}`` dicts sorted by date then id (a total, stable order so every
+    surface lists them the same way). The DOCUMENTED FALLBACK IS ``[]`` — no
+    store, an empty store, a corrupt store or a store with no valid row all read
+    as "no dates declared". Never raises.
+
+    Folding: rows are append-only, so the LAST valid row for an id is that id's
+    current state (``date done`` / ``date move`` append rather than edit). Rows
+    the validator refuses are skipped, which leaves the previous row for that id
+    standing.
+
+    Source: ``instance/config/captain-dates.yml``
+    (``captain_dates_path()``) — the same one-resolver discipline as the
+    availability dial, so the phone writer and every reader cannot drift."""
+    global _captain_dates_cache
+    if _captain_dates_cache is not None:
+        return [dict(row) for row in _captain_dates_cache]
+
+    folded: "dict[str, dict]" = {}
+    try:
+        import yaml  # local: keep env.py import-light for the safety switches
+
+        store = captain_dates_path()
+        if store.exists():
+            doc = yaml.safe_load(store.read_text(encoding="utf-8")) or {}
+            entries = doc.get("entries") if isinstance(doc, dict) else None
+            if isinstance(entries, list):
+                for raw in entries:
+                    got = _captain_date_entry(raw)
+                    if got is not None:
+                        folded[got["id"]] = got
+    except Exception:  # noqa: BLE001 — a corrupt store is an absent store
+        folded = {}
+
+    result = sorted(folded.values(), key=lambda r: (r["date"], r["id"]))
+    _captain_dates_cache = [dict(row) for row in result]
+    return [dict(row) for row in result]
+
+
+def captain_open_dates() -> list:
+    """The OPEN dates only — what the org still owes him, soonest first.
+
+    This is the reader every consumer wants: a ``done`` or ``moved`` row is
+    history, and an empty list means he has no live dates (the honest degenerate
+    end — consumers render NOTHING for it, never a placeholder)."""
+    return [row for row in captain_dates() if row.get("status") == "open"]
+
+
+def render_captain_date(row: dict, *, today: "str | None" = None) -> str:
+    """One plain line for one date — the shape EVERY surface prints, so the
+    briefing, the phone reply and the Captain-seat pack cannot describe the same
+    date three different ways.
+
+    ``<label>: <date> (in N days)`` while it is ahead; ``(today)`` on the day;
+    and PAST DUE renders LOUDER — an ``OVERDUE`` marker leads the line — because
+    the failure this store exists to prevent is a date going quiet, and the
+    quietest possible failure is a passed date rendered like any other row.
+
+    ``today`` (``YYYY-MM-DD``) is injectable so callers and tests are
+    clock-free; the default is today in UTC."""
+    label = str(row.get("label") or "").strip() or "(unlabelled)"
+    when = _captain_date_iso(row.get("date"))
+    if when is None:
+        return f"{label}: (no readable date)"
+    ref = _captain_date_iso(today) if today else None
+    if ref is None:
+        ref = datetime.now(timezone.utc).date().isoformat()
+    delta = (date.fromisoformat(when) - date.fromisoformat(ref)).days
+    if delta > 0:
+        return f"{label}: {when} (in {delta} day{'s' if delta != 1 else ''})"
+    if delta == 0:
+        return f"{label}: {when} (today)"
+    late = -delta
+    return (f"OVERDUE by {late} day{'s' if late != 1 else ''} — "
+            f"{label}: {when}")
+
+
 # Cache: shared_env_path is read once per process (same lifecycle as
 # captain_name). None ⇒ unresolved — the empty string is a VALID resolved value
 # (a generic deployment with no shared credential file), so the sentinel is

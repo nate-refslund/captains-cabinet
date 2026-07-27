@@ -229,7 +229,22 @@ trigger_send() {
     message "[$timestamp] From $sender: $message" \
     2>&1 > /dev/null)
   if [ $? -ne 0 ] || [ -n "$_xadd_err" ]; then
-    echo "trigger_send WARN: XADD to $stream failed (${_xadd_err:-redis unreachable?}) — trigger NOT queued, sender=$sender" >&2
+    # MARKER CONTRACT (2026-07-26). This line MUST contain a token from
+    # framework/watchdog/registry.py JOB_ERROR_MARKERS — that tuple is what the
+    # outcome-watchdog's no-silent-cron-failure log-tail scan actually greps
+    # for. From FW-027 until this date the line said "trigger NOT queued" while
+    # the detector looked for "trigger NOT pushed" / "trigger_send failed", so
+    # EVERY dropped trigger was invisible to the watchdog. The drift — not
+    # either spelling — was the defect: the emitting side and the detecting
+    # side had no test holding them to the same string.
+    #
+    # The pin is cabinet/scripts/tests/test_trigger_marker_contract.py: it
+    # imports JOB_ERROR_MARKERS from the registry, drives THIS function against
+    # a dead port for real, and asserts the captured stderr carries a listed
+    # marker. Change either side and that test fails. "trigger NOT queued" is
+    # kept verbatim because test_triggers_stream_durability.py pins it and it
+    # is the more accurate verb for an XADD.
+    echo "trigger_send failed: XADD to $stream failed (${_xadd_err:-redis unreachable?}) — trigger NOT queued, sender=$sender" >&2
     # A wake without a queued payload is actively misleading, and returning
     # success lets callers record work as dispatched when Redis received
     # nothing.  Propagate delivery failure so the caller can retry/rollback.

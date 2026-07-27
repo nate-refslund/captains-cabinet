@@ -1775,3 +1775,313 @@ class TestActionSeamOuterGate:
                                 needs_path=tmp_path / "needs-ledger.jsonl",
                                 now=NOW, posture="sovereign")
         assert rep2["state"] == "armed" and rep2["action_mode"] == "go"
+
+
+class TestSameSourceAskBatching:
+    """N pending Captain asks cued by ONE row must arrive as ONE decision.
+
+    Paid 2026-07-26 (Captain-seat dry run): eleven near-identical
+    supersession asks sat a week as eleven cards at identical dwell — "I
+    never gave ten answers, I gave zero". The detector's pair walk makes
+    that shape structural (one new row cues supersession of every older
+    row it contradicts), so the fix is producer-side grouping: same cueing
+    row ⇒ ONE card listing every member; distinct rows stay distinct; one
+    ask stays an ordinary per-pair card. His ruling fans out MECHANICALLY
+    — approve-all puts each member through the SAME guarded per-item path
+    with its own ledger row, skip-all records one skip per member — and
+    the batch card's receipt lands only after every member closed, so the
+    approval can never be spent on the first pair and lost for the rest.
+    The attention plane and the needs API are germline: nothing here edits
+    them, it only files fewer asks into them.
+    """
+
+    SRC = "100"
+
+    @staticmethod
+    def _cue_calls(rec):
+        """Cards this pass filed about ASKS — the once-per-window
+        soak-halfway heads-up rides the same seam and is not one."""
+        return [c for c in rec.calls
+                if c[1]["action_type"] != msa._HALFWAY_ACTION]
+
+    def _fixture(self, n, *, src=None, first_old=1):
+        """n contradiction-cue proposals, all cued by ONE live row."""
+        src = src or self.SRC
+        olds = list(range(first_old, first_old + n))
+        live = [_live(o, f"belief {o} about the office") for o in olds]
+        live.append(_live(src, "the office moved and is no longer there"))
+        props = [_prop(f"sup-cue{src}{o:04d}", o, src,
+                       reason="contradiction-cue", cues=["no longer"])
+                 for o in olds]
+        return live, props, [p["proposal_id"] for p in props]
+
+    def _batch_row(self, nid, members, status, *, src=None):
+        src = src or self.SRC
+        return {"id": nid, "kind": "decision", "status": status,
+                "action_type": f"{msa._ACTION_NS}:batch:{src}",
+                "why": msa._am.render_batch_body(
+                    src, sorted(members), noun="memory supersessions"),
+                "filed_by": "system:memory-supersession"}
+
+    # ---- minting -----------------------------------------------------
+
+    def test_eleven_same_source_asks_are_one_card_listing_eleven(
+            self, tmp_path):
+        live, props, pids = self._fixture(11)
+        rec = Recorder()
+        s, _, spath, _ = _run(tmp_path, props, live, need_fn=rec)
+        assert len(rec.calls) == 1, \
+            f"eleven asks minted {len(rec.calls)} cards, not one"
+        assert s["cue_cards"] == 11 and s["cue_batches"] == 1
+        kind, kw = rec.calls[0]
+        assert kind == "decision"
+        assert kw["action_type"] == f"{msa._ACTION_NS}:batch:{self.SRC}"
+        assert kw["filed_by"] == "system:memory-supersession"
+        assert f"11 memory supersessions cued by row {self.SRC}" in kw["why"]
+        assert "approve all / list / skip all" in kw["why"]
+        # every member id is preserved on the card he sees
+        assert msa._am.batch_members(kw["why"]) == tuple(sorted(pids))
+        # ...and every ask is still recorded individually, naming its card
+        decs = {d["proposal_id"]: d for d in _decisions(spath)}
+        assert set(decs) == set(pids)
+        for pid in pids:
+            assert decs[pid]["decision"] == "cue-card"
+            assert decs[pid]["need_id"] == "NEED-feedbeef"
+            assert decs[pid]["batch"] == f"{msa._ACTION_NS}:batch:{self.SRC}"
+
+    def test_three_distinct_sources_are_three_cards(self, tmp_path):
+        live, props = [], []
+        for i, src in enumerate(("100", "200", "300")):
+            lv, pr, _ = self._fixture(2, src=src, first_old=10 * (i + 1))
+            live += lv
+            props += pr
+        rec = Recorder()
+        s, *_ = _run(tmp_path, props, live, need_fn=rec)
+        assert len(rec.calls) == 3
+        actions = sorted(kw["action_type"] for _k, kw in rec.calls)
+        assert actions == [f"{msa._ACTION_NS}:batch:{s2}"
+                           for s2 in ("100", "200", "300")]
+        for _k, kw in rec.calls:
+            assert len(msa._am.batch_members(kw["why"])) == 2
+        assert s["cue_cards"] == 6 and s["cue_batches"] == 3
+
+    def test_single_ask_stays_an_ordinary_unbatched_card(self, tmp_path):
+        # degenerate end: a "batch of one" would be a second wording for
+        # the identical decision
+        live, props, pids = self._fixture(1)
+        rec = Recorder()
+        s, _, spath, _ = _run(tmp_path, props, live, need_fn=rec)
+        assert len(rec.calls) == 1
+        kw = rec.calls[0][1]
+        assert kw["action_type"] == f"{msa._ACTION_NS}:{pids[0]}"
+        assert msa._am.is_batch_action(kw["action_type"],
+                                       producer=msa._ACTION_NS) is False
+        assert "members (" not in kw["why"]
+        assert "approve = supersede the older row" in kw["why"]
+        d = _decisions(spath)[0]
+        assert d["need_id"] == "NEED-feedbeef" and "batch" not in d
+        assert s["cue_cards"] == 1 and s["cue_batches"] == 0
+
+    def test_distinct_single_asks_never_merge_into_one_card(self, tmp_path):
+        live, props = [], []
+        for i, src in enumerate(("100", "200", "300")):
+            lv, pr, _ = self._fixture(1, src=src, first_old=10 * (i + 1))
+            live += lv
+            props += pr
+        rec = Recorder()
+        s, *_ = _run(tmp_path, props, live, need_fn=rec)
+        assert len(rec.calls) == 3
+        assert all(not msa._am.is_batch_action(kw["action_type"],
+                                               producer=msa._ACTION_NS)
+                   for _k, kw in rec.calls)
+        assert s["cue_cards"] == 3 and s["cue_batches"] == 0
+
+    def test_a_guardian_dark_batch_retries_next_run(self, tmp_path):
+        live, props, pids = self._fixture(3)
+        s1, ppath, spath, _ = _run(tmp_path, props, live,
+                                   need_fn=lambda kind, **kw: None)
+        decs = msa.compact_soak(msa.read_jsonl(spath))
+        assert all("need_id" not in decs[pid] for pid in pids)
+        rec = Recorder()
+        msa.run_apply_pass(proposals_path=ppath, soak_path=spath,
+                           config_path=tmp_path / "nope.yml",
+                           needs_path=tmp_path / "needs-ledger.jsonl",
+                           now=NOW, live_rows=live, conn_factory=Boom(),
+                           file_need_fn=rec, posture="sovereign")
+        assert len(rec.calls) == 1
+        decs = msa.compact_soak(msa.read_jsonl(spath))
+        assert all(decs[pid]["need_id"] == "NEED-feedbeef" for pid in pids)
+        assert s1["cue_batches"] == 1
+
+    # ---- approve-all fan-out ------------------------------------------
+
+    def test_approve_all_fans_out_to_every_member_individually(
+            self, tmp_path):
+        live, props, pids = self._fixture(3)
+        rows = [self._batch_row("NEED-ba7c4001", pids,
+                                "approved_pending_apply")]
+        conn = FakeConn({1: None, 2: None, 3: None})
+        mark = MarkRecorder()
+        s, ppath, spath, rec = _run(tmp_path, props, live,
+                                    soak_rows=ARMED_SEED, conn=conn,
+                                    needs_rows=rows, mark_fn=mark)
+        # ONE ruling, N members: each is re-validated and recorded on its
+        # own, and no member is ever a cue-card again
+        decs = msa.compact_soak(msa.read_jsonl(spath))
+        assert set(decs) == set(pids)
+        for pid in pids:
+            assert decs[pid]["via"] == "captain-grant"
+            assert decs[pid]["need_id"] == "NEED-ba7c4001"
+        assert s["cue_cards"] == 0 and s["cue_batches"] == 0
+        # the fan-out is the EXISTING per-item apply path, so the same-run
+        # touched-id guard still binds: one apply now, the rest stay open
+        # with the approval live and land on following runs
+        assert s["applied"] == 1
+        assert mark.calls == [], "the approval closed before every member ran"
+        for _ in range(2):
+            msa.run_apply_pass(proposals_path=ppath, soak_path=spath,
+                               config_path=tmp_path / "nope.yml",
+                               needs_path=tmp_path / "needs-ledger.jsonl",
+                               now=NOW, live_rows=live, conn_factory=lambda: conn,
+                               file_need_fn=rec, mark_need_fn=mark,
+                               posture="sovereign")
+        decs = msa.compact_soak(msa.read_jsonl(spath))
+        assert [decs[pid]["decision"] for pid in pids] == ["applied"] * 3
+        assert conn.live == {1: 100, 2: 100, 3: 100}
+        # ONE receipt, once, only after the last member closed
+        assert len(mark.calls) == 1
+        nid, status, reason = mark.calls[0]
+        assert (nid, status) == ("NEED-ba7c4001", "granted")
+        assert "3/3 pairs applied" in reason
+
+    def test_an_open_batch_card_resolves_nothing(self, tmp_path):
+        # silence is never agreement: an unanswered batched card leaves
+        # every member exactly where the N cards left them
+        live, props, pids = self._fixture(3)
+        rows = [self._batch_row("NEED-ba7c4002", pids, "open")]
+        boom = Boom()
+        s, _, spath, _ = _run(tmp_path, props, live, soak_rows=ARMED_SEED,
+                              conn_factory=boom, needs_rows=rows)
+        assert s["applied"] == 0 and boom.called is False
+        decs = msa.compact_soak(msa.read_jsonl(spath))
+        assert all(decs[pid]["decision"] == "cue-card" for pid in pids)
+
+    def test_an_unreadable_membership_fans_out_to_nobody(self, tmp_path):
+        live, props, pids = self._fixture(3)
+        row = self._batch_row("NEED-ba7c4003", pids, "approved_pending_apply")
+        row["why"] = row["why"].replace("members (3)", "members (2)")
+        boom = Boom()
+        s, _, spath, _ = _run(tmp_path, props, live, soak_rows=ARMED_SEED,
+                              conn_factory=boom, needs_rows=[row])
+        assert msa.load_batch_rulings(tmp_path / "needs-ledger.jsonl") == {}
+        assert s["applied"] == 0 and boom.called is False
+        decs = msa.compact_soak(msa.read_jsonl(spath))
+        assert all(decs[pid]["decision"] == "cue-card" for pid in pids)
+
+    def test_a_ruled_batch_is_never_re_filed_with_new_members(self, tmp_path):
+        # membership may not grow after a ruling: a late ask waits for the
+        # next window rather than joining an approval it was never listed in
+        live, props, pids = self._fixture(3)
+        rows = [self._batch_row("NEED-ba7c4004", pids[:2],
+                                "approved_pending_apply")]
+        conn = FakeConn({1: None, 2: None, 3: None})
+        rec = Recorder()
+        s, _, spath, _ = _run(tmp_path, props, live, soak_rows=ARMED_SEED,
+                              conn=conn, needs_rows=rows, need_fn=rec)
+        assert self._cue_calls(rec) == [], "a ruled source re-filed its card"
+        decs = msa.compact_soak(msa.read_jsonl(spath))
+        assert decs[pids[2]]["decision"] == "cue-card"
+        assert "need_id" not in decs[pids[2]]
+        assert 3 not in conn.live or conn.live[3] is None
+
+    # ---- skip-all -----------------------------------------------------
+
+    def test_skip_all_records_one_skip_per_member(self, tmp_path):
+        live, props, pids = self._fixture(3)
+        rows = [self._batch_row("NEED-ba7c4005", pids, "denied")]
+        boom = Boom()
+        rec = Recorder()
+        s, ppath, spath, _ = _run(tmp_path, props, live,
+                                  soak_rows=ARMED_SEED, conn_factory=boom,
+                                  needs_rows=rows, need_fn=rec)
+        assert self._cue_calls(rec) == []
+        decs = msa.compact_soak(msa.read_jsonl(spath))
+        assert set(decs) == set(pids)
+        for pid in pids:
+            assert decs[pid]["decision"] == "cue-card-skipped"
+            assert decs[pid]["via"] == "captain-skip-all"
+            assert decs[pid]["need_id"] == "NEED-ba7c4005"
+        assert s["applied"] == 0 and boom.called is False
+        assert s["skipped"] == 3 and s["cue_cards"] == 0
+        # a skipped member is closed: no reopen, no re-file, no ledger growth
+        before = len(msa.read_jsonl(spath))
+        s2 = msa.run_apply_pass(proposals_path=ppath, soak_path=spath,
+                                config_path=tmp_path / "nope.yml",
+                                needs_path=tmp_path / "needs-ledger.jsonl",
+                                now=NOW, live_rows=live, conn_factory=Boom(),
+                                file_need_fn=rec, posture="sovereign")
+        assert s2["skipped"] == 0 and self._cue_calls(rec) == []
+        assert len(msa.read_jsonl(spath)) == before + 1   # the run marker
+
+    def test_a_denied_batch_never_reaches_the_apply_path(self, tmp_path):
+        live, props, pids = self._fixture(3)
+        rows = [self._batch_row("NEED-ba7c4006", pids, "denied")]
+        conn = FakeConn({1: None, 2: None, 3: None})
+        s, *_ = _run(tmp_path, props, live, soak_rows=ARMED_SEED, conn=conn,
+                     needs_rows=rows)
+        assert s["state"] == "armed"          # a skip is not a gate veto
+        assert conn.calls == []
+
+    def test_a_pair_card_ruling_is_never_read_as_a_batch(self, tmp_path):
+        # The ACTION TYPE is what separates the two card classes — not the
+        # body. Both non-batch rows below carry a well-formed membership
+        # line, so a reader that fell back to body-shape would fan a single
+        # pair approval (and a soak-halfway veto) out over three pairs.
+        body = msa._am.render_batch_body(
+            "100", ["sup-cue1000001", "sup-cue1000002", "sup-cue1000003"],
+            noun="memory supersessions")
+        npath = tmp_path / "needs-ledger.jsonl"
+        _write_jsonl(npath, [
+            {"id": "NEED-pair0001", "status": "approved_pending_apply",
+             "action_type": f"{msa._ACTION_NS}:sup-cue1000001", "why": body},
+            {"id": "NEED-half0001", "status": "denied",
+             "action_type": msa._HALFWAY_ACTION, "why": body},
+            {"id": "NEED-other001", "status": "approved_pending_apply",
+             "action_type": f"other-organ:batch:100", "why": body}])
+        assert msa.load_batch_rulings(npath) == {}
+        assert msa.load_granted_pids(npath) == {"sup-cue1000001":
+                                                "NEED-pair0001"}
+        assert msa.halfway_veto(npath) == "NEED-half0001"
+
+    # ---- the boundary this fix had to respect -------------------------
+
+    def test_batching_lives_entirely_outside_the_germline_set(self):
+        """The attention plane and the needs API are schg-locked, so the
+        batcher may only file FEWER asks into them — never edit them. This
+        pins that the unit's own files are outside the locked set (and
+        that the locked set still contains the plane it stayed out of)."""
+        lock = (_REPO / "cabinet" / "scripts" / "germline-lock.sh").read_text()
+        locked_files = set(re.findall(r'^\s*"([^"]+)"', lock, re.MULTILINE))
+        assert "framework/authority/needs.py" in locked_files
+        assert "framework/attention/queue.py" in locked_files
+        assert "framework/attention/queue_card.py" in locked_files
+        locked_dirs = set(re.findall(r'^\s*"([^"]+)"\s*(?:#.*)?$',
+                                     lock[lock.index("DIRS=("):],
+                                     re.MULTILINE))
+        unit_paths = (
+            "cabinet/scripts/lib/ask_mint.py",
+            "cabinet/scripts/lib/tests/test_ask_mint.py",
+            "cabinet/scripts/memory-supersede-apply.py",
+            "cabinet/scripts/tests/test_memory_supersede_apply.py",
+        )
+        for rel in unit_paths:
+            assert (_REPO / rel).is_file(), f"{rel} missing"
+            assert rel not in locked_files, f"{rel} is germline-locked"
+            assert not any(rel.startswith(d.rstrip("/") + "/")
+                           for d in locked_dirs), \
+                f"{rel} sits inside a germline-locked dir"
+        # ...and the batcher only CALLS the locked needs API
+        src = (_REPO / "cabinet" / "scripts" / "lib" / "ask_mint.py").read_text()
+        assert "from framework.authority import needs" in src
+        assert "needs.file_need(" in src
+        assert "open(" not in src, "the batcher opened a file of its own"

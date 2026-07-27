@@ -3,7 +3,6 @@ name: cross-officer-retro
 description: "48-hour cross-officer retro driven by CoS. Use when the retro trigger fires (event-driven floor of 5 reflections or 48h ceiling): handoff quality + trigger responsiveness + role evolution proposals. Ends in Part 5 consolidation: 3–5 consolidated_belief rows (incl. failure-patterns) queued to Cabinet Memory."
 sunset: '2026-10-05'
 ---
-
 # Skill: Cross-Officer Retrospective (Evolved)
 <!-- single-source (egg R138): the canonical skill body lives HERE (memory/skills/, Captain-applied). .claude/skills/cross-officer-retro/SKILL.md is the on-trigger wrapper — trigger frontmatter + a pointer to this file only, no duplicated body (wrapper side enforced by R155). -->
 
@@ -69,6 +68,8 @@ It prints what he was SENT, what he WROTE BACK, mechanical repetition counts, op
 **Step 2 — relive the window as him.** Hand the pack — **and nothing else** — to a FRESH context with zero retro priors (its own subagent; the point is no inherited framing of what "went well"). It answers in FIRST PERSON as the Captain: *what did this window cost me? what did I have to say more than once? what waited on me longer than it should have? what was sent to me that I never touched or never valued?*
 
 **Judge cost RELATIVE to the declared availability in the pack's AVAILABILITY section** (Captain ruling 2026-07-26): an ask that is fair at `full_time` is friction at minutes-a-day, so the same volume is a finding at one setting and nothing at another — and **an availability the pack reports as absent is itself pack evidence** (the org has been spending a budget it never asked for). The org fits the declared budget, never the reverse.
+
+**A date he set that the org stopped carrying is a paid cost, every time.** The pack's DATES section lists his open dates with `tracked_in_latest_briefing=yes|no`; **an open date the latest briefing does not carry means he had to hold it himself**, which is the in-window cost the emission bar asks for (the paid case: a captain-set release date appeared in zero of the next twelve days of briefings). An empty store is not a finding — he may simply have set no dates.
 
 **Emission bar — every part required:**
 - (a) it quotes an **artifact of his own** from the pack (his words, a number, a date);

@@ -88,6 +88,17 @@
 #      sweep >48h stale / never ran = WARN (AMBER, post-wake grace honored);
 #      unusable registry = WARN. Registry: cabinet/config/dependency-radar.yml;
 #      runbook: docs/runbooks/dependency-radar.md.
+#  15. cog2 cortex shadow-parity verdict (COG-2 §8 sim 6): latest line of
+#      cabinet/logs/cog2-parity.jsonl via cog2-parity-falsifier.py --probe
+#      (pure file inspection). Never DEAD; the captain card on a persisting
+#      breach comes from the falsifier organ, never from this probe.
+#  16. proactive-card channel flatline (Captain-Seat finding 2, 2026-07-27):
+#      card-flatline-probe.py --probe reads the daily emission series
+#      (shared/interfaces/falsifier-series.jsonl) and asks whether a
+#      normally-active captain-facing channel has gone silent while the org
+#      kept acting. AMBER-max, and every honest non-alarm state (no series
+#      yet, never active, deliberate zero, whole-org quiet) prints OK — a
+#      fresh hatch stays GREEN. Runbook: docs/runbooks/card-flatline-alarm.md.
 #
 # OUTPUT: one line per finding (OK / WARN / WAIVED / SKIP / DEAD), then either
 #   CABINET_DOCTOR GREEN (checks=N warn=N waived=N)
@@ -1163,6 +1174,44 @@ case "$COG2_PROBE" in
   STALE*)   re_stale_verdict "cog2-parity — latest verdict stale (${COG2_PROBE#STALE }) — the nightly parity cycle is not running" ;;
   BADLINE*) warn "cog2-parity — latest verdict line unparseable (ledger corrupt? see cabinet/logs/cog2-parity.jsonl)" ;;
   *)        warn "cog2-parity — probe output unparseable: $COG2_PROBE" ;;
+esac
+
+# ============================================================
+# 16. proactive-card CHANNEL FLATLINE (Captain-Seat dry-run finding 2)
+# A captain-facing channel that goes silent must SAY SO. The paid case:
+# proactive cards ran ~146/week, then emitted zero for seven consecutive
+# days while briefings kept flowing — and nothing anywhere raised it, because
+# the emission series recorded proactive_cards_7d and no reader ever asked
+# it a question. card-flatline-probe.py reads that series
+# (shared/interfaces/falsifier-series.jsonl) and classifies the channel:
+# pure file inspection — no DB, no network, no Redis, no writes.
+# LADDER, all AMBER-max (a quiet captain channel is a quality finding, never
+# dead config, and a fresh hatch must stay GREEN): BREACH = WARN; every
+# honest non-alarm state prints OK, including NOSERIES (the daily falsifier
+# has not written a line on this box yet — normal at hatch), NEVERACTIVE
+# (the channel has never emitted a card, so nothing went silent), QUIET (the
+# whole org stopped acting — that is the fleet floors' finding, not this
+# one), and NOSYNC (a DELIBERATE zero: the action-lane row is disabled, or
+# the Captain declared himself away). Staleness rides the same post-wake
+# grace as the checks above. The Captain-facing half is NOT here: it is one
+# line in the twice-daily digest / briefing card, asked once per silent
+# episode (framework/frontdoor/card_flatline.py) — this probe is the
+# standing fleet-side signal and never sends anything.
+# Runbook: docs/runbooks/card-flatline-alarm.md
+# ============================================================
+CFL_PROBE="$("$PY" cabinet/scripts/card-flatline-probe.py --probe 2>/dev/null)"
+case "$CFL_PROBE" in
+  OK*)          ok "card-flatline — proactive-card channel speaking (${CFL_PROBE#OK })" ;;
+  NOSERIES*)    ok "card-flatline — no emission series on this box yet (the daily falsifier has never written a line); nothing to judge, and nothing claimed" ;;
+  NEVERACTIVE*) ok "card-flatline — the proactive-card channel has never emitted a card (${CFL_PROBE#NEVERACTIVE }); a channel that never spoke has not gone silent" ;;
+  NOSYNC*)      ok "card-flatline — DELIBERATE zero (${CFL_PROBE#NOSYNC }); the silence is explained, so the Captain is not asked about it" ;;
+  QUIET*)       ok "card-flatline — cards are zero but so is everything else (${CFL_PROBE#QUIET }): no acts, no new stamped rows, no labels — that is a fleet finding the sections above own, not a channel finding" ;;
+  SILENT*)      ok "card-flatline — cards zero but still under the alarm bar (${CFL_PROBE#SILENT }); watching" ;;
+  BREACH*)      warn "card-flatline — the proactive-card channel has gone SILENT (${CFL_PROBE#BREACH }) while the org kept acting and nothing explains it — the Captain-facing question rides the next digest/briefing card (announced=1 means it already did); root-cause the action lane: python3.12 cabinet/scripts/card-flatline-probe.py --json" ;;
+  UNMEASURED*)  warn "card-flatline — the newest series line carries no proactive_cards_7d (${CFL_PROBE#UNMEASURED }); an unmeasured channel is not a healthy one — check cabinet/scripts/falsifier-report.py" ;;
+  STALE*)       re_stale_verdict "card-flatline — emission series stale (${CFL_PROBE#STALE }) — the daily falsifier-report row is not running, so the card channel cannot be judged at all" ;;
+  ERROR*)       warn "card-flatline — probe errored (${CFL_PROBE#ERROR }); see python3.12 cabinet/scripts/card-flatline-probe.py --json" ;;
+  *)            warn "card-flatline — probe output unparseable: $CFL_PROBE" ;;
 esac
 
 # ============================================================

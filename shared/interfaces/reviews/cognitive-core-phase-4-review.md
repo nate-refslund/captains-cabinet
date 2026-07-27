@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 540c08fbef048256b2f9bfcb4d6ce7e49cd246e73463c5e9cedf71221e026372
+Reviewed-Scope-Digest: 7f05bdcfaa716f78a9fb638ab464d5fd41699a388e9c13107957fdc128ca7e35
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
@@ -579,4 +579,106 @@ carried in by that merge: the census contract (its attention allowance) — no C
 path, so this stays a scope-membership re-bind. `verify-cognitive-phase4.sh` exits 0 on the merged
 tree.)
 
+(RE-BOUND BY THE CAPTAIN-DATES LANDING, 2026-07-27 — 0305f77547e14563c1a8505c14336ec4e8993fbc133217ce81136f7e4c5c4ce5
+-> 5615aae1867d54024ac851578e7970611e55ff7a2860bd83d7d879bb5f10f0aa, superseded by the merge note below. EXACTLY TWO in-scope paths moved, verified by intersecting the resolved 85-entry
+scope with `git diff --name-only origin/master..HEAD` rather than by reading the diff:
+  (1) `cabinet/config/cognitive-architecture-contract.yml` — one new
+      `framework_production_noncomment_lines` allowance row for the dates store (+208 measured; the
+      env.py resolver family plus the morning_synthesis briefing leg, ZERO new modules), re-measured
+      OVER THE MERGED TREE at 67883 vs 67675 base, still observed==max with zero headroom.
+  (2) `cabinet/scripts/egg-export-manifest.txt` — the dates store's `delete` +
+      `expect-present` pair, the same shape the availability dial added.
+NO COG-4 implementation path moved: not `framework/projection`, `framework/scheduler`,
+`framework/organs`, no organ manifest, no runner, no measurement surface, no fixture. The behavior
+this review's verdict covers is byte-untouched, so this is a SCOPE-MEMBERSHIP re-bind, not a
+behavior-delta one.
+WHAT WAS NOT DONE, stated plainly: no fresh frozen COG-4 panel ran. What DID run on the merged bytes:
+`verify-cognitive-phase4.sh` green end-to-end after this re-bind; census PASS at 54/50/67883
+observed==max; layer-sep new=0; state-persistence 0 UNACCOUNTED; docs-track-code GREEN; A13 ledger
+parity GREEN (353/353); golden evals 30/30 (EVAL-027 included, extended by this landing and shown RED
+against pre-change state first); `framework/` 6653 passed / 26 skipped / 1 failed and
+`cabinet/scripts/tests` 4727 passed / 28 skipped / 1 failed — the framework failure being the known
+pre-existing `test_retro_shim.py::test_reexports_constants` (a locally-installed pipe constant CI does
+not have), and the cabinet one a wall-clock latency bound over an ephemeral Postgres cluster that
+passes in isolation under no load.
+SIBLING BINDERS unchanged: COG-0/1/2/3 were already BLOCK on pre-change master and are NOT re-bound
+here. This commit edits ONLY the digest-excluded review artifact, so the digest it records is stable
+under its own landing — verified by recomputing after the edit.)
+
+(MERGE RE-BIND, 2026-07-27: the spend-meter landing (PR #215) reached master while this branch was in
+CI and re-bound this same digest to 540c08fb.... Two concurrent landings cannot both be right about one
+number, so it is recomputed over the MERGED committed tree rather than either side being picked — a
+hand-picked digest from either parent would record a tree that never existed. Merged value:
+e68adad9456b80394270fa6354b65d6f4a5de10162235232b787571e1e3e2b0a. The digest line was the ONLY conflict in this artifact;
+both landings' notes above are preserved verbatim, neither overwritten. In-scope paths carried in by the
+merge: the census contract (the spend meter's two allowance rows) — no COG-4 implementation path, so this
+stays a scope-membership re-bind. Census re-measured on the merged bytes: PASS at 243 modules / 68661
+lines, observed==max with zero headroom, the dates row still +208. `verify-cognitive-phase4.sh` re-run
+green end-to-end on the merged tree after this re-bind.)
+
+(MOVED BY THE CHANNEL-FLATLINE ALARM LANDING, 2026-07-27 —
+e68adad9456b80394270fa6354b65d6f4a5de10162235232b787571e1e3e2b0a -> the value above. Branch
+`feat/channel-flatline-alarm` (PR #224), one commit b7dcde05 over master 19d1c2e1: a captain-facing
+channel that goes silent now says so once, per Captain-Seat dry-run finding 2.
+A SCOPE-MEMBERSHIP re-bind, and the claim is made here because it holds. EXACTLY ONE in-scope path
+moved, verified by intersecting the resolved 85-entry scope with
+`git diff --name-only origin/master...HEAD` (12 changed files, one in scope) rather than by reading
+the diff: `cabinet/config/cognitive-architecture-contract.yml` gains TWO `temporary_allowances` rows
+(`framework_production_modules` +1, `framework_production_noncomment_lines` +390) for the new
+`framework/frontdoor/card_flatline.py` detector and its two delivery seams. That file is not a COG-4
+surface; it is bound only because the census contract sits in the declared scope — the same class as
+the spend-meter (a3036694), attention-well-spent (3dcd3e62) and contact-liveness (598868ed) re-binds
+above. NO maximum was relaxed and no threshold touched: the census re-measures PASS at 244<=244
+modules and 69051<=69051 lines, exact totals, zero headroom preserved.
+NO COG-4 implementation path moved: not `framework/projection`, `framework/scheduler`,
+`framework/organs`, no organ manifest, no runner, no measurement surface, no fixture, no boundary row.
+The eleven other changed paths sit OUTSIDE this scope and are named for the record: the new detector,
+probe, runbook and two test modules; `framework/frontdoor/{tell_digest,run_briefing}.py`;
+`cabinet/scripts/cabinet-doctor.sh` (a new check 16); `cabinet/scripts/docs-sweep-allowlist.txt`;
+the root `conftest.py` (one new read fence); and this landing's own FW-019 proof
+`feat-channel-flatline-alarm-cp1.md`.
+Re-measured on the branch bytes, not inherited: `verify-cognitive-phase4.sh` full green end-to-end
+after this re-bind; census 29 passed; `cabinet/scripts/tests` 4768 passed / 28 skipped;
+`framework/` 6748 passed with the one declared pre-existing red
+(`test_retro_shim::test_reexports_constants`, a locally-installed pipe constant CI does not have)
+reproduced identically on pristine master.
+NOT re-reviewed by a fresh frozen COG-4 panel; the branch carries its own FW-019 artifact.
+SIBLING BINDERS NOT TOUCHED, deliberately: the contract yml also sits in the COG-1/2/3 scopes, all
+three of which were ALREADY BLOCK on pristine master before this branch existed. Re-binding them
+would restamp frozen gate archaeology. This commit edits ONLY the digest-excluded review artifact, so
+the digest it records is stable under its own landing — verified by recomputing after the edit.)
+
 Verdict: PASS
+
+MOVED BY THE MATRIX-CLASS-MAPPING-PIN LANDING (2026-07-27,
+e68adad9456b80394270fa6354b65d6f4a5de10162235232b787571e1e3e2b0a -> the value
+above). MECHANICAL-DELTA re-bind: exactly ONE in-scope path moved,
+`cabinet/config/cognitive-architecture-contract.yml`, and the only change to it
+is one appended `temporary_allowances` row (`matrix-class-mapping-pin`,
+framework_production_noncomment_lines +65, 68661 -> 68726). No reviewed BEHAVIOUR
+byte changed: the branch's executable changes are all in
+`framework/authority/{matrix,classifier,deploy_classifier}.py` and
+`framework/authority/tests/test_matrix.py`, none of which is in this scope
+(verified by intersecting `git diff --name-only origin/master...HEAD` against
+the tool's resolved EXPECTED_SCOPE, not by reading the diff).
+
+RE-MEASURED, not assumed: `cognitive-architecture-census.py --check` PASS at
+observed == max (68726 <= 68726), and the full `verify-cognitive-phase4.sh`
+twin runs end-to-end green on this commit. The digest was recomputed over the
+COMMITTED tree and folded into the SAME commit — this artifact is excluded from
+its own scope, so the amend is stable under itself. NOT done: no COG-0/1/2/3
+twin was re-bound (frozen-historical, already BLOCK by design), and no prose
+section of this review was edited — no reviewer saw new bytes, because none of
+the reviewed bytes changed behaviour.
+
+RE-BOUND ON THE MASTER MERGE, 2026-07-27 —
+8421cbabbc5331087530603011d139ae0acfdd4d82cfeed45f95006ffa171f82 -> the value
+above. The matrix-class-mapping-pin branch merged origin/master 91412878
+(fail-closed-control-plane, channel-flatline-alarm, ask-batching and
+dashboard-availability landings). Both sides had appended a
+`temporary_allowances` row to `cabinet/config/cognitive-architecture-contract.yml`,
+the one in-scope path either side touched; the conflict was resolved by keeping
+BOTH rows, and the branch's own row was RE-MEASURED against the new base rather
+than carried (69116 vs 69051 at 91412878; +65 unchanged, since the growth is
+that unit's own lines). Still a MECHANICAL-DELTA re-bind: no reviewed BEHAVIOUR
+byte changed on either side of the merge.

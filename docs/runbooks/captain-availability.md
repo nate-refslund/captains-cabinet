@@ -96,9 +96,32 @@ python3.12 cabinet/scripts/lib/captain_availability.py show
 python3.12 cabinet/scripts/lib/captain_availability.py set 20m
 ```
 
-**Dashboard:** display-only today (Settings → Captain → "Time for the cabinet"),
-the same tech-debt shape as Timezone. Editing lands with the platform settings
-action.
+**Dashboard (Settings → Captain → "Time for the cabinet"):** pick a band or type
+exact minutes and Save. The picker lists the whole mode table and shows where
+the current value came from — his own later ruling, or what onboarding stamped.
+
+The dashboard does **not** edit `instance/config/platform.yml`. Its server
+action `updateCaptainAvailability`
+(`cabinet/dashboard/src/actions/config.ts`) runs the store's own recorder,
+`cabinet/scripts/lib/captain_availability.py set <value> --source dashboard`,
+inside the runtime — so a dashboard change is the same append to the same
+append-only store the phone verb writes, and the row carries `source:
+dashboard` as its provenance. Three properties follow, and each is pinned by a
+test rather than by this paragraph:
+
+- **Strict allowlist.** Only a mode verb from the table or whole minutes
+  0..1440 reach the writer, and only the canonical token the parser returns is
+  ever interpolated into the command — never the typed string.
+- **Refuse, don't round.** `90.5` and `1441` come back as a refusal with
+  nothing written, the same rule the phone applies.
+- **No silent success.** The action requires the writer's `recorded …` receipt
+  before it reports success, so a mocked or no-op exec can never report a save
+  that never reached disk.
+
+Timezone and the monthly budget on that page stay read-only: they are
+`platform.yml` fields whose only writer is the generator, and a settings action
+for them needs the marker-managed-file question answered first. That remains
+recorded tech-debt.
 
 ## Consumers
 
@@ -107,6 +130,10 @@ action.
 | Captain-Seat Review (`memory/skills/cross-officer-retro.md` Part 1c) | judges cost RELATIVE to it — an ask that is fair at `full_time` is friction at minutes-a-day | the absence is itself pack evidence |
 | `cabinet/scripts/meta-cognition/captain-seat-pack.sh` | prints the declared budget + `set_at` in its AVAILABILITY section | prints the measured absence line |
 | `framework/comms/surface/config.py` | scales the active-card `cap` (≤10 → 1, ≤30 → 2, ≤120 → 3, ≤240 → 4, else the shipped 5) when the deployment set no cap | shipped default, unchanged |
+
+Its sibling surface is `docs/runbooks/captain-dates.md` — the dates he SET, held
+on the org's books so a briefing cannot drop one. Availability is how much of him
+the org may spend; the dates store is what he told the org to remember.
 
 A configured `cap` (env or `instance/config/comms-surface.yml`) always wins — a
 configured value is a ruling. `availability_pacing: false` turns the derivation

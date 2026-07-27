@@ -645,18 +645,35 @@ EV9_STDERR_FILE="$EV9_STUB_DIR/stderr.log"
   # wait to reap it before subshell exits; PATH stub persists for it too.
   wait 2>/dev/null
 ) 2>"$EV9_STDERR_FILE"
-# Grep: semantic invariant is "stderr mentions XADD failure," not the
-# precise current wording. Match either the current WARN form or any
-# reasonable future rewording that still surfaces XADD + failure. A
-# refactor that drops the stderr entirely would fail both branches.
-# (Risk acknowledged: the backgrounded memory-queue subshell inside
-# trigger_send could theoretically emit stderr containing "XADD" or
-# "WARN" and cause a false-pass; memory.sh does not today, and the
-# test stubs redis-cli so no real write path reaches Postgres.)
-if grep -qE "(trigger_send WARN|XADD.*fail|WARN.*XADD|cabinet:triggers:.*fail)" "$EV9_STDERR_FILE"; then
-  pass "trigger_send emits stderr warn when XADD fails (FW-027 H-1 invariant holds)"
+# RE-POINTED 2026-07-26 (control-plane fail-open sweep). This assertion used
+# to be `grep -qE "(trigger_send WARN|XADD.*fail|WARN.*XADD|...)"` — a regex
+# BROADER than the marker list the detector actually uses. It matched
+# "trigger_send WARN", a string nothing scans for, so the eval stayed GREEN for
+# the entire period during which every dropped trigger was invisible to the
+# outcome-watchdog. A sensor whose pass condition is looser than the control's
+# is not covering the control.
+#
+# It now asserts what the DETECTOR would find: at least one literal token from
+# framework/watchdog/registry.py JOB_ERROR_MARKERS, extracted FROM THAT FILE at
+# eval time (never re-typed here — a copy is the drift this fixes). Emitting a
+# stderr line that no watchdog marker matches now FAILS, which is the property
+# FW-027 H-1 was always trying to buy.
+EV9_MARKERS_FILE="$EV9_STUB_DIR/markers.txt"
+if ! python3.12 - "$CABINET_ROOT" > "$EV9_MARKERS_FILE" <<'EOPY'
+import sys, pathlib
+sys.path.insert(0, sys.argv[1])
+from framework.watchdog.registry import JOB_ERROR_MARKERS
+if not JOB_ERROR_MARKERS:
+    raise SystemExit("JOB_ERROR_MARKERS is EMPTY — the detector scans for nothing")
+print("\n".join(JOB_ERROR_MARKERS))
+EOPY
+then
+  fail "EVAL-009 could not read JOB_ERROR_MARKERS from framework/watchdog/registry.py — the eval cannot verify what the detector scans for"
+elif grep -qF -f "$EV9_MARKERS_FILE" "$EV9_STDERR_FILE"; then
+  EV9_HIT=$(grep -oF -f "$EV9_MARKERS_FILE" "$EV9_STDERR_FILE" | head -1)
+  pass "trigger_send stderr on Redis-down carries a watchdog JOB_ERROR_MARKERS token ('$EV9_HIT') — the outcome-watchdog can SEE a dropped trigger"
 else
-  fail "trigger_send did NOT emit stderr warn on Redis-down (first 3 lines: $(head -3 "$EV9_STDERR_FILE" | tr '\n' '|'))"
+  fail "trigger_send stderr on Redis-down carries NO watchdog JOB_ERROR_MARKERS token — a dropped trigger is invisible to the no-silent-cron-failure scan (markers: $(tr '\n' '|' < "$EV9_MARKERS_FILE"); stderr: $(head -3 "$EV9_STDERR_FILE" | tr '\n' '|'))"
 fi
 rm -rf "$EV9_STUB_DIR"
 
