@@ -477,9 +477,16 @@ placeholders only:
    real recall instead of fail-closing to `NullPersonalSource` (zero
    hits). No `dispatch:` is emitted (writes fail-close to
    `NullPersonalDispatch`, draft-capture-only). `flavor: personal`
-   emits NO sources.yml — a Flavor-A captain binds their own personal
-   adapter by hand. An existing hand-authored sources.yml (no
-   generated-by marker) is never clobbered.
+   ALSO emits a marked `sources.yml` — binding
+   `framework.sources.local:LocalNotesSource` over a `local_root:`
+   the operator points at their own notes folder, read-only, with no
+   write side and no `dispatch:` either. CHANGED 2026-07-27: before
+   that, `personal` emitted nothing at all and a personal box
+   fail-closed to `NullPersonalSource` (`available()` False,
+   `search()` returning no hits) — so the ONE flavor shaped for an
+   operator who does not run a company was the one flavor that
+   shipped inert. An existing hand-authored sources.yml (no
+   generated-by marker) is never clobbered on either flavor.
 
    **Hiring is authorization-gated** (roster-authz, 2026-07-26). An
    officer is only usable when `cabinet/officer-capabilities.conf`
