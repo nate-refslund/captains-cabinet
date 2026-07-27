@@ -21,13 +21,18 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 7750002a3ccbf9f6d857cc0468228b156d4585d98149ab39930ec9914b2162bf
-(RE-BOUND 2026-07-27, `fix/hook-redos`, was b8ee235e0c34: `cabinet/config/cognitive-architecture-contract.yml`
-is in EXPECTED_SCOPE, and the hook-ReDoS landing adds ONE `temporary_allowances` row to it — paying for the
-+1 framework line of `policy_engine._STMT_RUN` at the pinned zero-headroom maximum. Nothing in the COG-4
-surface itself changed: no organ, projection, scheduler, manifest, snapshot/schedule/dispatch CLI or cog4
-test moved. Re-bound in the SAME commit as the byte change, per the §15 landing rule, so the binding keeps
-failing closed on any later one-sided edit.)
+Reviewed-Scope-Digest: PLACEHOLDER
+(RE-BOUND repeatedly on 2026-07-27 — the census-shift-left, expansion-registry and
+census-set-pins landings each edited `cabinet/config/cognitive-architecture-contract.yml`,
+which sits in `restore_from_baseline` and is therefore digest-bound, and so did the
+`recipient-exclusion-carve-backs` allowance row and, in this merge, the `hook-redos`
+allowance row that pays for the +1 framework line of `policy_engine._STMT_RUN`. NO COG-4
+implementation byte changed by any of them: every edit is a budget/allowance row, and
+`framework/authority/classifier.py` remains in the manifest's `must_remain_unchanged`
+block against the pinned phase anchor, which the rollback rehearsal re-checks. The
+hook-redos landing additionally touches `framework/authority/policy_engine.py` and
+`cabinet/scripts/policy-shadow.py`, neither of which is in EXPECTED_SCOPE. The phase-4
+findings below are unaffected.)
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of

@@ -82,12 +82,20 @@ captain_telegram_chat_id: "<YOUR-TELEGRAM-CHAT-ID>"
 # Instance-specific identifiers the universal-base framework reads via
 # framework.env resolvers (they are NOT hardcoded in framework/).
 #
-# org_domains — the org's internal email domains. The action classifier
-# (framework/authority/classifier.py) treats a recipient at one of these (or a
-# subdomain) as internal_comms; everything else is external_comms (the
-# always-gated ceiling). framework.env.org_domains() reads this list and
-# fails closed to EMPTY (a deployment with none set treats every recipient as
-# external). Domains are matched case-insensitively.
+# org_domains — the org's internal email domains, and the ALLOWLIST of what
+# counts as internal. The action classifier (framework/authority/classifier.py)
+# treats a recipient at one of these as internal_comms; everything else is
+# external_comms (the always-gated ceiling). framework.env.org_domains() reads
+# this list and fails closed to EMPTY (a deployment with none set treats every
+# recipient as external). Domains are matched case-insensitively, and — since
+# 2026-07-27 — EXACTLY: a subdomain you want treated as internal gets its own
+# line here, because a bare domain silently claiming its whole subdomain
+# namespace claimed subdomains nobody had checked and subdomains that did not
+# exist yet. instance/config/recipient-exclusions.yml holds the two carve-backs
+# on this list: `subdomain_matching: inherit` restores the old unbounded rule,
+# and its denylist names addresses/domains that are NOT internal despite
+# sitting at a domain listed here (an alias or distribution list that fans out
+# to non-employees is the case org_domains cannot express).
 org_domains:
   - example.com
   - example.org
