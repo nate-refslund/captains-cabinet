@@ -419,6 +419,24 @@ jobs:
           CABINET_EVALS_REDIS_DISPOSABLE: "1"
         run: bash /opt/founders-cabinet/cabinet/scripts/run-golden-evals.sh
 
+      - name: Golden eval — FW-002 spending limits
+        if: ${{ !cancelled() }}
+        # run-golden-evals.sh has NO discovery — every eval is a hardcoded
+        # inline block — so the standalone contract suites under
+        # memory/golden-evals/ only run if something invokes them by name.
+        # fw-002 had exactly one executor: framework/learning/
+        # self_improvement_loop.py, unattended every 6h on the Mac. It was
+        # RED there for weeks (and, worse, testing the wrong thing) and no
+        # gate said so. This step is that missing gate.
+        # Same disposable-endpoint declaration as the step above: this job's
+        # redis:7 SERVICE container is a throwaway, and the runner image has
+        # redis-cli but no redis-server to spawn an ephemeral sandbox with.
+        # The eval still saves and restores every hash field it writes and
+        # never writes cabinet:killswitch.
+        env:
+          CABINET_EVALS_REDIS_DISPOSABLE: "1"
+        run: bash /opt/founders-cabinet/memory/golden-evals/framework/fw-002-spending-limits.sh
+
       - name: Captain-rules retrieval eval
         if: ${{ !cancelled() }}
         # Spec 042 Phase 3: golden eval over 5 anchor fixtures asserting
@@ -531,6 +549,26 @@ jobs:
       # spawns `psql` against COG1_PG_DSN to apply the DDL chain and drive the
       # kill rigs — the service container alone leaves the DB sims skipping,
       # exactly the failure class redis-tools records above.
+      # KNOWN GAP, deliberately left open (2026-07-27):
+      # framework/cost/tests/test_meter_redis.py stands up its OWN ephemeral
+      # server per test, so with redis-tools alone all 29 of its arms SKIP —
+      # the meter's entire persistence layer (watermark, atomic write,
+      # error-reply detection) is unobserved in CI while the suite reports
+      # green. That is the same "a skipped test is a disabled sensor" class
+      # this step's comment above records.
+      #
+      # Installing `redis-server` here WAS tried and reverted in the same
+      # branch. Ubuntu ships 7.0.15; four version-sensitive suites in
+      # cabinet/scripts/tests (test_redis_backup_e2e, test_redis_state_replay
+      # x3) exercise Redis-8 behaviour and had been silently skipping for want
+      # of the binary. Installing it made them RUN and FAIL — measured: all
+      # four pass locally against Redis 8.8.0 and fail against CI's 7.0.15.
+      # Weakening them to go green was refused, and fixing four unrelated
+      # Redis suites is its own unit of work.
+      # FOLLOW-UP: either provision redis-server >= 8 for this job (both the
+      # meter arms and those four suites then gate), or have those suites
+      # declare their minimum Redis version so they skip for a stated reason
+      # instead of for a missing binary.
       - name: Install redis-cli + psql client
         run: sudo apt-get update -qq && sudo apt-get install -y -qq redis-tools postgresql-client
       # Collection census: the fidelity conftest silently collect_ignores 19

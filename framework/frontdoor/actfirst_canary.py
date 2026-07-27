@@ -520,6 +520,16 @@ def _llm_audit(system: str, user: str) -> str:
          "-H", "content-type: application/json",
          "-d", json.dumps(body)],
         capture_output=True, text=True, timeout=125)
+    # PAID CALL COUNTED (lane `api_direct`, 2026-07-26). ATTRIBUTION:
+    # launchd-scheduled (cabinet/launchd/com.cabinet.actfirst-canary.plist) —
+    # no officer, no session, so `svc:actfirst-canary` rather than a person.
+    # Counting only, guarded import: the audit fails CLOSED on any error, and a
+    # meter fault must never be what makes it red.
+    try:
+        from framework.cost.record_lane import record_anthropic
+        record_anthropic(r.stdout, "api_direct", "svc:actfirst-canary")
+    except Exception:  # noqa: BLE001
+        pass
     try:
         d = json.loads(r.stdout)
     except json.JSONDecodeError:

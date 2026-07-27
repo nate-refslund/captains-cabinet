@@ -725,6 +725,18 @@ def _llm(system: str, user: str) -> str:
             os.unlink(hpath)
         except OSError:
             pass
+    # PAID CALL COUNTED (lane `api_direct`, 2026-07-26). This lane never reaches
+    # the Claude Code Stop hook, so it was invisible to every cost surface.
+    # ATTRIBUTION: launchd-scheduled (cabinet/launchd/com.cabinet.action-lane.plist)
+    # — no officer, no session. `svc:action-lane` keeps infrastructure spend out
+    # of per-officer accounting, which charging it to an officer would corrupt.
+    # Counting only: it cannot gate, and the import is guarded so a missing
+    # meter can never turn a good LLM call into a failure.
+    try:
+        from framework.cost.record_lane import record_anthropic
+        record_anthropic(r.stdout, "api_direct", "svc:action-lane")
+    except Exception:  # noqa: BLE001
+        pass
     try:
         d = json.loads(r.stdout)
     except json.JSONDecodeError:

@@ -550,14 +550,38 @@ TG_HOURLY_CAP=$(_cfg_get telegram_whitelist_hourly_cap 10)
 # and nothing said so. A cap we cannot parse now falls back to the FRAMEWORK
 # DEFAULT (the same 75/300 floor _cfg_get uses when the cache is empty) and
 # warns; only a cap the Captain wrote as a literal numeric 0 disables a scope.
+# -- `unlimited` sentinel (Captain 2026-07-26: "unlimited spending") ---------
+# The Captain removed the spend ceiling. Expressing that as `0` would work —
+# 0 has always meant "no enforcement" — but `daily_per_officer_usd: 0` reads to
+# a stranger (and to a future us) as "this officer may spend nothing", which is
+# the exact opposite of the ruling. So the config says the word: `unlimited`.
+#
+# This MUST be matched before the non-numeric coercion below, which exists to
+# stop a corrupted cap from silently disabling the ceiling and would otherwise
+# turn the literal string `unlimited` into a $75 cap — a config that says
+# unlimited while enforcing 75 is precisely the "very large number that later
+# surprises someone" failure this sentinel is here to prevent.
+#
+# Uncapping does NOT stop metering. session-stop.sh keeps writing the ledger
+# and the lane recorder keeps counting; what used to be a GATE is now a WATCH
+# (framework/watchdog/registry.py spend rows + the briefing's daily line).
+_cap_is_unlimited() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    unlimited|none|off|infinite|inf) return 0 ;;
+  esac
+  return 1
+}
+if _cap_is_unlimited "$PER_OFF_CAP_USD"; then PER_OFF_CAP_USD=0; fi
+if _cap_is_unlimited "$CABINET_CAP_USD"; then CABINET_CAP_USD=0; fi
+
 case "$PER_OFF_CAP_USD" in
   *[!0-9.]*|'')
-    echo "pre-tool-use: WARN daily_per_officer_usd is not numeric ('$PER_OFF_CAP_USD') — falling back to the \$75 framework default, NOT unlimited" >&2
+    echo "pre-tool-use: WARN daily_per_officer_usd is not numeric ('$PER_OFF_CAP_USD') — falling back to the \$75 framework default, NOT unlimited (write the word 'unlimited' if that is what you mean)" >&2
     PER_OFF_CAP_USD=75 ;;
 esac
 case "$CABINET_CAP_USD" in
   *[!0-9.]*|'')
-    echo "pre-tool-use: WARN daily_cabinet_wide_usd is not numeric ('$CABINET_CAP_USD') — falling back to the \$300 framework default, NOT unlimited" >&2
+    echo "pre-tool-use: WARN daily_cabinet_wide_usd is not numeric ('$CABINET_CAP_USD') — falling back to the \$300 framework default, NOT unlimited (write the word 'unlimited' if that is what you mean)" >&2
     CABINET_CAP_USD=300 ;;
 esac
 case "$COS_MULT" in *[!0-9.]*|'') COS_MULT=1 ;; esac
