@@ -71,9 +71,44 @@ def test_need_id_varies_with_cabinet_id(monkeypatch):
 
 def test_disabled_seam_is_a_total_noop(tmp_path, monkeypatch):
     monkeypatch.delenv("CABINET_NEEDS_WIRED", raising=False)
+    # The enforcing disjunct is an ENABLING condition too — this test's
+    # premise is "no enabling condition present", so it must be cleared
+    # explicitly rather than assumed absent from the ambient environment.
+    monkeypatch.delenv("CABINET_AUTHORITY_ENFORCING", raising=False)
     assert N.needs_enabled(tmp_path) is False
     assert file_need(tmp_path) is None
     assert not N.ledger_path(tmp_path).exists()
+
+
+def test_enabled_by_live_authority_enforcement(tmp_path, monkeypatch):
+    """Live enforcement wires the needs plane (2026-07-27 direction gate).
+
+    The guardian no-op existed so the DEFAULT world stays bit-identical, and
+    the default world is enforcement OFF — where the matrix is skipped
+    entirely and there are no refusals to record. Once the Captain flips
+    enforcement on, refusals happen in volume and leaving the ledger a no-op
+    is what made a withheld step leave no trace at all.
+    """
+    monkeypatch.delenv("CABINET_NEEDS_WIRED", raising=False)
+    monkeypatch.setenv("CABINET_AUTHORITY_ENFORCING", "1")
+    assert N.needs_enabled(tmp_path) is True
+
+
+def test_authority_enforcing_FILE_does_not_wire_needs(tmp_path, monkeypatch):
+    """The `authority-enforcing` FILE must NOT wire this seam.
+
+    It is a different, already-true switch (Captain 2026-07-03): its scope is
+    the typed STATELESS policy set, which EXCLUDES `authority_matrix`. Every
+    deployment carries the file, so treating it as the matrix trigger turns
+    filing on everywhere and the guardian default world stops being
+    bit-identical — six digest/gate parity tests red when it did.
+    """
+    monkeypatch.delenv("CABINET_NEEDS_WIRED", raising=False)
+    monkeypatch.delenv("CABINET_AUTHORITY_ENFORCING", raising=False)
+    flag = tmp_path / "instance" / "config" / "authority-enforcing"
+    flag.parent.mkdir(parents=True, exist_ok=True)
+    flag.write_text("flipped: 2026-07-03\nscope: typed STATELESS policy set\n")
+    assert N.needs_enabled(tmp_path) is False
 
 
 def test_enabled_by_flag_file(tmp_path, monkeypatch):

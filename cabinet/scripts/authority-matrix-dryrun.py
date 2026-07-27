@@ -170,6 +170,26 @@ def _install_side_effect_guards() -> list[str]:
         policy_engine._emit_gate_tell = lambda *a, **k: None  # type: ignore[assignment]
         installed.append("_emit_gate_tell(no-op)")
 
+    # THIRD write, added with the propose/gate split: a propose verdict files
+    # a deduped `capability` need. Replaying ~41k propose records would write
+    # the ledger the report then reads — a measurement that files needs is not
+    # a measurement. The id is still computed so `.need_id` stays populated;
+    # only the append is suppressed.
+    if callable(getattr(policy_engine, "_file_propose_need", None)):
+        def _id_only(risk_class: str, action_type: str, lane: Any,
+                     officer: str) -> Any:
+            needs_mod = getattr(policy_engine, "_needs", None)
+            if needs_mod is None:
+                return None
+            try:
+                return needs_mod.need_id(
+                    "capability", risk_class, action_type, lane)
+            except Exception:
+                return None
+
+        policy_engine._file_propose_need = _id_only  # type: ignore[assignment]
+        installed.append("_file_propose_need(id-only, no append)")
+
     return installed
 
 
@@ -219,7 +239,7 @@ def _raise_timeout(signum: int, frame: Any) -> None:  # noqa: ARG001
 def _first_block(policies: list[dict], types: frozenset[str],
                  tool_name: str, tool_input: dict, officer: str,
                  budget: float = 0.0
-                 ) -> tuple[str, str] | None:
+                 ) -> tuple[str, Any] | None:
     """First-match-wins over `policies` restricted to `types`.
 
     Returns (policy_name, reason) for the first blocking policy, else None.
@@ -246,7 +266,13 @@ def _first_block(policies: list[dict], types: frozenset[str],
             if budget > 0:
                 signal.setitimer(signal.ITIMER_REAL, 0)
         if result:
-            return name, str(result)
+            # NOT `str(result)`: the engine returns a GateDecision (a str
+            # subclass) carrying the structured verdict kind, and coercing it
+            # here silently flattened every record to "legacy_typed" — a
+            # counter wired to something other than the thing it measures.
+            # Every downstream use is a plain string operation, which a str
+            # subclass satisfies unchanged.
+            return name, result
     return None
 
 
@@ -361,7 +387,10 @@ def _load_corpus(paths: list[str]) -> tuple[list[dict], int]:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__ and __doc__.splitlines()[0])
-    ap.add_argument("corpus", nargs="+", help="JSONL corpus file(s)")
+    # nargs="*" not "+": `--extract` BUILDS the corpus and has none to read.
+    # Requiring one made the documented extract command fail with a usage
+    # error unless a dummy path was passed.
+    ap.add_argument("corpus", nargs="*", help="JSONL corpus file(s)")
     ap.add_argument("--extract", metavar="OUT.jsonl",
                     help="rebuild the corpus from the live shadow record "
                          "(read-only) and exit; pass the output path")
@@ -468,6 +497,7 @@ def main(argv: list[str] | None = None) -> int:
     total = len(records)
     baseline_blocks = 0
     newly_blocked = 0
+    by_kind: Counter[str] = Counter()
     already_blocked_examples: Counter[str] = Counter()
 
     progress_every = max(1, total // 20)
@@ -513,6 +543,12 @@ def main(argv: list[str] | None = None) -> int:
         reason = cand[1]
         bucket = _risk_bucket(reason, ceilings)
         atype = _action_type(tool_name, tool_input)
+        # THE distinction the enforcement plane could not express before
+        # 2026-07-27: a hard ceiling (no auto path exists) vs a cell above the
+        # bar (withheld, filed, grantable) vs a call the classifier cannot see
+        # at all. Counting them as one number is what made the flip read as an
+        # undifferentiated 75.66%.
+        by_kind[policy_engine.decision_kind(reason) or "legacy_typed"] += 1
 
         by_officer[officer] += 1
         by_tool[tool_name] += 1
@@ -535,6 +571,20 @@ def main(argv: list[str] | None = None) -> int:
     # the honest move: counting it as "allowed today" would quietly assert the
     # allow the EngineTimeout docstring says we never assert. Reported
     # separately so the gap is visible, never absorbed.
+    # SENSOR-ON-THE-SENSOR. `by_kind` reads a field off the engine's return
+    # value; a single `str()` anywhere on that path flattens every record to
+    # "legacy_typed" and the report still prints a clean, plausible number.
+    # That happened once. If the authority matrix is in the candidate set and
+    # produced blocks, it is IMPOSSIBLE for none of them to carry a kind.
+    if newly_blocked and "authority_matrix" in CANDIDATE_TYPES:
+        if not (set(by_kind) - {"legacy_typed"}):
+            print("FATAL: every newly-blocked record came back without a "
+                  "verdict kind. The engine returns GateDecision (a str "
+                  "subclass); something on the return path coerced it, so the "
+                  "propose/gate split is UNMEASURED. Refusing to report.",
+                  file=sys.stderr)
+            return 3
+
     timed_out = sum(timeouts.values())
     allowed_today = total - baseline_blocks - timed_out
     pct = (100.0 * newly_blocked / allowed_today) if allowed_today else 0.0
@@ -554,6 +604,10 @@ def main(argv: list[str] | None = None) -> int:
         "allowed_today": allowed_today,
         "newly_blocked": newly_blocked,
         "newly_blocked_pct_of_allowed_today": round(pct, 2),
+        "newly_blocked_by_verdict_kind": dict(by_kind.most_common()),
+        "newly_blocked_pct_hard_ceiling": round(
+            (100.0 * by_kind.get("gate", 0) / allowed_today)
+            if allowed_today else 0.0, 2),
         "baseline_types": sorted(BASELINE_TYPES),
         "candidate_types": sorted(CANDIDATE_TYPES),
         "by_officer": dict(by_officer.most_common()),

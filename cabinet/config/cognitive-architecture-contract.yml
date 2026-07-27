@@ -65,6 +65,39 @@ budgets:
     callee_prefix: _write_to_
     maximum: 3
 temporary_allowances:
+  - phase: propose-means-propose
+    budget: framework_production_noncomment_lines
+    additional: 151
+    reason: >-
+      the propose/gate/unclassified verdict split in the authority gate.
+      `main()` exited 2 on ANY non-None result, so `propose_only` ("above your
+      bar — ask, and the chain proceeds without this step") and `always_gated`
+      ("hard ceiling, no auto path exists") were OPERATIONALLY IDENTICAL: the
+      verdict vocabulary was richer than enforcement could express, which is
+      why the enforcing flip measured as an undifferentiated 52,659 refusals
+      (75.66%) when only 11,570 of them are ceilings. +151 measured 2026-07-27
+      with cognitive-architecture-census.py against master f77bcf45 (69315,
+      itself exactly at the pinned maximum). The lines are: the GateDecision
+      str-subclass carrying a STRUCTURED verdict field (a str subclass because
+      ~100 call sites depend on `evaluate_policy` returning `str | None` —
+      nothing was weakened to buy the distinction), the propose-need filing
+      seam with its measured rate limit, the authority_enforcing() resolver,
+      and the needs_enabled() enforcing disjunct that closes the guardian
+      no-op. ZERO new modules (framework_production_modules unchanged at 244):
+      all of it lives inside the two existing authority modules. Docstrings
+      are counted as written — the reason a propose verdict still WITHHOLDS
+      the step (its dominant bucket is byte-indistinguishable from
+      send-to-group.sh, `gh api -X POST`, and `python3 -c "...smtplib..."`) is
+      the single most important thing a later reader must not lose, and
+      rewriting it into "#" comments to duck this counter would be buying a
+      number with the explanation that stops someone widening it by accident.
+    owner: authority-plane
+    sunset: '2027-01-19'
+    deletion_gate: >-
+      the per-invocation Bash sub-decider lands and the `unclassified` kind
+      stops being the dominant verdict, so the split collapses back into the
+      matrix rows it was compensating for, or COG-7 compaction brings
+      production non-comment lines below the pinned baseline
   - phase: bash-egress-fail-closed
     budget: framework_production_noncomment_lines
     additional: 186
