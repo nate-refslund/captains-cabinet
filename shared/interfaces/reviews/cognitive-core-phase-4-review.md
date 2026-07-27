@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 265281147721fc71b77a2be16bc63da0d323c902c6d9e912f5698093598977bb
+Reviewed-Scope-Digest: 771a2ffc3a2ce89f7c6afeaa6bc6af0df84290ff02b1f5c0ada88885911aa9b3
 
 
 
@@ -627,6 +627,16 @@ passes in isolation under no load.
 SIBLING BINDERS unchanged: COG-0/1/2/3 were already BLOCK on pre-change master and are NOT re-bound
 here. This commit edits ONLY the digest-excluded review artifact, so the digest it records is stable
 under its own landing — verified by recomputing after the edit.)
+(RE-BOUND 2026-07-27, `fix/hook-redos`, same commit as the change that moved the
+bytes. The moved file in scope is `cabinet/config/cognitive-architecture-contract.yml`:
+ONE `temporary_allowances` row paying for the +1 framework line of
+`policy_engine._STMT_RUN`, the rewrite that removes catastrophic backtracking from
+the `sed -i` write pattern (52 of 80,307 recorded officer calls exceeded 1.5s in it,
+and the hook has no time bound). The COG-4 findings are unaffected — no organ, no
+scheduler surface, no serve surface, no COG-4 entry point. The landing's other two
+files, `framework/authority/policy_engine.py` and `cabinet/scripts/policy-shadow.py`,
+are not in EXPECTED_SCOPE. Reviewed in `fix-hook-redos-cp1.md`, with equality proved
+in both directions and re-checked over all 80,307 recorded calls: 0 verdict changes.)
 
 (MERGE RE-BIND, 2026-07-27: the spend-meter landing (PR #215) reached master while this branch was in
 CI and re-bound this same digest to 540c08fb.... Two concurrent landings cannot both be right about one
@@ -732,9 +742,10 @@ RE-BOUND 2026-07-27 by the `feat/personal-preset-live` landing: 3188bf08… -> 2
 (First bound at b3523559… -> e7926158…; RE-MEASURED after merging origin/master,
 whose `fix/propose-means-propose` landing moved the same two in-scope files
 mid-flight. The merge kept BOTH allowance blocks — neither landing's row was
-dropped — and the branch census re-reads PASS at observed == max against the new
-baseline 6e50570f, with the module delta still exactly +1/+331, which is the
-check that the number measures this module and not the merge.)
+dropped — and the branch census re-reads PASS at observed == max against every new
+baseline (6e50570f, then 8095ded9 after the hook-redos landing), with the module
+delta exactly +1/+331 each time, which is the check that the number measures
+this module and not a merge.)
 ONE in-scope surface changed, `cabinet/config/cognitive-architecture-contract.yml`
 (it sits in `restore_from_baseline` and is therefore digest-bound), and the change
 is two `temporary_allowances` rows plus one `expansions` row paying for
