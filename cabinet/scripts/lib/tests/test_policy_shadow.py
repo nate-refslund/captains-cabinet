@@ -24,9 +24,11 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import signal
 import sqlite3
 import sys
 import tempfile
+import time
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
@@ -583,3 +585,205 @@ class TestMissingFloorShadowFailClosed:
         assert rc == 0
         assert recs and recs[0]["verdict"] == "propose_only"
         assert regex, "the legacy shadow decision must still emit"
+
+
+class TestPolicyEvalTimeoutFailsClosed:
+    """A typed-policy evaluation that will not finish must BLOCK, not fall back.
+
+    WHY THIS MATTERS MORE THAN IT LOOKS. `_engine_decision` deliberately
+    swallows every other exception and returns None, which drops the caller to
+    the weaker regex shadow. For a TIMEOUT that fallback would be a bypass
+    primitive: an input crafted to wedge the classifier would be evaluated by
+    the fallback instead of by the policy that was supposed to judge it. It
+    would also be a fail-open in the enforcer — allowing a call the gate never
+    managed to assess. So the timeout arm is the one exception that blocks.
+
+    The regex fix in policy_engine is the actual remedy; this is the net under
+    it, for the wedging pattern nobody has found yet.
+    """
+
+    HOOK = {"tool_name": "Bash", "tool_input": {"command": "echo hi"}}
+
+    def test_timeout_blocks_and_names_the_policy(self, monkeypatch):
+        mod = _load_shadow_module()
+        monkeypatch.setenv("CABINET_POLICY_EVAL_TIMEOUT", "0.25")
+
+        def _never_returns(policy, tool_name, tool_input, officer):
+            # 12x the budget: unambiguously a breach, but small enough that a
+            # regression (bound removed) fails in seconds per policy instead of
+            # turning this arm into a multi-minute hang.
+            time.sleep(3)
+            return None
+
+        monkeypatch.setattr(mod.policy_engine, "evaluate_policy", _never_returns)
+        started = time.monotonic()
+        res = mod._engine_decision(self.HOOK, "cos")
+        elapsed = time.monotonic() - started
+
+        assert elapsed < 10, f"the bound did not fire — took {elapsed:.1f}s"
+        assert res is not None, (
+            "a timeout returned None, which drops to the weaker regex fallback "
+            "— that is the fail-open this arm exists to prevent"
+        )
+        assert res["decision"] == "block", f"FAIL-OPEN on timeout: {res}"
+        assert res["reason"].endswith("_eval_timeout"), res
+        assert "did not finish" in res.get("detail", "")
+
+    def test_budget_zero_disables_the_bound(self, monkeypatch):
+        """0 means unbounded — the pre-2026-07-27 behaviour, for a bisect."""
+        mod = _load_shadow_module()
+        monkeypatch.setenv("CABINET_POLICY_EVAL_TIMEOUT", "0")
+        assert mod._eval_budget() == 0.0
+        calls = []
+        monkeypatch.setattr(
+            mod.policy_engine, "evaluate_policy",
+            lambda *a: calls.append(1) or None,
+        )
+        res = mod._engine_decision(self.HOOK, "cos")
+        assert calls, "policies must still be evaluated with the bound disabled"
+        assert res is not None and res["decision"] == "allow"
+
+    @pytest.mark.parametrize("raw", [
+        "not-a-number", "-5", "",
+        # NON-FINITE is the degenerate value that actually bites: `inf` parses
+        # as a float, then setitimer raises OverflowError, which the blanket
+        # handler turns into a silent fall-through to the weaker regex shadow.
+        # One env var would have disabled the enforcing engine — and `0`, the
+        # documented way to disable the bound, is safer than `inf` was.
+        "inf", "-inf", "Infinity", "1e400", "nan",
+    ])
+    def test_malformed_budget_falls_back_to_the_default(self, monkeypatch, raw):
+        mod = _load_shadow_module()
+        monkeypatch.setenv("CABINET_POLICY_EVAL_TIMEOUT", raw)
+        assert mod._eval_budget() == 2.0, f"{raw!r} produced a non-default budget"
+
+    def test_absent_budget_is_the_default(self, monkeypatch):
+        mod = _load_shadow_module()
+        monkeypatch.delenv("CABINET_POLICY_EVAL_TIMEOUT", raising=False)
+        assert mod._eval_budget() == 2.0
+
+    def test_budget_is_clamped(self, monkeypatch):
+        mod = _load_shadow_module()
+        monkeypatch.setenv("CABINET_POLICY_EVAL_TIMEOUT", "99999")
+        assert mod._eval_budget() == mod._EVAL_BUDGET_MAX
+
+    def test_non_finite_budget_does_not_disable_the_engine(self, monkeypatch):
+        """The end-to-end form of the arm above: an `inf` budget must still
+        produce a real typed verdict, not a fall-through to the regex shadow."""
+        mod = _load_shadow_module()
+        monkeypatch.setenv("CABINET_POLICY_EVAL_TIMEOUT", "inf")
+        res = mod._engine_decision(
+            {"tool_name": "Bash",
+             "tool_input": {"command": "sed -i 's/a/b/' /workspace/product/f.txt"}},
+            "cpo",
+        )
+        assert res is not None, (
+            "an inf budget dropped _engine_decision to the regex fallback — "
+            "that is a one-env-var bypass of the typed enforcing engine"
+        )
+        assert res["decision"] == "block"
+
+    def test_budget_is_total_not_per_policy(self, monkeypatch):
+        """Eleven policies load; the guarantee must not be 11x the number.
+
+        Every evaluation is made slow, so a per-policy bound would spend the
+        budget once per policy before returning.
+        """
+        mod = _load_shadow_module()
+        monkeypatch.setenv("CABINET_POLICY_EVAL_TIMEOUT", "1")
+        monkeypatch.setattr(
+            mod.policy_engine, "evaluate_policy",
+            lambda *a: time.sleep(3) or None,
+        )
+        started = time.monotonic()
+        res = mod._engine_decision(self.HOOK, "cos")
+        elapsed = time.monotonic() - started
+        assert res is not None and res["decision"] == "block"
+        assert elapsed < 2.5, (
+            f"took {elapsed:.1f}s for a 1s budget — the bound is being spent "
+            f"once per policy instead of once per call"
+        )
+
+    def test_normal_evaluation_is_unaffected_by_the_bound(self, monkeypatch):
+        """The bound must be invisible to every call that answers in time."""
+        mod = _load_shadow_module()
+        monkeypatch.setenv("CABINET_POLICY_EVAL_TIMEOUT", "5")
+        res = mod._engine_decision(
+            {"tool_name": "Bash", "tool_input": {"command": "echo hello"}}, "cos"
+        )
+        assert res is not None and res["decision"] == "allow"
+        blocked = mod._engine_decision(
+            {"tool_name": "Bash",
+             "tool_input": {"command": "sed -i 's/a/b/' /workspace/product/f.txt"}},
+            "cpo",
+        )
+        assert blocked is not None and blocked["decision"] == "block"
+        assert not blocked["reason"].endswith("_eval_timeout"), blocked
+
+    def test_alarm_handler_is_restored(self, monkeypatch):
+        """A hook process must not leave a SIGALRM handler behind."""
+        mod = _load_shadow_module()
+        monkeypatch.setenv("CABINET_POLICY_EVAL_TIMEOUT", "5")
+        before = signal.getsignal(signal.SIGALRM)
+        mod._engine_decision(self.HOOK, "cos")
+        assert signal.getsignal(signal.SIGALRM) is before
+        assert signal.getitimer(signal.ITIMER_REAL)[0] == 0.0
+
+    def test_alarm_state_is_clean_after_a_TIMEOUT(self, monkeypatch):
+        """The arm above only walks the FAST path, so it cannot see the defect
+        that actually existed: teardown after a real breach.
+
+        A SIGALRM generated just before the timer is disarmed is delivered
+        afterwards. If the armed-flag did not neutralise it, that straggler
+        either escapes as an exception from an unrelated frame or — once the
+        previous disposition (SIG_DFL in production) is restored — kills the
+        process with signal 14. Both were reproduced before this arm existed.
+        """
+        mod = _load_shadow_module()
+        monkeypatch.setenv("CABINET_POLICY_EVAL_TIMEOUT", "0.2")
+        monkeypatch.setattr(
+            mod.policy_engine, "evaluate_policy",
+            lambda *a: time.sleep(3) or None,
+        )
+        before = signal.getsignal(signal.SIGALRM)
+        res = mod._engine_decision(self.HOOK, "cos")
+        assert res is not None and res["decision"] == "block"
+        assert signal.getsignal(signal.SIGALRM) is before, "handler leaked"
+        assert signal.getitimer(signal.ITIMER_REAL)[0] == 0.0, "itimer left armed"
+        assert mod._EVAL_ALARM_ARMED is False, "armed flag left set"
+        # A straggler arriving now must be swallowed, not raised and not fatal.
+        mod._raise_eval_timeout(signal.SIGALRM, None)  # must NOT raise
+
+    def test_repeated_timeouts_do_not_leak_state(self, monkeypatch):
+        """Ten breaches in a row: no accumulation, no escape, no death."""
+        mod = _load_shadow_module()
+        monkeypatch.setenv("CABINET_POLICY_EVAL_TIMEOUT", "0.1")
+        monkeypatch.setattr(
+            mod.policy_engine, "evaluate_policy",
+            lambda *a: time.sleep(2) or None,
+        )
+        for i in range(10):
+            res = mod._engine_decision(self.HOOK, "cos")
+            assert res is not None and res["decision"] == "block", f"iteration {i}"
+            assert mod._EVAL_ALARM_ARMED is False, f"iteration {i}"
+
+    def test_off_main_thread_degrades_without_crashing(self, monkeypatch):
+        """SIGALRM needs the main thread; off it the call must still answer."""
+        import threading as _t
+
+        mod = _load_shadow_module()
+        monkeypatch.setenv("CABINET_POLICY_EVAL_TIMEOUT", "2")
+        out = {}
+
+        def run():
+            try:
+                out["res"] = mod._engine_decision(self.HOOK, "cos")
+            except Exception as exc:  # noqa: BLE001
+                out["exc"] = exc
+
+        th = _t.Thread(target=run)
+        th.start()
+        th.join(timeout=60)
+        assert not th.is_alive(), "off-thread evaluation hung"
+        assert "exc" not in out, f"off-thread evaluation raised {out.get('exc')!r}"
+        assert out["res"] is not None and out["res"]["decision"] == "allow"

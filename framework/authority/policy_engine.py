@@ -1343,6 +1343,52 @@ def _check_rm_in_tokens(tokens: list[str]) -> bool:
 # Bash write-to-path detection
 # ---------------------------------------------------------------------------
 
+# A run of command text that does not cross an UNQUOTED statement separator.
+#
+# WHY THIS SHAPE AND NOT THE OBVIOUS ONE. The obvious spelling is
+#     (?:[^;&|]|'[^']*'|"[^"]*")*
+# and it is CATASTROPHIC: `[^;&|]` also matches `'` and `"`, so every quoted
+# span can be tiled either as one alternative or character-by-character. Two of
+# those stars in one expression (Pattern 2 below) gave 2**(quote pairs)
+# decompositions to explore before the engine could report "no match" — 52 of
+# 80,307 recorded officer tool calls exceeded 1.5s, and the pre-tool-use hook
+# has no time bound, so an ordinary heredoc could pin the gate at 99% CPU
+# indefinitely. Measured: a 61-byte command took 1.6s, 73 bytes exceeded 10s.
+#
+# The rewrite below matches EXACTLY THE SAME LANGUAGE. Proof: in any tiling of
+# the old star, replace every quoted span that contains no separator by its
+# individual characters (each is a non-separator, so `[^;&|]` accepts it). What
+# survives is a sequence of separator-free runs joined by quoted spans that DO
+# contain a separator — which is precisely the form below. Conversely every
+# alternative below is accepted by the old star, since the quoted alternative is
+# a subset of `'[^']*'`. So neither direction gains or loses a string: the rule
+# is not narrowed, and a quoted `;` still cannot end a statement.
+#
+# TWO ambiguities had to die, not one. The obvious rewrite kills only the first
+# and is still exponential — it shipped in this file's first draft and a hostile
+# sweep broke it in 110 bytes:
+#   1. the quoted span must be REQUIRED to contain a separator, so a command
+#      with no separator at all cannot enter the inner group even once and the
+#      star degenerates to a single linear `[^;&|]*` scan;
+#   2. the span must anchor on its FIRST separator (`[^';&|]*` before the
+#      `[;&|]`, not `[^']*`). Written the loose way, a span holding s separators
+#      has s distinct parses, and that ambiguous unit sits inside the outer star
+#      — so `sed ` + `';;'`x26 costs s**k and wedges exactly like the original.
+#      Anchoring on the first separator leaves each span with ONE parse and
+#      matches the same set, since a span contains a separator iff it contains a
+#      first one.
+#
+# NOTE ON ATOMIC GROUPS: `(?>...)`/`*+` are NOT available. The hook invokes bare
+# `python3`, which is 3.9.6 on the deployment target (verified), and 3.9 raises
+# `re.error: unknown extension ?>`. They would also be WRONG here even where
+# supported — measured, not assumed: an atomic star cannot give ground, and both
+# runs must, so that the flag and then the path can match after them. Emulating
+# one with the 3.9-compatible `(?=(X))\1` idiom on the sibling `perl` pattern
+# made `perl-i/workspace/a/` stop matching — i.e. it silently NARROWED an
+# enforcing safety rule, which is the failure this whole comment exists to
+# prevent.
+_STMT_RUN = r"[^;&|]*(?:(?:'[^';&|]*[;&|][^']*'|\"[^\";&|]*[;&|][^\"]*\")[^;&|]*)*"
+
 # Patterns that indicate a bash command writes to a path
 _WRITE_PATTERNS = [
     # Pattern 1: redirect stdout/stderr to path (>, >>, >|)
@@ -1350,7 +1396,7 @@ _WRITE_PATTERNS = [
     # Pattern 2: sed -i (inplace edit) with path as file arg
     # Single-dash -i (with optional suffix like .bak): -i, -i.bak, -Ei, -ni
     # Long form --in-place only. Excludes --posix, --regexp-extended etc.
-    r"sed\b(?:[^;&|]|'[^']*'|\"[^\"]*\")*(?:(?<![-])-[a-zA-Z]*i(?:\.[^\s]*)?(?:\s|$)|--in-place(?:=[^\s]*)?)(?:[^;&|]|'[^']*'|\"[^\"]*\")*\s[\"']?{path}",
+    r"sed\b" + _STMT_RUN + r"(?:(?<![-])-[a-zA-Z]*i(?:\.[^\s]*)?(?:\s|$)|--in-place(?:=[^\s]*)?)" + _STMT_RUN + r"\s[\"']?{path}",
     # Pattern 3: tee writing to path (exclude input redirects: < before path)
     r"tee\b[^;&|]*(?<!<)\s[\"']?{path}",
     # Pattern 4: cp/mv/rsync with path as last arg (destination)
@@ -1362,6 +1408,19 @@ _WRITE_PATTERNS = [
     # Pattern 6: patch with path as file arg (exclude input redirects)
     r"patch\b[^;&|]*(?<!<)\s[\"']?{path}",
     # Pattern 7: perl -i (inplace edit) with path
+    # KNOWN RESIDUAL (RES-019): this one still backtracks superlinearly. The
+    # `[^\s]*` after the `i` and the `[^;&|]*` after it overlap on every
+    # non-space non-separator character, so their split point is free, and
+    # `re.search` restarts at every `perl`. Measured degree ~4: 601 bytes of
+    # `perl-i` repeats costs 2.5s and 1.2KB exceeds 5s. POLYNOMIAL, not
+    # exponential — unlike the sed pattern above it cannot be driven to hours
+    # from 110 bytes, and the pumped shapes are adversarial rather than
+    # accidental. NOT fixed in the same pass deliberately: the obvious repair
+    # (atomic-emulating the free star with the 3.9-compatible `(?=(X))\1`)
+    # was tried and NARROWED the rule — `perl-i/workspace/a/` stopped matching
+    # — and a fast matcher that misses a real write is a worse defect than a
+    # slow one. Contained meanwhile by the fail-closed evaluation timeout in
+    # cabinet/scripts/policy-shadow.py.
     r"perl\b[^;&|]*(?:-[^\sIi]*i[^\s]*|--in-place(?:=[^\s]*)?)[^;&|]*\s*[\"']?{path}",
     # Pattern 8: tar extract/create to path via -C or --directory
     # Handles: -C /path, -C/path (no space), -xC /path (bundled), --directory=/path,

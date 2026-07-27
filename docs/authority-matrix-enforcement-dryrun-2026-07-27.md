@@ -542,6 +542,61 @@ matches (weakening an enforcing safety rule) or needs atomic groups, which the
 system interpreter (3.9.6) does not have. It needs its own wave with an
 equivalence proof. Backlogged.
 
+> **CLOSED 2026-07-27** (`fix/hook-redos`). Both halves of the constraint held
+> and neither needed to be relaxed — no safety rule was narrowed and no atomic
+> group was used (they are unavailable under the hook's `python3`, 3.9.6, and
+> would have been the wrong tool anyway: both runs must backtrack for the flag
+> and path to match after them).
+>
+> **There were TWO ambiguities, not one, and the first attempt only killed one
+> of them.** Requiring the quoted alternative to CONTAIN a separator removes the
+> `2**(quote pairs)` tiling — but written the loose way (`'[^']*[;&|][^']*'`) a
+> span holding *s* separators still has *s* parses, and that unit sits inside
+> the outer star. That draft passed the original reproducer and every arm built
+> from it, then died in 110 bytes on `sed ` + `';;'`x26 under a hostile sibling
+> sweep, along with realistic shapes like `sed -i.bak -e 's/;;/;/g'`x16 (245
+> bytes) and a 635-byte multi-line agent script. The landed form anchors each
+> span on its FIRST separator, leaving one parse. Worth recording because the
+> first bench used ONE separator per span — exactly the case that stays fast —
+> so the arm proved nothing; the repo tests now pump both shapes, and neither
+> pump alone catches both defects (master fails only the first, the draft only
+> the second).
+>
+> Equality proved in both directions and checked by exhaustive enumeration
+> (6,725,601 strings over a class-complete alphabet, plus the full pattern over
+> 41,371 token compositions) and by replaying all 80,307 recorded calls through
+> the real `evaluate_policy`. The smallest corpus reproducer drops from 2.5s to
+> 0.4ms, the largest from >30s to 0.2ms.
+>
+> **What is NOT closed.** The sibling `perl -i` pattern backtracks
+> superlinearly too — degree ~4, 601 bytes costs 2.5s and 1.2KB exceeds 5s.
+> Polynomial rather than exponential, and its pump shapes are adversarial, but
+> it is real and is now registered as **RES-019** rather than left in this
+> report. The obvious repair was tried and rejected on evidence: emulating an
+> atomic group made `perl-i/workspace/a/` stop matching, i.e. it silently
+> narrowed the rule. Three lesser siblings (the brace expander, and the
+> `_regex_decision` fallback's rm and write-verb patterns) are quadratic-to-cubic
+> and need 2KB-120KB; they are named in RES-019 too.
+>
+> A FAIL-CLOSED evaluation timeout was added in `policy-shadow.py` as defence in
+> depth — it blocks with a named reason rather than falling through to the
+> weaker regex shadow, because that fallback would turn any slow pattern into a
+> policy-BYPASS primitive rather than merely a slow gate.
+>
+> **EVERYTHING HERE IS CLOSED IN THE REPO ONLY.** Both changed files are
+> germline — `cabinet/scripts/policy-shadow.py` AND
+> `framework/authority/policy_engine.py` are both in the schg set — so the
+> ReDoS fix itself, not merely the timeout, reaches the box only under a Captain
+> unlock/relock ceremony (§5.5). Until that window the live hook still carries
+> the exponential pattern and still has no time bound. §6.3's germline drift is
+> unaffected by this landing, and is the reason that ceremony needs care.
+>
+> One axis of §6.1 also remains OPEN and is declared as RES-019(a): the `sed`
+> pattern is still CUBIC in the flag-alternation split point times the number of
+> `sed` occurrences — 2.8KB costs ~1s, 4.9KB ~5s. That axis is untouched by this
+> fix and measures within 3% of master, so it is not a regression; it is simply
+> not what was closed, and saying otherwise would overstate the landing.
+
 ### 6.2 Content-vs-action confusion in the ceiling classifier — precision
 
 §4.6. Harmless while shadow-only; blocking the moment anything enforces. The
