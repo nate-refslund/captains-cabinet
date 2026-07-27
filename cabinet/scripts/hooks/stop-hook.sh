@@ -5,11 +5,15 @@
 #
 # STATUS (audit #13, germline window 2 2026-07-07): this script is wired to
 # NO hook event — .claude/settings.json routes Stop -> session-stop.sh, which
-# now owns the LIVE cost-ledger parse (section 2 below was copied there;
-# rate table provenance stays here). Container-era paths in sections 1/3
+# owns the LIVE cost ledger. Container-era paths in sections 1/3
 # (/opt/founders-cabinet) are dead on the native Mac deployment. Kept as
 # reference until the cost surface goes native (OTel / --max-budget-usd);
 # do not wire this file to an event without deduplicating session-stop.sh.
+#
+# NO RATES LIVE HERE ANY MORE (2026-07-26). Section 2 used to carry its own
+# copy of the model rate table; it was 5x wrong on cached tokens and was
+# DELETED, not fixed. Pricing lives only in framework/cost/meter.py. See the
+# dead-code marker in section 2 before touching or reviving anything below.
 
 HOOK_INPUT=$(cat)
 OFFICER="${OFFICER_NAME:-unknown}"
@@ -51,23 +55,36 @@ if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
     CACHE_READ=$(echo "$LAST_ENTRY" | jq -r '.usage.cache_read_input_tokens // 0' 2>/dev/null)
     MODEL=$(echo "$LAST_ENTRY" | jq -r '.model // "unknown"' 2>/dev/null)
 
-    # Calculate dollar cost in microdollars (millionths of a dollar) for integer math
-    # $/MTok = microdollars per token. Cache prices are fractional, so scale via nanodollars.
-    # Fable 5:   $10/MTok in, $50/MTok out, $12.50/MTok cache_write (1.25x in, 5m TTL), $1.00/MTok cache_read (0.1x in)
-    # Opus 4.6:  $15/MTok in, $75/MTok out, $3.75/MTok cache_write, $0.30/MTok cache_read
-    # Sonnet 4.6: $3/MTok in, $15/MTok out, $0.75/MTok cache_write, $0.06/MTok cache_read
-    case "$MODEL" in
-      *fable*)
-        COST_MICRO=$(( INPUT_TOKENS * 10 + OUTPUT_TOKENS * 50 + CACHE_WRITE * 12500 / 1000 + CACHE_READ * 1000 / 1000 ))
-        ;;
-      *opus*)
-        COST_MICRO=$(( INPUT_TOKENS * 15 + OUTPUT_TOKENS * 75 + CACHE_WRITE * 3750 / 1000 + CACHE_READ * 300 / 1000 ))
-        ;;
-      *)
-        # Default to Sonnet pricing
-        COST_MICRO=$(( INPUT_TOKENS * 3 + OUTPUT_TOKENS * 15 + CACHE_WRITE * 750 / 1000 + CACHE_READ * 60 / 1000 ))
-        ;;
-    esac
+    # ═══════════════════════════════════════════════════════════════════════
+    # ☠️  DEAD CODE — DO NOT COPY, DO NOT RE-WIRE  ☠️   (2026-07-26)
+    #
+    # The rate table that used to sit here has been DELETED, not corrected.
+    # It was wrong in three ways at once and every one of them under-reported:
+    #   * opus/sonnet cache_write was charged at 0.25x the input rate and
+    #     cache_read at 0.02x, instead of the published 1.25x and 0.10x — a 5x
+    #     under-report on every cached token. The fable arm was right, which is
+    #     how the other two survived review;
+    #   * there was no 1-hour cache TTL (2.0x input) at all, and in real
+    #     transcripts essentially every cache write is the 1h flavour;
+    #   * an unrecognised model fell through to Sonnet, the CHEAPEST row.
+    # Combined with this file's `tail -1` (one API response billed per turn
+    # instead of one per tool round-trip), the shipped meter under-reported by
+    # a MEASURED 16.0x across 279 real transcripts.
+    #
+    # PRICING NOW LIVES IN EXACTLY ONE PLACE: framework/cost/meter.py, where
+    # the cache rates are DERIVED from the input rate by multiplier so the 5x
+    # error is not expressible, and an unknown model resolves to the most
+    # EXPENSIVE known rate. The live Stop hook is
+    # cabinet/scripts/hooks/session-stop.sh, which calls
+    # `python3 -m framework.cost.record_turn`. This file is wired to NO hook
+    # event (see the header) — re-wiring it would double-count every turn AND
+    # resurrect the mispricing.
+    #
+    # COST_MICRO is left at 0 deliberately: this block is unreachable in the
+    # live deployment, and a zero is visibly wrong to anyone who does reach it,
+    # whereas a plausible-looking number is how a 16x error hides for months.
+    # ═══════════════════════════════════════════════════════════════════════
+    COST_MICRO=0
 
     # Store context window percentage for health dashboard
     CONTEXT_TOKENS=$(( INPUT_TOKENS + CACHE_READ + CACHE_WRITE ))

@@ -19,6 +19,15 @@ TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN not set}"
 OFFICER="${OFFICER_NAME:-unknown}"
 CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 
+# LANE METER (2026-07-26). Two paid vendors run from this script — Haiku for
+# naturalization and ElevenLabs for the speech itself — and neither touches
+# the Claude Code Stop hook. Counting only; see cabinet/scripts/lib/cost-lane.sh.
+# `unknown` is deliberately passed through: meter.safe_principal maps it to the
+# honest `unattributed` bucket rather than to a wrong officer.
+COST_PRINCIPAL="${CABINET_COST_PRINCIPAL:-$OFFICER}"
+# shellcheck source=/dev/null
+. "$CABINET_ROOT/cabinet/scripts/lib/cost-lane.sh" 2>/dev/null || true
+
 # Read voice config from product.yml
 CONFIG_FILE="$CABINET_ROOT/instance/config/product.yml"
 
@@ -165,6 +174,15 @@ ${input}"
       }]
     }" 2>/dev/null)
 
+  # PAID CALL COUNTED (lane `api_direct`). Priced from the response's own usage
+  # block by framework/cost/meter.py — the ONE rate table — so this site never
+  # grows a second copy of the multipliers. Recorded before the text is
+  # extracted, so a call that returns an error envelope still shows up as a
+  # call (unpriced) rather than vanishing.
+  printf '%s' "$response" | cost_lane_record --lane api_direct \
+    --principal "$COST_PRINCIPAL" --response - --response-kind anthropic \
+    2>/dev/null || true
+
   local naturalized
   naturalized=$(echo "$response" | jq -r '.content[0].text // empty' 2>/dev/null)
 
@@ -200,6 +218,16 @@ HTTP_CODE=$(curl -s -w "%{http_code}" -o "$TMPFILE" \
       \"speed\": ${SPEED}
     }
   }")
+
+# PAID CALL COUNTED (lane `tts`). Unpriced by design — ElevenLabs has no row in
+# meter.RATES and guessing one would be a lie. `units` is CHARACTERS, which is
+# the unit ElevenLabs actually bills TTS in, counted only on a 200: a rejected
+# request synthesizes nothing, so it is a call with no units rather than
+# phantom characters. Recorded BEFORE the error exit so failures are counted too.
+TTS_UNITS=0
+[ "$HTTP_CODE" = "200" ] && TTS_UNITS=${#TEXT}
+cost_lane_record --lane tts --principal "$COST_PRINCIPAL" \
+  --units "$TTS_UNITS" 2>/dev/null || true
 
 if [ "$HTTP_CODE" != "200" ]; then
   echo "ElevenLabs API error (HTTP $HTTP_CODE)" >&2

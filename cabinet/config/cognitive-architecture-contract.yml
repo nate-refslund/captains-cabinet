@@ -184,6 +184,20 @@ temporary_allowances:
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: COG-7 compaction, or the attention term folds into the per-instrument objectives view when the legacy OVI composite retires on its ruled SUNSET path
+  - phase: spend-meter-uncapped
+    budget: framework_production_modules
+    additional: 4
+    reason: the cabinet's single cost meter — framework/cost/ (__init__, meter.py with the one rate table + transcript parser + lane recorder, record_turn.py the Stop-hook CLI, record_lane.py the non-session lane CLI). Replaces pricing arithmetic that was duplicated inline across two shell hooks, a shell report and a TypeScript advisor and had drifted in every copy; the shipped meter under-reported by a MEASURED 16.0x across 279 real transcripts. Four modules is the whole package and its net add, not a ceiling. EXACT measured running total (243 vs 239 base), 2026-07-27, via cognitive-architecture-census.py
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: COG-7 compaction folds the meter into the projection kernel, or the metering surface is absorbed by native platform cost telemetry
+  - phase: spend-meter-uncapped
+    budget: framework_production_noncomment_lines
+    additional: 778
+    reason: same framework/cost/ package as the row above — rate table with cache prices DERIVED from the input rate by published multiplier (so the 5x mispricing that shipped is not expressible), message.id dedupe (transcripts repeat one entry per content block; 821 entries vs 352 real API responses measured), per-session watermark so each response bills exactly once across Stop events, positive-confirmation Redis writes (redis-cli in stdin mode exits 0 with empty stdout when the server is down), and the ledger heartbeat that makes a dead meter distinguishable from a zero-spend day. EXACT measured running total (68104 vs 67326 base), 2026-07-27, via cognitive-architecture-census.py
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: COG-7 compaction folds the meter into the projection kernel, or the metering surface is absorbed by native platform cost telemetry
 ownership:
   authoritative_state: domain_transaction
   cross_domain_delivery: transactional_outbox
