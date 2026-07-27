@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 0305f77547e14563c1a8505c14336ec4e8993fbc133217ce81136f7e4c5c4ce5
+Reviewed-Scope-Digest: 5615aae1867d54024ac851578e7970611e55ff7a2860bd83d7d879bb5f10f0aa
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
@@ -557,5 +557,31 @@ artifact; both landings' notes above are preserved verbatim, neither overwritten
 carried in by that merge: the census contract (its attention allowance) — no COG-4 implementation
 path, so this stays a scope-membership re-bind. `verify-cognitive-phase4.sh` exits 0 on the merged
 tree.)
+
+(RE-BOUND BY THE CAPTAIN-DATES LANDING, 2026-07-27 — 0305f77547e14563c1a8505c14336ec4e8993fbc133217ce81136f7e4c5c4ce5
+-> the value above. EXACTLY TWO in-scope paths moved, verified by intersecting the resolved 85-entry
+scope with `git diff --name-only origin/master..HEAD` rather than by reading the diff:
+  (1) `cabinet/config/cognitive-architecture-contract.yml` — one new
+      `framework_production_noncomment_lines` allowance row for the dates store (+208 measured; the
+      env.py resolver family plus the morning_synthesis briefing leg, ZERO new modules), re-measured
+      OVER THE MERGED TREE at 67883 vs 67675 base, still observed==max with zero headroom.
+  (2) `cabinet/scripts/egg-export-manifest.txt` — the dates store's `delete` +
+      `expect-present` pair, the same shape the availability dial added.
+NO COG-4 implementation path moved: not `framework/projection`, `framework/scheduler`,
+`framework/organs`, no organ manifest, no runner, no measurement surface, no fixture. The behavior
+this review's verdict covers is byte-untouched, so this is a SCOPE-MEMBERSHIP re-bind, not a
+behavior-delta one.
+WHAT WAS NOT DONE, stated plainly: no fresh frozen COG-4 panel ran. What DID run on the merged bytes:
+`verify-cognitive-phase4.sh` green end-to-end after this re-bind; census PASS at 54/50/67883
+observed==max; layer-sep new=0; state-persistence 0 UNACCOUNTED; docs-track-code GREEN; A13 ledger
+parity GREEN (353/353); golden evals 30/30 (EVAL-027 included, extended by this landing and shown RED
+against pre-change state first); `framework/` 6653 passed / 26 skipped / 1 failed and
+`cabinet/scripts/tests` 4727 passed / 28 skipped / 1 failed — the framework failure being the known
+pre-existing `test_retro_shim.py::test_reexports_constants` (a locally-installed pipe constant CI does
+not have), and the cabinet one a wall-clock latency bound over an ephemeral Postgres cluster that
+passes in isolation under no load.
+SIBLING BINDERS unchanged: COG-0/1/2/3 were already BLOCK on pre-change master and are NOT re-bound
+here. This commit edits ONLY the digest-excluded review artifact, so the digest it records is stable
+under its own landing — verified by recomputing after the edit.)
 
 Verdict: PASS
