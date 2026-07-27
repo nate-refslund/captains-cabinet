@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: e68adad9456b80394270fa6354b65d6f4a5de10162235232b787571e1e3e2b0a
+Reviewed-Scope-Digest: 1ed2f6c125697ed3654fffe2afb53ea0a8faa3bf7462259d0b53b974c3f9eabb
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
@@ -617,3 +617,24 @@ lines, observed==max with zero headroom, the dates row still +208. `verify-cogni
 green end-to-end on the merged tree after this re-bind.)
 
 Verdict: PASS
+
+MOVED BY THE MATRIX-CLASS-MAPPING-PIN LANDING (2026-07-27,
+e68adad9456b80394270fa6354b65d6f4a5de10162235232b787571e1e3e2b0a -> the value
+above). MECHANICAL-DELTA re-bind: exactly ONE in-scope path moved,
+`cabinet/config/cognitive-architecture-contract.yml`, and the only change to it
+is one appended `temporary_allowances` row (`matrix-class-mapping-pin`,
+framework_production_noncomment_lines +65, 68661 -> 68726). No reviewed BEHAVIOUR
+byte changed: the branch's executable changes are all in
+`framework/authority/{matrix,classifier,deploy_classifier}.py` and
+`framework/authority/tests/test_matrix.py`, none of which is in this scope
+(verified by intersecting `git diff --name-only origin/master...HEAD` against
+the tool's resolved EXPECTED_SCOPE, not by reading the diff).
+
+RE-MEASURED, not assumed: `cognitive-architecture-census.py --check` PASS at
+observed == max (68726 <= 68726), and the full `verify-cognitive-phase4.sh`
+twin runs end-to-end green on this commit. The digest was recomputed over the
+COMMITTED tree and folded into the SAME commit — this artifact is excluded from
+its own scope, so the amend is stable under itself. NOT done: no COG-0/1/2/3
+twin was re-bound (frozen-historical, already BLOCK by design), and no prose
+section of this review was edited — no reviewer saw new bytes, because none of
+the reviewed bytes changed behaviour.

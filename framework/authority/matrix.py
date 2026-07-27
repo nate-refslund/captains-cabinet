@@ -73,7 +73,11 @@ _FRAMEWORK_ROOT = Path(__file__).resolve().parents[2]
 if str(_FRAMEWORK_ROOT) not in sys.path:
     sys.path.insert(0, str(_FRAMEWORK_ROOT))
 
-from framework.authority.classifier import ACTION_TYPES, AMBIGUOUS  # noqa: E402
+from framework.authority.classifier import (  # noqa: E402
+    ACTION_TYPES,
+    AMBIGUOUS,
+    CEILING_CLASS_ACTION_TYPES,
+)
 from framework.learning.capability_gaps import HARD_CEILING_TOUCHES  # noqa: E402
 
 
@@ -435,6 +439,7 @@ def _validate_policy(policy: dict[str, Any]) -> None:
 
     _validate_risk_classes(policy["risk_classes"])
     hard_ceiling = _validate_hard_ceiling(policy["hard_ceiling"])
+    _validate_ceiling_class_mapping(policy["risk_classes"], hard_ceiling)
     _validate_ceiling_map(policy["ceiling_frozenset_map"], hard_ceiling)
     _validate_verdicts(policy["verdicts"], hard_ceiling)
     # RECONCILE 2026-07-05: kept both — HEAD's trust-inversion floor check
@@ -499,6 +504,64 @@ def _validate_hard_ceiling(hard_ceiling: Any) -> set[str]:
             f"hard_ceiling references unknown risk_classes: {sorted(unknown)}"
         )
     return hc
+
+
+def _validate_ceiling_class_mapping(
+    risk_classes: Any, hard_ceiling: set[str]
+) -> None:
+    """THE CI INVARIANT #6 — the hard-ceiling class MAPPING is pinned, not just
+    the fact that every action_type is mapped exactly ONCE.
+
+    WHY: the gate's ceiling short-circuit is risk_class-KEYED
+    (`policy_engine._eval_authority_matrix` step 2, `risk_class in
+    hard_ceiling`), so "mapped exactly once" left a fail-open in the enforcer
+    itself — TWO, both reproduced against pre-change code:
+
+      a. relocate the KIND — moving `external_email` off `external_comms` onto
+         a non-ceiling row validated clean, and a real send then rode the
+         ordinary confidence path (onto `draft_only`/`read_only_dispatch` it
+         reached the notify_after allow-branch: ALLOW at `unmeasured`);
+      b. relocate the CEILING — leaving the kind where it is but re-pointing
+         which ROW NAME `hard_ceiling` + the frozenset map carry also
+         validated clean, and also allowed.
+
+    Both close against ONE declared source, `CEILING_CLASS_ACTION_TYPES`
+    (values derived from the classifier sets that already exist — no second
+    list to drift): the ceiling class NAMES must equal `hard_ceiling` [b], and
+    each ceiling row's action_types must equal its declared set [a].
+
+    Fail-closed at every degenerate end — an empty declared set, an absent or
+    non-list `action_types`, a missing row, or a malformed `risk_classes` all
+    RAISE rather than compare vacuously.
+    """
+    if not isinstance(risk_classes, dict):
+        raise MatrixValidationError("risk_classes must be a mapping")
+    if set(CEILING_CLASS_ACTION_TYPES) != hard_ceiling:
+        raise MatrixValidationError(
+            "hard_ceiling must be exactly the declared ceiling classes "
+            f"{sorted(CEILING_CLASS_ACTION_TYPES)}, got {sorted(hard_ceiling)} "
+            "— the gate's ceiling short-circuit is risk_class-keyed, so moving "
+            "which row carries a ceiling would silently un-gate it"
+        )
+    for rc, declared in CEILING_CLASS_ACTION_TYPES.items():
+        if not declared:
+            raise MatrixValidationError(  # never assert against an empty set
+                f"declared ceiling action_types for '{rc}' are empty — the "
+                f"mapping pin would be vacuous"
+            )
+        row = risk_classes.get(rc)
+        ats = row.get("action_types") if isinstance(row, dict) else None
+        if not isinstance(ats, list) or not ats:
+            raise MatrixValidationError(
+                f"risk_classes.{rc}.action_types must be a non-empty list "
+                f"(hard-ceiling row)"
+            )
+        if frozenset(ats) != declared:
+            raise MatrixValidationError(
+                f"risk_classes.{rc}.action_types must be exactly "
+                f"{sorted(declared)}, got {sorted(set(ats))} — a hard-ceiling "
+                f"kind may never be relocated off its ceiling row"
+            )
 
 
 def _validate_ceiling_map(cmap: Any, hard_ceiling: set[str]) -> None:

@@ -48,14 +48,18 @@ _FRAMEWORK_ROOT = Path(__file__).resolve().parents[2]
 if str(_FRAMEWORK_ROOT) not in sys.path:
     sys.path.insert(0, str(_FRAMEWORK_ROOT))
 
-from framework.authority.classifier import classify_action  # noqa: E402
+from framework.authority.classifier import (  # noqa: E402
+    _DEPLOY_PROD as _PROD_ACTION_TYPES,
+    classify_action,
+)
 
 # The two verdict strings this classifier may return.
 AUTO = "auto"
 PROPOSE_ONLY = "propose_only"
 
-# Action_types that mean a PROD deploy target (the never-auto frozenset rows).
-_PROD_ACTION_TYPES = frozenset({"vercel_deploy_prod", "git_push_main"})
+# Action_types that mean a PROD deploy target (the never-auto frozenset rows)
+# are imported above from the classifier's _DEPLOY_PROD — ONE declared source,
+# shared with the authority matrix's deploy_prod ceiling pin.
 
 # Tokens an explicit `target` field may carry to mean production.
 _PROD_TARGET_TOKENS = ("prod", "production", "live", "main", "master")

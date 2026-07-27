@@ -68,11 +68,11 @@ _CALENDAR_WRITE = {"calendar_event_create"}
 # propose-first (internal_comms's graduated verdict is dormant per M1).
 _INTERNAL_COMMS = {"internal_message", "internal_email", "officer_dispatch"}
 _EXTERNAL_COMMS = {"external_message", "external_email"}
-# deploy
-_DEPLOY = {
-    "vercel_deploy_preview", "git_push_nonmain",
-    "vercel_deploy_prod", "git_push_main",
-}
+# deploy — split prod/nonprod at the SOURCE (the authority matrix's
+# deploy_prod ceiling row is pinned against _DEPLOY_PROD; deploy_classifier
+# imports it as _PROD_ACTION_TYPES rather than re-declaring the pair).
+_DEPLOY_PROD = frozenset({"vercel_deploy_prod", "git_push_main"})
+_DEPLOY = {"vercel_deploy_preview", "git_push_nonmain"} | _DEPLOY_PROD
 # spend (ceiling)
 _SPEND = {"purchase", "provision_paid", "billing"}
 # secrets (ceiling)
@@ -85,6 +85,22 @@ _CREDENTIALS_GRANT = {"oauth_grant", "token_grant"}
 # The execution-surface ceiling action_types that MUST be positively
 # classified (never the AMBIGUOUS backstop) [FIX-7].
 CEILING_ACTION_TYPES = frozenset(_SECRETS | _NETWORK_WRITE | _CREDENTIALS_GRANT)
+
+# THE ONE DECLARED SOURCE for which action_types each hard-ceiling risk_class
+# owns. The authority matrix pins its class mapping against THIS
+# (matrix.py:_validate_ceiling_class_mapping), closing the fail-open where a
+# send/deploy/spend kind could be relocated off its ceiling row and still
+# validate: the gate's ceiling short-circuit is risk_class-keyed, so a
+# relocated kind would ride the ordinary confidence path. Values are DERIVED
+# from the sets above — never a second hand-maintained list to drift.
+CEILING_CLASS_ACTION_TYPES = {
+    "external_comms": frozenset(_EXTERNAL_COMMS),
+    "deploy_prod": frozenset(_DEPLOY_PROD),
+    "spend": frozenset(_SPEND),
+    "secrets": frozenset(_SECRETS),
+    "network_write": frozenset(_NETWORK_WRITE),
+    "credentials_grant": frozenset(_CREDENTIALS_GRANT),
+}
 
 # Every valid action_type the classifier can return.
 ACTION_TYPES = frozenset(

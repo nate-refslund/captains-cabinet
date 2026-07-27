@@ -343,7 +343,24 @@ shipped no config naming `act_then_tell`, because that token resolves to
 `guardian` and would have been a setting that lies. That remains true: nothing
 in this landing added such a config, and `POSTURES` is unchanged.
 
-## 9. Open item found while landing — recorded, NOT closed
+## 9. Open item found while landing — recorded, then CLOSED 2026-07-27
+
+> **CLOSED 2026-07-27** on `fix/matrix-class-mapping-pin` — the threshold
+> decision below was taken rather than deferred. `matrix.py` gained invariant
+> #6 (`_validate_ceiling_class_mapping`), which pins the whole hard-ceiling
+> class mapping against ONE declared source
+> (`classifier.CEILING_CLASS_ACTION_TYPES`, derived from the ceiling sets the
+> classifier already owns). Executing the hole first turned up a **second**
+> variant the write-up below did not have: leaving the kinds where they are and
+> re-pointing which ROW NAME `hard_ceiling` carries also validated clean, and
+> that one reached a full **ALLOW** at the gate. Both are closed; the arms go
+> RED against pre-change code. The census cost was paid honestly as a
+> `temporary_allowances` row of **+65** lines (`matrix-class-mapping-pin`), not
+> bought by reformatting docstrings into comments and not by raising a
+> threshold. The rest of this section is kept verbatim as the record of what
+> was known at the time.
+
+
 
 Writing the §5a mutation sensors surfaced a **pre-existing gap in the
 validator**, present identically on master before this landing and unrelated to

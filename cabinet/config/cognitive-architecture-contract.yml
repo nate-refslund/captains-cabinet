@@ -205,6 +205,13 @@ temporary_allowances:
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: the dates resolver folds into the projection kernel alongside the availability dial, or COG-7 compaction
+  - phase: matrix-class-mapping-pin
+    budget: framework_production_noncomment_lines
+    additional: 65
+    reason: 'closes a fail-open in the ENFORCER itself, reproduced by execution on master before it was fixed: validate_matrix pinned that every action_type maps to exactly ONE risk_class but never to WHICH one, while the gate''s hard-ceiling short-circuit is risk_class-KEYED (policy_engine._eval_authority_matrix step 2). Relocating external_email off the external_comms ceiling row onto draft_only or read_only_dispatch validated clean AND the gate then returned ALLOW for a real outbound send at unmeasured confidence; separately, re-pointing which ROW NAME carries the ceiling also validated clean and also allowed. NO new module — framework/authority/matrix.py gains _validate_ceiling_class_mapping (invariant #6, +57) and framework/authority/classifier.py exports CEILING_CLASS_ACTION_TYPES derived from the ceiling sets it already owns (+6, incl. splitting _DEPLOY_PROD out of _DEPLOY so deploy_prod has a declared source); framework/authority/deploy_classifier.py imports that set instead of re-declaring the prod pair (+2), so the fix REMOVES a hand-maintained duplicate rather than adding a fourth list. Docstrings are counted, not reformatted into # comments to duck the counter. EXACT measured running total (68726 vs 68661 base at 856ef494, re-measured after the captain-dates merge), 2026-07-27, via cognitive-architecture-census.py'
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: COG-7 compaction folds the authority validator into the projection kernel, or the ceiling mapping becomes structurally unrepresentable (risk_class carried as a typed attribute of the action_type enum rather than as a separate YAML mapping, removing the relocation channel entirely)
 ownership:
   authoritative_state: domain_transaction
   cross_domain_delivery: transactional_outbox

@@ -534,17 +534,16 @@ class TestDraftWideningDidNotMoveTheCeilings:
         # for as long as it MAPS to a ceiling class. Every outbound-comms kind
         # the classifier can emit must therefore sit on a hard-ceiling row.
         #
-        # KNOWN VALIDATOR GAP (pre-existing, present identically on master —
-        # this assertion is the sensor that covers it): validate_matrix checks
-        # that every action_type is mapped exactly once, but NOT which class it
-        # is mapped to, so relocating `external_email` into a non-ceiling class
-        # validates clean and would reach the notify_after allow-branch. Fixing
-        # that in the validator needs new framework production lines against a
-        # census budget already at its ceiling, so it is recorded in the CG-35
-        # amendment doc as an open item rather than silently closed here. A CI
-        # test is a real sensor for it: the floor is germline + schg-locked and
-        # load_policies REFUSES any preset/instance authority_matrix, so a
-        # direct edit of this file is the only channel, and it lands here.
+        # THAT VALIDATOR GAP IS NOW CLOSED (2026-07-27, invariant #6 —
+        # matrix.py:_validate_ceiling_class_mapping + §12 below). It was real:
+        # validate_matrix pinned that every action_type maps exactly once but
+        # NOT to WHICH class, so relocating `external_email` into a non-ceiling
+        # class validated clean and reached the notify_after allow-branch. The
+        # validator now pins the whole ceiling mapping against ONE declared
+        # source, so a relocated send kind no longer loads at all. This
+        # assertion stays as the independent sensor: it reads the SHIPPED
+        # floor, so it would still catch a drift that somehow satisfied the
+        # validator.
         from framework.authority.classifier import _EXTERNAL_COMMS
         # Not vacuous at the degenerate end: an empty/shrunk egress set would
         # make the loop below assert nothing at all.
@@ -580,5 +579,173 @@ class TestDraftWideningDidNotMoveTheCeilings:
         d = copy.deepcopy(loaded)
         pol = M.matrix_policy(d)
         pol["postures"]["sovereign"]["verdicts"]["draft_only"]["demote"] = "notify_after"
+        with pytest.raises(M.MatrixValidationError):
+            M.validate_matrix(d)
+
+
+# ---------------------------------------------------------------------------
+# 12. INVARIANT #6 — the hard-ceiling class MAPPING is pinned
+# ---------------------------------------------------------------------------
+# Closes a fail-open in the ENFORCER itself, found on master and reproduced by
+# execution before it was fixed. `_validate_risk_classes` pinned that every
+# action_type maps exactly ONCE but never to WHICH class, while the gate's
+# ceiling short-circuit is risk_class-KEYED — so a hard-ceiling kind could be
+# relocated onto an ordinary row and still validate clean. Two distinct
+# variants existed; both are armed below, and both go RED against pre-change
+# code (verified with __pycache__ purged).
+
+class TestCeilingClassMappingPinned:
+    # the six ceiling rows × the kind used to probe each one
+    RELOCATABLE = [
+        ("external_comms", "external_email"),
+        ("external_comms", "external_message"),
+        ("deploy_prod", "git_push_main"),
+        ("deploy_prod", "vercel_deploy_prod"),
+        ("spend", "purchase"),
+        ("secrets", "secret_write"),
+        ("network_write", "mcp_post"),
+        ("credentials_grant", "oauth_grant"),
+    ]
+
+    def test_the_declared_source_is_not_vacuous(self):
+        # The pin compares the YAML against CEILING_CLASS_ACTION_TYPES, so an
+        # emptied or shrunk declared source would make every arm below assert
+        # nothing. Pin the source itself at the degenerate end.
+        from framework.authority.classifier import CEILING_CLASS_ACTION_TYPES
+        assert set(CEILING_CLASS_ACTION_TYPES) == _HARD_CEILING_ROWS
+        for name, declared in CEILING_CLASS_ACTION_TYPES.items():
+            assert declared, name
+            assert declared <= set(ACTION_TYPES) - {AMBIGUOUS}, name
+        assert CEILING_CLASS_ACTION_TYPES["external_comms"] == {
+            "external_message", "external_email"}
+        assert CEILING_CLASS_ACTION_TYPES["deploy_prod"] == {
+            "vercel_deploy_prod", "git_push_main"}
+
+    def test_shipped_floor_matches_the_declared_mapping(self, loaded):
+        from framework.authority.classifier import CEILING_CLASS_ACTION_TYPES
+        rcs = M.matrix_policy(loaded)["risk_classes"]
+        for name, declared in CEILING_CLASS_ACTION_TYPES.items():
+            assert set(rcs[name]["action_types"]) == declared, name
+
+    @pytest.mark.parametrize("ceiling_row,kind", RELOCATABLE)
+    @pytest.mark.parametrize(
+        "destination",
+        ["reversible", "draft_only", "read_only_dispatch", "internal_comms",
+         "pm_write", "deploy_nonprod"],
+    )
+    def test_relocating_a_ceiling_kind_off_its_row_is_rejected(
+        self, loaded, ceiling_row, kind, destination
+    ):
+        # VARIANT A. Pre-change this validated clean and the kind then rode the
+        # ordinary confidence path.
+        d = copy.deepcopy(loaded)
+        pol = M.matrix_policy(d)
+        pol["risk_classes"][ceiling_row]["action_types"].remove(kind)
+        pol["risk_classes"][destination]["action_types"].append(kind)
+        with pytest.raises(M.MatrixValidationError):
+            M.validate_matrix(d)
+
+    def test_relocating_which_row_carries_the_ceiling_is_rejected(self, loaded):
+        # VARIANT B. Leave every action_type where it is; move the CEILING onto
+        # a different row name (hard_ceiling + the frozenset map + the verdict
+        # tables all kept internally consistent, so every pre-existing
+        # invariant still passes). Pre-change this validated clean AND the gate
+        # allowed a send outright.
+        d = copy.deepcopy(loaded)
+        pol = M.matrix_policy(d)
+        pol["hard_ceiling"] = ["pm_write", "deploy_prod", "spend", "secrets",
+                               "network_write", "credentials_grant"]
+        pol["ceiling_frozenset_map"] = {
+            "pm_write": "external_comms", "deploy_prod": "production",
+            "spend": "spending", "secrets": "secrets",
+            "network_write": "network_write",
+            "credentials_grant": "credentials_grant"}
+        pol["verdicts"]["pm_write"] = {"*": "always_gated"}
+        pol["verdicts"]["external_comms"] = {
+            "graduated": "notify_after", "eligible": "notify_after",
+            "propose_only": "notify_after", "unmeasured": "notify_after",
+            "demote": "propose_only"}
+        for posture in ("earn_up", "sovereign"):
+            table = pol["postures"][posture]["verdicts"]
+            table["pm_write"] = {"*": table["external_comms"]["*"]}
+            table["external_comms"] = {
+                "graduated": "propose_only", "eligible": "propose_only",
+                "propose_only": "propose_only", "unmeasured": "propose_only",
+                "demote": "propose_only"}
+        with pytest.raises(M.MatrixValidationError):
+            M.validate_matrix(d)
+
+    def test_hard_ceiling_must_be_exactly_the_declared_ceiling_classes(self, loaded):
+        for mutate in (
+            lambda p: p["hard_ceiling"].append("reversible"),   # a 7th ceiling
+            lambda p: p["hard_ceiling"].remove("external_comms"),  # one dropped
+        ):
+            d = copy.deepcopy(loaded)
+            mutate(M.matrix_policy(d))
+            with pytest.raises(M.MatrixValidationError):
+                M.validate_matrix(d)
+
+    @pytest.mark.parametrize("shape", [[], None, "external_email", {}])
+    def test_degenerate_ceiling_row_shapes_are_rejected(self, loaded, shape):
+        # ZERO / EMPTY / ABSENT / WRONG-TYPE at the ceiling row: fail closed,
+        # never compare vacuously.
+        d = copy.deepcopy(loaded)
+        M.matrix_policy(d)["risk_classes"]["external_comms"]["action_types"] = shape
+        with pytest.raises(M.MatrixValidationError):
+            M.validate_matrix(d)
+
+    @pytest.mark.parametrize("shape", [None, {}, [], "nope"])
+    def test_degenerate_whole_mapping_shapes_are_rejected(self, loaded, shape):
+        d = copy.deepcopy(loaded)
+        M.matrix_policy(d)["risk_classes"] = shape
+        with pytest.raises(M.MatrixValidationError):
+            M.validate_matrix(d)
+
+    def test_missing_ceiling_row_is_rejected(self, loaded):
+        d = copy.deepcopy(loaded)
+        del M.matrix_policy(d)["risk_classes"]["external_comms"]
+        with pytest.raises(M.MatrixValidationError):
+            M.validate_matrix(d)
+
+    def test_validator_called_standalone_fails_closed_on_garbage(self):
+        # The helper is reachable on a merged policy dict independently of
+        # _validate_policy (same shape as _validate_postures), so it re-checks
+        # what it compares against rather than assuming a prior pass.
+        for risk_classes in (None, [], "x", {}):
+            with pytest.raises(M.MatrixValidationError):
+                M._validate_ceiling_class_mapping(risk_classes, _HARD_CEILING_ROWS)
+
+    def test_prod_deploy_kinds_have_exactly_one_declared_source(self):
+        # deploy_classifier used to re-declare the prod pair by hand; it now
+        # imports the classifier's set, so the two can never drift apart and
+        # leave the matrix pinned against a stale copy.
+        from framework.authority import classifier, deploy_classifier
+        assert deploy_classifier._PROD_ACTION_TYPES == classifier._DEPLOY_PROD
+        assert classifier._DEPLOY_PROD <= classifier._DEPLOY
+
+    def test_the_rejected_relocation_is_exactly_the_one_that_would_have_sent(
+        self, loaded
+    ):
+        # Ties the validator arm to the CONSEQUENCE it prevents, so the sensor
+        # is wired to the live control rather than to a shape. Drives the real
+        # gate on a mutant policy dict: the ceiling short-circuit is bypassed
+        # and a real external send is ALLOWED — which is why validate_matrix
+        # must refuse to load it.
+        from framework.authority import policy_engine as PE
+        tool, tool_input = "mcp__brain__queue_draft", {
+            "recipient": "outsider@example.com", "channel": "email", "body": "x"}
+        assert PE.classify_action(tool, tool_input) == "external_email"
+
+        shipped = M.matrix_policy(loaded)
+        assert PE._eval_authority_matrix(shipped, tool, tool_input, "cos") is not None
+
+        d = copy.deepcopy(loaded)
+        mutant = M.matrix_policy(d)
+        mutant["risk_classes"]["external_comms"]["action_types"].remove("external_email")
+        mutant["risk_classes"]["draft_only"]["action_types"].append("external_email")
+        assert PE.risk_of("external_email", mutant["risk_classes"]) == "draft_only"
+        assert "draft_only" not in mutant["hard_ceiling"]
+        # the gate ALLOWS it (None) — the fail-open this invariant closes
+        assert PE._eval_authority_matrix(mutant, tool, tool_input, "cos") is None
         with pytest.raises(M.MatrixValidationError):
             M.validate_matrix(d)
