@@ -267,9 +267,13 @@ def _spend_block(now: dt.datetime,
     hash yielded none. Through this reader an empty ledger and an unreachable
     Redis look identical, so "no figures came back" is the honest label for
     both — and consumers must treat a null day as NO EVIDENCE rather than as a
-    zero. Distinguishing the two is the live ``meter-silent`` watchdog row's
-    job, not this snapshot's (it reads Redis directly and keeps HGETALL's
-    None-vs-{} tri-state).
+    zero. Distinguishing the two is NOT this snapshot's job; it belongs to a
+    ``meter-silent`` watchdog row that reads Redis directly and keeps HGETALL's
+    None-vs-{} tri-state. That row is NOT IMPLEMENTED — withheld pending a
+    two-model direction gate (2026-07-27 scope ruling) — so today nothing
+    downstream distinguishes an empty ledger from an unreachable one. The
+    tri-state is preserved here so that row can be written later without
+    re-plumbing this reader.
 
     ``officers`` is keyed by the ledger PREFIX — ``<officer>`` or
     ``<officer>_<project>`` — because meter.py joins the two with the same "_"

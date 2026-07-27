@@ -24,12 +24,18 @@ convergence work currently in flight.
 
 **Cost discipline:** there is NO spending cap to catch you (Captain ruling
 2026-07-26 — `instance/config/platform.yml` reads `unlimited`). A runaway
-`/loop` will NOT halt on its own. What exists instead is detection, not
-prevention: every turn is metered, and the outcome-watchdog's
-`spend-without-output` row escalates to the Chair when cost climbs while
-nothing is being delivered. That is a report after the fact, on a 30-minute
-sweep — so a `/loop` that cannot make progress is your responsibility to
-stop, not the gate's. See `docs/cost-metering.md`.
+`/loop` will NOT halt on its own, and — read this before you rely on anything
+— NOTHING will tell you it is running away either. What exists is
+MEASUREMENT: every turn is metered, so the spend is visible in
+`cabinet:cost:tokens:daily:<UTC date>` and in the briefing's per-lane line
+*if someone looks*. No watchdog row escalates it. The `spend-without-output`
+row that would page the Chair when cost climbs while nothing ships is **not
+implemented — withheld pending a two-model direction gate** (2026-07-27 scope
+ruling: deciding what counts as anomalous and interrupting the Captain is new
+behaviour, not a repair), so there is no after-the-fact report either.
+Stopping a `/loop` that cannot make progress is entirely your
+responsibility — not the gate's, and not a watchdog's. See
+`docs/cost-metering.md`.
 
 ## `/goal` — Outcome-driven autonomy with a Stop-hook gate
 
