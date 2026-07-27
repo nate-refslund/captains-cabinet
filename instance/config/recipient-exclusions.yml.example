@@ -57,6 +57,17 @@
 #     `subdomain_matching` IS case-folded, so a caps typo cannot take the whole
 #     cabinet to deny-all.
 #
+# TWO CAPTAIN DENY FILES, DIFFERENT PLANES — read this before assuming one is
+# redundant. instance/config/authority-exceptions.yml (landed the same day)
+# subtracts from what the cabinet may DO: a row there REFUSES a tool call
+# outright, enforced in the pre-tool-use hook. This file changes what a
+# recipient IS: a row here moves a send from internal_comms to the always-gated
+# external_comms ceiling, so the Captain is ASKED rather than the send being
+# refused — which is what you usually want for a distribution list. It also
+# corrects the action_type written to the consequence ledger, which a
+# hook-level refusal cannot do. Use that file to forbid; use this one to say
+# "these people are not us".
+#
 # WHAT THIS CANNOT DO
 # -------------------
 # It cannot see a delivery graph. The classifier is handed a string of

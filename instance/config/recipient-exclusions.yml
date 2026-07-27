@@ -22,12 +22,26 @@
 # YAML aliases, and a row that parses but can never match — write the bare
 # address or bare domain, no angle brackets, no separators, no leading dot.
 #
+# TWO CAPTAIN DENY FILES, DIFFERENT PLANES — read this before assuming one is
+# redundant. instance/config/authority-exceptions.yml (landed the same day)
+# subtracts from what the cabinet may DO: a row there REFUSES a tool call
+# outright, enforced in the pre-tool-use hook. This file changes what a
+# recipient IS: a row here moves a send from internal_comms to the always-gated
+# external_comms ceiling, so the Captain is ASKED rather than the send being
+# refused — which is what you usually want for a distribution list. It also
+# corrects the action_type written to the consequence ledger, which a
+# hook-level refusal cannot do. Use that file to forbid; use this one to say
+# "these people are not us".
+#
 # NOT PROTECTED FROM AGENTS, deliberately recorded: this file is neither in the
 # germline lock nor in the pre-tool-use hook's guarded paths — and neither is
 # instance/config/platform.yml, which holds the org_domains list this file
 # carves back. Editing that one loosens further than editing this one. Closing
-# the gap means a change to the germline set, which is a Captain ceremony;
-# until then, cabinet/scripts/tests/test_recipient_exclusions_posture.py turns
+# the gap means a change to the Ring-0 set, which is a Captain ceremony. The
+# proposal is already written for the sibling file —
+# docs/proposals/authority-exceptions-hook-protection-2026-07-27.md — and this
+# file plus instance/config/platform.yml should ride the SAME unlock window.
+# Until then, cabinet/scripts/tests/test_recipient_exclusions_posture.py turns
 # CI red if `subdomain_matching` moves off `strict`.
 # =============================================================================
 

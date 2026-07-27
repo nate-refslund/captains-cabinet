@@ -174,9 +174,10 @@ leaving `platform.yml` open would also be the exact failure this unit's
 coverage fence exists to avoid: a partial fix that relabels the rest as
 covered.
 
-**Handback to the Captain**, recorded rather than worked around: add both
+**Handback to the Captain**, recorded rather than worked around: the sibling
+unit already wrote the proposal — `docs/proposals/authority-exceptions-hook-protection-2026-07-27.md`.
 `instance/config/recipient-exclusions.yml` and `instance/config/platform.yml`
-to the hook's protected set and to the germline set, in one amendment.
+should ride the SAME unlock window, in one amendment rather than three.
 
 **Mitigation landed meanwhile**, needing no ceremony:
 `cabinet/scripts/tests/test_recipient_exclusions_posture.py` turns CI red if
@@ -184,6 +185,23 @@ to the hook's protected set and to the germline set, in one amendment.
 `why`. It pins only the loosening knob and leaves the tightening surface free,
 so adding an exclusion never touches it. Armed: flipping the live file to
 `inherit` reddens it.
+
+## 6b. Why there are now TWO Captain deny files
+
+`instance/config/authority-exceptions.yml` landed on master the same day, from
+the sibling authority-matrix unit, and answers the same Captain ruling. They
+are complementary, not duplicates, and the distinction is written into both
+config headers so a later reader does not delete one:
+
+| | `authority-exceptions.yml` | `recipient-exclusions.yml` (this unit) |
+|---|---|---|
+| Subtracts from | what the cabinet may **DO** | what a recipient **IS** |
+| Outcome of a row | the tool call is **REFUSED** | the send moves to the always-gated external ceiling — the Captain is **ASKED** |
+| Enforced at | pre-tool-use hook → `policy-shadow.py` | `classify_action`, before the gate |
+| Ledger effect | none — a refusal does not correct a misclassification | corrects the `action_type` written to the consequence ledger |
+
+For a distribution list you almost always want "ask me", not "never" — which
+is why this plane exists rather than folding the need into a refusal list.
 
 ## 7. What this still cannot see — stated, not implied away
 
