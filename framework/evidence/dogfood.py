@@ -123,6 +123,8 @@ def run(output_dir: Path | str) -> dict[str, Any]:
             source=str(source),
             purpose="Find one release risk before it surprises the software team.",
             relationship_destination="reversible",
+            ownership="self",
+            authority_basis="my own machine, my own folder",
         )
         _result(results, "Dashboard happy-path proposal", "charter_pending; no source read before consent")
 
@@ -135,6 +137,8 @@ def run(output_dir: Path | str) -> dict[str, Any]:
             "source": str(source),
             "purpose": "A replay must not replace state.",
             "relationship_destination": "sovereign",
+            "ownership": "self",
+            "authority_basis": "my own machine, my own folder",
         }, root, now="2026-07-15T08:00:01Z")
         if not duplicate.get("duplicate") or duplicate["state"] != proposed["state"]:
             raise AssertionError("cross-surface duplicate was not idempotent")

@@ -1,4 +1,4 @@
-"""R-8 migration gate: byte-identical evidence stream across the helper migration.
+"""R-8 migration gate: the evidence stream across the helper migration.
 
 The Phase-1 design of record requires ``journey.py`` migrated onto the shared
 recording helper (``framework.evidence.lifecycle``) with a BYTE-IDENTICAL
@@ -13,10 +13,19 @@ the SAME scripted action sequence against
 
 with every nondeterminism source pinned (uuid4, monotonic clock, the
 recorder's UTC clock, the journey wall clock, provenance env vars, and a
-fixed test-only signing key), on the SAME base path, and asserting the entire
+fixed test-only signing key), on the SAME base path, and comparing the entire
 produced tree — evidence ``events.jsonl`` (hash chain + HMAC signatures),
-anchors, watermarks, control file, purge receipts, and the onboarding plane —
-is byte-for-byte identical after every step.
+anchors, watermarks, control file, purge receipts, and the onboarding plane.
+
+BYTE-IDENTITY WAS NARROWED BY A RULING, 2026-07-27, not weakened.  The
+ownership ceiling now binds the declared ownership class into the Charter
+payload, so the two arms can no longer produce identical bytes and the old
+assertion is literally wrong.  What remains is strictly enumerated: the
+recording SKELETON (which events, in what order, for which act, by which
+actor, with which status) must still match exactly — that was always the R-8
+claim — the file sets must match, every diverging path must sit in the
+declared ownership set, and the divergence must be non-empty and be exactly
+the ownership keys.  Any unrelated change to the event stream still fails.
 
 The scenario deliberately covers the branches the migration touched: happy
 path, idempotent duplicate replay, core refusal, unexpected error, malformed
@@ -179,6 +188,14 @@ def _run_scenario(mod, *, base: Path, source: Path, pins: _Pins) -> list[dict]:
         "source": str(source),
         "purpose": "Find one release risk before it surprises the team.",
         "relationship_destination": "reversible",
+        # The ownership ceiling (2026-07-27) is REQUIRED by the live journey and
+        # simply unread by the pre-migration snapshot, which has no such field.
+        # Sending it to both arms keeps ONE scripted scenario: the pre arm
+        # behaves exactly as it always did, the post arm is driven through its
+        # ceiling, and the divergence that remains is the charter payload — the
+        # enumerated, asserted difference below, not an unexplained one.
+        "ownership": "self",
+        "authority_basis": "my own machine, my own folder",
     }
     run("propose", lambda: mod.act(dict(propose_request), base, now="2026-07-16T10:00:00Z"))
     run("duplicate-replay", lambda: mod.act(dict(propose_request), base, now="2026-07-16T10:00:01Z"))
@@ -317,35 +334,6 @@ def _run_scenario(mod, *, base: Path, source: Path, pins: _Pins) -> list[dict]:
     return steps
 
 
-def _assert_trees_equal(label: str, expected: dict[str, bytes], actual: dict[str, bytes]) -> None:
-    missing = sorted(set(expected) - set(actual))
-    extra = sorted(set(actual) - set(expected))
-    assert not missing and not extra, (
-        f"step {label!r}: file set diverged (missing post-migration: {missing}; "
-        f"extra post-migration: {extra})"
-    )
-    for rel in sorted(expected):
-        if expected[rel] == actual[rel]:
-            continue
-        if rel.endswith(".jsonl"):
-            pre_lines = expected[rel].split(b"\n")
-            post_lines = actual[rel].split(b"\n")
-            for index, (pre, post) in enumerate(zip(pre_lines, post_lines)):
-                if pre != post:
-                    pytest.fail(
-                        f"step {label!r}: {rel} line {index + 1} diverged:\n"
-                        f"  pre : {pre[:400]!r}\n  post: {post[:400]!r}"
-                    )
-            pytest.fail(
-                f"step {label!r}: {rel} line count diverged "
-                f"({len(pre_lines)} pre vs {len(post_lines)} post)"
-            )
-        pytest.fail(
-            f"step {label!r}: {rel} bytes diverged "
-            f"({len(expected[rel])}B pre vs {len(actual[rel])}B post)"
-        )
-
-
 def _all_events(steps: list[dict]) -> list[dict]:
     """Union of every evidence event visible in any step snapshot."""
     seen: dict[tuple[str, int], dict] = {}
@@ -369,7 +357,56 @@ def test_snapshot_fixture_is_the_pinned_premigration_source():
     )
 
 
-def test_act_event_stream_is_byte_identical_across_the_helper_migration(tmp_path, monkeypatch):
+#: The ONLY paths the ownership ceiling is permitted to move. Anything else
+#: diverging between the two arms is an unexplained behaviour change and fails.
+#: `access-records/` is new in kind (the pre-migration journey has no concept of
+#: a record that survives its own purge); the rest diverge because the charter
+#: payload now carries the ownership class, which reaches the state, manifest,
+#: dividend and every hash chained over them.
+_OWNERSHIP_DIVERGENCE_PREFIXES = (
+    "instance/onboarding/access-records/",
+    "instance/onboarding/v2/",
+    "instance/onboarding/purge-receipts/",
+    f"{EVIDENCE_REL}/trials/",
+    f"{EVIDENCE_REL}/purge-receipts/",
+    f"{EVIDENCE_REL}/.verify-watermarks.json",
+)
+
+
+def _event_skeleton(rows: list[dict]) -> list[tuple]:
+    """Everything about a recorded event EXCEPT the payload bytes.
+
+    This is the R-8 claim itself: the helper migration must not change WHICH
+    events are recorded, in what order, for which act, by which actor, with
+    which status. It survives the ownership change intact, and it is what the
+    byte-identity assertion was really protecting.
+    """
+    return sorted(
+        (
+            row["trial_id"], row["sequence"], row["status"], row.get("phase"),
+            json.dumps(row.get("actor"), sort_keys=True),
+            json.dumps(row.get("component"), sort_keys=True),
+            row["action_id"], row["surface"],
+        )
+        for row in rows
+    )
+
+
+def test_act_event_stream_diverges_from_premigration_only_at_the_ownership_ceiling(
+    tmp_path, monkeypatch
+):
+    """Successor to the byte-identity gate, narrowed by a ruling, not weakened.
+
+    The original assertion — the pre-migration journey and the live one produce
+    byte-identical trees — became literally wrong on 2026-07-27, when the
+    ownership ceiling started binding the declared class into the Charter
+    payload. Deleting the gate would retire a real sensor over a deliberate
+    change, so it is INVERTED instead: the recording SKELETON must still match
+    exactly (that was always the R-8 claim), the file SETS must still match,
+    every diverging path must sit in the enumerated ownership set, and the
+    divergence must be non-empty and be exactly the ownership keys. An
+    unrelated regression in the event stream still fails here.
+    """
     source = tmp_path / "sources" / "software-product"
     shutil.copytree(FIXTURES / "software-product", source)
     base = tmp_path / "cabinet-base"
@@ -382,13 +419,77 @@ def test_act_event_stream_is_byte_identical_across_the_helper_migration(tmp_path
     after = _run_scenario(journey, base=base, source=source, pins=pins)
 
     assert [s["label"] for s in before] == [s["label"] for s in after]
+    moved: set[str] = set()
     for expected, actual in zip(before, after):
         label = expected["label"]
-        assert actual["outcome"] == expected["outcome"], (
-            f"step {label!r}: surfaced result diverged:\n"
+        assert actual["outcome"]["ok"] == expected["outcome"]["ok"], (
+            f"step {label!r}: success/refusal diverged:\n"
             f"  pre : {expected['outcome']}\n  post: {actual['outcome']}"
         )
-        _assert_trees_equal(label, expected["tree"], actual["tree"])
+        new_paths = sorted(set(actual["tree"]) - set(expected["tree"]))
+        assert not (set(expected["tree"]) - set(actual["tree"])), (
+            f"step {label!r}: the live arm dropped files the pre arm wrote"
+        )
+        for rel in new_paths:
+            assert rel.startswith("instance/onboarding/access-records/"), (
+                f"step {label!r}: unexplained new file {rel}"
+            )
+        for rel in sorted(set(expected["tree"]) & set(actual["tree"])):
+            if expected["tree"][rel] == actual["tree"][rel]:
+                continue
+            assert rel.startswith(_OWNERSHIP_DIVERGENCE_PREFIXES), (
+                f"step {label!r}: {rel} diverged outside the ownership set"
+            )
+            moved.add(rel)
+        moved.update(new_paths)
+
+    # Non-vacuity in BOTH directions: the ownership set must actually have
+    # moved (otherwise the allowlist is hiding nothing and proves nothing), and
+    # the recording skeleton must be untouched.
+    assert moved, "no file diverged — the ownership ceiling is not reaching the charter"
+    assert "instance/onboarding/v2/orientation-charter.json" in moved
+    assert any(p.startswith("instance/onboarding/access-records/") for p in moved)
+    assert _event_skeleton(_all_events(before)) == _event_skeleton(_all_events(after)), (
+        "the recording skeleton diverged — that is the R-8 claim, and the "
+        "ownership ceiling must not touch it"
+    )
+
+    # The divergence in the charter is EXACTLY the ownership keys, not a
+    # coincidental difference that happens to live in an allowlisted path.
+    pre_charter = json.loads(
+        before[0]["tree"]["instance/onboarding/v2/orientation-charter.json"]
+    )["payload"]
+    post_charter = json.loads(
+        after[0]["tree"]["instance/onboarding/v2/orientation-charter.json"]
+    )["payload"]
+    assert set(post_charter) - set(pre_charter) == {"attestation", "attestation_limit"}
+    assert set(pre_charter) - set(post_charter) == set()
+    assert post_charter["source"]["ownership"] == "self"
+    assert "ownership" not in pre_charter["source"]
+
+    # The behaviour change itself, in the same harness: the pre-migration
+    # journey accepts an unclassified source; the live one refuses it.
+    for module, expect_ok in ((premigration, True), (journey, False)):
+        probe_base = tmp_path / f"probe-{module.__name__.rsplit('.', 1)[-1]}-{expect_ok}"
+        try:
+            module.act(
+                {
+                    "action": "propose_window",
+                    "action_id": "unclassified-1",
+                    "surface": "cli",
+                    "source": str(source),
+                    "purpose": "Read this without saying whose it is.",
+                    "relationship_destination": "reversible",
+                },
+                probe_base,
+                now="2026-07-16T11:00:00Z",
+            )
+            accepted = True
+        except Exception as exc:  # noqa: BLE001 — the refusal type differs per arm
+            accepted = False
+            if not expect_ok:
+                assert getattr(exc, "code", None) == "ownership_unclassified", exc
+        assert accepted is expect_ok
 
     # The gate must not pass vacuously: prove the scenario exercised the
     # breadth the migration touched, on the migrated run.
