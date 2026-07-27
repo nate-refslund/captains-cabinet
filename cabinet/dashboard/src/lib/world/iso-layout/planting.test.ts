@@ -10,6 +10,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  auditLayout,
   buildLaneField,
   clearOfDistricts,
   composeLayout,
@@ -17,6 +18,7 @@ import {
   DEFAULT_FOOTPRINTS,
   footprintOnLane,
   forestRing,
+  maxGroundOverlap,
   grownField,
   HOUSE_KINDS,
   inRingGap,
@@ -310,6 +312,91 @@ describe('the forest enclosure ring — the frame, not a gradient', () => {
     // that drew a large jitter clears a lane laid on the layer's nominal radius.
     // The rule is the per-item test above; this is the shape of its effect.
     expect(onBearing(withRoad)).toBeLessThan(onBearing(noRoad))
+  })
+
+  it('both belt clearance rules are measured on the sprite it DRAWS', () => {
+    // PAID 2026-07-27, adversarial re-review. The belt samples every rule
+    // against the LARGEST sprite in its layer. That is right for a containment
+    // question ("would the biggest thing here fit?") and it is NOT conservative
+    // for either of the two rules below, so the belt emitted items the audit —
+    // and the renderer, and check_on_road — then measured as defects:
+    //   4 of 200 hamlet islands had a belt item standing on the coastal
+    //   carriageway, and 40 of 11031 belt items shared ground with a building.
+    //
+    // PREMISE FIRST, because the consequence is only interesting if the two
+    // sizes really can disagree in this direction. footprintOnLane is a sparse
+    // 4x5 probe grid whose sample points SCALE with the footprint, so a bigger
+    // diamond does not probe a superset of a smaller one's points: a narrow lane
+    // passes clean between the big probes and is hit square on by the small
+    // ones. iso-layout.test.ts already pins the opposite direction (big hits,
+    // small misses); this is the one the belt walks into.
+    const deg = 270 // due north — outside every gap arc
+    const ang = (deg * Math.PI) / 180
+    const r = hamlet.coast.edgeAt(ang) - RING_LAYERS[0].inset
+    const pts: Point[] = []
+    for (let d = -30; d <= 30; d += 2) {
+      const a = ang + (d * Math.PI) / 180
+      pts.push({
+        x: LAYOUT_SPACE.cx + Math.cos(a) * r,
+        y: LAYOUT_SPACE.cy + Math.sin(a) * r * 0.92,
+      })
+    }
+    // 18px is not a contrived width: it is what the coastal lane really is at
+    // the `dirt_worn` rung, which is the island the defect was measured on.
+    const narrow: Lane[] = [{ key: 'treeline', kind: 'coastal', width: 18, runs: [pts] }]
+    const field = buildLaneField(narrow)
+    const big = { w: 150, h: 150 }
+    const small = DEFAULT_FOOTPRINTS.fern_cluster
+    let disagree: Point | null = null
+    for (const p of pts) {
+      for (let dy = 0; dy <= 40 && !disagree; dy += 1) {
+        const q = { x: p.x, y: p.y + dy }
+        if (footprintOnLane(q, small, field) && !footprintOnLane(q, big, field)) disagree = q
+      }
+      if (disagree) break
+    }
+    expect(disagree).not.toBeNull()
+
+    // ...so the belt re-tests the sprite it chose. Mutation: delete the two
+    // itemSize lines in ring.ts and this goes RED with one fern_cluster on the
+    // lane, on this exact seed and bearing.
+    const items = forestRing('acme-corp', ctxOf(hamlet, { lanes: field }))
+    expect(items.filter((i) => footprintOnLane(i.at, i.size, field)).map((i) => i.kind)).toEqual([])
+    // and a belt that planted nothing would pass the line above while measuring
+    // nothing at all
+    expect(items.length).toBeGreaterThan(40)
+  })
+
+  it('nothing the belt plants stands on a lane or on a building — 80 islands', () => {
+    // COVERAGE, not a new rule. The composed on-lane arms in iso-layout.test.ts
+    // run on two islands; the size-aliasing above fires on about 2% of them and
+    // the stacking on about 0.4% of belt items, so two islands cannot see it. A
+    // rule is only as true as the population it was measured over.
+    //
+    // Mutation (both itemSize lines deleted from ring.ts): lane=3, stacked=59.
+    const seeds = Array.from({ length: 80 }, (_, i) => `org-${i}`)
+    let lane = 0
+    let stacked = 0
+    const examples: string[] = []
+    for (const seed of seeds) {
+      for (const state of [HAMLET, VILLAGE]) {
+        const l = composeLayout(state, seed, FAST)
+        for (const hit of auditLayout(l).onLane) {
+          lane++
+          if (examples.length < 4) examples.push(`onLane ${seed} ${hit.kind}`)
+        }
+        // The audit's own stacked arm compares structures to structures only, so
+        // belt-on-building has no sensor there. Same function the rule calls.
+        const book = l.structures.map((s) => ({ at: s.at, size: s.size }))
+        for (const item of l.ring) {
+          if (maxGroundOverlap(item.at, item.size, book) > 0.16) {
+            stacked++
+            if (examples.length < 4) examples.push(`stacked ${seed} ${item.kind}`)
+          }
+        }
+      }
+    }
+    expect({ lane, stacked, examples }).toEqual({ lane: 0, stacked: 0, examples: [] })
   })
 
   it('the belt is on land, off the road, out of the water and off the paving', () => {

@@ -46,9 +46,10 @@
  *   a blocked tree sideways until it settles. This port's standing rule is
  *   reject-at-sampling-time and DROP, because nudging oscillates between two
  *   neighbours and settles on neither — silently, since the prop still draws.
- *   So a ring candidate that is not admissible is dropped, and the belt's own
- *   spacing comes from the occupancy book rather than from the reference's
- *   30px reservation.
+ *   So a ring candidate that is not admissible is dropped. Belt-vs-belt spacing
+ *   is the reference's own `reserve(x, y, 30)` (see RING_SPACING) rather than
+ *   the building-grade ground-diamond rule; the caller's occupancy book keeps
+ *   the strict rule, so a building still keeps its ground.
  *
  * PURE and SEEDED: one stream per layer, consumed in the reference's order.
  */
@@ -241,9 +242,30 @@ export function forestRing(seed: string | number, ctx: RingContext): RingItem[] 
       if (groundTaken(at, size, ctx.occupied)) continue
       if (crowded(x, y)) continue
 
+      // THE SAMPLING SIZE IS NOT A CONSERVATIVE SIZE, and assuming it was is how
+      // the belt put four trees on the coastal carriageway (measured 2026-07-27:
+      // 4 items over 200 hamlet islands, and 40 of 11031 items sharing ground
+      // with a building). Sampling against the pool's LARGEST sprite is right for
+      // a containment question, and it is WRONG for both of the rules above:
+      //   - footprintOnLane is a sparse 4x5 probe grid whose sample points scale
+      //     with the footprint, so a bigger diamond does not probe a superset of
+      //     a smaller one's points. An 18px-wide lane passes clean between a
+      //     150x150 diamond's probes and is hit square on by a 47x47 one's.
+      //   - groundTaken divides the shared area by min(area) — shrink the
+      //     candidate and the same overlap crosses the threshold.
+      // The renderer, check_on_road and auditLayout all measure the sprite that
+      // was DRAWN, so the drawn sprite is what has to pass. Both rules therefore
+      // run twice: once on the pool max at sampling time (nothing lands in a gap
+      // that only fitted a sapling) and once on the chosen sprite here.
+      //
+      // The kind and the flip are drawn BEFORE this test so the stream is
+      // consumed in the reference's order whatever the answer is — the same
+      // discipline the paint stage's clip-after-draw follows.
       const kind = layer.kinds[Math.min(layer.kinds.length - 1, Math.floor(rng() * layer.kinds.length))]
       const flip = rng() < 0.5
       const itemSize = ctx.sizeOf(kind)
+      if (footprintOnLane(at, itemSize, ctx.lanes)) continue
+      if (groundTaken(at, itemSize, ctx.occupied)) continue
       planted.push(at)
       out.push({ kind, at, flip, layer: li, size: itemSize })
     }

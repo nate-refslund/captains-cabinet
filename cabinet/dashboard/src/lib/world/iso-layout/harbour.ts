@@ -14,11 +14,23 @@
  *
  * NOTHING FLOATS. The reference records the defect this section exists to
  * prevent (compose.py:1119-1120): "the Captain's note on v12 was that the dock
- * sat out in open sea." Every x here resolves its own y through shoreAt(); a
- * column with no land in the cove window contributes NOTHING rather than a
- * guessed y. That is why shoreLine() returns a short polyline on a seed whose
- * cove ate the whole south shore, and why the dock kit drops items instead of
- * inventing a waterline for them.
+ * sat out in open sea." Every x here resolves its own y through shoreAt(), and
+ * the populations that can afford to lose a member DROP one whose column has no
+ * land in the cove window rather than inventing a waterline for it: shoreLine()
+ * returns a short polyline on a seed whose cove ate the south shore, and the
+ * dock kit and the cranes skip the column.
+ *
+ * THREE ANCHORS CANNOT BE DROPPED and therefore DO fall back to a guessed y —
+ * stated here rather than left for a reader to find, because the paragraph above
+ * used to claim there were none. They are the jetty root (`?? cove.y - 140`) and
+ * the warehouse and harbourmaster columns (`?? cove.y - 160`), each of which is
+ * a single anchor the harbour is defined by rather than one of many. Two of the
+ * three are then rescued downstream: the quayside sites are ANCHORS the caller
+ * walks through placeOnGround, which drops a building it cannot ground. The
+ * JETTY IS NOT — a guessed root is emitted as geometry. Measured 2026-07-27 over
+ * 300 seeds: the fallback fires 0 times for all three, because buildHarbour has
+ * already returned null when the cove has fewer than four land columns. It is
+ * unreached rather than unreachable, and nothing currently senses it.
  *
  * THE DECK IS DRAWN, NOT STAMPED. quay.py exists because stamping a deck sprite
  * along the shore "piles overlapping slabs into a jumbled staircase". So this
