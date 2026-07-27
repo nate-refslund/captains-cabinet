@@ -406,22 +406,39 @@ def _production_python_files(path: Path) -> list[Path]:
     )
 
 
-def _pattern_set(path: Path, pattern: str) -> list[Path]:
-    """Files matching `pattern` anywhere under `path`, DERIVED from the tree.
+def _pattern_set(path: Path, pattern: str | list[str]) -> list[Path]:
+    """Files matching ANY of `pattern` anywhere under `path`, DERIVED from the tree.
 
     Never a hand-maintained list: a new organ manifest or a new skill is a new
     file, and the pin reads the directory rather than a fourth list that can
     drift away from it. Nested matches count — a manifest parked one directory
     down is still a new decider.
+
+    A LIST of patterns, not one, because a class whose runtime accepts several
+    spellings is only pinned if the pin accepts all of them: organ manifests
+    load from `framework/organs/registry.py::MANIFEST_SUFFIXES` (.yml, .yaml,
+    .json), so a `*.yml`-only pin was defeated by naming the sixth organ
+    `.yaml` — a live organ in the registry, free, proven by execution
+    2026-07-27. The spellings are contract DATA so widening stays a data edit.
+
+    NOT-A-DIRECTORY is an ERROR, exactly like a missing one. `Path.rglob` over
+    a regular file yields nothing, so a contract path pointed at a file read
+    ZERO and passed — the disabled sensor this function's own docstring says it
+    refuses.
     """
 
     if not path.exists():
         raise ContractError(f"set-pin directory is missing: {path}")
-    return sorted(
+    if not path.is_dir():
+        raise ContractError(f"set-pin path is not a directory: {path}")
+    patterns = [pattern] if isinstance(pattern, str) else list(pattern)
+    matched = {
         candidate
-        for candidate in path.rglob(pattern)
+        for one in patterns
+        for candidate in path.rglob(one)
         if candidate.is_file() and "__pycache__" not in candidate.parts
-    )
+    }
+    return sorted(matched)
 
 
 def _durable_store_units(path: Path) -> frozenset[str]:
@@ -697,8 +714,21 @@ def load_contract(path: Path, *, as_of: date | None = None) -> dict[str, Any]:
                 raise ContractError("named_compiler_modules requires pattern")
         if name in PATTERN_SET_BUDGETS:
             expected_keys.add("pattern")
-            if not isinstance(budget.get("pattern"), str) or not budget["pattern"]:
-                raise ContractError(f"set pin {name} requires pattern")
+            # One spelling or several: a class the runtime loads under several
+            # suffixes is only pinned when every spelling is named (the
+            # organ-manifest escape, 2026-07-27). An EMPTY list would match
+            # nothing and read zero, so it is refused like a missing key.
+            raw_pattern = budget.get("pattern")
+            spellings = [raw_pattern] if isinstance(raw_pattern, str) else raw_pattern
+            if (
+                not isinstance(spellings, list)
+                or not spellings
+                or not all(isinstance(one, str) and one.strip() for one in spellings)
+            ):
+                raise ContractError(
+                    f"set pin {name} requires pattern — a non-empty string or a "
+                    "non-empty list of non-empty strings"
+                )
         if name in SYMBOL_SET_BUDGETS:
             expected_keys.add("symbol_pattern")
             if not isinstance(budget.get("symbol_pattern"), str) or not budget["symbol_pattern"]:
