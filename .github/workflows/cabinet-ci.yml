@@ -549,22 +549,28 @@ jobs:
       # spawns `psql` against COG1_PG_DSN to apply the DDL chain and drive the
       # kill rigs — the service container alone leaves the DB sims skipping,
       # exactly the failure class redis-tools records above.
-      # redis-server (2026-07-27): framework/cost/tests/test_meter_redis.py
-      # stands up its OWN ephemeral server per test rather than sharing a
-      # service container, so redis-tools alone leaves all 29 of its arms
-      # SKIPPING — the same failure this step's own comment records above, and
-      # exactly the class it is meant to prevent. Those arms are the only
-      # coverage of the meter's entire persistence layer (watermark, atomic
-      # write, error-reply detection); skipped, the live meter is unobserved in
-      # CI while the suite reports green.
-      - name: Install redis-cli + redis-server + psql client
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq redis-tools redis-server postgresql-client
-      # Prove the binary is actually usable, so a packaging change degrades to a
-      # loud failure here instead of silently re-skipping the arms above.
-      - name: Verify redis-server is runnable (spend-meter arms must GATE, not skip)
-        run: |
-          command -v redis-server
-          redis-server --version
+      # KNOWN GAP, deliberately left open (2026-07-27):
+      # framework/cost/tests/test_meter_redis.py stands up its OWN ephemeral
+      # server per test, so with redis-tools alone all 29 of its arms SKIP —
+      # the meter's entire persistence layer (watermark, atomic write,
+      # error-reply detection) is unobserved in CI while the suite reports
+      # green. That is the same "a skipped test is a disabled sensor" class
+      # this step's comment above records.
+      #
+      # Installing `redis-server` here WAS tried and reverted in the same
+      # branch. Ubuntu ships 7.0.15; four version-sensitive suites in
+      # cabinet/scripts/tests (test_redis_backup_e2e, test_redis_state_replay
+      # x3) exercise Redis-8 behaviour and had been silently skipping for want
+      # of the binary. Installing it made them RUN and FAIL — measured: all
+      # four pass locally against Redis 8.8.0 and fail against CI's 7.0.15.
+      # Weakening them to go green was refused, and fixing four unrelated
+      # Redis suites is its own unit of work.
+      # FOLLOW-UP: either provision redis-server >= 8 for this job (both the
+      # meter arms and those four suites then gate), or have those suites
+      # declare their minimum Redis version so they skip for a stated reason
+      # instead of for a missing binary.
+      - name: Install redis-cli + psql client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq redis-tools postgresql-client
       # Collection census: the fidelity conftest silently collect_ignores 19
       # flavor-A-coupled modules (288 tests) when the retrodiction lib is
       # absent — true on every CI runner until plan A2.1 vendors it. This

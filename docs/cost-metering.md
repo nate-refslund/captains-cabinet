@@ -300,3 +300,21 @@ The second file exists because the first passes identically with `REDIS_PORT`
 pointed at nothing. Every arm in it stands up its own server on a free port and
 refuses 6379; the arms skip with a reason if `redis-server` is unavailable
 rather than silently passing.
+
+**These 29 arms currently SKIP in CI** — a known, deliberately-recorded gap, not
+an oversight. GitHub's runner image ships `redis-tools` but no `redis-server`,
+so the arms self-disable there and the meter's persistence layer is unobserved
+by CI even though the suite reports green. They DO gate locally.
+
+Installing `redis-server` in CI was tried and reverted in the same branch that
+wrote this file. Ubuntu ships 7.0.15, and four version-sensitive suites in
+`cabinet/scripts/tests` (`test_redis_backup_e2e`, `test_redis_state_replay` x3)
+exercise Redis-8 behaviour while silently skipping for want of that same binary.
+Installing it made them RUN and FAIL — measured: all four pass against Redis
+8.8.0 locally and fail against 7.0.15. Weakening them to reach green was
+refused, and repairing four unrelated Redis suites is its own unit of work.
+
+**Follow-up:** provision `redis-server >= 8` for the `framework-tests` job (both
+these arms and those four suites then gate), or have those suites declare a
+minimum Redis version so they skip for a stated reason rather than for a missing
+binary.
