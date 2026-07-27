@@ -485,7 +485,19 @@ jobs:
   # absent — fix tracked in docs/plans/EXECUTION-STATUS.md.
   framework-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 15 -> 25 (2026-07-27). This job had grown to within SECONDS of its own
+    # guard and started killing runs whose every step had already succeeded —
+    # a false red, which is the worst signal a gate can emit. Measured, not
+    # guessed: master 19d1c2e1 ran 14m49s (run 30231881685) and the very next
+    # branch run took 14m57s (run 30235086502) and was cancelled at the
+    # boundary with all 15 steps green, the whole delta being 5s of slower
+    # container init and 6s of slower apt — the two pytest steps were a net
+    # ONE SECOND faster than master's. Nothing here weakens an assertion: every
+    # suite still runs and still gates; the wall-clock number was a runner
+    # guard riding on ~10s of headroom, which the shared-runner variance law
+    # says will flake. When the honest fix arrives (splitting cabinet/scripts/
+    # tests, 11m13s of the 14m49s, into its own job), bring this back down.
+    timeout-minutes: 25
     # SPIKE (hardening loop 2026-07-11): redis service closes 23 of 24 runtime
     # skips; the 5 sovereign tests need the germline hook rc=0 on a fresh empty
     # redis — unproven on a runner, hence branch-spike before master.
