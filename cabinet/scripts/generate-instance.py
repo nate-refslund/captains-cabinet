@@ -1258,21 +1258,21 @@ def resolve_preset(answers: dict) -> tuple[str, str]:
 
     Precedence, and each rung is a real declaration rather than a guess:
       1. ``cabinet.preset`` — the captain named a preset. Always wins.
-      2. ``mission.altitude`` in {contributor, project} → ``developer``.
+      2. ``mission.altitude`` in {contributor, project} → ``personal``.
          ALTITUDE MUST REACH PRESET SELECTION or it is decoration (direction
-         gate, 2026-07-26). At those rungs the operator's estate IS the code /
-         PR / deploy surface, and `developer` is the one shipped preset whose
-         day-1 kit is exactly that (GitHub, browser verdicts, read-only DB,
-         deploy state, error budget). It stays OPT-IN: declaring your rung is
-         a choice, not a default flip, and (1) overrides it.
+         gate, 2026-07-26). ``presets/personal`` is the kit written for exactly
+         those rungs — "someone who owns a project, not a company; a developer
+         inside a large organisation" — and it is the ONE shipped preset that
+         stands up no C-suite. It stays OPT-IN: declaring your rung is a
+         choice, not a default flip, and (1) overrides it.
       3. ``cabinet.org_shape`` — today's default (portfolio → portfolio,
          functional → work, custom → unmapped).
 
-    HONEST GAP, stated because a stranger will hit it: no shipped preset is
-    shaped for a low-altitude operator. Every one of them stands up a C-suite
-    for a company the operator may not run, and ``presets/personal/`` — the
-    placeholder for exactly that case — ships empty and forbidden. `developer`
-    is the closest FIT, not a solution to that gap."""
+    CORRECTED 2026-07-27: this mapped the low rungs to ``developer`` while
+    ``presets/personal/`` was a placeholder whose README forbade activating it,
+    and it said so as an honest gap. The sibling personal-preset landing closed
+    that gap, so "closest fit" became "wrong fit": `developer` is a flat copy of
+    `work` and stands up the C-suite this altitude does not have."""
     cabinet = answers.get("cabinet") or {}
     explicit = cabinet.get("preset")
     if explicit:
@@ -1282,7 +1282,7 @@ def resolve_preset(answers: dict) -> tuple[str, str]:
     if isinstance(mission, dict):
         altitude = str(mission.get("altitude") or "").strip().lower()
     if altitude in ("contributor", "project"):
-        return "developer", "mission.altitude"
+        return "personal", "mission.altitude"
     org_shape = str(cabinet.get("org_shape", "portfolio"))
     if org_shape == "portfolio":
         return "portfolio", "cabinet.org_shape"
@@ -1828,10 +1828,10 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
     print("\nNext steps (in order):")
     print(f"  1. echo {preset} > instance/config/active-preset")
     if preset_basis == "mission.altitude":
-        print(f"     (selected from mission.altitude — your declared rung. No")
-        print("      shipped preset is shaped for a low-altitude operator: every")
-        print("      one stands up a C-suite, and presets/personal/ is empty. This")
-        print("      is the closest fit. Override with cabinet.preset.)")
+        print("     (selected from mission.altitude — your declared rung. The")
+        print("      personal preset is the one shipped kit with NO C-suite:")
+        print("      Navigator, Librarian, Reviewer for one operator who owns a")
+        print("      project, not a company. Override with cabinet.preset.)")
     if org_shape == "functional" and preset_basis == "cabinet.org_shape":
         print("     (work is the default. Shipping a software/web/app product? The")
         print("      OPTIONAL developer preset is the software product-kind kit —")

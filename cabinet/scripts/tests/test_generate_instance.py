@@ -1510,7 +1510,7 @@ class TestUnknownMissionKeyTolerated:
         answers["mission"] = dict(self._MISSION_BLOCK)
         assert gi.resolve_preset(answers) == ("portfolio", "cabinet.org_shape")
         answers["mission"]["altitude"] = "contributor"
-        assert gi.resolve_preset(answers) == ("developer", "mission.altitude")
+        assert gi.resolve_preset(answers) == ("personal", "mission.altitude")
 
         root = self._build_root(tmp_path / "alt-bad")
         answers["mission"]["altitude"] = "not-a-rung"
@@ -1532,9 +1532,9 @@ class TestAltitudeReachesPresetSelection:
         ({"cabinet": {"org_shape": "portfolio", "preset": "developer"}},
          "developer", "cabinet.preset"),
         ({"cabinet": {"org_shape": "portfolio"},
-          "mission": {"altitude": "contributor"}}, "developer", "mission.altitude"),
+          "mission": {"altitude": "contributor"}}, "personal", "mission.altitude"),
         ({"cabinet": {"org_shape": "portfolio"},
-          "mission": {"altitude": "project"}}, "developer", "mission.altitude"),
+          "mission": {"altitude": "project"}}, "personal", "mission.altitude"),
         # High-altitude rungs keep today's org-shape default exactly.
         ({"cabinet": {"org_shape": "portfolio"},
           "mission": {"altitude": "team"}}, "portfolio", "cabinet.org_shape"),
@@ -1564,7 +1564,7 @@ class TestAltitudeReachesPresetSelection:
         low = run_cli(cab_root, "--answers", str(path), "--print-preset")
         assert high.returncode == 0 and low.returncode == 0
         assert high.stdout.strip() == "portfolio"
-        assert low.stdout.strip() == "developer"
+        assert low.stdout.strip() == "personal"
 
     def test_print_preset_writes_nothing(self, cab_root):
         path = write_answers(cab_root, acme_answers())
@@ -1581,14 +1581,22 @@ class TestAltitudeReachesPresetSelection:
         assert res.returncode == 3
         assert "set instance/config/active-preset yourself" in res.stderr
 
-    def test_altitude_selection_names_the_honest_gap(self, cab_root, capsys):
+    def test_low_altitude_selects_the_no_c_suite_preset(self, cab_root, capsys):
+        """CORRECTED 2026-07-27: this asserted `developer` plus an honest-gap
+        line saying no shipped preset fits a low-altitude operator and
+        presets/personal/ is empty. The sibling personal-preset landing made
+        both statements false — `personal` is now the kit for exactly this
+        rung, and it is the only one that stands up no C-suite."""
         answers = acme_answers()
         answers["mission"] = {"altitude": "contributor"}
         run_gen(cab_root, answers)
         out = capsys.readouterr().out
-        assert "echo developer > instance/config/active-preset" in out
-        assert "presets/personal/ is empty" in out    # no shipped low-altitude kit
+        assert "echo personal > instance/config/active-preset" in out
+        assert "NO C-suite" in out
         assert "OPTIONAL developer preset" not in out
+        assert (_REPO_ROOT / "presets/personal/preset.yml").is_file(), (
+            "the mapping points at a preset that must exist — an unpopulated "
+            "one fails later and less clearly")
 
     @pytest.mark.parametrize("bad", ["ic", "manager", "senior engineer", "", 3])
     def test_bad_altitude_verb_refuses_loudly(self, cab_root, bad):
@@ -1603,7 +1611,7 @@ class TestAltitudeReachesPresetSelection:
         answers = acme_answers()
         answers["mission"] = {"altitude": "  Contributor "}
         run_gen(cab_root, answers)
-        assert "echo developer > instance/config/active-preset" in capsys.readouterr().out
+        assert "echo personal > instance/config/active-preset" in capsys.readouterr().out
 
     @pytest.mark.parametrize("rung", sorted(gi.ALTITUDES))
     def test_every_declared_rung_is_accepted(self, cab_root, rung):
@@ -1617,7 +1625,7 @@ class TestAltitudeReachesPresetSelection:
         answers = yaml.safe_load(
             (cab_root / "instance/config/cabinet-init.answers.yml").read_text())
         assert answers["mission"] == {"altitude": "contributor"}
-        assert gi.resolve_preset(answers) == ("developer", "mission.altitude")
+        assert gi.resolve_preset(answers) == ("personal", "mission.altitude")
 
     def test_defaults_without_altitude_records_no_mission_block(self, cab_root):
         res = run_cli(cab_root, "--defaults")

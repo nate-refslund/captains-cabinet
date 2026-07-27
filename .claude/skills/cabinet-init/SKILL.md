@@ -292,12 +292,11 @@ text never becomes a slug). The generator validates the slug shape.
 and lives in ONE place — `generate-instance.py resolve_preset()`, printed
 by `--print-preset`, which is what `hatch.sh` writes into
 `instance/config/active-preset`. A declared `contributor`/`project` rung
-resolves to `developer` (at those altitudes the captain's estate IS the
-code/PR/deploy surface); an explicit `cabinet.preset` always outranks it.
-State the honest gap when it fires: no shipped preset is shaped for a
-low-altitude operator — all three stand up a C-suite, and
-`presets/personal/` is empty — so `developer` is the closest fit, not a
-solution. If the captain chose
+resolves to **`personal`** — the one shipped preset with no C-suite
+(Navigator / Librarian / Reviewer, for an operator who owns a project, not
+a company). An explicit `cabinet.preset` always outranks it, and the
+resolved slug must have a `presets/<slug>/preset.yml` or the hatch stops
+with a named handback. If the captain chose
 `developer`, also add its extra env-var NAMES — `NEON_API_KEY`,
 `VERCEL_API_KEY`, `VERCEL_TEAM_ID` — to `integrations.mcp_env_names` so
 `setup-env.sh` walks them (values still go only in `cabinet/.env`).

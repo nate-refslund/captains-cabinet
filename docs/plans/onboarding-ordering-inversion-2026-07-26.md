@@ -69,10 +69,11 @@ validated on three NON-founder personas — and that **its output fed nothing.**
    no sources must still never be a dead end.
 5. **Altitude reaches two live surfaces or it is decoration.**
    `mission.altitude` ∈ {contributor, project, team, function, company}:
-   * **preset SELECTION** — `resolve_preset()` is now the ONE resolution and
-     `hatch.sh` calls it via `--print-preset` instead of re-deriving a mapping
-     that had already drifted (it wrote `portfolio` even when the answers said
-     `cabinet.preset: developer`);
+   * **preset SELECTION** — `resolve_preset()` is now the ONE resolution
+     (`cabinet.preset` > `mission.altitude` > `org_shape`) and `hatch.sh` calls
+     it via `--print-preset` instead of re-deriving a mapping that had already
+     drifted past `cabinet.preset`. `contributor`/`project` resolve to
+     `presets/personal`, the one kit with no C-suite;
    * **proposed-CARD derivation** — the proof line changes shape.
    ABSENT is a first-class answer meaning UNKNOWN, and it reproduces the
    pre-altitude behaviour byte-for-byte.
@@ -138,14 +139,23 @@ decision it changed.
   before an ingest engine is built. `INGEST_DONE` and everything after it stay
   honest IOU stubs on purpose.
 
-## 5. The honest gap this unit does not close
+## 5. The gap that was open here, and the sibling landing that closed it
 
-No shipped preset is shaped for a low-altitude operator. `presets/work`,
-`presets/portfolio` and `presets/developer` all stand up a C-suite for a
-company the operator may not run, and `presets/personal/` — the placeholder for
-exactly that case — ships empty and forbidden. `developer` is the closest FIT
-at contributor/project altitude, not a solution; the generator says so in its
-printed next steps rather than letting a stranger discover it.
+While this unit was in flight, `contributor`/`project` resolved to
+`developer` — the closest FIT, not a solution, because every shipped preset
+stood up a C-suite for a company the operator may not run and
+`presets/personal/` was a placeholder whose README forbade activating it. The
+generator said so in its printed next steps rather than letting a stranger
+discover it.
+
+The sibling **personal-preset landing** (resulting-order item 8,
+`docs/plans/personal-preset-live-2026-07-27.md`) activated that preset: no
+C-suite, Navigator / Librarian / Reviewer, "someone who owns a project, not a
+company; a developer inside a large organisation". So the mapping was
+CORRECTED to `personal` — with the gap closed, "closest fit" had become the
+wrong fit, since `developer` is a flat copy of `work` and ships the C-suite
+this altitude does not have. `hatch.sh` also gained that landing's existence
+guard on the resolved slug, kept on the single-resolution path.
 
 ## 6. Surfaces
 
