@@ -2,12 +2,39 @@
 # pre-commit.sh — Checkpoint-review enforcement (FW-019)
 #
 # Gates any commit whose staged diff exceeds CP_REVIEW_THRESHOLD lines.
-# Requires a review artifact at shared/interfaces/reviews/<branch>-<sha>.md
-# (or matching the pattern) created in the last 30 minutes.
+# Requires a review artifact under shared/interfaces/reviews/ whose filename
+# carries the branch slug AND which records the SHA-256 scope digest of the
+# bytes this commit will actually contain.
+#
+# WHAT THIS REPLACED, AND WHY (2026-07-27, direction gate "Catching EXPANSION"):
+# the original check accepted any file whose NAME contained the branch slug,
+# preferred one modified in the last 30 minutes and then FELL BACK TO ANY AGE,
+# and never read a byte of it. Measured consequence:
+#   touch shared/interfaces/reviews/<branch>-cp1.md
+# passed the gate — as did a review copied from another branch, and a review
+# written before the code it claims to have reviewed. Two independent models
+# named it, unprompted, as the most forgeable pattern in the tree. A gate that
+# a `touch` satisfies is not a gate; it is a green light with paperwork.
+#
+# THE REPLACEMENT is the digest discipline this repo already proves twice, in
+# cabinet/scripts/cognitive-phase{0..4}-review-scope.py: SHA-256 over the
+# sorted, newline-joined canonical records "<mode> <sha> <path>" of a declared
+# scope, with the review plane EXCLUDED from its own digest so the binding is
+# non-self-referential. Verification is "does the recorded digest equal the
+# recomputed one" — which a copied artifact cannot satisfy, and which a stale
+# artifact stops satisfying the instant the code moves.
+#
+# HONEST LIMIT: a git hook binds only clones that ran install-git-hooks.sh. A
+# fresh clone has core.hooksPath unset and .git/hooks/ holding samples only, so
+# this catches honest mistakes; the required CI checks remain the floor.
 #
 # Override: COMMIT_NO_REVIEW=1 git commit ... (for docs-only / trivial fixes).
 # Captain directive 2026-04-19 msg 1535: "eat our own dog food, starting
 # with phase A" — gated behavior ships now, feature work follows.
+#
+# Also usable as a plain CLI, which is how a reviewer obtains the digest to
+# record (git never passes arguments to pre-commit, so this cannot collide):
+#   bash cabinet/scripts/git-hooks/pre-commit --print-scope-digest
 #
 # Exit 0 = allow commit, Exit 1 = block (git semantics for hooks).
 # Stderr gets the reason on block (never silent).
@@ -17,13 +44,113 @@ set -u
 # ---- Config ----
 CP_REVIEW_THRESHOLD="${CP_REVIEW_THRESHOLD:-300}"   # LOC threshold
 REVIEW_DIR_REL="shared/interfaces/reviews"
-REVIEW_MAX_AGE_MIN="${CP_REVIEW_MAX_AGE_MIN:-30}"   # artifact must be recent
+FW019_DIGEST_LABEL="Reviewed-Scope-Digest"          # the one line an artifact must carry
 
 # Find repo root (hook is installed in <repo>/.git/hooks/pre-commit).
 # Resolved FIRST because the freshness gate below needs it.
 REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 if [ -z "$REPO_ROOT" ]; then
   echo "pre-commit: not in a git repo — skipping" >&2
+  exit 0
+fi
+
+# ---- FW-019 scope-digest primitives ------------------------------------------
+#
+# SCOPE = the STAGED change set (the bytes this commit will contain) MINUS
+# everything under $REVIEW_DIR_REL. The phase bindings hash `git ls-tree -r
+# HEAD` because they bind an already-landed commit; a pre-commit hook runs
+# BEFORE the commit exists, so the equivalent committed-bytes source is the
+# index — `git diff --cached --raw`, which reports the destination mode and the
+# destination blob id git is about to write. Same grammar, same guarantee.
+#
+# DELETIONS are recorded honestly as mode 000000 / sha 0{40} (git's own raw
+# output), so a commit cannot change WHAT IT REMOVES without moving the digest.
+# The naive alternative — hash only surviving blobs — would leave a pure-removal
+# commit binding nothing, which is the degenerate end this class of check keeps
+# failing at.
+
+# macOS ships shasum (perl), Linux ships sha256sum. Same order and same reason
+# as cabinet/scripts/retrieval-eval-nightly.sh. Returns 127 when neither exists
+# so the caller fails CLOSED rather than treating an empty digest as a match.
+fw019_sha256_stdin() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | awk '{print $1}'
+  else
+    return 127
+  fi
+}
+
+# fw019_write_scope_records <outfile> — canonical records, LC_ALL=C sorted.
+# Non-zero return = the scope could not be canonicalised (caller must block).
+fw019_write_scope_records() {
+  local out="$1" meta path rc=0
+  local -a fields
+  : > "$out" || return 1
+  # -c diff.relative=false : a user's diff.relative=true emits cwd-relative
+  #      paths and would silently move the digest between two honest runs.
+  # --no-renames           : a rename record carries TWO paths and would break
+  #      the one-path-per-record grammar.
+  # -z                     : paths verbatim, so core.quotePath cannot move the
+  #      digest either.
+  # --abbrev=40            : full object ids. An abbreviated id is not a binding.
+  while IFS= read -r -d '' meta && IFS= read -r -d '' path; do
+    case "$path" in
+      "$REVIEW_DIR_REL"/*) continue ;;
+    esac
+    case "$path" in
+      *$'\n'*)
+        echo "pre-commit: staged path contains a newline; the scope digest cannot bind it: $path" >&2
+        rc=1
+        continue
+        ;;
+    esac
+    # meta is ":<srcmode> <dstmode> <srcsha> <dstsha> <status>"
+    IFS=' ' read -r -a fields <<<"$meta"
+    printf '%s %s %s\n' "${fields[1]}" "${fields[3]}" "$path" >> "$out"
+  done < <(git -c diff.relative=false -C "$REPO_ROOT" diff --cached --raw \
+             --abbrev=40 --no-renames -z 2>/dev/null)
+  [ "$rc" -eq 0 ] || return 1
+  LC_ALL=C sort -o "$out" "$out"
+}
+
+# fw019_staged_digest — echoes "<count> <digest>" for the current index, or
+# returns non-zero with the reason on stderr. Fail-closed by construction:
+# every failure path returns non-zero instead of echoing something falsy that a
+# recorded digest could accidentally equal.
+fw019_staged_digest() {
+  local records count digest
+  records=$(mktemp) || { echo "pre-commit: mktemp failed" >&2; return 1; }
+  if ! fw019_write_scope_records "$records"; then
+    rm -f "$records"
+    return 1
+  fi
+  count=$(wc -l < "$records" | tr -d ' ')
+  digest=$(fw019_sha256_stdin < "$records")
+  local rc=$?
+  rm -f "$records"
+  if [ "$rc" -ne 0 ] || [ ${#digest} -ne 64 ]; then
+    echo "pre-commit: no usable sha256 tool on PATH (need sha256sum or shasum)" >&2
+    return 1
+  fi
+  printf '%s %s\n' "$count" "$digest"
+}
+
+# CLI mode — how a reviewer gets the digest to record in the artifact.
+if [ "${1:-}" = "--print-scope-digest" ]; then
+  if ! FW019_PAIR=$(fw019_staged_digest); then
+    echo "pre-commit: cannot compute the staged scope digest" >&2
+    exit 1
+  fi
+  FW019_COUNT=${FW019_PAIR%% *}
+  FW019_DIGEST=${FW019_PAIR##* }
+  if [ "$FW019_COUNT" -eq 0 ]; then
+    echo "pre-commit: nothing staged outside $REVIEW_DIR_REL/ — no reviewable bytes to bind" >&2
+    exit 1
+  fi
+  echo "scope: $FW019_COUNT staged path(s), excluding $REVIEW_DIR_REL/" >&2
+  printf '%s: %s\n' "$FW019_DIGEST_LABEL" "$FW019_DIGEST"
   exit 0
 fi
 
@@ -120,48 +247,111 @@ if [ "$DIFF_LINES" -le "$CP_REVIEW_THRESHOLD" ] 2>/dev/null; then
   exit 0
 fi
 
-# Over threshold — require a recent review artifact.
+# Over threshold — require a review artifact BOUND TO THE STAGED BYTES.
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
 REVIEW_DIR="$REPO_ROOT/$REVIEW_DIR_REL"
 
-# Look for any review file matching the branch slug, modified within the
-# last N minutes. Slugify by replacing / with - (git branch slashes).
+# Slugify by replacing / with - (git branch slashes). The filename convention
+# survives — it is how a human finds the artifact — but it is no longer the
+# EVIDENCE. The digest is.
 BRANCH_SLUG=$(echo "$BRANCH" | tr '/' '-')
 
-RECENT_REVIEW=""
-if [ -d "$REVIEW_DIR" ]; then
-  # find -mmin accepts negative minutes as "modified less than N minutes ago"
-  RECENT_REVIEW=$(find "$REVIEW_DIR" -maxdepth 2 -type f -name "*${BRANCH_SLUG}*" -mmin "-${REVIEW_MAX_AGE_MIN}" 2>/dev/null | head -1)
-  # Fallback: any review file matching branch, regardless of age — useful
-  # when a build spans longer than REVIEW_MAX_AGE_MIN. Still requires SOMETHING.
-  if [ -z "$RECENT_REVIEW" ]; then
-    RECENT_REVIEW=$(find "$REVIEW_DIR" -maxdepth 2 -type f -name "*${BRANCH_SLUG}*" 2>/dev/null | head -1)
-  fi
+if ! FW019_PAIR=$(fw019_staged_digest); then
+  echo "pre-commit: BLOCKED — the staged scope digest could not be computed (reason above)." >&2
+  exit 1
+fi
+SCOPE_COUNT=${FW019_PAIR%% *}
+STAGED_DIGEST=${FW019_PAIR##* }
+
+# Degenerate end: everything staged lives inside the review plane, so there is
+# nothing for a review to bind. Hashing the empty record set would produce a
+# CONSTANT any artifact could record — the exact forgery this replaces. Block.
+if [ "$SCOPE_COUNT" -eq 0 ]; then
+  cat >&2 <<EOF
+pre-commit: BLOCKED — diff is ${DIFF_LINES} LOC (threshold ${CP_REVIEW_THRESHOLD}) but
+every staged path is inside ${REVIEW_DIR_REL}/, so there are no reviewable bytes
+for a checkpoint review to bind to.
+
+Stage the change the review is about, or — for a review-artifact-only commit —
+override with:
+  COMMIT_NO_REVIEW=1 git commit ...
+EOF
+  exit 1
 fi
 
-if [ -n "$RECENT_REVIEW" ]; then
-  # Accept. Note the artifact used in stderr for the developer's log.
-  echo "pre-commit: checkpoint-review artifact found: ${RECENT_REVIEW#$REPO_ROOT/}" >&2
+# Scan every artifact whose filename carries the branch slug. Symlinks are
+# INCLUDED in the find (\( -type f -o -type l \)) precisely so they can be
+# refused by name: `-type f` alone would silently skip them, and a "refusal"
+# that never sees its target is a disabled sensor, not a control. Same hazard
+# the pre-push announcement log already refuses for (a hostile swap pointing at
+# a world-writable scratch file crafted to carry the right digest).
+MATCHED=""
+CANDIDATES=0
+NOTES=""
+if [ -d "$REVIEW_DIR" ]; then
+  while IFS= read -r artifact; do
+    [ -n "$artifact" ] || continue
+    CANDIDATES=$((CANDIDATES + 1))
+    rel="${artifact#"$REPO_ROOT"/}"
+    if [ -L "$artifact" ]; then
+      NOTES="$NOTES
+  - $rel: symlink — a review artifact must be a regular file in this tree"
+      continue
+    fi
+    hits=$(tr -d '\r' < "$artifact" | grep -cE "^${FW019_DIGEST_LABEL}: [0-9a-f]{64}\$")
+    if [ "$hits" != "1" ]; then
+      NOTES="$NOTES
+  - $rel: carries ${hits} '${FW019_DIGEST_LABEL}: <64-hex>' line(s); exactly one is required"
+      continue
+    fi
+    recorded=$(tr -d '\r' < "$artifact" | grep -E "^${FW019_DIGEST_LABEL}: [0-9a-f]{64}\$" | awk '{print $2}')
+    if [ "$recorded" = "$STAGED_DIGEST" ]; then
+      MATCHED="$rel"
+      break
+    fi
+    NOTES="$NOTES
+  - $rel: records ${recorded}, staged scope hashes to ${STAGED_DIGEST}"
+  done < <(find "$REVIEW_DIR" -maxdepth 2 \( -type f -o -type l \) -name "*${BRANCH_SLUG}*" 2>/dev/null | LC_ALL=C sort)
+fi
+
+if [ -n "$MATCHED" ]; then
+  echo "pre-commit: checkpoint-review artifact bound: $MATCHED (scope digest $STAGED_DIGEST, ${SCOPE_COUNT} path(s))" >&2
   exit 0
 fi
 
-# No review artifact → block.
+if [ "$CANDIDATES" -eq 0 ]; then
+  NOTES="
+  - no file under ${REVIEW_DIR_REL}/ has \"${BRANCH_SLUG}\" in its name"
+fi
+
+# No artifact bound to these bytes → block.
 cat >&2 <<EOF
 pre-commit: BLOCKED — diff is ${DIFF_LINES} LOC (threshold ${CP_REVIEW_THRESHOLD}).
 
-Checkpoint-review required for large commits (FW-019, Captain directive 2026-04-19).
+Checkpoint-review required for large commits (FW-019, Captain directive 2026-04-19),
+and the review must be BOUND to the bytes being committed:${NOTES}
 
 To unblock:
-  1. Spawn a reviewer subagent on your staged diff (\`git diff --cached\`).
-  2. Write the review to: ${REVIEW_DIR_REL}/${BRANCH_SLUG}-cp<n>.md
-     (any filename containing "${BRANCH_SLUG}" works)
-  3. Retry the commit.
+  1. Stage the whole change (\`git add <paths>\`) — the digest covers the index,
+     so anything staged afterwards invalidates it.
+  2. Spawn a reviewer subagent on your staged diff (\`git diff --cached\`).
+  3. Write the review to: ${REVIEW_DIR_REL}/${BRANCH_SLUG}-cp<n>.md
+     (any filename containing "${BRANCH_SLUG}" works) and include exactly one line
+     recording the digest of what is staged right now:
+       ${FW019_DIGEST_LABEL}: ${STAGED_DIGEST}
+     (re-read it any time with:
+        bash cabinet/scripts/git-hooks/pre-commit --print-scope-digest)
+  4. \`git add -f\` that file (shared/interfaces/**/*.md is gitignored), then retry.
 
 For docs-only / trivial fixes, override with:
   COMMIT_NO_REVIEW=1 git commit ...
 
-Why: end-of-build reviews miss design drift and drown the reviewer in
-context. Checkpoint-review catches issues cheaply, one slice at a time.
+Why the digest and not a filename: the old check matched any file whose name
+contained the branch slug and never read a byte, so \`touch\` passed it and a
+review copied from another branch passed it. The digest is SHA-256 over the
+sorted "<mode> <sha> <path>" records of everything staged outside
+${REVIEW_DIR_REL}/ — a copied review cannot satisfy it, and a stale one stops
+satisfying it the moment the code moves.
 EOF
 
 exit 1

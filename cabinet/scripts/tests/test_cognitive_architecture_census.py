@@ -9,11 +9,13 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "cabinet" / "scripts" / "cognitive-architecture-census.py"
 CONTRACT = ROOT / "cabinet" / "config" / "cognitive-architecture-contract.yml"
+BASELINE_SETS = ROOT / "cabinet" / "config" / "architecture-baseline-sets.yml"
 
 
 def _load_module():
@@ -62,6 +64,7 @@ def _copy_census_tree(tmp_path: Path) -> Path:
     )
     for rel in (
         "cabinet/config/cognitive-architecture-contract.yml",
+        "cabinet/config/architecture-baseline-sets.yml",
         "cabinet/scripts/cognitive-architecture-census.py",
         "cabinet/services.yml",
         ".layer-separation-baseline",
@@ -353,6 +356,7 @@ def test_structural_compaction_baseline_growth_mutants_fail(
     "mutation",
     (
         lambda data: data.pop("ownership"),
+        lambda data: data.pop("expansions"),
         lambda data: data.pop("declared_invariants"),
         lambda data: data.pop("enduring_architecture_gates"),
         lambda data: data.update({"unknown_section": {}}),
@@ -827,3 +831,337 @@ def test_report_is_path_independent_for_explicit_as_of_date(tmp_path: Path):
 
     assert first_report == second_report
     assert first_report["as_of"] == "2026-07-19"
+
+
+# ---------------------------------------------------------------------------
+# The EXPANSION REGISTRY — permanent both-ways calibration.
+#
+# The registry's honest steady state is EMPTY: the baseline is the tree as it
+# stood when the registry landed, so there is no live surplus to name. Nothing
+# live therefore exercises it, and a registry that has never been seen to reject
+# is not a registry. These arms are the calibration anchor — the same idiom the
+# adapter conformance suite uses (the reference must pass everything, the
+# template must fail everything; a suite that cannot tell them apart tests
+# nothing). A synthetic member that is NOT registered must go RED, and the SAME
+# tree with the SAME member registered must go GREEN.
+#
+# Every arm below lifts the COUNT ceiling by exactly one first, so the only
+# thing that can red these trees is the registry — never the zero-headroom
+# ratchet standing in for a check that is not actually running.
+# ---------------------------------------------------------------------------
+
+SYNTHETIC_MEMBER = "census_fixture_unadjudicated_event"
+SYNTHETIC_CLASS = "central_event_types"
+BASELINE_MEMBER = "captain_goal_declared"
+
+
+def _plant_synthetic_member(tree: Path) -> None:
+    emitter = tree / "framework/events/emitter.py"
+    text = emitter.read_text()
+    needle = "VALID_EVENT_TYPES = frozenset({"
+    assert needle in text
+    emitter.write_text(text.replace(needle, f'{needle}\n    "{SYNTHETIC_MEMBER}",', 1))
+
+
+def _expansion_row(**overrides):
+    row = {
+        "member": SYNTHETIC_MEMBER,
+        "member_class": SYNTHETIC_CLASS,
+        "gate_date": "2026-07-27",
+        "models_run": ["fixture-arm-a", "fixture-arm-b"],
+        "adjudication": "docs/plans/cognitive-core-phase-4-contract-2026-07-23.md",
+        "merge_refuted": (
+            "framework/events/emitter.py::VALID_EVENT_TYPES no shipped event carries "
+            "this fixture's meaning"
+        ),
+        "consumer": "framework/watchdog/registry.py",
+        "provenance": "permanent calibration fixture for the expansion registry",
+    }
+    row.update(overrides)
+    return row
+
+
+def _rewrite_contract(tree: Path, expansions, *, lift_ceilings: bool = True) -> None:
+    """Rewrite the copied tree's contract, lifting the two COUNT ceilings the
+    planted member consumes (one event type, one non-comment line) by exactly
+    one each. Both must move: the point of these arms is that the ONLY thing
+    which can red the tree is the registry, never a zero-headroom ratchet
+    standing in for a check that is not actually running."""
+
+    path = tree / "cabinet/config/cognitive-architecture-contract.yml"
+    data = yaml.safe_load(path.read_text())
+    data["expansions"] = expansions
+    if lift_ceilings:
+        data["budgets"]["central_event_types"]["maximum"] += 1
+        data["budgets"]["framework_production_noncomment_lines"]["maximum"] += 1
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+
+
+def _tree_with_synthetic_member(tmp_path: Path, expansions) -> Path:
+    tree = _copy_census_tree(tmp_path)
+    _plant_synthetic_member(tree)
+    _rewrite_contract(tree, expansions)
+    return tree
+
+
+def test_unregistered_set_member_is_red(tmp_path: Path):
+    """NEGATIVE control: net-new member, count ceiling lifted, no row -> RED."""
+
+    census = _load_module()
+    tree = _tree_with_synthetic_member(tmp_path, [])
+
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is False
+    assert report["observed"]["central_event_types"] <= report["maximums"]["central_event_types"]
+    assert {
+        (failure["budget"], failure["member"], failure["reason"])
+        for failure in report["failures"]
+    } == {(SYNTHETIC_CLASS, SYNTHETIC_MEMBER, "unregistered set member")}
+
+
+def test_registered_set_member_is_green(tmp_path: Path):
+    """POSITIVE control: the same tree, the same member, one adjudicated row."""
+
+    census = _load_module()
+    tree = _tree_with_synthetic_member(tmp_path, [_expansion_row()])
+
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is True, report["failures"]
+    assert report["surplus_members"][SYNTHETIC_CLASS] == [SYNTHETIC_MEMBER]
+
+
+def test_expansion_row_naming_an_absent_member_is_red(tmp_path: Path):
+    """The stale copy-paste: a row survives the member it was written for."""
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    _rewrite_contract(tree, [_expansion_row()], lift_ceilings=False)
+
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is False
+    assert any(
+        failure.get("member") == SYNTHETIC_MEMBER
+        and failure["reason"] == "expansion row names a member that is not present"
+        for failure in report["failures"]
+    )
+
+
+def test_expansion_row_naming_a_baseline_member_is_red(tmp_path: Path):
+    """The laundering edit: pay for a member the baseline already covers."""
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    _rewrite_contract(
+        tree, [_expansion_row(member=BASELINE_MEMBER)], lift_ceilings=False
+    )
+
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is False
+    assert any(
+        failure.get("member") == BASELINE_MEMBER
+        and failure["reason"] == "expansion row names a baseline member"
+        for failure in report["failures"]
+    )
+
+
+def test_two_rows_for_one_member_are_refused(tmp_path: Path):
+    census = _load_module()
+    path = tmp_path / "duplicate-rows.yml"
+    data = yaml.safe_load(CONTRACT.read_text())
+    data["expansions"] = [_expansion_row(), _expansion_row(gate_date="2026-07-28")]
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+
+    with pytest.raises(census.ContractError, match="duplicate expansion row"):
+        census.load_contract(path)
+
+
+@pytest.mark.parametrize("dropped", sorted(_expansion_row()))
+def test_expansion_schema_refuses_every_missing_field(tmp_path: Path, dropped: str):
+    """Under-specification fails — one arm per field, so no field can be quietly
+    dropped from the forcing question later."""
+
+    census = _load_module()
+    row = _expansion_row()
+    row.pop(dropped)
+    path = tmp_path / f"missing-{dropped}.yml"
+    data = yaml.safe_load(CONTRACT.read_text())
+    data["expansions"] = [row]
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+
+    with pytest.raises(census.ContractError, match="expansion keys must be exactly"):
+        census.load_contract(path)
+
+
+def test_expansion_schema_refuses_an_extra_field(tmp_path: Path):
+    """Over-specification fails too — the closed-key law runs both directions."""
+
+    census = _load_module()
+    path = tmp_path / "extra-field.yml"
+    data = yaml.safe_load(CONTRACT.read_text())
+    data["expansions"] = [_expansion_row(surprise="forbidden")]
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+
+    with pytest.raises(census.ContractError, match="expansion keys must be exactly"):
+        census.load_contract(path)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    (
+        ({"member": "   "}, "expansion requires non-empty member"),
+        ({"provenance": ""}, "expansion requires non-empty provenance"),
+        ({"member_class": "framework_production_noncomment_lines"}, "member_class must be one of"),
+        ({"member_class": "not_a_class"}, "member_class must be one of"),
+        ({"gate_date": "27-07-2026"}, "gate_date must be YYYY-MM-DD"),
+        ({"models_run": ["only-one-arm"]}, "at least two independently-run arms"),
+        ({"models_run": "two, honest"}, "at least two independently-run arms"),
+        ({"models_run": ["same-arm", " Same-Arm "]}, "arms must be distinct"),
+        ({"models_run": ["ok-arm", ""]}, "entries must be non-empty strings"),
+        ({"adjudication": "/etc/passwd.md"}, "must be a relative, confined"),
+        ({"adjudication": "../outside/gate.md"}, "must be a relative, confined"),
+        ({"adjudication": "docs/plans/gate.txt"}, "must name the written adjudication"),
+        (
+            {"merge_refuted": "nothing existing does this, I checked"},
+            "must OPEN with a <path>::<symbol> anchor",
+        ),
+        (
+            {"merge_refuted": "framework/events/emitter.py no symbol here"},
+            "must OPEN with a <path>::<symbol> anchor",
+        ),
+        (
+            {"merge_refuted": "framework/events/emitter.py::ab too short a symbol"},
+            "must OPEN with a <path>::<symbol> anchor",
+        ),
+        ({"consumer": "/absolute/consumer.py"}, "must be a relative, confined"),
+    ),
+)
+def test_expansion_field_shapes_are_refused_at_load(tmp_path: Path, overrides, message):
+    census = _load_module()
+    path = tmp_path / "bad-shape.yml"
+    data = yaml.safe_load(CONTRACT.read_text())
+    data["expansions"] = [_expansion_row(**overrides)]
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+
+    with pytest.raises(census.ContractError, match=message):
+        census.load_contract(path)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "reason_fragment"),
+    (
+        (
+            {"merge_refuted": "framework/no_such_module.py::SOME_SYMBOL prose"},
+            "merge_refuted names a path that is absent",
+        ),
+        (
+            {"merge_refuted": "framework/events/emitter.py::NOT_A_REAL_SYMBOL_HERE prose"},
+            "merge_refuted symbol is absent from the file it names",
+        ),
+        ({"consumer": "framework/no_such_consumer.py"}, "consumer resolves to neither"),
+        ({"consumer": SYNTHETIC_MEMBER}, "consumer must READ the output"),
+        ({"consumer": "framework/events/emitter.py"}, "consumer must READ the output"),
+    ),
+)
+def test_expansion_bindings_must_resolve_against_the_tree(
+    tmp_path: Path, overrides, reason_fragment: str
+):
+    """merge_refuted is answered by grep or not at all, and a consumer that is
+    the member or its own declaring file is not a consumer."""
+
+    census = _load_module()
+    tree = _tree_with_synthetic_member(tmp_path, [_expansion_row(**overrides)])
+
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is False
+    assert any(
+        reason_fragment in failure["reason"] for failure in report["failures"]
+    ), report["failures"]
+
+
+def test_a_declared_service_name_is_an_acceptable_consumer(tmp_path: Path):
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    _plant_synthetic_member(tree)
+    services = yaml.safe_load((tree / "cabinet/services.yml").read_text())["services"]
+    _rewrite_contract(tree, [_expansion_row(consumer=services[0]["name"])])
+
+    report = census.inspect_repository(tree)
+
+    assert report["ok"] is True, report["failures"]
+
+
+def test_bijection_classes_are_pinned(tmp_path: Path):
+    """A silent narrowing of the covered classes would disable the registry for a
+    whole class while every other arm stayed green."""
+
+    census = _load_module()
+
+    assert census.BIJECTION_CLASSES == frozenset(
+        {
+            "central_event_types",
+            "central_action_types",
+            "services_total",
+            "services_enabled",
+            "framework_production_modules",
+            "duplicate_event_writer_sinks",
+        }
+    )
+    assert set(yaml.safe_load(BASELINE_SETS.read_text())["classes"]) == set(
+        census.BIJECTION_CLASSES
+    )
+
+
+def test_live_registry_carries_no_unregistered_surplus():
+    census = _load_module()
+    report = census.inspect_repository(ROOT)
+
+    assert set(report["surplus_members"]) == set(census.BIJECTION_CLASSES)
+    assert all(not members for members in report["surplus_members"].values()), (
+        report["surplus_members"]
+    )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        lambda data: data.pop("classes"),
+        lambda data: data.pop("snapshot_of"),
+        lambda data: data.update({"unexpected": 1}),
+        lambda data: data.update({"schema_version": "architecture-baseline-sets/v0"}),
+        lambda data: data.update({"snapshot_of": "not-a-sha"}),
+        lambda data: data["classes"].pop("services_total"),
+        lambda data: data["classes"].update({"invented_class": ["x"]}),
+        lambda data: data["classes"].update({"central_event_types": []}),
+        lambda data: data["classes"].update({"central_event_types": ["dup", "dup"]}),
+        lambda data: data["classes"].update({"central_event_types": ["ok", "  "]}),
+    ),
+)
+def test_baseline_sets_are_closed_and_fail_shut(tmp_path: Path, mutation):
+    census = _load_module()
+    data = yaml.safe_load(BASELINE_SETS.read_text())
+    mutation(data)
+    path = tmp_path / "mutant-baseline.yml"
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+
+    with pytest.raises(census.ContractError):
+        census.load_baseline_sets(path)
+
+
+def test_duplicate_service_names_fail_closed(tmp_path: Path):
+    """Two rows under one name would shrink the member set below the row count
+    and hide a service from the registry while the count budget still read it."""
+
+    census = _load_module()
+    tree = _copy_census_tree(tmp_path)
+    services = tree / "cabinet/services.yml"
+    data = yaml.safe_load(services.read_text())
+    data["services"][1]["name"] = data["services"][0]["name"]
+    services.write_text(yaml.safe_dump(data, sort_keys=False))
+
+    with pytest.raises(census.ContractError, match="duplicate service names"):
+        census.inspect_repository(tree)

@@ -87,9 +87,13 @@ LEGACY_EXEMPT = {
     # 669 -> 680) by the captain-dates manifest rows — each time a delete row +
     # comment above the first site and an expect-present row + comment above the
     # second. The marker TEXT and the exempt SET are unchanged every time — these
-    # are re-anchors, not widenings, and LEGACY_MAX stays 2.
-    ("cabinet/scripts/egg-export-manifest.txt", 248): "RESIDUAL SCRUB",
-    ("cabinet/scripts/egg-export-manifest.txt", 680): "RESIDUAL SCRUB",
+    # are re-anchors, not widenings, and LEGACY_MAX stays 2. Re-anchored again
+    # 2026-07-27 (248 -> 258, 680 -> 696) by the expansion-registry manifest
+    # rows — same shape: a delete row + comment above the first site and an
+    # expect-present row + comment above the second. Marker TEXT and exempt SET
+    # unchanged.
+    ("cabinet/scripts/egg-export-manifest.txt", 258): "RESIDUAL SCRUB",
+    ("cabinet/scripts/egg-export-manifest.txt", 696): "RESIDUAL SCRUB",
 }
 LEGACY_MAX = 2
 

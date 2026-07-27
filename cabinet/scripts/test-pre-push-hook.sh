@@ -5,12 +5,22 @@
 #   FW-007:  force-push / delete refusal on master
 #   FW-025:  golden-eval gate on master pushes (stubbed to always pass)
 #   FW-025b: layer-separation gate on master pushes (stubbed to always pass)
+#   FW-025c: architecture-census gate on master pushes (stubbed; BOTH arms —
+#            a passing stub must let the push through, a failing stub must
+#            block it, because a gate never observed rejecting proves nothing)
 #
-# Both master-push gates (run-golden-evals.sh AND check-layer-separation.sh)
-# are stubbed with exit 0 in every fixture so this harness focuses exclusively
-# on FW-007 force-push logic without coupling to those suites' own regression
-# coverage. That the gates RUN on master pushes is asserted (Test 4); their
-# pass/fail behavior is covered by run-golden-evals.sh / check-layer-separation.sh.
+# All three master-push gates (run-golden-evals.sh, check-layer-separation.sh
+# AND cognitive-architecture-census.py) are stubbed in every fixture so this
+# harness focuses on the hook's own decision tree without coupling to those
+# suites' regression coverage. That the gates RUN on master pushes is asserted
+# (Test 4); their real pass/fail behavior is covered by run-golden-evals.sh /
+# check-layer-separation.sh / test_cognitive_architecture_census.py.
+#
+# CABINET_PYTHON=bash (exported below): the hook invokes the census as
+# "$CABINET_PYTHON" <script>, so pointing the interpreter at bash lets the stub
+# be a bash script. That keeps the harness hermetic — it needs no python and no
+# PyYAML to test branching that is pure shell — and matches how the other two
+# gates are already stubbed.
 #
 # Run:  bash cabinet/scripts/test-pre-push-hook.sh
 # Exit 0 on all PASS, 1 on any FAIL.
@@ -20,6 +30,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOK="$SCRIPT_DIR/git-hooks/pre-push"
 ZERO_SHA="0000000000000000000000000000000000000000"
+export CABINET_PYTHON="${CABINET_PYTHON:-bash}"
 
 PASS=0
 FAIL=0
@@ -116,6 +127,12 @@ STUB
 exit 0
 STUB
     chmod +x cabinet/scripts/check-layer-separation.sh
+    # FW-025c census stub. Named .py because that is the path the hook resolves;
+    # it is bash, and runs under CABINET_PYTHON=bash (see the header note).
+    cat > cabinet/scripts/cognitive-architecture-census.py <<'STUB'
+#!/bin/bash
+exit 0
+STUB
     # Real regular log file (starts empty)
     touch shared/force-push-log.md
   ) >/dev/null 2>&1
@@ -165,6 +182,8 @@ RC=$?
 assert_eq "  exit code 0" "$RC" "0"
 # FW-025 gate prints a message when it runs; confirm it did NOT run
 assert_not_contains "  eval gate did not run" "$OUTPUT" "golden-eval suite"
+# Same scope limit for the census gate — feature branches are not gated
+assert_not_contains "  census gate did not run" "$OUTPUT" "FW-025c"
 
 # Test 2: Empty stdin (no refs pushed) → exit 0
 echo "Test 2: empty stdin → exit 0"
@@ -196,6 +215,8 @@ assert_eq "  exit code 0" "$RC" "0"
 assert_not_contains "  no BLOCKED" "$OUTPUT" "BLOCKED"
 # The layer-sep gate (FW-025b) runs on master pushes, ahead of the eval gate
 assert_contains "  layer-sep gate ran" "$OUTPUT" "FW-025b"
+# The census gate (FW-025c) runs between layer-sep and the eval suite
+assert_contains "  census gate ran" "$OUTPUT" "FW-025c"
 # The eval gate message should appear because PUSHES_MASTER=true
 assert_contains "  eval gate ran" "$OUTPUT" "golden-eval suite"
 
@@ -332,6 +353,52 @@ assert_eq "  exit code 0" "$RC" "0"
 assert_contains "  allowed message present" "$OUTPUT" "allowed"
 # Eval gate must also run (PUSHES_MASTER is true)
 assert_contains "  eval gate ran" "$OUTPUT" "golden-eval suite"
+
+# ═════════════════════════════════════════════════════════════════════════════
+# FW-025c CENSUS GATE — the REJECTING arms
+#
+# Tests 1/4 prove the gate runs and lets a clean tree through. A gate that has
+# only ever been observed passing proves nothing, so each way it can fail gets
+# its own arm: a real breach, an absent script, and an absent interpreter. All
+# three must BLOCK — fail-open on an enforcement plane is the worst fail-open.
+# ═════════════════════════════════════════════════════════════════════════════
+
+echo ""
+echo "── FW-025c census gate — rejecting arms ─────────────────────────────────"
+
+CENSUS_STUB="$FIXTURE/cabinet/scripts/cognitive-architecture-census.py"
+
+# Test 15: census reports a breach (exit 1) → master push blocked
+echo "Test 15: census breach → exit 1 + FW-025c block message"
+printf '#!/bin/bash\necho "cognitive architecture census: FAIL" >&2\nexit 1\n' > "$CENSUS_STUB"
+OUTPUT=$(echo "refs/heads/master $HEAD_SHA refs/heads/master $ANCESTOR_SHA" \
+  | run_hook "$FIXTURE" 2>&1)
+RC=$?
+assert_eq "  exit code 1" "$RC" "1"
+assert_contains "  stderr: FW-025c block" "$OUTPUT" "FW-025c"
+assert_contains "  stderr: names the contract" "$OUTPUT" "temporary_allowances"
+# Fail-fast: the census runs BEFORE the 75s eval suite, so the suite must not
+# have been reached at all.
+assert_not_contains "  eval suite not reached" "$OUTPUT" "golden-eval suite"
+printf '#!/bin/bash\nexit 0\n' > "$CENSUS_STUB"
+
+# Test 16: census script absent → master push blocked (fail-closed on absence)
+echo "Test 16: census script missing → exit 1 + 'missing'"
+mv "$CENSUS_STUB" "$CENSUS_STUB.bak"
+OUTPUT=$(echo "refs/heads/master $HEAD_SHA refs/heads/master $ANCESTOR_SHA" \
+  | run_hook "$FIXTURE" 2>&1)
+RC=$?
+mv "$CENSUS_STUB.bak" "$CENSUS_STUB"
+assert_eq "  exit code 1" "$RC" "1"
+assert_contains "  stderr: missing census" "$OUTPUT" "missing (FW-025c)"
+
+# Test 17: interpreter absent → master push blocked (never silently skipped)
+echo "Test 17: CABINET_PYTHON not on PATH → exit 1 + 'not on PATH'"
+OUTPUT=$(echo "refs/heads/master $HEAD_SHA refs/heads/master $ANCESTOR_SHA" \
+  | run_hook "$FIXTURE" "CABINET_PYTHON=cabinet-no-such-interpreter" 2>&1)
+RC=$?
+assert_eq "  exit code 1" "$RC" "1"
+assert_contains "  stderr: interpreter missing" "$OUTPUT" "not on PATH"
 
 # ═════════════════════════════════════════════════════════════════════════════
 # Summary

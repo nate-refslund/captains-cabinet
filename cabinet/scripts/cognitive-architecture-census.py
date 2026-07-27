@@ -4,6 +4,42 @@
 The census deliberately parses source instead of importing framework modules:
 it must work in a gitless clean hatch and must never trigger runtime state,
 environment, event, or connector side effects.
+
+TWO LAWS, not one.
+
+  * BUDGETS answer "how many?". Every class is pinned at observed==max with
+    zero headroom, so a single unit of growth blocks. Mass is paid for with a
+    temporary_allowances row (reason / owner / sunset / deletion_gate).
+  * The EXPANSION REGISTRY answers "which, and was it adjudicated?". For the
+    classes whose members the census can name, the contract's `expansions`
+    list must stand in BIJECTION with the surplus:
+
+        observed - baseline  ==  {row.member for row in expansions}
+
+    exactly and disjointly, per class, against
+    cabinet/config/architecture-baseline-sets.yml. An unregistered net-new
+    member is RED; a row naming a member that is not observed (the stale
+    copy-paste) is RED; a row naming a baseline member (the laundering edit)
+    is RED; two rows naming one member are refused at load.
+
+An allowance CANNOT buy a net-new set member. That gap is why this exists: an
+expansion's line-mass was once paid as a routine allowance, whose schema asks
+only reason/owner/sunset — declaration without adjudication. The expansion row
+carries the adjudication fields (the blind arms that ran, the written verdict,
+the merge that was refuted by path+symbol, and the consumer that will read the
+output), and every one of them is schema-refused when missing or empty.
+
+COVERAGE, stated so nothing here reads as more than it is: bijection reaches
+the six member classes named in BIJECTION_CLASSES. Growth in non-comment LINES
+inside an existing module is a mass, not a set, and stays on allowances alone.
+`adjudication` is shape-checked here and BOUND to its document (exists, and
+names its member) by cabinet/scripts/tests/test_expansion_adjudication_binding.py,
+which is source-side only because docs/plans and docs/proposals archive out of
+the egg — a shipped copy would red a hatched cabinet for a document the export
+deliberately removed.
+
+Provenance: the 2026-07-27 two-model expansion-gate adjudication (Fable 5 +
+Opus 5, blind, own clones), per the 2026-07-07 full-autonomy grant.
 """
 
 from __future__ import annotations
@@ -22,6 +58,50 @@ import yaml
 
 
 DEFAULT_CONTRACT = Path("cabinet/config/cognitive-architecture-contract.yml")
+DEFAULT_BASELINE_SETS = Path("cabinet/config/architecture-baseline-sets.yml")
+# The classes whose MEMBERS the census can name, and therefore the classes the
+# expansion registry can hold to a bijection. Deliberately code, not data: a
+# silent narrowing of this set would disable the registry for a whole class
+# while every remaining arm stayed green, so it is pinned by a test.
+#
+# Excluded, each with its reason:
+#   framework_production_noncomment_lines — a mass, not a set.
+#   named_compiler_modules — pinned at 1 behind a declared invariant; a second
+#       one is already unreachable, and it is a subset of the module class.
+#   layer_debt_entries / layer_allowlist_entries — shrink-only ratchets owned by
+#       cabinet/scripts/check-layer-separation.sh, entry by Captain-ratified
+#       entry.
+BIJECTION_CLASSES = frozenset(
+    {
+        "central_event_types",
+        "central_action_types",
+        "services_total",
+        "services_enabled",
+        "framework_production_modules",
+        "duplicate_event_writer_sinks",
+    }
+)
+REQUIRED_EXPANSION_FIELDS = {
+    "member",
+    "member_class",
+    "gate_date",
+    "models_run",
+    "adjudication",
+    "merge_refuted",
+    "consumer",
+    "provenance",
+}
+EXPECTED_BASELINE_SET_KEYS = frozenset({"schema_version", "snapshot_of", "classes"})
+BASELINE_SETS_SCHEMA_VERSION = "architecture-baseline-sets/v1"
+# merge_refuted opens with a grep-able anchor, never prose: both near-misses the
+# program caught before this gate existed were answerable by grepping a named
+# symbol (a proposed engine whose value was a join something already did; a
+# "missing rung" that was a verdict already granted). Prose may follow the
+# anchor; the anchor itself must resolve.
+MERGE_REFUTED_ANCHOR = re.compile(
+    r"^(?P<path>[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9_]+)"
+    r"::(?P<symbol>[A-Za-z_][A-Za-z0-9_.]{2,})$"
+)
 REQUIRED_ALLOWANCE_FIELDS = {
     "phase",
     "budget",
@@ -80,6 +160,7 @@ EXPECTED_TOP_KEYS = frozenset(
         "baseline_sha",
         "budgets",
         "temporary_allowances",
+        "expansions",
         "ownership",
         "declared_invariants",
         "enduring_architecture_gates",
@@ -111,6 +192,115 @@ EXPECTED_ENDURING_ARCHITECTURE_GATES = frozenset(
 
 class ContractError(ValueError):
     """The architecture contract is malformed or internally inconsistent."""
+
+
+def _confined_relative_path(value: str, what: str) -> str:
+    """Reject absolute or escaping paths before anything resolves them."""
+
+    pure = PurePosixPath(value)
+    if not value.strip() or pure.is_absolute() or ".." in pure.parts:
+        raise ContractError(f"{what} must be a relative, confined repository path")
+    return value
+
+
+def _validate_expansions(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    """Schema-refuse every under- and over-specified expansion row.
+
+    Structural only: nothing here touches the tree, so `load_contract` stays
+    usable without a repository root. Tree resolution (does the refuted symbol
+    exist, does the consumer resolve, is the member actually surplus) happens in
+    `inspect_repository`.
+    """
+
+    expansions = raw["expansions"]
+    if not isinstance(expansions, list):
+        raise ContractError("expansions must be a list")
+    seen: set[tuple[str, str]] = set()
+    for expansion in expansions:
+        if not isinstance(expansion, dict) or set(expansion) != REQUIRED_EXPANSION_FIELDS:
+            raise ContractError(
+                "expansion keys must be exactly member, member_class, gate_date, "
+                "models_run, adjudication, merge_refuted, consumer, and provenance"
+            )
+        for field in ("member", "adjudication", "merge_refuted", "consumer", "provenance"):
+            if not isinstance(expansion[field], str) or not expansion[field].strip():
+                raise ContractError(f"expansion requires non-empty {field}")
+        if expansion["member_class"] not in BIJECTION_CLASSES:
+            raise ContractError(
+                f"expansion member_class must be one of {sorted(BIJECTION_CLASSES)}"
+            )
+        key = (expansion["member_class"], expansion["member"])
+        if key in seen:
+            raise ContractError(
+                f"duplicate expansion row for {key[0]} member {key[1]} — a surplus "
+                "member is named by exactly one row"
+            )
+        seen.add(key)
+        try:
+            date.fromisoformat(expansion["gate_date"])
+        except (TypeError, ValueError) as exc:
+            raise ContractError("expansion gate_date must be YYYY-MM-DD") from exc
+        models = expansion["models_run"]
+        if not isinstance(models, list) or len(models) < 2:
+            raise ContractError(
+                "expansion models_run must list at least two independently-run arms"
+            )
+        if not all(isinstance(model, str) and model.strip() for model in models):
+            raise ContractError("expansion models_run entries must be non-empty strings")
+        if len({model.strip().casefold() for model in models}) != len(models):
+            raise ContractError(
+                "expansion models_run arms must be distinct — one model run twice "
+                "is one opinion and an echo, not two"
+            )
+        adjudication = expansion["adjudication"].strip()
+        _confined_relative_path(adjudication, "expansion adjudication")
+        if not adjudication.endswith(".md"):
+            raise ContractError(
+                "expansion adjudication must name the written adjudication document (.md)"
+            )
+        anchor = MERGE_REFUTED_ANCHOR.match(expansion["merge_refuted"].split()[0])
+        if anchor is None:
+            raise ContractError(
+                "expansion merge_refuted must OPEN with a <path>::<symbol> anchor, "
+                "never prose — the merge question is answered by grep or not at all"
+            )
+        _confined_relative_path(anchor.group("path"), "expansion merge_refuted path")
+        _confined_relative_path(expansion["consumer"].strip(), "expansion consumer")
+    return expansions
+
+
+def load_baseline_sets(path: Path) -> dict[str, frozenset[str]]:
+    """Load the per-class member sets the registry measures surplus against."""
+
+    raw = yaml.safe_load(path.read_text())
+    if not isinstance(raw, dict):
+        raise ContractError("architecture baseline sets must be a mapping")
+    if raw.get("schema_version") != BASELINE_SETS_SCHEMA_VERSION:
+        raise ContractError("unsupported architecture baseline-sets schema_version")
+    if set(raw) != EXPECTED_BASELINE_SET_KEYS:
+        raise ContractError(
+            f"baseline-set keys must be exactly {sorted(EXPECTED_BASELINE_SET_KEYS)}"
+        )
+    if (
+        not isinstance(raw["snapshot_of"], str)
+        or re.fullmatch(r"[0-9a-f]{40}", raw["snapshot_of"]) is None
+    ):
+        raise ContractError("baseline-set snapshot_of must be a 40-character lowercase git SHA")
+    classes = raw["classes"]
+    if not isinstance(classes, dict) or set(classes) != set(BIJECTION_CLASSES):
+        raise ContractError(
+            f"baseline-set classes must be exactly {sorted(BIJECTION_CLASSES)}"
+        )
+    resolved: dict[str, frozenset[str]] = {}
+    for name, members in classes.items():
+        if not isinstance(members, list) or not members:
+            raise ContractError(f"baseline set {name} must be a non-empty list")
+        if not all(isinstance(member, str) and member.strip() for member in members):
+            raise ContractError(f"baseline set {name} members must be non-empty strings")
+        if len(set(members)) != len(members):
+            raise ContractError(f"baseline set {name} contains duplicate members")
+        resolved[name] = frozenset(members)
+    return resolved
 
 
 def _non_comment_line_count(path: Path) -> int:
@@ -561,6 +751,7 @@ def load_contract(path: Path, *, as_of: date | None = None) -> dict[str, Any]:
         except (TypeError, ValueError) as exc:
             raise ContractError("temporary allowance sunset must be YYYY-MM-DD") from exc
         allowance["_expired"] = sunset < (as_of or date.today())
+    _validate_expansions(raw)
     return raw
 
 
@@ -575,6 +766,119 @@ def _effective_maximum(contract: dict[str, Any], budget_name: str) -> tuple[int,
         else:
             maximum += allowance["additional"]
     return maximum, expired
+
+
+def _bijection_failures(
+    contract: dict[str, Any],
+    member_sets: dict[str, frozenset[str]],
+    baseline_sets: dict[str, frozenset[str]],
+) -> tuple[dict[str, list[str]], list[dict[str, Any]]]:
+    """observed - baseline == the registered members, exactly and disjointly.
+
+    Three distinct lies, three distinct reds. The registry is not a presence
+    check: nothing here asks whether a row EXISTS, only whether the rows and the
+    surplus are the same set — which a copied row, a touched file or a relabelled
+    allowance cannot satisfy.
+    """
+
+    rows_by_class: dict[str, set[str]] = {}
+    for expansion in contract["expansions"]:
+        rows_by_class.setdefault(expansion["member_class"], set()).add(expansion["member"])
+
+    surplus: dict[str, list[str]] = {}
+    failures: list[dict[str, Any]] = []
+    for name in sorted(BIJECTION_CLASSES):
+        observed_members = member_sets[name]
+        baseline_members = baseline_sets[name]
+        registered = rows_by_class.get(name, set())
+        class_surplus = observed_members - baseline_members
+        surplus[name] = sorted(class_surplus)
+        for member in sorted(class_surplus - registered):
+            failures.append(
+                {
+                    "budget": name,
+                    "member": member,
+                    "reason": "unregistered set member",
+                }
+            )
+        for member in sorted(registered - observed_members):
+            failures.append(
+                {
+                    "budget": name,
+                    "member": member,
+                    "reason": "expansion row names a member that is not present",
+                }
+            )
+        for member in sorted(registered & baseline_members):
+            failures.append(
+                {
+                    "budget": name,
+                    "member": member,
+                    "reason": "expansion row names a baseline member",
+                }
+            )
+    return surplus, failures
+
+
+def _expansion_binding_failures(
+    root: Path,
+    contract: dict[str, Any],
+    budgets: dict[str, Any],
+    service_names: set[str],
+) -> list[dict[str, Any]]:
+    """Resolve the two fields that must survive a hostile reading.
+
+    `merge_refuted` is answered by grep or not at all: the anchor's file must
+    exist and must contain the symbol it names, so a merge question cannot be
+    closed with prose. `consumer` must be a path that exists or a service the
+    fleet manifest declares, and must be neither the member itself nor the file
+    that declares it — "name the consumer before adding the producer" is not
+    satisfied by the producer naming itself.
+    """
+
+    failures: list[dict[str, Any]] = []
+    for expansion in contract["expansions"]:
+        member = expansion["member"]
+        member_class = expansion["member_class"]
+        anchor = MERGE_REFUTED_ANCHOR.match(expansion["merge_refuted"].split()[0])
+        refuted_path = root / anchor.group("path")
+        symbol = anchor.group("symbol")
+        if not refuted_path.is_file():
+            failures.append(
+                {
+                    "budget": member_class,
+                    "member": member,
+                    "reason": f"merge_refuted names a path that is absent: {anchor.group('path')}",
+                }
+            )
+        elif symbol not in refuted_path.read_text(encoding="utf-8", errors="ignore"):
+            failures.append(
+                {
+                    "budget": member_class,
+                    "member": member,
+                    "reason": f"merge_refuted symbol is absent from the file it names: {symbol}",
+                }
+            )
+        consumer = expansion["consumer"].strip()
+        if consumer in {member, budgets[member_class]["path"]}:
+            failures.append(
+                {
+                    "budget": member_class,
+                    "member": member,
+                    "reason": "consumer must READ the output — not the member itself "
+                    "and not the file that declares it",
+                }
+            )
+        elif consumer not in service_names and not (root / consumer).exists():
+            failures.append(
+                {
+                    "budget": member_class,
+                    "member": member,
+                    "reason": f"consumer resolves to neither a repository path nor a "
+                    f"declared service: {consumer}",
+                }
+            )
+    return failures
 
 
 def inspect_repository(
@@ -599,11 +903,21 @@ def inspect_repository(
     service_rows = services.get("services") if isinstance(services, dict) else None
     if not isinstance(service_rows, list):
         raise ContractError("cabinet services manifest must contain a services list")
+    service_names: list[str] = []
     for index, row in enumerate(service_rows):
         if not isinstance(row, dict):
             raise ContractError(f"service row {index} must be a mapping")
         if "disabled" in row and not isinstance(row["disabled"], bool):
             raise ContractError(f"service row {index} disabled must be boolean")
+        name = row.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise ContractError(f"service row {index} requires a non-empty name")
+        service_names.append(name)
+    # Two rows under one name would make the member set smaller than the row
+    # count and hide a service from the registry while the count budget still
+    # read it — the set and the count must describe the same fleet.
+    if len(set(service_names)) != len(service_names):
+        raise ContractError("cabinet services manifest contains duplicate service names")
 
     observed = {
         "central_event_types": len(event_types),
@@ -633,13 +947,12 @@ def inspect_repository(
         ]
     )
     writer_budget = budgets["duplicate_event_writer_sinks"]
-    observed["duplicate_event_writer_sinks"] = len(
-        _static_prefixed_callees(
-            root / writer_budget["path"],
-            writer_budget["symbol"],
-            writer_budget["callee_prefix"],
-        )
+    writer_sinks = _static_prefixed_callees(
+        root / writer_budget["path"],
+        writer_budget["symbol"],
+        writer_budget["callee_prefix"],
     )
+    observed["duplicate_event_writer_sinks"] = len(writer_sinks)
     # ── SET PINS (D3) — the surfaces the mass budgets above cannot see ───────
     # `.gitignore` is ALREADY the durable-store registry, so the store set is
     # DERIVED from it rather than hand-maintained as a fourth list.
@@ -657,6 +970,21 @@ def inspect_repository(
         observed[name] = _vocabulary_member_count(
             root / budgets[name]["path"], budgets[name]["symbol_pattern"]
         )
+
+    member_sets: dict[str, frozenset[str]] = {
+        "central_event_types": frozenset(event_types),
+        "central_action_types": frozenset(action_types),
+        "services_total": frozenset(service_names),
+        "services_enabled": frozenset(
+            row["name"] for row in service_rows if not bool(row.get("disabled", False))
+        ),
+        "framework_production_modules": frozenset(
+            path.relative_to(root).as_posix() for path in production_files
+        ),
+        "duplicate_event_writer_sinks": frozenset(writer_sinks),
+    }
+    if set(member_sets) != set(BIJECTION_CLASSES):
+        raise ContractError("member sets diverge from the declared bijection classes")
 
     failures: list[dict[str, Any]] = []
     maximums: dict[str, int] = {}
@@ -682,12 +1010,18 @@ def inspect_repository(
                     "reason": "budget exceeded",
                 }
             )
+
+    baseline_sets = load_baseline_sets(root / DEFAULT_BASELINE_SETS)
+    surplus, bijection_failures = _bijection_failures(contract, member_sets, baseline_sets)
+    failures.extend(bijection_failures)
+    failures.extend(_expansion_binding_failures(root, contract, budgets, set(service_names)))
     return {
         "schema_version": "cognitive-architecture-census/v1",
         "baseline_sha": contract["baseline_sha"],
         "as_of": evaluation_date.isoformat(),
         "observed": observed,
         "maximums": maximums,
+        "surplus_members": surplus,
         "failures": failures,
         "ok": not failures,
     }
@@ -698,11 +1032,19 @@ def _human_report(report: dict[str, Any]) -> str:
     lines = [f"cognitive architecture census: {status}"]
     for name, actual in report["observed"].items():
         lines.append(f"  {name}: {actual} <= {report['maximums'][name]}")
+    for name, members in sorted(report["surplus_members"].items()):
+        if members:
+            lines.append(f"  registered expansion in {name}: {', '.join(members)}")
     for failure in report["failures"]:
-        lines.append(
-            f"  BLOCK {failure['budget']}: {failure['reason']} "
-            f"({failure['observed']} > {failure['maximum']})"
-        )
+        if "member" in failure:
+            lines.append(
+                f"  BLOCK {failure['budget']}: {failure['reason']} [{failure['member']}]"
+            )
+        else:
+            lines.append(
+                f"  BLOCK {failure['budget']}: {failure['reason']} "
+                f"({failure['observed']} > {failure['maximum']})"
+            )
     return "\n".join(lines)
 
 
