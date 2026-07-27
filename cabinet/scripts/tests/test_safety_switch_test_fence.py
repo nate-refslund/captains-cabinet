@@ -44,6 +44,10 @@ is worse than no guard:
 * **The dashboard TypeScript suite** is not scanned.
 * ``cabinet/scripts/test-escalation.sh --live`` writes the real switch BY
   DESIGN; it is fenced by a pre-flight refusal in the script itself, not here.
+* **This file itself**, excluded from its own endpoint scan — it must carry the
+  literal endpoint three times over (the incident description, the known-bad
+  detector samples, and the PATH shim that makes the hostname resolve). A live
+  write hidden in THIS file is caught by review, not by this arm.
 * This file scans EXECUTABLE lines only: a full-line comment naming a literal
   endpoint is prose, not a write, and the comments explaining this very fix
   would otherwise trip the guard that polices it.
@@ -232,10 +236,24 @@ def _real_root_freeze_writes(text: str) -> list[tuple[int, str]]:
 # ---------------------------------------------------------------------------
 
 def test_no_test_addresses_a_hardcoded_control_plane():
+    """Every tracked test file, every language.
+
+    THIS FILE IS EXCLUDED FROM ITS OWN SCAN, and that is a real blind spot, so
+    it is stated here and in the module docstring rather than left implicit. It
+    has to carry the literal three times over: the incident description, the
+    known-bad samples that prove the detector still matches, and the PATH shim
+    that deliberately makes the hostname resolve. Excluding it is the same
+    concession ``test_killswitch_test_fence.py`` makes for itself — narrow (one
+    filename, asserted below to be exactly this file) rather than a pattern
+    that could quietly widen. The cost: a live write hidden in THIS file would
+    not be flagged by THIS arm, and only review catches that.
+    """
     scanned = 0
     offenders: dict[str, list[tuple[int, str]]] = {}
     for rel in _tracked():
         if not _is_test_surface(rel):
+            continue
+        if Path(rel).name == Path(__file__).name:
             continue
         path = REPO / rel
         try:
@@ -248,6 +266,11 @@ def test_no_test_addresses_a_hardcoded_control_plane():
         hits = hardcoded_endpoints(text, shell=rel.endswith((".sh", ".bash")))
         if hits:
             offenders[rel] = hits
+    assert sum(1 for rel in _tracked()
+               if _is_test_surface(rel)
+               and Path(rel).name == Path(__file__).name) == 1, (
+        "the self-exclusion above must name exactly ONE tracked file (this "
+        "one); a second file sharing the basename would be silently unscanned.")
     assert scanned >= 10, (
         f"only {scanned} redis-touching test files scanned — the detector or the "
         "path predicate is broken, and a guard that inspects nothing is not a guard.")
