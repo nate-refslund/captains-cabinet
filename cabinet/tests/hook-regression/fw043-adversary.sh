@@ -7,6 +7,21 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 HOOK="$REPO_ROOT/cabinet/scripts/hooks/pre-tool-use.sh"
+
+# Redis, hermetically (2026-07-27 safety-switch fence). Every hook probe below
+# runs with fixtures/redis-cli first on PATH — a stub that answers as a
+# reachable control plane with no keys set — the pattern evidence-pathnorm.sh
+# and germline-readonly.sh already use.
+#
+# It replaces an unconditional `redis-cli -h redis -p 6379 DEL <cabinet:layer1:cto:*>`, which
+# addressed a control plane this test does not own. That line did NOTHING
+# wherever the `redis` hostname does not resolve (the Mac fleet, and the GitHub
+# runner) — so the probes silently read whatever plane the ambient
+# REDIS_HOST/REDIS_PORT named, i.e. the LIVE one on an officer box — and was a
+# live CTO review-gate clear wherever it does resolve (the watchdog container's docker
+# network). "Key absent" is exactly the state that DEL was reaching for; the
+# stub provides it without touching anyone's control plane.
+TEST_BIN="$SCRIPT_DIR/fixtures"
 P="/workspace/product"
 AMP="&"
 PIPE="|"
@@ -22,9 +37,7 @@ test_cto() {
   local label="$1"; local cmd="$2"; local expect="$3"
   local json
   json=$(jq -cn --arg cmd "$cmd" '{tool_name:"Bash",tool_input:{command:$cmd}}')
-  redis-cli -h redis -p 6379 DEL cabinet:layer1:cto:reviewed >/dev/null 2>&1
-  redis-cli -h redis -p 6379 DEL cabinet:layer1:cto:ci-green >/dev/null 2>&1
-  echo "$json" | OFFICER_NAME=cto bash "$HOOK" >/dev/null 2>&1
+  echo "$json" | PATH="$TEST_BIN:$PATH" OFFICER_NAME=cto bash "$HOOK" >/dev/null 2>&1
   local ec=$?
   local status="OK"
   [ "$ec" != "$expect" ] && status="**FAIL-${ec}**"
