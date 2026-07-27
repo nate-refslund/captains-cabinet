@@ -65,6 +65,19 @@ export interface DressItem {
   size: Footprint
   /** Stands on water: no shadow, and the land rule does not apply. */
   overWater: boolean
+  /**
+   * True = this thing FLOATS, so it must lie in OPEN water — clear of land and
+   * clear of the harbour's decking (./harbour inOpenWater, which auditLayout
+   * re-measures). Absent means "not a craft", which is right for a woodpile and
+   * for everything `dressSettle` places on the ground.
+   *
+   * SEPARATE FROM overWater ON PURPOSE (2026-07-27): `overWater` only says the
+   * thing does not stand on the island, which is equally true of a crate on the
+   * wharf and of a hull in the water. Reading it as "floats" is what let the
+   * landing's fishing boat be drawn along the finger pier's planks on every one
+   * of 1600 measured cases while every arm stayed green.
+   */
+  afloat?: boolean
 }
 
 /**
@@ -217,6 +230,16 @@ export interface DressCtx {
   /** The cove's waterline sampler, and the cove centre — for the landing. */
   shoreAt: ((x: number) => number | null) | null
   cove: Point | null
+  /**
+   * Would a craft of this size, based here, lie in OPEN water — off the island
+   * AND off the harbour's decking? ./harbour owns the predicate; this is the
+   * closure over the coastline and the wharf and pier that were actually built.
+   *
+   * null when the layout has no coastline to ask, and the landing then draws
+   * nothing: a craft placed with no way to check is the claim that was already
+   * paid for once.
+   */
+  openWater: ((at: Point, size: Footprint) => boolean) | null
 }
 
 const TAU = Math.PI * 2
@@ -682,25 +705,66 @@ export function dressDistricts(ctx: DressCtx): DressItem[] {
  * ever been here. Without it the camp reads as an empty island with a tent.
  *
  * Offsets are the reference's, measured from the cove centre; the y of each
- * shore item comes from the SAME waterline sampler the wharf uses, so nothing
- * here floats and nothing is beached.
+ * shore item comes from the SAME waterline sampler the wharf uses.
+ *
+ * THE OFFSETS ARE A WISH, NOT A BERTH (2026-07-27, the Captain's beached-ship
+ * frame). "The fishing boat lies east of the pier head" is the reference's own
+ * sentence and `cove.x + 122` was its own number — but the pier head here is at
+ * `cove.x + 104` and 44 to 58px wide, so that column is ON the planks, and the
+ * boat was drawn lying along them. Measured over 80 seeds x 4 eras x 5 quay
+ * rungs BEFORE the fix: 1600 of 1600 fishing boats beached (886 on the pier,
+ * 714 on the wharf), 785 of 3200 buoys and 33 of 1600 rowboats likewise, every
+ * one of them carrying `overWater: true` as a hard-coded claim and every arm
+ * green. Each craft now DRIFTS along the shore away from the cove until it
+ * finds open water — off the island and off the decking — and is dropped when
+ * it cannot. Dropping is honest here: the landing has no ladder behind it, so
+ * a missing rowboat hides no count, while a beached one is a lie about the
+ * island the Captain can see from any zoom.
  */
+/** How far along the shore, and how much further out, a craft may drift. */
+const LANDING_DRIFT_X: readonly number[] = [0, 26, 52, 78, 104, 130, 156]
+const LANDING_DRIFT_Y: readonly number[] = [0, 22, 44, 66]
+
 export function dressLanding(ctx: DressCtx): DressItem[] {
   const cove = ctx.cove
   const shore = ctx.shoreAt
-  if (!cove || !shore) return []
+  const openWater = ctx.openWater
+  if (!cove || !shore || !openWater) return []
   const out: DressItem[] = []
+  // Smallest move first: a craft that fits where the reference put it stays
+  // there, and one that does not moves as little as it can.
+  const drift: { dx: number; dy: number }[] = []
+  for (const dx of LANDING_DRIFT_X) for (const dy of LANDING_DRIFT_Y) drift.push({ dx, dy })
+  drift.sort((a, b) => a.dx + a.dy - (b.dx + b.dy))
+
   const water = (kind: string, x: number, dy: number, flip = false) => {
-    const s = shore(x)
-    if (s === null) return
-    out.push({
-      kind,
-      role: 'landing',
-      at: { x, y: s + dy },
-      flip,
-      size: ctx.sizeOf(kind),
-      overWater: true,
-    })
+    const size = ctx.sizeOf(kind)
+    // Outward is away from the cove's centre — which for the fishing boat is
+    // the reference's own "east of the pier head", and for the rowboat and the
+    // west buoy is away from the harbour works rather than into them.
+    const away = x >= cove.x ? 1 : -1
+    for (const d of drift) {
+      const cx = x + away * d.dx
+      const s = shore(cx)
+      if (s === null) continue
+      const at = { x: cx, y: s + dy + d.dy }
+      if (!openWater(at, size)) continue
+      out.push({
+        kind,
+        role: 'landing',
+        at,
+        flip,
+        size,
+        // NOT a declaration: ctx.openWater has just measured this craft's whole
+        // contact patch — its base point included — off the island, so `true`
+        // here is the reading and not the intention. auditLayout re-measures it
+        // against coast.landAt independently, which is what would catch the
+        // entailment breaking.
+        overWater: true,
+        afloat: true,
+      })
+      return
+    }
   }
   // compose.py:1159-1161 — the rowboat off the west horn, the buoys either side
   water('boat_rowing', cove.x - 286, 126)

@@ -42,7 +42,9 @@
  *                        loosened claim.
  */
 import { describe, expect, it } from 'vitest'
-import { composeLayout, type Layout, type LayoutState } from './index'
+import type { Footprint } from './clearance'
+import { dressLanding, type DressCtx, type DressItem } from './dressing'
+import { composeLayout, DEFAULT_FOOTPRINTS, type Layout, type LayoutState, type Point } from './index'
 
 const FAST = { coastline: { step: 8 } }
 const SEED = 'dressing-districts'
@@ -240,5 +242,92 @@ describe('a district draws its furniture only when the district was built', () =
     })
     const villageLife = ['bench', 'consequence_ledger', 'law_post', 'laundry_line', 'beehives']
     expect(villageLife.filter((k) => has(camp, k))).toEqual([])
+  })
+})
+
+// ── the landing: nothing the shore draws may be drawn ON something ─────────
+
+/**
+ * THE BEACHED FISHING BOAT (Captain, 2026-07-27: "is it on purpose that the
+ * ship is ON the ground and not water?").
+ *
+ * The craft the Captain saw lying along the finger pier's planks came from
+ * `dressLanding`, not from the harbour: the reference's own offset,
+ * `cove.x + 122`, is inside the pier's column here (the pier is rooted at
+ * `cove.x + 104` and is 44 to 58px wide), and every craft carried
+ * `overWater: true` as a hard-coded claim that nothing measured. Swept over 80
+ * seeds x 4 eras x 5 quay rungs before the fix: 1600 of 1600 fishing boats
+ * beached — 982 on the pier, 618 on the wharf — plus 752 of 3200 buoys and 30
+ * of 1600 rowboats. After: 0 of each, and none dropped.
+ *
+ * These arms are UNIT arms on the ctx rather than sweeps, because the two
+ * branches that matter are the ones a seeded island does not reach: the drift
+ * (every seed found water within one or two steps) and the DROP.
+ *
+ * SOURCE MUTATIONS RUN AGAINST THEM (2026-07-27, scratch copy, one at a time):
+ *   `landing-unchecked` — restore the direct push at the authored offset with
+ *                         no `openWater` test. Result: the drift arm and the
+ *                         drop arm both go RED.
+ *   `landing-nodrop`    — keep the search but emit the last candidate when none
+ *                         passes. Result: the drop arm goes RED.
+ */
+describe('the landing', () => {
+  const COVE = { x: 1200, y: 1430 }
+  const SHORE = 1300
+
+  function landingCtx(openWater: ((at: Point, size: Footprint) => boolean) | null): DressCtx {
+    const nope = (name: string) => (): never => {
+      throw new Error(`landingCtx has no ${name}: this fixture dresses a beach only`)
+    }
+    return {
+      era: 'hamlet',
+      village: true,
+      stageOf: () => null,
+      countOf: () => 0,
+      built: () => false,
+      sizeOf: (k: string) => DEFAULT_FOOTPRINTS[k] ?? { w: 96, h: 96 },
+      settle: nope('settle'),
+      anchor: (p) => p,
+      great: null,
+      lib: null,
+      works: null,
+      fields: null,
+      square: { x: 1200, y: 1000 },
+      dwellings: [],
+      shoreAt: () => SHORE,
+      cove: COVE,
+      openWater,
+    }
+  }
+
+  it('draws its four craft where the reference put them when that is open water', () => {
+    const out = dressLanding(landingCtx(() => true))
+    expect(out.map((d) => d.kind)).toEqual(['boat_rowing', 'buoy', 'buoy', 'boat_fishing'])
+    // the reference's own offsets, untouched when nothing is in the way
+    expect(out.map((d) => d.at.x)).toEqual([914, 1552, 828, 1322])
+    for (const d of out) {
+      expect(d.overWater).toBe(true)
+      expect(d.afloat).toBe(true)
+    }
+  })
+
+  it('drifts a craft away from the cove until it finds open water', () => {
+    // A band of timber over the pier's own columns — which is where the fishing
+    // boat's authored offset lands — and open water everywhere else.
+    const out = dressLanding(landingCtx((at) => !(at.x > 1280 && at.x < 1380)))
+    const fishing = out.find((d) => d.kind === 'boat_fishing')
+    expect(fishing).toBeDefined()
+    // EAST, away from the cove's centre: the reference's own "east of the pier
+    // head", which drifting the other way would have contradicted.
+    expect((fishing as DressItem).at.x).toBeGreaterThanOrEqual(1380)
+    // and the craft that were already clear did not move
+    expect(out.find((d) => d.kind === 'boat_rowing')?.at.x).toBe(914)
+  })
+
+  it('draws NOTHING rather than a beached craft when no drift finds water', () => {
+    expect(dressLanding(landingCtx(() => false))).toEqual([])
+    // and refuses to place at all with no way to ask — a craft emitted without
+    // the check is the claim that was paid for once already
+    expect(dressLanding(landingCtx(null))).toEqual([])
   })
 })

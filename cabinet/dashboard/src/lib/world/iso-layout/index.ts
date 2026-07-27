@@ -68,6 +68,7 @@ import {
 import {
   buildHarbour,
   CAIRN_CLEARING,
+  inOpenWater,
   lampPosition,
   lighthouseSite,
   shoreAt,
@@ -75,6 +76,7 @@ import {
   rectContains,
   type Ellipse,
   type Harbour,
+  type HarbourTimber,
   type Lighthouse,
   type Rect,
 } from './harbour'
@@ -1202,6 +1204,16 @@ export function composeLayout(
   }
   const roleAt = (role: string): Point | null =>
     structures.find((s) => s.role === role)?.at ?? null
+  /**
+   * Everything the harbour BUILT over the water, and the open-water test the
+   * landing's craft are held to. One closure, built once from the wharf and
+   * pier that actually exist, so the landing and auditLayout below cannot end
+   * up asking two different questions about the same planks.
+   */
+  const harbourTimber: HarbourTimber = {
+    wharf: harbour?.wharf ?? null,
+    jetty: harbour?.jetty ?? null,
+  }
   const dressing: DressItem[] = [
     ...dressDistricts({
       era: state.era,
@@ -1225,6 +1237,7 @@ export function composeLayout(
         .map((s) => ({ at: s.at, face: s.lot?.face ?? { x: 1, y: 0 } })),
       shoreAt: coast.cove ? (x: number) => shoreAt(coast, coast.cove!, x) : null,
       cove: coast.cove ? { x: coast.cove.x, y: coast.cove.y } : null,
+      openWater: null,
     }),
     ...dressLanding({
       era: state.era,
@@ -1243,6 +1256,7 @@ export function composeLayout(
       dwellings: [],
       shoreAt: coast.cove ? (x: number) => shoreAt(coast, coast.cove!, x) : null,
       cove: coast.cove ? { x: coast.cove.x, y: coast.cove.y } : null,
+      openWater: (at, size) => inOpenWater(coast, harbourTimber, at, size),
     }),
   ]
   // The floating half of the landing occupies WATER, not ground, so it never
@@ -1779,6 +1793,10 @@ export function auditLayout(layout: Layout): {
   stacked: { a: string; b: string }[]
   inWater: { kind: string; at: Point }[]
   outsideHarbour: { kind: string; at: Point }[]
+  /** Declared `overWater` while standing on the island's ground. */
+  waterClaim: { kind: string; at: Point }[]
+  /** Declared afloat while drawn on land or on the harbour's own timber. */
+  beached: { kind: string; at: Point }[]
 } {
   const field = buildLaneField(layout.lanes)
   const onLane: { kind: string; at: Point }[] = []
@@ -1862,7 +1880,55 @@ export function auditLayout(layout: Layout): {
       outsideHarbour.push({ kind: 'jetty', at: h.jetty.end })
     }
   }
-  return { onLane, stacked, inWater, outsideHarbour }
+
+  // THE `overWater` CLAIM, RE-MEASURED. It was a DECLARATION on the vessel and
+  // on every craft the landing draws — hard-coded `true`, checked by nothing —
+  // until the Captain returned a frame with the packet lying on the planks. The
+  // flag means one thing only, "this does not stand on the island's ground", so
+  // the arm is `overWater === !landAt(base)` and it is asked of every emitter
+  // that carries the flag. It is deliberately the WEAK arm: it passes for a
+  // crate on the deck, which is correct, and it passed for the beached boat
+  // too, which is why the second arm below exists.
+  const waterClaim: { kind: string; at: Point }[] = []
+  const claimers: { kind: string; at: Point; overWater: boolean }[] = [
+    ...(h?.items ?? []),
+    ...layout.dressing,
+  ]
+  for (const c of claimers) {
+    if (c.overWater !== !layout.coast.landAt(c.at.x, c.at.y)) {
+      waterClaim.push({ kind: c.kind, at: c.at })
+    }
+  }
+
+  // NOTHING THAT FLOATS IS DRAWN STANDING ON TIMBER — the arm the beached
+  // vessel needed and did not have. The set is everything that declares
+  // `afloat` plus every mooring post, which is in the water by construction and
+  // was found on the wharf on 111 of 6400 measured cases; the test is the
+  // sprite's own CONTACT PATCH (../projection's ground diamond, the same one
+  // the lane and stacking rules use) against `inOpenWater`, which is the same
+  // function the emitters checked before emitting. Asking about the base point
+  // alone is exactly what let the defect through: the vessel's base sat 82px
+  // clear of the deck it was drawn across.
+  //
+  // The dock kit is NOT in this set and must not be: a crate on the wharf is
+  // cargo, and an arm that called it beached would be a sensor arguing with the
+  // thing it measures.
+  //
+  // RUN WHETHER OR NOT THERE IS A HARBOUR. A cove whose shore has fewer than
+  // four sampled columns builds no harbour at all, and the landing still
+  // dresses that beach — gating this arm on `h` would have made the one case
+  // with no wharf to check the one case with no check.
+  const beached: { kind: string; at: Point }[] = []
+  const timber: HarbourTimber = { wharf: h?.wharf ?? null, jetty: h?.jetty ?? null }
+  const craft: { kind: string; at: Point; size: Footprint }[] = [
+    ...(h?.items ?? []).filter((i) => i.afloat),
+    ...layout.dressing.filter((d) => d.afloat),
+    ...(h ? h.moorings.map((m) => ({ kind: 'mooring_post', at: m, size: h.mooringSize })) : []),
+  ]
+  for (const c of craft) {
+    if (!inOpenWater(layout.coast, timber, c.at, c.size)) beached.push({ kind: c.kind, at: c.at })
+  }
+  return { onLane, stacked, inWater, outsideHarbour, waterClaim, beached }
 }
 
 export * from './space'

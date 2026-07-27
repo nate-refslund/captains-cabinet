@@ -38,6 +38,19 @@
  * waterline lifted onto the LAND side by SHORE_LIFT, so the pier starts exactly
  * where the deck's upper edge does and walks out from there.
  *
+ * AND NOTHING IS BEACHED EITHER, which is the same sentence read the other way
+ * and the fix the Captain's second 2026-07-27 frame forced. A boat drawn flat
+ * along the planks reads as a boat parked on a pier, and `overWater: true` on
+ * the vessel was a DECLARATION that nothing measured: it was hard-coded, the
+ * flag's own meaning ("does not stand on the island's ground") was true of a
+ * crate on the deck as well as of a hull in the water, and the only sensor
+ * anywhere asked about the BASE POINT, which sat 82px clear of a deck the
+ * sprite was drawn straight across. So: `overWater` is now measured at emit
+ * time and never asserted; craft carry a second flag, `afloat`, meaning "must
+ * lie in open water"; and `inOpenWater()` decides it on the sprite's own
+ * contact patch — clear of land AND clear of every plank this module laid.
+ * Emitters check before emitting and the audit re-measures afterwards.
+ *
  * THE DECK IS DRAWN, NOT STAMPED. quay.py exists because stamping a deck sprite
  * along the shore "piles overlapping slabs into a jumbled staircase". So this
  * module emits the deck's GEOMETRY — the shore polyline and a depth — and the
@@ -69,6 +82,7 @@
  *
  * PURE: no clocks, no unseeded randomness, no IO, no DOM.
  */
+import { groundDiamond } from '../projection'
 import type { Footprint } from './clearance'
 import type { Coastline } from './coastline'
 import { clamp, emptyRung, hypot, type Era, type LayoutSpace, type Point } from './space'
@@ -286,8 +300,135 @@ export interface Jetty {
   length: number
   width: number
   angle: number
-  /** Seaward end. compose.py:1153 JETTY_END; moored vessels hang off it. */
+  /**
+   * Seaward end. compose.py:1153 JETTY_END.
+   *
+   * It is the pier's own geometry and no longer an anchor anything else is
+   * pinned to: the vessel used to sit at a fixed offset from it, which is how
+   * it came to be drawn on the planks. Berths are searched along the run now
+   * (BERTH_STATIONS), so this end is where the pier stops and nothing more.
+   */
   end: Point
+}
+
+// ── timber over water, and open water ──────────────────────────────────────
+//
+// THE HARBOUR BUILDS SURFACES OVER THE SEA, so "is this over water?" stopped
+// being the same question as "is this floating?" the moment the deck existed.
+// A crate on the wharf is over water and standing on planks; a boat on the
+// wharf is over water and BEACHED. Everything below exists to keep those two
+// apart, because the frame the Captain returned on 2026-07-27 — a packet with
+// its hull drawn flat along the finger pier — passed every arm the layout had:
+// its base point was in open water, 82px clear of the deck, and the sprite it
+// anchored was drawn standing on the planks all the same.
+
+/**
+ * quay.py deck_strip's fascia — the constant lip drawn BELOW the deck's own
+ * depth so the surface has thickness above the water. It is part of the drawn
+ * deck, so anything asking "am I on the deck" has to include it or it will
+ * clear the planks by 6px and land on the front board.
+ */
+export const DECK_FASCIA = 8
+
+/**
+ * The deck's upper edge in one column, interpolated between shore samples —
+ * quay.py deck_strip's own `top_at()`, which is what the renderer draws from.
+ *
+ * Returns null OUTSIDE the kept span rather than clamping to its ends, which
+ * is the one thing quay.py does differently and deliberately so: quay.py only
+ * ever asks about x it is already drawing, while this is asked about moorings
+ * and craft that are routinely beyond the deck. Clamping there would invent a
+ * deck along bare shore and push things off a surface that is not built.
+ */
+export function deckEdgeAt(shore: readonly Point[], x: number): number | null {
+  for (let i = 0; i < shore.length - 1; i++) {
+    const a = shore[i]
+    const b = shore[i + 1]
+    if (a.x <= x && x <= b.x && b.x !== a.x) return a.y + ((b.y - a.y) * (x - a.x)) / (b.x - a.x)
+  }
+  return null
+}
+
+/** Is this point on the wharf's drawn planks (surface + fascia)? */
+export function onWharfDeck(wharf: Wharf | null | undefined, p: Point): boolean {
+  if (!wharf) return false
+  const top = deckEdgeAt(wharf.shore, p.x)
+  return top !== null && p.y >= top && p.y <= top + wharf.depth + DECK_FASCIA
+}
+
+/**
+ * Is this point on the finger pier's planks? quay.py jetty() walks the run in
+ * 1px steps and lays a `width`-wide row at each, so the pier is that swept
+ * band — sampled here every 2px, which is finer than any craft is small.
+ */
+export function onFingerPier(jetty: Jetty | null | undefined, p: Point): boolean {
+  if (!jetty) return false
+  const dx = Math.sin(jetty.angle)
+  const dy = Math.cos(jetty.angle)
+  const half = jetty.width / 2
+  for (let s = 0; s <= jetty.length; s += 2) {
+    if (
+      Math.abs(p.x - (jetty.at.x + dx * s)) <= half &&
+      Math.abs(p.y - (jetty.at.y + dy * s * 0.86)) <= 4
+    ) {
+      return true
+    }
+  }
+  return false
+}
+
+/** Everything the harbour has BUILT over the water. */
+export interface HarbourTimber {
+  wharf: Wharf | null
+  jetty: Jetty | null
+}
+
+export function onHarbourTimber(timber: HarbourTimber, p: Point): boolean {
+  return onWharfDeck(timber.wharf, p) || onFingerPier(timber.jetty, p)
+}
+
+/**
+ * The sprite's ground diamond, probed the way ./clearance's footprintOnLane
+ * probes it — four depths, the span narrowing toward the far vertex.
+ *
+ * The half-width and depth come from ../projection's groundDiamond, which is
+ * the ONE definition of a contact patch in this world (checks/world_checks.py
+ * ground_box mirrors it). Sampling the base point alone is what let the defect
+ * through: the vessel's base was 82px below the deck's front board and its
+ * hull was drawn across it anyway.
+ */
+function contactPatch(at: Point, size: Footprint): Point[] {
+  const g = groundDiamond(size.w, size.h)
+  const half = Math.max(4, g.hw)
+  const out: Point[] = []
+  for (const fy of [0, 0.35, 0.7, 1]) {
+    const y = at.y - g.depth * fy
+    const span = half * (1 - 0.45 * fy)
+    for (const fx of [-1, -0.55, 0, 0.55, 1]) out.push({ x: at.x + span * fx, y })
+  }
+  return out
+}
+
+/**
+ * Would a craft of this size, based here, lie in OPEN water — clear of the
+ * island and clear of every plank the harbour has laid?
+ *
+ * This is the predicate `afloat` means, and the only one: an emitter that sets
+ * the flag has to pass this at emit time, and auditLayout re-measures it with
+ * this same function afterwards. Land is asked with `coast.landAt`, the
+ * layout's own water predicate — there is no fourth notion of water here.
+ */
+export function inOpenWater(
+  coast: Coastline,
+  timber: HarbourTimber,
+  at: Point,
+  size: Footprint
+): boolean {
+  for (const p of contactPatch(at, size)) {
+    if (coast.landAt(p.x, p.y)) return false
+    if (onHarbourTimber(timber, p)) return false
+  }
+  return true
 }
 
 /**
@@ -307,8 +448,27 @@ export interface HarbourItem {
   at: Point
   flip: boolean
   size: Footprint
-  /** True = on the deck or in the water; false = on the shore strip. */
+  /**
+   * True = this does not stand on the island's ground — it is on the deck, on
+   * the pier, or in the water. It decides the SHADOW and nothing else.
+   *
+   * MEASURED, NEVER DECLARED (2026-07-27). It is `!coast.landAt(at)` at emit
+   * time on every item here, and auditLayout re-measures it; the vessel used to
+   * hard-code `true`, which made it a claim with no sensor on it. A hard-coded
+   * `true` on this field is the defect, not a shortcut.
+   */
   overWater: boolean
+  /**
+   * True = this thing FLOATS, so it must lie in open water: clear of land AND
+   * clear of the harbour's own timber (`inOpenWater`). False for the dock kit,
+   * whose whole point is that it stands on the planks.
+   *
+   * The two flags are not the same question and were conflated until the
+   * Captain's beached-vessel frame: a crate on the wharf is `overWater` and
+   * must NOT be `afloat`, and reading one as the other either deletes the cargo
+   * from the deck or lets a boat be drawn on it.
+   */
+  afloat: boolean
 }
 
 export interface Harbour {
@@ -325,6 +485,14 @@ export interface Harbour {
   jetty: Jetty | null
   /** compose.py:1149-1152 — one per open outcome window (the `berths` count). */
   moorings: Point[]
+  /**
+   * The drawn size of a mooring post, carried so the audit can measure the
+   * posts' contact patches with the size the LAYOUT used. Without it the audit
+   * has to guess a footprint, and a sensor holding a different size than the
+   * renderer is measuring a different world (blueprint.ts resolves the same
+   * post through the pack).
+   */
+  mooringSize: Footprint
   /** Cargo and working clutter; its extent follows completed work items. */
   items: HarbourItem[]
   /** compose.py:1181 — one per inherited extension pack, as many as fit. */
@@ -360,6 +528,28 @@ export const DOCK_KIT: readonly { kind: string; dx: number; dy: number }[] = [
 export const WAREHOUSE_DX = -330
 export const WAREHOUSE_STRIDE = { x: 118, y: -14 }
 export const HARBOURMASTER_DX = 300
+
+// ── where the org's vessel ties up ─────────────────────────────────────────
+//
+// compose.py:1156-1157 moors it at a FIXED offset from the pier head
+// (`JETTY_END + (-132, -6)`), which is an authored spot on the reference's own
+// island and nothing more. Ported literally it beached the boat, so the offset
+// is replaced by a berth SEARCH: the stations below are tried in order and the
+// first one that is genuinely in open water wins.
+
+/** Fractions along the pier's run where the vessel is offered a berth. */
+export const BERTH_STATIONS: readonly number[] = [0.66, 0.82, 0.5, 0.94, 0.34]
+/** Which side of the pier, west first — the side the reference moored on. */
+export const BERTH_SIDES: readonly number[] = [-1, 1]
+/** Daylight between the hull's contact patch and the pier's planks. */
+export const BERTH_GAP = 10
+/**
+ * With no pier to tie to, the vessel lies at anchor these distances below its
+ * column's waterline. They are absolute because there is no pier length to
+ * scale off — the shortest is already clear of the deepest wharf in the ladder
+ * (54px + fascia) and of the shore band the landing dresses.
+ */
+export const ANCHOR_DEPTHS: readonly number[] = [96, 132, 168]
 
 /** Cranes need working room between them; below this they are one heap. */
 export const CRANE_SPACING = 150
@@ -488,14 +678,92 @@ export function buildHarbour(
         }
       : null
 
+  /** Every plank this harbour has laid — what a floating thing must clear. */
+  const timber: HarbourTimber = { wharf, jetty }
+
+  const berths = count(input.berths, 64)
+
+  // ---- the working envelope ---------------------------------------------
+  //
+  // COMPUTED BEFORE THE THINGS IT CONTAINS, since 2026-07-27, because the
+  // vessel now has to be placed INSIDE it: a berth search that could not ask
+  // the envelope would moor the boat somewhere auditLayout's outsideHarbour arm
+  // then reported. Nothing here reads an emitted position, so moving it up
+  // changes no value — it only makes the "derived from inputs, never from the
+  // items" rule mechanical rather than a promise.
+  //
+  // THE DEEPEST THING IN A HARBOUR IS NOT ALWAYS THE PIER. The reach was the
+  // jetty's alone until 2026-07-27, and the mooring rows walk 52px further out
+  // per PAIR of open outcome windows, so a well-used harbour out-reaches its own
+  // finger pier: measured over 20 seeds at the top quay rung, `berths: 16` put 6
+  // mooring posts outside the envelope the harbour declares for itself and
+  // `berths: 24` put 150 — auditLayout's outsideHarbour arm reporting a defect
+  // that was the ENVELOPE's, not the moorings'. It went unseen because every
+  // fixture in the suite stopped at 6 berths, which is the value the state
+  // happened to carry; `count()` admits up to 64.
+  //
+  // EVERY TERM IS COMPUTED FROM INPUTS — the quay rung, the berth count, the
+  // kit table, whether the org has a vessel — and not from the emitted
+  // positions. That distinction is the whole point of the envelope: a box
+  // fitted around the items it contains is a sensor that cannot fail, while a
+  // box derived from the inputs still catches a row indexed off the wrong base
+  // or a kit computed from the wrong origin.
+  const xs = shore.map((p) => p.x)
+  const ys = shore.map((p) => p.y)
+  // The pier now leaves the shore ON the shore line rather than 52px out on the
+  // water, so its reach below the shore box is its run and nothing more. The
+  // constant that used to lead this term was the root offset; it went with it.
+  const pierReach = jLen * 0.86
+  // The mooring row's own depth below the shore box, in the same terms: the
+  // last row sits 116 + floor((berths-1)/2)*52 below its column's waterline,
+  // that column can be the lowest in the box (+4 for SHORE_LIFT), and the box
+  // already adds `depth` below the shore before `reach` is applied.
+  const mooringReach =
+    berths > 0 ? Math.max(0, 120 + Math.floor((berths - 1) / 2) * 52 - depth) : 0
+  // The dock kit's own depth, which the old pier constant was quietly covering:
+  // its deepest member sits 14+dy below its column's waterline, and that column
+  // is not one of the sampled ones, so the shore box alone does not contain it.
+  // Read off the KIT TABLE, never off the emitted items — same rule as above.
+  const kitReach = Math.max(0, 14 + Math.max(...DOCK_KIT.map((k) => k.dy)) + SHORE_LIFT - depth)
+  // A vessel with no pier lies at anchor, which is the one berth that reaches
+  // past everything above. Only claimed when there is no pier, because that is
+  // the only case the anchorage is used — an envelope widened for a berth the
+  // harbour cannot take is a looser bound for no reason.
+  const anchorReach =
+    input.boat && jetty === null
+      ? Math.max(0, ANCHOR_DEPTHS[ANCHOR_DEPTHS.length - 1] + SHORE_LIFT - depth)
+      : 0
+  const reach = Math.max(pierReach, mooringReach, kitReach, anchorReach)
+  const extent: Rect = [
+    Math.min(...xs) - HARBOUR_MARGIN,
+    Math.min(...ys) - HARBOUR_MARGIN,
+    Math.max(...xs) + HARBOUR_MARGIN,
+    Math.max(...ys) + depth + reach + HARBOUR_MARGIN,
+  ]
+
   // ---- the moorings: ONE PER OPEN OUTCOME WINDOW -------------------------
   // compose.py:1149-1152. A real count, in two rows either side of the pier.
   // Not era-gated: "there are no moorings without open outcome windows" is a
   // statement about the count, and a camp with an open window has a mooring.
-  const berths = count(input.berths, 64)
+  //
+  // EACH POST RESOLVES ITS OWN COLUMN'S WATERLINE, which is the law the rest of
+  // this module already follows and the mooring rows were the last thing here
+  // to break. They were laid off the JETTY column's waterline for both rows,
+  // 152px apart, across a cove shore that falls away by up to 250px over that
+  // span — so the east row was measured against the wrong sea. Measured over 80
+  // seeds x 4 eras x 5 quay rungs before the fix: 111 of 6400 posts drawn
+  // standing on the wharf deck, and the audit's new float arm found posts on
+  // the BEACH as well. A post may never be dropped for it (it is a count), and
+  // it no longer has to be: 116px below its own waterline is open water by the
+  // same argument the deck's own edge is, since the deepest wharf in the ladder
+  // reaches 54 + fascia below that line. The envelope above already contains
+  // the deepest row this can produce (see mooringReach).
+  const mooringSize = input.sizeOf('mooring_post')
   const moorings: Point[] = []
   for (let b = 0; b < berths; b++) {
-    moorings.push({ x: jx - 66 + (b % 2) * 152, y: waterBase + 116 + Math.floor(b / 2) * 52 })
+    const x = jx - 66 + (b % 2) * 152
+    const s = shoreAt(coast, cove, x) ?? nearestShoreY(shore, x)
+    moorings.push({ x, y: s + 116 + Math.floor(b / 2) * 52 })
   }
 
   // ---- cargo and working clutter ----------------------------------------
@@ -520,10 +788,16 @@ export function buildHarbour(
       flip: false,
       size: input.sizeOf(kit.kind),
       overWater: !coast.landAt(at.x, at.y),
+      // THE KIT IS CARGO AND WORKING GEAR: crates, barrels, nets and crab pots
+      // stand ON the planks, which is what a working dock looks like. Marking
+      // them afloat would either delete them from the deck or force the float
+      // arm to grow an exemption, and an exemption is how a beached boat gets
+      // waved through next time.
+      afloat: false,
     })
   }
 
-  // ---- the org's own vessel, moored off the pier -------------------------
+  // ---- the org's own vessel, moored ALONGSIDE the pier --------------------
   // compose.py:1156-1157. This is the ONE craft with a ladder behind it
   // (`harbor_boat`, outcomes achieved), and it is the only one ported.
   //
@@ -531,16 +805,55 @@ export function buildHarbour(
   // ducks. Every one of those is a sprite with no rule over `state` behind it,
   // which is exactly what check_state_traceable is for — so they belong to the
   // renderer's ambient set (era-permitted dressing) if anywhere, not to a stage
-  // that claims everything it emits is measured. Their absence is why JETTY_END
-  // has one consumer here rather than seven.
+  // that claims everything it emits is measured.
+  //
+  // THE OFFSET WAS A CLAIM, NOT A PLACEMENT. `JETTY_END + (-132, -6)` is an
+  // authored spot on the reference's own island; ported here it carried
+  // `overWater: true` as a hard-coded declaration and nothing measured it. It
+  // put the hull on the wharf on 2 of 1600 (seed x era x rung) and it could
+  // never have done better than luck, because a fixed offset from a pier whose
+  // length is a state reading cannot know where the water is. It is now a berth
+  // SEARCH against `inOpenWater` — the same predicate auditLayout re-measures —
+  // and a seed with no open water beside its pier gets NO VESSEL, which is the
+  // rule the jetty root already follows: a missing boat says the harbour could
+  // not berth one, a beached boat says something false about the island.
   if (input.boat) {
-    items.push({
-      kind: 'harbor_boat',
-      at: { x: jEnd.x - 132, y: jEnd.y - 6 },
-      flip: false,
-      size: input.sizeOf('harbor_boat'),
-      overWater: true,
-    })
+    const boatSize = input.sizeOf('harbor_boat')
+    const beam = Math.max(4, groundDiamond(boatSize.w, boatSize.h).hw)
+    const berths: Point[] = []
+    if (jetty) {
+      // Beam-on to the planks, bow up-shore: near the head first, because that
+      // is where a working boat ties up and where the water is deepest.
+      const off = jetty.width / 2 + beam + BERTH_GAP
+      for (const f of BERTH_STATIONS) {
+        const px = jetty.at.x + Math.sin(jetty.angle) * jetty.length * f
+        const py = jetty.at.y + Math.cos(jetty.angle) * jetty.length * f * 0.86
+        for (const side of BERTH_SIDES) berths.push({ x: px + side * off, y: py })
+      }
+    }
+    // At anchor when there is no pier to lie against — the jetty is null on an
+    // unmeasured quay ladder and on a column with no land to root in, and a
+    // boat is a fact about the org either way.
+    for (const d of ANCHOR_DEPTHS) {
+      for (const side of BERTH_SIDES) berths.push({ x: jx + side * (beam + 24), y: waterBase + d })
+    }
+    const berth = berths.find(
+      (p) => rectContains(extent, p) && inOpenWater(coast, timber, p, boatSize)
+    )
+    if (berth) {
+      items.push({
+        kind: 'harbor_boat',
+        at: berth,
+        flip: false,
+        size: boatSize,
+        // MEASURED like every other item here, not asserted. inOpenWater has
+        // already proved the whole contact patch is off the land, so this reads
+        // true — which is the point: the flag now reports a measurement instead
+        // of repeating the emitter's intention.
+        overWater: !coast.landAt(berth.x, berth.y),
+        afloat: true,
+      })
+    }
   }
 
   // ---- the cranes: one per inherited extension pack ----------------------
@@ -586,54 +899,13 @@ export function buildHarbour(
   const hmS = shoreAt(coast, cove, hmX) ?? nearestShoreY(shore, hmX)
   const harbourmasterSite = input.harbourmaster ? { x: hmX, y: hmS - 8 } : null
 
-  // ---- the working envelope ---------------------------------------------
-  //
-  // THE DEEPEST THING IN A HARBOUR IS NOT ALWAYS THE PIER. The reach was the
-  // jetty's alone until 2026-07-27, and the mooring rows walk 52px further out
-  // per PAIR of open outcome windows, so a well-used harbour out-reaches its own
-  // finger pier: measured over 20 seeds at the top quay rung, `berths: 16` put 6
-  // mooring posts outside the envelope the harbour declares for itself and
-  // `berths: 24` put 150 — auditLayout's outsideHarbour arm reporting a defect
-  // that was the ENVELOPE's, not the moorings'. It went unseen because every
-  // fixture in the suite stopped at 6 berths, which is the value the state
-  // happened to carry; `count()` admits up to 64.
-  //
-  // BOTH TERMS ARE COMPUTED FROM INPUTS — the quay rung and the berth count —
-  // and not from the emitted positions. That distinction is the whole point of
-  // the envelope: a box fitted around the items it contains is a sensor that
-  // cannot fail, while a box derived from the inputs still catches a row
-  // indexed off the wrong base or a kit computed from the wrong origin.
-  const xs = shore.map((p) => p.x)
-  const ys = shore.map((p) => p.y)
-  // The pier now leaves the shore ON the shore line rather than 52px out on the
-  // water, so its reach below the shore box is its run and nothing more. The
-  // constant that used to lead this term was the root offset; it went with it.
-  const pierReach = jLen * 0.86
-  // The mooring row's own depth below the shore box, in the same terms: the
-  // last row sits 116 + floor((berths-1)/2)*52 below its column's waterline,
-  // that column can be the lowest in the box (+4 for SHORE_LIFT), and the box
-  // already adds `depth` below the shore before `reach` is applied.
-  const mooringReach =
-    berths > 0 ? Math.max(0, 120 + Math.floor((berths - 1) / 2) * 52 - depth) : 0
-  // The dock kit's own depth, which the old pier constant was quietly covering:
-  // its deepest member sits 14+dy below its column's waterline, and that column
-  // is not one of the sampled ones, so the shore box alone does not contain it.
-  // Read off the KIT TABLE, never off the emitted items — same rule as above.
-  const kitReach = Math.max(0, 14 + Math.max(...DOCK_KIT.map((k) => k.dy)) + SHORE_LIFT - depth)
-  const reach = Math.max(pierReach, mooringReach, kitReach)
-  const extent: Rect = [
-    Math.min(...xs) - HARBOUR_MARGIN,
-    Math.min(...ys) - HARBOUR_MARGIN,
-    Math.max(...xs) + HARBOUR_MARGIN,
-    Math.max(...ys) + depth + reach + HARBOUR_MARGIN,
-  ]
-
   return {
     cove,
     shore,
     wharf,
     jetty,
     moorings,
+    mooringSize,
     items,
     cranes,
     cranesRequested,

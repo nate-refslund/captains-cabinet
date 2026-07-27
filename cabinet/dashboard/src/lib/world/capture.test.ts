@@ -81,6 +81,12 @@ function capture(fixtureName: string, mutate = ''): Verdict {
     expect(frame.audit.stacked, `${fixtureName}: layout audit stacked`).toEqual([])
     expect(frame.audit.inWater, `${fixtureName}: layout audit inWater`).toEqual([])
     expect(frame.audit.outsideHarbour, `${fixtureName}: layout audit harbour`).toEqual([])
+    // The two arms the Captain's beached vessel needed (2026-07-27). They ride
+    // here for the same reason as the four above: the frame under judgement is
+    // the one the layout already has an opinion about, and a boat drawn on the
+    // planks must not reach the pixel checks as if it were a clean frame.
+    expect(frame.audit.waterClaim, `${fixtureName}: layout audit waterClaim`).toEqual([])
+    expect(frame.audit.beached, `${fixtureName}: layout audit beached`).toEqual([])
 
     // 2. THE PIXELS. Scale 1.0 always: the checks carry absolute-pixel
     //    constants, so a shrunk frame is judged at a different relative
@@ -151,7 +157,11 @@ const MUTATIONS: [string, string[], string][] = [
   //  the fixture it is run against]
   ['orphan-sprite', ['state_traceable'], 'hamlet'],  // a banner nothing entitles
   ['sprite-on-lane', ['on_road'], 'hamlet'],         // a building standing in the road
-  ['no-shadows', ['shadows'], 'hamlet'],             // sprites floating without a cast shadow
+  // ON THE CAMP FRAME, and the move is a measurement rather than a preference —
+  // see the noise-floor arm below. camp: 31/68 (46%) mutated against a 55%
+  // floor, which is a nine-point margin; hamlet reaches the floor on contrast
+  // alone.
+  ['no-shadows', ['shadows'], 'camp'],               // sprites floating without a cast shadow
   ['reverse-depth', ['depth_order'], 'hamlet'],      // far sprites painted over near ones
   ['unpaved-square', ['terrain'], 'hamlet'],         // a square declared and never paved
   ['ghost-sprite', ['paint_fidelity'], 'hamlet'],    // a declared sprite that leaves no mark
@@ -187,5 +197,42 @@ describe('the checks can fail — every arm, proven', () => {
   it('camp-bench is NOT a defect at hamlet, where a bench is entitled', TIMEOUT, () => {
     const v = capture('hamlet', 'camp-bench')
     expect(v.red).toEqual([])
+  })
+
+  /**
+   * A PINNED DEFECT, NOT A PASS — check_shadows is NOISE-LIMITED on the hamlet
+   * frame and this arm exists so that fact lives in the suite instead of in a
+   * report nobody re-reads.
+   *
+   * check_shadows scores a sprite as casting when the ground at its foot is
+   * darker than bare ground on a ring `max(70, w*1.5)` out. It cannot tell a
+   * shadow from a MATERIAL CHANGE, so anything standing on water, soil or
+   * timber next to bright grass scores as shadowed whether or not a shadow was
+   * drawn. Delete every shadow in the hamlet frame and it still scores 55%,
+   * which is exactly the check's own 55% floor: the sensor's noise floor has
+   * reached its threshold, so on that frame the check cannot go red.
+   *
+   * Measured 2026-07-27 with `--mutate no-shadows` on three tree states:
+   *   40eff57e  33/71 = 46%  (red, nine points of margin)
+   *   2669f2fc  35/65 = 54%  (red by ONE sprite — the margin was already gone)
+   *   + the vessel berths in open water: 36/65 = 55%  (GREEN, fail-open)
+   * The world change that tipped it is correct and was verified by eye — two
+   * boats stopped standing on the pier and now float, and water reads darker
+   * than the land in their reference ring. The CHECK is what needs fixing (it
+   * has to compare like material with like, or judge only sprites that declare
+   * a shadow — the blueprint does not carry that flag today, so the fix reaches
+   * checks/world_checks.py and its mirror, which this branch does not own).
+   *
+   * WHEN THAT FIX LANDS THIS ARM GOES RED, and that is its whole purpose: move
+   * the `no-shadows` row above back to `hamlet` and delete this.
+   */
+  it('PINNED: check_shadows cannot fail on the hamlet frame — noise floor = its own floor', TIMEOUT, () => {
+    const v = capture('hamlet', 'no-shadows')
+    expect(v.red, 'shadows still cannot fail on hamlet — see this arm’s docstring').toEqual([])
+    const shadows = v.results.find((r) => r.check === 'shadows')
+    expect(shadows?.ok).toBe(true)
+    // and the un-mutated frame is not carried by the same noise: it scores well
+    // clear of the floor WITH its shadows drawn.
+    expect(capture('hamlet').red).toEqual([])
   })
 })

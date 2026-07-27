@@ -49,5 +49,9 @@ process.stdout.write(
     `${frame.blueprint.fields.length} fields, ` +
     `justified ${frame.blueprint.state.justified.length}\n` +
     `audit: onLane ${a.onLane.length}, stacked ${a.stacked.length}, ` +
-    `inWater ${a.inWater.length}, outsideHarbour ${a.outsideHarbour.length}\n`
+    `inWater ${a.inWater.length}, outsideHarbour ${a.outsideHarbour.length}, ` +
+    // Printed, not just written to audit.json: an arm nobody reads on the way
+    // past is an arm that goes red in a file. `beached` is the one that would
+    // have caught the vessel drawn on the pier.
+    `waterClaim ${a.waterClaim.length}, beached ${a.beached.length}\n`
 )

@@ -10,6 +10,21 @@
  * A SEPARATE FILE from iso-layout.test.ts on purpose: this branch had two waves
  * in one worktree, and a shared test file is the one surface where two writers
  * silently drop each other's arms.
+ *
+ * SOURCE MUTATIONS FOR THE 2026-07-27 BEACHED-VESSEL WORK (run on a scratch
+ * copy of the tree, one at a time, `vitest run src/lib/world/iso-layout/`):
+ *   MH31 `vessel-fixed-offset` — restore `at: { x: jEnd.x - 132, y: jEnd.y - 6 }`
+ *        and the hard-coded `overWater: true`. RED: the open-water arm, the
+ *        drop arm, and auditLayout's `beached`.
+ *   MH32 `moorings-shared-waterline` — lay both mooring rows off the pier
+ *        column's `waterBase` again. RED: the mooring arm, `beached`, and the
+ *        negative twin.
+ *   MH33 `kit-flag-inverted` — compute the dock kit's `overWater` the wrong way
+ *        round. RED: `waterClaim` and the per-column waterline arm. (Hard-CODING
+ *        it `true` instead is green here and correctly so: no kit item's base
+ *        lands on land on any measured seed, so that edit tells no lie.)
+ * And in ./dressing.test.ts, against the landing's own arms: `landing-unchecked`
+ * and `landing-nodrop`.
  */
 import { describe, expect, it } from 'vitest'
 import {
@@ -24,17 +39,22 @@ import {
   type Point,
 } from './index'
 import {
+  BERTH_GAP,
   buildHarbour,
   CRANE_SPACING,
   DOCK_KIT,
+  inOpenWater,
   jettyLength,
   lighthouseSite,
+  onFingerPier,
+  onWharfDeck,
   quayDepth,
   shoreAt,
   SHORE_LIFT,
   shoreLine,
   type Cove,
   type Harbour,
+  type HarbourItem,
   type Rect,
 } from './harbour'
 
@@ -504,6 +524,43 @@ describe('the finger jetty', () => {
     expect(whole.jetty?.at.y).toBe(flatY - SHORE_LIFT)
     expect(whole.jetty?.end.y).toBeGreaterThan(flatY)
   })
+
+  /**
+   * NO WATER BESIDE THE PIER, NO VESSEL — the drop path, which the 1600-case
+   * sweep never reaches (every seeded island had a berth going spare) and which
+   * would therefore have been an untested branch claiming to be the safety net.
+   * A boat is not a count: it says the org HAS a vessel, and the honest way to
+   * say that on an island with nowhere to lie is to say nothing, exactly as the
+   * jetty root refuses a column with no land.
+   *
+   * The island is a shelf that drops 300px in the columns either side of the
+   * pier, so the pier itself roots correctly and every berth beside it lands on
+   * ground. The positive control is the same island without the shelf.
+   */
+  it('emits NO vessel when no berth beside the pier is open water', () => {
+    const cove: Cove = { x: 1200, y: 1430, r: 300 }
+    const jx = cove.x + 104
+    const inputs = {
+      era: 'hamlet' as const,
+      quay: 'rowboat_jetty',
+      boat: true,
+      sizeOf: (k: string) => DEFAULT_FOOTPRINTS[k] ?? { w: 96, h: 96 },
+    }
+    const shelved = buildHarbour(
+      fakeCoast(cove, (x) => (Math.abs(x - jx) < 20 ? 1200 : 1500)),
+      cove,
+      inputs
+    ) as Harbour
+    expect(shelved).not.toBeNull()
+    expect(shelved.jetty).not.toBeNull()
+    expect(shelved.items.some((i) => i.kind === 'harbor_boat')).toBe(false)
+
+    // the same island without the shelf DOES berth it — otherwise this arm is
+    // measuring the fixture and would pass against a rule that never draws one
+    const open = buildHarbour(fakeCoast(cove, () => 1200), cove, inputs) as Harbour
+    expect(open.jetty).not.toBeNull()
+    expect(open.items.some((i) => i.kind === 'harbor_boat')).toBe(true)
+  })
 })
 
 describe('the moorings', () => {
@@ -581,8 +638,14 @@ describe('the dock kit', () => {
     const boat = has.items.find((i) => i.kind === 'harbor_boat')
     expect(boat).toBeDefined()
     expect(boat?.overWater).toBe(true)
-    expect(boat?.at.y).toBeCloseTo(pierOf(has).end.y - 6, 6)
-    expect(boat?.at.x).toBeCloseTo(pierOf(has).end.x - 132, 6)
+    expect(boat?.afloat).toBe(true)
+    // ALONGSIDE the pier, not hung off a fixed offset from its end: beam-on
+    // within the pier's own run, and clear of the planks by at least the gap.
+    const pier = pierOf(has)
+    const dx = Math.abs((boat as HarbourItem).at.x - pier.at.x)
+    expect(dx).toBeGreaterThanOrEqual(pier.width / 2 + BERTH_GAP)
+    expect((boat as HarbourItem).at.y).toBeGreaterThan(pier.at.y)
+    expect((boat as HarbourItem).at.y).toBeLessThanOrEqual(pier.end.y)
 
     for (const rung of ['none', undefined]) {
       const not = harbourOf(withState(PORT, { stages: { harbor_boat: rung } }))
@@ -591,6 +654,108 @@ describe('the dock kit', () => {
     // and no craft nobody measured comes with it
     const ambient = ['boat_fishing', 'boat_rowing', 'buoy', 'duck']
     for (const kind of ambient) expect(has.items.some((i) => i.kind === kind)).toBe(false)
+  })
+
+  /**
+   * THE BEACHED-VESSEL ARM (Captain, 2026-07-27: "is it on purpose that the
+   * ship is ON the ground and not water?").
+   *
+   * The vessel was placed at a FIXED offset from the pier head with
+   * `overWater: true` hard-coded, and every arm in this file was green: its
+   * base point sat in open water on 1598 of 1600 measured cases while the hull
+   * it anchors was drawn across the deck. So this arm asks about the CONTACT
+   * PATCH, which is what a viewer sees, and asks it of every era and every rung
+   * — the pier's length is a state reading, so a berth that works at one rung
+   * proves nothing about the next.
+   *
+   * Mutation MH31: restore `at: { x: jEnd.x - 132, y: jEnd.y - 6 }`.
+   */
+  it('lies in open water at every era and every quay rung, or is not drawn', () => {
+    for (const seed of [...SEEDS, ...WIDE]) {
+      for (const era of ['camp', 'hamlet', 'town', 'beyond_bay'] as const) {
+        // The three geometries the deck can take: none, the middle 30%, and the
+        // full span at the deepest rung. A berth that clears one clears nothing
+        // about the others — the deck is what the boat was drawn on.
+        for (const rung of ['rowboat_jetty', 'timber_jetty', 'stone_quay_5']) {
+          const state = withState(PORT, {
+            era,
+            stages: { harbor_boat: 'packet_boat', quay: rung },
+          })
+          const l = composeLayout(state, seed, FAST)
+          const h = l.harbour as Harbour
+          const boat = h.items.find((i) => i.kind === 'harbor_boat')
+          if (!boat) continue // no water beside this pier: no vessel is the honest answer
+          const timber = { wharf: h.wharf, jetty: h.jetty }
+          expect(inOpenWater(l.coast, timber, boat.at, boat.size)).toBe(true)
+          expect(onWharfDeck(h.wharf, boat.at)).toBe(false)
+          expect(onFingerPier(h.jetty, boat.at)).toBe(false)
+          expect(inRect(h.extent, boat.at)).toBe(true)
+        }
+      }
+    }
+  }, 120_000)
+
+  /**
+   * THE ARM ABOVE IS NOT VACUOUS. A rule that answers "no vessel" everywhere
+   * satisfies it perfectly, which is the cheapest way to fake a fix — so the
+   * berth search has to be shown actually berthing boats, on the great majority
+   * of seeds, at every rung.
+   */
+  it('finds a berth on almost every seed rather than dropping the vessel', () => {
+    let drawn = 0
+    let total = 0
+    for (const seed of [...SEEDS, ...WIDE]) {
+      for (const rung of ['rowboat_jetty', 'timber_jetty', 'stone_quay_5']) {
+        const state = withState(PORT, { stages: { harbor_boat: 'packet_boat', quay: rung } })
+        const h = harbourOf(state, seed)
+        total++
+        if (h.items.some((i) => i.kind === 'harbor_boat')) drawn++
+      }
+    }
+    expect(total).toBe(90)
+    expect(drawn / total).toBeGreaterThan(0.95)
+  })
+
+  /**
+   * MOORING POSTS ARE A COUNT, so they may never be dropped — but a post drawn
+   * standing on the wharf is the same defect as a boat on it. Measured over 80
+   * seeds x 4 eras x 5 rungs before the rule: 111 of 6400 posts on the deck, on
+   * the seeds where the cove shore falls more than 58px between the pier's
+   * column and the post's. The fix moves them seaward; this arm is what says so.
+   *
+   * Mutation MH32: drop the `deckEdgeAt` floor from the mooring loop.
+   */
+  it('drives its mooring posts into open water, never through the deck', () => {
+    // The two rows stand 152px apart across a shore that falls away, so the
+    // arm's discriminator is that their COLUMNS DISAGREE: if every column had
+    // the same waterline, measuring per column and measuring off the pier's
+    // would be the same number and this could not fail. Counted and asserted.
+    let disagreeing = 0
+    for (const seed of [...SEEDS, ...WIDE]) {
+      for (const rung of ['timber_jetty', 'stone_quay_5']) {
+        const state = withState(PORT, { stages: { quay: rung }, counts: { berths: 8 } })
+        const l = composeLayout(state, seed, FAST)
+        const h = l.harbour as Harbour
+        expect(h.moorings.length).toBe(8)
+        for (let b = 0; b < h.moorings.length; b++) {
+          const m = h.moorings[b]
+          // ITS OWN COLUMN'S WATERLINE — the rule, asserted directly rather
+          // than through its consequence. Measuring both rows off the pier's
+          // column put 111 of 6400 posts on the wharf and some on the beach.
+          const own = shoreAt(l.coast, h.cove, m.x)
+          expect(own).not.toBeNull()
+          expect(m.y).toBeCloseTo((own as number) + 116 + Math.floor(b / 2) * 52, 6)
+          expect(onWharfDeck(h.wharf, m)).toBe(false)
+          expect(inRect(h.extent, m)).toBe(true)
+        }
+        const jShore = shoreAt(l.coast, h.cove, h.cove.x + 104) as number
+        if (h.moorings.some((m) => Math.abs((shoreAt(l.coast, h.cove, m.x) as number) - jShore) > 8))
+          disagreeing++
+      }
+    }
+    // If this were 0 the arm above would be vacuous — the whole defect is that
+    // the cove shore is not one row.
+    expect(disagreeing).toBeGreaterThan(20)
   })
 
   /**
@@ -1104,6 +1269,106 @@ describe('auditLayout, on the harbour', () => {
       harbour: { ...h, jetty: { ...pierOf(h), end: { x: 40, y: 1700 } } },
     }
     expect(auditLayout(strayJetty).outsideHarbour.length).toBe(1)
+  })
+
+  /**
+   * THE TWO ARMS THE BEACHED VESSEL NEEDED (Captain, 2026-07-27).
+   *
+   *   waterClaim — `overWater` is a MEASUREMENT, not a declaration: it must
+   *     equal `!coast.landAt(base)` on every emitter that carries it.
+   *   beached    — everything that FLOATS (the vessel, the landing's craft, and
+   *     every mooring post) lies in open water: its contact patch is clear of
+   *     the island AND of the wharf and pier this harbour built.
+   *
+   * The dock kit is deliberately outside the second set — a crate on the wharf
+   * is cargo, and an arm that called it beached would be arguing with the world
+   * rather than measuring it.
+   *
+   * The whole cross is swept, not one fixture: the pier's length and the deck's
+   * span are both state readings, so the geometry a craft has to clear changes
+   * with the rung.
+   */
+  it('reports no false water claim and nothing afloat on timber', () => {
+    for (const seed of [...SEEDS, ...WIDE]) {
+      for (const rung of ['rowboat_jetty', 'timber_jetty', 'stone_quay_5']) {
+        const state = withState(PORT, { stages: { harbor_boat: 'packet_boat', quay: rung } })
+        const a = auditLayout(composeLayout(state, seed, FAST))
+        expect(a.waterClaim).toEqual([])
+        expect(a.beached).toEqual([])
+      }
+    }
+  }, 120_000)
+
+  /**
+   * THE NEGATIVE TWINS. Both arms above are worth exactly what these are: an
+   * arm that cannot go red is a disabled sensor wearing a green tick, and the
+   * defect they exist for passed every OTHER arm in this file.
+   */
+  it('DOES report a false water claim and a craft drawn on the timber', () => {
+    const l = composeLayout(
+      withState(PORT, { stages: { harbor_boat: 'packet_boat', quay: 'stone_quay_5' } }),
+      'acme-corp',
+      FAST
+    )
+    const h = l.harbour as Harbour
+    const boat = h.items.find((i) => i.kind === 'harbor_boat') as HarbourItem
+    expect(boat).toBeDefined()
+
+    // A CLAIM THE GROUND CONTRADICTS: same item, moved onto the island.
+    const inland = { x: l.space.cx, y: l.space.cy }
+    expect(l.coast.landAt(inland.x, inland.y)).toBe(true)
+    const lying: Layout = {
+      ...l,
+      harbour: { ...h, items: [{ ...boat, at: inland }] },
+    }
+    const aLying = auditLayout(lying)
+    expect(aLying.waterClaim.map((c) => c.kind)).toEqual(['harbor_boat'])
+    expect(aLying.beached.map((c) => c.kind)).toContain('harbor_boat')
+
+    // THE VESSEL BACK ON THE PLANKS — the reference's own offset, which is the
+    // defect verbatim. `overWater` stays true and stays TRUE (the pier is over
+    // water), so the first arm says nothing and only the second one fires.
+    // That is the whole reason there are two.
+    const pier = pierOf(h)
+    const onPlanks = {
+      x: pier.at.x + Math.sin(pier.angle) * pier.length * 0.6,
+      y: pier.at.y + Math.cos(pier.angle) * pier.length * 0.6 * 0.86,
+    }
+    const beachedLayout: Layout = {
+      ...l,
+      harbour: { ...h, items: [{ ...boat, at: onPlanks }] },
+    }
+    const aBeached = auditLayout(beachedLayout)
+    expect(aBeached.waterClaim).toEqual([])
+    expect(aBeached.beached.map((c) => c.kind)).toEqual(['harbor_boat'])
+
+    // A MOORING POST PUT THROUGH THE DECK, which is the state 111 of 6400 were
+    // in before the mooring rule.
+    const deckPoint = h.wharf ? h.wharf.shore[Math.floor(h.wharf.shore.length / 2)] : null
+    expect(deckPoint).not.toBeNull()
+    const onDeck: Layout = {
+      ...l,
+      harbour: {
+        ...h,
+        items: [],
+        moorings: [{ x: (deckPoint as Point).x, y: (deckPoint as Point).y + h.wharf!.depth / 2 }],
+      },
+    }
+    expect(auditLayout(onDeck).beached.map((c) => c.kind)).toEqual(['mooring_post'])
+
+    // AND THE LANDING'S OWN CRAFT, which is the sprite the Captain photographed:
+    // move the fishing boat back onto the pier and the arm has to name it.
+    const landing = l.dressing.filter((d) => d.afloat)
+    expect(landing.length).toBeGreaterThan(0)
+    const shoved: Layout = {
+      ...l,
+      dressing: landing.map((d) => ({ ...d, at: onPlanks })),
+    }
+    // Every one of them, and nothing else: this layout's own harbour is clean,
+    // so anything extra in the list would be the arm reporting the wrong thing.
+    const aShoved = auditLayout(shoved)
+    expect(aShoved.beached.length).toBe(landing.length)
+    expect(aShoved.beached.every((c) => landing.some((d) => d.kind === c.kind))).toBe(true)
   })
 })
 
