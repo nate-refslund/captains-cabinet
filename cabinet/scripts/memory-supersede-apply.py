@@ -155,11 +155,17 @@ CONFIG_PATH = _REPO_ROOT / "instance" / "config" / "memory-supersession.yml"
 SOAK_DAYS = 14                # propose-only window from the FIRST ledger entry
 MAX_APPLIES_PER_RUN = 50      # blast-radius bound; the rest stays would_apply
 
+# The organ's action_type namespace — ONE constant so the pair cards
+# (``memory-supersede:sup-*``), the soak-halfway card and the batched
+# same-source cards (``memory-supersede:batch:*``) can never drift apart
+# from the readers that look their rulings back up.
+_ACTION_NS = "memory-supersede"
+
 # The soak-halfway card's needs fingerprint — ONE constant so the filer
 # (file_soak_halfway_card) and the veto reader (halfway_veto) can never
 # drift apart: a card the organ files under one action_type but reads the
 # ruling for under another would make the promised veto silently unbinding.
-_HALFWAY_ACTION = "memory-supersede:soak-halfway"
+_HALFWAY_ACTION = f"{_ACTION_NS}:soak-halfway"
 
 # The organ's ENTIRE write surface against the store — two module-constant
 # parameterized statements (ids only; content never reaches SQL). The
@@ -199,6 +205,20 @@ def _load_detector():
 
 
 _mc = _load_detector()
+
+
+def _load_ask_mint():
+    """The shared same-source ask batcher (cabinet/scripts/lib/ask_mint.py).
+    Underscore-named, so a plain sys.path insert imports it — the same door
+    officer-inbound-poller.py uses for the lib/ modules it depends on."""
+    lib_dir = str(_REPO_ROOT / "cabinet" / "scripts" / "lib")
+    if lib_dir not in sys.path:
+        sys.path.insert(0, lib_dir)
+    import ask_mint  # noqa: PLC0415 — deliberate late import
+    return ask_mint
+
+
+_am = _load_ask_mint()
 
 
 # ---------------------------------------------------------------------------
@@ -657,8 +677,40 @@ def load_granted_pids(path: Optional[Path] = None) -> Dict[str, str]:
         if str(row.get("status") or "") != "approved_pending_apply":
             continue
         action = str(row.get("action_type") or "")
-        if action.startswith("memory-supersede:sup-"):
+        if action.startswith(f"{_ACTION_NS}:sup-"):
             out[action.split(":", 1)[1]] = rid
+    return out
+
+
+def load_batch_rulings(path: Optional[Path] = None) -> Dict[str, dict]:
+    """Captain rulings on the BATCHED same-source cards, keyed by need id.
+
+    A batched card is an ordinary decision card, so the ruling verbs are
+    the ones he already has: ``grant NEED-<hex8>`` = approve all
+    (``approved_pending_apply``), ``deny NEED-<hex8>`` = skip all
+    (``denied``). Nothing else counts — an OPEN batch card resolves
+    nothing, exactly like the N cards it replaced (constitution D12:
+    silence is never agreement).
+
+    Membership comes from ``ask_mint.batch_members`` reading the row's OWN
+    body — the member list the Captain SAW. Re-deriving it from today's
+    pending set would let one approval reach pairs that were never on the
+    card. A body whose membership cannot be read yields no members and the
+    ruling reaches nobody (fail-closed). Rows are UNTRUSTED JSONL; every
+    member is still re-validated by ``classify`` before any SQL."""
+    out: Dict[str, dict] = {}
+    for rid, row in _merged_needs(path or _needs_ledger_path()).items():
+        action = str(row.get("action_type") or "")
+        if not _am.is_batch_action(action, producer=_ACTION_NS):
+            continue
+        status = str(row.get("status") or "")
+        if status not in ("approved_pending_apply", "denied"):
+            continue
+        members = _am.batch_members(row)
+        if not members:
+            continue
+        out[rid] = {"status": status, "members": members,
+                    "source_key": _am.batch_source_key(action) or ""}
     return out
 
 
@@ -733,7 +785,7 @@ def file_cue_card(decision: dict,
             file_need_fn = needs.file_need
         return file_need_fn(
             "decision",
-            action_type=f"memory-supersede:{pid}",
+            action_type=f"{_ACTION_NS}:{pid}",
             why=why,
             unblocks="cabinet_memory recall hygiene",
             cost_of_delay="low",
@@ -741,6 +793,49 @@ def file_cue_card(decision: dict,
             cid=pid)
     except Exception:  # noqa: BLE001 — a card must never break the pass
         return None
+
+
+def cue_source_key(decision: dict) -> str:
+    """The row that CUED a cue-card ask — the batching group key.
+
+    The detector walks pairs newest-first inside one source_type bucket
+    (``memory-contradictions.propose``), so ONE new row can cue supersession
+    of every older row it contradicts: N asks, one cue. That is exactly the
+    shape that produced eleven cards for one decision, so the group key is
+    the cueing row — the same row the card text already names ("row X cues
+    supersession of row Y")."""
+    return str(decision.get("new_id") or "")
+
+
+def file_cue_batch_card(source_key: str, members: List[str],
+                        *, file_need_fn: Optional[Callable] = None) -> dict:
+    """ONE Captain card for every cue-card ask the SAME row cued.
+
+    Paid 2026-07-26: eleven near-identical supersession asks arrived as
+    eleven cards and collected zero answers. Same surface, same verbs, same
+    dedup as ``file_cue_card`` — only the grouping differs, and the body
+    lists every member id so approve-all can never reach a pair he did not
+    see. Two members is the floor: a single ask stays an ordinary per-pair
+    card (the caller's degenerate end). Returns the ``ask_mint`` result
+    dict; ``need_id`` None means the ledger no-opped (guardian-dark) and the
+    caller retries next run, exactly as for a per-pair card."""
+    n = len(members)
+    detail = (f"approve all = supersede the older row of all {n} pairs "
+              "(this organ executes each grant on a following weekly pass, "
+              "once the auto-apply gate arms; guarded, each reversible on "
+              "its own via --undo), skip all = keep both rows in every "
+              "pair. Nothing changes until the grants land. One decision, "
+              f"{n} pairs — every pair is still re-validated and recorded "
+              "individually.")
+    return _am.group_pending_asks(
+        source_key, members,
+        producer=_ACTION_NS,
+        noun="memory supersessions",
+        detail=detail,
+        unblocks="cabinet_memory recall hygiene",
+        cost_of_delay="low",
+        filed_by="system:memory-supersession",
+        file_need_fn=file_need_fn)
 
 
 def file_soak_halfway_card(stats: dict, *, state: str,
@@ -795,10 +890,93 @@ def file_soak_halfway_card(stats: dict, *, state: str,
 def _ledger_entry(decision: dict, *, ts: str, mode: str) -> dict:
     entry = {"ts": ts, "mode": mode}
     for k in ("proposal_id", "reason", "decision", "old_id", "new_id",
-              "jaccard", "texts_hash", "cues", "need_id", "note", "via"):
+              "jaccard", "texts_hash", "cues", "need_id", "note", "via",
+              "batch"):
         if decision.get(k) is not None:
             entry[k] = decision[k]
     return entry
+
+
+def _mint_cue_cards(results: List[tuple], summary: dict, *,
+                    ruled_sources: set,
+                    file_need_fn: Optional[Callable] = None) -> None:
+    """Mint this pass's cue-class Captain cards — ONE per cueing row.
+
+    The grouping decision needs the whole pass, so it happens here rather
+    than per-ask inside the classify loop. Three shapes, all deliberate:
+    a source with two or more asks becomes ONE batched card listing every
+    member; a source with exactly ONE ask stays an ordinary per-pair card
+    (a "batch of one" would be a second wording for the same decision);
+    and a source whose batched card the Captain has ALREADY ruled on mints
+    nothing — re-filing would rewrite the body his ruling was given on, so
+    a late member waits for the next window instead of joining an approval
+    it was never listed in. Members past the per-card cap are left
+    uncarded and retried, never folded silently into a body that does not
+    list them. A card that no-ops (guardian-dark) leaves need_id None and
+    the existing retry path re-files next run."""
+    by_key: Dict[str, List[dict]] = {}
+    for _origin, _pid, d in results:
+        if str(d.get("decision") or "") == "cue-card":
+            by_key.setdefault(cue_source_key(d), []).append(d)
+
+    for key in sorted(by_key):
+        group = by_key[key]
+        if key and key in ruled_sources:
+            continue
+        out = ({} if len(group) < 2 else file_cue_batch_card(
+            key, sorted(str(d.get("proposal_id") or "") for d in group),
+            file_need_fn=file_need_fn))
+        if not out.get("batched"):
+            for d in group:                       # degenerate end / no key
+                d["need_id"] = file_cue_card(d, file_need_fn=file_need_fn)
+            continue
+        summary["cue_batches"] += 1
+        covered = set(out["members"])
+        for d in group:
+            if str(d.get("proposal_id") or "") not in covered:
+                continue
+            d["need_id"] = out["need_id"]
+            d["batch"] = out["action_type"]
+
+
+def _close_batch_needs(results: List[tuple], batch_rulings: Dict[str, dict],
+                       latest: Dict[str, dict], *,
+                       mark_need_fn: Optional[Callable] = None) -> None:
+    """ONE receipt per APPROVED batched card — and only once EVERY member
+    it listed has reached a terminal state (applied or terminally refused).
+
+    Closing on the first member's outcome would evict the rest from
+    ``load_granted_pids`` and silently un-approve them, so a batch whose
+    members are still queued under soak/hold/blocked keeps its approval
+    live and retries next run — the same "the executor retries" contract a
+    per-pair approval has. ``granted`` when the approval actually executed
+    for at least one pair, ``superseded`` when every pair turned out moot.
+    A DENIED batch needs no receipt: deny is already terminal on the
+    ledger, and each member recorded its own skip."""
+    if not batch_rulings:
+        return
+    outcome = {pid: str(d.get("decision") or "") for _o, pid, d in results}
+    for nid in sorted(batch_rulings):
+        ruling = batch_rulings[nid]
+        if ruling["status"] != "approved_pending_apply":
+            continue
+        finals = [outcome.get(pid)
+                  or str((latest.get(pid) or {}).get("decision") or "")
+                  for pid in ruling["members"]]
+        if not all(f == "applied" or f.startswith("refused-") for f in finals):
+            continue
+        applied = sum(1 for f in finals if f == "applied")
+        total = len(finals)
+        key = ruling["source_key"]
+        if applied:
+            _mark_need(nid, "granted",
+                       f"batch {key}: {applied}/{total} pairs applied "
+                       "(superseded_by set; each reversible via --undo)",
+                       mark_need_fn)
+        else:
+            _mark_need(nid, "superseded",
+                       f"batch {key}: all {total} pairs closed without "
+                       "applying — the approval is moot", mark_need_fn)
 
 
 def run_apply_pass(*, proposals_path: Optional[Path] = None,
@@ -846,7 +1024,23 @@ def run_apply_pass(*, proposals_path: Optional[Path] = None,
     supersede both rows). Consumed proposals the soak ledger has NO entry
     for (hand-surgery recovery) reopen from their stamps. Unmeasurable
     store (no psql/conn) consumes NOTHING — honest degrade, mirror of the
-    detector. dry_run computes everything and writes nothing."""
+    detector. dry_run computes everything and writes nothing.
+
+    SAME-SOURCE BATCHING (2026-07-26): cue-card asks are grouped by the row
+    that cued them (``cue_source_key``) and minted at the END of the pass,
+    once the whole group is known — N asks cued by ONE row become ONE card
+    listing all N (``file_cue_batch_card``); distinct sources stay distinct
+    cards; a group of one stays an ordinary per-pair card. His ruling on a
+    batched card fans out MECHANICALLY, never as new authority: approve-all
+    puts every listed member through the SAME per-item apply path (same
+    liveness/type/order guards, same per-member soak-ledger entry, same
+    armed-gate requirement), and skip-all records one ``cue-card-skipped``
+    entry per member. The batch need is closed with ONE receipt only after
+    every member reached a terminal state — closing it on the first apply
+    would silently un-approve the rest. While a batch card is ruled, no new
+    card is minted for that source: a re-file would rewrite the body the
+    ruling was given on, and an approval must never grow members after the
+    fact."""
     ppath = proposals_path or PROPOSALS_PATH
     spath = soak_path or SOAK_PATH
     nowdt = _to_dt(now) or _now()
@@ -874,8 +1068,25 @@ def run_apply_pass(*, proposals_path: Optional[Path] = None,
     latest = compact_soak(entries)
     granted_pids = load_granted_pids(needs_path)
 
+    # Batched same-source cards: ONE ruling, N members. Approve-all joins
+    # the SAME granted map the per-pair grants use, so every member walks
+    # the identical guarded path — the fan-out adds no authority, only
+    # fewer cards. Skip-all is recorded per member (below). Membership is
+    # read from the card BODY (what he saw), never re-derived.
+    batch_rulings = load_batch_rulings(needs_path)
+    skipped_pids: Dict[str, str] = {}
+    for _nid, _r in sorted(batch_rulings.items()):
+        target = (granted_pids if _r["status"] == "approved_pending_apply"
+                  else skipped_pids)
+        for _pid in _r["members"]:
+            target.setdefault(_pid, _nid)
+    batch_need_ids = set(batch_rulings)
+    ruled_sources = {_r["source_key"] for _r in batch_rulings.values()
+                     if _r["source_key"]}
+
     summary = {"mode": mode, "state": state, "pending": len(pending),
                "consumed": 0, "would_apply": 0, "applied": 0, "cue_cards": 0,
+               "cue_batches": 0, "skipped": 0,
                "refused": 0, "blocked": 0, "measurable": measurable,
                "dry_run": dry_run, "halfway_card": None,
                "veto_need": veto_nid,
@@ -899,7 +1110,9 @@ def run_apply_pass(*, proposals_path: Optional[Path] = None,
     # (would_apply/blocked-db re-validate until closed; a cue-card entry
     # missing its need_id re-files the Captain card until one lands; a
     # cue-card the Captain APPROVED — binder grant, status
-    # approved_pending_apply — reopens into the apply path), then
+    # approved_pending_apply — reopens into the apply path; a cue-card he
+    # SKIPPED on a batched card reopens once, only to record its own skip),
+    # then
     # consumed proposals the soak ledger holds NO entry for — hand-surgery
     # on the ledger must not orphan pairs; their stamps carry enough to
     # re-validate, and already-superseded rows close as refused-superseded.
@@ -912,7 +1125,8 @@ def run_apply_pass(*, proposals_path: Optional[Path] = None,
         dec_prev = str(e.get("decision") or "")
         if dec_prev in open_decisions or (
                 dec_prev == "cue-card" and (not e.get("need_id")
-                                            or pid in granted_pids)):
+                                            or pid in granted_pids
+                                            or pid in skipped_pids)):
             work.append(("reopen", pid, {
                 "proposal_id": pid,
                 "reason": str(e.get("reason") or "near-duplicate"),
@@ -954,6 +1168,7 @@ def run_apply_pass(*, proposals_path: Optional[Path] = None,
     conn = None
     applies = 0
     touched: set = set()
+    results: List[tuple] = []       # (origin, pid, decision) in work order
     try:
         for origin, pid, prop in work:
             d = classify(prop, live_by_id, aux_by_id=aux_by_id,
@@ -962,12 +1177,21 @@ def run_apply_pass(*, proposals_path: Optional[Path] = None,
             new_id_int = d.pop("_new_id_int", None)
             dec = d["decision"]
 
-            if dec == "cue-card":
-                # First consumption AND every reopen of a card that never
-                # got a need id — fingerprint dedup (action_type carries
-                # the pid) makes a re-file a count-bump, never spam.
-                if not dry_run:
-                    d["need_id"] = file_cue_card(d, file_need_fn=file_need_fn)
+            if dec == "cue-card" and pid in skipped_pids:
+                # Skip-all: HIS ruling on the batched card, recorded per
+                # member so the record is per-pair even though the decision
+                # was one. Closes the pair (kept, not superseded) — no card
+                # re-file, no reopen next run.
+                dec = d["decision"] = "cue-card-skipped"
+                d["need_id"] = skipped_pids[pid]
+                d["via"] = "captain-skip-all"
+                summary["skipped"] += 1
+            elif dec == "cue-card":
+                # Minted AFTER the loop: the batching decision needs the
+                # whole group, and one source's asks must arrive as ONE
+                # card. Fingerprint dedup (action_type carries the pid, or
+                # the source key for a batch) makes a re-file a count-bump,
+                # never spam.
                 summary["cue_cards"] += 1
             elif dec == "blocked-db":
                 # classify-level indeterminacy (liveness probe unreachable)
@@ -1023,8 +1247,12 @@ def run_apply_pass(*, proposals_path: Optional[Path] = None,
             # one that turned out MOOT (terminal refusal: row gone/already
             # superseded/raced/order/type) closes as ``superseded``. Open
             # outcomes (would_apply under soak/hold, blocked-db, deferred)
-            # leave the need approved — the executor retries next run.
-            if pid in granted_pids and not dry_run:
+            # leave the need approved — the executor retries next run. A
+            # BATCH need is exempt here and closed once below: marking it on
+            # the first member's outcome would evict the remaining members
+            # out of load_granted_pids and silently un-approve them.
+            if (pid in granted_pids and not dry_run
+                    and granted_pids[pid] not in batch_need_ids):
                 final = d["decision"]
                 if final == "applied" or final.startswith("refused-"):
                     d["need_id"] = granted_pids[pid]
@@ -1037,32 +1265,51 @@ def run_apply_pass(*, proposals_path: Optional[Path] = None,
                         _mark_need(granted_pids[pid], "superseded",
                                    f"pair {pid} closed {final} — the "
                                    "approval is moot", mark_need_fn)
+            elif pid in granted_pids and granted_pids[pid] in batch_need_ids:
+                # the member rode a batched card — record WHICH one
+                d["need_id"] = granted_pids[pid]
 
-            if not dry_run:
-                prev = latest.get(pid) or {}
-                entry = _ledger_entry(d, ts=now_iso, mode=state)
-                changed = str(prev.get("decision") or "") != entry["decision"]
-                if not changed and entry["decision"] == "cue-card":
-                    # same decision, but the card finally got its need id —
-                    # record it so the reopen loop stops re-filing; while
-                    # it stays None nothing is appended (no ledger growth,
-                    # retried next run)
-                    changed = (bool(entry.get("need_id"))
-                               and not prev.get("need_id"))
-                if changed:
-                    append_jsonl(spath, entry)
-                if origin == "proposal":
-                    append_jsonl(ppath, {"proposal_id": pid,
-                                         "status": "consumed",
-                                         "consumed_at": now_iso,
-                                         "decision": entry["decision"]})
-                    summary["consumed"] += 1
+            results.append((origin, pid, d))
     finally:
         if conn is not None:
             try:
                 conn.close()
             except Exception:  # noqa: BLE001
                 pass
+
+    # ---- ONE card per source ------------------------------------------
+    # Minted here, not in the loop: batching is a decision about the whole
+    # group, and the group is only known once every ask is classified.
+    if not dry_run:
+        _mint_cue_cards(results, summary, ruled_sources=ruled_sources,
+                        file_need_fn=file_need_fn)
+
+    # ---- record ---------------------------------------------------------
+    if not dry_run:
+        for origin, pid, d in results:
+            prev = latest.get(pid) or {}
+            entry = _ledger_entry(d, ts=now_iso, mode=state)
+            changed = str(prev.get("decision") or "") != entry["decision"]
+            if not changed and entry["decision"] == "cue-card":
+                # same decision, but the card finally got its need id —
+                # record it so the reopen loop stops re-filing; while
+                # it stays None nothing is appended (no ledger growth,
+                # retried next run)
+                changed = (bool(entry.get("need_id"))
+                           and not prev.get("need_id"))
+            if changed:
+                append_jsonl(spath, entry)
+            if origin == "proposal":
+                append_jsonl(ppath, {"proposal_id": pid,
+                                     "status": "consumed",
+                                     "consumed_at": now_iso,
+                                     "decision": entry["decision"]})
+                summary["consumed"] += 1
+
+    # ---- ONE receipt per batched card, only once every member closed ----
+    if not dry_run:
+        _close_batch_needs(results, batch_rulings, latest,
+                           mark_need_fn=mark_need_fn)
 
     # Half-soak Captain heads-up (ONE per soak window): the gate otherwise
     # arms on elapsed time alone. The ledger marker is written only when
