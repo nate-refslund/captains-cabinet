@@ -946,7 +946,12 @@ def test_full_run_with_fake_probe_routes_only_failures():
         redis={},  # no officer worked → reflection passes
     )
     report = check.run(probe=probe, dry_run=False)
-    assert report["checked"] == 5
+    # 6 since the Captain's 2026-07-26 arming ceremony uncommented
+    # evidence-store-invariants on this deployment (the 5 original rows + it);
+    # with no store the extra row returns skipped=True, so `failed` is
+    # untouched — a swept-but-silent row is exactly what "not observable"
+    # should look like.
+    assert report["checked"] == 6
     assert report["failed"] == 1
     assert probe.heartbeats == 1  # heartbeat stamped after sweep
     failed = [r for r in report["results"] if not r["ok"] and not r["skipped"]]
@@ -1052,19 +1057,36 @@ def test_watchdog_select_expectations_filters_and_never_blinds():
     assert [e.id for e in reg._select_expectations(reg._CATALOG, ["zzz"])] == all_ids
 
 
-def test_watchdog_this_deployment_enables_original_rows_phase4_dark():
+def test_watchdog_this_deployment_enables_original_rows_plus_store_invariants():
     """The committed instance config enables the five original catalog rows in
-    catalog order — the module-level EXPECTATIONS the checker sweeps stays at
-    5 (test_full_run_with_fake_probe pins checked == 5). The Phase-4
-    evidence-plane rows ship in the catalog but STAGED DARK on this
-    deployment (shadow law — whole-cabinet evidence design 2026-07-16 §3
-    Phase 4): commented in the instance enable-list until the Captain
-    ceremony arms them alongside the evidence-shadow-detectors service."""
+    catalog order PLUS evidence-store-invariants — the module-level
+    EXPECTATIONS the checker sweeps is 6 (test_full_run_with_fake_probe pins
+    checked == 6).
+
+    The Captain's 2026-07-26 arm-the-cabinet ruling executed the Phase-4
+    ceremony for the two SHADOW service rows, and this test moved with it. The
+    arming is DELIBERATELY PARTIAL and the partition is pinned by equality in
+    BOTH directions, because arming the other two would page daily on a
+    cabinet whose evidence plane was never activated:
+
+      * evidence-store-invariants ARMED — its checker returns skipped=True
+        when the store is not observable, so an unactivated plane is silent by
+        construction.
+      * evidence-anchor-export-fresh DARK — its producer (the evidence-anchor
+        service row) is still parked; a freshness floor over a surface nobody
+        produces is a manufactured page.
+      * evidence-shadow-detector-liveness DARK — its skip arm covers only "row
+        disabled", and with the row now ENABLED and no store the detector
+        correctly writes nothing, so the never-appended-journal arm would fail
+        every day. It arms in the same step that activates the store.
+    """
     enabled = [e.id for e in reg.EXPECTATIONS]
     catalog = [e.id for e in reg._CATALOG]
-    assert enabled == catalog[:5]
-    assert len(reg.EXPECTATIONS) == 5
+    assert enabled[:5] == catalog[:5]
+    assert len(reg.EXPECTATIONS) == 6
     phase4 = {"evidence-store-invariants", "evidence-anchor-export-fresh",
               "evidence-shadow-detector-liveness"}
-    assert phase4 <= set(catalog)          # shipped in the framework catalog
-    assert not (phase4 & set(enabled))     # dark on this deployment (shadow)
+    assert phase4 <= set(catalog)          # all three shipped in the catalog
+    assert "evidence-store-invariants" in enabled       # armed 2026-07-26
+    assert {"evidence-anchor-export-fresh",
+            "evidence-shadow-detector-liveness"}.isdisjoint(enabled)  # still dark

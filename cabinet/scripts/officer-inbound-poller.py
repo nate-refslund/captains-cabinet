@@ -613,6 +613,76 @@ def availability_command_reply(*, api_post, chat_id, text, log=log) -> bool:
         return False
 
 
+# ---------------------------------------------------------------------------
+# /missed — the UNDER-ASK verdict (2026-07-26). "You should have raised this,
+# and you didn't." Mechanical for exactly the same reasons as /score above.
+#
+# WHY IT CANNOT BE A REPLY. Every other correction verb quotes a card: undo /
+# edit: / never: all bind to something the org showed him. An under-ask has NO
+# card — the failure IS the absence — so it has to be sayable cold. Anchored,
+# so "/missed" inside a sentence stays ordinary conversation for the Chair.
+#
+# Fails OPEN to the Chair relay, so a misfire relays the Captain's words rather
+# than eating them, and a bare "/missed" with no subject is left to relay too:
+# an under-ask with no something is not a lesson anything can learn from.
+# ---------------------------------------------------------------------------
+
+
+def _action_lessons_lib():
+    """The lesson ledger module. Raises on failure — callers are fail-open."""
+    from framework.frontdoor import action_lessons  # noqa: PLC0415 — late
+    return action_lessons
+
+
+def is_missed_command(text: str) -> bool:
+    """True for an anchored ``/missed <what>``. Never mid-sentence, and never
+    true when the library is unavailable (→ the message relays)."""
+    try:
+        return _action_lessons_lib().parse_missed_command(text) is not None
+    except Exception:  # noqa: BLE001 — unavailable library must not eat a msg
+        return False
+
+
+def missed_command_reply(*, api_post, chat_id, text, log=log) -> bool:
+    """Record one under-ask and confirm it. Returns True when the row is
+    durably on disk AND the confirmation was sent; False lets the caller fall
+    open to the Chair relay so the command is never silently consumed.
+
+    Order is load-bearing, same as /score: record FIRST, confirm second — a
+    confirmation the Captain can see must never outrun the row it claims."""
+    try:
+        al = _action_lessons_lib()
+        parsed = al.parse_missed_command(text)
+        if parsed is None:
+            return False
+        row = al.record_missed(parsed["what"])
+        api_post("sendMessage", {
+            "chat_id": int(chat_id),
+            "text": ("Recorded as something I should have raised and didn't "
+                     f"({row['lesson_ref']}). It rides the correction ledger "
+                     "the proposer reads.")})
+        return True
+    except Exception as exc:  # noqa: BLE001 — fail-open to the Chair relay
+        log(f"missed command failed (falling back to relay): "
+            f"{type(exc).__name__}: {exc}")
+        return False
+
+
+def _tap_situation_key(mid) -> "str | None":
+    """The situation this tap belongs to, resolved from the send it answers.
+
+    Stamped at journal time (2026-07-26) so "what did the Captain engage with"
+    is answerable from the row itself. Measured before this: 0 of 21 taps
+    carried a situation_key, and the message-id join recovered only 6 of them.
+    Total — any failure returns None, because a tap is journaled whether or not
+    it can be attributed."""
+    try:
+        from framework.attention.feed import situation_key_for_message
+        return situation_key_for_message(mid)
+    except Exception:
+        return None
+
+
 def _first_reaction_emoji(reactions) -> str:
     """First emoji from a ``new_reaction`` list (``[{type:'emoji', emoji:'👍'}]``)."""
     for r in reactions or []:
@@ -898,7 +968,8 @@ def handle_callback_query(cbq: dict, *, captain, api_post, inject, feed_append,
             f"ack={ack_state} {summary}"[:300])
 
     row = {"direction": "in", "kind": "callback", "telegram_message_id": mid,
-           "callback_data": sanitize_callback_data(data), "ack": ack_state}
+           "callback_data": sanitize_callback_data(data), "ack": ack_state,
+           "situation_key": _tap_situation_key(mid)}
     for k in ("mode", "item_id", "outcome"):
         if result.get(k):
             row[k] = str(result[k])[:120]
@@ -923,7 +994,8 @@ def handle_message_reaction(upd: dict, *, captain, inject, feed_append, log=log)
     emoji = _first_reaction_emoji(mr.get("new_reaction") or [])
     inject(format_reaction_line(mid, emoji))
     feed_append({"direction": "in", "kind": "reaction",
-                 "telegram_message_id": mid, "emoji": emoji})
+                 "telegram_message_id": mid, "emoji": emoji,
+                 "situation_key": _tap_situation_key(mid)})
 
 
 def handle_poll_answer(upd: dict, *, captain, inject, feed_append, log=log) -> None:
@@ -937,7 +1009,12 @@ def handle_poll_answer(upd: dict, *, captain, inject, feed_append, log=log) -> N
     inject(format_poll_answer_line(poll_id, option_ids))
     feed_append({"direction": "in", "kind": "poll_answer",
                  "poll_id": _sanitize_id(poll_id),
-                 "options": [int(o) for o in option_ids if isinstance(o, int)]})
+                 "options": [int(o) for o in option_ids if isinstance(o, int)],
+                 # A poll_answer update carries no message id, so there is
+                 # nothing to join on: the field is present and honestly None
+                 # rather than absent, so a consumer can tell "no situation"
+                 # from "field never stamped".
+                 "situation_key": None})
 
 
 def record_captain_contact(redis_host: str, message_id: int, *,
@@ -1435,6 +1512,27 @@ def main() -> int:
                                                       chat_id=captain, text=text,
                                                       log=log)
                     fa({"direction": "in", "kind": "availability-command",
+                        "telegram_message_id": mid,
+                        "recorded": "yes" if sent else "failed"})
+                    if not sent:
+                        deliver(text, quoted, "", mid=mid)
+                elif frm == str(captain) and is_missed_command(text):
+                    # /missed <what> → the UNDER-ASK verdict (2026-07-26): the
+                    # one correction verb that is not about something the org
+                    # DID. Same mechanical shape and fail-open discipline as
+                    # /score above.
+                    log(f"captain /missed update_id={uid} -> under-ask ledger")
+                    mid = int(msg.get("message_id", 0))
+                    set_last_captain_msg_id(mid)
+                    record_recent_msg(mid, text)
+                    chat_dm = str((msg.get("chat") or {}).get("id") or frm)
+                    archive_captain_dm(chat_dm, mid, text, kind="missed",
+                                       update_id=uid, tg_date=msg.get("date", 0),
+                                       quoted=quoted_full, officer=officer)
+                    sent = missed_command_reply(api_post=api_post,
+                                                chat_id=captain, text=text,
+                                                log=log)
+                    fa({"direction": "in", "kind": "missed-command",
                         "telegram_message_id": mid,
                         "recorded": "yes" if sent else "failed"})
                     if not sent:

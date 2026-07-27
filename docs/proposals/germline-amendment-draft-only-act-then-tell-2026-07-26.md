@@ -1,327 +1,375 @@
-# Germline amendment — `draft_only` act-then-tell — 2026-07-26
+# Germline amendment — `draft_only` moves to act-then-tell
 
-**Status:** AWAITING CAPTAIN — the *ceremony*, not the code. Ledger row
-**CG-35**. The content below is **already landed on master** under the
-landed-then-ceremonied rule for germline content: the edit was built in a
-clone, reviewed, gated and merged like any change, and what remains is one
-Captain unlock/relock window that re-materialises the landed bytes into the
-locked working tree on the deployment machine. Reply **"apply draft
-act-then-tell"** to run that window.
+**Filed** 2026-07-26 · **Ledger row** CG-35 · **Status** captain-gated (NAMED
+Captain sudo-unlock handback, non-grantable) · **AWAITING CAPTAIN** for the
+ceremony only
 
-Nothing in this document asks for new authority. The germline path **SET** is
-byte-identical — `cabinet/scripts/germline-lock.sh` is untouched, no path was
-added to or removed from the locked set, and this amendment changes only the
-CONTENT of four already-locked files.
+> **LANDED 2026-07-26** on `feat/draft-only-act-then-tell`. This document was
+> first written (by the arm-the-cabinet unit) as a *proposal*; the edit it
+> proposes is now **on master**, under the landed-then-ceremonied rule for
+> germline CONTENT: build it in a clone, land it like any change, and leave ONE
+> Captain unlock/relock that re-materialises the landed bytes into the locked
+> tree. Reply **"apply draft act-then-tell"** to run that window. §2's original
+> framing ("could not ship in that unit") remains true of *that unit* and is
+> kept for provenance — it was never a claim that the change could not land at
+> all, and §6 already allowed for landing first.
+>
+> What landed, beyond §3's two edits: the §5 test-pin moves; comment-only
+> corrections in the three germline modules that still claimed `draft_only`
+> "keeps earn-up" (`matrix.py`, `policy_engine.py`, `action_undo.py`); a
+> plain-language fix to `docs/how-your-cabinet-is-governed.md`; and new CI arms
+> verified to FAIL against pre-change code (§5a). The §3 **optional**
+> `_TRUST_FIRST_UNMEASURED` tightening was **NOT** taken — it stays the
+> Captain's call at the window (§3a says why). One **open item** was found
+> while writing the mutation sensors and is recorded in **§9**; it is
+> pre-existing on master and not introduced here.
+>
+> The germline path **SET** is byte-identical: `germline-lock.sh` is untouched
+> and no path entered or left the locked set — only the CONTENT of four
+> already-locked files changed.
 
----
+## 1. The ruling being implemented
 
-## 0 · What this changes, in one paragraph
+The Captain ruled on 2026-07-26 that **drafting moves to act-then-tell**,
+overriding his own 2026-07-04 ruling. His stated reason: **with the trust
+ladder unable to climb, earn-up meant asking forever.** Sending still requires
+him — this changes only whether the cabinet asks before *writing* a draft.
 
-The Captain ruled (2026-07-26): *"the act first (except for emailing real
-people…)"*. Composing a draft was the last obviously-reversible thing the
-cabinet still had to ask permission for. The `draft_only` risk class moves off
-the earn-up ladder onto **`notify_after`** — the act-and-tell verdict
-`read_only_dispatch` already rides — at every non-demote confidence state, in
-the root/guardian table and the sovereign table. `earn_up` is untouched
-(narrowing stays legal, and the cautious start stays cautious). Every hard
-ceiling is untouched. **This widens COMPOSING a draft. It cannot widen
-DELIVERING one** — delivery is `external_comms`, which is `always_gated` at
-every confidence state in every posture, before and after.
+Stated as the one-line safety claim the rest of this document has to earn:
+**it widens composing a draft, and it cannot widen delivering one.** Delivery
+is `external_comms`, which stays `always_gated` at every confidence state in
+every posture, before and after (§4c proves this four independent ways).
 
----
+The 2026-07-04 ruling is recorded verbatim in the file this amendment edits
+(`framework/policies/authority-matrix.yml:130-138`):
 
-## 1 · The ruling
+> `# CAPTAIN-RULING 2026-07-04: draft_only KEEPS the old reversible earn-up`
+> `# ladder (Captain judgment — a draft is outbound-ADJACENT: its content`
+> `# exists to leave the machine, so it earns autonomy rather than getting`
+> `# it granted; actual sending stays behind the external_comms ceiling).`
 
-> the act first (except for emailing real people…)
+## 2. Why this could not ship inside the 2026-07-26 arm-the-cabinet unit
 
-Read narrowly and applied narrowly: drafting is act-then-tell; sending to a
-real human outside the org keeps per-item Captain approval, which is a
-structural, non-grantable limit and is not in scope here.
+**The file is germline.** `framework/policies` is a whole locked DIRECTORY
+(`cabinet/scripts/germline-lock.sh` `DIRS`), so `authority-matrix.yml` is
+physically unwritable in the live tree by this uid — by design. The doctrine
+path for a germline *content* change is landed-then-ceremonied: build it in a
+clone, land it like any change, and leave ONE Captain unlock/relock that
+re-materializes the landed bytes. That ceremony is the non-grantable limit; it
+is filed here rather than worked around.
 
-This SUPERSEDES the `draft_only` half of **CAPTAIN-RULING 2026-07-04**
-(recorded in `docs/proposals/germline-amendment-trust-inversion-2026-07-04.md`),
-which kept `draft_only` on the earn-up ladder as outbound-ADJACENT. The
-2026-07-04 *reasoning* is not overturned — it is exactly why this is safe.
-Adjacent is not outbound. The 2026-07-04 ruling's other half (`deploy_nonprod`
-stays earn-up, prod-adjacent) is **untouched**.
+**A correction to the brief that ordered the work.** The unit's brief said
+`act_then_tell` is defined in `framework/authority/action_mode.py:110` but
+excluded from `framework/authority/posture.py:62`, so "naming it in config
+silently resolves to guardian", and asked for the rung to be made real.
 
----
+That premise is true as stated but points at the wrong plane, and following it
+would have been a much larger and more dangerous change than the ruling asks
+for. There are two distinct planes:
 
-## 2 · The exact edit
-
-`framework/policies/authority-matrix.yml`. Two verdict rows, ten cells, and
-the comments that describe them. No other key changed — not `risk_classes`,
-not `hard_ceiling`, not `ceiling_frozenset_map`, not `bars`, not
-`cooldown_days`, not `deploy`, not `veto_window_minutes`.
-
-### 2a · Root / guardian table (`policies[0].verdicts.draft_only`)
-
-| confidence state | BEFORE | AFTER |
+| plane | vocabulary | what "act-then-tell" is there |
 |---|---|---|
-| `graduated` | `auto` | `notify_after` |
-| `eligible` | `propose_only` | `notify_after` |
-| `propose_only` | `propose_only` | `notify_after` |
-| `unmeasured` | `propose_only` | `notify_after` |
-| `demote` | `propose_only` | `propose_only` (**unchanged**) |
+| authority matrix — lane × action-type → verdict | `propose_only` · `act_with_undo` · `notify_after` · `auto` · `always_gated` | **`notify_after`** — "act-and-tell … the notification IS the oversight surface" (`authority-matrix.yml:119-123`) |
+| posture ladder — the deployment's autonomy level | `earn_up` · `guardian` · `sovereign` (+ the forward-compatible `act_then_tell` token) | a whole-cabinet posture, not a per-class rung |
 
-### 2b · Sovereign posture table (`policies[0].postures.sovereign.verdicts.draft_only`)
+The ruling is about the **`draft_only` risk class**, which lives in the first
+plane. `notify_after` is fully implemented there today — it is what
+`read_only_dispatch` already rides. **No posture change is required, and the
+`act_then_tell` posture token must NOT be added**: `POSTURES` is the
+whole-cabinet ladder, so adding it would widen every class at once rather than
+drafting, and `framework/authority/posture.py` is itself germline. The
+existing guard `test_action_mode.py::test_ladder_does_not_define_act_then_tell_today`
+stays true and stays green under this amendment.
 
-Identical before and after to the root row above — the sovereign table
-mirrored the guardian row before this amendment and mirrors it after.
+## 3. The complete proposed edit
 
-| confidence state | BEFORE | AFTER |
-|---|---|---|
-| `graduated` | `auto` | `notify_after` |
-| `eligible` | `propose_only` | `notify_after` |
-| `propose_only` | `propose_only` | `notify_after` |
-| `unmeasured` | `propose_only` | `notify_after` |
-| `demote` | `propose_only` | `propose_only` (**unchanged**) |
+**File:** `framework/policies/authority-matrix.yml` (germline, dir-cover)
 
-### 2c · `earn_up` posture table — NOT TOUCHED
+**Edit 1 — the root/guardian table** (`:130-138`). Replace the earn-up ladder
+with the trust-first act-and-tell ladder, mirroring the `read_only_dispatch`
+row directly above it:
 
-| confidence state | BEFORE | AFTER |
-|---|---|---|
-| all five | `propose_only` | `propose_only` (**unchanged**) |
+```yaml
+      # CAPTAIN-RULING 2026-07-26 (supersedes the 2026-07-04 ruling recorded
+      # below): draft_only moves from the earn-up ladder to act-and-tell.
+      # Captain's reason: with the trust ladder unable to climb, earn-up meant
+      # asking forever. A draft is still outbound-ADJACENT — but the drafting
+      # is now done and TOLD, while actual SENDING stays behind the
+      # external_comms hard ceiling, which this edit does not touch.
+      # SUPERSEDED 2026-07-04 ruling, kept for provenance: "draft_only KEEPS
+      # the old reversible earn-up ladder (a draft is outbound-ADJACENT: its
+      # content exists to leave the machine, so it earns autonomy rather than
+      # getting it granted; actual sending stays behind the external_comms
+      # ceiling)."
+      draft_only:
+        graduated: notify_after
+        eligible: notify_after
+        propose_only: notify_after
+        unmeasured: notify_after
+        demote: propose_only
+```
 
-Narrowing stays legal, so the cautious start keeps proposing. This is the one
-place a reader might expect a matching widening and must not find one.
+**Edit 2 — the sovereign posture table** (`:228`). Sovereign currently mirrors
+the old earn-up ladder; leaving it would make sovereign NARROWER than guardian
+at `unmeasured`, an incoherent inversion:
 
-### 2d · `graduated` — the one cell that is not a widening
+```yaml
+          draft_only:        { graduated: notify_after, eligible: notify_after, propose_only: notify_after, unmeasured: notify_after, demote: propose_only }
+```
 
-`graduated` goes from `auto` (act **silently**) to `notify_after` (act **and
-tell**). That is deliberate and is the only cell in this amendment that is
-narrower than before. For an outbound-adjacent class the notification IS the
-oversight surface, so no confidence state may let a draft appear with no tell.
-The result is one uniform rule for the class rather than a ladder: **compose,
-then tell — always**. Nothing that acted before now proposes; the class is
-strictly more autonomous at four of five states and strictly more visible at
+**NOT edited:** the `earn_up` posture table keeps `draft_only: propose_only` at
+all five states — earn_up may only NARROW versus the root table
+(`matrix.py:_validate_earn_up_narrows`), and `propose_only`(1) is narrower than
+`notify_after`(4). **NOT edited:** every hard-ceiling row, including
+`external_comms` (`{"*": always_gated}`) — sending still requires the Captain,
+which is the half of the 2026-07-04 ruling he did NOT override.
+
+### 3a. The complete before/after cell map (both edited tables)
+
+Ten cells, and nothing else in the file: not `risk_classes`, not
+`hard_ceiling`, not `ceiling_frozenset_map`, not `bars`, not `cooldown_days`,
+not `deploy`, not `veto_window_minutes`.
+
+| confidence state | root/guardian BEFORE | sovereign BEFORE | BOTH AFTER |
+|---|---|---|---|
+| `graduated` | `auto` | `auto` | `notify_after` |
+| `eligible` | `propose_only` | `propose_only` | `notify_after` |
+| `propose_only` | `propose_only` | `propose_only` | `notify_after` |
+| `unmeasured` | `propose_only` | `propose_only` | `notify_after` |
+| `demote` | `propose_only` | `propose_only` | `propose_only` (**unchanged**) |
+
+`earn_up` stays `propose_only` at all five states, unchanged — the one place a
+reader might expect a matching widening and must not find one.
+
+**`graduated` is the one cell that NARROWS**, deliberately: `auto` acts
+*silently*, `notify_after` acts *and tells*. For an outbound-adjacent class the
+notification IS the oversight surface, so no confidence state may let a draft
+appear with no tell. The class ends up with one uniform rule — compose, then
+tell, always — instead of a ladder. Nothing that acted before now proposes: it
+is strictly more autonomous at four of five states and strictly more visible at
 the fifth.
 
-### 2e · Comment-only edits in three germline modules
+### 3b. Optional tightening — offered, NOT taken
 
-No executable line changed in any of these; the framework production-line
-budget is unchanged (see §6).
+**Captain's call at the window:** adding `"draft_only":
+"notify_after"` to `_TRUST_FIRST_UNMEASURED` in `framework/authority/matrix.py`
+(also germline) would pin the new cell by equality the way the two beachhead
+rows are pinned, making a future silent earn-up regression a hard validation
+error. This is a strict tightening; it is listed separately because it widens
+the ceremony to a second file.
 
-- `framework/authority/matrix.py` — the `RISK_CLASSES` note and the
-  `_TRUST_FIRST_UNMEASURED` note said `draft_only` "keeps earn-up". Corrected,
-  with the reason it is still not in that equality pin (§3d).
-- `framework/authority/policy_engine.py` — the `notify_after` allow-branch
-  said `notify_after` is a sovereign-table verdict and "guardian carries
-  none". That was already wrong on master (`read_only_dispatch` carries it in
-  the root table) and is now doubly wrong. Corrected, and the branch now names
-  `draft_only` as its second rider.
-- `framework/frontdoor/action_undo.py` — said `draft_only` has no registered
-  inverse *because* it keeps earn-up. The conclusion is unchanged (it still
-  has none, deliberately) but the reason is now: `notify_after` never consults
-  the undo plane, and a draft that was only composed has nothing outbound to
-  reverse.
+It was **not** taken at landing, for two reasons — either of which the Captain
+may overrule at the window:
 
----
-
-## 3 · Validator analysis
-
-`framework/authority/matrix.py` is fail-closed: anything unknown, mistyped,
-missing or extra raises `MatrixValidationError`. Every invariant it enforces
-was checked against the new table, by reading the validator rather than by
-trusting that the suite is green.
-
-### 3a · Invariants that could have rejected this edit, and why they do not
-
-| # | invariant | verdict on this edit |
-|---|---|---|
-| 1 | no ceiling/prod cell may be `auto` (`no_ceiling_or_prod_auto`, sweeps root **and every posture**) | untouched — no ceiling cell changed |
-| 2 | `ceiling_frozenset_map.values()` == all six `HARD_CEILING_TOUCHES` | untouched |
-| 3a | any non-ceiling row granting `act_with_undo` anywhere must grant it at `unmeasured` and demote to `propose_only` | **does not fire** — `notify_after` is not `act_with_undo`, so the row grants none |
-| 3b | beachhead rows pinned by equality at `unmeasured` (`_TRUST_FIRST_UNMEASURED`) | `draft_only` is not a member, so no equality pin applies (see §3d) |
-| 3c | no beachhead row may move under the hard ceiling | untouched |
-| 4 | `postures.guardian` rejected; posture ceiling rows wildcard-only in {`always_gated`, `standing_grant`}; `standing_grant` never in the root table or on a non-ceiling row; **demote posture-invariant** | holds — root and sovereign `demote` are both `propose_only`, so the invariance check compares equal |
-| 5 | `earn_up` may only NARROW vs root, cell by cell on `VERDICT_PERMISSIVENESS` | holds, and gets *more* headroom: `earn_up` `propose_only` (rank 1) against a root that rose from `propose_only`/`auto` to `notify_after` (rank 4) |
-| — | shape rules: full 13-class coverage, all five states on non-ceiling rows, every verdict a `VERDICTS` member | holds — same shape, different values |
-
-### 3b · Is `demote → propose_only` *required* by the validator here?
-
-**No — and it is kept anyway.** Rule (a) requires it only of rows granting
-`act_with_undo`; rule (b) only of the two `_TRUST_FIRST_UNMEASURED` members.
-`draft_only` is neither, so the validator would have accepted a wider demote
-cell. The demote invariance check in `_validate_postures` only requires root
-and sovereign to *agree*, which they would have done at any shared value. It
-stays `propose_only` because demotion evidence must always land fail-safe —
-that is the doctrine, independent of whether a validator happens to enforce it
-on this row. A CI arm now pins it (§7).
-
-### 3c · `notify_after` is already implemented — not a new verdict
-
-`notify_after` is a member of `VERDICTS`, carries rank 4 in
-`VERDICT_PERMISSIVENESS`, and has a live allow-branch in
-`framework/authority/policy_engine.py`: it emits the gate tell via
-`_emit_gate_tell` and returns `None` (allow). The branch keys on the **verdict
-string**, not on the risk class, so `draft_only` reaching it needs no new code
-whatsoever. It is also in `_RUNG_LIFT_VERDICTS`, so the earn_up trust ladder
-could already lift a cell to it. **No new capability is introduced by this
-amendment** — an existing verdict is applied to one more class.
-
-Notably, `notify_after` does **not** consult the undo plane. Only the
-`act_with_undo` branch runs `_act_with_undo_gap` (registered inverse +
-writable journal). So `draft_only` keeping no registered inverse in
-`action_undo.py` is correct and required no change.
-
-### 3d · Why `draft_only` was NOT added to `_TRUST_FIRST_UNMEASURED`
-
-Adding it would pin `unmeasured == notify_after` by equality, which is
-superficially attractive. It was deliberately not done, for two reasons, and
-the code comment records both:
-
-1. That dict defends the **preset/instance merge** channel. For this policy
-   type that channel is already closed twice over: `load_policies` REFUSES any
-   preset/instance policy typed `authority_matrix` or named `authority-matrix`
+1. **Its threat model is already covered twice.** That dict defends the
+   *preset/instance merge* channel, and for this policy type the channel is
+   shut: `load_policies` REFUSES any preset/instance policy typed
+   `authority_matrix` or named `authority-matrix`
    (`policy_engine._is_authority_matrix_policy`), and `instance/config/policies`
-   is itself germline-locked. The only remaining channel is a direct edit of
-   the floor file — which the shipped-table CI pins catch (§7).
-2. It costs a framework production line against a budget already **at its
-   ceiling** (`cognitive-architecture-census`:
-   `framework_production_noncomment_lines` 67326 ≤ 67326). A safety pin is not
-   worth buying with a raised threshold, and the pin it would buy is redundant
-   per (1).
+   is itself germline-locked. The only remaining channel is a direct edit of the
+   floor file, which the shipped-table CI pins (§5, §5a) catch.
+2. **It costs a framework production line against a budget at its ceiling.**
+   `cognitive-architecture-census` holds
+   `framework_production_noncomment_lines` at 67326 ≤ 67326 — zero headroom. A
+   safety pin is not worth buying with a raised threshold, and per (1) the pin
+   it buys is redundant.
 
----
+The stale comment it would have repaired was fixed directly instead: the
+`matrix.py` note now records the 2026-07-26 ruling *and* states why
+`draft_only` is absent from the pin, so the file no longer claims `draft_only`
+keeps earn-up.
 
-## 4 · What stays unchanged
+## 4. Validator analysis (why the edit is legal)
 
-- **All six hard ceilings** — `external_comms`, `deploy_prod`, `spend`,
-  `secrets`, `network_write`, `credentials_grant`: single-`*` wildcard,
-  `always_gated` in root and `earn_up`, `standing_grant` (grant-or-file-a-NEED,
-  never unconditional) in sovereign. Byte-identical before and after.
-- **`earn_up`** — every cell, including `draft_only`.
-- **Every other risk class** — `reversible`, `read_only_dispatch`, `pm_write`,
-  `calendar_write`, `internal_comms`, `deploy_nonprod`: byte-identical.
-- **`framework/authority/posture.py`'s `POSTURES`** — deliberately NOT
-  extended. There is no new `act_then_tell` posture and there must not be: the
-  posture ladder is a whole-cabinet selector, so a token there would widen
-  every risk class at once instead of drafting. Act-then-tell is not a missing
-  capability needing a new rung — the matrix already grants `act_with_undo` on
-  trust-first cells from day one, so acting first is the ruled default and this
-  amendment extends it to one more class.
-- **`cabinet/scripts/germline-lock.sh`** — untouched. The locked path SET is
-  byte-identical; only file CONTENT changed.
-- **The undo registry** — `draft_only` still has no registered inverse, now
-  for the correct reason (§2e).
+`_validate_act_first_floor` (`matrix.py:597`) — three rules, all satisfied:
 
----
+* rule (a) applies only when a row grants `act_with_undo` somewhere.
+  `notify_after` is not `act_with_undo`, so it does not fire.
+* rule (b) pins only `_TRUST_FIRST_UNMEASURED` = {`reversible`,
+  `read_only_dispatch`}. `draft_only` is not a member, so no equality pin
+  fires (see §3's optional tightening).
+* rule (c) concerns beachhead rows moved under the hard ceiling — not this
+  edit.
 
-## 5 · Why sending is still Captain-gated
+`_validate_earn_up_narrows` (`matrix.py:753`) — cell-by-cell on
+`VERDICT_PERMISSIVENESS`. earn_up's `draft_only` stays `propose_only`(1) against
+a root of `notify_after`(4): still narrowing, still legal.
 
-Four independent legs, each checked rather than asserted:
+Demote stays posture-invariant at `propose_only` in every table (§2.1) —
+evidence still beats posture, and demotion evidence still lands fail-safe.
 
-1. **The ceiling row.** `external_comms` is `always_gated` for every
-   confidence state in the root and `earn_up` tables, and at most the
-   conditional `standing_grant` in sovereign. `no_ceiling_or_prod_auto()`
-   sweeps the root table AND every posture table and still returns True.
-2. **The gate short-circuits before confidence is consulted.** In
-   `policy_engine`, a hard-ceiling risk class is resolved and blocked at step 2
-   — above the cell resolution and above the earn_up rung-lift — with a
-   dedicated `external_comms` message that literally tells the officer to
-   *draft via queue_draft* instead. The widened row is never reached.
+### 4a. `demote → propose_only` is NOT validator-required on this row
+
+Worth stating plainly, because it is easy to assume the opposite and then stop
+checking: rule (a) demands the safe demote landing only of rows granting
+`act_with_undo`, and rule (b) only of the two `_TRUST_FIRST_UNMEASURED`
+members. `draft_only` is neither, so the validator would have accepted a wider
+`demote` cell here. `_validate_postures`' demote-invariance check only requires
+root and sovereign to *agree* — which they would at any shared value. It is
+kept at `propose_only` on doctrine, not because a check forced it, and §5a now
+pins it so the choice cannot drift silently.
+
+### 4b. `notify_after` is already implemented — no new capability
+
+`notify_after` is a `VERDICTS` member, ranks 4 in `VERDICT_PERMISSIVENESS`, and
+has a live allow-branch in `policy_engine`: it emits the gate tell via
+`_emit_gate_tell` and returns `None` (allow). **The branch keys on the verdict
+string, not the risk class**, so `draft_only` reaching it needs no new code. It
+is also already in `_RUNG_LIFT_VERDICTS`. This amendment applies an existing
+verdict to one more class; it introduces nothing.
+
+Note also that `notify_after` never consults the undo plane — only the
+`act_with_undo` branch runs `_act_with_undo_gap` (registered inverse + writable
+journal). So `draft_only` keeping **no** registered inverse in `action_undo.py`
+is correct and required no behavioural change there.
+
+### 4c. Why DELIVERING a draft is still Captain-gated — four legs
+
+Each checked in code rather than assumed:
+
+1. **The ceiling row.** `external_comms` is `{"*": always_gated}` in the root
+   and `earn_up` tables and at most the conditional `standing_grant` in
+   sovereign. `no_ceiling_or_prod_auto()` sweeps the root table *and every
+   posture table* and still returns True.
+2. **The gate short-circuits above confidence.** A hard-ceiling risk class is
+   resolved and blocked at step 2 of `_eval_authority_matrix` — above cell
+   resolution and above the earn_up rung lift — with a dedicated
+   `external_comms` message that tells the officer to *draft via queue_draft*
+   instead. The widened row is never reached.
 3. **The classifier routes by RECIPIENT, not by framing.** `classify_action`
    has **no branch that returns `draft_only` at all**. The draft-shaped tool
-   `mcp__brain__queue_draft` classifies by who the message is addressed to: an
+   `mcp__brain__queue_draft` classifies on who the message is addressed to: an
    outside recipient yields `external_email`/`external_message` (the ceiling),
-   an internal one yields `internal_email`/`internal_message`, and an
-   unresolvable recipient is **fail-closed to external**. So no
-   classifier-reachable path can wear the widened class to reach a real
-   person.
+   an internal one yields the internal kinds, and an unresolvable recipient is
+   **fail-closed to external**. No classifier-reachable path can wear the
+   widened class to reach a real person.
 4. **The class owns exactly one non-egress action type.** `draft_only`'s
-   `action_types` list is exactly `[draft_only]`; `external_message` and
-   `external_email` remain on `external_comms`. A CI arm pins this (§7).
+   `action_types` is exactly `[draft_only]`; `external_message` and
+   `external_email` stay on `external_comms`.
 
-Per-item Captain approval for external comms is a **non-grantable limit** —
-it reaches real people outside the org — and no ruling in this amendment
-touches it.
+Per-item Captain approval for external comms is a **non-grantable** limit — it
+reaches real people outside the org — and nothing here touches it.
 
----
+## 5. Test pins that must move in the SAME commit as the edit
 
-## 6 · Open item found while landing this — NOT closed here
+These pin the 2026-07-04 ruling by value. They are not being weakened — they
+are re-pinned to the new ruled values, which is what makes a future silent
+drift red:
 
-While writing the mutation sensors for §7 I found a **pre-existing gap in the
-validator**, present identically on master and unrelated to this ruling:
+| file:line | current pin | becomes |
+|---|---|---|
+| `framework/authority/tests/test_matrix.py:235` | `draft_only.graduated == "auto"` | `== "notify_after"` |
+| `framework/authority/tests/test_matrix.py:236` | `draft_only.unmeasured == "propose_only"` | `== "notify_after"` |
+| `framework/authority/tests/test_matrix.py:231` (comment) | "draft_only keeps the old earn-up ladder verbatim" | rewrite to the 2026-07-26 ruling |
+| `framework/authority/tests/test_matrix_postures.py:67,116` | expected earn_up + sovereign `draft_only` tables | sovereign row → `notify_after`; earn_up row unchanged |
+| `framework/authority/tests/test_matrix_earnup.py:112` | mutation fixture `("draft_only","eligible","act_with_undo")` expects REJECT because root `propose_only`(1) < `act_with_undo`(4) | the mutation stops widening once root is `notify_after`(4) — re-point the fixture at a cell that still widens (e.g. `("draft_only","eligible","auto")`, 5 > 4) |
+
+`memory/golden-evals/` is germline too; EVAL-026 exercises the *posture* seam,
+which this amendment does not touch, so no eval body changes. (All 30 golden
+evals ran green at landing.)
+
+### 5a. New CI arms landed with the edit
+
+Moving the pins above proves the new values are *present*; it does not prove
+the walls held. Two classes were added in
+`framework/authority/tests/test_matrix.py`:
+
+- **`TestDraftOnlyActThenTell`** — the widening, in both tables. **Verified to
+  FAIL against pre-change code**: master's YAML restored with `__pycache__`
+  purged, three arms go red on `graduated: auto` / `propose_only` at the other
+  four; green after. Also pins `draft_only == read_only_dispatch` (one rule for
+  both act-and-tell classes), `earn_up` still proposing (the narrowing that must
+  NOT have moved), the `demote` cell from §4a, and that the row never claims
+  `act_with_undo` (which would silently demand an inverse it deliberately
+  lacks).
+- **`TestDraftWideningDidNotMoveTheCeilings`** — the walls. These pass before
+  *and* after by design, so they are not left as shape assertions: they are
+  backed by **mutation sensors that must RAISE** (letting `external_comms` act
+  via `auto` and via `notify_after`; letting a sovereign ceiling act; drifting
+  the sovereign `draft_only` demote off the root's), plus the live-classifier
+  recipient-routing proof from §4c.3 and a **non-degeneracy guard** asserting
+  the egress set is exactly `{external_message, external_email}` so the egress
+  loop cannot pass vacuously over an empty set.
+
+## 6. Ceremony (Captain sudo, relock SAME day)
+
+Batchable with the CG-33 / CG-34 windows.
+
+1. Re-verify lock state fresh: `bash cabinet/scripts/germline-lock.sh status`
+   plus `ls -lO framework/policies/authority-matrix.yml` — boundary state
+   changes between sessions.
+2. `sudo bash cabinet/scripts/germline-lock.sh unlock`
+3. **The edit is already on master** (see the landing note at the top), so this
+   is a checkout, not a hand-edit: bring the locked tree to master so it carries
+   the landed bytes. There is nothing to type. Only if the Captain wants the §3b
+   optional `matrix.py` tightening is there an edit to make in this window.
+4. Gates green, in this order:
+   * `python3.12 -c "import yaml;yaml.safe_load(open('framework/policies/authority-matrix.yml'))"`
+   * `python3.12 -m pytest framework/authority -q` (matrix validators, posture
+     tables, earn-up narrows, policy engine)
+   * `bash cabinet/scripts/run-golden-evals.sh`
+   * `python3.12 cabinet/scripts/cognitive-architecture-census.py`
+5. `sudo bash cabinet/scripts/germline-lock.sh lock` then `status` + `verify`
+   in the SAME session.
+
+## 7. Rollback
+
+**One-revert rollback:** revert the single landing commit. It restores
+`framework/policies/authority-matrix.yml` (`draft_only` back to `auto`@graduated
++ `propose_only` at the other four, in both the root and sovereign tables) and
+the comment-only edits in `framework/authority/matrix.py`,
+`framework/authority/policy_engine.py` and `framework/frontdoor/action_undo.py`,
+plus the §5/§5a CI arms and `docs/how-your-cabinet-is-governed.md`. No schema
+and no interface changes to unwind, and the **germline path SET** needs no
+restoration — `cabinet/scripts/germline-lock.sh` was never touched, so no path
+entered or left the locked set. If the §3b optional tightening was taken at the
+window, revert that `matrix.py` hunk with it. Post-window the revert is itself a
+Captain-windowed germline edit. Nothing depends on the amendment until the
+window runs: until then the deployment keeps asking before drafting, which is
+the pre-ruling behaviour, not a broken state.
+
+## 8. Honest status
+
+**On master: in effect. On the deployment: NOT in effect until the window.**
+Those are two different trees and the distinction is the whole point of
+landed-then-ceremonied. Master carries the new bytes; the deployment's
+schg-locked tree still reads as the 2026-07-04 ruling, and will until the
+Captain's unlock/relock window runs. A session reading the live locked tree and
+concluding "the ruling never landed" would be reading the right file on the
+wrong tree.
+
+No setting anywhere claims otherwise — the arm-the-cabinet unit deliberately
+shipped no config naming `act_then_tell`, because that token resolves to
+`guardian` and would have been a setting that lies. That remains true: nothing
+in this landing added such a config, and `POSTURES` is unchanged.
+
+## 9. Open item found while landing — recorded, NOT closed
+
+Writing the §5a mutation sensors surfaced a **pre-existing gap in the
+validator**, present identically on master before this landing and unrelated to
+the ruling. One sensor was written expecting a rejection and did not get one:
 
 > `validate_matrix` checks that every `action_type` is mapped to exactly one
 > risk class, but **not which class**. Relocating `external_email` from
 > `external_comms` into any non-ceiling class validates clean. Because the
 > gate's ceiling short-circuit is keyed on `risk_class in hard_ceiling`, such a
-> matrix would send a real egress kind down the ordinary confidence path.
+> matrix would route a real egress kind down the ordinary confidence path.
 > `HARD_CEILING_TOUCHES` does not backstop this — per the design doc it guards
 > **self-extension** (installing a capability), a different layer from action
 > execution.
 
-This amendment does not widen that gap: the mapping is unchanged, and a
-ceiling kind landing on a non-ceiling class was already unsafe before. It does
-raise the stakes marginally, since `draft_only` is now an act verdict rather
-than mostly-propose. Closing it properly needs new executable lines in
-`framework/authority/matrix.py` against the census budget already at its
-ceiling (§3d.2), which is a threshold decision, not a mechanical fix — so it
-is **recorded here and covered by a CI sensor** (`test_every_egress_action_type_sits_on_a_ceiling_row`)
-rather than silently left or silently relaxed.
+This landing does not widen that gap: the mapping is unchanged, and a ceiling
+kind on a non-ceiling class was already unsafe. It does raise the stakes
+marginally, since `draft_only` is now an act verdict rather than mostly-propose.
 
----
+**The test was not weakened to match the behaviour.** It was rewritten to pin
+the shipped mapping — `test_every_egress_action_type_sits_on_a_ceiling_row`,
+with the non-degeneracy guard from §5a — which is a real sensor on the only
+channel that can reach this file: the floor is germline and schg-locked, and
+`load_policies` refuses any preset/instance `authority_matrix`, so a direct edit
+is the sole route and it lands on that test.
 
-## 7 · CI proofs — landed in the SAME commit ("Docs Must Track the Code")
-
-In `framework/authority/tests/test_matrix.py`:
-
-- `TestDraftOnlyActThenTell` — the widening, in both tables. **Verified to
-  FAIL against pre-change code** (`__pycache__` purged, master's YAML restored:
-  3 arms red on `graduated: auto` / `propose_only` at the other four; green
-  after). Includes `test_draft_only_row_mirrors_read_only_dispatch` (one rule
-  for both act-and-tell classes), `test_earn_up_draft_only_still_proposes`
-  (the narrowing that must NOT have moved), and
-  `test_draft_only_needs_no_registered_inverse`.
-- `TestDraftWideningDidNotMoveTheCeilings` — the walls, proven not assumed:
-  every ceiling row `always_gated` in root; `external_comms` never acting in
-  any posture; `no_ceiling_or_prod_auto()` still True; full six-member ceiling
-  coverage; egress action types still on the ceiling row (non-vacuous — the
-  egress set is asserted non-degenerate first); the live-classifier
-  recipient-routing proof from §5.3; and **mutation sensors** that must RAISE —
-  letting `external_comms` act (`auto` and `notify_after`), letting a sovereign
-  ceiling act, and drifting the sovereign `draft_only` demote cell off the
-  root's.
-
-Updated pins (old values were the pre-ruling table, not weakened assertions):
-`test_matrix.py::test_reversible_is_act_with_undo_trust_first`,
-`test_matrix_postures.py::_EXPECTED_GUARDIAN` / `_EXPECTED_SOVEREIGN`, and the
-`test_matrix_earnup.py` widening case for `draft_only` (root rose to rank 4, so
-the case now uses `auto` at rank 5 to remain a genuine widening).
-
----
-
-**One-revert rollback:** revert the single commit. It restores
-`framework/policies/authority-matrix.yml` (`draft_only` back to
-`auto`@graduated + `propose_only` at the other four, in both the root and
-sovereign tables), and the comment-only edits in `framework/authority/matrix.py`,
-`framework/authority/policy_engine.py` and `framework/frontdoor/action_undo.py`,
-plus the CI arms and `docs/how-your-cabinet-is-governed.md`. No schema, no
-lock-set and no interface changes to unwind — `cabinet/scripts/germline-lock.sh`
-was never touched, so the germline path SET needs no restoration. If the
-ceremony window has already run, the revert is itself Captain-windowed (a
-germline edit both ways).
-
----
-
-## 8 · The ceremony (what "apply draft act-then-tell" runs)
-
-1. Re-verify lock state fresh — `cabinet/scripts/germline-lock.sh status` plus
-   `ls -lO` on `framework/policies/` and the three locked modules —
-   **immediately** before the window; boundary state changes across sessions.
-2. `sudo bash cabinet/scripts/germline-lock.sh unlock`.
-3. `git pull` / check out master so the locked tree carries the landed bytes.
-   There is no hand-editing in this window: the content is already reviewed and
-   merged, and the window exists only to re-materialise it.
-4. Gate battery green: `python3.12 framework/authority/matrix.py` (floor
-   validation + actor-id parity), `python3.12 -m pytest framework/authority -q`,
-   and the golden evals.
-5. **Same-day** `sudo bash cabinet/scripts/germline-lock.sh lock`, then
-   `status` and `verify` in the same session.
-
-The unlock is interactive `sudo` — a **named handback**, non-grantable, never
-worked around. Until the window runs, master carries the ruling and the
-deployment's locked tree carries the previous bytes; nothing depends on the
-window having run.
+Closing it *in the validator* needs new executable lines in
+`framework/authority/matrix.py` against the census budget already at its ceiling
+(§3b.2). That is a threshold decision, not a mechanical fix, so it is written
+down here rather than silently left or silently bought with a raised budget.
