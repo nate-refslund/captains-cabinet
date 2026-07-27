@@ -386,14 +386,21 @@ def test_catalog_rows_present_chair_tier_and_instance_dark():
         assert eid in ids, eid
         assert ids[eid].tier is registry.Tier.ESCALATE_CHAIR
         assert ids[eid].auto_fix is None
-    # Staged dark on the shipped instance: the enable-list is non-empty and
-    # carries the Phase-4 ids only as comments.
+    # Instance enable-list after the Captain's 2026-07-26 ceremony: ONLY
+    # evidence-store-invariants is armed (its checker skips when the store is
+    # not observable). The other two would page daily on a cabinet whose
+    # evidence plane was never activated, so they stay commented — pinned by
+    # equality in both directions, so neither a silent arming nor a silent
+    # disarming of any of the three passes.
     text = (REPO_ROOT / "instance/config/watchdog.yml").read_text()
-    for eid in ("evidence-store-invariants", "evidence-anchor-export-fresh",
+    assert re.search(r"^\s*- evidence-store-invariants\s*$", text, re.M), (
+        "evidence-store-invariants must be ARMED in the instance enable-list "
+        "(Captain ceremony 2026-07-26)")
+    for eid in ("evidence-anchor-export-fresh",
                 "evidence-shadow-detector-liveness"):
         assert not re.search(rf"^\s*- {re.escape(eid)}\s*$", text, re.M), (
-            f"{eid} must ship staged dark (commented) in the instance "
-            "enable-list — enabling is a Captain ceremony step")
+            f"{eid} must stay staged dark (commented) in the instance "
+            "enable-list — its producer/store precondition is unmet")
         assert f"# - {eid}" in text
     # Weak-signal doctrine is pinned in code, not just prose.
     registry_src = (REPO_ROOT / "framework" / "watchdog" / "registry.py").read_text()
@@ -673,12 +680,21 @@ def test_detector_module_is_pure_report_only():
         assert required.lower() in source.lower(), required
 
 
-def test_services_row_ships_disabled_and_journal_gitignored():
+def test_services_row_is_armed_and_journal_gitignored():
+    """The row was ARMED by the Captain's 2026-07-26 ceremony (it shipped
+    `disabled: true` staged-dark before that). What the shadow law actually
+    requires of this row survives the arming and is pinned here: the row still
+    declares the shadow posture, still runs exactly ONE command, and its
+    findings journal is still gitignored runtime data outside every plane.
+    Enabling a DETECTOR is not enabling an ACTOR — the zero-consumer proof
+    (test_shadow_grep_proof_no_officer_surface_reads_detector_output) is the
+    test that would catch that, and it is untouched."""
     services = (REPO_ROOT / "cabinet" / "services.yml").read_text()
     block = services.split("- name: evidence-shadow-detectors", 1)[1]
     block = block.split("- name: ", 1)[0]
-    assert "disabled: true" in block
-    assert "staged" in block.split("disabled_reason:", 1)[1][:200]
+    assert "disabled: true" not in block
+    assert "disabled_reason:" not in block   # a live row carries no parking note
+    assert "shadow" in block                 # the posture is still declared
     assert "python3.12 cabinet/scripts/evidence-shadow-detectors.py" in block
     # ONE command, no && chain (plist wrapper execs a single program).
     command_line = next(l for l in block.splitlines() if "command:" in l)
