@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: bd4c69760baecd7d89d0c4d623767d87cf61e5afcd856a6ec9a099d82319c41b
+Reviewed-Scope-Digest: d32ef4d40dbe7e2b744a2b70c69cff9bf1f64a82f9e047724b777a823a89cc4c
 (RE-BOUND 2026-07-27, `fix/propose-means-propose`, same commit as the change that
 moved the bytes — the re-bind-at-landing procedure this artifact already
 prescribes. Prior digest: `b8ee235e0c34bd2a…`. The moved file in scope is
