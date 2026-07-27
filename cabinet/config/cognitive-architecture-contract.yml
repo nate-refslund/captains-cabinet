@@ -229,6 +229,70 @@ temporary_allowances:
       the authority matrix grows a local-execution risk class (the PR-233
       dry-run's own recommendation), which removes the reason this parser must
       carry the whole locality question, or COG-7 compaction brings production
+  - phase: recipient-exclusion-carve-backs
+    budget: framework_production_noncomment_lines
+    additional: 140
+    reason: >-
+      answers the Captain's 2026-07-27 "allowlist or/and denylist?" question.
+      The ALLOWLIST already existed and no second one was built: org_domains()
+      IS it, the framework ships none of its own, and it fails closed to EMPTY
+      so a stranger's cabinet treats every recipient as external. What it could
+      not express was an EXCEPTION, and that gap was reachable two ways with no
+      code and no config change. (1) ADDRESS: every address at a listed domain
+      is internal, so a distribution list or alias that fans out to
+      non-employees classified internal_comms — off the always-gated
+      external_comms ceiling — and no setting of org_domains can carve one
+      address out. (2) SUBDOMAIN: matching was `dom == d or
+      dom.endswith("." + d)`, so a bare listed domain claimed its ENTIRE
+      subdomain namespace, unboundedly and forever, including subdomains a
+      partner operates and subdomains that do not exist yet. FIX — two
+      carve-backs on the SAME one declared source, never a second way to BE
+      internal: a Captain-owned denylist (instance/config/
+      recipient-exclusions.yml, reusing the act-first-surfaces dialect — ruled
+      file, empty denylist default, why: per row) and `subdomain_matching`,
+      now `strict` by default with the old unbounded rule reachable as
+      `inherit` — a config line, not a code change. Both only ever REMOVE from
+      the internal set, so the direction-of-travel law the previous landing
+      established (the predicate can only move a recipient TOWARD the ceiling,
+      never away) survives and is now PROVEN, not asserted: a property arm
+      quantifies every expressible policy over the recipient corpus against a
+      frozen reimplementation of the pre-change predicate, and a mutant that
+      widens the allow side to a dotless suffix match turns it red. Corruption
+      is honest, copying the act-first contract: file ABSENT => empty denylist;
+      file PRESENT but damaged => EVERY recipient external until repaired.
+      +108 measured 2026-07-27 with cognitive-architecture-census.py against
+      master 0ab0cc2b (69315, itself exactly at the pinned maximum) -> 69423.
+      108 -> 140 in the same landing: an adversarial review DEFEATED the
+      fail-closed claim three ways and the fixes are all in the parser. A
+      duplicate `denylist:` key is last-wins under yaml.safe_load, so appending
+      one empties the exclusion set while every original row still reads intact
+      above it — a silent shrink, and the shape a careless append produces; a
+      dangling symlink read as ABSENT rather than damaged; and rows that parse
+      but can never MATCH (a value carrying an address separator, the
+      display-name form pasted out of a mail client, a domain written with a
+      leading dot) were accepted, so a Captain's exclusion could read live and
+      exclude nothing. Those 32 lines add a SafeLoader subclass refusing
+      duplicate keys and aliases (an exclusion list assembled from anchors
+      cannot be audited by eye), lexists over exists, a size bound on a file
+      parsed at import of a germline module, an inert-row refusal, and a
+      case-fold so a caps typo cannot take the whole org to deny-all.
+      ZERO new modules (244 unchanged): the resolver joins framework/env.py
+      beside org_domains and the predicate stays inside the existing
+      classifier. Docstrings are counted as written — they carry the two
+      attack shapes, the fail-closed contract, and the one thing this
+      mechanism cannot see (a delivery graph: an internal-looking address that
+      relays outward is invisible by construction), which is exactly the
+      reasoning a later reader needs and would be bought back with a smaller
+      number by rewriting it into "#" comments.
+    owner: authority-plane
+    sunset: '2027-01-19'
+    deletion_gate: >-
+      the two independent recipient classifiers are unified — framework/
+      channels/contract.py's classify_recipient still decides internal-vs-
+      external on its own, last-address-wins, from a different config file, and
+      is fenced today only by having no importer (the fence arm in
+      framework/authority/tests/test_classifier.py) — so folding both onto one
+      predicate reclaims this surface; or COG-7 compaction brings production
       non-comment lines below the pinned baseline
   - phase: COG-0
     budget: framework_production_modules

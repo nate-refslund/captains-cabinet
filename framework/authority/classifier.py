@@ -143,6 +143,19 @@ ACTION_TYPES = frozenset(
 # (any -> all), which narrows toward the ceiling.
 _INTERNAL_DOMAINS = env.org_domains()
 
+# The Captain's carve-back on that allowlist (env.recipient_policy — instance/
+# config/recipient-exclusions.yml). _INTERNAL_DOMAINS stays the ONE declared
+# source of "internal"; this adds no second way to BE internal, only ways to
+# stop being one, so composing the two can only move a recipient TOWARD the
+# always-gated external ceiling. Two carve-backs, because the allowlist is
+# coarse in two different directions: `deny` names an address or a domain that
+# is NOT internal despite sitting at an allowed domain (a distribution list, a
+# partner-run subdomain), and `subdomains` bounds the implicit claim a bare
+# domain makes over its entire — infinite, and partly not-yet-existing —
+# subdomain namespace. Frozen at import beside _INTERNAL_DOMAINS; tests patch
+# both module constants.
+_RECIPIENT_POLICY = env.recipient_policy()
+
 _DOTENV_RE = re.compile(r"(^|/)\.env(\.[\w.-]+)?$")
 # Command-scan variant: find a .env token anywhere on a command line,
 # bounded on the left by start/space/quote/= and on the right by a path
@@ -195,12 +208,54 @@ def _is_internal_recipient(recipient: str) -> bool:
     (`Nate <nate@<org>>` -> domain `<org>>`) still matches no domain and still
     classifies external as before: this can only move a recipient TOWARD the
     ceiling, never away.
+
+    An address is internal only if it survives BOTH carve-backs on
+    _INTERNAL_DOMAINS (see _RECIPIENT_POLICY): it is not denylisted, and its
+    domain matches a listed org domain EXACTLY — a bare listed domain no longer
+    claims its whole subdomain namespace unless the Captain rules
+    `subdomain_matching: inherit`. Both carve-backs only ever REMOVE addresses
+    from the internal set, so the direction-of-travel law above still holds
+    against the strongest possible config: no setting of this file can make
+    anything internal that the unbounded pre-2026-07-27 predicate did not
+    already classify internal.
+
+    WHAT THIS CANNOT SEE: a delivery graph. The predicate is handed a string of
+    addresses, never the mailboxes behind them, so an internal-looking address
+    that fans out or forwards to outsiders — an alias, a distribution list, a
+    mail rule — is invisible here BY CONSTRUCTION and stays internal until
+    someone denylists it by hand.
     """
     addrs = [t for t in _ADDR_SEP_RE.split(recipient.strip().lower()) if "@" in t]
-    return bool(addrs) and all(
-        any(dom == d or dom.endswith("." + d) for d in _INTERNAL_DOMAINS)
-        for dom in (a.rsplit("@", 1)[-1] for a in addrs)
-    )
+    if not addrs:
+        return False
+    inherit = _RECIPIENT_POLICY["subdomains"] == "inherit"
+    for addr in addrs:
+        dom = addr.rsplit("@", 1)[-1]
+        if _is_excluded(addr, dom):
+            return False
+        if not any(dom == d or (inherit and dom.endswith("." + d))
+                   for d in _INTERNAL_DOMAINS):
+            return False
+    return True
+
+
+def _is_excluded(addr: str, dom: str) -> bool:
+    """True if the Captain has ruled this address/domain NOT internal.
+
+    A deny entry containing ``@`` is a full address and matches exactly; one
+    without is a domain and matches it AND every subdomain of it — a denylist
+    that reaches further is the safe direction, the mirror of why the ALLOW
+    side is bounded. ``DENY_ALL_RECIPIENTS`` is the corruption sentinel and
+    excludes everything (see env.recipient_policy)."""
+    for pat in _RECIPIENT_POLICY["deny"]:
+        if pat == env.DENY_ALL_RECIPIENTS:
+            return True
+        if "@" in pat:
+            if addr == pat:
+                return True
+        elif dom == pat or dom.endswith("." + pat):
+            return True
+    return False
 
 
 def _curl_method(command: str) -> str | None:

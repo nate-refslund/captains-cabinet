@@ -160,13 +160,20 @@ def test_live_values_absent_example_twins_present(export: Path):
     for live in ("platform.yml", "sources.yml", "directions.yml", "peers.yml",
                  "officer-emails.yml", "probes.yml", "warrooms.yml",
                  "outcomes.yml", "hq-instance.yml.draft",
-                 "authority-enforcing"):
+                 "authority-enforcing",
+                 # this captain's ruled carve-back on his own org_domains —
+                 # named addresses/subdomains that are NOT internal. Unlike
+                 # act-first-surfaces there is nothing to re-materialize:
+                 # ABSENT is the shipped default (empty denylist, strict
+                 # subdomain matching), so the twin alone ships.
+                 "recipient-exclusions.yml"):
         assert not (cfg / live).exists(), f"R120: live {live} must not ship"
     for twin in ("platform.yml.example", "sources.yml.example",
                  "directions.yml.example", "peers.yml.example",
                  "officer-emails.yml.example", "probes.yml.example",
                  "warrooms.yml.example", "roster.yml.example",
                  "egress.yml.example",
+                 "recipient-exclusions.yml.example",
                  "publish-scan-patterns.local.example",
                  "role-registry.md.example"):
         assert (cfg / twin).is_file(), f"R120/R166: {twin} must ship"
