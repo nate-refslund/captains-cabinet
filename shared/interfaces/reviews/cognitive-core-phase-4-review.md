@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: c988a6b4b4d441ff73be4e4e3433a92d048bc0e15cbfe18fca3b8ef245ffcf09
+Reviewed-Scope-Digest: 1b60ed4000cd5c5f747cd64c9f5cf42df36a566bc2f8b4a44b7fce7419e21bfd
 (RE-BOUND repeatedly on 2026-07-27 — the census-shift-left, expansion-registry and
 census-set-pins landings each edited `cabinet/config/cognitive-architecture-contract.yml`,
 which sits in `restore_from_baseline` and is therefore digest-bound, and so did this
@@ -62,6 +62,13 @@ digest line was the ONLY conflict in this artifact both times; every landing's
 note above is preserved verbatim, none overwritten. In-scope paths carried in by
 the merges: the census contract only. Census re-measured on the merged bytes:
 PASS, observed==max with zero headroom.)
+(MERGE RE-BIND #2, 2026-07-27, same branch: the source-ownership-class and
+killswitch-test-fence landings re-bound this digest again while the branch was
+in CI. Recomputed over the merged committed tree for the same reason — a
+hand-picked digest from either parent records a tree that never existed. The
+digest line was again the only conflict here; every note is preserved. In-scope
+paths carried in by the merge: the census contract only. Census re-measured on
+the merged bytes: PASS, observed==max with zero headroom.)
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of

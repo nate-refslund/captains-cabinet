@@ -139,6 +139,8 @@ function scriptState(overrides: {
   working?: boolean
   purgeArmed?: boolean
   purgeConfirmation?: string
+  ownership?: string
+  authorityBasis?: string
   feedbackRecorded?: string | null
 }) {
   hookScript.cursor = 0
@@ -154,6 +156,8 @@ function scriptState(overrides: {
     { initial: '~/Documents' }, // source
     { initial: 'Find one useful thing I may be missing.' }, // purpose
     { initial: 'reversible' }, // destination
+    { initial: '', value: overrides.ownership ?? '' }, // ownership — no default BY DESIGN
+    { initial: '', value: overrides.authorityBasis ?? '' }, // authorityBasis
     { initial: null, value: overrides.feedbackRecorded ?? null }, // feedbackRecorded
   ]
 }
@@ -256,7 +260,9 @@ function findByText(tree: TreeElement[], type: string, text: string): TreeElemen
 }
 
 /** Indices into the component's useState order (guarded by scriptState). */
-const STATE = { error: 3, feedbackRecorded: 11 } as const
+// Indices track the useState order in journey-card.tsx; the ownership pair
+// landed between destination (10) and feedbackRecorded, which moved to 13.
+const STATE = { error: 3, ownership: 11, authorityBasis: 12, feedbackRecorded: 13 } as const
 
 function settersFor(index: number): unknown[] {
   return hookScript.setterCalls.filter((call) => call.index === index).map((call) => call.value)

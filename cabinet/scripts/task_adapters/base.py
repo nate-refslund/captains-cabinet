@@ -6,10 +6,35 @@ Captain configures one external system per project (Jira, Linear, Asana,
 GitHub Issues — Monday is plugin-routed, see get_adapter). The adapter for
 that system bridges Cabinet ↔ external in both directions.
 
-Conflict resolution: **canonical wins**. If an officer changes a task and an
-operator changes the same task in the external UI, the next sync overwrites
-the external change and logs a warning. This is intentional — the org runtime
-should be authoritative.
+Conflict resolution: **canonical wins, on a system the operator OWNS**. If an
+officer changes a task and the operator changes the same task in the external
+UI, the next sync overwrites the external change and logs a warning. That is
+correct when the tracker is the operator's own: the org runtime should be
+authoritative over its own board.
+
+It is indefensible anywhere else, and the difference is not a matter of
+degree. Pointed at an employer's Jira, "canonical wins" is an autonomous agent
+overwriting colleagues' edits in a system the operator does not own — and the
+undo contract does not save it, because undoing a write to a colleague's
+ticket does not un-notify the colleague. So since 2026-07-27 the write half is
+gated on the source's OWNERSHIP CLASS, and structurally rather than by
+configuration:
+
+  * `tasks.ownership` (`self` | `employer` | `third_party`) and
+    `tasks.authority_basis` are REQUIRED for any real tracker. A tracker the
+    operator has not classified is REFUSED — never defaulted to the
+    safest-looking class, because a default is the cabinet making the
+    authorization call on the operator's behalf, which is the whole thing this
+    gate exists to stop.
+  * `self` gets the adapter as before, canonical-wins included.
+  * `employer` / `third_party` get an `ObserveOnlyTaskAdapter`: a DIFFERENT
+    TYPE whose push/delete/link raise. There is no flag, env var or config key
+    that turns the write path back on, because a flag that can be set is a
+    flag that gets set — usually by the component with the least context about
+    whose data it is.
+
+See `framework.authority.ownership`, which also states plainly what this
+cannot enforce: the truth of the operator's attestation.
 
 Contract:
 
@@ -58,6 +83,15 @@ _FRAMEWORK_ROOT = str(Path(__file__).parent.parent.parent.parent)
 if _FRAMEWORK_ROOT not in sys.path:
     sys.path.insert(0, _FRAMEWORK_ROOT)
 
+from framework.authority.ownership import (  # noqa: E402 — after the sys.path seam
+    OWNERSHIP_CLASSES,
+    OwnershipRefusal,
+    require_authority_basis,
+    require_ownership,
+    require_write_permitted,
+    writes_permitted,
+)
+
 
 @dataclass
 class CanonicalTask:
@@ -90,6 +124,12 @@ class SyncResult:
     errors: list[str] = field(default_factory=list)
     started_at: str = ""
     finished_at: str = ""
+    #: True when the tracker is classified employer/third_party, so the write
+    #: half of this cycle was refused structurally rather than skipped. Carried
+    #: into telemetry: an observe-only cycle and a cycle with nothing to push
+    #: produce the same counters, and a reader must be able to tell them apart.
+    read_only: bool = False
+    ownership: str | None = None
 
 
 class RateLimitedError(RuntimeError):
@@ -266,6 +306,64 @@ class NoOpTaskAdapter(TaskAdapter):
 
 
 # ---------------------------------------------------------------------------
+# Observe-only wrapper — structural read-only for any non-owned tracker
+# ---------------------------------------------------------------------------
+
+
+class ObserveOnlyTaskAdapter(TaskAdapter):
+    """A tracker the operator does not own: reads pass through, writes cannot.
+
+    STRUCTURAL, and the word is doing work. This is not the real adapter with
+    a `read_only=True` flag consulted inside `push` — it is a different type,
+    handed out by the factory, whose write methods have no implementation to
+    reach. Nothing in the process can turn `push` back into a write short of
+    reclassifying the source, which is an operator act with its own record.
+
+    `pull` and `health_check` delegate: reading a tracker the operator has a
+    seat in is what an employee-altitude cabinet is FOR, and refusing that
+    would be safety theatre that costs the whole feature.
+    """
+
+    def __init__(self, inner: TaskAdapter, *, ownership: str, authority_basis: str) -> None:
+        super().__init__(inner.project_config)
+        self.inner = inner
+        self.ownership = require_ownership(ownership)
+        self.authority_basis = require_authority_basis(authority_basis)
+        self.destination = inner.destination
+        # Belt-and-braces: the factory is the only caller, but a future one
+        # must not be able to wrap an owned source and quietly lose its writes.
+        if writes_permitted(self.ownership):
+            raise ValueError(
+                "ObserveOnlyTaskAdapter wraps a NON-OWNED source; "
+                f"{self.ownership!r} owns its writes and must not be wrapped"
+            )
+
+    def __repr__(self) -> str:
+        return (
+            f"<ObserveOnlyTaskAdapter destination={self.destination!r} "
+            f"ownership={self.ownership!r} writes=refused>"
+        )
+
+    def health_check(self) -> bool:
+        return self.inner.health_check()
+
+    def pull(self) -> list[CanonicalTask]:
+        return self.inner.pull()
+
+    def push(self, task: CanonicalTask) -> str:
+        require_write_permitted(self.ownership, operation=f"push to {self.destination}")
+        raise AssertionError("unreachable: require_write_permitted always refuses here")
+
+    def delete(self, external_id: str) -> None:
+        require_write_permitted(self.ownership, operation=f"delete in {self.destination}")
+        raise AssertionError("unreachable: require_write_permitted always refuses here")
+
+    def link(self, canonical_id: str, external_id: str) -> None:
+        require_write_permitted(self.ownership, operation=f"link in {self.destination}")
+        raise AssertionError("unreachable: require_write_permitted always refuses here")
+
+
+# ---------------------------------------------------------------------------
 # Adapter registry — ONE truth for which adapters exist + their CI posture
 # ---------------------------------------------------------------------------
 
@@ -368,13 +466,20 @@ def get_adapter(project_config: dict[str, Any]) -> TaskAdapter:
     registry CONSTANTS — config input never names an import path). Imports
     stay lazy so unused adapters cost no mandatory deps.
 
+    A real tracker must additionally declare `tasks.ownership` and
+    `tasks.authority_basis`; a non-`self` class comes back wrapped in
+    ObserveOnlyTaskAdapter. The no-op path needs neither, and that is not a
+    hole: NoOpTaskAdapter writes nowhere by construction, so there is no act
+    to authorize.
+
     Args:
         project_config: full project YAML dict (a `tasks: {system: ...}`
             block selects an external adapter; absent block = no-op)
 
     Raises:
-        ValueError: if the system slug is unknown, harness-only, or "monday"
-            (plugin-routed since the adapter's removal).
+        ValueError: if the system slug is unknown, harness-only, "monday"
+            (plugin-routed since the adapter's removal), or the tracker has
+            no usable ownership declaration.
     """
     tasks_block = project_config.get("tasks") or {}
     system = tasks_block.get("system")
@@ -421,6 +526,31 @@ def get_adapter(project_config: dict[str, Any]) -> TaskAdapter:
             + ", ".join(sorted(s for s, r in ADAPTER_REGISTRY.items() if r.selectable))
         )
 
+    # THE OWNERSHIP GATE. A real tracker reached here, so the operator must
+    # have said whose it is and under what right. Unclassified is a REFUSAL,
+    # not a default: guessing "probably theirs" is the cabinet making an
+    # authorization decision that is not the cabinet's to make.
+    try:
+        ownership = require_ownership(tasks_block.get("ownership"))
+        authority_basis = require_authority_basis(tasks_block.get("authority_basis"))
+    except OwnershipRefusal as exc:
+        raise ValueError(
+            f"tasks.system={system!r} has no usable ownership declaration: {exc} "
+            f"Set tasks.ownership to one of {', '.join(OWNERSHIP_CLASSES)} and "
+            "tasks.authority_basis to the right you hold over it "
+            "(instance/config/projects/_template.yml documents both)."
+        ) from exc
+
     module = importlib.import_module(spec.module)
     cls = getattr(module, spec.cls_name)
-    return cls(tasks_block)
+    adapter = cls(tasks_block)
+    if writes_permitted(ownership):
+        return adapter
+    print(
+        f"task-sync: INFO {system} is classified {ownership} — observe-only; "
+        f"writes are refused structurally",
+        file=sys.stderr,
+    )
+    return ObserveOnlyTaskAdapter(
+        adapter, ownership=ownership, authority_basis=authority_basis
+    )

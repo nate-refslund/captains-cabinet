@@ -63,7 +63,7 @@
 # gitignored leaves (files, linked only once a shared/ copy already exists —
 # never fabricated from nothing) plus the handful of directories that are
 # bulk-gitignored (state/, cache/, archive/, loop-prompts/, secrets/, the
-# fresh-relaunch persistence additions evidence/ + onboarding/{formation,v2,
+# fresh-relaunch persistence additions evidence/ + onboarding/{formation,v2,access-records,
 # purge-receipts}, and roles/{active,archive,hats}) — verified against
 # .gitignore + `git ls-files` at fix time, not guessed. NOT "ENTIRELY"
 # gitignored: roles/{active,archive,hats}/ each ship a tracked `.gitkeep`
@@ -237,7 +237,7 @@ swap_symlink() {
 # hard judge failure. They are linked at the SUBDIR level deliberately: the
 # corpus root holds a git-TRACKED manifest.json that a whole-dir link would
 # shadow (the same "never shadow a tracked file" rule as the wildcard block).
-INSTANCE_PERSISTENT_DIRS="instance/roles/active instance/roles/archive instance/roles/hats instance/loop-prompts instance/archive instance/state instance/cache instance/onboarding/formation instance/onboarding/v2 instance/onboarding/purge-receipts instance/evidence secrets shared/interfaces/foundry shared/interfaces/world cabinet/scripts/world-aesthetic/corpus/positive cabinet/scripts/world-aesthetic/corpus/negative"
+INSTANCE_PERSISTENT_DIRS="instance/roles/active instance/roles/archive instance/roles/hats instance/loop-prompts instance/archive instance/state instance/cache instance/onboarding/formation instance/onboarding/v2 instance/onboarding/purge-receipts instance/onboarding/access-records instance/evidence secrets shared/interfaces/foundry shared/interfaces/world cabinet/scripts/world-aesthetic/corpus/positive cabinet/scripts/world-aesthetic/corpus/negative"
 # Gitignored in bulk but ships a tracked tier2/<officer>/{,reflections/}.gitkeep
 # skeleton — seeded into shared/ from the release's own tree, then
 # symlinked whole like any PERSISTENT_DIRS entry.

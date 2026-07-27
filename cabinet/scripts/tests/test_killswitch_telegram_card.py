@@ -40,6 +40,14 @@ POLLER = REPO / "cabinet/scripts/officer-inbound-poller.py"
 SCRIPT = REPO / "cabinet/scripts/kill-switch.sh"
 HOOK = REPO / "cabinet/scripts/hooks/pre-tool-use.sh"
 
+import sys  # noqa: E402
+_HERE = Path(__file__).resolve().parent
+for _p in (str(_HERE), str(REPO)):        # tests/ is a package: put it on the path
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+import lib_killswitch_fence as ksfence  # noqa: E402
+
 _spec = importlib.util.spec_from_file_location(
     "officer_inbound_poller_killswitch", POLLER)
 poller = importlib.util.module_from_spec(_spec)
@@ -206,13 +214,19 @@ def sandbox_redis(tmp_path):
 
 
 def _env(port, events_dir):
-    env = dict(os.environ)
-    env["REDIS_URL"] = f"redis://127.0.0.1:{port}"
-    env["CABINET_EVENT_LOG_DIR"] = str(events_dir)
-    # the hook prefers REDIS_HOST/PORT — keep every reader on the sandbox
-    env["REDIS_HOST"] = "127.0.0.1"
-    env["REDIS_PORT"] = str(port)
-    return env
+    """Every killswitch routing channel pinned at the sandbox, then PROVEN.
+
+    This file was PARTIALLY fenced (incident 2026-07-27): it already pinned
+    REDIS_HOST/REDIS_PORT for the redis channel, but left the FILESYSTEM stop
+    marker on the ambient CABINET_ROOT that the officer plists export — and it
+    drives ``deactivate``, which does ``rm -f`` on that marker. Reproduced: with
+    CABINET_ROOT ambient, this file DELETED an armed estop marker and only then
+    went red. A partial fence is the dangerous kind, because it reads as covered.
+    """
+    return ksfence.sandbox_env(
+        port,
+        marker=Path(events_dir).parent / "killswitch-estop-marker",
+        extra={"CABINET_EVENT_LOG_DIR": str(events_dir)})
 
 
 def _events(events_dir: Path) -> list:

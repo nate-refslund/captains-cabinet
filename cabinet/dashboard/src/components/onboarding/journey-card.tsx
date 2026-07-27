@@ -5,6 +5,7 @@ import type {
   OnboardingAction,
   OnboardingResponse,
   OnboardingSurface,
+  OwnershipClass,
 } from '@/lib/onboarding/types'
 
 // A dedup/idempotency id that works in every context. crypto.randomUUID is
@@ -40,6 +41,11 @@ export default function OnboardingJourneyCard({
   const [source, setSource] = useState('~/Documents')
   const [purpose, setPurpose] = useState('Find one useful thing I may be missing.')
   const [destination, setDestination] = useState<'earn' | 'reversible' | 'sovereign'>('reversible')
+  // No initial value, deliberately: an unclassified source is REFUSED by the
+  // core, so pre-selecting "mine" here would answer the operator's question for
+  // them and defeat the whole gate.
+  const [ownership, setOwnership] = useState<OwnershipClass | ''>('')
+  const [authorityBasis, setAuthorityBasis] = useState('')
   const [feedbackRecorded, setFeedbackRecorded] = useState<string | null>(null)
   const effectiveSurface = useRef<Extract<OnboardingSurface, 'dashboard' | 'world' | 'companion'>>(surface)
   const handoffIds = useRef<{ trace_id?: string; correlation_id?: string }>({})
@@ -195,6 +201,8 @@ export default function OnboardingJourneyCard({
       source,
       purpose,
       relationship_destination: destination,
+      ownership: ownership || undefined,
+      authority_basis: authorityBasis,
     })
   }
 
@@ -204,6 +212,10 @@ export default function OnboardingJourneyCard({
       if (journey?.state.purpose) setPurpose(journey.state.purpose)
       if (journey?.state.relationship_destination) {
         setDestination(journey.state.relationship_destination)
+      }
+      if (journey?.state.source?.ownership) setOwnership(journey.state.source.ownership)
+      if (journey?.state.source?.authority_basis) {
+        setAuthorityBasis(journey.state.source.authority_basis)
       }
       setEditScope(true)
       return
@@ -363,6 +375,49 @@ export default function OnboardingJourneyCard({
                   maxLength={300}
                   rows={2}
                   className={`mt-1 w-full rounded-md border px-3 py-2 text-sm outline-none ${input}`}
+                  required
+                />
+              </div>
+
+              <fieldset>
+                <legend className="text-sm font-medium">Whose data is in this folder?</legend>
+                <div className="mt-2 space-y-2 text-sm">
+                  {([
+                    ['self', 'Mine — my own machine, my own files'],
+                    ['employer', "My employer's — I have a seat in it, I do not own it"],
+                    ['third_party', "Someone else's — a client, a customer, a counterparty"],
+                  ] as const).map(([value, label]) => (
+                    <label key={value} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-md border border-current/20 px-3 py-2">
+                      <input
+                        type="radio"
+                        name={`${surface}-ownership`}
+                        value={value}
+                        checked={ownership === value}
+                        onChange={() => setOwnership(value)}
+                        required
+                      />
+                      <span>{label}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className={`mt-1 text-xs ${muted}`}>
+                  Anything that is not yours is read-only and never written to. I cannot
+                  check this answer — I can only refuse to start without one.
+                </p>
+              </fieldset>
+
+              <div>
+                <label htmlFor={`${surface}-authority-basis`} className="block text-sm font-medium">
+                  Under what right?
+                </label>
+                <input
+                  id={`${surface}-authority-basis`}
+                  value={authorityBasis}
+                  onChange={(event) => setAuthorityBasis(event.target.value)}
+                  maxLength={300}
+                  placeholder="my own laptop / read access granted to my seat / our engagement"
+                  className={`mt-1 w-full rounded-md border px-3 py-2 text-sm outline-none ${input}`}
+                  autoComplete="off"
                   required
                 />
               </div>

@@ -34,6 +34,8 @@ def propose(root: Path, source: Path, *, surface: str = "dashboard", action_id: 
     return journey.act(
         {
             "action": "propose_window",
+            "ownership": "self",
+            "authority_basis": "my own machine, my own folder",
             "action_id": action_id,
             "surface": surface,
             "source": str(source),
@@ -93,13 +95,22 @@ def test_charter_binds_exact_scope_limits_purpose_and_destination_without_granti
     charter = out["state"]["charter"]
     payload = charter["payload"]
     assert payload["source"]["root"] == str(source.resolve())
+    # The permission block is DERIVED from the ownership class (2026-07-27) —
+    # this proposal declares `self`, so write-capable adapters are allowed and
+    # egress needs no per-item approval. The employer/third_party inverse is
+    # pinned in test_ownership_charter.py.
     assert payload["permission"] == {
         "read_only": True,
         "writes_to_source": False,
+        "write_capable_adapters": "allowed",
+        "egress": "allow",
+        "structural": True,
         "network": False,
         "connectors": False,
         "follow_symlinks": False,
     }
+    assert payload["source"]["ownership"] == "self"
+    assert payload["attestation"]["verified_by_framework"] is False
     assert payload["limits"]["max_files"] == journey.MAX_FILES
     assert payload["relationship_destination"]["id"] == "reversible"
     assert payload["relationship_destination"]["authority_effect"] == "none; this is a destination, not a grant"
@@ -182,6 +193,8 @@ def test_success_is_correlated_across_all_evidence_phases_with_stable_ids(tmp_pa
     out = journey.act(
         {
             "action": "propose_window",
+            "ownership": "self",
+            "authority_basis": "my own machine, my own folder",
             "action_id": "action-dashboard-001",
             "trace_id": "trace-dashboard-001",
             "correlation_id": "corr-DOGFOOD-001",
@@ -468,6 +481,8 @@ def test_one_action_id_is_idempotent_across_surfaces(tmp_path):
     second = journey.act(
         {
             "action": "propose_window",
+            "ownership": "self",
+            "authority_basis": "my own machine, my own folder",
             "action_id": "same-action",
             "surface": "telegram",
             "source": str(source),
@@ -601,6 +616,8 @@ def test_propose_validation_rejects_carry_specific_codes(tmp_path):
     def act_propose(**over):
         req = {
             "action": "propose_window", "surface": "test",
+            "ownership": "self",
+            "authority_basis": "my own machine, my own folder",
             "action_id": over.pop("action_id", "v-1"),
             "source": str(source), "purpose": "ok",
             "relationship_destination": "reversible",
@@ -716,6 +733,8 @@ def test_inner_action_lock_refuses_stale_action_after_concurrent_purge(tmp_path)
         journey._act_core(
             {
                 "action": "propose_window",
+                "ownership": "self",
+                "authority_basis": "my own machine, my own folder",
                 "action_id": "stale-proposal",
                 "surface": "telegram",
                 "source": str(source),
@@ -769,6 +788,8 @@ def test_scope_refuses_disk_home_empty_and_missing_paths(tmp_path, raw):
         journey.act(
             {
                 "action": "propose_window",
+                "ownership": "self",
+                "authority_basis": "my own machine, my own folder",
                 "action_id": f"bad-{raw}",
                 "surface": "test",
                 "source": raw,
@@ -1007,6 +1028,8 @@ def test_malformed_caller_ids_cannot_fork_canonical_and_evidence_planes(tmp_path
     out = journey.act(
         {
             "action": "propose_window",
+            "ownership": "self",
+            "authority_basis": "my own machine, my own folder",
             "action_id": "fork-probe-1",
             "trace_id": ".dot-trace",
             "correlation_id": ".dot-corr",
@@ -1050,6 +1073,8 @@ def test_lone_surrogate_purpose_is_scrubbed_and_recorded_not_crashed(tmp_path):
     out = journey.act(
         {
             "action": "propose_window",
+            "ownership": "self",
+            "authority_basis": "my own machine, my own folder",
             "action_id": "surrogate-purpose",
             "surface": "dashboard",
             "source": str(source),
@@ -1112,6 +1137,8 @@ def test_unencodable_source_path_is_a_clean_refusal(tmp_path):
         journey.act(
             {
                 "action": "propose_window",
+                "ownership": "self",
+                "authority_basis": "my own machine, my own folder",
                 "action_id": "surrogate-source",
                 "surface": "test",
                 "source": str(bad),
@@ -1269,6 +1296,8 @@ def _employee_estate_dividend(tmp_path: Path) -> tuple[dict, list[dict]]:
     proposal = journey.act(
         {
             "action": "propose_window",
+            "ownership": "employer",
+            "authority_basis": "my employer's repo and tracker export; read access granted to my seat",
             "action_id": "employee-estate-propose",
             "surface": "test",
             "source": str(source),

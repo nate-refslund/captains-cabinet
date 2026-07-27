@@ -108,3 +108,38 @@ telegram:
     cro: ""
     cpo: ""
     coo: ""
+
+# =============================================================
+# External task system — OPTIONAL, and OWNERSHIP IS REQUIRED when present
+# =============================================================
+# Omit this whole block for a plugin-routed or trackerless lane: that is a
+# clean no-op, not a misconfiguration.
+#
+# When you DO name a tracker, you must also say whose it is. There is no
+# default: an unclassified tracker is REFUSED at adapter construction, because
+# guessing "probably yours" would be the cabinet making an authorization
+# decision that is not the cabinet's to make.
+#
+#   ownership: self         your own board. Canonical wins — the org runtime is
+#                           authoritative and may create, update and close items.
+#   ownership: employer     a board your employer owns and you hold a seat in.
+#   ownership: third_party  a client's, customer's or counterparty's board.
+#
+# employer and third_party are STRUCTURALLY observe-only: the factory returns a
+# different adapter type whose push/delete/link raise. There is no flag that
+# turns writes back on — reclassify the source instead, deliberately.
+#
+# authority_basis is free text and required for every class, your own included.
+# Write the right you actually hold ("my personal GitHub org"; "read access
+# granted to my seat by IT"; "the shared board under our engagement"). The
+# framework CANNOT verify it is true — it can only force the question, record
+# the answer, and refuse the write half for anything you did not claim as
+# yours. See framework/authority/ownership.py and
+# docs/source-ownership-and-authority.md.
+#
+# tasks:
+#   system: github-issues          # github-issues | linear | asana | jira | none
+#   ownership: self                # self | employer | third_party  (REQUIRED)
+#   authority_basis: ""            # the right you hold over it     (REQUIRED)
+#   config:
+#     repo: ""                     # per-system settings

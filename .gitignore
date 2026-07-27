@@ -179,6 +179,7 @@ instance/memory/briefing-scores.jsonl
 instance/onboarding/formation/
 instance/onboarding/v2/
 instance/onboarding/purge-receipts/
+instance/onboarding/access-records/
 instance/onboarding/.onboarding-v2.lock
 # Universal Evidence Recorder v1 store: local Captain-owned ledgers, signing
 # key, controls, receipts, and explicit exports never enter git.
