@@ -63,6 +63,14 @@ if [ -f "$REPO_ROOT/cabinet/.env" ]; then
 fi
 REDIS_HOST="${REDIS_HOST:-localhost}"
 REDIS_PORT="${REDIS_PORT:-6379}"
+# Proven-read helper (2026-07-26 fail-open sweep) — VALUE / ABSENT /
+# INDETERMINATE instead of coercing an unreadable plane to 0. See
+# cabinet/scripts/lib/plane-read.sh.
+PLANE_LIB="$REPO_ROOT/cabinet/scripts/lib/plane-read.sh"
+if [ -r "$PLANE_LIB" ]; then
+  # shellcheck source=/dev/null
+  . "$PLANE_LIB"
+fi
 SENTINEL_DIR="$HOME/Library/Caches/cabinet"
 LA_DIR="$HOME/Library/LaunchAgents"
 
@@ -159,8 +167,24 @@ restart_officer() {
   # dedup. Pre-fix, the dedup blocked the counter from incrementing at all.
 
   # Rate-limit check via Redis counter (INCR, set TTL on first hit).
+  #
+  # PROVEN READ (2026-07-26 fail-open sweep). This was `... 2>/dev/null ||
+  # echo "0"`, so if the plane died between the reachability probe below and
+  # this call, cnt=0 — which is BELOW the cap, so the 3/hour restart limiter
+  # silently stopped limiting and the watchdog could kickstart an officer every
+  # tick indefinitely. A counter you cannot read is not a counter at zero.
+  #
+  # The decision here is NOT invented: this file already declares its rule for
+  # an unreadable plane, twenty lines down — "if Redis is down, do NOTHING …
+  # restarting blindly would be worse than waiting for the next tick". This
+  # applies that same rule at the point of use instead of only at the top.
   local cnt
-  cnt=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" INCR "cabinet:watchdog:restart-count:$o" 2>/dev/null || echo "0")
+  plane_read_int INCR "cabinet:watchdog:restart-count:$o"
+  case "$PLANE_VERDICT" in
+    VALUE) cnt="$PLANE_VALUE" ;;
+    *)     echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) heartbeat-watchdog: FATAL restart-count for $o unreadable ($PLANE_REASON) — refusing to restart without an enforceable rate limit ($reason)" >&2
+           return 1 ;;
+  esac
   if [ "$cnt" = "1" ]; then
     redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" EXPIRE "cabinet:watchdog:restart-count:$o" 3600 > /dev/null 2>&1 || true
   fi
@@ -221,9 +245,18 @@ restart_officer() {
 # "PONG" on success; any other output (including empty from a timeout) means
 # unreachable. Treat the watchdog as a no-op in that case (exit 0 so launchd
 # doesn't accumulate failure backoff — the cron schedule will retry in 5min).
-REDIS_PING=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -t 2 PING 2>/dev/null || echo "")
-if [ "$REDIS_PING" != "PONG" ]; then
-  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) heartbeat-watchdog: Redis unreachable at $REDIS_HOST:$REDIS_PORT — no-op, will retry next tick" >&2
+#
+# PROVEN probe (2026-07-26): `redis-cli PING 2>/dev/null || echo ""` was
+# already fail-closed on its verdict (empty != PONG), but a shimmed or
+# half-broken client answering a bare "PONG" satisfied it. plane_reachable
+# frames the PING between two fresh nonces, so only a live server that echoed
+# both can pass. Same decision, unforgeable evidence.
+if ! command -v plane_reachable > /dev/null 2>&1; then
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) heartbeat-watchdog: FATAL proven-read helper missing at $PLANE_LIB — cannot verify the control plane, no-op" >&2
+  exit 0
+fi
+if ! plane_reachable; then
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) heartbeat-watchdog: Redis not provably readable at $REDIS_HOST:$REDIS_PORT ($PLANE_REASON) — no-op, will retry next tick" >&2
   exit 0
 fi
 
@@ -232,7 +265,19 @@ fi
 # unbound-variable fatal there. ${ARR[@]+...} expands to zero words when empty.
 for o in ${FULLTIME_OFFICERS[@]+"${FULLTIME_OFFICERS[@]}"}; do
   # Probe 1 — LIVENESS heartbeat (the death signal)
-  LIVE_EXISTS=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" EXISTS "cabinet:heartbeat:liveness:$o" 2>/dev/null || echo "0")
+  #
+  # PROVEN READ (2026-07-26 fail-open sweep). This was `... || echo "0"`, and
+  # 0 means "no liveness key" means THE OFFICER IS DEAD — so a plane that died
+  # after the reachability probe above made EVERY officer look dead at once and
+  # drove a fleet-wide restart. An EXISTS you cannot read is not a zero.
+  # Unreadable -> skip this officer for this tick, which is this file's own
+  # stated rule for an unreadable plane.
+  plane_read_int EXISTS "cabinet:heartbeat:liveness:$o"
+  if [ "$PLANE_VERDICT" != "VALUE" ]; then
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) heartbeat-watchdog: FATAL liveness probe for $o unreadable ($PLANE_REASON) — skipping this officer this tick (NOT treating it as dead)" >&2
+    continue
+  fi
+  LIVE_EXISTS="$PLANE_VALUE"
 
   # Probe 2 — pane_pid sentinel (cross-check: is the wrapper process alive?)
   PANE_PID_STATE="absent"   # absent | alive | dead
