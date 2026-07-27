@@ -1,0 +1,36 @@
+# Nature that exists whether or not anyone lives here — verify.py --allow-ambient.
+#
+# WHY THESE ARE NOT IN THE BLUEPRINT'S `justified` SET. That set answers "which
+# STATE RULE entitles this sprite", and no rung or count entitles a birch. An
+# island has a treeline the day it is hatched, exactly as it has a waterline;
+# planting it is morphology, not tending. Folding morphology into `justified`
+# would put it beside the measured things and make the difference invisible.
+#
+# WHY IT IS A STATIC FILE AND NOT DERIVED FROM THE PLANTING PASSES. A list
+# generated from the code that plants can never disagree with it — it would be a
+# sensor wired to its own subject. This list is hand-held: the day a planting
+# pass grows a species that is not written here, check_state_traceable fails,
+# and a human decides whether the species or the list is wrong. Proven to fire:
+# tests/test_capture.py's mutation arm plants a name off this list and asserts
+# the arm goes red.
+#
+# One name per line. Order is irrelevant; keep it sorted for review.
+bush_flowering
+bush_round
+fallen_log
+fern_cluster
+flowers_pink
+flowers_white
+flowers_yellow
+lilypads
+mushrooms
+reeds
+rock_cluster
+rock_small
+tree_birch
+tree_oak
+tree_oak_small
+tree_pine
+tree_pine_small
+tree_stump
+tree_willow

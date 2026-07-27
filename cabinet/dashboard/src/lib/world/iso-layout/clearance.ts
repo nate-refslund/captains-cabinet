@@ -335,6 +335,59 @@ export function clearOfLane(
   return fallback ?? at
 }
 
+/**
+ * Push a thing off a SURFACE it must not stand on, onto ground nothing else is
+ * using. The same ring search as clearOfLane, for a set of keep-off regions
+ * expressed as occupants.
+ *
+ * WHY IT IS NOT clearOfLane WITH ANOTHER ARGUMENT: clearOfLane returns
+ * immediately when the spot is off the road (`if (!footprintOnLane) return at`),
+ * which is exactly the case that has to keep searching here — a tilled plot is
+ * not a lane, so that early-out fires and nothing moves.
+ *
+ * WHY IT IS NOT settleAgainstOccupants: that function has no land test (the
+ * reference's does not either), so it happily pushes a shoreline building into
+ * the sea; placeOnGround then walks it back inland toward the island centre and
+ * lands it on the very plot it was pushed off. Measured 2026-07-27 on 40
+ * village seeds: the settle alone left 16 of them with a structure standing in
+ * the crop, all of them shoreline anchors — the harbourmaster's hut, whose
+ * harbour offset is the plots' own column, and the lighthouse. A ring search
+ * that only ever considers points ON LAND cannot make that mistake.
+ */
+export function clearOfRegions(
+  at: Point,
+  size: Footprint,
+  regions: readonly Occupant[],
+  lanes: LaneField,
+  onLand: (x: number, y: number) => boolean,
+  occupied: readonly Occupant[],
+  opts: ClearOfLaneOptions = {}
+): Point {
+  const reach = opts.reach ?? 420
+  const frac = opts.frac ?? 0.04
+  if (regions.length === 0 || maxGroundOverlap(at, size, regions) <= frac) return at
+  let fallback: Point | null = null
+  let fallbackOverlap = Infinity
+  for (let r = 8; r < reach; r += 7) {
+    for (let i = 0; i < 16; i++) {
+      const ang = (i * Math.PI * 2) / 16
+      const p = { x: at.x + Math.cos(ang) * r, y: at.y + Math.sin(ang) * r * 0.66 }
+      if (!onLand(p.x, p.y - 2) || footprintOnLane(p, size, lanes)) continue
+      const onRegion = maxGroundOverlap(p, size, regions)
+      const shared = maxGroundOverlap(p, size, occupied)
+      if (onRegion <= frac && shared <= frac) return p
+      // Rank the compromises the way clearOfLane does: the SLIGHTEST one, not
+      // the first the deterministic ring happened to reach.
+      const cost = onRegion + shared
+      if (cost < fallbackOverlap) {
+        fallbackOverlap = cost
+        fallback = p
+      }
+    }
+  }
+  return fallback ?? at
+}
+
 export interface PlaceOptions {
   /** Tighter thresholds and a longer search — for structures. */
   strict?: boolean

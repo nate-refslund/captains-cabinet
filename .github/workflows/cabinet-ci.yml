@@ -84,7 +84,13 @@ jobs:
           python3 -m pip install --upgrade pip
           # Python tests stub requests/yaml/psycopg2 via sys.modules, so real
           # packages are optional. Install anyway to match officer container.
-          pip3 install psycopg2-binary requests pyyaml pytest
+          # pillow: cabinet/dashboard/src/lib/world/capture.test.ts renders a
+          # real world frame and runs the twelve invariants in
+          # cabinet/scripts/world-capture/mirror/checks over its pixels. That
+          # test FAILS rather than skips without Pillow, on purpose — a skipped
+          # world check is a disabled sensor, and the whole point is that CI
+          # cannot go green without a frame having been judged.
+          pip3 install psycopg2-binary requests pyyaml pytest pillow
 
       - name: Setup Node
         # FW-048: dashboard typecheck needs node + npm. Node 20 matches
@@ -687,6 +693,18 @@ jobs:
         # render corpus is absent — always true on a fresh CI checkout, so
         # expect 87 passed + 5 skipped here.
         run: python -m pytest cabinet/scripts/world-aesthetic/tests -q
+
+      - name: Cabinet world-capture tests (ground port + check mirror)
+        if: ${{ !cancelled() }}
+        # The capture harness's own arms: ground.py's ramps are the palette's
+        # byte for byte, every surface emits only its own ramp (so the noise
+        # substitution can move a shade but never invent one), each surface
+        # lands in the colour class world_checks.py will read it as, the
+        # mirrored checks are identical to their source, and no check imports
+        # the thing it tests. The PIXEL gate — compose a frame, run all twelve
+        # invariants, then six mutations that each turn exactly one arm red —
+        # runs in the Dashboard vitest step, which is where node lives.
+        run: python -m pytest cabinet/scripts/world-capture/tests -q
 
       # Docs-track-code sweep (G6, hardening loop 2026-07-11): dead repo-path
       # refs + dead relative links in LIVING docs fail CI — the repo rule

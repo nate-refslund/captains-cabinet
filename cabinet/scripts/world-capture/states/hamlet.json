@@ -1,0 +1,38 @@
+{
+  "name": "hamlet",
+  "seed": "cabinet-hamlet",
+  "date": "2026-07-26",
+  "index": 0.412,
+  "note": "The approved-look reference state: a settled village with a working harbour. Mirrors designs/cabinet-world-state-today-2026-07-26.png.",
+  "provenance": "EVERY rung name below is a real rung of that ladder in cabinet/world/growth-ladders.yml, and every count is the ladder's own count. Inventing a rung would be inventing a measurement — which is the exact defect check_era's rung arm exists to catch, so a fixture that made it up would be turning the check off. `packs_inherited` carries no stage because it is not a ladder at all: it is a census count (cabinet/world/morphology.yml:178, harbour cranes = extension packs present).",
+  "state": {
+    "era": "hamlet",
+    "road": "gravel_road",
+    "stages": {
+      "great_house": "great_house",
+      "library": "library_hall",
+      "workshop": "shed",
+      "outbuildings": "small_barn",
+      "well": "well",
+      "firepit": "stone_ring",
+      "warehouse": "warehouse",
+      "harbormaster_hut": "hut",
+      "harbor_boat": "packet_boat",
+      "cargo_stacks": "crates_mid",
+      "officer_dwellings": "dwellings_5plus",
+      "berths": "berths_4",
+      "field_plots": "plots_3",
+      "lighthouse": "tower_full",
+      "lighthouse_lamp": "lit",
+      "quay": "timber_jetty"
+    },
+    "counts": {
+      "officer_dwellings": 5,
+      "field_plots": 3,
+      "berths": 4,
+      "cargo_stacks": 2,
+      "warehouse": 2,
+      "packs_inherited": 1
+    }
+  }
+}

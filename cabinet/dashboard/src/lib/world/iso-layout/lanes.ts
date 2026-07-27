@@ -272,7 +272,20 @@ export interface LaneField {
   nearLane(x: number, y: number, r?: number): boolean
 }
 
-const SQUASH = 0.72
+/**
+ * The vertical squash of a lane's occupancy disc — a circle on the ground
+ * projects flattened on a 2:1 screen.
+ *
+ * EXPORTED because the thing that PAINTS the road has to paint this exact
+ * shape. It was private until 2026-07-27, and the first frame ever rendered
+ * from this layout put the harbourmaster's hut on a lane: the rules had cleared
+ * it against a squashed ellipse while the renderer drew a round stroke 39%
+ * taller in y, so the painted road reached ground the rules had never reserved.
+ * check_on_road caught it on first contact. One constant, emitted to the
+ * renderer through the draw list, is what stops that class returning.
+ */
+export const LANE_SQUASH = 0.72
+const SQUASH = LANE_SQUASH
 const BUCKET = 64
 
 export function buildLaneField(lanes: readonly Lane[]): LaneField {

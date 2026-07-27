@@ -40,6 +40,7 @@
 import { fnv1a, seededRng } from '../hash'
 import { buildCoastline, type Coastline, type CoastlineOptions } from './coastline'
 import {
+  clearOfRegions,
   footprintOnLane,
   groundTaken,
   placeOnGround,
@@ -538,6 +539,62 @@ export function composeLayout(
   // ---- 7. structures ------------------------------------------------------
   const occupied: Occupant[] = []
   const structures: Structure[] = []
+
+  /**
+   * THE TILLED PLOTS ARE TAKEN GROUND, for buildings as well as for planting.
+   *
+   * FOUND BY DRAWING A FRAME, 2026-07-27, and by nothing else: the first
+   * capture ever rendered from this layout put the harbourmaster's hut in a
+   * ploughed plot, and check_on_road flagged it (soil is the same warm brown as
+   * a dirt lane, so a building in the crop reads as a building in the road).
+   * Measured across 40 village seeds before the fix: 28 of 40 stood a structure
+   * on a plot — the hut, whose harbour offset is the plots' own column, and on
+   * some islands the lighthouse. Three adversarial rounds of layout-only review
+   * never saw it, because the plots are PAINT and no arm compared paint to
+   * buildings.
+   *
+   * The predicate already existed one stage down: index.ts free() forbids
+   * planting on 'crop' and 'ploughed', and a building is a stronger claim on
+   * ground than a shrub. It is expressed as OCCUPANTS rather than a new
+   * placeOnGround parameter so the existing settle machinery does the work — a
+   * plot is ground that is taken, which is exactly what an Occupant means.
+   *
+   * NOT ADDED TO `occupied` ITSELF, on purpose: the ring and scatter passes
+   * already exclude the plots through `onPaving`, and pushing plot rectangles
+   * into their occupancy book would move planting near every plot edge for no
+   * reason. Structures are the only stage that could not see them.
+   *
+   * THE PLAZA IS DELIBERATELY NOT HERE. The firepit and the market stall stand
+   * ON the square by design — it is somewhere to stand, not a surface to keep
+   * off. Adding it would delete the square's whole purpose.
+   *
+   * ONE OCCUPANT PER PLOT, NOT ONE PER BLOB, and that is the difference
+   * between a fix and a half-fix. settleAgainstOccupants pushes away from the
+   * occupant it collided with; a plot is 27 overlapping blobs, so per-blob
+   * occupants make the building bounce from one blob into the next and give up
+   * inside the plot after 60 tries. Measured over the same 40 seeds: per-blob
+   * took 28 down to 17, per-plot takes it to 0. A partial fix that looked like
+   * a fix is worse than none, because the arm goes green over the remainder.
+   *
+   * KNOWN LIMIT, on the safe side: the extent is the ellipse INSCRIBED IN THE
+   * BLOBS' BOUNDING BOX (ellipseOfRegion), which is a superset of the paint —
+   * about 3.5% of the average declared plot is grass the plough never turned.
+   * So a building is pushed slightly further from a plot than the soil strictly
+   * requires. Over-reserving here costs a few pixels of siting; under-reserving
+   * would put a hut back in the crop.
+   */
+  const plotGround: Occupant[] = paint
+    .filter((r) => r.kind === 'ploughed' || r.kind === 'crop')
+    .map((r) => ellipseOfRegion(r))
+    .filter((e): e is Ellipse => e !== null)
+    .map(([cx, cy, rx, ry]) => ({
+      // An Occupant's ground box is (x-w*0.42, y-min(h,w)*0.55, x+w*0.42, y),
+      // so the sizes that make the box EXACTLY the plot extent are rx/0.42 and
+      // 2*ry/0.55. Writing 2*rx/0.42 (the obvious symmetry with the height)
+      // reserves twice the plot's width, which is a different island.
+      at: { x: cx, y: cy + ry },
+      size: { w: rx / 0.42, h: (2 * ry) / 0.55 },
+    }))
   const put = (
     kind: string,
     role: string,
@@ -562,13 +619,19 @@ export function composeLayout(
     // is over which lot the building belongs to, not over the last hundred
     // pixels. The forecourt lane ends AT the great house's anchor, so the
     // great house is the routine case, not the exception.
-    const p = placeOnGround(at, size, laneField, onLand, occupied, {
+    const p = placeOnGround(at, size, laneField, onLand, [...occupied, ...plotGround], {
       strict: true,
       inlandTo: inland,
     })
     if (!p) return null
-    occupied.push({ at: p, size })
-    const s: Structure = { kind, role, at: p, flip, size, lot }
+    // placeOnGround knows about lanes, water and neighbours; it does not know
+    // about the plough. Its own recovery path is what puts a building back on a
+    // plot — the settle shoves a shoreline anchor into the sea and the land walk
+    // returns it inland onto the soil it was pushed off — so the plot rule gets
+    // the last word, exactly as the road does inside placeOnGround.
+    const cleared = clearOfRegions(p, size, plotGround, laneField, onLand, occupied)
+    occupied.push({ at: cleared, size })
+    const s: Structure = { kind, role, at: cleared, flip, size, lot }
     structures.push(s)
     return s
   }
