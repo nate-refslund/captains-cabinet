@@ -3,6 +3,21 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 HOOK="$REPO_ROOT/cabinet/scripts/hooks/pre-tool-use.sh"
+
+# Redis, hermetically (2026-07-27 safety-switch fence). Every hook probe below
+# runs with fixtures/redis-cli first on PATH — a stub that answers as a
+# reachable control plane with no keys set — the pattern evidence-pathnorm.sh
+# and germline-readonly.sh already use.
+#
+# It replaces an unconditional `redis-cli -h redis -p 6379 DEL <cabinet:layer1:cto:*>`, which
+# addressed a control plane this test does not own. That line did NOTHING
+# wherever the `redis` hostname does not resolve (the Mac fleet, and the GitHub
+# runner) — so the probes silently read whatever plane the ambient
+# REDIS_HOST/REDIS_PORT named, i.e. the LIVE one on an officer box — and was a
+# live CTO review-gate clear wherever it does resolve (the watchdog container's docker
+# network). "Key absent" is exactly the state that DEL was reaching for; the
+# stub provides it without touching anyone's control plane.
+TEST_BIN="$SCRIPT_DIR/fixtures"
 probe() {
   local label="$1"; local cmd="$2"; local expect="$3"
   local json=$(jq -cn --arg cmd "$cmd" '{tool_name:"Bash",tool_input:{command:$cmd}}')
@@ -10,8 +25,7 @@ probe() {
   # ci-green gates Section 7 (pulls/N/merge). ADV-4 + COO-E10 hit Section 7 —
   # leaked ci-green from an operator push (EX 300) silently consumes the key
   # and returns exit=0 → false FAIL(bypass). DEL both to keep harness hermetic.
-  redis-cli -h redis -p 6379 DEL cabinet:layer1:cto:reviewed cabinet:layer1:cto:ci-green >/dev/null 2>&1
-  CABINET_HOOK_TEST_MODE=1 OFFICER_NAME=cto bash "$HOOK" <<<"$json" >/dev/null 2>&1
+  PATH="$TEST_BIN:$PATH" CABINET_HOOK_TEST_MODE=1 OFFICER_NAME=cto bash "$HOOK" <<<"$json" >/dev/null 2>&1
   local ec=$?
   local result="?"
   if [ "$expect" = "BLOCK" ]; then [ "$ec" = "2" ] && result="PASS" || result="FAIL(bypass)"
