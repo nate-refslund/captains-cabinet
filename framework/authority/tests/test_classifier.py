@@ -14,6 +14,7 @@ See docs/authority-matrix-design-2026-06-19.md §2 (classify_action rules),
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -21,6 +22,8 @@ import pytest
 
 # Repo root on sys.path so `framework.authority` imports as a package.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
+
+import framework.env as env  # noqa: E402
 
 from framework.authority.classifier import (  # noqa: E402
     ACTION_TYPES,
@@ -40,6 +43,12 @@ def _synthetic_org_domains(monkeypatch):
     from framework.authority import classifier as _clf
     monkeypatch.setattr(_clf, "_INTERNAL_DOMAINS",
                         ("testburg.example", "testburg-media.example"))
+    # Same reason for the exclusion policy: the classifier freezes
+    # env.recipient_policy() at import, so pin the shipped default (no
+    # exclusions, strict subdomain matching) rather than reading this
+    # deployment's ruled file.
+    monkeypatch.setattr(_clf, "_RECIPIENT_POLICY",
+                        {"deny": (), "subdomains": "strict"})
 
 
 
@@ -225,7 +234,6 @@ class TestComms:
     @pytest.mark.parametrize("recipient", [
         "bo@testburg.example",
         "bo@testburg.example, otto@testburg-media.example",         # ALL internal
-        "bo@testburg.example otto@sub.testburg.example",            # subdomain
         "BO@TESTBURG.EXAMPLE, OTTO@TESTBURG-MEDIA.EXAMPLE",         # casing
     ])
     def test_all_internal_recipients_stay_internal(self, recipient):
@@ -246,6 +254,309 @@ class TestComms:
             {"channel": "email", "recipient": "", "body": "x"},
         )
         assert out in ("external_email", "external_message")
+
+
+# ===================================================================
+# CAPTAIN CARVE-BACKS on the org_domains allowlist
+# ===================================================================
+# org_domains ALREADY is the allowlist of what counts as internal — the
+# framework ships none of its own, so an unconfigured cabinet treats every
+# recipient as external. What it could not express was an EXCEPTION: a listed
+# domain admitted every address at it, and every subdomain of it, unboundedly
+# and forever. instance/config/recipient-exclusions.yml is the carve-back.
+# Everything below can only move a recipient TOWARD the always-gated external
+# ceiling; the two property tests at the end of this class prove that no
+# setting of the file can move one the other way.
+
+def _policy(monkeypatch, deny=(), subdomains="strict"):
+    from framework.authority import classifier as _clf
+    monkeypatch.setattr(_clf, "_RECIPIENT_POLICY",
+                        {"deny": tuple(deny), "subdomains": subdomains})
+
+
+def _classify(recipient):
+    return classify_action(
+        "mcp__brain__queue_draft",
+        {"channel": "email", "recipient": recipient, "body": "x"},
+    )
+
+
+class TestRecipientExclusions:
+
+    # ---- the subdomain rule is now BOUNDED by default -------------------
+    def test_subdomain_of_an_org_domain_is_external_by_default(self, monkeypatch):
+        """RELOCATED, DELIBERATELY TIGHTENED (2026-07-27). This exact address
+        used to be a row of test_all_internal_recipients_stay_internal above,
+        asserting internal_email — because a bare listed domain silently
+        claimed its entire subdomain namespace, including subdomains that do
+        not exist yet and ones a partner operates. The assertion moved here and
+        FLIPPED to external, which is strictly more gating, never less: the
+        property tests below pin that this direction is the only one available.
+        The relocated-from corpus still pins that an all-internal field stays
+        internal (its other three rows)."""
+        assert _classify("bo@testburg.example otto@sub.testburg.example") \
+            == "external_email"
+        assert _classify("otto@sub.testburg.example") == "external_email"
+
+    def test_inherit_restores_subdomains_by_config_not_code(self, monkeypatch):
+        """The old unbounded rule stays reachable — a deployment that depends
+        on it writes one config line, not a patch."""
+        _policy(monkeypatch, subdomains="inherit")
+        assert _classify("bo@testburg.example otto@sub.testburg.example") \
+            == "internal_email"
+
+    def test_explicitly_listing_the_subdomain_is_the_other_route(self, monkeypatch):
+        """Under strict, a subdomain you DO want internal earns its own
+        org_domains line — a named, auditable claim instead of a blanket."""
+        from framework.authority import classifier as _clf
+        monkeypatch.setattr(_clf, "_INTERNAL_DOMAINS",
+                            ("testburg.example", "sub.testburg.example"))
+        assert _classify("otto@sub.testburg.example") == "internal_email"
+
+    # ---- the denylist: the thing org_domains cannot express --------------
+    def test_denylisted_address_at_an_allowed_domain_is_external(self, monkeypatch):
+        """THE gap this unit closes. `all-staff@testburg.example` sits at an
+        allowed domain, so no setting of org_domains can carve it out — a
+        distribution list that fans out to non-employees classified internal,
+        off the always-gated external_comms ceiling."""
+        assert _classify("all-staff@testburg.example") == "internal_email"
+        _policy(monkeypatch, deny=("all-staff@testburg.example",))
+        assert _classify("all-staff@testburg.example") == "external_email"
+
+    def test_denylisted_address_poisons_the_whole_field(self, monkeypatch):
+        """ALL-quantified, like the org-domain check: one excluded address in a
+        multi-address field makes the send external."""
+        _policy(monkeypatch, deny=("all-staff@testburg.example",))
+        assert _classify("bo@testburg.example, all-staff@testburg.example") \
+            == "external_email"
+
+    def test_denylist_is_precise_not_a_blanket(self, monkeypatch):
+        """Excluding one address must not gate its siblings — an exclusion
+        mechanism that over-reaches trains the Captain to stop using it."""
+        _policy(monkeypatch, deny=("all-staff@testburg.example",))
+        assert _classify("bo@testburg.example") == "internal_email"
+
+    def test_denylisted_domain_covers_its_subdomains(self, monkeypatch):
+        """A deny entry with no `@` is a DOMAIN and reaches its subdomains too
+        — a denylist that reaches further is the safe direction, the mirror of
+        why the allow side is bounded."""
+        from framework.authority import classifier as _clf
+        monkeypatch.setattr(_clf, "_INTERNAL_DOMAINS", ("testburg.example",))
+        _policy(monkeypatch, deny=("news.testburg.example",),
+                subdomains="inherit")
+        assert _classify("ed@news.testburg.example") == "external_email"
+        assert _classify("ed@wire.news.testburg.example") == "external_email"
+        assert _classify("bo@testburg.example") == "internal_email"
+
+    def test_corrupt_exclusion_file_gates_every_recipient(self, monkeypatch):
+        """The deny-all sentinel env.recipient_policy() returns for a file that
+        EXISTS but cannot be parsed: an unreadable Captain exclusion list is
+        never silently ignored, so every recipient — including a wholly
+        internal field — classifies external until it is repaired."""
+        _policy(monkeypatch, deny=(env.DENY_ALL_RECIPIENTS,))
+        assert _classify("bo@testburg.example") == "external_email"
+        assert _classify("bo@testburg.example, otto@testburg-media.example") \
+            == "external_email"
+
+    def test_deny_all_sentinel_is_the_resolver_s_corruption_value(self):
+        """Bind this class's sentinel to the one the resolver actually emits —
+        a fixture inventing its own value would test nothing (the arm above
+        would pass against a classifier that ignores the real sentinel)."""
+        assert _policy_from_damage() == (env.DENY_ALL_RECIPIENTS,)
+
+    # ---- the direction-of-travel law, proven over the corpus -------------
+    def test_no_config_can_make_anything_internal_that_was_not(self, monkeypatch):
+        """THE invariant this file must never lose: the predicate can only move
+        a recipient TOWARD the ceiling, never away. For every policy P and
+        every recipient R, internal(R, P) implies REFERENCE(R) — where
+        REFERENCE is the unbounded pre-2026-07-27 predicate, reimplemented
+        below as a FROZEN baseline rather than read off the code under test.
+        That distinction is the whole sensor: comparing against this
+        implementation's own widest policy would move with any bug that
+        widened it (a dotless `endswith` suffix match, say), and the arm would
+        stay green while the thing it names broke."""
+        from framework.authority import classifier as _clf
+        reference = {r for r in _CORPUS if _pre_change_internal(_clf, r)}
+        assert reference, "vacuous: the reference predicate admits nothing"
+        for deny, subs in _POLICY_SPACE:
+            for r in _CORPUS:
+                if _internal_under(monkeypatch, _clf, r, deny, subs):
+                    assert r in reference, (
+                        f"policy deny={deny} subdomains={subs} made {r!r} "
+                        f"internal, which the unbounded predicate did not")
+        # and the reach is real, not a rounding error: the shipped default is
+        # STRICTLY tighter than the reference on this corpus.
+        default = {r for r in _CORPUS
+                   if _internal_under(monkeypatch, _clf, r, (), "strict")}
+        assert default < reference
+
+    def test_adding_a_denylist_row_only_ever_shrinks_internal(self, monkeypatch):
+        """The second half: a denylist row is MONOTONE. Adding one can never
+        turn an external recipient internal, at either subdomain setting."""
+        from framework.authority import classifier as _clf
+        rows = ("bo@testburg.example", "testburg.example",
+                "sub.testburg.example", "all-staff@testburg.example",
+                "testburg-media.example")
+        checked = 0
+        for subs in ("strict", "inherit"):
+            before = {r for r in _CORPUS
+                      if _internal_under(monkeypatch, _clf, r, (), subs)}
+            for row in rows:
+                after = {r for r in _CORPUS
+                         if _internal_under(monkeypatch, _clf, r, (row,), subs)}
+                assert after <= before, (
+                    f"adding deny row {row!r} at subdomains={subs} made "
+                    f"{sorted(after - before)!r} internal")
+                checked += 1
+        assert checked == len(rows) * 2
+        # non-vacuity: at least one row must actually REMOVE something, else
+        # "subset" holds trivially and this arm proves nothing.
+        assert any(
+            {r for r in _CORPUS
+             if _internal_under(monkeypatch, _clf, r, (row,), "inherit")}
+            < {r for r in _CORPUS
+               if _internal_under(monkeypatch, _clf, r, (), "inherit")}
+            for row in rows)
+
+
+def test_the_second_recipient_classifier_is_still_unwired():
+    """COVERAGE FENCE — the honest edge of everything above.
+
+    framework/channels/contract.py carries an INDEPENDENT second
+    implementation of this same decision (`classify_recipient`, returning
+    internal_email/external_email and journalling an `audience`). It reads a
+    DIFFERENT config file (instance/config/channels.yml), it is still
+    last-address-wins — the exact quantifier hole closed here on 2026-07-27 —
+    and it does not consult the exclusion policy at all. Every proof in this
+    module is about framework/authority/classifier.py and covers none of it.
+
+    It is harmless TODAY for one reason only: nothing outside
+    framework/channels MENTIONS it in any wiring-capable file, so no live path
+    reaches it. That is a
+    property of the tree, not of the code, and it can be undone by one import.
+    This arm fails the moment it is, so the gap is found by CI rather than by
+    a send that should have been gated. Closing it properly (one predicate, or
+    the exclusion policy threaded through both) is recorded work, not
+    something to do silently here."""
+    root = Path(__file__).resolve().parents[3]
+    me = Path(__file__).resolve()
+    # ANY mention, in any wiring-capable file type, is the test — never an
+    # import-statement regex. An earlier version matched `^(from|import)
+    # framework.channels` and an adversarial pass walked straight past it with
+    # importlib.import_module, a `python3.12 -c` inside a launchd plist, and a
+    # module path in a yml. Prose lives in .md, which is not scanned, so the
+    # broad rule costs nothing today (measured: zero hits outside the package
+    # and this file).
+    suffixes = {".py", ".sh", ".yml", ".yaml", ".plist", ".json", ".toml", ".cfg"}
+    offenders = []
+    for path in sorted(root.rglob("*")):
+        rel = path.relative_to(root).as_posix()
+        if not path.is_file() or path.suffix not in suffixes:
+            continue
+        if rel.startswith("framework/channels/") or "__pycache__" in rel:
+            continue
+        if path.resolve() == me:
+            continue                       # this fence names it to fence it
+        if any(p == ".git" or p.startswith(".git") for p in path.parts):
+            continue                       # object store, not source
+        body = path.read_text(encoding="utf-8", errors="replace")
+        # The DOTTED module form only. Every mechanism that can actually bind
+        # the module spells it this way — `from`/`import`, importlib, `-c`,
+        # `-m`, a PYTHONPATH invocation in a plist. The SLASH form is how
+        # coverage globs, ledger titles and cross-reference comments name the
+        # directory (three such today), and matching it would make this arm
+        # red on documentation, which is how a real tripwire gets deleted.
+        if "framework.channels" in body:
+            offenders.append(rel)
+    assert not offenders, (
+        "framework/channels/contract.py is now REACHABLE from " + repr(offenders)
+        + " — it decides internal-vs-external independently, last-address-wins, "
+        "and ignores instance/config/recipient-exclusions.yml. The denylist no "
+        "longer covers every outbound path. Fix the twin before landing this.")
+
+
+def _pre_change_internal(clf, recipient):
+    """The predicate EXACTLY as master carried it before the carve-backs: every
+    address at an org domain, matching the domain OR any subdomain of it,
+    unboundedly. Frozen here on purpose — the invariant above is measured
+    against this, never against the live code's own widest setting."""
+    addrs = [t for t in clf._ADDR_SEP_RE.split(recipient.strip().lower())
+             if "@" in t]
+    return bool(addrs) and all(
+        any(dom == d or dom.endswith("." + d) for d in clf._INTERNAL_DOMAINS)
+        for dom in (a.rsplit("@", 1)[-1] for a in addrs)
+    )
+
+
+def _internal_under(monkeypatch, clf, recipient, deny, subdomains):
+    with monkeypatch.context() as m:
+        m.setattr(clf, "_RECIPIENT_POLICY",
+                  {"deny": tuple(deny), "subdomains": subdomains})
+        return clf._is_internal_recipient(recipient)
+
+
+def _policy_from_damage():
+    """The sentinel the REAL resolver emits for a damaged file, read from
+    env.recipient_policy itself rather than restated here."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        cfg = Path(d) / "instance/config"
+        cfg.mkdir(parents=True)
+        (cfg / "recipient-exclusions.yml").write_text("denylist: [\n")
+        saved_cache, saved_root = env._recipient_policy_cache, os.environ.get("CABINET_ROOT")
+        try:
+            os.environ["CABINET_ROOT"] = d
+            env._recipient_policy_cache = None
+            return env.recipient_policy()["deny"]
+        finally:
+            env._recipient_policy_cache = saved_cache
+            if saved_root is None:
+                os.environ.pop("CABINET_ROOT", None)
+            else:
+                os.environ["CABINET_ROOT"] = saved_root
+
+
+# The corpus the two property tests quantify over: every recipient shape this
+# file already exercises, plus the address-level cases only a denylist can
+# reach. Kept as one list so a future recipient case joins both proofs.
+_CORPUS = (
+    "bo@testburg.example",
+    "otto@testburg-media.example",
+    "all-staff@testburg.example",
+    "otto@sub.testburg.example",
+    "ed@wire.news.testburg.example",
+    "bo@testburg.example, otto@testburg-media.example",
+    "bo@testburg.example otto@sub.testburg.example",
+    "BO@TESTBURG.EXAMPLE, OTTO@TESTBURG-MEDIA.EXAMPLE",
+    "outsider@partner-external.example, bo@testburg.example",
+    "outsider@partner-external.example; bo@testburg.example",
+    "outsider@partner-external.example\nbo@testburg.example",
+    "bo@testburg.example, outsider@partner-external.example",
+    "Nate <bo@testburg.example>",
+    "outsider@gmail.example",
+    # adversarial near-misses: a DOTLESS suffix match would swallow both, and
+    # they are what makes the frozen-reference property arm bite.
+    "crook@nottestburg.example",
+    # trailing FQDN dot: an rstrip(".") in the domain split would make this
+    # internal, which the frozen reference refuses — found by an adversarial
+    # mutant that survived the whole suite before this row existed.
+    "bo@testburg.example.",
+    "crook@eviltestburg-media.example",
+    "crook@testburg.example.attacker.test",
+    "",
+    "   ",
+    "not-an-address",
+)
+
+# Every policy a valid exclusion file can express, over the corpus's domains.
+_POLICY_SPACE = tuple(
+    (deny, subs)
+    for subs in ("strict", "inherit")
+    for deny in ((), ("*",), ("bo@testburg.example",), ("testburg.example",),
+                 ("sub.testburg.example",), ("all-staff@testburg.example",),
+                 ("testburg.example", "testburg-media.example"),
+                 ("news.testburg.example",))
+)
 
 
 # ===================================================================
