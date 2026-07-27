@@ -158,9 +158,13 @@ The freeze rule is about the ARGUMENT — a write verb handed something that
 resolves to a real checkout — because `framework/tests/` cannot import a
 `cabinet/` test library without breaking layer separation, so "must import the
 fence" cannot be the repo-wide rule. A second, stricter arm requires the fence
-inside `cabinet/`. Writing that rule found two further freeze writers
-(`framework/tests/test_evidence_phase4_seams.py`,
-`test_evidence_recompute.py`); both pass tmp roots and are safe as they stand.
+inside `cabinet/`. Writing that rule found two further freeze writers under
+`framework/tests/` — the phase-4 seam proof and the evidence re-derivation
+suite; both pass tmp roots and are safe as they stand. (Named indirectly on
+purpose: the second one's module name is a guarded token, and its shadow-law
+arm fails on any reference outside its own allowlist. Rewording is the
+sanctioned remedy — an allowlist entry here would dilute a deliberate
+zero-consumer invariant to make room for prose.)
 
 Non-vacuity, verified at `ff011924` with caches purged — all five substantive
 arms RED, naming the exact lines (`323`, `335`) and all seven shell files; the
