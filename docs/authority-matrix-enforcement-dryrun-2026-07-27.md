@@ -97,12 +97,23 @@ reporting a comfortable zero; an unimportable engine exits 3; the
 policy evaluation is wall-clock bounded and a breach is reported as its own
 category rather than silently counted as allow.
 
-Reproduce:
+**Re-running it — one command each, no side scripts.** This number is what
+decides when the flip becomes possible, so the corpus filters live in the
+instrument rather than in a one-off:
 
 ```
-python3.12 cabinet/scripts/authority-matrix-dryrun.py CORPUS.jsonl \
+# rebuild the corpus from the live shadow record (read-only, mode=ro URI)
+python3.12 cabinet/scripts/authority-matrix-dryrun.py --extract corpus.jsonl
+# measure
+python3.12 cabinet/scripts/authority-matrix-dryrun.py corpus.jsonl \
     --verify-cache 300 --policy-timeout 1.5 --json out.json
 ```
+
+**BASELINE OF RECORD — 2026-07-27, master `0ab0cc2b`, guardian posture:**
+80,307 records · 10,652 blocked today · 52 no-verdict · 69,603 allowed today ·
+**52,659 newly blocked = 75.66%**. The same numbers are in the instrument's
+docstring. A materially different result means the corpus, the classifier or
+the matrix moved — find out which before trusting it.
 
 ---
 
@@ -198,6 +209,98 @@ That last row matters on its own: it is the bounded doorway the **observe-only**
 emergency mode leaves open. Flipping enforcement would break the Captain's own
 "constrain the fleet right now" control.
 
+### 4.5b Decomposition — what actually blocks, ranked, and the smallest fix
+
+The `unclassified` bucket is 71.5% of the blast, so it is worth taking apart.
+Of its 42,279 records, 39,797 are Bash commands the shell parser can analyse
+(the rest: 2,353 non-Bash tools with no classifier arm at all — `CronList` 527,
+`ToolSearch` 399, `Agent` 174, `SendMessage` 74, `WebFetch` 64 …; 126
+unparseable; 3 `/dev/tcp` refusals).
+
+For each of those 39,797, the set of tokens that fails `_is_provably_local`:
+
+| why the locality proof fails | records | share |
+|---|---:|---:|
+| ONLY real binaries — a genuine allowlist gap | 16,741 | 42.1% |
+| **includes a token that is not a program at all** — the parser cannot resolve it | **13,691** | **34.4%** |
+| ONLY shell builtins / git verbs | 5,505 | 13.8% |
+| mixed | 3,860 | 9.7% |
+
+**The single largest cause is not policy and not a short allowlist — it is that
+the shell parser cannot tell what a command invokes.** 347 distinct
+non-program tokens are being resolved as command words: bare `1`, `)`, `#`,
+`##`, `.`, newline fragments, `REDIS_HOST:-localhost`, ` -p $`,
+` XLEN cabinet:captain-attention:polads`, and whole sentences out of heredoc
+bodies (`COUNTERFACTUAL=Actively pull my lanes…`). The "real binaries" row above
+is optimistic for the same reason: its 609 distinct tokens include `A`, `ACK`,
+`ALLOW`, `AND`, `API`, `ACTIVE_TASK`, `BLOCKS_CHECK` — heredoc words and shell
+variables that merely *look* like program names. So 34.4% is a floor, not an
+estimate.
+
+**Allowlist widening has a hard ceiling.** Greedy cover — add the token that
+clears the most remaining records, repeat:
+
+| rank | token | clears | cumulative |
+|---:|---|---:|---:|
+| 1 | `gh` | 5,429 | 13.6% |
+| 2 | `tar` | 2,309 | 19.4% |
+| 3 | `sudo` | 1,651 | 23.6% |
+| 4 | `__unresolved_program__` | 1,442 | 27.2% |
+| 6 | `source` | 3,378 | 38.0% |
+| 8 | `exit` | 2,124 | 45.9% |
+| 12 | `sed` | 1,073 | 58.4% |
+| 15 | `python3.12` | 1,052 | 67.0% |
+| 30 | `tclsh` | 156 | 84.4% |
+
+Thirty additions reach 84.4% — and the list is unusable. `gh`, `redis-cli`,
+`docker` are network clients; `python3`, `perl`, `awk`, `tar`, `find`, `xargs`
+execute arbitrary programs; `sudo`, `reboot`, `launchctl` are privilege and
+system control; `source` and `.` run another script. Adding any of them would
+delete the very property the allowlist exists to prove, which is exactly the
+argument `_is_provably_local`'s own docstring makes against a blocklist. The
+top-ranked single win, `gh` at 13.6%, is illegitimate on its face.
+
+**What IS legitimately cheap** (each is a strict subset of "cannot reach the
+network and cannot exec"):
+
+1. **Pure shell builtins** — `export`, `exit`, `read`, `local`, `declare`,
+   `return`, `shift`, `set`, `unset`. They neither exec nor open a socket, and
+   they are currently treated as unknown programs.
+2. **The local git WRITE verbs** — `add`, `commit`, `checkout`, `switch`,
+   `restore`, `merge`, `rebase`, `stash`, `tag`, `apply`, `am`, `cherry-pick`,
+   `revert`, `mv`, `rm`, `worktree`. None reaches the network; only `push`,
+   `fetch`, `pull`, `clone`, `remote`, `submodule` and `send-email` do, and
+   `push` already has its own positive classification.
+
+Together those clear the 13.8% "builtins / git verbs" row outright and part of
+the 9.7% mixed row, for two small edits to sets that already exist. Worth doing
+on their own merits; nowhere near enough to make the flip viable.
+
+**The smallest change that moves the number most is none of the above.** The
+matrix's thirteen risk classes are all about *acting on the world* — comms,
+deploy, spend, secrets, PM writes, calendar. **Not one of them describes
+"run a command on this machine."** So every build, test, inspect and
+housekeeping command an officer runs falls off the edge of the vocabulary into
+`AMBIGUOUS`, and the fail-safe does the rest. That is the actual defect: not a
+missing allowlist entry, not a wrong verdict, but a *missing risk class*.
+
+The high-leverage fix is therefore one new `action_type` + risk class —
+call it `toolchain` — covering local build/inspect/housekeeping execution,
+mapped to `act_with_undo` or `notify_after`, with the network-reaching and
+privilege-escalating cases explicitly kept out and left to the existing
+ceilings. That addresses the whole 71.5% in one place, in the layer where the
+question belongs, instead of chasing 609 binary names. Its own gate is that
+adding a class is a *widening*: it needs an adversarial pass proving no
+`sendmail`/`nc`/`ssh`/`osascript` path lands inside it — the same attack that
+produced the current fail-closed default (RES-018).
+
+Second, independently: **give the non-Bash tools a classifier arm.** 2,353
+records are tools (`CronList`, `ToolSearch`, `Agent`, `SendMessage`,
+`WebFetch`, `ScheduleWakeup`, the `mcp__brain__*` family) that fall through
+`classify_action` to `AMBIGUOUS` because nothing matches them — a read-only
+`ToolSearch` and a `WebFetch` are not the same action, and today neither is
+anything at all.
+
 ### 4.6 The ceiling classes are not a safe subset either
 
 The obvious salvage — enforce only the six hard ceilings, which are positively
@@ -271,9 +374,17 @@ Measured: `_act_with_undo_gap` returns `None` (gate allows) for all seven of
 
 ### 5.1 The surface
 
-`instance/config/authority-exceptions.yml` — **deny-only**, empty by default,
-re-read on every tool call. Same shape the Captain already ruled for
+`instance/config/authority-exceptions.yml` — **deny-only**, re-read on every
+tool call. Same shape the Captain already ruled for
 `instance/config/act-first-surfaces.yml`: a `denylist:` he appends to.
+
+Only the **`.example` ships**; the live file is absent by default, which is
+behaviourally identical to an empty denylist and avoids two real problems: the
+egg export would otherwise delete a file two shipped tests read (no materialize
+transform exists for it, unlike `act-first-surfaces`), and a present file makes
+the loader reach `import yaml` on every call — so a deployment missing PyYAML
+would go from "degrades to the regex fallback" to "every tool call blocked,
+including Read".
 
 ```yaml
 version: 1
@@ -306,21 +417,48 @@ self-inflicted denial of service rather than an escalation. That is what makes
 germline ceremony. `act-first-surfaces.yml` is schg-locked precisely because it
 *grants*.
 
-**Stated plainly so it is not mistaken for containment:** the file is unlocked —
-which is what makes it Captain-editable — and officers run as the same uid.
-Deleting a row through a channel this gate does not see (a launchd job, a
-subprocess of an already-allowed command, anything outside `pre-tool-use.sh`)
-restores the cabinet's own verdict. So this is a **preference channel** that
-holds against drift, mistake and an officer's ordinary tool calls; it is **not a
-boundary** that holds against an officer trying to defeat it. The boundary is
-germline, and promoting this path there is a Captain ceremony — recorded as the
-retirement path in §7.
+**Stated plainly, and MEASURED — this is not containment.** The path is on
+neither of `pre-tool-use.sh`'s protected lists, so an ordinary officer tool call
+erases it. Probed through the real hook:
 
-What it *does* guarantee is that erasure is **loud rather than silent**. The
-first version of this code used `path.is_file()`, so `ln -sf /dev/null <path>`
-read as ABSENT — an empty denylist, no error, every exclusion gone. Presence in
-any form with the wrong shape now fails closed and names the shape. Found by
-attacking my own implementation; pinned by three arms in each battery.
+| probe | result |
+|---|---|
+| `Write` over the file | exit 0 (allowed) |
+| `Bash: echo 'denylist: []' > <file>` | exit 0 (allowed) |
+| `Bash: rm -f <file>` | exit 0 (allowed) |
+| `Bash: truncate the file to 0 bytes` | exit 0 (allowed) |
+| *contrast:* `Write` to `instance/config/act-first-surfaces.yml` | **exit 2** (refused) |
+
+Four of those erasures are **SILENT**: an absent, empty, or `denylist: []` file
+is legitimately the ruled posture and is indistinguishable from a deliberate
+Captain edit. Only a WRONG-SHAPE file (symlink, directory, corrupt YAML) fails
+closed. The refusal string also names the row that blocked the call, which helps
+a cooperative officer and hands an uncooperative one the string to delete.
+
+So this is a **preference channel**: it holds against drift, mistake, and an
+officer that is not trying to defeat it. It is **not a boundary**. An earlier
+draft of this section claimed it held against "an officer's ordinary tool calls"
+and that erasure was "loud rather than silent" — both were false, caught by
+adversarial review, and are corrected here rather than softened. The same probe
+table is in the shipped `.example`'s own header, because the person who most
+needs to know is the Captain deciding whether to rely on a row.
+
+The fix is the hook half of the Captain's own ruling: one enumerated
+`hook_protected` entry in `framework/policies/immutable-core.yml` plus the two
+`pre-tool-use.sh` lists, on the `shared/interfaces/captain-vetoes.yml`
+precedent (hook-protected, deliberately NOT schg-locked, so the Captain keeps
+editing it without root). It is not in this PR because adding a path changes the
+Ring-0 **set**, which `immutable-core.yml` reserves to the Captain in its own
+header. Proposed in
+`docs/proposals/authority-exceptions-hook-protection-2026-07-27.md`; it edits
+the same `pre-tool-use.sh` that §6.3 already forces onto the Captain's bench, so
+it costs no extra window.
+
+What the shape check *does* buy is narrower and still worth having: a
+**wrong-shape** file cannot masquerade as an empty one. The first version used
+`path.is_file()`, so `ln -sf /dev/null <path>` read as ABSENT — every exclusion
+gone, no error. Found by attacking my own implementation; three arms in each
+battery.
 
 ### 5.3 Failure semantics
 
@@ -331,7 +469,7 @@ attacking my own implementation; pinned by three arms in each battery.
 | present, unreadable | **every call refused until repaired** — an unreadable Captain exclusion list is never ignored (same clause as `act-first-surfaces.yml`) |
 | present as a symlink | refused, naming the shape (the enforcement plane's convention: a control surface is a real file or it is broken — cf. the observe-only marker and `killswitch-read.sh`) |
 | present but not a regular file (directory, device) | refused, naming the shape |
-| a row with no predicate | **load error**, not a wildcard — a row matching everything reads like a typo and behaves like an outage |
+| a row with no predicate, a non-string predicate value, a non-string `id`, or an `action_type` outside the classifier enum | **load error**, not a silent no-op — a row that cannot mean what it looks like is refused, naming the row and the problem |
 | a row that cannot be evaluated | that row refuses |
 
 E-stop unchanged and total: `rm instance/config/authority-enforcing` disarms the
@@ -342,13 +480,13 @@ whole typed plane, this surface with it. Proven (probe E17 below).
 Two layers, both of which **fail against pre-change code** — verified by
 reverting `policy-shadow.py` to HEAD and re-running:
 
-* `cabinet/scripts/lib/tests/test_captain_exceptions.py` — 22 tests. Against
-  pre-change code: **16 failed, 3 passed** (measured at 19 tests, before the
-  three shape arms were added). After: 22 passed.
+* `cabinet/scripts/lib/tests/test_captain_exceptions.py` — 31 tests. Against
+  pre-change code: **16 failed, 3 passed** (measured at the 19 tests that
+  existed then). After: 31 passed.
 * `cabinet/tests/hook-regression/captain-exceptions.sh` — 19 probes driving the
   **real `pre-tool-use.sh`**. Against pre-change code: **PASS=10 FAIL=7**
-  (measured at 17 probes). After: PASS=19 FAIL=0. Wired into
-  `run-hook-regression.sh`, so CI keeps it.
+  (measured at the 17 probes that existed then). After: PASS=19 FAIL=0. Wired
+  into `run-hook-regression.sh`, so CI keeps it.
 
 Both directions, at the hook:
 
@@ -458,11 +596,17 @@ needed to know.
 
 In dependency order. None of these is a threshold change; all are composition.
 
-1. **Give the classifier a vocabulary for developer tooling.** Either widen
-   `_LOCAL_ONLY_BINARIES` + `_GIT_LOCAL_SUBCOMMANDS` deliberately (a *widening*,
-   so it needs its own adversarial gate), or add a risk class for "local
-   toolchain" that the matrix maps to `act_with_undo`. Target: the
-   `unclassified` bucket below ~1% of calls, re-measured with this instrument.
+1. **Give the matrix a risk class for running commands on this machine** —
+   §4.5b decomposes why this, and not allowlist surgery, is the high-leverage
+   move: the vocabulary has no row for "run a build tool", 34.4%+ of the
+   ambiguous bucket is the shell parser failing to resolve command words at all,
+   and greedy allowlist widening tops out at 84.4% using entries
+   (`gh`, `sudo`, `python3`, `source`) that would delete the property the
+   allowlist exists to prove. Do the two cheap legitimate pieces as well (pure
+   shell builtins; the local git write verbs). Adding a class is a *widening*,
+   so it needs the adversarial pass that produced the current default.
+   Target: the `unclassified` bucket below ~1% of calls, re-measured with this
+   instrument.
 2. **Fix ceiling precision** (§6.2), re-measured the same way.
 3. **Discharge the journaling precondition** (§4.8) — route raw officer
    Edit/Write through the write-ahead lane, or block them at the hook so only

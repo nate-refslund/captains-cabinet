@@ -46,6 +46,29 @@ HONESTY PROPERTIES (each one is a sensor that could otherwise lie):
     `ORG_POLICY_SHADOW_RECORD=0` is also forced, though that flag is read only by
     policy-shadow.py and never by the engine.
 
+RE-RUNNING IT (the whole point — this number decides when the flip becomes
+possible, so it must not be a one-off):
+
+    # 1. rebuild the corpus from the live shadow record, read-only
+    python3.12 cabinet/scripts/authority-matrix-dryrun.py --extract corpus.jsonl
+    # 2. measure
+    python3.12 cabinet/scripts/authority-matrix-dryrun.py corpus.jsonl \
+        --verify-cache 300 --policy-timeout 1.5 --json out.json
+
+`--extract` reads `cabinet/cache/org-runtime.sqlite3` through a `mode=ro` URI,
+takes `event_type='policy.shadow_decision'` (the record pre-tool-use.sh writes
+itself), de-duplicates on (officer, tool, input, second), drops the pytest
+fixture rows suites leave in the live DB, and drops `officer=unknown`
+(developer/CI sessions, `$OFFICER` unset). Those filters are the corpus's
+honesty and are applied HERE rather than in a one-off script so the next
+session gets the same population.
+
+BASELINE OF RECORD — 2026-07-27, master 0ab0cc2b, guardian posture:
+    80,307 records · 10,652 blocked today · 52 no-verdict · 69,603 allowed today
+    52,659 NEWLY BLOCKED = 75.66%
+Compare against this. A materially different number means the corpus, the
+classifier or the matrix moved — find out which before trusting it.
+
 CORPUS FORMAT — JSONL, one object per line, any of these shapes:
     {"tool_name": "Bash", "tool_input": {"command": "..."}, "officer": "cos"}
     {"tool_name": "Read", "tool_input": {...}, "ts": "2026-07-20T10:00:00Z"}
@@ -265,6 +288,54 @@ def _action_type(tool_name: str, tool_input: dict) -> str:
         return "<classifier-error>"
 
 
+_FIXTURE_MARKERS = ("/workspace/product/", "sed -i \'s/x/y/\'", "/workspace/testburg/")
+
+
+def extract_corpus(db_path: str, out_path: str) -> int:
+    """Rebuild the replay corpus from the live shadow record. READ-ONLY.
+
+    Opened through a `mode=ro` URI so a measurement can never write the
+    deployment's event store. Returns the record count written.
+    """
+    import hashlib
+    import sqlite3
+
+    con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    rows = con.execute(
+        "SELECT actor, created_at, payload_json FROM org_events "
+        "WHERE event_type='policy.shadow_decision'"
+    )
+    seen: set = set()
+    kept = 0
+    with open(out_path, "w", encoding="utf-8") as fh:
+        for actor, ts, payload_json in rows:
+            try:
+                payload = json.loads(payload_json) if isinstance(payload_json, str) else payload_json
+            except Exception:  # noqa: BLE001
+                continue
+            if not isinstance(payload, dict) or not payload.get("tool_name"):
+                continue
+            tool_input = payload.get("tool_input")
+            if not isinstance(tool_input, dict):
+                tool_input = {}
+            officer = (payload.get("shadow_decision") or {}).get("officer") or actor or "unknown"
+            if officer == "unknown":
+                continue                     # developer/CI session, not the fleet
+            blob = json.dumps(tool_input, sort_keys=True)
+            if any(m in blob for m in _FIXTURE_MARKERS):
+                continue                     # pytest fixtures written into the live DB
+            key = (officer, payload["tool_name"],
+                   hashlib.sha1(blob.encode()).hexdigest(), str(ts or "")[:19])
+            if key in seen:
+                continue
+            seen.add(key)
+            fh.write(json.dumps({"officer": officer, "tool_name": payload["tool_name"],
+                                 "tool_input": tool_input, "ts": ts}) + "\n")
+            kept += 1
+    con.close()
+    return kept
+
+
 def _load_corpus(paths: list[str]) -> tuple[list[dict], int]:
     records: list[dict] = []
     malformed = 0
@@ -291,6 +362,12 @@ def _load_corpus(paths: list[str]) -> tuple[list[dict], int]:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__ and __doc__.splitlines()[0])
     ap.add_argument("corpus", nargs="+", help="JSONL corpus file(s)")
+    ap.add_argument("--extract", metavar="OUT.jsonl",
+                    help="rebuild the corpus from the live shadow record "
+                         "(read-only) and exit; pass the output path")
+    ap.add_argument("--db", default=None,
+                    help="event store for --extract "
+                         "(default <CABINET_ROOT>/cabinet/cache/org-runtime.sqlite3)")
     ap.add_argument("--json", dest="json_out", help="write the full result object here")
     ap.add_argument("--top", type=int, default=25, help="rows per breakdown table")
     ap.add_argument("--examples", type=int, default=3, help="example calls per bucket")
@@ -302,6 +379,16 @@ def main(argv: list[str] | None = None) -> int:
                     help="per-policy wall-clock bound; a breach is REPORTED, not "
                          "swallowed (0 = unbounded, like the live hook)")
     args = ap.parse_args(argv)
+
+    if args.extract:
+        db = args.db or str(Path(os.environ.get("CABINET_ROOT") or _REPO_ROOT)
+                            / "cabinet" / "cache" / "org-runtime.sqlite3")
+        if not Path(db).is_file():
+            print(f"FATAL: no event store at {db} — pass --db.", file=sys.stderr)
+            return 2
+        n = extract_corpus(db, args.extract)
+        print(f"wrote {n} records to {args.extract} (read-only from {db})")
+        return 0
 
     records, malformed = _load_corpus(args.corpus)
     if not records:

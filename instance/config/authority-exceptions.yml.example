@@ -40,11 +40,21 @@
 #                              is outside it, we do not act.
 #
 # WHAT THIS IS NOT — measured, not assumed. This file is unlocked so YOU can
-# edit it, and the officers run as the same user. It is on NEITHER of the hook's
-# protected-path lists today, so an ordinary officer tool call can erase it:
-# Write over it, `echo 'denylist: []' >` it, or `rm` it all currently succeed.
-# Four of those are SILENT, because an absent or empty list is legitimately the
-# ruled posture and looks identical to your own edit.
+# edit it, and the officers run as the same user. It is on NEITHER of the
+# hook's protected-path lists today. Probed through the real pre-tool-use.sh:
+#
+#     probe                                              result
+#     ------------------------------------------------   ------
+#     Write over this file                               exit 0   (allowed)
+#     Bash: echo 'denylist: []' > this file              exit 0   (allowed)
+#     Bash: rm -f this file                              exit 0   (allowed)
+#     Bash: truncate this file to 0 bytes                exit 0   (allowed)
+#     -- contrast --
+#     Write to instance/config/act-first-surfaces.yml    exit 2   (refused)
+#
+# Four of those erasures are SILENT: an absent, empty, or `denylist: []` file is
+# legitimately the ruled posture and is indistinguishable from your own edit.
+# Only a WRONG-SHAPE file (symlink, directory, corrupt YAML) fails closed.
 #
 # So a row here holds against drift and mistake. It does NOT hold against an
 # officer trying to remove it. Making it a wall is one entry in the Ring-0 list
