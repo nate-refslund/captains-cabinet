@@ -17,9 +17,18 @@ building if the outage cannot disable it:
     ABSENCE, and absence is exactly what an outage produces.
 
 So this module never raises an alarm and never talks to the Captain. It is a
-heartbeat that the act of talking EMITS. That also makes it the north-star
-instrument: time-since-last-confirmed-contact is both the alarm and the
-denominator of "value per unit of Captain attention".
+heartbeat that the act of talking EMITS.
+
+WHAT IT MEASURES, CORRECTED 2026-07-26. This docstring used to call
+time-since-last-confirmed-contact "the denominator of value per unit of Captain
+attention". That framing is retired: it made Captain contact the cost term to
+divide by, i.e. something to minimise, and the Captain's 2026-07-25 ruling
+reworded the metric to attention WELL SPENT — the share of his minutes spent on
+decisions only he could make — which makes UNDER-asking a failure exactly as
+much as over-asking. Read this signal the other way round: a heartbeat that has
+STOPPED is the org having gone dark, which is now a first-class failure and not
+a saving. The value term itself lives in ``framework/ovi/components.yml`` as
+``captain_attention_well_spent`` and reads 0.0 at zero contact.
 
 WHAT IT DELIBERATELY IS NOT. This is not a direct-to-Captain alert tier. The
 constitution's P-Alerts-To-Chair rule stands untouched: every operational alert
@@ -281,3 +290,39 @@ def _default_opener(url: str, timeout: int) -> int:
     req.add_header("User-Agent", "cabinet-liveness/1")
     with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
         return int(getattr(resp, "status", 0) or 0)
+
+
+def status(cfg: dict | None = None,
+           config_path_override: str | None = None) -> dict:
+    """Is this dead-man ARMED, and if not, why not — WITHOUT any network.
+
+    ``{"armed": bool, "instance_id": str|None, "events": {name: reason}}``
+    where each reason is the same machine-readable token ``resolve`` returns
+    (``ready`` = that event will fire).
+
+    WHY THIS EXISTS (2026-07-26). An absence detector that is itself silently
+    absent is the worst fail-open there is: the whole design promises "the
+    watcher alarms when the pings stop", and an unconfigured emitter produces
+    exactly the same observable — no pings — as a dead cabinet. Until this
+    function, the unarmed state was reachable only by a caller inspecting a
+    swallowed ``reason`` on a per-event ``emit`` return, which is to say: not
+    reachable. This makes the arming state a first-class question anything can
+    ask, cheaply and offline.
+
+    IT DOES NOT ARM ANYTHING, and it deliberately cannot. Arming needs a real
+    off-machine watcher — an account with a ping service, a registered check,
+    and a per-instance slug — which is an external act, not a code change. A
+    default config shipped with the framework would be worse than none: a
+    default endpoint silently phones a stranger's host, and a shared default
+    slug makes a DEAD instance indistinguishable from a QUIET one, which is the
+    precise confusion this detector exists to remove. See
+    ``instance/config/liveness.yml.example`` for the operator's activation step.
+    """
+    conf = cfg if cfg is not None else load_config(config_path_override)
+    events = {name: resolve(name, conf)["reason"] for name in KNOWN_EVENTS}
+    instance = (conf.get("instance_id") or "").strip() or None
+    return {
+        "armed": any(reason == "ready" for reason in events.values()),
+        "instance_id": instance,
+        "events": events,
+    }

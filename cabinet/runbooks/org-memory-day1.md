@@ -162,7 +162,7 @@ interview) emits the instance layer:
 | `memory-reconcile` | nightly 03:30 (after the 03:00 backup, before the 03:45 apoptosis sweep) | re-hashes the watch list, queue-embeds hook-missed / hash-drifted files; summary line in the service log (generated-plist convention `~/Library/Logs/cabinet/memory-reconcile.log`; hq's pre-fix 2026-07-07 install writes `~/.cabinet/logs/memory-reconcile.log`) — installed via the §4 generate-plists pattern like self-improvement-loop |
 | `falsifier-daily` | daily 08:05 | daily line carries the per-source_type **memory-ingestion liveness** object + ALERT lines (the observability half over the best-effort hooks) |
 | `retrieval-eval` | nightly 03:50 (after the 03:30 reconcile settles the store, before the 07:10 doctor) | the **refinement gate** (§7): recall@k + MRR floors over `memory_search` in BOTH arms (hybrid+rerank AND `--no-rerank` blended order); one verdict JSONL line/night in `cabinet/logs/retrieval-eval-history.jsonl` (runtime, gitignored); exit 1 on breach |
-| `self-improvement-loop` | every 6h, **`REPORT_ONLY: "1"`** | see §6 — propose+validate runs, apply/promote/graduate withheld until first weekly review |
+| `self-improvement-loop` | every 6h, **`REPORT_ONLY: "0"` (ARMED 2026-07-26)** | see §6 — propose+validate runs and accepted proposals APPLY through the green gate; every application is journalled and individually revertible |
 
 Install/reload pattern for manifest rows (used for self-improvement-loop,
 2026-07-07): `python3.12 cabinet/scripts/generate-plists.py` → cp
@@ -200,15 +200,47 @@ is the deliberate step.
    store the first nights may print `NOTOK status=no-pairs` — expected
    until the harvester finds enough durable-knowledge rows.
 
-## 6. Self-improvement loop — REPORT_ONLY soak (audit-ratified)
+## 6. Self-improvement loop — ARMED (Captain ruling 2026-07-26)
 
 The R8 growth engine (`framework.learning.self_improvement_loop`, wrapper
 `cabinet/cron/self-improvement-loop.sh`) chains propose → validate →
-**auto-apply** with no Captain wait. The ratified plan requires an
-observe-first soak: the fleet row ships `env: { REPORT_ONLY: "1" }`.
+**auto-apply** with no Captain wait.
 
-**Semantics under `REPORT_ONLY=1`** (wrapper maps the env onto the
-driver's `--report-only` flag; `1|true|yes|on`, case-insensitive):
+**STATE OF RECORD: ARMED.** The row carries `env: { REPORT_ONLY: "0" }` since
+the Captain's 2026-07-26 ruling. He chose to arm it now, over the
+recommendation to sequence it behind the independent-recompute soak, with the
+risk stated; his reasoning of record is that the cabinet with good context
+out-reasons him. The soak semantics below are retained because flipping back
+to `"1"` is the one-switch rollback.
+
+**What the armed loop can and cannot mutate** (measured 2026-07-26, before
+arming — re-measure before trusting this list again):
+
+| can mutate | cannot |
+|---|---|
+| role capability lists (`instance/roles/active/<slug>.yml`) | **code — by construction**: `_is_code_diff_proposal` routes every `code_change`/`code_diff` proposal (and anything with a non-empty `diff`) to `framework.learning.gate.ratify`, which produces an EVIDENCE PACK and applies nothing |
+| a role's DESCRIPTIVE `authority_level` — read by officers as roster context (`cabinet/scripts/lib/officer-boot.sh:143`), **not** by the enforcement plane; the machine authority answer stays the matrix × posture × lane resolution | germline anything — apply stays a Captain-manual ceremony |
+| skill-draft `status:` flips in `memory/skills/evolved/` (sovereign posture only) | the authority matrix, posture, grants, vetoes |
+| proposal-YAML status stamps (`instance/roles/proposals/*.yml`) | |
+
+**The two safeguards the Captain ordered with the arming** (both live):
+
+- **(a) individually reversible + logged.** Every application appends one row
+  to `cabinet/logs/self-improvement-applications.jsonl` carrying what changed,
+  why, the evidence it cited, and its exact inverse. One command reverts any
+  single application:
+  `python3.12 cabinet/scripts/self-improvement-journal.py --undo <application_id>`
+  (`--list`, `--show <id>`, `--dry-run` alongside). Double-undo is refused;
+  an application with no recorded pre-image refuses rather than guessing.
+- **(b) a visible weekly line.** The weekly shadow-dividend report
+  (`shared/interfaces/cognitive/shadow-dividend-<date>.md`, produced by the
+  `cog3-shadow-dividend` fleet row) carries a
+  **"Self-improvement — applied to itself"** section listing the week's
+  applications with their why and evidence. Empty weeks say so explicitly, so
+  a quiet loop never reads as a dead one.
+
+**Semantics under `REPORT_ONLY=1`** (the rollback state; the wrapper maps the
+env onto the driver's `--report-only` flag; `1|true|yes|on`, case-insensitive):
 
 - Propose + the validation gate (scenario evals + golden shells) **run
   for real**; a RED evaluated gate still exits 3 with the FATAL stderr
@@ -226,11 +258,12 @@ driver's `--report-only` flag; `1|true|yes|on`, case-insensitive):
   `.out.log`/`.err.log`) shows a `REPORT-ONLY` block + one grep-able
   `REPORT_ONLY_SUMMARY: {...}` JSON line per run.
 
-**Weekly review → arming auto-apply:** read the accumulated
-`REPORT_ONLY_SUMMARY` lines / `would_apply` payloads; when the Captain is
-satisfied, flip the services.yml row env to `REPORT_ONLY: "0"`, re-render
-(`generate-plists.py`), reinstall + reload the one label (§4 pattern).
-Flip back to `"1"` any time — the env is the whole switch.
+**Arming / disarming:** flip the services.yml row env between
+`REPORT_ONLY: "0"` (armed) and `"1"` (soak), re-render
+(`generate-plists.py`), reinstall + reload the one label (§4 pattern). The env
+is the whole switch, in both directions. Armed since 2026-07-26; the weekly
+review surface is now the shadow-dividend section (b) above rather than the
+`REPORT_ONLY_SUMMARY` lines.
 
 **Caveats (updated by the 2026-07-07 review fix):** REPORT-ONLY is now the
 wrapper's DEFAULT — an UNSET `REPORT_ONLY` runs `--report-only`, so manual

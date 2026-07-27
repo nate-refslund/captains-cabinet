@@ -244,10 +244,10 @@ test refuses a `retired` row whose marker is still in the tree.
 - **Closed:** everything that matters in shadow. Replay refusal is real for a single process (`idempotency_replay`, panel double-run probe); row-carried idempotency keys are never trusted (the key is re-derived); the log itself cannot corrupt — `append_shadow_log` takes an `O_EXCL` lock, writes an `O_EXCL` tmp, fsyncs and `os.replace`s, and losers fail LOUD.
 - **Open:** `replay_keys` are READ before that lock is taken (`cabinet/scripts/cog4-dispatch-shadow.py:858-863`, versus the lock at `:625-658`), so two dispatchers racing one log could each record `would_dispatch` for the SAME idempotency key.
 - **Why open:** zero effect surface exists this phase — nothing dispatched in shadow reaches the world, so a doubled `would_dispatch` RECORD is the entire blast radius. The review disposition is explicit: not ship-blocking in shadow, and it binds the future cutover amendment rather than this phase.
-- **Declared at:** `shared/interfaces/reviews/cognitive-core-phase-4-review.md:362`
+- **Declared at:** `shared/interfaces/reviews/cognitive-core-phase-4-review.md:454`
 - **Anchor:** `Shadow-log replay window`
 - **Retirement:** the cutover amendment REQUIRES read+check+append under one lock, and `cog4-dispatch-shadow.py` (or its cutover successor) implements it, before any dispatch becomes real. In the SAME commit as that amendment landing: flip this row to `retired` and record the implementing commit here. Until then this row is the carrier — the review artifact is digest-bound and frozen, so it cannot be updated in place.
-- **Note:** this residual is declared in a FROZEN review artifact and has no in-code marker. Registering it here is the only reason it survives a refactor of the dispatcher. The cite moved `:233` → `:320` at this register's landing: two re-bind ceremonies (`fcad8e47`, `598868ed`) inserted an 88-line block at `:70`, ABOVE the findings table, leaving the P1 row byte-identical but 87 lines lower. Expect the same re-point at each future re-bind — the row is not drifting, the file is growing above it. This is the pin working: a frozen artifact cannot be updated in place, so the cite is the only thing that can move.
+- **Note:** this residual is declared in a FROZEN review artifact and has no in-code marker. Registering it here is the only reason it survives a refactor of the dispatcher. The cite moved `:233` → `:320` at this register's landing: two re-bind ceremonies (`fcad8e47`, `598868ed`) inserted an 88-line block at `:70`, ABOVE the findings table, leaving the P1 row byte-identical but 87 lines lower. Expect the same re-point at each future re-bind — the row is not drifting, the file is growing above it. This is the pin working: a frozen artifact cannot be updated in place, so the cite is the only thing that can move. Re-pointed `:362` → `:434` on 2026-07-27 by the attention-well-spent landing (`fix/attention-silence-ratchet`), whose census-allowance row forced TWO re-bind ceremonies — one for the branch itself and a second when the branch merged master ac56ce78, which had left COG-4 BLOCK by landing its own contract rows without discharging the ceremony. The two inserted 39 and 33 net lines into the digest-note preamble ABOVE the findings table, so the P1 row is again byte-identical and 72 lines lower. Third and fourth occurrences, same cause, exactly as this note predicted; the cite is re-pointed once, to the final position.
 
 ### RES-008 — COG-4 W1 u3: officer-plist instance leakage NOT cleaned up (PARKED)
 
@@ -393,13 +393,19 @@ Order does not matter. Whichever lands last pays, and the gate names the exact
 
 ## Legacy exemptions — shrink-only
 
-Two marker sites in the sweep surface are NOT residuals and carry no row:
-`cabinet/scripts/egg-export-manifest.txt:233` and `:653`, both reading
-`RESIDUAL SCRUB` — they describe scrub rules already EXECUTED (2026-07-21), not
-open channels. They are exempted by exact `path:line` in the pin test with a
-hard maximum, so the list can shrink and never grow. Rewording them out of the
-sweep is blocked for a good reason: that file is inside the frozen COG-4 review
-digest scope, and touching it would force a re-bind ceremony.
+Two marker sites in the sweep surface are NOT residuals and carry no row: the
+two `RESIDUAL SCRUB` comment blocks in `cabinet/scripts/egg-export-manifest.txt`
+— they describe scrub rules already EXECUTED (2026-07-21), not open channels.
+They are exempted by exact `path:line` in the pin test (`LEGACY_EXEMPT` in
+`cabinet/scripts/tests/test_declared_residuals_register.py`, with a hard
+maximum) so the list can shrink and never grow. **The line numbers live only in
+that test, deliberately:** any row added to the manifest above a marker shifts
+its cite, and the test's own comment records each re-anchor with its cause
+(233→235 by the egg egress-default flip, 235→242 by the captain-availability
+dial). Quoting them here as well made this paragraph rot silently on the first
+such shift. Rewording the markers out of the sweep is blocked for a good reason:
+that file is inside the frozen COG-4 review digest scope, and changing marker
+TEXT would force a re-bind ceremony (adding unrelated manifest rows does not).
 
 ## Known limits of this register — stated, not hidden
 

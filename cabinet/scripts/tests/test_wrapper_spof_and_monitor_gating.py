@@ -7,11 +7,22 @@ made ``source`` non-zero, the ``&&`` chain short-circuited, and the service
 the best-effort source with ``;`` (+ a ``[ -r ]`` guard); ``cd`` failure still
 aborts.
 
-#52: ``healthchecks-drill`` + ``memory-curator-health`` are hardwired to a
+#52: ``healthchecks-drill`` + ``memory-curator-health`` were hardwired to a
 personal screenpipe source and shipped ENABLED, so on a box with no personal
-source they alert forever. The fix marks both ``disabled: true`` — excluded
+source they alert forever. The fix marked both ``disabled: true`` — excluded
 from the rendered fleet AND from the watchdog's no-silent-cron floors (so
 disabling them can never manufacture a false-DEAD, the #59 class).
+
+#52 UPDATE 2026-07-26 (Captain arm-the-cabinet ruling): ``healthchecks-drill``
+was RE-POINTED off the personal sensor onto the cabinet's own hourly dead-man
+and enabled, so it is no longer a member of the parked set. The #52 PROPERTY is
+not relaxed — it is machine-checked on the newly-enabled row instead of assumed:
+``test_drill_carries_no_personal_source_coupling`` reads the drill's default
+target constants out of the AST and REDs if either one ever points back at a
+personal source while the row is enabled, and
+``test_drill_is_credless_safe`` proves the surviving cries-wolf path (no
+healthchecks keys) exits 0 with a DRILL_SKIP line instead of paging weekly.
+``memory-curator-health`` stays parked and stays in the list.
 
 Run: python3.12 -m pytest cabinet/scripts/tests/test_wrapper_spof_and_monitor_gating.py -q
 """
@@ -29,7 +40,12 @@ import yaml
 _REPO = Path(__file__).resolve().parents[3]
 _SCRIPT = _REPO / "cabinet" / "scripts" / "generate-plists.py"
 _SERVICES = _REPO / "cabinet" / "services.yml"
-_SCREENPIPE_MONITORS = ("healthchecks-drill", "memory-curator-health")
+# Rows still hardwired to a personal source: they must ship parked.
+# healthchecks-drill LEFT this set 2026-07-26 (re-pointed at the cabinet's own
+# ledger-liveness dead-man) — its replacement guards are the two tests at the
+# bottom of this file, which are strictly stronger than membership here.
+_SCREENPIPE_MONITORS = ("memory-curator-health",)
+_DRILL = Path(__file__).resolve().parents[3] / "cabinet" / "scripts" / "healthchecks-drill.py"
 
 
 def _load_gp():
@@ -145,3 +161,56 @@ def test_screenpipe_monitors_excluded_from_watchdog_floors():
         row = next(e for e in entries if e["name"] == name)
         assert row["disabled"] is True          # parses as disabled...
         assert name not in floored              # ...so excluded from floors
+
+
+# ===========================================================================
+# #52 successor guards — the RE-POINTED drill (2026-07-26 Captain ruling)
+# ===========================================================================
+def test_drill_carries_no_personal_source_coupling():
+    """The drill may only ship ENABLED while its defaults name a CABINET-owned
+    target. Re-pointing it back at a personal sensor without re-parking the row
+    is exactly the #52 regression, so it REDs here."""
+    import ast
+    row = next(s for s in _services() if s["name"] == "healthchecks-drill")
+    tree = ast.parse(_DRILL.read_text())
+    defaults = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        for tgt in node.targets:
+            if isinstance(tgt, ast.Name) and tgt.id in ("TARGET_SLUG", "WATCHDOG_LABEL"):
+                # os.environ.get(NAME, "default") — the default is arg 2.
+                assert isinstance(node.value, ast.Call), \
+                    f"{tgt.id} must stay env-overridable with an explicit default"
+                assert len(node.value.args) == 2, f"{tgt.id} needs a literal default"
+                defaults[tgt.id] = ast.literal_eval(node.value.args[1])
+    assert set(defaults) == {"TARGET_SLUG", "WATCHDOG_LABEL"}, defaults
+    if not row.get("disabled"):
+        for name, value in defaults.items():
+            assert "screenpipe" not in value.lower(), (
+                f"healthchecks-drill is ENABLED but {name} defaults to a personal "
+                f"source ({value!r}) — #52 regression; re-park the row or re-point it")
+        assert defaults["WATCHDOG_LABEL"].startswith("com.cabinet."), defaults
+        target = defaults["TARGET_SLUG"]
+        owner = defaults["WATCHDOG_LABEL"].split("com.cabinet.", 1)[1]
+        assert any(s["name"] == owner and not s.get("disabled") for s in _services()), (
+            f"drill kickstarts {owner!r}, which is not an enabled services.yml row — "
+            f"the recovery leg would fail every week")
+        assert target, "drill target slug must not be empty"
+
+
+def test_drill_is_credless_safe(tmp_path):
+    """No healthchecks keys = no external dead-man to drill. That is an honest
+    absence: one DRILL_SKIP line, exit 0 — never a weekly page (#52's surviving
+    cries-wolf path). Runs a COPY in a tmp tree so no live cabinet/.env is read
+    and no network call can happen (main() returns before any request)."""
+    dest = tmp_path / "cabinet" / "scripts" / "healthchecks-drill.py"
+    dest.parent.mkdir(parents=True)
+    dest.write_text(_DRILL.read_text())
+    env = dict(os.environ)
+    env["HOME"] = str(tmp_path / "home")
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    proc = subprocess.run([sys.executable, str(dest)], capture_output=True,
+                          text=True, env=env, timeout=120)
+    assert proc.returncode == 0, (proc.stdout, proc.stderr)
+    assert "DRILL_SKIP" in proc.stdout

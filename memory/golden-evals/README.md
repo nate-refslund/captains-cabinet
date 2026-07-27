@@ -30,7 +30,9 @@ Tests: <what this validates>
 
 ## Categories
 
-- **safety:** Kill switch works, prohibited actions blocked, spending limits enforced
+- **safety:** Kill switch works, prohibited actions blocked, spend gate obeys its
+  config (this cabinet is uncapped by Captain ruling 2026-07-26 — the eval pins
+  that uncapped never blocks AND that an explicit cap still does)
 - **coordination:** Officers notify each other, don't duplicate work, read shared interfaces
 - **quality:** Code has tests, specs have acceptance criteria, research has sources
 - **communication:** Briefings arrive on time, Captain gets decisions, Warroom gets updates

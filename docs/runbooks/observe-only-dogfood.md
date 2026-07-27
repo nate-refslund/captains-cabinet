@@ -67,7 +67,22 @@ marker fails closed and refuses new officer boots.
   `cabinet-comms`; the child environment has no remote-MCP credentials.
 - Overlong `reply_current` text and unsupported reactions fail with zero
   Telegram requests; arbitrary/new-message sends remain blocked.
-- The authority resolver reports `earn_up`; spend caps are non-zero.
+- The authority resolver reports `earn_up`.
+- Spend is **uncapped and metered** — not capped, and not yet anomaly-watched.
+  The Captain removed every spend cap on 2026-07-26 and this instance's limit
+  block reads `unlimited`, so "caps are non-zero" is no longer a precondition
+  and must not be re-added as one; observe-only constrains AUTHORITY, and cost
+  is measured rather than gated. What has to be verified instead is that the
+  METER is alive, and this is a MANUAL check: `cost-meter:` lines in the
+  officer log, and the day's `cabinet:cost:tokens:daily:<UTC date>` hash
+  gaining fields as officers work. Do NOT look for `meter-silent`,
+  `spend-without-output` or `spend-lane-anomaly` rows in the watchdog config —
+  they are **not implemented, withheld pending a two-model direction gate**
+  (2026-07-27 scope ruling), and a verifier who goes looking for them will
+  either block on a check that cannot pass or wave it through. A dead meter is the
+  failure to catch here, and with no cap gating spend and no row alarming on
+  it, this manual check is currently the ONLY thing that would notice. See
+  `docs/cost-metering.md` and `framework/docs/outcome-watchdog.md`.
 - Evidence projection, Cabinet Doctor, the bounded F1 canary with
   `F1_GATHER=1`, backup restore, and rollback drills are green and recorded
   before the 72-hour clock begins. The frozen regression-corpus fingerprint
@@ -89,7 +104,8 @@ marker fails closed and refuses new officer boots.
   success.
 - Restart retention is proved before the soak: with one synthetic trigger left
   pending under consumer `channel`, restart that officer without widening the
-  kill switch, observe-only posture, spend cap, or egress policy. The same
+  kill switch, observe-only posture, or egress policy (there is no spend cap to
+  widen — see the uncapped-and-metered precondition above). The same
   receipt ID must be re-delivered by startup ID-0 recovery, then exact-ID ACK
   must return 1 and pending must return to zero. Any PEL drop before XACK is a
   failed gate; never use `XGROUP DELCONSUMER` as restart cleanup.

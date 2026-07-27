@@ -232,3 +232,75 @@ def test_consumer_id_traversal_rejected(feed_dir, bad_id):
         feed.load_cursor(bad_id)
     with pytest.raises(ValueError):
         feed.store_cursor(bad_id, 1)
+
+
+# ---------------------------------------------------------------------------
+# TAP ATTRIBUTION: situation_key resolved at journal time (2026-07-26)
+#
+# Measured on the live feed before this change: 21 Captain taps (callback /
+# reaction / poll_answer), 0 of them carrying a situation_key. Joining them
+# back to sends through telegram_message_id recovered only 6 — every other tap
+# was a Captain action the org could not attribute to anything.
+# ---------------------------------------------------------------------------
+
+
+def test_situation_key_resolves_from_the_send_it_answers(feed_dir):
+    feed.append_event({"direction": "out", "kind": "queue-card",
+                       "telegram_message_id": 4242, "situation_key": "sit-abc123"})
+    assert feed.situation_key_for_message(4242) == "sit-abc123"
+
+
+def test_situation_key_accepts_a_string_message_id(feed_dir):
+    feed.append_event({"direction": "out", "kind": "queue-card",
+                       "telegram_message_id": 77, "situation_key": "sit-xyz"})
+    assert feed.situation_key_for_message("77") == "sit-xyz"
+
+
+def test_situation_key_picks_the_newest_matching_send(feed_dir):
+    feed.append_event({"direction": "out", "kind": "queue-card",
+                       "telegram_message_id": 9, "situation_key": "sit-old"})
+    feed.append_event({"direction": "out", "kind": "queue-card",
+                       "telegram_message_id": 9, "situation_key": "sit-new"})
+    assert feed.situation_key_for_message(9) == "sit-new"
+
+
+def test_situation_key_never_inherits_from_another_tap(feed_dir):
+    """A tap inherits from a SEND, never from another inbound row."""
+    feed.append_event({"direction": "in", "kind": "callback",
+                       "telegram_message_id": 5, "situation_key": "sit-in"})
+    assert feed.situation_key_for_message(5) is None
+
+
+# --- degenerate ends: each must be None, never a WRONG attribution ---------
+
+
+def test_situation_key_no_matching_send(feed_dir):
+    feed.append_event({"direction": "out", "kind": "queue-card",
+                       "telegram_message_id": 1, "situation_key": "sit-a"})
+    assert feed.situation_key_for_message(999) is None
+
+
+def test_situation_key_matching_send_without_a_key(feed_dir):
+    """The send genuinely had no situation identity, so neither does the tap —
+    it must NOT fall through to some other message's key."""
+    feed.append_event({"direction": "out", "kind": "message",
+                       "telegram_message_id": 3})
+    feed.append_event({"direction": "out", "kind": "queue-card",
+                       "telegram_message_id": 4, "situation_key": "sit-other"})
+    assert feed.situation_key_for_message(3) is None
+
+
+def test_situation_key_empty_feed(feed_dir):
+    assert feed.situation_key_for_message(1) is None
+
+
+def test_situation_key_junk_message_id(feed_dir):
+    for bad in (None, 0, "", "abc", [], {}):
+        assert feed.situation_key_for_message(bad) is None
+
+
+def test_situation_key_reads_stay_total_on_a_corrupt_journal(feed_dir):
+    """A tap must be journaled whether or not it can be attributed."""
+    feed_dir.mkdir(parents=True, exist_ok=True)
+    (feed_dir / "feed-2026-07-26.jsonl").write_text("{not json\n", encoding="utf-8")
+    assert feed.situation_key_for_message(42) is None

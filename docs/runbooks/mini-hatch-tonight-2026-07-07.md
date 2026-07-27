@@ -243,11 +243,15 @@ write).
    happens on the Mini. If an agent fails: `launchctl print gui/$(id -u)/<label>`
    for last-exit; PATH gaps are the historical failure class.
 4. **Healthchecks.io dead-man registration.** Create the checks (per
-   `cabinet/services.yml` expected-floors; at minimum verifier + drill-failed),
-   assign ALERT CHANNELS (the 2026-07-02 drill found API-created checks ship
-   with EMPTY channel lists — an alarm wired to nobody), put the ping/API
-   keys in `cabinet/.env` (names-not-values everywhere else). The weekly
-   `healthchecks-drill.py` then exercises the alarm end-to-end.
+   `cabinet/services.yml` expected-floors; at minimum verifier, drill-failed
+   and **`ledger-liveness`** — the drill's target since the 2026-07-26
+   re-point off the Captain's personal screenpipe sensor), assign ALERT
+   CHANNELS (the 2026-07-02 drill found API-created checks ship with EMPTY
+   channel lists — an alarm wired to nobody), put the ping/API keys in
+   `cabinet/.env` (names-not-values everywhere else). The weekly
+   `healthchecks-drill.py` then exercises the alarm end-to-end. Skipping this
+   step is allowed: with no keys in `cabinet/.env` the drill logs one
+   `DRILL_SKIP` line and exits 0 rather than paging every Sunday.
 
 ## Rollback (nothing severs)
 

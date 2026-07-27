@@ -1,0 +1,5 @@
+key,title,status,assignee,due,updated,component
+LEDG-4417,Reconcile job misses rows when a batch is retried,In Progress,eng-kestrel,2026-08-07,2026-07-21,ledger-api
+LEDG-4462,Migrate settlement writes off the v1 router,In Progress,eng-kestrel,2026-10-14,2026-07-22,ledger-api
+LEDG-4488,Add lag alerting for the reconcile job,Blocked,eng-kestrel,2026-08-14,2026-07-09,ledger-api
+PLAT-2210,Review the on-call rota for ledger-api,To Do,eng-kestrel,2026-08-01,2026-06-30,platform

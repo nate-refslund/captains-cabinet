@@ -45,6 +45,33 @@ captain_timezone: Europe/Berlin       # <YOUR-IANA-TIMEZONE> — auto-adjusts fo
 # these slots.
 briefing_times: ["07:30", "19:30"]
 
+# =============================================================
+# Captain availability — the declared time budget the org fits into
+# =============================================================
+# How much of the captain's day this cabinet is entitled to. Asked once at
+# cabinet-init (framework.onboarding.availability) and stamped HERE; adjusted
+# later from the phone with "availability 20m" / "availability part_time" /
+# "availability away", which appends to instance/config/captain-availability.yml
+# and OVERRIDES this key (see captain-availability.yml.example).
+#
+# The rule this exists to enforce: THE ORG FITS THE DECLARED BUDGET, NEVER THE
+# REVERSE. The Captain-Seat Review judges every ask relative to it (an ask that
+# is fair at full_time is friction at minutes-a-day), and the comms-surface
+# pacing cap scales from it when the deployment has not set its own cap.
+#
+# OMITTING BOTH KEYS IS LEGAL and means UNKNOWN — "the org does not know how
+# much of the captain it is entitled to". Consumers then keep their own
+# conservative defaults; nothing invents a number. Do NOT stamp a placeholder.
+#
+#   captain_availability_minutes_per_day — 0..1440. The value that rules.
+#   captain_availability_mode            — OPTIONAL label, one of the fixed
+#       verbs away | minimal | part_time | substantial | full_time (bands:
+#       0 / 10 / 30 / 120 / 480 min per day — framework.env.AVAILABILITY_MODES
+#       is the one source of truth). With no minutes key, the mode's band
+#       supplies the number.
+# captain_availability_minutes_per_day: 30
+# captain_availability_mode: part_time
+
 # Founder's Telegram chat ID — used by hooks to detect Captain conversations
 # Find yours: look at the chat_id field in incoming Telegram messages
 captain_telegram_chat_id: "<YOUR-TELEGRAM-CHAT-ID>"

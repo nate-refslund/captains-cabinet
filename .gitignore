@@ -114,6 +114,14 @@ instance/config/standing-grants.yml
 instance/config/comms-charter.yml
 instance/config/comms-charter-amendments.jsonl
 instance/config/comms-charter-proposals.jsonl
+# The captain's DECLARED time budget — the availability dial (Captain ruling
+# 2026-07-26). Written at RUNTIME by cabinet/scripts/lib/captain_availability.py
+# when he types "availability 20m" on his phone; read by
+# framework.env.captain_availability(). His own declaration about his own day,
+# never repo content. Tracked twin: captain-availability.yml.example; the file
+# is carried across deploys by runtime-provision.sh's INSTANCE_PERSISTENT_FILES
+# (losing it would silently return the org to UNKNOWN and re-widen pacing).
+instance/config/captain-availability.yml
 # Deployment-local (product/captain-agnostic foundation, 2026-07-14): the
 # concrete war-room census seed list — real product/personal items belong
 # here, never in the tracked seed-war-room.py (tracked twin: war-room-seed.yml.example)

@@ -1,0 +1,4 @@
+# Feature flags read at boot. A flag removed here is removed from the service.
+ledger_shadow_read: true
+ledger_batch_settlement: false
+settlement_v2_router: true

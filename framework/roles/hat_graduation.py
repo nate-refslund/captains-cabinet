@@ -6,21 +6,46 @@ capability:
   1. **Base capabilities** — declared in the role's charter; rarely change.
   2. **Hats** — temporary specializations a role wears for a mission context.
 
-A hat that proves consistently useful (≥N uses across ≥N missions, without
-OVI regression during its use) is a candidate for **graduation**: its
-capabilities become permanent base capabilities of the role, and the hat
-itself can be retired (or kept for accounting).
+A hat that proves consistently useful (≥N uses across ≥N missions) is a
+candidate for **graduation**: its capabilities become permanent base
+capabilities of the role, and the hat itself can be retired (or kept for
+accounting).
 
 This module reads the event ledger to:
   - count hat uses (role_hat_assigned events) per (role_slug, hat_slug)
   - infer the use window (first → last assignment)
-  - check whether OVI regressed during that window
   - emit `role_hat_promoted` proposal events for hats meeting criteria
 
 Criteria (configurable):
   - uses ≥ 5
   - distinct missions ≥ 5
-  - OVI mean during use window not lower than 2% below baseline
+
+NO OVI INPUT — DELIBERATE, AND ENFORCED (Captain rider, 2026-07-25). Until
+2026-07-26 this module ALSO gated a candidate on ``_ovi_regression_during()``,
+which replayed ``ovi_snapshot_computed`` and read its ``composite_score``.
+That made the OVI composite a **selection input**, which the standing Captain
+rider forbids absolutely: OVI is a Captain-FACING instrument and must never
+select, rank, or gate anything. The wire is cut, and
+``framework/tests/test_ovi_never_a_selection_input.py`` fails the suite if any
+selection/ranking/gating path reads the composite or the attention term again.
+
+Two independent reasons it had to go, either sufficient:
+
+  1. **The rider.** A dormant violation is still a violation — this path feeds
+     ``framework.learning.self_improvement_loop._apply_hat_graduations``, which
+     emits ``role_capability_added``, so the composite was one snapshot away
+     from mechanically widening a role's permanent capabilities.
+  2. **It never worked.** The check failed OPEN at both degenerate ends — no
+     snapshot in the window returned False (no regression), and no baseline
+     before the window returned False as well — and the live ledger holds ZERO
+     ``ovi_snapshot_computed`` events, so in its entire life it never once
+     refused a candidate. Removing it changes no observed behaviour; it only
+     removes the wire.
+
+The composite it read is itself now known to have been mis-signed: its
+attention term scored a week of ZERO Captain contact and ZERO delivery a
+perfect 1.00 (see ``framework/ovi/components.yml``). A selection input built
+on that would have rewarded going quiet.
 
 Output: proposals for Captain to ratify. Each proposal is a draft amendment
 to the role's charter (add capabilities, remove the hat). On ratification,
@@ -48,7 +73,6 @@ from framework.events.emitter import emit, replay
 # Defaults
 DEFAULT_MIN_USES = 5
 DEFAULT_MIN_MISSIONS = 5
-DEFAULT_OVI_REGRESSION_THRESHOLD = 0.02  # 2%
 
 
 def _hat_usage_from_events() -> dict[tuple[str, str], dict[str, Any]]:
@@ -96,50 +120,17 @@ def _hat_usage_from_events() -> dict[tuple[str, str], dict[str, Any]]:
     return usage
 
 
-def _ovi_regression_during(
-    first_iso: str | None,
-    last_iso: str | None,
-    threshold: float,
-) -> bool:
-    """True if any OVI snapshot during the window dropped > threshold below the prior baseline.
-
-    If no OVI snapshots exist in the window, returns False (no evidence of regression).
-    """
-    if not first_iso:
-        return False
-
-    snapshots = replay(event_types=["ovi_snapshot_computed"])
-    in_window = [
-        s for s in snapshots
-        if (not first_iso or s["created_at"] >= first_iso)
-        and (not last_iso or s["created_at"] <= last_iso)
-    ]
-    if not in_window:
-        return False
-
-    baseline_candidates = [
-        s for s in snapshots
-        if first_iso and s["created_at"] < first_iso
-    ]
-    if not baseline_candidates:
-        return False
-    baseline_score = float(
-        (baseline_candidates[-1].get("payload") or {}).get("composite_score", 0)
-    )
-
-    for s in in_window:
-        score = float((s.get("payload") or {}).get("composite_score", 0))
-        if (baseline_score - score) > threshold:
-            return True
-    return False
-
-
 def graduation_candidates(
     min_uses: int = DEFAULT_MIN_USES,
     min_missions: int = DEFAULT_MIN_MISSIONS,
-    ovi_threshold: float = DEFAULT_OVI_REGRESSION_THRESHOLD,
 ) -> list[dict[str, Any]]:
-    """Return all (role, hat) pairs that meet graduation criteria + have not yet promoted."""
+    """Return all (role, hat) pairs that meet graduation criteria + have not yet promoted.
+
+    Criteria are USE EVIDENCE ONLY: uses, distinct missions, not-yet-promoted.
+    No OVI term participates — see the module docstring's "NO OVI INPUT"
+    section for the Captain rider that forbids it and the two independent
+    reasons the removed check was both unlawful and inert.
+    """
     usage = _hat_usage_from_events()
     candidates: list[dict[str, Any]] = []
     for (role, hat), bucket in usage.items():
@@ -148,8 +139,6 @@ def graduation_candidates(
         if bucket["uses"] < min_uses:
             continue
         if len(bucket["missions"]) < min_missions:
-            continue
-        if _ovi_regression_during(bucket["first"], bucket["last"], ovi_threshold):
             continue
         candidates.append({
             "role_slug": role,

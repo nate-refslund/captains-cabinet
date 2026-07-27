@@ -371,8 +371,17 @@ def decide(item: dict, *, ch: "dict | None" = None,
     # exempt (never quieted); the standing-edit path already returned above.
     if demoted_kinds and not resolved["floor"] \
             and item.get("kind") in demoted_kinds:
+        # The REASON is carried, not assumed (2026-07-26). ``demoted_kinds``
+        # may be the reason-bearing mapping from ``queue.demotions()`` or the
+        # legacy bare set; a demotion driven by the Captain repeatedly saying
+        # NO is different evidence from one driven by nobody looking, and a
+        # journal that spells both "expiry-streak" cannot tell them apart —
+        # which is how 58 of 58 live demote rows came to read `card-expiry`.
+        why = (demoted_kinds.get(item.get("kind"))
+               if isinstance(demoted_kinds, dict) else None)
         return {**base, "action": "briefing",
-                "reason": "class-demoted-expiry-streak"}
+                "reason": (f"class-demoted-{why}" if why
+                           else "class-demoted-expiry-streak")}
 
     # (3) Timing — quiet hours + ping-now demotion (Captain tz).
     #
@@ -582,17 +591,22 @@ def deliver(decision: dict, *, send_fn=None, edit_fn=None, briefing_fn=None,
     return {"status": "suppressed", "sent": False, "reason": decision.get("reason")}
 
 
-def _live_demoted_kinds() -> "frozenset | None":
-    """H5 live wiring for the submit path: kinds past the charter expiry-
-    streak bar, from the recent ledger. Best-effort — None (no demotions)
-    on any read failure, so a broken ledger can never mute the channel."""
+def _live_demoted_kinds() -> "dict | None":
+    """H5 live wiring for the submit path: ``{kind: reason}`` for kinds past a
+    charter demote bar, from the recent ledger. Best-effort — None (no
+    demotions) on any read failure, so a broken ledger can never mute the
+    channel.
+
+    Returns the REASON-BEARING mapping (``queue.demotions``) rather than the
+    bare set, so ``decide`` can journal WHY a kind was quieted: repeated
+    Captain rejection and repeated non-response are different failures."""
     try:
         from datetime import timedelta
-        from framework.attention.queue import demoted_kinds
+        from framework.attention.queue import demotions
         from framework.fidelity.consequence import read_ledger
         since = (datetime.now(timezone.utc) - timedelta(days=30)) \
             .strftime("%Y-%m-%dT%H:%M:%SZ")
-        return frozenset(demoted_kinds(read_ledger(since=since)))
+        return dict(demotions(read_ledger(since=since)))
     except Exception:
         return None
 
