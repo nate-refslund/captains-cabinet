@@ -263,6 +263,53 @@ temporary_allowances:
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: COG-7 compaction folds the classifier into the projection kernel, or the recipient set becomes structurally typed (a list of parsed addresses carried on the action rather than a free-text field re-parsed at the gate, removing the multi-address channel entirely)
+  - phase: hook-redos
+    budget: framework_production_noncomment_lines
+    additional: 1
+    reason: >-
+      closes an AVAILABILITY defect in the enforcer, measured on the live
+      shadow record before anything was changed. The sed entry of
+      policy_engine._WRITE_PATTERNS — type bash_write_to_path, already in
+      policy-shadow's _LEGACY_ENFORCING_TYPES, so its verdict is a live
+      refusal — nested the ambiguous statement-run twice in one expression.
+      The negated class in that run also matches both quote characters, so
+      every quoted span is tileable two ways and answering "no match" costs
+      2**(quote pairs). Replaying the recorded shadow decisions, 52 of 80,307
+      real officer tool calls exceeded 1.5s inside this one policy, the
+      smallest an ordinary 889-byte heredoc; a 73-byte synthetic exceeds 10s
+      and a 61-byte one takes 1.6s. pre-tool-use.sh puts NO time bound on the
+      evaluation, so such a command pins the officer's own gate at 99% CPU
+      indefinitely with nothing reporting it. FIX — ONE named constant,
+      _STMT_RUN (+1 line), used for both occurrences, killing BOTH ambiguities:
+      the quoted alternative must CONTAIN a separator (so a separator-free
+      command degenerates to a single linear scan), AND it anchors on the FIRST
+      separator, without which a span holding s separators still has s parses
+      inside the outer star — a draft that fixed only the first was still
+      exponential and died in 110 bytes under a hostile sweep. A constant rather
+      than two inline copies precisely because a future editor fixing one and
+      missing the other is the duplicate-source bug this codebase keeps
+      deleting. The sibling perl pattern is NOT fixed here and is registered as
+      RES-019: it is polynomial rather than exponential, and the obvious repair
+      was measured to NARROW the rule.
+      EQUALITY IS PROVED IN BOTH DIRECTIONS, not assumed - rewrite every
+      separator-free quoted span of any old tiling as its individual
+      characters and exactly the new form remains; and every new alternative
+      is a subset of an old one. So the safety rule is not narrowed: a quoted
+      separator still cannot end a statement. Checked by exhaustive
+      enumeration (6,725,601 strings over a class-complete alphabet up to
+      length 8, plus the full pattern over 41,371 token compositions, 0
+      mismatches) and by replaying all 80,307 recorded calls through the real
+      evaluate_policy. Atomic groups were unavailable AND would have been
+      wrong: the hook invokes bare python3, which is 3.9.6 on the target, and
+      these runs must backtrack for the flag and path to match after them. The
+      fail-closed evaluation timeout is defence in depth, not the fix, and
+      lives in cabinet/ outside this budget. EXACT measured running total
+      (69316 vs 69315 base), 2026-07-27, via cognitive-architecture-census.py
+      — the zero-headroom observed==max law means this is the exact new total,
+      never a pre-allocated ceiling
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: bash_write_to_path stops matching command TEXT and matches a parsed invocation instead (the content-vs-action fix the same dry run flagged as finding 6.2), which removes the run-of-command-text construct entirely, or COG-7 compaction folds the write-path matcher into the projection kernel
 # ── The EXPANSION REGISTRY (two-model gate adjudication, 2026-07-27) ─────────
 # temporary_allowances above pay for MASS and ask only reason/owner/sunset —
 # declaration, not adjudication. That gap is measured, not theoretical: an

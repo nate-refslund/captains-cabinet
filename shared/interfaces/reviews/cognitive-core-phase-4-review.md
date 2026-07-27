@@ -21,7 +21,13 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: b8ee235e0c34bd2af9d592c7128af6a9ba215b6edf97030376c715ef16347306
+Reviewed-Scope-Digest: 7750002a3ccbf9f6d857cc0468228b156d4585d98149ab39930ec9914b2162bf
+(RE-BOUND 2026-07-27, `fix/hook-redos`, was b8ee235e0c34: `cabinet/config/cognitive-architecture-contract.yml`
+is in EXPECTED_SCOPE, and the hook-ReDoS landing adds ONE `temporary_allowances` row to it — paying for the
++1 framework line of `policy_engine._STMT_RUN` at the pinned zero-headroom maximum. Nothing in the COG-4
+surface itself changed: no organ, projection, scheduler, manifest, snapshot/schedule/dispatch CLI or cog4
+test moved. Re-bound in the SAME commit as the byte change, per the §15 landing rule, so the binding keeps
+failing closed on any later one-sided edit.)
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
