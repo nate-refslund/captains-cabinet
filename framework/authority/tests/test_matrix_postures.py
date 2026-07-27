@@ -49,10 +49,13 @@ _HARD_CEILING_ROWS = {
 # region is SOV-9's golden suite; this pin catches any verdict-level drift).
 # RECONCILE 2026-07-05: kept both — the pin below reflects main's ratified
 # trust-inversion floor (reversible = act_with_undo day-one + the fix-wave
-# read_only_dispatch / draft_only class split, both enforced by
-# _validate_act_first_floor) while preserving sovereign's guardian-parity
-# discipline: guardian == the CURRENT root table, byte-untouched by the
-# posture axis.
+# read_only_dispatch / draft_only class split, the first of which
+# _validate_act_first_floor pins by equality) while preserving sovereign's
+# guardian-parity discipline: guardian == the CURRENT root table,
+# byte-untouched by the posture axis. UPDATED 2026-07-26 (CAPTAIN-RULING "the
+# act first, except for emailing real people"): draft_only is act-and-tell
+# (notify_after) at every non-demote state — the only row this pin has moved
+# since the posture axis landed.
 _EXPECTED_GUARDIAN = {
     "reversible": {
         "graduated": "act_with_undo", "eligible": "act_with_undo",
@@ -65,8 +68,8 @@ _EXPECTED_GUARDIAN = {
         "demote": "propose_only",
     },
     "draft_only": {
-        "graduated": "auto", "eligible": "propose_only",
-        "propose_only": "propose_only", "unmeasured": "propose_only",
+        "graduated": "notify_after", "eligible": "notify_after",
+        "propose_only": "notify_after", "unmeasured": "notify_after",
         "demote": "propose_only",
     },
     "pm_write": {
@@ -100,7 +103,8 @@ _EXPECTED_GUARDIAN = {
 # The EXACT §2.1 sovereign table the floor must ship.
 # RECONCILE 2026-07-05: kept both — §2.1 table extended with main's two
 # fix-wave risk classes, MIRRORING the guardian rows (read_only_dispatch is
-# already act-and-tell; draft_only keeps the ADA-DECISION earn-up ladder —
+# already act-and-tell; draft_only became act-and-tell too on CAPTAIN-RULING
+# 2026-07-26 and mirrors the guardian row rather than climbing to auto —
 # a posture never silently widens a Captain-ruled row; demote stays
 # posture-invariant).
 _EXPECTED_SOVEREIGN = {
@@ -114,8 +118,8 @@ _EXPECTED_SOVEREIGN = {
         "demote": "propose_only",
     },
     "draft_only": {
-        "graduated": "auto", "eligible": "propose_only",
-        "propose_only": "propose_only", "unmeasured": "propose_only",
+        "graduated": "notify_after", "eligible": "notify_after",
+        "propose_only": "notify_after", "unmeasured": "notify_after",
         "demote": "propose_only",
     },
     "pm_write": {
