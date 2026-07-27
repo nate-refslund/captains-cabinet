@@ -23,6 +23,29 @@ fi
 REDIS_HOST="${REDIS_HOST:-localhost}"
 REDIS_PORT="${REDIS_PORT:-6379}"
 
+# FAIL-CLOSED SPEND REPORTING (2026-07-26). Until this date the per-officer read
+# below was `redis-cli ... 2>/dev/null` with a `|| DAILY_MICRO=0` coercion, so
+# with the control plane unreachable this job sent the Captain's group
+# `💰 Total: $0.00`, exit 0, stderr empty — proven BYTE-IDENTICAL to a true
+# zero-spend day. The outage rendered as a legitimate business result, on the
+# one surface that reaches him personally.
+#
+# The rule now: this job may never emit a number it cannot source. Either the
+# control plane is PROVEN readable and every figure is a proven read, or the
+# group gets one honest "cost data unavailable" line and no digest at all.
+# plane-read.sh returns VALUE / ABSENT / INDETERMINATE (the killswitch-read.sh
+# discipline); ABSENT after a proven-live plane is the ONLY legitimate zero.
+PLANE_LIB="$REPO_ROOT/cabinet/scripts/lib/plane-read.sh"
+UNAVAIL_REASON=""
+if [ -r "$PLANE_LIB" ]; then
+  # shellcheck disable=SC1090
+  . "$PLANE_LIB"
+fi
+if ! command -v plane_read_int >/dev/null 2>&1; then
+  # A missing/broken helper must NOT degrade to the old silent-zero path.
+  UNAVAIL_REASON="proven-read helper unavailable at $PLANE_LIB"
+fi
+
 # Use Captain timezone for the date (matches their day-cycle)
 TZ_NAME=$(grep captain_timezone "$REPO_ROOT/instance/config/platform.yml" 2>/dev/null | awk '{print $2}')
 TZ_NAME="${TZ_NAME:-UTC}"
@@ -65,14 +88,31 @@ if [ "${#OFFICERS[@]}" -eq 0 ]; then
 fi
 MSG="💰 Cabinet cost summary $TODAY"
 
+# Prove the plane ONCE up front, so an outage yields one honest line instead of
+# N innocent-looking zeroes. (Cheap: a single framed PING.)
+if [ -z "$UNAVAIL_REASON" ]; then
+  if ! plane_reachable; then
+    UNAVAIL_REASON="$PLANE_REASON"
+  fi
+fi
+
 TOTAL_MICRO=0
 # Empty-safe expansion (bash 3.2 + set -u): the totals-only branch above means
 # OFFICERS can be legitimately empty, and a bare "${OFFICERS[@]}" is an
 # unbound-variable fatal there. ${OFFICERS[@]+...} expands to zero words.
 for o in ${OFFICERS[@]+"${OFFICERS[@]}"}; do
-  # HGET the per-officer aggregate field from today's HSET
-  DAILY_MICRO=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGET "cabinet:cost:tokens:daily:$TODAY" "${o}_cost_micro" 2>/dev/null)
-  [[ "$DAILY_MICRO" =~ ^[0-9]+$ ]] || DAILY_MICRO=0
+  [ -n "$UNAVAIL_REASON" ] && break
+  # HGET the per-officer aggregate field from today's HSET — PROVEN read.
+  #   VALUE         a live server answered and returned this officer's spend.
+  #   ABSENT        a live server answered and the field is genuinely unset —
+  #                 the ONLY legitimate zero (officer spent nothing today).
+  #   INDETERMINATE could not read. NOT a zero. Abandons the whole digest.
+  plane_read_int HGET "cabinet:cost:tokens:daily:$TODAY" "${o}_cost_micro"
+  case "$PLANE_VERDICT" in
+    VALUE)  DAILY_MICRO="$PLANE_VALUE" ;;
+    ABSENT) DAILY_MICRO=0 ;;
+    *)      UNAVAIL_REASON="$PLANE_REASON"; break ;;
+  esac
   # Convert microdollars → dollars (integer cents for display)
   DAILY_CENTS=$(( DAILY_MICRO / 10000 ))
   DAILY_DOLLARS=$(( DAILY_CENTS / 100 )).$(printf "%02d" $(( DAILY_CENTS % 100 )))
@@ -81,11 +121,20 @@ for o in ${OFFICERS[@]+"${OFFICERS[@]}"}; do
   TOTAL_MICRO=$(( TOTAL_MICRO + DAILY_MICRO ))
 done
 
-TOTAL_CENTS=$(( TOTAL_MICRO / 10000 ))
-TOTAL_DOLLARS=$(( TOTAL_CENTS / 100 )).$(printf "%02d" $(( TOTAL_CENTS % 100 )))
-MSG="$MSG
+if [ -n "$UNAVAIL_REASON" ]; then
+  # NO digest, NO total, NO number of any kind — the Captain must be able to
+  # tell "I cannot read the spend" from "the cabinet spent nothing".
+  MSG="⚠️ Cabinet cost summary $TODAY — cost data unavailable: control plane unreachable.
+No spend figures are being reported because none could be sourced (this is NOT a zero-spend day).
+Detail: $UNAVAIL_REASON"
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) cost-summary: FATAL cost data unavailable — control plane unreachable: $UNAVAIL_REASON" >&2
+else
+  TOTAL_CENTS=$(( TOTAL_MICRO / 10000 ))
+  TOTAL_DOLLARS=$(( TOTAL_CENTS / 100 )).$(printf "%02d" $(( TOTAL_CENTS % 100 )))
+  MSG="$MSG
 
 Total: \$$TOTAL_DOLLARS"
+fi
 
 # Audit-fix 2026-05-23: timezone caveat documented.
 # launchd's StartCalendarInterval Hour=23 fires at 23:00 LOCAL (the user's TZ,

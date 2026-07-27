@@ -59,8 +59,28 @@ deployment's `watchdog.yml`):
 | `briefing-delivered` | Briefing DELIVERED to the Captain 2×/day (07:30 + 19:30 local) | auto-fix | **Satisfied by delivery via ANY means** (refinement below). Checks the `cabinet:schedule:last-run:cos:briefing` marker first (the Chair stamps it on every delivery, incl. a manual one); if ≥ the due slot → OUTCOME TRUE. Else falls back to the cron log: newest record `send.sent == True` after the slot = delivered; a fresh `sent:false` = ran-but-send-failed; a stale success = didn't-run. |
 | `officer-reflection` | Each fulltime officer that did recent work reflected within 48h | escalate-chair | Reuses the same `cabinet:schedule:last-run:<o>:reflection` + `cabinet:last-experience:<o>` stamps the anomaly-scan reads. Idle officers (no recent work) are not expected to reflect. |
 | `captain-decisions-logged` | Relayed Captain decisions are logged to `captain-decisions.md` | drift | Soft backstop to the real-time post-tool-use enforcement: flags if the newest dated entry is >7 days old (a structural lapse). |
-| `no-silent-cron-failure` | The cabinet's own crons produce output and don't silently error | escalate-chair | Per watched job log: error-marker in the tail (`FATAL`, `Traceback`, `trigger NOT pushed`) OR stale past cadence. |
+| `no-silent-cron-failure` | The cabinet's own crons produce output and don't silently error | escalate-chair | Per watched job log: error-marker in the tail (`JOB_ERROR_MARKERS`: `FATAL`, `Traceback (most recent call last)`, `trigger NOT pushed`, `trigger_send failed`, `NOGROUP`, `command not found`) OR stale past cadence. **Emitters must use a listed token** — from FW-027 until 2026-07-26 `triggers.sh` printed `trigger_send WARN … trigger NOT queued`, which matched none of them, so every dropped trigger was invisible here. The two sides are now pinned to each other by `cabinet/scripts/tests/test_trigger_marker_contract.py` (imports this tuple, drives `trigger_send` against a dead port) and by EVAL-009, which greps the emitted stderr for tokens read out of `registry.py` at eval time. |
 | `pipes-fresh` | Brain ingestion pipes (msgraph/teams/embeddings) fresh | escalate-chair | Log mtimes only (no Graph poll). pipe-watchdog auto-heals stalls; a residual stale pipe here = the heal didn't take. |
+
+> **KNOWN GAP — nothing here watches Redis itself** (measured 2026-07-26:
+> `git grep -i redis framework/watchdog/registry.py` → 0 hits). Every row above
+> reads the control plane through `Probe.redis_get`, which returns `""` for
+> BOTH "key unset" and "server gone" — so a dead plane makes them all report
+> absent outcomes with no way to attribute the absence. Observed the same day:
+> `cabinet:watchdog:outcome:heartbeat` 34.5h stale, 27.6× its own 75-minute
+> floor, nothing fired.
+>
+> A `control-plane-reachable` row (three-valued `Probe.redis_health()` using the
+> `killswitch-read.sh` nonce-sandwich) is fully built and test-pinned but **not
+> landed**: `framework_production_noncomment_lines` in
+> `cabinet/config/cognitive-architecture-contract.yml` is at **observed ==
+> maximum == 67578**, zero headroom, so any framework growth fails the census.
+> The only sanctioned path is a `temporary_allowances` row (phase / owner /
+> sunset / deletion_gate) in that contract — an architecture-contract amendment,
+> not a repair. Handed back rather than worked around. Note the row would not
+> have closed the full-outage case anyway: the Chair escalation XADDs to Redis.
+> The off-machine dead-man (`framework/liveness/deadman.py`) is what survives
+> that, and it is independent of this watchdog.
 
 **To add an expectation:** append one `Expectation(...)` to `_CATALOG` in
 `registry.py` with a `verify` fn that takes the `Probe` and returns a
