@@ -176,3 +176,49 @@ the instrument now exits 3 rather than reporting.
 Also fixed: `--extract` required a corpus positional it does not use, so the
 documented rebuild command failed with a usage error unless given a dummy path.
 The measurement was documented as repeatable and was not.
+
+## 7. Adversarial review round — what it broke and what it confirmed
+
+A fresh-context reviewer attacked the change on six axes. Full dispositions in
+`shared/interfaces/reviews/fix-propose-means-propose-cp1.md` §Checkpoint 2.
+
+**Confirmed, independently and by execution:** the allow set did not move.
+166,656 differential cases through both trees gave `ALLOW pre=20008
+post=20008`, **newly allowed = 0**, and zero differing message bytes; an AST
+pass found 5 `return None` sites before and 5 after at identical control-flow
+positions; a `settrace` run hit every allow line on both trees. The six
+ceilings could not be made to allow or to report a softer kind across posture,
+quarantine and hostile `classify_action` returns.
+
+**The one finding that mattered, and it is the mirror image of this change's
+thesis.** A floor whose `hard_ceiling` is missing, empty or mistyped sent every
+ceiling class down to the step-6 collapse — where, *because of this change*,
+it was labelled PROPOSE and filed a `capability` need reading *"grant
+autonomous external_message for this lane"*. The pre-existing bug was an
+undifferentiated block; this change converted it into **grantable headroom on
+the Captain's deny surface**. Fixed by fail-closing on the canonical ceiling
+set (`classifier.CEILING_CLASS_ACTION_TYPES`) rather than on what the floor
+claims. Deliberately narrow: an empty list stays legal for a matrix that
+declares no ceiling classes.
+
+**Three deliberately wrong implementations passed the entire 1199-test suite** —
+a constant marker path, an unclassified branch that files nothing, and an
+infinite refile window. Each destroys something the code comments promise and
+none was caught, because every arm used the same probe or the same cell. Three
+arms added; each mutant now fails and the control stays green. That is the
+difference between a test that describes an implementation and one that
+constrains it.
+
+Also fixed: a future-dated marker could mute a need forever (`abs()`); an unset
+`CABINET_ROOT` silently disabled the rate limit at 45.65 ms/call vs 3.87;
+`copy`/`pickle` raised where a plain `str` round-tripped; an undo-plane outage
+filed under the capability wording; and the kind sensor caught only a *total*
+coercion, not a partial one.
+
+**Carried forward, not fixed:** `policy-shadow.py:509 authority_decision()`
+re-implements the gate and records `propose_only` for both the unclassified
+bucket and the quarantine — the same misattribution this change fixes on the
+other half of the plane. The measurement above is unaffected (the dry run
+recomputes through the real gate), but the recorded field stays collapsed until
+that duplicate implementation is removed. And `authority-matrix-dryrun.py` has
+no test in any CI step, so the new counter and guards are unpinned.

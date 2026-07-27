@@ -170,7 +170,7 @@ budgets:
 temporary_allowances:
   - phase: propose-means-propose
     budget: framework_production_noncomment_lines
-    additional: 151
+    additional: 194
     reason: >-
       the propose/gate/unclassified verdict split in the authority gate.
       `main()` exited 2 on ANY non-None result, so `propose_only` ("above your
@@ -178,7 +178,7 @@ temporary_allowances:
       ("hard ceiling, no auto path exists") were OPERATIONALLY IDENTICAL: the
       verdict vocabulary was richer than enforcement could express, which is
       why the enforcing flip measured as an undifferentiated 52,659 refusals
-      (75.66%) when only 11,570 of them are ceilings. +151 measured 2026-07-27
+      (75.66%) when only 11,570 of them are ceilings. +186 measured 2026-07-27 (151 at first landing, +43 closing an adversarial review)
       with cognitive-architecture-census.py against master f77bcf45 (69315,
       itself exactly at the pinned maximum). The lines are: the GateDecision
       str-subclass carrying a STRUCTURED verdict field (a str subclass because
@@ -194,6 +194,16 @@ temporary_allowances:
       the single most important thing a later reader must not lose, and
       rewriting it into "#" comments to duck this counter would be buying a
       number with the explanation that stops someone widening it by accident.
+      The +43 closes an adversarial pass: a ceiling risk_class the floor's
+      `hard_ceiling` omits, mistypes or drops now GATES on the CANONICAL set
+      (classifier.CEILING_CLASS_ACTION_TYPES) instead of falling through to
+      the propose collapse (it was filing "grant autonomous external_message" onto
+      the Captain's deny surface), a future-dated rate-limit marker degrades to
+      re-file instead of muting a need forever, the marker path falls back to
+      the needs kernel's own root resolver instead of silently disabling the
+      limit at ~46ms/call, an undo-plane gap files its OWN reason rather than
+      deduping onto a capability request, and GateDecision gained
+      __getnewargs__ so copy/pickle round-trip as a plain str always did.
     owner: authority-plane
     sunset: '2027-01-19'
     deletion_gate: >-

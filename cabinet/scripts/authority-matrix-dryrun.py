@@ -177,7 +177,10 @@ def _install_side_effect_guards() -> list[str]:
     # only the append is suppressed.
     if callable(getattr(policy_engine, "_file_propose_need", None)):
         def _id_only(risk_class: str, action_type: str, lane: Any,
-                     officer: str) -> Any:
+                     officer: str, *args: Any, **kwargs: Any) -> Any:
+            # *args/**kwargs deliberately: this stub SHADOWS a real function,
+            # and a stub that pins the signature turns any later parameter
+            # into a hard crash of the measurement (it did once, on `why=`).
             needs_mod = getattr(policy_engine, "_needs", None)
             if needs_mod is None:
                 return None
@@ -577,7 +580,12 @@ def main(argv: list[str] | None = None) -> int:
     # That happened once. If the authority matrix is in the candidate set and
     # produced blocks, it is IMPOSSIBLE for none of them to carry a kind.
     if newly_blocked and "authority_matrix" in CANDIDATE_TYPES:
-        if not (set(by_kind) - {"legacy_typed"}):
+        # STRICT: a newly-blocked record is BY CONSTRUCTION blocked by the
+        # authority matrix (the baseline arm already allowed it), so a kindless
+        # record is impossible. The earlier `set(by_kind) - {"legacy_typed"}`
+        # form only caught a TOTAL coercion; a partial one — say only the
+        # ceiling branch — passed silently, which is the same class of hole.
+        if by_kind.get("legacy_typed", 0):
             print("FATAL: every newly-blocked record came back without a "
                   "verdict kind. The engine returns GateDecision (a str "
                   "subclass); something on the return path coerced it, so the "

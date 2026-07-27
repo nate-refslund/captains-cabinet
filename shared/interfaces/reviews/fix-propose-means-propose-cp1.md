@@ -99,3 +99,82 @@ one `os.stat`; true per-call counts already live in the shadow record.
   residual is 54.06% `unclassified`, which is a classifier problem. This change
   establishes that only **16.62%** of what the fleet runs is a genuine ceiling —
   the number a per-invocation sub-decider has to get down to.
+
+---
+
+# Checkpoint 2 — adversarial review round
+
+A fresh-context adversarial reviewer attacked the change on six axes. Its two
+headline results, then every finding and what was done.
+
+## Axis 2 — widening: CLEAN, independently proved
+
+- **Static:** AST-enumerated every `return` in `_eval_authority_matrix` on both
+  trees. 15 returns before, 15 after; **5 `return None` before, 5 after**, at
+  identical control-flow positions. No allow site added, removed or re-guarded.
+- **Dynamic:** **166,656 differential cases** (8 policy variants × 4 postures ×
+  7 cell states × 4 officers × ~174 tool/input pairs including junk types)
+  through both trees: `ALLOW pre=20008 post=20008` · **newly allowed = 0** ·
+  newly blocked = 0 · verdict-string differing cases = 0 · message-text
+  differing cases = 0.
+- **Coverage-proved:** a `sys.settrace` run hit all 5 allow-return lines in
+  both trees with 0 differences.
+
+## Axis 1 — hard ceilings: clean under the shipped floor
+
+Could not make any of the six classes allow or report `.kind != "gate"` across
+guardian / sovereign / earn_up / bogus posture, the quarantine stub,
+`classify_action` returning `None`/`""`/`42`/list/dict/`object()`, and a forced
+`auto` rung-lift at `graduated`. All 6 × 8 scenarios: `allow=False,
+kind='gate', filed=[]`.
+
+## Findings and dispositions
+
+| # | sev | finding | disposition |
+|---|---|---|---|
+| 1 | MED | a floor whose `hard_ceiling` is missing/empty/mistyped sent ceilings to the step-6 collapse, where they were labelled PROPOSE **and filed "grant autonomous external_message for this lane"** onto the Captain's deny surface | **FIXED** — the gate now fail-closes on the CANONICAL set (`classifier.CEILING_CLASS_ACTION_TYPES`), not the floor's own list. Deliberately narrow: an empty `hard_ceiling` stays legal for a matrix declaring no ceiling classes (a posture fixture relies on it); only a canonical ceiling class ABSENT from the list is corrupt. New arm covers `{}`, `[]`, a str, a dict, and a well-formed list that omits the class |
+| 2 | HIGH | same shape **plus** a hand-edited `verdicts.external_comms: auto` allows | **FIXED by #1** — pre-existing, needs an unlock window to reach; the canonical-set guard closes it at the gate |
+| 5 | LOW | `copy`/`deepcopy`/`pickle` raised `TypeError` where a plain `str` round-tripped | **FIXED** — `__getnewargs__`, with an arm |
+| 6 | LOW | the kind sensor caught only a TOTAL coercion; a partial one passed | **FIXED** — now asserts `legacy_typed == 0` |
+| 11 | MED | `CABINET_ROOT` unset silently disabled the rate limit — measured **45.65 ms/call vs 3.87** | **FIXED** — falls back to the needs kernel's own root resolver |
+| 12 | MED | a future-dated marker satisfied `delta < window` forever, permanently muting a need while the step kept being refused | **FIXED** — `abs()`, with an arm that back-dates a marker to 2027 |
+| 13 | LOW | an undo-plane outage filed under the capability wording and deduped onto a genuine below-bar refusal | **FIXED** — `_propose(why=…)`; the undo gap files its own reason naming it an undo-plane defect |
+| 14 | MED | **three deliberately wrong implementations passed the whole 1199-test suite**: a constant marker path, an unclassified branch that files nothing, and an infinite refile window | **FIXED** — three arms added. Verified as real sensors: each mutant now fails, control green |
+| 3, 4, 9, 10 | — | `__slots__` legal on a str subclass; `decision_kind` never raises; `need_id` cannot traverse (42 hostile inputs, all `NEED-[0-9a-f]{8}`); a filing failure never changes a verdict | NON-ISSUE, confirmed |
+
+### Mutation check — the new arms are sensors, not decoration
+
+| mutant | result |
+|---|---|
+| constant marker path | **1 failed** |
+| unclassified files nothing | **2 failed** |
+| `_PROPOSE_REFILE_SECONDS = 10**12` | **1 failed** |
+| `hard_ceiling` guard removed | **1 failed** |
+| control (unmutated) | 33 passed |
+
+## Carried forward, NOT fixed here — named so they are not lost
+
+- **#7 (MED) — the shadow twin still collapses the buckets.**
+  `cabinet/scripts/policy-shadow.py:509 authority_decision()` re-implements the
+  gate instead of calling `_eval_authority_matrix`, and its `verdict` field is
+  what the shadow record stores. It reports `propose_only` for BOTH the 37,624
+  unclassified calls and the quarantine, so anyone reading the recorded field
+  as "the propose bucket" gets the exact misattribution this change fixes on
+  the other half of the plane. **My measurement is unaffected — the dry run
+  recomputes through the real gate rather than reading that field.** Fixing it
+  properly means removing a duplicate implementation of the verdict logic,
+  which is larger than this unit.
+- **#8 (MED) — `authority-matrix-dryrun.py` has no test and is in no CI step.**
+  The `by_kind` counter, the `nargs="*"` fix, the `_id_only` guard and the
+  FATAL sensor are unpinned by CI. Worth a fixture-corpus test.
+- The `_id_only` guard stub crashed the measurement once when `_file_propose_need`
+  gained a `why=` parameter. Now `*args/**kwargs`: a stub that pins a shadowed
+  function's signature converts any later parameter into a hard failure.
+
+## Re-verification after the fixes
+
+framework **6989 passed** (1 pre-existing red) · `cabinet/scripts/tests` 4874
+passed · census PASS `69509 <= 69509` zero headroom · layer-sep OK · import
+gate OK · A13 GREEN 353/353 · germline SET identical · RES-007 cite re-pointed
+`:454 → :466` (the register predicts this at every re-bind) · **blast radius
+re-measured identical: 52,659 = 75.66%, split 16.62 / 4.98 / 54.06**.

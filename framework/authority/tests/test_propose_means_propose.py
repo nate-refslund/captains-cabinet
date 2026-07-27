@@ -33,6 +33,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -263,6 +264,139 @@ def test_propose_refiling_is_rate_limited(_root):
         PE._eval_authority_matrix(pol, *_PROPOSE_PROBE, "cto")
     caps = [r for r in _ledger_rows(_root) if r.get("kind") == "capability"]
     assert len(caps) == 1, f"expected 1 rate-limited row, got {len(caps)}"
+
+
+def test_distinct_cells_file_distinct_needs(_root):
+    """Two different refused cells must produce two DIFFERENT need ids.
+
+    MUTANT THIS KILLS: `_propose_need_marker` returning a constant path. Every
+    arm above uses one probe, so a constant marker suppresses every cell after
+    the first and the whole suite still passes — while the ledger collapses to
+    a single row and the "enumerated list of what the fleet is denied" becomes
+    one arbitrary entry.
+    """
+    pol = _policy()
+    a = PE._eval_authority_matrix(pol, *_PROPOSE_PROBE, "cto")
+    b = PE._eval_authority_matrix(pol, *_UNCLASSIFIED_PROBE, "cto")
+    assert a.need_id and b.need_id
+    assert a.need_id != b.need_id, "two distinct cells collapsed to one need"
+    caps = [r for r in _ledger_rows(_root) if r.get("kind") == "capability"]
+    assert len({r["id"] for r in caps}) == 2, (
+        f"expected 2 distinct needs on the ledger, got {[r['id'] for r in caps]}"
+    )
+
+
+def test_unclassified_actually_files(_root):
+    """The 71.5% blind spot leaves a record.
+
+    MUTANT THIS KILLS: the UNCLASSIFIED branch filing nothing. `test_unclassified_is_its_own_kind`
+    only checks the kind, so a branch that labels correctly and records
+    nothing passes — and the code comment's promise that the blind spot is
+    recorded becomes false.
+    """
+    result = PE._eval_authority_matrix(_policy(), *_UNCLASSIFIED_PROBE, "cto")
+    assert result.need_id, "unclassified filed no need"
+    caps = [r for r in _ledger_rows(_root) if r.get("kind") == "capability"]
+    assert [r for r in caps if r.get("risk_class") == "unclassified"], (
+        f"no unclassified capability row on the ledger: {caps!r}"
+    )
+
+
+def test_refiling_resumes_after_the_window(monkeypatch, _root):
+    """The rate limit is a WINDOW, not a permanent mute.
+
+    MUTANT THIS KILLS: `_PROPOSE_REFILE_SECONDS = 10**12`. The rate-limit arm
+    only proves suppression WITHIN the window, so an infinite window passes it
+    while the need is never re-filed again and `count`/`last_seen` freeze.
+    """
+    pol = _policy()
+    PE._eval_authority_matrix(pol, *_PROPOSE_PROBE, "cto")
+    before = len(_ledger_rows(_root))
+    monkeypatch.setattr(PE, "_PROPOSE_REFILE_SECONDS", 0)
+    PE._eval_authority_matrix(pol, *_PROPOSE_PROBE, "cto")
+    assert len(_ledger_rows(_root)) > before, (
+        "the window elapsed and the need was still never re-filed"
+    )
+
+
+def test_future_dated_marker_does_not_mute_the_need_forever(_root):
+    """A marker dated in the future must degrade to re-file, never to silence.
+
+    The marker is officer-writable runtime state outside the hook's protected
+    set, so `time.time() - mtime` alone lets a clock skew — or a deliberate
+    `touch -t 2036` — satisfy `< window` forever and permanently suppress the
+    audit record while the step keeps being refused.
+    """
+    pol = _policy()
+    first = PE._eval_authority_matrix(pol, *_PROPOSE_PROBE, "cto")
+    marker = PE._propose_need_marker(first.need_id)
+    assert marker and os.path.exists(marker)
+    future = time.time() + 365 * 24 * 3600
+    os.utime(marker, (future, future))
+    before = len(_ledger_rows(_root))
+    PE._eval_authority_matrix(pol, *_PROPOSE_PROBE, "cto")
+    assert len(_ledger_rows(_root)) > before, (
+        "a future-dated marker silenced the need permanently"
+    )
+
+
+def test_floor_without_a_usable_hard_ceiling_is_corrupt_not_permissive(_root):
+    """A malformed `hard_ceiling` must GATE every class, never propose it.
+
+    Without this, ceiling classes fall through to the step-6 collapse and get
+    labelled PROPOSE — filing a `capability` need that reads "grant
+    autonomous external_message for this lane". A change whose thesis is
+    "a refusal becomes legible as a proposal" must never put *grant me
+    outbound comms* on the Captain's deny surface.
+
+    The last case is the sharp one: a list that is well-formed but OMITS this
+    class. The canonical set decides, not the floor's own list.
+    """
+    for broken in ({}, {"hard_ceiling": []}, {"hard_ceiling": "external_comms"},
+                   {"hard_ceiling": {"a": 1}}, {"hard_ceiling": ["spend"]}):
+        pol = _policy()
+        pol.pop("hard_ceiling", None)
+        pol.update(broken)
+        tool, tool_input, _ = _CEILINGS["external_comms"]
+        result = PE._eval_authority_matrix(pol, tool, tool_input, "cto")
+        assert result is not None, f"{broken!r} ALLOWED a ceiling"
+        assert PE.decision_kind(result) == PE.GATE, (
+            f"{broken!r} resolved a ceiling to "
+            f"{PE.decision_kind(result)!r}, not GATE"
+        )
+    caps = [r for r in _ledger_rows(_root) if r.get("kind") == "capability"]
+    assert not [r for r in caps if r.get("risk_class") in _CEILINGS], (
+        f"a malformed floor filed a ceiling as grantable: {caps!r}"
+    )
+
+
+def test_undo_gap_is_not_filed_as_a_capability_request(_root):
+    """An undo-plane outage must not read as "grant me this autonomy".
+
+    The remedy for a missing inverse is registering one, not granting the
+    officer the action. Filing it under the capability wording asks the
+    Captain to grant away a broken undo plane.
+    """
+    nid = PE._file_propose_need(
+        "pm_write", "task_create", "cto", "cto",
+        why="undo plane unusable for task_create (lane cto): no inverse",
+    )
+    assert nid
+    rows = [r for r in _ledger_rows(_root) if r.get("id") == nid]
+    assert rows and "undo plane unusable" in rows[-1]["why"], (
+        f"undo-gap need filed with the capability wording: {rows!r}"
+    )
+
+
+def test_gate_decision_survives_copy_and_pickle(_root):
+    """copy/deepcopy/pickle must not raise where a plain `str` round-tripped."""
+    import copy as _copy
+    import pickle as _pickle
+    d = PE.GateDecision("PROPOSE-ONLY (x) — y", PE.PROPOSE, "NEED-abc12345")
+    for made in (_copy.copy(d), _copy.deepcopy(d), _pickle.loads(_pickle.dumps(d))):
+        assert made == str(d)
+        assert made.kind == PE.PROPOSE
+        assert made.need_id == "NEED-abc12345"
 
 
 # ---------------------------------------------------------------------------
