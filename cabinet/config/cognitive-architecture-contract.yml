@@ -109,12 +109,23 @@ budgets:
   # growth blocks. Shrink is always green.
   organ_manifests:
     path: cabinet/config/organs
-    pattern: "*.yml"
+    # EVERY manifest spelling the runtime loads, not just the one in use:
+    # framework/organs/registry.py MANIFEST_SUFFIXES = (".yml", ".yaml",
+    # ".json") and load_organ_manifests reads each of them out of this
+    # directory. A "*.yml"-only pin was DEFEATED by execution 2026-07-27 —
+    # a sixth organ named .yaml, declared in cabinet/services.yml, loaded by
+    # the registry (6 manifests) and derived a floor in
+    # framework/watchdog/registry.py::_parse_organ_manifests (6 entries),
+    # while the census still read organ_manifests 5 <= 5. Widening stays a
+    # DATA edit; this list tracks MANIFEST_SUFFIXES.
+    pattern: ["*.yml", "*.yaml", "*.json"]
     # An organ manifest IS a new scheduled decider — the composed runner reads
     # this directory and derives one freshness floor per organ from it
     # (framework/watchdog/registry.py _parse_organ_manifests). It was
     # un-budgeted: organs are YAML, so they cost the module and line budgets
-    # nothing. Missing directory = ERROR, never 0 — a contract path that
+    # nothing. Missing directory = ERROR, never 0 — and so is a path that
+    # exists but is NOT a directory (rglob over a regular file yields nothing,
+    # which read zero and passed until 2026-07-27). A contract path that
     # silently reads zero is a disabled sensor.
     maximum: 5
   claude_skills:
