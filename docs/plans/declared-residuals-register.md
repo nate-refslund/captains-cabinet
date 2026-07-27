@@ -402,8 +402,8 @@ maximum) so the list can shrink and never grow. **The line numbers live only in
 that test, deliberately:** any row added to the manifest above a marker shifts
 its cite, and the test's own comment records each re-anchor with its cause
 (233→235 by the egg egress-default flip, 235→242 by the captain-availability
-dial). Quoting them here as well made this paragraph rot silently on the first
-such shift. Rewording the markers out of the sweep is blocked for a good reason:
+dial, 242→248 by the captain-dates store). Quoting them here as well made this
+paragraph rot silently on the first such shift. Rewording the markers out of the sweep is blocked for a good reason:
 that file is inside the frozen COG-4 review digest scope, and changing marker
 TEXT would force a re-bind ceremony (adding unrelated manifest rows does not).
 
