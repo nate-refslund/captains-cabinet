@@ -424,6 +424,18 @@ describe('the forest enclosure ring — the frame, not a gradient', () => {
     expect(with_.length).toBeGreaterThan(without.length - on.length - 6)
   })
 
+  /**
+   * TIMEOUT, stated rather than left to the runner's default.
+   *
+   * This arm composes eighty islands and walks every belt item on each. It runs
+   * in about six seconds on a quiet machine, which is over vitest's 5s default,
+   * so it FAILED IN CI while passing locally — a wall-clock bound on a shared
+   * runner, not a regression. Raised to 60s: the point of the arm is the
+   * POPULATION (a rule is only as true as the population it was measured over),
+   * and cutting the seed count to fit a default would trade the thing it exists
+   * for. Sixty seconds is a real ceiling, not a disabled one — a genuine
+   * blow-up in composeLayout still trips it.
+   */
   it('nothing the belt plants stands on a lane or on a building — 80 islands', () => {
     // COVERAGE, not a new rule. The composed on-lane arms in iso-layout.test.ts
     // run on two islands; the size-aliasing above fires on about 2% of them and
@@ -454,7 +466,7 @@ describe('the forest enclosure ring — the frame, not a gradient', () => {
       }
     }
     expect({ lane, stacked, examples }).toEqual({ lane: 0, stacked: 0, examples: [] })
-  })
+  }, 60_000)
 
   it('the belt is on land, off the road, out of the water and off the paving', () => {
     for (const seed of SEEDS) {

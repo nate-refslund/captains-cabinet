@@ -42,6 +42,22 @@
 # (pervasive real personal-identity content in this pack's own docstrings +
 # test fixtures needs its own scrub pass first) — see the README before
 # flipping this rule.
+# WORLD ART — the iso pack's atlas and resolve table.
+#
+# COMMITTABLE but NOT (yet) REDISTRIBUTED. The atlas under
+# public/world-assets/originals/iso is the org's own commissioned art
+# ("owned — org-original", the class .gitignore already ratified as
+# committable), so it lives in this repo; the LimeZu packs beside it never do.
+# Shipping it in the PUBLIC export is a further step — it puts the org's art in
+# a stranger's hands — and that is the Captain's call, not this manifest's. So
+# it is deleted from the egg until that call is made.
+#
+# THE COST IS REAL AND IS STATED: a fresh hatch has no world art at all, so
+# /world?iso=1 draws its computed ground and NO sprites, loudly (iso-pack.ts
+# raises the DOM issues badge rather than a silent black frame). The world
+# renders honestly empty rather than not at all.
+delete cabinet/dashboard/public/world-assets/originals
+
 delete instance/flavor-a
 # R128: instance/agents leaves; the cua-driver MCP overlay's template home is
 # cabinet/mcp-overlays/ (landed 1a8c94fb) and officer .md files regenerate.
@@ -633,6 +649,7 @@ expect-absent docs/plans/EXECUTION-STATUS.md
 expect-absent docs/plans/proofs
 expect-absent cabinet/dashboard/public/world-assets/*.png
 expect-absent cabinet/dashboard/public/world-assets/*.zip
+expect-absent cabinet/dashboard/public/world-assets/originals
 expect-absent cabinet/scripts/world-aesthetic/corpus/*.png
 expect-absent cabinet/scripts/world-aesthetic/goldens/*.png
 expect-absent cabinet/dashboard/.next

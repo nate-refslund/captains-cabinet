@@ -124,6 +124,32 @@ duplicating the literal. Every path in this commit was named explicitly to
 **Two agents in one checkout is the hazard the doctrine names and it should not
 be repeated.** The next round needs its own worktree.
 
+## CI, per job — the two reds this landing had to clear
+
+The first push went red on two jobs. Both are recorded because neither was
+visible from any local run.
+
+1. **`framework-tests` / `cognitive-phase4`: `test_egg_export.py::test_world_assets_and_node_modules_absent`** —
+   *"licensed binaries must not ship in cabinet/dashboard/public/world-assets:
+   ['atlas-0.png']"*. The manifest's existing rule is a top-level glob
+   (`world-assets/*.png`) and the atlas sits a level deeper at
+   `originals/iso/`; the Python arm globs recursively and caught it. The atlas
+   is org-original, not licensed third-party, so the ban's *stated* intent does
+   not cover it — but **whether the public egg redistributes the org's own
+   commissioned art is the Captain's call, not this manifest's**. So the export
+   deletes `world-assets/originals` and the fork is surfaced rather than taken.
+   The cost is stated in the manifest itself: a fresh hatch draws the computed
+   ground and no sprites, loudly (the DOM issues badge), never a silent black
+   frame.
+2. **`ci`: `planting.test.ts > nothing the belt plants stands on a lane or on a
+   building — 80 islands` — "Test timed out in 5000ms"**. It runs in ~6s and
+   passes locally; vitest's default is 5s. A wall-clock bound on a shared
+   runner, not a regression — and it was already red at `710109e6`, before any
+   of this round's work. Given an explicit 60s timeout with the reason in the
+   test body, because the arm's whole point is the POPULATION and trimming the
+   seed count to fit a default would trade away the thing it exists for. My own
+   new arms were measured for the same trap: the slowest is 770 ms.
+
 ## Verdict
 
 SHIP for what it claims: the delivery path exists, the top-down path is proven
