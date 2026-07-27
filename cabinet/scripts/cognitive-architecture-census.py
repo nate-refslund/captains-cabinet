@@ -20,14 +20,43 @@ TWO LAWS, not one.
     cabinet/config/architecture-baseline-sets.yml. An unregistered net-new
     member is RED; a row naming a member that is not observed (the stale
     copy-paste) is RED; a row naming a baseline member (the laundering edit)
-    is RED; two rows naming one member are refused at load.
+    is RED; a BASELINE name the tree does not carry is RED (the pre-loaded
+    inventory); two rows naming one member are refused at load.
 
-An allowance CANNOT buy a net-new set member. That gap is why this exists: an
-expansion's line-mass was once paid as a routine allowance, whose schema asks
-only reason/owner/sunset — declaration without adjudication. The expansion row
-carries the adjudication fields (the blind arms that ran, the written verdict,
-the merge that was refuted by path+symbol, and the consumer that will read the
-output), and every one of them is schema-refused when missing or empty.
+The expansion row carries the adjudication fields (the blind arms that ran, the
+written verdict, the merge that was refuted by path+symbol, and the consumer
+that will read the output), and every one of them is schema-refused when
+missing or empty. An allowance asks only reason/owner/sunset — declaration
+without adjudication — which is why an expansion's line-mass once rode in as a
+routine allowance row.
+
+WHAT THE PREVIOUS VERSION OF THIS DOCSTRING GOT WRONG, kept because the wrong
+sentence shipped in the public egg. It said flatly "an allowance CANNOT buy a
+net-new set member", and an adversarial review falsified it BY EXECUTION on
+2026-07-27: a genuinely net-new production module landed at ok=True with no
+expansion row, paid for with ONE line in the baseline file plus an ordinary
+temporary_allowances row — the twelfth on framework_production_modules. The
+membership question and the count question are two separate costs, and the
+sentence named only the count.
+
+WHAT IS ENFORCED NOW, stated exactly so nothing reads as more than it is:
+
+  * COUNT. No temporary_allowances row may name a bijection class at all —
+    refused at contract load. The rows that were already live when that refusal
+    landed are grandfathered by exact (phase, budget, additional) triple in
+    LEGACY_BIJECTION_ALLOWANCES, so a legacy row cannot be edited upward or
+    duplicated to buy a member either. The count of a bijection class therefore
+    grows only by raising `maximum` in the contract: visible, permanent, and on
+    the line the zero-headroom law is read from.
+  * PRE-LOADING. A baseline name the tree does not carry is a failure, so an
+    inventory cannot be written in one commit and consumed in a later one.
+  * NOT REFUSED, and the residual is named rather than relabelled: a baseline
+    line added in the SAME commit as the file it names still removes that file
+    from the surplus, and the bijection cannot tell the difference. That path
+    now costs a visible `maximum` raise and a claim about `snapshot_of` that
+    git blame contradicts; it is caught by reading the diff, not by this
+    script. Removing a baseline line is always safe — it can only make the
+    surplus larger.
 
 COVERAGE, stated so nothing here reads as more than it is: bijection reaches
 the six member classes named in BIJECTION_CLASSES. Growth in non-comment LINES
@@ -79,6 +108,46 @@ BIJECTION_CLASSES = frozenset(
         "services_enabled",
         "framework_production_modules",
         "duplicate_event_writer_sinks",
+    }
+)
+#: The temporary_allowances rows that name a BIJECTION class and are permitted,
+#: pinned as exact (phase, budget, additional) triples. Everything else naming a
+#: bijection class is refused at contract load.
+#:
+#: WHY THE TRIPLE AND NOT THE PHASE NAME. A permit keyed on the phase alone
+#: leaves the row EDITABLE: bumping COG-3 from 12 to 13 would buy a module for
+#: one character, which is the same purchase this refusal exists to stop. The
+#: `additional` is therefore part of the key, and a triple may appear at most
+#: once — a verbatim copy of a permitted row is a second purchase.
+#:
+#: WHY THESE ELEVEN AND NOT THE NINE THE REVIEW NAMED. The review that proved
+#: the bypass counted nine rows totalling +38. Two more landed on
+#: framework_production_modules before the fix (`personal-preset-live`,
+#: `source-ownership-class`, +1 each, total +40 against base 206 = 246 observed).
+#: Both are registered expansions, so their MEMBERSHIP was adjudicated; only
+#: their count rode an allowance. They are grandfathered rather than refused
+#: because refusing them would red master for work that was already reviewed —
+#: and the widening is stated here rather than made silently, which is the
+#: point.
+#:
+#: CLOSED AND SHRINK-ONLY: this set is a legacy carve-out, never a place to add.
+#: A twelfth entry is a new author choosing the instrument being closed; the
+#: pin is asserted verbatim by
+#: cabinet/scripts/tests/test_cognitive_architecture_census.py so growing it
+#: cannot be quiet.
+LEGACY_BIJECTION_ALLOWANCES = frozenset(
+    {
+        ("COG-0", "framework_production_modules", 2),
+        ("COG-1", "framework_production_modules", 1),
+        ("COG-2", "framework_production_modules", 5),
+        ("COG-3", "framework_production_modules", 12),
+        ("COG-4", "framework_production_modules", 10),
+        ("captain-availability-dial", "framework_production_modules", 1),
+        ("captain-contact-liveness", "framework_production_modules", 2),
+        ("channel-flatline-alarm", "framework_production_modules", 1),
+        ("personal-preset-live", "framework_production_modules", 1),
+        ("source-ownership-class", "framework_production_modules", 1),
+        ("spend-meter-uncapped", "framework_production_modules", 4),
     }
 )
 REQUIRED_EXPANSION_FIELDS = {
@@ -762,6 +831,7 @@ def load_contract(path: Path, *, as_of: date | None = None) -> dict[str, Any]:
     allowances = raw.get("temporary_allowances", [])
     if not isinstance(allowances, list):
         raise ContractError("temporary_allowances must be a list")
+    legacy_seen: set[tuple[str, str, int]] = set()
     for allowance in allowances:
         if not isinstance(allowance, dict) or set(allowance) != REQUIRED_ALLOWANCE_FIELDS:
             raise ContractError(
@@ -780,6 +850,27 @@ def load_contract(path: Path, *, as_of: date | None = None) -> dict[str, Any]:
             sunset = date.fromisoformat(allowance["sunset"])
         except (TypeError, ValueError) as exc:
             raise ContractError("temporary allowance sunset must be YYYY-MM-DD") from exc
+        # An allowance may not name a class whose MEMBERS the registry can see.
+        # Refused at LOAD rather than reported as a failure: a census that
+        # merely reds can be argued with, and this instrument is the one an
+        # adversarial review proved buys a net-new member for one data line.
+        if allowance["budget"] in BIJECTION_CLASSES:
+            legacy_key = (allowance["phase"], allowance["budget"], allowance["additional"])
+            if legacy_key not in LEGACY_BIJECTION_ALLOWANCES:
+                raise ContractError(
+                    f"temporary allowance {allowance['phase']!r} names the bijection "
+                    f"class {allowance['budget']} — an allowance pays for MASS and asks "
+                    "only reason/owner/sunset, so it may not pay for a class whose "
+                    "members the expansion registry names. Raise the budget maximum "
+                    "visibly and register the member as an expansion."
+                )
+            if legacy_key in legacy_seen:
+                raise ContractError(
+                    f"temporary allowance {allowance['phase']!r} duplicates a "
+                    f"grandfathered bijection-class row on {allowance['budget']} — the "
+                    "legacy carve-out is consumed once, never copied"
+                )
+            legacy_seen.add(legacy_key)
         allowance["_expired"] = sunset < (as_of or date.today())
     _validate_expansions(raw)
     return raw
@@ -805,10 +896,24 @@ def _bijection_failures(
 ) -> tuple[dict[str, list[str]], list[dict[str, Any]]]:
     """observed - baseline == the registered members, exactly and disjointly.
 
-    Three distinct lies, three distinct reds. The registry is not a presence
+    Four distinct lies, four distinct reds. The registry is not a presence
     check: nothing here asks whether a row EXISTS, only whether the rows and the
-    surplus are the same set — which a copied row, a touched file or a relabelled
-    allowance cannot satisfy.
+    surplus are the same set — which a copied row or a touched file cannot
+    satisfy. Editing the BASELINE can, and that is the honest limit of the
+    assertion: a member listed as pre-existing is not surplus, so the bijection
+    holds trivially. What the arms below reach is everything except a baseline
+    line written in the same commit as the member it excuses.
+
+    The fourth arm is about the BASELINE, not the rows. `observed - baseline`
+    silently ignores a baseline name the tree does not carry, so before
+    2026-07-27 an inventory could be written into the baseline file in one
+    commit — moving no count, reddening nothing — and the files consumed in a
+    later one, each arriving pre-excused from the surplus. A baseline name with
+    no tree member is therefore a failure. It is a hard red and not a warning
+    because the remedy is always a SAFE edit: deleting a baseline line can only
+    make the surplus larger, never smaller, so nothing is bought by fixing it —
+    and a report nobody has to act on is the disabled sensor this program keeps
+    finding in its own tests.
     """
 
     rows_by_class: dict[str, set[str]] = {}
@@ -845,6 +950,14 @@ def _bijection_failures(
                     "budget": name,
                     "member": member,
                     "reason": "expansion row names a baseline member",
+                }
+            )
+        for member in sorted(baseline_members - observed_members):
+            failures.append(
+                {
+                    "budget": name,
+                    "member": member,
+                    "reason": "baseline names a member the tree does not carry",
                 }
             )
     return surplus, failures

@@ -21,7 +21,20 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 8bee10cdcd41994b8278447bc2a428fa8da93332e2c6506c71fb1dee8205ab9b
+Reviewed-Scope-Digest: ec20b25abf5b77c12f8dd582ebce75b84e414868cead5d86f63ea1d72ad90c2d
+
+(RE-BOUND 2026-07-27, `fix/bijection-allowance-bypass`, same commit as the change
+that moved the bytes — the re-bind-at-landing procedure this artifact prescribes.
+Prior digest: `8bee10cdcd41994b…`. The one moved file in scope is
+`cabinet/config/cognitive-architecture-contract.yml`, and the move is COMMENT
+bytes plus one allowance `reason` string: the expansion-registry header now
+states what the census actually enforces after an adversarial review falsified
+its previous claim by execution. No budget maximum, no `additional`, no member
+and no expansion row changed — verified by loading both revisions and comparing
+the parsed budgets/allowances/expansions. NO COG-4 implementation byte changed;
+`framework/authority/classifier.py` remains in the manifest's
+`must_remain_unchanged` block against the pinned phase anchor, which the rollback
+rehearsal re-checks. The phase-4 findings below are unaffected.)
 
 
 
