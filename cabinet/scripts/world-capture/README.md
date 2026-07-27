@@ -8,6 +8,24 @@ python3.12 cabinet/scripts/world-capture/capture.py --state hamlet
 python3.12 cabinet/scripts/world-capture/capture.py --state camp
 ```
 
+To judge the state the org is actually in, rather than one of the two authored
+fixtures — the question that had no offline answer until 2026-07-27, and whose
+first run turned `check_on_road` red on two sprites both fixtures leave green:
+
+```
+curl -s -H "Cookie: cabinet_session=$TOKEN" \
+     http://localhost:3100/api/world/engine > /tmp/engine.json
+cd cabinet/scripts/world-capture
+node --import ./resolve-ts.mjs live-state.ts --engine /tmp/engine.json --out states/live.json
+python3.12 capture.py --state states/live.json
+```
+
+`states/live.json` is a SNAPSHOT — true the day it is taken and a lie a week
+later — so regenerate it rather than committing one. Serve the route with
+`CABINET_ROOT` pointed at a checkout that has `shared/interfaces/world-chronicle.jsonl`
+(it is a gitignored runtime artifact); without it, or without the session
+cookie, `eval` is undefined and every consumer sees a day-zero cabinet.
+
 Writes to `/tmp/world-capture/<state>/`: `frame.png`, `frame.ground.png`
 (sprites-free), `frame.ids.png` and `frame.idsrev.png` (forward/reverse paint
 order), `frame.blueprint.json`, `assets/` (one PNG per frame the capture drew),
@@ -31,6 +49,7 @@ each other; nothing told them about the plough.
 |---|---|
 | `../../dashboard/src/lib/world/blueprint.ts` | Layout → the blueprint the checks read + an ordered draw list. Pure, no browser. |
 | `emit.ts` + `resolve-ts.mjs` | node CLI around it (node ≥ 22 strips the TypeScript itself). |
+| `live-state.ts` | `/api/world/engine` payload → a state fixture, through the SAME `engineStep` + `layoutStateFrom` the browser runs. Refuses an empty feed rather than emitting a hatch that looks measured. |
 | `ground.py` | the procedural ground: `terrain.py`'s ramps, Bayer dither, furrows, flagstone — with a dependency-free noise source. |
 | `raster.py` | draws the frame, the ground layer and both id buffers; `--mutate` breaks one rule on purpose. |
 | `capture.py` | the one command: emit → raster → verify. |
@@ -66,6 +85,10 @@ each other; nothing told them about the plough.
   the era-vocabulary resolution, and a 40-seed sweep asserting no structure
   stands in a tilled plot.
 - `tests/test_ground.py` — the ground port's own claims, and the mirror's identity.
+- `tests/test_meadow_feather.py` — the meadow shading has a feather, both renderers
+  read the SAME one out of the draw list, and the blur is applied to the union
+  rather than per blob. Its own negative twin runs in the same file: without the
+  feather the mask steps 204/255 in one pixel, with it 3/255.
 
 ## Not here yet
 

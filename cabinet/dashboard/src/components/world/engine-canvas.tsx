@@ -50,11 +50,13 @@ import {
   pickIsoSprite,
   LANE_PAINT_SQUASH,
   layoutStateFrom,
+  UNMEASURED_STATE_ISSUE,
   type IsoScene,
 } from '@/lib/world/iso-scene'
 import { groundField, seaTile, type GroundClass, type TerrainBuffer } from '@/lib/world/iso-terrain'
 import {
   MOTTLE_TONES,
+  PAINT_FEATHER,
   type Blob as PaintBlob,
   type LayoutState,
   type PaintRegion,
@@ -1155,7 +1157,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         cls: GroundClass,
         seed: number,
         ext: Extent,
-        mask: Graphics,
+        mask: Container,
         alpha = 1
       ): void {
         if (extentEmpty(ext)) {
@@ -1174,7 +1176,14 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         sp.scale.set(2) // the field's `block`, upscaled nearest — the same grain
         sp.alpha = alpha
         into.addChild(mask)
-        sp.mask = mask
+        // A Graphics mask is a STENCIL — binary coverage, hard edge, which is
+        // right for a surface with a real boundary (a plaza, a pond, a road).
+        // A Sprite mask is an ALPHA mask, and `channel: 'alpha'` is what makes
+        // it read the coverage this renderer actually wrote: the default 'red'
+        // channel multiplies colour by alpha and would square the ramp, turning
+        // a feather back into a shoulder.
+        if (mask instanceof PIXI.Sprite) sp.setMask({ mask, channel: 'alpha' })
+        else sp.mask = mask
         into.addChild(sp)
       }
 
@@ -1194,6 +1203,69 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         }
         g.fill(0xffffff)
         return g
+      }
+
+      /**
+       * A region's blobs unioned into ONE feathered alpha mask.
+       *
+       * THE DEFECT (Captain, 2026-07-27): "the meadow patches read as hard dark
+       * ellipses rather than as subtle variation". compose.py:149 draws its 70
+       * patches into one mask and blurs the WHOLE mask by 26px before pasting
+       * the dark grass through it; this renderer painted a stencil, which has
+       * no edge at all between covered and not. iso-layout/paint.ts owns the
+       * number (PAINT_FEATHER) and the offline rasteriser reads the same one out
+       * of the draw list, so the two renderers cannot drift apart.
+       *
+       * ONE MASK, ONE BLUR, and both halves of that matter:
+       *
+       *   The per-blob STRENGTH is carried in the mask's own alpha instead of in
+       *   one masked sprite per bucket. Compositing the buckets weakest-first at
+       *   an incremental alpha lands on exactly max(w) — the same identity the
+       *   bucket loop used, and the same `ImageChops.lighter` the offline
+       *   rasteriser takes — but now it happens INSIDE the mask, so there is one
+       *   thing left to blur rather than twenty.
+       *
+       *   Blurring LAST is not the same as blurring each blob. Feathering the
+       *   pieces and then taking the union would restore a hard edge wherever
+       *   two soft rims crossed, because the union of two ramps is a ramp with a
+       *   crease. The reference blurs the finished mask and so does this.
+       *
+       * The extent is padded by 3σ so the Gaussian's own tail is inside the
+       * texture; a mask cropped at its own edge would draw the crisp rectangle
+       * it was trying to avoid.
+       */
+      function featheredBlobMask(blobs: readonly PaintBlob[], feather: number): Sprite | null {
+        const ext = blobExtent([{ kind: 'meadow_dark', blobs } as PaintRegion], feather * 3)
+        if (extentEmpty(ext)) return null
+        const w = Math.ceil(ext.x1 - ext.x0)
+        const h = Math.ceil(ext.y1 - ext.y0)
+        const c = new PIXI.Container()
+        const bucket = (b: PaintBlob) => Math.round((b.w ?? 1) * 20) / 20
+        const levels = [...new Set(blobs.map(bucket))].sort((a, b) => a - b)
+        let below = 0
+        for (const level of levels) {
+          const at = blobs.filter((b) => bucket(b) >= level)
+          const step = below >= 1 ? 0 : (level - below) / (1 - below)
+          below = level
+          if (at.length === 0 || step <= 0.001) continue
+          const g = new PIXI.Graphics()
+          for (const b of at) {
+            g.ellipse(b.c.x - ext.x0, b.c.y - ext.y0, Math.max(1, b.rx), Math.max(1, b.ry))
+          }
+          g.fill({ color: 0xffffff, alpha: step })
+          c.addChild(g)
+        }
+        if (c.children.length === 0) {
+          c.destroy({ children: true })
+          return null
+        }
+        if (feather > 0) c.filters = [new PIXI.BlurFilter({ strength: feather, quality: 4 })]
+        const rt = PIXI.RenderTexture.create({ width: w, height: h, antialias: false })
+        app.renderer.render({ container: c, target: rt, clear: true })
+        c.destroy({ children: true })
+        const sp = new PIXI.Sprite(rt)
+        sp.position.set(ext.x0, ext.y0)
+        return sp
       }
 
       function blobMask(blobs: readonly PaintBlob[]): Graphics {
@@ -1258,31 +1330,20 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         // reference's per-blob mask VALUE (compose.py:148 fill 110..210), so
         // where two patches overlap the mask is the BRIGHTER of the two — which
         // is what raster.py does (ImageChops.lighter) and what the offline
-        // still therefore shows. Painting one sprite per alpha bucket over the
-        // top of another composites instead: two 0.5 patches read 0.75, so
-        // every overlap draws a dark seam and the patches outline each other.
+        // still therefore shows. Compositing one masked sprite per alpha bucket
+        // over another sums instead: two 0.5 patches read 0.75, so every
+        // overlap draws a dark seam and the patches outline each other.
         //
-        // The buckets are painted WEAKEST-FIRST at an INCREMENTAL alpha: bucket
-        // k gets the union of every blob at strength >= a_k, laid down at
-        // (a_k - a_{k-1}) / (1 - a_{k-1}). Compositing those in order lands on
-        // exactly a_k wherever a_k is the maximum, so the engine and the
-        // offline renderer agree by construction rather than by luck. Each
-        // union is ONE Graphics path, so blobs inside a bucket never
-        // double-count either.
-        const meadow = regionsOf('meadow_dark')
-        for (const r of meadow) {
-          const bucket = (b: PaintBlob) => Math.round((b.w ?? 1) * 20) / 20
-          const levels = [...new Set(r.blobs.map(bucket))].sort((a, b) => a - b)
-          let below = 0
-          for (const level of levels) {
-            const blobs = r.blobs.filter((b) => bucket(b) >= level)
-            if (blobs.length === 0) continue
-            const step = below >= 1 ? 0 : (level - below) / (1 - below)
-            if (step > 0.001) {
-              paintClass(c, 'grass_dark', seed, blobExtent([{ ...r, blobs }]), blobMask(blobs), step)
-            }
-            below = level
-          }
+        // That max identity now lives INSIDE the mask (featheredBlobMask) so
+        // the region is one soft-edged shape painted once, rather than twenty
+        // hard-edged ones stacked. The dark grass goes down at full strength
+        // through it, exactly as the reference pastes GRASS2 through its
+        // blurred patch mask.
+        const meadowFeather = PAINT_FEATHER.meadow_dark ?? 0
+        for (const r of regionsOf('meadow_dark')) {
+          const mask = featheredBlobMask(r.blobs, meadowFeather)
+          if (!mask) continue
+          paintClass(c, 'grass_dark', seed, blobExtent([r], meadowFeather * 3), mask)
         }
         // 4. mottle: three flat tones at the reference's own alphas
         const mottleG = new PIXI.Graphics()
@@ -1432,6 +1493,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
       /** The composed scene for the current state, rebuilt with the statics. */
       let isoScene: IsoScene | null = null
       let isoIssued = false
+      let isoUnmeasuredIssued = false
 
       function rebuildIsoStatics(p: EngineCanvasProps) {
         if (!isoPack || !isoAtlas) {
@@ -1439,6 +1501,20 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           // than invent art. The ground still needs the layout, so compose it.
           isoScene = null
           return
+        }
+        // AN UNFED RENDERER AND A DAY-ZERO CABINET DRAW THE SAME ISLAND, so the
+        // difference has to be said out loud — see UNMEASURED_STATE_ISSUE. It is
+        // raised ONCE and then only again after a real resolution has arrived
+        // and gone away, so a page that never authenticates badges once rather
+        // than every poll.
+        if (!p.resolution) {
+          if (!isoUnmeasuredIssued) {
+            isoUnmeasuredIssued = true
+            console.error('[world/engine] iso scene:', UNMEASURED_STATE_ISSUE)
+            propsRef.current.onIssues?.([UNMEASURED_STATE_ISSUE])
+          }
+        } else {
+          isoUnmeasuredIssued = false
         }
         const state: LayoutState = layoutStateFrom(p.resolution)
         // The seed is the deployment's own island: same org, same island,

@@ -48,6 +48,7 @@ import {
   countOf,
   eraAtLeast,
   HOUSE_KINDS,
+  PAINT_FEATHER,
   presentRung,
   type ComposeOptions,
   type Footprint,
@@ -410,6 +411,17 @@ export interface DrawList {
    * on-road defect that no rule could have prevented.
    */
   lane_squash: number
+  /**
+   * How far a painted region's edge is feathered, in layout px, by kind
+   * (iso-layout/paint.ts PAINT_FEATHER). Absent kinds have a hard edge.
+   *
+   * SHIPPED for the same reason `lane_squash` is: two renderers paint this
+   * list, and a feather each of them held privately would be two different
+   * grounds. The Captain's 2026-07-27 frame is what this is for — the meadow
+   * shading read as hard dark ellipses because the reference's 26px mask blur
+   * (compose.py:149) had no home on the data side of the bridge.
+   */
+  paint_feather: Record<string, number>
   wharf: { shore: [number, number][]; depth: number } | null
   jetty: { at: [number, number]; end: [number, number]; width: number } | null
   /** compose.py LAMP_AT — the glow's centre, or null when the lamp is dark. */
@@ -595,6 +607,7 @@ export function emitFrame(
       runs: l.runs.map((run) => run.map(pt)),
     })),
     lane_squash: LANE_SQUASH,
+    paint_feather: { ...PAINT_FEATHER } as Record<string, number>,
     wharf: h?.wharf ? { shore: h.wharf.shore.map(pt), depth: h.wharf.depth } : null,
     jetty: h?.jetty
       ? { at: pt(h.jetty.at), end: pt(h.jetty.end), width: h.jetty.width }

@@ -325,6 +325,34 @@ export const REED_MARGIN = 52
 export const MEADOW_LOBES = 7
 
 /**
+ * How far a SHADING region's edge is feathered, in layout px, per kind.
+ *
+ * THE DEFECT (Captain, 2026-07-27): "the meadow patches read as HARD DARK
+ * ELLIPSES rather than as subtle variation". They did, and the reason is in the
+ * meadow pass's own docstring twelve lines down: compose.py draws its ellipses
+ * and then blurs the WHOLE mask by 26px (compose.py:149,
+ * `patch.filter(ImageFilter.GaussianBlur(26))`), and this port replaced that
+ * blur with an irregular OUTLINE. A lobed edge is still an edge — it broke the
+ * razor oval into a razor cloud and the frame still read as blobs. The lobes
+ * are kept, because they stop the silhouette being an oval; the blur is what
+ * stops it being a silhouette at all.
+ *
+ * IT IS SHIPPED, NOT RE-TYPED, for exactly the reason LANE_SQUASH is: two
+ * renderers paint this layout — the engine and cabinet/scripts/world-capture —
+ * and a feather that lived in each of them separately would be two grounds.
+ * blueprint.ts puts it in the draw list, raster.py reads it from there, and
+ * engine-canvas.tsx imports this constant. Nobody holds a second copy.
+ *
+ * ONLY `meadow_dark`. The mottle is already three flat tones at alpha 18-22/255
+ * and the reference does not blur it; the plaza, the tillage and the water are
+ * SURFACES with real edges — a pond has a bank, not a fade — and feathering
+ * them would blur the boundary the planting rules actually use.
+ */
+export const PAINT_FEATHER: Readonly<Partial<Record<PaintKind, number>>> = {
+  meadow_dark: 26,
+}
+
+/**
  * All the ground regions for a world state.
  *
  * `fieldPlots` and `village` rather than the whole LayoutState: this module is

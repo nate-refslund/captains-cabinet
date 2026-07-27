@@ -185,6 +185,41 @@ export function layoutStateFrom(resolution: WorldResolution | null): LayoutState
   }
 }
 
+/**
+ * What the frame is when NO world state reached the renderer.
+ *
+ * THE DEFECT THIS EXISTS FOR (Captain, 2026-07-27): `/world?iso=1` was drawing
+ * a camp island while the org is a hamlet at index 0.44 with four officers,
+ * seven berths and a lit lighthouse — and the frame said nothing about it. It
+ * could not: `layoutStateFrom(null)` returns era `camp` with no rungs at all,
+ * which is a PERFECTLY VALID hatch state, so an unfed renderer and a day-zero
+ * cabinet paint the identical island. A dashboard whose "we know nothing" and
+ * whose "you have nothing" are the same picture is not reporting.
+ *
+ * The baseline itself is right and stays: an unmeasured metric renders its
+ * baseline, so with no feed the island is the hatch. What was missing is the
+ * SAYING SO. The canvas raises this on the same issues channel it already
+ * badges, so the reader can tell the two apart without opening a console.
+ *
+ * WHAT MAKES THE FEED VANISH, both measured on 2026-07-27 and both silent
+ * before this:
+ *   1. NO SESSION. /api/world/engine 401s without the `cabinet_session`
+ *      cookie, engine-client's `if (!r.ok) return` swallows it, and the
+ *      resolution stays null. This is the one that produced the Captain's
+ *      frame — a logged-out browser renders a hatch.
+ *   2. NO CHRONICLE. The route reads shared/interfaces/world-chronicle.jsonl
+ *      under CABINET_ROOT (default: the repo the server runs from). That file
+ *      is a gitignored RUNTIME artifact, so a dev server started in a fresh
+ *      clone or a worktree has no keyframes, `eval` is undefined, and the
+ *      resolution is null again. Run it with
+ *      `CABINET_ROOT=<the live checkout>` to render the real org.
+ */
+export const UNMEASURED_STATE_ISSUE =
+  'no measured world state reached the renderer (/api/world/engine returned no eval — ' +
+  'unauthenticated session, or no world-chronicle.jsonl under CABINET_ROOT). ' +
+  'The island is drawn at the HATCH BASELINE: camp, every ladder unbuilt. ' +
+  'That is an honest zero, NOT a claim that the org is at camp.'
+
 export interface ResolvedFrame {
   frame: string
   trueArt: boolean

@@ -273,12 +273,20 @@ def _mask_from_coast(coast: dict, W: int, H: int) -> tuple[Image.Image, Image.Im
     return out[0], out[1]
 
 
-def _blob_mask(W: int, H: int, blobs, solid_floor=0.0) -> Image.Image:
+def _blob_mask(W: int, H: int, blobs, solid_floor=0.0, feather=0.0) -> Image.Image:
     """A region's blobs unioned into one soft mask.
 
     `w` on a blob is the reference's per-blob fill VALUE, not an alpha ramp, so
     blobs are drawn at their own strength and the brightest wins — a max, not a
     sum, which is what keeps overlapping meadow patches from stacking to white.
+
+    `feather` is the draw list's own PAINT_FEATHER for this kind, in layout px,
+    and it is applied to the UNION rather than per blob — which is what
+    compose.py:149 does (`patch.filter(GaussianBlur(26))` over the whole mask)
+    and is not the same thing: blurring each blob first and taking the max
+    afterwards would restore a hard edge wherever two feathered rims crossed.
+    Blurring last is also why the union rule survives the change — the plateau
+    is still the brightest blob, only its rim now falls off.
     """
     m = Image.new("L", (W, H), 0)
     d = ImageDraw.Draw(m)
@@ -290,6 +298,8 @@ def _blob_mask(W: int, H: int, blobs, solid_floor=0.0) -> Image.Image:
         )
         m = ImageChops.lighter(m, cur)
     del d
+    if feather > 0:
+        m = m.filter(ImageFilter.GaussianBlur(feather))
     return m
 
 
@@ -341,8 +351,18 @@ def build_ground(draw: dict, W: int, H: int, seed: int) -> Image.Image:
         by_kind.setdefault(reg["kind"], []).append(reg)
 
     # shading first — it is what the ground LOOKS like, under everything built
+    #
+    # The feather comes from the DRAW LIST, never from a number kept here: the
+    # engine and this rasteriser paint the same layout, and one ground means one
+    # authority for how soft its edges are (iso-layout/paint.ts PAINT_FEATHER,
+    # shipped through blueprint.ts, same contract as lane_squash). Missing key →
+    # 0 → the hard edge this file drew before, so an older draw list still
+    # renders rather than crashing.
+    feather = draw.get("paint_feather") or {}
     for reg in by_kind.get("meadow_dark", []):
-        m = ImageChops.multiply(_blob_mask(W, H, reg["blobs"]), land)
+        m = ImageChops.multiply(
+            _blob_mask(W, H, reg["blobs"], feather=float(feather.get("meadow_dark", 0))), land
+        )
         canvas.paste(ground.grass_dark(W, H, seed=seed + 8), (0, 0), m)
     for reg in by_kind.get("mottle", []):
         tone = ground.MOTTLE_TONES[(reg.get("tone") or 0) % len(ground.MOTTLE_TONES)]

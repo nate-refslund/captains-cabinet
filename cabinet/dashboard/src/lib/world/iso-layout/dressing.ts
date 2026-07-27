@@ -229,6 +229,34 @@ export function dressDistricts(ctx: DressCtx): DressItem[] {
   const life: Settle = (kind, role, at, flip, opts) =>
     village ? ctx.settle(kind, role, at, flip, opts) : null
 
+  /**
+   * A DISTRICT'S OWN DRESSING — silent until the district itself was built.
+   *
+   * THE DEFECT THIS EXISTS FOR, in the Captain's own frame (2026-07-27): the
+   * consequence ledger standing alone in open grass beside three fence posts
+   * and a rock, with no law plot around it. Every district here is anchored at
+   * a FIXED compass offset and its props were placed at fixed offsets from that
+   * anchor gated on the ERA alone, so a district whose measured structure had
+   * not been built — or, worse, had been built at a LOW RUNG covering a third
+   * of the ground its props are spread over — still drew its whole yard. The
+   * lectern was the visible one; the audit in the commit message lists all six.
+   *
+   * WHY ERA IS NOT ENOUGH HERE, when it is enough for the square. Village life
+   * is entitled by the era because a village HAS benches — the square is paved
+   * at hamlet by the paint stage, so those props have ground that exists. A
+   * district's yard is different: it is the curtilage OF A THING, and the thing
+   * is measured. Under the Captain's clearing model this is not a nicety but
+   * the whole grammar — a structure stands in ground that was cleared for it,
+   * and stumps, tools and fences are the RECORD of that clearing. No structure
+   * means no clearing, so there is nothing for the record to be about.
+   *
+   * WHAT IT IS NOT: a second era gate. `life` still runs first, so a camp is
+   * still silent. This narrows village life to the districts that exist; it can
+   * never widen it.
+   */
+  const districtLife = (built: boolean): Settle =>
+    built ? life : () => null
+
   /** A ladder item: drawn only when its own rung has built something. */
   const ladder = (object: string, at: Point, flip = false) => {
     if (!ctx.built(object)) return null
@@ -297,7 +325,7 @@ export function dressDistricts(ctx: DressCtx): DressItem[] {
    * that would stand on the road is dropped instead (the caller's lane test
    * still runs — it just drops rather than nudges, so the run stays straight).
    */
-  const fenceLine = (pts: readonly Point[], kind = 'fence_run') => {
+  const fenceLine = (pts: readonly Point[], kind = 'fence_run', place: Settle = life) => {
     if (!village) return
     const w = ctx.sizeOf(kind).w
     const step = Math.max(6, w - 2)
@@ -315,13 +343,19 @@ export function dressDistricts(ctx: DressCtx): DressItem[] {
       for (let k = 0; k < n; k++) {
         const x = from.x + k * step
         const y = from.y + k * step * ISO_AXIS_SLOPE * axis
-        keep(life(kind, 'village_life', { x, y }, axis < 0, { avoidLane: false, nudge: false }))
+        keep(place(kind, 'village_life', { x, y }, axis < 0, { avoidLane: false, nudge: false }))
       }
     }
   }
 
   /** compose.py lamp_line(): street lamps set back from a lane. */
-  const lampLine = (pts: readonly Point[], kind: string, spacing = 190, offset = 34) => {
+  const lampLine = (
+    pts: readonly Point[],
+    kind: string,
+    spacing = 190,
+    offset = 34,
+    place: Settle = life
+  ) => {
     for (let i = 0; i < pts.length - 1; i++) {
       const a = pts[i]
       const b = pts[i + 1]
@@ -332,7 +366,7 @@ export function dressDistricts(ctx: DressCtx): DressItem[] {
         const nx = -(b.y - a.y) / Math.max(1e-3, d)
         const ny = (b.x - a.x) / Math.max(1e-3, d)
         keep(
-          life(
+          place(
             kind,
             'lantern_posts',
             { x: a.x + (b.x - a.x) * t + nx * offset, y: a.y + (b.y - a.y) * t + ny * offset },
@@ -418,14 +452,33 @@ export function dressDistricts(ctx: DressCtx): DressItem[] {
   }
 
   // ---- LAW (N): one fenced plot, posts inside it (compose.py:998-1007) -----
+  //
+  // THE PLOT DECIDES ITS OWN FURNITURE, and this is the defect the Captain's
+  // frame caught. The plot is `law_plot` rung runs long; the posts stood three
+  // abreast and the ledger sat at a FIXED +104 whatever the rung said, so at
+  // rung `wood_fence` (2 runs, which is the live org today) the ledger landed a
+  // clear 100px past the last fence and read as a lectern in a field. Both are
+  // now measured off the plot's real span: at most one post per run, and the
+  // ledger at the plot's far end, following the same -8 per-run fall the row
+  // itself walks. A rung that grows the plot walks them both outward — which is
+  // what "era styles a thing, rung measures it" means when the rung is a length.
   const LAW = ctx.anchor({ x: 1010, y: 392 })
-  if (ctx.built('law_plot')) {
-    const n = Math.max(1, ctx.countOf('law_plot'))
-    row(ctx.settle, 'law_plot', 'law_plot', LAW.x - 60, LAW.y + 40, n, 62, -8, false)
+  const lawBuilt = ctx.built('law_plot')
+  const lawRuns = lawBuilt ? Math.max(1, ctx.countOf('law_plot')) : 0
+  const lawLife = districtLife(lawBuilt)
+  if (lawBuilt) {
+    row(ctx.settle, 'law_plot', 'law_plot', LAW.x - 60, LAW.y + 40, lawRuns, 62, -8, false)
   }
-  row(life, 'law_post', 'village_life', LAW.x - 84, LAW.y + 22, village ? 3 : 0, 74, -12, false)
+  row(lawLife, 'law_post', 'village_life', LAW.x - 84, LAW.y + 22, Math.min(3, lawRuns), 74, -12, false)
   keep(ladder('veto_plinth', { x: LAW.x + 6, y: LAW.y + 66 }))
-  keep(life('consequence_ledger', 'village_life', { x: LAW.x + 104, y: LAW.y + 70 }, false))
+  keep(
+    lawLife(
+      'consequence_ledger',
+      'village_life',
+      { x: LAW.x - 60 + (lawRuns - 1) * 62 + 44, y: LAW.y + 70 - (lawRuns - 1) * 8 },
+      false
+    )
+  )
 
   // ---- MEMORY (NE): the library's curtilage (compose.py:1010-1018) --------
   if (ctx.lib) {
@@ -437,38 +490,51 @@ export function dressDistricts(ctx: DressCtx): DressItem[] {
   }
 
   // ---- WORKS (E): the machine room (compose.py:1021-1045) -----------------
+  //
+  // The LADDER items keep the fallback anchor — a water store, a composter and
+  // the pens are each entitled by their OWN rung and stand wherever the compass
+  // puts them with or without a workshop. The YARD CLUTTER does not: timber,
+  // crates, barrels, a barrow and a trough are the working residue of a
+  // workshop, and without one they were a machine room's mess with no machine
+  // room. `ctx.works` is the workshop's PLACED centre, so null means it was
+  // never built and the district is a wish.
   const WRK = ctx.works ?? ctx.anchor({ x: 1830, y: 800 })
+  const worksLife = districtLife(ctx.works !== null)
   for (const b of COUNT_GATED_BUILDINGS) {
     if (b.from !== 'works') continue
     if (!village || ctx.countOf(b.ladder) < b.atLeast) continue
     keep(ctx.settle(b.kind, `${b.ladder}_count`, ctx.anchor({ x: WRK.x + b.dx, y: WRK.y + b.dy }), false))
   }
   keep(ladder('water_store', { x: WRK.x - 216, y: WRK.y + 176 }))
-  row(life, 'wood_pile', 'village_life', WRK.x - 186, WRK.y + 58, village ? 2 : 0, 54, 12)
-  row(life, 'crate_single', 'village_life', WRK.x - 72, WRK.y + 74, village ? 3 : 0, 40, 10)
-  row(life, 'barrel_single', 'village_life', WRK.x + 58, WRK.y + 92, village ? 2 : 0, 42, 10)
+  row(worksLife, 'wood_pile', 'village_life', WRK.x - 186, WRK.y + 58, village ? 2 : 0, 54, 12)
+  row(worksLife, 'crate_single', 'village_life', WRK.x - 72, WRK.y + 74, village ? 3 : 0, 40, 10)
+  row(worksLife, 'barrel_single', 'village_life', WRK.x + 58, WRK.y + 92, village ? 2 : 0, 42, 10)
   if (ctx.built('composter')) {
     const n = Math.max(0, Math.min(4, ctx.countOf('composter')))
     row(ctx.settle, 'composter', 'composter', WRK.x - 140, WRK.y + 188, n, 60, 14)
   }
-  keep(life('wheelbarrow', 'village_life', { x: WRK.x - 236, y: WRK.y + 96 }, true))
-  keep(life('water_trough', 'village_life', { x: WRK.x + 236, y: WRK.y + 58 }, false))
+  keep(worksLife('wheelbarrow', 'village_life', { x: WRK.x - 236, y: WRK.y + 96 }, true))
+  keep(worksLife('water_trough', 'village_life', { x: WRK.x + 236, y: WRK.y + 58 }, false))
   // the service pens themselves — the ladder the windmill only counts
   keep(ladder('pens', { x: WRK.x - 120, y: WRK.y - 96 }))
 
   // ---- FIELDS (SE): shipped work (compose.py:1048-1065) -------------------
+  // Same rule as the works yard: `ctx.fields` is the outbuildings' PLACED
+  // centre, and fowl, a cart, a scarecrow, a kitchen garden and three fence
+  // runs are a farm's furniture. Without the barn they enclosed nothing.
   const FLD = ctx.fields ?? ctx.anchor({ x: 1620, y: 1180 })
+  const fieldsLife = districtLife(ctx.fields !== null)
   for (const b of COUNT_GATED_BUILDINGS) {
     if (b.from !== 'fields') continue
     if (!village || ctx.countOf(b.ladder) < b.atLeast) continue
     keep(ctx.settle(b.kind, `${b.ladder}_count`, ctx.anchor({ x: FLD.x + b.dx, y: FLD.y + b.dy }), false))
   }
-  keep(life('chicken', 'village_life', { x: FLD.x + 206, y: FLD.y + 16 }, false))
-  keep(life('chicken', 'village_life', { x: FLD.x + 282, y: FLD.y + 30 }, true))
-  keep(life('cart', 'village_life', { x: FLD.x - 136, y: FLD.y - 96 }, true))
-  keep(life('scarecrow', 'village_life', { x: FLD.x - 46, y: FLD.y + 40 }, false))
+  keep(fieldsLife('chicken', 'village_life', { x: FLD.x + 206, y: FLD.y + 16 }, false))
+  keep(fieldsLife('chicken', 'village_life', { x: FLD.x + 282, y: FLD.y + 30 }, true))
+  keep(fieldsLife('cart', 'village_life', { x: FLD.x - 136, y: FLD.y - 96 }, true))
+  keep(fieldsLife('scarecrow', 'village_life', { x: FLD.x - 46, y: FLD.y + 40 }, false))
   row(
-    life,
+    fieldsLife,
     'haystack',
     'village_life',
     FLD.x - 150,
@@ -477,19 +543,31 @@ export function dressDistricts(ctx: DressCtx): DressItem[] {
     60,
     16
   )
-  keep(life('veg_garden', 'village_life', { x: FLD.x - 268, y: FLD.y + 140 }, false))
-  fenceLine([
-    { x: FLD.x - 320, y: FLD.y + 94 },
-    { x: FLD.x + 108, y: FLD.y + 142 },
-  ])
-  fenceLine([
-    { x: FLD.x + 150, y: FLD.y + 150 },
-    { x: FLD.x + 352, y: FLD.y + 96 },
-  ])
-  fenceLine([
-    { x: FLD.x - 190, y: FLD.y - 64 },
-    { x: FLD.x + 70, y: FLD.y - 38 },
-  ])
+  keep(fieldsLife('veg_garden', 'village_life', { x: FLD.x - 268, y: FLD.y + 140 }, false))
+  fenceLine(
+    [
+      { x: FLD.x - 320, y: FLD.y + 94 },
+      { x: FLD.x + 108, y: FLD.y + 142 },
+    ],
+    'fence_run',
+    fieldsLife
+  )
+  fenceLine(
+    [
+      { x: FLD.x + 150, y: FLD.y + 150 },
+      { x: FLD.x + 352, y: FLD.y + 96 },
+    ],
+    'fence_run',
+    fieldsLife
+  )
+  fenceLine(
+    [
+      { x: FLD.x - 190, y: FLD.y - 64 },
+      { x: FLD.x + 70, y: FLD.y - 38 },
+    ],
+    'fence_run',
+    fieldsLife
+  )
 
   // ---- RESIDENTIAL (W): one yard prop per officer (compose.py:1068-1081) --
   ctx.dwellings.forEach((c, i) => {
@@ -502,11 +580,20 @@ export function dressDistricts(ctx: DressCtx): DressItem[] {
       )
     )
   })
-  fenceLine([
-    { x: 742, y: 742 },
-    { x: 656, y: 900 },
-    { x: 712, y: 1050 },
-  ])
+  // The residential SPINE is a fixed line down the west side and its fence,
+  // lamps, laundry and hives belong to the houses along it. With no dwelling
+  // placed there is no street — a garden fence and a washing line in empty
+  // grass are the same defect as the ledger, one district over.
+  const homesLife = districtLife(ctx.dwellings.length > 0)
+  fenceLine(
+    [
+      { x: 742, y: 742 },
+      { x: 656, y: 900 },
+      { x: 712, y: 1050 },
+    ],
+    'fence_run',
+    homesLife
+  )
   if (lampSeq.length > 4) {
     lampLine(
       [
@@ -516,11 +603,12 @@ export function dressDistricts(ctx: DressCtx): DressItem[] {
       ],
       lampSeq[4],
       300,
-      -46
+      -46,
+      homesLife
     )
   }
-  keep(life('laundry_line', 'village_life', { x: 760, y: 1120 }, false))
-  keep(life('beehives', 'village_life', { x: 556, y: 966 }, false))
+  keep(homesLife('laundry_line', 'village_life', { x: 760, y: 1120 }, false))
+  keep(homesLife('beehives', 'village_life', { x: 556, y: 966 }, false))
 
   // ---- TRAINING (NW): the dojo (compose.py:1084-1095) ---------------------
   // The law is explicit that a delta of zero or less renders exactly ONE
@@ -536,11 +624,21 @@ export function dressDistricts(ctx: DressCtx): DressItem[] {
   ])
 
   // ---- OBSERVATORY (N rise): foresight (compose.py:1098-1104) -------------
+  // The bench faces the dome. Without the dome it faces a field.
   const OBS = ctx.anchor({ x: 960, y: 372 })
+  const obsLife = districtLife(ctx.built('observatory'))
   keep(ladder('observatory', OBS))
-  keep(life('bench', 'village_life', { x: OBS.x + 64, y: OBS.y + 56 }, true))
+  keep(obsLife('bench', 'village_life', { x: OBS.x + 64, y: OBS.y + 56 }, true))
 
   // ---- SIGNALS (SW): the crossroads mailbox (compose.py:1107-1112) --------
+  //
+  // NO DISTRICT GATE HERE, AND NOT AN OVERSIGHT — the same for TRAINING above.
+  // Neither district has a ladder: cabinet/world/growth-ladders.yml measures no
+  // `mailbox`, `signals` or `dojo`, so there is nothing to ask. Gating them on
+  // an invented name would be a switch wired to the empty set, which is the
+  // exact defect the market-stall comment 200 lines up records paying for. They
+  // stay era-entitled village life, like the square's benches, and the missing
+  // ladder is reported rather than papered over.
   const SIG = ctx.anchor({ x: 840, y: 1226 })
   keep(life('mailbox', 'village_life', SIG, false))
   keep(life('signpost', 'village_life', { x: SIG.x + 82, y: SIG.y + 14 }, false))
