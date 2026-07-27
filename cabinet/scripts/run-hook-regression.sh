@@ -38,6 +38,7 @@ HARNESSES=(
   "germline-bash-write.sh"
   "evidence-access.sh"
   "evidence-pathnorm.sh"
+  "captain-exceptions.sh"
 )
 
 OVERALL_FAIL=0
