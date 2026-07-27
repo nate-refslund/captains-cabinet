@@ -184,10 +184,24 @@ temporary_allowances:
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: COG-7 compaction, or the attention term folds into the per-instrument objectives view when the legacy OVI composite retires on its ruled SUNSET path
+  - phase: spend-meter-uncapped
+    budget: framework_production_modules
+    additional: 4
+    reason: the cabinet's single cost meter — framework/cost/ (__init__, meter.py with the one rate table + transcript parser + lane recorder, record_turn.py the Stop-hook CLI, record_lane.py the non-session lane CLI). Replaces pricing arithmetic that was duplicated inline across two shell hooks, a shell report and a TypeScript advisor and had drifted in every copy; the shipped meter under-reported by a MEASURED 16.0x across 279 real transcripts. Four modules is the whole package and its net add, not a ceiling. EXACT measured running total (243 vs 239 base), 2026-07-27, via cognitive-architecture-census.py
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: COG-7 compaction folds the meter into the projection kernel, or the metering surface is absorbed by native platform cost telemetry
+  - phase: spend-meter-uncapped
+    budget: framework_production_noncomment_lines
+    additional: 778
+    reason: same framework/cost/ package as the row above — rate table with cache prices DERIVED from the input rate by published multiplier (so the 5x mispricing that shipped is not expressible), message.id dedupe (transcripts repeat one entry per content block; 821 entries vs 352 real API responses measured), per-session watermark so each response bills exactly once across Stop events, positive-confirmation Redis writes (redis-cli in stdin mode exits 0 with empty stdout when the server is down), and the ledger heartbeat that makes a dead meter distinguishable from a zero-spend day. EXACT measured running total (68104 vs 67326 base), 2026-07-27, via cognitive-architecture-census.py
+    owner: cognitive-core-program
+    sunset: '2027-01-19'
+    deletion_gate: COG-7 compaction folds the meter into the projection kernel, or the metering surface is absorbed by native platform cost telemetry
   - phase: captain-dates
     budget: framework_production_noncomment_lines
     additional: 208
-    reason: Captain dated commitments (Captain-Seat dry-run finding 1, 2026-07-26 — a captain-set date appeared in ZERO of the next twelve days of briefings). NO new module — framework/env.py gains the store resolver family (captain_dates_path, the CAPTAIN_DATE_STATUSES enum + id/ISO validators, _captain_date_iso with the PyYAML date-retyping rescue, the fail-closed per-row _captain_date_entry, the append-only latest-row-per-id fold captain_dates, captain_open_dates, and render_captain_date — the ONE line shape every surface prints, louder past due) and framework/frontdoor/morning_synthesis.py gains captain_date_items plus its gather_items leg (ONE briefing item carrying one line per open date, so the composer's five-item per-tier cap can never roll the Nth date into a count line; zero open dates emits nothing). EXACT measured running total (67883 vs 67675 base after merging the attention-well-spent and arm-the-cabinet landings; re-measured post-merge, +208 either way since the growth is this unit's own lines), 2026-07-27, via cognitive-architecture-census.py — the zero-headroom observed==max law means this is the exact new total, never a pre-allocated ceiling
+    reason: Captain dated commitments (Captain-Seat dry-run finding 1, 2026-07-26 — a captain-set date appeared in ZERO of the next twelve days of briefings). NO new module — framework/env.py gains the store resolver family (captain_dates_path, the CAPTAIN_DATE_STATUSES enum + id/ISO validators, _captain_date_iso with the PyYAML date-retyping rescue, the fail-closed per-row _captain_date_entry, the append-only latest-row-per-id fold captain_dates, captain_open_dates, and render_captain_date — the ONE line shape every surface prints, louder past due) and framework/frontdoor/morning_synthesis.py gains captain_date_items plus its gather_items leg (ONE briefing item carrying one line per open date, so the composer's five-item per-tier cap can never roll the Nth date into a count line; zero open dates emits nothing). EXACT measured running total (68661 vs 68453 base after merging the attention-well-spent, arm-the-cabinet and spend-meter landings; re-measured after EACH merge, +208 every time since the growth is this unit's own lines), 2026-07-27, via cognitive-architecture-census.py — the zero-headroom observed==max law means this is the exact new total, never a pre-allocated ceiling
     owner: cognitive-core-program
     sunset: '2027-01-19'
     deletion_gate: the dates resolver folds into the projection kernel alongside the availability dial, or COG-7 compaction

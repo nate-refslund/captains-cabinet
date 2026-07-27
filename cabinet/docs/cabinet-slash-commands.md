@@ -22,8 +22,14 @@ Trigger Channel + `cabinet/cron/*.sh` LaunchAgents handle all scheduled
 work. `/loop` is for *temporary* / *implementation* tasks only — like the
 convergence work currently in flight.
 
-**Cost discipline:** the `pre-tool-use.sh` daily spending cap applies. A
-runaway `/loop` will hit cap and halt with a Captain DM.
+**Cost discipline:** there is NO spending cap to catch you (Captain ruling
+2026-07-26 — `instance/config/platform.yml` reads `unlimited`). A runaway
+`/loop` will NOT halt on its own. What exists instead is detection, not
+prevention: every turn is metered, and the outcome-watchdog's
+`spend-without-output` row escalates to the Chair when cost climbs while
+nothing is being delivered. That is a report after the fact, on a 30-minute
+sweep — so a `/loop` that cannot make progress is your responsibility to
+stop, not the gate's. See `docs/cost-metering.md`.
 
 ## `/goal` — Outcome-driven autonomy with a Stop-hook gate
 
