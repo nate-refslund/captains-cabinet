@@ -231,8 +231,8 @@ emit_plan() {
     echo "                    on inherited-instance refusal -> prints the exact --adopt command and stops"
   fi
   echo " 4. [preset]        write instance/config/active-preset from generate-instance.py --print-preset"
-  echo "                    (portfolio -> portfolio, functional -> work — the generator's own mapping;"
-  echo "                    custom shapes = named handback, set the file yourself)"
+  echo "                    (cabinet.preset > mission.altitude > org_shape — the generator's ONE"
+  echo "                    resolution; custom shapes = named handback, set the file yourself)"
   echo " 5. [roles]         bash cabinet/scripts/bootstrap-roles.sh --roster instance/config/roster.yml"
   echo "                    (no roster.yml -> plain bootstrap-roles.sh, the functional default seed)"
   if [ "$CLEAN_ROOM" = "1" ]; then
@@ -406,6 +406,16 @@ do_set_preset() {
   if [ "$rc" -ne 0 ] || [ -z "$preset" ]; then
     echo "the generator could not resolve a preset for $answers (rc=$rc)." >&2
     echo "Named handback — set instance/config/active-preset yourself, then re-run." >&2
+    return 1
+  fi
+  # EXISTENCE GUARD (from the personal-preset landing, 2026-07-27): the resolved
+  # slug becomes a path segment, and an unpopulated preset fails later and less
+  # clearly. Kept on the single-resolution path rather than beside a second copy
+  # of the mapping — the drift this guard was written next to is what
+  # --print-preset removes.
+  if [ ! -f "presets/$preset/preset.yml" ]; then
+    echo "resolved preset '$preset' has no presets/$preset/preset.yml." >&2
+    echo "Named handback — populate that preset or fix the answers file, then re-run." >&2
     return 1
   fi
   printf '%s\n' "$preset" > instance/config/active-preset

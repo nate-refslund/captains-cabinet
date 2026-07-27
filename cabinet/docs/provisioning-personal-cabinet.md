@@ -19,7 +19,8 @@ Framework prep built around these being deferred. Answer them before starting.
 
 ## What the framework already ships (you don't need to build)
 
-- `presets/personal/` populated — constitution addendum, safety addendum, 4 schemas (longitudinal_metrics, coaching_narratives, coaching_consent_log, coaching_experiments), 2 agent scaffolds (physical-coach, mindfulness-coach)
+- `presets/personal/` populated and ACTIVE (2026-07-27) — constitution addendum, safety addendum, 4 schemas (longitudinal_metrics, coaching_narratives, coaching_consent_log, coaching_experiments), 5 agent scaffolds (navigator, librarian, reviewer, physical-coach, mindfulness-coach — no C-suite), a role/learning measurement seed, and `validate.sh` (a missing one is a hard-gate failure in cabinet-bootstrap.sh)
+- Recall: `autonomy.flavor: personal` now emits an `instance/config/sources.yml` binding `framework.sources.local:LocalNotesSource` over a declared notes folder, read-only. Before this it emitted nothing and recall fail-closed to `NullPersonalSource` (zero hits)
 - Cabinet MCP with 5 tools (identify, presence, availability, send_message, request_handoff); transport stdio for Phase 2, HTTP-ready signatures for Phase 3
 - `peers.yml` config schema + loader validation at boot (`CABINET_MODE=multi` enforces, single-mode warns)
 - Trust policy enforcement in `pre-tool-use.sh` §10

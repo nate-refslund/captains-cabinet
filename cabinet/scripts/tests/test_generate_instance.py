@@ -920,13 +920,21 @@ class TestSourcesAndOrgVault:
         run_gen(cab_root, answers)
         assert (cab_root / "instance/config/sources.yml").is_file()
 
-    def test_personal_flavor_emits_nothing(self, cab_root):
-        """flavor: personal (Flavor-A) → NO sources.yml — the captain binds
-        their own personal adapter by hand; today's behavior preserved."""
+    def test_personal_flavor_emits_the_local_binding(self, cab_root):
+        """INVERTED 2026-07-27 (was test_personal_flavor_emits_nothing, which
+        pinned "NO sources.yml"). Emitting nothing meant the personal flavor
+        resolved NullPersonalSource — zero recall — so the preset built for an
+        operator who does not run a company was the only shipped configuration
+        that was inert. It now binds the local notes adapter; the dispatch seam
+        deliberately stays unbound (the adapter has no write side)."""
         answers = acme_answers()
         answers["autonomy"] = {"posture": "propose_first", "flavor": "personal"}
         run_gen(cab_root, answers)
-        assert not (cab_root / "instance/config/sources.yml").exists()
+        src = yaml.safe_load(
+            (cab_root / "instance/config/sources.yml").read_text())
+        assert src["adapter"] == "framework.sources.local:LocalNotesSource"
+        assert src["local_root"] == "vault"
+        assert "dispatch" not in src
 
     def test_hand_authored_sources_never_clobbered(self, cab_root):
         """An existing sources.yml WITHOUT the marker (e.g. a live Flavor-A
@@ -937,10 +945,13 @@ class TestSourcesAndOrgVault:
         with pytest.raises(gi.GenerationError, match="REFUSING to overwrite"):
             run_gen(cab_root, acme_answers())
         assert hand.read_bytes() == before
-        # personal flavor: no emission attempted, hand file untouched, run OK
+        # personal flavor emits too (2026-07-27) — so the marker guard, not an
+        # absent emission, is what protects a hand-authored binding on BOTH
+        # flavors. It must refuse and leave the file byte-identical.
         answers = acme_answers()
         answers["autonomy"] = {"posture": "propose_first", "flavor": "personal"}
-        run_gen(cab_root, answers)
+        with pytest.raises(gi.GenerationError, match="REFUSING to overwrite"):
+            run_gen(cab_root, answers)
         assert hand.read_bytes() == before
 
     def test_generated_sources_rerun_idempotent(self, cab_root):

@@ -233,6 +233,67 @@ temporary_allowances:
       stops being the dominant verdict, so the split collapses back into the
       matrix rows it was compensating for, or COG-7 compaction brings
       production non-comment lines below the pinned baseline
+  - phase: personal-preset-live
+    budget: framework_production_modules
+    additional: 1
+    reason: >-
+      framework/sources/local.py — the local-folder PersonalSource. Paid because
+      the personal flavor emitted NO instance/config/sources.yml, so a
+      deployment declaring autonomy.flavor: personal fail-closed to
+      NullPersonalSource (available() False, search() no hits) and the ONE
+      preset shaped for an operator who does not run a company shipped inert
+      (adjudicated 2026-07-26, two blind arms). NOT merged into either existing
+      adapter, and the merge question is answered by grep rather than prose:
+      null.py IS the fail-closed default the resolver binds when config is
+      absent or damaged — teaching it to read a directory would make the
+      FAILURE path read files — and org.py's search() spawns memory.sh, which
+      needs NEON_CONNECTION_STRING plus an embedding provider and returns the
+      same empty without them, so binding it on a laptop buys nothing. The
+      module is bound as DATA through the existing resolver: no framework code
+      branches on flavor to select it, and the axis linter stays green.
+      Docstrings counted as written — they carry the mtime refusal (a
+      fabricated content_ts defeats the leak fence downstream), the realpath
+      jail, the caps, and the fact that there is no write side, which is the
+      reasoning a later reader needs and would be bought back with a smaller
+      number by rewriting it into "#" comments.
+    owner: onboarding-plane
+    sunset: '2027-01-19'
+    deletion_gate: >-
+      the connect-explore-structure sweep lands and supersedes single-folder
+      recall with a per-source ingest carrying ownership classes (resulting
+      order items 2-4 of the 2026-07-26 altitude gate), at which point this
+      adapter is folded into it; or COG-7 compaction brings production modules
+      below the pinned baseline
+  - phase: personal-preset-live
+    budget: framework_production_noncomment_lines
+    additional: 331
+    reason: >-
+      the same module. RE-MEASURED on every merge rather than carried from the
+      first measurement — master moved four times mid-flight (shell-lexer,
+      propose-means-propose, hook-redos and source-ownership-class each moved
+      this budget): cognitive-architecture-census.py reads 70434 on master
+      d7c66fe2, itself exactly at the pinned maximum, and 70765 on this
+      branch. The DELTA is 331 against every base measured (91faed1b 69654 ->
+      69985; 6e50570f 69848 -> 70179; 8095ded9 69849 -> 70180; d7c66fe2 70434
+      -> 70765), which is the check that the number measures this module and
+      not a merge. ZERO other framework files grew:
+      the emission is cabinet/scripts/generate-instance.py and the preset
+      payload is presets/personal/, both outside this budget's path. What the
+      331 buy: a bounded read (file cap, per-file byte cap, extension
+      allowlist, hidden dirs skipped), a realpath jail applied to BOTH the walk
+      and read_note so a symlink out of the declared root is skipped rather
+      than followed, IDF x saturating-TF ranking normalised into the same
+      0..1 base_score band OrgSource returns, and content_ts derived from
+      frontmatter or filename or left None. Every other Protocol method is an
+      explicit honest empty — a notes folder is not a mailbox, a dossier index
+      or a deploy log, and the two tri-state probes return None rather than a
+      fabricated boolean.
+    owner: onboarding-plane
+    sunset: '2027-01-19'
+    deletion_gate: >-
+      same as the module row above — the per-source ingest supersedes this
+      adapter, or COG-7 compaction brings production non-comment lines below
+      the pinned baseline
   - phase: bash-egress-fail-closed
     budget: framework_production_noncomment_lines
     additional: 186
@@ -713,6 +774,33 @@ expansions:
     provenance: >-
       per 2026-07-07 full-autonomy grant + 2026-07-21 ownership-on-GO; direction
       of record LAUNCH-DIRECTION-ALTITUDE-2026-07-26 (two blind arms)
+  - member: framework/sources/local.py
+    member_class: framework_production_modules
+    gate_date: '2026-07-26'
+    models_run:
+      - fable-5
+      - opus-5
+    adjudication: docs/plans/personal-preset-live-2026-07-27.md
+    merge_refuted: >-
+      framework/sources/null.py::NullPersonalSource — the two candidate merge
+      targets both refuse this capability for stated reasons. NullPersonalSource
+      is the adapter the resolver binds when sources.yml is absent, unparseable
+      or names an unimportable module; giving it a directory read would put file
+      I/O on the failure path, and its own docstring pins it as "thin honest
+      empties". framework/sources/org.py::OrgSource backs search() with
+      cabinet_memory through cabinet/scripts/lib/memory.sh and returns the
+      honest empty whenever NEON_CONNECTION_STRING is neither in the process env
+      nor named in cabinet/.env, which is the normal state of the box this
+      adapter serves. A third adapter beside them, bound as data, is the shape
+      this seam was built for.
+    consumer: framework/sources/__init__.py
+    provenance: >-
+      Altitude direction gate 2026-07-26, resulting-order item 8
+      ("presets/personal/ is the north star's own altitude and ships inert —
+      unblocking it is now a launch item"). get_source() importlib-loads and
+      binds this module from instance/config/sources.yml, which
+      cabinet/scripts/generate-instance.py emits for autonomy.flavor: personal;
+      before this the personal branch emitted nothing.
   - member: framework/onboarding/estate.py
     member_class: framework_production_modules
     gate_date: '2026-07-26'

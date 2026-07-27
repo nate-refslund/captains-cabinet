@@ -2,7 +2,7 @@
 
 A **preset** is a configuration overlay that adapts the Captain's Cabinet framework for a particular mode of operation. Presets define:
 
-- Which agent archetypes pre-scaffold (work: First Mate (CoS), CTO, CPO, CRO, COO; personal: coaches)
+- Which agent archetypes pre-scaffold (work: First Mate (CoS), CTO, CPO, CRO, COO; personal: Navigator, Librarian, Reviewer + two coaches — no C-suite)
 - Terminology defaults ("officer" vs "coach", "sprint" vs "cycle")
 - Constitution and safety addenda specific to the use case
 - Additional database schema beyond the framework base
@@ -18,7 +18,7 @@ A preset is **not** a separate codebase, a fork, or an alternate framework. It's
 | `work/` | Active | Product-team shape: First Mate (CoS) / CTO / CPO / CRO / COO, Linear-or-Library backlog, Notion-or-Library business brain, product repo workspace. |
 | `portfolio/` | Active | Portfolio shape: one persistent First Mate (id `cos`, single Telegram bot) + one on-demand CEO officer per lane, generated from `agents/_lane-ceo.md.template` into `instance/agents/`. Functional depth via hats + hat graduation and Sonnet crew, not extra fulltime officers. |
 | `developer/` | Active | OPTIONAL software product-kind kit (first of a family under the general product org): the work roster flat-copied + day-1 connector declarations (GitHub MCP, Playwright, read-only Neon; Vercel by REST+probes; Sentry armed when keys exist), Product Journal starter Space, probes starter config, day-1 runbook. Declarations only — env-var NAMES, no secrets, no scope auto-grants. |
-| `personal/` | Placeholder | Coaching / life-operator shape. Empty until Phase 2 of the Cabinet v2 arc populates it. |
+| `personal/` | Active | Single-operator shape at project/IC altitude — for someone who owns a PROJECT, not a company. Navigator / Librarian / Reviewer plus two longitudinal coaches; **no C-suite**. Recall binds a read-only local notes folder (`framework.sources.local:LocalNotesSource`). Activated 2026-07-27; it was a forbidden placeholder before that, which made the one preset built for a non-company operator the one preset that shipped inert. |
 | `_template/` | Template | Skeleton for creating a new preset. Copy to `presets/<your-name>/` and customize. |
 
 ## Preset structure

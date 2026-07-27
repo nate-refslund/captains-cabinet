@@ -25,10 +25,16 @@ import pytest
 _REPO = Path(__file__).resolve().parents[3]
 _PRESETS = _REPO / "presets"
 
-# Presets that run the org self-improvement gate on a full roster. `personal`
-# is intentionally excluded: it is a minimal placeholder preset with no
-# measurement seed, and fail-closed correctly surfaces it the day it activates.
-_FULL_ORG_PRESETS = ("work", "developer", "portfolio")
+# Every ACTIVATABLE preset — one that load-preset.sh will load and whose
+# measurement seed the self-improvement gate therefore collects.
+#
+# `personal` JOINED THIS LIST 2026-07-27. It was excluded with the note "a
+# minimal placeholder preset with no measurement seed, and fail-closed
+# correctly surfaces it the day it activates" — and that day is this one: the
+# preset was unblocked, so an unseeded activation would now brick the gate for
+# real rather than theoretically. Its seed ships at
+# presets/personal/measurement/scenarios/role_adaptation.py.
+_FULL_ORG_PRESETS = ("work", "developer", "portfolio", "personal")
 _CAT_RE = re.compile(r"""category\s*=\s*["'](?:role|learning)["']""")
 
 
