@@ -23,15 +23,29 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 HOOK="${HOOK_OVERRIDE:-$REPO_ROOT/cabinet/scripts/hooks/pre-tool-use.sh}"
+
+# Redis, hermetically (2026-07-27 safety-switch fence). Every hook probe below
+# runs with fixtures/redis-cli first on PATH — a stub that answers as a
+# reachable control plane with no keys set — the pattern evidence-pathnorm.sh
+# and germline-readonly.sh already use.
+#
+# It replaces an unconditional `redis-cli -h redis -p 6379 DEL <cabinet:killswitch>`, which
+# addressed a control plane this test does not own. That line did NOTHING
+# wherever the `redis` hostname does not resolve (the Mac fleet, and the GitHub
+# runner) — so the probes silently read whatever plane the ambient
+# REDIS_HOST/REDIS_PORT named, i.e. the LIVE one on an officer box — and was a
+# live emergency-stop clear wherever it does resolve (the watchdog container's docker
+# network). "Key absent" is exactly the state that DEL was reaching for; the
+# stub provides it without touching anyone's control plane.
+TEST_BIN="$SCRIPT_DIR/fixtures"
 PASS=0; FAIL=0
 
-redis-cli -h redis -p 6379 DEL "cabinet:killswitch" >/dev/null 2>&1
 
 run() {
   local label="$1" expected="$2" cmd="$3"
   local json ec
   json=$(jq -cn --arg c "$cmd" '{tool_name:"Bash",tool_input:{command:$c}}')
-  echo "$json" | OFFICER_NAME=cto bash "$HOOK" >/dev/null 2>&1
+  echo "$json" | PATH="$TEST_BIN:$PATH" OFFICER_NAME=cto bash "$HOOK" >/dev/null 2>&1
   ec=$?
   if [ "$ec" = "$expected" ]; then
     printf "  [PASS] %s: exit=%d\n" "$label" "$ec"
