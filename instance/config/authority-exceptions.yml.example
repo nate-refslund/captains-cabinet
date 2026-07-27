@@ -1,0 +1,117 @@
+# =============================================================================
+# authority exceptions — the Captain's "not that" list. DENY-ONLY.
+# =============================================================================
+#
+# CAPTAIN-RULING 2026-07-27, verbatim:
+#   "cabinet should decide what action is allowed. if captain wants some
+#    specific actions not allowed, captain can just say so and cabinet should
+#    be able to adjust, e.g. guardrails through hooks."
+#
+# This is the access-inversion doctrine (2026-07-04, estate writes) applied to
+# the authority plane. The cabinet's typed policy decides what is ALLOWED.
+# This file only ever SUBTRACTS from that. It has NO allow direction — there is
+# no syntax here that can permit anything — which is precisely what makes it
+# safe to leave UNLOCKED (unlike instance/config/act-first-surfaces.yml, which
+# is schg-locked because it grants). An officer who edits this file can only
+# narrow the cabinet: a loud, self-inflicted denial of service, never a
+# privilege escalation.
+#
+# TAKES EFFECT IMMEDIATELY. cabinet/scripts/policy-shadow.py re-reads this file
+# on EVERY tool call, so a row added mid-session constrains already-running
+# officers on their next call. No deploy, no restart, no code change.
+#
+# WHERE IT IS ENFORCED
+#   cabinet/scripts/hooks/pre-tool-use.sh §0 -> policy-shadow.py decision().
+#   The exception denylist is consulted BEFORE the typed policies, so a Captain
+#   exclusion outranks any policy that would have allowed the call.
+#
+# FAILURE SEMANTICS (deliberate, mirrors act-first-surfaces.yml)
+#   ABSENT                  -> empty denylist. The default posture; a fresh
+#                              hatch has no exceptions.
+#   PRESENT and empty       -> empty denylist.
+#   PRESENT but unreadable  -> EVERY call is refused until repaired. An
+#                              unreadable Captain exclusion list is never
+#                              ignored. The refusal names the file.
+#   PRESENT as a SYMLINK, a directory, or any non-regular file -> refused,
+#                              naming the shape. `ln -sf /dev/null <this file>`
+#                              must not read as "absent" — erasure is loud.
+#   A row that cannot be evaluated -> that row REFUSES. If the Captain excluded
+#                              a class of action and we cannot prove this call
+#                              is outside it, we do not act.
+#
+# WHAT THIS IS NOT — measured, not assumed. This file is unlocked so YOU can
+# edit it, and the officers run as the same user. It is on NEITHER of the
+# hook's protected-path lists today. Probed through the real pre-tool-use.sh:
+#
+#     probe                                              result
+#     ------------------------------------------------   ------
+#     Write over this file                               exit 0   (allowed)
+#     Bash: echo 'denylist: []' > this file              exit 0   (allowed)
+#     Bash: rm -f this file                              exit 0   (allowed)
+#     Bash: truncate this file to 0 bytes                exit 0   (allowed)
+#     -- contrast --
+#     Write to instance/config/act-first-surfaces.yml    exit 2   (refused)
+#
+# Four of those erasures are SILENT: an absent, empty, or `denylist: []` file is
+# legitimately the ruled posture and is indistinguishable from your own edit.
+# Only a WRONG-SHAPE file (symlink, directory, corrupt YAML) fails closed.
+#
+# So a row here holds against drift and mistake. It does NOT hold against an
+# officer trying to remove it. Making it a wall is one entry in the Ring-0 list
+# plus two hook lists — the same treatment shared/interfaces/captain-vetoes.yml
+# already gets (hook-protected, deliberately NOT locked, so you keep editing it
+# without root). It is reserved to you because it changes the Ring-0 SET.
+# Proposal, with the exact edits and the tests that must pass:
+#   docs/proposals/authority-exceptions-hook-protection-2026-07-27.md
+# Say the word and it rides the unlock window this deployment already needs.
+#
+# WHAT IS SHIPPED. Only this .example. The live file is absent by default —
+# behaviourally identical to an empty denylist. Copy this to
+# instance/config/authority-exceptions.yml when you want your first row.
+#
+# E-STOP, unchanged and total: `rm instance/config/authority-enforcing`
+# disarms the whole typed-policy plane, this file with it.
+#
+# -----------------------------------------------------------------------------
+# ROW SHAPE
+# -----------------------------------------------------------------------------
+#   id:               REQUIRED. Stable kebab-case identifier. Appears verbatim
+#                     in the refusal the officer sees ("captain_exception:<id>").
+#   why:              The Captain's reason, in his words. Shown with the
+#                     refusal, so the officer is told WHY, not just no.
+#   tool:             Exact tool name (Bash, Edit, Write, Read, an mcp__ name).
+#   officer:          Exact officer id (cos, cto, cpo, cro, coo, ...).
+#   command_contains: Case-insensitive substring of a Bash command.
+#   path_contains:    Case-insensitive substring of a file_path / path.
+#   action_type:      One of the classifier's action_type enum values
+#                     (framework/authority/classifier.py ACTION_TYPES) — e.g.
+#                     external_email, git_push_main, secret_read.
+#
+# A row matches when EVERY predicate it declares matches (AND). Omitted
+# predicates are wildcards. At least one predicate is REQUIRED: a row with none
+# would deny every call, which reads like a typo and behaves like an outage, so
+# it is a load error rather than a silent estate-wide halt.
+#
+# To narrow, add a row. To lift, delete it. That is the whole interface.
+# =============================================================================
+
+version: 1
+
+# EMPTY by default — the cabinet decides; the Captain subtracts.
+denylist: []
+
+# ---- worked examples (delete the [] above and uncomment to use) -------------
+# denylist:
+#   - id: no-prod-deploys
+#     why: "I want to be the one who ships to production."
+#     action_type: vercel_deploy_prod
+#
+#   - id: no-touching-the-billing-repo
+#     why: "Billing is off-limits until the audit closes."
+#     path_contains: "/billing/"
+#
+#   - id: cro-may-not-shell-into-the-crm
+#     why: "CRO works through the API, never the box."
+#     officer: cro
+#     tool: Bash
+#     command_contains: "ssh crm"
