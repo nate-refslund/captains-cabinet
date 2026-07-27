@@ -282,8 +282,18 @@ describe('iso kernel', () => {
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-const PACK_DIR = '/Users/nate/cabinet-meta/designs/world-pack'
-const pack = JSON.parse(readFileSync(join(PACK_DIR, 'world-pack.json'), 'utf8')) as {
+// The pack METADATA is vendored beside the code. It was read from a sibling checkout by
+// absolute path, which passes on the machine that wrote it and fails in CI with ENOENT —
+// which is what happened. A test that can only pass on one machine is not a guard.
+//
+// Only the metadata lives here. The ATLAS is art, and art goes through
+// cabinet/scripts/world-asset-intake.py --promote and the asset gate before the renderer
+// may load it (.gitignore:294-302 — owned originals ARE committable, but through the
+// gate, not around it). Force-adding the binary past that ignore would be bypassing a
+// control, which is never the fix.
+const pack = JSON.parse(
+  readFileSync(join(process.cwd(), 'src', 'lib', 'world', 'iso-pack.json'), 'utf8')
+) as {
   note: string
   frames: Record<string, { dw: number; dh: number; anchor: [number, number]; scale: number }>
 }
