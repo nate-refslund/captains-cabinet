@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: e68adad9456b80394270fa6354b65d6f4a5de10162235232b787571e1e3e2b0a
+Reviewed-Scope-Digest: 8421cbabbc5331087530603011d139ae0acfdd4d82cfeed45f95006ffa171f82
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
@@ -615,5 +615,37 @@ merge: the census contract (the spend meter's two allowance rows) — no COG-4 i
 stays a scope-membership re-bind. Census re-measured on the merged bytes: PASS at 243 modules / 68661
 lines, observed==max with zero headroom, the dates row still +208. `verify-cognitive-phase4.sh` re-run
 green end-to-end on the merged tree after this re-bind.)
+
+(MOVED BY THE CHANNEL-FLATLINE ALARM LANDING, 2026-07-27 —
+e68adad9456b80394270fa6354b65d6f4a5de10162235232b787571e1e3e2b0a -> the value above. Branch
+`feat/channel-flatline-alarm` (PR #224), one commit b7dcde05 over master 19d1c2e1: a captain-facing
+channel that goes silent now says so once, per Captain-Seat dry-run finding 2.
+A SCOPE-MEMBERSHIP re-bind, and the claim is made here because it holds. EXACTLY ONE in-scope path
+moved, verified by intersecting the resolved 85-entry scope with
+`git diff --name-only origin/master...HEAD` (12 changed files, one in scope) rather than by reading
+the diff: `cabinet/config/cognitive-architecture-contract.yml` gains TWO `temporary_allowances` rows
+(`framework_production_modules` +1, `framework_production_noncomment_lines` +390) for the new
+`framework/frontdoor/card_flatline.py` detector and its two delivery seams. That file is not a COG-4
+surface; it is bound only because the census contract sits in the declared scope — the same class as
+the spend-meter (a3036694), attention-well-spent (3dcd3e62) and contact-liveness (598868ed) re-binds
+above. NO maximum was relaxed and no threshold touched: the census re-measures PASS at 244<=244
+modules and 69051<=69051 lines, exact totals, zero headroom preserved.
+NO COG-4 implementation path moved: not `framework/projection`, `framework/scheduler`,
+`framework/organs`, no organ manifest, no runner, no measurement surface, no fixture, no boundary row.
+The eleven other changed paths sit OUTSIDE this scope and are named for the record: the new detector,
+probe, runbook and two test modules; `framework/frontdoor/{tell_digest,run_briefing}.py`;
+`cabinet/scripts/cabinet-doctor.sh` (a new check 16); `cabinet/scripts/docs-sweep-allowlist.txt`;
+the root `conftest.py` (one new read fence); and this landing's own FW-019 proof
+`feat-channel-flatline-alarm-cp1.md`.
+Re-measured on the branch bytes, not inherited: `verify-cognitive-phase4.sh` full green end-to-end
+after this re-bind; census 29 passed; `cabinet/scripts/tests` 4768 passed / 28 skipped;
+`framework/` 6748 passed with the one declared pre-existing red
+(`test_retro_shim::test_reexports_constants`, a locally-installed pipe constant CI does not have)
+reproduced identically on pristine master.
+NOT re-reviewed by a fresh frozen COG-4 panel; the branch carries its own FW-019 artifact.
+SIBLING BINDERS NOT TOUCHED, deliberately: the contract yml also sits in the COG-1/2/3 scopes, all
+three of which were ALREADY BLOCK on pristine master before this branch existed. Re-binding them
+would restamp frozen gate archaeology. This commit edits ONLY the digest-excluded review artifact, so
+the digest it records is stable under its own landing — verified by recomputing after the edit.)
 
 Verdict: PASS
