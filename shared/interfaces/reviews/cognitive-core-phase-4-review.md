@@ -21,15 +21,30 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 9b8bf627c9c6979c82911e6548e4a8e0b5d888cf9420be8983a03f3dea21bc9f
-(RE-BOUND repeatedly on 2026-07-27 — the census-shift-left, expansion-registry,
-census-set-pins, recipient-exclusion-carve-backs and hook-redos landings each edited
-`cabinet/config/cognitive-architecture-contract.yml`, which sits in `restore_from_baseline`
-and is therefore digest-bound. NO COG-4 implementation byte changed by any of them: every
-edit is a budget/allowance row, and `framework/authority/classifier.py` remains in the
-manifest's `must_remain_unchanged` block against the pinned phase anchor, which the
-rollback rehearsal re-checks. hook-redos also touches `policy_engine.py` and
-`policy-shadow.py`, neither in EXPECTED_SCOPE. The phase-4 findings below are unaffected.)
+Reviewed-Scope-Digest: PLACEHOLDER
+
+
+
+(RE-BOUND repeatedly on 2026-07-27 — the census-shift-left, expansion-registry and
+census-set-pins landings each edited `cabinet/config/cognitive-architecture-contract.yml`,
+which sits in `restore_from_baseline` and is therefore digest-bound, and so did this
+branch's `recipient-exclusion-carve-backs` allowance row. NO COG-4 implementation byte
+changed by any of them: every edit is a budget/allowance row, and
+`framework/authority/classifier.py` remains in the manifest's `must_remain_unchanged`
+block against the pinned phase anchor, which the rollback rehearsal re-checks. The
+phase-4 findings below are unaffected.)
+(RE-BOUND 2026-07-27, `fix/propose-means-propose`, same commit as the change that
+moved the bytes — the re-bind-at-landing procedure this artifact already
+prescribes. Prior digest: `b8ee235e0c34bd2a…`. The moved file in scope is
+`framework/authority/policy_engine.py`: `_eval_authority_matrix` now returns a
+`GateDecision` carrying a structured verdict kind instead of a bare `str`, so
+`propose_only` and `always_gated` stop being operationally identical. The COG-4
+findings are unaffected — the change adds no organ, no scheduler surface and no
+serve surface, touches no COG-4 entry point, and is separately reviewed in
+`fix-propose-means-propose-cp1.md` with six per-ceiling arms and a corpus
+cross-check over 80,307 recorded calls. Exit codes and all guardian block
+strings are byte-identical, which is what keeps this re-bind mechanical rather
+than a re-review.)
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
@@ -612,6 +627,16 @@ passes in isolation under no load.
 SIBLING BINDERS unchanged: COG-0/1/2/3 were already BLOCK on pre-change master and are NOT re-bound
 here. This commit edits ONLY the digest-excluded review artifact, so the digest it records is stable
 under its own landing — verified by recomputing after the edit.)
+(RE-BOUND 2026-07-27, `fix/hook-redos`, same commit as the change that moved the
+bytes. The moved file in scope is `cabinet/config/cognitive-architecture-contract.yml`:
+ONE `temporary_allowances` row paying for the +1 framework line of
+`policy_engine._STMT_RUN`, the rewrite that removes catastrophic backtracking from
+the `sed -i` write pattern (52 of 80,307 recorded officer calls exceeded 1.5s in it,
+and the hook has no time bound). The COG-4 findings are unaffected — no organ, no
+scheduler surface, no serve surface, no COG-4 entry point. The landing's other two
+files, `framework/authority/policy_engine.py` and `cabinet/scripts/policy-shadow.py`,
+are not in EXPECTED_SCOPE. Reviewed in `fix-hook-redos-cp1.md`, with equality proved
+in both directions and re-checked over all 80,307 recorded calls: 0 verdict changes.)
 
 (MERGE RE-BIND, 2026-07-27: the spend-meter landing (PR #215) reached master while this branch was in
 CI and re-bound this same digest to 540c08fb.... Two concurrent landings cannot both be right about one
