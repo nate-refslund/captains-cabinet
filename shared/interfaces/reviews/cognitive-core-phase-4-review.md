@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: PENDING_MERGE_RECOMPUTE
+Reviewed-Scope-Digest: e68adad9456b80394270fa6354b65d6f4a5de10162235232b787571e1e3e2b0a
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
@@ -580,7 +580,7 @@ path, so this stays a scope-membership re-bind. `verify-cognitive-phase4.sh` exi
 tree.)
 
 (RE-BOUND BY THE CAPTAIN-DATES LANDING, 2026-07-27 — 0305f77547e14563c1a8505c14336ec4e8993fbc133217ce81136f7e4c5c4ce5
--> the value above. EXACTLY TWO in-scope paths moved, verified by intersecting the resolved 85-entry
+-> 5615aae1867d54024ac851578e7970611e55ff7a2860bd83d7d879bb5f10f0aa, superseded by the merge note below. EXACTLY TWO in-scope paths moved, verified by intersecting the resolved 85-entry
 scope with `git diff --name-only origin/master..HEAD` rather than by reading the diff:
   (1) `cabinet/config/cognitive-architecture-contract.yml` — one new
       `framework_production_noncomment_lines` allowance row for the dates store (+208 measured; the
@@ -604,5 +604,16 @@ passes in isolation under no load.
 SIBLING BINDERS unchanged: COG-0/1/2/3 were already BLOCK on pre-change master and are NOT re-bound
 here. This commit edits ONLY the digest-excluded review artifact, so the digest it records is stable
 under its own landing — verified by recomputing after the edit.)
+
+(MERGE RE-BIND, 2026-07-27: the spend-meter landing (PR #215) reached master while this branch was in
+CI and re-bound this same digest to 540c08fb.... Two concurrent landings cannot both be right about one
+number, so it is recomputed over the MERGED committed tree rather than either side being picked — a
+hand-picked digest from either parent would record a tree that never existed. Merged value:
+e68adad9456b80394270fa6354b65d6f4a5de10162235232b787571e1e3e2b0a. The digest line was the ONLY conflict in this artifact;
+both landings' notes above are preserved verbatim, neither overwritten. In-scope paths carried in by the
+merge: the census contract (the spend meter's two allowance rows) — no COG-4 implementation path, so this
+stays a scope-membership re-bind. Census re-measured on the merged bytes: PASS at 243 modules / 68661
+lines, observed==max with zero headroom, the dates row still +208. `verify-cognitive-phase4.sh` re-run
+green end-to-end on the merged tree after this re-bind.)
 
 Verdict: PASS
