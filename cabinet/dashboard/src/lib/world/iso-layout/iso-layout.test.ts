@@ -43,6 +43,7 @@ import {
 import {
   clearOfLane,
   clipBlobToLand,
+  grownField,
   maxGroundOverlap,
   paintField,
   snapInland,
@@ -122,6 +123,33 @@ function closestLotPair(l: Layout): number {
     }
   }
   return mn
+}
+
+/**
+ * The structure ROLES a state justifies, derived from the state and not from
+ * the layout — the shape of checks/world_checks.py check_state_traceable, which
+ * asks whether every drawn thing traces back to a rule over `state`.
+ *
+ * It is written out longhand rather than imported so the arms that use it are
+ * measuring the RULE's claim rather than re-running the rule's code. It covers
+ * the village set only; a state with berths, cargo or a harbourmaster also
+ * builds quayside structures, and the arms below assert separately that this
+ * state builds none.
+ */
+function justifiedRoles(state: LayoutState): string[] {
+  const present = (obj: string) => {
+    const rung = state.stages?.[obj]
+    return rung !== null && rung !== undefined && rung !== 'none'
+  }
+  const out: string[] = []
+  if (present('great_house')) out.push('great_house')
+  if (present('well')) out.push('well')
+  out.push('firepit') // ALWAYS_DRAWN: an unbuilt hearth is still a hearth
+  if (state.era !== 'camp' && present('market_stall')) out.push('market_stall')
+  for (let i = 0; i < countOf(state, 'officer_dwellings'); i++) out.push('officer_dwelling')
+  for (const obj of ['library', 'workshop', 'outbuildings']) if (present(obj)) out.push(obj)
+  out.push('lighthouse') // ALWAYS_DRAWN: an unlit cairn is the drawing
+  return out
 }
 
 function sizeOfItem(kind: string) {
@@ -667,8 +695,15 @@ describe('scatter — a density field, and rejection at sampling time', () => {
     // used, so the two bands have areas nothing analytic can give. Measure
     // both areas by seeded Monte Carlo through THAT predicate, then compare
     // points per unit plantable area.
-    const items = hamlet.scatter
+    // RING + SCATTER, because the ring IS planting. Measuring `scatter` alone
+    // now measures the planting that is left over AFTER the belt took the
+    // coastal band, which inverts the very gradient this arm exists to see: the
+    // number went from 1.9x to 0.90x the moment the ring landed, while the
+    // realized planting got MORE coastal, not less. A sensor pointed at part of
+    // a population cannot answer a question about the population.
+    const items = [...hamlet.ring, ...hamlet.scatter]
     expect(items.length).toBeGreaterThan(30)
+    expect(hamlet.ring.length).toBeGreaterThan(20)
     const c = { x: LAYOUT_SPACE.cx, y: LAYOUT_SPACE.cy }
     const radialFraction = (p: Point) => {
       const ang = Math.atan2((p.y - c.y) / 0.92, p.x - c.x)
@@ -771,7 +806,13 @@ describe('era gates CONTENT, not just size', () => {
       FAST
     )
     expect(farmedCamp.paint.map((p) => p.kind)).toContain('ploughed')
-    expect(farmedCamp.paint.filter((p) => p.kind !== 'pond')).toHaveLength(3)
+    // THREE PLOT REGIONS, named by kind rather than by "everything that is not
+    // the pond": that phrasing counted the ground-shading passes too, so adding
+    // the broken meadow or the mottle broke an arm about FIELD PLOTS. A count
+    // over a complement is a count over whatever else the file happens to emit.
+    expect(
+      farmedCamp.paint.filter((p) => p.kind === 'ploughed' || p.kind === 'crop')
+    ).toHaveLength(3)
     // and the fixture camp, which has no such count, draws none
     expect(camp.paint.map((p) => p.kind)).not.toContain('ploughed')
   })
@@ -799,7 +840,9 @@ describe('era gates CONTENT, not just size', () => {
   it('era may never hide a COUNT: dwellings track the measured number', () => {
     for (const n of [0, 2, 5]) {
       const l = composeLayout({ ...HAMLET, counts: { officer_dwellings: n } }, 'acme-corp', FAST)
-      expect(l.structures.filter((s) => s.kind === 'officer_dwelling')).toHaveLength(n)
+      // by ROLE, not by sprite: the officer row draws a different house per lot
+      // (see dwellingKind), so a filter on `kind` would count one variant.
+      expect(l.structures.filter((s) => s.role === 'officer_dwelling')).toHaveLength(n)
     }
   })
 
@@ -979,9 +1022,15 @@ describe('the land rule — nothing stands on open water', () => {
         const l = composeLayout(HAMLET, seed, {
           coastline: { step: 4, radii: { hw, vh: Math.round((hw * 784) / 962) } },
         })
-        // every measured building still exists — the rule moves things, it does
-        // not quietly delete the org's districts
-        expect(l.structures).toHaveLength(10)
+        // EVERY MEASURED BUILDING STILL EXISTS — the rule moves things, it
+        // does not quietly delete the org's districts. Asserted as the set of
+        // ROLES the state justifies rather than as a count: the count was 10,
+        // which silently encoded "one of the eleven is dropped on these radii",
+        // so a change that made the eleventh fit read as a regression. A number
+        // that nobody can derive from the state is a number nobody can check.
+        expect(l.structures.map((s) => s.role).sort()).toEqual(
+          justifiedRoles(HAMLET).sort()
+        )
         for (const s of l.structures) {
           expect({ hw, seed, kind: s.kind, land: l.coast.landAt(s.at.x, s.at.y - 2) }).toEqual({
             hw,
@@ -1045,7 +1094,9 @@ describe('the land rule — nothing stands on open water', () => {
     expect(hamlet.coast.landAt(sea.x, sea.y)).toBe(false)
     const drowned = {
       ...hamlet,
-      structures: [{ kind: 'workshop', at: sea, flip: false, size: { w: 170, h: 170 } }],
+      structures: [
+        { kind: 'workshop', role: 'workshop', at: sea, flip: false, size: { w: 170, h: 170 } },
+      ],
     }
     expect(auditLayout(drowned).inWater).toEqual([{ kind: 'workshop', at: sea }])
   })
@@ -1176,8 +1227,28 @@ describe('a keep-out disc is an exclusion, not a density hint', () => {
     // disc, including a full-size oak 26px from the great house.
     for (const seed of SEEDS) {
       const l = composeLayout(HAMLET, seed, FAST)
-      expect(l.scatter.length).toBeGreaterThan(30) // not vacuous
-      const inside = l.scatter.filter((s) => insideDisc(l, s.at))
+      // NOT VACUOUS — counted over the planting, which is the ring AND the
+      // meadow scatter. The old guard counted `scatter` alone and it started
+      // tripping the moment the belt landed: the belt takes the coastal band
+      // first, so the meadow pass legitimately emits fewer points while the
+      // island carries three times as many plants. A liveness guard aimed at
+      // part of a population reports a shortage that does not exist.
+      expect(l.ring.length + l.scatter.length).toBeGreaterThan(60)
+      // EXCEPT THE POND'S OWN TWO PLANTS. Lilypads and bank reeds are placed
+      // by passes that are deliberately not free()-gated — exactly as the verge
+      // pass is not — and the pond's 190px disc covers the water and its whole
+      // margin, so both land inside one by design.
+      //
+      // The exemption is stated as WHERE, not as WHICH SPRITE: an item may be
+      // inside a disc only if it is standing in the pond or on the pond's
+      // margin. Exempting the name `reeds` would have opened a hole for the
+      // SHORE pass, which plants reeds too and is free()-gated, so a shore reed
+      // that wandered into the village square would have stopped being visible
+      // to this arm. planting.test.ts then pins the other half — that every one
+      // of these really is at a waterline.
+      const pondPlant = (p: Point) =>
+        waterField(l.paint)(p.x, p.y) || grownField(l.paint, ['pond', 'stream'], 52)(p.x, p.y)
+      const inside = l.scatter.filter((s) => insideDisc(l, s.at) && !pondPlant(s.at))
       expect({ seed, inside: inside.map((s) => s.kind) }).toEqual({ seed, inside: [] })
     }
   })
@@ -1194,10 +1265,20 @@ describe('a keep-out disc is an exclusion, not a density hint', () => {
   it('nothing is planted on the plaza, in a field or in the pond', () => {
     for (const seed of SEEDS) {
       const l = composeLayout(HAMLET, seed, FAST)
-      const onPaint = l.scatter.filter((s) =>
-        insidePaint(l, ['plaza', 'crop', 'ploughed', 'pond'], s.at)
+      const onPaint = l.scatter.filter(
+        (s) => s.kind !== 'lilypads' && insidePaint(l, ['plaza', 'crop', 'ploughed', 'pond'], s.at)
       )
       expect({ seed, onPaint: onPaint.map((s) => s.kind) }).toEqual({ seed, onPaint: [] })
+      // ...and the ring, which is a separate population placed by a separate
+      // module against its own predicate — the arm above would not have noticed
+      // a belt growing straight across the plaza.
+      const ringOnPaint = l.ring.filter((s) =>
+        insidePaint(l, ['plaza', 'crop', 'ploughed', 'pond', 'stream'], s.at)
+      )
+      expect({ seed, ringOnPaint: ringOnPaint.map((s) => s.kind) }).toEqual({
+        seed,
+        ringOnPaint: [],
+      })
     }
   })
 
@@ -1352,7 +1433,9 @@ describe('the seed SPACE, not five islands', () => {
     for (const seed of WIDE_SEEDS) {
       const l = composeLayout(VILLAGE, seed, FAST)
       expect(l.paint.some((r) => r.kind === 'crop' || r.kind === 'ploughed')).toBe(true)
-      const on = l.scatter.filter((s) => insidePaint(l, ['plaza', 'crop', 'ploughed', 'pond'], s.at))
+      const on = [...l.ring, ...l.scatter].filter(
+        (s) => s.kind !== 'lilypads' && insidePaint(l, ['plaza', 'crop', 'ploughed', 'pond'], s.at)
+      )
       expect({ seed, on: on.map((s) => `${s.kind}@${s.at.x.toFixed(0)},${s.at.y.toFixed(0)}`) }).toEqual({
         seed,
         on: [],

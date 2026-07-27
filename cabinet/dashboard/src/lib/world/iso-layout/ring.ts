@@ -1,0 +1,265 @@
+/**
+ * FOREST ENCLOSURE RING — "the biggest single lever" (compose.py:885).
+ *
+ * PORTED FROM compose.py lines 885-941.
+ *
+ * WHAT IT IS. Four sublayers of trees at increasing insets from the waterline,
+ * walked by ANGLE around the island rather than sampled over its area. That
+ * distinction is the whole point: a Poisson field with a density that rises
+ * toward the coast produces a gradient, and a gradient is not a frame. Walking
+ * the shore at a fixed angular step produces a continuous belt of canopy with
+ * the meadow inside it, which is what makes an island read as enclosed instead
+ * of as a lawn that happens to end.
+ *
+ * WHY THIS PORT NEEDED IT BADLY. Enforcing the keep-out discs deleted the trees
+ * that had been standing INSIDE the village and nothing replaced the ones that
+ * belong on the rim: planting fell from 173-206 items per hamlet to 42-68, and
+ * the density profile from a disc rim outward read 0 / 137 / 72 / 41 per Mpx —
+ * a hard edge with a pile-up on it, and empty coast beyond. The exclusions were
+ * right; the ring is the half that was missing.
+ *
+ * THE GAPS ARE NOT DECORATION (compose.py:886-889). A ring with no gaps is a
+ * wall: it hides the water, and the water is what says "island". The reference
+ * opens three arcs, and this port keeps its numbers verbatim because the
+ * approved stills are what those numbers produce. Their measured directions,
+ * in this coordinate frame (0 = east, 90 = south, 180 = west, y grows down):
+ *   58-122   due south — the harbour and its cove.
+ *   18-46    east-south-east — the lighthouse point.
+ *   196-224  west-north-west.
+ * The reference's own comment names the third one "the west coastal lane". It
+ * is not: that lane runs 126-167 degrees and already punches its own hole in
+ * the ring through the near-lane rule below. The arc is recorded here by what
+ * it measures rather than by what the comment calls it, because a port that
+ * copies a label it can disprove teaches the next reader something false.
+ *
+ * WHERE THIS DIVERGES FROM THE REFERENCE, deliberately, twice:
+ *
+ *   ORDER. compose.py plants the ring BEFORE it places the district buildings,
+ *   protecting the plots only with the keep-out discs it reserved first
+ *   (:899-914). This port plants it AFTER the structures, so a ring tree can
+ *   never take ground a measured building needs — the exact defect
+ *   compose.py:907-909 records paying for, one level deeper. The visible result
+ *   is the same belt (the discs already keep the ring 93px clear of every lot
+ *   centre) and the failure mode is strictly smaller.
+ *
+ *   REJECTION. The reference calls place() with its default nudge, which shoves
+ *   a blocked tree sideways until it settles. This port's standing rule is
+ *   reject-at-sampling-time and DROP, because nudging oscillates between two
+ *   neighbours and settles on neither — silently, since the prop still draws.
+ *   So a ring candidate that is not admissible is dropped, and the belt's own
+ *   spacing comes from the occupancy book rather than from the reference's
+ *   30px reservation.
+ *
+ * PURE and SEEDED: one stream per layer, consumed in the reference's order.
+ */
+import { footprintOnLane, groundTaken, type Footprint, type Occupant } from './clearance'
+import { fnv1a, seededRng } from '../hash'
+import type { Coastline } from './coastline'
+import type { LaneField } from './lanes'
+import type { District, ScatterItem } from './scatter'
+import type { LayoutSpace, Point } from './space'
+
+/**
+ * compose.py:920-921 — the two species pools. Pines are the silhouette against
+ * the sea; broadleaf fills in behind them.
+ */
+export const RING_PINES: readonly string[] = ['tree_pine', 'tree_pine_small']
+export const RING_BROAD: readonly string[] = ['tree_oak', 'tree_oak_small', 'tree_birch']
+
+/** One depth sublayer of the belt. */
+export interface RingLayer {
+  /** How far inside the waterline this layer's trunks sit. */
+  inset: number
+  /** The species pool this layer draws from. */
+  kinds: readonly string[]
+  /** Extra inward jitter, 0..jitter px, so the belt has no machined edge. */
+  jitter: number
+}
+
+/**
+ * compose.py:923-927. The reference's tuple carries a fourth field it calls
+ * `density` (108/96/118/130) which its own loop body never reads — a dead
+ * parameter, not a rule, so it is not ported. Porting it would have meant
+ * inventing a meaning for it and then testing the invention.
+ */
+export const RING_LAYERS: readonly RingLayer[] = [
+  { inset: 22, kinds: RING_PINES, jitter: 26 },
+  { inset: 78, kinds: [...RING_PINES, ...RING_BROAD], jitter: 40 },
+  { inset: 140, kinds: [...RING_BROAD, 'tree_oak_small', 'bush_round'], jitter: 48 },
+  {
+    inset: 206,
+    kinds: [...RING_BROAD, 'bush_round', 'bush_flowering', 'fern_cluster'],
+    jitter: 60,
+  },
+]
+
+/** compose.py:888-889 — the arcs the belt opens, in degrees. */
+export const RING_GAPS: readonly (readonly [number, number])[] = [
+  [58, 122],
+  [18, 46],
+  [196, 224],
+]
+
+/** compose.py:888 in_gap(). Exclusive at both ends, as in the reference. */
+export function inRingGap(deg: number): boolean {
+  return RING_GAPS.some(([lo, hi]) => deg > lo && deg < hi)
+}
+
+/**
+ * compose.py:916-918 clear_of_districts(). The disc is shrunk to `k` of its
+ * radius because "the ring frames the village; it may crowd a district but not
+ * grow through it" — a belt held off at the full radius leaves a bald collar
+ * around every district, which is the hole this whole exercise exists to close.
+ *
+ * The 1.3 vertical squash is the reference's, and it is NOT the 1.35 the
+ * planting predicate uses. Both are copied rather than unified: they are two
+ * separate constants in the reference and quietly making them agree would be
+ * changing the composition under cover of tidying it.
+ */
+export const RING_DISTRICT_K = 0.62
+
+export function clearOfDistricts(
+  x: number,
+  y: number,
+  districts: readonly District[],
+  k = RING_DISTRICT_K
+): boolean {
+  return !districts.some(
+    (d) => (x - d.at.x) ** 2 + ((y - d.at.y) * 1.3) ** 2 < (d.r * k) ** 2
+  )
+}
+
+/** compose.py:936 — below this radius the belt would be planting the meadow. */
+export const RING_MIN_RADIUS = 130
+
+/**
+ * compose.py:941 `reserve(x, y, 30)` — the belt's own minimum trunk separation.
+ *
+ * THIS IS NOT THE GROUND-DIAMOND RULE, and that is the point. Two buildings
+ * sharing a ground diamond are stacked and it is a defect; two trees 40px apart
+ * with interpenetrating canopies are a FOREST, and holding a belt to
+ * building-grade exclusivity thins it into a dotted line. Measured with
+ * `groundTaken` at the standard 0.16 against the belt's own members: a full pine
+ * needs ~92px of clearance, the belt's angular step gives 69-113px of arc, and
+ * layer 1 (inset 78) sits inside layer 0's (inset 22) diamonds almost
+ * everywhere — so the belt came out at 35-75 items where the reference draws
+ * 150-200 and the depth sublayers largely cancelled each other.
+ *
+ * The reference resolves it by never dropping: place() nudges a crowded tree up
+ * to 30 times and draws it wherever it ends up. This port may not nudge (see the
+ * header), so it takes the reference's OTHER number — the 30px reservation the
+ * ring writes for itself — as the admission rule instead. Buildings still keep
+ * their ground: the caller's occupancy book is tested with the strict rule.
+ */
+export const RING_SPACING = 30
+
+export interface RingItem extends ScatterItem {
+  /** Which sublayer planted it — the renderer's depth cue, 0 = outermost. */
+  layer: number
+  size: Footprint
+}
+
+export interface RingContext {
+  space: LayoutSpace
+  coast: Coastline
+  lanes: LaneField
+  districts: readonly District[]
+  /** The occupancy book. READ here; the caller decides what to add to it. */
+  occupied: readonly Occupant[]
+  /** The painted water (pond + outflow) — nothing is planted in it. */
+  inWater: (x: number, y: number) => boolean
+  /** The painted plaza and tilled plots — nothing is planted on them either. */
+  onPaving: (x: number, y: number) => boolean
+  sizeOf: (kind: string) => Footprint
+  layers?: readonly RingLayer[]
+}
+
+/**
+ * Walk the shore and plant the belt. Returns items in emission order,
+ * outermost layer first; the caller adds them to the occupancy book.
+ *
+ * `occupied` is read once per candidate and the function keeps its OWN running
+ * book of what it has planted, so two trees in the same layer cannot land on
+ * each other. It never mutates the caller's array: the layout stays a pure map
+ * from (state, seed) to data.
+ */
+export function forestRing(seed: string | number, ctx: RingContext): RingItem[] {
+  const numSeed = typeof seed === 'number' ? seed >>> 0 : fnv1a(seed)
+  const layers = ctx.layers ?? RING_LAYERS
+  const out: RingItem[] = []
+  // Everything this call has planted so far, as the reference's reservations:
+  // (x, y) with RING_SPACING. The caller's book is tested separately, with the
+  // strict ground rule — see RING_SPACING for why the belt gets its own.
+  const planted: Point[] = []
+  const crowded = (x: number, y: number) =>
+    planted.some(
+      (p) => (x - p.x) ** 2 + ((y - p.y) * 1.35) ** 2 < RING_SPACING * RING_SPACING
+    )
+  const cx = ctx.space.cx
+  const cy = ctx.space.cy
+
+  for (let li = 0; li < layers.length; li++) {
+    const layer = layers[li]
+    // ONE STREAM PER LAYER, not one for the ring: the layers are independent
+    // bands and a shared stream would make the outermost belt's shape depend on
+    // how many candidates the layer before it happened to reject.
+    const rng = seededRng(fnv1a(`${numSeed}:ring:${li}`))
+    // Sampled against the LARGEST sprite in the pool, as everywhere else in
+    // this library: sampling against a sapling and then drawing a full pine is
+    // how a 175px tree lands in a gap that only fitted a 50px one.
+    const size = {
+      w: Math.max(...layer.kinds.map((n) => ctx.sizeOf(n).w)),
+      h: Math.max(...layer.kinds.map((n) => ctx.sizeOf(n).h)),
+    }
+
+    let a = 0
+    while (a < 360) {
+      // deg is read BEFORE the step is added — the reference's own order, and
+      // it is what puts the first sample at exactly 0 degrees.
+      const deg = a % 360
+      a += 4.4 + rng() * 2.8
+      if (inRingGap(deg)) continue
+      const ang = (deg * Math.PI) / 180
+      const r = ctx.coast.edgeAt(ang) - layer.inset - Math.floor(rng() * (layer.jitter + 1))
+      if (r < RING_MIN_RADIUS) continue
+      const x = cx + Math.cos(ang) * r
+      const y = cy + Math.sin(ang) * r * 0.92
+      const at = { x, y }
+      // the reference's three terms...
+      if (!ctx.coast.landAt(x, y)) continue
+      if (ctx.lanes.nearLane(x, y, 40)) continue
+      if (!clearOfDistricts(x, y, ctx.districts)) continue
+      // ...and this port's two: painted water and paved/tilled surface, which
+      // the reference's ring predicate omits because its pond and its plots are
+      // covered incidentally by district discs it happens to have reserved.
+      // The outflow stream is not, and it runs through open west meadow the
+      // innermost layer reaches on most seeds.
+      if (ctx.inWater(x, y) || ctx.onPaving(x, y)) continue
+      // ...and the standing rejection rules every placement in this library
+      // obeys: the road wins, and a building's ground is a building's ground.
+      if (footprintOnLane(at, size, ctx.lanes)) continue
+      if (groundTaken(at, size, ctx.occupied)) continue
+      if (crowded(x, y)) continue
+
+      const kind = layer.kinds[Math.min(layer.kinds.length - 1, Math.floor(rng() * layer.kinds.length))]
+      const flip = rng() < 0.5
+      const itemSize = ctx.sizeOf(kind)
+      planted.push(at)
+      out.push({ kind, at, flip, layer: li, size: itemSize })
+    }
+  }
+  return out
+}
+
+/** The belt's angular span in degrees, gaps removed — used by the tests. */
+export function ringOpenDegrees(): number {
+  let open = 360
+  for (const [lo, hi] of RING_GAPS) open -= hi - lo
+  return open
+}
+
+/** Where a point sits relative to the island centre, in the ring's own frame. */
+export function ringAngleDeg(p: Point, space: LayoutSpace): number {
+  const d = (Math.atan2((p.y - space.cy) / 0.92, p.x - space.cx) * 180) / Math.PI
+  return (d + 360) % 360
+}

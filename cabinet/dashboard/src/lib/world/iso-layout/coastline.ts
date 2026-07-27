@@ -124,6 +124,14 @@ export type Ground = 'sea' | 'beach' | 'land'
 export interface Coastline {
   readonly space: LayoutSpace
   readonly seed: number
+  /**
+   * The cove this island was actually carved with, or null when it was built
+   * without one. EMITTED rather than re-derived by the caller: the harbour and
+   * the lighthouse are both sited against the cove, and a second literal COVE
+   * in those stages would keep claiming a harbour bite after a caller passed
+   * `coastline: { cove: null }` — a wharf pinned to water that is not there.
+   */
+  readonly cove: { x: number; y: number; r: number } | null
   /** Raster step in layout px, and the raster's own dimensions. */
   readonly step: number
   readonly mw: number
@@ -301,6 +309,7 @@ export function buildCoastline(
   return {
     space,
     seed,
+    cove,
     step,
     mw,
     mh,

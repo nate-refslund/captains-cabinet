@@ -4,7 +4,8 @@
  *
  * THE STAGE ORDER IS ITSELF A RULE (compose.py's docstring, "armature first"):
  *
- *   coastline -> lanes -> lots -> driveways -> ground paint -> structures -> scatter
+ *   coastline -> lanes -> lots -> driveways -> ground paint -> structures ->
+ *   forest ring -> scatter
  *
  * Every arrow is load-bearing and each one was learned the expensive way:
  *   - lanes need the coastline, because a lot whose setback lands in the sea
@@ -17,7 +18,14 @@
  *   - structures before scatter, because scatter rejects at sampling time
  *     against occupied ground, and ground a house has not claimed yet is
  *     ground a tree will take (the reference records a tree claiming a house
- *     plot before the house existed, compose.py:907-909).
+ *     plot before the house existed, compose.py:907-909);
+ *   - THE FOREST RING BEFORE THE SCATTER. The belt frames the island and the
+ *     meadow planting fills in behind it; run the other way round, a shrub that
+ *     happened to land on the shore band takes the tree's spot and the frame
+ *     goes ragged. compose.py runs the ring before the district BUILDINGS as
+ *     well, protected only by the discs it reserved first — this port runs it
+ *     after them instead, so a tree can never take ground a measured building
+ *     needs (see ring.ts, which records both divergences and why).
  *
  * ERA GATES CONTENT, NOT JUST SIZE. A camp has ONE worn track, no plaza, no
  * market, no verge dressing, no ambient village props. RUNG measures — the
@@ -41,6 +49,18 @@ import {
 } from './clearance'
 import { driveway, drivewayLane, type Driveway } from './driveways'
 import {
+  buildHarbour,
+  CAIRN_CLEARING,
+  lampPosition,
+  lighthouseSite,
+  LIGHTHOUSE_CLEARING,
+  rectContains,
+  type Ellipse,
+  type Harbour,
+  type Lighthouse,
+  type Rect,
+} from './harbour'
+import {
   buildLaneField,
   buildLanes,
   GREAT,
@@ -50,6 +70,16 @@ import {
   type LaneField,
 } from './lanes'
 import { lotDoor, lotFlip, lotFor, lotsAlong, CIVIC_ANCHORS, type Lot } from './lots'
+import {
+  grownField,
+  paintField,
+  paintRegions,
+  POND,
+  REED_MARGIN,
+  waterField,
+  type PaintRegion,
+} from './paint'
+import { forestRing, type RingItem } from './ring'
 import {
   poissonScatter,
   wildnessField,
@@ -105,8 +135,22 @@ const EMPTY_RUNGS = new Set([
 const ALWAYS_DRAWN = new Set(['veto_plinth', 'flagpole', 'firepit', 'lighthouse'])
 
 export function isBuilt(state: LayoutState, obj: string): boolean {
-  const stage = state.stages?.[obj]
   if (ALWAYS_DRAWN.has(obj)) return true
+  return presentRung(state, obj)
+}
+
+/**
+ * worldstate.py present(), WITHOUT the always-drawn override: has this object's
+ * rung actually built anything?
+ *
+ * The two questions are different and conflating them is how a lamp ends up
+ * floating over a cairn. `isBuilt('lighthouse')` is true at every era because
+ * the empty rung IS the drawing — an unlit cairn is a lighthouse that has not
+ * been earned, and hiding it would hide the fact. `presentRung('lighthouse')`
+ * is false there, which is what the lamp has to ask: a lamp needs a tower.
+ */
+export function presentRung(state: LayoutState, obj: string): boolean {
+  const stage = state.stages?.[obj]
   if (stage === null || stage === undefined) return false
   return !EMPTY_RUNGS.has(stage)
 }
@@ -137,6 +181,26 @@ export const DEFAULT_FOOTPRINTS: Readonly<Record<string, Footprint>> = {
   market_stall: { w: 150, h: 140 },
   well: { w: 140, h: 150 },
   firepit: { w: 130, h: 115 },
+  // the harbour and the lighthouse (manifest.py:33-35, :72-85, :124-125,
+  // divided by scale_of()'s HALF fraction where it applies)
+  warehouse: { w: 200, h: 175 },
+  harbormaster_hut: { w: 145, h: 145 },
+  lighthouse: { w: 130, h: 200 },
+  harbor_crane: { w: 150, h: 190 },
+  // the packet boat: the hamlet rung of the harbor_boat ladder, which is the
+  // middle of its three sprites — the renderer overrides with the real one
+  harbor_boat: { w: 165, h: 165 },
+  mooring_post: { w: 47, h: 55 },
+  cargo_stacks: { w: 55, h: 55 },
+  cargo_barrels: { w: 55, h: 50 },
+  crate_single: { w: 45, h: 45 },
+  rope_coil: { w: 45, h: 45 },
+  crab_pots: { w: 50, h: 50 },
+  fish_barrel: { w: 47, h: 47 },
+  fishing_net: { w: 52, h: 47 },
+  fish_drying_rack: { w: 130, h: 130 },
+  anchor: { w: 50, h: 55 },
+  barrel_single: { w: 45, h: 47 },
   tree_oak: { w: 150, h: 150 },
   tree_oak_small: { w: 55, h: 55 },
   tree_birch: { w: 150, h: 150 },
@@ -153,6 +217,20 @@ export const DEFAULT_FOOTPRINTS: Readonly<Record<string, Footprint>> = {
   tree_stump: { w: 47, h: 45 },
   fallen_log: { w: 47, h: 45 },
   reeds: { w: 47, h: 55 },
+  // the enclosure ring's conifers, and the pond's own plant (manifest.py
+  // NATURE, at scale_of()'s 1 and 2 respectively)
+  tree_pine: { w: 130, h: 175 },
+  tree_pine_small: { w: 50, h: 65 },
+  lilypads: { w: 47, h: 45 },
+  // the six dwelling variants the officer row draws from (manifest.py
+  // BUILDINGS), plus the shelter that stands on those lots at camp
+  officer_house_a: { w: 150, h: 150 },
+  officer_house_b: { w: 150, h: 150 },
+  officer_house_c: { w: 150, h: 150 },
+  cottage_a: { w: 150, h: 150 },
+  cottage_b: { w: 150, h: 150 },
+  cottage_c: { w: 145, h: 145 },
+  camp_tent: { w: 120, h: 120 },
 }
 
 const FALLBACK_FOOTPRINT: Footprint = { w: 96, h: 96 }
@@ -198,46 +276,27 @@ const DISTRICT_ANCHORS: readonly { at: Point; r: number; villageOnly: boolean }[
   { at: { x: 612, y: 1086 }, r: 190, villageOnly: false }, // the pond: water, not doctrine
 ]
 
-// ── ground paint ───────────────────────────────────────────────────────────
-
-/** One painted blob — the renderer unions them into an organic region. */
-export interface Blob {
-  c: Point
-  rx: number
-  ry: number
-}
-
-/**
- * The regions this stage actually emits. `meadow_dark` was declared here and
- * never produced — the reference's broken-meadow pass (compose.py:143-150, 70
- * dark-grass blobs) is not ported — and a declared-but-unreachable member is a
- * promise to the renderer that nothing keeps. It comes back when the pass does.
- */
-export type PaintKind = 'plaza' | 'ploughed' | 'crop' | 'pond'
-
-export interface PaintRegion {
-  kind: PaintKind
-  blobs: Blob[]
-}
-
-/**
- * compose.py:366 — the tilled plots in the south-east, taken in order and
- * truncated to the number of field plots that really exist.
- */
-const FIELD_PLOTS: readonly { c: Point; w: number; h: number; kind: PaintKind }[] = [
-  { c: { x: 1548, y: 1218 }, w: 150, h: 74, kind: 'ploughed' },
-  { c: { x: 1772, y: 1152 }, w: 138, h: 68, kind: 'crop' },
-  { c: { x: 1650, y: 1332 }, w: 158, h: 70, kind: 'crop' },
-  { c: { x: 1420, y: 1300 }, w: 120, h: 58, kind: 'ploughed' },
-]
-
-/** compose.py:154 — the inland pond, which gave the dead west meadow a reason. */
-const POND: Point = { x: 612, y: 1086 }
-
 // ── structures ─────────────────────────────────────────────────────────────
 
 export interface Structure {
+  /**
+   * The SPRITE drawn here. One role may have several: the officer row draws a
+   * different house per lot, which is why this is no longer the same string as
+   * `role`. A renderer keys the atlas off this.
+   */
   kind: string
+  /**
+   * The STATE OBJECT this structure is — the thing whose rung or count made it
+   * exist ('officer_dwelling', 'library', 'well', ...).
+   *
+   * It exists because `kind` stopped being able to answer "why is this drawn?"
+   * the moment one role gained six sprites, and that question is the whole of
+   * check_state_traceable: anything drawn that cannot be traced to a rule over
+   * `state` is a bug. A checker matching on sprite names would have to carry
+   * its own copy of the variant table, which is a second place for the answer
+   * to be wrong.
+   */
+  role: string
   /** Base centre, in layout space — the bottom vertex of its ground diamond. */
   at: Point
   /** Mirror so the door faces its lane. Sprites have one baked facing. */
@@ -262,6 +321,30 @@ export interface PlacedItem extends ScatterItem {
   size: Footprint
 }
 
+/**
+ * THE REGION EXTENTS, in the shapes checks/world_checks.py reads them.
+ *
+ * EMITTED BY THE LAYOUT, not derived downstream. The blueprint's `plaza`,
+ * `fields` and `quay` are read by check_on_road (which exempts anything standing
+ * on a paved square, a tilled plot or the wharf) and by check_terrain (which
+ * sweeps them for paving and cultivation, and lets a lane leave the shore at the
+ * harbour). Deriving them in a bridge would mean a second module deciding where
+ * the plaza is — and the exemption zone of a check must be the surface that was
+ * actually painted, or the check is being turned down over ground nobody paved.
+ *
+ * They are computed from the EMITTED blobs, not from the authored constants:
+ * this port shrinks and drops blobs that would spill into the sea, so the
+ * authored 300x190 plaza is not the plaza on most islands.
+ */
+export interface Regions {
+  /** [cx,cy,rx,ry]; null at camp, where the square is trodden grass. */
+  plaza: Ellipse | null
+  /** [cx,cy,rx,ry] per tilled plot, in emission order. */
+  fields: Ellipse[]
+  /** [x0,y0,x1,y1]; null when no deck was built. */
+  quay: Rect | null
+}
+
 export interface Layout {
   space: LayoutSpace
   seed: number
@@ -273,9 +356,24 @@ export interface Layout {
   driveways: Driveway[]
   paint: PaintRegion[]
   structures: Structure[]
+  /**
+   * The forest enclosure ring, outermost sublayer first, each item carrying the
+   * `layer` it belongs to.
+   *
+   * SEPARATE FROM `scatter` on purpose. It is a different kind of thing: a belt
+   * walked by angle around the shore, in depth sublayers a renderer wants to
+   * draw as bands, against a meadow scatter sampled over area. Merging them
+   * would throw the layer away and leave a consumer no way to get it back.
+   */
+  ring: RingItem[]
   scatter: PlacedItem[]
   /** Keep-out discs, exported so the renderer can debug-draw the field. */
   districts: District[]
+  /** null on an island carved with no cove: no bite, no harbour. */
+  harbour: Harbour | null
+  /** null only when there is no ground to stand it on. */
+  lighthouse: Lighthouse | null
+  regions: Regions
 }
 
 export interface ComposeOptions {
@@ -376,12 +474,14 @@ export function composeLayout(
   // plot, one level up. Measured before this gate: `composeLayout(CAMP,
   // dwellings: 1)` emitted `drive-residential-0` whose road end (709,802) lay
   // on no carriageway at all.
-  const built: { key: string; obj: string; lot: Lot; group: string }[] = []
+  const built: { key: string; obj: string; kind: string; lot: Lot; group: string }[] = []
   const dwellings = Math.min(countOf(state, 'officer_dwellings'), lots.residential.length)
   for (let i = 0; i < dwellings; i++) {
+    const key = `residential-${i}`
     built.push({
-      key: `residential-${i}`,
+      key,
       obj: 'officer_dwelling',
+      kind: dwellingKind(numSeed, state.era, key),
       lot: lots.residential[i],
       group: 'residential',
     })
@@ -391,7 +491,7 @@ export function composeLayout(
     ['works', 'workshop'],
     ['fields', 'outbuildings'],
   ] as const) {
-    if (isBuilt(state, obj)) built.push({ key, obj, lot: lots[key][0], group: key })
+    if (isBuilt(state, obj)) built.push({ key, obj, kind: obj, lot: lots[key][0], group: key })
   }
 
   const driveways: Driveway[] = []
@@ -413,12 +513,40 @@ export function composeLayout(
   const laneField: LaneField = buildLaneField(lanes)
 
   // ---- 5. ground paint regions -------------------------------------------
-  const paint = paintRegions(state, numSeed, coast, village)
+  // Two numbers rather than the state: see ./paint. The plots are the only
+  // count the ground stage may read, and the era reaches it only as `village`.
+  const paint = paintRegions(numSeed, coast, countOf(state, 'field_plots'), village)
 
-  // ---- 6. structures ------------------------------------------------------
+  // ---- 6. the harbour -----------------------------------------------------
+  // BEFORE the structures, because it decides where the quayside buildings and
+  // the lighthouse stand; those anchors then go through the same structure
+  // rules as every other building, so the harbour never places anything on
+  // water by fiat. No cove, no harbour: the whole section is pinned to the
+  // cove's waterline and an island carved without one has no bite to build in.
+  const harbour = coast.cove
+    ? buildHarbour(coast, coast.cove, {
+        era: state.era,
+        quay: state.stages?.quay,
+        berths: countOf(state, 'berths'),
+        cargo: countOf(state, 'cargo_stacks'),
+        warehouses: countOf(state, 'warehouse'),
+        harbourmaster: presentRung(state, 'harbormaster_hut'),
+        packs: countOf(state, 'packs_inherited'),
+        boat: presentRung(state, 'harbor_boat'),
+        sizeOf,
+      })
+    : null
+
+  // ---- 7. structures ------------------------------------------------------
   const occupied: Occupant[] = []
   const structures: Structure[] = []
-  const put = (kind: string, at: Point, flip: boolean, lot?: Lot) => {
+  const put = (
+    kind: string,
+    role: string,
+    at: Point,
+    flip: boolean,
+    lot?: Lot
+  ): Structure | null => {
     const size = sizeOf(kind)
     // Structures are STRICT and are not dropped for being crowded: a measured
     // building that cannot find clear ground is a fact about the org, and
@@ -440,20 +568,45 @@ export function composeLayout(
       strict: true,
       inlandTo: inland,
     })
-    if (!p) return
+    if (!p) return null
     occupied.push({ at: p, size })
-    structures.push({ kind, at: p, flip, size, lot })
+    const s: Structure = { kind, role, at: p, flip, size, lot }
+    structures.push(s)
+    return s
   }
 
   if (isBuilt(state, 'great_house')) {
-    put('great_house', lots.centre[0].c, lotFlip(lots.centre[0]), lots.centre[0])
+    put('great_house', 'great_house', lots.centre[0].c, lotFlip(lots.centre[0]), lots.centre[0])
   }
-  if (isBuilt(state, 'well')) put('well', { x: 1050, y: 970 }, false)
-  if (isBuilt(state, 'firepit')) put('firepit', SQUARE, false)
-  if (village && isBuilt(state, 'market_stall')) put('market_stall', { x: 1386, y: 958 }, false)
-  for (const b of built) put(b.obj, b.lot.c, lotFlip(b.lot), b.lot)
+  if (isBuilt(state, 'well')) put('well', 'well', { x: 1050, y: 970 }, false)
+  if (isBuilt(state, 'firepit')) put('firepit', 'firepit', SQUARE, false)
+  if (village && isBuilt(state, 'market_stall')) {
+    put('market_stall', 'market_stall', { x: 1386, y: 958 }, false)
+  }
+  // ONE SPRITE PER LOT, not one sprite six times — see dwellingKind.
+  for (const b of built) put(b.kind, b.obj, b.lot.c, lotFlip(b.lot), b.lot)
 
-  // ---- 7. scatter ---------------------------------------------------------
+  // The quayside buildings stand on LAND above the wharf (compose.py:1165-1176)
+  // and go through the same door as every other building — so a warehouse on a
+  // seed whose cove ate its shore is DROPPED, not floated.
+  const quayside: Structure[] = []
+  for (const site of harbour?.warehouseSites ?? []) {
+    const s = put('warehouse', 'warehouse', site, false)
+    if (s) quayside.push(s)
+  }
+  if (harbour?.harbourmasterSite) {
+    const s = put('harbormaster_hut', 'harbormaster_hut', harbour.harbourmasterSite, false)
+    if (s) quayside.push(s)
+  }
+
+  // ---- 8. the lighthouse --------------------------------------------------
+  // ALWAYS DRAWN: an unlit cairn is a lighthouse that has not been earned, and
+  // drawing nothing there would hide the fact (compose.py:26). Its site is
+  // WALKED from the coastline, so it moves with the island rather than sitting
+  // at an authored bearing that half the seeds put inland.
+  const lighthouse = placeLighthouse(state, coast, space, put)
+
+  // ---- 9. scatter ---------------------------------------------------------
   const districts: District[] = [
     ...DISTRICT_ANCHORS.filter((d) => village || !d.villageOnly).map((d) => ({
       // SNAPPED, like every other anchor: a disc centred in the sea reserves
@@ -464,6 +617,14 @@ export function composeLayout(
     })),
     // the GENERATED lots, which is where buildings actually land
     ...Object.values(lots).flat().map((l) => ({ at: l.c, r: 150 })),
+    // THE LIGHTHOUSE CLEARING (compose.py:905) — the forest ring frames the
+    // point, it does not swallow the tower. Centred on where the tower actually
+    // ENDED, not on the site it was walked from: the structure rules may have
+    // moved it off a lane, and a clearing round the old spot would leave the
+    // tower in the trees and a bald circle beside it.
+    ...(lighthouse ? [{ at: lighthouse.at, r: lighthouse.clearing }] : []),
+    // compose.py:1171,1176 reserves the quayside buildings the same way
+    ...quayside.map((s) => ({ at: s.at, r: s.kind === 'warehouse' ? 160 : 110 })),
   ]
   const wildness = wildnessField(
     { x: space.cx, y: space.cy },
@@ -474,6 +635,38 @@ export function composeLayout(
     districts,
     laneField
   )
+  // The dock kit occupies ground like anything else. It is not a structure (it
+  // stands on a deck over water), but the half of it that lands on the shore
+  // strip is real ground a reed must not grow through — and the scatter stage
+  // rejects against `occupied` at sampling time, so the book is where it goes.
+  for (const item of harbour?.items ?? []) occupied.push({ at: item.at, size: item.size })
+
+  // ---- 10. the forest enclosure ring --------------------------------------
+  // MORPHOLOGY, not doctrine, so it stands in every era: an island has a
+  // treeline whether or not anyone has landed on it, on the same argument that
+  // keeps the pond at camp. What the ERA changes is where it may grow — at camp
+  // the village-only keep-out discs do not exist, so the belt is free to close
+  // over ground a hamlet would have reserved.
+  //
+  // BEFORE the general planting and AFTER the structures: the belt takes the
+  // coastal band first (that is what makes it a belt rather than the outer tail
+  // of a gradient) and the six scatter passes then fill the meadow inside it
+  // against an occupancy book the ring has already written into.
+  const inWater = waterField(paint)
+  const onPaving = paintField(paint, ['plaza', 'crop', 'ploughed'])
+  const ring = forestRing(numSeed, {
+    space,
+    coast,
+    lanes: laneField,
+    districts,
+    occupied,
+    inWater,
+    onPaving,
+    sizeOf,
+  })
+  for (const item of ring) occupied.push({ at: item.at, size: item.size })
+
+  // ---- 11. scatter --------------------------------------------------------
   const scatter = plant(numSeed, {
     space,
     coast,
@@ -481,12 +674,30 @@ export function composeLayout(
     occupied,
     districts,
     wildness,
-    inWater: waterField(paint),
-    onPaving: paintField(paint, ['plaza', 'crop', 'ploughed']),
+    inWater,
+    onPaving,
+    // The plantable MARGIN around the water, which is wider than the painted
+    // sand fringe — see grownField in ./paint for why the two differ.
+    onBank: grownField(paint, ['pond', 'stream'], REED_MARGIN),
+    // NOTHING IS PLANTED ON THE WHARF. This port's own term, on the same
+    // argument the paving term needed: a deck is a surface, and the keep-out
+    // discs do not reach it (the nearest is the square's, 400px north). The
+    // shore band runs along the waterline, which is exactly where the deck is.
+    onQuay: rectField(harbour?.wharf?.rect ?? null),
     sizeOf,
     village,
     camp,
   })
+
+  // ---- 12. region extents -------------------------------------------------
+  const regions: Regions = {
+    plaza: ellipseOfRegion(paint.find((r) => r.kind === 'plaza')),
+    fields: paint
+      .filter((r) => r.kind === 'ploughed' || r.kind === 'crop')
+      .map((r) => ellipseOfRegion(r))
+      .filter((e): e is Ellipse => e !== null),
+    quay: harbour?.wharf?.rect ?? null,
+  }
 
   return {
     space,
@@ -498,207 +709,114 @@ export function composeLayout(
     driveways,
     paint,
     structures,
+    ring,
     scatter,
     districts,
+    harbour,
+    lighthouse,
+    regions,
   }
+}
+
+/**
+ * PER-OFFICER HOUSE VARIETY (compose.py:1067-1072).
+ *
+ * The officer row drew ONE sprite on every lot, which is what makes a row of
+ * cottages read as a barracks: six identical roofs in a line is a pattern no
+ * village has. The reference varies it per lot from a pool of six.
+ *
+ * SEEDED ON THE LOT'S IDENTITY, not on its index alone. The reference uses
+ * `HOUSES[i % 6]`, which gives every org on earth the same six houses in the
+ * same order; keying on (world seed, lot key) gives each island its own row and
+ * is just as stable, because the lot keys are generated in a fixed order from
+ * data that does not depend on how many dwellings are occupied. Growing from
+ * three officers to four therefore ADDS a house rather than reshuffling three.
+ * It is the pattern the world already uses for per-officer roof cuts
+ * (island-layout.ts: `V.cottage[fnv1a(`${slug}:roof`) % V.cottage.length]`).
+ *
+ * ERA GATES IT. At camp a dwelling is a canvas tent: a slate-roofed cottage on
+ * a camp lot would be claiming a building the org has not earned. The reference
+ * keys the same rule off the sprite the dwelling ladder resolves to (`_dw`
+ * starting with `camp_`); this port has no sprite table, so it keys off the era
+ * that decides that rung — the same fact, read from the surface this layer has.
+ */
+export const HOUSE_KINDS: readonly string[] = [
+  'officer_house_a',
+  'officer_house_b',
+  'officer_house_c',
+  'cottage_a',
+  'cottage_b',
+  'cottage_c',
+]
+
+/** compose.py's `camp_` dwelling: what stands on an officer lot before a house. */
+export const CAMP_DWELLING = 'camp_tent'
+
+export function dwellingKind(seed: number, era: Era, lotKey: string): string {
+  if (!eraAtLeast(era, 'hamlet')) return CAMP_DWELLING
+  return HOUSE_KINDS[fnv1a(`${seed}:dwelling:${lotKey}`) % HOUSE_KINDS.length]
+}
+
+/**
+ * Site, place and light the lighthouse.
+ *
+ * The site is WALKED from the coastline (harbour.ts lighthouseSite) and then
+ * goes through the same `put` every other building does, so the tower is on
+ * land or it does not exist. When the walk finds no south-east point at all the
+ * island centre is the last resort, exactly as compose.py's snap() ends — and
+ * `put` still refuses to draw it if even that is water.
+ */
+function placeLighthouse(
+  state: LayoutState,
+  coast: Coastline,
+  space: LayoutSpace,
+  put: (kind: string, role: string, at: Point, flip: boolean) => Structure | null
+): Lighthouse | null {
+  const site = lighthouseSite(coast, space, coast.cove) ?? { x: space.cx, y: space.cy }
+  const s = put('lighthouse', 'lighthouse', site, false)
+  if (!s) return null
+  const tower = presentRung(state, 'lighthouse')
+  const rungLit = state.stages?.lighthouse_lamp === 'lit'
+  // A LAMP NEEDS A TOWER. See LighthouseLamp in harbour.ts: `rungLit` keeps the
+  // measurement even on the frame that cannot draw it, so nothing is hidden.
+  const lit = rungLit && tower
+  return {
+    at: s.at,
+    size: s.size,
+    clearing: tower ? LIGHTHOUSE_CLEARING : CAIRN_CLEARING,
+    tower,
+    lamp: { rungLit, lit, at: lit ? lampPosition(s.at, s.size) : null },
+  }
+}
+
+/** The bounding ellipse of a painted region — [cx,cy,rx,ry], or null if empty. */
+export function ellipseOfRegion(region: PaintRegion | undefined): Ellipse | null {
+  if (!region || region.blobs.length === 0) return null
+  let x0 = Infinity
+  let y0 = Infinity
+  let x1 = -Infinity
+  let y1 = -Infinity
+  for (const b of region.blobs) {
+    x0 = Math.min(x0, b.c.x - b.rx)
+    x1 = Math.max(x1, b.c.x + b.rx)
+    y0 = Math.min(y0, b.c.y - b.ry)
+    y1 = Math.max(y1, b.c.y + b.ry)
+  }
+  return [(x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / 2, (y1 - y0) / 2]
+}
+
+/** Membership of a rect extent, as a field the planting predicate can compose. */
+export function rectField(rect: Rect | null): (x: number, y: number) => boolean {
+  if (!rect) return () => false
+  return (x, y) => rectContains(rect, { x, y })
 }
 
 // ── stage helpers ──────────────────────────────────────────────────────────
-
-/**
- * EVERY PAINTED MASK IS CLIPPED TO LAND — compose.py clips all four
- * (`ImageChops.darker(m, landmask)`): paths :343, plaza :360, each field plot
- * :374, pond :171. This port clipped only the pond, and only by testing its
- * blob CENTRE, so ploughed soil and crop were painted onto open sea on most
- * seeds (measured: 38-189 of 468 field-blob samples over water across five
- * seeds; one seed had an entire crop plot offshore).
- *
- * A raster intersection keeps the on-land crescent of a blob. A blob here is an
- * ellipse, not pixels, so the honest equivalent is to SHRINK it until its whole
- * extent is on land and to DROP it when it cannot fit. Shrinking never paints
- * water and never invents a shape the reference would not have painted; it can
- * only paint less. The alternative — emitting the full ellipse and telling the
- * renderer to clip — puts the land rule in a stage that has no test around it,
- * which is how this defect got in.
- *
- * THE WHOLE ELLIPSE IS SAMPLED, not just its rim: a lattice at ~BLOB_PROBE_STEP
- * px plus the rim at the same arc spacing. Rim-only sampling has a hole in the
- * middle (a blob wide enough to straddle an inlet has water inside it its rim
- * never sees), and a fixed number of rim angles has holes between them that
- * grow with the blob — a 150px field plot probed at 24 angles skips 39px of arc
- * at a time, and the coastline mask is quantised to the sampling step, so the
- * gaps do not average out. The probe step is finer than the finest coastline
- * raster this library will build.
- */
-const BLOB_PROBE_STEP = 5
-const BLOB_MIN_RADIUS = 8
-
-function blobOnLand(
-  c: Point,
-  rx: number,
-  ry: number,
-  onLand: (x: number, y: number) => boolean
-): boolean {
-  if (!onLand(c.x, c.y)) return false
-  const n = Math.max(24, Math.ceil((2 * Math.PI * Math.max(rx, ry)) / BLOB_PROBE_STEP))
-  for (let i = 0; i < n; i++) {
-    const a = (i * Math.PI * 2) / n
-    if (!onLand(c.x + Math.cos(a) * rx, c.y + Math.sin(a) * ry)) return false
-  }
-  const sx = Math.max(1, Math.ceil(rx / BLOB_PROBE_STEP))
-  const sy = Math.max(1, Math.ceil(ry / BLOB_PROBE_STEP))
-  for (let ix = -sx; ix <= sx; ix++) {
-    for (let iy = -sy; iy <= sy; iy++) {
-      const fx = ix / sx
-      const fy = iy / sy
-      if (fx * fx + fy * fy > 1) continue
-      if (!onLand(c.x + fx * rx, c.y + fy * ry)) return false
-    }
-  }
-  return true
-}
-
-/** The blob that fits on land, or null when even a shrunken one does not. */
-export function clipBlobToLand(
-  b: Blob,
-  onLand: (x: number, y: number) => boolean
-): Blob | null {
-  let rx = b.rx
-  let ry = b.ry
-  for (let i = 0; i < 10; i++) {
-    if (blobOnLand(b.c, rx, ry, onLand)) return { c: b.c, rx, ry }
-    rx *= 0.82
-    ry *= 0.82
-    if (rx < BLOB_MIN_RADIUS || ry < BLOB_MIN_RADIUS) break
-  }
-  return null
-}
-
-/**
- * compose.py:176-177 in_water() — the pond is water, and nothing is planted in
- * water. Built from the painted pond region rather than from POND, so it is the
- * water that was actually emitted (clipped, possibly absent) and not the water
- * that was intended.
- */
-export function waterField(paint: readonly PaintRegion[]): (x: number, y: number) => boolean {
-  return paintField(paint, ['pond'])
-}
-
-/**
- * Is this point inside a painted region of one of these kinds?
- *
- * A PAVED SQUARE AND A TILLED PLOT ARE SURFACES, NOT SPACING HINTS — the same
- * argument the keep-out discs needed. Until 2026-07-27 nothing tested for them
- * at all: the property "no tree on the plaza, no reed in the crop" was carried
- * incidentally by whichever district disc happened to overlap the region, and
- * it LEAKED wherever one did not. Measured across 80 seeds with the discs
- * enforced: 9 shore-band items (reeds, rock_small, rock_cluster) standing in a
- * crop plot, all of them on the east plot's outer rim at x>=1900, which lies
- * outside every disc — and 2 of those survive at the production coastline step.
- * The arm named for the property ran five seeds and passed over all nine.
- *
- * It is the port's own term, not the reference's: compose.py can afford to
- * leave the plots to its KEEPOUT list because by planting time that list also
- * carries every fenced plot, hedgerow and outbuilding it drew over them, none
- * of which is ported. This layout emits the regions as data, so it can just say
- * so — and a claim in a test name has to be a rule somewhere or it is decoration.
- */
-export function paintField(
-  paint: readonly PaintRegion[],
-  kinds: readonly PaintKind[]
-): (x: number, y: number) => boolean {
-  const blobs = paint.filter((r) => kinds.includes(r.kind)).flatMap((r) => r.blobs)
-  if (blobs.length === 0) return () => false
-  return (x, y) =>
-    blobs.some((b) => ((x - b.c.x) / b.rx) ** 2 + ((y - b.c.y) / b.ry) ** 2 <= 1)
-}
-
-/** compose.py:355-376 — the plaza and the tilled plots, as seeded blob sets. */
-function paintRegions(
-  state: LayoutState,
-  seed: number,
-  coast: Coastline,
-  village: boolean
-): PaintRegion[] {
-  // ONE STREAM PER REGION, not one stream for the file. A single shared
-  // stream makes each region's shape depend on how many draws the regions
-  // BEFORE it consumed — so gaining a field plot would silently reshape the
-  // pond, and the pond is morphology: water does not wait for an org to grow.
-  const streamFor = (tag: string) => seededRng(fnv1a(`${seed}:paint:${tag}`))
-  const out: PaintRegion[] = []
-  const onLand = (x: number, y: number) => coast.landAt(x, y)
-  // Clip AFTER every draw, never instead of one: the rng stream must be
-  // consumed in the reference's order whatever the coastline does, or a blob
-  // that fell in the sea would reshape every blob after it.
-  const keep = (kind: PaintKind, blobs: Blob[]) => {
-    const clipped = blobs.map((b) => clipBlobToLand(b, onLand)).filter((b): b is Blob => b !== null)
-    if (clipped.length > 0) out.push({ kind, blobs: clipped })
-  }
-
-  // The square is PAVED only once there is a village to gather in it. A camp
-  // has trodden grass, which is the absence of this region, not a smaller one.
-  if (village) {
-    const rng = streamFor('plaza')
-    const blobs: Blob[] = []
-    for (let i = 0; i < 26; i++) {
-      const a = rng() * Math.PI * 2
-      const rr = Math.sqrt(rng())
-      const r = 54 + rng() * 42
-      blobs.push({
-        c: { x: SQUARE.x + Math.cos(a) * rr * 124, y: SQUARE.y + Math.sin(a) * rr * 74 },
-        rx: r,
-        ry: r * 0.62,
-      })
-    }
-    keep('plaza', blobs)
-  }
-
-  const plots = clamp(countOf(state, 'field_plots'), 0, FIELD_PLOTS.length)
-  for (let i = 0; i < plots; i++) {
-    const plot = FIELD_PLOTS[i]
-    // per-plot stream: plot 1 looks the same whether or not plot 2 exists
-    const rng = streamFor(`field-${i}`)
-    const blobs: Blob[] = []
-    for (let j = 0; j < 9; j++) {
-      blobs.push({
-        c: {
-          x: plot.c.x + (rng() * 80 - 40),
-          y: plot.c.y + (rng() * 36 - 18),
-        },
-        rx: plot.w,
-        ry: plot.h,
-      })
-    }
-    keep(plot.kind, blobs)
-  }
-
-  // The pond is morphology, not doctrine: it is there in every era, because
-  // water does not wait for an org to grow — and its own stream is what makes
-  // that literally true rather than merely intended.
-  const rng = streamFor('pond')
-  const pondBlobs: Blob[] = []
-  for (let i = 0; i < 14; i++) {
-    const a = rng() * Math.PI * 2
-    const rr = Math.sqrt(rng())
-    const r = 46 + rng() * 32
-    const c = { x: POND.x + Math.cos(a) * rr * 74, y: POND.y + Math.sin(a) * rr * 38 }
-    // compose.py:171 clips the pond mask against the land mask
-    // (ImageChops.darker(pond_m, landmask_pre)) — an inland pond that bled
-    // into the sea would read as a hole in the island. The seed decides where
-    // the west meadow actually is, so on some islands the pond is smaller and
-    // on some there is no room for one at all.
-    //
-    // ALONG ITS WHOLE EXTENT, not at its centre. Testing the centre alone was
-    // the port's original clip and it is the shape of a dead sensor: the one
-    // quantity the code checks is the one quantity a test of it can never fail
-    // on. Measured on the old code, 11 of 26 pond samples on seed acme-corp and
-    // 24 of 182 on seed lantern stood in open water while every blob centre was
-    // on land.
-    pondBlobs.push({ c, rx: r, ry: r * 0.58 })
-  }
-  keep('pond', pondBlobs)
-  return out
-}
+//
+// The ground-paint stage moved to ./paint when it gained the broken meadow, the
+// outflow stream, the pond bank and the value mottle: it was a third of this
+// file and it is a stage of its own, exactly like ./lanes and ./lots. Its whole
+// surface is re-exported below, so `from './index'` is unchanged.
 
 interface PlantCtx {
   space: LayoutSpace
@@ -707,10 +825,14 @@ interface PlantCtx {
   occupied: Occupant[]
   districts: District[]
   wildness: DensityField
-  /** compose.py in_water(): the pond that was actually painted. */
+  /** compose.py in_water(): the pond and outflow that were actually painted. */
   inWater: (x: number, y: number) => boolean
   /** The paved square and the tilled plots that were actually painted. */
   onPaving: (x: number, y: number) => boolean
+  /** The wharf deck that was actually built. */
+  onQuay: (x: number, y: number) => boolean
+  /** The sand ring around the water — where reeds belong and nothing else. */
+  onBank: (x: number, y: number) => boolean
   sizeOf: (kind: string) => Footprint
   village: boolean
   camp: boolean
@@ -733,20 +855,34 @@ function plant(seed: number, ctx: PlantCtx): PlacedItem[] {
    * disc on the ground projects flattened on a 2:1 screen, so a circular test
    * in screen space would reserve a tall oval nobody drew.
    *
-   * HONEST NOTE ON THE WATER TERM: with today's constants it is REDUNDANT. The
-   * pond sits inside its own 190px keep-out disc, so deleting `inWater` here
-   * leaves every arm green — measured, not assumed. It is kept because the disc
-   * is doctrine (a district reservation, era-gated, movable) while the water is
-   * morphology, and because it is the reference's own rule; the test suite pins
-   * the dependency with an arm asserting the pond's disc still covers the pond,
-   * so the day the two part company the suite says so instead of the planting
-   * quietly arriving in the water.
+   * THE WATER TERM IS STILL QUIET, and the outflow did NOT change that — which
+   * is worth writing down, because it was the obvious prediction and it is
+   * wrong. Measured 2026-07-27 by deleting `!ctx.inWater(x, y)` from this
+   * predicate and running both suites: 164 arms, all green. The stream reaches
+   * well outside the pond's 190px disc (20 of its blobs do on seed zeta), so the
+   * disc is no longer the whole reason — but the surviving reasons are just as
+   * effective: the outflow is 24-30px wide against meadow passes that space at
+   * 58-104px, and the bank and lilypad passes have already written the margin
+   * and the water into the occupancy book by the time those passes sample.
+   *
+   * So this stays a REDUNDANT rule, kept deliberately: it is the reference's own
+   * term, the disc above it is doctrine (era-gated, movable) while water is
+   * morphology, and three coincidences are not an invariant. What is NOT quiet
+   * is the identical term in ring.ts — deleting it there turns four arms red,
+   * because the belt walks the coastal band at a fixed angular step and does not
+   * care how narrow a river is.
    *
    * THE PAVING TERM IS NOT REDUNDANT, which is how it was found: the same
    * incidental-coverage argument was made for the plaza and the plots, and it
    * was false. 9 items across 80 seeds stood in a crop plot whose outer rim
    * reaches past every disc (see paintField). Both terms now exist for the same
    * reason, and only one of them is quiet.
+   *
+   * THE QUAY TERM IS THE SAME ARGUMENT AGAIN, and it is not quiet either: no
+   * keep-out disc reaches the wharf (the nearest is the square's, 400px north),
+   * and the SHORE BAND — the pass that plants reeds and shore rocks — is defined
+   * as the strip just inside the waterline, which is precisely where the deck
+   * is. Measured with the term dropped, reeds and shore rocks stand on the deck.
    */
   const inDistrict = (x: number, y: number) =>
     ctx.districts.some(
@@ -756,6 +892,7 @@ function plant(seed: number, ctx: PlantCtx): PlacedItem[] {
     !ctx.laneField.nearLane(x, y, 34) &&
     !ctx.inWater(x, y) &&
     !ctx.onPaving(x, y) &&
+    !ctx.onQuay(x, y) &&
     !inDistrict(x, y)
   const inner = (x: number, y: number) => ctx.coast.isInner(x, y) && free(x, y)
 
@@ -795,6 +932,28 @@ function plant(seed: number, ctx: PlantCtx): PlacedItem[] {
     }
   }
 
+  // THE POND'S OWN DRESSING, first, so the bank is not already full of meadow
+  // shrubs by the time the reeds arrive. Neither pass is free()-gated — free()
+  // forbids the pond's 190px disc, which is the whole area these two want —
+  // exactly as the verge pass is not free()-gated because it wants a lane.
+  // That is also why they are the only way anything reaches the water: the
+  // general passes still cannot, and the arm that says so is now stronger for
+  // naming what may.
+  //
+  // MORPHOLOGY, so both stand at camp. Reeds at a waterline are not tending.
+  const bank = (x: number, y: number) =>
+    ctx.onBank(x, y) &&
+    !ctx.inWater(x, y) &&
+    !ctx.laneField.nearLane(x, y, 34) &&
+    !ctx.onPaving(x, y) &&
+    !ctx.onQuay(x, y)
+  pass('bank', ['reeds'], bank, () => 0.85, 54, 92, 22)
+  // Lilypads are the one thing that belongs ON the water, and they are gated on
+  // water they can actually float on: `inWater` is built from the pond that was
+  // EMITTED, so a seed whose west meadow had no room for a pond gets no pads
+  // rather than pads on grass.
+  pass('lilypads', ['lilypads'], (x, y) => ctx.inWater(x, y), () => 0.9, 46, 78, 14)
+
   pass('trees', NATURE_TREES, inner, ctx.wildness, 104, 300, 60)
   pass('shrubs', NATURE_SHRUBS, inner, ctx.wildness, 62, 170, 110)
   pass('flowers', NATURE_FLOWERS, inner, (x, y) => 1 - ctx.wildness(x, y) * 0.5, 58, 150, 90)
@@ -809,12 +968,21 @@ function plant(seed: number, ctx: PlantCtx): PlacedItem[] {
   // compose.py's verge() is NOT free() — it wants to be near a lane, which
   // free() forbids — but it carries the same disc and water terms, so verge
   // dressing does not appear inside the square or in the pond either.
+  //
+  // AND THE QUAY TERM, which is where it was found: the main street ends AT the
+  // harbour head, so the verge band — 62 to 96px off a carriageway — lies
+  // squarely on the wharf. Measured with the term on free() only: 8 verge items
+  // (5 shore rocks, 2 flowers, a bush) standing on the deck across 30 seeds, all
+  // of them on the landward strip where nothing else would catch them. Adding a
+  // term to one predicate and calling the rule enforced is exactly how the
+  // paving leak survived its own arm.
   if (ctx.village) {
     const verge = (x: number, y: number) =>
       ctx.laneField.nearLane(x, y, 96) &&
       !ctx.laneField.nearLane(x, y, 62) &&
       !ctx.inWater(x, y) &&
       !ctx.onPaving(x, y) &&
+      !ctx.onQuay(x, y) &&
       !inDistrict(x, y)
     pass('verge', VERGE_KINDS, verge, () => 0.7, 88, 130, 34)
   }
@@ -838,13 +1006,19 @@ export function auditLayout(layout: Layout): {
   onLane: { kind: string; at: Point }[]
   stacked: { a: string; b: string }[]
   inWater: { kind: string; at: Point }[]
+  outsideHarbour: { kind: string; at: Point }[]
 } {
   const field = buildLaneField(layout.lanes)
   const onLane: { kind: string; at: Point }[] = []
   // Both lists carry the size the RULES used, so the audit cannot measure a
   // different world than the one that was built.
+  // THE RING IS AUDITED TOO. It is the largest single population the layout
+  // emits and it is placed by its own module against its own predicate, which
+  // makes it the population most likely to drift out from under the rules —
+  // exactly the argument for auditing anything at all.
   const all: { kind: string; at: Point; size: Footprint }[] = [
     ...layout.structures.map((s) => ({ kind: s.kind, at: s.at, size: s.size })),
+    ...layout.ring.map((s) => ({ kind: s.kind, at: s.at, size: s.size })),
     ...layout.scatter.map((s) => ({ kind: s.kind, at: s.at, size: s.size })),
   ]
   for (const item of all) {
@@ -879,7 +1053,42 @@ export function auditLayout(layout: Layout): {
   for (const s of layout.scatter) {
     if (!layout.coast.landAt(s.at.x, s.at.y)) inWater.push({ kind: s.kind, at: s.at })
   }
-  return { onLane, stacked, inWater }
+  // The ring samples with the scatter's convention (x, y), so it is probed with
+  // the scatter's convention. A belt planted at `landEdge - inset` is the
+  // population standing closest to the waterline by construction, which makes
+  // this the arm most likely to catch a coastline the ring stopped agreeing with.
+  for (const s of layout.ring) {
+    if (!layout.coast.landAt(s.at.x, s.at.y)) inWater.push({ kind: s.kind, at: s.at })
+  }
+  // THE HARBOUR'S OWN INVARIANT, because the water arm cannot be its sensor.
+  // A mooring post is in the water by construction and a crate stands on a deck
+  // that is over water, so the honest question about them is not "is this on
+  // land" but "is this in the HARBOUR" — a dock kit computed from the wrong
+  // origin, a mooring row indexed off the wrong base, or a crane laid along a
+  // span that is not the wharf's all put working gear out in open sea, and none
+  // of those is visible to any other arm here.
+  //
+  // The envelope is built from the cove and the shore ONLY (harbour.ts
+  // `extent`), never from the items it contains: a box fitted around the things
+  // it checks is a sensor that cannot fail.
+  const outsideHarbour: { kind: string; at: Point }[] = []
+  const h = layout.harbour
+  if (h) {
+    const inside = (p: Point) => rectContains(h.extent, p)
+    for (const item of h.items) {
+      if (!inside(item.at)) outsideHarbour.push({ kind: item.kind, at: item.at })
+    }
+    for (const m of h.moorings) {
+      if (!inside(m)) outsideHarbour.push({ kind: 'mooring_post', at: m })
+    }
+    for (const c of h.cranes) {
+      if (!inside(c)) outsideHarbour.push({ kind: 'harbor_crane', at: c })
+    }
+    if (!inside(h.jetty.at) || !inside(h.jetty.end)) {
+      outsideHarbour.push({ kind: 'jetty', at: h.jetty.end })
+    }
+  }
+  return { onLane, stacked, inWater, outsideHarbour }
 }
 
 export * from './space'
@@ -889,3 +1098,5 @@ export * from './lots'
 export * from './driveways'
 export * from './clearance'
 export * from './scatter'
+export * from './paint'
+export * from './ring'
