@@ -290,6 +290,39 @@ lesson generalises with the two-agents-one-worktree lesson already recorded:
 **a shared machine has shared ports; check what holds a port before killing by
 pattern, and pick a port nobody else is on.** I used 3200/3201 afterwards.
 
+## 10. ADDENDUM — the PR is blocked, and it is nobody in this round's fault
+
+Recorded after pushing this artifact, because it changed the landing picture.
+
+`gh pr view 223` -> `mergeable: CONFLICTING`, `mergeStateStatus: DIRTY`. The
+conflict is **not** caused by either agent or by this artifact. It predates my
+commit:
+
+    git merge-tree --write-tree a541034a  origin/master   -> exit 1
+    git merge-tree --write-tree 73343a7e  origin/master   -> exit 1
+
+both with the identical three-way stage entries on
+`shared/interfaces/reviews/cognitive-core-phase-4-review.md`. Master moved after
+the round closed — PR #229 (`authority: a Bash command must PROVE it is local,
+or it proposes`, 73e23666, merged as 3a710183) touched an in-scope COG-4 path
+and re-bound the same `Reviewed-Scope-Digest:` line the branch re-bound in
+6b6784e2. Master now carries `05c20f79…` with no notes; the branch carries
+`50fbfff6…` plus both of its re-bind notes.
+
+The fix is the same scripted re-bind 6b6784e2 performed: merge origin/master,
+re-resolve the scope with `cabinet/scripts/cognitive-phase4-review-scope.py`
+over the MERGED tree, write the recomputed digest, and keep all three notes
+(master's cause and the branch's two). I did not do it. It is a frozen-review
+governance artifact, the landing integrator's call, and a verifier silently
+recomputing a review binding is exactly the wrong hand on that lever.
+
+**Consequence for this record's own CI claim, stated plainly:** the 8/8 green is
+`a541034a`, run 30264672004, and that is the SHA the verification above
+measures. GitHub will not run a `pull_request` workflow while the PR is DIRTY —
+it cannot build the merge commit — so commit 73343a7e (this artifact, one file,
+312 lines, no code, no test, no gate) has **no CI run and will not get one until
+the conflict is resolved**. Nothing in the verification depends on it.
+
 ---
 
 ## Verdict: PASS
@@ -310,3 +343,7 @@ the rules hold, the art is good, and the composition is thinner and flatter
 than the approved look, in the specific ways listed in §7. The two that will
 read as *wrong* rather than *early* are the hard-edged ellipses (meadow shading
 and field plots) and the empty camp shore.
+
+PASS is the verdict on the WORK. The LANDING is blocked on §10 — a frozen-review
+digest conflict created by master moving under the branch, needing one scripted
+re-bind by whoever integrates.
