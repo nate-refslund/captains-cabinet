@@ -139,40 +139,39 @@ if $show_session && [ -n "$TRANSCRIPT" ]; then
   echo "Transcript: $(basename "$TRANSCRIPT")"
   echo ""
 
-  # Detect the model from the transcript and pick rates matching
-  # cabinet/scripts/hooks/stop-hook.sh ($/MTok: in/out/cache_write/cache_read).
-  # Last-seen assistant model wins; mixed-model transcripts are priced at that
-  # model's rates (same convention as stop-hook, which prices the last entry).
-  MODEL=$(jq -r 'select(.type == "assistant" and .message.model != null) | .message.model' "$TRANSCRIPT" 2>/dev/null | tail -1)
-  MODEL=${MODEL:-unknown}
-  case "$MODEL" in
-    *fable*) IN_RATE=10; OUT_RATE=50; CW_RATE=12.5; CR_RATE=1.0 ;;
-    *opus*)  IN_RATE=15; OUT_RATE=75; CW_RATE=3.75; CR_RATE=0.30 ;;
-    *)       IN_RATE=3;  OUT_RATE=15; CW_RATE=0.75; CR_RATE=0.06 ;;  # Sonnet default
-  esac
+  # PRICING LIVES IN framework/cost/meter.py — NOT HERE (2026-07-27).
+  # This report used to carry its own copy of the rate table, and that copy
+  # carried the same bug the live meter did: opus cache_write at $3.75/MTok and
+  # cache_read at $0.30/MTok, both exactly 5x under the published 1.25x/0.1x of
+  # the input rate, with unknown models falling through to the CHEAPEST row.
+  # A second copy of a rate table is how the first one survived review for
+  # months, so this one is deleted rather than corrected. The meter also dedupes
+  # by message.id — this report summed every assistant ENTRY, and the transcript
+  # writes one entry per content block, so it over-counted responses while
+  # under-pricing cache. Two errors in opposite directions is not an accurate
+  # report; it is a number nobody can reason about.
+  CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+  PYTHONPATH="$CABINET_ROOT" python3 - "$TRANSCRIPT" <<'PYEOF' 2>/dev/null || echo "  (cost unavailable — framework/cost/meter.py not importable)"
+import sys
+from framework.cost import meter
 
-  jq -c 'select(.type == "assistant" and .message.usage != null) | .message.usage' "$TRANSCRIPT" 2>/dev/null | jq -s '
-  {
-    input: (map(.input_tokens // 0) | add // 0),
-    output: (map(.output_tokens // 0) | add // 0),
-    cache_write: (map(.cache_creation_input_tokens // 0) | add // 0),
-    cache_read: (map(.cache_read_input_tokens // 0) | add // 0),
-    turns: length
-  }' 2>/dev/null | jq -r \
-    --arg model "$MODEL" \
-    --argjson in_rate "$IN_RATE" --argjson out_rate "$OUT_RATE" \
-    --argjson cw_rate "$CW_RATE" --argjson cr_rate "$CR_RATE" '
-    "Turns: \(.turns)",
-    "Input:       \(.input) tokens (\(.input / 1000000 * 100 | round / 100) MTok)",
-    "Output:      \(.output) tokens (\(.output / 1000000 * 100 | round / 100) MTok)",
-    "Cache write: \(.cache_write) tokens (\(.cache_write / 1000000 * 100 | round / 100) MTok)",
-    "Cache read:  \(.cache_read) tokens (\(.cache_read / 1000000 * 100 | round / 100) MTok)",
-    "",
-    "Cost (\($model): $\($in_rate)/$\($out_rate)/$\($cw_rate)/$\($cr_rate) per MTok):",
-    "  Input:       $\(.input / 1000000 * $in_rate * 100 | round / 100)",
-    "  Output:      $\(.output / 1000000 * $out_rate * 100 | round / 100)",
-    "  Cache write: $\(.cache_write / 1000000 * $cw_rate * 100 | round / 100)",
-    "  Cache read:  $\(.cache_read / 1000000 * $cr_rate * 100 | round / 100)",
-    "  TOTAL:       $\((.input / 1000000 * $in_rate + .output / 1000000 * $out_rate + .cache_write / 1000000 * $cw_rate + .cache_read / 1000000 * $cr_rate) * 100 | round / 100)"
-  ' 2>/dev/null
+sl = meter.parse_transcript(sys.argv[1])
+if sl.responses_billed == 0:
+    print("No billable API responses found in this transcript.")
+    raise SystemExit(0)
+
+models = ", ".join("%s x%d" % (k, v) for k, v in sorted(sl.models.items()))
+print("Responses:   %d  (%d duplicate content-block entries skipped)"
+      % (sl.responses_billed, sl.duplicates_skipped))
+print("Models:      %s" % models)
+print("Input:       %d tokens" % sl.input_tokens)
+print("Output:      %d tokens" % sl.output_tokens)
+print("Cache write: %d tokens" % sl.cache_write)
+print("Cache read:  %d tokens" % sl.cache_read)
+print("")
+print("TOTAL:       $%.2f" % (sl.cost_micro / 1_000_000))
+if sl.malformed_skipped:
+    print("NOTE:        %d entr(ies) had unparseable token counts and were skipped"
+          % sl.malformed_skipped)
+PYEOF
 fi

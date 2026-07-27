@@ -8,6 +8,20 @@ import pytest
 from framework.fidelity import oauth_llm
 
 
+def _is_claude(argv) -> bool:
+    """True for the `claude -p` invocation these tests are actually about.
+
+    The fakes below patch ``subprocess.run`` on the shared subprocess MODULE,
+    so they see every subprocess the call makes — including the lane meter's
+    ``redis-cli`` (framework/cost/record_lane, wired 2026-07-26 so headless
+    Max-pool calls stop being invisible spend). A fake that captures whichever
+    subprocess happened to run LAST is asserting about the wrong process; these
+    guards keep each assertion pointed at the CLI invocation it names, at
+    exactly the strength it had before the meter existed.
+    """
+    return bool(argv) and argv[0] == "claude"
+
+
 class TestArgv:
     def test_builds_claude_print_argv_no_api_key(self):
         argv = oauth_llm._build_argv("SYS PROMPT", "claude-sonnet-4-6")
@@ -70,7 +84,8 @@ class TestRawLlm:
         captured = {}
 
         def fake_run(argv, **kw):
-            captured["home"] = kw.get("env", {}).get("HOME")
+            if _is_claude(argv):
+                captured["home"] = kw.get("env", {}).get("HOME")
             return subprocess.CompletedProcess(argv, 0, stdout="ok", stderr="")
 
         monkeypatch.setattr(oauth_llm.subprocess, "run", fake_run)
@@ -88,7 +103,8 @@ class TestRawLlm:
         captured = {}
 
         def fake_run(argv, **kw):
-            captured["cwd"] = kw.get("cwd")
+            if _is_claude(argv):
+                captured["cwd"] = kw.get("cwd")
             return subprocess.CompletedProcess(argv, 0, stdout="ok", stderr="")
 
         monkeypatch.setattr(oauth_llm.subprocess, "run", fake_run)
@@ -121,8 +137,9 @@ class TestJsonLlm:
         captured = {}
 
         def fake_run(argv, **kw):
-            captured["argv"] = argv
-            captured["env"] = kw.get("env", {})
+            if _is_claude(argv):
+                captured["argv"] = argv
+                captured["env"] = kw.get("env", {})
             return subprocess.CompletedProcess(
                 argv, 0, stdout=_envelope(structured={"verdict": "match"}), stderr="")
 
@@ -153,7 +170,8 @@ class TestJsonLlm:
         calls = {"n": 0}
 
         def fake_run(argv, **kw):
-            calls["n"] += 1
+            if _is_claude(argv):
+                calls["n"] += 1
             return subprocess.CompletedProcess(argv, 0, stdout="garbage", stderr="")
 
         monkeypatch.setattr(oauth_llm.subprocess, "run", fake_run)
@@ -166,7 +184,8 @@ class TestJsonLlm:
                   "required": ["verdict"]}
 
         def fake_run(argv, **kw):
-            captured["argv"] = argv
+            if _is_claude(argv):
+                captured["argv"] = argv
             return subprocess.CompletedProcess(
                 argv, 0, stdout=_envelope(structured={"verdict": "match"}), stderr="")
 
@@ -222,7 +241,8 @@ class TestJsonLlm:
         captured = {}
 
         def fake_run(argv, **kw):
-            captured["cwd"] = kw.get("cwd")
+            if _is_claude(argv):
+                captured["cwd"] = kw.get("cwd")
             return subprocess.CompletedProcess(
                 argv, 0, stdout=_envelope(structured={"v": 1}), stderr="")
 

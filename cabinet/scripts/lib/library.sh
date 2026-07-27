@@ -536,6 +536,12 @@ library_search() {
   fi
 
   local query_embedding
+  # PAID CALL — counted, but NOT here. memory_get_embedding (memory.sh) makes
+  # the Voyage request and records the `embeddings` lane itself, so every
+  # caller is counted exactly once at the one place the money is spent. A
+  # second cost_lane_record on this line would double the lane for every
+  # library search. If this ever stops going through memory_get_embedding, the
+  # meter moves with the curl.
   query_embedding=$(memory_get_embedding "$query")
   # If embedding fails, fall back to ILIKE title search (matches dashboard behavior)
   if [ -z "$query_embedding" ] || [ "$query_embedding" = "null" ]; then

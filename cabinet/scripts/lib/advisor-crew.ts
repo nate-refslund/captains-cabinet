@@ -148,9 +148,13 @@ function buildRequestBody(args: Args, context: string): object {
     model: advisorModel,
   };
 
-  // Add cache_control only when expected calls >= 3
+  // Add cache_control only when expected calls >= 3.
+  // TTL comes from the shared CACHE_TTL constant, which ALSO selects the
+  // pricing multiplier — see cacheWriteMultiplier(). Changing the TTL here
+  // therefore changes the price automatically instead of silently
+  // under-reporting by 1.6x, which is what a commented-only invariant would do.
   if (args.expectedCalls >= 3) {
-    advisorTool.cache_control = { type: "ephemeral", ttl: "5m" };
+    advisorTool.cache_control = { type: "ephemeral", ttl: CACHE_TTL };
   }
 
   return {
@@ -195,27 +199,87 @@ interface UsageSummary {
   advisorCallCount: number;
 }
 
-// Pricing (microdollars per token == $/MTok; fractional cache rates scaled as N/1000).
-// Keyed off the model id, matching cabinet/scripts/hooks/stop-hook.sh exactly:
-//   Fable 5:    $10/MTok in, $50/MTok out, $12.50/MTok cache_write, $1.00/MTok cache_read
-//   Opus:       $15/MTok in, $75/MTok out, $3.75/MTok cache_write, $0.30/MTok cache_read
-//   Sonnet 4.6 (default): $3/MTok in, $15/MTok out, $0.75/MTok cache_write, $0.06/MTok cache_read
+// Pricing — microdollars per token, which is the same number as $/MTok.
+//
+// FIXED 2026-07-26. This table used to carry hand-typed cache rates copied from
+// cabinet/scripts/hooks/stop-hook.sh, and it carried that file's bug: opus
+// cache_write was written as $3.75/MTok and cache_read as $0.30/MTok, i.e. 0.25x
+// and 0.02x of the input rate instead of the published 1.25x and 0.10x — a 5x
+// UNDER-report on every cached token. Sonnet had the identical 5x error
+// ($0.75 / $0.06). Only the fable row was right, which is how it survived review.
+// Unknown models also fell through to Sonnet, the CHEAPEST row, so anything the
+// matcher failed to recognise was billed at a fifth of Opus.
+//
+// Both faults are now structurally unavailable:
+//   * cache prices are DERIVED from the input rate by the published
+//     multipliers, never typed in, so a 5x error would require editing a
+//     multiplier constant;
+//   * an unknown model resolves to the most expensive known rate per dimension,
+//     never the cheapest — every estimation error must fail toward
+//     OVER-reporting, because the cabinet stopped gating on spend
+//     (Captain 2026-07-26) and this is a watch, not a cap.
+// Rate provenance and the identical constants live in framework/cost/meter.py.
+const MULT_CACHE_WRITE_5M = 1.25;  // 5-minute TTL cache write
+const MULT_CACHE_WRITE_1H = 2.00;  // 1-hour TTL cache write
+const MULT_CACHE_READ = 0.10;      // cache hit
+
+// The ONE place this script's cache TTL is decided. It is read both by
+// buildRequestBody (the actual request) and by cacheWriteMultiplier (the
+// price), so the two cannot drift apart. The advisor usage envelope reports a
+// single cache_creation_input_tokens total with NO TTL split, so the multiplier
+// has to follow the REQUEST — which means this constant is the only honest
+// source for it.
+const CACHE_TTL: "5m" | "1h" = "5m";
+
+function cacheWriteMultiplier(): number {
+  return CACHE_TTL === "1h" ? MULT_CACHE_WRITE_1H : MULT_CACHE_WRITE_5M;
+}
+
+// [model-id substring, input $/MTok, output $/MTok]. First match wins, so more
+// specific families go first — mirrors meter.RATES key order.
+const RATES: Array<[string, number, number]> = [
+  ["fable", 10, 50],
+  ["opus", 15, 75],
+  ["sonnet", 3, 15],
+  ["haiku", 1, 5],
+];
+
 interface ModelPricing {
   inputMicro: number;
   outputMicro: number;
-  cacheWriteMicroNum: number; // divide by 1000
-  cacheReadMicroNum: number;  // divide by 1000
+  matched: string;
 }
 
 function pricingFor(model: string): ModelPricing {
-  if (model.includes("fable")) {
-    return { inputMicro: 10, outputMicro: 50, cacheWriteMicroNum: 12500, cacheReadMicroNum: 1000 };
+  const m = (model || "").toLowerCase();
+  for (const row of RATES) {
+    if (m.includes(row[0])) {
+      return { inputMicro: row[1], outputMicro: row[2], matched: row[0] };
+    }
   }
-  if (model.includes("opus")) {
-    return { inputMicro: 15, outputMicro: 75, cacheWriteMicroNum: 3750, cacheReadMicroNum: 300 };
-  }
-  // Default to Sonnet pricing (matches stop-hook.sh fallback)
-  return { inputMicro: 3, outputMicro: 15, cacheWriteMicroNum: 750, cacheReadMicroNum: 60 };
+  // PER-DIMENSION max, not the max of (input+output): a future row with a high
+  // input rate and a low output rate would otherwise leave unknown models
+  // resolving elsewhere and under-billing input.
+  return {
+    inputMicro: Math.max.apply(null, RATES.map(function (r) { return r[1]; })),
+    outputMicro: Math.max.apply(null, RATES.map(function (r) { return r[2]; })),
+    matched: "unknown",
+  };
+}
+
+// One response priced, in microdollars.
+//
+// Cache writes are charged at the multiplier matching CACHE_TTL — the same
+// constant buildRequestBody stamps on the request — so the price follows the
+// TTL by construction rather than by comment.
+function costMicro(p: ModelPricing, input: number, output: number,
+                   cacheWrite: number, cacheRead: number): number {
+  return Math.round(
+    input * p.inputMicro +
+    output * p.outputMicro +
+    cacheWrite * p.inputMicro * cacheWriteMultiplier() +
+    cacheRead * p.inputMicro * MULT_CACHE_READ
+  );
 }
 
 function parseUsage(usage: any, advisorModel: string, executorModel: string): UsageSummary {
@@ -257,36 +321,45 @@ function parseUsage(usage: any, advisorModel: string, executorModel: string): Us
     summary.executorOutput = summary.totalOutput;
   }
 
-  // Cost calculations (integer microdollar math, matching stop-hook.sh pattern exactly)
+  // Cost calculations — rates and cache multipliers from the derived table above.
   const executorPricing = pricingFor(executorModel);
   const advisorPricing = pricingFor(advisorModel);
 
-  summary.executorCostMicro =
-    summary.executorInput * executorPricing.inputMicro +
-    summary.executorOutput * executorPricing.outputMicro +
-    Math.floor(summary.executorCacheWrite * executorPricing.cacheWriteMicroNum / 1000) +
-    Math.floor(summary.executorCacheRead * executorPricing.cacheReadMicroNum / 1000);
+  summary.executorCostMicro = costMicro(
+    executorPricing, summary.executorInput, summary.executorOutput,
+    summary.executorCacheWrite, summary.executorCacheRead);
 
-  summary.advisorCostMicro =
-    summary.advisorInput * advisorPricing.inputMicro +
-    summary.advisorOutput * advisorPricing.outputMicro +
-    Math.floor(summary.advisorCacheWrite * advisorPricing.cacheWriteMicroNum / 1000) +
-    Math.floor(summary.advisorCacheRead * advisorPricing.cacheReadMicroNum / 1000);
+  summary.advisorCostMicro = costMicro(
+    advisorPricing, summary.advisorInput, summary.advisorOutput,
+    summary.advisorCacheWrite, summary.advisorCacheRead);
 
   summary.totalCostMicro = summary.executorCostMicro + summary.advisorCostMicro;
 
   return summary;
 }
 
+// A principal becomes a Redis FIELD NAME and reaches an execSync command line,
+// and it arrives from argv or the environment. Same charset and same
+// `unattributed` fallback as meter.safe_principal — spend we cannot attribute
+// is still spend and must still be counted, just never against a wrong officer.
+function safePrincipal(name: string): string {
+  const slug = (name || "").trim().toLowerCase();
+  if (!slug || slug === "unknown" || slug === "none" || slug === "null") {
+    return "unattributed";
+  }
+  return /^(svc:)?[a-z0-9][a-z0-9._-]{0,63}$/.test(slug) ? slug : "unattributed";
+}
+
 // ────────────────────────────────────────────────────────────
 // Redis cost tracking (mirrors stop-hook.sh pattern exactly)
 // ────────────────────────────────────────────────────────────
 
-async function writeAdvisorCosts(officer: string, usage: UsageSummary, model: string): Promise<void> {
-  const { execSync } = await import("child_process");
+async function writeAdvisorCosts(rawOfficer: string, usage: UsageSummary, model: string, executorModel: string): Promise<void> {
+  const { execSync, execFileSync } = await import("child_process");
+  const officer = safePrincipal(rawOfficer);
   const redisHost = process.env.REDIS_HOST || "redis";
   const redisPort = process.env.REDIS_PORT || "6379";
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC, matches meter.utc_date)
   const timestamp = new Date().toISOString();
 
   const exec = (cmd: string) => {
@@ -297,7 +370,12 @@ async function writeAdvisorCosts(officer: string, usage: UsageSummary, model: st
     }
   };
 
-  // Per-officer last-values (expire 24h)
+  // Per-officer last-values (expire 24h).
+  // EXECUTOR HALF ADDED 2026-07-26: parseUsage has always computed
+  // executorCostMicro, and this function has always thrown it away — every
+  // advisor-crew call persisted only the advisor side, so the executor tokens
+  // (the larger half on a single-consultation task) were computed, printed to
+  // stderr, and then dropped on the floor.
   exec(
     `redis-cli -h ${redisHost} -p ${redisPort} HSET "cabinet:cost:advisor:${officer}" ` +
     `last_input "${usage.advisorInput}" ` +
@@ -307,17 +385,73 @@ async function writeAdvisorCosts(officer: string, usage: UsageSummary, model: st
     `last_cost_micro "${usage.advisorCostMicro}" ` +
     `last_model "${model}" ` +
     `last_advisor_calls "${usage.advisorCallCount}" ` +
+    `last_executor_input "${usage.executorInput}" ` +
+    `last_executor_output "${usage.executorOutput}" ` +
+    `last_executor_cache_write "${usage.executorCacheWrite}" ` +
+    `last_executor_cache_read "${usage.executorCacheRead}" ` +
+    `last_executor_cost_micro "${usage.executorCostMicro}" ` +
+    `last_executor_model "${executorModel.replace(/[^A-Za-z0-9._:@-]/g, "")}" ` +
+    `last_total_cost_micro "${usage.totalCostMicro}" ` +
     `last_updated "${timestamp}"`
   );
   exec(`redis-cli -h ${redisHost} -p ${redisPort} EXPIRE "cabinet:cost:advisor:${officer}" 86400`);
 
-  // Daily accumulation (expire 48h)
+  // Daily accumulation (expire 48h). `<officer>_cost_micro` stays ADVISOR-only
+  // for back-compat (cabinet/scripts/test-advisor-crew.sh reads that exact
+  // field); the executor half lands in its own `_executor_cost_micro` field, so
+  // a reader that sums `*_cost_micro` across the hash gets the TRUE total
+  // rather than half of it. Deliberately no `_total_cost_micro` field here —
+  // that would make the same sum count the spend twice.
   exec(`redis-cli -h ${redisHost} -p ${redisPort} HINCRBY "cabinet:cost:advisor:daily:${today}" "${officer}_input" "${usage.advisorInput}"`);
   exec(`redis-cli -h ${redisHost} -p ${redisPort} HINCRBY "cabinet:cost:advisor:daily:${today}" "${officer}_output" "${usage.advisorOutput}"`);
   exec(`redis-cli -h ${redisHost} -p ${redisPort} HINCRBY "cabinet:cost:advisor:daily:${today}" "${officer}_cache_write" "${usage.advisorCacheWrite}"`);
   exec(`redis-cli -h ${redisHost} -p ${redisPort} HINCRBY "cabinet:cost:advisor:daily:${today}" "${officer}_cache_read" "${usage.advisorCacheRead}"`);
   exec(`redis-cli -h ${redisHost} -p ${redisPort} HINCRBY "cabinet:cost:advisor:daily:${today}" "${officer}_cost_micro" "${usage.advisorCostMicro}"`);
+  exec(`redis-cli -h ${redisHost} -p ${redisPort} HINCRBY "cabinet:cost:advisor:daily:${today}" "${officer}_executor_input" "${usage.executorInput}"`);
+  exec(`redis-cli -h ${redisHost} -p ${redisPort} HINCRBY "cabinet:cost:advisor:daily:${today}" "${officer}_executor_output" "${usage.executorOutput}"`);
+  exec(`redis-cli -h ${redisHost} -p ${redisPort} HINCRBY "cabinet:cost:advisor:daily:${today}" "${officer}_executor_cache_write" "${usage.executorCacheWrite}"`);
+  exec(`redis-cli -h ${redisHost} -p ${redisPort} HINCRBY "cabinet:cost:advisor:daily:${today}" "${officer}_executor_cache_read" "${usage.executorCacheRead}"`);
+  exec(`redis-cli -h ${redisHost} -p ${redisPort} HINCRBY "cabinet:cost:advisor:daily:${today}" "${officer}_executor_cost_micro" "${usage.executorCostMicro}"`);
   exec(`redis-cli -h ${redisHost} -p ${redisPort} EXPIRE "cabinet:cost:advisor:daily:${today}" 172800`);
+
+  // LANE LEDGER (2026-07-26). The two hashes above are an advisor-only surface
+  // nothing else reads; `cabinet:cost:lanes:daily:<date>` is the one place every
+  // paid non-session call lands. Shelling out to framework.cost.record_lane
+  // instead of writing the fields inline keeps the field shape defined ONCE —
+  // duplicating a cost contract across files is the exact mistake this commit
+  // is undoing. calls=1 because the advisor-tool beta is ONE billed HTTP
+  // request whatever its internal iteration count; cost is executor+advisor,
+  // the whole request.
+  //
+  // execFileSync, NOT execSync: this argv carries an interpreter name and a
+  // path, both from the environment, and no shell means no metacharacter can
+  // be interpreted. (The redis-cli calls above predate this and still build
+  // shell strings — same reason `officer` is slug-validated before it is used
+  // anywhere in this function.)
+  const { fileURLToPath } = await import("node:url");
+  const cabinetRoot = process.env.CABINET_ROOT
+    || fileURLToPath(new URL("../../..", import.meta.url));
+  const python = process.env.CABINET_PYTHON || "python3";
+  try {
+    execFileSync(
+      python,
+      ["-m", "framework.cost.record_lane",
+       "--lane", "advisor",
+       "--principal", officer,
+       "--calls", "1",
+       "--cost-micro", String(Math.round(usage.totalCostMicro))],
+      {
+        stdio: "ignore",
+        env: Object.assign({}, process.env, {
+          PYTHONPATH: process.env.PYTHONPATH
+            ? cabinetRoot + ":" + process.env.PYTHONPATH
+            : cabinetRoot,
+        }),
+      }
+    );
+  } catch {
+    // Counting only — a missing python3 or a down Redis never fails the task.
+  }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -464,8 +598,8 @@ async function main() {
   const advisorModel = process.env.ADVISOR_MODEL || "claude-fable-5";
   const usage = parseUsage(data.usage, advisorModel, args.executor);
 
-  // Write costs to Redis (best-effort — never blocks result)
-  await writeAdvisorCosts(args.officer, usage, advisorModel);
+  // Write costs to Redis + the lane ledger (best-effort — never blocks result)
+  await writeAdvisorCosts(args.officer, usage, advisorModel, args.executor);
 
   // Print result to stdout
   process.stdout.write(result + "\n");

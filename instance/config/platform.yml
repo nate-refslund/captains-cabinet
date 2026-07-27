@@ -141,18 +141,30 @@ git_repos:
 # =============================================================
 # Per-officer and cabinet-wide caps enforced by pre-tool-use.sh.
 # Framework ships safe defaults at framework/defaults/spending-limits.yml;
-# this block overrides them for THIS Cabinet. The live deployment previously
-# disabled both caps; the 72-hour dogfood requires finite ceilings and keeps
-# these framework-safe values afterward unless the Captain explicitly revises
-# them. Any key set to 0 disables enforcement for that scope. When a cap blocks, the hook prints the
-# reason on stderr; Telegram reply/react/group always bypass the gate
-# so an over-cap officer can DM the Captain for a raise.
+# this block overrides them for THIS Cabinet.
+#
+# CAPTAIN RULING 2026-07-26 — "unlimited spending". Both caps are OFF on this
+# deployment. The word `unlimited` is deliberate: `0` also disables a scope,
+# but a config line reading `daily_per_officer_usd: 0` says the opposite of
+# what is meant, and a very large number would surprise whoever eventually
+# crossed it. Refined the same day: money is not the scarce resource here (the
+# work rides a Max x20 subscription), Captain ATTENTION is — so a dollar
+# threshold would page him with noise.
+#
+# Removing the cap did NOT remove the measurement, and that distinction is the
+# whole point. session-stop.sh still meters every turn, framework/cost/meter.py
+# still counts the non-session lanes, the briefing still carries a per-lane
+# line, and framework/watchdog/registry.py still alarms — but on ANOMALY
+# (spend with no output, a lane 20x its own trailing median, a lane that never
+# billed suddenly billing, a silent meter), never on amount. Alarm, never
+# block. The subscription's own limit is now the real ceiling; see
+# cabinet/cron/limit-reset-watchdog.sh.
 #
 # Background: FW-002 in shared/cabinet-framework-backlog.md; incident
 # 2026-04-17 — CoS bricked for ~15 min by silent over-cap block.
 spending_limits:
-  daily_per_officer_usd: 75
-  daily_cabinet_wide_usd: 300
+  daily_per_officer_usd: unlimited
+  daily_cabinet_wide_usd: unlimited
   coordinating_officer_multiplier: 3.0  # CoS routing overhead carve-out; cabinet-wide cap still wins
   telegram_whitelist_enabled: true    # Always-on safety net, cheap to keep enabled
   telegram_whitelist_hourly_cap: 10

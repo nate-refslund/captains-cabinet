@@ -7,18 +7,35 @@ for days because the alarm was never exercised — and the FIRST manual drill
 EMPTY alert-channel lists, so DOWN alerts went nowhere. An alarm that is never
 fired is not an alarm. This job fires one, weekly, end-to-end:
 
-  1. /fail-ping the `pipe-watchdog-alive` check (send-only ping key).
+  1. /fail-ping the drill target check (send-only ping key).
   2. Verify via the management API that the check flipped DOWN and a flip was
      recorded (the alert pipeline engaged — channel assignment verified too).
-  3. Recover for real: `launchctl kickstart` the screenpipe pipe-watchdog so
-     its next cycle sends the genuine alive ping (never a simulated recovery).
+  3. Recover for real: `launchctl kickstart` the service that owns that check
+     so its next cycle sends the genuine alive ping (never a simulated one).
   4. Verify the check returns UP within DRILL_RECOVERY_TIMEOUT_S.
   5. Append one drill record line to ~/Library/Logs/cabinet/healthchecks-drill.log.
+
+DRILL TARGET (re-pointed 2026-07-26, Captain arm-the-cabinet ruling): the
+cabinet's OWN hourly dead-man — the `ledger-liveness` check pinged by
+com.cabinet.ledger-liveness (cabinet/scripts/ledger-liveness-check.py:39,
+services.yml row `ledger-liveness`, interval 3600s). It used to drill the
+Captain's PERSONAL screenpipe sensor (`pipe-watchdog-alive` /
+com.screenpipe.pipe-watchdog), which is why the row was parked as a
+cries-wolf on any box with no personal source bound (#52). Both are
+env-overridable (CABINET_DRILL_TARGET_SLUG / CABINET_DRILL_TARGET_LABEL) so a
+deployment that DOES bind a personal source can point the drill back at it
+without editing framework-adjacent code.
 
 Self-alarming (who drills the drill): a `drill-failed` check (timeout 8d,
 grace 1d, all channels) is pinged NORMALLY on drill success — so a drill that
 stops running goes visibly late within ~9 days — and pinged /fail on any step
 failure, which alerts the Captain immediately.
+
+CREDLESS BOX (2026-07-26): no healthchecks keys in cabinet/.env means this
+deployment has no external dead-man to drill. That is an honest absence, not a
+failure, so it logs one DRILL_SKIP line and exits 0 — the credless idiom
+retrieval-eval-nightly.sh already uses. It used to exit 1, which paged weekly
+on every box that never configured healthchecks.
 
 Secrets: keys are read from cabinet/.env at runtime (names-not-values
 discipline everywhere else); nothing is rendered into plists or logs.
@@ -27,6 +44,7 @@ Requires no officer context; stdlib only.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -39,15 +57,22 @@ CABINET_ROOT = Path(__file__).resolve().parents[2]
 ENV_FILE = CABINET_ROOT / "cabinet" / ".env"
 LOG_FILE = Path.home() / "Library/Logs/cabinet/healthchecks-drill.log"
 API = "https://healthchecks.io/api/v3"
-TARGET_SLUG = "pipe-watchdog-alive"
+TARGET_SLUG = os.environ.get("CABINET_DRILL_TARGET_SLUG", "ledger-liveness")
 FAILSAFE_SLUG = "drill-failed"
-WATCHDOG_LABEL = "com.screenpipe.pipe-watchdog"
+WATCHDOG_LABEL = os.environ.get("CABINET_DRILL_TARGET_LABEL", "com.cabinet.ledger-liveness")
 DOWN_TIMEOUT_S = 120
 RECOVERY_TIMEOUT_S = 15 * 60
 
 
 def _env(key: str) -> str:
-    m = re.search(rf"^{key}=(.*)$", ENV_FILE.read_text(), re.M)
+    # A missing cabinet/.env is the credless-box case, not a crash: without the
+    # guard this raised FileNotFoundError at IMPORT time, before main() could
+    # report the honest skip.
+    try:
+        text = ENV_FILE.read_text()
+    except OSError:
+        return ""
+    m = re.search(rf"^{key}=(.*)$", text, re.M)
     return m.group(1).strip() if m else ""
 
 
@@ -109,8 +134,12 @@ def wait_status(slug: str, want: str, timeout_s: int) -> bool:
 
 def main() -> int:
     if not API_KEY or not PING_KEY:
-        log("DRILL ERROR: healthchecks keys missing from cabinet/.env")
-        return 1
+        # Honest absence, not a fault: this deployment has no external dead-man
+        # to drill. Exit 0 so a never-configured box does not page every Sunday
+        # (the #52 cries-wolf class this row was parked for).
+        log("DRILL_SKIP: no healthchecks credentials in cabinet/.env — "
+            "no external dead-man configured on this deployment")
+        return 0
     ensure_failsafe()
     target = check_by_slug(TARGET_SLUG)
     if not target:
@@ -131,7 +160,7 @@ def main() -> int:
     log("down confirmed; alert pipeline engaged — kickstarting real recovery")
 
     r = subprocess.run(
-        ["launchctl", "kickstart", f"gui/{__import__('os').getuid()}/{WATCHDOG_LABEL}"],
+        ["launchctl", "kickstart", f"gui/{os.getuid()}/{WATCHDOG_LABEL}"],
         capture_output=True, text=True,
     )
     if r.returncode != 0:
