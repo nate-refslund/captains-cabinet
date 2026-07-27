@@ -54,6 +54,7 @@ import {
   type IsoScene,
 } from '@/lib/world/iso-scene'
 import { groundField, seaTile, type GroundClass, type TerrainBuffer } from '@/lib/world/iso-terrain'
+import { deckStripRects, jettyDeckRects, type DeckRect } from '@/lib/world/iso-quay'
 import {
   MOTTLE_TONES,
   PAINT_FEATHER,
@@ -1306,9 +1307,13 @@ export default function EngineCanvas(props: EngineCanvasProps) {
       /**
        * The whole ground, baked once into ONE RenderTexture.
        *
-       * Order is the reference's: sand ring, grass, meadow shading, mottle,
-       * paving and tillage, water, then the lanes over everything and the deck
-       * last. Baking into a single texture is what makes an expensive
+       * Order is the reference's (compose.py, and world-capture/raster.py's
+       * build_ground which mirrors it): sand ring, grass, meadow shading,
+       * mottle, water, THE LANES, then the paving and the tillage over them,
+       * and the timber deck last. The lanes go down before the paving because
+       * a road runs UNDER a paved square and out the other side; laying them
+       * after made the road stop dead at the plaza edge.
+       * Baking into a single texture is what makes an expensive
        * computed ground affordable — it is paid on a state change, never per
        * frame, through the statics cache that already exists.
        */
@@ -1356,18 +1361,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           }
         }
         c.addChild(mottleG)
-        // 5. the square and the tillage
-        for (const [kind, cls] of [
-          ['plaza', 'cobble'],
-          ['ploughed', 'ploughed'],
-          ['crop', 'crop'],
-        ] as const) {
-          const rs = regionsOf(kind)
-          const blobs = rs.flatMap((r) => r.blobs)
-          if (blobs.length === 0) continue
-          paintClass(c, cls, seed, blobExtent(rs), blobMask(blobs))
-        }
-        // 6. the pond: its sand bank first, then the water and the outflow
+        // 5. the pond: its sand bank first, then the water and the outflow
         for (const [kind, cls] of [
           ['pond_bank', 'sand'],
           ['pond', 'sea'],
@@ -1378,33 +1372,61 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           if (blobs.length === 0) continue
           paintClass(c, cls, seed, blobExtent(rs), blobMask(blobs))
         }
-        // 7. the lanes. The runs are already clipped to land, but the painted
-        // band has a width, so the surface is cut to the coastline as well —
-        // otherwise a road along the shore is drawn on the sea.
+        // 6. the lanes, laid BEFORE the paving. The runs are already clipped to
+        // land, but the painted band has a width, so the surface is cut to the
+        // coastline as well — otherwise a road along the shore is on the sea.
+        //
+        // ORDER IS THE DEFECT, NOT THE SHAPE (Captain, 2026-07-27: "the road —
+        // can you put it beneath the centre concrete?"). Painting the lanes
+        // after the plaza laid a dirt band ACROSS the paved square, so the road
+        // read as ending there instead of running under it and out the other
+        // side. compose.py:351/362 and world-capture/raster.py:388/391 both lay
+        // the lanes first and the paving on top, and this path was the only one
+        // of the three that did not.
         const lanes = new PIXI.Container()
         paintClass(lanes, 'dirt', seed, landExt, laneMask(scene))
         const landCut = rasterMask(coast.land, coast.mw, coast.mh, coast.step)
         lanes.addChild(landCut)
         lanes.mask = landCut
         c.addChild(lanes)
-        // 8. the wharf deck and the jetty — timber over water, so NOT cut to land
-        const hb = layout.harbour
-        if (hb?.wharf && hb.wharf.shore.length > 1) {
-          const deck = new PIXI.Graphics()
-          const s = hb.wharf.shore
-          deck.moveTo(s[0].x, s[0].y - 4)
-          for (const pt of s) deck.lineTo(pt.x, pt.y - 4)
-          for (let i = s.length - 1; i >= 0; i--) deck.lineTo(s[i].x, s[i].y + hb.wharf.depth)
-          deck.fill(0xffffff)
-          paintClass(c, 'dirt', seed + 41, extentOf(s, 80), deck)
+        // 7. the square and the tillage, over the lanes
+        for (const [kind, cls] of [
+          ['plaza', 'cobble'],
+          ['ploughed', 'ploughed'],
+          ['crop', 'crop'],
+        ] as const) {
+          const rs = regionsOf(kind)
+          const blobs = rs.flatMap((r) => r.blobs)
+          if (blobs.length === 0) continue
+          paintClass(c, cls, seed, blobExtent(rs), blobMask(blobs))
         }
-        if (hb?.jetty) {
-          const j = hb.jetty
-          const g = new PIXI.Graphics()
-          g.moveTo(j.at.x, j.at.y)
-          g.lineTo(j.end.x, j.end.y)
-          g.stroke({ width: j.width, color: 0xffffff, cap: 'square' })
-          paintClass(c, 'dirt', seed + 43, extentOf([j.at, j.end], j.width), g)
+        // 8. the wharf deck and the finger pier — TIMBER over water, so neither
+        // cut to land nor painted with a ground class. Painting them with the
+        // lane's 'dirt' is what made the harbour read as a road walking into
+        // the sea (Captain, 2026-07-27); iso-quay.ts is the port of the
+        // reference's quay.py, the same deck world-capture/raster.py:417 draws.
+        const hb = layout.harbour
+        const deckRects: DeckRect[] = [
+          ...(hb?.wharf && hb.wharf.shore.length > 1
+            ? deckStripRects(hb.wharf.shore, hb.wharf.depth, seed + 3)
+            : []),
+          ...(hb?.jetty ? jettyDeckRects(hb.jetty.at, hb.jetty.end, hb.jetty.width, seed + 11) : []),
+        ]
+        if (deckRects.length > 0) {
+          // grouped by colour so the whole deck is a handful of fills rather
+          // than one per plank pixel
+          const byColour = new Map<number, DeckRect[]>()
+          for (const r of deckRects) {
+            const at = byColour.get(r.color)
+            if (at) at.push(r)
+            else byColour.set(r.color, [r])
+          }
+          const deck = new PIXI.Graphics()
+          for (const [colour, rects] of byColour) {
+            for (const r of rects) deck.rect(r.x, r.y, r.w, r.h)
+            deck.fill(colour)
+          }
+          c.addChild(deck)
         }
 
         const rt = PIXI.RenderTexture.create({ width: space.w, height: space.h })
