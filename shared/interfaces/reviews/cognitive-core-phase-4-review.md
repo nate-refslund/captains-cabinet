@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 8421cbabbc5331087530603011d139ae0acfdd4d82cfeed45f95006ffa171f82
+Reviewed-Scope-Digest: 7f05bdcfaa716f78a9fb638ab464d5fd41699a388e9c13107957fdc128ca7e35
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
@@ -649,3 +649,36 @@ would restamp frozen gate archaeology. This commit edits ONLY the digest-exclude
 the digest it records is stable under its own landing — verified by recomputing after the edit.)
 
 Verdict: PASS
+
+MOVED BY THE MATRIX-CLASS-MAPPING-PIN LANDING (2026-07-27,
+e68adad9456b80394270fa6354b65d6f4a5de10162235232b787571e1e3e2b0a -> the value
+above). MECHANICAL-DELTA re-bind: exactly ONE in-scope path moved,
+`cabinet/config/cognitive-architecture-contract.yml`, and the only change to it
+is one appended `temporary_allowances` row (`matrix-class-mapping-pin`,
+framework_production_noncomment_lines +65, 68661 -> 68726). No reviewed BEHAVIOUR
+byte changed: the branch's executable changes are all in
+`framework/authority/{matrix,classifier,deploy_classifier}.py` and
+`framework/authority/tests/test_matrix.py`, none of which is in this scope
+(verified by intersecting `git diff --name-only origin/master...HEAD` against
+the tool's resolved EXPECTED_SCOPE, not by reading the diff).
+
+RE-MEASURED, not assumed: `cognitive-architecture-census.py --check` PASS at
+observed == max (68726 <= 68726), and the full `verify-cognitive-phase4.sh`
+twin runs end-to-end green on this commit. The digest was recomputed over the
+COMMITTED tree and folded into the SAME commit — this artifact is excluded from
+its own scope, so the amend is stable under itself. NOT done: no COG-0/1/2/3
+twin was re-bound (frozen-historical, already BLOCK by design), and no prose
+section of this review was edited — no reviewer saw new bytes, because none of
+the reviewed bytes changed behaviour.
+
+RE-BOUND ON THE MASTER MERGE, 2026-07-27 —
+8421cbabbc5331087530603011d139ae0acfdd4d82cfeed45f95006ffa171f82 -> the value
+above. The matrix-class-mapping-pin branch merged origin/master 91412878
+(fail-closed-control-plane, channel-flatline-alarm, ask-batching and
+dashboard-availability landings). Both sides had appended a
+`temporary_allowances` row to `cabinet/config/cognitive-architecture-contract.yml`,
+the one in-scope path either side touched; the conflict was resolved by keeping
+BOTH rows, and the branch's own row was RE-MEASURED against the new base rather
+than carried (69116 vs 69051 at 91412878; +65 unchanged, since the growth is
+that unit's own lines). Still a MECHANICAL-DELTA re-bind: no reviewed BEHAVIOUR
+byte changed on either side of the merge.
