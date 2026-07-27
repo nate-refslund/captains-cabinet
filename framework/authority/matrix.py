@@ -90,9 +90,9 @@ class MatrixValidationError(Exception):
 # The thirteen risk classes: the trust-first act-with-undo classes
 # (reversible, pm_write, calendar_write), the 2026-07-04 split-outs from the
 # old reversible bucket (read_only_dispatch = act-and-tell investigation runs;
-# draft_only = earn-up kept, CAPTAIN-RULING: outbound-adjacent), the earn-up
-# rows (internal_comms, deploy_nonprod), and the six execution-surface hard
-# ceilings. Closed set: the YAML's risk_classes AND verdicts keys must equal
+# draft_only = act-and-tell draft composition since CAPTAIN-RULING 2026-07-26,
+# earn-up before that), the earn-up rows (internal_comms, deploy_nonprod), and
+# the six execution-surface hard ceilings. Closed set: the YAML's risk_classes AND verdicts keys must equal
 # it exactly (additionalProperties:false in both directions).
 RISK_CLASSES = frozenset({
     "reversible", "read_only_dispatch", "draft_only",
@@ -145,8 +145,19 @@ CONFIDENCE_STATES = frozenset({
 # rows are the doctrine's beachhead, so their unmeasured cells are pinned by
 # equality (not merely "not propose_only"): `auto` here would be a WIDENING
 # (dropping the undo/tell handle), `always_gated`/`propose_only` a silent
-# earn-up regression. draft_only and deploy_nonprod are deliberately absent
-# (CAPTAIN-RULING: outbound-/prod-adjacent — they keep earn-up).
+# earn-up regression. deploy_nonprod is deliberately absent (CAPTAIN-RULING:
+# prod-adjacent — it keeps earn-up). draft_only ALSO acts from day one since
+# CAPTAIN-RULING 2026-07-26 (notify_after at every non-demote state — see the
+# YAML's draft_only row) but is deliberately NOT pinned here: this dict defends
+# the preset/instance MERGE channel, and load_policies already REFUSES any
+# preset/instance policy typed authority_matrix or named authority-matrix
+# outright (policy_engine._is_authority_matrix_policy; the instance policy dir
+# is schg-locked besides), so for this row the only remaining channel is a
+# direct edit of the floor file — which the shipped-table pins in
+# framework/authority/tests/test_matrix.py + test_matrix_postures.py catch.
+# Adding a fourth entry would also breach the framework production-line budget
+# (cognitive-architecture-census, at its ceiling), and a safety pin is not
+# worth buying with a raised threshold.
 _TRUST_FIRST_UNMEASURED = {
     "reversible": "act_with_undo",
     "read_only_dispatch": "notify_after",
