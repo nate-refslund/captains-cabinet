@@ -23,6 +23,8 @@ byte-clean (`git status --porcelain` empty) after every run.
 
 Reviewed-Scope-Digest: 54cd27ea190616029cee7c4a3edb9078e79628fc3b851bed89f674d461a2e03a
 
+
+
 (RE-BOUND repeatedly on 2026-07-27 — the census-shift-left, expansion-registry and
 census-set-pins landings each edited `cabinet/config/cognitive-architecture-contract.yml`,
 which sits in `restore_from_baseline` and is therefore digest-bound, and so did this
