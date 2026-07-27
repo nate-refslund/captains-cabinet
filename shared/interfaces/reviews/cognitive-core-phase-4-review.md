@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 50fbfff6985c3a412995ae2a3518af94636eb07f5424dbb47ca62741bcb70248
+Reviewed-Scope-Digest: 807bad894caab9a4dc1ed9239dbe6cd19ef59d5c900949a2e8c155ed9469d709
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
@@ -739,3 +739,20 @@ they are DIFFERENT paths — master's
 a digest that had to be recomputed over the merged tree rather than carried from
 either side. Still a MECHANICAL-DELTA re-bind: no reviewed BEHAVIOUR byte changed
 on either side of the merge, and neither side's prose was edited.
+
+RE-BOUND ON THE SECOND MASTER MERGE, 2026-07-27 — same mechanism, third time,
+and ALL THREE NOTES ARE KEPT. `iso-port-composition` merged origin/master
+3a710183 (the bash-egress-fail-closed landing, PR #229). Master's side re-bound
+the same `Reviewed-Scope-Digest` line this branch had re-bound in 6b6784e2, so
+`git merge-tree` reported a CONTENT conflict on exactly that one line and on
+nothing else — the two sides' appended notes merged cleanly, which is what made
+the PR read CONFLICTING while nothing about the two changes actually disagreed.
+Master moved `framework/authority/{classifier,grants,policy_engine}.py` and
+their tests; this branch moved `cabinet/scripts/egg-export-manifest.txt`.
+DIFFERENT in-scope paths, no semantic conflict, and the resolution is neither
+side's value: the digest is recomputed over the MERGED tree with
+`cognitive-phase4-review-scope.py --print`, which is the only value that
+describes the bytes that now exist. Still a MECHANICAL-DELTA re-bind — the
+world/iso work this branch carries touches no COG-4 scope path (checked: zero
+`world`/`dashboard` entries in the 85-entry EXPECTED_SCOPE), and no reviewed
+BEHAVIOUR byte changed on either side of the merge.

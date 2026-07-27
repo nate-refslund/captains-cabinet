@@ -65,6 +65,36 @@ budgets:
     callee_prefix: _write_to_
     maximum: 3
 temporary_allowances:
+  - phase: bash-egress-fail-closed
+    budget: framework_production_noncomment_lines
+    additional: 186
+    reason: >-
+      positive-locality proof for Bash commands (classifier._is_provably_local
+      + the two capability sets it asks its question of), the derived
+      enum-and-class fence on standing-grant rows, and the ONE fenced
+      risk-class map replacing queue.py's two verbatim copies. +130 measured
+      2026-07-27 with cognitive-architecture-census.py against master 73c516ba
+      (69129, itself exactly at the pinned maximum). 130 -> 186 in the same
+      landing: an adversarial review defeated the first proof with a generic
+      prefix, and all four causes were in the SHARED shell parser, so the fix
+      moved there (newline as a statement separator, redirect words never
+      becoming the command word, an UNRESOLVED sentinel where the parser cannot
+      see the program, and inline VAR=VAL reported instead of skipped). Those
+      56 lines also close a PRE-EXISTING bypass of the live-enforcing
+      binary_block and destructive_rm gates, which the same two gaps defeated. ZERO new modules — the
+      proof lives inside the existing classifier rather than in a new file,
+      which is why framework_production_modules is unchanged at 244. Docstrings
+      are counted as written: the sets carry their membership RULE and the
+      measured parser gaps that justify an allowlist over a blocklist, and
+      rewriting that reasoning into "#" comments to duck this counter would be
+      buying a number with the explanation a later reader needs.
+    owner: authority-plane
+    sunset: '2027-01-19'
+    deletion_gate: >-
+      the containment half of RES-018 lands (sandbox appleevent-send deny with a
+      sanctioned-destination allowlist) and the locality proof is reduced to the
+      classification it is, or COG-7 compaction brings production non-comment
+      lines below the pinned baseline
   - phase: COG-0
     budget: framework_production_modules
     additional: 2
