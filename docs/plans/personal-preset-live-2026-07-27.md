@@ -119,6 +119,17 @@ The gate's resulting order has other items, and they are other units:
   briefing is a real briefing with real proposed cards but its *content* is not
   yet preset-shaped. That gap is unchanged by this unit and is stated here
   rather than papered over.
+
+  **CLOSED 2026-07-28** (`docs/plans/briefing-consumes-recall-2026-07-28.md`).
+  A hatch run measured the consequence: three generic cards, scored **1 of 3**
+  — "read it, no value" — while recall on the same box was live and its notes
+  held a live incident spread across three files that no card mentioned. Two
+  defects were behind it. Nothing in the genesis chain ever called
+  `get_source()`, so the briefing consumed **zero** recall; and `local_root:`
+  was hardcoded to `vault`, with no answers-file override, so a personal hatch
+  bound the cabinet's OWN shipped docs and reported `available()` True — a
+  confident false positive. Both are fixed there. The sentence above stands as
+  the dated record of what this unit did not do.
 - The three entry modes, per-source ownership classes, structural read-only for
   non-owned sources beyond this one adapter, the first-time-list trajectory
   read, and the public README claim fix.

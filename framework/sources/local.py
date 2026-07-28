@@ -30,9 +30,20 @@ nothing here to flip.
 
 WHAT IT READS, AND THE BOUNDS IT KEEPS.
   * ROOT: ``CABINET_LOCAL_SOURCE_ROOT`` (env) wins; else ``local_root:`` in
-    ``instance/config/sources.yml``; else ``<CABINET_ROOT>/vault``. A relative
-    value resolves under ``CABINET_ROOT``, never under the process cwd — a
-    daemon's cwd is not a consented scope.
+    ``instance/config/sources.yml``; else **NOTHING** — ``resolve_root()``
+    returns ``None`` and the adapter reports ``available() -> False``. A
+    relative value resolves under ``CABINET_ROOT``, never under the process
+    cwd — a daemon's cwd is not a consented scope.
+
+    THE ABSENT CASE FAILS HONESTLY (changed 2026-07-28, measured). It used to
+    fall back to ``<CABINET_ROOT>/vault``, which on a fresh hatch is the
+    CABINET'S OWN SHIPPED DOCS (``vault/README.md``, ``vault/architecture.md``
+    are tracked in the repo). So an operator who declared no folder got
+    ``available() -> True`` and recall answering out of the framework's own
+    documentation as if it were their notes — a confident false positive,
+    which is worse than an honest empty because nothing downstream can tell
+    the two apart. Undeclared is now UNSET, and every caller sees the same
+    fail-closed shape it already handles for ``NullPersonalSource``.
   * JAIL: every candidate path must ``os.path.realpath``-resolve INSIDE the
     realpath of the root. A symlink pointing out of the folder is SKIPPED, not
     followed — the same containment rule ``validate-extension.sh`` applies to
@@ -135,15 +146,19 @@ def _configured_root() -> Optional[str]:
         return None
 
 
-def resolve_root() -> Path:
-    """The declared notes folder. Env wins, then config, then the deployment's
-    own ``vault/``. A relative value resolves under ``CABINET_ROOT`` — never
-    under the process cwd, because a daemon's cwd is not a consented scope."""
+def resolve_root() -> Optional[Path]:
+    """The declared notes folder, or ``None`` when nobody declared one.
+
+    Env wins, then config. A relative value resolves under ``CABINET_ROOT`` —
+    never under the process cwd, because a daemon's cwd is not a consented
+    scope. THERE IS NO DEFAULT: see the module docstring — the former
+    ``<CABINET_ROOT>/vault`` fallback bound the cabinet's own shipped docs and
+    reported a live source, which is a lie an operator cannot detect."""
     base = _cabinet_root()
     declared = os.environ.get("CABINET_LOCAL_SOURCE_ROOT", "").strip() \
         or _configured_root()
     if not declared:
-        return base / "vault"
+        return None
     path = Path(declared).expanduser()
     return path if path.is_absolute() else base / path
 
@@ -206,8 +221,25 @@ class LocalNotesSource:
         self._corpus: Optional[List[dict]] = None
 
     # --- scope -------------------------------------------------------------
-    def root(self) -> Path:
+    def root(self) -> Optional[Path]:
+        """The declared folder, or ``None`` when nothing is declared. Callers
+        MUST treat ``None`` as "no scope was granted", never as a path."""
         return Path(self._root_override) if self._root_override else resolve_root()
+
+    def binding_status(self) -> dict:
+        """One honest description of this binding, for surfaces that report
+        recall state to the operator (the genesis briefing does).
+
+        ``{"declared": bool, "root": str|None, "exists": bool, "notes": int}``
+        — ``declared`` False is the UNSET case: a folder was never named, so
+        there is nothing to be unavailable ABOUT, and the fix is to name one.
+        Distinguishing "you pointed me nowhere" from "the folder you named is
+        empty" is the whole reason this returns a shape rather than a bool."""
+        root = self.root()
+        if root is None:
+            return {"declared": False, "root": None, "exists": False, "notes": 0}
+        return {"declared": True, "root": str(root), "exists": root.is_dir(),
+                "notes": len(self._load())}
 
     def _in_jail(self, candidate: Path, jail: str) -> bool:
         """realpath containment — a symlink out of the folder is SKIPPED, never
@@ -221,7 +253,7 @@ class LocalNotesSource:
 
     def _files(self) -> List[Path]:
         root = self.root()
-        if not root.is_dir():
+        if root is None or not root.is_dir():
             return []
         try:
             jail = os.path.realpath(str(root))
@@ -256,6 +288,9 @@ class LocalNotesSource:
         if self._corpus is not None:
             return self._corpus
         root = self.root()
+        if root is None:
+            self._corpus = []
+            return self._corpus
         corpus: List[dict] = []
         for path in self._files():
             text = self._read(path)
@@ -286,10 +321,11 @@ class LocalNotesSource:
 
     # --- OBSERVE / SEARCH --------------------------------------------------
     def available(self) -> bool:
-        """True only when the declared folder exists AND holds at least one
-        admissible note. A configured-but-empty folder is NOT available — the
-        caller must degrade honestly rather than report a live source that can
-        only ever answer nothing."""
+        """True only when a folder was DECLARED, exists, AND holds at least
+        one admissible note. A configured-but-empty folder is NOT available,
+        and neither is an UNDECLARED one — the caller must degrade honestly
+        rather than report a live source that can only ever answer nothing, or
+        (before 2026-07-28) one answering out of the cabinet's own docs."""
         return bool(self._load())
 
     def search(self, handle: str, *, topic: Optional[str] = None) -> dict:
@@ -345,6 +381,8 @@ class LocalNotesSource:
         the same refusal an absent file gets, so a traversal attempt learns
         nothing a miss would not tell it."""
         root = self.root()
+        if root is None:
+            raise FileNotFoundError(path)   # no scope granted — same refusal
         try:
             jail = os.path.realpath(str(root))
         except OSError:

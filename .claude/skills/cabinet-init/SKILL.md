@@ -481,10 +481,18 @@ placeholders only:
    autonomy: {posture: propose_first,            # fixed at init
               flavor: org,                       # org | personal (§4; also gates the
                                                  #  sources.yml recall binding — org emits
-                                                 #  OrgSource, personal emits none)
+                                                 #  OrgSource, personal emits LocalNotesSource)
               target_posture: guardian}          # optional; guardian default, 'mini*' org ⇒ sovereign
                                                  # (an earn_up choice rides the preset-written
                                                  #  posture.yml from §4, not this key)
+   sources:                                     # OPTIONAL, personal flavor only
+     notes_root: ~/Documents/notes              #  the ONE folder recall reads,
+                                                #  read-only. NO DEFAULT: omit it and
+                                                #  recall resolves UNSET (available()
+                                                #  False, every gather honestly empty).
+                                                #  ASK for it on flavor: personal —
+                                                #  an unpointed personal box has no
+                                                #  recall at all
    integrations:
      telegram: {ceo_bot, bot_token_env}          # username + ENV VAR NAME
      mcp_env_names: []                           # ENV VAR NAMES
@@ -536,8 +544,21 @@ placeholders only:
    `NullPersonalDispatch`, draft-capture-only). `flavor: personal`
    ALSO emits a marked `sources.yml` — binding
    `framework.sources.local:LocalNotesSource` over a `local_root:`
-   the operator points at their own notes folder, read-only, with no
-   write side and no `dispatch:` either. CHANGED 2026-07-27: before
+   taken from the answers' `sources.notes_root`, read-only, with no
+   write side and no `dispatch:` either.
+
+   **ASK for `sources.notes_root` whenever `flavor: personal`.**
+   CHANGED 2026-07-28: `local_root:` used to be HARDCODED to `vault`
+   with no answers-file override, and `<root>/vault` is the
+   cabinet's OWN shipped documentation (`vault/README.md`,
+   `vault/architecture.md` are tracked) — so a fresh personal hatch
+   silently bound the framework's own docs as the operator's notes
+   and reported `available()` True. There is now NO default: an
+   undeclared folder emits `local_root:` commented out, the adapter
+   resolves UNSET, and the first briefing says so with the fix. An
+   honest unavailable beats a plausible wrong folder, because the
+   operator can act on the first and cannot even see the second.
+   CHANGED 2026-07-27: before
    that, `personal` emitted nothing at all and a personal box
    fail-closed to `NullPersonalSource` (`available()` False,
    `search()` returning no hits) — so the ONE flavor shaped for an

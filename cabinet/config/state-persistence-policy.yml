@@ -159,7 +159,9 @@ disposable:
       the normal resume verb could never clear it. No learned state is lost: the
       authoritative channel is the Redis key cabinet:killswitch, the verdict is
       the OR of the two channels, and `activate` does not write this marker at
-      all today (declared residual RES-016, declared-residuals-register.md :340).
+      all today (declared residual RES-016, declared-residuals-register.md — cited
+      by row id, not by line: that register's cites are anchor-resolved as of
+      2026-07-28 precisely because line pins rot).
       RESIDUAL, stated rather than hidden: once RES-016 arms the marker, a deploy
       will drop the filesystem channel for the incoming release, so inside that
       window the pre-armed `DEL cabinet:killswitch` loop the second channel

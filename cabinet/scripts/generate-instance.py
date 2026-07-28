@@ -121,8 +121,16 @@ sources.yml emission rule (Wave-1 OrgSource, 2026-07-07): the answers'
     fail-closes to NullPersonalDispatch (draft-capture-only), correct for a box
     with no personal actuator estate.
   * flavor == personal (Flavor-A): emit a generated-by-marked sources.yml
-    binding `framework.sources.local:LocalNotesSource` with a `local_root:`
-    pointing at the deployment's own notes folder. CHANGED 2026-07-27: this
+    binding `framework.sources.local:LocalNotesSource` with the `local_root:`
+    THE ANSWERS DECLARE (`sources.notes_root`). CHANGED 2026-07-28: that value
+    used to be HARDCODED to `vault`, which the answers file had no way to
+    override — and `vault/` on a fresh clone is the CABINET'S OWN SHIPPED DOCS
+    (vault/README.md, vault/architecture.md are tracked). So a personal hatch
+    silently bound the framework's documentation as the operator's notes and
+    reported `available() True`: a confident false positive. When the answers
+    declare nothing, `local_root:` is emitted COMMENTED OUT, the adapter
+    resolves UNSET, and recall reports honestly unavailable rather than
+    answering out of a plausible-looking wrong folder. CHANGED 2026-07-27: this
     used to emit NOTHING, which fail-closed the ONE flavor shaped for a
     non-company operator to NullPersonalSource — available() False, search()
     {"hits": []} — i.e. the personal preset shipped inert. A captain who
@@ -292,6 +300,24 @@ LOCAL_SOURCE_ADAPTER = "framework.sources.local:LocalNotesSource"
 ORG_VAULT_KEY = "org_vault_dir"
 ORG_VAULT_DEFAULT = "vault"
 LEGACY_ORG_VAULT_KEY = "product_brain_dir"   # pre-rename key, suppression-checked
+
+# The answers key a PERSONAL deployment declares its own notes folder under —
+# the one folder framework.sources.local:LocalNotesSource reads, read-only.
+# THERE IS NO DEFAULT, deliberately (2026-07-28). `local_root:` used to be
+# hardcoded to ORG_VAULT_DEFAULT with no answers-file override at all, so a
+# fresh personal hatch bound <root>/vault — the cabinet's OWN shipped docs, two
+# tracked files — and `available()` returned True over the framework's
+# documentation. An operator cannot tell that apart from working recall, which
+# makes it worse than the honest empty it replaced. Undeclared now emits the
+# key commented out; resolve_root() returns None and recall says so.
+SOURCES_KEY = "sources"
+NOTES_ROOT_KEY = "notes_root"
+# Refuses control characters, NUL, and a bare empty/whitespace value. A path
+# is otherwise unconstrained on purpose: an operator's notes folder is usually
+# an ABSOLUTE machine path ("~/Documents/notes"), which is exactly what the
+# adapter's resolve_root() expanduser()s and jails. instance/config/ is
+# deployment-local, so an absolute path here never enters the shipped tree.
+NOTES_ROOT_RE = re.compile(r"^[^\x00-\x1f\x7f]{1,4096}$")
 
 # The presets tree location, repo-root-relative. The CABINET layer owns this
 # knowledge (same as load-preset.sh): framework code must not hardcode where
@@ -499,6 +525,29 @@ def load_answers(path: Path, root: Path | None = None) -> dict:
             raise GenerationError(
                 f"integrations.mcp_env_names[{j}] {env_name!r} must be an ENV VAR NAME (UPPER_SNAKE)"
             )
+
+    # OPTIONAL recall scope (2026-07-28). `sources.notes_root` is the ONE
+    # folder a personal deployment grants the local read-only adapter. ABSENT
+    # is a first-class answer meaning "nobody granted a folder yet" — never
+    # defaulted here, because the default this replaced (`vault`) silently
+    # bound the cabinet's own shipped docs and reported working recall.
+    sources_block = answers.get(SOURCES_KEY)
+    if sources_block is not None:
+        if not isinstance(sources_block, dict):
+            raise GenerationError(
+                f"answers {SOURCES_KEY}: must be a mapping "
+                f"(e.g. {SOURCES_KEY}:\n  {NOTES_ROOT_KEY}: ~/notes)"
+            )
+        notes_root = sources_block.get(NOTES_ROOT_KEY)
+        if notes_root is not None:
+            value = str(notes_root)
+            if not NOTES_ROOT_RE.match(value.strip()) or not value.strip():
+                raise GenerationError(
+                    f"{SOURCES_KEY}.{NOTES_ROOT_KEY} {notes_root!r} must be a "
+                    f"single-line filesystem path (absolute, ~-prefixed, or "
+                    f"relative to the deployment root) — omit the key entirely "
+                    f"to leave recall UNSET, which reports honestly unavailable"
+                )
 
     # Posture answers (sovereign amendment 2026-07-05). Both optional; the
     # rendered posture.yml is an INERT scaffold either way (resolve_posture
@@ -1078,15 +1127,58 @@ adapter: {ORG_SOURCE_ADAPTER}
 """
 
 
-def render_sources_personal(local_root: str) -> str:
+def declared_notes_root(answers: dict) -> str | None:
+    """The operator's declared notes folder (``sources.notes_root``), or None.
+
+    ONE resolution, so the renderer and the printed next steps cannot drift.
+    None means UNSET — nobody granted a folder — and every caller must treat
+    that as a scope that was never granted, never as a path to guess at."""
+    block = answers.get(SOURCES_KEY)
+    if not isinstance(block, dict):
+        return None
+    value = block.get(NOTES_ROOT_KEY)
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def render_sources_personal(local_root: str | None) -> str:
     """instance/config/sources.yml for a PERSONAL-flavor deployment.
 
     Emitted since 2026-07-27: before this, `flavor: personal` emitted no
     sources.yml at all, so the one flavor shaped for an operator who does not
     run a company fail-closed to NullPersonalSource — zero recall on every
-    gather. `local_root:` is a deployment-root-relative path (never an
-    absolute machine path, so generated config stays relocatable), read by
-    framework.sources.local.resolve_root()."""
+    gather.
+
+    ``local_root`` is whatever the answers declared (``sources.notes_root``),
+    read by framework.sources.local.resolve_root(); it may be absolute,
+    ~-prefixed, or relative to the deployment root. ``None`` means the answers
+    declared NOTHING, and the key is then emitted COMMENTED OUT so the adapter
+    resolves UNSET. That case used to be impossible: the value was hardcoded to
+    `vault`, i.e. the cabinet's own shipped docs, and a personal box reported
+    live recall over the framework's documentation (measured 2026-07-28). An
+    honest unavailable is worth more than a plausible wrong folder, because the
+    operator can act on the first and cannot even see the second."""
+    if local_root:
+        root_line = f"local_root: {local_root}"
+    else:
+        root_line = (
+            "# local_root: /path/to/your/notes\n"
+            "#\n"
+            "# UNSET — the answers file declared no `sources.notes_root`, so no\n"
+            "# folder has been granted. The adapter resolves NO root, available()\n"
+            "# returns False, and every gather reports honestly empty. Point it\n"
+            "# somewhere by declaring sources.notes_root in\n"
+            "# instance/config/cabinet-init.answers.yml and re-running\n"
+            "# cabinet/scripts/generate-instance.py, by uncommenting the line\n"
+            "# above, or by exporting CABINET_LOCAL_SOURCE_ROOT.\n"
+            "#\n"
+            "# There is deliberately NO default. Until 2026-07-28 this fell back\n"
+            "# to <root>/vault — the cabinet's OWN shipped documentation — and\n"
+            "# reported working recall over it, which an operator cannot tell\n"
+            "# apart from their own notes."
+        )
     return f"""\
 # {MARKER} — personal-sensing seam binding for a PERSONAL-flavor deployment
 # (regenerate via cabinet/scripts/generate-instance.py; emitted because the
@@ -1100,13 +1192,14 @@ def render_sources_personal(local_root: str) -> str:
 # NullPersonalSource — honest, but ZERO recall on every gather.
 adapter: {LOCAL_SOURCE_ADAPTER}
 
-# The ONE folder the adapter reads, relative to this deployment root (an
-# absolute path is honored too). Point it at your own notes/project folder.
+# The ONE folder the adapter reads — YOUR notes, declared in the answers file
+# as sources.notes_root. Absolute, ~-prefixed, or relative to this deployment
+# root; all three are honored.
 # Bounds are the adapter's, not this file's: text extensions only, a file cap,
 # a per-file byte cap, hidden dirs skipped, and every path realpath-jailed
 # inside this root (a symlink out of the folder is skipped, never followed).
 # CABINET_LOCAL_SOURCE_ROOT overrides this at runtime.
-local_root: {local_root}
+{root_line}
 
 # No dispatch: binding, and it is not an omission. framework/sources/local.py
 # has NO write side — a folder pointed at material the operator does not own
@@ -1402,6 +1495,16 @@ autonomy:
   posture: propose_first
   flavor: org                    # org | personal (personal ⇒ guardian scaffold, always)
   # target_posture: sovereign    # optional; default guardian ('mini*' org ids default sovereign)
+
+# The ONE folder a PERSONAL deployment grants recall, read-only. OPTIONAL and
+# with NO DEFAULT: omit it and recall resolves UNSET — available() False, every
+# gather honestly empty — which is the correct state for a folder nobody
+# granted. It used to default to `vault`, i.e. the cabinet's own shipped docs,
+# so a personal box reported working recall over the framework's own
+# documentation. Ignored on flavor: org (that binds the cabinet's memory
+# estate instead).
+# sources:
+#   notes_root: ~/Documents/notes
 
 integrations:
   telegram:
@@ -1739,8 +1842,12 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
     flavor = str((answers.get("autonomy") or {}).get("flavor", "org"))
     sources_adapter = (ORG_SOURCE_ADAPTER if flavor != "personal"
                        else LOCAL_SOURCE_ADAPTER)
+    # THE ANSWERS DECLARE THE SCOPE (2026-07-28). Undeclared stays undeclared:
+    # render_sources_personal(None) emits the key commented out, so recall
+    # reports unavailable instead of binding the cabinet's own docs.
+    notes_root = declared_notes_root(answers)
     sources_body = (render_sources() if flavor != "personal"
-                    else render_sources_personal(ORG_VAULT_DEFAULT))
+                    else render_sources_personal(notes_root))
     outputs.append((
         _instance_path(root, "config", "sources.yml"),
         sources_body, "yaml",
@@ -1912,8 +2019,17 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
     print(f"  (autonomy.flavor: {flavor}). No dispatch: binding — writes fail-close to")
     print("  draft-capture-only.")
     if sources_adapter == LOCAL_SOURCE_ADAPTER:
-        print(f"  Point local_root: at your own notes folder (default: {ORG_VAULT_DEFAULT}/)")
-        print("  — the adapter reads it read-only and has no write side at all.")
+        if notes_root:
+            print(f"  Recall reads {notes_root} (declared as "
+                  f"{SOURCES_KEY}.{NOTES_ROOT_KEY}) — read-only, no write side")
+            print("  at all. Re-run this generator after moving it.")
+        else:
+            print("  Recall is UNSET: no folder was granted, so it reports")
+            print("  unavailable and every gather is honestly empty. Declare")
+            print(f"  {SOURCES_KEY}.{NOTES_ROOT_KEY} in the answers file and re-run "
+                  f"(or export")
+            print("  CABINET_LOCAL_SOURCE_ROOT). There is no default on purpose —")
+            print("  the old one bound this repo's own docs and looked like it worked.")
     return written
 
 
