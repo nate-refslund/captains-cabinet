@@ -61,7 +61,22 @@ budgets:
     # the new level. Zero new MODULES (framework_production_modules unchanged
     # at 206+allowances): the helper lives inside the existing module, and the
     # revert CLI lives in cabinet/scripts/, outside this budget's path.
-    maximum: 60164
+    #
+    # 60164 -> 60183 (+19 measured 2026-07-28 via cognitive-architecture-census.py):
+    # the injection screen in framework/acting/action_lane.py became BILINGUAL.
+    # Measured that day against the deployment's real inbound language: 7/7
+    # English payloads fired and 8 of 11 semantically identical DANISH ones did
+    # not, so the deterministic screen was policing a language this deployment
+    # barely receives while the one it does receive walked through. The growth
+    # is Danish alternations folded into the existing arms plus two new arms
+    # (forget-instructions, bulk-exfil-address). Same reasoning as the bump
+    # above and again deliberately NOT a temporary_allowances row: an operator's
+    # language is not a phase, so an allowance would promise a deletion gate
+    # that will never fire. Zero new MODULES; the arms live in the existing
+    # tuple. Compressing the regexes onto fewer lines to dodge the ratchet was
+    # the alternative and would have been gaming the budget rather than paying
+    # it. Shrink-only resumes from 60183.
+    maximum: 60183
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
