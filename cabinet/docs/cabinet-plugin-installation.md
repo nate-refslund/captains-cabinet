@@ -131,7 +131,7 @@ are never packaged into the marketplace.
 | `vercel-lane-pack` | deploy-and-verify, engineering-development-loop | Copies of the core skills (both are Vercel-flow skills) |
 | `agent-teams-pack` | agent-team-workflow | Copy of the core skill |
 | `preset-portfolio-pack` | portfolio-preset activation guide | Payload referenced at `presets/portfolio/` — requires the core plugin |
-| `preset-personal-pack` | personal-preset activation guide | Payload referenced at `presets/personal/` — requires the core plugin |
+| `preset-personal-pack` | personal-preset activation guide | Payload referenced at `presets/personal/` (ACTIVE since 2026-07-27) — requires the core plugin |
 | `lighthouse-log-pack` | daily-lighthouse-log (keeper's log composed from the world chronicle into the officer's own tier2 note) | Original — authored in the pack: no core copy, no `sunset:` line; the running exemplar for `docs/authoring-a-pack.md` |
 
 **Additive posture (this wave):** the core-skill packs are parallel copies —

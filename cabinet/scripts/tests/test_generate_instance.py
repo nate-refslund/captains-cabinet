@@ -920,13 +920,21 @@ class TestSourcesAndOrgVault:
         run_gen(cab_root, answers)
         assert (cab_root / "instance/config/sources.yml").is_file()
 
-    def test_personal_flavor_emits_nothing(self, cab_root):
-        """flavor: personal (Flavor-A) → NO sources.yml — the captain binds
-        their own personal adapter by hand; today's behavior preserved."""
+    def test_personal_flavor_emits_the_local_binding(self, cab_root):
+        """INVERTED 2026-07-27 (was test_personal_flavor_emits_nothing, which
+        pinned "NO sources.yml"). Emitting nothing meant the personal flavor
+        resolved NullPersonalSource — zero recall — so the preset built for an
+        operator who does not run a company was the only shipped configuration
+        that was inert. It now binds the local notes adapter; the dispatch seam
+        deliberately stays unbound (the adapter has no write side)."""
         answers = acme_answers()
         answers["autonomy"] = {"posture": "propose_first", "flavor": "personal"}
         run_gen(cab_root, answers)
-        assert not (cab_root / "instance/config/sources.yml").exists()
+        src = yaml.safe_load(
+            (cab_root / "instance/config/sources.yml").read_text())
+        assert src["adapter"] == "framework.sources.local:LocalNotesSource"
+        assert src["local_root"] == "vault"
+        assert "dispatch" not in src
 
     def test_hand_authored_sources_never_clobbered(self, cab_root):
         """An existing sources.yml WITHOUT the marker (e.g. a live Flavor-A
@@ -937,10 +945,13 @@ class TestSourcesAndOrgVault:
         with pytest.raises(gi.GenerationError, match="REFUSING to overwrite"):
             run_gen(cab_root, acme_answers())
         assert hand.read_bytes() == before
-        # personal flavor: no emission attempted, hand file untouched, run OK
+        # personal flavor emits too (2026-07-27) — so the marker guard, not an
+        # absent emission, is what protects a hand-authored binding on BOTH
+        # flavors. It must refuse and leave the file byte-identical.
         answers = acme_answers()
         answers["autonomy"] = {"posture": "propose_first", "flavor": "personal"}
-        run_gen(cab_root, answers)
+        with pytest.raises(gi.GenerationError, match="REFUSING to overwrite"):
+            run_gen(cab_root, answers)
         assert hand.read_bytes() == before
 
     def test_generated_sources_rerun_idempotent(self, cab_root):
@@ -1394,16 +1405,31 @@ class TestUniversality:
 
 
 # ---------------------------------------------------------------------------
-# Forward-compat pin — an unknown top-level `mission:` key is TOLERATED
+# Forward-compat pin — unknown top-level keys are TOLERATED, and the parts of
+# `mission:` the generator DOES consume are named rather than assumed inert
 # ---------------------------------------------------------------------------
 class TestUnknownMissionKeyTolerated:
-    """The purpose-first interview (onboarding-vision-2026-07-14 Phase 2) will
-    add a machine-readable top-level ``mission:`` block to
-    cabinet-init.answers.yml. That upgrade only works if the zero-LLM
-    generator IGNORES an unknown top-level key rather than rejecting it. Pin
-    that tolerance TODAY so the interview change can never silently trip the
-    generator — and so anyone who later adds strict top-level validation is
-    forced to reconcile with this contract (Phase 0 zero-risk fix)."""
+    """The purpose-first interview (onboarding-vision-2026-07-14 Phase 2)
+    added a machine-readable top-level ``mission:`` block to
+    cabinet-init.answers.yml, and the zero-LLM generator must IGNORE a key it
+    does not know rather than rejecting it.
+
+    NARROWED 2026-07-26 (altitude, direction gate). This class used to pin
+    "the mission key changes NOTHING in the generated tree" — which read as
+    "mission is inert", and under that reading a scope key that is merely
+    CARRIED would be decoration. It is not: ``mission.altitude`` reaches
+    preset SELECTION (``resolve_preset``, the value hatch.sh writes into
+    instance/config/active-preset) and proposed-CARD derivation
+    (framework.onboarding.genesis). So the pin is split, and both halves are
+    asserted here so no reader can take one for the other:
+
+      * ``purpose`` / ``success_90d`` / ``never_touch`` — still inert in the
+        GENERATED TREE (genesis conditions cards on them; the generator does
+        not read them);
+      * a genuinely unknown top-level key — inert, which is the forward-compat
+        property this class exists for;
+      * ``mission.altitude`` — NOT inert, and validated: a typo refuses.
+    """
 
     def _build_root(self, base: Path) -> Path:
         (base / "instance/config/contexts").mkdir(parents=True)
@@ -1462,6 +1488,256 @@ class TestUnknownMissionKeyTolerated:
         res = run_cli(root, "--answers", str(path))
         assert res.returncode == 0, res.stderr
         assert (root / "instance/config/roster.yml").is_file()
+
+    def test_a_genuinely_unknown_top_level_key_is_still_inert(self, tmp_path):
+        """The forward-compat property itself, tested with a key the
+        generator really does not know — `mission:` no longer qualifies."""
+        baseline_root = self._build_root(tmp_path / "fc-baseline")
+        run_gen(baseline_root, acme_answers())
+        baseline = self._generated_tree(baseline_root)
+
+        future_root = self._build_root(tmp_path / "fc-future")
+        answers = acme_answers()
+        answers["some_future_block"] = {"a": 1, "b": ["c"]}
+        run_gen(future_root, answers)
+        assert self._generated_tree(future_root) == baseline
+
+    def test_mission_altitude_is_NOT_inert(self, tmp_path):
+        """The other half of the split: altitude must REACH something. If this
+        arm ever passes as "no change", altitude has become decoration and the
+        direction gate's requirement is unmet."""
+        answers = acme_answers()
+        answers["mission"] = dict(self._MISSION_BLOCK)
+        assert gi.resolve_preset(answers) == ("portfolio", "cabinet.org_shape")
+        answers["mission"]["altitude"] = "contributor"
+        assert gi.resolve_preset(answers) == ("personal", "mission.altitude")
+
+        root = self._build_root(tmp_path / "alt-bad")
+        answers["mission"]["altitude"] = "not-a-rung"
+        with pytest.raises(gi.GenerationError, match="mission.altitude"):
+            run_gen(root, answers)
+
+
+class TestAltitudeReachesPresetSelection:
+    """ALTITUDE MUST REACH PRESET SELECTION or it is decoration (direction
+    gate 2026-07-26). `resolve_preset` is the ONE resolution — hatch.sh calls
+    it through `--print-preset` instead of re-deriving a mapping that had
+    already drifted (it wrote `portfolio` even when the answers declared
+    `cabinet.preset: developer`)."""
+
+    @pytest.mark.parametrize("answers,expected,basis", [
+        ({"cabinet": {"org_shape": "portfolio"}}, "portfolio", "cabinet.org_shape"),
+        ({"cabinet": {"org_shape": "functional"}}, "work", "cabinet.org_shape"),
+        ({"cabinet": {"org_shape": "custom"}}, "", "cabinet.org_shape"),
+        ({"cabinet": {"org_shape": "portfolio", "preset": "developer"}},
+         "developer", "cabinet.preset"),
+        ({"cabinet": {"org_shape": "portfolio"},
+          "mission": {"altitude": "contributor"}}, "personal", "mission.altitude"),
+        ({"cabinet": {"org_shape": "portfolio"},
+          "mission": {"altitude": "project"}}, "personal", "mission.altitude"),
+        # High-altitude rungs keep today's org-shape default exactly.
+        ({"cabinet": {"org_shape": "portfolio"},
+          "mission": {"altitude": "team"}}, "portfolio", "cabinet.org_shape"),
+        ({"cabinet": {"org_shape": "functional"},
+          "mission": {"altitude": "company"}}, "work", "cabinet.org_shape"),
+        # An explicit preset OUTRANKS the rung — the captain named it.
+        ({"cabinet": {"org_shape": "portfolio", "preset": "work"},
+          "mission": {"altitude": "contributor"}}, "work", "cabinet.preset"),
+        # Unknown/typo altitude is UNKNOWN, never a silent selection.
+        ({"cabinet": {"org_shape": "portfolio"},
+          "mission": {"altitude": "vice-president"}}, "portfolio", "cabinet.org_shape"),
+        ({"cabinet": {"org_shape": "portfolio"}, "mission": None},
+         "portfolio", "cabinet.org_shape"),
+    ])
+    def test_resolution_and_its_basis(self, answers, expected, basis):
+        assert gi.resolve_preset(answers) == (expected, basis)
+
+    def test_two_altitudes_select_different_presets_through_the_cli(self, cab_root):
+        """The executable half: the SAME answers at two rungs print two
+        different preset slugs, so the file hatch.sh writes differs."""
+        answers = acme_answers()
+        answers["mission"] = {"altitude": "company"}
+        path = write_answers(cab_root, answers)
+        high = run_cli(cab_root, "--answers", str(path), "--print-preset")
+        answers["mission"] = {"altitude": "contributor"}
+        write_answers(cab_root, answers)
+        low = run_cli(cab_root, "--answers", str(path), "--print-preset")
+        assert high.returncode == 0 and low.returncode == 0
+        assert high.stdout.strip() == "portfolio"
+        assert low.stdout.strip() == "personal"
+
+    def test_print_preset_writes_nothing(self, cab_root):
+        path = write_answers(cab_root, acme_answers())
+        before = sorted(p.name for p in (cab_root / "instance/config").iterdir())
+        res = run_cli(cab_root, "--answers", str(path), "--print-preset")
+        assert res.returncode == 0 and res.stdout.strip() == "portfolio"
+        assert sorted(p.name for p in (cab_root / "instance/config").iterdir()) == before
+
+    def test_print_preset_exit_3_when_nothing_maps(self, cab_root):
+        answers = acme_answers()
+        answers["cabinet"]["org_shape"] = "custom"
+        path = write_answers(cab_root, answers)
+        res = run_cli(cab_root, "--answers", str(path), "--print-preset")
+        assert res.returncode == 3
+        assert "set instance/config/active-preset yourself" in res.stderr
+
+    def test_low_altitude_selects_the_no_c_suite_preset(self, cab_root, capsys):
+        """CORRECTED 2026-07-27: this asserted `developer` plus an honest-gap
+        line saying no shipped preset fits a low-altitude operator and
+        presets/personal/ is empty. The sibling personal-preset landing made
+        both statements false — `personal` is now the kit for exactly this
+        rung, and it is the only one that stands up no C-suite."""
+        answers = acme_answers()
+        answers["mission"] = {"altitude": "contributor"}
+        run_gen(cab_root, answers)
+        out = capsys.readouterr().out
+        assert "echo personal > instance/config/active-preset" in out
+        assert "NO C-suite" in out
+        assert "OPTIONAL developer preset" not in out
+        assert (_REPO_ROOT / "presets/personal/preset.yml").is_file(), (
+            "the mapping points at a preset that must exist — an unpopulated "
+            "one fails later and less clearly")
+
+    @pytest.mark.parametrize("bad", ["ic", "manager", "senior engineer", "", 3])
+    def test_bad_altitude_verb_refuses_loudly(self, cab_root, bad):
+        answers = acme_answers()
+        answers["mission"] = {"altitude": bad}
+        with pytest.raises(gi.GenerationError, match="mission.altitude"):
+            run_gen(cab_root, answers)
+
+    def test_case_and_whitespace_are_normalized_not_refused(self, cab_root, capsys):
+        """Deliberate, and the same tolerance captain.availability already
+        has: a rung typed `  Contributor ` is the answer the operator meant."""
+        answers = acme_answers()
+        answers["mission"] = {"altitude": "  Contributor "}
+        run_gen(cab_root, answers)
+        assert "echo personal > instance/config/active-preset" in capsys.readouterr().out
+
+    @pytest.mark.parametrize("rung", sorted(gi.ALTITUDES))
+    def test_every_declared_rung_is_accepted(self, cab_root, rung):
+        answers = acme_answers()
+        answers["mission"] = {"altitude": rung}
+        run_gen(cab_root, answers)
+
+    def test_defaults_altitude_flag_records_the_rung(self, cab_root):
+        res = run_cli(cab_root, "--defaults", "--altitude", "contributor")
+        assert res.returncode == 0, res.stderr
+        answers = yaml.safe_load(
+            (cab_root / "instance/config/cabinet-init.answers.yml").read_text())
+        assert answers["mission"] == {"altitude": "contributor"}
+        assert gi.resolve_preset(answers) == ("personal", "mission.altitude")
+
+    def test_defaults_without_altitude_records_no_mission_block(self, cab_root):
+        res = run_cli(cab_root, "--defaults")
+        assert res.returncode == 0, res.stderr
+        answers = yaml.safe_load(
+            (cab_root / "instance/config/cabinet-init.answers.yml").read_text())
+        assert "mission" not in answers          # unknown stays unknown
+
+    def test_bad_altitude_flag_refuses_before_writing(self, cab_root):
+        res = run_cli(cab_root, "--defaults", "--altitude", "vice-president")
+        assert res.returncode == 2
+        assert not (cab_root / "instance/config/cabinet-init.answers.yml").exists()
+
+    def test_altitude_flag_requires_defaults(self, cab_root):
+        write_answers(cab_root, acme_answers())
+        res = run_cli(cab_root, "--altitude", "contributor")
+        assert res.returncode == 2 and "requires --defaults" in res.stderr
+
+
+class TestLanesAreDerivable:
+    """THE ordering inversion (Captain ruling 2026-07-26). The refusal
+    "answers must declare at least one lane" was absolute, and a lane IS a
+    product — so a developer inside a large company could only invent one or
+    take the --defaults placeholder, and the cards derived from that
+    placeholder were the irrelevant ones."""
+
+    ESTATE = {
+        "schema": "cabinet.derived-estate/v1",
+        "deployment": "acme-hq",
+        "derived_at": "2026-07-26T00:00:00Z",
+        "sources": [],
+        "entities": [],
+    }
+
+    def _laneless(self):
+        answers = acme_answers()
+        answers["lanes"] = []
+        return answers
+
+    def _plant_estate(self, cab_root: Path, **over):
+        import yaml as _yaml
+        doc = dict(self.ESTATE)
+        doc.update(over)
+        path = cab_root / "instance/onboarding/formation/derived-estate.yml"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(_yaml.safe_dump(doc, sort_keys=False))
+        return path
+
+    def test_no_lanes_and_no_estate_still_refuses_and_teaches_the_fix(self, cab_root):
+        with pytest.raises(gi.GenerationError) as excinfo:
+            run_gen(cab_root, self._laneless())
+        msg = str(excinfo.value)
+        assert "no usable derived estate" in msg
+        assert "formation.sh" in msg           # names the executable next step
+        assert "lanes-proposed.yml" in msg
+
+    def test_no_lanes_with_an_empty_but_real_estate_generates(self, cab_root):
+        """"I looked and found nothing" is a legitimate lane-less state — the
+        briefing answers it with the read-your-world card, not a fake lane."""
+        self._plant_estate(cab_root)
+        run_gen(cab_root, self._laneless())
+        assert (cab_root / "instance/config/roster.yml").is_file()
+        assert (cab_root / "instance/config/platform.yml").is_file()
+        # nothing lane-shaped was invented
+        assert not list((cab_root / "instance/config/contexts").glob("*.yml"))
+        assert not list((cab_root / "instance/config/projects").glob("*.yml"))
+        assert not list((cab_root / "instance/agents").glob("*-ceo.md"))
+
+    def test_lane_less_roster_is_chair_only(self, cab_root):
+        self._plant_estate(cab_root)
+        run_gen(cab_root, self._laneless())
+        roster = yaml.safe_load((cab_root / "instance/config/roster.yml").read_text())
+        assert list(roster["roster"]) == ["cos"]
+        platform = (cab_root / "instance/config/platform.yml").read_text()
+        assert "cos: { type: fulltime }" in platform
+        assert "-ceo: { type: consultant }" not in platform
+
+    def test_lane_less_writes_no_active_project_placeholder(self, cab_root, capsys):
+        """A placeholder slug here would be a value pretending to be an answer
+        — the named failure of the 1/3-scored briefing."""
+        self._plant_estate(cab_root)
+        run_gen(cab_root, self._laneless())
+        assert not (cab_root / "instance/config/active-project.txt").exists()
+        out = capsys.readouterr().out
+        assert "Active project: NOT written" in out
+        assert "lanes-proposed.yml" in out
+
+    def test_a_foreign_estate_does_not_unlock_the_gate(self, cab_root):
+        self._plant_estate(cab_root, deployment="someone-elses-cabinet")
+        with pytest.raises(gi.GenerationError, match="not 'acme-hq'"):
+            run_gen(cab_root, self._laneless())
+
+    @pytest.mark.parametrize("over", [
+        {"schema": "cabinet.something-else/v1"},
+        {"derived_at": ""},
+        {"sources": "not-a-list"},
+    ])
+    def test_a_malformed_estate_does_not_unlock_the_gate(self, cab_root, over):
+        self._plant_estate(cab_root, **over)
+        with pytest.raises(gi.GenerationError, match="no usable derived estate"):
+            run_gen(cab_root, self._laneless())
+
+    def test_lanes_must_still_be_a_list(self, cab_root):
+        answers = acme_answers()
+        answers["lanes"] = "acme-store"
+        with pytest.raises(gi.GenerationError, match="lanes: must be a list"):
+            run_gen(cab_root, answers)
+
+    def test_declared_lanes_never_consult_the_estate(self, cab_root):
+        """No estate anywhere, two declared lanes: byte-identical to before."""
+        run_gen(cab_root, acme_answers())
+        assert (cab_root / "instance/config/active-project.txt").read_text() == "acme-store\n"
 
 
 class TestFreeTextYamlEscaping:

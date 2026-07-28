@@ -22,6 +22,11 @@ from framework.authority import posture as P
 
 NOW = "2026-07-10T12:00:00Z"
 
+# Samples taken by the hook-latency smoke below; the budget is asserted
+# against the MINIMUM (see that test's docstring for why). Filing costs
+# ~0.2ms, so the whole loop is single-digit milliseconds.
+_LATENCY_SAMPLES = 15
+
 
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch, tmp_path):
@@ -165,10 +170,54 @@ def test_marker_char_is_stripped(tmp_path):
 
 
 def test_filing_latency_smoke(tmp_path):
-    file_need(tmp_path)  # warm the ledger
-    t0 = time.perf_counter()
-    file_need(tmp_path)
-    assert (time.perf_counter() - t0) < 0.050  # <50ms hook budget
+    """The `<50ms` hook-latency budget — best of N, not a single sample.
+
+    THE BUDGET IS REAL AND IS NOT RELAXED HERE. `file_need` sits on the gate's
+    hook path (`frontdoor/action_exec.py`, `policy_engine`'s sovereign ceiling
+    branch), so a filing that stalls stalls the acting chain; the `<50ms`
+    number is the SOV-1 lane's own test contract in
+    `docs/plans/sovereign-build-spec-2026-07-04.md`, not a number picked here.
+    It stays 50ms.
+
+    WHAT CHANGED (2026-07-28) IS THE STATISTIC. Filing costs ~0.2ms, so a
+    single wall-clock sample against a 50ms bound is not measuring this code —
+    it is measuring whether the OS descheduled the process once. The 06:03Z
+    scheduled run 30333546103 recorded 73ms on commit 8ffeae51, a ~300x
+    outlier, on an UNCHANGED commit that was green on its own push run
+    30314036148 — and green in the same run's `framework-tests` job minutes
+    earlier. Scheduling noise is strictly ONE-SIDED: it can inflate a sample,
+    never deflate one. So the MINIMUM over N samples is the estimator of what
+    the operation actually costs, and that is what the budget is asserted
+    against. (The `timeit` doctrine, for the same reason.)
+
+    It still FAILS for its named reason: genuinely slow code is slow in EVERY
+    sample, so the minimum moves with it. Mutation-proven 2026-07-28, each
+    reverted to green afterwards — a 60ms `sleep` in `_file_need` turns it red
+    at 61.1ms; a quadratic re-read injected into `_read_rows` turns it red at
+    x5000 (61.7ms) and x20000 (245.6ms). Conversely a ONE-SHOT 200ms stall on
+    a single sample leaves it green, while the single-sample form it replaced
+    goes red on that same stall — which is exactly the CI failure above.
+
+    KNOWN INSENSITIVITY, stated rather than papered over: filing costs ~0.2ms
+    against a 50ms budget, so only a ~250x regression trips this at all (the
+    x500 re-read mutation passes at ~9ms, honestly). And a regression that is
+    slow only OCCASIONALLY — a periodic compaction, an every-Nth fsync — hides
+    under a minimum by construction. This is the spec's hook-latency SMOKE; a
+    percentile SLO on this path would be a NEW requirement, not a bug fix, and
+    is not smuggled in here.
+    """
+    file_need(tmp_path)  # warm the ledger, the imports and the page cache
+    samples = []
+    for _ in range(_LATENCY_SAMPLES):
+        t0 = time.perf_counter()
+        file_need(tmp_path)
+        samples.append(time.perf_counter() - t0)
+    best = min(samples)
+    assert best < 0.050, (  # <50ms hook budget
+        f"filing latency {best * 1e3:.1f}ms blows the 50ms hook budget in the "
+        f"BEST of {_LATENCY_SAMPLES} samples, so this is the code and not the "
+        f"runner; all samples (ms): {[round(s * 1e3, 2) for s in samples]}"
+    )
 
 
 def test_concurrent_appends_tolerated(tmp_path):

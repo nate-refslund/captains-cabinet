@@ -21,14 +21,72 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: dbdf515ca91c7f4c9d618b9029af44e8cb02e626123738c4df230dabf7f90300
+Reviewed-Scope-Digest: eebcf40b378451b84145449e0c00821c3858cec15d5283979208eab4d08bc3a1
+
+(RE-BOUND 2026-07-28 at the merge of `origin/master` dd01ce8f into
+`iso-port-composition` — the merge that unblocked PR #223, which had been
+CONFLICTING for days and was therefore running NO CI at all. Both sides of the
+merge had re-bound this line, so neither recorded value can be carried: the
+branch's `dbdf515c…` and master's `fa66d3d0…` are each a digest over a tree that
+no longer exists. The value above is RECOMPUTED over the merged tree and folded
+into the merge commit itself.
+
+Exactly TWO in-scope paths differ across the merge, and the delta is disjoint by
+side — computed, not read off the diff, by intersecting
+`git diff --name-only HEAD origin/master` with the tool's resolved 85-entry
+scope: `cabinet/config/cognitive-architecture-contract.yml` moved on MASTER only
+(the branch never touched it — the two allowance/budget landings its own notes
+below describe), and `cabinet/scripts/egg-export-manifest.txt` moved on the
+BRANCH only (master never touched it — the `delete`/`expect-absent` rows that
+keep the org's commissioned iso art out of the public export). Neither side
+contested a byte of the other's, so git auto-merged both and no row of either was
+dropped. NO COG-4 implementation byte changed on either side: no organ, no
+scheduler surface, no serve surface, no fixture, no boundary row, and
+`framework/authority/classifier.py` remains in the manifest's
+`must_remain_unchanged` block against the pinned phase anchor. Only two files in
+the whole merge were touched by BOTH sides — this artifact and
+`.github/workflows/cabinet-ci.yml`, whose four added steps sit in four disjoint
+regions and all four survive in the merged file. The phase-4 findings below are
+unaffected, and nothing here was re-reviewed, because no reviewed byte moved.)
+
+(RE-BOUND 2026-07-28 at the landing of `feat/onboarding-ordering-inversion`,
+same commit as the change that moved the bytes. Prior digest:
+`deca1533428d8df8…`. The one moved file in scope is again
+`cabinet/config/cognitive-architecture-contract.yml`, and the move is: the
+`framework_production_modules` budget maximum raised visibly 206 -> 207, the
+duplicate temporary-allowance row for `framework/onboarding/estate.py` removed
+(master's bijection-allowance-bypass landing refuses an allowance that names a
+bijection class, and an expansion row for that member was already present), and
+the `framework_production_noncomment_lines` allowance 646 -> 654 for eight lines
+fixing two defects found in this unit by the landing review. No COG-4
+implementation byte changed; `framework/authority/classifier.py` remains in the
+manifest's `must_remain_unchanged` block against the pinned phase anchor. The
+phase-4 findings below are unaffected.)
+
+(RE-BOUND 2026-07-27, `fix/bijection-allowance-bypass`, same commit as the change
+that moved the bytes — the re-bind-at-landing procedure this artifact prescribes.
+Prior digest: `8bee10cdcd41994b…`. The one moved file in scope is
+`cabinet/config/cognitive-architecture-contract.yml`, and the move is COMMENT
+bytes plus one allowance `reason` string: the expansion-registry header now
+states what the census actually enforces after an adversarial review falsified
+its previous claim by execution. No budget maximum, no `additional`, no member
+and no expansion row changed — verified by loading both revisions and comparing
+the parsed budgets/allowances/expansions. NO COG-4 implementation byte changed;
+`framework/authority/classifier.py` remains in the manifest's
+`must_remain_unchanged` block against the pinned phase anchor, which the rollback
+rehearsal re-checks. The phase-4 findings below are unaffected. Re-bound a
+second time at the merge of `origin/master` b6a58b15, which had itself re-bound
+to `e3675c7b4b1db4c2…` for the `onboarding-three-entry-modes` row; the digest
+above is recomputed over the MERGED tree, since both sides moved the same one
+scope file.)
 
 
 
 (RE-BOUND repeatedly on 2026-07-27 — the census-shift-left, expansion-registry and
 census-set-pins landings each edited `cabinet/config/cognitive-architecture-contract.yml`,
 which sits in `restore_from_baseline` and is therefore digest-bound, and so did this
-branch's `recipient-exclusion-carve-backs` allowance row. NO COG-4 implementation byte
+branch's `recipient-exclusion-carve-backs` allowance row, and again for the
+`onboarding-three-entry-modes` allowance row (2026-07-27). NO COG-4 implementation byte
 changed by any of them: every edit is a budget/allowance row, and
 `framework/authority/classifier.py` remains in the manifest's `must_remain_unchanged`
 block against the pinned phase anchor, which the rollback rehearsal re-checks. The
@@ -45,6 +103,40 @@ serve surface, touches no COG-4 entry point, and is separately reviewed in
 cross-check over 80,307 recorded calls. Exit codes and all guardian block
 strings are byte-identical, which is what keeps this re-bind mechanical rather
 than a re-review.)
+(RE-BOUND 2026-07-27, `feat/onboarding-entry-modes`, same commit as the change
+that moved the bytes. The moved file in scope is the ONE budget surface again:
+`cabinet/config/cognitive-architecture-contract.yml` gains an
+`onboarding-three-entry-modes` allowance row. MECHANICALLY VERIFIED rather than
+asserted: `resolve_scope()` was intersected with `git diff --name-only` over that
+landing and the contract file is the ONLY digest-bound path it touches — the rest
+are the onboarding entry-mode surface, its tests, its vendored pre/post-migration
+snapshot and the dashboard, none of them in COG-4 scope. No organ, no scheduler
+surface, no serve surface, no COG-4 entry point. A re-bind that moved an
+implementation byte would not be a mechanical delta and is not what this records.)
+(MERGE RE-BIND, 2026-07-27, `feat/onboarding-entry-modes`: the propose/gate and
+hook-redos landings each re-bound this same digest while this branch was in CI.
+Two concurrent landings cannot both be right about one number, so it is
+RECOMPUTED over the MERGED committed tree rather than either side being picked —
+a hand-picked digest from either parent records a tree that never existed. The
+digest line was the ONLY conflict in this artifact both times; every landing's
+note above is preserved verbatim, none overwritten. In-scope paths carried in by
+the merges: the census contract only. Census re-measured on the merged bytes:
+PASS, observed==max with zero headroom.)
+(MERGE RE-BIND #2, 2026-07-27, same branch: the source-ownership-class and
+killswitch-test-fence landings re-bound this digest again while the branch was
+in CI. Recomputed over the merged committed tree for the same reason — a
+hand-picked digest from either parent records a tree that never existed. The
+digest line was again the only conflict here; every note is preserved. In-scope
+paths carried in by the merge: the census contract only. Census re-measured on
+the merged bytes: PASS, observed==max with zero headroom.)
+(MERGE RE-BIND #3, 2026-07-27, same branch: the personal-preset-live landing
+re-bound this digest while the branch was in CI. Recomputed over the merged
+committed tree, same reason and same mechanics as #1 and #2 — in-scope paths
+carried in by the merge: the census contract only; census re-measured on the
+merged bytes: PASS, observed==max with zero headroom. Three merge re-binds on
+one branch is not drift, it is a hot shared surface: every concurrent landing
+that pays line mass edits the same contract file, which is in this digest's
+restore_from_baseline set.)
 (As frozen, the panel bound the DECLARED W1-W5 scope: `cognitive-phase4-review-scope.py` EXPECTED_SCOPE
 deliberately excluded the e2/e3 sibling surfaces (cog4-organ-runner.py, cog4-measure.py, organ manifests,
 their out-of-band tests, the FW-019 sibling artifacts) pending the landing integrator's PAIRED extension of
@@ -738,6 +830,55 @@ under itself. NOT done: no COG-0/1/2/3 twin was re-bound (frozen-historical,
 already BLOCK by design), and no prose section of this review was edited — no
 reviewer saw new bytes, because none of the reviewed bytes changed behaviour.
 
+RE-BOUND 2026-07-27 by the `feat/personal-preset-live` landing: 3188bf08… -> 26528114….
+(First bound at b3523559… -> e7926158…; RE-MEASURED after merging origin/master,
+whose `fix/propose-means-propose` landing moved the same two in-scope files
+mid-flight. The merge kept BOTH allowance blocks — neither landing's row was
+dropped — and the branch census re-reads PASS at observed == max against every new
+baseline (6e50570f, then 8095ded9 after the hook-redos landing), with the module
+delta exactly +1/+331 each time, which is the check that the number measures
+this module and not a merge.)
+ONE in-scope surface changed, `cabinet/config/cognitive-architecture-contract.yml`
+(it sits in `restore_from_baseline` and is therefore digest-bound), and the change
+is two `temporary_allowances` rows plus one `expansions` row paying for
+`framework/sources/local.py` — the local-folder PersonalSource that unblocks
+`presets/personal/`. NO COG-4 implementation byte changed: intersecting
+`git diff --name-only origin/master...HEAD` with the tool's resolved scope yields
+exactly the contract file. `cognitive-architecture-census.py` is PASS at
+observed == max (245 <= 245 modules, 69985 <= 69985 lines) with the expansion row
+registered. The digest was recomputed over the COMMITTED tree and folded into the
+same landing; this artifact is excluded from its own scope, so the edit is stable
+under itself.
+
+NOT done: the COG-0/1/2/3 twins were NOT re-bound, which is the state the
+`cognitive-phase4` CI job's own scope note already records ("the phase-0/1/2/3
+twins are the digest-frozen HISTORICAL instances their own docstrings describe,
+and all of them are already BLOCK on master by design"). Re-measured here on a
+clean clone of `origin/master` at 91faed1b, before this branch existed: phase 0
+f543dc1e -> 268e01b4, phase 1 25c2f5e3 -> 3168b0b1, phase 2 b3863291 ->
+ae79b6e2, phase 3 78a7bf18 -> fde71324, and phase 4 clean. Re-binding a frozen
+historical twin here would absorb earlier landings' drift under this one's name
+and bless bytes no reviewer on this branch has read, so they are left as they
+were.
+
+RE-BOUND 2026-07-27 by the `feat/personal-preset-live` landing: 9c1a8082… -> 8bee10cd….
+ONE in-scope surface changed, `cabinet/config/cognitive-architecture-contract.yml`
+(`restore_from_baseline`, therefore digest-bound): two `temporary_allowances` rows
+plus one `expansions` row paying for `framework/sources/local.py`, the
+local-folder PersonalSource that unblocks `presets/personal/`. NO COG-4
+implementation byte changed — intersecting `git diff --name-only
+origin/master...HEAD` with the tool's resolved scope yields exactly that file.
+RE-MEASURED on every merge rather than carried: master moved four times while
+this branch was in flight, and the census re-reads PASS at observed == max
+against each new baseline with the module delta exactly +1/+331 every time
+(d7c66fe2 70434 -> 70765), which is the check that the number measures this
+module and not a merge. The concurrent `feat/source-ownership-class` landing
+edited the same contract and the same census tests; BOTH landings' allowance and
+expansion rows are kept (verified by set-difference against
+`origin/master`, zero rows lost), and this branch took master's census-test
+version wholesale — its bijection assertion is strictly stronger than the
+"no unregistered surplus" form this branch had written for the same defect, and
+it additionally catches a row that outlives its member.
 
 ---
 
@@ -763,3 +904,32 @@ than absorbed silently.
 
 Recorded digest: dbdf515ca91c7f4c9d618b9029af44e8cb02e626123738c4df230dabf7f90300
 Previous:        9c1a8082d1d6348f345e3aad1faee87fef59e98d3538b08fe9c1f130dce5d68d
+
+SUPERSEDED 2026-07-28 — the `dbdf515c…` above is HISTORY, not the live binding. It is
+kept because it records what was reviewed at that merge; the live value is the single
+`Reviewed-Scope-Digest:` line at the top of this file, recomputed over the 2026-07-28
+merge of `origin/master` dd01ce8f. Both this branch's note and the master-line notes
+above it survive that merge verbatim: they describe different landings and neither is
+the other's restamp.
+
+---
+
+## Re-bind 2026-07-28 (merge of origin/master dd01ce8f into iso-port-composition)
+
+PR #223 had been CONFLICTING for days. An unmergeable PR gets no checks at all, so this
+artifact's own gate — and every other gate on the branch — had been silently OFF the
+whole time; the merge is what turns them back on. That is the finding worth recording:
+the digest did not drift unnoticed, it went UNCHECKED, which is the worse failure of the
+two and is invisible from a green-looking PR page.
+
+The conflict here was in this file only, and it was two append-only note histories
+colliding, not a contested byte. Resolution kept BOTH sides in full — verified by
+`grep -c` for each side's marker strings in the merged file, so the claim is a count and
+not a reading — and the digest was RECOMPUTED over the merged tree rather than either
+side's value being carried, since both sides' values are digests over trees that no
+longer exist.
+
+The in-scope delta and why it is mechanical are stated with the digest at the top of
+this file. Nothing was re-reviewed and no prose finding was edited, because no reviewed
+byte moved: the branch's entire diff is the world layout, the renderer, the hit test and
+the check harness, none of which is in the COG-4 scope.

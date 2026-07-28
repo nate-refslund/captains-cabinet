@@ -9,9 +9,14 @@
 # and journal-based RESUME (re-run with --run-id <id>; already-journaled
 # stages are skipped — Ctrl-C loses nothing).
 #
-# SCAFFOLD HONESTY: every stage is an honest IOU stub ("not yet built —
-# Phase 3 increment N") — no LLM call, no network, no Captain data read,
-# nothing proposed, nothing activated. The mission compiler structurally
+# STAGE HONESTY: DISCOVERY_DONE is REAL — it structures the ALREADY-RATIFIED
+# First Window into instance/onboarding/formation/derived-estate.yml and
+# derives instance/config/lanes-proposed.yml, performing NO NEW READ (no
+# folder opened, no connector, no network, no LLM). Every other stage is
+# still an honest IOU stub ("not yet built — Phase 3 increment N") — no LLM
+# call, no network, no Captain data read, nothing proposed, nothing
+# activated. Nothing activates either way: generate-instance.py takes lanes
+# ONLY from the answers file, so a proposed lane cannot hire anyone. The mission compiler structurally
 # never reads any formation surface (its filename gate reads only the
 # ratified outcomes file — tested invariant, framework/onboarding/tests/
 # test_formation.py; this script never even names that file). A printed
@@ -42,7 +47,7 @@ FORMATION_DIR="$CABINET_ROOT/instance/onboarding/formation"
 
 usage() {
   cat <<'EOF'
-formation.sh — Formation deep self-setup run (Phase 3 SCAFFOLD; propose-only)
+formation.sh — Formation deep self-setup run (propose-only; DISCOVERY real)
 
 USAGE
   bash cabinet/scripts/formation.sh                 # new run (prints run-id)
@@ -50,13 +55,16 @@ USAGE
   bash cabinet/scripts/formation.sh --undo <id>     # supersede-archive a run
   bash cabinet/scripts/formation.sh --help
 
-STAGES (stamped in order; each is an honest IOU stub in the scaffold)
+STAGES (stamped in order; DISCOVERY_DONE derives the estate, rest are IOUs)
   FORMATION_START -> DISCOVERY_DONE -> READ_SCOPE_RATIFIED -> INGEST_DONE
   -> STRATEGY_DONE -> BRIEFING_DONE
 
 SAFETY MODEL
-  * PROPOSE-ONLY: outputs live under instance/onboarding/formation/<run-id>/
-    — the mission compiler structurally cannot read them; nothing activates.
+  * PROPOSE-ONLY: outputs live under instance/onboarding/formation/ — the
+    mission compiler structurally cannot read them; nothing activates. The
+    two DISCOVERY_DONE outputs (derived-estate.yml, and the lanes-proposed.yml
+    sibling under instance/config/) are equally inert: lanes are taken ONLY
+    from the answers file, so ratifying one is the Captain's copy-and-re-run.
   * RESUME: journal.jsonl is append-only; re-run with --run-id to continue.
   * COST: prints an estimate up front; per-run LLM call cap from
     CABINET_FORMATION_CALL_CAP (default 25; the scaffold makes 0 calls).
@@ -111,9 +119,9 @@ echo ""
 "$PY" -m framework.onboarding.formation estimate --run-id "$RUN_ID"
 echo ""
 
-# ---- the stage loop (idempotent stubs; journal rows are the resume state) ----
+# ---- the stage loop (idempotent; journal rows are the resume state) ----
 for STAMP in DISCOVERY_DONE READ_SCOPE_RATIFIED INGEST_DONE STRATEGY_DONE BRIEFING_DONE; do
-  flight_step_begin "$STAMP" "formation stage stub"
+  flight_step_begin "$STAMP" "formation stage"
   t0="$(date +%s)"
   line="$("$PY" -m framework.onboarding.formation stage --run-id "$RUN_ID" --stamp "$STAMP")"
   status="${line%% *}"
@@ -124,12 +132,16 @@ for STAMP in DISCOVERY_DONE READ_SCOPE_RATIFIED INGEST_DONE STRATEGY_DONE BRIEFI
   else
     flight_step_end "$STAMP" ok "$((t1 - t0))"
     flight_stamp "$STAMP"
-    echo "  [iou ] $STAMP — honest stub written (${line#* })"
+    if [ "$status" = "derived" ]; then
+      echo "  [done] $STAMP — derived from the ratified First Window (${line#* })"
+    else
+      echo "  [iou ] $STAMP — honest stub written (${line#* })"
+    fi
   fi
 done
 
 echo ""
-echo "==== FORMATION run $RUN_ID complete (scaffold: all stages honest IOUs) ===="
+echo "==== FORMATION run $RUN_ID complete (DISCOVERY derived; rest honest IOUs) ===="
 echo "Nothing activated: the mission compiler cannot read any of this run's files."
 echo "(Summary below reuses hatch-lib's flight recorder — its TTFR line is"
 echo " hatch vocabulary; formation has no receipt stage, so ignore it here.)"

@@ -11,8 +11,8 @@ export default function OnboardingPage() {
         <p className="text-sm font-medium text-purple-300">Start small, grow without a ceiling</p>
         <h1 className="mt-1 text-3xl font-bold text-white">Orient your Cabinet</h1>
         <p className="mt-2 max-w-2xl text-zinc-400">
-          First, let it prove value inside one narrow read-only window. Later, you can let it build a deeper map,
-          mirror your strategy, propose its officer team, and earn responsibility lane by lane.
+          Start wherever you actually are. Connect a source and it reads first and asks second; connect nothing and it
+          asks what you do, then goes looking; grant nothing at all and it tells you plainly what it cannot know.
         </p>
       </div>
       <OnboardingJourneyCard />

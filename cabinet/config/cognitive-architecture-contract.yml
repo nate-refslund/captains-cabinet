@@ -34,7 +34,14 @@ budgets:
     maximum: 19
   framework_production_modules:
     path: framework
-    maximum: 206
+    # 206 -> 207 (2026-07-28): framework/onboarding/estate.py, the derived-estate
+    # contract. RAISED VISIBLY rather than paid for by a temporary allowance —
+    # this is a bijection class, so its members are named in the expansion
+    # registry below and an allowance may not buy one anonymously. The unit
+    # originally declared it as an allowance row; merging master's
+    # bijection-allowance-bypass landing refused that row by name, which is the
+    # gate working exactly as designed.
+    maximum: 207
   framework_production_noncomment_lines:
     path: framework
     # 60067 -> 60164 (+97 measured 2026-07-26 via cognitive-architecture-census.py):
@@ -233,6 +240,67 @@ temporary_allowances:
       stops being the dominant verdict, so the split collapses back into the
       matrix rows it was compensating for, or COG-7 compaction brings
       production non-comment lines below the pinned baseline
+  - phase: personal-preset-live
+    budget: framework_production_modules
+    additional: 1
+    reason: >-
+      framework/sources/local.py — the local-folder PersonalSource. Paid because
+      the personal flavor emitted NO instance/config/sources.yml, so a
+      deployment declaring autonomy.flavor: personal fail-closed to
+      NullPersonalSource (available() False, search() no hits) and the ONE
+      preset shaped for an operator who does not run a company shipped inert
+      (adjudicated 2026-07-26, two blind arms). NOT merged into either existing
+      adapter, and the merge question is answered by grep rather than prose:
+      null.py IS the fail-closed default the resolver binds when config is
+      absent or damaged — teaching it to read a directory would make the
+      FAILURE path read files — and org.py's search() spawns memory.sh, which
+      needs NEON_CONNECTION_STRING plus an embedding provider and returns the
+      same empty without them, so binding it on a laptop buys nothing. The
+      module is bound as DATA through the existing resolver: no framework code
+      branches on flavor to select it, and the axis linter stays green.
+      Docstrings counted as written — they carry the mtime refusal (a
+      fabricated content_ts defeats the leak fence downstream), the realpath
+      jail, the caps, and the fact that there is no write side, which is the
+      reasoning a later reader needs and would be bought back with a smaller
+      number by rewriting it into "#" comments.
+    owner: onboarding-plane
+    sunset: '2027-01-19'
+    deletion_gate: >-
+      the connect-explore-structure sweep lands and supersedes single-folder
+      recall with a per-source ingest carrying ownership classes (resulting
+      order items 2-4 of the 2026-07-26 altitude gate), at which point this
+      adapter is folded into it; or COG-7 compaction brings production modules
+      below the pinned baseline
+  - phase: personal-preset-live
+    budget: framework_production_noncomment_lines
+    additional: 331
+    reason: >-
+      the same module. RE-MEASURED on every merge rather than carried from the
+      first measurement — master moved four times mid-flight (shell-lexer,
+      propose-means-propose, hook-redos and source-ownership-class each moved
+      this budget): cognitive-architecture-census.py reads 70434 on master
+      d7c66fe2, itself exactly at the pinned maximum, and 70765 on this
+      branch. The DELTA is 331 against every base measured (91faed1b 69654 ->
+      69985; 6e50570f 69848 -> 70179; 8095ded9 69849 -> 70180; d7c66fe2 70434
+      -> 70765), which is the check that the number measures this module and
+      not a merge. ZERO other framework files grew:
+      the emission is cabinet/scripts/generate-instance.py and the preset
+      payload is presets/personal/, both outside this budget's path. What the
+      331 buy: a bounded read (file cap, per-file byte cap, extension
+      allowlist, hidden dirs skipped), a realpath jail applied to BOTH the walk
+      and read_note so a symlink out of the declared root is skipped rather
+      than followed, IDF x saturating-TF ranking normalised into the same
+      0..1 base_score band OrgSource returns, and content_ts derived from
+      frontmatter or filename or left None. Every other Protocol method is an
+      explicit honest empty — a notes folder is not a mailbox, a dossier index
+      or a deploy log, and the two tri-state probes return None rather than a
+      fabricated boolean.
+    owner: onboarding-plane
+    sunset: '2027-01-19'
+    deletion_gate: >-
+      same as the module row above — the per-source ingest supersedes this
+      adapter, or COG-7 compaction brings production non-comment lines below
+      the pinned baseline
   - phase: bash-egress-fail-closed
     budget: framework_production_noncomment_lines
     additional: 186
@@ -359,6 +427,52 @@ temporary_allowances:
       framework/authority/tests/test_classifier.py) — so folding both onto one
       predicate reclaims this surface; or COG-7 compaction brings production
       non-comment lines below the pinned baseline
+  - phase: onboarding-three-entry-modes
+    budget: framework_production_noncomment_lines
+    additional: 386
+    reason: >-
+      the three entry modes and the First Window's coverage honesty, both
+      inside framework/onboarding/journey.py. ZERO new modules
+      (framework_production_modules unchanged at 244) — the entry classifier
+      lives in the module that OWNS the entry surface rather than in a new file
+      wired back to it, which is the shape this program has twice paid for
+      (substrate built ahead of a consumer). WHAT THE LINES BUY, and each is
+      pinned by an arm that fails against the pre-change module. (1) ENTRY
+      MODES — the welcome card offered exactly one move, "choose a folder", so
+      an operator with no folder to grant had NO path at all, and the
+      deep-orientation card offered pause/revoke/purge, three ways to stop and
+      none to go on. Both were dead ends. entry_plan() classifies what has
+      actually been granted into connected / seeded / ungranted and returns a
+      non-empty next step in all eight grant combinations, with the residual
+      questionnaire (rights, salience, limits, purpose — none of them "what is
+      your company") and the derivability table stating, per subject, what a
+      sweep may assert with a citation versus what inferring would be
+      fabrication. (2) COVERAGE HONESTY — the sweep read files in ALPHABETICAL
+      walk order and then told the operator it "did not find a broken
+      documented command", a negative it never earned. Measured 2026-07-26 on
+      an employee-scale slice (docs/persona-employee-slice-2026-07-26.md §5):
+      200 of 2103 eligible files, all from ONE top-level directory, and the
+      statistic that should have revealed the loss concealed it — the scan
+      stopped counting candidates the moment the cap tripped, so
+      scan_statistics read candidate_files == included_files == 200 with zero
+      exclusions, indistinguishable from complete coverage. The scan is now two
+      passes: it counts the whole tree, reads in relevance order, and reports
+      what it could not reach. The three-file arm that used to pin the defect
+      now finds the cross-directory command drift the old ordering dropped.
+      +386 measured 2026-07-27 with cognitive-architecture-census.py against
+      master 91faed1b (69654, itself exactly at the pinned maximum) -> 70040.
+      Docstrings are counted as written: the scanner's states WHY the two-pass
+      split exists and what the old single pass concealed, and the entry
+      plan's states the never-a-dead-end invariant it is there to hold —
+      rewriting either into "#" comments would buy a smaller number by
+      deleting the reasoning that stops the next author reintroducing both.
+    owner: onboarding-plane
+    sunset: '2027-01-19'
+    deletion_gate: >-
+      the ordering inversion lands (lanes derivable, discovery artifact
+      consumed by genesis) and the entry classifier moves onto that shared
+      estate surface instead of carrying its own grant reader, or COG-7
+      compaction brings production non-comment lines below the pinned baseline
   - phase: COG-0
     budget: framework_production_modules
     additional: 2
@@ -598,8 +712,10 @@ temporary_allowances:
       names a member of the other. EXACT measured running total (245 vs 244
       base), 2026-07-27, via cognitive-architecture-census.py — the zero-headroom
       observed==max law means this is the exact new total, never a pre-allocated
-      ceiling. Registered as an expansion row below, since an allowance cannot
-      buy a net-new member of a set the census can name.
+      ceiling. Registered as an expansion row below, which is where a net-new
+      member belongs. This row is one of the eleven grandfathered by exact
+      (phase, budget, additional) triple in the census source: since 2026-07-27
+      an allowance may not name a bijection class at all.
     owner: authority-plane
     sunset: '2027-01-19'
     deletion_gate: >-
@@ -638,17 +754,38 @@ temporary_allowances:
 # temporary_allowances above pay for MASS and ask only reason/owner/sunset —
 # declaration, not adjudication. That gap is measured, not theoretical: an
 # expansion's line-mass once rode in under a fix-shaped brief as a routine
-# allowance row. So an allowance CANNOT buy a net-new member of any set the
-# census can name. Those go here, and the census holds the list to a BIJECTION
-# against cabinet/config/architecture-baseline-sets.yml:
+# allowance row. Net-new MEMBERS go here instead, and the census holds the list
+# to a BIJECTION against cabinet/config/architecture-baseline-sets.yml:
 #
 #     observed - baseline  ==  {row.member for row in expansions}
 #
 # per class, exactly and disjointly. Unregistered member -> RED. Row naming a
 # member that is not observed (the stale copy-paste) -> RED. Row naming a
-# baseline member (the laundering edit) -> RED. Two rows for one member ->
+# baseline member (the laundering edit) -> RED. A BASELINE name the tree does
+# not carry -> RED (the pre-loaded inventory). Two rows for one member ->
 # refused at load. Nothing here checks that a FILE EXISTS, because `touch`
 # passes that; a bijection cannot be faked at all.
+#
+# THE SENTENCE THAT USED TO SIT HERE WAS FALSE, and is kept as a correction
+# because it shipped in the public egg. It said "an allowance CANNOT buy a
+# net-new member of any set the census can name". An adversarial review
+# falsified it by EXECUTION on 2026-07-27: a genuinely net-new production module
+# landed at ok=True with no expansion row, paid for with ONE line in the
+# baseline file plus an ordinary allowance row — the twelfth on
+# framework_production_modules. Membership and count are two separate costs, and
+# only the count was named. What is true NOW:
+#   * no temporary_allowances row may name a bijection class at all — refused at
+#     contract load. The rows live when that refusal landed are grandfathered by
+#     exact (phase, budget, additional) triple in the census source, so a legacy
+#     row cannot be edited upward or duplicated either. A bijection class's
+#     count therefore grows only by raising its `maximum` above, visibly.
+#   * a baseline name with no tree member is RED, so an inventory cannot be
+#     pre-loaded in one commit and consumed in a later one.
+#   * NOT refused: a baseline line added in the SAME commit as the file it names
+#     still removes that file from the surplus. That residual costs a visible
+#     `maximum` raise and a false claim about the baseline snapshot; it is caught
+#     by reading the diff, not by the census. It is named here rather than left
+#     to read as covered.
 #
 # Every field is schema-refused when missing or empty:
 #   member         the exact member id — an event/action token, a service name,
@@ -677,6 +814,13 @@ temporary_allowances:
 # cabinet/scripts/tests/test_cognitive_architecture_census.py are what keep an
 # empty registry from being an untested one — a registry never seen to reject
 # is not a registry.
+  - phase: onboarding-ordering-inversion
+    budget: framework_production_noncomment_lines
+    additional: 654
+    reason: 'Onboarding ordering inversion (Captain ruling 2026-07-26) — 646 -> 654 at the landing review (2026-07-28): +8 non-comment lines in framework/onboarding/genesis.py fixing two defects the hostile pass found in this unit''s own new code. (1) The genesis-estate provenance line summed the per-source `refusals` MAPPING as if it were a list of {reason, count} dicts, so `isinstance(r, dict)` was never true and the refusal count was structurally 0 for every real sweep — the auditability that line exists to provide, silently disabled — and it read `root` where the canonical record writes `source_root`, so provenance always fell back to the label. Both now read framework.authority.ownership.access_record''s own fields (`refusals_total`, `source_root`). The unit''s test fixture had been hand-written in the buggy shape, so the sensor agreed with the defect and went green; the fixture is corrected to the producer''s shape and a new arm builds the record from access_record itself so it cannot drift again. (2) The same line claimed unconditionally that "the cards above are derived from it, with citations" — false in the shipped ordering, where nothing runs formation.sh before the first briefing and write_proposals is write-once, so the cards on file predate the estate. The claim is now conditional on a card actually carrying derived_from: estate, with both arms pinned. EXACT measured running total 71805, 2026-07-28, via cognitive-architecture-census.py. ORIGINAL UNIT — framework/onboarding/estate.py (derive_estate from the ratified charter+manifest+dividend with the charter-binding check, the citable entity derivation, the per-source provenance record incl. every refusal with its reason, estate_is_usable, proposed_lanes with the self-ownership write-capability law, and both writers); framework/onboarding/formation.py (_run_discovery replacing the DISCOVERY_DONE IOU stub, REAL_STAMPS, the honest estimate lines, and _archive_discovery_outputs so undo supersedes the artifacts it produced); framework/onboarding/genesis.py (_low_altitude, _subject_proof, _estate_subject_cards, _residual_card, the estate parameter through propose_outcome_cards/write_proposals/_proposals_doc/run_genesis_proposal, and the genesis-estate provenance intake item); framework/frontdoor/run_briefing.py (docstring correction only — the "no estate to gather" line became literally false). HONEST ACCOUNTING: the majority of these lines are DOCSTRING prose carrying the reason for each invariant, per the house rule. They are NOT reformatted into # comments to duck this budget — the counter excludes comments, so that would be optimising the number instead of the thing. EXACT measured running total (71080 after merging master''s source-ownership landing; +646 for this unit), 2026-07-27, via cognitive-architecture-census.py. The +29 over the pre-merge measurement is the RECONCILIATION with that landing: estate.py stopped carrying its own ownership vocabulary and its own per-source record shape and now reads the class off the charter hash and rides framework.authority.ownership.access_record / writes_permitted — one vocabulary, one record, one decision function'
+    owner: cognitive-core-program
+    sunset: '2027-01-27'
+    deletion_gate: the estate contract folds into a single onboarding module when the ingest engine lands, or COG-7 compaction
 expansions:
   - member: framework/authority/ownership.py
     member_class: framework_production_modules
@@ -699,6 +843,43 @@ expansions:
     provenance: >-
       per 2026-07-07 full-autonomy grant + 2026-07-21 ownership-on-GO; direction
       of record LAUNCH-DIRECTION-ALTITUDE-2026-07-26 (two blind arms)
+  - member: framework/sources/local.py
+    member_class: framework_production_modules
+    gate_date: '2026-07-26'
+    models_run:
+      - fable-5
+      - opus-5
+    adjudication: docs/plans/personal-preset-live-2026-07-27.md
+    merge_refuted: >-
+      framework/sources/null.py::NullPersonalSource — the two candidate merge
+      targets both refuse this capability for stated reasons. NullPersonalSource
+      is the adapter the resolver binds when sources.yml is absent, unparseable
+      or names an unimportable module; giving it a directory read would put file
+      I/O on the failure path, and its own docstring pins it as "thin honest
+      empties". framework/sources/org.py::OrgSource backs search() with
+      cabinet_memory through cabinet/scripts/lib/memory.sh and returns the
+      honest empty whenever NEON_CONNECTION_STRING is neither in the process env
+      nor named in cabinet/.env, which is the normal state of the box this
+      adapter serves. A third adapter beside them, bound as data, is the shape
+      this seam was built for.
+    consumer: framework/sources/__init__.py
+    provenance: >-
+      Altitude direction gate 2026-07-26, resulting-order item 8
+      ("presets/personal/ is the north star's own altitude and ships inert —
+      unblocking it is now a launch item"). get_source() importlib-loads and
+      binds this module from instance/config/sources.yml, which
+      cabinet/scripts/generate-instance.py emits for autonomy.flavor: personal;
+      before this the personal branch emitted nothing.
+  - member: framework/onboarding/estate.py
+    member_class: framework_production_modules
+    gate_date: '2026-07-26'
+    models_run:
+      - Fable 5 (arm A)
+      - Opus 5 (arm B)
+    adjudication: docs/plans/onboarding-ordering-inversion-2026-07-26.md
+    merge_refuted: framework/onboarding/formation.py::_run_discovery — the merge candidates were genesis.py and formation.py, and both are refuted by direction. formation PRODUCES the estate (_run_discovery) while genesis and cabinet/scripts/generate-instance.py CONSUME it; putting the contract inside either consumer would make the producer import a consumer, and putting it inside the producer would make the generator import the formation stage machine to read a schema.
+    consumer: cabinet/scripts/generate-instance.py
+    provenance: per 2026-07-07 full-autonomy grant + the 2026-07-26 north-star/altitude Captain rulings
 ownership:
   authoritative_state: domain_transaction
   cross_domain_delivery: transactional_outbox

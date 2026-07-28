@@ -71,6 +71,19 @@ def test_ci_declares_its_service_container_disposable():
     text = wf.read_text(encoding="utf-8")
     assert 'CABINET_EVALS_REDIS_DISPOSABLE: "1"' in text
 
+    # The variable ALONE is no longer sufficient (2026-07-27): the endpoint
+    # must carry the marker, so CI has to write it. Every job that declares
+    # disposability needs a step that does — otherwise the suite refuses and
+    # the job goes red for a reason nobody will connect to this change.
+    declaring_jobs = text.count('CABINET_EVALS_REDIS_DISPOSABLE: "1"')
+    setting_steps = text.count("SET cabinet:evals:disposable")
+    assert setting_steps >= 1, (
+        "no CI step writes cabinet:evals:disposable, so every declared-"
+        "disposable endpoint will be REFUSED by evals_redis_sandbox_start.")
+    assert setting_steps >= 1 and declaring_jobs >= setting_steps, (
+        f"{setting_steps} marker step(s) for {declaring_jobs} declaration(s) — "
+        "if a job declares the flag without a marker step it will refuse.")
+
 
 # --- behavioral (skip without redis binaries) ----------------------------------
 
@@ -97,17 +110,104 @@ def test_start_exports_triple_and_stop_kills(tmp_path):
     assert "DEAD" in r.stdout, "sandbox server still alive after stop"
 
 
+def _spawn_disposable(tmp_path, lo=24020, hi=24040):
+    """A throwaway server this test owns. Returns (proc, port)."""
+    for candidate in range(lo, hi):
+        proc = subprocess.Popen(
+            ["redis-server", "--port", str(candidate), "--bind", "127.0.0.1",
+             "--save", "", "--appendonly", "no", "--dir", str(tmp_path)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        for _ in range(50):
+            ping = subprocess.run(["redis-cli", "-p", str(candidate), "PING"],
+                                  capture_output=True, text=True)
+            if "PONG" in ping.stdout:
+                return proc, candidate
+            time.sleep(0.1)
+        proc.kill()
+    raise AssertionError("could not start a disposable redis")
+
+
 @pytestmark_redis
-def test_disposable_flag_skips_spawn_and_keeps_endpoint():
+def test_disposable_flag_skips_spawn_when_the_ENDPOINT_declares_itself(tmp_path):
+    """The hatch is honoured only when the SERVER carries the declaration.
+
+    Rewritten 2026-07-27 with the contract, not weakened: the old version
+    pointed the flag at 10.9.9.9:7777 — an address nothing answers — and
+    asserted rc 0. That is exactly the hole: the flag was believed about an
+    endpoint no one had even reached.
+    """
+    proc, port = _spawn_disposable(tmp_path)
+    try:
+        subprocess.run(["redis-cli", "-p", str(port), "SET",
+                        "cabinet:evals:disposable", "1"], check=True,
+                       capture_output=True)
+        r = _bash(
+            f'source "{_LIB}" && evals_redis_sandbox_start && '
+            'echo "H=$REDIS_HOST P=$REDIS_PORT PID=[$_EVALS_SANDBOX_PID]"',
+            env_extra={"CABINET_EVALS_REDIS_DISPOSABLE": "1",
+                       "REDIS_HOST": "127.0.0.1", "REDIS_PORT": str(port)})
+        assert r.returncode == 0, r.stderr + r.stdout
+        assert f"H=127.0.0.1 P={port}" in r.stdout
+        assert "PID=[]" in r.stdout          # nothing spawned
+        assert "PROVEN disposable" in r.stdout
+    finally:
+        proc.kill()
+
+
+@pytestmark_redis
+def test_disposable_flag_refuses_an_endpoint_that_never_declared_itself(tmp_path):
+    """An env var is a claim about intent and it travels between shells; the
+    endpoint has to agree. Without the marker the hatch REFUSES."""
+    proc, port = _spawn_disposable(tmp_path)
+    try:
+        r = _bash(
+            f'source "{_LIB}"; evals_redis_sandbox_start; rc=$?; '
+            'echo "rc=$rc"; exit 0',
+            env_extra={"CABINET_EVALS_REDIS_DISPOSABLE": "1",
+                       "REDIS_HOST": "127.0.0.1", "REDIS_PORT": str(port)})
+        assert "rc=1" in r.stdout, r.stdout + r.stderr
+        assert "cabinet:evals:disposable" in r.stderr
+    finally:
+        proc.kill()
+
+
+@pytestmark_redis
+def test_disposable_flag_refuses_over_an_armed_emergency_stop(tmp_path):
+    """Even a declared-disposable endpoint is refused while a stop is armed:
+    the suite SETs and then unconditionally DELs that key, so running here
+    would clear it. This is the 2026-07-15 lockdown's shape."""
+    proc, port = _spawn_disposable(tmp_path)
+    try:
+        for key in ("cabinet:evals:disposable", "cabinet:killswitch"):
+            subprocess.run(["redis-cli", "-p", str(port), "SET", key, "1"],
+                           check=True, capture_output=True)
+        r = _bash(
+            f'source "{_LIB}"; evals_redis_sandbox_start; rc=$?; '
+            'echo "rc=$rc"; exit 0',
+            env_extra={"CABINET_EVALS_REDIS_DISPOSABLE": "1",
+                       "REDIS_HOST": "127.0.0.1", "REDIS_PORT": str(port)})
+        assert "rc=1" in r.stdout, r.stdout + r.stderr
+        assert "cabinet:killswitch" in r.stderr
+        # and the armed stop is still armed
+        got = subprocess.run(["redis-cli", "-p", str(port), "GET",
+                              "cabinet:killswitch"], capture_output=True,
+                             text=True).stdout.strip()
+        assert got == "1", f"the refusal path touched the switch: {got!r}"
+    finally:
+        proc.kill()
+
+
+@pytestmark_redis
+def test_disposable_flag_refuses_an_endpoint_nobody_can_reach():
+    """The old test's exact input, now a REFUSAL: an endpoint that answers
+    nothing cannot be proven to be anything."""
     r = _bash(
-        f'source "{_LIB}" && evals_redis_sandbox_start && '
-        'echo "H=$REDIS_HOST P=$REDIS_PORT PID=[$_EVALS_SANDBOX_PID]"',
+        f'source "{_LIB}"; evals_redis_sandbox_start; rc=$?; '
+        'echo "rc=$rc"; exit 0',
         env_extra={"CABINET_EVALS_REDIS_DISPOSABLE": "1",
-                   "REDIS_HOST": "10.9.9.9", "REDIS_PORT": "7777"})
-    assert r.returncode == 0, r.stderr
-    assert "H=10.9.9.9 P=7777" in r.stdout
-    assert "PID=[]" in r.stdout  # nothing spawned
-    assert "declared disposable" in r.stdout
+                   "REDIS_HOST": "127.0.0.1", "REDIS_PORT": "1"})
+    assert "rc=1" in r.stdout, r.stdout + r.stderr
+    assert "did not answer PING" in r.stderr
 
 
 def test_missing_binary_refuses_without_exporting(tmp_path):

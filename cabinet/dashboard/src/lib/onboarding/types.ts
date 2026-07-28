@@ -48,6 +48,37 @@ export interface OnboardingOption {
   danger?: boolean
 }
 
+/**
+ * The three entry modes (Captain ruling 2026-07-26). Present on the cards that
+ * were dead ends — `welcome` (one option: choose a folder) and
+ * `orientation_offered` (pause/revoke/purge and nothing forward). Optional
+ * because every other stage renders without it, never because it may be
+ * skipped where it belongs: `next_actions` is non-empty by construction on the
+ * producing side, so a card carrying an entry plan always carries a way on.
+ */
+export interface OnboardingEntryQuestion {
+  id: string
+  prompt: string
+  why: string
+  required: boolean
+}
+
+export interface OnboardingEntryPlan {
+  schema: 'cabinet.onboarding-entry-plan/v1'
+  mode: 'connected' | 'seeded' | 'ungranted'
+  opening_move: 'sweep_and_assert' | 'seed_then_discover' | 'residual_questions'
+  grants: { connectors: string[]; local_files: boolean; web: boolean }
+  seed_question: string | null
+  questions: OnboardingEntryQuestion[]
+  discovery: {
+    terms: string[]
+    probes: Array<Record<string, string>>
+    executable: boolean
+  }
+  cannot_know: Array<{ subject: string; verdict: string; statement: string }>
+  next_actions: OnboardingOption[]
+}
+
 export interface OnboardingCard {
   schema: 'cabinet.onboarding-card/v1'
   id: string
@@ -60,6 +91,7 @@ export interface OnboardingCard {
   status: string
   evidence: OnboardingCitation[]
   options: OnboardingOption[]
+  entry?: OnboardingEntryPlan
   egress?: OnboardingEgress
 }
 

@@ -120,9 +120,17 @@ sources.yml emission rule (Wave-1 OrgSource, 2026-07-07): the answers'
     NullPersonalSource (zero hits). No `dispatch:` is emitted — get_dispatch()
     fail-closes to NullPersonalDispatch (draft-capture-only), correct for a box
     with no personal actuator estate.
-  * flavor == personal (Flavor-A): emit NOTHING — the captain's instance binds
-    its own adapter by hand (e.g. a screenpipe source), exactly today's
-    behavior; the generator never touches an existing binding.
+  * flavor == personal (Flavor-A): emit a generated-by-marked sources.yml
+    binding `framework.sources.local:LocalNotesSource` with a `local_root:`
+    pointing at the deployment's own notes folder. CHANGED 2026-07-27: this
+    used to emit NOTHING, which fail-closed the ONE flavor shaped for a
+    non-company operator to NullPersonalSource — available() False, search()
+    {"hits": []} — i.e. the personal preset shipped inert. A captain who
+    binds a richer personal adapter by hand still wins: the file is
+    marker-guarded like every other, so a hand-authored binding is REFUSED,
+    never clobbered. Still no `dispatch:` — the local adapter is structurally
+    read-only (framework/sources/local.py has no write side at all), so
+    writes stay draft-capture-only on both flavors.
 An existing sources.yml follows the standard marker convention: with the
 generated-by marker it is rewritten byte-identically; without it (hand-authored,
 e.g. a live Flavor-A binding) the run REFUSES rather than clobbering
@@ -197,8 +205,17 @@ _FRAMEWORK_ROOT = str(Path(__file__).resolve().parents[2])
 if _FRAMEWORK_ROOT not in sys.path:
     sys.path.insert(0, _FRAMEWORK_ROOT)
 from framework import env as _fenv  # noqa: E402  (after the sys.path insert)
+from framework.onboarding import estate as _estate  # noqa: E402
 
 AVAILABILITY_VERBS = frozenset(_fenv.availability_modes())
+
+# The operator's RUNG (Captain ruling 2026-07-26 — the north star is an AIM,
+# not an entry bar). Fixed verb enum, sourced from framework.onboarding.estate
+# so the vocabulary has ONE home: a developer inside a large company occupies
+# `contributor`, and the cabinet must be valuable there. ABSENT is a
+# first-class answer meaning UNKNOWN — never defaulted, never invented — and
+# an unknown altitude reproduces the pre-altitude behaviour exactly.
+ALTITUDES = frozenset(_estate.ALTITUDES)
 
 # Secret shapes the generator refuses to persist anywhere. Config carries
 # env-var NAMES only; values live in the gitignored cabinet/.env.
@@ -250,6 +267,13 @@ POSTURE_TARGETS = frozenset({"guardian", "sovereign"})
 # _load_bound() reads `adapter: "<module>:<Class>"` and importlib-loads it;
 # framework/sources/ is one of its two trusted module trees.
 ORG_SOURCE_ADAPTER = "framework.sources.org:OrgSource"
+
+# The personal-box recall binding. Same resolver contract, different backend:
+# OrgSource reads cabinet_memory (needs a connection string + an embedding
+# provider), which a laptop with a notes folder has neither of, so binding it
+# there would fail-close to the same zero hits the null adapter gives. The
+# local adapter reads ONE declared folder and is structurally read-only.
+LOCAL_SOURCE_ADAPTER = "framework.sources.local:LocalNotesSource"
 
 # platform.yml key naming the org's knowledge-corpus dir — the cabinet VAULT
 # (vault/, Captain-ratified 2026-07-16; formerly product-brain/). Canonical
@@ -313,7 +337,12 @@ def _req(d: dict, key: str, where: str) -> object:
     return d[key]
 
 
-def load_answers(path: Path) -> dict:
+def load_answers(path: Path, root: Path | None = None) -> dict:
+    """Load + validate the answers. ``root`` is the deployment root the
+    derived-estate artifact is read from for the lanes-derivable gate below;
+    it defaults to two levels above this script, which is the deployment root
+    in every non-scratch run."""
+    root = Path(root) if root is not None else Path(__file__).resolve().parents[2]
     if not path.is_file():
         raise GenerationError(
             f"answers file not found: {path}\n"
@@ -386,9 +415,48 @@ def load_answers(path: Path) -> dict:
     if not re.match(r"^[a-z0-9][a-z0-9.\[\]-]{0,63}$", model):
         raise GenerationError(f"cabinet.officer_model {model!r} has an unexpected shape")
 
+    # OPTIONAL mission block (purpose-first interview). The generator ignores
+    # purpose/success_90d/never_touch — genesis conditions cards on them — but
+    # it OWNS answers validation, so a mistyped altitude refuses loudly here
+    # rather than silently resolving to UNKNOWN and quietly selecting the
+    # wrong preset. An absent block and an absent altitude both stay unknown.
+    mission = answers.get("mission")
+    if isinstance(mission, dict) and mission.get("altitude") is not None:
+        verb = str(mission.get("altitude")).strip().lower()
+        if verb not in ALTITUDES:
+            raise GenerationError(
+                f"mission.altitude {mission.get('altitude')!r} must be one of "
+                f"{sorted(ALTITUDES)} (the operator's rung — omit the key "
+                f"entirely to leave it unknown)"
+            )
+
+    # LANES ARE DERIVABLE (ordering inversion, Captain ruling 2026-07-26).
+    # This refusal used to be absolute — "answers must declare at least one
+    # lane" — and a lane IS a product, so a developer inside a large company
+    # could only invent one or take the --defaults placeholder. Now an EMPTY
+    # lane list is legal WHEN DISCOVERY HAS RUN for this deployment: the
+    # derived-estate artifact is the proof that the cabinet looked, and the
+    # lanes it found are proposed in instance/config/lanes-proposed.yml for
+    # the Captain to ratify into this file. An empty estate still passes —
+    # "I looked and found nothing" is a legitimate lane-less state, answered
+    # by the briefing's read-your-world card, not by a fabricated lane. What
+    # stays refused is lanes: [] with NO artifact at all: nobody ever looked.
     lanes = answers.get("lanes")
-    if not isinstance(lanes, list) or not lanes:
-        raise GenerationError("answers must declare at least one lane under lanes:")
+    if not isinstance(lanes, list):
+        raise GenerationError("answers lanes: must be a list")
+    if not lanes:
+        deployment = str((answers.get("cabinet") or {}).get("id", "main"))
+        usable, reason = _estate.estate_is_usable(
+            _estate.load_estate(root), deployment)
+        if not usable:
+            raise GenerationError(
+                f"answers declare no lanes and no usable derived estate "
+                f"({reason}). Either add a lane under lanes:, or let the "
+                f"cabinet READ your world first — grant a First Window and "
+                f"run `bash cabinet/scripts/formation.sh`, which derives "
+                f"{_estate.ESTATE_REL} and proposes lanes in "
+                f"{_estate.LANES_PROPOSED_REL}."
+            )
     seen = set()
     for i, lane in enumerate(lanes):
         if not isinstance(lane, dict):
@@ -1010,6 +1078,43 @@ adapter: {ORG_SOURCE_ADAPTER}
 """
 
 
+def render_sources_personal(local_root: str) -> str:
+    """instance/config/sources.yml for a PERSONAL-flavor deployment.
+
+    Emitted since 2026-07-27: before this, `flavor: personal` emitted no
+    sources.yml at all, so the one flavor shaped for an operator who does not
+    run a company fail-closed to NullPersonalSource — zero recall on every
+    gather. `local_root:` is a deployment-root-relative path (never an
+    absolute machine path, so generated config stays relocatable), read by
+    framework.sources.local.resolve_root()."""
+    return f"""\
+# {MARKER} — personal-sensing seam binding for a PERSONAL-flavor deployment
+# (regenerate via cabinet/scripts/generate-instance.py; emitted because the
+# answers declare autonomy.flavor: personal — a personal box has no
+# cabinet_memory estate, so recall binds a folder of notes instead).
+#
+# framework.sources.get_source() reads `adapter: "<module>:<Class>"` from this
+# file, importlib-loads the module (framework/sources/ is a trusted adapter
+# tree), instantiates the class, and binds it as the PersonalSource framework
+# CORE queries. Without this file the deployment fail-closes to
+# NullPersonalSource — honest, but ZERO recall on every gather.
+adapter: {LOCAL_SOURCE_ADAPTER}
+
+# The ONE folder the adapter reads, relative to this deployment root (an
+# absolute path is honored too). Point it at your own notes/project folder.
+# Bounds are the adapter's, not this file's: text extensions only, a file cap,
+# a per-file byte cap, hidden dirs skipped, and every path realpath-jailed
+# inside this root (a symlink out of the folder is skipped, never followed).
+# CABINET_LOCAL_SOURCE_ROOT overrides this at runtime.
+local_root: {local_root}
+
+# No dispatch: binding, and it is not an omission. framework/sources/local.py
+# has NO write side — a folder pointed at material the operator does not own
+# can be recalled but never written back, and no setting here can change that.
+# get_dispatch() fail-closes to NullPersonalDispatch (draft-capture-only).
+"""
+
+
 def _set_top_level_key(text: str, key: str, value: str) -> str:
     """Replace `key: ...` at column 0, preserving a trailing comment; append if absent."""
     pattern = re.compile(rf"^{re.escape(key)}:[^\n#]*(?P<comment>#[^\n]*)?$", re.MULTILINE)
@@ -1142,6 +1247,50 @@ def render_platform(existing: str, answers: dict, lanes: list, org_shape: str,
     return text
 
 
+def resolve_preset(answers: dict) -> tuple[str, str]:
+    """``(preset, basis)`` — THE preset resolution, for every caller.
+
+    Before this there were TWO mappings: this generator's printed next step and
+    hatch.sh's own org_shape switch, which had already drifted — hatch.sh wrote
+    `portfolio` even when the answers said `cabinet.preset: developer`. One
+    function, called by both, is the fix; hatch.sh now shells to
+    ``--print-preset`` rather than re-deriving it.
+
+    Precedence, and each rung is a real declaration rather than a guess:
+      1. ``cabinet.preset`` — the captain named a preset. Always wins.
+      2. ``mission.altitude`` in {contributor, project} → ``personal``.
+         ALTITUDE MUST REACH PRESET SELECTION or it is decoration (direction
+         gate, 2026-07-26). ``presets/personal`` is the kit written for exactly
+         those rungs — "someone who owns a project, not a company; a developer
+         inside a large organisation" — and it is the ONE shipped preset that
+         stands up no C-suite. It stays OPT-IN: declaring your rung is a
+         choice, not a default flip, and (1) overrides it.
+      3. ``cabinet.org_shape`` — today's default (portfolio → portfolio,
+         functional → work, custom → unmapped).
+
+    CORRECTED 2026-07-27: this mapped the low rungs to ``developer`` while
+    ``presets/personal/`` was a placeholder whose README forbade activating it,
+    and it said so as an honest gap. The sibling personal-preset landing closed
+    that gap, so "closest fit" became "wrong fit": `developer` is a flat copy of
+    `work` and stands up the C-suite this altitude does not have."""
+    cabinet = answers.get("cabinet") or {}
+    explicit = cabinet.get("preset")
+    if explicit:
+        return str(explicit), "cabinet.preset"
+    mission = answers.get("mission")
+    altitude = ""
+    if isinstance(mission, dict):
+        altitude = str(mission.get("altitude") or "").strip().lower()
+    if altitude in ("contributor", "project"):
+        return "personal", "mission.altitude"
+    org_shape = str(cabinet.get("org_shape", "portfolio"))
+    if org_shape == "portfolio":
+        return "portfolio", "cabinet.org_shape"
+    if org_shape == "functional":
+        return "work", "cabinet.org_shape"
+    return "", "cabinet.org_shape"
+
+
 def resolve_target_posture(answers: dict) -> tuple[str, str]:
     """(posture, flavor) the scaffold should declare (sovereign amendment
     2026-07-05). Default guardian; an explicit `autonomy.target_posture`
@@ -1244,9 +1393,11 @@ lanes:
 # 2026-07-05, `apply sovereign posture`): the generator renders an INERT
 # instance/config/posture.yml scaffold from the two optional keys below, and
 # nothing changes until the Captain locks it (germline-lock.sh lock).
-# flavor also gates the recall binding: org (the default) emits
-# instance/config/sources.yml binding framework.sources.org:OrgSource;
-# personal emits NO sources.yml (bind your own adapter by hand).
+# flavor also gates WHICH recall binding instance/config/sources.yml carries:
+# org (the default) binds framework.sources.org:OrgSource (the cabinet's own
+# memory estate); personal binds framework.sources.local:LocalNotesSource over
+# a declared notes folder, read-only. Both are emitted; a hand-authored
+# sources.yml is refused, never clobbered.
 autonomy:
   posture: propose_first
   flavor: org                    # org | personal (personal ⇒ guardian scaffold, always)
@@ -1284,7 +1435,7 @@ def default_captain_name(explicit: str | None) -> str:
     return DEFAULTS_CAPTAIN_FALLBACK
 
 
-def render_default_answers(captain_name: str) -> str:
+def render_default_answers(captain_name: str, altitude: str | None = None) -> str:
     """The --defaults answers file: a fixed, consent-safe, syntactically valid
     answers set (guardian + propose-first, org flavor, portfolio shape, one
     placeholder lane, env-var NAMES only). Marker-stamped: the generator owns
@@ -1294,6 +1445,19 @@ def render_default_answers(captain_name: str) -> str:
     YAML-reserved name ("yes", "Null", "0000") round-trips as that exact
     string instead of silently retyping to True/None/0."""
     captain_scalar = _yaml_str(captain_name)
+    # The ONE thing --defaults now asks-without-asking. An absent --altitude
+    # emits NO mission block at all, so the zero-question hatch stays
+    # byte-identical to before; a declared rung is a real answer and reaches
+    # preset selection + card derivation.
+    mission_block = ""
+    if altitude:
+        mission_block = (
+            "\n# The operator's RUNG (--altitude). It is not a title: it is what\n"
+            "# the operator can DECIDE, which bounds what a proposed outcome's\n"
+            "# proof can be. genesis reads it for card derivation; resolve_preset\n"
+            "# reads it for preset selection. Omit it and it stays unknown.\n"
+            f"mission:\n  altitude: {altitude}\n\n"
+        )
     return f"""\
 # {MARKER} — DEFAULTS fast lane (generate-instance.py --defaults).
 # A consent-safe answers set written with ZERO questions asked: guardian
@@ -1315,7 +1479,7 @@ captain:
   # named failure of the 1/3-scored briefing). Set it whenever you like, from
   # your phone: "availability 20m" / "availability part_time".
 
-cabinet:
+{mission_block}cabinet:
   id: main                       # single-instance default
   mode: single
   org_shape: portfolio           # one Chair + on-demand lane CEOs
@@ -1347,7 +1511,8 @@ integrations:
 
 
 def prepare_default_answers(root: Path, answers_path: Path, captain_name: str | None,
-                            adopt: bool = False, dry_run: bool = False) -> tuple[Path, Path | None]:
+                            adopt: bool = False, dry_run: bool = False,
+                            altitude: str | None = None) -> tuple[Path, Path | None]:
     """--defaults: materialize the defaults answers set at ``answers_path``
     and return ``(path_for_generate, tmp_path_or_None)``. Zero prompts.
 
@@ -1406,7 +1571,7 @@ def prepare_default_answers(root: Path, answers_path: Path, captain_name: str | 
     rel = resolved.relative_to(root)
 
     name = default_captain_name(captain_name)
-    content = render_default_answers(name)
+    content = render_default_answers(name, altitude)
 
     needs_archive = resolved.exists() and MARKER not in resolved.read_text(encoding="utf-8")
     if needs_archive and not adopt:
@@ -1466,7 +1631,7 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
              adopt: bool = False) -> list:
     """Run the full generation pass. Returns the list of written paths."""
     root = root.resolve()
-    answers = load_answers(answers_path)
+    answers = load_answers(answers_path, root)
     cabinet = answers.get("cabinet") or {}
     org_shape = str(cabinet.get("org_shape", "portfolio"))
     model = str(cabinet.get("officer_model", DEFAULT_MODEL))
@@ -1562,19 +1727,24 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
                         org_vault=ORG_VAULT_DEFAULT), "yaml",
     ))
 
-    # Personal-sensing seam binding (module-docstring emission rule): an
-    # org-flavor deployment (autonomy.flavor != personal) gets the OrgSource
-    # binding so recall works out of the box; a personal/Flavor-A deployment
-    # binds its own adapter by hand — the generator emits nothing. The
-    # standard overwrite guard below protects a hand-authored sources.yml
-    # (no marker ⇒ refuse without --force).
+    # Personal-sensing seam binding (module-docstring emission rule). BOTH
+    # flavors now get a live binding: org boxes bind the cabinet's own memory
+    # estate (OrgSource), personal boxes bind a folder of notes
+    # (LocalNotesSource). Before 2026-07-27 the personal branch emitted
+    # nothing and that deployment fail-closed to NullPersonalSource — zero
+    # recall — which is why the personal preset shipped inert. The standard
+    # overwrite guard below still protects a hand-authored sources.yml (no
+    # marker ⇒ refuse without --force), so a captain's own richer adapter is
+    # never clobbered by this emission.
     flavor = str((answers.get("autonomy") or {}).get("flavor", "org"))
-    sources_emitted = flavor != "personal"
-    if sources_emitted:
-        outputs.append((
-            _instance_path(root, "config", "sources.yml"),
-            render_sources(), "yaml",
-        ))
+    sources_adapter = (ORG_SOURCE_ADAPTER if flavor != "personal"
+                       else LOCAL_SOURCE_ADAPTER)
+    sources_body = (render_sources() if flavor != "personal"
+                    else render_sources_personal(ORG_VAULT_DEFAULT))
+    outputs.append((
+        _instance_path(root, "config", "sources.yml"),
+        sources_body, "yaml",
+    ))
 
     # Posture scaffold (sovereign amendment 2026-07-05): rendered ONLY when
     # absent — an existing posture.yml is a Captain RULING (possibly ratified
@@ -1591,7 +1761,14 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
     # declared lane is the natural initial value.
     active_project_path = _instance_path(root, "config", "active-project.txt")
     active_project_skipped = active_project_path.exists()
-    if not active_project_skipped:
+    # NO LANES, NO INVENTED SLUG. A lane-less deployment has no product to be
+    # active in, and writing a placeholder here is the exact failure the
+    # ordering inversion exists to remove: a value pretending to be an answer.
+    # bootstrap-roles.sh then says what it always says — pass --product-slug or
+    # set this file — and the next-steps block below names the ratification
+    # path that fills it honestly.
+    active_project_written = not active_project_skipped and bool(lanes)
+    if active_project_written:
         outputs.append((active_project_path, f"{lanes[0]['slug']}\n", "text"))
 
     # ---- pre-write validation: every planned artifact must parse ----
@@ -1646,12 +1823,16 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
     # default. The developer preset stays OPT-IN — surfaced as a choice for
     # the functional shape below, never substituted as the default.
     explicit_preset = cabinet.get("preset")
-    preset = (str(explicit_preset) if explicit_preset
-              else "portfolio" if org_shape == "portfolio"
-              else ("work" if org_shape == "functional" else "<your-preset>"))
+    preset, preset_basis = resolve_preset(answers)
+    preset = preset or "<your-preset>"
     print("\nNext steps (in order):")
     print(f"  1. echo {preset} > instance/config/active-preset")
-    if org_shape == "functional" and not explicit_preset:
+    if preset_basis == "mission.altitude":
+        print("     (selected from mission.altitude — your declared rung. The")
+        print("      personal preset is the one shipped kit with NO C-suite:")
+        print("      Navigator, Librarian, Reviewer for one operator who owns a")
+        print("      project, not a company. Override with cabinet.preset.)")
+    if org_shape == "functional" and preset_basis == "cabinet.org_shape":
         print("     (work is the default. Shipping a software/web/app product? The")
         print("      OPTIONAL developer preset is the software product-kind kit —")
         print("      presets/developer/README.md; activate with")
@@ -1706,10 +1887,15 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
     if active_project_skipped:
         print("  Active project: existing instance/config/active-project.txt left")
         print("  untouched (operator state — never regenerated).")
-    else:
+    elif active_project_written:
         print(f"  Active project: wrote instance/config/active-project.txt = "
               f"{lanes[0]['slug']} (bootstrap-roles.sh reads it for the product")
         print("  slug; edit it any time to switch the active lane).")
+    else:
+        print("  Active project: NOT written — this deployment declares no lanes,")
+        print("  and a placeholder slug would be a value pretending to be an")
+        print(f"  answer. Ratify a lane from {_estate.LANES_PROPOSED_REL} into")
+        print("  the answers file and re-run, or set the file yourself.")
     if adopted:
         print(f"  Adopted: {len(adopted)} previous-deployment file(s) archived under")
         print(f"  {adopt_root.relative_to(root)}/ — review, then delete when confident.")
@@ -1722,13 +1908,12 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
         print(f"  flavor: {f}) — INERT until the Captain ratifies by locking:")
         print("  edit basis/ruled_at, commit, then sudo bash cabinet/scripts/germline-lock.sh lock")
         print("  (unlocked/absent/mismatched always resolves guardian — today's rules).")
-    if sources_emitted:
-        print(f"  Recall: instance/config/sources.yml binds {ORG_SOURCE_ADAPTER} (org")
-        print("  flavor). No dispatch: binding — writes fail-close to draft-capture-only.")
-    else:
-        print("  Recall: no sources.yml emitted (autonomy.flavor: personal) — bind your")
-        print("  personal adapter by hand in instance/config/sources.yml; until then")
-        print("  officers fail-close to NullPersonalSource (zero recall).")
+    print(f"  Recall: instance/config/sources.yml binds {sources_adapter}")
+    print(f"  (autonomy.flavor: {flavor}). No dispatch: binding — writes fail-close to")
+    print("  draft-capture-only.")
+    if sources_adapter == LOCAL_SOURCE_ADAPTER:
+        print(f"  Point local_root: at your own notes folder (default: {ORG_VAULT_DEFAULT}/)")
+        print("  — the adapter reads it read-only and has no write side at all.")
     return written
 
 
@@ -1755,8 +1940,17 @@ def main(argv=None) -> int:
     parser.add_argument("--captain-name", default=None, metavar="NAME",
                         help="captain display name for --defaults "
                              "(default: $USER, else 'Captain')")
+    parser.add_argument("--altitude", default=None, metavar="RUNG",
+                        help="operator rung for --defaults: "
+                             + " | ".join(sorted(ALTITUDES))
+                             + " (omit to leave it unknown)")
     parser.add_argument("--example", action="store_true",
                         help="print a starter answers file to stdout and exit")
+    parser.add_argument("--print-preset", action="store_true", dest="print_preset",
+                        help="print the resolved preset slug for the answers file "
+                             "and exit (the ONE resolution; hatch.sh calls this "
+                             "instead of re-deriving it). Exit 3 when no preset "
+                             "maps (custom shape).")
     args = parser.parse_args(argv)
 
     if args.example:
@@ -1767,16 +1961,45 @@ def main(argv=None) -> int:
         print("[generate-instance] ERROR: --captain-name requires --defaults",
               file=sys.stderr)
         return 2
+    if args.altitude is not None:
+        if not args.defaults:
+            print("[generate-instance] ERROR: --altitude requires --defaults "
+                  "(otherwise set mission.altitude in the answers file)",
+                  file=sys.stderr)
+            return 2
+        if args.altitude not in ALTITUDES:
+            print(f"[generate-instance] ERROR: --altitude {args.altitude!r} must "
+                  f"be one of {sorted(ALTITUDES)}", file=sys.stderr)
+            return 2
 
     root = Path(args.root).resolve() if args.root else Path(__file__).resolve().parents[2]
     answers_path = Path(args.answers).resolve() if args.answers else root / "instance/config/cabinet-init.answers.yml"
+
+    if args.print_preset:
+        # Read-only: resolve and print, write nothing. Full validation still
+        # runs, so a broken answers file fails here exactly as it would at
+        # generation — the hatch must not select a preset from answers the
+        # generator would then refuse.
+        try:
+            preset, basis = resolve_preset(load_answers(answers_path, root))
+        except GenerationError as e:
+            print(f"[generate-instance] ERROR: {e}", file=sys.stderr)
+            return 2
+        if not preset:
+            print("[generate-instance] ERROR: no preset maps to this answers "
+                  "file (custom org_shape and no cabinet.preset) — set "
+                  "instance/config/active-preset yourself", file=sys.stderr)
+            return 3
+        print(preset)
+        return 0
 
     tmp_answers: Path | None = None
     try:
         if args.defaults:
             answers_path, tmp_answers = prepare_default_answers(
                 root, answers_path, args.captain_name,
-                adopt=args.adopt, dry_run=args.dry_run)
+                adopt=args.adopt, dry_run=args.dry_run,
+                altitude=args.altitude)
         generate(root, answers_path, dry_run=args.dry_run, force=args.force,
                  adopt=args.adopt)
     except GenerationError as e:

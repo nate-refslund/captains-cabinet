@@ -7,8 +7,6 @@
 [ -f /etc/environment.cabinet ] && source /etc/environment.cabinet
 
 REDIS_URL="${REDIS_URL:-redis://redis:6379}"
-REDIS_HOST=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f1)
-REDIS_PORT=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)
 
 # Read the switch through the ONE shared reader, not a raw GET (2026-07-25
 # audit). This script claims to test "the full kill switch escalation chain",
@@ -18,6 +16,35 @@ REDIS_PORT=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)
 # back to the literal the assertions below already expect, and surfaces an
 # unverifiable switch as a LOUD mismatch rather than an empty (= clear) read.
 _KS_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/hooks" 2>/dev/null && pwd)/killswitch-read.sh"
+
+# ENDPOINT DERIVED FROM THE READER (2026-07-27 safety-switch fence). The write
+# endpoint used to be parsed HERE, from REDIS_URL, with a second copy of the
+# URL-splitting logic; the reader resolves its own through `_ks_endpoint`,
+# which PREFERS REDIS_HOST/REDIS_PORT. Measured, the two agreed — but only by
+# accident of shell scoping (the assignments below were unexported shell
+# variables that `_ks_endpoint`, sourced into this same shell, then read back).
+# Anything that broke that coincidence — exporting, a subshell, a reorder —
+# would have this script SET the switch on one server and assert against
+# another: a drill that passes while writing nowhere, or writes live while
+# reading a sandbox. Asking the reader where IT would go removes the second
+# parser entirely, so writer and reader cannot diverge by construction.
+_ks_resolve_endpoint() {
+  [ -r "$_KS_HELPER" ] || return 1
+  # shellcheck source=/dev/null
+  ( . "$_KS_HELPER" > /dev/null 2>&1 && _ks_endpoint \
+      && printf '%s %s\n' "$_KS_HOST" "$_KS_PORT" )
+}
+read -r _EP_HOST _EP_PORT <<< "$(_ks_resolve_endpoint)"
+if [ -n "${_EP_HOST:-}" ] && [ -n "${_EP_PORT:-}" ]; then
+  REDIS_HOST="$_EP_HOST"
+  REDIS_PORT="$_EP_PORT"
+else
+  # No reader on disk (should not happen: Dockerfile.watchdog ships it next to
+  # this script). Fall back to the local parse, and --live refuses below —
+  # an endpoint nobody can prove the reader shares is not one to write to.
+  REDIS_HOST=$(printf '%s' "$REDIS_URL" | sed 's|redis://||' | cut -d: -f1)
+  REDIS_PORT=$(printf '%s' "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)
+fi
 ks_value() {
   if [ ! -r "$_KS_HELPER" ]; then echo "NO-READER"; return 0; fi
   # shellcheck source=/dev/null
@@ -31,6 +58,27 @@ ks_value() {
 
 LIVE=false
 [ "${1:-}" = "--live" ] && LIVE=true
+
+# PRE-FLIGHT: --live REFUSES over a switch that is not provably CLEAR
+# (2026-07-27 safety-switch fence). Reproduced before this guard existed: with
+# the Captain's stop armed at the resolved endpoint, step 1 reported the
+# mismatch, the script CARRIED ON, and step 6's unconditional DEL cleared the
+# real emergency stop — exit 1 at the end, damage already done. A drill that
+# can silently undo a Captain stop is the same class as one that arms it.
+# Refusing here also covers UNVERIFIABLE (NOAUTH/NOPERM/WRONGTYPE/LOADING) and
+# a missing reader: absence of the literal "active" is not evidence of a clear
+# switch, and this script is about to write to it.
+if [ "$LIVE" = true ]; then
+  KS_PREFLIGHT=$(ks_value)
+  if [ -n "$KS_PREFLIGHT" ]; then
+    echo "REFUSED: --live writes cabinet:killswitch at ${REDIS_HOST}:${REDIS_PORT}," >&2
+    echo "and the switch there does not read as provably clear (got: '$KS_PREFLIGHT')." >&2
+    echo "A stop may be armed right now. Clearing it is Captain-side only —" >&2
+    echo "kill-switch.sh deactivate or the dashboard toggle, never a drill." >&2
+    echo "Re-run without --live for the dry run, or resolve the switch first." >&2
+    exit 64
+  fi
+fi
 
 PASSED=0
 FAILED=0
