@@ -26,7 +26,13 @@ import type {
   WorldSnapshot,
 } from '@/lib/world/types'
 import type { GrammarCodex, Morphology, ShowGrammar } from '@/lib/world/grammar'
-import { TILE } from '@/lib/world/layout'
+import {
+  projectionFor,
+  screenDeltaToTiles,
+  worldToScreen,
+  type ProjectionKind,
+} from '@/lib/world/projection'
+import { cameraClamp, cameraHome } from '@/lib/world/iso-scene'
 import { fnv1a } from '@/lib/world/hash'
 import { formatClock } from '@/lib/world/lighting'
 import {
@@ -81,6 +87,7 @@ import KillswitchLever from './killswitch-lever'
 import DecisionQueueCard from './decision-queue-card'
 import LibraryCard from './library-card'
 import type { EngineTarget } from './engine-canvas'
+import { officerSlots } from '@/lib/world/pick'
 
 const EngineCanvas = dynamic(() => import('./engine-canvas'), { ssr: false })
 
@@ -124,24 +131,37 @@ interface EnginePayload {
   todayISO?: string
 }
 
-function parseUrlState(search: string): { camera: EngineCamera; sel: string | null; at: string | null } {
+function parseUrlState(
+  search: string,
+  projection: ProjectionKind
+): { camera: EngineCamera; sel: string | null; at: string | null } {
   const p = new URLSearchParams(search)
   const zRaw = Number(p.get('z'))
   const z = Number.isFinite(zRaw) && zRaw > 0 ? clampZoom(zRaw) : 1
-  // Default landing: the whole island in frame (main island center).
-  const x = p.get('x') !== null && Number.isFinite(Number(p.get('x'))) ? Number(p.get('x')) : 120
-  const y = p.get('y') !== null && Number.isFinite(Number(p.get('y'))) ? Number(p.get('y')) : 32
+  // Default landing: the whole island in frame. The two kernels frame
+  // DIFFERENT worlds — the iso world is the compositor's canvas, not the tile
+  // canvas — so the home position comes from the kernel rather than a literal.
+  const home = cameraHome(projection)
+  const x = p.get('x') !== null && Number.isFinite(Number(p.get('x'))) ? Number(p.get('x')) : home.x
+  const y = p.get('y') !== null && Number.isFinite(Number(p.get('y'))) ? Number(p.get('y')) : home.y
   return { camera: { z, x, y }, sel: p.get('sel'), at: p.get('at') }
 }
 
-export default function EngineClient({ canActuate = false }: { canActuate?: boolean }) {
+export default function EngineClient({
+  canActuate = false,
+  projection = 'topdown',
+}: {
+  canActuate?: boolean
+  /** Which world→screen kernel to render with — read server-side from ?iso. */
+  projection?: ProjectionKind
+}) {
   const [snapshot, setSnapshot] = useState<WorldSnapshot | null>(null)
   const [grammar, setGrammar] = useState<GrammarPayload | null>(null)
   const [engine, setEngine] = useState<EnginePayload | null>(null)
   const [resolution, setResolution] = useState<WorldResolution | null>(null)
   const [weather, setWeather] = useState<WeatherState>(initialWeather())
   const [tick, setTick] = useState(0)
-  const [camera, setCamera] = useState<EngineCamera>({ z: 1, x: 120, y: 32 })
+  const [camera, setCamera] = useState<EngineCamera>({ z: 1, ...cameraHome(projection) })
   const [cutaway, setCutaway] = useState<CutawayState>(initialCutaway())
   const [sel, setSel] = useState<string | null>(null)
   const [at, setAt] = useState<string | null>(null)
@@ -174,11 +194,11 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
 
   // ── URL state ────────────────────────────────────────────────────────────
   useEffect(() => {
-    const s = parseUrlState(window.location.search)
+    const s = parseUrlState(window.location.search, projection)
     setCamera(s.camera)
     setSel(s.sel)
     setAt(s.at)
-  }, [])
+  }, [projection])
   useEffect(() => {
     const p = new URLSearchParams()
     p.set('z', camera.z.toFixed(2))
@@ -186,8 +206,12 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
     p.set('y', camera.y.toFixed(1))
     if (sel) p.set('sel', sel)
     if (at) p.set('at', at)
+    // The kernel flag SURVIVES the rewrite. Without this the first pan drops
+    // ?iso from the address bar, so the page the Captain reloads or shares is
+    // the other renderer — a bake-off that silently swaps its own subject.
+    if (projection === 'iso') p.set('iso', '1')
     window.history.replaceState(null, '', `${window.location.pathname}?${p.toString()}`)
-  }, [camera, sel, at])
+  }, [camera, sel, at, projection])
 
   // ── data feeds ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -376,6 +400,11 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
     return () => cancelAnimationFrame(raf)
   }, [])
 
+  // The kernel this client speaks in: one instance, shared by the pan
+  // inverse, the DOM-label projection and the clamp box, so none of them can
+  // drift from the canvas.
+  const proj = useMemo(() => projectionFor(projection), [projection])
+
   // ── derived world models (all pure) ──────────────────────────────────────
   const geo: WorldGeo = useMemo(
     () =>
@@ -387,6 +416,7 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
       }),
     [engine]
   )
+  const clamp = useMemo(() => cameraClamp(projection, geo.canvas), [projection, geo.canvas])
   const buildings: WorldBuilding[] = useMemo(
     () => (resolution ? buildWorldBuildings(resolution, geo) : []),
     [resolution, geo]
@@ -599,13 +629,20 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
     const dy = ev.clientY - d.y
     if (!d.moved && Math.hypot(dx, dy) < 5) return
     d.moved = true
-    setCamera((c) => ({
-      ...c,
-      // one world, one clamp box: the archipelago canvas + a sea margin
-      x: Math.max(-24, Math.min(geo.canvas.w + 24, d.camX - dx / (TILE * c.z))),
-      y: Math.max(-24, Math.min(geo.canvas.h + 24, d.camY - dy / (TILE * c.z))),
-    }))
-  }, [geo.canvas.w, geo.canvas.h])
+    setCamera((c) => {
+      // A screen drag walks the INVERSE kernel basis. Dividing by a tile size
+      // is only correct when the axes are uncoupled; under iso it slides the
+      // camera diagonally under the cursor.
+      const step = screenDeltaToTiles(proj, dx, dy, c.z)
+      return {
+        ...c,
+        // one world, one clamp box — derived from the PROJECTED corners, so
+        // the iso world's diamond extent is not cut off at two of them
+        x: Math.max(clamp.x0, Math.min(clamp.x1, d.camX - step.tx)),
+        y: Math.max(clamp.y0, Math.min(clamp.y1, d.camY - step.ty)),
+      }
+    })
+  }, [proj, clamp])
   const onPointerUp = useCallback(() => {
     dragRef.current = null
   }, [])
@@ -685,12 +722,11 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
+  // THE one forward projection for DOM chrome — the same kernel the canvas
+  // draws with, so a label can never drift off the sprite it names.
   const project = useCallback(
-    (wx: number, wy: number) => ({
-      x: hostSize.w / 2 + (wx - camera.x) * TILE * camera.z,
-      y: hostSize.h / 2 + (wy - camera.y) * TILE * camera.z,
-    }),
-    [camera, hostSize]
+    (wx: number, wy: number) => worldToScreen(proj, wx, wy, camera, hostSize),
+    [proj, camera, hostSize]
   )
 
   // Label positions MIRROR engine-canvas officerPositions exactly (same
@@ -702,25 +738,17 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
   const officerLabels = useMemo(() => {
     const gh = buildings.find((b) => b.element === 'great_house')
     if (!gh || lodTier(camera.z) !== 'close') return []
-    const open = cutaway.openId === gh.id
-    const slugs = Object.keys(presenceBySlug).sort()
-    return slugs.map((slug, i) => {
-      const h = fnv1a(`officer:${slug}`)
-      const pos = open
-        ? {
-            x: gh.x + 1 + (i % 3) * ((gh.w - 2) / 2.5),
-            y: gh.y + 1.6 + Math.floor(i / 3) * 1.6,
-          }
-        : {
-            x: gh.x + 0.5 + ((h >>> 4) % (gh.w * 2)) / 2,
-            y: gh.y + gh.h + 1 + (i % 2),
-          }
-      return {
-        slug,
-        ...pos,
-        verb: presenceBySlug[slug]?.present ? presenceBySlug[slug]?.verb ?? null : null,
-      }
-    })
+    // officerSlots is THE seeded placement — the canvas draws from it and the
+    // hit test picks against it, so a name chip cannot drift off the officer it
+    // names. It was re-derived here, and nothing held the two copies equal.
+    return officerSlots(gh, Object.keys(presenceBySlug).sort(), cutaway.openId === gh.id).map(
+      (o) => ({
+        slug: o.slug,
+        x: o.x,
+        y: o.y,
+        verb: presenceBySlug[o.slug]?.present ? presenceBySlug[o.slug]?.verb ?? null : null,
+      })
+    )
   }, [buildings, camera.z, presenceBySlug, cutaway.openId])
 
   const ticker = useMemo(
@@ -740,6 +768,7 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
     >
       {!eraMode && (
         <EngineCanvas
+          projection={projection}
           geo={geo}
           buildings={buildings}
           resolution={resolution}
