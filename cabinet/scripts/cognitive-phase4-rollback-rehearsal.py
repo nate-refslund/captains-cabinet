@@ -357,6 +357,36 @@ def main() -> int:
             # restored-contracts arm: the v1-only contracts.py under its own
             # unmodified baseline suite.
             run(["python3.12", "-m", "pytest", CONTRACTS_SUITE, "-q"], cwd=scratch)
+            # COMPATIBILITY arm: does the REVERTED tree still work. Note the
+            # cwd — `scratch` is a worktree detached at the manifest's pinned
+            # anchor, so this battery runs the test bytes AS OF THAT COMMIT and
+            # is deliberately immune to anything landed on master since. That
+            # pinning is correct for a rollback proof and is why the deselect
+            # below has to live HERE, in the runner, rather than in the test.
+            #
+            # DESELECT (2026-07-28): `test_filing_latency_smoke` is a WALL-CLOCK
+            # perf smoke, and it red-lined this gate on the 06:03Z scheduled run
+            # 30333546103 at 73ms for an operation that costs ~0.2ms — a
+            # scheduler outlier on a shared runner, on an UNCHANGED commit that
+            # was green on its own push run. The reported line number (136) is
+            # the ANCHOR copy's, not master's (171), which is how we know the
+            # red was raised in here and not at HEAD.
+            #
+            # This does NOT disable the sensor, which is the only reason it is
+            # acceptable: `framework-tests` runs `pytest framework/ -q -rs` over
+            # the LIVE bytes on every push, and that job ran the very same test
+            # green in this very same run. What is dropped here is a duplicate
+            # execution of frozen bytes. It is also not a property of the
+            # inverse: `needs.py` is in neither the remove nor the restore set,
+            # so the reverted tree and HEAD run identical filing code, and how
+            # FAST that code is was never what a rollback rehearsal proves.
+            # The live copy of this test was made best-of-N in the same commit.
+            #
+            # Fail-safe by construction: pytest silently ignores a `--deselect`
+            # id it cannot resolve (verified 2026-07-28), so if the anchor is
+            # ever re-pinned past this test's rename or removal, the worst case
+            # is that the arm runs again and the flake returns LOUDLY. There is
+            # no spelling of this that yields a false green.
             run(
                 [
                     "python3.12", "-m", "pytest",
@@ -365,6 +395,8 @@ def main() -> int:
                     "framework/outbox/tests", "framework/missions/tests",
                     "framework/sources/tests", "framework/ovi/tests",
                     "framework/triggers/tests", "-q",
+                    "--deselect",
+                    "framework/authority/tests/test_needs.py::test_filing_latency_smoke",
                 ],
                 cwd=scratch,
             )
