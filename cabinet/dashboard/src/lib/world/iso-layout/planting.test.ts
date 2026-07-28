@@ -809,7 +809,7 @@ describe('per-officer house variety', () => {
     // six independent draws from six kinds average 3.99 distinct; ONE sprite
     // for every lot — which is what this port did before — averages exactly 1.
     expect(mean).toBeGreaterThan(3)
-  })
+  }, 60_000)
 
   it('every house is a real dwelling sprite, and its ROLE is still traceable', () => {
     const row = hamlet.structures.filter((s) => s.role === 'officer_dwelling')

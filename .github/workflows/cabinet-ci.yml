@@ -38,7 +38,25 @@ concurrency:
 jobs:
   ci:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # RE-BUDGETED 2026-07-28, first time since eac1c4a4 created this job. 15 was
+    # the value this file was born with, when the job was a handful of shellcheck
+    # passes; it has never been revisited while the job grew to the whole
+    # dashboard suite plus the world pixel gate. It stopped fitting on run
+    # 30350363875, where "Hook regression harnesses" was CANCELLED mid-step at
+    # 15m12s — a timeout-minutes hit reports as `cancelled`, which is why this
+    # read as a mystery cancellation and not as a budget.
+    #
+    # Measured, from that run's own step timings plus the last green one
+    # (30264672004): 3m40 setup+lint+python, 5m51 vitest, 2m11 golden evals,
+    # 0m15 the small evals, 4m52 hook regression harnesses = ~16m50.
+    # The growth is real work arriving on this branch, not a hang — the vitest
+    # step went 34s (30230120417) -> 2m16s (30264672004) -> 5m43s as the world
+    # capture pixel gate and the harbour/planting content landed.
+    #
+    # 25 matches framework-tests' budget and leaves ~50% headroom over the
+    # measurement. It is a resource bound, not a threshold: no arm is skipped,
+    # relaxed or widened by it, and a genuinely hung step still dies here.
+    timeout-minutes: 25
 
     services:
       redis:
@@ -411,6 +429,18 @@ jobs:
           npm test
 
       - name: Declare the redis service container disposable
+        # RUNS EVEN AFTER A RED, and that is the whole point of the condition.
+        # Every consumer below carries `if: !cancelled()` so that one red does
+        # not hide the next; this step did not, so a failing vitest SKIPPED it
+        # and then "Golden evals" and "FW-002 spending limits" both went red
+        # with `INFRA-FAIL (gate stays closed): declared-disposable redis at
+        # 127.0.0.1:6379 did not prove it is a throwaway` — a fabricated cause
+        # for a run whose only real defect was three timed-out world sweeps
+        # (run 30350363875, 2026-07-28). A setup step that is weaker than its
+        # consumers turns one honest red into three misleading ones, which is
+        # the same dead-sensor class as a check that cannot fail: you cannot
+        # read the cause off the result.
+        #
         # The golden-eval suite SETs/DELs cabinet:killswitch, so it refuses any
         # endpoint not PROVEN throwaway (2026-07-27). CABINET_EVALS_REDIS_DISPOSABLE=1
         # alone is no longer enough: an env var is a claim about this process's
@@ -418,6 +448,7 @@ jobs:
         # property of the SERVER. This step writes it on the service container —
         # which is torn down with the job — and is the only place in the repo that
         # writes that marker. NEVER add a step like this against a real fleet's Redis.
+        if: ${{ !cancelled() }}
         run: redis-cli -h 127.0.0.1 -p 6379 SET cabinet:evals:disposable 1
 
       - name: Golden evals

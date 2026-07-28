@@ -100,7 +100,7 @@ describe('iso-scene — the layout, dressed in the shipped pack', () => {
         expect(Number.isFinite(s.x) && Number.isFinite(s.y)).toBe(true)
       }
     }
-  })
+  }, 60_000)
 
   it('THE ERA LAW: a camp island never wears later-era art', () => {
     const camp = buildIsoScene(PACK, stateFor('camp'), 'cabinet')

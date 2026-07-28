@@ -1773,7 +1773,7 @@ describe('every painted mask is clipped to land', () => {
         }
       }
     }
-  })
+  }, 60_000)
 
   it('a field plot with no land under it is DROPPED, not painted on the sea', () => {
     // The seed the review found with a whole crop plot offshore is a moving
@@ -2103,7 +2103,7 @@ describe('the seed SPACE, not five islands', () => {
       under: expect.any(Number),
     })
     expect(under).toBeLessThanOrEqual(10)
-  })
+  }, 60_000)
 
   it('no two structures share ground on ANY seed, not just the demo island', () => {
     // auditLayout reported a stacked pair on org-13 for a whole review cycle
@@ -2113,7 +2113,7 @@ describe('the seed SPACE, not five islands', () => {
       expect(l.structures.length).toBeGreaterThan(6) // not vacuous
       expect({ seed, stacked: auditLayout(l).stacked }).toEqual({ seed, stacked: [] })
     }
-  })
+  }, 60_000)
 
   it('the road-wins fallback takes the SLIGHTEST stack, not the first one', () => {
     // clearOfLane may only fall back to shared ground when nothing is clear —
@@ -2160,7 +2160,7 @@ describe('the seed SPACE, not five islands', () => {
         on: [],
       })
     }
-  })
+  }, 60_000)
 
   it('paintField answers about the painted region, and is empty when nothing is painted', () => {
     // negative twin for the term above: a predicate that returns false
