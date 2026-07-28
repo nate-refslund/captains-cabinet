@@ -347,3 +347,66 @@ def test_module_exposes_no_write_verb(tmp_path):
     exported = [n for n in dir(mod) if not n.startswith("_")]
     assert not any("dispatch" in n.lower() for n in exported), (
         "the local adapter must not ship a dispatch class")
+
+
+# --------------------------------------------------------------------------
+# FRONTMATTER IS METADATA, NOT THE OPERATOR'S WORDS
+# --------------------------------------------------------------------------
+def test_frontmatter_never_becomes_the_operators_own_words(tmp_path):
+    """FOUND BY A HOSTILE PASS, 2026-07-28, through the real
+    ``first-briefing.sh --local`` chain on the shape this adapter EXISTS for —
+    an Obsidian folder, whose ``date:`` frontmatter is the primary
+    ``content_ts`` derivation this module documents.
+
+    A headingless note is ONE chunk, so its frontmatter WAS the head of the
+    chunk body. Both operator-facing readers then reported machinery as the
+    operator's own material: the genesis card's quote line — *"I did not ask
+    you for this, I read it"* — rendered ``"--- date: 2026-07-20 title: …
+    tags: [notes] status: open --- The storefront widget alignment drifts…"``,
+    and ``genesis._join_terms`` captioned three cited notes ``Shared wording:
+    status, title, date, open``, key names present in every note outscoring
+    (and evicting, at ``_MAX_JOIN_TERMS``) the one real word two of them
+    shared.
+
+    THE ARM IS THE PROPERTY: no frontmatter KEY reaches the chunk text, and the
+    prose does."""
+    notes = tmp_path / "fm"
+    notes.mkdir()
+    (notes / "2026-07-20-widget.md").write_text(
+        "---\ndate: 2026-07-20\ntitle: widget\ntags: [notes]\nstatus: open\n---\n\n"
+        "The storefront widget alignment drifts on checkout.\n", encoding="utf-8")
+    hits = LocalNotesSource(root=str(notes)).search("storefront checkout")["hits"]
+    assert hits, "the note must still be findable by its prose"
+    text = hits[0]["text"]
+    assert "The storefront widget alignment drifts on checkout." in text
+    for key in ("date:", "title:", "tags:", "status:", "---"):
+        assert key not in text, (
+            f"{key!r} survived into the chunk the operator is quoted from — "
+            "the card would report metadata as their own words")
+    assert hits[0]["content_ts"] == "2026-07-20T00:00:00Z", (
+        "dating reads the RAW text and must be unaffected by the strip")
+
+
+def test_a_bare_rule_is_not_frontmatter(tmp_path):
+    """DEGENERATE END, and the one that decides whether the strip is safe: a
+    note OPENING with a thematic break has an unterminated ``---``, and eating
+    to end-of-file would silently delete the whole note from recall. Also
+    covers the ``...`` YAML terminator and a note that is frontmatter and
+    nothing else."""
+    notes = tmp_path / "edge"
+    notes.mkdir()
+    (notes / "rule.md").write_text(
+        "---\n\nthe storefront ledger reconciliation ran late.\n", encoding="utf-8")
+    (notes / "dots.md").write_text(
+        "---\ndate: 2026-02-02\n...\n\nthe storefront ledger arrived.\n",
+        encoding="utf-8")
+    (notes / "onlyfm.md").write_text(
+        "---\ntitle: storefront ledger\n---\n", encoding="utf-8")
+    src = LocalNotesSource(root=str(notes))
+    got = {h["path"]: h["text"] for h in src.search("storefront ledger")["hits"]}
+    assert "reconciliation ran late" in got.get("rule.md", ""), (
+        "an unterminated --- is a horizontal rule; the note must survive whole")
+    assert got.get("dots.md", "").strip() == "the storefront ledger arrived."
+    assert "onlyfm.md" not in got, (
+        "a note that is nothing but frontmatter has no prose to recall, and an "
+        "empty hit citing a file is a citation that shows nothing")

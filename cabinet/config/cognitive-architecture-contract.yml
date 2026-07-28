@@ -879,7 +879,7 @@ temporary_allowances:
     deletion_gate: the estate contract folds into a single onboarding module when the ingest engine lands, or COG-7 compaction
   - phase: briefing-consumes-recall
     budget: framework_production_noncomment_lines
-    additional: 456
+    additional: 491
     reason: >-
       the first briefing READS what recall already holds. MEASURED, not
       reviewed: an agent ran the genuine hatch path (personal answers ->
@@ -936,6 +936,36 @@ temporary_allowances:
       and sending the operator to re-run genesis for a result that cannot
       change — the three live sub-states are now three sentences, with the
       arm that would have caught it), 2026-07-28, via
+      cognitive-architecture-census.py. 456 -> 491 AT THE REVIEW OF THIS
+      BRANCH'S OWN FIX (2026-07-28): +35 non-comment lines in
+      framework/sources/local.py for _strip_frontmatter and its call site. The
+      branch narrowed the card's "Shared wording:" caption to the files the card
+      actually CITES; on the corpus shape this adapter exists for — an Obsidian
+      folder, whose `date:` frontmatter is the primary content_ts derivation
+      local.py's own docstring names — the caption still was not the operator's
+      words, and neither was the quote. A headingless note is ONE chunk, so
+      _chunks put the YAML at the head of the chunk body: measured through the
+      real first-briefing.sh --local chain on five dated notes, the card's
+      "I did not ask you for this, I read it" line — the entire value
+      proposition of the surface — opened with `--- date: 2026-07-20 title: ...
+      tags: [notes] status: open ---`, and because every note carries the same
+      keys they outscored every real word, so `Shared wording: status, title,
+      date, open` filled all four _MAX_JOIN_TERMS slots and evicted `checkout`,
+      the one term two of the three cited files genuinely shared. Stripped in
+      _chunks rather than in either consumer because the chunk body is supposed
+      to be the operator's prose and every future reader of it inherits the
+      defect otherwise; _content_ts_for reads the RAW text and runs first, so
+      dating is untouched. Conservative by construction — an unterminated `---`
+      is a thematic break and the note is returned whole, since eating to
+      end-of-file would delete a note from recall entirely. Both directions
+      pinned, cache purged: reverting the call site reds both new arms, and
+      mutating the unterminated-case `return text` to `return ""` reds the
+      degenerate arm. Zero new MODULES (local.py is already a registered
+      expansion; framework_production_modules unchanged at 247), and most of the
+      35 is DOCSTRING prose carrying the measurement, per the house rule, NOT
+      reformatted into "#" comments to duck the counter. EXACT measured running
+      total 72988 on this merged tree, master f224e884 reading 72953 exactly at
+      its own pinned level, so the delta is 35 measured against that base, via
       cognitive-architecture-census.py.
     owner: onboarding-plane
     sunset: '2027-01-28'

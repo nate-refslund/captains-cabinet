@@ -21,7 +21,23 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 657db3fd0a80b3f62ab5f5ba68263ee9511a7f9103bde26d56e8aab4f1ef4144
+Reviewed-Scope-Digest: ae050c1ab051bf8c4b0129c120680fe17a2bacb46c6b1eaddffd506359706713
+
+(RE-BOUND 2026-07-28 by `fix/recall-card-claims-its-own-cites`, merged with
+master `f224e884` (PR #259). Its ONLY digest-bound path is
+`cabinet/config/cognitive-architecture-contract.yml` — the existing
+`briefing-consumes-recall` `temporary_allowances` row moved from `additional:
+456` to `491` for +35 framework production non-comment lines in
+framework/sources/local.py. No budget `maximum` raised, no bijection class
+touched, no expansion registered, and NO COG-4 implementation byte moved.
+MEASURED rather than reasoned: the digest was recomputed at each commit of this
+branch — `f224e884` and the master merge `e3d5e9ad` and the test-only commit
+`28cacfda` all read `657db3fd`, and only the commit carrying the contract file
+moves it; two single-path probe commits off `28cacfda` then isolated it, the
+contract file alone reading `ae050c1a` and `framework/sources/local.py` plus its
+test alone reading `657db3fd`, i.e. the sources change is out of scope
+entirely. Nothing below was re-reviewed, because no reviewed byte moved. Every
+prior note is kept verbatim, none superseded.)
 
 (MERGE RE-BIND, 2026-07-28, `fix/briefing-consumes-recall` x master
 `dad973d5` (PR #257). Fourth master landing this branch has merged in one
