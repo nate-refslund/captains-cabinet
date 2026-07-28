@@ -381,7 +381,7 @@ def test_reconcile_queues_the_trust_tier_and_writer(tmp_path):
     patched = subprocess.Popen
     subprocess.Popen = _REAL_POPEN
     try:
-        subprocess.run(
+        proc = subprocess.run(
             ["bash", str(RECONCILE_SH)],
             capture_output=True, text=True,
             env={
@@ -394,7 +394,18 @@ def test_reconcile_queues_the_trust_tier_and_writer(tmp_path):
     finally:
         subprocess.Popen = patched
 
-    args = (tmp_path / "redis_args").read_text().splitlines()
+    # Diagnose rather than raise FileNotFoundError: a missing runtime tool
+    # (jq builds every payload here) makes reconcile queue NOTHING while its
+    # own log says "some queue pushes failed (redis unreachable?)". That cost
+    # one red CI run to identify, so the message names the real cause.
+    queued = tmp_path / "redis_args"
+    assert queued.exists(), (
+        "memory-reconcile queued nothing — redis-cli was never invoked. "
+        "Most likely a missing runtime dependency (jq) rather than a logic "
+        f"change.\nrc={proc.returncode}\nstdout={proc.stdout!r}\n"
+        f"stderr={proc.stderr!r}"
+    )
+    args = queued.read_text().splitlines()
     payloads = [json.loads(a) for a in args if a.startswith("{")]
     assert payloads, f"reconcile queued nothing (redis argv: {args!r})"
     meta = payloads[0]["metadata"]
