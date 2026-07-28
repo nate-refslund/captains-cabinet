@@ -24,7 +24,21 @@ world-asset-intake.py, license "owned — org-original", committable), the
 manifest is tracked, and this gate runs wherever assets land. Exit 0 = all
 conformant (or manifest honestly empty), 1 = violation.
 
-Usage: python3.12 cabinet/scripts/world-asset-gate.py [manifest.json]
+--committed-only restricts the sweep to rows whose FILE IS TRACKED IN GIT.
+Why it exists (2026-07-28): the full gate can only run on a machine that holds
+the licensed packs, so it ran nowhere automatic — and the atlas row shipped a
+declared sha256 that matched no committed blob in the file's whole history
+(declared 425e9f93…, actual 88dea7194171…, wrong from the commit that wrote
+it). A content-addressed manifest whose hashes nothing checks is not
+content-addressed. The tracked subset is exactly what a pristine clone and CI
+can see, so that is the subset CI now gates, with a floor: a sweep that finds
+FEWER than --min-committed tracked rows fails rather than reporting green over
+an empty set (the degenerate end is the failure mode this gate class keeps
+hitting — an empty universe passes every per-item check).
+
+Usage:
+  python3.12 cabinet/scripts/world-asset-gate.py [manifest.json]
+  python3.12 cabinet/scripts/world-asset-gate.py --committed-only [--min-committed N]
 """
 from __future__ import annotations
 
@@ -32,9 +46,10 @@ import hashlib
 import json
 import os
 import struct
+import subprocess
 import sys
 from pathlib import Path
-from typing import Any, List
+from typing import Any, List, Set
 
 _REPO_ROOT = Path(os.environ.get("CABINET_ROOT")
                   or Path(__file__).resolve().parents[2])
@@ -101,7 +116,50 @@ def check_asset(entry: Any, asset_root: Path, problems: List[str]) -> None:
                             f"{actual[:12]}…)")
 
 
+#: A tracked-row floor low enough to survive an honest prune of the owned set
+#: and high enough that an empty or broken `git ls-files` cannot read as green.
+#: Today the tracked set is the 20 owned character sheets + the iso atlas.
+DEFAULT_MIN_COMMITTED = 20
+
+
+def tracked_paths(asset_root: Path) -> Set[str] | None:
+    """Manifest-relative paths of the asset files git actually tracks.
+
+    None when git cannot answer (not a checkout, no git) — the caller treats
+    that as "cannot run", never as "nothing tracked", because an empty set
+    would silently pass every row.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(asset_root), "ls-files", "-z", "--", "."],
+            capture_output=True, timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    return {p.decode("utf-8", "surrogateescape")
+            for p in proc.stdout.split(b"\0") if p}
+
+
 def main(argv: List[str]) -> int:
+    committed_only = False
+    min_committed = DEFAULT_MIN_COMMITTED
+    rest: List[str] = []
+    it = iter(argv)
+    for a in it:
+        if a == "--committed-only":
+            committed_only = True
+        elif a == "--min-committed":
+            try:
+                min_committed = int(next(it))
+            except (StopIteration, ValueError):
+                print("WORLD_ASSETS FAIL — --min-committed needs an integer")
+                return 1
+        else:
+            rest.append(a)
+    argv = rest
+
     manifest_path = Path(argv[0]) if argv else DEFAULT_MANIFEST
     if not manifest_path.exists():
         print(f"WORLD_ASSETS ABSENT — no manifest at {manifest_path} "
@@ -119,16 +177,38 @@ def main(argv: List[str]) -> int:
         return 1
     problems: List[str] = []
     asset_root = manifest_path.parent
-    for entry in assets:
+    swept = assets
+    if committed_only:
+        tracked = tracked_paths(asset_root)
+        if tracked is None:
+            print("WORLD_ASSETS FAIL — --committed-only asked git which "
+                  "asset files are tracked and git could not answer; a "
+                  "sweep that cannot enumerate its universe has not passed")
+            return 1
+        swept = [e for e in assets
+                 if isinstance(e, dict) and str(e.get("path", "")) in tracked]
+        if len(swept) < min_committed:
+            print(f"WORLD_ASSETS FAIL — only {len(swept)} of {len(assets)} "
+                  f"manifest rows name a git-tracked file, below the floor of "
+                  f"{min_committed}. Either owned art left the repo or the "
+                  f"sweep is looking in the wrong place; an empty universe "
+                  f"must never report green")
+            return 1
+    for entry in swept:
         check_asset(entry, asset_root, problems)
     for p in problems:
         print(f"FAIL {p}")
     if problems:
-        print(f"WORLD_ASSETS FAIL (assets={len(assets)}, "
+        print(f"WORLD_ASSETS FAIL (assets={len(swept)}, "
               f"violations={len(problems)})")
         return 1
-    print(f"WORLD_ASSETS GREEN (assets={len(assets)} — all conformant"
-          f"{'; manifest empty, placeholder mode' if not assets else ''})")
+    if committed_only:
+        print(f"WORLD_ASSETS GREEN (committed-only: {len(swept)} of "
+              f"{len(assets)} rows are git-tracked and all conformant; "
+              f"floor {min_committed})")
+        return 0
+    print(f"WORLD_ASSETS GREEN (assets={len(swept)} — all conformant"
+          f"{'; manifest empty, placeholder mode' if not swept else ''})")
     return 0
 
 

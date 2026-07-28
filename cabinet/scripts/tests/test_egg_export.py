@@ -655,9 +655,44 @@ def test_testburg_fixture_ships(export: Path):
         assert (tb / f).is_file(), f"testburg demo fixture must ship: {f}"
 
 
-def test_world_assets_and_node_modules_absent(export: Path):
-    for banned_dir in ("cabinet/dashboard/public/world-assets",
-                       "cabinet/scripts/world-aesthetic/corpus",
+def test_licensed_art_must_not_ship_but_owned_art_must(export: Path):
+    """The egg carries the OWNED art and none of the licensed art.
+
+    Retargeted 2026-07-28 (Captain direction "ALL OUT of LimeZu"). This arm used
+    to ban every .png under world-assets on the stated grounds that binaries
+    there are licensed — a sensor testing something other than the control. When
+    20 owned character sheets landed beside the atlas, the extension test kept
+    passing while the thing it was protecting (nobody redistributes LimeZu) had
+    stopped being what it measured, and the egg shipped a world with no art at
+    all. The check is now on the manifest's `license` field, which is the actual
+    property, so owned art can ship and a licensed byte still cannot.
+    """
+    manifest_path = export / "cabinet/dashboard/public/world-assets/manifest.json"
+    assert manifest_path.is_file(), "the world asset manifest must ship"
+    rows = json.loads(manifest_path.read_text(encoding="utf-8"))["assets"]
+    owned = {r["path"] for r in rows
+             if str(r.get("license", "")).startswith("owned")}
+    assert len(owned) >= 21, f"expected the owned set in the manifest, got {len(owned)}"
+
+    art_root = export / "cabinet/dashboard/public/world-assets"
+    shipped = sorted(p.relative_to(art_root).as_posix()
+                     for p in art_root.rglob("*")
+                     if p.suffix in (".png", ".zip", ".jpg"))
+    unlicensed = [p for p in shipped if p not in owned]
+    assert not unlicensed, (
+        "every image the egg ships from world-assets must be an "
+        f"'owned — org-original' manifest row; these are not: {unlicensed}")
+
+    # …and the floor: shipping NOTHING would satisfy the line above trivially.
+    # A stranger hatching from this egg must get a cast and a tileset.
+    assert "originals/iso/atlas-0.png" in shipped, "the owned iso atlas must ship"
+    cast = [p for p in shipped
+            if p.startswith("originals/characters/Premade_Character_")]
+    assert len(cast) == 20, f"the owned 20-sheet cast must ship, got {len(cast)}"
+
+    # The corpus/goldens dirs keep the blanket rule: those images are Captain
+    # -rejected build screenshots and licensed showcase scenes, never owned rows.
+    for banned_dir in ("cabinet/scripts/world-aesthetic/corpus",
                        "cabinet/scripts/world-aesthetic/goldens"):
         d = export / banned_dir
         if d.exists():
