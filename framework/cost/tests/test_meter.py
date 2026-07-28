@@ -72,7 +72,7 @@ class TestPrincipal(unittest.TestCase):
             self.assertEqual(meter.safe_principal(bad), meter.UNATTRIBUTED, repr(bad))
 
     def test_real_names_survive(self):
-        for good in ("cos", "polads-ceo", "svc:action-lane", "cto", "stephie-ceo"):
+        for good in ("cos", "lane-one-ceo", "svc:action-lane", "cto", "lane-two-ceo"):
             self.assertEqual(meter.safe_principal(good), good)
 
     def test_case_is_normalized(self):

@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 13ac99ce77dbd5c88a8c0954a643bcc0f341cf2b17dac551d286246190bf5dc4
+Reviewed-Scope-Digest: 702a60ba73cf19210667b95b583757dc2148df3ccb7d8b20bf23fb213c4b2e1b
 
 (MERGE RE-BIND, 2026-07-28, `fix/stranger-hatch-timed` x master `a70bcfb5`
 (PR #268). Both sides had re-bound this line and BOTH moved
@@ -34,6 +34,18 @@ conflict was textual adjacency, not a contested value, and the running total is
 RE-MEASURED on the merged tree rather than carried from either side. No budget
 `maximum` raised, no expansion member, no bijection class, and NO COG-4
 implementation byte moved on either side. Nothing below was re-reviewed,
+
+(MERGE RE-BIND, 2026-07-29, `fix/stranger-hatch-timed` x master `0166f74b`
+(PR #281). Fourth master merge for this branch, same shape: both sides had
+re-bound this line, neither digest describes the merged tree, value above
+RECOMPUTED over it, every prior note kept. Master's side also touched
+the Phase-4 evidence lens test file under `framework/tests/`
+(named by role, not by module: the shadow-law reference proof scans every
+shipped file for the module token), which auto-merged cleanly — this
+branch's two arms in that file (the ARMED assertion it already carried and the
+new shipped-twin lockstep) are both present and green after the merge, verified
+by running the file rather than by reading the merge output. NO COG-4
+implementation byte moved on either side.)
 
 (MERGE RE-BIND, 2026-07-28, `fix/recall-live-claims-it-never-earned` x master
 `a70bcfb5` (PR #268). Both sides re-bound this line and both moved
@@ -65,6 +77,23 @@ it; every prior note kept, none superseded. Master's side added
 RE-MEASURED on the merged tree rather than carried. NO COG-4 implementation
 byte moved on either side.)
 because no reviewed COG-4 byte moved.)
+
+(MERGE RE-BIND, 2026-07-28, `feat/agnosticism-gate` x master `e8449ce6`.
+Third re-bind of this line in a day, same mechanism: both sides moved
+`cabinet/config/cognitive-architecture-contract.yml`, so neither recorded
+digest describes the merged tree and the value above is recomputed over
+THIS merge commit. Prior digests: this branch
+`d517beb0de1e284304c54d4a3591be173433c8a830b87b5cd7f8d13694595796`, master
+`c18946e6377c31c9c653389e02ff26273df8cb587cf446c80170e589340a9109`.
+THIS BRANCH's in-scope move: the contract's
+`framework_production_noncomment_lines` MAXIMUM, 60164 -> 60169, raised
+visibly for the parameterised charset seam that replaces a deleted
+keyboard whitelist (+5 measured). No set pin, no bijection class, no
+declared invariant and no temporary allowance moved; master's side moved
+only the allowances list, so the two edits are disjoint within the file.
+NO COG-4 implementation byte moved on either side: no organ, no scheduler
+or projection surface, no serve surface, no boundary row, no fixture, no
+CLI. Nothing below was re-reviewed, because no reviewed COG-4 byte moved.)
 
 (RE-BOUND 2026-07-28 at the landing of `fix/world-art-manifest-truth-and-egg`.
 Prior digest: `ebbdcc3f771afef7ffddc7558ea64a06bf3f8fa782cf14b5dd129891f796ca15`.
