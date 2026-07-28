@@ -35,3 +35,20 @@ the launcher product name in `framework/`.
 4. **What the gate cannot see** is documented in the module, not implied by green:
    closed enums, capability names, currency units, cadence thresholds, vendors with no
    URL anywhere, and vendors laundered through namespace position.
+
+---
+
+# Checkpoint review — feat/agnosticism-gate cp2 (CI-driven fixes)
+
+Reviewed-Scope-Digest: f35a7244e7b504a64440ab16ecaded4e882280913384a3e6cc1b206751a8e473
+
+Two reds, both real, both found only because the artifact became TRACKED at commit
+time — the working tree passed the same suite (class 2: working tree ≠ committed tree).
+
+| Red | Cause | Fix |
+|---|---|---|
+| `clean-room-source`, `null-hatch` — three evidence shadow-law tests | their zero-consumer greps scan `git ls-files`, and the new debt ledger keys rows by the framework path that carries the literal, so it "references" `evidence_calibration` / `_detectors` / `_recompute` | one allowlist entry each, in the idiom those files already document for `architecture-baseline-sets.yml` ("a member-name row in a data file, never an import and never a consumer") |
+| `cognitive-phase4` — census budget | `framework_production_noncomment_lines` 73055 > 73050: the charset seam is 5 non-comment lines larger than the whitelist it replaces | `maximum` raised 60164 → 60169, **visibly**, with the measurement — not a temporary allowance, because an allowance promises a deletion gate and this seam is permanent |
+
+Zero new production modules, so `framework_production_modules` is untouched. Census
+now PASS with every other budget still at zero headroom.
