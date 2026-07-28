@@ -186,10 +186,12 @@ describe('the shipped pack’s roof-off art', () => {
     const want = new Set([...WITH_INTERIORS, 'officer_dwelling'])
     const drawn = scene.sprites.filter((s) => s.role !== null && want.has(s.role))
     expect(drawn.length, 'the hamlet island drew none of them').toBeGreaterThan(4)
-    // Three of the seven now stand refused: `library_open` is a different
-    // building, `cottage_b_open` and `officer_house_b_open` are wider on the
-    // ground than what they replace (iso-cutaway.openTwinRefusal). They keep
-    // the interim roof-fade. THE POINT OF SPLITTING THE ANSWER: "has no twin"
+    // Two of the seven now stand refused: `library_open` is a different
+    // building and `officer_house_b_open` is wider on the ground than what it
+    // replaces (iso-cutaway.openTwinRefusal). They keep the interim roof-fade.
+    // `cottage_b` left this list on 2026-07-28 — it was oversized by a baked
+    // exterior lawn rather than by its walls, and the lawn peel put it back
+    // inside its closed footprint. THE POINT OF SPLITTING THE ANSWER: "has no twin"
     // and "has a twin the world will not use" were one bucket, so the day a
     // building silently stops opening it would have joined a list nobody reads.
     const noArt: string[] = []
@@ -201,13 +203,13 @@ describe('the shipped pack’s roof-off art', () => {
     }
     expect(noArt, 'drawn on a hamlet island with no roof-off twin at all').toEqual([])
     expect(refused, 'the refused set changed — re-read openTwinRefusal before touching this').toEqual(
-      ['cottage_b', 'library', 'officer_house_b']
+      ['library', 'officer_house_b']
     )
     for (const f of refused) expect(openTwinRefusal(PACK, f)).not.toBeNull()
     // and the majority still opens, so the feature is alive rather than
     // refused into silence
     const opens = [...new Set(drawn.map((s) => s.frame))].filter((f) => openFrameOf(PACK, f)).sort()
-    expect(opens).toEqual(['cottage_a', 'great_house', 'officer_house_c', 'workshop'])
+    expect(opens).toEqual(['cottage_a', 'cottage_b', 'great_house', 'officer_house_c', 'workshop'])
   })
 
   /**
