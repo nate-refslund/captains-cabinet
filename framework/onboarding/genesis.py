@@ -454,16 +454,27 @@ def _flatten(text: str, limit: int) -> str:
     return flat[:limit].rstrip() + ("…" if len(flat) > limit else "")
 
 
-def _quote_of(hit: dict) -> str:
-    """The operator's own sentence, without the heading the citation already
-    names. Adapters chunk as ``heading + "\\n" + body``, so a raw flatten
-    reads "What we know The billing migration moved…" — the heading twice, and
-    fewer of their actual words inside the cap."""
+def _body_of(hit: dict) -> str:
+    """The hit's body WITHOUT the heading the citation already names.
+
+    Adapters chunk as ``heading + "\\n" + body``, so the heading is inside
+    ``text`` as well as beside it. Every operator-facing use of a hit's words
+    must run through here: the heading is the cabinet's own chunk boundary
+    label, not the operator's material, and rendering it as theirs is the
+    defect the frontmatter strip (``local._strip_frontmatter``) was landed for
+    one layer down."""
     text = str(hit.get("text") or "")
     heading = str(hit.get("heading") or "").strip()
     if heading and text.lstrip().startswith(heading):
         text = text.lstrip()[len(heading):]
-    return _flatten(text, _MAX_QUOTE)
+    return text
+
+
+def _quote_of(hit: dict) -> str:
+    """The operator's own sentence, without the heading the citation already
+    names. A raw flatten reads "What we know The billing migration moved…" —
+    the heading twice, and fewer of their actual words inside the cap."""
+    return _flatten(_body_of(hit), _MAX_QUOTE)
 
 
 def _cite(hit: dict) -> str:
@@ -504,7 +515,18 @@ def _join_terms(cited: list, query: str) -> list:
     per_file: dict = {}
     for hit in cited:
         path = str(hit.get("path") or hit.get("ref") or "")
-        blob = f"{hit.get('heading') or ''} {hit.get('text') or ''}"
+        # BODY ONLY (fixed 2026-07-28, measured through the real
+        # `first-briefing.sh --local` chain on an Obsidian vault). This used to
+        # be `heading + " " + text` — and since adapters chunk as
+        # `heading + "\n" + body`, that counted the heading TWICE. Three daily
+        # notes cited as `1-Daily/<date>.md#Summary` therefore rendered
+        # "Shared wording: verification, network, summary, active": `summary`
+        # is the markdown heading the citation already prints beside it, shared
+        # by every note that has one, and present in NONE of their bodies. The
+        # operator is being told the cabinet's own chunk label is their own
+        # recurring wording — the same machinery-as-material defect the
+        # frontmatter strip removed one layer down.
+        blob = _body_of(hit)
         terms = {t for t in _query_terms(blob)
                  if len(t) >= _MIN_JOIN_TERM_LEN
                  and t not in _JOIN_STOPWORDS and t not in asked

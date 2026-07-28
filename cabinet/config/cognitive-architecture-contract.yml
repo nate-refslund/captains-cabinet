@@ -211,6 +211,48 @@ budgets:
     # never excerpts), and the purge redacts its root. Shrink-only resumes here.
     maximum: 97
 temporary_allowances:
+  - phase: recall-live-claims-it-never-earned
+    budget: framework_production_noncomment_lines
+    additional: 30
+    reason: >-
+      TWO UNEARNED CLAIMS MEASURED IN A REAL FIRST BRIEFING, on the Captain's
+      own estate, through `hatch.sh --defaults --clean-room` and
+      `first-briefing.sh --local` (2026-07-28). (1) `setup-env.sh --defaults`
+      writes the whole variable set as bare `NAME=` placeholder lines, so a
+      hatch that has connected NOTHING carries the literal line
+      `NEON_CONNECTION_STRING=`. `org._neon_configured` tested the NAME only,
+      matched it, `available()` returned True, and the briefing told the
+      operator recall was "bound and reachable but held NOTHING on the
+      subjects you declared - an empty answer, not a stale one". Nothing was
+      ever reachable: a confident negative on the DEFAULT flavor, in the first
+      message the org ever sends, and the same false positive
+      `LocalNotesSource`'s `vault/` fallback was removed for one adapter over.
+      An empty (or quoted-empty, or whitespace) value is now not configured,
+      so `recall_state()` reaches its own honest sentence instead. (2)
+      `genesis._join_terms` built its term blob as `heading + " " + text`
+      while adapters chunk as `heading + "\n" + body` - counting the heading
+      TWICE, so it outranked real words. Three daily notes cited as
+      `1-Daily/<date>.md#Summary` rendered "Shared wording: verification,
+      network, summary, active": `summary` is the chunk heading the citation
+      already prints beside it and appears in the BODY of none of the three.
+      The card presents the cabinet's own boundary label as the operator's
+      recurring wording - the machinery-as-material defect
+      `local._strip_frontmatter` removed one layer down, and which `_quote_of`
+      already strips for the quote. Both operator-facing uses now read one
+      `_body_of` helper. +30 non-comment lines measured with
+      cognitive-architecture-census.py against master adab6ec0 (73016, itself
+      exactly at the pinned ceiling); the majority is docstring prose carrying
+      the measurement that justifies each invariant, per the house rule, and
+      is counted honestly rather than reformatted into comments to duck the
+      budget.
+    owner: onboarding-plane
+    sunset: "2027-01-28"
+    deletion_gate: >-
+      `available()` becomes a REACHABILITY probe rather than a configuration
+      probe (one bounded round-trip to the backend, cached per process), at
+      which point the empty-value branch collapses into it; and the recall
+      adapters return body and heading as separate fields to every consumer,
+      at which point `_body_of` has nothing left to strip.
   - phase: propose-means-propose
     budget: framework_production_noncomment_lines
     additional: 194
