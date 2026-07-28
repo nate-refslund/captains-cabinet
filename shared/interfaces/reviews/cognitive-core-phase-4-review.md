@@ -21,7 +21,18 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 959f30114e345fe135d9c42b63719bbee885e0053157bf97c7b1fffb1c1dbb0e
+Reviewed-Scope-Digest: ea17bf91912bd3fe7b777fa8c3fe08388123b71e45487ac533bd5f0e9c5a3170
+
+(MERGE RE-BIND, 2026-07-28, `fix/probe-truncation-unearned-negative` x master
+`d8ab0308` (PR #255). Both sides re-bound this line and both moved
+`cabinet/config/cognitive-architecture-contract.yml` — this branch one
+`temporary_allowances` row (`onboarding-probe-truncation`, +13 non-comment lines),
+master its own (`briefing-consumes-recall`, +456). git auto-merged the allowance
+list with no contested byte. Neither recorded digest describes the merged tree, so
+the value above is RECOMPUTED over it. No budget `maximum`, no existing
+`additional`, no expansion member and no bijection class changed on either side,
+and NO COG-4 implementation byte moved. Every note from both sides is kept below,
+none superseded.)
 
 (RE-BOUND 2026-07-28 by `fix/probe-truncation-unearned-negative`, branched from
 master `a0cd4bc1`. Its ONLY digest-bound path is
@@ -34,6 +45,71 @@ no scheduler surface, no serve surface, no fixture, no boundary row. The other
 files in the change are `framework/onboarding/*` and `cabinet/dashboard/*`, none
 of them in scope. Nothing below was re-reviewed, because no reviewed byte moved.
 Every prior note is kept verbatim, none superseded.)
+
+(MERGE RE-BIND, 2026-07-28, `fix/briefing-consumes-recall` x master
+`dad973d5` (PR #257). Fourth master landing this branch has merged in one
+day, and the third that had re-bound this same line. Neither recorded
+digest describes the merged tree, so the value above is RECOMPUTED over
+it; every note from both sides is kept below, none superseded. This
+branch's only in-scope path remains
+`cabinet/config/cognitive-architecture-contract.yml` (one
+`temporary_allowances` row, `briefing-consumes-recall`, +456 non-comment
+lines); no budget `maximum`, no existing `additional`, no expansion member
+and no bijection class changed, and NO COG-4 implementation byte moved on
+either side.)
+
+
+(MERGE RE-BIND, 2026-07-28, `fix/briefing-consumes-recall` x master
+`8cf00772` (PR #253, connector-registry). BOTH sides had re-bound this
+line and both moved the SAME in-scope path,
+`cabinet/config/cognitive-architecture-contract.yml` — this branch one
+`temporary_allowances` row (`briefing-consumes-recall`, +456 non-comment
+lines), master one of its own (`onboarding-connector-registry`, +566).
+The rows are independent and BOTH are kept; git flagged the hunk only
+because they append at the same point. Neither recorded digest describes
+the merged tree, so the value above is RECOMPUTED over it, and every note
+from both sides is kept below, none superseded. No budget `maximum`, no
+existing `additional`, no expansion member and no bijection class changed
+on either side. NO COG-4 implementation byte moved: intersecting
+`resolve_scope()` with each side's changed paths yields the contract file
+and nothing else.)
+
+
+(MERGE RE-BIND, 2026-07-28, `fix/briefing-consumes-recall` x master
+d67fba97: master landed PR #250 while this branch sat green locally, and
+BOTH sides had re-bound this line — `338e6f08…` here, `d85d407f…` on
+master. Neither describes the merged tree, so the value above is
+RECOMPUTED over it rather than picked from a parent; every note from both
+sides is KEPT below, none superseded. The two sides' in-scope deltas are
+disjoint and were computed, not read off the diff: intersecting
+`resolve_scope()` with `git diff --name-only` on each side gives
+`cabinet/config/cognitive-architecture-contract.yml` on BOTH — but on
+DISJOINT rows (master added its own budget movements; this branch appended
+one `temporary_allowances` row, `briefing-consumes-recall`, +456 on
+`framework_production_noncomment_lines`), and git auto-merged them with no
+contested byte. The delta was RE-MEASURED against the new base rather than
+carried: 71805 -> 72261 on 6ec81460 and 71931 -> 72387 on d67fba97, the
+same 456 both times, which is the check that the number measures the unit
+and not the merge. No budget `maximum`, no existing `additional`, no
+expansion member and no bijection class changed —
+`framework_production_modules` stays 247, zero new modules. No COG-4
+implementation byte moved on either side.)
+
+
+(RE-BOUND 2026-07-28 at the landing of `fix/briefing-consumes-recall`,
+same commit as the change that moved the bytes. Prior digest:
+`fa66d3d0541fa8b0…`. The one moved file in scope is again
+`cabinet/config/cognitive-architecture-contract.yml`, and the move is ONE
+added `temporary_allowances` row: `briefing-consumes-recall`, +456 on
+`framework_production_noncomment_lines`, for the recall probe and card
+composition in `framework/onboarding/genesis.py` plus the honest-unset
+resolve_root in `framework/sources/local.py`. No budget `maximum`, no
+existing `additional`, no expansion member and no bijection class changed
+— `framework_production_modules` stays 247 (zero new modules), and the
+census is back at observed == maximum so the ratchet still bites. No COG-4
+implementation byte changed; `framework/authority/classifier.py` remains in
+the manifest's `must_remain_unchanged` block against the pinned phase
+anchor. The phase-4 findings below are unaffected.)
 
 (MERGE RE-BIND, 2026-07-28, `fix/needs-anti-vacuity-and-depth-labels` x
 `feat/connector-registry`: both sides re-bound this line and both moved

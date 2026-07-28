@@ -21,6 +21,8 @@ Framework prep built around these being deferred. Answer them before starting.
 
 - `presets/personal/` populated and ACTIVE (2026-07-27) — constitution addendum, safety addendum, 4 schemas (longitudinal_metrics, coaching_narratives, coaching_consent_log, coaching_experiments), 5 agent scaffolds (navigator, librarian, reviewer, physical-coach, mindfulness-coach — no C-suite), a role/learning measurement seed, and `validate.sh` (a missing one is a hard-gate failure in cabinet-bootstrap.sh)
 - Recall: `autonomy.flavor: personal` now emits an `instance/config/sources.yml` binding `framework.sources.local:LocalNotesSource` over a declared notes folder, read-only. Before this it emitted nothing and recall fail-closed to `NullPersonalSource` (zero hits)
+- Recall SCOPE is declared, not defaulted (2026-07-28): put your notes folder in the answers as `sources.notes_root:`. Omit it and recall is UNSET — `available()` False, every gather honestly empty. It used to default to `<root>/vault`, i.e. the cabinet's own shipped docs, so an unpointed box reported working recall over the framework's documentation
+- The FIRST BRIEFING reads that folder: genesis probes the bound recall seam for every declared subject and composes its outcome cards from what comes back — the operator's own sentence quoted, each file cited with its derived date, and the wording two or more notes share. Deterministic, no LLM; `CABINET_GENESIS_RECALL=0` skips it
 - Cabinet MCP with 5 tools (identify, presence, availability, send_message, request_handoff); transport stdio for Phase 2, HTTP-ready signatures for Phase 3
 - `peers.yml` config schema + loader validation at boot (`CABINET_MODE=multi` enforces, single-mode warns)
 - Trust policy enforcement in `pre-tool-use.sh` §10

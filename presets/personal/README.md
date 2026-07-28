@@ -47,12 +47,26 @@ has something to measure instead of failing closed on activation.
 
 ## Recall: a folder, read-only
 
-Set `autonomy.flavor: personal` in your answers file and
+Set `autonomy.flavor: personal` in your answers file, point
+`sources.notes_root` at your own notes folder, and
 `cabinet/scripts/generate-instance.py` writes an
 `instance/config/sources.yml` binding
-`framework.sources.local:LocalNotesSource`, with a `local_root:` you point at
-your own notes folder. Search is exact-term over that folder, ranked, with the
-file and heading on every hit.
+`framework.sources.local:LocalNotesSource` over exactly that folder. Search is
+exact-term over it, ranked, with the file and heading on every hit.
+
+**There is no default, and that is deliberate.** Until 2026-07-28 an
+undeclared folder resolved to `<root>/vault` — the cabinet's own shipped
+documentation — so a fresh personal box reported live recall while answering
+out of the framework's docs. Now an undeclared folder is UNSET: `available()`
+is False, every gather is honestly empty, and the first briefing says so with
+the one line that fixes it. `CABINET_LOCAL_SOURCE_ROOT` overrides at runtime.
+
+**The first briefing reads it.** Genesis asks this seam about every subject you
+declared and composes its outcome cards from what comes back — your own
+sentence quoted, each file cited with the date derived from its frontmatter or
+filename, and the wording two or more of your notes share. Nothing is asserted
+that a citation does not already show, and when recall holds nothing the cards
+are identical to what they would have been without it.
 
 Bounds are structural, not settings: text extensions only, a file-count cap, a
 per-file byte cap, hidden directories skipped, and every path realpath-jailed
