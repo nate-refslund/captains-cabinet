@@ -95,7 +95,12 @@ export const OPEN_TWIN_REJECTED: ReadonlyMap<string, ArtVerdict> = new Map<strin
         'a different building: the closed library is a half-timbered plaster cottage with an ' +
         'orange tile roof, the open twin is a dressed-sandstone arcade with round arches — ' +
         'cross-fading them is a scene swap in place',
-      pixelHash: '47c8bcaa',
+      // Re-judged 2026-07-28 after the cutout fix re-cut every twin. The library's
+      // DRAWN pixels did not change — it carried no baked lawn, so the lawn peel
+      // removed nothing and only the transparent margin was cropped — and it is
+      // still a sandstone arcade against a plaster cottage. The refusal stands
+      // verbatim; only the bytes it is bound to moved.
+      pixelHash: '6ea02fa6',
     },
   ],
 ])
@@ -114,14 +119,20 @@ export const OPEN_TWIN_REJECTED: ReadonlyMap<string, ArtVerdict> = new Map<strin
  *    island was placed against the closed frame's ground diamond. A twin with a
  *    wider or deeper diamond therefore overhangs ground the layout already
  *    promised to something else, and it does it at the exact moment the camera
- *    is closest to it. Measured on the shipped atlas: `camp_log_cabin_open`
- *    +4.2px half-width, `cottage_b_open` +3.8px, `officer_house_b_open` +4.2px
- *    and +3.3px deep.
+ *    is closest to it. Measured on the shipped atlas: `officer_house_b_open`
+ *    +4.2px half-width and +3.3px deep — the only twin still on that side.
+ *
+ *    RE-MEASURED 2026-07-28. `camp_log_cabin_open` (+4.2px) and `cottage_b_open`
+ *    (+3.8px) used to be refused here and now are not. Neither twin was
+ *    redrawn: both were carrying a baked exterior LAWN that the old base
+ *    treatment could not lift, so their frames were oversized by the deck
+ *    around the walls rather than by the walls. The lawn peel removed it and
+ *    the buildings fell back inside their closed footprint. Both open now.
  *
  *    The rule is ONE-SIDED on purpose. A twin that is SMALLER is what a roof
  *    coming off actually looks like — the eaves overhang the walls, so the
- *    walls alone are narrower — and the seven correct twins are all on that
- *    side (great_house -8.4px, cottage_a -7.6px, officer_house_a -14.3px,
+ *    walls alone are narrower — and the nine correct twins are all on that
+ *    side (great_house -11.7px, cottage_a -8.4px, officer_house_a -14.3px,
  *    workshop -0.4px). There is no defensible symmetric tolerance in this
  *    sample and inventing one would be a constant dressed as a measurement.
  *
