@@ -21,20 +21,26 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 3d18b9363409a4dfe6f4655ed2877ea745ea7e8b09e7630b2b75ee1ca942d49f
+Reviewed-Scope-Digest: a11d874a2674cb821c4ce5d3921503d88462e74c7064e128aca7e234ef8f0005
 
-(RE-BOUND 2026-07-28 at the landing of the capability-URL redaction and
-bilingual injection-screen fix. Prior digest:
-`9b43322029c6c91dd56c240894e27fd879dd2a18590c3ca98a8a43462743ef2d`. ONE in-scope
-path moved and it is not a COG-4 byte: `cabinet/config/cognitive-architecture-contract.yml`,
-whose `framework_production_noncomment_lines` maximum went 60164 -> 60183 to pay
-— visibly, not by a temporary allowance — for the Danish alternations added to
-`framework/acting/action_lane.py`'s injection screen after a read-only rehearsal
-against the operator's real estate measured the screen catching 7/7 English
-payloads and missing 8 of 11 semantically identical Danish ones. No COG-4
-finding, claim or verdict in this review is touched; the budget row it depends
-on is a strictly higher ceiling at zero headroom, so every ratchet claim made
-here still holds.)
+(MERGE RE-BIND, 2026-07-28: this branch and master each re-bound this line and
+both moved in-scope bytes, so neither recorded digest describes the merged tree —
+the value above is recomputed over the MERGE commit and supersedes both. HEAD is
+what the gate reads. Superseded: `3d18b9363409a4dfe6f4655ed2877ea745ea7e8b09e7630b2b75ee1ca942d49f`
+(this branch) and `3c8c1f7f60bd32a56e831438d768ea1b760b8f148353e65aba3c76c9b6d50a79`
+(master, the onboarding-derivation landing).
+
+THIS BRANCH's in-scope move, and it is not a COG-4 byte:
+`cabinet/config/cognitive-architecture-contract.yml`, whose
+`framework_production_noncomment_lines` maximum went 60164 -> 60183 to pay —
+visibly, not by a temporary allowance — for the Danish alternations added to
+`framework/acting/action_lane.py`'s injection screen, after a read-only
+rehearsal against the operator's real estate measured that screen catching 7/7
+English payloads and missing 8 of 11 semantically identical Danish ones. The
+merge stacks that ceiling bump on master's +34 allowance row for the onboarding
+derivation fixes; the two are disjoint and the census re-pins at zero headroom
+over both. No COG-4 finding, claim or verdict in this review is touched, and a
+strictly higher ceiling leaves every ratchet claim made here standing.)
 
 (RE-BOUND 2026-07-28 at the landing of `fix/world-art-manifest-truth-and-egg`.
 Prior digest: `ebbdcc3f771afef7ffddc7558ea64a06bf3f8fa782cf14b5dd129891f796ca15`.
