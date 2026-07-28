@@ -12,11 +12,20 @@ name: Cabinet CI
 # F0.3 (2026-07-02): retargeted at the live integration branch — CI had been
 # structurally dead since master froze 2026-06-12 while all fidelity/authority/
 # acting/frontdoor work landed on feat/fidelity-harness-design.
+#
+# 2026-07-28: feat/fidelity-harness-design DROPPED from both trigger lists. It
+# is fully merged and dead — measured at ca86c31c: 0 commits ahead of master,
+# 894 behind, last commit 2026-07-11, no push since. While it was live it was
+# a MIRROR of master, not a divergent branch: 42 SHAs in the 30-day window were
+# pushed to both refs and paid for two identical full runs (330 billable
+# minutes of provably duplicate work). Keeping a dead ref in the trigger list
+# costs nothing today and re-opens that duplicate lane the day anyone force-
+# pushes it. Real work resumes on master + PRs, both still triggered.
 on:
   pull_request:
-    branches: [master, feat/fidelity-harness-design]
+    branches: [master]
   push:
-    branches: [master, feat/fidelity-harness-design]
+    branches: [master]
   # CI-audit 2026-07-09: nightly sweep — catches environment drift
   # (runner image, action resolution, date-sensitive fixtures) on quiet
   # days, and is the event gitleaks uses for its FULL-HISTORY scan.
@@ -36,72 +45,125 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ── DUPLICATE-TREE GUARD (2026-07-28) ──────────────────────────────────────
-  # Measured over the trailing 30 days (776 runs): 306 were `push` runs on
-  # master, and 99 of those pushed a MERGE commit whose tree hash was
-  # byte-identical to its second parent's — the PR head branch protection
-  # (`strict: true`) had just made CI test. All 99 had a completed,
-  # conclusion=success run of THIS workflow on that exact parent SHA. Zero
-  # exceptions. At 60.0 billable minutes per full run (measured off the 14 most
-  # recent completed runs: per-job wall time, rounded up per job, ubuntu 1x)
-  # that is ~5,940 minutes a month re-testing bytes already tested green.
+  # ── tree-dedupe (2026-07-28) ────────────────────────────────────────────────
+  # COST, not coverage. Measured over the 30 days to 2026-07-28 against the
+  # Actions API (765 runs, 5,026 job-runs, billable = ceil(per-job seconds/60),
+  # which is how GitHub charges): 18,672 billable minutes, of which master-push
+  # runs are 7,300 (39.1%). Of those, 122 runs / 3,943 minutes (21.1% of the
+  # whole bill; 25.8% over the last 7 days, 83% of master-push spend) ran on a
+  # git TREE that a non-push run had already taken to green. Every merge here is
+  # a PR merge and branch protection has `strict: true` (a PR must be up to date
+  # with master before it can merge), so the merge commit's tree is byte-
+  # identical to the `refs/pull/N/merge` tree the PR run already tested. Testing
+  # it a second time buys nothing.
   #
-  # The other 207 master push runs pushed a genuinely NEW tree — direct pushes
-  # to master, which `enforce_admins: false` still allows. For those this guard
-  # does nothing: they are the only test that tree will ever get.
+  # This job decides that, and ONLY that. It skips nothing on its own; the eight
+  # gate jobs read its output.
   #
-  # This is a cost change, NOT a coverage change. It skips a run only when the
-  # identical tree already has a per-job green record, so every job in this
-  # workflow still runs and can still fail on every tree that has not been
-  # tested. The reasoning is in cabinet/scripts/ci-duplicate-tree-guard.py and
-  # pinned in cabinet/scripts/tests/test_ci_duplicate_tree_guard.py.
+  # THE SAFETY ARGUMENT, which is the whole design (a cheaper CI that catches
+  # less is not a saving):
   #
-  # DOUBLE LOCK — layer 1 of 2. GitHub counts a `skipped` check run as
-  # SUCCESSFUL for branch protection, so a guard that wrongly emitted skip on a
-  # `pull_request` event would turn all seven required contexts green without
-  # running anything. That cannot rest on one condition: this `if` keeps the
-  # guard job from even existing off a master push, AND decide() in the script
-  # re-derives the same predicate from its own inputs and refuses to skip
-  # otherwise. Because the job is skipped on every other event, downstream jobs
-  # read an EMPTY `skip` output there and run — the fail-open direction.
+  #  1. A pull_request or schedule run can NEVER be skipped. Each gate job's
+  #     condition leads with `github.event_name != 'push'`, which is true for
+  #     every non-push event before anything about this job is consulted. That
+  #     matters more than it looks: GitHub reports a job skipped by an `if:` as
+  #     SUCCESS to branch protection, so a bug that skipped a required check on
+  #     a PR would read as a green merge button over an ungated tree. The
+  #     event guard makes that unreachable rather than unlikely.
+  #  2. It fails CLOSED in every direction. `skip` is written exactly once, at
+  #     the end, and is `true` only on the single path that proves a match; any
+  #     non-zero exit, empty variable, API error or unresolved tree leaves it
+  #     `false` and everything runs. The gate jobs carry `!cancelled()`, so if
+  #     THIS job fails outright they still run — a broken dedupe costs a full
+  #     run, never a skipped one.
+  #  3. Evidence is only ever accepted from a `pull_request` run, which is a
+  #     class this job can never have skipped. That closes the chain where a
+  #     skipped (and therefore "successful") run becomes the evidence for
+  #     skipping the next one.
+  #  4. It compares the TREE, not the commit. A tree is the complete content of
+  #     the checkout; two commits with one tree cannot make any gate here
+  #     answer differently. The two history-sensitive gates were checked
+  #     individually: gitleaks on push scans the pushed range, which under
+  #     `strict: true` is the same commit set the PR run scanned, and the
+  #     nightly full-history sweep is a schedule run and never skipped; the
+  #     architecture baseline ratchet compares base→head, and its push base
+  #     (`github.event.before`) equals the PR base for an up-to-date branch.
+  #  5. A run-level `success` is a STRONGER claim than the required-check set —
+  #     it means all eight jobs ran and passed, including `cognitive-phase4`,
+  #     which branch protection does not require.
   #
-  # It also bills only on master pushes: a skipped job costs zero minutes, so
-  # the guard's own cost is ~306 minutes a month against ~5,940 saved.
-  duplicate-tree-guard:
+  # Not touched, deliberately: master's per-SHA concurrency group. Cancelling
+  # superseded master runs would be cheaper and would leave master commits that
+  # no gate ever ran. That is coverage traded for cost, which is out of scope
+  # here by construction.
+  tree-dedupe:
+    # Push-only. On pull_request/schedule this job does not exist, so it costs
+    # nothing on the two thirds of runs it could never help.
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
-      actions: read
+      actions: read          # read this workflow's own run history
     outputs:
-      skip: ${{ steps.guard.outputs.skip }}
-      reason: ${{ steps.guard.outputs.reason }}
+      skip: ${{ steps.decide.outputs.skip }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
-        with:
-          # Exactly what the decision needs: the pushed commit and both of its
-          # parents, trees included. Not fetch-depth: 0 — a full history costs
-          # more than the question is worth.
-          fetch-depth: 2
-          persist-credentials: false
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
-        with:
-          python-version: "3.12"
-      - name: "Duplicate-tree guard — skip only a tree already green per job"
-        id: guard
-        # The verdict is ALWAYS printed and always written to the step summary,
-        # skip or run, naming the prior run id. A duplicate run must read as an
-        # explicit "skipped as duplicate of run N", never as a silent absence
-        # and never as a cancellation — this repo has twice misread a
-        # cancellation as a test result.
+      # No checkout: the pushed commit's tree is resolved through the API, so
+      # this job is a handful of seconds and one billable minute — the floor for
+      # any job. Against 3,943 minutes it is a 304-minute/month tax.
+      - name: Has this exact tree already gone green?
+        id: decide
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 cabinet/scripts/ci-duplicate-tree-guard.py
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.sha }}
+          WORKFLOW_FILE: cabinet-ci.yml
+        run: |
+          set -uo pipefail
+          SKIP=false
+          # Single write, at exit, whatever happens below.
+          trap 'echo "skip=${SKIP}" >> "${GITHUB_OUTPUT}"; echo "DEDUPE skip=${SKIP}"' EXIT
+
+          TREE="$(gh api "repos/${REPO}/commits/${HEAD_SHA}" --jq '.commit.tree.sha' 2>/dev/null)"
+          if [ -z "${TREE}" ]; then
+            echo "could not resolve the tree of ${HEAD_SHA} — running everything"
+            exit 0
+          fi
+          echo "pushed tree: ${TREE}"
+
+          # Newest successful pull_request runs of THIS workflow. The match is
+          # normally the first candidate (the merge happens minutes after the
+          # PR run goes green); the loop is bounded so a miss costs seconds.
+          CANDIDATES="$(gh api \
+            "repos/${REPO}/actions/workflows/${WORKFLOW_FILE}/runs?event=pull_request&status=success&per_page=40" \
+            --jq ".workflow_runs[] | select(.head_repository.full_name == \"${REPO}\") | .head_sha" 2>/dev/null)"
+          if [ -z "${CANDIDATES}" ]; then
+            echo "no successful pull_request runs to compare against — running everything"
+            exit 0
+          fi
+
+          n=0
+          while IFS= read -r sha; do
+            [ -n "${sha}" ] || continue
+            n=$((n + 1))
+            [ "${n}" -le 40 ] || break
+            t="$(gh api "repos/${REPO}/commits/${sha}" --jq '.commit.tree.sha' 2>/dev/null)"
+            if [ -n "${t}" ] && [ "${t}" = "${TREE}" ]; then
+              echo "tree ${TREE} already green on ${sha} (pull_request run) — skipping the re-test"
+              SKIP=true
+              exit 0
+            fi
+          done <<< "${CANDIDATES}"
+
+          echo "tree ${TREE} not found green in the last ${n} successful PR runs — running everything"
+          exit 0
 
   ci:
-    needs: duplicate-tree-guard
-    if: ${{ !cancelled() && needs.duplicate-tree-guard.outputs.skip != 'true' }}
+    needs: [tree-dedupe]
+    # Runs unless this exact tree is already proven green by a PR run. The
+    # leading `!cancelled()` is load-bearing: without it a FAILED tree-dedupe
+    # would skip this gate instead of forcing it. See tree-dedupe's header.
+    if: ${{ !cancelled() && (github.event_name != 'push' || needs.tree-dedupe.outputs.skip != 'true') }}
     runs-on: ubuntu-latest
     # RE-BUDGETED 2026-07-28, first time since eac1c4a4 created this job. 15 was
     # the value this file was born with, when the job was a handful of shellcheck
@@ -618,8 +680,11 @@ jobs:
   # with wall-clock-relative day arithmetic; rotted by 07-02). Honest red over
   # absent — fix tracked in docs/plans/EXECUTION-STATUS.md.
   framework-tests:
-    needs: duplicate-tree-guard
-    if: ${{ !cancelled() && needs.duplicate-tree-guard.outputs.skip != 'true' }}
+    needs: [tree-dedupe]
+    # Skipped only on a master push whose tree a PR run already took to
+    # green. `!cancelled()` keeps this gate running when tree-dedupe itself
+    # fails, and the event clause makes a skipped PR check unreachable.
+    if: ${{ !cancelled() && (github.event_name != 'push' || needs.tree-dedupe.outputs.skip != 'true') }}
     runs-on: ubuntu-latest
     # 15 -> 25 (2026-07-27). This job had grown to within SECONDS of its own
     # guard and started killing runs whose every step had already succeeded —
@@ -891,8 +956,11 @@ jobs:
   #     the launcher.
   # Its own job so a launcher-leak regression is a distinct, unmissable signal.
   clean-room-foundation:
-    needs: duplicate-tree-guard
-    if: ${{ !cancelled() && needs.duplicate-tree-guard.outputs.skip != 'true' }}
+    needs: [tree-dedupe]
+    # Skipped only on a master push whose tree a PR run already took to
+    # green. `!cancelled()` keeps this gate running when tree-dedupe itself
+    # fails, and the event clause makes a skipped PR check unreachable.
+    if: ${{ !cancelled() && (github.event_name != 'push' || needs.tree-dedupe.outputs.skip != 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -920,8 +988,11 @@ jobs:
   # with the static ratchet framework/tests/test_no_screenpipe_in_core.py (which
   # proves framework/** NAMES no screenpipe) — this proves it RUNS without one.
   clean-room-source:
-    needs: duplicate-tree-guard
-    if: ${{ !cancelled() && needs.duplicate-tree-guard.outputs.skip != 'true' }}
+    needs: [tree-dedupe]
+    # Skipped only on a master push whose tree a PR run already took to
+    # green. `!cancelled()` keeps this gate running when tree-dedupe itself
+    # fails, and the event clause makes a skipped PR check unreachable.
+    if: ${{ !cancelled() && (github.event_name != 'push' || needs.tree-dedupe.outputs.skip != 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -1037,8 +1108,11 @@ jobs:
   # Exit 0 = Proof 1 holds. Sibling jobs stay: they are the per-seam signals;
   # this is the composed egg-level gate.
   null-hatch:
-    needs: duplicate-tree-guard
-    if: ${{ !cancelled() && needs.duplicate-tree-guard.outputs.skip != 'true' }}
+    needs: [tree-dedupe]
+    # Skipped only on a master push whose tree a PR run already took to
+    # green. `!cancelled()` keeps this gate running when tree-dedupe itself
+    # fails, and the event clause makes a skipped PR check unreachable.
+    if: ${{ !cancelled() && (github.event_name != 'push' || needs.tree-dedupe.outputs.skip != 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -1089,8 +1163,11 @@ jobs:
   # subsetting. The whole point is that CI runs the same command a captain
   # runs, so a local green and a CI green cannot disagree.
   cognitive-phase4:
-    needs: duplicate-tree-guard
-    if: ${{ !cancelled() && needs.duplicate-tree-guard.outputs.skip != 'true' }}
+    needs: [tree-dedupe]
+    # Skipped only on a master push whose tree a PR run already took to
+    # green. `!cancelled()` keeps this gate running when tree-dedupe itself
+    # fails, and the event clause makes a skipped PR check unreachable.
+    if: ${{ !cancelled() && (github.event_name != 'push' || needs.tree-dedupe.outputs.skip != 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -1259,8 +1336,11 @@ jobs:
   # zizmor doctrine. Repo owner is a User account — no GITLEAKS_LICENSE
   # needed (v2 requires one only for Organization repos).
   gitleaks:
-    needs: duplicate-tree-guard
-    if: ${{ !cancelled() && needs.duplicate-tree-guard.outputs.skip != 'true' }}
+    needs: [tree-dedupe]
+    # Skipped only on a master push whose tree a PR run already took to
+    # green. `!cancelled()` keeps this gate running when tree-dedupe itself
+    # fails, and the event clause makes a skipped PR check unreachable.
+    if: ${{ !cancelled() && (github.event_name != 'push' || needs.tree-dedupe.outputs.skip != 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -1285,8 +1365,11 @@ jobs:
   # no code-scanning Security tab to upload to. Offline audits only so
   # the gate is deterministic and needs no token.
   zizmor:
-    needs: duplicate-tree-guard
-    if: ${{ !cancelled() && needs.duplicate-tree-guard.outputs.skip != 'true' }}
+    needs: [tree-dedupe]
+    # Skipped only on a master push whose tree a PR run already took to
+    # green. `!cancelled()` keeps this gate running when tree-dedupe itself
+    # fails, and the event clause makes a skipped PR check unreachable.
+    if: ${{ !cancelled() && (github.event_name != 'push' || needs.tree-dedupe.outputs.skip != 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
