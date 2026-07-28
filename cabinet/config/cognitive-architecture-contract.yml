@@ -1101,6 +1101,48 @@ temporary_allowances:
       a partial search becomes a continuable one and the disclosure collapses
       into the completeness flag it already sets, or COG-7 compaction brings
       production non-comment lines below the pinned baseline
+  - phase: stranger-hatch-unopened-areas
+    budget: framework_production_noncomment_lines
+    additional: 27
+    reason: >-
+      the truncation caveat stops being a fraction and NAMES the parts of the
+      approved folder it never opened. Measured 2026-07-28 by driving the real
+      journey over a 723-file operator estate during the first end-to-end TIMED
+      stranger hatch: relevance ordering admitted 200 files drawn from two of
+      four top-level areas and left `tracker/` — the one area holding an urgent
+      row — at ZERO coverage, while the card said only "I read 200 of 723
+      supported files, most-informative first; the rest were left unopened by
+      the First Window limits". Every word true, and the operator still could
+      not tell that the part they would have cared about was never opened. The
+      count sensor added 2026-07-27 structurally cannot catch it: it reads
+      identically whether one area or four went unread, which is the same shape
+      as the defect the probe-truncation row above exists to have fixed. What
+      the 27 buy: `_area_of` (the top-level area of one relative path, with
+      files sitting directly in the folder collected under one label), the
+      `unopened_areas` set difference computed inside `_scan_source` from the
+      two collections it already holds so it cannot disagree with the counts it
+      is published beside, the coverage key itself, and ONE renderer used at
+      BOTH disclosure sites (the strong-finding card and the orientation-only
+      summary) so the two cannot drift into different disclosures of the same
+      fact. Path-derived only: nothing is read to decide what to name, so the
+      naming cannot be steered by file CONTENT. Docstrings counted as written
+      — they carry the measurement that justifies the feature and the reason
+      the unit is the area rather than the path, which is exactly what a later
+      reader needs, and rewriting them into "#" comments to buy a smaller
+      number is forbidden. ZERO new modules, ZERO bijection classes touched:
+      everything lands inside framework/onboarding/journey.py, and the four new
+      arms are under framework/onboarding/tests/, outside this budget's count.
+      EXACT measured 73043 on this branch against master 49ed144e reading 73016
+      exactly at its own pinned effective level, so the delta is 27 measured
+      against that base rather than carried from an earlier reading.
+    owner: onboarding-plane
+    sunset: '2027-01-28'
+    deletion_gate: >-
+      the First Window gains a resumable sweep (a cursor rather than a cap), so
+      an unopened area becomes a continuable one and the naming collapses into
+      the completeness flag it already sets; or the sweep is superseded by the
+      per-source ingest the 2026-07-26 altitude gate ordered; or COG-7
+      compaction brings production non-comment lines below the pinned baseline
 expansions:
   - member: framework/authority/ownership.py
     member_class: framework_production_modules

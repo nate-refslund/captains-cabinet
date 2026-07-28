@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: ebbdcc3f771afef7ffddc7558ea64a06bf3f8fa782cf14b5dd129891f796ca15
+Reviewed-Scope-Digest: e8da2ab0dc8f2440886810e9f3ee18590eae96cdda13e075b57a811c6e0b2939
 
 (MERGE RE-BIND, 2026-07-28, `fix/probe-truncation-unearned-negative` x master
 `2b3de03d` (PR #261). Both sides had re-bound this line and both moved
