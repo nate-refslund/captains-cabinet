@@ -100,6 +100,15 @@ ENTITY_MARKERS = (
     "makefile", "dockerfile", "docker-compose.yml", "readme.md", "readme",
     "readme.rst", "readme.txt",
 )
+#: The subset of ENTITY_MARKERS that declares a project's OWN dependencies. A
+#: directory carrying one of these is a project in its own right; a directory
+#: carrying only prose or an ops file is a component of the project above it.
+#: That distinction is what tells a monorepo apart from a single product with
+#: documentation subfolders, and the two want opposite answers about the root.
+PROJECT_MANIFESTS = frozenset({
+    "package.json", "pyproject.toml", "setup.py", "cargo.toml", "go.mod",
+    "pom.xml", "build.gradle", "gemfile", "composer.json", "requirements.txt",
+})
 _ENTITY_DEPTH = 2
 
 
@@ -186,22 +195,38 @@ def _entities_from_manifest(manifest: dict, source_id: str) -> list:
         if not rel or rel.startswith("/"):
             continue
         parts = rel.split("/")
-        if parts[-1].lower() not in ENTITY_MARKERS:
+        marker = parts[-1].lower()
+        if marker not in ENTITY_MARKERS:
             continue
         depth = len(parts) - 1
         if depth > _ENTITY_DEPTH:
             continue
         key = "/".join(parts[:-1])
         name = parts[-2] if depth else root_label
-        entry = found.setdefault(key, {"name": name, "depth": depth, "evidence": []})
+        entry = found.setdefault(
+            key, {"name": name, "depth": depth, "evidence": [], "manifest": False})
+        entry["manifest"] = entry["manifest"] or marker in PROJECT_MANIFESTS
         if len(entry["evidence"]) < 3:
             entry["evidence"].append({"path": rel, "sha256": str(row.get("sha256") or "")})
-    # The granted ROOT is the container, not a product: when anything deeper
-    # carries a marker, a root entity would take one of the two subject-card
-    # slots away from the actual projects and name them by the folder the
-    # operator happened to point at. Kept only when it is all there is.
-    if any(row["depth"] for row in found.values()):
+    # WHICH ONE IS THE PRODUCT — decided by the marker KIND, not by depth alone.
+    # In a monorepo the granted root is a container and the deeper packages are
+    # the products, so the root is dropped: a root entity would take a
+    # subject-card slot and name the products after the folder the operator
+    # happened to point at. But depth alone got this exactly backwards on a
+    # single-product repo. Measured 2026-07-28 through the real journey on a
+    # live single-product web repo: the root held the ONLY package.json and the
+    # deeper markers were a docs README and an internal folder's README, so the
+    # cabinet dropped the product and proposed two of its own subdirectories as
+    # the lanes. A
+    # directory whose only marker is prose or an ops file is a COMPONENT of the
+    # project above it, and cannot displace it.
+    nested = [row for row in found.values() if row["depth"]]
+    if any(row["manifest"] for row in nested):
         found = {k: v for k, v in found.items() if v["depth"]}
+    elif nested:
+        root_rows = {k: v for k, v in found.items() if not v["depth"]}
+        if root_rows:
+            found = root_rows
     entities, taken = [], set()
     for key in sorted(found, key=lambda k: (found[k]["depth"], k))[:_MAX_ENTITIES]:
         row = found[key]
