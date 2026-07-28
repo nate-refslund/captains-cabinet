@@ -206,7 +206,13 @@ class TestOrgSourcesEmission:
         the deployment fail-closes to NullPersonalSource (available() False,
         search() -> no hits), so the ONE flavor shaped for an operator who does
         not run a company had zero recall out of the box. It now binds the
-        read-only local-folder adapter, and still emits no dispatch."""
+        read-only local-folder adapter, and still emits no dispatch.
+
+        INVERTED AGAIN 2026-07-28 on the local_root arm, which asserted
+        ``"vault"``. That value was hardcoded with no answers-file override,
+        and ``<root>/vault`` is the cabinet's OWN shipped documentation — so a
+        clean-room personal hatch resolved live recall over the framework's
+        docs and reported ``available() True``. Undeclared is now UNSET."""
         answers = org_answers()
         answers["autonomy"]["flavor"] = "personal"
         run_cli_ok(cab_root, answers)
@@ -214,8 +220,18 @@ class TestOrgSourcesEmission:
         assert src_path.is_file()
         src = yaml.safe_load(src_path.read_text(encoding="utf-8"))
         assert src["adapter"] == "framework.sources.local:LocalNotesSource"
-        assert src["local_root"] == "vault"
+        assert src.get("local_root") is None
         assert "dispatch" not in src
+
+    def test_personal_flavor_binds_a_declared_notes_root(self, cab_root):
+        """A clean-room personal hatch that DOES declare a folder binds it."""
+        answers = org_answers()
+        answers["autonomy"]["flavor"] = "personal"
+        answers["sources"] = {"notes_root": "~/notes"}
+        run_cli_ok(cab_root, answers)
+        src = yaml.safe_load(
+            (cab_root / "instance/config/sources.yml").read_text(encoding="utf-8"))
+        assert src["local_root"] == "~/notes"
 
 
 # ---------------------------------------------------------------------------

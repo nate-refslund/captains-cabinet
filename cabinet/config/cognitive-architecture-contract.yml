@@ -877,6 +877,73 @@ temporary_allowances:
     owner: cognitive-core-program
     sunset: '2027-01-27'
     deletion_gate: the estate contract folds into a single onboarding module when the ingest engine lands, or COG-7 compaction
+  - phase: briefing-consumes-recall
+    budget: framework_production_noncomment_lines
+    additional: 456
+    reason: >-
+      the first briefing READS what recall already holds. MEASURED, not
+      reviewed: an agent ran the genuine hatch path (personal answers ->
+      generate-instance.py --adopt -> the hatch's own do_set_preset ->
+      load-preset.sh -> first-briefing.sh --local) and scored the result 1 of 3
+      — "read it, no value" — on the shipped instrument, while recall on that
+      same box was LIVE (available() True; three probes returning dated,
+      file#heading-cited hits) and its notes held a live incident spread across
+      three files that no card mentioned. Nothing in the genesis chain had ever
+      called framework.sources.get_source(). What the 446 buy, all inside two
+      EXISTING modules (framework_production_modules unchanged at 247 — zero new
+      modules, and the answers-side change lives in cabinet/scripts/, outside
+      this budget's path): in framework/onboarding/genesis.py, recall_probes
+      (subjects derived from declared lanes / estate entities / mission, never
+      invented), probe_recall (the bound seam asked per subject, root-guarded so
+      it never answers for a tree other than CABINET_ROOT, kill-switchable via
+      CABINET_GENESIS_RECALL=0, and NEVER raising — recall is an input to the
+      first receipt, not a dependency of it), the one-entry-per-file
+      newest-first join with its shared-term extraction and stopword set, the
+      verbatim quote with the heading the citation already names stripped off,
+      recall_state as the SINGLE source of the four-state binding sentence both
+      the residual card and the briefing's provenance card render, the recall
+      parameter threaded through propose_outcome_cards / _estate_subject_cards /
+      write_proposals / _proposals_doc / run_genesis_proposal, the earned-only
+      recall_refs provenance, and the genesis-recall intake item; in
+      framework/sources/local.py, resolve_root returning None instead of
+      defaulting to <CABINET_ROOT>/vault, plus binding_status. THAT DEFAULT WAS
+      THE SECOND DEFECT and it is why the local.py lines are here: vault/ is the
+      CABINET'S OWN shipped documentation (vault/README.md and
+      vault/architecture.md are tracked), local_root: was hardcoded with no
+      answers-file override, and a fresh personal hatch therefore reported
+      available() True while answering out of the framework's own docs —
+      reproduced on master before the fix. Nothing downstream could tell that
+      apart from working recall, which makes it worse than the honest empty it
+      replaced. HONEST ACCOUNTING: most of these lines are DOCSTRING prose
+      carrying the reason for each invariant, per the house rule, and they are
+      NOT reformatted into "#" comments to duck this counter — the counter
+      excludes comments, so that would buy the number with the explanation that
+      stops a later reader re-introducing a plausible default. EXACT measured
+      running total 72387 on the merged tree (RE-MEASURED at the merge, not
+      carried: master moved to d67fba97 mid-flight — PR #250, itself moving
+      this budget — and reads 71931 there, exactly at its own pinned maximum,
+      so the merged tree reads 72387 and the DELTA is 456 against BOTH bases
+      measured, 6ec81460 71805 -> 72261 and d67fba97 71931 -> 72387, which is
+      the check that the number measures this unit and not a merge; this branch
+      read 72261 pre-merge — 446 at the first measurement,
+      +3 from the landing's own hostile pass (the provenance card's `why`
+      attributed the undeclared-folder cause to EVERY non-live state, and a
+      probe that failed mid-sweep left the seam available so a partial answer
+      rendered as a complete one), +7 from a defect a REAL clean-room hatch
+      found that this unit's own suite did not: an org box whose backend held
+      nothing about the declared lane was told "the proposals on file were
+      written before this run", blaming an ORDERING problem for an EMPTY one
+      and sending the operator to re-run genesis for a result that cannot
+      change — the three live sub-states are now three sentences, with the
+      arm that would have caught it), 2026-07-28, via
+      cognitive-architecture-census.py.
+    owner: onboarding-plane
+    sunset: '2027-01-28'
+    deletion_gate: >-
+      the connect-explore-structure sweep lands and genesis composes from a
+      per-source ingest instead of a single probe-per-declared-subject (the
+      same gate the two personal-preset-live rows carry), or COG-7 compaction
+      brings production non-comment lines below the pinned baseline
   - phase: onboarding-connector-registry
     budget: framework_production_noncomment_lines
     additional: 566
