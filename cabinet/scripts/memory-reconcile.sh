@@ -153,7 +153,19 @@ reconcile_file() {
   esac
 
   local meta ts
-  meta=$(jq -nc --arg sha "$sha" '{content_sha256: $sha, via: "memory-reconcile"}')
+  # TRUST MUST RIDE ALONG (2026-07-28). memory_embed's upsert does
+  # `metadata = EXCLUDED.metadata` — a full REPLACE, not a merge — so whatever
+  # this queues IS the row's final metadata. Queuing only {sha, via} therefore
+  # stripped the trust tier and writer off every file it touched, and
+  # memory_search renders a trust-less row as `derived`
+  # (COALESCE(...metadata->>'trust'..., 'derived')): a captain-tier or
+  # officer-tier artifact came back from recall labelled derived. Measured on
+  # the live store: 146/146 rows carrying `via: memory-reconcile` had no
+  # `trust` and no `writer` key at all. pfwm_trust_for is the SAME resolver the
+  # hook and backfill use, so all three writers now agree per source_type.
+  meta=$(jq -nc --arg sha "$sha" --arg trust "$(pfwm_trust_for "$st")" \
+    --arg writer "${CLAUDE_OFFICER:-system}" \
+    '{content_sha256: $sha, via: "memory-reconcile", trust: $trust, writer: $writer}')
   # Content-derived time ONLY (frontmatter/dated-heading/filename) — "" when
   # honestly underivable (memory_queue_embed stamps queue time for ""), NEVER
   # mtime (P2e content-time rule; see post-file-write-memory.sh header).

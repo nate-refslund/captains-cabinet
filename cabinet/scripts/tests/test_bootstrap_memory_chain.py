@@ -337,3 +337,73 @@ def test_post_file_write_hook_keeps_the_legacy_corpus_alias():
         "deliberately dropped — un-migrated checkouts and externally "
         "relocated corpora still use the old dir name"
     )
+
+
+# ---------------------------------------------------------------------------
+# TRUST SURVIVES RECONCILE (2026-07-28). memory_embed's upsert does
+# `metadata = EXCLUDED.metadata` — a full REPLACE, not a merge — so whatever
+# the nightly reconcile queues IS the row's final metadata. Queuing only
+# {content_sha256, via} therefore stripped the trust tier and the writer off
+# every file it touched, and memory_search renders a trust-less row as
+# `derived` (COALESCE(...metadata->>'trust'..., 'derived')) — so a
+# captain-tier or officer-tier artifact came back from recall labelled
+# derived, indistinguishable from a genuinely derived one. Measured on the
+# live store before the fix: 146/146 rows carrying `via: memory-reconcile`
+# had neither a `trust` nor a `writer` key.
+#
+# This arm EXECUTES the real script (stubbed psql + redis-cli, a temp
+# CABINET_ROOT holding one vault file) and reads the payload that would have
+# been queued. Still offline: no network, no Neon, no Redis.
+# ---------------------------------------------------------------------------
+
+def test_reconcile_queues_the_trust_tier_and_writer(tmp_path):
+    import json
+    import os
+    import subprocess
+
+    root = tmp_path / "root"
+    (root / "vault").mkdir(parents=True)
+    (root / "vault" / "note.md").write_text("# org note\nbody line\n")
+    # cabinet/ is symlinked so the script sources the REAL memory.sh + hook lib.
+    (root / "cabinet").symlink_to(_SCRIPTS_DIR.parent)
+
+    stub = tmp_path / "bin"
+    stub.mkdir()
+    (stub / "psql").write_text("#!/bin/bash\nexit 0\n")          # empty snapshot
+    (stub / "redis-cli").write_text(
+        "#!/bin/bash\n"
+        f"printf '%s\\n' \"$@\" >> '{tmp_path}/redis_args'\n"
+        "exit 0\n"
+    )
+    for f in ("psql", "redis-cli"):
+        (stub / f).chmod(0o755)
+
+    patched = subprocess.Popen
+    subprocess.Popen = _REAL_POPEN
+    try:
+        subprocess.run(
+            ["bash", str(RECONCILE_SH)],
+            capture_output=True, text=True,
+            env={
+                "PATH": f"{stub}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+                "CABINET_ROOT": str(root),
+                "NEON_CONNECTION_STRING": "postgresql://placeholder",
+                "CABINET_ID": "testcab",
+            },
+        )
+    finally:
+        subprocess.Popen = patched
+
+    args = (tmp_path / "redis_args").read_text().splitlines()
+    payloads = [json.loads(a) for a in args if a.startswith("{")]
+    assert payloads, f"reconcile queued nothing (redis argv: {args!r})"
+    meta = payloads[0]["metadata"]
+    assert meta.get("trust") == "officer", (
+        "memory-reconcile must queue the source_type's trust tier "
+        "(pfwm_trust_for — the SAME resolver the hook and backfill use); "
+        f"without it the upsert REPLACES metadata and the row reads as "
+        f"'derived' at recall. got: {meta!r}"
+    )
+    assert meta.get("writer"), f"writer attribution must survive too: {meta!r}"
+    assert meta.get("via") == "memory-reconcile", meta
+    assert meta.get("content_sha256"), meta
