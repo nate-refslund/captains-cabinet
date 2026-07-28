@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 9b43322029c6c91dd56c240894e27fd879dd2a18590c3ca98a8a43462743ef2d
+Reviewed-Scope-Digest: 3c8c1f7f60bd32a56e831438d768ea1b760b8f148353e65aba3c76c9b6d50a79
 
 (RE-BOUND 2026-07-28 at the landing of `fix/world-art-manifest-truth-and-egg`.
 Prior digest: `ebbdcc3f771afef7ffddc7558ea64a06bf3f8fa782cf14b5dd129891f796ca15`.
