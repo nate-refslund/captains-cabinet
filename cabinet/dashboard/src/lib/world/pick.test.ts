@@ -15,7 +15,7 @@
 import { describe, expect, it } from 'vitest'
 import fs from 'fs'
 import path from 'path'
-import { buildIsoScene, type IsoScene } from './iso-scene'
+import { buildIsoScene, elementForRole, type IsoScene } from './iso-scene'
 import { parsePack, type IsoPack } from './iso-pack'
 import { officerSlots, pickTarget, STATIONS, type PickKind, type PickWorld } from './pick'
 import { LOD_RULES, lodTier } from './lod'
@@ -130,6 +130,7 @@ function world(over: Partial<PickWorld> = {}): PickWorld {
     officers: OFFICERS,
     life: LIFE,
     chartTable: true,
+    cutawayOpenId: null,
     scene: SCENE,
     ...over,
   }
@@ -172,7 +173,7 @@ function solidHolds(s: { x: number; y: number; dw: number; dh: number }, px: num
 function targetOf(s: { frame: string; role: string | null }) {
   const station = STATIONS.get(s.frame)
   if (station) return station
-  const b = BUILDINGS.find((bb) => bb.element === s.role)
+  const b = BUILDINGS.find((bb) => bb.element === elementForRole(s.role))
   return b ? { kind: 'building', id: b.id } : { kind: 'ground', id: 'ground' }
 }
 
@@ -306,6 +307,65 @@ describe('every interactive kind is reachable, or is honestly not drawn', () => 
     expect([...seen].sort()).toEqual(['building', 'chart_table', 'ground', 'mailbox'])
     for (const gone of ['officer', 'site', 'lane'] as PickKind[]) {
       expect(seen.has(gone), `iso answers ${gone} for something it never drew`).toBe(false)
+    }
+  })
+
+  /**
+   * THE ENUMERATION IS DERIVED, not listed. The five-frame table above proves
+   * the five frames somebody thought of; it cannot notice a SIXTH role whose
+   * card stops opening, which is exactly what had happened — every officer
+   * dwelling on a hamlet island answered `ground` while that table stayed
+   * green, because the pick compared the layout's `officer_dwelling` to the
+   * ladder's `officer_dwellings` with `===`.
+   *
+   * So the subject is the composed scene: every card-bearing role it really
+   * draws must either open its own building card, or be named here as a role
+   * the top-down building table has no row for. A new role joins the second
+   * list only by someone writing it down.
+   */
+  it('iso: EVERY card-bearing role a hamlet island draws opens its own card', () => {
+    // Measured, real, and deliberately card-less: the harbour's own kit is
+    // entitled by ladders but `world-buildings.ts` has no row for any of it,
+    // so `ground` is the honest answer rather than a neighbour's card.
+    const NO_BUILDING_ROW = ['berths', 'cargo_stacks', 'harbor_boat']
+    const roles = [...new Set(SCENE.sprites.map((s) => s.role).filter((r): r is string => r !== null))]
+    expect(roles.length, 'the hamlet scene drew no measured structure at all').toBeGreaterThan(8)
+    const unreachable: string[] = []
+    for (const role of roles.sort()) {
+      const b = BUILDINGS.find((bb) => bb.element === elementForRole(role))
+      const s = SCENE.sprites.find((sp) => sp.role === role)!
+      const got = pickOnSprite(isoWorld(), s.frame, 0.3)
+      if (b) {
+        if (got.kind !== 'building') unreachable.push(`${role} -> ${got.kind}`)
+      } else if (!NO_BUILDING_ROW.includes(role)) {
+        unreachable.push(`${role} has no building row and is not declared card-less`)
+      }
+    }
+    expect(unreachable, 'drawn, measured, and answers nothing').toEqual([])
+    // and the declaration is verified rather than trusted: a name that stops
+    // being drawn, or grows a row, must not sit here unnoticed
+    for (const role of NO_BUILDING_ROW) {
+      expect(roles, `${role} is declared card-less but is not drawn`).toContain(role)
+      expect(
+        BUILDINGS.find((bb) => bb.element === elementForRole(role)),
+        `${role} now HAS a building row — it is no longer card-less`
+      ).toBeUndefined()
+    }
+  })
+
+  it('iso: an officer dwelling opens its dwelling card, at every height', () => {
+    // The role the LAYOUT spells is singular; the ladder that entitles it is
+    // plural. `pick` resolves through iso-scene's one alias table.
+    const dwellings = SCENE.sprites.filter((s) => s.role === 'officer_dwelling')
+    expect(dwellings.length, 'a hamlet island really does draw dwellings').toBeGreaterThan(2)
+    expect(
+      BUILDINGS.some((b) => b.element === 'officer_dwellings'),
+      'the ladder spells it plural — that is the trap'
+    ).toBe(true)
+    for (const up of [0.02, 0.4, 0.85]) {
+      const got = pickOnSprite(isoWorld(), dwellings[0].frame, up)
+      expect(got.kind, `dwelling at ${up} of its height`).toBe('building')
+      expect(got.id).toMatch(/^dwelling:/)
     }
   })
 
@@ -610,6 +670,66 @@ describe('an absent subject answers ground, and never invents one', () => {
     const w = isoWorld({ scene: camp, buildings: [] })
     const { wx, wy } = tileOfLayoutPx(camp.space.w / 2, camp.space.h / 2)
     expect(pickAtTile({ ...w, camera: { z: 3, x: wx, y: wy } }, wx, wy).kind).toBe('ground')
+  })
+
+  /**
+   * THE CUTAWAY MOVES THE OFFICERS, so it moves the pick.
+   *
+   * `officerSlots(gh, slugs, open)` is ONE definition with TWO answers, and the
+   * canvas calls it with `p.cutaway.openId === gh.id` while the extraction
+   * called it with a hardcoded `false`. Measured 2026-07-28 before this arm
+   * existed: with the great house open, a click on the drawn officer at
+   * (117.00, 16.60) returned `building:great_house`, and a click on the empty
+   * yard at (121.50, 21.00) returned `officer:cos` — a phantom. The whole suite
+   * stayed green, including a 4,000-point differential sweep, because its oracle
+   * had the closed formula inlined and neither side modelled the open case.
+   *
+   * Both directions are asserted. An arm that only checked the drawn slot would
+   * pass on a pick that answered `officer` for BOTH sets of squares.
+   */
+  it('with the roof off, the pick follows the officers INSIDE — and leaves the yard', () => {
+    const slugs = Object.keys(OFFICERS).sort()
+    const inside = officerSlots(GH, slugs, true)
+    const yard = officerSlots(GH, slugs, false)
+    expect(inside.every((s) => s.inside)).toBe(true)
+    expect(inside.map((s) => `${s.x},${s.y}`)).not.toEqual(yard.map((s) => `${s.x},${s.y}`))
+    const open = world({ cutawayOpenId: GH.id })
+    for (const o of inside) {
+      const got = pickAtTile({ ...open, camera: { z: 3, x: o.x, y: o.y } }, o.x, o.y - 0.3)
+      expect(got, `drawn officer ${o.slug} inside the open great house`).toEqual({
+        kind: 'officer',
+        id: o.slug,
+      })
+    }
+    for (const o of yard) {
+      const got = pickAtTile({ ...open, camera: { z: 3, x: o.x, y: o.y } }, o.x, o.y - 0.3)
+      expect(got.kind, `the yard slot ${o.slug} is empty while the roof is off`).not.toBe('officer')
+    }
+    // …and shut again, the yard answers and the desks do not.
+    const shut = world({ cutawayOpenId: null })
+    for (const o of yard) {
+      expect(pickAtTile({ ...shut, camera: { z: 3, x: o.x, y: o.y } }, o.x, o.y - 0.3)).toEqual({
+        kind: 'officer',
+        id: o.slug,
+      })
+    }
+    for (const o of inside) {
+      expect(
+        pickAtTile({ ...shut, camera: { z: 3, x: o.x, y: o.y } }, o.x, o.y - 0.3).kind,
+        `the desk slot ${o.slug} is empty while the roof is on`
+      ).not.toBe('officer')
+    }
+  })
+
+  it('a cutaway open on some OTHER building leaves the officers in the yard', () => {
+    // The gate is `openId === greatHouse.id`, not "anything is open" — the
+    // officers live in the great house's yard and nowhere else.
+    const other = world({ cutawayOpenId: LIB.id })
+    const o = SLOTS[0]
+    expect(pickAtTile({ ...other, camera: { z: 3, x: o.x, y: o.y } }, o.x, o.y - 0.3)).toEqual({
+      kind: 'officer',
+      id: o.slug,
+    })
   })
 
   it('no great house means no officer anywhere — not an officer at (0,0)', () => {

@@ -37,7 +37,13 @@
  * MouseEvent into a screen point and hands over state it already holds.
  */
 import { fnv1a } from './hash'
-import { PICKS_MEASURED, pickIsoSprite, type IsoScene, type IsoSprite } from './iso-scene'
+import {
+  elementForRole,
+  PICKS_MEASURED,
+  pickIsoSprite,
+  type IsoScene,
+  type IsoSprite,
+} from './iso-scene'
 import { LOD_RULES, lodTier, type EngineCamera } from './lod'
 import { projectionFor, screenToWorld, type ProjectionKind, type ViewportPx } from './projection'
 import { CHART_TABLE_LOCAL, roadPoint, toWorld, type WorldGeo } from './world-geo'
@@ -105,6 +111,19 @@ export interface PickWorld {
   life: LifeOut | null
   /** Directions exist on this deployment — the chart table's own gate. */
   chartTable: boolean
+  /**
+   * The building whose roof is currently OFF (`CutawayState.openId`), or null.
+   *
+   * IT IS A PICK INPUT BECAUSE IT MOVES THE OFFICERS. `officerSlots` places
+   * them in the yard when the great house is shut and at desks INSIDE it when
+   * the roof is off, and the canvas draws from that same call — so a pick that
+   * cannot see this state tests the wrong six squares whenever the cutaway is
+   * open, which at close zoom over the great house is exactly when a person is
+   * clicking an officer. Measured 2026-07-28: with the roof off, a click on a
+   * drawn officer returned `building:great_house` and a click on empty yard
+   * returned an officer who was not there.
+   */
+  cutawayOpenId: string | null
   /**
    * The composed iso scene, or null. Null is the honest state when the pack
    * failed to load: the canvas draws ground and no sprites, and the pick must
@@ -195,6 +214,16 @@ type IsoWants = (s: IsoSprite) => boolean
  * already agree on, so the card that opens is about the same measurement the
  * sprite drew. A measured role the building table has no row for is real but has
  * no card yet, and answers `ground` rather than opening a neighbour's.
+ *
+ * THROUGH `elementForRole`, NOT `===`. The layout spells one role differently
+ * from the ladder that entitles it (`officer_dwelling` vs `officer_dwellings`),
+ * and iso-scene has carried the alias since it was written — for the PACK
+ * lookup. A raw `===` here meant every officer dwelling a hamlet island draws
+ * answered `ground`: four sprites, the most numerous card-bearing structure
+ * after the anchors, silently un-clickable while the suite stayed green.
+ * Measured 2026-07-28 on a composed hamlet scene, base/mid/upper: 0/4 at every
+ * height. This is the same table iso-scene resolves the pack with — never a
+ * second copy, and never a fuzzy singular/plural match.
  */
 function pickIso(world: PickWorld, tx: number, ty: number): PickTarget {
   const scene = world.scene
@@ -204,7 +233,8 @@ function pickIso(world: PickWorld, tx: number, ty: number): PickTarget {
   if (!s) return GROUND
   const station = STATIONS.get(s.frame)
   if (station) return station
-  const b = world.buildings.find((bb) => bb.element === s.role)
+  const element = elementForRole(s.role)
+  const b = element === null ? undefined : world.buildings.find((bb) => bb.element === element)
   if (b) return { kind: 'building', id: b.id }
   return GROUND
 }
@@ -229,7 +259,11 @@ export function pickTarget(world: PickWorld, screen: { x: number; y: number }): 
   // officers first (small, on top)
   if (LOD_RULES[lodTier(p.camera.z)].officers) {
     const gh = p.buildings.find((b) => b.element === 'great_house')
-    for (const o of officerSlots(gh, Object.keys(p.officers).sort(), false)) {
+    // THE SAME CALL THE CANVAS DRAWS FROM, including the open/closed argument.
+    // `false` here was the extraction's one behavioural change and it is the
+    // whole point of collapsing the two copies: a pick that assumes the yard
+    // while the renderer draws desks is two definitions again, wearing one name.
+    for (const o of officerSlots(gh, Object.keys(p.officers).sort(), p.cutawayOpenId === gh?.id)) {
       if (Math.abs(wx - o.x) < 0.8 && Math.abs(wy - o.y + 0.3) < 1) {
         return { kind: 'officer', id: o.slug }
       }

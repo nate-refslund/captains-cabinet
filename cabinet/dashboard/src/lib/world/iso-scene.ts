@@ -59,6 +59,22 @@ const ROLE_ALIAS: Readonly<Record<string, string>> = {
 }
 
 /**
+ * A sprite's `role` as the rest of the world spells it — the ONE alias table.
+ *
+ * THE DEFECT THIS EXISTS FOR, measured 2026-07-28: `pick.ts` matched a sprite's
+ * raw `role` against `WorldBuilding.element` with `===`, so every officer
+ * dwelling on a hamlet island (four sprites, the most numerous card-bearing
+ * structure after the anchors) answered `ground`. The alias was already here
+ * and already applied to the pack lookup two lines below; the pick simply never
+ * asked. A second copy of this map, or a fuzzy singular/plural match, is how
+ * that comes back — so callers resolve THROUGH this function or not at all.
+ */
+export function elementForRole(role: string | null): string | null {
+  if (role === null) return null
+  return ROLE_ALIAS[role] ?? role
+}
+
+/**
  * Layout kinds the LAYOUT varies per lot, and the object whose rung governs
  * them. Derived from iso-layout's own exports, never re-typed: `dwellingKind`
  * picks one of HOUSE_KINDS (or CAMP_DWELLING) per lot, and every one of them

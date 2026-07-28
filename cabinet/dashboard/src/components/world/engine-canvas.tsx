@@ -2297,6 +2297,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
             officers: p.officers,
             life: p.life,
             chartTable: p.chartTable ?? false,
+            cutawayOpenId: p.cutaway.openId,
             scene: isoScene,
           },
           { x: ev.clientX - rect.left, y: ev.clientY - rect.top }
