@@ -123,9 +123,26 @@ export const CHAR_FRAME_H = 32
 export const CHAR_SHEET_MIN_W = 384
 export const CHAR_SHEET_MIN_H = 96
 
+/**
+ * WHICH character art the world draws — the ONE line that swaps the whole cast.
+ *
+ * 'characters'           = the purchased LimeZu Premade sheets. Commercially
+ *                          licensed, do-not-redistribute, gitignored — so a
+ *                          stranger who hatches a cabinet from the public egg
+ *                          gets a world with no people in it.
+ * 'originals/characters' = the owned actor_officer family (20 sheets, same
+ *                          896x656-compatible 16x32 cell layout, same file
+ *                          names, license "owned — org-original"), committed
+ *                          and exported.
+ *
+ * Both sets are in the manifest; changing this constant changes which one the
+ * renderer binds. Nothing else in the engine knows the difference.
+ */
+export const CHARACTER_DIR = 'characters'
+
 export function characterSheetFor(slug: string): string {
   const n = (fnv1a(slug) % CHARACTER_COUNT) + 1
-  return `characters/Premade_Character_${String(n).padStart(2, '0')}`
+  return `${CHARACTER_DIR}/Premade_Character_${String(n).padStart(2, '0')}`
 }
 
 export function deskSheetFor(slug: string): string {
@@ -198,7 +215,7 @@ export function charFrame(
  */
 export function requiredSheets(): string[] {
   const chars = Array.from({ length: CHARACTER_COUNT }, (_, i) =>
-    `characters/Premade_Character_${String(i + 1).padStart(2, '0')}`
+    `${CHARACTER_DIR}/Premade_Character_${String(i + 1).padStart(2, '0')}`
   )
   return [
     ...new Set([
@@ -252,7 +269,7 @@ export function resolveWorldSprites(manifest: WorldAssetManifest): ResolvedSprit
         cutFits(row, POUF_DARK_CUT)
     } else if (id === LIBRARY_SHEET) {
       ok = cutFits(row, BOOKSHELF_CUT)
-    } else if (id.startsWith('characters/')) {
+    } else if (id.startsWith(`${CHARACTER_DIR}/`)) {
       ok = row.w >= CHAR_SHEET_MIN_W && row.h >= CHAR_SHEET_MIN_H
     } else if (id.startsWith('office/singles/')) {
       ok = row.w === SINGLE_W && row.h === SINGLE_H
