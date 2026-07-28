@@ -701,6 +701,11 @@ _REFERENCE_ALLOWLIST = {
     "shared/interfaces/reviews/evidence-hp-preconditions-cp1.md":
         "the FW-019 checkpoint review for the HP batch (prose records the "
         "composed proofs — never a consumer)",
+    "shared/interfaces/reviews/fix-evidence-append-quadratic-cp2.md":
+        "the FW-019 checkpoint review for the append-quadratic fix — its "
+        "PYTEST_CURRENT_TEST sibling table cites this module's two pytest "
+        "fences by file:line as UNMEASURED-claim candidates. A row in a "
+        "review table, never an import and never a consumer",
 }
 
 
