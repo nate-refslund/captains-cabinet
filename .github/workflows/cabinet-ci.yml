@@ -1141,7 +1141,15 @@ jobs:
       # surplus invisibly (reproduced on master 6ec81460: ok=True, 248/248, no
       # expansion row). The census cannot see it — it is gitless by design so it
       # runs in a clean hatch — so the "before" comparison has to be a git-aware
-      # step, and this is the only job that already carries `fetch-depth: 0`.
+      # step, and it lives in a job that already carries `fetch-depth: 0` and
+      # already installs the census toolchain. Corrected 2026-07-28: the line
+      # here used to say this was the ONLY job with full history — `gitleaks`
+      # carries `fetch-depth: 0` too. It matters, because `cognitive-phase4` is
+      # NOT in branch protection's required-check set (verified 2026-07-28,
+      # required = ci, framework-tests, clean-room-foundation, clean-room-source,
+      # null-hatch, gitleaks, zizmor), so a breach here reds this run and the
+      # master push but does not itself hold the merge button. Treat a red here
+      # as blocking by hand until the job is required.
       # The script REFUSES a shallow checkout rather than measuring the wrong
       # base, so moving this step to a shallow job turns it red, not quiet.
       #
