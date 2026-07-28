@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: PENDING-MERGE-RECOMPUTE
+Reviewed-Scope-Digest: 5435fddbdd80ff6df3b7937039ca4fe7c74fe34e049022fc48ab092875210951
 
 (MERGE RE-BIND, 2026-07-28, `fix/evidence-append-quadratic`: origin/master's
 `feat/onboarding-ordering-inversion` landing re-bound this same digest while this
