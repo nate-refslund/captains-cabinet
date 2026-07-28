@@ -58,13 +58,16 @@ WHAT IS ENFORCED NOW, stated exactly so nothing reads as more than it is:
     a move. The rule is stated in the baseline file's header, because friction
     with no stated remedy is how routine baseline edits get normalised, and the
     baseline is the one input this whole gate rests on.
-  * NOT REFUSED, and the residual is named rather than relabelled: a baseline
-    line added in the SAME commit as the file it names still removes that file
-    from the surplus, and the bijection cannot tell the difference. That path
-    now costs a visible `maximum` raise and a claim about `snapshot_of` that
-    git blame contradicts; it is caught by reading the diff, not by this
-    script. Removing a baseline line is always safe — it can only make the
-    surplus larger.
+  * SAME-COMMIT BASELINE GROWTH, which THIS script still cannot see and no
+    longer has to. A baseline line added in the same commit as the file it
+    names removes that file from the surplus, and the bijection cannot tell it
+    from a line that was always there. Nothing here can: the census is gitless
+    by design, so it has no "before" to compare against. That comparison now
+    lives in cabinet/scripts/baseline-set-ratchet.py, a git-aware CI gate that
+    reads the baseline at merge-base and at HEAD and refuses a NET addition
+    while letting a paired rename through — see its docstring for the rules and
+    for the residual IT names (a symbol-class swap). Removing a baseline line
+    is still always safe here: it can only make the surplus larger.
 
 COVERAGE, stated so nothing here reads as more than it is: bijection reaches
 the six member classes named in BIJECTION_CLASSES. Growth in non-comment LINES
@@ -1201,6 +1204,11 @@ def inspect_repository(
         "schema_version": "cognitive-architecture-census/v1",
         "baseline_sha": contract["baseline_sha"],
         "as_of": evaluation_date.isoformat(),
+        # The observed members themselves, so the git-aware baseline ratchet
+        # (cabinet/scripts/baseline-set-ratchet.py) can ask THIS derivation what
+        # a tree holds instead of growing a second copy of it. Reported, never
+        # enforced here — the bijection above is what enforces.
+        "member_sets": {name: sorted(members) for name, members in member_sets.items()},
         "observed": observed,
         "maximums": maximums,
         "surplus_members": surplus,

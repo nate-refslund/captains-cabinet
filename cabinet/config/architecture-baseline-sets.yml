@@ -60,14 +60,21 @@
 # an inventory cannot be pre-loaded and consumed later. A rename satisfies this
 # by construction — the new path exists at the commit that adds it.
 #
-# NOT BOUNDED, named rather than relabelled as covered: a line added here in the
-# SAME commit as the file it names still removes that file from the surplus, and
-# the bijection cannot tell the difference. That path costs a visible `maximum`
-# raise and a claim about snapshot_of below that git blame contradicts — it is
-# caught by reading the diff, not by the census. Adding to this file is
-# therefore never routine. REMOVING a line is always safe: it can only make the
-# surplus larger, never smaller, so a stale line after a real deletion is
-# corrected by deleting it, and nothing is bought by the correction.
+# BOUNDED SINCE 2026-07-28, and by a different instrument than the census. A
+# line added here in the SAME commit as the file it names still removes that
+# file from the surplus, and the bijection still cannot tell the difference —
+# the census is GITLESS, so it has no "before" to compare against and never
+# will. cabinet/scripts/baseline-set-ratchet.py is that comparison: a git-aware
+# CI gate reading this file at the merge-base and at HEAD, which refuses a NET
+# addition (added > credited removals, per class) and refuses a path addition
+# git does not score as a RENAME of something removed in the same diff. A
+# paired rename stays green; the purchase above goes red. Its docstring carries
+# the rules, the remedies and the one residual it does NOT close (a same-commit
+# swap inside a symbol-shaped class, where there is no file for git to score).
+# So: adding to this file is never routine, and it is now also never silent.
+# REMOVING a line is always safe: it can only make the surplus larger, never
+# smaller, so a stale line after a real deletion is corrected by deleting it,
+# and nothing is bought by the correction.
 #
 # HONEST SCOPE — the members below were NOT adjudicated by this gate. They are
 # the tree as it stood when the registry landed; the registry makes no claim

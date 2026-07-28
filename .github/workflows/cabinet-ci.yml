@@ -1077,6 +1077,40 @@ jobs:
           PYTEST_ADDOPTS: "--deselect framework/authority/tests/test_needs.py::test_filing_latency_smoke"
         run: bash cabinet/scripts/verify-cognitive-phase4.sh
 
+      # BASELINE RATCHET (2026-07-28) — the last purchase channel the expansion
+      # registry left open, and the reason it lives HERE rather than in the
+      # census: cabinet/config/architecture-baseline-sets.yml is a SNAPSHOT, and
+      # a line added to it in the same commit as the file it names empties the
+      # surplus invisibly (reproduced on master 6ec81460: ok=True, 248/248, no
+      # expansion row). The census cannot see it — it is gitless by design so it
+      # runs in a clean hatch — so the "before" comparison has to be a git-aware
+      # step, and this is the only job that already carries `fetch-depth: 0`.
+      # The script REFUSES a shallow checkout rather than measuring the wrong
+      # base, so moving this step to a shallow job turns it red, not quiet.
+      #
+      # The base is passed through env rather than interpolated into the script
+      # body (zizmor template-injection doctrine). Both event shapes resolve to
+      # a real commit; the HEAD^ fallback keeps schedule/dispatch runs honest
+      # instead of vacuously green.
+      - name: "Architecture baseline ratchet (the snapshot may not net-grow)"
+        if: ${{ !cancelled() }}
+        env:
+          RATCHET_EVENT: ${{ github.event_name }}
+          RATCHET_PR_BASE: ${{ github.event.pull_request.base.sha }}
+          RATCHET_PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          case "${RATCHET_EVENT:-}" in
+            pull_request) BASE="${RATCHET_PR_BASE:-}" ;;
+            push)         BASE="${RATCHET_PUSH_BEFORE:-}" ;;
+            *)            BASE="" ;;
+          esac
+          if [ -z "$BASE" ] || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            BASE="$(git rev-parse HEAD^)"
+          fi
+          echo "architecture baseline ratchet base: $BASE"
+          python3.12 cabinet/scripts/baseline-set-ratchet.py --base "$BASE" --check
+
   # CI-audit 2026-07-09: secret scanning with the EXISTING committed
   # .gitleaks.toml (gitleaks auto-detects it at repo root). Event-native
   # scan depth: push scans the pushed commit range, pull_request scans the
