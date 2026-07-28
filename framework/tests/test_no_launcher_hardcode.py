@@ -739,15 +739,30 @@ _DATED_DESIGN_DOC_RX = re.compile(r"-\d{4}-\d{2}-\d{2}\.md\Z")
 
 _MIN_LABEL_LEN = 4  # below this a host label is URL grammar (api, www, io, x), not a name
 
-# Directories the seed walk never descends into. Build output and dependency
-# trees are not the repository's own vocabulary, and `instance/` is the
-# PER-DEPLOYMENT layer: a stranger's own vendors live there legitimately and
-# must not bind the framework gate (it would go red on their own supplier's
-# name). Determinism matters — this walk must produce the same vocabulary in
-# CI, in a hatched cabinet and in a dirty dev checkout.
+# WHERE THE VOCABULARY MAY COME FROM. The seed walk takes every root-level file
+# plus these top-level directories, and nothing else — an INCLUDE list of this
+# repository's OWN layers, not an exclude list of things to dodge.
+#
+# The per-deployment layer is deliberately absent. A stranger's own suppliers
+# live there legitimately, and letting them seed would make this gate go red on
+# their own supplier's name appearing anywhere in framework/ prose. So is the
+# preset layer, for the same reason at one remove. Omitting a root can only
+# SHRINK the vocabulary, which can only shrink the finding set — it fails toward
+# green, never toward a false red, so a root that does not exist in a hatched
+# cabinet or an egg cut costs nothing.
+#
+# Determinism is the reason this is a walk over declared roots rather than a
+# tracked-file listing: it must produce the same vocabulary in CI, in a hatched
+# cabinet with no git metadata, and in a dirty dev checkout.
+_SEED_ROOTS = (
+    "framework", "cabinet", "docs", "packs", "memory", "shared",
+    ".claude", ".claude-plugin", ".github",
+)
+# Never descended into even under a seed root: build output and dependency
+# trees are not the repository's own vocabulary.
 _SEED_SKIP_DIRS = frozenset({
     ".git", "node_modules", "__pycache__", ".venv", "venv", ".mypy_cache",
-    ".pytest_cache", ".ruff_cache", ".next", "dist", "build", "instance",
+    ".pytest_cache", ".ruff_cache", ".next", "dist", "build",
 })
 _SEED_MAX_BYTES = 512 * 1024  # lockfiles and bundles carry no doctrine
 
@@ -814,16 +829,28 @@ def _read_text_file(path: Path) -> Optional[str]:
 
 
 def iter_seed_files(root: Path) -> Iterator[Path]:
-    """Every text file the vocabulary may be derived from (see _SEED_SKIP_DIRS)."""
-    for dirpath, dirnames, filenames in os.walk(str(root)):
-        dirnames[:] = sorted(d for d in dirnames if d not in _SEED_SKIP_DIRS)
-        for name in sorted(filenames):
-            p = Path(dirpath) / name
-            try:
-                if p.is_symlink() or p.stat().st_size > _SEED_MAX_BYTES:
+    """Every text file the vocabulary may be derived from: root-level files plus
+    the declared _SEED_ROOTS (see the comment there for why it is an include
+    list, and which layers are deliberately absent)."""
+    root = Path(root)
+    def _files_under(base: Path, recurse: bool) -> Iterator[Path]:
+        if not base.is_dir():
+            return
+        for dirpath, dirnames, filenames in os.walk(str(base)):
+            dirnames[:] = ([] if not recurse
+                           else sorted(d for d in dirnames if d not in _SEED_SKIP_DIRS))
+            for name in sorted(filenames):
+                p = Path(dirpath) / name
+                try:
+                    if p.is_symlink() or p.stat().st_size > _SEED_MAX_BYTES:
+                        continue
+                except OSError:
                     continue
-            except OSError:
-                continue
+                yield p
+    for p in _files_under(root, recurse=False):
+        yield p
+    for rel in _SEED_ROOTS:
+        for p in _files_under(root / rel, recurse=True):
             yield p
 
 
@@ -1099,12 +1126,19 @@ class TestSpecificsEngine:
                        seed='"$schema": "https://spec.vendorx.io/d"\nhttps://api.vendorx.io/v2\n')
         assert "vendorx" not in v
 
-    def test_instance_layer_never_seeds_the_vocabulary(self, tmp_path):
-        """A stranger's OWN suppliers live in instance/ legitimately; letting
-        them bind the framework gate would go red on their supplier's name."""
-        self._write(tmp_path / "instance" / "config" / "x.yml",
+    def test_a_layer_outside_the_seed_roots_never_seeds(self, tmp_path):
+        # A stranger's OWN suppliers live in the per-deployment layer
+        # legitimately; letting them bind the framework gate would go red on
+        # their supplier's name. That layer is not a seed root, so a URL under
+        # any non-root directory contributes nothing.
+        self._write(tmp_path / "not-a-seed-root" / "config" / "x.yml",
                     "url: https://api.vendorx.io/v2\n")
         assert "vendorx" not in derive_vendor_vocabulary(tmp_path)
+        # ...and the control: the SAME file under a seed root does seed, so the
+        # arm above cannot pass by the walk being broken.
+        self._write(tmp_path / "cabinet" / "config" / "x.yml",
+                    "url: https://api.vendorx.io/v2\n")
+        assert "vendorx" in derive_vendor_vocabulary(tmp_path)
 
     def test_skips_tests_and_dated_design_snapshots(self, tmp_path):
         v = self._tree(tmp_path, seed="https://api.vendorx.io/v2\n", fw={

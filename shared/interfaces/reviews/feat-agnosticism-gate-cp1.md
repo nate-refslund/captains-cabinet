@@ -52,3 +52,26 @@ time — the working tree passed the same suite (class 2: working tree ≠ commi
 
 Zero new production modules, so `framework_production_modules` is untouched. Census
 now PASS with every other budget still at zero headroom.
+
+---
+
+# Checkpoint review — feat/agnosticism-gate cp3 (layer-separation red)
+
+Reviewed-Scope-Digest: c855190b061aa5f271e63ae874ab4e598c8ee5667d6fa5ff193517b150c0b54e
+
+`check-layer-separation.sh` flagged `framework/tests/test_no_launcher_hardcode.py`
+with `FRAMEWORK_PATH_INSTANCE` — its per-deployment-layer grep has no `tests/`
+exclusion, and the seed walk named that layer twice (a skip-set member and a
+fixture path).
+
+The fix is not an allowlist entry: the seed walk is now an **include list of this
+repository's own layers** (`_SEED_ROOTS`) rather than an exclude list of layers to
+dodge. Strictly better on three counts — the per-deployment and preset layers are
+absent by construction rather than by name, an omitted root can only shrink the
+vocabulary (fails toward green, never toward a false red), and it no longer
+depends on enumerating everything a stranger's tree might contain. The fixture now
+uses a directory that is simply not a root, **with a control arm** proving the same
+file under a root does seed, so the negative cannot pass by the walk being broken.
+
+Measured after the change: vocabulary 47 labels (unchanged), 318 debt keys
+(unchanged), layer-sep `new=0`, 42 tests green.
