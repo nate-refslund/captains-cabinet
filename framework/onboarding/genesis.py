@@ -858,7 +858,8 @@ def genesis_intake_items(root: Path | None = None, now: str | None = None) -> li
     ts = _utc_now_iso(now)
     items: list[dict] = []
 
-    for row in _load_proposal_rows(base):
+    proposal_rows = _load_proposal_rows(base)
+    for row in proposal_rows:
         name = str(row.get("name") or row.get("id") or "").strip()
         if not name:
             continue
@@ -904,9 +905,25 @@ def genesis_intake_items(root: Path | None = None, now: str | None = None) -> li
     if derived.get("schema") == _estate.SCHEMA:
         srcs = [s for s in (derived.get("sources") or []) if isinstance(s, dict)]
         ents = derived.get("entities") or []
-        refusals = sum(int(r.get("count") or 0) for s in srcs
-                       for r in (s.get("refusals") or []) if isinstance(r, dict))
-        roots = ", ".join(str(s.get("root") or s.get("label") or "?") for s in srcs[:2])
+        # READ THE CANONICAL RECORD'S OWN FIELDS. ``access_record`` writes
+        # ``refusals`` as a MAPPING class->count and pre-totals it into
+        # ``refusals_total``; the earlier list-of-dicts sum iterated the
+        # mapping's KEYS, so ``isinstance(r, dict)`` was never true and the
+        # count was structurally 0 for every sweep — the auditability this
+        # line exists to provide, silently disabled. Same class of bug one
+        # field over: the record's key is ``source_root``, not ``root``, so
+        # the provenance always fell back to the label.
+        refusals = sum(int(s.get("refusals_total") or 0) for s in srcs)
+        roots = ", ".join(str(s.get("source_root") or s.get("label") or "?")
+                          for s in srcs[:2])
+        # Do NOT claim the cards derive from the estate unless one actually
+        # does. Nothing in the shipped chain runs formation.sh before the
+        # first briefing, and ``write_proposals`` is write-once, so the
+        # ordinary ordering yields cards written BEFORE this estate existed.
+        # Claiming the citation anyway is the unearned-negative defect this
+        # unit was built to remove, reappearing one surface up.
+        from_estate = sum(1 for r in proposal_rows
+                          if str(r.get("derived_from") or "") == "estate")
         # PROVENANCE, not a claim: what was read, from where, under which
         # ownership class, and how many entries were REFUSED. A silent skip
         # destroys auditability, so the count is shown even when it is 0.
@@ -920,8 +937,13 @@ def genesis_intake_items(root: Path | None = None, now: str | None = None) -> li
             "source": "onboarding-genesis", "kind": "genesis-estate",
             "ts": ts, "urgency_tier": "fyi",
             "payload": {"summary": body},
-            "context": {"why": "what the cabinet READ — the cards above are "
-                               "derived from it, with citations"},
+            "context": {"why": ("what the cabinet READ — the cards above are "
+                                "derived from it, with citations")
+                        if from_estate else
+                        ("what the cabinet READ. No card above derives from "
+                         "it: the proposals on file were written before this "
+                         "estate existed. Re-run genesis to derive cards "
+                         "from what was read.")},
         })
 
     if (base / FOCUS_REL).is_file():

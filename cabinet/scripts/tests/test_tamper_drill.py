@@ -18,6 +18,20 @@ Pins, per the batch invariants:
 
 Everything runs against scratch stores under tmp_path; the repo-root
 conftest already fences all CABINET_* env vars to a session sandbox.
+
+FREEZE FENCE (2026-07-27). The live-mode arms used to freeze and thaw
+``_REPO_ROOT`` — the real checkout. ``freeze()`` is first-freeze-wins, so with
+a genuine Captain freeze armed the test's own freeze was a no-op, its
+assertion failed, and the ``finally`` DELETED the Captain's marker anyway,
+bypassing the token-gated ``captain_clear``. Every freeze/thaw here now goes
+through ``lib_freeze_fence``, which proves — by asking the real resolvers
+where they would write — that the root is inside this test's tmp sandbox, and
+refuses otherwise. The live-mode arms drive a COPY of the drill inside a
+pseudo repo root, because the marker path is a pure function of an explicit
+root with no environment knob to redirect. Assertions about the real
+checkout's marker are change-detecting (``fingerprint`` before/after), not
+absolute: ``assert not is_frozen(real_root)`` false-reds on a runtime box
+where the Captain has legitimately armed a freeze.
 """
 from __future__ import annotations
 
@@ -33,8 +47,12 @@ from pathlib import Path
 import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+_HERE = Path(__file__).resolve().parent
+for _p in (str(_HERE), str(_REPO_ROOT)):   # tests/ is a package: put it on the path
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+import lib_freeze_fence as fzfence  # noqa: E402
 
 from framework import evidence_freeze as ef  # noqa: E402
 from framework.evidence import __main__ as evidence_cli  # noqa: E402
@@ -89,14 +107,15 @@ def _mint_token(store: Path, path: Path) -> Path:
     return path
 
 
-def _thaw(root: Path) -> None:
-    """Test cleanup only: lift the scratch marker's immutable flag + remove."""
-    marker = ef.marker_path(root)
-    ef._lift_immutable(marker)
-    try:
-        marker.unlink()
-    except OSError:
-        pass
+def _thaw(root: Path, sandbox: Path) -> None:
+    """Test cleanup only: lift the scratch marker's immutable flag + remove.
+
+    ``sandbox`` is REQUIRED and is proven before anything is unlinked. This is
+    ``captain_clear`` with the token check removed, so pointing it at a root
+    the test does not own deletes a real Captain freeze — the 2026-07-27
+    incident. The fence refuses instead.
+    """
+    fzfence.thaw(root, sandbox=sandbox)
 
 
 def _run(argv: list[str], env_extra: dict[str, str] | None = None,
@@ -124,7 +143,7 @@ def test_marker_fail_closed_table(tmp_path):
     frozen_root = tmp_path / "frozen"
     ef.freeze(frozen_root, "test freeze", finding_kinds=["trial_rollback"])
     assert ef.is_frozen(frozen_root) is True
-    _thaw(frozen_root)
+    _thaw(frozen_root, tmp_path)
 
     # Garbage bytes: still frozen (presence is presence).
     garbage_root = tmp_path / "garbage"
@@ -184,7 +203,7 @@ def test_freeze_atomic_first_wins(tmp_path):
         leftovers = [p.name for p in path.parent.iterdir() if ".tmp." in p.name]
         assert leftovers == []
     finally:
-        _thaw(root)
+        _thaw(root, tmp_path)
 
 
 def test_status_reports(tmp_path):
@@ -199,7 +218,7 @@ def test_status_reports(tmp_path):
         assert info["error"] is None
         assert info["content"]["reason"] == "why"
     finally:
-        _thaw(root)
+        _thaw(root, tmp_path)
 
     garbage_root = tmp_path / "garbage"
     marker = ef.marker_path(garbage_root)
@@ -262,7 +281,7 @@ def test_captain_clear_token_gate(tmp_path, monkeypatch):
         assert ef.is_frozen(root2) is True
         assert not (tmp_path / "absent-store").exists()
     finally:
-        _thaw(root2)
+        _thaw(root2, tmp_path)
 
 
 def test_unfreeze_cli_verb(tmp_path):
@@ -306,34 +325,53 @@ def test_drill_run_refuses_store_argument():
 
 
 def test_live_mode_requires_confirm(tmp_path):
+    before = fzfence.fingerprint(_REPO_ROOT)
     out_root = tmp_path / "out"
     proc = _run([str(_SCRIPT), "run", "--mode", "live",
                  "--out-root", str(out_root)])
     assert proc.returncode == 64
     assert "--confirm-live" in proc.stderr
-    # Refused BEFORE any side effect: no report surfaces, no marker.
+    # Refused BEFORE any side effect: no report surfaces, and the checkout's
+    # marker is UNCHANGED. Change-detecting, not `not is_frozen`: on a runtime
+    # box the Captain may legitimately have one armed, and this arm is about
+    # what the drill did, not about what was already true.
     assert not out_root.exists()
-    assert not ef.is_frozen(_REPO_ROOT)
+    assert fzfence.fingerprint(_REPO_ROOT) == before
 
 
 def test_live_mode_refuses_over_existing_freeze(tmp_path):
     """A live drill over a REAL freeze would muddy triage: the guard runs
     before any side effect (no scratch, no page, no report surfaces).
-    Freezing THIS clone's root is safe — instance/state/ is runtime-only."""
-    ef.freeze(_REPO_ROOT, "test: pre-existing real freeze", set_by="pytest")
+
+    Driven against a PSEUDO repo root, never this checkout. The old version
+    froze and thawed ``_REPO_ROOT``; with a genuine Captain freeze armed its
+    own freeze was a no-op (first-freeze-wins), the ``set_by`` assertion
+    failed, and the ``finally`` deleted the Captain's marker. The marker path
+    has no environment knob by design, so isolation is a throwaway root the
+    drill copy resolves as its own — proven by asking that copy where its
+    marker is before anything is written.
+    """
+    real_before = fzfence.fingerprint(_REPO_ROOT)
+    root = fzfence.pseudo_root(tmp_path)
+    marker = fzfence.assert_isolated(root, sandbox=tmp_path)
+    assert tmp_path in marker.parents
+
+    ef.freeze(root, "test: pre-existing real freeze", set_by="pytest")
     try:
         out_root = tmp_path / "out"
-        proc = _run([str(_SCRIPT), "run", "--mode", "live", "--confirm-live",
-                     "--out-root", str(out_root)])
+        proc = _run([str(fzfence.drill_in(root)), "run", "--mode", "live",
+                     "--confirm-live", "--out-root", str(out_root)])
         assert proc.returncode == 64
         assert "ALREADY frozen" in proc.stderr
         assert not out_root.exists()
         # First-freeze-wins held: the original marker survived untouched.
-        content = ef.status(_REPO_ROOT)["content"]
+        content = ef.status(root)["content"]
         assert content is not None and content["set_by"] == "pytest"
     finally:
-        _thaw(_REPO_ROOT)
-    assert not ef.is_frozen(_REPO_ROOT)
+        _thaw(root, tmp_path)
+    assert not ef.is_frozen(root)
+    # The real checkout was never in the write set at all.
+    assert fzfence.fingerprint(_REPO_ROOT) == real_before
 
 
 def test_anchor_check_is_byte_stable(tmp_path):
@@ -357,6 +395,7 @@ def test_anchor_check_is_byte_stable(tmp_path):
 
 
 def test_drill_end_to_end_test_mode(tmp_path):
+    real_before = fzfence.fingerprint(_REPO_ROOT)
     out_root = tmp_path / "out"
     proc = _run([str(_SCRIPT), "run", "--out-root", str(out_root)])
     assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -384,9 +423,10 @@ def test_drill_end_to_end_test_mode(tmp_path):
     assert "WOULD PAGE Chair (" in proc.stdout
     assert row["freeze_scope"] == "scratch"
     assert row["froze"].startswith(row["scratch"])
-    assert not ef.is_frozen(_REPO_ROOT)
-    assert not (_REPO_ROOT / "instance" / "state"
-                / "evidence-judging-freeze.json").exists()
+    # The repo-root marker is UNCHANGED by this run — the property the drill
+    # actually promises. `not is_frozen` would instead assert the state of a
+    # box the test does not own, and false-red where a Captain freeze is armed.
+    assert fzfence.fingerprint(_REPO_ROOT) == real_before
 
     # Zero trace: the scratch dir (store, snapshot, anchors, marker) is gone.
     assert not Path(row["scratch"]).exists()

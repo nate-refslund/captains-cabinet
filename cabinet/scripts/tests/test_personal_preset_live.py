@@ -185,3 +185,75 @@ def test_the_other_presets_really_are_c_suite_shaped(preset):
     assert agents & set(_C_SUITE), (
         f"presets/{preset} no longer ships any C-suite role — the personal "
         f"preset's stated contrast is now stale")
+
+
+# ---------------------------------------------------------------------------
+# The interview a STRANGER is walked through must describe the recall binding
+# the generator ACTUALLY emits.
+#
+# Paid 2026-07-28. When presets/personal went live (2026-07-27) the generator
+# began emitting a personal `sources.yml`, and cabinet/docs/provisioning-
+# personal-cabinet.md was updated in the same commit — but
+# .claude/skills/cabinet-init/SKILL.md, the document that shapes the
+# onboarding INTERVIEW, kept saying "`flavor: personal` emits NO sources.yml —
+# a Flavor-A captain binds their own personal adapter by hand". A stranger
+# following the interview would have hand-bound an adapter the generator had
+# already bound, or concluded personal recall was unsupported. Docs track code
+# in the same commit; this is the sensor that makes that checkable rather than
+# remembered.
+# ---------------------------------------------------------------------------
+_INTERVIEW = _REPO / ".claude" / "skills" / "cabinet-init" / "SKILL.md"
+_GENERATOR = _SCRIPTS / "generate-instance.py"
+
+
+def _generator_personal_adapter() -> str:
+    """The adapter the generator really binds on ``flavor: personal``, read
+    out of the generator itself.
+
+    DERIVED, never hardcoded: that is the whole point. If the code ever
+    reverts to emitting nothing for personal, this extractor's own assertions
+    fire — so the pair fails loudly instead of the doc quietly rotting back
+    into agreement with a defect."""
+    text = _GENERATOR.read_text(encoding="utf-8")
+    m = re.search(r'^LOCAL_SOURCE_ADAPTER\s*=\s*"([^"]+)"', text, re.M)
+    assert m, (
+        "generate-instance.py no longer defines LOCAL_SOURCE_ADAPTER — this "
+        "extractor would silently pass on nothing; re-derive it before "
+        "trusting this test")
+    adapter = m.group(1).strip()
+    assert adapter, "LOCAL_SOURCE_ADAPTER is empty — vacuous extraction"
+    # >= 2 occurrences: the ``def`` PLUS at least one call site. Checking for
+    # the bare name would pass on a dead function whose call had been deleted —
+    # which is precisely the shape the original defect had (a renderer that
+    # existed and was never reached).
+    renders = text.count("render_sources_personal(")
+    assert renders >= 2, (
+        f"render_sources_personal appears {renders}x in generate-instance.py "
+        f"(definition only, no call site) — the personal flavor renders "
+        f"nothing again; fix the code, not this test")
+    return adapter
+
+
+def test_interview_doc_names_the_personal_recall_binding():
+    """Doc-to-code coupling: whatever personal flavor binds, the interview
+    names it."""
+    assert _INTERVIEW.is_file(), f"{_INTERVIEW} is missing"
+    adapter = _generator_personal_adapter()
+    text = _INTERVIEW.read_text(encoding="utf-8")
+    assert adapter in text, (
+        f"the cabinet-init interview never names {adapter!r}, which is what "
+        f"`autonomy.flavor: personal` actually binds — a stranger is being "
+        f"interviewed against stale behaviour")
+
+
+@pytest.mark.parametrize("claim", [
+    "emits NO sources.yml",
+    "binds their own personal adapter by hand",
+])
+def test_interview_doc_does_not_claim_personal_is_unbound(claim):
+    """The two literal false sentences that shipped, pinned so a revert of the
+    doc is caught even if the code stays right."""
+    text = " ".join(_INTERVIEW.read_text(encoding="utf-8").split())
+    assert claim.lower() not in text.lower(), (
+        f"cabinet-init SKILL.md still claims {claim!r}; `flavor: personal` "
+        f"has emitted a generated sources.yml since 2026-07-27")

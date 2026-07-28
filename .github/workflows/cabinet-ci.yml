@@ -404,6 +404,16 @@ jobs:
           cd /opt/founders-cabinet/cabinet/dashboard
           npm test
 
+      - name: Declare the redis service container disposable
+        # The golden-eval suite SETs/DELs cabinet:killswitch, so it refuses any
+        # endpoint not PROVEN throwaway (2026-07-27). CABINET_EVALS_REDIS_DISPOSABLE=1
+        # alone is no longer enough: an env var is a claim about this process's
+        # intent and it travels between shells, so the declaration now has to be a
+        # property of the SERVER. This step writes it on the service container —
+        # which is torn down with the job — and is the only place in the repo that
+        # writes that marker. NEVER add a step like this against a real fleet's Redis.
+        run: redis-cli -h 127.0.0.1 -p 6379 SET cabinet:evals:disposable 1
+
       - name: Golden evals
         if: ${{ !cancelled() }}
         # EVAL-023 (FW-047) runs under CABINET_HOOK_TEST_MODE=1 so trigger_send
@@ -1017,6 +1027,16 @@ jobs:
             git status --porcelain
             exit 1
           fi
+      - name: Declare the redis service container disposable
+        # The golden-eval suite SETs/DELs cabinet:killswitch, so it refuses any
+        # endpoint not PROVEN throwaway (2026-07-27). CABINET_EVALS_REDIS_DISPOSABLE=1
+        # alone is no longer enough: an env var is a claim about this process's
+        # intent and it travels between shells, so the declaration now has to be a
+        # property of the SERVER. This step writes it on the service container —
+        # which is torn down with the job — and is the only place in the repo that
+        # writes that marker. NEVER add a step like this against a real fleet's Redis.
+        run: redis-cli -h 127.0.0.1 -p 6379 SET cabinet:evals:disposable 1
+
       - name: "COG-4 exit gate — verify-cognitive-phase4.sh (committed tree)"
         run: bash cabinet/scripts/verify-cognitive-phase4.sh
 

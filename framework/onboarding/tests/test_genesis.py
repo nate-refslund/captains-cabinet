@@ -592,9 +592,18 @@ ESTATE_DOC = {
     "schema": "cabinet.derived-estate/v1",
     "deployment": "acme-hq",
     "derived_at": "2026-07-26T00:00:00Z",
+    # THE PRODUCER'S OWN SHAPE, not a hand-rolled one. This fixture used to
+    # carry `root` and `refusals` as a list of {reason, count} — a shape
+    # `estate.py` never writes. The consumer was coded against the fixture, so
+    # its refusal count was structurally 0 on every real sweep while this test
+    # went green: a sensor wired to something other than the control. The
+    # canonical record is `framework.authority.ownership.access_record`:
+    # `source_root`, `refusals` as a class->count MAPPING, and a pre-summed
+    # `refusals_total`. test_estate_provenance_fields_match_the_real_record
+    # below now pins that agreement so it cannot drift again.
     "sources": [{"id": "first-window", "kind": "local_folder",
-                 "root": "/granted", "ownership": "unclassified",
-                 "refusals": [{"reason": "sensitive_name", "count": 2}]}],
+                 "source_root": "/granted", "ownership": "unclassified",
+                 "refusals": {"sensitive_name": 2}, "refusals_total": 2}],
     "entities": [
         {"id": "storefront", "name": "storefront", "kind": "project",
          "source_id": "first-window", "relative_path": "storefront",
@@ -718,6 +727,65 @@ def test_estate_intake_item_shows_provenance_including_refusals(tmp_path):
     assert "2 refused" in summary           # silent skips destroy auditability
     assert "unclassified" in summary
     assert card["urgency_tier"] == "fyi"    # information; nothing acts on it
+
+
+def test_estate_provenance_fields_match_the_real_record(tmp_path):
+    """The consumer must read keys the PRODUCER actually writes.
+
+    Built from ``access_record`` itself — the one function that defines the
+    per-source shape — rather than from a hand-written dict, because the
+    hand-written dict is exactly how this drifted: the briefing summed a
+    mapping as if it were a list and reported 0 refusals for every real sweep,
+    and the fixture agreed with the bug. Feeding the genuine record proves the
+    count and the root survive the trip to the operator.
+    """
+    from framework.authority.ownership import access_record
+    from framework.onboarding import estate as estate_mod
+
+    record = access_record(
+        schema=estate_mod.SCHEMA, source_root="/granted/notes",
+        ownership="self", authority_basis="owner",
+        charter_hash="c" * 64, manifest_hash="m" * 64, entry_count=9,
+        refusals={"sensitive_name": 2, "too_large": 3},
+        retention="paths, hashes and counts only; no file contents persisted",
+        recorded_at="2026-07-26T00:00:00Z",
+    )
+    row = {"id": "first-window", "kind": "local_folder", "label": "notes"}
+    row.update(record)
+    _write_answers(tmp_path, LANELESS)
+    estate_mod.write_estate(dict(ESTATE_DOC, sources=[row]), tmp_path)
+
+    items = genesis.genesis_intake_items(tmp_path, now="2026-07-26T00:00:00Z")
+    summary = next(i for i in items if i["kind"] == "genesis-estate")["payload"]["summary"]
+    assert "5 refused" in summary        # 2 + 3, not the structural 0
+    assert "/granted/notes" in summary   # source_root, not the label fallback
+
+
+def test_estate_provenance_never_claims_a_citation_it_did_not_earn(tmp_path):
+    """The FYI line may only say the cards derive from the estate when one does.
+
+    Nothing in the shipped chain runs formation.sh before the first briefing
+    and ``write_proposals`` is write-once, so the ordinary ordering leaves
+    cards that predate the estate. Asserting the citation anyway is the
+    unearned claim this unit exists to remove, one surface up.
+    """
+    from framework.onboarding import estate as estate_mod
+    _write_answers(tmp_path, LANELESS)
+
+    # (a) proposals written with NO estate → no card can derive from one.
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-26T00:00:00Z")
+    estate_mod.write_estate(ESTATE_DOC, tmp_path)
+    why = next(i for i in genesis.genesis_intake_items(tmp_path, now="2026-07-26T00:00:00Z")
+               if i["kind"] == "genesis-estate")["context"]["why"]
+    assert "No card above derives from it" in why
+    assert "with citations" not in why
+
+    # (b) estate present BEFORE the proposals are written → the claim is earned.
+    (tmp_path / genesis.PROPOSALS_REL).unlink()
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-26T00:00:00Z")
+    why = next(i for i in genesis.genesis_intake_items(tmp_path, now="2026-07-26T00:00:00Z")
+               if i["kind"] == "genesis-estate")["context"]["why"]
+    assert "with citations" in why
 
 
 def test_no_estate_artifact_means_no_estate_item(tmp_path):

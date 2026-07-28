@@ -11,16 +11,63 @@
 # exactly and disjointly — a bijection, not a presence check. A net-new member
 # with no row is RED. A row naming a member that is not observed (the stale
 # copy-paste) is RED. A row naming a member that is already in the baseline (the
-# laundering edit) is RED. Two rows naming one member are refused outright.
+# laundering edit) is RED. A name in THIS file that the tree does not carry is
+# RED. Two rows naming one member are refused outright.
 #
 # WHY A SNAPSHOT AND NOT A DERIVATION: the census must run in a gitless clean
 # hatch (its own docstring), so it cannot ask git what the tree looked like
 # before. The baseline is therefore data, hand-maintained, and deliberately
 # ships with NO regenerator script: a one-command "refresh the baseline" is
-# exactly the laundering path the registry exists to close, and the count
-# budgets in the contract are what stop a hand edit here from buying anything —
-# every class is pinned at observed==max with zero headroom, so adding a member
-# to this file WITHOUT raising the matching maximum still REDs the census.
+# exactly the laundering path the registry exists to close.
+#
+# WHAT ACTUALLY BOUNDS A HAND EDIT HERE — stated exactly, because the sentence
+# that used to sit on this line was FALSE and was falsified twice by execution
+# on 2026-07-27. It claimed the count budgets stopped a hand edit: "every class
+# is pinned at observed==max with zero headroom, so adding a member to this file
+# WITHOUT raising the matching maximum still REDs the census". Both halves were
+# wrong. An ordinary temporary_allowances row is not a maximum raise and worked
+# — a net-new production module landed at ok=True with no expansion row, paid
+# for with one line here plus one routine allowance row. And a name added here
+# for a member that does not exist in the tree moved no count at all, so it red
+# NOTHING, and the inventory could be pre-loaded in one commit and consumed in a
+# later one. A line here does not move a count; what it does is take a member
+# out of the surplus, which is the whole of the bijection. The two real bounds:
+#
+#   * COUNT: since 2026-07-27 no temporary_allowances row may name a bijection
+#     class — it is refused at contract load, with the rows already live pinned
+#     by exact (phase, budget, additional) triple in the census source. The
+#     count of a bijection class now grows only by raising `maximum` in the
+#     contract: visible, permanent, and on the line the zero-headroom law is
+#     read from.
+#   * PRE-LOADING: a name here with no corresponding tree member is a census
+#     failure, so an inventory cannot be written now and consumed later.
+#
+# WHEN YOU MAY EDIT THIS FILE — the rule, because without one the friction below
+# will teach the wrong habit. A pure RENAME or MOVE has ZERO net growth and yet
+# reds twice: `unregistered set member` on the new path, and (if the old path was
+# a registered expansion) `expansion row names a member that is not present`.
+# Measured 2026-07-27: renaming one production module held the count at 246/246
+# and produced exactly those two failures. The two green paths are a full
+# expansion row — two blind arms and a written adjudication, absurd for a rename
+# — or an edit here. The edit is correct, and it is a PAIRED edit made in the
+# SAME commit as the tree change: REMOVE the old member and ADD the new one
+# together. Never one without the other. If the member carried an expansion row,
+# that row's `member` moves with it in the same commit.
+#
+# And the clause that keeps the paired edit from becoming the D1 bypass, stated
+# once and MACHINE-ENFORCED: a line is NEVER added here for a member the tree
+# does not ALREADY have. A name here with no tree member is a census failure, so
+# an inventory cannot be pre-loaded and consumed later. A rename satisfies this
+# by construction — the new path exists at the commit that adds it.
+#
+# NOT BOUNDED, named rather than relabelled as covered: a line added here in the
+# SAME commit as the file it names still removes that file from the surplus, and
+# the bijection cannot tell the difference. That path costs a visible `maximum`
+# raise and a claim about snapshot_of below that git blame contradicts — it is
+# caught by reading the diff, not by the census. Adding to this file is
+# therefore never routine. REMOVING a line is always safe: it can only make the
+# surplus larger, never smaller, so a stale line after a real deletion is
+# corrected by deleting it, and nothing is bought by the correction.
 #
 # HONEST SCOPE — the members below were NOT adjudicated by this gate. They are
 # the tree as it stood when the registry landed; the registry makes no claim
