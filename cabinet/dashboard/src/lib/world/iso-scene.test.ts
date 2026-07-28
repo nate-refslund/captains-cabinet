@@ -378,7 +378,7 @@ describe('the iso pick — the world answers when you click it', () => {
   const state = stateFor('hamlet')
   const scene = buildIsoScene(PACK, state, 'cabinet-pick')
 
-  it('picks the sprite whose ground diamond holds the point, not the one behind it', () => {
+  it('picks the sprite whose pick solid holds the point, not the one behind it', () => {
     const measured = scene.sprites.filter((s) => s.role !== null)
     expect(measured.length).toBeGreaterThan(10)
     // A sprite's own base centre is the front vertex of its own diamond, so a
@@ -405,7 +405,7 @@ describe('the iso pick — the world answers when you click it', () => {
     }
     // …and asking for decoration explicitly does return it
     const withDecor = pickIsoSprite(scene, decor[0].x, decor[0].y - 1, {
-      includeDecorative: true,
+      wants: () => true,
     })
     expect(withDecor).not.toBeNull()
   })

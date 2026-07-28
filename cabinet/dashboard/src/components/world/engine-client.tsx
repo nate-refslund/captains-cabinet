@@ -87,6 +87,7 @@ import KillswitchLever from './killswitch-lever'
 import DecisionQueueCard from './decision-queue-card'
 import LibraryCard from './library-card'
 import type { EngineTarget } from './engine-canvas'
+import { officerSlots } from '@/lib/world/pick'
 
 const EngineCanvas = dynamic(() => import('./engine-canvas'), { ssr: false })
 
@@ -737,25 +738,17 @@ export default function EngineClient({
   const officerLabels = useMemo(() => {
     const gh = buildings.find((b) => b.element === 'great_house')
     if (!gh || lodTier(camera.z) !== 'close') return []
-    const open = cutaway.openId === gh.id
-    const slugs = Object.keys(presenceBySlug).sort()
-    return slugs.map((slug, i) => {
-      const h = fnv1a(`officer:${slug}`)
-      const pos = open
-        ? {
-            x: gh.x + 1 + (i % 3) * ((gh.w - 2) / 2.5),
-            y: gh.y + 1.6 + Math.floor(i / 3) * 1.6,
-          }
-        : {
-            x: gh.x + 0.5 + ((h >>> 4) % (gh.w * 2)) / 2,
-            y: gh.y + gh.h + 1 + (i % 2),
-          }
-      return {
-        slug,
-        ...pos,
-        verb: presenceBySlug[slug]?.present ? presenceBySlug[slug]?.verb ?? null : null,
-      }
-    })
+    // officerSlots is THE seeded placement — the canvas draws from it and the
+    // hit test picks against it, so a name chip cannot drift off the officer it
+    // names. It was re-derived here, and nothing held the two copies equal.
+    return officerSlots(gh, Object.keys(presenceBySlug).sort(), cutaway.openId === gh.id).map(
+      (o) => ({
+        slug: o.slug,
+        x: o.x,
+        y: o.y,
+        verb: presenceBySlug[o.slug]?.present ? presenceBySlug[o.slug]?.verb ?? null : null,
+      })
+    )
   }, [buildings, camera.z, presenceBySlug, cutaway.openId])
 
   const ticker = useMemo(

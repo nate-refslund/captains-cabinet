@@ -40,7 +40,7 @@ import {
 } from './iso-layout'
 import { LANDING_FRAMES, VILLAGE_LIFE_FRAMES } from './iso-layout/dressing'
 import { eraOfFrame, frameFor, isEmptyRung, type IsoPack, type PackFrame } from './iso-pack'
-import { pointInGround, projectionFor, type ProjectionKind } from './projection'
+import { pointInSprite, projectionFor, type ProjectionKind } from './projection'
 import type { WorldResolution } from './era-engine'
 
 const ERAS: readonly Era[] = ['camp', 'hamlet', 'town', 'beyond_bay']
@@ -576,6 +576,19 @@ export function cameraClamp(
 }
 
 /**
+ * Which sprites a pick may answer with. A PREDICATE rather than a flag because
+ * "what has a card" is the CALLER's question, not the scene's: ./pick.ts also
+ * answers for the two STATION frames that no ladder entitles (the crossroads
+ * mailbox, the chart table) and gates the chart table on whether this
+ * deployment has any directions at all. A boolean here would have pushed that
+ * knowledge into this module, or grown a second pick beside it.
+ */
+export type IsoPickWants = (s: IsoSprite) => boolean
+
+/** The default: a sprite some measured state put on the island. */
+export const PICKS_MEASURED: IsoPickWants = (s) => s.role !== null
+
+/**
  * THE ISO PICK — which sprite is under a layout-pixel point.
  *
  * It lives here, and not in the canvas closure, for the reason every other pure
@@ -587,31 +600,36 @@ export function cameraClamp(
  * FRONT TO BACK, which is the reverse of the depth sort `buildIsoScene` already
  * applied, so the sprite the eye sees on top is the sprite the pointer gets.
  *
- * ON THE SHARED GROUND DIAMOND (../projection pointInGround), not on the sprite
- * rectangle. A sprite's rectangle is its ART — a lighthouse is 200px tall and
- * stands on a 54px diamond — so picking by rectangle would let a roof 150px up
- * the screen answer for ground a person is standing on, and would make tall
- * things swallow everything behind them. It is also the SAME geometry the
- * placement rules cleared against and checks/world_checks.py judges; a fifth
- * definition of where a sprite stands is the defect ./iso-layout/clearance.ts
- * records paying for three times.
+ * ON THE SHARED PICK SOLID (../projection pointInSprite) — the ground diamond
+ * swept up-screen by the art's rise. It was the ground DIAMOND until
+ * 2026-07-28, and that was changed against a measurement rather than an
+ * argument: on the hamlet capture's own forward id buffer the diamond returned
+ * the right sprite for 35.5% of the pixels the renderer had painted that sprite
+ * on, so roughly two thirds of every visible building answered "empty ground".
+ * The sweep takes that to 93.4% AND more than halves the wrong-card rate, and
+ * pointInSprite's docstring carries the whole table and what it still costs.
  *
- * DECORATION IS TRANSPARENT TO THE PICK. `role === null` is a sprite no state
- * rule entitled — a tree, a barrel, a buoy — and it is SKIPPED rather than
- * answered, so a bush in front of the library does not turn the library into
- * bare ground. `wantsRole` lets the caller ask only for things with a card.
+ * It is still built from `groundDiamond`, so no new footprint enters the world:
+ * the pick, the clearance rules and checks/world_checks.py read one geometry,
+ * and a fifth definition of where a sprite stands is the defect
+ * ./iso-layout/clearance.ts records paying for three times.
+ *
+ * DECORATION IS TRANSPARENT TO THE PICK. A sprite `wants` rejects is SKIPPED
+ * rather than answered, so a bush in front of the library does not turn the
+ * library into bare ground — and that is also what keeps the swept solid
+ * honest, since only things with a card are given a body at all.
  */
 export function pickIsoSprite(
   scene: Pick<IsoScene, 'sprites'>,
   px: number,
   py: number,
-  opts: { includeDecorative?: boolean } = {}
+  opts: { wants?: IsoPickWants } = {}
 ): IsoSprite | null {
-  const wantAll = opts.includeDecorative ?? false
+  const wants = opts.wants ?? PICKS_MEASURED
   for (let i = scene.sprites.length - 1; i >= 0; i--) {
     const s = scene.sprites[i]
-    if (!wantAll && s.role === null) continue
-    if (pointInGround(px, py, s.x, s.y, s.dw, s.dh)) return s
+    if (!wants(s)) continue
+    if (pointInSprite(px, py, s.x, s.y, s.dw, s.dh)) return s
   }
   return null
 }

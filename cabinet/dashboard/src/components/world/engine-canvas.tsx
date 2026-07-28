@@ -38,16 +38,15 @@ import {
   cameraTranslation,
   groundDiamond,
   projectionFor,
-  screenToWorld,
   TOPDOWN_TILE,
   worldScale,
   type ProjectionKind,
 } from '@/lib/world/projection'
+import { officerSlots, pickTarget, type PickTarget } from '@/lib/world/pick'
 import { fnv1a } from '@/lib/world/hash'
 import { parsePack, type IsoPack } from '@/lib/world/iso-pack'
 import {
   buildIsoScene,
-  pickIsoSprite,
   LANE_PAINT_SQUASH,
   layoutStateFrom,
   unmeasuredIssues,
@@ -194,10 +193,13 @@ const VEIL: Record<DayBucket, { colors: readonly number[]; coverage: number } | 
   night: { colors: NIGHT_VEIL_HUES, coverage: 0.42 },
 }
 
-export interface EngineTarget {
-  kind: 'officer' | 'building' | 'lane' | 'mailbox' | 'chart_table' | 'site' | 'ground'
-  id: string
-}
+/**
+ * The pick's own type, re-exported so every consumer keeps one import site.
+ * It lives in lib/world/pick.ts because that is where the hit test lives now,
+ * and a type declared beside a renderer that no longer decides anything would
+ * be the second definition this port exists to delete.
+ */
+export type EngineTarget = PickTarget
 
 export interface EngineCanvasProps {
   /**
@@ -1612,8 +1614,14 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         }
       }
 
-      /** Officer world positions: present officers stand at the Great House
-       * yard (seeded slots); on cutaway they render INSIDE at desks. */
+      /**
+       * Officer world positions: present officers stand at the Great House
+       * yard (seeded slots); on cutaway they render INSIDE at desks.
+       *
+       * The SEEDED MATH LIVES IN lib/world/pick.ts, because the hit test and
+       * the DOM name chips place from it too and three copies of one hash is
+       * how a click lands on nobody.
+       */
       function officerPositions(p: EngineCanvasProps): Array<{
         slug: string
         x: number
@@ -1621,28 +1629,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         inside: boolean
       }> {
         const gh = p.buildings.find((b) => b.element === 'great_house')
-        if (!gh) return []
-        const open = p.cutaway.openId === gh.id
-        const slugs = Object.keys(p.officers).sort()
-        return slugs.map((slug, i) => {
-          const h = fnv1a(`officer:${slug}`)
-          if (open) {
-            const col = i % 3
-            const row = Math.floor(i / 3)
-            return {
-              slug,
-              x: gh.x + 1 + col * ((gh.w - 2) / 2.5),
-              y: gh.y + 1.6 + row * 1.6,
-              inside: true,
-            }
-          }
-          return {
-            slug,
-            x: gh.x + 0.5 + ((h >>> 4) % (gh.w * 2)) / 2,
-            y: gh.y + gh.h + 1 + (i % 2),
-            inside: false,
-          }
-        })
+        return officerSlots(gh, Object.keys(p.officers).sort(), p.cutaway.openId === gh?.id)
       }
 
       /** One pooled character sprite (LimeZu Premade sheet frame). */
@@ -2108,131 +2095,28 @@ export default function EngineCanvas(props: EngineCanvasProps) {
       }
 
       /**
-       * The iso pick: the scene's own sprites, front to back, on the SHARED
-       * ground diamond.
-       *
-       * WHY IT CANNOT REUSE ANYTHING ABOVE. Under iso a sprite's position is a
-       * layout PIXEL, not a tile: buildIsoSprites does `sp.position.set(s.x,
-       * s.y)` straight from composeLayout. `screenToWorld` returns TILES,
-       * because that is what the camera and the top-down world speak — so the
-       * one conversion here is `proj.project(tx, ty)`, which is the same kernel
-       * the camera projects with, run forward. project() is linear, so
-       * project(tile) is the absolute layout px of that tile and no camera term
-       * is needed twice.
-       *
-       * THE DIAMOND IS THE ONE IN ../lib/world/projection, the same geometry
-       * the placement rules cleared against and checks/world_checks.py judges —
-       * a fifth definition of where a sprite stands is the defect that file's
-       * header records paying for. Front to back is the reverse of the depth
-       * sort buildIsoScene already did, so the thing the eye sees on top is the
-       * thing the pointer gets.
-       *
-       * DECORATION DOES NOT ABSORB THE CLICK. A sprite with no state role — a
-       * tree, a barrel, a buoy — is skipped rather than answered, so a bush
-       * standing in front of the library does not turn the library into
-       * "ground". What answers is the front-most sprite that a STATE RULE
-       * entitled, and when nothing does, `ground` says so plainly.
+       * The DOM edge, and nothing else: the rect subtraction, then the pure
+       * pick. Every tolerance, the priority order and the LOD gate live in
+       * lib/world/pick.ts, where a test can drive them — which is the whole
+       * point of the move (this closure had none, in either kernel).
        */
-      function isoHitTarget(tx: number, ty: number): EngineTarget {
-        const scene = isoScene
-        const GROUND: EngineTarget = { kind: 'ground', id: 'ground' }
-        if (!scene) return GROUND
-        const px = proj.project(tx, ty)
-        const p = propsRef.current
-        const s = pickIsoSprite(scene, px.x, px.y)
-        if (!s) return GROUND
-        // the two stations that are their own card, not a building row
-        if (s.frame === 'mailbox') return { kind: 'mailbox', id: 'mailbox' }
-        if (s.frame === 'chart_table' && p.chartTable) {
-          return { kind: 'chart_table', id: 'chart-table' }
-        }
-        // A LADDER ROLE IS A BUILDING ROW BY ITS `element`, never by its id.
-        // The engine's building ids are its own; the ladder object is the name
-        // both sides already agree on (WorldBuilding.element), so the card that
-        // opens is about the same measurement the sprite drew.
-        const b = p.buildings.find((bb) => bb.element === s.role)
-        if (b) return { kind: 'building', id: b.id }
-        // A role the top-down building table has no row for is real and
-        // measured but has no card yet. Answering `ground` is the honest reply
-        // — better than opening a neighbour's card.
-        return GROUND
-      }
-
-      function hitTarget(ev: MouseEvent): EngineTarget | null {
+      function hitTarget(ev: MouseEvent): EngineTarget {
         const rect = app.canvas.getBoundingClientRect()
         const p = propsRef.current
-        const s = p.camera.z
-        // THE one inverse — the same kernel the camera projects with, so a
-        // click can never land where the eye did not.
-        const view = { w: app.renderer.width, h: app.renderer.height }
-        const w = screenToWorld(proj, ev.clientX - rect.left, ev.clientY - rect.top, p.camera, view)
-        const wx = w.x
-        const wy = w.y
-        // UNDER ISO THE PICK IS ITS OWN, because the world is its own.
-        //
-        // Every target below is a tile-space tolerance against the TOP-DOWN
-        // geometry — building bboxes, the crossroads mailbox, lane-site
-        // circles, the road walk. The iso world is not that world: its
-        // buildings stand where composeLayout put them, in the compositor's
-        // pixel space. Running these tests against an iso pointer would open
-        // the inspect card for whatever top-down building happened to occupy
-        // the coordinate, which is a card asserting something false about the
-        // org. So the iso path answers from the SCENE it actually drew.
-        if (isIso) return isoHitTarget(wx, wy)
-        // officers first (small, on top)
-        if (LOD_RULES[lodTier(s)].officers) {
-          for (const o of officerPositions(p)) {
-            if (Math.abs(wx - o.x) < 0.8 && Math.abs(wy - o.y + 0.3) < 1) {
-              return { kind: 'officer', id: o.slug }
-            }
-          }
-          // commute walkers inspect as their officer (the walk is presence
-          // animation of a real verb shift — the card cites the mechanism)
-          if (p.life) {
-            for (const cm of p.life.commuters) {
-              const t = cm.walk.to === 'quay' ? cm.progress : 1 - cm.progress
-              const pos = roadPoint(t)
-              if (Math.abs(wx - (pos.x + 0.5)) < 0.9 && Math.abs(wy - (pos.y + 1) + 0.5) < 1.2) {
-                return { kind: 'officer', id: cm.slug }
-              }
-            }
-            for (const st of p.life.sites) {
-              const f = st.site.footprint
-              if (wx >= f.x - 1 && wx <= f.x + f.w + 1 && wy >= f.y - 1 && wy <= f.y + f.h + 1) {
-                return { kind: 'site', id: st.site.id }
-              }
-            }
-          }
-        }
-        // the mailbox (crossroads)
-        if (
-          Math.abs(wx - (p.geo.crossroads.x + 1.2)) < 1.2 &&
-          Math.abs(wy - p.geo.crossroads.y) < 1.6
-        ) {
-          return { kind: 'mailbox', id: 'mailbox' }
-        }
-        // the chart table (direction surface — read-only card, never an
-        // actuator; the killswitch lever stays THE one actuator, D2)
-        if (p.chartTable) {
-          const ctw = toWorld(CHART_TABLE_LOCAL.x, CHART_TABLE_LOCAL.y)
-          if (Math.abs(wx - (ctw.x + 0.5)) < 1.1 && Math.abs(wy - (ctw.y + 0.5)) < 1.2) {
-            return { kind: 'chart_table', id: 'chart-table' }
-          }
-        }
-        // buildings by bbox (footprints hit the same boxes at far LOD)
-        for (const b of p.buildings) {
-          if (wx >= b.x - 0.3 && wx <= b.x + b.w + 0.3 && wy >= b.y - 1 && wy <= b.y + b.h + 0.3) {
-            return { kind: 'building', id: b.id }
-          }
-        }
-        // lane sites (buoys / isles / mist)
-        for (const site of p.geo.laneSites) {
-          const r = site.render === 'isle' ? 12 : 4
-          if (Math.hypot(wx - site.cx, wy - site.cy) <= r) {
-            return { kind: 'lane', id: `lane:${site.slot}` }
-          }
-        }
-        return { kind: 'ground', id: 'ground' }
+        return pickTarget(
+          {
+            projection: p.projection,
+            camera: p.camera,
+            viewport: { w: app.renderer.width, h: app.renderer.height },
+            geo: p.geo,
+            buildings: p.buildings,
+            officers: p.officers,
+            life: p.life,
+            chartTable: p.chartTable ?? false,
+            scene: isoScene,
+          },
+          { x: ev.clientX - rect.left, y: ev.clientY - rect.top }
+        )
       }
 
       const onClick = (ev: MouseEvent) => propsRef.current.onPrimary(hitTarget(ev))

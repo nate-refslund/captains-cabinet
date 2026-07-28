@@ -304,10 +304,13 @@ export function groundOverlap(a: PxBox, b: PxBox): number {
 }
 
 /**
- * Is a px point inside a sprite's ground DIAMOND (not its box)? The pick
- * geometry — a diamond, because that is what the sprite actually stands on.
- * The diamond's bottom vertex is the base centre; its top vertex sits
- * `depth` up-screen; its side vertices sit at ±hw, half a depth up.
+ * Is a px point inside a sprite's ground DIAMOND (not its box)? Where the
+ * sprite STANDS — the diamond's bottom vertex is the base centre, its top
+ * vertex sits `depth` up-screen, its side vertices sit at ±hw, half a depth up.
+ *
+ * This is the FOOTPRINT, and it is not the pick — see pointInSprite. It stays
+ * the shared answer to "what ground does this occupy", which is what the
+ * clearance rules reserve against and what checks/world_checks.py judges.
  */
 export function pointInGround(
   px: number,
@@ -322,6 +325,63 @@ export function pointInGround(
   const dx = Math.abs(px - baseX) / g.hw
   const dy = Math.abs(py - cy) / (g.depth / 2)
   return dx + dy <= 1
+}
+
+/**
+ * The pick SOLID: the ground diamond swept straight up-screen by however much
+ * taller the art is than the footprint is deep. `rise = max(0, dh - depth)`, so
+ * where art is no taller than its own footprint the sweep is zero and this
+ * reduces to pointInGround term for term — flat props are untouched.
+ *
+ * WHY THE FOOTPRINT IS NOT THE PICK. A sprite in this world is drawn from its
+ * base centre UP: the great house is 196x174 standing on a diamond 165 wide and
+ * 96 deep, the lighthouse 128x200 on 108x70. So the diamond is knee-height and
+ * everything a person actually clicks is above it.
+ *
+ * MEASURED, not reasoned — the hamlet capture's own FORWARD ID BUFFER as the
+ * oracle (cabinet/scripts/world-capture, 2026-07-28: 2400x1760 sampled every
+ * 3px, 19,276 sampled pixels on which the renderer put a card-bearing sprite on
+ * top). "Recall" = of those pixels, the share the pick answers with that same
+ * sprite; "wrong" = the share it answers with a DIFFERENT card-bearing sprite:
+ *
+ *   solid                      recall   precision   wrong
+ *   ground diamond (shipped)    35.5%      72.2%      69
+ *   this swept diamond          93.4%      67.1%      28
+ *   full drawn rect             97.5%*     52.5%*     73   (*measured as the
+ *                                                          diamond's column)
+ *   the sprite's alpha mask     95.0%      94.7%       0   (the ceiling)
+ *
+ * So the shipped footprint answered "empty ground" for two of every three
+ * pixels of a building a person can see, which is the defect. The sweep fixes
+ * that and, because it keeps the diamond's own half-width (dw*0.42) rather than
+ * the full drawn width, it does NOT trade the fix for occlusion errors: the
+ * wrong-card rate falls from 69 to 28. A greedy full-width prism would let a
+ * lighthouse's transparent corners swallow the sea beside it.
+ *
+ * WHAT IT STILL COSTS, stated rather than discovered: precision 67.1% means
+ * about a third of the clicks that name a structure land on ground inside its
+ * solid. The remaining 28 points to the alpha ceiling need each frame's real
+ * silhouette, which this pack does not carry (163 frames, no coverage data), so
+ * that is a named BACKLOG row and not something faked here. The halo is also
+ * in-family: the top-down pick has always padded a building's bbox by 0.3 tiles
+ * on three sides and 1 tile on top.
+ */
+export function pointInSprite(
+  px: number,
+  py: number,
+  baseX: number,
+  baseY: number,
+  dw: number,
+  dh: number
+): boolean {
+  const g = groundDiamond(dw, dh)
+  if (g.hw <= 0 || g.depth <= 0) return false
+  const u = Math.abs(px - baseX) / g.hw
+  if (u > 1) return false
+  // the diamond's half-extent at this horizontal offset, swept up by the rise
+  const e = (g.depth / 2) * (1 - u)
+  const cy = baseY - g.depth / 2
+  return py <= cy + e && py >= cy - e - Math.max(0, dh - g.depth)
 }
 
 // ── camera: pure scale + translate, one definition ─────────────────────────
