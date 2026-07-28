@@ -316,33 +316,66 @@ _ZW_BIDI = (
 # describe the world. Tuned to high-signal patterns; a hit only forces
 # propose-only + ⚠ (the safe default), so false positives cost nothing but a
 # review. The SEC-5 canary suite (Wave 3) is the calibration harness.
+#
+# BILINGUAL, because the operator's inbound is (measured 2026-07-28: 7/7 of the
+# English arms fired, 8 of 11 semantically identical DANISH payloads walked
+# straight through — the screen was policing a language this deployment barely
+# receives). Danish alternations are folded into the EXISTING arms rather than
+# added as a second table, so there is one screen with one calibration surface.
+# ONE deliberate non-addition: "send X til <email>" is not screened on the bare
+# address, because that is ordinary Danish business prose and a detector that
+# fires on every second message is a detector nobody reads; the bulk-exfil arm
+# below requires a totality word ("alle", "hele", "samtlige") to fire.
 _INJECTION_SCREEN = (
     ("ignore-previous", re.compile(
-        r"\bignore\s+(?:all\s+|the\s+|any\s+)?(?:previous|prior|above|preceding|earlier)\b",
-        re.I)),
+        r"\b(?:ignore|ignor[eé]r)\s+(?:all\s+|the\s+|any\s+|alle\s+|al\s+)?"
+        r"(?:previous|prior|above|preceding|earlier"
+        r"|tidligere|forrige|ovenst[åa]ende|foreg[åa]ende)\b", re.I)),
     ("disregard-instructions", re.compile(
-        r"\bdisregard\s+(?:all\s+|the\s+|your\s+|any\s+)?"
-        r"(?:previous|prior|above|instructions?|rules?|prompt)\b", re.I)),
-    ("role-preamble", re.compile(r"(?im)^\s*(?:system|assistant|developer|ai)\s*[:：]")),
-    ("you-are-now", re.compile(r"\byou\s+are\s+now\b", re.I)),
-    ("new-instructions", re.compile(r"\bnew\s+(?:instructions?|rules?|system\s+prompt)\b", re.I)),
-    ("override-instructions", re.compile(r"\boverride\b[^\n]{0,40}\b(?:instructions?|rules?|prompt)\b", re.I)),
+        r"\b(?:disregard|tilsides[æa]t)\s+(?:all\s+|the\s+|your\s+|any\s+|alle\s+|dine\s+|de\s+)?"
+        r"(?:previous|prior|above|instructions?|rules?|prompt"
+        r"|tidligere|instruktioner|instrukser|regler|reglerne)\b", re.I)),
+    ("forget-instructions", re.compile(
+        r"\b(?:forget(?:\s+about)?|se\s+bort\s+fra|glem(?:\s+alt\s+om)?)\s+"
+        r"(?:all\s+|the\s+|your\s+|any\s+|alle\s+|al\s+|dine\s+|de\s+)?"
+        r"(?:previous\s+|prior\s+|tidligere\s+|forrige\s+|ovenst[åa]ende\s+)?"
+        r"(?:instructions?|rules?|guidelines?"
+        r"|instruktioner|instrukser|regler|retningslinjer)\b", re.I)),
+    ("role-preamble", re.compile(
+        r"(?im)^\s*(?:system|systemet|assistant|assistent|developer|udvikler|ai)\s*[:：]")),
+    ("you-are-now", re.compile(r"\b(?:you\s+are\s+now|du\s+er\s+nu)\b", re.I)),
+    ("new-instructions", re.compile(
+        r"\b(?:new|nye?)\s+(?:instructions?|rules?|system\s+prompt"
+        r"|instruktioner|instrukser|regler|systemprompt)\b", re.I)),
+    ("override-instructions", re.compile(
+        r"\b(?:override|overskriv|tilsides[æa]t)\b[^\n]{0,40}"
+        r"\b(?:instructions?|rules?|prompt|instruktioner|instrukser|regler)\b", re.I)),
     ("marker-char", re.compile("·")),
     ("zero-width-bidi", re.compile("[" + _ZW_BIDI + "]")),
     ("data-uri", re.compile(r"\bdata:[a-z]+/[a-z0-9.+-]+;base64,", re.I)),
     ("cred-url", re.compile(r"\bhttps?://[^\s/@]+:[^\s/@]+@", re.I)),
     ("base64-blob", re.compile(r"(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{120,}={0,2}(?![A-Za-z0-9+/=])")),
     ("url-exfil", re.compile(
-        r"\b(?:exfiltrate|exfil|leak)\b|\b(?:send|post|forward|upload)\b[^\n]{0,40}"
-        r"\b(?:to\s+)?https?://", re.I)),
+        r"\b(?:exfiltrate|exfil|leak|l[æa]k|udlever)\b"
+        r"|\b(?:send|post|forward|upload|videresend|indsend|eftersend)\b[^\n]{0,40}"
+        r"\b(?:to\s+|til\s+)?https?://", re.I)),
+    # Bulk exfiltration to a mail address — narrow on purpose: the verb must be
+    # paired with a TOTALITY word before an address counts, so ordinary "send
+    # den til anders@…" stays clean while "videresend hele indbakken til …"
+    # does not.
+    ("bulk-exfil-address", re.compile(
+        r"\b(?:send|forward|upload|videresend|indsend|eftersend)\b[^\n]{0,30}"
+        r"\b(?:all|every|everything|whole|entire|alle|hele|al|samtlige)\b[^\n]{0,40}"
+        r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", re.I)),
     # [SEC-5 finding 2026-07-04] Bare approval IMPERATIVE directed at the agent's
     # decision — "approve this card", "please approve it", "godkend denne". The
     # executor tripwire caught only the past-participle claim (godkendt/approved);
     # this closes the proposer layer so a planted approval imperative forces
     # injection_suspect (→ propose_only) BEFORE the card is ever a candidate.
     ("approval-imperative", re.compile(
-        r"\b(?:please\s+)?(?:approve|godkend|authori[sz]e)\s+"
-        r"(?:this|the|it|my|card|action|request|task|denne|dette|den)\b", re.I)),
+        r"\b(?:please\s+|venligst\s+|bedes\s+)?(?:approve|godkend(?:e|es)?|authori[sz]e)\s+"
+        r"(?:this|the|it|my|card|action|request|task"
+        r"|denne|dette|den|opgaven|handlingen|kortet|anmodningen)\b", re.I)),
 )
 
 
