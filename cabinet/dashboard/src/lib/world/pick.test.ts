@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import { buildIsoScene, elementForRole, type IsoScene } from './iso-scene'
+import { interiorSlots, openFrameOf } from './iso-cutaway'
 import { parsePack, type IsoPack } from './iso-pack'
 import { officerSlots, pickTarget, STATIONS, type PickKind, type PickWorld } from './pick'
 import { LOD_RULES, lodTier } from './lod'
@@ -288,16 +289,23 @@ describe('every interactive kind is reachable, or is honestly not drawn', () => 
     }
   })
 
-  it('iso: officers, walkers, sites and lane isles are NOT DRAWN, so nothing answers', () => {
-    // Not a gap in the pick — a gap in the world. The pack ships no character
-    // sprites, `drawIsoDynamics` draws only the lighthouse lamp, and the
-    // five-slot isle fan is top-down `world-geo` geometry with no iso
-    // counterpart. The pick must not invent them from top-down coordinates:
-    // that would be a card asserting something false about the org.
+  it('iso: the STATIC scene draws no walker, site or lane isle, so nothing answers', () => {
+    // Not a gap in the pick — a gap in the world. The five-slot isle fan is
+    // top-down `world-geo` geometry with no iso counterpart, and the pick must
+    // not invent one from top-down coordinates: that would be a card asserting
+    // something false about the org.
     // stated as the BEHAVIOUR, not as a name heuristic: an earlier version of
     // this arm looked for the substring 'officer' in frame names and fired on
     // `officer_house_a`, which is a HOUSE. A living thing is a thing the pick
     // can answer `officer`/`site`/`lane` for, so that is what is measured.
+    //
+    // SCOPED TO THE STATIC SCENE ON PURPOSE. This arm shipped saying "the pack
+    // ships no character sprites, drawIsoDynamics draws only the lamp", and the
+    // very next commit made that false: `drawIsoCutaway` draws one LimeZu
+    // officer per slug inside any open room (engine-canvas.tsx ~1887). The
+    // sweep could not see it, because a scene with no cutaway open has no
+    // officer in it — so the justification was rewritten to what is measured
+    // here, and the surface it stopped covering is pinned by the arm below.
     const seen = new Set<PickKind>()
     for (let i = 0; i < 2500; i++) {
       const h = fnv1a(`iso-living:${i}`)
@@ -307,6 +315,36 @@ describe('every interactive kind is reachable, or is honestly not drawn', () => 
     expect([...seen].sort()).toEqual(['building', 'chart_table', 'ground', 'mailbox'])
     for (const gone of ['officer', 'site', 'lane'] as PickKind[]) {
       expect(seen.has(gone), `iso answers ${gone} for something it never drew`).toBe(false)
+    }
+  })
+
+  /**
+   * A DECLARED GAP, so it is visible from the board instead of from a report.
+   *
+   * Under iso the cutaway DOES draw officers: `drawIsoCutaway` places one
+   * character sprite per slug on `interiorSlots` inside the open room. The iso
+   * pick has no officer branch at all — it answers stations, then a building
+   * row, then ground — so a click on a drawn officer opens the BUILDING's card.
+   * That is wrong but not dishonest: the card names a thing that is really
+   * there. Inventing an officer from top-down yard coordinates would be worse.
+   *
+   * Pinned rather than left implicit BECAUSE IT GOES RED WHEN IT IS FIXED. The
+   * two commits that produced this state each held one half of it and the suite
+   * was green over the pair; an arm that says out loud what is not reachable is
+   * the only thing that survives the next hand-off.
+   */
+  it('iso: an officer inside an OPEN room is not pickable yet — declared, not discovered', () => {
+    const gh = SCENE.sprites.find((s) => s.role === 'great_house')!
+    const open = openFrameOf(PACK, gh.frame)
+    expect(open, 'the great house really does have roof-off art to open').not.toBeNull()
+    const slots = interiorSlots(open!, gh.x, gh.y, 3)
+    expect(slots.length, 'the room really does place desks the officers stand at').toBe(3)
+    for (const slot of slots) {
+      // the officer is drawn at slot.y + 7 (engine-canvas.tsx), inside the room
+      const { wx, wy } = tileOfLayoutPx(slot.x, slot.y + 7)
+      const got = pickAtTile(isoWorld({ camera: { z: 3, x: wx, y: wy } }), wx, wy)
+      expect(got.kind, 'when this becomes `officer`, delete this arm').toBe('building')
+      expect(got.id).toBe('great_house')
     }
   })
 
