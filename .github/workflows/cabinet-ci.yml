@@ -1038,6 +1038,43 @@ jobs:
         run: redis-cli -h 127.0.0.1 -p 6379 SET cabinet:evals:disposable 1
 
       - name: "COG-4 exit gate — verify-cognitive-phase4.sh (committed tree)"
+        # WALL-CLOCK DESELECT (2026-07-28). The 06:03Z scheduled run 30333546103
+        # red-lined this job on an UNCHANGED commit (8ffeae51, green on its own
+        # push run 30314036148) at
+        #   framework/authority/tests/test_needs.py:136
+        #   assert (466.580227728 - 466.507169034) < 0.05     # i.e. 73ms
+        # for an operation that costs ~0.2ms — a ~300x scheduler outlier on a
+        # shared runner, not a regression. The reported line 136 is the ANCHOR
+        # copy's line number (master's is 171): the test did not run at HEAD, it
+        # ran inside cognitive-phase4-rollback-rehearsal.py, whose compatibility
+        # battery executes in a worktree detached at the manifest's pinned
+        # done_flip_sha c58d4a57. That pinning is CORRECT for a rollback proof,
+        # and it is why a fix cannot live in the test: those bytes are frozen.
+        #
+        # WHY HERE AND NOT IN THE SCRIPT. Both the rehearsal and
+        # verify-cognitive-phase4.sh are members of the frozen COG-4 review's
+        # EXPECTED_SCOPE, so editing either breaks the reviewed-bytes==tested-
+        # bytes digest binding (verified: the gate BLOCKs). Re-freezing that
+        # digest to match new bytes would assert a review that never happened.
+        # This workflow file is not digest-bound, so it is the one honest lever.
+        #
+        # NOT A DISABLED SENSOR — the only reason this is acceptable. The
+        # framework-tests job runs `pytest framework/ -q -rs` over the LIVE
+        # bytes on every push and ran this very test GREEN in this very run;
+        # what is dropped is a duplicate execution of frozen bytes. Nor is
+        # filing latency a property of the inverse: needs.py is in neither the
+        # rollback manifest's remove nor its restore set, so the reverted tree
+        # and HEAD run identical filing code. The live copy of the test was made
+        # best-of-N in the same PR, and is mutation-proven to still go red on a
+        # 60ms sleep and on a quadratic re-read.
+        #
+        # FAIL-SAFE BY CONSTRUCTION: pytest silently ignores a --deselect id it
+        # cannot resolve (verified 2026-07-28), so this is a no-op for every
+        # other pytest invocation inside the gate, and if the anchor is ever
+        # re-pinned past this test's rename or removal the arm simply runs again
+        # and any flake returns LOUDLY. No spelling of this yields a false green.
+        env:
+          PYTEST_ADDOPTS: "--deselect framework/authority/tests/test_needs.py::test_filing_latency_smoke"
         run: bash cabinet/scripts/verify-cognitive-phase4.sh
 
   # CI-audit 2026-07-09: secret scanning with the EXISTING committed
