@@ -143,11 +143,19 @@ import type { LaneCourse, VoyageRender } from '@/lib/world/course'
 import type { WorldBuilding } from '@/lib/world/world-buildings'
 import {
   LOD_RULES,
+  cutawayStep,
+  initialCutaway,
   lodTier,
   roofAlpha,
   type CutawayState,
   type EngineCamera,
 } from '@/lib/world/lod'
+import {
+  cutawayMix,
+  interiorSlots,
+  isoCutawayCandidate,
+  openFrameOf,
+} from '@/lib/world/iso-cutaway'
 import type { WeatherState } from '@/lib/world/weather'
 import { rainDrops } from '@/lib/world/weather'
 import type { WorldResolution } from '@/lib/world/era-engine'
@@ -1475,20 +1483,34 @@ export default function EngineCanvas(props: EngineCanvasProps) {
        * from the pack's dw/dh — never from `scale`, which disagrees on 28 of
        * them.
        */
+      /** The atlas cut for a pack frame — one Texture per frame, ever. */
+      function isoTex(pack: IsoPack, atlas: Texture, frame: string): Texture | null {
+        const f = pack.frames[frame]
+        if (!f) return null
+        const key = `iso|${frame}`
+        let tex = cutCache.get(key)
+        if (!tex) {
+          tex = new PIXI.Texture({
+            source: atlas.source,
+            frame: new PIXI.Rectangle(f.x, f.y, f.w, f.h),
+          })
+          cutCache.set(key, tex)
+        }
+        return tex
+      }
+
       function buildIsoSprites(scene: IsoScene, pack: IsoPack, atlas: Texture): void {
+        isoSpriteById.clear()
         for (const s of scene.sprites) {
           const f = pack.frames[s.frame]
           if (!f) continue // unreachable: buildIsoScene already reported it
-          const key = `iso|${s.frame}`
-          let tex = cutCache.get(key)
-          if (!tex) {
-            tex = new PIXI.Texture({
-              source: atlas.source,
-              frame: new PIXI.Rectangle(f.x, f.y, f.w, f.h),
-            })
-            cutCache.set(key, tex)
-          }
+          const tex = isoTex(pack, atlas, s.frame)
+          if (!tex) continue
           const sp = new PIXI.Sprite(tex)
+          // the cutaway needs a handle on the building it opens: these sprites
+          // are STATICS, rebuilt only on a state change, so the per-tick roof
+          // fade has to reach the object rather than re-create it
+          isoSpriteById.set(s.id, sp)
           sp.anchor.set(0.5, 1)
           sp.setSize(s.dw, s.dh)
           sp.position.set(s.x, s.y)
@@ -1546,6 +1568,22 @@ export default function EngineCanvas(props: EngineCanvasProps) {
       let isoScene: IsoScene | null = null
       let isoIssued = false
       let isoUnmeasuredIssued = false
+      /** Static iso sprites by scene id — the cutaway's handle on a roof. */
+      const isoSpriteById = new Map<string, Sprite>()
+      /**
+       * The iso cutaway machine.
+       *
+       * IT IS THE SAME PURE REDUCER the top-down path runs (lod.cutawayStep),
+       * driven from the same logical tick — what differs is the CANDIDATE, and
+       * it has to: the shell computes its candidate from the top-down building
+       * boxes in TILE space, whose ids are `great_house` / `dwelling:2`, while
+       * an iso roof belongs to a scene sprite at a layout PIXEL with an id like
+       * `st:0:great_house`. Feeding one machine's answer to the other would open
+       * a roof that is not there. Stepped here rather than in the shell because
+       * this is the only place that holds the composed scene.
+       */
+      let isoCut: CutawayState = initialCutaway()
+      let isoCutTick = -1
 
       function rebuildIsoStatics(p: EngineCanvasProps) {
         if (!isoPack || !isoAtlas) {
@@ -1733,7 +1771,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
        * stage ABOVE the ambience veil — so warm light cuts through the night
        * grade instead of being dithered away by it.
        */
-      function drawIsoDynamics(): void {
+      function drawIsoDynamics(p: EngineCanvasProps): void {
         dynG.clear()
         dynShadowG.clear()
         const lamp = isoScene?.lamp
@@ -1741,6 +1779,152 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           drawGlow(fxG, 'iso:lamp', lamp.x, lamp.y, 54)
           fxG.rect(lamp.x - 4, lamp.y - 4, 8, 8).fill({ color: GLOW_CORE })
         }
+        drawIsoCutaway(p)
+      }
+
+      /**
+       * THE ROOF CUTAWAY, in isometric — a cross-fade to real roof-off art.
+       *
+       * What it replaces was a fade of the WHOLE building sprite to alpha 0.08
+       * over an axis-aligned TilingSprite floor and a rectangular desk grid laid
+       * out in tile space. Top-down that reads as a roof lifting, because a
+       * top-down building IS its roof from above. In iso it is a ghost of the
+       * entire structure with a rectangle punched through the world behind it,
+       * and officers packed into a 165x96 lozenge under a building still
+       * standing over them.
+       *
+       * Now: the closed frame fades OUT while its `_open` twin — the same
+       * building with its roof removed and its own floor and inner walls drawn —
+       * fades IN at the same base centre, and the interior kit is placed on the
+       * room's own iso lattice. A building the pack has no roof-off art for
+       * keeps the old fade, which is why this is a swap and not a rewrite.
+       *
+       * EVERY FIXTURE IS EMPTY ART FILLED FROM STATE. The desks are as many as
+       * there are officers; the board and the shelf are drawn bare. Baking a
+       * count into the art is the doctrine violation this project has already
+       * rejected a whole design for.
+       */
+      function drawIsoCutaway(p: EngineCanvasProps): void {
+        const scene = isoScene
+        if (!scene || !isoPack || !isoAtlas) return
+        const pack = isoPack
+        const atlas = isoAtlas
+        // one step per LOGICAL tick, never per frame: the reducer's hold and
+        // fade are counted in ticks
+        if (p.tick !== isoCutTick) {
+          isoCutTick = p.tick
+          const eligible = LOD_RULES[lodTier(p.camera.z)].cutawayEligible
+          const centre = proj.project(p.camera.x, p.camera.y)
+          const cand = eligible
+            ? isoCutawayCandidate(
+                scene.sprites,
+                pack,
+                centre,
+                { w: app.renderer.width, h: app.renderer.height },
+                worldScale(proj, p.camera.z)
+              )
+            : null
+          isoCut = cutawayStep(isoCut, cand, p.tick)
+        }
+        const live = new Set<string>()
+        const slugs = Object.keys(p.officers).sort()
+        for (const s of scene.sprites) {
+          if (s.id !== isoCut.openId && s.id !== isoCut.closingId) continue
+          const open = openFrameOf(pack, s.frame)
+          const mix = cutawayMix(isoCut, s.id, p.tick, open !== null)
+          const roof = isoSpriteById.get(s.id)
+          if (roof) roof.alpha = mix.closed
+          if (!open || mix.open <= 0) continue
+          const tex = isoTex(pack, atlas, open.frame)
+          if (!tex) continue
+          // ONE CONTAINER FOR THE WHOLE ROOM, and this is the part that has to
+          // be a container rather than loose sprites: the room's own depth key
+          // is the building's base y, which is LARGER than every interior slot
+          // inside it, so on the flat propLayer the room would paint over its
+          // own furniture. Nesting keeps the room at the building's depth in
+          // the world and sorts the furniture inside it by its own y.
+          const key = `isoroom:${s.id}`
+          live.add(key)
+          const room = pooled(key, () => {
+            const c = new PIXI.Container()
+            c.sortableChildren = true
+            return c
+          })
+          room.alpha = mix.open
+          room.zIndex = s.depth + 0.5
+          if (room.children.length === 0) {
+            const floor = new PIXI.Sprite(tex)
+            floor.anchor.set(0.5, 1)
+            floor.setSize(open.dw, open.dh)
+            floor.position.set(s.x, s.y)
+            floor.zIndex = -1
+            room.addChild(floor)
+          }
+          // THE FIXTURES, filled from measured state: one desk per officer, on
+          // the room's own iso lattice. The art is EMPTY on purpose — a desk
+          // drawn with papers, or a board drawn with pins, would bake a count
+          // into a static frame.
+          const deskFrame = pack.frames.int_desk
+          const deskTex = deskFrame ? isoTex(pack, atlas, 'int_desk') : null
+          const slots = interiorSlots(open, s.x, s.y, slugs.length)
+          const want = new Set<string>()
+          slots.forEach((slot, i) => {
+            if (deskTex && deskFrame) {
+              const dk = `desk:${i}`
+              want.add(dk)
+              const d = roomChild(room, dk, () => new PIXI.Sprite())
+              if (d instanceof PIXI.Sprite) {
+                d.texture = deskTex
+                d.anchor.set(0.5, 1)
+                d.setSize(deskFrame.dw, deskFrame.dh)
+                d.position.set(slot.x, slot.y)
+                d.zIndex = slot.y
+              }
+            }
+            // the officer stands on the NEAR side of their desk, so the desk
+            // never hides them — the same relation the top-down interior had
+            const slug = slugs[i]
+            const sheet = characterSheetFor(slug)
+            const cut = charFrame('work', 'down', p.tick, fnv1a(slug) % 6)
+            const ctex = texFor(sheet, { x: cut.x, y: cut.y, w: CHAR_FRAME_W, h: CHAR_FRAME_H })
+            if (!ctex) return
+            const ok = `off:${slug}`
+            want.add(ok)
+            const o = roomChild(room, ok, () => new PIXI.Sprite())
+            if (o instanceof PIXI.Sprite) {
+              o.texture = ctex
+              o.anchor.set(0.5, 1)
+              o.position.set(slot.x, slot.y + 7)
+              o.zIndex = slot.y + 7
+              o.alpha = p.officers[slug]?.present ? 1 : 0.4
+            }
+          })
+          for (const c of room.children) {
+            const n = (c as Container).label
+            if (n && !want.has(n)) c.visible = false
+          }
+        }
+        // anything this pass did not touch stops being drawn — a stale open
+        // room left on the layer is a roof that never came back
+        for (const key of pool.keys()) {
+          if (key.startsWith('isoroom:') && !live.has(key)) {
+            const obj = pool.get(key)
+            if (obj) obj.visible = false
+          }
+        }
+      }
+
+      /** A named child of a room container — the pool, one level down. */
+      function roomChild<T extends Container>(room: Container, name: string, make: () => T): T {
+        const found = room.children.find((c) => (c as Container).label === name) as T | undefined
+        if (found) {
+          found.visible = true
+          return found
+        }
+        const made = make()
+        made.label = name
+        room.addChild(made)
+        return made
       }
 
       function drawDynamics(p: EngineCanvasProps) {
@@ -2090,7 +2274,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         placeholderBuildings(p)
         const bucket = bucketOf(p.clockHour)
         drawWeather(p, bucket) // clears fxG first
-        if (isIso) drawIsoDynamics() // then the lamp is composited onto fxG
+        if (isIso) drawIsoDynamics(p) // then the lamp is composited onto fxG
         else drawDynamics(p) // …or the whole top-down dynamic layer is
       }
 
