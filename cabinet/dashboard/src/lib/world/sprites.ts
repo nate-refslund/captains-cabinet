@@ -149,7 +149,10 @@ export const CHAR_SHEET_MIN_H = 96
  * licensed set, gitignored and absent from HEAD, could never give them.
  *
  * Both sets are in the manifest; changing this constant changes which one the
- * renderer binds. Nothing else in the engine knows the difference.
+ * renderer binds. Nothing else in the engine knows the difference — EXCEPT the
+ * art credit, which must not name LimeZu for pixels LimeZu did not draw: it
+ * reads this constant's licence back off the manifest (lib/world/credit.ts),
+ * so reverting this line restores the credit under iso by itself.
  */
 export const CHARACTER_DIR = 'originals/characters'
 
