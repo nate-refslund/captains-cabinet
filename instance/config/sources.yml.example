@@ -26,3 +26,18 @@
 # that owns ALL screenpipe imports and paths (spec §4.5). Uncomment to bind:
 #
 # adapter: flavor_a.screenpipe_source:ScreenpipeSource
+#
+# ── Local-folder binding (the personal flavor) ────────────────────────────────
+# For an operator with a folder of notes and no org estate. The generator emits
+# this automatically on `autonomy.flavor: personal`, taking `local_root:` from
+# the answers' `sources.notes_root`. Read-only by construction — the module has
+# no write side, so no `dispatch:` exists to bind.
+#
+# NO DEFAULT ROOT, deliberately (2026-07-28): an absent `local_root:` resolves
+# to NOTHING and `available()` returns False. It used to fall back to
+# <root>/vault — the cabinet's OWN shipped docs — and reported live recall over
+# the framework's documentation, which an operator cannot tell apart from their
+# own notes. CABINET_LOCAL_SOURCE_ROOT overrides at runtime.
+#
+# adapter: framework.sources.local:LocalNotesSource
+# local_root: ~/Documents/notes

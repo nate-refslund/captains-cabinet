@@ -139,6 +139,72 @@ def test_local_root_from_config_is_root_relative(tmp_path):
     assert resolve_root() == tmp_path / "notes"
 
 
+def test_undeclared_root_resolves_to_nothing_not_to_the_cabinets_own_docs(tmp_path):
+    """THE CONFIDENT FALSE POSITIVE, pinned (measured 2026-07-28).
+
+    ``resolve_root()`` used to fall back to ``<CABINET_ROOT>/vault`` when
+    nothing was declared. ``vault/`` is the CABINET'S OWN shipped
+    documentation — ``vault/README.md`` and ``vault/architecture.md`` are
+    tracked files in this repo — so a personal hatch that granted no folder got
+    ``available() -> True`` and recall answering out of the framework's own
+    docs as if they were the operator's notes. Nothing downstream could tell
+    that apart from working recall, which is why it is worse than the honest
+    empty it replaced.
+
+    This arm reproduces the exact shape: a deployment root that HAS a populated
+    ``vault/``, and NO declaration anywhere."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "README.md").write_text(
+        "# vault\n\nWhere a document lives in the cabinet.\n", encoding="utf-8")
+    (vault / "architecture.md").write_text(
+        "# Architecture\n\ncabinet layering\n", encoding="utf-8")
+    (tmp_path / "instance/config").mkdir(parents=True)
+    (tmp_path / "instance/config/sources.yml").write_text(
+        "adapter: framework.sources.local:LocalNotesSource\n", encoding="utf-8")
+    os.environ["CABINET_ROOT"] = str(tmp_path)
+    os.environ.pop("CABINET_LOCAL_SOURCE_ROOT", None)
+    from framework.sources.local import resolve_root
+    assert resolve_root() is None, (
+        "an undeclared notes folder resolved to a path — the pre-2026-07-28 "
+        "fallback bound the cabinet's own vault/ and called it the operator's")
+    src_pkg._reset_cache()
+    bound = src_pkg.get_source()
+    assert isinstance(bound, LocalNotesSource)
+    assert bound.available() is False
+    assert bound.search("cabinet architecture")["hits"] == []
+    assert bound.binding_status() == {
+        "declared": False, "root": None, "exists": False, "notes": 0}
+
+
+def test_binding_status_separates_unset_from_missing_from_empty(tmp_path):
+    """Three states, three fixes. Collapsing them into one boolean is what let
+    "recall is fine" and "recall is pointed at the wrong thing" read the same."""
+    os.environ.pop("CABINET_LOCAL_SOURCE_ROOT", None)
+    os.environ["CABINET_ROOT"] = str(tmp_path)
+    assert LocalNotesSource().binding_status()["declared"] is False
+
+    gone = LocalNotesSource(root=str(tmp_path / "nope")).binding_status()
+    assert gone["declared"] is True and gone["exists"] is False
+
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    got = LocalNotesSource(root=str(empty)).binding_status()
+    assert got["declared"] is True and got["exists"] is True and got["notes"] == 0
+
+    live = LocalNotesSource(root=str(_notes(tmp_path))).binding_status()
+    assert live["declared"] and live["exists"] and live["notes"] > 0
+
+
+def test_read_note_refuses_when_no_root_was_granted(tmp_path):
+    """No scope granted is the same refusal as a missing file — a traversal
+    attempt against an unbound adapter must not learn that it is unbound."""
+    os.environ.pop("CABINET_LOCAL_SOURCE_ROOT", None)
+    os.environ["CABINET_ROOT"] = str(tmp_path)
+    with pytest.raises(FileNotFoundError):
+        LocalNotesSource().read_note("anything.md")
+
+
 def test_env_override_beats_config(tmp_path):
     cfg = tmp_path / "instance/config"
     cfg.mkdir(parents=True)
