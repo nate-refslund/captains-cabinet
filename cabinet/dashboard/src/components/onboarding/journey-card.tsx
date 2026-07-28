@@ -46,9 +46,14 @@ export default function OnboardingJourneyCard({
   // them and defeat the whole gate.
   const [ownership, setOwnership] = useState<OwnershipClass | ''>('')
   const [authorityBasis, setAuthorityBasis] = useState('')
+  // The seed answer. The core PRINTED its question on this card and offered no
+  // field to answer it, so a few words about the operator's work had nowhere to
+  // go and the discovery path they are supposed to start could never start.
+  const [seed, setSeed] = useState('')
   const [feedbackRecorded, setFeedbackRecorded] = useState<string | null>(null)
   const effectiveSurface = useRef<Extract<OnboardingSurface, 'dashboard' | 'world' | 'companion'>>(surface)
   const handoffIds = useRef<{ trace_id?: string; correlation_id?: string }>({})
+  const seedFieldRef = useRef<HTMLTextAreaElement | null>(null)
 
   const reportEvidence = useCallback(async (
     phase: 'transport' | 'ui' | 'feedback',
@@ -206,7 +211,18 @@ export default function OnboardingJourneyCard({
     })
   }
 
+  function submitSeed(event: FormEvent) {
+    event.preventDefault()
+    void send('answer_seed', { seed })
+  }
+
   function choose(action: OnboardingAction) {
+    if (action === 'answer_seed') {
+      // Focus the field rather than firing an empty action: this option exists
+      // to point at the input, and sending it bare would only earn a refusal.
+      seedFieldRef.current?.focus()
+      return
+    }
     if (action === 'propose_window') {
       if (journey?.state.source?.root) setSource(journey.state.source.root)
       if (journey?.state.purpose) setPurpose(journey.state.purpose)
@@ -292,6 +308,60 @@ export default function OnboardingJourneyCard({
           </div>
 
           <p className={`mt-3 text-sm leading-6 ${muted}`}>{journey.card.body}</p>
+
+          {journey.card.entry?.seed_question && (
+            <form
+              className={`mt-4 rounded-lg border p-3 ${variant === 'world' ? 'border-stone-500/70 bg-amber-50/40' : 'border-zinc-700 bg-zinc-950'}`}
+              onSubmit={submitSeed}
+            >
+              <label htmlFor={`${surface}-seed`} className="block text-sm font-semibold">
+                {journey.card.entry.seed_question}
+              </label>
+              <p className={`mt-1 text-xs ${muted}`}>
+                A sentence is enough. I take it as a starting point and go looking — not as the answer.
+              </p>
+              <textarea
+                id={`${surface}-seed`}
+                ref={seedFieldRef}
+                value={seed}
+                onChange={(event) => setSeed(event.target.value)}
+                rows={2}
+                maxLength={500}
+                className={`mt-2 w-full rounded-md border px-3 py-2 text-sm outline-none ${input}`}
+              />
+              <button
+                type="submit"
+                disabled={working || !seed.trim()}
+                className={`mt-2 min-h-11 rounded-md border px-3 py-2 text-sm font-medium disabled:opacity-50 ${variant === 'world' ? 'border-stone-600 bg-amber-100' : 'border-zinc-600 bg-zinc-800'}`}
+              >
+                Go and look
+              </button>
+            </form>
+          )}
+
+          {journey.card.entry?.discovery?.executed && (
+            <div className={`mt-4 rounded-lg border p-3 ${variant === 'world' ? 'border-stone-500/70 bg-amber-50/40' : 'border-zinc-700 bg-zinc-950'}`}>
+              <h3 className="text-sm font-semibold">What I went and looked for</h3>
+              <ul className="mt-2 space-y-1 text-sm">
+                {journey.card.entry.discovery.executed.executed.map((probe) => (
+                  <li key={`ran-${probe.kind}-${probe.pattern ?? ''}`}>
+                    <code>{probe.pattern ?? probe.kind}</code>
+                    <span className={`block ${muted}`}>
+                      {probe.matches.length > 0 ? probe.matches.join(', ') : 'nothing matched by name'}
+                    </span>
+                  </li>
+                ))}
+                {journey.card.entry.discovery.executed.deferred.map((probe, index) => (
+                  <li key={`skipped-${probe.kind}-${index}`}>
+                    <code>{probe.kind}</code>
+                    <span className={`block ${muted}`}>
+                      did not run — {probe.reason.replaceAll('_', ' ')}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {journey.card.entry && journey.card.entry.questions.length > 0 && (
             <div className={`mt-4 rounded-lg border p-3 ${variant === 'world' ? 'border-stone-500/70 bg-amber-50/40' : 'border-zinc-700 bg-zinc-950'}`}>

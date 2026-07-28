@@ -7,6 +7,8 @@ export type OnboardingSurface =
 
 export type OnboardingAction =
   | 'propose_window'
+  /** Answers the seed question. Carries free text, so surfaces render a FIELD. */
+  | 'answer_seed'
   | 'ratify_charter'
   | 'continue'
   | 'pause'
@@ -46,6 +48,13 @@ export interface OnboardingOption {
   action: OnboardingAction
   label: string
   danger?: boolean
+  /**
+   * Set when the action needs typed input rather than a tap. A question the
+   * core prints with no way to answer it is a dead end wearing an
+   * invitation's clothes, so the core says which option needs a field and
+   * every surface obeys — a tap-only surface must not offer it as a button.
+   */
+  input?: 'seed'
 }
 
 /**
@@ -74,6 +83,17 @@ export interface OnboardingEntryPlan {
     terms: string[]
     probes: Array<Record<string, string>>
     executable: boolean
+    /**
+     * What the probes actually FOUND once they were run. `deferred` carries
+     * every probe class that did NOT run with its reason, so no surface can
+     * summarise a partial run as though it had searched everywhere.
+     */
+    executed?: {
+      schema: 'cabinet.onboarding-probe-result/v1'
+      executed: Array<{ kind: string; pattern?: string; matches: string[]; truncated: boolean }>
+      deferred: Array<{ kind: string; reason: string }>
+      complete: boolean
+    }
   }
   cannot_know: Array<{ subject: string; verdict: string; statement: string }>
   next_actions: OnboardingOption[]
@@ -121,6 +141,15 @@ export interface OnboardingState {
     ratified_at?: string
   }
   first_dividend: null | Record<string, unknown>
+  /** The seed answer, when one was given. A starting point, never the data. */
+  seed?: { text: string; answered_at: string }
+  /** Written by the core's connector registry on every commit and snapshot. */
+  entry_grants?: { connectors: string[]; local_files: boolean; web: boolean }
+  connector_probes?: {
+    schema: 'cabinet.connector-registry/v1'
+    connected: Array<{ kind: string; name: string; evidence?: string }>
+    refused: Array<{ kind: string; name: string; reason: string }>
+  }
   created_at: string
   updated_at: string
 }
@@ -156,6 +185,8 @@ export interface OnboardingActionRequest {
   authority_basis?: string
   charter_hash?: string
   confirmation?: string
+  /** REQUIRED by answer_seed. A sentence about the operator's work. */
+  seed?: string
 }
 
 export interface OnboardingObservationRequest {

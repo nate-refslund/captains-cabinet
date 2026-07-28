@@ -141,6 +141,7 @@ function scriptState(overrides: {
   purgeConfirmation?: string
   ownership?: string
   authorityBasis?: string
+  seed?: string
   feedbackRecorded?: string | null
 }) {
   hookScript.cursor = 0
@@ -158,6 +159,7 @@ function scriptState(overrides: {
     { initial: 'reversible' }, // destination
     { initial: '', value: overrides.ownership ?? '' }, // ownership — no default BY DESIGN
     { initial: '', value: overrides.authorityBasis ?? '' }, // authorityBasis
+    { initial: '', value: overrides.seed ?? '' }, // seed — the seed question's field
     { initial: null, value: overrides.feedbackRecorded ?? null }, // feedbackRecorded
   ]
 }
@@ -262,7 +264,7 @@ function findByText(tree: TreeElement[], type: string, text: string): TreeElemen
 /** Indices into the component's useState order (guarded by scriptState). */
 // Indices track the useState order in journey-card.tsx; the ownership pair
 // landed between destination (10) and feedbackRecorded, which moved to 13.
-const STATE = { error: 3, ownership: 11, authorityBasis: 12, feedbackRecorded: 13 } as const
+const STATE = { error: 3, ownership: 11, authorityBasis: 12, seed: 13, feedbackRecorded: 14 } as const
 
 function settersFor(index: number): unknown[] {
   return hookScript.setterCalls.filter((call) => call.index === index).map((call) => call.value)
@@ -386,6 +388,89 @@ describe('rendered component — accessible shell', () => {
     expect(html).toContain('What I cannot work out for myself')
     expect(html).toContain('yours to give me read access to')
     expect(html).toContain('No amount of access answers this.')
+  })
+
+  // THE FIELD THE QUESTION NEVER HAD. The core printed "what do you do, and
+  // how can I best serve you?" inside the card body, and this surface rendered
+  // it as prose with no input — so the operator was asked a question they had
+  // no way to answer, which is a dead end wearing an invitation's clothes.
+  it('renders an input for the seed question whenever the core asks it', () => {
+    const fixture = journeyFixture('welcome')
+    fixture.card.entry = {
+      schema: 'cabinet.onboarding-entry-plan/v1',
+      mode: 'seeded',
+      opening_move: 'seed_then_discover',
+      grants: { connectors: [], local_files: true, web: false },
+      seed_question: 'What do you do, and how can I best serve you?',
+      questions: [],
+      discovery: { terms: [], probes: [], executable: false },
+      cannot_know: [],
+      next_actions: [
+        { action: 'propose_window', label: 'Choose a folder I may read' },
+        { action: 'answer_seed', label: 'Tell me in a sentence', input: 'seed' },
+      ],
+    }
+    scriptState({ journey: fixture, seed: 'I look after payments releases' })
+    const html = render()
+    expect(html).toContain('What do you do, and how can I best serve you?')
+    expect(html).toContain('id="dashboard-seed"')
+    expect(html).toContain('Go and look')
+  })
+
+  it('renders no seed input when the core asks no seed question', () => {
+    const fixture = journeyFixture('welcome')
+    fixture.card.entry = {
+      schema: 'cabinet.onboarding-entry-plan/v1',
+      mode: 'connected',
+      opening_move: 'sweep_and_assert',
+      grants: { connectors: ['tracker_export:t.csv'], local_files: true, web: false },
+      seed_question: null,
+      questions: [],
+      discovery: { terms: [], probes: [], executable: false },
+      cannot_know: [],
+      next_actions: [{ action: 'propose_window', label: 'Choose a folder I may read' }],
+    }
+    scriptState({ journey: fixture })
+    // Narrow to the seed field's own id: the welcome scope form carries its
+    // own textarea, so a bare '<textarea' assertion would pass for the wrong
+    // reason and stop being a sensor for this behaviour at all.
+    expect(render()).not.toContain('id="dashboard-seed"')
+  })
+
+  // A probe class that did not run is never summarised away: the surface shows
+  // the deferred rows beside the hits, or "I went looking" is a claim about
+  // somewhere it never reached.
+  it('renders what the probes found AND what did not run', () => {
+    const fixture = journeyFixture('welcome')
+    fixture.card.entry = {
+      schema: 'cabinet.onboarding-entry-plan/v1',
+      mode: 'seeded',
+      opening_move: 'seed_then_discover',
+      grants: { connectors: [], local_files: true, web: false },
+      seed_question: 'What do you do, and how can I best serve you?',
+      questions: [],
+      discovery: {
+        terms: ['payments'],
+        probes: [{ kind: 'local_name_match', pattern: '*payments*' }],
+        executable: true,
+        executed: {
+          schema: 'cabinet.onboarding-probe-result/v1',
+          executed: [
+            { kind: 'local_name_match', pattern: '*payments*', matches: ['docs/payments.md'], truncated: false },
+          ],
+          deferred: [{ kind: 'web_search', reason: 'no_egress_in_the_onboarding_core' }],
+          complete: false,
+        },
+      },
+      cannot_know: [],
+      next_actions: [{ action: 'propose_window', label: 'Choose a folder I may read' }],
+    }
+    scriptState({ journey: fixture })
+    const html = render()
+    expect(html).toContain('What I went and looked for')
+    expect(html).toContain('docs/payments.md')
+    expect(html).toContain('did not run')
+    expect(html).toContain('no egress in the onboarding core')
   })
 
   it('renders no residual-question block when the card carries no entry plan', () => {
