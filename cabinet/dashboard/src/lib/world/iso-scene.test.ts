@@ -166,7 +166,12 @@ describe('iso-scene — the layout, dressed in the shipped pack', () => {
     const fp = packFootprintOf(PACK, state)
     expect(DEFAULT_FOOTPRINTS.great_house).toEqual({ w: 200, h: 200 })
     expect(fp('great_house')).toEqual({ w: 128, h: 120 })
-    expect(fp('lighthouse')).toEqual({ w: 88, h: 126 })
+    // camp's lighthouse rung is `camp_dark_cairn`, 88x126 native and drawn at
+    // /2 since the 2026-07-28 scale contract. The metre table declares it
+    // 1.6 x 1.6 x 3.0 m — a stacked-stone beacon tower, not a chest-high pile
+    // — which derives 38x55 intended; at /1 it drew 88x126, i.e. TALLER than
+    // the camp_log_cabin beside it (128x120). At /2 it measures 1.15 x 1.14.
+    expect(fp('lighthouse')).toEqual({ w: 44, h: 63 })
     // …and at town the same kind is a different size again
     const town = packFootprintOf(PACK, stateFor('town'))
     expect(town('great_house')).toEqual({ w: 192, h: 196 })

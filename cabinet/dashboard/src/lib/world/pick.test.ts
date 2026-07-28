@@ -306,11 +306,37 @@ describe('every interactive kind is reachable, or is honestly not drawn', () => 
     // sweep could not see it, because a scene with no cutaway open has no
     // officer in it — so the justification was rewritten to what is measured
     // here, and the surface it stopped covering is pinned by the arm below.
+    //
+    // THE SWEEP CARRIES THE NEGATIVE CLAIM ONLY, and that split is the fix for
+    // a sensor that was measuring sprite AREA rather than reachability. The
+    // positive half used to ride on the same 2500 random tiles, so a chart
+    // table drawn 96x105 was hit by luck and the same table drawn 32x35 — the
+    // 2026-07-28 scale contract, which holds every prop to the person beside
+    // it — was not, and the arm went red for a world where nothing had become
+    // unreachable. Expected hits for a 32x35 sprite in a 2400x1760 scene are
+    // under one; raising the sample count until it passes again would restore
+    // the green and keep the defect. So the two small interactive sprites are
+    // now probed WHERE THEY STAND, which is the claim that matters: a prop the
+    // contract shrank must still answer when a pointer is actually on it.
+    //
+    // KNOWN COST, stated so a future red is readable: the sweep's expectation
+    // below now encodes "chart_table and mailbox are too small for 2500 random
+    // samples to hit". Enlarge either prop and this line goes red with a
+    // message about walkers and lane isles — which is NOT what broke. Verified
+    // by mutation (2026-07-28 review): restoring chart_table or mailbox to /1
+    // reds this line and nothing else. If a class change makes it red, move the
+    // frame out of the expectation; do not raise the sample count.
     const seen = new Set<PickKind>()
     for (let i = 0; i < 2500; i++) {
       const h = fnv1a(`iso-living:${i}`)
       const { wx, wy } = tileOfLayoutPx((h >>> 3) % SCENE.space.w, (h >>> 15) % SCENE.space.h)
       seen.add(pickAtTile(isoWorld({ camera: { z: 3, x: wx, y: wy } }), wx, wy).kind)
+    }
+    expect([...seen].sort()).toEqual(['building', 'ground'])
+    for (const frame of ['chart_table', 'mailbox'] as const) {
+      const hit = pickOnSprite(isoWorld(), frame, 0.3)
+      expect(hit.kind, `${frame} answers when the pointer is on it`).toBe(frame)
+      seen.add(hit.kind)
     }
     expect([...seen].sort()).toEqual(['building', 'chart_table', 'ground', 'mailbox'])
     for (const gone of ['officer', 'site', 'lane'] as PickKind[]) {
