@@ -235,13 +235,19 @@ def test_memory_search_keyless_degrade_contract():
     assert "0.80 * s.lex + 0.20 * s.recency" in text
     assert "m.content_tsv @@ p.tsq" in text
     assert "numnode(p.tsq) > 0" in text
-    # Every fence appears in BOTH arms (hybrid + lexical).
-    assert text.count("ANY(string_to_array(:'st_filter', ','))") == 2
+    # Every fence appears in all THREE fence carriers: the hybrid arm, the
+    # lexical arm, and (since 2026-07-28) memory_scope_count — the free COUNT
+    # behind the empty-result diagnosis. The count is raised VISIBLY rather
+    # than relaxed to >=: a fence dropped from any one carrier still takes the
+    # number below the pin and reds this gate. memory_scope_count MUST stay
+    # fence-identical or an empty store would be reported as "N rows were in
+    # scope and none cleared the floor", which is the opposite diagnosis.
+    assert text.count("ANY(string_to_array(:'st_filter', ','))") == 3
     assert text.count(
         "AND (:'cid' = '' OR m.cabinet_id = :'cid' OR m.cabinet_id = 'main')"
-    ) == 2
-    assert text.count("AND (:'as_of' = '' OR (m.source_created_at IS NOT NULL") == 2
-    assert text.count("m.superseded_by IS NULL") == 2
+    ) == 3
+    assert text.count("AND (:'as_of' = '' OR (m.source_created_at IS NOT NULL") == 3
+    assert text.count("m.superseded_by IS NULL") == 3
     # 8-col output parity (same SELECT tail in both arms).
     assert text.count("COALESCE(source_id, id::text) as ref") == 2
     # min_score stays a vec-only floor: exactly the hybrid arm applies it.

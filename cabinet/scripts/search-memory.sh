@@ -56,6 +56,12 @@ esac
 
 if [ -z "$(echo "$RESULTS" | tr -d '[:space:]')" ]; then
   echo "No results found."
+  # STDERR ONLY — stdout stays byte-identical for the placeholder-matching
+  # consumers (pre-captain-dm.sh's exact "Noresultsfound." compare,
+  # captain_inbound.py's literal check). Says WHICH empty this is: a store
+  # with nothing in it, or a similarity floor that discarded real candidates.
+  # See memory_empty_reason in lib/memory.sh for the measurement behind it.
+  memory_empty_reason "$(memory_scope_count "$TYPE" "$AS_OF")" "$MIN_SCORE" "$QUERY" >&2
   exit 0
 fi
 

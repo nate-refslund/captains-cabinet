@@ -21,6 +21,15 @@ if [ -z "${NEON_CONNECTION_STRING:-}" ] || [ -z "${CABINET_ID:-}" ]; then
   _mem_pre_eprov="${EMBED_PROVIDER:-}"
   _mem_pre_emodel="${EMBED_MODEL:-}"
   _mem_pre_edims="${EMBED_DIMS:-}"
+  # The embed CREDENTIAL is caller-wins too (2026-07-28). It was the one
+  # member of the seam left off this list, so a caller that exported its own
+  # VOYAGE_API_KEY — a scratch cabinet on a second key, or a harness
+  # SIMULATING a provider outage — had it silently replaced by the live
+  # .env value. Measured: an outage drill run that way reported
+  # "processed: 2 ok, 0 failed" because it was quietly still talking to the
+  # real provider, i.e. a disabled sensor wearing a green badge. Restoring
+  # it here makes the caller's key (including a deliberately bad one) hold.
+  _mem_pre_vkey="${VOYAGE_API_KEY:-}"
   set -a
   source "$CABINET_ROOT/cabinet/.env" 2>/dev/null || true
   set +a
@@ -29,7 +38,9 @@ if [ -z "${NEON_CONNECTION_STRING:-}" ] || [ -z "${CABINET_ID:-}" ]; then
   if [ -n "$_mem_pre_eprov" ]; then EMBED_PROVIDER="$_mem_pre_eprov"; fi
   if [ -n "$_mem_pre_emodel" ]; then EMBED_MODEL="$_mem_pre_emodel"; fi
   if [ -n "$_mem_pre_edims" ]; then EMBED_DIMS="$_mem_pre_edims"; fi
-  unset _mem_pre_neon _mem_pre_cid _mem_pre_eprov _mem_pre_emodel _mem_pre_edims
+  if [ -n "$_mem_pre_vkey" ]; then VOYAGE_API_KEY="$_mem_pre_vkey"; fi
+  unset _mem_pre_neon _mem_pre_cid _mem_pre_eprov _mem_pre_emodel _mem_pre_edims \
+        _mem_pre_vkey
 fi
 
 MEM_REDIS_HOST="${REDIS_HOST:-redis}"
@@ -117,6 +128,77 @@ memory_cabinet_scope() {
     cid="main"
   fi
   printf '%s' "$cid"
+}
+
+# =============================================================
+# EMPTY-RESULT DIAGNOSIS (2026-07-28)
+#
+# WHY THIS EXISTS. A live exercise against a REAL document corpus (157 repo
+# docs, whole-file embeddings, mean length ~19.8k chars) found that ten out
+# of ten natural-language questions returned "No results found." — not
+# because nothing matched, but because the top cosine similarity for a
+# question-shaped query against a long document sits around 0.30-0.42 while
+# the default vec floor is 0.45. The right document WAS in the pool every
+# time; the floor discarded it before the reranker could see it. The same
+# probe against the live store cleared the floor for 2 of 10 questions.
+#
+# The ranking is NOT touched here (that region is fingerprint-pinned and a
+# floor change needs a store-local eval re-stamp). What is fixed is the
+# OBSERVABILITY: "No results found." was indistinguishable between an empty
+# store, a missing embed key, and a floor that swallowed a good hit — so a
+# total recall failure looked exactly like a quiet, healthy day.
+#
+# STDOUT IS UNTOUCHED — the diagnosis goes to STDERR only. Consumers parse
+# stdout by exact shape (cabinet/scripts/hooks/pre-captain-dm.sh compares the
+# whitespace-stripped block to "Noresultsfound." and lib/captain_inbound.py
+# looks for the literal placeholder), so one extra stdout line would inject
+# diagnostic prose into the Captain's recall context.
+#
+# PURE + FREE: no embedding call, no second search. `rows` is whatever the
+# caller could count cheaply (a plain SQL COUNT), or "" when it could not
+# count at all — an unknown row count still yields a useful line.
+# =============================================================
+memory_empty_reason() {
+  local rows="${1:-}" min_score="${2:-}" q="${3:-}"
+  local floor="${min_score:-${CABINET_MEMORY_MIN_SCORE:-0.45}}"
+  if [ -z "$(printf '%s' "$rows" | tr -cd '0-9')" ]; then
+    printf 'memory.sh: no rows cleared the similarity floor %s (row count unavailable). Re-run with --min-score 0 to see the best near matches.\n' "$floor"
+    return 0
+  fi
+  if [ "$rows" -eq 0 ] 2>/dev/null; then
+    printf 'memory.sh: the memory store holds 0 searchable rows in this scope — nothing to recall yet (backfill: cabinet/scripts/backfill-memory.sh).\n'
+    return 0
+  fi
+  printf 'memory.sh: %s row(s) were in scope and NONE cleared the similarity floor %s. This is a floor verdict, not an empty store: question-shaped queries against long whole-file documents typically peak near 0.30-0.42. Re-run with --min-score 0.30 (or CABINET_MEMORY_MIN_SCORE) to see what was discarded.\n' "$rows" "$floor"
+}
+
+# Cheap searchable-row count for the scope a search just ran in. Pure SQL
+# COUNT — no embedding, no paid call. Prints nothing (empty string) on any
+# failure, so every caller degrades to the unknown-count message.
+#
+# FENCE PARITY IS LOAD-BEARING: this carries the SAME four fences as both
+# search arms (superseded / multi-type / tenant OR-'main' / fail-closed
+# as-of), because a count taken in a WIDER scope than the search would turn
+# "your store is empty" into a false "the floor discarded 200 rows". It is the
+# third fence carrier alongside memory_search and memory_search_lexical — the
+# `== 3` occurrence counts in lib/tests/test_memory_search_sh.py pin exactly
+# that, so a fence dropped from ANY of the three still reds the gate.
+memory_scope_count() {
+  local source_type_filter="${1:-}"
+  local as_of="${2:-}"
+  [ -z "${NEON_CONNECTION_STRING:-}" ] && return 0
+  psql "$NEON_CONNECTION_STRING" -q -t -A \
+    -v st_filter="${source_type_filter:-}" \
+    -v as_of="${as_of:-}" \
+    -v cid="$(memory_cabinet_scope)" 2>/dev/null <<'SQLEOF' | tr -cd '0-9'
+SELECT count(*) FROM cabinet_memory m
+WHERE m.superseded_by IS NULL
+  AND m.embedding IS NOT NULL
+  AND (:'st_filter' = '' OR m.source_type = ANY(string_to_array(:'st_filter', ',')))
+  AND (:'cid' = '' OR m.cabinet_id = :'cid' OR m.cabinet_id = 'main')
+  AND (:'as_of' = '' OR (m.source_created_at IS NOT NULL
+                         AND m.source_created_at <= NULLIF(:'as_of', '')::timestamptz));
+SQLEOF
 }
 
 # =============================================================
