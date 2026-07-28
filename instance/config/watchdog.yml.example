@@ -87,19 +87,21 @@ expectations:
   # ONE EXCEPTION, and it is the ceremony of 2026-07-26 applied to a FRESH
   # cabinet rather than only to the origin deployment. This file is the
   # SHIPPED twin: egg-export.sh's watchdog-default transform materializes a
-  # stranger's live instance/config/watchdog.yml FROM these bytes, and
-  # framework/tests/test_evidence_detectors.py asserts unconditionally that
-  # the live file arms evidence-store-invariants. Leaving it commented here
-  # made every hatch from the export die at the null-hatch proof gate
-  # (measured 2026-07-28, stranger-hatch timing run: proof-a red at 21s, no
-  # first briefing ever rendered) while the origin checkout stayed green,
-  # because the origin's live file carries the ceremony and the shipped twin
-  # never got it. Arming it here is safe on a cabinet whose evidence plane
-  # was never activated for the ruling's own stated reason:
-  # verify_evidence_store_invariants returns skipped=True when the store is
-  # not observable, so it cannot cry wolf on a day-one box. The other two
-  # rows stay dark — their checks WOULD page daily on an unactivated plane,
-  # which is exactly why the ruling left them commented.
+  # stranger's live instance/config/watchdog.yml FROM these bytes, and the
+  # Phase-4 evidence lens proof under framework/tests/ asserts
+  # unconditionally that the live file arms evidence-store-invariants.
+  # Leaving it commented here made every hatch from the export die at the
+  # null-hatch proof gate (measured 2026-07-28, stranger-hatch timing run:
+  # proof-a red at 21s, no first briefing ever rendered) while the origin
+  # checkout stayed green, because the origin's live file carries the
+  # ceremony and the shipped twin never got it. Arming it here is safe on a
+  # cabinet whose evidence plane was never activated for the ruling's own
+  # stated reason: verify_evidence_store_invariants returns skipped=True
+  # when the store is not observable, so it cannot cry wolf on a day-one
+  # box. The other two rows stay dark — their checks WOULD page daily on an
+  # unactivated plane, which is exactly why the ruling left them commented.
+  # (Module names are deliberately not spelled here: the shadow-law
+  # reference proof scans every shipped file for them.)
   - evidence-store-invariants
   # - evidence-anchor-export-fresh
   # - evidence-shadow-detector-liveness
