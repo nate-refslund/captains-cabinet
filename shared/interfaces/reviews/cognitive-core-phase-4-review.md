@@ -21,7 +21,27 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 9b43322029c6c91dd56c240894e27fd879dd2a18590c3ca98a8a43462743ef2d
+Reviewed-Scope-Digest: c18946e6377c31c9c653389e02ff26273df8cb587cf446c80170e589340a9109
+
+(MERGE RE-BIND, 2026-07-28, `fix/recall-live-claims-it-never-earned` x master
+`a70bcfb5` (PR #268). Both sides re-bound this line and both moved
+`cabinet/config/cognitive-architecture-contract.yml`, so the two digests
+conflicted textually: neither describes the merged tree, and the value above is
+recomputed over the MERGE COMMIT rather than taken from either side. Prior
+digests: this branch `ec75278e9929f8a03d811ec3689716e1190808db3df0a3a0ba0a0ef2275c5666`,
+master `3c8c1f7f60bd32a56e831438d768ea1b760b8f148353e65aba3c76c9b6d50a79`.
+THIS BRANCH's in-scope move: `cabinet/config/cognitive-architecture-contract.yml`,
+and only its `temporary_allowances` list — a new row buying the +30 non-comment
+lines two recall fixes cost (an unconfigured backend reporting live recall; the
+chunk heading rendered as the operator's own shared wording). No budget MAXIMUM,
+no set pin, no bijection class and no declared invariant moved. The two changed
+production files, `framework/sources/org.py` and `framework/onboarding/genesis.py`,
+are NOT in this scope, and neither is anything PR #268 touched
+(`framework/onboarding/estate.py`, `framework/onboarding/journey.py` and their
+tests) — the two branches share no production file. NO COG-4 implementation byte
+moved on either side: no organ, no scheduler or projection surface, no serve
+surface, no boundary row, no fixture, no CLI. Nothing below was re-reviewed,
+because no reviewed COG-4 byte moved.)
 
 (RE-BOUND 2026-07-28 at the landing of `fix/world-art-manifest-truth-and-egg`.
 Prior digest: `ebbdcc3f771afef7ffddc7558ea64a06bf3f8fa782cf14b5dd129891f796ca15`.

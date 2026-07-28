@@ -39,6 +39,8 @@ import { NOTE_PIN_MAX } from '@/lib/world/set-dressing'
 import { buildGrowth, type CensusKeyframe, type GrowthModel } from '@/lib/world/growth'
 import { buildStreetLayout, type StreetLayout } from '@/lib/world/street-layout'
 import { buildIslandLayout, type IslandLayout } from '@/lib/world/island-layout'
+import { creditReason, limezuSurfaces } from '@/lib/world/credit'
+import { ASSET_BASE, type WorldAssetManifest } from '@/lib/world/sprites'
 import InspectCard, { type InspectTarget } from './inspect-card'
 import PortraitRail from './portrait-rail'
 import KillswitchLever from './killswitch-lever'
@@ -114,6 +116,11 @@ export default function WorldClient({
   // errors and manifest/texture gaps badge HERE, in DOM — silent-black is a
   // ratcheted regression class (world/ratchets.test.ts #9).
   const [renderIssues, setRenderIssues] = useState<string[]>([])
+  // ART CREDIT INPUTS — see lib/world/credit.ts. This legacy shell renders the
+  // three top-down scenes only (wardroom/street/island), so its canvas is the
+  // 'topdown' kernel by construction; the rail reports its own portraits.
+  const [artManifest, setArtManifest] = useState<WorldAssetManifest | null>(null)
+  const [railLimeZu, setRailLimeZu] = useState(0)
 
   const directorState = useRef<DirectorState>({})
   const tickRef = useRef(0)
@@ -126,6 +133,31 @@ export default function WorldClient({
   // Scene selector state: displayScene lags the camera z by the fade cut.
   const [displayScene, setDisplayScene] = useState<SceneName>('wardroom')
   const [fadeActive, setFadeActive] = useState(false)
+
+  // The manifest, for its `license` column only (browser-cached; the canvas
+  // resolves its own copy for drawing).
+  useEffect(() => {
+    let alive = true
+    fetch(ASSET_BASE + 'manifest.json')
+      .then((r) => (r.ok ? (r.json() as Promise<WorldAssetManifest>) : null))
+      .then((m) => {
+        if (alive) setArtManifest(m)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [])
+  /** Mounted surfaces currently painting LimeZu-licensed pixels. */
+  const creditSurfaces = useMemo(
+    () =>
+      limezuSurfaces({
+        projection: 'topdown',
+        manifest: artManifest,
+        limezuPortraits: railLimeZu,
+      }),
+    [artManifest, railLimeZu]
+  )
 
   // ── URL state (read once; write on change) ──────────────────────────────
   useEffect(() => {
@@ -934,10 +966,20 @@ export default function WorldClient({
             ))
           )}
         </div>
-        {/* LimeZu license credit (Captain-ratified 2026-07-12): always visible at default zoom. */}
-        <span data-world-credit className="shrink-0 whitespace-nowrap text-[10px] text-zinc-500">
-          Art: LimeZu — limezu.itch.io
-        </span>
+        {/* LimeZu license credit (Captain-ratified 2026-07-12), shown WHERE IT
+            IS OWED — derived from the manifest's licence column over what this
+            shell's surfaces bind (lib/world/credit.ts), never assumed. It is in
+            the always-on bottom bar, never behind the legend toggle. */}
+        {creditSurfaces.length > 0 && (
+          <span
+            data-world-credit
+            data-credit-surfaces={creditSurfaces.join(',')}
+            title={creditReason(creditSurfaces)}
+            className="shrink-0 whitespace-nowrap text-[10px] text-zinc-500"
+          >
+            Art: LimeZu — limezu.itch.io
+          </span>
+        )}
       </div>
 
       {/* ── Legend Law panel ── */}
@@ -1016,6 +1058,7 @@ export default function WorldClient({
         <PortraitRail
           tick={tick}
           onInspect={(slug) => openInspect({ kind: 'officer', id: slug })}
+          onLimeZuPortraits={setRailLimeZu}
         />
       )}
 
