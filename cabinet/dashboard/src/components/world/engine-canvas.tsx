@@ -1865,7 +1865,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           // the room's own iso lattice. The art is EMPTY on purpose — a desk
           // drawn with papers, or a board drawn with pins, would bake a count
           // into a static frame.
-          // THROUGH THE KIT, never `pack.frames.int_desk`. The atlas ships
+          // THROUGH THE KIT, never by indexing the atlas table. The pack ships
           // three fixtures that bake a measured quantity or a piece of animate
           // state into static art (a stove with a lit fire and smoke, a table
           // with its chairs drawn, a "postbox" that is an outdoor shed), and

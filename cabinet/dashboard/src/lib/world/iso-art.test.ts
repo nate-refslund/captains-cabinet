@@ -20,7 +20,7 @@
  * non-interlaced, which is the one PNG shape worth hand-decoding.
  */
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { inflateSync } from 'node:zlib'
 import {
@@ -195,6 +195,18 @@ function shapeOf(name: string): Shape {
 
 const ALL = Object.keys(PACK.frames).sort()
 
+/** A pack with only the frames a case needs — no fixture inherits the atlas. */
+function packOf(frames: Record<string, { dw: number; dh: number }>): IsoPack {
+  const f: Record<string, unknown> = {}
+  for (const [n, s] of Object.entries(frames)) {
+    f[n] = {
+      atlas: 0, x: 0, y: 0, w: s.dw, h: s.dh,
+      dw: s.dw, dh: s.dh, scale: 1, anchor: [s.dw / 2, s.dh],
+    }
+  }
+  return { ...PACK, frames: f as IsoPack['frames'] }
+}
+
 // ---------------------------------------------------------------------------
 
 describe('the decoder itself, before anything is measured with it', () => {
@@ -343,6 +355,31 @@ describe('roof-off twins — judged, and the judgement bound to the pixels', () 
     expect(narrower.length).toBe(7)
   })
 
+  it('the DEPTH half of the footprint rule fires on its own', () => {
+    // A MUTATION SURVIVED THIS FILE AND THIS ARM IS THE ANSWER. Deleting the
+    // depth branch entirely left every arm above green, because on the shipped
+    // atlas every twin that is too deep is ALSO too wide — the width branch
+    // decides all three, and a rule that never decides anything is a rule
+    // nobody is testing.
+    //
+    // The fixture has to be built with `groundDiamond`'s own arithmetic in mind:
+    // depth is `min(dh, dw) * 0.55`, so at equal `dw` the depth can never
+    // exceed — the first version of this arm asserted 55 > 55 and said so. The
+    // case that reaches the branch is a LOW WIDE building (dh < dw, so depth is
+    // set by dh) whose twin is taller: same footprint width, and it grows
+    // toward the viewer.
+    const p = packOf({ hall: { dw: 100, dh: 50 }, hall_open: { dw: 100, dh: 200 } })
+    expect(groundDiamond(100, 200).hw).toBe(groundDiamond(100, 50).hw)
+    expect(groundDiamond(100, 200).depth).toBeGreaterThan(groundDiamond(100, 50).depth + 1)
+    expect(openTwinRefusal(p, 'hall')).toMatch(/deeper on the ground/)
+    expect(openFrameOf(p, 'hall')).toBeNull()
+    // and the same shapes the other way round open, so the arm is not just
+    // asserting that this function refuses things
+    const q = packOf({ hall: { dw: 100, dh: 200 }, hall_open: { dw: 100, dh: 50 } })
+    expect(openTwinRefusal(q, 'hall')).toBeNull()
+    expect(openFrameOf(q, 'hall')?.frame).toBe('hall_open')
+  })
+
   it('a twin that is neither judged nor oversized DOES open', () => {
     // The inverted arm. Without it every assertion above is satisfied by a
     // function that refuses everything, which is the failure mode of a gate.
@@ -425,6 +462,60 @@ describe('the interior kit — no fixture enters unjudged', () => {
     for (const k of ['int_desk', 'int_work_board', 'int_bookshelf', 'int_bunk']) {
       expect(greenIn(k).green, `${k} stands on grass too`).toBe(0)
     }
+  })
+})
+
+describe('the renderer cannot reach around the kit — a grep, because a canvas has no test', () => {
+  /**
+   * THE SECOND MUTATION THAT SURVIVED. Putting `pack.frames.int_desk` back in
+   * `engine-canvas.tsx` left every arm in this file green, and it always will:
+   * `drawIsoCutaway` lives inside a PixiJS `useEffect` closure and nothing in
+   * the tree can drive it. A rule whose only enforcement is a function nobody is
+   * obliged to call is a convention, not a gate.
+   *
+   * So this is mechanical and it reads the shipped source: no file under the
+   * world trees may name an `int_*` frame as a property of `pack.frames` or as a
+   * string literal outside iso-cutaway.ts, which is where the kit lives.
+   */
+  const WORLD_TREES = [
+    join(process.cwd(), 'src', 'lib', 'world'),
+    join(process.cwd(), 'src', 'components', 'world'),
+  ]
+  function collect(dir: string): string[] {
+    if (!existsSync(dir)) return []
+    const out: string[] = []
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name)
+      if (e.isDirectory()) out.push(...collect(p))
+      else if (/\.(ts|tsx)$/.test(e.name) && !e.name.endsWith('.test.ts')) out.push(p)
+    }
+    return out
+  }
+  const sources = WORLD_TREES.flatMap(collect)
+
+  it('there are world sources to grep at all', () => {
+    expect(sources.length).toBeGreaterThan(10)
+    expect(sources.some((p) => p.endsWith('engine-canvas.tsx'))).toBe(true)
+  })
+
+  it('only iso-cutaway.ts names an interior fixture; everything else goes through kitFrame', () => {
+    const offenders: string[] = []
+    for (const p of sources) {
+      if (p.endsWith('iso-cutaway.ts')) continue
+      const src = readFileSync(p, 'utf8')
+      // `pack.frames.int_desk`, `pack.frames['int_desk']`, `frames.int_stove`…
+      if (/\bframes\s*(\.\s*int_|\[\s*['"]int_)/.test(src)) {
+        offenders.push(`${p.split('/').pop()}: indexes pack.frames by an int_ name`)
+      }
+    }
+    expect(offenders, 'the interior kit is being reached around').toEqual([])
+    // and the canvas DOES go through the kit, so this is not vacuous on a file
+    // that simply stopped drawing interiors
+    const canvas = readFileSync(
+      sources.find((p) => p.endsWith('engine-canvas.tsx'))!,
+      'utf8'
+    )
+    expect(canvas).toMatch(/kitFrame\(pack, 'int_desk'\)/)
   })
 })
 
