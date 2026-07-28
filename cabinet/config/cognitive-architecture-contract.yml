@@ -879,7 +879,7 @@ temporary_allowances:
     deletion_gate: the estate contract folds into a single onboarding module when the ingest engine lands, or COG-7 compaction
   - phase: briefing-consumes-recall
     budget: framework_production_noncomment_lines
-    additional: 456
+    additional: 491
     reason: >-
       the first briefing READS what recall already holds. MEASURED, not
       reviewed: an agent ran the genuine hatch path (personal answers ->
@@ -936,6 +936,36 @@ temporary_allowances:
       and sending the operator to re-run genesis for a result that cannot
       change — the three live sub-states are now three sentences, with the
       arm that would have caught it), 2026-07-28, via
+      cognitive-architecture-census.py. 456 -> 491 AT THE REVIEW OF THIS
+      BRANCH'S OWN FIX (2026-07-28): +35 non-comment lines in
+      framework/sources/local.py for _strip_frontmatter and its call site. The
+      branch narrowed the card's "Shared wording:" caption to the files the card
+      actually CITES; on the corpus shape this adapter exists for — an Obsidian
+      folder, whose `date:` frontmatter is the primary content_ts derivation
+      local.py's own docstring names — the caption still was not the operator's
+      words, and neither was the quote. A headingless note is ONE chunk, so
+      _chunks put the YAML at the head of the chunk body: measured through the
+      real first-briefing.sh --local chain on five dated notes, the card's
+      "I did not ask you for this, I read it" line — the entire value
+      proposition of the surface — opened with `--- date: 2026-07-20 title: ...
+      tags: [notes] status: open ---`, and because every note carries the same
+      keys they outscored every real word, so `Shared wording: status, title,
+      date, open` filled all four _MAX_JOIN_TERMS slots and evicted `checkout`,
+      the one term two of the three cited files genuinely shared. Stripped in
+      _chunks rather than in either consumer because the chunk body is supposed
+      to be the operator's prose and every future reader of it inherits the
+      defect otherwise; _content_ts_for reads the RAW text and runs first, so
+      dating is untouched. Conservative by construction — an unterminated `---`
+      is a thematic break and the note is returned whole, since eating to
+      end-of-file would delete a note from recall entirely. Both directions
+      pinned, cache purged: reverting the call site reds both new arms, and
+      mutating the unterminated-case `return text` to `return ""` reds the
+      degenerate arm. Zero new MODULES (local.py is already a registered
+      expansion; framework_production_modules unchanged at 247), and most of the
+      35 is DOCSTRING prose carrying the measurement, per the house rule, NOT
+      reformatted into "#" comments to duck the counter. EXACT measured running
+      total 72988 on this merged tree, master f224e884 reading 72953 exactly at
+      its own pinned level, so the delta is 35 measured against that base, via
       cognitive-architecture-census.py.
     owner: onboarding-plane
     sunset: '2027-01-28'
@@ -1008,7 +1038,7 @@ temporary_allowances:
       non-comment lines below the pinned baseline
   - phase: onboarding-probe-truncation
     budget: framework_production_noncomment_lines
-    additional: 13
+    additional: 28
     reason: >-
       A TRUNCATED SEARCH WAS REPORTED AS A FINISHED ONE. journey._execute_probes
       computed complete as "bool(executed) and not deferred" and consulted
@@ -1035,7 +1065,35 @@ temporary_allowances:
       written and NOT reformatted into "#" comments to duck the counter. EXACT
       measured running total 72510, 2026-07-28, via
       cognitive-architecture-census.py against master a0cd4bc1 (72497, itself
-      exactly at the pinned maximum).
+      exactly at the pinned maximum). 13 -> 28 AT THE HOSTILE REVIEW OF THIS
+      BRANCH (2026-07-28): +15 non-comment lines in _name_matches for the
+      boundary defect that review found and reproduced. `truncated` was set on
+      `len(hits) >= MAX_PROBE_HITS`, i.e. on REACHING the cap rather than on
+      anything remaining — and this branch is what gives the flag its first
+      reader, so the old meaning became an operator-facing sentence that is
+      FALSE: a folder holding exactly 20 matching files and nothing else is
+      walked to its last entry, and the card still said "1 search(es) stopped
+      at my limit before the end of that folder, so this is what I saw and not
+      what is there" with complete:false. n=20 and n=21 were indistinguishable
+      to the operator — an unearned negative inside the fix for unearned
+      negatives, which is the one defect that would have undercut this unit's
+      whole thesis. The walk now collects ONE hit past the cap and reports
+      truncation only when that extra hit exists, slicing the returned list
+      back to MAX_PROBE_HITS so no caller sees more; measured after, n=20 reads
+      truncated False / complete True / no disclosure and n=21 reads truncated
+      True / complete False / disclosure. That also makes the sentence three
+      lines above ("reachable in any folder with 21 matching names") literally
+      true, which it was NOT before. The entries cap needed no change: `visited
+      > MAX_PROBE_ENTRIES` already fires on the entry AFTER the budget, which
+      is itself the proof that something remained (verified at 4999/5000/5001).
+      A fourth arm pins BOTH sides of the hit boundary, because the existing
+      truncation arm uses MAX_PROBE_HITS + 5 and structurally cannot see it —
+      pinning only the truncating side is exactly what let this through. Still
+      ZERO new modules and no bijection class touched. EXACT measured running
+      total 73016 on this merged tree, master 2b3de03d reading 72988 exactly at
+      its own pinned level, so the delta is 28 measured against that base — the
+      re-measurement at the merge rather than a carried figure, since master
+      moved four times mid-flight and PR #261 moved this very budget.
     owner: onboarding-plane
     sunset: '2027-01-28'
     deletion_gate: >-

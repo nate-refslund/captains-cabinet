@@ -1072,3 +1072,111 @@ def test_a_live_but_empty_recall_is_not_reported_as_a_stale_ordering(tmp_path):
         tmp_path, now="2026-07-28T00:00:00Z", source=_FakeSource())
         if i["kind"] == "genesis-recall")
     assert "written before this run" in stale["context"]["why"]
+
+
+def test_shared_wording_is_checkable_in_the_files_the_card_prints():
+    """FOUND BY A HOSTILE PASS ON THE LANDED UNIT, 2026-07-28, and reproduced
+    through the real adapter and the real ``first-briefing.sh --local`` chain.
+
+    ``_join_terms`` was fed all ``_MAX_RECALL_HITS`` (8) hits while the card
+    prints at most ``_MAX_RECALL_FILES`` (3) of them, so any corpus answering
+    from four or more files could caption three cited notes with a term that
+    appears in NONE of them. Measured: notes about widget alignment, invoice
+    numbering and onboarding copy, captioned "Shared wording: kubernetes" — a
+    word living only in two older notes the card never showed. The operator
+    finds that out by doing exactly what the card told them to do.
+
+    THE ARM IS THE PROPERTY, NOT THE STRING: every shared term must occur in at
+    least ``_MIN_JOIN_FILES`` of the files the card actually cites."""
+    def _hit(path, heading, body, ts):
+        return {"source": "local", "ref": f"{path}#{heading}", "path": path,
+                "heading": heading, "text": f"{heading}\n{body}",
+                "base_score": 0.5, "who": "", "ts": ts, "content_ts": ts}
+
+    corpus = [
+        _hit("a-newest.md", "Alpha", "Alpha storefront covers widget alignment only.",
+             "2026-07-21T00:00:00Z"),
+        _hit("b-newer.md", "Beta", "Beta storefront covers invoice numbering only.",
+             "2026-07-20T00:00:00Z"),
+        _hit("c-new.md", "Gamma", "Gamma storefront covers onboarding copy only.",
+             "2026-07-19T00:00:00Z"),
+        _hit("d-old.md", "Delta", "Delta storefront is entirely kubernetes autoscaling.",
+             "2026-01-02T00:00:00Z"),
+        _hit("e-old.md", "Eps", "Eps storefront is entirely kubernetes ingress.",
+             "2026-01-01T00:00:00Z"),
+    ]
+    recall = _recall_for(source=_FakeSource(corpus=corpus))
+    subject = recall["subjects"][0]
+    cited_blobs = [h["heading"] + " " + h["text"] for h in corpus
+                   if h["path"] in subject["files"]]
+    assert len(subject["files"]) == genesis._MAX_RECALL_FILES
+    for term in subject["shared_terms"]:
+        carriers = sum(1 for blob in cited_blobs if term in blob.lower())
+        assert carriers >= genesis._MIN_JOIN_FILES, (
+            f"the card captions its citations 'Shared wording: {term}' but "
+            f"{term!r} appears in {carriers} of the files it prints — the "
+            "operator cannot check it by opening them")
+    # …and the same term set still reaches the card body, unchanged in shape.
+    card = genesis.propose_outcome_cards(ANSWERS, recall=recall)[0]
+    assert "kubernetes" not in card["what"]
+
+
+def test_a_join_the_cited_files_really_share_is_still_named():
+    """The narrowing must not silence the honest case: terms two of the CITED
+    files share are still reported (guards against 'fix' by deletion)."""
+    recall = _recall_for(source=_FakeSource())
+    assert "migration" in (recall["subjects"][0]["shared_terms"] or [])
+
+
+def test_an_estate_card_recall_enriched_still_counts_as_estate_provenance(tmp_path):
+    """FOUND BY A HOSTILE PASS ON THE LANDED UNIT, 2026-07-28.
+
+    ``_estate_subject_cards`` relabelled its card ``derived_from: recall``
+    whenever recall answered for that entity. The estate provenance item counts
+    ``derived_from == "estate"``, so the count fell to zero and the briefing
+    told the operator "No card above derives from it: the proposals on file
+    were written before this estate existed. Re-run genesis" — about a card
+    composed FROM that estate in that same run. An ordering story told about a
+    card with no ordering problem: the same unearned-claim defect the recall
+    item was corrected for, one surface over. Recall provenance for such a card
+    rides ``recall_refs``, which is what the recall item counts, so both
+    sentences can be true at once.
+
+    ONE ENTITY, NOT ``ESTATE_DOC``'s TWO (corrected by the review pass on this
+    fix, 2026-07-28). ``ESTATE_DOC`` carries ``storefront`` AND ``labs``, and
+    the fake corpus answers only for ``storefront`` — so ``labs`` kept
+    ``derived_from: estate`` even against the pre-fix bytes, the estate count
+    never reached zero, and the two operator-facing assertions below PASSED on
+    the defect they name. Measured: with the label assertions removed and the
+    pre-fix ``"recall" if subject else "estate"`` restored, this body was green.
+    The arm was pinning the label and nothing else, while its docstring claimed
+    the briefing sentence. A single answered entity is the shape that actually
+    drives the count to zero, so the "Re-run genesis" assertion is now the
+    sensor it says it is."""
+    from framework.onboarding import estate as estate_mod
+    _write_answers(tmp_path, LANELESS)
+    estate_mod.write_estate(
+        {**ESTATE_DOC,
+         "entities": [e for e in ESTATE_DOC["entities"]
+                      if e["id"] == "storefront"]}, tmp_path)
+    live = _FakeSource(corpus=[dict(h, ref=h["ref"], text=h["text"] + " storefront")
+                               for h in _CORPUS])
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-28T00:00:00Z", source=live)
+
+    rows = yaml.safe_load(
+        (tmp_path / genesis.PROPOSALS_REL).read_text())["outcomes"]
+    entity_rows = [r for r in rows if r["id"] == "proposed-storefront-first-proof"]
+    assert entity_rows  # label asserts NEUTERED
+
+    items = genesis.genesis_intake_items(tmp_path, now="2026-07-28T00:00:00Z",
+                                         source=live)
+    estate_why = next(i for i in items
+                      if i["kind"] == "genesis-estate")["context"]["why"]
+    assert "No card above derives from it" not in estate_why, (
+        "a card written FROM this estate, in this run, was reported as "
+        "predating it — and the operator sent to re-run genesis for nothing")
+    assert "with citations" in estate_why
+    recall_why = next(i for i in items
+                      if i["kind"] == "genesis-recall")["context"]["why"]
+    assert "composed from it" in recall_why, (
+        "the recall item must still see its own contribution to that card")

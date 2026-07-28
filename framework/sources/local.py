@@ -180,11 +180,53 @@ def _content_ts_for(path: Path, text: str) -> Optional[str]:
     return None
 
 
+def _strip_frontmatter(text: str) -> str:
+    """Drop a leading YAML frontmatter block. NOT cosmetic — measured
+    2026-07-28 on the shape this adapter is FOR (an Obsidian folder, where
+    ``date:`` frontmatter is the primary ``content_ts`` derivation this module
+    documents).
+
+    A headingless note is ONE chunk, so its frontmatter was the first thing in
+    the chunk body, and both operator-facing uses of that body then reported
+    machinery as the operator's own material. Through the real
+    ``first-briefing.sh --local`` chain, on five dated notes:
+
+      * the card's quote — the "I did not ask you for this, I read it" line,
+        the whole point of the surface — rendered
+        ``"--- date: 2026-07-20 title: … tags: [notes] status: open --- The
+        storefront widget alignment drifts…"``;
+      * ``genesis._join_terms`` counted the KEY NAMES, and since every note
+        carries them they scored above every real word: ``Shared wording:
+        status, title, date, open``, with the genuinely shared domain term
+        (``checkout``, in two of the three cited files) pushed out of all four
+        slots.
+
+    Stripped HERE rather than in either consumer because the chunk body is
+    supposed to be the operator's prose, and every present and future reader of
+    it inherits the same defect otherwise.
+
+    Conservative by construction: strips ONLY when the file OPENS with a
+    ``---`` line and a later line is exactly ``---`` or ``...``. An unterminated
+    ``---`` is a thematic break and the text is returned untouched, so a note
+    that merely starts with a horizontal rule keeps every word.
+
+    ``_content_ts_for`` reads the RAW text and runs before this, so dating is
+    unaffected — verified by the frontmatter-date arm in
+    ``framework/sources/tests/test_local_source.py``."""
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return text
+    for i in range(1, len(lines)):
+        if lines[i].strip() in ("---", "..."):
+            return "\n".join(lines[i + 1:])
+    return text
+
+
 def _chunks(text: str) -> List[Tuple[str, str]]:
     """``[(heading, body)]`` split on markdown headings. A note with no
     headings is ONE chunk (heading ``""``) — never zero, or a plain .txt file
     would be invisible to every query."""
-    lines = text.splitlines()
+    lines = _strip_frontmatter(text).splitlines()
     out: List[Tuple[str, str]] = []
     heading = ""
     buf: List[str] = []
