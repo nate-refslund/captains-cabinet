@@ -91,13 +91,20 @@ def test_rejects_interlace_and_16bit_and_bombs(wa, tmp_path):
 
 
 def test_corpus_smoke(wa):
+    # The corpus itself is gitignored, so "no corpus at all" is a legitimate
+    # skip. A corpus that EXISTS but is missing a named image is not — that is
+    # a corpus/test mismatch, and skipping it is how this sensor went quiet
+    # through the 2026-07-28 re-fit (it named LimeZu positives that no longer
+    # exist). Assert instead, so a corpus change has to update its readers.
     if not wa.has_corpus:
         pytest.skip("gitignored corpus not present on this checkout")
-    rgb = wa.corpus_dir / "positive" / "pos-village-island.png"   # ct2
-    rgba = wa.corpus_dir / "positive" / "pos-village-house.png"   # ct6
+    rgb = wa.corpus_dir / "positive" / "pos-owned-square-close.png"  # ct2
+    rgba = wa.corpus_dir / "negative" / "neg-city-street-void.png"   # ct6
     for p in (rgb, rgba):
-        if not p.exists():
-            pytest.skip(f"{p.name} missing")
+        assert p.exists(), (
+            f"{p.name} is named by this test but not in the corpus — "
+            f"re-point the test at a current corpus image (both PNG colour "
+            f"types must stay covered: ct2 truecolour and ct6 truecolour+alpha)")
         w, h, buf = wa.png.decode(p)
         assert (w, h) == wa.png.read_size(p)
         assert len(buf) == w * h * 4

@@ -110,38 +110,91 @@ emits `GATE_CRASH` (error) without taking the others down.
   `cabinet.world.clustering-bounds/v1` — derived-numbers-only calibration
   files under `calibration/` (committed).
 
-## Calibration corpus & licensing (why `corpus/` is gitignored)
+## Calibration corpus (why `corpus/` is gitignored)
 
-`corpus/positive/` holds official LimeZu showcase scenes (licensed art) PLUS
-the Captain-approved 7.5 direction mockups (`pos-mockup-unified-world` /
-`pos-mockup-unified-close`, promoted 2026-07-09 — the density/coziness bar
-live frames are pairwise-judged against is THE MOCKUPS, not just the
-showcases); `corpus/negative/` holds the Captain-rejected build screenshots +
-two synthetic scatter renders. **Licensed pixels are never committed** —
-`.gitignore` excludes `corpus/*` except `corpus/manifest.json` (sha256 +
-provenance for every image). Only code, the manifest, and derived-number
-calibrations are tracked.
+Three classes, `corpus/{positive,negative,palette}/`:
 
-* `build_corpus.py synthetic|manifest|verify` — regenerate the synthetic
-  negatives, rebuild the manifest, verify corpus bytes against it
-  (currently 16/16 OK).
+* **positive** — finished OWNED isometric scenes the Captain has seen: two
+  wide island states (hamlet, overgrown camp), one close zoom, one roof-off
+  interior. Fits the palette AND the clustering image bounds, and is the
+  vision judge's positive pool.
+* **negative** — the three Captain-rejected build screenshots (accumulated
+  taste, carried across every re-fit) plus three synthetic OWNED-art scenes:
+  scatter at two densities and a building void. The owned negatives are what
+  give the composition bounds ground truth that cannot be passed on
+  art-family grounds.
+* **palette** — palette-source art that is not a scene (the owned isometric
+  atlas). Read by the palette fit ONLY: never the clustering bounds (a sprite
+  sheet is not a composed scene) and never the judge (which would compare a
+  candidate against a sprite sheet). Without it, a frame drawing sprites the
+  corpus renders happen not to contain reads as foreign colour — measured
+  6.52% vs 1.23%.
+
+**Pixels are never committed** — `.gitignore` excludes `corpus/*` except
+`corpus/manifest.json` (sha256 + provenance per image). Only code, the
+manifests, and derived-number calibrations are tracked.
+
+**Re-fit 2026-07-28 (LimeZu → owned art).** The corpus was LimeZu showcase
+scenes until the Captain's "ALL OUT of LimeZu" direction. A palette fitted to
+LimeZu measured owned frames at 57-90% foreign against a 5% limit — the gate
+was pointed at the art family we are deliberately leaving. The previous
+corpus is preserved verbatim and still runnable at
+`corpus/archive-limezu-2026-07-08/`, with its manifest and the calibration it
+produced TRACKED at `calibration/archive/limezu-2026-07-08/`. The argument,
+before/after numbers and bite proof are in cabinet-meta
+`designs/world-aesthetic-corpus-refit-2026-07-28.md`. Reproduce any pre-refit
+claim with `calibrate.py all --corpus corpus/archive-limezu-2026-07-08
+--out-dir /tmp/old`.
+
+An archive nests INSIDE `corpus/` rather than beside it, and that is
+load-bearing: `cognitive-architecture-census.py` derives `durable_store_units`
+from `.gitignore`'s wildcard-free prefixes, so a sibling `corpus-*/` needs its
+own ignore rule and reads as a NEW organ of memory against a zero-headroom
+budget. An archived corpus is not a new organ — it is this organ's own history.
+
+* `build_corpus.py synthetic|manifest|verify [--corpus DIR] [--manifest PATH]` — regenerate the
+  synthetic negatives (cut from the repo's own tracked owned atlas, so they
+  rebuild from a plain checkout + Pillow), rebuild the manifest, verify bytes
+  against it. Current corpus 11/11 OK; archive 16/16 OK.
 * `calibrate.py palette|clustering|prove|all` — fit `calibration/*.json`
   from the corpus. Palette floor semantics: a quantized bin joins the
-  palette when it reaches `min_bin_share` in **at least one** positive
+  palette when it reaches `min_bin_share` in **at least one** input
   (per-image floor — a merged-mass floor let big images starve a small
   positive's colors and broke self-consistency).
 
-## The prove-it contract (clustering)
+## The prove-it contract
 
-Enforced twice, mechanically:
+`calibrate.py prove` proves BOTH gates, and they discriminate different
+things. That split was measured, not assumed: against the pre-2026-07-28
+corpus `palette_coherence` passed **3 of its own 5 negatives** (0.04%, 0.15%,
+1.38% foreign). It never separated good scenes from bad and never could.
+Clustering is the composition gate; palette is the ART-FAMILY gate.
 
-1. `calibrate.py prove` — every corpus **negative** must trip an image
-   bound, every **positive** must trip none; synthetic scatter maps (seeds
-   mirroring the corpus scatter renders) must trip the map bounds while a
-   held-out clustered layout passes. Exit 1 on any violation.
-2. `tests/test_world_aesthetic_clustering.py` — the same separation as
-   pytest against the **committed** calibrations, plus corpus-independent
-   synthetic cases so a clean clone (no corpus) still proves the mechanism.
+1. **Clustering** — every corpus **negative** must trip an image bound, every
+   **positive** must trip none; synthetic scatter maps must trip the map
+   bounds while a held-out clustered layout passes.
+2. **Palette** — P1 every positive under `max_foreign`; P2 every OWNED-art
+   negative ALSO under it (a composition defect must never be reported as
+   foreign colour); P3 a channel-rotated positive `(r,g,b)->(g,b,r)` must
+   EXCEED it — composition-identical by construction, so `flat_mass` and
+   `dominant_share` come out byte-identical and no other gate can see it;
+   P4 a synthetic CSS-rectangle scene must exceed it; P5 every image in any
+   archived corpus must exceed it. P3/P4 synthesize their own inputs, so the
+   bite proof never depends on assembled pixels; P5 prints **NOT RUN** and is
+   listed after the verdict when an archive is absent, never counted as a
+   pass. Exit 1 on any violation.
+3. `tests/test_world_aesthetic_{clustering,palette}.py` — the same
+   separations as pytest against the **committed** calibrations, plus
+   corpus-independent synthetic cases so a clean clone (no corpus) still
+   proves the mechanism, plus a mutation arm: a palette broadened to admit
+   the whole colour cube must FAIL the proof.
+
+**What `palette_coherence` cannot see.** It is a bulk gate on pixel mass, so
+foreign art below ~5% of a frame's opaque pixels is invisible by
+construction. Measured on the owned island frame: one LimeZu 16x32 character
+cell at 2x (0.048% of the frame) reads 0.24% foreign and passes; it takes
+~800 such cells covering ~39% of the frame to cross the limit. Per-sprite
+provenance is a manifest-level check, not this one.
 
 ## The vision judge (`judge/`)
 
