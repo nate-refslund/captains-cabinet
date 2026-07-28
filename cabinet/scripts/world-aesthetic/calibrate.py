@@ -2,19 +2,55 @@
 """Fit the aesthetic-gate calibrations from the (gitignored) corpus.
 
 Subcommands:
-    palette     -> calibration/palette.json           (from corpus positives)
+    palette     -> calibration/palette.json           (from corpus positives
+                   PLUS the corpus `palette` class — see PALETTE CLASS below)
     clustering  -> calibration/clustering_bounds.json (image bounds from
                    corpus positives; map bounds from canonical synthetic
                    clustered layouts — geometry stats are asset-independent)
-    prove       -> assert separation: every corpus NEGATIVE trips >=1
-                   clustering-image bound, every POSITIVE trips none; and the
-                   synthetic scatter maps trip the map bounds while a held-out
-                   clustered map passes. Exit 1 on any violation.
+    prove       -> assert separation on BOTH gates. Exit 1 on any violation.
     all         -> palette + clustering + prove
 
+PALETTE CLASS. corpus/palette/ holds palette-source art that is not a scene
+(today: the owned isometric atlas). It feeds the palette fit ONLY — never the
+clustering image bounds (a sprite sheet is not a composed scene) and never the
+vision judge. Without it a frame drawing sprites the corpus renders happen not
+to contain reads as foreign colour; measured 6.52% vs 1.23% (2026-07-28).
+
+THE PROVE CONTRACT, and what each half actually discriminates — this was
+measured, not assumed, and the split is the reason both gates exist:
+
+  CLUSTERING is the composition gate. Every corpus negative must trip >=1
+  clustering-image bound and every positive must trip none; the synthetic
+  scatter maps must trip the map bounds while a held-out clustered map passes.
+
+  PALETTE is the ART-FAMILY gate, not a composition gate. Measured against the
+  pre-2026-07-28 LimeZu corpus, palette_coherence passed 3 of its own 5
+  negatives (0.04%, 0.15%, 1.38% foreign) — it never separated good scenes from
+  bad ones and was never able to. What it does separate is "drawn from the
+  sanctioned art family" from "not", which is exactly the sensor the
+  all-owned-art direction needs. So its arms are:
+    P1 SELF      every positive under max_foreign (the fit admits its inputs)
+    P2 OWNED-NEG every owned-art negative ALSO under max_foreign — an owned
+                 frame must never be failed by the palette gate for a
+                 COMPOSITION defect; that is clustering's job and P2 pins the
+                 division of labour instead of leaving it to be assumed
+    P3 BITE      a channel-rotated positive (r,g,b)->(g,b,r) must EXCEED
+                 max_foreign. Composition-identical by construction: flat_mass
+                 and dominant_share are byte-identical to the source, so no
+                 other gate can see it. If P3 ever passes, palette_coherence
+                 has no independent discriminative power and is a dead gate
+    P4 BITE      a synthetic flat CSS-rectangle scene must EXCEED max_foreign
+                 (the AI-art / dashboard-mock class named in the gate docstring)
+    P5 CROSS     when an archived corpus dir is present, EVERY image in it must
+                 EXCEED max_foreign — the direct "did we actually leave that art
+                 family" sensor. P3/P4 need no external art, so the bite proof
+                 never depends on P5 being runnable; when the archive is absent
+                 P5 prints NOT RUN and is listed in the summary, never silently
+                 counted as a pass.
+
 Only DERIVED NUMBERS + sha256 provenance are written to calibration/ (tracked);
-LimeZu-licensed corpus pixels stay untracked (see corpus/manifest.json /
-build_corpus.py). Corpus file access is path-contained to the corpus dir.
+corpus pixels stay untracked (see corpus/manifest.json / build_corpus.py).
+Corpus file access is path-contained to the corpus dir.
 """
 
 from __future__ import annotations
@@ -23,12 +59,24 @@ import argparse
 import importlib.util
 import json
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 CORPUS = HERE / "corpus"
 CALIB = HERE / "calibration"
+# Superseded corpora kept verbatim for reproduction AND used as the P5
+# cross-family bite arm. Picked up by name, so archiving another corpus later
+# extends the proof rather than needing a code edit.
+#
+# They live INSIDE corpus/, not beside it, and that is not cosmetic:
+# cognitive-architecture-census.py derives `durable_store_units` from
+# .gitignore's wildcard-free prefixes, so a sibling corpus-*/ needs its own
+# ignore rule and reads as a NEW organ of memory against a zero-headroom
+# budget. An archived corpus is not a new organ — it is this organ's own
+# history — so it nests under the rule that already covers corpus/*.
+ARCHIVE_GLOB = "archive-*"
 
 # Margins over the worst positive: generous enough to admit unseen good
 # scenes, tight enough that every corpus negative still trips (prove checks).
@@ -69,6 +117,17 @@ def _corpus_images(corpus: Path, cls: str) -> list[Path]:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def palette_inputs(corpus: Path) -> list[Path]:
+    """Positives + the palette class. Sorted, deduped, deterministic."""
+    seen, out = set(), []
+    for cls in ("positive", "palette"):
+        for p in _corpus_images(corpus, cls):
+            if p not in seen:
+                seen.add(p)
+                out.append(p)
+    return out
 
 
 def fit_palette(gates, positives: list[Path], bits: int,
@@ -145,6 +204,130 @@ def fit_clustering(gates, corpus: Path) -> dict:
     return bounds
 
 
+OWNED_NEG_PREFIX = "neg-owned-"
+
+
+def _foreign_share(gates, palette: dict, path) -> float:
+    """Foreign mass THROUGH THE REAL GATE FUNCTION.
+
+    Deliberately calls palette_coherence.check rather than re-deriving the
+    arithmetic: a proof that reimplements the thing it proves drifts from it
+    silently, which is the defect class this whole harness exists to catch.
+    """
+    for f in gates.palette_coherence.check(str(path), palette=palette):
+        if f.get("code") == "PALETTE_STATS":
+            return float(f["data"]["foreign_share"])
+    raise ValueError(f"palette gate returned no PALETTE_STATS for {path}")
+
+
+def _channel_rotated(gates, src: Path, dst: Path) -> None:
+    """(r,g,b) -> (g,b,r), alpha untouched. Every pixel keeps its exact
+    luminance-neighbourhood structure, so flat_mass and dominant_share come out
+    byte-identical — the arm is invisible to every gate except this one."""
+    w, h, rgba = gates._png.decode(str(src))
+    out = bytearray(rgba)
+    out[0::4], out[1::4], out[2::4] = rgba[1::4], rgba[2::4], rgba[0::4]
+    gates._png.encode(str(dst), w, h, bytes(out))
+
+
+def prove_palette(gates, corpus: Path, palette: dict) -> tuple[list[str], list[str]]:
+    """Palette separation proof. Returns (violations, not_run)."""
+    violations: list[str] = []
+    not_run: list[str] = []
+    limit = gates.palette_coherence.MAX_FOREIGN  # the gate's own constant
+    print(f"palette side (limit {limit:.0%} foreign mass):")
+
+    positives = _corpus_images(corpus, "positive")
+    if not positives:
+        return ["no positives — palette proof cannot run"], not_run
+
+    # P1 — the fit admits its own inputs.
+    for p in positives:
+        s = _foreign_share(gates, palette, p)
+        ok = s <= limit
+        print(f"  P1 self     {p.name:34s} {s:7.2%} -> {'pass' if ok else 'FAIL'}")
+        if not ok:
+            violations.append(f"P1 positive {p.name} exceeds max_foreign "
+                              f"({s:.2%} > {limit:.0%})")
+
+    # P2 — owned-art negatives must NOT be failed by the palette gate. Their
+    # defect is composition; attributing it to colour would be a false reading.
+    for p in _corpus_images(corpus, "negative"):
+        if not p.name.startswith(OWNED_NEG_PREFIX):
+            continue
+        s = _foreign_share(gates, palette, p)
+        ok = s <= limit
+        print(f"  P2 owned-neg {p.name:33s} {s:7.2%} -> {'pass' if ok else 'FAIL'}")
+        if not ok:
+            violations.append(
+                f"P2 owned-art negative {p.name} FAILS the palette gate "
+                f"({s:.2%} > {limit:.0%}) — a composition defect is being "
+                f"reported as foreign colour; the palette is under-fitted")
+
+    # P3/P4 — the bite arms. No external art: they are synthesised here, so the
+    # proof that the gate still fires never depends on assembled pixels.
+    with tempfile.TemporaryDirectory(prefix="wa-prove-") as td:
+        rot = Path(td) / "bite-channel-rotated.png"
+        _channel_rotated(gates, positives[0], rot)
+        s = _foreign_share(gates, palette, rot)
+        base_stats = gates.clustering.image_stats(positives[0])
+        rot_stats = gates.clustering.image_stats(rot)
+        invisible = (base_stats["flat_mass"] == rot_stats["flat_mass"]
+                     and base_stats["dominant_share"] == rot_stats["dominant_share"])
+        print(f"  P3 bite     channel-rot({positives[0].name[:22]}) "
+              f"{s:7.2%} -> {'FAIL(good)' if s > limit else 'PASSES(bad)'}"
+              f"  clustering-blind={invisible}")
+        if s <= limit:
+            violations.append(
+                f"P3 channel-rotated positive PASSES the palette gate "
+                f"({s:.2%} <= {limit:.0%}) — the gate cannot distinguish the "
+                f"art family from a hue-permuted impostor and is DEAD")
+        if not invisible:
+            violations.append(
+                "P3 arm is not clustering-blind (flat_mass/dominant_share "
+                "moved) — it no longer isolates palette_coherence")
+
+        css = Path(td) / "bite-css-rects.png"
+        w, h = 384, 320
+        gates._png.encode(str(css), w, h, gates._synth.make_css_rect_scene(7, w, h))
+        s = _foreign_share(gates, palette, css)
+        print(f"  P4 bite     synthetic CSS rectangles           "
+              f"{s:7.2%} -> {'FAIL(good)' if s > limit else 'PASSES(bad)'}")
+        if s <= limit:
+            violations.append(
+                f"P4 synthetic CSS-rectangle scene PASSES the palette gate "
+                f"({s:.2%} <= {limit:.0%}) — the gate no longer catches the "
+                f"class its own docstring names")
+
+    # P5 — cross-family, against every archived corpus that is present.
+    archives = sorted(d for d in corpus.glob(ARCHIVE_GLOB)
+                      if d.is_dir() and d.resolve() != corpus.resolve())
+    if not archives:
+        print("  P5 cross    NOT RUN — no archived corpus present")
+        not_run.append("P5 cross-family (no archived corpus dir on disk)")
+    for arch in archives:
+        imgs = [p for cls in ("positive", "negative", "palette")
+                for p in _corpus_images(arch, cls)]
+        if not imgs:
+            print(f"  P5 cross    NOT RUN — {arch.name} has no images on disk")
+            not_run.append(f"P5 cross-family ({arch.name} pixels not assembled)")
+            continue
+        worst = 1.0
+        bad = []
+        for p in imgs:
+            s = _foreign_share(gates, palette, p)
+            worst = min(worst, s)
+            if s <= limit:
+                bad.append(f"{p.name} {s:.2%}")
+        print(f"  P5 cross    {arch.name:34s} {len(imgs)} imgs, "
+              f"min foreign {worst:7.2%} -> {'FAIL(good)' if not bad else 'LEAK'}")
+        for b in bad:
+            violations.append(
+                f"P5 archived foreign-family image PASSES the palette gate: "
+                f"{b} (<= {limit:.0%}) — the corpora are not separated")
+    return violations, not_run
+
+
 def prove(gates, corpus: Path, bounds: dict) -> list[str]:
     """Mechanical separation proof. Returns list of violations (empty = OK)."""
     violations: list[str] = []
@@ -213,18 +396,22 @@ def main(argv=None) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     rc = 0
 
+    palette = None
     if args.cmd in ("palette", "all"):
-        positives = _corpus_images(corpus, "positive")
-        if not positives:
+        if not _corpus_images(corpus, "positive"):
             print(f"no positives under {corpus}/positive — cannot fit palette",
                   file=sys.stderr)
             return 1
-        pal = fit_palette(gates, positives, args.quant_bits,
-                          args.min_bin_share)
+        inputs = palette_inputs(corpus)
+        pal = fit_palette(gates, inputs, args.quant_bits, args.min_bin_share)
         out = out_dir / "palette.json"
         out.write_text(json.dumps(pal, indent=2) + "\n")
+        palette = pal
         print(f"wrote {out} ({len(pal['bins'])} bins from "
-              f"{len(positives)} positives, {pal['source_pixels']} px)")
+              f"{len(inputs)} inputs "
+              f"({len(_corpus_images(corpus, 'positive'))} positive + "
+              f"{len(_corpus_images(corpus, 'palette'))} palette-class), "
+              f"{pal['source_pixels']} px)")
 
     bounds = None
     if args.cmd in ("clustering", "all"):
@@ -245,14 +432,29 @@ def main(argv=None) -> int:
                       file=sys.stderr)
                 return 1
             bounds = json.loads(bpath.read_text())
+        if palette is None:
+            ppath = out_dir / "palette.json"
+            if not ppath.is_file():
+                print(f"no palette at {ppath} — run palette first",
+                      file=sys.stderr)
+                return 1
+            palette = json.loads(ppath.read_text())
         violations = prove(gates, corpus, bounds)
+        pal_viol, not_run = prove_palette(gates, corpus, palette)
+        violations += pal_viol
         if violations:
             print("PROVE FAILED:")
             for v in violations:
                 print(f"  - {v}")
             rc = 1
         else:
-            print("PROVE OK: negatives fail, positives pass")
+            print("PROVE OK: composition — negatives trip a clustering bound, "
+                  "positives trip none; art family — positives and owned-art "
+                  "negatives are palette-native, the bite arms are not")
+        # Printed AFTER the verdict, always: an arm that did not run is a
+        # disabled sensor, not a pass, and must not be invisible in a green run.
+        for n in not_run:
+            print(f"NOT RUN (not a pass): {n}")
     return rc
 
 

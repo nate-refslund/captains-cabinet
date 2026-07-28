@@ -1,9 +1,16 @@
 {
-  "purpose": "Calibration corpus for the Cabinet World aesthetic judge (positive = LimeZu showcase scenes; negative = Captain-rejected builds + synthetic prop-scatter).",
-  "note": "Image files are gitignored (LimeZu license); this manifest is the tracked record. Verify with `build_corpus.py verify`.",
+  "purpose": "Calibration corpus for the Cabinet World aesthetic judge. positive = OWNED isometric scenes the Captain has seen; negative = Captain-rejected builds + synthetic owned-art scatter/void; palette = owned atlas (palette fit only, never the judge).",
+  "note": "Image files are gitignored (instance renders); this manifest is the tracked record. Verify with `build_corpus.py verify`. The pre-2026-07-28 LimeZu corpus is preserved verbatim at corpus/archive-limezu-2026-07-08/ and its manifest plus the calibration it produced at calibration/archive/limezu-2026-07-08/.",
+  "refit": {
+    "date": "2026-07-28",
+    "reason": "Captain direction: every world pixel becomes owned generated art. A palette fitted to LimeZu measured owned frames at 57-90% foreign against a 5% limit \u2014 the gate was pointed at the art family we are leaving.",
+    "supersedes": "corpus/archive-limezu-2026-07-08/manifest.json",
+    "argument": "cabinet-meta designs/world-aesthetic-corpus-refit-2026-07-28.md"
+  },
   "counts": {
-    "positive": 11,
-    "negative": 5
+    "positive": 4,
+    "negative": 6,
+    "palette": 1
   },
   "images": [
     {
@@ -31,108 +38,68 @@
       "why": "Ground-truth rejection: sparse props floating on flat green void \u2014 no terrain variation, no paths, no shore, buildings unanchored."
     },
     {
-      "id": "neg-scatter-dense",
+      "id": "neg-owned-scatter-dense",
       "class": "negative",
-      "file": "corpus/negative/neg-scatter-dense.png",
-      "sha256": "744088e6052da18bd8381e14a347041d0df19e28b257ce6e39030434db110bb6",
-      "provenance": "Synthetic (build_corpus.py synthetic, seed 1337, 90 props): random LimeZu singles scattered on flat green",
+      "file": "corpus/negative/neg-owned-scatter-dense.png",
+      "sha256": "ba1653cf742abbfb9de3c88ae7298ccb9e8c4f0a4891c40d6db209dca34facff",
+      "provenance": "Synthetic (build_corpus.py synthetic, seed 1337, 90 props): owned atlas frames scattered on the world's own ground colour",
       "why": "Same failure mode at high density: clutter without composition still fails \u2014 density alone must not fool the judge."
     },
     {
-      "id": "neg-scatter-sparse",
+      "id": "neg-owned-scatter-sparse",
       "class": "negative",
-      "file": "corpus/negative/neg-scatter-sparse.png",
-      "sha256": "33e17b4606e407a71175a65ff42a220419fc38576244dcf1171e2543f2245bc4",
-      "provenance": "Synthetic (build_corpus.py synthetic, seed 42, 18 props): random LimeZu singles scattered on flat green",
-      "why": "Reproduces the rejected failure mode at low density: unrelated props dropped on an untextured green field with no grounding."
+      "file": "corpus/negative/neg-owned-scatter-sparse.png",
+      "sha256": "f66712c66900b79adf2ab4584c3e17fc4eb9602079933a330213f9e1a6830655",
+      "provenance": "Synthetic (build_corpus.py synthetic, seed 42, 18 props): owned atlas frames scattered on the world's own ground colour",
+      "why": "Reproduces the rejected failure mode at low density in owned art: unrelated props dropped on an untextured field with no grounding."
     },
     {
-      "id": "pos-city-market-square",
-      "class": "positive",
-      "file": "corpus/positive/pos-city-market-square.png",
-      "sha256": "eca66ef07bd1692511aa285ab811e8a784507a952211b3c17659016d5d32d34d",
-      "provenance": "LimeZu Modern Exteriors showcase (itch.io limezu/modernexteriors, image 1329426/7805364, first GIF frame)",
-      "why": "Market square with stalls, fountain, benches, lamp posts: dense purposeful prop placement on continuous paving."
+      "id": "neg-owned-void",
+      "class": "negative",
+      "file": "corpus/negative/neg-owned-void.png",
+      "sha256": "8547d20382dd51180df6dd312ac4335a2218af4533c5a1ed73b58eef59ffd7e8",
+      "provenance": "Synthetic (build_corpus.py synthetic, seed 5150): owned atlas buildings on the world's own flat ground colour, no terrain",
+      "why": "The island-void rejection rebuilt in owned art: real buildings, real palette, no terrain variation, no paths, nothing anchored."
     },
     {
-      "id": "pos-city-street",
-      "class": "positive",
-      "file": "corpus/positive/pos-city-street.png",
-      "sha256": "3d82701fab3b83326d3e8efb7db508231ac0b6590d755da80eace75ed6bbfdce",
-      "provenance": "LimeZu Modern Exteriors showcase (itch.io limezu/modernexteriors, image 1329426/8444670, first GIF frame)",
-      "why": "Composed city street: full paving coverage, road markings, crosswalk, streetlights and inhabitants \u2014 the standard the rejected street shot missed."
+      "id": "pal-owned-atlas",
+      "class": "palette",
+      "file": "corpus/palette/pal-owned-atlas.png",
+      "sha256": "88dea7194171d37d5115db01e03980d211bad63477f69d0bcaa5c72c4c7be52d",
+      "provenance": "Copy of the repo's own TRACKED owned isometric atlas (cabinet/dashboard/public/world-assets/originals/iso/atlas-0.png, 2048x2048, 182 frames) \u2014 the one corpus member reconstructible from a plain checkout with a single cp",
+      "why": "Defines every colour the owned sprites may draw, independently of which sprites a chosen render happens to contain. Without it an all-owned-sprite frame reads foreign (6.52% vs 1.23% measured)."
     },
     {
-      "id": "pos-farm-barn-silo",
+      "id": "pos-owned-interior-cutaway",
       "class": "positive",
-      "file": "corpus/positive/pos-farm-barn-silo.png",
-      "sha256": "c4cab0446dc27efe998a0539276a61af17fa1e1094243041f571ec3e17c34798",
-      "provenance": "LimeZu Modern Farm showcase (itch.io limezu/modernfarm, image 3354014/20024294, first GIF frame)",
-      "why": "Barn + silo + animal pens scene: large structures grounded by paths, fences and animals \u2014 how big buildings sit in terrain."
+      "file": "corpus/positive/pos-owned-interior-cutaway.png",
+      "sha256": "56793e7ef4b6f8c539943186bd9d48bbd99c98bb9f7342326bb6d63c4fb5ff43",
+      "provenance": "Owned isometric roof-off capture, post alpha-hole fix (cabinet-meta designs/world-iso-roof-off-great-house-close-FIXED-2026-07-28.png, 1440x960)",
+      "why": "Roof-off interior: floors, walls, furniture. The frame whose alpha holes the Captain diagnosed, AFTER the cutout fix \u2014 so the corpus records the corrected interior, never the bug."
     },
     {
-      "id": "pos-farm-homestead",
+      "id": "pos-owned-island-camp",
       "class": "positive",
-      "file": "corpus/positive/pos-farm-homestead.png",
-      "sha256": "d7944987aa5c26a32629f3b60bba13a9b273e0edf41eba84839f563942cca078",
-      "provenance": "LimeZu Modern Farm showcase (itch.io limezu/modernfarm, image 3354014/20024293, first GIF frame)",
-      "why": "Dense farm homestead: forest border, dirt clearing, fenced crop plots, characters mid-task \u2014 no empty voids anywhere in frame."
+      "file": "corpus/positive/pos-owned-island-camp.png",
+      "sha256": "3cc3d0f3cada4d62753b2eb12a037b5d750df9932b981100b6028e23135652c5",
+      "provenance": "Owned isometric live capture (cabinet-meta designs/world-camp-overgrown-2026-07-27.png, 2400x1760)",
+      "why": "Wide island in the wilderness/camp era \u2014 the Captain's subtractive-clearing inversion. Different terrain mix from the hamlet, so the palette covers overgrowth and not only cleared ground."
     },
     {
-      "id": "pos-interior-hotel",
+      "id": "pos-owned-island-hamlet",
       "class": "positive",
-      "file": "corpus/positive/pos-interior-hotel.png",
-      "sha256": "f29989d077041bba3c3470c2d90bf505b316d75154abb6a85e5edb751e6f2ead",
-      "provenance": "LimeZu Modern Interiors showcase (itch.io limezu/moderninteriors, image 671751/7034264, first GIF frame)",
-      "why": "Hotel hallway + lobby interior: complete walls, floor coverage, carpets on stairs, plants at doors \u2014 interior composition reference."
+      "file": "corpus/positive/pos-owned-island-hamlet.png",
+      "sha256": "0fa085e969dab55982545ef42025209814aa3e2ef6fbaeb9945ddff908eeba6a",
+      "provenance": "Owned isometric live capture (cabinet-meta designs/world-iso-hamlet-island-2026-07-28.png, 2400x1760)",
+      "why": "Wide island at today's org state: computed fbm+dither ground, worn lanes, districts, quay. The default frame every renderer change is judged on."
     },
     {
-      "id": "pos-interior-restaurant",
+      "id": "pos-owned-square-close",
       "class": "positive",
-      "file": "corpus/positive/pos-interior-restaurant.png",
-      "sha256": "210d5d5385de7e0aa663149f7dbac65950dd9312ec91665461001d7e0bffc025",
-      "provenance": "LimeZu Modern Interiors showcase (itch.io limezu/moderninteriors, image 671751/4589297, first GIF frame)",
-      "why": "Restaurant kitchen + dining interior: wall-hugging appliances, set tables, patterned floor, characters seated \u2014 furnished-interior bar for Z2."
-    },
-    {
-      "id": "pos-mockup-unified-close",
-      "class": "positive",
-      "file": "corpus/positive/pos-mockup-unified-close.png",
-      "sha256": "c5d92373dbd360dd6c9e531d51f922ea69fb1a5db3111ea1c9a728840d17af32",
-      "provenance": "Captain-approved 7.5 direction mockup (compose_unified.py, world-unified/unified-close.png, ratified direction 2026-07-07)",
-      "why": "THE close-zoom cozy bar: village heart crop \u2014 lamp posts, benches, flower beds, rugs of path texture, drop shadows under every prop, animals in the yard. Texture-level reference for close/mid tiers."
-    },
-    {
-      "id": "pos-mockup-unified-world",
-      "class": "positive",
-      "file": "corpus/positive/pos-mockup-unified-world.png",
-      "sha256": "a5cea5fce9e57c96841ecd0ddba3df7c051eceeb3223a3eaae867f86f7794797",
-      "provenance": "Captain-approved 7.5 direction mockup (compose_unified.py, world-unified/unified-world.png, ratified direction 2026-07-07)",
-      "why": "THE density bar: full unified island \u2014 three-pass ground, purposeful prop clusters, fenced pasture + gardens, working quay with berth chalk + crate stacks, fauna, mist bands. Live frames are pairwise-judged against this exact look."
-    },
-    {
-      "id": "pos-office-floor",
-      "class": "positive",
-      "file": "corpus/positive/pos-office-floor.png",
-      "sha256": "215628e45737e3437219cf04de4e45b8297de06b24146aa475897b18e07950cf",
-      "provenance": "LimeZu Modern Office Revamped showcase (itch.io limezu/modernoffice, img 6975002, first GIF frame)",
-      "why": "Office floor with cubicle rows, meeting nook, side rooms: desks face consistently, walkways read clearly \u2014 the wardroom target look."
-    },
-    {
-      "id": "pos-village-house",
-      "class": "positive",
-      "file": "corpus/positive/pos-village-house.png",
-      "sha256": "d1abc90184be0973e8ba2e6966031ba1999817cdd8abdfb753eca49e23759758",
-      "provenance": "LimeZu Serene Village showcase (itch.io limezu/serenevillagerevamped, image 803179/4498755)",
-      "why": "Close-up composed house: fence lines, dirt path edge, mailbox placement, layered tree canopy \u2014 texture-level (Z1) composition reference."
-    },
-    {
-      "id": "pos-village-island",
-      "class": "positive",
-      "file": "corpus/positive/pos-village-island.png",
-      "sha256": "0b1af7e8f6b0bcda6178ccbb5c6658033d2dfe51e50343de4ee368c6fbe7196d",
-      "provenance": "LimeZu Serene Village showcase (itch.io limezu/serenevillagerevamped, image 803179/4541802, first GIF frame)",
-      "why": "Finished island village scene: shore transitions, fenced yard, path to door, grounded props \u2014 the composition bar Z0/Z1 exteriors must clear."
+      "file": "corpus/positive/pos-owned-square-close.png",
+      "sha256": "af81e14682d23a08e115526037456af72241484064bff3ef3cd2df712e1c0ba9",
+      "provenance": "Owned isometric live capture, close zoom (cabinet-meta designs/cabinet-world-iso-v24-zoom-square-2026-07-25.png, 1200x800)",
+      "why": "Close-zoom village square: paving, benches, lamp posts at texture level. Carries the plaza colours no wide frame exercises."
     }
   ]
 }
