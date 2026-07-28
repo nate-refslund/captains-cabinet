@@ -22,6 +22,8 @@ export function clampZoom(z: number): number {
 }
 
 /** Continuous camera — world-tile center + continuous zoom. */
+import { TOPDOWN_TILE } from './projection'
+
 export interface EngineCamera {
   z: number
   x: number
@@ -129,15 +131,25 @@ export interface Viewport {
   h: number
 }
 
-const TILE_PX = 16
-
-/** Project a world-tile rect to screen px under a centered camera. */
+/**
+ * Project a world-tile rect to screen px under a centered camera.
+ *
+ * The tile comes from the ONE kernel module. It was a private TILE_PX = 16
+ * here — the fifth copy of a transform that existed five times and disagreed
+ * with itself, and the one nobody would have thought to look at.
+ *
+ * IT IS DELIBERATELY TOP-DOWN ONLY, and that is a stated limit rather than an
+ * oversight: the only caller is cutawayCandidate, whose 40%-of-the-central-third
+ * coverage rule is calibrated to axis-aligned rects and would misfire on ground
+ * diamonds. The iso path draws no cutaway this round, so a kernel parameter
+ * here would be a lever with no correct setting behind it.
+ */
 function screenRect(
   b: BuildingBox,
   cam: EngineCamera,
   vp: Viewport
 ): { x0: number; y0: number; x1: number; y1: number } {
-  const s = TILE_PX * cam.z
+  const s = TOPDOWN_TILE.w * cam.z
   return {
     x0: vp.w / 2 + (b.x - cam.x) * s,
     y0: vp.h / 2 + (b.y - cam.y) * s,
