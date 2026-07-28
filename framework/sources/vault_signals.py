@@ -41,6 +41,7 @@ from collections import namedtuple
 from pathlib import Path
 from typing import Any
 
+from framework.acting.action_lane import neutralize_fence_shapes
 from framework.env import vault_dir
 
 # The operational gather window (hours) — the lane's default recency fence.
@@ -230,10 +231,14 @@ def _excerpt(p: Path, chars: int) -> str:
 
 
 def _relpath(p: Path, vault: Path) -> str:
+    # whitespace-collapsed: this string is interpolated into the bundle's fence
+    # HEADER, and a path carrying a newline (POSIX permits one) would end that
+    # line early and let its own remainder open a forged second header — the
+    # metadata-side twin of the body forgery neutralize_fence_shapes() closes.
     try:
-        return str(p.relative_to(vault))
+        return " ".join(str(p.relative_to(vault)).split())
     except ValueError:
-        return p.name
+        return " ".join(p.name.split())
 
 
 def collect_sections(as_of: dt.datetime, *, window_h: int = WINDOW_H,
@@ -278,7 +283,11 @@ def collect_sections(as_of: dt.datetime, *, window_h: int = WINDOW_H,
             files = _recent_files(root, as_of=as_of, window_h=eff_window,
                                   cap=sec.cap, ff_filter=sec.ff_filter)
         for p in files:
-            body = _excerpt(p, sec.chars)
+            # SEC-5 2026-07-28: an excerpt is attacker-writable text and must not
+            # be able to type a fence header of its own — see the reproduction in
+            # action_lane.neutralize_fence_shapes' header. The one other producer
+            # of this bundle (run_action_lane._fence_block) calls the same helper.
+            body = neutralize_fence_shapes(_excerpt(p, sec.chars))
             if body:
                 parts.append(
                     (p, f"--- {sec.label} ref={ref_prefix}{_relpath(p, base)} ---\n{body}"))

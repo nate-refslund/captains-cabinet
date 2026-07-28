@@ -21,7 +21,17 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: ebbdcc3f771afef7ffddc7558ea64a06bf3f8fa782cf14b5dd129891f796ca15
+Reviewed-Scope-Digest: c97c4fca1e44d1516e95cdb5220685dae70583f95e6a5f29080e847be4b1c251
+
+(RE-BIND, 2026-07-28, `fix/hostile-input-red-team`. The hostile-input red
+team added a `temporary_allowances` row to
+`cabinet/config/cognitive-architecture-contract.yml` — a restore_from_baseline
+member of this phase's scope — paying +31 production non-comment lines for the
+fenced-bundle provenance fix (a source file could type its own fence header,
+defeating both the taint map and the D13 never-act-first floor). No COG-4
+surface changed: framework/acting, framework/sources and framework/frontdoor
+are outside this scope set. Recomputed over the committed tree; the prior
+value is superseded, the note below it is retained in full.)
 
 (MERGE RE-BIND, 2026-07-28, `fix/probe-truncation-unearned-negative` x master
 `2b3de03d` (PR #261). Both sides had re-bound this line and both moved
