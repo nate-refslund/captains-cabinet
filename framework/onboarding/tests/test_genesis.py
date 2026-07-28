@@ -1128,6 +1128,68 @@ def test_a_join_the_cited_files_really_share_is_still_named():
     assert "migration" in (recall["subjects"][0]["shared_terms"] or [])
 
 
+def test_shared_wording_is_never_the_chunk_heading_the_citation_prints():
+    """MEASURED 2026-07-28 through the real ``first-briefing.sh --local`` chain
+    against a real Obsidian vault, on the Captain's own estate.
+
+    ``_join_terms`` built its term blob as ``heading + " " + text`` while
+    adapters chunk as ``heading + "\\n" + body`` — so the heading was counted
+    TWICE and, being shared by every note that carries it, outranked real
+    words. Three daily notes cited as ``1-Daily/<date>.md#Summary`` rendered:
+
+        Shared wording: verification, network, summary, active
+
+    ``summary`` is the markdown heading the citation already prints beside the
+    term, present in the BODY of none of the three. The card tells the operator
+    that a boundary label the cabinet itself chose is their own recurring
+    wording — the same machinery-as-material defect ``_strip_frontmatter``
+    removed one layer down, and ``_quote_of`` already strips for the quote.
+
+    THE ARM IS THE PROPERTY: a term captioned as shared must occur in at least
+    ``_MIN_JOIN_FILES`` of the cited files' BODIES, not their headings."""
+    def _hit(path, heading, body, ts):
+        return {"source": "local", "ref": f"{path}#{heading}", "path": path,
+                "heading": heading, "text": f"{heading}\n{body}",
+                "base_score": 0.5, "who": "", "ts": ts, "content_ts": ts}
+
+    corpus = [
+        _hit("1-Daily/2026-07-02.md", "Summary",
+             "Storefront verification ran against the payment network.",
+             "2026-07-02T00:00:00Z"),
+        _hit("1-Daily/2026-06-03.md", "Summary",
+             "Storefront verification queue drained; network latency fine.",
+             "2026-06-03T00:00:00Z"),
+        _hit("1-Daily/2026-05-30.md", "Summary",
+             "Storefront verification backlog and the network cutover.",
+             "2026-05-30T00:00:00Z"),
+    ]
+    recall = _recall_for(source=_FakeSource(corpus=corpus))
+    subject = recall["subjects"][0]
+    bodies = {h["path"]: h["text"].split("\n", 1)[1].lower() for h in corpus}
+    assert len(subject["files"]) == genesis._MAX_RECALL_FILES
+    assert subject["shared_terms"], "the honest join must survive the fix"
+    assert "summary" not in subject["shared_terms"], (
+        "the card captions the operator's notes 'Shared wording: summary' — "
+        "that is the chunk heading the citation already names, not their words")
+    for term in subject["shared_terms"]:
+        carriers = sum(1 for body in bodies.values() if term in body)
+        assert carriers >= genesis._MIN_JOIN_FILES, (
+            f"{term!r} is captioned as shared wording but appears in "
+            f"{carriers} of the cited files' BODIES")
+
+
+def test_the_quote_and_the_join_read_the_same_body():
+    """One helper, so the two operator-facing uses of a hit's words cannot
+    drift into disagreeing about what the operator actually wrote."""
+    hit = {"path": "n.md", "ref": "n.md#Summary", "heading": "Summary",
+           "text": "Summary\nThe cutover moved billing to the new network.",
+           "content_ts": "2026-07-02T00:00:00Z", "base_score": 0.5}
+    body = genesis._body_of(hit)
+    assert not body.strip().lower().startswith("summary")
+    assert "cutover moved billing" in body
+    assert not genesis._quote_of(hit).lower().startswith("summary")
+
+
 def test_an_estate_card_recall_enriched_still_counts_as_estate_provenance(tmp_path):
     """FOUND BY A HOSTILE PASS ON THE LANDED UNIT, 2026-07-28.
 
