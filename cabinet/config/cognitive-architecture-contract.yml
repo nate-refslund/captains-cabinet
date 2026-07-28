@@ -1134,7 +1134,12 @@ temporary_allowances:
       arms are under framework/onboarding/tests/, outside this budget's count.
       EXACT measured 73043 on this branch against master 49ed144e reading 73016
       exactly at its own pinned effective level, so the delta is 27 measured
-      against that base rather than carried from an earlier reading.
+      against that base rather than carried from an earlier reading. RE-MEASURED AT THE MERGE with
+      master `a70bcfb5` (PR #268), which added its own +34 row at the same
+      position in this list: the merged tree reads 73077 = 73016 + 34 + 27, so
+      the two deltas are exactly additive and this row's `additional` is
+      unchanged by the merge. Re-measured rather than carried, because master
+      moved this very budget twice while this branch was in flight.
     owner: onboarding-plane
     sunset: '2027-01-28'
     deletion_gate: >-
@@ -1143,6 +1148,53 @@ temporary_allowances:
       the completeness flag it already sets; or the sweep is superseded by the
       per-source ingest the 2026-07-26 altitude gate ordered; or COG-7
       compaction brings production non-comment lines below the pinned baseline
+  - phase: onboarding-derivation-false-positives
+    budget: framework_production_noncomment_lines
+    additional: 34
+    reason: >-
+      TWO CONFIDENTLY WRONG DERIVATIONS, each the FIRST thing an operator sees,
+      each found by running the real onboarding path (propose_window ->
+      ratify_charter -> _first_dividend -> derive_estate) read-only against four
+      live product repos and one live personal knowledge vault, 2026-07-28.
+      (1) journey._command_drift read a bare `pnpm x` / `yarn x` as a script
+      reference. Those package managers try a SCRIPT first and fall back to an
+      installed package binary, so an undeclared script proves nothing on its
+      own — but the finding scores 100 and therefore becomes the headline first
+      dividend. On one live single-product web repo 1382 of 1529 flagged
+      occurrences named a DECLARED dependency (a migration tool, a browser
+      test runner), the top-ranked finding in the First Window was exactly such
+      a false positive, and "Requires pnpm 8 or newer" was reported as a missing
+      script. Same detector was the ONLY finding kind on two further live repos,
+      so a false positive was the entire dividend there. (2)
+      estate._entities_from_manifest dropped the granted ROOT whenever anything
+      deeper carried a marker — right for a monorepo, exactly backwards for a
+      single product with documentation subfolders. On the same repo the root
+      held the only package.json while the deeper markers were a docs README and
+      an internal folder's README, so the estate discarded the product and
+      proposed two of the product's own subdirectories as the lanes; on the
+      vault it proposed a beliefs folder and an archive dedup folder. WHAT THE
+      LINES BUY, each pinned by an arm that FAILS against the pre-change tree
+      (verified with __pycache__ purged and the sources stashed): the explicit
+      `run` form split from the bare form, the dependency-name union that lets a
+      bare invocation be settled from in-window evidence, the numeric-name
+      refusal, and the manifest-vs-prose marker class that decides whether the
+      root is a container or the product. A third arm guards that the explicit
+      `run` form is STILL drift when a dependency of that name exists. Effect on
+      the same window: 66 drift findings -> 6, headline becomes a genuine broken
+      command. ZERO new modules, no bijection class touched. Docstrings and
+      comments counted as written and NOT reformatted to duck the counter. EXACT
+      measured running total 73050 via cognitive-architecture-census.py, against
+      a branch merged with master adab6ec0 (73016, itself exactly at the pinned
+      maximum).
+    owner: onboarding-plane
+    sunset: '2027-01-28'
+    deletion_gate: >-
+      the per-source ingest supersedes the single-folder First Window (resulting
+      order items 2-4 of the 2026-07-26 altitude gate), at which point the
+      entity rule moves with it and the drift detector generalises into the
+      referenced-identifier-liveness detector the employee-slice measurement
+      named as the highest-value missing one, or COG-7 compaction brings
+      production non-comment lines below the pinned baseline
 expansions:
   - member: framework/authority/ownership.py
     member_class: framework_production_modules

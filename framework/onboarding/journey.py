@@ -1789,6 +1789,26 @@ def _source_integrity_fingerprint(source: Path) -> dict[str, Any]:
     }
 
 
+#: Every package.json block that names an installed package. A BARE
+#: `pnpm <name>` resolves to such a package's binary when no script matches, so
+#: these names are the evidence that a bare invocation is not broken.
+_DEPENDENCY_BLOCKS = (
+    "dependencies", "devDependencies", "peerDependencies", "optionalDependencies",
+)
+#: `npm|pnpm|yarn run <script>` — an UNAMBIGUOUS script reference. The name must
+#: start with an alphanumeric so an option flag ("yarn --version") is never
+#: captured and reported as a missing script.
+_EXPLICIT_RUN_RE = re.compile(
+    r"\b(?:npm|pnpm|yarn)\s+run\s+([A-Za-z0-9][A-Za-z0-9:_-]*)\b"
+)
+#: `pnpm <name>` / `yarn <name>` — script FIRST, installed binary second. `npm`
+#: is deliberately absent: it has no such fallback, so its bare form is not a
+#: command invocation at all.
+_BARE_INVOCATION_RE = re.compile(
+    r"\b(?:pnpm|yarn)\s+([A-Za-z0-9][A-Za-z0-9:_-]*)\b"
+)
+
+
 def _command_drift(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
     # Union of the declared scripts of EVERY package.json inside the First
@@ -1797,6 +1817,7 @@ def _command_drift(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     # confident, citation-backed false "broken command" claims in any workspace
     # or monorepo where the script lives in a sibling package.
     declared: set[str] = set()
+    dependencies: set[str] = set()
     package_count = 0
     for entry in entries:
         if Path(entry["path"]).name != "package.json":
@@ -1809,30 +1830,49 @@ def _command_drift(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if isinstance(scripts, dict):
             package_count += 1
             declared |= {str(k) for k in scripts}
+        if isinstance(obj, dict):
+            for block in _DEPENDENCY_BLOCKS:
+                deps = obj.get(block)
+                if isinstance(deps, dict):
+                    dependencies |= {str(k) for k in deps}
     if package_count == 0:
         return findings
-    # The script name must START with an alphanumeric character so an option
-    # flag ("yarn --version") is never captured and reported as a missing
-    # script — a leading hyphen was previously accepted by the character class.
-    command_re = re.compile(
-        r"\b(?:npm\s+run|pnpm(?:\s+run)?|yarn)\s+([A-Za-z0-9][A-Za-z0-9:_-]*)\b"
-    )
     builtin = {"add", "audit", "exec", "help", "init", "install", "remove", "run", "update"}
     for entry in entries:
         if Path(entry["path"]).suffix.lower() not in {".md", ".mdx", ".rst", ".txt"}:
             continue
         for line_no, line in enumerate(entry["lines"], start=1):
-            for match in command_re.finditer(line):
+            matches = [(True, m) for m in _EXPLICIT_RUN_RE.finditer(line)]
+            matches += [(False, m) for m in _BARE_INVOCATION_RE.finditer(line)]
+            for explicit, match in sorted(matches, key=lambda pair: pair[1].start()):
                 command = match.group(1)
                 if command in builtin or command in declared:
                     continue
+                # "Requires pnpm 8 or newer" is a version constraint, not a
+                # script name. Measured on two live repos 2026-07-28.
+                if command.isdigit():
+                    continue
+                # A BARE `pnpm x` / `yarn x` runs a SCRIPT if one exists and
+                # otherwise falls back to an installed package binary, so the
+                # absence of a script proves nothing on its own. Measured
+                # 2026-07-28 on a live single-product web repo: 1382 of 1529
+                # flagged occurrences named a declared dependency
+                # (`drizzle-kit`, `playwright`), and the top-ranked one was the
+                # headline dividend — a confident, cited, wrong claim. Only the
+                # explicit `run` form is an unambiguous script reference.
+                if not explicit and command in dependencies:
+                    continue
+                fallback = "" if explicit else (
+                    " and no package.json declares a dependency by that name, so the "
+                    "package manager has no installed tool to fall back on"
+                )
                 findings.append({
                     "score": 100,
                     "kind": "software_command_drift",
                     "quality": "strong",
                     "summary": (
                         f"The documentation tells someone to run “{command}”, but no package.json in the "
-                        "approved folder declares that script. "
+                        f"approved folder declares that script{fallback}. "
                         "That can break onboarding or a release at the exact moment someone follows the documented path."
                     ),
                     "citations": [_citation(entry, line_no, line)],

@@ -21,7 +21,20 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 64bef382bf57f1d508e143862d71dd92f96e040ff41942d6fb3fcba75acb423d
+Reviewed-Scope-Digest: eaada02fe52f1d48b0a5042d4d49d2bb0a734d940db1e86f1a4e25569698bacf
+
+(MERGE RE-BIND, 2026-07-28, `fix/stranger-hatch-timed` x master `a70bcfb5`
+(PR #268). Both sides had re-bound this line and BOTH moved
+`cabinet/config/cognitive-architecture-contract.yml`, so the two digests
+conflicted textually: neither describes the merged tree and the value above is
+RECOMPUTED over it. Both sides added a `temporary_allowances` row at the same
+position — `stranger-hatch-unopened-areas` (+27, this branch) and
+`onboarding-derivation-false-positives` (+34, master) — and BOTH ARE KEPT; the
+conflict was textual adjacency, not a contested value, and the running total is
+RE-MEASURED on the merged tree rather than carried from either side. No budget
+`maximum` raised, no expansion member, no bijection class, and NO COG-4
+implementation byte moved on either side. Nothing below was re-reviewed,
+because no reviewed COG-4 byte moved.)
 
 (RE-BOUND 2026-07-28 at the landing of `fix/world-art-manifest-truth-and-egg`.
 Prior digest: `ebbdcc3f771afef7ffddc7558ea64a06bf3f8fa782cf14b5dd129891f796ca15`.
