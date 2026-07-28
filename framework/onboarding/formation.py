@@ -1,24 +1,44 @@
-"""framework.onboarding.formation — the deep Formation stage machine (scaffold).
+"""framework.onboarding.formation — the deep Formation stage machine.
 
 Formation is the post-First-Dividend, propose-only deep self-setup run
 (``docs/plans/onboarding-v2-design-of-record-2026-07-14.md``): discover →
 consent → ingest/organize → strategy map → the T+24h
-strategic briefing. THIS module is the SKELETON only — run-id + journal
-helpers, resume logic, undo, and stage entry-point STUBS. Every stage writes
-an honest IOU artifact ("not yet built — Phase 3 increment N"); no stage does
-fake work, calls an LLM, touches the network, or reads any Captain data. The
-production First Window + hash-bound Charter live in
-``framework.onboarding.journey``; this scaffold MUST NOT duplicate that state
-or be presented as though deep orientation is implemented.
+strategic briefing. Most of it is still the SKELETON — run-id + journal
+helpers, resume logic, undo, and stage entry-point STUBS that write an honest
+IOU artifact ("not yet built — Phase 3 increment N"); those stages do no fake
+work, call no LLM, touch no network and read no Captain data. The production
+First Window + hash-bound Charter live in ``framework.onboarding.journey``;
+this module MUST NOT duplicate that state or be presented as though deep
+orientation is implemented.
+
+ONE STAGE IS REAL: ``DISCOVERY_DONE`` (the ordering inversion, Captain ruling
+2026-07-26). It STRUCTURES what the ratified First Window already read into
+``framework.onboarding.estate``'s derived-estate document and derives
+``instance/config/lanes-proposed.yml`` beside it, so ``lanes`` stop being
+something the operator must declare before the cabinet has looked at anything.
+It performs NO NEW READ — no folder is opened, no connector is called; every
+fact is re-derived from artifacts the journey wrote after the Captain ratified
+a hash-bound charter. The stages after it stay honest IOUs precisely because
+real ingest is gated on the employee-slice experiment (direction gate D9:
+"the sweep and its consumer land as ONE unit or not at all").
 
 Safety model (structural, not conventional):
 * PROPOSE-ONLY / NOTHING ACTIVATES — every artifact lands under
   ``instance/onboarding/formation/<run-id>/``, a surface the mission compiler
   structurally never reads (its filename gate reads only
   ``instance/config/outcomes.yml``; pinned by test_formation.py's invariant).
+  The two DISCOVERY_DONE outputs sit one level up
+  (``instance/onboarding/formation/derived-estate.yml`` and
+  ``instance/config/lanes-proposed.yml``) so consumers have ONE stable path
+  instead of guessing a run id — and both are equally inert: the compiler's
+  filename gate does not read them, and ``generate-instance.py`` takes lanes
+  ONLY from the answers file, so a proposed lane cannot hire anyone.
 * REVERSIBLE — ``undo_run`` supersede-archives the whole run dir into
   ``instance/onboarding/formation/_pre-adopt-<UTC-stamp>/<run-id>/`` (the
-  generate-instance --adopt idiom: nothing deleted, ever).
+  generate-instance --adopt idiom: nothing deleted, ever), and takes the two
+  DISCOVERY_DONE outputs with it when they carry THIS run's id — otherwise
+  undoing a run would leave its derived estate behind, still feeding the
+  generator and the briefing.
 * HONEST IOU — the C1 consent gate is NOT built yet, so the READ_SCOPE
   stub's artifact states plainly that no consent was requested and no data
   was read; downstream stubs read nothing either.
@@ -47,6 +67,10 @@ GENERATED_MARKER = "generated-by: framework.onboarding.formation"
 IOU_PREFIX = "not yet built — Phase 3 increment"
 
 START_STAMP = "FORMATION_START"
+# The stages that DO REAL WORK. Everything else is an honest IOU stub, and
+# this set is what keeps the two apart in one place instead of by prose:
+# estimate_lines, the artifact writer and the tests all read it.
+REAL_STAMPS = frozenset({"DISCOVERY_DONE"})
 # (stamp, artifact slug, phase-3 increment number, design-stage label)
 STAGES: tuple[tuple[str, str, int, str], ...] = (
     ("DISCOVERY_DONE", "discovery", 1, "F1 estate discovery"),
@@ -198,7 +222,9 @@ def run_call_cap(root: Path | None, run_id: str) -> int:
 
 
 def estimate_lines(root: Path | None, run_id: str) -> list[str]:
-    """The printed cost estimate — honest for the scaffold: zero LLM calls."""
+    """The printed cost estimate — honest: zero LLM calls, and honest about
+    which stages actually do something (a blanket "every stage is a stub" line
+    became false the moment DISCOVERY_DONE started deriving the estate)."""
     cap = run_call_cap(root, run_id)
     remaining = [s for s in STAGE_STAMPS
                  if s not in journaled_stamps(root, run_id)]
@@ -206,10 +232,13 @@ def estimate_lines(root: Path | None, run_id: str) -> list[str]:
         f"Cost estimate — run {run_id}:",
         f"  LLM CLI calls this run: 0 of a per-run cap of {cap} "
         "(CABINET_FORMATION_CALL_CAP)",
-        "  Every stage below is an honest IOU stub (Phase 3 scaffold) — no "
-        "LLM, no network,",
-        "  no Captain data read. Future increments spend against the "
-        "recorded cap only.",
+        "  DISCOVERY_DONE structures the ALREADY-RATIFIED First Window into "
+        "the derived estate",
+        "  (no new read: no folder opened, no connector, no network, no LLM). "
+        "Every other",
+        "  stage is an honest IOU stub and reads nothing. Future increments "
+        "spend against the",
+        "  recorded cap only.",
         f"  Stages remaining: {len(remaining)} of {len(STAGE_STAMPS)}"
         + (f" (resume — next: {remaining[0]})" if remaining
            and len(remaining) < len(STAGE_STAMPS) else ""),
@@ -247,11 +276,43 @@ def _stage_artifact_text(stamp: str, slug: str, increment: int, label: str, *,
     return "\n".join(lines) + "\n"
 
 
+def _run_discovery(root: Path | None, run_id: str, rdir: Path, ts: str) -> dict:
+    """DISCOVERY_DONE, for real: ratified First Window → derived estate →
+    lanes-proposed. Reads only artifacts the journey already wrote; the
+    run-local copy under the run dir is what ``undo_run`` archives, and the
+    two stable-path files are what the generator and genesis consume."""
+    from framework.onboarding import estate as _estate  # local: import-light
+
+    answers = {}
+    base = Path(root) if root else cabinet_root()
+    apath = base / "instance/config/cabinet-init.answers.yml"
+    if apath.is_file():
+        try:
+            import yaml
+            loaded = yaml.safe_load(apath.read_text(encoding="utf-8"))
+            answers = loaded if isinstance(loaded, dict) else {}
+        except Exception:
+            answers = {}
+    doc = _estate.derive_estate(base, answers=answers, run_id=run_id, now=ts)
+    written = _estate.write_estate(doc, base)
+    lanes = _estate.write_lanes_proposed(doc, base, now=ts)
+    import yaml
+    copy = rdir / "discovery.yml"
+    tmp = copy.with_name(copy.name + ".tmp")
+    tmp.write_text(yaml.safe_dump(doc, sort_keys=False, allow_unicode=True,
+                                  width=100), encoding="utf-8")
+    os.replace(tmp, copy)
+    return {"status": "derived", "stamp": "DISCOVERY_DONE", "artifact": str(copy),
+            "sources": written["sources"], "entities": written["entities"],
+            "lanes_proposed": lanes["lanes"]}
+
+
 def run_stage(root: Path | None, run_id: str, stamp: str, *,
               now: str | None = None) -> dict:
-    """Execute one stage STUB: write the honest-IOU artifact + journal the
-    stamp. Idempotent — an already-journaled stamp is skipped (RESUME), its
-    artifact untouched."""
+    """Execute one stage: DISCOVERY_DONE derives the estate for real, every
+    other stamp writes its honest-IOU artifact. Both journal the stamp.
+    Idempotent — an already-journaled stamp is skipped (RESUME), its artifact
+    untouched."""
     matches = [s for s in STAGES if s[0] == stamp]
     if not matches:
         raise ValueError(f"unknown formation stage stamp: {stamp!r}")
@@ -262,6 +323,15 @@ def run_stage(root: Path | None, run_id: str, stamp: str, *,
     ts = _utc_now_iso(now)
     rdir = run_dir(root, run_id)
     rdir.mkdir(parents=True, exist_ok=True)
+    if stamp in REAL_STAMPS:
+        res = _run_discovery(root, run_id, rdir, ts)
+        append_journal(root, run_id, stamp, status=res["status"],
+                       note=(f"{label}: {res['sources']} source(s), "
+                             f"{res['entities']} entity(ies), "
+                             f"{res['lanes_proposed']} lane(s) proposed; "
+                             f"no new read (ratified First Window only)"),
+                       now=ts)
+        return res
     artifact = rdir / f"{slug}-IOU.md"
     text = _stage_artifact_text(stamp, slug, increment, label,
                                 run_id=run_id, now=ts)
@@ -275,12 +345,38 @@ def run_stage(root: Path | None, run_id: str, stamp: str, *,
     return {"status": "stub-iou", "stamp": stamp, "artifact": str(artifact)}
 
 
+def _archive_discovery_outputs(root: Path | None, run_id: str, dest: Path) -> list:
+    """Take DISCOVERY_DONE's two stable-path outputs with the run they belong
+    to. They live OUTSIDE the run dir (one stable path beats a run-id guess
+    for consumers), so archiving only the run dir would leave the derived
+    estate still feeding the generator's ``lanes: []`` gate and the briefing's
+    cards after the run that produced it was undone — an undo that leaves its
+    effect in place is not an undo. Only outputs stamped with THIS run id
+    move, so a later run's estate is never dragged away by an older undo."""
+    from framework.onboarding import estate as _estate  # local: import-light
+    base = Path(root) if root else cabinet_root()
+    doc = _estate.load_estate(base)
+    if str(doc.get("run_id") or "") != run_id:
+        return []
+    moved = []
+    for rel in (_estate.ESTATE_REL, _estate.LANES_PROPOSED_REL):
+        path = base / rel
+        if not path.is_file():
+            continue
+        target = dest / "superseded" / Path(rel).name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(path), str(target))
+        moved.append(rel)
+    return moved
+
+
 def undo_run(root: Path | None, run_id: str, *, now: str | None = None) -> dict:
     """Supersede-archive the run dir in the ``_pre-adopt`` idiom: MOVE it to
     ``instance/onboarding/formation/_pre-adopt-<UTC-stamp>/<run-id>/`` —
     nothing deleted, path-contained, honest refusal when the run is absent.
-    (When formation grows DB writes — F2 ingest — undo also supersedes those
-    rows; the scaffold has none.)"""
+    DISCOVERY_DONE's derived estate + lanes-proposed ride along when they carry
+    this run's id (see ``_archive_discovery_outputs``). (When formation grows
+    DB writes — F2 ingest — undo also supersedes those rows; it has none.)"""
     rdir = run_dir(root, run_id)  # validates the id + containment
     if not rdir.is_dir():
         return {"status": "no-such-run", "run_id": run_id, "archived_to": None}
@@ -293,14 +389,17 @@ def undo_run(root: Path | None, run_id: str, *, now: str | None = None) -> dict:
         n += 1
     dest_dir.mkdir(parents=True, exist_ok=True)
     shutil.move(str(rdir), str(dest))
+    superseded = _archive_discovery_outputs(root, run_id, dest)
     receipt = dest / "undo-receipt.md"
     with open(receipt, "a", encoding="utf-8") as fh:
         fh.write(f"{GENERATED_MARKER} (undo)\n"
                  f"superseded_at: {_utc_now_iso(now)}\n"
                  f"undone_run: {run_id}\n"
+                 f"superseded_outputs: {', '.join(superseded) or 'none'}\n"
                  "note: supersede-archive — nothing deleted; restore by "
                  "moving this dir back.\n")
-    return {"status": "archived", "run_id": run_id, "archived_to": str(dest)}
+    return {"status": "archived", "run_id": run_id, "archived_to": str(dest),
+            "superseded_outputs": superseded}
 
 
 def main(argv: list[str] | None = None) -> int:  # pragma: no cover — thin CLI

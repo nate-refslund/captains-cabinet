@@ -60,7 +60,8 @@ re-run completes from it. The defaults it picks, exactly:
 | `captain.timezone` | `UTC` — placeholder, edit later |
 | `captain.telegram_chat_id` | `"0000"` — placeholder address (not a secret); set after the bot exists |
 | `cabinet` | `id: main` · `mode: single` · `org_shape: portfolio` · default `officer_model` |
-| `lanes` | one placeholder lane: `First Lane` / `first-lane`, no repos, no boards, `task_system: none` |
+| `lanes` | one placeholder lane: `First Lane` / `first-lane`, no repos, no boards, `task_system: none` — rename it, or clear it to `[]` after running discovery (§2) |
+| `mission.altitude` | ABSENT unless `--altitude <rung>` is passed (`hatch.sh --altitude` threads it through); unknown stays unknown |
 | `autonomy` | `posture: propose_first` · `flavor: org` (OrgSource recall, no personal estate) · `target_posture: guardian` — explicitly consent-safe; nothing can scaffold sovereign |
 | `integrations` | `bot_token_env: TELEGRAM_COS_TOKEN` (env-var NAME only), no bot username yet |
 
@@ -101,10 +102,33 @@ questions, in the captain's own words:
   without the captain's explicit yes.
 - **The `mission:` block** — a machine-readable top-level key in the
   answers file (schema in "Write answers + generate" below):
-  `purpose`, `success_90d`, `never_touch: []`. The zero-LLM generator
-  deliberately ignores this key (a test pins that tolerance); genesis
-  conditions its proposed outcome cards on it. Propose-only as ever —
-  nothing in the mission block activates anything.
+  `purpose`, `success_90d`, `never_touch: []`, `altitude`. The zero-LLM
+  generator ignores `purpose`/`success_90d`/`never_touch` (a test pins that
+  tolerance) and genesis conditions its proposed outcome cards on them.
+  Propose-only as ever — nothing in the mission block activates anything.
+
+4. **Altitude** — "What can you actually DECIDE where you work?" It is not
+   a title and it is not seniority; it bounds what a proposed outcome's
+   PROOF can be. Map the answer onto exactly one rung — `contributor` |
+   `project` | `team` | `function` | `company` — and record it as
+   `mission.altitude`. **OMIT it if the captain does not answer**: unknown
+   is a legal state and every consumer keeps its pre-altitude behaviour;
+   a guessed rung is a value pretending to be an answer.
+
+   Why it is asked at all: the north star is an AIM, not an entry bar
+   (Captain ruling 2026-07-26). A developer inside a large company does not
+   get to run it, and the cabinet must be valuable to them anyway. Altitude
+   is LOAD-BEARING in two places — it selects the preset
+   (`generate-instance.py --print-preset`, which is what `hatch.sh` writes
+   into `instance/config/active-preset`) and it reshapes every proposed
+   card's proof line. At `contributor`/`project`/`team` the six hard
+   ceilings (external comms, production deploys, spend, secrets, network
+   writes, credential grants) belong to the captain's EMPLOYER, not to
+   them, so a "shipped and deployed" proof is unreachable by org chart
+   rather than by cabinet quality. There the proof becomes proposal-shaped:
+   evidence assembled across what they already read, delivered to whoever
+   owns the decision. **Say the promise plainly: expanded reach and
+   proposal quality, never permission that is not theirs to grant.**
 
 **Optional MCP-estate glance (consent-gated, names only):** offer —
 never assume — "May I read the MCP server NAMES this repo declares
@@ -201,10 +225,25 @@ Collect:
   key, so a later re-run of the interview can never demote his own
   ruling.
 
-### 2. Lanes
+### 2. Lanes — ASK LAST, and prefer to READ them
 
 A **lane** is a product/venture/area the Cabinet works (see
-`framework/docs/work-model.md` — products are lanes, not outcomes). Per lane:
+`framework/docs/work-model.md` — products are lanes, not outcomes).
+
+**A captain who owns no product is not a broken captain.** Since the
+ordering inversion (Captain ruling 2026-07-26,
+`docs/plans/onboarding-ordering-inversion-2026-07-26.md`) `lanes: []` is a
+legal answer whenever discovery has RUN: grant one read-only First Window
+(`/onboarding`, Telegram `/onboard`, or the World overlay) and run
+`bash cabinet/scripts/formation.sh`, which derives
+`instance/onboarding/formation/derived-estate.yml` from what was actually
+read and proposes lanes — with citations — in
+`instance/config/lanes-proposed.yml`. Ratifying one is copying its row into
+this answers file and re-running the generator; nothing self-activates.
+Offer that path BEFORE asking a captain to name products, and never invent
+a placeholder lane to get past the generator.
+
+Per declared lane:
 
 - **Name** (human, e.g. `Acme Storefront`) and **slug** (kebab-case,
   e.g. `acme-store` — becomes the context slug and the `<slug>-ceo`
@@ -247,8 +286,17 @@ Map the answer onto the fixed slug enum — `work` (default) |
 `developer` — and record it as `cabinet.preset` in
 `cabinet-init.answers.yml` ONLY when the captain opted in (absent =
 default; the choice is opt-in, never a default flip; conversational free
-text never becomes a slug). The generator validates the slug shape and
-uses it solely in the printed activation step. If the captain chose
+text never becomes a slug). The generator validates the slug shape.
+
+**Resolution order is `cabinet.preset` > `mission.altitude` > `org_shape`**
+and lives in ONE place — `generate-instance.py resolve_preset()`, printed
+by `--print-preset`, which is what `hatch.sh` writes into
+`instance/config/active-preset`. A declared `contributor`/`project` rung
+resolves to **`personal`** — the one shipped preset with no C-suite
+(Navigator / Librarian / Reviewer, for an operator who owns a project, not
+a company). An explicit `cabinet.preset` always outranks it, and the
+resolved slug must have a `presets/<slug>/preset.yml` or the hatch stops
+with a named handback. If the captain chose
 `developer`, also add its extra env-var NAMES — `NEON_API_KEY`,
 `VERCEL_API_KEY`, `VERCEL_TEAM_ID` — to `integrations.mcp_env_names` so
 `setup-env.sh` walks them (values still go only in `cabinet/.env`).
@@ -412,17 +460,24 @@ placeholders only:
                                                 #  substantial | full_time.
                                                 #  OMIT to leave UNKNOWN — never
                                                 #  a placeholder number
-   mission:                                     # Phase 0 (purpose-first interview);
-     purpose: <one sentence>                    #  the generator IGNORES this key
-     success_90d: <one sentence>                #  (pinned by test) — only genesis
-     never_touch: []                            #  reads it, to condition proposals
+   mission:                                     # Phase 0 (purpose-first interview)
+     purpose: <one sentence>                    #  purpose/success_90d/never_touch:
+     success_90d: <one sentence>                #  the generator IGNORES them (pinned
+     never_touch: []                            #  by test); only genesis reads them
+     altitude: contributor                      #  OPTIONAL rung: contributor | project
+                                                #  | team | function | company. NOT
+                                                #  inert — selects the preset AND
+                                                #  reshapes every card's proof line.
+                                                #  OMIT to leave it UNKNOWN
    cabinet: {id, mode: single|multi, org_shape: portfolio|functional|custom, officer_model,
              preset}                             # preset OPTIONAL (§3b) — slug only,
                                                  #  e.g. developer; absent = shape default
-   lanes:
-     - {name, slug, repos: [], task_system, boards: [],
-        neon_project, vercel_project,            # NAMES only
+   lanes:                                      # [] IS LEGAL once discovery ran —
+     - {name, slug, repos: [], task_system, boards: [],   # see §2; the generator
+        neon_project, vercel_project,            # NAMES only    accepts an empty list
         linear_team_key, linear_workspace_url}   # when task_system: linear
+                                                 # only when a derived-estate artifact
+                                                 # exists for this deployment
    autonomy: {posture: propose_first,            # fixed at init
               flavor: org,                       # org | personal (§4; also gates the
                                                  #  sources.yml recall binding — org emits
@@ -465,10 +520,12 @@ placeholders only:
    authorize (see "Hiring is authorization-gated" below),
    `instance/config/active-project.txt` (first lane slug, only when
    absent — bootstrap-roles.sh needs it for the product slug and
-   start-officer-mac.sh reads it for CABINET_LANE), and — only when
-   absent — the INERT `instance/config/posture.yml` ruling scaffold
-   (§4; an existing ruling is never regenerated, not even with
-   --force).
+   start-officer-mac.sh reads it for CABINET_LANE; **NOT written at all
+   when `lanes: []`** — a placeholder slug there would be a value
+   pretending to be an answer, so the generator prints the ratification
+   path instead), and — only when absent — the INERT
+   `instance/config/posture.yml` ruling scaffold (§4; an existing ruling
+   is never regenerated, not even with --force).
 
    **Recall binding** (`instance/config/sources.yml`): when
    `autonomy.flavor` is anything but `personal` (i.e. `org`, the

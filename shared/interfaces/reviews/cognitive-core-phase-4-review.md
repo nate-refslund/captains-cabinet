@@ -21,7 +21,21 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: deca1533428d8df83e6c0b53d96723620c8ae4f4285a943b9e352fc98c652671
+Reviewed-Scope-Digest: fa66d3d0541fa8b0553e982513fef3f0933271bcec8619977c55ac5772c4ed70
+
+(RE-BOUND 2026-07-28 at the landing of `feat/onboarding-ordering-inversion`,
+same commit as the change that moved the bytes. Prior digest:
+`deca1533428d8df8…`. The one moved file in scope is again
+`cabinet/config/cognitive-architecture-contract.yml`, and the move is: the
+`framework_production_modules` budget maximum raised visibly 206 -> 207, the
+duplicate temporary-allowance row for `framework/onboarding/estate.py` removed
+(master's bijection-allowance-bypass landing refuses an allowance that names a
+bijection class, and an expansion row for that member was already present), and
+the `framework_production_noncomment_lines` allowance 646 -> 654 for eight lines
+fixing two defects found in this unit by the landing review. No COG-4
+implementation byte changed; `framework/authority/classifier.py` remains in the
+manifest's `must_remain_unchanged` block against the pinned phase anchor. The
+phase-4 findings below are unaffected.)
 
 (RE-BOUND 2026-07-27, `fix/bijection-allowance-bypass`, same commit as the change
 that moved the bytes — the re-bind-at-landing procedure this artifact prescribes.
