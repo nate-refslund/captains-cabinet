@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: c18946e6377c31c9c653389e02ff26273df8cb587cf446c80170e589340a9109
+Reviewed-Scope-Digest: 1c91f915f42e5243ddfc3a0b7a1af291394a25944661d50d0c981f43895a5934
 
 (MERGE RE-BIND, 2026-07-28, `fix/recall-live-claims-it-never-earned` x master
 `a70bcfb5` (PR #268). Both sides re-bound this line and both moved
@@ -42,6 +42,23 @@ tests) — the two branches share no production file. NO COG-4 implementation by
 moved on either side: no organ, no scheduler or projection surface, no serve
 surface, no boundary row, no fixture, no CLI. Nothing below was re-reviewed,
 because no reviewed COG-4 byte moved.)
+
+(MERGE RE-BIND, 2026-07-28, `feat/agnosticism-gate` x master `e8449ce6`.
+Third re-bind of this line in a day, same mechanism: both sides moved
+`cabinet/config/cognitive-architecture-contract.yml`, so neither recorded
+digest describes the merged tree and the value above is recomputed over
+THIS merge commit. Prior digests: this branch
+`d517beb0de1e284304c54d4a3591be173433c8a830b87b5cd7f8d13694595796`, master
+`c18946e6377c31c9c653389e02ff26273df8cb587cf446c80170e589340a9109`.
+THIS BRANCH's in-scope move: the contract's
+`framework_production_noncomment_lines` MAXIMUM, 60164 -> 60169, raised
+visibly for the parameterised charset seam that replaces a deleted
+keyboard whitelist (+5 measured). No set pin, no bijection class, no
+declared invariant and no temporary allowance moved; master's side moved
+only the allowances list, so the two edits are disjoint within the file.
+NO COG-4 implementation byte moved on either side: no organ, no scheduler
+or projection surface, no serve surface, no boundary row, no fixture, no
+CLI. Nothing below was re-reviewed, because no reviewed COG-4 byte moved.)
 
 (RE-BOUND 2026-07-28 at the landing of `fix/world-art-manifest-truth-and-egg`.
 Prior digest: `ebbdcc3f771afef7ffddc7558ea64a06bf3f8fa782cf14b5dd129891f796ca15`.

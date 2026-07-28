@@ -528,7 +528,9 @@ def test_shadow_zero_callers_and_never_a_score():
                # module path is there by construction — a member-name row in a data
                # file, never an import and never a consumer. A future module under a
                # zero-consumers shadow law needs the same entry in its own landing.
-               "cabinet/config/architecture-baseline-sets.yml"}
+               "cabinet/config/architecture-baseline-sets.yml",
+               # Specifics ratchet (2026-07-28): the specifics-ratchet DEBT LEDGER keys one line per known third-party literal by the framework path that carries it, so a module that carries one is there by construction — a path-keyed debt row in a data file, never an import and never a consumer.
+               "framework/tests/framework-specifics-baseline.txt"}
     needles = (b"evidence_calibration", b"evidence-calibration")
     hits: set[str] = set()
     for rel in _tracked_files(ROOT):
