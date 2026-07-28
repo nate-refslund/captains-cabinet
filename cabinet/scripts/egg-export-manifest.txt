@@ -42,21 +42,29 @@
 # (pervasive real personal-identity content in this pack's own docstrings +
 # test fixtures needs its own scrub pass first) — see the README before
 # flipping this rule.
-# WORLD ART — the iso pack's atlas and resolve table.
+# WORLD ART — the owned set SHIPS (Captain direction 2026-07-28, "ALL OUT of
+# LimeZu": every pixel the world draws becomes owned, generated art).
 #
-# COMMITTABLE but NOT (yet) REDISTRIBUTED. The atlas under
-# public/world-assets/originals/iso is the org's own commissioned art
-# ("owned — org-original", the class .gitignore already ratified as
-# committable), so it lives in this repo; the LimeZu packs beside it never do.
-# Shipping it in the PUBLIC export is a further step — it puts the org's art in
-# a stranger's hands — and that is the Captain's call, not this manifest's. So
-# it is deleted from the egg until that call is made.
+# SUPERSEDES the delete rule that stood here until 2026-07-28. That rule was
+# written when `originals/` held one thing — the iso atlas — and it reasoned
+# that redistributing the org's commissioned art was a further step and the
+# Captain's call. The call has since been made in the other direction, and the
+# reason the art was commissioned at all was the cost that rule stated in its
+# own words: a fresh hatch had NO world art, so a stranger's cabinet drew a
+# computed ground and no sprites. Owning the art and then deleting it from the
+# egg keeps the defect and pays for the cure.
 #
-# THE COST IS REAL AND IS STATED: a fresh hatch has no world art at all, so
-# /world?iso=1 draws its computed ground and NO sprites, loudly (iso-pack.ts
-# raises the DOM issues badge rather than a silent black frame). The world
-# renders honestly empty rather than not at all.
-delete cabinet/dashboard/public/world-assets/originals
+# WHAT SHIPS: only the tracked, owned rows — the iso atlas + resolve table and
+# the 20 owned character sheets, every one carrying license
+# "owned — org-original". The LimeZu packs beside them are gitignored, so they
+# are not in HEAD and the export (which reads HEAD) cannot carry them; the
+# licence test below now checks that by LICENCE rather than by file extension.
+#
+# STILL TRUE: nothing here is public until the Captain flips the new repo's
+# visibility — a separate, Captain-only act.
+expect-present cabinet/dashboard/public/world-assets/originals/iso/atlas-0.png
+expect-present cabinet/dashboard/public/world-assets/originals/characters/Premade_Character_01.png
+expect-present cabinet/dashboard/public/world-assets/manifest.json
 
 delete instance/flavor-a
 # R128: instance/agents leaves; the cua-driver MCP overlay's template home is
@@ -672,7 +680,12 @@ expect-absent docs/plans/EXECUTION-STATUS.md
 expect-absent docs/plans/proofs
 expect-absent cabinet/dashboard/public/world-assets/*.png
 expect-absent cabinet/dashboard/public/world-assets/*.zip
-expect-absent cabinet/dashboard/public/world-assets/originals
+# `originals/` DELIBERATELY absent from this list since 2026-07-28 — the owned
+# art ships (see the WORLD ART block above). The licensed packs stay out by
+# construction: they are gitignored, so they are not in HEAD, which is the only
+# thing the export copies.
+expect-absent cabinet/dashboard/public/world-assets/characters
+expect-absent cabinet/dashboard/public/world-assets/portraits
 expect-absent cabinet/scripts/world-aesthetic/corpus/*.png
 expect-absent cabinet/scripts/world-aesthetic/goldens/*.png
 expect-absent cabinet/dashboard/.next
