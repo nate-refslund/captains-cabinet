@@ -7,10 +7,205 @@
 # exit-2 echo path here to `>&2` for this reason — keep new paths the same way.
 # Claude Code passes JSON on stdin: { tool_name, tool_input }
 
+# ============================================================
+# -1. DEPENDENCY PREFLIGHT — FAIL CLOSED ON A MISSING OR LYING TOOL
+# ============================================================
+# THE DEFECT THIS CLOSES. Every gate below dispatches on $TOOL_NAME, and
+# $TOOL_NAME is produced by `cat | jq`. With jq absent both TOOL_NAME and
+# TOOL_INPUT are empty, no `case`/`if` arm matches, and control falls through
+# to this script's closing `exit 0` = ALLOW. Measured against master 8ffeae51
+# on a curated PATH: 24 of 24 payloads that block on a full toolchain —
+# `sudo rm -rf /`, a Write to a germline path, a Bash append to the
+# Captain-law plane, a production deploy, an out-of-scope MCP call — were
+# ALLOWED with exit 0 and ZERO bytes on stderr. The enforcement plane failed
+# open silently and totally.
+#
+# IT IS NOT ONLY jq. Same sweep, same tree, one binary removed at a time:
+#   cat   24/24 leak — the payload is never read at all.
+#   grep  16/24 — nearly every gate is `... | grep -qE ...; then block`, and
+#         exit 127 reads as "no match" = allow (§3, §5b, §5c, §6, §7, §9, §10).
+#   perl   4/24 — §3's quote-strip and heredoc normaliser; bare `sudo`,
+#         `shutdown`, heredoc smuggling and quoted evasion all sail through.
+#   awk    1/24, PLUS the spend cap: an empty cap parses as 0, which means
+#         "enforcement disabled", so $999,000 of recorded spend passed a $75
+#         cap (measured against a scratch ledger).
+#   date  the spend cap: an empty date collapses the daily cost key to a
+#         key that is always empty, which reads as "$0 spent today".
+#   sed, tr  0/24 today, and only because §1's kill-switch frame parser also
+#         uses them and returns INDETERMINATE (fail-closed) before any gate is
+#         reached. They build FILE_PATH / CMD_SQ / CMD_NORM — the inputs
+#         §3/§5/§5b/§5c/§6/§7 match on — so their coverage is another gate's
+#         implementation detail, not a control. Listed here on purpose.
+#
+# MEASURED NOT TO LEAK on either channel, deliberately excluded: cut, head,
+# wc, sort, uniq, od, dd, mktemp, realpath, readlink, stat, dirname, basename,
+# tee, expr, python3. python3 and mktemp degrade the RIGHT way — they warn on
+# stderr and fall back to the hardcoded framework caps, which tightens rather
+# than widens. redis-cli is excluded on purpose: §1 already fails closed on its
+# absence and EVAL-001c pins reads staying open through that posture, so
+# listing it here would silently convert a ratified partial block into a total
+# one.
+#
+# PRESENCE IS NOT FUNCTION, and this is the sharp end. Officers are launched
+# with `PATH="$HOME/.local/bin:$PATH"` (cabinet/scripts/start-officer-mac.sh:827),
+# an officer-WRITABLE directory ahead of every system dir. Measured on master:
+# a two-line `$HOME/.local/bin/jq` that exits 0 and prints nothing allowed 24 of
+# 24; a `grep` that always exits 1 allowed 16 of 24 — no missing package, no
+# root, nothing to escape.
+#
+# So the tools are EXERCISED, not merely located: the checks run them and
+# compare the answer. What that does and does not buy is stated exactly below,
+# because an earlier draft of this block said "exercised" and left the reader to
+# infer the shim channel was closed. It is not, and an adversarial review
+# defeated the inference in three lines — a `jq` that answers the fixed probe
+# string honestly and lies only about `.tool_name` passed every probe and still
+# leaked 23 of 32 payloads. A probe containing a literal can always be
+# recognised by the thing it probes.
+#
+# CAUGHT HERE: a missing binary; a binary shadowed by a shell function or alias
+# (an exported function via BASH_ENV otherwise substitutes arbitrary behaviour
+# for every call site); and a shim that is simply broken — silent, failing,
+# truncating, passing its input through, or answering with garbage.
+#
+# NOT CAUGHT HERE, and registered rather than left to be discovered: a
+# shim that RECOGNISES the probe. Closing that needs one of two things, both
+# outside this block — resolving the enforcement toolchain by absolute path from
+# a root-owned location instead of through PATH (every call site in this file),
+# or removing the officer-writable directory from the launcher's PATH
+# (cabinet/scripts/start-officer-mac.sh, which already flags the same channel at
+# :601-603). Testing the PRECONDITION instead — refusing when a dependency
+# resolves through a directory this uid can write — was built and rejected: it
+# refuses every synthetic PATH a hermetic harness can construct, so it would
+# have traded a tested control for an untested one, which is the exact defect
+# class this change exists to remove.
+#
+# WHY THIS WAS NEVER CAUGHT: CI installs jq explicitly (the "Install system
+# deps" step in .github/workflows/cabinet-ci.yml), so every gate test ran in
+# the one environment where this cannot happen. No test had ever run a gate
+# with a required binary off PATH. cabinet/tests/hook-regression/
+# dependency-preflight.sh now does exactly that, constructing the deprived
+# environment itself so CI's toolchain is not what decides the verdict.
+#
+# COST: state it as the absolute number, because the percentage depends on what
+# the rest of the hook is doing. Measured end to end, master vs patched, 25 runs
+# each, same payload and environment: +21 ms on a 446 ms hook with a reachable
+# control plane (+4.7%), +29 ms on a 204 ms hook with the control plane
+# unreachable (+14%). An earlier version of this line said "13.5 ms / 2.7%",
+# which was the probe pipeline timed in isolation — not the thing anyone pays.
+#
+# RESIDUAL (RES-021): a shim that RECOGNISES the probe still defeats this. See
+# the CAUGHT/NOT CAUGHT paragraphs above for the two real closures, both of
+# which are outside this block.
+#
+# NO CAPTAIN-COMMS CARVE-OUT, AND THERE CANNOT BE ONE. §1 and §2 both keep the
+# Telegram tools open when they refuse everything else, so a blocked officer can
+# still say it is blocked. This gate cannot do that, because identifying a tool
+# as a Telegram tool requires parsing the payload — the very thing that is
+# broken. Permitting an unidentifiable call in order to preserve a comms channel
+# IS the fail-open. So the refusal is made loud instead: it names the missing
+# binary, the reason, and the repair command, on the officer's stderr, on every
+# call — visible in the session transcript even though the officer cannot send.
+# HONEST LIMIT: a shim that HANGS rather than lying will hang this hook. That
+# is a same-uid officer denying service to itself, which it can already do by
+# other means, and macOS ships no portable `timeout` to bound it with.
+_CABINET_DEP_FAULTS=""
+_CABINET_DEP_ABSENT=0
+_cabinet_dep_fault() {
+  _CABINET_DEP_FAULTS="${_CABINET_DEP_FAULTS:+$_CABINET_DEP_FAULTS }$1"
+}
+# --- (1) present, and actually a program ---
+for _dep in cat jq grep sed awk tr date perl; do
+  _CABINET_DEP_PATH=$(command -v "$_dep" 2>/dev/null)
+  if [ -z "$_CABINET_DEP_PATH" ]; then
+    _cabinet_dep_fault "$_dep(missing)"
+    _CABINET_DEP_ABSENT=1
+    continue
+  fi
+  # A shell function or alias exported through BASH_ENV resolves here as a bare
+  # name, not a path, and would satisfy a naive presence check while
+  # substituting arbitrary behaviour for every later call site.
+  case "$_CABINET_DEP_PATH" in
+    /*) ;;
+    *) _cabinet_dep_fault "$_dep(shadowed-by-shell-function-or-builtin)"
+       _CABINET_DEP_ABSENT=1
+       continue ;;
+  esac
+done
+# --- (2) functional ---
+# Skipped only when a dependency is genuinely ABSENT, where a probe failure adds
+# nothing to the message.
+if [ "$_CABINET_DEP_ABSENT" = "0" ]; then
+  # One chained probe exercises cat/tr/sed/awk/perl in a single pipeline (they
+  # run concurrently, so this costs about one fork of wall clock). EVERY STAGE
+  # TRANSFORMS: A -> a -> b -> B -> ok. That matters — the first version of this
+  # probe used `awk '{print}'` and `perl -pe 's/ok/ok/'`, which are identity
+  # filters, so a shim that simply `exec /bin/cat`s would have satisfied it
+  # while lying to every gate downstream. A probe a passthrough can pass is not
+  # a probe. `cat` is the one stage that cannot be verified by transformation,
+  # since passing input through IS its contract; the chain still catches a cat
+  # that truncates, empties or fails.
+  _CABINET_PROBE=$(printf 'A\n' | cat | tr 'A-Z' 'a-z' | sed 's/^a$/b/' \
+                   | awk '{print toupper($0)}' | perl -pe 's/^B$/ok/' 2>/dev/null)
+  [ "$_CABINET_PROBE" = "ok" ] \
+    || _cabinet_dep_fault "cat/tr/sed/awk/perl(chain-probe-failed)"
+
+  _CABINET_PROBE=$(printf '%s' '{"_preflight":"ok"}' | jq -r '._preflight' 2>/dev/null)
+  [ "$_CABINET_PROBE" = "ok" ] \
+    || _cabinet_dep_fault "jq(probe-failed)"
+
+  # BOTH directions. A grep that never matches disarms every gate below; a grep
+  # that always matches would block everything. Neither may pass as healthy.
+  if ! printf 'ok\n' | grep -qE '^ok$' 2>/dev/null \
+     || printf 'no\n' | grep -qE '^ok$' 2>/dev/null; then
+    _cabinet_dep_fault "grep(probe-failed)"
+  fi
+
+  case "$(date -u +%Y-%m-%d 2>/dev/null)" in
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
+    *) _cabinet_dep_fault "date(probe-failed)" ;;
+  esac
+fi
+if [ -n "$_CABINET_DEP_FAULTS" ]; then
+  echo "BLOCKED: pre-tool-use enforcement cannot run — missing or non-functional required tool(s): $_CABINET_DEP_FAULTS." >&2
+  echo "  Every policy gate in this hook dispatches on a jq-parsed tool name and matches with grep/sed/awk/tr/perl. Without a working toolchain the hook would ALLOW every tool call unchecked, so it fails closed instead." >&2
+  echo "  Fix PATH (launchd hands daemons a minimal PATH, and \$HOME/.local/bin is searched ahead of the system dirs) or repair the tool, then retry." >&2
+  echo "  Diagnose with: bash cabinet/scripts/check-deps.sh" >&2
+  exit 2
+fi
+
 # Read JSON from stdin
 HOOK_INPUT=$(cat)
 TOOL_NAME=$(echo "$HOOK_INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
 TOOL_INPUT=$(echo "$HOOK_INPUT" | jq -c '.tool_input // {}' 2>/dev/null)
+
+# ---- MALFORMED-PAYLOAD FAIL-CLOSED ---------------------------------------
+# Even with a healthy toolchain, an empty, truncated or non-JSON payload yields
+# TOOL_NAME="", which matches no gate arm and falls through to `exit 0`.
+# Measured on master: `not json at all` on stdin was ALLOWED, exit 0, silent.
+# Claude Code's PreToolUse contract always supplies tool_name, so an empty one
+# means the payload is corrupt — a state in which this hook cannot make an
+# authorization decision and therefore must not grant one.
+if [ -z "$TOOL_NAME" ]; then
+  echo "BLOCKED: pre-tool-use received no parseable tool_name (empty or malformed hook payload)." >&2
+  echo "  Every policy gate keys off tool_name; a payload that cannot be parsed cannot be authorized. Failing closed." >&2
+  exit 2
+fi
+
+# ---- PARSE CROSS-CHECK (cost-raiser, NOT a wall) -------------------------
+# A well-formed payload always contains its own tool name as a quoted literal,
+# so the jq answer must be findable in the raw bytes jq was given. This costs
+# one fixed-string grep and it defeats the simplest form of the RES-021 shim —
+# the measured `jq` that returns a substituted tool name (e.g. "Read") for a
+# payload that never contained it, which leaked 23 of 32 payloads.
+# IT IS NOT A WALL, deliberately stated: the officer authors the payload, so a
+# shim paired with a command that embeds the substituted name defeats it. It
+# raises cost; RES-021 remains open. `grep -qF` cannot itself be the liar here —
+# a grep that lies is already refused by the both-directions probe above.
+if ! printf '%s' "$HOOK_INPUT" | grep -qF "\"$TOOL_NAME\"" 2>/dev/null; then
+  echo "BLOCKED: pre-tool-use parsed tool_name '$TOOL_NAME', which does not appear in the raw payload." >&2
+  echo "  The JSON parser disagrees with the bytes it was handed, so the parse cannot be trusted to route this call to the right gate. Failing closed." >&2
+  exit 2
+fi
 
 # REDIS CONNECTION RESOLUTION (B4 — Mac portability)
 # Honors REDIS_HOST + REDIS_PORT first; REDIS_URL only if neither is set.

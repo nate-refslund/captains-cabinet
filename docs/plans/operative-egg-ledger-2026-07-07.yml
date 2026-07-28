@@ -2554,7 +2554,7 @@ entries:
     last_update: "2026-07-10"
   # --- Perfect Cabinet Wave B leftovers CG rows (appended 2026-07-10) ---
   - id: "CG-17"
-    title: "germline: post-tool-use.sh:518 quote-naive captain_name parse — CAPTAIN_NAME=$(grep '^captain_name:' instance/config/platform.yml | awk '{print $2}') keeps the leading double-quote of a quoted YAML value and truncates multi-word names to the first token (a quoted Ada Testburg renders with a stray leading quote today); EXACT FIX for the next unlock window: append the tr -d double-quote strip after the awk, per the assemble-config.sh:60 idiom (which additionally strips single quotes — mirror both tr calls for parity). The fix yields the clean first name; full multi-word capture would need a cut -d: -f2- style parse and is deliberately NOT part of this minimal window edit"
+    title: "germline: post-tool-use.sh:639 quote-naive captain_name parse — CAPTAIN_NAME=$(grep '^captain_name:' instance/config/platform.yml | awk '{print $2}') keeps the leading double-quote of a quoted YAML value and truncates multi-word names to the first token (a quoted Ada Testburg renders with a stray leading quote today); EXACT FIX for the next unlock window: append the tr -d double-quote strip after the awk, per the assemble-config.sh:60 idiom (which additionally strips single quotes — mirror both tr calls for parity). The fix yields the clean first name; full multi-word capture would need a cut -d: -f2- style parse and is deliberately NOT part of this minimal window edit"
     class: "compress"
     lane: "captain-gated"
     wave: "CG"

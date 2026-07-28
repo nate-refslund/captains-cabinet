@@ -39,6 +39,15 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CABINET_ROOT="${CABINET_ROOT:-$(cd "$SCRIPT_DIR/../../.." && pwd)}"
+# RESIDUAL (RES-020): this guard tests a DEAD TWIN. `.claude/settings.json`
+# wires Stop to cabinet/scripts/hooks/session-stop.sh; stop-hook.sh below is
+# wired to NO event, so all ten arms pass every six hours about a file that
+# never runs, and the live Stop hook — which writes the per-turn cost the
+# spending caps read — has no coverage here at all. Golden EVAL-008 was
+# re-pointed to the live writer on 2026-07-26; this guard was not, because its
+# contracts are written against stop-hook.sh internals (at least the context-
+# percentage threshold arms) that the live hook does not have, so re-pointing
+# it is a rewrite rather than a one-line retarget. Registered, not relabelled.
 SRC_HOOK="$CABINET_ROOT/cabinet/scripts/hooks/stop-hook.sh"
 
 infra_fail() {

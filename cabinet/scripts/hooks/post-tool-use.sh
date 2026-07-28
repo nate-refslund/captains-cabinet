@@ -3,6 +3,52 @@
 # Logs the action and increments cost counters.
 # Claude Code passes JSON on stdin: { tool_name, tool_input, tool_response }
 
+# ============================================================
+# -1. DEPENDENCY PREFLIGHT — FAIL CLOSED ON A MISSING OR LYING TOOL
+# ============================================================
+# This hook AUTHORIZES NOTHING — it is the audit log, the heartbeat and the
+# cost ledger's feeder. But its failure mode is the same silent one the
+# pre-hook's preflight closes: with jq absent, TOOL_NAME / TOOL_INPUT /
+# TOOL_OUTPUT all collapse to empty, every JSONL line records a tool call that
+# looks like nothing happened, and the hook still exits 0. A silently empty
+# audit trail is worse than a missing one, because the record looks complete —
+# and the spend cap the pre-hook enforces is only as good as the ledger this
+# hook feeds.
+#
+# DO NOT MISTAKE THIS FOR ENFORCEMENT. A PostToolUse exit 2 does not undo the
+# tool; the call has already run. It surfaces the fault to the officer instead
+# of writing a hollow record. In practice the pre-hook's preflight has already
+# refused the call before this can fire — this is the second wall, not the
+# first, and it is deliberately reachable only when the two hooks disagree
+# about the environment.
+#
+# Scoped to what a CORRECT record needs. Excluded on purpose: redis-cli
+# (heartbeat/telemetry, degrades loudly elsewhere), awk (already carries an
+# `|| echo` fallback), perl (already guarded by the one pre-existing
+# `command -v` check in this file), and git/stat/chmod/wc/basename (cosmetic
+# or best-effort).
+_CABINET_MISSING_DEPS=""
+for _dep in cat jq grep sed tr cut head date mkdir dirname; do
+  command -v "$_dep" > /dev/null 2>&1 \
+    || _CABINET_MISSING_DEPS="${_CABINET_MISSING_DEPS:+$_CABINET_MISSING_DEPS }$_dep"
+done
+if [ -z "$_CABINET_MISSING_DEPS" ]; then
+  # Presence is not function: a shimmed jq that exits 0 and prints nothing
+  # produces the identical empty-record collapse. $HOME/.local/bin sits ahead
+  # of the system dirs on an officer's PATH, so this is reachable by any
+  # same-uid officer, not just by a broken install.
+  _CABINET_PROBE=$(printf '%s' '{"_preflight":"ok"}' | jq -r '._preflight' 2>/dev/null)
+  [ "$_CABINET_PROBE" = "ok" ] \
+    || _CABINET_MISSING_DEPS="jq(present but non-functional)"
+fi
+if [ -n "$_CABINET_MISSING_DEPS" ]; then
+  echo "post-tool-use: FAILING CLOSED — missing or non-functional required tool(s): $_CABINET_MISSING_DEPS." >&2
+  echo "  The audit log, heartbeat and cost/activity records for this call could not be written correctly, so none were written rather than writing a hollow record." >&2
+  echo "  Fix PATH (launchd hands daemons a minimal PATH, and \$HOME/.local/bin is searched ahead of the system dirs) or repair the tool." >&2
+  echo "  Diagnose with: bash cabinet/scripts/check-deps.sh" >&2
+  exit 2
+fi
+
 # Read JSON from stdin
 HOOK_INPUT=$(cat)
 TOOL_NAME=$(echo "$HOOK_INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
