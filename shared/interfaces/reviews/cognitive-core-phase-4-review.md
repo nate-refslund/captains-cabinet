@@ -21,7 +21,15 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: ffe8b3ee489ed66b44bc83aa1613b99dd245cf50a96baa8be07227ceff5806d3
+Reviewed-Scope-Digest: 954860eafdd93f1ea7feaf0e651ad42cf6b08d61ca28482db281eea12985be89
+
+(RE-BOUND again in the same branch, 2026-07-29: the agnosticism gate landed on
+master and correctly refused this unit's prose, so the line allowance was
+re-measured 685 -> 687 — a contract edit, and the contract IS in this scope. I
+first wrote that nothing in scope had moved; the verifier said otherwise and it
+was right. Prior digest
+`ffe8b3ee489ed66b44bc83aa1613b99dd245cf50a96baa8be07227ceff5806d3`. No COG-4
+byte moved; only the census ledger's own number.)
 
 (MERGE RE-BIND, 2026-07-29, `feat/salience-sweep` x master `1875e112`.
 Both sides had re-bound this line and both moved

@@ -34,8 +34,9 @@ rows themselves:
 * identity DEMOTION, never deletion — a token matching an account, owner or
   workspace name the connectors themselves reported is demoted, because the
   operator's own name is genuine noise AND may also be a genuine target. Both
-  are true of the same string: an estate whose owner is "step network" also
-  contains the product "stepnetwork.dk". A delete floor erases the second to
+  are true of the same string: measured on a real estate, the owner's name was
+  also the name of one of its live targets — think an owner called "north bay"
+  whose busiest thing is northbay.example. A delete floor erases the second to
   suppress the first; only a demotion keeps both facts.
 
 WHY RECENCY IS REFUSED PER CONNECTOR. "Freshest wins" assumes the clock
@@ -139,11 +140,12 @@ class SalienceError(Exception):
 def tokenize(name: Any) -> list[str]:
     """Split a name into ranking tokens, plus the compounds of adjacent pairs.
 
-    The compounds are not decoration. A name written ``step-network-website``
-    and a name written ``stepnetwork.dk`` refer to the same thing, and a
-    word-only tokenizer cannot see it: it produces ``step`` and ``network``
-    (which are the ESTATE's own name, ranked first and third by pure noise) and
-    never produces ``stepnetwork`` at all. Emitting the adjacent-pair compound
+    The compounds are not decoration. A name written ``north-bay-website`` and a
+    name written ``northbay.example`` refer to the same thing, and a word-only
+    tokenizer cannot see it: it produces ``north`` and ``bay`` (which on the
+    estate this was measured against were the OWNER's own name, ranked first and
+    third by pure noise) and never produces ``northbay`` at all. Emitting the
+    adjacent-pair compound
     is mechanical, needs no dictionary, and is what lets the specific token beat
     its own generic fragments.
 
@@ -333,7 +335,7 @@ def _cluster(index: Mapping[str, set[int]]) -> list[list[str]]:
 
     Two words that always appear together are ONE candidate; ranking them
     separately splits a candidate's evidence in half and pushes both down. The
-    merge is by row-set overlap, so it needs no notion of what either word
+    merge is by row-set overlap, so it never has to know what either word
     means — which is what keeps this agnostic.
     """
     tokens = sorted(index, key=lambda t: (-len(index[t]), t))

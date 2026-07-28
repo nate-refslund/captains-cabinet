@@ -34,17 +34,17 @@ def _spread(connector, names, start_day=1):
 
 
 def test_a_hyphenated_name_and_a_solid_one_produce_the_same_token():
-    """The fragment problem, measured: an estate writing ``step-network-website``
-    in one system and ``stepnetwork.dk`` in another produced ``step`` and
-    ``network`` — the estate's OWN name, ranked first and third by pure noise —
-    and never produced ``stepnetwork`` at all. The adjacent-pair compound is
-    what lets the specific token exist to beat its own generic fragments."""
-    tokens = salience.tokenize("step-network-website")
-    assert "stepnetwork" in tokens
-    assert "networkwebsite" in tokens
-    assert "stepnetwork" in salience.tokenize("stepnetwork.dk")
+    """The fragment problem, measured: an estate writing ``north-bay-website``
+    in one system and ``northbay.example`` in another produced ``north`` and
+    ``bay`` — the OWNER's own name, ranked first and third by pure noise — and
+    never produced ``northbay`` at all. The adjacent-pair compound is what lets
+    the specific token exist to beat its own generic fragments."""
+    tokens = salience.tokenize("north-bay-website")
+    assert "northbay" in tokens
+    assert "baywebsite" in tokens
+    assert "northbay" in salience.tokenize("northbay.example")
     # and the short fragments are floored by length, not by a stopword list
-    assert "dk" not in salience.tokenize("stepnetwork.dk")
+    assert "bay" not in salience.tokenize("northbay.example")
 
 
 def test_tokens_are_not_invented_for_an_empty_or_junk_name():
@@ -90,8 +90,8 @@ def test_a_token_living_almost_entirely_in_one_system_is_that_systems_structure(
 def test_the_operators_own_name_is_demoted_and_never_deleted():
     """BOTH directions, because a delete floor passes the first one.
 
-    Measured: the estate's owner is "step network" AND one of its real targets
-    is stepnetwork.dk. A floor that removes identity tokens erases the target to
+    Measured: the estate's owner name was ALSO the name of one of its real
+    targets. A floor that removes identity tokens erases the target to
     suppress the noise. Demotion keeps both facts — the cluster stays visible,
     ranked below what it would be worth if it were not also the owner's name.
     """
@@ -195,18 +195,18 @@ def test_an_answered_alias_joins_two_candidates_the_names_could_not():
     and the merged candidate then outranks both halves, which is the loop
     closing.
     """
-    rows = _spread("tracker", ["Polads Tickets", "Polads Board"]) + \
-        _spread("repo", ["v0-politiske-annoncer", "politiske.annoncer.site"], start_day=5) + \
-        _spread("db", ["politiske-annoncer"], start_day=9) + \
-        _spread("host", ["polads-insights"], start_day=13)
+    rows = _spread("tracker", ["Quay Tickets", "Quay Board"]) + \
+        _spread("repo", ["v0-harbour-lantern", "harbour.lantern.site"], start_day=5) + \
+        _spread("db", ["harbour-lantern"], start_day=9) + \
+        _spread("host", ["quay-insights"], start_day=13)
     cold = salience.rank(rows)
     cold_labels = [c["label"] for c in cold["clusters"]]
-    assert "polads" in cold_labels and "politiskeannoncer" in cold_labels
+    assert "quay" in cold_labels and "harbourlantern" in cold_labels
     split_score = max(c["score"] for c in cold["clusters"]
-                      if c["label"] in {"polads", "politiskeannoncer"})
+                      if c["label"] in {"quay", "harbourlantern"})
 
-    warm = salience.rank(rows, aliases=[["polads", "politiske-annoncer"]])
-    merged = [c for c in warm["clusters"] if "polads" in c["tokens"]]
+    warm = salience.rank(rows, aliases=[["quay", "harbour-lantern"]])
+    merged = [c for c in warm["clusters"] if "quay" in c["tokens"]]
     assert len(merged) == 1
     assert len(merged[0]["connectors"]) == 4
     assert merged[0]["score"] > split_score
@@ -214,19 +214,19 @@ def test_an_answered_alias_joins_two_candidates_the_names_could_not():
 
 def test_an_alias_only_merges_what_the_ranking_already_named():
     """PAID REGRESSION. The escape hatch takes free text, so an operator writes
-    a sentence — "PolAds, which the repos CALL politiske-annoncer". Matching
+    a sentence — "Quay, which the repos CALL harbour-lantern". Matching
     that against every token in every cluster pulled in an unrelated cluster
     whose rows contained the word "call", and the junk ranked second. Only
     cluster LABELS may be merged; a word matching nothing is a target, not a
     merge."""
-    rows = _spread("tracker", ["Polads Tickets"]) + \
-        _spread("repo", ["v0-politiske-annoncer", "network-call-tracking"], start_day=4) + \
-        _spread("db", ["politiske-annoncer", "call-tracking-db"], start_day=8) + \
-        _spread("host", ["polads-insights", "call-tracking"], start_day=12)
-    sentence = ["PolAds", "which the repos call politiske-annoncer"]
+    rows = _spread("tracker", ["Quay Tickets"]) + \
+        _spread("repo", ["v0-harbour-lantern", "network-call-tracking"], start_day=4) + \
+        _spread("db", ["harbour-lantern", "call-tracking-db"], start_day=8) + \
+        _spread("host", ["quay-insights", "call-tracking"], start_day=12)
+    sentence = ["Quay", "which the repos call harbour-lantern"]
     warm = salience.rank(rows, aliases=[sentence])
-    merged = [c for c in warm["clusters"] if "polads" in c["tokens"]][0]
-    assert "polads" in merged["tokens"] and "politiskeannoncer" in merged["tokens"]
+    merged = [c for c in warm["clusters"] if "quay" in c["tokens"]][0]
+    assert "quay" in merged["tokens"] and "harbourlantern" in merged["tokens"]
     # the innocent bystander did NOT get absorbed by the word "call"
     assert "calltracking" not in merged["tokens"]
     assert any("call" in c["tokens"] or "calltracking" in c["tokens"]
