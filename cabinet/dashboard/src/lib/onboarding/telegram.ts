@@ -282,6 +282,15 @@ export async function handleTelegramOnboarding(
       if (!charterHash) throw new OnboardingBridgeError('charter_not_pending', 'There is no Charter waiting for approval.')
       return [formatTelegramOnboarding(await action('ratify_charter', actionId, { charter_hash: charterHash }))]
     }
+    // The typed answer to the seed question. Telegram cannot render a text
+    // field, and the core marks this option `input: 'seed'` so `buttonsFor`
+    // must not offer it as a tap — a tap carries no words. The command is the
+    // field: without it the seed question would print here with no way to
+    // answer it, which is the dead end this whole path exists to close.
+    if (/^seed\s+/i.test(command)) {
+      const seed = command.replace(/^seed\s+/i, '').trim()
+      return [formatTelegramOnboarding(await action('answer_seed', actionId, { seed }))]
+    }
     if (/^continue$/i.test(command)) return [formatTelegramOnboarding(await action('continue', actionId))]
     if (/^pause$/i.test(command)) return [formatTelegramOnboarding(await action('pause', actionId))]
     if (/^revoke$/i.test(command)) return [formatTelegramOnboarding(await action('revoke', actionId))]

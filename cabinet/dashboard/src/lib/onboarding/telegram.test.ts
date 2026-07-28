@@ -211,6 +211,35 @@ describe('Telegram standalone journey', () => {
     )
   })
 
+  // A tap carries no words, so the core marks this option `input: 'seed'` and
+  // Telegram must answer the seed question with a TYPED command instead. Without
+  // one the question prints here and the operator has no way to answer it —
+  // the dead end the whole seed path exists to close.
+  it('answers the seed question through a typed command, never a button', async () => {
+    applyMock.mockResolvedValue(WELCOME)
+    await handleTelegramOnboarding('/onboard seed I look after payments releases', 'tg-seed')
+    expect(applyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'answer_seed',
+        seed: 'I look after payments releases',
+      }),
+      'telegram'
+    )
+    const rendered = formatTelegramOnboarding({
+      ...WELCOME,
+      card: {
+        ...WELCOME.card,
+        stage: 'orientation_offered',
+        options: [
+          { action: 'answer_seed', label: 'Tell me in a sentence', input: 'seed' },
+          { action: 'pause', label: 'Pause here' },
+        ],
+      },
+    } as never)
+    const actions = (rendered.buttons || []).flat().map((button) => button.callback_data)
+    expect(actions).toEqual(['onboard:pause'])
+  })
+
   it('records usefulness feedback through the bounded observation seam', async () => {
     const reply = await handleTelegramOnboardingCallback('onboard:feedback:useful', 'tg-feedback')
     expect(recordMock).toHaveBeenCalledWith(
