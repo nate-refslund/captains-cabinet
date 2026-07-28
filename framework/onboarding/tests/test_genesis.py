@@ -10,6 +10,7 @@ the property under test (what the child can reach) is not observable through
 the injected seam.
 """
 import os
+import re
 import stat
 import subprocess
 from pathlib import Path
@@ -231,7 +232,10 @@ def test_run_genesis_proposal_end_to_end(tmp_path):
 
 def test_run_genesis_proposal_without_answers_fails_loud_not_fake(tmp_path):
     out = genesis.run_genesis_proposal(tmp_path)
-    assert out == {"status": "no-answers", "path": None, "cards": 0}
+    # `recall` joined the return shape 2026-07-28 (empty here: nothing to probe
+    # about a deployment whose answers do not exist).
+    assert out == {"status": "no-answers", "path": None, "cards": 0,
+                   "recall": {}}
     assert not (tmp_path / genesis.PROPOSALS_REL).exists()   # no invented file
 
 
@@ -792,3 +796,279 @@ def test_no_estate_artifact_means_no_estate_item(tmp_path):
     _write_answers(tmp_path, LANELESS)
     items = genesis.genesis_intake_items(tmp_path, now="2026-07-26T00:00:00Z")
     assert not [i for i in items if i["kind"] == "genesis-estate"]
+
+
+# ---------------------------------------------------------------------------
+# RECALL — the briefing READS what recall already holds (2026-07-28).
+#
+# THE MEASUREMENT THAT PRODUCED THESE ARMS. An agent ran the genuine hatch path
+# end to end and scored the resulting first briefing 1 of 3 — "read it, no
+# value". Recall on that box was LIVE (available() True; probes returned dated,
+# cited hits) and its notes folder held a live incident spread across three
+# files. Every card in the briefing was composed from the answers file alone,
+# because nothing in the genesis chain ever called get_source().
+#
+# Each arm below fails against the pre-change code by construction — there was
+# no recall parameter, no probe, and no citation anywhere to assert on.
+# ---------------------------------------------------------------------------
+class _FakeSource:
+    """A PersonalSource-shaped stub over a fixed corpus. NOT the degenerate
+    'return nothing' stub: a stub that answers nothing would make every arm
+    below pass while asserting the defect."""
+
+    def __init__(self, corpus=None, available=True, raises=False):
+        self.corpus = corpus if corpus is not None else _CORPUS
+        self._available = available
+        self._raises = raises
+        self.queries = []
+
+    def available(self):
+        if self._raises:
+            raise RuntimeError("backend down")
+        return self._available
+
+    def search(self, handle, *, topic=None):
+        self.queries.append(handle)
+        terms = {w.lower() for w in re.findall(r"[a-z0-9_]{3,}", handle.lower())}
+        hits = [h for h in self.corpus
+                if terms & {w.lower() for w in
+                            re.findall(r"[a-z0-9_]{3,}", (h["text"] + " " + h["ref"]).lower())}]
+        return {"hits": hits, "topic_terms": None}
+
+
+_CORPUS = [
+    {"source": "local", "ref": "incidents/2026-07-21-latency.md#Impact",
+     "path": "incidents/2026-07-21-latency.md", "heading": "Impact",
+     "text": "Impact tax_quote p99 climbed to 1.9s after the billing migration "
+             "cutover on storefront checkout.",
+     "base_score": 0.42, "who": "", "ts": "2026-07-21T00:00:00Z",
+     "content_ts": "2026-07-21T00:00:00Z"},
+    {"source": "local", "ref": "decisions/2026-07-14-billing.md#Rollback window",
+     "path": "decisions/2026-07-14-billing.md", "heading": "Rollback window",
+     "text": "Rollback window The billing migration rollback window closes "
+             "2026-07-31 for storefront.",
+     "base_score": 0.55, "who": "", "ts": "2026-07-14T00:00:00Z",
+     "content_ts": "2026-07-14T00:00:00Z"},
+    {"source": "local", "ref": "slo/error-budget.md#July",
+     "path": "slo/error-budget.md", "heading": "July",
+     "text": "July The storefront error budget burns out 2026-07-30 at the "
+             "current latency; a further regression triggers a freeze.",
+     "base_score": 0.31, "who": "", "ts": None, "content_ts": "2026-07-01T00:00:00Z"},
+]
+
+
+def _recall_for(answers=ANSWERS, **kw):
+    return genesis.probe_recall(answers, kw.pop("focus_text", None), **kw)
+
+
+def test_probe_recall_asks_the_bound_seam_about_declared_subjects():
+    src = _FakeSource()
+    got = _recall_for(source=src)
+    assert got["consulted"] is True and got["available"] is True
+    assert got["probes"] == ["Acme Storefront", "Acme Labs"]
+    assert src.queries, "the seam was never asked anything"
+    assert got["hits_total"] > 0
+
+
+def test_recall_hits_reach_the_card_with_file_and_date_citations():
+    """The property the 1-of-3 briefing lacked: a claim the operator can open
+    and check. Every cite carries a ref AND a derived date."""
+    cards = genesis.propose_outcome_cards(ANSWERS, recall=_recall_for(source=_FakeSource()))
+    card = cards[0]
+    assert card["derived_from"] == "recall"
+    assert "incidents/2026-07-21-latency.md#Impact" in card["what"]
+    assert "dated 2026-07-21" in card["what"]
+    assert card["recall_refs"], "no citation list on a recall-derived card"
+    # The operator's own words, verbatim, with the file beside them.
+    assert "tax_quote p99 climbed" in card["why"]
+    assert "incidents/2026-07-21-latency.md#Impact" in card["why"]
+
+
+def test_the_card_names_the_join_across_distinct_files_newest_first():
+    """The value is the JOIN — several of the operator's own files, dated, in
+    time order, with the wording they share. Score order buried the live note
+    behind whichever page repeated the query terms most."""
+    card = genesis.propose_outcome_cards(
+        ANSWERS, recall=_recall_for(source=_FakeSource()))[0]
+    what = card["what"]
+    first = what.index("incidents/2026-07-21-latency.md")
+    second = what.index("decisions/2026-07-14-billing.md")
+    third = what.index("slo/error-budget.md")
+    assert first < second < third, "citations are not in newest-first order"
+    assert "Shared wording:" in what and "migration" in what
+    assert "2026-07-01 … 2026-07-21" in what      # the span, stated
+    assert "3 of your own notes" in card["name"]  # named after what was FOUND
+
+
+def test_one_entry_per_file_never_two_headings_of_the_same_note():
+    """Two headings out of one note are ONE source; listing both reads as a
+    join that is not there."""
+    twin = dict(_CORPUS[0], ref="incidents/2026-07-21-latency.md#What we know",
+                heading="What we know", base_score=0.9)
+    recall = _recall_for(source=_FakeSource(corpus=[twin] + _CORPUS))
+    subject = recall["subjects"][0]
+    assert len(subject["files"]) == len(set(subject["files"]))
+
+
+def test_quote_drops_the_heading_the_citation_already_names():
+    card = genesis.propose_outcome_cards(
+        ANSWERS, recall=_recall_for(source=_FakeSource()))[0]
+    assert '"Impact tax_quote' not in card["why"], (
+        "the heading is quoted twice — once in the cite, once inside the quote")
+    assert '"tax_quote p99' in card["why"]
+
+
+def test_no_recall_derives_byte_identical_cards():
+    """An unearned citation is the defect this removes. Recall that answered
+    nothing must change NOTHING — including a seam that is down."""
+    baseline = genesis.propose_outcome_cards(ANSWERS)
+    for source in (_FakeSource(corpus=[]), _FakeSource(available=False),
+                   _FakeSource(raises=True)):
+        got = genesis.propose_outcome_cards(
+            ANSWERS, recall=_recall_for(source=source))
+        assert got == baseline
+        assert all("recall_refs" not in c for c in got), (
+            "an empty citation list is still a citation key — a card that "
+            "cited nothing must carry none")
+    assert genesis.propose_outcome_cards(ANSWERS, recall=None) == baseline
+
+
+def test_a_broken_seam_is_recorded_never_raised():
+    got = _recall_for(source=_FakeSource(raises=True))
+    assert got["available"] is False and "RuntimeError" in (got["error"] or "")
+
+
+def test_recall_probe_is_skippable_by_env(monkeypatch):
+    monkeypatch.setenv("CABINET_GENESIS_RECALL", "0")
+    got = genesis.probe_recall(ANSWERS)
+    assert got["consulted"] is False and "CABINET_GENESIS_RECALL=0" in got["error"]
+
+
+def test_recall_is_not_probed_for_a_foreign_root(tmp_path, monkeypatch):
+    """get_source() answers for CABINET_ROOT and no other tree. Probing the
+    live checkout's binding on behalf of a scratch instance would attribute one
+    deployment's recall to another."""
+    monkeypatch.delenv("CABINET_GENESIS_RECALL", raising=False)
+    monkeypatch.setenv("CABINET_ROOT", str(tmp_path / "elsewhere"))
+    got = genesis.probe_recall(ANSWERS, root=tmp_path)
+    assert got["consulted"] is False and "CABINET_ROOT" in (got["error"] or "")
+
+
+def test_probes_are_derived_never_invented():
+    """No declaration and no estate ⇒ no probe. A probe invented here is the
+    guessing the read-don't-ask direction removes."""
+    assert genesis.recall_probes(LANELESS) == []
+    assert genesis.recall_probes(ANSWERS)[0]["label"] == "Acme Storefront"
+
+
+def test_altitude_reaches_the_subject_what_not_only_the_proof():
+    """The measured leftover: the WHAT line ended "verified deploy/close" at
+    EVERY rung — precisely the authority an IC does not hold, i.e. the altitude
+    failure the proof line was already fixed for, one layer down."""
+    low = genesis.propose_outcome_cards({**ANSWERS, "mission": {"altitude": "contributor"}})
+    high = genesis.propose_outcome_cards({**ANSWERS, "mission": {"altitude": "company"}})
+    assert "verified deploy/close" not in low[0]["what"]
+    assert "written proposal" in low[0]["what"]
+    assert "verified deploy/close" in high[0]["what"]
+
+
+def test_recall_card_closes_at_the_operators_altitude():
+    recall = _recall_for(source=_FakeSource())
+    low = genesis.propose_outcome_cards(
+        {**ANSWERS, "mission": {"altitude": "contributor"}}, recall=recall)[0]
+    high = genesis.propose_outcome_cards(
+        {**ANSWERS, "mission": {"altitude": "company"}}, recall=recall)[0]
+    assert "whoever owns the decision" in low["what"]
+    assert "ship the change it argues for" in high["what"]
+
+
+def test_recall_refs_are_persisted_only_when_earned(tmp_path):
+    _write_answers(tmp_path)
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-28T00:00:00Z",
+                                 source=_FakeSource())
+    rows = yaml.safe_load(
+        (tmp_path / genesis.PROPOSALS_REL).read_text())["outcomes"]
+    cited = [r for r in rows if r.get("recall_refs")]
+    assert cited, "no row records the notes it was composed from"
+    assert all("recall_refs" not in r for r in rows if r["derived_from"] == "system")
+
+
+def test_briefing_card_shows_the_refs_the_operator_can_open(tmp_path):
+    _write_answers(tmp_path)
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-28T00:00:00Z",
+                                 source=_FakeSource())
+    items = genesis.genesis_intake_items(tmp_path, now="2026-07-28T00:00:00Z",
+                                         source=_FakeSource())
+    for it in items:
+        intake.validate_item(it)
+    cards = [i["payload"]["summary"] for i in items if i["kind"] == "outcome-proposal"]
+    assert any("FROM YOUR NOTES: incidents/2026-07-21-latency.md#Impact" in c
+               for c in cards)
+
+
+def test_recall_provenance_item_states_live_unbound_and_unconsulted(tmp_path):
+    """The surface that makes the false positive visible. Its NEGATIVE arms are
+    the load-bearing ones: a briefing silent about recall is indistinguishable
+    from one whose recall was answering out of the framework's own docs."""
+    _write_answers(tmp_path)
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-28T00:00:00Z",
+                                 source=_FakeSource())
+
+    def _item(**kw):
+        items = genesis.genesis_intake_items(tmp_path, now="2026-07-28T00:00:00Z", **kw)
+        return next(i for i in items if i["kind"] == "genesis-recall")
+
+    live = _item(source=_FakeSource())
+    assert "Recall: live" in live["payload"]["summary"]
+    assert "incidents/2026-07-21-latency.md#Impact" in live["payload"]["summary"]
+
+    class _Unbound(_FakeSource):
+        def available(self):
+            return False
+
+        def binding_status(self):
+            return {"declared": False, "root": None, "exists": False, "notes": 0}
+
+    unbound = _item(source=_Unbound())
+    body = unbound["payload"]["summary"]
+    assert "bound to NOTHING" in body and "sources.notes_root" in body
+    assert "vault/" in unbound["context"]["why"]        # names what went wrong
+
+
+def test_recall_item_absent_on_a_bare_root(tmp_path):
+    """Honest empty holds: no answers, no deployment, no recall claim."""
+    assert genesis.genesis_intake_items(tmp_path) == []
+
+
+def test_a_live_but_empty_recall_is_not_reported_as_a_stale_ordering(tmp_path):
+    """FOUND BY A REAL CLEAN-ROOM HATCH, 2026-07-28, not by this suite.
+
+    An org box whose backend held nothing about the declared lane rendered
+    "recall answered, but NO card above derives from it: the proposals on file
+    were written before this run" — blaming an ORDERING problem for an EMPTY
+    one, and telling the operator to re-run genesis for a result that cannot
+    change. Nothing was cited because there was nothing to cite. Three live
+    sub-states, three sentences; conflating the last two is the same
+    unearned-claim defect the estate item was already corrected for."""
+    _write_answers(tmp_path)
+    empty = _FakeSource(corpus=[])
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-28T00:00:00Z",
+                                 source=empty)
+    item = next(i for i in genesis.genesis_intake_items(
+        tmp_path, now="2026-07-28T00:00:00Z", source=empty)
+        if i["kind"] == "genesis-recall")
+    why = item["context"]["why"]
+    assert "held NOTHING" in why
+    assert "written before this run" not in why, (
+        "an EMPTY recall answer was reported as a STALE one — the operator is "
+        "sent to re-run genesis for a result that cannot change")
+
+    # …and the stale-ordering sentence must still fire when it IS the truth:
+    # recall answers, but the proposals on file predate this run.
+    (tmp_path / genesis.PROPOSALS_REL).unlink()
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-28T00:00:00Z",
+                                 source=_FakeSource(corpus=[]))
+    stale = next(i for i in genesis.genesis_intake_items(
+        tmp_path, now="2026-07-28T00:00:00Z", source=_FakeSource())
+        if i["kind"] == "genesis-recall")
+    assert "written before this run" in stale["context"]["why"]

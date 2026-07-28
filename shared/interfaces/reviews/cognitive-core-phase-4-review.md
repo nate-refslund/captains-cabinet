@@ -21,7 +21,22 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: fa66d3d0541fa8b0553e982513fef3f0933271bcec8619977c55ac5772c4ed70
+Reviewed-Scope-Digest: 338e6f083e8ff737bcc0716ba44ee3c1fb9ed372e87d1ba4f3501746fe62f0e8
+
+(RE-BOUND 2026-07-28 at the landing of `fix/briefing-consumes-recall`,
+same commit as the change that moved the bytes. Prior digest:
+`fa66d3d0541fa8b0…`. The one moved file in scope is again
+`cabinet/config/cognitive-architecture-contract.yml`, and the move is ONE
+added `temporary_allowances` row: `briefing-consumes-recall`, +456 on
+`framework_production_noncomment_lines`, for the recall probe and card
+composition in `framework/onboarding/genesis.py` plus the honest-unset
+resolve_root in `framework/sources/local.py`. No budget `maximum`, no
+existing `additional`, no expansion member and no bijection class changed
+— `framework_production_modules` stays 247 (zero new modules), and the
+census is back at observed == maximum so the ratchet still bites. No COG-4
+implementation byte changed; `framework/authority/classifier.py` remains in
+the manifest's `must_remain_unchanged` block against the pinned phase
+anchor. The phase-4 findings below are unaffected.)
 
 (RE-BOUND 2026-07-28 at the landing of `feat/onboarding-ordering-inversion`,
 same commit as the change that moved the bytes. Prior digest:

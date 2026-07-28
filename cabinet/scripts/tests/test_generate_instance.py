@@ -926,15 +926,53 @@ class TestSourcesAndOrgVault:
         resolved NullPersonalSource — zero recall — so the preset built for an
         operator who does not run a company was the only shipped configuration
         that was inert. It now binds the local notes adapter; the dispatch seam
-        deliberately stays unbound (the adapter has no write side)."""
+        deliberately stays unbound (the adapter has no write side).
+
+        INVERTED AGAIN 2026-07-28: this asserted ``local_root == "vault"``.
+        That was literally true and was a defect — the answers file could not
+        declare the operator's folder at all, and ``vault`` is the CABINET'S
+        OWN shipped docs, so a personal hatch reported ``available() True``
+        over the framework's documentation. Undeclared must now emit NO
+        ``local_root`` value at all."""
         answers = acme_answers()
         answers["autonomy"] = {"posture": "propose_first", "flavor": "personal"}
         run_gen(cab_root, answers)
+        text = (cab_root / "instance/config/sources.yml").read_text()
+        src = yaml.safe_load(text)
+        assert src["adapter"] == "framework.sources.local:LocalNotesSource"
+        assert src.get("local_root") is None, (
+            "an undeclared notes folder must stay UNSET — a default here is a "
+            "folder the operator never granted")
+        assert "vault" not in text.split("There is deliberately NO default")[0], (
+            "the emitted binding must not point at the cabinet's own vault/")
+        assert "dispatch" not in src
+
+    def test_personal_flavor_binds_the_declared_notes_root(self, cab_root):
+        """The answers DECLARE the scope (2026-07-28). Before this the value
+        was hardcoded and no answer could change it."""
+        answers = acme_answers()
+        answers["autonomy"] = {"posture": "propose_first", "flavor": "personal"}
+        answers["sources"] = {"notes_root": "~/Documents/field-notes"}
+        run_gen(cab_root, answers)
         src = yaml.safe_load(
             (cab_root / "instance/config/sources.yml").read_text())
-        assert src["adapter"] == "framework.sources.local:LocalNotesSource"
-        assert src["local_root"] == "vault"
-        assert "dispatch" not in src
+        assert src["local_root"] == "~/Documents/field-notes"
+
+    @pytest.mark.parametrize("bad", ["", "   ", "notes\nmore"])
+    def test_malformed_notes_root_refuses_loudly(self, cab_root, bad):
+        """A path the adapter could not honour must refuse at generation time,
+        not resolve to something plausible at read time."""
+        answers = acme_answers()
+        answers["autonomy"] = {"posture": "propose_first", "flavor": "personal"}
+        answers["sources"] = {"notes_root": bad}
+        with pytest.raises(gi.GenerationError, match="notes_root"):
+            run_gen(cab_root, answers)
+
+    def test_non_mapping_sources_block_refuses(self, cab_root):
+        answers = acme_answers()
+        answers["sources"] = ["notes"]
+        with pytest.raises(gi.GenerationError, match="sources"):
+            run_gen(cab_root, answers)
 
     def test_hand_authored_sources_never_clobbered(self, cab_root):
         """An existing sources.yml WITHOUT the marker (e.g. a live Flavor-A

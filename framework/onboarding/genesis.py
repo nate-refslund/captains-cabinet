@@ -55,9 +55,26 @@ will be produced when officers wake") instead of fake content. A delivered
 brief is honestly labeled model-knowledge (no live web at genesis); officers
 refresh it with sourced research when they wake.
 
-``genesis_intake_items`` renders both surfaces (plus the focus letter) as
-composer-shaped intake items for the local first briefing
-(``framework.frontdoor.run_briefing --now --local-render``).
+THE BRIEFING READS WHAT RECALL HOLDS (2026-07-28, measured). Until this,
+NOTHING in the genesis chain ever called ``framework.sources.get_source()``:
+cards came from the answers file and the derived estate only. An agent ran the
+genuine hatch path and scored the resulting briefing 1 of 3 — "read it, no
+value" — while recall on that same box was live and its notes held a live
+incident spread across three files that no card mentioned. ``probe_recall``
+now asks the bound seam about each declared subject and hands the hits to
+``propose_outcome_cards`` as DATA (the function stays pure, exactly as it does
+for ``estate``), so a card can quote the operator's own sentence, cite the
+file#heading it came from with its derived date, and name the terms two of
+their files share. Deterministic string work throughout — no LLM, no network,
+no writes — and when recall holds nothing the cards are byte-identical to the
+pre-recall derivation, because an unearned citation is the defect this exists
+to remove. ``CABINET_GENESIS_RECALL=0`` skips the probe.
+
+``genesis_intake_items`` renders all of these surfaces (plus the focus letter)
+as composer-shaped intake items for the local first briefing
+(``framework.frontdoor.run_briefing --now --local-render``), including a
+``genesis-recall`` provenance card that states whether recall was live, unbound
+or unconsulted — the negative cases are the load-bearing ones.
 
 ``merge_proposals`` (onboarding design 2026-07-14 Phase 1) is the
 MERGE-BY-CARD-ID writer other organs use to ADD cards to the staging file
@@ -67,15 +84,17 @@ write-once protection, same propose-only file, same draft-only rows.
 
 No Redis, no Telegram, no network beyond the single gated CLI invocation.
 Env knobs (names-in-env doctrine; malformed values fall back, never crash):
-``CABINET_GENESIS_BRIEF_TIMEOUT`` (CLI budget, default 90s) and
+``CABINET_GENESIS_BRIEF_TIMEOUT`` (CLI budget, default 90s),
 ``CABINET_GENESIS_NET_HOST``/``_PORT`` (preflight target, default
-api.anthropic.com:443 — override for Bedrock/Vertex/proxy CLIs).
+api.anthropic.com:443 — override for Bedrock/Vertex/proxy CLIs), and
+``CABINET_GENESIS_RECALL=0`` (skip the recall probe entirely).
 Secrets doctrine: prompts and written files carry NAMES only (the answers file
 is already secret-shape-refused upstream by generate-instance.py).
 """
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -86,6 +105,9 @@ from pathlib import Path
 ANSWERS_REL = "instance/config/cabinet-init.answers.yml"
 FOCUS_REL = "instance/config/onboarding-focus.md"
 PROPOSALS_REL = "instance/config/outcomes-proposed.yml"
+# The recall BINDING this deployment resolved — named so the briefing can point
+# an operator at the one file that decides what recall reads.
+SOURCES_REL = "instance/config/sources.yml"
 LIBRARY_DIR_REL = "instance/memory/library"
 BRIEF_REL = LIBRARY_DIR_REL + "/genesis-research-brief.md"
 FIRST_BRIEFING_DIR_REL = "instance/memory"
@@ -221,7 +243,8 @@ def _subject_proof(name: str, repos: list, low: bool) -> str:
 
 
 def _estate_subject_cards(estate: dict, taken: set, seen_ids: set, *,
-                          purpose: str | None, low: bool, limit: int) -> list[dict]:
+                          purpose: str | None, low: bool, limit: int,
+                          recall: dict | None = None) -> list[dict]:
     """Subject cards derived from what the cabinet READ, each carrying the
     citation that produced it. Entities whose slug already came from a
     declared lane are skipped: the Captain's own declaration wins over a
@@ -237,12 +260,14 @@ def _estate_subject_cards(estate: dict, taken: set, seen_ids: set, *,
         if not (slug or name) or slug in taken:
             continue
         taken.add(slug)
+        subject = _recall_subject(recall, slug, name)
         cites = [str(c.get("path")) for c in (ent.get("evidence") or [])
                  if isinstance(c, dict) and c.get("path")]
         why = (f"I found {name or slug} by reading your world, not by asking: "
                + (f"{', '.join(cites[:2])} " if cites else "")
                + f"under the folder you granted (path: {ent.get('relative_path') or '.'}). "
                "Correct me if this is not a thing you work on.")
+        why += _recall_why(subject)
         if purpose:
             why += f' The mission it serves: "{purpose}"'
         base_id = f"proposed-{slug or 'entity'}-first-proof"
@@ -252,26 +277,62 @@ def _estate_subject_cards(estate: dict, taken: set, seen_ids: set, *,
         seen_ids.add(card_id)
         cards.append({
             "id": card_id,
-            "name": f"First verifiable improvement in {name or slug}",
+            "name": _recall_card_name(
+                name or slug, subject,
+                f"First verifiable improvement in {name or slug}"),
             "lane": slug or None,
-            "derived_from": "estate",
-            "what": (
-                f"One reviewed, Captain-approved improvement in {name or slug} "
-                "traced end-to-end from the evidence that surfaced it."
-            ),
+            "derived_from": "recall" if subject else "estate",
+            "what": _subject_what(name or slug, low, subject,
+                                  evidence_derived=True),
             "why": why,
             "proof_expected": _subject_proof(name or slug, [], low),
+            **({"recall_refs": list(subject.get("refs") or [])}
+               if subject and subject.get("refs") else {}),
         })
     return cards
 
 
-def _residual_card(estate: dict | None, low: bool) -> dict:
+def recall_state(recall: dict | None) -> str:
+    """ONE sentence naming which of four states the recall seam is in.
+
+    "you granted no folder", "the folder you named is gone", "it is bound and
+    holds nothing", "it could not be reached" — four states with four different
+    fixes, which a bare ``available: false`` collapses into one. Empty string
+    when recall is LIVE (there is then nothing to explain). Single source: the
+    residual card and the briefing's provenance card both render it, so the two
+    surfaces cannot drift into telling the operator different things."""
+    if not isinstance(recall, dict) or not recall.get("consulted"):
+        reason = (recall or {}).get("error") if isinstance(recall, dict) else None
+        return f"not consulted this run ({reason})" if reason else "not consulted this run"
+    if recall.get("error") and not recall.get("available"):
+        return f"could not be reached ({recall['error']})"
+    if recall.get("available"):
+        return ""
+    binding = recall.get("binding") or {}
+    if binding and not binding.get("declared"):
+        return ("bound to NOTHING — no folder has been granted, so it answers "
+                "nothing rather than guessing. Declare sources.notes_root in "
+                + ANSWERS_REL + " and re-run "
+                "cabinet/scripts/generate-instance.py, or export "
+                "CABINET_LOCAL_SOURCE_ROOT")
+    if binding.get("declared") and not binding.get("exists"):
+        return f"pointed at {binding.get('root')}, which does not exist"
+    return "bound but holding nothing readable yet"
+
+
+def _residual_card(estate: dict | None, low: bool,
+                   recall: dict | None = None) -> dict:
     """The card that replaces "tell us what your company is".
 
     Three questions, and every one of them is un-derivable BY CONSTRUCTION —
     the answer is not in any data the cabinet could read. Plus the seed
     question for the operator who has connected nothing at all, because a
-    cabinet with no sources must still never be a dead end."""
+    cabinet with no sources must still never be a dead end.
+
+    It also states the RECALL binding's real state, because "I have nothing to
+    say about your world" and "I am not pointed at your world" are different
+    sentences with different fixes, and only one of them is the operator's to
+    act on."""
     read_anything = bool((estate or {}).get("sources"))
     opening = (
         "I read what you granted and found nothing I could honestly call a "
@@ -302,6 +363,7 @@ def _residual_card(estate: dict | None, low: bool) -> dict:
             + (" At your altitude the answer is reach, not permission: I can "
                "assemble context nobody at your level holds, and I will never "
                "claim authority that is not yours to give." if low else "")
+            + (f" Recall is {recall_state(recall)}." if recall_state(recall) else "")
         ),
         "proof_expected": (
             "instance/onboarding/formation/derived-estate.yml exists with at "
@@ -313,10 +375,370 @@ def _residual_card(estate: dict | None, low: bool) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# RECALL — the briefing READS what recall already holds (2026-07-28).
+#
+# MEASURED, and this is the whole reason the block exists: an agent ran the
+# genuine hatch path and scored the resulting first briefing 1 of 3 — "read it,
+# no value". Recall itself WORKED on that same box (available() True; three
+# probes returned dated, cited hits), and its notes folder held a live incident
+# whose pieces sat in three different files — a latency regression traceable to
+# a migration cutover, a rollback window closing the same week an error budget
+# ran out. The briefing referenced NONE of it, because nothing in the genesis
+# chain ever called get_source(). Cards were composed from the answers file and
+# the derived estate only, so the best the org could say about a lane was that
+# the operator had declared it.
+#
+# WHAT THIS DOES: derives probes from what the operator DECLARED (lanes,
+# mission, focus letter, estate entities), asks the BOUND recall seam for each,
+# and hands the hits back as DATA. ``propose_outcome_cards`` stays PURE — it
+# receives this dict exactly the way it already receives ``estate`` — so the
+# no-I/O contract the hatch chain depends on is unchanged, and every card that
+# cites a note can be checked against a file the operator can open.
+#
+# NO LLM, NO NETWORK, NO WRITES. The join is term overlap across DISTINCT
+# files, the dates are the hits' own ``content_ts`` (derived or absent, never
+# mtime), and the quotes are verbatim excerpts of the operator's own text. A
+# card that cites nothing checkable is worse than no card, so nothing here ever
+# asserts a relationship the citations do not already show.
+# ---------------------------------------------------------------------------
+_MAX_RECALL_PROBES = 4      # subjects asked about — the card band is 2–4 anyway
+_MAX_RECALL_HITS = 8        # hits examined per subject
+_MAX_RECALL_FILES = 3       # DISTINCT files named on a card — the join unit
+_MAX_QUOTE = 200            # chars of the operator's own words, verbatim
+_MIN_JOIN_FILES = 2         # a "join" needs at least two DIFFERENT files
+_MAX_JOIN_TERMS = 4
+_MIN_JOIN_TERM_LEN = 4
+
+# Terms that co-occur in any two English notes and therefore say nothing about
+# what those notes share. Deliberately small and literal: a bigger list would
+# start suppressing real domain words, and the failure mode of THIS surface is
+# a card that claims a connection the operator cannot see.
+_JOIN_STOPWORDS = frozenset({
+    "about", "after", "again", "against", "already", "also", "another", "any",
+    "because", "been", "before", "being", "between", "both", "but", "came",
+    "can", "cannot", "come", "could", "did", "does", "done", "down", "during",
+    "each", "even", "ever", "every", "first", "for", "from", "get", "give",
+    "going", "had", "has", "have", "here", "how", "into", "issue", "its",
+    "just", "keep", "know", "last", "like", "made", "make", "many", "may",
+    "more", "most", "much", "must", "need", "next", "not", "note", "notes",
+    "now", "off", "one", "only", "other", "our", "out", "over", "own", "put",
+    "same", "see", "shall", "should", "since", "some", "still", "such", "take",
+    "than", "that", "the", "their", "them", "then", "there", "these", "they",
+    "thing", "things", "this", "those", "through", "time", "today", "too",
+    "took", "under", "until", "upon", "use", "used", "using", "very", "want",
+    "was", "way", "week", "well", "were", "what", "when", "where", "which",
+    "while", "who", "why", "will", "with", "work", "would", "year", "yet",
+    "you", "your",
+})
+
+_WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_-]{2,}")
+
+
+def _flatten(text: str, limit: int) -> str:
+    """One line of the operator's own words, control characters stripped and
+    length-capped. VERBATIM otherwise — the value of a quote is that it can be
+    checked against the file, and a paraphrase cannot be."""
+    flat = " ".join(str(text or "").split())
+    flat = "".join(ch for ch in flat if ch.isprintable())
+    return flat[:limit].rstrip() + ("…" if len(flat) > limit else "")
+
+
+def _quote_of(hit: dict) -> str:
+    """The operator's own sentence, without the heading the citation already
+    names. Adapters chunk as ``heading + "\\n" + body``, so a raw flatten
+    reads "What we know The billing migration moved…" — the heading twice, and
+    fewer of their actual words inside the cap."""
+    text = str(hit.get("text") or "")
+    heading = str(hit.get("heading") or "").strip()
+    if heading and text.lstrip().startswith(heading):
+        text = text.lstrip()[len(heading):]
+    return _flatten(text, _MAX_QUOTE)
+
+
+def _cite(hit: dict) -> str:
+    """``path#heading (dated YYYY-MM-DD)`` — the handle the operator opens.
+
+    An absent ``content_ts`` renders "(undated)" rather than a guess: the local
+    adapter refuses to derive a date from mtime, and inventing one here would
+    put a fabricated timestamp on a card the operator is asked to trust."""
+    ref = str(hit.get("ref") or hit.get("path") or "?")
+    ts = str(hit.get("content_ts") or "")
+    return f"{ref} (dated {ts[:10]})" if ts else f"{ref} (undated)"
+
+
+def _query_terms(text: str) -> set:
+    return {w.lower() for w in _WORD_RE.findall(text or "")}
+
+
+def _join_terms(hits: list, query: str) -> list:
+    """Terms shared by at least ``_MIN_JOIN_FILES`` DISTINCT files among the
+    hits, minus the query's own terms and the stopwords.
+
+    This is the join, and it is deliberately weak on purpose: it reports that
+    several of the operator's notes use the same words, which is a fact they
+    can verify by opening them. It never claims causality — the operator makes
+    that call, from files they wrote."""
+    asked = _query_terms(query)
+    per_file: dict = {}
+    for hit in hits:
+        path = str(hit.get("path") or hit.get("ref") or "")
+        blob = f"{hit.get('heading') or ''} {hit.get('text') or ''}"
+        terms = {t for t in _query_terms(blob)
+                 if len(t) >= _MIN_JOIN_TERM_LEN
+                 and t not in _JOIN_STOPWORDS and t not in asked
+                 and not t.isdigit()}
+        per_file.setdefault(path, set()).update(terms)
+    counts: dict = {}
+    for terms in per_file.values():
+        for term in terms:
+            counts[term] = counts.get(term, 0) + 1
+    shared = [t for t, n in counts.items() if n >= _MIN_JOIN_FILES]
+    shared.sort(key=lambda t: (-counts[t], -len(t), t))
+    return shared[:_MAX_JOIN_TERMS]
+
+
+def recall_probes(answers: dict, focus_text: str | None = None, *,
+                  estate: dict | None = None) -> list[dict]:
+    """The subjects worth asking recall about, derived from what the operator
+    DECLARED — never invented. ``[{'key', 'label', 'query'}]``, deduped by key,
+    capped at ``_MAX_RECALL_PROBES``.
+
+    Declared lanes first (the Captain's own statement), then estate entities
+    (what the cabinet read). An operator who declared nothing and granted
+    nothing yields NO probes: there is nothing to ask about, and a probe
+    invented here would be the guessing this whole direction removes."""
+    purpose, success, _never = _mission_fields(answers)
+    tail = " ".join(x for x in (purpose, success,
+                                _focus_excerpt(focus_text, 120)) if x)
+    out: list[dict] = []
+    seen: set = set()
+
+    def _add(key: str, label: str, extra: str = "") -> None:
+        key = (key or label or "").strip().lower()
+        if not key or key in seen or len(out) >= _MAX_RECALL_PROBES:
+            return
+        seen.add(key)
+        out.append({"key": key, "label": label,
+                    "query": " ".join(x for x in (label, extra) if x).strip()})
+
+    for lane in (answers.get("lanes") or []):
+        if isinstance(lane, dict):
+            slug = str(lane.get("slug") or "").strip()
+            name = str(lane.get("name") or slug).strip()
+            if slug or name:
+                _add(slug or name, name or slug,
+                     " ".join(str(r) for r in (lane.get("repos") or [])))
+    for ent in ((estate or {}).get("entities") or []):
+        if isinstance(ent, dict):
+            slug = str(ent.get("id") or "").strip()
+            name = str(ent.get("name") or slug).strip()
+            if slug or name:
+                _add(slug or name, name or slug)
+    # The mission/focus text is a probe of its own ONLY when it is all there
+    # is: it is a sentence, not a subject, and it would otherwise dilute every
+    # subject query it was appended to.
+    if not out and tail:
+        _add("mission", _flatten(tail, 80))
+    return out
+
+
+def _recall_enabled() -> bool:
+    """``CABINET_GENESIS_RECALL=0`` skips the probe entirely.
+
+    The one kill-switch, and it exists because a CONFIGURED org box's
+    ``search()`` shells out to the memory backend: an operator who needs the
+    hatch receipt to depend on nothing but local files can turn the probe off
+    and still get a briefing (composed from the answers and the estate, exactly
+    as before this landed). Any other value, including absent, means on."""
+    return (os.environ.get("CABINET_GENESIS_RECALL", "") or "").strip() != "0"
+
+
+def probe_recall(answers: dict, focus_text: str | None = None, *,
+                 estate: dict | None = None, source=None,
+                 root: Path | None = None) -> dict:
+    """Ask the BOUND recall seam about each derived probe. I/O lives here.
+
+    Returns ``{'consulted', 'adapter', 'available', 'binding', 'probes',
+    'subjects', 'hits_total', 'error'}``. NEVER RAISES: recall is an input to
+    the first receipt, not a dependency of it, so a broken or unbound seam
+    degrades to ``available: False`` with the reason recorded — the briefing
+    then says so in the operator's own terms instead of silently composing
+    cards that cite nothing.
+
+    ``source`` is the test seam; the default is ``framework.sources.get_source()``,
+    i.e. whatever THIS deployment actually bound.
+
+    ROOT GUARD: ``get_source()`` resolves its binding from ``CABINET_ROOT``, so
+    it answers for THAT deployment and no other. When ``root`` names a
+    different tree (a scratch instance, a hermetic test root) the seam is NOT
+    consulted — probing the live checkout's binding on behalf of a scratch
+    instance would attribute one deployment's recall to another. Pass
+    ``source=`` to probe a specific one."""
+    result = {"consulted": False, "adapter": "", "available": False,
+              "binding": {}, "probes": [], "subjects": [], "hits_total": 0,
+              "error": None}
+    probes = recall_probes(answers, focus_text, estate=estate)
+    result["probes"] = [p["label"] for p in probes]
+    if source is None and not _recall_enabled():
+        result["error"] = "skipped: CABINET_GENESIS_RECALL=0"
+        return result
+    if source is None and root is not None:
+        try:
+            same = Path(root).resolve() == cabinet_root().resolve()
+        except OSError:
+            same = False
+        if not same:
+            result["error"] = ("skipped: the bound recall seam answers for "
+                               "CABINET_ROOT, not this root")
+            return result
+    try:
+        if source is None:
+            from framework import sources as _sources  # local: import-light
+            source = _sources.get_source()
+        result["consulted"] = True
+        result["adapter"] = (f"{type(source).__module__}:"
+                             f"{type(source).__name__}")
+        status = getattr(source, "binding_status", None)
+        if callable(status):
+            got = status()
+            result["binding"] = got if isinstance(got, dict) else {}
+        result["available"] = bool(source.available())
+    except Exception as e:  # noqa: BLE001 — recall never blocks the receipt
+        result["error"] = f"{type(e).__name__}: {e}"[:200]
+        return result
+    if not result["available"]:
+        return result
+
+    for probe in probes:
+        try:
+            found = source.search(probe["query"]) or {}
+            hits = [h for h in (found.get("hits") or []) if isinstance(h, dict)]
+        except Exception as e:  # noqa: BLE001 — one bad probe never kills the rest
+            result["error"] = result["error"] or f"{type(e).__name__}: {e}"[:200]
+            continue
+        if not hits:
+            continue
+        kept = hits[:_MAX_RECALL_HITS]
+        # ONE ENTRY PER FILE, NEWEST FIRST. Two headings out of the same note
+        # are one source, and listing both reads as a join that is not there;
+        # and the useful order is TIME, not retrieval score — "these notes of
+        # yours span these weeks and were never read together" is the finding,
+        # while score order buries the live one behind whichever page repeats
+        # the query terms most (measured: an ownership footnote outranked the
+        # latency regression it was a footnote to).
+        by_file: dict = {}
+        for hit in kept:
+            path = str(hit.get("path") or hit.get("ref") or "")
+            if path and path not in by_file:
+                by_file[path] = hit
+        ordered = sorted(
+            by_file.values(),
+            key=lambda h: (str(h.get("content_ts") or ""),
+                           float(h.get("base_score") or 0.0)),
+            reverse=True)[:_MAX_RECALL_FILES]
+        dates = sorted({str(h.get("content_ts") or "")[:10]
+                        for h in ordered if h.get("content_ts")})
+        result["subjects"].append({
+            "key": probe["key"],
+            "label": probe["label"],
+            "query": probe["query"],
+            "files": [str(h.get("path") or h.get("ref") or "") for h in ordered],
+            "cites": [_cite(h) for h in ordered],
+            "dates": list(reversed(dates)),
+            "span": (f"{dates[0]} … {dates[-1]}"
+                     if len(dates) > 1 else (dates[0] if dates else "")),
+            "shared_terms": _join_terms(kept, probe["query"]),
+            "quote": _quote_of(ordered[0]) if ordered else "",
+            "top_cite": _cite(ordered[0]) if ordered else "",
+            "refs": [str(h.get("ref") or h.get("path") or "") for h in ordered],
+        })
+        result["hits_total"] += len(kept)
+    return result
+
+
+def _recall_subject(recall: dict | None, slug: str, name: str) -> dict | None:
+    """The probed subject matching this card's lane/entity, or None."""
+    if not isinstance(recall, dict):
+        return None
+    for key in ((slug or "").strip().lower(), (name or "").strip().lower()):
+        if not key:
+            continue
+        for subject in (recall.get("subjects") or []):
+            if isinstance(subject, dict) and str(subject.get("key")) == key:
+                return subject
+    return None
+
+
+def _subject_what(name: str, low: bool, subject: dict | None = None, *,
+                  evidence_derived: bool = False) -> str:
+    """The WHAT line for a subject card, at the operator's altitude and over
+    whatever recall actually holds.
+
+    ALTITUDE REACHES THE WHAT, not only the proof (fixed 2026-07-28). The
+    declared-lane line used to end "task → change → verified deploy/close" at
+    EVERY rung — the exact authority an IC does not hold, i.e. the altitude
+    failure the PROOF line had already been corrected for, reappearing one
+    layer down and gating the card on a permission that belongs to the
+    operator's employer."""
+    close = ("write the one-page finding and take it to whoever owns the "
+             "decision" if low else
+             "write the one-page finding, then ship the change it argues for")
+    if subject and len(subject.get("files") or []) >= _MIN_JOIN_FILES:
+        shared = subject.get("shared_terms") or []
+        span = subject.get("span") or ""
+        return (
+            f"Read these notes of yours side by side"
+            + (f" ({span})" if span else "")
+            + ", newest first: "
+            + "; ".join(subject.get("cites") or [])
+            + (f". Shared wording: {', '.join(shared)}" if shared else "")
+            + f". Then {close}."
+        )
+    if subject and subject.get("top_cite"):
+        return (f"Start from what you already wrote about {name} — "
+                f"{subject['top_cite']} — then {close}.")
+    if evidence_derived:
+        # Already altitude-neutral: it names the evidence, not a deploy.
+        return (f"One reviewed, Captain-approved improvement in {name} traced "
+                f"end-to-end from the evidence that surfaced it.")
+    if low:
+        return (f"One reviewed, Captain-approved improvement in {name} traced "
+                f"end-to-end: evidence → written proposal → the decision it "
+                f"changed.")
+    return (f"One reviewed, Captain-approved improvement in {name} traced "
+            f"end-to-end: task → change → verified deploy/close.")
+
+
+def _recall_card_name(name: str, subject: dict | None, fallback: str) -> str:
+    """Name the card after WHAT WAS FOUND, not after the thing the operator
+    already knows they declared. A headline that counts their own notes and
+    dates them is checkable at a glance; "First verifiable improvement in X"
+    is true of every deployment ever hatched."""
+    files = (subject or {}).get("files") or []
+    if len(files) < _MIN_JOIN_FILES:
+        return fallback
+    span = (subject or {}).get("span") or ""
+    return (f"{name}: {len(files)} of your own notes"
+            + (f" ({span})" if span else "")
+            + ", never read together")
+
+
+def _recall_why(subject: dict | None) -> str:
+    """The sentence that makes a card checkable: the operator's own words, with
+    the file and date beside them. Empty when recall held nothing — an
+    unearned citation is the defect this whole unit exists to remove."""
+    if not subject or not subject.get("quote"):
+        return ""
+    return (f' I did not ask you for this, I read it: "{subject["quote"]}" '
+            f'— {subject.get("top_cite") or "?"}.')
+
+
+# ---------------------------------------------------------------------------
 # ONBOARD-1 — the org PROPOSES outcome cards (propose-only, never activating).
 # ---------------------------------------------------------------------------
 def propose_outcome_cards(answers: dict, focus_text: str | None = None, *,
-                          estate: dict | None = None) -> list[dict]:
+                          estate: dict | None = None,
+                          recall: dict | None = None) -> list[dict]:
     """PURE derivation: the derived estate + cabinet-init answers (+ optional
     focus letter) → 2–4 proposed outcome cards.
 
@@ -335,9 +757,19 @@ def propose_outcome_cards(answers: dict, focus_text: str | None = None, *,
     MISSION-CONDITIONED (Phase 2, onboarding-vision-2026-07-14 §4): when the
     answers carry the interview's ``mission:`` block, the cards quote the
     stated purpose / 90-day bar / never-touch list, and ``mission.altitude``
-    reshapes every proof line — still PURE deterministic string derivation (no
-    LLM anywhere near the hatch chain). Missionless answers with a declared
-    lane derive exactly today's cards."""
+    reshapes every proof line AND every subject WHAT line — still PURE
+    deterministic string derivation (no LLM anywhere near the hatch chain).
+    Missionless answers with a declared lane derive exactly today's cards.
+
+    RECALL-CONDITIONED (2026-07-28): ``recall`` is a ``probe_recall`` result —
+    what the deployment's BOUND recall seam actually holds about each subject,
+    passed in as DATA exactly like ``estate`` so this function stays pure. A
+    subject recall answered for gets a card composed from the operator's own
+    notes: their words quoted, every file cited with its derived date, and the
+    terms two or more of those files share named. Without it (``recall=None``,
+    or a seam that answered nothing) the cards are byte-identical to the
+    pre-recall derivation — an unearned citation would be the exact defect this
+    surface exists to remove."""
     cabinet = answers.get("cabinet") or {}
     cabinet_id = str(cabinet.get("id") or "").strip()
     if not cabinet_id:
@@ -359,10 +791,12 @@ def propose_outcome_cards(answers: dict, focus_text: str | None = None, *,
             continue
         taken_slugs.add(slug)
         repos = [str(r) for r in (lane.get("repos") or []) if str(r).strip()]
+        subject = _recall_subject(recall, slug, name)
         why = f"You staked {name or slug} as a lane at genesis"
         if repos:
             why += f" (repos: {', '.join(repos)})"
         why += "."
+        why += _recall_why(subject)
         if focus_lower and (
             (slug and slug in focus_lower) or (name and name.lower() in focus_lower)
         ):
@@ -378,23 +812,30 @@ def propose_outcome_cards(answers: dict, focus_text: str | None = None, *,
         seen_ids.add(card_id)
         cards.append({
             "id": card_id,
-            "name": f"First verifiable improvement shipped in the {name or slug} lane",
+            # A card that names what recall found beats one that names the
+            # lane the operator already knows they declared.
+            "name": _recall_card_name(
+                name or slug, subject,
+                f"First verifiable improvement shipped in the "
+                f"{name or slug} lane"),
             "lane": slug or None,
-            "derived_from": "answers",
-            "what": (
-                f"One reviewed, Captain-approved improvement in {name or slug} "
-                "traced end-to-end: task → change → verified deploy/close."
-            ),
+            "derived_from": "recall" if subject else "answers",
+            "what": _subject_what(name or slug, low, subject),
             "why": why,
             "proof_expected": _subject_proof(name or slug, repos, low),
+            # ONLY WHEN EARNED — a card that cited nothing carries no refs key
+            # at all, so a no-recall derivation stays byte-identical to the
+            # pre-recall one and an empty list can never read as a citation.
+            **({"recall_refs": list(subject.get("refs") or [])}
+               if subject and subject.get("refs") else {}),
         })
 
     if len(cards) < _MAX_LANE_CARDS and isinstance(estate, dict):
         cards.extend(_estate_subject_cards(
             estate, taken_slugs, seen_ids, purpose=purpose, low=low,
-            limit=_MAX_LANE_CARDS - len(cards)))
+            limit=_MAX_LANE_CARDS - len(cards), recall=recall))
     if not cards:
-        cards.append(_residual_card(estate, low))
+        cards.append(_residual_card(estate, low, recall))
 
     cards.append({
         "id": "proposed-library-grounding",
@@ -450,14 +891,20 @@ def propose_outcome_cards(answers: dict, focus_text: str | None = None, *,
 
 
 def _proposals_doc(cards: list[dict], answers: dict, *, now: str,
-                   focus_present: bool, estate_present: bool = False) -> dict:
+                   focus_present: bool, estate_present: bool = False,
+                   recall_present: bool = False) -> dict:
     cabinet = answers.get("cabinet") or {}
     derived = [ANSWERS_REL] + ([FOCUS_REL] if focus_present else [])
     if estate_present:
         from framework.onboarding import estate as _estate  # local: import-light
         derived.append(_estate.ESTATE_REL)
+    if recall_present:
+        # Not a path: the recall seam is a BINDING, and naming it as one keeps
+        # the provenance list honest about what produced these rows.
+        derived.append("recall:" + SOURCES_REL)
     outcomes = []
     for card in cards:
+        refs = [str(r) for r in (card.get("recall_refs") or []) if str(r).strip()]
         outcomes.append({
             "id": card["id"],
             "name": card["name"],
@@ -466,7 +913,8 @@ def _proposals_doc(cards: list[dict], answers: dict, *, now: str,
             "lane": card.get("lane"),
             # Provenance the Captain can act on: "answers" is his own
             # declaration, "estate" is something I read and can cite,
-            # "residual" is a question only he can answer.
+            # "recall" is something his OWN notes already said, "residual" is
+            # a question only he can answer.
             "derived_from": card.get("derived_from", "answers"),
             "what": card["what"],
             "why": card["why"],
@@ -474,6 +922,10 @@ def _proposals_doc(cards: list[dict], answers: dict, *, now: str,
             # So a Captain-ratified copy moved into outcomes.yml is already
             # outcome.schema.json-shaped (id/name/measurable_criteria).
             "measurable_criteria": [card["proof_expected"]],
+            # Only when EARNED: the durable list of note refs this row was
+            # composed from. Absent means no note was cited, and the briefing
+            # says so rather than implying one.
+            **({"recall_refs": refs} if refs else {}),
         })
     return {
         "schema": "cabinet.outcomes-proposed/v1",
@@ -501,7 +953,8 @@ _PROPOSALS_HEADER = """\
 def write_proposals(cards: list[dict], root: Path | None = None, *,
                     answers: dict | None = None, now: str | None = None,
                     focus_present: bool = False, force: bool = False,
-                    estate_present: bool = False) -> dict:
+                    estate_present: bool = False,
+                    recall_present: bool = False) -> dict:
     """Write the propose-only staging file. Write-once: an existing file is
     NEVER overwritten unless ``force`` (the Captain may have edited drafts) —
     the briefing composes from the file either way."""
@@ -512,7 +965,8 @@ def write_proposals(cards: list[dict], root: Path | None = None, *,
     import yaml  # local: keep the module import-light
     doc = _proposals_doc(cards, answers or {}, now=_utc_now_iso(now),
                          focus_present=focus_present,
-                         estate_present=estate_present)
+                         estate_present=estate_present,
+                         recall_present=recall_present)
     body = _PROPOSALS_HEADER.format(marker=GENERATED_MARKER)
     body += yaml.safe_dump(doc, sort_keys=False, allow_unicode=True, width=100)
     _atomic_write(path, body)
@@ -603,29 +1057,41 @@ def merge_proposals(cards: list[dict], root: Path | None = None, *,
             "added": len(shaped), "merged": True}
 
 
-def run_genesis_proposal(root: Path | None = None, *, now: str | None = None) -> dict:
-    """ONBOARD-1 orchestration: answers (+ focus) → cards → staging file.
+def run_genesis_proposal(root: Path | None = None, *, now: str | None = None,
+                         source=None) -> dict:
+    """ONBOARD-1 orchestration: answers (+ focus + estate + RECALL) → cards →
+    staging file.
 
-    Returns ``{'status', 'path', 'cards': n}``. ``status='no-answers'`` when
-    the cabinet-init answers are absent/empty (a broken tree at hatch time —
-    callers fail loudly rather than staging an empty proposal)."""
+    Returns ``{'status', 'path', 'cards': n, 'recall': <probe result>}``.
+    ``status='no-answers'`` when the cabinet-init answers are absent/empty (a
+    broken tree at hatch time — callers fail loudly rather than staging an
+    empty proposal).
+
+    THE RECALL PROBE LIVES HERE, beside the estate load, for the same reason:
+    this is the orchestration layer that is allowed to do I/O, and
+    ``propose_outcome_cards`` stays pure by receiving the result as data.
+    ``source`` is the test seam forwarded to ``probe_recall``."""
     base = Path(root) if root else cabinet_root()
     answers = load_answers(base)
     if not answers:
-        return {"status": "no-answers", "path": None, "cards": 0}
+        return {"status": "no-answers", "path": None, "cards": 0, "recall": {}}
     focus = load_focus_text(base)
     from framework.onboarding import estate as _estate  # local: import-light
     derived = _estate.load_estate(base)
     usable, _reason = _estate.estate_is_usable(
         derived, (answers.get("cabinet") or {}).get("id"))
     estate = derived if usable else None
-    cards = propose_outcome_cards(answers, focus, estate=estate)
+    recall = probe_recall(answers, focus, estate=estate, source=source,
+                          root=base)
+    cards = propose_outcome_cards(answers, focus, estate=estate, recall=recall)
     if not cards:
-        return {"status": "no-cards", "path": None, "cards": 0}
+        return {"status": "no-cards", "path": None, "cards": 0, "recall": recall}
     res = write_proposals(cards, base, answers=answers, now=now,
                           focus_present=focus is not None,
-                          estate_present=estate is not None)
-    return {"status": res["status"], "path": res["path"], "cards": len(cards)}
+                          estate_present=estate is not None,
+                          recall_present=bool(recall.get("subjects")))
+    return {"status": res["status"], "path": res["path"], "cards": len(cards),
+            "recall": recall}
 
 
 # ---------------------------------------------------------------------------
@@ -845,10 +1311,17 @@ def _load_proposal_rows(base: Path) -> list[dict]:
     return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
 
 
-def genesis_intake_items(root: Path | None = None, now: str | None = None) -> list[dict]:
-    """Read the genesis surfaces (proposals file, focus letter, research brief)
-    into canonical intake items for ``composer.compose``. File reads only —
-    no Redis, no network. Honest empties: absent surfaces yield NO items.
+def genesis_intake_items(root: Path | None = None, now: str | None = None, *,
+                         source=None) -> list[dict]:
+    """Read the genesis surfaces (proposals file, focus letter, research brief,
+    derived estate, RECALL) into canonical intake items for
+    ``composer.compose``. Honest empties: absent surfaces yield NO items.
+
+    RECALL (2026-07-28) is the one surface here that is not a file read: it
+    asks the deployment's bound seam what it holds, and reports the answer —
+    live, unbound, or not consulted — with the citations any card claims. The
+    probe is root-guarded and kill-switchable (``probe_recall``); ``source``
+    is its test seam.
 
     When (and only when) a real genesis briefing is rendering — i.e. at least
     one surface produced an item — ONE extra ``genesis-contribute`` FYI card
@@ -856,6 +1329,7 @@ def genesis_intake_items(root: Path | None = None, now: str | None = None) -> li
     asked once at genesis and never again."""
     base = Path(root) if root else cabinet_root()
     ts = _utc_now_iso(now)
+    focus_text = load_focus_text(base)
     items: list[dict] = []
 
     proposal_rows = _load_proposal_rows(base)
@@ -865,13 +1339,18 @@ def genesis_intake_items(root: Path | None = None, now: str | None = None) -> li
             continue
         # LITERAL COUPLING: cabinet/scripts/first-briefing.sh's receipt gate
         # greps 'Proposed outcome:' — reword BOTH sides in the same commit.
+        refs = [str(r) for r in (row.get("recall_refs") or []) if str(r).strip()]
         summary = (
             f"📜 Proposed outcome: {name}\n"
             f"WHAT: {row.get('what') or '—'}\n"
             f"WHY: {row.get('why') or '—'}\n"
             f"PROOF-expected: {row.get('proof_expected') or '—'}\n"
-            f"Status: draft — propose-only, captain_ratified: false "
-            f"(draft row: {PROPOSALS_REL}, id: {row.get('id') or '?'})"
+            # The operator can open every one of these. A card citing nothing
+            # checkable is worse than no card, so the refs ride the card body
+            # rather than sitting only in the staging file.
+            + (f"FROM YOUR NOTES: {', '.join(refs)}\n" if refs else "")
+            + f"Status: draft — propose-only, captain_ratified: false "
+              f"(draft row: {PROPOSALS_REL}, id: {row.get('id') or '?'})"
         )
         items.append({
             "source": "onboarding-genesis", "kind": "outcome-proposal",
@@ -944,6 +1423,72 @@ def genesis_intake_items(root: Path | None = None, now: str | None = None) -> li
                          "it: the proposals on file were written before this "
                          "estate existed. Re-run genesis to derive cards "
                          "from what was read.")},
+        })
+
+    # RECALL PROVENANCE — the surface that made the false positive visible.
+    # Same discipline as the estate item above: state what the binding IS, what
+    # it answered, and whether any card on file actually derives from it. The
+    # negative cases are the load-bearing ones: a briefing that says nothing
+    # about recall is indistinguishable from one whose recall was answering out
+    # of the framework's own shipped documentation, which is what a personal
+    # hatch did until 2026-07-28.
+    answers_for_recall = load_answers(base)
+    if answers_for_recall:
+        recall = probe_recall(answers_for_recall, focus_text,
+                              estate=(derived if derived.get("schema")
+                                      == _estate.SCHEMA else None),
+                              source=source, root=base)
+        from_recall = sum(1 for r in proposal_rows if r.get("recall_refs"))
+        cited = sorted({str(ref) for r in proposal_rows
+                        for ref in (r.get("recall_refs") or []) if str(ref)})
+        state = recall_state(recall)          # "" ⇒ live (see recall_state)
+        if state:
+            body = (f"🧠 Recall: {state}. Adapter: "
+                    f"{recall.get('adapter') or 'unresolved'} ({SOURCES_REL}).")
+            why = ("nothing above cites your own material, and that has to be "
+                   "SAID. Until 2026-07-28 an undeclared folder silently "
+                   "resolved to this repo's own vault/ docs and reported "
+                   "working recall — so a briefing that stays QUIET about "
+                   "recall is exactly what a wrong answer looked like, "
+                   "whatever the reason for the silence is")
+        else:
+            answered = recall.get("subjects") or []
+            body = (f"🧠 Recall: live — {recall.get('adapter')} answered "
+                    f"{recall.get('hits_total')} hit(s) across "
+                    f"{len(answered)} of "
+                    f"{len(recall.get('probes') or [])} subject(s) "
+                    f"({', '.join(recall.get('probes') or []) or 'none derived'})."
+                    + (f" Cited above: {', '.join(cited)}." if cited else "")
+                    # A probe that failed mid-sweep still leaves the seam
+                    # available, so the live line would otherwise report a
+                    # partial answer as a complete one.
+                    + (f" One or more probes failed: {recall['error']}."
+                       if recall.get("error") else ""))
+            # THREE live sub-states, and conflating the last two is the same
+            # unearned-claim defect one surface over. Found by a real
+            # clean-room hatch 2026-07-28: an org box whose backend held
+            # nothing was told "the proposals on file were written before this
+            # run", blaming an ORDERING problem for an EMPTY one. Nothing is
+            # cited because there was nothing to cite, and the honest sentence
+            # is the one that says so.
+            if from_recall:
+                why = ("what your own material already held — the cards above "
+                       "are composed from it, every claim citing a file and a "
+                       "date you can open")
+            elif not answered:
+                why = ("recall is bound and reachable but held NOTHING on the "
+                       "subjects you declared, so no card cites it. That is an "
+                       "empty answer, not a stale one — nothing above is "
+                       "waiting on a re-run")
+            else:
+                why = ("recall answered, but NO card above derives from it: "
+                       "the proposals on file were written before this run. "
+                       "Re-run genesis to compose cards from what it holds")
+        items.append({
+            "source": "onboarding-genesis", "kind": "genesis-recall",
+            "ts": ts, "urgency_tier": "fyi",
+            "payload": {"summary": body},
+            "context": {"why": why},
         })
 
     if (base / FOCUS_REL).is_file():
