@@ -21,7 +21,22 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: d85d407f5047ea536c7441d652d92fe459cc9d70fa1820ad797a7fa5aaab289c
+Reviewed-Scope-Digest: d6c8fb54ae3c64a9d9d0baa8547139d7543b9740a9b4b2fc74270962c651c2ef
+
+(MERGE RE-BIND, 2026-07-28, `feat/connector-registry` x `fix/evidence-append-quadratic`: both sides re-bound this line and both moved `cabinet/config/cognitive-architecture-contract.yml` — this branch a `temporary_allowances` row for the connector registry, master the evidence recorder's own budget note. git auto-merged the allowance list with no contested byte. Neither recorded digest describes the merged tree, so the value above is RECOMPUTED over it. Every note from both sides is kept below, none superseded. NO COG-4 implementation byte moved on either side: this branch's only digest-bound path is the contract file, verified by intersecting `resolve_scope()` with `git diff --name-only 6ec81460 HEAD`.)
+
+(RE-BOUND AGAIN 2026-07-28 at the merge of `origin/master` 3126cfac into
+`feat/connector-registry` — the connector-registry landing moved
+`cabinet/config/cognitive-architecture-contract.yml`, its ONLY in-scope path
+(one `temporary_allowances` row, +566 non-comment lines; no maximum raised, no
+bijection class touched), and master had re-bound this line in the merge
+described below, so neither recorded value survives. The value above is
+RECOMPUTED over the merged tree. Verified by intersecting
+`git diff --name-only 6ec81460 HEAD` with the tool's resolved scope: the
+contract file is the only digest-bound path this branch touched, and NO COG-4
+implementation byte moved — no organ, no scheduler surface, no serve surface,
+no fixture, no boundary row. Nothing below was re-reviewed, because no reviewed
+byte moved. The prior re-bind's own note follows verbatim.)
 
 (MERGE RE-BIND, 2026-07-28, `fix/evidence-append-quadratic` x `iso-port-composition`:
 PR #223 landed on master while this branch sat green in CI, and BOTH sides had
@@ -69,7 +84,6 @@ compatibility battery runs in a worktree detached at the pinned anchor
 the bytes it runs; that same battery at HEAD, which
 `verify-cognitive-phase4.sh` runs, is green. The phase-4 findings below are
 unaffected.)
-
 (RE-BOUND 2026-07-28 at the merge of `origin/master` dd01ce8f into
 `iso-port-composition` — the merge that unblocked PR #223, which had been
 CONFLICTING for days and was therefore running NO CI at all. Both sides of the

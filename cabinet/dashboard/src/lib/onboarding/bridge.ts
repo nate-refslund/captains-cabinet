@@ -23,6 +23,7 @@ const MAX_OUTPUT_BYTES = 2 * 1024 * 1024
 
 const ACTIONS = new Set([
   'propose_window',
+  'answer_seed',
   'ratify_charter',
   'continue',
   'pause',
@@ -146,6 +147,11 @@ export function applyOnboardingAction(
   }
   if (request.purpose && request.purpose.length > 300) {
     throw new OnboardingBridgeError('purpose_too_long', 'Keep the first purpose under 300 characters.')
+  }
+  // The core bounds the seed too (it is what persists it); this is the cheap
+  // outer bound so a paste never crosses the process boundary at all.
+  if (request.seed && request.seed.length > 2_000) {
+    throw new OnboardingBridgeError('seed_too_long', 'A sentence or two is enough.')
   }
   return run<OnboardingResponse>('act', {
     ...request,
