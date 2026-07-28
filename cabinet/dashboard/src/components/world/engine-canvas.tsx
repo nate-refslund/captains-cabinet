@@ -1671,7 +1671,8 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         return officerSlots(gh, Object.keys(p.officers).sort(), p.cutaway.openId === gh?.id)
       }
 
-      /** One pooled character sprite (LimeZu Premade sheet frame). */
+      /** One pooled character sprite (a CHARACTER_DIR sheet frame — the
+       * owned actor_officer family since the 2026-07-28 flip). */
       function characterSprite(
         key: string,
         slug: string,
