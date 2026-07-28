@@ -21,7 +21,46 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: ae050c1ab051bf8c4b0129c120680fe17a2bacb46c6b1eaddffd506359706713
+Reviewed-Scope-Digest: ebbdcc3f771afef7ffddc7558ea64a06bf3f8fa782cf14b5dd129891f796ca15
+
+(MERGE RE-BIND, 2026-07-28, `fix/probe-truncation-unearned-negative` x master
+`2b3de03d` (PR #261). Both sides had re-bound this line and both moved
+`cabinet/config/cognitive-architecture-contract.yml`, so the two digests
+conflicted textually: neither describes the merged tree and the value above is
+RECOMPUTED over it. Both note sets are kept in full below, none superseded.
+This branch's own row (`onboarding-probe-truncation`) also moved `additional:
+13` -> `28` in this merge, for +15 non-comment lines in `_name_matches` fixing
+the boundary defect its hostile review found: `truncated` meant "reached the
+cap", not "something remained", so a folder of exactly `MAX_PROBE_HITS`
+matching files — read to its last entry — was disclosed to the operator as an
+unfinished search. Master's side moved `briefing-consumes-recall` 456 -> 491.
+Measured on the merged tree: 73016 non-comment lines against master `2b3de03d`
+at 72988, delta 28. No budget `maximum` raised, no expansion member, no
+bijection class, and NO COG-4 implementation byte moved on either side —
+the contract file remains this branch's only digest-bound path.)
+
+(MERGE RE-BIND, 2026-07-28, `fix/probe-truncation-unearned-negative` x master
+`d8ab0308` (PR #255). Both sides re-bound this line and both moved
+`cabinet/config/cognitive-architecture-contract.yml` — this branch one
+`temporary_allowances` row (`onboarding-probe-truncation`, +13 non-comment lines),
+master its own (`briefing-consumes-recall`, +456). git auto-merged the allowance
+list with no contested byte. Neither recorded digest describes the merged tree, so
+the value above is RECOMPUTED over it. No budget `maximum`, no existing
+`additional`, no expansion member and no bijection class changed on either side,
+and NO COG-4 implementation byte moved. Every note from both sides is kept below,
+none superseded.)
+
+(RE-BOUND 2026-07-28 by `fix/probe-truncation-unearned-negative`, branched from
+master `a0cd4bc1`. Its ONLY digest-bound path is
+`cabinet/config/cognitive-architecture-contract.yml` — one `temporary_allowances`
+row, +13 framework production non-comment lines, no `maximum` raised, no
+bijection class touched, no expansion registered. Verified by intersecting
+`git diff --name-only a0cd4bc1 HEAD` with the tool's resolved scope: the contract
+file is the only intersection, and NO COG-4 implementation byte moved — no organ,
+no scheduler surface, no serve surface, no fixture, no boundary row. The other
+files in the change are `framework/onboarding/*` and `cabinet/dashboard/*`, none
+of them in scope. Nothing below was re-reviewed, because no reviewed byte moved.
+Every prior note is kept verbatim, none superseded.)
 
 (RE-BOUND 2026-07-28 by `fix/recall-card-claims-its-own-cites`, merged with
 master `f224e884` (PR #259). Its ONLY digest-bound path is

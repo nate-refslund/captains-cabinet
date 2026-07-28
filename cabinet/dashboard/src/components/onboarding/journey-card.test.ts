@@ -473,6 +473,41 @@ describe('rendered component — accessible shell', () => {
     expect(html).toContain('no egress in the onboarding core')
   })
 
+  // A probe that STOPPED read part of the folder, so "nothing matched by name"
+  // beside it is a claim about somewhere it never reached. The core marks the
+  // row `truncated`; rendering the row without it is the unearned negative on
+  // the one surface the operator actually reads.
+  it('says when a search stopped at its limit instead of implying it finished', () => {
+    const fixture = journeyFixture('welcome')
+    fixture.card.entry = {
+      schema: 'cabinet.onboarding-entry-plan/v1',
+      mode: 'seeded',
+      opening_move: 'seed_then_discover',
+      grants: { connectors: [], local_files: true, web: false },
+      seed_question: 'What do you do, and how can I best serve you?',
+      questions: [],
+      discovery: {
+        terms: ['payments'],
+        probes: [{ kind: 'local_name_match', pattern: '*payments*' }],
+        executable: true,
+        executed: {
+          schema: 'cabinet.onboarding-probe-result/v1',
+          executed: [
+            { kind: 'local_name_match', pattern: '*payments*', matches: [], truncated: true },
+          ],
+          deferred: [],
+          complete: false,
+        },
+      },
+      cannot_know: [],
+      next_actions: [{ action: 'propose_window', label: 'Choose a folder I may read' }],
+    }
+    scriptState({ journey: fixture })
+    const html = render()
+    expect(html).toContain('nothing matched by name')
+    expect(html).toContain('stopped at my limit before the end of the folder')
+  })
+
   it('renders no residual-question block when the card carries no entry plan', () => {
     scriptState({ journey: journeyFixture('charter_pending') })
     expect(render()).not.toContain('What I cannot work out for myself')

@@ -505,18 +505,127 @@ def test_a_probe_pattern_from_operator_text_can_never_become_a_traversal(tmp_pat
 
 
 def test_the_executor_never_matches_a_sensitive_or_hidden_or_symlinked_file(tmp_path):
+    """Three separate refusals, and each fixture may trip only ITS OWN one.
+
+    The first version of this arm named every fixture ``*salary*``, so the
+    sensitivity refusal alone answered for all three and deleting either the
+    hidden-name guard or the symlink guard left it green: a test naming three
+    controls while pinning one. Each name below is refusable on exactly one
+    ground, and the plain file proves the probe still matches when nothing
+    refuses — otherwise an executor that returned ``[]`` unconditionally would
+    pass this too.
+    """
     source = tmp_path / "window"
     (source / "hidden").mkdir(parents=True)
-    (source / "salary-2026.csv").write_text("a\n", encoding="utf-8")
-    (source / ".salary-hidden.md").write_text("a\n", encoding="utf-8")
-    (source / "salary-notes.md").write_text("a\n", encoding="utf-8")
-    outside = tmp_path / "elsewhere.md"
+    (source / "plain-notes.md").write_text("a\n", encoding="utf-8")
+    (source / ".dotted-notes.md").write_text("a\n", encoding="utf-8")  # hidden only
+    (source / "salary-notes.md").write_text("a\n", encoding="utf-8")  # sensitive only
+    outside = tmp_path / "elsewhere-notes.md"
     outside.write_text("a\n", encoding="utf-8")
-    (source / "salary-link.md").symlink_to(outside)
+    (source / "linked-notes.md").symlink_to(outside)  # symlink only
 
-    result = journey._execute_probes(source, [{"kind": "local_name_match", "pattern": "*salary*"}])
+    result = journey._execute_probes(source, [{"kind": "local_name_match", "pattern": "*notes*"}])
     matches = result["executed"][0]["matches"]
-    assert matches == [], f"the executor surfaced a refused path: {matches}"
+    assert matches == ["plain-notes.md"], f"the executor surfaced a refused path: {matches}"
+
+
+# ── A partial search is never reported as a whole one ────────────────────────
+
+
+def test_a_search_that_stopped_at_its_limit_is_not_a_complete_run(tmp_path):
+    """``complete`` read only ``deferred``, so a truncated probe passed as whole.
+
+    ``_name_matches`` already returned ``truncated`` and already recorded it per
+    probe; nothing consulted it. A window with more matches than
+    ``MAX_PROBE_HITS`` therefore reported ``complete: True`` and an operator
+    sentence naming a hit count that was the CAP, not the count.
+    """
+    source = tmp_path / "window"
+    source.mkdir()
+    for index in range(journey.MAX_PROBE_HITS + 5):
+        (source / f"payments-{index:02d}.md").write_text("a\n", encoding="utf-8")
+
+    result = journey._execute_probes(
+        source, [{"kind": "local_name_match", "pattern": "*payments*"}]
+    )
+    assert result["executed"][0]["truncated"] is True
+    assert len(result["executed"][0]["matches"]) == journey.MAX_PROBE_HITS
+    assert result["deferred"] == [], "nothing was deferred — truncation is the only defect here"
+    assert result["complete"] is False, (
+        "a probe that stopped partway through the window has not searched it"
+    )
+    assert "stopped at my limit" in journey._discovery_note(result)
+
+
+def test_a_truncated_search_never_tells_the_operator_nothing_is_there(tmp_path, monkeypatch):
+    """The unearned negative, in the smallest frame this surface has.
+
+    Zero hits plus an early stop rendered as "I went looking in that folder and
+    nothing matched by name" — a claim about a folder the probe never finished
+    reading, on a card whose whole purpose is to say what it does not know. The
+    entry cap is shrunk rather than simulated: the truncation below is produced
+    by the real walk, not by a fixture hand-written in the shape being asserted.
+    """
+    monkeypatch.setattr(journey, "MAX_PROBE_ENTRIES", 2)
+    source = tmp_path / "window"
+    source.mkdir()
+    for index in range(6):
+        (source / f"unrelated-{index}.md").write_text("a\n", encoding="utf-8")
+
+    result = journey._execute_probes(
+        source, [{"kind": "local_name_match", "pattern": "*payments*"}]
+    )
+    assert result["executed"][0]["matches"] == []
+    assert result["executed"][0]["truncated"] is True
+    assert result["complete"] is False
+    note = journey._discovery_note(result)
+    assert "nothing matched by name" in note, "the negative itself still belongs on the card"
+    assert "stopped at my limit before the end of that folder" in note, (
+        "a negative from an unfinished search must carry that it was unfinished"
+    )
+
+
+def test_a_search_that_read_the_whole_folder_is_not_called_truncated(tmp_path):
+    """THE DEGENERATE END OF THE NEW SENSOR, and it was failing — found at this
+    branch's review, 2026-07-28, reproduced before the fix.
+
+    ``_name_matches`` returned ``truncated`` on ``len(hits) >= MAX_PROBE_HITS``,
+    i.e. on reaching the cap rather than on anything remaining. A folder holding
+    EXACTLY ``MAX_PROBE_HITS`` matching files and nothing else is walked to its
+    last entry, and the operator was still told *"1 search(es) stopped at my
+    limit before the end of that folder, so this is what I saw and not what is
+    there"* with ``complete: false``. n=20 and n=21 were indistinguishable on
+    the card — a claim about a folder that was in fact read whole, shipped by
+    the very change that makes the flag operator-visible.
+
+    Both sides of the boundary are pinned here, because pinning only the
+    truncating side is what let the defect through: the arm above uses
+    ``MAX_PROBE_HITS + 5`` and can never see it."""
+    exact = tmp_path / "exact"
+    exact.mkdir()
+    for index in range(journey.MAX_PROBE_HITS):
+        (exact / f"payments-{index:02d}.md").write_text("a\n", encoding="utf-8")
+    result = journey._execute_probes(
+        exact, [{"kind": "local_name_match", "pattern": "*payments*"}])
+    assert len(result["executed"][0]["matches"]) == journey.MAX_PROBE_HITS
+    assert result["executed"][0]["truncated"] is False, (
+        "every entry in that folder was read; nothing remained to stop at")
+    assert result["complete"] is True
+    assert "stopped at my limit" not in journey._discovery_note(result), (
+        "the card claimed an unfinished search over a folder it finished")
+
+    one_more = tmp_path / "one-more"
+    one_more.mkdir()
+    for index in range(journey.MAX_PROBE_HITS + 1):
+        (one_more / f"payments-{index:02d}.md").write_text("a\n", encoding="utf-8")
+    result = journey._execute_probes(
+        one_more, [{"kind": "local_name_match", "pattern": "*payments*"}])
+    assert result["executed"][0]["truncated"] is True, (
+        "one file past the cap IS something remaining, and must be disclosed")
+    assert len(result["executed"][0]["matches"]) == journey.MAX_PROBE_HITS, (
+        "the extra hit exists to detect truncation, never to reach a caller")
+    assert result["complete"] is False
+    assert "stopped at my limit" in journey._discovery_note(result)
 
 
 def test_a_probe_class_that_did_not_run_is_reported_never_dropped(tmp_path):
