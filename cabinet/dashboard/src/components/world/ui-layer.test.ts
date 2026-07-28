@@ -13,9 +13,11 @@
  *     wears the pixel frame.
  *  D. LEVER CEREMONY: the lever uses the tick-driven two-tap machine, pins
  *     actuation behind canActuate, and prints the honest CLI fallback.
- *  E. LIMEZU CREDIT: both world shells render the always-visible LimeZu
- *     art credit in the bottom bar (Captain-ratified license condition,
- *     2026-07-12) — plain text, never behind the legend toggle.
+ *  E. LIMEZU CREDIT: both world shells render the LimeZu art credit in the
+ *     always-on bottom bar (Captain-ratified license condition, 2026-07-12) —
+ *     plain text, never behind the legend toggle — and render it ONLY where
+ *     LimeZu pixels are measured on screen (2026-07-28: the owned cast made
+ *     "always visible" a false claim about our own art).
  */
 import { describe, expect, it } from 'vitest'
 import fs from 'fs'
@@ -132,11 +134,51 @@ describe('E. LimeZu art credit (ratified license condition, 2026-07-12)', () => 
     ['engine-client', ['components', 'world', 'engine-client.tsx']],
     ['world-client', ['components', 'world', 'world-client.tsx']],
   ] as const
-  it('both world shells carry the exact credit line, unconditionally rendered', () => {
+  it('both world shells carry the exact credit line', () => {
     for (const [name, rel] of SHELLS) {
       const text = src(...rel)
       expect(text, name).toMatch(/data-world-credit/)
       expect(text, name).toMatch(/Art: LimeZu — limezu\.itch\.io/)
+    }
+  })
+  /**
+   * SHOWN WHERE IT IS OWED, ABSENT WHERE IT IS NOT (2026-07-28). The line used
+   * to render unconditionally, and this suite pinned it that way — which was
+   * correct while every frame was LimeZu and became false attribution of our
+   * own art the day the cast flipped to the owned sheets under iso.
+   *
+   * This arm is STATIC (the suite runs in node with no DOM), so it pins the
+   * WIRING: the decision comes from lib/world/credit.ts and the span is inside
+   * a conditional on its result. The DECISION itself — shown/absent, in both
+   * directions, against the real manifest — is tested behaviourally in
+   * lib/world/credit.test.ts. Splitting it that way is deliberate: a grep can
+   * prove the shell asks the predicate, and only the predicate's own suite can
+   * prove the predicate answers correctly.
+   */
+  it('the credit is CONDITIONAL on measured LimeZu art, in both shells', () => {
+    for (const [name, rel] of SHELLS) {
+      const text = src(...rel)
+      // asks the one authority…
+      expect(text, name).toMatch(/from '@\/lib\/world\/credit'/)
+      expect(text, name).toMatch(/limezuSurfaces\(/)
+      // …and renders the span only when it answers yes
+      expect(text, name).toMatch(/\{creditSurfaces\.length > 0 && \(/)
+      const gateAt = text.indexOf('{creditSurfaces.length > 0 && (')
+      const creditAt = text.indexOf('data-world-credit')
+      expect(gateAt, name).toBeGreaterThan(-1)
+      expect(gateAt, name).toBeLessThan(creditAt)
+      // the surfaces are named on the element, so a live page can be asked
+      // WHY the line is there without reading the source
+      expect(text, name).toMatch(/data-credit-surfaces=/)
+    }
+  })
+  it('the iso arm can be empty: neither shell hardcodes a non-empty surface list', () => {
+    for (const [name, rel] of SHELLS) {
+      const text = src(...rel)
+      // No `creditSurfaces = ['...']` literal, and no `|| true` style escape —
+      // the value must come from the predicate call.
+      expect(text, name).not.toMatch(/creditSurfaces\s*=\s*\[\s*'/)
+      expect(text, name).not.toMatch(/creditSurfaces\.length > 0 \|\|/)
     }
   })
   it('the credit sits in the always-on bottom bar, not inside the legendOpen panel', () => {

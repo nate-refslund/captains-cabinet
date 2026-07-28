@@ -21,7 +21,17 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: e957036e779f8f36454f0fb581c3c65ba590e5eaf9e15074a4df39efbaad0a9e
+Reviewed-Scope-Digest: 076350932cb17e4bf194dfd40122160e9bd4494a410ebeeea4cf7f244e2ac390
+
+(MERGE RE-BIND, 2026-07-28, `fix/hostile-input-red-team` x master `b4859c55`.
+The second such merge on this branch: master re-bound this line again for the
+onboarding-derivation landing, which also appended a `temporary_allowances` row
+to `cabinet/config/cognitive-architecture-contract.yml`. BOTH rows are kept in
+the merged contract — each pays for its own lines and the census re-reads PASS
+at the summed level (73081) — and neither side's digest describes the merged
+tree, so the value above is RECOMPUTED over it. Master's superseded value was
+`3c8c1f7f60bd32a56e831438d768ea1b760b8f148353e65aba3c76c9b6d50a79`. No COG-4
+implementation byte moved on either side; nothing below was re-reviewed.)
 
 (MERGE RE-BIND, 2026-07-28, `fix/hostile-input-red-team` x master `4148d1e6`.
 Both sides re-bound this line and both moved paths inside this scope set — the
