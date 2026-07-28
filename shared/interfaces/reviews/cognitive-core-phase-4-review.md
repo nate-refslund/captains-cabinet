@@ -21,7 +21,28 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 338e6f083e8ff737bcc0716ba44ee3c1fb9ed372e87d1ba4f3501746fe62f0e8
+Reviewed-Scope-Digest: 9054929fea82f3b2afb4b58849ae041d20570ca2d533a381e78401da9cc24f18
+
+(MERGE RE-BIND, 2026-07-28, `fix/briefing-consumes-recall` x master
+d67fba97: master landed PR #250 while this branch sat green locally, and
+BOTH sides had re-bound this line — `338e6f08…` here, `d85d407f…` on
+master. Neither describes the merged tree, so the value above is
+RECOMPUTED over it rather than picked from a parent; every note from both
+sides is KEPT below, none superseded. The two sides' in-scope deltas are
+disjoint and were computed, not read off the diff: intersecting
+`resolve_scope()` with `git diff --name-only` on each side gives
+`cabinet/config/cognitive-architecture-contract.yml` on BOTH — but on
+DISJOINT rows (master added its own budget movements; this branch appended
+one `temporary_allowances` row, `briefing-consumes-recall`, +456 on
+`framework_production_noncomment_lines`), and git auto-merged them with no
+contested byte. The delta was RE-MEASURED against the new base rather than
+carried: 71805 -> 72261 on 6ec81460 and 71931 -> 72387 on d67fba97, the
+same 456 both times, which is the check that the number measures the unit
+and not the merge. No budget `maximum`, no existing `additional`, no
+expansion member and no bijection class changed —
+`framework_production_modules` stays 247, zero new modules. No COG-4
+implementation byte moved on either side.)
+
 
 (RE-BOUND 2026-07-28 at the landing of `fix/briefing-consumes-recall`,
 same commit as the change that moved the bytes. Prior digest:
@@ -37,6 +58,79 @@ census is back at observed == maximum so the ratchet still bites. No COG-4
 implementation byte changed; `framework/authority/classifier.py` remains in
 the manifest's `must_remain_unchanged` block against the pinned phase
 anchor. The phase-4 findings below are unaffected.)
+
+(MERGE RE-BIND, 2026-07-28, `fix/evidence-append-quadratic` x `iso-port-composition`:
+PR #223 landed on master while this branch sat green in CI, and BOTH sides had
+re-bound this line — `5435fddb…` here, `eebcf40b…` on master. Neither describes
+the merged tree, so the value above is RECOMPUTED over it rather than picked
+from a parent; every note from both sides is kept below, none superseded. The
+two sides' in-scope deltas are disjoint and were computed, not read off the
+diff: intersecting `resolve_scope()` with `git diff --name-only HEAD
+origin/master` and with this branch's own changed paths gives
+`cabinet/config/cognitive-architecture-contract.yml` (this branch's allowance
+row) and `cabinet/scripts/egg-export-manifest.txt` (master's iso-art export
+rows) — different files, no contested byte, git auto-merged both. No COG-4
+implementation byte moved on either side.)
+
+(MERGE RE-BIND, 2026-07-28, `fix/evidence-append-quadratic`: origin/master's
+`feat/onboarding-ordering-inversion` landing re-bound this same digest while this
+branch was in flight. Two concurrent landings cannot both be right about one
+number, so it is RECOMPUTED over the MERGED committed tree rather than either
+side being picked — a hand-picked digest from either parent records a tree that
+never existed. Both parents moved the SAME one scope file,
+`cabinet/config/cognitive-architecture-contract.yml`, and their edits are
+disjoint rows; both re-bind notes are kept below.)
+
+(RE-BOUND 2026-07-28, `fix/evidence-append-quadratic`, the re-bind-at-landing
+procedure this artifact prescribes. Prior digest: `deca1533428d8df8…`. The moved
+file in scope is the ONE budget surface again:
+`cabinet/config/cognitive-architecture-contract.yml` gains an
+`evidence-append-quadratic` allowance row on
+`framework_production_noncomment_lines` (+126, exact measured running total
+71277 vs 71151) for a fix to `framework/evidence/verifier.py` and
+`recorder.py` — the append path was O(n) in the trial and O(n^2) overall.
+MECHANICALLY VERIFIED rather than asserted: `resolve_scope()` was intersected
+with `git diff --cached --name-only` over this landing and the contract file is
+the ONLY digest-bound path it touches; the intersection with the manifest's DIR
+entries is empty too. The other seven paths are the evidence verifier and
+recorder, their tests, `framework/authority/tests/test_needs.py`,
+`cabinet/scripts/governance-review.py` (one renamed-helper doc reference) and
+one dated doc correction — none in COG-4 scope. No organ, no scheduler surface,
+no serve surface, no COG-4 entry point, no budget `maximum` and no `additional`
+on any pre-existing row changed. `framework/authority/classifier.py` remains in
+the manifest's `must_remain_unchanged` block against the pinned phase anchor,
+which the rollback rehearsal re-checks. The rehearsal's nine-directory
+compatibility battery runs in a worktree detached at the pinned anchor
+`c58d4a57`, so the edit to `framework/authority/tests/test_needs.py` is not in
+the bytes it runs; that same battery at HEAD, which
+`verify-cognitive-phase4.sh` runs, is green. The phase-4 findings below are
+unaffected.)
+
+(RE-BOUND 2026-07-28 at the merge of `origin/master` dd01ce8f into
+`iso-port-composition` — the merge that unblocked PR #223, which had been
+CONFLICTING for days and was therefore running NO CI at all. Both sides of the
+merge had re-bound this line, so neither recorded value can be carried: the
+branch's `dbdf515c…` and master's `fa66d3d0…` are each a digest over a tree that
+no longer exists. The value above is RECOMPUTED over the merged tree and folded
+into the merge commit itself.
+
+Exactly TWO in-scope paths differ across the merge, and the delta is disjoint by
+side — computed, not read off the diff, by intersecting
+`git diff --name-only HEAD origin/master` with the tool's resolved 85-entry
+scope: `cabinet/config/cognitive-architecture-contract.yml` moved on MASTER only
+(the branch never touched it — the two allowance/budget landings its own notes
+below describe), and `cabinet/scripts/egg-export-manifest.txt` moved on the
+BRANCH only (master never touched it — the `delete`/`expect-absent` rows that
+keep the org's commissioned iso art out of the public export). Neither side
+contested a byte of the other's, so git auto-merged both and no row of either was
+dropped. NO COG-4 implementation byte changed on either side: no organ, no
+scheduler surface, no serve surface, no fixture, no boundary row, and
+`framework/authority/classifier.py` remains in the manifest's
+`must_remain_unchanged` block against the pinned phase anchor. Only two files in
+the whole merge were touched by BOTH sides — this artifact and
+`.github/workflows/cabinet-ci.yml`, whose four added steps sit in four disjoint
+regions and all four survive in the merged file. The phase-4 findings below are
+unaffected, and nothing here was re-reviewed, because no reviewed byte moved.)
 
 (RE-BOUND 2026-07-28 at the landing of `feat/onboarding-ordering-inversion`,
 same commit as the change that moved the bytes. Prior digest:
@@ -868,3 +962,57 @@ expansion rows are kept (verified by set-difference against
 version wholesale — its bijection assertion is strictly stronger than the
 "no unregistered surplus" form this branch had written for the same defect, and
 it additionally catches a row that outlives its member.
+
+---
+
+## Re-bind 2026-07-27 (merge of origin/master into iso-port-composition)
+
+The gate blocked correctly — reviewed bytes were not tested bytes — and this records why
+the digest moved rather than quietly restamping it.
+
+Three of the 85 in-scope paths changed, and NONE of them by this branch. All three are
+master's own commits arriving through the merge, each already reviewed on its own PR:
+
+  cabinet/config/cognitive-architecture-contract.yml  — the expansion-gate set pins
+      (D3, 2026-07-27), adding budget arms for the surfaces the mass budgets are blind to
+  cabinet/scripts/egg-export-manifest.txt             — the recipient-exclusions and
+      expansion-registry rows
+  cabinet/scripts/tests/test_egg_export.py            — the matching assertion for the
+      recipient-exclusions twin
+
+Nothing in this branch's own work touches the COG-4 scope: it is the world layout, the
+renderer and the check harness. The digest is re-anchored over the merged tree so the
+binding again means "these exact bytes were reviewed", with the delta named above rather
+than absorbed silently.
+
+Recorded digest: dbdf515ca91c7f4c9d618b9029af44e8cb02e626123738c4df230dabf7f90300
+Previous:        9c1a8082d1d6348f345e3aad1faee87fef59e98d3538b08fe9c1f130dce5d68d
+
+SUPERSEDED 2026-07-28 — the `dbdf515c…` above is HISTORY, not the live binding. It is
+kept because it records what was reviewed at that merge; the live value is the single
+`Reviewed-Scope-Digest:` line at the top of this file, recomputed over the 2026-07-28
+merge of `origin/master` dd01ce8f. Both this branch's note and the master-line notes
+above it survive that merge verbatim: they describe different landings and neither is
+the other's restamp.
+
+---
+
+## Re-bind 2026-07-28 (merge of origin/master dd01ce8f into iso-port-composition)
+
+PR #223 had been CONFLICTING for days. An unmergeable PR gets no checks at all, so this
+artifact's own gate — and every other gate on the branch — had been silently OFF the
+whole time; the merge is what turns them back on. That is the finding worth recording:
+the digest did not drift unnoticed, it went UNCHECKED, which is the worse failure of the
+two and is invisible from a green-looking PR page.
+
+The conflict here was in this file only, and it was two append-only note histories
+colliding, not a contested byte. Resolution kept BOTH sides in full — verified by
+`grep -c` for each side's marker strings in the merged file, so the claim is a count and
+not a reading — and the digest was RECOMPUTED over the merged tree rather than either
+side's value being carried, since both sides' values are digests over trees that no
+longer exist.
+
+The in-scope delta and why it is mechanical are stated with the digest at the top of
+this file. Nothing was re-reviewed and no prose finding was edited, because no reviewed
+byte moved: the branch's entire diff is the world layout, the renderer, the hit test and
+the check harness, none of which is in the COG-4 scope.

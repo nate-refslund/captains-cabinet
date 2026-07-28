@@ -210,4 +210,39 @@ describe('world CI ratchets', () => {
       expect(client, name).toMatch(/data-world-census-badge/)
     }
   })
+  it('10. ONE tile size in the ENGINE path — no sixth copy of the transform', () => {
+    // The world→screen transform existed FIVE times and disagreed with itself
+    // (engine-canvas camera, engine-canvas hit-test, engine-client pan,
+    // engine-client DOM-label project, lod.ts's private TILE_PX). They now go
+    // through lib/world/projection.ts. This is the ratchet that stops a sixth
+    // appearing while the iso port is being written: no file on the engine path
+    // may declare a tile constant of its own, and none may import the legacy
+    // wardroom TILE.
+    //
+    // The LEGACY three-scene shell (world-canvas/world-client/outdoor-canvas)
+    // is out of scope ON PURPOSE — it is scheduled for deletion with ?legacy=1
+    // and still speaks the wardroom layout's tile. Listing it here would force
+    // a change to code that is going away.
+    const ENGINE_PATH = [
+      path.join(DASH, 'src', 'components', 'world', 'engine-canvas.tsx'),
+      path.join(DASH, 'src', 'components', 'world', 'engine-client.tsx'),
+      path.join(DASH, 'src', 'lib', 'world', 'lod.ts'),
+      path.join(DASH, 'src', 'lib', 'world', 'iso-scene.ts'),
+      path.join(DASH, 'src', 'lib', 'world', 'iso-pack.ts'),
+    ]
+    for (const file of ENGINE_PATH) {
+      const src = read(file)
+      const name = path.basename(file)
+      expect(src, `${name} declares its own tile constant`).not.toMatch(
+        /(const|let)\s+(TILE|TILE_PX|TILE_SIZE)\s*=/
+      )
+      expect(src, `${name} imports the legacy wardroom TILE`).not.toMatch(
+        /import\s*\{[^}]*\bTILE\b[^}]*\}\s*from\s*['"][^'"]*world\/layout['"]/
+      )
+    }
+    // …and the kernel module really is where the constants live.
+    const proj = read(path.join(DASH, 'src', 'lib', 'world', 'projection.ts'))
+    expect(proj).toMatch(/export const TOPDOWN_TILE/)
+    expect(proj).toMatch(/export const ISO_TILE/)
+  })
 })

@@ -4,10 +4,14 @@ This module deliberately does not call the recorder's append or purge paths.
 It re-derives every hash, signature, sequence, previous-hash link, anchor, and
 purge-receipt signature from disk and returns bounded findings only.
 
-The one piece of state it maintains is its own signed anti-rollback watermark
-sidecar (``.verify-watermarks.json`` in the store root): a monotonic,
+The one piece of DURABLE state it maintains is its own signed anti-rollback
+watermark sidecar (``.verify-watermarks.json`` in the store root): a monotonic,
 HMAC-signed high-water mark of every trial's verified length and tip hash,
-keyed by hashed trial id so purge receipts stay content-free.  It never
+keyed by hashed trial id so purge receipts stay content-free.  It also keeps
+one in-process, non-durable memo of ledger prefixes it has already proved
+clean, pinned to the sha256 of exactly those bytes (see ``_verify_events``);
+that memo can make verification cheaper and never weaker, and a fresh process
+re-derives everything from disk.  It never
 mutates ledgers, anchors, controls, or receipts.  Residual limits, by design:
 deleting the sidecar (or restoring the whole store directory including it)
 resets the anti-rollback protection, because absence is not provable locally
@@ -23,11 +27,13 @@ import json
 import os
 import re
 import stat
+import threading
 import uuid
+from collections import OrderedDict
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, NamedTuple
 
 from .redaction import contains_secret_shape
 
@@ -104,6 +110,21 @@ def _object_signature(key: bytes, purpose: str, value: dict[str, Any]) -> str:
 
 def _trial_hash(trial_id: str) -> str:
     return hashlib.sha256(trial_id.encode("utf-8")).hexdigest()
+
+
+def _resolved(path: Path) -> Path:
+    """Absolute, symlink-free spelling, so a memo key names the store DIRECTORY
+    rather than the spelling used to reach it.
+
+    Hygiene, not the safety property: soundness rests entirely on the byte
+    digest and the key pin below, so even a shared key could not produce a
+    wrong verdict — it would only make two stores evict each other's memo on
+    every call.
+    """
+    try:
+        return path.resolve()
+    except OSError:
+        return path.absolute()
 
 
 def _fsync_dir(path: Path) -> None:
@@ -246,25 +267,34 @@ def _watermark_check(
     return errors
 
 
-def _read_event_lines(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
-    errors: list[str] = []
+def _read_ledger_bytes(path: Path) -> tuple[bytes, list[str]]:
+    """Raw ledger bytes plus the whole-file framing findings."""
     if not path.is_file():
-        return [], errors
+        return b"", []
     try:
         raw = path.read_bytes()
     except OSError:
-        return [], ["ledger_unreadable"]
-    if raw and not raw.endswith(b"\n"):
-        errors.append("partial_tail")
+        return b"", ["ledger_unreadable"]
+    return raw, ["partial_tail"] if raw and not raw.endswith(b"\n") else []
+
+
+def _frame_event_lines(raw: bytes, first_line: int) -> tuple[list[dict[str, Any]], list[str]]:
+    """Frame ledger bytes into rows, numbering findings from ``first_line``.
+
+    Frame rows on b"\\n" ONLY.  bytes.splitlines() also splits on \\r and
+    \\r\\n, so a reframed ledger like b'rowA\\rrowB\\n' — bytes the recorder
+    never wrote — would silently parse as two chained rows.  The recorder
+    writes exactly one JSON object per "\\n", and json.dumps escapes every
+    control character inside strings, so a legitimate row never contains a
+    raw \\r; any other framing byte is row content and must fail JSON
+    parsing here.
+
+    ``first_line`` exists so a suffix scan reports the SAME line numbers a
+    whole-file scan would; it is the count of b"\\n" already consumed, plus 1.
+    """
+    errors: list[str] = []
     rows: list[dict[str, Any]] = []
-    # Frame rows on b"\n" ONLY.  bytes.splitlines() also splits on \r and
-    # \r\n, so a reframed ledger like b'rowA\rrowB\n' — bytes the recorder
-    # never wrote — would silently parse as two chained rows.  The recorder
-    # writes exactly one JSON object per "\n", and json.dumps escapes every
-    # control character inside strings, so a legitimate row never contains a
-    # raw \r; any other framing byte is row content and must fail JSON
-    # parsing here.
-    for number, line in enumerate(raw.split(b"\n"), start=1):
+    for number, line in enumerate(raw.split(b"\n"), start=first_line):
         if not line.strip():
             continue
         try:
@@ -277,6 +307,149 @@ def _read_event_lines(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
             continue
         rows.append(row)
     return rows, errors
+
+
+class _VerifiedLedger(NamedTuple):
+    """A ledger prefix proven clean, pinned to the exact bytes that proved it."""
+
+    length: int           # bytes of events.jsonl the proof covers
+    digest: str           # sha256 over exactly those bytes
+    key_digest: str       # sha256 of the signing key that proved them
+    lines: int            # b"\n" already consumed (finding line numbers)
+    count: int            # events verified inside the prefix
+    last_hash: str        # RECOMPUTED event_hash of the prefix's last event
+    last_signature: str   # that event's stored signature
+
+
+#: Bounded because a long-lived process can touch many day-bounded trials;
+#: eviction only costs a full re-scan, never correctness.
+_VERIFIED_MEMO_MAX = 128
+_verified_memo: "OrderedDict[tuple[str, str], _VerifiedLedger]" = OrderedDict()
+_verified_memo_lock = threading.Lock()
+
+
+def reset_verified_ledger_memo() -> None:
+    """Test seam: drop every memoized clean prefix (the memo is process-global)."""
+    with _verified_memo_lock:
+        _verified_memo.clear()
+
+
+def _memo_get(memo_key: tuple[str, str]) -> "_VerifiedLedger | None":
+    with _verified_memo_lock:
+        entry = _verified_memo.get(memo_key)
+        if entry is not None:
+            _verified_memo.move_to_end(memo_key)
+        return entry
+
+
+def _memo_put(memo_key: tuple[str, str], entry: _VerifiedLedger) -> None:
+    with _verified_memo_lock:
+        _verified_memo[memo_key] = entry
+        _verified_memo.move_to_end(memo_key)
+        while len(_verified_memo) > _VERIFIED_MEMO_MAX:
+            _verified_memo.popitem(last=False)
+
+
+def _verify_events(
+    ledger_path: Path,
+    key: bytes,
+    trial_id: str,
+    memo_key: tuple[str, str],
+) -> tuple[list[str], int, str, str]:
+    """Verify every event in one ledger.
+
+    Returns ``(errors, event_count, last_event_hash, last_signature)`` — the
+    same four facts a whole-file scan produces, and byte-for-byte the same
+    values, always.
+
+    WHY THIS IS MEMOIZED.  The recorder verifies before it appends, so a
+    whole-file re-scan per append makes filing O(n) in the trial and the trial
+    O(n^2) overall: a 500-event trial (the R-8 per-trial envelope, so this is
+    the LIVE ceiling, not a hypothetical) was costing ~9x a fresh one and
+    eating most of the 50ms hook budget the acting chain is held to.
+
+    WHY IT IS STILL THE SAME VERDICT.  The per-row checks are a pure function
+    of (row bytes, position in the chain, signing key, trial id) — no clock,
+    no environment, no filesystem.  So a prefix whose bytes hash identical to
+    bytes that already verified clean under the SAME key yields, by identity
+    of inputs, the identical verdict; only the suffix can carry news.  The
+    memo therefore stores the sha256 of exactly the bytes it proved, and any
+    edit, truncation, reordering or key change misses it and falls back to the
+    full scan.  A prefix is memoized ONLY when the whole ledger verified with
+    ZERO findings and ended on a b"\\n" boundary, so a partial tail, an
+    unreadable ledger or any row finding all re-scan from byte zero next time.
+    The permission and anchor checks are NOT memoized — they are properties of
+    the filesystem and of anchor.json, not of these bytes, and still run every
+    call.
+    """
+    raw, errors = _read_ledger_bytes(ledger_path)
+    key_digest = hashlib.sha256(key).hexdigest()
+
+    offset = 0
+    first_line = 1
+    sequence = 1
+    previous = ZERO_HASH
+    last_hash = ZERO_HASH
+    last_signature = ""
+    memo = _memo_get(memo_key)
+    prefix_hash = None
+    if memo is not None and memo.key_digest == key_digest and len(raw) >= memo.length:
+        prefix_hash = hashlib.sha256(raw[: memo.length])
+        if prefix_hash.hexdigest() == memo.digest:
+            offset = memo.length
+            first_line = memo.lines + 1
+            sequence = memo.count + 1
+            previous = memo.last_hash
+            last_hash = memo.last_hash
+            last_signature = memo.last_signature
+        else:
+            prefix_hash = None  # memo miss: the prefix bytes are not those bytes
+    # sha256 over the WHOLE ledger, continuing the prefix hash on a memo hit so
+    # the bytes are hashed exactly once on the common path.
+    whole_hash = prefix_hash if offset else hashlib.sha256()
+    whole_hash.update(raw[offset:])
+
+    rows, frame_errors = _frame_event_lines(raw[offset:], first_line)
+    errors.extend(frame_errors)
+    for row in rows:
+        prefix = f"event:{sequence}"
+        errors.extend(_shape_errors(row, prefix))
+        if row.get("schema") != EVENT_SCHEMA:
+            errors.append(prefix + ":schema")
+        if row.get("trial_id") != trial_id:
+            errors.append(prefix + ":trial_id")
+        if row.get("sequence") != sequence:
+            errors.append(prefix + ":sequence")
+        if row.get("previous_hash") != previous:
+            errors.append(prefix + ":previous_hash")
+        supplied_hash = row.get("event_hash")
+        supplied_signature = row.get("signature")
+        unsigned = {key_name: value for key_name, value in row.items() if key_name not in {"event_hash", "signature"}}
+        computed_hash = _digest(unsigned)
+        if supplied_hash != computed_hash:
+            errors.append(prefix + ":event_hash")
+        expected_signature = _event_signature(key, trial_id, sequence, computed_hash)
+        if not isinstance(supplied_signature, str) or not hmac.compare_digest(supplied_signature, expected_signature):
+            errors.append(prefix + ":signature")
+        if contains_secret_shape(row):
+            errors.append(prefix + ":secret_shape")
+        previous = computed_hash
+        last_hash = computed_hash
+        last_signature = str(supplied_signature or "")
+        sequence += 1
+
+    event_count = sequence - 1
+    if not errors and (not raw or raw.endswith(b"\n")):
+        _memo_put(memo_key, _VerifiedLedger(
+            length=len(raw),
+            digest=whole_hash.hexdigest(),
+            key_digest=key_digest,
+            lines=raw.count(b"\n"),
+            count=event_count,
+            last_hash=last_hash,
+            last_signature=last_signature,
+        ))
+    return errors, event_count, last_hash, last_signature
 
 
 def _private_path_error(path: Path, label: str, *, directory: bool = False) -> str | None:
@@ -406,38 +579,14 @@ def verify_trial(
             errors.append(permission_error)
     ledger_path = trial / "events.jsonl"
     if ledger_path.is_symlink():
-        rows = []
+        # A symlinked ledger is refused above by _private_path_error; its bytes
+        # are never read, so there is nothing to verify or memoize.
+        event_count, last_hash, last_signature = 0, ZERO_HASH, ""
     else:
-        rows, read_errors = _read_event_lines(ledger_path)
-        errors.extend(read_errors)
-    previous = ZERO_HASH
-    last_hash = ZERO_HASH
-    last_signature = ""
-    for expected_sequence, row in enumerate(rows, start=1):
-        prefix = f"event:{expected_sequence}"
-        errors.extend(_shape_errors(row, prefix))
-        if row.get("schema") != EVENT_SCHEMA:
-            errors.append(prefix + ":schema")
-        if row.get("trial_id") != trial_id:
-            errors.append(prefix + ":trial_id")
-        if row.get("sequence") != expected_sequence:
-            errors.append(prefix + ":sequence")
-        if row.get("previous_hash") != previous:
-            errors.append(prefix + ":previous_hash")
-        supplied_hash = row.get("event_hash")
-        supplied_signature = row.get("signature")
-        unsigned = {key_name: value for key_name, value in row.items() if key_name not in {"event_hash", "signature"}}
-        computed_hash = _digest(unsigned)
-        if supplied_hash != computed_hash:
-            errors.append(prefix + ":event_hash")
-        expected_signature = _event_signature(key, trial_id, expected_sequence, computed_hash)
-        if not isinstance(supplied_signature, str) or not hmac.compare_digest(supplied_signature, expected_signature):
-            errors.append(prefix + ":signature")
-        if contains_secret_shape(row):
-            errors.append(prefix + ":secret_shape")
-        previous = computed_hash
-        last_hash = computed_hash
-        last_signature = str(supplied_signature or "")
+        ledger_errors, event_count, last_hash, last_signature = _verify_events(
+            ledger_path, key, trial_id, (str(_resolved(root)), str(trial_id)),
+        )
+        errors.extend(ledger_errors)
 
     anchor_path = trial / "anchor.json"
     if require_anchor:
@@ -461,7 +610,7 @@ def verify_trial(
                 errors.append("anchor_schema")
             if anchor.get("trial_id") != trial_id:
                 errors.append("anchor_trial_id")
-            if anchor.get("sequence") != len(rows):
+            if anchor.get("sequence") != event_count:
                 errors.append("anchor_sequence")
             if anchor.get("event_hash") != last_hash:
                 errors.append("anchor_event_hash")
@@ -471,7 +620,7 @@ def verify_trial(
                 errors.append("anchor_signature")
 
     errors.extend(_watermark_check(
-        root, key, trial_id, len(rows), last_hash, advance=not errors,
+        root, key, trial_id, event_count, last_hash, advance=not errors,
     ))
 
     unique = sorted(set(errors))
@@ -479,7 +628,7 @@ def verify_trial(
         "ok": not unique,
         "schema": "cabinet.evidence-verification/v1",
         "trial_id": trial_id,
-        "event_count": len(rows),
+        "event_count": event_count,
         "last_event_hash": last_hash,
         "errors": unique,
         "checks": {

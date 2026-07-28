@@ -750,6 +750,48 @@ temporary_allowances:
       the ownership class becomes a typed attribute of a source record carried by
       the projection kernel, or COG-7 compaction brings production non-comment
       lines below the pinned baseline
+  - phase: evidence-append-quadratic
+    budget: framework_production_noncomment_lines
+    additional: 126
+    reason: >-
+      the evidence append was O(n) in the trial and the trial O(n^2) — a live
+      production defect a green gate could not see. EvidenceRecorder.append
+      verifies before it extends (correct: it is what stops a truncation being
+      laundered by writing over it), but it re-verified the WHOLE trial every
+      time, so filing a need cost 3.9ms at trial depth 40 and 36.6ms at depth
+      499 against a 50ms hook budget, with one contains_secret_shape walk per
+      row per append. framework/evidence/verifier.py now memoizes the clean
+      ledger prefix against the sha256 of EXACTLY the bytes that proved it
+      (_read_ledger_bytes / _frame_event_lines / _VerifiedLedger / the bounded
+      memo / _verify_events), so a prefix that still hashes the same is
+      known-good by identity of inputs and only the new suffix is scanned; any
+      edit, truncation, key change or finding misses the memo and re-scans from
+      byte zero, and the permission/anchor/watermark checks are never memoized.
+      framework/evidence/recorder.py takes its length and tip from that verdict
+      instead of a second _rows() pass, which also closes a TOCTOU window
+      between verifying bytes and reading them back. Measured after
+      (production path, same machine): 1.5ms at depth 40, 3.1ms at depth 499.
+      HONEST ACCOUNTING: most of these 126 lines are DOCSTRING prose stating
+      the soundness argument — why a memo may make verification cheaper and
+      never weaker — and it is NOT reformatted into "#" comments to duck this
+      counter, which would buy a number with the reasoning a later reader needs
+      to check the claim. EXACT measured running total (71931 vs 71805 base
+      after merging origin/master dd01ce8f, whose onboarding-ordering-inversion
+      landing moved the base from 71151 to 71805; re-measured after that merge
+      and +126 is unchanged by it, since the growth is this unit's own lines in
+      files that landing does not touch), 2026-07-28, via
+      cognitive-architecture-census.py — the zero-headroom
+      observed==max law means this is the exact new total, never a
+      pre-allocated ceiling. Zero new MODULES: both files already exist, so
+      framework_production_modules is unchanged and no expansion-registry row
+      is owed.
+    owner: evidence-plane
+    sunset: '2027-01-19'
+    deletion_gate: >-
+      the recorder's per-append verification is replaced by sealed segments
+      (the COG-5 archive shape, which bounds this same class by construction),
+      or COG-7 compaction brings production non-comment lines below the pinned
+      baseline
 # ── The EXPANSION REGISTRY (two-model gate adjudication, 2026-07-27) ─────────
 # temporary_allowances above pay for MASS and ask only reason/owner/sunset —
 # declaration, not adjudication. That gap is measured, not theoretical: an
@@ -863,8 +905,13 @@ temporary_allowances:
       NOT reformatted into "#" comments to duck this counter — the counter
       excludes comments, so that would buy the number with the explanation that
       stops a later reader re-introducing a plausible default. EXACT measured
-      running total 72261 (master 6ec81460 reads 71805, itself exactly at the
-      pinned maximum; this branch reads 72261 — 446 at the first measurement,
+      running total 72387 on the merged tree (RE-MEASURED at the merge, not
+      carried: master moved to d67fba97 mid-flight — PR #250, itself moving
+      this budget — and reads 71931 there, exactly at its own pinned maximum,
+      so the merged tree reads 72387 and the DELTA is 456 against BOTH bases
+      measured, 6ec81460 71805 -> 72261 and d67fba97 71931 -> 72387, which is
+      the check that the number measures this unit and not a merge; this branch
+      read 72261 pre-merge — 446 at the first measurement,
       +3 from the landing's own hostile pass (the provenance card's `why`
       attributed the undeclared-folder cause to EVERY non-live state, and a
       probe that failed mid-sweep left the seam available so a partial answer
