@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: eaada02fe52f1d48b0a5042d4d49d2bb0a734d940db1e86f1a4e25569698bacf
+Reviewed-Scope-Digest: 13ac99ce77dbd5c88a8c0954a643bcc0f341cf2b17dac551d286246190bf5dc4
 
 (MERGE RE-BIND, 2026-07-28, `fix/stranger-hatch-timed` x master `a70bcfb5`
 (PR #268). Both sides had re-bound this line and BOTH moved
@@ -34,6 +34,36 @@ conflict was textual adjacency, not a contested value, and the running total is
 RE-MEASURED on the merged tree rather than carried from either side. No budget
 `maximum` raised, no expansion member, no bijection class, and NO COG-4
 implementation byte moved on either side. Nothing below was re-reviewed,
+
+(MERGE RE-BIND, 2026-07-28, `fix/recall-live-claims-it-never-earned` x master
+`a70bcfb5` (PR #268). Both sides re-bound this line and both moved
+`cabinet/config/cognitive-architecture-contract.yml`, so the two digests
+conflicted textually: neither describes the merged tree, and the value above is
+recomputed over the MERGE COMMIT rather than taken from either side. Prior
+digests: this branch `ec75278e9929f8a03d811ec3689716e1190808db3df0a3a0ba0a0ef2275c5666`,
+master `3c8c1f7f60bd32a56e831438d768ea1b760b8f148353e65aba3c76c9b6d50a79`.
+THIS BRANCH's in-scope move: `cabinet/config/cognitive-architecture-contract.yml`,
+and only its `temporary_allowances` list — a new row buying the +30 non-comment
+lines two recall fixes cost (an unconfigured backend reporting live recall; the
+chunk heading rendered as the operator's own shared wording). No budget MAXIMUM,
+no set pin, no bijection class and no declared invariant moved. The two changed
+production files, `framework/sources/org.py` and `framework/onboarding/genesis.py`,
+are NOT in this scope, and neither is anything PR #268 touched
+(`framework/onboarding/estate.py`, `framework/onboarding/journey.py` and their
+tests) — the two branches share no production file. NO COG-4 implementation byte
+moved on either side: no organ, no scheduler or projection surface, no serve
+surface, no boundary row, no fixture, no CLI. Nothing below was re-reviewed,
+
+(MERGE RE-BIND, 2026-07-28, `fix/stranger-hatch-timed` x master `1875e112`
+(PR #269). Third master merge for this branch and the same shape each time:
+both sides re-bound this line and both moved
+`cabinet/config/cognitive-architecture-contract.yml`, so the digests conflicted
+textually while neither described the merged tree. Value above RECOMPUTED over
+it; every prior note kept, none superseded. Master's side added
+`recall-live-claims-it-never-earned` (+30); this branch's
+`stranger-hatch-unopened-areas` (+27) is untouched, and the running total is
+RE-MEASURED on the merged tree rather than carried. NO COG-4 implementation
+byte moved on either side.)
 because no reviewed COG-4 byte moved.)
 
 (RE-BOUND 2026-07-28 at the landing of `fix/world-art-manifest-truth-and-egg`.
