@@ -357,7 +357,8 @@ export function requiredOutdoorSheets(scene: OutdoorScene): string[] {
     STREET_PROPS.mailbox,
     // T1 engine additions (v1a review fixes): the recomposed lighthouse,
     // the staged-vocab worksite kit, era water store, officer characters
-    // (real LimeZu sprites at island/mid/close — Captain's E1 headline),
+    // (real sprites at island/mid/close — Captain's E1 headline; the owned
+    // actor_officer family since the 2026-07-28 flip),
     // and the cutaway interior kit (floor/wall + desks).
     LIGHTHOUSE_SHEET,
     LIGHTHOUSE_LIT_SHEET,

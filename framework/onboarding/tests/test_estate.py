@@ -163,6 +163,32 @@ def test_lone_root_marker_yields_the_root_but_children_replace_it(tmp_path):
     assert "." not in [e["relative_path"] for e in doc2["entities"]]
 
 
+def test_single_product_root_is_not_displaced_by_doc_only_subdirectories(tmp_path):
+    """Depth alone got this backwards on a real single-product repo.
+
+    Measured 2026-07-28 through the real journey on a live web product: the
+    root held the ONLY package.json and the deeper markers
+    were ``docs/i18n/README.md`` and an internal folder's README, so the estate
+    dropped the product and proposed ``i18n`` and ``personas`` as the two
+    lanes — named after two of the product's own subdirectories. A directory
+    whose only marker is prose is a COMPONENT and cannot displace the project
+    that declares the dependencies.
+    """
+    src = tmp_path / "single-src" / "granted"
+    (src / "docs" / "i18n").mkdir(parents=True)
+    (src / "internal").mkdir()
+    (src / "package.json").write_text('{"name":"my-v0-project"}\n', encoding="utf-8")
+    (src / "docs" / "i18n" / "README.md").write_text("# i18n\n", encoding="utf-8")
+    (src / "internal" / "README.md").write_text("# internal\n", encoding="utf-8")
+    root = tmp_path / "single"
+    _ratified_journey(root, src)
+    doc = estate.derive_estate(root, answers=ANSWERS, now="2026-07-26T00:01:00Z")
+    assert [e["relative_path"] for e in doc["entities"]] == ["."]
+    # Named for the granted folder, cited by its dependency manifest.
+    assert [e["name"] for e in doc["entities"]] == ["granted"]
+    assert [c["path"] for c in doc["entities"][0]["evidence"]] == ["package.json"]
+
+
 # ---------------------------------------------------------------------------
 # the usability gate — what `lanes: []` is allowed to ride
 # ---------------------------------------------------------------------------
