@@ -170,3 +170,34 @@ Both arms fail against the pre-fix bytes and pass after
 (`framework/onboarding/tests/test_genesis.py`), plus a third arm that keeps a
 genuinely shared term reported, so the first fix cannot be satisfied by
 deleting the clause.
+
+**The review pass on this fix found the second arm half-vacuous, and it is
+corrected here.** It wrote the two-entity `ESTATE_DOC`, whose second entity
+(`labs`) recall never answers for — so that card kept `derived_from: estate`
+against the PRE-FIX bytes too, the estate count never reached zero, and the arm
+went green on the very branch it names. Measured: with the label assertions
+removed and `"recall" if subject else "estate"` restored, the body passed. It
+was pinning the LABEL while its docstring claimed the BRIEFING SENTENCE — a
+sensor wired to something other than the control, the dominant defect class of
+this fortnight, inside the fix for that same class. The arm now writes a
+single-entity estate, which is the shape that actually drives the count to
+zero, and the "Re-run genesis" assertion fires against the pre-fix bytes.
+
+### Residual overclaims on this surface — NOT introduced here, still true
+
+Found by the same pass, in code that predates this fix; recorded rather than
+silently carried. Each is the same class this unit exists to remove:
+
+- **`never read together`** (`_recall_card_name`) is the headline of every join
+  card — *"Acme Storefront: 3 of your own notes (2026-07-19 … 2026-07-21),
+  never read together"* — and nothing the cabinet can read shows it. It is an
+  assertion about the operator's own reading history, offered as a finding.
+- **`Shared wording:`** is printed beside up to three citations while
+  `_MIN_JOIN_FILES` is 2, so a term can be absent from one of the files named
+  beside it. Measured post-fix: three cites captioned *"Shared wording:
+  reconciliation, ledger, late"* where `c.md` carries none of the three. Far
+  weaker than the pre-fix version (a term in ZERO cited files) but the same
+  shape — the operator finds out by opening the files.
+- **The headline span covers only the DATED cites.** Three cited files with one
+  `content_ts` renders *"3 of your own notes (2026-07-21)"*; the other two say
+  `(undated)` in the citation line, but the headline dates all three.

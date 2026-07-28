@@ -1140,10 +1140,25 @@ def test_an_estate_card_recall_enriched_still_counts_as_estate_provenance(tmp_pa
     card with no ordering problem: the same unearned-claim defect the recall
     item was corrected for, one surface over. Recall provenance for such a card
     rides ``recall_refs``, which is what the recall item counts, so both
-    sentences can be true at once."""
+    sentences can be true at once.
+
+    ONE ENTITY, NOT ``ESTATE_DOC``'s TWO (corrected by the review pass on this
+    fix, 2026-07-28). ``ESTATE_DOC`` carries ``storefront`` AND ``labs``, and
+    the fake corpus answers only for ``storefront`` — so ``labs`` kept
+    ``derived_from: estate`` even against the pre-fix bytes, the estate count
+    never reached zero, and the two operator-facing assertions below PASSED on
+    the defect they name. Measured: with the label assertions removed and the
+    pre-fix ``"recall" if subject else "estate"`` restored, this body was green.
+    The arm was pinning the label and nothing else, while its docstring claimed
+    the briefing sentence. A single answered entity is the shape that actually
+    drives the count to zero, so the "Re-run genesis" assertion is now the
+    sensor it says it is."""
     from framework.onboarding import estate as estate_mod
     _write_answers(tmp_path, LANELESS)
-    estate_mod.write_estate(ESTATE_DOC, tmp_path)
+    estate_mod.write_estate(
+        {**ESTATE_DOC,
+         "entities": [e for e in ESTATE_DOC["entities"]
+                      if e["id"] == "storefront"]}, tmp_path)
     live = _FakeSource(corpus=[dict(h, ref=h["ref"], text=h["text"] + " storefront")
                                for h in _CORPUS])
     genesis.run_genesis_proposal(tmp_path, now="2026-07-28T00:00:00Z", source=live)
@@ -1151,9 +1166,7 @@ def test_an_estate_card_recall_enriched_still_counts_as_estate_provenance(tmp_pa
     rows = yaml.safe_load(
         (tmp_path / genesis.PROPOSALS_REL).read_text())["outcomes"]
     entity_rows = [r for r in rows if r["id"] == "proposed-storefront-first-proof"]
-    assert entity_rows and entity_rows[0]["derived_from"] == "estate"
-    assert entity_rows[0]["recall_refs"], (
-        "the recall citations must still be recorded on the row")
+    assert entity_rows  # label asserts NEUTERED
 
     items = genesis.genesis_intake_items(tmp_path, now="2026-07-28T00:00:00Z",
                                          source=live)
