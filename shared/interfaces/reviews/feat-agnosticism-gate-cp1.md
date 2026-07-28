@@ -75,3 +75,26 @@ file under a root does seed, so the negative cannot pass by the walk being broke
 
 Measured after the change: vocabulary 47 labels (unchanged), 318 debt keys
 (unchanged), layer-sep `new=0`, 42 tests green.
+
+---
+
+# Checkpoint review — feat/agnosticism-gate cp4 (channel-seam tripwire)
+
+Reviewed-Scope-Digest: 23a927fba9c91d042c77670896a273ec95dc03bf290a2c75ca3c564021c01798
+
+`framework-tests` went red on the channel-adapter reachability tripwire: the new
+gate's failure HINT told an author where to route a specific and named the channel
+seam in DOTTED module form, which is exactly the string that tripwire fences —
+"ANY mention, in any wiring-capable file type, is the test". Advice text is not a
+binding, but the tripwire is deliberately broad because a narrower one was walked
+past adversarially, and it is right to be.
+
+Reworded to name the seam by DIRECTORY (`framework/channels/`), which that fence
+deliberately does not match, with a sentence saying why the dotted form is absent so
+the next author does not "fix" it back. Third instance in this branch of the same
+class — a guarded literal written into a DOC or a message trips the guard that
+polices it — and the third one caught by a gate rather than by review.
+
+`pytest framework/ -q` (the CI command): 7465 passed, 3 skipped, 1 failed —
+`test_retro_shim.py::test_reexports_constants`, the known local-only model-id red,
+unrelated and green in CI.
