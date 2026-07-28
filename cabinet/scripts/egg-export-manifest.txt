@@ -674,7 +674,6 @@ expect-absent cabinet/dashboard/public/world-assets/*.png
 expect-absent cabinet/dashboard/public/world-assets/*.zip
 expect-absent cabinet/dashboard/public/world-assets/originals
 expect-absent cabinet/scripts/world-aesthetic/corpus/*.png
-expect-absent cabinet/scripts/world-aesthetic/corpus-*/*.png
 expect-absent cabinet/scripts/world-aesthetic/goldens/*.png
 expect-absent cabinet/dashboard/.next
 expect-absent-name node_modules

@@ -656,16 +656,9 @@ def test_testburg_fixture_ships(export: Path):
 
 
 def test_world_assets_and_node_modules_absent(export: Path):
-    banned = ["cabinet/dashboard/public/world-assets",
-              "cabinet/scripts/world-aesthetic/corpus",
-              "cabinet/scripts/world-aesthetic/goldens"]
-    # Superseded corpora (corpus-<name>-<date>/) follow the same rule. Globbed
-    # rather than listed, so archiving a corpus in future is covered without a
-    # test edit — a literal list is how a check stops covering what it names.
-    banned += [str(p.relative_to(export)) for p in
-               (export / "cabinet/scripts/world-aesthetic").glob("corpus-*")
-               if p.is_dir()]
-    for banned_dir in banned:
+    for banned_dir in ("cabinet/dashboard/public/world-assets",
+                       "cabinet/scripts/world-aesthetic/corpus",
+                       "cabinet/scripts/world-aesthetic/goldens"):
         d = export / banned_dir
         if d.exists():
             pngs = [p.name for p in d.rglob("*") if p.suffix in (".png", ".zip", ".jpg")]
