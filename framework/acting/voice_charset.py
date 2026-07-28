@@ -1,59 +1,47 @@
-"""voice_charset — captain-voice charset rule (framework-vendored copy).
+"""voice_charset — outbound text normalization for the acting/frontdoor lanes.
 
-VENDORED 2026-07-02 (CI 2861900…) from the personal-source adapter's
-`_shared/voice_charset.py` so flavor-B / CI installs get the SAME one
-implementation without the adapter's personal-source estate. The _shared copy
-remains live for the pipes until the A3 re-point turns
-it into a re-export of this file — until then, changes go to BOTH (they are
-byte-synced below this header; drift check: diff the two files minus this block).
+WHAT THIS DOES, and what it deliberately no longer does
+-------------------------------------------------------
+``normalize_charset()`` applies SCRIPT-AGNOSTIC typography normalization: the
+Unicode dash family, bullet glyphs, arrows, ellipsis, curly quotes and
+non-breaking spaces are folded to their plain-keyboard equivalents, then the
+result is NFC-composed. It is lossless for every writing system: nothing is
+dropped, and text in any script comes back intact.
 
-Origin rule (Captain, 2026-06-25): write only with characters on a normal
-Danish keyboard, PLUS emojis.
+REMOVED 2026-07-28 — the Danish-keyboard CHARSET WHITELIST.
+Until this date the framework copy also enforced a whitelist ("write only with
+characters on a normal Danish keyboard, plus emojis", a launching-Captain style
+rule from 2026-06-25) and DROPPED every character outside it. That rule is a
+legitimate INSTANCE preference and a framework invariant it must never have
+been: ``framework/`` is the seed for ANY captain in ANY country, and a
+character whitelist is a set of permitted human expression.
 
-The captain's rule (2026-06-25, refined): "write only with characters on a normal
-Danish keyboard, PLUS emojis." So instead of an ever-growing substitution
-table, normalize_charset() enforces a CHARSET WHITELIST with an emoji-safe
-catch-all:
-  1. FAST PATH  — a small map for the common offenders, giving nice results
-     (em/en/any dash -> " - ", bullet glyphs -> "-", arrows -> "->",
-      ellipsis -> "...", curly quotes -> '/' , NBSP -> space).
-  2. WHITELIST  — the Danish-keyboard charset is kept verbatim: a-z A-Z, 0-9,
-     ae/oe/aa (the three Danish letters, both cases), the accented Latin
-     reachable via dead keys, standard punctuation/symbols (incl. EUR), space,
-     newline. EMOJIS are kept too (the captain uses them) and NEVER stripped.
-  3. CATCH-ALL  — any char NOT whitelisted and NOT an emoji is decomposed
-     (unicodedata NFKD, combining marks stripped) and only the resulting
-     keyboard chars are kept; if nothing keyboard-friendly results, the char is
-     dropped. So an unanticipated fancy char (a CJK char, a math symbol, a
-     rare dash variant the fast path missed) is caught, not leaked — the table
-     never has to grow again.
+The consequence was measured, not theorized. ``normalize_charset`` runs at
+``framework/frontdoor/binder_wire.py`` on ``routed.edit_text`` — the Captain's
+OWN typed edit of an outbound message — immediately before delivery, and it
+never raises, so the loss was silent and outward-facing:
 
-Idempotent: keyboard-only text (incl. emojis + ae/oe/aa) passes through
-unchanged. Pure string transform: no I/O, never raises, only `re` +
-`unicodedata` deps so it imports cleanly with NO adapter-specific deps — which
-is why both the personal-source adapter's draft_lib AND the cabinet's acting
-adapter import this one implementation instead of each restating it (the E-2
-de-duplication: the whole
-point of the charset reframe was that the table never grows again, so two copies
-would re-introduce drift).
+    Polish   'Zazolc gesla jazn - Lodz' lost its L-stroke
+    Turkish  lost the dotless i
+    Greek / Cyrillic / CJK / Arabic / Hebrew / Devanagari  ->  '' or ' '
+
+A Greek, Russian, Japanese, Arabic, Hebrew or Hindi operator's first act of
+trusting the cabinet with an outbound message was the act that broke.
+
+THE SEAM THAT REPLACES IT. A deployment that genuinely wants a restricted
+output charset calls ``restrict_to_charset(text, allowed)`` and supplies the
+set. The framework knows that a deployment MAY restrict its output charset; it
+does not know WHICH charset — that is the difference between a mechanism and a
+specific. The launching deployment's Danish-keyboard set now lives with the
+personal-source adapter in ``instance/flavor-a/`` (``normalize_voice``), which
+is where a per-captain style rule belongs, and its behaviour is unchanged.
+
+Idempotent. Pure string transform: no I/O, never raises, only ``re`` and
+``unicodedata``, so it imports cleanly with no adapter-specific deps.
 """
 from __future__ import annotations
 import re
 import unicodedata as _ud
-
-# Danish-keyboard punctuation/symbols (AltGr-reachable EUR + the usual set).
-_KB_PUNCT = set(" \t\n\r" + ".,;:!?-_'\"()[]{}/\\@#%&=+*<>$€|~^`")
-# Accented Latin letters a normal DK keyboard produces via dead keys (acute,
-# grave, circumflex, diaeresis, tilde, cedilla) + sharp-s, both cases.
-_KB_ACCENTED = set(
-    "éèêëáàâäïîíì"
-    "óòôöúùûüçñýÿ"
-    "ÉÈÊËÁÀÂÄÏÎÍÌ"
-    "ÓÒÔÖÚÙÛÜÇÑÝß"
-)
-# The three Danish letters, both cases (must be whitelisted explicitly: NFKD
-# would otherwise decompose å -> 'a' and lose them).
-_KB_DANISH = set("æøåÆØÅ")
 
 
 def _is_emoji(ch: str) -> bool:
@@ -74,21 +62,6 @@ def _is_emoji(ch: str) -> bool:
         0x23E9 <= o <= 0x23FA or
         0x25FB <= o <= 0x25FE
     )
-
-
-def _in_keyboard_charset(ch: str) -> bool:
-    """True when `ch` is directly producible on a normal Danish keyboard."""
-    if ch in _KB_PUNCT or ch in _KB_DANISH or ch in _KB_ACCENTED:
-        return True
-    return ch.isascii() and (ch.isalnum() or ch in _KB_PUNCT)
-
-
-def _catch_all_char(ch: str) -> str:
-    """Map a non-keyboard, non-emoji char to its keyboard equivalent via NFKD
-    (combining marks stripped, only keyboard chars kept), or '' to drop it."""
-    nfkd = _ud.normalize("NFKD", ch)
-    return "".join(c for c in nfkd
-                   if not _ud.combining(c) and _in_keyboard_charset(c))
 
 
 # FAST PATH — common offenders, run before the catch-all for nicer results.
@@ -119,21 +92,51 @@ def _apply_fast_path(text: str) -> str:
 
 
 def normalize_charset(text: str) -> str:
-    """Enforce the Danish-keyboard-plus-emoji charset: run the fast-path map, then
-    sweep every remaining char — keep it if it's keyboard-producible OR an emoji,
-    else map it through the NFKD catch-all (or drop). The single source of truth
-    for the teams-message-voice-formatting charset rule. Total: any error or
+    """SCRIPT-AGNOSTIC outbound typography normalization. Folds the Unicode
+    dash family, bullets, arrows, ellipsis, curly quotes and non-breaking
+    spaces to plain-keyboard equivalents, then NFC-composes.
+
+    LOSSLESS BY CONTRACT: no character is dropped and no script is privileged.
+    Greek, Cyrillic, CJK, Arabic, Hebrew and Devanagari text comes back intact
+    — see the module docstring for what this used to do instead, and why a
+    character whitelist could not stay in ``framework/``. Total: any error or
     non-str input returns the input unchanged."""
     if not text or not isinstance(text, str):
         return text
     try:
-        text = _apply_fast_path(text)
+        return _ud.normalize("NFC", _apply_fast_path(text))
+    except Exception:
+        return text
+
+
+def restrict_to_charset(text: str, allowed, keep_emoji: bool = True) -> str:
+    """THE SEAM, not a policy: fold ``text`` onto the caller's ``allowed``
+    character set. A character outside the set is NFKD-decomposed (combining
+    marks stripped) and only the resulting in-set characters are kept; if
+    nothing survives, it is dropped.
+
+    The framework knows a deployment MAY want a restricted output charset. It
+    does NOT know which characters — ``allowed`` is supplied by the caller, and
+    nothing in ``framework/`` calls this with a set of its own. A deployment
+    whose captain writes on one keyboard layout wires it in its own layer (the
+    launching deployment does exactly that in ``instance/flavor-a/``).
+
+    Restricting an outbound charset is LOSSY by construction: characters the
+    caller did not allow do not survive. That is the caller's decision to make
+    and to own, which is precisely why it is a parameter. Total: any error or
+    non-str input returns the input unchanged."""
+    if not text or not isinstance(text, str):
+        return text
+    try:
+        allowed_set = frozenset(allowed)
         out = []
         for ch in text:
-            if _in_keyboard_charset(ch) or _is_emoji(ch):
+            if ch in allowed_set or (keep_emoji and _is_emoji(ch)):
                 out.append(ch)
-            else:
-                out.append(_catch_all_char(ch))  # keyboard equivalent or '' (drop)
+                continue
+            nfkd = _ud.normalize("NFKD", ch)
+            out.append("".join(c for c in nfkd
+                               if not _ud.combining(c) and c in allowed_set))
         return "".join(out)
     except Exception:
         return text

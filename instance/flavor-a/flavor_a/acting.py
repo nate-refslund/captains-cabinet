@@ -601,12 +601,37 @@ def gather(thread: dict, *, do_prep: bool = True) -> dict:
 # re-exports it; this adapter ALSO applies it at the cabinet chokepoint (draft_fn)
 # so the lane can NEVER present or persist a non-conforming draft. Primary path:
 # draft_lib.humanize (the full screenpipe stack). Fallback (cabinet unit suite,
-# no screenpipe deps): import voice_charset DIRECTLY — same one implementation, no
-# restated rule, so the table can never drift. Both paths apply the identical
-# doubled-space tidy humanize() does. Pure string transform: idempotent
-# (keyboard-only + emoji passes through), no I/O, never raises.
+# no screenpipe deps): typography-normalize via voice_charset, then apply THIS
+# deployment's keyboard set through voice_charset.restrict_to_charset. Both
+# paths apply the identical doubled-space tidy humanize() does. Pure string
+# transform: idempotent (keyboard-only + emoji passes through), no I/O, never
+# raises.
+#
+# WHERE THE SET LIVES, and why it moved here (2026-07-28). Until this date the
+# whitelist itself sat in framework/acting/voice_charset.py, so EVERY cabinet —
+# in every country — silently dropped any character off a Danish keyboard,
+# including on the Captain's own edited outbound text (binder_wire). A Greek,
+# Cyrillic, CJK, Arabic, Hebrew or Devanagari message came back empty. The
+# framework now owns only the MECHANISM (restrict_to_charset(text, allowed));
+# the SET is this deployment's, and lives with this deployment. Behaviour here
+# is unchanged — the same characters survive, byte for byte.
 # ---------------------------------------------------------------------------
 _VOICE_DBLSPACE_RE = re.compile(r"(?<=\S)[ \t]{2,}")
+
+# THIS deployment's keyboard set: a normal Danish keyboard, plus emojis (kept by
+# restrict_to_charset's keep_emoji default). ASCII alphanumerics, the
+# AltGr-reachable punctuation/symbols (incl. EUR), the accented Latin a DK
+# keyboard produces via dead keys, and ae/oe/aa in both cases — the three Danish
+# letters must be listed explicitly or NFKD would decompose them away.
+_DK_KEYBOARD_CHARSET = frozenset(
+    "abcdefghijklmnopqrstuvwxyz"
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "0123456789"
+    " \t\n\r" + ".,;:!?-_'\"()[]{}/\\@#%&=+*<>$€|~^`"
+    "éèêëáàâäïîíì" "óòôöúùûüçñýÿ"
+    "ÉÈÊËÁÀÂÄÏÎÍÌ" "ÓÒÔÖÚÙÛÜÇÑÝß"
+    "æøåÆØÅ"
+)
 
 
 def _vc():
@@ -625,11 +650,22 @@ def _vc():
 
 
 def _voice_fallback(text):
-    """Charset-whitelist normalize without the screenpipe stack: delegates to the
-    SAME voice_charset.normalize_charset draft_lib re-exports (no rule restated),
-    then applies the doubled-space tidy humanize() applies, so this fallback's
-    output matches the draft_lib.humanize primary path exactly."""
-    t = _vc().normalize_charset(text)
+    """Charset-whitelist normalize without the screenpipe stack: typography via
+    the SAME voice_charset.normalize_charset draft_lib re-exports (no rule
+    restated), then THIS deployment's keyboard set through the framework's
+    parameterised restrict_to_charset seam, then the doubled-space tidy
+    humanize() applies — so this fallback's output matches the
+    draft_lib.humanize primary path exactly.
+
+    The `restrict_to_charset` attribute is looked up defensively: the _shared/
+    copy (preferred when the estate is present) still applies the keyboard rule
+    inside its own normalize_charset and has no such attribute, and re-applying
+    the same set would be a no-op anyway (idempotent)."""
+    vc = _vc()
+    t = vc.normalize_charset(text)
+    restrict = getattr(vc, "restrict_to_charset", None)
+    if restrict is not None:
+        t = restrict(t, _DK_KEYBOARD_CHARSET)
     return _VOICE_DBLSPACE_RE.sub(" ", t)
 
 

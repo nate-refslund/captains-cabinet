@@ -570,6 +570,9 @@ _REFERENCE_ALLOWLIST = {
     # shadow law needs the identical one-line entry in its own landing.
     "cabinet/config/architecture-baseline-sets.yml":
         "the architecture baseline sets are the census's inventory of WHICH framework modules exist, so every module path is there by construction — a member-name row in a data file, never an import and never a consumer",
+    # Specifics ratchet (2026-07-28): same class, same forcing rule.
+    "framework/tests/framework-specifics-baseline.txt":
+        "the specifics-ratchet DEBT LEDGER keys one line per known third-party literal by the framework path that carries it, so a module that carries one is there by construction — a path-keyed debt row in a data file, never an import and never a consumer",
     "cabinet/config/state-persistence-policy.yml":
         "a path row in deploy-persistence accounting, never a consumer — "
         "state-persistence-preflight.py derives its durable set from "
