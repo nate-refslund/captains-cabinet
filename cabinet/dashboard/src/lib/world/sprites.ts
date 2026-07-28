@@ -132,19 +132,29 @@ export const CHAR_SHEET_MIN_H = 96
 /**
  * WHICH character art the world draws — the ONE line that swaps the whole cast.
  *
- * 'characters'           = the purchased LimeZu Premade sheets. Commercially
- *                          licensed, do-not-redistribute, gitignored — so a
- *                          stranger who hatches a cabinet from the public egg
- *                          gets a world with no people in it.
- * 'originals/characters' = the owned actor_officer family (20 sheets, same
- *                          896x656-compatible 16x32 cell layout, same file
- *                          names, license "owned — org-original"), committed
- *                          and exported.
+ * 'originals/characters' = the owned actor_officer family (20 sheets, 384x96,
+ *                          the same 16x32 cell layout the frame math below
+ *                          takes its cuts from, license "owned —
+ *                          org-original"), committed and exported. THE CAST
+ *                          THE WORLD DRAWS — Captain ruling 2026-07-28
+ *                          ("flip now"), shown the island comparison at true
+ *                          zoom plus the full 20-person cast. Known and
+ *                          accepted soft spot: the walk reads as a sway rather
+ *                          than a stride, improvable in place.
+ * 'characters'           = the purchased LimeZu Premade sheets (896x656).
+ *                          Commercially licensed, do-not-redistribute,
+ *                          gitignored — so a stranger who hatches a cabinet
+ *                          from the public egg gets a world with no people in
+ *                          it. Kept on disk and in the manifest so the revert
+ *                          stays this one line.
  *
  * Both sets are in the manifest; changing this constant changes which one the
- * renderer binds. Nothing else in the engine knows the difference.
+ * renderer binds. Nothing else in the engine knows the difference — EXCEPT the
+ * art credit, which must not name LimeZu for pixels LimeZu did not draw: it
+ * reads this constant's licence back off the manifest (lib/world/credit.ts),
+ * so reverting this line restores the credit under iso by itself.
  */
-export const CHARACTER_DIR = 'characters'
+export const CHARACTER_DIR = 'originals/characters'
 
 export function characterSheetFor(slug: string): string {
   const n = (fnv1a(slug) % CHARACTER_COUNT) + 1
