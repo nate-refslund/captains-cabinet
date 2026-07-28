@@ -108,6 +108,23 @@ and `CABINET_GENESIS_RECALL=0` turns it off.
   the same commit. The three edited framework/cabinet source files are NOT in
   `EXPECTED_SCOPE`.
 
+## Merge fallout, found by the merged-tree sweep
+
+`RES-007`'s cite in `docs/plans/declared-residuals-register.md` pointed at a
+line number in the frozen phase-4 review artifact, and this branch's two digest
+re-bind notes pushed the anchored row 36 lines down. Re-pointed `:616` → `:652`,
+**re-derived by grep for the anchor**, not by arithmetic. Twelfth occurrence of
+the same cause, third inside one day — the register note now says plainly that
+the fix (search by anchor, drop the line number) has been deferred by every
+branch that hit it because it is never in scope, which is how a recurring tax
+survives.
+
+`test_cog1_outbox_capture.py::test_baselines_hold_the_bound` also failed in that
+sweep at `b1.unblock post p95 52.95ms > bound 52.46ms` — 0.5ms over a wall-clock
+bound, under local load, in a code path this branch does not touch. VERIFIED
+rather than assumed: the file passes 24/24 re-run alone. The test skips this
+assertion on CI by design for exactly this reason.
+
 ## Batteries (this session, re-measured against master)
 
 | Battery | Master baseline | This branch |
