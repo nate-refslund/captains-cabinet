@@ -97,7 +97,16 @@ log() { echo "[memory-reconcile $(date -u +%Y-%m-%dT%H:%M:%SZ)] $1"; }
 # 1. Snapshot current holdings: (source_type, source_id, stored hash)
 #    ONE constant read-only SELECT — no untrusted input near the SQL.
 # =============================================================
-SNAP_TSV="$(mktemp -t memory-reconcile)"
+# PORTABLE mktemp (2026-07-28). `mktemp -t memory-reconcile` is a BSD/macOS
+# idiom: GNU coreutils REQUIRES the template to end in at least three X's and
+# fails outright with "too few X's in template". On Linux — the Docker
+# deployment target, and CI — SNAP_TSV came back EMPTY, the snapshot redirect
+# then failed on `> ""`, and the run aborted logging "cabinet_memory snapshot
+# query failed", blaming the query for a temp-file error. So the nightly
+# reconcile (cabinet/services.yml, 03:30 daily) queued NOTHING on every Linux
+# deployment, with a plausible-looking log line. Explicit dir + X's is the one
+# form both implementations accept identically.
+SNAP_TSV="$(mktemp "${TMPDIR:-/tmp}/memory-reconcile.XXXXXX")"
 trap 'rm -f "$SNAP_TSV"' EXIT
 
 if ! psql "$NEON_CONNECTION_STRING" -X -q -t -A -F $'\t' -c "
