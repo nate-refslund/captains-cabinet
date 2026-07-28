@@ -348,6 +348,11 @@ export default function OnboardingJourneyCard({
                     <code>{probe.pattern ?? probe.kind}</code>
                     <span className={`block ${muted}`}>
                       {probe.matches.length > 0 ? probe.matches.join(', ') : 'nothing matched by name'}
+                      {/* A search that stopped at its limit read PART of the
+                          folder, so the line above is about what it reached —
+                          never about the folder. Silent here, "nothing matched"
+                          is a negative this surface never earned. */}
+                      {probe.truncated && ' — stopped at my limit before the end of the folder'}
                     </span>
                   </li>
                 ))}

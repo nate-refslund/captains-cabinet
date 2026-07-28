@@ -21,7 +21,19 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 264478e38b6f99c1d18ef657df5206b8cd84ff54d0bb07673bbe00add6c3a52d
+Reviewed-Scope-Digest: 959f30114e345fe135d9c42b63719bbee885e0053157bf97c7b1fffb1c1dbb0e
+
+(RE-BOUND 2026-07-28 by `fix/probe-truncation-unearned-negative`, branched from
+master `a0cd4bc1`. Its ONLY digest-bound path is
+`cabinet/config/cognitive-architecture-contract.yml` — one `temporary_allowances`
+row, +13 framework production non-comment lines, no `maximum` raised, no
+bijection class touched, no expansion registered. Verified by intersecting
+`git diff --name-only a0cd4bc1 HEAD` with the tool's resolved scope: the contract
+file is the only intersection, and NO COG-4 implementation byte moved — no organ,
+no scheduler surface, no serve surface, no fixture, no boundary row. The other
+files in the change are `framework/onboarding/*` and `cabinet/dashboard/*`, none
+of them in scope. Nothing below was re-reviewed, because no reviewed byte moved.
+Every prior note is kept verbatim, none superseded.)
 
 (MERGE RE-BIND, 2026-07-28, `fix/needs-anti-vacuity-and-depth-labels` x
 `feat/connector-registry`: both sides re-bound this line and both moved

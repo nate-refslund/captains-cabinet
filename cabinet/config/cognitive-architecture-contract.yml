@@ -939,6 +939,43 @@ temporary_allowances:
       estate widens to new source KINDS (its schema already carries
       sources[].kind for exactly this), or COG-7 compaction brings production
       non-comment lines below the pinned baseline
+  - phase: onboarding-probe-truncation
+    budget: framework_production_noncomment_lines
+    additional: 13
+    reason: >-
+      A TRUNCATED SEARCH WAS REPORTED AS A FINISHED ONE. journey._execute_probes
+      computed complete as "bool(executed) and not deferred" and consulted
+      nothing else, while _name_matches already returned — and every executed row
+      already carried — a `truncated` flag set when the walk stopped at
+      MAX_PROBE_HITS (20) or MAX_PROBE_ENTRIES (5000). The flag had no reader.
+      PROVEN BY EXECUTION on master 8cf00772 through the public act() API: a
+      ratified window of 5,201 files truncated all four seed probes and the
+      operator-facing card still read "From what you told me I went looking and
+      found 1 file(s)" with complete:true; with the matching file past the cap
+      the same card reads "I went looking in that folder and nothing matched by
+      name" — a negative about a folder the probe never finished reading, on the
+      one surface whose whole purpose is to say what it does not know, and the
+      failure class this module's own docstrings twice claim to have closed ("no
+      surface may summarise it as though it had", "the unearned negative again in
+      a smaller frame"). The 20-hit cap makes it reachable in any folder with 21
+      matching names. WHAT THE LINES BUY, each pinned by an arm that fails
+      against the pre-change tree: complete now also refuses a truncated run;
+      _discovery_note names how many searches stopped and that this is what it
+      saw and not what is there; the dashboard's "What I went and looked for"
+      panel marks the stopped row beside its result, because reading the flag
+      only in the core would leave the same lie on the surface the operator
+      reads. ZERO new modules, no bijection class touched. Docstrings counted as
+      written and NOT reformatted into "#" comments to duck the counter. EXACT
+      measured running total 72510, 2026-07-28, via
+      cognitive-architecture-census.py against master a0cd4bc1 (72497, itself
+      exactly at the pinned maximum).
+    owner: onboarding-plane
+    sunset: '2027-01-28'
+    deletion_gate: >-
+      the probe executor gains a resumable walk (a cursor rather than a cap), so
+      a partial search becomes a continuable one and the disclosure collapses
+      into the completeness flag it already sets, or COG-7 compaction brings
+      production non-comment lines below the pinned baseline
 expansions:
   - member: framework/authority/ownership.py
     member_class: framework_production_modules

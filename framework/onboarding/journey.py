@@ -976,10 +976,18 @@ def _discovery_note(executed: Any) -> str:
     The deferred half is never silent: a run whose web probes could not leave
     the machine has not searched where the plan said it would, and reporting
     only the hits would be the unearned negative again in a smaller frame.
+
+    NEITHER IS THE TRUNCATED HALF. A probe that stopped at ``MAX_PROBE_HITS`` or
+    ``MAX_PROBE_ENTRIES`` searched PART of the window, so "nothing matched by
+    name" is a statement about the part it reached and not about the folder —
+    the same unearned negative in an even smaller frame, and the one a
+    thousands-of-files estate hits first. The stop is disclosed here because
+    the operator reads this sentence, not the ``truncated`` flag beside it.
     """
     if not isinstance(executed, dict):
         return ""
     hits = sorted({m for row in executed.get("executed") or () for m in row.get("matches") or ()})
+    stopped = [row for row in executed.get("executed") or () if row.get("truncated")]
     deferred = executed.get("deferred") or []
     if hits:
         shown = ", ".join(hits[:5])
@@ -988,6 +996,11 @@ def _discovery_note(executed: Any) -> str:
         note = " From what you told me I went looking in that folder and nothing matched by name."
     else:
         note = ""
+    if stopped:
+        note += (
+            f" {len(stopped)} search(es) stopped at my limit before the end of that folder, "
+            "so this is what I saw and not what is there."
+        )
     if deferred:
         reasons = sorted({str(row.get("reason") or "unknown") for row in deferred})
         note += (
@@ -2125,8 +2138,13 @@ def _execute_probes(source_root: Any, probes: Any) -> dict[str, Any]:
         "executed": executed,
         "deferred": deferred,
         # A run with anything deferred has NOT searched everywhere the plan
-        # proposed, and no surface may summarise it as though it had.
-        "complete": bool(executed) and not deferred,
+        # proposed, and no surface may summarise it as though it had. A probe
+        # that TRUNCATED is the same claim in a smaller frame — it stopped
+        # partway through the window, so the run is incomplete for exactly the
+        # reason ``deferred`` makes it incomplete, and reading only ``deferred``
+        # here let a folder of thousands of files report a complete search.
+        "complete": bool(executed) and not deferred
+        and not any(row["truncated"] for row in executed),
     }
 
 

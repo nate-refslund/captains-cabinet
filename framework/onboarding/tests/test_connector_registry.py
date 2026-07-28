@@ -505,18 +505,84 @@ def test_a_probe_pattern_from_operator_text_can_never_become_a_traversal(tmp_pat
 
 
 def test_the_executor_never_matches_a_sensitive_or_hidden_or_symlinked_file(tmp_path):
+    """Three separate refusals, and each fixture may trip only ITS OWN one.
+
+    The first version of this arm named every fixture ``*salary*``, so the
+    sensitivity refusal alone answered for all three and deleting either the
+    hidden-name guard or the symlink guard left it green: a test naming three
+    controls while pinning one. Each name below is refusable on exactly one
+    ground, and the plain file proves the probe still matches when nothing
+    refuses — otherwise an executor that returned ``[]`` unconditionally would
+    pass this too.
+    """
     source = tmp_path / "window"
     (source / "hidden").mkdir(parents=True)
-    (source / "salary-2026.csv").write_text("a\n", encoding="utf-8")
-    (source / ".salary-hidden.md").write_text("a\n", encoding="utf-8")
-    (source / "salary-notes.md").write_text("a\n", encoding="utf-8")
-    outside = tmp_path / "elsewhere.md"
+    (source / "plain-notes.md").write_text("a\n", encoding="utf-8")
+    (source / ".dotted-notes.md").write_text("a\n", encoding="utf-8")  # hidden only
+    (source / "salary-notes.md").write_text("a\n", encoding="utf-8")  # sensitive only
+    outside = tmp_path / "elsewhere-notes.md"
     outside.write_text("a\n", encoding="utf-8")
-    (source / "salary-link.md").symlink_to(outside)
+    (source / "linked-notes.md").symlink_to(outside)  # symlink only
 
-    result = journey._execute_probes(source, [{"kind": "local_name_match", "pattern": "*salary*"}])
+    result = journey._execute_probes(source, [{"kind": "local_name_match", "pattern": "*notes*"}])
     matches = result["executed"][0]["matches"]
-    assert matches == [], f"the executor surfaced a refused path: {matches}"
+    assert matches == ["plain-notes.md"], f"the executor surfaced a refused path: {matches}"
+
+
+# ── A partial search is never reported as a whole one ────────────────────────
+
+
+def test_a_search_that_stopped_at_its_limit_is_not_a_complete_run(tmp_path):
+    """``complete`` read only ``deferred``, so a truncated probe passed as whole.
+
+    ``_name_matches`` already returned ``truncated`` and already recorded it per
+    probe; nothing consulted it. A window with more matches than
+    ``MAX_PROBE_HITS`` therefore reported ``complete: True`` and an operator
+    sentence naming a hit count that was the CAP, not the count.
+    """
+    source = tmp_path / "window"
+    source.mkdir()
+    for index in range(journey.MAX_PROBE_HITS + 5):
+        (source / f"payments-{index:02d}.md").write_text("a\n", encoding="utf-8")
+
+    result = journey._execute_probes(
+        source, [{"kind": "local_name_match", "pattern": "*payments*"}]
+    )
+    assert result["executed"][0]["truncated"] is True
+    assert len(result["executed"][0]["matches"]) == journey.MAX_PROBE_HITS
+    assert result["deferred"] == [], "nothing was deferred — truncation is the only defect here"
+    assert result["complete"] is False, (
+        "a probe that stopped partway through the window has not searched it"
+    )
+    assert "stopped at my limit" in journey._discovery_note(result)
+
+
+def test_a_truncated_search_never_tells_the_operator_nothing_is_there(tmp_path, monkeypatch):
+    """The unearned negative, in the smallest frame this surface has.
+
+    Zero hits plus an early stop rendered as "I went looking in that folder and
+    nothing matched by name" — a claim about a folder the probe never finished
+    reading, on a card whose whole purpose is to say what it does not know. The
+    entry cap is shrunk rather than simulated: the truncation below is produced
+    by the real walk, not by a fixture hand-written in the shape being asserted.
+    """
+    monkeypatch.setattr(journey, "MAX_PROBE_ENTRIES", 2)
+    source = tmp_path / "window"
+    source.mkdir()
+    for index in range(6):
+        (source / f"unrelated-{index}.md").write_text("a\n", encoding="utf-8")
+
+    result = journey._execute_probes(
+        source, [{"kind": "local_name_match", "pattern": "*payments*"}]
+    )
+    assert result["executed"][0]["matches"] == []
+    assert result["executed"][0]["truncated"] is True
+    assert result["complete"] is False
+    note = journey._discovery_note(result)
+    assert "nothing matched by name" in note, "the negative itself still belongs on the card"
+    assert "stopped at my limit before the end of that folder" in note, (
+        "a negative from an unfinished search must carry that it was unfinished"
+    )
 
 
 def test_a_probe_class_that_did_not_run_is_reported_never_dropped(tmp_path):
