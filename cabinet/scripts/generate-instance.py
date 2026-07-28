@@ -205,8 +205,17 @@ _FRAMEWORK_ROOT = str(Path(__file__).resolve().parents[2])
 if _FRAMEWORK_ROOT not in sys.path:
     sys.path.insert(0, _FRAMEWORK_ROOT)
 from framework import env as _fenv  # noqa: E402  (after the sys.path insert)
+from framework.onboarding import estate as _estate  # noqa: E402
 
 AVAILABILITY_VERBS = frozenset(_fenv.availability_modes())
+
+# The operator's RUNG (Captain ruling 2026-07-26 — the north star is an AIM,
+# not an entry bar). Fixed verb enum, sourced from framework.onboarding.estate
+# so the vocabulary has ONE home: a developer inside a large company occupies
+# `contributor`, and the cabinet must be valuable there. ABSENT is a
+# first-class answer meaning UNKNOWN — never defaulted, never invented — and
+# an unknown altitude reproduces the pre-altitude behaviour exactly.
+ALTITUDES = frozenset(_estate.ALTITUDES)
 
 # Secret shapes the generator refuses to persist anywhere. Config carries
 # env-var NAMES only; values live in the gitignored cabinet/.env.
@@ -328,7 +337,12 @@ def _req(d: dict, key: str, where: str) -> object:
     return d[key]
 
 
-def load_answers(path: Path) -> dict:
+def load_answers(path: Path, root: Path | None = None) -> dict:
+    """Load + validate the answers. ``root`` is the deployment root the
+    derived-estate artifact is read from for the lanes-derivable gate below;
+    it defaults to two levels above this script, which is the deployment root
+    in every non-scratch run."""
+    root = Path(root) if root is not None else Path(__file__).resolve().parents[2]
     if not path.is_file():
         raise GenerationError(
             f"answers file not found: {path}\n"
@@ -401,9 +415,48 @@ def load_answers(path: Path) -> dict:
     if not re.match(r"^[a-z0-9][a-z0-9.\[\]-]{0,63}$", model):
         raise GenerationError(f"cabinet.officer_model {model!r} has an unexpected shape")
 
+    # OPTIONAL mission block (purpose-first interview). The generator ignores
+    # purpose/success_90d/never_touch — genesis conditions cards on them — but
+    # it OWNS answers validation, so a mistyped altitude refuses loudly here
+    # rather than silently resolving to UNKNOWN and quietly selecting the
+    # wrong preset. An absent block and an absent altitude both stay unknown.
+    mission = answers.get("mission")
+    if isinstance(mission, dict) and mission.get("altitude") is not None:
+        verb = str(mission.get("altitude")).strip().lower()
+        if verb not in ALTITUDES:
+            raise GenerationError(
+                f"mission.altitude {mission.get('altitude')!r} must be one of "
+                f"{sorted(ALTITUDES)} (the operator's rung — omit the key "
+                f"entirely to leave it unknown)"
+            )
+
+    # LANES ARE DERIVABLE (ordering inversion, Captain ruling 2026-07-26).
+    # This refusal used to be absolute — "answers must declare at least one
+    # lane" — and a lane IS a product, so a developer inside a large company
+    # could only invent one or take the --defaults placeholder. Now an EMPTY
+    # lane list is legal WHEN DISCOVERY HAS RUN for this deployment: the
+    # derived-estate artifact is the proof that the cabinet looked, and the
+    # lanes it found are proposed in instance/config/lanes-proposed.yml for
+    # the Captain to ratify into this file. An empty estate still passes —
+    # "I looked and found nothing" is a legitimate lane-less state, answered
+    # by the briefing's read-your-world card, not by a fabricated lane. What
+    # stays refused is lanes: [] with NO artifact at all: nobody ever looked.
     lanes = answers.get("lanes")
-    if not isinstance(lanes, list) or not lanes:
-        raise GenerationError("answers must declare at least one lane under lanes:")
+    if not isinstance(lanes, list):
+        raise GenerationError("answers lanes: must be a list")
+    if not lanes:
+        deployment = str((answers.get("cabinet") or {}).get("id", "main"))
+        usable, reason = _estate.estate_is_usable(
+            _estate.load_estate(root), deployment)
+        if not usable:
+            raise GenerationError(
+                f"answers declare no lanes and no usable derived estate "
+                f"({reason}). Either add a lane under lanes:, or let the "
+                f"cabinet READ your world first — grant a First Window and "
+                f"run `bash cabinet/scripts/formation.sh`, which derives "
+                f"{_estate.ESTATE_REL} and proposes lanes in "
+                f"{_estate.LANES_PROPOSED_REL}."
+            )
     seen = set()
     for i, lane in enumerate(lanes):
         if not isinstance(lane, dict):
@@ -1194,6 +1247,50 @@ def render_platform(existing: str, answers: dict, lanes: list, org_shape: str,
     return text
 
 
+def resolve_preset(answers: dict) -> tuple[str, str]:
+    """``(preset, basis)`` — THE preset resolution, for every caller.
+
+    Before this there were TWO mappings: this generator's printed next step and
+    hatch.sh's own org_shape switch, which had already drifted — hatch.sh wrote
+    `portfolio` even when the answers said `cabinet.preset: developer`. One
+    function, called by both, is the fix; hatch.sh now shells to
+    ``--print-preset`` rather than re-deriving it.
+
+    Precedence, and each rung is a real declaration rather than a guess:
+      1. ``cabinet.preset`` — the captain named a preset. Always wins.
+      2. ``mission.altitude`` in {contributor, project} → ``personal``.
+         ALTITUDE MUST REACH PRESET SELECTION or it is decoration (direction
+         gate, 2026-07-26). ``presets/personal`` is the kit written for exactly
+         those rungs — "someone who owns a project, not a company; a developer
+         inside a large organisation" — and it is the ONE shipped preset that
+         stands up no C-suite. It stays OPT-IN: declaring your rung is a
+         choice, not a default flip, and (1) overrides it.
+      3. ``cabinet.org_shape`` — today's default (portfolio → portfolio,
+         functional → work, custom → unmapped).
+
+    CORRECTED 2026-07-27: this mapped the low rungs to ``developer`` while
+    ``presets/personal/`` was a placeholder whose README forbade activating it,
+    and it said so as an honest gap. The sibling personal-preset landing closed
+    that gap, so "closest fit" became "wrong fit": `developer` is a flat copy of
+    `work` and stands up the C-suite this altitude does not have."""
+    cabinet = answers.get("cabinet") or {}
+    explicit = cabinet.get("preset")
+    if explicit:
+        return str(explicit), "cabinet.preset"
+    mission = answers.get("mission")
+    altitude = ""
+    if isinstance(mission, dict):
+        altitude = str(mission.get("altitude") or "").strip().lower()
+    if altitude in ("contributor", "project"):
+        return "personal", "mission.altitude"
+    org_shape = str(cabinet.get("org_shape", "portfolio"))
+    if org_shape == "portfolio":
+        return "portfolio", "cabinet.org_shape"
+    if org_shape == "functional":
+        return "work", "cabinet.org_shape"
+    return "", "cabinet.org_shape"
+
+
 def resolve_target_posture(answers: dict) -> tuple[str, str]:
     """(posture, flavor) the scaffold should declare (sovereign amendment
     2026-07-05). Default guardian; an explicit `autonomy.target_posture`
@@ -1338,7 +1435,7 @@ def default_captain_name(explicit: str | None) -> str:
     return DEFAULTS_CAPTAIN_FALLBACK
 
 
-def render_default_answers(captain_name: str) -> str:
+def render_default_answers(captain_name: str, altitude: str | None = None) -> str:
     """The --defaults answers file: a fixed, consent-safe, syntactically valid
     answers set (guardian + propose-first, org flavor, portfolio shape, one
     placeholder lane, env-var NAMES only). Marker-stamped: the generator owns
@@ -1348,6 +1445,19 @@ def render_default_answers(captain_name: str) -> str:
     YAML-reserved name ("yes", "Null", "0000") round-trips as that exact
     string instead of silently retyping to True/None/0."""
     captain_scalar = _yaml_str(captain_name)
+    # The ONE thing --defaults now asks-without-asking. An absent --altitude
+    # emits NO mission block at all, so the zero-question hatch stays
+    # byte-identical to before; a declared rung is a real answer and reaches
+    # preset selection + card derivation.
+    mission_block = ""
+    if altitude:
+        mission_block = (
+            "\n# The operator's RUNG (--altitude). It is not a title: it is what\n"
+            "# the operator can DECIDE, which bounds what a proposed outcome's\n"
+            "# proof can be. genesis reads it for card derivation; resolve_preset\n"
+            "# reads it for preset selection. Omit it and it stays unknown.\n"
+            f"mission:\n  altitude: {altitude}\n\n"
+        )
     return f"""\
 # {MARKER} — DEFAULTS fast lane (generate-instance.py --defaults).
 # A consent-safe answers set written with ZERO questions asked: guardian
@@ -1369,7 +1479,7 @@ captain:
   # named failure of the 1/3-scored briefing). Set it whenever you like, from
   # your phone: "availability 20m" / "availability part_time".
 
-cabinet:
+{mission_block}cabinet:
   id: main                       # single-instance default
   mode: single
   org_shape: portfolio           # one Chair + on-demand lane CEOs
@@ -1401,7 +1511,8 @@ integrations:
 
 
 def prepare_default_answers(root: Path, answers_path: Path, captain_name: str | None,
-                            adopt: bool = False, dry_run: bool = False) -> tuple[Path, Path | None]:
+                            adopt: bool = False, dry_run: bool = False,
+                            altitude: str | None = None) -> tuple[Path, Path | None]:
     """--defaults: materialize the defaults answers set at ``answers_path``
     and return ``(path_for_generate, tmp_path_or_None)``. Zero prompts.
 
@@ -1460,7 +1571,7 @@ def prepare_default_answers(root: Path, answers_path: Path, captain_name: str | 
     rel = resolved.relative_to(root)
 
     name = default_captain_name(captain_name)
-    content = render_default_answers(name)
+    content = render_default_answers(name, altitude)
 
     needs_archive = resolved.exists() and MARKER not in resolved.read_text(encoding="utf-8")
     if needs_archive and not adopt:
@@ -1520,7 +1631,7 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
              adopt: bool = False) -> list:
     """Run the full generation pass. Returns the list of written paths."""
     root = root.resolve()
-    answers = load_answers(answers_path)
+    answers = load_answers(answers_path, root)
     cabinet = answers.get("cabinet") or {}
     org_shape = str(cabinet.get("org_shape", "portfolio"))
     model = str(cabinet.get("officer_model", DEFAULT_MODEL))
@@ -1650,7 +1761,14 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
     # declared lane is the natural initial value.
     active_project_path = _instance_path(root, "config", "active-project.txt")
     active_project_skipped = active_project_path.exists()
-    if not active_project_skipped:
+    # NO LANES, NO INVENTED SLUG. A lane-less deployment has no product to be
+    # active in, and writing a placeholder here is the exact failure the
+    # ordering inversion exists to remove: a value pretending to be an answer.
+    # bootstrap-roles.sh then says what it always says — pass --product-slug or
+    # set this file — and the next-steps block below names the ratification
+    # path that fills it honestly.
+    active_project_written = not active_project_skipped and bool(lanes)
+    if active_project_written:
         outputs.append((active_project_path, f"{lanes[0]['slug']}\n", "text"))
 
     # ---- pre-write validation: every planned artifact must parse ----
@@ -1705,12 +1823,16 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
     # default. The developer preset stays OPT-IN — surfaced as a choice for
     # the functional shape below, never substituted as the default.
     explicit_preset = cabinet.get("preset")
-    preset = (str(explicit_preset) if explicit_preset
-              else "portfolio" if org_shape == "portfolio"
-              else ("work" if org_shape == "functional" else "<your-preset>"))
+    preset, preset_basis = resolve_preset(answers)
+    preset = preset or "<your-preset>"
     print("\nNext steps (in order):")
     print(f"  1. echo {preset} > instance/config/active-preset")
-    if org_shape == "functional" and not explicit_preset:
+    if preset_basis == "mission.altitude":
+        print("     (selected from mission.altitude — your declared rung. The")
+        print("      personal preset is the one shipped kit with NO C-suite:")
+        print("      Navigator, Librarian, Reviewer for one operator who owns a")
+        print("      project, not a company. Override with cabinet.preset.)")
+    if org_shape == "functional" and preset_basis == "cabinet.org_shape":
         print("     (work is the default. Shipping a software/web/app product? The")
         print("      OPTIONAL developer preset is the software product-kind kit —")
         print("      presets/developer/README.md; activate with")
@@ -1765,10 +1887,15 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
     if active_project_skipped:
         print("  Active project: existing instance/config/active-project.txt left")
         print("  untouched (operator state — never regenerated).")
-    else:
+    elif active_project_written:
         print(f"  Active project: wrote instance/config/active-project.txt = "
               f"{lanes[0]['slug']} (bootstrap-roles.sh reads it for the product")
         print("  slug; edit it any time to switch the active lane).")
+    else:
+        print("  Active project: NOT written — this deployment declares no lanes,")
+        print("  and a placeholder slug would be a value pretending to be an")
+        print(f"  answer. Ratify a lane from {_estate.LANES_PROPOSED_REL} into")
+        print("  the answers file and re-run, or set the file yourself.")
     if adopted:
         print(f"  Adopted: {len(adopted)} previous-deployment file(s) archived under")
         print(f"  {adopt_root.relative_to(root)}/ — review, then delete when confident.")
@@ -1813,8 +1940,17 @@ def main(argv=None) -> int:
     parser.add_argument("--captain-name", default=None, metavar="NAME",
                         help="captain display name for --defaults "
                              "(default: $USER, else 'Captain')")
+    parser.add_argument("--altitude", default=None, metavar="RUNG",
+                        help="operator rung for --defaults: "
+                             + " | ".join(sorted(ALTITUDES))
+                             + " (omit to leave it unknown)")
     parser.add_argument("--example", action="store_true",
                         help="print a starter answers file to stdout and exit")
+    parser.add_argument("--print-preset", action="store_true", dest="print_preset",
+                        help="print the resolved preset slug for the answers file "
+                             "and exit (the ONE resolution; hatch.sh calls this "
+                             "instead of re-deriving it). Exit 3 when no preset "
+                             "maps (custom shape).")
     args = parser.parse_args(argv)
 
     if args.example:
@@ -1825,16 +1961,45 @@ def main(argv=None) -> int:
         print("[generate-instance] ERROR: --captain-name requires --defaults",
               file=sys.stderr)
         return 2
+    if args.altitude is not None:
+        if not args.defaults:
+            print("[generate-instance] ERROR: --altitude requires --defaults "
+                  "(otherwise set mission.altitude in the answers file)",
+                  file=sys.stderr)
+            return 2
+        if args.altitude not in ALTITUDES:
+            print(f"[generate-instance] ERROR: --altitude {args.altitude!r} must "
+                  f"be one of {sorted(ALTITUDES)}", file=sys.stderr)
+            return 2
 
     root = Path(args.root).resolve() if args.root else Path(__file__).resolve().parents[2]
     answers_path = Path(args.answers).resolve() if args.answers else root / "instance/config/cabinet-init.answers.yml"
+
+    if args.print_preset:
+        # Read-only: resolve and print, write nothing. Full validation still
+        # runs, so a broken answers file fails here exactly as it would at
+        # generation — the hatch must not select a preset from answers the
+        # generator would then refuse.
+        try:
+            preset, basis = resolve_preset(load_answers(answers_path, root))
+        except GenerationError as e:
+            print(f"[generate-instance] ERROR: {e}", file=sys.stderr)
+            return 2
+        if not preset:
+            print("[generate-instance] ERROR: no preset maps to this answers "
+                  "file (custom org_shape and no cabinet.preset) — set "
+                  "instance/config/active-preset yourself", file=sys.stderr)
+            return 3
+        print(preset)
+        return 0
 
     tmp_answers: Path | None = None
     try:
         if args.defaults:
             answers_path, tmp_answers = prepare_default_answers(
                 root, answers_path, args.captain_name,
-                adopt=args.adopt, dry_run=args.dry_run)
+                adopt=args.adopt, dry_run=args.dry_run,
+                altitude=args.altitude)
         generate(root, answers_path, dry_run=args.dry_run, force=args.force,
                  adopt=args.adopt)
     except GenerationError as e:

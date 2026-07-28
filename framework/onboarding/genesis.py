@@ -6,11 +6,38 @@ first briefing carrying org-PROPOSED outcome cards; Telegram is a post-receipt
 errand). This module supplies the two genesis organs behind that receipt:
 
 ONBOARD-1 — ``propose_outcome_cards`` / ``run_genesis_proposal``: the org
-PROPOSES 2–4 outcome cards derived from the cabinet-init answers (lanes, org
-shape, and — when the purpose-first interview recorded one — the ``mission:``
-block) + the focus letter (``instance/config/onboarding-focus.md``, a
-first-class Phase-0 artifact since onboarding-vision-2026-07-14; still
+PROPOSES 2–4 outcome cards derived from the DERIVED ESTATE (what the cabinet
+READ — ``framework.onboarding.estate``) and the cabinet-init answers (lanes,
+org shape, and — when the purpose-first interview recorded one — the
+``mission:`` block) + the focus letter (``instance/config/onboarding-focus.md``,
+a first-class Phase-0 artifact since onboarding-vision-2026-07-14; still
 tolerated absent).
+
+THE ESTATE IS A FIRST-CLASS INPUT BESIDE THE ANSWERS FILE (Captain ruling
+2026-07-26, ordering inversion). Before it, cards were composed ONLY from the
+answers, so a ``--defaults`` hatch derived them from a placeholder lane named
+"First Lane" and the first real briefing scored 1 of 3 with — the Captain's
+word — irrelevant cards. Now: declared lanes still win (they are the Captain's
+own ratified statement), estate ENTITIES fill the remaining subject slots with
+their citations, and when there is neither, one leftover-question card asks the three
+questions that are un-derivable by construction — which sources are yours to
+grant, what actually matters this week, what must this never be touched — plus
+the human-shaped seed question for an operator who has connected nothing. What
+never appears again is "tell us what your company is": a developer inside a
+large company has no answer to it, and the correct product behaviour is not to
+ask it.
+
+ALTITUDE CONDITIONS THE PROOF LINE, and this is the point of carrying it at
+all. ``mission.altitude`` (contributor | project | team | function | company)
+is the operator's rung. At function/company altitude a card's proof is a
+shipped, closed, deployed change. At contributor/project/team altitude that
+proof is unreachable BY ORG CHART, not by cabinet quality — the six ceiling
+classes belong to the employer — so the proof becomes proposal-shaped: a
+written proposal citing evidence the operator could not previously assemble,
+delivered to whoever owns the decision, and the decision it changed. The
+promise at low altitude is expanded REACH and PROPOSAL QUALITY, never expanded
+permission. An ABSENT altitude derives byte-identical cards to the
+pre-altitude behaviour — unknown is a first-class answer.
 PROPOSE-ONLY by construction: every card is ``status: draft`` +
 ``captain_ratified: false`` and lands in ``instance/config/outcomes-proposed.yml``
 — a filename the mission compiler structurally never reads (its filename gate
@@ -72,8 +99,15 @@ IOU_LINE = "research brief queued — will be produced when officers wake"
 _NET_HOST = "api.anthropic.com"
 _NET_PORT = 443
 
-_MAX_LANE_CARDS = 2   # 2 lane cards + 2 org cards = the 2–4 band's ceiling
+_MAX_LANE_CARDS = 2   # 2 subject cards + 2 org cards = the 2–4 band's ceiling
 _DEFAULT_BRIEF_TIMEOUT = 90
+
+# The rungs where the six ceiling classes (external comms, prod deploy, spend,
+# secrets, network write, credential grant) are NOT the operator's to grant,
+# because they belong to their employer. A card whose proof needs one of them
+# is unreachable there through no fault of the cabinet, so the proof changes
+# shape rather than the operator being handed a bar set by org chart.
+_LOW_ALTITUDES = frozenset({"contributor", "project", "team"})
 
 
 def cabinet_root() -> Path:
@@ -161,26 +195,149 @@ def _mission_fields(answers: dict) -> tuple[str | None, str | None, list[str]]:
     return purpose, success, never[:3]
 
 
+def _low_altitude(answers: dict) -> bool:
+    """True when the operator declared a rung whose action space is bounded by
+    org chart. Absent/unknown → False, i.e. exactly today's cards."""
+    from framework.onboarding import estate as _estate  # local: import-light
+    return (_estate.altitude_of(answers) or "") in _LOW_ALTITUDES
+
+
+def _subject_proof(name: str, repos: list, low: bool) -> str:
+    """The proof line for a subject card, at the operator's altitude."""
+    if low:
+        return (
+            "A written proposal about " + name + " that cites evidence "
+            "assembled across what you already read"
+            + (f" (incl. {repos[0]})" if repos else "")
+            + ", delivered to whoever owns the decision — plus what they "
+            "decided. Reach and proposal quality, not permission you do not "
+            "hold."
+        )
+    return (
+        "A closed task in the lane's task system linked to the shipped "
+        "change" + (f" in {repos[0]}" if repos else "")
+        + ", plus the action's receipt (what/why/undo) in the org journal."
+    )
+
+
+def _estate_subject_cards(estate: dict, taken: set, seen_ids: set, *,
+                          purpose: str | None, low: bool, limit: int) -> list[dict]:
+    """Subject cards derived from what the cabinet READ, each carrying the
+    citation that produced it. Entities whose slug already came from a
+    declared lane are skipped: the Captain's own declaration wins over a
+    derivation of the same thing."""
+    cards: list[dict] = []
+    for ent in (estate.get("entities") or []):
+        if len(cards) >= limit:
+            break
+        if not isinstance(ent, dict):
+            continue
+        slug = str(ent.get("id") or "").strip()
+        name = str(ent.get("name") or slug).strip()
+        if not (slug or name) or slug in taken:
+            continue
+        taken.add(slug)
+        cites = [str(c.get("path")) for c in (ent.get("evidence") or [])
+                 if isinstance(c, dict) and c.get("path")]
+        why = (f"I found {name or slug} by reading your world, not by asking: "
+               + (f"{', '.join(cites[:2])} " if cites else "")
+               + f"under the folder you granted (path: {ent.get('relative_path') or '.'}). "
+               "Correct me if this is not a thing you work on.")
+        if purpose:
+            why += f' The mission it serves: "{purpose}"'
+        base_id = f"proposed-{slug or 'entity'}-first-proof"
+        card_id, n = base_id, 2
+        while card_id in seen_ids:
+            card_id, n = f"{base_id}-{n}", n + 1
+        seen_ids.add(card_id)
+        cards.append({
+            "id": card_id,
+            "name": f"First verifiable improvement in {name or slug}",
+            "lane": slug or None,
+            "derived_from": "estate",
+            "what": (
+                f"One reviewed, Captain-approved improvement in {name or slug} "
+                "traced end-to-end from the evidence that surfaced it."
+            ),
+            "why": why,
+            "proof_expected": _subject_proof(name or slug, [], low),
+        })
+    return cards
+
+
+def _residual_card(estate: dict | None, low: bool) -> dict:
+    """The card that replaces "tell us what your company is".
+
+    Three questions, and every one of them is un-derivable BY CONSTRUCTION —
+    the answer is not in any data the cabinet could read. Plus the seed
+    question for the operator who has connected nothing at all, because a
+    cabinet with no sources must still never be a dead end."""
+    read_anything = bool((estate or {}).get("sources"))
+    opening = (
+        "I read what you granted and found nothing I could honestly call a "
+        "product or project of yours."
+        if read_anything else
+        "I have not read anything of yours yet, so I am not going to guess "
+        "what you work on."
+    )
+    return {
+        "id": "proposed-read-your-world",
+        "name": "Point me at your world — then I stop asking and start reading",
+        "lane": None,
+        "derived_from": "residual",
+        "what": (
+            "Grant one read-only First Window (a folder, a repo checkout, a "
+            "docs tree) and let discovery derive your lanes: "
+            "bash cabinet/scripts/formation.sh — proposals land in "
+            "instance/config/lanes-proposed.yml for you to ratify. Nothing "
+            "is activated, nothing is sent, nothing is written back."
+        ),
+        "why": (
+            opening + " Three things I cannot derive from any data, so I ask "
+            "them and nothing else: (1) which of these sources are yours to "
+            "grant? (2) of what I show you, what actually matters to you this "
+            "week? (3) what must I never touch? If you would rather start by "
+            "talking: tell me what you do and how I can best serve you — a "
+            "few words is enough to go find the rest."
+            + (" At your altitude the answer is reach, not permission: I can "
+               "assemble context nobody at your level holds, and I will never "
+               "claim authority that is not yours to give." if low else "")
+        ),
+        "proof_expected": (
+            "instance/onboarding/formation/derived-estate.yml exists with at "
+            "least one source, and instance/config/lanes-proposed.yml carries "
+            "a lane you ratified into "
+            "instance/config/cabinet-init.answers.yml."
+        ),
+    }
+
+
 # ---------------------------------------------------------------------------
 # ONBOARD-1 — the org PROPOSES outcome cards (propose-only, never activating).
 # ---------------------------------------------------------------------------
-def propose_outcome_cards(answers: dict, focus_text: str | None = None) -> list[dict]:
-    """PURE derivation: cabinet-init answers (+ optional focus letter) → 2–4
-    proposed outcome cards.
+def propose_outcome_cards(answers: dict, focus_text: str | None = None, *,
+                          estate: dict | None = None) -> list[dict]:
+    """PURE derivation: the derived estate + cabinet-init answers (+ optional
+    focus letter) → 2–4 proposed outcome cards.
 
     Card anatomy (the hatching design's proposal-card lines): ``what`` /
     ``why`` / ``proof_expected``, plus ``status: draft`` and
-    ``captain_ratified: False`` — ALWAYS. Derivation is deterministic: up to
-    ``_MAX_LANE_CARDS`` lane cards (declared lane order) + the two org cards
-    (Library grounding, Captain decision loop), so 0 lanes → 2 cards,
-    1 lane → 3, ≥2 lanes → 4. Returns [] when answers carry no cabinet id at
-    all (nothing to key a proposal to — honest empty).
+    ``captain_ratified: False`` — ALWAYS. Derivation is deterministic. Up to
+    ``_MAX_LANE_CARDS`` SUBJECT cards fill first from the declared lanes (the
+    Captain's own statement wins), then from the estate's entities; when
+    neither yields one, a single leftover-question card asks the three
+    un-derivable questions. Then the two org cards (Library grounding,
+    Captain decision loop). So 2 lanes → 4 cards, 1 lane → 3, 0 lanes and no
+    estate entities → 3 (residual + the two org cards). Returns [] when
+    answers carry no cabinet id at all (nothing to key a proposal to — honest
+    empty).
 
     MISSION-CONDITIONED (Phase 2, onboarding-vision-2026-07-14 §4): when the
     answers carry the interview's ``mission:`` block, the cards quote the
-    stated purpose / 90-day bar / never-touch list — still PURE deterministic
-    string derivation (no LLM anywhere near the hatch chain). Missionless
-    answers derive exactly today's cards."""
+    stated purpose / 90-day bar / never-touch list, and ``mission.altitude``
+    reshapes every proof line — still PURE deterministic string derivation (no
+    LLM anywhere near the hatch chain). Missionless answers with a declared
+    lane derive exactly today's cards."""
     cabinet = answers.get("cabinet") or {}
     cabinet_id = str(cabinet.get("id") or "").strip()
     if not cabinet_id:
@@ -189,15 +346,18 @@ def propose_outcome_cards(answers: dict, focus_text: str | None = None) -> list[
     excerpt = _focus_excerpt(focus_text)
     focus_lower = (focus_text or "").lower()
     purpose, success_90d, never_touch = _mission_fields(answers)
+    low = _low_altitude(answers)
     cards: list[dict] = []
 
     seen_ids: set[str] = set()
+    taken_slugs: set[str] = set()
     lanes = [ln for ln in (answers.get("lanes") or []) if isinstance(ln, dict)]
     for lane in lanes[:_MAX_LANE_CARDS]:
         slug = str(lane.get("slug") or "").strip()
         name = str(lane.get("name") or slug).strip()
         if not (slug or name):
             continue
+        taken_slugs.add(slug)
         repos = [str(r) for r in (lane.get("repos") or []) if str(r).strip()]
         why = f"You staked {name or slug} as a lane at genesis"
         if repos:
@@ -209,11 +369,6 @@ def propose_outcome_cards(answers: dict, focus_text: str | None = None) -> list[
             why += " Your focus letter names this lane."
         if purpose:
             why += f' The mission it serves: "{purpose}"'
-        proof = (
-            "A closed task in the lane's task system linked to the shipped "
-            "change" + (f" in {repos[0]}" if repos else "")
-            + ", plus the action's receipt (what/why/undo) in the org journal."
-        )
         # ids are keys downstream (ratification moves rows by id) — duplicate
         # lane slugs in the answers must still yield unique card ids.
         base_id = f"proposed-{slug or name.lower().replace(' ', '-')}-first-proof"
@@ -225,18 +380,27 @@ def propose_outcome_cards(answers: dict, focus_text: str | None = None) -> list[
             "id": card_id,
             "name": f"First verifiable improvement shipped in the {name or slug} lane",
             "lane": slug or None,
+            "derived_from": "answers",
             "what": (
                 f"One reviewed, Captain-approved improvement in {name or slug} "
                 "traced end-to-end: task → change → verified deploy/close."
             ),
             "why": why,
-            "proof_expected": proof,
+            "proof_expected": _subject_proof(name or slug, repos, low),
         })
+
+    if len(cards) < _MAX_LANE_CARDS and isinstance(estate, dict):
+        cards.extend(_estate_subject_cards(
+            estate, taken_slugs, seen_ids, purpose=purpose, low=low,
+            limit=_MAX_LANE_CARDS - len(cards)))
+    if not cards:
+        cards.append(_residual_card(estate, low))
 
     cards.append({
         "id": "proposed-library-grounding",
         "name": "The Library grounds the org: ratified company/market/product brief",
         "lane": None,
+        "derived_from": "system",
         "what": (
             "The genesis research brief is reviewed by the Captain, corrected "
             "where wrong, and ratified into the Library as the org's baseline "
@@ -257,6 +421,7 @@ def propose_outcome_cards(answers: dict, focus_text: str | None = None) -> list[
         "id": "proposed-captain-loop",
         "name": "The Captain decision loop is proven end-to-end",
         "lane": None,
+        "derived_from": "system",
         "what": (
             "At least one org-proposed outcome from this first briefing is "
             "ratified, edited, or rejected by the Captain, and the org visibly "
@@ -285,9 +450,12 @@ def propose_outcome_cards(answers: dict, focus_text: str | None = None) -> list[
 
 
 def _proposals_doc(cards: list[dict], answers: dict, *, now: str,
-                   focus_present: bool) -> dict:
+                   focus_present: bool, estate_present: bool = False) -> dict:
     cabinet = answers.get("cabinet") or {}
     derived = [ANSWERS_REL] + ([FOCUS_REL] if focus_present else [])
+    if estate_present:
+        from framework.onboarding import estate as _estate  # local: import-light
+        derived.append(_estate.ESTATE_REL)
     outcomes = []
     for card in cards:
         outcomes.append({
@@ -296,6 +464,10 @@ def _proposals_doc(cards: list[dict], answers: dict, *, now: str,
             "status": "draft",
             "captain_ratified": False,
             "lane": card.get("lane"),
+            # Provenance the Captain can act on: "answers" is his own
+            # declaration, "estate" is something I read and can cite,
+            # "residual" is a question only he can answer.
+            "derived_from": card.get("derived_from", "answers"),
             "what": card["what"],
             "why": card["why"],
             "proof_expected": card["proof_expected"],
@@ -328,7 +500,8 @@ _PROPOSALS_HEADER = """\
 
 def write_proposals(cards: list[dict], root: Path | None = None, *,
                     answers: dict | None = None, now: str | None = None,
-                    focus_present: bool = False, force: bool = False) -> dict:
+                    focus_present: bool = False, force: bool = False,
+                    estate_present: bool = False) -> dict:
     """Write the propose-only staging file. Write-once: an existing file is
     NEVER overwritten unless ``force`` (the Captain may have edited drafts) —
     the briefing composes from the file either way."""
@@ -338,7 +511,8 @@ def write_proposals(cards: list[dict], root: Path | None = None, *,
         return {"status": "kept-existing", "path": str(path), "written": False}
     import yaml  # local: keep the module import-light
     doc = _proposals_doc(cards, answers or {}, now=_utc_now_iso(now),
-                         focus_present=focus_present)
+                         focus_present=focus_present,
+                         estate_present=estate_present)
     body = _PROPOSALS_HEADER.format(marker=GENERATED_MARKER)
     body += yaml.safe_dump(doc, sort_keys=False, allow_unicode=True, width=100)
     _atomic_write(path, body)
@@ -440,11 +614,17 @@ def run_genesis_proposal(root: Path | None = None, *, now: str | None = None) ->
     if not answers:
         return {"status": "no-answers", "path": None, "cards": 0}
     focus = load_focus_text(base)
-    cards = propose_outcome_cards(answers, focus)
+    from framework.onboarding import estate as _estate  # local: import-light
+    derived = _estate.load_estate(base)
+    usable, _reason = _estate.estate_is_usable(
+        derived, (answers.get("cabinet") or {}).get("id"))
+    estate = derived if usable else None
+    cards = propose_outcome_cards(answers, focus, estate=estate)
     if not cards:
         return {"status": "no-cards", "path": None, "cards": 0}
     res = write_proposals(cards, base, answers=answers, now=now,
-                          focus_present=focus is not None)
+                          focus_present=focus is not None,
+                          estate_present=estate is not None)
     return {"status": res["status"], "path": res["path"], "cards": len(cards)}
 
 
@@ -678,7 +858,8 @@ def genesis_intake_items(root: Path | None = None, now: str | None = None) -> li
     ts = _utc_now_iso(now)
     items: list[dict] = []
 
-    for row in _load_proposal_rows(base):
+    proposal_rows = _load_proposal_rows(base)
+    for row in proposal_rows:
         name = str(row.get("name") or row.get("id") or "").strip()
         if not name:
             continue
@@ -717,6 +898,52 @@ def genesis_intake_items(root: Path | None = None, now: str | None = None) -> li
             "ts": ts, "urgency_tier": "fyi",
             "payload": {"summary": f"📚 {IOU_LINE} (IOU on file: {BRIEF_REL})"},
             "context": {"why": "ONBOARD-2 honest IOU — no fake content"},
+        })
+
+    from framework.onboarding import estate as _estate  # local: import-light
+    derived = _estate.load_estate(base)
+    if derived.get("schema") == _estate.SCHEMA:
+        srcs = [s for s in (derived.get("sources") or []) if isinstance(s, dict)]
+        ents = derived.get("entities") or []
+        # READ THE CANONICAL RECORD'S OWN FIELDS. ``access_record`` writes
+        # ``refusals`` as a MAPPING class->count and pre-totals it into
+        # ``refusals_total``; the earlier list-of-dicts sum iterated the
+        # mapping's KEYS, so ``isinstance(r, dict)`` was never true and the
+        # count was structurally 0 for every sweep — the auditability this
+        # line exists to provide, silently disabled. Same class of bug one
+        # field over: the record's key is ``source_root``, not ``root``, so
+        # the provenance always fell back to the label.
+        refusals = sum(int(s.get("refusals_total") or 0) for s in srcs)
+        roots = ", ".join(str(s.get("source_root") or s.get("label") or "?")
+                          for s in srcs[:2])
+        # Do NOT claim the cards derive from the estate unless one actually
+        # does. Nothing in the shipped chain runs formation.sh before the
+        # first briefing, and ``write_proposals`` is write-once, so the
+        # ordinary ordering yields cards written BEFORE this estate existed.
+        # Claiming the citation anyway is the unearned-negative defect this
+        # unit was built to remove, reappearing one surface up.
+        from_estate = sum(1 for r in proposal_rows
+                          if str(r.get("derived_from") or "") == "estate")
+        # PROVENANCE, not a claim: what was read, from where, under which
+        # ownership class, and how many entries were REFUSED. A silent skip
+        # destroys auditability, so the count is shown even when it is 0.
+        body = (f"🗺️ Derived estate: {len(srcs)} source(s), {len(ents)} "
+                f"entity(ies), {refusals} refused entr(ies)"
+                + (f" — {roots}" if roots else " — nothing granted yet")
+                + f". Ownership: {', '.join(sorted({str(s.get('ownership')) for s in srcs})) or 'n/a'} "
+                  "(asked, never inferred; anything not `self` proposes "
+                  "read-only). Record: " + _estate.ESTATE_REL)
+        items.append({
+            "source": "onboarding-genesis", "kind": "genesis-estate",
+            "ts": ts, "urgency_tier": "fyi",
+            "payload": {"summary": body},
+            "context": {"why": ("what the cabinet READ — the cards above are "
+                                "derived from it, with citations")
+                        if from_estate else
+                        ("what the cabinet READ. No card above derives from "
+                         "it: the proposals on file were written before this "
+                         "estate existed. Re-run genesis to derive cards "
+                         "from what was read.")},
         })
 
     if (base / FOCUS_REL).is_file():
