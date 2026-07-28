@@ -120,6 +120,32 @@ def make_textured_scene(seed: int, w: int = 384, h: int = 320) -> bytes:
     return bytes(buf)
 
 
+def make_css_rect_scene(seed: int = 7, w: int = 384, h: int = 320) -> bytes:
+    """Flat CSS/dashboard rectangles on a dark slate field (palette-attack
+    class). Deliberately built from web colours no pixel-art corpus contains,
+    so palette_coherence must fail it whatever the corpus is fitted to. Pure
+    stdlib, no corpus input — this arm stays runnable when the corpus does not
+    exist, which is why the bite proof never depends on assembled pixels."""
+    rng = random.Random(seed)
+    bg = (17, 24, 39)
+    pal = [(59, 130, 246), (239, 68, 68), (16, 185, 129), (245, 158, 11),
+           (139, 92, 246), (236, 72, 153), (255, 255, 255)]
+    buf = bytearray(w * h * 4)
+    for i in range(0, len(buf), 4):
+        buf[i], buf[i + 1], buf[i + 2], buf[i + 3] = bg[0], bg[1], bg[2], 255
+    for k in range(24):
+        rw, rh = rng.randint(30, 90), rng.randint(18, 60)
+        x0 = rng.randint(0, max(0, w - rw - 1))
+        y0 = rng.randint(0, max(0, h - rh - 1))
+        c = pal[k % len(pal)]
+        for y in range(y0, y0 + rh):
+            i = (y * w + x0) * 4
+            for _ in range(rw):
+                buf[i], buf[i + 1], buf[i + 2], buf[i + 3] = c[0], c[1], c[2], 255
+                i += 4
+    return bytes(buf)
+
+
 def make_flat_scatter_scene(seed: int, n: int = 30, w: int = 384,
                             h: int = 320,
                             bg=(139, 195, 116)) -> bytes:

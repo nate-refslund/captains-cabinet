@@ -231,13 +231,18 @@ swap_symlink() {
 # foundry/ is the COG-5 sealed append-only trajectory archive whose own contract
 # says "rollback = verified RESTORE, never cache-delete"; world/ holds the
 # append-only chronicle series that services.yml orders ARCHIVED, never
-# truncated. corpus/{positive,negative} are the judge's taste-accumulation
-# frames — Captain approve/reject rulings on renders that no longer exist
-# anywhere, and _corpus.py integrity-checks every read, so a lost corpus is a
-# hard judge failure. They are linked at the SUBDIR level deliberately: the
-# corpus root holds a git-TRACKED manifest.json that a whole-dir link would
-# shadow (the same "never shadow a tracked file" rule as the wildcard block).
-INSTANCE_PERSISTENT_DIRS="instance/roles/active instance/roles/archive instance/roles/hats instance/loop-prompts instance/archive instance/state instance/cache instance/onboarding/formation instance/onboarding/v2 instance/onboarding/purge-receipts instance/onboarding/access-records instance/evidence secrets shared/interfaces/foundry shared/interfaces/world cabinet/scripts/world-aesthetic/corpus/positive cabinet/scripts/world-aesthetic/corpus/negative"
+# truncated. corpus/{positive,negative,palette} are the judge's taste-
+# accumulation frames — Captain approve/reject rulings on renders that no
+# longer exist anywhere, and _corpus.py integrity-checks every read, so a lost
+# corpus is a hard judge failure. corpus/palette (2026-07-28) holds the
+# palette-fit-only art; the corpus-limezu-2026-07-08/ subdirs are the
+# SUPERSEDED corpus, kept so every claim made against it stays reproducible and
+# so calibrate.py prove keeps its cross-family bite arm — losing it on a deploy
+# would silently turn that arm into a NOT RUN. All are linked at the SUBDIR
+# level deliberately: each corpus root holds a git-TRACKED manifest.json that a
+# whole-dir link would shadow (the same "never shadow a tracked file" rule as
+# the wildcard block).
+INSTANCE_PERSISTENT_DIRS="instance/roles/active instance/roles/archive instance/roles/hats instance/loop-prompts instance/archive instance/state instance/cache instance/onboarding/formation instance/onboarding/v2 instance/onboarding/purge-receipts instance/onboarding/access-records instance/evidence secrets shared/interfaces/foundry shared/interfaces/world cabinet/scripts/world-aesthetic/corpus/positive cabinet/scripts/world-aesthetic/corpus/negative cabinet/scripts/world-aesthetic/corpus/palette cabinet/scripts/world-aesthetic/corpus-limezu-2026-07-08/positive cabinet/scripts/world-aesthetic/corpus-limezu-2026-07-08/negative"
 # Gitignored in bulk but ships a tracked tier2/<officer>/{,reflections/}.gitkeep
 # skeleton — seeded into shared/ from the release's own tree, then
 # symlinked whole like any PERSISTENT_DIRS entry.

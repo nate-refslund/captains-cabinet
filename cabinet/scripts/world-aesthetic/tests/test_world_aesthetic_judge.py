@@ -486,21 +486,20 @@ def test_build_corpus_manifest_preserves_recorded_entries(
                WA_DIR / "build_corpus.py")
     monkeypatch.setattr(bc, "HERE", tmp_path)
     monkeypatch.setattr(bc, "CORPUS", corpus)
-    monkeypatch.setattr(bc, "MANIFEST", corpus / "manifest.json")
     monkeypatch.setattr(bc, "REGISTRY", {
         "pos-0": ("positive", "pos-0.png", "test prov", "test why"),
     })
 
-    bc.build_manifest()
+    bc.build_manifest(corpus)
     data = json.loads((corpus / "manifest.json").read_text())
     ids = {i["id"] for i in data["images"]}
     assert "cap-keeper" in ids          # Captain taste survives a rebuild
     assert "pos-0" in ids               # REGISTRY entry rebuilt
     assert "neg-0" in ids               # non-REGISTRY fixture entry carried
-    assert data["counts"] == {"positive": 2, "negative": 1}
+    assert data["counts"] == {"positive": 2, "negative": 1, "palette": 0}
 
     # a drifted carried file is a hard stop, never a silent drop
     solid_png(png, corpus / "positive" / "cap-keeper.png",
               8, 8, (99, 99, 99, 255))
     with pytest.raises(SystemExit):
-        bc.build_manifest()
+        bc.build_manifest(corpus)

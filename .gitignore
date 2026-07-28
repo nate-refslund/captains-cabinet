@@ -303,11 +303,21 @@ cabinet/dashboard/public/world-assets/*
 # LimeZu commercial binaries stay ignored.
 !cabinet/dashboard/public/world-assets/originals/
 
-# World-aesthetic calibration corpus: LimeZu-derived showcase scenes +
-# Captain-rejected build screenshots are licensed/instance data — images
-# never committed; only build_corpus.py + the sha256 manifest are tracked.
+# World-aesthetic calibration corpus: owned live captures + Captain-rejected
+# build screenshots are instance data — images never committed; only
+# build_corpus.py + the sha256 manifest are tracked. Superseded corpora keep
+# the same rule: pixels ignored, manifest tracked, so an archived corpus stays
+# verifiable (build_corpus.py verify --corpus <dir>) without committing it.
+# Each superseded corpus gets its OWN literal rule when it is archived, never
+# a corpus-*/ glob: state-persistence-preflight.py resolves a wildcard rule to
+# its deepest wildcard-free prefix, so a glob here would collapse to
+# cabinet/scripts/world-aesthetic and read as an unaccounted durable path.
+# Naming each archive literally forces whoever archives one to declare its
+# persistence at the same time, which is the behaviour we want.
 cabinet/scripts/world-aesthetic/corpus/*
 !cabinet/scripts/world-aesthetic/corpus/manifest.json
+cabinet/scripts/world-aesthetic/corpus-limezu-2026-07-08/*
+!cabinet/scripts/world-aesthetic/corpus-limezu-2026-07-08/manifest.json
 
 # Vision-judge golden frames (Captain-approved renders are LimeZu-derived,
 # licensed — same rule as the corpus above): only the sha256 + per-region
