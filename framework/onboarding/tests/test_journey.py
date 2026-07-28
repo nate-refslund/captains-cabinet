@@ -1685,3 +1685,119 @@ def test_a_revoked_source_stops_counting_as_a_local_grant(tmp_path):
     assert state["source"]["status"] == "revoked"
     assert journey._entry_grants(state)["local_files"] is False
     assert journey.entry_plan(journey._entry_grants(state))["next_actions"]
+
+
+def _starved_area_estate(tmp_path: Path) -> Path:
+    """An estate shaped like the measured one: a bulk prose area that eats the
+    budget, a repo area carrying the manifest, and a small tracker area that
+    relevance ordering ranks BELOW four hundred standup notes and therefore
+    never opens at all."""
+    root = (tmp_path / "estate").resolve()
+    notes = root / "notes"
+    notes.mkdir(parents=True)
+    for i in range(12):
+        (notes / f"2026-05-{i:03d}-standup.md").write_text(
+            f"# Standup {i}\n\nNothing blocking.\n", encoding="utf-8"
+        )
+    repo = root / "repo"
+    repo.mkdir(parents=True)
+    (repo / "package.json").write_text('{"name":"svc","scripts":{"dev":"tsx"}}\n', encoding="utf-8")
+    (repo / "README.md").write_text(
+        "# Svc\n\nRun `npm run verify` before every release.\n", encoding="utf-8"
+    )
+    tracker = root / "tracker"
+    tracker.mkdir(parents=True)
+    (tracker / "sprint-42-export.csv").write_text(
+        "id,title,status\n1,URGENT rotate the signing key,Todo\n", encoding="utf-8"
+    )
+    return root
+
+
+def test_a_capped_window_NAMES_the_areas_it_never_opened(tmp_path, monkeypatch):
+    """A fraction is not a disclosure.
+
+    Measured 2026-07-28 on a 723-file operator estate during the timed
+    stranger-hatch run: the window admitted 200 files from two of four
+    top-level areas and left ``tracker/`` — the only place holding an urgent
+    row — at ZERO coverage, while the card said only "I read 200 of 723
+    supported files, most-informative first". Every word of that was true and
+    the operator still could not tell that the part they would have cared
+    about was never opened. The count sensor added 2026-07-27 cannot catch
+    this: it passes unchanged whether one area or four went unread.
+
+    Both directions on one estate, so neither a dropped naming nor a
+    manufactured one passes.
+    """
+    monkeypatch.setattr(journey, "MAX_FILES", 3)
+    capped_root = tmp_path / "capped"
+    capped = ratify(capped_root, propose(capped_root, _starved_area_estate(tmp_path / "capped-src")))
+    coverage = capped["state"]["first_dividend"]["coverage"]
+    assert coverage["complete"] is False
+    assert "tracker" in coverage["unopened_areas"], coverage
+    body = capped["card"]["body"]
+    assert "Nothing at all was opened in:" in body
+    assert "tracker" in body
+
+    monkeypatch.setattr(journey, "MAX_FILES", 200)
+    whole_root = tmp_path / "whole"
+    whole = ratify(whole_root, propose(whole_root, _starved_area_estate(tmp_path / "whole-src")))
+    whole_coverage = whole["state"]["first_dividend"]["coverage"]
+    assert whole_coverage["complete"] is True
+    assert whole_coverage["unopened_areas"] == []
+    assert "Nothing at all was opened in" not in whole["card"]["body"]
+
+
+def test_the_orientation_only_summary_names_the_unopened_areas_too(tmp_path, monkeypatch):
+    """The no-findings branch carries its own copy of the caveat, so it needs
+    its own arm — 'point me at a narrower one' is unactionable advice unless
+    the operator is told which part went unread."""
+    monkeypatch.setattr(journey, "MAX_FILES", 2)
+    root = (tmp_path / "quiet").resolve()
+    (root / "notes").mkdir(parents=True)
+    for i in range(6):
+        (root / "notes" / f"note-{i}.md").write_text(f"# Note {i}\n\nOrdinary prose.\n", encoding="utf-8")
+    (root / "ledger").mkdir()
+    (root / "ledger" / "rows.csv").write_text("id,title\n1,ordinary row\n", encoding="utf-8")
+    manifest, entries = journey._scan_source(root, charter_hash="quiet")
+    dividend = journey._first_dividend(manifest, entries, "2026-07-28T00:00:00Z")
+    assert dividend["finding"]["quality"] == "orientation_only"
+    assert "ledger" in dividend["coverage"]["unopened_areas"], dividend["coverage"]
+    assert "Nothing at all was opened in:" in dividend["finding"]["summary"]
+    assert "ledger" in dividend["finding"]["summary"]
+
+
+def test_files_sitting_directly_in_the_folder_are_one_named_area(tmp_path, monkeypatch):
+    """The degenerate end. A path with no directory component has no parts[0]
+    to name, and an area list that silently drops those files would report a
+    complete-looking blind spot for the most likely place an operator keeps
+    the thing that matters."""
+    monkeypatch.setattr(journey, "MAX_FILES", 2)
+    root = (tmp_path / "flat").resolve()
+    (root / "deep").mkdir(parents=True)
+    for i in range(6):
+        (root / "deep" / f"page-{i}.md").write_text(f"# Page {i}\n\nprose\n", encoding="utf-8")
+    # Rank LAST so the budget cannot reach it: not a manifest, not an entry
+    # stem, not prose, no signal token, and shallow paths tie-break on name.
+    (root / "zzz-loose.csv").write_text("id,note\n1,loose row\n", encoding="utf-8")
+    manifest, _entries = journey._scan_source(root, charter_hash="flat")
+    assert manifest["coverage"]["complete"] is False
+    assert journey._TOP_LEVEL_AREA in manifest["coverage"]["unopened_areas"], manifest["coverage"]
+
+
+def test_the_named_area_list_is_capped_when_rendered_but_not_when_recorded(tmp_path, monkeypatch):
+    """A card that lists forty directory names is not a disclosure either."""
+    monkeypatch.setattr(journey, "MAX_FILES", 1)
+    root = (tmp_path / "wide").resolve()
+    root.mkdir(parents=True)
+    for i in range(9):
+        area = root / f"area-{i:02d}"
+        area.mkdir()
+        (area / "readme.md").write_text(f"# Area {i}\n\nprose\n", encoding="utf-8")
+    manifest, _entries = journey._scan_source(root, charter_hash="wide")
+    recorded = manifest["coverage"]["unopened_areas"]
+    assert len(recorded) == 8, recorded          # every area but the one opened
+    phrase = journey.unopened_areas_phrase(manifest["coverage"])
+    assert phrase.count("area-") == journey._MAX_NAMED_AREAS
+    assert f"and {len(recorded) - journey._MAX_NAMED_AREAS} more" in phrase
+    assert journey.unopened_areas_phrase({"unopened_areas": []}) == ""
+    assert journey.unopened_areas_phrase(None) == ""

@@ -1175,6 +1175,10 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
                 f" I read {coverage.get('examined_files', 0)} of "
                 f"{coverage.get('eligible_files', 0)} supported files, most-informative "
                 "first; the rest were left unopened by the First Window limits."
+                # …and WHICH parts got nothing, because a fraction cannot tell
+                # the operator whether the blind spot is the part they care
+                # about. See unopened_areas_phrase for the measurement.
+                + unopened_areas_phrase(coverage)
             )
         common.update(
             kind="first_dividend",
@@ -1410,6 +1414,49 @@ _RANK_SIGNAL_TOKENS = (
 _PROSE_SUFFIXES = frozenset({".md", ".mdx", ".rst", ".txt"})
 _CONFIG_SUFFIXES = frozenset({".json", ".yml", ".yaml", ".toml", ".csv", ".tsv"})
 
+# ── Naming the blind spot ────────────────────────────────────────────────────
+# A COUNT ANSWERS THE WRONG QUESTION. "I read 200 of 723" tells the operator
+# how much was missed; it cannot tell them whether the missed part was the
+# part that mattered, and that is the only question a coverage caveat is for.
+# Measured 2026-07-28 on a 723-file operator estate (a timed stranger-hatch
+# run): relevance ordering admitted 200 files drawn from exactly two of four
+# top-level areas and left ``tracker/`` — the one place holding an urgent row
+# — at ZERO coverage, while the card said only "200 of 723, most-informative
+# first". Relevance ordering is a real improvement over the alphabetical cap
+# it replaced and it still starves whole areas, because a bucket-3 CSV export
+# loses to four hundred bucket-2 standup notes. So the disclosure names them.
+#
+# The unit is the AREA: the immediate child of the approved folder, with
+# files sitting directly in the folder collected under one label. Coarser
+# than a path list (which no operator reads) and actionable in the only way
+# the operator can act — "point me at that one instead". Derived from paths
+# alone, never from content, so the naming cannot be steered by what a file
+# says. Capped when rendered, never when recorded.
+_TOP_LEVEL_AREA = "(files directly in the folder)"
+_MAX_NAMED_AREAS = 5
+
+
+def _area_of(rel: Path) -> str:
+    """The top-level area one relative path belongs to. Total and path-only."""
+    parts = rel.parts
+    return parts[0] if len(parts) > 1 else _TOP_LEVEL_AREA
+
+
+def unopened_areas_phrase(coverage: dict[str, Any] | None) -> str:
+    """The rendered ' Nothing was opened in: …' clause, or '' when there is
+    nothing honest to say. ONE renderer, because the card and the
+    orientation-only summary must not drift into two different disclosures of
+    the same fact."""
+    areas = list((coverage or {}).get("unopened_areas") or [])
+    if not areas:
+        return ""
+    shown = areas[:_MAX_NAMED_AREAS]
+    remainder = len(areas) - len(shown)
+    named = ", ".join(shown)
+    if remainder:
+        named += f", and {remainder} more"
+    return f" Nothing at all was opened in: {named}."
+
 
 def _relevance_key(rel: Path) -> tuple[int, int, int, str]:
     """Rank one eligible path. Total, deterministic, content-blind.
@@ -1624,6 +1671,13 @@ def _scan_source(source: Path, charter_hash: str) -> tuple[dict[str, Any], list[
         })
         total += len(raw)
     unexamined = max(eligible_count - reached, 0)
+    # Areas with eligible files and ZERO opened ones — the blind spot, named.
+    # Computed from the two sets this function already has, so it costs one
+    # pass over paths already in memory and cannot disagree with the counts.
+    _opened_areas = {_area_of(Path(entry["path"])) for entry in entries}
+    unopened_areas = sorted(
+        {_area_of(rel) for _key, _path, rel in eligible} - _opened_areas
+    )
     manifest_files = [
         {"path": e["path"], "bytes": e["bytes"], "sha256": e["sha256"]}
         for e in entries
@@ -1652,6 +1706,10 @@ def _scan_source(source: Path, charter_hash: str) -> tuple[dict[str, Any], list[
             "unexamined_files": unexamined,
             "complete": unexamined == 0 and not truncated,
             "ordering": "relevance",
+            # WHICH parts of the folder the window never touched at all, by
+            # name. Empty on a complete window by construction. Recorded in
+            # full; the surfaces cap what they render.
+            "unopened_areas": unopened_areas,
         },
     }
     manifest = {**manifest_payload, "manifest_hash": _hash(manifest_payload)}
@@ -2241,6 +2299,9 @@ def _first_dividend(manifest: dict[str, Any], entries: list[dict[str, Any]], now
                 f"command, or explicit urgent marker IN WHAT I READ. {unexamined} eligible files were left "
                 "unopened by the First Window limits, so this is not a clean bill of health for the folder — "
                 "widen the window or point me at a narrower one and I will finish the job."
+                # "Point me at a narrower one" is unactionable advice unless
+                # the operator is told WHICH part went unread.
+                + unopened_areas_phrase(coverage)
             )
         # COVERAGE IS NOT THE ONLY WAY A NEGATIVE GOES UNEARNED. Reading every
         # file still proves nothing about a question no detector was able to
