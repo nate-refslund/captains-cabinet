@@ -743,6 +743,44 @@ temporary_allowances:
       the ownership class becomes a typed attribute of a source record carried by
       the projection kernel, or COG-7 compaction brings production non-comment
       lines below the pinned baseline
+  - phase: evidence-append-quadratic
+    budget: framework_production_noncomment_lines
+    additional: 126
+    reason: >-
+      the evidence append was O(n) in the trial and the trial O(n^2) — a live
+      production defect a green gate could not see. EvidenceRecorder.append
+      verifies before it extends (correct: it is what stops a truncation being
+      laundered by writing over it), but it re-verified the WHOLE trial every
+      time, so filing a need cost 3.9ms at trial depth 40 and 36.6ms at depth
+      499 against a 50ms hook budget, with one contains_secret_shape walk per
+      row per append. framework/evidence/verifier.py now memoizes the clean
+      ledger prefix against the sha256 of EXACTLY the bytes that proved it
+      (_read_ledger_bytes / _frame_event_lines / _VerifiedLedger / the bounded
+      memo / _verify_events), so a prefix that still hashes the same is
+      known-good by identity of inputs and only the new suffix is scanned; any
+      edit, truncation, key change or finding misses the memo and re-scans from
+      byte zero, and the permission/anchor/watermark checks are never memoized.
+      framework/evidence/recorder.py takes its length and tip from that verdict
+      instead of a second _rows() pass, which also closes a TOCTOU window
+      between verifying bytes and reading them back. Measured after
+      (production path, same machine): 1.5ms at depth 40, 3.1ms at depth 499.
+      HONEST ACCOUNTING: most of these 126 lines are DOCSTRING prose stating
+      the soundness argument — why a memo may make verification cheaper and
+      never weaker — and it is NOT reformatted into "#" comments to duck this
+      counter, which would buy a number with the reasoning a later reader needs
+      to check the claim. EXACT measured running total (71277 vs 71151 base),
+      2026-07-28, via cognitive-architecture-census.py — the zero-headroom
+      observed==max law means this is the exact new total, never a
+      pre-allocated ceiling. Zero new MODULES: both files already exist, so
+      framework_production_modules is unchanged and no expansion-registry row
+      is owed.
+    owner: evidence-plane
+    sunset: '2027-01-19'
+    deletion_gate: >-
+      the recorder's per-append verification is replaced by sealed segments
+      (the COG-5 archive shape, which bounds this same class by construction),
+      or COG-7 compaction brings production non-comment lines below the pinned
+      baseline
 # ── The EXPANSION REGISTRY (two-model gate adjudication, 2026-07-27) ─────────
 # temporary_allowances above pay for MASS and ask only reason/owner/sunset —
 # declaration, not adjudication. That gap is measured, not theoretical: an

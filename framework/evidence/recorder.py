@@ -715,12 +715,22 @@ class EvidenceRecorder:
         with self._lock(context.trial_id) as trial:
             self._recover_pending_locked(context.trial_id, trial)
             events_path = trial / "events.jsonl"
+            # The verifier just read these bytes and proved them; re-reading
+            # them with _rows() would be a SECOND O(n) pass over the same file
+            # and a TOCTOU window besides (the re-read can return bytes the
+            # verification never saw).  Take the length and the tip from the
+            # verdict instead: when ok is True the recomputed last_event_hash
+            # IS rows[-1]["event_hash"], because any divergence is an
+            # ":event_hash" finding and would have made ok False.
             if events_path.exists():
                 verified = verify_trial(self.root, context.trial_id)
                 if not verified["ok"]:
                     raise EvidenceError("ledger_integrity", "Evidence continuity failed; no new event was written.")
-            rows = self._rows(trial)
-            sequence = len(rows) + 1
+                event_count = int(verified["event_count"])
+                previous_hash = str(verified["last_event_hash"])
+            else:
+                event_count, previous_hash = 0, ZERO_HASH
+            sequence = event_count + 1
             if sequence > MAX_TRIAL_EVENTS:
                 # Refuse BEFORE the event is built, hashed, signed, or
                 # written ahead: a refused mint leaves zero bytes behind and
@@ -732,7 +742,6 @@ class EvidenceRecorder:
                     "no new event was written. Continue on a fresh trial "
                     "(day-bounded taxonomy trials roll over naturally).",
                 )
-            previous_hash = rows[-1]["event_hash"] if rows else ZERO_HASH
             event: dict[str, Any] = {
                 "schema": EVENT_SCHEMA,
                 "event_id": _identifier("evidence"),

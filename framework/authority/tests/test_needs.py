@@ -8,6 +8,7 @@ import re
 import sys
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -17,15 +18,24 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from framework import evidence_mirror as EM
 from framework.authority import needs as N
 from framework.authority import posture as P
 
 NOW = "2026-07-10T12:00:00Z"
 
-# Samples taken by the hook-latency smoke below; the budget is asserted
-# against the MINIMUM (see that test's docstring for why). Filing costs
-# ~0.2ms, so the whole loop is single-digit milliseconds.
+# Samples taken by the hook-latency arms below; the budget is asserted against
+# the MINIMUM (see test_filing_latency_smoke for why).
 _LATENCY_SAMPLES = 15
+# Depth the deep samples are taken at. The evidence mirror caps a trial at
+# MAX_MIRROR_EVENTS_PER_TRIAL (500) before rolling to a fresh day segment, so
+# this is the deepest trial that exists in production, not a hypothetical one;
+# the samples land at 480..494 and stay under the cap.
+_DEEP_TRIAL_EVENTS = 480
+# Trial depth may eat at most this much of the 50ms hook budget (20%).
+_DEPTH_BUDGET_S = 0.010
+# Frozen so the mirror's day-bounded trial id cannot roll mid-measurement.
+_MIRROR_DAY = datetime(2026, 7, 10, 12, 0, 0, tzinfo=timezone.utc)
 
 
 @pytest.fixture(autouse=True)
@@ -169,7 +179,114 @@ def test_marker_char_is_stripped(tmp_path):
     assert "·" not in json.dumps(row)
 
 
-def test_filing_latency_smoke(tmp_path):
+def _mirror_trial_depth(store: Path) -> int:
+    """Events in the deepest mirror trial under ``store`` (0 = mirror silent)."""
+    trials = store / "trials"
+    if not trials.is_dir():
+        return 0
+    return max(
+        (ledger.read_bytes().count(b"\n") for ledger in trials.glob("*/events.jsonl")),
+        default=0,
+    )
+
+
+@pytest.fixture(scope="module")
+def filing_latency(tmp_path_factory) -> dict[str, float]:
+    """Time `file_need` on the PRODUCTION path, shallow and at trial depth.
+
+    WHY THIS FIXTURE EXISTS.  `framework/evidence_mirror._store_root()` returns
+    None whenever PYTEST_CURRENT_TEST is set and no scratch store is supplied,
+    so a latency test that supplies none measures a filing that never reaches
+    the evidence recorder at all — the ~0.2ms half of a path whose other half
+    holds all the latency risk.  That is how a budget arm stayed green for its
+    whole life while filing had gone quadratic in production: the sensor was
+    measuring something other than the control.  CABINET_EVIDENCE_MIRROR_STORE
+    is the mirror's own sanctioned scratch-store seam (the 2026-07-04 leak
+    fence allows exactly this, and never the live signed store), and the
+    `depth` assertion below fails the arms LOUDLY if the mirror ever goes
+    quiet again rather than letting them pass on the cheap path.
+
+    Both arms share one measurement because filling a trial to the R-8
+    envelope costs ~480 real fsync-ing appends (~1.5s); doing it twice buys
+    nothing.  The env is restored before the fixture returns, so the rest of
+    the module still runs with the mirror off.
+    """
+    store = tmp_path_factory.mktemp("evidence-mirror-store")
+    root = tmp_path_factory.mktemp("needs-latency-root")
+    with pytest.MonkeyPatch.context() as mp:
+        for var in ("CABINET_POSTURE", "CABINET_ID", "CABINET_ROOT", "DATABASE_URL"):
+            mp.delenv(var, raising=False)
+        mp.setenv("CABINET_NEEDS_WIRED", "1")
+        mp.setenv("CABINET_EVIDENCE_MIRROR_STORE", str(store))
+        mp.setenv("CABINET_EVIDENCE_MIRROR_MARKER", str(store / "degradations.jsonl"))
+        # Day-bounded trial ids roll at UTC midnight; freeze the mirror's day
+        # so a run that straddles midnight cannot silently reset the depth.
+        mp.setattr(EM, "_utc_now", lambda: _MIRROR_DAY)
+        EM._reset_state()
+        try:
+            file_need(root)  # warm the ledger, the imports and the page cache
+            shallow = []
+            for _ in range(_LATENCY_SAMPLES):
+                start = time.perf_counter()
+                file_need(root)
+                shallow.append(time.perf_counter() - start)
+            shallow_depth = _mirror_trial_depth(store)
+            while _mirror_trial_depth(store) < _DEEP_TRIAL_EVENTS:
+                file_need(root)
+            deep = []
+            for _ in range(_LATENCY_SAMPLES):
+                start = time.perf_counter()
+                file_need(root)
+                deep.append(time.perf_counter() - start)
+            deep_depth = _mirror_trial_depth(store)
+        finally:
+            EM._reset_state()
+    assert deep_depth >= _DEEP_TRIAL_EVENTS, (
+        f"the evidence mirror never filled a trial (depth {deep_depth}) — these arms "
+        "would be measuring the disabled-mirror short-circuit, not the production path"
+    )
+    return {
+        "shallow": shallow, "deep": deep,
+        "shallow_best": min(shallow), "deep_best": min(deep),
+        "shallow_depth": shallow_depth, "deep_depth": deep_depth,
+    }
+
+
+def test_filing_latency_does_not_grow_with_trial_depth(filing_latency):
+    """Filing must cost the same at the deepest live evidence trial as at a
+    fresh one — the sensor for the defect the budget arm below cannot see.
+
+    THE DEFECT IT CATCHES.  `file_need` -> `_emit` -> the evidence mirror ->
+    `EvidenceRecorder.append`, and append verifies the trial before extending
+    it.  Re-verifying the WHOLE trial per append is O(n) per filing and
+    O(n^2) per trial; measured on the pre-fix code, filing cost 3.9ms at depth
+    40 and 36.6ms at depth 499 — 33ms of pure depth against a 50ms budget.
+
+    WHY A DIFFERENCE AND NOT AN ABSOLUTE.  The absolute number is dominated by
+    fsync, which varies ~10x across the machines this runs on, so an absolute
+    bound is red on a slow disk and green on a fast one for the SAME code.
+    Subtracting the shallow measurement cancels that constant and leaves only
+    the part that scales with trial depth, which is the actual defect.  Both
+    terms are best-of-N minima, so scheduler noise (one-sided: it can only
+    inflate) cannot manufacture growth.
+
+    Mutation-proven 2026-07-28 against the pre-fix code: 32.8ms of growth
+    against this 10ms allowance, RED by 3.3x. After the fix: 1.6ms, green by
+    6.3x. Two-sided margins on purpose — a bound that only one side clears is
+    a bound that will flake or never fire.
+    """
+    growth = filing_latency["deep_best"] - filing_latency["shallow_best"]
+    assert growth < _DEPTH_BUDGET_S, (
+        f"filing costs {growth * 1e3:.1f}ms MORE at trial depth "
+        f"{filing_latency['deep_depth']} than at depth "
+        f"{filing_latency['shallow_depth']}, over the {_DEPTH_BUDGET_S * 1e3:.0f}ms "
+        "depth allowance: the evidence append is scaling with trial length again. "
+        f"shallow={filing_latency['shallow_best'] * 1e3:.2f}ms "
+        f"deep={filing_latency['deep_best'] * 1e3:.2f}ms"
+    )
+
+
+def test_filing_latency_smoke(filing_latency):
     """The `<50ms` hook-latency budget — best of N, not a single sample.
 
     THE BUDGET IS REAL AND IS NOT RELAXED HERE. `file_need` sits on the gate's
@@ -198,23 +315,30 @@ def test_filing_latency_smoke(tmp_path):
     a single sample leaves it green, while the single-sample form it replaced
     goes red on that same stall — which is exactly the CI failure above.
 
-    KNOWN INSENSITIVITY, stated rather than papered over: filing costs ~0.2ms
-    against a 50ms budget, so only a ~250x regression trips this at all (the
-    x500 re-read mutation passes at ~9ms, honestly). And a regression that is
-    slow only OCCASIONALLY — a periodic compaction, an every-Nth fsync — hides
-    under a minimum by construction. This is the spec's hook-latency SMOKE; a
-    percentile SLO on this path would be a NEW requirement, not a bug fix, and
-    is not smuggled in here.
+    WHAT CHANGED (2026-07-28, second edit of the day) IS THE PATH MEASURED.
+    This arm used to run with the evidence mirror short-circuited to None by
+    its own pytest fence, so it measured a filing that never reached the
+    evidence recorder — the cheap half of the path, ~0.2ms, forever green
+    while the expensive half went quadratic in production. It now measures the
+    real thing, at the deepest trial the R-8 envelope allows. See the
+    `filing_latency` fixture.
+
+    KNOWN INSENSITIVITY, stated rather than papered over: even on the
+    production path filing costs ~3ms against a 50ms budget, so this arm alone
+    still only trips on a ~16x regression, and how much of the budget fsync
+    eats varies ~10x by machine. That is precisely why
+    test_filing_latency_does_not_grow_with_trial_depth exists beside it: this
+    arm holds the SPEC's number, that arm is the sensitive sensor. And a
+    regression that is slow only OCCASIONALLY — a periodic compaction, an
+    every-Nth fsync — hides under a minimum by construction. This is the
+    spec's hook-latency SMOKE; a percentile SLO on this path would be a NEW
+    requirement, not a bug fix, and is not smuggled in here.
     """
-    file_need(tmp_path)  # warm the ledger, the imports and the page cache
-    samples = []
-    for _ in range(_LATENCY_SAMPLES):
-        t0 = time.perf_counter()
-        file_need(tmp_path)
-        samples.append(time.perf_counter() - t0)
-    best = min(samples)
+    samples = filing_latency["deep"]
+    best = filing_latency["deep_best"]
     assert best < 0.050, (  # <50ms hook budget
-        f"filing latency {best * 1e3:.1f}ms blows the 50ms hook budget in the "
+        f"filing latency {best * 1e3:.1f}ms at trial depth "
+        f"{filing_latency['deep_depth']} blows the 50ms hook budget in the "
         f"BEST of {_LATENCY_SAMPLES} samples, so this is the code and not the "
         f"runner; all samples (ms): {[round(s * 1e3, 2) for s in samples]}"
     )
