@@ -21,7 +21,41 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 918d6306d1b8104fc6f787951cfd4029b28ef388a9fada291451e12b1657ce6d
+Reviewed-Scope-Digest: 916c646bc352115f34cf94ff3f16a82a40674bc0c83293f61555cdec388a40ea
+
+(MERGE RE-BIND, 2026-07-29, `feat/salience-sweep` x master `1875e112`.
+Both sides had re-bound this line and both moved
+`cabinet/config/cognitive-architecture-contract.yml` (this branch: the visible
+bijection raise plus the salience expansion row; master: the recall unit's own
+allowance), so the two digests conflicted textually and NEITHER described the
+merged tree. The value above is recomputed over the MERGE COMMIT rather than
+taken from either side — taking either would have bound this artifact to bytes
+that no longer exist, which is the one thing the digest is for. Prior digests:
+this branch `918d6306d1b8104fc6f787951cfd4029b28ef388a9fada291451e12b1657ce6d`,
+master `c18946e6377c31c9c653389e02ff26273df8cb587cf446c80170e589340a9109`. Both
+landings' notes survive below verbatim; neither is the other's restamp, and the
+contract carries both allowance rows whole — the conflict was two independent
+additions to one list, not a contest.)
+
+(MERGE RE-BIND, 2026-07-28, `fix/recall-live-claims-it-never-earned` x master
+`a70bcfb5` (PR #268). Both sides re-bound this line and both moved
+`cabinet/config/cognitive-architecture-contract.yml`, so the two digests
+conflicted textually: neither describes the merged tree, and the value above is
+recomputed over the MERGE COMMIT rather than taken from either side. Prior
+digests: this branch `ec75278e9929f8a03d811ec3689716e1190808db3df0a3a0ba0a0ef2275c5666`,
+master `3c8c1f7f60bd32a56e831438d768ea1b760b8f148353e65aba3c76c9b6d50a79`.
+THIS BRANCH's in-scope move: `cabinet/config/cognitive-architecture-contract.yml`,
+and only its `temporary_allowances` list — a new row buying the +30 non-comment
+lines two recall fixes cost (an unconfigured backend reporting live recall; the
+chunk heading rendered as the operator's own shared wording). No budget MAXIMUM,
+no set pin, no bijection class and no declared invariant moved. The two changed
+production files, `framework/sources/org.py` and `framework/onboarding/genesis.py`,
+are NOT in this scope, and neither is anything PR #268 touched
+(`framework/onboarding/estate.py`, `framework/onboarding/journey.py` and their
+tests) — the two branches share no production file. NO COG-4 implementation byte
+moved on either side: no organ, no scheduler or projection surface, no serve
+surface, no boundary row, no fixture, no CLI. Nothing below was re-reviewed,
+because no reviewed COG-4 byte moved.)
 
 (RE-BOUND 2026-07-29 at the landing of `feat/salience-sweep`, over the merge of
 `origin/master` b4859c55. Prior digest on this branch:
