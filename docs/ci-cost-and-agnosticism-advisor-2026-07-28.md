@@ -62,7 +62,7 @@ own comment says to treat its red as blocking by hand until it is required.
 
 ---
 
-## 2. What landed: the duplicate-tree guard
+## 2. The dedup saving — landed by another session, and not duplicated here
 
 `git rev-parse <sha>^{tree}` vs `<sha>^2^{tree}` over every master push run,
 joined to that parent's run conclusions:
@@ -72,89 +72,56 @@ joined to that parent's run conclusions:
 | 30 days | 306 | **99 (32%)** | 207 |
 | last 7 days | 105 | **66 (63%)** | 39 |
 
-Of the 99, **99 had a completed `conclusion=success` run of this workflow on the
-exact parent SHA. Zero exceptions.** That join is the thing worth checking,
-because tree identity alone would not be enough: if the PR run had been
-cancelled, the master push would have been the first complete test of that tree
-and skipping it would delete real coverage. It never was.
+Of the 99, **99 had a completed `conclusion=success` run of this workflow on
+the exact parent SHA. Zero exceptions.** That join is the thing worth checking:
+tree identity alone would not be enough, because if the PR run had been
+cancelled the master push would have been the first complete test of that tree
+and skipping it would delete real coverage. It never was. At today's 60.0
+min/run and the 7-day duplicate rate, that class is worth **~16,970 billable
+minutes a month, about 19.2% of the bill**.
 
-The 207 pushed a genuinely new tree — direct pushes to master, which
-`enforce_admins: false` still permits. The guard never touches them; that run is
-the only test those trees will ever get.
+**A concurrent session shipped this first.** PR #272 (`perf/ci-cost`, merged as
+`6dfd39ac` while this branch was in CI) added a `tree-dedupe` job that solves
+the same problem, measured independently: 122 runs / 3,943 billable minutes,
+21.1% of the bill. Two independent skip paths on one workflow is strictly worse
+than either alone, so this branch **deleted its own mechanism** rather than
+landing a second one. Theirs is broader where it counts — it compares the
+pushed tree against the last 40 successful `pull_request` runs rather than only
+the pushed commit's second parent, and it accepts evidence ONLY from
+`pull_request` runs, which closes the chain where a skipped (and therefore
+"successful") run becomes the evidence for skipping the next one.
 
-`.github/workflows/cabinet-ci.yml` now carries a `duplicate-tree-guard` job.
-`cabinet/scripts/ci-duplicate-tree-guard.py` decides; the eight existing jobs
-are gated on its `skip` output.
+### What this branch contributes instead: the precondition, made executable
 
-**Before / after, at the 7-day rate and today's per-run cost:**
+`tree-dedupe`'s safety argument rests on two claims in its header, and the
+second one is not true by construction:
 
-| | billable min / month |
-|---|---|
-| before | ~86,100 (1,436 runs × 60.0) |
-| duplicate merge-pushes removed | −16,970 (283/mo × 60.0) |
-| guard job's own cost | +450 (450 master pushes × 1 min minimum) |
-| **after** | **~69,600 — a 19.2% reduction** |
+1. *"A pull_request or schedule run can NEVER be skipped."* This is the claim
+   that matters, because GitHub reports a job skipped by an `if:` as
+   **successful** to branch protection — a condition that went false on a PR
+   would show a green merge button over a tree nothing ran on.
+2. *"A run-level `success` … means all eight jobs ran and passed."* GitHub does
+   not guarantee that: a run concludes `success` when jobs are merely skipped.
+   It is true here **only because of claim 1**.
 
-(At the trailing-30-day duplicate rate rather than the 7-day one the same change
-is ~5,600 min/month. The 7-day rate is the better predictor and the 30-day rate
-is the conservative floor; both are real.)
+Both are properties of expression strings in a YAML file — the kind of thing
+that decays silently the next time someone adds a condition. So
+`cabinet/scripts/tests/test_ci_dedupe_cannot_skip_a_pr.py` evaluates the real
+`if:` expressions under a simulated `pull_request` context, for every value the
+dedupe output can take, and the workflow comment now states the precondition
+instead of asserting the conclusion.
 
-### Why this is a cost change and not a coverage change
+Non-vacuity, both directions:
 
-An identical tree hash means identical bytes for every file the suite reads.
-Every job here is a function of the checked-out tree plus the runner
-environment. The one input that differs between a merge commit and its second
-parent is commit metadata, and the two steps that read history resolve to the
-same comparison either way:
-
-* `cognitive-phase4`'s baseline ratchet takes
-  `github.event.pull_request.base.sha` on a PR and `github.event.before` on a
-  push. Under `strict: true` those are the same commit — the master tip the
-  merge lands on, which is the merge's first parent.
-* `gitleaks` scans the PR's commits on a PR and the pushed range on a push;
-  both cover the same commits, and the nightly `schedule` run — never skipped —
-  is the full-history sweep.
-
-Residual, stated rather than hidden: same-day environment drift on an
-already-tested tree is not re-observed on the merge push. The nightly run is the
-designed control for that class.
-
-### The one defect that would matter, and the double lock
-
-GitHub counts a `skipped` check run as **successful** for branch protection. A
-guard that wrongly emitted `skip` on a `pull_request` would report all seven
-required contexts green without running them. So the event predicate is enforced
-twice, independently:
-
-1. the workflow gates the guard **job** on
-   `github.event_name == 'push' && github.ref == 'refs/heads/master'`;
-2. `decide()` re-derives the same predicate from its own inputs and refuses to
-   skip for any other event or ref.
-
-Either alone is sufficient. Everything unknown — no prior run, an incomplete
-prior run, a prior run missing one required job, unresolvable git, an API
-error — resolves to **run**. The CLI always exits 0, so the guard cannot itself
-turn master red.
-
-Evidence is per **job**, not per run: a run can conclude `success` with a job
-skipped, and that job's evidence then does not exist. The guard requires all
-seven required job names present with `conclusion=success`.
-
-### Proofs
-
-* 57 arms in `cabinet/scripts/tests/test_ci_duplicate_tree_guard.py` pass on
-  this tree; the 8 workflow-shape arms **FAIL** against `origin/master`'s
-  workflow, cache purged. Six mutation arms each remove exactly one lock and
-  require the shape checker to name it — so the checker is proven to fail as
-  well as to pass.
-* An empty required-job set **refuses to skip** rather than being vacuously
-  satisfied, and that degenerate end has its own arm.
-* End-to-end against the live GitHub API on three real master merges —
-  `8bab4c32`, `adab6ec0`, `49ed144e` — returning `skip=true` and naming runs
-  30397272506 / 30394947770 / 30389656699. The same three commits return
-  `skip=false` when the event is `pull_request`.
-
----
+* the same evaluator must report the gate jobs as **skipped** on a master push
+  with `skip=true` — so it measures the mechanism rather than agreeing with it;
+* nine mutation arms strip the event guard out of each gate job in turn and
+  require the check to fail;
+* the evaluator itself has arms in both directions, refuses any expression node
+  it does not model rather than guessing, and parses via a restricted AST walk
+  rather than `eval`;
+* run against the pre-`tree-dedupe` workflow (`a70bcfb5`) three arms **FAIL**,
+  so the file is wired to the live artifact rather than to a fixture.
 
 ## 3. What did NOT land, and why
 
