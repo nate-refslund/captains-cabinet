@@ -146,10 +146,13 @@ describe('the credit follows the art, in both directions', () => {
 
 describe('the flip is IN EFFECT (not merely available)', () => {
   /**
-   * sprites.test.ts asserts the cast id matches `^${CHARACTER_DIR}/…`, which
-   * follows the constant and so stays green whichever way it points. This arm
-   * is the one that reads the licence of the row the world actually binds, so
-   * a revert turns it red instead of silently passing.
+   * sprites.test.ts:87 asserts the cast id matches `^${CHARACTER_DIR}/…`, which
+   * follows the constant and so stays green whichever way it points. Its
+   * sibling arm ("the LIVE cast is the owned set") now pins the bound PATHS.
+   * This one is the credit module's own guard on the same fact, stated through
+   * `isLimeZuRow` — the predicate the canvas arm keys on — so a revert turns
+   * BOTH the flip test and the credit's own sensor red rather than silently
+   * changing what the credit line claims.
    */
   it('every officer binds an owned sheet', () => {
     const m = realManifest()
