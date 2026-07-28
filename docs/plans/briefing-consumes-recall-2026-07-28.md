@@ -136,3 +136,37 @@ about their own corpus they did not have, and every part of it opens.
 - **Genesis-time only.** `write_proposals` is write-once, so a later
   `formation.sh` plus re-probe needs the staging file removed or
   `merge_proposals`. The `genesis-recall` card says so when it happens.
+
+### Two corrections found by a hostile pass on the landed unit (2026-07-28)
+
+Both were this unit's own new code putting an unearned claim on an
+operator-facing surface — the defect it exists to remove — and both were
+reproduced before being fixed.
+
+1. **"Shared wording" could name a term appearing in none of the files the card
+   prints.** `_join_terms` was fed all `_MAX_RECALL_HITS` (8) hits while a card
+   cites at most `_MAX_RECALL_FILES` (3), so on any corpus answering from four
+   or more files the caption drew from files the operator never saw. Measured
+   through the real `LocalNotesSource` and the real `first-briefing.sh --local`:
+   three cited notes about widget alignment, invoice numbering and onboarding
+   copy, captioned *"Shared wording: kubernetes"* — a word living only in two
+   older notes the card never showed. The operator finds that out by doing
+   exactly what the card told them to do. The join is now computed over the
+   CITED set only, so every term is checkable in the files named beside it.
+   `presets/personal/README.md`'s promise — *"nothing is asserted that a
+   citation does not already show"* — was false until this; it is true now.
+2. **A recall-enriched ESTATE card stopped counting as estate provenance.**
+   `_estate_subject_cards` relabelled its card `derived_from: recall` whenever
+   recall answered, and the estate provenance item counts `derived_from ==
+   "estate"` — so the count fell to zero and the briefing told the operator
+   *"No card above derives from it: the proposals on file were written before
+   this estate existed. Re-run genesis"* about a card composed from that estate
+   in that same run. An ordering story told about a card with no ordering
+   problem: the empty-vs-stale confusion above, one surface over. The field
+   stays `estate`; recall provenance for such a card rides `recall_refs`, which
+   is what the recall item already counts, so both sentences are true at once.
+
+Both arms fail against the pre-fix bytes and pass after
+(`framework/onboarding/tests/test_genesis.py`), plus a third arm that keeps a
+genuinely shared term reported, so the first fix cannot be satisfied by
+deleting the clause.
