@@ -26,6 +26,7 @@
  */
 import { useEffect, useState } from 'react'
 import type { RailPayload, RailSlot } from '@/app/api/world/rail/route'
+import { isLimeZuRow } from '@/lib/world/credit'
 import { ASSET_BASE, type WorldAssetManifest } from '@/lib/world/sprites'
 import { formatMicro, TALK_FRESH_S } from '@/lib/world/ui-cards'
 
@@ -60,11 +61,20 @@ function loadManifest(): Promise<WorldAssetManifest | null> {
 export default function PortraitRail({
   tick,
   onInspect,
+  onLimeZuPortraits,
 }: {
   /** Logical director tick — the ONLY animation clock in this tree. */
   tick: number
   /** Click slot → the universal WHAT/NOW/PROOF inspect card. */
   onInspect: (slug: string) => void
+  /**
+   * How many LimeZu-licensed portraits this rail is painting right now — the
+   * shell's art credit is computed from what is actually on screen, and the
+   * rail is the only surface that knows its own answer. Reported from HERE
+   * rather than re-derived in the shell from a roster proxy: the rail's slots
+   * come from /api/world/rail, and a second derivation is a second truth.
+   */
+  onLimeZuPortraits?: (n: number) => void
 }) {
   const [rail, setRail] = useState<RailPayload | null>(null)
   const [manifest, setManifest] = useState<WorldAssetManifest | null>(null)
@@ -105,12 +115,27 @@ export default function PortraitRail({
   }, [])
 
   const slots = rail?.slots ?? []
-  if (slots.length === 0) return null
-
   const portraitRow = (slug: string) =>
     manifest?.assets.find((r) => r.id === `portraits/portrait_${slug}`) ?? null
   const sheetRow = (slug: string) =>
     manifest?.assets.find((r) => r.id === `portraits/portrait_${slug}_sheet`) ?? null
+
+  // What this rail is ACTUALLY painting from LimeZu, for the shell's art
+  // credit. Closed and ambient both paint zero portraits (a toggle button and
+  // status dots), so they report zero — the credit tracks the screen, not the
+  // mount. Declared above every early return: hook order is not conditional.
+  const limezuPortraits =
+    open && !ambient
+      ? slots.filter((s) => isLimeZuRow(portraitRow(s.slug))).length
+      : 0
+  useEffect(() => {
+    onLimeZuPortraits?.(limezuPortraits)
+    // A rail that unmounts (era mode hides it) is painting nothing; without
+    // this the shell would keep crediting portraits that left the screen.
+    return () => onLimeZuPortraits?.(0)
+  }, [limezuPortraits, onLimeZuPortraits])
+
+  if (slots.length === 0) return null
 
   if (!open) {
     return (
