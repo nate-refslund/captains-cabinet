@@ -21,7 +21,31 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: d85d407f5047ea536c7441d652d92fe459cc9d70fa1820ad797a7fa5aaab289c
+Reviewed-Scope-Digest: 1d24befc8b113c094ce1222a4ef22ac28841887d1ad15fdc6834595c35e2b1ce
+
+(RE-BOUND 2026-07-28, `fix/needs-anti-vacuity-and-depth-labels`, in the SAME
+commit as the change that moved the bytes — the re-bind-at-landing procedure
+this artifact prescribes. Prior digest: `d85d407f5047ea53…`. The moved file in
+scope is the ONE budget surface again:
+`cabinet/config/cognitive-architecture-contract.yml`, whose
+`evidence-append-quadratic` row cited trial depths 40 and 499 for latency
+figures the `filing_latency` fixture takes at depths 16 and 495 — a governance
+record asserting a measurement the code does not take. PROSE ONLY: no `budget`,
+no `maximum`, no `additional`, no `owner`, no `sunset` and no row identity
+changed, and the census is byte-for-byte unmoved at 71931 <= 71931.
+MECHANICALLY VERIFIED rather than asserted: `resolve_scope()` was intersected
+with `git diff --name-only` over this landing for ALL FIVE phase scopes and this
+file is the only digest-bound path any of them touches; the intersection with
+the manifest's DIR entries is empty. The other two paths —
+`framework/authority/tests/test_needs.py` (its latency fixture's fill loop
+bounded, so the fixture's own anti-vacuity assert becomes reachable instead of
+spinning forever) and one dated doc correction — are in no phase scope. No
+organ, no scheduler surface, no serve surface, no COG-4 entry point. Neither
+`cognitive-phase4-rollback-rehearsal.py` nor `verify-cognitive-phase4.sh` is
+touched: the frozen battery is byte-identical, which is what keeps this re-bind
+mechanical rather than a restamp of a review that never happened. The
+rehearsal's compatibility battery runs in a worktree detached at the pinned
+anchor `c58d4a57`, so the `test_needs.py` edit is not in the bytes it runs.)
 
 (MERGE RE-BIND, 2026-07-28, `fix/evidence-append-quadratic` x `iso-port-composition`:
 PR #223 landed on master while this branch sat green in CI, and BOTH sides had

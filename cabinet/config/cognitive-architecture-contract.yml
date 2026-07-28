@@ -758,8 +758,8 @@ temporary_allowances:
       production defect a green gate could not see. EvidenceRecorder.append
       verifies before it extends (correct: it is what stops a truncation being
       laundered by writing over it), but it re-verified the WHOLE trial every
-      time, so filing a need cost 3.9ms at trial depth 40 and 36.6ms at depth
-      499 against a 50ms hook budget, with one contains_secret_shape walk per
+      time, so filing a need cost 1.5ms at trial depth 16 and 35.9ms at depth
+      495 against a 50ms hook budget, with one contains_secret_shape walk per
       row per append. framework/evidence/verifier.py now memoizes the clean
       ledger prefix against the sha256 of EXACTLY the bytes that proved it
       (_read_ledger_bytes / _frame_event_lines / _VerifiedLedger / the bounded
@@ -770,7 +770,21 @@ temporary_allowances:
       framework/evidence/recorder.py takes its length and tip from that verdict
       instead of a second _rows() pass, which also closes a TOCTOU window
       between verifying bytes and reading them back. Measured after
-      (production path, same machine): 1.5ms at depth 40, 3.1ms at depth 499.
+      (production path, same machine): 1.5ms at depth 16, 3.2ms at depth 495.
+      DEPTH LABELS CORRECTED 2026-07-28. This row said "3.9ms at depth 40 /
+      36.6ms at depth 499" before and "1.5ms at depth 40 / 3.1ms at depth 499"
+      after, naming depths the filing_latency fixture never visits: it samples
+      at 16 (the warm-up plus _LATENCY_SAMPLES filings) and at 495 (the fill to
+      _DEEP_TRIAL_EVENTS plus _LATENCY_SAMPLES more). The pairs above are the
+      ones carried by that fixture's own mutation-proven docstring in
+      framework/authority/tests/test_needs.py, which commit a5386197 corrected
+      in the test but not here — leaving the governance record asserting a
+      measurement the code does not take. Independently re-measured on a second
+      machine at the same depths, pre-fix production files restored in a
+      detached worktree: 1.4ms then 34.4ms before the fix, 1.4ms then 2.7ms
+      after. The load-bearing claim reproduces either way and is what this row
+      is really buying: ~33ms of pure depth-growth removed, with the growth arm
+      RED at 33.0ms against its 10ms allowance on the pre-fix tree.
       HONEST ACCOUNTING: most of these 126 lines are DOCSTRING prose stating
       the soundness argument — why a memo may make verification cheaper and
       never weaker — and it is NOT reformatted into "#" comments to duck this
