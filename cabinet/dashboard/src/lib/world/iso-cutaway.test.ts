@@ -16,6 +16,7 @@ import {
   interiorSlots,
   isoCutawayCandidate,
   openFrameOf,
+  openTwinRefusal,
   type CutawaySprite,
 } from './iso-cutaway'
 import { CUTAWAY_FADE_MS, ROOF_ALPHA_OPEN, TICK_MS, initialCutaway, roofAlpha } from './lod'
@@ -177,7 +178,7 @@ describe('the shipped pack’s roof-off art', () => {
    * The role name is the SCENE's (`officer_dwelling`, singular), aliased in
    * iso-scene the same way the pack lookup aliases it.
    */
-  it('every interior-bearing building a real hamlet island DRAWS has roof-off art', () => {
+  it('every interior-bearing building a hamlet island DRAWS either opens, or is refused BY NAME', () => {
     const st = JSON.parse(
       readFileSync(join(process.cwd(), '..', 'scripts', 'world-capture', 'states', 'hamlet.json'), 'utf8')
     ) as { seed: string; state: LayoutState }
@@ -185,10 +186,28 @@ describe('the shipped pack’s roof-off art', () => {
     const want = new Set([...WITH_INTERIORS, 'officer_dwelling'])
     const drawn = scene.sprites.filter((s) => s.role !== null && want.has(s.role))
     expect(drawn.length, 'the hamlet island drew none of them').toBeGreaterThan(4)
-    const missing = [
-      ...new Set(drawn.filter((s) => !openFrameOf(PACK, s.frame)).map((s) => `${s.role}:${s.frame}`)),
-    ].sort()
-    expect(missing, 'drawn on a hamlet island with no roof-off twin').toEqual([])
+    // Three of the seven now stand refused: `library_open` is a different
+    // building, `cottage_b_open` and `officer_house_b_open` are wider on the
+    // ground than what they replace (iso-cutaway.openTwinRefusal). They keep
+    // the interim roof-fade. THE POINT OF SPLITTING THE ANSWER: "has no twin"
+    // and "has a twin the world will not use" were one bucket, so the day a
+    // building silently stops opening it would have joined a list nobody reads.
+    const noArt: string[] = []
+    const refused: string[] = []
+    for (const f of [...new Set(drawn.map((s) => s.frame))].sort()) {
+      if (openFrameOf(PACK, f)) continue
+      if (PACK.frames[`${f}${'_open'}`]) refused.push(f)
+      else noArt.push(f)
+    }
+    expect(noArt, 'drawn on a hamlet island with no roof-off twin at all').toEqual([])
+    expect(refused, 'the refused set changed — re-read openTwinRefusal before touching this').toEqual(
+      ['cottage_b', 'library', 'officer_house_b']
+    )
+    for (const f of refused) expect(openTwinRefusal(PACK, f)).not.toBeNull()
+    // and the majority still opens, so the feature is alive rather than
+    // refused into silence
+    const opens = [...new Set(drawn.map((s) => s.frame))].filter((f) => openFrameOf(PACK, f)).sort()
+    expect(opens).toEqual(['cottage_a', 'great_house', 'officer_house_c', 'workshop'])
   })
 
   /**

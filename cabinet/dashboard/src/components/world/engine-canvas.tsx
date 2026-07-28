@@ -154,6 +154,7 @@ import {
   cutawayMix,
   interiorSlots,
   isoCutawayCandidate,
+  kitFrame,
   openFrameOf,
 } from '@/lib/world/iso-cutaway'
 import type { WeatherState } from '@/lib/world/weather'
@@ -1864,7 +1865,13 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           // the room's own iso lattice. The art is EMPTY on purpose — a desk
           // drawn with papers, or a board drawn with pins, would bake a count
           // into a static frame.
-          const deskFrame = pack.frames.int_desk
+          // THROUGH THE KIT, never `pack.frames.int_desk`. The atlas ships
+          // three fixtures that bake a measured quantity or a piece of animate
+          // state into static art (a stove with a lit fire and smoke, a table
+          // with its chairs drawn, a "postbox" that is an outdoor shed), and
+          // reaching into `pack.frames` by name is exactly how one of them gets
+          // placed by a later round with the whole suite green.
+          const deskFrame = kitFrame(pack, 'int_desk')
           const deskTex = deskFrame ? isoTex(pack, atlas, 'int_desk') : null
           const slots = interiorSlots(open, s.x, s.y, slugs.length)
           const want = new Set<string>()
