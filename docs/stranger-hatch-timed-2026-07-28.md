@@ -17,7 +17,7 @@ the artifacts it wrote.
 | | |
 |---|---|
 | Master `49ed144e`, unmodified | **The stranger hatch does not complete.** Red at step `proof-a` after 21s. No briefing is ever rendered. |
-| With the two fixes on this branch | **Green.** Export → first briefing in **2m 22s – 2m 59s** wall clock (two runs), on a Mac that already has the dependencies. |
+| With the two fixes on this branch | **Green, three times.** Export → first briefing in **142s / 156s / 179s** wall clock, on a Mac that already has the dependencies. TTFR (proofs-done → briefing) was **31–34s** across all three. |
 | The first briefing, scored on the shipped 0–3 scale | **1 — "read it, no value."** Defended in §3. |
 
 The red was invisible to every gate in the repo because CI only ever runs
@@ -71,6 +71,10 @@ it) and the first receipt (32–34s — a `claude` CLI call for the genesis rese
 brief). Everything else rounds to zero. **TTFR is the stable number**: it varied
 by 2 seconds across a 37-second spread in the total, because it measures the
 briefing and not the proof gate.
+
+A third green run after merging master (which moved the egg-export world-art
+block) read 155.7s total with TTFR 31s — inside the same band, and the reason
+the headline is a band and not a number.
 
 ### 1a. What this number does NOT include, stated plainly
 
