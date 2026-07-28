@@ -378,3 +378,41 @@ def test_warm_and_cold_agree_on_a_ledger_that_goes_bad_after_the_memo(tmp_path: 
     assert warm["ok"] is False
     assert "invalid_json_line:4" in warm["errors"]
     assert warm["event_count"] == 3
+
+
+def test_a_ledger_lifted_from_a_SIBLING_TRIAL_is_rejected_with_a_warm_memo(tmp_path: Path):
+    """Same store, same signing key, two trials — the case the store-root half of
+    the memo key cannot cover.
+
+    Found by adversarial review 2026-07-28: the `trial_id` component of the memo
+    key was load-bearing and UNTESTED. Keying on the store root alone survives
+    the whole evidence suite while losing every `event:N:trial_id` and
+    `event:N:signature` finding on the warm path, because one store's trials
+    share a key and a clean prefix of one would answer for the other. The
+    store-root sibling of this test cannot reach it: both trials live in the
+    SAME store.
+    """
+    recorder = EvidenceRecorder(tmp_path)
+    other = "VERIFIER-TRIAL-002"
+    for trial in (TRIAL, other):
+        _append(recorder, trial, step="one")
+        _append(recorder, trial, step="two")
+
+    # ORDER IS THE WHOLE TEST. Lift TRIAL's ledger wholesale into its sibling
+    # FIRST, then warm the memo from TRIAL — whose bytes are now byte-identical
+    # to the sibling's. A trial-blind memo key therefore HITS on the sibling and
+    # skips exactly the rows that refuse it. Warming before the lift would leave
+    # a stale digest and the mutant would fall back to a full scan, which is how
+    # a sibling-trial arm can look like a sensor without being one.
+    (tmp_path / "trials" / other / "events.jsonl").write_bytes(
+        (tmp_path / "trials" / TRIAL / "events.jsonl").read_bytes()
+    )
+    _warm_memo(tmp_path, TRIAL)
+
+    warm = verify_trial(tmp_path, other)
+    reset_verified_ledger_memo()
+    cold = verify_trial(tmp_path, other)
+    assert warm == cold, (warm, cold)
+    assert warm["ok"] is False
+    assert "event:1:trial_id" in warm["errors"]
+    assert "event:1:signature" in warm["errors"]
