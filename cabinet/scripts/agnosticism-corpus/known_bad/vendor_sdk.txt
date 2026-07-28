@@ -1,0 +1,9 @@
+# framework/acting/action_lane.py
+"""Action lane dispatch."""
+
+from quillpost_sdk import PostClient
+
+
+def dispatch(action: dict) -> None:
+    client = PostClient()
+    client.publish(action["body"])

@@ -1,0 +1,11 @@
+# framework/products/scoring.py
+"""Document scoring."""
+
+
+def score(doc: dict) -> float:
+    base = float(doc.get("confidence", 0.0))
+    # Freight-forwarding invoices carry a customs line that other invoices do
+    # not, so they score higher when the HS code parses.
+    if doc.get("kind") == "freight_forwarding_invoice" and doc.get("hs_code"):
+        base += 0.25
+    return base

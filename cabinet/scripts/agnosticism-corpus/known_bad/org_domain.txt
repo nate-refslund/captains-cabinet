@@ -1,0 +1,8 @@
+# framework/frontdoor/escalation.py
+"""Escalation routing for the frontdoor lane."""
+
+DEFAULT_ESCALATION_ADDRESS = "ops@wexlar-freight.example"
+
+
+def escalation_address(cfg: dict) -> str:
+    return cfg.get("escalation_address") or DEFAULT_ESCALATION_ADDRESS
