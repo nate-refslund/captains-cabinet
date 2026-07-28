@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: a11d874a2674cb821c4ce5d3921503d88462e74c7064e128aca7e234ef8f0005
+Reviewed-Scope-Digest: 12f839580de1970165c2c5079bcbb4cf6c3fa6452357c0ce1305f79a379d0364
 
 (MERGE RE-BIND, 2026-07-28: this branch and master each re-bound this line and
 both moved in-scope bytes, so neither recorded digest describes the merged tree —
@@ -41,6 +41,13 @@ merge stacks that ceiling bump on master's +34 allowance row for the onboarding
 derivation fixes; the two are disjoint and the census re-pins at zero headroom
 over both. No COG-4 finding, claim or verdict in this review is touched, and a
 strictly higher ceiling leaves every ratchet claim made here standing.)
+
+(MERGE RE-BIND #2, 2026-07-29: master re-bound this line again while this
+branch's CI ran (the memory-honest-empty landing). Neither recorded digest
+describes the merged tree, so the value above is recomputed over THIS merge
+commit and supersedes master's `c18946e6377c31c9c653389e02ff26273df8cb587cf446c80170e589340a9109`
+as well. No COG-4 byte moved on either side; the only in-scope path is the
+contract file, and both landings' budget rows are additive and disjoint.)
 
 (RE-BOUND 2026-07-28 at the landing of `fix/world-art-manifest-truth-and-egg`.
 Prior digest: `ebbdcc3f771afef7ffddc7558ea64a06bf3f8fa782cf14b5dd129891f796ca15`.

@@ -109,13 +109,54 @@ def test_search_fails_closed_without_neon_env(monkeypatch, tmp_path):
 
 
 def test_env_file_name_only_counts_as_configured(monkeypatch, tmp_path):
-    """A cabinet/.env that NAMES the variable configures the backend (memory.sh
-    sources it) — checked by name, the value never surfaces anywhere."""
+    """A cabinet/.env that NAMES the variable WITH A VALUE configures the
+    backend (memory.sh sources it) — only presence is inspected, the value
+    never surfaces anywhere."""
     monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
     env_file = tmp_path / "cabinet" / ".env"
     env_file.parent.mkdir(parents=True)
     env_file.write_text("export NEON_CONNECTION_STRING=postgres://x.invalid/db\n",
                         encoding="utf-8")
+    assert OrgSource().available() is True
+
+
+def test_empty_placeholder_line_is_not_configured(monkeypatch, tmp_path):
+    """MEASURED 2026-07-28 through the real ``hatch.sh --defaults --clean-room``
+    chain: this is what a stranger's first briefing was built on.
+
+    ``setup-env.sh --defaults`` writes the whole variable set as bare ``NAME=``
+    placeholder lines, so a cabinet that has connected NOTHING carries the
+    literal line ``NEON_CONNECTION_STRING=``. The name-only test matched it,
+    ``available()`` said True, and the first briefing told the operator recall
+    was "bound and reachable but held NOTHING on the subjects you declared —
+    an empty answer, not a stale one". Nothing was ever reachable: a confident
+    negative the cabinet never earned, on the DEFAULT flavor, in the first
+    message it ever sends. ``recall_state()`` has a distinct, actionable
+    sentence for the unbound case and this must reach it.
+
+    Quoted-empty and whitespace forms count as empty too — the same
+    placeholder, spelled differently."""
+    monkeypatch.delenv("NEON_CONNECTION_STRING", raising=False)
+    monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+    env_file = tmp_path / "cabinet" / ".env"
+    env_file.parent.mkdir(parents=True)
+    for line in ("NEON_CONNECTION_STRING=",
+                 "NEON_CONNECTION_STRING=   ",
+                 'NEON_CONNECTION_STRING=""',
+                 "export NEON_CONNECTION_STRING=''"):
+        env_file.write_text(
+            "# generated-by: setup-env.sh --defaults\n"
+            "VOYAGE_API_KEY=\n" + line + "\nTELEGRAM_COS_TOKEN=\n",
+            encoding="utf-8")
+        assert OrgSource().available() is False, (
+            f"{line!r} is an unfilled placeholder, not a configured backend")
+    # …and a real value on the same shaped file still configures it (guards
+    # against a 'fix' that just turns the whole file branch off).
+    env_file.write_text(
+        "# generated-by: setup-env.sh --defaults\n"
+        "VOYAGE_API_KEY=\n"
+        "NEON_CONNECTION_STRING=postgres://x.invalid/db\n",
+        encoding="utf-8")
     assert OrgSource().available() is True
 
 
