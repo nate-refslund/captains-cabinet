@@ -318,13 +318,16 @@ describe('roof-off twins — judged, and the judgement bound to the pixels', () 
     // into a sandstone arcade at a fixed base centre.
     expect(openFrameOf(PACK, 'library')).toBeNull()
     expect(openTwinRefusal(PACK, 'library')).toMatch(/scene swap/)
-    // …and it is refused for THAT reason, not by accident of geometry: its
-    // footprint is identical to the closed frame's, so the mechanical rule
-    // below would have admitted it.
+    // …and it is refused for THAT reason, not by accident of geometry: the
+    // mechanical rule below admits it, so removing the judged entry would let
+    // the scene swap ship. Asserted as "would be admitted" rather than
+    // "footprint identical" — until 2026-07-28 the twin was byte-for-byte the
+    // closed frame's size because the old base treatment returned it uncropped,
+    // and pinning that equality was pinning an artefact of that bug.
     const gc = groundDiamond(PACK.frames.library.dw, PACK.frames.library.dh)
     const go = groundDiamond(PACK.frames.library_open.dw, PACK.frames.library_open.dh)
-    expect(go.hw).toBe(gc.hw)
-    expect(go.depth).toBe(gc.depth)
+    expect(go.hw).toBeLessThanOrEqual(gc.hw + 1)
+    expect(go.depth).toBeLessThanOrEqual(gc.depth + 1)
   })
 
   it('the footprint rule is measured against the SHIPPED atlas, both ways', () => {
@@ -350,9 +353,12 @@ describe('roof-off twins — judged, and the judgement bound to the pixels', () 
       }
     }
     // The measurement itself, so a regenerated atlas that flips a building from
-    // one side to the other cannot do it silently.
-    expect(wider.sort()).toEqual(['camp_log_cabin', 'cottage_b', 'officer_house_b'])
-    expect(narrower.length).toBe(7)
+    // one side to the other cannot do it silently. It flipped two on
+    // 2026-07-28 and this arm is how that was noticed: `camp_log_cabin_open`
+    // and `cottage_b_open` were oversized by a baked exterior lawn, not by
+    // their walls, and the lawn peel put them back inside the closed footprint.
+    expect(wider.sort()).toEqual(['officer_house_b'])
+    expect(narrower.length).toBe(9)
   })
 
   it('the DEPTH half of the footprint rule fires on its own', () => {
@@ -392,9 +398,14 @@ describe('roof-off twins — judged, and the judgement bound to the pixels', () 
 
   it('the refusal reaches the CANDIDATE, not only the draw', () => {
     // A refusal enforced at one of three call sites leaves the building chosen,
-    // its roof faded to nothing, and no interior under it.
+    // its roof faded to nothing, and no interior under it. One of each kind, so
+    // the arm covers both branches of openTwinRefusal: `library` is the JUDGED
+    // refusal, `officer_house_b` the geometric one. It used to name
+    // `camp_log_cabin`, which stopped being refused on 2026-07-28 when the lawn
+    // peel took the baked deck off its frame and it fell back inside its closed
+    // footprint — the refusal was about a lawn, not about the building.
     expect(openFrameOf(PACK, 'library')).toBeNull()
-    expect(openFrameOf(PACK, 'camp_log_cabin')).toBeNull()
+    expect(openFrameOf(PACK, 'officer_house_b')).toBeNull()
   })
 })
 
@@ -551,15 +562,20 @@ describe('what this round did NOT fix, declared so it cannot be forgotten', () =
     }
   })
 
-  it('great_house_open ships built-in cabinets with contents — declared art debt', () => {
-    // The one open twin kept despite a doctrine smell: its back walls carry
-    // glazed casework with objects drawn inside them, which is architecture
-    // rather than a fixture the compositor fills — but it is the same sentence
-    // ("a bookshelf drawn full") the module forbids for the kit. It is kept
-    // because it is the ONLY interior officers are ever drawn in and the art is
-    // otherwise the same building; it is pinned so a regeneration is noticed and
-    // so the debt is never confused with a clean bill.
-    expect(fnv1aBytes(frameBytes('great_house_open'))).toBe('07df3a61')
+  it('great_house_open ships a built-in stove — declared art debt', () => {
+    // The one open twin kept despite a doctrine smell, RE-JUDGED 2026-07-28 on
+    // new pixels. The debt changed shape rather than clearing: the old frame's
+    // back walls carried glazed casework with objects drawn inside them, and
+    // that is gone — the walls are now plain arched windows and a plank door.
+    // What replaced it is a small stone stove standing in the corner, which is
+    // still a fixture drawn into art the compositor is supposed to fill (the
+    // kit ships `int_stove` for exactly this). It is strictly the lesser debt,
+    // because a stove bakes in no MEASURED QUANTITY the way a shelf drawn full
+    // or a board drawn with pins does, and it is clear of all five desk slots.
+    // Kept because this is the ONLY interior officers are ever drawn in; still
+    // pinned, so a regeneration is noticed and the debt is never confused with
+    // a clean bill.
+    expect(fnv1aBytes(frameBytes('great_house_open'))).toBe('cc15ead9')
     expect(openFrameOf(PACK, 'great_house')).not.toBeNull()
   })
 })
