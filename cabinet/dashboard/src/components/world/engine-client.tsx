@@ -33,6 +33,8 @@ import {
   type ProjectionKind,
 } from '@/lib/world/projection'
 import { cameraClamp, cameraHome } from '@/lib/world/iso-scene'
+import { creditReason, limezuSurfaces } from '@/lib/world/credit'
+import { ASSET_BASE, type WorldAssetManifest } from '@/lib/world/sprites'
 import { fnv1a } from '@/lib/world/hash'
 import { formatClock } from '@/lib/world/lighting'
 import {
@@ -171,6 +173,11 @@ export default function EngineClient({
   const [legendOpen, setLegendOpen] = useState(false)
   const [connected, setConnected] = useState(false)
   const [renderIssues, setRenderIssues] = useState<string[]>([])
+  // ART CREDIT INPUTS — the credit line names LimeZu only where LimeZu pixels
+  // are on screen, so both facts are measured: the manifest says which rows are
+  // licensed, and the rail reports how many of its portraits it is painting.
+  const [artManifest, setArtManifest] = useState<WorldAssetManifest | null>(null)
+  const [railLimeZu, setRailLimeZu] = useState(0)
 
   const tickRef = useRef(0)
   const accRef = useRef(0)
@@ -212,6 +219,32 @@ export default function EngineClient({
     if (projection === 'iso') p.set('iso', '1')
     window.history.replaceState(null, '', `${window.location.pathname}?${p.toString()}`)
   }, [camera, sel, at, projection])
+
+  // The manifest, for its `license` column only — the canvas resolves its own
+  // copy for drawing. Same URL, so this is a browser-cache hit, not a second
+  // download.
+  useEffect(() => {
+    let alive = true
+    fetch(ASSET_BASE + 'manifest.json')
+      .then((r) => (r.ok ? (r.json() as Promise<WorldAssetManifest>) : null))
+      .then((m) => {
+        if (alive) setArtManifest(m)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [])
+  /** Mounted surfaces currently painting LimeZu-licensed pixels. */
+  const creditSurfaces = useMemo(
+    () =>
+      limezuSurfaces({
+        projection,
+        manifest: artManifest,
+        limezuPortraits: railLimeZu,
+      }),
+    [projection, artManifest, railLimeZu]
+  )
 
   // ── data feeds ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -926,10 +959,23 @@ export default function EngineClient({
             ))
           )}
         </div>
-        {/* LimeZu license credit (Captain-ratified 2026-07-12): always visible at default zoom. */}
-        <span data-world-credit className="shrink-0 whitespace-nowrap text-[10px] text-zinc-500">
-          Art: LimeZu — limezu.itch.io
-        </span>
+        {/* LimeZu license credit (Captain-ratified 2026-07-12), shown WHERE IT
+            IS OWED: the licence requires it wherever LimeZu art is drawn, and
+            printing it over a frame LimeZu did not draw attributes our own art
+            to someone else. `limezuSurfaces` derives that from the manifest's
+            licence column over what each mounted surface binds — see
+            lib/world/credit.ts. It is in the always-on bottom bar, never behind
+            the legend toggle. */}
+        {creditSurfaces.length > 0 && (
+          <span
+            data-world-credit
+            data-credit-surfaces={creditSurfaces.join(',')}
+            title={creditReason(creditSurfaces)}
+            className="shrink-0 whitespace-nowrap text-[10px] text-zinc-500"
+          >
+            Art: LimeZu — limezu.itch.io
+          </span>
+        )}
       </div>
 
       {/* ── Legend Law panel (grammar + growth-ladders provenance) ── */}
@@ -980,7 +1026,11 @@ export default function EngineClient({
 
       {/* ── portrait rail (chrome, never the world framebuffer) ── */}
       {!eraMode && (
-        <PortraitRail tick={tick} onInspect={(slug) => openInspect({ kind: 'officer', id: slug })} />
+        <PortraitRail
+          tick={tick}
+          onInspect={(slug) => openInspect({ kind: 'officer', id: slug })}
+          onLimeZuPortraits={setRailLimeZu}
+        />
       )}
 
       {/* ── mailbox: READ-only pending decision-queue view (ruling) ── */}

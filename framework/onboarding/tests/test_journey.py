@@ -169,6 +169,57 @@ def test_command_drift_unions_every_package_and_ignores_option_flags():
     assert all("build" not in f["summary"] and "version" not in f["summary"] for f in findings)
 
 
+def test_bare_package_manager_invocation_of_an_installed_tool_is_not_drift():
+    """The headline dividend on a real repo was a false positive.
+
+    Measured 2026-07-28 through the real journey on a live single-product web
+    repo: 66 of 68 findings were command drift and the top-ranked one
+    claimed ``pnpm drizzle-kit generate`` was a broken documented command.
+    ``drizzle-kit`` is a declared devDependency whose binary pnpm executes —
+    across the whole repo 1382 of 1529 flagged occurrences named a declared
+    dependency. A bare ``pnpm x`` tries a script FIRST and falls back to an
+    installed package binary, so an undeclared script proves nothing; only the
+    explicit ``run`` form is an unambiguous script reference. A version
+    constraint ("pnpm 8") is not a command at all.
+    """
+    entries = [
+        {"path": "package.json", "sha256": "a" * 64, "lines": [],
+         "text": json.dumps({"scripts": {"build": "next build"},
+                             "devDependencies": {"drizzle-kit": "^0.31.0"}})},
+        {"path": "docs/MIGRATIONS.md", "sha256": "b" * 64, "text": "", "lines": [
+            "Run `pnpm drizzle-kit generate` to create the migration.",  # installed tool
+            "Requires pnpm 8 or newer.",                                 # version constraint
+            "Compare branches with `pnpm migrate:diff`.",                # genuinely undeclared
+            "Then `pnpm run build` to compile.",                         # declared script
+        ]},
+    ]
+    findings = journey._command_drift(entries)
+    assert [f["citations"][0]["line"] for f in findings] == [3]
+    assert "migrate:diff" in findings[0]["summary"]
+    # The bare form's claim states BOTH halves of what was actually checked.
+    assert "dependency by that name" in findings[0]["summary"]
+
+
+def test_explicit_run_form_is_still_drift_even_for_a_declared_dependency():
+    """The dependency escape hatch must not swallow a real broken script.
+
+    ``pnpm run drizzle-kit`` names a SCRIPT explicitly; the binary fallback
+    does not apply, so a declared dependency of the same name is irrelevant.
+    """
+    entries = [
+        {"path": "package.json", "sha256": "a" * 64, "lines": [],
+         "text": json.dumps({"scripts": {"build": "next build"},
+                             "devDependencies": {"drizzle-kit": "^0.31.0"}})},
+        {"path": "README.md", "sha256": "b" * 64, "text": "", "lines": [
+            "Run `pnpm run drizzle-kit` to migrate.",
+        ]},
+    ]
+    findings = journey._command_drift(entries)
+    assert len(findings) == 1
+    assert "drizzle-kit" in findings[0]["summary"]
+    assert "dependency by that name" not in findings[0]["summary"]
+
+
 def test_monorepo_documented_subpackage_script_is_not_false_drift(tmp_path):
     source = tmp_path / "sources" / "monorepo"
     (source / "packages" / "api").mkdir(parents=True)

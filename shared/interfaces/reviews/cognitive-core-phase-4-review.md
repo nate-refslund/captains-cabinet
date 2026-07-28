@@ -21,21 +21,28 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 528005675917203f902d45d5b8c7769cbe1f3598cdc58fb016284f1ebce88a56
+Reviewed-Scope-Digest: 918d6306d1b8104fc6f787951cfd4029b28ef388a9fada291451e12b1657ce6d
 
-(RE-BOUND 2026-07-28 at the landing of `feat/salience-sweep`. Prior digest:
-`9b43322029c6c91dd56c240894e27fd879dd2a18590c3ca98a8a43462743ef2d`. ONE in-scope
-path moved and it is not a COG-4 byte:
+(RE-BOUND 2026-07-29 at the landing of `feat/salience-sweep`, over the merge of
+`origin/master` b4859c55. Prior digest on this branch:
+`528005675917203f902d45d5b8c7769cbe1f3598cdc58fb016284f1ebce88a56`; master's own
+at that merge: `3c8c1f7f60bd32a56e831438d768ea1b760b8f148353e65aba3c76c9b6d50a79`.
+NEITHER side's value survives, because the digest is a function of the MERGED
+bytes — a concurrent branch moved the same in-scope file, and taking either
+recorded value would have bound this artifact to bytes that no longer existed.
+ONE in-scope path moved on this branch and it is not a COG-4 byte:
 `cabinet/config/cognitive-architecture-contract.yml` gains the visible bijection
 raise 207 -> 208 for `framework/onboarding/salience.py`, that member's expansion
-row, and one `framework_production_noncomment_lines` allowance measured at the
-landing. The budgets file is in scope because COG-4 extended it; the salience
-ranker itself, its suite and `framework/onboarding/journey.py` are OUTSIDE the
-scope set — verified, since the digest over this branch's first commit still
-read `9b433220…` unchanged. No COG-4 organ, contract clause or measurement was
-touched, so nothing this artifact reviewed changed meaning; only the census
-ledger grew by one adjudicated member. Re-bound in the SAME commit as the
-contract edit, because a recorded digest and the bytes it binds must never be
+row, and one `framework_production_noncomment_lines` allowance re-measured after
+the merge (73735 = 73016 + this unit's 685 + master's 34, both rows kept whole —
+the conflict was two independent additions to one list, not a contest). The
+budgets file is in scope because COG-4 extended it; the salience ranker itself,
+its suite and `framework/onboarding/journey.py` are OUTSIDE the scope set —
+verified, since the digest over this branch's FIRST commit still read
+`9b433220…`, unchanged from master. No COG-4 organ, contract clause or
+measurement was touched, so nothing this artifact reviewed changed meaning; only
+the census ledger grew by one adjudicated member. Re-bound in the SAME commit as
+the contract edit, because a recorded digest and the bytes it binds must never be
 able to disagree, even for one commit.
 
 Earlier RE-BIND 2026-07-28 at the landing of `fix/world-art-manifest-truth-and-egg`.
