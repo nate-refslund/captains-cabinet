@@ -95,8 +95,11 @@ missing was any way to tell the two refusals apart, and any trace of the first.
    `contains_secret_shape` calls are one call per row per append. Fixed by
    memoizing the clean ledger prefix against the sha256 of exactly the bytes
    that proved it (`framework/evidence/verifier.py::_verify_events`): measured
-   on the production path, filing went 3.9ms → 1.5ms at trial depth 40 and
-   36.6ms → 3.1ms at depth 499 (the R-8 envelope). The rate limit above is
+   on the production path, filing went 1.5ms → 1.5ms at trial depth 16 and
+   35.9ms → 3.2ms at depth 495 (the R-8 envelope). Those are the depths the
+   `filing_latency` fixture actually samples; the "depth 40 / depth 499" pair
+   printed here until 2026-07-28 named depths it never visits, and the numbers
+   above are the fixture's own measured pair, not a relabel. The rate limit above is
    still right on its own merits — a per-tool-call ledger row is a ledger
    problem, not a latency one — but its latency premise no longer holds.
 

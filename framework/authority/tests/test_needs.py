@@ -231,7 +231,20 @@ def filing_latency(tmp_path_factory) -> dict[str, float]:
                 file_need(root)
                 shallow.append(time.perf_counter() - start)
             shallow_depth = _mirror_trial_depth(store)
-            while _mirror_trial_depth(store) < _DEEP_TRIAL_EVENTS:
+            # BOUNDED, not `while depth < target`.  The `deep_depth` assertion
+            # below is this fixture's anti-vacuity guard, and an unbounded fill
+            # is what stops it ever being reached: with the mirror silent the
+            # depth stays 0 and the loop spins forever.  MEASURED 2026-07-28 by
+            # deleting CABINET_EVIDENCE_MIRROR_STORE from this fixture — it was
+            # still running at 120s instead of failing, which in CI is a
+            # 30-minute job timeout reading as infrastructure rather than as the
+            # named defect.  The ceiling is twice the fill a healthy run needs,
+            # so it cannot trip on one; exhausting it drops through to that
+            # assert, which says what actually went wrong (re-probed with the
+            # same deletion: both arms now ERROR in 1.4s).
+            for _ in range(_DEEP_TRIAL_EVENTS * 2):
+                if _mirror_trial_depth(store) >= _DEEP_TRIAL_EVENTS:
+                    break
                 file_need(root)
             deep = []
             for _ in range(_LATENCY_SAMPLES):
