@@ -21,7 +21,20 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: b535a3382ce73f6825121f18130ce1f8d54041940571cf62992739d6cca7be7b
+Reviewed-Scope-Digest: 657db3fd0a80b3f62ab5f5ba68263ee9511a7f9103bde26d56e8aab4f1ef4144
+
+(MERGE RE-BIND, 2026-07-28, `fix/briefing-consumes-recall` x master
+`dad973d5` (PR #257). Fourth master landing this branch has merged in one
+day, and the third that had re-bound this same line. Neither recorded
+digest describes the merged tree, so the value above is RECOMPUTED over
+it; every note from both sides is kept below, none superseded. This
+branch's only in-scope path remains
+`cabinet/config/cognitive-architecture-contract.yml` (one
+`temporary_allowances` row, `briefing-consumes-recall`, +456 non-comment
+lines); no budget `maximum`, no existing `additional`, no expansion member
+and no bijection class changed, and NO COG-4 implementation byte moved on
+either side.)
+
 
 (MERGE RE-BIND, 2026-07-28, `fix/briefing-consumes-recall` x master
 `8cf00772` (PR #253, connector-registry). BOTH sides had re-bound this
@@ -75,6 +88,19 @@ implementation byte changed; `framework/authority/classifier.py` remains in
 the manifest's `must_remain_unchanged` block against the pinned phase
 anchor. The phase-4 findings below are unaffected.)
 
+(MERGE RE-BIND, 2026-07-28, `fix/needs-anti-vacuity-and-depth-labels` x
+`feat/connector-registry`: both sides re-bound this line and both moved
+`cabinet/config/cognitive-architecture-contract.yml` — this branch a PROSE-ONLY
+correction of the evidence-append-quadratic row's trial-depth labels (no budget,
+no maximum, no additional, no row identity; census unmoved at 71931 <= 71931),
+master a connector-registry allowance row. git auto-merged the file with no
+contested byte. Neither recorded digest describes the merged tree, so the value
+above is RECOMPUTED over it rather than picked from a parent, and every note
+from both sides is kept below, none superseded. NO COG-4 implementation byte
+moved on either side: `resolve_scope()` intersected with
+`git diff --name-only origin/master...HEAD` over this branch yields exactly the
+contract file, and the intersection with the manifest's DIR entries is empty.)
+
 (MERGE RE-BIND, 2026-07-28, `feat/connector-registry` x `fix/evidence-append-quadratic`: both sides re-bound this line and both moved `cabinet/config/cognitive-architecture-contract.yml` — this branch a `temporary_allowances` row for the connector registry, master the evidence recorder's own budget note. git auto-merged the allowance list with no contested byte. Neither recorded digest describes the merged tree, so the value above is RECOMPUTED over it. Every note from both sides is kept below, none superseded. NO COG-4 implementation byte moved on either side: this branch's only digest-bound path is the contract file, verified by intersecting `resolve_scope()` with `git diff --name-only 6ec81460 HEAD`.)
 
 (RE-BOUND AGAIN 2026-07-28 at the merge of `origin/master` 3126cfac into
@@ -89,6 +115,30 @@ contract file is the only digest-bound path this branch touched, and NO COG-4
 implementation byte moved — no organ, no scheduler surface, no serve surface,
 no fixture, no boundary row. Nothing below was re-reviewed, because no reviewed
 byte moved. The prior re-bind's own note follows verbatim.)
+
+(RE-BOUND 2026-07-28, `fix/needs-anti-vacuity-and-depth-labels`, in the SAME
+commit as the change that moved the bytes — the re-bind-at-landing procedure
+this artifact prescribes. Prior digest: `d85d407f5047ea53…`. The moved file in
+scope is the ONE budget surface again:
+`cabinet/config/cognitive-architecture-contract.yml`, whose
+`evidence-append-quadratic` row cited trial depths 40 and 499 for latency
+figures the `filing_latency` fixture takes at depths 16 and 495 — a governance
+record asserting a measurement the code does not take. PROSE ONLY: no `budget`,
+no `maximum`, no `additional`, no `owner`, no `sunset` and no row identity
+changed, and the census is byte-for-byte unmoved at 71931 <= 71931.
+MECHANICALLY VERIFIED rather than asserted: `resolve_scope()` was intersected
+with `git diff --name-only` over this landing for ALL FIVE phase scopes and this
+file is the only digest-bound path any of them touches; the intersection with
+the manifest's DIR entries is empty. The other two paths —
+`framework/authority/tests/test_needs.py` (its latency fixture's fill loop
+bounded, so the fixture's own anti-vacuity assert becomes reachable instead of
+spinning forever) and one dated doc correction — are in no phase scope. No
+organ, no scheduler surface, no serve surface, no COG-4 entry point. Neither
+`cognitive-phase4-rollback-rehearsal.py` nor `verify-cognitive-phase4.sh` is
+touched: the frozen battery is byte-identical, which is what keeps this re-bind
+mechanical rather than a restamp of a review that never happened. The
+rehearsal's compatibility battery runs in a worktree detached at the pinned
+anchor `c58d4a57`, so the `test_needs.py` edit is not in the bytes it runs.)
 
 (MERGE RE-BIND, 2026-07-28, `fix/evidence-append-quadratic` x `iso-port-composition`:
 PR #223 landed on master while this branch sat green in CI, and BOTH sides had
