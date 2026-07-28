@@ -46,16 +46,24 @@ jobs:
     # 15m12s — a timeout-minutes hit reports as `cancelled`, which is why this
     # read as a mystery cancellation and not as a budget.
     #
-    # Measured, from that run's own step timings plus the last green one
-    # (30264672004): 3m40 setup+lint+python, 5m51 vitest, 2m11 golden evals,
-    # 0m15 the small evals, 4m52 hook regression harnesses = ~16m50.
-    # The growth is real work arriving on this branch, not a hang — the vitest
-    # step went 34s (30230120417) -> 2m16s (30264672004) -> 5m43s as the world
-    # capture pixel gate and the harbour/planting content landed.
+    # Measured the honest way — off MASTER's own green run of this job at
+    # 6ec81460 (30351195519), which is the same job doing the same work minus
+    # this branch: 12m10 end to end, of which vitest is 33s and the hook
+    # regression harnesses 5m59 (that step grew ~1m in #249, which added the
+    # 540-line dependency-preflight harness). This branch's vitest measured
+    # 5m43 on run 30350363875 against master's 33s, so this job lands near
+    # 17m30. The earlier estimate written here was ~16m50 off the pre-#249
+    # step timings and was stale within the hour; 17m30 is the number.
     #
-    # 25 matches framework-tests' budget and leaves ~50% headroom over the
-    # measurement. It is a resource bound, not a threshold: no arm is skipped,
+    # The growth is real work arriving, not a hang — the vitest step went
+    # 34s (30230120417) -> 2m16s (30264672004) -> 5m43s as the world capture
+    # pixel gate and the harbour/planting content landed.
+    #
+    # 25 matches framework-tests' budget and leaves ~30% headroom over that
+    # 17m30. It is a resource bound, not a threshold: no arm is skipped,
     # relaxed or widened by it, and a genuinely hung step still dies here.
+    # If the job ever creeps past ~22m, re-budget again rather than letting a
+    # cancellation be read as a test result — that is what cost this round.
     timeout-minutes: 25
 
     services:
