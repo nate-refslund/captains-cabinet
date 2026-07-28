@@ -10,6 +10,7 @@ import jsonschema
 
 from framework.evidence import EvidenceError, EvidenceRecorder, RepairRequest, repair_verdict
 from framework.evidence.__main__ import main as evidence_cli
+from framework.evidence import verifier
 from framework.evidence.recorder import _canonical, _digest
 from framework.evidence.verifier import verify_store, verify_trial
 
@@ -505,3 +506,40 @@ def test_self_repair_is_fail_closed_on_every_hard_ceiling_and_missing_receipt():
         "reason": "missing_precondition",
         "missing": ["regression_tests"],
     }
+
+
+def test_append_reverifies_only_the_new_tail(tmp_path: Path, monkeypatch):
+    """Appending to a deep trial must not re-scan every earlier event.
+
+    `append` verifies the trial before it extends it — correct, and the reason
+    a truncation cannot be laundered by writing over it. Re-verifying the WHOLE
+    trial each time made that O(n) per append and O(n^2) per trial, which on
+    the live filing path (`framework/authority/needs.file_need` ->
+    `framework/evidence_mirror`) cost 33ms of the 50ms hook budget by the time
+    a trial reached the 500-event R-8 envelope.
+
+    This is the STRUCTURAL sensor for that defect: it counts rows scanned
+    rather than milliseconds, so it is deterministic, machine-independent and
+    instant. Against the pre-fix code it reads 40 instead of 1.
+    """
+    recorder = EvidenceRecorder(tmp_path)
+    for _ in range(40):
+        append_started(recorder)
+
+    scanned: list[str] = []
+    real_shape_errors = verifier._shape_errors
+
+    def counting_shape_errors(row, prefix):
+        scanned.append(prefix)
+        return real_shape_errors(row, prefix)
+
+    monkeypatch.setattr(verifier, "_shape_errors", counting_shape_errors)
+    append_started(recorder)
+
+    assert scanned == ["event:40"], (
+        f"append re-verified {len(scanned)} events to write one; the evidence "
+        "append is scaling with trial length again"
+    )
+    monkeypatch.undo()
+    final = verify_trial(tmp_path, "DOGFOOD-001")
+    assert final["ok"] is True and final["event_count"] == 41

@@ -18,6 +18,7 @@ from framework.evidence.verifier import (
     _digest,
     _event_signature,
     _object_signature,
+    reset_verified_ledger_memo,
     verify_store,
     verify_trial,
 )
@@ -239,3 +240,141 @@ def test_clean_trials_and_stores_still_verify_green_and_keep_recording(tmp_path:
     _append(recorder, step="three")
     third = verify_trial(tmp_path, TRIAL)
     assert third["ok"] is True and third["event_count"] == 3
+
+
+# --- the verified-prefix memo: it may make verification CHEAPER, never WEAKER
+
+def _warm_memo(root: Path, trial: str = TRIAL) -> dict:
+    """Verify once so the clean prefix is memoized, then hand back the verdict."""
+    result = verify_trial(root, trial)
+    assert result["ok"] is True, result["errors"]
+    return result
+
+
+def test_memoized_prefix_still_catches_mid_ledger_content_tampering(tmp_path: Path):
+    """The memo keys on the sha256 of the exact bytes it proved.  Editing a row
+    that sits INSIDE the memoized prefix changes those bytes, so the memo
+    misses and the full scan runs — the tamper is caught with the same finding
+    a cold verifier reports."""
+    recorder = EvidenceRecorder(tmp_path)
+    for step in ("one", "two", "three"):
+        _append(recorder, step=step)
+    _warm_memo(tmp_path)
+    ledger = tmp_path / "trials" / TRIAL / "events.jsonl"
+    rows = [json.loads(line) for line in ledger.read_text().splitlines()]
+    rows[1]["detail"] = {"action": "tampered"}  # hash/signature fields untouched
+    ledger.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in rows))
+    result = verify_trial(tmp_path, TRIAL)
+    assert result["ok"] is False
+    assert "event:2:event_hash" in result["errors"]
+
+
+def test_memoized_prefix_still_catches_tail_truncation(tmp_path: Path):
+    """Dropping rows from the end leaves a byte PREFIX of what was proved —
+    the one shape a naive prefix cache would wave through.  A shorter ledger
+    can never satisfy the memo (which pins the length it covers), and the
+    anchor plus the anti-rollback watermark both fail closed."""
+    recorder = EvidenceRecorder(tmp_path)
+    for step in ("one", "two", "three"):
+        _append(recorder, step=step)
+    _warm_memo(tmp_path)
+    ledger = tmp_path / "trials" / TRIAL / "events.jsonl"
+    lines = ledger.read_text().splitlines(keepends=True)
+    ledger.write_text("".join(lines[:2]))
+    result = verify_trial(tmp_path, TRIAL)
+    assert result["ok"] is False
+    assert "anchor_sequence" in result["errors"]
+    assert "rollback_detected" in result["errors"]
+
+
+def test_memoized_prefix_still_catches_a_swapped_signing_key(tmp_path: Path):
+    """A prefix proved under one key proves nothing under another, so the memo
+    pins the key digest too: rotate the key and every row is re-checked."""
+    recorder = EvidenceRecorder(tmp_path)
+    _append(recorder, step="one")
+    _append(recorder, step="two")
+    _warm_memo(tmp_path)
+    (tmp_path / ".signing-key").write_bytes(b"z" * 64)
+    result = verify_trial(tmp_path, TRIAL)
+    assert result["ok"] is False
+    assert "event:1:signature" in result["errors"]
+
+
+def test_memo_hit_and_cold_scan_return_identical_verdicts(tmp_path: Path):
+    """The whole claim in one assertion: warm and cold verification of the same
+    bytes are the same dict.  Run cold (memo cleared) and warm (memo hit, one
+    new row scanned) over a growing ledger and compare every field."""
+    recorder = EvidenceRecorder(tmp_path)
+    for index in range(6):
+        _append(recorder, step=f"step-{index}")
+        warm = verify_trial(tmp_path, TRIAL)
+        reset_verified_ledger_memo()
+        cold = verify_trial(tmp_path, TRIAL)
+        assert warm == cold, (index, warm, cold)
+        assert warm["ok"] is True and warm["event_count"] == index + 1
+
+
+def test_a_ledger_lifted_from_another_store_is_rejected_with_a_warm_memo(tmp_path: Path):
+    """Same trial id in two stores, each with its own random signing key.  Copy
+    one store's ledger over the other's AFTER both have been verified clean:
+    the second store's memo describes bytes that no longer exist, so it misses
+    and the foreign rows are checked against the local key and refused."""
+    first, second = tmp_path / "a", tmp_path / "b"
+    for root in (first, second):
+        recorder = EvidenceRecorder(root)
+        _append(recorder, step="one")
+        _append(recorder, step="two")
+    assert verify_trial(first, TRIAL)["ok"] is True
+    assert verify_trial(second, TRIAL)["ok"] is True
+    # The stores really are distinct (independent random signing keys).
+    assert (first / ".signing-key").read_bytes() != (second / ".signing-key").read_bytes()
+    (second / "trials" / TRIAL / "events.jsonl").write_bytes(
+        (first / "trials" / TRIAL / "events.jsonl").read_bytes()
+    )
+    result = verify_trial(second, TRIAL)
+    assert result["ok"] is False
+    assert "event:1:signature" in result["errors"]
+
+
+def test_a_failing_verification_is_not_memoized_as_clean(tmp_path: Path):
+    """A ledger that fails must fail EVERY time, not just the first time.
+
+    Only a ZERO-finding scan may seed the memo.  Memoizing a prefix that
+    carried findings would let the very next verification skip those rows and
+    report the trial clean — a tamper that heals itself by being looked at
+    twice.
+    """
+    recorder = EvidenceRecorder(tmp_path)
+    for step in ("one", "two", "three"):
+        _append(recorder, step=step)
+    _warm_memo(tmp_path)
+    ledger = tmp_path / "trials" / TRIAL / "events.jsonl"
+    rows = [json.loads(line) for line in ledger.read_text().splitlines()]
+    rows[1]["detail"] = {"action": "tampered"}
+    ledger.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in rows))
+
+    first = verify_trial(tmp_path, TRIAL)
+    assert first["ok"] is False and "event:2:event_hash" in first["errors"]
+    second = verify_trial(tmp_path, TRIAL)
+    assert second["errors"] == first["errors"]
+    assert second["ok"] is False
+
+
+def test_warm_and_cold_agree_on_a_ledger_that_goes_bad_after_the_memo(tmp_path: Path):
+    """The suffix scan must report what a whole-file scan reports — same
+    findings, same LINE NUMBERS, same event count.  A suffix scanned as if it
+    started at line 1 would mislabel every finding in it."""
+    recorder = EvidenceRecorder(tmp_path)
+    for step in ("one", "two", "three"):
+        _append(recorder, step=step)
+    _warm_memo(tmp_path)
+    ledger = tmp_path / "trials" / TRIAL / "events.jsonl"
+    ledger.write_bytes(ledger.read_bytes() + b"{not json}\n")
+
+    warm = verify_trial(tmp_path, TRIAL)
+    reset_verified_ledger_memo()
+    cold = verify_trial(tmp_path, TRIAL)
+    assert warm == cold, (warm, cold)
+    assert warm["ok"] is False
+    assert "invalid_json_line:4" in warm["errors"]
+    assert warm["event_count"] == 3
