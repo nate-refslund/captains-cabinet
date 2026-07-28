@@ -7,8 +7,8 @@ Bash hooks wired into Claude Code's lifecycle events (`UserPromptSubmit`, `PreTo
 | Event              | Hook                                  | Purpose |
 |--------------------|---------------------------------------|---------|
 | UserPromptSubmit   | `pre-captain-dm.sh`                   | Spec 042 — inject retrieval block as `<system-reminder>` on Captain DM. Spec 046 — when DM carries a voice attachment, transcribe via Telegram Bot API + ElevenLabs Scribe, cache by message_id at `cabinet/cache/voice-transcripts/<id>.txt` (24h TTL), inject transcript before retrieval. Disable: `VOICE_TRANSCRIBE_HOOK_ENABLED=0`. |
-| PreToolUse (any)   | `pre-tool-use.sh`                     | Kill switch, spending limits, prohibited-action enforcement, Layer 1 gates |
-| PostToolUse (any)  | `post-tool-use.sh`                    | Heartbeat, structured logging, cost tracking, trigger delivery, deploy alerts |
+| PreToolUse (any)   | `pre-tool-use.sh`                     | Dependency preflight, kill switch, spending limits, prohibited-action enforcement, Layer 1 gates |
+| PostToolUse (any)  | `post-tool-use.sh`                    | Dependency preflight, heartbeat, structured logging, cost tracking, trigger delivery, deploy alerts |
 | PostToolUse (reply)| `post-reply-voice.sh`                 | Auto-send voice message after Captain reply |
 | PostToolUse (reply)| `post-reply-memory.sh`                | Compact a Captain-conversation slice into long-term memory |
 | PreToolUse (reply) | `captain-reply-refine.sh`             | Spec 047 v2 — wrapper that runs H1 + H2 BEFORE send, escalates flags to a Sonnet refine-pass (max 3 cycles, 50-char trivial-skip, audit log at `cabinet/logs/captain-reply-reviews.jsonl`). Disable: `REPLY_REFINE_HOOK_ENABLED=0`. |
@@ -21,7 +21,50 @@ Bash hooks wired into Claude Code's lifecycle events (`UserPromptSubmit`, `PreTo
 | TaskCreated        | `claude-task-bridge.py`               | Records Claude Code native Tasks to `org_events` and warns when Cabinet metadata is missing |
 | TaskCompleted      | `claude-task-bridge.py`               | Records Claude Code native Task completion to `org_events` and updates `claude_native_tasks` |
 | PreCompact         | `pre-compact.sh`                      | Pre-compaction state snapshot |
-| Stop               | `stop-hook.sh`                        | Session-end cleanup |
+| Stop               | `session-stop.sh`                     | Session-end cleanup + the per-turn cost write the spending caps read. This row used to name `stop-hook.sh`, which `.claude/settings.json` wires to NO event — verify against the settings file, not this table, before pointing a test at either. |
+
+## Dependency preflight (`pre-tool-use.sh` §-1, `post-tool-use.sh` §-1)
+
+Both hooks parse their payload with `cat | jq` and every policy gate dispatches
+on the result. With any of `cat jq grep sed awk tr date perl` missing — or
+present but shimmed — the parse collapsed to empty, no gate arm matched, and
+`pre-tool-use.sh` reached its closing `exit 0` = ALLOW. Measured on master
+`8ffeae51`: 24 of 24 payloads that block on a healthy toolchain were allowed,
+exit 0, silently.
+
+Both hooks now check presence with bash builtins only (so the check cannot be
+defeated by the absence it looks for), require each name to resolve to an
+absolute path (an exported shell function via `BASH_ENV` otherwise substitutes
+itself for the binary), and then **run** each dependency and compare the answer.
+`pre-tool-use.sh` additionally refuses a payload whose `tool_name` will not
+parse — an unauthorizable call is not an authorized one — and cross-checks the
+parsed tool name against the raw bytes the parser was handed.
+
+**What that does and does not close.** It closes: a missing binary, a shadowed
+one, and a shim that is simply broken (silent, failing, truncating, passing its
+input through, answering with garbage). It does NOT close a shim that
+*recognises the probe*: the probe strings are literals in the hook, and a `jq`
+that answers them honestly while lying only about `.tool_name` leaked 23 of 32
+payloads when this fix was reviewed. That is registered as **RES-021** in
+`docs/plans/declared-residuals-register.md`, with the two real closures named —
+resolving the toolchain by absolute path from a root-owned location, or dropping
+the officer-writable directory from the launcher's PATH. The cross-check raises
+the cost of the simplest form; it is not a wall.
+
+`redis-cli` is deliberately NOT in the set: the kill-switch gate already fails
+closed on its absence with reads left open, and adding it here would convert
+that ratified posture into a total block.
+
+There is also no Captain-comms carve-out, and there cannot be one: identifying a
+call as a Telegram call requires parsing the payload, which is the thing that is
+broken. The refusal is made loud on stderr instead, naming the tool and the
+repair.
+
+Diagnose a refusal with `bash cabinet/scripts/check-deps.sh`, which names the
+enforcement-critical misses separately. The behaviour is pinned by
+`cabinet/tests/hook-regression/dependency-preflight.sh`, which builds the
+deprived environment itself rather than relying on the host to be missing
+anything — CI installs `jq`, which is precisely why nothing caught this.
 
 ## Captain-discipline soft-warn hooks (Spec 043)
 
