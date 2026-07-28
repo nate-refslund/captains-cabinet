@@ -123,14 +123,11 @@ describe('world sprite resolution', () => {
     expect(BUNK_SHEET).toMatch(/^office\/singles\//)
   })
   /**
-   * The owned cast must be BINDABLE at all times, not just after someone flips
-   * CHARACTER_DIR. The licensed LimeZu sheets are gitignored do-not-redistribute
-   * binaries, so a stranger hatching from the public egg gets a world with no
-   * people in it unless the owned set is present, complete and correctly shaped.
-   * This asserts the owned rows would satisfy resolveWorldSprites the moment
-   * CHARACTER_DIR becomes 'originals/characters' — the one-line swap.
+   * The owned cast must be complete, correctly shaped, and BOUND — the
+   * licensed LimeZu sheets are gitignored do-not-redistribute binaries, so
+   * only the owned set can be relied on to be present.
    */
-  it('the owned character set is complete and would resolve if CHARACTER_DIR flipped', () => {
+  it('the owned character set is complete and correctly shaped', () => {
     const manifest = realManifest()
     const owned = manifest.assets.filter((r) =>
       r.id.startsWith('originals/characters/Premade_Character_')
@@ -145,6 +142,37 @@ describe('world sprite resolution', () => {
       expect(row!.h, id).toBeGreaterThanOrEqual(CHAR_SHEET_MIN_H)
       expect(row!.grid, id).toBe(16)
       expect(row!.license, id).toBe('owned — org-original')
+    }
+  })
+
+  /**
+   * The world draws art the org OWNS (Captain ruling 2026-07-28).
+   *
+   * The completeness test above passed both before and after the flip — it
+   * proves the owned sheets exist, never that they are the ones bound. This
+   * one fails against pre-flip code: it asserts the paths resolveWorldSprites
+   * actually hands the renderer are the owned files. Reverting the cast is
+   * still one line, but it can no longer happen by accident.
+   */
+  it('the LIVE cast is the owned set — every bound character path is owned art', () => {
+    expect(CHARACTER_DIR).toBe('originals/characters')
+
+    const manifest = realManifest()
+    const { urls, missing } = resolveWorldSprites(manifest)
+    const bound = requiredSheets().filter((id) => id.startsWith(`${CHARACTER_DIR}/`))
+    expect(bound).toHaveLength(CHARACTER_COUNT)
+
+    const byId = new Map(manifest.assets.map((r) => [r.id, r]))
+    for (const id of bound) {
+      expect(missing, id).not.toContain(id)
+      expect(urls[id], id).toBeDefined()
+      // the drawn bytes come from the owned directory, under the owned licence
+      expect(urls[id], id).toContain('originals/characters/')
+      expect(byId.get(id)?.license, id).toBe('owned — org-original')
+    }
+    // and no licensed LimeZu character sheet is bound anywhere
+    for (const id of requiredSheets()) {
+      expect(id.startsWith('characters/'), id).toBe(false)
     }
   })
 })
