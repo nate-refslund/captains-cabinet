@@ -281,7 +281,18 @@ def _estate_subject_cards(estate: dict, taken: set, seen_ids: set, *,
                 name or slug, subject,
                 f"First verifiable improvement in {name or slug}"),
             "lane": slug or None,
-            "derived_from": "recall" if subject else "estate",
+            # STAYS "estate" EVEN WHEN RECALL ENRICHED IT (fixed 2026-07-28).
+            # This card exists because the ESTATE named the entity; recall only
+            # added quotes and cites, and `recall_refs` below already records
+            # that (it is what the briefing's recall item counts). Overwriting
+            # the field dropped the estate's own provenance count to zero, so
+            # genesis_intake_items told the operator "No card above derives
+            # from it: the proposals on file were written before this estate
+            # existed. Re-run genesis" about a card written from that estate in
+            # that same run — an ordering story told about a card that has no
+            # ordering problem, i.e. the exact defect the recall item was
+            # corrected for, one surface over. Reproduced before the fix.
+            "derived_from": "estate",
             "what": _subject_what(name or slug, low, subject,
                                   evidence_derived=True),
             "why": why,
@@ -470,17 +481,28 @@ def _query_terms(text: str) -> set:
     return {w.lower() for w in _WORD_RE.findall(text or "")}
 
 
-def _join_terms(hits: list, query: str) -> list:
-    """Terms shared by at least ``_MIN_JOIN_FILES`` DISTINCT files among the
-    hits, minus the query's own terms and the stopwords.
+# CALLERS PASS ONLY THE HITS THE CARD WILL CITE (fixed 2026-07-28, reproduced
+# through the real adapter and the real `first-briefing.sh --local` chain). This
+# used to be called with all `_MAX_RECALL_HITS` (8) hits while the card names at
+# most `_MAX_RECALL_FILES` (3) of them, so on any corpus answering from four or
+# more files the "Shared wording:" clause could name a term appearing in NONE of
+# the files printed beside it — measured: three cited notes about widget
+# alignment, invoice numbering and onboarding copy, captioned "Shared wording:
+# kubernetes", a word living only in two older notes the card never showed. The
+# operator finds that out the moment they do what the card tells them and open
+# the three files, which is the unearned-claim defect this whole surface exists
+# to remove, appearing on the surface itself.
+def _join_terms(cited: list, query: str) -> list:
+    """Terms shared by at least ``_MIN_JOIN_FILES`` of the DISTINCT files this
+    card CITES, minus the query's own terms and the stopwords.
 
     This is the join, and it is deliberately weak on purpose: it reports that
-    several of the operator's notes use the same words, which is a fact they
-    can verify by opening them. It never claims causality — the operator makes
-    that call, from files they wrote."""
+    several of the operator's notes use the same words — checkable by opening
+    the very files named beside it, which is why the scope is the CITED set and
+    not the wider hit list. It never claims causality; they make that call."""
     asked = _query_terms(query)
     per_file: dict = {}
-    for hit in hits:
+    for hit in cited:
         path = str(hit.get("path") or hit.get("ref") or "")
         blob = f"{hit.get('heading') or ''} {hit.get('text') or ''}"
         terms = {t for t in _query_terms(blob)
@@ -647,7 +669,9 @@ def probe_recall(answers: dict, focus_text: str | None = None, *,
             "dates": list(reversed(dates)),
             "span": (f"{dates[0]} … {dates[-1]}"
                      if len(dates) > 1 else (dates[0] if dates else "")),
-            "shared_terms": _join_terms(kept, probe["query"]),
+            # ``ordered``, never ``kept``: the shared wording must be checkable
+            # in the files this card actually prints (see _join_terms' header).
+            "shared_terms": _join_terms(ordered, probe["query"]),
             "quote": _quote_of(ordered[0]) if ordered else "",
             "top_cite": _cite(ordered[0]) if ordered else "",
             "refs": [str(h.get("ref") or h.get("path") or "") for h in ordered],
