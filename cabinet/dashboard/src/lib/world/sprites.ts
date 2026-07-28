@@ -143,9 +143,10 @@ export const CHAR_SHEET_MIN_H = 96
  * walk reads as a sway rather than a stride — improvable in place, and the
  * revert stays this one line.
  *
- * NOT redistributed: egg-export-manifest.txt deletes public/world-assets/
- * originals, so the PUBLIC egg still carries no character art either way —
- * shipping the org's own art to strangers is a separate Captain call.
+ * It also ships: egg-export-manifest.txt expects public/world-assets/
+ * originals PRESENT since 2026-07-28 ("ALL OUT of LimeZu"), so a stranger who
+ * hatches from the public egg now gets a world with people in it — which the
+ * licensed set, gitignored and absent from HEAD, could never give them.
  *
  * Both sets are in the manifest; changing this constant changes which one the
  * renderer binds. Nothing else in the engine knows the difference.
