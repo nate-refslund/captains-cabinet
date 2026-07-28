@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 916c646bc352115f34cf94ff3f16a82a40674bc0c83293f61555cdec388a40ea
+Reviewed-Scope-Digest: ffe8b3ee489ed66b44bc83aa1613b99dd245cf50a96baa8be07227ceff5806d3
 
 (MERGE RE-BIND, 2026-07-29, `feat/salience-sweep` x master `1875e112`.
 Both sides had re-bound this line and both moved
@@ -80,6 +80,24 @@ the contract edit, because a recorded digest and the bytes it binds must never b
 able to disagree, even for one commit.
 
 Earlier RE-BIND 2026-07-28 at the landing of `fix/world-art-manifest-truth-and-egg`.
+(MERGE RE-BIND, 2026-07-28, `feat/agnosticism-gate` x master `e8449ce6`.
+Third re-bind of this line in a day, same mechanism: both sides moved
+`cabinet/config/cognitive-architecture-contract.yml`, so neither recorded
+digest describes the merged tree and the value above is recomputed over
+THIS merge commit. Prior digests: this branch
+`d517beb0de1e284304c54d4a3591be173433c8a830b87b5cd7f8d13694595796`, master
+`c18946e6377c31c9c653389e02ff26273df8cb587cf446c80170e589340a9109`.
+THIS BRANCH's in-scope move: the contract's
+`framework_production_noncomment_lines` MAXIMUM, 60164 -> 60169, raised
+visibly for the parameterised charset seam that replaces a deleted
+keyboard whitelist (+5 measured). No set pin, no bijection class, no
+declared invariant and no temporary allowance moved; master's side moved
+only the allowances list, so the two edits are disjoint within the file.
+NO COG-4 implementation byte moved on either side: no organ, no scheduler
+or projection surface, no serve surface, no boundary row, no fixture, no
+CLI. Nothing below was re-reviewed, because no reviewed COG-4 byte moved.)
+
+(RE-BOUND 2026-07-28 at the landing of `fix/world-art-manifest-truth-and-egg`.
 Prior digest: `ebbdcc3f771afef7ffddc7558ea64a06bf3f8fa782cf14b5dd129891f796ca15`.
 TWO in-scope paths moved, both on the egg-export surface COG-4 extended and
 neither a COG-4 byte: `cabinet/scripts/egg-export-manifest.txt` (the WORLD ART

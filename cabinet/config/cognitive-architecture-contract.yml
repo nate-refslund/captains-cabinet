@@ -70,7 +70,21 @@ budgets:
     # the new level. Zero new MODULES (framework_production_modules unchanged
     # at 206+allowances): the helper lives inside the existing module, and the
     # revert CLI lives in cabinet/scripts/, outside this budget's path.
-    maximum: 60164
+    #
+    # 60164 -> 60169 (+5 measured 2026-07-28 via cognitive-architecture-census.py,
+    # observed 73055 vs the then-effective 73050): the specifics-ratchet landing
+    # removed the Danish-keyboard charset WHITELIST from
+    # framework/acting/voice_charset.py and replaced it with the parameterised
+    # restrict_to_charset(text, allowed) seam — the framework keeps the
+    # MECHANISM and the deployment supplies the set. The whitelist it deletes is
+    # slightly smaller than the seam that replaces it, hence +5 rather than a
+    # shrink. RAISED VISIBLY rather than paid for by a temporary allowance: an
+    # allowance promises a deletion gate, and this seam is permanent — a
+    # framework that normalizes outbound text for every writing system needs
+    # somewhere for a per-deployment restriction to enter, and this is it. Zero
+    # new production MODULES (the new suite is a test; the ratchet's debt ledger
+    # is a .txt), so framework_production_modules is unchanged.
+    maximum: 60169
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
