@@ -39,6 +39,10 @@ HARNESSES=(
   "evidence-access.sh"
   "evidence-pathnorm.sh"
   "captain-exceptions.sh"
+  # The enforcement plane's own toolchain. Every other harness here runs with a
+  # complete toolchain, which is the one environment in which the hook cannot
+  # fail open — this one builds the deprived environment itself.
+  "dependency-preflight.sh"
 )
 
 OVERALL_FAIL=0
