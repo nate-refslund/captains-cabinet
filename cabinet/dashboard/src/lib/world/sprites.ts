@@ -49,6 +49,12 @@ export interface ManifestRow {
   h: number
   grid: number
   sha256: string
+  /** Provenance, written by world-asset-install.py / world-asset-intake.py.
+   * Optional because the renderer never reads them — but they are on every row
+   * in the committed manifest, and the owned-vs-licensed distinction lives in
+   * `license` ("owned — org-original" vs the LimeZu commercial terms). */
+  pack?: string
+  license?: string
 }
 
 export interface WorldAssetManifest {
