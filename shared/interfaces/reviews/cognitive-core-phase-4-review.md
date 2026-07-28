@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: PLACEHOLDER
+Reviewed-Scope-Digest: c18946e6377c31c9c653389e02ff26273df8cb587cf446c80170e589340a9109
 
 (MERGE RE-BIND, 2026-07-28, `fix/recall-live-claims-it-never-earned` x master
 `a70bcfb5` (PR #268). Both sides re-bound this line and both moved
