@@ -1556,12 +1556,23 @@ def test_a_sweep_may_assert_products_but_never_roles_or_the_business_model():
 
 
 def test_connected_mode_does_not_ask_what_the_data_answers():
-    """Mode 1: sweep and assert. The salience question is the one exception —
-    what the operator CARES about this week is not in the data either."""
+    """Mode 1: sweep and assert — but salience is asked here TOO, now.
+
+    This arm used to assert salience was DROPPED in connected mode, on the
+    premise that a cabinet which had swept the sources already knew what
+    mattered. The premise was tested against a real estate: 665 names across
+    four connectors, ranked, put the operator's own three answers at ranks 1, 4
+    and 8 of 47 candidates, and the top three contained one of them. A ranking
+    that good is a fine shortlist and a bad oracle, so the sweep RANKS and the
+    operator still CHOOSES. What connected mode still refuses to ask is the
+    seed question — that part of the premise held.
+    """
     plan = journey.entry_plan({"connectors": ["tracker", "repo"]})
     assert plan["opening_move"] == "sweep_and_assert"
     assert plan["seed_question"] is None
-    assert [q["id"] for q in plan["questions"]] == ["rights", "limits", "purpose"]
+    assert [q["id"] for q in plan["questions"]] == [
+        "rights", "salience", "limits", "purpose"
+    ]
     assert plan["grants"]["connectors"] == ["repo", "tracker"]
 
 
@@ -1685,3 +1696,179 @@ def test_a_revoked_source_stops_counting_as_a_local_grant(tmp_path):
     assert state["source"]["status"] == "revoked"
     assert journey._entry_grants(state)["local_files"] is False
     assert journey.entry_plan(journey._entry_grants(state))["next_actions"]
+
+
+# --- the salience offer: rank shallow, ask, then spend depth ---------------
+
+
+def _connected_state(root: Path, rows, identities=(), not_reached=()) -> dict:
+    """A journey whose connectors have already produced a rows block.
+
+    The rows arrive the only way this module accepts them — from a block
+    somebody already lawfully produced — so the test needs no credential and
+    the production path needs no API client.
+    """
+    data = root / journey.DATA_REL
+    data.mkdir(parents=True, exist_ok=True)
+    state = journey._fresh_state()
+    state["salience_rows"] = {
+        "rows": list(rows), "identities": list(identities),
+        "not_reached": list(not_reached),
+    }
+    state["entry_grants"] = {
+        "connectors": sorted({r["connector"] for r in rows}),
+        "local_files": False, "web": False,
+    }
+    (data / journey.STATE_NAME).write_text(json.dumps(state), encoding="utf-8")
+    return state
+
+
+def _estate_rows():
+    """Two sources naming the same three things, plus one thing in only one."""
+    rows = []
+    for i, name in enumerate(("Blue Harbour plan", "Blue Harbour ops", "Red Anchor",
+                              "Green Lantern brief", "Internal admin 1",
+                              "Internal admin 2", "Internal admin 3",
+                              "Internal admin 4", "Internal admin 5")):
+        rows.append({"connector": "tracker", "name": name,
+                     "updated": f"2026-07-{i + 1:02d}T09:00:00Z"})
+    for i, name in enumerate(("blue-harbour", "blue-harbour-api", "red-anchor",
+                              "green-lantern", "solo-repo", "another-repo",
+                              "third-repo", "fourth-repo", "fifth-repo")):
+        rows.append({"connector": "repo", "name": name,
+                     "updated": f"2026-07-{i + 10:02d}T09:00:00Z"})
+    return rows
+
+
+def test_the_connected_card_offers_ranked_candidates_and_an_escape_hatch(tmp_path):
+    """THE ASK, on the surface an operator actually reads.
+
+    Three candidates and a way to say none of them — the picker holds four
+    options, so this is the whole surface. The evidence on each candidate is the
+    NAMES that produced it, because a score the operator cannot audit is not
+    evidence.
+    """
+    _connected_state(tmp_path, _estate_rows())
+    card = journey.snapshot(tmp_path)["card"]
+    action = [a for a in card["options"] if a["action"] == "answer_salience"]
+    assert action, "the ranked question reached no surface"
+    ids = [o["id"] for o in action[0]["options"]]
+    assert ids[-1] == "other" and 2 <= len(ids) <= 4
+    assert all(o.get("why") for o in action[0]["options"])
+    assert any("blue-harbour" in o["why"] for o in action[0]["options"])
+    assert action[0]["not_reached"]
+    assert "Ranking what recurs across your sources" in card["body"]
+
+
+def test_the_offer_states_what_it_did_not_reach_on_the_card_itself(tmp_path):
+    """An unearned clean negative is the defect; the long sentence is the fix."""
+    _connected_state(tmp_path, _estate_rows(),
+                     not_reached=["two workspaces refused the read"])
+    body = journey.snapshot(tmp_path)["card"]["body"]
+    assert "What I did not reach" in body
+    assert "two workspaces refused the read" in body
+    assert "Ranked names only, never contents" in body
+
+
+def test_no_offer_is_manufactured_when_there_is_nothing_to_rank(tmp_path):
+    """DEGENERATE END. One source has no recurrence, so there is no ranking —
+    and salience stays the free-text question it always was rather than becoming
+    a picker whose only candidate is the operator's single folder."""
+    rows = [{"connector": "repo", "name": f"thing-{i}", "updated": None}
+            for i in range(5)]
+    _connected_state(tmp_path, rows)
+    state = journey.snapshot(tmp_path)["state"]
+    assert journey.salience_offer(state) is None
+    plan = journey._entry_plan_for(state)
+    salience_q = [q for q in plan["questions"] if q["id"] == "salience"][0]
+    assert "offer" not in salience_q
+    assert not [a for a in plan["next_actions"] if a["action"] == "answer_salience"]
+    assert plan["next_actions"], "a mode with no ranking still has a next step"
+
+
+def test_answering_the_offer_records_a_ratified_target(tmp_path):
+    """Depth is spent on a RATIFIED target, which is what earned the sweep the
+    right to be shallow."""
+    _connected_state(tmp_path, _estate_rows())
+    offered = journey.salience_offer(journey.snapshot(tmp_path)["state"])
+    choice = offered["options"][0]["id"]
+    result = journey.act(
+        {"action": "answer_salience", "choice": choice, "surface": "dashboard",
+         "action_id": "sal-1"},
+        tmp_path,
+    )
+    assert result["ok"] is True
+    recorded = result["state"]["salience"]
+    assert recorded["target"] == choice
+    assert recorded["from_escape_hatch"] is False
+    assert recorded["evidence"] and recorded["offered"][-1] == "other"
+    assert "so that is where I spend depth" in result["card"]["body"]
+
+
+def test_the_escape_hatch_takes_a_typed_name_and_teaches_the_alias(tmp_path):
+    """The loop that makes the mechanism agnostic close.
+
+    A name typed here is not a preference stored somewhere — it re-enters the
+    ranking as an IDENTITY, so two candidates the names could never join become
+    one on the next pass. Nothing records what KIND of thing it is.
+    """
+    rows = _estate_rows() + [
+        {"connector": "host", "name": "bluehbr-live", "updated": "2026-07-20T09:00:00Z"},
+        {"connector": "host", "name": "bluehbr-staging", "updated": "2026-07-21T09:00:00Z"},
+        {"connector": "tracker", "name": "BlueHbr rollout", "updated": "2026-07-22T09:00:00Z"},
+    ]
+    _connected_state(tmp_path, rows)
+    before = journey.salience_offer(journey.snapshot(tmp_path)["state"])
+    labels_before = {o["id"] for o in before["options"]}
+    assert "blueharbour" in labels_before or "harbour" in labels_before
+
+    result = journey.act(
+        {"action": "answer_salience", "choice": "other",
+         "name": "blue harbour, which the hosting calls bluehbr",
+         "surface": "dashboard", "action_id": "sal-esc"},
+        tmp_path,
+    )
+    recorded = result["state"]["salience"]
+    assert recorded["from_escape_hatch"] is True
+    assert "bluehbr" in recorded["aliases"]
+    assert "I had not ranked it; I have it now." in result["card"]["body"]
+
+    after = journey.salience_offer(result["state"])
+    merged = [o for o in after["options"] if "bluehbr" in (o.get("aliases") or [])]
+    assert merged, "the answered alias did not reach the next ranking"
+    assert "host" in merged[0]["connectors"] and "tracker" in merged[0]["connectors"]
+
+
+def test_the_offer_refuses_an_answer_it_never_made(tmp_path):
+    """A picker that accepts anything is not a gate. Both refusals, plus the
+    escape hatch's own required field."""
+    _connected_state(tmp_path, _estate_rows())
+    for request, code in (
+        ({"choice": "something-i-invented"}, "salience_choice_unknown"),
+        ({"choice": "   "}, "salience_choice_required"),
+        ({}, "salience_choice_required"),
+        ({"choice": "other"}, "salience_name_required"),
+        ({"choice": "other", "name": "   "}, "salience_name_required"),
+    ):
+        with pytest.raises(journey.JourneyError) as excinfo:
+            journey.act(
+                {"action": "answer_salience", "surface": "dashboard",
+                 "action_id": f"bad-{code}-{len(request)}", **request},
+                tmp_path,
+            )
+        assert excinfo.value.code == code
+
+
+def test_answering_salience_is_refused_when_nothing_was_offered(tmp_path):
+    """Fail-closed: no ranking, no choice to record — not a silently accepted
+    target the cabinet then spends depth on."""
+    rows = [{"connector": "repo", "name": f"thing-{i}", "updated": None}
+            for i in range(4)]
+    _connected_state(tmp_path, rows)
+    with pytest.raises(journey.JourneyError) as excinfo:
+        journey.act(
+            {"action": "answer_salience", "choice": "anything",
+             "surface": "dashboard", "action_id": "sal-none"},
+            tmp_path,
+        )
+    assert excinfo.value.code == "salience_not_offered"
