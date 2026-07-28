@@ -67,9 +67,16 @@ HERE = Path(__file__).resolve().parent
 CORPUS = HERE / "corpus"
 CALIB = HERE / "calibration"
 # Superseded corpora kept verbatim for reproduction AND used as the P5
-# cross-family bite arm. A dir is picked up by name, so archiving another
-# corpus later automatically extends the proof rather than needing a code edit.
-ARCHIVE_GLOB = "corpus-*"
+# cross-family bite arm. Picked up by name, so archiving another corpus later
+# extends the proof rather than needing a code edit.
+#
+# They live INSIDE corpus/, not beside it, and that is not cosmetic:
+# cognitive-architecture-census.py derives `durable_store_units` from
+# .gitignore's wildcard-free prefixes, so a sibling corpus-*/ needs its own
+# ignore rule and reads as a NEW organ of memory against a zero-headroom
+# budget. An archived corpus is not a new organ — it is this organ's own
+# history — so it nests under the rule that already covers corpus/*.
+ARCHIVE_GLOB = "archive-*"
 
 # Margins over the worst positive: generous enough to admit unseen good
 # scenes, tight enough that every corpus negative still trips (prove checks).
@@ -293,7 +300,7 @@ def prove_palette(gates, corpus: Path, palette: dict) -> tuple[list[str], list[s
                 f"class its own docstring names")
 
     # P5 — cross-family, against every archived corpus that is present.
-    archives = sorted(d for d in corpus.parent.glob(ARCHIVE_GLOB)
+    archives = sorted(d for d in corpus.glob(ARCHIVE_GLOB)
                       if d.is_dir() and d.resolve() != corpus.resolve())
     if not archives:
         print("  P5 cross    NOT RUN — no archived corpus present")

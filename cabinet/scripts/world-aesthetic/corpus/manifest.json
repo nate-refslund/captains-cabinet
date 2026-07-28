@@ -1,10 +1,10 @@
 {
   "purpose": "Calibration corpus for the Cabinet World aesthetic judge. positive = OWNED isometric scenes the Captain has seen; negative = Captain-rejected builds + synthetic owned-art scatter/void; palette = owned atlas (palette fit only, never the judge).",
-  "note": "Image files are gitignored (instance renders); this manifest is the tracked record. Verify with `build_corpus.py verify`. The pre-2026-07-28 LimeZu corpus is preserved verbatim at corpus-limezu-2026-07-08/ and the calibration it produced at calibration/archive/limezu-2026-07-08/.",
+  "note": "Image files are gitignored (instance renders); this manifest is the tracked record. Verify with `build_corpus.py verify`. The pre-2026-07-28 LimeZu corpus is preserved verbatim at corpus/archive-limezu-2026-07-08/ and its manifest plus the calibration it produced at calibration/archive/limezu-2026-07-08/.",
   "refit": {
     "date": "2026-07-28",
     "reason": "Captain direction: every world pixel becomes owned generated art. A palette fitted to LimeZu measured owned frames at 57-90% foreign against a 5% limit \u2014 the gate was pointed at the art family we are leaving.",
-    "supersedes": "corpus-limezu-2026-07-08/manifest.json",
+    "supersedes": "corpus/archive-limezu-2026-07-08/manifest.json",
     "argument": "cabinet-meta designs/world-aesthetic-corpus-refit-2026-07-28.md"
   },
   "counts": {

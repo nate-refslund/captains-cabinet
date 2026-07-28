@@ -32,9 +32,9 @@ Captain's "ALL OUT of LimeZu" direction made every world pixel owned generated
 art. A palette fitted to LimeZu measured owned frames at 57-90% foreign against
 a 5% limit — the gate was pointed at the art family we are deliberately leaving,
 not at a defect. The previous corpus is preserved VERBATIM and still runnable at
-corpus-limezu-2026-07-08/ (manifest tracked), and the calibration it produced is
-preserved at calibration/archive/limezu-2026-07-08/ so every claim made against
-it is still reproducible from a plain checkout. The argument, the before/after
+corpus/archive-limezu-2026-07-08/, and its manifest plus the calibration it
+produced are TRACKED at calibration/archive/limezu-2026-07-08/, so every claim
+made against it is still reproducible from a plain checkout. The argument, the before/after
 numbers and the bite proof are in cabinet-meta
 designs/world-aesthetic-corpus-refit-2026-07-28.md.
 """
@@ -318,7 +318,8 @@ def build_manifest(corpus: Path) -> None:
         "note": "Image files are gitignored (instance renders); this manifest "
                 "is the tracked record. Verify with `build_corpus.py verify`. "
                 "The pre-2026-07-28 LimeZu corpus is preserved verbatim at "
-                "corpus-limezu-2026-07-08/ and the calibration it produced at "
+                "corpus/archive-limezu-2026-07-08/ and its manifest plus the "
+                "calibration it produced at "
                 "calibration/archive/limezu-2026-07-08/.",
         "refit": {
             "date": "2026-07-28",
@@ -326,7 +327,7 @@ def build_manifest(corpus: Path) -> None:
                       "generated art. A palette fitted to LimeZu measured "
                       "owned frames at 57-90% foreign against a 5% limit — "
                       "the gate was pointed at the art family we are leaving.",
-            "supersedes": "corpus-limezu-2026-07-08/manifest.json",
+            "supersedes": "corpus/archive-limezu-2026-07-08/manifest.json",
             "argument": "cabinet-meta designs/"
                         "world-aesthetic-corpus-refit-2026-07-28.md",
         },
@@ -338,8 +339,8 @@ def build_manifest(corpus: Path) -> None:
           + ", ".join(f"{v} {k}" for k, v in counts.items()))
 
 
-def verify(corpus: Path) -> None:
-    manifest = corpus / "manifest.json"
+def verify(corpus: Path, manifest: Path | None = None) -> None:
+    manifest = Path(manifest) if manifest else corpus / "manifest.json"
     if not manifest.is_file():
         sys.exit(f"no manifest at {manifest}")
     data = json.loads(manifest.read_text())
@@ -370,7 +371,13 @@ def main(argv=None) -> None:
     ap.add_argument("cmd", choices=["synthetic", "manifest", "verify"])
     ap.add_argument("--corpus", default=str(CORPUS),
                     help="corpus dir (default corpus/; pass "
-                         "corpus-limezu-2026-07-08 to verify the archive)")
+                         "corpus/archive-limezu-2026-07-08 to verify the archive)")
+    ap.add_argument("--manifest", default=None,
+                    help="manifest to verify AGAINST (default <corpus>/"
+                         "manifest.json). The archive's tracked copy lives at "
+                         "calibration/archive/<name>/corpus-manifest.json, so a "
+                         "plain checkout can verify archived pixels without "
+                         "trusting the untracked copy beside them.")
     args = ap.parse_args(argv)
     corpus = Path(args.corpus).resolve()
     if args.cmd == "synthetic":
@@ -378,7 +385,7 @@ def main(argv=None) -> None:
     elif args.cmd == "manifest":
         build_manifest(corpus)
     else:
-        verify(corpus)
+        verify(corpus, args.manifest)
 
 
 if __name__ == "__main__":

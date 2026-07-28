@@ -242,7 +242,7 @@ swap_symlink() {
 # level deliberately: each corpus root holds a git-TRACKED manifest.json that a
 # whole-dir link would shadow (the same "never shadow a tracked file" rule as
 # the wildcard block).
-INSTANCE_PERSISTENT_DIRS="instance/roles/active instance/roles/archive instance/roles/hats instance/loop-prompts instance/archive instance/state instance/cache instance/onboarding/formation instance/onboarding/v2 instance/onboarding/purge-receipts instance/onboarding/access-records instance/evidence secrets shared/interfaces/foundry shared/interfaces/world cabinet/scripts/world-aesthetic/corpus/positive cabinet/scripts/world-aesthetic/corpus/negative cabinet/scripts/world-aesthetic/corpus/palette cabinet/scripts/world-aesthetic/corpus-limezu-2026-07-08/positive cabinet/scripts/world-aesthetic/corpus-limezu-2026-07-08/negative"
+INSTANCE_PERSISTENT_DIRS="instance/roles/active instance/roles/archive instance/roles/hats instance/loop-prompts instance/archive instance/state instance/cache instance/onboarding/formation instance/onboarding/v2 instance/onboarding/purge-receipts instance/onboarding/access-records instance/evidence secrets shared/interfaces/foundry shared/interfaces/world cabinet/scripts/world-aesthetic/corpus/positive cabinet/scripts/world-aesthetic/corpus/negative cabinet/scripts/world-aesthetic/corpus/palette cabinet/scripts/world-aesthetic/corpus/archive-limezu-2026-07-08/positive cabinet/scripts/world-aesthetic/corpus/archive-limezu-2026-07-08/negative"
 # Gitignored in bulk but ships a tracked tier2/<officer>/{,reflections/}.gitkeep
 # skeleton — seeded into shared/ from the release's own tree, then
 # symlinked whole like any PERSISTENT_DIRS entry.

@@ -130,23 +130,29 @@ Three classes, `corpus/{positive,negative,palette}/`:
   corpus renders happen not to contain reads as foreign colour — measured
   6.52% vs 1.23%.
 
-**Pixels are never committed** — `.gitignore` excludes `corpus/*` and
-`corpus-*/*` except each `manifest.json` (sha256 + provenance per image).
-Only code, the manifests, and derived-number calibrations are tracked.
+**Pixels are never committed** — `.gitignore` excludes `corpus/*` except
+`corpus/manifest.json` (sha256 + provenance per image). Only code, the
+manifests, and derived-number calibrations are tracked.
 
 **Re-fit 2026-07-28 (LimeZu → owned art).** The corpus was LimeZu showcase
 scenes until the Captain's "ALL OUT of LimeZu" direction. A palette fitted to
 LimeZu measured owned frames at 57-90% foreign against a 5% limit — the gate
 was pointed at the art family we are deliberately leaving. The previous
 corpus is preserved verbatim and still runnable at
-`corpus-limezu-2026-07-08/`, the calibration it produced at
-`calibration/archive/limezu-2026-07-08/`, and the argument, before/after
-numbers and bite proof are in cabinet-meta
+`corpus/archive-limezu-2026-07-08/`, with its manifest and the calibration it
+produced TRACKED at `calibration/archive/limezu-2026-07-08/`. The argument,
+before/after numbers and bite proof are in cabinet-meta
 `designs/world-aesthetic-corpus-refit-2026-07-28.md`. Reproduce any pre-refit
-claim with
-`calibrate.py all --corpus corpus-limezu-2026-07-08 --out-dir /tmp/old`.
+claim with `calibrate.py all --corpus corpus/archive-limezu-2026-07-08
+--out-dir /tmp/old`.
 
-* `build_corpus.py synthetic|manifest|verify [--corpus DIR]` — regenerate the
+An archive nests INSIDE `corpus/` rather than beside it, and that is
+load-bearing: `cognitive-architecture-census.py` derives `durable_store_units`
+from `.gitignore`'s wildcard-free prefixes, so a sibling `corpus-*/` needs its
+own ignore rule and reads as a NEW organ of memory against a zero-headroom
+budget. An archived corpus is not a new organ — it is this organ's own history.
+
+* `build_corpus.py synthetic|manifest|verify [--corpus DIR] [--manifest PATH]` — regenerate the
   synthetic negatives (cut from the repo's own tracked owned atlas, so they
   rebuild from a plain checkout + Pillow), rebuild the manifest, verify bytes
   against it. Current corpus 11/11 OK; archive 16/16 OK.

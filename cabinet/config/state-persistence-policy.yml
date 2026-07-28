@@ -205,17 +205,14 @@ disposable:
       the release and must never be shadowed. The durable frames — the judge's
       accumulated Captain approve/reject rulings — live in corpus/positive,
       corpus/negative and corpus/palette, and ALL THREE are carried in
-      INSTANCE_PERSISTENT_DIRS. Superseded corpora are carried too — see the
-      corpus-limezu-2026-07-08 entry below.
-  - path: cabinet/scripts/world-aesthetic/corpus-limezu-2026-07-08
-    reason: >-
-      The 2026-07-28 re-fit's SUPERSEDED corpus, same shape and same rule as
-      corpus/ above: the ROOT holds only the git-tracked manifest.json, which
-      must never be shadowed, and the frames live in positive/ and negative/ —
-      BOTH carried in INSTANCE_PERSISTENT_DIRS. They are durable, not
-      disposable: the re-fit's whole contract is that every claim made against
-      the old corpus stays reproducible, and calibrate.py prove uses this dir
-      as its P5 cross-family bite arm, which degrades to NOT RUN if it is lost.
+      INSTANCE_PERSISTENT_DIRS, as are corpus/archive-limezu-2026-07-08/
+      {positive,negative} (the 2026-07-28 re-fit's superseded corpus, nested
+      here rather than beside corpus/ so it needs no new .gitignore rule and
+      does not read as a new durable store against the zero-headroom
+      durable_store_units budget). The archive is durable, not disposable: the
+      re-fit's contract is that every claim made against the old corpus stays
+      reproducible, and calibrate.py prove uses it as the P5 cross-family bite
+      arm, which degrades to NOT RUN if it is lost.
   - path: cabinet/dashboard/public/world-assets
     reason: >-
       LimeZu pack binaries are commercial-licensed and never committed, but the
