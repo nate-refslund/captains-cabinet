@@ -34,8 +34,39 @@
 import { useEffect, useRef } from 'react'
 import type { Container, Graphics, Sprite, Texture, TilingSprite } from 'pixi.js'
 import type { OfficerPresence } from '@/lib/world/types'
-import { TILE } from '@/lib/world/layout'
+import {
+  cameraTranslation,
+  groundDiamond,
+  projectionFor,
+  TOPDOWN_TILE,
+  worldScale,
+  type ProjectionKind,
+} from '@/lib/world/projection'
+import { officerSlots, pickTarget, type PickTarget } from '@/lib/world/pick'
 import { fnv1a } from '@/lib/world/hash'
+import { parsePack, type IsoPack } from '@/lib/world/iso-pack'
+import {
+  buildIsoScene,
+  LANE_PAINT_SQUASH,
+  layoutStateFrom,
+  unmeasuredIssues,
+  type IsoScene,
+} from '@/lib/world/iso-scene'
+import { groundField, ROAD_GROUND, seaTile, type GroundClass, type TerrainBuffer } from '@/lib/world/iso-terrain'
+import {
+  deckStripRects,
+  jettyDeckRects,
+  jettyPostRects,
+  wharfPostRects,
+  type DeckRect,
+} from '@/lib/world/iso-quay'
+import {
+  MOTTLE_TONES,
+  PAINT_FEATHER,
+  type Blob as PaintBlob,
+  type LayoutState,
+  type PaintRegion,
+} from '@/lib/world/iso-layout'
 import type { SpriteCut, WorldAssetManifest } from '@/lib/world/sprites'
 import {
   CHAR_FRAME_H,
@@ -112,11 +143,20 @@ import type { LaneCourse, VoyageRender } from '@/lib/world/course'
 import type { WorldBuilding } from '@/lib/world/world-buildings'
 import {
   LOD_RULES,
+  cutawayStep,
+  initialCutaway,
   lodTier,
   roofAlpha,
   type CutawayState,
   type EngineCamera,
 } from '@/lib/world/lod'
+import {
+  cutawayMix,
+  interiorSlots,
+  isoCutawayCandidate,
+  kitFrame,
+  openFrameOf,
+} from '@/lib/world/iso-cutaway'
 import type { WeatherState } from '@/lib/world/weather'
 import { rainDrops } from '@/lib/world/weather'
 import type { WorldResolution } from '@/lib/world/era-engine'
@@ -130,6 +170,31 @@ import { lotPerimeter } from '@/lib/world/life/sites'
  * seeded dither VEIL in an in-bin hue: covered pixels are exactly the veil
  * color, uncovered pixels keep their true color — the frame darkens/warms
  * perceptually while every pixel stays in the fitted palette). */
+/**
+ * The TOP-DOWN tile, taken from the ONE kernel module rather than re-declared.
+ *
+ * The scene builders below (buildTerrain, buildBuildings, buildDressing, the
+ * interior, the LIFE draw sites) ARE the top-down renderer: they run only when
+ * the projection is 'topdown', where the tile is square — w === h, pinned in
+ * projection.test.ts — which is why one scalar serves both axes. Under 'iso'
+ * none of them is called: the scene is driven from composeLayout, whose
+ * coordinates are already projected. The camera, the pointer inverse and the
+ * depth key go through the kernel in BOTH modes; those are the copies that had
+ * to collapse, and they have.
+ */
+const TD = TOPDOWN_TILE.w
+
+/**
+ * The island's seed under the iso kernel.
+ *
+ * One deployment, one island, forever: composeLayout keys its coastline, its
+ * plaza edge and every planting decision off this, so the same org always gets
+ * the same ground. It is deliberately NOT derived from the camera, the clock or
+ * the payload — a world that re-rolls its coastline when a metric moves is not
+ * a place anyone can learn.
+ */
+const ISO_SEED = 'cabinet-world'
+
 const VEIL: Record<DayBucket, { colors: readonly number[]; coverage: number } | null> = {
   dawn: { colors: [GLOW_CORE], coverage: 0.08 },
   day: null,
@@ -137,12 +202,22 @@ const VEIL: Record<DayBucket, { colors: readonly number[]; coverage: number } | 
   night: { colors: NIGHT_VEIL_HUES, coverage: 0.42 },
 }
 
-export interface EngineTarget {
-  kind: 'officer' | 'building' | 'lane' | 'mailbox' | 'chart_table' | 'site' | 'ground'
-  id: string
-}
+/**
+ * The pick's own type, re-exported so every consumer keeps one import site.
+ * It lives in lib/world/pick.ts because that is where the hit test lives now,
+ * and a type declared beside a renderer that no longer decides anything would
+ * be the second definition this port exists to delete.
+ */
+export type EngineTarget = PickTarget
 
 export interface EngineCanvasProps {
+  /**
+   * Which world→screen kernel this canvas renders with. Told, never
+   * discovered: page.tsx reads ?iso server-side and threads it down, exactly
+   * as it threads ?legacy, so the canvas never reads window and the two paths
+   * are both permanently reachable for the bake-off.
+   */
+  projection: ProjectionKind
   geo: WorldGeo
   buildings: WorldBuilding[]
   resolution: WorldResolution | null
@@ -201,6 +276,10 @@ export default function EngineCanvas(props: EngineCanvasProps) {
     let cancelled = false
     async function boot() {
       if (!hostRef.current) return
+      // The kernel is fixed for the life of this canvas: the flag is read
+      // server-side and a change is a navigation, which remounts the effect.
+      const proj = projectionFor(propsRef.current.projection)
+      const isIso = proj.kind === 'iso'
       const PIXI = await import('pixi.js')
       await import('pixi.js/unsafe-eval') // CSP: AOT patch, header never widens
       if (cancelled || !hostRef.current) return
@@ -249,6 +328,32 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         issues.push('asset manifest unavailable — placeholder mode')
         console.error('[world/engine] manifest fetch failed — placeholder mode:', err)
       }
+
+      // ── the iso pack: one atlas + one resolve table, LOUD when absent ────
+      // The top-down path has a placeholder mode because a missing LimeZu
+      // sheet still leaves a world to look at. The iso path has none: without
+      // the atlas there is nothing to draw at all, so an absent or malformed
+      // pack raises the DOM badge and this canvas renders ground and no
+      // sprites — never a silent black frame (2026-07-08 contract).
+      let isoPack: IsoPack | null = null
+      let isoAtlas: Texture | null = null
+      if (isIso) {
+        try {
+          const res = await fetch('/world-assets/originals/iso/world-pack.json')
+          if (!res.ok) throw new Error(`world-pack HTTP ${res.status}`)
+          isoPack = parsePack(await res.json())
+          const url = `/world-assets/originals/iso/${isoPack.atlases[0]}`
+          isoAtlas = (await PIXI.Assets.load(url)) as Texture
+          if (!isoAtlas) throw new Error(`atlas ${url} loaded as null`)
+        } catch (err) {
+          isoPack = null
+          isoAtlas = null
+          const msg = err instanceof Error ? err.message : String(err)
+          issues.push(`iso pack unavailable — no sprites will draw: ${msg}`)
+          console.error('[world/engine] iso pack/atlas failed:', err)
+        }
+      }
+
       if (cancelled || !hostRef.current) {
         app.destroy(true, { children: true })
         return
@@ -269,6 +374,23 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           cutCache.set(key, t)
         }
         return t
+      }
+
+      /** A field buffer as a nearest-neighbour texture, cached per key. */
+      const fieldTex = new Map<string, Texture>()
+      function fieldTexture(key: string, buf: TerrainBuffer): Texture {
+        const hit = fieldTex.get(key)
+        if (hit) return hit
+        const cv = document.createElement('canvas')
+        cv.width = buf.w
+        cv.height = buf.h
+        const ctx = cv.getContext('2d')
+        if (!ctx) throw new Error('iso terrain: no 2d context for the ground bake')
+        ctx.putImageData(new ImageData(buf.rgba, buf.w, buf.h), 0, 0)
+        const tex = PIXI.Texture.from(cv)
+        tex.source.scaleMode = 'nearest'
+        fieldTex.set(key, tex)
+        return tex
       }
 
       // ── compositor-grade patterns (baked ONCE; fnv1a-seeded, replayable) ──
@@ -295,10 +417,16 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         c.destroy({ children: true })
         return rt
       }
-      const waterPattern = bakePattern(texFor(VILLAGE_SHEET, V.water), WATER_BASE, [
-        ...waterTones(), // tonal bands FIRST…
-        ...waterDashes(), // …dashes on top (blocks never flat)
-      ])
+      // The open sea. Under 'iso' it is the reference's own computed water,
+      // generated as a SEAMLESS patch (the sea repeats in screen space, so a
+      // non-periodic field would draw a grid across the water); under
+      // 'topdown' it stays the sheet-sampled pattern the world ships today.
+      const waterPattern = isIso
+        ? fieldTexture('sea', seaTile(fnv1a(ISO_SEED)))
+        : bakePattern(texFor(VILLAGE_SHEET, V.water), WATER_BASE, [
+            ...waterTones(), // tonal bands FIRST…
+            ...waterDashes(), // …dashes on top (blocks never flat)
+          ])
       /** Cozy-density ground (2026-07-09): the mockups' OWN three-pass
        * recipe — farm-terrain base + seeded variant daubs + speckle tile +
        * tonal bands + blade flecks. The v1a single-tile-plus-flecks lawn
@@ -319,7 +447,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         const varTexes = GRASS_VARIANT_CUTS.map((cut) => texFor(GRASS_VARIANTS, cut)).filter(
           (t): t is Texture => t !== null
         )
-        const TILES = PATTERN_PX / 16
+        const TILES = PATTERN_PX / TD
         if (varTexes.length > 0) {
           const nDaub = Math.max(6, (TILES * TILES) / 6)
           for (let d = 0; d < nDaub; d++) {
@@ -332,7 +460,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
               const tx = Math.min(TILES - 1, Math.max(0, cx + ((hh % 5) - 2)))
               const ty = Math.min(TILES - 1, Math.max(0, cy + (((hh >>> 8) % 3) - 1)))
               const sp = new PIXI.Sprite(v)
-              sp.position.set(tx * 16, ty * 16)
+              sp.position.set(tx * TD, ty * TD)
               c.addChild(sp)
             }
           }
@@ -343,7 +471,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
               for (let tx = 0; tx < TILES; tx++) {
                 if (fnv1a(`grass-speck:${tx},${ty}`) % 100 < 85) {
                   const sp = new PIXI.Sprite(gvarTex)
-                  sp.position.set(tx * 16, ty * 16)
+                  sp.position.set(tx * TD, ty * TD)
                   c.addChild(sp)
                 }
               }
@@ -361,7 +489,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         c.destroy({ children: true })
         return rt
       }
-      const grassPattern = bakeGrassPattern()
+      const grassPattern = isIso ? PIXI.Texture.EMPTY : bakeGrassPattern()
       /** Ambience veils (palette-lawful dither, baked once per bucket). */
       const veilTextures = new Map<string, Texture>()
       function veilTexture(colors: readonly number[], coverage: number): Texture {
@@ -500,8 +628,8 @@ export default function EngineCanvas(props: EngineCanvasProps) {
               const mask = shoreMask(tx, ty, geo)
               if (mask === 0) continue
               const v = shoreVariant(mask)
-              const px = tx * TILE
-              const py = ty * TILE
+              const px = tx * TD
+              const py = ty * TD
               const seed = fnv1a(`foam:${tx},${ty}`)
               const off = 3 + (seed % 5)
               const foam = { width: 2, color: FOAM_WHITE, alpha: 1 }
@@ -509,10 +637,10 @@ export default function EngineCanvas(props: EngineCanvasProps) {
                 shoreG.moveTo(px + 2, py + 3).lineTo(px + off + 6, py + 3).stroke(foam)
               }
               if (v === 'edge_s' || v.startsWith('corner_s') || v === 'cove') {
-                shoreG.moveTo(px + 2, py + TILE - 3).lineTo(px + off + 6, py + TILE - 3).stroke(foam)
+                shoreG.moveTo(px + 2, py + TD - 3).lineTo(px + off + 6, py + TD - 3).stroke(foam)
               }
               if (v === 'edge_e' || v.endsWith('e') || v === 'channel_ew') {
-                shoreG.moveTo(px + TILE - 3, py + 2).lineTo(px + TILE - 3, py + off + 4).stroke(foam)
+                shoreG.moveTo(px + TD - 3, py + 2).lineTo(px + TD - 3, py + off + 4).stroke(foam)
               }
               if (v === 'edge_w' || v.endsWith('w') || v === 'channel_ew') {
                 shoreG.moveTo(px + 3, py + 2).lineTo(px + 3, py + off + 4).stroke(foam)
@@ -541,16 +669,16 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           const mask = new PIXI.Graphics()
           for (let ty = y0; ty <= y1; ty++) {
             for (let tx = x0; tx <= x1; tx++) {
-              if (landAt(tx, ty, geo)) mask.rect(tx * TILE, ty * TILE, TILE, TILE)
+              if (landAt(tx, ty, geo)) mask.rect(tx * TD, ty * TD, TD, TD)
             }
           }
           mask.fill(0xffffff)
           const grass = new PIXI.TilingSprite({
             texture: grassPattern,
-            width: (x1 - x0 + 1) * TILE,
-            height: (y1 - y0 + 1) * TILE,
+            width: (x1 - x0 + 1) * TD,
+            height: (y1 - y0 + 1) * TD,
           })
-          grass.position.set(x0 * TILE, y0 * TILE)
+          grass.position.set(x0 * TD, y0 * TD)
           grass.mask = mask
           terrainLayer.addChild(mask)
           terrainLayer.addChild(grass)
@@ -574,7 +702,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
               const t = baseTile(tx, ty, geo)
               if (t === 'sand' && sandTex) {
                 const sp = new PIXI.Sprite(sandTex)
-                sp.position.set(tx * TILE, ty * TILE)
+                sp.position.set(tx * TD, ty * TD)
                 terrainLayer.addChild(sp)
               } else if (t === 'meadow') {
                 const h = fnv1a(`meadow-decal:${tx},${ty}`)
@@ -590,7 +718,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
                         : flowerTex
                 if (tex) {
                   const sp = new PIXI.Sprite(tex)
-                  sp.position.set(tx * TILE + (h % 4), ty * TILE + ((h >>> 4) % 4))
+                  sp.position.set(tx * TD + (h % 4), ty * TD + ((h >>> 4) % 4))
                   terrainLayer.addChild(sp)
                 }
               } else if (t === 'forest') {
@@ -601,10 +729,10 @@ export default function EngineCanvas(props: EngineCanvasProps) {
                   const tex = treeTexes[h % treeTexes.length]
                   const sp = new PIXI.Sprite(tex)
                   sp.anchor.set(0.5, 1)
-                  const px = tx * TILE + (h % 8) - 4
-                  const py = (ty + 1) * TILE + ((h >>> 6) % 8)
+                  const px = tx * TD + (h % 8) - 4
+                  const py = (ty + 1) * TD + ((h >>> 6) % 8)
                   sp.position.set(px, py)
-                  sp.zIndex = ty * TILE - 2000 // canopy band behind buildings
+                  sp.zIndex = ty * TD - 2000 // canopy band behind buildings
                   propLayer.addChild(sp)
                   // cozy pass #13: soft dither shadow under every tree
                   drawShadow(staticShadowG, `tree:${tx},${ty}`, px, py - 2, tex.width - 14)
@@ -623,10 +751,10 @@ export default function EngineCanvas(props: EngineCanvasProps) {
             const tx = Number(xs)
             const ty = Number(ys)
             const sp = new PIXI.Sprite(dirtTex)
-            sp.position.set(tx * TILE, ty * TILE)
+            sp.position.set(tx * TD, ty * TD)
             terrainLayer.addChild(sp)
             for (const d of dirtTileFlecks(tx, ty)) {
-              dirtG.rect(tx * TILE + d.x, ty * TILE + d.y, d.len, d.h).fill(d.color)
+              dirtG.rect(tx * TD + d.x, ty * TD + d.y, d.len, d.h).fill(d.color)
             }
           }
         }
@@ -648,10 +776,10 @@ export default function EngineCanvas(props: EngineCanvasProps) {
             })
             if (!plank) continue
             const sp = new PIXI.Sprite(plank)
-            sp.position.set(tx * TILE, ty * TILE)
+            sp.position.set(tx * TD, ty * TD)
             terrainLayer.addChild(sp)
             for (const d of dirtTileFlecks(tx, ty)) {
-              dirtG.rect(tx * TILE + d.x, ty * TILE + d.y, d.len, d.h).fill(d.color)
+              dirtG.rect(tx * TD + d.x, ty * TD + d.y, d.len, d.h).fill(d.color)
             }
           }
         }
@@ -661,12 +789,12 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         const ringG = new PIXI.Graphics()
         if (pierTex) {
           const sp = new PIXI.Sprite(pierTex)
-          sp.position.set((geo.quayCenter.x - 1) * TILE, geo.quayCenter.y * TILE)
+          sp.position.set((geo.quayCenter.x - 1) * TD, geo.quayCenter.y * TD)
           terrainLayer.addChild(sp)
           for (const [ri, [px, py]] of (
             [
-              [(geo.quayCenter.x - 0.6) * TILE, (geo.quayCenter.y + 2.1) * TILE],
-              [(geo.quayCenter.x + 1.7) * TILE, (geo.quayCenter.y + 2.0) * TILE],
+              [(geo.quayCenter.x - 0.6) * TD, (geo.quayCenter.y + 2.1) * TD],
+              [(geo.quayCenter.x + 1.7) * TD, (geo.quayCenter.y + 2.0) * TD],
             ] as const
           ).entries()) {
             for (const d of waveRingDashes(`pier:${ri}`)) {
@@ -682,8 +810,8 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           // along the plotted course (progress arrives as server data via
           // the engine payload; the render never reads a clock). The boat's
           // SIZE/vocab stay the harbor_boat ladder's (dual-view D7).
-          let bx = (geo.quayCenter.x + 3.1) * TILE
-          let by = (geo.quayCenter.y + 3.4) * TILE
+          let bx = (geo.quayCenter.x + 3.1) * TD
+          let by = (geo.quayCenter.y + 3.4) * TD
           const voy = p.voyage
           if (voy?.underway && voy.lane) {
             const site = p.geo.laneSites.find((s) => s.lane === voy.lane)
@@ -694,8 +822,8 @@ export default function EngineCanvas(props: EngineCanvasProps) {
                 0.9 * (voy.progress <= 0.5 ? voy.progress * 2 : (1 - voy.progress) * 2)
               const x0 = geo.quayCenter.x + 3.1
               const y0 = geo.quayCenter.y + 3.4
-              bx = (x0 + (site.cx - x0) * t) * TILE
-              by = (y0 + (site.cy - y0) * t) * TILE
+              bx = (x0 + (site.cx - x0) * t) * TD
+              by = (y0 + (site.cy - y0) * t) * TD
             }
           }
           const sp = new PIXI.Sprite(boatTex)
@@ -712,13 +840,13 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         // in-bin warm) = adrift ONLY, grey stays unmeasured-only, red never;
         // NO text in world-space (dates live on the authed card).
         const courseG = new PIXI.Graphics()
-        const qx = geo.quayCenter.x * TILE
-        const qy = (geo.quayCenter.y + 2) * TILE
+        const qx = geo.quayCenter.x * TD
+        const qy = (geo.quayCenter.y + 2) * TD
         for (const site of p.geo.laneSites) {
           const course = site.lane ? p.courses?.[site.lane] : undefined
           if (!course) continue
-          const tx = site.cx * TILE
-          const ty = site.cy * TILE
+          const tx = site.cx * TD
+          const ty = site.cy * TD
           const dx = tx - qx
           const dy = ty - qy
           const steps = Math.max(10, Math.floor(Math.hypot(dx, dy) / 12))
@@ -777,8 +905,8 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           if (!tex) continue
           const sp = new PIXI.Sprite(tex)
           sp.anchor.set(0.5, 1)
-          const px = d.x * TILE
-          const py = d.y * TILE
+          const px = d.x * TD
+          const py = d.y * TD
           sp.position.set(px, py)
           sp.zIndex = py
           propLayer.addChild(sp)
@@ -799,7 +927,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           for (let ty = 0; ty < b.h; ty++) {
             for (let tx = 0; tx < b.w; tx++) {
               const g = new PIXI.Sprite(groundTex)
-              g.position.set((b.x + tx) * TILE, (b.y + ty) * TILE)
+              g.position.set((b.x + tx) * TD, (b.y + ty) * TD)
               c.addChild(g)
             }
           }
@@ -818,24 +946,24 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           if (!tex) continue
           const f = new PIXI.Sprite(tex)
           f.anchor.set(0.5, 1)
-          f.position.set(pt.x * TILE + TILE / 2, (pt.y + 1) * TILE)
-          f.zIndex = (pt.y + 1) * TILE
+          f.position.set(pt.x * TD + TD / 2, (pt.y + 1) * TD)
+          f.zIndex = (pt.y + 1) * TD
           c.addChild(f)
         }
         if (moundsTex) {
           const m = new PIXI.Sprite(moundsTex)
           m.anchor.set(0.5, 1)
-          m.position.set((b.x + b.w / 2) * TILE, (b.y + b.h - 0.5) * TILE)
+          m.position.set((b.x + b.w / 2) * TD, (b.y + b.h - 0.5) * TD)
           c.addChild(m)
         }
         if (signTex) {
           const s = new PIXI.Sprite(signTex)
           s.anchor.set(0.5, 1)
-          s.position.set((b.x + 0.6) * TILE, (b.y + b.h + 0.4) * TILE)
-          s.zIndex = (b.y + b.h + 0.4) * TILE
+          s.position.set((b.x + 0.6) * TD, (b.y + b.h + 0.4) * TD)
+          s.zIndex = (b.y + b.h + 0.4) * TD
           c.addChild(s)
         }
-        c.zIndex = (b.y + b.h) * TILE
+        c.zIndex = (b.y + b.h) * TD
         propLayer.addChild(c)
       }
 
@@ -843,8 +971,8 @@ export default function EngineCanvas(props: EngineCanvasProps) {
        * dark_cairn rung composes shore rocks). */
       function buildLighthouse(b: WorldBuilding) {
         const cut = lighthouseCutFor(b.rungName)
-        const bx = (b.x + b.w / 2) * TILE
-        const by = (b.y + b.h) * TILE
+        const bx = (b.x + b.w / 2) * TD
+        const by = (b.y + b.h) * TD
         if (cut) {
           const tex = texFor(LIGHTHOUSE_SHEET, cut)
           if (tex) {
@@ -862,7 +990,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
             if (signTex) {
               const s = new PIXI.Sprite(signTex)
               s.anchor.set(0.5, 1)
-              s.position.set(bx - 2.2 * TILE, by + 4)
+              s.position.set(bx - 2.2 * TD, by + 4)
               s.zIndex = by + 4
               propLayer.addChild(s)
             }
@@ -879,10 +1007,10 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           ] as const) {
             const r = new PIXI.Sprite(rockTex)
             r.anchor.set(0.5, 1)
-            r.position.set(bx + dx * TILE, by + dy * TILE)
-            r.zIndex = by + dy * TILE
+            r.position.set(bx + dx * TD, by + dy * TD)
+            r.zIndex = by + dy * TD
             propLayer.addChild(r)
-            drawShadow(staticShadowG, `cairn:${b.id}:${dx},${dy}`, bx + dx * TILE, by + dy * TILE, 16)
+            drawShadow(staticShadowG, `cairn:${b.id}:${dx},${dy}`, bx + dx * TD, by + dy * TD, 16)
           }
         }
       }
@@ -903,13 +1031,13 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         for (const [tx, ty] of pts) {
           const sp = new PIXI.Sprite(hedgeTex)
           sp.anchor.set(0.5, 1)
-          const px = tx * TILE
-          const py = (ty + 1) * TILE
+          const px = tx * TD
+          const py = (ty + 1) * TD
           sp.position.set(px, py)
           sp.zIndex = py
           propLayer.addChild(sp)
         }
-        drawShadow(staticShadowG, `pen:${b.id}`, (b.x + b.w / 2) * TILE, (b.y + b.h + 1) * TILE, 20)
+        drawShadow(staticShadowG, `pen:${b.id}`, (b.x + b.w / 2) * TD, (b.y + b.h + 1) * TD, 20)
       }
 
       function buildBuildings(p: EngineCanvasProps) {
@@ -934,22 +1062,22 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           if (!tex) continue // loud placeholder rect drawn per-frame
           const sp = new PIXI.Sprite(tex)
           sp.anchor.set(0.5, 1)
-          const bx = (b.x + b.w / 2) * TILE
-          const by = (b.y + b.h) * TILE
+          const bx = (b.x + b.w / 2) * TD
+          const by = (b.y + b.h) * TD
           sp.position.set(bx, by)
           sp.zIndex = by
           buildingSprites.set(b.id, sp)
           propLayer.addChild(sp)
           // cozy pass #13: every grounded structure casts a dither shadow
-          drawShadow(staticShadowG, `bld:${b.id}`, bx, by, Math.min(tex.width - 8, b.w * TILE))
+          drawShadow(staticShadowG, `bld:${b.id}`, bx, by, Math.min(tex.width - 8, b.w * TD))
         }
         // the mailbox at the crossroads (read-only Captain surface)
         const mailTex = texFor(STREET_PROPS.mailbox)
         if (mailTex) {
           const sp = new PIXI.Sprite(mailTex)
           sp.anchor.set(0.5, 1)
-          const mx = (p.geo.crossroads.x + 1.2) * TILE
-          const my = (p.geo.crossroads.y + 0.6) * TILE
+          const mx = (p.geo.crossroads.x + 1.2) * TD
+          const my = (p.geo.crossroads.y + 0.6) * TD
           sp.position.set(mx, my)
           sp.zIndex = my
           propLayer.addChild(sp)
@@ -962,8 +1090,8 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         // the audited fish-precedent class, never a wrong-object sprite).
         if (p.chartTable) {
           const w = toWorld(CHART_TABLE_LOCAL.x, CHART_TABLE_LOCAL.y)
-          const px = w.x * TILE
-          const py = w.y * TILE
+          const px = w.x * TD
+          const py = w.y * TD
           const cg = new PIXI.Graphics()
           cg.rect(px + 2, py + 8, 2, 6).fill({ color: INK_BLACK }) // legs
           cg.rect(px + 12, py + 8, 2, 6).fill({ color: INK_BLACK })
@@ -984,14 +1112,419 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         for (const b of p.buildings) {
           const h = fnv1a(`fp:${b.id}`)
           const c = (h & 1) === 0 ? FOOT_SLATE : FOOT_SLATE_2
-          g.rect(b.x * TILE, b.y * TILE, b.w * TILE, b.h * TILE).fill({ color: c })
+          g.rect(b.x * TD, b.y * TD, b.w * TD, b.h * TD).fill({ color: c })
         }
         // the lighthouse silhouette survives every zoom — honest-zero anomaly
         const lh = p.buildings.find((b) => b.element === 'lighthouse')
         if (lh) {
-          g.rect((lh.x + 1) * TILE, (lh.y - 2) * TILE, TILE, 2 * TILE).fill({ color: INK_BLACK })
+          g.rect((lh.x + 1) * TD, (lh.y - 2) * TD, TD, 2 * TD).fill({ color: INK_BLACK })
         }
         terrainLayer.addChild(g)
+      }
+
+      // ── the ISO scene ────────────────────────────────────────────────────
+      // Everything below drives the world from composeLayout instead of the
+      // tile lattice. It is a SEPARATE set of builders rather than a branch
+      // inside the top-down ones, because the two are different renderers that
+      // happen to share a camera, a depth sort and a stage: mixing them would
+      // put a tile-space tolerance in an iso path and leave neither honest.
+
+      interface Extent {
+        x0: number
+        y0: number
+        x1: number
+        y1: number
+      }
+
+      const EMPTY_EXTENT: Extent = { x0: 0, y0: 0, x1: 0, y1: 0 }
+      function extentOf(pts: Iterable<{ x: number; y: number }>, pad = 0): Extent {
+        let x0 = Infinity
+        let y0 = Infinity
+        let x1 = -Infinity
+        let y1 = -Infinity
+        for (const p of pts) {
+          x0 = Math.min(x0, p.x)
+          y0 = Math.min(y0, p.y)
+          x1 = Math.max(x1, p.x)
+          y1 = Math.max(y1, p.y)
+        }
+        if (!Number.isFinite(x0)) return EMPTY_EXTENT
+        return { x0: x0 - pad, y0: y0 - pad, x1: x1 + pad, y1: y1 + pad }
+      }
+      function blobExtent(regions: PaintRegion[], pad = 0): Extent {
+        const pts: { x: number; y: number }[] = []
+        for (const r of regions) {
+          for (const b of r.blobs) {
+            pts.push({ x: b.c.x - b.rx, y: b.c.y - b.ry }, { x: b.c.x + b.rx, y: b.c.y + b.ry })
+          }
+        }
+        return extentOf(pts, pad)
+      }
+      const extentEmpty = (e: Extent) => e.x1 <= e.x0 || e.y1 <= e.y0
+
+      /**
+       * A ground class laid over an extent and cut to a mask.
+       *
+       * The field is generated at the extent's WORLD origin, so two patches of
+       * the same class that abut are continuous — this is what keeps the plaza
+       * stones lined up with their neighbours and the meadow from shimmering
+       * when a region's bounding box moves.
+       */
+      function paintClass(
+        into: Container,
+        cls: GroundClass,
+        seed: number,
+        ext: Extent,
+        mask: Container,
+        alpha = 1
+      ): void {
+        if (extentEmpty(ext)) {
+          mask.destroy()
+          return
+        }
+        const w = Math.ceil(ext.x1 - ext.x0)
+        const h = Math.ceil(ext.y1 - ext.y0)
+        const key = `${cls}:${seed}:${ext.x0}:${ext.y0}:${w}:${h}`
+        const buf = fieldTex.has(key)
+          ? null
+          : groundField(cls, w, h, seed, Math.floor(ext.x0), Math.floor(ext.y0))
+        const tex = buf ? fieldTexture(key, buf) : fieldTex.get(key)!
+        const sp = new PIXI.Sprite(tex)
+        sp.position.set(Math.floor(ext.x0), Math.floor(ext.y0))
+        sp.scale.set(2) // the field's `block`, upscaled nearest — the same grain
+        sp.alpha = alpha
+        into.addChild(mask)
+        // A Graphics mask is a STENCIL — binary coverage, hard edge, which is
+        // right for a surface with a real boundary (a plaza, a pond, a road).
+        // A Sprite mask is an ALPHA mask, and `channel: 'alpha'` is what makes
+        // it read the coverage this renderer actually wrote: the default 'red'
+        // channel multiplies colour by alpha and would square the ramp, turning
+        // a feather back into a shoulder.
+        if (mask instanceof PIXI.Sprite) sp.setMask({ mask, channel: 'alpha' })
+        else sp.mask = mask
+        into.addChild(sp)
+      }
+
+      /** Run-length spans of a coastline raster row, as one mask Graphics. */
+      function rasterMask(cells: Uint8Array, mw: number, mh: number, step: number): Graphics {
+        const g = new PIXI.Graphics()
+        for (let j = 0; j < mh; j++) {
+          let run = -1
+          for (let i = 0; i <= mw; i++) {
+            const on = i < mw && cells[j * mw + i] === 1
+            if (on && run < 0) run = i
+            else if (!on && run >= 0) {
+              g.rect(run * step, j * step, (i - run) * step, step)
+              run = -1
+            }
+          }
+        }
+        g.fill(0xffffff)
+        return g
+      }
+
+      /**
+       * A region's blobs unioned into ONE feathered alpha mask.
+       *
+       * THE DEFECT (Captain, 2026-07-27): "the meadow patches read as hard dark
+       * ellipses rather than as subtle variation". compose.py:149 draws its 70
+       * patches into one mask and blurs the WHOLE mask by 26px before pasting
+       * the dark grass through it; this renderer painted a stencil, which has
+       * no edge at all between covered and not. iso-layout/paint.ts owns the
+       * number (PAINT_FEATHER) and the offline rasteriser reads the same one out
+       * of the draw list, so the two renderers cannot drift apart.
+       *
+       * ONE MASK, ONE BLUR, and both halves of that matter:
+       *
+       *   The per-blob STRENGTH is carried in the mask's own alpha instead of in
+       *   one masked sprite per bucket. Compositing the buckets weakest-first at
+       *   an incremental alpha lands on exactly max(w) — the same identity the
+       *   bucket loop used, and the same `ImageChops.lighter` the offline
+       *   rasteriser takes — but now it happens INSIDE the mask, so there is one
+       *   thing left to blur rather than twenty.
+       *
+       *   Blurring LAST is not the same as blurring each blob. Feathering the
+       *   pieces and then taking the union would restore a hard edge wherever
+       *   two soft rims crossed, because the union of two ramps is a ramp with a
+       *   crease. The reference blurs the finished mask and so does this.
+       *
+       * The extent is padded by 3σ so the Gaussian's own tail is inside the
+       * texture; a mask cropped at its own edge would draw the crisp rectangle
+       * it was trying to avoid.
+       */
+      function featheredBlobMask(blobs: readonly PaintBlob[], feather: number): Sprite | null {
+        const ext = blobExtent([{ kind: 'meadow_dark', blobs } as PaintRegion], feather * 3)
+        if (extentEmpty(ext)) return null
+        const w = Math.ceil(ext.x1 - ext.x0)
+        const h = Math.ceil(ext.y1 - ext.y0)
+        const c = new PIXI.Container()
+        const bucket = (b: PaintBlob) => Math.round((b.w ?? 1) * 20) / 20
+        const levels = [...new Set(blobs.map(bucket))].sort((a, b) => a - b)
+        let below = 0
+        for (const level of levels) {
+          const at = blobs.filter((b) => bucket(b) >= level)
+          const step = below >= 1 ? 0 : (level - below) / (1 - below)
+          below = level
+          if (at.length === 0 || step <= 0.001) continue
+          const g = new PIXI.Graphics()
+          for (const b of at) {
+            g.ellipse(b.c.x - ext.x0, b.c.y - ext.y0, Math.max(1, b.rx), Math.max(1, b.ry))
+          }
+          g.fill({ color: 0xffffff, alpha: step })
+          c.addChild(g)
+        }
+        if (c.children.length === 0) {
+          c.destroy({ children: true })
+          return null
+        }
+        if (feather > 0) c.filters = [new PIXI.BlurFilter({ strength: feather, quality: 4 })]
+        const rt = PIXI.RenderTexture.create({ width: w, height: h, antialias: false })
+        app.renderer.render({ container: c, target: rt, clear: true })
+        c.destroy({ children: true })
+        const sp = new PIXI.Sprite(rt)
+        sp.position.set(ext.x0, ext.y0)
+        return sp
+      }
+
+      function blobMask(blobs: readonly PaintBlob[]): Graphics {
+        const g = new PIXI.Graphics()
+        for (const b of blobs) g.ellipse(b.c.x, b.c.y, Math.max(1, b.rx), Math.max(1, b.ry))
+        g.fill(0xffffff)
+        return g
+      }
+
+      /**
+       * The lane network as a mask — the SAME shape the clearance rules
+       * reserved, not a round stroke over it.
+       *
+       * iso-layout's occupancy field treats each lane sample as an ellipse
+       * with y-radius `half * LANE_PAINT_SQUASH`, because a circle on the
+       * ground projects flattened on a 2:1 screen. Painting a round stroke
+       * instead lays 39% more road in y than was ever reserved, and every
+       * structure the rules cleared against the ellipse can then be standing
+       * on it. The path is drawn with y pre-divided by the squash and the
+       * whole mask scaled back down, which reproduces the union of ellipses
+       * exactly rather than approximating it.
+       */
+      function laneMask(scene: IsoScene, only?: string): Graphics {
+        const g = new PIXI.Graphics()
+        const s = LANE_PAINT_SQUASH
+        for (const lane of scene.layout.lanes) {
+          if (only !== undefined && lane.surface !== only) continue
+          for (const run of lane.runs) {
+            if (run.length < 2) continue
+            g.moveTo(run[0].x, run[0].y / s)
+            for (let i = 1; i < run.length; i++) g.lineTo(run[i].x, run[i].y / s)
+            g.stroke({ width: lane.width, color: 0xffffff, cap: 'round', join: 'round' })
+          }
+        }
+        g.scale.set(1, s)
+        return g
+      }
+
+      /**
+       * The whole ground, baked once into ONE RenderTexture.
+       *
+       * Order is the reference's (compose.py, and world-capture/raster.py's
+       * build_ground which mirrors it): sand ring, grass, meadow shading,
+       * mottle, water, THE LANES, then the paving and the tillage over them,
+       * and the timber deck last. The lanes go down before the paving because
+       * a road runs UNDER a paved square and out the other side; laying them
+       * after made the road stop dead at the plaza edge.
+       * Baking into a single texture is what makes an expensive
+       * computed ground affordable — it is paid on a state change, never per
+       * frame, through the statics cache that already exists.
+       */
+      function buildIsoTerrain(scene: IsoScene): void {
+        const { space, layout } = scene
+        const coast = layout.coast
+        const seed = layout.seed >>> 0
+        const c = new PIXI.Container()
+        const regionsOf = (kind: string) => layout.paint.filter((r) => r.kind === kind)
+        const landExt: Extent = { x0: 0, y0: 0, x1: space.w, y1: space.h }
+
+        // 1. the beach ring, OUTSIDE the land mask — the waterline reads as sand
+        paintClass(c, 'sand', seed, landExt, rasterMask(coast.beach, coast.mw, coast.mh, coast.step))
+        // 2. the island itself
+        paintClass(c, 'grass', seed, landExt, rasterMask(coast.land, coast.mw, coast.mh, coast.step))
+        // 3. meadow shading — what the ground LOOKS like, not what it IS
+        //
+        // MAX, NOT SUM, and getting that wrong is visible. A blob's `w` is the
+        // reference's per-blob mask VALUE (compose.py:148 fill 110..210), so
+        // where two patches overlap the mask is the BRIGHTER of the two — which
+        // is what raster.py does (ImageChops.lighter) and what the offline
+        // still therefore shows. Compositing one masked sprite per alpha bucket
+        // over another sums instead: two 0.5 patches read 0.75, so every
+        // overlap draws a dark seam and the patches outline each other.
+        //
+        // That max identity now lives INSIDE the mask (featheredBlobMask) so
+        // the region is one soft-edged shape painted once, rather than twenty
+        // hard-edged ones stacked. The dark grass goes down at full strength
+        // through it, exactly as the reference pastes GRASS2 through its
+        // blurred patch mask.
+        const meadowFeather = PAINT_FEATHER.meadow_dark ?? 0
+        for (const r of regionsOf('meadow_dark')) {
+          const mask = featheredBlobMask(r.blobs, meadowFeather)
+          if (!mask) continue
+          paintClass(c, 'grass_dark', seed, blobExtent([r], meadowFeather * 3), mask)
+        }
+        // 4. mottle: three flat tones at the reference's own alphas
+        const mottleG = new PIXI.Graphics()
+        for (const r of regionsOf('mottle')) {
+          const tone = MOTTLE_TONES[r.tone ?? 0]
+          for (const b of r.blobs) {
+            mottleG
+              .ellipse(b.c.x, b.c.y, Math.max(1, b.rx), Math.max(1, b.ry))
+              .fill({ color: (tone[0] << 16) | (tone[1] << 8) | tone[2], alpha: (tone[3] / 255) * (b.w ?? 1) })
+          }
+        }
+        c.addChild(mottleG)
+        // 5. the pond: its sand bank first, then the water and the outflow
+        for (const [kind, cls] of [
+          ['pond_bank', 'sand'],
+          ['pond', 'sea'],
+          ['stream', 'sea'],
+        ] as const) {
+          const rs = regionsOf(kind)
+          const blobs = rs.flatMap((r) => r.blobs)
+          if (blobs.length === 0) continue
+          paintClass(c, cls, seed, blobExtent(rs), blobMask(blobs))
+        }
+        // 6. the lanes, laid BEFORE the paving. The runs are already clipped to
+        // land, but the painted band has a width, so the surface is cut to the
+        // coastline as well — otherwise a road along the shore is on the sea.
+        //
+        // ORDER IS THE DEFECT, NOT THE SHAPE (Captain, 2026-07-27: "the road —
+        // can you put it beneath the centre concrete?"). Painting the lanes
+        // after the plaza laid a dirt band ACROSS the paved square, so the road
+        // read as ending there instead of running under it and out the other
+        // side. compose.py:351/362 and world-capture/raster.py:388/391 both lay
+        // the lanes first and the paving on top, and this path was the only one
+        // of the three that did not.
+        // PAINTED IN THE MATERIAL THE ROAD LADDER SAYS, one mask per surface.
+        // The rung names (dirt_path / dirt_worn / gravel_road / cobbled_road)
+        // are materials, and since 2026-07-27 they are the ONLY thing that rung
+        // controls — a lane's width is its own destination's traffic now
+        // (iso-layout/lanes.ts). Painting the network as bare dirt here would
+        // leave the org's road maturity with no way onto the live frame while
+        // the offline still showed it, which is the two-renderers-one-world
+        // rule broken in the direction nobody would notice.
+        const lanes = new PIXI.Container()
+        const surfaces = [...new Set(scene.layout.lanes.map((l) => l.surface))].sort()
+        for (const surface of surfaces) {
+          paintClass(lanes, ROAD_GROUND[surface] ?? 'dirt', seed, landExt, laneMask(scene, surface))
+        }
+        const landCut = rasterMask(coast.land, coast.mw, coast.mh, coast.step)
+        lanes.addChild(landCut)
+        lanes.mask = landCut
+        c.addChild(lanes)
+        // 7. the square and the tillage, over the lanes
+        for (const [kind, cls] of [
+          ['plaza', 'cobble'],
+          ['ploughed', 'ploughed'],
+          ['crop', 'crop'],
+        ] as const) {
+          const rs = regionsOf(kind)
+          const blobs = rs.flatMap((r) => r.blobs)
+          if (blobs.length === 0) continue
+          paintClass(c, cls, seed, blobExtent(rs), blobMask(blobs))
+        }
+        // 8. the wharf deck and the finger pier — TIMBER over water, so neither
+        // cut to land nor painted with a ground class. Painting them with the
+        // lane's 'dirt' is what made the harbour read as a road walking into
+        // the sea (Captain, 2026-07-27); iso-quay.ts is the port of the
+        // reference's quay.py, the same deck world-capture/raster.py:417 draws.
+        const hb = layout.harbour
+        const deckRects: DeckRect[] = [
+          ...(hb?.wharf && hb.wharf.shore.length > 1
+            ? deckStripRects(hb.wharf.shore, hb.wharf.depth, seed + 3)
+            : []),
+          ...(hb?.jetty ? jettyDeckRects(hb.jetty.at, hb.jetty.end, hb.jetty.width, seed + 11) : []),
+          // AND THE PILINGS, which the port did not have: raster.py:418 has
+          // called quay.posts since it was written, so the offline still showed
+          // a wharf standing on legs and the live engine showed a deck floating
+          // on the sea. Measured on a fresh hamlet capture: 3 wharf and 6 jetty
+          // pilings the engine never drew. They go AFTER the deck so a post
+          // head reads as sitting under the front edge.
+          ...(hb?.wharf && hb.wharf.shore.length > 1
+            ? wharfPostRects(hb.wharf.shore, hb.wharf.depth, seed + 5)
+            : []),
+          ...(hb?.jetty ? jettyPostRects(hb.jetty.at, hb.jetty.end, hb.jetty.width, seed + 11) : []),
+        ]
+        if (deckRects.length > 0) {
+          // grouped by colour so the whole deck is a handful of fills rather
+          // than one per plank pixel
+          const byColour = new Map<number, DeckRect[]>()
+          for (const r of deckRects) {
+            const at = byColour.get(r.color)
+            if (at) at.push(r)
+            else byColour.set(r.color, [r])
+          }
+          const deck = new PIXI.Graphics()
+          for (const [colour, rects] of byColour) {
+            for (const r of rects) deck.rect(r.x, r.y, r.w, r.h)
+            deck.fill(colour)
+          }
+          c.addChild(deck)
+        }
+
+        const rt = PIXI.RenderTexture.create({ width: space.w, height: space.h })
+        app.renderer.render({ container: c, target: rt })
+        c.destroy({ children: true })
+        const ground = new PIXI.Sprite(rt)
+        terrainLayer.addChild(ground)
+      }
+
+      /**
+       * Every sprite the scene resolved, at its base centre, depth-sorted by
+       * base y on the propLayer the engine already sorts.
+       *
+       * The anchor is (0.5, 1) and nothing else: all 163 pack frames anchor at
+       * their base centre, which is exactly what that anchor means. Size is set
+       * from the pack's dw/dh — never from `scale`, which disagrees on 28 of
+       * them.
+       */
+      /** The atlas cut for a pack frame — one Texture per frame, ever. */
+      function isoTex(pack: IsoPack, atlas: Texture, frame: string): Texture | null {
+        const f = pack.frames[frame]
+        if (!f) return null
+        const key = `iso|${frame}`
+        let tex = cutCache.get(key)
+        if (!tex) {
+          tex = new PIXI.Texture({
+            source: atlas.source,
+            frame: new PIXI.Rectangle(f.x, f.y, f.w, f.h),
+          })
+          cutCache.set(key, tex)
+        }
+        return tex
+      }
+
+      function buildIsoSprites(scene: IsoScene, pack: IsoPack, atlas: Texture): void {
+        isoSpriteById.clear()
+        for (const s of scene.sprites) {
+          const f = pack.frames[s.frame]
+          if (!f) continue // unreachable: buildIsoScene already reported it
+          const tex = isoTex(pack, atlas, s.frame)
+          if (!tex) continue
+          const sp = new PIXI.Sprite(tex)
+          // the cutaway needs a handle on the building it opens: these sprites
+          // are STATICS, rebuilt only on a state change, so the per-tick roof
+          // fade has to reach the object rather than re-create it
+          isoSpriteById.set(s.id, sp)
+          sp.anchor.set(0.5, 1)
+          sp.setSize(s.dw, s.dh)
+          sp.position.set(s.x, s.y)
+          sp.scale.x = s.flip ? -Math.abs(sp.scale.x) : Math.abs(sp.scale.x)
+          sp.zIndex = s.depth
+          propLayer.addChild(sp)
+          // The shadow IS the footprint: the pack's own ground diamond, in the
+          // corpus slate the top-down world already casts.
+          const g = groundDiamond(s.dw, s.dh)
+          staticShadowG
+            .ellipse(s.x, s.y - g.depth / 2, g.hw, g.depth / 2)
+            .fill({ color: FOOT_SLATE, alpha: 0.22 })
+        }
       }
 
       function staticsKey(p: EngineCanvasProps): string {
@@ -1012,11 +1545,89 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           ? `voy:${p.voyage.lane}:${p.voyage.progress.toFixed(3)}`
           : 'moored'
         const ct = p.chartTable ? 'ct1' : 'ct0'
+        if (isIso) {
+          // The iso scene is a function of the WHOLE resolution, not just the
+          // buildings the top-down path reads, so the key is the whole rung
+          // set. It deliberately does NOT carry the LOD tier: the iso path has
+          // no footprint tier this round, and keying on one would re-bake the
+          // computed ground on every zoom crossing for no change in output.
+          const st = layoutStateFrom(p.resolution)
+          const rungs = Object.entries(st.stages ?? {})
+            .map(([k, v]) => `${k}:${v}`)
+            .sort()
+            .join(',')
+          const counts = Object.entries(st.counts ?? {})
+            .map(([k, v]) => `${k}=${v}`)
+            .sort()
+            .join(',')
+          return `iso·${st.era}·${st.road}·${rungs}·${counts}`
+        }
         return `${fp}·${geoKey}·${bKey}·${posts}·${ct}·${courseKey}·${voyKey}`
+      }
+
+      /** The composed scene for the current state, rebuilt with the statics. */
+      let isoScene: IsoScene | null = null
+      let isoIssued = false
+      let isoUnmeasuredIssued = false
+      /** Static iso sprites by scene id — the cutaway's handle on a roof. */
+      const isoSpriteById = new Map<string, Sprite>()
+      /**
+       * The iso cutaway machine.
+       *
+       * IT IS THE SAME PURE REDUCER the top-down path runs (lod.cutawayStep),
+       * driven from the same logical tick — what differs is the CANDIDATE, and
+       * it has to: the shell computes its candidate from the top-down building
+       * boxes in TILE space, whose ids are `great_house` / `dwelling:2`, while
+       * an iso roof belongs to a scene sprite at a layout PIXEL with an id like
+       * `st:0:great_house`. Feeding one machine's answer to the other would open
+       * a roof that is not there. Stepped here rather than in the shell because
+       * this is the only place that holds the composed scene.
+       */
+      let isoCut: CutawayState = initialCutaway()
+      let isoCutTick = -1
+
+      function rebuildIsoStatics(p: EngineCanvasProps) {
+        if (!isoPack || !isoAtlas) {
+          // Loud already (the badge is raised at boot); draw nothing rather
+          // than invent art. The ground still needs the layout, so compose it.
+          isoScene = null
+          return
+        }
+        // AN UNFED RENDERER AND A DAY-ZERO CABINET DRAW THE SAME ISLAND, so the
+        // difference has to be said out loud — see UNMEASURED_STATE_ISSUE. It is
+        // raised ONCE and then only again after a real resolution has arrived
+        // and gone away, so a page that never authenticates badges once rather
+        // than every poll.
+        const unmeasured = unmeasuredIssues(p.resolution)
+        if (unmeasured.length > 0) {
+          if (!isoUnmeasuredIssued) {
+            isoUnmeasuredIssued = true
+            for (const i of unmeasured) console.error('[world/engine] iso scene:', i)
+            propsRef.current.onIssues?.(unmeasured)
+          }
+        } else {
+          isoUnmeasuredIssued = false
+        }
+        const state: LayoutState = layoutStateFrom(p.resolution)
+        // The seed is the deployment's own island: same org, same island,
+        // forever. `geo.canvas` is the top-down world's size and plays no part.
+        const scene = buildIsoScene(isoPack, state, ISO_SEED)
+        isoScene = scene
+        buildIsoTerrain(scene)
+        buildIsoSprites(scene, isoPack, isoAtlas)
+        if (scene.issues.length && !isoIssued) {
+          isoIssued = true
+          for (const i of scene.issues) console.error('[world/engine] iso scene:', i)
+          propsRef.current.onIssues?.(scene.issues)
+        }
       }
 
       function rebuildStatics(p: EngineCanvasProps) {
         clearStatics()
+        if (isIso) {
+          rebuildIsoStatics(p)
+          return
+        }
         buildTerrain(p)
         if (LOD_RULES[lodTier(p.camera.z)].buildingsAsFootprints) {
           buildFootprints(p)
@@ -1028,21 +1639,28 @@ export default function EngineCanvas(props: EngineCanvasProps) {
 
       function placeholderBuildings(p: EngineCanvasProps) {
         placeholderG.clear()
+        if (isIso) return // the iso path draws no tile-space building boxes
         if (LOD_RULES[lodTier(p.camera.z)].buildingsAsFootprints) return
         for (const b of p.buildings) {
           if (buildingSprites.has(b.id)) continue
           if (STAGED_VOCAB_ELEMENTS.has(b.element) || b.element === 'lighthouse') continue
           placeholderG
-            .rect(b.x * TILE, b.y * TILE, b.w * TILE, b.h * TILE)
+            .rect(b.x * TD, b.y * TD, b.w * TD, b.h * TD)
             .fill({ color: 0x39415a, alpha: 0.7 })
           placeholderG
-            .rect(b.x * TILE, b.y * TILE, b.w * TILE, b.h * TILE)
+            .rect(b.x * TD, b.y * TD, b.w * TD, b.h * TD)
             .stroke({ width: 2, color: 0x9aa4bd })
         }
       }
 
-      /** Officer world positions: present officers stand at the Great House
-       * yard (seeded slots); on cutaway they render INSIDE at desks. */
+      /**
+       * Officer world positions: present officers stand at the Great House
+       * yard (seeded slots); on cutaway they render INSIDE at desks.
+       *
+       * The SEEDED MATH LIVES IN lib/world/pick.ts, because the hit test and
+       * the DOM name chips place from it too and three copies of one hash is
+       * how a click lands on nobody.
+       */
       function officerPositions(p: EngineCanvasProps): Array<{
         slug: string
         x: number
@@ -1050,28 +1668,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         inside: boolean
       }> {
         const gh = p.buildings.find((b) => b.element === 'great_house')
-        if (!gh) return []
-        const open = p.cutaway.openId === gh.id
-        const slugs = Object.keys(p.officers).sort()
-        return slugs.map((slug, i) => {
-          const h = fnv1a(`officer:${slug}`)
-          if (open) {
-            const col = i % 3
-            const row = Math.floor(i / 3)
-            return {
-              slug,
-              x: gh.x + 1 + col * ((gh.w - 2) / 2.5),
-              y: gh.y + 1.6 + row * 1.6,
-              inside: true,
-            }
-          }
-          return {
-            slug,
-            x: gh.x + 0.5 + ((h >>> 4) % (gh.w * 2)) / 2,
-            y: gh.y + gh.h + 1 + (i % 2),
-            inside: false,
-          }
-        })
+        return officerSlots(gh, Object.keys(p.officers).sort(), p.cutaway.openId === gh?.id)
       }
 
       /** One pooled character sprite (LimeZu Premade sheet frame). */
@@ -1098,13 +1695,13 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         if (sp instanceof PIXI.Sprite) {
           sp.texture = tex
           sp.anchor.set(0.5, 1)
-          sp.position.set(wx * TILE, wy * TILE)
-          sp.zIndex = wy * TILE
+          sp.position.set(wx * TD, wy * TD)
+          sp.zIndex = wy * TD
           sp.alpha = opts?.alpha ?? 1
           sp.scale.set(opts?.scale ?? 1)
         }
         // cozy pass #13: figures cast dither shadows too (dynamic half)
-        drawShadow(dynShadowG, key, wx * TILE, wy * TILE, 11)
+        drawShadow(dynShadowG, key, wx * TD, wy * TD, 11)
         return true
       }
 
@@ -1118,23 +1715,23 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           if (floorTex) {
             const floor = new PIXI.TilingSprite({
               texture: floorTex,
-              width: b.w * TILE - 4,
-              height: b.h * TILE - 4,
+              width: b.w * TD - 4,
+              height: b.h * TD - 4,
             })
-            floor.position.set(b.x * TILE + 2, b.y * TILE + 2)
+            floor.position.set(b.x * TD + 2, b.y * TD + 2)
             cont.addChild(floor)
           } else {
             const g = new PIXI.Graphics()
-            g.rect(b.x * TILE + 2, b.y * TILE + 2, b.w * TILE - 4, b.h * TILE - 4).fill(0x8a6a48)
+            g.rect(b.x * TD + 2, b.y * TD + 2, b.w * TD - 4, b.h * TD - 4).fill(0x8a6a48)
             cont.addChild(g)
           }
           if (wallTex) {
             const wall = new PIXI.TilingSprite({
               texture: wallTex,
-              width: b.w * TILE - 4,
-              height: TILE,
+              width: b.w * TD - 4,
+              height: TD,
             })
-            wall.position.set(b.x * TILE + 2, b.y * TILE + 2)
+            wall.position.set(b.x * TD + 2, b.y * TD + 2)
             cont.addChild(wall)
           }
           // desks: one per officer slot (same grid officerPositions uses)
@@ -1146,15 +1743,195 @@ export default function EngineCanvas(props: EngineCanvasProps) {
             const d = new PIXI.Sprite(deskTex)
             d.anchor.set(0.5, 1)
             d.position.set(
-              (b.x + 1 + col * ((b.w - 2) / 2.5)) * TILE,
-              (b.y + 1.3 + row * 1.6) * TILE
+              (b.x + 1 + col * ((b.w - 2) / 2.5)) * TD,
+              (b.y + 1.3 + row * 1.6) * TD
             )
             cont.addChild(d)
           })
-          cont.zIndex = b.y * TILE + 1
+          cont.zIndex = b.y * TD + 1
           return cont
         })
-        c.zIndex = b.y * TILE + 1
+        c.zIndex = b.y * TD + 1
+      }
+
+      /**
+       * The one dynamic the iso path draws this round: the lighthouse lamp.
+       *
+       * WHY ONLY THIS. Every other dynamic in drawDynamics — officers, commute
+       * walkers, site crews, fauna, chimney smoke, lane-site buoys, window
+       * glows, the cutaway — is placed in TILE space against the top-down
+       * geometry, and the iso world is not that world. Drawing them here would
+       * put a walker in open sea and call it a feature. They are named as
+       * ABSENT in the port's own report rather than approximated; the LIFE
+       * layer's own port is a separate step with its own risks.
+       *
+       * The lamp is different, and it is here because it is the biggest visual
+       * event in the world's life: the layout already computes LAMP_AT in the
+       * same space the scene draws in, and it already refuses to light a lamp
+       * that has no tower to sit in. The glow rides fxG, which is added to the
+       * stage ABOVE the ambience veil — so warm light cuts through the night
+       * grade instead of being dithered away by it.
+       */
+      function drawIsoDynamics(p: EngineCanvasProps): void {
+        dynG.clear()
+        dynShadowG.clear()
+        const lamp = isoScene?.lamp
+        if (lamp) {
+          drawGlow(fxG, 'iso:lamp', lamp.x, lamp.y, 54)
+          fxG.rect(lamp.x - 4, lamp.y - 4, 8, 8).fill({ color: GLOW_CORE })
+        }
+        drawIsoCutaway(p)
+      }
+
+      /**
+       * THE ROOF CUTAWAY, in isometric — a cross-fade to real roof-off art.
+       *
+       * What it replaces was a fade of the WHOLE building sprite to alpha 0.08
+       * over an axis-aligned TilingSprite floor and a rectangular desk grid laid
+       * out in tile space. Top-down that reads as a roof lifting, because a
+       * top-down building IS its roof from above. In iso it is a ghost of the
+       * entire structure with a rectangle punched through the world behind it,
+       * and officers packed into a 165x96 lozenge under a building still
+       * standing over them.
+       *
+       * Now: the closed frame fades OUT while its `_open` twin — the same
+       * building with its roof removed and its own floor and inner walls drawn —
+       * fades IN at the same base centre, and the interior kit is placed on the
+       * room's own iso lattice. A building the pack has no roof-off art for
+       * keeps the old fade, which is why this is a swap and not a rewrite.
+       *
+       * EVERY FIXTURE IS EMPTY ART FILLED FROM STATE. The desks are as many as
+       * there are officers; the board and the shelf are drawn bare. Baking a
+       * count into the art is the doctrine violation this project has already
+       * rejected a whole design for.
+       */
+      function drawIsoCutaway(p: EngineCanvasProps): void {
+        const scene = isoScene
+        if (!scene || !isoPack || !isoAtlas) return
+        const pack = isoPack
+        const atlas = isoAtlas
+        // one step per LOGICAL tick, never per frame: the reducer's hold and
+        // fade are counted in ticks
+        if (p.tick !== isoCutTick) {
+          isoCutTick = p.tick
+          const eligible = LOD_RULES[lodTier(p.camera.z)].cutawayEligible
+          const centre = proj.project(p.camera.x, p.camera.y)
+          const cand = eligible
+            ? isoCutawayCandidate(
+                scene.sprites,
+                pack,
+                centre,
+                { w: app.renderer.width, h: app.renderer.height },
+                worldScale(proj, p.camera.z)
+              )
+            : null
+          isoCut = cutawayStep(isoCut, cand, p.tick)
+        }
+        const live = new Set<string>()
+        const slugs = Object.keys(p.officers).sort()
+        for (const s of scene.sprites) {
+          if (s.id !== isoCut.openId && s.id !== isoCut.closingId) continue
+          const open = openFrameOf(pack, s.frame)
+          const mix = cutawayMix(isoCut, s.id, p.tick, open !== null)
+          const roof = isoSpriteById.get(s.id)
+          if (roof) roof.alpha = mix.closed
+          if (!open || mix.open <= 0) continue
+          const tex = isoTex(pack, atlas, open.frame)
+          if (!tex) continue
+          // ONE CONTAINER FOR THE WHOLE ROOM, and this is the part that has to
+          // be a container rather than loose sprites: the room's own depth key
+          // is the building's base y, which is LARGER than every interior slot
+          // inside it, so on the flat propLayer the room would paint over its
+          // own furniture. Nesting keeps the room at the building's depth in
+          // the world and sorts the furniture inside it by its own y.
+          const key = `isoroom:${s.id}`
+          live.add(key)
+          const room = pooled(key, () => {
+            const c = new PIXI.Container()
+            c.sortableChildren = true
+            return c
+          })
+          room.alpha = mix.open
+          room.zIndex = s.depth + 0.5
+          if (room.children.length === 0) {
+            const floor = new PIXI.Sprite(tex)
+            floor.anchor.set(0.5, 1)
+            floor.setSize(open.dw, open.dh)
+            floor.position.set(s.x, s.y)
+            floor.zIndex = -1
+            room.addChild(floor)
+          }
+          // THE FIXTURES, filled from measured state: one desk per officer, on
+          // the room's own iso lattice. The art is EMPTY on purpose — a desk
+          // drawn with papers, or a board drawn with pins, would bake a count
+          // into a static frame.
+          // THROUGH THE KIT, never by indexing the atlas table. The pack ships
+          // three fixtures that bake a measured quantity or a piece of animate
+          // state into static art (a stove with a lit fire and smoke, a table
+          // with its chairs drawn, a "postbox" that is an outdoor shed), and
+          // reaching into `pack.frames` by name is exactly how one of them gets
+          // placed by a later round with the whole suite green.
+          const deskFrame = kitFrame(pack, 'int_desk')
+          const deskTex = deskFrame ? isoTex(pack, atlas, 'int_desk') : null
+          const slots = interiorSlots(open, s.x, s.y, slugs.length)
+          const want = new Set<string>()
+          slots.forEach((slot, i) => {
+            if (deskTex && deskFrame) {
+              const dk = `desk:${i}`
+              want.add(dk)
+              const d = roomChild(room, dk, () => new PIXI.Sprite())
+              if (d instanceof PIXI.Sprite) {
+                d.texture = deskTex
+                d.anchor.set(0.5, 1)
+                d.setSize(deskFrame.dw, deskFrame.dh)
+                d.position.set(slot.x, slot.y)
+                d.zIndex = slot.y
+              }
+            }
+            // the officer stands on the NEAR side of their desk, so the desk
+            // never hides them — the same relation the top-down interior had
+            const slug = slugs[i]
+            const sheet = characterSheetFor(slug)
+            const cut = charFrame('work', 'down', p.tick, fnv1a(slug) % 6)
+            const ctex = texFor(sheet, { x: cut.x, y: cut.y, w: CHAR_FRAME_W, h: CHAR_FRAME_H })
+            if (!ctex) return
+            const ok = `off:${slug}`
+            want.add(ok)
+            const o = roomChild(room, ok, () => new PIXI.Sprite())
+            if (o instanceof PIXI.Sprite) {
+              o.texture = ctex
+              o.anchor.set(0.5, 1)
+              o.position.set(slot.x, slot.y + 7)
+              o.zIndex = slot.y + 7
+              o.alpha = p.officers[slug]?.present ? 1 : 0.4
+            }
+          })
+          for (const c of room.children) {
+            const n = (c as Container).label
+            if (n && !want.has(n)) c.visible = false
+          }
+        }
+        // anything this pass did not touch stops being drawn — a stale open
+        // room left on the layer is a roof that never came back
+        for (const key of pool.keys()) {
+          if (key.startsWith('isoroom:') && !live.has(key)) {
+            const obj = pool.get(key)
+            if (obj) obj.visible = false
+          }
+        }
+      }
+
+      /** A named child of a room container — the pool, one level down. */
+      function roomChild<T extends Container>(room: Container, name: string, make: () => T): T {
+        const found = room.children.find((c) => (c as Container).label === name) as T | undefined
+        if (found) {
+          found.visible = true
+          return found
+        }
+        const made = make()
+        made.label = name
+        room.addChild(made)
+        return made
       }
 
       function drawDynamics(p: EngineCanvasProps) {
@@ -1180,8 +1957,8 @@ export default function EngineCanvas(props: EngineCanvasProps) {
               if (cone instanceof PIXI.Sprite) {
                 cone.texture = coneTex
                 cone.anchor.set(0.5, 1)
-                cone.position.set((b.x + 0.5) * TILE, (b.y + 0.2) * TILE)
-                cone.zIndex = (b.y + 0.2) * TILE
+                cone.position.set((b.x + 0.5) * TD, (b.y + 0.2) * TD)
+                cone.zIndex = (b.y + 0.2) * TD
               }
             }
           }
@@ -1229,7 +2006,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
                 ic.position.set(3, 2)
                 bub.addChild(ic)
               }
-              bub.position.set((pos.x + 0.9) * TILE, (pos.y - 1.6) * TILE)
+              bub.position.set((pos.x + 0.9) * TD, (pos.y - 1.6) * TD)
               bub.zIndex = 100000 // bubbles float over the scene
             }
           }
@@ -1242,7 +2019,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
                 for (let ty = 0; ty < f.h; ty++) {
                   for (let tx = 0; tx < f.w; tx++) {
                     const g = new PIXI.Sprite(groundTex)
-                    g.position.set((f.x + tx) * TILE, (f.y + ty) * TILE)
+                    g.position.set((f.x + tx) * TD, (f.y + ty) * TD)
                     cont.addChild(g)
                   }
                 }
@@ -1255,20 +2032,20 @@ export default function EngineCanvas(props: EngineCanvasProps) {
                 if (!tex) continue
                 const fs = new PIXI.Sprite(tex)
                 fs.anchor.set(0.5, 1)
-                fs.position.set(pt.x * TILE + TILE / 2, (pt.y + 1) * TILE)
+                fs.position.set(pt.x * TD + TD / 2, (pt.y + 1) * TD)
                 cont.addChild(fs)
               }
               const signTex = texFor(WORKSITE_KIT.sign)
               if (signTex) {
                 const sg = new PIXI.Sprite(signTex)
                 sg.anchor.set(0.5, 1)
-                sg.position.set((f.x + 0.5) * TILE, (f.y + f.h + 0.6) * TILE)
+                sg.position.set((f.x + 0.5) * TD, (f.y + f.h + 0.6) * TD)
                 cont.addChild(sg)
               }
-              cont.zIndex = (f.y + f.h) * TILE
+              cont.zIndex = (f.y + f.h) * TD
               return cont
             })
-            siteC.zIndex = (f.y + f.h) * TILE
+            siteC.zIndex = (f.y + f.h) * TD
             // crew figures: decorative-honest wrights (staging of a real
             // witnessed transition; the sign codex says exactly that)
             for (const w of s.crew) {
@@ -1321,12 +2098,12 @@ export default function EngineCanvas(props: EngineCanvasProps) {
             if (sp instanceof PIXI.Sprite) {
               sp.texture = tex
               sp.anchor.set(0.5, 1)
-              sp.position.set(fa.x * TILE, fa.y * TILE)
-              sp.zIndex = fa.y * TILE
+              sp.position.set(fa.x * TD, fa.y * TD)
+              sp.zIndex = fa.y * TD
               sp.scale.x = flipX ? -1 : 1
             }
             if (fa.layer === 'ground') {
-              drawShadow(dynShadowG, fa.id, fa.x * TILE, fa.y * TILE, fa.kind === 'dog' ? 20 : 8)
+              drawShadow(dynShadowG, fa.id, fa.x * TD, fa.y * TD, fa.kind === 'dog' ? 20 : 8)
             }
           }
         }
@@ -1337,8 +2114,8 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           const gh = p.buildings.find((b) => b.element === 'great_house')
           const anyPresent = Object.values(p.officers).some((o) => o.present)
           if (gh && anyPresent) {
-            const cx = (gh.x + gh.w * 0.78) * TILE
-            const cy = (gh.y + 0.4) * TILE
+            const cx = (gh.x + gh.w * 0.78) * TD
+            const cy = (gh.y + 0.4) * TD
             for (const puff of smokePuffs(gh.id, p.tick)) {
               dynG.rect(cx + puff.x, cy + puff.y, puff.r, puff.r).fill({ color: puff.color })
             }
@@ -1347,8 +2124,8 @@ export default function EngineCanvas(props: EngineCanvasProps) {
 
         // lane sites: buoys + isle docks/warehouses + mist pockets
         for (const site of p.geo.laneSites) {
-          const px = site.cx * TILE
-          const py = site.cy * TILE
+          const px = site.cx * TD
+          const py = site.cy * TD
           if (site.render === 'reef_buoy') {
             dynG.circle(px, py, 5).fill({ color: 0xc63228 })
             dynG.circle(px, py, 5).stroke({ width: 1, color: 0x35110d })
@@ -1379,22 +2156,22 @@ export default function EngineCanvas(props: EngineCanvasProps) {
             const live = Object.values(p.officers).filter((o) => o.present).length
             const main = p.geo.islands.find((i) => i.id === 'main')
             if (main && live > 0) {
-              drawGlow(fxG, 'mass:main', main.cx * TILE, main.cy * TILE, (14 + live * 5) * 2)
+              drawGlow(fxG, 'mass:main', main.cx * TD, main.cy * TD, (14 + live * 5) * 2)
             }
             for (const site of p.geo.laneSites) {
               if (site.render !== 'isle') continue
-              drawGlow(fxG, `mass:${site.slot}`, site.cx * TILE, site.cy * TILE, 24)
+              drawGlow(fxG, `mass:${site.slot}`, site.cx * TD, site.cy * TD, 24)
             }
           } else {
             // window-glow lamp pools per lived-in building (island tier+)
             for (const b of p.buildings) {
               if (!b.interior) continue
-              const wx = (b.x + 0.9) * TILE
-              const wy = (b.y + b.h * 0.55) * TILE
+              const wx = (b.x + 0.9) * TD
+              const wy = (b.y + b.h * 0.55) * TD
               drawGlow(fxG, `win:${b.id}`, wx, wy, 12)
               fxG.rect(wx - 3, wy - 3, 6, 6).fill({ color: GLOW_CORE })
               if (b.w >= 4) {
-                const wx2 = (b.x + b.w - 0.9) * TILE
+                const wx2 = (b.x + b.w - 0.9) * TD
                 drawGlow(fxG, `win2:${b.id}`, wx2, wy, 9)
                 fxG.rect(wx2 - 2, wy - 3, 5, 5).fill({ color: GLOW_CORE })
               }
@@ -1412,7 +2189,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           const litCut = lighthouseCutFor(lh.rungName)
           const litTex = litCut ? texFor(LIGHTHOUSE_LIT_SHEET, litCut) : null
           if (sp && litTex) sp.texture = litTex
-          drawGlow(fxG, 'lh:pool', (lh.x + lh.w / 2) * TILE, lh.y * TILE, 40)
+          drawGlow(fxG, 'lh:pool', (lh.x + lh.w / 2) * TD, lh.y * TD, 40)
         }
         sweepPool()
       }
@@ -1475,14 +2252,19 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           builtKey = key
           rebuildStatics(p)
         }
+        // ONE viewport source of truth: renderer px, converted at the DOM edge
+        // by Pixi itself. clientWidth and getBoundingClientRect() used to feed
+        // the same math from two other places.
         const vw = app.renderer.width
         const vh = app.renderer.height
-        const s = p.camera.z // continuous zoom = world scale (16px tiles ×z)
+        // The camera is a PURE SCALE + TRANSLATE over the one world Container,
+        // in both kernels: iso is applied per object at placement, never as a
+        // matrix on the container (that would shear every sprite, and the
+        // pack's sprites are already drawn in isometric).
+        const s = worldScale(proj, p.camera.z)
+        const t = cameraTranslation(proj, p.camera, { w: vw, h: vh })
         world.scale.set(s)
-        world.position.set(
-          vw / 2 - p.camera.x * TILE * s,
-          vh / 2 - p.camera.y * TILE * s
-        )
+        world.position.set(t.x, t.y)
         // the glow layer tracks the world transform (it lives above the
         // screen-space veil so warm light cuts through the night dither)
         fxG.scale.set(s)
@@ -1499,69 +2281,34 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         placeholderBuildings(p)
         const bucket = bucketOf(p.clockHour)
         drawWeather(p, bucket) // clears fxG first
-        drawDynamics(p) // then dynamics adds light masses onto fxG
+        if (isIso) drawIsoDynamics(p) // then the lamp is composited onto fxG
+        else drawDynamics(p) // …or the whole top-down dynamic layer is
       }
 
-      function hitTarget(ev: MouseEvent): EngineTarget | null {
+      /**
+       * The DOM edge, and nothing else: the rect subtraction, then the pure
+       * pick. Every tolerance, the priority order and the LOD gate live in
+       * lib/world/pick.ts, where a test can drive them — which is the whole
+       * point of the move (this closure had none, in either kernel).
+       */
+      function hitTarget(ev: MouseEvent): EngineTarget {
         const rect = app.canvas.getBoundingClientRect()
         const p = propsRef.current
-        const s = p.camera.z
-        const wx = (ev.clientX - rect.left - app.renderer.width / 2) / (TILE * s) + p.camera.x
-        const wy = (ev.clientY - rect.top - app.renderer.height / 2) / (TILE * s) + p.camera.y
-        // officers first (small, on top)
-        if (LOD_RULES[lodTier(s)].officers) {
-          for (const o of officerPositions(p)) {
-            if (Math.abs(wx - o.x) < 0.8 && Math.abs(wy - o.y + 0.3) < 1) {
-              return { kind: 'officer', id: o.slug }
-            }
-          }
-          // commute walkers inspect as their officer (the walk is presence
-          // animation of a real verb shift — the card cites the mechanism)
-          if (p.life) {
-            for (const cm of p.life.commuters) {
-              const t = cm.walk.to === 'quay' ? cm.progress : 1 - cm.progress
-              const pos = roadPoint(t)
-              if (Math.abs(wx - (pos.x + 0.5)) < 0.9 && Math.abs(wy - (pos.y + 1) + 0.5) < 1.2) {
-                return { kind: 'officer', id: cm.slug }
-              }
-            }
-            for (const st of p.life.sites) {
-              const f = st.site.footprint
-              if (wx >= f.x - 1 && wx <= f.x + f.w + 1 && wy >= f.y - 1 && wy <= f.y + f.h + 1) {
-                return { kind: 'site', id: st.site.id }
-              }
-            }
-          }
-        }
-        // the mailbox (crossroads)
-        if (
-          Math.abs(wx - (p.geo.crossroads.x + 1.2)) < 1.2 &&
-          Math.abs(wy - p.geo.crossroads.y) < 1.6
-        ) {
-          return { kind: 'mailbox', id: 'mailbox' }
-        }
-        // the chart table (direction surface — read-only card, never an
-        // actuator; the killswitch lever stays THE one actuator, D2)
-        if (p.chartTable) {
-          const ctw = toWorld(CHART_TABLE_LOCAL.x, CHART_TABLE_LOCAL.y)
-          if (Math.abs(wx - (ctw.x + 0.5)) < 1.1 && Math.abs(wy - (ctw.y + 0.5)) < 1.2) {
-            return { kind: 'chart_table', id: 'chart-table' }
-          }
-        }
-        // buildings by bbox (footprints hit the same boxes at far LOD)
-        for (const b of p.buildings) {
-          if (wx >= b.x - 0.3 && wx <= b.x + b.w + 0.3 && wy >= b.y - 1 && wy <= b.y + b.h + 0.3) {
-            return { kind: 'building', id: b.id }
-          }
-        }
-        // lane sites (buoys / isles / mist)
-        for (const site of p.geo.laneSites) {
-          const r = site.render === 'isle' ? 12 : 4
-          if (Math.hypot(wx - site.cx, wy - site.cy) <= r) {
-            return { kind: 'lane', id: `lane:${site.slot}` }
-          }
-        }
-        return { kind: 'ground', id: 'ground' }
+        return pickTarget(
+          {
+            projection: p.projection,
+            camera: p.camera,
+            viewport: { w: app.renderer.width, h: app.renderer.height },
+            geo: p.geo,
+            buildings: p.buildings,
+            officers: p.officers,
+            life: p.life,
+            chartTable: p.chartTable ?? false,
+            cutawayOpenId: p.cutaway.openId,
+            scene: isoScene,
+          },
+          { x: ev.clientX - rect.left, y: ev.clientY - rect.top }
+        )
       }
 
       const onClick = (ev: MouseEvent) => propsRef.current.onPrimary(hitTarget(ev))

@@ -1,0 +1,21 @@
+{
+  "name": "camp",
+  "seed": "cabinet-camp",
+  "date": "2026-05-25",
+  "index": 0.041,
+  "note": "The hatch state: one officer under canvas, nothing built, no quay, an unlit cairn. Mirrors designs/cabinet-world-state-hatch-2026-07-26.png.",
+  "provenance": "Rung names from cabinet/world/growth-ladders.yml. The counts block is nearly empty on purpose: every ladder absent here is absent because it has NEVER BEEN MEASURED, and an absent ladder renders nothing. Writing zeroes instead would claim a measurement that says 'none', which is a different fact — the difference between no data and zero, collapsed in the only direction that cannot fabricate.",
+  "state": {
+    "era": "camp",
+    "road": "dirt_path",
+    "stages": {
+      "lighthouse": "dark_cairn",
+      "lighthouse_lamp": "dark",
+      "firepit": "bare_ground",
+      "officer_dwellings": "dwelling_1"
+    },
+    "counts": {
+      "officer_dwellings": 1
+    }
+  }
+}

@@ -369,7 +369,7 @@ def attest_telegram_channel(claimed_chat_id: Any,
 # ---------------------------------------------------------------------------
 
 def _read_raw_events(store: Path, trial_id: str) -> list[dict[str, Any]]:
-    """Unverified raw rows (verifier _read_event_lines framing: b"\\n" only,
+    """Unverified raw rows (verifier _frame_event_lines framing: b"\\n" only,
     corrupt lines skipped). Used for stratification hints and the blind
     filter; NEVER served as content — presentation happens only after
     verify_trial passes. The id is regex-validated before the one fixed
