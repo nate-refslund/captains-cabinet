@@ -110,9 +110,30 @@ def _cabinet_root() -> Path:
 
 def _neon_configured(root: Path) -> bool:
     """Is the memory backend reachable in principle — ``NEON_CONNECTION_STRING``
-    present in the process env, or NAMED in ``<root>/cabinet/.env`` (the file
-    ``memory.sh`` itself sources)? Checked by variable NAME only; the secret
-    VALUE is never captured, stored, or logged by this module."""
+    set in the process env, or NAMED WITH A VALUE in ``<root>/cabinet/.env``
+    (the file ``memory.sh`` itself sources)? Only the PRESENCE/EMPTINESS of the
+    value is inspected; the secret is never captured, stored, or logged.
+
+    AN EMPTY VALUE IS NOT CONFIGURED (fixed 2026-07-28, measured through the
+    real ``hatch.sh --defaults`` chain). ``setup-env.sh --defaults`` writes the
+    whole variable set as bare ``NAME=`` placeholder lines, so a fresh hatch
+    that has connected NOTHING carries the literal line
+    ``NEON_CONNECTION_STRING=``. A name-only test matched it, ``available()``
+    returned True, and the first briefing told the operator:
+
+        "Recall: live — OrgSource answered 0 hit(s) … recall is bound and
+         reachable but held NOTHING on the subjects you declared. That is an
+         empty answer, not a stale one."
+
+    Nothing was ever reachable. That is a confident negative the cabinet never
+    earned, on the DEFAULT flavor, in the first message a stranger ever reads —
+    and it is the same false positive ``LocalNotesSource``'s ``vault/`` fallback
+    was removed for, one adapter over. ``recall_state()`` has a distinct
+    sentence for the unbound case; an empty placeholder must reach it rather
+    than be laundered into "bound and holding nothing".
+
+    The env branch already behaved correctly (an empty string is falsy); only
+    the file branch was name-only."""
     if os.environ.get("NEON_CONNECTION_STRING"):
         return True
     env_file = root / "cabinet/.env"
@@ -121,9 +142,16 @@ def _neon_configured(root: Path) -> bool:
             return False
         for line in env_file.read_text(encoding="utf-8", errors="replace").splitlines():
             stripped = line.strip()
-            if stripped.startswith("NEON_CONNECTION_STRING=") \
-                    or stripped.startswith("export NEON_CONNECTION_STRING="):
-                return True
+            for prefix in ("NEON_CONNECTION_STRING=",
+                           "export NEON_CONNECTION_STRING="):
+                if stripped.startswith(prefix):
+                    # Presence-only inspection: strip whitespace and one pair of
+                    # surrounding quotes, then ask ONLY whether anything is left.
+                    value = stripped[len(prefix):].strip()
+                    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                        value = value[1:-1].strip()
+                    if value:
+                        return True
     except OSError:
         return False
     return False
