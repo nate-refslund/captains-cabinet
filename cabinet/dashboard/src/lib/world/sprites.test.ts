@@ -19,6 +19,8 @@ import {
   CHAR_FRAME_W,
   CHAR_SHEET_MIN_H,
   CHAR_SHEET_MIN_W,
+  CHARACTER_COUNT,
+  CHARACTER_DIR,
   charFrame,
   characterSheetFor,
   DESK_SHEETS,
@@ -81,7 +83,9 @@ describe('world sprite resolution', () => {
       expect(deskSheetFor(slug)).toBe(deskSheetFor(slug))
       expect(DESK_SHEETS).toContain(deskSheetFor(slug))
       expect(characterSheetFor(slug)).toBe(characterSheetFor(slug))
-      expect(characterSheetFor(slug)).toMatch(/^characters\/Premade_Character_\d{2}$/)
+      expect(characterSheetFor(slug)).toMatch(
+        new RegExp(`^${CHARACTER_DIR}/Premade_Character_\\d{2}$`)
+      )
     }
   })
 
@@ -117,5 +121,30 @@ describe('world sprite resolution', () => {
       expect(STATION_SPRITES[id], id).toBeDefined()
     }
     expect(BUNK_SHEET).toMatch(/^office\/singles\//)
+  })
+  /**
+   * The owned cast must be BINDABLE at all times, not just after someone flips
+   * CHARACTER_DIR. The licensed LimeZu sheets are gitignored do-not-redistribute
+   * binaries, so a stranger hatching from the public egg gets a world with no
+   * people in it unless the owned set is present, complete and correctly shaped.
+   * This asserts the owned rows would satisfy resolveWorldSprites the moment
+   * CHARACTER_DIR becomes 'originals/characters' — the one-line swap.
+   */
+  it('the owned character set is complete and would resolve if CHARACTER_DIR flipped', () => {
+    const manifest = realManifest()
+    const owned = manifest.assets.filter((r) =>
+      r.id.startsWith('originals/characters/Premade_Character_')
+    )
+    expect(owned).toHaveLength(CHARACTER_COUNT)
+    for (let i = 1; i <= CHARACTER_COUNT; i++) {
+      const id = `originals/characters/Premade_Character_${String(i).padStart(2, '0')}`
+      const row = owned.find((r) => r.id === id)
+      expect(row, id).toBeDefined()
+      // the same dimension rule resolveWorldSprites applies to the licensed set
+      expect(row!.w, id).toBeGreaterThanOrEqual(CHAR_SHEET_MIN_W)
+      expect(row!.h, id).toBeGreaterThanOrEqual(CHAR_SHEET_MIN_H)
+      expect(row!.grid, id).toBe(16)
+      expect(row!.license, id).toBe('owned — org-original')
+    }
   })
 })

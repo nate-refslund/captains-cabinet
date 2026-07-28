@@ -21,6 +21,7 @@ import type { ManifestRow, SpriteCut, WorldAssetManifest } from './sprites'
 import {
   ASSET_BASE,
   CHARACTER_COUNT,
+  CHARACTER_DIR,
   CHAR_SHEET_MIN_H,
   CHAR_SHEET_MIN_W,
   DESK_SHEETS,
@@ -33,7 +34,7 @@ import {
  * characterSheetFor picks per slug; the engine draws walk/idle frames). */
 export const ENGINE_CHARACTER_SHEETS = Array.from(
   { length: CHARACTER_COUNT },
-  (_, i) => `characters/Premade_Character_${String(i + 1).padStart(2, '0')}`
+  (_, i) => `${CHARACTER_DIR}/Premade_Character_${String(i + 1).padStart(2, '0')}`
 )
 
 // ── street kit (whole-file singles; dims pinned from the manifest gate) ────
@@ -441,7 +442,7 @@ export function resolveOutdoorSprites(
     if (id.startsWith('farm/crops/')) {
       ok = row.w >= CROP_STAGES * 16 && row.h >= 18
     }
-    if (id.startsWith('characters/')) {
+    if (id.startsWith(`${CHARACTER_DIR}/`)) {
       ok = row.w >= CHAR_SHEET_MIN_W && row.h >= CHAR_SHEET_MIN_H
     }
     if (DESK_SHEETS.includes(id)) {
