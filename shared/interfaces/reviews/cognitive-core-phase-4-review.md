@@ -21,7 +21,33 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: deca1533428d8df83e6c0b53d96723620c8ae4f4285a943b9e352fc98c652671
+Reviewed-Scope-Digest: cafe902b65a942f943cf502160a8d830582445f391a61695c0fad699adadba45
+
+(RE-BOUND 2026-07-28, `fix/evidence-append-quadratic`, the re-bind-at-landing
+procedure this artifact prescribes. Prior digest: `deca1533428d8df8…`. The moved
+file in scope is the ONE budget surface again:
+`cabinet/config/cognitive-architecture-contract.yml` gains an
+`evidence-append-quadratic` allowance row on
+`framework_production_noncomment_lines` (+126, exact measured running total
+71277 vs 71151) for a fix to `framework/evidence/verifier.py` and
+`recorder.py` — the append path was O(n) in the trial and O(n^2) overall.
+MECHANICALLY VERIFIED rather than asserted: `resolve_scope()` was intersected
+with `git diff --cached --name-only` over this landing and the contract file is
+the ONLY digest-bound path it touches; the intersection with the manifest's DIR
+entries is empty too. The other seven paths are the evidence verifier and
+recorder, their tests, `framework/authority/tests/test_needs.py`,
+`cabinet/scripts/governance-review.py` (one renamed-helper doc reference) and
+one dated doc correction — none in COG-4 scope. No organ, no scheduler surface,
+no serve surface, no COG-4 entry point, no budget `maximum` and no `additional`
+on any pre-existing row changed. `framework/authority/classifier.py` remains in
+the manifest's `must_remain_unchanged` block against the pinned phase anchor,
+which the rollback rehearsal re-checks. The rehearsal's nine-directory
+compatibility battery runs in a worktree detached at the pinned anchor
+`c58d4a57`, so the edit to `framework/authority/tests/test_needs.py` is not in
+the bytes it runs; that same battery at HEAD, which
+`verify-cognitive-phase4.sh` runs, is green. The phase-4 findings below are
+unaffected.)
+
 
 (RE-BOUND 2026-07-27, `fix/bijection-allowance-bypass`, same commit as the change
 that moved the bytes — the re-bind-at-landing procedure this artifact prescribes.
