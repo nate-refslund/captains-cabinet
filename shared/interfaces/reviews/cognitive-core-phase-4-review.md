@@ -21,9 +21,24 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 9b43322029c6c91dd56c240894e27fd879dd2a18590c3ca98a8a43462743ef2d
+Reviewed-Scope-Digest: 528005675917203f902d45d5b8c7769cbe1f3598cdc58fb016284f1ebce88a56
 
-(RE-BOUND 2026-07-28 at the landing of `fix/world-art-manifest-truth-and-egg`.
+(RE-BOUND 2026-07-28 at the landing of `feat/salience-sweep`. Prior digest:
+`9b43322029c6c91dd56c240894e27fd879dd2a18590c3ca98a8a43462743ef2d`. ONE in-scope
+path moved and it is not a COG-4 byte:
+`cabinet/config/cognitive-architecture-contract.yml` gains the visible bijection
+raise 207 -> 208 for `framework/onboarding/salience.py`, that member's expansion
+row, and one `framework_production_noncomment_lines` allowance measured at the
+landing. The budgets file is in scope because COG-4 extended it; the salience
+ranker itself, its suite and `framework/onboarding/journey.py` are OUTSIDE the
+scope set — verified, since the digest over this branch's first commit still
+read `9b433220…` unchanged. No COG-4 organ, contract clause or measurement was
+touched, so nothing this artifact reviewed changed meaning; only the census
+ledger grew by one adjudicated member. Re-bound in the SAME commit as the
+contract edit, because a recorded digest and the bytes it binds must never be
+able to disagree, even for one commit.
+
+Earlier RE-BIND 2026-07-28 at the landing of `fix/world-art-manifest-truth-and-egg`.
 Prior digest: `ebbdcc3f771afef7ffddc7558ea64a06bf3f8fa782cf14b5dd129891f796ca15`.
 TWO in-scope paths moved, both on the egg-export surface COG-4 extended and
 neither a COG-4 byte: `cabinet/scripts/egg-export-manifest.txt` (the WORLD ART
