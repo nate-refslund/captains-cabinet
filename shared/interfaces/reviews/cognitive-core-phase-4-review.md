@@ -21,7 +21,16 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: cafe902b65a942f943cf502160a8d830582445f391a61695c0fad699adadba45
+Reviewed-Scope-Digest: PENDING-MERGE-RECOMPUTE
+
+(MERGE RE-BIND, 2026-07-28, `fix/evidence-append-quadratic`: origin/master's
+`feat/onboarding-ordering-inversion` landing re-bound this same digest while this
+branch was in flight. Two concurrent landings cannot both be right about one
+number, so it is RECOMPUTED over the MERGED committed tree rather than either
+side being picked — a hand-picked digest from either parent records a tree that
+never existed. Both parents moved the SAME one scope file,
+`cabinet/config/cognitive-architecture-contract.yml`, and their edits are
+disjoint rows; both re-bind notes are kept below.)
 
 (RE-BOUND 2026-07-28, `fix/evidence-append-quadratic`, the re-bind-at-landing
 procedure this artifact prescribes. Prior digest: `deca1533428d8df8…`. The moved
@@ -48,6 +57,19 @@ the bytes it runs; that same battery at HEAD, which
 `verify-cognitive-phase4.sh` runs, is green. The phase-4 findings below are
 unaffected.)
 
+(RE-BOUND 2026-07-28 at the landing of `feat/onboarding-ordering-inversion`,
+same commit as the change that moved the bytes. Prior digest:
+`deca1533428d8df8…`. The one moved file in scope is again
+`cabinet/config/cognitive-architecture-contract.yml`, and the move is: the
+`framework_production_modules` budget maximum raised visibly 206 -> 207, the
+duplicate temporary-allowance row for `framework/onboarding/estate.py` removed
+(master's bijection-allowance-bypass landing refuses an allowance that names a
+bijection class, and an expansion row for that member was already present), and
+the `framework_production_noncomment_lines` allowance 646 -> 654 for eight lines
+fixing two defects found in this unit by the landing review. No COG-4
+implementation byte changed; `framework/authority/classifier.py` remains in the
+manifest's `must_remain_unchanged` block against the pinned phase anchor. The
+phase-4 findings below are unaffected.)
 
 (RE-BOUND 2026-07-27, `fix/bijection-allowance-bypass`, same commit as the change
 that moved the bytes — the re-bind-at-landing procedure this artifact prescribes.

@@ -34,7 +34,14 @@ budgets:
     maximum: 19
   framework_production_modules:
     path: framework
-    maximum: 206
+    # 206 -> 207 (2026-07-28): framework/onboarding/estate.py, the derived-estate
+    # contract. RAISED VISIBLY rather than paid for by a temporary allowance —
+    # this is a bijection class, so its members are named in the expansion
+    # registry below and an allowance may not buy one anonymously. The unit
+    # originally declared it as an allowance row; merging master's
+    # bijection-allowance-bypass landing refused that row by name, which is the
+    # gate working exactly as designed.
+    maximum: 207
   framework_production_noncomment_lines:
     path: framework
     # 60067 -> 60164 (+97 measured 2026-07-26 via cognitive-architecture-census.py):
@@ -768,8 +775,12 @@ temporary_allowances:
       the soundness argument — why a memo may make verification cheaper and
       never weaker — and it is NOT reformatted into "#" comments to duck this
       counter, which would buy a number with the reasoning a later reader needs
-      to check the claim. EXACT measured running total (71277 vs 71151 base),
-      2026-07-28, via cognitive-architecture-census.py — the zero-headroom
+      to check the claim. EXACT measured running total (71931 vs 71805 base
+      after merging origin/master dd01ce8f, whose onboarding-ordering-inversion
+      landing moved the base from 71151 to 71805; re-measured after that merge
+      and +126 is unchanged by it, since the growth is this unit's own lines in
+      files that landing does not touch), 2026-07-28, via
+      cognitive-architecture-census.py — the zero-headroom
       observed==max law means this is the exact new total, never a
       pre-allocated ceiling. Zero new MODULES: both files already exist, so
       framework_production_modules is unchanged and no expansion-registry row
@@ -845,6 +856,13 @@ temporary_allowances:
 # cabinet/scripts/tests/test_cognitive_architecture_census.py are what keep an
 # empty registry from being an untested one — a registry never seen to reject
 # is not a registry.
+  - phase: onboarding-ordering-inversion
+    budget: framework_production_noncomment_lines
+    additional: 654
+    reason: 'Onboarding ordering inversion (Captain ruling 2026-07-26) — 646 -> 654 at the landing review (2026-07-28): +8 non-comment lines in framework/onboarding/genesis.py fixing two defects the hostile pass found in this unit''s own new code. (1) The genesis-estate provenance line summed the per-source `refusals` MAPPING as if it were a list of {reason, count} dicts, so `isinstance(r, dict)` was never true and the refusal count was structurally 0 for every real sweep — the auditability that line exists to provide, silently disabled — and it read `root` where the canonical record writes `source_root`, so provenance always fell back to the label. Both now read framework.authority.ownership.access_record''s own fields (`refusals_total`, `source_root`). The unit''s test fixture had been hand-written in the buggy shape, so the sensor agreed with the defect and went green; the fixture is corrected to the producer''s shape and a new arm builds the record from access_record itself so it cannot drift again. (2) The same line claimed unconditionally that "the cards above are derived from it, with citations" — false in the shipped ordering, where nothing runs formation.sh before the first briefing and write_proposals is write-once, so the cards on file predate the estate. The claim is now conditional on a card actually carrying derived_from: estate, with both arms pinned. EXACT measured running total 71805, 2026-07-28, via cognitive-architecture-census.py. ORIGINAL UNIT — framework/onboarding/estate.py (derive_estate from the ratified charter+manifest+dividend with the charter-binding check, the citable entity derivation, the per-source provenance record incl. every refusal with its reason, estate_is_usable, proposed_lanes with the self-ownership write-capability law, and both writers); framework/onboarding/formation.py (_run_discovery replacing the DISCOVERY_DONE IOU stub, REAL_STAMPS, the honest estimate lines, and _archive_discovery_outputs so undo supersedes the artifacts it produced); framework/onboarding/genesis.py (_low_altitude, _subject_proof, _estate_subject_cards, _residual_card, the estate parameter through propose_outcome_cards/write_proposals/_proposals_doc/run_genesis_proposal, and the genesis-estate provenance intake item); framework/frontdoor/run_briefing.py (docstring correction only — the "no estate to gather" line became literally false). HONEST ACCOUNTING: the majority of these lines are DOCSTRING prose carrying the reason for each invariant, per the house rule. They are NOT reformatted into # comments to duck this budget — the counter excludes comments, so that would be optimising the number instead of the thing. EXACT measured running total (71080 after merging master''s source-ownership landing; +646 for this unit), 2026-07-27, via cognitive-architecture-census.py. The +29 over the pre-merge measurement is the RECONCILIATION with that landing: estate.py stopped carrying its own ownership vocabulary and its own per-source record shape and now reads the class off the charter hash and rides framework.authority.ownership.access_record / writes_permitted — one vocabulary, one record, one decision function'
+    owner: cognitive-core-program
+    sunset: '2027-01-27'
+    deletion_gate: the estate contract folds into a single onboarding module when the ingest engine lands, or COG-7 compaction
 expansions:
   - member: framework/authority/ownership.py
     member_class: framework_production_modules
@@ -894,6 +912,16 @@ expansions:
       binds this module from instance/config/sources.yml, which
       cabinet/scripts/generate-instance.py emits for autonomy.flavor: personal;
       before this the personal branch emitted nothing.
+  - member: framework/onboarding/estate.py
+    member_class: framework_production_modules
+    gate_date: '2026-07-26'
+    models_run:
+      - Fable 5 (arm A)
+      - Opus 5 (arm B)
+    adjudication: docs/plans/onboarding-ordering-inversion-2026-07-26.md
+    merge_refuted: framework/onboarding/formation.py::_run_discovery — the merge candidates were genesis.py and formation.py, and both are refuted by direction. formation PRODUCES the estate (_run_discovery) while genesis and cabinet/scripts/generate-instance.py CONSUME it; putting the contract inside either consumer would make the producer import a consumer, and putting it inside the producer would make the generator import the formation stage machine to read a schema.
+    consumer: cabinet/scripts/generate-instance.py
+    provenance: per 2026-07-07 full-autonomy grant + the 2026-07-26 north-star/altitude Captain rulings
 ownership:
   authoritative_state: domain_transaction
   cross_domain_delivery: transactional_outbox

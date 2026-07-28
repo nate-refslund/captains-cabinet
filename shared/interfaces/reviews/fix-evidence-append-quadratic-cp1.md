@@ -154,7 +154,9 @@ green.
 `framework_production_noncomment_lines` is zero-headroom by law
 (observed == maximum). +126 production lines (verifier +124, recorder +2;
 tests cost this budget nothing) therefore need a `temporary_allowances` row —
-`evidence-append-quadratic`, exact measured running total 71277 vs 71151 base.
+`evidence-append-quadratic`, exact measured running total 71931 vs 71805
+base (re-measured after merging origin/master `dd01ce8f`, which moved the base
+from 71151; +126 is unchanged by that merge).
 Most of those lines are docstring prose stating the soundness argument; it is
 deliberately **not** reformatted into `#` comments to duck the counter, which
 would buy a number with the reasoning a later reader needs.

@@ -97,17 +97,82 @@ def test_call_cap_knob_falls_back_on_malformed(monkeypatch, raw):
 
 
 def test_stage_stub_writes_honest_iou_and_journals(tmp_path):
+    """INVERTED for DISCOVERY_DONE 2026-07-26 (ordering inversion): the stage
+    that used to write "not yet built" now DERIVES the estate. INGEST_DONE is
+    the nearest remaining stub and takes over this arm — the IOU contract
+    itself is unchanged for every stage that has not been built."""
     res = formation.open_run(tmp_path, now="2026-07-14T00:00:00Z")
     rid = res["run_id"]
-    out = formation.run_stage(tmp_path, rid, "DISCOVERY_DONE",
+    out = formation.run_stage(tmp_path, rid, "INGEST_DONE",
                               now="2026-07-14T00:00:01Z")
     assert out["status"] == "stub-iou"
     artifact = Path(out["artifact"])
-    assert artifact.name == "discovery-IOU.md"
+    assert artifact.name == "ingest-IOU.md"
     text = artifact.read_text()
-    assert formation.IOU_PREFIX + " 1" in text     # "not yet built — increment 1"
+    assert formation.IOU_PREFIX + " 3" in text     # "not yet built — increment 3"
     assert formation.GENERATED_MARKER in text
-    assert "DISCOVERY_DONE" in formation.journaled_stamps(tmp_path, rid)
+    assert "INGEST_DONE" in formation.journaled_stamps(tmp_path, rid)
+
+
+def test_discovery_stage_derives_the_estate_instead_of_an_iou(tmp_path):
+    """The one REAL stage. With no ratified First Window it still derives —
+    honestly empty — because "discovery ran and found nothing" and "discovery
+    never ran" must be distinguishable downstream: the generator's lanes: []
+    gate rides exactly that distinction."""
+    from framework.onboarding import estate
+
+    rid = formation.open_run(tmp_path, now="2026-07-14T00:00:00Z")["run_id"]
+    out = formation.run_stage(tmp_path, rid, "DISCOVERY_DONE",
+                              now="2026-07-14T00:00:01Z")
+    assert out["status"] == "derived"
+    assert Path(out["artifact"]).name == "discovery.yml"
+    assert not list(formation.run_dir(tmp_path, rid).glob("discovery-IOU.md"))
+
+    doc = estate.load_estate(tmp_path)
+    assert doc["schema"] == estate.SCHEMA
+    assert doc["run_id"] == rid
+    assert estate.estate_is_usable(doc, "")[0] is True
+    assert (tmp_path / estate.LANES_PROPOSED_REL).is_file()
+    row = [r for r in formation.read_journal(tmp_path, rid)
+           if r["stage"] == "DISCOVERY_DONE"][0]
+    assert row["status"] == "derived"
+    assert "no new read" in row["note"]
+
+
+def test_undo_takes_the_discovery_outputs_with_it(tmp_path):
+    """An undo that leaves its effect in place is not an undo: the derived
+    estate lives OUTSIDE the run dir (one stable path for consumers), so it
+    must be superseded with the run that produced it — otherwise it keeps
+    feeding the generator's lanes gate and the briefing's cards."""
+    from framework.onboarding import estate
+
+    rid = formation.open_run(tmp_path)["run_id"]
+    formation.run_stage(tmp_path, rid, "DISCOVERY_DONE")
+    assert estate.load_estate(tmp_path)
+
+    res = formation.undo_run(tmp_path, rid, now="2026-07-14T01:02:03Z")
+    assert res["status"] == "archived"
+    assert set(res["superseded_outputs"]) == {estate.ESTATE_REL,
+                                              estate.LANES_PROPOSED_REL}
+    assert estate.load_estate(tmp_path) == {}
+    assert not (tmp_path / estate.LANES_PROPOSED_REL).exists()
+    dest = Path(res["archived_to"])
+    assert (dest / "superseded" / "derived-estate.yml").is_file()   # nothing deleted
+    assert (dest / "superseded" / "lanes-proposed.yml").is_file()
+    assert estate.ESTATE_REL in (dest / "undo-receipt.md").read_text()
+
+
+def test_undo_never_drags_away_a_later_runs_estate(tmp_path):
+    from framework.onboarding import estate
+
+    old_rid = formation.open_run(tmp_path)["run_id"]
+    formation.run_stage(tmp_path, old_rid, "DISCOVERY_DONE")
+    new_rid = formation.open_run(tmp_path)["run_id"]
+    formation.run_stage(tmp_path, new_rid, "DISCOVERY_DONE")
+
+    res = formation.undo_run(tmp_path, old_rid, now="2026-07-14T01:02:03Z")
+    assert res["superseded_outputs"] == []
+    assert estate.load_estate(tmp_path)["run_id"] == new_rid
 
 
 def test_read_scope_stub_states_no_consent_was_recorded(tmp_path):
@@ -139,10 +204,13 @@ def test_full_run_stamps_all_stages_in_order(tmp_path):
     assert [r["stage"] for r in rows] == list(formation.ALL_STAMPS)
     assert formation.next_stage(tmp_path, rid) is None
     rdir = formation.run_dir(tmp_path, rid)
+    # discovery-IOU.md is gone by design — that stage derives now (REAL_STAMPS).
     assert sorted(p.name for p in rdir.glob("*-IOU.md")) == [
-        "briefing-IOU.md", "discovery-IOU.md", "ingest-IOU.md",
-        "read-scope-IOU.md", "strategy-IOU.md",
+        "briefing-IOU.md", "ingest-IOU.md", "read-scope-IOU.md",
+        "strategy-IOU.md",
     ]
+    assert (rdir / "discovery.yml").is_file()
+    assert formation.REAL_STAMPS == {"DISCOVERY_DONE"}
 
 
 def test_open_run_resume_keeps_original_start_row(tmp_path, monkeypatch):
@@ -162,6 +230,10 @@ def test_estimate_is_honest_about_zero_calls(tmp_path):
     text = "\n".join(formation.estimate_lines(tmp_path, rid))
     assert "LLM CLI calls this run: 0" in text
     assert "cap" in text and "CABINET_FORMATION_CALL_CAP" in text
+    # A blanket "every stage is a stub" line became FALSE the moment
+    # DISCOVERY_DONE started deriving; the estimate must not say it.
+    assert "Every stage below is an honest IOU stub" not in text
+    assert "no new read" in text
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +250,7 @@ def test_undo_archives_nothing_deleted(tmp_path):
     assert dest.parent.parent == formation.formation_dir(tmp_path)
     assert not formation.run_dir(tmp_path, rid).exists()   # moved, not copied
     assert (dest / "journal.jsonl").is_file()              # contents intact
-    assert (dest / "discovery-IOU.md").is_file()
+    assert (dest / "discovery.yml").is_file()
     assert "nothing deleted" in (dest / "undo-receipt.md").read_text()
 
 

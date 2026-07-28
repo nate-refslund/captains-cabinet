@@ -25,8 +25,10 @@ composed from the LOCAL genesis surfaces (framework.onboarding.genesis: the
 org-PROPOSED outcome cards, the focus letter, the research-brief status),
 written to ``instance/memory/first-briefing-<UTC date>.md`` and printed —
 never sent. In this mode the synthesis/recap/digest legs and the Redis intake
-are DELIBERATELY not touched: a genesis instance has no estate to gather, and
-a scratch-instance run on a developer Mac must never consume the LIVE
+are DELIBERATELY not touched: a genesis instance has no LIVE estate to gather
+(the DERIVED estate — what the cabinet READ — reaches the cards through
+genesis, not through these legs), and a scratch-instance run on a developer
+Mac must never consume the LIVE
 ``cabinet:frontdoor:intake`` consumer-group items (a drain marks them
 delivered). The normal path — and the Telegram send through channel.py +
 allow_sends — is byte-identical to before and still used when configured.
@@ -265,7 +267,8 @@ def _run_local_render(*, genesis_fn=None, now: str | None = None) -> dict:
     os.replace(tmp, path)
 
     return {
-        "synthesis": {"skipped": "local-render (genesis has no estate to gather)"},
+        "synthesis": {"skipped": "local-render (no live estate; the DERIVED "
+                                 "estate reaches the cards through genesis)"},
         "recap": None,
         "digest": {"skipped": "local-render"},
         "send": {
