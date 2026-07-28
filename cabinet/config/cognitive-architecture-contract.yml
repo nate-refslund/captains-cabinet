@@ -62,6 +62,19 @@ budgets:
     # at 206+allowances): the helper lives inside the existing module, and the
     # revert CLI lives in cabinet/scripts/, outside this budget's path.
     #
+    # 60164 -> 60169 (+5 measured 2026-07-28 via cognitive-architecture-census.py,
+    # observed 73055 vs the then-effective 73050): the specifics-ratchet landing
+    # removed the Danish-keyboard charset WHITELIST from
+    # framework/acting/voice_charset.py and replaced it with the parameterised
+    # restrict_to_charset(text, allowed) seam — the framework keeps the
+    # MECHANISM and the deployment supplies the set. The whitelist it deletes is
+    # slightly smaller than the seam that replaces it, hence +5 rather than a
+    # shrink. RAISED VISIBLY rather than paid for by a temporary allowance: an
+    # allowance promises a deletion gate, and this seam is permanent — a
+    # framework that normalizes outbound text for every writing system needs
+    # somewhere for a per-deployment restriction to enter, and this is it. Zero
+    # new production MODULES (the new suite is a test; the ratchet's debt ledger
+    # is a .txt), so framework_production_modules is unchanged.
     # 60164 -> 60183 (+19 measured 2026-07-28 via cognitive-architecture-census.py):
     # the injection screen in framework/acting/action_lane.py became BILINGUAL.
     # Measured that day against the deployment's real inbound language: 7/7
@@ -76,7 +89,15 @@ budgets:
     # tuple. Compressing the regexes onto fewer lines to dodge the ratchet was
     # the alternative and would have been gaming the budget rather than paying
     # it. Shrink-only resumes from 60183.
-    maximum: 60183
+    #
+    # MERGE, 2026-07-29: the two bumps above landed concurrently off the SAME
+    # 60164 base and are disjoint (a charset seam; a bilingual injection
+    # screen), so the merged ceiling is their SUM, re-measured over the merge
+    # tree rather than added on paper (60164 + 5 + 19 = 60188; observed 73104
+    # against the 73080 that the un-merged pair would have allowed). Neither is
+    # an allowance; both are permanent, so the ratchet re-pins here at zero
+    # headroom.
+    maximum: 60188
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

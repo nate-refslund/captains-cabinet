@@ -19,6 +19,18 @@ files skipped) and goes RED on any launcher literal that is not covered by the
 documented, shrink-only allowlist below. A NEW hardcoded launcher literal in
 framework is a CI failure — not a review note.
 
+TWO ARMS, one home. **Arm 1** (this docstring, the checks below) is the
+launcher/product IDENTITY ratchet described here. **Arm 2** — the SPECIFICS
+ratchet — is the second half of the same promise: the framework is the seed for
+ANY captain, in ANY industry, with ANY tool, so no third-party VENDOR, SERVICE
+or PRODUCT may enter ``framework/`` unrecorded either. Arm 1 is green over a
+framework that hardcodes a dozen vendors, because its live patterns are the
+launcher's own identity and a synthetic demo one; Arm 2 derives its vocabulary
+FROM THE TREE (a self-join on the hosts the repository itself names) rather
+than from any list. Its doctrine, its scan set, its one hand-maintained
+exclusion and — read this before treating green as coverage — the class of
+specific it CANNOT see are all documented at the ``ARM 2`` banner below.
+
 Two enforcement halves, by design:
 
   * THIS module is the tracked, captain-AGNOSTIC half. Every pattern below is
@@ -91,6 +103,7 @@ deployment-flavoured literal.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 from pathlib import Path
@@ -584,12 +597,723 @@ class TestScannerEngine:
         assert any("symlink escape" in r[2] for r in v)
 
 
+
+
+# ===========================================================================
+# ARM 2 — THE SPECIFICS RATCHET  (added 2026-07-28)
+# ===========================================================================
+#
+# WHY A SECOND ARM. Arm 1 above is an IDENTITY ratchet: it keeps framework/
+# clean of the LAUNCHER's own display name, home path, org domain, product
+# slug and personal-source adapter. Exactly one of its live checks has
+# launcher-independent teeth (the absolute home path); the rest are SYNTHETIC
+# demo tokens (Testburg / bakery / *.example / examplesource), chosen so the
+# shipped tree names no real person. That design is right for what it guards
+# and it is why Arm 1 runs GREEN over a framework/ that hardcodes a Sentry
+# REST base, a Monday GraphQL client, a Telegram control plane, a Redis store
+# and a Vercel deploy enum: none of those literals is the demo identity.
+#
+# Arm 2 guards the OTHER half of the same promise. The framework is the seed
+# for ANY captain, in ANY industry, using ANY tool — so it may know that
+# things exist, have times, have actors and have volume, and it may NOT know
+# that any particular vendor, service or product exists. A partly-agnostic
+# framework is worse than an openly specific one: it reads as portable and is
+# not, and the stranger inherits assumptions nobody declared.
+#
+# THE TWO RULES, both DERIVED FROM THE TREE — never a list of vendor names.
+# A blocklist of vendors would be the very specific it is meant to prevent,
+# one level up, and this program has deleted four hand-maintained lists in a
+# week.
+#
+#   EXTERNAL_HOST  — a `https?://<host>` literal in framework/ whose host is
+#       not reserved-for-documentation. It is a SHAPE: every third-party
+#       endpoint matches it and the rule names none of them.
+#
+#   VENDOR_TOKEN   — a word-bounded occurrence, in framework/, of a vendor
+#       label DERIVED by self-join: the registrable label of every non-reserved
+#       host the repository itself mentions OUTSIDE framework/'s own scan set.
+#       The tree teaches the gate its own vendor vocabulary; the gate then
+#       forbids that vocabulary inside the universal layer. The vocabulary
+#       grows on its own as the instance/cabinet layers name more tools, so
+#       cleaning framework/ never blinds the rule (the seed does not live in
+#       the thing being cleaned).
+#
+# TWO CLASSES OF URL, ONE DERIVED DISTINCTION. A URL in *namespace position*
+# (`"$schema"`, `"$id"`, `"$ref"`, `xmlns`, a `!DOCTYPE ... PUBLIC` line) is a
+# FORMAT IDENTIFIER, not a service call — a JSON-Schema draft URI (scheme
+# omitted here on purpose: this file is itself a seed file, and writing a live
+# URL in it would teach the gate a label out of thin air) binds nothing at
+# runtime. Namespace-position URLs are skipped by
+# EXTERNAL_HOST and their labels are subtracted from the vendor vocabulary.
+# That single distinction is what keeps the repo's own `$id` namespace, the
+# JSON-Schema meta-schema and a plist DOCTYPE out of the rules without naming
+# any of them. (Cost, stated plainly: a vendor whose host appears ANYWHERE in
+# namespace position is subtracted from the vocabulary — see WHAT THIS CANNOT
+# SEE, item 6.)
+#
+# THE BASELINE IS A DEBT LEDGER, NOT A REGISTRY. `_SPECIFICS_BASELINE` (the
+# tracked sidecar file) records one line per known finding as
+# ``path:RULE:digest`` — a blake2s digest of the literal, never the literal.
+# That is deliberate: a baseline that spelled the nouns would BE the
+# hand-maintained vendor list this gate exists to prevent, and would read as
+# sanction ("# monday - by design"). The digest keeps it a debt ledger. The
+# offending literal is still shown, in full, in the failure message and in
+# `--report`, where a human needs it.
+#
+# RATCHET SEMANTICS. Green iff the live finding set is a SUBSET of the
+# baseline. A finding key is (path, rule, digest), so:
+#   * a NEW file under framework/ carrying any vendor literal  -> RED
+#   * a NEW vendor in an ALREADY-baselined file                -> RED
+#   * more uses of a vendor a file already carries             -> green
+# The last one is deliberate and is the whole false-positive story: ordinary
+# work inside a module that already speaks to a vendor does not fire, while
+# widening the framework's vendor surface always does. Line numbers are NOT
+# recorded, mirroring check-layer-separation.sh, so moving code never churns
+# the baseline.
+#
+# The baseline may only SHRINK: its size is capped by _SPECIFICS_BASELINE_MAX,
+# so admitting a new specific requires raising that number in the same commit
+# — visibly, in a diff, with a reviewer looking at it. There is no allowance
+# and no per-entry exemption to hide behind.
+#
+# WHAT THIS CANNOT SEE — read this before treating green as coverage.
+# The subtlest specifics carry no vendor name at all, and no mechanical check
+# in this file reaches them:
+#   1. A CLOSED ENUM whose members are one industry's verbs. 30 action types
+#      built around deploys and pushes make every act in a law firm, a clinic
+#      or a building site classify as `ambiguous` — permanently propose-only,
+#      with the graduation ladder unreachable. No literal is wrong; the
+#      TAXONOMY is. Only a direction gate catches that.
+#   2. A CAPABILITY or ROLE NAME. A resolver is agnostic; a resolver called
+#      `deploys_code_officer()` still asks a question about software. The seam
+#      is clean and the VOCABULARY crossing it is not.
+#   3. A UNIT baked into a schema key (`max_eur_per_day` beside
+#      `daily_per_officer_usd`) — the framework disagreeing with itself on
+#      currency is the tell that neither was decided. A key-shape rule needs
+#      ISO-4217, i.e. a list, so it is not attempted here.
+#   4. A CHARACTER, CADENCE or THRESHOLD encoding one operator's day —
+#      quiet hours 21:00-07:00, a fortnight cooldown, seven rendered
+#      decisions. Each is documented and reasonable; together they calibrate
+#      the cabinet to somebody else's tempo, and nothing prompts a stranger
+#      to look.
+#   5. A VENDOR NAMED ONLY IN framework/ AND NOWHERE ELSE seeds only itself;
+#      it is caught (the seed includes framework/'s own non-scanned files and
+#      its scan-set URLs), but a vendor mentioned by TOKEN ONLY, with no URL
+#      anywhere in the tree, is invisible to the self-join.
+#   6. A VENDOR LAUNDERED THROUGH NAMESPACE POSITION. One `"$schema"` line
+#      carrying a vendor host subtracts that label from the vocabulary.
+#   7. Anything in `cabinet/scripts/**`, `cabinet/dashboard/**`, `packs/**`
+#      or `presets/**`. This arm scans framework/ only — those layers are
+#      allowed specifics, and their boundary is defended by other gates.
+# Green here means "framework/ grew no NEW named third party". It does not
+# mean "framework/ is agnostic".
+
+
+# ---------------------------------------------------------------------------
+# Arm 2 — shapes, reserved sets, and the ONE hand-maintained exclusion
+# ---------------------------------------------------------------------------
+_SPECIFICS_BASELINE_PATH = Path(__file__).resolve().parent / "framework-specifics-baseline.txt"
+
+# The baseline may only SHRINK. Admitting a specific means raising this number
+# in the same commit — visibly, in the diff, with a reviewer on it.
+_SPECIFICS_BASELINE_MAX = 318
+
+_URL_RX = re.compile(r"https?://([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)")
+
+# A URL in NAMESPACE position is a format identifier, not a service call.
+_NS_CONTEXT_RX = re.compile(r'"\$(?:id|schema|ref|comment)"|xmlns|!DOCTYPE|\bPUBLIC\b')
+
+# RFC 2606 / RFC 6761 reserved-for-documentation + loopback + mDNS. A host here
+# names nobody, so it is neither a finding nor a source of vocabulary.
+_RESERVED_HOSTS = frozenset({"localhost", "example.com", "example.org", "example.net"})
+_RESERVED_HOST_SUFFIXES = (".example", ".invalid", ".test", ".localhost", ".local",
+                           ".example.com", ".example.org", ".example.net")
+_NUMERIC_HOST_RX = re.compile(r"[0-9.]+\Z")
+
+# Dated design snapshots under framework/docs/ are archived OUT of the egg by
+# cabinet/scripts/egg-export.sh (transform framework-docs-archive, rule R162):
+# they are the launching deployment's own history and never reach a stranger,
+# so policing them is churn with no stranger benefit. The predicate mirrors the
+# exporter's, as a DATE SHAPE rather than the exporter's hardcoded year.
+_DATED_DESIGN_DOC_RX = re.compile(r"-\d{4}-\d{2}-\d{2}\.md\Z")
+
+_MIN_LABEL_LEN = 4  # below this a host label is URL grammar (api, www, io, x), not a name
+
+# WHERE THE VOCABULARY MAY COME FROM. The seed walk takes every root-level file
+# plus these top-level directories, and nothing else — an INCLUDE list of this
+# repository's OWN layers, not an exclude list of things to dodge.
+#
+# The per-deployment layer is deliberately absent. A stranger's own suppliers
+# live there legitimately, and letting them seed would make this gate go red on
+# their own supplier's name appearing anywhere in framework/ prose. So is the
+# preset layer, for the same reason at one remove. Omitting a root can only
+# SHRINK the vocabulary, which can only shrink the finding set — it fails toward
+# green, never toward a false red, so a root that does not exist in a hatched
+# cabinet or an egg cut costs nothing.
+#
+# Determinism is the reason this is a walk over declared roots rather than a
+# tracked-file listing: it must produce the same vocabulary in CI, in a hatched
+# cabinet with no git metadata, and in a dirty dev checkout.
+_SEED_ROOTS = (
+    "framework", "cabinet", "docs", "packs", "memory", "shared",
+    ".claude", ".claude-plugin", ".github",
+)
+# Never descended into even under a seed root: build output and dependency
+# trees are not the repository's own vocabulary.
+_SEED_SKIP_DIRS = frozenset({
+    ".git", "node_modules", "__pycache__", ".venv", "venv", ".mypy_cache",
+    ".pytest_cache", ".ruff_cache", ".next", "dist", "build",
+})
+_SEED_MAX_BYTES = 512 * 1024  # lockfiles and bundles carry no doctrine
+
+# THE ONE HAND-MAINTAINED ELEMENT IN ARM 2, stated plainly because the standard
+# says to. These are vendor labels the self-join DERIVES correctly and that the
+# TOKEN rule cannot use, because the label is also an ordinary English word in
+# this repository's own prose. Excluding a label narrows enforcement to
+# EXTERNAL_HOST (its URL is still forbidden); it does not bless the vendor.
+# The set may only SHRINK (_COLLISION_TOKENS_MAX) and every entry carries the
+# measurement that justifies it. It is an EXCLUSION list, so growing it weakens
+# the gate — the opposite pressure from a blocklist, which is why it is capped.
+_COLLISION_TOKENS: Dict[str, str] = {
+    "make": "English verb and identifier prefix — 84 lines across 48 framework "
+            "files (make_resolve_step, 'build|make|create'). Collides with make.com.",
+    "linear": "English adjective — 4 of its 7 framework files are 'a single "
+              "linear scan' / 'one linear chain' / 'pre-compiled and linear'. "
+              "Collides with linear.app.",
+    "acme": "the universal documentation placeholder company (acme.example, "
+            "'Suggestion - acme:'), not a vendor this framework binds to. "
+            "Collides with acme.com.",
+    "evil": "English adjective carrying the threat-model prose ('/tmp/evil', "
+            "'/dev/tcp/evil.example/25'). Collides with evil.com.",
+}
+_COLLISION_TOKENS_MAX = 4  # may only be LOWERED
+
+
+SpecificsFinding = Tuple[str, str, str, int]  # (path, rule, literal, line_no)
+
+
+def _host_is_reserved(host: str) -> bool:
+    """True for a host that names nobody: RFC 2606 / 6761 documentation and
+    special-use names, loopback/bare IPs, and a bare label (a placeholder or an
+    interpolated variable, not a public host)."""
+    h = host.lower().rstrip(".")
+    if h in _RESERVED_HOSTS:
+        return True
+    if h.endswith(_RESERVED_HOST_SUFFIXES):
+        return True
+    if _NUMERIC_HOST_RX.match(h):
+        return True
+    return "." not in h
+
+
+def _registrable_label(host: str) -> Optional[str]:
+    """The label that names the operator of a host: the second-to-last label
+    (`api.monday.com` -> `monday`, `sentry.io` -> `sentry`). Deliberately needs
+    NO public-suffix list — over-long results on a multi-part TLD would simply
+    be a label nobody writes in source, and under-matching costs a finding, not
+    a false one."""
+    parts = host.lower().rstrip(".").split(".")
+    return parts[-2] if len(parts) >= 2 else None
+
+
+def _read_text_file(path: Path) -> Optional[str]:
+    """Read-only, total: returns None for unreadable or binary content (never
+    raises, never imports, never executes)."""
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return None
+    if b"\0" in raw[:8192]:
+        return None
+    return raw.decode("utf-8", "replace")
+
+
+def iter_seed_files(root: Path) -> Iterator[Path]:
+    """Every text file the vocabulary may be derived from: root-level files plus
+    the declared _SEED_ROOTS (see the comment there for why it is an include
+    list, and which layers are deliberately absent)."""
+    root = Path(root)
+    def _files_under(base: Path, recurse: bool) -> Iterator[Path]:
+        if not base.is_dir():
+            return
+        for dirpath, dirnames, filenames in os.walk(str(base)):
+            dirnames[:] = ([] if not recurse
+                           else sorted(d for d in dirnames if d not in _SEED_SKIP_DIRS))
+            for name in sorted(filenames):
+                p = Path(dirpath) / name
+                try:
+                    if p.is_symlink() or p.stat().st_size > _SEED_MAX_BYTES:
+                        continue
+                except OSError:
+                    continue
+                yield p
+    for p in _files_under(root, recurse=False):
+        yield p
+    for rel in _SEED_ROOTS:
+        for p in _files_under(root / rel, recurse=True):
+            yield p
+
+
+def derive_vendor_vocabulary(root) -> "frozenset[str]":
+    """THE SELF-JOIN. Read every seed file; every non-reserved host in SERVICE
+    position contributes its registrable label to the vendor vocabulary, and
+    every host in NAMESPACE position subtracts its label (a format identifier
+    binds nothing). Word-collision labels are removed last. Nothing here is a
+    list of vendors: the tree teaches the gate its own vocabulary."""
+    service = set()  # type: set
+    namespace = set()  # type: set
+    for p in iter_seed_files(Path(root)):
+        txt = _read_text_file(p)
+        if txt is None:
+            continue
+        for line in txt.splitlines():
+            if "://" not in line:
+                continue
+            ns = _NS_CONTEXT_RX.search(line) is not None
+            for m in _URL_RX.finditer(line):
+                host = m.group(1)
+                if _host_is_reserved(host):
+                    continue
+                lab = _registrable_label(host)
+                if not lab or len(lab) < _MIN_LABEL_LEN:
+                    continue
+                (namespace if ns else service).add(lab)
+    return frozenset(service - namespace - set(_COLLISION_TOKENS))
+
+
+def iter_specifics_files(root: Path) -> Iterator[Path]:
+    """The scan set: every text file under the tree EXCEPT tests (same skips as
+    Arm 1, so the two arms police the same surface) and the dated design
+    snapshots the egg export archives out."""
+    for dirpath, dirnames, filenames in os.walk(str(root)):
+        dirnames[:] = sorted(d for d in dirnames
+                             if d not in ("__pycache__", "tests") and d not in _SEED_SKIP_DIRS)
+        for name in sorted(filenames):
+            if name.startswith("test_") or name.endswith("_test.py"):
+                continue
+            p = Path(dirpath) / name
+            rel = p.relative_to(root).as_posix()
+            if rel.startswith("docs/") and _DATED_DESIGN_DOC_RX.search(name):
+                continue
+            yield p
+
+
+def _strip_reserved_url_text(line: str) -> str:
+    """Blank out documentation-host URLs before token matching, so a reserved
+    host never contributes a token hit (`xtest.acme.example` is not a vendor)."""
+    out, last = [], 0
+    for m in _URL_RX.finditer(line):
+        if _host_is_reserved(m.group(1)):
+            out.append(line[last:m.start()])
+            last = m.end()
+    out.append(line[last:])
+    return "".join(out)
+
+
+def _vocabulary_regex(vocabulary) -> "Optional[re.Pattern[str]]":
+    if not vocabulary:
+        return None
+    alts = "|".join(re.escape(v) for v in sorted(vocabulary, key=lambda s: (-len(s), s)))
+    return re.compile(r"(?<![A-Za-z0-9])(" + alts + r")(?![A-Za-z0-9])", re.IGNORECASE)
+
+
+def scan_specifics(root, vocabulary=None, rel_to=None) -> List[SpecificsFinding]:
+    """Read-only scan of ``root`` for third-party specifics. Returns
+    (display_path, RULE, literal, line_no), sorted. Symlink escapes are
+    refused, never followed (realpath containment, mirroring Arm 1)."""
+    root = Path(root)
+    base = Path(rel_to) if rel_to is not None else root
+    if vocabulary is None:
+        vocabulary = derive_vendor_vocabulary(base)
+    vrx = _vocabulary_regex(vocabulary)
+    real_root = os.path.realpath(str(root))
+    found = []  # type: List[SpecificsFinding]
+    for p in iter_specifics_files(root):
+        try:
+            display = p.relative_to(base).as_posix()
+        except ValueError:
+            display = p.as_posix()
+        rp = os.path.realpath(str(p))
+        if rp != real_root and not rp.startswith(real_root + os.sep):
+            found.append((display, "SYMLINK_ESCAPE", display, 0))
+            continue
+        txt = _read_text_file(p)
+        if txt is None:
+            continue
+        for i, line in enumerate(txt.splitlines(), 1):
+            ns = _NS_CONTEXT_RX.search(line) is not None
+            if not ns and "://" in line:
+                for m in _URL_RX.finditer(line):
+                    host = m.group(1).lower()
+                    if not _host_is_reserved(host):
+                        found.append((display, "EXTERNAL_HOST", host, i))
+            if vrx is not None and not ns:
+                seen = set()
+                for m in vrx.finditer(_strip_reserved_url_text(line)):
+                    tok = m.group(1).lower()
+                    if tok not in seen:
+                        seen.add(tok)
+                        found.append((display, "VENDOR_TOKEN", tok, i))
+    return sorted(found)
+
+
+def specifics_key(finding: SpecificsFinding) -> str:
+    """The baseline key: ``path:RULE:digest``. The digest — never the literal —
+    is what keeps the baseline a debt ledger instead of a vendor registry."""
+    path, rule, literal, _line = finding
+    return "%s:%s:%s" % (path, rule, hashlib.blake2s(
+        literal.encode("utf-8"), digest_size=4).hexdigest())
+
+
+def load_specifics_baseline(path=None) -> "frozenset[str]":
+    p = Path(path) if path is not None else _SPECIFICS_BASELINE_PATH
+    try:
+        text = p.read_text(encoding="utf-8")
+    except OSError:
+        return frozenset()
+    return frozenset(ln.strip() for ln in text.splitlines()
+                     if ln.strip() and not ln.startswith("#"))
+
+
+_SPECIFICS_BASELINE_HEADER = (
+    "# framework-specifics-baseline.txt — the DEBT LEDGER for Arm 2 of\n"
+    "# framework/tests/test_no_launcher_hardcode.py (the specifics ratchet).\n"
+    "#\n"
+    "# One line per known third-party specific already inside framework/, as\n"
+    "#     <path>:<RULE>:<blake2s-4 digest of the literal>\n"
+    "# The digest is deliberate. Spelling the vendor here would make THIS FILE\n"
+    "# the hand-maintained list of vendors the gate exists to prevent, and each\n"
+    "# line would read as sanction. It is debt, not design. Run\n"
+    "#     python3 framework/tests/test_no_launcher_hardcode.py --report\n"
+    "# to see every entry with its literal, path and line.\n"
+    "#\n"
+    "# Machine-generated: `--update-baseline`. It may only SHRINK — the size cap\n"
+    "# _SPECIFICS_BASELINE_MAX must be raised, in the same commit, to admit one.\n"
+)
+
+
+def render_specifics_baseline(keys) -> str:
+    return _SPECIFICS_BASELINE_HEADER + "".join(k + "\n" for k in sorted(keys))
+
+
+
+
+_SPECIFICS_HINT = (
+    "framework/ may not name a third-party vendor, service or product — the "
+    "framework is the seed for ANY captain, in ANY industry, with ANY tool. "
+    "Route the specific to the per-deployment layer, reach it through an "
+    "adapter seam (the channel-adapter protocol under framework/channels/, "
+    "framework.sources.get_source), or read it from config — the DOTTED "
+    "module path for the channel seam is deliberately not written here: a "
+    "sibling tripwire fences every file that can bind it. If the coupling "
+    "is genuinely unavoidable TODAY, it "
+    "is DEBT, not design: run\n"
+    "    python3 framework/tests/test_no_launcher_hardcode.py --update-baseline\n"
+    "and RAISE _SPECIFICS_BASELINE_MAX in the same commit so the admission is "
+    "visible in the diff")
+
+
+class TestSpecificsRatchet:
+    """Arm 2 over the live tree."""
+
+    def test_framework_carries_no_new_specific(self):
+        """THE RATCHET: the live finding set must be a SUBSET of the tracked
+        debt baseline. A new file carrying a vendor literal, or a NEW vendor in
+        an already-known file, is a CI failure — not a review note."""
+        vocabulary = derive_vendor_vocabulary(_REPO_ROOT)
+        findings = scan_specifics(_REPO_ROOT / "framework", vocabulary=vocabulary,
+                                  rel_to=_REPO_ROOT)
+        baseline = load_specifics_baseline()
+        new = [f for f in findings if specifics_key(f) not in baseline]
+        assert new == [], "%s\nNEW specifics: %s" % (
+            _SPECIFICS_HINT,
+            ["%s:%d (%s %s)" % (f[0], f[3], f[1], f[2]) for f in new[:40]])
+
+    def test_baseline_only_shrinks(self):
+        """Intent lock: the debt ledger may only SHRINK. Admitting a specific
+        means raising _SPECIFICS_BASELINE_MAX in the same commit — visibly, in
+        the diff. There is no per-entry allowance to hide an admission in."""
+        baseline = load_specifics_baseline()
+        assert len(baseline) <= _SPECIFICS_BASELINE_MAX, (
+            "specifics baseline grew (%d > %d) — %s"
+            % (len(baseline), _SPECIFICS_BASELINE_MAX, _SPECIFICS_HINT))
+
+    def test_baseline_is_a_debt_ledger_not_a_vendor_registry(self):
+        """The forcing function on the baseline's SHAPE: every line must end in
+        an opaque digest. The moment someone writes the noun there ("# monday —
+        by design") the file has become the hand-maintained vendor list this
+        gate exists to prevent, one level up. This test makes that unlandable."""
+        bad = [ln for ln in load_specifics_baseline()
+               if not re.match(r"\A[^:]+:[A-Z_]+:[0-9a-f]{8}\Z", ln)]
+        assert bad == [], (
+            "baseline lines must be '<path>:<RULE>:<digest>' — a spelled-out "
+            "vendor noun turns the debt ledger into a registry: %s" % bad[:10])
+
+    def test_collision_exclusions_only_shrink_and_are_justified(self):
+        """The ONE hand-maintained element in Arm 2 is capped and documented.
+        Growing it WEAKENS the gate (it is an exclusion list), so it may only
+        shrink, and every entry must carry the measurement that justifies it."""
+        assert len(_COLLISION_TOKENS) <= _COLLISION_TOKENS_MAX, (
+            "word-collision exclusions grew (%d > %d) — narrow the token or fix "
+            "the code; do not widen the exclusion"
+            % (len(_COLLISION_TOKENS), _COLLISION_TOKENS_MAX))
+        thin = [k for k, why in _COLLISION_TOKENS.items() if len(why) < 40]
+        assert thin == [], "unjustified collision exclusions: %s" % thin
+
+    def test_the_live_vocabulary_is_derived_and_non_empty(self):
+        """Non-vacuity of the SEED: a vocabulary that came back empty would make
+        VENDOR_TOKEN a no-op while still reporting green — the exact
+        sensor-tests-nothing failure this program keeps finding. It is derived
+        from the tree, so it is asserted to be non-trivial, never listed."""
+        vocabulary = derive_vendor_vocabulary(_REPO_ROOT)
+        assert len(vocabulary) >= 10, (
+            "the self-join derived only %d vendor labels — the seed walk is "
+            "broken (skip-dirs? size cap?), and VENDOR_TOKEN is inert"
+            % len(vocabulary))
+        assert not (set(_COLLISION_TOKENS) & vocabulary)
+
+
+class TestSpecificsEngine:
+    """Hermetic proofs on own tmp trees — never the real baseline."""
+
+    @staticmethod
+    def _write(p: Path, body: str) -> None:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(body, encoding="utf-8")
+
+    def _tree(self, tmp_path, seed: str = "", fw=None):
+        """A miniature repo: a seed file OUTSIDE framework/ teaches the
+        vocabulary, files under framework/ are what gets scanned."""
+        self._write(tmp_path / "cabinet" / "notes.md", seed)
+        for rel, body in (fw or {}).items():
+            self._write(tmp_path / "framework" / rel, body)
+        return derive_vendor_vocabulary(tmp_path)
+
+    def test_vocabulary_is_derived_from_the_tree(self, tmp_path):
+        v = self._tree(tmp_path, seed="see https://api.vendorx.io/v2 for the API\n")
+        assert "vendorx" in v
+
+    def test_flags_a_new_external_host(self, tmp_path):
+        v = self._tree(tmp_path, fw={"m.py": "BASE = 'https://api.vendorx.io/v2'\n"})
+        f = scan_specifics(tmp_path / "framework", vocabulary=v, rel_to=tmp_path)
+        assert ("framework/m.py", "EXTERNAL_HOST", "api.vendorx.io", 1) in f
+
+    def test_flags_a_derived_vendor_token(self, tmp_path):
+        """The self-join with teeth: the URL lives OUTSIDE framework/, the bare
+        NAME inside it, and the rule never spelled the vendor."""
+        v = self._tree(tmp_path, seed="https://api.vendorx.io/v2\n",
+                       fw={"m.py": "# push the card to VendorX when it lands\n"})
+        f = scan_specifics(tmp_path / "framework", vocabulary=v, rel_to=tmp_path)
+        assert ("framework/m.py", "VENDOR_TOKEN", "vendorx", 1) in f
+
+    def test_ignores_reserved_documentation_hosts(self, tmp_path):
+        """RFC 2606 / 6761 hosts name nobody: not a finding, and not vocabulary."""
+        v = self._tree(tmp_path, seed="https://api.example.com/v2 https://x.invalid/\n",
+                       fw={"m.py": "A = 'https://api.example.com/v2'\n"
+                                   "B = 'https://box.acme.example/'\n"
+                                   "C = 'http://localhost:8080/'\n"
+                                   "D = 'http://127.0.0.1:6379'\n"})
+        assert scan_specifics(tmp_path / "framework", vocabulary=v, rel_to=tmp_path) == []
+
+    def test_ignores_namespace_position_urls(self, tmp_path):
+        """A $schema / $id / DOCTYPE URI is a FORMAT identifier, not a service."""
+        v = self._tree(tmp_path, fw={
+            "s.json": '{\n  "$schema": "https://spec.vendorx.io/draft/2020-12/schema",\n'
+                      '  "$id": "https://own.vendorx.io/schemas/thing"\n}\n'})
+        assert scan_specifics(tmp_path / "framework", vocabulary=v, rel_to=tmp_path) == []
+
+    def test_namespace_position_subtracts_from_the_vocabulary(self, tmp_path):
+        """Stated cost, pinned: a label used anywhere as a format identifier is
+        removed from the vendor vocabulary (see 'WHAT THIS CANNOT SEE', 6)."""
+        v = self._tree(tmp_path,
+                       seed='"$schema": "https://spec.vendorx.io/d"\nhttps://api.vendorx.io/v2\n')
+        assert "vendorx" not in v
+
+    def test_a_layer_outside_the_seed_roots_never_seeds(self, tmp_path):
+        # A stranger's OWN suppliers live in the per-deployment layer
+        # legitimately; letting them bind the framework gate would go red on
+        # their supplier's name. That layer is not a seed root, so a URL under
+        # any non-root directory contributes nothing.
+        self._write(tmp_path / "not-a-seed-root" / "config" / "x.yml",
+                    "url: https://api.vendorx.io/v2\n")
+        assert "vendorx" not in derive_vendor_vocabulary(tmp_path)
+        # ...and the control: the SAME file under a seed root does seed, so the
+        # arm above cannot pass by the walk being broken.
+        self._write(tmp_path / "cabinet" / "config" / "x.yml",
+                    "url: https://api.vendorx.io/v2\n")
+        assert "vendorx" in derive_vendor_vocabulary(tmp_path)
+
+    def test_skips_tests_and_dated_design_snapshots(self, tmp_path):
+        v = self._tree(tmp_path, seed="https://api.vendorx.io/v2\n", fw={
+            "tests/test_x.py": "VendorX\n",
+            "test_top.py": "VendorX\n",
+            "pkg/thing_test.py": "VendorX\n",
+            "__pycache__/c.py": "VendorX\n",
+            "docs/design-2026-06-19.md": "VendorX everywhere\n",
+        })
+        assert scan_specifics(tmp_path / "framework", vocabulary=v, rel_to=tmp_path) == []
+
+    def test_living_docs_are_still_scanned(self, tmp_path):
+        """Only the DATED snapshots the egg export archives out are skipped —
+        the undated living contract docs still ship to a stranger."""
+        v = self._tree(tmp_path, seed="https://api.vendorx.io/v2\n",
+                       fw={"docs/work-model.md": "sync to VendorX\n"})
+        f = scan_specifics(tmp_path / "framework", vocabulary=v, rel_to=tmp_path)
+        assert [(x[0], x[1]) for x in f] == [("framework/docs/work-model.md", "VENDOR_TOKEN")]
+
+    def test_non_python_files_are_scanned(self, tmp_path):
+        """Arm 1 is .py-only; the specifics that bind hardest live in YAML and
+        Markdown (a safety policy's deploy patterns, a constitution's tracker
+        list), so Arm 2 walks every text file."""
+        v = self._tree(tmp_path, seed="https://api.vendorx.io/v2\n", fw={
+            "policies/base-safety.yml": "patterns: ['vendorx deploy']\n",
+            "constitution-base.md": "External trackers (VendorX, ...)\n"})
+        got = sorted({x[0] for x in scan_specifics(
+            tmp_path / "framework", vocabulary=v, rel_to=tmp_path)})
+        assert got == ["framework/constitution-base.md",
+                       "framework/policies/base-safety.yml"]
+
+    def test_word_collision_tokens_never_fire(self, tmp_path):
+        """The measured false-positive class: an English word that is also a
+        vendor label. Excluded from the TOKEN rule; its URL still fires."""
+        for tok in _COLLISION_TOKENS:
+            v = self._tree(tmp_path, seed="https://api.%s.io/v2\n" % tok,
+                           fw={"m.py": "# an ordinary sentence using %s here\n" % tok})
+            f = scan_specifics(tmp_path / "framework", vocabulary=v, rel_to=tmp_path)
+            assert [x for x in f if x[1] == "VENDOR_TOKEN"] == [], tok
+
+    def test_binary_and_oversized_seed_files_are_skipped(self, tmp_path):
+        self._write(tmp_path / "cabinet" / "notes.md", "")
+        (tmp_path / "cabinet" / "blob.bin").write_bytes(
+            b"https://api.vendorx.io/v2\x00\x01\x02")
+        assert "vendorx" not in derive_vendor_vocabulary(tmp_path)
+
+    def test_symlink_escape_is_refused(self, tmp_path):
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "secret.py").write_text("x = 1\n", encoding="utf-8")
+        root = tmp_path / "framework"
+        root.mkdir()
+        try:
+            (root / "link.py").symlink_to(outside / "secret.py")
+        except (OSError, NotImplementedError):  # pragma: no cover — FS w/o symlinks
+            if pytest is not None:
+                pytest.skip("symlinks unsupported on this filesystem")
+            return
+        f = scan_specifics(root, vocabulary=frozenset(), rel_to=tmp_path)
+        assert any(x[1] == "SYMLINK_ESCAPE" for x in f)
+
+
+class TestSpecificsRatchetIsNonVacuous:
+    """The property that decides whether this gate is worth having: it must be
+    SEEN to fail on a new specific, in both rules, against the REAL vocabulary
+    and the REAL baseline. A gate never seen to fail proves nothing."""
+
+    def test_a_new_specific_in_a_new_framework_file_is_red(self, tmp_path):
+        vocabulary = derive_vendor_vocabulary(_REPO_ROOT)
+        baseline = load_specifics_baseline()
+        # A vendor the TREE itself names — resolved at runtime, so this test
+        # spells no vendor either.
+        token = sorted(vocabulary)[0]
+        d = tmp_path / "framework" / "acting"
+        d.mkdir(parents=True)
+        (d / "brand_new_module.py").write_text(
+            "BASE = 'https://api.brand-new-third-party.systems/v1'\n"
+            "# also mentions %s by name\n" % token, encoding="utf-8")
+        f = scan_specifics(tmp_path / "framework", vocabulary=vocabulary, rel_to=tmp_path)
+        rules = {x[1] for x in f}
+        assert rules == {"EXTERNAL_HOST", "VENDOR_TOKEN"}, f
+        assert all(specifics_key(x) not in baseline for x in f), (
+            "the live baseline already covers a path that does not exist — the "
+            "ratchet would pass a planted specific")
+
+    def test_a_new_vendor_inside_an_already_baselined_file_is_red(self, tmp_path):
+        """The narrow case a presence-only baseline would miss: the file is
+        already known debt, and a DIFFERENT vendor is added to it."""
+        seed = "https://api.vendorx.io/1 https://api.vendory.io/1\n"
+        (tmp_path / "cabinet").mkdir()
+        (tmp_path / "cabinet" / "n.md").write_text(seed, encoding="utf-8")
+        fw = tmp_path / "framework"
+        fw.mkdir()
+        (fw / "m.py").write_text("# talks to vendorx\n", encoding="utf-8")
+        v = derive_vendor_vocabulary(tmp_path)
+        known = {specifics_key(x) for x in
+                 scan_specifics(fw, vocabulary=v, rel_to=tmp_path)}
+        (fw / "m.py").write_text("# talks to vendorx\n# and now vendory too\n",
+                                 encoding="utf-8")
+        after = scan_specifics(fw, vocabulary=v, rel_to=tmp_path)
+        assert [x for x in after if specifics_key(x) not in known], after
+
+    def test_more_uses_of_a_vendor_the_file_already_carries_stay_green(self, tmp_path):
+        """The deliberate false-positive floor: ordinary work inside a module
+        that already speaks to a vendor must NOT fire, or the gate is disabled
+        within a week."""
+        (tmp_path / "cabinet").mkdir()
+        (tmp_path / "cabinet" / "n.md").write_text("https://api.vendorx.io/1\n",
+                                                   encoding="utf-8")
+        fw = tmp_path / "framework"
+        fw.mkdir()
+        (fw / "m.py").write_text("# talks to vendorx\n", encoding="utf-8")
+        v = derive_vendor_vocabulary(tmp_path)
+        known = {specifics_key(x) for x in
+                 scan_specifics(fw, vocabulary=v, rel_to=tmp_path)}
+        (fw / "m.py").write_text(
+            "# talks to vendorx\n" * 4 + "def more_vendorx_calls(): pass\n",
+            encoding="utf-8")
+        after = scan_specifics(fw, vocabulary=v, rel_to=tmp_path)
+        assert [x for x in after if specifics_key(x) not in known] == []
+
+
 # CLI mode: `python3 framework/tests/test_no_launcher_hardcode.py` prints every
 # offender and exits non-zero — usable under the system python without pytest.
 if __name__ == "__main__":  # pragma: no cover
     import sys
+
+    argv = sys.argv[1:]
+    mode = argv[0] if argv else "--check"
+    if mode not in ("--check", "--report", "--update-baseline"):
+        print("usage: test_no_launcher_hardcode.py [--check|--report|--update-baseline]")
+        sys.exit(2)
+
     offenders = scan_tree(_REPO_ROOT / "framework", rel_to=_REPO_ROOT)
+    vocabulary = derive_vendor_vocabulary(_REPO_ROOT)
+    specifics = scan_specifics(_REPO_ROOT / "framework", vocabulary=vocabulary,
+                               rel_to=_REPO_ROOT)
+    baseline = load_specifics_baseline()
+
+    if mode == "--update-baseline":
+        keys = {specifics_key(f) for f in specifics}
+        _SPECIFICS_BASELINE_PATH.write_text(render_specifics_baseline(keys),
+                                            encoding="utf-8")
+        print("wrote %s: %d entries (cap %d) from a vocabulary of %d derived labels"
+              % (_SPECIFICS_BASELINE_PATH.name, len(keys),
+                 _SPECIFICS_BASELINE_MAX, len(vocabulary)))
+        if len(keys) > _SPECIFICS_BASELINE_MAX:
+            print("RAISE _SPECIFICS_BASELINE_MAX to %d in this same commit — the "
+                  "admission has to be visible in the diff." % len(keys))
+        sys.exit(0)
+
     for d, i, why in offenders:
-        print("%s:%d  %s" % (d, i, why))
-    print(("FAIL: %s" % _HINT) if offenders else "OK: framework/ is launcher-agnostic")
-    sys.exit(1 if offenders else 0)
+        print("arm1 %s:%d  %s" % (d, i, why))
+    new_specifics = [f for f in specifics if specifics_key(f) not in baseline]
+    show = specifics if mode == "--report" else new_specifics
+    for path, rule, literal, line in show:
+        mark = " " if specifics_key((path, rule, literal, line)) in baseline else "*"
+        print("arm2%s%s:%d  %s  %s" % (mark, path, line, rule, literal))
+    if mode == "--report":
+        print("arm2: %d findings, %d baselined, %d NEW (* above); vocabulary %d labels"
+              % (len(specifics), len(specifics) - len(new_specifics),
+                 len(new_specifics), len(vocabulary)))
+
+    bad = bool(offenders) or bool(new_specifics)
+    if offenders:
+        print("FAIL (arm1): %s" % _HINT)
+    if new_specifics:
+        print("FAIL (arm2): %s" % _SPECIFICS_HINT)
+    if not bad:
+        print("OK: framework/ is launcher-agnostic and carries no NEW specific "
+              "(%d known debt keys over %d occurrences, cap %d; vocabulary %d "
+              "derived labels)"
+              % (len({specifics_key(f) for f in specifics}), len(specifics),
+                 _SPECIFICS_BASELINE_MAX, len(vocabulary)))
+    sys.exit(1 if (bad and mode != "--report") else 0)

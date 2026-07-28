@@ -3416,9 +3416,9 @@ class TestCommandWordIsAProgram:
         assert set(bins) == {"find", "head"}
 
     def test_case_patterns_are_not_commands(self):
-        """`polads-ceo)` is a PATTERN; bash never executes it. The subject of
+        """`<lane>-ceo)` is a PATTERN; bash never executes it. The subject of
         `case "$x" in` is not a command either."""
-        cmd = 'case "$x" in\n  polads-ceo) echo one;;\n  *) echo other;;\nesac'
+        cmd = 'case "$x" in\n  lane-one-ceo) echo one;;\n  *) echo other;;\nesac'
         assert set(extract_invoked_binaries(cmd)) == {"echo"}
         assert "$x" not in extract_invoked_binaries(cmd)
 

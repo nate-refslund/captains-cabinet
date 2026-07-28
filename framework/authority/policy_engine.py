@@ -769,9 +769,9 @@ def _split_on_statement_seps(command: str) -> list[str]:
                 flush()
                 paren_depth -= 1
             elif case_depth > 0:
-                # A case PATTERN (`polads-ceo)`), not a command. Bash never
+                # A case PATTERN (`<lane>-ceo)`), not a command. Bash never
                 # executes it; resolving it as a command word is how
-                # `[polads-ceo` and friends reached the resolver.
+                # `[<lane>-ceo` and friends reached the resolver.
                 flush(drop=True)
             else:
                 # Unbalanced: keep what came before rather than drop it.
