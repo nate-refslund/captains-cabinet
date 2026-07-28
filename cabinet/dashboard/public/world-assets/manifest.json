@@ -24137,6 +24137,206 @@
    "sha256": "425e9f93215cbc91ffe816c57c15065b4482756b907c644e8596ec977efb9843",
    "pack": "Cabinet World iso pack — atlas-0 (designs/world-pack, PixelLab-generated)",
    "license": "owned — org-original"
+  },
+  {
+   "id": "originals/characters/Premade_Character_01",
+   "path": "originals/characters/Premade_Character_01.png",
+   "w": 384,
+   "h": 96,
+   "grid": 16,
+   "sha256": "9aedfeeb201a95a7d8b513451bfccc7fb819cb7ff020405463ff57aaeec1b4e5",
+   "pack": "Cabinet World actor_officer family — owned, generated 2026-07-28",
+   "license": "owned — org-original"
+  },
+  {
+   "id": "originals/characters/Premade_Character_02",
+   "path": "originals/characters/Premade_Character_02.png",
+   "w": 384,
+   "h": 96,
+   "grid": 16,
+   "sha256": "e60f8182d79daad425f722d65535e8d517ea8f3442d72e44e939a77b09631873",
+   "pack": "Cabinet World actor_officer family — owned, generated 2026-07-28",
+   "license": "owned — org-original"
+  },
+  {
+   "id": "originals/characters/Premade_Character_03",
+   "path": "originals/characters/Premade_Character_03.png",
+   "w": 384,
+   "h": 96,
+   "grid": 16,
+   "sha256": "902443c2475f46462ff8fe671968c41f12c40f5fd6123ae317e0e5dd41bc0f75",
+   "pack": "Cabinet World actor_officer family — owned, generated 2026-07-28",
+   "license": "owned — org-original"
+  },
+  {
+   "id": "originals/characters/Premade_Character_04",
+   "path": "originals/characters/Premade_Character_04.png",
+   "w": 384,
+   "h": 96,
+   "grid": 16,
+   "sha256": "0a99ee1d0cddfe901756bdb8cca46030b6715a76c9e09c07707c1a83d07ff873",
+   "pack": "Cabinet World actor_officer family — owned, generated 2026-07-28",
+   "license": "owned — org-original"
+  },
+  {
+   "id": "originals/characters/Premade_Character_05",
+   "path": "originals/characters/Premade_Character_05.png",
+   "w": 384,
+   "h": 96,
+   "grid": 16,
+   "sha256": "2de8059914d7cc5f24df1e430c85637fbf52e4f09244a7657bc24710a783d8d2",
+   "pack": "Cabinet World actor_officer family — owned, generated 2026-07-28",
+   "license": "owned — org-original"
+  },
+  {
+   "id": "originals/characters/Premade_Character_06",
+   "path": "originals/characters/Premade_Character_06.png",
+   "w": 384,
+   "h": 96,
+   "grid": 16,
+   "sha256": "8e404f56ea03454e63f2f06ac1f2655df0ea50335348429642d9f31ecc686274",
+   "pack": "Cabinet World actor_officer family — owned, generated 2026-07-28",
+   "license": "owned — org-original"
+  },
+  {
+   "id": "originals/characters/Premade_Character_07",
+   "path": "originals/characters/Premade_Character_07.png",
+   "w": 384,
+   "h": 96,
+   "grid": 16,
+   "sha256": "ed563791be762060eda6a16f114b6f43ba90fc16f56117e386cee2b65433328a",
+   "pack": "Cabinet World actor_officer family — owned, generated 2026-07-28",
+   "license": "owned — org-original"
+  },
+  {
+   "id": "originals/characters/Premade_Character_08",
+   "path": "originals/characters/Premade_Character_08.png",
+   "w": 384,
+   "h": 96,
+   "grid": 16,
+   "sha256": "fc83aaa82c96f87299d5a42e570c6dfd94f890dccc61ebaae9f247dd240b9b56",
+   "pack": "Cabinet World actor_officer family — owned, generated 2026-07-28",
+   "license": "owned — org-original"
+  },
+  {
+   "id": "originals/characters/Premade_Character_09",
+   "path": "originals/characters/Premade_Character_09.png",
+   "w": 384,
+   "h": 96,
+   "grid": 16,
+   "sha256": "4c5bf11550ff9b336e420d1e21c5ab8dc43b861616518f644bf5197ed0a8c122",
+   "pack": "Cabinet World actor_officer family — owned, generated 2026-07-28",
+   "license": "owned — org-original"
+  },
+  {
+   "id": "originals/characters/Premade_Character_10",
+   "path": "originals/characters/Premade_Character_10.png",
+   "w": 384,
+   "h": 96,
+   "grid": 16,
+   "sha256": "d1b7872083f631bee4b989a78d7f25da1d5e1901212dab8df06010d570a47455",
+   "pack": "Cabinet World actor_officer family — owned, generated 2026-07-28",
+   "license": "owned — org-original"
+  },
+  {
+   "id": "originals/characters/Premade_Character_11",
+   "path": "originals/characters/Premade_Character_11.png",
+   "w": 384,
+   "h": 96,
+   "grid": 16,
+   "sha256": "86064d9a0e5639facbfcc0938277ad14d3b013c371653ba4ce88b288f873f76e",
+   "pack": "Cabinet World actor_officer family — owned, generated 2026-07-28",
+   "license": "owned — org-original"
+  },
+  {
+   "id": "originals/characters/Premade_Character_12",
+   "path": "originals/characters/Premade_Character_12.png",
+   "w": 384,
+   "h": 96,
+   "grid": 16,
+   "sha256": "fc9b526bd01393c19c1b4a7a4fce5bf166d5e804f4be88ff5d1800864edcf93e",
+   "pack": "Cabinet World actor_officer family — owned, generated 2026-07-28",
+   "license": "owned — org-original"
+  },
+  {
+   "id": "originals/characters/Premade_Character_13",
+   "path": "originals/characters/Premade_Character_13.png",
+   "w": 384,
+   "h": 96,
+   "grid": 16,
+   "sha256": "1b33159dae3b07094afbb7c92db43aee70df62b60fca6a75c691cd9ccac0bb20",
+   "pack": "Cabinet World actor_officer family — owned, generated 2026-07-28",
+   "license": "owned — org-original"
+  },
+  {
+   "id": "originals/characters/Premade_Character_14",
+   "path": "originals/characters/Premade_Character_14.png",
+   "w": 384,
+   "h": 96,
+   "grid": 16,
+   "sha256": "a31787e95dd4ecf128a77c3327a641b29d2cda42e995949e692be2338b151ca2",
+   "pack": "Cabinet World actor_officer family — owned, generated 2026-07-28",
+   "license": "owned — org-original"
+  },
+  {
+   "id": "originals/characters/Premade_Character_15",
+   "path": "originals/characters/Premade_Character_15.png",
+   "w": 384,
+   "h": 96,
+   "grid": 16,
+   "sha256": "3db9fcbbbdf0e69d76f3ff3e9f8f5723d8aef0d13aab84651bc6359b36914d75",
+   "pack": "Cabinet World actor_officer family — owned, generated 2026-07-28",
+   "license": "owned — org-original"
+  },
+  {
+   "id": "originals/characters/Premade_Character_16",
+   "path": "originals/characters/Premade_Character_16.png",
+   "w": 384,
+   "h": 96,
+   "grid": 16,
+   "sha256": "736bb787f3470708e574ded7b9260c55c3c9cceda9db28c13184bcf637730c23",
+   "pack": "Cabinet World actor_officer family — owned, generated 2026-07-28",
+   "license": "owned — org-original"
+  },
+  {
+   "id": "originals/characters/Premade_Character_17",
+   "path": "originals/characters/Premade_Character_17.png",
+   "w": 384,
+   "h": 96,
+   "grid": 16,
+   "sha256": "6921b8f69fb73073aeb3a91632bffaa8ecf99c8c1605b6919104e034977f085a",
+   "pack": "Cabinet World actor_officer family — owned, generated 2026-07-28",
+   "license": "owned — org-original"
+  },
+  {
+   "id": "originals/characters/Premade_Character_18",
+   "path": "originals/characters/Premade_Character_18.png",
+   "w": 384,
+   "h": 96,
+   "grid": 16,
+   "sha256": "5adee56ea59e7645bfe912b206900ac5dab4e060dc9759719da1731215c6fb2e",
+   "pack": "Cabinet World actor_officer family — owned, generated 2026-07-28",
+   "license": "owned — org-original"
+  },
+  {
+   "id": "originals/characters/Premade_Character_19",
+   "path": "originals/characters/Premade_Character_19.png",
+   "w": 384,
+   "h": 96,
+   "grid": 16,
+   "sha256": "fbb970802a4c933451360e5449daae5d8d942ce4905daffecb0d008fbe5b0d1c",
+   "pack": "Cabinet World actor_officer family — owned, generated 2026-07-28",
+   "license": "owned — org-original"
+  },
+  {
+   "id": "originals/characters/Premade_Character_20",
+   "path": "originals/characters/Premade_Character_20.png",
+   "w": 384,
+   "h": 96,
+   "grid": 16,
+   "sha256": "54a1cc273c718b19af2ac9f33afe8c835c3139831cea86ab9fc61c0d3426f538",
+   "pack": "Cabinet World actor_officer family — owned, generated 2026-07-28",
+   "license": "owned — org-original"
   }
  ]
 }
