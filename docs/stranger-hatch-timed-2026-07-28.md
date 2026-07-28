@@ -17,7 +17,7 @@ the artifacts it wrote.
 | | |
 |---|---|
 | Master `49ed144e`, unmodified | **The stranger hatch does not complete.** Red at step `proof-a` after 21s. No briefing is ever rendered. |
-| With the two fixes on this branch | **Green.** Export → first briefing in **2m 22s** wall clock, on a Mac that already has the dependencies. |
+| With the two fixes on this branch | **Green.** Export → first briefing in **2m 22s – 2m 59s** wall clock (two runs), on a Mac that already has the dependencies. |
 | The first briefing, scored on the shipped 0–3 scale | **1 — "read it, no value."** Defended in §3. |
 
 The red was invisible to every gate in the repo because CI only ever runs
@@ -40,31 +40,37 @@ bash cabinet/scripts/hatch.sh --defaults --clean-room --altitude contributor \
 Wall clock measured around each stage; per-step seconds are the hatch's own
 flight recorder (`cabinet/scripts/hatch-lib/flight-recorder.sh`).
 
-| # | Stage | Step id | Seconds | Human needed? |
-|---|---|---|---|---|
-| — | **Export the egg from HEAD** | `egg-export.sh` | **1.8** | no |
-| 1 | Seed `cabinet/.env` non-interactively | `setup-env` | 0 | no |
-| 2 | Host preflight (clean-room: check only) | `setup-mac` | 0 | **see §1a** |
-| 3 | Generate the instance | `gen` | 0 | no |
-| 4 | Select the active preset | `preset` | 0 | no |
-| 5 | Seed the durable roster | `roles` | 0 | no |
-| 6 | Assemble the runtime | `load-preset` | 0 | no |
-| 7 | Roster authorization | `roster-authz` | 0 | no |
-| 8 | **P-a null-hatch gate** | `proof-a` | **100** | no |
-| 9 | P-b clean-room ratchets | `proof-b` | 5 | no |
-| 10 | P-c dry render: officer boot | `proof-c1` | 0 | no |
-| 11 | P-c dry render: plist plan | `proof-c2` | 0 | no |
-| 12 | P-d kill-switch drill | `proof-d` | skipped | — |
-| 13 | **FIRST RECEIPT — the genesis briefing** | `first-receipt` | **34** | **yes — Claude Code must be installed and authenticated** |
-| 14 | Demo receipt | `demo-receipt` | 0 | no |
-| | **TTFR** (proofs-done → first receipt) | | **34s** | |
-| | **Hatch total** | | **140s** | |
-| | **Export + hatch total** | | **142s (2m 22s)** | |
+Two green runs, both reported. **Run A** and **Run B** are the same commands on
+the same machine roughly an hour apart; the spread is machine load (this box was
+running other test suites), and reporting one number would be false precision.
 
-Two steps are 96% of the clock: the null-hatch proof gate (100s — it stages a
-sandbox copy of the tree and runs the full framework suite inside it) and the
-first receipt (34s — a `claude` CLI call for the genesis research brief).
-Everything else rounds to zero.
+| # | Stage | Step id | Run A (s) | Run B (s) | Human needed? |
+|---|---|---|---|---|---|
+| — | **Export the egg from HEAD** | `egg-export.sh` | **1.8** | **2.5** | no |
+| 1 | Seed `cabinet/.env` non-interactively | `setup-env` | 0 | 0 | no |
+| 2 | Host preflight (clean-room: check only) | `setup-mac` | 0 | 0 | **see §1a** |
+| 3 | Generate the instance | `gen` | 0 | 1 | no |
+| 4 | Select the active preset | `preset` | 0 | 0 | no |
+| 5 | Seed the durable roster | `roles` | 0 | 0 | no |
+| 6 | Assemble the runtime | `load-preset` | 0 | 0 | no |
+| 7 | Roster authorization | `roster-authz` | 0 | 7 | no |
+| 8 | **P-a null-hatch gate** | `proof-a` | **100** | **129** | no |
+| 9 | P-b clean-room ratchets | `proof-b` | 5 | 8 | no |
+| 10 | P-c dry render: officer boot | `proof-c1` | 0 | 0 | no |
+| 11 | P-c dry render: plist plan | `proof-c2` | 0 | 0 | no |
+| 12 | P-d kill-switch drill | `proof-d` | skip | skip | — |
+| 13 | **FIRST RECEIPT — the genesis briefing** | `first-receipt` | **34** | **32** | **yes — Claude Code must be installed and authenticated** |
+| 14 | Demo receipt | `demo-receipt` | 0 | 0 | no |
+| | **TTFR** (proofs-done → first receipt) | | **34s** | **32s** | |
+| | **Hatch total** | | **140s** | **177s** | |
+| | **Export + hatch total** | | **142s (2m 22s)** | **179s (2m 59s)** | |
+
+Two steps are ~93% of the clock in both runs: the null-hatch proof gate (100–129s
+— it stages a sandbox copy of the tree and runs the full framework suite inside
+it) and the first receipt (32–34s — a `claude` CLI call for the genesis research
+brief). Everything else rounds to zero. **TTFR is the stable number**: it varied
+by 2 seconds across a 37-second spread in the total, because it measures the
+briefing and not the proof gate.
 
 ### 1a. What this number does NOT include, stated plainly
 
@@ -240,7 +246,15 @@ is reachable only from the dashboard's `/onboarding` route and the Telegram
 provisioning webhook. The v0 hatch starts neither: it defaults to `--no-launchd`
 and prints "dashboard not started". The stranger's first briefing comes from a
 completely different surface (`framework/onboarding/genesis.py` +
-`framework/frontdoor/run_briefing.py`). **So the disclaimer cannot fire on the
+`framework/frontdoor/run_briefing.py`). Proven by execution rather than by
+grep — importing exactly what the first receipt runs, in a clean interpreter:
+
+```
+$ python3.12 -c "import sys; import framework.onboarding.genesis, \
+    framework.frontdoor.run_briefing; \
+    print('journey imported:', 'framework.onboarding.journey' in sys.modules)"
+journey imported: False
+``` **So the disclaimer cannot fire on the
 hatch path, because the sweep it belongs to is not on the hatch path** — and the
 one mechanism that would read the operator's own material, and is therefore the
 only plausible route from a 1 to a 3, requires errand #10 that nothing tells them
@@ -277,7 +291,35 @@ to run.
 
 ---
 
-## 7. Reproducing this
+## 7. Verification of the changes in this branch
+
+Every number re-measured this session, cache purged, private `--basetemp`,
+sweeps run serially against a re-measured master baseline (`49ed144e`).
+
+| Battery | Master `49ed144e` | This branch |
+|---|---|---|
+| `pytest framework/` | 1 failed, 7408 passed, 25 skipped | 1 failed, **7413** passed, 25 skipped |
+| `pytest cabinet/scripts/tests` | 5012 passed, 34 skipped | **5012 passed, 34 skipped** |
+| `check-layer-separation.sh` | — | OK, new=0 (baseline 24, allowlist 19) |
+| `ledger-status-parity.sh` (A13) | — | GREEN, ids=353 md_rows=353 findings=0 |
+| `cog2-import-gate.py` | — | OK, shadow boundary intact |
+| `run-golden-evals.sh` | — | 32/32 PASS |
+| `verify-cognitive-phase4.sh` | — | 29/29 PASS, review bound to tested bytes |
+| `docs-track-code-sweep.sh` | — | GREEN (files=64 findings=0) |
+| `cognitive-architecture-census.py` | PASS at 73016 (zero headroom) | PASS at 73043 |
+| `hatch.sh --defaults --clean-room` on a fresh export | **RED at `proof-a`** | **GREEN**, twice |
+
+The one framework failure on both sides is
+`test_retro_shim.py::TestRetroShim::test_reexports_constants` — a known
+local-only red on this machine (a third-party library here has drifted its model
+id past a hardcoded pin; CI does not carry that library). It fails identically
+before and after, so it is a constant, not a signal.
+
+The five new framework tests are the delta: one lockstep arm pinning the shipped
+watchdog twin to the live file, and four arms on the unopened-areas naming. All
+five were verified to FAIL against pre-change code and pass after.
+
+## 8. Reproducing this
 
 ```bash
 git clone https://github.com/nate-refslund/captains-cabinet.git /tmp/sh-repo
