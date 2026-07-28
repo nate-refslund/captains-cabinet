@@ -21,7 +21,23 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 9b43322029c6c91dd56c240894e27fd879dd2a18590c3ca98a8a43462743ef2d
+Reviewed-Scope-Digest: ec75278e9929f8a03d811ec3689716e1190808db3df0a3a0ba0a0ef2275c5666
+
+(RE-BOUND 2026-07-28 at the landing of `fix/recall-live-claims-it-never-earned`.
+Prior digest: `9b43322029c6c91dd56c240894e27fd879dd2a18590c3ca98a8a43462743ef2d`.
+ONE in-scope path moved: `cabinet/config/cognitive-architecture-contract.yml`,
+and only its `temporary_allowances` list — a new row buying the +30 non-comment
+lines two recall fixes cost, re-pinning
+`framework_production_noncomment_lines` at 73046 with zero headroom (master was
+exactly at its ceiling at 73016). No budget MAXIMUM, no set pin, no bijection
+class and no declared invariant moved. Verified by intersecting
+`resolve_scope()` with `git diff --name-only origin/master...HEAD`: exactly that
+one path, and the scope carries no DIR entries. NO COG-4 implementation byte
+moved — no organ, no scheduler or projection surface, no serve surface, no
+boundary row, no fixture, no CLI. The two changed production files —
+`framework/sources/org.py` and `framework/onboarding/genesis.py` — are NOT in
+this scope. Nothing below was re-reviewed, because no reviewed COG-4 byte
+moved.)
 
 (RE-BOUND 2026-07-28 at the landing of `fix/world-art-manifest-truth-and-egg`.
 Prior digest: `ebbdcc3f771afef7ffddc7558ea64a06bf3f8fa782cf14b5dd129891f796ca15`.
