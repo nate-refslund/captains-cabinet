@@ -133,18 +133,25 @@ export const CHAR_SHEET_MIN_H = 96
  * WHICH character art the world draws — the ONE line that swaps the whole cast.
  *
  * 'characters'           = the purchased LimeZu Premade sheets. Commercially
- *                          licensed, do-not-redistribute, gitignored — so a
- *                          stranger who hatches a cabinet from the public egg
- *                          gets a world with no people in it.
- * 'originals/characters' = the owned actor_officer family (20 sheets, same
+ *                          licensed, do-not-redistribute, gitignored.
+ * 'originals/characters' = LIVE (Captain ruling 2026-07-28). The owned
+ *                          actor_officer family: 20 sheets, same
  *                          896x656-compatible 16x32 cell layout, same file
- *                          names, license "owned — org-original"), committed
- *                          and exported.
+ *                          names, license "owned — org-original", committed.
+ *
+ * The world now draws art the org owns. Known and accepted at the ruling: the
+ * walk reads as a sway rather than a stride — improvable in place, and the
+ * revert stays this one line.
+ *
+ * It also ships: egg-export-manifest.txt expects public/world-assets/
+ * originals PRESENT since 2026-07-28 ("ALL OUT of LimeZu"), so a stranger who
+ * hatches from the public egg now gets a world with people in it — which the
+ * licensed set, gitignored and absent from HEAD, could never give them.
  *
  * Both sets are in the manifest; changing this constant changes which one the
  * renderer binds. Nothing else in the engine knows the difference.
  */
-export const CHARACTER_DIR = 'characters'
+export const CHARACTER_DIR = 'originals/characters'
 
 export function characterSheetFor(slug: string): string {
   const n = (fnv1a(slug) % CHARACTER_COUNT) + 1

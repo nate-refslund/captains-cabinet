@@ -21,7 +21,15 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: c97c4fca1e44d1516e95cdb5220685dae70583f95e6a5f29080e847be4b1c251
+Reviewed-Scope-Digest: e957036e779f8f36454f0fb581c3c65ba590e5eaf9e15074a4df39efbaad0a9e
+
+(MERGE RE-BIND, 2026-07-28, `fix/hostile-input-red-team` x master `4148d1e6`.
+Both sides re-bound this line and both moved paths inside this scope set — the
+red team moved `cabinet/config/cognitive-architecture-contract.yml`, master moved
+the two egg-export paths — so the two digests conflicted textually and NEITHER
+describes the merged tree. The value above is RECOMPUTED over it. Both note sets
+are kept below in full, none superseded; no COG-4 implementation byte moved on
+either side, so nothing below was re-reviewed.)
 
 (RE-BIND, 2026-07-28, `fix/hostile-input-red-team`. The hostile-input red
 team added a `temporary_allowances` row to
@@ -32,6 +40,32 @@ defeating both the taint map and the D13 never-act-first floor). No COG-4
 surface changed: framework/acting, framework/sources and framework/frontdoor
 are outside this scope set. Recomputed over the committed tree; the prior
 value is superseded, the note below it is retained in full.)
+
+(RE-BOUND 2026-07-28 at the landing of `fix/world-art-manifest-truth-and-egg`.
+Prior digest: `ebbdcc3f771afef7ffddc7558ea64a06bf3f8fa782cf14b5dd129891f796ca15`.
+TWO in-scope paths moved, both on the egg-export surface COG-4 extended and
+neither a COG-4 byte: `cabinet/scripts/egg-export-manifest.txt` (the WORLD ART
+block — the owned iso atlas, resolve table and 20-sheet character cast now SHIP
+in the egg instead of being deleted from it, per the Captain's 2026-07-28 "ALL
+OUT of LimeZu" direction; the block that stood there reserved the call to the
+Captain and stated the cost it was paying, which was a fresh hatch with no world
+art at all) and `cabinet/scripts/tests/test_egg_export.py` (`test_world_assets_
+and_node_modules_absent` -> `test_licensed_art_must_not_ship_but_owned_art_must`:
+the arm banned every `.png` under `world-assets` on the stated grounds that
+binaries there are licensed, i.e. it tested the file extension and not the
+licence, so it kept passing after 20 owned sheets landed beside the licensed
+packs while the property it named had stopped being what it measured. It now
+reads the manifest's `license` field and carries a floor — the atlas and all 20
+owned sheets must BE in the export — so shipping nothing can no longer satisfy
+it). Verified by intersecting `resolve_scope()` with
+`git diff --name-only origin/master...HEAD`: exactly those two paths, and the
+intersection with the manifest's DIR entries is empty. NO COG-4 implementation
+byte moved — no organ, no scheduler or projection surface, no serve surface, no
+boundary row, no fixture, no CLI, and the contract file is untouched. Nothing
+below was re-reviewed, because no reviewed COG-4 byte moved. The re-bind is a
+separate commit from the byte-moving one only because this landing's brief
+forbids `--force`, so the pushed branch could not be amended; both commits land
+together and HEAD is what the gate reads.)
 
 (MERGE RE-BIND, 2026-07-28, `fix/probe-truncation-unearned-negative` x master
 `2b3de03d` (PR #261). Both sides had re-bound this line and both moved
