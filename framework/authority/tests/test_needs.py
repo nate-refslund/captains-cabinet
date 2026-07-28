@@ -259,8 +259,9 @@ def test_filing_latency_does_not_grow_with_trial_depth(filing_latency):
     THE DEFECT IT CATCHES.  `file_need` -> `_emit` -> the evidence mirror ->
     `EvidenceRecorder.append`, and append verifies the trial before extending
     it.  Re-verifying the WHOLE trial per append is O(n) per filing and
-    O(n^2) per trial; measured on the pre-fix code, filing cost 3.9ms at depth
-    40 and 36.6ms at depth 499 — 33ms of pure depth against a 50ms budget.
+    O(n^2) per trial; measured on the pre-fix code at the depths this fixture
+    actually samples, filing cost 1.5ms at depth 16 and 35.9ms at depth 495 —
+    34ms of pure depth against a 50ms budget.
 
     WHY A DIFFERENCE AND NOT AN ABSOLUTE.  The absolute number is dominated by
     fsync, which varies ~10x across the machines this runs on, so an absolute
@@ -270,9 +271,9 @@ def test_filing_latency_does_not_grow_with_trial_depth(filing_latency):
     terms are best-of-N minima, so scheduler noise (one-sided: it can only
     inflate) cannot manufacture growth.
 
-    Mutation-proven 2026-07-28 against the pre-fix code: 32.8ms of growth
-    against this 10ms allowance, RED by 3.3x. After the fix: 1.6ms, green by
-    6.3x. Two-sided margins on purpose — a bound that only one side clears is
+    Mutation-proven 2026-07-28 against the pre-fix code: 34.4ms of growth
+    against this 10ms allowance, RED by 3.4x. After the fix: 1.7ms, green by
+    5.9x. Two-sided margins on purpose — a bound that only one side clears is
     a bound that will flake or never fire.
     """
     growth = filing_latency["deep_best"] - filing_latency["shallow_best"]
@@ -326,7 +327,8 @@ def test_filing_latency_smoke(filing_latency):
     KNOWN INSENSITIVITY, stated rather than papered over: even on the
     production path filing costs ~3ms against a 50ms budget, so this arm alone
     still only trips on a ~16x regression, and how much of the budget fsync
-    eats varies ~10x by machine. That is precisely why
+    eats varies ~10x by machine — it passes at 35.9ms against the very code
+    whose depth cost this branch removed. That is precisely why
     test_filing_latency_does_not_grow_with_trial_depth exists beside it: this
     arm holds the SPEC's number, that arm is the sensitive sensor. And a
     regression that is slow only OCCASIONALLY — a periodic compaction, an

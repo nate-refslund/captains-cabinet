@@ -375,9 +375,9 @@ def _verify_events(
     of inputs, the identical verdict; only the suffix can carry news.  The
     memo therefore stores the sha256 of exactly the bytes it proved, and any
     edit, truncation, reordering or key change misses it and falls back to the
-    full scan.  A prefix is memoized ONLY when the whole ledger verified with
-    ZERO findings and ended on a b"\\n" boundary, so a partial tail, an
-    unreadable ledger or any row finding all re-scan from byte zero next time.
+    full scan.  The ONE gate on storing a prefix is a ZERO-finding scan, which
+    already excludes a partial tail and an unreadable ledger; the b"\\n"-boundary
+    conjunct beside it is belt-and-suspenders, not a second independent guard.
     The permission and anchor checks are NOT memoized — they are properties of
     the filesystem and of anchor.json, not of these bytes, and still run every
     call.
@@ -393,6 +393,8 @@ def _verify_events(
     last_signature = ""
     memo = _memo_get(memo_key)
     prefix_hash = None
+    # The length test is a fast path only: a short ledger's bytes cannot hash to
+    # a longer prefix's digest either. The digest and the key pin are the control.
     if memo is not None and memo.key_digest == key_digest and len(raw) >= memo.length:
         prefix_hash = hashlib.sha256(raw[: memo.length])
         if prefix_hash.hexdigest() == memo.digest:
