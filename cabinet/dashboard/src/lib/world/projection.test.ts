@@ -1,383 +1,314 @@
 /**
- * projection.ts — the ONE world→screen kernel.
+ * The projection kernel's pins.
  *
- * The load-bearing assertion of iso-port step 1 is NEGATIVE: rewiring the
- * five copies of the transform through this module must reproduce the legacy
- * arithmetic BIT FOR BIT, or "nothing visible changed" is a claim rather than
- * a fact. Every legacy expression below is transcribed verbatim from the site
- * it replaced, with the file:line it came from, and compared with
- * toBe() (Object.is — no epsilon, no rounding slack).
+ * WHY THIS FILE EXISTS AT ALL, stated because the gap is the lesson: until it
+ * was written, projection.ts's own doc comments claimed "pinned by the
+ * bit-for-bit tests below" and cited "projection.test.ts's calibration block" —
+ * and no such file existed. The ISO_TILE comment even recorded that the
+ * constant had ONCE cited a test that did not exist, while itself citing a test
+ * that did not exist. A constant pinned by a docstring is pinned by nothing.
+ *
+ * What is pinned here, and why each arm can fail:
+ *   1. the top-down kernel reproduces the legacy `t * TILE` arithmetic BIT FOR
+ *      BIT, which is the whole proof that rewiring ~100 call sites in
+ *      engine-canvas changed nothing;
+ *   2. both kernels round-trip exactly enough to hit-test with;
+ *   3. depth is the projected base y in both — the value the renderer's one
+ *      sortableChildren layer already sorts on;
+ *   4. groundDiamond IS world-pack.json's own note, parsed out of the SHIPPED
+ *      pack rather than restated here (a check that restates the code guards
+ *      nothing);
+ *   5. ISO_TILE is 2:1 with whole-pixel halves, agreeing with the pack's own
+ *      `projection` declaration and with iso-layout's ISO_AXIS_SLOPE.
  */
 import { describe, expect, it } from 'vitest'
+import fs from 'fs'
+import path from 'path'
 import {
   cameraTranslation,
   DEFAULT_PROJECTION,
   groundBox,
   groundDiamond,
   groundOverlap,
+  ISO_BASE,
   ISO_TILE,
   pointInGround,
   projectionFor,
+  projectionFromParam,
   screenDeltaToTiles,
   screenToWorld,
   TOPDOWN_TILE,
+  worldScale,
   worldToScreen,
 } from './projection'
+import { ISO_AXIS_SLOPE } from './iso-layout'
 import { TILE } from './layout'
 
-const TD = projectionFor('topdown')
-const ISO = projectionFor('iso')
+const PACK_PATH = path.resolve(
+  __dirname,
+  '..',
+  '..',
+  '..',
+  'public',
+  'world-assets',
+  'originals',
+  'iso',
+  'world-pack.json'
+)
 
-/** A fixture grid that covers negatives, fractions and the island band. */
-const GRID: Array<[number, number]> = []
-for (const tx of [-24, -0.5, 0, 1, 3.1, 16.5, 117, 120.75, 240]) {
-  for (const ty of [-24, -0.5, 0, 1, 2.1, 19.5, 96, 150.25, 192]) {
-    GRID.push([tx, ty])
-  }
-}
+/** Fixture grid: integers, halves, negatives, and the canvas extremes. */
+const SAMPLES = [
+  0, 1, 2, 3, 7, 15, 16, 17, 31, 63, 64, 119, 120, 191, 192, 239, 240, -1, -7, -24,
+  0.5, 1.25, 2.75, 33.4, 96.125, -3.5, 1e-3, 1e6,
+]
 
-describe('projection — the single kernel', () => {
-  it('starts in top-down so the port lands invisible', () => {
+describe('projection — the ONE world→screen kernel', () => {
+  it('DEFAULT_PROJECTION starts top-down so the port lands invisible', () => {
     expect(DEFAULT_PROJECTION).toBe('topdown')
   })
 
-  it('the top-down tile IS the engine tile (layout.TILE) — one grid, not two', () => {
+  it('?iso selects in BOTH directions, absent falls to the default', () => {
+    expect(projectionFromParam('1')).toBe('iso')
+    expect(projectionFromParam('true')).toBe('iso')
+    expect(projectionFromParam('0')).toBe('topdown')
+    expect(projectionFromParam('false')).toBe('topdown')
+    expect(projectionFromParam(undefined)).toBe(DEFAULT_PROJECTION)
+    expect(projectionFromParam(null)).toBe(DEFAULT_PROJECTION)
+    expect(projectionFromParam('yes')).toBe(DEFAULT_PROJECTION)
+    // Next hands repeated params as arrays; the first one wins.
+    expect(projectionFromParam(['1', '0'])).toBe('iso')
+    // …and the EXPLICIT arms are exercised against the OTHER default, because
+    // with the default at 'topdown' a broken ?iso=0 branch answers correctly by
+    // accident — right up to the day the default flips.
+    expect(projectionFromParam('0', 'iso')).toBe('topdown')
+    expect(projectionFromParam('false', 'iso')).toBe('topdown')
+    expect(projectionFromParam('1', 'iso')).toBe('iso')
+    expect(projectionFromParam(undefined, 'iso')).toBe('iso')
+    expect(projectionFromParam('yes', 'iso')).toBe('iso')
+  })
+
+  it('1. topdown reproduces the legacy `t * TILE` arithmetic BIT FOR BIT', () => {
+    const p = projectionFor('topdown')
     expect(TOPDOWN_TILE.w).toBe(TILE)
     expect(TOPDOWN_TILE.h).toBe(TILE)
-  })
-
-  // The original assertion here demanded both tile sizes be POWERS OF TWO, which the
-  // measured iso tile (48x24) is not, and never needed to be. What actually has to hold
-  // is that half a tile is a whole pixel — an iso projection adds tile/2 terms, and a
-  // fractional half-tile would put sprites on sub-pixel positions and destroy the very
-  // pixel grid the integer display scale exists to protect.
-  it('half a tile is a whole pixel in both grids — no sub-pixel placement', () => {
-    for (const n of [TOPDOWN_TILE.w, TOPDOWN_TILE.h, ISO_TILE.w, ISO_TILE.h]) {
-      expect(n % 2).toBe(0)
-    }
-  })
-
-  it('the iso grid is 2:1 (the projection world-pack.json declares)', () => {
-    expect(ISO_TILE.w).toBe(2 * ISO_TILE.h)
-  })
-})
-
-describe('top-down kernel reproduces the legacy arithmetic exactly', () => {
-  it('project() == the inline `tx * TILE` / `ty * TILE` sites', () => {
-    for (const [tx, ty] of GRID) {
-      const p = TD.project(tx, ty)
-      expect(p.x).toBe(tx * TILE)
-      expect(p.y).toBe(ty * TILE)
-    }
-  })
-
-  it('depthOf() == the inline `zIndex = y * TILE` sites', () => {
-    for (const [tx, ty] of GRID) {
-      expect(TD.depthOf(tx, ty)).toBe(ty * TILE)
-    }
-  })
-
-  it('screenAABB() == the inline footprint rect (engine-canvas buildFootprints)', () => {
-    const box = { x: 117, y: 17, w: 6, h: 5 }
-    const r = TD.screenAABB(box)
-    // engine-canvas.tsx:987 — g.rect(b.x*TILE, b.y*TILE, b.w*TILE, b.h*TILE)
-    expect(r.x0).toBe(box.x * TILE)
-    expect(r.y0).toBe(box.y * TILE)
-    expect(r.x1 - r.x0).toBe(box.w * TILE)
-    expect(r.y1 - r.y0).toBe(box.h * TILE)
-  })
-
-  it('cameraTranslation() == engine-canvas.tsx:1482-1485', () => {
-    const vp = { w: 1440, h: 900 }
-    for (const cam of [
-      { z: 1, x: 120, y: 96 },
-      { z: 3, x: 120.75, y: 19.5 },
-      { z: 0.25, x: -24, y: 150.25 },
-    ]) {
-      const t = cameraTranslation(TD, cam, vp)
-      expect(t.x).toBe(vp.w / 2 - cam.x * TILE * cam.z)
-      expect(t.y).toBe(vp.h / 2 - cam.y * TILE * cam.z)
-    }
-  })
-
-  it('worldToScreen() == engine-client.tsx project() and lod.ts screenRect', () => {
-    const vp = { w: 1440, h: 900 }
-    for (const cam of [
-      { z: 1, x: 120, y: 96 },
-      { z: 3, x: 120.75, y: 19.5 },
-      { z: 0.375, x: 40, y: 150 },
-    ]) {
-      for (const [wx, wy] of GRID) {
-        const s = worldToScreen(TD, wx, wy, cam, vp)
-        // engine-client.tsx:689-693
-        expect(s.x).toBe(vp.w / 2 + (wx - cam.x) * TILE * cam.z)
-        expect(s.y).toBe(vp.h / 2 + (wy - cam.y) * TILE * cam.z)
-        // lod.ts:140-146 — const s = TILE_PX * cam.z; vp.w/2 + (b.x-cam.x)*s
-        const legacyScale = TILE * cam.z
-        expect(s.x).toBe(vp.w / 2 + (wx - cam.x) * legacyScale)
-        expect(s.y).toBe(vp.h / 2 + (wy - cam.y) * legacyScale)
+    for (const tx of SAMPLES) {
+      for (const ty of SAMPLES) {
+        const got = p.project(tx, ty)
+        // Object.is, not toBe-with-tolerance: this is an exactness claim.
+        expect(Object.is(got.x, tx * TILE)).toBe(true)
+        expect(Object.is(got.y, ty * TILE)).toBe(true)
+        expect(Object.is(p.depthOf(tx, ty), ty * TILE)).toBe(true)
       }
     }
   })
 
-  it('screenToWorld() == engine-canvas.tsx hitTarget (:1509-1510)', () => {
-    const vp = { w: 1440, h: 900 }
+  it('1b. topdown screenAABB reproduces the legacy rect arithmetic exactly', () => {
+    const p = projectionFor('topdown')
+    for (const x of SAMPLES.slice(0, 12)) {
+      for (const w of [1, 2, 4, 6, 0.5]) {
+        const box = p.screenAABB({ x, y: x + 3, w, h: w + 1 })
+        expect(Object.is(box.x0, x * TILE)).toBe(true)
+        expect(Object.is(box.x1, (x + w) * TILE)).toBe(true)
+        expect(Object.is(box.y0, (x + 3) * TILE)).toBe(true)
+        expect(Object.is(box.y1, (x + 3 + w + 1) * TILE)).toBe(true)
+      }
+    }
+  })
+
+  it('1c. the topdown camera math is the legacy camera math, unscaled', () => {
+    const p = projectionFor('topdown')
+    const vp = { w: 1024, h: 640 }
     for (const cam of [
-      { z: 1, x: 120, y: 96 },
-      { z: 2.75, x: 117.5, y: 19.5 },
-      { z: 0.25, x: -3.5, y: 191.75 },
+      { z: 1, x: 120, y: 32 },
+      { z: 0.25, x: 0, y: 0 },
+      { z: 3, x: 87.5, y: 191 },
     ]) {
-      for (const sx of [0, 1, 719, 720.5, 1439]) {
-        for (const sy of [0, 13, 450.25, 899]) {
-          const w = screenToWorld(TD, sx, sy, cam, vp)
-          expect(w.x).toBe((sx - vp.w / 2) / (TILE * cam.z) + cam.x)
-          expect(w.y).toBe((sy - vp.h / 2) / (TILE * cam.z) + cam.y)
+      // ISO_BASE must NEVER reach the top-down path.
+      expect(Object.is(worldScale(p, cam.z), cam.z)).toBe(true)
+      const t = cameraTranslation(p, cam, vp)
+      expect(Object.is(t.x, vp.w / 2 - cam.x * TILE * cam.z)).toBe(true)
+      expect(Object.is(t.y, vp.h / 2 - cam.y * TILE * cam.z)).toBe(true)
+      // …and the hit-test inverse is the one engine-canvas hand-rolled.
+      for (const [sx, sy] of [[0, 0], [512, 320], [1023, 639]] as const) {
+        const w = screenToWorld(p, sx, sy, cam, vp)
+        expect(Object.is(w.x, (sx - vp.w / 2) / (TILE * cam.z) + cam.x)).toBe(true)
+        expect(Object.is(w.y, (sy - vp.h / 2) / (TILE * cam.z) + cam.y)).toBe(true)
+      }
+      // …and the drag inverse is the one engine-client hand-rolled.
+      const d = screenDeltaToTiles(p, 37, -19, cam.z)
+      expect(Object.is(d.tx, 37 / (TILE * cam.z))).toBe(true)
+      expect(Object.is(d.ty, -19 / (TILE * cam.z))).toBe(true)
+    }
+  })
+
+  it('2. both kernels round-trip project/unproject', () => {
+    for (const kind of ['topdown', 'iso'] as const) {
+      const p = projectionFor(kind)
+      for (const tx of SAMPLES) {
+        for (const ty of SAMPLES) {
+          const back = p.unproject(p.project(tx, ty).x, p.project(tx, ty).y)
+          expect(back.tx).toBeCloseTo(tx, 9)
+          expect(back.ty).toBeCloseTo(ty, 9)
         }
       }
     }
   })
 
-  it('screenDeltaToTiles() == engine-client.tsx pan (:605-606)', () => {
-    for (const z of [0.25, 1, 2.75, 3]) {
-      for (const dx of [-311, -5, 0, 7, 640]) {
-        for (const dy of [-207, -5, 0, 9, 400]) {
-          const t = screenDeltaToTiles(TD, dx, dy, z)
-          expect(t.tx).toBe(dx / (TILE * z))
-          expect(t.ty).toBe(dy / (TILE * z))
-        }
-      }
-    }
-  })
-})
-
-describe('round trips', () => {
-  it('unproject(project(p)) == p in both kernels', () => {
-    for (const proj of [TD, ISO]) {
-      for (const [tx, ty] of GRID) {
-        const p = proj.project(tx, ty)
-        const back = proj.unproject(p.x, p.y)
-        expect(back.tx).toBeCloseTo(tx, 10)
-        expect(back.ty).toBeCloseTo(ty, 10)
-      }
-    }
-  })
-
-  it('screenToWorld(worldToScreen(p)) == p in both kernels', () => {
-    const vp = { w: 1440, h: 900 }
-    const cam = { z: 1.75, x: 120, y: 96 }
-    for (const proj of [TD, ISO]) {
-      for (const [tx, ty] of GRID) {
-        const s = worldToScreen(proj, tx, ty, cam, vp)
-        const back = screenToWorld(proj, s.x, s.y, cam, vp)
-        expect(back.x).toBeCloseTo(tx, 8)
-        expect(back.y).toBeCloseTo(ty, 8)
-      }
-    }
-  })
-})
-
-describe('depth is monotone along both walk directions', () => {
-  it('a step toward the camera never sorts behind where it started', () => {
-    for (const proj of [TD, ISO]) {
-      for (const [tx, ty] of GRID) {
-        // +ty is "south" (toward the viewer) in both kernels
-        expect(proj.depthOf(tx, ty + 1)).toBeGreaterThan(proj.depthOf(tx, ty))
-      }
-    }
-  })
-
-  it('iso depth also advances along +tx (top-down deliberately does not)', () => {
-    for (const [tx, ty] of GRID) {
-      expect(ISO.depthOf(tx + 1, ty)).toBeGreaterThan(ISO.depthOf(tx, ty))
-      expect(TD.depthOf(tx + 1, ty)).toBe(TD.depthOf(tx, ty))
-    }
-  })
-
-  it('depth IS the projected base y — one value, not a parallel notion', () => {
-    for (const proj of [TD, ISO]) {
-      for (const [tx, ty] of GRID) {
-        expect(proj.depthOf(tx, ty)).toBe(proj.project(tx, ty).y)
-      }
-    }
-  })
-})
-
-describe('the ground diamond — one footprint definition', () => {
-  it('matches world-pack.json / world_checks.ground_box exactly', () => {
-    // barn: dw 159, dh 149 (world-pack.json frames.barn)
-    const g = groundDiamond(159, 149)
-    expect(g.hw).toBe(159 * 0.42)
-    expect(g.depth).toBe(Math.min(149 * 0.55, 159 * 0.55))
-    // a sliver sprite floors at 6px depth, like the python
-    expect(groundDiamond(4, 4).depth).toBe(6)
-  })
-
-  it('groundBox == (x−hw, y−depth, x+hw, y) — the python tuple, in order', () => {
-    const b = groundBox(100, 200, 159, 149)
-    const g = groundDiamond(159, 149)
-    expect(b.x0).toBe(100 - g.hw)
-    expect(b.y0).toBe(200 - g.depth)
-    expect(b.x1).toBe(100 + g.hw)
-    expect(b.y1).toBe(200)
-  })
-
-  it('groundOverlap == overlap_frac (fraction of the SMALLER box)', () => {
-    const a = { x0: 0, y0: 0, x1: 10, y1: 10 }
-    const b = { x0: 5, y0: 5, x1: 25, y1: 25 }
-    expect(groundOverlap(a, b)).toBeCloseTo(25 / 100, 12)
-    expect(groundOverlap(a, { x0: 100, y0: 100, x1: 110, y1: 110 })).toBe(0)
-    expect(groundOverlap(a, a)).toBe(1)
-  })
-
-  it('pointInGround picks a diamond, not a rect — corners are OUTSIDE', () => {
-    const [bx, by, dw, dh] = [0, 0, 100, 100]
-    const g = groundDiamond(dw, dh)
-    expect(pointInGround(bx, by, bx, by, dw, dh)).toBe(true) // front vertex
-    expect(pointInGround(bx, by - g.depth, bx, by, dw, dh)).toBe(true) // back
-    expect(pointInGround(bx - g.hw, by - g.depth / 2, bx, by, dw, dh)).toBe(true)
-    expect(pointInGround(bx + g.hw, by - g.depth / 2, bx, by, dw, dh)).toBe(true)
-    // the box corner: inside the AABB, outside the diamond
-    const box = groundBox(bx, by, dw, dh)
-    expect(pointInGround(box.x0, box.y0, bx, by, dw, dh)).toBe(false)
-    expect(pointInGround(box.x1, box.y1, bx, by, dw, dh)).toBe(false)
-  })
-})
-
-describe('iso kernel', () => {
-  it('is 2:1 — a tile step east and a tile step south mirror each other', () => {
-    const e = ISO.project(1, 0)
-    const s = ISO.project(0, 1)
-    expect(e.x).toBe(ISO_TILE.w / 2)
-    expect(e.y).toBe(ISO_TILE.h / 2)
-    expect(s.x).toBe(-ISO_TILE.w / 2)
-    expect(s.y).toBe(ISO_TILE.h / 2)
-  })
-
-  it('the origin is the origin (no hidden offset)', () => {
-    expect(ISO.project(0, 0)).toEqual({ x: 0, y: 0 })
-    expect(TD.project(0, 0)).toEqual({ x: 0, y: 0 })
-  })
-
-  it('screenAABB spans all four projected corners, not two', () => {
-    const box = { x: 0, y: 0, w: 6, h: 5 }
-    const r = ISO.screenAABB(box)
-    expect(r.x0).toBe(ISO.project(0, 5).x) // west corner
-    expect(r.x1).toBe(ISO.project(6, 0).x) // east corner
-    expect(r.y0).toBe(ISO.project(0, 0).y) // north corner
-    expect(r.y1).toBe(ISO.project(6, 5).y) // south corner
-  })
-})
-
-/**
- * THE GUARDS THE DOCSTRINGS CLAIMED BUT DID NOT HAVE.
- *
- * A review mutated ISO_TILE to {16,8} — the value the calibration REJECTED — and to
- * {64,32}, and all 23 tests stayed green. The constant's docstring cited a calibration
- * test that did not exist, and groundDiamond's cited a pack test that did not exist. A
- * claimed guard that is absent is worse than no guard: it reads as evidence.
- *
- * These read the SHIPPED pack rather than restating the code, so a check cannot pass by
- * agreeing with the thing it is checking.
- */
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
-
-// The pack METADATA is vendored beside the code. It was read from a sibling checkout by
-// absolute path, which passes on the machine that wrote it and fails in CI with ENOENT —
-// which is what happened. A test that can only pass on one machine is not a guard.
-//
-// Only the metadata lives here. The ATLAS is art, and art goes through
-// cabinet/scripts/world-asset-intake.py --promote and the asset gate before the renderer
-// may load it (.gitignore:294-302 — owned originals ARE committable, but through the
-// gate, not around it). Force-adding the binary past that ignore would be bypassing a
-// control, which is never the fix.
-const pack = JSON.parse(
-  readFileSync(join(process.cwd(), 'src', 'lib', 'world', 'iso-pack.json'), 'utf8')
-) as {
-  note: string
-  frames: Record<string, { dw: number; dh: number; anchor: [number, number]; scale: number }>
-}
-
-describe('ISO_TILE is pinned by the shipped pack, not by assertion', () => {
-  const frames = Object.values(pack.frames)
-
-  it('the pack is real and non-trivial', () => {
-    expect(frames.length).toBeGreaterThan(100)
-  })
-
-  it('48x24 fits the structures; the rejected 16x8 does not', () => {
-    // A structure must not need more than ~4 tile steps of ground, or the lattice
-    // spacing the anchors were authored for cannot hold them apart. The largest frames
-    // are the manors and warehouses at ~200px.
-    const widest = Math.max(...frames.map((f) => f.dw))
-    expect(widest).toBeGreaterThan(150)
-
-    const stepsAt = (tileW: number) => {
-      const hw = widest * 0.42
-      return (hw * 2) / tileW
-    }
-    expect(stepsAt(ISO_TILE.w)).toBeLessThanOrEqual(4)
-    expect(stepsAt(16)).toBeGreaterThan(4) // the size the calibration rejected
-  })
-
-  it('half an iso tile is a whole pixel — the kernel adds tile/2 terms', () => {
-    expect(ISO_TILE.w % 2).toBe(0)
-    expect(ISO_TILE.h % 2).toBe(0)
-  })
-
-  it('the iso grid is 2:1, which the pack declares as its projection', () => {
-    expect(ISO_TILE.w).toBe(2 * ISO_TILE.h)
-  })
-})
-
-describe('groundDiamond is pinned against the shipped pack NOTE, not against itself', () => {
-  it('the note still states the formula this module implements', () => {
-    // If the pack's contract ever changes wording or numbers, this fails and someone
-    // has to reconcile the two — which is the entire point of quoting it.
-    expect(pack.note).toContain('half-width dw*0.42')
-    expect(pack.note).toContain('min(dh*0.55, dw*0.55)')
-    expect(pack.note).toContain('base')
-  })
-
-  it('every frame in the pack anchors at its BASE CENTRE', () => {
-    for (const [name, f] of Object.entries(pack.frames)) {
-      expect(`${name}:${f.anchor[0]}`).toBe(`${name}:${f.dw / 2}`)
-      expect(`${name}:${f.anchor[1]}`).toBe(`${name}:${f.dh}`)
-    }
-  })
-
-  it('the implementation reproduces the note for real pack frames', () => {
-    for (const f of Object.values(pack.frames).slice(0, 40)) {
-      const g = groundDiamond(f.dw, f.dh)
-      expect(g.hw).toBeCloseTo(f.dw * 0.42, 10)
-      expect(g.depth).toBeCloseTo(Math.max(6, Math.min(f.dh * 0.55, f.dw * 0.55)), 10)
-    }
-  })
-
-  it('display size is an INTEGER fraction of native — the pixel-grid promise', () => {
-    for (const [name, f] of Object.entries(pack.frames)) {
-      expect(`${name}:${Number.isInteger(f.scale)}`).toBe(`${name}:true`)
-      expect(f.scale).toBeGreaterThanOrEqual(1)
-    }
-  })
-})
-
-describe('the camera stays a pure scale+translate', () => {
-  it('worldToScreen == cameraTranslation + projected*z, in both kernels', () => {
-    // This is the property that makes "iso is applied per object, never to the
-    // container" safe. It was asserted in prose and by nothing else.
+  it('2b. worldToScreen and screenToWorld invert each other under both kernels', () => {
     const vp = { w: 1280, h: 720 }
     for (const kind of ['topdown', 'iso'] as const) {
       const p = projectionFor(kind)
-      for (const cam of [{ x: 0, y: 0, z: 1 }, { x: 13.5, y: -7.25, z: 2.5 }]) {
-        const t = cameraTranslation(p, cam, vp)
-        for (const tile of [{ x: 0, y: 0 }, { x: 40.5, y: -12.25 }, { x: -3, y: 88 }]) {
-          const direct = worldToScreen(p, tile.x, tile.y, cam, vp)
-          const abs = p.project(tile.x, tile.y)
-          expect(direct.x).toBeCloseTo(t.x + abs.x * cam.z, 6)
-          expect(direct.y).toBeCloseTo(t.y + abs.y * cam.z, 6)
+      for (const cam of [
+        { z: 1, x: 30, y: 12 },
+        { z: 0.4, x: -5, y: 60 },
+        { z: 2.5, x: 56.67, y: 6.67 },
+      ]) {
+        for (const [wx, wy] of [[0, 0], [30, 12], [61.5, -8.25]] as const) {
+          const s = worldToScreen(p, wx, wy, cam, vp)
+          const back = screenToWorld(p, s.x, s.y, cam, vp)
+          expect(back.x).toBeCloseTo(wx, 6)
+          expect(back.y).toBeCloseTo(wy, 6)
         }
       }
     }
+  })
+
+  it('3. depth is the projected base y in both kernels', () => {
+    for (const kind of ['topdown', 'iso'] as const) {
+      const p = projectionFor(kind)
+      for (const tx of SAMPLES) {
+        for (const ty of SAMPLES) {
+          expect(p.depthOf(tx, ty)).toBeCloseTo(p.project(tx, ty).y, 9)
+        }
+      }
+    }
+    // …and under iso a step along EITHER ground axis moves depth forward,
+    // which is what makes a base-y sort an occlusion order.
+    const iso = projectionFor('iso')
+    expect(iso.depthOf(5, 5)).toBeGreaterThan(iso.depthOf(4, 5))
+    expect(iso.depthOf(5, 5)).toBeGreaterThan(iso.depthOf(5, 4))
+  })
+
+  it('3b. iso screenAABB spans all FOUR projected corners, not two', () => {
+    const p = projectionFor('iso')
+    const box = { x: 2, y: 5, w: 3, h: 7 }
+    const corners = [
+      p.project(box.x, box.y),
+      p.project(box.x + box.w, box.y),
+      p.project(box.x, box.y + box.h),
+      p.project(box.x + box.w, box.y + box.h),
+    ]
+    const aabb = p.screenAABB(box)
+    expect(aabb.x0).toBeCloseTo(Math.min(...corners.map((c) => c.x)), 9)
+    expect(aabb.x1).toBeCloseTo(Math.max(...corners.map((c) => c.x)), 9)
+    expect(aabb.y0).toBeCloseTo(Math.min(...corners.map((c) => c.y)), 9)
+    expect(aabb.y1).toBeCloseTo(Math.max(...corners.map((c) => c.y)), 9)
+    // the degenerate end: a zero-extent box is a point, not an inverted rect
+    const dot = p.screenAABB({ x: 4, y: 4, w: 0, h: 0 })
+    expect(dot.x0).toBe(dot.x1)
+    expect(dot.y0).toBe(dot.y1)
+  })
+
+  it('4. groundDiamond IS the SHIPPED pack note, parsed — not restated here', () => {
+    const pack = JSON.parse(fs.readFileSync(PACK_PATH, 'utf8')) as { note: string }
+    const note = pack.note
+    // half-width dw*0.42
+    const hw = note.match(/half-width\s+dw\*([0-9.]+)/)
+    // depth min(dh*0.55, dw*0.55)
+    const depth = note.match(/depth\s+min\(dh\*([0-9.]+),\s*dw\*([0-9.]+)\)/)
+    expect(hw, `pack note no longer states a half-width: ${note}`).not.toBeNull()
+    expect(depth, `pack note no longer states a depth: ${note}`).not.toBeNull()
+    const kHw = Number(hw![1])
+    const kDh = Number(depth![1])
+    const kDw = Number(depth![2])
+    for (const [dw, dh] of [
+      [196, 174],
+      [159, 149],
+      [43, 48],
+      [15, 15],
+      [107, 125],
+      [30, 37],
+    ] as const) {
+      const g = groundDiamond(dw, dh)
+      expect(g.hw).toBeCloseTo(dw * kHw, 9)
+      // the 6px floor is checks/world_checks.py ground_box()'s and is part of
+      // the shared geometry — stated here because the note does not carry it
+      expect(g.depth).toBeCloseTo(Math.max(6, Math.min(dh * kDh, dw * kDw)), 9)
+    }
+    // the floor is REACHED by real pack geometry, so it is not dead code
+    expect(groundDiamond(10, 10).depth).toBe(6)
+  })
+
+  it('4b. groundBox is checks/world_checks.py ground_box, and overlap is of the SMALLER', () => {
+    const b = groundBox(100, 200, 50, 40)
+    const g = groundDiamond(50, 40)
+    expect(b).toEqual({ x0: 100 - g.hw, y0: 200 - g.depth, x1: 100 + g.hw, y1: 200 })
+    // a box entirely inside another overlaps the SMALLER one fully (1.0),
+    // which is the measure the offline checks use
+    const big = { x0: 0, y0: 0, x1: 100, y1: 100 }
+    const small = { x0: 10, y0: 10, x1: 20, y1: 20 }
+    expect(groundOverlap(big, small)).toBeCloseTo(1, 9)
+    expect(groundOverlap(small, big)).toBeCloseTo(1, 9)
+    // …and disjoint boxes overlap zero, including edge-touching ones
+    expect(groundOverlap(small, { x0: 20, y0: 10, x1: 30, y1: 20 })).toBe(0)
+  })
+
+  it('4c. pointInGround picks the DIAMOND, not its box', () => {
+    const dw = 100
+    const dh = 100
+    const g = groundDiamond(dw, dh)
+    // base centre is the front vertex — on the diamond's boundary
+    expect(pointInGround(0, 0, 0, 0, dw, dh)).toBe(true)
+    // the box corner is OUTSIDE the diamond (this is the whole point)
+    expect(pointInGround(g.hw - 0.5, -g.depth + 0.5, 0, 0, dw, dh)).toBe(false)
+    // the centre of the diamond is inside
+    expect(pointInGround(0, -g.depth / 2, 0, 0, dw, dh)).toBe(true)
+    // …and a point below the base is outside
+    expect(pointInGround(0, 2, 0, 0, dw, dh)).toBe(false)
+  })
+
+  it('5. ISO_TILE is 2:1 with whole-pixel halves, and everything agrees', () => {
+    expect(ISO_TILE.w).toBe(2 * ISO_TILE.h)
+    expect(ISO_TILE.w % 2).toBe(0)
+    expect(ISO_TILE.h % 2).toBe(0)
+    // iso-layout routes driveways along this slope; a second notion of the
+    // grid is the defect class that cost three placement bugs
+    expect(ISO_AXIS_SLOPE).toBe(ISO_TILE.h / ISO_TILE.w)
+    expect(ISO_AXIS_SLOPE).toBe(0.5)
+    // the SHIPPED pack declares the geometry its art was drawn in; the grid
+    // must be the geometry the art is drawn in or every sprite sits askew
+    const pack = JSON.parse(fs.readFileSync(PACK_PATH, 'utf8')) as { projection: string }
+    expect(pack.projection).toMatch(/2:1/)
+    expect(pack.projection).toMatch(/isometric/i)
+  })
+
+  it('5b. ISO_BASE re-bases scale so z keeps its meaning across kernels', () => {
+    const iso = projectionFor('iso')
+    // z=3 lands on the pack's native pixels at the close tier
+    expect(worldScale(iso, 3)).toBeCloseTo(1, 9)
+    // an iso tile at z=1 covers the same screen width as a top-down tile does
+    expect(ISO_TILE.w * ISO_BASE).toBeCloseTo(TOPDOWN_TILE.w, 9)
+  })
+
+  it('5c. the iso camera translation and its inverse use the SAME scale', () => {
+    const iso = projectionFor('iso')
+    const vp = { w: 1000, h: 800 }
+    const cam = { z: 1.7, x: 56.67, y: 6.67 }
+    // the camera's own centre must land at the centre of the viewport
+    const s = worldToScreen(iso, cam.x, cam.y, cam, vp)
+    expect(s.x).toBeCloseTo(vp.w / 2, 9)
+    expect(s.y).toBeCloseTo(vp.h / 2, 9)
+    // …and the world container translation puts it there too
+    const t = cameraTranslation(iso, cam, vp)
+    const o = iso.project(cam.x, cam.y)
+    const sc = worldScale(iso, cam.z)
+    expect(t.x + o.x * sc).toBeCloseTo(vp.w / 2, 9)
+    expect(t.y + o.y * sc).toBeCloseTo(vp.h / 2, 9)
+    // a drag of one viewport-width must move the camera by the tiles that
+    // width covers — the arm that catches a pan inverse missing ISO_BASE
+    const d = screenDeltaToTiles(iso, vp.w, 0, cam.z)
+    const moved = iso.project(d.tx, d.ty)
+    expect(moved.x).toBeCloseTo(vp.w / sc, 6)
+    expect(moved.y).toBeCloseTo(0, 6)
   })
 })

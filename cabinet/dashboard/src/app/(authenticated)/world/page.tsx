@@ -14,6 +14,13 @@
  * signal-bound weather layer. The legacy three-scene shell stays reachable
  * at ?legacy=1 for the engine bake-off, then deletes.
  *
+ * ?iso=1 renders the SAME engine through the isometric kernel, driven from the
+ * ported composition layer instead of the tile lattice; ?iso=0 forces top-down.
+ * The flag is read HERE, server-side, and threaded down as a prop — the canvas
+ * is told which kernel it renders, never left to discover it from window. Both
+ * directions work from day one, so the eventual default flip is one constant
+ * and the top-down path stays permanently reachable for the bake-off.
+ *
  * canActuate: the captain session cookie is verified HERE (server) and
  * threaded down — without it the lever renders truth but refuses to act
  * (view-only law).
@@ -22,6 +29,7 @@ import { cookies } from 'next/headers'
 import WorldClient from '@/components/world/world-client'
 import EngineClient from '@/components/world/engine-client'
 import OnboardingJourneyCard from '@/components/onboarding/journey-card'
+import { projectionFromParam } from '@/lib/world/projection'
 
 export const metadata = {
   title: 'Cabinet World',
@@ -40,7 +48,7 @@ export default async function WorldPage({
       {params.legacy === '1' ? (
         <WorldClient canActuate={canActuate} />
       ) : (
-        <EngineClient canActuate={canActuate} />
+        <EngineClient canActuate={canActuate} projection={projectionFromParam(params.iso)} />
       )}
       {/*
         Orientation overlay: this is NOT a World mutation path. It renders the
