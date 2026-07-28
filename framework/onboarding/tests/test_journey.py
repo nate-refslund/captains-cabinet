@@ -1622,6 +1622,15 @@ def test_the_welcome_card_is_no_longer_a_single_locked_door(tmp_path):
     A cabinet nobody has granted anything is in ``ungranted`` — the honest
     default — so the first card asks the human-shaped question and states its
     blindness instead of demanding a folder as the only way in.
+
+    INVERTED 2026-07-28, not weakened. This arm pinned the option list at
+    exactly ``["propose_window"]``, which the Captain's own ruling makes
+    literally wrong: the card PRINTS the seed question, and printing a question
+    with no action able to carry an answer is the dead end this whole surface
+    exists to abolish. The assertion now pins the corrected behaviour — the
+    answering action is present AND declares that it needs a typed field, so a
+    tap-only surface cannot offer it as a button — and still fails on any
+    unrelated option appearing here.
     """
     card = journey.snapshot(tmp_path)["card"]
     assert card["stage"] == "welcome"
@@ -1629,7 +1638,11 @@ def test_the_welcome_card_is_no_longer_a_single_locked_door(tmp_path):
     assert card["entry"]["schema"] == journey.ENTRY_PLAN_SCHEMA
     assert journey.SEED_QUESTION in card["body"]
     assert "cannot know" in card["body"]
-    assert [option["action"] for option in card["options"]] == ["propose_window"]
+    assert [option["action"] for option in card["options"]] == [
+        "propose_window", "answer_seed",
+    ]
+    answering = next(o for o in card["options"] if o["action"] == "answer_seed")
+    assert answering["input"] == "seed"
 
 
 def test_deep_orientation_is_no_longer_terminal(tmp_path):

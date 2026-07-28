@@ -821,6 +821,68 @@ temporary_allowances:
     owner: cognitive-core-program
     sunset: '2027-01-27'
     deletion_gate: the estate contract folds into a single onboarding module when the ingest engine lands, or COG-7 compaction
+  - phase: onboarding-connector-registry
+    budget: framework_production_noncomment_lines
+    additional: 566
+    reason: >-
+      The read-the-world mode could not FIRE. journey._entry_grants() read a
+      state key (entry_grants) that NOTHING in the tree ever wrote, so
+      `connectors` was permanently empty and ENTRY_MODE_CONNECTED — "sources are
+      connected, so sweep them, derive, and ASSERT with a citation", the exact
+      mechanism of the Captain's 2026-07-26 north-star ruling — was structurally
+      unreachable in production by any sequence of operator actions. Two of the
+      three advertised entry modes worked; the one the direction is about did
+      not. In the same surface the seed question was PRINTED with no action able
+      to carry an answer, and seed_probes() returned proposals no code anywhere
+      executed. ZERO new modules (framework_production_modules unchanged at 247,
+      no bijection class moved): the registry lands in
+      framework/onboarding/research.py, which the altitude gate named as the
+      connector inventory that "exists, wrong subject" — it read the CABINET's
+      declared MCP servers, never the operator's estate — so this repoints an
+      organ that already exists and already claims to work rather than adding
+      one beside it. WHAT THE LINES BUY, each pinned by an arm that fails
+      against the pre-change tree (27 of 28 new Python arms red at 6ec81460).
+      (1) THE REGISTRY — probe_connectors() probes rather than reads a
+      declaration: a repo counts only when .git/HEAD RESOLVES to an object id
+      (loose or packed), a tracker export counts only when its rows parsed AND
+      the file is still there at probe time, web is the egress ceiling and fails
+      closed on an absent or unparseable egress.yml, and every probe that did
+      not answer carries its REASON so "nothing is connected" is never
+      indistinguishable from "I never looked". journey._with_registry() writes
+      that block on every commit and refreshes it on every snapshot, which is
+      the writer entry_grants never had. (2) THE SEED FIELD — an answer_seed
+      action, the entry plan emitting it with input:"seed" in every mode that
+      prints the question, and _execute_probes() running the local half inside
+      the ratified First Window (names only, never a file open, allow-listed
+      pattern shape so operator free text cannot become a traversal) while
+      reporting the web half as DEFERRED with its reason. (3) THE CROSS-SOURCE
+      JOIN, bounded by the refuted ingest experiment — of its four findings ONE
+      needed more than one FILE and ZERO needed more than one SYSTEM, and two of
+      three existing detectors are reproduced exactly by one git grep — so what
+      lands is ONE join with two parsers and a comparison and no vault:
+      untracked_commitment, a commitment in prose that no OPEN row of a
+      structured tracker export accounts for, citing BOTH sides because without
+      the export citation the negative half of the claim is a negative nobody
+      can check. Its named consumer is the connected mode's own card. (4) THE
+      SECOND HALF OF THE COVERAGE LIE — the alphabetical walk and the unscoped
+      negative were closed by the three-entry-modes unit and re-verified here by
+      execution, but `detectors` was still a HARDCODED three-name list that
+      named software_command_drift on every dividend including the windows with
+      no package.json, where it is structurally incapable of firing: a disabled
+      sensor reported as a live one. It now reports what RAN, carries
+      detectors_skipped with reasons, and the orientation negative discloses
+      them in the same breath. Docstrings counted as written and NOT reformatted
+      into "#" comments to duck the counter: each one carries the defect its
+      code exists to prevent. EXACT measured running total 72371, 2026-07-28,
+      via cognitive-architecture-census.py against master 6ec81460 (71805,
+      itself exactly at the pinned maximum).
+    owner: onboarding-plane
+    sunset: '2027-01-28'
+    deletion_gate: >-
+      the connector registry folds into framework/onboarding/estate.py when the
+      estate widens to new source KINDS (its schema already carries
+      sources[].kind for exactly this), or COG-7 compaction brings production
+      non-comment lines below the pinned baseline
 expansions:
   - member: framework/authority/ownership.py
     member_class: framework_production_modules

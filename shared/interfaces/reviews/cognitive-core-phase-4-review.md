@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: fa66d3d0541fa8b0553e982513fef3f0933271bcec8619977c55ac5772c4ed70
+Reviewed-Scope-Digest: 453c1a58028ca258331bc64c02bbac9215867a0c629826065123e84b71fa56dc
 
 (RE-BOUND 2026-07-28 at the landing of `feat/onboarding-ordering-inversion`,
 same commit as the change that moved the bytes. Prior digest:

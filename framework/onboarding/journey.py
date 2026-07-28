@@ -49,7 +49,9 @@ claims can be tested and cited rather than performed.
 from __future__ import annotations
 
 import argparse
+import csv
 import fcntl
+import fnmatch
 import hashlib
 import json
 import math
@@ -84,6 +86,10 @@ from framework.evidence import (
     remint_trial,
     valid_id_or_none,
 )
+# The connector registry. It is imported, never re-implemented: the probe
+# vocabulary and the grant derivation have exactly one home, so a surface
+# cannot invent a connector this module would not recognise.
+from framework.onboarding import research
 
 SCHEMA = "cabinet.onboarding-journey/v2"
 ACCESS_RECORD_SCHEMA = "cabinet.source-access-record/v1"
@@ -91,6 +97,7 @@ CARD_SCHEMA = "cabinet.onboarding-card/v1"
 CHARTER_SCHEMA = "cabinet.orientation-charter/v1"
 MANIFEST_SCHEMA = "cabinet.first-window-manifest/v1"
 DIVIDEND_SCHEMA = "cabinet.first-dividend/v1"
+PROBE_RESULT_SCHEMA = "cabinet.onboarding-probe-result/v1"
 EVENT_SCHEMA = "cabinet.onboarding-event/v1"
 
 DATA_REL = "instance/onboarding/v2"
@@ -677,6 +684,9 @@ _SEED_STOPWORDS = frozenset({
 })
 MAX_SEED_TERMS = 8
 MAX_SEED_PROBES = 6
+#: A seed is a few words, not a document. Bounded before it is persisted or
+#: rendered, so no surface has to trust the length of an operator's paste.
+MAX_SEED_CHARS = 500
 
 
 def _normalized_grants(raw: Any) -> dict[str, Any]:
@@ -786,7 +796,9 @@ def _cannot_know(mode: str) -> list[dict[str, str]]:
     return out
 
 
-def entry_plan(grants: Any = None, *, seed: Any = None) -> dict[str, Any]:
+def entry_plan(
+    grants: Any = None, *, seed: Any = None, executed: Any = None
+) -> dict[str, Any]:
     """The opening move for whatever the operator has actually granted.
 
     THE INVARIANT THIS EXISTS FOR: ``next_actions`` is never empty, in any of
@@ -795,10 +807,20 @@ def entry_plan(grants: Any = None, *, seed: Any = None) -> dict[str, Any]:
     the floor — a folder is the one grant an operator can always make — and
     every mode carries the residual questions plus the honest cannot-know list
     on top of its own opening move.
+
+    A QUESTION THAT IS PRINTED NEEDS A FIELD. Every mode that asks the seed
+    question now also emits the action that ANSWERS it, carrying ``input:
+    "seed"`` so a surface knows to render a text field rather than a button. A
+    question with no way to answer it is a dead end wearing an invitation's
+    clothes, which is precisely what this function exists to abolish; and
+    ``executed`` carries what the probes that answer FOUND, so the seed does
+    not vanish into a plan nothing ever ran.
     """
     normalized = _normalized_grants(grants)
     mode = entry_mode(normalized)
     discovery = seed_probes(seed, normalized)
+    if isinstance(executed, dict):
+        discovery = {**discovery, "executed": deepcopy(executed)}
     if mode == ENTRY_MODE_CONNECTED:
         opening_move = "sweep_and_assert"
         asks: tuple[dict[str, Any], ...] = tuple(
@@ -814,6 +836,12 @@ def entry_plan(grants: Any = None, *, seed: Any = None) -> dict[str, Any]:
         asks = RESIDUAL_QUESTIONS
         question = SEED_QUESTION
     next_actions = [{"action": "propose_window", "label": "Choose a folder I may read"}]
+    if question is not None:
+        next_actions.append({
+            "action": "answer_seed",
+            "label": "Tell me in a sentence, and I will go look",
+            "input": "seed",
+        })
     payload = {
         "schema": ENTRY_PLAN_SCHEMA,
         "mode": mode,
@@ -833,12 +861,18 @@ def entry_plan(grants: Any = None, *, seed: Any = None) -> dict[str, Any]:
 def _entry_grants(state: dict[str, Any]) -> dict[str, Any]:
     """The grants THIS journey can prove, read from its own state.
 
-    Exactly one is provable here today, and it is provable exactly: a source
-    whose status is ``ratified_read_only`` is a local-file grant the Captain
-    made and has not revoked. Connectors and web come from an explicit
-    ``entry_grants`` block when a surface supplies one, and are otherwise NOT
-    granted — the fail-closed direction, because over-claiming a grant is how a
-    cabinet reads something nobody gave it.
+    ``entry_grants`` USED TO HAVE NO WRITER. This function read the key, no
+    code anywhere in the tree ever set it, and the consequence was structural:
+    ``connectors`` was permanently empty, so ``ENTRY_MODE_CONNECTED`` — the
+    sweep-derive-assert mode that is the whole mechanism of the 2026-07-26
+    ruling — could not be reached in production by any sequence of operator
+    actions. ``_entry_registry`` is that writer: it PROBES what is connected at
+    every commit and every snapshot, so the reader below now consults a fact.
+
+    Still fail-closed at the shape boundary: a malformed or absent block grants
+    nothing beyond a source whose status is ``ratified_read_only``, which is a
+    local-file grant the Captain made and has not revoked. Over-claiming a
+    grant is how a cabinet reads something nobody gave it.
     """
     source = state.get("source")
     ratified = isinstance(source, dict) and source.get("status") == "ratified_read_only"
@@ -849,6 +883,118 @@ def _entry_grants(state: dict[str, Any]) -> dict[str, Any]:
         "local_files": True if ratified else supplied.get("local_files"),
         "web": supplied.get("web"),
     })
+
+
+def _entry_registry(root: Path, state: dict[str, Any]) -> dict[str, Any]:
+    """Probe what is connected for THIS journey, and return the registry.
+
+    The probes are bounded local reads (``framework.onboarding.research``); the
+    only charter-bound input is ``tracker_exports``, which the ratified scan
+    already parsed under the Captain's approved Charter — nothing here opens a
+    file the operator did not approve. A probe error is not allowed to break an
+    action: an unprobeable estate is an UNGRANTED one, which is the honest and
+    the fail-closed answer at the same time.
+    """
+    source = state.get("source") if isinstance(state.get("source"), dict) else {}
+    ratified = source.get("status") == "ratified_read_only"
+    try:
+        return research.probe_connectors(
+            root,
+            source_root=source.get("root"),
+            ratified=bool(ratified),
+            exports=state.get("tracker_exports") or (),
+        )
+    except Exception:  # pragma: no cover — defensive; probes are pure reads
+        return {
+            "schema": research.CONNECTOR_REGISTRY_SCHEMA,
+            "connected": [],
+            "refused": [{"kind": "registry", "name": "registry",
+                         "connected": False, "reason": "probe_failed"}],
+            "grants": {"connectors": [], "local_files": bool(ratified), "web": False},
+        }
+
+
+def _with_registry(root: Path, state: dict[str, Any]) -> dict[str, Any]:
+    """State with its grants block refreshed from a live probe.
+
+    Written on every commit (so the event stream records what was connected
+    when each action was taken) and refreshed on every snapshot (so a surface
+    that only reads is never shown a stale registry). A connector removed
+    between two actions therefore stops granting, in the same read.
+    """
+    registry = _entry_registry(root, state)
+    refreshed = deepcopy(state)
+    refreshed["entry_grants"] = deepcopy(registry["grants"])
+    refreshed["connector_probes"] = {
+        "schema": registry["schema"],
+        "connected": deepcopy(registry["connected"]),
+        "refused": deepcopy(registry["refused"]),
+    }
+    return refreshed
+
+
+def _entry_plan_for(state: dict[str, Any]) -> dict[str, Any]:
+    """The entry plan for a persisted journey: grants, seed, and what ran.
+
+    One place, so a card can never be built from grants that skipped the
+    registry or from a seed whose probes were never executed.
+    """
+    seed = state.get("seed")
+    return entry_plan(
+        _entry_grants(state),
+        seed=seed.get("text") if isinstance(seed, dict) else None,
+        executed=state.get("discovery"),
+    )
+
+
+def _probe_note(state: dict[str, Any]) -> str:
+    """One sentence naming the connectors that were PROBED and did not answer.
+
+    Without it "nothing is connected" is a claim the operator cannot check, and
+    a probe that failed for a fixable reason (a folder with no repository, an
+    egress ceiling with no allowed hosts) looks identical to one never tried.
+    """
+    probes = state.get("connector_probes")
+    refused = probes.get("refused") if isinstance(probes, dict) else None
+    if not refused:
+        return ""
+    named = "; ".join(
+        f"{row.get('kind')} ({str(row.get('reason') or 'unknown').replace('_', ' ')})"
+        for row in refused[:3]
+    )
+    return f" I looked for these and they did not answer: {named}."
+
+
+def _discovery_note(executed: Any) -> str:
+    """What the seed's probes actually FOUND, and what was not run.
+
+    Takes the executed block rather than a plan so EVERY stage can render it:
+    an operator who answers the seed question and is then shown a card that
+    says nothing about it has answered into a void, which is the same dead end
+    the seed field was added to close.
+
+    The deferred half is never silent: a run whose web probes could not leave
+    the machine has not searched where the plan said it would, and reporting
+    only the hits would be the unearned negative again in a smaller frame.
+    """
+    if not isinstance(executed, dict):
+        return ""
+    hits = sorted({m for row in executed.get("executed") or () for m in row.get("matches") or ()})
+    deferred = executed.get("deferred") or []
+    if hits:
+        shown = ", ".join(hits[:5])
+        note = f" From what you told me I went looking and found {len(hits)} file(s): {shown}."
+    elif executed.get("executed"):
+        note = " From what you told me I went looking in that folder and nothing matched by name."
+    else:
+        note = ""
+    if deferred:
+        reasons = sorted({str(row.get("reason") or "unknown") for row in deferred})
+        note += (
+            f" {len(deferred)} probe(s) did not run ({', '.join(r.replace('_', ' ') for r in reasons)}), "
+            "so this is not everywhere I said I would look."
+        )
+    return note
 
 
 def _entry_body(plan: dict[str, Any]) -> str:
@@ -955,12 +1101,14 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
         "options": [],
     }
     if stage == "welcome":
-        plan = entry_plan(_entry_grants(state))
+        plan = _entry_plan_for(state)
         common.update(
             kind="first_window",
             title="Let me earn my first responsibility",
             body=(
                 _entry_body(plan)
+                + _probe_note(state)
+                + _discovery_note(state.get("discovery"))
                 + " Whatever you approve, I show you exactly what I would read first; "
                 "nothing is opened until you approve that Charter."
             ),
@@ -1018,7 +1166,7 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
         common.update(
             kind="first_dividend",
             title="I found something worth your attention" if finding["quality"] == "strong" else "Your first map is ready",
-            body=egress["summary"] + disclosure,
+            body=egress["summary"] + disclosure + _discovery_note(state.get("discovery")),
             evidence=egress["citations"],
             options=[
                 {"action": "continue", "label": "See the locked next step"},
@@ -1028,7 +1176,7 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
             ],
         )
     elif stage == "orientation_offered":
-        plan = entry_plan(_entry_grants(state))
+        plan = _entry_plan_for(state)
         common.update(
             kind="deep_orientation",
             title="Deeper Orientation has not started",
@@ -1038,6 +1186,8 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
                 "of what each officer may observe, propose, or do. That work is disabled and has not started. "
                 "No new access or authority was granted. What I can do now instead: "
                 + _entry_body(plan)
+                + _probe_note(state)
+                + _discovery_note(state.get("discovery"))
             ),
             entry=plan,
             # ``propose_window`` is what stops this card being terminal. It was
@@ -1085,7 +1235,11 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
 def snapshot(root: Path | str | None = None) -> dict[str, Any]:
     base = Path(root) if root else cabinet_root()
     with _locked(base):
-        state = _load_state(base)
+        # Probed here, not merely replayed from the last action: a connector can
+        # appear or disappear between two actions, and a read-only surface that
+        # showed the grants as of the last write would offer the connected mode
+        # for an estate that has since gone away.
+        state = _with_registry(base, _load_state(base))
         return {"ok": True, "state": deepcopy(state), "card": _card(state)}
 
 
@@ -1698,8 +1852,326 @@ def _risk_markers(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+# ── The cross-source join ────────────────────────────────────────────────────
+# BOUNDED BY A REFUTED HYPOTHESIS, deliberately. The ingest experiment came back
+# negative (docs/persona-employee-slice-2026-07-26.md): of four findings, ONE
+# needed more than one FILE and ZERO needed more than one SYSTEM; three of the
+# four were the operator's own handwriting; and two of the three detectors above
+# are reproduced exactly by ``git grep -E 'TODO|FIXME|URGENT|BLOCKED'``. The
+# adjudicated consequence is that THE VALUE IS THE JOIN, NOT THE VAULT — so what
+# lands here is ONE join between two named sources, two parsers and a
+# comparison, with no index, belief store or ingest engine anywhere near it.
+#
+# The join: a commitment written in PROSE against the OPEN rows of a structured
+# tracker export. Neither half is interesting alone — a "BLOCKED:" line is the
+# operator's own handwriting and a tracker row is a row — and the answer is
+# reachable by no single-source read, which is exactly the class the experiment
+# found invisible. It is also the connected mode's reason to exist: a parsed
+# export is what makes ``entry_mode`` return ``connected``, and this is what
+# that mode then asserts, with a citation on BOTH sides.
+MAX_EXPORT_ROWS = 2000
+_EXPORT_TITLE_COLUMNS = ("title", "summary", "name", "subject", "task", "issue")
+_EXPORT_STATUS_COLUMNS = ("status", "state", "stage", "resolution")
+_EXPORT_ID_COLUMNS = ("id", "key", "ticket", "number", "ref")
+#: A row in one of these states is not an open commitment. Anything unrecognised
+#: counts as OPEN: mis-reading an open row as closed suppresses a real finding
+#: silently, while the reverse is visible and correctable by the operator.
+_CLOSED_STATUSES = frozenset({
+    "done", "closed", "complete", "completed", "resolved", "shipped", "merged",
+    "cancelled", "canceled", "wontfix", "won't fix", "released", "archived",
+})
+_COMMITMENT_RE = re.compile(
+    r"^(?:todo|fixme|blocked|blocker|action required|needs action|follow[- ]up)"
+    r"\s*[:\-–—]\s*(.+)$",
+    re.I,
+)
+_MARKER_PREFIX_RE = re.compile(
+    r"^\s*(?:(?://+|/\*+|<!--|#{1,6}|[-*+]|\d+[.)]|\[[ xX]\])\s*)+"
+)
+_CONTENT_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9._-]{3,}")
+#: Two shared content words. One is a coincidence between any two sentences
+#: about the same codebase; requiring two is what keeps the join's assertion
+#: ("no open row accounts for this") worth printing.
+_JOIN_MATCH_TOKENS = 2
+
+
+def _export_column(fieldnames: Any, candidates: tuple[str, ...]) -> Any:
+    lowered = {str(f or "").strip().lower(): f for f in (fieldnames or ())}
+    for candidate in candidates:
+        if candidate in lowered:
+            return lowered[candidate]
+    return None
+
+
+def _tracker_rows(entry: dict[str, Any]) -> list[dict[str, str]]:
+    """Parse one entry as a structured tracker export. Not one ⇒ no rows.
+
+    Recognised by SHAPE, never by filename: a delimited or JSON table carrying
+    BOTH a title-ish and a status-ish column. Guessing from a name would let a
+    ``tasks.csv`` full of prose count as a connected tracker, and the connected
+    mode would then assert against a source that answers nothing.
+    """
+    suffix = Path(entry["path"]).suffix.lower()
+    if suffix not in {".csv", ".tsv", ".json"}:
+        return []
+    lines = entry.get("lines") or []
+    records: list[dict[str, Any]] = []
+    fields: Any = ()
+    if suffix == ".json":
+        try:
+            doc = json.loads("\n".join(lines))
+        except ValueError:
+            return []
+        if isinstance(doc, dict):
+            doc = next((v for v in doc.values() if isinstance(v, list)), None)
+        if not isinstance(doc, list):
+            return []
+        records = [r for r in doc if isinstance(r, dict)][:MAX_EXPORT_ROWS]
+        fields = sorted({k for r in records for k in r})
+    else:
+        try:
+            reader = csv.DictReader(
+                lines, delimiter="\t" if suffix == ".tsv" else ","
+            )
+            fields = reader.fieldnames
+            records = [row for _, row in zip(range(MAX_EXPORT_ROWS), reader)]
+        except (csv.Error, ValueError):
+            return []
+    title_col = _export_column(fields, _EXPORT_TITLE_COLUMNS)
+    status_col = _export_column(fields, _EXPORT_STATUS_COLUMNS)
+    if title_col is None or status_col is None:
+        return []
+    id_col = _export_column(fields, _EXPORT_ID_COLUMNS)
+    rows: list[dict[str, str]] = []
+    for record in records:
+        title = str(record.get(title_col) or "").strip()
+        if not title:
+            continue
+        rows.append({
+            "id": str(record.get(id_col) or "").strip() if id_col is not None else "",
+            "title": title,
+            "status": str(record.get(status_col) or "").strip().lower(),
+        })
+    return rows
+
+
+def _content_tokens(text: str) -> set[str]:
+    """The comparison surface for the join: content words, no scaffolding."""
+    return {
+        token.lower() for token in _CONTENT_TOKEN_RE.findall(text)
+        if token.lower() not in _SEED_STOPWORDS
+    }
+
+
+def _untracked_commitment(
+    entries: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """A commitment in prose that NO open tracker row accounts for.
+
+    Returns ``(findings, detector_state)``. The state is not bookkeeping: a
+    detector that silently returns nothing when one of its two sides is missing
+    is indistinguishable from one that looked and found nothing, and this
+    program has now paid for that exact confusion three times (a coverage
+    statistic that concealed its own loss, an eval pointed at a dead twin, a
+    command-drift detector disabled by an absent manifest). The caller turns
+    ``ran: False`` into a sentence the operator reads.
+    """
+    exports: list[dict[str, Any]] = []
+    open_titles: list[set[str]] = []
+    open_rows = 0
+    for entry in entries:
+        rows = _tracker_rows(entry)
+        if not rows:
+            continue
+        exports.append(entry)
+        for row in rows:
+            if row["status"] in _CLOSED_STATUSES:
+                continue
+            open_rows += 1
+            open_titles.append(_content_tokens(f"{row['id']} {row['title']}"))
+    if not exports:
+        return [], {"ran": False, "reason": "no_tracker_export_in_window"}
+    export_paths = {entry["path"] for entry in exports}
+    witness = exports[0]
+    out: list[dict[str, Any]] = []
+    for entry in entries:
+        if entry["path"] in export_paths:
+            continue
+        if Path(entry["path"]).suffix.lower() not in _PROSE_SUFFIXES:
+            continue
+        for line_no, line in enumerate(entry["lines"], start=1):
+            match = _COMMITMENT_RE.match(
+                _MARKER_PREFIX_RE.sub("", line).lstrip("*_`")
+            )
+            if not match:
+                continue
+            subject = _content_tokens(match.group(1))
+            # A one-word commitment carries too little to claim a miss against;
+            # asserting "nothing tracks this" on a single token is how a join
+            # detector earns a reputation for noise and stops being read.
+            if len(subject) < _JOIN_MATCH_TOKENS:
+                continue
+            if any(
+                len(subject & tracked) >= _JOIN_MATCH_TOKENS
+                for tracked in open_titles
+            ):
+                continue
+            out.append({
+                "score": 95,
+                "kind": "untracked_commitment",
+                "quality": "strong",
+                "summary": (
+                    "Someone committed to this in writing and no open row in the "
+                    f"tracker export accounts for it ({open_rows} open row(s) "
+                    f"checked in “{witness['path']}”). Neither source shows this "
+                    "on its own — the document looks like a plan and the tracker "
+                    "looks complete. I matched by shared wording, so a row phrased "
+                    "differently could be the answer; tell me and I will stop "
+                    "raising it."
+                ),
+                # BOTH sides are cited, and that is not decoration: without the
+                # export citation the negative half of this claim ("no open row
+                # accounts for it") is a negative nobody can check.
+                "citations": [
+                    _citation(entry, line_no, line),
+                    _citation(witness, 1, witness["lines"][0] if witness["lines"] else witness["path"]),
+                ],
+            })
+    return out, {
+        "ran": True,
+        "tracker_exports": sorted(export_paths),
+        "open_rows_checked": open_rows,
+    }
+
+
+# ── The probe executor ───────────────────────────────────────────────────────
+MAX_PROBE_HITS = 20
+MAX_PROBE_ENTRIES = 5_000
+#: The operator's own words reach this pattern through ``_seed_terms``. A path
+#: separator or a parent segment would turn a NAME match into a traversal, so
+#: the shape is allow-listed rather than escaped.
+_PROBE_PATTERN_RE = re.compile(r"^[A-Za-z0-9*][A-Za-z0-9*+#._-]{0,63}$")
+
+
+def _name_matches(root: Path, pattern: str) -> tuple[list[str], bool]:
+    """Names matching one probe inside the ratified window. Never opens a file."""
+    hits: list[str] = []
+    visited = 0
+    lowered = pattern.lower()
+    for current, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
+        dirnames[:] = sorted(
+            d for d in dirnames if not d.startswith(".") and d not in SKIP_DIRS
+        )
+        current_path = Path(current)
+        for name in sorted(filenames):
+            visited += 1
+            if visited > MAX_PROBE_ENTRIES:
+                return hits, True
+            path = current_path / name
+            if name.startswith(".") or path.is_symlink() or not _allowed_file(path):
+                continue
+            rel = path.relative_to(root)
+            if _is_sensitive(rel) or not fnmatch.fnmatch(name.lower(), lowered):
+                continue
+            hits.append(rel.as_posix())
+            if len(hits) >= MAX_PROBE_HITS:
+                return hits, True
+    return hits, False
+
+
+def _execute_probes(source_root: Any, probes: Any) -> dict[str, Any]:
+    """RUN the discovery probes this machine can run; SAY which it could not.
+
+    ``seed_probes`` returned proposals with no executor anywhere in the tree, so
+    a few words from the operator became a plan nobody ran — an interview whose
+    answers go nowhere, which is the one thing the seed question exists to
+    avoid.
+
+    What runs is strictly WEAKER than the Charter the Captain already approved:
+    it matches NAMES inside the ratified First Window and opens nothing, so it
+    can reveal nothing a bounded read of that same folder could not. Web probes
+    are not run — this module holds no egress and never will — and are reported
+    as DEFERRED with their reason rather than dropped, so "found nothing" is
+    never claimed on behalf of a probe class that did not run.
+    """
+    executed: list[dict[str, Any]] = []
+    deferred: list[dict[str, Any]] = []
+    root: Path | None = None
+    if source_root:
+        try:
+            root = Path(str(source_root)).resolve(strict=True)
+        except (OSError, RuntimeError):
+            root = None
+    for probe in probes or ():
+        if not isinstance(probe, dict):
+            continue
+        if str(probe.get("kind") or "") != "local_name_match":
+            deferred.append({**probe, "executed": False,
+                             "reason": "no_egress_in_the_onboarding_core"})
+            continue
+        if root is None or not root.is_dir():
+            deferred.append({**probe, "executed": False,
+                             "reason": "no_ratified_first_window"})
+            continue
+        pattern = str(probe.get("pattern") or "")
+        if not _PROBE_PATTERN_RE.match(pattern):
+            deferred.append({**probe, "executed": False, "reason": "pattern_unsafe"})
+            continue
+        matches, truncated = _name_matches(root, pattern)
+        executed.append({**probe, "executed": True, "matches": matches,
+                         "truncated": truncated})
+    return {
+        "schema": PROBE_RESULT_SCHEMA,
+        "executed": executed,
+        "deferred": deferred,
+        # A run with anything deferred has NOT searched everywhere the plan
+        # proposed, and no surface may summarise it as though it had.
+        "complete": bool(executed) and not deferred,
+    }
+
+
+def _detector_roster(
+    entries: list[dict[str, Any]], join_state: dict[str, Any]
+) -> tuple[list[str], list[dict[str, str]]]:
+    """Which detectors RAN, and which could not — with the reason.
+
+    ``detectors`` was a hardcoded three-name list that named
+    ``software_command_drift`` on every dividend, including the windows where no
+    package.json was ever read and that detector was therefore structurally
+    incapable of firing. That is a disabled sensor reported as a live one: the
+    same defect the coverage accounting closed one layer up, still open here.
+    """
+    has_manifest = any(
+        Path(entry["path"]).name.lower() == "package.json" for entry in entries
+    )
+    ran = ["conflicting_commitment", "attention_marker"]
+    skipped: list[dict[str, str]] = []
+    if has_manifest:
+        ran.insert(0, "software_command_drift")
+    else:
+        skipped.append({
+            "name": "software_command_drift",
+            "reason": "no_package_json_in_window",
+        })
+    if join_state.get("ran"):
+        ran.append("untracked_commitment")
+    else:
+        skipped.append({
+            "name": "untracked_commitment",
+            "reason": str(join_state.get("reason") or "not_run"),
+        })
+    return ran, skipped
+
+
 def _first_dividend(manifest: dict[str, Any], entries: list[dict[str, Any]], now: str) -> dict[str, Any]:
-    findings = _command_drift(entries) + _contradictions(entries) + _risk_markers(entries)
+    join_findings, join_state = _untracked_commitment(entries)
+    detectors_ran, detectors_skipped = _detector_roster(entries, join_state)
+    findings = (
+        _command_drift(entries)
+        + join_findings
+        + _contradictions(entries)
+        + _risk_markers(entries)
+    )
     findings.sort(
         key=lambda item: (
             -int(item["score"]),
@@ -1735,6 +2207,15 @@ def _first_dividend(manifest: dict[str, Any], entries: list[dict[str, Any]], now
                 "unopened by the First Window limits, so this is not a clean bill of health for the folder — "
                 "widen the window or point me at a narrower one and I will finish the job."
             )
+        # COVERAGE IS NOT THE ONLY WAY A NEGATIVE GOES UNEARNED. Reading every
+        # file still proves nothing about a question no detector was able to
+        # ask, so a detector that could not run is disclosed in the same breath
+        # as the negative it would otherwise appear to support.
+        if detectors_skipped:
+            summary += " I could not run " + "; ".join(
+                f"{row['name']} ({row['reason'].replace('_', ' ')})"
+                for row in detectors_skipped
+            ) + ", so nothing here speaks to what those would have found."
         finding = {
             "score": 10,
             "kind": "orientation_map",
@@ -1755,7 +2236,12 @@ def _first_dividend(manifest: dict[str, Any], entries: list[dict[str, Any]], now
         "generated_at": now,
         "manifest_hash": manifest["manifest_hash"],
         "finding": finding,
-        "detectors": ["software_command_drift", "conflicting_commitment", "attention_marker"],
+        # WHAT ACTUALLY RAN, not what this module can in principle run. The old
+        # list was a constant and named a detector that cannot fire without a
+        # package.json in the window — a disabled sensor reported as a live one.
+        "detectors": detectors_ran,
+        "detectors_skipped": detectors_skipped,
+        "join": join_state,
         "raw_source_persisted": False,
         # Carried on the dividend, not left on the manifest, because the
         # dividend is what every surface renders — a coverage figure an
@@ -1821,7 +2307,11 @@ def _commit(
     undo_of: str | None = None,
     manifest: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    after = deepcopy(after)
+    # THE WRITER ``entry_grants`` NEVER HAD. Every committed projection carries
+    # the grants block derived from a live probe, so the entry-mode reader
+    # consults a fact and the event stream records what was connected at the
+    # moment each action was taken.
+    after = _with_registry(root, after)
     after["revision"] = int(before.get("revision", 0)) + 1
     after["updated_at"] = now
     row = {
@@ -2058,6 +2548,39 @@ def _act_core(
                 base, state, request, surface=surface, trace_id=trace_id,
                 correlation_id=correlation_id, now=ts,
             )
+        if action == "answer_seed":
+            # THE FIELD THE SEED QUESTION NEVER HAD. "What do you do, and how
+            # can I best serve you?" was printed on the welcome card with no
+            # action that could carry an answer, so the Captain's ruling — take
+            # a few words as a SEED for discovery, not as the data — had no
+            # entry point in any surface. This is it, and it runs the probes in
+            # the same action so the answer visibly goes somewhere.
+            raw_seed = request.get("seed")
+            if not isinstance(raw_seed, str) or not raw_seed.strip():
+                raise JourneyError(
+                    "seed_required",
+                    "Say a sentence about what you do, or choose a folder for me to read instead.",
+                )
+            seed_text = " ".join(_scrub_lone_surrogates(raw_seed).split())[:MAX_SEED_CHARS]
+            after = deepcopy(state)
+            after["seed"] = {"text": seed_text, "answered_at": ts}
+            # The probes are derived from the CURRENT grants, so the seed can
+            # never conjure a reach the operator has not granted: no local
+            # grant, no local probe; no web grant, no web probe.
+            probed = _with_registry(base, after)
+            plan = entry_plan(_entry_grants(probed), seed=seed_text)
+            source_state = probed.get("source") or {}
+            after["discovery"] = _execute_probes(
+                source_state.get("root")
+                if source_state.get("status") == "ratified_read_only"
+                else None,
+                plan["discovery"]["probes"],
+            )
+            return _commit(
+                base, state, after, action=action, action_id=action_id,
+                surface=surface, trace_id=trace_id,
+                correlation_id=correlation_id, now=ts,
+            )
         if action == "propose_window":
             source = _validate_source(request.get("source"))
             purpose = _validate_purpose(request.get("purpose"))
@@ -2140,6 +2663,16 @@ def _act_core(
             after["charter"]["status"] = "ratified"
             after["charter"]["ratified_at"] = ts
             after["first_dividend"] = dividend
+            # THE ONE CONNECTOR ONLY A CHARTER-BOUND READ CAN PROVE. Whether a
+            # tracker export is real means whether its rows PARSE, and reading
+            # file contents is lawful only inside the Charter the Captain just
+            # approved. Paths and counts only — no row ever leaves the scan.
+            after["tracker_exports"] = [
+                {"path": entry["path"], "rows": len(rows)}
+                for entry in entries
+                for rows in (_tracker_rows(entry),)
+                if rows
+            ]
             return _commit(
                 base, state, after, action=action, action_id=action_id,
                 surface=surface, trace_id=trace_id,
