@@ -2067,7 +2067,24 @@ _PROBE_PATTERN_RE = re.compile(r"^[A-Za-z0-9*][A-Za-z0-9*+#._-]{0,63}$")
 
 
 def _name_matches(root: Path, pattern: str) -> tuple[list[str], bool]:
-    """Names matching one probe inside the ratified window. Never opens a file."""
+    """Names matching one probe inside the ratified window. Never opens a file.
+
+    ``(hits, truncated)`` where TRUNCATED MEANS SOMETHING REMAINED — never
+    merely "the cap was reached" (corrected at this branch's review,
+    2026-07-28, reproduced first). This branch is what makes the flag
+    operator-visible, so the old reading shipped a sentence that is FALSE: a
+    folder holding exactly ``MAX_PROBE_HITS`` matching files and nothing else
+    is read to the last entry, yet ``len(hits) >= MAX_PROBE_HITS`` returned
+    True and the card said *"1 search(es) stopped at my limit before the end of
+    that folder, so this is what I saw and not what is there"* with
+    ``complete: false``. n=20 and n=21 were indistinguishable to the operator —
+    an unearned negative inside the fix for unearned negatives.
+
+    The walk therefore collects ONE hit past the cap and reports truncation
+    only when that extra hit exists; the returned list is still capped, so no
+    caller sees more than ``MAX_PROBE_HITS``. The entries cap needs no such
+    correction: ``visited > MAX_PROBE_ENTRIES`` already fires on the entry
+    AFTER the budget, which is itself the proof that something remained."""
     hits: list[str] = []
     visited = 0
     lowered = pattern.lower()
@@ -2087,8 +2104,8 @@ def _name_matches(root: Path, pattern: str) -> tuple[list[str], bool]:
             if _is_sensitive(rel) or not fnmatch.fnmatch(name.lower(), lowered):
                 continue
             hits.append(rel.as_posix())
-            if len(hits) >= MAX_PROBE_HITS:
-                return hits, True
+            if len(hits) > MAX_PROBE_HITS:
+                return hits[:MAX_PROBE_HITS], True
     return hits, False
 
 
