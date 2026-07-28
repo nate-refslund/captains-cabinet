@@ -301,7 +301,7 @@ describe('every interactive kind is reachable, or is honestly not drawn', () => 
     //
     // SCOPED TO THE STATIC SCENE ON PURPOSE. This arm shipped saying "the pack
     // ships no character sprites, drawIsoDynamics draws only the lamp", and the
-    // very next commit made that false: `drawIsoCutaway` draws one LimeZu
+    // very next commit made that false: `drawIsoCutaway` draws one owned
     // officer per slug inside any open room (engine-canvas.tsx ~1887). The
     // sweep could not see it, because a scene with no cutaway open has no
     // officer in it — so the justification was rewritten to what is measured
