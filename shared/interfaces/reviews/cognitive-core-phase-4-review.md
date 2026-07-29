@@ -21,7 +21,19 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: e7a6983a05d08cd4e88233935a84a8a3afded44dbb6e79021f24a54fede4bf86
+Reviewed-Scope-Digest: 404043309cd97b5d753e43b22b73b80dc734977c73025746b65a0e322e3e9159
+(RE-BOUND 2026-07-29 on `feat/onboarding-connector-read`, previous value
+`e7a6983a…`. TWO in-scope paths moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` gains one
+`temporary_allowances` row (`connector-read-lane`, +411 non-comment lines, the
+line ceiling re-measured over this tree), and
+`cabinet/scripts/egg-export-manifest.txt` gains one `delete` line for
+`instance/config/connectors.yml` so a live instance value cannot ship in the
+egg. The unit's own work is in `framework/onboarding/` and
+`instance/config/`, which this scope does not bind. The delta is named here
+rather than absorbed silently, because a re-freeze that hides what moved would
+assert a review that never happened.)
+
 (MERGE RE-BIND, 2026-07-29, `fix/fence-newline-forgery` x master (the eight-PR billing-wall drain, final landing). Both sides had re-bound this line, so the merge left two; the SECOND is removed and the value above is recomputed over this merge commit. Every note from both sides is kept verbatim. No COG-4 implementation byte moved on either side — the only in-scope path is the contract file, whose ceiling is re-measured over the merged tree.)
 
 
