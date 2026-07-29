@@ -801,13 +801,30 @@ def _sweep_one(spec, credential, *, fetch, timeout, max_items, budget) -> dict:
     return row
 
 
-def load_connector_specs(root) -> list:
+def load_connector_specs(root, *, not_reached=None) -> list:
     """Connectors the OPERATOR declared. Absent file = an honest empty list.
 
     No connector is built in. A cabinet that has been told about nothing reads
     nothing, and says so — which is the correct behaviour for a fresh hatch and
     the reason this returns ``[]`` rather than inventing a default estate.
+
+    AN ABSENT FILE IS THE ONLY HONEST EMPTY, and this function used to return
+    the same ``[]`` for two things that are not that — committing, in the
+    loader, the exact failure the section header above forbids one function
+    down. A declaration that WOULD NOT PARSE came back indistinguishable from
+    an operator who declared nothing; a single malformed ENTRY was dropped
+    without a word, so a sweep over a file naming two connectors reported
+    ``declared: 1``, swept the sibling, called it connected, and left
+    ``not_reached`` EMPTY — a confident result that omits a source it threw
+    away.
+
+    Both now append to the caller's ``not_reached`` list with the operator's
+    own path, what is wrong, and (for an entry) WHICH one, so the refusal is
+    something a person can go and fix rather than a clean negative nobody
+    earned. The list is optional because a caller that wants only the COUNT
+    stays a one-liner; passing nothing loses the reasons, never a spec.
     """
+    refused = not_reached if isinstance(not_reached, list) else []
     path = Path(root).expanduser() / CONNECTORS_REL
     if not path.is_file():
         return []
@@ -815,16 +832,32 @@ def load_connector_specs(root) -> list:
         import yaml  # local: keep the module import-light
 
         doc = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except Exception:
-        return []
-    if not isinstance(doc, dict):
+        declared = (doc.get("connectors") or []) if isinstance(doc, dict) else None
+    except Exception as exc:
+        # THE EXCEPTION'S TYPE, NEVER ITS TEXT. A YAML parse error quotes the
+        # offending SOURCE LINE back at you (verified by execution), and this
+        # file is the one the operator edits next to their credentials — so the
+        # obvious "make the message more helpful" edit would put a line of their
+        # config into a document this lane promises is contents-free. Pinned by
+        # test_a_parse_failure_never_echoes_the_line_that_broke.
+        declared, problem = None, f"would not parse ({type(exc).__name__})"
+    else:
+        problem = "carries no `connectors:` list"
+    if not isinstance(declared, list):
+        refused.append(
+            f"{CONNECTORS_REL} {problem}, so NO connector declared in it was read — "
+            "that is a broken file, not evidence that you have no connectors")
         return []
     out = []
-    for entry in doc.get("connectors") or ():
-        if not isinstance(entry, dict):
-            continue
-        if str(entry.get("name") or "").strip() and isinstance(entry.get("inventory"), dict):
+    for position, entry in enumerate(declared, start=1):
+        name = str(entry.get("name") or "").strip() if isinstance(entry, dict) else ""
+        if name and isinstance(entry.get("inventory"), dict):
             out.append(entry)
+            continue
+        refused.append(
+            f"{CONNECTORS_REL} entry {position}" + (f" ({name})" if name else "")
+            + " was skipped, so nothing in it was read: a connector needs a "
+              "non-empty `name` and an `inventory:` mapping saying what to read")
     return out
 
 
@@ -857,13 +890,19 @@ def sweep_connectors(root, *, specs=None, env=None, fetch=None, now=None,
     answers go nowhere.
     """
     root_path = Path(root).expanduser()
-    specs = load_connector_specs(root_path) if specs is None else list(specs)
+    connectors, rows, identities, not_reached = [], [], [], []
+    # THE LOADER'S OWN REFUSALS LAND HERE, in the same list as every other
+    # named failure. A declaration the operator broke and a deployment that
+    # declared nothing both produce zero specs, and without this they produced
+    # the same document too — which is the one confusion this whole lane exists
+    # to prevent.
+    specs = (load_connector_specs(root_path, not_reached=not_reached)
+             if specs is None else list(specs))
     env = os.environ if env is None else env
     fetch = _http_fetch if fetch is None else fetch
     ceiling = _probe_web(root_path) if ceiling is None else ceiling
     swept_at = now or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    connectors, rows, identities, not_reached = [], [], [], []
     budget = {"left": max(0, int(max_calls))}
     permitted = bool(ceiling.get("connected"))
     for spec in specs:

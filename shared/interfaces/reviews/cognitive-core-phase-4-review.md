@@ -21,7 +21,19 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 408e6b979fff5a1d84da85fdc19ed7114a8a2df96492636407d80febee0aa017
+Reviewed-Scope-Digest: 66168c74861d31276ae25e046d594464a15d9ae22b2547419ca4c067c713cea0
+(RE-BOUND 2026-07-29 on `fix/connector-loader-honesty`, previous value
+`408e6b97…`. ONE in-scope path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` raises
+`framework_production_noncomment_lines` 60543 -> 60572 VISIBLY, with the
+per-item breakdown in the row's own comment — not an allowance, and not a
+bijection class. The unit's own work is in `framework/onboarding/`, which
+this scope does not bind: the connector loader's two silent skips (an
+unparseable declaration returning the document an ABSENT one returns, and a
+malformed entry dropped without a word) now arrive as named refusals. Stated
+here rather than absorbed silently, because a re-freeze that hides what moved
+asserts a review that never happened.)
+
 (RE-BOUND 2026-07-29 on `fix/framework-specifics`, previous value
 `0df4d12a…`. TWO in-scope paths moved and NO COG-4 implementation byte did:
 `cabinet/config/cognitive-architecture-contract.yml` raises
