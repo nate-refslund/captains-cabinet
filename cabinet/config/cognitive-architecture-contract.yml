@@ -252,7 +252,11 @@ budgets:
     # headroom) rather than added on paper: 94 + 305 summed on paper would have
     # been 60942, and the two-line difference is the merge itself. Neither is an
     # allowance; both are permanent, so the ratchet re-pins at zero headroom.
-    maximum: 60944
+    #
+    # 60944 -> 60946 (+2, same landing): the actor harvest read one entry PER
+    # ROW, so the live estate's 665 rows handed every caller 665 identity
+    # strings for four distinct owners. Deduped in place, order kept.
+    maximum: 60946
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

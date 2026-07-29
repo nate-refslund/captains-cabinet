@@ -765,13 +765,20 @@ def rows_from_state(state: Mapping[str, Any]) -> tuple[list[dict[str, Any]], lis
         # both come FROM the connectors, so no list is being maintained here.
         # It stays out of attribution, where the same string means nothing:
         # see framework.onboarding.research.operator_identity.
-        identities.extend(
-            str(actor).strip()
-            for row in raw
-            if isinstance(row, Mapping)
-            for actor in (row.get("actors") or ())
-            if str(actor).strip()
-        )
+        #
+        # DEDUPED, because this reads one entry PER ROW: the live estate stamps
+        # 665 rows with four distinct owners, and an undeduped list would hand
+        # every caller 665 strings to carry, log or disclose for four facts.
+        # Order is kept so the result is stable to read and to diff.
+        seen = {str(i) for i in identities}
+        for row in raw:
+            if not isinstance(row, Mapping):
+                continue
+            for actor in (row.get("actors") or ()):
+                text = str(actor).strip()
+                if text and text not in seen:
+                    seen.add(text)
+                    identities.append(text)
     probes = state.get("connector_probes") if isinstance(state, Mapping) else None
     for probe in (probes or {}).get("connected", ()) if isinstance(probes, Mapping) else ():
         if not isinstance(probe, Mapping):

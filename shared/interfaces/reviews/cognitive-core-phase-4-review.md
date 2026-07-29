@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: ade4e533458db0efd149a6f80da69b95f364f096bd934361f6a31ed75aaee975
+Reviewed-Scope-Digest: 8e9e9177e4f168b3404ddc947d5d128445fe7d1101b07d694eab9611530e8eba
 (RE-BOUND 2026-07-29 on `feat/look-capabilities`, previous value
 `408e6b97…`. ONE in-scope path moved and NO COG-4 implementation byte did:
 `cabinet/config/cognitive-architecture-contract.yml` raises
@@ -1550,3 +1550,18 @@ them, and is moved below both. No budget value changes, the census re-runs at
 observed == maximum with zero headroom, and no COG-4 implementation byte moves.
 Named rather than absorbed, because a digest that moves for reasons nobody wrote
 down is a binding to nothing.
+
+
+---
+
+## Re-bind 2026-07-29 (fix/salience-ranking, actor-harvest dedupe)
+
+Recorded digest: 8e9e9177e4f168b3404ddc947d5d128445fe7d1101b07d694eab9611530e8eba
+Previous:        ade4e533458db0efd149a6f80da69b95f364f096bd934361f6a31ed75aaee975
+
+ONE bound path, `cabinet/config/cognitive-architecture-contract.yml`, taking
+`framework_production_noncomment_lines` 60944 -> 60946 for a two-line fix in
+`framework/onboarding/salience.py`: the actor harvest read one identity string
+per ROW, so 665 rows produced 665 strings for four distinct owners. Raised
+visibly on the same maximum line, census PASS at observed == maximum with zero
+headroom, no allowance, zero new modules, no COG-4 implementation byte moved.
