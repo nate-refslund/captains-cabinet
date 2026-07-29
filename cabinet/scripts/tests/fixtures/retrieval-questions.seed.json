@@ -1,0 +1,33 @@
+{
+  "generated_at": "2026-07-29T00:00:00Z",
+  "generator": "hand-authored — see note",
+  "recall_k": 10,
+  "note": "QUESTION-SHAPED retrieval eval. Every `query` below is a question a person would actually ask, written WITHOUT looking at the answering document's opening words; every `expected_ref` is a document THIS REPOSITORY SHIPS, so any cabinet that has ingested its own docs/ tree into cabinet_memory can run this eval unchanged and nothing here reveals anything about any operator's private material. This REPLACES the previous seed shape, whose queries were each document's own leading 110 characters — the corpus asked to find itself, which reported recall@10 = 1.0000 and MRR = 1.0000 while plainly-worded questions were returning nothing at all. An eval that cannot fail is not a sensor. TWO ARMS, and the second one is load-bearing: `pairs` measures that a real question FINDS its answer, and `unanswerable` measures that the store still REFUSES a question it holds nothing on — without that arm, deleting the similarity floor entirely would score a perfect recall@k.",
+  "pairs": [
+    {"query": "how do I prove nobody can roll the evidence store back to an older copy?", "expected_ref": "docs/runbooks/tamper-drill.md", "source_type": "framework_doc"},
+    {"query": "can I stop officers from reaching the internet, and what is allowed by default?", "expected_ref": "docs/runbooks/egress-allowlist.md", "source_type": "framework_doc"},
+    {"query": "what happens when I send the emergency stop command from my phone?", "expected_ref": "docs/runbooks/captain-killswitch-card.md", "source_type": "framework_doc"},
+    {"query": "how does the cabinet notice when an upstream vendor changes something we depend on?", "expected_ref": "docs/runbooks/dependency-radar.md", "source_type": "framework_doc"},
+    {"query": "what does the second independent leg that re-derives outcomes actually prove?", "expected_ref": "docs/runbooks/evidence-recompute.md", "source_type": "framework_doc"},
+    {"query": "which kinds of forged records can we catch today and which stay open?", "expected_ref": "docs/runbooks/fuel-integrity.md", "source_type": "framework_doc"},
+    {"query": "where can I look up what the org already knows without opening a terminal?", "expected_ref": "docs/runbooks/library-search-2026-07-17.md", "source_type": "framework_doc"},
+    {"query": "why can the calendar helper read my calendars by hand but not when launchd starts it?", "expected_ref": "docs/runbooks/calendar-officer-grant.md", "source_type": "framework_doc"},
+    {"query": "what is the weekly ritual where I give verdicts and how long does it take?", "expected_ref": "docs/runbooks/governance-review.md", "source_type": "framework_doc"},
+    {"query": "what may the cabinet do during a soak where it can look but not change anything?", "expected_ref": "docs/runbooks/observe-only-dogfood.md", "source_type": "framework_doc"},
+    {"query": "where does the money go and how are token costs metered?", "expected_ref": "docs/TRANSPARENCY.md", "source_type": "framework_doc"},
+    {"query": "how do we mass produce our own sprite art once the palette lands?", "expected_ref": "docs/runbooks/world-asset-forge.md", "source_type": "framework_doc"},
+    {"query": "is there a read only way to browse the vault notes in a browser?", "expected_ref": "docs/runbooks/vault-browser-2026-07-17.md", "source_type": "framework_doc"},
+    {"query": "is there a lane that can apply code to the constitutional files, and is it on?", "expected_ref": "docs/runbooks/gate-apply-runbook.md", "source_type": "framework_doc"},
+    {"query": "how would an outsider build an installable capability pack?", "expected_ref": "docs/authoring-a-pack.md", "source_type": "framework_doc"},
+    {"query": "how do I change what is allowed to wake me at night?", "expected_ref": "docs/runbooks/comms-charter-amend.md", "source_type": "framework_doc"}
+  ],
+  "unanswerable": [
+    "what is the best recipe for sourdough bread with a rye starter?",
+    "how do I change the oil filter on a 1998 Honda Civic?",
+    "when did the Ming dynasty fall and who replaced it?",
+    "what are the symptoms of vitamin D deficiency in toddlers?",
+    "how do I prune an apple tree in late winter?",
+    "which knot should I use to tie a hammock between two trees?"
+  ],
+  "unanswerable_note": "Six questions in domains no cabinet's own documentation covers, so the honest answer is silence. Each must return ZERO rows. They are deliberately ordinary rather than adversarial: an operator asking a mundane off-topic question is the everyday case, and it is the case a lowered floor breaks first. Measured on the calibration store (1811 rows, whole-file embeddings, voyage-4-large): these peak at vec 0.125-0.213, while the answering document of every question above scores 0.344 or better."
+}

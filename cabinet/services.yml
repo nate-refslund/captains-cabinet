@@ -779,9 +779,13 @@ services:
     expected: "one verdict JSONL line/night appended to cabinet/logs/retrieval-eval-history.jsonl (runtime path, gitignored via cabinet/logs/*) carrying recall@k + MRR + pass per arm for BOTH arms — production hybrid+rerank AND --no-rerank blended order (a blended-arm breach is a real finding even when the rerank arm passes); exit 1 on a floor breach so launchd surfaces it; credless boxes (clean-room/CI) log a skip line and exit 0"
     notes: >-
       The standing gate over memory_search ranking quality (recall@k >= 0.60
-      + MRR >= 0.50 per arm, self-harvested pairs via
-      harvest-retrieval-eval.sh --limit 12, --limit 20 > k=10 so the k-cut
-      stays order-sensitive). Closes the R1 landing residual (960d4c4d):
+      + MRR >= 0.50 + abstain = 1.00 per arm, over the committed
+      question-shaped seed cabinet/scripts/tests/fixtures/
+      retrieval-questions.seed.json, --limit 20 > k=10 so the k-cut
+      stays order-sensitive). The pairs used to be self-harvested from this
+      store, each query being the expected document own leading 110
+      characters — the corpus asked to find itself, scoring 1.0000 forever;
+      that harvester is deleted and the seed asks real questions. Closes the R1 landing residual (960d4c4d):
       rerank rescues pool damage, so the eval also runs a
       CABINET_MEMORY_RERANK=off arm measuring the BLENDED order directly.
       Store-local by design (queries the live cabinet_memory) — GitHub CI
@@ -792,7 +796,7 @@ services:
       the verdict ledger (--probe): breach or >48h stale = WARN/AMBER,
       credless = SKIP. Runbook: cabinet/runbooks/org-memory-day1.md §7.
       Floors env-overridable (RE_FLOOR / RE_MRR_FLOOR /
-      RE_BLENDED_MRR_FLOOR); secrets stay in cabinet/.env (sourced via
+      RE_BLENDED_MRR_FLOOR / RE_ABSTAIN_FLOOR); secrets stay in cabinet/.env (sourced via
       lib/memory.sh, never printed).
 
   # brain-quality Wave F watch (installed 2026-07-07, Captain directive)

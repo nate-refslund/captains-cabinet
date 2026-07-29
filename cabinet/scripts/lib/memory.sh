@@ -138,15 +138,18 @@ memory_cabinet_scope() {
 # of ten natural-language questions returned "No results found." — not
 # because nothing matched, but because the top cosine similarity for a
 # question-shaped query against a long document sits around 0.30-0.42 while
-# the default vec floor is 0.45. The right document WAS in the pool every
+# the default vec floor was 0.45. The right document WAS in the pool every
 # time; the floor discarded it before the reranker could see it. The same
 # probe against the live store cleared the floor for 2 of 10 questions.
 #
-# The ranking is NOT touched here (that region is fingerprint-pinned and a
-# floor change needs a store-local eval re-stamp). What is fixed is the
-# OBSERVABILITY: "No results found." was indistinguishable between an empty
-# store, a missing embed key, and a floor that swallowed a good hit — so a
-# total recall failure looked exactly like a quiet, healthy day.
+# THE FLOOR ITSELF IS FIXED (2026-07-29 — MEMORY_VEC_FLOOR_DEFAULT, and the
+# measurement behind the number, in the memory_search header). This diagnosis
+# STAYS, because a floor verdict is still possible and still has to be
+# legible: the failure it was written for is that "No results found." reads
+# identically for an empty store, a missing embed key, and a floor that
+# swallowed a good hit — so a total recall failure looked exactly like a
+# quiet, healthy day. It now carries the calibration too, so a reader can
+# tell an unusual floor verdict from a routine one.
 #
 # STDOUT IS UNTOUCHED — the diagnosis goes to STDERR only. Consumers parse
 # stdout by exact shape (cabinet/scripts/hooks/pre-captain-dm.sh compares the
@@ -160,7 +163,7 @@ memory_cabinet_scope() {
 # =============================================================
 memory_empty_reason() {
   local rows="${1:-}" min_score="${2:-}" q="${3:-}"
-  local floor="${min_score:-${CABINET_MEMORY_MIN_SCORE:-0.45}}"
+  local floor="${min_score:-${CABINET_MEMORY_MIN_SCORE:-${MEMORY_VEC_FLOOR_DEFAULT:-0.28}}}"
   if [ -z "$(printf '%s' "$rows" | tr -cd '0-9')" ]; then
     printf 'memory.sh: no rows cleared the similarity floor %s (row count unavailable). Re-run with --min-score 0 to see the best near matches.\n' "$floor"
     return 0
@@ -169,7 +172,7 @@ memory_empty_reason() {
     printf 'memory.sh: the memory store holds 0 searchable rows in this scope — nothing to recall yet (backfill: cabinet/scripts/backfill-memory.sh).\n'
     return 0
   fi
-  printf 'memory.sh: %s row(s) were in scope and NONE cleared the similarity floor %s. This is a floor verdict, not an empty store: question-shaped queries against long whole-file documents typically peak near 0.30-0.42. Re-run with --min-score 0.30 (or CABINET_MEMORY_MIN_SCORE) to see what was discarded.\n' "$rows" "$floor"
+  printf 'memory.sh: %s row(s) were in scope and NONE cleared the similarity floor %s. This is a floor verdict, not an empty store — but at the measured default floor it is now an unusual one, because on the corpus this was calibrated against an unrelated question peaks around 0.21 and a question this store can answer scores 0.34 or better. Re-run with --min-score 0.15 (or CABINET_MEMORY_MIN_SCORE) to see what was discarded.\n' "$rows" "$floor"
 }
 
 # Cheap searchable-row count for the scope a search just ran in. Pure SQL
@@ -460,7 +463,8 @@ memory_queue_embed() {
 # SEARCH: hybrid semantic + lexical + recency query
 # Args: query, source_type (optional, comma-separated multi-type OK),
 #       officer (optional), limit (default 10),
-#       min_score (optional; default 0.45, env CABINET_MEMORY_MIN_SCORE),
+#       min_score (optional; default MEMORY_VEC_FLOOR_DEFAULT below, env
+#              CABINET_MEMORY_MIN_SCORE),
 #       as_of (optional ISO timestamp; fail-closed content-time fence —
 #              rows with NULL source_created_at are EXCLUDED under a fence)
 #
@@ -479,6 +483,31 @@ memory_queue_embed() {
 # The similarity floor (min_score) applies to vec, not final — a lexically
 # strong but semantically unrelated row must not sneak in.
 #
+# THE FLOOR VALUE IS MEASURED, NOT CHOSEN (2026-07-29). It shipped at 0.45
+# from nowhere and was never measured, and at 0.45 it was DELETING the answer:
+# on this store, 16 plainly-worded questions whose answering document is in
+# the store returned the answer as the TOP vector neighbour in 15 of 16 —
+# and the 0.45 floor then discarded it in 7 of the 16, so those questions
+# printed "No results found." The pool was never the problem. Measured
+# separation, whole-file embeddings, voyage-4-large:
+#   answerable   the answering document scored vec 0.344 … 0.583 (min 0.344)
+#   unanswerable six questions in domains this corpus holds nothing on
+#                (bread, car repair, dynasties, toddlers, pruning, knots)
+#                peaked at vec 0.125 … 0.213 (max 0.213)
+# MEMORY_VEC_FLOOR_DEFAULT is the midpoint of that 0.131-wide gap — maximum
+# margin in both directions (0.064 below the hardest true answer, 0.067 above
+# the strongest unrelated one). Both arms are the committed eval
+# (cabinet/scripts/tests/fixtures/retrieval-questions.seed.json), so the
+# number is falsifiable rather than asserted, and the ABSTAIN arm is what
+# stops "fix retrieval" from degenerating into "delete the floor": drop the
+# floor to 0.20 and the unanswerable questions start returning rows.
+# Re-derive on any store: bash cabinet/scripts/retrieval-eval.sh --pairs
+# <seed> --json (it reports both arms).
+#
+# A RELATIVE band (keep rows within a ratio of the pool's best vec) was built
+# and measured on this same set and CHANGED NOTHING at any floor that holds
+# the abstain arm — it is not in the code because it earned no place there.
+#
 # RERANK (R2): the blended score above ranks a POOL of limit*4 candidates;
 # memory_rerank then reorders that pool with a Voyage cross-encoder and cuts
 # to top-k. Fail-soft — keyless/error yields the blended top-k unchanged. The
@@ -491,18 +520,28 @@ memory_queue_embed() {
 # cabinet_id = memory_cabinet_scope() OR 'main' (legacy transition rows);
 # CABINET_ID unset → unscoped (all rows). See the transition comment inline.
 # =============================================================
+# RANKING-BLOCK-BEGIN (retrieval-eval fingerprint scope: the vec-floor
+# DEFAULT. It lives inside the markers because the guard's own docstring
+# claims to pin "the vec floor" and, until 2026-07-29, pinned only the
+# comparison — the NUMBER sat outside, so the single value that decides
+# whether a true answer is returned or discarded could be changed without
+# reddening the guard. A floor edit now needs the same store-local re-stamp
+# every other ranking edit needs.)
+MEMORY_VEC_FLOOR_DEFAULT="0.28"
+# RANKING-BLOCK-END
+
 memory_search() {
   local query="$1"
   local source_type_filter="${2:-}"
   local officer_filter="${3:-}"
   local limit="${4:-10}"
-  local min_score="${5:-${CABINET_MEMORY_MIN_SCORE:-0.45}}"
+  local min_score="${5:-${CABINET_MEMORY_MIN_SCORE:-$MEMORY_VEC_FLOOR_DEFAULT}}"
   local as_of="${6:-}"
 
   # min_score must be a plain non-negative decimal — junk falls back to the
   # default rather than erroring the query.
   if ! printf '%s' "$min_score" | grep -qE '^[0-9]*\.?[0-9]+$'; then
-    min_score="0.45"
+    min_score="$MEMORY_VEC_FLOOR_DEFAULT"
   fi
 
   local query_embedding

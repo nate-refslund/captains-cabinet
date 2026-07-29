@@ -5,7 +5,7 @@
 # Runs each {query -> expected_ref} pair through memory_search and measures
 # whether (recall@k) and where (MRR) the expected row is retrieved. This is the
 # regression GATE the org spine never had: the blended weights (0.60/0.25/0.15),
-# the 0.45 vec floor, and the rerank stage all shipped unmeasured. TWO floors,
+# the vec floor, and the rerank stage all shipped unmeasured. TWO floors,
 # because they trip on DIFFERENT damage (R1-EVAL-NO-TEETH fix, 2026-07-12):
 #   recall@k >= --floor      trips on POOL damage (expected row evicted from
 #       the returned set). At --limit == k it is ORDER-BLIND — a worst-first
@@ -17,8 +17,25 @@
 # It makes "context handling excellent" MEASURABLE instead of asserted.
 #
 # Pairs come from the committed seed (cabinet/scripts/tests/fixtures/
-# retrieval-eval-pairs.seed.json) or a fresh self-generated set from
-# harvest-retrieval-eval.sh (portable to any instance).
+# retrieval-questions.seed.json). Every query in it is a QUESTION A PERSON
+# WOULD ACTUALLY ASK and every expected_ref is a document this repository
+# ships, so it is portable to any cabinet that has ingested its own docs and
+# reveals nothing about any operator's private material.
+#
+# WHY THE SEED WAS REPLACED (2026-07-29). The previous seed's queries were
+# each document's own leading 110 characters — the corpus asked to find
+# itself. It reported recall@10 = 1.0000 and MRR = 1.0000 while plainly
+# worded questions against the same store were returning "No results found."
+# for 7 of 16. An eval that cannot fail is not a sensor, and this one was
+# also the gate standing between the ranking and a fix.
+#
+# THE ABSTAIN ARM (added with that seed, and load-bearing). The pairs file
+# may carry `unanswerable: [...]` — questions in domains the corpus holds
+# nothing on. Each must return ZERO rows. Without it the whole eval is
+# satisfiable by DELETING the similarity floor, which scores a perfect
+# recall@k and answers every question with the nearest unrelated document.
+# A pairs file with no `unanswerable` key skips the arm and says so
+# (abstain_rate: null) rather than reporting a pass it never measured.
 #
 # TWO ARMS (no-rerank arm added 2026-07-15 — closes the R1 landing's named
 # residual "rerank rescues pool damage"):
@@ -35,14 +52,16 @@
 #
 # Usage:
 #   retrieval-eval.sh [--pairs FILE] [--k K] [--floor F] [--mrr-floor M]
-#                     [--limit L] [--min-score S] [--no-rerank] [--json]
-#                     [--quiet]
+#                     [--abstain-floor A] [--limit L] [--min-score S]
+#                     [--no-rerank] [--json] [--quiet]
 # Defaults: --pairs seed, --k from the pairs file (.recall_k, else 10),
-#           --floor 0.70, --mrr-floor 0.50 (seed baseline MRR ~0.925; an
-#           order-inverted ranker scores ~0.10, so 0.50 has margin both ways),
+#           --floor 0.70, --mrr-floor 0.50 (an order-inverted ranker scores
+#           ~0.10, so 0.50 has margin both ways), --abstain-floor 1.00 (every
+#           unanswerable question must return nothing — a single fabricated
+#           answer is the failure this arm exists to catch),
 #           --limit = k, --min-score = memory_search default.
-# Exit: 0 if recall@k >= floor AND MRR >= mrr-floor; 1 if either gate fails;
-#       2 on usage/setup error.
+# Exit: 0 if recall@k >= floor AND MRR >= mrr-floor AND abstain >= its floor;
+#       1 if any gate fails; 2 on usage/setup error.
 # Requires NEON_CONNECTION_STRING (+ VOYAGE_API_KEY for the hybrid+rerank path
 # AND for the --no-rerank arm's query embeddings; keyless degrades to lexical
 # and still scores). Secrets used by the lib, never printed.
@@ -56,10 +75,11 @@ export CABINET_ROOT
 # shellcheck source=/dev/null
 source "$CABINET_ROOT/cabinet/scripts/lib/memory.sh"
 
-PAIRS="$CABINET_ROOT/cabinet/scripts/tests/fixtures/retrieval-eval-pairs.seed.json"
+PAIRS="$CABINET_ROOT/cabinet/scripts/tests/fixtures/retrieval-questions.seed.json"
 K=""
 FLOOR="0.70"
 MRR_FLOOR="0.50"
+ABSTAIN_FLOOR="1.00"
 LIMIT=""
 MIN_SCORE=""
 JSON=0
@@ -71,6 +91,7 @@ while [ $# -gt 0 ]; do
     --k) K="$2"; shift 2 ;;
     --floor) FLOOR="$2"; shift 2 ;;
     --mrr-floor) MRR_FLOOR="$2"; shift 2 ;;
+    --abstain-floor) ABSTAIN_FLOOR="$2"; shift 2 ;;
     --limit) LIMIT="$2"; shift 2 ;;
     --min-score) MIN_SCORE="$2"; shift 2 ;;
     --no-rerank) NO_RERANK=1; shift ;;
@@ -139,22 +160,61 @@ RECALL="$(awk -v h="$HITS" -v t="$TOTAL" 'BEGIN{printf "%.4f", h/t}')"
 MRR="$(awk -v s="$RR_SUM" -v t="$TOTAL" 'BEGIN{printf "%.4f", s/t}')"
 RECALL_PASS="$(awk -v r="$RECALL" -v f="$FLOOR" 'BEGIN{print (r+1e-9 >= f) ? 1 : 0}')"
 MRR_PASS="$(awk -v m="$MRR" -v f="$MRR_FLOOR" 'BEGIN{print (m+1e-9 >= f) ? 1 : 0}')"
-if [ "$RECALL_PASS" = 1 ] && [ "$MRR_PASS" = 1 ]; then PASS=1; else PASS=0; fi
+
+# --- ABSTAIN ARM ------------------------------------------------------------
+# Questions the corpus holds nothing on MUST return zero rows. This is the arm
+# that stops "make retrieval find things" from being satisfied by removing the
+# similarity floor: with no floor, recall@k goes to 1.0000 and every one of
+# these fabricates an answer out of the nearest unrelated document.
+# A pairs file with no `unanswerable` key SKIPS the arm and reports
+# abstain_rate: null — a skipped sensor is reported as skipped, never as a pass.
+AB_TOTAL=0; AB_OK=0; AB_LEAKS=""
+while IFS= read -r q; do
+  [ -z "$q" ] && continue
+  AB_TOTAL=$((AB_TOTAL+1))
+  rows="$(memory_search "$q" "" "" "$LIMIT" "$MIN_SCORE" 2>/dev/null \
+          | grep -c '[^[:space:]]')"
+  case "$rows" in ''|*[!0-9]*) rows=0 ;; esac
+  if [ "$rows" -eq 0 ]; then
+    AB_OK=$((AB_OK+1))
+    [ "$QUIET" = 0 ] && [ "$JSON" = 0 ] && printf '  ABSTAIN       %s\n' "$q"
+  else
+    AB_LEAKS="${AB_LEAKS}${q}\n"
+    [ "$QUIET" = 0 ] && [ "$JSON" = 0 ] && printf '  ANSWERED  %-3s %s  <-- should have returned nothing\n' "$rows" "$q"
+  fi
+done < <(jq -r '(.unanswerable // [])[]' "$PAIRS")
+
+if [ "$AB_TOTAL" -eq 0 ]; then
+  ABSTAIN="null"; ABSTAIN_PASS=1
+else
+  ABSTAIN="$(awk -v h="$AB_OK" -v t="$AB_TOTAL" 'BEGIN{printf "%.4f", h/t}')"
+  ABSTAIN_PASS="$(awk -v a="$ABSTAIN" -v f="$ABSTAIN_FLOOR" 'BEGIN{print (a+1e-9 >= f) ? 1 : 0}')"
+fi
+
+if [ "$RECALL_PASS" = 1 ] && [ "$MRR_PASS" = 1 ] && [ "$ABSTAIN_PASS" = 1 ]; then
+  PASS=1
+else
+  PASS=0
+fi
 
 if [ "$JSON" = 1 ]; then
   jq -nc --argjson recall "$RECALL" --argjson mrr "$MRR" --argjson k "$K" \
     --argjson floor "$FLOOR" --argjson mrr_floor "$MRR_FLOOR" \
     --argjson hits "$HITS" --argjson total "$TOTAL" \
+    --argjson abstain "$ABSTAIN" --argjson abstain_ok "$AB_OK" \
+    --argjson abstain_total "$AB_TOTAL" --argjson abstain_floor "$ABSTAIN_FLOOR" \
     --argjson pass "$PASS" --arg arm "$ARM" \
-    '{arm:$arm, recall_at_k:$recall, mrr:$mrr, k:$k, floor:$floor, mrr_floor:$mrr_floor, hits:$hits, total:$total, pass:($pass==1)}'
+    '{arm:$arm, recall_at_k:$recall, mrr:$mrr, k:$k, floor:$floor, mrr_floor:$mrr_floor, hits:$hits, total:$total, abstain_rate:$abstain, abstain_ok:$abstain_ok, abstain_total:$abstain_total, abstain_floor:$abstain_floor, pass:($pass==1)}'
 else
   echo ""
-  echo "retrieval-eval [arm=${ARM}]: recall@${K} = ${RECALL} (${HITS}/${TOTAL})   MRR = ${MRR}   floors: recall >= ${FLOOR}, mrr >= ${MRR_FLOOR}"
+  echo "retrieval-eval [arm=${ARM}]: recall@${K} = ${RECALL} (${HITS}/${TOTAL})   MRR = ${MRR}   abstain = ${ABSTAIN} (${AB_OK}/${AB_TOTAL})   floors: recall >= ${FLOOR}, mrr >= ${MRR_FLOOR}, abstain >= ${ABSTAIN_FLOOR}"
   if [ "$PASS" = 1 ]; then
-    echo "PASS — recall@${K} >= ${FLOOR} AND MRR >= ${MRR_FLOOR}"
+    echo "PASS — recall@${K} >= ${FLOOR} AND MRR >= ${MRR_FLOOR} AND abstain >= ${ABSTAIN_FLOOR}"
+    [ "$AB_TOTAL" -eq 0 ] && echo "NOTE — abstain arm SKIPPED: this pairs file carries no 'unanswerable' list, so nothing proves the floor still refuses an off-corpus question."
   else
-    [ "$RECALL_PASS" = 0 ] && echo "FAIL [arm=${ARM}] — recall@${K} ${RECALL} < floor ${FLOOR} (pool regression: eviction/weights?)"
+    [ "$RECALL_PASS" = 0 ] && echo "FAIL [arm=${ARM}] — recall@${K} ${RECALL} < floor ${FLOOR} (pool regression: eviction/weights/floor too high?)"
     [ "$MRR_PASS" = 0 ] && echo "FAIL [arm=${ARM}] — MRR ${MRR} < mrr-floor ${MRR_FLOOR} (order regression: rerank/weights?)"
+    [ "$ABSTAIN_PASS" = 0 ] && printf 'FAIL [arm=%s] — abstain %s < floor %s: the store answered a question it holds nothing on (floor too low / removed?):\n%b' "$ARM" "$ABSTAIN" "$ABSTAIN_FLOOR" "$AB_LEAKS"
   fi
 fi
 

@@ -128,6 +128,12 @@ def _mk_fixture(tmp_path, rerank=None, blended=None):
         "pairs": [{"query": f"query topic {i}", "expected_ref": f"ref-{i}"}
                   for i in range(1, N_PAIRS + 1)],
     }))
+    # The nightly's DEFAULT pairs source is the committed seed (the
+    # self-harvester it used to call is deleted — its queries were each
+    # document's own first 110 characters). The fixture tree carries one so
+    # the no-seed-documents path is exercisable.
+    (root / "cabinet" / "scripts" / "tests" / "fixtures"
+     / "retrieval-questions.seed.json").write_text(pairs.read_text())
     return root, rankdir, pairs
 
 
@@ -304,18 +310,53 @@ def test_nightly_credless_box_skips_clean_without_fabricating_verdicts(tmp_path)
     assert not _hist(root).exists(), "a credless box must not fabricate verdicts"
 
 
-def test_nightly_empty_harvest_appends_no_pairs_line(tmp_path):
+def test_nightly_no_seed_documents_in_store_appends_no_pairs_line(tmp_path):
+    """A store that has not ingested this repo's docs holds NONE of the seed's
+    expected documents. Scoring recall for absent documents would red the gate
+    for a reason that has nothing to do with the ranking, so the run reports
+    itself unmeasurable instead — and says so in the ledger rather than
+    silently passing."""
     root, rankdir, _pairs = _mk_fixture(tmp_path)
     stub_bin = tmp_path / "bin"
     stub_bin.mkdir()
-    (stub_bin / "psql").write_text("#!/bin/bash\nexit 0\n")  # harvest sees no rows
+    (stub_bin / "psql").write_text("#!/bin/bash\nexit 0\n")  # presence count = 0
     (stub_bin / "psql").chmod(0o755)
     env = _env(root, rankdir)
     env["PATH"] = f"{stub_bin}:{env['PATH']}"
-    p = _run(["bash", str(NIGHTLY)], env=env)  # no --pairs → harvest path
+    p = _run(["bash", str(NIGHTLY)], env=env)  # no --pairs → seed path
     assert p.returncode == 0, f"stdout={p.stdout} stderr={p.stderr}"
     v = json.loads(_hist(root).read_text().splitlines()[-1])
     assert v["status"] == "no-pairs" and v["pass"] is None, v
+    assert v["note"].startswith("this store holds NONE"), v
+
+
+def test_nightly_abstain_leak_fails_the_gate(tmp_path):
+    """THE arm that stops "make retrieval find things" from being satisfied by
+    deleting the similarity floor. The stub answers every query it is asked,
+    including a question the corpus holds nothing on — recall stays perfect and
+    the gate must still go red."""
+    root, rankdir, _pairs = _mk_fixture(tmp_path)
+    seed = (root / "cabinet" / "scripts" / "tests" / "fixtures"
+            / "retrieval-questions.seed.json")
+    data = json.loads(seed.read_text())
+    data["unanswerable"] = ["a question about something entirely elsewhere?"]
+    seed.write_text(json.dumps(data))
+    # teach the stub to ANSWER that question (the leak being measured)
+    for name in ("rerank.tsv", "blended.tsv"):
+        f = rankdir / name
+        f.write_text(f.read_text()
+                     + "a question about something entirely elsewhere?\tunrelated-row\n")
+    p = _run(["bash", str(NIGHTLY), "--pairs", str(seed)], env=_env(root, rankdir))
+    assert p.returncode == 1, (
+        "answering a question the store holds nothing on must red the gate; "
+        f"stdout={p.stdout} stderr={p.stderr}"
+    )
+    v = json.loads(_hist(root).read_text().splitlines()[-1])
+    assert v["pass"] is False
+    assert v["arms"]["rerank"]["recall_at_k"] == 1.0, (
+        "the point of this control: recall is PERFECT and the gate still fails"
+    )
+    assert v["arms"]["rerank"]["abstain_rate"] == 0.0, v
 
 
 def test_nightly_stamp_gated_on_both_arm_pass(tmp_path):
@@ -499,19 +540,41 @@ def test_marker_integrity_covers_weights_floor_rerank_and_seam():
     """The markers must keep enclosing the load-bearing ranking surface —
     shrinking them to exclude the weights would silently neuter the guard."""
     text = MEMORY_SH.read_text()
-    assert text.count("RANKING-BLOCK-BEGIN") == 2, "expected exactly 2 BEGIN markers"
-    assert text.count("RANKING-BLOCK-END") == 2, "expected exactly 2 END markers"
+    assert text.count("RANKING-BLOCK-BEGIN") == 3, "expected exactly 3 BEGIN markers"
+    assert text.count("RANKING-BLOCK-END") == 3, "expected exactly 3 END markers"
     block = _ranking_block(text)
     for token in (
         "0.60 * s.vec_sim + 0.25 * s.lex + 0.15 * s.recency",   # blended weights
         "0.80 * s.vec_sim + 0.20 * s.recency",                  # degraded renorm
         "vec_sim >= (:'min_score')::float8",                     # vec floor
+        "MEMORY_VEC_FLOOR_DEFAULT=",                             # the floor VALUE
         "ORDER BY final_score DESC",                             # pool order
         "memory_rerank()",                                       # rerank stage
         "_memory_blended_topk()",                                # blended cut
         "CABINET_MEMORY_RERANK",                                 # no-rerank seam
     ):
         assert token in block, f"ranking block no longer covers: {token}"
+
+
+def test_floor_value_mutant_changes_fingerprint():
+    """The guard's docstring always claimed to pin "the vec floor" and until
+    2026-07-29 pinned only the COMPARISON — the number sat outside the markers,
+    so the one value deciding whether a true answer is returned or discarded
+    could be changed without reddening anything. It was: the floor shipped at
+    an unmeasured 0.45 and was deleting the answering document for 7 of 16
+    plainly-worded questions whose answer was in the store."""
+    text = MEMORY_SH.read_text()
+    assert 'MEMORY_VEC_FLOOR_DEFAULT="0.28"' in text, (
+        "the measured floor default moved or was renamed — see the memory_search "
+        "header for the measurement behind the number"
+    )
+    mutant = text.replace('MEMORY_VEC_FLOOR_DEFAULT="0.28"',
+                          'MEMORY_VEC_FLOOR_DEFAULT="0.45"')
+    assert mutant != text
+    assert _sha256(_ranking_block(mutant)) != _sha256(_ranking_block(text)), (
+        "a vec-floor VALUE edit must change the fingerprint (else the guard is "
+        "blind to the single number that decides recall)"
+    )
 
 
 # ---------------------------------------------------------------------------
