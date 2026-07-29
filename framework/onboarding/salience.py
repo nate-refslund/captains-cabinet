@@ -19,7 +19,7 @@ noun BY ANSWERING — never by configuring. A kind-list here would be correct fo
 exactly one estate and wrong for the next one, which is why three
 hand-maintained lists were deleted from this program in a single week.
 
-WHY THE FLOORS ARE MEASURED, NEVER WRITTEN DOWN. Naive recurrence ranks noise
+WHY EVERY NOISE RULE IS MEASURED, NEVER WRITTEN DOWN. Naive recurrence ranks noise
 first, and the noise is estate-specific: the employer's own name recurs
 everywhere because everything belongs to it; a tracker's template words
 ("Subitems of ...") recur because the tracker put them there; a scaffolding
@@ -114,10 +114,13 @@ SALIENCE_CHECK_SCHEMA = "cabinet.salience-check/v1"
 #: name something the sweep never ranked.
 ESCAPE_OPTION_ID = "other"
 
-# --- floors, all applied to MEASURED quantities -----------------------------
+# --- the measured quantities every discount and demotion is derived from ----
 
-#: Tokens shorter than this are ranked out. Not a stopword list: a length rule
-#: is estate-independent, and every short token is disclosed as floored.
+#: Tokens shorter than this never become ranking tokens. Not a stopword list: a
+#: length rule is estate-independent and knows no words. This one IS a floor and
+#: not a discount, and the difference is that it applies before there is anything
+#: to discount — a two-character fragment is not a candidate that lost, it is a
+#: substring that was never a name.
 _MIN_TOKEN_LEN = 4
 #: A token in more than this share of ONE connector's rows is that connector's
 #: furniture, and its occurrences INSIDE that connector are explained by it.

@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: d424e84fd9b7b8c1d17af49915dfa4951c1680c472df9a3215f6eee7ef9d4e1f
+Reviewed-Scope-Digest: ade4e533458db0efd149a6f80da69b95f364f096bd934361f6a31ed75aaee975
 (RE-BOUND 2026-07-29 on `feat/look-capabilities`, previous value
 `408e6b97…`. ONE in-scope path moved and NO COG-4 implementation byte did:
 `cabinet/config/cognitive-architecture-contract.yml` raises
@@ -1534,3 +1534,19 @@ Neither raise is an allowance — a bijection class may never be bought with one
 and this is mass on the line the zero-headroom law is read from. ZERO new
 modules, so no bijection class moves. The unit's own work is in
 `framework/onboarding/`, which this scope does not bind.
+
+
+---
+
+## Re-bind 2026-07-29 (fix/salience-ranking, prose correction)
+
+Recorded digest: ade4e533458db0efd149a6f80da69b95f364f096bd934361f6a31ed75aaee975
+Previous:        d424e84fd9b7b8c1d17af49915dfa4951c1680c472df9a3215f6eee7ef9d4e1f
+
+Comment bytes only in the one bound path,
+`cabinet/config/cognitive-architecture-contract.yml`: the merge note added by
+the re-bind above said "the two raises above are DISJOINT" while sitting between
+them, and is moved below both. No budget value changes, the census re-runs at
+observed == maximum with zero headroom, and no COG-4 implementation byte moves.
+Named rather than absorbed, because a digest that moves for reasons nobody wrote
+down is a binding to nothing.
