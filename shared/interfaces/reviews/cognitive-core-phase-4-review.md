@@ -21,7 +21,16 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 2f93a3f251612988fe7ec673910310a8b0ad4a4accac4d4d860c73f6a3ac45e9
+Reviewed-Scope-Digest: 949fdca711db0987277bea82d720789e7c619dbc44b06fc77b67b79ee37f14b9
+
+(MERGE RE-BIND #4, 2026-07-29, vs the hostile-input red-team landing
+(`2c6f4d636640e0b094348d0bf24eb7ecd22435a265d07514cf8aea928f15c92a`). That leg fixed the SAME
+injection screen from the other side and its Nordic/German arms are the
+richer half, so this branch TOOK master's screen verbatim and re-applied only
+the measured delta (seven payloads that still scored zero against those arms).
+The budget row was re-measured down from +19 to +13 accordingly — the ceiling
+follows the merged tree, not this branch's original claim. Only the contract
+file is in COG-4 scope; no COG-4 implementation byte moved on either side.)
 
 (MERGE RE-BIND #3, 2026-07-29, vs master's specifics-ratchet landing
 (`1c91f915f42e5243ddfc3a0b7a1af291394a25944661d50d0c981f43895a5934`). Both sides raised the SAME
