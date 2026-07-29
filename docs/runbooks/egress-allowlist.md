@@ -29,10 +29,20 @@ cabinet/scripts/egress-guard.sh stop       # stop runtime proxy/env; policy unch
 The generic framework default is **allow all**, and since the Captain's
 2026-07-26 ruling a freshly hatched egg ships that same allow-all posture in
 its `instance/config/egress.yml` — enforcement is strictly **opt-in**, one
-command (`egress-guard.sh enable`). *This* deployment has opted in and pins
-`enforce: true`, `allow_product: false`, and no extra hosts, leaving only the
-Anthropic + Telegram framework floor. `apply` **fails closed** if it cannot
-attest the proxy.
+command (`egress-guard.sh enable`). *This* deployment now matches that default:
+`enforce: false`, `allow_product: true`. It previously pinned an enforcing
+72-hour dogfood posture with an EMPTY allow list; that window expired, the
+ruling of 2026-07-29 ("network is allow-all by default") settled it, and an
+empty allow list under enforcement 403s every outbound request — including the
+read-only connector sweep onboarding now runs. `apply` **fails closed** if it
+cannot attest the proxy.
+
+Egress is a **reachability** ceiling, never a permission to act. Nothing about
+this posture widens a write or a send: `framework.env.allow_sends()`, the comms
+charter and recipient gates, the front-door killswitch and vetoes, the
+authority matrix, and the connector lane's own mechanical read-only assertion
+(`framework.onboarding.research.assert_read_only` — GET, or a GraphQL read
+document, no other verb reachable, no redirect followed) all still hold.
 
 ---
 
