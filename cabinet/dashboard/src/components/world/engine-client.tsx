@@ -92,7 +92,7 @@ import PortraitRail from './portrait-rail'
 import KillswitchLever from './killswitch-lever'
 import DecisionQueueCard from './decision-queue-card'
 import LibraryCard from './library-card'
-import type { EngineTarget } from './engine-canvas'
+import type { EngineTarget, WorldLabel } from './engine-canvas'
 import { officerSlots } from '@/lib/world/pick'
 
 const EngineCanvas = dynamic(() => import('./engine-canvas'), { ssr: false })
@@ -179,6 +179,8 @@ export default function EngineClient({
   const [legendOpen, setLegendOpen] = useState(false)
   const [connected, setConnected] = useState(false)
   const [renderIssues, setRenderIssues] = useState<string[]>([])
+  /** Chip anchors the ISO canvas emitted — see EngineCanvasProps.onLabels. */
+  const [worldLabels, setWorldLabels] = useState<WorldLabel[]>([])
   // ART CREDIT INPUTS — the credit line names LimeZu only where LimeZu pixels
   // are on screen, so both facts are measured: the manifest says which rows are
   // licensed, and the rail reports how many of its portraits it is painting.
@@ -803,6 +805,13 @@ export default function EngineClient({
   // identity is the sprite (portrait rail + inspect keep names one click
   // away). Full pixel two-tier typography stays the v1b row.
   const officerLabels = useMemo(() => {
+    // UNDER ISO THE CANVAS OWNS THE PLACEMENT. An officer's spot is a layout
+    // pixel derived from the composed island, and this component does not hold
+    // the composition — the tile arithmetic below names open water there, which
+    // is why the world had no names on it at all. `onLabels` hands over the
+    // anchors the frame actually drew, already offset above the figure and
+    // already in this projection's tile space, so `project` below is unchanged.
+    if (projection === 'iso') return worldLabels
     const gh = buildings.find((b) => b.element === 'great_house')
     if (!gh || lodTier(camera.z) !== 'close') return []
     // officerSlots is THE seeded placement — the canvas draws from it and the
@@ -816,7 +825,7 @@ export default function EngineClient({
         verb: presenceBySlug[o.slug]?.present ? presenceBySlug[o.slug]?.verb ?? null : null,
       })
     )
-  }, [buildings, camera.z, presenceBySlug, cutaway.openId])
+  }, [projection, worldLabels, buildings, camera.z, presenceBySlug, cutaway.openId])
 
   const ticker = useMemo(
     () => [...(snapshot?.chronicle ?? [])].slice(-8).reverse(),
@@ -853,6 +862,7 @@ export default function EngineClient({
           onPrimary={onPrimary}
           onSecondary={onSecondary}
           onIssues={(issues) => setRenderIssues(issues)}
+          onLabels={setWorldLabels}
         />
       )}
 
@@ -860,8 +870,19 @@ export default function EngineClient({
            v1a fix: colliding labels garbled at the great-house yard) ── */}
       {!eraMode &&
         (() => {
+          // THE LIFT ABOVE THE HEAD IS THE TOP-DOWN PATH'S, and it must not run
+          // under iso. `- 2.2` is 2.2 TILES, and a tile step is only "up the
+          // screen" in a kernel whose axes are uncoupled: the iso kernel
+          // projects it DIAGONALLY, which put every chip 53px right and 26px up
+          // of the officer it named. Measured 2026-07-29 — the clicks that
+          // should have opened `cto` while he walked landed on a firepit 39px
+          // away, and the chip visibly sat beside its officer rather than over
+          // him. Under iso the canvas has already applied the lift in LAYOUT px
+          // (`emitIsoLabels`), which is the only space where "above" means
+          // above, so there is nothing left to add here.
+          const lift = projection === 'iso' ? 0 : 2.2
           const projected = officerLabels
-            .map((m) => ({ m, p: project(m.x, m.y - 2.2) }))
+            .map((m) => ({ m, p: project(m.x, m.y - lift) }))
             .filter(
               ({ p }) =>
                 !(p.x < -100 || p.x > hostSize.w + 100 || p.y < -50 || p.y > hostSize.h + 50)

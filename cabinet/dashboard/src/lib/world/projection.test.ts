@@ -422,21 +422,27 @@ describe('the kernel survives the URL rewrite — IN BOTH DIRECTIONS', () => {
     expect(writes.length).toBe(1)
     // …and its address argument is the builder's own return value
     expect(src).toMatch(/history\.replaceState\(\s*null,\s*'',\s*nextWorldHref\(/)
-    // the component never names the kernel param itself — any hand-rolled query
-    // would have to, and that is what M6 did
-    expect(src).not.toMatch(/'iso'/)
     expect(src).not.toMatch(/worldUrlSearch\(/)
-    // AND IT WRITES NO `iso=` PAIR ITSELF, which is the property the line above
-    // only stands in for. Added 2026-07-29 after the `'iso'` grep fired on
+    // THE COMPONENT WRITES NO `iso=` PAIR ITSELF. This is the property, not a
+    // stand-in for it: a hand-rolled address has to spell the pair, in a
+    // template or in a `set` call, so the defect SHAPE is what is asserted.
+    //
+    // IT REPLACED A `not.toMatch(/'iso'/)` GREP, and the two-step by which it
+    // did is the lesson. That grep banned the LITERAL anywhere in the shell as
+    // a stand-in for "did not hand-roll the query". On 2026-07-29 it fired on
     // `projection === 'iso'` — a truthful kernel comparison with nothing to do
-    // with the address bar. A proxy a correct edit trips is a proxy the next
-    // author deletes, so the defect SHAPE is asserted too: a hand-rolled
-    // address has to spell the pair, in a template or a `set` call.
+    // with the address bar — and these two arms were added beside it while the
+    // proxy was left in, with the note that "a proxy a correct edit trips is a
+    // proxy the next author deletes". The very next correct edit tripped it
+    // again (the iso path owning its own DOM chip anchors), which is the
+    // prediction coming true inside one day. So it is deleted rather than
+    // worked around: an arm that reds on correct code is not a weak sensor, it
+    // is a sensor pointed at the wrong thing, and keeping it teaches the next
+    // author that red means "edit the test".
     //
     // NOT `URLSearchParams`, deliberately: the component legitimately PARSES
     // the incoming query with one (`parseUrlState`), and banning the class
-    // would have been a second proxy failing the same way as the first — an
-    // arm that goes red on correct code, one layer down.
+    // would have been a third proxy failing the same way as the first.
     expect(src).not.toMatch(/[?&]iso=/)
     expect(src).not.toMatch(/\.set\(\s*['"]iso['"]/)
   })
@@ -487,5 +493,43 @@ describe('nextWorldHref — the escape hatch survives the rewrite', () => {
       const state = { ...CAM, projection }
       expect(nextWorldHref('/world', state)).toBe(`/world?${worldUrlSearch(state)}`)
     }
+  })
+})
+
+/**
+ * WHY A DOM CHIP CANNOT BE LIFTED IN TILE SPACE UNDER ISO.
+ *
+ * The world shell used to place its officer name chips at `project(x, y - 2.2)`
+ * — 2.2 TILES above the officer — which is exactly "up the screen" in a kernel
+ * whose axes are uncoupled and is NOT that in one whose axes are not. Measured
+ * in a browser 2026-07-29: every chip sat 53px right and 26px up of the person
+ * it named, and clicks aimed under a chip landed on the scenery beside the
+ * officer.
+ *
+ * The fix lives inside a JSX render body, where no unit test can drive it. What
+ * IS testable is the property that makes the fix necessary, and that is what
+ * this pins: a tile-space y step moves DIAGONALLY under iso, so anything that
+ * needs "straight up on the screen" has to say so in projected space.
+ */
+describe('a tile-space lift is not a screen-space lift', () => {
+  it('moves diagonally under iso and straight up under top-down', () => {
+    const cam = { z: 1, x: 0, y: 0 }
+    const vp = { w: 800, h: 600 }
+    const iso = projectionFor('iso')
+    const td = projectionFor('topdown')
+    const a = worldToScreen(iso, 10, 10, cam, vp)
+    const b = worldToScreen(iso, 10, 10 - 2.2, cam, vp)
+    expect(b.y).toBeLessThan(a.y) // it does go up…
+    // …and sideways by the kernel's own 2:1, which is the whole point: the
+    // sideways drift is TWICE the lift, so a chip lifted this way lands further
+    // from its subject than the lift itself.
+    expect(Math.abs(b.x - a.x) / Math.abs(b.y - a.y)).toBeCloseTo(
+      ISO_TILE.w / ISO_TILE.h,
+      9
+    )
+    const c = worldToScreen(td, 10, 10, cam, vp)
+    const d = worldToScreen(td, 10, 10 - 2.2, cam, vp)
+    expect(d.x).toBeCloseTo(c.x, 9) // top-down: purely vertical
+    expect(d.y).toBeLessThan(c.y)
   })
 })

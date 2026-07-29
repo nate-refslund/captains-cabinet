@@ -234,12 +234,29 @@ export const VERB_ICONS = {
   up: { x: 497, y: 114, w: 13, h: 11 } as SpriteCut, // deploying/shipping
 } as const
 
-/** Closed verb → icon mapping (keys align with commute VERB_GLOSS). */
+export type VerbIconClass = keyof typeof VERB_ICONS
+
+/**
+ * Closed verb → icon CLASS mapping (keys align with commute VERB_GLOSS).
+ *
+ * IT IS THE CLASS AND NOT THE CUT because there are now two renderers of the
+ * same bubble. The top-down path cuts a 16x16 icon out of the LimeZu Modern_UI
+ * sheet; the iso path DRAWS the same four pictograms as rectangles, because
+ * `/world` references zero LimeZu files since the 2026-07-28 flip and loading
+ * that sheet again to fetch four glyphs would give the property back. Two
+ * copies of "which verb is which icon" is how the two kernels come to disagree
+ * about what an officer is doing, so the decision lives here once and both
+ * renderers read it.
+ */
+export function verbIconClass(verb: string): VerbIconClass {
+  if (verb === 'replying') return 'mail'
+  if (verb === 'coordinating') return 'people'
+  if (verb === 'deploying' || verb === 'shipping') return 'up'
+  return 'gear'
+}
+
 export function verbIconCut(verb: string): SpriteCut {
-  if (verb === 'replying') return VERB_ICONS.mail
-  if (verb === 'coordinating') return VERB_ICONS.people
-  if (verb === 'deploying' || verb === 'shipping') return VERB_ICONS.up
-  return VERB_ICONS.gear
+  return VERB_ICONS[verbIconClass(verb)]
 }
 
 // ── crop growth strips (7 stages × 16px wide; label band excluded) ─────────
