@@ -1214,7 +1214,17 @@ def test_an_estate_card_recall_enriched_still_counts_as_estate_provenance(tmp_pa
     The arm was pinning the label and nothing else, while its docstring claimed
     the briefing sentence. A single answered entity is the shape that actually
     drives the count to zero, so the "Re-run genesis" assertion is now the
-    sensor it says it is."""
+    sensor it says it is.
+
+    THE TWO LABEL ASSERTIONS ARE BACK (2026-07-28, second pass). That
+    measurement — "with the label assertions removed … the body was green" —
+    was run by editing them out, and the edit LANDED: the arm reached master
+    reading ``assert entity_rows  # label asserts NEUTERED``, so the row's
+    ``derived_from`` and its ``recall_refs`` were unpinned by the very commit
+    that proved the sentence. Measurement scaffolding is not a fix. Both
+    assertions hold on this fixture and are restored beside the sentence
+    arms; each covers what the other cannot (the label alone passed on the
+    defect, and the sentence alone leaves the row shape unpinned)."""
     from framework.onboarding import estate as estate_mod
     _write_answers(tmp_path, LANELESS)
     estate_mod.write_estate(
@@ -1228,7 +1238,9 @@ def test_an_estate_card_recall_enriched_still_counts_as_estate_provenance(tmp_pa
     rows = yaml.safe_load(
         (tmp_path / genesis.PROPOSALS_REL).read_text())["outcomes"]
     entity_rows = [r for r in rows if r["id"] == "proposed-storefront-first-proof"]
-    assert entity_rows  # label asserts NEUTERED
+    assert entity_rows and entity_rows[0]["derived_from"] == "estate"
+    assert entity_rows[0]["recall_refs"], (
+        "the recall citations must still be recorded on the row")
 
     items = genesis.genesis_intake_items(tmp_path, now="2026-07-28T00:00:00Z",
                                          source=live)
