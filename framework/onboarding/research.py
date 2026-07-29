@@ -550,7 +550,15 @@ def assert_read_only(call) -> None:
     headers = call.get("headers") or {}
     if not isinstance(headers, dict):
         raise ReadOnlyViolation("headers_not_a_mapping")
-    for key in headers:
+    # THE DECLARED HEADERS ARE NOT THE WHOLE WIRE. ``_request_of`` injects one
+    # MORE header — the credential's, under whatever ``auth_header`` the spec
+    # names — so checking only ``headers`` left the override channel open by
+    # the back door: ``auth_header: X-HTTP-Method-Override`` with
+    # ``auth_format: DELETE`` was emitted on a request this function had just
+    # certified as a read (found by attacking the ceiling, 2026-07-29). Every
+    # header name this module can put on the wire is checked here, or the
+    # ceiling is a claim rather than a control.
+    for key in (*headers, str(call.get("auth_header") or "Authorization")):
         if str(key).strip().lower() in _METHOD_OVERRIDE_HEADERS:
             raise ReadOnlyViolation(f"method_override_header:{key}")
     body = call.get("json")
