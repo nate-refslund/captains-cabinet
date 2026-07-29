@@ -94,6 +94,12 @@ def _items(n, start=0):
     ({"url": "https://", "method": "GET"}, "url_has_no_host"),
     ({"url": "https://a.test", "method": "GET",
       "headers": {"X-HTTP-Method-Override": "DELETE"}}, "method_override_header"),
+    # The credential's OWN header name is a second override channel: the
+    # request builder injects it after this check used to run.
+    ({"url": "https://a.test", "method": "GET",
+      "auth_header": "X-HTTP-Method-Override"}, "method_override_header"),
+    ({"url": "https://a.test", "method": "POST", "auth_header": "x-method-override",
+      "json": {"query": "query { x }"}}, "method_override_header"),
     ({"url": "https://a.test", "method": "GET", "json": {"q": 1}}, "get_with_body"),
     ({"url": "https://a.test", "method": "POST",
       "json": {"name": "new"}}, "post_body_not_a_graphql_document"),
@@ -139,6 +145,24 @@ def test_a_write_spec_never_reaches_the_network(tmp_path):
     assert out["calls"] == 0
     assert out["connectors"][0]["connected"] is False
     assert out["connectors"][0]["reason"].startswith("read_only_refused:")
+
+
+def test_the_injected_credential_header_cannot_smuggle_a_method_override(tmp_path):
+    """The ceiling has to cover the header the REQUEST BUILDER adds, not just
+    the ones the spec declares. Proven the same way as the arm above: an EMPTY
+    request log, because an arm that only read the reason would pass against a
+    lane that made the call and then complained."""
+    fetch = Recorder([_items(1)])
+    spec = _spec(inventory={
+        "url": "https://api.example.test/v1/things", "method": "GET",
+        "auth_header": "X-HTTP-Method-Override", "auth_format": "DELETE",
+        "items_path": "items", "name_field": "title"})
+    out = research.sweep_connectors(
+        _open(tmp_path), specs=[spec], env={"TEST_CONNECTOR_TOKEN": CRED}, fetch=fetch)
+    assert fetch.seen == []
+    assert out["calls"] == 0
+    assert out["connectors"][0]["reason"].startswith(
+        "read_only_refused:method_override_header")
 
 
 def test_every_request_the_lane_emits_is_a_read(tmp_path):
