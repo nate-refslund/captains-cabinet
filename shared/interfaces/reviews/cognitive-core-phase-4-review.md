@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 0df4d12ac60f2353118fdadf244ed8d522a9e1fdcaee5edbd2e7dc078bd211a6
+Reviewed-Scope-Digest: d9d2d8a9b4d228d72661fc6145c5e3243f01e0fb619baed4ea55bde34cbb80b1
 (RE-BOUND 2026-07-29 on `feat/onboarding-connector-read`, previous value
 `e7a6983a…`. TWO in-scope paths moved and NO COG-4 implementation byte did:
 `cabinet/config/cognitive-architecture-contract.yml` gains one
@@ -1392,3 +1392,19 @@ The in-scope delta and why it is mechanical are stated with the digest at the to
 this file. Nothing was re-reviewed and no prose finding was edited, because no reviewed
 byte moved: the branch's entire diff is the world layout, the renderer, the hit test and
 the check harness, none of which is in the COG-4 scope.
+
+---
+
+## Re-bind 2026-07-29 (feat/salience-loop — the sweep's two silent claims)
+
+One bound path changed: `cabinet/config/cognitive-architecture-contract.yml`, which
+takes a +200 non-comment-line phase row for the who/when unit. NO COG-4
+implementation path moved — no organ, no projection, no scheduler byte — so the
+review's findings are untouched by this landing. The contract sits inside this
+digest's scope precisely so that a budget row cannot ride in unnoticed behind a
+frozen review; ZERO new modules ride here, so no bijection class moves.
+
+Recorded digest: d9d2d8a9b4d228d72661fc6145c5e3243f01e0fb619baed4ea55bde34cbb80b1
+Previous:        0df4d12ac60f2353118fdadf244ed8d522a9e1fdcaee5edbd2e7dc078bd211a6
+
+Re-bound at landing by the integrator, in the SAME commit as the change, per §15.

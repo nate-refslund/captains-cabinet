@@ -291,15 +291,33 @@ def _token_index(rows: Sequence[Mapping[str, Any]]) -> dict[str, set[int]]:
 def _apply_floors(
     index: Mapping[str, set[int]],
     rows: Sequence[Mapping[str, Any]],
+    identity: Iterable[str] = (),
 ) -> tuple[dict[str, set[int]], list[dict[str, Any]]]:
     """Drop the two measured noise classes and say which token went for which
-    reason. Returns the surviving index and the floored rows."""
+    reason. Returns the surviving index and the floored rows.
+
+    AN ESTATE-IDENTITY TOKEN IS NEVER FLOORED HERE, whatever its share. The
+    module header already says identity is DEMOTED and not deleted, because the
+    same string can be both the estate's own label and one of its real targets —
+    but that promise was kept only against the identity path, and these two
+    floors reach the same token by a different route. Measured on a live estate:
+    the code connector named every row `<org>/<repo>`, which put the org's token
+    in 100% of that connector's rows, and the furniture floor deleted it as
+    filing structure. The org was also the name of the estate's busiest live
+    site, so a correct answer was removed to suppress a noise the demotion
+    already handles. A floor that can delete what another rule promised to keep
+    is not a stricter version of that rule; it is a hole in it.
+    """
+    protected = {str(token) for token in identity or ()}
     connector_totals: dict[str, int] = {}
     for row in rows:
         connector_totals[row["connector"]] = connector_totals.get(row["connector"], 0) + 1
     kept: dict[str, set[int]] = {}
     floored: list[dict[str, Any]] = []
     for token, positions in index.items():
+        if token in protected:
+            kept[token] = positions
+            continue
         per_connector: dict[str, int] = {}
         for position in positions:
             connector = rows[position]["connector"]
@@ -428,8 +446,8 @@ def rank(
     clocks = admissible_clocks(normalized)
     now_dt = _parse_iso(now) or datetime.now(timezone.utc)
     index = _token_index(normalized)
-    kept, floored = _apply_floors(index, normalized)
     identity = _identity_tokens(identities)
+    kept, floored = _apply_floors(index, normalized, identity)
 
     clusters: list[dict[str, Any]] = []
     for members in _merge_aliases(_cluster(kept), kept, aliases):
