@@ -522,11 +522,28 @@ def _assert_enum_growth_walls(resolved):
     assert row["path"] == "framework/authority/classifier.py"
     assert row["symbol"] == "ACTION_TYPES"
     assert len(ACTION_TYPES) == row["maximum"]          # observed == max
-    # (2) consequence-event schema set-equality (the closed 30 + null mirror)
+    # (2) consequence-event schema set-equality (the closed 30 + null mirror).
+    # The property is a oneOf since 2026-07-29 — a null branch, the CLOSED
+    # branch that must still mirror the classifier exactly, and an OPEN branch
+    # for namespaced deployment-declared operations. The closed branch is
+    # located by SHAPE (it is the one carrying an enum), never by index, and
+    # the open branch is asserted to be pattern-gated so it cannot silently
+    # widen into "any string" and swallow the closed enum's job.
     schema = json.loads(_CONSEQUENCE_SCHEMA.read_text(encoding="utf-8"))
-    enum = schema["properties"]["action_type"]["enum"]
-    assert None in enum
-    assert {e for e in enum if e is not None} == set(ACTION_TYPES)
+    branches = schema["properties"]["action_type"]["oneOf"]
+    closed = [b for b in branches if "enum" in b]
+    assert len(closed) == 1
+    enum = closed[0]["enum"]
+    assert None not in enum                     # the null branch carries null
+    assert any(b.get("type") == "null" for b in branches)
+    assert set(enum) == set(ACTION_TYPES)
+    open_branches = [b for b in branches
+                     if b.get("type") == "string" and "enum" not in b]
+    assert len(open_branches) == 1
+    pattern = open_branches[0]["pattern"]
+    assert re.match(pattern, "somewhere/some-operation")
+    for member in ACTION_TYPES:                 # un-collidable, all 30 proven
+        assert not re.match(pattern, member)
     # (3) matrix totality: load_matrix() raises on any drift; the closed 13
     policy = authority_matrix.matrix_policy(authority_matrix.load_matrix())
     assert set(authority_matrix.RISK_CLASSES) == t3.RISK_CLASS_ENUM

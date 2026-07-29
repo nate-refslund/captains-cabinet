@@ -70,7 +70,9 @@ def test_grant_marks_approved_and_presents_machine_scope(wired_root):
     receipt = shown[0]
     # the one paste + the machine-effective scope — never the why prose
     assert f"grant-apply.sh {nid}" in receipt
-    assert "purchase (spend)" in receipt and "max 25 EUR/day" in receipt
+    # The cap is a NUMBER and the framework prints no unit (2026-07-29): it
+    # compares amounts and does not know what they count.
+    assert "purchase (spend)" in receipt and "max 25/day" in receipt
     assert "EVERYONE" not in receipt and "URGENT" not in receipt
     assert "nothing is live yet" in receipt.lower() or "pending apply" in receipt
 
@@ -356,7 +358,7 @@ def test_apply_refuses_ceiling_without_ack(wired_root, approved_need):
     assert res.returncode == 4
     assert "hard-ceiling" in res.stderr and "--ceiling-ack" in res.stderr
     # the machine-effective scope printed BEFORE the ack refusal
-    assert "max 25 EUR/day" in res.stdout
+    assert "max 25/day" in res.stdout
     assert not _grants_file(wired_root).exists()
     assert _status(approved_need) == "approved_pending_apply"
 

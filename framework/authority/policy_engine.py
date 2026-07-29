@@ -2043,7 +2043,7 @@ def _earn_up_rung_lift(lane: str | None) -> str | None:
 
 
 def _grant_context(tool_input: Any) -> dict[str, Any]:
-    """Hard-scope context ({recipient|amount_eur|vendor}) from the tool call.
+    """Hard-scope context ({recipient|amount|vendor}) from the tool call.
 
     Only positively-typed fields are forwarded — a missing field FAILS the
     class hard-scope predicate inside grants.check (fail-closed), so the gate
@@ -2055,9 +2055,14 @@ def _grant_context(tool_input: Any) -> dict[str, Any]:
     recipient = tool_input.get("recipient") or tool_input.get("to")
     if isinstance(recipient, str) and recipient.strip():
         ctx["recipient"] = recipient
-    amount = tool_input.get("amount_eur")
+    # The framework counts an AMOUNT and does not name its unit: the
+    # deployment states that once, and both sides of the cap comparison are in
+    # it. `amount_eur` stays readable as a legacy spelling of the same number.
+    amount = tool_input.get("amount")
+    if amount is None:
+        amount = tool_input.get("amount_eur")
     if isinstance(amount, (int, float)) and not isinstance(amount, bool):
-        ctx["amount_eur"] = amount
+        ctx["amount"] = amount
     vendor = tool_input.get("vendor")
     if isinstance(vendor, str) and vendor.strip():
         ctx["vendor"] = vendor
@@ -2613,6 +2618,22 @@ def load_policies(cabinet_root: str | None = None) -> list[dict]:
                     f"WARN: policy-engine — failed to load {filepath}",
                     file=sys.stderr,
                 )
+
+    # Join the deployment's declared operations onto the surviving floor
+    # BEFORE it is validated, so the gate reads the same table CI validates.
+    # The floor stays FLOOR-ONLY (D8): this adds operations to the classes the
+    # floor already declares, it can neither create a class, re-point an
+    # existing binding, nor touch a verdict. Any failure leaves the floor
+    # exactly as it shipped, which means unclassified ⇒ propose-only.
+    for _p in policies_by_name.values():
+        if isinstance(_p, dict) and _p.get("type") == "authority_matrix":
+            try:
+                from framework.authority.matrix import (  # noqa: E402
+                    bind_declared_operations,
+                )
+                bind_declared_operations(_p)
+            except Exception:
+                pass
 
     _validate_authority_floor(policies_by_name)
     return list(policies_by_name.values())

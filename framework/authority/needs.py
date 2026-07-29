@@ -296,17 +296,19 @@ def _compose_grant_line(
     if risk_class == "external_comms":
         recipient = str(hint.get("recipient") or "").strip()
         allow = json.dumps(recipient) if recipient else ""
-        scope = ("{recipient_allowlist: [%s], max_eur_per_day: 0, "
+        scope = ("{recipient_allowlist: [%s], max_amount_per_day: 0, "
                  "vendor_allowlist: []}" % allow)
     elif risk_class == "spend":
-        amt = hint.get("amount_eur")
+        amt = hint.get("amount")
+        if amt is None:
+            amt = hint.get("amount_eur")          # legacy spelling, same number
         amt = amt if isinstance(amt, (int, float)) and not isinstance(amt, bool) else 0
-        scope = ("{recipient_allowlist: [], max_eur_per_day: %s, "
+        scope = ("{recipient_allowlist: [], max_amount_per_day: %s, "
                  "vendor_allowlist: []}" % amt)
     else:
         vendor = str(hint.get("vendor") or "").strip()
         allow = json.dumps(vendor) if vendor else ""
-        scope = ("{recipient_allowlist: [], max_eur_per_day: 0, "
+        scope = ("{recipient_allowlist: [], max_amount_per_day: 0, "
                  "vendor_allowlist: [%s]}" % allow)
     lanes = "[%s]" % json.dumps(str(lane)) if lane else "[]"
     expires = (now + timedelta(days=90)).date().isoformat()
@@ -348,7 +350,7 @@ def file_need(
     bit-identical seam), denied-and-suppressed (90d). Re-filing an existing
     need bumps count/last_seen (full-row append, last-write-wins — concurrent
     re-files may under-count, tolerated by design). `scope_hint`
-    ({recipient|amount_eur|vendor}) seeds the auto-composed NARROWEST
+    ({recipient|amount|vendor}) seeds the auto-composed NARROWEST
     proposed_grant_line for kind=standing_grant.
     """
     try:

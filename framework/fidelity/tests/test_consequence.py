@@ -356,12 +356,26 @@ class TestActionTypeField:
             validate_consequence(ev)
 
     def test_enum_is_sourced_from_classifier(self):
-        # single source of truth: the schema enum must equal the classifier's
-        # ACTION_TYPES (no drifting duplicated literal list).
-        action_type_prop = SCHEMA["properties"]["action_type"]
-        schema_values = {v for v in action_type_prop["enum"] if v is not None}
-        assert schema_values == set(ACTION_TYPES)
-        assert None in action_type_prop["enum"]  # null allowed
+        # Single source of truth: the schema's CLOSED branch must equal the
+        # classifier's ACTION_TYPES (no drifting duplicated literal list).
+        # Since 2026-07-29 the property is a oneOf — null | the closed branch |
+        # an OPEN branch for namespaced deployment-declared operations. The
+        # closed branch is located by SHAPE (it is the one with an enum), never
+        # by position, and the open branch is asserted pattern-gated so it can
+        # never widen into "any string" and make the closed branch decorative.
+        import re as _re
+        branches = SCHEMA["properties"]["action_type"]["oneOf"]
+        closed = [b for b in branches if "enum" in b]
+        assert len(closed) == 1
+        assert set(closed[0]["enum"]) == set(ACTION_TYPES)
+        assert any(b.get("type") == "null" for b in branches)   # null allowed
+        open_b = [b for b in branches
+                  if b.get("type") == "string" and "enum" not in b]
+        assert len(open_b) == 1
+        pat = open_b[0]["pattern"]
+        assert _re.match(pat, "somewhere/an-operation")
+        for m in ACTION_TYPES:      # all 30: the open branch cannot swallow one
+            assert not _re.match(pat, m)
 
     def test_emit_persists_action_type(self, event_log_dir):
         ev = emit_consequence(

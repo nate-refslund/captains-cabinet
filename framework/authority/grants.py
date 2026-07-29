@@ -27,7 +27,7 @@ rate not exhausted (`cabinet:grant:count:<id>:<date>` — **unreadable ⇒ not
 granted**; the act path RESERVES the slot atomically via INCR-and-compare,
 so concurrent checks cannot both pass a max_per_day ceiling) ∧ no active
 Captain veto ∧ the class **hard-scope predicate**
-(recipient∈allowlist / amount≤max_eur_per_day / vendor∈allowlist — a missing
+(recipient∈allowlist / amount≤max_amount_per_day / vendor∈allowlist — a missing
 context field FAILS the predicate: no allow without executor-supplied scope
 data, per the REDTEAM never-allow-without-enforcing-executor rule).
 
@@ -80,7 +80,34 @@ _GRANT_KEYS = {
     "id", "deployment", "risk_class", "action_types", "lanes", "scope",
     "rate", "expires", "granted_by", "granted_at", "basis", "revoked",
 }
-_SCOPE_KEYS = {"recipient_allowlist", "max_eur_per_day", "vendor_allowlist"}
+# The scope keys a grant row may carry. `max_amount_per_day` is a NUMBER, and
+# the framework never claims to know what it counts: a deployment states its
+# own unit once (`instance/config/platform.yml` -> spending_limits.unit) and
+# every amount on both sides of this comparison is in it. Until 2026-07-29 the
+# key named a currency, and a grant that named a different one was rejected as
+# MALFORMED rather than converted — so the whole spend ceiling was ungrantable
+# outside one currency area, while the spend CAPS next to it counted in a
+# different currency again. Two units, neither ever decided. `max_eur_per_day`
+# stays accepted as a legacy spelling of the same number so existing grant
+# files keep working; nothing writes it any more.
+_LEGACY_AMOUNT_CAP_KEY = "max_eur_per_day"
+_AMOUNT_CAP_KEY = "max_amount_per_day"
+_SCOPE_KEYS = {"recipient_allowlist", _AMOUNT_CAP_KEY, _LEGACY_AMOUNT_CAP_KEY,
+               "vendor_allowlist"}
+
+
+def _scope_amount_cap(scope: dict) -> Any:
+    """The per-day amount ceiling from a scope, current spelling first."""
+    v = scope.get(_AMOUNT_CAP_KEY)
+    return scope.get(_LEGACY_AMOUNT_CAP_KEY) if v is None else v
+
+
+def _context_amount(ctx: dict) -> Any:
+    """The amount an executor supplied, current spelling first."""
+    v = ctx.get("amount")
+    return ctx.get("amount_eur") if v is None else v
+
+
 _RATE_KEYS = {"max_per_day"}
 
 
@@ -287,10 +314,14 @@ def _row_error(g: Any) -> str | None:
         if lv is not None and not (isinstance(lv, list)
                                    and all(isinstance(x, str) for x in lv)):
             return f"scope.{lk} must be a list of strings"
-    cap = scope.get("max_eur_per_day")
+    if _AMOUNT_CAP_KEY in scope and _LEGACY_AMOUNT_CAP_KEY in scope:
+        # Two spellings of one number is a row that means two things.
+        return (f"scope carries both {_AMOUNT_CAP_KEY} and "
+                f"{_LEGACY_AMOUNT_CAP_KEY} — declare the cap once")
+    cap = _scope_amount_cap(scope)
     if cap is not None and (not isinstance(cap, (int, float))
                             or isinstance(cap, bool) or cap < 0):
-        return "scope.max_eur_per_day must be a non-negative number"
+        return f"scope.{_AMOUNT_CAP_KEY} must be a non-negative number"
     rate = g["rate"]
     if (not isinstance(rate, dict) or set(rate) != _RATE_KEYS
             or not isinstance(rate["max_per_day"], int)
@@ -404,14 +435,14 @@ def _hard_scope_ok(risk_class: str, scope: dict[str, Any],
             return True, ""
         return False, f"hard-scope: recipient '{recipient}' not in allowlist"
     if risk_class == "spend":
-        amt = ctx.get("amount_eur")
+        amt = _context_amount(ctx)
         if not isinstance(amt, (int, float)) or isinstance(amt, bool) or amt < 0:
-            return False, "hard-scope: no amount_eur in context (fail-closed)"
-        cap = scope.get("max_eur_per_day")
+            return False, "hard-scope: no amount in context (fail-closed)"
+        cap = _scope_amount_cap(scope)
         if (isinstance(cap, (int, float)) and not isinstance(cap, bool)
                 and amt <= cap):
             return True, ""
-        return False, f"hard-scope: amount {amt} EUR exceeds max_eur_per_day"
+        return False, f"hard-scope: amount {amt} exceeds {_AMOUNT_CAP_KEY}"
     vendor = ctx.get("vendor")
     if not isinstance(vendor, str) or not vendor.strip():
         return False, "hard-scope: no vendor in context (fail-closed)"
@@ -577,7 +608,7 @@ def check(
     """FI-2 allow decision → {granted, grant_id, reason}. THE only path a
     ceiling row may resolve to an allow, and it enforces every condition —
     including the class hard-scope predicate against `context`
-    ({recipient|amount_eur|vendor}); missing context fails closed.
+    ({recipient|amount|vendor}); missing context fails closed.
 
     Rate is reserved ATOMICALLY on the act path: the day counter is INCR'd
     and the returned value compared, so concurrent checks can never both

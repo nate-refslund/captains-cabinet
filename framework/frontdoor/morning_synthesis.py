@@ -22,6 +22,7 @@ import subprocess
 
 from framework.acting import product_health
 from framework.env import captain_name, render_captain_date, signal_tells
+from framework import env  # roster-resolved chair role
 from framework.env import captain_open_dates as env_captain_open_dates
 from framework.frontdoor import intake
 from framework.frontdoor import signal_discriminator as sd
@@ -49,7 +50,7 @@ _DUE_FOLLOWUPS_SH = os.path.join(_REPO_ROOT, "cabinet", "scripts", "due-followup
 # its next turn; the Chair triages (gather-then-decide) and escalates only the
 # genuinely-actionable. Reversible: flip _OPERATIONAL_SOURCES back into the intake.
 _OPERATIONAL_SOURCES = {"sentry-health", "deploy-health"}
-_CHAIR_OFFICER = "cos"
+_CHAIR_OFFICER = env.chair_officer()
 _CHAIR_STREAM = f"cabinet:triggers:{_CHAIR_OFFICER}"
 _CHAIR_GROUP = f"officer-{_CHAIR_OFFICER}"
 

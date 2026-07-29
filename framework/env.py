@@ -597,6 +597,150 @@ def deploys_code_officer(default: str = "") -> str:
     return holder
 
 
+# Cache: chair_officer is read once per process (same lifecycle as officers).
+# None ⇒ unresolved — the empty string is a VALID resolved value (a deployment
+# with no roster), so the sentinel is None, never "".
+_chair_officer_cache: "str | None" = None
+
+
+def chair_officer(default: str = "") -> str:
+    """The FIRST role in the deployment's roster (conf file order) — the
+    resolver every "whose act is this by default" site consults instead of
+    naming a role.
+
+    A default actor is unavoidable: an act recorded against nobody cannot be
+    graduated, demoted or undone, because the ledger cell key is
+    (actor, lane, action_type). What IS avoidable is the framework choosing
+    WHICH actor, which is a fact about one operator's org shape. A sole
+    operator has one role; a large deployment has many; the framework knows
+    only that a roster exists and that its first entry is the one the
+    deployment listed first.
+
+    Reads the same roster :func:`officers` reads, so the two can never
+    disagree, and returns its first entry. Absence / unreadable roster /
+    empty roster falls back to ``default`` — the EMPTY string — so a
+    deployment with no roster resolves "" and consumers keep their own
+    literal-free fallback, never a baked-in role name. NB: the FIRST call's
+    resolution — fallback included — is cached for the process, so every
+    caller must pass a uniform ``default`` (all in-repo callers pass the
+    empty one)."""
+    global _chair_officer_cache
+    if _chair_officer_cache is not None:
+        return _chair_officer_cache
+    try:
+        roster = officers()
+        name = roster[0] if roster else str(default)
+    except Exception:
+        name = str(default)
+    _chair_officer_cache = name
+    return name
+
+
+# Cache: declared_operations is read once per process (same lifecycle as
+# officers). None ⇒ unresolved — the EMPTY tuple is a VALID resolved value (a
+# deployment that declared none), so the sentinel is None, never ().
+_declared_operations_cache: "tuple[dict, ...] | None" = None
+
+# A declared operation id is NAMESPACED — exactly one "/", both halves
+# non-empty. That single shape is what makes the deployment's vocabulary
+# structurally un-collidable with the framework's own flat vocabulary, so
+# opening the vocabulary can never silently redefine a framework member. It is
+# the same never-overload law the extension-manifest plane already applies to
+# its own operation ids.
+_DECLARED_OP_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*$")
+# An invocation token is one bare word — the program/verb a call arrives as.
+# Whitespace or a shell metacharacter would make the match a parse, not a
+# lookup, and a parse is where this kind of thing goes wrong.
+_DECLARED_OP_TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
+
+
+def declared_operations(default: "tuple[dict, ...]" = ()) -> "tuple[dict, ...]":
+    """The operations THIS deployment performs, as declared by this deployment.
+
+    The framework owns the CLASSES OF CONSEQUENCE (reversible, undoable,
+    outward, irreversible …) and the verdict each class earns. It does not own
+    the LIST OF OPERATIONS that fall in each class: that list is a fact about
+    the work an operator does, and a framework that ships one is a framework
+    that only fits the operator it was written for. Everything an operator does
+    that the framework cannot name classifies as unclassified, which is
+    permanently propose-only — so without this seam the autonomy ladder cannot
+    move at all outside the work the shipped vocabulary happens to describe.
+
+    Reads ``instance/config/operations.yml``::
+
+        operations:
+          - id: <namespace>/<name>     # namespaced, hence un-collidable
+            invoked_as: [<token>, ...] # how the call arrives (program/tool)
+            risk_class: <class>        # which class of consequence it is
+
+    SHAPE is validated here; MEMBERSHIP of ``risk_class`` is validated where
+    the classes are known (the authority matrix), because this resolver must
+    stay a leaf. A malformed row is DROPPED, never repaired: a dropped
+    operation stays unclassified and therefore propose-only, so every failure
+    mode of this file narrows autonomy. Absence / unreadable / unparseable ⇒
+    ``default`` — the EMPTY tuple — i.e. exactly the behaviour of a deployment
+    that declared nothing. Rows are returned in file order; a duplicate id or a
+    duplicate invocation token is dropped (first wins) so the mapping is a
+    function. NB: the FIRST call's resolution is cached for the process."""
+    global _declared_operations_cache
+    if _declared_operations_cache is not None:
+        return _declared_operations_cache
+    rows: "tuple[dict, ...]" = tuple(default)
+    try:
+        import yaml  # local: keep env.py import-light for the safety switches
+        p = _cabinet_root() / "instance/config/operations.yml"
+        data = yaml.safe_load(p.read_text(encoding="utf-8")) if p.exists() else None
+        raw = (data or {}).get("operations") if isinstance(data, dict) else None
+        out: list = []
+        seen_ids: set = set()
+        seen_tokens: set = set()
+        for item in raw if isinstance(raw, list) else []:
+            if not isinstance(item, dict):
+                continue
+            oid = item.get("id")
+            rc = item.get("risk_class")
+            toks = item.get("invoked_as")
+            if not isinstance(oid, str) or not _DECLARED_OP_ID_RE.match(oid.strip()):
+                continue
+            oid = oid.strip()
+            if oid in seen_ids:
+                continue
+            if not isinstance(rc, str) or not rc.strip():
+                continue
+            if not isinstance(toks, (list, tuple)) or not toks:
+                continue
+            clean = []
+            for t in toks:
+                if not isinstance(t, str):
+                    continue
+                t = t.strip()
+                if not t or not _DECLARED_OP_TOKEN_RE.match(t):
+                    continue
+                if t.lower() in seen_tokens:
+                    continue
+                clean.append(t)
+            if not clean:
+                continue
+            seen_ids.add(oid)
+            seen_tokens.update(t.lower() for t in clean)
+            out.append({"id": oid, "invoked_as": tuple(clean),
+                        "risk_class": rc.strip()})
+        if out:
+            rows = tuple(out)
+    except Exception:
+        rows = tuple(default)
+    _declared_operations_cache = rows
+    return rows
+
+
+def is_declared_operation_id(value: "str | None") -> bool:
+    """True when ``value`` has the namespaced shape a deployment-declared
+    operation id must have. The one predicate every consumer shares, so
+    "is this the deployment's vocabulary or the framework's?" is answered in
+    exactly one place."""
+    return isinstance(value, str) and bool(_DECLARED_OP_ID_RE.match(value.strip()))
+
+
 # Cache: lanes is read once per process (same lifecycle as captain_name;
 # config is stable under a running officer, a restart re-reads). None ⇒
 # unresolved — the EMPTY tuple is a VALID resolved value (a deployment with no

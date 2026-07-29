@@ -21,7 +21,23 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 09dc69fbbf6f90bdbe183b80e012eb92b6e3742ef1e5d3343fbd3f5fa066df6c
+Reviewed-Scope-Digest: PENDING-RECOMPUTE
+(RE-BOUND 2026-07-29 on `fix/framework-specifics`, previous value
+`0df4d12a…`. TWO in-scope paths moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` raises
+`framework_production_noncomment_lines` VISIBLY (+261 over this tree, with a
+per-item breakdown in the row's own comment — not an allowance), and
+`cabinet/scripts/tests/test_cog4_exit_fixtures.py` follows the
+consequence-event schema's `action_type` from a flat enum to a `oneOf`:
+the CLOSED branch is still asserted equal to `classifier.ACTION_TYPES`, is
+now located by SHAPE rather than by position, and the new OPEN branch is
+asserted pattern-gated and un-able to match any of the 30 — so the arm got
+stronger, not looser. The unit's own work is in `framework/` and
+`instance/config/`, which this scope does not bind. Named here rather than
+absorbed silently, because a re-freeze that hides what moved would assert a
+review that never happened.)
+
+
 (RE-BOUND 2026-07-29 on `feat/onboarding-connector-read`, previous value
 `e7a6983a…`. TWO in-scope paths moved and NO COG-4 implementation byte did:
 `cabinet/config/cognitive-architecture-contract.yml` gains one

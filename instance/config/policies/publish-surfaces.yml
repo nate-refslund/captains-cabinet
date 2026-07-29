@@ -1,0 +1,34 @@
+# This deployment's publish surface — the operator layer, on purpose.
+#
+# The framework floor (framework/policies/base-safety.yml -> no-production-publish)
+# states the CATEGORY: a command that explicitly selects the live target, or
+# that pairs a publish verb with the live target, needs the Captain. That holds
+# for any operator with any toolchain, and it is the whole of what a universal
+# base can honestly claim to know.
+#
+# It does NOT know which programs THIS deployment publishes with, and it must
+# not: a supplier's command line is a fact about one operator. This file is
+# where that fact lives, and it is scrubbed out of the packaged export, so a
+# stranger inherits the category and never this list.
+#
+# What this adds beyond the floor: the stricter stance the launching deployment
+# has always had — its publishing CLI needs the Captain even when the command
+# names no live target, because the default target of a bare invocation is a
+# property of that CLI, not something a category rule can see. Removing this
+# file loses only that extra strictness; the floor's live-target rule is
+# framework-side and cannot be removed from here.
+#
+# This directory is schg-locked (see README.md): the Captain adds to it in an
+# unlock window. Name each rule distinctly — load_policies merges by name, so
+# reusing the floor's name would REPLACE the category rule rather than add to it.
+version: 1
+policies:
+  - name: publish-surface-vercel
+    type: command_contains
+    description: "This deployment publishes with the Vercel CLI; any invocation of its deploy verb needs the Captain"
+    tool: Bash
+    case_sensitive: true
+    patterns_all:
+      - "vercel"
+      - "deploy|--prod|--target"
+    message: "Publishing to the live world requires Captain approval"

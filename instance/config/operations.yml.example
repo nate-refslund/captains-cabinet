@@ -1,0 +1,64 @@
+# =============================================================
+# Operations — what THIS deployment does
+# =============================================================
+# Copy to `operations.yml` and describe your own work. Optional: a deployment
+# that declares nothing behaves exactly as before.
+#
+# WHY THIS FILE EXISTS
+# The framework decides the CLASSES OF CONSEQUENCE — reversible, undoable,
+# outward-facing, irreversible — and what autonomy each class can earn. It
+# deliberately does NOT decide which of your operations fall in them, because
+# that is a fact about your work, not about the machine. Anything the framework
+# cannot name classifies as unclassified, and unclassified is permanently
+# propose-only: without this file, an operator whose work the shipped
+# vocabulary happens not to describe can never move the autonomy ladder at all,
+# and the always-gated ceilings guard nothing that exists in their world.
+#
+# EACH ROW
+#   id          `<namespace>/<operation>` — exactly one "/", lowercase. The
+#               namespace keeps your vocabulary from ever colliding with the
+#               framework's own, so a declaration can never redefine a built-in.
+#   invoked_as  the bare program or tool name a call arrives as. Matched
+#               whole-token and case-insensitively, never as a substring, and
+#               an absolute path resolves to the same bare name.
+#   risk_class  which class of consequence this operation is. Run
+#               `python3.12 -c "from framework.authority.matrix import
+#               RISK_CLASSES; print(sorted(RISK_CLASSES))"` for the list.
+#
+# HOW IT FAILS
+# Every failure mode narrows autonomy, never widens it. A malformed row is
+# dropped, not repaired; a class this deployment's floor does not have is
+# dropped; an unreadable file behaves as an empty one. A dropped operation
+# stays unclassified, which is propose-only. A declaration is also consulted
+# only AFTER every built-in ceiling rule, so it can neither escape a ceiling
+# nor claim one it did not earn.
+#
+# CHOOSING THE CLASS — the only question that matters:
+#   * Can it be put back automatically, with no one else involved?  reversible
+#   * Can it be put back, but only by an explicit undo step?        …_write
+#   * Does it reach a person, money, credentials or the live world
+#     your customers depend on?                                     a ceiling
+# When in doubt choose the stricter one: too strict costs a confirmation, too
+# loose costs the thing that could not be put back.
+# =============================================================
+
+operations:
+  # Something routine and self-contained: it changes only your own working
+  # state, and putting it back is another run of the same kind of command.
+  - id: example/routine-local-change
+    invoked_as: [example-adjust]
+    risk_class: reversible
+
+  # Something that leaves a record other people work from, where "undo" is a
+  # real, explicit step rather than an automatic one.
+  - id: example/recorded-change
+    invoked_as: [example-record, example-record-batch]
+    risk_class: pm_write
+
+  # Something irreversible in the world outside this machine. A ceiling row is
+  # always gated regardless of how much confidence has been earned, so putting
+  # your own irreversible operations here is what makes the ceiling protect
+  # anything at all in YOUR deployment.
+  - id: example/irreversible-release
+    invoked_as: [example-release]
+    risk_class: deploy_prod

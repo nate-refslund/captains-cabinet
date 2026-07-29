@@ -148,7 +148,10 @@ def load_checked():
         eff = "to " + (", ".join(scope.get("recipient_allowlist") or [])
                        or "NO recipients (inert)")
     elif rc == "spend":
-        eff = f"max {scope.get('max_eur_per_day')} EUR/day"
+        _cap = scope.get('max_amount_per_day')
+        if _cap is None:
+            _cap = scope.get('max_eur_per_day')    # legacy spelling
+        eff = f"max {_cap}/day"
     else:
         eff = "vendors: " + (", ".join(scope.get("vendor_allowlist") or [])
                              or "NONE (inert)")

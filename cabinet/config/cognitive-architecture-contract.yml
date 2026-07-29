@@ -128,6 +128,34 @@ budgets:
     # cognitive-architecture-census.py rather than added on paper. Neither is an
     # allowance; both are permanent, so the ratchet re-pins at zero headroom.
     #
+    # MERGE, 2026-07-29 (third): +246, measured over THIS tree with
+    # cognitive-architecture-census.py against a clean 73846-at-zero-headroom
+    # base, for the de-specification of framework/ — four specifics that bound
+    # a stranger to the launching operator's trade, currency and org chart.
+    #   +~150  THE OPEN HALF OF THE ACTION VOCABULARY. The 30-member vocabulary
+    #          is one industry's verbs, so every act in any other kind of work
+    #          classified `ambiguous`, which carries no risk class, which is
+    #          permanently propose-only — the autonomy ladder was unreachable
+    #          outside that industry, and symmetrically the always-gated
+    #          ceilings guarded classes with no members in such an operator's
+    #          world. env.declared_operations() + the namespaced-id join in
+    #          classifier / matrix / policy_engine / consequence.
+    #   +~50   THE ROSTER-RESOLVED DEFAULT ACTOR. env.chair_officer(), replacing
+    #          a role literal repeated across the acting, frontdoor, attention
+    #          and watchdog planes: the cell key (actor, lane, action_type) needs
+    #          A default, but WHICH one is a fact about one operator's org shape.
+    #   +~46   THE UNIT-FREE SPEND SCOPE. A grant naming a different currency was
+    #          rejected as MALFORMED rather than converted, so the spend ceiling
+    #          was ungrantable outside one currency area; the legacy spelling is
+    #          kept readable, which is where a few of these lines go.
+    #   +15    the remaining role literals swept out of the fidelity, learning,
+    #          measurement and matrix planes in the same pass — each a signature
+    #          default that now resolves from the roster inside its own body.
+    # RAISED VISIBLY, never an allowance: none of this is phase scaffolding —
+    # each is the permanent mechanism that lets a deployment state a fact about
+    # itself that the framework must not state for it. Zero new production
+    # MODULES (the new suite is a test). Re-pins at zero headroom: 74107
+    # measured over THIS tree, 73846 on the clean base.
     # 60185 -> 60282 (+97 measured 2026-07-29 via cognitive-architecture-census.py,
     # observed 73943 vs the then-effective 73846): the first briefing's cards were
     # making five claims their own citations do not support, and every fix is a
@@ -146,7 +174,13 @@ budgets:
     # do not. Zero new production MODULES (framework_production_modules unchanged:
     # every helper lives inside the existing genesis module). observed == maximum,
     # zero headroom.
-    maximum: 60282
+    # MERGE, 2026-07-29 (fourth): the de-specification ceiling above and this
+    # branch's +97 are DISJOINT (one is framework/ vocabulary and roster
+    # resolution, one is framework/onboarding/genesis.py claim refusals), so
+    # the merged ceiling is their sum — RE-MEASURED over this merge tree with
+    # cognitive-architecture-census.py rather than added on paper. Neither is
+    # an allowance; both are permanent, so the ratchet re-pins at zero headroom.
+    maximum: 60543
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
