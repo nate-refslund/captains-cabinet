@@ -48,8 +48,8 @@ _SHARED_DIR = RETRO_PIPE_DIR.parent / "_shared"
 
 def _exists_unprivileged(p: Path) -> bool:
     """``p.exists()`` that treats an UNREADABLE path as absent instead of
-    crashing at import. The null-hatch gate (operative-egg A15/P1, and the
-    clean-room-source CI job it composes) plants an unreadable stand-in for
+    crashing at import. The null-hatch gate (operative-egg A15/P1, the sole
+    clean-room CI job since 2026-07-29) plants an unreadable stand-in for
     the adapter's state dir as present-but-mode-000, and ``Path.exists()``
     PROPAGATES EACCES (pathlib
     swallows only ENOENT/ENOTDIR/EBADF/ELOOP) — which took this module down at

@@ -39,8 +39,10 @@ dispatch: flavor_a.screenpipe_dispatch:ScreenpipeDispatch
 
 Doing nothing (leaving `sources.yml` absent or omitting these keys) is the
 supported, tested, default-off path — this is the same contract the
-`clean-room-source` CI job asserts (`.github/workflows/cabinet-ci.yml`,
-golden eval `memory/golden-evals/eval-021-source-boundary.md`).
+`null-hatch` CI job asserts (`.github/workflows/cabinet-ci.yml`, running
+`cabinet/scripts/null-hatch.sh` stages 2-4; the separate `clean-room-source`
+job it superseded was deleted 2026-07-29 as a strict subset), golden eval
+`memory/golden-evals/eval-021-source-boundary.md`.
 
 ## What's in here
 
