@@ -297,3 +297,81 @@ def test_memory_search_keyless_functional_lexical_fallback(tmp_path):
     assert "query=redis stream wiring" in args
     assert "cid=testcab" in args
     assert not any(a.startswith("embedding=") for a in args)
+
+
+# ---------------------------------------------------------------------------
+# WRITE CONFIRMATION (2026-07-28). memory_embed used to report SUCCESS for a
+# row that never landed: psql WITHOUT ON_ERROR_STOP exits 0 even when the
+# statement it ran ERRORed, and memory_embed suppresses psql's stderr. Measured
+# against a live Postgres 17 + pgvector store: an `officer` past the column's
+# VARCHAR(16) (and a `source_type` past VARCHAR(32), and content Postgres
+# rejects as invalid UTF-8) each gave rc=0 with 0 rows stored, after which
+# memory-worker.sh logged "processed: N ok, 0 failed" and XACKed the queue
+# entry — the memory was gone with a green log line.
+#
+# The stubs below encode the MEASURED psql behaviour, not the fix's mechanism:
+# the failure stub exits 0 and prints nothing (exactly what real psql does
+# without ON_ERROR_STOP), so the arm passes only if the id check — not the
+# exit code — is what refuses. memory_get_embedding is overridden to a
+# constant vector, so these run with no network, no Voyage key and no jq
+# dependency on the embed path.
+# ---------------------------------------------------------------------------
+_EMBED_STUB = 'memory_get_embedding() { printf "[0.1,0.2]"; }; '
+_EMBED_CALL = (
+    'memory_embed sometype some/id someofficer somesender '
+    '"real content that must be stored" "{}" "2026-07-01T00:00:00Z"'
+)
+
+
+def _psql_stub(tmp_path, stdout_text: str):
+    """A psql stub that always exits 0 (the measured no-ON_ERROR_STOP
+    behaviour) and prints exactly what the real client printed."""
+    import os
+
+    stub_dir = tmp_path / "bin"
+    stub_dir.mkdir(exist_ok=True)
+    psql = stub_dir / "psql"
+    psql.write_text(
+        "#!/bin/bash\n"
+        f"printf '%s\\n' \"$@\" > '{tmp_path}/psql_args'\n"
+        "cat > /dev/null\n"
+        f"cat '{tmp_path}/psql_stdout'\n"
+        "exit 0\n"
+    )
+    psql.chmod(0o755)
+    (tmp_path / "psql_stdout").write_text(stdout_text)
+    return {
+        "NEON_CONNECTION_STRING": "postgresql://placeholder",
+        "CABINET_ID": "testcab",
+        "PATH": f"{stub_dir}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+    }
+
+
+def test_memory_embed_refuses_success_when_no_row_landed(tmp_path):
+    """Failed INSERT: psql exits 0 and prints nothing (measured). memory_embed
+    must return NON-ZERO so memory-worker retries and eventually DLQs, instead
+    of XACKing a lost write."""
+    env = _psql_stub(tmp_path, "")
+    proc = _run_bash(f'source "{MEMORY_SH}" && {_EMBED_STUB} {_EMBED_CALL}', env=env)
+    assert proc.returncode != 0, (
+        "memory_embed reported success for an INSERT that stored nothing "
+        f"(stdout={proc.stdout!r} stderr={proc.stderr!r})"
+    )
+
+
+def test_memory_embed_reports_success_when_the_row_lands(tmp_path):
+    """The other direction — the guard must not refuse a real write. Stdout is
+    the real psql -q rendering of `RETURNING id` captured from a live store."""
+    env = _psql_stub(tmp_path, "  id  \n-----\n 219\n(1 row)\n")
+    proc = _run_bash(f'source "{MEMORY_SH}" && {_EMBED_STUB} {_EMBED_CALL}', env=env)
+    assert proc.returncode == 0, f"stderr={proc.stderr!r}"
+    assert "219" in proc.stdout
+
+
+def test_memory_embed_passes_on_error_stop_to_psql(tmp_path):
+    """Second, independent guard: psql is told to fail loudly (exit 3) rather
+    than swallow a statement error. Asserted from the stub's captured argv."""
+    env = _psql_stub(tmp_path, "  id  \n-----\n 219\n(1 row)\n")
+    _run_bash(f'source "{MEMORY_SH}" && {_EMBED_STUB} {_EMBED_CALL}', env=env)
+    args = (tmp_path / "psql_args").read_text().splitlines()
+    assert "ON_ERROR_STOP=1" in args
