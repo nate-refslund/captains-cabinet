@@ -21,7 +21,19 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 408e6b979fff5a1d84da85fdc19ed7114a8a2df96492636407d80febee0aa017
+Reviewed-Scope-Digest: a9be6fa17cc368ca64a84309d26fb65d1b1483633ec39722cf8b0c2796894658
+(RE-BOUND 2026-07-29 on `feat/look-capabilities`, previous value
+`408e6b97…`. ONE in-scope path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` raises
+`framework_production_noncomment_lines` VISIBLY 60543 -> 60637 (+94 measured
+over this tree, with a three-item breakdown in the row's own comment — not an
+allowance, because a read lane that reads more clock encodings honestly and
+refuses to describe its own misconfiguration as the operator's empty estate has
+no deletion gate that could ever fire). The unit's own work is in
+`framework/onboarding/` and `instance/config/`, which this scope does not bind.
+Named here rather than absorbed silently, because a re-freeze that hides what
+moved would assert a review that never happened.)
+
 (RE-BOUND 2026-07-29 on `fix/framework-specifics`, previous value
 `0df4d12a…`. TWO in-scope paths moved and NO COG-4 implementation byte did:
 `cabinet/config/cognitive-architecture-contract.yml` raises
