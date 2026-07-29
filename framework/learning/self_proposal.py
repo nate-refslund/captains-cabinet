@@ -40,6 +40,7 @@ _FRAMEWORK_ROOT = str(Path(__file__).resolve().parents[2])
 if _FRAMEWORK_ROOT not in sys.path:
     sys.path.insert(0, _FRAMEWORK_ROOT)
 
+from framework import env  # roster-resolved default role
 from framework.events.emitter import emit  # noqa: E402
 from framework.learning.capability_gaps import (  # noqa: E402
     HARD_CEILING_TOUCHES,
@@ -262,7 +263,7 @@ def prepare_mcp_proposal(
     kind: str = "mcp",
     gap_id: Optional[str] = None,
     urgency_tier: str = "batch",
-    actor: str = "cos",
+    actor: "str | None" = None,
     cabinet_root: str | Path | None = None,
     enqueue_fn=None,
     emit_fn=None,
@@ -276,7 +277,7 @@ def prepare_mcp_proposal(
 
     Args:
         server: MCP/plugin token as it appears in mcp-scope.yml (e.g. 'make').
-        officers: officer ids to grant (e.g. ['cos']).
+        officers: officer ids to grant (roles from this deployment's roster).
         why: one-line rationale.
         test_evidence: what the Chair verified works (the capability proof).
         account_step: credential/account step handed to the Captain, or None.
@@ -289,6 +290,7 @@ def prepare_mcp_proposal(
     Surfacing degrades gracefully: if enqueue fails, the proposal dict + the
     audit event are still returned/emitted (never raises on a transport error).
     """
+    actor = actor or env.chair_officer()
     server = (server or "").strip()
     if not server:
         raise ValueError("prepare_mcp_proposal: server is required")
@@ -367,7 +369,7 @@ if __name__ == "__main__":  # tiny manual smoke
     import json
     demo = prepare_mcp_proposal(
         "make",
-        officers=["cos"],
+        officers=[env.chair_officer()],
         why="Chair needs Make scenario access for the Teams→Outlook flow",
         test_evidence="Listed scenarios via mcp__make; the read modules return rows.",
         account_step=None,

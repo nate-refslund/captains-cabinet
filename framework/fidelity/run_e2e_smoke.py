@@ -36,6 +36,7 @@ import subprocess
 import tempfile
 from typing import Any
 
+from framework import env  # roster-resolved default role
 from framework.fidelity import graduation
 from framework.fidelity.fidelity_events import emit_case_scored
 from framework.fidelity.oauth_llm import oauth_raw_llm
@@ -157,7 +158,7 @@ def _cell_str(officer_role: str, lane: str, action_type: str) -> str:
     return f"officer:{officer_role}|{lane}|{action_type}"
 
 
-def run_smoke(officer_role: str = "cos", n_cases: int = 1,
+def run_smoke(officer_role: "str | None" = None, n_cases: int = 1,
               lane: str = "send-1to1-reply",
               action_type: str = "internal_message",
               people_dir=None) -> dict[str, Any]:
@@ -170,6 +171,7 @@ def run_smoke(officer_role: str = "cos", n_cases: int = 1,
     {state, evidence}. No side effects beyond the local consequence/org-event
     ledger writes (reversible).
     """
+    officer_role = officer_role or env.chair_officer()
     result = run_batch(officer_role=officer_role, n_cases=n_cases,
                        people_dir=people_dir, emit_events=True)
 
@@ -231,7 +233,7 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
     from datetime import datetime, timezone
 
     argv = list(sys.argv[1:] if argv is None else argv)
-    role = argv[0] if len(argv) > 0 else "cos"
+    role = argv[0] if len(argv) > 0 else env.chair_officer()
     n = int(argv[1]) if len(argv) > 1 else 1
     note_path = argv[2] if len(argv) > 2 else None
 

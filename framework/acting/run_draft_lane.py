@@ -42,6 +42,7 @@ from framework.acting import loop, lane_dedup as ld
 from framework.acting.loop import proposal_id
 from framework.fidelity.consequence import emit_consequence
 from framework.env import captain_name
+from framework import env  # roster-resolved default actor
 from framework.sources import get_source
 
 MAX = int(os.environ.get("DRAFT_LANE_MAX", "1"))
@@ -281,7 +282,7 @@ def main() -> None:
         except Exception as e:
             print(f"draft-reconcile: skipped ({e})")
     cap = captain_name()
-    actor = {"kind": "officer", "id": "cos"}
+    actor = {"kind": "officer", "id": env.chair_officer()}
     # Dedup against OPEN proposals (already awaiting your decision) AND against
     # DECIDED proposals with no genuinely-new inbound since the decision (Fix 1:
     # a skip/send/edit must STICK — don't re-present a thread the captain already ruled

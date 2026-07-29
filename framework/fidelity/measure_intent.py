@@ -54,6 +54,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 # real run. Byte-identical (retro provides the same paths); drops
 # measure_intent's only adapter-specific path literal (clean-room ratchet).
 
+from framework import env  # roster-resolved default role
 from framework.fidelity.benchmark import build_cases
 from framework.fidelity import officer_runner, scorer, leakguard
 from framework.fidelity.officer_runner import gather_cutoff_context
@@ -98,7 +99,7 @@ def main():
                "outcome_verdict": None, "grounded_fact": None}
         try:
             decision = officer_runner.run_case(
-                c, "cos", gather=gather_cutoff_context, emit_events=False,
+                c, env.chair_officer(), gather=gather_cutoff_context, emit_events=False,
                 identity_mode=args.identity)
         except leakguard.LeakageDetectedError:
             rec["leaked"] = True

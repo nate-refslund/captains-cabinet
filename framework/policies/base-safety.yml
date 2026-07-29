@@ -26,13 +26,40 @@ policies:
     path_patterns: ["*.env", "*.env.*"]
     message: "Environment files cannot be modified by Officers"
 
-  - name: no-production-deploy
+  # PUBLISHING TO THE LIVE WORLD — the CATEGORY, not one supplier's CLI.
+  # Until 2026-07-29 this rule was named for the category and implemented as
+  # two literals from a single vendor's command line. The gap that leaves is
+  # invisible from the rule's NAME: every other way to put a change live went
+  # unmatched, and for an operator who does not use that vendor the rule
+  # guarded nothing while reading, in the policy file, as protection.
+  #
+  # Two shapes, neither naming a supplier, product, platform or trade:
+  #   patterns      the command EXPLICITLY SELECTS the live target. A
+  #                 live-target flag is not something a read or a build says
+  #                 by accident, so this half is high-precision on its own.
+  #   patterns_all  a publish verb AND the live target both appear.
+  # A deployment whose publish surface neither shape recognises adds its own
+  # rule in instance/config/policies/ — a supplier's command line is an
+  # operator's fact, and it belongs in the operator's layer.
+  - name: no-production-publish
     type: command_contains
-    description: "Block production deployment (mirrors pre-tool-use.sh section 3a)"
+    description: "Block putting a change into the live world without the Captain (mirrors pre-tool-use.sh section 3a-ii)"
     tool: Bash
-    patterns: ["vercel deploy", "vercel --prod"]
-    case_sensitive: true
-    message: "Production deployment requires Captain approval"
+    case_sensitive: false
+    patterns:
+      - "--prod"
+      - "--production"
+      - "--live"
+      - "--target prod"
+      - "--target=prod"
+      - "--env prod"
+      - "--env=prod"
+      - "--stage prod"
+      - "--stage=prod"
+    patterns_all:
+      - "deploy|publish|release|promote|rollout|cutover|go-live|golive|apply|upgrade|migrate|activate|provision"
+      - "prod|live"
+    message: "Publishing to the live world requires Captain approval"
 
   # ---------------------------------------------------------------------------
   # Parity migration (2026-07-03): the following stateless rules were live-only

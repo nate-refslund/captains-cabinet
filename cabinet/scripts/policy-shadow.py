@@ -345,8 +345,9 @@ def _shadow_cabinet_root() -> str | None:
 
 def _reason_token(policy: dict[str, Any]) -> str:
     """Stable reason token for a matched policy: the kebab name → snake_case
-    (e.g. no-production-deploy → no_production_deploy, which CONTAINS the legacy
-    'production_deploy' token the shadow tests assert on)."""
+    (e.g. no-destructive-sql → no_destructive_sql). The fallback regex arm
+    below keeps its own stable reason tokens, which is what the shadow tests
+    assert on — those are independent of any typed policy's NAME."""
     name = str(policy.get("name") or policy.get("type") or "policy")
     return name.replace("-", "_")
 
@@ -613,7 +614,18 @@ def _regex_decision(hook: dict[str, Any], officer: str) -> dict[str, Any]:
 
     if tool_name == "Bash":
         cmd = command(tool_input)
-        if re.search(r"\bvercel\s+(deploy|--prod)\b", cmd):
+        # PUBLISHING TO THE LIVE WORLD — the category (2026-07-29), matching
+        # the floor's no-production-publish. This arm used to name one
+        # supplier's CLI, so it saw nothing for an operator using any other.
+        # Two shapes: an explicit live-target selection, or a publish verb
+        # together with the live target. The reason token is unchanged — it is
+        # a stable identifier consumers join on, not a description.
+        if (re.search(r"--(prod|production|live)\b", cmd, re.I)
+                or re.search(r"--(target|env|stage)[= ]prod", cmd, re.I)
+                or (re.search(r"\b(deploy|publish|release|promote|rollout|cutover"
+                              r"|go-live|golive|apply|upgrade|migrate|activate"
+                              r"|provision)\b", cmd, re.I)
+                    and re.search(r"\b(prod|production|live)\b", cmd, re.I))):
             reasons.append("production_deploy_requires_captain_approval")
         if re.search(r"\b(DROP\s+TABLE|DROP\s+DATABASE|TRUNCATE|DELETE\s+FROM)\b", cmd):
             reasons.append("destructive_database_operation_requires_captain_approval")
