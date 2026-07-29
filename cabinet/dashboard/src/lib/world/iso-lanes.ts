@@ -51,6 +51,7 @@ import {
   type LaneSite,
 } from './world-geo'
 import type { Layout, LayoutSpace, Point } from './iso-layout'
+import type { VoyageRender } from './course'
 
 /**
  * The vertical squash of the isometric ground plane — the projection kernel's
@@ -308,4 +309,117 @@ export function isoQuayMouth(
   if (h?.jetty) return { x: h.jetty.end.x, y: h.jetty.end.y }
   if (h?.cove) return { x: h.cove.x, y: h.cove.y }
   return { x: layout.space.cx, y: home.y1 }
+}
+
+// ── the voyage boat (show-grammar v4 / morphology harbor_boat_voyage) ───────
+
+/**
+ * The most of the run out to a berth a voyage ever covers.
+ *
+ * The top-down kernel's own cap, kept as a ceiling: a voyage should read as a
+ * crossing even when the berth is close enough that the standoff below would
+ * let the boat sit on top of it.
+ */
+export const VOYAGE_REACH = 0.9
+
+/**
+ * How far short of a berth the boat stops, as a multiple of THAT BERTH'S own
+ * drawn ground half-width.
+ *
+ * IT IS NOT THE TOP-DOWN 0.9, AND THE BROWSER IS WHY. `drawDynamics` stops at
+ * 0.9 of the run and that works there because its fan sits 126 tiles out from a
+ * 5-tile isle: a tenth of that run clears the island many times over. Here the
+ * fan radius and the isle are the SAME ORDER — measured 2026-07-29 on the live
+ * cabinet, the polads run is 1871px and the isle's own ground is ~250px, so a
+ * tenth of the run (187px) left the hull INSIDE the berth's ellipse, painted
+ * over by the isle's jetty and warehouse block. The voyage was correct in the
+ * data and invisible on the screen.
+ *
+ * So the stand-off is measured against the thing it has to clear rather than
+ * copied as a fraction of something else: a quarter of the berth's own mark
+ * beyond its edge, which scales with the ring the way the berth does. A reef
+ * buoy is small and gets a small berth; an r2 isle is large and pushes the
+ * anchorage out with it.
+ */
+export const BERTH_STANDOFF = 1.25
+
+/** The org's vessel, placed for this payload. */
+export interface IsoBoat {
+  /** Ground anchor in layout px. */
+  x: number
+  y: number
+  /** True = on the course line; false = at the berth the layout measured. */
+  underway: boolean
+  /** The lane being sailed to, or null when moored. */
+  lane: string | null
+  /** Mirror the hull when the course runs left, so the bow leads. */
+  flip: boolean
+}
+
+/**
+ * Where the org's vessel is for this payload — at its berth, or out on a course.
+ *
+ * IT IS THE HARBOUR'S OWN BOAT, MOVED, and that is the whole design. The iso
+ * layout already berths `harbor_boat` — the one craft with a ladder behind it —
+ * by SEARCHING for open water beside the pier, and the pack ships its art at
+ * every rung (rowboat → boat_rowing, packet_boat → boat_packet, steam_packet →
+ * bay_steam_packet). Drawing a second hull for the voyage would put two vessels
+ * in one harbour and would invent pixels for a thing the pack already draws;
+ * the top-down kernel moves its one boat too, and the grammar says the boat's
+ * "SIZE/vocab stay the harbor_boat ladder's". So this function returns a
+ * DISPLACEMENT for a sprite that already exists, never a boat of its own.
+ *
+ * NO BERTH MEANS NO BOAT, and the caller gets null. That is the layout's own
+ * rule, not a guard bolted on here: a seed whose pier has no open water beside
+ * it gets no vessel, "because a missing boat says the harbour could not berth
+ * one, a beached boat says something false about the island". A voyage cannot
+ * be shown by a boat that does not exist, and inventing one to show it would be
+ * exactly that false claim.
+ *
+ * PROGRESS IS SERVER DATA, folded by `voyageRender` from the newest port call;
+ * nothing here reads a clock, exactly as the top-down path does not. The fold
+ * is the same triangle: out at progress ≤ 0.5, back at > 0.5, so a voyage
+ * returns home instead of teleporting.
+ *
+ * A TACKING LANE WITH NO BERTH ON THE FAN LEAVES THE BOAT AT ITS MOORING. Not a
+ * bug guard — a lane can be tacking and hold no slot (the fan is five wide and
+ * `outcomes.yml` is not), and inventing a destination for it would draw a
+ * voyage the org has not made. The top-down kernel makes the same choice with
+ * the same `if (site)`.
+ */
+export function isoVoyageBoat(
+  voyage: VoyageRender | null | undefined,
+  berth: Point | null | undefined,
+  sites: readonly IsoLaneSite[]
+): IsoBoat | null {
+  if (!berth) return null
+  const site =
+    voyage?.underway && voyage.lane
+      ? (sites.find((s) => s.lane === voyage.lane) ?? null)
+      : null
+  if (!site) {
+    return { x: berth.x, y: berth.y, underway: false, lane: null, flip: false }
+  }
+  const p = voyage as VoyageRender
+  const fold = p.progress <= 0.5 ? p.progress * 2 : (1 - p.progress) * 2
+  // THE RUN IS MEASURED ON THE GROUND PLANE, because the stand-off it is
+  // compared against (`site.hw`) is a ground half-width. Taking the screen
+  // distance instead would under-state a run that goes mostly north-south by
+  // the projection's own 2:1 and moor the boat short by half an isle.
+  const run = Math.hypot(site.x - berth.x, (site.y - berth.y) / ISO_GROUND_SQUASH)
+  const clear = run > 0 ? Math.max(0, (run - site.hw * BERTH_STANDOFF) / run) : 0
+  const t = Math.min(VOYAGE_REACH, clear) * fold
+  return {
+    x: berth.x + (site.x - berth.x) * t,
+    y: berth.y + (site.y - berth.y) * t,
+    underway: true,
+    lane: site.lane,
+    flip: site.x < berth.x,
+  }
+}
+
+/** The berth the layout measured for the org's vessel, or null if it seated none. */
+export function isoBoatBerth(layout: Pick<Layout, 'harbour'>): Point | null {
+  const it = layout.harbour?.items.find((i) => i.kind === 'harbor_boat')
+  return it ? { x: it.at.x, y: it.at.y } : null
 }

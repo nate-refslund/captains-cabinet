@@ -25,18 +25,25 @@ import {
   BUOY_RED,
   homeExtentOf,
   homeHalfWidth,
+  isoBoatBerth,
   isoLaneFanRadius,
   isoLaneSites,
   isoQuayMouth,
+  isoVoyageBoat,
   laneBearing,
   laneGroundHw,
   pickIsoLane,
   pointInLaneSite,
   ISO_GROUND_SQUASH,
+  BERTH_STANDOFF,
   LANE_FAN_CLEARANCE,
+  VOYAGE_REACH,
   type HomeExtent,
+  type IsoLaneSite,
 } from './iso-lanes'
+import type { VoyageRender } from './course'
 import { composeLayout, LAYOUT_SPACE, type Layout, type LayoutState } from './iso-layout'
+import type { HarbourItem } from './iso-layout/harbour'
 import {
   buildWorldGeo,
   ISLE_SLOTS,
@@ -382,5 +389,205 @@ describe('the radius is derived, so a bigger island pushes its own fan out', () 
         home.y1 - LAYOUT_SPACE.cy + isle * ISO_GROUND_SQUASH + LANE_FAN_CLEARANCE - 1e-9
       )
     }
+  })
+})
+
+// ── 5. THE VOYAGE: the org's own vessel, moved ──────────────────────────────
+
+describe('the voyage', () => {
+  // The base fixture stages no `harbor_boat`, so it seats no vessel — which is
+  // the null case one arm below is about. A voyage needs an org that HAS a
+  // boat, so this one earns the ladder's first rung.
+  const BOAT_LAYOUT = layoutFor({ stages: { harbor_boat: 'rowboat' } })
+  const BOAT_HOME = homeExtentOf(BOAT_LAYOUT)
+  const SITES = isoLaneSites(laneSites(), LAYOUT_SPACE, BOAT_HOME)
+  const BERTH = isoBoatBerth(BOAT_LAYOUT)!
+  const voy = (lane: string | null, progress: number): VoyageRender => ({
+    underway: lane !== null,
+    lane,
+    progress,
+  })
+
+  it('the berth is the LAYOUT\'s own, not a point this module invented', () => {
+    // The harbour seats `harbor_boat` by searching for open water beside the
+    // pier. Re-deriving a mooring from the quay mouth would put the hull on the
+    // decking about as often as the offset that search replaced did.
+    const item = BOAT_LAYOUT.harbour!.items.find((i) => i.kind === 'harbor_boat')!
+    expect(BERTH).toEqual({ x: item.at.x, y: item.at.y })
+    expect(item.afloat).toBe(true)
+    // and it really is over water, which is the property the search exists for
+    expect(item.overWater).toBe(true)
+  })
+
+  it('an org with no harbor_boat rung seats no vessel, so there is nothing to sail', () => {
+    expect(isoBoatBerth(LAYOUT)).toBeNull()
+  })
+
+  it('finds the vessel by KIND, never by position in the item list', () => {
+    // SYNTHETIC ON PURPOSE, and this arm exists because the shipped fixture
+    // could not carry it: a hamlet harbour emits exactly ONE item — the boat —
+    // so `items[0]` and `find(kind === 'harbor_boat')` are the same answer and
+    // every other arm here is green on both. Measured 2026-07-29 by mutating
+    // the lookup to `items[0]`: the whole file stayed green. A richer state
+    // (cranes' piers, notched wharves) pushes kit into that list ahead of the
+    // vessel, and then position-lookup returns a bollard's berth and sails it.
+    const kit = (kind: string, x: number, y: number): HarbourItem => ({
+      kind,
+      at: { x, y },
+      flip: false,
+      size: { w: 16, h: 16 },
+      overWater: false,
+      afloat: false,
+    })
+    const harbour = {
+      items: [kit('capstan', 11, 22), kit('harbor_boat', 333, 444), kit('bollard', 55, 66)],
+    } as unknown as Layout['harbour']
+    expect(isoBoatBerth({ harbour })).toEqual({ x: 333, y: 444 })
+  })
+
+  it('a harbour that seated NO vessel has no voyage — null, never a boat', () => {
+    // The layout's own rule: a pier with no open water beside it gets no boat,
+    // "because a missing boat says the harbour could not berth one, a beached
+    // boat says something false about the island". A voyage cannot be shown by
+    // a vessel that does not exist.
+    expect(isoBoatBerth({ harbour: null })).toBeNull()
+    expect(isoVoyageBoat(voy('gamma', 0.5), null, SITES)).toBeNull()
+  })
+
+  it('rests at the berth when no lane is tacking', () => {
+    const b = isoVoyageBoat(voy(null, 0), BERTH, SITES)!
+    expect(b.underway).toBe(false)
+    expect(b.lane).toBeNull()
+    expect(b.x).toBeCloseTo(BERTH.x, 6)
+    expect(b.y).toBeCloseTo(BERTH.y, 6)
+  })
+
+  it('sails toward the berth of the lane that is tacking, joined BY NAME', () => {
+    // The join has to be by lane name. `laneSites()` puts alpha in slot 1 and
+    // gamma in slot 3, so a boat that took the first entry, or the entry at the
+    // tacking lane's index, would sail to alpha's berth for a gamma voyage and
+    // look entirely plausible doing it.
+    const gamma = SITES.find((s) => s.lane === 'gamma')!
+    const alpha = SITES.find((s) => s.lane === 'alpha')!
+    expect(gamma.slot).not.toBe(alpha.slot)
+    const b = isoVoyageBoat(voy('gamma', 0.5), BERTH, SITES)!
+    expect(b.underway).toBe(true)
+    expect(b.lane).toBe('gamma')
+    expect(Math.hypot(b.x - gamma.x, b.y - gamma.y)).toBeLessThan(
+      Math.hypot(b.x - alpha.x, b.y - alpha.y)
+    )
+  })
+
+  it('folds the voyage into a triangle: out, then home again', () => {
+    const out = (pr: number) => {
+      const b = isoVoyageBoat(voy('gamma', pr), BERTH, SITES)!
+      return Math.hypot(b.x - BERTH.x, b.y - BERTH.y)
+    }
+    expect(out(0)).toBeCloseTo(0, 6)
+    expect(out(1)).toBeCloseTo(0, 6)
+    // Symmetric about the turn, and the turn is the furthest point.
+    expect(out(0.25)).toBeCloseTo(out(0.75), 6)
+    expect(out(0.5)).toBeGreaterThan(out(0.25))
+    expect(out(0.5)).toBeGreaterThan(out(0.9))
+  })
+
+  it('leaves the harbour at all — the run is a real distance, not a jiggle', () => {
+    // A DETERMINISM ARM AND A FOLD ARM ARE BOTH GREEN ON A BOAT THAT NEVER
+    // MOVES (0 → 0 → 0 satisfies every symmetry above). This pins the quantity
+    // that makes the voyage visible: at the turn the vessel is most of the way
+    // out to its berth and nowhere near its mooring.
+    const gamma = SITES.find((s) => s.lane === 'gamma')!
+    const run = Math.hypot(gamma.x - BERTH.x, gamma.y - BERTH.y)
+    const b = isoVoyageBoat(voy('gamma', 0.5), BERTH, SITES)!
+    expect(run).toBeGreaterThan(200) // the fan is far offshore by construction
+    expect(Math.hypot(b.x - BERTH.x, b.y - BERTH.y)).toBeGreaterThan(run * 0.5)
+  })
+
+  it('stops CLEAR of the berth\'s own ground, by exactly the stated stand-off', () => {
+    // THE DEFECT THIS ARM EXISTS FOR, found in a browser and not in a test:
+    // stopping at the top-down 0.9 of the run put the hull inside the isle's
+    // own ellipse, where the berth's jetty and warehouse block paint over it —
+    // a voyage that was right in the data and invisible on the screen.
+    //
+    // IT ASSERTS THE EXACT GAP, not merely "outside", and the fixtures include
+    // a run that is PURELY NORTH-SOUTH. Both matter: `hw` is a ground
+    // half-width, so the run has to be measured on the ground plane too, and
+    // measuring it on the screen instead only shows up when the run has a big
+    // vertical share — measured 2026-07-29, dropping the un-squash from the run
+    // left every east-west fixture green.
+    const cases: Array<[string, IsoLaneSite]> = [
+      ...SITES.filter((s) => s.lane).map((s) => [s.lane!, s] as [string, IsoLaneSite]),
+      ['due-south', { ...SITES[0], lane: 'due-south', x: BERTH.x, y: BERTH.y + 900, hw: 200 }],
+      ['due-east', { ...SITES[0], lane: 'due-east', x: BERTH.x + 1800, y: BERTH.y, hw: 200 }],
+    ]
+    for (const [label, site] of cases) {
+      const b = isoVoyageBoat(voy(site.lane, 0.5), BERTH, [site])!
+      const run = Math.hypot(site.x - BERTH.x, (site.y - BERTH.y) / SQUASH)
+      const gap = Math.hypot(b.x - site.x, (b.y - site.y) / SQUASH)
+      // Whichever binds: the berth's own stand-off, or the hard reach ceiling.
+      const want = Math.max(site.hw * BERTH_STANDOFF, run * (1 - VOYAGE_REACH))
+      expect(gap, `${label}: gap to the berth centre`).toBeCloseTo(want, 6)
+      expect(gap, `${label}: hull inside the berth's own ground`).toBeGreaterThan(site.hw)
+    }
+  })
+
+  it('a berth closer than its own stand-off keeps the boat AT the mooring', () => {
+    // Degenerate and reachable: a big isle berthed near the harbour makes the
+    // stand-off longer than the whole run. Clamped, the answer is "do not
+    // sail". Unclamped it is a NEGATIVE fraction, and the boat sails backwards
+    // out of the world — measured 2026-07-29, no other arm here could see it.
+    const hugged = { ...SITES[0], lane: 'H', x: BERTH.x + 30, y: BERTH.y, hw: 400 }
+    const b = isoVoyageBoat(voy('H', 0.5), BERTH, [hugged])!
+    expect(b.x).toBeCloseTo(BERTH.x, 6)
+    expect(b.y).toBeCloseTo(BERTH.y, 6)
+  })
+
+  it('a BIGGER berth pushes the anchorage further out — the stand-off is measured', () => {
+    // A constant stand-off passes every other arm here. This one moves the
+    // thing the stand-off is supposed to be measured against, and nothing else.
+    const base = SITES.find((s) => s.render === 'isle')!
+    const small = { ...base, hw: 60, lane: 'S' }
+    const large = { ...base, hw: 260, lane: 'S' }
+    const dOut = (site: typeof base) => {
+      const b = isoVoyageBoat(voy('S', 0.5), BERTH, [site])!
+      return Math.hypot(b.x - BERTH.x, (b.y - BERTH.y) / SQUASH)
+    }
+    expect(dOut(large)).toBeLessThan(dOut(small))
+    expect(VOYAGE_REACH).toBeLessThan(1)
+  })
+
+  it('the cap still bites when a berth is so close the stand-off would not', () => {
+    // Degenerate end: a berth right off the harbour mouth. `clear` is nearly 1
+    // there, so without the VOYAGE_REACH ceiling the boat would sail onto it.
+    const near = { ...SITES[0], x: BERTH.x + 40, y: BERTH.y + 10, hw: 0, lane: 'N' }
+    const b = isoVoyageBoat(voy('N', 0.5), BERTH, [near])!
+    const run = Math.hypot(near.x - BERTH.x, (near.y - BERTH.y) / SQUASH)
+    const got = Math.hypot(b.x - BERTH.x, (b.y - BERTH.y) / SQUASH)
+    expect(got).toBeCloseTo(run * VOYAGE_REACH, 6)
+  })
+
+  it('a tacking lane with NO berth on the fan leaves the vessel at its mooring', () => {
+    // Honest absence, not an invented destination: the fan is five wide and
+    // outcomes.yml is not, so a lane can be under way and hold no slot.
+    const b = isoVoyageBoat(voy('not-on-the-fan', 0.5), BERTH, SITES)!
+    expect(b.underway).toBe(false)
+    expect(b.lane).toBeNull()
+    expect(b.x).toBeCloseTo(BERTH.x, 6)
+    expect(b.y).toBeCloseTo(BERTH.y, 6)
+  })
+
+  it('an absent voyage fold is the same as moored, never a throw', () => {
+    for (const v of [null, undefined]) {
+      expect(isoVoyageBoat(v, BERTH, SITES)!.underway).toBe(false)
+    }
+  })
+
+  it('the hull mirrors only when the course runs left of the berth', () => {
+    // BOTH DIRECTIONS, because an arm over one is a sensor over half the
+    // function: `flip: false` everywhere passes a left-only check.
+    const left = { ...SITES[0], x: BERTH.x - 500, lane: 'L' }
+    const right = { ...SITES[0], x: BERTH.x + 500, lane: 'R' }
+    expect(isoVoyageBoat(voy('L', 0.5), BERTH, [left])!.flip).toBe(true)
+    expect(isoVoyageBoat(voy('R', 0.5), BERTH, [right])!.flip).toBe(false)
   })
 })

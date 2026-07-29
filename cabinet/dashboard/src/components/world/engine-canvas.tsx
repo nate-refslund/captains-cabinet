@@ -65,8 +65,12 @@ import {
 import {
   BUOY_RED,
   homeExtentOf,
+  homeHalfWidth,
+  isoBoatBerth,
   isoLaneSites,
   isoQuayMouth,
+  isoVoyageBoat,
+  laneGroundHw,
   ISO_GROUND_SQUASH,
   type HomeExtent,
   type IsoLaneSite,
@@ -1567,6 +1571,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
 
       function buildIsoSprites(scene: IsoScene, pack: IsoPack, atlas: Texture): void {
         isoSpriteById.clear()
+        isoBoatSpriteId = null
         for (const s of scene.sprites) {
           const f = pack.frames[s.frame]
           if (!f) continue // unreachable: buildIsoScene already reported it
@@ -1583,6 +1588,14 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           sp.scale.x = s.flip ? -Math.abs(sp.scale.x) : Math.abs(sp.scale.x)
           sp.zIndex = s.depth
           propLayer.addChild(sp)
+          // THE ORG'S VESSEL IS THE ONE STATIC THAT MOVES — `drawIsoVoyage`
+          // sails it — so it is remembered by id and its shadow is NOT baked
+          // here. A diamond in the static buffer would stay at the berth all
+          // voyage, because that buffer is not redrawn for a payload change.
+          if (s.role === 'harbor_boat') {
+            isoBoatSpriteId = s.id
+            continue
+          }
           // The shadow IS the footprint: the pack's own ground diamond, in the
           // corpus slate the top-down world already casts.
           const g = groundDiamond(s.dw, s.dh)
@@ -1646,6 +1659,8 @@ export default function EngineCanvas(props: EngineCanvasProps) {
 
       /** Static iso sprites by scene id — the cutaway's handle on a roof. */
       const isoSpriteById = new Map<string, Sprite>()
+      /** The org's vessel, if the layout seated one — `drawIsoVoyage` sails it. */
+      let isoBoatSpriteId: string | null = null
       /**
        * The iso cutaway machine.
        *
@@ -1912,6 +1927,12 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         dynShadowG.clear()
         syncIsoLanes(p)
         drawIsoLanes(p)
+        // CALLED HERE AND NOT INSIDE `drawIsoLanes`, which returns early when
+        // the fan is empty. The vessel belongs to the HARBOUR, not to the
+        // archipelago: a cabinet that has ratified no product lane still berths
+        // a boat, and letting an empty fan skip this pass would strand that
+        // boat's shadow — the pass casts it.
+        drawIsoVoyage(p)
         drawIsoLife(p)
         const lamp = isoScene?.lamp
         if (lamp) {
@@ -2449,6 +2470,52 @@ export default function EngineCanvas(props: EngineCanvasProps) {
             }
             dynG.ellipse(s.x, s.y, rx * 0.16, ry * 0.16).fill({ color: MIST_GREY })
           }
+        }
+      }
+
+      /**
+       * THE VOYAGE — `harbor_boat_voyage`, the last law row to reach this kernel.
+       *
+       * IT MOVES THE HARBOUR'S OWN BOAT. Nothing here draws a hull: the iso
+       * layout already berths `harbor_boat` against the pier by SEARCHING for
+       * open water beside it, and the pack ships that vessel's art at every rung
+       * of the ladder (rowboat, packet, steam packet). A second hand-drawn boat
+       * would put two craft in one harbour and would invent pixels for the one
+       * thing the pack does draw — so this takes the sprite handle
+       * `buildIsoSprites` already keeps, and re-seats it.
+       *
+       * A MOVED SPRITE NEEDS ITS SHADOW MOVED. The vessel's ground diamond is
+       * cast in the STATIC shadow buffer, which is not rebuilt when a payload
+       * changes under iso — so a boat that sailed would tow a black ellipse left
+       * behind on the water. Its diamond is therefore skipped in the static pass
+       * and re-cast here, in the per-frame buffer, under wherever the boat is.
+       *
+       * THE WAKE IS THE DUAL CODE. Position alone cannot say "under way": at
+       * both ends of the fold the boat is AT its mooring, and a reader who
+       * glanced then would see a berthed vessel and be wrong. A hull with the
+       * sea moving past it gets wave rings; a berthed one does not.
+       */
+      function drawIsoVoyage(p: EngineCanvasProps): void {
+        if (!isoScene || !isoHome) return
+        const sp = isoBoatSpriteId ? isoSpriteById.get(isoBoatSpriteId) : undefined
+        if (!sp) return // the layout seated no vessel — there is nothing to sail
+        const boat = isoVoyageBoat(p.voyage, isoBoatBerth(isoScene.layout), isoLanes)
+        if (!boat) return
+        sp.position.set(boat.x, boat.y)
+        sp.zIndex = boat.y
+        const mag = Math.abs(sp.scale.x)
+        sp.scale.x = boat.flip ? -mag : mag
+        const g = groundDiamond(sp.width, sp.height)
+        dynShadowG
+          .ellipse(boat.x, boat.y - g.depth / 2, g.hw, g.depth / 2)
+          .fill({ color: FOOT_SLATE, alpha: 0.22 })
+        if (!boat.underway) return
+        const u = laneGroundHw('reef_buoy', 0, homeHalfWidth(isoScene.space, isoHome))
+        if (u <= 0) return
+        for (const d of waveRingDashes('iso:boat')) {
+          dynG
+            .rect(boat.x + d.x * (u / 20), boat.y + d.y * ((u * ISO_GROUND_SQUASH) / 10), d.len, d.h)
+            .fill(d.color)
         }
       }
 
