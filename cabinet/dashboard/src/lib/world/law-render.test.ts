@@ -26,7 +26,7 @@ import {
 } from './law-render'
 import { composeLayout, type Layout, type LayoutState } from './iso-layout/index'
 import { NO_STATE_KINDS } from './iso-scene'
-import { isoLaneSites } from './iso-lanes'
+import { isoLaneSites, isoVoyageBoat } from './iso-lanes'
 import { buildChartTableCard, laneCourseState } from './course'
 
 /** The repo root, from `cabinet/dashboard/src/lib/world`. */
@@ -118,6 +118,7 @@ function placed(s: LawSurface): boolean {
 const CODE_SURFACES = new Map<string, unknown>([
   ['iso-scene#NO_STATE_KINDS', NO_STATE_KINDS],
   ['iso-lanes#isoLaneSites', isoLaneSites],
+  ['iso-lanes#isoVoyageBoat', isoVoyageBoat],
   ['course#buildChartTableCard', buildChartTableCard],
   ['course#laneCourseState', laneCourseState],
 ])
@@ -181,7 +182,7 @@ describe('law-render — the second coverage term', () => {
     }
   })
 
-  it('coverage is HONEST under iso — the eight unpainted rows are named', () => {
+  it('coverage is HONEST under iso — the seven unpainted rows are named', () => {
     const c = renderCoverage('iso')
     expect(c.total).toBe(LAW_RENDER.size)
     expect(c.rendered).toBeLessThan(c.total) // the whole point: never a free 100%
@@ -194,7 +195,6 @@ describe('law-render — the second coverage term', () => {
       'wardroom_bookshelf_fill',
       'wardroom_noticeboard_pins',
       'street_liveliness',
-      'harbor_boat_voyage',
     ])
     expect(c.rendered + c.unrendered.length).toBe(c.total)
   })

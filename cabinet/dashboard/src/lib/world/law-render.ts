@@ -425,14 +425,17 @@ export const LAW_RENDER: ReadonlyMap<string, LawBinding> = new Map<string, LawBi
   [
     'harbor_boat_voyage',
     {
-      rendered: false,
-      reason:
-        'the VOYAGE BOAT is drawn by the top-down dynamics layer only (engine-canvas ' +
-        'drawDynamics), so under iso there is no vessel under way. Its course DRIFT LINES are ' +
-        'now drawn in both kernels — `drawIsoLanes` lays the same dashed run from the harbour ' +
-        'mouth to the berth, with the same cadence/hue/sag coding — but a line is not a boat, ' +
-        'and half a law painted is not the law. The underlying state is also readable on the ' +
-        'chart table card (see `lane_course_state`).',
+      rendered: true,
+      kernels: 'both',
+      surfaces: [{ at: 'code', module: 'iso-lanes', symbol: 'isoVoyageBoat' }],
+      note:
+        'the boat is moored at the harbour mouth until a lane is TACKING, then sails the ' +
+        'out-and-back fold to that lane berth — position is a pure fold of the newest port ' +
+        'call (voyageRender), never a clock. Bound in BOTH kernels since 2026-07-29: the ' +
+        'top-down path cuts the LimeZu rowboat, the iso path draws an owned hull on the ' +
+        'ground plane with the sail set only under way, so the state is dual-coded by shape ' +
+        'as well as by position. Its course DRIFT LINES are drawn in both kernels too, and ' +
+        'the underlying state stays readable on the chart table card (lane_course_state).',
     },
   ],
 ])
