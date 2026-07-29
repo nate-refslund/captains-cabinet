@@ -52,14 +52,25 @@ import {
   unmeasuredIssues,
   type IsoScene,
 } from '@/lib/world/iso-scene'
-import { groundField, ROAD_GROUND, seaTile, type GroundClass, type TerrainBuffer } from '@/lib/world/iso-terrain'
+import { groundField, RAMPS, ROAD_GROUND, seaTile, type GroundClass, type TerrainBuffer } from '@/lib/world/iso-terrain'
 import {
   deckStripRects,
   jettyDeckRects,
   jettyPostRects,
+  JOINT,
+  PLANK,
   wharfPostRects,
   type DeckRect,
 } from '@/lib/world/iso-quay'
+import {
+  BUOY_RED,
+  homeExtentOf,
+  isoLaneSites,
+  isoQuayMouth,
+  ISO_GROUND_SQUASH,
+  type HomeExtent,
+  type IsoLaneSite,
+} from '@/lib/world/iso-lanes'
 import {
   MOTTLE_TONES,
   PAINT_FEATHER,
@@ -1604,12 +1615,46 @@ export default function EngineCanvas(props: EngineCanvasProps) {
        */
       let isoCut: CutawayState = initialCutaway()
       let isoCutTick = -1
+      /**
+       * The home island's own reach, and the archipelago sited against it.
+       *
+       * `isoHome` is measured off the COMPOSED LAYOUT (64 `landEdge` walks plus
+       * the harbour envelope), so it is paid once per statics rebuild and never
+       * per frame. `isoLanes` is then a five-element fold over the engine's
+       * lane sites, recomputed only when those sites change — the signature
+       * below is the whole of what the placement reads from them.
+       *
+       * ONE ARRAY, DRAWN AND PICKED. `hitTarget` hands this same array to
+       * `pickTarget`, which is what makes "the card names the isle you clicked"
+       * a construction rather than a hope.
+       */
+      let isoHome: HomeExtent | null = null
+      let isoLanes: IsoLaneSite[] = []
+      let isoLanesKey = ''
+      let isoQuay: { x: number; y: number } | null = null
+      function syncIsoLanes(p: EngineCanvasProps): void {
+        if (!isoHome || !isoScene) {
+          isoLanes = []
+          isoLanesKey = ''
+          return
+        }
+        const key = p.geo.laneSites
+          .map((s) => `${s.slot}:${s.lane ?? ''}:${s.render}:${s.ringRung}`)
+          .join('|')
+        if (key === isoLanesKey) return
+        isoLanesKey = key
+        isoLanes = isoLaneSites(p.geo.laneSites, isoScene.space, isoHome)
+      }
 
       function rebuildIsoStatics(p: EngineCanvasProps) {
         if (!isoPack || !isoAtlas) {
           // Loud already (the badge is raised at boot); draw nothing rather
           // than invent art. The ground still needs the layout, so compose it.
           isoScene = null
+          isoHome = null
+          isoLanesKey = ''
+          isoLanes = []
+          isoQuay = null
           return
         }
         // AN UNFED RENDERER AND A DAY-ZERO CABINET DRAW THE SAME ISLAND, so the
@@ -1632,6 +1677,9 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         // forever. `geo.canvas` is the top-down world's size and plays no part.
         const scene = buildIsoScene(isoPack, state, ISO_SEED)
         isoScene = scene
+        isoHome = homeExtentOf(scene.layout)
+        isoQuay = isoQuayMouth(scene.layout, isoHome)
+        isoLanesKey = '' // force the fold to re-run against the new island
         buildIsoTerrain(scene)
         buildIsoSprites(scene, isoPack, isoAtlas)
         if (scene.issues.length && !isoIssued) {
@@ -1795,12 +1843,132 @@ export default function EngineCanvas(props: EngineCanvasProps) {
       function drawIsoDynamics(p: EngineCanvasProps): void {
         dynG.clear()
         dynShadowG.clear()
+        syncIsoLanes(p)
+        drawIsoLanes(p)
         const lamp = isoScene?.lamp
         if (lamp) {
           drawGlow(fxG, 'iso:lamp', lamp.x, lamp.y, 54)
           fxG.rect(lamp.x - 4, lamp.y - 4, 8, 8).fill({ color: GLOW_CORE })
         }
         drawIsoCutaway(p)
+      }
+
+      /**
+       * THE PRODUCT ARCHIPELAGO — five berth slots on the open water.
+       *
+       * WHAT EACH SHAPE MEANS, because they are three different states and
+       * drawing them as generic props would throw away exactly the information
+       * they carry (world-geo.ts `LaneRender`):
+       *   ISLE          — the lane has a ratified outcome; its ring rung is
+       *                   LAND, so the isle grows and gains a jetty at r0 and
+       *                   warehouses at r1. Land IS the claim.
+       *   REEF_BUOY     — a lane with a berth and NOTHING RATIFIED, or one that
+       *                   is instance-test-only or retired. No land: the buoy
+       *                   marks water that will never be built on unless the
+       *                   outcomes say so.
+       *   MIST_RESERVED — no lane is bound to this slot at all. The dither is
+       *                   an honest absence, not an empty building plot.
+       * ERA styles nothing here and RUNG measures everything: an isle's size is
+       * `isleRadius(ringRung)` and a buoy's is fixed, in both kernels.
+       *
+       * EVERY HUE IS TAKEN FROM SOMETHING ALREADY IN THE WORLD. The ground uses
+       * iso-terrain's own RAMPS (the ramps the island itself is painted from),
+       * the deck uses iso-quay's PLANK/JOINT (the harbour's own timber), the
+       * foam is the corpus FOAM_WHITE and the mist the corpus MIST_GREY. The
+       * buoy's red is sampled from the SHIPPED PACK's own `buoy` frame
+       * (atlas-0.png 210,903 77x92 — (198,85,63) is its second-commonest opaque
+       * colour), so this layer introduces no colour the atlas the palette was
+       * fitted on does not already contain.
+       */
+      function drawIsoLanes(p: EngineCanvasProps): void {
+        if (isoLanes.length === 0) return
+        const courses = p.courses ?? null
+        // ── the plotted courses, drawn first so a line runs UNDER its berth ──
+        // Same law as the top-down kernel: dash cadence and hue dual-code the
+        // state, an adrift line hangs slack, and no text ever enters world
+        // space. Ported term for term from drawDynamics' course pass.
+        if (isoQuay && courses) {
+          for (const s of isoLanes) {
+            const course = s.lane ? courses[s.lane] : undefined
+            if (!course) continue
+            const dx = s.x - isoQuay.x
+            const dy = s.y - isoQuay.y
+            const steps = Math.max(10, Math.floor(Math.hypot(dx, dy) / 36))
+            const every =
+              course.state === 'tacking' ? 1 : course.state === 'docked_refitting' ? 2 : 3
+            const color =
+              course.state === 'adrift'
+                ? 0xffc890
+                : course.state === 'tacking'
+                  ? PLANK_BROWN
+                  : FOOT_SLATE_2
+            for (let i = 1; i < steps; i++) {
+              if (i % every !== 0) continue
+              const f = i / steps
+              const sag = course.state === 'adrift' ? Math.sin(Math.PI * f) * 22 : 0
+              dynG.rect(isoQuay.x + dx * f - 3, isoQuay.y + dy * f + sag - 3, 7, 7).fill({ color })
+            }
+            // port-call chalk count-marks at the berth (dates: card-only)
+            const stamps = Math.min(course.portCallDates.length, 12)
+            const offY = s.hw * ISO_GROUND_SQUASH + 12
+            for (let k = 0; k < stamps; k++) {
+              dynG
+                .rect(s.x - 30 + (k % 6) * 10, s.y + offY + Math.floor(k / 6) * 10, 5, 7)
+                .fill({ color: FOAM_WHITE })
+            }
+          }
+        }
+        for (const s of isoLanes) {
+          const rx = s.hw
+          const ry = s.hw * ISO_GROUND_SQUASH
+          if (s.render === 'isle') {
+            // sand shelf, then grass, then a darker rim — the island's own
+            // three-band coastline read, at a fifth of the size.
+            dynG.ellipse(s.x, s.y, rx, ry).fill({ color: RAMPS.sand[1] })
+            dynG.ellipse(s.x, s.y - ry * 0.1, rx * 0.78, ry * 0.74).fill({ color: RAMPS.grass[2] })
+            dynG
+              .ellipse(s.x, s.y - ry * 0.24, rx * 0.5, ry * 0.44)
+              .fill({ color: RAMPS.grassDark[2] })
+            // the dock: a plank jetty on the shore that faces home, so the
+            // course line arrives at something. r0 IS the dock rung.
+            const toHome = Math.atan2((isoScene?.space.cy ?? s.y) - s.y, (isoScene?.space.cx ?? s.x) - s.x)
+            const jx = s.x + Math.cos(toHome) * rx * 0.92
+            const jy = s.y + Math.sin(toHome) * ry * 0.92
+            dynG.ellipse(jx, jy, rx * 0.3, ry * 0.34).fill({ color: PLANK[2] })
+            dynG.ellipse(jx, jy + ry * 0.1, rx * 0.3, ry * 0.16).fill({ color: JOINT })
+            if (s.ringRung >= 2) {
+              // r1 = warehouses. A block per rung above the dock, never a
+              // count invented here: ringRung is the ladder's own index.
+              const bw = rx * 0.34
+              const bh = ry * 1.05
+              for (let i = 0; i < Math.min(s.ringRung - 1, 3); i++) {
+                const bx = s.x + (i - 1) * bw * 1.25
+                const by = s.y - ry * 0.22
+                dynG.rect(bx - bw / 2, by - bh, bw, bh).fill({ color: PLANK[1] })
+                dynG.rect(bx - bw / 2, by - bh, bw, bh * 0.34).fill({ color: FOOT_SLATE })
+              }
+            }
+          } else if (s.render === 'reef_buoy') {
+            // No land. A buoy on a foam ring: the ring makes the slot findable
+            // at the archipelago tier, the buoy says "water, not ground".
+            for (const d of waveRingDashes(`lane:${s.slot}`)) {
+              dynG.rect(s.x + d.x * (rx / 24), s.y + d.y * (ry / 12), d.len, d.h).fill(d.color)
+            }
+            const bh = ry * 0.9
+            dynG.rect(s.x - rx * 0.11, s.y - bh, rx * 0.22, bh).fill({ color: BUOY_RED })
+            dynG.rect(s.x - rx * 0.11, s.y - bh * 0.45, rx * 0.22, bh * 0.2).fill({ color: FOAM_WHITE })
+            dynG.rect(s.x - rx * 0.05, s.y - bh * 1.5, rx * 0.1, bh * 0.5).fill({ color: FOOT_SLATE })
+          } else {
+            // mist_reserved: OPAQUE corpus-grey dither (alpha blends leave the
+            // palette) plus a grey buoy — hue AND shape dual-code "reserved".
+            for (const d of mistDots(s.slot)) {
+              dynG.rect(s.x + d.x * (rx / 72), s.y + d.y * (ry / 36), d.r * 3, d.r * 3).fill({
+                color: MIST_GREY,
+              })
+            }
+            dynG.ellipse(s.x, s.y, rx * 0.16, ry * 0.16).fill({ color: MIST_GREY })
+          }
+        }
       }
 
       /**
@@ -2345,6 +2513,11 @@ export default function EngineCanvas(props: EngineCanvasProps) {
             cutawayOpenId: p.cutaway.openId,
             scene: isoScene,
             roomOfficers: roomOfficerBoxes,
+            // THE SAME ARRAY THE LAST FRAME DREW, never a re-derivation: a
+            // second placement of the archipelago is how a click lands on the
+            // isle beside the one under the pointer.
+            isoLanes,
+            measuredElements: new Set(Object.keys(p.resolution?.elements ?? {})),
           },
           { x: ev.clientX - rect.left, y: ev.clientY - rect.top }
         )
