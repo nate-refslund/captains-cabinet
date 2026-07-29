@@ -164,16 +164,16 @@ rather than with the original reasoning alone.
 
 | Gate | Result |
 |---|---|
-| `framework/onboarding/tests/` | 583 passed, 1 skipped (merged tree) |
-| `framework/` full suite | 7647 passed, 25 skipped, 1 failed = `test_retro_shim.py::test_reexports_constants` (known local-only red, unrelated) |
+| `framework/onboarding/tests/` | 592 passed, 1 skipped (final merged tree) |
+| `framework/` full suite | 7690 passed, 26 skipped, 1 failed = `test_retro_shim.py::test_reexports_constants` (known local-only red, unrelated) |
 | new arms vs master `26ad54c0` | 46 of 46 in the new suite RED; 6 of 6 rewritten arms in the two existing suites RED; 2 of 2 new journey arms RED. Both directions, `__pycache__` purged. |
-| `cognitive-architecture-census.py` | PASS, observed == maximum (75221 on the merged tree), zero headroom |
+| `cognitive-architecture-census.py` | PASS, observed == maximum (75256 on the final merged tree), zero headroom |
 | `check-layer-separation.sh` | `new=0` — OK |
 | `ledger-status-parity.sh` | GREEN (ids=353 md_rows=353) |
 | `cabinet/scripts/tests/` ratchet + adjudication binding | 19 passed |
 | live estate | 14 calls, 665 rows, 4/4 connectors, offer rendered, 0 writes |
 
-**The mass raise is visible, not an allowance.** +305 non-comment lines in
+**The mass raise is visible, not an allowance.** +311 non-comment lines in
 `framework/`, all inside `salience.py` and `journey.py`; zero new production
 modules; the reason is recorded on the `maximum` line the zero-headroom law is
 read from. The COG-4 review digest is re-bound in this same commit because
@@ -194,3 +194,19 @@ token is still named with its numbers.
 mechanically asserted mutation-free before send. No Telegram call. No Voyage
 call. No write to any external system. Credentials read by NAME only; no value
 printed, logged, committed or fixtured.
+
+## 6. CI, read per job
+
+Run `30495277643` on head `17b965ab`, `conclusion: success`, every job read
+individually rather than off the run line: `ci` SUCCESS · `framework-tests`
+SUCCESS · `null-hatch` SUCCESS · `cognitive-phase4` SUCCESS · `gitleaks`
+SUCCESS · `tree-dedupe` SKIPPED (push-only job, absent by design on a pull
+request). Four earlier runs on this branch read `cancelled`, every one of them
+because a later push superseded it — a cancelled run is not a red and is not
+counted here as a pass either.
+
+Three merges of `origin/master` landed inside this branch while it was in
+flight, each into the same read lane. Every number above is measured on the
+FINAL merged tree, not carried forward from the pre-merge measurement: the
+mass ceiling was re-measured at each merge rather than summed on paper, and the
+live-estate sweep was re-run rather than quoted.
