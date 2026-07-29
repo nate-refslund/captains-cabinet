@@ -1331,6 +1331,22 @@ def test_the_quote_citation_names_the_file_the_words_came_from():
         "the newest cited file should still head the citation list"
     )
 
+    # AND THE RENDERED WHY LINE, not only the dict it is composed from
+    # (2026-07-29, review). `quote_cite` alone leaves `_recall_why` free to
+    # print `top_cite` again: reverting that one line puts the quoted words
+    # under a file that does not contain them, and every arm in this suite
+    # stayed green while the real `first-briefing.sh --local` chain rendered
+    # the false attribution. The sensor has to sit on the line the operator
+    # reads.
+    card = next(c for c in genesis.propose_outcome_cards(ANSWERS, recall=recall)
+                if "of your own notes" in c.get("name", ""))
+    assert subject["quote"][:40] in card["why"], card["why"]
+    assert subject["quote_cite"] in card["why"], card["why"]
+    assert subject["top_cite"] not in card["why"], (
+        "the WHY line credits the newest hit, not the file the quoted words "
+        "are in: " + card["why"]
+    )
+
 
 def test_no_card_claims_the_operator_never_read_their_own_notes():
     """"never read together" was the headline of every join card. It is an
