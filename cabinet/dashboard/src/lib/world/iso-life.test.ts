@@ -506,23 +506,68 @@ describe('crewSlot', () => {
 // ── the pending rung ────────────────────────────────────────────────────────
 
 describe('pending marks', () => {
-  it('stands on the sprite the scene drew for that element', () => {
+  /**
+   * THE ARM THAT USED TO PIN THE DEFECT, turned round.
+   *
+   * It asserted the DRAWN SPRITE's coordinates for a pending count ladder, which
+   * is the "raise the scaffolding around dwelling number one" error isoSitePad
+   * exists to avoid — so the sensor was aimed at the defect and putting the
+   * production order right is what turns it red. It now asserts the FREE LOT,
+   * and it is driven with the four dwelling sprites a hamlet really draws so
+   * the old order is a red rather than a coincidence.
+   */
+  it('pegs a pending COUNT ladder on the free lot, never on a house that already stands', () => {
     const L = hamlet()
-    const sprites = [{ role: 'library', x: 111, y: 222 }]
-    const { marks, unplaced } = pendingMarks(L, sprites, ['library'])
+    const drawn = L.structures
+      .filter((s) => s.role === 'officer_dwelling')
+      .map((s) => ({ role: s.role, x: s.at.x, y: s.at.y }))
+    expect(drawn.length).toBe(4) // the fixture really does draw four
+    const free = L.lots.residential.find(
+      (l) => !L.structures.some((s) => s.lot && s.lot.c.x === l.c.x && s.lot.c.y === l.c.y)
+    )
+    expect(free).toBeDefined()
+    const { marks, unplaced } = pendingMarks(L, drawn, ['officer_dwellings'])
     expect(unplaced).toEqual([])
-    expect(marks[0]).toMatchObject({ element: 'library', x: 111, y: 222 })
+    expect(marks[0]).toMatchObject({ element: 'officer_dwellings', x: free!.c.x, y: free!.c.y })
+    // and NOT on any of the four standing houses
+    for (const d of drawn) expect(`${marks[0].x},${marks[0].y}`).not.toBe(`${d.x},${d.y}`)
+  })
+
+  /**
+   * An UPGRADE has one lot and it is occupied, so the same rule lands on the
+   * structure being changed. This is the case the sprite-first order got right
+   * by accident, and it must keep working.
+   */
+  it('pegs a pending UPGRADE on the structure whose rung is moving', () => {
+    const L = hamlet()
+    const lib = L.structures.find((s) => s.role === 'library')
+    expect(lib).toBeDefined()
+    const { marks, unplaced } = pendingMarks(L, [{ role: 'library', x: 111, y: 222 }], ['library'])
+    expect(unplaced).toEqual([])
+    expect(marks[0]).toMatchObject({ element: 'library', x: lib!.at.x, y: lib!.at.y })
+  })
+
+  /**
+   * HARBOUR KIT is the sprite fallback's whole purpose: `berths` is a real
+   * measured ladder with no lot group and no structure, so the lot rule returns
+   * null and the mooring post the scene drew is the only honest ground.
+   */
+  it('marks harbour kit on the sprite, because the lot rule knows no lot for it', () => {
+    const L = hamlet()
+    expect(isoSitePad(L, 'berths')).toBeNull() // the premise of the fallback
+    const { marks, unplaced } = pendingMarks(L, [{ role: 'berths', x: 900, y: 1400 }], ['berths'])
+    expect(unplaced).toEqual([])
+    expect(marks[0]).toMatchObject({ element: 'berths', x: 900, y: 1400 })
   })
 
   /** The layout spells one role as the singular of the ladder that entitles it. */
-  it('matches the layout\'s singular spelling of a count ladder', () => {
+  it('matches the layout\'s singular spelling on the kit fallback', () => {
     const L = hamlet()
-    const sprites = [{ role: 'officer_dwelling', x: 5, y: 6 }]
-    const { marks } = pendingMarks(L, sprites, ['officer_dwellings'])
+    const { marks } = pendingMarks(L, [{ role: 'berth', x: 5, y: 6 }], ['berths'])
     expect(marks[0]).toMatchObject({ x: 5, y: 6 })
   })
 
-  it('falls back to the plot when the scene draws nothing for it', () => {
+  it('uses the free plot when the scene draws nothing for it', () => {
     const L = composeLayout(CAMP, SEED)
     const { marks, unplaced } = pendingMarks(L, [], ['library'])
     // camp draws no library; the memory lot is free, so the plot is knowable

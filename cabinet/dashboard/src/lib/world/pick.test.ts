@@ -31,10 +31,11 @@ import {
 import { LOD_RULES, lodTier } from './lod'
 import { projectionFor, worldToScreen } from './projection'
 import { buildWorldGeo, CHART_TABLE_LOCAL, roadPoint, toWorld } from './world-geo'
-import { homeExtentOf, isoLaneSites } from './iso-lanes'
+import { homeExtentOf, isoBoatBerth, isoLaneSites, isoVoyageBoat } from './iso-lanes'
 import { buildWorldBuildings } from './world-buildings'
 import { fnv1a } from './hash'
 import type { LayoutState } from './iso-layout'
+import type { VoyageRender } from './course'
 import type { ElementResolution, WorldResolution } from './era-engine'
 import type { LifeOut } from './life/life'
 
@@ -1261,5 +1262,102 @@ describe('iso — the ISLAND\'s own people and worksites are pickable', () => {
       kind: 'ground',
       id: 'ground',
     })
+  })
+})
+
+describe('iso — the vessel is pickable WHERE IT SAILED, not where it was moored', () => {
+  /**
+   * THE DEFECT, measured in a browser 2026-07-30 with a staged port call: the
+   * org's boat is a composed STATIC that `drawIsoVoyage` re-seats along its
+   * course, and `scene.sprites` keeps the berth coordinates forever. So for the
+   * whole voyage the drawn hull answered `ground` and a click on the EMPTY
+   * BERTH answered `harbor_boat`. The world named the vessel where it was not
+   * and refused to name it where it was — and both halves stayed green, because
+   * every arm this file had tested a MOORED boat.
+   *
+   * Driven through the real `isoVoyageBoat` the canvas draws from, so the arm
+   * measures the HANDOVER (does the pick test the drawn position?) rather than
+   * re-deriving the fold and agreeing with itself.
+   */
+  const BOAT = SCENE.sprites.find((s) => s.role === 'harbor_boat')
+  const BERTH = isoBoatBerth(SCENE.layout)
+  const voy = (lane: string | null, progress: number): VoyageRender => ({
+    underway: lane !== null,
+    lane,
+    progress,
+  })
+  /** Mid-outbound leg: far enough from the berth that the two cannot overlap. */
+  const SAILED = isoVoyageBoat(voy('alpha', 0.5), BERTH, ISO_LANES)
+
+  /**
+   * `harbor_boat` IS a measured ladder element (`growth-ladders.yml`: rowboat →
+   * packet_boat → steam_packet) that no `world-buildings.ts` row renders, so it
+   * answers through the `element` kind exactly as the mooring posts do. The
+   * shared RESOLUTION fixture does not carry it, so the gate is opened here on
+   * purpose rather than widened for everyone.
+   */
+  const boatWorld = (over: Partial<PickWorld> = {}) =>
+    isoWorld({
+      isoLanes: ISO_LANES,
+      measuredElements: new Set([...Object.keys(RESOLUTION.elements), 'harbor_boat']),
+      ...over,
+    })
+  const handover = () => new Map([[BOAT!.id, { x: SAILED!.x, y: SAILED!.y }]])
+
+  function pickAtPx(w: PickWorld, x: number, y: number) {
+    const { wx, wy } = tileOfLayoutPx(x, y)
+    return pickTarget({ ...w, camera: { z: 3, x: wx, y: wy } }, { x: VIEWPORT.w / 2, y: VIEWPORT.h / 2 })
+  }
+
+  it('the fixture really berths a vessel and really sails it clear of the berth', () => {
+    expect(BOAT, 'the scene draws harbor_boat').toBeDefined()
+    expect(BERTH).not.toBeNull()
+    expect(SAILED).not.toBeNull()
+    expect(SAILED!.underway).toBe(true)
+    // clear of its own body, or the two arms below would be the same point
+    expect(Math.hypot(SAILED!.x - BERTH!.x, SAILED!.y - BERTH!.y)).toBeGreaterThan(BOAT!.dw)
+  })
+
+  it('a click on the SAILING hull opens the vessel', () => {
+    const w = boatWorld({ isoMoved: handover() })
+    expect(pickAtPx(w, SAILED!.x, SAILED!.y - BOAT!.dh * 0.25)).toEqual({
+      kind: 'element',
+      id: 'harbor_boat',
+    })
+  })
+
+  it('and the EMPTY BERTH it left does not answer with the vessel', () => {
+    const w = boatWorld({ isoMoved: handover() })
+    const t = pickAtPx(w, BERTH!.x, BERTH!.y - BOAT!.dh * 0.25)
+    expect(t.id).not.toBe('harbor_boat')
+  })
+
+  it('WITHOUT the handover both answers invert — which is what shipped', () => {
+    const w = boatWorld()
+    expect(pickAtPx(w, SAILED!.x, SAILED!.y - BOAT!.dh * 0.25).id).not.toBe('harbor_boat')
+    expect(pickAtPx(w, BERTH!.x, BERTH!.y - BOAT!.dh * 0.25)).toEqual({
+      kind: 'element',
+      id: 'harbor_boat',
+    })
+  })
+
+  it('a MOORED boat is pickable at its berth, handover or not', () => {
+    const moored = isoVoyageBoat(voy(null, 0), BERTH, ISO_LANES)!
+    expect(moored.underway).toBe(false)
+    const w = boatWorld({ isoMoved: new Map([[BOAT!.id, { x: moored.x, y: moored.y }]]) })
+    expect(pickAtPx(w, BERTH!.x, BERTH!.y - BOAT!.dh * 0.25)).toEqual({
+      kind: 'element',
+      id: 'harbor_boat',
+    })
+  })
+
+  it('an EMPTY handover map changes nothing — a frame that seated no boat', () => {
+    const a = pickAtPx(boatWorld(), BERTH!.x, BERTH!.y - BOAT!.dh * 0.25)
+    const b = pickAtPx(
+      boatWorld({ isoMoved: new Map() }),
+      BERTH!.x,
+      BERTH!.y - BOAT!.dh * 0.25
+    )
+    expect(b).toEqual(a)
   })
 })

@@ -11,7 +11,6 @@ import {
   PET_REACTION_TICKS,
   catPosture,
   faunaAt,
-  faunaCard,
   petReaction,
   type FaunaInput,
 } from './fauna'
@@ -127,17 +126,11 @@ describe('the pettable cat — client-only, zero writes', () => {
   })
 })
 
-describe('honest cards — every creature answers inspect truthfully', () => {
-  it('joy fauna: "carries no data — exists for joy"', () => {
-    for (const kind of ['bird', 'butterfly', 'fish', 'dog'] as const) {
-      expect(faunaCard(kind).now).toContain('Carries no data')
-      expect(faunaCard(kind).decorative).toBe(true)
-    }
-  })
-  it('the cat: pets gratefully accepted, zero state, zero writes', () => {
-    const card = faunaCard('cat')
-    expect(card.now).toBe('Carries no data — pets gratefully accepted.')
-    expect(card.proof).toContain('zero state, zero writes')
-    expect(card.proof).toContain('Exactly one cat')
-  })
-})
+/**
+ * THE ARMS FOR `faunaCard` LIVED HERE and went with it (2026-07-30). They were
+ * the function's ONLY callers — an audit found no production consumer in either
+ * kernel, because `PickKind` has no fauna member and no click can name a
+ * creature. A test that is a dead export's only consumer is not coverage; it is
+ * what kept the dead twin looking alive. The honest card a creature answers with
+ * today is the pick's `ground` card, and that path has its own arms in pick.test.ts.
+ */
