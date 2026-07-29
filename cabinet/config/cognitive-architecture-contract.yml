@@ -1399,6 +1399,55 @@ temporary_allowances:
       a per-run nonce the writer of a source file cannot know would make the
       neutralizer and the fence-forgery pattern both dead weight — or COG-7
       compaction brings production non-comment lines below the pinned baseline
+  - phase: connector-read-lane
+    budget: framework_production_noncomment_lines
+    additional: 416
+    reason: >-
+      THE READ THE CABINET COULD NOT MAKE. Captain ruling 2026-07-29 ("gather
+      from connectors through read-only, and network is allow-all by default"),
+      restating the 2026-07-26 ordering inversion. Two things in the tree made
+      it impossible and both were REFUTED BY EXECUTION rather than by argument.
+      (1) framework/onboarding/research.py declared "NO NETWORK, NO CREDENTIALS
+      ... not a limitation to be lifted later", justified by the ingest
+      experiment — but that experiment refuted INGEST-EVERYTHING-INTO-A-VAULT on
+      a fixture whose second system was a CSV ALREADY ON DISK, so the network
+      hop was presupposed as done by a human and no-credential was never an
+      arm; framework/onboarding/estate.py already recorded the opposite
+      ("widening to new source kinds is a later unit; the schema below already
+      has the shape for them"). (2) instance/config/egress.yml still carried an
+      expired 72-hour dogfood posture (enforce true, allow_hosts empty) that
+      403s EVERY outbound request and contradicted both the framework default
+      and its own .example twin — the bytes the egg ships. So the connected
+      entry mode, whose grant key finally got a writer in the registry unit,
+      still had nothing that could fill `connectors`. The lines are:
+      assert_read_only (the ceiling — GET, or a POST whose body is a GraphQL
+      read document with no mutation/subscription token, no method-override
+      header, https only; every other verb is unreachable by construction),
+      _http_fetch (one socket, redirects REFUSED so a credential cannot be
+      handed to a host the operator never declared, capped read),
+      sweep_connectors + _sweep_one (per-connector paging, call budget, item
+      cap, contents-free extraction of ONLY the declared name/updated/actor
+      paths, and a NAMED refusal for every connector that did not answer),
+      load_connector_specs, _probe_sweep (a completed read grants the mode; a
+      declaration grants nothing), and the journey's gather_connectors action.
+      ZERO new modules and ZERO vendor knowledge: nothing in framework/ names a
+      tool, host, industry, role or entity kind — a connector is a credential,
+      an inventory call and a timestamp field, described by the operator in
+      instance/config/connectors.yml. PROVEN BY EXECUTION against the Captain's
+      real estate, read-only: 4 connectors, 665 names, 14 HTTPS requests, ~9
+      seconds, entry mode seeded -> connected through the public act() API, no
+      write of any kind emitted. +416 measured with
+      cognitive-architecture-census.py against master 70bf330e (73846, itself
+      exactly at the pinned ceiling); the majority is docstring prose carrying
+      the ceiling's rationale, counted honestly rather than reformatted into
+      comments to duck the budget.
+    owner: onboarding-plane
+    sunset: '2027-01-29'
+    deletion_gate: >-
+      the read lane moves behind a single shared source-adapter seam (the
+      recorded source-adapter-boundary debt) so the executor, the ceiling and
+      the extraction stop living beside the local probes — or COG-7 compaction
+      brings production non-comment lines below the pinned baseline
 expansions:
   - member: framework/onboarding/salience.py
     member_class: framework_production_modules

@@ -1,8 +1,33 @@
-# Captain-owned live egress switch. This file is germline-locked: officers may
-# inspect it but cannot widen their own next restart. This deployment's 72-hour
-# dogfood posture is enforced and deliberately excludes product domains; only
-# the framework floor (Anthropic + Telegram) survives.
+# Captain-owned live egress switch. Germline-locked: officers may inspect it but
+# cannot widen their own next restart.
+#
+# POSTURE: ALLOW ALL — the ratified shipped default (Captain 2026-07-26), and
+# re-ruled explicitly on 2026-07-29: "websearch/internet/network is allow-all by
+# default". This file previously carried a 72-hour dogfood posture
+# (`enforce: true`, `allow_product: false`, `allow_hosts: []`) that outlived its
+# window and contradicted BOTH framework/defaults/egress.yml and this file's own
+# .example twin — the bytes the egg ships. Its effect was total: an empty allow
+# list under enforcement 403s every outbound request, so the credentialed
+# read-only connector sweep the Captain asked for could not have made one call.
+#
+# WHAT IS *NOT* WIDENED BY THIS. Egress is a REACHABILITY ceiling, never a
+# permission to act. Every write- and send-side gate is untouched and still
+# holds: framework.env.allow_sends() (dev never sends), the comms charter and
+# recipient gates, the front-door killswitch and vetoes, the authority matrix,
+# and the connector read lane's own mechanical read-only assertion — GET or a
+# GraphQL read document, no other verb reachable, no redirect followed. Read
+# freely; write never.
+#
+# TO RESTRICT AGAIN — one command, no file editing:
+#   cabinet/scripts/egress-guard.sh enable    # sets enforce: true + installs the proxy
+#   cabinet/scripts/egress-guard.sh dry-run   # preview the verdict, install nothing
+#   cabinet/scripts/egress-guard.sh disable   # reverse it
+# List the hosts your tools call under allow_hosts FIRST (see the table in
+# docs/runbooks/egress-allowlist.md) — anything outside the framework floor
+# (api.anthropic.com, api.telegram.org) 403s once enforcement is on. The guard
+# FAILS CLOSED: it errors non-zero and installs nothing rather than leaving
+# egress open while claiming to enforce.
 
-enforce: true
-allow_product: false
+enforce: false
+allow_product: true
 allow_hosts: []

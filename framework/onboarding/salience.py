@@ -508,10 +508,14 @@ def rows_from_state(state: Mapping[str, Any]) -> tuple[list[dict[str, Any]], lis
       ANSWERED becomes a row, so a bare local hatch still gets a real (small)
       ranking rather than an empty one dressed up as a survey.
 
-    A credentialed sweep is deliberately NOT here. On a deployment whose egress
-    ceiling is closed (``sweep_ceiling``) it could not make one request, and a
-    client that writes by accident is a class of damage a read-only ranker
-    should not be able to cause. It hands rows in; it does not live here.
+    A credentialed sweep is deliberately NOT here — a client that writes by
+    accident is a class of damage a read-only ranker should not be able to
+    cause. It hands rows in; it does not live here. Its producer is
+    ``framework.onboarding.research.sweep_connectors``, run by the journey's
+    ``gather_connectors`` action, which writes ``salience_rows`` (rows +
+    identities + not_reached) onto state — so this function reads a lawfully
+    produced block and still cannot tell a credentialed sweep from an operator
+    export, which is the property that keeps a per-system client out of here.
     """
     rows: list[dict[str, Any]] = []
     identities: list[str] = []
@@ -540,10 +544,11 @@ def sweep_ceiling(root: Any) -> dict[str, Any]:
     """May a credentialed sweep leave this machine at all? FAIL-CLOSED.
 
     ``instance/config/egress.yml`` is the Captain-owned live switch and it is
-    germline-locked, so a cabinet cannot widen its own reach. This deployment's
-    is ``enforce: true`` with an EMPTY allow list, which means a connector sweep
-    would 403 on every request — and a sweep that plans requests it cannot make
-    is an interview whose answers go nowhere.
+    germline-locked, so a cabinet cannot widen its own reach. Under the shipped
+    default (``enforce: false``) a sweep proceeds; under enforcement with an
+    EMPTY allow list it would 403 on every request — the posture this deployment
+    carried until 2026-07-29 — and a sweep that plans requests it cannot make is
+    an interview whose answers go nowhere.
 
     So the ceiling is consulted BEFORE any credentialed provider runs, and a
     closed ceiling is reported as a not-reached reason in the offer rather than

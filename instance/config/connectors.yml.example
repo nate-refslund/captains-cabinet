@@ -1,0 +1,98 @@
+# =============================================================
+# instance/config/connectors.yml — what this cabinet may READ, and how
+# =============================================================
+# EXAMPLE / TEMPLATE. Copy to instance/config/connectors.yml and describe YOUR
+# systems. Absent file = no connectors = the cabinet reads nothing outward and
+# says so; nothing here is built in, and the framework knows no vendor, tool,
+# industry or entity kind. That is the point: a connector is three things — a
+# CREDENTIAL, an INVENTORY CALL, and a TIMESTAMP FIELD — and whatever answers
+# that shape is a connector, whether it holds boards, repositories, case files,
+# patient lists, catalogues or shipments.
+#
+# WHAT THE CABINET DOES WITH IT. At onboarding it runs the `gather_connectors`
+# action: every declared connector is read ONCE, read-only, and what comes back
+# is names, dates, actors and counts — never bodies, never rows. Those names are
+# ranked by what RECURS across your systems, and you are asked which one to open
+# first. Depth is spent only where you point.
+#
+# ------------------------------------------------------------------
+# THE CEILING, which is not configurable and not negotiable
+# ------------------------------------------------------------------
+#   * READ ONLY. `method: GET`, or `method: POST` whose body is a GraphQL READ
+#     document. Every other verb is refused before a socket is opened, a POST
+#     body that is not {query, variables, operationName} is refused, a document
+#     containing a `mutation` or `subscription` token is refused, and a method-
+#     override header is refused. There is no spelling of this file that can
+#     make the cabinet write to your systems.
+#   * HTTPS ONLY, AND NO REDIRECTS. Your credential goes to the host you named
+#     or nowhere at all.
+#   * BOUNDED. A whole sweep is a few dozen requests with a per-call timeout, a
+#     response-size cap and an item cap.
+#   * CREDENTIALS BY NAME. `credential_env` names an environment variable; the
+#     VALUE is read at call time and never appears in a result, a log, an error
+#     message or an artifact.
+#
+# TREAT THIS FILE AS PRIVILEGED. It says where a credential may be sent. Keep it
+# owned by the captain (the same custody as instance/config/egress.yml), because
+# an attacker who could edit it could point your token at their host.
+#
+# NOTE ON EGRESS. The sweep asks instance/config/egress.yml first. With the
+# shipped default (`enforce: false`, allow-all) it proceeds. If you have turned
+# enforcement on, add each connector's host to `allow_hosts` or the sweep will
+# refuse it — visibly, with the reason, rather than as a wall of failures.
+# =============================================================
+
+schema: cabinet.connectors/v1
+
+connectors:
+  # ---------------------------------------------------------------
+  # A REST connector: one GET, a list of things, a timestamp on each.
+  # ---------------------------------------------------------------
+  # - name: code                     # YOUR label. It appears in the evidence
+  #                                  # line you are shown; nothing reads it.
+  #   credential_env: EXAMPLE_TOKEN  # env var NAME, never the value
+  #   inventory:
+  #     url: https://api.example.test/v3/things?per_page=100&page={page}
+  #     method: GET
+  #     auth_header: Authorization   # default: Authorization
+  #     auth_format: "Bearer {credential}"   # default: "{credential}"
+  #     headers:
+  #       Accept: application/json
+  #     items_path: ""               # dotted path to the list; "" = the root
+  #     name_field: full_name        # dotted path, per item
+  #     updated_field: updated_at    # dotted path, per item (ISO-8601 reads best)
+  #     actor_field: owner.login     # optional: who owns/created the thing
+  #   page:
+  #     start: 1
+  #     max_pages: 3                 # {page} in the url/body is substituted
+  #     size: 100                    # optional, and worth setting: the page size
+  #                                  # you asked for. A SHORT last page then
+  #                                  # proves the estate was exhausted, so the
+  #                                  # "there may be more" caveat is printed only
+  #                                  # when it is true. Omit it and the caveat is
+  #                                  # printed on every complete sweep.
+  #
+  # ---------------------------------------------------------------
+  # A GraphQL connector: one POST carrying a READ document.
+  # ---------------------------------------------------------------
+  # - name: tracker
+  #   credential_env: EXAMPLE_GRAPHQL_TOKEN
+  #   inventory:
+  #     url: https://api.example.test/graphql
+  #     method: POST
+  #     json:
+  #       query: "query { things (limit: 100, page: {page}) { id name updated_at } }"
+  #     items_path: data.things
+  #     name_field: name
+  #     updated_field: updated_at
+  #   page:
+  #     start: 1
+  #     max_pages: 6
+  #   identity:                      # optional, and worth declaring:
+  #     url: https://api.example.test/graphql   # the account/owner names the
+  #     method: POST                            # ranker DEMOTES, so your own
+  #     json:                                   # name does not win every rank
+  #       query: "query { me { name } account { name } }"
+  #     value_paths:
+  #       - data.me.name
+  #       - data.account.name
