@@ -323,6 +323,16 @@ _INJECTION_SCREEN = (
     ("disregard-instructions", re.compile(
         r"\bdisregard\s+(?:all\s+|the\s+|your\s+|any\s+)?"
         r"(?:previous|prior|above|instructions?|rules?|prompt)\b", re.I)),
+    ("forget-instructions", re.compile(
+        r"\bforget(?:\s+about)?\s+(?:all\s+|the\s+|your\s+|any\s+)?"
+        r"(?:previous\s+|prior\s+)?(?:instructions?|rules?|guidelines?)\b", re.I)),
+    # Danish/German OVERRIDE verbs. The nordic arm above is built on ignore/
+    # forget stems; "tilsidesæt dine regler" and "overskriv dine instruktioner"
+    # are the same imperative with a verb that arm cannot reach.
+    ("override-instructions-nordic", re.compile(
+        r"\b(?:tilsides[æae]t\w*|overskriv\w*|[öo]verskriv\w*|[üu]berschreib\w*)\b"
+        r"[^\n]{0,40}\b(?:instruktion\w*|instrukser|anvisning\w*|anweisung\w*"
+        r"|regler|reglerne|reglerna|regeln|prompt\w*)\b", re.I)),
     ("role-preamble", re.compile(r"(?im)^\s*(?:system|assistant|developer|ai)\s*[:：]")),
     ("you-are-now", re.compile(r"\byou\s+are\s+now\b", re.I)),
     ("new-instructions", re.compile(r"\bnew\s+(?:instructions?|rules?|system\s+prompt)\b", re.I)),
@@ -333,16 +343,25 @@ _INJECTION_SCREEN = (
     ("cred-url", re.compile(r"\bhttps?://[^\s/@]+:[^\s/@]+@", re.I)),
     ("base64-blob", re.compile(r"(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{120,}={0,2}(?![A-Za-z0-9+/=])")),
     ("url-exfil", re.compile(
-        r"\b(?:exfiltrate|exfil|leak)\b|\b(?:send|post|forward|upload)\b[^\n]{0,40}"
-        r"\b(?:to\s+)?https?://", re.I)),
+        r"\b(?:exfiltrate|exfil|leak|l[æae]k|udlever)\b"
+        r"|\b(?:send|post|forward|upload|videresend|indsend|eftersend)\b[^\n]{0,40}"
+        r"\b(?:to\s+|til\s+)?https?://", re.I)),
+    # Bulk exfiltration to a MAIL address. The totality word is what keeps this
+    # honest: ordinary Danish business prose says "send den til anders@…" all
+    # day, and a detector that fires on that is a detector nobody reads.
+    ("bulk-exfil-address", re.compile(
+        r"\b(?:send|forward|upload|videresend|indsend|eftersend)\b[^\n]{0,30}"
+        r"\b(?:all|every|everything|whole|entire|alle|hele|al|samtlige)\b[^\n]{0,40}"
+        r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", re.I)),
     # [SEC-5 finding 2026-07-04] Bare approval IMPERATIVE directed at the agent's
     # decision — "approve this card", "please approve it", "godkend denne". The
     # executor tripwire caught only the past-participle claim (godkendt/approved);
     # this closes the proposer layer so a planted approval imperative forces
     # injection_suspect (→ propose_only) BEFORE the card is ever a candidate.
     ("approval-imperative", re.compile(
-        r"\b(?:please\s+)?(?:approve|godkend|authori[sz]e)\s+"
-        r"(?:this|the|it|my|card|action|request|task|denne|dette|den)\b", re.I)),
+        r"\b(?:please\s+|venligst\s+|bedes\s+)?(?:approve|godkend(?:e|es)?|authori[sz]e)\s+"
+        r"(?:this|the|it|my|card|action|request|task"
+        r"|denne|dette|den|opgaven|handlingen|kortet|anmodningen)\b", re.I)),
     # [SEC-5 red team 2026-07-28] A body line that would PARSE as a bundle fence
     # header — the forged-provenance attack neutralize_fence_shapes() defangs
     # below. Matches the raw shape AND the defanged one (the "[…] " prefix), so
@@ -377,7 +396,7 @@ _INJECTION_SCREEN = (
         r"|se\s+bort\s+fra|bortse\s+fr[åa]n)\b[^\n]{0,40}?"
         r"\b(?:tidligere|tidigare|f[öo]reg[åa]ende|ov[ae]nst[åa]ende|forrige"
         r"|vorherigen|obigen|instruktion\w*|anvisning\w*|anweisung\w*"
-        r"|reglerne|reglerna|regeln|systemprompt\w*)\b", re.I)),
+        r"|regler|reglerne|reglerna|regeln|systemprompt\w*)\b", re.I)),
     ("you-are-now-nordic", re.compile(
         r"\bdu\s+(?:er|[äa]r|bist)\s+(?:nu|n[åa]|jetzt|nun)\b", re.I)),
     ("new-instructions-nordic", re.compile(
