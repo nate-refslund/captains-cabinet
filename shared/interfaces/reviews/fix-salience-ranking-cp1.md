@@ -108,6 +108,21 @@ to one candidate at rank 2. 33 tokens are discounted and **0** are lost from the
 ranking — the arm that checks this counts every discounted token against the
 clusters plus the named non-candidates.
 
+**And the correction the oracle forced on this review's own first draft.**
+Master's ranking was graded with the new `check` on the same rows, and its
+HEADLINE IS IDENTICAL: 1 offered, 3 reached, 0 lost, deepest 16. So the honest
+statement of the deletion defect is narrower than "it loses a correct answer on
+this estate". What the deletion lost here is the SPECIFIC name and its evidence:
+`stepnetwork` and `network` were removed, and the answer survived only because
+the generic four-letter fragment inside them happened to remain and rank third.
+An operator was therefore shown a word nobody calls anything, standing in for a
+candidate whose 62 rows across four connectors had been deleted underneath it.
+That the fragment survived is luck, not a mechanism — nothing in the deleting
+version reports which answers it removed, which is why the same run can look
+clean on a headline and be one estate away from silence. Stated here rather than
+left implied, because a review that let its own strongest number stand
+unexamined is the exact failure this branch was sent to fix.
+
 **The honest verdict, which is not a green tick.** The oracle grades the
 operator's three known answers: cold, 1 offered in the top 3, 3 of 3 reached,
 0 lost, deepest rank 17. Judged, still 1 offered, 3 reached, 0 lost — the
@@ -125,7 +140,7 @@ to plural `actors` in the same commit, so the demotion set still contains the
 organisation and the org name is still rank 3 rather than deleted.
 
 **Open and NOT claimed fixed.** (a) The generic descriptor still outranks the
-specific one — `website` is rank 1 and merges four unrelated sites; no floor
+specific one — `website` is rank 1 and merges four unrelated sites; no rule
 derived from this estate separates them, and the join API can union candidates
 but cannot split one. (b) One of the three answers is demoted because the
 estate's own identity string and a real target are the same word; that is the
@@ -134,6 +149,16 @@ proposal shows CANDIDATES only, so a fragment that recurs inside a single system
 cannot be joined by judgment either — the count of those is disclosed in the
 not-reached sentence and `check` reports such an answer as `not_a_candidate`
 rather than hiding it.
+
+**One measured result for the next direction gate, not acted on here.** Ranked
+with the identity set EMPTIED — no demotion of the estate's own name at all —
+the oracle scores the same three answers at deepest rank 8 instead of 17, better
+on every one of them. The identity demotion is costing this estate a real answer
+in order to suppress a noise that is also a real answer, which is the collision
+the demotion was ratified to hold both sides of. It is a gate decision with two
+blind arms behind it and a single execution session is the wrong place to
+overturn it; recorded here with the number so the next gate argues with evidence
+rather than with the original reasoning alone.
 
 ## 4. Verification
 
