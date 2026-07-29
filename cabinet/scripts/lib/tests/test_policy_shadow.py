@@ -241,7 +241,31 @@ class TestRegexShadowUnchanged:
             ]
             assert regex, "expected the unchanged regex shadow-v1 decision"
             assert regex[0]["decision"] == "block"
-            assert "production_deploy" in regex[0]["reason"]
+            # The reason token tracks the rule's NAME, and the rule was renamed
+            # when it stopped naming one supplier and started stating the
+            # category (2026-07-29). What matters is that a live publish still
+            # blocks and says why.
+            assert "production_publish" in regex[0]["reason"]
+
+    def test_regex_shadow_blocks_a_publish_it_never_saw_before(self):
+        """The rename was not cosmetic. Before 2026-07-29 this arm matched one
+        supplier's command line, so an operator publishing any other way got
+        SILENCE from the shadow — the gap was invisible from the rule's name."""
+        mod = _load_shadow_module()
+        for cmd in ("kubectl apply -f app.yml --context production",
+                    "helm upgrade app ./chart --namespace prod",
+                    "./publish.sh --stage prod"):
+            with tempfile.TemporaryDirectory() as tmp:
+                db = os.path.join(tmp, "shadow.sqlite3")
+                _run_shadow(
+                    mod,
+                    {"tool_name": "Bash", "tool_input": {"command": cmd}},
+                    db,
+                    officer="cto",
+                )
+                blocks = [e["shadow_decision"] for e in _events(db)
+                          if e.get("shadow_decision", {}).get("decision") == "block"]
+                assert blocks, cmd
 
     def test_regex_shadow_allow_still_emitted(self):
         mod = _load_shadow_module()

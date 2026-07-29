@@ -355,8 +355,74 @@ def classify_action(tool_name: str, tool_input: dict[str, Any] | None) -> str:
         if mcp is not None:
             return mcp
 
+    # === The deployment's own vocabulary, arriving as a named tool ========
+    declared = _declared_operation_for_tokens([tool_name])
+    if declared is not None:
+        return declared
+
     # === Unknown / unmatched ==============================================
     return AMBIGUOUS
+
+
+# ---------------------------------------------------------------------------
+# The deployment's declared operations — the open half of the vocabulary
+# ---------------------------------------------------------------------------
+# WHY THIS EXISTS. Everything above is a fact about one kind of work. Measured
+# 2026-07-29 against the shipped vocabulary: a filing, a dispensation and a
+# materials order each classified `ambiguous`, which carries NO risk class,
+# which resolves fail-safe to propose-only — forever. The fail-safe was right
+# and its reach was wrong: an operator whose work the shipped vocabulary
+# happens not to describe could never move the ladder at all, while the
+# always-gated ceilings guarded classes with no members in their world and
+# therefore protected nothing while reading as protection.
+#
+# The framework keeps what is universal — the CLASSES of consequence and the
+# verdict each earns — and lets the deployment supply the operations that fall
+# in them (framework.env.declared_operations). Every property that made the
+# closed vocabulary safe is preserved by construction:
+#   * a declared id is NAMESPACED, so it can never collide with, shadow or
+#     redefine a member of the framework's own flat vocabulary;
+#   * this lookup runs AFTER every positive ceiling rule, so a declaration can
+#     neither escape a ceiling nor claim one;
+#   * an undeclared or malformed operation is still `AMBIGUOUS` -> propose,
+#     so the failure modes of the declaration file all NARROW autonomy;
+#   * the risk class a declared operation binds to is validated against the
+#     framework's class vocabulary by the authority matrix, not here.
+
+def _declared_operation_for_tokens(tokens: "list[str]") -> str | None:
+    """The declared operation id whose `invoked_as` matches one of `tokens`,
+    else None. Case-insensitive, exact-token (never substring: a substring
+    match would let an unrelated call inherit a declared operation's class).
+    Total — any resolver failure yields None, i.e. the closed behaviour."""
+    try:
+        rows = env.declared_operations()
+        if not rows:
+            return None
+        wanted = {t.strip().lower() for t in tokens if isinstance(t, str) and t.strip()}
+        if not wanted:
+            return None
+        for row in rows:
+            for tok in row["invoked_as"]:
+                if tok.lower() in wanted:
+                    return row["id"]
+    except Exception:
+        return None
+    return None
+
+
+def _declared_operation_for(command: str) -> str | None:
+    """The declared operation a shell command invokes, else None. Reuses the
+    engine's own shell parser (the same one `_is_provably_local` asks its
+    question of) rather than growing a second one, and matches on the BARE
+    program name so an absolute path invokes the same operation."""
+    try:
+        if not env.declared_operations():
+            return None                 # nothing declared: no parse, no cost
+        from framework.authority.policy_engine import extract_invoked_binaries
+        names = [_bare_name(b) for b in extract_invoked_binaries(command)]
+    except Exception:
+        return None
+    return _declared_operation_for_tokens(names)
 
 
 def _is_tier2(path: str) -> bool:
@@ -437,6 +503,16 @@ def _classify_bash(command: str) -> str:
         if CALENDAR_EVENT_SCRIPT in command:
             return "calendar_event_create"
         return AMBIGUOUS
+
+    # --- the deployment's own vocabulary ---------------------------------
+    # LAST before the fallbacks and AFTER every ceiling rule above, so a
+    # declaration can neither reach a ceiling class nor soften one. It is
+    # ahead of the local-proof deliberately: a declared operation is a
+    # statement that this call DOES something here, which outranks a proof
+    # that the program it runs cannot open a socket.
+    declared = _declared_operation_for(cmd)
+    if declared is not None:
+        return declared
 
     # --- positively local, or nothing ------------------------------------
     # THE DEFAULT IS NOT local_edit. A command earns `local_edit` only by

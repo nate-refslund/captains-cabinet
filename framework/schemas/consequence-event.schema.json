@@ -38,23 +38,28 @@
       "description": "What was done, verb-first kebab/snake form (e.g. 'drafted-reply', 'auto-closed-commitment', 'claimed-task', 'deployed-preview')."
     },
     "action_type": {
-      "type": ["string", "null"],
-      "enum": [
-        "task_status_move", "board_status", "label", "tier2_note",
-        "draft_only", "local_edit", "investigation_run",
-        "task_create", "calendar_event_create",
-        "internal_message", "internal_email", "officer_dispatch",
-        "external_message", "external_email",
-        "vercel_deploy_preview", "git_push_nonmain",
-        "vercel_deploy_prod", "git_push_main",
-        "purchase", "provision_paid", "billing",
-        "secret_read", "secret_write", "env_write",
-        "mcp_post", "mcp_put", "mcp_delete",
-        "oauth_grant", "token_grant",
-        "ambiguous",
-        null
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "string",
+          "enum": [
+            "task_status_move", "board_status", "label", "tier2_note",
+            "draft_only", "local_edit", "investigation_run",
+            "task_create", "calendar_event_create",
+            "internal_message", "internal_email", "officer_dispatch",
+            "external_message", "external_email",
+            "vercel_deploy_preview", "git_push_nonmain",
+            "vercel_deploy_prod", "git_push_main",
+            "purchase", "provision_paid", "billing",
+            "secret_read", "secret_write", "env_write",
+            "mcp_post", "mcp_put", "mcp_delete",
+            "oauth_grant", "token_grant",
+            "ambiguous"
+          ]
+        },
+        { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*$" }
       ],
-      "description": "[FIX-1] First-class action-type enum — the (lane × action_type) cell key the authority-matrix gate reads and graduation math keys on. Stamped at emit time by the SAME shared classify_action() the gate uses (framework/authority/classifier.py), so the ledger and the verdict table can never disagree about what an action is. Optional/nullable: absent when not yet stamped (the unmeasured default). MUST mirror classifier.ACTION_TYPES exactly (CI-asserted) — do not drift this list from the classifier."
+      "description": "[FIX-1] First-class action-type enum — the (lane × action_type) cell key the authority-matrix gate reads and graduation math keys on. Stamped at emit time by the SAME shared classify_action() the gate uses (framework/authority/classifier.py), so the ledger and the verdict table can never disagree about what an action is. Optional/nullable: absent when not yet stamped (the unmeasured default). The CLOSED branch MUST mirror classifier.ACTION_TYPES exactly (CI-asserted) — do not drift that list from the classifier. THE OPEN BRANCH (2026-07-29) accepts a NAMESPACED id (<namespace>/<operation>): an operation this deployment declared and bound to a framework risk class. Namespacing is what keeps the two vocabularies un-collidable, so a declaration can never redefine a closed member. Without the open branch the ledger could key no cell on any operation the shipped vocabulary does not name, and such an operation could be neither graduated nor demoted on evidence — the ladder would be unreachable for the whole of that operator's work."
     },
     "subject": {
       "type": "string",

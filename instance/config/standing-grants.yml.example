@@ -26,7 +26,9 @@
 # rate (cabinet:grant:count:<id>:<date>; unreadable ⇒ not granted), no active
 # Captain veto, and the class HARD-SCOPE predicate:
 #   external_comms → recipient ∈ scope.recipient_allowlist (glob ok)
-#   spend          → amount_eur ≤ scope.max_eur_per_day
+#   spend          → amount ≤ scope.max_amount_per_day  (a NUMBER: the
+#                    framework compares amounts and names no currency — both
+#                    sides are in whatever unit your executor supplies)
 #   others         → vendor ∈ scope.vendor_allowlist
 #
 # Grants change ONLY via `sudo bash cabinet/scripts/grant-apply.sh NEED-<hex>`
@@ -39,7 +41,7 @@ grants:
   - {id: GRANT-example-testburg-mail, deployment: testburg-mini,
      risk_class: external_comms, action_types: [external_email],
      lanes: [testburg-market],
-     scope: {recipient_allowlist: ["*@example.com"], max_eur_per_day: 0,
+     scope: {recipient_allowlist: ["*@example.com"], max_amount_per_day: 0,
              vendor_allowlist: []},
      rate: {max_per_day: 10}, expires: 2026-10-03,
      granted_by: "Captain (Ada Testburg)", granted_at: 2026-07-05T00:00:00Z,

@@ -23,6 +23,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
+from framework import env  # roster-resolved default role
 
 
 @dataclass
@@ -108,7 +109,7 @@ EXTINCT_WORK_ROSTER = frozenset({"cto", "cpo", "cro", "coo"})
 # roster (instance/config/platform.yml "cos cto cpo coo cro" note).
 # Platform-subsystem evals belong to the coordinating officer when their
 # original owner is gone.
-_STATIC_SUCCESSOR = "cos"
+_STATIC_SUCCESSOR = env.chair_officer()
 
 
 def _live_roster() -> dict[str, list[str]]:

@@ -63,6 +63,7 @@ _FRAMEWORK_ROOT = str(Path(__file__).resolve().parents[2])
 if _FRAMEWORK_ROOT not in sys.path:
     sys.path.insert(0, _FRAMEWORK_ROOT)
 
+from framework import env  # roster-resolved default role
 from framework.events.emitter import emit  # noqa: E402
 
 try:
@@ -527,7 +528,7 @@ def _render_rung_card(actor_id: str, lane: Optional[str], entry: dict[str, Any],
 
 
 def propose_next_rung(actor_id: str, lane: Optional[str] = None,
-                      *, urgency_tier: str = "batch", actor: str = "cos",
+                      *, urgency_tier: str = "batch", actor: "str | None" = None,
                       evaluate_fn=None, enqueue_fn=None, emit_fn=None,
                       posture_fn=None,
                       cabinet_root: str | Path | None = None) -> Optional[dict[str, Any]]:
@@ -540,6 +541,7 @@ def propose_next_rung(actor_id: str, lane: Optional[str] = None,
     nothing is ready. NEVER grants — only proposes. Best-effort surfacing
     (never raises on transport).
     """
+    actor = actor or env.chair_officer()
     if _resolved_posture(lane, posture_fn) != EARN_UP_POSTURE:
         return None
     if urgency_tier not in ("ping-now", "batch", "fyi"):

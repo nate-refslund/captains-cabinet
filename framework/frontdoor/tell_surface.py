@@ -583,8 +583,13 @@ def grant_scope_plain(need_row: Optional[Dict[str, Any]]) -> str:
         bits.append("to " + (", ".join(allow) if allow
                              else "NO recipients (inert until filled)"))
     elif rc == "spend":
-        cap = scope.get("max_eur_per_day")
-        bits.append(f"max {cap if cap is not None else 0} EUR/day")
+        cap = scope.get("max_amount_per_day")
+        if cap is None:
+            cap = scope.get("max_eur_per_day")     # legacy spelling
+        # No unit is printed: the framework compares numbers and does not know
+        # what they count. The deployment's own unit is the one the amount
+        # arrived in, and naming a currency here would be a guess.
+        bits.append(f"max {cap if cap is not None else 0}/day")
     else:
         vend = [str(x) for x in (scope.get("vendor_allowlist") or [])]
         bits.append("vendors: " + (", ".join(vend) if vend
