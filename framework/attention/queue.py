@@ -54,6 +54,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable, Optional
 
+from framework import env  # roster-resolved default delegate target
 from framework.attention import situations as sit_view
 
 # ---------------------------------------------------------------------------
@@ -439,7 +440,8 @@ def _one_tap_for(kind: str) -> dict:
     return {"approve": {"semantics": approve},
             "veto": {"semantics": "direct"},
             "defer": {"semantics": "direct", "until": None},
-            "delegate_back": {"semantics": "direct", "to": "cos", "note": ""}}
+            "delegate_back": {"semantics": "direct",
+                              "to": env.chair_officer(), "note": ""}}
 
 
 def _default_options(subject: str, reversible: bool) -> list:

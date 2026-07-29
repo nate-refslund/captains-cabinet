@@ -56,6 +56,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from framework.env import captain_name, captain_timezone  # noqa: E402
+from framework import env  # noqa: E402  # roster-resolved chair role
 from framework.watchdog import registry  # noqa: E402
 from framework.watchdog.registry import CheckResult, Probe, Tier  # noqa: E402
 
@@ -67,7 +68,7 @@ from framework.watchdog.registry import CheckResult, Probe, Tier  # noqa: E402
 # ─────────────────────────────────────────────────────────────────────────────
 REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
 REDIS_PORT = os.environ.get("REDIS_PORT", "6379")
-CHAIR_OFFICER = os.environ.get("CABINET_CHAIR_OFFICER", "cos")
+CHAIR_OFFICER = os.environ.get("CABINET_CHAIR_OFFICER") or env.chair_officer()
 HEARTBEAT_KEY = "cabinet:watchdog:outcome:heartbeat"
 COOLDOWN_KEY_PREFIX = "cabinet:watchdog:outcome:cooldown:"
 # Don't re-fire the same (expectation, action) within this many seconds. Long

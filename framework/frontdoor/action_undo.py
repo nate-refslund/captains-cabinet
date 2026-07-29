@@ -57,6 +57,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+from framework import env  # roster-resolved default actor
 from framework.fidelity.consequence import validate_consequence
 
 # --- constants ---------------------------------------------------------------
@@ -198,7 +199,7 @@ def new_row(*, pid: str, cid: str, step: int, kind: str, backend: str,
         # composes "officer:"+role for its ledger query, so a pre-prefixed id
         # reads back as "officer:officer:cos" and SEVERS this row from the
         # demotion evidence it is supposed to supply.
-        "actor": actor or {"kind": "officer", "id": "cos"},
+        "actor": actor or {"kind": "officer", "id": env.chair_officer()},
         "action_type": action_type_for(kind),
         "prestate": prestate or {},
         "created": created or {},
@@ -1262,7 +1263,7 @@ def acted_event(step: Optional[dict], row: dict, *,
         # BARE role id — see the canonical-actor-id comment in new_row(): the
         # gate composes "officer:"+role, so "officer:cos" here would sever
         # this acted event from demotion evidence (germline batch 2026-07-04).
-        "actor": row.get("actor") or {"kind": "officer", "id": "cos"},
+        "actor": row.get("actor") or {"kind": "officer", "id": env.chair_officer()},
         "lane": row.get("lane"),
         "action": action or ("acted:" + str(kind)),
         "subject": str(row.get("subject") or (step or {}).get("title") or kind)[:300],

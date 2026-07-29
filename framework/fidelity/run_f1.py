@@ -10,6 +10,7 @@ scored case (inside run_case via fidelity_events)."""
 
 from __future__ import annotations
 
+from framework import env  # roster-resolved default role
 from framework.fidelity import leakguard
 from framework.fidelity.benchmark import build_cases
 from framework.fidelity.officer_prompt import format_situation
@@ -33,7 +34,7 @@ def _baseline_payload(case) -> str:
     return format_situation(case)
 
 
-def run_batch(officer_role: str = "cos", n_cases: int = 24, people_dir=None,
+def run_batch(officer_role: "str | None" = None, n_cases: int = 24, people_dir=None,
               runner=run_case, scorer_fn=score, baseline_llm=oauth_raw_llm,
               emit_events: bool = True, gather=None, with_intent: bool = False,
               emit_scored: bool = False) -> dict:
@@ -52,6 +53,7 @@ def run_batch(officer_role: str = "cos", n_cases: int = 24, people_dir=None,
       per case (carries the intent fields + maps review.verdict from intent), so
       the graduation bar is actually FED. A pure-scorer/dry run leaves it False;
       a measurement run sets it True."""
+    officer_role = officer_role or env.chair_officer()
     from framework.fidelity.officer_runner import gather_cutoff_context
     from framework.fidelity.fidelity_events import emit_case_scored
     cases = build_cases(n=n_cases, people_dir=people_dir)
@@ -146,7 +148,7 @@ if __name__ == "__main__":
     import json
     import sys
 
-    role = sys.argv[1] if len(sys.argv) > 1 else "cos"
+    role = sys.argv[1] if len(sys.argv) > 1 else env.chair_officer()
     n = int(sys.argv[2]) if len(sys.argv) > 2 else 24
     # D1 knobs (Captain-authorized 2026-06-20, run_batch docstring) reachable
     # from the scheduled entry (W3 2026-07-09 — before this they were

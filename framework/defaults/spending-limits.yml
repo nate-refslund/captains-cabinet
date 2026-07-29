@@ -1,9 +1,16 @@
 # =============================================================
 # Captain's Cabinet — Spending Limits (framework defaults)
 # =============================================================
-# Per-officer and cabinet-wide daily caps on Anthropic API spend.
+# Per-officer and cabinet-wide daily caps on model spend.
 # These values ship with the framework and protect forkers from
 # runaway cost without any configuration.
+#
+# ON THE UNIT. Every number below is an AMOUNT, compared against amounts
+# your own cost reporting produces; the framework performs no conversion
+# and asserts no currency. The `_usd` suffix on the keys is a legacy
+# spelling kept because the live gate, the dashboard and the eval harness
+# all read those exact names — set them in whatever unit your reporting
+# uses. (Recorded as debt: the suffix should not be in a framework key.)
 #
 # To override for your own Cabinet, copy the `spending_limits:` block
 # into `instance/config/platform.yml` and change the values. The instance
@@ -23,22 +30,23 @@
 # =============================================================
 
 spending_limits:
-  # Daily USD cap per individual officer. Applies to each officer independently.
+  # Daily cap per individual officer. Applies to each officer independently.
   # Typical ratio: ~3x your planned average daily spend per officer.
   # Set to 0 to disable per-officer enforcement.
   daily_per_officer_usd: 75
 
-  # Daily USD cap across ALL officers combined (sum over the whole Cabinet).
+  # Daily cap across ALL officers combined (sum over the whole Cabinet).
   # Typical ratio: ~4-5x per_officer cap for a 4-5 officer Cabinet.
   # Set to 0 to disable cabinet-wide enforcement.
   daily_cabinet_wide_usd: 300
 
-  # Coordinating officer (CoS) carve-out.
-  # CoS pays structural trigger-routing overhead — every officer handoff,
-  # every Captain DM, every briefing passes through CoS. Without a carve-out
-  # CoS hits the per-officer cap first even when other officers are idle.
-  # Value is a multiplier on `daily_per_officer_usd`. CoS's effective cap
-  # is per_officer × multiplier. Set to 1.0 to disable the carve-out.
+  # Coordinating-role carve-out.
+  # Whichever role coordinates the others pays structural routing overhead —
+  # every handoff, every message to the Captain, every briefing passes
+  # through it. Without a carve-out it hits the per-officer cap first even
+  # when the rest are idle. Value is a multiplier on `daily_per_officer_usd`;
+  # the coordinating role's effective cap is per_officer × multiplier. Set to
+  # 1.0 to disable the carve-out.
   coordinating_officer_multiplier: 3.0
 
   # Telegram whitelist. When an officer is over cap, these MCP tools are

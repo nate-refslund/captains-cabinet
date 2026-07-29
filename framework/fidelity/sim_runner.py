@@ -40,6 +40,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
+from framework import env  # roster-resolved default role
 from framework.fidelity import run_f1
 from framework.fidelity.consequence import _sim_mode, read_ledger
 
@@ -77,7 +78,7 @@ def assert_sim_quarantine(environ: dict[str, str] | None = None) -> Path:
 
 
 def run_sim_batch(
-    officer_role: str = "cos",
+    officer_role: "str | None" = None,
     n_cases: int = 24,
     *,
     people_dir=None,
@@ -96,6 +97,7 @@ def run_sim_batch(
     zero live-shaped rows landed, and writes an atomic summary artifact into
     the quarantine dir. Injectable runner/scorer/baseline keep tests offline,
     exactly like run_f1's own tests."""
+    officer_role = officer_role or env.chair_officer()
     qdir = assert_sim_quarantine()
 
     kwargs: dict[str, Any] = {}
@@ -144,7 +146,7 @@ def run_sim_batch(
 if __name__ == "__main__":
     import sys
 
-    role = sys.argv[1] if len(sys.argv) > 1 else "cos"
+    role = sys.argv[1] if len(sys.argv) > 1 else env.chair_officer()
     n = int(sys.argv[2]) if len(sys.argv) > 2 else 24
     s = run_sim_batch(officer_role=role, n_cases=n)
     print(json.dumps({k: v for k, v in s.items() if k != "scores"}, indent=2))

@@ -30,6 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from framework import env  # declared-operation shape predicate (leaf)
 from framework.authority.classifier import ACTION_TYPES
 
 
@@ -169,9 +170,10 @@ def validate_consequence(event: dict[str, Any]) -> None:
             raise ConsequenceValidationError(
                 "action_type must be a string or null"
             )
-        if at not in _ACTION_TYPES:
+        if at not in _ACTION_TYPES and not env.is_declared_operation_id(at):
             raise ConsequenceValidationError(
-                f"action_type must be one of {sorted(a for a in _ACTION_TYPES if a)} or null"
+                f"action_type must be one of {sorted(a for a in _ACTION_TYPES if a)}, "
+                f"a namespaced deployment-declared operation id, or null"
             )
 
     # [T3] decision_verdict: optional enum string | null (scorer._DEC keys).

@@ -73,6 +73,7 @@ _FRAMEWORK_ROOT = Path(__file__).resolve().parents[2]
 if str(_FRAMEWORK_ROOT) not in sys.path:
     sys.path.insert(0, str(_FRAMEWORK_ROOT))
 
+from framework import env  # noqa: E402 — declared-operation shape predicate
 from framework.authority.classifier import (  # noqa: E402
     ACTION_TYPES,
     AMBIGUOUS,
@@ -228,6 +229,14 @@ def load_matrix(path: str | None = None, *, validate: bool = True) -> dict[str, 
     except yaml.YAMLError as exc:
         raise MatrixValidationError(f"authority matrix is not valid YAML: {exc}")
 
+    # Join the deployment's declared operations onto the floor BEFORE
+    # validation, so what is validated is what the gate will read. A
+    # deployment that declared none gets a byte-identical floor.
+    try:
+        bind_declared_operations(matrix_policy(data))
+    except Exception:
+        pass                                  # unbound ⇒ propose-only, never wider
+
     if validate:
         validate_matrix(data)
     return data
@@ -253,6 +262,52 @@ def matrix_policy(data: dict[str, Any]) -> dict[str, Any]:
             f"expected exactly one authority_matrix policy, found {len(matches)}"
         )
     return matches[0]
+
+
+def bind_declared_operations(policy: dict[str, Any]) -> dict[str, Any]:
+    """Bind this deployment's declared operations into the floor's risk
+    classes, in place, and return the policy.
+
+    The floor decides the CLASSES of consequence and what each earns; the
+    deployment decides which of its operations fall in them. This is the join,
+    and it is the whole reason the ladder can move for work the shipped
+    vocabulary does not describe.
+
+    Fail-closed at every step, because every drop here leaves an operation
+    unclassified and therefore propose-only:
+      * a row whose declared class is not a class this floor has is DROPPED —
+        binding it anywhere else would be the framework guessing;
+      * an id already mapped (to any class) is DROPPED — the mapping stays a
+        function, and a declaration can never re-point an existing binding;
+      * a non-namespaced id is DROPPED — the shape is what keeps the two
+        vocabularies from colliding;
+      * any exception at all leaves the floor exactly as it shipped.
+    """
+    try:
+        rows = env.declared_operations()
+        if not rows:
+            return policy
+        risk_classes = policy.get("risk_classes")
+        if not isinstance(risk_classes, dict):
+            return policy
+        already = {
+            at
+            for rc in risk_classes.values() if isinstance(rc, dict)
+            for at in (rc.get("action_types") or [])
+        }
+        for row in rows:
+            oid, rc_name = row["id"], row["risk_class"]
+            if oid in already or not env.is_declared_operation_id(oid):
+                continue
+            entry = risk_classes.get(rc_name)
+            if not isinstance(entry, dict) or not isinstance(
+                    entry.get("action_types"), list):
+                continue
+            entry["action_types"].append(oid)
+            already.add(oid)
+    except Exception:
+        return policy
+    return policy
 
 
 def ceiling_members(policy: dict[str, Any]) -> set[str]:
@@ -284,10 +339,12 @@ def no_ceiling_or_prod_auto(policy: dict[str, Any]) -> bool:
     return True
 
 
-def check_gate_actor_id_parity(officer: str = "cos") -> bool:
+def check_gate_actor_id_parity(officer: "str | None" = None) -> bool:
     """Parity probe: a synthetic acted row written with the CANONICAL bare-role
-    actor id ({"kind": "officer", "id": "cos"}) must be visible to the gate's
-    `read_cell_state("cos", ...)`. Deterministic check the CI test calls
+    actor id ({"kind": "officer", "id": <bare role>}) must be visible to the
+    gate's `read_cell_state(<bare role>, ...)`. The role defaults to the
+    deployment's own first roster entry (env.chair_officer), never a name this
+    module supplies. Deterministic check the CI test calls
     directly (peer of `no_ceiling_or_prod_auto`) — NEVER called by the
     load/validate paths.
 
@@ -323,6 +380,7 @@ def check_gate_actor_id_parity(officer: str = "cos") -> bool:
 
     Returns True iff BOTH legs hold.
     """
+    officer = officer or env.chair_officer()
     import shutil
     import tempfile
     from datetime import datetime, timezone
@@ -472,11 +530,17 @@ def _validate_risk_classes(risk_classes: Any) -> None:
                 f"risk_classes.{name}.action_types must be a non-empty list"
             )
         for at in ats:
-            if at not in _MAPPABLE_ACTION_TYPES:
+            # The framework's own vocabulary, or a NAMESPACED operation this
+            # deployment declared. Namespacing is what keeps the two apart:
+            # a declaration can never collide with, shadow or redefine a
+            # framework member, so opening the vocabulary cannot silently
+            # re-point an existing binding. Anything that is neither is a
+            # typo, and a typo binds nothing while reading as a binding.
+            if at not in _MAPPABLE_ACTION_TYPES and not env.is_declared_operation_id(at):
                 raise MatrixValidationError(
-                    f"risk_classes.{name}: action_type '{at}' is not a member of "
+                    f"risk_classes.{name}: action_type '{at}' is neither a member of "
                     f"the shared classifier ACTION_TYPES (minus the AMBIGUOUS "
-                    f"backstop)"
+                    f"backstop) nor a namespaced deployment-declared operation id"
                 )
             if at in mapped:
                 raise MatrixValidationError(
@@ -556,11 +620,29 @@ def _validate_ceiling_class_mapping(
                 f"risk_classes.{rc}.action_types must be a non-empty list "
                 f"(hard-ceiling row)"
             )
-        if frozenset(ats) != declared:
+        # The framework's own ceiling members must be present and UNMOVED:
+        # the gate's ceiling short-circuit is risk_class-keyed, so relocating
+        # one off its row silently un-gates it. What the row MAY additionally
+        # carry is a namespaced operation this deployment declared — and only
+        # in this direction, because a ceiling row is always-gated, so adding
+        # to it can only NARROW autonomy. Without that, every ceiling protects
+        # exactly the operations the shipped vocabulary happens to name: an
+        # operator whose irreversible acts are not in that list gets a ceiling
+        # with no members in their world, which reads as protection and is not.
+        extras = frozenset(ats) - declared
+        if not declared <= frozenset(ats):
             raise MatrixValidationError(
-                f"risk_classes.{rc}.action_types must be exactly "
-                f"{sorted(declared)}, got {sorted(set(ats))} — a hard-ceiling "
-                f"kind may never be relocated off its ceiling row"
+                f"risk_classes.{rc}.action_types must contain exactly "
+                f"{sorted(declared)} of the framework's own kinds, got "
+                f"{sorted(set(ats))} — a hard-ceiling kind may never be "
+                f"relocated off its ceiling row"
+            )
+        stray = sorted(a for a in extras if not env.is_declared_operation_id(a))
+        if stray:
+            raise MatrixValidationError(
+                f"risk_classes.{rc}.action_types carries {stray}, which is "
+                f"neither one of this row's framework kinds nor a namespaced "
+                f"deployment-declared operation id"
             )
 
 

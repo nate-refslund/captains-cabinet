@@ -41,7 +41,7 @@ driver-less jobs never breaks (§9.4).
 Usage:
     from framework.outbox.relay import queue, dispatch_pending, register_adapter
 
-    qid = queue(destination="notion", payload={...}, actor="cos")
+    qid = queue(destination="<sink>", payload={...}, actor="<role>")
     result = dispatch_pending()           # legacy: {"dispatched","failed","skipped"}
 
     # COG-1 table drain (cron / launchd); the host identity resolves from the

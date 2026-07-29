@@ -1103,7 +1103,7 @@ def _exec_mission_adopt(payload: dict) -> dict:
     # instance-tunable via ADOPT_OWNER_ROLE; a mission with no first_outcomes still
     # yields one routable node (the mission itself). why_now folds into the
     # description; the return value + reasoning log carry the rest.
-    owner = os.environ.get("ADOPT_OWNER_ROLE", "cos")
+    owner = os.environ.get("ADOPT_OWNER_ROLE") or env.chair_officer()
     # Filter blank/whitespace outcomes: a "" title makes _normalize_criterion raise
     # -> compile_from_yaml raises -> _adopted_missions_source swallows to [],
     # SILENTLY dropping the WHOLE adopted file from routing. Fall back to the
@@ -1481,8 +1481,8 @@ def _recard_edited(pid: str, rec: dict, edit_text: str, *,
         # CANONICAL ACTOR ID (germline contract 2026-07-04): BARE role — ledger/
         # journal consumers compose the qualified key as "officer:"+role
         # themselves (e.g. framework/fidelity/run_e2e_smoke.py:145), so a
-        # pre-qualified "officer:cos" would double-compose and sever evidence.
-        actor={"kind": "officer", "id": "cos"},
+        # pre-qualified "officer:<role>" would double-compose and sever evidence.
+        actor={"kind": "officer", "id": env.chair_officer()},
         lane=prop.lane, subject=prop.subject, ts=ts, action="action-card",
         refs=[correlation.ref_for(cid)] + list(prop.evidence)
              + [f"recard-of:{pid}"])
@@ -2007,7 +2007,7 @@ def deliver_action(pid: str, override_text: str = "", *,
     # undo-journal row's demotion evidence from the graduation/demotion gate
     # query. Stored action records carry no actor today, so this fallback IS
     # the identity every journal row gets stamped with.
-    actor = rec.get("actor") or {"kind": "officer", "id": "cos"}
+    actor = rec.get("actor") or {"kind": "officer", "id": env.chair_officer()}
     for i, step in enumerate(steps, 1):
         kind = step.get("kind")
         # per-step gated delivery (act-first only): a gated kind / no-inverse step
