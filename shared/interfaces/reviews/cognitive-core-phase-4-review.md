@@ -21,7 +21,19 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: a1ed1cb20d7e4a769f66049a92757e130ba02dee6a4b4a8bdba148520d759fe4
+Reviewed-Scope-Digest: d424e84fd9b7b8c1d17af49915dfa4951c1680c472df9a3215f6eee7ef9d4e1f
+(RE-BOUND 2026-07-29 on `feat/look-capabilities`, previous value
+`408e6b97…`. ONE in-scope path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` raises
+`framework_production_noncomment_lines` VISIBLY 60543 -> 60637 (+94 measured
+over this tree, with a three-item breakdown in the row's own comment — not an
+allowance, because a read lane that reads more clock encodings honestly and
+refuses to describe its own misconfiguration as the operator's empty estate has
+no deletion gate that could ever fire). The unit's own work is in
+`framework/onboarding/` and `instance/config/`, which this scope does not bind.
+Named here rather than absorbed silently, because a re-freeze that hides what
+moved would assert a review that never happened.)
+
 (RE-BOUND 2026-07-29 on `fix/framework-specifics`, previous value
 `0df4d12a…`. TWO in-scope paths moved and NO COG-4 implementation byte did:
 `cabinet/config/cognitive-architecture-contract.yml` raises
@@ -1410,7 +1422,6 @@ this file. Nothing was re-reviewed and no prose finding was edited, because no r
 byte moved: the branch's entire diff is the world layout, the renderer, the hit test and
 the check harness, none of which is in the COG-4 scope.
 
-<<<<<<< HEAD
 ---
 
 ## Re-bind 2026-07-29 (feat/salience-loop — the sweep's two silent claims)
@@ -1443,7 +1454,6 @@ so no bijection class moves either. The unit's own work is in
 
 Recorded digest: a8e0903b5f5bcc2c216dc886b83aa12d5d5a78ac79804a1c65f76ecc8f367cd5
 Previous:        2c6fdb6779f555a5fc7a360a5eb9f316aec08be78c4ad85d71e1646a3a32d782
-=======
 
 ---
 
@@ -1483,7 +1493,6 @@ in-scope path that moved on either side is
 over this merge tree (74620 at zero headroom) rather than added on paper: the
 de-specification ceiling and this branch's +97 genesis claim refusals are disjoint
 sets of lines. No COG-4 implementation byte moved on either side.
->>>>>>> origin/master
 
 ## Re-bind 2026-07-29 (feat/salience-loop — merge of origin/master c98a58a6)
 
@@ -1499,19 +1508,29 @@ Recorded digest: 408e6b979fff5a1d84da85fdc19ed7114a8a2df96492636407d80febee0aa01
 Previous:        b6872d9f98e0b1138aec5c496a1787e23a3afe1aa20b1acc2f7865bf6b18fd13
 
 
-## Re-bind 2026-07-29 (fix/salience-ranking)
+---
 
-Recorded digest: a1ed1cb20d7e4a769f66049a92757e130ba02dee6a4b4a8bdba148520d759fe4
-Previous:        408e6b979fff5a1d84da85fdc19ed7114a8a2df96492636407d80febee0aa017
+## Re-bind 2026-07-29 (fix/salience-ranking, over the merge of origin/master b65ae3fb)
+
+Recorded digest: d424e84fd9b7b8c1d17af49915dfa4951c1680c472df9a3215f6eee7ef9d4e1f
+Previous:        a9be6fa17cc368ca64a84309d26fb65d1b1483633ec39722cf8b0c2796894658
 
 Every prior note above survives verbatim; each describes a different landing and
-none is another's restamp. ONE bound path moved and NO COG-4 implementation byte
-did: `cabinet/config/cognitive-architecture-contract.yml` raises
-`framework_production_noncomment_lines` VISIBLY (60543 -> 60848, +305 measured
-over this tree with cognitive-architecture-census.py, observed == maximum at zero
-headroom) and supersedes two prose blocks that described the salience floors as
-DELETING — which is what the branch stops them doing, so the contract's own words
-would otherwise contradict the code they adjudicate. Not an allowance: a bijection
-class may never be bought with one, and this is mass on the line the zero-headroom
-law is read from. ZERO new modules, so no bijection class moves. The unit's own
-work is in `framework/onboarding/`, which this scope does not bind.
+none is another's restamp. Two committed conflict markers this file had been
+carrying since an earlier resolution are removed in the same commit — no note
+text moved, and this file is excluded from its own digest, so nothing here can
+change the value it records.
+
+ONE bound path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml`. It carries BOTH sides'
+mass raises verbatim — master's +94 read-lane row and this branch's +305 for the
+ranker's discount, join seam and oracle — under a merged `maximum` of 60944 that
+is RE-MEASURED over this tree (observed 75221, zero headroom) rather than summed
+on paper. It also supersedes two prose blocks that described the salience floors
+as DELETING, which is precisely what this branch stops them doing; leaving them
+would have left the contract's own words contradicting the code they adjudicate.
+
+Neither raise is an allowance — a bijection class may never be bought with one,
+and this is mass on the line the zero-headroom law is read from. ZERO new
+modules, so no bijection class moves. The unit's own work is in
+`framework/onboarding/`, which this scope does not bind.

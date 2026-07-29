@@ -180,6 +180,49 @@ budgets:
     # the merged ceiling is their sum — RE-MEASURED over this merge tree with
     # cognitive-architecture-census.py rather than added on paper. Neither is
     # an allowance; both are permanent, so the ratchet re-pins at zero headroom.
+    # 60543 -> 60637 (+94 measured 2026-07-29 via cognitive-architecture-census.py,
+    # observed 74914 vs the then-effective 74820): three capabilities recovered
+    # into framework/onboarding/research.py's read lane from a parallel sweep
+    # engine that was proven against the same live estate and then correctly
+    # DROPPED rather than landed beside it — one producer for the salience rows,
+    # better, never two. Each was ported because the landed lane was measurably
+    # making a claim it could not support, not because the other engine had it.
+    #   +~26  _stamp + the DECLARED clock encoding (iso | epoch_ms | epoch_s).
+    #         Measured on the operator's own estate: one of four connectors
+    #         stamps in epoch milliseconds, so the period, the presence question
+    #         and salience.admissible_clocks all saw 58 fully stamped rows as
+    #         undated and the ranker refused that clock as "absent on most rows".
+    #         An unknown encoding is refused by name rather than read as ISO.
+    #   +~30  _people + plural row actors. _scalar returns None for a container,
+    #         so a declared actor path resolving to a LIST of people — the shape
+    #         the operator is most likely to be inside — was dropped whole, and
+    #         the sweep then reported it could not tell which actor was them.
+    #   +~36  a declaration that MISSED stops reading as an empty estate:
+    #         _items_of returns its reason, a name path that resolved on nothing
+    #         says so, items dropped for having no name are counted, and a date
+    #         or actor path that never resolved is named in the disclosure. The
+    #         lane's own header already required this one level up and the level
+    #         below it was collapsing three facts into "no items".
+    #   +2    the two degenerate-end guards attacking the port found: a non-
+    #         positive epoch stamp is absent rather than 1970-01-01 (systems
+    #         write 0 for "never set", and converted faithfully that is a date,
+    #         which ranks and sorts), and the declared encoding is normalised
+    #         like every other verb this lane reads so `ISO` is not refused on
+    #         invisible case.
+    # RAISED VISIBLY, never an allowance: an allowance promises a deletion gate,
+    # and a sweep that reads more encodings honestly and refuses to describe its
+    # own misconfiguration as the operator's empty estate has nothing to delete.
+    # Zero new production MODULES (every helper lives inside the existing
+    # research module; the new arms are tests). Re-pins at zero headroom.
+    #
+    # MERGE 2026-07-29 (fix/salience-ranking over feat/look-capabilities): the
+    # two raises above are DISJOINT — one is the read lane's clock/actor/miss
+    # honesty in research.py, one is the ranker's discount, join seam and
+    # oracle in salience.py — so the merged ceiling is 60944, RE-MEASURED over
+    # this tree with cognitive-architecture-census.py (observed 75221 at zero
+    # headroom) rather than added on paper: 94 + 305 summed on paper would have
+    # been 60942, and the two-line difference is the merge itself. Neither is an
+    # allowance; both are permanent, so the ratchet re-pins at zero headroom.
     #
     # 60543 -> 60848 (+305 measured 2026-07-29 via cognitive-architecture-census.py,
     # observed 75125 vs the then-effective 74820): the salience ranker was
@@ -209,7 +252,7 @@ budgets:
     # production MODULES (framework_production_modules unchanged at 248: every
     # function lands inside framework/onboarding/salience.py, and the new suite
     # is a test). observed == maximum, zero headroom.
-    maximum: 60848
+    maximum: 60944
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

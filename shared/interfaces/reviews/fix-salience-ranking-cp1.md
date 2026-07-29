@@ -110,10 +110,19 @@ clusters plus the named non-candidates.
 
 **The honest verdict, which is not a green tick.** The oracle grades the
 operator's three known answers: cold, 1 offered in the top 3, 3 of 3 reached,
-0 lost, deepest rank 16. Judged, still 1 offered, 3 reached, 0 lost — the
+0 lost, deepest rank 17. Judged, still 1 offered, 3 reached, 0 lost — the
 union moves the split entity into the shortlist and moves the org name out of
 it. **The shortlist is better and is still not an oracle-clean 3 of 3, and the
 mechanism now says so in its own output instead of a report saying otherwise.**
+
+**Re-measured after merging `origin/master` (`feat/look-capabilities`, which
+lands epoch-millisecond clock decoding and plural row actors in the same read
+lane).** A second read-only sweep — 14 calls, 665 rows, 4/4 connectors, 0
+writes — reproduces the table above unchanged except that the estate itself
+moved a day: one candidate enters at rank 13 and the third answer sits at 17
+rather than 16. The actor harvest follows master's rename from a single `actor`
+to plural `actors` in the same commit, so the demotion set still contains the
+organisation and the org name is still rank 3 rather than deleted.
 
 **Open and NOT claimed fixed.** (a) The generic descriptor still outranks the
 specific one — `website` is rank 1 and merges four unrelated sites; no floor
@@ -130,10 +139,10 @@ rather than hiding it.
 
 | Gate | Result |
 |---|---|
-| `framework/onboarding/tests/` | 550 passed, 1 skipped |
+| `framework/onboarding/tests/` | 583 passed, 1 skipped (merged tree) |
 | `framework/` full suite | 7647 passed, 25 skipped, 1 failed = `test_retro_shim.py::test_reexports_constants` (known local-only red, unrelated) |
 | new arms vs master `26ad54c0` | 46 of 46 in the new suite RED; 6 of 6 rewritten arms in the two existing suites RED; 2 of 2 new journey arms RED. Both directions, `__pycache__` purged. |
-| `cognitive-architecture-census.py` | PASS, observed == maximum (75125), zero headroom |
+| `cognitive-architecture-census.py` | PASS, observed == maximum (75221 on the merged tree), zero headroom |
 | `check-layer-separation.sh` | `new=0` — OK |
 | `ledger-status-parity.sh` | GREEN (ids=353 md_rows=353) |
 | `cabinet/scripts/tests/` ratchet + adjudication binding | 19 passed |

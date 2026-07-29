@@ -32,6 +32,18 @@
 #     VALUE is read at call time and never appears in a result, a log, an error
 #     message or an artifact.
 #
+# ------------------------------------------------------------------
+# IF SOMETHING COMES BACK EMPTY, READ THE REASON — it is never just "empty"
+# ------------------------------------------------------------------
+# A first pass at this file is usually wrong somewhere, so every declared path
+# reports whether it RESOLVED. `items_path_missed:<path>` means the list was not
+# where you said (a real empty system says `inventory_returned_no_items`
+# instead); `name_path_missed:<path>` means items came back and none carried a
+# name there; and a date or actor path that resolved on NONE of the items is
+# named in the disclosure rather than left to read as a system that has no
+# clock and no people. Fix the path, re-run — the sweep is a glance, not an
+# ingest, and it is meant to be re-run.
+#
 # TREAT THIS FILE AS PRIVILEGED. It says where a credential may be sent. Keep it
 # owned by the captain (the same custody as instance/config/egress.yml), because
 # an attacker who could edit it could point your token at their host.
@@ -60,8 +72,25 @@ connectors:
   #       Accept: application/json
   #     items_path: ""               # dotted path to the list; "" = the root
   #     name_field: full_name        # dotted path, per item
-  #     updated_field: updated_at    # dotted path, per item (ISO-8601 reads best)
-  #     actor_field: owner.login     # optional: who owns/created the thing
+  #     updated_field: updated_at    # dotted path, per item
+  #     date_encoding: iso           # iso (default) | epoch_ms | epoch_s.
+  #                                  # DECLARED, never guessed. A system that
+  #                                  # stamps in epoch time is not an undated
+  #                                  # system, but read as text it fails every
+  #                                  # date test downstream and the sweep will
+  #                                  # tell you it found no clock. An encoding
+  #                                  # this cabinet does not know is refused by
+  #                                  # name rather than read as ISO.
+  #     actor_field: owner.login     # optional: who owns/created/is on the
+  #                                  # thing. One path, or a LIST of paths —
+  #                                  # and a path may resolve to a person, or
+  #                                  # to a list of them (assignees, parties,
+  #                                  # participants), which is usually where
+  #                                  # YOU are. One name is read out of each
+  #                                  # person, never their record.
+  #     # actor_field:
+  #     #   - owner.login
+  #     #   - assignees
   #   page:
   #     start: 1
   #     max_pages: 3                 # {page} in the url/body is substituted

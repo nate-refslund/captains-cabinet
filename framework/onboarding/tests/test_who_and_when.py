@@ -68,7 +68,7 @@ class TestPeriod:
 
 class TestPresenceQuestion:
     def _rows(self, days, actor="aperson"):
-        return [{"connector": "code", "name": f"n{i}", "updated": d, "actor": actor}
+        return [{"connector": "code", "name": f"n{i}", "updated": d, "actors": [actor]}
                 for i, d in enumerate(days)]
 
     def test_a_gap_in_the_operators_own_activity_is_asked_never_concluded(self):
@@ -142,13 +142,13 @@ class TestActorSurvivesTheSweep:
         sweep = self._sweep([{"name": "alpha", "updated_at": "2026-07-01T00:00:00Z",
                               "owner": {"login": "aperson"}}], actor_field="owner.login")
         assert sweep["rows"] == [{"connector": "code", "name": "alpha",
-                                  "updated": "2026-07-01T00:00:00Z", "actor": "aperson"}]
+                                  "updated": "2026-07-01T00:00:00Z", "actors": ["aperson"]}]
 
     def test_a_row_without_an_actor_carries_no_actor_key(self):
         """Absence stays absent. A blank actor would match a blank handle and
         silently attribute every unattributed row to the operator."""
         sweep = self._sweep([{"name": "alpha", "updated_at": "2026-07-01T00:00:00Z"}])
-        assert sweep["rows"] and "actor" not in sweep["rows"][0]
+        assert sweep["rows"] and "actors" not in sweep["rows"][0]
 
 
 # --- end to end through the real action --------------------------------------
@@ -164,8 +164,8 @@ def test_the_gathered_sweep_discloses_who_and_when(tmp_path, monkeypatch):
         "schema": "cabinet.connector-sweep/v1", "swept_at": "2026-07-29T00:00:00Z",
         "declared": 1, "calls": 1,
         "connectors": [{"name": "code", "connected": True, "items": 2}],
-        "rows": [{"connector": "code", "name": "alpha", "updated": "2026-06-01", "actor": "x"},
-                 {"connector": "code", "name": "beta", "updated": "2026-07-25", "actor": "x"}],
+        "rows": [{"connector": "code", "name": "alpha", "updated": "2026-06-01", "actors": ["x"]},
+                 {"connector": "code", "name": "beta", "updated": "2026-07-25", "actors": ["x"]}],
         "identities": [], "not_reached": [],
     })
     result = journey.act({"action": "gather_connectors", "surface": "dashboard",
@@ -191,8 +191,8 @@ def test_the_record_is_the_only_place_the_operator_comes_from(tmp_path, monkeypa
     monkeypatch.setattr(journey.research, "sweep_connectors", lambda base: {
         "schema": "cabinet.connector-sweep/v1", "swept_at": "2026-07-29T00:00:00Z",
         "declared": 1, "calls": 1, "connectors": [], "identities": [], "not_reached": [],
-        "rows": [{"connector": "code", "name": "a", "updated": "2026-05-01", "actor": "x"},
-                 {"connector": "code", "name": "b", "updated": "2026-07-25", "actor": "x"}],
+        "rows": [{"connector": "code", "name": "a", "updated": "2026-05-01", "actors": ["x"]},
+                 {"connector": "code", "name": "b", "updated": "2026-07-25", "actors": ["x"]}],
     })
     result = journey.act({"action": "gather_connectors", "surface": "dashboard",
                           "action_id": "g-2"}, tmp_path)

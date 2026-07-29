@@ -763,9 +763,11 @@ def rows_from_state(state: Mapping[str, Any]) -> tuple[list[dict[str, Any]], lis
         # It stays out of attribution, where the same string means nothing:
         # see framework.onboarding.research.operator_identity.
         identities.extend(
-            str(row["actor"]).strip()
+            str(actor).strip()
             for row in raw
-            if isinstance(row, Mapping) and str(row.get("actor") or "").strip()
+            if isinstance(row, Mapping)
+            for actor in (row.get("actors") or ())
+            if str(actor).strip()
         )
     probes = state.get("connector_probes") if isinstance(state, Mapping) else None
     for probe in (probes or {}).get("connected", ()) if isinstance(probes, Mapping) else ():
