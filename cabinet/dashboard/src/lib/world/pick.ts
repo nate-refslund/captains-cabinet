@@ -44,6 +44,7 @@ import {
   type IsoScene,
   type IsoSprite,
 } from './iso-scene'
+import { pickRoomOfficer, type RoomOfficerBox } from './iso-cutaway'
 import { LOD_RULES, lodTier, type EngineCamera } from './lod'
 import { projectionFor, screenToWorld, type ProjectionKind, type ViewportPx } from './projection'
 import { CHART_TABLE_LOCAL, roadPoint, toWorld, type WorldGeo } from './world-geo'
@@ -130,6 +131,20 @@ export interface PickWorld {
    * answer the world it drew rather than one it imagines.
    */
   scene: Pick<IsoScene, 'sprites'> | null
+  /**
+   * The officer boxes the LAST cutaway draw placed inside the open room, in
+   * layout px — empty whenever no roof is off.
+   *
+   * IT IS HANDED OVER RATHER THAN RECOMPUTED, and that is the point. The room's
+   * officers are not scene sprites: they are pooled `off:<slug>` children the
+   * cutaway pass creates inside the room container, so `scene.sprites` cannot
+   * see them and this pick returned `building` for every one of them (measured
+   * 2026-07-29: 208 clicks over an open room, 0 officer cards). Recomputing the
+   * lattice here would be a second copy of `roomFixtures`, free to drift by a
+   * slot; taking the boxes the draw pass actually placed means the hit test is
+   * testing what the eye is looking at, by construction.
+   */
+  roomOfficers?: readonly RoomOfficerBox[]
 }
 
 /**
@@ -229,6 +244,18 @@ function pickIso(world: PickWorld, tx: number, ty: number): PickTarget {
   const scene = world.scene
   if (!scene) return GROUND
   const px = projectionFor('iso').project(tx, ty)
+  // OFFICERS IN THE OPEN ROOM COME FIRST — they are drawn on top of everything,
+  // inside a container nested above the building's own sprite, so a pointer on
+  // one of them is on THEM and not on the house they are standing in. This is
+  // also the priority the top-down arm below uses (officers, then structures),
+  // which is product law rather than an implementation detail.
+  const inRoom = pickRoomOfficer(world.roomOfficers ?? [], px.x, px.y)
+  // `id` carries the slug here exactly as the top-down arm does below — one
+  // shape of officer target, so the card and the deep link do not need to know
+  // which kernel named it. The LOD gate the top-down arm applies explicitly is
+  // implicit here and stronger: these boxes ARE what the cutaway pass drew, so
+  // at a tier that draws no room there are none to test.
+  if (inRoom) return { kind: 'officer', id: inRoom }
   const s = pickIsoSprite(scene, px.x, px.y, { wants: isoWants(world.chartTable) })
   if (!s) return GROUND
   const station = STATIONS.get(s.frame)

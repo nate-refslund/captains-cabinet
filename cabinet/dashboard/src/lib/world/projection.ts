@@ -48,12 +48,28 @@ export type ProjectionKind = 'topdown' | 'iso'
 /**
  * The kernel the world renders with when nothing overrides it.
  *
- * Starts 'topdown' so the port lands invisible. ?iso=1 / ?iso=0 select
- * explicitly in both directions from day one, so flipping this constant is
- * one line and the top-down path stays permanently reachable for the
- * bake-off (and for a one-line revert).
+ * FLIPPED TO 'iso' 2026-07-29 — port-plan step 14, on the Captain's ruling.
+ * It started 'topdown' so twelve steps of the port could land invisible; that
+ * is done, the bake-off ran, and `/world` is now the isometric world.
+ *
+ * WHAT THE FLIP IS WORTH, measured rather than asserted: the top-down kernel
+ * paints the LimeZu sheet universe, so `/world` was ~100% LimeZu pixels and
+ * every residue number in this programme's records described a view a visitor
+ * had to ask for. The iso kernel binds the OWNED atlas and the owned cast — 0%
+ * with no room open, 0.034% with a roof-off cutaway. The credit line follows by
+ * derivation (see lib/world/credit.ts), so there is no second edit here: it
+ * keeps showing for the portrait rail, whose portraits ARE LimeZu-derived, and
+ * that is correct rather than a leak.
+ *
+ * `?iso=0` REMAINS THE ESCAPE HATCH, permanently and in both directions — the
+ * same engine, the other kernel, which is a better comparison than the retired
+ * three-scene shell ever was. `worldUrlSearch` writes the flag unconditionally
+ * precisely so this survives the first pan; that is not decoration, it was
+ * measured failing.
+ *
+ * REVERTING IS THIS ONE LINE plus the arm in projection.test.ts that pins it.
  */
-export const DEFAULT_PROJECTION: ProjectionKind = 'topdown'
+export const DEFAULT_PROJECTION: ProjectionKind = 'iso'
 
 /** Tile size in screen px, per kernel. */
 export interface TileSize {
@@ -185,6 +201,30 @@ export function worldUrlSearch(state: WorldUrlState): string {
   if (state.at) p.set('at', state.at)
   p.set('iso', isoParamFor(state.projection))
   return p.toString()
+}
+
+/**
+ * THE WHOLE ADDRESS the client writes — pathname and query, one call.
+ *
+ * WHY THIS EXISTS RATHER THAN THE QUERY STRING ALONE. `worldUrlSearch` was
+ * already the one definition of the query, and the client already called it —
+ * and the sensor guarding that was still walkable. The guard grepped
+ * `engine-client.tsx` for `worldUrlSearch(` and for the ABSENCE of one exact
+ * literal, so a rewrite that kept calling the builder, DISCARDED its return and
+ * hand-rolled the query beside it satisfied both halves: mutation-tested
+ * 2026-07-29, that rewrite reinstates the escape-hatch defect with 838 tests
+ * across lib/world and components/world green.
+ *
+ * A grep cannot tell "called it" from "used what it returned". So the whole
+ * href is built here, the client passes this straight to `replaceState`, and
+ * the untested surface in the component shrinks to a single call that a
+ * one-line assertion can pin. Everything that decides anything is in this
+ * function, where the tests drive it directly.
+ *
+ * PURE: takes the pathname, never reads `window`.
+ */
+export function nextWorldHref(pathname: string, state: WorldUrlState): string {
+  return `${pathname}?${worldUrlSearch(state)}`
 }
 
 /** A world-tile point (fractional tiles allowed — LIFE emits floats). */

@@ -382,12 +382,31 @@ export interface ResolvedOutdoor {
  */
 export function resolveOutdoorSprites(
   manifest: WorldAssetManifest,
-  scene: OutdoorScene
+  scene: OutdoorScene,
+  /**
+   * The ids to resolve, when the caller knows better than the scene default.
+   *
+   * THE DEFECT THIS PARAMETER EXISTS FOR, measured in a browser 2026-07-29 on
+   * the iso default: the canvas fetched the ENTIRE top-down LimeZu sheet
+   * universe — farm, exteriors, office, village, derived — and drew none of it.
+   * The iso pack's own load is gated on `isIso`; this one never was, so the
+   * asymmetry read as deliberate and was not. 56 requests on a clone without
+   * the gitignored binaries; on a real deployment, 56 successful loads of art
+   * the kernel cannot put on screen.
+   *
+   * It also made `credit.ts` wrong in the direction that matters: that module
+   * says the iso canvas binds the owned atlas and the cast and nothing else,
+   * and computes the licence notice from exactly that claim. The loader
+   * disagreed. Passing `canvasAssetIds(projection)` makes the credit module
+   * the ONE authority for what a kernel binds — the notice and the network
+   * requests now come from the same list, so they cannot drift apart again.
+   */
+  ids?: readonly string[]
 ): ResolvedOutdoor {
   const byId = new Map(manifest.assets.map((r) => [r.id, r]))
   const urls: Record<string, string> = {}
   const missing: string[] = []
-  for (const id of requiredOutdoorSheets(scene)) {
+  for (const id of ids ?? requiredOutdoorSheets(scene)) {
     const row = byId.get(id)
     if (!row) {
       missing.push(id)

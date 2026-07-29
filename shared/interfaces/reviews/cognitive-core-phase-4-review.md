@@ -21,11 +21,11 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 404043309cd97b5d753e43b22b73b80dc734977c73025746b65a0e322e3e9159
+Reviewed-Scope-Digest: 0df4d12ac60f2353118fdadf244ed8d522a9e1fdcaee5edbd2e7dc078bd211a6
 (RE-BOUND 2026-07-29 on `feat/onboarding-connector-read`, previous value
 `e7a6983a…`. TWO in-scope paths moved and NO COG-4 implementation byte did:
 `cabinet/config/cognitive-architecture-contract.yml` gains one
-`temporary_allowances` row (`connector-read-lane`, +411 non-comment lines, the
+`temporary_allowances` row (`connector-read-lane`, +416 non-comment lines, the
 line ceiling re-measured over this tree), and
 `cabinet/scripts/egg-export-manifest.txt` gains one `delete` line for
 `instance/config/connectors.yml` so a live instance value cannot ship in the

@@ -111,6 +111,7 @@ import {
   resolveOutdoorSprites,
   type DayBucket,
 } from '@/lib/world/sprites-outdoor'
+import { canvasAssetIds, ISO_ATLAS_ROW } from '@/lib/world/credit'
 import {
   dirtTileFlecks,
   FOAM_WHITE,
@@ -152,12 +153,13 @@ import {
 } from '@/lib/world/lod'
 import {
   cutawayMix,
-  interiorSlots,
+  roomFixtures,
   isoCutawayCandidate,
   kitFrame,
   openFrameOf,
   ROOM_FLOOR,
   roomChildStale,
+  type RoomOfficerBox,
 } from '@/lib/world/iso-cutaway'
 import type { WeatherState } from '@/lib/world/weather'
 import { rainDrops } from '@/lib/world/weather'
@@ -309,7 +311,12 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         const res = await fetch('/world-assets/manifest.json')
         if (!res.ok) throw new Error(`manifest HTTP ${res.status}`)
         const manifest = (await res.json()) as WorldAssetManifest
-        const resolved = resolveOutdoorSprites(manifest, 'island')
+        // ONLY WHAT THIS KERNEL BINDS — `canvasAssetIds` is the same list
+        // credit.ts derives the licence notice from, so the art the page
+        // fetches and the art it says it is showing are one answer. Under iso
+        // that is the cast alone; the owned atlas loads below, off-manifest.
+        const wanted = canvasAssetIds(proj.kind).filter((id) => id !== ISO_ATLAS_ROW)
+        const resolved = resolveOutdoorSprites(manifest, 'island', wanted)
         for (const id of resolved.missing) {
           issues.push(`missing sheet: ${id}`)
           console.error('[world/engine] sheet missing/invalid — placeholder fallback:', id)
@@ -1571,6 +1578,16 @@ export default function EngineCanvas(props: EngineCanvasProps) {
       let isoScene: IsoScene | null = null
       let isoIssued = false
       let isoUnmeasuredIssued = false
+      /**
+       * The officer boxes the last cutaway pass placed, for the PICK.
+       *
+       * Written by `drawIsoCutaway` on every pass (including the pass that
+       * closes the room, which writes an empty list), read by `hitTarget`. It is
+       * a handover rather than a second computation on purpose — see
+       * PickWorld.roomOfficers.
+       */
+      let roomOfficerBoxes: RoomOfficerBox[] = []
+
       /** Static iso sprites by scene id — the cutaway's handle on a roof. */
       const isoSpriteById = new Map<string, Sprite>()
       /**
@@ -1809,6 +1826,14 @@ export default function EngineCanvas(props: EngineCanvasProps) {
        * rejected a whole design for.
        */
       function drawIsoCutaway(p: EngineCanvasProps): void {
+        // CLEARED FIRST, on every pass and before every early return. A room
+        // that closed, a pack that failed to load, a tier that draws no cutaway
+        // — all of them must leave the pick with NO officer boxes, or a click on
+        // empty grass opens the card of someone who was in a room that is not
+        // there any more. Resetting only on the success path is how that
+        // survives; this is the same stale-pool bug the room's own child sweep
+        // exists for, one level up.
+        roomOfficerBoxes = []
         const scene = isoScene
         if (!scene || !isoPack || !isoAtlas) return
         const pack = isoPack
@@ -1880,9 +1905,14 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           // placed by a later round with the whole suite green.
           const deskFrame = kitFrame(pack, 'int_desk')
           const deskTex = deskFrame ? isoTex(pack, atlas, 'int_desk') : null
-          const slots = interiorSlots(open, s.x, s.y, slugs.length)
+          // ONE placement call for the desks, the officers AND the pick — see
+          // iso-cutaway.roomFixtures. Officers were drawn here and clickable
+          // nowhere until 2026-07-29 because the hit test had no term for them.
+          const fixtures = roomFixtures(open, s.x, s.y, slugs)
+          roomOfficerBoxes = fixtures.map((f) => f.officer)
           const want = new Set<string>([ROOM_FLOOR])
-          slots.forEach((slot, i) => {
+          fixtures.forEach((fx, i) => {
+            const slot = fx.desk
             if (deskTex && deskFrame) {
               const dk = `desk:${i}`
               want.add(dk)
@@ -1896,8 +1926,10 @@ export default function EngineCanvas(props: EngineCanvasProps) {
               }
             }
             // the officer stands on the NEAR side of their desk, so the desk
-            // never hides them — the same relation the top-down interior had
-            const slug = slugs[i]
+            // never hides them — the same relation the top-down interior had.
+            // The OFFSET lives in roomFixtures, so the box the pick tests and
+            // the pixels drawn here can never be 7px apart.
+            const slug = fx.slug
             const sheet = characterSheetFor(slug)
             const cut = charFrame('work', 'down', p.tick, fnv1a(slug) % 6)
             const ctex = texFor(sheet, { x: cut.x, y: cut.y, w: CHAR_FRAME_W, h: CHAR_FRAME_H })
@@ -1908,8 +1940,8 @@ export default function EngineCanvas(props: EngineCanvasProps) {
             if (o instanceof PIXI.Sprite) {
               o.texture = ctex
               o.anchor.set(0.5, 1)
-              o.position.set(slot.x, slot.y + 7)
-              o.zIndex = slot.y + 7
+              o.position.set(fx.officer.x + fx.officer.w / 2, fx.officer.y + fx.officer.h)
+              o.zIndex = fx.officer.y + fx.officer.h
               o.alpha = p.officers[slug]?.present ? 1 : 0.4
             }
           })
@@ -2312,6 +2344,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
             chartTable: p.chartTable ?? false,
             cutawayOpenId: p.cutaway.openId,
             scene: isoScene,
+            roomOfficers: roomOfficerBoxes,
           },
           { x: ev.clientX - rect.left, y: ev.clientY - rect.top }
         )
