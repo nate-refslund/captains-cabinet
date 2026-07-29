@@ -27,9 +27,11 @@ import type {
 } from '@/lib/world/types'
 import type { GrammarCodex, Morphology, ShowGrammar } from '@/lib/world/grammar'
 import {
+  DEFAULT_PROJECTION,
   projectionFor,
   screenDeltaToTiles,
   worldToScreen,
+  worldUrlSearch,
   type ProjectionKind,
 } from '@/lib/world/projection'
 import { cameraClamp, cameraHome } from '@/lib/world/iso-scene'
@@ -151,7 +153,9 @@ function parseUrlState(
 
 export default function EngineClient({
   canActuate = false,
-  projection = 'topdown',
+  // NOT a literal: a second copy of the default kernel is a second thing to
+  // remember on flip day, and the one that gets forgotten.
+  projection = DEFAULT_PROJECTION,
 }: {
   canActuate?: boolean
   /** Which world→screen kernel to render with — read server-side from ?iso. */
@@ -207,17 +211,12 @@ export default function EngineClient({
     setAt(s.at)
   }, [projection])
   useEffect(() => {
-    const p = new URLSearchParams()
-    p.set('z', camera.z.toFixed(2))
-    p.set('x', camera.x.toFixed(1))
-    p.set('y', camera.y.toFixed(1))
-    if (sel) p.set('sel', sel)
-    if (at) p.set('at', at)
-    // The kernel flag SURVIVES the rewrite. Without this the first pan drops
-    // ?iso from the address bar, so the page the Captain reloads or shares is
-    // the other renderer — a bake-off that silently swaps its own subject.
-    if (projection === 'iso') p.set('iso', '1')
-    window.history.replaceState(null, '', `${window.location.pathname}?${p.toString()}`)
+    // The kernel flag SURVIVES the rewrite, in BOTH directions — see
+    // `worldUrlSearch`, which owns the reason. Without this the first pan drops
+    // the flag from the address bar and the page the Captain reloads or shares
+    // is whichever renderer happens to be the default that week.
+    const qs = worldUrlSearch({ camera, sel, at, projection })
+    window.history.replaceState(null, '', `${window.location.pathname}?${qs}`)
   }, [camera, sel, at, projection])
 
   // The manifest, for its `license` column only — the canvas resolves its own

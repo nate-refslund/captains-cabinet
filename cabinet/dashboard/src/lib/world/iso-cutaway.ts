@@ -431,3 +431,50 @@ export function interiorSlots(
   kept.sort((a, b) => a.y - b.y || a.x - b.x)
   return kept
 }
+
+// ── the room's own child pool ───────────────────────────────────────────────
+
+/**
+ * The label the roof-off FLOOR sprite carries.
+ *
+ * It exists because the room container is a POOL: the draw pass re-uses the
+ * same children across ticks and switches off the ones it no longer placed.
+ * A pool needs to know which children it owns, and the floor is one of them.
+ */
+export const ROOM_FLOOR = 'floor'
+
+/** The label prefixes the cutaway pass places and therefore owns. */
+export const ROOM_MANAGED_PREFIXES: readonly string[] = ['desk:', 'off:']
+
+/**
+ * Is this room child STALE — placed by an earlier pass and not by this one?
+ *
+ * THE DEFECT THIS FUNCTION EXISTS FOR, measured in a browser on master
+ * 2026-07-29: the roof-off room drew NOTHING. The sweep was written inline as
+ * `const n = c.label; if (n && !want.has(n)) c.visible = false`, on the
+ * assumption that a child nobody named has a falsy label. PixiJS 8.19 does not
+ * work that way — `Sprite`'s constructor passes `label: "Sprite"` to
+ * `Container` (node_modules/pixi.js/lib/scene/sprite/Sprite.mjs:18), so the
+ * unnamed floor sprite arrived carrying a truthy label that was never in
+ * `want`, and the tick after it was added the sweep hid it. The building faded
+ * out on cue and the room behind it was never visible: officers and desks
+ * standing on open grass inside the shadow of a house that had vanished.
+ *
+ * So the rule is inverted, and this is the invariant rather than a patch: a
+ * sweep may only switch off a child it PLACED. Ownership is the label
+ * namespace — the floor, and the `desk:`/`off:` slots that vary with how many
+ * officers there are. Anything else is art some other code put in this
+ * container, and hiding art you did not place is exactly the bug above.
+ *
+ * PURE: no PixiJS types, no DOM. It takes the label, so the test can hand it
+ * the string a REAL `new PIXI.Sprite()` reports rather than one we imagine.
+ */
+export function roomChildStale(
+  label: string | null | undefined,
+  want: ReadonlySet<string>
+): boolean {
+  if (!label) return false
+  if (want.has(label)) return false
+  if (label === ROOM_FLOOR) return false
+  return ROOM_MANAGED_PREFIXES.some((p) => label.startsWith(p))
+}

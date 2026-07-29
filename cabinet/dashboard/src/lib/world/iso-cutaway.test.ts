@@ -17,6 +17,8 @@ import {
   isoCutawayCandidate,
   openFrameOf,
   openTwinRefusal,
+  ROOM_FLOOR,
+  roomChildStale,
   type CutawaySprite,
 } from './iso-cutaway'
 import { CUTAWAY_FADE_MS, ROOF_ALPHA_OPEN, TICK_MS, initialCutaway, roofAlpha } from './lod'
@@ -369,5 +371,65 @@ describe('interiorSlots — the room is a DIAMOND, and the fixtures sit on its l
       const sorted = [...r].sort((a, b) => a - b)
       expect(sorted[1] - sorted[0]).toBeCloseTo(STEP, 9)
     }
+  })
+})
+
+describe('roomChildStale — a pool may only switch off what it PLACED', () => {
+  /**
+   * THE ARM THAT WOULD HAVE CAUGHT THE ROOM GOING INVISIBLE.
+   *
+   * Watched fail against the pre-change rule (`!!label && !want.has(label)`),
+   * which answers `true` here and is what hid the floor. It reads the label off
+   * a REAL PixiJS Sprite rather than the string this repo assumed one carries —
+   * the whole defect was an assumption about somebody else's constructor, so a
+   * fixture repeating the assumption would re-encode the bug as a test.
+   */
+  it('never hides a child it did not place — whatever PixiJS names it', async () => {
+    const PIXI = await import('pixi.js')
+    const untouched = new PIXI.Sprite().label
+    // the premise, stated out loud: PixiJS does NOT leave it empty
+    expect(untouched).toBeTruthy()
+    expect(roomChildStale(untouched, new Set(['desk:0', 'off:cto']))).toBe(false)
+    // and the pre-change rule, shown failing on the same input
+    const preChange = (l: string | null, w: ReadonlySet<string>) => Boolean(l) && !w.has(l ?? '')
+    expect(preChange(untouched, new Set(['desk:0', 'off:cto']))).toBe(true)
+  })
+
+  it('never hides the floor, even when the caller forgets to want it', () => {
+    expect(roomChildStale(ROOM_FLOOR, new Set())).toBe(false)
+  })
+
+  it('still does its job: a slot this pass did not place is stale', () => {
+    // five officers became three — desks 3 and 4 must stop being drawn, which
+    // is the ONLY reason this sweep exists
+    const want = new Set(['desk:0', 'desk:1', 'desk:2', 'off:coo', 'off:cos', 'off:cpo'])
+    expect(roomChildStale('desk:3', want)).toBe(true)
+    expect(roomChildStale('off:cro', want)).toBe(true)
+    expect(roomChildStale('desk:1', want)).toBe(false)
+    expect(roomChildStale('off:cos', want)).toBe(false)
+  })
+
+  it('an unlabelled child is not ours either', () => {
+    expect(roomChildStale('', new Set())).toBe(false)
+    expect(roomChildStale(null, new Set())).toBe(false)
+    expect(roomChildStale(undefined, new Set())).toBe(false)
+  })
+
+  /**
+   * The renderer must actually seed `want` with the floor and route every
+   * hide through this predicate. A pure function nobody calls is the class-11
+   * defect this repo keeps paying for, so the wiring is pinned by grep — the
+   * same device ratchets.test.ts uses for the contracts the canvas must honour.
+   */
+  it('the canvas labels its floor and sweeps through this predicate', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src', 'components', 'world', 'engine-canvas.tsx'),
+      'utf8'
+    )
+    expect(src).toMatch(/floor\.label\s*=\s*ROOM_FLOOR/)
+    expect(src).toMatch(/new Set<string>\(\[ROOM_FLOOR\]\)/)
+    expect(src).toMatch(/roomChildStale\(/)
+    // and nothing left behind that hides a child on truthiness alone
+    expect(src).not.toMatch(/if \(n && !want\.has\(n\)\)/)
   })
 })

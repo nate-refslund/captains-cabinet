@@ -40,6 +40,7 @@ import {
   TOPDOWN_TILE,
   worldScale,
   worldToScreen,
+  worldUrlSearch,
 } from './projection'
 import { ISO_AXIS_SLOPE } from './iso-layout'
 import { TILE } from './layout'
@@ -310,5 +311,85 @@ describe('projection — the ONE world→screen kernel', () => {
     const moved = iso.project(d.tx, d.ty)
     expect(moved.x).toBeCloseTo(vp.w / sc, 6)
     expect(moved.y).toBeCloseTo(0, 6)
+  })
+})
+
+const readFileSync = fs.readFileSync
+const join = path.join
+
+describe('the kernel survives the URL rewrite — IN BOTH DIRECTIONS', () => {
+  /**
+   * The property, stated so it holds on the day the default flips: a URL the
+   * client wrote reproduces the kernel that wrote it, WHATEVER the default
+   * happens to be. `projectionFromParam`'s `fallback` is how a test flips the
+   * default without editing the constant — the argument existed for this and
+   * nothing used it this way until the flip made it matter.
+   *
+   * Watched fail against the pre-change client, which wrote `iso` only for
+   * 'iso': the (projection 'topdown', default 'iso') cell came back 'iso'.
+   */
+  it('round-trips under either default', () => {
+    for (const projection of ['iso', 'topdown'] as const) {
+      const qs = worldUrlSearch({ camera: { z: 1.5, x: 120, y: 32 }, projection })
+      const raw = new URLSearchParams(qs).get('iso')
+      for (const asIfDefault of ['iso', 'topdown'] as const) {
+        expect(projectionFromParam(raw, asIfDefault), `${projection} under ${asIfDefault}`).toBe(
+          projection
+        )
+      }
+    }
+  })
+
+  it('the rule it replaces loses the top-down opt-out once iso is the default', () => {
+    // the shipped line, verbatim: `if (projection === 'iso') p.set('iso', '1')`
+    const preChange = (projection: 'iso' | 'topdown') => {
+      const p = new URLSearchParams()
+      if (projection === 'iso') p.set('iso', '1')
+      return p.get('iso')
+    }
+    expect(projectionFromParam(preChange('topdown'), 'iso')).toBe('iso') // ← the loss
+    expect(projectionFromParam(preChange('topdown'), 'topdown')).toBe('topdown') // ← why it hid
+  })
+
+  it('always names the kernel — absent is never an answer the client gives', () => {
+    for (const projection of ['iso', 'topdown'] as const) {
+      const p = new URLSearchParams(worldUrlSearch({ camera: { z: 1, x: 0, y: 0 }, projection }))
+      expect(p.get('iso')).toBe(projection === 'iso' ? '1' : '0')
+    }
+  })
+
+  it('carries the camera and the selection unchanged', () => {
+    const p = new URLSearchParams(
+      worldUrlSearch({
+        camera: { z: 0.375, x: 12.34, y: -5.67 },
+        sel: 'h799475',
+        at: '2026-07-01',
+        projection: 'iso',
+      })
+    )
+    expect(p.get('z')).toBe('0.38')
+    expect(p.get('x')).toBe('12.3')
+    expect(p.get('y')).toBe('-5.7')
+    expect(p.get('sel')).toBe('h799475')
+    expect(p.get('at')).toBe('2026-07-01')
+  })
+
+  it('omits sel/at when there are none (a clean URL stays clean)', () => {
+    const p = new URLSearchParams(
+      worldUrlSearch({ camera: { z: 1, x: 0, y: 0 }, sel: null, at: null, projection: 'topdown' })
+    )
+    expect(p.has('sel')).toBe(false)
+    expect(p.has('at')).toBe(false)
+  })
+
+  /** And the client must actually use it — a pure builder nobody calls is the
+   * disabled sensor this programme keeps finding in its own tests. */
+  it('the client rewrites through this builder', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src', 'components', 'world', 'engine-client.tsx'),
+      'utf8'
+    )
+    expect(src).toMatch(/worldUrlSearch\(/)
+    expect(src).not.toMatch(/if \(projection === 'iso'\) p\.set\('iso', '1'\)/)
   })
 })
