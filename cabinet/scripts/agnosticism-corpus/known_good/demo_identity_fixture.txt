@@ -1,0 +1,15 @@
+# framework/tests/test_clean_room.py
+"""Clean-room runtime proof.
+
+Drives a throwaway instance naming the SYNTHETIC demo operator `Testburg` in
+the demo lane `bakery` at `testburg.example`, and asserts the identity prompt
+renders that placeholder — the shipped source therefore names no real person,
+organisation or product.
+"""
+
+
+def test_identity_renders_the_configured_operator(tmp_path):
+    inst = tmp_path / "instance" / "config"
+    inst.mkdir(parents=True)
+    (inst / "platform.yml").write_text("captain_name: Testburg\nlane: bakery\n")
+    assert "Testburg" in render_identity(root=tmp_path)

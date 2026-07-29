@@ -4,7 +4,8 @@
  * detailed/decorative/alive than the approved 7.5 mockups — now the
  * harness's positive class).
  *
- * The exact template of the Wardroom interior cozy pass (set-dressing.ts):
+ * The exact template of the Wardroom interior cozy pass (the legacy
+ * set-dressing.ts, deleted 2026-07-29 with the three-scene shell):
  * PURE DATA + seeded pickers, no rendering here. Doctrine:
  *  - Every sheet is a content-addressed manifest row, unioned into
  *    requiredOutdoorSheets('island') → the SAME loud missing→badge chain.

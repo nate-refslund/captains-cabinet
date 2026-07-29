@@ -1,0 +1,66 @@
+# Calibration corpus for cabinet/scripts/agnosticism-advisor.py.
+#
+# GROUND TRUTH, and the reason the advisor can be trusted to have looked. Every
+# run of `--calibrate` re-scores this whole set before any verdict it produces
+# is worth reading. Missing ONE planted violation VOIDs the run; wrongly
+# flagging more than `max_false_positives` of the clean set VOIDs it too. Both
+# directions, deliberately: a judge that approves everything and a judge that
+# flags everything are equally useless, and only checking one direction leaves
+# the other free to rot.
+#
+# EVERY PROPER NOUN BELOW IS SYNTHETIC. `Wexlar Freight`, `quillpost`,
+# `Marta Lindqvist` and the numeric board ids name nothing real — the same
+# discipline framework/tests/test_no_launcher_hardcode.py already uses with
+# `Testburg` / `bakery` / `testburg.example`, so the tracked tree seeds no real
+# operator, product or person token that a publish scan would later have to
+# strip.
+#
+# The clean set is deliberately adversarial in one direction: it contains the
+# third-party infrastructure the framework itself runs on (Redis, PostgreSQL,
+# GitHub Actions) and the SANCTIONED synthetic demo identity. A judge that
+# cannot tell "the framework runs on Redis" from "the framework knows about one
+# company's freight invoices" would flag ordinary work every day and be turned
+# off within a week, which is the real failure mode of an advisory lane.
+
+version: 1
+
+# 100% of planted violations must be caught. Any miss VOIDs the run.
+min_true_positive_rate: 1.0
+# At most one clean fixture may be wrongly flagged. More VOIDs the run.
+max_false_positives: 1
+
+known_bad:
+  - file: known_bad/org_domain.txt
+    plant: a specific organisation's mail domain as a framework default
+  - file: known_bad/product_slug.txt
+    plant: a specific product name as the framework's lane default
+  - file: known_bad/named_person.txt
+    plant: a named individual as an approval route
+  - file: known_bad/industry_rule.txt
+    plant: one industry's document type special-cased in generic scoring
+  - file: known_bad/vendor_sdk.txt
+    plant: a specific vendor SDK imported by framework core
+  - file: known_bad/role_titles.txt
+    plant: one organisation's job titles as a framework enum
+  - file: known_bad/tracker_ids.txt
+    plant: external tracker board ids as framework constants
+  - file: known_bad/jurisdiction_rule.txt
+    plant: one jurisdiction's regulatory field set hardcoded in a validator
+
+known_good:
+  - file: known_good/backoff.txt
+    note: generic algorithm, no proper nouns at all
+  - file: known_good/redis_state.txt
+    note: infrastructure the framework itself runs on
+  - file: known_good/postgres_dsn.txt
+    note: infrastructure the framework itself runs on
+  - file: known_good/captain_resolver.txt
+    note: the sanctioned resolver seam instead of an identity literal
+  - file: known_good/ci_helper.txt
+    note: the framework's own CI substrate, not a customer's tool
+  - file: known_good/priority_enum.txt
+    note: generic taxonomy
+  - file: known_good/demo_identity_fixture.txt
+    note: the sanctioned SYNTHETIC demo identity, which must not be flagged
+  - file: known_good/doctrine_prose.txt
+    note: abstract doctrine prose with no specific entity

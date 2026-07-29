@@ -33,6 +33,27 @@ import fs from 'fs'
 import path from 'path'
 
 const DASH = path.resolve(__dirname, '..', '..', '..')
+
+const WORLD_COMPONENTS = path.join(DASH, 'src', 'components', 'world')
+
+/**
+ * The pixi renderers and world shells, DERIVED from the tree rather than typed.
+ *
+ * A filename ratchet is only as good as its list. Until 2026-07-29 these were
+ * literals naming three renderers and two shells; the legacy three-scene shell
+ * was deleted that day, and a hardcoded list would have gone on "passing" over
+ * two files that no longer exist — the vacuous-green class this repo keeps
+ * paying for. Deriving them means adding a renderer opts it IN automatically,
+ * and the floor assertions below mean deleting them all cannot report green.
+ */
+const WORLD_FILES = fs
+  .readdirSync(WORLD_COMPONENTS)
+  .filter((f) => /\.tsx$/.test(f))
+  .sort()
+const PIXI_RENDERERS = WORLD_FILES.filter((f) =>
+  fs.readFileSync(path.join(WORLD_COMPONENTS, f), 'utf8').includes("from 'pixi.js'")
+)
+const WORLD_SHELLS = WORLD_FILES.filter((f) => /-client\.tsx$/.test(f))
 const WORLD_TREES = [
   path.join(DASH, 'src', 'lib', 'world'),
   path.join(DASH, 'src', 'components', 'world'),
@@ -132,12 +153,16 @@ describe('world CI ratchets', () => {
   })
 
   it('6. URL layer writes opaque sel handles, never slug params', () => {
-    const client = read(
-      path.join(DASH, 'src', 'components', 'world', 'world-client.tsx')
-    )
-    // The only sel writes must come from the server-issued handle field.
-    expect(client).not.toMatch(/set\(['"]slug['"]/)
-    expect(client).not.toMatch(/[?&]slug=/)
+    // Every shell, not one named one: this read `world-client.tsx` until
+    // 2026-07-29, and that file is now deleted — a ratchet pointed at a deleted
+    // file does not fail, it throws or (worse, if guarded) passes over nothing.
+    expect(WORLD_SHELLS.length).toBeGreaterThan(0)
+    for (const name of WORLD_SHELLS) {
+      const client = read(path.join(WORLD_COMPONENTS, name))
+      // The only sel writes must come from the server-issued handle field.
+      expect(client, name).not.toMatch(/set\(['"]slug['"]/)
+      expect(client, name).not.toMatch(/[?&]slug=/)
+    }
     // And the stream route must issue hashed handles.
     const route = read(
       path.join(DASH, 'src', 'app', 'api', 'world', 'stream', 'route.ts')
@@ -177,7 +202,13 @@ describe('world CI ratchets', () => {
     // The renderer side: the patch import + workers disabled must be
     // present in EVERY pixi renderer, or the canvas boots black under the
     // pinned header (2026-07-08 incident; engine-canvas pinned per v1a).
-    for (const name of ['world-canvas.tsx', 'outdoor-canvas.tsx', 'engine-canvas.tsx']) {
+    // The list was ['world-canvas.tsx','outdoor-canvas.tsx','engine-canvas.tsx']
+    // until 2026-07-29, when the legacy three-scene shell was deleted; a
+    // filename ratchet left pointing at a deleted file passes VACUOUSLY, which
+    // is why the array is edited in the same commit as the deletion. There is
+    // exactly one pixi renderer in the tree now, and PIXI_RENDERERS below is
+    // asserted to be that whole set rather than a hand-kept list.
+    for (const name of PIXI_RENDERERS) {
       const canvas = read(path.join(DASH, 'src', 'components', 'world', name))
       expect(canvas, name).toMatch(/import\(\s*['"]pixi\.js\/unsafe-eval['"]\s*\)/)
       expect(canvas, name).toMatch(/preferWorkers:\s*false/)
@@ -190,7 +221,7 @@ describe('world CI ratchets', () => {
     // the T1 continuous-world engine (v1a review fix: engine-canvas was
     // compliant but unpinned — the 2026-07-08 silent-black regression
     // class could have returned in the new renderer unnoticed).
-    for (const name of ['world-canvas.tsx', 'outdoor-canvas.tsx', 'engine-canvas.tsx']) {
+    for (const name of PIXI_RENDERERS) {
       const canvas = read(path.join(DASH, 'src', 'components', 'world', name))
       // Boot rejection + manifest/texture gaps must be loud…
       expect(canvas, name).toMatch(/console\.error\(/)
@@ -200,9 +231,10 @@ describe('world CI ratchets', () => {
       expect(canvas, name).toMatch(/import\(\s*['"]pixi\.js\/unsafe-eval['"]\s*\)/)
       expect(canvas, name).toMatch(/preferWorkers:\s*false/)
     }
-    // …and the shells must render them as a visible DOM badge (both the
-    // three-scene shell and the T1 engine shell).
-    for (const name of ['world-client.tsx', 'engine-client.tsx']) {
+    // …and the shell must render them as a visible DOM badge. Two shells until
+    // 2026-07-29; the legacy one is deleted and WORLD_SHELLS is derived, not
+    // typed, so this cannot silently shrink to zero.
+    for (const name of WORLD_SHELLS) {
       const client = read(path.join(DASH, 'src', 'components', 'world', name))
       expect(client, name).toMatch(/data-world-issues/)
       expect(client, name).toMatch(/onIssues=/)
@@ -219,10 +251,9 @@ describe('world CI ratchets', () => {
     // may declare a tile constant of its own, and none may import the legacy
     // wardroom TILE.
     //
-    // The LEGACY three-scene shell (world-canvas/world-client/outdoor-canvas)
-    // is out of scope ON PURPOSE — it is scheduled for deletion with ?legacy=1
-    // and still speaks the wardroom layout's tile. Listing it here would force
-    // a change to code that is going away.
+    // The LEGACY three-scene shell used to be out of scope here because it
+    // still spoke the wardroom layout's tile; it was deleted 2026-07-29, so
+    // there is no longer an exempt renderer in the tree.
     const ENGINE_PATH = [
       path.join(DASH, 'src', 'components', 'world', 'engine-canvas.tsx'),
       path.join(DASH, 'src', 'components', 'world', 'engine-client.tsx'),
@@ -244,5 +275,38 @@ describe('world CI ratchets', () => {
     const proj = read(path.join(DASH, 'src', 'lib', 'world', 'projection.ts'))
     expect(proj).toMatch(/export const TOPDOWN_TILE/)
     expect(proj).toMatch(/export const ISO_TILE/)
+  })
+})
+
+describe('the ratchet lists themselves', () => {
+  /**
+   * A DERIVED list can still go empty, and an empty for-loop passes every
+   * assertion inside it. These two arms are the floor under ratchets 8, 9 and
+   * 10: they fail if the world ever has no pixi renderer or no shell to gate,
+   * which is exactly the state a careless deletion would leave behind.
+   */
+  it('there is at least one pixi renderer, and it is the engine canvas', () => {
+    expect(PIXI_RENDERERS.length).toBeGreaterThan(0)
+    expect(PIXI_RENDERERS).toContain('engine-canvas.tsx')
+  })
+
+  it('there is at least one world shell, and it is the engine client', () => {
+    expect(WORLD_SHELLS.length).toBeGreaterThan(0)
+    expect(WORLD_SHELLS).toContain('engine-client.tsx')
+  })
+
+  /**
+   * And the legacy shell is GONE, asserted by absence rather than assumed.
+   * `?legacy=1` was a live URL until 2026-07-29; a stray re-add would restore a
+   * third renderer nobody is maintaining, on a code path with no bake-off left
+   * to justify it.
+   */
+  it('the legacy three-scene shell does not come back', () => {
+    for (const gone of ['world-client.tsx', 'world-canvas.tsx', 'outdoor-canvas.tsx']) {
+      expect(fs.existsSync(path.join(WORLD_COMPONENTS, gone)), gone).toBe(false)
+    }
+    const page = read(path.join(DASH, 'src', 'app', '(authenticated)', 'world', 'page.tsx'))
+    expect(page).not.toMatch(/params\.legacy/)
+    expect(page).not.toMatch(/WorldClient/)
   })
 })

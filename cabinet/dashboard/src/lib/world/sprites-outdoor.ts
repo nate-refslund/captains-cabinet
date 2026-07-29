@@ -40,53 +40,12 @@ export const ENGINE_CHARACTER_SHEETS = Array.from(
 // ── street kit (whole-file singles; dims pinned from the manifest gate) ────
 const STREET = (n: string) => `exteriors/street/${n}`
 
-export const ASPHALT_SHEETS = [
-  STREET('ME_Singles_City_Terrains_16x16_Asphalt_1_Variation_1'),
-  STREET('ME_Singles_City_Terrains_16x16_Asphalt_1_Variation_4'),
-  STREET('ME_Singles_City_Terrains_16x16_Asphalt_1_Variation_7'),
-  STREET('ME_Singles_City_Terrains_16x16_Asphalt_1_Variation_12'),
-]
-export const SIDEWALK_SHEETS = [
-  STREET('ME_Singles_City_Terrains_16x16_Sidewalk_1_1'),
-  STREET('ME_Singles_City_Terrains_16x16_Sidewalk_1_2'),
-]
 export const STREET_PROPS = {
-  lamp1: STREET('ME_Singles_City_Props_16x16_Street_Lamp_1'),
-  lamp2: STREET('ME_Singles_City_Props_16x16_Street_Lamp_2'),
   bench: STREET('ME_Singles_City_Props_16x16_Bench_1'),
-  hydrant: STREET('ME_Singles_City_Props_16x16_Hydrant_1'),
-  trash: STREET('ME_Singles_City_Props_16x16_Black_Closed_Trash_Can'),
-  tree1: STREET('ME_Singles_City_Props_16x16_Tree_1'),
-  tree2: STREET('ME_Singles_City_Props_16x16_Tree_2'),
-  carLeft: STREET('ME_Singles_Vehicles_16x16_Car_Left_1'),
-  carRight: STREET('ME_Singles_Vehicles_16x16_Car_Right_1'),
   boat: STREET('ME_Singles_Vehicles_16x16_Boat_1_Down_1'),
-  airDuct: STREET('ME_Singles_Office_16x16_Air_Duct_1_Roof_Prop'),
-  sign: STREET('ME_Singles_Office_16x16_Building_Sign_1'),
   mailbox: 'exteriors/22_Post_Office_16x16_Big_Blue_Mailbox',
 } as const
 
-/** HQ modular building — one Middle_Floor per commits tier (§3.1). */
-export const HQ_GROUND = STREET('ME_Singles_Floor_Modular_Building_16x16_Ground_Floor_Shop_1')
-export const HQ_MIDDLE_FLOORS = [
-  STREET('ME_Singles_Floor_Modular_Building_16x16_Middle_Floor_1'),
-  STREET('ME_Singles_Floor_Modular_Building_16x16_Middle_Floor_5'),
-  STREET('ME_Singles_Floor_Modular_Building_16x16_Middle_Floor_9'),
-]
-export const HQ_ROOF = STREET('ME_Singles_Floor_Modular_Building_16x16_Roof_1')
-export const NEIGHBOR_GROUND = [
-  STREET('ME_Singles_Floor_Modular_Building_16x16_Ground_Floor_Condo_1'),
-  STREET('ME_Singles_Floor_Modular_Building_16x16_Ground_Floor_Bakery_1'),
-]
-export const NEIGHBOR_ROOF = [
-  STREET('ME_Singles_Floor_Modular_Building_16x16_Roof_2'),
-  STREET('ME_Singles_Floor_Modular_Building_16x16_Roof_5'),
-]
-/** Modular prefab geometry (px): all pieces are 112 wide = 7 tiles. */
-export const MODULAR_W = 112
-export const GROUND_H = 48
-export const MIDDLE_H = 64
-export const ROOF_H = 96
 
 // ── village sheet cuts (Serene_Village_16x16, 304x720) ─────────────────────
 export const VILLAGE_SHEET = 'village/Serene_Village_16x16'
@@ -306,7 +265,17 @@ export function moteColor(h: number): number {
   return (r << 16) | (g << 8) | b
 }
 
-export type OutdoorScene = 'street' | 'island'
+/**
+ * The scenes a caller may bind a sheet universe for.
+ *
+ * It was `'street' | 'island'`. The street scene belonged to the legacy
+ * three-scene shell (`outdoor-canvas.tsx`, deleted 2026-07-29 with the rest of
+ * that shell), and the engine has only ever bound `'island'`. Leaving the arm
+ * behind would have kept ~28 licensed street sheets in a required set no
+ * renderer can select — a loud-failure universe for a scene that cannot be
+ * drawn, which is the same defect as a check with no subject.
+ */
+export type OutdoorScene = 'island'
 
 // ── pure scene dynamics (shared by renderer + tests; NO clocks here) ──────
 
@@ -336,19 +305,7 @@ export function motePatrolX(
 }
 
 /** Every sheet a scene may draw (loud-failure universe per scene). */
-export function requiredOutdoorSheets(scene: OutdoorScene): string[] {
-  if (scene === 'street') {
-    return [
-      ...ASPHALT_SHEETS,
-      ...SIDEWALK_SHEETS,
-      ...Object.values(STREET_PROPS),
-      HQ_GROUND,
-      ...HQ_MIDDLE_FLOORS,
-      HQ_ROOF,
-      ...NEIGHBOR_GROUND,
-      ...NEIGHBOR_ROOF,
-    ]
-  }
+export function requiredOutdoorSheets(_scene: OutdoorScene = 'island'): string[] {
   return [
     VILLAGE_SHEET,
     FARM_SHEET,

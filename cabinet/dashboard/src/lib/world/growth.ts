@@ -67,7 +67,18 @@ export function surfaceGrowth(
   return { tier: tPrev, pendingTier: tLatest, value: sLatest }
 }
 
-/** Street set-dressing unlock band by org age (street_liveliness, TEXTURE). */
+/**
+ * Street set-dressing unlock band by org age (street_liveliness, TEXTURE).
+ *
+ * UNCONSUMED SINCE 2026-07-29, said out loud rather than left to be discovered.
+ * Its only reader was `street-layout.ts` in the legacy three-scene shell, which
+ * was deleted that day. The field STAYS because `street_liveliness` is a
+ * ratified row in cabinet/world/morphology.yml — that grammar is LAW and
+ * changes by grammar PR, not by a renderer deletion — and because the band is
+ * computed honestly from census dates either way. Nothing on the live path
+ * reads `streetBand` today; a future surface that wants an org-age texture
+ * should bind THIS rather than derive a second one.
+ */
 export type StreetAgeBand = 'bare' | 'benches' | 'planters'
 
 /** Age in whole days between two census date strings (server data, not a clock). */

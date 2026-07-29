@@ -1,0 +1,16 @@
+# framework/authority/posture.py
+"""Posture ladder.
+
+A posture level fixes the mutation mode uniformly across every capability:
+propose-only, act-then-tell, or go. Raising a level is an explicit act by the
+authority root; nothing in this module may raise its own level, because a
+control that can widen itself is not a control.
+"""
+
+
+def mutation_mode(level: int) -> str:
+    if level <= 0:
+        return "propose"
+    if level == 1:
+        return "act-then-tell"
+    return "go"

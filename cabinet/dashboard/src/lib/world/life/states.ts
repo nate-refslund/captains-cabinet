@@ -12,8 +12,20 @@
  * invented work) = asleep. Presence-TTL honesty is what makes the sleeping
  * officer in the night cutaway TRUE.
  */
-import { DAY_END_HOUR, DAY_START_HOUR } from '../director'
 import type { OfficerPresence } from '../types'
+
+/**
+ * The captain-local DAY WINDOW (§1.2).
+ *
+ * It lived in `director.ts`, the wardroom scene director, which was the T1
+ * three-scene shell's mover and was deleted with that shell on 2026-07-29. LIFE
+ * was its only surviving reader, so the constants move HERE rather than leaving
+ * a 600-line module alive to export two numbers. Same values, same law: outside
+ * this window an officer whose verb TTL has expired is asleep, and NO clock
+ * fail-closes to rest rather than to invented work.
+ */
+export const DAY_START_HOUR = 8
+export const DAY_END_HOUR = 20
 
 export type OfficerLifeState =
   | 'working' // live verb at a work station

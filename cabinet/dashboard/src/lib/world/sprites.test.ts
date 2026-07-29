@@ -1,20 +1,28 @@
 /**
- * Sprite resolution tests — the SILENT-BLACK failure class (2026-07-08).
+ * The shared sprite vocabulary — per-slug picks, frame math, and the CAST.
  *
- * The incident: a renderer failure produced an empty canvas with zero
- * signal. These tests pin the two structural defenses in lib form:
- *  1. every sheet the renderer needs resolves against the REAL committed
- *     manifest (a regression here = a texture silently gone), and
- *  2. when a sheet is absent or dimension-invalid, the resolver reports it
- *     LOUDLY in `missing` (the renderer badges + console.errors from that)
- *     instead of quietly returning less work to do.
+ * THE THREE ARMS THAT LEFT THIS FILE (2026-07-29), named so their absence is a
+ * decision rather than a gap. This file used to open with the SILENT-BLACK
+ * defence (2026-07-08 incident: a renderer failure produced an empty canvas
+ * with zero signal) in three arms over `resolveWorldSprites` — the WARDROOM
+ * resolver, whose only caller was `world-canvas.tsx` in the legacy three-scene
+ * shell. The shell was deleted in the same commit, and with it the resolver.
+ *
+ * THE LAW DID NOT LEAVE WITH THEM. It is enforced on the live path by
+ * `resolveOutdoorSprites`, and pinned in `outdoor.test.ts`: every island sheet
+ * resolves against the REAL committed manifest, absent rows are reported LOUDLY
+ * in `missing` rather than quietly dropped, urls come only from manifest rows,
+ * and a sheet whose real dimensions cannot contain the cuts taken from it is
+ * treated as missing. That last arm was MOVED there rather than deleted, so the
+ * count of sensors over the silent-black class is unchanged.
+ *
+ * What stays here is what still has a subject: the pure sprite vocabulary the
+ * engine draws with, and the cast the world actually binds.
  */
 import { describe, expect, it } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import {
-  ASSET_BASE,
-  BUNK_SHEET,
   CHAR_FRAME_H,
   CHAR_FRAME_W,
   CHAR_SHEET_MIN_H,
@@ -25,12 +33,9 @@ import {
   characterSheetFor,
   DESK_SHEETS,
   deskSheetFor,
-  requiredSheets,
-  resolveWorldSprites,
-  ROOM_SHEET,
-  STATION_SPRITES,
   type WorldAssetManifest,
 } from './sprites'
+import { requiredOutdoorSheets, resolveOutdoorSprites } from './sprites-outdoor'
 
 const MANIFEST_PATH = path.resolve(
   __dirname,
@@ -46,38 +51,7 @@ function realManifest(): WorldAssetManifest {
   return JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf8')) as WorldAssetManifest
 }
 
-describe('world sprite resolution', () => {
-  it('every required sheet resolves against the committed manifest', () => {
-    const { urls, missing } = resolveWorldSprites(realManifest())
-    expect(missing).toEqual([])
-    for (const id of requiredSheets()) {
-      expect(urls[id], id).toBeDefined()
-      expect(urls[id], id).toMatch(new RegExp(`^${ASSET_BASE}`))
-    }
-  })
-
-  it('absent sheets are reported loudly, never silently dropped', () => {
-    const { urls, missing } = resolveWorldSprites({ version: 2, assets: [] })
-    expect(Object.keys(urls)).toEqual([])
-    // Every single required sheet must be named in missing.
-    expect([...missing].sort()).toEqual([...requiredSheets()].sort())
-  })
-
-  it('dimension-invalid sheets are treated as missing (cuts must fit)', () => {
-    const m = realManifest()
-    const shrunk: WorldAssetManifest = {
-      version: m.version,
-      assets: m.assets.map((r) =>
-        r.id === characterSheetFor('cos') || r.id === ROOM_SHEET
-          ? { ...r, w: 64, h: 32 } // too small for strips / floor+wall cuts
-          : r
-      ),
-    }
-    const { missing } = resolveWorldSprites(shrunk)
-    expect(missing).toContain(ROOM_SHEET)
-    expect(missing).toContain(characterSheetFor('cos'))
-  })
-
+describe('the shared sprite vocabulary', () => {
   it('per-slug picks are deterministic and inside the known sets', () => {
     for (const slug of ['cos', 'bakery-ceo', 'newsletter-ceo', 'comms-officer']) {
       expect(deskSheetFor(slug)).toBe(deskSheetFor(slug))
@@ -109,19 +83,6 @@ describe('world sprite resolution', () => {
     }
   })
 
-  it('station fixture map covers every fixed civic station in the layout', () => {
-    // Fixed stations from layout.ts — desks/bunks are per-slug and covered
-    // by DESK_SHEETS/BUNK_SHEET instead. v2 adds the cozy-pass stations
-    // (table/kettle/bookshelf/windows/noticeboard — clockwall is DOM-only,
-    // deliberately NOT a station sprite: numbers are text, text is DOM).
-    for (const id of [
-      'board', 'postbox', 'door', 'dojo', 'floor', 'lever',
-      'table', 'kettle', 'bookshelf', 'window:1', 'window:2', 'noticeboard',
-    ]) {
-      expect(STATION_SPRITES[id], id).toBeDefined()
-    }
-    expect(BUNK_SHEET).toMatch(/^office\/singles\//)
-  })
   /**
    * The owned cast must be complete, correctly shaped, and BOUND — the
    * licensed LimeZu sheets are gitignored do-not-redistribute binaries, so
@@ -137,7 +98,7 @@ describe('world sprite resolution', () => {
       const id = `originals/characters/Premade_Character_${String(i).padStart(2, '0')}`
       const row = owned.find((r) => r.id === id)
       expect(row, id).toBeDefined()
-      // the same dimension rule resolveWorldSprites applies to the licensed set
+      // the same dimension rule the resolver applies to the licensed set
       expect(row!.w, id).toBeGreaterThanOrEqual(CHAR_SHEET_MIN_W)
       expect(row!.h, id).toBeGreaterThanOrEqual(CHAR_SHEET_MIN_H)
       expect(row!.grid, id).toBe(16)
@@ -158,8 +119,10 @@ describe('world sprite resolution', () => {
     expect(CHARACTER_DIR).toBe('originals/characters')
 
     const manifest = realManifest()
-    const { urls, missing } = resolveWorldSprites(manifest)
-    const bound = requiredSheets().filter((id) => id.startsWith(`${CHARACTER_DIR}/`))
+    const { urls, missing } = resolveOutdoorSprites(manifest, 'island')
+    const bound = requiredOutdoorSheets('island').filter((id) =>
+      id.startsWith(`${CHARACTER_DIR}/`)
+    )
     expect(bound).toHaveLength(CHARACTER_COUNT)
 
     const byId = new Map(manifest.assets.map((r) => [r.id, r]))
@@ -171,7 +134,7 @@ describe('world sprite resolution', () => {
       expect(byId.get(id)?.license, id).toBe('owned — org-original')
     }
     // and no licensed LimeZu character sheet is bound anywhere
-    for (const id of requiredSheets()) {
+    for (const id of requiredOutdoorSheets('island')) {
       expect(id.startsWith('characters/'), id).toBe(false)
     }
   })

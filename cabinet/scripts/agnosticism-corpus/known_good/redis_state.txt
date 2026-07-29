@@ -1,0 +1,12 @@
+# framework/state/store.py
+"""Durable key-state over Redis."""
+
+import redis
+
+
+def client(host: str, port: int = 6379) -> "redis.Redis":
+    return redis.Redis(host=host, port=port, decode_responses=True)
+
+
+def watermark(conn, lane: str) -> str | None:
+    return conn.get(f"cabinet:watermark:{lane}")

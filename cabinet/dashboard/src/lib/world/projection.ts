@@ -140,6 +140,53 @@ export function projectionFromParam(
   return fallback
 }
 
+/**
+ * The `?iso` value that names a kernel EXPLICITLY, in both directions.
+ *
+ * '1' for iso, '0' for top-down — never absent. See `worldUrlSearch`.
+ */
+export function isoParamFor(projection: ProjectionKind): '0' | '1' {
+  return projection === 'iso' ? '1' : '0'
+}
+
+/** The camera + selection state the /world URL carries. */
+export interface WorldUrlState {
+  camera: { z: number; x: number; y: number }
+  sel?: string | null
+  at?: string | null
+  projection: ProjectionKind
+}
+
+/**
+ * THE /world QUERY STRING — one definition, because the client rewrites the
+ * address bar on every camera change and that rewrite IS the link people share.
+ *
+ * WHY THE KERNEL FLAG IS ALWAYS WRITTEN, in both directions. It used to be
+ * written only when the projection was 'iso', which was correct exactly while
+ * 'topdown' was the default: the non-default answer was the one that needed
+ * saying. The moment DEFAULT_PROJECTION flips, that same line silently deletes
+ * the ESCAPE HATCH — measured in a browser 2026-07-29 with the flip simulated
+ * locally: /world?iso=0 rendered top-down, the first rewrite dropped `iso`, and
+ * reloading the resulting URL came back as iso=1. The opt-out survived exactly
+ * one page view, and the recovered page carried the OTHER kernel's camera
+ * coordinates, so the island sat in a corner of an empty sea.
+ *
+ * Writing it unconditionally also makes a shared link kernel-stable in the
+ * other direction: ?z/?x/?y mean different places in the two kernels (they
+ * frame different worlds — see `cameraHome`), so a link that does not name its
+ * kernel is a link to a camera position that never existed.
+ */
+export function worldUrlSearch(state: WorldUrlState): string {
+  const p = new URLSearchParams()
+  p.set('z', state.camera.z.toFixed(2))
+  p.set('x', state.camera.x.toFixed(1))
+  p.set('y', state.camera.y.toFixed(1))
+  if (state.sel) p.set('sel', state.sel)
+  if (state.at) p.set('at', state.at)
+  p.set('iso', isoParamFor(state.projection))
+  return p.toString()
+}
+
 /** A world-tile point (fractional tiles allowed — LIFE emits floats). */
 export interface TilePoint {
   tx: number

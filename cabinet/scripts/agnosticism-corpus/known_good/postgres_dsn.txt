@@ -1,0 +1,9 @@
+# framework/outbox/db.py
+"""Outbox persistence over PostgreSQL."""
+
+import os
+
+
+def dsn() -> str:
+    """Keyword conninfo, never a URI — later keys must be able to override."""
+    return os.environ.get("CABINET_PG_DSN", "host=localhost port=5432 user=postgres")

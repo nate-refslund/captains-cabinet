@@ -1,0 +1,10 @@
+# framework/fidelity/validate.py
+"""Payload validation."""
+
+REQUIRED_FIELDS = ("sponsor_vat_number", "sponsor_registration_number")
+
+
+def validate(payload: dict) -> list[str]:
+    """Every political advertisement filed under the EU transparency regime
+    must carry the sponsor's VAT and registration numbers."""
+    return [f for f in REQUIRED_FIELDS if not payload.get(f)]

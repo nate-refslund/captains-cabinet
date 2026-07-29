@@ -1,0 +1,12 @@
+# framework/org/roles.py
+"""Officer roles."""
+
+ROLE_TITLES = (
+    "VP Product and Publishers",
+    "Head of Adtech Delivery",
+    "Nordic Partnerships Lead",
+)
+
+
+def is_known_role(title: str) -> bool:
+    return title in ROLE_TITLES
