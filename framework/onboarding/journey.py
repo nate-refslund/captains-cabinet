@@ -801,17 +801,13 @@ def _cannot_know(mode: str) -> list[dict[str, str]]:
     return out
 
 
-def salience_offer(state: Mapping[str, Any] | dict[str, Any] | None,
-                   *, now: str | None = None) -> dict[str, Any] | None:
-    """The ranked "which of these should I open first?" offer, or nothing.
-
-    RETURNS NONE RATHER THAN AN EMPTY OFFER. A ranking needs names recurring
-    across sources; a journey holding one source has nothing to rank, and a
-    picker built from it would present the operator's single folder as the
-    considered winner of a survey. When there is no offer the salience question
-    stays exactly what it was — free text — which is the honest fallback and
-    also the one the Captain's own ruling asks for when the sweep cannot see.
-    """
+def _salience_ranking(state: Mapping[str, Any] | dict[str, Any] | None,
+                      *, join: Any = None,
+                      now: str | None = None) -> dict[str, Any] | None:
+    """The ranking behind the offer, or nothing. Shared so the offer the
+    operator answered and the grade of that answer read the SAME ordering — two
+    rankings built from one state would let the grade describe a shortlist
+    nobody was shown."""
     if not isinstance(state, Mapping):
         return None
     rows, identities = _salience.rows_from_state(state)
@@ -821,8 +817,31 @@ def salience_offer(state: Mapping[str, Any] | dict[str, Any] | None,
     aliases = []
     if isinstance(answered, Mapping) and answered.get("aliases"):
         aliases = [list(answered["aliases"])]
-    ranking = _salience.rank(rows, identities=identities, aliases=aliases, now=now)
-    if not ranking["clusters"]:
+    ranking = _salience.rank(rows, identities=identities, aliases=aliases,
+                             join=join, now=now)
+    return ranking if ranking["clusters"] else None
+
+
+def salience_offer(state: Mapping[str, Any] | dict[str, Any] | None,
+                   *, join: Any = None,
+                   now: str | None = None) -> dict[str, Any] | None:
+    """The ranked "which of these should I open first?" offer, or nothing.
+
+    RETURNS NONE RATHER THAN AN EMPTY OFFER. A ranking needs names recurring
+    across sources; a journey holding one source has nothing to rank, and a
+    picker built from it would present the operator's single folder as the
+    considered winner of a survey. When there is no offer the salience question
+    stays exactly what it was — free text — which is the honest fallback and
+    also the one the Captain's own ruling asks for when the sweep cannot see.
+
+    ``join`` is passed straight through to the ranker: it is the judgment that
+    reads the estate's own names and says which candidates are one thing under
+    two words. Nothing here supplies one, and the offer is honest without it —
+    split candidates and all, which is what the operator saw before anyone was
+    asked.
+    """
+    ranking = _salience_ranking(state, join=join, now=now)
+    if ranking is None:
         return None
     supplied = state.get("salience_rows")
     extra = [str(n) for n in (supplied or {}).get("not_reached") or ()] \
@@ -1083,9 +1102,10 @@ def _salience_note(state: dict[str, Any], plan: dict[str, Any]) -> str:
     THE NOT-REACHED SENTENCE IS THE POINT. A shortlist read without it is a
     claim that everything was considered, and an operator who believes that
     stops looking for the answer the ranking missed — which, measured on a real
-    estate, is where the right answer often is. The floored words, the sources
-    with no usable clock and the candidates below the cut are all named here,
-    because the operator reads this sentence and not the coverage block.
+    estate, is where the right answer often is. The discounted words, the names
+    that recur inside one system only, the sources with no usable clock and the
+    candidates below the cut are all named here, because the operator reads this
+    sentence and not the coverage block.
     """
     answered = state.get("salience")
     if isinstance(answered, dict) and answered.get("target"):
@@ -2933,6 +2953,20 @@ def _act_core(
                 "evidence": evidence,
                 "answered_at": ts,
             }
+            # THE ANSWER GRADES THE RANKING, on the operator's estate and in the
+            # operator's words. A ranking nobody checks is an assertion, and the
+            # only check that is not tuned to one estate is the one the operator
+            # supplies by answering: where did the mechanism actually put the
+            # thing they picked? An answer typed into the escape hatch is the
+            # loud case — it means the shortlist did not hold it — and the grade
+            # says whether it was ranked below the cut or was not a candidate at
+            # all, which are different defects with different fixes.
+            ranking = _salience_ranking(_with_registry(base, state), now=ts)
+            if ranking is not None:
+                shown = len([o for o in offer["options"]
+                             if str(o.get("id")) != _salience.ESCAPE_OPTION_ID])
+                after["salience"]["grade"] = _salience.check(
+                    ranking, [target], top=shown)
             return _commit(
                 base, state, after, action=action, action_id=action_id,
                 surface=surface, trace_id=trace_id,

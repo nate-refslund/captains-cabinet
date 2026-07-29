@@ -24,20 +24,63 @@ first, and the noise is estate-specific: the employer's own name recurs
 everywhere because everything belongs to it; a tracker's template words
 ("Subitems of ...") recur because the tracker put them there; a scaffolding
 prefix recurs because a generator put it there. A hand list of stopwords would
-encode ONE estate into the framework. So every floor below is derived from the
-rows themselves:
+encode ONE estate into the framework. So every measurement below is derived
+from the rows themselves:
 
 * ``_FURNITURE_SHARE`` — a token in more than a quarter of ONE connector's rows
   is that connector's furniture, whatever the word is.
 * ``_CONCENTRATION`` — a token whose occurrences are overwhelmingly inside a
   single system is that system's structure, not a thing that spans systems.
-* identity DEMOTION, never deletion — a token matching an account, owner or
-  workspace name the connectors themselves reported is demoted, because the
-  operator's own name is genuine noise AND may also be a genuine target. Both
-  are true of the same string: measured on a real estate, the owner's name was
-  also the name of one of its live targets — think an owner called "north bay"
-  whose busiest thing is northbay.example. A delete floor erases the second to
-  suppress the first; only a demotion keeps both facts.
+* identity DEMOTION — a token matching an account, owner or workspace name the
+  connectors themselves reported is demoted, because the operator's own name is
+  genuine noise AND may also be a genuine target. Both are true of the same
+  string: measured on a real estate, the owner's name was also the name of one
+  of its live targets — think an owner called "north bay" whose busiest thing is
+  northbay.example.
+
+NOTHING IS DELETED, and that took three attempts to get right. The first two
+measurements above began life as FLOORS that dropped the token, and a floor that
+drops is a silent loss: the candidate stops existing, nothing downstream can
+report it, and an operator reading a clean-looking shortlist has no way to know
+their answer was removed before the ranking began. Measured on a live estate,
+that is exactly what happened — the code connector names every row
+``<org>/<thing>``, so the org token sat in 93% of that connector's rows, the
+furniture floor deleted it, and the org was also the name of the estate's
+busiest live site. An identity EXEMPTION was added to patch the hole and did not
+close it: the exemption only fires for strings the connectors happened to report
+about themselves, and the org that owns 52 of 56 repositories was not one of
+them.
+
+So the floors are now DISCOUNTS. A token's occurrences inside the connector that
+explains them stop counting as evidence of importance; the token keeps its span
+and every occurrence the structure does NOT explain, and both numbers are
+reported. On the same live estate the org token keeps 8 occurrences across three
+other connectors and ranks on those — demoted from what its 60 raw occurrences
+would have bought, deleted by nothing. A candidate whose every occurrence is
+explained scores on span alone and sorts where that puts it; a token that never
+spanned two systems was never a candidate, and says so in ``not_candidates``
+rather than vanishing.
+
+WHAT NAMES CANNOT DO, AND WHO DOES IT INSTEAD. One entity wears a different word
+in each system it lives in. Measured: the entity spanning the most connectors on
+a live estate was ranked as FIVE separate candidates, at ranks 6, 11, 21, 33 and
+34, because its tracker calls it one word and its repository, database and
+hosting call it another that shares no stem with the first. No string function
+joins those. A stemming or fuzzy-match table would join them for one estate and
+mis-join the next, which is a hand-maintained list in disguise — this program
+has deleted three of those. So :func:`rank` emits the candidate names UNMODIFIED
+(:func:`join_proposal`) and takes an optional ``join`` judgment that reads them
+and answers which are one thing. The module validates that an answer only names
+candidates it actually produced, and records that the union was judged. The
+operator answering through the escape hatch is the same channel by another
+route.
+
+HOW ANYONE KNOWS THIS WORKS. :func:`check` grades a ranking against answers the
+OPERATOR supplies — never a list living in here, which would be right for one
+estate and a fiction for the next. It reports, per answer, the rank it reached
+or the reason it could not be reached at all, and the difference between those
+two is the entire point: "ranked eleventh" is a shortlist that needs scrolling,
+"not a candidate" is a correct answer that was lost.
 
 WHY RECENCY IS REFUSED PER CONNECTOR. "Freshest wins" assumes the clock
 measures use. Measured on a real estate, two of four connectors' timestamps
@@ -63,6 +106,8 @@ from typing import Any, Iterable, Mapping, Sequence
 SALIENCE_SCHEMA = "cabinet.salience-ranking/v1"
 SALIENCE_ROW_SCHEMA = "cabinet.salience-rows/v1"
 SALIENCE_OFFER_SCHEMA = "cabinet.salience-offer/v1"
+SALIENCE_JOIN_SCHEMA = "cabinet.salience-join-proposal/v1"
+SALIENCE_CHECK_SCHEMA = "cabinet.salience-check/v1"
 
 #: The escape hatch's option id. It is not a candidate: it is the admission
 #: that the ranking may be wrong, and it carries a text field so the answer can
@@ -75,7 +120,8 @@ ESCAPE_OPTION_ID = "other"
 #: is estate-independent, and every short token is disclosed as floored.
 _MIN_TOKEN_LEN = 4
 #: A token in more than this share of ONE connector's rows is that connector's
-#: furniture. Measured, not declared — the word is irrelevant.
+#: furniture, and its occurrences INSIDE that connector are explained by it.
+#: Measured, not declared — the word is irrelevant.
 _FURNITURE_SHARE = 0.25
 #: ...but only once that connector has enough rows for a share to MEAN
 #: anything. Below this, every token is in "most" of the rows and the floor
@@ -288,64 +334,64 @@ def _token_index(rows: Sequence[Mapping[str, Any]]) -> dict[str, set[int]]:
     return index
 
 
-def _apply_floors(
+def _explained(
     index: Mapping[str, set[int]],
     rows: Sequence[Mapping[str, Any]],
     identity: Iterable[str] = (),
 ) -> tuple[dict[str, set[int]], list[dict[str, Any]]]:
-    """Drop the two measured noise classes and say which token went for which
-    reason. Returns the surviving index and the floored rows.
+    """Which of a token's occurrences one connector's filing structure explains.
 
-    AN ESTATE-IDENTITY TOKEN IS NEVER FLOORED HERE, whatever its share. The
-    module header already says identity is DEMOTED and not deleted, because the
-    same string can be both the estate's own label and one of its real targets —
-    but that promise was kept only against the identity path, and these two
-    floors reach the same token by a different route. Measured on a live estate:
-    the code connector named every row `<org>/<repo>`, which put the org's token
-    in 100% of that connector's rows, and the furniture floor deleted it as
-    filing structure. The org was also the name of the estate's busiest live
-    site, so a correct answer was removed to suppress a noise the demotion
-    already handles. A floor that can delete what another rule promised to keep
-    is not a stricter version of that rule; it is a hole in it.
+    NOTHING IS REMOVED HERE, and the previous version of this function removed
+    two whole classes; the module header records what that cost. Both
+    measurements are unchanged — a token in more than a quarter of one
+    connector's rows is that connector's furniture; a token whose occurrences
+    are overwhelmingly inside one connector is that connector's structure — but
+    the verdict is no longer "this token does not exist". It is "these
+    particular occurrences are accounted for", and the token carries on with the
+    ones that are not.
+
+    A token the connectors named as the estate's own is exempt outright. It is
+    already demoted for being that, its recurrence everywhere is the expected
+    consequence of owning everything, and discounting it a second time for the
+    same fact would count one property twice.
+
+    Returns ``(explained, notes)`` — a per-token set of explained positions
+    (possibly empty) and one auditable note per token that had any.
     """
-    protected = {str(token) for token in identity or ()}
+    exempt = {str(token) for token in identity or ()}
     connector_totals: dict[str, int] = {}
     for row in rows:
         connector_totals[row["connector"]] = connector_totals.get(row["connector"], 0) + 1
-    kept: dict[str, set[int]] = {}
-    floored: list[dict[str, Any]] = []
+    explained: dict[str, set[int]] = {}
+    notes: list[dict[str, Any]] = []
     for token, positions in index.items():
-        if token in protected:
-            kept[token] = positions
+        if token in exempt:
             continue
-        per_connector: dict[str, int] = {}
+        per_connector: dict[str, set[int]] = {}
         for position in positions:
-            connector = rows[position]["connector"]
-            per_connector[connector] = per_connector.get(connector, 0) + 1
-        furniture = [
-            connector
-            for connector, count in per_connector.items()
-            if connector_totals[connector] >= _FURNITURE_MIN_ROWS
-            and count / connector_totals[connector] > _FURNITURE_SHARE
-        ]
-        if furniture:
-            floored.append({
-                "token": token, "reason": "connector_furniture",
-                "connector": sorted(furniture)[0], "total": len(positions),
-            })
-            continue
+            per_connector.setdefault(rows[position]["connector"], set()).add(position)
         total = len(positions)
-        top = max(per_connector.values())
-        if total >= _CONCENTRATION_MIN_TOTAL and top / total > _CONCENTRATION:
-            floored.append({
-                "token": token, "reason": "single_system_structure",
-                "connector": max(per_connector, key=lambda c: per_connector[c]),
-                "total": total,
-            })
+        accounted: set[int] = set()
+        reasons: dict[str, str] = {}
+        for connector, hits in per_connector.items():
+            if (connector_totals[connector] >= _FURNITURE_MIN_ROWS
+                    and len(hits) / connector_totals[connector] > _FURNITURE_SHARE):
+                accounted |= hits
+                reasons[connector] = "connector_furniture"
+            elif total >= _CONCENTRATION_MIN_TOTAL and len(hits) / total > _CONCENTRATION:
+                accounted |= hits
+                reasons[connector] = "single_system_structure"
+        if not accounted:
             continue
-        kept[token] = positions
-    floored.sort(key=lambda r: (-r["total"], r["token"]))
-    return kept, floored
+        explained[token] = accounted
+        leading = sorted(reasons, key=lambda c: (-len(per_connector[c]), c))[0]
+        notes.append({
+            "token": token, "reason": reasons[leading], "connector": leading,
+            "total": total, "explained": len(accounted),
+            "unexplained": total - len(accounted),
+        })
+    notes.sort(key=lambda r: (-r["explained"], r["token"]))
+    return explained, notes
 
 
 def _cluster(index: Mapping[str, set[int]]) -> list[list[str]]:
@@ -384,9 +430,16 @@ def _label(members: Sequence[str], index: Mapping[str, set[int]]) -> str:
     return sorted(members, key=lambda t: (len(index[t]), -len(t), t))[0]
 
 
-def _merge_aliases(groups: list[list[str]],
+def _labelled(groups: Sequence[Sequence[str]],
+              index: Mapping[str, set[int]]) -> list[tuple[str, list[str]]]:
+    """Name every group once, so a later union can keep a name instead of
+    re-deriving one from the fragments it just absorbed."""
+    return [(_label(group, index), list(group)) for group in groups]
+
+
+def _merge_aliases(labelled: Sequence[tuple[str, Sequence[str]]],
                    index: Mapping[str, set[int]],
-                   aliases: Iterable[Iterable[Any]]) -> list[list[str]]:
+                   aliases: Iterable[Iterable[Any]]) -> list[tuple[str, list[str]]]:
     """Fold clusters the OPERATOR said are one thing into one cluster.
 
     THE ONE THING NAMES CANNOT DO. Measured on a real estate, the single entity
@@ -411,7 +464,7 @@ def _merge_aliases(groups: list[list[str]],
     operator can only join things the ranking already NAMED to them; a typed
     word matching nothing is a target, not a merge, and is handled as one.
     """
-    labelled = [(_label(group, index), list(group)) for group in groups]
+    labelled = [(name, list(group)) for name, group in labelled]
     for alias in aliases or ():
         wanted: set[str] = set()
         for item in alias or ():
@@ -421,41 +474,77 @@ def _merge_aliases(groups: list[list[str]],
             continue
         union = sorted({t for _, group in hit for t in group})
         labelled = [row for row in labelled if row not in hit]
-        labelled.append((_label(union, index), union))
-    return [group for _, group in labelled]
+        # THE UNION KEEPS ONE OF THE NAMES IT JOINED, and re-deriving the label
+        # from scratch does not. `_label` prefers the RAREST member so a narrow
+        # word beats the generic word it sits inside, which is right inside a
+        # cluster the row sets built and wrong across candidates a judgment
+        # joined: the rarest token in the union is by construction the smallest
+        # fragment of the entity, so the union of five names for one thing came
+        # back labelled with the two-row scrap nobody calls it. The biggest of
+        # the joined candidates names the union — most of the estate uses that
+        # word for it — and ties break alphabetically so the result is stable.
+        widest = min(hit, key=lambda row: (-len({p for t in row[1] for p in index[t]}),
+                                           row[0]))
+        labelled.append((widest[0], union))
+    return labelled
 
 
-def rank(
-    rows: Iterable[Mapping[str, Any]],
-    *,
-    identities: Iterable[Any] = (),
-    aliases: Iterable[Iterable[Any]] = (),
-    now: str | None = None,
-) -> dict[str, Any]:
-    """Rank the estate's recurring names. Read-only, content-free, no network.
+def _assemble(
+    groups: Sequence[tuple[str, Sequence[str]]],
+    index: Mapping[str, set[int]],
+    explained: Mapping[str, set[int]],
+    normalized: Sequence[Mapping[str, Any]],
+    clocks: Mapping[str, Mapping[str, Any]],
+    identity: set[str],
+    now_dt: datetime,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Turn token groups into scored candidates, and say what fell short.
 
-    ``score = connectors² × recency × (1 + min(rows, 20)/20) × identity``
+    ``score = connectors² × recency × (1 + min(unexplained, 20)/20) × identity``
 
     Recurrence across connectors is squared because it is the ENTIRE signal the
     Captain named — a name in four systems is categorically different from a
     name in two, while a name appearing 400 times in one system is a list.
-    Volume is damped and capped for the same reason. Recency multiplies only
-    where the clock was admitted.
-    """
-    normalized = normalize_rows(rows)
-    clocks = admissible_clocks(normalized)
-    now_dt = _parse_iso(now) or datetime.now(timezone.utc)
-    index = _token_index(normalized)
-    identity = _identity_tokens(identities)
-    kept, floored = _apply_floors(index, normalized, identity)
+    Volume is damped, capped, and counted over the occurrences one connector's
+    filing structure does NOT already account for, which is where the discount
+    lands: a candidate that is 93% filing structure is ranked on the other 7%
+    rather than removed. Recency multiplies only where the clock was admitted.
 
+    THE SPAN IS COUNTED OVER THE STANDING OCCURRENCES, and that follows from
+    what the discount means rather than from tuning. A candidate's claim is
+    "this name recurs ACROSS systems"; a system whose own filing explains every
+    occurrence there is not evidence for that claim, so it does not vote in the
+    span either. Measured: leaving explained occurrences in the span put one
+    tracker's filing word at rank 4 of 51 on three connectors, two of which
+    contributed two rows between them. The raw span is reported beside it.
+
+    A group standing in fewer than ``_MIN_CONNECTORS`` connectors is not a
+    candidate — recurrence across systems is the whole signal, and a name in one
+    system is a list. It goes into the second return value with its numbers
+    rather than disappearing, because "never spanned two systems" and "ranked
+    last" are different facts and an operator looking for a missing answer needs
+    to know which one happened.
+    """
     clusters: list[dict[str, Any]] = []
-    for members in _merge_aliases(_cluster(kept), kept, aliases):
+    short: list[dict[str, Any]] = []
+    for label, members in groups:
         positions: set[int] = set()
+        accounted: set[int] = set()
         for token in members:
-            positions |= kept[token]
-        connectors = sorted({normalized[p]["connector"] for p in positions})
+            positions |= index[token]
+            accounted |= explained.get(token, set())
+        accounted &= positions
+        standing_positions = positions - accounted
+        connectors = sorted({normalized[p]["connector"] for p in standing_positions})
         if len(connectors) < _MIN_CONNECTORS:
+            short.append({
+                "label": label, "tokens": sorted(members),
+                "connectors": sorted({normalized[p]["connector"] for p in positions}),
+                "connectors_standing": connectors,
+                "rows": len(positions), "rows_standing": len(standing_positions),
+                "reason": ("spans_one_connector" if not accounted
+                           else "one_system_explains_where_it_recurs"),
+            })
             continue
         freshest: datetime | None = None
         for position in positions:
@@ -468,42 +557,161 @@ def rank(
         recency = _recency_weight(freshest, now_dt)
         matched_identity = sorted(set(members) & identity)
         demotion = _IDENTITY_DEMOTION if matched_identity else 1.0
-        volume = 1.0 + min(len(positions), _VOLUME_CAP) / _VOLUME_CAP
+        standing = len(standing_positions)
+        volume = 1.0 + min(standing, _VOLUME_CAP) / _VOLUME_CAP
         score = (len(connectors) ** 2) * recency * volume * demotion
         per_connector: dict[str, list[str]] = {}
         for position in sorted(positions, key=lambda p: normalized[p]["name"]):
             row = normalized[position]
             per_connector.setdefault(row["connector"], []).append(row["name"])
         clusters.append({
-            "label": _label(members, kept),
-            "tokens": list(members),
-            "connectors": connectors,
+            "label": label,
+            "tokens": sorted(members),
+            "connectors": sorted({normalized[p]["connector"] for p in positions}),
+            "connectors_standing": connectors,
             "rows": len(positions),
+            "rows_standing": standing,
+            "rows_explained": len(accounted),
             "per_connector": {c: len(n) for c, n in sorted(per_connector.items())},
             "examples": {c: n[:3] for c, n in sorted(per_connector.items())},
             "freshest": freshest.strftime("%Y-%m-%dT%H:%M:%SZ") if freshest else None,
             "recency_weight": recency,
             "recency_measured": freshest is not None,
             "identity_match": matched_identity,
-            "demoted": bool(matched_identity),
+            "demoted": bool(matched_identity) or bool(accounted),
             "score": round(score, 4),
         })
     clusters.sort(key=lambda c: (-c["score"], -len(c["connectors"]), c["label"]))
+    short.sort(key=lambda c: (-c["rows"], c["label"]))
+    return clusters, short
+
+
+def join_proposal(clusters: Sequence[Mapping[str, Any]],
+                  *, names_per_connector: int = 4) -> dict[str, Any]:
+    """The candidates and the estate's own words for them, UNMODIFIED.
+
+    This is the whole input judgment needs and the whole input it is allowed to
+    have. Every name is passed through exactly as the connector reported it —
+    no stemming, no lowering, no normalising — because the joinable evidence
+    lives in the surface form: one system writes a name solid, another writes it
+    hyphenated, a third abbreviates it, and a fourth prefixes the year. A
+    tokenizer sees six unrelated strings there and a reader sees one thing.
+
+    It carries no scores and no counts beyond how many names were withheld. A
+    judge shown a score is being told the answer it was asked to check.
+    """
+    per = max(int(names_per_connector), 1)
+    candidates = []
+    for cluster in clusters:
+        names: list[str] = []
+        withheld = 0
+        for connector, shown in (cluster.get("examples") or {}).items():
+            total = (cluster.get("per_connector") or {}).get(connector, len(shown))
+            names.extend(str(n) for n in list(shown)[:per])
+            withheld += max(total - min(len(shown), per), 0)
+        candidates.append({
+            "label": str(cluster.get("label") or ""),
+            "names": names,
+            "names_withheld": withheld,
+            "connectors": list(cluster.get("connectors") or ()),
+        })
+    return {
+        "schema": SALIENCE_JOIN_SCHEMA,
+        "question": "Which of these candidates are the same thing under "
+                    "different names? Answer with groups of labels, or nothing.",
+        "candidates": candidates,
+    }
+
+
+def _judged_joins(join: Any, clusters: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Ask judgment which candidates are one thing, and refuse what it invents.
+
+    A judge that answers with a label the ranking never produced has not read
+    the estate, and accepting that answer would let an unbounded string arrive
+    in the ranking's own vocabulary. Such a group is REFUSED and recorded,
+    never silently dropped: a judgment that misfired is a fact about the loop
+    and the next reader is owed it. A group naming fewer than two candidates
+    joins nothing and is refused the same way.
+    """
+    if not callable(join):
+        raise SalienceError("join_not_callable", "A join must be something to ask.")
+    offered = {str(c.get("label") or "") for c in clusters}
+    answer = join(join_proposal(clusters))
+    out: list[dict[str, Any]] = []
+    for group in answer or ():
+        if isinstance(group, (str, bytes)) or not isinstance(group, Iterable):
+            out.append({"labels": [], "accepted": False, "reason": "not_a_group"})
+            continue
+        labels = [str(item) for item in group]
+        unknown = sorted({label for label in labels if label not in offered})
+        if unknown:
+            out.append({"labels": labels, "accepted": False,
+                        "reason": "names_a_candidate_that_was_never_ranked",
+                        "unknown": unknown})
+        elif len(set(labels)) < 2:
+            out.append({"labels": labels, "accepted": False,
+                        "reason": "joins_nothing"})
+        else:
+            out.append({"labels": sorted(set(labels)), "accepted": True})
+    return out
+
+
+def rank(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    identities: Iterable[Any] = (),
+    aliases: Iterable[Iterable[Any]] = (),
+    join: Any = None,
+    now: str | None = None,
+) -> dict[str, Any]:
+    """Rank the estate's recurring names. Read-only, content-free, no network.
+
+    ``join`` is the seam where JUDGMENT joins what names cannot. It is handed
+    :func:`join_proposal`'s payload — every candidate's label and the estate's
+    own names for it, UNMODIFIED — and answers with groups of labels that are
+    one thing. Nothing in here compares two strings to decide that, and nothing
+    in here may: a stem table or an edit distance is a hand-maintained list
+    wearing an algorithm, correct for the estate it was tuned on. Absent a
+    ``join`` the ranking stands exactly as the names left it, split candidates
+    and all, and the operator's answer through the escape hatch is the same
+    union arriving by a different route.
+    """
+    normalized = normalize_rows(rows)
+    clocks = admissible_clocks(normalized)
+    now_dt = _parse_iso(now) or datetime.now(timezone.utc)
+    index = _token_index(normalized)
+    identity = _identity_tokens(identities)
+    explained, discounted = _explained(index, normalized, identity)
+
+    groups = _merge_aliases(_labelled(_cluster(index), index), index, aliases)
+    clusters, short = _assemble(groups, index, explained, normalized, clocks,
+                                identity, now_dt)
+    judged: list[dict[str, Any]] = []
+    if join is not None:
+        judged = _judged_joins(join, clusters)
+        accepted = [row["labels"] for row in judged if row["accepted"]]
+        if accepted:
+            groups = _merge_aliases(groups, index, accepted)
+            clusters, short = _assemble(groups, index, explained, normalized,
+                                        clocks, identity, now_dt)
     connector_rows: dict[str, int] = {}
     for row in normalized:
         connector_rows[row["connector"]] = connector_rows.get(row["connector"], 0) + 1
     return {
         "schema": SALIENCE_SCHEMA,
         "clusters": clusters,
-        "floored": floored,
+        "discounted": discounted,
+        "not_candidates": short,
+        "joined": judged,
         "clocks": clocks,
         "coverage": {
             "connectors": sorted(connector_rows),
             "rows_by_connector": dict(sorted(connector_rows.items())),
             "rows": len(normalized),
             "tokens": len(index),
-            "tokens_after_floors": len(kept),
+            "tokens_discounted": len(discounted),
             "clusters_ranked": len(clusters),
+            "below_span": len(short),
         },
     }
 
@@ -539,9 +747,25 @@ def rows_from_state(state: Mapping[str, Any]) -> tuple[list[dict[str, Any]], lis
     identities: list[str] = []
     supplied = state.get("salience_rows") if isinstance(state, Mapping) else None
     if isinstance(supplied, Mapping):
-        rows.extend(normalize_rows(supplied.get("rows") or ()))
+        raw = list(supplied.get("rows") or ())
+        rows.extend(normalize_rows(raw))
         identities.extend(
             str(i) for i in (supplied.get("identities") or ()) if str(i).strip()
+        )
+        # THE OWNER FIELD IS AN IDENTITY STRING TOO, and leaving it out cost a
+        # correct answer. A connector's identity call asks the CREDENTIAL who it
+        # is; the owner stamped on each row says who the estate belongs to, and
+        # measured on a live estate those were different words — the credential
+        # answered with a person and 52 of 56 repositories were owned by an
+        # organisation whose name never entered the demotion set at all. Both
+        # are "what this estate calls itself", which is all demotion asks; and
+        # both come FROM the connectors, so no list is being maintained here.
+        # It stays out of attribution, where the same string means nothing:
+        # see framework.onboarding.research.operator_identity.
+        identities.extend(
+            str(row["actor"]).strip()
+            for row in raw
+            if isinstance(row, Mapping) and str(row.get("actor") or "").strip()
         )
     probes = state.get("connector_probes") if isinstance(state, Mapping) else None
     for probe in (probes or {}).get("connected", ()) if isinstance(probes, Mapping) else ():
@@ -581,6 +805,105 @@ def sweep_ceiling(root: Any) -> dict[str, Any]:
         "permitted": bool(verdict.get("connected")),
         "reason": verdict.get("reason"),
         "evidence": verdict.get("evidence"),
+    }
+
+
+# --- the oracle -------------------------------------------------------------
+
+
+def check(ranking: Mapping[str, Any],
+          answers: Iterable[Any],
+          *, top: int = 3) -> dict[str, Any]:
+    """Grade a ranking against answers THE OPERATOR gave. Read-only, no network.
+
+    THE ANSWER KEY IS AN ARGUMENT, and that is the entire design. A key living
+    inside this module would be right for the one estate it was copied from and
+    a fiction everywhere else — the same defect as a stopword list, arriving as
+    a test fixture instead of a constant. So the oracle asks a question any
+    estate can answer: the operator names what actually matters to them, and
+    this reports where the mechanism put it. Nothing here knows what a good
+    answer looks like; it knows only whether the ranking reached the answer it
+    was handed. Run it on a synthesised estate and the planted entity is the
+    key; run it on a live one and the operator's own words are.
+
+    THE DISTINCTION IT EXISTS TO DRAW is between an answer that ranked low and
+    an answer that could not be ranked at all. The first is a shortlist the
+    operator scrolls; the second is a correct answer the mechanism lost, and
+    every version of this ranker that deleted rather than demoted produced the
+    second while looking exactly like the first from the outside.
+
+    Matching uses :func:`tokenize` — the ranker's OWN vocabulary and nothing
+    else. No stemming, no edit distance, no near-miss allowance: the oracle may
+    only credit the ranking with a word the ranking could itself have produced,
+    or it becomes an instrument that grades generously and reports success.
+    """
+    if not isinstance(ranking, Mapping) or ranking.get("schema") != SALIENCE_SCHEMA:
+        raise SalienceError("ranking_invalid", "That is not a salience ranking.")
+    cut = max(int(top), 0)
+    clusters = list(ranking.get("clusters") or ())
+    short = list(ranking.get("not_candidates") or ())
+    graded: list[dict[str, Any]] = []
+    for answer in answers or ():
+        text = str(answer or "").strip()
+        wanted = set(tokenize(text))
+        row: dict[str, Any] = {"answer": text, "tokens": sorted(wanted)}
+        if not wanted:
+            row.update(verdict="unrankable_name", position=None,
+                       why="nothing in this name survives the length rule")
+            graded.append(row)
+            continue
+        found = next(
+            ((i, c) for i, c in enumerate(clusters, 1) if wanted & set(c["tokens"])),
+            None,
+        )
+        if found:
+            position, cluster = found
+            row.update(
+                position=position,
+                label=cluster["label"],
+                matched=sorted(wanted & set(cluster["tokens"])),
+                connectors=list(cluster["connectors"]),
+                rows=cluster["rows"],
+                rows_standing=cluster.get("rows_standing", cluster["rows"]),
+                demoted=bool(cluster.get("demoted")),
+                verdict="offered" if position <= cut else "below_the_cut",
+                why=("in the shortlist the operator sees" if position <= cut
+                     else f"ranked {position} of {len(clusters)}; the operator "
+                          f"reaches it only past the cut"),
+            )
+        else:
+            near = next((s for s in short if wanted & set(s["tokens"])), None)
+            if near:
+                row.update(verdict="not_a_candidate", position=None,
+                           label=near["label"], connectors=list(near["connectors"]),
+                           rows=near["rows"],
+                           why="its words recur inside one system only, and "
+                               "recurrence across systems is the whole signal")
+            else:
+                row.update(verdict="never_seen", position=None,
+                           why="no name read by the sweep carries any of its words")
+        graded.append(row)
+    offered = [r for r in graded if r["verdict"] == "offered"]
+    reached = [r for r in graded if r["verdict"] in ("offered", "below_the_cut")]
+    lost = [r for r in graded if r["verdict"] not in ("offered", "below_the_cut")]
+    if not graded:
+        verdict = "nothing_to_check"
+    elif lost:
+        verdict = "lost"
+    elif len(offered) == len(graded):
+        verdict = "all_offered"
+    else:
+        verdict = "reached_but_below_the_cut"
+    return {
+        "schema": SALIENCE_CHECK_SCHEMA,
+        "top": cut,
+        "ranked": len(clusters),
+        "answers": graded,
+        "offered": len(offered),
+        "reached": len(reached),
+        "lost": len(lost),
+        "deepest": max((r["position"] for r in reached), default=None),
+        "verdict": verdict,
     }
 
 
@@ -641,12 +964,19 @@ def not_reached_line(
             "Ranked names only, never contents: "
             + ", ".join(f"{count} from {c}" for c, count in rows_by.items())
         )
-    floored = ranking.get("floored") or []
-    if floored:
-        shown = ", ".join(str(f["token"]) for f in floored[:4])
+    discounted = ranking.get("discounted") or []
+    if discounted:
+        listed = ", ".join(str(f["token"]) for f in discounted[:4])
         bits.append(
-            f"{len(floored)} recurring word(s) were ranked out as filing "
-            f"structure rather than things ({shown})"
+            f"{len(discounted)} recurring word(s) count for less because one "
+            f"system's own filing explains most of where they appear ({listed}) "
+            f"— none of them was removed"
+        )
+    short = ranking.get("not_candidates") or []
+    if short:
+        bits.append(
+            f"{len(short)} name(s) recur inside a single system only, so "
+            f"nothing here ranks them against anything"
         )
     dead = [c for c, v in (ranking.get("clocks") or {}).items() if not v.get("admitted")]
     if dead:

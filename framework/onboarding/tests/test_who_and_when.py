@@ -231,12 +231,25 @@ class TestIdentityIsDemotedNotFloored:
         carrying = [c for c in ranking["clusters"] if "northbay" in c["tokens"]]
         assert carrying, "the estate name was deleted by a floor, not demoted"
         assert carrying[0]["demoted"] is True
-        assert "northbay" not in {str(f["token"]) for f in ranking["floored"]}
+        assert "northbay" not in {str(f["token"]) for f in ranking["discounted"]}
 
-    def test_without_the_identity_the_same_token_is_still_floored(self):
+    def test_without_the_identity_the_same_token_is_discounted_not_deleted(self):
         """The exemption is EARNED by being declared estate identity, not handed
-        to every high-share token — otherwise the floors would stop working."""
+        to every high-share token — otherwise the measurements would stop
+        working. INVERTED 2026-07-29 and strengthened: the undeclared token used
+        to be DELETED here, and the arm asserting the deletion is what let a
+        second correct answer be lost on the live estate — the org owning 52 of
+        56 repositories was never in the identity strings the connectors report
+        about themselves, so the exemption never fired for it. Now it is
+        discounted, and this pins that the discount still bites AND that the
+        token is still named with its numbers rather than gone."""
         from framework.onboarding import salience
 
         ranking = salience.rank(self._rows(), now="2026-07-03T00:00:00Z")
-        assert "northbay" in {str(f["token"]) for f in ranking["floored"]}
+        discounted = {str(f["token"]): f for f in ranking["discounted"]}
+        assert "northbay" in discounted
+        assert discounted["northbay"]["explained"] == 9
+        named = [c for c in ranking["clusters"] + ranking["not_candidates"]
+                 if "northbay" in c["tokens"]]
+        assert named, "the undeclared token was deleted rather than discounted"
+        assert named[0]["rows"] == 10  # every occurrence still counted and shown

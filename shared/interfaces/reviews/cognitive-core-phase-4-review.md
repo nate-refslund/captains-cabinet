@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 408e6b979fff5a1d84da85fdc19ed7114a8a2df96492636407d80febee0aa017
+Reviewed-Scope-Digest: a1ed1cb20d7e4a769f66049a92757e130ba02dee6a4b4a8bdba148520d759fe4
 (RE-BOUND 2026-07-29 on `fix/framework-specifics`, previous value
 `0df4d12a…`. TWO in-scope paths moved and NO COG-4 implementation byte did:
 `cabinet/config/cognitive-architecture-contract.yml` raises
@@ -1497,3 +1497,21 @@ bijection class moves.
 
 Recorded digest: 408e6b979fff5a1d84da85fdc19ed7114a8a2df96492636407d80febee0aa017
 Previous:        b6872d9f98e0b1138aec5c496a1787e23a3afe1aa20b1acc2f7865bf6b18fd13
+
+
+## Re-bind 2026-07-29 (fix/salience-ranking)
+
+Recorded digest: a1ed1cb20d7e4a769f66049a92757e130ba02dee6a4b4a8bdba148520d759fe4
+Previous:        408e6b979fff5a1d84da85fdc19ed7114a8a2df96492636407d80febee0aa017
+
+Every prior note above survives verbatim; each describes a different landing and
+none is another's restamp. ONE bound path moved and NO COG-4 implementation byte
+did: `cabinet/config/cognitive-architecture-contract.yml` raises
+`framework_production_noncomment_lines` VISIBLY (60543 -> 60848, +305 measured
+over this tree with cognitive-architecture-census.py, observed == maximum at zero
+headroom) and supersedes two prose blocks that described the salience floors as
+DELETING — which is what the branch stops them doing, so the contract's own words
+would otherwise contradict the code they adjudicate. Not an allowance: a bijection
+class may never be bought with one, and this is mass on the line the zero-headroom
+law is read from. ZERO new modules, so no bijection class moves. The unit's own
+work is in `framework/onboarding/`, which this scope does not bind.

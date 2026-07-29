@@ -180,7 +180,36 @@ budgets:
     # the merged ceiling is their sum — RE-MEASURED over this merge tree with
     # cognitive-architecture-census.py rather than added on paper. Neither is
     # an allowance; both are permanent, so the ratchet re-pins at zero headroom.
-    maximum: 60543
+    #
+    # 60543 -> 60848 (+305 measured 2026-07-29 via cognitive-architecture-census.py,
+    # observed 75125 vs the then-effective 74820): the salience ranker was
+    # REPORTED to do two things and, re-executed against the same live 665-name
+    # estate, did neither. (1) The alias union never happened: the entity
+    # spanning the most connectors stood as FIVE separate candidates at ranks 6,
+    # 11, 21, 33 and 34, and no string function can join those — so `rank` now
+    # emits the estate's own names unmodified (`join_proposal`) and takes an
+    # optional `join` JUDGMENT that reads them and answers which are one thing,
+    # validating that an answer only names candidates the ranking produced.
+    # (2) Demote-never-delete was reported closed and was not: three
+    # identity-shaped candidates were removed outright as `connector_furniture`,
+    # the exact removal that measurably deletes a correct answer when an owner's
+    # name and a real target are the same string. Both floors are now DISCOUNTS
+    # — the occurrences one connector's filing explains stop counting as
+    # evidence, the token keeps the rest, and every discounted word stays
+    # findable — and the span is counted over what is left, so a filing word
+    # cannot buy a span it did not earn. (3) `check` is the oracle the wave
+    # lacked: it grades a ranking against answers THE OPERATOR supplies, never a
+    # list living in the framework, and separates "ranked below the cut" from
+    # "could not be ranked at all" — the difference between a short shortlist
+    # and a lost answer. Its live consumer is `answer_salience`, where the
+    # operator's own pick grades the ordering they were shown.
+    # RAISED VISIBLY, never an allowance: an allowance promises a deletion gate
+    # and none of this can ever be deleted — a ranking whose defects are only
+    # visible by executing it needs the instrument that executes it. Zero new
+    # production MODULES (framework_production_modules unchanged at 248: every
+    # function lands inside framework/onboarding/salience.py, and the new suite
+    # is a test). observed == maximum, zero headroom.
+    maximum: 60848
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
@@ -1294,11 +1323,15 @@ temporary_allowances:
       candidates because its tracker and its code call it different words, and
       one typed answer merges them to rank 2 with all four connectors. Only
       cluster LABELS merge, because matching every token let the word "call"
-      inside a typed sentence absorb an unrelated cluster. (5) THE WIRING —
-      journey.salience_offer, the salience question restored in connected mode
-      (its deletion rested on a premise this unit falsified against 665 real
-      names), the answer_salience action and its four refusals, and the card
-      sentence that states the cut, the floored words and every refused clock.
+      inside a typed sentence absorb an unrelated cluster. SUPERSEDED IN PART
+      2026-07-29 — re-execution found the split was five candidates, not two,
+      and that no union happens until somebody is asked; salience.join_proposal
+      plus rank(join=) now put that question to judgment instead of waiting for
+      the operator to notice. (5) THE WIRING — journey.salience_offer, the
+      salience question restored in connected mode (its deletion rested on a
+      premise this unit falsified against 665 real names), the answer_salience
+      action and its four refusals, and the card sentence that states the cut,
+      the discounted words and every refused clock.
       RE-MEASURED at 687 after the agnosticism gate landed on master mid-flight
       and correctly refused this module's prose: the docstrings cited a real
       operator's employer and products by name to explain the identity-collision
@@ -1356,10 +1389,14 @@ temporary_allowances:
       furniture floor reached the same token by another route and deleted it.
       Measured live: one connector names every row "<org>/<thing>", putting the
       org token in 100% of that connector's rows, and the estate's busiest live
-      site was floored as filing structure. With the exemption it returns at rank
-      3 of 47 across all four connectors, flagged demoted — and the arm proving
-      an UNDECLARED high-share token is still floored rides beside it, because an
-      exemption handed to everything would disable the floors. ZERO new modules;
+      site was floored as filing structure. SUPERSEDED 2026-07-29: the exemption
+      did not close the hole, because it only fires for strings the connectors
+      report about THEMSELVES and the org owning 52 of 56 repositories was not
+      one of them — re-execution found three identity-shaped candidates still
+      removed as connector_furniture. The floors are now DISCOUNTS that remove
+      nothing, the owner stamped on each row joins the estate's identity
+      strings, and the arm asserting an undeclared high-share token is DELETED
+      is inverted to assert it is discounted and still named. ZERO new modules;
       the whole unit lands inside the two organs that already own these
       questions. Measured 74462 on this tree against the 74262 pinned level with
       cognitive-architecture-census.py at this landing rather than carried.
