@@ -732,6 +732,30 @@ class TestActorsArePlural:
             inventory={"actor_field": "assignees"})
         assert len(out["rows"][0]["actors"]) == research._MAX_ACTORS_PER_ITEM
 
+    def test_two_people_who_share_a_role_word_are_still_two_people(self, tmp_path):
+        """The walk reads ONE key out of a person object, so which key it prefers
+        decides whether two people are two. A role word is not an identifier: two
+        different people carrying the same one collapsed into a single actor and
+        the distinct-actor count said 1 about 2 — a merge that announces nothing,
+        under a number the operator is invited to trust."""
+        out, _ = _sweep(tmp_path, {"items": [
+            {"title": "a", "changed_at": "2026-07-01T00:00:00Z",
+             "owner": {"title": "a role", "email": "one@x.test"}},
+            {"title": "b", "changed_at": "2026-07-02T00:00:00Z",
+             "owner": {"title": "a role", "email": "two@x.test"}}]},
+            inventory={"actor_field": "owner"})
+        assert [r["actors"] for r in out["rows"]] == [["one@x.test"], ["two@x.test"]]
+        assert out["connectors"][0]["actors"] == 2
+
+    def test_a_person_carrying_only_a_role_word_is_still_read(self, tmp_path):
+        """The guard on that order: the last resort stays a resort. Something
+        that distinguishes two rows beats nothing at all."""
+        out, _ = _sweep(tmp_path, {"items": [
+            {"title": "a", "changed_at": "2026-07-01T00:00:00Z",
+             "owner": {"title": "the only word here"}}]},
+            inventory={"actor_field": "owner"})
+        assert out["rows"][0]["actors"] == ["the only word here"]
+
     def test_a_row_with_no_resolvable_actor_carries_no_actors_key(self, tmp_path):
         """Absence stays absent: an empty list would match an empty handle and
         attribute every unattributed row to the operator."""
@@ -802,3 +826,35 @@ class TestADeclarationThatMissedIsNotAnEmptyEstate:
                         pages=[_items(3), {"items": []}])
         assert [line for line in out["not_reached"] if "resolved on" in line] == []
         assert "reason" not in out["connectors"][0]
+
+    # THE INVERSE ARM ABOVE ENDS THE READ WITH `{"items": []}`, which is only ONE
+    # of the shapes a source uses for "past the last page" — and the one shape
+    # that cannot trip the new miss reason. The two below are the others, and
+    # both were printing `items_path_missed` at an operator whose declaration
+    # resolved on every page it was used on (found by attacking the port,
+    # 2026-07-29; the third arm is the guard that the fix did not buy quiet by
+    # swallowing real truncation).
+    @pytest.mark.parametrize("tail", [{}, {"items": None}, {"other": [1]}])
+    def test_a_page_past_the_end_is_exhaustion_not_a_missed_declaration(
+            self, tmp_path, tail):
+        out, _ = _sweep(tmp_path, _items(3), pages=[_items(3), tail],
+                        page={"max_pages": 3, "size": 3})
+        assert out["connectors"][0]["items"] == 3
+        assert "reason" not in out["connectors"][0]
+        assert out["not_reached"] == [], out["not_reached"]
+
+    def test_a_declaration_that_never_resolved_at_all_still_says_so(self, tmp_path):
+        """The other direction, in the same arm family: page ONE missing is a
+        mistyped path, and staying silent about that is the defect this whole
+        capability exists to close."""
+        out, _ = _sweep(tmp_path, {"items": [{"title": "a"}]},
+                        inventory={"items_path": "data.thigns"})
+        assert out["connectors"][0]["reason"] == "items_path_missed:data.thigns"
+
+    def test_a_real_truncation_mid_paging_is_still_disclosed(self, tmp_path):
+        """The guard on the fix: an HTTP status, an unreachable host or an
+        unparseable body part-way through IS a short read, and quiet there is an
+        unearned clean negative — exactly what the lane refuses."""
+        out, _ = _sweep(tmp_path, _items(3), pages=[_items(3), (503, b"nope")],
+                        page={"max_pages": 3, "size": 3})
+        assert any("paging stopped early (http_503)" in line for line in out["not_reached"])
