@@ -300,12 +300,14 @@ weight-swap passed the eval while rerank was on. So the gate runs BOTH:
 
 **Nightly service** (`retrieval-eval`, 03:50 — after the 03:30 reconcile so
 it measures the post-consolidation store; before the 07:10 doctor):
-`cabinet/scripts/retrieval-eval-nightly.sh` self-harvests ~12 pairs from
-this cabinet's own high-signal rows (`harvest-retrieval-eval.sh` — portable
-to any instance), runs both arms with floors recall ≥ 0.60 and MRR ≥ 0.50
-(`RE_FLOOR` / `RE_MRR_FLOOR` / `RE_BLENDED_MRR_FLOOR` env-overridable;
-calibrated live 2026-07-15: rerank MRR 0.958 / blended 0.736 vs ~0.10 for an
-order-inverted mutant), and appends ONE verdict JSONL line to
+`cabinet/scripts/retrieval-eval-nightly.sh` runs both arms over the
+committed question-shaped seed
+(`cabinet/scripts/tests/fixtures/retrieval-questions.seed.json` — every query
+a question a person would ask, every expected document one this repo ships,
+so it is portable to any instance that has ingested its own docs), with
+floors recall ≥ 0.60, MRR ≥ 0.50 and abstain = 1.00
+(`RE_FLOOR` / `RE_MRR_FLOOR` / `RE_BLENDED_MRR_FLOOR` / `RE_ABSTAIN_FLOOR`
+env-overridable), and appends ONE verdict JSONL line to
 `cabinet/logs/retrieval-eval-history.jsonl` (runtime, gitignored). Floor
 breach → exit 1 (launchd surfaces it).
 

@@ -156,7 +156,31 @@ budgets:
     # itself that the framework must not state for it. Zero new production
     # MODULES (the new suite is a test). Re-pins at zero headroom: 74107
     # measured over THIS tree, 73846 on the clean base.
-    maximum: 60446
+    # 60185 -> 60282 (+97 measured 2026-07-29 via cognitive-architecture-census.py,
+    # observed 73943 vs the then-effective 73846): the first briefing's cards were
+    # making five claims their own citations do not support, and every fix is a
+    # new refusal in framework/onboarding/genesis.py — _prose_lines (drop the
+    # markup so the WHY line quotes a SENTENCE and not the markdown table it was
+    # quoting back at the operator as their own words), _quote_and_cite (walk the
+    # quote to the first cited hit that HAS prose and walk its citation with it,
+    # or one file's words get attributed to another), _join_span + _shared_clause
+    # (carry HOW MANY of the cited files share the wording, since the threshold is
+    # 2 while three citations are printed beside the caption), and the headline
+    # rewrite that drops "never read together" — an assertion about the operator's
+    # own reading history — and dates only the notes that carry a date.
+    # RAISED VISIBLY, not paid for by a temporary allowance: an allowance promises
+    # a deletion gate, and none of these can ever be deleted — a surface whose
+    # whole value is that every claim opens has to keep refusing the claims that
+    # do not. Zero new production MODULES (framework_production_modules unchanged:
+    # every helper lives inside the existing genesis module). observed == maximum,
+    # zero headroom.
+    # MERGE, 2026-07-29 (fourth): the de-specification ceiling above and this
+    # branch's +97 are DISJOINT (one is framework/ vocabulary and roster
+    # resolution, one is framework/onboarding/genesis.py claim refusals), so
+    # the merged ceiling is their sum — RE-MEASURED over this merge tree with
+    # cognitive-architecture-census.py rather than added on paper. Neither is
+    # an allowance; both are permanent, so the ratchet re-pins at zero headroom.
+    maximum: 60543
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

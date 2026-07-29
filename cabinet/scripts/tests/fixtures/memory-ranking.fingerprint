@@ -6,4 +6,4 @@
 # re-stamps it:  bash cabinet/scripts/retrieval-eval-nightly.sh --stamp
 # (stamps ONLY on a both-arm PASS; commit the refreshed file WITH the ranking
 # change). Hand-editing the hex defeats the gate's purpose — don't.
-42c71ad786dfce68da53c3df4256e1f6ca51574427d3359687407b46d3aa842a
+3b5d48747a0910c8fec0272ed1196771a0b9607c4454ec02386b370a8c6b871b

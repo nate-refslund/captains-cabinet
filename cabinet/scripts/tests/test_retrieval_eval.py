@@ -1,24 +1,30 @@
-"""Retrieval-quality eval locks — recall@k + MRR gate for memory_search (R1,
-2026-07-12 — org-memory study §5-R1).
+"""Retrieval-quality eval locks — recall@k + MRR + ABSTAIN gate for
+memory_search (R1 2026-07-12; seed replaced 2026-07-29).
 
-Two layers, matching the study's "at minimum a runnable script + a doctor/CI
-hook" bar:
+WHAT CHANGED AND WHY. The eval this file guarded reported recall@10 = 1.0000
+and MRR = 1.0000 for months — because a harvester derived each query from the
+expected document's OWN leading 110 characters. The corpus was being asked to
+find itself. Over the same store and the same code, sixteen plainly-worded
+questions whose answering document was present returned nothing at all for
+seven of them. An eval that cannot fail is not a sensor, and this one was also
+the gate standing between the ranking and its fix.
 
-  * OFFLINE (always run, no network/Neon/Voyage): the harvester + runner parse
-    (``bash -n``), the committed seed is well-formed, the runner carries a floor
-    + exit-code contract, and the default harvest set EXCLUDES the exhaust types
-    (officer_trigger / trigger-archive / transcript-digest) — harvesting those
-    would make the eval measure nervous-system noise, not knowledge (study C3).
+The harvester is deleted. The seed is hand-written questions over documents
+THIS REPO SHIPS, so it is portable to any instance that ingested its own docs
+and carries nothing private. Three layers:
 
-  * LIVE GATE (skipped unless Neon is reachable): self-harvests a FRESH eval set
-    from THIS cabinet's own cabinet_memory and asserts recall@k >= floor AND
-    MRR >= mrr-floor. Two floors because they trip on different damage
-    (R1-EVAL-NO-TEETH): recall@k catches pool damage (row evicted) but is
-    order-blind at limit==k, while the MRR floor catches order damage — a
-    worst-first rerank keeps recall@10 ~0.95 while MRR collapses to ~0.10.
-    Run with --limit > k so the k-cut is order-sensitive too. It is
-    store-agnostic (self-generating), so a fresh instance enforces the same gate
-    on its own memory with no portable seed. Keyless/CI runs stay green (skip).
+  * OFFLINE, and this is the anti-regression that matters: every seed query is
+    checked AGAINST THE SHIPPED DOCUMENT IT NAMES — the file must exist, and
+    the query must not be a copy of its opening text. That is exactly the
+    defect that made the old seed unfailable, and it is now mechanically
+    refused.
+
+  * OFFLINE: the runner parses and carries the floor + exit-code contract,
+    including the ABSTAIN floor — the arm that stops "make retrieval find
+    things" from being satisfied by deleting the similarity floor.
+
+  * LIVE GATE (skipped unless Neon is reachable): runs the real
+    memory_search path over the seed and enforces all three floors.
 
 Run: python3 -m pytest cabinet/scripts/tests/test_retrieval_eval.py -q
 """
@@ -41,12 +47,8 @@ _REAL_POPEN = subprocess.Popen
 
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent
 _REPO_ROOT = _SCRIPTS_DIR.parent.parent
-HARVEST = _SCRIPTS_DIR / "harvest-retrieval-eval.sh"
 RUNNER = _SCRIPTS_DIR / "retrieval-eval.sh"
-SEED = _SCRIPTS_DIR / "tests/fixtures/retrieval-eval-pairs.seed.json"
-
-_EXHAUST_TYPES = ("officer_trigger", "trigger-archive", "transcript-digest")
-
+SEED = _SCRIPTS_DIR / "tests/fixtures/retrieval-questions.seed.json"
 
 def _run(cmd, timeout=60, env=None):
     patched = subprocess.Popen
@@ -67,10 +69,6 @@ def _bash_n(path: Path) -> None:
 # ---------------------------------------------------------------------------
 # offline — the scripts parse
 # ---------------------------------------------------------------------------
-
-def test_harvester_parses():
-    _bash_n(HARVEST)
-
 
 def test_runner_parses():
     _bash_n(RUNNER)
@@ -100,6 +98,114 @@ def test_seed_has_no_secret_shaped_queries():
     for pat in (r"sk-[A-Za-z0-9]{8}", r"\bBearer\b", r"postgres(?:ql)?://",
                 r"password\s*[:=]", r"[A-Za-z0-9_\-]{40,}"):
         assert not re.search(pat, blob, re.I), f"seed query matches secret-shape /{pat}/"
+
+
+def test_every_expected_document_is_a_file_this_repo_ships():
+    """Each expected_ref must resolve to a tracked file. A seed pointing at a
+    document nobody ships can never be retrieved on a fresh instance, and the
+    eval would red for a reason that has nothing to do with the ranking."""
+    data = json.loads(SEED.read_text())
+    missing = [p["expected_ref"] for p in data["pairs"]
+               if not (_REPO_ROOT / p["expected_ref"]).is_file()]
+    assert not missing, f"seed names documents this repo does not ship: {missing}"
+
+
+#: A query whose content words are mostly drawn from the opening of the very
+#: document it must find is the shape that cannot fail. Deliberately loose — a
+#: real question about egress DOES contain the word "egress".
+_SELF_FIND_MAX = 0.60
+
+
+def _opening_overlap(ref: str, query: str) -> float:
+    """Fraction of the query's content words that appear in the opening of the
+    document it names. 0.0 for an empty query (an empty query is caught by the
+    seed-well-formed test, not by this one)."""
+    opening = set(_opening_words(_REPO_ROOT / ref))
+    qwords = re.findall(r"[a-z0-9]{3,}", query.lower())
+    if not qwords:
+        return 1.0
+    return sum(1 for w in qwords if w in opening) / len(qwords)
+
+
+def _opening_words(path: Path, n: int = 40) -> list:
+    """The first n word tokens of a document, lowercased, frontmatter and
+    markdown punctuation stripped — the surface the retired harvester used to
+    copy verbatim into the query."""
+    text = path.read_text(encoding="utf-8", errors="replace")
+    words = re.findall(r"[a-z0-9]{3,}", text.lower())
+    return words[:n]
+
+
+def test_no_seed_query_is_a_copy_of_its_document_opening():
+    """THE anti-self-find lock, and the reason this file was rewritten.
+
+    The retired harvester built each query from the expected document's own
+    leading 110 characters, so the eval reported recall@10 = 1.0000 and
+    MRR = 1.0000 while real questions returned nothing — a sensor measuring
+    its own reflection. A query is refused here when most of its content words
+    are drawn from the opening of the very document it is supposed to find.
+
+    The bar is deliberately loose (a real question about egress DOES contain
+    the word "egress"); it fails the SHAPE that cannot fail, not vocabulary
+    overlap."""
+    data = json.loads(SEED.read_text())
+    offenders = [(p["expected_ref"], f"{_opening_overlap(p['expected_ref'], p['query']):.0%}"
+                  " of the query's words come from the document's opening")
+                 for p in data["pairs"]
+                 if _opening_overlap(p["expected_ref"], p["query"]) > _SELF_FIND_MAX]
+    assert not offenders, (
+        "seed queries are copied from the documents they are meant to find — "
+        f"this is the eval-that-cannot-fail shape: {offenders}"
+    )
+
+
+def test_the_self_find_detector_rejects_the_retired_harvester_shape():
+    """NEGATIVE CONTROL — without this, the check above passes because it
+    measures nothing.
+
+    Rebuild a query the way the deleted harvester did (the document's own
+    leading 110 characters, markdown-stripped) and assert the detector refuses
+    it. If this ever goes green, the detector has stopped detecting and the
+    seed can silently drift back into asking the corpus to find itself."""
+    ref = json.loads(SEED.read_text())["pairs"][0]["expected_ref"]
+    raw = (_REPO_ROOT / ref).read_text(encoding="utf-8", errors="replace")
+    harvester_query = re.sub(r"[#*>`~_\n\t\r]+", " ", raw[:110]).strip()
+    assert _opening_overlap(ref, harvester_query) > _SELF_FIND_MAX, (
+        "the retired harvester's own query shape is no longer detected as a "
+        f"self-find: {harvester_query!r}"
+    )
+
+
+def test_seed_carries_an_abstain_arm():
+    """Without unanswerable questions the whole eval is satisfiable by
+    DELETING the similarity floor: recall@k goes to 1.0000 and every off-topic
+    question is answered out of the nearest unrelated document."""
+    data = json.loads(SEED.read_text())
+    unanswerable = data.get("unanswerable")
+    assert isinstance(unanswerable, list) and len(unanswerable) >= 5, (
+        "seed must carry >=5 unanswerable questions (the abstention arm)"
+    )
+    for q in unanswerable:
+        assert q.strip().endswith("?"), f"unanswerable entry is not a question: {q}"
+
+
+def test_abstain_questions_are_not_answerable_from_the_shipped_docs():
+    """The abstain arm is only honest if the corpus really holds nothing on
+    those subjects — otherwise it gates on the retrieval failing to find
+    something it SHOULD find."""
+    data = json.loads(SEED.read_text())
+    docs = " ".join(
+        (_REPO_ROOT / p["expected_ref"]).read_text(encoding="utf-8", errors="replace").lower()
+        for p in data["pairs"])
+    for q in data["unanswerable"]:
+        # the distinctive noun of each off-corpus question must be absent
+        rare = [w for w in re.findall(r"[a-z]{5,}", q.lower())
+                if w not in ("should", "which", "there", "where", "would")]
+        assert rare, q
+        hits = [w for w in rare if w in docs]
+        assert len(hits) < len(rare), (
+            f"every distinctive word of an 'unanswerable' question appears in "
+            f"the shipped docs — it may not be unanswerable: {q} ({hits})")
 
 
 # ---------------------------------------------------------------------------
@@ -133,18 +239,6 @@ def test_runner_has_mrr_floor_gate():
     )
 
 
-def test_harvester_excludes_exhaust_types():
-    txt = HARVEST.read_text()
-    m = re.search(r'^TYPES="([^"]+)"', txt, re.M)
-    assert m, "harvester lost its default TYPES set"
-    default_types = m.group(1)
-    for exhaust in _EXHAUST_TYPES:
-        assert exhaust not in default_types, (
-            f"harvester default set must exclude exhaust type '{exhaust}' "
-            f"(study C3 — harvesting noise measures noise)"
-        )
-
-
 # ---------------------------------------------------------------------------
 # live gate — self-harvest from the current store, enforce recall floor
 # ---------------------------------------------------------------------------
@@ -174,47 +268,50 @@ def _neon_reachable(conn: str) -> bool:
     return p.returncode == 0 and "1" in p.stdout
 
 
-def test_live_recall_gate_self_harvested():
+def test_live_recall_gate_over_the_question_seed():
+    """The real memory_search path, the real store, real questions.
+
+    This is the arm that went from 9/16 to 16/16 when the vec floor was
+    corrected from its unmeasured 0.45 to the measured default. It is
+    store-local: a box with no Neon skips, and CI pins the ranking
+    fingerprint instead."""
     conn = _env_val("NEON_CONNECTION_STRING")
     if not _neon_reachable(conn):
         pytest.skip("Neon not reachable — live retrieval gate skipped (keyless/CI safe)")
 
-    # Faithfully exercise the production hybrid+rerank path whenever creds exist
-    # anywhere (env OR cabinet/.env); pass both into the child env.
     child_env = {**os.environ, "CABINET_ROOT": str(_REPO_ROOT),
                  "NEON_CONNECTION_STRING": conn}
-    vkey = _env_val("VOYAGE_API_KEY")
-    if vkey:
-        child_env["VOYAGE_API_KEY"] = vkey
-    cid = _env_val("CABINET_ID")
-    if cid:
-        child_env["CABINET_ID"] = cid
+    for name in ("VOYAGE_API_KEY", "CABINET_ID"):
+        v = _env_val(name)
+        if v:
+            child_env[name] = v
 
-    fd, pairs_path = tempfile.mkstemp(suffix=".json")
-    os.close(fd)
-    try:
-        h = _run(["bash", str(HARVEST), "--limit", "12", "--out", pairs_path],
-                 timeout=180, env=child_env)
-        assert h.returncode == 0, f"harvest failed: {h.stderr}"
-        # floor 0.60 for the small self-harvested sample: absorbs sample variance
-        # and a lone Voyage hiccup while still tripping on a real ranker break
-        # (baseline recall@10 on durable-knowledge rows is ~0.9).
-        # --mrr-floor 0.50 is the ORDER gate (R1-EVAL-NO-TEETH): recall@k alone
-        # is order-blind at limit==k — a worst-first rerank kept recall at 0.95
-        # while MRR collapsed 0.925 -> ~0.10; only the MRR floor trips on that.
-        # --limit 20 > k=10 makes the k-cut order-sensitive as well (a found-
-        # but-buried row now counts as a recall MISS instead of being invisible).
-        r = _run(["bash", str(RUNNER), "--pairs", pairs_path, "--floor", "0.60",
-                  "--mrr-floor", "0.50", "--limit", "20", "--json"],
-                 timeout=240, env=child_env)
-        assert r.returncode == 0, (
-            f"retrieval gate FAILED — memory_search ranking regressed "
-            f"(recall < floor OR MRR < mrr-floor). stdout={r.stdout} stderr={r.stderr}"
-        )
-        summary = json.loads(r.stdout)
-        assert summary["pass"] is True
-        assert summary["mrr_floor"] == 0.50, f"mrr floor not applied: {summary}"
-        assert summary["mrr"] >= 0.50, f"MRR below floor yet pass=true: {summary}"
-        assert summary["total"] >= 8, f"too few usable pairs: {summary}"
-    finally:
-        os.unlink(pairs_path)
+    # Unmeasurable rather than red: a store that has not ingested this repo's
+    # docs holds none of the seed's expected documents, and scoring recall for
+    # absent documents would be a sensor pointed at nothing.
+    refs = "|".join(p["expected_ref"] for p in json.loads(SEED.read_text())["pairs"])
+    q = _run(["psql", conn, "-tAc",
+              "SELECT count(*) FROM cabinet_memory WHERE superseded_by IS NULL "
+              "AND source_id = ANY(string_to_array($$" + refs + "$$, '|'));"],
+             timeout=30, env=child_env)
+    present = int((q.stdout or "0").strip() or 0)
+    if present == 0:
+        pytest.skip("this store holds none of the seed's expected documents")
+
+    # --limit 20 > k=10 keeps the k-cut order-sensitive (a found-but-buried row
+    # counts as a recall MISS instead of being invisible). --mrr-floor 0.50 is
+    # the ORDER gate: recall@k alone is order-blind at limit==k.
+    r = _run(["bash", str(RUNNER), "--pairs", str(SEED), "--floor", "0.60",
+              "--mrr-floor", "0.50", "--abstain-floor", "1.00",
+              "--limit", "20", "--json"], timeout=600, env=child_env)
+    summary = json.loads(r.stdout)
+    assert r.returncode == 0, (
+        f"retrieval gate FAILED — recall/MRR/abstain below floor: {summary}"
+    )
+    assert summary["pass"] is True
+    assert summary["mrr"] >= 0.50, summary
+    assert summary["abstain_total"] >= 5, (
+        "the abstain arm must actually have run — without it this gate is "
+        "satisfied by deleting the similarity floor"
+    )
+    assert summary["abstain_rate"] == 1.0, summary

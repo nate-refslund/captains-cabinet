@@ -470,11 +470,77 @@ def _body_of(hit: dict) -> str:
     return text
 
 
+#: A line that is markup rather than prose. Measured 2026-07-29 through the
+#: real ``first-briefing.sh --local`` chain on a 138-note folder: the WHY line
+#: — "I did not ask you for this, I read it: …" — quoted a markdown TABLE back
+#: at the operator as their own sentence:
+#:     "| Path | Locked via | Change | |---|---|---| | `framework/evidence/…"
+#: Same class as the frontmatter strip and the heading strip that preceded it:
+#: the cabinet's own rendering machinery presented as the operator's material,
+#: on the ONE line whose entire job is to be checkable prose.
+_PROSE_REJECT = (
+    re.compile(r"^\s*\|"),              # markdown table row / separator
+    re.compile(r"^\s*[-*+]\s"),         # bullet — a fragment, not a sentence
+    re.compile(r"^\s*\d+[.)]\s"),       # numbered list item
+    re.compile(r"^\s*```"),             # code fence
+    re.compile(r"^\s*[|>=+-]{3,}\s*$"), # rule / table separator
+    re.compile(r"^\s*<"),               # raw html / comment
+)
+
+#: A prose line has to carry some actual words, or "The:" and "—" qualify.
+_MIN_PROSE_WORDS = 5
+
+
+def _prose_lines(text: str) -> list:
+    """The lines of a chunk body that read as the operator's own prose.
+
+    Markup lines are DROPPED rather than cleaned up: a table row with its pipes
+    removed is not a sentence either, and repairing it would put words in the
+    operator's mouth in the exact place the card promises not to."""
+    out = []
+    running = False
+    for line in str(text or "").splitlines():
+        if any(rx.search(line) for rx in _PROSE_REJECT):
+            running = False
+            continue
+        # A SHORT LINE CONTINUES A SENTENCE, it does not start one. The
+        # word floor is there to reject standalone fragments ("The:", a lone
+        # dash); applied to every line it also severs a hard-wrapped
+        # paragraph, and the card then quotes the operator mid-sentence with
+        # no ellipsis — measured: "…require the unlock ceremony to update on
+        # an", because the next line was "armed Mac:".
+        if len(_WORD_RE.findall(line)) < _MIN_PROSE_WORDS and not running:
+            continue
+        if not line.strip():
+            running = False
+            continue
+        out.append(line.strip())
+        running = True
+    return out
+
+
+#: Inline emphasis markers. Stripping them keeps EVERY word and every mark of
+#: punctuation and makes the quote match what the operator SEES when they open
+#: the note — measured on a real hatch, the WHY line read
+#: '"**What this is.** The design of record for **WORLD-ONBOARDING-V1B**…"',
+#: which is their text but not their sentence as rendered anywhere they read it.
+_EMPHASIS_RE = re.compile(r"(\*\*|__|`)")
+
+
 def _quote_of(hit: dict) -> str:
-    """The operator's own sentence, without the heading the citation already
-    names. A raw flatten reads "What we know The billing migration moved…" —
-    the heading twice, and fewer of their actual words inside the cap."""
-    return _flatten(_body_of(hit), _MAX_QUOTE)
+    """The operator's own SENTENCE, without the heading the citation already
+    names and without the markup around it.
+
+    A raw flatten reads "What we know The billing migration moved…" — the
+    heading twice, and fewer of their actual words inside the cap. A flatten
+    that keeps markup reads like a table. Returns "" when the chunk holds no
+    prose at all, and the caller then quotes NOTHING: a card with one fewer
+    claim is the point of this surface, and a quote that is really a table is
+    an unearned one."""
+    lines = _prose_lines(_body_of(hit))
+    if not lines:
+        return ""
+    return _flatten(_EMPHASIS_RE.sub("", " ".join(lines)), _MAX_QUOTE)
 
 
 def _cite(hit: dict) -> str:
@@ -486,6 +552,18 @@ def _cite(hit: dict) -> str:
     ref = str(hit.get("ref") or hit.get("path") or "?")
     ts = str(hit.get("content_ts") or "")
     return f"{ref} (dated {ts[:10]})" if ts else f"{ref} (undated)"
+
+
+def _quote_and_cite(ordered: list) -> dict:
+    """``{'quote', 'quote_cite'}`` — the first cited hit that yields prose, and
+    ITS citation. Empty quote and empty cite when none of them do; the WHY line
+    then carries no quote at all rather than quoting the file it did not
+    take the words from."""
+    for hit in ordered or []:
+        quote = _quote_of(hit)
+        if quote:
+            return {"quote": quote, "quote_cite": _cite(hit)}
+    return {"quote": "", "quote_cite": ""}
 
 
 def _query_terms(text: str) -> set:
@@ -503,6 +581,20 @@ def _query_terms(text: str) -> set:
 # operator finds that out the moment they do what the card tells them and open
 # the three files, which is the unearned-claim defect this whole surface exists
 # to remove, appearing on the surface itself.
+def _join_span(cited: list, query: str) -> int:
+    """How many of the CITED files carry the terms ``_join_terms`` reports.
+
+    Split out rather than returned as a tuple so every existing caller of
+    ``_join_terms`` keeps its shape. It re-derives instead of caching because a
+    cached count that drifts from the terms is the same defect one level up."""
+    terms = _join_terms(cited, query)
+    if not terms:
+        return 0
+    term = terms[0]
+    return sum(1 for hit in cited
+               if term in _query_terms(_body_of(hit)))
+
+
 def _join_terms(cited: list, query: str) -> list:
     """Terms shared by at least ``_MIN_JOIN_FILES`` of the DISTINCT files this
     card CITES, minus the query's own terms and the stopwords.
@@ -536,7 +628,39 @@ def _join_terms(cited: list, query: str) -> list:
     for terms in per_file.values():
         for term in terms:
             counts[term] = counts.get(term, 0) + 1
-    shared = [t for t, n in counts.items() if n >= _MIN_JOIN_FILES]
+    # THE CAPTION MUST SAY HOW MANY (fixed 2026-07-29). The threshold is 2
+    # while up to `_MAX_RECALL_FILES` citations are printed beside the caption,
+    # so "Shared wording: X" could name a term absent from one of the very
+    # files listed next to it — measured by the pass that landed the first
+    # half: three cites captioned "Shared wording: reconciliation, ledger,
+    # late" where the third file carried none of the three. The operator finds
+    # that out by doing exactly what the card told them to do.
+    #
+    # Requiring ALL cited files was tried first and is WRONG: it silences a
+    # genuine 2-of-3 join, which is a real thing the operator wants to know,
+    # and "fix it by deleting the honest case" is the failure the previous
+    # pass wrote an arm against. So the terms are the ones shared MOST WIDELY
+    # (all of them at the top count), and the count travels with them —
+    # `shared_in`, rendered by the caller. The claim then matches the files.
+    if not counts:
+        return []
+    best = max(counts.values())
+    if best < _MIN_JOIN_FILES:
+        return []
+    shared = [t for t, n in counts.items() if n == best]
+    # THE JOIN STAYS WEAK, AND SAYING SO IS THE POINT. Every term is now
+    # genuinely in every cited file, but "shared" and "worth saying" are
+    # different bars: on a real 138-note folder the honest caption came out
+    # "framework, tests, file, path" — words that appear in most of the
+    # operator's notes and say little about what THESE three have in common.
+    #
+    # A distinctiveness re-rank was BUILT and MEASURED against this: down-rank
+    # a term by how many of the OTHER hits recall returned for the same subject
+    # also carry it (a free background corpus, no model, nothing named). On the
+    # same folder it produced the identical four Evidence terms in a different
+    # order, and swapped two Cabinet-World terms for two no better. It is not
+    # in the code because it earned no place there — the same verdict the
+    # relative retrieval band got, from the same kind of measurement.
     shared.sort(key=lambda t: (-counts[t], -len(t), t))
     return shared[:_MAX_JOIN_TERMS]
 
@@ -682,6 +806,12 @@ def probe_recall(answers: dict, focus_text: str | None = None, *,
             reverse=True)[:_MAX_RECALL_FILES]
         dates = sorted({str(h.get("content_ts") or "")[:10]
                         for h in ordered if h.get("content_ts")})
+        # DISTINCT dates and DATED FILES are different numbers, and the
+        # headline needs the second one: two notes written the same day are one
+        # date and two files, so counting `dates` would under-report how many
+        # of the cited notes the span actually covers — a fabricated precision
+        # on the line the operator reads first.
+        dated_files = sum(1 for h in ordered if h.get("content_ts"))
         result["subjects"].append({
             "key": probe["key"],
             "label": probe["label"],
@@ -689,12 +819,22 @@ def probe_recall(answers: dict, focus_text: str | None = None, *,
             "files": [str(h.get("path") or h.get("ref") or "") for h in ordered],
             "cites": [_cite(h) for h in ordered],
             "dates": list(reversed(dates)),
+            "dated_files": dated_files,
             "span": (f"{dates[0]} … {dates[-1]}"
                      if len(dates) > 1 else (dates[0] if dates else "")),
             # ``ordered``, never ``kept``: the shared wording must be checkable
             # in the files this card actually prints (see _join_terms' header).
             "shared_terms": _join_terms(ordered, probe["query"]),
-            "quote": _quote_of(ordered[0]) if ordered else "",
+            "shared_in": _join_span(ordered, probe["query"]),
+            # THE QUOTE AND ITS CITATION ARE THE SAME HIT. The quote used to be
+            # pinned to ordered[0] while the citation was printed from
+            # ordered[0] too — which was consistent only because the quote could
+            # never be empty. Now that a chunk holding no prose yields no quote,
+            # the quote walks to the first hit that HAS prose, and its citation
+            # has to walk with it or the card would attribute one file's words
+            # to another — the citation-does-not-support-the-claim defect this
+            # whole surface exists to remove.
+            **_quote_and_cite(ordered),
             "top_cite": _cite(ordered[0]) if ordered else "",
             "refs": [str(h.get("ref") or h.get("path") or "") for h in ordered],
         })
@@ -737,7 +877,7 @@ def _subject_what(name: str, low: bool, subject: dict | None = None, *,
             + (f" ({span})" if span else "")
             + ", newest first: "
             + "; ".join(subject.get("cites") or [])
-            + (f". Shared wording: {', '.join(shared)}" if shared else "")
+            + _shared_clause(subject)
             + f". Then {close}."
         )
     if subject and subject.get("top_cite"):
@@ -755,18 +895,55 @@ def _subject_what(name: str, low: bool, subject: dict | None = None, *,
             f"end-to-end: task → change → verified deploy/close.")
 
 
+def _shared_clause(subject: dict | None) -> str:
+    """". Shared wording: a, b" — and, when the terms are not in EVERY cited
+    file, how many of them carry the words. Without that count the sentence
+    asserts something about a file printed beside it that the file does not
+    show, which is the whole defect this surface exists to remove."""
+    shared = (subject or {}).get("shared_terms") or []
+    if not shared:
+        return ""
+    n = int((subject or {}).get("shared_in") or 0)
+    total = len((subject or {}).get("files") or [])
+    scope = "" if (n and total and n >= total) else f" (in {n} of the {total})"
+    return f". Shared wording{scope}: {', '.join(shared)}"
+
+
 def _recall_card_name(name: str, subject: dict | None, fallback: str) -> str:
     """Name the card after WHAT WAS FOUND, not after the thing the operator
     already knows they declared. A headline that counts their own notes and
     dates them is checkable at a glance; "First verifiable improvement in X"
-    is true of every deployment ever hatched."""
+    is true of every deployment ever hatched.
+
+    "NEVER READ TOGETHER" IS GONE (2026-07-29). It was the headline of every
+    join card — "Evidence: 3 of your own notes (2026-07-08 … 2026-07-16),
+    never read together" — and it is an assertion about the operator's own
+    reading history, which nothing the cabinet can read shows. Offered as a
+    finding, on the one line they see first. What replaces it is the join
+    itself, which every citation below the headline already supports: these
+    files, this span, these words in common. The card loses a flourish and
+    stops making a claim it cannot back.
+
+    The SPAN covers only the notes that carry a date. Three cited files with
+    one derivable ``content_ts`` used to render "3 of your own notes
+    (2026-07-21)" while two of the three citation lines said "(undated)" —
+    the headline dating notes the card itself refuses to date."""
     files = (subject or {}).get("files") or []
     if len(files) < _MIN_JOIN_FILES:
         return fallback
     span = (subject or {}).get("span") or ""
-    return (f"{name}: {len(files)} of your own notes"
-            + (f" ({span})" if span else "")
-            + ", never read together")
+    dated = int((subject or {}).get("dated_files") or 0)
+    if span and dated < len(files):
+        when = f" ({dated} of them dated {span})"
+    elif span:
+        when = f" ({span})"
+    else:
+        when = " (undated)"
+    # The shared wording is NOT repeated up here. It is printed in full in the
+    # WHAT line beside the citations that make it checkable, and a headline
+    # that parrots four generic words amplifies the weakest part of the card.
+    tail = " that share wording" if (subject or {}).get("shared_terms") else ""
+    return f"{name}: {len(files)} of your own notes{when}{tail}"
 
 
 def _recall_why(subject: dict | None) -> str:
@@ -775,8 +952,12 @@ def _recall_why(subject: dict | None) -> str:
     unearned citation is the defect this whole unit exists to remove."""
     if not subject or not subject.get("quote"):
         return ""
+    # quote_cite, NOT top_cite: the citation must name the file the words were
+    # taken from. They are usually the same hit and were assumed to be, which
+    # held only while a quote could never be empty.
+    cite = subject.get("quote_cite") or subject.get("top_cite") or "?"
     return (f' I did not ask you for this, I read it: "{subject["quote"]}" '
-            f'— {subject.get("top_cite") or "?"}.')
+            f'— {cite}.')
 
 
 # ---------------------------------------------------------------------------

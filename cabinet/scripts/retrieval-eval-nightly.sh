@@ -4,7 +4,12 @@
 # its named residual "rerank rescues pool damage").
 #
 # Runs the retrieval eval (cabinet/scripts/retrieval-eval.sh) in BOTH arms
-# every night and appends ONE verdict JSONL line to the runtime ledger:
+# every night against the COMMITTED QUESTION SEED (2026-07-29 — it used to
+# self-harvest its pairs, and that harvester derived each query from the
+# expected document's own leading 110 characters, so the nightly gate was
+# asking the corpus to find itself and scored 1.0000 forever; the harvester
+# is deleted, the seed is question-shaped and ships with the repo) and
+# appends ONE verdict JSONL line to the runtime ledger:
 #   arm "rerank"     the production path (blended pool + Voyage rerank)
 #   arm "no-rerank"  CABINET_MEMORY_RERANK=off — the same floors over the
 #                    BLENDED order, so weight/pool damage cannot hide behind
@@ -35,8 +40,8 @@
 # log freshness (daily calendar → 26h floor).
 #
 # Usage:
-#   retrieval-eval-nightly.sh                    nightly run (self-harvests pairs)
-#   retrieval-eval-nightly.sh --pairs FILE       use a fixed pairs file (replays/tests)
+#   retrieval-eval-nightly.sh                    nightly run (committed question seed)
+#   retrieval-eval-nightly.sh --pairs FILE       use a different pairs file (replays/tests)
 #   retrieval-eval-nightly.sh --stamp            after a BOTH-ARM PASS, refresh the
 #       ranking fingerprint cabinet/scripts/tests/fixtures/memory-ranking.fingerprint
 #       (sha256 over the RANKING-BLOCK marker regions of lib/memory.sh). This is
@@ -51,14 +56,20 @@
 #         BADLINE            latest line is not parseable verdict JSON
 #         STALE age=<s> ...  latest verdict older than 48h (gate not running)
 #         BREACH ...         latest verdict is a floor breach (pass=false)
-#         NOTOK status=<s>   latest verdict could not measure (no-pairs/error)
+#         NOTOK status=<s>   latest verdict could not measure (no-pairs/error;
+#                            no-pairs now means THIS STORE HOLDS NONE of the
+#                            seed's expected documents — a store that has not
+#                            ingested its own docs cannot be measured by it)
 #         OK age=<s> ...     latest verdict fresh + passing
 # Floors (env-overridable): RE_FLOOR=0.60 RE_MRR_FLOOR=0.50 (rerank arm — the
 #   proven live-test floors), RE_BLENDED_MRR_FLOOR=0.50 (no-rerank arm;
 #   calibrated live 2026-07-15 on self-harvested pairs: rerank r@10=1.00
 #   MRR=0.958, blended r@10=0.833 MRR=0.736 vs ~0.10 for an order-inverted
 #   mutant — 0.50 has margin both ways),
-#   RE_LIMIT=20 (> k=10 keeps the k-cut order-sensitive), RE_HARVEST_LIMIT=12.
+#   RE_LIMIT=20 (> k=10 keeps the k-cut order-sensitive),
+#   RE_ABSTAIN_FLOOR=1.00 (every unanswerable seed question must return
+#   nothing — the arm that stops a floor deletion from scoring a perfect
+#   recall; see retrieval-eval.sh).
 # Exit: 0 pass / skip (credless, no-pairs); 1 floor breach or arm error;
 #       2 usage error.
 set -uo pipefail
@@ -74,18 +85,18 @@ HIST="$CABINET_ROOT/cabinet/logs/retrieval-eval-history.jsonl"
 MEMLIB="$CABINET_ROOT/cabinet/scripts/lib/memory.sh"
 FPRINT="$CABINET_ROOT/cabinet/scripts/tests/fixtures/memory-ranking.fingerprint"
 RUNNER="$SCRIPT_DIR/retrieval-eval.sh"
-HARVEST="$SCRIPT_DIR/harvest-retrieval-eval.sh"
+SEED="$CABINET_ROOT/cabinet/scripts/tests/fixtures/retrieval-questions.seed.json"
 STALE_S=172800   # 48h — one missed night is grace, two is a dead gate
 
 RE_FLOOR="${RE_FLOOR:-0.60}"
 RE_MRR_FLOOR="${RE_MRR_FLOOR:-0.50}"
 RE_BLENDED_MRR_FLOOR="${RE_BLENDED_MRR_FLOOR:-0.50}"
 RE_LIMIT="${RE_LIMIT:-20}"
-RE_HARVEST_LIMIT="${RE_HARVEST_LIMIT:-12}"
+RE_ABSTAIN_FLOOR="${RE_ABSTAIN_FLOOR:-1.00}"
 # Floors must be plain non-negative decimals — they travel into jq --argjson
 # (JSON numbers) and awk comparisons in the runner; junk fails loudly here,
 # never as a malformed verdict line.
-for _f in "$RE_FLOOR" "$RE_MRR_FLOOR" "$RE_BLENDED_MRR_FLOOR"; do
+for _f in "$RE_FLOOR" "$RE_MRR_FLOOR" "$RE_BLENDED_MRR_FLOOR" "$RE_ABSTAIN_FLOOR"; do
   if ! printf '%s' "$_f" | grep -qE '^[0-9]*\.?[0-9]+$'; then
     echo "retrieval-eval-nightly.sh: floor env not a plain decimal: $_f" >&2; exit 2
   fi
@@ -174,32 +185,46 @@ _append_line() {  # $1 = one compact JSON line (already jq-composed)
 }
 
 PAIRS_SOURCE="file"
-TMP_PAIRS=""
-cleanup() { [ -n "$TMP_PAIRS" ] && rm -f "$TMP_PAIRS"; }
-trap cleanup EXIT
 
 if [ -z "$PAIRS" ]; then
-  PAIRS_SOURCE="harvest"
-  TMP_PAIRS="$(mktemp "${TMPDIR:-/tmp}/retrieval-eval-pairs.XXXXXX")"
-  if ! bash "$HARVEST" --limit "$RE_HARVEST_LIMIT" --out "$TMP_PAIRS" >/dev/null 2>&1; then
+  PAIRS_SOURCE="seed"
+  PAIRS="$SEED"
+  [ -f "$PAIRS" ] || {
+    echo "retrieval-eval-nightly: seed not found: $PAIRS" >&2; exit 2; }
+  # PRESENCE PRECHECK. The seed's expected documents are ones this repo ships,
+  # but a store that has not ingested its docs yet holds none of them — and
+  # measuring recall for documents that are ABSENT would red the gate for a
+  # young store rather than report that it cannot be measured. Pure SQL COUNT,
+  # no embedding, no paid call. A store holding SOME of them is measurable and
+  # proceeds (the eval scores what it finds); only zero is unmeasurable.
+  _present="$(psql "$NEON_CONNECTION_STRING" -q -t -A \
+      -v refs="$(jq -r '[.pairs[].expected_ref] | join("|")' "$PAIRS")" \
+      2>/dev/null <<'SQLEOF' | tr -cd '0-9'
+SELECT count(*) FROM cabinet_memory
+WHERE superseded_by IS NULL
+  AND source_id = ANY(string_to_array(:'refs', '|'));
+SQLEOF
+)"
+  if [ -z "$_present" ] || [ "$_present" -eq 0 ] 2>/dev/null; then
     line="$(jq -nc --arg ts "$(_now_iso)" \
       '{ts:$ts, status:"no-pairs", pass:null,
-        note:"harvest yielded no usable pairs (young store?) — gate unmeasurable tonight"}')"
+        note:"this store holds NONE of the seed expected documents (docs not ingested yet?) — gate unmeasurable tonight"}')"
     _append_line "$line"
-    echo "retrieval-eval-nightly: NO-PAIRS — harvest found nothing usable; verdict line appended, exiting 0"
+    echo "retrieval-eval-nightly: NO-PAIRS — store holds none of the seed's expected documents; verdict line appended, exiting 0"
     exit 0
   fi
-  PAIRS="$TMP_PAIRS"
 fi
 
 # Arm 1 — production path (rerank live). --quiet --json → stdout is exactly
 # one JSON verdict line (per-pair HIT/MISS prints are JSON-gated off).
 rerank_json="$(bash "$RUNNER" --pairs "$PAIRS" --floor "$RE_FLOOR" \
-  --mrr-floor "$RE_MRR_FLOOR" --limit "$RE_LIMIT" --json --quiet)"
+  --mrr-floor "$RE_MRR_FLOOR" --abstain-floor "$RE_ABSTAIN_FLOOR" \
+  --limit "$RE_LIMIT" --json --quiet)"
 rerank_rc=$?
 # Arm 2 — blended order (rerank seam off).
 blended_json="$(bash "$RUNNER" --no-rerank --pairs "$PAIRS" --floor "$RE_FLOOR" \
-  --mrr-floor "$RE_BLENDED_MRR_FLOOR" --limit "$RE_LIMIT" --json --quiet)"
+  --mrr-floor "$RE_BLENDED_MRR_FLOOR" --abstain-floor "$RE_ABSTAIN_FLOOR" \
+  --limit "$RE_LIMIT" --json --quiet)"
 blended_rc=$?
 
 if ! printf '%s' "$rerank_json" | jq -e . >/dev/null 2>&1 \
