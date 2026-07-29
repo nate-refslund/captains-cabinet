@@ -1852,3 +1852,42 @@ def test_the_named_area_list_is_capped_when_rendered_but_not_when_recorded(tmp_p
     assert f"and {len(recorded) - journey._MAX_NAMED_AREAS} more" in phrase
     assert journey.unopened_areas_phrase({"unopened_areas": []}) == ""
     assert journey.unopened_areas_phrase(None) == ""
+
+
+def test_a_COMPLETE_window_can_still_hold_an_area_it_never_entered(tmp_path):
+    """``unopened_areas`` is not empty-by-construction on a complete window.
+
+    The field's own comment claimed it was, and driving the real scan proved
+    that false: ``complete`` is derived from files REACHED, while this set is
+    derived from files ENTERED, and a file rejected at read time — binary,
+    unreadable, raced — is reached but never entered. An area made only of
+    those is a genuine blind spot sitting behind ``complete == True``.
+
+    This arm pins the honest half: the RECORD names the area regardless of
+    ``complete``. It deliberately does not assert what the card renders,
+    because the rendering gap (both disclosure sites gate on ``not complete``)
+    is a claim-surface change filed for its own review, and an assertion that
+    the operator is NOT told would enshrine the very gap it documents. Pinning
+    the record instead is what catches the naive repair — computing the set
+    only on an incomplete window to make the old comment true again.
+    """
+    root = (tmp_path / "blind").resolve()
+    (root / "notes").mkdir(parents=True)
+    for i in range(4):
+        (root / "notes" / f"n{i}.md").write_text(f"# n{i}\n\nprose\n", encoding="utf-8")
+    (root / "tracker").mkdir()
+    locked = []
+    for i in range(2):
+        row = root / "tracker" / f"sprint-{i}.csv"
+        row.write_text("id,title\n1,URGENT rotate the signing key\n", encoding="utf-8")
+        row.chmod(0o000)
+        locked.append(row)
+    try:
+        manifest, _entries = journey._scan_source(root, charter_hash="blind")
+    finally:
+        for row in locked:
+            row.chmod(0o600)
+    coverage = manifest["coverage"]
+    assert coverage["complete"] is True, coverage
+    assert coverage["unexamined_files"] == 0, coverage
+    assert "tracker" in coverage["unopened_areas"], coverage

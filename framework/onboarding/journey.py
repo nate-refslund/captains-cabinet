@@ -1707,8 +1707,19 @@ def _scan_source(source: Path, charter_hash: str) -> tuple[dict[str, Any], list[
             "complete": unexamined == 0 and not truncated,
             "ordering": "relevance",
             # WHICH parts of the folder the window never touched at all, by
-            # name. Empty on a complete window by construction. Recorded in
-            # full; the surfaces cap what they render.
+            # name. Recorded in full; the surfaces cap what they render.
+            # NOT empty-by-construction on a complete window, and the earlier
+            # claim that it was is measurably false: ``complete`` is derived
+            # from files REACHED, while this set is derived from files
+            # ENTERED, and a file rejected at read time (binary, unreadable,
+            # raced) is reached-but-never-entered. An area made only of those
+            # therefore appears here with ``complete`` true — verified by
+            # execution 2026-07-29 on an area of mode-000 CSVs. Neither
+            # disclosure site renders the clause in that case (both gate on
+            # ``not complete``), so the record is honest and the RENDERING of
+            # it is not yet; closing that means re-deriving ``complete`` from
+            # entered files, which moves an older claim surface and is filed
+            # rather than smuggled in here.
             "unopened_areas": unopened_areas,
         },
     }
