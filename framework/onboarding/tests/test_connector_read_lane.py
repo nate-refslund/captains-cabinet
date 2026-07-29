@@ -17,7 +17,14 @@ control is this program's dominant defect class:
 * the WIRE arm drives ``journey.act`` and asserts the entry mode FLIPS to
   connected — the mode whose grant key had no writer for connectors until this
   landed. It fails against pre-change code, which is the only proof that the
-  wire is real and not a grep.
+  wire is real and not a grep;
+* the DECLARATION-LOAD arms are the degenerate ends of the loader itself, and
+  each is written as a DIFFERENCE rather than as a presence check: a broken
+  file must not produce the document an absent file produces, and a dropped
+  entry must not vanish out of a sweep that reports its sibling as connected.
+  An arm that only asserted "not_reached is non-empty" would pass against a
+  lane that complained about everything, so the absent-file case is asserted
+  SILENT in the same test.
 """
 from __future__ import annotations
 
@@ -285,6 +292,114 @@ def test_an_empty_inventory_is_not_a_connection(tmp_path):
     assert out["connectors"][0]["connected"] is False
     assert out["connectors"][0]["reason"] == "inventory_returned_no_items"
     assert research.probe_connectors(tmp_path, sweep=out)["grants"]["connectors"] == []
+
+
+# -------------------------------------------- the declaration that would not load
+def _declare(root, text):
+    """Write a raw connector declaration under an OPEN egress ceiling."""
+    _open(root)
+    (root / research.CONNECTORS_REL).write_text(text, encoding="utf-8")
+    return root
+
+
+@pytest.mark.parametrize("text, problem", [
+    ("connectors: [unclosed\n", "would not parse"),
+    ("just a string, not a mapping\n", "carries no `connectors:` list"),
+    ("connectors:\n  things: {}\n", "carries no `connectors:` list"),
+])
+def test_a_declaration_that_will_not_load_is_named_not_read_as_an_empty_one(
+        tmp_path, text, problem):
+    """A parse failure and "the operator declared nothing" both yield zero
+    specs. They must not yield the same DOCUMENT — that is this module's own
+    named failure, committed in its loader."""
+    broken = research.sweep_connectors(
+        _declare(tmp_path / "broken", text), env={}, fetch=Recorder([{}]))
+    assert broken["declared"] == 0 and broken["connectors"] == []
+    named = [n for n in broken["not_reached"]
+             if problem in n and research.CONNECTORS_REL in n]
+    assert named, broken["not_reached"]
+
+    # The honest empty is the ABSENT file, and it stays SILENT. Without this
+    # half the arm above would pass against a lane that complained about
+    # everything, which is a different lie with the same shape.
+    absent = research.sweep_connectors(_open(tmp_path / "fresh"), env={},
+                                       fetch=Recorder([{}]))
+    assert absent["declared"] == 0 and absent["not_reached"] == []
+
+
+def test_a_parse_failure_never_echoes_the_line_that_broke(tmp_path):
+    """The refusal must name the FAILURE without quoting the FILE.
+
+    A YAML error's own text quotes the offending source line, and the file it
+    quotes is the one the operator edits beside their credentials — so the
+    obvious "include the exception message" improvement would push a line of
+    their config into a lane that promises contents-free. The fixture is
+    asserted to ACTUALLY LEAK through the parser first; without that half the
+    arm would pass against a string the parser never mentions, proving nothing.
+    """
+    secret = "SUPER-SECRET-INLINE-VALUE"
+    text = f"connectors:\n  - name: things\n    token: [{secret}\n"
+    with pytest.raises(Exception) as excinfo:
+        __import__("yaml").safe_load(text)
+    assert secret in str(excinfo.value), "fixture does not leak — arm proves nothing"
+
+    out = research.sweep_connectors(_declare(tmp_path, text), env={},
+                                    fetch=Recorder([{}]))
+    assert [n for n in out["not_reached"] if "would not parse" in n], out["not_reached"]
+    assert secret not in json.dumps(out)
+
+
+def test_a_malformed_entry_is_named_and_its_sibling_is_still_swept(tmp_path):
+    """The confident result that omits what it discarded: two declared, one
+    dropped, the other read and reported CONNECTED, and — before this — nothing
+    anywhere naming the one that went in the bin."""
+    root = _declare(tmp_path, "connectors:\n"
+                              "  - name: things\n"
+                              "    credential_env: TEST_CONNECTOR_TOKEN\n"
+                              "    inventory:\n"
+                              "      url: https://api.example.test/v1/things\n"
+                              "      items_path: items\n"
+                              "      name_field: title\n"
+                              "  - name: half-written\n")
+    out = research.sweep_connectors(root, env={"TEST_CONNECTOR_TOKEN": CRED},
+                                    fetch=Recorder([_items(2)]))
+    assert out["declared"] == 1
+    assert out["connectors"][0]["connected"] is True
+    named = [n for n in out["not_reached"] if "half-written" in n]
+    assert named, out["not_reached"]
+    assert "entry 2" in named[0] and "inventory" in named[0]
+
+
+def test_an_entry_too_malformed_to_have_a_name_is_named_by_its_position(tmp_path):
+    """The degenerate end of the degenerate end: an entry with no name at all,
+    and an entry that is not a mapping. Neither can be reported by name, so the
+    refusal carries the position the operator can count to in their own file."""
+    out = research.sweep_connectors(
+        _declare(tmp_path, "connectors:\n  - inventory: {}\n  - just-a-string\n"),
+        env={}, fetch=Recorder([{}]))
+    assert out["declared"] == 0
+    assert [n for n in out["not_reached"] if "entry 1" in n], out["not_reached"]
+    assert [n for n in out["not_reached"] if "entry 2" in n], out["not_reached"]
+
+
+def test_the_loader_reports_through_the_read_the_operator_is_offered(tmp_path):
+    """THE WIRE for the refusals above, driven through the public surfaces.
+
+    Zero usable specs means the gather action was never offered, so a refusal
+    landing only in the sweep document would have been written somewhere no
+    operator could ask for it — a sensor pointed at a path nobody walks.
+    """
+    _declare(tmp_path, "connectors: [unclosed\n")
+    state = journey.snapshot(tmp_path)["state"]
+    assert state["connectors_declared"] == 0
+    assert state["connectors_unreadable"]
+    assert "gather_connectors" in [
+        a["action"] for a in journey._entry_plan_for(state)["next_actions"]]
+
+    out = journey.act({"action": "gather_connectors", "surface": "cli",
+                       "action_id": "act-" + "e" * 16}, root=tmp_path)
+    reported = out["state"]["connector_sweep"]["not_reached"]
+    assert [n for n in reported if "would not parse" in n], reported
 
 
 @pytest.mark.parametrize("payload, reason", [
