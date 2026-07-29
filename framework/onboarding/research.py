@@ -490,14 +490,24 @@ def probe_connectors(root, *, source_root=None, ratified=False, exports=(),
 #   * BOUNDED. A call budget, a per-call timeout, a response-size cap and an
 #     item cap, all enforced here rather than trusted to the far end.
 #   * CONTENTS-FREE. Only the declared name / updated / actor paths are read out
-#     of each item, each coerced to a short scalar string. The response body is
-#     never persisted and never returned.
+#     of each item, each coerced to a short scalar string. An actor path may
+#     resolve to a PERSON-SHAPED object or a list of them, so that one step is
+#     walked at a fixed key set and a per-row cap; nothing else is descended
+#     into. The response body is never persisted and never returned.
 #
 # EVERY FAILURE IS NAMED. A connector that does not answer is REFUSED WITH ITS
 # REASON, never dropped: a missing credential, a closed egress ceiling, an HTTP
 # status, an unparseable body and a truncated page all read differently, and
 # collapsing them is how "nothing is connected" gets confused with "I never
 # looked" — the failure this program has now paid for at three altitudes.
+#
+# AND A DECLARATION THAT MISSED IS NOT AN EMPTY ESTATE. The same rule applied
+# one level down, where it was being broken: a mistyped ``items_path`` returned
+# no items, and no items was reported as ``inventory_returned_no_items`` — the
+# reason an empty system gets. So the operator's first pass at their own config,
+# the moment this lane is most likely to be wrong, read back as "you have
+# nothing there". Every declared path now reports whether it RESOLVED, and a
+# path that never did is named as itself.
 CONNECTOR_SWEEP_SCHEMA = "cabinet.connector-sweep/v1"
 CONNECTORS_REL = "instance/config/connectors.yml"
 
@@ -523,6 +533,23 @@ _DEFAULT_MAX_CALLS = 40
 _DEFAULT_TIMEOUT = 25.0
 _DEFAULT_MAX_ITEMS = 2000
 _DEFAULT_MAX_PAGES = 12
+#: The clock encodings a connector may DECLARE. A clock that exists in another
+#: encoding is not an absent clock: read as text, an epoch stamp fails every
+#: ISO test downstream and the sweep tells the operator "nothing I read carried
+#: a date" about an estate that dates every row — a sensor describing itself
+#: rather than the estate. Declared, never sniffed: guessing is how a 1970 date
+#: appears, and an encoding this module does not know is REFUSED by name rather
+#: than silently read as ISO.
+_DATE_ENCODINGS = frozenset({"iso", "epoch_ms", "epoch_s"})
+#: The keys an actor object may carry its name under, in preference order. Not a
+#: taxonomy of people — a list of the words systems put a display name behind,
+#: and the last resort is an opaque id, which still DISTINGUISHES two actors even
+#: when it names neither.
+_ACTOR_NAME_KEYS = ("name", "login", "title", "email", "id")
+#: Actors kept per item. A declared path that resolves to a list of two hundred
+#: participants is a body arriving through the actor door; the cap holds the
+#: contents-free property without refusing the ordinary two-or-three case.
+_MAX_ACTORS_PER_ITEM = 8
 
 
 class ReadOnlyViolation(RuntimeError):
@@ -605,6 +632,60 @@ def _scalar(value):
     return text[:_MAX_FIELD_CHARS] or None
 
 
+def _stamp(value, encoding: str):
+    """One declared clock field, normalised to a comparable instant — or None.
+
+    ISO is passed through as the short scalar it already is. An epoch encoding is
+    converted here, because every reader downstream (the period, the presence
+    question, the ranker's clock admission) tests for a leading ``YYYY-MM-DD``
+    and an epoch integer silently fails all three at once.
+    """
+    if encoding == "iso":
+        return _scalar(value)
+    if value is None or isinstance(value, bool) or isinstance(value, (dict, list, tuple, set)):
+        return None
+    try:
+        seconds = float(value) / (1000.0 if encoding == "epoch_ms" else 1.0)
+        # ZERO AND BELOW ARE SENTINELS, NOT INSTANTS. Systems write 0 for "never
+        # set", and converted faithfully that becomes 1970-01-01 — a date, which
+        # ranks, sorts and reports as a real reading. Absent is what it means.
+        if seconds <= 0:
+            return None
+        return datetime.fromtimestamp(seconds, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+
+
+def _people(value, budget: int) -> list:
+    """The actor names at one declared path: a string, an object, or a list.
+
+    ONE ITEM DOES NOT HAVE EXACTLY ONE ACTOR, and assuming so loses the operator
+    precisely where they are most likely to appear — the assignees, the
+    participants, the parties. ``_scalar`` returns None for any container, so
+    before this the whole list was dropped and the connector reported zero
+    distinct actors while carrying the operator's own handle in every row. The
+    walk is one level deep, at ``_ACTOR_NAME_KEYS``, capped: enough to read a
+    person out of the shape systems store people in, never enough to read a body.
+    """
+    if value is None or isinstance(value, bool) or budget <= 0:
+        return []
+    if isinstance(value, dict):
+        for key in _ACTOR_NAME_KEYS:
+            text = _scalar(value.get(key))
+            if text:
+                return [text]
+        return []
+    if isinstance(value, (list, tuple)):
+        out = []
+        for entry in value:
+            out.extend(_people(entry, budget - len(out)))
+            if len(out) >= budget:
+                return out[:budget]
+        return out
+    text = _scalar(value)
+    return [text] if text else []
+
+
 def _paged(value, page: int):
     """Substitute the page cursor. ``str.replace``, never ``str.format`` — a
     GraphQL document is full of braces and ``format`` would raise on all of
@@ -682,15 +763,24 @@ def _one_call(call, credential, page, *, fetch, timeout):
         return None, "response_not_json"
 
 
-def _items_of(doc, call) -> list:
-    """The inventory items. A single object counts as one item — an estate with
-    exactly one thing in it is not an empty estate."""
+def _items_of(doc, call) -> tuple:
+    """``(items, reason)`` — the inventory items, or why there are none.
+
+    A single object counts as one item: an estate with exactly one thing in it is
+    not an empty estate. And a path that resolved to NOTHING is reported as a
+    missed path rather than as an empty list, because those two are the same
+    bytes and opposite facts — one says the operator has nothing, the other says
+    this module was told to look in the wrong place.
+    """
     found = _dig(doc, call.get("items_path"))
     if isinstance(found, list):
-        return [i for i in found if isinstance(i, (dict, str, int, float))]
+        return [i for i in found if isinstance(i, (dict, str, int, float))], None
     if isinstance(found, dict):
-        return [found]
-    return []
+        return [found], None
+    path = str(call.get("items_path") or "")
+    if found is None:
+        return [], f"items_path_missed:{path or '(root)'}"
+    return [], f"items_path_not_a_list:{path or '(root)'}"
 
 
 def _sweep_one(spec, credential, *, fetch, timeout, max_items, budget) -> dict:
@@ -704,6 +794,15 @@ def _sweep_one(spec, credential, *, fetch, timeout, max_items, budget) -> dict:
     except ReadOnlyViolation as exc:
         return {**row, "reason": f"read_only_refused:{exc}"}
     row["host"] = str(call["url"]).split("://", 1)[1].split("/", 1)[0]
+    encoding = str(call.get("date_encoding") or "iso").strip().lower()
+    if encoding not in _DATE_ENCODINGS:
+        # REFUSED, not read as ISO. A typo here does not lose a clock quietly —
+        # it produces a whole sweep with no period, which reads as a fact about
+        # the estate. One named word is cheaper to fix than a false negative.
+        return {**row, "reason": f"date_encoding_unknown:{encoding}"}
+    actor_fields = call.get("actor_field")
+    actor_fields = [actor_fields] if isinstance(actor_fields, str) else list(actor_fields or ())
+    actor_fields = [str(f) for f in actor_fields if str(f).strip()]
 
     identity = spec.get("identity")
     if isinstance(identity, dict):
@@ -748,6 +847,15 @@ def _sweep_one(spec, credential, *, fetch, timeout, max_items, budget) -> dict:
     reason = None
     page = first
     last_page_items = None
+    # What each DECLARED path did, counted while reading rather than inferred
+    # afterwards from an absence. "This estate has no clock" and "the clock path
+    # I was given never resolved" produce identical rows and want opposite
+    # answers from the operator.
+    read = 0
+    nameless = 0
+    stamped = 0
+    dated = 0
+    peopled = 0
     for page in range(first, first + max_pages):
         if budget["left"] <= 0:
             row["not_reached"].append(f"{name}: call budget spent at page {page}")
@@ -757,24 +865,32 @@ def _sweep_one(spec, credential, *, fetch, timeout, max_items, budget) -> dict:
         doc, reason = _one_call(call, credential, page, fetch=fetch, timeout=timeout)
         if reason:
             break
-        items = _items_of(doc, call)
+        items, reason = _items_of(doc, call)
         last_page_items = len(items)
         if not items:
-            reason = None
             break
         for item in items:
+            read += 1
             title = _scalar(_dig(item, call.get("name_field")) if isinstance(item, dict) else item)
             if not title:
+                nameless += 1
                 continue
-            updated = _scalar(_dig(item, call.get("updated_field"))) if isinstance(item, dict) else None
-            actor = _scalar(_dig(item, call.get("actor_field"))) if isinstance(item, dict) else None
+            updated = _stamp(_dig(item, call.get("updated_field")), encoding) \
+                if isinstance(item, dict) else None
+            actors = []
+            if isinstance(item, dict):
+                for field in actor_fields:
+                    actors.extend(_people(_dig(item, field), _MAX_ACTORS_PER_ITEM - len(actors)))
+            stamped += 1 if updated else 0
+            dated += 1 if _day(updated) else 0
+            peopled += 1 if actors else 0
             key = (title, updated)
             if key in seen:
                 continue
             seen.add(key)
             entry = {"connector": name, "name": title, "updated": updated}
-            if actor:
-                entry["actor"] = actor
+            if actors:
+                entry["actors"] = actors
             row["rows"].append(entry)
             if len(row["rows"]) >= max_items:
                 row["not_reached"].append(
@@ -792,12 +908,37 @@ def _sweep_one(spec, credential, *, fetch, timeout, max_items, budget) -> dict:
     if reason:
         row["not_reached"].append(f"{name}: paging stopped early ({reason})")
     row["items"] = len(row["rows"])
+    row["items_read"] = read
     row["connected"] = row["items"] > 0
     if not row["connected"]:
-        row["reason"] = "inventory_returned_no_items"
+        # THREE WAYS TO COME BACK WITH NOTHING, and they are not the same fact.
+        row["reason"] = f"name_path_missed:{call.get('name_field') or '(item)'}" \
+            if read else "inventory_returned_no_items"
+    elif nameless:
+        row["not_reached"].append(
+            f"{name}: {nameless} of {read} items carried nothing at the declared "
+            f"name path ({call.get('name_field') or '(item)'}), so they are not in this ranking")
+    if read and call.get("updated_field") and not stamped:
+        row["not_reached"].append(
+            f"{name}: the declared date path ({call['updated_field']}) resolved on none of "
+            f"{read} items, so what looks like an undated system may be a mistyped path")
+    elif read and call.get("updated_field") and not dated:
+        # PRESENT BUT UNREADABLE is its own answer, and the one the period, the
+        # presence question and the ranker's clock admission all fail silently
+        # on: every one of them tests for a leading date and gets nothing, so a
+        # fully stamped system reports as having no clock. The message names the
+        # fix rather than the symptom.
+        row["not_reached"].append(
+            f"{name}: the declared date path ({call['updated_field']}) resolved on {stamped} of "
+            f"{read} items but none of it is a date I can read — if that system stamps in epoch "
+            f"time, declare date_encoding: epoch_ms (or epoch_s) beside the path")
+    if read and actor_fields and not peopled:
+        row["not_reached"].append(
+            f"{name}: the declared actor path ({', '.join(actor_fields)}) resolved on none of "
+            f"{read} items, so I cannot tell whether any of this is yours")
     dates = sorted(r["updated"] for r in row["rows"] if r.get("updated"))
     row["latest"] = dates[-1] if dates else None
-    row["actors"] = len({r["actor"] for r in row["rows"] if r.get("actor")})
+    row["actors"] = len({a for r in row["rows"] for a in (r.get("actors") or ())})
     return row
 
 
@@ -923,13 +1064,14 @@ def sweep_connectors(root, *, specs=None, env=None, fetch=None, now=None,
                             max_items=max_items, budget=budget)
         rows.extend({"connector": r["connector"], "name": r["name"],
                      "updated": r["updated"],
-                     # The ACTOR survives onto the row. It was extracted per item
-                     # and then collapsed to a distinct COUNT, which answers "how
-                     # many people" and structurally cannot answer "which of them
-                     # is you" — so no downstream reader could tell the operator's
-                     # own activity from anyone else's, and a period could be
-                     # presented as theirs without anything having checked.
-                     **({"actor": r["actor"]} if r.get("actor") else {})}
+                     # The ACTORS survive onto the row. They were extracted per
+                     # item and then collapsed to a distinct COUNT, which answers
+                     # "how many people" and structurally cannot answer "which of
+                     # them is you" — so no downstream reader could tell the
+                     # operator's own activity from anyone else's, and a period
+                     # could be presented as theirs without anything having
+                     # checked. Plural, because one item does not have one actor.
+                     **({"actors": r["actors"]} if r.get("actors") else {})}
                     for r in result["rows"])
         identities.extend(result["identities"])
         not_reached.extend(result["not_reached"])
@@ -1062,7 +1204,11 @@ def presence_question(rows, operator, period, *, quiet_days: int = QUIET_DAYS):
     for row in rows or ():
         connector = str(row.get("connector") or "")
         wanted = {h.lower() for h in (handles.get(connector) or ())}
-        if not wanted or str(row.get("actor") or "").lower() not in wanted:
+        # ANY of the row's actors being the operator makes the row theirs. A row
+        # names everyone the declared paths resolved, and the operator is often
+        # the second name in it — matching only a single actor field would report
+        # a quiet fortnight that the data contradicts.
+        if not wanted or not wanted & {str(a).lower() for a in (row.get("actors") or ())}:
             continue
         day = _day(row.get("updated"))
         if day:

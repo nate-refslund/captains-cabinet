@@ -21,7 +21,27 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 66168c74861d31276ae25e046d594464a15d9ae22b2547419ca4c067c713cea0
+Reviewed-Scope-Digest: b885033efb7fe6c672a8d8c43b3aafd8852e601f7c398e6bf868f9436b21ae24
+(MERGE RE-BIND, 2026-07-29, `fix/connector-loader-honesty` x master. Both sides
+re-bound this line, so the merge left two; ONE value stands and it is recomputed
+over this merge commit. Every note from both sides is kept verbatim below,
+because a re-freeze that hides what moved asserts a review that never happened.
+No COG-4 implementation byte moved on either side — the only in-scope path is the
+contract file, whose line ceiling is RE-MEASURED over the merged tree rather than
+added on paper.)
+
+(RE-BOUND 2026-07-29 on `feat/look-capabilities`, previous value
+`408e6b97…`. ONE in-scope path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` raises
+`framework_production_noncomment_lines` VISIBLY 60543 -> 60637 (+94 measured
+over this tree, with a three-item breakdown in the row's own comment — not an
+allowance, because a read lane that reads more clock encodings honestly and
+refuses to describe its own misconfiguration as the operator's empty estate has
+no deletion gate that could ever fire). The unit's own work is in
+`framework/onboarding/` and `instance/config/`, which this scope does not bind.
+Named here rather than absorbed silently, because a re-freeze that hides what
+moved would assert a review that never happened.)
+
 (RE-BOUND 2026-07-29 on `fix/connector-loader-honesty`, previous value
 `408e6b97…`. ONE in-scope path moved and NO COG-4 implementation byte did:
 `cabinet/config/cognitive-architecture-contract.yml` raises
@@ -1422,7 +1442,6 @@ this file. Nothing was re-reviewed and no prose finding was edited, because no r
 byte moved: the branch's entire diff is the world layout, the renderer, the hit test and
 the check harness, none of which is in the COG-4 scope.
 
-<<<<<<< HEAD
 ---
 
 ## Re-bind 2026-07-29 (feat/salience-loop — the sweep's two silent claims)
@@ -1455,7 +1474,6 @@ so no bijection class moves either. The unit's own work is in
 
 Recorded digest: a8e0903b5f5bcc2c216dc886b83aa12d5d5a78ac79804a1c65f76ecc8f367cd5
 Previous:        2c6fdb6779f555a5fc7a360a5eb9f316aec08be78c4ad85d71e1646a3a32d782
-=======
 
 ---
 
@@ -1495,7 +1513,6 @@ in-scope path that moved on either side is
 over this merge tree (74620 at zero headroom) rather than added on paper: the
 de-specification ceiling and this branch's +97 genesis claim refusals are disjoint
 sets of lines. No COG-4 implementation byte moved on either side.
->>>>>>> origin/master
 
 ## Re-bind 2026-07-29 (feat/salience-loop — merge of origin/master c98a58a6)
 
