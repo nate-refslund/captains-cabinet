@@ -952,14 +952,35 @@ if [ "$TOOL_NAME" = "Bash" ]; then
 
   # 3a. Literal multi-word / case-sensitive prohibitions — substring match is
   # safe here: these phrases are unlikely to appear inside filenames or grep
-  # patterns and are case-sensitive (uppercase SQL verbs, "vercel deploy").
+  # patterns and are case-sensitive (uppercase SQL verbs).
   case "$CMD" in
-    *"vercel deploy"*|*"vercel --prod"*)
-      echo "BLOCKED: Production deployment requires Captain approval" >&2
-      exit 2
-      ;;
     *"DROP TABLE"*|*"DROP DATABASE"*|*"TRUNCATE"*|*"DELETE FROM"*)
       echo "BLOCKED: Destructive database operation requires Captain approval" >&2
+      exit 2
+      ;;
+  esac
+
+  # 3a-ii. PUBLISHING TO THE LIVE WORLD — stated as the category (2026-07-29).
+  # This arm was named for the category and implemented as ONE supplier's CLI
+  # ("vercel deploy" / "vercel --prod"), so the gap was invisible from the
+  # rule's own name: every other way to put a change live walked straight
+  # through, and for an operator who does not use that supplier the arm
+  # guarded nothing at all while reading as protection.
+  #
+  # Two shapes, neither naming a supplier:
+  #   (i)  the command EXPLICITLY SELECTS the live target. High precision — a
+  #        live-target flag is not something a read or a build says by accident.
+  #   (ii) a publish verb AND the live target both appear. Broader, so it runs
+  #        on the QUOTE-STRIPPED command (built at 3b) where a mention inside a
+  #        quoted argument — `grep "deploy" prod/` — is already gone.
+  # Everything the old literal caught is still caught: a live-target flag is
+  # exactly what its second pattern was, and a publish verb beside it is what
+  # its first one was.
+  CMD_LOWER=$(printf '%s' "$CMD" | tr '[:upper:]' '[:lower:]')
+  case "$CMD_LOWER" in
+    *--prod*|*--production*|*--live*|*"--target prod"*|*--target=prod*|\
+    *"--env prod"*|*--env=prod*|*"--stage prod"*|*--stage=prod*)
+      echo "BLOCKED: Publishing to the live world requires Captain approval" >&2
       exit 2
       ;;
   esac
@@ -1116,6 +1137,25 @@ if [ "$TOOL_NAME" = "Bash" ]; then
   CMD_STRIPPED=$(printf '%s' "$CMD_NORM" \
     | sed -e "s/\\\$'[^']*'//g" -e "s/'[^']*'//g" -e 's/"[^"$`]*"//g' \
     | perl -0777 -pe 's/<<([A-Za-z_]\w*)\n.*?\n\1(?=\n|\z)//gs')
+
+  # 3a-ii, second shape (see section 3): a PUBLISH VERB together with the LIVE
+  # TARGET. Run here, on CMD_STRIPPED, because a mention inside a quoted
+  # argument (`grep "deploy" prod/`) is already gone by this point — the same
+  # false-positive lesson FW-042 paid for the binary list. Category only: no
+  # supplier, product or platform is named, so it holds for whatever an
+  # operator publishes with.
+  CMD_STRIPPED_LOWER=$(printf '%s' "$CMD_STRIPPED" | tr '[:upper:]' '[:lower:]')
+  case "$CMD_STRIPPED_LOWER" in
+    *deploy*|*publish*|*release*|*promote*|*rollout*|*cutover*|*go-live*|*golive*|\
+    *apply*|*upgrade*|*migrate*|*activate*|*provision*)
+      case "$CMD_STRIPPED_LOWER" in
+        *prod*|*live*)
+          echo "BLOCKED: Publishing to the live world requires Captain approval" >&2
+          exit 2
+          ;;
+      esac
+      ;;
+  esac
 
   # v3.7 post-adversary Finding 2 fix: CMD_UNQUOTED preserves the CONTENT of quoted
   # spans (unwraps them) instead of wiping them. Defeats quoted-token splice like

@@ -905,12 +905,13 @@ def _canary_pid(step_kind: str) -> str:
 
 
 def _canary_actor() -> Dict[str, str]:
-    # CANONICAL ACTOR ID (germline batch, 2026-07-04): the id is the BARE role
-    # ("cos"), never "officer:cos" — consumers compose the query key as
-    # "officer:" + role, so a pre-prefixed id yields "officer:officer:cos" and
-    # severs canary/journal rows from the demotion-evidence reads. One emitter
-    # contract across every module; the kind field already carries "officer".
-    return {"kind": "officer", "id": "cos"}
+    # CANONICAL ACTOR ID (germline batch, 2026-07-04): the id is the BARE role,
+    # never "officer:<role>" — consumers compose the query key as "officer:" +
+    # role, so a pre-prefixed id yields "officer:officer:<role>" and severs
+    # canary/journal rows from the demotion-evidence reads. One emitter contract
+    # across every module; the kind field already carries "officer". WHICH role
+    # comes from the deployment's own roster (2026-07-29), never from here.
+    return {"kind": "officer", "id": env.chair_officer()}
 
 
 def _journal_canary(pid: str, step: int, step_kind: str, backend: str, *,

@@ -35,6 +35,8 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+from framework import env  # roster-resolved judgment recipient
+
 
 def _attention_dir() -> Path:
     return Path(os.environ.get("CABINET_ATTENTION_DIR") or
@@ -195,7 +197,7 @@ def file_judgment_request(item: dict, decision: dict, dossier: dict, *,
     os.replace(tmp, d / (rid + ".json"))
 
     trig = trigger_fn or _default_trigger
-    trig("cos", f"⚖️ T2 judgment needed: {rid} "
+    trig(env.chair_officer(), f"⚖️ T2 judgment needed: {rid} "
                 f"(class={record['class_id']}, deadline={deadline}) — "
                 f"read framework.attention.t2.load_request('{rid}')")
     return rid

@@ -32,7 +32,7 @@ Usage:
 
     # Run all evals bound to the coordinating officer (includes evals
     # inherited from the retired work-preset roster via roster resolution)
-    results = run_all_for_role("cos")
+    results = run_all_for_role("<role>")
 
     # Run everything (weekly cron path)
     results = run_all()

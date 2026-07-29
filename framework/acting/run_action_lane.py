@@ -53,6 +53,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from framework.acting import action_lane, lane_dedup as ld  # noqa: E402
 from framework.attention import acted_overlay  # noqa: E402  # P2 world-grounding
 from framework.env import vault_dir, shared_env_path, product_brain_dir  # noqa: E402
+from framework import env  # noqa: E402  # roster-resolved default actor
 from framework.acting.loop import (  # noqa: E402
     expire_event, pending_proposals, proposal_event, proposal_id)
 from framework.fidelity.consequence import emit_consequence, read_ledger  # noqa: E402
@@ -176,7 +177,16 @@ _lock_fh = None
 # module constant now feeds both emit sites (dry-run + live) AND the gate's
 # cell composition (_graduation_demoted), so the identities can never drift
 # apart again. run_draft_lane.py:237 already uses the bare form.
-_ACTOR = {"kind": "officer", "id": "cos"}
+# WHOSE ACT IS THIS BY DEFAULT. A default actor is unavoidable — the
+# graduation/demotion cell key is (actor, lane, action_type), so an act
+# recorded against nobody can be neither earned nor lost. WHICH actor is a
+# fact about one operator's org shape, and until 2026-07-29 the framework
+# supplied it: a sole practitioner inherited a coordinating-officer org chart
+# from a roster they never wrote. env.chair_officer() reads the deployment's
+# own roster and returns its FIRST entry; a deployment with no roster resolves
+# to the empty string, which the callers below keep as their own fallback.
+_ACTOR_ID = env.chair_officer()
+_ACTOR = {"kind": "officer", "id": _ACTOR_ID}
 
 # --- LANE CELL-KEY NORMALIZATION (germline batch 2026-07-05) -----------------
 # The graduation cell key is (actor, lane, action_type). The lane component was
@@ -381,7 +391,7 @@ def _route_verdict(pctx: dict, prop, action_type: "str | None"):
     risk_class = pctx["risk_of"](action_type, policy.get("risk_classes"))
     if risk_class is None:
         return None, posture, None
-    state = pctx["read_cell_state"]("cos", prop.lane, action_type)
+    state = pctx["read_cell_state"](_ACTOR_ID, prop.lane, action_type)
     verdict = pctx["resolve_verdict"](
         policy.get("verdicts"), risk_class, state,
         posture=posture, postures=policy.get("postures"))

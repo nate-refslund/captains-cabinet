@@ -21,7 +21,22 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: d9d2d8a9b4d228d72661fc6145c5e3243f01e0fb619baed4ea55bde34cbb80b1
+Reviewed-Scope-Digest: a8e0903b5f5bcc2c216dc886b83aa12d5d5a78ac79804a1c65f76ecc8f367cd5
+(RE-BOUND 2026-07-29 on `fix/framework-specifics`, previous value
+`0df4d12a…`. TWO in-scope paths moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` raises
+`framework_production_noncomment_lines` VISIBLY (+261 over this tree, with a
+per-item breakdown in the row's own comment — not an allowance), and
+`cabinet/scripts/tests/test_cog4_exit_fixtures.py` follows the
+consequence-event schema's `action_type` from a flat enum to a `oneOf`:
+the CLOSED branch is still asserted equal to `classifier.ACTION_TYPES`, is
+now located by SHAPE rather than by position, and the new OPEN branch is
+asserted pattern-gated and un-able to match any of the 30 — so the arm got
+stronger, not looser. The unit's own work is in `framework/` and
+`instance/config/`, which this scope does not bind. Named here rather than
+absorbed silently, because a re-freeze that hides what moved would assert a
+review that never happened.)
+
 (RE-BOUND 2026-07-29 on `feat/onboarding-connector-read`, previous value
 `e7a6983a…`. TWO in-scope paths moved and NO COG-4 implementation byte did:
 `cabinet/config/cognitive-architecture-contract.yml` gains one
@@ -1408,3 +1423,20 @@ Recorded digest: d9d2d8a9b4d228d72661fc6145c5e3243f01e0fb619baed4ea55bde34cbb80b
 Previous:        0df4d12ac60f2353118fdadf244ed8d522a9e1fdcaee5edbd2e7dc078bd211a6
 
 Re-bound at landing by the integrator, in the SAME commit as the change, per §15.
+
+---
+
+## Re-bind 2026-07-29 (feat/salience-loop — merge of origin/master 2eeaa8d7)
+
+Both branches re-bound this digest the same afternoon, which is what the conflict
+was. Master's note above survives VERBATIM — it describes a different landing and
+is not this one's restamp — and this is the value over the merged tree.
+
+One bound path moves on this branch: `cabinet/config/cognitive-architecture-contract.yml`,
+a +200 non-comment-line phase row for the who/when unit. NO COG-4 implementation
+path moved — no organ, no projection, no scheduler byte — and ZERO new modules,
+so no bijection class moves either. The unit's own work is in
+`framework/onboarding/`, which this scope does not bind.
+
+Recorded digest: a8e0903b5f5bcc2c216dc886b83aa12d5d5a78ac79804a1c65f76ecc8f367cd5
+Previous:        2c6fdb6779f555a5fc7a360a5eb9f316aec08be78c4ad85d71e1646a3a32d782

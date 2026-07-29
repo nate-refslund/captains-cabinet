@@ -2652,8 +2652,14 @@ class TestStandingGrantResolutionHelper:
     def test_grant_context_extraction(self):
         assert _grant_context({"recipient": "a@b.dk"}) == {"recipient": "a@b.dk"}
         assert _grant_context({"to": "a@b.dk"}) == {"recipient": "a@b.dk"}
-        assert _grant_context({"amount_eur": 12.5}) == {"amount_eur": 12.5}
+        # The context key names an AMOUNT and no currency (2026-07-29): the
+        # framework compares numbers on both sides of a cap and does not know
+        # what they count. The old currency-suffixed spelling still reads, so
+        # an executor written against it keeps working.
+        assert _grant_context({"amount": 12.5}) == {"amount": 12.5}
+        assert _grant_context({"amount_eur": 12.5}) == {"amount": 12.5}
         assert _grant_context({"vendor": "hetzner"}) == {"vendor": "hetzner"}
+        assert _grant_context({"amount": True}) == {}       # bool is not a number
         assert _grant_context({"amount_eur": True}) == {}   # bool is not a number
         assert _grant_context({"recipient": "  "}) == {}
         assert _grant_context("nope") == {}

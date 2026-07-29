@@ -6,7 +6,7 @@ Events are the single source of truth — all other systems derive state from th
 Usage:
     from framework.events.emitter import emit
 
-    emit("mission_created", actor="cos", payload={"mission_id": "...", "name": "..."})
+    emit("mission_created", actor="<role>", payload={"mission_id": "...", "name": "..."})
     emit("role_hat_assigned", actor="captain", payload={...}, parent_id="<event-uuid>")
 """
 
