@@ -17,6 +17,7 @@ answer is genuinely unreachable, and the oracle is required to say so.
 """
 from __future__ import annotations
 
+import json
 import random
 
 import pytest
@@ -277,6 +278,38 @@ def test_a_join_that_is_not_something_to_ask_is_refused_before_anything_runs():
     estate = _estate(6)
     with pytest.raises(salience.SalienceError):
         salience.rank(estate["rows"], join="a string is not a judgment")
+
+
+def test_a_judgment_that_dies_leaves_the_ranking_standing_and_says_so():
+    """An unreachable model, a timeout or a parse error must not take down the
+    operator's whole offer in order to improve its ordering. The join is optional
+    by construction — the default is not to have one — so a dead judgment is an
+    ABSENT one, recorded by type and never silently swallowed."""
+    estate = _estate(9)
+
+    def dies(proposal):
+        raise TimeoutError("the judge did not answer")
+
+    ranking = salience.rank(estate["rows"], join=dies, now=_NOW)
+    plain = salience.rank(estate["rows"], now=_NOW)
+    assert [c["label"] for c in ranking["clusters"]] == \
+        [c["label"] for c in plain["clusters"]]
+    assert ranking["joined"] == [{"labels": [], "accepted": False,
+                                  "reason": "judgment_unavailable",
+                                  "error": "TimeoutError"}]
+
+
+def test_a_dead_judgment_never_carries_its_own_message_outward():
+    """The failure TYPE is the whole record. A judge's exception text is not
+    this module's to carry into an operator-facing surface — it is the one place
+    a model's raw output could reach the card without passing anything."""
+    estate = _estate(10)
+
+    def dies(proposal):
+        raise RuntimeError("upstream said: " + "s3cret-looking-detail")
+
+    joined = salience.rank(estate["rows"], join=dies, now=_NOW)["joined"]
+    assert "s3cret-looking-detail" not in json.dumps(joined)
 
 
 def test_the_union_keeps_a_name_the_operator_would_recognise():

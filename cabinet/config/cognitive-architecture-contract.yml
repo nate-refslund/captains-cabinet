@@ -256,7 +256,13 @@ budgets:
     # 60944 -> 60946 (+2, same landing): the actor harvest read one entry PER
     # ROW, so the live estate's 665 rows handed every caller 665 identity
     # strings for four distinct owners. Deduped in place, order kept.
-    maximum: 60946
+    #
+    # 60946 -> 60950 (+4, same landing): a judgment that DIES is an absent one,
+    # not a dead ranking. An unreachable model, a timeout or a parse error was
+    # taking down the operator's whole offer in order to improve its ordering,
+    # which is a worse outcome than the ordering. Recorded by exception TYPE
+    # only — a judge's failure text is not this module's to carry outward.
+    maximum: 60950
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

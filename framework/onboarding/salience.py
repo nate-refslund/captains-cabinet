@@ -639,7 +639,19 @@ def _judged_joins(join: Any, clusters: Sequence[Mapping[str, Any]]) -> list[dict
     if not callable(join):
         raise SalienceError("join_not_callable", "A join must be something to ask.")
     offered = {str(c.get("label") or "") for c in clusters}
-    answer = join(join_proposal(clusters))
+    try:
+        answer = join(join_proposal(clusters))
+    except Exception as exc:
+        # A JUDGMENT THAT DIED IS AN ABSENT ONE, not a dead ranking. Judgment
+        # here is optional by construction — the module's own default is no join
+        # at all, and the ranking is honest without one, split candidates and
+        # all. Letting the exception out would mean an unreachable model, a
+        # timeout or a parse error takes down the operator's whole offer to
+        # improve its ordering, which is a worse outcome than the ordering it
+        # was asked to improve. Recorded by TYPE only: a judge's failure text is
+        # not this module's to carry into an operator-facing surface.
+        return [{"labels": [], "accepted": False, "reason": "judgment_unavailable",
+                 "error": type(exc).__name__}]
     out: list[dict[str, Any]] = []
     for group in answer or ():
         if isinstance(group, (str, bytes)) or not isinstance(group, Iterable):

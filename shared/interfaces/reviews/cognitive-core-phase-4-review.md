@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 8e9e9177e4f168b3404ddc947d5d128445fe7d1101b07d694eab9611530e8eba
+Reviewed-Scope-Digest: fb9ef1716b7171213bf9c38eb24db1eb06a19127b31527ec01520ba0540ba29d
 (RE-BOUND 2026-07-29 on `feat/look-capabilities`, previous value
 `408e6b97…`. ONE in-scope path moved and NO COG-4 implementation byte did:
 `cabinet/config/cognitive-architecture-contract.yml` raises
@@ -1565,3 +1565,19 @@ ONE bound path, `cabinet/config/cognitive-architecture-contract.yml`, taking
 per ROW, so 665 rows produced 665 strings for four distinct owners. Raised
 visibly on the same maximum line, census PASS at observed == maximum with zero
 headroom, no allowance, zero new modules, no COG-4 implementation byte moved.
+
+
+---
+
+## Re-bind 2026-07-29 (fix/salience-ranking, fail-soft judgment)
+
+Recorded digest: fb9ef1716b7171213bf9c38eb24db1eb06a19127b31527ec01520ba0540ba29d
+Previous:        8e9e9177e4f168b3404ddc947d5d128445fe7d1101b07d694eab9611530e8eba
+
+ONE bound path, `cabinet/config/cognitive-architecture-contract.yml`, taking
+`framework_production_noncomment_lines` 60946 -> 60950 for four lines in
+`framework/onboarding/salience.py`: a judgment callable that raised took the
+exception out through `rank()`, so an unreachable model would have taken down
+the operator's offer to improve its ordering. Raised visibly, census PASS at
+observed == maximum with zero headroom, no allowance, zero new modules, no
+COG-4 implementation byte moved.
