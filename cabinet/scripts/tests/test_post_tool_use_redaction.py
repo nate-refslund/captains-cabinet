@@ -69,6 +69,22 @@ SECRET_SHAPES = [
      _j("https://hooks.slack.com/", "services/T00000000/B00000000/SYNTHETIC0000000000000000")),
     ("discord webhook",
      "https://discord.com/api/webhooks/000000000000000000/SYNTHETIC00000000000000000"),
+    # --- the 2026-07-29 finding: a value with NO token-ish name beside it ----
+    # Every rule but #5 keys on a token-ish word in the adjacent NAME, so a
+    # credential parked behind a two-letter variable was logged verbatim even
+    # though rule 5 claimed the nameless class was handled. These four FAIL
+    # against the pre-change hook. Sentry and PostHog carry unambiguous vendor
+    # prefixes, so the fix is prefix-anchored and cost 0 new redactions across
+    # 8.3 MB of this repo's tracked text. The class rule 5 still cannot reach
+    # is stated as L1 in the hook, and pinned by the claim-surface test below.
+    ("sentry org token, no name beside it",
+     _j("sntrys_", "SYNTHETIC000000000000000000000000000000000000000000")),
+    ("sentry user token behind a two-letter name",
+     _j('ST="', "sntryu_", 'SYNTHETIC000000000000000000000000000000000000000000"')),
+    ("posthog personal key behind a two-letter name",
+     _j('PH="', "phx_", 'SYNTHETIC0000000000000000000000"')),
+    ("posthog project key, no name beside it",
+     _j("phc_", "SYNTHETIC0000000000000000000000")),
 ]
 
 # Ordinary tool output that must survive intact — over-redaction destroys the
@@ -81,6 +97,13 @@ INNOCUOUS = [
     "if (token == expected) { return true }",
     "authToken = await getSession()",
     "grep -n 'webhook' cabinet/scripts/hooks/post-tool-use.sh",
+    # Controls for the 2026-07-29 vendor-prefix arms. The prefixes are short
+    # enough to collide with ordinary words if the length bound or the
+    # underscore ever gets relaxed, so pin the near-misses rather than trusting
+    # the regex to stay tight.
+    "phase_4 digest re-bound and verifying against HEAD",
+    "commit 4c7d42e7f1a9b3c5d7e9f1a3b5c7d9e1f3a5b7c9 landed on master",
+    "photos_api_v2 returned 200 in 0.34s",
 ]
 
 
@@ -117,6 +140,35 @@ def test_secret_shapes_are_redacted(label, payload):
 @pytest.mark.parametrize("payload", INNOCUOUS)
 def test_ordinary_tool_output_survives(payload):
     assert _redact(payload).strip() == payload, "over-redacted ordinary output"
+
+
+def test_the_stated_limits_survive_in_the_live_hook():
+    """The 2026-07-29 defect was a CLAIM defect, so this is its sensor.
+
+    Rule 5 read "caught regardless of surrounding = or quotes" while covering
+    four vendor prefixes, which invited the reading that a credential with no
+    name beside it was handled. Three real ones were not. The fix closed what a
+    prefix can close and WROTE DOWN the rest (L1: no prefix and no name; L2:
+    separators other than `=`), because the alternative — a silent gap under a
+    confident sentence — is the failure this hook keeps re-learning.
+
+    A behavioural arm cannot pin a gap without also forbidding its fix, so this
+    pins the claim surface instead: delete the caveat while the hole is still
+    open and this goes red. If you CLOSE L1 or L2, rewrite the block and this
+    test together — that edit is the point at which someone must re-measure the
+    false-positive cost on ordinary output.
+    """
+    text = HOOK.read_text()
+    assert "LIMITS — what redaction does NOT catch" in text, (
+        "the LIMITS block was removed from the hook; either the gaps were "
+        "closed (then update this test) or the claim silently widened again"
+    )
+    for marker in ("L1.", "L2."):
+        assert marker in text, f"limit {marker} lost from the hook's claim surface"
+    assert "do not read this rule" in text, (
+        "rule 5's scope disclaimer was dropped — it is what stops the next "
+        "reader assuming nameless credentials are covered"
+    )
 
 
 def test_webhook_host_stays_legible_so_the_log_is_still_useful():

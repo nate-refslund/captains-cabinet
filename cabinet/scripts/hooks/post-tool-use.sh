@@ -173,8 +173,13 @@ fi
 #      _SUFFIX words (AWS_SECRET_ACCESS_KEY), value must be >=8 chars and not
 #      start with =/~ so code comparisons (token == x) and short RHS
 #      identifiers (authToken = await) are left intact.
-#   5. Bare high-entropy token shapes (AWS AKIA, GitHub ghp_, OpenAI sk-,
-#      Slack xox*-) — caught regardless of surrounding = or quotes.
+#   5. Bare high-entropy token shapes with an UNAMBIGUOUS VENDOR PREFIX (AWS
+#      AKIA, GitHub ghp_, OpenAI sk-, Slack xox*-, Sentry sntrys_/sntryu_,
+#      PostHog phc_/phx_/phs_) — caught regardless of surrounding = or quotes,
+#      because the prefix alone identifies the string as a credential. This is
+#      the ONLY rule that catches a value with no name beside it; read the
+#      LIMITS block below for what that leaves open, and do not read this rule
+#      as "nameless credentials are handled".
 #   6. Telegram bot-token in canonical API-URL form (.../bot<token>/...) —
 #      rule 2's leading \b can't anchor after the word-char 'bot' prefix, so
 #      match the 'bot'-prefixed token explicitly; keep 'bot' legible, redact
@@ -195,6 +200,35 @@ fi
 #      wherever it appears in prose, since the leak that mattered was a
 #      sentence quoting the endpoint, not an assignment. Host stays legible;
 #      only the secret path token is eaten.
+#
+# LIMITS — what redaction does NOT catch (measured 2026-07-29; stated here so
+# no reader mistakes the rules above for blanket coverage, which is the exact
+# defect the webhook arm was added to fix one rule earlier):
+#
+#   L1. A credential with NEITHER a vendor prefix NOR a token-ish word in an
+#       adjacent NAME is invisible. Every rule keys on one or the other. A
+#       Vercel token is the live example — 24 chars of [A-Za-z0-9] with no
+#       public prefix — so `<prose>vcp...` or `X="<vercel token>"` survives.
+#       NOT fixed by shape: a bare 24-char alphanumeric run cannot be told
+#       apart from ordinary tool output, and matching it would eat SHAs,
+#       base64 fragments and identifiers wholesale. The mitigation that works
+#       is upstream (name the variable *_TOKEN, which rule 4 then eats), not a
+#       looser regex here.
+#
+#   L2. Name/value pairs joined by anything other than `=` — `TOKEN: value`,
+#       `TOKEN => value`, `TOKEN value` — are NOT caught by rule 4, which
+#       requires the equals sign. This is a real hole (a YAML-shaped or
+#       log-shaped dump of a well-named secret walks through) and it is left
+#       open DELIBERATELY. Widening the separator to `[=:]`/`=>` was built and
+#       measured on 2026-07-29 against 8.3 MB of this repo's own tracked text:
+#       it produced 34 new redactions, and they were not credentials — it ate
+#       env-var NAMES out of documentation (`bot_token_env: <NAME>`, where the
+#       name is the whole point of the line), swallowed Python type
+#       annotations, and corrupted code fragments mid-expression. A log that
+#       mangles ordinary output is a log the operator turns off, which costs
+#       more than this gap. Closing L2 needs a value-side entropy test, not a
+#       wider separator; until someone builds that, it stays stated rather
+#       than quietly assumed away.
 redact_secrets() {
   if command -v perl >/dev/null 2>&1; then
     perl -0777 -pe '
@@ -207,6 +241,8 @@ redact_secrets() {
       s/\b(?:ghp|gho|ghs|ghu|ghr|github_pat)_[A-Za-z0-9_]{20,}\b/[REDACTED]/g;
       s/\bsk-[A-Za-z0-9_-]{20,}\b/[REDACTED]/g;
       s/\bxox[baprs]-[A-Za-z0-9-]{10,}\b/[REDACTED]/g;
+      s/\bsntry[us]_[A-Za-z0-9_]{20,}\b/[REDACTED]/g;
+      s/\bph[cxs]_[A-Za-z0-9]{20,}\b/[REDACTED]/g;
       s/(:\/\/[^:@\/\s]+:)[^@\/\s]+(@)/${1}[REDACTED]${2}/g;
       s{(?i)\b(https?://hooks?[\w.-]*\.(?:make|integromat|zapier|zapier-staging)\.com/)[A-Za-z0-9_-]{8,}}{${1}[REDACTED]}g;
       s{(?i)\b(https?://hooks\.slack\.com/services/)[A-Za-z0-9\/_-]{8,}}{${1}[REDACTED]}g;
