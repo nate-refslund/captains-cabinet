@@ -214,7 +214,45 @@ budgets:
     # own misconfiguration as the operator's empty estate has nothing to delete.
     # Zero new production MODULES (every helper lives inside the existing
     # research module; the new arms are tests). Re-pins at zero headroom.
-    maximum: 60637
+    #
+    # 60543 -> 60572 (+29 measured 2026-07-29 via cognitive-architecture-census.py,
+    # observed 74849 vs the then-effective 74820): the connector LOADER was
+    # breaking the law its own module states — "a silent skip is how 'nothing is
+    # connected' and 'I never looked' become indistinguishable" — in two ways,
+    # both reproduced by executing the degenerate input against pre-change bytes.
+    # A connectors declaration that WOULD NOT PARSE returned the same
+    # `declared: 0, connectors: [], not_reached: []` document as a deployment
+    # that declared nothing; and a malformed ENTRY was dropped without a word,
+    # so a file naming two connectors swept one, reported it CONNECTED, and left
+    # nothing anywhere naming the one it discarded. Both now land in the sweep's
+    # `not_reached` with the operator's own path, what is wrong and — for an
+    # entry — which position, in framework/onboarding/research.py
+    # (load_connector_specs + the sweep's refusal list moved above the load);
+    # +3 of the 29 are framework/onboarding/journey.py, where the gather offer
+    # now also fires on "you declared something I could not read", because
+    # `declared > 0` meant a wholly unparseable file was never offered the read
+    # that would have TOLD the operator — an honest refusal wired to a path
+    # nobody walks is the same defect one surface up.
+    # 14 of the 29 are DOCSTRING prose (the house rule that every invariant
+    # carries its reason) and 15 are executable — measured, not estimated, and
+    # deliberately NOT reformatted into `#` comments, which the counter skips:
+    # that would buy the number without buying the thing.
+    # RAISED VISIBLY rather than paid for by a temporary allowance: an allowance
+    # promises a deletion gate, and a refusal that names what it threw away can
+    # never be deleted from a lane whose entire value is that it does not claim
+    # a negative it did not earn. Zero new production MODULES. observed ==
+    # maximum, zero headroom.
+    #
+    # MERGE, 2026-07-29 (fifth): master's +94 read-lane capability recovery
+    # and this branch's +29 loader-honesty fix landed off the SAME 60543 base
+    # and are DISJOINT (one is _stamp/_people/_items_of inside the sweep, one
+    # is load_connector_specs + the journey's gather offer), so the merged
+    # ceiling is their sum — RE-MEASURED over this merge tree with
+    # cognitive-architecture-census.py (observed 74943, exactly at the number
+    # below) rather than added on paper: the arithmetic agreeing with the
+    # measurement is the evidence, not a substitute for it. Neither is an
+    # allowance; both are permanent, so the ratchet re-pins at zero headroom.
+    maximum: 60666
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
