@@ -184,10 +184,20 @@ def test_no_gate_job_can_be_skipped_off_a_push(workflow):
     assert _pr_skippable(workflow) == []
 
 
-def test_all_eight_gate_jobs_are_present(workflow):
+def test_every_gate_job_is_present(workflow):
+    """The set is pinned EXACTLY, in both directions: a silently added gate job
+    would escape the guard arms below, and a silently deleted one would take a
+    check with it.
+
+    Was ``test_all_eight_gate_jobs_are_present`` until 2026-07-29, when
+    ``clean-room-foundation`` and ``clean-room-source`` were deleted as strict
+    subsets of ``cabinet/scripts/null-hatch.sh`` and ``zizmor`` was folded into
+    the ``gitleaks`` job (cost, not coverage — see
+    ``docs/plans/ci-bill-2026-07-29.md``). The count moved into the name once
+    and rotted immediately; the property is the SET, so the name no longer
+    carries a number."""
     expected = {
-        "ci", "framework-tests", "clean-room-foundation", "clean-room-source",
-        "null-hatch", "cognitive-phase4", "gitleaks", "zizmor",
+        "ci", "framework-tests", "null-hatch", "cognitive-phase4", "gitleaks",
     }
     assert set(_gate_jobs(workflow)) == expected
 
@@ -244,9 +254,12 @@ def test_every_gate_job_depends_on_the_dedupe_job(workflow):
 # --- mutation arms: the checker must fail when the guard is removed --------
 
 
+# One arm per gate job, and the list is pinned to the same set
+# test_every_gate_job_is_present asserts — so adding a job without an arm here
+# fails there, and an arm naming a job that no longer exists fails at
+# `mutated["jobs"][job_name]` rather than passing vacuously.
 @pytest.mark.parametrize("job_name", [
-    "ci", "framework-tests", "clean-room-foundation", "clean-room-source",
-    "null-hatch", "cognitive-phase4", "gitleaks", "zizmor",
+    "ci", "framework-tests", "null-hatch", "cognitive-phase4", "gitleaks",
 ])
 def test_dropping_the_event_guard_from_one_job_is_caught(workflow, job_name):
     mutated = copy.deepcopy(workflow)
