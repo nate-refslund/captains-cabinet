@@ -97,7 +97,16 @@ log() { echo "[memory-reconcile $(date -u +%Y-%m-%dT%H:%M:%SZ)] $1"; }
 # 1. Snapshot current holdings: (source_type, source_id, stored hash)
 #    ONE constant read-only SELECT — no untrusted input near the SQL.
 # =============================================================
-SNAP_TSV="$(mktemp -t memory-reconcile)"
+# PORTABLE mktemp (2026-07-28). `mktemp -t memory-reconcile` is a BSD/macOS
+# idiom: GNU coreutils REQUIRES the template to end in at least three X's and
+# fails outright with "too few X's in template". On Linux — the Docker
+# deployment target, and CI — SNAP_TSV came back EMPTY, the snapshot redirect
+# then failed on `> ""`, and the run aborted logging "cabinet_memory snapshot
+# query failed", blaming the query for a temp-file error. So the nightly
+# reconcile (cabinet/services.yml, 03:30 daily) queued NOTHING on every Linux
+# deployment, with a plausible-looking log line. Explicit dir + X's is the one
+# form both implementations accept identically.
+SNAP_TSV="$(mktemp "${TMPDIR:-/tmp}/memory-reconcile.XXXXXX")"
 trap 'rm -f "$SNAP_TSV"' EXIT
 
 if ! psql "$NEON_CONNECTION_STRING" -X -q -t -A -F $'\t' -c "
@@ -153,7 +162,19 @@ reconcile_file() {
   esac
 
   local meta ts
-  meta=$(jq -nc --arg sha "$sha" '{content_sha256: $sha, via: "memory-reconcile"}')
+  # TRUST MUST RIDE ALONG (2026-07-28). memory_embed's upsert does
+  # `metadata = EXCLUDED.metadata` — a full REPLACE, not a merge — so whatever
+  # this queues IS the row's final metadata. Queuing only {sha, via} therefore
+  # stripped the trust tier and writer off every file it touched, and
+  # memory_search renders a trust-less row as `derived`
+  # (COALESCE(...metadata->>'trust'..., 'derived')): a captain-tier or
+  # officer-tier artifact came back from recall labelled derived. Measured on
+  # the live store: 146/146 rows carrying `via: memory-reconcile` had no
+  # `trust` and no `writer` key at all. pfwm_trust_for is the SAME resolver the
+  # hook and backfill use, so all three writers now agree per source_type.
+  meta=$(jq -nc --arg sha "$sha" --arg trust "$(pfwm_trust_for "$st")" \
+    --arg writer "${CLAUDE_OFFICER:-system}" \
+    '{content_sha256: $sha, via: "memory-reconcile", trust: $trust, writer: $writer}')
   # Content-derived time ONLY (frontmatter/dated-heading/filename) — "" when
   # honestly underivable (memory_queue_embed stamps queue time for ""), NEVER
   # mtime (P2e content-time rule; see post-file-write-memory.sh header).
