@@ -1,13 +1,22 @@
 #!/usr/bin/env bash
 # null-hatch.sh — Proof-1: the NULL HATCH (operative-egg plan row A15, proof row P1, decision D2).
 #
-# ONE named runnable gate composing the two existing clean-room proofs:
-#   * the Testburg render      (clean-room-foundation CI job: launcher-agnostic
-#     ratchet + runtime identity proof — framework renders "Testburg"/"Captain",
-#     never a baked-in captain), and
-#   * the clean-room source job (SRC-5: no source binding + unreadable
+# ONE named runnable gate carrying both clean-room proofs:
+#   * the Testburg render      (DN-6: launcher-agnostic ratchet + runtime
+#     identity proof — framework renders "Testburg"/"Captain", never a
+#     baked-in captain), and
+#   * the clean-room source proof (SRC-5: no source binding + unreadable
 #     ~/.screenpipe ⇒ resolver fail-closed to NullPersonalSource, honest
 #     empties everywhere, framework CORE imports + null-path suite subset).
+#
+# 2026-07-29: this script is now the SOLE executor of both. The two per-seam CI
+# jobs (`clean-room-foundation`, `clean-room-source`) were deleted as strict
+# subsets of these stages — they billed a whole GitHub minute each for ~51
+# seconds of work already done here, and the in-workflow copy of the CORE
+# import list had drifted WEAKER than stage 3 (it lacked
+# framework.evolution.contracts). Stage banners `[1/4]`…`[4/4]` carry the
+# per-seam attribution those jobs used to provide. Adding a seam here means
+# adding a stage, never re-adding a job.
 #
 # The claim it proves: the egg boots with NO captain data, NO screenpipe, NO
 # instance source binding, adapters absent → NullPersonalSource honest-empties
