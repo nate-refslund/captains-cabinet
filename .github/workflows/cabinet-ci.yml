@@ -802,11 +802,22 @@ jobs:
       # rather than spawning a binary — a different mechanism, different jobs,
       # its own blast radius — so they are not bumped here. The parity gap is
       # wider than this one step and is not closed by it.
-      - name: Install redis-cli + redis-server 8 + psql client
+      - name: Install redis-cli + redis-server 8 + psql client + jq
+        # jq (2026-07-28): this job runs `cabinet/scripts/tests`, and the shell
+        # surfaces those tests exercise — memory.sh, memory-reconcile.sh, the
+        # post-file-write hook, append-interface.sh — all build their JSON
+        # payloads with jq and are never deployed without it. Without jq on the
+        # runner those code paths take their degraded branch, so the arms
+        # pointed at them were measuring an environment production never has:
+        # memory-reconcile queued NOTHING (payload construction failed) while
+        # logging "some queue pushes failed (redis unreachable?)" — reproduced
+        # locally on one machine, same tree, only PATH varying. Same reasoning,
+        # same job, as the redis-server/psql notes above: arming a sensor
+        # pointed at the wrong environment is not coverage.
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq postgresql-client curl gpg lsb-release
+          sudo apt-get install -y -qq postgresql-client curl gpg lsb-release jq
           curl -fsSL https://packages.redis.io/gpg \
             | sudo gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
           codename="$(lsb_release -cs)"
