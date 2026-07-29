@@ -7,12 +7,15 @@
  * mutation path: it renders the shared card and calls /api/onboarding, the same
  * service Dashboard uses; it cannot write map, chronicle, outcomes, or runtime.
  *
- * T1 (spec v2 supersession #5): the three-scene shell (WorldClient —
- * wardroom/street/island scene swap) is REPLACED by EngineClient: chunked
+ * T1 (spec v2 supersession #5): the three-scene shell (the wardroom /
+ * street / island scene swap) was REPLACED by EngineClient: chunked
  * unbounded tilemap, era×rung growth from hot-reloaded growth-ladders.yml,
  * continuous LOD zoom to the archipelago, in-place roof cutaway, and the
- * signal-bound weather layer. The legacy three-scene shell stays reachable
- * at ?legacy=1 for the engine bake-off, then deletes.
+ * signal-bound weather layer. It stayed reachable at ?legacy=1 for the engine
+ * bake-off; the bake-off ran (2026-07-29) and the shell is now DELETED. The
+ * comparison that remains is a better one — ?iso=0 vs ?iso=1 on the SAME
+ * engine, same data path, same cards — rather than a retired scene-swap
+ * renderer nobody was maintaining.
  *
  * ?iso=1 renders the SAME engine through the isometric kernel, driven from the
  * ported composition layer instead of the tile lattice; ?iso=0 forces top-down.
@@ -26,7 +29,6 @@
  * (view-only law).
  */
 import { cookies } from 'next/headers'
-import WorldClient from '@/components/world/world-client'
 import EngineClient from '@/components/world/engine-client'
 import OnboardingJourneyCard from '@/components/onboarding/journey-card'
 import { projectionFromParam } from '@/lib/world/projection'
@@ -45,11 +47,7 @@ export default async function WorldPage({
   const params = await searchParams
   return (
     <>
-      {params.legacy === '1' ? (
-        <WorldClient canActuate={canActuate} />
-      ) : (
-        <EngineClient canActuate={canActuate} projection={projectionFromParam(params.iso)} />
-      )}
+      <EngineClient canActuate={canActuate} projection={projectionFromParam(params.iso)} />
       {/*
         Orientation overlay: this is NOT a World mutation path. It renders the
         canonical onboarding card and posts to /api/onboarding — the same

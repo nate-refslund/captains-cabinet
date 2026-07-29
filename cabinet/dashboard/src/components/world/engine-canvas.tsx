@@ -156,6 +156,8 @@ import {
   isoCutawayCandidate,
   kitFrame,
   openFrameOf,
+  ROOM_FLOOR,
+  roomChildStale,
 } from '@/lib/world/iso-cutaway'
 import type { WeatherState } from '@/lib/world/weather'
 import { rainDrops } from '@/lib/world/weather'
@@ -1860,6 +1862,10 @@ export default function EngineCanvas(props: EngineCanvasProps) {
             floor.setSize(open.dw, open.dh)
             floor.position.set(s.x, s.y)
             floor.zIndex = -1
+            // NAMED, because the pool below only keeps what it can name. An
+            // unnamed sprite is not anonymous to PixiJS — it is called
+            // "Sprite" — and that is what hid this floor for a fortnight.
+            floor.label = ROOM_FLOOR
             room.addChild(floor)
           }
           // THE FIXTURES, filled from measured state: one desk per officer, on
@@ -1875,7 +1881,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           const deskFrame = kitFrame(pack, 'int_desk')
           const deskTex = deskFrame ? isoTex(pack, atlas, 'int_desk') : null
           const slots = interiorSlots(open, s.x, s.y, slugs.length)
-          const want = new Set<string>()
+          const want = new Set<string>([ROOM_FLOOR])
           slots.forEach((slot, i) => {
             if (deskTex && deskFrame) {
               const dk = `desk:${i}`
@@ -1908,8 +1914,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
             }
           })
           for (const c of room.children) {
-            const n = (c as Container).label
-            if (n && !want.has(n)) c.visible = false
+            if (roomChildStale((c as Container).label, want)) c.visible = false
           }
         }
         // anything this pass did not touch stops being drawn — a stale open
