@@ -75,7 +75,21 @@ budgets:
     # somewhere for a per-deployment restriction to enter, and this is it. Zero
     # new production MODULES (the new suite is a test; the ratchet's debt ledger
     # is a .txt), so framework_production_modules is unchanged.
-    maximum: 60169
+    # 60169 -> 60172 (+3 measured 2026-07-29 via cognitive-architecture-census.py,
+    # observed 73119 vs the then-effective 73116): the "fence-forgery" screen arm
+    # grew a SECOND alternative. `_FENCE_RE` used `\s`, which matches a newline,
+    # so the bundle's section header was never anchored to one line and a forged
+    # header could be SPLIT across two — a bare markdown rule, then the `ref=`
+    # line beneath it. Anchoring the parser stops it parsing; this arm keeps the
+    # ATTEMPT attributable, so the real enclosing ref still goes suspect instead
+    # of the forgery passing as inert prose. Three lines, because the two shapes
+    # are alternatives inside ONE arm — a second (name, regex) entry would have
+    # cost the same and made `hits` report "fence-forgery" twice. RAISED VISIBLY
+    # rather than paid by a temporary allowance: a screen arm for an attack that
+    # has been demonstrated twice is permanent, so an allowance would promise a
+    # deletion gate that never fires. Zero new production MODULES (the new suite
+    # is a test).
+    maximum: 60172
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
