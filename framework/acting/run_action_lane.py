@@ -313,6 +313,19 @@ ACT_VERDICTS = frozenset({"act_with_undo", "auto", "notify_after"})
 _INBOUND_REF_PREFIXES = tuple(sorted(
     set(vault_signals.INBOUND_REF_PREFIXES) | set(action_lane.D13_INBOUND_FLOOR)))
 
+# [SEC-5 red team 2026-07-28] The fence is matched the way the SIBLING taint
+# check (action_lane._refs_intersect_tainted) already matches refs — tolerant of
+# re-spelling — because the proposer demonstrably re-spells the refs it cites,
+# and a bare str.startswith() made the floor escapable by TYPING. Measured on a
+# real inbound-area ref: a leading "./", a leading space, a namespace prefix
+# ("vault/…") and a lead-in word ("see …") ALL read "internal" and walked the
+# card out of the never-act-first floor. An area name preceded by a path or word
+# boundary now counts, so the fence holds under every one of those; the only
+# cost of over-matching is a propose, which is the D13 fail-safe direction.
+_INBOUND_REF_RE = re.compile(
+    r"(?:^|[\s(\[\"'./,;])(?:%s)/"
+    % "|".join(re.escape(p.strip("/")) for p in _INBOUND_REF_PREFIXES))
+
 
 def _act_first_on() -> bool:
     return (os.environ.get("CABINET_ACT_FIRST") == "1"
@@ -397,7 +410,7 @@ def _card_provenance(p) -> str:
     if getattr(p, "provenance", "") == "inbound":
         return "inbound"
     for ref in (getattr(p, "evidence", ()) or ()):
-        if str(ref).lstrip("/").startswith(_INBOUND_REF_PREFIXES):
+        if _INBOUND_REF_RE.search(str(ref).replace("\\", "/")):
             return "inbound"
     return "internal"
 
@@ -774,7 +787,13 @@ def _gather_via_source() -> bool:
 
 
 def _fence_block(label: str, ref: str, body: str, chars: int = 700) -> str:
-    body = (body or "").strip()[:chars]
+    # neutralize AFTER the cap, so what is screened is exactly what is emitted
+    # (a truncation can itself leave a half-header behind) — SEC-5 2026-07-28.
+    body = action_lane.neutralize_fence_shapes((body or "").strip()[:chars])
+    # the OTHER half of the same forgery: a ref carrying a newline (a POSIX
+    # filename may) would end the header line early and let the rest of the ref
+    # open a second one. Whitespace-collapsed here, at the header's own producer.
+    ref = " ".join(str(ref).split())
     return f"--- {label} ref={ref} ---\n{body}" if body else ""
 
 
@@ -861,7 +880,12 @@ def _directions_block() -> str:
         txt = DIRECTIONS_PATH.read_text(encoding="utf-8", errors="ignore").strip()
     except OSError:
         return ""
-    return f"--- DIRECTIONS ref={DIRECTIONS_PATH.name} ---\n{txt[:2000]}" if txt else ""
+    # The THIRD producer of the fenced bundle, and neutralized like the other
+    # two even though this file is Captain-ratified instance config rather than
+    # captured text: a producer that is exempt today is a producer nobody
+    # re-checks when its writer changes (SEC-5 2026-07-28).
+    body = action_lane.neutralize_fence_shapes(txt[:2000])
+    return f"--- DIRECTIONS ref={DIRECTIONS_PATH.name} ---\n{body}" if txt else ""
 
 
 def gather_signals(as_of: dt.datetime, *, window_h: int = WINDOW_H,
