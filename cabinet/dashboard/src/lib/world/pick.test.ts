@@ -19,6 +19,15 @@ import { buildIsoScene, elementForRole, type IsoScene } from './iso-scene'
 import { interiorSlots, openFrameOf, roomFixtures } from './iso-cutaway'
 import { parsePack, type IsoPack } from './iso-pack'
 import { officerSlots, pickTarget, STATIONS, type PickKind, type PickWorld } from './pick'
+import {
+  commuteRoad,
+  isoApprentices,
+  isoOfficerYard,
+  isoSites,
+  isoWalkers,
+  PERSON_H_PX,
+  type IsoFigure,
+} from './iso-life'
 import { LOD_RULES, lodTier } from './lod'
 import { projectionFor, worldToScreen } from './projection'
 import { buildWorldGeo, CHART_TABLE_LOCAL, roadPoint, toWorld } from './world-geo'
@@ -1135,5 +1144,122 @@ describe('iso — officers in the OPEN ROOM are pickable (the 2026-07-29 dead af
     // …and a point well outside every box still answers the world, not a person
     const far = pickAtPx(w, (gh?.x ?? 0) + 4000, (gh?.y ?? 0) + 4000)
     expect(far.kind).not.toBe('officer')
+  })
+})
+
+describe('iso — the ISLAND\'s own people and worksites are pickable', () => {
+  /**
+   * THE OTHER HALF OF THE SAME 2026-07-29 DEFECT. The room fix gave the
+   * cutaway's desk officers a card; the moment a roof went back on, EVERY
+   * officer in the world was unclickable again, because `pickIso` walked
+   * `scene.sprites` and nobody in the yard or on the road is a scene sprite.
+   * A world whose people cannot be clicked is a world whose people are
+   * decoration.
+   *
+   * The figures below come from the SAME `iso-life` placement the canvas draws
+   * from — `isoOfficerYard` and `isoWalkers` — so this drives the real thing.
+   */
+  const LAYOUT = SCENE.layout
+  const SLUGS = ['ada', 'brook', 'cass']
+  const YARD = isoOfficerYard(LAYOUT, SLUGS, () => true)
+  const ROAD = commuteRoad(LAYOUT)
+  const WALKERS = isoWalkers(ROAD, [
+    {
+      slug: 'dell',
+      walk: { from: 'village', to: 'quay', startTick: 0, walkTicks: 120, bubble: null },
+      progress: 0.5,
+      glance: false,
+    },
+  ])
+  const PADS = isoSites(LAYOUT, [
+    {
+      site: {
+        id: 'site:library',
+        element: 'library',
+        targetStage: 'wing',
+        siteClass: 'great',
+        t0Tick: 0,
+        footprint: { x: 0, y: 0, w: 4, h: 4 },
+        witness: { kind: 'chronicle', ref: 'iid:7' },
+      },
+      progress: { progress: 0.5, phase: 'raising' },
+      resolution: 'building',
+      crew: [],
+      sign: { what: 'a', now: 'b', proof: 'c' },
+    },
+  ]).pads
+
+  function pickAtPx(w: PickWorld, x: number, y: number) {
+    const { wx, wy } = tileOfLayoutPx(x, y)
+    return pickTarget({ ...w, camera: { z: 3, x: wx, y: wy } }, { x: VIEWPORT.w / 2, y: VIEWPORT.h / 2 })
+  }
+
+  it('a click on an officer standing in the yard opens THAT officer', () => {
+    const w = isoWorld({ isoFigures: YARD })
+    expect(YARD.length).toBe(SLUGS.length)
+    for (const f of YARD) {
+      expect(pickAtPx(w, f.x, f.y - PERSON_H_PX / 2), f.slug).toEqual({
+        kind: 'officer',
+        id: f.slug,
+      })
+    }
+  })
+
+  it('a click on a commute walker opens the officer who is walking', () => {
+    expect(WALKERS.length).toBe(1)
+    const w = isoWorld({ isoFigures: WALKERS })
+    const f = WALKERS[0]
+    expect(pickAtPx(w, f.x, f.y - PERSON_H_PX / 2)).toEqual({ kind: 'officer', id: 'dell' })
+  })
+
+  it('WITHOUT the figures the same clicks name nobody — the arm is real', () => {
+    const w = isoWorld()
+    for (const f of [...YARD, ...WALKERS]) {
+      expect(pickAtPx(w, f.x, f.y - PERSON_H_PX / 2).kind).not.toBe('officer')
+    }
+  })
+
+  it('a click on a worksite opens the SITE, not the building it wraps', () => {
+    expect(PADS.length).toBe(1)
+    const w = isoWorld({ isoSitePads: PADS })
+    const p = PADS[0]
+    expect(pickAtPx(w, p.cx, p.cy)).toEqual({ kind: 'site', id: 'site:library' })
+    // and without the pads the same point falls through to the library itself
+    expect(pickAtPx(isoWorld(), p.cx, p.cy).kind).not.toBe('site')
+  })
+
+  it('people outrank the worksite they are standing on', () => {
+    const p = PADS[0]
+    const onPad: IsoFigure = {
+      id: 'officer:ada',
+      slug: 'ada',
+      kind: 'officer',
+      x: p.cx,
+      y: p.cy,
+      facing: 'down',
+      anim: 'work',
+      present: true,
+      scale: 1,
+    }
+    const w = isoWorld({ isoFigures: [onPad], isoSitePads: PADS })
+    expect(pickAtPx(w, p.cx, p.cy - PERSON_H_PX / 2)).toEqual({ kind: 'officer', id: 'ada' })
+  })
+
+  it('an apprentice answers with the officer it belongs to, never itself', () => {
+    const app = isoApprentices(YARD, [
+      { id: 'app-1', officer: YARD[0].slug, x: 0, y: 0, spawnIid: 3, frame: 0 },
+    ])
+    expect(app.length).toBe(1)
+    const w = isoWorld({ isoFigures: app })
+    const t = pickAtPx(w, app[0].x, app[0].y - PERSON_H_PX / 4)
+    expect(t).toEqual({ kind: 'officer', id: YARD[0].slug })
+  })
+
+  it('empty water still answers ground with people on the island', () => {
+    const w = isoWorld({ isoFigures: YARD, isoSitePads: PADS })
+    expect(pickAtPx(w, SCENE.space.cx, SCENE.space.cy + 3000)).toEqual({
+      kind: 'ground',
+      id: 'ground',
+    })
   })
 })

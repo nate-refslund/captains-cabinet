@@ -72,6 +72,20 @@ import {
   type IsoLaneSite,
 } from '@/lib/world/iso-lanes'
 import {
+  commuteRoad,
+  isoApprentices,
+  hoardingPanels,
+  padDither,
+  isoOfficerYard,
+  isoSites,
+  isoWalkers,
+  pendingMarks,
+  PERSON_H_PX,
+  PERSON_SCALE,
+  type IsoFigure,
+  type IsoSitePad,
+} from '@/lib/world/iso-life'
+import {
   MOTTLE_TONES,
   PAINT_FEATHER,
   type Blob as PaintBlob,
@@ -116,6 +130,7 @@ import {
   UI_SHEET,
   V,
   VILLAGE_SHEET,
+  verbIconClass,
   verbIconCut,
   WORKSITE_KIT,
   bucketOf,
@@ -255,6 +270,36 @@ export interface EngineCanvasProps {
   onPrimary: (target: EngineTarget | null) => void
   onSecondary: (target: EngineTarget | null) => void
   onIssues?: (issues: string[]) => void
+  /**
+   * Where the DOM name/verb chips go — emitted BY the canvas, in the camera's
+   * own tile space, whenever the set moves.
+   *
+   * THE BUG THIS EXISTS FOR, silent since the default flip: `engine-client`
+   * built its chip anchors from `officerSlots(greatHouse, ...)`, which is a
+   * TOP-DOWN building box in TILE space, and then projected them with whatever
+   * kernel was live. Under iso those tiles name water a long way off the
+   * island, so every chip was culled by the client's own off-screen filter and
+   * THE WORLD HAD NO NAMES ON IT AT ALL — with the suite green, because nothing
+   * asserted that a projected chip lands on the officer it names.
+   *
+   * It cannot be fixed by projecting differently: under iso an officer's place
+   * is a layout pixel derived from the COMPOSED LAYOUT, and this canvas is the
+   * only holder of that. Recomputing the composition in the client to find out
+   * where a name goes would be a second island, free to disagree with the one
+   * on screen — the same defect one level up. So the placement is emitted from
+   * the one place that draws it, in the tile space `worldToScreen` already
+   * takes, and the client projects it with the function it already has.
+   */
+  onLabels?: (labels: WorldLabel[]) => void
+}
+
+/** One DOM chip anchor: a real actor, at a point in CAMERA TILE space. */
+export interface WorldLabel {
+  slug: string
+  verb: string | null
+  /** Already offset ABOVE the figure — the client adds nothing. */
+  x: number
+  y: number
 }
 
 interface PixiHandles {
@@ -1631,6 +1676,24 @@ export default function EngineCanvas(props: EngineCanvasProps) {
       let isoHome: HomeExtent | null = null
       let isoLanes: IsoLaneSite[] = []
       let isoLanesKey = ''
+      /**
+       * The LIFE layer's figures and site pads, EXACTLY as the last frame drew
+       * them — handed to the pick rather than recomputed, the same contract
+       * `roomOfficerBoxes` and `isoLanes` are on.
+       *
+       * Recomputing them in `pick.ts` would mean a second copy of the road
+       * walk, the yard fan and the lot lookup, free to drift by a step; and
+       * because a walker MOVES EVERY TICK, a drift here is not a subtle
+       * misalignment but a click that lands on nobody. The array is also what
+       * makes the LOD gate exact: below the officers tier `drawIsoLife` returns
+       * before filling it, so there is nothing to hit and no gate to remember.
+       */
+      let isoFigures: IsoFigure[] = []
+      let isoSitePads: IsoSitePad[] = []
+      /** LIFE placements the layout has no honest spot for — badged once. */
+      let isoLifeIssued = false
+      /** Last emitted chip set, so the callback fires on a MOVE, not a frame. */
+      let isoLabelKey = ''
       let isoQuay: { x: number; y: number } | null = null
       function syncIsoLanes(p: EngineCanvasProps): void {
         if (!isoHome || !isoScene) {
@@ -1823,34 +1886,452 @@ export default function EngineCanvas(props: EngineCanvasProps) {
       }
 
       /**
-       * The one dynamic the iso path draws this round: the lighthouse lamp.
+       * THE ISO DYNAMIC LAYER — everything on the frame that MOVES.
        *
-       * WHY ONLY THIS. Every other dynamic in drawDynamics — officers, commute
-       * walkers, site crews, fauna, chimney smoke, lane-site buoys, window
-       * glows, the cutaway — is placed in TILE space against the top-down
-       * geometry, and the iso world is not that world. Drawing them here would
-       * put a walker in open sea and call it a feature. They are named as
-       * ABSENT in the port's own report rather than approximated; the LIFE
-       * layer's own port is a separate step with its own risks.
+       * WHAT THIS REPLACED. Until 2026-07-29 this function drew the lighthouse
+       * lamp, the roof cutaway and the product archipelago, and the comment
+       * here said the rest was absent on purpose: every other dynamic in
+       * `drawDynamics` is placed in TILE space against the top-down geometry,
+       * and drawing those coordinates under iso would put a walker in open sea
+       * and call it a feature. That was the right call at the time and it is no
+       * longer the situation — `lib/world/iso-life.ts` re-sites the reducer's
+       * MEASURED half (who walks, how far along, which site, how big its crew)
+       * on the composed layout's OWN geometry, so nothing here approximates a
+       * tile.
        *
-       * The lamp is different, and it is here because it is the biggest visual
-       * event in the world's life: the layout already computes LAMP_AT in the
-       * same space the scene draws in, and it already refuses to light a lamp
-       * that has no tower to sit in. The glow rides fxG, which is added to the
-       * stage ABOVE the ambience veil — so warm light cuts through the night
-       * grade instead of being dithered away by it.
+       * ORDER IS MEANING. Ground marks first (the site pads and the pegged-out
+       * pending plots are painted ON the ground), then the pack props and the
+       * figures, which are depth-sorted sprites on the same layer as the
+       * buildings, so a walker passes correctly in front of and behind them.
+       * The lamp and the window glow ride `fxG`, which sits ABOVE the ambience
+       * veil — warm light has to cut through the night grade instead of being
+       * dithered away by it.
        */
       function drawIsoDynamics(p: EngineCanvasProps): void {
         dynG.clear()
         dynShadowG.clear()
         syncIsoLanes(p)
         drawIsoLanes(p)
+        drawIsoLife(p)
         const lamp = isoScene?.lamp
         if (lamp) {
           drawGlow(fxG, 'iso:lamp', lamp.x, lamp.y, 54)
           fxG.rect(lamp.x - 4, lamp.y - 4, 8, 8).fill({ color: GLOW_CORE })
         }
         drawIsoCutaway(p)
+        emitIsoLabels(p)
+        // EVERY POOLED OBJECT THIS PASS DID NOT TOUCH IS DESTROYED. The iso
+        // path never swept, which was harmless while the only pooled things
+        // were cutaway rooms that hid themselves — and is not harmless now: a
+        // walker who arrives, or an apprentice whose run closes, must LEAVE the
+        // frame. `drawDynamics` has always ended this way; so does this.
+        sweepPool()
+      }
+
+      /**
+       * The DOM chip anchors, AFTER the cutaway has run.
+       *
+       * ORDER MATTERS: an officer whose room is open is drawn at a desk by
+       * `drawIsoCutaway`, and their name has to follow them inside. So the room
+       * boxes are read here, one pass later, and they WIN over the island
+       * figures — the island list already excludes them, and reading both makes
+       * that a belt as well as braces.
+       *
+       * EMITTED IN CAMERA TILE SPACE, not in layout px. `unproject` is the
+       * exact inverse of the kernel `worldToScreen` projects with, so a tile
+       * emitted here lands back on the same pixel in the client with no second
+       * conversion and no new coordinate system to keep in step. The vertical
+       * offset is applied HERE, in layout px, because "above the figure" is a
+       * screen direction and subtracting from a TILE y under iso moves
+       * diagonally — which is how a chip drifts off its officer.
+       */
+      function emitIsoLabels(p: EngineCanvasProps): void {
+        const emit = propsRef.current.onLabels
+        if (!emit) return
+        if (!LOD_RULES[lodTier(p.camera.z)].officers) {
+          if (isoLabelKey !== '') {
+            isoLabelKey = ''
+            emit([])
+          }
+          return
+        }
+        const out: WorldLabel[] = []
+        const seen = new Set<string>()
+        for (const b of roomOfficerBoxes) {
+          seen.add(b.slug)
+          out.push(labelAt(b.slug, b.x + b.w / 2, b.y - 6, p))
+        }
+        for (const f of isoFigures) {
+          if (f.kind === 'apprentice' || seen.has(f.slug)) continue
+          seen.add(f.slug)
+          out.push(labelAt(f.slug, f.x, f.y - PERSON_H_PX - 8, p))
+        }
+        // Only when it actually moved: this runs inside the draw loop, and an
+        // unconditional callback would set React state on every animation
+        // frame for a chip that has not moved a pixel.
+        const key = out.map((l) => `${l.slug}:${l.verb}:${l.x.toFixed(2)},${l.y.toFixed(2)}`).join('|')
+        if (key === isoLabelKey) return
+        isoLabelKey = key
+        emit(out)
+      }
+
+      function labelAt(slug: string, lx: number, ly: number, p: EngineCanvasProps): WorldLabel {
+        const t = proj.unproject(lx, ly)
+        const pres = p.officers[slug]
+        return { slug, verb: pres?.present ? pres.verb ?? null : null, x: t.tx, y: t.ty }
+      }
+
+      /**
+       * One character, placed in LAYOUT PX rather than in tiles.
+       *
+       * `characterSprite` multiplies its arguments by the top-down tile, which
+       * is the whole reason it cannot be reused here. Everything else is the
+       * same: the same owned `actor_officer` sheets, the same `charFrame`
+       * cadence, the same seeded per-slug phase, and a dither shadow under the
+       * feet — so a figure on the island reads as the same cast as a figure at
+       * a desk in the open room.
+       */
+      function isoCharacter(
+        key: string,
+        slug: string,
+        anim: 'work' | 'walk',
+        facing: CharFacing,
+        tick: number,
+        x: number,
+        y: number,
+        opts?: { alpha?: number; scale?: number }
+      ): void {
+        const cut = charFrame(anim, facing, tick, fnv1a(slug) % 6)
+        const tex = texFor(characterSheetFor(slug), {
+          x: cut.x,
+          y: cut.y,
+          w: CHAR_FRAME_W,
+          h: CHAR_FRAME_H,
+        })
+        if (!tex) return
+        const sp = pooled(key, () => new PIXI.Sprite())
+        if (sp instanceof PIXI.Sprite) {
+          sp.texture = tex
+          sp.anchor.set(0.5, 1)
+          sp.position.set(x, y)
+          sp.zIndex = y
+          sp.alpha = opts?.alpha ?? 1
+          sp.scale.set(PERSON_SCALE * (opts?.scale ?? 1))
+        }
+        drawShadow(dynShadowG, key, x, y, Math.max(10, PERSON_H_PX * (opts?.scale ?? 1) * 0.5))
+      }
+
+      /** One pack prop, placed at a base centre in layout px. */
+      function isoProp(key: string, frame: string, x: number, y: number, scale = 1): void {
+        const pack = isoPack
+        const atlas = isoAtlas
+        if (!pack || !atlas) return
+        const f = pack.frames[frame]
+        const tex = isoTex(pack, atlas, frame)
+        if (!f || !tex) return
+        const sp = pooled(key, () => new PIXI.Sprite())
+        if (sp instanceof PIXI.Sprite) {
+          sp.texture = tex
+          sp.anchor.set(0.5, 1)
+          sp.setSize(f.dw * scale, f.dh * scale)
+          sp.position.set(x, y)
+          sp.zIndex = y
+        }
+      }
+
+      /**
+       * THE LIFE LAYER — walkers, the yard, sites and crews, apprentices, the
+       * pending mark, chimney smoke and window glow.
+       *
+       * THE LAW EVERY SPRITE BELOW OBEYS. A walker walks because `commuteStep`
+       * measured a verb shift; a site stands because a witnessed transition is
+       * in the ledger; a crew is that many wrights because the site's own
+       * footprint says so; a plot is pegged out because a rung is PENDING.
+       * Nothing here decides that something happened — `lifeStep` and the
+       * era engine decide, and this function decides only WHERE on the island
+       * their answer is drawn.
+       *
+       * IT IS LOD-GATED exactly as the top-down layer is: below the officers
+       * tier the world is being read as a map and figures are noise, so they
+       * are not drawn AND (by the same array) not clickable. A click may not
+       * name what the frame does not show.
+       */
+      function drawIsoLife(p: EngineCanvasProps): void {
+        isoFigures = []
+        isoSitePads = []
+        const scene = isoScene
+        if (!scene) return
+        const layout = scene.layout
+        const tier = lodTier(p.camera.z)
+        const rules = LOD_RULES[tier]
+        const bucket = bucketOf(p.clockHour)
+        const dark = bucket === 'night' || bucket === 'dusk'
+        const slugs = Object.keys(p.officers).sort()
+
+        // ── the pending rung: a plot pegged out where the change will land ──
+        // Drawn at EVERY tier, including the ones that draw no people: "this is
+        // about to change" is map-scale information about the org, and it is
+        // the single thing whose absence under iso was a silent lie.
+        const pendingEls = Object.entries(p.resolution?.elements ?? {})
+          .filter(([, el]) => el.pending !== null)
+          .map(([name]) => name)
+        const pend = pendingMarks(layout, scene.sprites, pendingEls)
+        for (const m of pend.marks) drawPendingPlot(m.x, m.y, m.hw)
+        if (pend.unplaced.length > 0 && !isoLifeIssued) {
+          isoLifeIssued = true
+          propsRef.current.onIssues?.(
+            pend.unplaced.map(
+              (el) =>
+                `pending rung "${el}" has no place on the island: the layout draws no ` +
+                `structure for it and knows no lot for it, so the world cannot honestly ` +
+                `mark where the change will land. NOT drawn (an invented spot would be worse).`
+            )
+          )
+        }
+
+        if (!rules.officers) return
+
+        // ── the officers' yard, and the walkers on the harbour road ─────────
+        const road = commuteRoad(layout)
+        const yard = isoOfficerYard(layout, slugs, (s) => Boolean(p.officers[s]?.present), {
+          // The reducer's own answer to "where is this officer", so an officer
+          // who WALKED to the quay is standing at the quay on the next frame.
+          districts: p.life?.districts,
+          road,
+        })
+        const openId = isoCut.openId
+        // An officer whose ROOM IS OPEN is drawn at a desk by the cutaway pass
+        // and must not also stand in the yard — one actor, one body.
+        const roomOpen = openId !== null && scene.sprites.some((s) => s.id === openId)
+        const standing = roomOpen ? [] : yard
+        const walkers = isoWalkers(road, p.life?.commuters ?? [])
+        const walking = new Set(walkers.map((w) => w.slug))
+        // A COMMUTING OFFICER IS ON THE ROAD, NOT IN THE YARD. The reducer says
+        // which; drawing both would be the same person twice.
+        const onIsland = [...standing.filter((o) => !walking.has(o.slug)), ...walkers]
+        const apprentices = isoApprentices(
+          onIsland,
+          p.life?.apprentices.figures ?? []
+        )
+        isoFigures = [...onIsland, ...apprentices].sort((a, b) => a.y - b.y)
+        for (const f of isoFigures) {
+          isoCharacter(f.id, f.slug, f.anim, f.facing, p.tick, f.x, f.y, {
+            alpha: f.present ? 1 : 0.4,
+            scale: f.scale,
+          })
+        }
+        // the verb bubble — a PIXEL pictogram, never text in world space
+        for (const cm of p.life?.commuters ?? []) {
+          if (!cm.walk.bubble) continue
+          const w = walkers.find((x) => x.slug === cm.slug)
+          if (!w) continue
+          drawVerbBubble(`bubble:${cm.slug}`, cm.walk.bubble.verb, w.x, w.y - PERSON_H_PX - 6)
+        }
+
+        // ── construction sites: the ground, the fence, the props, the crew ──
+        const sites = isoSites(layout, p.life?.sites ?? [])
+        isoSitePads = sites.pads
+        for (const pad of sites.pads) drawIsoSite(pad, p.tick)
+        if (sites.unplaced.length > 0 && !isoLifeIssued) {
+          isoLifeIssued = true
+          propsRef.current.onIssues?.(
+            sites.unplaced.map(
+              (el) =>
+                `construction site for "${el}" has no plot in the composed layout — ` +
+                `NOT drawn rather than placed somewhere arbitrary.`
+            )
+          )
+        }
+
+        // ── chimney smoke over the lived-in great house ─────────────────────
+        const gh = layout.structures.find((s) => s.role === 'great_house')
+        if (gh && Object.values(p.officers).some((o) => o.present)) {
+          const cx = gh.at.x + gh.size.w * 0.26
+          const cy = gh.at.y - gh.size.h * 0.92
+          for (const puff of smokePuffs(gh.role, p.tick)) {
+            dynG.rect(cx + puff.x, cy + puff.y, puff.r, puff.r).fill({ color: puff.color })
+          }
+        }
+
+        // ── window glow, DUSK AND NIGHT ONLY ────────────────────────────────
+        // A building has lit windows when the pack ships ROOF-OFF art for it,
+        // which is the pack's own statement that the thing has an inside. That
+        // is a property of the atlas rather than a list in this file, so a
+        // building whose interior art lands later lights up by itself.
+        if (dark && isoPack) {
+          for (const s of scene.sprites) {
+            if (!openFrameOf(isoPack, s.frame)) continue
+            const wx = s.x - s.dw * 0.2
+            const wy = s.y - s.dh * 0.42
+            drawGlow(fxG, `iso:win:${s.id}`, wx, wy, 13)
+            fxG.rect(wx - 2, wy - 2, 5, 5).fill({ color: GLOW_CORE })
+            if (s.dw >= 150) {
+              const wx2 = s.x + s.dw * 0.2
+              drawGlow(fxG, `iso:win2:${s.id}`, wx2, wy, 10)
+              fxG.rect(wx2 - 2, wy - 2, 4, 4).fill({ color: GLOW_CORE })
+            }
+          }
+        }
+      }
+
+      /**
+       * A PENDING RUNG, as a surveyed plot: corner pegs and taut tape.
+       *
+       * WHY NOT THE TOP-DOWN CONE. The cone is a LimeZu prop, and `/world`
+       * references zero LimeZu files since the flip — reaching for one here
+       * would give that back for a marker. The owned pack ships no traffic
+       * cone either, and the posts it does ship (`signpost`, `law_post`,
+       * `camp_signal_post`) each already MEAN something else in this world's
+       * vocabulary, so borrowing one would make the frame ambiguous about which
+       * rung it is talking about.
+       *
+       * Pegs-and-tape is the reading that cannot be confused with anything else
+       * on the island: ground that has been measured out and not yet built on.
+       * Every hue is the harbour's own timber and the corpus foam — no colour
+       * enters the world for this.
+       */
+      function drawPendingPlot(x: number, y: number, hw: number): void {
+        const hh = hw * ISO_GROUND_SQUASH
+        const corners: Array<[number, number]> = [
+          [x - hw, y],
+          [x, y - hh],
+          [x + hw, y],
+          [x, y + hh],
+        ]
+        for (const [cx, cy] of corners) {
+          dynG.rect(cx - 1, cy - 9, 3, 10).fill({ color: PLANK_BROWN })
+          dynG.rect(cx - 2, cy - 11, 5, 3).fill({ color: FOAM_WHITE })
+        }
+        // the tape: dashes along each side, so the plot reads as pegged out
+        // rather than as a painted shape
+        for (let i = 0; i < corners.length; i++) {
+          const [ax, ay] = corners[i]
+          const [bx, by] = corners[(i + 1) % corners.length]
+          const steps = 7
+          for (let k = 1; k < steps; k++) {
+            if (k % 2 === 0) continue
+            const f = k / steps
+            dynG
+              .rect(ax + (bx - ax) * f - 1, ay + (by - ay) * f - 6, 3, 2)
+              .fill({ color: FOAM_WHITE })
+          }
+        }
+      }
+
+      /**
+       * ONE CONSTRUCTION SITE — cleared ground, a fence, phase props and crew.
+       *
+       * THE PHASE IS THE PROPS, and the props are the shipped pack's own:
+       * felling leaves stumps and a fallen log, raising stacks timber and
+       * crates, finishing leaves barrels. That is the Captain's approved
+       * sequence — "a new officer spawns and then starts chopping trees and
+       * building his cabin" — read off `siteProgress`'s phase rather than
+       * animated on a timer of its own.
+       *
+       * A REVEAL SITE DRAWS NOTHING BUT ITS GROUND. `crewFor` returns no
+       * wrights at reveal (the quiet frame — the site is retired), and dressing
+       * an empty site with props would keep claiming work after the work
+       * stopped.
+       */
+      function drawIsoSite(pad: IsoSitePad, tick: number): void {
+        // cleared earth: an opaque dither in the terrain's own dirt ramp
+        for (const d of padDither(pad.id, pad.rx, pad.ry)) {
+          dynG
+            .rect(pad.cx + d.x * pad.rx, pad.cy + d.y * pad.ry, d.r, d.r)
+            .fill({ color: RAMPS.dirt[d.tone % RAMPS.dirt.length] })
+        }
+        const working = pad.phase !== 'reveal'
+        if (working) {
+          // the hoarding: fence panels round the pad, as many as its PERIMETER
+          // takes — a fixed count reads as a fence at one pad size and as a row
+          // of loose sticks at every other.
+          const n = hoardingPanels(pad.rx, pad.ry)
+          for (let i = 0; i < n; i++) {
+            const a = (i / n) * Math.PI * 2
+            isoProp(
+              `sitefence:${pad.id}:${i}`,
+              'fence_run',
+              pad.cx + Math.cos(a) * pad.rx,
+              pad.cy + Math.sin(a) * pad.ry,
+              0.85
+            )
+          }
+          // the sign: at the front of the plot, facing the reader. The TEXT is
+          // the inspect card's — `siteSign` composes it and world space carries
+          // no words, in either kernel.
+          isoProp(`sitesign:${pad.id}`, 'signpost', pad.cx - pad.rx * 0.5, pad.cy + pad.ry)
+          const props =
+            pad.phase === 'clearing'
+              ? ['tree_stump', 'fallen_log', 'tree_stump']
+              : pad.phase === 'raising'
+                ? ['wood_pile', 'crate_single', 'wood_pile']
+                : ['barrel_single', 'crate_single', 'barrel_single']
+          props.forEach((frame, i) => {
+            const a = ((fnv1a(`siteprop:${pad.id}:${i}`) % 360) * Math.PI) / 180
+            isoProp(
+              `siteprop:${pad.id}:${i}`,
+              frame,
+              pad.cx + Math.cos(a) * pad.rx * 0.55,
+              pad.cy + Math.sin(a) * pad.ry * 0.55,
+              0.85
+            )
+          })
+        }
+        for (const w of pad.crew) {
+          // The wrights are the same owned cast, keyed by their own id: they
+          // are decorative-honest staging of a witnessed transition, which is
+          // exactly what CREW_CODEX says on the card.
+          isoCharacter(`wright:${w.id}`, w.id, 'walk', w.facing, tick + w.frame, w.x, w.y, {
+            scale: 0.92,
+          })
+        }
+      }
+
+      /**
+       * THE VERB BUBBLE — a pixel pictogram over a walking officer.
+       *
+       * DRAWN, NOT CUT. The top-down bubble takes its icon from the LimeZu
+       * `Modern_UI` sheet; loading that here would put a licensed pack back
+       * into a world that references none, for four 12x12 glyphs. So the four
+       * classes `verbIconCut` already maps every verb onto — mail, people, up,
+       * gear — are drawn as rectangles in the corpus slate on the pack's own
+       * parchment, and the world stays owned.
+       *
+       * NO TEXT, in either kernel: the grammar's bubble law is that the verb
+       * reads as a shape, and the word itself belongs on the officer's card.
+       */
+      function drawVerbBubble(key: string, verb: string, x: number, y: number): void {
+        const cls = verbIconClass(verb)
+        const g = pooled(key, () => new PIXI.Graphics()) as Graphics
+        g.clear()
+        g.position.set(x, y)
+        g.zIndex = 1e6 // bubbles float over the scene, as they do top-down
+        g.roundRect(-11, -15, 22, 17, 3).fill(GLOW_CORE).stroke({ width: 1, color: FOOT_SLATE })
+        g.poly([-4, 2, 2, 2, -4, 8]).fill(GLOW_CORE)
+        const ink = { color: FOOT_SLATE }
+        if (cls === 'mail') {
+          g.rect(-7, -11, 14, 9).fill(ink)
+          g.rect(-6, -10, 12, 1).fill({ color: GLOW_CORE })
+          g.rect(-4, -9, 8, 1).fill({ color: GLOW_CORE })
+          g.rect(-2, -8, 4, 1).fill({ color: GLOW_CORE })
+        } else if (cls === 'people') {
+          g.rect(-7, -12, 4, 4).fill(ink)
+          g.rect(-8, -7, 6, 5).fill(ink)
+          g.rect(2, -12, 4, 4).fill(ink)
+          g.rect(1, -7, 6, 5).fill(ink)
+        } else if (cls === 'up') {
+          g.rect(-2, -12, 4, 10).fill(ink)
+          g.rect(-6, -9, 4, 3).fill(ink)
+          g.rect(2, -9, 4, 3).fill(ink)
+          g.rect(-4, -12, 8, 3).fill(ink)
+        } else {
+          g.rect(-6, -10, 12, 7).fill(ink)
+          g.rect(-2, -12, 4, 2).fill(ink)
+          g.rect(-2, -3, 4, 2).fill(ink)
+          g.rect(-8, -8, 2, 3).fill(ink)
+          g.rect(6, -8, 2, 3).fill(ink)
+          g.rect(-2, -8, 4, 3).fill({ color: GLOW_CORE })
+        }
       }
 
       /**
@@ -2517,6 +2998,12 @@ export default function EngineCanvas(props: EngineCanvasProps) {
             // second placement of the archipelago is how a click lands on the
             // isle beside the one under the pointer.
             isoLanes,
+            // Same contract for the people and the worksites: `drawIsoLife`
+            // fills these two arrays as it draws, and a tier that draws no
+            // figures leaves them empty — so the LOD gate is the drawn frame
+            // itself rather than a rule this call has to remember.
+            isoFigures,
+            isoSitePads,
             measuredElements: new Set(Object.keys(p.resolution?.elements ?? {})),
           },
           { x: ev.clientX - rect.left, y: ev.clientY - rect.top }

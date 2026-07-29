@@ -46,6 +46,12 @@ import {
 } from './iso-scene'
 import { pickRoomOfficer, type RoomOfficerBox } from './iso-cutaway'
 import { pickIsoLane, type IsoLaneSite } from './iso-lanes'
+import {
+  pickIsoFigure,
+  pickIsoSite,
+  type IsoFigure,
+  type IsoSitePad,
+} from './iso-life'
 import { LOD_RULES, lodTier, type EngineCamera } from './lod'
 import { projectionFor, screenToWorld, type ProjectionKind, type ViewportPx } from './projection'
 import { CHART_TABLE_LOCAL, roadPoint, toWorld, type WorldGeo } from './world-geo'
@@ -176,6 +182,31 @@ export interface PickWorld {
    */
   isoLanes?: readonly IsoLaneSite[]
   /**
+   * The LIFE figures the last iso frame drew — officers standing in the yard,
+   * commute walkers on the harbour road, apprentices beside their officer.
+   *
+   * THE DEFECT IT CLOSES, measured 2026-07-29: `pickIso` could never return
+   * `kind:'officer'` for anyone on the ISLAND. The room fix gave the cutaway's
+   * desk officers a card, but the moment a roof went back on, every officer in
+   * the world became unclickable again — 208 clicks, 207 building cards, zero
+   * officer cards. Officers were reachable only through the portrait rail and
+   * `?sel=`, which is "reachable" the way a phone book is: not *in the world*.
+   *
+   * HANDED OVER, NEVER RECOMPUTED, for the same reason `roomOfficers` is — and
+   * harder here, because a walker MOVES EVERY TICK. A second copy of the road
+   * walk in this file would not drift subtly; it would put the hit box a step
+   * behind the sprite on every frame. The LOD gate is implicit and exact for
+   * the same reason: below the officers tier the draw pass fills nothing.
+   */
+  isoFigures?: readonly IsoFigure[]
+  /**
+   * The construction-site pads the last iso frame drew, in layout px. Same
+   * contract, same reason: a site's ground ellipse is computed from the
+   * layout's own lot and structure sizes, and the pick must test the pad the
+   * eye is looking at.
+   */
+  isoSitePads?: readonly IsoSitePad[]
+  /**
    * Ladder elements the engine actually MEASURED this frame — `resolution
    * .elements`' own keys, or empty when nothing reached the client.
    *
@@ -296,6 +327,19 @@ function pickIso(world: PickWorld, tx: number, ty: number): PickTarget {
   // implicit here and stronger: these boxes ARE what the cutaway pass drew, so
   // at a tier that draws no room there are none to test.
   if (inRoom) return { kind: 'officer', id: inRoom }
+  // THE ISLAND'S OWN PEOPLE, in the same priority slot the top-down arm gives
+  // them: officers, then the walkers who resolve to their officer. An
+  // apprentice answers with the officer it belongs to — it is not an actor of
+  // its own (life/apprentices.ts: "a figure may never float free of its real
+  // actor"), so the card that opens is the one whose run spawned it, which is
+  // exactly what the top-down world does with a walker.
+  const fig = pickIsoFigure(world.isoFigures ?? [], px.x, px.y)
+  if (fig) return { kind: 'officer', id: fig.slug }
+  // LIFE SITES, before the buildings — a site's hoarding stands ON a building's
+  // ground while an upgrade is under way, and the thing being worked on is what
+  // a click there is asking about. Same order as the top-down arm.
+  const site = pickIsoSite(world.isoSitePads ?? [], px.x, px.y)
+  if (site) return { kind: 'site', id: site.id }
   const s = pickIsoSprite(scene, px.x, px.y, { wants: isoWants(world.chartTable) })
   if (s) {
     const station = STATIONS.get(s.frame)
