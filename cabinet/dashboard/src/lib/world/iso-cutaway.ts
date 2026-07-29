@@ -29,6 +29,7 @@
  */
 import { ROOF_ALPHA_OPEN, roofAlpha, type CutawayState } from './lod'
 import { groundDiamond } from './projection'
+import { CHAR_FRAME_H, CHAR_FRAME_W } from './sprites'
 import type { IsoPack } from './iso-pack'
 
 /** The suffix a roof-off twin carries in the pack. */
@@ -477,4 +478,106 @@ export function roomChildStale(
   if (want.has(label)) return false
   if (label === ROOM_FLOOR) return false
   return ROOM_MANAGED_PREFIXES.some((p) => label.startsWith(p))
+}
+
+// ── who is standing in the room, and where ──────────────────────────────────
+
+/**
+ * How far in front of their desk an officer stands, in layout px.
+ *
+ * The officer is on the NEAR side so the desk never hides them — the same
+ * relation the top-down interior had. It is a constant rather than a literal at
+ * the call site because the PICK has to know it too, and the one thing this
+ * function exists to prevent is the draw and the hit test disagreeing by 7px.
+ */
+export const OFFICER_DESK_OFFSET_Y = 7
+
+/** An officer's drawn box inside an open room — layout px, top-left origin. */
+export interface RoomOfficerBox {
+  slug: string
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/** One officer's furniture: their desk slot and the box they are drawn in. */
+export interface RoomFixture {
+  slug: string
+  desk: InteriorSlot
+  officer: RoomOfficerBox
+}
+
+/**
+ * THE ROOM'S FIXTURES — one function, used by the draw pass AND the pick.
+ *
+ * THE DEFECT THIS EXISTS FOR, measured in a browser 2026-07-29 under the iso
+ * default: five officer figures stood visibly at desks in the roof-off great
+ * house and NONE of them was clickable. 208 clicks over the open room returned
+ * 207 `great_house` building cards and zero officer cards, because `pickIso`
+ * walks `scene.sprites` and the room's officers are not scene sprites — they
+ * are pooled children the cutaway pass creates, labelled `off:<slug>`, inside
+ * the room container. The pick had no term for them at all.
+ *
+ * Worse, it was a defect the roof-off fix CREATED: before the room drew, there
+ * was nothing there to click, so the gap was invisible. Making the room visible
+ * turned a hidden hole into five dead affordances at the exact zoom where a
+ * person is trying to click an officer.
+ *
+ * So the placement is computed ONCE, here, and both sides read it. The obvious
+ * alternative — teaching the pick the same arithmetic — is how the two drift by
+ * a few pixels and then by a whole slot, and this file already carries one
+ * comment about a rectangular grid laid inside an isometric building.
+ *
+ * `slugs` must arrive in the SAME order the draw pass uses (sorted), because
+ * slot i belongs to slug i; the caller owns that ordering and the test pins it.
+ *
+ * PURE: no PixiJS, no DOM.
+ */
+export function roomFixtures(
+  open: OpenFrame,
+  baseX: number,
+  baseY: number,
+  slugs: readonly string[],
+  opts: { step?: number; margin?: number } = {}
+): RoomFixture[] {
+  const slots = interiorSlots(open, baseX, baseY, slugs.length, opts)
+  const out: RoomFixture[] = []
+  for (let i = 0; i < slots.length && i < slugs.length; i++) {
+    const slot = slots[i]
+    const cy = slot.y + OFFICER_DESK_OFFSET_Y
+    out.push({
+      slug: slugs[i],
+      desk: slot,
+      // anchor (0.5, 1): the sprite hangs from its feet at (slot.x, cy)
+      officer: {
+        slug: slugs[i],
+        x: slot.x - CHAR_FRAME_W / 2,
+        y: cy - CHAR_FRAME_H,
+        w: CHAR_FRAME_W,
+        h: CHAR_FRAME_H,
+      },
+    })
+  }
+  return out
+}
+
+/**
+ * Which officer, if any, is under this layout-space point.
+ *
+ * FRONT TO BACK. `roomFixtures` returns its slots back-to-front so the draw
+ * pass can paint them in order; a pointer must therefore be tested in REVERSE,
+ * or a figure standing behind another one answers for a click that landed on
+ * the one in front. Same rule as the scene's own sprite pick.
+ */
+export function pickRoomOfficer(
+  boxes: readonly RoomOfficerBox[],
+  px: number,
+  py: number
+): string | null {
+  for (let i = boxes.length - 1; i >= 0; i--) {
+    const b = boxes[i]
+    if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) return b.slug
+  }
+  return null
 }

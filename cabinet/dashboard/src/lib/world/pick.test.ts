@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import { buildIsoScene, elementForRole, type IsoScene } from './iso-scene'
-import { interiorSlots, openFrameOf } from './iso-cutaway'
+import { interiorSlots, openFrameOf, roomFixtures } from './iso-cutaway'
 import { parsePack, type IsoPack } from './iso-pack'
 import { officerSlots, pickTarget, STATIONS, type PickKind, type PickWorld } from './pick'
 import { LOD_RULES, lodTier } from './lod'
@@ -902,5 +902,70 @@ describe('the killswitch lever cannot be reached through the pick', () => {
     expect(code).not.toMatch(/from '@\/app\//)
     expect(code).not.toMatch(/action/i)
     expect(code.toLowerCase()).not.toMatch(/lever|killswitch/)
+  })
+})
+
+describe('iso — officers in the OPEN ROOM are pickable (the 2026-07-29 dead affordance)', () => {
+  /**
+   * MEASURED ON MASTER, in a browser, under the iso default: with the roof off
+   * the great house, five officer figures stood visibly at desks and 208 clicks
+   * over the open room returned 207 `great_house` building cards and ZERO
+   * officer cards. `pickIso` walks `scene.sprites`; the room's officers are
+   * pooled `off:<slug>` children of the room container and are not in it.
+   *
+   * The boxes below come from the SAME `roomFixtures` the canvas draws from, so
+   * this drives the real thing rather than a restatement of it.
+   */
+  const gh = SCENE.sprites.find((s) => s.role === 'great_house')
+  const OPEN = { frame: 'great_house_open', dw: gh?.dw ?? 190, dh: gh?.dh ?? 120 }
+  const SLUGS = ['ada', 'brook', 'cass']
+  const boxes = roomFixtures(OPEN, gh?.x ?? 0, gh?.y ?? 0, SLUGS).map((f) => f.officer)
+
+  /** Pick at a layout-px point with the camera centred on it. */
+  function pickAtPx(w: PickWorld, x: number, y: number) {
+    const { wx, wy } = tileOfLayoutPx(x, y)
+    return pickTarget({ ...w, camera: { z: 3, x: wx, y: wy } }, { x: VIEWPORT.w / 2, y: VIEWPORT.h / 2 })
+  }
+
+  it('a click on a drawn officer opens THAT officer, not the house', () => {
+    const w = isoWorld({ cutawayOpenId: 'great_house', roomOfficers: boxes })
+    for (const b of boxes) {
+      expect(pickAtPx(w, b.x + b.w / 2, b.y + b.h / 2), b.slug).toEqual({
+        kind: 'officer',
+        id: b.slug,
+      })
+    }
+  })
+
+  it('WITHOUT the boxes the same clicks do not name an officer — the arm is real', () => {
+    // This is the pre-change behaviour, pinned: it must be observably different.
+    const w = isoWorld({ cutawayOpenId: 'great_house' })
+    for (const b of boxes) {
+      expect(pickAtPx(w, b.x + b.w / 2, b.y + b.h / 2).kind).not.toBe('officer')
+    }
+  })
+
+  it('a closed room names nobody, even standing where an officer used to be', () => {
+    const w = isoWorld({ cutawayOpenId: null, roomOfficers: [] })
+    for (const b of boxes) {
+      expect(pickAtPx(w, b.x + b.w / 2, b.y + b.h / 2).kind).not.toBe('officer')
+    }
+  })
+
+  it('officers outrank the building they stand in, and only where they stand', () => {
+    const w = isoWorld({ cutawayOpenId: 'great_house', roomOfficers: boxes })
+    const named = new Set(SLUGS)
+    let officers = 0
+    for (const b of boxes) {
+      const t = pickAtPx(w, b.x + b.w / 2, b.y + b.h / 2)
+      if (t.kind === 'officer') {
+        officers += 1
+        expect(named.has(t.id)).toBe(true)
+      }
+    }
+    expect(officers).toBe(boxes.length)
+    // …and a point well outside every box still answers the world, not a person
+    const far = pickAtPx(w, (gh?.x ?? 0) + 4000, (gh?.y ?? 0) + 4000)
+    expect(far.kind).not.toBe('officer')
   })
 })
