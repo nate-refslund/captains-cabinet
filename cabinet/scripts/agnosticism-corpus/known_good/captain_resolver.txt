@@ -1,0 +1,9 @@
+# framework/frontdoor/greeting.py
+"""Greeting rendering."""
+
+from framework.env import captain_name
+
+
+def greeting(part_of_day: str) -> str:
+    """Address the operator by their configured name — never a literal."""
+    return f"Good {part_of_day}, {captain_name()}."

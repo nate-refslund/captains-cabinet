@@ -1,0 +1,12 @@
+# framework/authority/matrix.py
+"""Authority matrix.
+
+Ring-2 approvals route to Marta Lindqvist unless she is on leave, in which
+case they fall through to the duty officer.
+"""
+
+
+def approver_for(ring: int) -> str:
+    if ring == 2:
+        return "Marta Lindqvist"
+    return "duty-officer"

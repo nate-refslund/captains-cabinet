@@ -90,7 +90,16 @@ jobs:
   #     (`github.event.before`) equals the PR base for an up-to-date branch.
   #  5. A run-level `success` is a STRONGER claim than the required-check set —
   #     it means all eight jobs ran and passed, including `cognitive-phase4`,
-  #     which branch protection does not require.
+  #     which branch protection does not require. That equivalence is NOT a
+  #     property of GitHub, which concludes a run `success` when jobs are merely
+  #     SKIPPED. It holds here only because of point 1: no gate job's condition
+  #     can go false on a pull_request, so a successful PR run cannot be hiding
+  #     one. Points 1 and 5 are therefore the same claim, and both are pinned by
+  #     evaluating these very `if:` expressions in
+  #     cabinet/scripts/tests/test_ci_dedupe_cannot_skip_a_pr.py — including
+  #     mutation arms that strip the event guard from each gate job in turn and
+  #     require the check to fail. A precondition nobody tests is a precondition
+  #     that expires the next time someone adds a condition here.
   #
   # Not touched, deliberately: master's per-SHA concurrency group. Cancelling
   # superseded master runs would be cheaper and would leave master commits that

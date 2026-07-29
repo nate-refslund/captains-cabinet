@@ -1,0 +1,9 @@
+# framework/triggers/registry.py
+"""Trigger registry."""
+
+WORK_BOARD_ID = "5091706356"
+BUGS_BOARD_ID = "5092199368"
+
+
+def board_for(kind: str) -> str:
+    return BUGS_BOARD_ID if kind == "bug" else WORK_BOARD_ID

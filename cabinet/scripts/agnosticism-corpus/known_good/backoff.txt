@@ -1,0 +1,10 @@
+# framework/net/backoff.py
+"""Exponential backoff with jitter."""
+
+import random
+
+
+def delay(attempt: int, base: float = 0.5, cap: float = 30.0) -> float:
+    """Seconds to wait before retry `attempt` (0-indexed)."""
+    raw = min(cap, base * (2 ** attempt))
+    return raw * (0.5 + random.random() / 2)

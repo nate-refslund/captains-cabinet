@@ -1,0 +1,11 @@
+# framework/ci/workflow.py
+"""Read the repository's GitHub Actions workflow definition."""
+
+from pathlib import Path
+
+import yaml
+
+
+def jobs(repo_root: Path) -> list[str]:
+    wf = repo_root / ".github" / "workflows" / "cabinet-ci.yml"
+    return list((yaml.safe_load(wf.read_text()) or {}).get("jobs", {}))
