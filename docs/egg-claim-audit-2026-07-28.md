@@ -66,6 +66,26 @@ promise.
 `posture.resolve_posture()` with the config present and absent.
 **Corrected** in `README.md` and `captains-cabinet-guide.md` (this branch).
 
+> **F1a — the correction was itself wrong, and this is the lesson of the sweep**
+> (adversarial re-review, same day). The verification above read the matrix
+> *table*; it never ran the lane. Executed inside a freshly cut export:
+> `run_action_lane._act_first_on()` → `False` (no `instance/config/act-first-enabled`,
+> no `CABINET_ACT_FIRST`), `posture.posture_config_present()` → `False`,
+> `run_action_lane._load_posture_ctx()` → `None`,
+> `policy_engine.authority_matrix_enforcing()` → `False`, and the shipped
+> `instance/config/act-first-surfaces.yml` is the empty unratified twin. The
+> lane's own gate says it plainly: *"DEFAULT OFF. The entire earn-demotion
+> posture stays DARK until the Captain flips it … with it off, `main()` behaves
+> byte-identically to the propose-only lane."* So **"the reversible classes act
+> from day one" is false in the egg** — a stranger's hatch proposes everything,
+> and the sentence F1 called false ("every consequential action starts as a
+> proposal") was the behaviourally true one. Corrected a second time in
+> `README.md` ×2, `captains-cabinet-guide.md` §1.6 and
+> `docs/how-your-cabinet-is-governed.md`, which carried the same sentence and
+> was wrongly cited above as the correct description. This is exactly the rule
+> stated in the method note — *a claim that is true only because a feature is
+> dormant is FALSE* — applied to the audit's own output.
+
 ### F2 — SAFETY. "Watchdogs are unwritable by officers" — no watchdog is germline
 
 **Quoted, as shipped:**
@@ -150,7 +170,8 @@ per-`(context, officer)` WIP cap enforced by a Postgres trigger taking
 amendment 038.1).
 
 CAS-claim-with-leases was **planned** in
-`docs/plans/plan-B-macmini-product-org-2026-07-02.md` row B4.11 — 30-minute
+`docs/plans/plan-B-macmini-product-org-2026-07-02.md` (repo-only — `docs/plans/`
+archives out of the export, so this path does not resolve in the egg) row B4.11 — 30-minute
 leases, 5-minute heartbeats, 15-minute expiry reclaim — and never built. The
 export archives `docs/plans/` out, so a stranger reading the egg had no way to
 discover that the sentence described a plan. **Corrected.**
@@ -169,6 +190,28 @@ and `redis-cli DEL cabinet:killswitch` → rc=2 — and the two disarm paths
 (`kill-switch.sh deactivate`, the dashboard toggle) run outside officer hooks.
 A same-uid process outside the hooks can still clear it; that is declared
 residual RES-016. **Corrected.**
+
+### F6 — "Model upgrades demote graduated cells" — nothing reads a model baseline
+
+Found by the adversarial re-review, in a sentence this branch had already
+rewritten without checking its third clause.
+
+**Quoted, as shipped:**
+* `README.md` — *"Demotion is automatic on wrong verdicts, detected fabrication
+  **and model upgrades**."*
+* `captains-cabinet-guide.md` §3 — *"**Model upgrades demote graduated cells one
+  level pending re-proof** — graduation history is stamped with the model
+  baseline it was earned on."*
+
+**What is actually enforced.** Nothing.
+`git grep -nIiE "model[-_ ]?baseline|model[-_ ]?upgrade|baseline_model"` over
+`framework/ cabinet/ presets/ memory/ shared/ instance/` returns **zero** hits,
+and `git grep -nIiw model -- framework/fidelity/graduation.py` returns zero:
+the graduation math has no concept of a model at all. Evidence events do carry
+an R-4 `model_id` (`framework/schemas/evidence-event.schema.json`), so the
+*stamp* exists — but no consumer compares it or demotes on a change. Same shape
+as F3: designed, disclosed nowhere, shipped as fact. **Corrected** in both
+surfaces (marked target-state).
 
 ---
 
