@@ -21,7 +21,15 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: fb9ef1716b7171213bf9c38eb24db1eb06a19127b31527ec01520ba0540ba29d
+Reviewed-Scope-Digest: 80d1b9fed616d8bc4332d015bcedb155f3aa409b0181022f3bde359bd80b2a7b
+(MERGE RE-BIND, 2026-07-29, `fix/connector-loader-honesty` x master. Both sides
+re-bound this line, so the merge left two; ONE value stands and it is recomputed
+over this merge commit. Every note from both sides is kept verbatim below,
+because a re-freeze that hides what moved asserts a review that never happened.
+No COG-4 implementation byte moved on either side — the only in-scope path is the
+contract file, whose line ceiling is RE-MEASURED over the merged tree rather than
+added on paper.)
+
 (RE-BOUND 2026-07-29 on `feat/look-capabilities`, previous value
 `408e6b97…`. ONE in-scope path moved and NO COG-4 implementation byte did:
 `cabinet/config/cognitive-architecture-contract.yml` raises
@@ -33,6 +41,18 @@ no deletion gate that could ever fire). The unit's own work is in
 `framework/onboarding/` and `instance/config/`, which this scope does not bind.
 Named here rather than absorbed silently, because a re-freeze that hides what
 moved would assert a review that never happened.)
+
+(RE-BOUND 2026-07-29 on `fix/connector-loader-honesty`, previous value
+`408e6b97…`. ONE in-scope path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` raises
+`framework_production_noncomment_lines` 60543 -> 60572 VISIBLY, with the
+per-item breakdown in the row's own comment — not an allowance, and not a
+bijection class. The unit's own work is in `framework/onboarding/`, which
+this scope does not bind: the connector loader's two silent skips (an
+unparseable declaration returning the document an ABSENT one returns, and a
+malformed entry dropped without a word) now arrive as named refusals. Stated
+here rather than absorbed silently, because a re-freeze that hides what moved
+asserts a review that never happened.)
 
 (RE-BOUND 2026-07-29 on `fix/framework-specifics`, previous value
 `0df4d12a…`. TWO in-scope paths moved and NO COG-4 implementation byte did:
@@ -1507,7 +1527,6 @@ bijection class moves.
 Recorded digest: 408e6b979fff5a1d84da85fdc19ed7114a8a2df96492636407d80febee0aa017
 Previous:        b6872d9f98e0b1138aec5c496a1787e23a3afe1aa20b1acc2f7865bf6b18fd13
 
-
 ---
 
 ## Re-bind 2026-07-29 (fix/salience-ranking, over the merge of origin/master b65ae3fb)
@@ -1581,3 +1600,23 @@ exception out through `rank()`, so an unreachable model would have taken down
 the operator's offer to improve its ordering. Raised visibly, census PASS at
 observed == maximum with zero headroom, no allowance, zero new modules, no
 COG-4 implementation byte moved.
+
+
+---
+
+## Re-bind 2026-07-29 (fix/salience-ranking, merge of origin/master 468e1a7b)
+
+Recorded digest: 80d1b9fed616d8bc4332d015bcedb155f3aa409b0181022f3bde359bd80b2a7b
+Previous:        b885033efb7fe6c672a8d8c43b3aafd8852e601f7c398e6bf868f9436b21ae24
+
+Both sides re-bound this digest the same day. Master's copy of this file is
+taken wholesale so nothing it carries is dropped, and this branch's four notes
+are appended to it; every note above stands verbatim and none is another's
+restamp.
+
+ONE bound path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` carries BOTH sides' mass
+raises verbatim — master's +29 connector-loader honesty row and this branch's
+ranker rows — under a merged `maximum` of 60979 that is RE-MEASURED over this
+tree (observed 75256, zero headroom) rather than summed on paper. Neither is an
+allowance; ZERO new modules, so no bijection class moves.

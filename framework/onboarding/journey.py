@@ -1046,10 +1046,20 @@ def _with_registry(root: Path, state: dict[str, Any]) -> dict[str, Any]:
     # declaration grants nothing; only a completed sweep does), but it is the
     # difference between offering "read what I am connected to" and printing an
     # invitation to a lane this deployment has not been given.
+    unreadable: list[str] = []
     try:
-        refreshed["connectors_declared"] = len(research.load_connector_specs(root))
+        refreshed["connectors_declared"] = len(
+            research.load_connector_specs(root, not_reached=unreadable))
     except Exception:  # pragma: no cover — defensive; the loader is fail-soft
         refreshed["connectors_declared"] = 0
+    # A DECLARATION THAT REFUSED EVERYTHING MUST STILL BE OFFERABLE. The gate
+    # below reads "declared > 0", so a file that will not parse yields zero
+    # specs, the read is never offered, and the loader's honest refusal is
+    # written into a document no operator can ask for — a message wired to a
+    # path nobody walks. Carrying the refusals lets the offer fire on "you
+    # declared something and I could not read it", which is the case where
+    # being told matters most.
+    refreshed["connectors_unreadable"] = unreadable
     refreshed["connector_probes"] = {
         "schema": registry["schema"],
         "connected": deepcopy(registry["connected"]),
@@ -1074,7 +1084,7 @@ def _entry_plan_for(state: dict[str, Any]) -> dict[str, Any]:
         seed=seed.get("text") if isinstance(seed, dict) else None,
         executed=state.get("discovery"),
         offer=salience_offer(state),
-        gather=declared > 0,
+        gather=declared > 0 or bool(state.get("connectors_unreadable")),
     )
 
 
