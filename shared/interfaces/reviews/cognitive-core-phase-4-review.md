@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: PENDING-RECOMPUTE
+Reviewed-Scope-Digest: b6872d9f98e0b1138aec5c496a1787e23a3afe1aa20b1acc2f7865bf6b18fd13
 (RE-BOUND 2026-07-29 on `fix/framework-specifics`, previous value
 `0df4d12a…`. TWO in-scope paths moved and NO COG-4 implementation byte did:
 `cabinet/config/cognitive-architecture-contract.yml` raises
@@ -1435,3 +1435,17 @@ absorbed silently, so the binding again means "these exact bytes were reviewed":
 
 Nothing in this branch's own work touches the COG-4 implementation: it is
 retrieval ranking, the retrieval eval, and the genesis briefing composition.
+
+
+---
+
+## Re-bind 2026-07-29 (merge of origin/master into fix/briefing-and-recall, second)
+
+Recorded digest: b6872d9f98e0b1138aec5c496a1787e23a3afe1aa20b1acc2f7865bf6b18fd13
+
+Both sides had re-bound the line again and both notes are kept verbatim. The only
+in-scope path that moved on either side is
+`cabinet/config/cognitive-architecture-contract.yml`, whose ceiling is RE-MEASURED
+over this merge tree (74620 at zero headroom) rather than added on paper: the
+de-specification ceiling and this branch's +97 genesis claim refusals are disjoint
+sets of lines. No COG-4 implementation byte moved on either side.
