@@ -84,7 +84,29 @@ budgets:
     # somewhere for a per-deployment restriction to enter, and this is it. Zero
     # new production MODULES (the new suite is a test; the ratchet's debt ledger
     # is a .txt), so framework_production_modules is unchanged.
-    maximum: 60169
+    # +13 (2026-07-29): the injection screen's IMPERATIVE-VERB delta. The
+    # hostile-input red team landed the Nordic/German arms first, built on
+    # IGNORE/FORGET stems; a safety sweep measured seven payloads that still
+    # scored ZERO against them — tilsidesæt / overskriv (override verbs the
+    # stems cannot reach), bare `regler` (the stem list carried only the
+    # definite `reglerne`, so the most natural phrasing of the very attack it
+    # was written for missed), English `forget` (the twin of its own `glem`),
+    # bulk exfiltration to a mail address in both languages, and the polite
+    # Danish approval imperative. Folded into the EXISTING arms plus two new
+    # ones (forget-instructions, bulk-exfil-address); the red team's arms are
+    # kept verbatim and are the richer half. Deliberately NOT a
+    # temporary_allowances row: an operator's language is not a phase, so an
+    # allowance would promise a deletion gate that will never fire. Zero new
+    # MODULES. Compressing the regexes to dodge the ratchet was the alternative
+    # and would have been gaming the budget rather than paying it.
+    #
+    # MERGE, 2026-07-29: the two bumps above landed concurrently off the SAME
+    # 60164 base and are disjoint (a charset seam; a bilingual injection
+    # screen), so the merged ceiling is their SUM, re-measured over the merge
+    # tree rather than added on paper (60164 + 5 + 13 = 60182; observed 73129).
+    # Neither is an allowance; both are permanent, so the ratchet re-pins here
+    # at zero headroom.
+    maximum: 60182
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
@@ -1219,6 +1241,53 @@ temporary_allowances:
       derivable rather than assembled (a surface that renders the cluster
       directly), or COG-7 compaction brings production non-comment lines below
       the pinned baseline
+  - phase: stranger-hatch-unopened-areas
+    budget: framework_production_noncomment_lines
+    additional: 27
+    reason: >-
+      the truncation caveat stops being a fraction and NAMES the parts of the
+      approved folder it never opened. Measured 2026-07-28 by driving the real
+      journey over a 723-file operator estate during the first end-to-end TIMED
+      stranger hatch: relevance ordering admitted 200 files drawn from two of
+      four top-level areas and left `tracker/` — the one area holding an urgent
+      row — at ZERO coverage, while the card said only "I read 200 of 723
+      supported files, most-informative first; the rest were left unopened by
+      the First Window limits". Every word true, and the operator still could
+      not tell that the part they would have cared about was never opened. The
+      count sensor added 2026-07-27 structurally cannot catch it: it reads
+      identically whether one area or four went unread, which is the same shape
+      as the defect the probe-truncation row above exists to have fixed. What
+      the 27 buy: `_area_of` (the top-level area of one relative path, with
+      files sitting directly in the folder collected under one label), the
+      `unopened_areas` set difference computed inside `_scan_source` from the
+      two collections it already holds so it cannot disagree with the counts it
+      is published beside, the coverage key itself, and ONE renderer used at
+      BOTH disclosure sites (the strong-finding card and the orientation-only
+      summary) so the two cannot drift into different disclosures of the same
+      fact. Path-derived only: nothing is read to decide what to name, so the
+      naming cannot be steered by file CONTENT. Docstrings counted as written
+      — they carry the measurement that justifies the feature and the reason
+      the unit is the area rather than the path, which is exactly what a later
+      reader needs, and rewriting them into "#" comments to buy a smaller
+      number is forbidden. ZERO new modules, ZERO bijection classes touched:
+      everything lands inside framework/onboarding/journey.py, and the four new
+      arms are under framework/onboarding/tests/, outside this budget's count.
+      EXACT measured 73043 on this branch against master 49ed144e reading 73016
+      exactly at its own pinned effective level, so the delta is 27 measured
+      against that base rather than carried from an earlier reading. RE-MEASURED AT THE MERGE with
+      master `a70bcfb5` (PR #268), which added its own +34 row at the same
+      position in this list: the merged tree reads 73077 = 73016 + 34 + 27, so
+      the two deltas are exactly additive and this row's `additional` is
+      unchanged by the merge. Re-measured rather than carried, because master
+      moved this very budget twice while this branch was in flight.
+    owner: onboarding-plane
+    sunset: '2027-01-28'
+    deletion_gate: >-
+      the First Window gains a resumable sweep (a cursor rather than a cap), so
+      an unopened area becomes a continuable one and the naming collapses into
+      the completeness flag it already sets; or the sweep is superseded by the
+      per-source ingest the 2026-07-26 altitude gate ordered; or COG-7
+      compaction brings production non-comment lines below the pinned baseline
   - phase: onboarding-derivation-false-positives
     budget: framework_production_noncomment_lines
     additional: 34

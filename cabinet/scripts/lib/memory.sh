@@ -357,7 +357,23 @@ memory_embed() {
   embedding=$(memory_get_embedding "$content")
   [ -z "$embedding" ] || [ "$embedding" = "null" ] && return 1
 
-  psql "$NEON_CONNECTION_STRING" -q \
+  # WRITE CONFIRMATION (2026-07-28). psql WITHOUT ON_ERROR_STOP exits 0 even
+  # when the statement it ran ERRORed, and stderr is suppressed here — so the
+  # old form returned SUCCESS for a row that never landed. Measured live: an
+  # `officer` longer than the column's VARCHAR(16) (or a `source_type` past
+  # VARCHAR(32), or content Postgres rejects as invalid UTF-8) gave
+  # memory_embed rc=0 with 0 rows stored; memory-worker.sh then logged
+  # "processed: N ok, 0 failed" and XACKed the queue entry, so the memory was
+  # gone with a green log line. Two independent guards, because an exit code
+  # is a vendor promise and the id is our own evidence:
+  #   1. ON_ERROR_STOP=1 — psql exits 3 on a statement error (measured).
+  #   2. The RETURNING id must actually come back. A row that landed always
+  #      prints its id; a failed statement prints nothing. stdout is captured
+  #      (no caller consumes it — memory-worker.sh redirects it to /dev/null)
+  #      and re-emitted unchanged, so the output contract is untouched.
+  local _ins_out
+  _ins_out=$(psql "$NEON_CONNECTION_STRING" -q \
+    -v ON_ERROR_STOP=1 \
     -v source_type="$source_type" \
     -v source_id="${source_id:-}" \
     -v officer="${officer:-}" \
@@ -390,6 +406,10 @@ DO UPDATE SET
   version = cabinet_memory.version + 1
 RETURNING id;
 SQLEOF
+) || return 1
+  # No id came back ⇒ nothing landed, whatever psql's exit code claimed.
+  printf '%s' "$_ins_out" | grep -qE '^[[:space:]]*[0-9]+[[:space:]]*$' || return 1
+  printf '%s\n' "$_ins_out"
 }
 
 # =============================================================
