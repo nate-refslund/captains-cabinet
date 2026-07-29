@@ -1662,6 +1662,14 @@ export default function EngineCanvas(props: EngineCanvasProps) {
       /** The org's vessel, if the layout seated one — `drawIsoVoyage` sails it. */
       let isoBoatSpriteId: string | null = null
       /**
+       * Statics this frame re-seated, by scene id — the pick's own copy of the
+       * only displacement in the world (see PickWorld.isoMoved). It is a MAP and
+       * not a boat field because the property that matters is "the pick tests
+       * where the frame drew it", and the day a second static moves, forgetting
+       * to add a second field is exactly how the boat's own defect happened.
+       */
+      const isoMovedStatics = new Map<string, { x: number; y: number }>()
+      /**
        * The iso cutaway machine.
        *
        * IT IS THE SAME PURE REDUCER the top-down path runs (lod.cutawayStep),
@@ -2496,11 +2504,19 @@ export default function EngineCanvas(props: EngineCanvasProps) {
        * sea moving past it gets wave rings; a berthed one does not.
        */
       function drawIsoVoyage(p: EngineCanvasProps): void {
+        // CLEARED FIRST, BEFORE EVERY EARLY RETURN, like the cutaway's officer
+        // boxes: a pack that failed, a harbour that seats no vessel or a payload
+        // with no boat must leave the pick testing the composed scene, never a
+        // position some earlier frame sailed to.
+        isoMovedStatics.clear()
         if (!isoScene || !isoHome) return
         const sp = isoBoatSpriteId ? isoSpriteById.get(isoBoatSpriteId) : undefined
         if (!sp) return // the layout seated no vessel — there is nothing to sail
         const boat = isoVoyageBoat(p.voyage, isoBoatBerth(isoScene.layout), isoLanes)
         if (!boat) return
+        // THE HIT TEST FOLLOWS THE HULL. Same numbers, same frame, one source —
+        // see PickWorld.isoMoved for the browser measurement that bought this.
+        if (isoBoatSpriteId) isoMovedStatics.set(isoBoatSpriteId, { x: boat.x, y: boat.y })
         sp.position.set(boat.x, boat.y)
         sp.zIndex = boat.y
         const mag = Math.abs(sp.scale.x)
@@ -3071,6 +3087,8 @@ export default function EngineCanvas(props: EngineCanvasProps) {
             // itself rather than a rule this call has to remember.
             isoFigures,
             isoSitePads,
+            // …and the one STATIC that moves, for the same reason.
+            isoMoved: isoMovedStatics,
             measuredElements: new Set(Object.keys(p.resolution?.elements ?? {})),
           },
           { x: ev.clientX - rect.left, y: ev.clientY - rect.top }
