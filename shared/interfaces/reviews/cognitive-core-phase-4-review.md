@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 702a60ba73cf19210667b95b583757dc2148df3ccb7d8b20bf23fb213c4b2e1b
+Reviewed-Scope-Digest: b6243dcbe43af9b3bda0aedc9944d3fedc3864c0b1c096faf2ab95c5eddbf04d
 
 (MERGE RE-BIND, 2026-07-28, `fix/stranger-hatch-timed` x master `a70bcfb5`
 (PR #268). Both sides had re-bound this line and BOTH moved
@@ -46,6 +46,60 @@ branch's two arms in that file (the ARMED assertion it already carried and the
 new shipped-twin lockstep) are both present and green after the merge, verified
 by running the file rather than by reading the merge output. NO COG-4
 implementation byte moved on either side.)
+
+(MERGE RE-BIND, 2026-07-29, `fix/hostile-input-red-team` x master. Master
+re-bound this line again on a contract-touching landing; neither side's digest
+describes the merged tree, so the value above is RECOMPUTED over it. Master's
+superseded value was `1c91f915f42e5243ddfc3a0b7a1af291394a25944661d50d0c981f43895a5934`. Every contract allowance
+row from both sides survives and the census re-reads PASS at the summed level.
+No COG-4 implementation byte moved on either side; nothing below was
+re-reviewed.)
+
+(MERGE RE-BIND, 2026-07-29, `fix/hostile-input-red-team` x master. Master
+re-bound this line again (its own contract-touching landing); neither side's
+digest describes the merged tree, so the value above is RECOMPUTED over it.
+Master's superseded value was `c18946e6377c31c9c653389e02ff26273df8cb587cf446c80170e589340a9109`. Both contract allowance rows
+survive the merge and the census re-reads PASS at the summed level. No COG-4
+implementation byte moved on either side; nothing below was re-reviewed.)
+
+(MERGE RE-BIND, 2026-07-28, `fix/hostile-input-red-team` x master `b4859c55`.
+The second such merge on this branch: master re-bound this line again for the
+onboarding-derivation landing, which also appended a `temporary_allowances` row
+to `cabinet/config/cognitive-architecture-contract.yml`. BOTH rows are kept in
+the merged contract — each pays for its own lines and the census re-reads PASS
+at the summed level (73081) — and neither side's digest describes the merged
+tree, so the value above is RECOMPUTED over it. Master's superseded value was
+`3c8c1f7f60bd32a56e831438d768ea1b760b8f148353e65aba3c76c9b6d50a79`. No COG-4
+implementation byte moved on either side; nothing below was re-reviewed.)
+
+(MERGE RE-BIND, 2026-07-28, `fix/hostile-input-red-team` x master `4148d1e6`.
+Both sides re-bound this line and both moved paths inside this scope set — the
+red team moved `cabinet/config/cognitive-architecture-contract.yml`, master moved
+the two egg-export paths — so the two digests conflicted textually and NEITHER
+describes the merged tree. The value above is RECOMPUTED over it. Both note sets
+are kept below in full, none superseded; no COG-4 implementation byte moved on
+either side, so nothing below was re-reviewed.)
+
+(RE-BIND, 2026-07-28, `fix/hostile-input-red-team`. The hostile-input red
+team added a `temporary_allowances` row to
+`cabinet/config/cognitive-architecture-contract.yml` — a restore_from_baseline
+member of this phase's scope — paying +31 production non-comment lines for the
+fenced-bundle provenance fix (a source file could type its own fence header,
+defeating both the taint map and the D13 never-act-first floor). No COG-4
+surface changed: framework/acting, framework/sources and framework/frontdoor
+are outside this scope set. Recomputed over the committed tree; the prior
+value is superseded, the note below it is retained in full.)
+
+(superseded historical binding, kept for archaeology — prior digest `1c91f915f42e5243ddfc3a0b7a1af291394a25944661d50d0c981f43895a5934`)
+
+(MERGE RE-BIND, 2026-07-29, `fix/stranger-hatch-timed` x master `4c7d42e7`
+(PR #276). Fifth master merge for this branch. The shape has stopped being
+incidental and is worth recording as a finding in its own right: this one line
+is re-bound by EVERY landing that touches the digest scope, so with landings
+arriving faster than a full CI pass every in-flight branch conflicts here
+exactly once per landing, and each resolution is mechanical — keep both note
+blocks, recompute the digest over the merged tree, never pick a side. Nothing
+below was re-reviewed; NO COG-4 implementation byte moved on either side.)
 
 (MERGE RE-BIND, 2026-07-28, `fix/recall-live-claims-it-never-earned` x master
 `a70bcfb5` (PR #268). Both sides re-bound this line and both moved
