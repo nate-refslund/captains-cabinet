@@ -545,7 +545,16 @@ _DATE_ENCODINGS = frozenset({"iso", "epoch_ms", "epoch_s"})
 #: taxonomy of people — a list of the words systems put a display name behind,
 #: and the last resort is an opaque id, which still DISTINGUISHES two actors even
 #: when it names neither.
-_ACTOR_NAME_KEYS = ("name", "login", "title", "email", "id")
+#:
+#: THE ORDER IS THE WHOLE CONTROL, and it is ordered by how well each word
+#: DISTINGUISHES one person from another rather than by how nicely it reads. The
+#: identifiers come before the descriptions: a person object that carries no name
+#: and no handle but does carry a role word and an address resolved to the ROLE
+#: while `title` outranked `email`, so two different people collapsed into one
+#: actor, the distinct-actor count under-reported, and every row was attributed
+#: to a word that is not anybody. A count that merges two people is worse than a
+#: name nobody recognises, because only one of the two announces itself.
+_ACTOR_NAME_KEYS = ("name", "login", "email", "id", "title")
 #: Actors kept per item. A declared path that resolves to a list of two hundred
 #: participants is a body arriving through the actor door; the cap holds the
 #: contents-free property without refusing the ordinary two-or-three case.
@@ -905,7 +914,16 @@ def _sweep_one(spec, credential, *, fetch, timeout, max_items, budget) -> dict:
                 f"coming back — the estate may be larger")
     if reason and not row["rows"]:
         return {**row, "reason": reason}
-    if reason:
+    # A PAGE PAST THE END IS EXHAUSTION, NOT A MISSED DECLARATION. Sources stop
+    # carrying the list once it runs out — `{}`, or the key nulled — and that is
+    # the same bytes as a mistyped `items_path`. Here, rows were already read at
+    # that very path, so it resolved and the miss is the end of the estate: the
+    # only honest reading, and printing the miss instead told an operator whose
+    # config is correct that it is not. Every OTHER reason (an HTTP status, an
+    # unreachable host, an unparseable body) still surfaces — those are real
+    # truncation, and silently dropping them is the failure this lane exists to
+    # refuse.
+    if reason and not str(reason).startswith("items_path_"):
         row["not_reached"].append(f"{name}: paging stopped early ({reason})")
     row["items"] = len(row["rows"])
     row["items_read"] = read
