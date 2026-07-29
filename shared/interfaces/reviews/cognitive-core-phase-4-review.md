@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: e7a6983a05d08cd4e88233935a84a8a3afded44dbb6e79021f24a54fede4bf86
+Reviewed-Scope-Digest: f6cff878b3bbd8f2dcfde7118cfa1b161a0bcad7d23ff8ed5cd23b16e7d2646a
 (MERGE RE-BIND, 2026-07-29, `fix/fence-newline-forgery` x master (the eight-PR billing-wall drain, final landing). Both sides had re-bound this line, so the merge left two; the SECOND is removed and the value above is recomputed over this merge commit. Every note from both sides is kept verbatim. No COG-4 implementation byte moved on either side — the only in-scope path is the contract file, whose ceiling is re-measured over the merged tree.)
 
 
@@ -1380,3 +1380,29 @@ The in-scope delta and why it is mechanical are stated with the digest at the to
 this file. Nothing was re-reviewed and no prose finding was edited, because no reviewed
 byte moved: the branch's entire diff is the world layout, the renderer, the hit test and
 the check harness, none of which is in the COG-4 scope.
+
+
+---
+
+## Re-bind 2026-07-29 (fix/briefing-and-recall)
+
+Recorded digest: f6cff878b3bbd8f2dcfde7118cfa1b161a0bcad7d23ff8ed5cd23b16e7d2646a
+Previous:        e7a6983a05d08cd4e88233935a84a8a3afded44dbb6e79021f24a54fede4bf86
+
+TWO bound paths changed, NEITHER of them COG-4 behaviour. Named rather than
+absorbed silently, so the binding again means "these exact bytes were reviewed":
+
+* `cabinet/services.yml` — the `retrieval-eval` row's `notes:` prose and its
+  env-overridable floor list. The nightly gate used to self-harvest its pairs
+  from this store, deriving each query from the expected document's own leading
+  110 characters; the row now names the committed question-shaped seed and the
+  added `RE_ABSTAIN_FLOOR`. Schedule, command, label and `expected:` contract
+  are untouched — no service starts, stops or runs differently.
+* `cabinet/config/cognitive-architecture-contract.yml` — ONE budget maximum,
+  `framework_production_noncomment_lines` 60185 -> 60282, for +97 measured
+  non-comment lines in `framework/onboarding/genesis.py` (the first briefing's
+  claim refusals). Raised visibly, zero headroom, zero new modules. No COG-4
+  set pin, allowance, or organ row is touched.
+
+Nothing in this branch's own work touches the COG-4 implementation: it is
+retrieval ranking, the retrieval eval, and the genesis briefing composition.
