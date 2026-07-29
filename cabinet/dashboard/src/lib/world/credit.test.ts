@@ -16,6 +16,8 @@
 import { describe, expect, it } from 'vitest'
 import fs from 'fs'
 import path from 'path'
+import { readFileSync } from 'fs'
+import { join } from 'path'
 import {
   canvasAssetIds,
   creditOwed,
@@ -25,7 +27,7 @@ import {
   limezuSurfaces,
 } from './credit'
 import { CHARACTER_DIR, characterSheetFor, type WorldAssetManifest } from './sprites'
-import { ENGINE_CHARACTER_SHEETS } from './sprites-outdoor'
+import { ENGINE_CHARACTER_SHEETS, requiredOutdoorSheets } from './sprites-outdoor'
 
 const MANIFEST_PATH = path.resolve(
   __dirname, '..', '..', '..', 'public', 'world-assets', 'manifest.json'
@@ -166,5 +168,54 @@ describe('the flip is IN EFFECT (not merely available)', () => {
     for (const id of ENGINE_CHARACTER_SHEETS) {
       expect(isLimeZuRow(rowFor(m, id)), id).toBe(false)
     }
+  })
+})
+
+describe('the canvas fetches exactly what the credit says it binds', () => {
+  /**
+   * THE DIVERGENCE THIS PINS, measured in a browser 2026-07-29 on the iso
+   * default: this module said the iso canvas binds the owned atlas and the cast
+   * and computed the licence notice from that — while `engine-canvas` loaded
+   * `resolveOutdoorSprites(manifest, 'island')` UNGATED and fetched the whole
+   * top-down LimeZu sheet universe (56 requests: farm, exteriors, office,
+   * village, derived) and drew none of it. The iso pack's own load was gated on
+   * `isIso`; this one was not.
+   *
+   * The canvas now resolves `canvasAssetIds(projection)`, so there is ONE list.
+   * These arms are what keeps it one list.
+   */
+  it('the iso kernel binds the cast and the owned atlas — no LimeZu sheets', () => {
+    const ids = canvasAssetIds('iso')
+    expect(ids).toContain(ISO_ATLAS_ROW)
+    for (const id of ids) {
+      if (id === ISO_ATLAS_ROW) continue
+      expect(ENGINE_CHARACTER_SHEETS, `${id} is not a cast sheet`).toContain(id)
+    }
+    // and none of the top-down universe rides along
+    for (const sheet of requiredOutdoorSheets('island')) {
+      if (ENGINE_CHARACTER_SHEETS.includes(sheet)) continue
+      expect(ids, `${sheet} must not load under iso`).not.toContain(sheet)
+    }
+  })
+
+  it('the top-down kernel still binds its whole sheet universe', () => {
+    const ids = canvasAssetIds('topdown')
+    expect(ids).toEqual(requiredOutdoorSheets('island'))
+    expect(ids.length).toBeGreaterThan(20) // not an empty list passing vacuously
+  })
+
+  it('iso binds strictly fewer sheets than top-down — the flip is a reduction', () => {
+    expect(canvasAssetIds('iso').length).toBeLessThan(canvasAssetIds('topdown').length)
+  })
+
+  it('the canvas resolves through canvasAssetIds, not the scene default', () => {
+    // The one structural line: a revert to the ungated call restores 56
+    // LimeZu fetches under a kernel that draws none of them.
+    const src = readFileSync(
+      join(process.cwd(), 'src', 'components', 'world', 'engine-canvas.tsx'),
+      'utf8'
+    )
+    expect(src).toMatch(/canvasAssetIds\(proj\.kind\)/)
+    expect(src).not.toMatch(/resolveOutdoorSprites\(manifest, 'island'\)/)
   })
 })

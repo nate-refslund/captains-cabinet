@@ -40,6 +40,7 @@ import {
   TOPDOWN_TILE,
   worldScale,
   worldToScreen,
+  nextWorldHref,
   worldUrlSearch,
 } from './projection'
 import { ISO_AXIS_SLOPE } from './iso-layout'
@@ -77,8 +78,10 @@ const SAMPLES = [
 ]
 
 describe('projection — the ONE world→screen kernel', () => {
-  it('DEFAULT_PROJECTION starts top-down so the port lands invisible', () => {
-    expect(DEFAULT_PROJECTION).toBe('topdown')
+  it('DEFAULT_PROJECTION is iso — /world IS the isometric world (step 14)', () => {
+    // Flipped 2026-07-29 on the Captain's ruling. This arm is half of the
+    // revert: the constant and this line move together, and nothing else does.
+    expect(DEFAULT_PROJECTION).toBe('iso')
   })
 
   it('?iso selects in BOTH directions, absent falls to the default', () => {
@@ -395,14 +398,81 @@ describe('the kernel survives the URL rewrite — IN BOTH DIRECTIONS', () => {
     expect(p.has('at')).toBe(false)
   })
 
-  /** And the client must actually use it — a pure builder nobody calls is the
-   * disabled sensor this programme keeps finding in its own tests. */
-  it('the client rewrites through this builder', () => {
+  /**
+   * And the client must actually use it. THE PREVIOUS VERSION OF THIS ARM WAS
+   * WALKABLE, mutation-tested 2026-07-29: it grepped the component for
+   * `worldUrlSearch(` and for the absence of one exact literal, and a rewrite
+   * that KEPT the call, discarded its return and hand-rolled the query beside it
+   * reinstated the escape-hatch defect with 838 tests green. A grep cannot tell
+   * "called it" from "used what it returned".
+   *
+   * So the decision moved into `nextWorldHref`, which is exercised directly
+   * below, and what is left for the component is ONE call whose result IS the
+   * argument. Discarding it, or building the address another way, changes this
+   * line. The structural check is deliberately narrow, and the behaviour it
+   * used to stand in for is now tested rather than approximated.
+   */
+  it('the client writes exactly what nextWorldHref returns', () => {
     const src = readFileSync(
       join(process.cwd(), 'src', 'components', 'world', 'engine-client.tsx'),
       'utf8'
     )
-    expect(src).toMatch(/worldUrlSearch\(/)
-    expect(src).not.toMatch(/if \(projection === 'iso'\) p\.set\('iso', '1'\)/)
+    // one history write in the whole shell…
+    const writes = src.match(/history\.(replaceState|pushState)\(/g) ?? []
+    expect(writes.length).toBe(1)
+    // …and its address argument is the builder's own return value
+    expect(src).toMatch(/history\.replaceState\(\s*null,\s*'',\s*nextWorldHref\(/)
+    // the component never names the kernel param itself — any hand-rolled query
+    // would have to, and that is what M6 did
+    expect(src).not.toMatch(/'iso'/)
+    expect(src).not.toMatch(/worldUrlSearch\(/)
+  })
+})
+
+/**
+ * `nextWorldHref` — the whole address, which is where the escape hatch lives or
+ * dies. Every arm below is driven with `projection: 'topdown'` against an iso
+ * DEFAULT, because that is the one combination the flip makes load-bearing and
+ * the one a same-as-default test can never see.
+ */
+describe('nextWorldHref — the escape hatch survives the rewrite', () => {
+  const CAM = { camera: { z: 1, x: 0, y: 0 }, sel: null, at: null }
+
+  it('writes iso=0 for top-down and iso=1 for iso, ALWAYS', () => {
+    expect(nextWorldHref('/world', { ...CAM, projection: 'topdown' })).toContain('iso=0')
+    expect(nextWorldHref('/world', { ...CAM, projection: 'iso' })).toContain('iso=1')
+  })
+
+  it('round-trips: what it writes for top-down parses back as top-down', () => {
+    const href = nextWorldHref('/world', { ...CAM, projection: 'topdown' })
+    const q = new URLSearchParams(href.slice(href.indexOf('?')))
+    // under an ISO default — the arm that matters after the flip
+    expect(projectionFromParam(q.get('iso'), 'iso')).toBe('topdown')
+  })
+
+  it('keeps the pathname it was given and adds exactly one query', () => {
+    const href = nextWorldHref('/world', { ...CAM, projection: 'iso' })
+    expect(href.startsWith('/world?')).toBe(true)
+    expect(href.split('?').length).toBe(2)
+  })
+
+  it('carries the camera and the selection through unchanged', () => {
+    const href = nextWorldHref('/world', {
+      camera: { z: 2.5, x: 12.34, y: -5.67 },
+      sel: 'h799475',
+      at: '2026-07-01',
+      projection: 'iso',
+    })
+    const q = new URLSearchParams(href.slice(href.indexOf('?')))
+    expect(q.get('z')).toBe('2.50')
+    expect(q.get('sel')).toBe('h799475')
+    expect(q.get('at')).toBe('2026-07-01')
+  })
+
+  it('is the query builder plus the path — never a second query definition', () => {
+    for (const projection of ['iso', 'topdown'] as const) {
+      const state = { ...CAM, projection }
+      expect(nextWorldHref('/world', state)).toBe(`/world?${worldUrlSearch(state)}`)
+    }
   })
 })

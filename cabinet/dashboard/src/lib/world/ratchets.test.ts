@@ -310,3 +310,177 @@ describe('the ratchet lists themselves', () => {
     expect(page).not.toMatch(/WorldClient/)
   })
 })
+
+
+/**
+ * RATCHET 11 — DEAD EXPORTS IN lib/world, at SYMBOL granularity, SHRINK-ONLY.
+ *
+ * THE DEFECT THIS EXISTS FOR, measured 2026-07-29. Deleting the legacy shell
+ * took `world-client.tsx`, `island-layout.ts` and `street-layout.ts` with it and
+ * orphaned NINE exports of `lib/world/growth.ts` — `buildGrowth` and the whole
+ * `GrowthModel` read-model among them — while `growth.test.ts` went on running
+ * thirteen green tests over a builder with no caller.
+ *
+ * Nothing caught it and nothing COULD have: every reachability check in this
+ * tree works at FILE granularity, and `growth.ts` stayed file-reachable the
+ * whole time because `world-geo.ts` imports `landRadius` from it. ONE live
+ * import kept a module of dead code looking maintained. The sensor was pointed
+ * one level coarser than the thing it had to see, so this one is pointed at
+ * symbols.
+ *
+ * TESTS ARE NOT CONSUMERS. That is the whole point and it is the only setting
+ * under which this ratchet would have caught the defect it was written for:
+ * `growth.test.ts` imported `buildGrowth` right up to the day it was deleted.
+ * A symbol whose only reader is its own test is dead code with a green light
+ * over it.
+ *
+ * WHY A BASELINE AND NOT A ZERO. The first run found THIRTY-EIGHT, nearly all
+ * of them pre-dating this change — the cozy lighting layer, the outdoor sprite
+ * crops, the night veil, the whole `blueprint.ts` compose/emit path. Deleting
+ * thirty-eight exports across twenty files is a reviewable unit of its own, and
+ * shipping this red or muting it with a thirty-eight-line allowlist are both
+ * worse than saying the number out loud. So the list below is the measured
+ * baseline and the ratchet is SHRINK-ONLY, the same shape as the layer-
+ * separation gate: a NEW orphan fails immediately, and an entry that stops
+ * being dead must leave the list. It cannot be gamed upward and it cannot rot
+ * downward. BACKLOG carries the row for draining it.
+ *
+ * WHY A GREP AND NOT A TYPE-AWARE WALK: real reachability needs the compiler,
+ * and a cheap ratchet that runs on every commit beats an exact one that gets
+ * disabled. It counts a name mentioned in a comment as a use, so it
+ * over-reports liveness and never fails a live symbol. It is a FLOOR.
+ */
+describe('ratchet 11 — dead exports in lib/world (symbol granularity, shrink-only)', () => {
+  /**
+   * MEASURED 2026-07-29, not typed: every export under `src/lib/world` with no
+   * reader in any non-test source file. Entries leave this list when the export
+   * gains a consumer or is deleted; nothing may be added without deleting the
+   * dead code instead.
+   */
+  const BASELINE: readonly string[] = [
+    'blueprint.ts -> composeFrame',
+    'chunks.ts -> ChunkStore',
+    'chunks.ts -> chunksInRect',
+    'credit.ts -> creditOwed',
+    'grammar.ts -> WorldSceneName',
+    'hatch-dialog.ts -> COMMISSIONING_STAGES',
+    'hatch-dialog.ts -> ticksToReveal',
+    'iso-cutaway.ts -> INTERIOR_KIT_REJECTED',
+    'iso-layout/clearing.ts -> canopyCoverage',
+    'iso-layout/clearing.ts -> recordDensity',
+    'iso-layout/harbour.ts -> harbourDistance',
+    'iso-layout/ring.ts -> ringAngleDeg',
+    'iso-layout/ring.ts -> ringOpenDegrees',
+    'iso-pack.ts -> drawSize',
+    'iso-quay.ts -> DECK_COLOURS',
+    'iso-quay.ts -> POST_COLOURS',
+    'iso-scene.ts -> objectIsEmpty',
+    'ladders-loader.ts -> resetLaddersCache',
+    'life/apprentices.ts -> apprenticeCard',
+    'life/commute.ts -> COMMUTE_CODEX',
+    'life/commute.ts -> bubbleBoxPx',
+    'life/fauna.ts -> faunaCard',
+    'life/fauna.ts -> petReaction',
+    'life/sites.ts -> CREW_CODEX',
+    'life/sites.ts -> struckCodex',
+    'life/states.ts -> lifeStateLabel',
+    'lighting.ts -> STAR_COLOR',
+    'lighting.ts -> ambientTint',
+    'lighting.ts -> bucketForHour',
+    'lighting.ts -> lampGlow',
+    'lighting.ts -> starOffsets',
+    'projection.ts -> pointInGround',
+    'sprites-outdoor.ts -> cropCut',
+    'sprites-outdoor.ts -> moteColor',
+    'sprites-outdoor.ts -> motePatrolX',
+    'terrain-pattern.ts -> NIGHT_VEIL',
+    'types.ts -> Station',
+    'world-geo.ts -> SEA_EDGE_Y',
+  ]
+
+  const WORLD_LIB = path.join(DASH, 'src', 'lib', 'world')
+
+  /** Every .ts/.tsx under a directory, recursively, TESTS EXCLUDED (see above). */
+  function sources(dir: string): string[] {
+    const out: string[] = []
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name)
+      if (e.isDirectory()) out.push(...sources(p))
+      else if (/\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name)) out.push(p)
+    }
+    return out
+  }
+
+  /**
+   * COMMENTS ARE NOT USES. Measured while writing this ratchet: re-adding
+   * `buildGrowth` as dead code PASSED, because this module's own header comment
+   * names it — one prose mention in the same file made the sweep call it live.
+   * A sensor that a docstring can switch off is the disabled sensor again, so
+   * both block and line comments come out before anything is counted.
+   */
+  function stripComments(src: string): string {
+    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/[^\n]*/g, '$1')
+  }
+
+  const ALL_SRC = sources(path.join(DASH, 'src'))
+  const LIB_FILES = sources(WORLD_LIB)
+  const TEXT = new Map(ALL_SRC.map((f) => [f, stripComments(read(f))]))
+
+  const EXPORT_RE =
+    /^export\s+(?:declare\s+)?(?:async\s+)?(?:function|const|let|class|type|interface|enum)\s+([A-Za-z_$][\w$]*)/gm
+
+  /** Dead = referenced nowhere but its own export line. */
+  function deadExports(): string[] {
+    const dead: string[] = []
+    for (const file of LIB_FILES) {
+      const src = TEXT.get(file) ?? ''
+      for (const m of src.matchAll(EXPORT_RE)) {
+        const name = m[1]
+        const rx = new RegExp(`\\b${name}\\b`, 'g')
+        const own = (src.match(rx) ?? []).length
+        if (own > 1) continue // used inside its own module
+        const elsewhere = ALL_SRC.some((o) => o !== file && rx.test(TEXT.get(o) ?? ''))
+        if (!elsewhere) {
+          dead.push(`${path.relative(WORLD_LIB, file).split(path.sep).join('/')} -> ${name}`)
+        }
+      }
+    }
+    return dead.sort()
+  }
+
+  it('sweeps a real corpus — an empty sweep would pass every arm below', () => {
+    expect(LIB_FILES.length).toBeGreaterThan(20)
+    expect(ALL_SRC.length).toBeGreaterThan(LIB_FILES.length)
+    const names = LIB_FILES.flatMap((f) => [...read(f).matchAll(EXPORT_RE)].map((m) => m[1]))
+    expect(names.length).toBeGreaterThan(100)
+  })
+
+  it('no NEW dead export — the list may shrink, never grow', () => {
+    const now = deadExports()
+    const added = now.filter((d) => !BASELINE.includes(d))
+    expect(added, 'new dead export(s): delete the code, do not extend the baseline').toEqual([])
+  })
+
+  it('the baseline stays honest — a fixed entry must leave the list', () => {
+    const now = new Set(deadExports())
+    const stale = BASELINE.filter((d) => !now.has(d))
+    expect(stale, 'no longer dead: remove from BASELINE').toEqual([])
+  })
+
+  it('the growth read-model orphans are GONE — asserted on the declarations', () => {
+    // The nine that motivated this ratchet, checked by ABSENCE FROM THE SOURCE
+    // rather than by absence from the sweep's output. Going through the sweep
+    // would make this arm inherit every blind spot the sweep has, and it had
+    // one: re-adding `buildGrowth` passed until comments stopped counting.
+    const growth = TEXT.get(path.join(WORLD_LIB, 'growth.ts')) ?? ''
+    expect(growth.length).toBeGreaterThan(0) // the file was read
+    for (const gone of ['buildGrowth', 'GrowthModel', 'GrowthSurface', 'streetAgeBand',
+      'StreetAgeBand', 'surfaceGrowth', 'GROWTH_BASES', 'ageDays', 'tier']) {
+      expect(growth, gone).not.toMatch(new RegExp(`\\bexport\\s+[\\w$]+\\s+${gone}\\b`))
+      expect(BASELINE.join('\n'), gone).not.toContain(`growth.ts -> ${gone}`)
+    }
+    // and what SURVIVED is still exported, so this is not vacuous
+    expect(growth).toMatch(/export function landRadius/)
+    expect(growth).toMatch(/export type CensusKeyframe/)
+  })
+})

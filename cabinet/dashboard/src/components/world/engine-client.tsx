@@ -32,10 +32,11 @@ import {
   projectionFor,
   screenDeltaToTiles,
   worldToScreen,
-  worldUrlSearch,
+  nextWorldHref,
   type ProjectionKind,
 } from '@/lib/world/projection'
 import { cameraClamp, cameraHome } from '@/lib/world/iso-scene'
+import { renderCoverage, unrenderedReason } from '@/lib/world/law-render'
 import { creditReason, limezuSurfaces } from '@/lib/world/credit'
 import { ASSET_BASE, type WorldAssetManifest } from '@/lib/world/sprites'
 import { fnv1a } from '@/lib/world/hash'
@@ -216,8 +217,15 @@ export default function EngineClient({
     // `worldUrlSearch`, which owns the reason. Without this the first pan drops
     // the flag from the address bar and the page the Captain reloads or shares
     // is whichever renderer happens to be the default that week.
-    const qs = worldUrlSearch({ camera, sel, at, projection })
-    window.history.replaceState(null, '', `${window.location.pathname}?${qs}`)
+    // ONE call, and its RESULT is what is written — see `nextWorldHref`. The
+    // previous shape built the query here from the builder's return, which read
+    // identically and left a hole a grep could not see: keeping the call and
+    // discarding it passed the guard.
+    window.history.replaceState(
+      null,
+      '',
+      nextWorldHref(window.location.pathname, { camera, sel, at, projection })
+    )
   }, [camera, sel, at, projection])
 
   // The manifest, for its `license` column only — the canvas resolves its own
@@ -460,6 +468,11 @@ export default function EngineClient({
     [geo, buildings, resolution]
   )
   dressingRef.current = dressing
+
+  // How much of the ratified law THIS kernel actually paints — the second
+  // coverage term the Legend shows next to codex coverage. Pure over the
+  // projection, so it recomputes only when the kernel changes.
+  const renderCov = useMemo(() => renderCoverage(projection), [projection])
 
   // ── direction surface (grammar v4): courses + voyage + chart table ──────
   const courses = useMemo(() => engine?.courses ?? null, [engine])
@@ -1001,6 +1014,40 @@ export default function EngineClient({
               </div>
             </div>
           )}
+          {/* THE SECOND COVERAGE TERM (2026-07-29). Codex coverage answers "is
+              every law row documented", and it is 100% — which read, next to a
+              list of every ratified row, as "the world draws all of this". It
+              does not. Seven rows have no surface under the isometric kernel:
+              four lost their renderer with the legacy shell, three never had an
+              iso form. This gauge is the honest one, it is derived per kernel
+              in lib/world/law-render.ts, and the rows it cannot paint are named
+              below it with the reason rather than left to be inferred. */}
+          <div data-world-render-gauge data-render-projection={projection} className="mb-2">
+            <div className="mb-0.5 flex justify-between font-mono text-[10px] text-zinc-400">
+              <span>render coverage ({projection})</span>
+              <span data-render-coverage={renderCov.rendered + '/' + renderCov.total}>
+                {renderCov.fraction === null ? 'n/a' : `${Math.round(renderCov.fraction * 100)}%`}
+              </span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-sm bg-zinc-800">
+              <div
+                className={
+                  'h-full ' + ((renderCov.fraction ?? 0) >= 1 ? 'bg-emerald-500' : 'bg-amber-500')
+                }
+                style={{ width: `${Math.round((renderCov.fraction ?? 0) * 100)}%` }}
+              />
+            </div>
+            {renderCov.unrendered.length > 0 && (
+              <ul data-world-unrendered-law className="mt-1 space-y-0.5 text-[10px] text-amber-300/80">
+                {renderCov.unrendered.map((id) => (
+                  <li key={id} title={unrenderedReason(id, projection) ?? ''}>
+                    <span className="font-mono">{id}</span>{' '}
+                    <span className="text-zinc-500">— not drawn</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           {resolution && (
             <div className="mb-2 rounded bg-zinc-950 p-2">
               <div className="font-mono text-zinc-200">
