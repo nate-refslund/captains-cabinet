@@ -21,7 +21,52 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 1c91f915f42e5243ddfc3a0b7a1af291394a25944661d50d0c981f43895a5934
+Reviewed-Scope-Digest: 2c6f4d636640e0b094348d0bf24eb7ecd22435a265d07514cf8aea928f15c92a
+
+(MERGE RE-BIND, 2026-07-29, `fix/hostile-input-red-team` x master. Master
+re-bound this line again on a contract-touching landing; neither side's digest
+describes the merged tree, so the value above is RECOMPUTED over it. Master's
+superseded value was `1c91f915f42e5243ddfc3a0b7a1af291394a25944661d50d0c981f43895a5934`. Every contract allowance
+row from both sides survives and the census re-reads PASS at the summed level.
+No COG-4 implementation byte moved on either side; nothing below was
+re-reviewed.)
+
+(MERGE RE-BIND, 2026-07-29, `fix/hostile-input-red-team` x master. Master
+re-bound this line again (its own contract-touching landing); neither side's
+digest describes the merged tree, so the value above is RECOMPUTED over it.
+Master's superseded value was `c18946e6377c31c9c653389e02ff26273df8cb587cf446c80170e589340a9109`. Both contract allowance rows
+survive the merge and the census re-reads PASS at the summed level. No COG-4
+implementation byte moved on either side; nothing below was re-reviewed.)
+
+(MERGE RE-BIND, 2026-07-28, `fix/hostile-input-red-team` x master `b4859c55`.
+The second such merge on this branch: master re-bound this line again for the
+onboarding-derivation landing, which also appended a `temporary_allowances` row
+to `cabinet/config/cognitive-architecture-contract.yml`. BOTH rows are kept in
+the merged contract — each pays for its own lines and the census re-reads PASS
+at the summed level (73081) — and neither side's digest describes the merged
+tree, so the value above is RECOMPUTED over it. Master's superseded value was
+`3c8c1f7f60bd32a56e831438d768ea1b760b8f148353e65aba3c76c9b6d50a79`. No COG-4
+implementation byte moved on either side; nothing below was re-reviewed.)
+
+(MERGE RE-BIND, 2026-07-28, `fix/hostile-input-red-team` x master `4148d1e6`.
+Both sides re-bound this line and both moved paths inside this scope set — the
+red team moved `cabinet/config/cognitive-architecture-contract.yml`, master moved
+the two egg-export paths — so the two digests conflicted textually and NEITHER
+describes the merged tree. The value above is RECOMPUTED over it. Both note sets
+are kept below in full, none superseded; no COG-4 implementation byte moved on
+either side, so nothing below was re-reviewed.)
+
+(RE-BIND, 2026-07-28, `fix/hostile-input-red-team`. The hostile-input red
+team added a `temporary_allowances` row to
+`cabinet/config/cognitive-architecture-contract.yml` — a restore_from_baseline
+member of this phase's scope — paying +31 production non-comment lines for the
+fenced-bundle provenance fix (a source file could type its own fence header,
+defeating both the taint map and the D13 never-act-first floor). No COG-4
+surface changed: framework/acting, framework/sources and framework/frontdoor
+are outside this scope set. Recomputed over the committed tree; the prior
+value is superseded, the note below it is retained in full.)
+
+(superseded historical binding, kept for archaeology — prior digest `1c91f915f42e5243ddfc3a0b7a1af291394a25944661d50d0c981f43895a5934`)
 
 (MERGE RE-BIND, 2026-07-28, `fix/recall-live-claims-it-never-earned` x master
 `a70bcfb5` (PR #268). Both sides re-bound this line and both moved
