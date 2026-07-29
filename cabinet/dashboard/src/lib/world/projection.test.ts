@@ -43,7 +43,20 @@ import {
   worldUrlSearch,
 } from './projection'
 import { ISO_AXIS_SLOPE } from './iso-layout'
-import { TILE } from './layout'
+
+/**
+ * The legacy tile, PINNED AS A LITERAL ON PURPOSE.
+ *
+ * Arm 1 below is the proof that collapsing five copies of the world→screen
+ * transform into one kernel changed no top-down arithmetic. Its reference value
+ * used to be imported from `lib/world/layout.ts` — the wardroom shell's layout
+ * module, deleted with that shell on 2026-07-29. Re-pointing the reference at
+ * `TOPDOWN_TILE`, the very constant under test, would have turned the arm into
+ * `x*16 === x*16`: green forever, and blind to the one thing it exists to catch.
+ * So the number the legacy renderer actually used is written down here instead,
+ * where it stays a fixed external reference rather than a mirror.
+ */
+const TILE = 16
 
 const PACK_PATH = path.resolve(
   __dirname,

@@ -130,11 +130,20 @@ describe('D. killswitch lever ceremony', () => {
 })
 
 describe('E. LimeZu art credit (ratified license condition, 2026-07-12)', () => {
-  const SHELLS = [
-    ['engine-client', ['components', 'world', 'engine-client.tsx']],
-    ['world-client', ['components', 'world', 'world-client.tsx']],
-  ] as const
-  it('both world shells carry the exact credit line', () => {
+  /**
+   * ONE shell since 2026-07-29. This was a two-row list until the legacy
+   * three-scene shell was deleted; the second row named a file that no longer
+   * exists, and a list of filenames is only a sensor while every filename in it
+   * is real. The credit assertion itself is UNCHANGED and deliberately so — the
+   * resolution to "the iso pack is owned art" is ADDITIVE, never the deletion
+   * of a licence line. LimeZu pixels remain on /world under both projections
+   * (the portrait rail's portraits are LimeZu-derived, and the rail is chrome
+   * that mounts under either kernel), so the line is still owed and still
+   * asserted. What decides whether it RENDERS is credit.ts, measured from the
+   * manifest's own licence column over what each mounted surface binds.
+   */
+  const SHELLS = [['engine-client', ['components', 'world', 'engine-client.tsx']]] as const
+  it('every world shell carries the exact credit line', () => {
     for (const [name, rel] of SHELLS) {
       const text = src(...rel)
       expect(text, name).toMatch(/data-world-credit/)
@@ -155,7 +164,7 @@ describe('E. LimeZu art credit (ratified license condition, 2026-07-12)', () => 
    * prove the shell asks the predicate, and only the predicate's own suite can
    * prove the predicate answers correctly.
    */
-  it('the credit is CONDITIONAL on measured LimeZu art, in both shells', () => {
+  it('the credit is CONDITIONAL on measured LimeZu art, in every shell', () => {
     for (const [name, rel] of SHELLS) {
       const text = src(...rel)
       // asks the one authority…

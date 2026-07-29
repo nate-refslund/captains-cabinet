@@ -12,7 +12,7 @@ const nextConfig: NextConfig = {
         //
         // script-src stays EVAL-FREE by design (ratchets.test.ts #8): the
         // PixiJS v8 renderer's eval dependency is satisfied by importing
-        // the official 'pixi.js/unsafe-eval' AOT patch in world-canvas.tsx
+        // the official 'pixi.js/unsafe-eval' AOT patch in engine-canvas.tsx
         // (plus preferWorkers:false so no blob: worker needs worker-src) —
         // never by adding 'unsafe-eval' here. 2026-07-08 black-canvas
         // incident: init rejected on the eval check under this header.

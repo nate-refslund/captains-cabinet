@@ -96,5 +96,6 @@ vault wave; runbook→skill policy in `vault/README.md`, Captain-ratified
 after every world change — so it lives in the skill library where the
 learning loops can improve it. A pointer stub remains at the old runbook
 path. Root evidence: the 2026-07-08 world-alive review (measurements above;
-`cabinet/dashboard/src/components/world/world-canvas.tsx` documents the
-WebGL gotcha at the code seam).
+`cabinet/dashboard/src/components/world/engine-canvas.tsx` documents the
+WebGL gotcha at the code seam — it moved there when the legacy three-scene
+shell was deleted, 2026-07-29).

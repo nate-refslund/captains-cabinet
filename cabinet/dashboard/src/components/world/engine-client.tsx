@@ -1,9 +1,10 @@
 'use client'
 
 /**
- * EngineClient — the ONE-continuous-world shell (T1; replaces the
- * three-scene WorldClient per spec v2 supersession #5: LOD zoom + pan only,
- * never a scene swap).
+ * EngineClient — THE world shell (T1; replaced the three-scene wardroom /
+ * street / island shell per spec v2 supersession #5: LOD zoom + pan only,
+ * never a scene swap). That shell was deleted 2026-07-29 after the bake-off,
+ * so this is now the only one.
  *
  * Owns: SSE wiring, the LOGICAL clock (frame deltas → integer ticks), the
  * continuous camera (+ URL state), the era×rung engine feed (hot-reloaded
