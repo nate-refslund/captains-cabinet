@@ -57,23 +57,43 @@ def test_tokens_are_not_invented_for_an_empty_or_junk_name():
 # --- the floors, and the proof that they are MEASURED -----------------------
 
 
-def test_a_word_is_floored_for_its_share_not_for_being_that_word():
+def test_a_word_is_discounted_for_its_share_not_for_being_that_word():
     """The same string is furniture in one estate and a candidate in another.
 
-    This is the whole reason there is no stopword list: ``widget`` is ranked out
-    when it labels a quarter of a connector's rows and ranked IN when it does
-    not, and no line of code knows what ``widget`` means.
+    This is the whole reason there is no stopword list: ``widget`` counts for
+    less when it labels a quarter of a connector's rows and counts fully when it
+    does not, and no line of code knows what ``widget`` means.
     """
     furniture = _spread("tracker", [f"widget {i}" for i in range(10)]) + \
         _spread("repo", ["widget-core", "other-thing"], start_day=5)
-    floored = {row["token"] for row in salience.rank(furniture)["floored"]}
-    assert "widget" in floored
+    ranking = salience.rank(furniture)
+    discounted = {row["token"]: row for row in ranking["discounted"]}
+    assert "widget" in discounted
+    assert discounted["widget"]["explained"] == 10  # the tracker's ten, and only those
+    assert discounted["widget"]["unexplained"] == 1
 
     sparse = _spread("tracker", ["widget core"] + [f"unrelated {i}" for i in range(20)]) + \
         _spread("repo", ["widget-core", "other-thing"], start_day=5)
     ranking = salience.rank(sparse)
-    assert "widget" not in {row["token"] for row in ranking["floored"]}
+    assert "widget" not in {row["token"] for row in ranking["discounted"]}
     assert any("widget" in c["tokens"] for c in ranking["clusters"])
+
+
+def test_a_discounted_word_is_still_reachable_and_never_removed():
+    """THE RULE THAT WAS BROKEN TWICE, and the second time by the fix for the
+    first. A floor that DROPS a token loses a correct answer in silence: the
+    candidate stops existing and nothing downstream can name what went. So the
+    discount is checked from the other end — every discounted token is still
+    findable in the ranking, as a candidate or as a named non-candidate with its
+    numbers, and never merely absent."""
+    rows = _spread("tracker", [f"widget {i}" for i in range(10)]) + \
+        _spread("repo", ["widget-core", "gadget-core"], start_day=5)
+    ranking = salience.rank(rows)
+    assert ranking["discounted"], "nothing was discounted; this fixture proves nothing"
+    reachable = {t for c in ranking["clusters"] for t in c["tokens"]}
+    reachable |= {t for c in ranking["not_candidates"] for t in c["tokens"]}
+    missing = [d["token"] for d in ranking["discounted"] if d["token"] not in reachable]
+    assert missing == [], f"discounted tokens vanished from the ranking: {missing}"
 
 
 def test_a_token_living_almost_entirely_in_one_system_is_that_systems_structure():
@@ -83,8 +103,25 @@ def test_a_token_living_almost_entirely_in_one_system_is_that_systems_structure(
     never called structure."""
     rows = _spread("tracker", [f"Tasks {i}" for i in range(12)]) + \
         _spread("repo", ["tasks-mcp"], start_day=9)
-    floored = {r["token"]: r["reason"] for r in salience.rank(rows)["floored"]}
-    assert floored.get("tasks") in {"single_system_structure", "connector_furniture"}
+    discounted = {r["token"]: r["reason"] for r in salience.rank(rows)["discounted"]}
+    assert discounted.get("tasks") in {"single_system_structure", "connector_furniture"}
+
+
+def test_the_span_is_counted_over_what_the_filing_does_not_explain():
+    """Measured on the live estate: one tracker's filing word reached rank 4 of
+    51 on a three-connector span, two of whose connectors contributed two rows
+    between them. A system whose own filing explains every occurrence there is
+    not evidence that the name recurs ACROSS systems, so it does not vote in the
+    span either — and the raw span is still reported beside it."""
+    rows = _spread("tracker", [f"Tasks {i}" for i in range(12)]) + \
+        _spread("repo", ["tasks-mcp"], start_day=9) + \
+        _spread("db", ["tasks-db"], start_day=15)
+    ranking = salience.rank(rows)
+    carrying = [c for c in ranking["clusters"] if "tasks" in c["tokens"]]
+    short = [c for c in ranking["not_candidates"] if "tasks" in c["tokens"]]
+    seen = (carrying or short)[0]
+    assert len(seen["connectors"]) == 3          # where the word appears
+    assert len(seen["connectors_standing"]) == 2  # where it appears unexplained
 
 
 def test_the_operators_own_name_is_demoted_and_never_deleted():
