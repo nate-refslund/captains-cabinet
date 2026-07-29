@@ -28,7 +28,29 @@ carries them too:
     nothing can occupy cannot detect a resurrection. This found one — the
     path ``cabinet/scripts/hooks-src/pre-captain-dm.sh`` sat in ALLOWED with
     no such file anywhere in the tree and no other reference to it in the
-    repo. Removed below; removal is what shrink-only permits.
+    repo. Removed below; removal is what shrink-only permits;
+  * every ALLOWED and KILLED path must also be REACHED by the walk
+    (``test_every_listed_path_is_reachable_by_the_scan``, added 2026-07-29 by
+    the adversarial pass on the four arms above). EXISTING is not REACHED, and
+    the four arms close only the glob breaks that EMPTY the scan. Measured
+    forges that passed all four: ``cabinet/scripts/**/*.sh`` narrowed to
+    ``cabinet/scripts/*.sh`` (roots exist, scan non-empty, door present,
+    planted poster still reported at the top of ``cabinet/scripts`` — while
+    ``cabinet/scripts/hooks/pre-captain-dm.sh`` silently left the surface),
+    and ``framework/**/*.py`` narrowed to ``framework/frontdoor/**/*.py``
+    (the whole P3 kill-list left the surface, so ``resurrected == []`` was
+    once again true of nothing). Both are RED now.
+
+RESIDUAL, stated rather than implied. The reachability arm is anchored to the
+two lists, so a narrowing that drops only trees NO listed path lives in is
+still green — and the opening sentence's "anywhere else is CI-red" is
+therefore scoped to SCAN_GLOBS, which are python and shell only. Live
+counter-example in the tree today: ``cabinet/dashboard/src/lib/docker.ts`` and
+``cabinet/dashboard/src/app/api/telegram/provisioning-webhook/route.ts`` both
+carry the raw host, are on no list, and this ratchet has never seen them.
+Widening the scan to the dashboard's TypeScript is a separate unit with its
+own allowlist decision; until it lands, "anywhere else" means anywhere else
+SCAN_GLOBS reaches.
 """
 from pathlib import Path
 
@@ -96,19 +118,32 @@ def _scan_roots():
     return sorted({p.split("/*", 1)[0] for p in SCAN_GLOBS})
 
 
-def _hits(root: Path = ROOT):
-    out = set()
+def _scanned_files(root: Path = ROOT):
+    """{repo-relative path: Path} for every file the globs actually REACH,
+    after the test-file exclusion — i.e. the surface both ``offenders == []``
+    arms are computed over. ``_hits`` is defined as a content filter over this
+    exact mapping ON PURPOSE: the reachability arm must measure the walk the
+    ratchet really performs, not a wishful second copy of it that a narrowed
+    glob would leave untouched."""
+    out = {}
     for pattern in SCAN_GLOBS:
         for f in root.glob(pattern):
             rel = f.relative_to(root).as_posix()
             if "/tests/" in rel or rel.startswith("framework/tests/"):
                 continue
-            try:
-                text = f.read_text(encoding="utf-8", errors="ignore")
-            except OSError:
-                continue
-            if "api.telegram.org" in text:
-                out.add(rel)
+            out[rel] = f
+    return out
+
+
+def _hits(root: Path = ROOT):
+    out = set()
+    for rel, f in _scanned_files(root).items():
+        try:
+            text = f.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        if "api.telegram.org" in text:
+            out.add(rel)
     return out
 
 
@@ -166,6 +201,27 @@ def test_every_listed_path_exists():
         f"listed paths that do not exist: {missing} — drop them from ALLOWED "
         "(removal is what shrink-only permits) or re-point KILLED at where "
         "the poster moved")
+
+
+def test_every_listed_path_is_reachable_by_the_scan():
+    """EXISTING is not REACHED. The four arms above catch a glob break that
+    EMPTIES the scan; they do not catch one that merely SHRINKS it, and both
+    natural shrinks were measured green against all four (named in the last
+    block of the module docstring). An allowlist entry the walk never visits
+    permits nothing, and a kill-list entry the walk never visits cannot detect
+    the resurrection it exists to detect — in both states the two
+    ``== []`` arms are true of a set that can no longer contain the file."""
+    surface = set(_scanned_files())
+
+    def reached(p):
+        return p in surface or any(s.startswith(p + "/") for s in surface)
+
+    unreachable = sorted(p for p in (ALLOWED | KILLED) if not reached(p))
+    assert unreachable == [], (
+        f"SCAN_GLOBS no longer reach listed paths: {unreachable} — the "
+        "allowlist and the kill-list only bind files the walk actually "
+        "visits; widen SCAN_GLOBS back over them, or drop the entries and "
+        "say in the docstring that they are no longer policed")
 
 
 def test_scanner_flags_a_planted_poster(tmp_path):
