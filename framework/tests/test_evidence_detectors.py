@@ -409,6 +409,49 @@ def test_catalog_rows_present_chair_tier_and_instance_dark():
         "never expectation ground truth" in registry_src
 
 
+def test_shipped_watchdog_twin_matches_the_ceremony_this_test_demands():
+    """The SHIPPED twin carries the same three-row posture as the live file.
+
+    The assertion above reads ``instance/config/watchdog.yml`` unconditionally
+    and runs inside null-hatch.sh, which stages the EXPORT tree — where that
+    live file is not this deployment's at all: egg-export.sh's
+    ``watchdog-default`` transform materializes it from
+    ``instance/config/watchdog.yml.example``. So the test above is really a
+    claim about two files, and only one of them was pinned. When the Captain's
+    2026-07-26 ceremony armed ``evidence-store-invariants`` in the live file
+    and not in the twin, the origin checkout stayed green and every hatch from
+    the export died at the proof-a gate — measured 2026-07-28 on a timed
+    stranger hatch: chain red at 21s, first briefing never rendered, and no
+    gate anywhere could see it because CI only ever runs the origin's own
+    instance/.
+
+    Pinned in BOTH directions for all three ids, so neither a silent arming
+    nor a silent disarming of the shipped default passes, and so the twin can
+    never again drift from the ceremony the test above enforces.
+    """
+    live = (REPO_ROOT / "instance/config/watchdog.yml").read_text()
+    twin = (REPO_ROOT / "instance/config/watchdog.yml.example").read_text()
+    for eid in ("evidence-store-invariants", "evidence-anchor-export-fresh",
+                "evidence-shadow-detector-liveness"):
+        pattern = rf"^\s*- {re.escape(eid)}\s*$"
+        live_armed = bool(re.search(pattern, live, re.M))
+        twin_armed = bool(re.search(pattern, twin, re.M))
+        assert live_armed == twin_armed, (
+            f"{eid} is "
+            f"{'ARMED' if live_armed else 'dark'} in instance/config/watchdog.yml "
+            f"but {'ARMED' if twin_armed else 'dark'} in "
+            "instance/config/watchdog.yml.example. The twin is what a stranger's "
+            "cabinet actually boots with (egg-export watchdog-default), and the "
+            "assertion in test_catalog_rows_present_chair_tier_and_instance_dark "
+            "is applied to whichever of the two the running tree carries — a "
+            "divergence here is a hatch that dies at proof-a on the export while "
+            "the origin checkout stays green.")
+        if not twin_armed:
+            assert f"# - {eid}" in twin, (
+                f"{eid} must remain PRESENT-BUT-COMMENTED in the shipped twin "
+                "— a deleted row is an id a fresh cabinet cannot discover")
+
+
 def test_registry_rel_constants_sync_pinned_to_owning_modules():
     """The registry's mirrored REL constants never drift from their owning
     modules. Mirror-not-import is deliberate (registry survival contract:
