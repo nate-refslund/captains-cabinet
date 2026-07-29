@@ -61,37 +61,25 @@ export function bucketForHour(
   return 'night'
 }
 
-/** Full-room ambient wash (drawn over props/officers, under the killswitch fx). */
-export interface AmbientTint {
-  color: number
-  alpha: number
-}
-
-/** §2 lighting table: dawn ffe8d0@0.06 · day none · dusk ffc890@0.10 · night 2a3560@0.22. */
-export function ambientTint(bucket: DayBucket): AmbientTint | null {
-  switch (bucket) {
-    case 'dawn':
-      return { color: 0xffe8d0, alpha: 0.06 }
-    case 'day':
-      return null
-    case 'dusk':
-      return { color: 0xffc890, alpha: 0.1 }
-    case 'night':
-      return { color: 0x2a3560, alpha: 0.22 }
-  }
-}
-
 /**
- * The screen-space ambience VEIL — the opaque seeded dither that replaced the
- * full-frame alpha washes above (an alpha wash shifts every pixel out of the
- * corpus bins; v1a live captures measured 15–61% PALETTE_FOREIGN_MASS).
+ * The screen-space ambience VEIL — the opaque seeded dither that IS the day/
+ * night ambience. It replaced a per-bucket alpha wash (`ambientTint`, deleted
+ * 2026-07-29 once it had been dead long enough to become a trap: it still
+ * returned the apricot the veil laws now ban, and a green test asserted it).
+ * An alpha wash shifts every pixel out of the corpus bins — v1a live captures
+ * measured 15–61% PALETTE_FOREIGN_MASS — which is why ambience is a dither.
  *
  * It lives HERE, beside the rest of the per-bucket ambience table, and not in
  * the canvas component, for one reason: a hue table declared inside a 3000-line
  * renderer has no test that can reach it, and the dusk hue shipped wrong for
  * exactly that long. Every hue comes from terrain-pattern.ts and obeys THE VEIL
- * LUMINANCE LAW documented there. `veil.test.ts` reads this function; a second
- * table at the call site would defeat it, so that test also greps the canvas.
+ * LAWS documented there. `veil.test.ts` reads this function; a second table at
+ * the call site would defeat it, so that test also checks the canvas has
+ * exactly one veil call site and passes it exactly this function's output.
+ *
+ * The veil is the DARKENING half of ambience. The warm half at dusk/night is
+ * the lamp pools and lit windows drawn on `fxG`, which sits ABOVE the veil in
+ * engine-canvas.tsx precisely so light cuts through the dither.
  */
 export interface AmbientVeil {
   /** Rotated so no single quantized bin dominates the frame. */

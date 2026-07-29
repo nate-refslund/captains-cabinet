@@ -385,7 +385,6 @@ describe('ratchet 11 — dead exports in lib/world (symbol granularity, shrink-o
     'life/sites.ts -> struckCodex',
     'life/states.ts -> lifeStateLabel',
     'lighting.ts -> STAR_COLOR',
-    'lighting.ts -> ambientTint',
     'lighting.ts -> bucketForHour',
     'lighting.ts -> lampGlow',
     'lighting.ts -> starOffsets',

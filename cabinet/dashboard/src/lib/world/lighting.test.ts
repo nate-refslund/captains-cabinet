@@ -14,7 +14,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  ambientTint,
+  ambientVeil,
   bucketForHour,
   DEFAULT_BUCKETS,
   formatClock,
@@ -96,13 +96,6 @@ describe('bucketForHour', () => {
 })
 
 describe('lighting table (§2)', () => {
-  it('ambient tint per bucket — day renders no tint at all', () => {
-    expect(ambientTint('dawn')).toEqual({ color: 0xffe8d0, alpha: 0.06 })
-    expect(ambientTint('day')).toBeNull()
-    expect(ambientTint('dusk')).toEqual({ color: 0xffc890, alpha: 0.1 })
-    expect(ambientTint('night')).toEqual({ color: 0x2a3560, alpha: 0.22 })
-  })
-
   it('lamp pools exist ONLY at dusk/night (warm additive, r=28px)', () => {
     expect(lampGlow('dawn')).toBeNull()
     expect(lampGlow('day')).toBeNull()
@@ -128,9 +121,12 @@ describe('lighting table (§2)', () => {
     const lightingColors = [
       ...Object.values(WINDOW_SKY),
       STAR_COLOR,
-      ambientTint('dawn')!.color,
-      ambientTint('dusk')!.color,
-      ambientTint('night')!.color,
+      // the ambience VEIL replaced the alpha washes that used to be read here;
+      // its hues are what actually reach the frame, so they are what must not
+      // collide with an alarm colour. veil.test.ts bans the adrift hue too.
+      ...(['dawn', 'dusk', 'night'] as const).flatMap((b) => [
+        ...(ambientVeil(b)?.colors ?? []),
+      ]),
       lampGlow('night')!.color,
     ]
     for (const c of lightingColors) {

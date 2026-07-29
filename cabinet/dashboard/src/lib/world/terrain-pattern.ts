@@ -90,21 +90,33 @@ export const NIGHT_VEIL_HUES = [0x24344c, 0x34344c, 0x2c344c] as const
  *
  * Law 2 exists because law 1 alone was not enough: the first fix used in-bin
  * warm browns (0x996b45 / 0x966c3e / 0xb48e64, luminance 114-147, chroma
- * 29-34). They passed law 1 and the water still grained visibly at 1:1 — the
- * warm greys below sit at chroma 8-10 and read as haze.
+ * 29-34). They passed law 1 and the water still grained visibly at 1:1.
+ *
+ * KNOWN EDGE, named rather than discovered later: law 2 would reject a genuinely
+ * moon-tinted night. The shipped navies clear it at chroma 16.1-16.8, but the
+ * old alpha-wash night tint 0x2a3560 is 28.6 and any bluer moonlight is worse.
+ * If §12's "moon-tint" is ever taken literally, law 2 is the thing to argue
+ * with — deliberately, in writing, not by widening the bound to make a build go
+ * green.
  *
  * Second reason the shipped dusk hue was wrong: 0xffc890 is the ADRIFT
  * course-line signal in engine-canvas.tsx. Painting a sixth of every frame in
  * a reserved salience hue destroys the salience of the signal itself.
  */
-/** Dusk = the light going flat: three in-bin cobble greys, warm but nearly
- * neutral (chroma 7.9 / 9.4 / 9.9), rotated for the same anti-dominance reason
- * as the navies. Dusk's COLOUR story is carried by the lamps coming on
- * (lampGlow) and the amber window sky, not by tinting the whole ocean. */
-export const DUSK_VEIL_HUES = [0x9a9084, 0x998f80, 0xa79c8c] as const
-/** Dawn = pale first light: the two lightest in-bin greys under the ceiling,
- * at half dusk's coverage — a thinner, higher veil. */
-export const DAWN_VEIL_HUES = [0xa79c8f, 0x9a9084] as const
+/** Dusk = the light draining. Three tones taken from the FITTED CORPUS PALETTE
+ * itself (calibration/palette.json bins, chroma 3.3-20.6, all exact-bin), not
+ * from a terrain ramp: the ramps have no dark low-chroma grey, and every warm
+ * ramp tone dark enough to read as evening carries enough chroma to grain.
+ * Composed over the sea ramp at 16% these move mean water luminance -2.5 —
+ * the world gets DARKER, which is the direction dusk is supposed to go. The
+ * first pass at this fix used cobble greys and moved it +2.9, i.e. dusk very
+ * slightly brightened the ocean. Warmth at dusk is the LAMPS coming on and the
+ * lit windows drawn on fxG above this veil (engine-canvas.tsx, gated
+ * dusk-or-night) — not a tint over the whole sea. */
+export const DUSK_VEIL_HUES = [0x7c7c84, 0x6c6c74, 0x4c7c6c] as const
+/** Dawn = pale first light: two in-bin greys that LIFT (mean water luminance
+ * +1.5 at 8% coverage) — the mirror of dusk, half the dose. */
+export const DAWN_VEIL_HUES = [0x8c8c94, 0xa79c8f] as const
 export const GLOW_WARM = 0xffc35c // (255,195,92) — in-bin lamp warmth
 export const GLOW_CORE = 0xf2ecde // (242,236,222) — proven CREAM
 export const SMOKE_LITE = 0x78747c // (120,116,124) — proven ash greys
