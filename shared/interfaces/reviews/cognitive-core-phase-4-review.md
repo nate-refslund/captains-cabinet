@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: PENDING-RECOMPUTE
+Reviewed-Scope-Digest: 09dc69fbbf6f90bdbe183b80e012eb92b6e3742ef1e5d3343fbd3f5fa066df6c
 (RE-BOUND 2026-07-29 on `feat/onboarding-connector-read`, previous value
 `e7a6983a…`. TWO in-scope paths moved and NO COG-4 implementation byte did:
 `cabinet/config/cognitive-architecture-contract.yml` gains one
