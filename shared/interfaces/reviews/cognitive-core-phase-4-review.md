@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: a8e0903b5f5bcc2c216dc886b83aa12d5d5a78ac79804a1c65f76ecc8f367cd5
+Reviewed-Scope-Digest: 408e6b979fff5a1d84da85fdc19ed7114a8a2df96492636407d80febee0aa017
 (RE-BOUND 2026-07-29 on `fix/framework-specifics`, previous value
 `0df4d12a…`. TWO in-scope paths moved and NO COG-4 implementation byte did:
 `cabinet/config/cognitive-architecture-contract.yml` raises
@@ -37,6 +37,7 @@ stronger, not looser. The unit's own work is in `framework/` and
 absorbed silently, because a re-freeze that hides what moved would assert a
 review that never happened.)
 
+
 (RE-BOUND 2026-07-29 on `feat/onboarding-connector-read`, previous value
 `e7a6983a…`. TWO in-scope paths moved and NO COG-4 implementation byte did:
 `cabinet/config/cognitive-architecture-contract.yml` gains one
@@ -49,6 +50,7 @@ egg. The unit's own work is in `framework/onboarding/` and
 rather than absorbed silently, because a re-freeze that hides what moved would
 assert a review that never happened.)
 
+(RE-BOUND 2026-07-29 on `fix/briefing-and-recall`, merged with the connector-read re-bind above rather than replacing it — both sides re-bound this line and both notes are kept verbatim, because a re-freeze that hides what moved asserts a review that never happened. This branch's in-scope delta is named in its own re-bind note at the end of this file: `cabinet/services.yml` (the retrieval-eval row's notes + `RE_ABSTAIN_FLOOR`) and one budget maximum in `cabinet/config/cognitive-architecture-contract.yml`. No COG-4 implementation byte moved on either side.)
 (MERGE RE-BIND, 2026-07-29, `fix/fence-newline-forgery` x master (the eight-PR billing-wall drain, final landing). Both sides had re-bound this line, so the merge left two; the SECOND is removed and the value above is recomputed over this merge commit. Every note from both sides is kept verbatim. No COG-4 implementation byte moved on either side — the only in-scope path is the contract file, whose ceiling is re-measured over the merged tree.)
 
 
@@ -1408,6 +1410,7 @@ this file. Nothing was re-reviewed and no prose finding was edited, because no r
 byte moved: the branch's entire diff is the world layout, the renderer, the hit test and
 the check harness, none of which is in the COG-4 scope.
 
+<<<<<<< HEAD
 ---
 
 ## Re-bind 2026-07-29 (feat/salience-loop — the sweep's two silent claims)
@@ -1440,3 +1443,57 @@ so no bijection class moves either. The unit's own work is in
 
 Recorded digest: a8e0903b5f5bcc2c216dc886b83aa12d5d5a78ac79804a1c65f76ecc8f367cd5
 Previous:        2c6fdb6779f555a5fc7a360a5eb9f316aec08be78c4ad85d71e1646a3a32d782
+=======
+
+---
+
+## Re-bind 2026-07-29 (fix/briefing-and-recall)
+
+Recorded digest: f6cff878b3bbd8f2dcfde7118cfa1b161a0bcad7d23ff8ed5cd23b16e7d2646a
+Previous:        e7a6983a05d08cd4e88233935a84a8a3afded44dbb6e79021f24a54fede4bf86
+
+TWO bound paths changed, NEITHER of them COG-4 behaviour. Named rather than
+absorbed silently, so the binding again means "these exact bytes were reviewed":
+
+* `cabinet/services.yml` — the `retrieval-eval` row's `notes:` prose and its
+  env-overridable floor list. The nightly gate used to self-harvest its pairs
+  from this store, deriving each query from the expected document's own leading
+  110 characters; the row now names the committed question-shaped seed and the
+  added `RE_ABSTAIN_FLOOR`. Schedule, command, label and `expected:` contract
+  are untouched — no service starts, stops or runs differently.
+* `cabinet/config/cognitive-architecture-contract.yml` — ONE budget maximum,
+  `framework_production_noncomment_lines` 60185 -> 60282, for +97 measured
+  non-comment lines in `framework/onboarding/genesis.py` (the first briefing's
+  claim refusals). Raised visibly, zero headroom, zero new modules. No COG-4
+  set pin, allowance, or organ row is touched.
+
+Nothing in this branch's own work touches the COG-4 implementation: it is
+retrieval ranking, the retrieval eval, and the genesis briefing composition.
+
+
+---
+
+## Re-bind 2026-07-29 (merge of origin/master into fix/briefing-and-recall, second)
+
+Recorded digest: b6872d9f98e0b1138aec5c496a1787e23a3afe1aa20b1acc2f7865bf6b18fd13
+
+Both sides had re-bound the line again and both notes are kept verbatim. The only
+in-scope path that moved on either side is
+`cabinet/config/cognitive-architecture-contract.yml`, whose ceiling is RE-MEASURED
+over this merge tree (74620 at zero headroom) rather than added on paper: the
+de-specification ceiling and this branch's +97 genesis claim refusals are disjoint
+sets of lines. No COG-4 implementation byte moved on either side.
+>>>>>>> origin/master
+
+## Re-bind 2026-07-29 (feat/salience-loop — merge of origin/master c98a58a6)
+
+Third re-bind of this digest in one afternoon, by three branches landing in
+parallel; every prior note above survives verbatim, because each describes a
+different landing and none is another's restamp. This value is over the merged
+tree. This branch moves ONE bound path,
+`cabinet/config/cognitive-architecture-contract.yml` (+200 non-comment lines for
+the who/when unit), and NO COG-4 implementation byte; ZERO new modules, so no
+bijection class moves.
+
+Recorded digest: 408e6b979fff5a1d84da85fdc19ed7114a8a2df96492636407d80febee0aa017
+Previous:        b6872d9f98e0b1138aec5c496a1787e23a3afe1aa20b1acc2f7865bf6b18fd13

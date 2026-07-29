@@ -115,6 +115,11 @@ def test_ranking_block_markers_present_in_memory_sh():
     """The fingerprint stamper/CI guard extract awk ranges over these marker
     tokens — losing them silently empties the ranking-change guard."""
     text = MEMORY_SH.read_text()
-    assert text.count("RANKING-BLOCK-BEGIN") == 2
-    assert text.count("RANKING-BLOCK-END") == 2
+    # THREE regions since 2026-07-29: the SQL ranking block, the rerank stage,
+    # and the vec-floor DEFAULT — which used to sit outside the markers, so the
+    # single number deciding whether a true answer is returned or discarded
+    # could be changed without reddening the guard that claims to pin it.
+    assert text.count("RANKING-BLOCK-BEGIN") == 3
+    assert text.count("RANKING-BLOCK-END") == 3
     assert "CABINET_MEMORY_RERANK" in text
+    assert "MEMORY_VEC_FLOOR_DEFAULT=" in text

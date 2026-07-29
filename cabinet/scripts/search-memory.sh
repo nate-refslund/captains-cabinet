@@ -26,7 +26,7 @@ if [ -z "$QUERY" ]; then
   echo "Usage: search-memory.sh \"<query>\" [--type TYPE[,TYPE...]] [--officer OFFICER] [--limit N] [--min-score S] [--as-of TS]"
   echo "Types: telegram_dm, telegram_group, officer_trigger, reflection, correction, captain_decision, product_spec, tech_radar, working_note, skill, role_definition, session_memory, golden_eval, experience_record, research_brief, framework_file"
   echo "  --type       one type or a comma-separated list (matches any of them)"
-  echo "  --min-score  similarity floor 0..1 (default 0.45; env CABINET_MEMORY_MIN_SCORE)"
+  echo "  --min-score  vec-similarity floor 0..1 (default ${MEMORY_VEC_FLOOR_DEFAULT:-0.28}, measured — see lib/memory.sh; env CABINET_MEMORY_MIN_SCORE)"
   echo "  --as-of      ISO timestamp content-time fence: only rows with source_created_at <= TS;"
   echo "               rows WITHOUT a source timestamp are EXCLUDED under a fence (fail-closed)"
   exit 1
