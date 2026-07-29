@@ -175,9 +175,15 @@ is the deliberate step.
 
 1. **Hybrid search smoke:** `bash cabinet/scripts/search-memory.sh "<known topic>"`
    — expect hits with `[trust:...]` labels; blend = 0.60 vector + 0.25
-   lexical (`content_tsv`) + 0.15 recency, floor 0.45; `--as-of <ts>` is a
-   fail-closed content-time fence (rows without content-time are excluded,
-   never mtime-guessed).
+   lexical (`content_tsv`) + 0.15 recency, vec floor
+   `MEMORY_VEC_FLOOR_DEFAULT` = 0.28 (measured 2026-07-29 — the derivation is
+   in `cabinet/scripts/lib/memory.sh`'s `memory_search` header; it shipped at
+   an unmeasured 0.45 that was discarding the answering document for 7 of 16
+   plainly-worded questions). NOTE, open divergence: the dashboard mirror
+   `cabinet/dashboard/src/lib/memory-search.ts` still defaults
+   `DEFAULT_MIN_SCORE = 0.45`, so the no-terminal Library search does not yet
+   run the corrected floor. `--as-of <ts>` is a fail-closed content-time
+   fence (rows without content-time are excluded, never mtime-guessed).
 2. **Golden eval:** `memory/golden-evals/eval-022-memory-recall-liveness.md`
    passes.
 3. **Falsifier liveness:** today's falsifier line shows the
