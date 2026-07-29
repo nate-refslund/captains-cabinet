@@ -56,6 +56,55 @@ export const NIGHT_VEIL = 0x24344c // (36,52,76) — darkest in-bin navy
 /** Night veil rotates THREE in-bin navies so no single quantized bin ever
  * dominates the frame (a one-hue 42% veil tripped CLUSTER dominant_share). */
 export const NIGHT_VEIL_HUES = [0x24344c, 0x34344c, 0x2c344c] as const
+
+/**
+ * THE VEIL LAWS (paid 2026-07-29, measured on live browser frames of /world).
+ *
+ * The ambience veil is the ONE pass that paints every surface in the frame,
+ * open water included, so its hues cannot be picked to look good on land and
+ * left to fall where they may. Two bounds, both DERIVED from the shipped sea
+ * ramp (`RAMPS.sea` in iso-terrain.ts) rather than typed in, and both pinned
+ * by veil.test.ts:
+ *
+ *   1. LUMINANCE — no veil hue brighter than the brightest water tone
+ *      (0x6faea6, relative luminance 160). One-sided on purpose: a veil may
+ *      fall BELOW the ground band, which is dusk and night arriving and is why
+ *      the navies above read correctly at 42% coverage, but it may never rise
+ *      above it. Pixel art has no bloom, so a dot brighter than the brightest
+ *      water tone cannot read as lit water — it reads as a speck ON the water.
+ *
+ *   2. CHROMA — no veil hue more colourful than the water it shades (max sea
+ *      chroma 22.2 in CIE Lab). Ambience is a shading pass; a dot with more
+ *      chroma than the ground competes with the surface's own hue instead of
+ *      shading it, and the eye reads the difference as grain rather than light.
+ *
+ * WHAT THEY COST. Dusk shipped as a single 0xffc890 apricot at 16% coverage
+ * (luminance 208, chroma 38) and dawn as 0xf2ecde cream at 8% (luminance 236).
+ * Both are "in-bin" pixel-by-pixel, so PALETTE_FOREIGN_MASS stayed green — that
+ * gate asks whether each pixel is a corpus colour and never whether it is a
+ * plausible NEIGHBOUR of the surface it landed on. Measured over open water in
+ * real frames: 15.6% of the sea became apricot at dusk and 7.9% cream at dawn,
+ * identically at every zoom (0.35 / 0.50 / 0.60 / 1.00 / 2.00), and the ocean
+ * read as orange static. The navies, obeying both laws by luck rather than by
+ * rule, measured 0.0%.
+ *
+ * Law 2 exists because law 1 alone was not enough: the first fix used in-bin
+ * warm browns (0x996b45 / 0x966c3e / 0xb48e64, luminance 114-147, chroma
+ * 29-34). They passed law 1 and the water still grained visibly at 1:1 — the
+ * warm greys below sit at chroma 8-10 and read as haze.
+ *
+ * Second reason the shipped dusk hue was wrong: 0xffc890 is the ADRIFT
+ * course-line signal in engine-canvas.tsx. Painting a sixth of every frame in
+ * a reserved salience hue destroys the salience of the signal itself.
+ */
+/** Dusk = the light going flat: three in-bin cobble greys, warm but nearly
+ * neutral (chroma 7.9 / 9.4 / 9.9), rotated for the same anti-dominance reason
+ * as the navies. Dusk's COLOUR story is carried by the lamps coming on
+ * (lampGlow) and the amber window sky, not by tinting the whole ocean. */
+export const DUSK_VEIL_HUES = [0x9a9084, 0x998f80, 0xa79c8c] as const
+/** Dawn = pale first light: the two lightest in-bin greys under the ceiling,
+ * at half dusk's coverage — a thinner, higher veil. */
+export const DAWN_VEIL_HUES = [0xa79c8f, 0x9a9084] as const
 export const GLOW_WARM = 0xffc35c // (255,195,92) — in-bin lamp warmth
 export const GLOW_CORE = 0xf2ecde // (242,236,222) — proven CREAM
 export const SMOKE_LITE = 0x78747c // (120,116,124) — proven ash greys

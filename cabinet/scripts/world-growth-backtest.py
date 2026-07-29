@@ -557,9 +557,16 @@ def _fnv1a(s: str) -> int:
 # OPAQUE seeded dither in in-bin hues — the palette-lawful ambience idiom
 # (an alpha wash shifts every pixel out of the corpus bins; the cozy pass
 # replaced it on the live engine too). day → byte-identical passthrough.
+# THIS TABLE IS A MIRROR of DAWN/DUSK/NIGHT_VEIL_HUES in the renderer's
+# terrain-pattern.ts. Change one, change both — a beauty shot rendered from a
+# veil the live world no longer draws is a picture of a world that does not
+# exist. The dawn/dusk rows below were the shipped cream and apricot until
+# 2026-07-29, when both were measured breaking THE VEIL LAWS (see that file):
+# no veil hue brighter than the brightest sea tone, none more colourful than
+# the water it shades. They painted 7.9% and 15.6% of open water respectively.
 _VEILS = {
-    "dawn": ([(242, 236, 222)], 0.08),   # proven CREAM
-    "dusk": ([(255, 200, 144)], 0.16),   # in-bin warm
+    "dawn": ([(167, 156, 143), (154, 144, 132)], 0.08),   # pale in-bin greys
+    "dusk": ([(154, 144, 132), (153, 143, 128), (167, 156, 140)], 0.16),
     # night rotates THREE in-bin navies so no single quantized bin ever
     # dominates the frame (one-hue 42% veil tripped CLUSTER dominant_share)
     "night": ([(36, 52, 76), (52, 52, 76), (44, 52, 76)], 0.42),

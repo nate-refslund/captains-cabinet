@@ -137,6 +137,7 @@ import {
   resolveOutdoorSprites,
   type DayBucket,
 } from '@/lib/world/sprites-outdoor'
+import { ambientVeil } from '@/lib/world/lighting'
 import { canvasAssetIds, ISO_ATLAS_ROW } from '@/lib/world/credit'
 import {
   dirtTileFlecks,
@@ -151,7 +152,6 @@ import {
   MIST_GREY,
   mistBandDashes,
   mistDots,
-  NIGHT_VEIL_HUES,
   PATTERN_PX,
   PLANK_BROWN,
   shadowDots,
@@ -225,12 +225,12 @@ const TD = TOPDOWN_TILE.w
  */
 const ISO_SEED = 'cabinet-world'
 
-const VEIL: Record<DayBucket, { colors: readonly number[]; coverage: number } | null> = {
-  dawn: { colors: [GLOW_CORE], coverage: 0.08 },
-  day: null,
-  dusk: { colors: [0xffc890], coverage: 0.16 }, // in-bin warm (verified)
-  night: { colors: NIGHT_VEIL_HUES, coverage: 0.42 },
-}
+// The per-bucket veil table used to live HERE, as three hand-picked hues no
+// test could reach, and dusk shipped a 16%-coverage apricot (luminance 208)
+// over a sea whose brightest tone is 160 — measured 15.6% of open water at
+// EVERY zoom. It now comes from lighting.ts, beside the rest of the ambience
+// table, under THE VEIL LUMINANCE LAW in terrain-pattern.ts. Do not re-declare
+// it here: veil.test.ts greps this file for exactly that.
 
 /**
  * The pick's own type, re-exported so every consumer keeps one import site.
@@ -2918,7 +2918,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         // ambient day/night VEIL (screen-space, from the server-stamped
         // clock): opaque in-bin dither instead of the old alpha wash — the
         // whole frame (open sea included) darkens/warms palette-natively.
-        const veil = VEIL[bucket]
+        const veil = ambientVeil(bucket)
         if (veil) {
           veilSprite.texture = veilTexture(veil.colors, veil.coverage)
           veilSprite.width = vw

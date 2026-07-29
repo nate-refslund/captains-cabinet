@@ -18,6 +18,7 @@
  *    absence of data renders as no claim, not as invented night).
  */
 import { fnv1a } from './hash'
+import { DAWN_VEIL_HUES, DUSK_VEIL_HUES, NIGHT_VEIL_HUES } from './terrain-pattern'
 
 export type DayBucket = 'dawn' | 'day' | 'dusk' | 'night'
 
@@ -77,6 +78,39 @@ export function ambientTint(bucket: DayBucket): AmbientTint | null {
       return { color: 0xffc890, alpha: 0.1 }
     case 'night':
       return { color: 0x2a3560, alpha: 0.22 }
+  }
+}
+
+/**
+ * The screen-space ambience VEIL — the opaque seeded dither that replaced the
+ * full-frame alpha washes above (an alpha wash shifts every pixel out of the
+ * corpus bins; v1a live captures measured 15–61% PALETTE_FOREIGN_MASS).
+ *
+ * It lives HERE, beside the rest of the per-bucket ambience table, and not in
+ * the canvas component, for one reason: a hue table declared inside a 3000-line
+ * renderer has no test that can reach it, and the dusk hue shipped wrong for
+ * exactly that long. Every hue comes from terrain-pattern.ts and obeys THE VEIL
+ * LUMINANCE LAW documented there. `veil.test.ts` reads this function; a second
+ * table at the call site would defeat it, so that test also greps the canvas.
+ */
+export interface AmbientVeil {
+  /** Rotated so no single quantized bin dominates the frame. */
+  colors: readonly number[]
+  /** Fraction of screen pixels the dither replaces outright. */
+  coverage: number
+}
+
+/** Per-bucket veil; `null` = no veil at all (day is honest neutral). */
+export function ambientVeil(bucket: DayBucket): AmbientVeil | null {
+  switch (bucket) {
+    case 'dawn':
+      return { colors: DAWN_VEIL_HUES, coverage: 0.08 }
+    case 'day':
+      return null
+    case 'dusk':
+      return { colors: DUSK_VEIL_HUES, coverage: 0.16 }
+    case 'night':
+      return { colors: NIGHT_VEIL_HUES, coverage: 0.42 }
   }
 }
 
