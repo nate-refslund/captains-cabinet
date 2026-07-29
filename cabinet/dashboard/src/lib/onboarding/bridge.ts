@@ -24,6 +24,10 @@ const MAX_OUTPUT_BYTES = 2 * 1024 * 1024
 const ACTIONS = new Set([
   'propose_window',
   'answer_seed',
+  // Credentialed READ-ONLY connector sweep (Captain ruling 2026-07-29). Carries
+  // no payload: what may be read is declared in instance/config/connectors.yml,
+  // never in a request, so no surface can widen the read by sending a field.
+  'gather_connectors',
   'ratify_charter',
   'continue',
   'pause',

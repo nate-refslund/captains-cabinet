@@ -1,0 +1,104 @@
+# This deployment's declared connectors — READ-ONLY inventory calls.
+# Shape, ceiling and rationale: instance/config/connectors.yml.example.
+#
+# Every entry below is a bounded read: names, dates, actors, counts. No entry
+# can write — the executor refuses anything that is not a GET or a GraphQL read
+# document before a socket exists. Credentials are env var NAMES; the values
+# live in cabinet/.env and never enter this file, a log or an artifact.
+#
+# The egg export drops this file (live instance values never ship); a fresh
+# cabinet starts with no connectors and the .example twin to copy.
+
+schema: cabinet.connectors/v1
+
+connectors:
+  - name: tracker
+    credential_env: MONDAY_API_TOKEN
+    inventory:
+      url: https://api.monday.com/v2
+      method: POST
+      json:
+        query: "query { boards (limit: 100, page: {page}, state: active) { id name updated_at } }"
+      items_path: data.boards
+      name_field: name
+      updated_field: updated_at
+    page:
+      start: 1
+      size: 100
+      max_pages: 8
+    identity:
+      url: https://api.monday.com/v2
+      method: POST
+      json:
+        query: "query { me { name } account { name slug } }"
+      value_paths:
+        - data.me.name
+        - data.account.name
+        - data.account.slug
+
+  - name: code
+    credential_env: GITHUB_PAT
+    inventory:
+      url: https://api.github.com/user/repos?per_page=100&sort=updated&page={page}
+      method: GET
+      auth_format: "Bearer {credential}"
+      headers:
+        Accept: application/vnd.github+json
+        X-GitHub-Api-Version: "2022-11-28"
+        User-Agent: captains-cabinet-onboarding
+      items_path: ""
+      name_field: full_name
+      updated_field: updated_at
+      actor_field: owner.login
+    page:
+      start: 1
+      size: 100
+      max_pages: 3
+    identity:
+      url: https://api.github.com/user
+      method: GET
+      auth_format: "Bearer {credential}"
+      headers:
+        Accept: application/vnd.github+json
+        User-Agent: captains-cabinet-onboarding
+      value_paths:
+        - login
+        - name
+
+  - name: hosting
+    credential_env: VERCEL_API_KEY
+    inventory:
+      url: https://api.vercel.com/v9/projects?limit=100
+      method: GET
+      auth_format: "Bearer {credential}"
+      items_path: projects
+      name_field: name
+      updated_field: updatedAt
+    page:
+      start: 1
+      size: 100
+      max_pages: 1
+    identity:
+      url: https://api.vercel.com/v2/user
+      method: GET
+      auth_format: "Bearer {credential}"
+      value_paths:
+        - user.username
+        - user.name
+
+  - name: databases
+    credential_env: NEON_API_KEY
+    inventory:
+      url: https://console.neon.tech/api/v2/projects?limit=100
+      method: GET
+      auth_format: "Bearer {credential}"
+      headers:
+        Accept: application/json
+      items_path: projects
+      name_field: name
+      updated_field: updated_at
+      actor_field: org_id
+    page:
+      start: 1
+      size: 100
+      max_pages: 1

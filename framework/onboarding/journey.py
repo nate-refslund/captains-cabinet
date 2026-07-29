@@ -831,7 +831,7 @@ def salience_offer(state: Mapping[str, Any] | dict[str, Any] | None,
 
 def entry_plan(
     grants: Any = None, *, seed: Any = None, executed: Any = None,
-    offer: Any = None,
+    offer: Any = None, gather: Any = False,
 ) -> dict[str, Any]:
     """The opening move for whatever the operator has actually granted.
 
@@ -875,6 +875,17 @@ def entry_plan(
         asks = RESIDUAL_QUESTIONS
         question = SEED_QUESTION
     next_actions = [{"action": "propose_window", "label": "Choose a folder I may read"}]
+    if gather:
+        # NEVER ASK WHAT YOU COULD HAVE LOOKED UP. When the operator has
+        # declared connectors, the opening move is to GO AND READ them —
+        # read-only, bounded, contents-free — not to interview the operator
+        # about an estate their own systems can answer for. The action exists
+        # before it is advertised (the whole point of the seed-question fix):
+        # ``gather_connectors`` is a real action in this module.
+        next_actions.append({
+            "action": "gather_connectors",
+            "label": "Read what I'm connected to",
+        })
     if question is not None:
         next_actions.append({
             "action": "answer_seed",
@@ -960,6 +971,10 @@ def _entry_registry(root: Path, state: dict[str, Any]) -> dict[str, Any]:
             source_root=source.get("root"),
             ratified=bool(ratified),
             exports=state.get("tracker_exports") or (),
+            # The credentialed read lane's own result, carried on state. The
+            # sweep happened in ITS action; this is a local read of what came
+            # back, so probing stays socket-free on every commit and snapshot.
+            sweep=state.get("connector_sweep"),
         )
     except Exception:  # pragma: no cover — defensive; probes are pure reads
         return {
@@ -982,6 +997,16 @@ def _with_registry(root: Path, state: dict[str, Any]) -> dict[str, Any]:
     registry = _entry_registry(root, state)
     refreshed = deepcopy(state)
     refreshed["entry_grants"] = deepcopy(registry["grants"])
+    # HOW MANY CONNECTORS THE OPERATOR HAS DECLARED — a bounded local parse of
+    # instance/config/connectors.yml, refreshed with the registry so the card
+    # can offer the read as an ACTION. Declaring is not connecting (a
+    # declaration grants nothing; only a completed sweep does), but it is the
+    # difference between offering "read what I am connected to" and printing an
+    # invitation to a lane this deployment has not been given.
+    try:
+        refreshed["connectors_declared"] = len(research.load_connector_specs(root))
+    except Exception:  # pragma: no cover — defensive; the loader is fail-soft
+        refreshed["connectors_declared"] = 0
     refreshed["connector_probes"] = {
         "schema": registry["schema"],
         "connected": deepcopy(registry["connected"]),
@@ -997,11 +1022,16 @@ def _entry_plan_for(state: dict[str, Any]) -> dict[str, Any]:
     registry or from a seed whose probes were never executed.
     """
     seed = state.get("seed")
+    try:
+        declared = int(state.get("connectors_declared") or 0)
+    except (TypeError, ValueError):
+        declared = 0
     return entry_plan(
         _entry_grants(state),
         seed=seed.get("text") if isinstance(seed, dict) else None,
         executed=state.get("discovery"),
         offer=salience_offer(state),
+        gather=declared > 0,
     )
 
 
@@ -2878,6 +2908,45 @@ def _act_core(
                 "not_reached": offer.get("not_reached", ""),
                 "evidence": evidence,
                 "answered_at": ts,
+            }
+            return _commit(
+                base, state, after, action=action, action_id=action_id,
+                surface=surface, trace_id=trace_id,
+                correlation_id=correlation_id, now=ts,
+            )
+        if action == "gather_connectors":
+            # THE READ THE CAPTAIN ASKED FOR, several times: "gather from
+            # connectors through read-only" (2026-07-29), restating the
+            # 2026-07-26 ordering inversion — connect tools, then GATHER, and
+            # through that come to know the company, its products and its
+            # people, instead of interviewing the operator about them.
+            #
+            # IT IS AN ACTION, not a side effect. The sweep leaves the machine,
+            # so it happens once, on the record, when the operator asks for it —
+            # never inside a snapshot, a card render or a probe refresh. What
+            # lands on state is contents-free by construction: per-connector
+            # counts, the freshest timestamp, distinct-actor counts, call counts
+            # and every refusal with its reason, plus the (connector, name,
+            # updated) triples the ranker consumes. No body, no row, no field
+            # the operator did not name in their own config.
+            #
+            # AN EMPTY ESTATE IS A RESULT. A deployment that has declared no
+            # connectors still commits the honest empty — "I looked, and there
+            # was nothing to look at" is a fact worth recording, and it is what
+            # keeps "nothing is connected" distinguishable from "I never
+            # looked".
+            sweep = research.sweep_connectors(base)
+            after = deepcopy(state)
+            after["connector_sweep"] = {
+                key: deepcopy(sweep[key])
+                for key in ("schema", "swept_at", "declared", "calls",
+                            "connectors", "not_reached")
+            }
+            after["salience_rows"] = {
+                "schema": _salience.SALIENCE_ROW_SCHEMA,
+                "rows": deepcopy(sweep["rows"]),
+                "identities": deepcopy(sweep["identities"]),
+                "not_reached": deepcopy(sweep["not_reached"]),
             }
             return _commit(
                 base, state, after, action=action, action_id=action_id,

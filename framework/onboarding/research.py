@@ -9,11 +9,23 @@ Also home to ``inventory_mcp_estate`` (Phase 2, onboarding-vision-2026-07-14):
 the interview's consent-gated MCP-estate glance — server NAMES only, from the
 repo's declared surfaces, honoring the null-hatch zero-captain-data spirit
 (no consent ⇒ no reads at all).
+
+AND to the CONNECTOR READ LANE (Captain ruling 2026-07-29 — "gather from
+connectors through read-only"): ``sweep_connectors`` takes the credentials the
+operator declared in ``instance/config/connectors.yml``, calls each connector's
+inventory endpoint READ-ONLY, and returns names, dates, actors and counts. It
+reaches the network on purpose; the read-only ceiling is mechanical, the
+verb set is unreachable-by-construction, and nothing about any tool, vendor or
+industry is known to this module. See the section header above it for the full
+contract and for why the module's former "no network, no credentials" law was
+superseded rather than merely relaxed.
 """
 from __future__ import annotations
 
 import json
+import os
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 # package.json dependency name (exact or prefix) → stack tag
@@ -203,13 +215,35 @@ def inventory_mcp_estate(root: str, *, consent: bool = False) -> dict:
 # become indistinguishable — the same defect class as a sweep claiming a
 # negative it never earned, one surface up.
 #
-# NO NETWORK, NO CREDENTIALS, NO SUBPROCESS. Every probe is a bounded local
-# file read. That is not a limitation to be lifted later: the ingest hypothesis
-# was REFUTED by decisive experiment (of four findings, one needed more than one
-# file and ZERO needed more than one system), so the adjudicated first build is
-# a small cross-source JOIN with a named consumer, not an ingest engine. A probe
-# that needed a credential would be the first brick of the engine that was
-# refuted.
+# THE PROBES ARE LOCAL; THE READ LANE BELOW IS NOT — and the sentence that used
+# to stand here ("no network, no credentials ... not a limitation to be lifted
+# later") was SUPERSEDED by Captain ruling 2026-07-29: "GATHER FROM CONNECTORS
+# THROUGH READ-ONLY, and websearch/internet/network is allow-all by default",
+# restating the 2026-07-26 ordering inversion ("during onboarding, connect tools
+# and then gather information ... through that, the cabinet may even know
+# everything about the company and projects and products and teams").
+#
+# WHY THE OLD SENTENCE WAS WRONG, stated so it cannot come back. It justified
+# itself with the ingest experiment — "of four findings, one needed more than
+# one file and ZERO needed more than one system". That experiment refuted
+# INGEST-EVERYTHING-INTO-A-VAULT; its fixture's second system was a CSV ALREADY
+# ON DISK, so the network hop was presupposed as done by a human. No-credential
+# was never an experimental arm, and a refutation of ingest is not a refutation
+# of LOOKING. The tree said so one module over: ``framework.onboarding.estate``
+# already recorded that widening to new source kinds "is a later unit; the
+# schema below already has the shape for them".
+#
+# WHAT IS STILL TRUE, and is now enforced by code rather than by a comment: the
+# probes in THIS section stay bounded local file reads, because they run on
+# every commit and every snapshot. The credentialed lane is a SEPARATE,
+# operator-triggered pass (``sweep_connectors``) whose result the probes then
+# read off state — so a hot path never opens a socket, and a connector that has
+# not been swept cannot grant the connected mode.
+#
+# NEVER WRITE, NEVER SEND. That ceiling is not configurable and is asserted
+# MECHANICALLY before a socket exists (``assert_read_only``): GET, or a POST
+# whose body is a GraphQL read document carrying no ``mutation``/``subscription``
+# token. There is no code path in this module that can emit any other verb.
 #
 # DELIBERATELY NOT A CONNECTOR: the MCP estate above. ``inventory_mcp_estate``
 # reads the CABINET's declared servers (.mcp.json, extensions.yml) — the wrong
@@ -353,7 +387,46 @@ def _probe_exports(exports, source_root=None) -> list:
     return rows
 
 
-def probe_connectors(root, *, source_root=None, ratified=False, exports=()) -> dict:
+def _probe_sweep(sweep) -> list:
+    """Rows for every connector a credentialed sweep actually READ.
+
+    THE ONLY EVIDENCE ACCEPTED HERE IS A COMPLETED READ. A declaration in
+    ``instance/config/connectors.yml`` grants nothing — that is a claim, and the
+    section header above says why claims do not count. What this reads is the
+    contents-free summary ``sweep_connectors`` persisted onto the journey's own
+    state: a connector row appears as connected only when that pass came back
+    with at least one item, and every connector that was declared and did NOT
+    answer arrives here carrying the reason it did not (``credential_absent``,
+    ``egress_closed_no_allowed_hosts``, ``http_401`` ...). A declared connector
+    that is silently dropped would make "nothing is connected" and "I never
+    looked" indistinguishable, one surface up from where that already bit.
+
+    Local by construction: the sweep already happened, in its own operator-
+    triggered action. Nothing in this function opens a socket.
+    """
+    rows = []
+    if not isinstance(sweep, dict):
+        return rows
+    for entry in sweep.get("connectors") or ():
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("name") or "").strip()
+        if not name:
+            continue
+        row = {"kind": "connector", "name": f"connector:{name}", "connected": False}
+        try:
+            items = int(entry.get("items") or 0)
+        except (TypeError, ValueError):
+            items = 0
+        if entry.get("connected") and items > 0:
+            rows.append({**row, "connected": True, "evidence": f"{items} item(s)"})
+        else:
+            rows.append({**row, "reason": str(entry.get("reason") or "sweep_returned_nothing")})
+    return rows
+
+
+def probe_connectors(root, *, source_root=None, ratified=False, exports=(),
+                     sweep=None) -> dict:
     """The registry: every probe, its verdict, and the grants that follow.
 
     ``grants`` is the three-key block the entry-mode reader consults, and it is
@@ -362,9 +435,13 @@ def probe_connectors(root, *, source_root=None, ratified=False, exports=()) -> d
     ``web`` is the egress ceiling. ``refused`` carries every probe that did not
     answer WITH ITS REASON, so "nothing is connected" is always accompanied by
     what was tried.
+
+    ``sweep`` is the contents-free result of the credentialed read lane, handed
+    in from state so this stays a local read (see ``_probe_sweep``).
     """
     probed = [_probe_repo(source_root if ratified else None)]
     probed.extend(_probe_exports(exports, source_root if ratified else None))
+    probed.extend(_probe_sweep(sweep))
     probed.append(_probe_web(root))
     connected = [r for r in probed if r.get("connected")]
     refused = [r for r in probed if not r.get("connected")]
@@ -380,4 +457,426 @@ def probe_connectors(root, *, source_root=None, ratified=False, exports=()) -> d
             "local_files": bool(ratified),
             "web": any(r["kind"] == "web" for r in connected),
         },
+    }
+
+
+# ---------------------------------------------------------------------------
+# THE READ LANE — credentialed, READ-ONLY gathering (Captain ruling 2026-07-29).
+# ---------------------------------------------------------------------------
+# WHAT THIS IS. The LOOK step of look -> infer -> ask -> go deeper: bounded,
+# contents-free, and outward. It answers "what is this operator connected to,
+# and what is in there" with names, dates, actors and counts — never bodies,
+# never rows, never a field the operator did not declare.
+#
+# AGNOSTIC TO EVERYTHING, and that is a code property rather than an intention.
+# NOTHING in this module names a tool, a vendor, a host, an industry, a role or
+# an entity kind. A connector is exactly three things: a credential, an
+# inventory call, and a timestamp field. Whoever the operator is, whatever they
+# use, they describe it in ``instance/config/connectors.yml`` — the instance
+# layer, where deployment specifics belong — and this executor knows only the
+# shape. Ask what a connector IS and the honest answer is "the operator told
+# me"; that is the whole design, and it is why the framework must never grow a
+# per-system client.
+#
+# THE CEILING, which is not configurable:
+#   * READ ONLY. ``assert_read_only`` runs BEFORE a socket exists. GET, or a
+#     POST whose body is a GraphQL read document with no ``mutation`` /
+#     ``subscription`` token. Every other verb is unreachable — there is no
+#     branch in this file that can emit one — and a method-override header is
+#     refused, because a write smuggled inside a GET is still a write.
+#   * NO REDIRECTS. The credential goes to the declared origin or nowhere. A
+#     followed 30x hands an Authorization header to whatever the response says,
+#     which turns a config file into an exfiltration primitive.
+#   * BOUNDED. A call budget, a per-call timeout, a response-size cap and an
+#     item cap, all enforced here rather than trusted to the far end.
+#   * CONTENTS-FREE. Only the declared name / updated / actor paths are read out
+#     of each item, each coerced to a short scalar string. The response body is
+#     never persisted and never returned.
+#
+# EVERY FAILURE IS NAMED. A connector that does not answer is REFUSED WITH ITS
+# REASON, never dropped: a missing credential, a closed egress ceiling, an HTTP
+# status, an unparseable body and a truncated page all read differently, and
+# collapsing them is how "nothing is connected" gets confused with "I never
+# looked" — the failure this program has now paid for at three altitudes.
+CONNECTOR_SWEEP_SCHEMA = "cabinet.connector-sweep/v1"
+CONNECTORS_REL = "instance/config/connectors.yml"
+
+#: The only verbs reachable from this module. POST is admitted solely because a
+#: read-only GraphQL query cannot be expressed as a GET on most endpoints.
+_READ_METHODS = frozenset({"GET", "POST"})
+#: A lawful POST body is a GraphQL document and nothing else. Restricting the
+#: KEY SET is what stops "POST is allowed" from meaning "any REST write is
+#: allowed": a JSON payload that is not {query, variables, operationName} is
+#: refused before its content is even inspected.
+_GRAPHQL_BODY_KEYS = frozenset({"query", "variables", "operationName"})
+#: Token-boundary match, so a board named "Mutations" in a query string cannot
+#: be mistaken for the keyword and a keyword cannot hide inside an identifier.
+_WRITE_TOKEN_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(mutation|subscription)(?![A-Za-z0-9_])", re.IGNORECASE)
+#: Headers that ask a server to treat this request as a different verb. A read
+#: lane that permits one is a write lane wearing a GET.
+_METHOD_OVERRIDE_HEADERS = frozenset(
+    {"x-http-method-override", "x-method-override", "x-http-method"})
+_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+_MAX_FIELD_CHARS = 200
+_DEFAULT_MAX_CALLS = 40
+_DEFAULT_TIMEOUT = 25.0
+_DEFAULT_MAX_ITEMS = 2000
+_DEFAULT_MAX_PAGES = 12
+
+
+class ReadOnlyViolation(RuntimeError):
+    """A declared call could write. Raised BEFORE any socket is opened."""
+
+
+def assert_read_only(call) -> None:
+    """Mechanically refuse anything that is not a read. No network here.
+
+    This is the Captain's one absolute limit expressed as code rather than as a
+    promise: read freely, write never. It runs on the DECLARATION, so a spec
+    that could write is refused at the config boundary and the credential is
+    never even fetched, let alone sent.
+    """
+    if not isinstance(call, dict):
+        raise ReadOnlyViolation("call_not_a_mapping")
+    url = str(call.get("url") or "").strip()
+    if not url.lower().startswith("https://"):
+        raise ReadOnlyViolation("url_not_https")
+    if len(url.split("://", 1)[1].split("/", 1)[0].strip()) == 0:
+        raise ReadOnlyViolation("url_has_no_host")
+    method = str(call.get("method") or "GET").strip().upper()
+    if method not in _READ_METHODS:
+        raise ReadOnlyViolation(f"method_not_read_only:{method}")
+    headers = call.get("headers") or {}
+    if not isinstance(headers, dict):
+        raise ReadOnlyViolation("headers_not_a_mapping")
+    for key in headers:
+        if str(key).strip().lower() in _METHOD_OVERRIDE_HEADERS:
+            raise ReadOnlyViolation(f"method_override_header:{key}")
+    body = call.get("json")
+    if method == "GET":
+        if body is not None:
+            raise ReadOnlyViolation("get_with_body")
+        if _WRITE_TOKEN_RE.search(url):
+            raise ReadOnlyViolation("write_token_in_url")
+        return
+    if not isinstance(body, dict):
+        raise ReadOnlyViolation("post_body_not_a_graphql_document")
+    if set(body) - _GRAPHQL_BODY_KEYS or "query" not in body:
+        raise ReadOnlyViolation("post_body_not_a_graphql_document")
+    if not isinstance(body.get("query"), str):
+        raise ReadOnlyViolation("graphql_query_not_a_string")
+    if _WRITE_TOKEN_RE.search(json.dumps(body, ensure_ascii=False)):
+        raise ReadOnlyViolation("write_token_in_graphql_document")
+
+
+def _dig(doc, path):
+    """One dotted path into a decoded JSON document. Empty path = the root."""
+    cur = doc
+    if path in (None, ""):
+        return cur
+    for part in str(path).split("."):
+        if isinstance(cur, dict):
+            cur = cur.get(part)
+        elif isinstance(cur, list):
+            try:
+                cur = cur[int(part)]
+            except (ValueError, IndexError):
+                return None
+        else:
+            return None
+    return cur
+
+
+def _scalar(value):
+    """A short scalar string, or None. Containers are NEVER flattened into text:
+    that is how a body leaks out of a lane that promised names only."""
+    if value is None or isinstance(value, (dict, list, tuple, set)):
+        return None
+    text = " ".join(str(value).split())
+    return text[:_MAX_FIELD_CHARS] or None
+
+
+def _paged(value, page: int):
+    """Substitute the page cursor. ``str.replace``, never ``str.format`` — a
+    GraphQL document is full of braces and ``format`` would raise on all of
+    them."""
+    if isinstance(value, str):
+        return value.replace("{page}", str(page))
+    if isinstance(value, dict):
+        return {k: _paged(v, page) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_paged(v, page) for v in value]
+    return value
+
+
+def _http_fetch(request, timeout):
+    """The only socket in this module. No redirects, capped read.
+
+    Returns ``(status, payload_bytes)``; a transport failure raises. A 30x is
+    surfaced as a status rather than followed, so the credential cannot be
+    handed to a host the operator never declared.
+    """
+    import urllib.error  # local: keep the module import-light
+    import urllib.request
+
+    class _NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
+    opener = urllib.request.build_opener(_NoRedirect)
+    req = urllib.request.Request(
+        request["url"], data=request.get("body"),
+        headers=dict(request.get("headers") or {}), method=request["method"])
+    try:
+        with opener.open(req, timeout=timeout) as resp:
+            return int(getattr(resp, "status", 0) or 0), resp.read(_MAX_RESPONSE_BYTES + 1)
+    except urllib.error.HTTPError as exc:  # includes the refused redirects
+        try:
+            payload = exc.read(_MAX_RESPONSE_BYTES + 1)
+        except Exception:
+            payload = b""
+        return int(exc.code), payload
+
+
+def _request_of(call, credential: str, page: int) -> dict:
+    """A declared call + a credential -> the wire request. Never logged."""
+    headers = {str(k): str(v) for k, v in (call.get("headers") or {}).items()}
+    auth_header = str(call.get("auth_header") or "Authorization")
+    auth_format = str(call.get("auth_format") or "{credential}")
+    headers[auth_header] = auth_format.replace("{credential}", credential)
+    body = None
+    method = str(call.get("method") or "GET").strip().upper()
+    if method == "POST":
+        headers.setdefault("Content-Type", "application/json")
+        body = json.dumps(_paged(call.get("json") or {}, page),
+                          ensure_ascii=False).encode("utf-8")
+    return {"url": _paged(str(call["url"]), page), "method": method,
+            "headers": headers, "body": body}
+
+
+def _one_call(call, credential, page, *, fetch, timeout):
+    """Execute one declared call. Returns ``(document, reason)`` — exactly one
+    of the two is None, so a caller can never mistake an error for an empty
+    estate."""
+    request = _request_of(call, credential, page)
+    try:
+        status, payload = fetch(request, timeout)
+    except Exception as exc:
+        return None, f"unreachable:{type(exc).__name__}"
+    if status != 200:
+        return None, f"http_{status}"
+    if len(payload) > _MAX_RESPONSE_BYTES:
+        return None, "response_too_large"
+    try:
+        return json.loads(payload.decode("utf-8", errors="replace")), None
+    except Exception:
+        return None, "response_not_json"
+
+
+def _items_of(doc, call) -> list:
+    """The inventory items. A single object counts as one item — an estate with
+    exactly one thing in it is not an empty estate."""
+    found = _dig(doc, call.get("items_path"))
+    if isinstance(found, list):
+        return [i for i in found if isinstance(i, (dict, str, int, float))]
+    if isinstance(found, dict):
+        return [found]
+    return []
+
+
+def _sweep_one(spec, credential, *, fetch, timeout, max_items, budget) -> dict:
+    """One connector, read read-only, reported contents-free."""
+    name = str(spec.get("name") or "").strip()
+    call = spec.get("inventory")
+    row = {"name": name, "connected": False, "calls": 0,
+           "items": 0, "rows": [], "identities": [], "not_reached": []}
+    try:
+        assert_read_only(call)
+    except ReadOnlyViolation as exc:
+        return {**row, "reason": f"read_only_refused:{exc}"}
+    row["host"] = str(call["url"]).split("://", 1)[1].split("/", 1)[0]
+
+    identity = spec.get("identity")
+    if isinstance(identity, dict):
+        try:
+            assert_read_only(identity)
+        except ReadOnlyViolation as exc:
+            row["not_reached"].append(f"{name}: identity call refused ({exc})")
+        else:
+            if budget["left"] > 0:
+                budget["left"] -= 1
+                row["calls"] += 1
+                doc, reason = _one_call(identity, credential, 1,
+                                        fetch=fetch, timeout=timeout)
+                if reason:
+                    row["not_reached"].append(f"{name}: identity unread ({reason})")
+                else:
+                    for path in identity.get("value_paths") or ():
+                        value = _scalar(_dig(doc, path))
+                        if value:
+                            row["identities"].append(value)
+
+    page_spec = spec.get("page") if isinstance(spec.get("page"), dict) else {}
+    try:
+        max_pages = max(1, min(int(page_spec.get("max_pages") or 1), _DEFAULT_MAX_PAGES))
+    except (TypeError, ValueError):
+        max_pages = 1
+    try:
+        first = int(page_spec.get("start") or 1)
+    except (TypeError, ValueError):
+        first = 1
+    # OPTIONAL, AND IT IS WHAT MAKES THE TRUNCATION CAVEAT EARNED. Declaring the
+    # page size the call asked for lets a SHORT final page prove the estate was
+    # exhausted, so the "may be larger" sentence is printed only when it is
+    # actually true. Undeclared, the caveat is printed on every complete sweep —
+    # over-disclosure, which is the safe side of an unearned clean negative.
+    try:
+        page_size = int(page_spec.get("size") or 0)
+    except (TypeError, ValueError):
+        page_size = 0
+
+    seen = set()
+    reason = None
+    page = first
+    last_page_items = None
+    for page in range(first, first + max_pages):
+        if budget["left"] <= 0:
+            row["not_reached"].append(f"{name}: call budget spent at page {page}")
+            break
+        budget["left"] -= 1
+        row["calls"] += 1
+        doc, reason = _one_call(call, credential, page, fetch=fetch, timeout=timeout)
+        if reason:
+            break
+        items = _items_of(doc, call)
+        last_page_items = len(items)
+        if not items:
+            reason = None
+            break
+        for item in items:
+            title = _scalar(_dig(item, call.get("name_field")) if isinstance(item, dict) else item)
+            if not title:
+                continue
+            updated = _scalar(_dig(item, call.get("updated_field"))) if isinstance(item, dict) else None
+            actor = _scalar(_dig(item, call.get("actor_field"))) if isinstance(item, dict) else None
+            key = (title, updated)
+            if key in seen:
+                continue
+            seen.add(key)
+            entry = {"connector": name, "name": title, "updated": updated}
+            if actor:
+                entry["actor"] = actor
+            row["rows"].append(entry)
+            if len(row["rows"]) >= max_items:
+                row["not_reached"].append(
+                    f"{name}: stopped at the {max_items}-item cap")
+                break
+        if len(row["rows"]) >= max_items:
+            break
+        exhausted = page_size > 0 and last_page_items is not None and last_page_items < page_size
+        if page == first + max_pages - 1 and not exhausted:
+            row["not_reached"].append(
+                f"{name}: stopped after {max_pages} page(s) with a full page still "
+                f"coming back — the estate may be larger")
+    if reason and not row["rows"]:
+        return {**row, "reason": reason}
+    if reason:
+        row["not_reached"].append(f"{name}: paging stopped early ({reason})")
+    row["items"] = len(row["rows"])
+    row["connected"] = row["items"] > 0
+    if not row["connected"]:
+        row["reason"] = "inventory_returned_no_items"
+    dates = sorted(r["updated"] for r in row["rows"] if r.get("updated"))
+    row["latest"] = dates[-1] if dates else None
+    row["actors"] = len({r["actor"] for r in row["rows"] if r.get("actor")})
+    return row
+
+
+def load_connector_specs(root) -> list:
+    """Connectors the OPERATOR declared. Absent file = an honest empty list.
+
+    No connector is built in. A cabinet that has been told about nothing reads
+    nothing, and says so — which is the correct behaviour for a fresh hatch and
+    the reason this returns ``[]`` rather than inventing a default estate.
+    """
+    path = Path(root).expanduser() / CONNECTORS_REL
+    if not path.is_file():
+        return []
+    try:
+        import yaml  # local: keep the module import-light
+
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    if not isinstance(doc, dict):
+        return []
+    out = []
+    for entry in doc.get("connectors") or ():
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("name") or "").strip() and isinstance(entry.get("inventory"), dict):
+            out.append(entry)
+    return out
+
+
+def sweep_connectors(root, *, specs=None, env=None, fetch=None, now=None,
+                     ceiling=None, max_calls=_DEFAULT_MAX_CALLS,
+                     timeout=_DEFAULT_TIMEOUT, max_items=_DEFAULT_MAX_ITEMS) -> dict:
+    """LOOK: read every declared connector, read-only, and report what is there.
+
+    Returns the contents-free sweep document: one row per connector with its
+    item count, freshest timestamp, distinct-actor count and call count; the
+    ``(connector, name, updated)`` triples ``framework.onboarding.salience``
+    ranks; the identity strings that let the ranker DEMOTE the operator's own
+    name rather than delete it; and every refusal with its reason.
+
+    THE CEILING IS CONSULTED FIRST. ``_probe_web`` reads the Captain-owned
+    egress switch, and a closed ceiling refuses every connector before a socket
+    is opened — a sweep that plans requests it cannot make is an interview whose
+    answers go nowhere.
+    """
+    root_path = Path(root).expanduser()
+    specs = load_connector_specs(root_path) if specs is None else list(specs)
+    env = os.environ if env is None else env
+    fetch = _http_fetch if fetch is None else fetch
+    ceiling = _probe_web(root_path) if ceiling is None else ceiling
+    swept_at = now or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    connectors, rows, identities, not_reached = [], [], [], []
+    budget = {"left": max(0, int(max_calls))}
+    permitted = bool(ceiling.get("connected"))
+    for spec in specs:
+        name = str(spec.get("name") or "").strip()
+        if not permitted:
+            reason = str(ceiling.get("reason") or "egress_closed")
+            connectors.append({"name": name, "connected": False, "items": 0,
+                               "calls": 0, "reason": f"egress_{reason}"})
+            continue
+        credential = str((env.get(str(spec.get("credential_env") or "")) or "")).strip()
+        if not credential:
+            # The NAME is reported; the value never exists in a result, a log or
+            # an exception message anywhere in this lane.
+            connectors.append({"name": name, "connected": False, "items": 0,
+                               "calls": 0, "reason": "credential_absent"})
+            continue
+        result = _sweep_one(spec, credential, fetch=fetch, timeout=timeout,
+                            max_items=max_items, budget=budget)
+        rows.extend({"connector": r["connector"], "name": r["name"],
+                     "updated": r["updated"]} for r in result["rows"])
+        identities.extend(result["identities"])
+        not_reached.extend(result["not_reached"])
+        connectors.append({k: v for k, v in result.items()
+                           if k not in ("rows", "identities", "not_reached")})
+    if budget["left"] <= 0 and permitted and specs:
+        not_reached.append("the sweep's call budget was fully spent")
+    return {
+        "schema": CONNECTOR_SWEEP_SCHEMA,
+        "swept_at": swept_at,
+        "declared": len(specs),
+        "calls": max(0, int(max_calls)) - budget["left"],
+        "connectors": connectors,
+        "rows": rows,
+        "identities": sorted(set(identities)),
+        "not_reached": not_reached,
     }
