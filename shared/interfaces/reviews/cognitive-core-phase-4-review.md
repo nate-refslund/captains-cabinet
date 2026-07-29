@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: b6872d9f98e0b1138aec5c496a1787e23a3afe1aa20b1acc2f7865bf6b18fd13
+Reviewed-Scope-Digest: 408e6b979fff5a1d84da85fdc19ed7114a8a2df96492636407d80febee0aa017
 (RE-BOUND 2026-07-29 on `fix/framework-specifics`, previous value
 `0df4d12a…`. TWO in-scope paths moved and NO COG-4 implementation byte did:
 `cabinet/config/cognitive-architecture-contract.yml` raises
@@ -1410,6 +1410,40 @@ this file. Nothing was re-reviewed and no prose finding was edited, because no r
 byte moved: the branch's entire diff is the world layout, the renderer, the hit test and
 the check harness, none of which is in the COG-4 scope.
 
+<<<<<<< HEAD
+---
+
+## Re-bind 2026-07-29 (feat/salience-loop — the sweep's two silent claims)
+
+One bound path changed: `cabinet/config/cognitive-architecture-contract.yml`, which
+takes a +200 non-comment-line phase row for the who/when unit. NO COG-4
+implementation path moved — no organ, no projection, no scheduler byte — so the
+review's findings are untouched by this landing. The contract sits inside this
+digest's scope precisely so that a budget row cannot ride in unnoticed behind a
+frozen review; ZERO new modules ride here, so no bijection class moves.
+
+Recorded digest: d9d2d8a9b4d228d72661fc6145c5e3243f01e0fb619baed4ea55bde34cbb80b1
+Previous:        0df4d12ac60f2353118fdadf244ed8d522a9e1fdcaee5edbd2e7dc078bd211a6
+
+Re-bound at landing by the integrator, in the SAME commit as the change, per §15.
+
+---
+
+## Re-bind 2026-07-29 (feat/salience-loop — merge of origin/master 2eeaa8d7)
+
+Both branches re-bound this digest the same afternoon, which is what the conflict
+was. Master's note above survives VERBATIM — it describes a different landing and
+is not this one's restamp — and this is the value over the merged tree.
+
+One bound path moves on this branch: `cabinet/config/cognitive-architecture-contract.yml`,
+a +200 non-comment-line phase row for the who/when unit. NO COG-4 implementation
+path moved — no organ, no projection, no scheduler byte — and ZERO new modules,
+so no bijection class moves either. The unit's own work is in
+`framework/onboarding/`, which this scope does not bind.
+
+Recorded digest: a8e0903b5f5bcc2c216dc886b83aa12d5d5a78ac79804a1c65f76ecc8f367cd5
+Previous:        2c6fdb6779f555a5fc7a360a5eb9f316aec08be78c4ad85d71e1646a3a32d782
+=======
 
 ---
 
@@ -1449,3 +1483,17 @@ in-scope path that moved on either side is
 over this merge tree (74620 at zero headroom) rather than added on paper: the
 de-specification ceiling and this branch's +97 genesis claim refusals are disjoint
 sets of lines. No COG-4 implementation byte moved on either side.
+>>>>>>> origin/master
+
+## Re-bind 2026-07-29 (feat/salience-loop — merge of origin/master c98a58a6)
+
+Third re-bind of this digest in one afternoon, by three branches landing in
+parallel; every prior note above survives verbatim, because each describes a
+different landing and none is another's restamp. This value is over the merged
+tree. This branch moves ONE bound path,
+`cabinet/config/cognitive-architecture-contract.yml` (+200 non-comment lines for
+the who/when unit), and NO COG-4 implementation byte; ZERO new modules, so no
+bijection class moves.
+
+Recorded digest: 408e6b979fff5a1d84da85fdc19ed7114a8a2df96492636407d80febee0aa017
+Previous:        b6872d9f98e0b1138aec5c496a1787e23a3afe1aa20b1acc2f7865bf6b18fd13

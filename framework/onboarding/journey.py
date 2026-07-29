@@ -67,6 +67,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Mapping
 
+from framework import env
 from framework.authority.ownership import (
     ATTESTATION_LIMIT,
     SENSITIVE_NAME_RE,
@@ -924,6 +925,29 @@ def entry_plan(
     if not payload["next_actions"]:  # pragma: no cover — structurally unreachable
         raise JourneyError("entry_dead_end", "Onboarding produced no next step.")
     return payload
+
+
+def _onboarding_record(root: Path) -> dict[str, Any]:
+    """The interview's own answers file, or nothing — the ONLY source of who the
+    operator is.
+
+    Resolved through ``framework.env`` rather than spelled here (the sanctioned
+    framework->instance crossing), and a missing or unreadable file returns an
+    empty record on purpose: the alternative is to fall back to whatever identity
+    a credential reports, which is the exact substitution this function exists to
+    prevent. An absent record makes attribution UNRESOLVED, which is a legitimate
+    and disclosed state; it never makes it "probably the token holder".
+    """
+    try:
+        path = env.cabinet_init_answers_path()
+        if not path.is_file():
+            return {}
+        import yaml  # local: the record is the only reason this module needs it
+
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return doc if isinstance(doc, dict) else {}
 
 
 def _entry_grants(state: dict[str, Any]) -> dict[str, Any]:
@@ -2935,18 +2959,41 @@ def _act_core(
             # was nothing to look at" is a fact worth recording, and it is what
             # keeps "nothing is connected" distinguishable from "I never
             # looked".
+            #
+            # WHO, AND WHEN. A sweep makes two further claims without saying so:
+            # that the activity it read is the operator's, and that the period it
+            # covers is representative of their work. Neither is checked by
+            # reading more rows. The first is settled from the ONBOARDING RECORD,
+            # never from the credential — a token issued to an integration
+            # answers "who am I" with a service account, so anchoring there
+            # attributes a whole company to a robot — and where the record
+            # resolves nothing, NO claim is made. The second is stated as an
+            # assumption and, when the operator's own activity has a quiet
+            # fortnight inside the window, handed back as a QUESTION: four words
+            # from them ("that was my holiday") invalidate an inference that no
+            # amount of further reading would have corrected.
             sweep = research.sweep_connectors(base)
+            record = _onboarding_record(base)
+            who_when = research.who_and_when(sweep["rows"], record)
             after = deepcopy(state)
             after["connector_sweep"] = {
                 key: deepcopy(sweep[key])
                 for key in ("schema", "swept_at", "declared", "calls",
                             "connectors", "not_reached")
             }
+            after["connector_sweep"]["who_and_when"] = deepcopy(who_when)
             after["salience_rows"] = {
                 "schema": _salience.SALIENCE_ROW_SCHEMA,
                 "rows": deepcopy(sweep["rows"]),
                 "identities": deepcopy(sweep["identities"]),
-                "not_reached": deepcopy(sweep["not_reached"]),
+                # The disclosure the operator reads carries the period and its
+                # assumption, every connector whose actors could not be resolved
+                # to them, and the presence question when there is one. A
+                # not-reached list that names only what failed to load, while
+                # silently asserting whose work it is and that the window is
+                # typical, is an unearned clean negative wearing a caveat.
+                "not_reached": deepcopy(sweep["not_reached"])
+                + research.who_and_when_lines(who_when),
             }
             return _commit(
                 base, state, after, action=action, action_id=action_id,

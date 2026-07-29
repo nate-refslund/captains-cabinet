@@ -836,8 +836,20 @@ def sweep_connectors(root, *, specs=None, env=None, fetch=None, now=None,
     Returns the contents-free sweep document: one row per connector with its
     item count, freshest timestamp, distinct-actor count and call count; the
     ``(connector, name, updated)`` triples ``framework.onboarding.salience``
-    ranks; the identity strings that let the ranker DEMOTE the operator's own
-    name rather than delete it; and every refusal with its reason.
+    ranks; the ESTATE identity strings that let the ranker DEMOTE a name the
+    estate calls itself rather than delete it; and every refusal with its reason.
+
+    THOSE IDENTITY STRINGS ARE NOT THE OPERATOR, and the difference is not
+    pedantic. A connector's ``identity`` block asks the credential who it is, and
+    a token issued to an integration answers with the INTEGRATION — a service
+    account nobody sits at. That is a perfectly good answer to "what does this
+    estate call itself", which is all demotion needs. It is the wrong answer to
+    "who did this", and a reader that used it there would attribute an entire
+    company's activity to a robot while reporting nothing about the person
+    onboarding. Who the operator is comes from the onboarding record instead
+    (:func:`operator_identity`), every claim about who did what carries
+    :func:`attribution_basis`, and where the record resolves nothing the basis is
+    ``unresolved`` and NO claim is made.
 
     THE CEILING IS CONSULTED FIRST. ``_probe_web`` reads the Captain-owned
     egress switch, and a closed ceiling refuses every connector before a socket
@@ -871,7 +883,15 @@ def sweep_connectors(root, *, specs=None, env=None, fetch=None, now=None,
         result = _sweep_one(spec, credential, fetch=fetch, timeout=timeout,
                             max_items=max_items, budget=budget)
         rows.extend({"connector": r["connector"], "name": r["name"],
-                     "updated": r["updated"]} for r in result["rows"])
+                     "updated": r["updated"],
+                     # The ACTOR survives onto the row. It was extracted per item
+                     # and then collapsed to a distinct COUNT, which answers "how
+                     # many people" and structurally cannot answer "which of them
+                     # is you" — so no downstream reader could tell the operator's
+                     # own activity from anyone else's, and a period could be
+                     # presented as theirs without anything having checked.
+                     **({"actor": r["actor"]} if r.get("actor") else {})}
+                    for r in result["rows"])
         identities.extend(result["identities"])
         not_reached.extend(result["not_reached"])
         connectors.append({k: v for k, v in result.items()
@@ -888,3 +908,193 @@ def sweep_connectors(root, *, specs=None, env=None, fetch=None, now=None,
         "identities": sorted(set(identities)),
         "not_reached": not_reached,
     }
+
+
+# --- WHO, AND WHEN: the two claims a sweep makes without noticing -----------
+#
+# A sweep answers "what is there". Two further claims ride along silently unless
+# something states them, and both are wrong often enough to matter:
+#
+#   "this activity is yours"       — it is not, unless somebody checked WHICH
+#                                    actor is the operator, and the credential
+#                                    cannot answer that (see sweep_connectors).
+#   "this period is representative" — it is not, if the operator was away for
+#                                    part of it, and nothing in an API says so.
+#
+# The rule below is the same in both cases: state the basis, and where the basis
+# is missing ASK rather than assume. An operator invalidates a whole inference in
+# four words ("that was my holiday"), and the loop's job is to make those four
+# words easy to say without them having to notice unprompted that they are owed.
+
+_DAY_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
+
+#: A quiet stretch this long in the operator's OWN activity is worth asking
+#: about. Not a threshold on the estate — a threshold on what a person would
+#: recognise as "I was not there", which is why it is a fortnight and not a
+#: percentile of anything.
+QUIET_DAYS = 14
+
+
+def operator_identity(record) -> dict:
+    """Who the operator is, per connector, FROM THE ONBOARDING RECORD.
+
+    Takes a plain mapping so this module never has to know which file the record
+    is; the caller resolves that. It reads
+    ``operator: {name: str, names: [str], handles: {<connector>: [str]}}``.
+
+    A connector with no recorded handle resolves to nothing, and that is a
+    legitimate outcome rather than a gap to be filled from somewhere else. An
+    honest "I cannot tell which of these people is you" beats an attribution to
+    whoever the token happened to be.
+    """
+    operator = record.get("operator") if isinstance(record, dict) else None
+    operator = operator if isinstance(operator, dict) else {}
+    handles = operator.get("handles") if isinstance(operator.get("handles"), dict) else {}
+    names = [str(n).strip() for n in (operator.get("names") or ()) if str(n).strip()]
+    if isinstance(operator.get("name"), str) and operator["name"].strip():
+        names.append(operator["name"].strip())
+    return {
+        "names": sorted(set(names)),
+        "handles": {str(k): sorted({str(v).strip() for v in (vs or ()) if str(v).strip()})
+                    for k, vs in handles.items()},
+        "basis": "onboarding_record",
+    }
+
+
+def attribution_basis(operator, connector: str) -> dict:
+    """What any claim about who-did-what in this connector rests on.
+
+    Returned WITH the claim, always. "Who did what" read off a shared integration
+    credential is the most confidently wrong fact a sweep can produce, and it
+    looks exactly like a correct one — so the basis travels with the claim rather
+    than being available on request.
+    """
+    handles = (operator or {}).get("handles") or {}
+    names = list(handles.get(connector) or ()) if isinstance(handles, dict) else []
+    if names:
+        return {"connector": connector, "basis": "onboarding_record", "identifies": names,
+                "statement": f"in {connector} I recognise you as {', '.join(names)}, "
+                             "because that is what the onboarding record says"}
+    return {"connector": connector, "basis": "unresolved", "identifies": [],
+            "statement": f"in {connector} I cannot tell which actor is you, so I am not "
+                         "claiming any of that activity is yours"}
+
+
+def _day(value):
+    match = _DAY_RE.match(str(value or "").strip())
+    return match.group(0) if match else None
+
+
+def period_read(rows) -> dict:
+    """The window a sweep actually covers, in the ROWS' own terms.
+
+    Never a window chosen here. "The last 90 days" asserts a period nothing
+    verified — the sources decide what they date, and some of them date nothing.
+    Reporting the observed extent plus how many rows carried a date at all is the
+    honest version of the same sentence, and it is what makes the assumption
+    underneath it visible enough to be contradicted.
+    """
+    stamps, dated, total = [], 0, 0
+    for row in rows or ():
+        total += 1
+        day = _day(row.get("updated"))
+        if day:
+            dated += 1
+            stamps.append(day)
+    if not stamps:
+        return {"from": None, "to": None, "dated_rows": 0, "rows": total,
+                "basis": "no source dated anything, so this sweep has no period at all"}
+    return {"from": min(stamps), "to": max(stamps), "dated_rows": dated, "rows": total,
+            "basis": "the earliest and latest dates the sources themselves carried"}
+
+
+def presence_question(rows, operator, period, *, quiet_days: int = QUIET_DAYS):
+    """A gap in the operator's OWN activity, handed back as a QUESTION.
+
+    Never as a finding. A quiet fortnight inside the window may be a holiday, a
+    leave, or another job, and everything derived from it is then wrong in a way
+    no additional data repairs. Where the record does not resolve the operator
+    for a connector, NO gap is claimed there at all — an unattributable silence
+    is not evidence about the operator, and treating it as such is precisely the
+    unearned negative this lane exists to avoid.
+    """
+    handles = (operator or {}).get("handles") or {}
+    mine: dict = {}
+    for row in rows or ():
+        connector = str(row.get("connector") or "")
+        wanted = {h.lower() for h in (handles.get(connector) or ())}
+        if not wanted or str(row.get("actor") or "").lower() not in wanted:
+            continue
+        day = _day(row.get("updated"))
+        if day:
+            mine.setdefault(connector, []).append(day)
+    days = sorted({d for values in mine.values() for d in values})
+    if len(days) < 2:
+        return None
+    gaps = []
+    for earlier, later in zip(days, days[1:]):
+        span = (datetime.fromisoformat(later).replace(tzinfo=timezone.utc)
+                - datetime.fromisoformat(earlier).replace(tzinfo=timezone.utc)).days
+        if span >= quiet_days:
+            gaps.append((span, earlier, later))
+    if not gaps:
+        return None
+    span, earlier, later = max(gaps)
+    connectors = sorted(mine)
+    return {
+        "question": f"I read {period.get('from')} to {period.get('to')}, and between "
+                    f"{earlier} and {later} — {span} days — I see nothing from you in "
+                    f"{', '.join(connectors)}. Was that time away, or was the work "
+                    "happening somewhere I cannot see?",
+        "options": ["I was away", "the work was elsewhere", "that is right, it was quiet"],
+        "gap_days": span, "from": earlier, "to": later,
+        "attribution": [attribution_basis(operator, c) for c in connectors],
+        "is_a_question": True,
+    }
+
+
+def who_and_when(rows, record=None) -> dict:
+    """The sweep's two silent claims, made out loud, in one block.
+
+    One call so a consumer cannot take the period and forget the basis: the
+    period is only meaningful alongside who it is a period OF, and the whole
+    point of this pair is that they travel together.
+    """
+    operator = operator_identity(record)
+    period = period_read(rows)
+    connectors = sorted({str(r.get("connector") or "") for r in (rows or ()) if r.get("connector")})
+    return {
+        "operator": operator,
+        "period": period,
+        "attribution": [attribution_basis(operator, c) for c in connectors],
+        "presence_question": presence_question(rows, operator, period),
+    }
+
+
+def who_and_when_lines(block) -> list:
+    """The same block as sentences for the operator-facing not-reached list.
+
+    The period sentence NAMES its assumption instead of implying it, and an
+    unresolved connector says so rather than being quietly omitted — a
+    disclosure that only mentions what it managed to resolve is how a partial
+    read starts reading as a complete one.
+    """
+    lines = []
+    period = (block or {}).get("period") or {}
+    if period.get("from"):
+        lines.append(
+            f"what I ranked is dated {period['from']} to {period['to']} "
+            f"({period.get('dated_rows')} of {period.get('rows')} carried a date), "
+            "and I am assuming that period is representative of your work")
+    else:
+        lines.append("nothing I read carried a date, so this has no period at all")
+    unresolved = [a["connector"] for a in (block or {}).get("attribution") or ()
+                  if a.get("basis") == "unresolved"]
+    if unresolved:
+        lines.append(
+            "I cannot tell which actor is you in " + ", ".join(unresolved)
+            + ", so I am not claiming any of that activity is yours")
+    question = (block or {}).get("presence_question")
+    if question:
+        lines.append(question["question"])
+    return lines

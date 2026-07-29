@@ -1315,6 +1315,60 @@ temporary_allowances:
       derivable rather than assembled (a surface that renders the cluster
       directly), or COG-7 compaction brings production non-comment lines below
       the pinned baseline
+  - phase: onboarding-who-and-when
+    budget: framework_production_noncomment_lines
+    additional: 200
+    reason: >-
+      THE TWO CLAIMS A CONNECTOR SWEEP MAKES WITHOUT SAYING SO. The lane landed
+      one PR earlier reads the estate honestly and then, silently, asserts two
+      further things that reading more rows can never settle: that the activity
+      is the OPERATOR'S, and that the period covered is REPRESENTATIVE of their
+      work. Both are false often enough to matter, and both were invisible. What
+      the lines buy, each pinned by an arm that fails against the pre-change tree
+      (17 of 18 new arms red at 4c49b798; the eighteenth is the degenerate-end
+      guard that must stay green in both directions). (1) WHO — operator_identity
+      resolves the operator per connector from the ONBOARDING RECORD, never from
+      the credential: a token issued to an integration answers "who am I" with a
+      service account, so attribution anchored there attributes a whole company
+      to a robot while saying nothing about the person onboarding. The
+      connectors' own identity calls stay exactly what they were good for —
+      ESTATE identity, for demotion — and the docstring that called them "the
+      operator's own name" is corrected in place, because the next reader would
+      otherwise re-derive the wrong use from the old words. (2) THE BASIS TRAVELS
+      WITH THE CLAIM — attribution_basis returns onboarding_record or unresolved
+      with the sentence that says which, and an unresolved connector makes NO
+      claim rather than a quiet one. Measured live on a 665-row estate: no
+      answers file exists, so all four connectors report unresolved and the
+      disclosure says so. (3) WHEN — period_read states the window in the ROWS'
+      own terms (with how many carried a date at all), never a window chosen in
+      code, so the assumption underneath it is visible enough to be
+      contradicted. (4) THE GAP IS A QUESTION, NEVER A FINDING — presence_question
+      turns a fortnight of silence in the operator's OWN activity into a question
+      with three answers, because four words ("that was my holiday") invalidate
+      an inference no amount of further reading would have corrected; where the
+      record cannot recognise the operator, no gap is claimed at all. (5) THE
+      ACTOR SURVIVES THE SWEEP — it was extracted per item and collapsed to a
+      distinct COUNT, which answers "how many people" and structurally cannot
+      answer "which of them is you", so nothing downstream could separate the
+      operator's rows from anyone else's. (6) A FLOOR THAT BROKE ANOTHER RULE'S
+      PROMISE — salience says identity is DEMOTED, never deleted, because the
+      same string can be the estate's label AND one of its real targets; the
+      furniture floor reached the same token by another route and deleted it.
+      Measured live: one connector names every row "<org>/<thing>", putting the
+      org token in 100% of that connector's rows, and the estate's busiest live
+      site was floored as filing structure. With the exemption it returns at rank
+      3 of 47 across all four connectors, flagged demoted — and the arm proving
+      an UNDECLARED high-share token is still floored rides beside it, because an
+      exemption handed to everything would disable the floors. ZERO new modules;
+      the whole unit lands inside the two organs that already own these
+      questions. Measured 74462 on this tree against the 74262 pinned level with
+      cognitive-architecture-census.py at this landing rather than carried.
+    owner: onboarding-plane
+    sunset: '2027-01-29'
+    deletion_gate: >-
+      the onboarding record grows a first-class operator block that every surface
+      reads (so attribution stops being assembled per consumer), or COG-7
+      compaction brings production non-comment lines below the pinned baseline
   - phase: stranger-hatch-unopened-areas
     budget: framework_production_noncomment_lines
     additional: 27
