@@ -14,6 +14,9 @@ import {
   ISO_CUTAWAY_MIN_H,
   cutawayMix,
   interiorSlots,
+  roomFixtures,
+  pickRoomOfficer,
+  OFFICER_DESK_OFFSET_Y,
   isoCutawayCandidate,
   openFrameOf,
   openTwinRefusal,
@@ -442,5 +445,92 @@ describe('roomChildStale — a pool may only switch off what it PLACED', () => {
     expect(src).toMatch(/roomChildStale\(/)
     // and nothing left behind that hides a child on truthiness alone
     expect(src).not.toMatch(/if \(n && !want\.has\(n\)\)/)
+  })
+})
+
+describe('roomFixtures — the ONE placement the draw and the pick both read', () => {
+  const open = { frame: 'great_house_open', dw: 190, dh: 120 }
+  const BX = 1200
+  const BY = 800
+  const SLUGS = ['ada', 'brook', 'cass', 'dev', 'eze']
+
+  it('gives every officer a desk and a box, in the caller’s order', () => {
+    const fx = roomFixtures(open, BX, BY, SLUGS)
+    expect(fx.length).toBe(SLUGS.length)
+    expect(fx.map((f) => f.slug)).toEqual(SLUGS)
+    expect(fx.map((f) => f.officer.slug)).toEqual(SLUGS)
+  })
+
+  it('the desk slots ARE interiorSlots — not a second lattice', () => {
+    const slots = interiorSlots(open, BX, BY, SLUGS.length)
+    expect(roomFixtures(open, BX, BY, SLUGS).map((f) => f.desk)).toEqual(slots)
+  })
+
+  it('the box is the sprite: anchor (0.5,1) at the desk plus the near-side offset', () => {
+    const [f] = roomFixtures(open, BX, BY, ['ada'])
+    // feet at (desk.x, desk.y + OFFSET); the box hangs up and left from there
+    expect(f.officer.x + f.officer.w / 2).toBeCloseTo(f.desk.x, 6)
+    expect(f.officer.y + f.officer.h).toBeCloseTo(f.desk.y + OFFICER_DESK_OFFSET_Y, 6)
+    expect(f.officer.w).toBeGreaterThan(0)
+    expect(f.officer.h).toBeGreaterThan(0)
+  })
+
+  it('an empty room places nothing, and never throws', () => {
+    expect(roomFixtures(open, BX, BY, [])).toEqual([])
+    expect(roomFixtures({ frame: 'x', dw: 0, dh: 0 }, BX, BY, SLUGS)).toEqual([])
+  })
+
+  it('never returns more fixtures than the room has slots for', () => {
+    const many = Array.from({ length: 200 }, (_, i) => `off-${i}`)
+    const fx = roomFixtures(open, BX, BY, many)
+    expect(fx.length).toBeLessThanOrEqual(many.length)
+    expect(fx.length).toBe(interiorSlots(open, BX, BY, many.length).length)
+  })
+})
+
+describe('pickRoomOfficer — the officers in an open room answer for their own pixels', () => {
+  const open = { frame: 'great_house_open', dw: 190, dh: 120 }
+  const BX = 1200
+  const BY = 800
+  const SLUGS = ['ada', 'brook', 'cass', 'dev', 'eze']
+  const boxes = roomFixtures(open, BX, BY, SLUGS).map((f) => f.officer)
+
+  it('EVERY drawn officer is hittable at their own centre — the 2026-07-29 defect', () => {
+    // Measured before this: 208 clicks over the open room, 207 building cards,
+    // ZERO officer cards. Every one of these points was a dead affordance.
+    for (const b of boxes) {
+      expect(pickRoomOfficer(boxes, b.x + b.w / 2, b.y + b.h / 2), b.slug).toBe(b.slug)
+    }
+  })
+
+  it('hits the corners of the box and misses just outside it', () => {
+    const b = boxes[0]
+    expect(pickRoomOfficer(boxes, b.x, b.y)).toBe(b.slug)
+    expect(pickRoomOfficer(boxes, b.x + b.w, b.y + b.h)).toBe(b.slug)
+    expect(pickRoomOfficer(boxes, b.x - 1, b.y + b.h / 2)).not.toBe(b.slug)
+    expect(pickRoomOfficer(boxes, b.x + b.w / 2, b.y - 1)).not.toBe(b.slug)
+  })
+
+  it('answers FRONT TO BACK where two figures overlap', () => {
+    const back = { slug: 'back', x: 0, y: 0, w: 20, h: 40 }
+    const front = { slug: 'front', x: 10, y: 20, w: 20, h: 40 }
+    // the overlap belongs to whoever is drawn last
+    expect(pickRoomOfficer([back, front], 15, 30)).toBe('front')
+    expect(pickRoomOfficer([back, front], 5, 10)).toBe('back')
+  })
+
+  it('an empty room answers nobody — a closed room may never name an officer', () => {
+    expect(pickRoomOfficer([], 1200, 800)).toBeNull()
+    expect(pickRoomOfficer(boxes, -9999, -9999)).toBeNull()
+  })
+
+  it('no point on the whole room can name an officer who is not in it', () => {
+    const named = new Set(SLUGS)
+    for (let x = BX - 300; x <= BX + 300; x += 7) {
+      for (let y = BY - 300; y <= BY + 100; y += 7) {
+        const hit = pickRoomOfficer(boxes, x, y)
+        if (hit !== null) expect(named.has(hit)).toBe(true)
+      }
+    }
   })
 })
