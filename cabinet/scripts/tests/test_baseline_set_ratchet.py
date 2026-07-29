@@ -252,9 +252,14 @@ class TestTheNamedResidual:
 
         report = _census(copy)
         assert report["ok"] is True, report["failures"]
+        # The LIVE registry's adjudicated members, and it grows by one each time
+        # an expansion lands. What the arm proves is unchanged and is the whole
+        # point: the PLANTED module is absent from this list, because a baseline
+        # line plus a raised ceiling bought it invisibly.
         assert report["surplus_members"]["framework_production_modules"] == [
             "framework/authority/ownership.py",
             "framework/onboarding/estate.py",
+            "framework/onboarding/salience.py",
             "framework/sources/local.py",
         ], "the planted module must NOT be surplus — that is the whole purchase"
 
