@@ -32,7 +32,12 @@ one, and read-only investigation plus **composing a draft** act and then tell
 you. It proposes first everywhere else until autonomy is proven, and it drops
 any class back to proposing the moment the evidence says so. Composing a
 draft is not sending it — a message to a real person outside the org is
-external comms, which waits for you at every confidence level. **earn_up** is
+external comms, which waits for you at every confidence level. One honest
+caveat on "acts from day one": that is the table, and the acting path behind
+it is **off in a fresh hatch** — the lane acts unattended only once
+`instance/config/act-first-enabled` exists (or `CABINET_ACT_FIRST=1`), and the
+export ships neither, so until you flip it your cabinet proposes everything.
+**earn_up** is
 stricter still: everything starts at propose-only and autonomy exists only
 where you grant it on the trust ladder. **sovereign** is the widest and can
 only be activated by you, deliberately: the ruling file must be edited,

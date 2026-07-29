@@ -1052,9 +1052,20 @@ RING0_DIFF = (
     "+files: []\n"
 )
 
+# NAMES ONLY — never values. One call site below hands this child
+# `dict(os.environ)` on purpose (the passthrough arm must see the live env to
+# prove the escape), so a `dict(os.environ)` dump here wrote every real
+# credential on the running machine into `probe-<stage>.json` on disk, where it
+# persisted across pytest basetemp rotations. Measured 2026-07-28 on the
+# operator's machine: real MAKE_MCP_TOKEN / GITHUB_MCP_PAT / GITHUB_PERSONAL_
+# ACCESS_TOKEN values sitting in three surviving basetemps. Every assertion that
+# reads this file (`assert_arm_escape`, the two `observed_env` arms in
+# test_cog5_sim_scoring) tests membership of NAMES and nothing reads a value, so
+# emptying them costs the suite nothing and makes the code match the contract
+# stated 20 lines below it ("values are never read or recorded, only names").
 _PROBE_CHILD_SRC = """\
 import json, os, sys
-out = {"env": dict(os.environ), "cwd": os.getcwd()}
+out = {"env": {k: "" for k in os.environ}, "cwd": os.getcwd()}
 with open(sys.argv[1], "w", encoding="utf-8") as fh:
     json.dump(out, fh)
 print("probe-ok")

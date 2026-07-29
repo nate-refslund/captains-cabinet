@@ -1,8 +1,8 @@
 """Channel-adapter contract [AX-5] — ONE uniform surface per outbound channel.
 
-Axes spec (docs/plans/cabinet-axes-spec-2026-07-05.md §4): every channel
-(Teams, Outlook, Slack, Gmail, Google Chat, Discord, ...) binds to the cabinet
-through this contract:
+Axes spec (docs/plans/cabinet-axes-spec-2026-07-05.md §4): every channel — a
+corporate chat surface, a mail surface, a consumer messenger, whatever the
+deployment actually runs on — binds to the cabinet through this contract:
 
     send(recipient, body, thread_id) -> artifact_id     # journaled
     classify(recipient) -> internal|external            # instance org-domain config

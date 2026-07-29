@@ -75,7 +75,29 @@ budgets:
     # somewhere for a per-deployment restriction to enter, and this is it. Zero
     # new production MODULES (the new suite is a test; the ratchet's debt ledger
     # is a .txt), so framework_production_modules is unchanged.
-    maximum: 60169
+    # +13 (2026-07-29): the injection screen's IMPERATIVE-VERB delta. The
+    # hostile-input red team landed the Nordic/German arms first, built on
+    # IGNORE/FORGET stems; a safety sweep measured seven payloads that still
+    # scored ZERO against them — tilsidesæt / overskriv (override verbs the
+    # stems cannot reach), bare `regler` (the stem list carried only the
+    # definite `reglerne`, so the most natural phrasing of the very attack it
+    # was written for missed), English `forget` (the twin of its own `glem`),
+    # bulk exfiltration to a mail address in both languages, and the polite
+    # Danish approval imperative. Folded into the EXISTING arms plus two new
+    # ones (forget-instructions, bulk-exfil-address); the red team's arms are
+    # kept verbatim and are the richer half. Deliberately NOT a
+    # temporary_allowances row: an operator's language is not a phase, so an
+    # allowance would promise a deletion gate that will never fire. Zero new
+    # MODULES. Compressing the regexes to dodge the ratchet was the alternative
+    # and would have been gaming the budget rather than paying it.
+    #
+    # MERGE, 2026-07-29: the two bumps above landed concurrently off the SAME
+    # 60164 base and are disjoint (a charset seam; a bilingual injection
+    # screen), so the merged ceiling is their SUM, re-measured over the merge
+    # tree rather than added on paper (60164 + 5 + 13 = 60182; observed 73129).
+    # Neither is an allowance; both are permanent, so the ratchet re-pins here
+    # at zero headroom.
+    maximum: 60182
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

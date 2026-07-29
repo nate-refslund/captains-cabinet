@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: b6243dcbe43af9b3bda0aedc9944d3fedc3864c0b1c096faf2ab95c5eddbf04d
+Reviewed-Scope-Digest: 0aef5259c538717accd4ae4b191850845e2cf7acf7fb448359f24a5dead35a9b
 
 (MERGE RE-BIND, 2026-07-28, `fix/stranger-hatch-timed` x master `a70bcfb5`
 (PR #268). Both sides had re-bound this line and BOTH moved
@@ -47,38 +47,48 @@ new shipped-twin lockstep) are both present and green after the merge, verified
 by running the file rather than by reading the merge output. NO COG-4
 implementation byte moved on either side.)
 
-(MERGE RE-BIND, 2026-07-29, `fix/hostile-input-red-team` x master. Master
-re-bound this line again on a contract-touching landing; neither side's digest
-describes the merged tree, so the value above is RECOMPUTED over it. Master's
-superseded value was `1c91f915f42e5243ddfc3a0b7a1af291394a25944661d50d0c981f43895a5934`. Every contract allowance
-row from both sides survives and the census re-reads PASS at the summed level.
-No COG-4 implementation byte moved on either side; nothing below was
-re-reviewed.)
+(MERGE RE-BIND #4, 2026-07-29, vs the hostile-input red-team landing
+(`2c6f4d636640e0b094348d0bf24eb7ecd22435a265d07514cf8aea928f15c92a`). That leg fixed the SAME
+injection screen from the other side and its Nordic/German arms are the
+richer half, so this branch TOOK master's screen verbatim and re-applied only
+the measured delta (seven payloads that still scored zero against those arms).
+The budget row was re-measured down from +19 to +13 accordingly — the ceiling
+follows the merged tree, not this branch's original claim. Only the contract
+file is in COG-4 scope; no COG-4 implementation byte moved on either side.)
 
-(MERGE RE-BIND, 2026-07-29, `fix/hostile-input-red-team` x master. Master
-re-bound this line again (its own contract-touching landing); neither side's
-digest describes the merged tree, so the value above is RECOMPUTED over it.
-Master's superseded value was `c18946e6377c31c9c653389e02ff26273df8cb587cf446c80170e589340a9109`. Both contract allowance rows
-survive the merge and the census re-reads PASS at the summed level. No COG-4
-implementation byte moved on either side; nothing below was re-reviewed.)
+(MERGE RE-BIND #3, 2026-07-29, vs master's specifics-ratchet landing
+(`1c91f915f42e5243ddfc3a0b7a1af291394a25944661d50d0c981f43895a5934`). Both sides raised the SAME
+`framework_production_noncomment_lines` maximum off the same 60164 base and
+both moved only the contract file in COG-4 scope, so the merged ceiling is
+re-measured over the merge tree (60188; observed 73104) rather than added on
+paper, and the digest above is recomputed over that merge commit. No COG-4
+implementation byte moved on either side.)
 
-(MERGE RE-BIND, 2026-07-28, `fix/hostile-input-red-team` x master `b4859c55`.
-The second such merge on this branch: master re-bound this line again for the
-onboarding-derivation landing, which also appended a `temporary_allowances` row
-to `cabinet/config/cognitive-architecture-contract.yml`. BOTH rows are kept in
-the merged contract — each pays for its own lines and the census re-reads PASS
-at the summed level (73081) — and neither side's digest describes the merged
-tree, so the value above is RECOMPUTED over it. Master's superseded value was
-`3c8c1f7f60bd32a56e831438d768ea1b760b8f148353e65aba3c76c9b6d50a79`. No COG-4
-implementation byte moved on either side; nothing below was re-reviewed.)
+(MERGE RE-BIND, 2026-07-28: this branch and master each re-bound this line and
+both moved in-scope bytes, so neither recorded digest describes the merged tree —
+the value above is recomputed over the MERGE commit and supersedes both. HEAD is
+what the gate reads. Superseded: `3d18b9363409a4dfe6f4655ed2877ea745ea7e8b09e7630b2b75ee1ca942d49f`
+(this branch) and `3c8c1f7f60bd32a56e831438d768ea1b760b8f148353e65aba3c76c9b6d50a79`
+(master, the onboarding-derivation landing).
 
-(MERGE RE-BIND, 2026-07-28, `fix/hostile-input-red-team` x master `4148d1e6`.
-Both sides re-bound this line and both moved paths inside this scope set — the
-red team moved `cabinet/config/cognitive-architecture-contract.yml`, master moved
-the two egg-export paths — so the two digests conflicted textually and NEITHER
-describes the merged tree. The value above is RECOMPUTED over it. Both note sets
-are kept below in full, none superseded; no COG-4 implementation byte moved on
-either side, so nothing below was re-reviewed.)
+THIS BRANCH's in-scope move, and it is not a COG-4 byte:
+`cabinet/config/cognitive-architecture-contract.yml`, whose
+`framework_production_noncomment_lines` maximum went 60164 -> 60183 to pay —
+visibly, not by a temporary allowance — for the Danish alternations added to
+`framework/acting/action_lane.py`'s injection screen, after a read-only
+rehearsal against the operator's real estate measured that screen catching 7/7
+English payloads and missing 8 of 11 semantically identical Danish ones. The
+merge stacks that ceiling bump on master's +34 allowance row for the onboarding
+derivation fixes; the two are disjoint and the census re-pins at zero headroom
+over both. No COG-4 finding, claim or verdict in this review is touched, and a
+strictly higher ceiling leaves every ratchet claim made here standing.)
+
+(MERGE RE-BIND #2, 2026-07-29: master re-bound this line again while this
+branch's CI ran (the memory-honest-empty landing). Neither recorded digest
+describes the merged tree, so the value above is recomputed over THIS merge
+commit and supersedes master's `c18946e6377c31c9c653389e02ff26273df8cb587cf446c80170e589340a9109`
+as well. No COG-4 byte moved on either side; the only in-scope path is the
+contract file, and both landings' budget rows are additive and disjoint.)
 
 (RE-BIND, 2026-07-28, `fix/hostile-input-red-team`. The hostile-input red
 team added a `temporary_allowances` row to
