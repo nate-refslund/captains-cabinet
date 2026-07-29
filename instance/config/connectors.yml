@@ -73,7 +73,12 @@ connectors:
       auth_format: "Bearer {credential}"
       items_path: projects
       name_field: name
+      # This endpoint stamps in epoch MILLISECONDS. Undeclared, the sweep read
+      # all 58 of them as text, the period and the presence question ignored
+      # every one, and the ranker refused the clock as "absent on most rows" —
+      # about the one connector here that dates every single row.
       updated_field: updatedAt
+      date_encoding: epoch_ms
     page:
       start: 1
       size: 100
