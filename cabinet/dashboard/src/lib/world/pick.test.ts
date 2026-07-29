@@ -22,6 +22,7 @@ import { officerSlots, pickTarget, STATIONS, type PickKind, type PickWorld } fro
 import { LOD_RULES, lodTier } from './lod'
 import { projectionFor, worldToScreen } from './projection'
 import { buildWorldGeo, CHART_TABLE_LOCAL, roadPoint, toWorld } from './world-geo'
+import { homeExtentOf, isoLaneSites } from './iso-lanes'
 import { buildWorldBuildings } from './world-buildings'
 import { fnv1a } from './hash'
 import type { LayoutState } from './iso-layout'
@@ -181,9 +182,53 @@ function targetOf(s: { frame: string; role: string | null }) {
 const isoWorld = (over: Partial<PickWorld> = {}) =>
   world({ projection: 'iso', camera: { z: 3, x: 0, y: 0 }, ...over })
 
+/**
+ * THE ARCHIPELAGO FIXTURE — one lane of each of the three renders.
+ *
+ * `GEO` above passes no lane records, so both of its berthed lanes come out as
+ * reef buoys; an isle needs a ratified outcome. This geo is built from the SAME
+ * fold with records that produce all three states, so the arms below cover
+ * every shape the sea can carry rather than the one the other fixture happens
+ * to make.
+ */
+const LANE_GEO = buildWorldGeo({
+  orgEventsTotal: 900,
+  lanes: {
+    alpha: { ever: 2, active: 1, achieved: 1, retired: 0, instanceTest: false },
+    beta: { ever: 0, active: 0, achieved: 0, retired: 0, instanceTest: true },
+  },
+  berths: ['alpha', 'beta', 'gamma', null, null],
+  probeWiredLanes: ['alpha'],
+})
+const ISO_LANES = isoLaneSites(LANE_GEO.laneSites, SCENE.space, homeExtentOf(SCENE.layout))
+/** The world the canvas hands over once the iso lane fold has run. */
+const laneWorld = (over: Partial<PickWorld> = {}) =>
+  isoWorld({ geo: LANE_GEO, isoLanes: ISO_LANES, ...over })
+/** The world with the engine's measured elements attached (the `element` kind). */
+const measuredWorld = (over: Partial<PickWorld> = {}) =>
+  isoWorld({
+    measuredElements: new Set([...Object.keys(RESOLUTION.elements), 'berths']),
+    ...over,
+  })
+
+/**
+ * The FRONT-MOST sprite of a frame — the one a pointer actually reaches.
+ *
+ * `find` returns the BACK-most, because the scene is depth-sorted back to
+ * front, and for a frame the world draws several of (the mooring row) the
+ * back-most can be occluded by something moored in front of it. Measured
+ * 2026-07-29: `mo:0` sits behind the packet boat, so an arm probing it was
+ * measuring the boat and reading the answer as a defect in the post.
+ */
+function frontMost(frame: string) {
+  const all = SCENE.sprites.filter((sp) => sp.frame === frame)
+  expect(all.length, `scene has at least one ${frame}`).toBeGreaterThan(0)
+  return all.reduce((a, b) => (b.depth >= a.depth ? b : a))
+}
+
 /** Pick on an iso sprite, `up` of the way up its drawn body (0 = its base). */
 function pickOnSprite(w: PickWorld, frame: string, up: number) {
-  const s = SCENE.sprites.find((sp) => sp.frame === frame)
+  const s = frontMost(frame)
   expect(s, `scene has a ${frame}`).toBeDefined()
   const { wx, wy } = tileOfLayoutPx(s!.x, s!.y - Math.max(1, s!.dh * up))
   const cam = { z: 3, x: wx, y: wy }
@@ -238,21 +283,45 @@ describe('every interactive kind is reachable, or is honestly not drawn', () => 
     expect(got).toEqual({ kind, id })
   })
 
-  it('the top-down table covers every PickKind — no member goes untested', () => {
-    const ALL: PickKind[] = [
-      'officer',
-      'building',
-      'lane',
-      'mailbox',
-      'chart_table',
-      'site',
-      'ground',
-    ]
-    // ALL is pinned against the module's own union by the type annotation
-    // above: adding a member to PickKind without adding it here is a compile
-    // error at the it.each rows, not a silent hole.
+  it('every PickKind is covered somewhere — no member goes untested', () => {
+    /**
+     * A RECORD, NOT AN ARRAY, and that is the whole load-bearing part.
+     *
+     * This was `const ALL: PickKind[] = [...]` with a comment claiming that
+     * adding a union member without adding it here is a compile error. It is
+     * not: an array of a union type accepts any subset, so when `element`
+     * joined `PickKind` on 2026-07-29 the arm stayed GREEN over a kind nothing
+     * tested — the same disabled-sensor shape this file exists to catch. A
+     * `Record<PickKind, ...>` is exhaustive by the type system: a new member
+     * fails to compile until it is given a home.
+     *
+     * `iso` marks the kinds the top-down kernel genuinely cannot produce, with
+     * the reason. They are covered by the iso arms above, and naming them here
+     * keeps "not reachable top-down" distinguishable from "nobody tried".
+     */
+    const HOME: Record<PickKind, 'topdown' | 'iso'> = {
+      officer: 'topdown',
+      building: 'topdown',
+      lane: 'topdown',
+      mailbox: 'topdown',
+      chart_table: 'topdown',
+      site: 'topdown',
+      ground: 'topdown',
+      // A ladder element with no building row. The top-down kernel picks by
+      // tile geometry and has no sprite whose role it could ask, so the kind
+      // is structurally iso-only — the harbour's mooring posts are its case.
+      element: 'iso',
+    }
     const covered = new Set(TOPDOWN.map(([, k]) => k))
-    expect([...ALL].filter((k) => !covered.has(k))).toEqual([])
+    const wantTopdown = (Object.keys(HOME) as PickKind[]).filter((k) => HOME[k] === 'topdown')
+    expect(wantTopdown.filter((k) => !covered.has(k))).toEqual([])
+    // and the iso-only members are not quietly ALSO missing from the top-down
+    // table by accident — they must be genuinely unreachable there
+    for (const k of (Object.keys(HOME) as PickKind[]).filter((x) => HOME[x] === 'iso')) {
+      expect(covered.has(k), `${k} is marked iso-only but the top-down table covers it`).toBe(
+        false
+      )
+    }
   })
 
   // ISO. The world under iso is composeLayout's island, not the tile lattice,
@@ -289,11 +358,18 @@ describe('every interactive kind is reachable, or is honestly not drawn', () => 
     }
   })
 
-  it('iso: the STATIC scene draws no walker, site or lane isle, so nothing answers', () => {
-    // Not a gap in the pick — a gap in the world. The five-slot isle fan is
-    // top-down `world-geo` geometry with no iso counterpart, and the pick must
-    // not invent one from top-down coordinates: that would be a card asserting
-    // something false about the org.
+  it('iso: the STATIC scene draws no walker or site, so nothing answers for one', () => {
+    // WHAT CHANGED HERE, 2026-07-29. This arm shipped saying the world drew no
+    // lane isle either, and treated that as a gap in the WORLD rather than in
+    // the pick. It was both: five product lanes and the why-strings that cite
+    // outcomes.yml were unreachable under the kernel that had just become the
+    // default. `iso-lanes.ts` now sites the fan in open water off the island's
+    // own reach and this pick answers for it — see the lane arms below. What
+    // stays absent is the LIFE layer: commute walkers and construction sites
+    // are top-down tile geometry with no iso counterpart, and the pick must not
+    // invent one from top-down coordinates. The sweep below stays scoped to the
+    // layout canvas, where by construction no lane site can be: the fan clears
+    // everything the island owns.
     // stated as the BEHAVIOUR, not as a name heuristic: an earlier version of
     // this arm looked for the substring 'officer' in frame names and fired on
     // `officer_house_a`, which is a HOUSE. A living thing is a thing the pick
@@ -339,8 +415,99 @@ describe('every interactive kind is reachable, or is honestly not drawn', () => 
       seen.add(hit.kind)
     }
     expect([...seen].sort()).toEqual(['building', 'chart_table', 'ground', 'mailbox'])
-    for (const gone of ['officer', 'site', 'lane'] as PickKind[]) {
+    for (const gone of ['officer', 'site'] as PickKind[]) {
       expect(seen.has(gone), `iso answers ${gone} for something it never drew`).toBe(false)
+    }
+    // AND NO LANE OVER THE ISLAND, which is the other half of the fan being
+    // sited in open water: a click on the great house may never open a card
+    // about a product lane.
+    expect(seen.has('lane'), 'a lane answers for ground the island stands on').toBe(false)
+  })
+
+  // ── THE PRODUCT ARCHIPELAGO, the P0 this file's own gap arm used to record ─
+
+  it.each([
+    ['isle', 1, 'lane:1'],
+    ['reef_buoy', 2, 'lane:2'],
+    ['mist_reserved', 4, 'lane:4'],
+  ])('iso: a %s answers with its lane card', (render, slot, id) => {
+    const site = ISO_LANES.find((s) => s.slot === slot)!
+    expect(site.render, `slot ${slot} is the ${render} fixture`).toBe(render)
+    // THE ANCHOR AND THE RIM, because a marker the pointer only finds dead
+    // centre is a marker nobody clicks.
+    for (const [dx, dy] of [
+      [0, 0],
+      [site.pickHw * 0.8, 0],
+      [-site.pickHw * 0.8, 0],
+      [0, site.pickHw * 0.4],
+    ]) {
+      const { wx, wy } = tileOfLayoutPx(site.x + dx, site.y + dy)
+      expect(
+        pickAtTile(laneWorld({ camera: { z: 0.3, x: wx, y: wy } }), wx, wy),
+        `${render} at +${dx},${dy}`
+      ).toEqual({ kind: 'lane', id })
+    }
+  })
+
+  it('iso: the lane id is the slot the CARD looks up, so the why-string matches', () => {
+    // engine-client resolves `lane:<slot>` back through geo.laneSites to build
+    // the card. If the id named an index or the array position, the card would
+    // quote another lane's why-string — which is a card asserting something
+    // false about the org, in the surface built to stop exactly that.
+    for (const site of ISO_LANES) {
+      const { wx, wy } = tileOfLayoutPx(site.x, site.y)
+      const got = pickAtTile(laneWorld({ camera: { z: 0.3, x: wx, y: wy } }), wx, wy)
+      expect(got).toEqual({ kind: 'lane', id: `lane:${site.slot}` })
+      const from = LANE_GEO.laneSites.find((s) => `lane:${s.slot}` === got.id)!
+      expect(from.lane).toBe(site.lane)
+      expect(from.why).toBe(site.why)
+    }
+  })
+
+  it('iso: with no archipelago handed over, the same water is honest ground', () => {
+    // The canvas hands the pick the array it DREW. A world where the iso lane
+    // fold has not run must not answer for isles that are not on the frame —
+    // and this is also what keeps the arm above from passing on a pick that
+    // answers `lane` for any point far from the island.
+    for (const site of ISO_LANES) {
+      const { wx, wy } = tileOfLayoutPx(site.x, site.y)
+      expect(
+        pickAtTile(isoWorld({ camera: { z: 0.3, x: wx, y: wy } }), wx, wy)
+      ).toEqual({ kind: 'ground', id: 'ground' })
+    }
+  })
+
+  // ── THE MOORING POSTS, which drew and then said "carries no data" ─────────
+
+  it('iso: a mooring post opens the berth count that put it there', () => {
+    // MEASURED 2026-07-29: `role: 'berths'` is a real measured element that no
+    // world-buildings row renders (buildings stand on land; a mooring post is
+    // in the water by construction), so the building lookup missed and the pick
+    // fell through to `ground`. Seven drawn sprites answering "carries no data"
+    // about a count the org had earned.
+    const post = frontMost('mooring_post')
+    expect(post.role).toBe('berths')
+    expect(
+      BUILDINGS.some((b) => b.element === 'berths'),
+      'berths deliberately has no building row — that is the trap'
+    ).toBe(false)
+    for (const up of [0.05, 0.5, 0.9]) {
+      expect(
+        pickOnSprite(measuredWorld(), 'mooring_post', up),
+        `mooring post at ${up} of its height`
+      ).toEqual({ kind: 'element', id: 'berths' })
+    }
+  })
+
+  it('iso: an element nothing MEASURED stays ground — no card for a non-measurement', () => {
+    // The gate is the engine's own resolution, not a list in the pick. With no
+    // resolution the honest answer is the one the world already gives for
+    // unmapped pixels.
+    for (const up of [0.05, 0.5, 0.9]) {
+      expect(pickOnSprite(isoWorld(), 'mooring_post', up)).toEqual({
+        kind: 'ground',
+        id: 'ground',
+      })
     }
   })
 
@@ -869,6 +1036,7 @@ describe('the killswitch lever cannot be reached through the pick', () => {
       'mailbox',
       'chart_table',
       'site',
+      'element',
       'ground',
     ]
     for (const projection of ['topdown', 'iso'] as const) {

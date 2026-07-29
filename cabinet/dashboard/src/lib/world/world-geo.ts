@@ -216,6 +216,29 @@ export function isleRadius(ringRung: number): number {
   return ringRung === 1 ? 5 : 10
 }
 
+/**
+ * The main island's land-radius CAP, in tiles — the disc may not outgrow the
+ * 60×48 core it is composed into.
+ *
+ * EXPORTED because it is the denominator every archipelago size is expressed
+ * in: `iso-lanes.ts` scales a lane isle's ground against the home island by
+ * `isleRadius(rung) / MAIN_ISLAND_R_CAP`, so the two kernels draw an isle at
+ * the same fraction of home. A second literal 28 in that module would be a
+ * second notion of how big this world's island can get.
+ */
+export const MAIN_ISLAND_R_CAP = 28
+
+/**
+ * The hit radius of a lane site, in TILES — the tolerances the shipped
+ * top-down pick has always used, named so the iso pick can be held to the same
+ * generosity instead of inventing its own.
+ *
+ * `isle` is deliberately far larger than `isleRadius()`: an isle is clicked at
+ * the coast/archipelago tier, where its land is a few screen pixels across.
+ * `mark` covers a reef buoy and a mist pocket, which have no land at all.
+ */
+export const LANE_PICK_TILES = { isle: 12, mark: 4 } as const
+
 export interface WorldGeo {
   canvas: { w: number; h: number }
   islands: IslandDisc[]
@@ -246,7 +269,7 @@ export interface WorldGeoInput {
 }
 
 export function buildWorldGeo(input: WorldGeoInput): WorldGeo {
-  const R = Math.min(landRadius(input.orgEventsTotal), 28) // core is 60×48 — cap the disc
+  const R = Math.min(landRadius(input.orgEventsTotal), MAIN_ISLAND_R_CAP) // 60×48 core
   const main: IslandDisc = {
     id: 'main',
     cx: MAIN_OFFSET.x + Math.floor(MAIN_CORE.w / 2),
