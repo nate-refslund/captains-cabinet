@@ -369,12 +369,15 @@ export const LAW_RENDER: ReadonlyMap<string, LawBinding> = new Map<string, LawBi
   [
     'lane_reef_buoys',
     {
-      rendered: false,
-      reason:
-        'buoys ARE drawn in the landing dressing, but as AUTHORED WATER FURNITURE at fixed ' +
-        'offsets — nothing binds them to the instance-test lanes the law names. A buoy that ' +
-        'floats whatever the lanes say is art, not a reading, and counting it as covered would ' +
-        'be the exact claim this file exists to stop.',
+      rendered: true,
+      kernels: 'both',
+      surfaces: [{ at: 'code', module: 'iso-lanes', symbol: 'isoLaneSites' }],
+      note:
+        'a lane with no ratified outcome — including an instance-test or retired one — renders ' +
+        'as a reef buoy at its berth slot, and the buoy opens the lane card that quotes the ' +
+        'why-string. Bound in BOTH kernels since 2026-07-29: the landing dressing still carries ' +
+        'authored water furniture, which is decoration, but the LAW is read off buildWorldGeo ' +
+        'laneSites and drawn by the iso dynamics layer.',
     },
   ],
   [
@@ -424,10 +427,12 @@ export const LAW_RENDER: ReadonlyMap<string, LawBinding> = new Map<string, LawBi
     {
       rendered: false,
       reason:
-        'the voyage boat and its course line are drawn by the TOP-DOWN dynamics layer only ' +
-        '(engine-canvas drawDynamics). `drawIsoDynamics` paints the lamp and the roof cutaway ' +
-        'and nothing else, so under iso the boat is absent. The underlying state is still ' +
-        'readable on the chart table card (see `lane_course_state`).',
+        'the VOYAGE BOAT is drawn by the top-down dynamics layer only (engine-canvas ' +
+        'drawDynamics), so under iso there is no vessel under way. Its course DRIFT LINES are ' +
+        'now drawn in both kernels — `drawIsoLanes` lays the same dashed run from the harbour ' +
+        'mouth to the berth, with the same cadence/hue/sag coding — but a line is not a boat, ' +
+        'and half a law painted is not the law. The underlying state is also readable on the ' +
+        'chart table card (see `lane_course_state`).',
     },
   ],
 ])

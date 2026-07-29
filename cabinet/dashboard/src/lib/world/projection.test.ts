@@ -426,6 +426,19 @@ describe('the kernel survives the URL rewrite — IN BOTH DIRECTIONS', () => {
     // would have to, and that is what M6 did
     expect(src).not.toMatch(/'iso'/)
     expect(src).not.toMatch(/worldUrlSearch\(/)
+    // AND IT WRITES NO `iso=` PAIR ITSELF, which is the property the line above
+    // only stands in for. Added 2026-07-29 after the `'iso'` grep fired on
+    // `projection === 'iso'` — a truthful kernel comparison with nothing to do
+    // with the address bar. A proxy a correct edit trips is a proxy the next
+    // author deletes, so the defect SHAPE is asserted too: a hand-rolled
+    // address has to spell the pair, in a template or a `set` call.
+    //
+    // NOT `URLSearchParams`, deliberately: the component legitimately PARSES
+    // the incoming query with one (`parseUrlState`), and banning the class
+    // would have been a second proxy failing the same way as the first — an
+    // arm that goes red on correct code, one layer down.
+    expect(src).not.toMatch(/[?&]iso=/)
+    expect(src).not.toMatch(/\.set\(\s*['"]iso['"]/)
   })
 })
 

@@ -610,36 +610,47 @@ export default function EngineClient({
         })
         return
       }
+      // ── a ladder element's own card ────────────────────────────────────
+      // ONE BUILDER, TWO CALLERS. A building's card has always been "what does
+      // this element measure, and where is it on its ladder"; the element kind
+      // (the harbour's mooring posts, whose `berths` count no building renders)
+      // asks the identical question. Writing it twice is how the two drift, and
+      // the drift would be invisible — both cards look right in isolation.
+      const elementCard = (element: string, id: string) => {
+        const el = resolution?.elements[element]
+        const morphEntry = (g?.morphology?.entries ?? []).find((e) => e.id.includes(element))
+        const staged = STAGED_VOCAB_ELEMENTS.has(element)
+          ? ' · era art STAGED — honest worksite marker until proper art lands'
+          : ''
+        const now = el
+          ? el.measured
+            ? `${element}: ${el.rungName}${el.vocab ? ` (${el.vocab})` : ''} — metric ${el.value ?? '—'}${el.pending !== null ? ` · rung ${el.pending} pending hysteresis` : ''}${staged}`
+            : `${element}: unmeasured — baseline rung renders grey, never interpolated${staged}`
+          : element + staged
+        setInspect({
+          kind: 'station',
+          id,
+          title: now,
+          codex:
+            morphEntry?.codex ??
+            ({
+              represents: `${element} — era×rung ladder element (growth-ladders.yml); era styles it, its own metric sizes it.`,
+              mechanism_path: 'cabinet/world/growth-ladders.yml',
+              day0: 'baseline rung',
+            } as GrammarCodex),
+          decorative: false,
+          presence: null,
+          proof: null,
+        })
+      }
+      if (target.kind === 'element') {
+        elementCard(target.id, target.id)
+        return
+      }
       // building
       const b = buildings.find((x) => x.id === target.id)
       if (!b) return
-      const el = resolution?.elements[b.element]
-      const morphEntry = (g?.morphology?.entries ?? []).find((e) =>
-        e.id.includes(b.element)
-      )
-      const staged = STAGED_VOCAB_ELEMENTS.has(b.element)
-        ? ' · era art STAGED — honest worksite marker until proper art lands'
-        : ''
-      const now = el
-        ? el.measured
-          ? `${b.element}: ${el.rungName}${el.vocab ? ` (${el.vocab})` : ''} — metric ${el.value ?? '—'}${el.pending !== null ? ` · rung ${el.pending} pending hysteresis` : ''}${staged}`
-          : `${b.element}: unmeasured — baseline rung renders grey, never interpolated${staged}`
-        : b.element + staged
-      setInspect({
-        kind: 'station',
-        id: b.id,
-        title: now,
-        codex:
-          morphEntry?.codex ??
-          ({
-            represents: `${b.element} — era×rung ladder element (growth-ladders.yml); era styles it, its own metric sizes it.`,
-            mechanism_path: 'cabinet/world/growth-ladders.yml',
-            day0: 'baseline rung',
-          } as GrammarCodex),
-        decorative: false,
-        presence: null,
-        proof: null,
-      })
+      elementCard(b.element, b.id)
     },
     [buildings, geo, officersBySlug, resolution, engine]
   )
@@ -733,9 +744,19 @@ export default function EngineClient({
         openInspect(target)
         return
       }
-      // far zoom primary = NAVIGATE: fly toward the target (still one world)
+      // far zoom primary = NAVIGATE: fly toward the target (still one world).
+      //
+      // TOP-DOWN ONLY, and that is a correction rather than a limitation. Every
+      // coordinate this branch flies to is a TOP-DOWN TILE — a building's bbox
+      // and a lane site's `cx/cy` both come from `world-geo`, whose tiles name
+      // completely different water under iso. Flying there put the camera in
+      // open sea and left the thing that was clicked off-screen. The iso kernel
+      // opens the card instead, which is what a far-zoom click on something
+      // that carries data should do when the camera cannot honestly go to it.
       const pos =
-        target.kind === 'building'
+        projection !== 'topdown'
+          ? null
+          : target.kind === 'building'
           ? (() => {
               const b = buildings.find((x) => x.id === target.id)
               return b ? { x: b.x + b.w / 2, y: b.y + b.h / 2 } : null
@@ -749,7 +770,7 @@ export default function EngineClient({
       if (pos) setCamera((c) => ({ z: clampZoom(c.z * 2), x: pos.x, y: pos.y }))
       else openInspect(target)
     },
-    [camera.z, buildings, geo, openInspect]
+    [camera.z, buildings, geo, openInspect, projection]
   )
   const onSecondary = useCallback(
     (target: EngineTarget | null) => {

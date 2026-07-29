@@ -45,6 +45,7 @@ import {
   type IsoSprite,
 } from './iso-scene'
 import { pickRoomOfficer, type RoomOfficerBox } from './iso-cutaway'
+import { pickIsoLane, type IsoLaneSite } from './iso-lanes'
 import { LOD_RULES, lodTier, type EngineCamera } from './lod'
 import { projectionFor, screenToWorld, type ProjectionKind, type ViewportPx } from './projection'
 import { CHART_TABLE_LOCAL, roadPoint, toWorld, type WorldGeo } from './world-geo'
@@ -65,6 +66,24 @@ export type PickKind =
   | 'mailbox'
   | 'chart_table'
   | 'site'
+  /**
+   * A LADDER ELEMENT with no building row — its own card, not a neighbour's
+   * and not ground.
+   *
+   * THE DEFECT IT EXISTS FOR, measured 2026-07-29: the seven mooring posts a
+   * hamlet harbour draws carry `role: 'berths'`, which is a real measured
+   * element (`growth-ladders.yml` berths: none/berth_1/.../berths_7plus) that
+   * no `world-buildings.ts` row renders — buildings stand on the island and a
+   * mooring post is in the water by construction. `pickIso` looked the role up
+   * in the building table, found nothing and returned `ground`, so seven drawn
+   * sprites answered "carries no data" about a count the org had earned. That
+   * is the sprite-with-no-data defect this world's own doctrine names, in the
+   * pick rather than in the renderer.
+   *
+   * It is READ-ONLY like every other member and carries the ELEMENT NAME as its
+   * id, which is the same key the building card already opens on.
+   */
+  | 'element'
   | 'ground'
 
 export interface PickTarget {
@@ -145,6 +164,27 @@ export interface PickWorld {
    * testing what the eye is looking at, by construction.
    */
   roomOfficers?: readonly RoomOfficerBox[]
+  /**
+   * The product archipelago as the ISO kernel places it, or empty.
+   *
+   * IT IS A SEPARATE INPUT FROM `geo.laneSites` and that is the whole point:
+   * `geo` is the top-down world's tile geometry, and the five sites in it sit
+   * at tile coordinates that name completely different water under iso. The
+   * canvas computes these once per statics rebuild from the composed layout
+   * (iso-lanes.ts) and hands over the SAME array it drew from, so the card a
+   * click opens is about the isle the eye is looking at.
+   */
+  isoLanes?: readonly IsoLaneSite[]
+  /**
+   * Ladder elements the engine actually MEASURED this frame — `resolution
+   * .elements`' own keys, or empty when nothing reached the client.
+   *
+   * It gates the `element` kind, and gating it on the resolution rather than on
+   * a list in this file is what keeps the card honest: a sprite whose role
+   * nothing measured stays `ground`, which is the true answer, and no card is
+   * opened for a measurement that was never taken.
+   */
+  measuredElements?: ReadonlySet<string>
 }
 
 /**
@@ -257,12 +297,28 @@ function pickIso(world: PickWorld, tx: number, ty: number): PickTarget {
   // at a tier that draws no room there are none to test.
   if (inRoom) return { kind: 'officer', id: inRoom }
   const s = pickIsoSprite(scene, px.x, px.y, { wants: isoWants(world.chartTable) })
-  if (!s) return GROUND
-  const station = STATIONS.get(s.frame)
-  if (station) return station
-  const element = elementForRole(s.role)
-  const b = element === null ? undefined : world.buildings.find((bb) => bb.element === element)
-  if (b) return { kind: 'building', id: b.id }
+  if (s) {
+    const station = STATIONS.get(s.frame)
+    if (station) return station
+    const element = elementForRole(s.role)
+    const b = element === null ? undefined : world.buildings.find((bb) => bb.element === element)
+    if (b) return { kind: 'building', id: b.id }
+    // A MEASURED ROLE THE BUILDING TABLE HAS NO ROW FOR still has a card: it is
+    // its own ladder element. Falling through to `ground` here is what made the
+    // harbour's mooring posts answer "carries no data" about the berth count
+    // that put them there. See PickKind['element'].
+    if (element !== null && world.measuredElements?.has(element)) {
+      return { kind: 'element', id: element }
+    }
+    // AND STILL NOT `ground` YET. A sprite the pick cannot name must not
+    // swallow the water behind it: the archipelago is tested below either way,
+    // and a sprite with no card is transparent exactly like decoration is.
+  }
+  // THE PRODUCT LANES, out on the open water. Tested after the island because
+  // the island is what is under the pointer nine clicks in ten; they cannot
+  // contend, since the fan is sited to clear everything the island owns.
+  const lane = pickIsoLane(world.isoLanes ?? [], px.x, px.y)
+  if (lane) return { kind: 'lane', id: `lane:${lane.slot}` }
   return GROUND
 }
 
