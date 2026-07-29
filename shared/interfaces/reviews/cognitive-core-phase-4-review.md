@@ -21,7 +21,20 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: f6cff878b3bbd8f2dcfde7118cfa1b161a0bcad7d23ff8ed5cd23b16e7d2646a
+Reviewed-Scope-Digest: PENDING-RECOMPUTE
+(RE-BOUND 2026-07-29 on `feat/onboarding-connector-read`, previous value
+`e7a6983a…`. TWO in-scope paths moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` gains one
+`temporary_allowances` row (`connector-read-lane`, +416 non-comment lines, the
+line ceiling re-measured over this tree), and
+`cabinet/scripts/egg-export-manifest.txt` gains one `delete` line for
+`instance/config/connectors.yml` so a live instance value cannot ship in the
+egg. The unit's own work is in `framework/onboarding/` and
+`instance/config/`, which this scope does not bind. The delta is named here
+rather than absorbed silently, because a re-freeze that hides what moved would
+assert a review that never happened.)
+
+(RE-BOUND 2026-07-29 on `fix/briefing-and-recall`, merged with the connector-read re-bind above rather than replacing it — both sides re-bound this line and both notes are kept verbatim, because a re-freeze that hides what moved asserts a review that never happened. This branch's in-scope delta is named in its own re-bind note at the end of this file: `cabinet/services.yml` (the retrieval-eval row's notes + `RE_ABSTAIN_FLOOR`) and one budget maximum in `cabinet/config/cognitive-architecture-contract.yml`. No COG-4 implementation byte moved on either side.)
 (MERGE RE-BIND, 2026-07-29, `fix/fence-newline-forgery` x master (the eight-PR billing-wall drain, final landing). Both sides had re-bound this line, so the merge left two; the SECOND is removed and the value above is recomputed over this merge commit. Every note from both sides is kept verbatim. No COG-4 implementation byte moved on either side — the only in-scope path is the contract file, whose ceiling is re-measured over the merged tree.)
 
 

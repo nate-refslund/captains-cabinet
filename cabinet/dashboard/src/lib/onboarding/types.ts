@@ -9,6 +9,12 @@ export type OnboardingAction =
   | 'propose_window'
   /** Answers the seed question. Carries free text, so surfaces render a FIELD. */
   | 'answer_seed'
+  /**
+   * Reads every connector the operator declared — read-only, contents-free.
+   * Payload-free: the estate is declared in instance/config/connectors.yml, so
+   * a surface can trigger the read but can never widen it.
+   */
+  | 'gather_connectors'
   | 'ratify_charter'
   | 'continue'
   | 'pause'
