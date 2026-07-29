@@ -98,3 +98,23 @@ read. It replaces a question that connected mode DELETED on a premise this gate
 falsified — that a cabinet which has swept its sources already knows what
 matters. Measured, it does not; it knows what is there, which is a different
 thing, and the difference is exactly the dialog the Captain asked for.
+
+## 7. Superseded in part, 2026-07-29 — re-executed on the same estate
+
+Two things §3 records as decided were REPORTED as working and, re-run against
+the same live 665-name sweep, were not. Both are corrected on
+`fix/salience-ranking`; the positions above are kept verbatim because a later
+session must argue with what was actually claimed, not with a tidied version.
+
+| Claim above | What re-execution measured | What replaced it |
+|---|---|---|
+| Divergence 3, "identity: demote, not delete" — closed | Three identity-shaped candidates were still REMOVED with reason `connector_furniture`. The identity exemption added afterwards only fires for strings the connectors report about *themselves*, and the organisation owning 52 of 56 repositories was never one of them. | Both floors are DISCOUNTS. The occurrences one connector's filing explains stop counting as evidence; the token keeps the rest and stays findable. The owner stamped on each row now joins the estate's identity strings. |
+| §5, "the alias learned from the escape hatch changed the next ranking" | True, and beside the point: cold, the entity stood as FIVE candidates (ranks 6, 11, 21, 33, 34), and an operator's typed answer only ever unions the two names they happened to type. Three fragments survived the "closed loop". | `rank(join=…)` hands the candidates' names UNMODIFIED to judgment and takes back groups it validates against what it actually ranked. No string function joins them and none may — a stem table is a hand-maintained list wearing an algorithm. |
+
+§3's divergence 2 ("does the ranking surface the operator's own three answers
+cleanly? **No**") stands, and is now MEASURABLE rather than anecdotal:
+`salience.check` grades a ranking against answers the operator supplies, and its
+live consumer is `answer_salience`, where every real answer grades the ordering
+that operator was actually shown. The score is unchanged except that its volume
+term counts the occurrences the discount left standing, and the connector span
+is counted over those too.

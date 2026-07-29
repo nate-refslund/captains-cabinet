@@ -1856,6 +1856,45 @@ def test_answering_the_offer_records_a_ratified_target(tmp_path):
     assert "so that is where I spend depth" in result["card"]["body"]
 
 
+def test_the_answer_grades_the_ranking_that_produced_it(tmp_path):
+    """THE ONLY ANSWER KEY THAT IS NOT TUNED TO ONE ESTATE. A ranking nobody
+    checks is an assertion; a check written against one operator's three answers
+    is right for one estate and a fiction for the next. The operator answering
+    IS the key, in their own words and on their own estate, so every real answer
+    records where the mechanism actually put the thing they picked."""
+    _connected_state(tmp_path, _estate_rows())
+    offered = journey.salience_offer(journey.snapshot(tmp_path)["state"])
+    choice = offered["options"][0]["id"]
+    result = journey.act(
+        {"action": "answer_salience", "choice": choice, "surface": "dashboard",
+         "action_id": "sal-grade"},
+        tmp_path,
+    )
+    grade = result["state"]["salience"]["grade"]
+    assert grade["schema"] == "cabinet.salience-check/v1"
+    assert grade["verdict"] == "all_offered"
+    assert grade["answers"][0]["position"] == 1
+    # the cut it is graded against is the cut the operator was SHOWN, not a
+    # number chosen here — a grade against a different shortlist grades nothing
+    assert grade["top"] == len(offered["options"]) - 1
+
+
+def test_a_typed_answer_the_ranking_missed_is_graded_as_a_miss(tmp_path):
+    """The direction that matters. An escape-hatch answer means the shortlist
+    did not hold it, and the grade must say so rather than record a success
+    beside a name the ranking never offered."""
+    _connected_state(tmp_path, _estate_rows())
+    result = journey.act(
+        {"action": "answer_salience", "choice": "other",
+         "name": "something the sweep never read",
+         "surface": "dashboard", "action_id": "sal-miss"},
+        tmp_path,
+    )
+    grade = result["state"]["salience"]["grade"]
+    assert grade["verdict"] == "lost"
+    assert grade["answers"][0]["verdict"] in {"never_seen", "not_a_candidate"}
+
+
 def test_the_escape_hatch_takes_a_typed_name_and_teaches_the_alias(tmp_path):
     """The loop that makes the mechanism agnostic close.
 

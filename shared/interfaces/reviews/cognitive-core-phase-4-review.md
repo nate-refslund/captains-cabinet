@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: b885033efb7fe6c672a8d8c43b3aafd8852e601f7c398e6bf868f9436b21ae24
+Reviewed-Scope-Digest: 80d1b9fed616d8bc4332d015bcedb155f3aa409b0181022f3bde359bd80b2a7b
 (MERGE RE-BIND, 2026-07-29, `fix/connector-loader-honesty` x master. Both sides
 re-bound this line, so the merge left two; ONE value stands and it is recomputed
 over this merge commit. Every note from both sides is kept verbatim below,
@@ -1526,3 +1526,97 @@ bijection class moves.
 
 Recorded digest: 408e6b979fff5a1d84da85fdc19ed7114a8a2df96492636407d80febee0aa017
 Previous:        b6872d9f98e0b1138aec5c496a1787e23a3afe1aa20b1acc2f7865bf6b18fd13
+
+---
+
+## Re-bind 2026-07-29 (fix/salience-ranking, over the merge of origin/master b65ae3fb)
+
+Recorded digest: d424e84fd9b7b8c1d17af49915dfa4951c1680c472df9a3215f6eee7ef9d4e1f
+Previous:        a9be6fa17cc368ca64a84309d26fb65d1b1483633ec39722cf8b0c2796894658
+
+Every prior note above survives verbatim; each describes a different landing and
+none is another's restamp. Two committed conflict markers this file had been
+carrying since an earlier resolution are removed in the same commit — no note
+text moved, and this file is excluded from its own digest, so nothing here can
+change the value it records.
+
+ONE bound path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml`. It carries BOTH sides'
+mass raises verbatim — master's +94 read-lane row and this branch's +305 for the
+ranker's discount, join seam and oracle — under a merged `maximum` of 60944 that
+is RE-MEASURED over this tree (observed 75221, zero headroom) rather than summed
+on paper. It also supersedes two prose blocks that described the salience floors
+as DELETING, which is precisely what this branch stops them doing; leaving them
+would have left the contract's own words contradicting the code they adjudicate.
+
+Neither raise is an allowance — a bijection class may never be bought with one,
+and this is mass on the line the zero-headroom law is read from. ZERO new
+modules, so no bijection class moves. The unit's own work is in
+`framework/onboarding/`, which this scope does not bind.
+
+
+---
+
+## Re-bind 2026-07-29 (fix/salience-ranking, prose correction)
+
+Recorded digest: ade4e533458db0efd149a6f80da69b95f364f096bd934361f6a31ed75aaee975
+Previous:        d424e84fd9b7b8c1d17af49915dfa4951c1680c472df9a3215f6eee7ef9d4e1f
+
+Comment bytes only in the one bound path,
+`cabinet/config/cognitive-architecture-contract.yml`: the merge note added by
+the re-bind above said "the two raises above are DISJOINT" while sitting between
+them, and is moved below both. No budget value changes, the census re-runs at
+observed == maximum with zero headroom, and no COG-4 implementation byte moves.
+Named rather than absorbed, because a digest that moves for reasons nobody wrote
+down is a binding to nothing.
+
+
+---
+
+## Re-bind 2026-07-29 (fix/salience-ranking, actor-harvest dedupe)
+
+Recorded digest: 8e9e9177e4f168b3404ddc947d5d128445fe7d1101b07d694eab9611530e8eba
+Previous:        ade4e533458db0efd149a6f80da69b95f364f096bd934361f6a31ed75aaee975
+
+ONE bound path, `cabinet/config/cognitive-architecture-contract.yml`, taking
+`framework_production_noncomment_lines` 60944 -> 60946 for a two-line fix in
+`framework/onboarding/salience.py`: the actor harvest read one identity string
+per ROW, so 665 rows produced 665 strings for four distinct owners. Raised
+visibly on the same maximum line, census PASS at observed == maximum with zero
+headroom, no allowance, zero new modules, no COG-4 implementation byte moved.
+
+
+---
+
+## Re-bind 2026-07-29 (fix/salience-ranking, fail-soft judgment)
+
+Recorded digest: fb9ef1716b7171213bf9c38eb24db1eb06a19127b31527ec01520ba0540ba29d
+Previous:        8e9e9177e4f168b3404ddc947d5d128445fe7d1101b07d694eab9611530e8eba
+
+ONE bound path, `cabinet/config/cognitive-architecture-contract.yml`, taking
+`framework_production_noncomment_lines` 60946 -> 60950 for four lines in
+`framework/onboarding/salience.py`: a judgment callable that raised took the
+exception out through `rank()`, so an unreachable model would have taken down
+the operator's offer to improve its ordering. Raised visibly, census PASS at
+observed == maximum with zero headroom, no allowance, zero new modules, no
+COG-4 implementation byte moved.
+
+
+---
+
+## Re-bind 2026-07-29 (fix/salience-ranking, merge of origin/master 468e1a7b)
+
+Recorded digest: 80d1b9fed616d8bc4332d015bcedb155f3aa409b0181022f3bde359bd80b2a7b
+Previous:        b885033efb7fe6c672a8d8c43b3aafd8852e601f7c398e6bf868f9436b21ae24
+
+Both sides re-bound this digest the same day. Master's copy of this file is
+taken wholesale so nothing it carries is dropped, and this branch's four notes
+are appended to it; every note above stands verbatim and none is another's
+restamp.
+
+ONE bound path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` carries BOTH sides' mass
+raises verbatim — master's +29 connector-loader honesty row and this branch's
+ranker rows — under a merged `maximum` of 60979 that is RE-MEASURED over this
+tree (observed 75256, zero headroom) rather than summed on paper. Neither is an
+allowance; ZERO new modules, so no bijection class moves.
