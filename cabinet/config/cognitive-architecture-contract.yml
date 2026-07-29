@@ -106,7 +106,28 @@ budgets:
     # tree rather than added on paper (60164 + 5 + 13 = 60182; observed 73129).
     # Neither is an allowance; both are permanent, so the ratchet re-pins here
     # at zero headroom.
-    maximum: 60182
+    # 60169 -> 60172 (+3 measured 2026-07-29 via cognitive-architecture-census.py,
+    # observed 73119 vs the then-effective 73116): the "fence-forgery" screen arm
+    # grew a SECOND alternative. `_FENCE_RE` used `\s`, which matches a newline,
+    # so the bundle's section header was never anchored to one line and a forged
+    # header could be SPLIT across two — a bare markdown rule, then the `ref=`
+    # line beneath it. Anchoring the parser stops it parsing; this arm keeps the
+    # ATTEMPT attributable, so the real enclosing ref still goes suspect instead
+    # of the forgery passing as inert prose. Three lines, because the two shapes
+    # are alternatives inside ONE arm — a second (name, regex) entry would have
+    # cost the same and made `hits` report "fence-forgery" twice. RAISED VISIBLY
+    # rather than paid by a temporary allowance: a screen arm for an attack that
+    # has been demonstrated twice is permanent, so an allowance would promise a
+    # deletion gate that never fires. Zero new production MODULES (the new suite
+    # is a test).
+    #
+    # MERGE, 2026-07-29 (second): the fence-forgery split-shape arm (+3) and the
+    # secret-redaction/Danish-screen leg (+13) landed off the SAME 60169 base and
+    # are disjoint (a screen arm; a bilingual screen plus redaction shapes), so
+    # the merged ceiling is their sum — RE-MEASURED over this merge tree with
+    # cognitive-architecture-census.py rather than added on paper. Neither is an
+    # allowance; both are permanent, so the ratchet re-pins at zero headroom.
+    maximum: 60185
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

@@ -21,7 +21,9 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: f10e59335771213b6083563d8b0e75ded1783d83d580c1b943589d4bb217c8c1
+Reviewed-Scope-Digest: e7a6983a05d08cd4e88233935a84a8a3afded44dbb6e79021f24a54fede4bf86
+(MERGE RE-BIND, 2026-07-29, `fix/fence-newline-forgery` x master (the eight-PR billing-wall drain, final landing). Both sides had re-bound this line, so the merge left two; the SECOND is removed and the value above is recomputed over this merge commit. Every note from both sides is kept verbatim. No COG-4 implementation byte moved on either side — the only in-scope path is the contract file, whose ceiling is re-measured over the merged tree.)
+
 
 (RE-BOUND again in the same branch, 2026-07-29: the agnosticism gate landed on
 master and correctly refused this unit's prose, so the line allowance was
