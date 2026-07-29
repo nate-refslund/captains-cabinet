@@ -65,7 +65,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, Mapping
 
 from framework.authority.ownership import (
     ATTESTATION_LIMIT,
@@ -90,6 +90,10 @@ from framework.evidence import (
 # vocabulary and the grant derivation have exactly one home, so a surface
 # cannot invent a connector this module would not recognise.
 from framework.onboarding import research
+# The salience ranker. Same rule as the registry above: the ranking function,
+# its measured floors and the shape of the ask have one home, so a surface
+# cannot present candidates that were scored by some other arithmetic.
+from framework.onboarding import salience as _salience
 
 SCHEMA = "cabinet.onboarding-journey/v2"
 ACCESS_RECORD_SCHEMA = "cabinet.source-access-record/v1"
@@ -796,8 +800,38 @@ def _cannot_know(mode: str) -> list[dict[str, str]]:
     return out
 
 
+def salience_offer(state: Mapping[str, Any] | dict[str, Any] | None,
+                   *, now: str | None = None) -> dict[str, Any] | None:
+    """The ranked "which of these should I open first?" offer, or nothing.
+
+    RETURNS NONE RATHER THAN AN EMPTY OFFER. A ranking needs names recurring
+    across sources; a journey holding one source has nothing to rank, and a
+    picker built from it would present the operator's single folder as the
+    considered winner of a survey. When there is no offer the salience question
+    stays exactly what it was — free text — which is the honest fallback and
+    also the one the Captain's own ruling asks for when the sweep cannot see.
+    """
+    if not isinstance(state, Mapping):
+        return None
+    rows, identities = _salience.rows_from_state(state)
+    if len({row["connector"] for row in _salience.normalize_rows(rows)}) < 2:
+        return None
+    answered = state.get("salience")
+    aliases = []
+    if isinstance(answered, Mapping) and answered.get("aliases"):
+        aliases = [list(answered["aliases"])]
+    ranking = _salience.rank(rows, identities=identities, aliases=aliases, now=now)
+    if not ranking["clusters"]:
+        return None
+    supplied = state.get("salience_rows")
+    extra = [str(n) for n in (supplied or {}).get("not_reached") or ()] \
+        if isinstance(supplied, Mapping) else []
+    return _salience.offer(ranking, not_reached=extra)
+
+
 def entry_plan(
-    grants: Any = None, *, seed: Any = None, executed: Any = None
+    grants: Any = None, *, seed: Any = None, executed: Any = None,
+    offer: Any = None,
 ) -> dict[str, Any]:
     """The opening move for whatever the operator has actually granted.
 
@@ -823,9 +857,14 @@ def entry_plan(
         discovery = {**discovery, "executed": deepcopy(executed)}
     if mode == ENTRY_MODE_CONNECTED:
         opening_move = "sweep_and_assert"
-        asks: tuple[dict[str, Any], ...] = tuple(
-            q for q in RESIDUAL_QUESTIONS if q["id"] != "salience"
-        )
+        # SALIENCE IS ASKED IN CONNECTED MODE TOO. It used to be deleted here,
+        # on the assumption that a cabinet which had swept the sources already
+        # knew what mattered. Measured against a real estate — 665 names across
+        # four connectors — the ranking put the operator's own three answers at
+        # ranks 1, 4 and 8 of 47, and its top three contained one of them. That
+        # is a good ranking and a bad oracle, so the sweep now RANKS and the
+        # operator still CHOOSES; the ranking rides along as the candidates.
+        asks = RESIDUAL_QUESTIONS
         question = None
     elif mode == ENTRY_MODE_SEEDED:
         opening_move = "seed_then_discover"
@@ -842,13 +881,31 @@ def entry_plan(
             "label": "Tell me in a sentence, and I will go look",
             "input": "seed",
         })
+    questions = [deepcopy(q) for q in asks]
+    if isinstance(offer, Mapping) and offer.get("options"):
+        # THE QUESTION THAT NOW HAS CANDIDATES. Salience stops being a blank
+        # field the moment a ranking exists, and gains the action that carries
+        # the answer — including the escape hatch, which takes a typed name so
+        # a right answer the ranking missed is one word away rather than
+        # unreachable. A question printed with options and no way to send one
+        # is the dead end this whole surface exists to abolish.
+        for entry in questions:
+            if entry["id"] == "salience":
+                entry["offer"] = deepcopy(dict(offer))
+        next_actions.append({
+            "action": "answer_salience",
+            "label": "Point me at the one to open first",
+            "input": "choice",
+            "options": deepcopy(list(offer["options"])),
+            "not_reached": offer.get("not_reached", ""),
+        })
     payload = {
         "schema": ENTRY_PLAN_SCHEMA,
         "mode": mode,
         "opening_move": opening_move,
         "grants": normalized,
         "seed_question": question,
-        "questions": [deepcopy(q) for q in asks],
+        "questions": questions,
         "discovery": discovery,
         "cannot_know": _cannot_know(mode),
         "next_actions": next_actions,
@@ -944,6 +1001,7 @@ def _entry_plan_for(state: dict[str, Any]) -> dict[str, Any]:
         _entry_grants(state),
         seed=seed.get("text") if isinstance(seed, dict) else None,
         executed=state.get("discovery"),
+        offer=salience_offer(state),
     )
 
 
@@ -963,6 +1021,40 @@ def _probe_note(state: dict[str, Any]) -> str:
         for row in refused[:3]
     )
     return f" I looked for these and they did not answer: {named}."
+
+
+def _salience_note(state: dict[str, Any], plan: dict[str, Any]) -> str:
+    """The ranking, in the operator's reading order: candidates, then the cut.
+
+    THE NOT-REACHED SENTENCE IS THE POINT. A shortlist read without it is a
+    claim that everything was considered, and an operator who believes that
+    stops looking for the answer the ranking missed — which, measured on a real
+    estate, is where the right answer often is. The floored words, the sources
+    with no usable clock and the candidates below the cut are all named here,
+    because the operator reads this sentence and not the coverage block.
+    """
+    answered = state.get("salience")
+    if isinstance(answered, dict) and answered.get("target"):
+        note = (
+            f" You pointed me at {answered['target']}, so that is where I spend "
+            "depth — nothing else gets opened on the strength of a ranking."
+        )
+        if answered.get("from_escape_hatch"):
+            note += " I had not ranked it; I have it now."
+        return note
+    for question in plan.get("questions") or ():
+        offer = question.get("offer") if isinstance(question, dict) else None
+        if not isinstance(offer, dict) or not offer.get("options"):
+            continue
+        named = ", ".join(
+            str(o["label"]) for o in offer["options"]
+            if str(o.get("id")) != _salience.ESCAPE_OPTION_ID
+        )
+        note = f" Ranking what recurs across your sources, these come up first: {named}."
+        if offer.get("not_reached"):
+            note += " " + str(offer["not_reached"])
+        return note
+    return ""
 
 
 def _discovery_note(executed: Any) -> str:
@@ -1121,6 +1213,7 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
             body=(
                 _entry_body(plan)
                 + _probe_note(state)
+                + _salience_note(state, plan)
                 + _discovery_note(state.get("discovery"))
                 + " Whatever you approve, I show you exactly what I would read first; "
                 "nothing is opened until you approve that Charter."
@@ -1175,6 +1268,10 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
                 f" I read {coverage.get('examined_files', 0)} of "
                 f"{coverage.get('eligible_files', 0)} supported files, most-informative "
                 "first; the rest were left unopened by the First Window limits."
+                # …and WHICH parts got nothing, because a fraction cannot tell
+                # the operator whether the blind spot is the part they care
+                # about. See unopened_areas_phrase for the measurement.
+                + unopened_areas_phrase(coverage)
             )
         common.update(
             kind="first_dividend",
@@ -1410,6 +1507,49 @@ _RANK_SIGNAL_TOKENS = (
 _PROSE_SUFFIXES = frozenset({".md", ".mdx", ".rst", ".txt"})
 _CONFIG_SUFFIXES = frozenset({".json", ".yml", ".yaml", ".toml", ".csv", ".tsv"})
 
+# ── Naming the blind spot ────────────────────────────────────────────────────
+# A COUNT ANSWERS THE WRONG QUESTION. "I read 200 of 723" tells the operator
+# how much was missed; it cannot tell them whether the missed part was the
+# part that mattered, and that is the only question a coverage caveat is for.
+# Measured 2026-07-28 on a 723-file operator estate (a timed stranger-hatch
+# run): relevance ordering admitted 200 files drawn from exactly two of four
+# top-level areas and left ``tracker/`` — the one place holding an urgent row
+# — at ZERO coverage, while the card said only "200 of 723, most-informative
+# first". Relevance ordering is a real improvement over the alphabetical cap
+# it replaced and it still starves whole areas, because a bucket-3 CSV export
+# loses to four hundred bucket-2 standup notes. So the disclosure names them.
+#
+# The unit is the AREA: the immediate child of the approved folder, with
+# files sitting directly in the folder collected under one label. Coarser
+# than a path list (which no operator reads) and actionable in the only way
+# the operator can act — "point me at that one instead". Derived from paths
+# alone, never from content, so the naming cannot be steered by what a file
+# says. Capped when rendered, never when recorded.
+_TOP_LEVEL_AREA = "(files directly in the folder)"
+_MAX_NAMED_AREAS = 5
+
+
+def _area_of(rel: Path) -> str:
+    """The top-level area one relative path belongs to. Total and path-only."""
+    parts = rel.parts
+    return parts[0] if len(parts) > 1 else _TOP_LEVEL_AREA
+
+
+def unopened_areas_phrase(coverage: dict[str, Any] | None) -> str:
+    """The rendered ' Nothing was opened in: …' clause, or '' when there is
+    nothing honest to say. ONE renderer, because the card and the
+    orientation-only summary must not drift into two different disclosures of
+    the same fact."""
+    areas = list((coverage or {}).get("unopened_areas") or [])
+    if not areas:
+        return ""
+    shown = areas[:_MAX_NAMED_AREAS]
+    remainder = len(areas) - len(shown)
+    named = ", ".join(shown)
+    if remainder:
+        named += f", and {remainder} more"
+    return f" Nothing at all was opened in: {named}."
+
 
 def _relevance_key(rel: Path) -> tuple[int, int, int, str]:
     """Rank one eligible path. Total, deterministic, content-blind.
@@ -1624,6 +1764,13 @@ def _scan_source(source: Path, charter_hash: str) -> tuple[dict[str, Any], list[
         })
         total += len(raw)
     unexamined = max(eligible_count - reached, 0)
+    # Areas with eligible files and ZERO opened ones — the blind spot, named.
+    # Computed from the two sets this function already has, so it costs one
+    # pass over paths already in memory and cannot disagree with the counts.
+    _opened_areas = {_area_of(Path(entry["path"])) for entry in entries}
+    unopened_areas = sorted(
+        {_area_of(rel) for _key, _path, rel in eligible} - _opened_areas
+    )
     manifest_files = [
         {"path": e["path"], "bytes": e["bytes"], "sha256": e["sha256"]}
         for e in entries
@@ -1652,6 +1799,21 @@ def _scan_source(source: Path, charter_hash: str) -> tuple[dict[str, Any], list[
             "unexamined_files": unexamined,
             "complete": unexamined == 0 and not truncated,
             "ordering": "relevance",
+            # WHICH parts of the folder the window never touched at all, by
+            # name. Recorded in full; the surfaces cap what they render.
+            # NOT empty-by-construction on a complete window, and the earlier
+            # claim that it was is measurably false: ``complete`` is derived
+            # from files REACHED, while this set is derived from files
+            # ENTERED, and a file rejected at read time (binary, unreadable,
+            # raced) is reached-but-never-entered. An area made only of those
+            # therefore appears here with ``complete`` true — verified by
+            # execution 2026-07-29 on an area of mode-000 CSVs. Neither
+            # disclosure site renders the clause in that case (both gate on
+            # ``not complete``), so the record is honest and the RENDERING of
+            # it is not yet; closing that means re-deriving ``complete`` from
+            # entered files, which moves an older claim surface and is filed
+            # rather than smuggled in here.
+            "unopened_areas": unopened_areas,
         },
     }
     manifest = {**manifest_payload, "manifest_hash": _hash(manifest_payload)}
@@ -2281,6 +2443,9 @@ def _first_dividend(manifest: dict[str, Any], entries: list[dict[str, Any]], now
                 f"command, or explicit urgent marker IN WHAT I READ. {unexamined} eligible files were left "
                 "unopened by the First Window limits, so this is not a clean bill of health for the folder — "
                 "widen the window or point me at a narrower one and I will finish the job."
+                # "Point me at a narrower one" is unactionable advice unless
+                # the operator is told WHICH part went unread.
+                + unopened_areas_phrase(coverage)
             )
         # COVERAGE IS NOT THE ONLY WAY A NEGATIVE GOES UNEARNED. Reading every
         # file still proves nothing about a question no detector was able to
@@ -2651,6 +2816,69 @@ def _act_core(
                 else None,
                 plan["discovery"]["probes"],
             )
+            return _commit(
+                base, state, after, action=action, action_id=action_id,
+                surface=surface, trace_id=trace_id,
+                correlation_id=correlation_id, now=ts,
+            )
+        if action == "answer_salience":
+            # WHERE THE DEPTH BUDGET IS SPENT. The sweep ranked names across
+            # every connected source; this is the operator saying which one to
+            # open. Nothing is opened here — the answer is recorded, and depth
+            # remains behind the Charter it always was — but from here the
+            # cabinet has a RATIFIED target instead of a guess, which is the
+            # whole reason the ranking was allowed to be shallow.
+            offer = salience_offer(_with_registry(base, state))
+            if not offer:
+                raise JourneyError(
+                    "salience_not_offered",
+                    "I have nothing ranked to choose from yet.",
+                )
+            raw_choice = request.get("choice")
+            if not isinstance(raw_choice, str) or not raw_choice.strip():
+                raise JourneyError(
+                    "salience_choice_required",
+                    "Pick one of the candidates, or name your own.",
+                )
+            choice = raw_choice.strip()
+            options = {str(o["id"]): o for o in offer["options"]}
+            if choice not in options:
+                raise JourneyError(
+                    "salience_choice_unknown",
+                    "That is not one of the candidates I offered.",
+                )
+            escaped = choice == _salience.ESCAPE_OPTION_ID
+            if escaped:
+                # THE ESCAPE HATCH IS A REAL PATH, NOT A POLITE ONE. Measured,
+                # this ranking's top three held one of the operator's three
+                # answers, so the typed name is the likeliest correct one and it
+                # must be as easy to give as a click. It also carries the ALIAS
+                # the ranking could not derive: a name typed here is merged with
+                # whatever was already ranked, so the split candidate becomes
+                # one candidate on the next pass.
+                raw_name = request.get("name")
+                if not isinstance(raw_name, str) or not raw_name.strip():
+                    raise JourneyError(
+                        "salience_name_required",
+                        "Tell me what to open instead, in a word or two.",
+                    )
+                target = " ".join(_scrub_lone_surrogates(raw_name).split())[:MAX_SEED_CHARS]
+                aliases = sorted(set(_salience.tokenize(target)))
+                evidence = "named by the operator; the ranking did not offer it"
+            else:
+                target = str(options[choice].get("label") or choice)
+                aliases = [str(a) for a in (options[choice].get("aliases") or ())]
+                evidence = str(options[choice].get("why") or "")
+            after = deepcopy(state)
+            after["salience"] = {
+                "target": target,
+                "aliases": aliases,
+                "from_escape_hatch": escaped,
+                "offered": [str(o["id"]) for o in offer["options"]],
+                "not_reached": offer.get("not_reached", ""),
+                "evidence": evidence,
+                "answered_at": ts,
+            }
             return _commit(
                 base, state, after, action=action, action_id=action_id,
                 surface=surface, trace_id=trace_id,

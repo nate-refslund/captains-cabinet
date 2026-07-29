@@ -41,7 +41,16 @@ budgets:
     # originally declared it as an allowance row; merging master's
     # bijection-allowance-bypass landing refused that row by name, which is the
     # gate working exactly as designed.
-    maximum: 207
+    #
+    # 207 -> 208 (2026-07-28): framework/onboarding/salience.py, the recurring-
+    # name ranker behind the Captain's helicopter-first onboarding ruling.
+    # RAISED VISIBLY, same reason as the row above and same instrument: an
+    # allowance pays for MASS and asks only reason/owner/sunset, so it may not
+    # buy a member of a class whose members the expansion registry names. The
+    # adjudication (two blind arms, the refuted merge into
+    # research.py::probe_connectors, and the consumer named before the producer
+    # landed) is docs/proposals/salience-ranking-expansion-2026-07-28.md.
+    maximum: 208
   framework_production_noncomment_lines:
     path: framework
     # 60067 -> 60164 (+97 measured 2026-07-26 via cognitive-architecture-census.py):
@@ -75,7 +84,29 @@ budgets:
     # somewhere for a per-deployment restriction to enter, and this is it. Zero
     # new production MODULES (the new suite is a test; the ratchet's debt ledger
     # is a .txt), so framework_production_modules is unchanged.
-    maximum: 60169
+    # +13 (2026-07-29): the injection screen's IMPERATIVE-VERB delta. The
+    # hostile-input red team landed the Nordic/German arms first, built on
+    # IGNORE/FORGET stems; a safety sweep measured seven payloads that still
+    # scored ZERO against them — tilsidesæt / overskriv (override verbs the
+    # stems cannot reach), bare `regler` (the stem list carried only the
+    # definite `reglerne`, so the most natural phrasing of the very attack it
+    # was written for missed), English `forget` (the twin of its own `glem`),
+    # bulk exfiltration to a mail address in both languages, and the polite
+    # Danish approval imperative. Folded into the EXISTING arms plus two new
+    # ones (forget-instructions, bulk-exfil-address); the red team's arms are
+    # kept verbatim and are the richer half. Deliberately NOT a
+    # temporary_allowances row: an operator's language is not a phase, so an
+    # allowance would promise a deletion gate that will never fire. Zero new
+    # MODULES. Compressing the regexes to dodge the ratchet was the alternative
+    # and would have been gaming the budget rather than paying it.
+    #
+    # MERGE, 2026-07-29: the two bumps above landed concurrently off the SAME
+    # 60164 base and are disjoint (a charset seam; a bilingual injection
+    # screen), so the merged ceiling is their SUM, re-measured over the merge
+    # tree rather than added on paper (60164 + 5 + 13 = 60182; observed 73129).
+    # Neither is an allowance; both are permanent, so the ratchet re-pins here
+    # at zero headroom.
+    maximum: 60182
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
@@ -1157,6 +1188,106 @@ temporary_allowances:
       a partial search becomes a continuable one and the disclosure collapses
       into the completeness flag it already sets, or COG-7 compaction brings
       production non-comment lines below the pinned baseline
+  - phase: onboarding-salience-sweep
+    budget: framework_production_noncomment_lines
+    additional: 687
+    reason: >-
+      The Captain's helicopter-first ruling: with 531 tracker boards, 56 repos,
+      20 databases and 58 hostings connected, the cabinet must find the one to
+      three things that matter MOST and keep asking which to go deep on — and it
+      must do that agnostic to what those things are, because for a salesperson
+      they are clients and for a librarian something else entirely. This is
+      RANKING, not the refuted ingest engine: nothing here reads content, the
+      primitive is a (connector, name, updated) row, and the signal is a name
+      recurring ACROSS systems. What the lines buy, each pinned by an arm that
+      fails against the pre-change tree (the whole salience suite cannot import
+      it, and all eight journey arms red at adab6ec0). (1) FLOORS MEASURED FROM
+      THE ESTATE, never a stopword list — connector furniture by share (>25% of
+      one connector's rows, and only once that connector carries >=8 rows,
+      because a share over two rows is not a measurement), single-system
+      structure by concentration, and identity by DEMOTION not deletion: an
+      estate whose owner is "step network" also contains the product
+      stepnetwork.dk, so a delete floor erases the target to suppress the noise.
+      (2) A CLOCK THAT IS REFUSED WHEN IT DOES NOT DISCRIMINATE — measured live,
+      one of four connectors resolved three distinct days across twenty rows, so
+      recency there was a rename rather than a ranking; its clusters now score
+      at a neutral band and the refusal is disclosed. (3) THE ASK — three
+      candidates carrying the NAMES that produced them, an escape hatch that is
+      never conditional and takes a typed name, and an offer that REFUSES to
+      exist without a coverage block so an unearned clean negative is
+      structurally impossible. (4) THE ANSWERED ALIAS — the one thing names
+      cannot do: the entity spanning the most connectors was scored as two
+      candidates because its tracker and its code call it different words, and
+      one typed answer merges them to rank 2 with all four connectors. Only
+      cluster LABELS merge, because matching every token let the word "call"
+      inside a typed sentence absorb an unrelated cluster. (5) THE WIRING —
+      journey.salience_offer, the salience question restored in connected mode
+      (its deletion rested on a premise this unit falsified against 665 real
+      names), the answer_salience action and its four refusals, and the card
+      sentence that states the cut, the floored words and every refused clock.
+      RE-MEASURED at 687 after the agnosticism gate landed on master mid-flight
+      and correctly refused this module's prose: the docstrings cited a real
+      operator's employer and products by name to explain the identity-collision
+      and fragment cases, which is precisely the coupling framework/ may not
+      carry — the measurements stay, the estate is now a neutral worked example,
+      and the +2 is that rewrite. Total 73772 on this tree against the 73085
+      pinned level, measured at this landing rather than carried. ZERO
+      bijection-class mass rides here: the module itself is a visible maximum
+      raise (207 -> 208) plus an expansion row.
+    owner: onboarding-plane
+    sunset: '2027-01-28'
+    deletion_gate: >-
+      the ranking gains a consumer that makes the offer's evidence lines
+      derivable rather than assembled (a surface that renders the cluster
+      directly), or COG-7 compaction brings production non-comment lines below
+      the pinned baseline
+  - phase: stranger-hatch-unopened-areas
+    budget: framework_production_noncomment_lines
+    additional: 27
+    reason: >-
+      the truncation caveat stops being a fraction and NAMES the parts of the
+      approved folder it never opened. Measured 2026-07-28 by driving the real
+      journey over a 723-file operator estate during the first end-to-end TIMED
+      stranger hatch: relevance ordering admitted 200 files drawn from two of
+      four top-level areas and left `tracker/` — the one area holding an urgent
+      row — at ZERO coverage, while the card said only "I read 200 of 723
+      supported files, most-informative first; the rest were left unopened by
+      the First Window limits". Every word true, and the operator still could
+      not tell that the part they would have cared about was never opened. The
+      count sensor added 2026-07-27 structurally cannot catch it: it reads
+      identically whether one area or four went unread, which is the same shape
+      as the defect the probe-truncation row above exists to have fixed. What
+      the 27 buy: `_area_of` (the top-level area of one relative path, with
+      files sitting directly in the folder collected under one label), the
+      `unopened_areas` set difference computed inside `_scan_source` from the
+      two collections it already holds so it cannot disagree with the counts it
+      is published beside, the coverage key itself, and ONE renderer used at
+      BOTH disclosure sites (the strong-finding card and the orientation-only
+      summary) so the two cannot drift into different disclosures of the same
+      fact. Path-derived only: nothing is read to decide what to name, so the
+      naming cannot be steered by file CONTENT. Docstrings counted as written
+      — they carry the measurement that justifies the feature and the reason
+      the unit is the area rather than the path, which is exactly what a later
+      reader needs, and rewriting them into "#" comments to buy a smaller
+      number is forbidden. ZERO new modules, ZERO bijection classes touched:
+      everything lands inside framework/onboarding/journey.py, and the four new
+      arms are under framework/onboarding/tests/, outside this budget's count.
+      EXACT measured 73043 on this branch against master 49ed144e reading 73016
+      exactly at its own pinned effective level, so the delta is 27 measured
+      against that base rather than carried from an earlier reading. RE-MEASURED AT THE MERGE with
+      master `a70bcfb5` (PR #268), which added its own +34 row at the same
+      position in this list: the merged tree reads 73077 = 73016 + 34 + 27, so
+      the two deltas are exactly additive and this row's `additional` is
+      unchanged by the merge. Re-measured rather than carried, because master
+      moved this very budget twice while this branch was in flight.
+    owner: onboarding-plane
+    sunset: '2027-01-28'
+    deletion_gate: >-
+      the First Window gains a resumable sweep (a cursor rather than a cap), so
+      an unopened area becomes a continuable one and the naming collapses into
+      the completeness flag it already sets; or the sweep is superseded by the
+      per-source ingest the 2026-07-26 altitude gate ordered; or COG-7
+      compaction brings production non-comment lines below the pinned baseline
   - phase: onboarding-derivation-false-positives
     budget: framework_production_noncomment_lines
     additional: 34
@@ -1248,6 +1379,38 @@ temporary_allowances:
       neutralizer and the fence-forgery pattern both dead weight — or COG-7
       compaction brings production non-comment lines below the pinned baseline
 expansions:
+  - member: framework/onboarding/salience.py
+    member_class: framework_production_modules
+    gate_date: '2026-07-28'
+    models_run:
+      - Fable 5
+      - Opus 5
+    adjudication: docs/proposals/salience-ranking-expansion-2026-07-28.md
+    merge_refuted: >-
+      framework/onboarding/research.py::probe_connectors — the nearest existing
+      organ and the obvious fold target: it IS the connector registry and this
+      module ranks across exactly those connectors. Refused on three properties
+      of that function rather than on preference. Different arity: probe_connectors
+      answers a per-source BOOLEAN (did this source answer, and if not why),
+      while rank answers a cross-source ORDERING over entity names — folding one
+      into the other gives the registry a second output whose shape has nothing
+      to do with its first. Different inputs: every probe there is a bounded
+      LOCAL FILE READ by explicit design, because "a probe that needed a
+      credential would be the first brick of the engine that was refuted", and a
+      ranker consuming rows a credentialed sweep may have produced would erase
+      the distinction that header exists to hold. Different failure mode:
+      probe_connectors is fail-closed per source, while a ranking's failure is a
+      CONFIDENT WRONG over an estate it only partly reached, and its defences
+      (escape hatch, not-reached line, offer refusing a coverage-less ranking)
+      are meaningless inside a boolean contract. Second candidate refused:
+      framework/onboarding/estate.py::proposed_lanes derives lanes from ONE
+      ratified window's directory markers and never sees a second system, which
+      is the only place recurrence exists.
+    consumer: framework/onboarding/journey.py
+    provenance: >-
+      per 2026-07-07 full-autonomy grant + 2026-07-21 ownership-on-GO; Captain
+      ruling 2026-07-28 (helicopter-first onboarding, agnostic to the noun), two
+      blind arms adjudicated in the document named above
   - member: framework/authority/ownership.py
     member_class: framework_production_modules
     gate_date: '2026-07-26'
