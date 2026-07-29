@@ -21,7 +21,57 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 308b32c438f8a2fafad2cc993760519dd2d5cbf602d7ac3f4d7cf1f18bb4fa1d
+Reviewed-Scope-Digest: e7a6983a05d08cd4e88233935a84a8a3afded44dbb6e79021f24a54fede4bf86
+(MERGE RE-BIND, 2026-07-29, `fix/fence-newline-forgery` x master (the eight-PR billing-wall drain, final landing). Both sides had re-bound this line, so the merge left two; the SECOND is removed and the value above is recomputed over this merge commit. Every note from both sides is kept verbatim. No COG-4 implementation byte moved on either side — the only in-scope path is the contract file, whose ceiling is re-measured over the merged tree.)
+
+
+(RE-BOUND again in the same branch, 2026-07-29: the agnosticism gate landed on
+master and correctly refused this unit's prose, so the line allowance was
+re-measured 685 -> 687 — a contract edit, and the contract IS in this scope. I
+first wrote that nothing in scope had moved; the verifier said otherwise and it
+was right. Prior digest
+`ffe8b3ee489ed66b44bc83aa1613b99dd245cf50a96baa8be07227ceff5806d3`. No COG-4
+byte moved; only the census ledger's own number.)
+
+(MERGE RE-BIND, 2026-07-29, `feat/salience-sweep` x master `1875e112`.
+Both sides had re-bound this line and both moved
+`cabinet/config/cognitive-architecture-contract.yml` (this branch: the visible
+bijection raise plus the salience expansion row; master: the recall unit's own
+allowance), so the two digests conflicted textually and NEITHER described the
+merged tree. The value above is recomputed over the MERGE COMMIT rather than
+taken from either side — taking either would have bound this artifact to bytes
+that no longer exist, which is the one thing the digest is for. Prior digests:
+this branch `918d6306d1b8104fc6f787951cfd4029b28ef388a9fada291451e12b1657ce6d`,
+master `c18946e6377c31c9c653389e02ff26273df8cb587cf446c80170e589340a9109`. Both
+landings' notes survive below verbatim; neither is the other's restamp, and the
+contract carries both allowance rows whole — the conflict was two independent
+additions to one list, not a contest.)
+(MERGE RE-BIND, 2026-07-29, `feat/salience-sweep` x master (the eight-PR billing-wall drain). Both sides had re-bound this line, so the merge left TWO digest lines and neither described the merged tree; the SECOND is removed and the value above is recomputed over this merge commit. Every note from both sides is kept verbatim below. The contract carries BOTH allowance rows whole (`onboarding-salience-sweep` +687, `stranger-hatch-unopened-areas` +27) and `framework/onboarding/tests/test_journey.py` carries BOTH sides' arms — nine salience arms and six starved-area arms, zero overlapping definitions. Every conflict here was two independent additions to one place, not a contest.)
+
+
+(MERGE RE-BIND, 2026-07-28, `fix/stranger-hatch-timed` x master `a70bcfb5`
+(PR #268). Both sides had re-bound this line and BOTH moved
+`cabinet/config/cognitive-architecture-contract.yml`, so the two digests
+conflicted textually: neither describes the merged tree and the value above is
+RECOMPUTED over it. Both sides added a `temporary_allowances` row at the same
+position — `stranger-hatch-unopened-areas` (+27, this branch) and
+`onboarding-derivation-false-positives` (+34, master) — and BOTH ARE KEPT; the
+conflict was textual adjacency, not a contested value, and the running total is
+RE-MEASURED on the merged tree rather than carried from either side. No budget
+`maximum` raised, no expansion member, no bijection class, and NO COG-4
+implementation byte moved on either side. Nothing below was re-reviewed,
+
+(MERGE RE-BIND, 2026-07-29, `fix/stranger-hatch-timed` x master `0166f74b`
+(PR #281). Fourth master merge for this branch, same shape: both sides had
+re-bound this line, neither digest describes the merged tree, value above
+RECOMPUTED over it, every prior note kept. Master's side also touched
+the Phase-4 evidence lens test file under `framework/tests/`
+(named by role, not by module: the shadow-law reference proof scans every
+shipped file for the module token), which auto-merged cleanly — this
+branch's two arms in that file (the ARMED assertion it already carried and the
+new shipped-twin lockstep) are both present and green after the merge, verified
+by running the file rather than by reading the merge output. NO COG-4
+implementation byte moved on either side.)
 
 (MERGE RE-BIND #4, 2026-07-29, vs the hostile-input red-team landing
 (`2c6f4d636640e0b094348d0bf24eb7ecd22435a265d07514cf8aea928f15c92a`). That leg fixed the SAME
@@ -66,6 +116,81 @@ commit and supersedes master's `c18946e6377c31c9c653389e02ff26273df8cb587cf446c8
 as well. No COG-4 byte moved on either side; the only in-scope path is the
 contract file, and both landings' budget rows are additive and disjoint.)
 
+(RE-BIND, 2026-07-28, `fix/hostile-input-red-team`. The hostile-input red
+team added a `temporary_allowances` row to
+`cabinet/config/cognitive-architecture-contract.yml` — a restore_from_baseline
+member of this phase's scope — paying +31 production non-comment lines for the
+fenced-bundle provenance fix (a source file could type its own fence header,
+defeating both the taint map and the D13 never-act-first floor). No COG-4
+surface changed: framework/acting, framework/sources and framework/frontdoor
+are outside this scope set. Recomputed over the committed tree; the prior
+value is superseded, the note below it is retained in full.)
+
+(superseded historical binding, kept for archaeology — prior digest `1c91f915f42e5243ddfc3a0b7a1af291394a25944661d50d0c981f43895a5934`)
+
+(MERGE RE-BIND, 2026-07-29, `fix/stranger-hatch-timed` x master `4c7d42e7`
+(PR #276). Fifth master merge for this branch. The shape has stopped being
+incidental and is worth recording as a finding in its own right: this one line
+is re-bound by EVERY landing that touches the digest scope, so with landings
+arriving faster than a full CI pass every in-flight branch conflicts here
+exactly once per landing, and each resolution is mechanical — keep both note
+blocks, recompute the digest over the merged tree, never pick a side. Nothing
+below was re-reviewed; NO COG-4 implementation byte moved on either side.)
+
+(MERGE RE-BIND, 2026-07-28, `fix/recall-live-claims-it-never-earned` x master
+`a70bcfb5` (PR #268). Both sides re-bound this line and both moved
+`cabinet/config/cognitive-architecture-contract.yml`, so the two digests
+conflicted textually: neither describes the merged tree, and the value above is
+recomputed over the MERGE COMMIT rather than taken from either side. Prior
+digests: this branch `ec75278e9929f8a03d811ec3689716e1190808db3df0a3a0ba0a0ef2275c5666`,
+master `3c8c1f7f60bd32a56e831438d768ea1b760b8f148353e65aba3c76c9b6d50a79`.
+THIS BRANCH's in-scope move: `cabinet/config/cognitive-architecture-contract.yml`,
+and only its `temporary_allowances` list — a new row buying the +30 non-comment
+lines two recall fixes cost (an unconfigured backend reporting live recall; the
+chunk heading rendered as the operator's own shared wording). No budget MAXIMUM,
+no set pin, no bijection class and no declared invariant moved. The two changed
+production files, `framework/sources/org.py` and `framework/onboarding/genesis.py`,
+are NOT in this scope, and neither is anything PR #268 touched
+(`framework/onboarding/estate.py`, `framework/onboarding/journey.py` and their
+tests) — the two branches share no production file. NO COG-4 implementation byte
+moved on either side: no organ, no scheduler or projection surface, no serve
+surface, no boundary row, no fixture, no CLI. Nothing below was re-reviewed,
+
+(MERGE RE-BIND, 2026-07-28, `fix/stranger-hatch-timed` x master `1875e112`
+(PR #269). Third master merge for this branch and the same shape each time:
+both sides re-bound this line and both moved
+`cabinet/config/cognitive-architecture-contract.yml`, so the digests conflicted
+textually while neither described the merged tree. Value above RECOMPUTED over
+it; every prior note kept, none superseded. Master's side added
+`recall-live-claims-it-never-earned` (+30); this branch's
+`stranger-hatch-unopened-areas` (+27) is untouched, and the running total is
+RE-MEASURED on the merged tree rather than carried. NO COG-4 implementation
+byte moved on either side.)
+because no reviewed COG-4 byte moved.)
+
+(RE-BOUND 2026-07-29 at the landing of `feat/salience-sweep`, over the merge of
+`origin/master` b4859c55. Prior digest on this branch:
+`528005675917203f902d45d5b8c7769cbe1f3598cdc58fb016284f1ebce88a56`; master's own
+at that merge: `3c8c1f7f60bd32a56e831438d768ea1b760b8f148353e65aba3c76c9b6d50a79`.
+NEITHER side's value survives, because the digest is a function of the MERGED
+bytes — a concurrent branch moved the same in-scope file, and taking either
+recorded value would have bound this artifact to bytes that no longer existed.
+ONE in-scope path moved on this branch and it is not a COG-4 byte:
+`cabinet/config/cognitive-architecture-contract.yml` gains the visible bijection
+raise 207 -> 208 for `framework/onboarding/salience.py`, that member's expansion
+row, and one `framework_production_noncomment_lines` allowance re-measured after
+the merge (73735 = 73016 + this unit's 685 + master's 34, both rows kept whole —
+the conflict was two independent additions to one list, not a contest). The
+budgets file is in scope because COG-4 extended it; the salience ranker itself,
+its suite and `framework/onboarding/journey.py` are OUTSIDE the scope set —
+verified, since the digest over this branch's FIRST commit still read
+`9b433220…`, unchanged from master. No COG-4 organ, contract clause or
+measurement was touched, so nothing this artifact reviewed changed meaning; only
+the census ledger grew by one adjudicated member. Re-bound in the SAME commit as
+the contract edit, because a recorded digest and the bytes it binds must never be
+able to disagree, even for one commit.
+
+Earlier RE-BIND 2026-07-28 at the landing of `fix/world-art-manifest-truth-and-egg`.
 (MERGE RE-BIND, 2026-07-28, `feat/agnosticism-gate` x master `e8449ce6`.
 Third re-bind of this line in a day, same mechanism: both sides moved
 `cabinet/config/cognitive-architecture-contract.yml`, so neither recorded
@@ -108,6 +233,24 @@ below was re-reviewed, because no reviewed COG-4 byte moved. The re-bind is a
 separate commit from the byte-moving one only because this landing's brief
 forbids `--force`, so the pushed branch could not be amended; both commits land
 together and HEAD is what the gate reads.)
+
+(MERGE RE-BIND, 2026-07-28, `fix/stranger-hatch-timed` x master `4148d1e6`
+(PRs #266 + #267). Both sides had re-bound this line — this branch at
+`e8da2ab0`, master at `9b433220` — so the two digests conflicted textually:
+NEITHER describes the merged tree, and the value above is RECOMPUTED over it.
+Both note sets are kept in full, none superseded. This branch's digest-bound
+move is `cabinet/config/cognitive-architecture-contract.yml` alone: one new
+`temporary_allowances` row (`stranger-hatch-unopened-areas`, +27 on
+`framework_production_noncomment_lines`) paying for the First Window's
+truncation caveat naming the areas it never opened. Verified by intersecting
+`resolve_scope()` with `git diff --name-only origin/master...HEAD`: exactly
+that one path. No budget `maximum` raised, no expansion member, no bijection
+class, and NO COG-4 implementation byte moved on either side — no organ, no
+scheduler or projection surface, no serve surface, no boundary row, no fixture,
+no CLI. Master's side moved the egg-export world-art block and its export test,
+neither a COG-4 byte. Nothing below was re-reviewed, because no reviewed COG-4
+byte moved. Census re-measured on the MERGED tree: 73043, at the pinned
+effective level.)
 
 (MERGE RE-BIND, 2026-07-28, `fix/probe-truncation-unearned-negative` x master
 `2b3de03d` (PR #261). Both sides had re-bound this line and both moved

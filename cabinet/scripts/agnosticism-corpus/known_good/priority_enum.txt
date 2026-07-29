@@ -1,0 +1,15 @@
+# framework/triggers/priority.py
+"""Priority taxonomy."""
+
+from enum import Enum
+
+
+class Priority(Enum):
+    CRITICAL = 0
+    HIGH = 1
+    NORMAL = 2
+    LOW = 3
+
+    @classmethod
+    def parse(cls, raw: str) -> "Priority":
+        return cls[raw.strip().upper()]

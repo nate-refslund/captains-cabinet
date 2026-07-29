@@ -26,19 +26,6 @@
  */
 import { fnv1a } from './hash'
 import type { OfficerScene } from './types'
-import {
-  BOOKSHELF_CUT,
-  CONF_SHEET,
-  CONF_TABLE_CUT,
-  KETTLE_SHEET,
-  LIBRARY_SHEET,
-  NOTICEBOARD_SHEET,
-  POUF_DARK_CUT,
-  POUF_TAN_CUT,
-  setDressingSheets,
-  SIDEBOARD_COFFEE_CUT,
-  WINDOW_CUT,
-} from './set-dressing'
 
 export const ASSET_BASE = '/world-assets/'
 
@@ -77,49 +64,11 @@ export const FLOOR_CUT: SpriteCut = { x: 160, y: 80, w: 32, h: 32 }
 /** Lavender wall — white trim + textured face, 3x2 tiles (tileable; the
  * sheet's 4th column carries the block-separator seam, so stop at 48px). */
 export const WALL_CUT: SpriteCut = { x: 0, y: 80, w: 48, h: 32 }
-/** Wall band height in tiles (drawn inside the room's top edge). */
-export const WALL_TILES = 2
 
 const SINGLE = (n: number) => `office/singles/Modern_Office_Singles_${n}`
 
-/** One fixed civic station's sprite binding. */
-export interface StationSprite {
-  sheet: string
-  flat: boolean
-  /** Optional pixel cut out of a big sheet (whole single otherwise). */
-  cut?: SpriteCut
-  /** Wall-hung fixtures anchor to the wall band, not the floor foot. */
-  wall?: boolean
-}
-
-/**
- * Fixed civic stations → Modern Office singles / verified big-sheet cuts.
- * flat=true renders under officers (mats/rugs); upright props y-sort.
- * v2 (cozy pass §2): table, kettle, bookshelf, windows, noticeboard.
- */
-export const STATION_SPRITES: Record<string, StationSprite> = {
-  board: { sheet: SINGLE(172), flat: false }, // analytics board on stand
-  postbox: { sheet: SINGLE(325), flat: false }, // printer desk — the dispatch fixture
-  door: { sheet: SINGLE(93), flat: true }, // doormat
-  dojo: { sheet: SINGLE(87), flat: true }, // red rug
-  floor: { sheet: SINGLE(92), flat: true }, // centre rug
-  lever: { sheet: SINGLE(176), flat: false }, // server rack (red lamp overlay when killswitch)
-  table: { sheet: CONF_SHEET, cut: CONF_TABLE_CUT, flat: false }, // conference oval table
-  kettle: { sheet: KETTLE_SHEET, flat: false }, // coffee-machine table (break nook core)
-  bookshelf: { sheet: LIBRARY_SHEET, cut: BOOKSHELF_CUT, flat: false }, // journal wall
-  'window:1': { sheet: ROOM_SHEET, cut: WINDOW_CUT, flat: false, wall: true },
-  'window:2': { sheet: ROOM_SHEET, cut: WINDOW_CUT, flat: false, wall: true },
-  noticeboard: { sheet: NOTICEBOARD_SHEET, flat: false, wall: true }, // cork panel
-}
-
 /** Officer workstation variants — picked deterministically per slug. */
 export const DESK_SHEETS = [SINGLE(225), SINGLE(227), SINGLE(231)]
-/** Bunk rest chair. */
-export const BUNK_SHEET = SINGLE(197)
-
-/** Singles are normalized 32x48 canvases, prop on the bottom edge. */
-export const SINGLE_W = 32
-export const SINGLE_H = 48
 
 // ── characters ──────────────────────────────────────────────────────────────
 export const CHARACTER_COUNT = 20
@@ -168,18 +117,6 @@ export function deskSheetFor(slug: string): string {
 /** Render-facing: the director's left/right plus the renderer's up/down. */
 export type CharFacing = 'right' | 'up' | 'left' | 'down'
 
-/**
- * Static up-facing frame (row 0, U at x=16) — the §1.1 "stretch" micro-loop
- * hold: reads as leaning back from the desk. Verified against the Premade
- * Character generator layout documented in this file's header.
- */
-export const CHAR_STRETCH_CUT: SpriteCut = {
-  x: 16,
-  y: 0,
-  w: CHAR_FRAME_W,
-  h: CHAR_FRAME_H,
-}
-
 /** Direction origin (px) of the 6-frame strips at y=32 (idle) / y=64 (walk). */
 const DIR_X: Record<CharFacing, number> = {
   right: 0,
@@ -220,81 +157,4 @@ export function charFrame(
     w: CHAR_FRAME_W,
     h: CHAR_FRAME_H,
   }
-}
-
-// ── resolution ──────────────────────────────────────────────────────────────
-
-/**
- * Every sheet the Wardroom may draw. The full universe loads at boot (~30
- * small PNGs) so draw() stays synchronous and officer churn never triggers
- * mid-frame network fetches.
- */
-export function requiredSheets(): string[] {
-  const chars = Array.from({ length: CHARACTER_COUNT }, (_, i) =>
-    `${CHARACTER_DIR}/Premade_Character_${String(i + 1).padStart(2, '0')}`
-  )
-  return [
-    ...new Set([
-      ROOM_SHEET,
-      ...Object.values(STATION_SPRITES).map((s) => s.sheet),
-      ...DESK_SHEETS,
-      BUNK_SHEET,
-      ...chars,
-      // Cozy pass (§2): decor/lamps/flair/pins — same loud missing→badge
-      // chain as every other asset class.
-      ...setDressingSheets(),
-    ]),
-  ]
-}
-
-export interface ResolvedSprites {
-  /** sheet id → same-origin URL (ASSET_BASE + manifest path). */
-  urls: Record<string, string>
-  /** Required sheet ids that are absent or fail dimension validation — LOUD. */
-  missing: string[]
-}
-
-function cutFits(row: ManifestRow, cut: SpriteCut): boolean {
-  return cut.x + cut.w <= row.w && cut.y + cut.h <= row.h
-}
-
-/**
- * Bind the required sheet universe against the manifest. Absent rows and
- * rows whose real dimensions cannot contain the cuts we take from them are
- * reported in `missing` — the renderer badges them and falls back to
- * visible placeholders (never silent, never invisible).
- */
-export function resolveWorldSprites(manifest: WorldAssetManifest): ResolvedSprites {
-  const byId = new Map(manifest.assets.map((r) => [r.id, r]))
-  const urls: Record<string, string> = {}
-  const missing: string[] = []
-  for (const id of requiredSheets()) {
-    const row = byId.get(id)
-    if (!row) {
-      missing.push(id)
-      continue
-    }
-    let ok = true
-    if (id === ROOM_SHEET) {
-      ok = cutFits(row, FLOOR_CUT) && cutFits(row, WALL_CUT) && cutFits(row, WINDOW_CUT)
-    } else if (id === CONF_SHEET) {
-      ok =
-        cutFits(row, CONF_TABLE_CUT) &&
-        cutFits(row, SIDEBOARD_COFFEE_CUT) &&
-        cutFits(row, POUF_TAN_CUT) &&
-        cutFits(row, POUF_DARK_CUT)
-    } else if (id === LIBRARY_SHEET) {
-      ok = cutFits(row, BOOKSHELF_CUT)
-    } else if (id.startsWith(`${CHARACTER_DIR}/`)) {
-      ok = row.w >= CHAR_SHEET_MIN_W && row.h >= CHAR_SHEET_MIN_H
-    } else if (id.startsWith('office/singles/')) {
-      ok = row.w === SINGLE_W && row.h === SINGLE_H
-    }
-    if (!ok) {
-      missing.push(id)
-      continue
-    }
-    urls[id] = ASSET_BASE + row.path
-  }
-  return { urls, missing }
 }

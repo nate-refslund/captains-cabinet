@@ -1,0 +1,9 @@
+# framework/env.py
+"""Lane defaults."""
+
+_LANES = ("quillpost", "quillpost-ceo", "general")
+
+
+def lane_default() -> str:
+    """The lane an officer runs in when none is configured."""
+    return "quillpost"

@@ -1374,7 +1374,8 @@ export function composeLayout(
  * data that does not depend on how many dwellings are occupied. Growing from
  * three officers to four therefore ADDS a house rather than reshuffling three.
  * It is the pattern the world already uses for per-officer roof cuts
- * (island-layout.ts: `V.cottage[fnv1a(`${slug}:roof`) % V.cottage.length]`).
+ * (the legacy island-layout.ts, deleted 2026-07-29:
+ * `V.cottage[fnv1a(`${slug}:roof`) % V.cottage.length]`).
  *
  * ERA GATES IT. At camp a dwelling is a canvas tent: a slate-roofed cottage on
  * a camp lot would be claiming a building the org has not earned. The reference
