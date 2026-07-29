@@ -668,8 +668,13 @@ class TestScannerEngine:
 # The last one is deliberate and is the whole false-positive story: ordinary
 # work inside a module that already speaks to a vendor does not fire, while
 # widening the framework's vendor surface always does. Line numbers are NOT
-# recorded, mirroring check-layer-separation.sh, so moving code never churns
-# the baseline.
+# recorded, mirroring check-layer-separation.sh, so moving code WITHIN a file
+# never churns the baseline. Moving it BETWEEN files does, and RENAMING a
+# baselined file goes RED on a diff that added no vendor at all — the key is
+# (path, rule, digest), so the old key vanishes and a new one appears. That is
+# the honest cost of a path-keyed ledger: the remedy is --update-baseline in
+# the same commit, and because a rename trades one key for one key the CAP does
+# not move, so the churn is visible but never buys headroom.
 #
 # The baseline may only SHRINK: its size is capped by _SPECIFICS_BASELINE_MAX,
 # so admitting a new specific requires raising that number in the same commit
@@ -702,9 +707,35 @@ class TestScannerEngine:
 #      anywhere in the tree, is invisible to the self-join.
 #   6. A VENDOR LAUNDERED THROUGH NAMESPACE POSITION. One `"$schema"` line
 #      carrying a vendor host subtracts that label from the vocabulary.
-#   7. Anything in `cabinet/scripts/**`, `cabinet/dashboard/**`, `packs/**`
-#      or `presets/**`. This arm scans framework/ only — those layers are
-#      allowed specifics, and their boundary is defended by other gates.
+#   7. Anything outside framework/. The operating layer, the packs and the
+#      presets are allowed their own suppliers and are not scanned here. Note
+#      what that means for a stranger: those layers SHIP, so the egg a stranger
+#      reads carries several times more named third parties than the surface
+#      this arm polices. Widening the scan to them is a separate unit with a
+#      separate baseline, not a tightening of this one.
+#   8. framework/'s OWN TESTS. The scan set skips every `tests/` directory and
+#      every `test_*` / `*_test` file (mirroring Arm 1, so both arms police the
+#      same surface) — but unlike the dated design snapshots, the tests are NOT
+#      archived out of the egg: ~280 of them ship, and they carry MORE vendor
+#      mentions than the production surface next to them. Measured 2026-07-29:
+#      two labels live in framework tests and in no scanned framework file, so
+#      a NEW vendor arriving only through a fixture is invisible here. It is a
+#      deliberate scope choice (a fixture is not a binding), not a claim that
+#      the tests are clean.
+#   9. A URL ON A NON-HTTP SCHEME. EXTERNAL_HOST matches `https?://` only, and
+#      the self-join reads the same shape, so a service addressed over another
+#      transport neither fires nor teaches the gate its label. A protocol-
+#      relative `//host/path` is invisible for the same reason.
+#  10. A LITERAL ASSEMBLED FROM FRAGMENTS. Both rules read source TEXT, so a
+#      name that never appears whole on one line — split across concatenated
+#      pieces, or interpolated from a variable defined elsewhere — is not seen.
+#      The benign version of this is the pattern the gate WANTS (a host read
+#      from config); the hostile version it simply cannot reach.
+#  11. A LINE CARRYING A NAMESPACE MARKER. The namespace-position skip is a
+#      LINE predicate, so any line that also contains one of those markers is
+#      exempt from BOTH rules, whatever else is on it. In the tree today every
+#      such line is a genuine schema/format identifier (verified 2026-07-29),
+#      but the escape is wider than the case it exists for.
 # Green here means "framework/ grew no NEW named third party". It does not
 # mean "framework/ is agnostic".
 
@@ -717,6 +748,18 @@ _SPECIFICS_BASELINE_PATH = Path(__file__).resolve().parent / "framework-specific
 # The baseline may only SHRINK. Admitting a specific means raising this number
 # in the same commit — visibly, in the diff, with a reviewer on it.
 _SPECIFICS_BASELINE_MAX = 318
+
+# THE SUBJECT FLOOR. A subset test passes trivially when the live finding set is
+# EMPTY, so "no new specifics" and "the scan never ran" are the same green. The
+# vocabulary already has a floor (an inert seed makes VENDOR_TOKEN a no-op); the
+# SCAN had none, which left the ratchet's own degenerate end unguarded — a
+# mis-rooted _REPO_ROOT, a renamed subject directory or a skip-list that
+# swallowed the tree would all report OK. This floor is a WIRING check, not a
+# debt measure: it is an order of magnitude below the live count (310 in the
+# source tree, 311 in an egg cut, measured 2026-07-29) precisely so that PAYING
+# the debt down to zero never trips it — the finding count is supposed to reach
+# zero one day; the file count is not.
+_SPECIFICS_SCAN_FLOOR = 100
 
 _URL_RX = re.compile(r"https?://([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)")
 
@@ -1072,6 +1115,25 @@ class TestSpecificsRatchet:
             % len(vocabulary))
         assert not (set(_COLLISION_TOKENS) & vocabulary)
 
+    def test_the_live_scan_actually_visits_the_subject(self):
+        """Non-vacuity of the SUBJECT, the other half of the pair above. The
+        ratchet asserts a SUBSET, and the empty set is a subset of everything:
+        a scan that visited no file reports exactly the same green as a clean
+        framework. That makes 'the walk is wired' a thing to prove, not assume
+        — the sensor-tests-something-other-than-the-control failure, aimed at
+        this file. A FLOOR on files visited (never on findings, which are meant
+        to reach zero) is what separates the two greens."""
+        subject = _REPO_ROOT / "framework"
+        assert subject.is_dir(), (
+            "the scan subject %s does not exist — every specifics assertion "
+            "below it is vacuously true" % subject)
+        visited = sum(1 for _ in iter_specifics_files(subject))
+        assert visited >= _SPECIFICS_SCAN_FLOOR, (
+            "the specifics scan visited only %d files (floor %d) — the walk is "
+            "broken (wrong root? skip-dirs?), and a SUBSET assertion over an "
+            "empty finding set passes no matter what the tree contains"
+            % (visited, _SPECIFICS_SCAN_FLOOR))
+
 
 class TestSpecificsEngine:
     """Hermetic proofs on own tmp trees — never the real baseline."""
@@ -1274,6 +1336,15 @@ if __name__ == "__main__":  # pragma: no cover
     if mode not in ("--check", "--report", "--update-baseline"):
         print("usage: test_no_launcher_hardcode.py [--check|--report|--update-baseline]")
         sys.exit(2)
+
+    # The same subject floor the pytest arm enforces, so the CLI can never
+    # print OK over a scan that visited nothing (see _SPECIFICS_SCAN_FLOOR).
+    _visited = sum(1 for _ in iter_specifics_files(_REPO_ROOT / "framework"))
+    if _visited < _SPECIFICS_SCAN_FLOOR:
+        print("FAIL: the specifics scan visited only %d files (floor %d) — the "
+              "walk is broken; a SUBSET check over an empty finding set is "
+              "green no matter what the tree contains" % (_visited, _SPECIFICS_SCAN_FLOOR))
+        sys.exit(1)
 
     offenders = scan_tree(_REPO_ROOT / "framework", rel_to=_REPO_ROOT)
     vocabulary = derive_vendor_vocabulary(_REPO_ROOT)
