@@ -895,7 +895,11 @@ def test_the_card_names_the_join_across_distinct_files_newest_first():
     second = what.index("decisions/2026-07-14-billing.md")
     third = what.index("slo/error-budget.md")
     assert first < second < third, "citations are not in newest-first order"
-    assert "Shared wording:" in what and "migration" in what
+    # The caption carries HOW MANY of the cited files share the words. Here
+    # the join is genuine but partial (2 of the 3), and saying "Shared
+    # wording:" flat would assert something the third cited file does not
+    # show — the operator finds that out by opening it.
+    assert "Shared wording (in 2 of the 3): " in what and "migration" in what
     assert "2026-07-01 … 2026-07-21" in what      # the span, stated
     assert "3 of your own notes" in card["name"]  # named after what was FOUND
 
@@ -1254,3 +1258,104 @@ def test_an_estate_card_recall_enriched_still_counts_as_estate_provenance(tmp_pa
                       if i["kind"] == "genesis-recall")["context"]["why"]
     assert "composed from it" in recall_why, (
         "the recall item must still see its own contribution to that card")
+
+
+# ---------------------------------------------------------------------------
+# 2026-07-29 — four claims the card was making that its own citations do not
+# support. Each was reproduced through the real `first-briefing.sh --local`
+# chain on a 138-note folder before it was written, and each arm here fails
+# against the pre-change bytes.
+# ---------------------------------------------------------------------------
+
+_TABLE_CORPUS = [
+    {"source": "local", "ref": "notes/locked-set.md#Ceremony set",
+     "path": "notes/locked-set.md", "heading": "Ceremony set",
+     "text": "Ceremony set\n"
+             "These are inside the storefront locked set and require the unlock ceremony\n"
+             "to update on an\n"
+             "armed Mac:\n"
+             "\n"
+             "| Path | Locked via | Change |\n"
+             "|---|---|---|\n"
+             "| `a/recorder.py` | `a` dir | typed error, external mutex |\n",
+     "base_score": 0.6, "who": "", "ts": "2026-07-16T00:00:00Z",
+     "content_ts": "2026-07-16T00:00:00Z"},
+    {"source": "local", "ref": "notes/tables-only.md#Set",
+     "path": "notes/tables-only.md", "heading": "Set",
+     "text": "Set\n| Path | storefront Locked via |\n|---|---|\n| `b/x.py` | `b` dir |\n",
+     "base_score": 0.5, "who": "", "ts": "2026-07-15T00:00:00Z",
+     "content_ts": "2026-07-15T00:00:00Z"},
+]
+
+
+def test_the_quote_is_prose_never_a_markdown_table():
+    """The WHY line's whole job is to be the operator's own checkable sentence:
+    "I did not ask you for this, I read it: …". Measured on a real hatch, it
+    quoted a markdown TABLE back at them —
+    "| Path | Locked via | Change | |---|---|---| | `framework/evidence/…" —
+    the cabinet's rendering machinery presented as their material, which is the
+    same class as the frontmatter and heading strips one layer down."""
+    recall = _recall_for(source=_FakeSource(corpus=_TABLE_CORPUS))
+    quote = recall["subjects"][0]["quote"]
+    assert quote, "a chunk holding real prose must still yield a quote"
+    assert "|" not in quote, f"the quote is markup, not a sentence: {quote!r}"
+    assert quote.startswith("These are inside the storefront locked set"), quote
+
+
+def test_a_wrapped_sentence_is_not_severed_mid_clause():
+    """The short-line floor exists to reject standalone fragments; applied to
+    every line it also cuts a hard-wrapped paragraph, and the card then quotes
+    the operator mid-sentence with no ellipsis."""
+    recall = _recall_for(source=_FakeSource(corpus=_TABLE_CORPUS))
+    assert recall["subjects"][0]["quote"].endswith("armed Mac:"), (
+        "a wrapped sentence lost its continuation line: "
+        f"{recall['subjects'][0]['quote']!r}"
+    )
+
+
+def test_the_quote_citation_names_the_file_the_words_came_from():
+    """The quote may now walk past a cited hit that holds no prose. Its
+    citation has to walk with it, or the card attributes one file's words to
+    another — a citation that does not support what it is printed beside."""
+    corpus = [_TABLE_CORPUS[1], _TABLE_CORPUS[0]]   # table-only file is NEWER? no: order by ts
+    corpus[0] = dict(_TABLE_CORPUS[1], ts="2026-07-20T00:00:00Z",
+                     content_ts="2026-07-20T00:00:00Z")
+    recall = _recall_for(source=_FakeSource(corpus=corpus))
+    subject = recall["subjects"][0]
+    assert subject["quote"].startswith("These are inside the storefront locked set")
+    assert "notes/locked-set.md" in subject["quote_cite"], (
+        "the citation names a file the quoted words are not in: "
+        f"{subject['quote_cite']!r}"
+    )
+    assert "notes/tables-only.md" in subject["top_cite"], (
+        "the newest cited file should still head the citation list"
+    )
+
+
+def test_no_card_claims_the_operator_never_read_their_own_notes():
+    """"never read together" was the headline of every join card. It is an
+    assertion about the operator's own reading history and nothing the cabinet
+    can read shows it — offered as a finding, on the first line they see."""
+    cards = genesis.propose_outcome_cards(ANSWERS, recall=_recall_for(source=_FakeSource()))
+    blob = " ".join(f"{c.get('name','')} {c.get('what','')} {c.get('why','')}"
+                    for c in cards)
+    assert "never read together" not in blob, blob
+    assert "read together" not in blob, blob
+
+
+def test_the_headline_dates_only_the_notes_that_carry_a_date():
+    """Three cited files with one derivable content_ts rendered "3 of your own
+    notes (2026-07-21)" while two of the three citation lines below it said
+    "(undated)" — the headline dating notes the card itself refuses to date."""
+    corpus = [dict(_CORPUS[0]),
+              dict(_CORPUS[1], ts=None, content_ts=None),
+              dict(_CORPUS[2], ts=None, content_ts=None)]
+    cards = genesis.propose_outcome_cards(
+        ANSWERS, recall=_recall_for(source=_FakeSource(corpus=corpus)))
+    join = [c for c in cards if "of your own notes" in c.get("name", "")]
+    assert join, [c.get("name") for c in cards]
+    name = join[0]["name"]
+    assert "1 of them dated 2026-07-21" in name, name
+    assert "(2026-07-21)" not in name, (
+        "the headline dates all three notes while two are undated: " + name
+    )
