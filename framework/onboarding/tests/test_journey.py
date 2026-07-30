@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from framework.onboarding import journey
+from framework.onboarding import salience as _salience
 from framework.evidence import EvidenceRecorder
 from framework.evidence.verifier import verify_store, verify_trial
 
@@ -2406,6 +2407,185 @@ def test_the_approval_card_states_the_binding_before_the_hash_is_accepted(tmp_pa
     assert f"You pointed me at {target}" in out["card"]["body"]
     ratified = ratify(tmp_path, out, action_id="ratify-charter-note")
     assert f"You pointed me at {target}" in ratified["card"]["body"]
+
+
+# --- a SHORT answer is still an answer: it binds, it does not hard-block -----
+
+
+def _typed(tmp_path: Path, name: str, *, root: Path | None = None,
+           action_id: str = "typed-answer") -> dict:
+    """A journey whose operator TYPED their target into the escape hatch.
+
+    The escape hatch is the only door a short name can come through — a ranked
+    label is built out of ranking tokens and clears the length floor by
+    construction, which is exactly why the happy path never surfaced this.
+    """
+    root = root if root is not None else tmp_path
+    _connected_state(root, _estate_rows())
+    return journey.act(
+        {"action": "answer_salience", "surface": "dashboard", "action_id": action_id,
+         "choice": "other", "name": name},
+        root,
+    )
+
+
+def _plain_words(name: str) -> set[str]:
+    """The words in a name, split INDEPENDENTLY of the code under test.
+
+    A sensor that asks the implementation whether the implementation was right
+    is not a sensor. This is the naive reading — the alphanumeric runs of the
+    string, lowercased — and it is what every refusal's stated reason is graded
+    against below. It deliberately emits no compounds: the refusal only ever
+    claims that no WORD is shared, so a claim that survives this reading is a
+    claim the operator can check by eye.
+    """
+    return {word for word in re.split(r"[^0-9a-z]+", str(name).lower()) if word}
+
+
+def test_a_short_answer_the_ranker_cannot_tokenize_still_binds_its_own_window(tmp_path):
+    """THE REGRESSION, DRIVEN, and lopsided on the same pair.
+
+    The bind derived both sides with the RANKING tokenizer, which drops every
+    part and every compound below its length floor. An operator whose target was
+    a short product, an acronym or an initialism therefore had no wanted words at
+    all — and an empty set intersects nothing, so the control that exists to
+    refuse ONE window refused EVERY window, the folder named after their own
+    answer included. A bind that refuses everything passes a one-sided
+    off-target test exactly as a bind that accepts everything does, so both
+    directions run here on the same answer.
+    """
+    answer = "BH"
+    assert _salience.tokenize(answer) == [], (
+        "the fixture no longer exercises the class: this answer must be one the "
+        "RANKING tokenizer cannot derive a single word from"
+    )
+    out = _typed(tmp_path, answer)
+    assert out["state"]["salience"]["target"] == answer
+
+    on_target = _folder(tmp_path, "bh")
+    ok = _propose(tmp_path, on_target, action_id="short-on-target")
+    assert ok["ok"] is True and ok["state"]["stage"] == "charter_pending"
+    window = ok["state"]["salience"]["window"]
+    assert window["relation"] == "matched" and window["evidence"] == ["bh"]
+    assert "so that is where I spend depth" in ok["card"]["body"]
+
+    off_target = _folder(tmp_path, "quarterly-tax-returns")
+    with pytest.raises(journey.JourneyError) as excinfo:
+        _propose(tmp_path, off_target, action_id="short-off-target")
+    assert excinfo.value.code == "salience_window_off_target"
+
+
+def test_a_short_answer_keeps_both_statements_the_operator_may_make(tmp_path):
+    """The two-value escape survives the fix, on an answer that has no ranking
+    tokens. Neither statement may quietly become unreachable: the folder that IS
+    the target under another word still binds and still teaches its alias, and a
+    deliberate detour is still opened with the depth claim DROPPED."""
+    same_root = tmp_path / "same"
+    _typed(tmp_path, "BH", root=same_root, action_id="short-same")
+    folder = _folder(same_root, "ops-monorepo")
+    out = _propose(same_root, folder, action_id="short-same-thing",
+                   salience_relation="same_thing")
+    assert out["ok"] is True
+    assert out["state"]["salience"]["window"]["relation"] == "same_thing"
+    assert "monorepo" in out["state"]["salience"]["aliases"]
+    assert "You pointed me at BH, so that is where I spend depth" in out["card"]["body"]
+
+    away_root = tmp_path / "away"
+    _typed(tmp_path, "BH", root=away_root, action_id="short-away")
+    detour = _folder(away_root, "quarterly-tax-returns")
+    out = _propose(away_root, detour, action_id="short-elsewhere",
+                   salience_relation="elsewhere")
+    assert out["ok"] is True and out["state"]["stage"] == "charter_pending"
+    assert out["state"]["salience"]["window"]["relation"] == "elsewhere"
+    assert "so that is where I spend depth" not in out["card"]["body"]
+
+
+#: (answer, folder name, does the bind permit it). Deliberately lopsided: the
+#: permitted rows outnumber the refused ones and are the ones a wrong rule gets
+#: wrong, so a bind that refuses everything cannot pass this table by symmetry.
+_BIND_CASES = (
+    ("BH", "bh", True),
+    ("BH", "bh-group", True),
+    ("QSD", "qsd-archive", True),
+    ("Ora", "ora", True),
+    ("ACME", "acme", True),
+    ("Blue Harbour", "blue-harbour", True),
+    ("Blue Harbour", "blueharbour", True),
+    ("BH", "quarterly-tax-returns", False),
+    ("QSD", "payroll", False),
+    ("Blue Harbour", "quarterly-tax-returns", False),
+)
+
+
+def test_no_refusal_states_a_reason_the_code_did_not_apply(tmp_path):
+    """THE HONESTY ARM. A refusal is a sentence the operator has to act on, so a
+    refusal whose stated reason is false is worse than no control at all: it
+    sends them looking for a problem that is not there.
+
+    The shipped sentence said the folder "does not carry that name" while the
+    code compared WORDS — and on precisely the answers the bind was refusing, a
+    folder named ``bh`` does carry the name ``BH``. This arm re-reads every
+    refusal's claim with a split of its own (:func:`_plain_words`) and fails if
+    the claim does not hold: it is red against the pre-change tree on the very
+    first case, before the assertion about wording is ever reached.
+    """
+    for index, (answer, name, permitted) in enumerate(_BIND_CASES):
+        root = tmp_path / f"case-{index}"
+        _typed(tmp_path, answer, root=root, action_id=f"honest-answer-{index}")
+        folder = _folder(root, name)
+        try:
+            out = _propose(root, folder, action_id=f"honest-window-{index}")
+        except journey.JourneyError as refusal:
+            assert not permitted, f"{answer!r} should have bound “{name}”"
+            assert refusal.code == "salience_window_off_target"
+            message = str(refusal)
+            assert answer in message and name in message
+            # THE STATED REASON, graded against a reading of the two names that
+            # never calls the module under test.
+            assert not (_plain_words(answer) & _plain_words(name)), (
+                f"the refusal says “{name}” shares no word with {answer!r}, and it does"
+            )
+            # ...and the refusal carries the evidence for its own claim, so a
+            # reader is not asked to take the sentence on trust.
+            detail = refusal.detail
+            assert not (set(detail["target_words"]) & set(detail["window_words"]))
+            assert _plain_words(name) <= set(detail["window_words"])
+            # The claim may not be stronger than the test. "Carries the name" is
+            # containment; the code tests shared words, and the two differ on
+            # every name written without a separator.
+            assert "carry that name" not in message
+        else:
+            assert permitted, f"{answer!r} should not have bound “{name}”"
+            assert out["state"]["salience"]["window"]["relation"] == "matched"
+
+
+def test_the_card_does_not_claim_an_unspent_answer_when_the_window_matches(tmp_path):
+    """THE SAME FALSE SENTENCE ON THE OTHER SURFACE. An answer can arrive after
+    a window is already open, and that branch renders its own note — so it needs
+    its own arm, or the refusal gets fixed while the card keeps lying. With a
+    short answer and the folder named after it, the card said depth was "not yet
+    spent where you pointed" at a window pointed exactly there."""
+    folder = _folder(tmp_path, "bh")
+    proposed = _propose(tmp_path, folder, action_id="window-before-short-answer")
+    ratify(tmp_path, proposed, action_id="ratify-before-short-answer")
+
+    data = tmp_path / journey.DATA_REL
+    state = json.loads((data / journey.STATE_NAME).read_text(encoding="utf-8"))
+    rows = _estate_rows()
+    state["salience_rows"] = {"rows": rows, "identities": [], "not_reached": []}
+    state["entry_grants"] = {"connectors": sorted({r["connector"] for r in rows}),
+                             "local_files": True, "web": False}
+    (data / journey.STATE_NAME).write_text(json.dumps(state), encoding="utf-8")
+
+    out = journey.act(
+        {"action": "answer_salience", "surface": "dashboard", "action_id": "short-late",
+         "choice": "other", "name": "BH"},
+        tmp_path,
+    )
+    assert journey._window_binding(out["state"])["relation"] == "matched"
+    body = out["card"]["body"]
+    assert "depth is not yet spent where you pointed" not in body
+    assert "so that is where I spend depth" in body
 
 
 def _starved_area_estate(tmp_path: Path) -> Path:

@@ -29,11 +29,13 @@ the record of each completed read SURVIVES a purge.
 
 THE SALIENCE ANSWER BINDS DEPTH — it is the only thing that scopes it, and it
 is enforced rather than asserted.  Once a target is ratified, ``propose_window``
-REFUSES a folder whose own name does not carry it, unless the operator states
-which of ``WINDOW_RELATIONS`` applies; ``_window_binding`` is the one decision
-function, and every card renders what it returns, so the shipped sentence can
-never promise a binding the code does not keep.  A loop whose answer changes
-nothing is a questionnaire.
+REFUSES a folder whose own name shares no word with it, unless the operator
+states which of ``WINDOW_RELATIONS`` applies; ``_window_binding`` is the one
+decision function, and every card renders what it returns, so the shipped
+sentence can never promise a binding the code does not keep.  A loop whose
+answer changes nothing is a questionnaire — and a loop that refuses every
+window is not a stricter one, it is a broken one, which is what an answer the
+RANKER could not tokenize used to produce.
 
 All state stays below ``instance/onboarding/v2`` — a surface the mission
 compiler never reads.  Events are append-only, state/artifacts are atomic,
@@ -1316,25 +1318,48 @@ def _window_binding(state: Mapping[str, Any] | dict[str, Any],
     The cost is a folder legitimately called something else, and that case has
     a named way through (``WINDOW_RELATIONS``) rather than a refusal.
 
-    WHAT IT CATCHES, EXACTLY: a window and an answer that share NO name-word.
-    It does not catch a coincidental shared one — a target typed as a phrase
-    lends every word in it, so a folder carrying any of those words binds
-    without the operator being asked. That is the limit of a test on names, and
-    the card claims no more than the test does: it says it refuses a window
-    that does not carry the name, which is precisely what happens here. The
-    only authority on what a folder actually holds is the operator, which is
+    WHAT IT CATCHES, EXACTLY: a window and an answer that SHARE NO WORD. It does
+    not catch a coincidental shared one — a target typed as a phrase lends every
+    word in it, so a folder carrying any of those words binds without the
+    operator being asked. That is the limit of a test on names, and every
+    sentence rendered from this function claims exactly that much and no more.
+    The only authority on what a folder actually holds is the operator, which is
     why the escape is a statement from them rather than a better guess.
+
+    IT COMPARES NAMES, NOT RANKING CANDIDATES, and the difference is not
+    academic — it shipped the other way and hard-blocked every window an
+    operator with a short answer could open. Both sides are derived with
+    ``salience.name_tokens``: the ranking's ``tokenize`` drops every part and
+    every compound below its length floor, which is right for deciding what is a
+    CANDIDATE and wrong for deciding what a NAME says, so a two- or three-letter
+    answer produced no wanted words at all, intersected nothing, and refused the
+    folder spelled exactly like it while telling the operator that folder did not
+    carry the name. The refusal was reserved for short products, acronyms,
+    initialisms and short names in any language, and the shortlist path could
+    never reach it: ranked labels clear the floor by construction.
+
+    THE RESIDUAL, stated rather than implied: a word is shared or it is not, so a
+    folder called ``northbayops`` shares no word with ``northbay`` — one name
+    written without a separator is one word. That is a real refusal an operator can hit,
+    it is what the sentence says happened, and ``WINDOW_RELATIONS`` is the way
+    through. Loosening it to substring containment is refused for the reason
+    every other near-match is refused here: "IT" inside "waiting" is not a
+    shared name, and a matcher that cannot tell the difference is a guess.
 
     Returns ``None`` when no target has been answered — there is nothing to
     bind to, and no claim is made either. Otherwise ``relation`` is one of:
-    ``unbound`` (answered, no window yet), ``matched`` (the folder carries the
-    target), ``off_target`` (it does not, and the operator has not said why),
-    or whichever of ``WINDOW_RELATIONS`` the operator stated.
+    ``unbound`` (answered, no window yet), ``matched`` (the folder's name shares
+    a word with the target), ``off_target`` (it shares none, and the operator has
+    not said why), or whichever of ``WINDOW_RELATIONS`` the operator stated. The
+    words compared ride back in ``target_words``/``window_words`` so the refusal
+    can carry the evidence for its own claim instead of asserting it.
     """
     answered = state.get("salience") if isinstance(state, Mapping) else None
     if not isinstance(answered, Mapping) or not answered.get("target"):
         return None
     target = str(answered["target"])
+    wanted = set(_salience.name_tokens(target))
+    wanted.update(str(alias) for alias in (answered.get("aliases") or ()))
     if source is None:
         current = state.get("source")
         root = str((current or {}).get("root") or "") if isinstance(current, Mapping) else ""
@@ -1345,14 +1370,17 @@ def _window_binding(state: Mapping[str, Any] | dict[str, Any],
         if isinstance(recorded, Mapping) and root and str(recorded.get("root") or "") == root:
             return {"target": target, "root": root,
                     "relation": str(recorded.get("relation") or "off_target"),
-                    "evidence": [str(e) for e in (recorded.get("evidence") or ())]}
+                    "evidence": [str(e) for e in (recorded.get("evidence") or ())],
+                    "target_words": sorted(wanted),
+                    "window_words": sorted(set(_salience.name_tokens(Path(root).name)))}
         if not root:
-            return {"target": target, "root": None, "relation": "unbound", "evidence": []}
+            return {"target": target, "root": None, "relation": "unbound",
+                    "evidence": [], "target_words": sorted(wanted), "window_words": []}
         source = root
-    wanted = set(_salience.tokenize(target))
-    wanted.update(str(alias) for alias in (answered.get("aliases") or ()))
-    evidence = sorted(wanted & set(_salience.tokenize(Path(str(source)).name)))
+    window_words = set(_salience.name_tokens(Path(str(source)).name))
+    evidence = sorted(wanted & window_words)
     return {"target": target, "root": str(source), "evidence": evidence,
+            "target_words": sorted(wanted), "window_words": sorted(window_words),
             "relation": "matched" if evidence else "off_target"}
 
 
@@ -1362,6 +1390,12 @@ def _binding_note(state: dict[str, Any]) -> str:
     Rendered from ``_window_binding`` on every card that either asks for depth
     or reports it, so the operator reads the enforcement rather than a promise:
     the depth claim appears only on the branches where the code keeps it.
+
+    THE SENTENCE SAYS WHAT THE TEST DID, which took a correction. It said the
+    folder "does not carry that name" while the code compared WORDS — and a
+    folder named ``bh`` does carry the name ``BH``, so on the answers the binding
+    was refusing that sentence was not merely loose, it was false to the
+    operator's face about the one thing they could check.
     """
     binding = _window_binding(state)
     if binding is None:
@@ -1372,12 +1406,12 @@ def _binding_note(state: dict[str, Any]) -> str:
                 "asked for, so nothing here was opened on the strength of a ranking.")
     elif binding["relation"] == "off_target":
         note = (f" You pointed me at {target} after this window was already open, and "
-                "this folder does not carry that name — so depth is not yet spent "
-                "where you pointed.")
+                f"“{Path(str(binding['root'])).name}” shares no word with it — so depth "
+                "is not yet spent where you pointed.")
     else:
         note = (f" You pointed me at {target}, so that is where I spend depth — I "
-                "refuse a window that does not carry that name unless you tell me "
-                "what it is.")
+                "refuse a window whose name shares no word with it unless you tell "
+                "me what it is.")
     if state["salience"].get("from_escape_hatch"):
         note += " I had not ranked it; I have it now."
     return note
@@ -3528,14 +3562,22 @@ def _act_core(
                     # still a detour if they say so.
                     binding = {**binding, "relation": stated}
                 elif binding["relation"] == "off_target":
+                    # THE REFUSAL CARRIES ITS OWN EVIDENCE. It states the test
+                    # that ran — these two names share no word — and hands back
+                    # both word sets, so the claim is auditable by whoever reads
+                    # it rather than taken on trust. The previous wording said
+                    # the folder "does not carry that name", which was false of
+                    # exactly the folders this refusal was reaching.
                     raise JourneyError(
                         "salience_window_off_target",
-                        f"You pointed me at {binding['target']}, and “{source.name}” does "
-                        "not carry that name. Tell me this folder is that thing under "
+                        f"You pointed me at {binding['target']}, and “{source.name}” "
+                        "shares no word with it. Tell me this folder is that thing under "
                         "another name, or that it is somewhere else you want opened — or "
                         "point me at something new and I will follow the answer.",
                         detail={"target": binding["target"],
                                 "window": source.name,
+                                "target_words": list(binding["target_words"]),
+                                "window_words": list(binding["window_words"]),
                                 "relations": sorted(WINDOW_RELATIONS)},
                     )
             charter = _build_charter(source, purpose, destination, ingest)

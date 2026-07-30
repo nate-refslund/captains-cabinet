@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: c83b9b88e3a75869150222c436539d5e9737e3ee8b292612b1d8dc9f6be8ab3c
+Reviewed-Scope-Digest: ea42d51ba95ed81bcd1fa3018b1503d659ce5dfa1a428a67a6b8985df4ce2238
 (MERGE RE-BIND, 2026-07-30, `feat/operator-identity` x master. Both sides
 re-bound this line, so the merge left two; ONE value stands and it is recomputed
 over this merge commit. Every note from both sides is kept verbatim below,
@@ -1796,3 +1796,27 @@ side: `cabinet/config/cognitive-architecture-contract.yml` carries master's
 maximum of 61327 together, RE-MEASURED over the merged tree with
 cognitive-architecture-census.py (PASS, observed 75866 at zero headroom).
 Merged onboarding suite: 655 passed, 1 skipped.
+
+
+---
+
+## Re-bind 2026-07-30 (fix/short-answer-binds)
+
+Recorded digest: ea42d51ba95ed81bcd1fa3018b1503d659ce5dfa1a428a67a6b8985df4ce2238
+Previous:        c83b9b88e3a75869150222c436539d5e9737e3ee8b292612b1d8dc9f6be8ab3c
+
+ONE bound path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` takes
+`framework_production_noncomment_lines` 61327 -> 61388 (+61 measured, observed
+75927 vs the then-effective 75866) for a regression the window bind shipped
+with — it derived BOTH sides of its name test with the RANKING tokenizer, whose
+length floor drops every part and every compound below four characters, so an
+operator whose answer was a short product, an acronym or an initialism had zero
+wanted words, and a control built to refuse ONE window refused EVERY window
+while telling them the folder "does not carry that name" — false of the folder
+spelled exactly like their answer. `salience.name_tokens` splits the floor out
+of the primitive (`tokenize` output pinned byte-identical), the bind compares
+names with it and returns the word sets it compared, and every sentence
+rendered from the bind now states the test that ran. Raised visibly, never an
+allowance; census PASS at observed == maximum with zero headroom; ZERO new
+production modules, so no bijection class moves.
