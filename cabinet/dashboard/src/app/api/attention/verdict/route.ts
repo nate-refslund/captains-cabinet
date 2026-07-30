@@ -141,8 +141,15 @@ export async function POST(req: NextRequest) {
   const { pid, verb, revision } = body
 
   // d. Freshness — live census re-read; never act on what the page cached.
+  //
+  // ANY source other than the census artifact is a freshness failure, not a
+  // decidable list. The old check only caught `empty`: on the degraded live
+  // path the rows carry pid=null, so findRow missed and the Captain was told
+  // "no longer waiting — it may already be decided" (`gone`) when the truth
+  // was that the door could not see the list at all. Wrong reason on a write
+  // door is worse than no reason.
   const queue = await readQueue()
-  if (queue.source === 'empty') {
+  if (queue.source !== 'census') {
     return deny(409, 'stale_census', {}, { pid, verb })
   }
   const row = findRow([...queue.decisions, ...queue.directions], pid)

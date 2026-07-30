@@ -64,7 +64,18 @@ export default function DecisionQueueCard({ onClose }: { onClose: () => void }) 
           </p>
         )}
         {!failed && data === null && <p className="text-zinc-500">reading the queue…</p>}
-        {data && data.items.length === 0 && !failed && (
+        {data && data.pendingTotal === null && !failed && (
+          <p className="text-amber-300">
+            the flag is UNKNOWN, not down — nothing current measured this
+            queue, so the card renders no count rather than a guess.
+            {data.unknownReason ? (
+              <span className="mt-1 block text-[10px] text-zinc-400">
+                {data.unknownReason}.
+              </span>
+            ) : null}
+          </p>
+        )}
+        {data && data.pendingTotal === 0 && data.items.length === 0 && !failed && (
           <p className="text-zinc-400">
             no pending decisions — the queue is honestly empty (flag down).
           </p>
@@ -89,7 +100,7 @@ export default function DecisionQueueCard({ onClose }: { onClose: () => void }) 
             ))}
           </ul>
         )}
-        {data && data.pendingTotal > data.items.length && (
+        {data && data.pendingTotal !== null && data.pendingTotal > data.items.length && (
           <p className="mt-2 text-[10px] text-zinc-500">
             +{data.pendingTotal - data.items.length} more pending (render capped)
           </p>
@@ -112,7 +123,7 @@ export default function DecisionQueueCard({ onClose }: { onClose: () => void }) 
           )}
           <p className="break-all font-mono text-[10px] text-zinc-600">
             PROOF: redis {data?.proof.keyPattern ?? 'cabinet:action:*'} ·{' '}
-            {data ? `${data.pendingTotal} pending` : '—'}
+            {data && data.pendingTotal !== null ? `${data.pendingTotal} pending` : '—'}
           </p>
         </div>
       </div>

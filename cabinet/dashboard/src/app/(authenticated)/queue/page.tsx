@@ -10,7 +10,12 @@
  * auto-refresh over interactive cards; nothing pulses; reload is honest.
  */
 import { cookies } from 'next/headers'
-import { readQueue, type QueueRow } from '@/lib/attention/queue'
+import {
+  attentionGlance,
+  mastheadCount,
+  readQueue,
+  type QueueRow,
+} from '@/lib/attention/queue'
 import { COPY, plainCard } from '@/lib/attention/plain'
 import { COOKIE_NAME, csrfTokenFor, verifySessionValue } from '@/lib/attention/verdict'
 import QueueDecisionCard from '@/components/queue-decision-card'
@@ -90,13 +95,48 @@ export default async function QueuePage() {
   const telegram = process.env.HQ_CHAIR_BOT_USERNAME
     ? `https://t.me/${process.env.HQ_CHAIR_BOT_USERNAME}`
     : null
-  const n = queue.pendingCaptainItems
-  const dark = n === 0 && queue.directions.length === 0
+  // The three-way glance is decided ONCE, in the lib: unknown / clear / count.
+  // Switching on `n === 0` here is what let a nine-day-old reading paint the
+  // green all-clear on 2026-07-30.
+  const glance = attentionGlance(queue)
+  // The numeral arrives ALREADY FORMATTED — an em-dash when nothing measured
+  // it. If this branch structure is ever broken, the worst the masthead can
+  // print is "—"; it can no longer print a 0 nobody counted.
+  const n = mastheadCount(queue)
+  const dark = glance.state === 'clear' && queue.directions.length === 0
+  const unknown = glance.state === 'unknown'
 
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-8">
-        {dark ? (
+        {unknown ? (
+          <div
+            className="rounded-lg border border-zinc-700 bg-zinc-900 text-center"
+            style={{ padding: '56px 24px' }}
+          >
+            <p
+              className="font-semibold leading-none text-zinc-600"
+              style={{ fontSize: 'clamp(40px, 8vw, 72px)' }}
+            >
+              —
+            </p>
+            <p className="mt-4 text-2xl italic text-zinc-100">{COPY.masthead_unknown}</p>
+            <p className="mt-3 text-sm text-amber-300">{COPY.masthead_unknown_sub}</p>
+            <p className="mx-auto mt-4 max-w-xl text-xs text-zinc-500">
+              {COPY.unknown_why_prefix} {glance.reason}.
+            </p>
+            {telegram ? (
+              <a
+                href={telegram}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-5 inline-block rounded bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-700"
+              >
+                {COPY.open_telegram}
+              </a>
+            ) : null}
+          </div>
+        ) : dark ? (
           <div className="rounded-lg border border-zinc-800 bg-zinc-900 text-center" style={{ padding: '56px 24px' }}>
             <p className="text-2xl italic text-zinc-100">{COPY.masthead_dark}</p>
             <p className="mt-3 text-sm text-emerald-400">{COPY.masthead_dark_sub}</p>
@@ -111,7 +151,7 @@ export default async function QueuePage() {
                 {n}
               </div>
               <div className="mt-1 text-lg text-zinc-400">
-                {n === 1 ? COPY.masthead_need_one : COPY.masthead_need_many}
+                {n === '1' ? COPY.masthead_need_one : COPY.masthead_need_many}
               </div>
             </div>
             <div className="text-right text-xs text-zinc-500">{fmtUpdated(queue.generatedAt)}</div>
@@ -119,7 +159,7 @@ export default async function QueuePage() {
         )}
       </div>
 
-      {!dark ? (
+      {!dark && !unknown ? (
         <>
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-amber-300">
             {COPY.decisions_header}

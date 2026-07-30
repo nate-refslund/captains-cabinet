@@ -209,6 +209,14 @@ COPY: dict[str, str] = {
     "masthead_need_many": "need you",
     "masthead_dark": "Nothing needs you.",
     "masthead_dark_sub": "All clear — your team is handling the rest. ✅",
+    # The face for an UNMEASURED count. Deliberately NOT a quieter version of
+    # masthead_dark: on 2026-07-30 a nine-day-old reading rendered the green
+    # all-clear above while two items sat waiting, so the two states must not
+    # look like neighbours. "I don't know" is the honest headline; the age and
+    # the reason are shown beneath it, and the way out is Telegram.
+    "masthead_unknown": "I can't tell you what's waiting.",
+    "masthead_unknown_sub": "My list is not current, so this is NOT an all-clear. Check Telegram.",
+    "unknown_why_prefix": "Why:",
     "updated_prefix": "Updated",
     "decisions_header": "Needs a decision",
     "decisions_empty": "Nothing here.",

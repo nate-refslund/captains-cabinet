@@ -17,8 +17,8 @@
  * absent → queueHref null and the card states the honest actuation channel.
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { sortDecisionQueue, type DecisionQueueItem } from '@/lib/world/ui-cards'
-import { readPendingCards, readQueue } from '@/lib/attention/queue'
+import { type DecisionQueueItem } from '@/lib/world/ui-cards'
+import { readQueue } from '@/lib/attention/queue'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,8 +26,13 @@ const MAX_ITEMS = 50
 
 export interface MailboxPayload {
   items: DecisionQueueItem[]
-  /** Total pending cards (may exceed items.length — capped render). */
-  pendingTotal: number
+  /**
+   * Total pending cards (may exceed items.length — capped render).
+   * NULL = nothing measured it; the card must render an absence, not a 0.
+   */
+  pendingTotal: number | null
+  /** Why there is no count, in plain words. Null on a measured payload. */
+  unknownReason: string | null
   /** Out-link to the real queue surface; null = Telegram-binder-only. */
   queueHref: string | null
   proof: { keyPattern: string }
@@ -63,23 +68,52 @@ export async function GET(_req: NextRequest) {
       return NextResponse.json({
         items: items.slice(0, MAX_ITEMS),
         pendingTotal: queue.pendingTotal,
+        unknownReason: null,
         queueHref,
         proof: { keyPattern: 'attention-census' },
       } satisfies MailboxPayload)
     }
 
-    // Pre-census fallback: the original live cabinet:action:* read, verbatim.
-    const sorted = sortDecisionQueue(await readPendingCards())
+    // Nothing was measured: the flag stays UNKNOWN, never down. `pendingTotal:
+    // 0` here was the world's half of the 2026-07-30 defect — the card read
+    // "no pending decisions — the queue is honestly empty (flag down)" off a
+    // reading that did not exist.
+    if (queue.source === 'unknown') {
+      return NextResponse.json({
+        items: [],
+        pendingTotal: null,
+        unknownReason: queue.unknownReason,
+        queueHref,
+        proof: { keyPattern: 'attention-census (no current reading)' },
+      } satisfies MailboxPayload)
+    }
+
+    // Degraded live view. The rows are ALREADY on `queue` — re-reading Redis
+    // here was a second chance to fail: `readPendingCards()` maps a failed or
+    // raced read to `[]`, which would have emitted `pendingTotal: 0` and put
+    // "the queue is honestly empty (flag down)" on the card off a read that
+    // did not happen (found by adversarial review, 2026-07-30).
+    const items: DecisionQueueItem[] = queue.decisions.map((row) => ({
+      cid: row.id,
+      subject: row.what ?? '(no subject)',
+      lane: row.lane ?? '?',
+      urgency: row.urgency ?? '?',
+      confidence: null,
+      evidenceCount: row.refs.length,
+      ts: '',
+    }))
     return NextResponse.json({
-      items: sorted.slice(0, MAX_ITEMS),
-      pendingTotal: sorted.length,
+      items: items.slice(0, MAX_ITEMS),
+      pendingTotal: queue.pendingTotal,
+      unknownReason: null,
       queueHref,
       proof: { keyPattern: 'cabinet:action:*' },
     } satisfies MailboxPayload)
   } catch {
     return NextResponse.json({
       items: [],
-      pendingTotal: 0,
+      pendingTotal: null,
+      unknownReason: 'the mailbox could not read the list at all',
       queueHref,
       proof: { keyPattern: 'cabinet:action:*' },
     } satisfies MailboxPayload)
