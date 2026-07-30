@@ -1,15 +1,25 @@
 // cabinet-companion — the Captain's menu-bar hand for the Cabinet.
 // Wave D / D1, spec: DESIGN-companion-2026-07-10.md (v0.6).
 //
-// ONE Swift file, compiled on-target by cabinet/scripts/build-companion.sh into
+// Compiled on-target by cabinet/scripts/build-companion.sh into
 // "bin/Cabinet Companion.app" (LSUIElement accessory — menu bar only, no Dock
-// icon), ad-hoc signed, calread-style. argv dispatch:
+// icon), ad-hoc signed, calread-style, together with its ONE sibling source
+// pet.swift (the desk pet's BODY — this file stays the brain). argv dispatch:
 //
 //   (no args)   GUI: NSStatusItem tray icon + menu
 //   --smoke     headless one-shot poll: prints "STATE=<S> reason=<r>", exit 0
 //               (any HONEST state passes — the acceptance gate works on
 //               un-hatched Macs too; nonzero only on internal failure)
 //   --version   print version, exit 0
+//   --pet       GUI + the floating desk pet beside the Dock (pet.swift).
+//               Optional: --pet-officer <slug>, --pet-scale <n>.
+//   --pet-demo <STATE>   GUI + pet rendering a SYNTHETIC state, live poll
+//               SUPPRESSED and the menu labelled DEMO. Exists so each of the
+//               five states can be photographed on the real desktop; it is
+//               the same synthetic input the test gate asserts on.
+//   --pet-selftest       headless: the pure state→look mapping, one line each
+//   --pet-render <STATE> <out.png>   headless: the composed canvas at source
+//               resolution, so a test can assert on the PIXELS
 //
 // DOCTRINE MAP (spec §10):
 //  1. Orchestrate-never-reimplement: every actuation shells an existing repo
@@ -40,7 +50,7 @@ import UserNotifications
 
 // MARK: - Constants
 
-let companionVersion = "0.6.0"
+let companionVersion = "0.7.0"
 let companionBundleID = "com.cabinet.companion"
 
 enum Const {
@@ -669,6 +679,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var notificationsWorking: Bool?
     private var lastEventLine: String?
     private var wrappersDir = ""
+    private var pet: PetController? // the floating desk pet (pet.swift), only with --pet
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // ONE background-activity token, strong, for the whole app lifetime —
@@ -684,6 +695,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem = item
         if rootInfo.valid { regenerateWrappers(root: rootInfo.path) }
         render() // boots AMBER "no data yet" — never green-by-default
+        if PetOptions.enabled {
+            if let demo = PetOptions.demoState {
+                CompanionLog.shared.line("pet: DEMO MODE — rendering a SYNTHETIC \(demo.rawValue) snapshot; the live poll is suppressed and the menu says so. Nothing here is a reading of the cabinet.")
+            }
+            pet = PetController(root: rootInfo.path, slug: PetOptions.slug,
+                                scale: PetOptions.scale, initial: displayedSnapshot())
+        }
         pollNow()
         scheduleTimer(interval: Const.pollInterval)
         let sentinel = Timer(timeInterval: 30, repeats: true) { [weak self] _ in self?.render() }
@@ -781,6 +799,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func pollNow() {
+        // DEMO: one choke point. A synthetic state must never be mixed with a
+        // real reading — so while --pet-demo is on, the cabinet is never read.
+        guard PetOptions.demoState == nil else { return }
         guard !pollInFlight else { return }
         pollInFlight = true
         let info = rootInfo
@@ -809,13 +830,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func displayedSnapshot() -> Snapshot {
-        (lastSnapshot ?? Snapshot.booting(rootValid: rootInfo.valid)).stalenessAdjusted(now: Date())
+        // DEMO returns a freshly stamped synthetic snapshot, so the forced
+        // state neither ages into "stale" nor leaks a real reading.
+        if let demo = PetOptions.demoState {
+            return PetCLI.demoSnapshot(demo, slug: PetOptions.slug)
+        }
+        return (lastSnapshot ?? Snapshot.booting(rootValid: rootInfo.valid)).stalenessAdjusted(now: Date())
     }
 
     private func render() {
         let snap = displayedSnapshot()
         statusItem?.button?.image = StatusIcon.image(for: snap.state)
-        statusItem?.button?.toolTip = "Cabinet: \(snap.state.rawValue) — \(snap.reason)"
+        // The DEMO marker belongs on the TOOLTIP too, not only inside the open
+        // menu: --pet-demo exists so states can be photographed on the real
+        // desktop, and the menu bar is in those photographs (adversarial
+        // review, 2026-07-30).
+        let demoTag = PetOptions.demoState == nil ? "" : "DEMO (synthetic, not a reading) — "
+        statusItem?.button?.toolTip = "\(demoTag)Cabinet: \(snap.state.rawValue) — \(snap.reason)"
+        pet?.apply(snapshot: snap)
         rebuildMenu(snap: snap)
     }
 
@@ -823,7 +855,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         pollNow() // immediate poll on menu open (§6)
-        if rootInfo.valid {
+        if rootInfo.valid, PetOptions.demoState == nil {
             // menu-open budget: one bounded ~1s HEAD probe (§6) — run OFF the
             // main thread so opening the menu never stalls behind a down
             // dashboard. Last-known dashboardUp renders instantly; the
@@ -847,8 +879,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func rebuildMenu(snap: Snapshot) {
         menu.removeAllItems()
-        let rootOK = rootInfo.valid
+        // DEMO: the snapshot is synthetic, so every item whose LABEL or
+        // ENABLEMENT would be derived from it is disabled. Actuation was
+        // always safe (the kill-switch lever re-reads Redis before arming),
+        // but the lever's verb is read off the state — and "▶ Resume
+        // Officers…" computed from a made-up PAUSED is a lie in the one menu
+        // that must never lie (adversarial review, 2026-07-30).
+        let demo = PetOptions.demoState != nil
+        let rootOK = rootInfo.valid && !demo
 
+        if let demo = PetOptions.demoState {
+            menu.addItem(infoItem("DEMO — synthetic \(demo.rawValue); the cabinet is NOT being read, and every action is disabled"))
+            menu.addItem(.separator())
+        }
         let header = infoItem("Cabinet: \(snap.state.rawValue)")
         menu.addItem(header)
         menu.addItem(smallInfoItem(snap.reason))
@@ -929,6 +972,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let refresh = actionItem("Refresh Now", #selector(refreshNow))
         refresh.isEnabled = rootOK
         menu.addItem(refresh)
+
+        if let pet {
+            let toggle = actionItem(pet.isVisible ? "Hide Desk Pet" : "Show Desk Pet",
+                                    #selector(toggleDeskPet))
+            toggle.toolTip = "the floating officer beside the Dock; it cannot be clicked (per-pixel click-through is broken on this macOS — see pet.swift)"
+            menu.addItem(toggle)
+        }
         menu.addItem(.separator())
 
         let login = actionItem("Launch at Login", #selector(toggleLoginItem))
@@ -1000,6 +1050,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func refreshNow() { pollNow() }
+
+    @objc private func toggleDeskPet() {
+        guard let pet else { return }
+        pet.setVisible(!pet.isVisible)
+        render()
+    }
 
     @objc private func openLog() {
         CompanionLog.shared.ensureExists()
@@ -1234,6 +1290,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 // MARK: - Entry point (argv dispatch — calread-style consolidated binary)
 
 let cliArgs = Array(CommandLine.arguments.dropFirst())
+let usageLine = "usage: cabinet-companion [--smoke | --version | --pet [--pet-officer <slug>] [--pet-scale <n>] | --pet-demo <STATE> | --pet-selftest | --pet-render <STATE> <out.png> [--pet-tick <n>]]"
+
+func petArgFail(_ msg: String) -> Never {
+    FileHandle.standardError.write(Data("\(usageLine)\n\(msg)\n".utf8))
+    exit(64)
+}
+
 if cliArgs.contains("--version") {
     print("cabinet-companion \(companionVersion)")
     exit(0)
@@ -1241,10 +1304,50 @@ if cliArgs.contains("--version") {
 if cliArgs.contains("--smoke") {
     exit(CompanionCore.runSmoke())
 }
-if let unknown = cliArgs.first {
-    FileHandle.standardError.write(Data("usage: cabinet-companion [--smoke | --version]\nunknown argument: \(unknown)\n".utf8))
-    exit(64)
+
+// ---- pet argv (pet.swift). Unknown flags still exit 64 — no silent accept.
+var petRenderTarget: (state: CabinetState, path: String)?
+var petSelftest = false
+var argIndex = 0
+while argIndex < cliArgs.count {
+    let arg = cliArgs[argIndex]
+    func value(_ name: String) -> String {
+        guard argIndex + 1 < cliArgs.count else { petArgFail("\(name) needs a value") }
+        argIndex += 1
+        return cliArgs[argIndex]
+    }
+    switch arg {
+    case "--pet":
+        PetOptions.enabled = true
+    case "--pet-officer":
+        PetOptions.slug = value("--pet-officer")
+    case "--pet-tick":
+        guard let n = Int(value("--pet-tick")), n >= 0 else { petArgFail("--pet-tick must be a non-negative integer") }
+        PetOptions.renderTick = n
+    case "--pet-scale":
+        guard let n = Int(value("--pet-scale")), (1...8).contains(n) else {
+            petArgFail("--pet-scale must be an integer 1...8 (integer scales only — a resampled pet is a failed pet)")
+        }
+        PetOptions.scale = n
+    case "--pet-demo":
+        let raw = value("--pet-demo")
+        guard let s = PetCLI.parseState(raw) else { petArgFail("--pet-demo: unknown state \(raw)") }
+        PetOptions.enabled = true
+        PetOptions.demoState = s
+    case "--pet-selftest":
+        petSelftest = true
+    case "--pet-render":
+        let raw = value("--pet-render")
+        guard let s = PetCLI.parseState(raw) else { petArgFail("--pet-render: unknown state \(raw)") }
+        petRenderTarget = (s, value("--pet-render <out.png>"))
+    default:
+        petArgFail("unknown argument: \(arg)")
+    }
+    argIndex += 1
 }
+if petSelftest { exit(PetCLI.selftest()) }
+if let target = petRenderTarget { exit(PetCLI.render(state: target.state, to: target.path, tick: PetOptions.renderTick)) }
+
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory) // LSUIElement twin: menu bar only, no Dock icon
 let appDelegate = AppDelegate()
