@@ -1433,6 +1433,20 @@ class TestSpecificsRatchetIsNonVacuous:
 #      `handles:` value that is an account rather than a name, derive nothing.
 #   8. ANYTHING OUTSIDE framework/. The operating layer, the presets and the
 #      packs are the deployment's own and are entitled to name it.
+#   9. A DECLARATION SURFACE THAT STOPS YIELDING. The non-vacuity floor is on
+#      the UNION of the three surfaces, so a surface can go quiet — a fork or
+#      an org move retargets the owner handle, a licence line is reworded —
+#      and the tokens it ALONE contributed stop being policed while the floor
+#      still passes and nothing goes red. Measured on the tree this arm landed
+#      with: the owner handle is the sole source of the short diminutive, and
+#      it is the token 15 of the 15 original literals used. There is no honest
+#      per-surface floor to add — a repository legitimately owned by an
+#      organisation yields no person-shaped handle, and reddening that is a
+#      false alarm on a correct tree — so this is a limit to KNOW, not one to
+#      close: after any change to the licence line or the manifests, re-read
+#      what `derive_operator_identity` returns.
+#      `test_a_surface_that_stops_declaring_narrows_the_arm_silently` pins it
+#      in both directions so the narrowing is at least a measured property.
 #
 # WHAT IT CAN GET WRONG, the mirror of the above, stated because a stranger
 # will meet it before I do: a deployment whose operator's name collides with
@@ -1630,8 +1644,9 @@ def iter_person_files(root: Path) -> Iterator[Path]:
     """The scan set: every text file under the tree INCLUDING its tests — five
     of the fifteen literals this arm was built for lived in a single test file,
     framework tests SHIP in the egg, and a name in a fixture publishes exactly
-    as widely as a name in a module. Dated design snapshots under docs/ are the
-    one exclusion (item 5)."""
+    as widely as a name in a module. Each file's PATH is scanned as well as its
+    content (a directory named after the operator publishes the name too).
+    Dated design snapshots under docs/ are the one exclusion (item 5)."""
     for dirpath, dirnames, filenames in os.walk(str(root)):
         dirnames[:] = sorted(d for d in dirnames
                              if d != "__pycache__" and d not in _SEED_SKIP_DIRS)
@@ -1644,10 +1659,11 @@ def iter_person_files(root: Path) -> Iterator[Path]:
 
 
 def scan_person_literals(root, vocabulary=None, rel_to=None) -> List[PersonFinding]:
-    """Read-only scan of ``root`` for a declared operator-identity token.
-    Returns (display_path, line_no, token), sorted, one entry per token per
-    line. Symlink escapes are refused, never followed (realpath containment,
-    mirroring Arms 1 and 2)."""
+    """Read-only scan of ``root`` for a declared operator-identity token, in
+    the file's PATH as well as its CONTENT. Returns (display_path, line_no,
+    token), sorted, one entry per token per line; ``line_no`` 0 means the
+    finding is the path itself, not a line in the file. Symlink escapes are
+    refused, never followed (realpath containment, mirroring Arms 1 and 2)."""
     root = Path(root)
     base = Path(rel_to) if rel_to is not None else root
     if vocabulary is None:
@@ -1666,6 +1682,20 @@ def scan_person_literals(root, vocabulary=None, rel_to=None) -> List[PersonFindi
             continue
         if rx is None:
             continue
+        # A PATH IS PUBLISHED TEXT TOO. A directory or a file NAMED after the
+        # operator ships the name exactly as widely as a line inside it, and a
+        # content-only scan calls that tree green — the gap this arm's own
+        # summary sentence ("framework/ does not name the operator") would
+        # otherwise be wrong about. Matched on the path relative to the SCAN
+        # ROOT, never the display path, so the subject directory's own name can
+        # never seed a finding (an operator called `Framework` would otherwise
+        # red every file in the tree — pinned below).
+        seen_path = set()  # type: set
+        for m in rx.finditer(p.relative_to(root).as_posix()):
+            tok = m.group(1).lower()
+            if tok not in seen_path:
+                seen_path.add(tok)
+                found.append((display, 0, tok))
         txt = _read_text_file(p)
         if txt is None:
             continue
@@ -1681,7 +1711,8 @@ def scan_person_literals(root, vocabulary=None, rel_to=None) -> List[PersonFindi
 
 _PERSON_HINT = (
     "framework/ is the universal layer — it may not name the person this "
-    "deployment belongs to. An EXAMPLE takes an obviously-synthetic "
+    "deployment belongs to, in a line OR in a path (line 0 = the path itself). "
+    "An EXAMPLE takes an obviously-synthetic "
     "placeholder (`<display>`, `abcd`, the demo identity); a value that has to "
     "be real lives in the instance layer and reaches framework only through a "
     "resolver (framework.env.captain_name()). There is no allowlist and no "
@@ -1906,6 +1937,55 @@ class TestPersonEngine:
         v = self._tree(tmp_path, {}, fw={"m.py": "# anybody at all\n"})
         assert v == {}
         assert scan_person_literals(tmp_path / "framework", vocabulary=v,
+                                    rel_to=tmp_path) == []
+
+    def test_a_path_that_names_the_operator_is_flagged(self, tmp_path):
+        """A directory or a file NAMED after the operator publishes the name as
+        widely as a line inside it does, and a content-only scan called that
+        tree green. Lopsided on purpose: two named paths whose CONTENT is
+        spotless are found, and a clean path beside them is not — so the arm
+        cannot pass by flagging everything."""
+        v = self._tree(tmp_path, {"LICENSE": "Copyright (c) 2026 Quillon Marrowby\n"},
+                       fw={"marrowby/helper.py": "x = 1\n",
+                           "docs/Quillon-fixture.md": "nothing to see\n",
+                           "clean/ok.py": "x = 1\n"})
+        f = scan_person_literals(tmp_path / "framework", vocabulary=v, rel_to=tmp_path)
+        assert ("framework/marrowby/helper.py", 0, "marrowby") in f
+        assert ("framework/docs/Quillon-fixture.md", 0, "quillon") in f
+        assert [x for x in f if x[0] == "framework/clean/ok.py"] == []
+
+    def test_the_subject_directory_name_is_not_itself_a_finding(self, tmp_path):
+        """Why the path is matched relative to the SCAN ROOT and not to the
+        display base: an operator whose declared identity happens to contain
+        the subject directory's own name would otherwise red every file in the
+        tree, on a tree that names nobody."""
+        v = self._tree(tmp_path, {"LICENSE": "Copyright (c) 2026 Framework Marrowby\n"},
+                       fw={"m.py": "x = 1\n"})
+        assert "framework" in v, "the fixture never derived the colliding token"
+        assert scan_person_literals(tmp_path / "framework", vocabulary=v,
+                                    rel_to=tmp_path) == []
+
+    def test_a_surface_that_stops_declaring_narrows_the_arm_silently(self, tmp_path):
+        """Item 9, pinned in BOTH directions because it is the failure this
+        gate is least able to notice about itself: the non-vacuity floor is on
+        the UNION, so a surface going quiet costs real teeth while every arm
+        stays green. Before: the owner handle contributes a token no licence
+        derives, and a line carrying it is found. After a fork/org retarget:
+        the token is gone, the same line passes, and the vocabulary is still
+        non-empty — so nothing anywhere reports the loss."""
+        v = self._tree(tmp_path, {
+            "LICENSE": "Copyright (c) 2026 Quillon Marrowby\n",
+            ".claude-plugin/plugin.json":
+                '{"homepage": "https://github.com/quill-marrowby/some-repo"}\n'},
+            fw={"m.py": "# ask Quill before shipping\n"})
+        assert scan_person_literals(tmp_path / "framework", vocabulary=v,
+                                    rel_to=tmp_path) == [("framework/m.py", 1, "quill")]
+        self._write(tmp_path / ".claude-plugin" / "plugin.json",
+                    '{"homepage": "https://github.com/zzq-x1/some-repo"}\n')
+        v2 = derive_operator_identity(tmp_path)
+        assert "quill" not in v2, "the fixture never retargeted the handle"
+        assert v2, "the union floor must still pass — that is what makes it silent"
+        assert scan_person_literals(tmp_path / "framework", vocabulary=v2,
                                     rel_to=tmp_path) == []
 
     def test_a_symlink_escape_is_refused_not_followed(self, tmp_path):
