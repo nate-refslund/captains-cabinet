@@ -5,7 +5,8 @@
 # build-calendar-helper.sh precedent (swiftc on-target, codesign --sign -),
 # extended from bare-binary to an LSUIElement .app bundle.
 #
-# Source:  cabinet/companion/main.swift + cabinet/companion/Info.plist
+# Source:  cabinet/companion/main.swift + cabinet/companion/pet.swift
+#          + cabinet/companion/Info.plist
 # Output:  $ROOT/bin/Cabinet Companion.app   (gitignored — never enters git
 #          HEAD, so it never rides the egg; the egg ships SOURCE + this script)
 #
@@ -25,6 +26,10 @@ set -euo pipefail
 ROOT="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 SRC_DIR="$ROOT/cabinet/companion"
 SRC="$SRC_DIR/main.swift"
+# pet.swift is the desk pet's BODY (floating window beside the Dock); main.swift
+# stays the brain. Both compile into the ONE binary — the pet adds no target,
+# no dependency and no daemon.
+PET="$SRC_DIR/pet.swift"
 PLIST="$SRC_DIR/Info.plist"
 APP="$ROOT/bin/Cabinet Companion.app"
 MACOS_DIR="$APP/Contents/MacOS"
@@ -36,6 +41,7 @@ if ! command -v swiftc >/dev/null 2>&1; then
   exit 1
 fi
 [ -f "$SRC" ] || { echo "error: missing source $SRC" >&2; exit 1; }
+[ -f "$PET" ] || { echo "error: missing source $PET" >&2; exit 1; }
 [ -f "$PLIST" ] || { echo "error: missing $PLIST" >&2; exit 1; }
 
 # fail early on a malformed plist (the bundle would be silently broken)
@@ -43,7 +49,7 @@ plutil -lint "$PLIST" >/dev/null
 
 mkdir -p "$MACOS_DIR"
 cp "$PLIST" "$APP/Contents/Info.plist"
-swiftc -O "$SRC" -o "$OUT"
+swiftc -O "$SRC" "$PET" -o "$OUT"
 codesign --force --sign - --identifier "$IDENTIFIER" "$APP"
 
 echo "built + signed: $APP"
