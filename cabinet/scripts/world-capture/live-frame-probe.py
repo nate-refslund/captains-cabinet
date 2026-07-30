@@ -13,10 +13,21 @@ went red; the Captain found it. This probe takes a PNG captured from the LIVE
 /world and asks the one question that would have caught it: is every pixel of
 open water still lawful water?
 
-THE LAWS, and they are the renderer's, not this file's. A veil hue may darken
-water but may never be brighter than the brightest sea tone, and may never be
-more colourful than the water it shades. Both bounds are derived here from the
-same sea ramp iso-terrain.ts declares (kept in sync by test_live_frame_probe).
+THE LAWS, and they are the renderer's, not this file's. Ambience may darken water
+but may never make it brighter, or more colourful, than any water this world
+draws. Both bounds are DERIVED from the shipped sea ramp and its own shaded forms
+— cabinet/dashboard/src/lib/world/ambience-derived.json, emitted by lib/world/
+ambience.ts and pinned to it there (this end is pinned by test_live_frame_probe
+and test_ambience_mirror).
+
+WHAT THIS PROBE STILL ADDS, now that ambience is a colour REMAP rather than a
+screen-space dither (THE AMBIENCE STRUCTURE LAW, 2026-07-30): the remap's table is
+a pure function with 32768 entries and every one of them is asserted in
+ambience.test.ts, so the COLOURS no longer need sampling from a screenshot. What a
+unit test cannot reach is the GPU: whether the shader indexes that table
+correctly, at every zoom, over a real composed frame. That is what is left here,
+and it is why the probe judges the hour it finds in the water rather than trusting
+the clock it was captured at.
 
 CAPTURING THE INPUT (no browser dependency is added to this repo — the capture
 is a two-minute local recipe, the judging is what had to be committed):
@@ -46,6 +57,7 @@ from __future__ import annotations
 import collections
 import math
 import sys
+from pathlib import Path
 
 try:
     from PIL import Image
@@ -54,19 +66,25 @@ except ImportError:  # pragma: no cover - the message IS the behaviour
           file=sys.stderr)
     raise SystemExit(2)
 
-# iso-terrain.ts RAMPS.sea, dark -> light. The ONE place these five tones are
-# duplicated outside the renderer; test_live_frame_probe.py pins them equal.
-SEA = [(0x3E, 0x6E, 0x6B), (0x48, 0x80, 0x7C), (0x54, 0x91, 0x8C),
-       (0x61, 0xA0, 0x99), (0x6F, 0xAE, 0xA6)]
+# THE COLOURS COME FROM THE RENDERER, NOT FROM HERE. ambience_py reads
+# cabinet/dashboard/src/lib/world/ambience-derived.json, which lib/world/
+# ambience.ts emits and ambience.test.ts pins to itself. Before 2026-07-30 this
+# file carried a hand-copied per-bucket veil hue table; that mechanism is gone
+# (THE AMBIENCE STRUCTURE LAW: ambience is a colour REMAP, not a dither), and
+# with it the last reason for a third copy of a hue table in this repo.
+#
+# WHAT CHANGED FOR THIS PROBE. Under a dither, water kept its own five tones and
+# the veil sat on top as extra hues, so "is this water" meant "is this the day
+# sea ramp". Under a remap, night water IS the sea ramp shaded — a night frame
+# contains none of the day tones — so the water set is the day ramp plus every
+# bucket's shaded ramp, and the probe can now name the hour FROM THE WATER rather
+# than from a dither it happens to recognise.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import ambience_py            # noqa: E402  (path set above; same-dir module)
 
-# terrain-pattern.ts DAWN/DUSK/NIGHT_VEIL_HUES, mirrored so a green can name
-# the veil it judged. test_live_frame_probe.py parses the TypeScript and pins
-# these equal — the same trick that pins SEA.
-VEILS = {
-    "dawn": [(0x8C, 0x8C, 0x94), (0xA7, 0x9C, 0x8F)],
-    "dusk": [(0x7C, 0x7C, 0x84), (0x6C, 0x6C, 0x74), (0x4C, 0x7C, 0x6C)],
-    "night": [(0x24, 0x34, 0x4C), (0x34, 0x34, 0x4C), (0x2C, 0x34, 0x4C)],
-}
+SEA = ambience_py.sea("day")
+SEA_BY_BUCKET = {b: ambience_py.sea(b) for b in ("day",) + ambience_py.LIT}
+ALL_WATER = {c for tones in SEA_BY_BUCKET.values() for c in tones}
 
 # Window sizes, tried LARGEST FIRST: a big window is better evidence, but at
 # close zoom the island fills the frame and no 150px square is clean open water.
@@ -125,8 +143,14 @@ def chroma(c: tuple[int, int, int]) -> float:
     return math.hypot(500 * (fx - fy), 200 * (fy - fz))
 
 
-LUMA_CAP = max(luma(c) for c in SEA)
-CHROMA_CAP = max(chroma(c) for c in SEA)
+# Both caps DERIVED, and from every tone lawful water can hold at ANY hour, not
+# from the day ramp alone: the dusk-shaded ramp sits 0.6 chroma above the day
+# ramp's own ceiling, which is one palette bin of snap, and a cap that red-flagged
+# correct dusk water would be a sensor pointed at the wrong thing. What the caps
+# still catch is what they were built for — an overlay putting a tone on the water
+# that is brighter or more colourful than any water this world draws.
+LUMA_CAP = max(luma(c) for c in ALL_WATER)
+CHROMA_CAP = max(chroma(c) for c in ALL_WATER)
 
 
 def _uniform(im, x0, y0, box, sea_set) -> bool:
@@ -188,7 +212,7 @@ def open_water(im: Image.Image):
     """
     px = im.load()
     w, h = im.size
-    sea_set = set(SEA)
+    sea_set = set(ALL_WATER)
     for box in BOXES:
         best = None
         for y in range(0, max(1, h - box), STEP):
@@ -221,16 +245,24 @@ def open_water(im: Image.Image):
     return None
 
 
-def _which_veil(hist, sea_set) -> str:
-    """Name the veil actually present, so a green says WHAT it judged.
+def _which_bucket(hist, sea_set) -> str:
+    """Name the HOUR actually present, so a green says what it judged.
 
-    A green that cannot distinguish "the veil is lawful" from "there is no veil
-    here" is a green about the wrong frame — captured at the wrong clock, or
-    with the day bucket, where every veil is trivially lawful.
+    A green that cannot distinguish "this frame's ambience is lawful" from "there
+    was no ambience here" is a green about the wrong frame — captured at the wrong
+    clock, or in the day bucket, where every ambience is trivially lawful.
+
+    Under the remap the water tones ARE the ambience, so the hour is read off the
+    water: whichever bucket's shaded sea ramp contains every water tone in the
+    window. `day` is checked last because its ramp is the unshaded one and a
+    frame that failed to apply ambience at all must be reported as `day`, not
+    silently accepted as the bucket it was captured for.
     """
-    tones = frozenset(col for col in hist if col not in sea_set)
-    for name, hues in VEILS.items():
-        if tones and tones <= set(hues):
+    water = frozenset(col for col in hist if col in sea_set)
+    if not water:
+        return 'none/unrecognised'
+    for name in ambience_py.LIT + ("day",):
+        if water <= set(SEA_BY_BUCKET[name]):
             return name
     return 'none/unrecognised'
 
@@ -245,11 +277,11 @@ def judge(path: str) -> int:
               f"frame proves nothing")
         return 1
     unlawful, at, hist, box, total = found
-    sea_set = set(SEA)
-    veil = _which_veil(hist, sea_set)
+    sea_set = set(ALL_WATER)
+    bucket = _which_bucket(hist, sea_set)
     if unlawful == 0:
         print(f"OK       {path}: worst {box}px open-water window at {at} is all "
-              f"lawful ({len(hist)} tones, veil={veil})")
+              f"lawful ({len(hist)} tones, bucket={bucket})")
         return 0
     worst = sorted(((n, col) for col, n in hist.items()
                     if col not in sea_set

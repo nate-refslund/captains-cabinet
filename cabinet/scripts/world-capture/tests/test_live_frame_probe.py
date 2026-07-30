@@ -24,7 +24,7 @@ of the probe before it ever ran in CI, and each one pins the fix:
     its tones is individually scattered. Together they also stopped a sand
     beach and the onboarding card from false-REDding.
 
-Plus the invariants: the sea ramp and the veil tables are parsed out of the
+Plus the invariants: the sea ramp and every shaded form of it are parsed out of the
 TypeScript rather than retyped, the probe is shown red on the exact defect that
 shipped and on the chroma near-miss, and a blank frame is UNJUDGED rather than
 OK — a probe that reports success on an empty image is the disabled sensor this
@@ -33,6 +33,7 @@ file exists to prevent.
 from __future__ import annotations
 
 import importlib.util
+import json
 import re
 import subprocess
 import sys
@@ -45,8 +46,9 @@ HERE = Path(__file__).resolve().parent
 PROBE = HERE.parent / "live-frame-probe.py"
 REPO = HERE.parents[3]
 WORLD_LIB = REPO / "cabinet" / "dashboard" / "src" / "lib" / "world"
+DERIVED = (REPO / "cabinet" / "dashboard" / "src" / "lib" / "world"
+            / "ambience-derived.json")
 ISO_TERRAIN = WORLD_LIB / "iso-terrain.ts"
-TERRAIN_PATTERN = WORLD_LIB / "terrain-pattern.ts"
 
 
 def _load():
@@ -73,14 +75,14 @@ def _ramp_from_ts(name: str) -> list[tuple[int, int, int]]:
     return out
 
 
-def _veil_from_ts(bucket: str) -> list[tuple[int, int, int]]:
-    """The shipped veil hues, read out of the renderer's own source."""
-    m = re.search(rf"^export const {bucket.upper()}_VEIL_HUES = \[([^\]]*)\]",
-                  TERRAIN_PATTERN.read_text(), re.M)
-    assert m, f"{bucket} veil hues not found in terrain-pattern.ts"
-    out = _hexes(m.group(1))
-    assert out, f"{bucket} veil hues parsed empty"
-    return out
+def _sea_from_derived(bucket: str) -> list[tuple[int, int, int]]:
+    """The SHADED sea ramp for a bucket, out of the renderer's own emitted
+    derivation. Ambience is a colour remap since 2026-07-30 (THE AMBIENCE
+    STRUCTURE LAW), so a bucket has no hues of its own — its water simply IS the
+    sea ramp shaded, and that is what a frame at that hour contains."""
+    raw = json.loads(DERIVED.read_text())["buckets"][bucket]["sea"]
+    assert raw, f"{bucket} shaded sea parsed empty"
+    return [tuple(c) for c in raw]
 
 
 def _frame(path: Path, base, dots=None, coverage=0.16, size=(600, 400),
@@ -123,17 +125,30 @@ def test_sea_ramp_is_the_shipped_one_byte_for_byte():
 
 
 @pytest.mark.parametrize("bucket", ["dawn", "dusk", "night"])
-def test_veil_tables_are_the_shipped_ones(bucket):
-    assert probe.VEILS[bucket] == _veil_from_ts(bucket), (
-        f"live-frame-probe.py's {bucket} veil has drifted from terrain-pattern.ts"
+def test_shaded_water_is_the_shipped_shaded_water(bucket):
+    assert probe.SEA_BY_BUCKET[bucket] == _sea_from_derived(bucket), (
+        f"live-frame-probe.py's {bucket} water has drifted from the renderer's "
+        "own ambience-derived.json"
     )
 
 
-def test_caps_are_derived_from_that_ramp_not_typed_in():
+def test_caps_are_derived_from_lawful_water_not_typed_in():
+    """The caps bound what water may BE, so they come from every tone water can
+    hold at any hour — the day ramp and each shaded form of it. Derived from the
+    day ramp alone they red-flagged correct dusk water, which sits 0.6 chroma
+    above the day ceiling: one palette bin of snap."""
+    assert probe.LUMA_CAP == max(probe.luma(c) for c in probe.ALL_WATER)
+    assert probe.CHROMA_CAP == max(probe.chroma(c) for c in probe.ALL_WATER)
+    # the day ramp is still the thing that sets the luminance ceiling — ambience
+    # only darkens, so a cap ABOVE the day ramp's would mean ambience brightened
     assert probe.LUMA_CAP == max(probe.luma(c) for c in probe.SEA)
-    assert probe.CHROMA_CAP == max(probe.chroma(c) for c in probe.SEA)
     assert 155 < probe.LUMA_CAP < 165
     assert 20 < probe.CHROMA_CAP < 25
+    # ...and every shaded ramp is inside both caps, or the probe reds on itself
+    for bucket, tones in probe.SEA_BY_BUCKET.items():
+        for c in tones:
+            assert probe.luma(c) <= probe.LUMA_CAP, (bucket, c)
+            assert probe.chroma(c) <= probe.CHROMA_CAP, (bucket, c)
 
 
 # ── it goes red on the real defect, both laws ───────────────────────────────
@@ -174,30 +189,25 @@ def test_red_when_only_PART_of_the_ocean_is_defective(tmp_path):
 
 # ── it goes green on the real fix, and says WHAT it judged ──────────────────
 
-def test_green_on_the_shipped_dusk_veil(tmp_path):
-    f = _frame(tmp_path / "dusk.png", _ramp_from_ts("sea"), dots=_veil_from_ts("dusk"))
+@pytest.mark.parametrize("bucket", ["dawn", "dusk", "night"])
+def test_green_on_shaded_water_and_it_names_the_hour(tmp_path, bucket):
+    """A frame whose water is the shaded ramp is lawful water, and the probe reads
+    the HOUR off that water. Under the old dither the hour had to be inferred from
+    hues sitting on top of unshaded water; under a remap the water IS the answer."""
+    f = _frame(tmp_path / f"{bucket}.png", _sea_from_derived(bucket))
     code, out = _run(f)
     assert code == 0, out
-    assert "OK" in out and "veil=dusk" in out
+    assert "OK" in out and f"bucket={bucket}" in out
 
 
-def test_green_on_the_shipped_night_veil_at_its_real_coverage(tmp_path):
-    """42% coverage. The FIRST qualifier rejected every night frame as 'not
-    water', so the densest veil in the world was never judged at all."""
-    f = _frame(tmp_path / "night.png", _ramp_from_ts("sea"),
-               dots=_veil_from_ts("night"), coverage=0.42)
-    code, out = _run(f)
-    assert code == 0, out
-    assert "veil=night" in out
-
-
-def test_a_green_says_when_there_was_no_veil_to_judge(tmp_path):
-    """Otherwise a pass cannot distinguish 'the veil is lawful' from 'you
-    captured the day bucket', which is the wrong-frame failure."""
+def test_a_green_says_when_the_frame_carried_no_ambience(tmp_path):
+    """Otherwise a pass cannot distinguish 'this frame's ambience is lawful' from
+    'you captured the day bucket', which is the wrong-frame failure. It is also
+    what catches a frame where the shader silently did nothing at midnight."""
     f = _frame(tmp_path / "clean.png", _ramp_from_ts("sea"))
     code, out = _run(f)
     assert code == 0, out
-    assert "veil=none" in out
+    assert "bucket=day" in out
 
 
 # ── it refuses to answer rather than answering wrongly ──────────────────────
@@ -269,7 +279,7 @@ def test_no_arguments_is_a_usage_error_not_a_pass():
 def test_every_frame_is_judged_not_just_the_first(tmp_path):
     """One red must not mask the next — the whole reason this loop is a sum."""
     bad = _frame(tmp_path / "bad.png", _ramp_from_ts("sea"), dots=[(255, 200, 144)])
-    good = _frame(tmp_path / "good.png", _ramp_from_ts("sea"), dots=_veil_from_ts("dusk"))
+    good = _frame(tmp_path / "good.png", _sea_from_derived("dusk"))
     code, out = _run(bad, good)
     assert code == 1
     assert "UNLAWFUL" in out and "OK" in out

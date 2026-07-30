@@ -131,6 +131,56 @@ today). A shader is only ever verified by looking at a browser capture; a second
 one nothing runs cannot be. On any other renderer `ambienceFilter` returns null
 and the canvas raises a HUD render issue rather than drawing daylight at midnight.
 
+## The Python side — cp2, after CI found it
+
+CI caught what a truncated grep of mine missed: the veil hue table had **three**
+copies, not one. `cabinet/scripts/world-capture/live-frame-probe.py` and
+`cabinet/scripts/world-growth-backtest.py` each carried their own, pinned to the
+TypeScript by `test_veil_table_mirror.py` — a good gate, doing exactly its job. My
+sweep for the old names printed more hits than I read, and I treated the visible
+portion as the whole set. The lesson is the lesson: a `head`-truncated grep is a
+coverage claim, and coverage claims are bounded by what was actually swept.
+
+Fixed by removing the reason for a copy at all. `lib/world/ambience.ts` now emits
+`ambience-derived.json` (per-bucket light factor, the shaded sea ramp, and all
+eleven shaded ramps); an arm in `ambience.test.ts` pins that artifact to the live
+derivation, and `cabinet/scripts/world-capture/ambience_py.py` is the one Python
+reader. The single piece of ported logic — the nearest-native snap — is verified
+against the authority's own output on all 52 shipped ramp colours in all three
+buckets (156 comparisons), and that arm was sabotage-tested twice: a wrong
+distance metric and a missing source quantize each turn it red.
+
+`live-frame-probe.py` needed more than a repoint. Its whole model was a dither:
+water kept its five day tones and the veil sat on top as extra hues, so "is this
+water" meant "is this the day sea ramp" — and a remapped night frame contains none
+of those five, so the probe would have reported every night capture UNJUDGED. Water
+is now the day ramp plus each shaded form of it, and the probe reads the HOUR off
+the water rather than off a dither it recognises, which also catches the case a
+dither-era probe could not: a shader that silently did nothing at midnight reports
+`bucket=day`. Its two caps are still derived, now from every tone lawful water can
+hold at any hour — the dusk-shaded ramp sits 0.6 chroma above the day ramp's own
+ceiling, one palette bin of snap, and a cap that red-flagged correct dusk water
+would be a sensor pointed at the wrong thing.
+
+`world-growth-backtest.py` loses its Pillow dither for the same remap, memoized per
+distinct colour, so a timelapse strip and a browser frame agree byte for byte
+instead of nearly. Its private `_bucket_of` and `_fnv1a` are gone with it — that
+was the FOURTH copy of the bucket ranges.
+
+## Two CI failures that were NOT mine, checked rather than assumed
+
+- `framework/frontdoor/tests/test_card_flatline.py` — fails at my base `d9cc1494`
+  and is fixed by `b5565640` ("the loop readout ran two clocks"), which landed
+  after it. Resolved by merging origin/master.
+- `framework/tests/test_no_launcher_hardcode.py::TestSpecificsRatchet` — red only
+  in my working tree, and the cause is worth recording: `next dev` generates
+  `cabinet/dashboard/next-env.d.ts` (gitignored), which carries a `nextjs.org`
+  URL, which enters `derive_vendor_vocabulary`'s self-join, which makes the
+  `nextjs` tokens already in `framework/onboarding` and `framework/products` read
+  as new vendor literals. Deleting the generated file turns it green. So that
+  ratchet's vocabulary can be moved by an untracked build artifact — pre-existing,
+  not touched here, named so it is not rediscovered as a mystery.
+
 ## Gates
 
 - `npx tsc --noEmit` clean

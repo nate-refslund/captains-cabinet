@@ -598,6 +598,52 @@ describe('the ambience derivation', () => {
     ).toBeGreaterThan(worstChromaGain([dg, dg, dg]))
   })
 
+  it('the derived artifact the Python side reads is this module’s own output', () => {
+    /**
+     * ONE AUTHORITY FOR THREE CONSUMERS. The renderer is not the only thing that
+     * has to know what night looks like: cabinet/scripts/world-capture/
+     * live-frame-probe.py judges live PNGs and world-growth-backtest.py paints
+     * Pillow timelapse strips, and neither can run TypeScript. Before 2026-07-30
+     * both carried their own hand-copied veil hue table, and `change one, change
+     * both` was a comment — which is how a third copy of a hue table exists in a
+     * repo whose whole finding was that un-reachable hue tables drift.
+     *
+     * So the TS derivation emits `ambience-derived.json` and both Python
+     * consumers read it. This arm is what makes it an artifact rather than a
+     * fourth copy: regenerate it with
+     *
+     *     npx vitest run src/lib/world/ambience.test.ts   # then fix the diff
+     *
+     * It is checked in because the Python side runs in a CI job with no node.
+     */
+    const path = join(process.cwd(), 'src', 'lib', 'world', 'ambience-derived.json')
+    const got = JSON.parse(readFileSync(path, 'utf8')) as {
+      buckets: Record<
+        string,
+        { light: number[]; sea: number[][]; ramps: Record<string, number[][]> }
+      >
+    }
+    expect(Object.keys(got.buckets).sort()).toEqual([...LIT].sort())
+    const rgb = (hex: number) => [(hex >> 16) & 0xff, (hex >> 8) & 0xff, hex & 0xff]
+    for (const bucket of LIT) {
+      const lut = ambienceLut(bucket)!
+      const row = got.buckets[bucket]
+      expect(row.light.map((v) => +v.toFixed(6)), `${bucket}: stale light factor`).toEqual(
+        ambientLight(bucket)!.map((v) => +v.toFixed(6))
+      )
+      expect(row.sea, `${bucket}: stale sea ramp`).toEqual(RAMPS.sea.map((c) => rgb(remap(lut, c))))
+      expect(Object.keys(row.ramps).sort(), `${bucket}: ramp set changed`).toEqual(
+        Object.keys(RAMPS).sort()
+      )
+      for (const [name, ramp] of Object.entries(RAMPS)) {
+        expect(row.ramps[name], `${bucket}/${name}: stale`).toEqual(ramp.map((c) => rgb(remap(lut, c))))
+      }
+      // vacuity guard: an artifact of empty arrays would satisfy nothing above
+      expect(row.sea.length).toBe(RAMPS.sea.length)
+      expect(row.sea.flat().some((v) => v > 0)).toBe(true)
+    }
+  })
+
   it('the palette mirror still matches the calibration it was cut from', () => {
     // MIRROR, NOT A FORK. corpus-palette.ts is a copy of the gate's own fitted
     // palette; a re-fit that lands in one and not the other silently changes what
