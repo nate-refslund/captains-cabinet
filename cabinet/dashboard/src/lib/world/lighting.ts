@@ -18,7 +18,6 @@
  *    absence of data renders as no claim, not as invented night).
  */
 import { fnv1a } from './hash'
-import { DAWN_VEIL_HUES, DUSK_VEIL_HUES, NIGHT_VEIL_HUES } from './terrain-pattern'
 
 export type DayBucket = 'dawn' | 'day' | 'dusk' | 'night'
 
@@ -62,46 +61,23 @@ export function bucketForHour(
 }
 
 /**
- * The screen-space ambience VEIL — the opaque seeded dither that IS the day/
- * night ambience. It replaced a per-bucket alpha wash (`ambientTint`, deleted
- * 2026-07-29 once it had been dead long enough to become a trap: it still
- * returned the apricot the veil laws now ban, and a green test asserted it).
- * An alpha wash shifts every pixel out of the corpus bins — v1a live captures
- * measured 15–61% PALETTE_FOREIGN_MASS — which is why ambience is a dither.
+ * THE AMBIENCE PASS DOES NOT LIVE HERE ANY MORE, and the two deletions that got
+ * it here are the reason this note replaces it rather than nothing.
  *
- * It lives HERE, beside the rest of the per-bucket ambience table, and not in
- * the canvas component, for one reason: a hue table declared inside a 3000-line
- * renderer has no test that can reach it, and the dusk hue shipped wrong for
- * exactly that long. Every hue comes from terrain-pattern.ts and obeys THE VEIL
- * LAWS documented there. `veil.test.ts` reads this function; a second table at
- * the call site would defeat it, so that test also checks the canvas has
- * exactly one veil call site and passes it exactly this function's output.
+ * `ambientTint` was a per-bucket alpha wash. It was deleted 2026-07-29 once it had
+ * been dead long enough to become a trap: it still returned the apricot the veil
+ * laws had just banned, and a green test asserted it.
  *
- * The veil is the DARKENING half of ambience. The warm half at dusk/night is
- * the lamp pools and lit windows drawn on `fxG`, which sits ABOVE the veil in
- * engine-canvas.tsx precisely so light cuts through the dither.
+ * `ambientVeil` was the opaque seeded dither that replaced it — a per-bucket hue
+ * table plus a coverage. Deleted 2026-07-30: a dither pays for every unit of
+ * darkness with a unit of the art's own grain, so it could not express night at
+ * all (THE AMBIENCE STRUCTURE LAW, lib/world/ambience.ts, with the arithmetic and
+ * the live-frame measurements). Ambience is now `ambienceLut(bucket)` there — a
+ * colour map, not an overlay — and this module keeps only the parts that ARE
+ * per-bucket ambience data: the window sky, the lamps, the stars. `WINDOW_SKY` is
+ * additionally the SOURCE of the remap's hue direction, so the two halves of the
+ * lighting model can no longer disagree about what hour it is.
  */
-export interface AmbientVeil {
-  /** Rotated so no single quantized bin dominates the frame. */
-  colors: readonly number[]
-  /** Fraction of screen pixels the dither replaces outright. */
-  coverage: number
-}
-
-/** Per-bucket veil; `null` = no veil at all (day is honest neutral). */
-export function ambientVeil(bucket: DayBucket): AmbientVeil | null {
-  switch (bucket) {
-    case 'dawn':
-      return { colors: DAWN_VEIL_HUES, coverage: 0.08 }
-    case 'day':
-      return null
-    case 'dusk':
-      return { colors: DUSK_VEIL_HUES, coverage: 0.16 }
-    case 'night':
-      return { colors: NIGHT_VEIL_HUES, coverage: 0.42 }
-  }
-}
-
 /** Warm additive pool under desk lamps + the kettle nook at dusk/night. */
 export interface LampGlow {
   color: number

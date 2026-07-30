@@ -296,16 +296,23 @@ export type OutdoorScene = 'island'
 
 // ── pure scene dynamics (shared by renderer + tests; NO clocks here) ──────
 
-/** Day/night bucket from the SERVER-stamped snapshot clock (§2 lighting).
- * The render path never reads a wall clock — hour arrives as data. */
-export type DayBucket = 'dawn' | 'day' | 'dusk' | 'night'
-export function bucketOf(hour: number | null): DayBucket {
-  if (hour === null || !Number.isFinite(hour)) return 'day'
-  if (hour >= 6 && hour < 8) return 'dawn'
-  if (hour >= 8 && hour < 18) return 'day'
-  if (hour >= 18 && hour < 21) return 'dusk'
-  return 'night'
-}
+/**
+ * Day/night bucket from the SERVER-stamped snapshot clock (§2 lighting). The
+ * render path never reads a wall clock — the hour arrives as data.
+ *
+ * `bucketOf` USED TO LIVE HERE, as a second implementation with the four ranges
+ * written out as literals, and the renderer called it. lighting.ts has always had
+ * `bucketForHour`, which takes its ranges from the parsed grammar `night.buckets`
+ * — and it sat on ratchet 11's dead-export baseline the whole time, because
+ * nothing called it. So the grammar's own day/night law was configuring a function
+ * no frame ever ran, and the frames were classified by literals instead. The twin
+ * is deleted; there is one implementation now (2026-07-30). The remaining half of
+ * that job — threading the grammar's ranges through to the call sites, which needs
+ * the grammar payload on EngineCanvasProps — is a BACKLOG row, not a silent gap:
+ * the defaults in `DEFAULT_BUCKETS` are byte-identical to the literals this twin
+ * carried, so behaviour is unchanged today.
+ */
+export type { DayBucket } from './lighting'
 
 /** Street badge-mote patrol: pure triangle-wave drift (4 ticks per tile)
  * while the officer's verb is live; seeded phase, deterministic forever. */

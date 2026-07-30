@@ -18,7 +18,6 @@ import {
   PATTERN_TILES,
   shadowDots,
   smokePuffs,
-  veilDots,
   WATER_DARK,
   WATER_DEEP,
   WATER_LITE,
@@ -101,13 +100,6 @@ describe('cozy-density primitives (2026-07-09 — the mockups are the bar)', () 
     expect(dots.length).toBeLessThan(20 * 7 * 2)
   })
 
-  it('veilDots: coverage tracks the request (night 0.42 ±0.04) — palette-lawful ambience', () => {
-    const dots = veilDots('night', 0.42)
-    const frac = dots.length / (PATTERN_PX * PATTERN_PX)
-    expect(frac).toBeGreaterThan(0.38)
-    expect(frac).toBeLessThan(0.46)
-  })
-
   it('mistBandDashes: density ramps toward the horizon (growth-fog law)', () => {
     const band = mistBandDashes(180, 191, 0, 39)
     const firstRow = band.filter((d) => d.y < 181 * 16).length
@@ -133,7 +125,6 @@ describe('cozy-density primitives (2026-07-09 — the mockups are the bar)', () 
     expect(grassTones()).toEqual(grassTones())
     expect(dirtTileFlecks(5, 9)).toEqual(dirtTileFlecks(5, 9))
     expect(shadowDots('x', 24)).toEqual(shadowDots('x', 24))
-    expect(veilDots('dusk', 0.16)).toEqual(veilDots('dusk', 0.16))
     expect(mistBandDashes(180, 191, 0, 10)).toEqual(mistBandDashes(180, 191, 0, 10))
   })
 })

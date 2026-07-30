@@ -137,11 +137,12 @@ import {
   verbIconClass,
   verbIconCut,
   WORKSITE_KIT,
-  bucketOf,
   resolveOutdoorSprites,
-  type DayBucket,
 } from '@/lib/world/sprites-outdoor'
-import { ambientVeil } from '@/lib/world/lighting'
+// ONE bucket implementation, and it is the one the grammar's night.buckets law
+// configures. The literal-ranges twin in sprites-outdoor.ts is deleted.
+import { bucketForHour, type DayBucket } from '@/lib/world/lighting'
+import { ambienceFilter } from './ambience-filter'
 import { canvasAssetIds, ISO_ATLAS_ROW } from '@/lib/world/credit'
 import {
   dirtTileFlecks,
@@ -160,7 +161,6 @@ import {
   PLANK_BROWN,
   shadowDots,
   smokePuffs,
-  veilDots,
   WATER_BASE,
   waterDashes,
   waterTones,
@@ -357,6 +357,13 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         resizeTo: hostRef.current,
         antialias: false,
         roundPixels: true,
+        // PINNED, not inherited. Pixi's own priority is webgl-first today, and the
+        // day/night ambience is a GLSL filter (ambience-filter.ts) with no WGSL
+        // twin — deliberately, because a shader is only ever verified by looking at
+        // a browser capture, and a second one that nothing runs cannot be. Pinning
+        // means the path that is verified is the path that renders; if Pixi ever
+        // flips its default, this line is why nothing silently changed.
+        preference: 'webgl',
       })
       if (cancelled || !hostRef.current) {
         app.destroy(true)
@@ -559,36 +566,27 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         return rt
       }
       const grassPattern = isIso ? PIXI.Texture.EMPTY : bakeGrassPattern()
-      /** Ambience veils (palette-lawful dither, baked once per bucket). */
-      const veilTextures = new Map<string, Texture>()
-      function veilTexture(colors: readonly number[], coverage: number): Texture {
-        const key = `${colors.join('-')}:${coverage}`
-        let t = veilTextures.get(key)
-        if (!t) {
-          const g = new PIXI.Graphics()
-          for (const d of veilDots(`veil:${key}`, coverage, colors.length)) {
-            g.rect(d.x, d.y, 1, 1).fill(colors[d.hue])
-          }
-          const rt = PIXI.RenderTexture.create({ width: PATTERN_PX, height: PATTERN_PX })
-          app.renderer.render({ container: g, target: rt })
-          g.destroy()
-          veilTextures.set(key, rt)
-          t = rt
-        }
-        return t
-      }
-
       // ── layers ──────────────────────────────────────────────────────────
       // The sea is SCREEN-space (the world is unbounded — no foreign void
       // beyond the canvas, ever); everything else lives in world space.
+      // Everything the day/night ambience acts on hangs under ONE container, so
+      // the remap is a single filter over the composed frame. The lamps (fxG) and
+      // the weather sit OUTSIDE it, further down, because light has to cut
+      // through the dark rather than be dimmed with it.
+      /** Which bucket's remap is currently attached, so filters are set on
+       *  CHANGE and not every frame (reassigning re-uploads the table). */
+      let ambienceApplied: DayBucket | null = null
+      let ambienceReported = false
+      const lit: Container = new PIXI.Container()
+      app.stage.addChild(lit)
       const seaSprite: TilingSprite = new PIXI.TilingSprite({
         texture: waterPattern,
         width: app.renderer.width,
         height: app.renderer.height,
       })
-      app.stage.addChild(seaSprite)
+      lit.addChild(seaSprite)
       const world: Container = new PIXI.Container()
-      app.stage.addChild(world)
+      lit.addChild(world)
       const terrainLayer: Container = new PIXI.Container()
       world.addChild(terrainLayer)
       const shoreG: Graphics = new PIXI.Graphics()
@@ -607,17 +605,8 @@ export default function EngineCanvas(props: EngineCanvasProps) {
       world.addChild(placeholderG)
       const dynG: Graphics = new PIXI.Graphics() // buoys, mist, small marks
       world.addChild(dynG)
-      // ambience veil: SCREEN-space palette-lawful dither (over the whole
-      // frame incl. the open sea; replaces alpha washes + sea tint)
-      const veilSprite: TilingSprite = new PIXI.TilingSprite({
-        texture: PIXI.Texture.EMPTY,
-        width: app.renderer.width,
-        height: app.renderer.height,
-      })
-      veilSprite.visible = false
-      app.stage.addChild(veilSprite)
-      // glow layer rides ABOVE the veil (warm windows must cut through the
-      // night dither — the light IS the story) but tracks world space:
+      // glow layer rides ABOVE the ambience remap (warm windows must cut through
+      // the night — the light IS the story) but tracks world space:
       // draw() copies the world transform onto it every frame.
       const fxG: Graphics = new PIXI.Graphics() // world-coord glow dither
       app.stage.addChild(fxG)
@@ -2093,7 +2082,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         const layout = scene.layout
         const tier = lodTier(p.camera.z)
         const rules = LOD_RULES[tier]
-        const bucket = bucketOf(p.clockHour)
+        const bucket = bucketForHour(p.clockHour)
         const dark = bucket === 'night' || bucket === 'dusk'
         const slugs = Object.keys(p.officers).sort()
 
@@ -2709,7 +2698,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         dynShadowG.clear()
         const tier = lodTier(p.camera.z)
         const rules = LOD_RULES[tier]
-        const bucket = bucketOf(p.clockHour)
+        const bucket = bucketForHour(p.clockHour)
         const dark = bucket === 'night' || bucket === 'dusk'
 
         // cutaway: roof alpha per building; REAL interior under the fade
@@ -2998,19 +2987,26 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           }
           weatherG.rect(0, 0, vw, vh).fill({ color: 0x1a2230, alpha: kind === 'storm' ? 0.3 : 0.18 })
         }
-        // ambient day/night VEIL (screen-space, from the server-stamped
-        // clock): opaque in-bin dither instead of the old alpha wash — the
-        // whole frame (open sea included) darkens/warms palette-natively.
-        const veil = ambientVeil(bucket)
-        if (veil) {
-          veilSprite.texture = veilTexture(veil.colors, veil.coverage)
-          veilSprite.width = vw
-          veilSprite.height = vh
-          veilSprite.visible = true
-        } else {
-          veilSprite.visible = false
+        // ambient day/night light (from the server-stamped clock): ONE remap of
+        // every colour in the composed frame, open sea included. Not an overlay —
+        // an overlay decides per screen position, and that decision is texture the
+        // art did not draw (THE AMBIENCE STRUCTURE LAW, lib/world/ambience.ts).
+        const filter = ambienceFilter(bucket, app.renderer)
+        // filterArea is not optional here: `world` is unbounded, so without it
+        // Pixi sizes the filter pass to the union of every sprite's bounds.
+        lit.filterArea = new PIXI.Rectangle(0, 0, vw, vh)
+        if (ambienceApplied !== bucket) {
+          ambienceApplied = bucket
+          lit.filters = filter ? [filter] : []
         }
-        seaSprite.tint = 0xffffff // the veil owns ambience now — never tint
+        if (!filter && bucket !== 'day' && !ambienceReported) {
+          ambienceReported = true
+          propsRef.current.onIssues?.([
+            `day/night ambience unavailable on this renderer — the world is ` +
+              `drawing ${bucket} at full daylight`,
+          ])
+        }
+        seaSprite.tint = 0xffffff // ambience is the remap now — never tint
         // killswitch red wash — SCREEN-space (the storm is the whole sky),
         // dual-coded with the DOM banner
         if (p.killswitch) weatherG.rect(0, 0, vw, vh).fill({ color: 0xcc2222, alpha: 0.14 })
@@ -3049,7 +3045,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         seaSprite.tileScale.set(Math.max(s, 0.75))
         seaSprite.tilePosition.set(world.position.x, world.position.y)
         placeholderBuildings(p)
-        const bucket = bucketOf(p.clockHour)
+        const bucket = bucketForHour(p.clockHour)
         drawWeather(p, bucket) // clears fxG first
         if (isIso) drawIsoDynamics(p) // then the lamp is composited onto fxG
         else drawDynamics(p) // …or the whole top-down dynamic layer is

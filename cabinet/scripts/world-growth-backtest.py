@@ -545,63 +545,39 @@ def replay(config: dict, history: dict) -> dict:
 
 # ── timelapse strip rendering (compositor lineage; optional) ────────────────
 
-def _fnv1a(s: str) -> int:
-    h = 0x811C9DC5
-    for ch in s.encode():
-        h ^= ch
-        h = (h * 0x01000193) & 0xFFFFFFFF
-    return h
-
-
-# Ambience buckets mirror the engine (sprites-outdoor bucketOf); veils are
-# OPAQUE seeded dither in in-bin hues — the palette-lawful ambience idiom
-# (an alpha wash shifts every pixel out of the corpus bins; the cozy pass
-# replaced it on the live engine too). day → byte-identical passthrough.
-# THIS TABLE IS A MIRROR of DAWN/DUSK/NIGHT_VEIL_HUES in the renderer's
-# terrain-pattern.ts, and test_veil_table_mirror.py parses that TypeScript and
-# fails if the two ever diverge. It used to say "change one, change both" and
-# leave it at that — a prose contract, in the same commit that proved a hue
-# table with no test reaching it will drift. The dawn/dusk rows were the shipped
-# cream and apricot until 2026-07-29, when both were measured breaking THE VEIL
-# LAWS (see that file): no veil hue brighter than the brightest sea tone, none
-# more colourful than the water it shades. They painted 7.9% and 15.6% of open
-# water respectively.
-_VEILS = {
-    "dawn": ([(140, 140, 148), (167, 156, 143)], 0.08),
-    "dusk": ([(124, 124, 132), (108, 108, 116), (76, 124, 108)], 0.16),
-    # night rotates THREE in-bin navies so no single quantized bin ever
-    # dominates the frame (one-hue 42% veil tripped CLUSTER dominant_share)
-    "night": ([(36, 52, 76), (52, 52, 76), (44, 52, 76)], 0.42),
-}
-
-
-def _bucket_of(hour: int) -> str:
-    if 6 <= hour < 8:
-        return "dawn"
-    if 8 <= hour < 18:
-        return "day"
-    if 18 <= hour < 21:
-        return "dusk"
-    return "night"
+# THE COLOURS COME FROM THE RENDERER. This file used to carry its own per-bucket
+# veil hue table with a comment saying "change one, change both" — in the same
+# commit whose whole finding was that a hue table nothing can reach will drift.
+# THE AMBIENCE STRUCTURE LAW (cabinet/dashboard/src/lib/world/ambience.ts,
+# 2026-07-30) replaced that dither with a colour REMAP, and ambience_py reads the
+# renderer's own emitted derivation rather than a copy of it.
+sys.path.insert(0, str(Path(__file__).resolve().parent / "world-capture"))
+import ambience_py                     # noqa: E402  (path set above)
 
 
 def _apply_ambience(im, hour: int):
     """Beauty-shot ambience for a chrome-free frame: hour arrives as DATA
-    (render input, never a wall clock — determinism-lawful; same frame +
-    same hour = same bytes forever)."""
-    bucket = _bucket_of(hour)
-    veil = _VEILS.get(bucket)
-    if veil is None:
+    (render input, never a wall clock — determinism-lawful; same frame + same
+    hour = same bytes forever).
+
+    A REMAP, byte-identical to what the browser draws, because both sides index
+    the same derivation: ambience_py.remap does the renderer's own
+    quantize-shade-snap. Memoized per distinct colour — a frame has hundreds, the
+    native set has thousands, and the product is what used to make this slow.
+    """
+    bucket = ambience_py.bucket_of(hour)
+    if ambience_py.light(bucket) is None:
         return im
-    hues, coverage = veil
     out = im.copy().convert("RGB")
     px = out.load()
-    thr = int(coverage * 1000)
+    seen: dict[tuple[int, int, int], tuple[int, int, int]] = {}
     for y in range(out.height):
         for x in range(out.width):
-            h = _fnv1a(f"veil:{bucket}:{x},{y}")
-            if h % 1000 < thr:
-                px[x, y] = hues[(h >> 12) % len(hues)]
+            c = px[x, y]
+            hit = seen.get(c)
+            if hit is None:
+                hit = seen[c] = ambience_py.remap(c, bucket)
+            px[x, y] = hit
     return out
 
 
