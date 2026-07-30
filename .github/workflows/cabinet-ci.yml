@@ -1392,8 +1392,9 @@ jobs:
     # matching every other gate here.
     if: ${{ !cancelled() && (github.event_name != 'push' || needs.tree-dedupe.outputs.skip != 'true') }}
     runs-on: ubuntu-latest
-    # MEASURED ON THIS RUNNER, not on a laptop (run 30552467292): 7m00 end to
-    # end — ~35s npm ci, 1m50 capture of 16 frames, 34s self-arms, 4m10 judge.
+    # MEASURED ON THIS RUNNER, not on a laptop (run 30565939095, with the
+    # `surface` arm): 7m21 end to end — 9s npm ci, 2m18 capture of 16 frames,
+    # 42s self-arms, 3m55 judge. (Run 30552467292 before that arm: 7m00.)
     # 15 leaves better than 2x headroom and still kills a genuinely hung browser
     # rather than letting a cancellation read as a test result. Re-budget if it
     # creeps past ~11m rather than letting a cancellation be read as a red arm.
