@@ -203,7 +203,7 @@ class SalienceError(Exception):
 
 
 def name_tokens(name: Any) -> list[str]:
-    """The words a name is made of, plus the compounds of adjacent pairs.
+    """The ASCII words a name is written with, plus adjacent-pair compounds.
 
     NO RANKING FLOOR. This answers "which words does this name contain", and
     :func:`tokenize` is this list above ``_MIN_TOKEN_LEN``. The two questions
@@ -211,9 +211,8 @@ def name_tokens(name: Any) -> list[str]:
     window they could open: ``journey._window_binding`` compares an ANSWER
     against a FOLDER NAME, derived both sides with the ranking tokenizer, and an
     operator who answered a short word, an acronym or an initialism — two or
-    three letters, a short name in any language — got an empty set of wanted
-    words. An empty
-    set intersects nothing, so every window they proposed was refused, including
+    three letters — got an empty set of wanted words. An empty set intersects
+    nothing, so every window they proposed was refused, including
     the folder named after their own answer, and the refusal told them that
     folder did not carry the name it was literally spelled with. Shortlist
     candidates are ranked labels and clear the floor by construction, so the
@@ -231,12 +230,17 @@ def name_tokens(name: Any) -> list[str]:
     tokenizer cannot see it: it produces ``north`` and ``bay`` (which on the
     estate this was measured against were the OWNER's own name, ranked first and
     third by pure noise) and never produces ``northbay`` at all. Emitting the
-    adjacent-pair compound
-    is mechanical, needs no dictionary, and is what lets the specific token beat
-    its own generic fragments.
+    adjacent-pair compound is mechanical, needs no dictionary, and is what lets
+    the specific token beat its own generic fragments.
 
     Digits are kept, because a case number or a vessel id is a perfectly good
     recurring name in an estate this module is not allowed to know the shape of.
+
+    RESIDUAL, THE SAME EMPTY SET FROM THE ALPHABET RATHER THAN THE FLOOR: the
+    split is ``[^0-9a-z]+``, so a name carrying no ASCII alphanumeric — a name
+    in another script — yields NO words here, on either side of any comparison,
+    including a comparison of that name with itself. Registered as RES-025:
+    widening the split widens the RANKING vocabulary, a decision above this one.
     """
     text = str(name or "").lower()
     parts = [p for p in _TOKEN_SPLIT_RE.split(text) if p]

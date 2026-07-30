@@ -511,6 +511,17 @@ cites.
 - **Anchor:** `THE RESIDUAL, stated rather than implied: a word is shared or it is not`
 - **Retirement:** a sub-word rule DERIVED from the estate's own names rather than from a threshold (so it stays estate-independent), or a signal that is not the name — content read after the Charter is ratified is lawful and is a different control point. Either way: shrink the docstring paragraph and this row in the SAME commit, or flip this row to `retired` if nothing remains.
 
+### RES-025 — a name written in a script the splitter cannot read yields no words, so it shares none with itself
+
+- **Phase:** onboarding salience — a short answer is still an answer (2026-07-30, found in adversarial review of RES-024's landing)
+- **Closed:** the LENGTH floor no longer reaches the name comparison. `salience.name_tokens` drops `_MIN_TOKEN_LEN` and `journey._window_binding` reads it, so a two- or three-letter ASCII answer now binds the folder spelled like it. Driven end to end on the merged tree: answer `BH` ⇒ folder `bh` bound (`relation=matched`, `evidence=['bh']`), folder `quarterly-tax-returns` refused, both `WINDOW_RELATIONS` statements still reachable with the depth claim kept and dropped respectively.
+- **Status:** open
+- **Open:** the split is `[^0-9a-z]+`, an ASCII alphabet. A target carrying no ASCII alphanumeric — a name written in a non-Latin script — still produces NO words, so it still intersects nothing and every window is still refused, including the folder spelled identically. Driven on the merged tree: answer `日本`, propose the folder named `日本` ⇒ `salience_window_off_target`, "shares no word with it", `target_words=[]` and `window_words=[]`. Same operator-visible shape as the defect RES-024 closed, reached through the alphabet instead of the floor. `WINDOW_RELATIONS` is still the way through, and nothing is opened wrongly — the failure is a refusal, never a false bind.
+- **Why open:** the repair is not local. `salience.tokenize` is `name_tokens` above the floor and everything that scores, clusters, discounts and grades reads it, so widening the split widens the RANKING vocabulary over every estate at once — a measured re-rank, not a docstring fix. Splitting the alphabets instead would put two splitters in the module, which is the drift the floor split was just made to prevent. Neither belongs in a review-scoped correction, and no test pins the current behaviour as correct: pinning a refusal that is wrong to the operator would encode the defect as a fixture.
+- **Declared at:** `framework/onboarding/salience.py`
+- **Anchor:** `RESIDUAL, THE SAME EMPTY SET FROM THE ALPHABET RATHER THAN THE FLOOR`
+- **Retirement:** the name comparison reads words from any script the operator can type — either one Unicode-aware split whose re-rank is MEASURED against a real estate before it lands, or a name-side splitter justified against the two-splitter drift argument above. In the SAME commit: an arm driving a non-Latin answer onto the folder spelled like it, the docstring paragraph shrunk, and this row flipped to `retired`.
+
 ## Absorption — how a wave's residuals get here (COG-5 W2 done)
 
 The rule this section originally stated as a future obligation has now been
