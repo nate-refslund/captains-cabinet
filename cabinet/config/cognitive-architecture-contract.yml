@@ -797,6 +797,34 @@ budgets:
     # never excerpts), and the purge redacts its root. Shrink-only resumes here.
     maximum: 97
 temporary_allowances:
+  - phase: unmeasured-is-not-zero
+    budget: framework_production_noncomment_lines
+    additional: 3
+    owner: cognitive-core-program
+    sunset: '2027-01-30'
+    deletion_gate: >-
+      the plain-language tables move out of framework/ (they sit there only
+      because framework/attention/plain.py is the generator the dashboard's
+      plain.json is pinned to), or the unknown face stops needing its own copy
+      because the all-clear face is retired.
+    reason: >-
+      THREE PLAIN-LANGUAGE STRINGS, and nothing else. Measured in a browser on
+      2026-07-30: the attention census was nine days stale and /queue rendered
+      "Nothing needs you. All clear - your team is handling the rest." over a
+      green tick, while the bytes on disk said two decisions and forty-two
+      situations were waiting. The fix makes an unmeasured count render as
+      UNKNOWN rather than as zero, which needs a face the Captain can read -
+      masthead_unknown, masthead_unknown_sub and unknown_why_prefix in
+      framework/attention/plain.py, the single source of truth the dashboard's
+      plain.json is generated from and a pytest drift guard pins. Copy cannot
+      live anywhere else without breaking that law, and the PLAIN-LANGUAGE
+      ruling (captain-decisions 2026-07-10 Ruling B) is what puts it in the
+      framework layer at all. Every other line this change adds to framework/
+      is a `#` comment by construction: the explanatory prose that first sat in
+      two launchctl_list docstrings was moved above the defs precisely so the
+      census would count it as what it is. +3 measured with
+      cognitive-architecture-census.py (76506 -> 76509). Retire this row when
+      the plain tables next move layer or are re-homed.
   - phase: recall-live-claims-it-never-earned
     budget: framework_production_noncomment_lines
     additional: 30

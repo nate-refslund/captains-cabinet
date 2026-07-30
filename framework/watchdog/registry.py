@@ -168,23 +168,22 @@ class Probe:
         """True/False if a launchd label is loaded; None if undeterminable."""
         raise NotImplementedError
 
+    # Same None-vs-[] contract as listdir() below, and it is spelled out twice
+    # because these two were ONE value ({}) until 2026-07-30: a fleet entirely
+    # booted out was indistinguishable from a host where launchd cannot be
+    # seen, so the ONE check written for that event (declared-but-not-loaded)
+    # switched itself off at exactly the moment it was needed. Real impl in
+    # check.py — which also reports None when running as root, since
+    # `launchctl list` answers for the CALLER'S domain and the fleet is a user
+    # agent.
     def launchctl_list(self) -> Optional[dict]:
         """`launchctl list` filtered to com.cabinet.* labels, as
         {label: {"pid": Optional[int], "status": Optional[int]}} where status is
-        the job's LAST EXIT STATUS.
-
-        None = NOT OBSERVABLE (non-Mac host, launchctl error, older Probe stub)
-        → the launchd checks self-disable rather than false-fail. {} = launchd
-        ANSWERED and knows zero com.cabinet.* labels — an affirmative
-        observation, and a very loud one: it means every declared service is
-        unloaded. Same contract as listdir() below, and the reason it is spelled
-        out separately here is the 2026-07-30 finding: these two were one value
-        ({}), so a fleet that had been entirely booted out was indistinguishable
-        from a host where launchd cannot be seen, and the ONE check written for
-        that event (declared-but-not-loaded) switched itself off at exactly the
-        moment it was needed. Real impl in check.py — which also reports None
-        when running as root, since `launchctl list` answers for the CALLER'S
-        domain and the fleet is a user agent."""
+        the job's LAST EXIT STATUS. None = NOT OBSERVABLE (non-Mac host,
+        launchctl error, older Probe stub) → the launchd checks self-disable
+        rather than false-fail. {} = launchd ANSWERED and knows zero
+        com.cabinet.* labels: an affirmative observation, and a very loud one —
+        every declared service is unloaded."""
         return None
 
     def listdir(self, path: str) -> Optional[list[str]]:
