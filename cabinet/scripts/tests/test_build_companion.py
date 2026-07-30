@@ -845,3 +845,37 @@ def test_pet_demo_suppression_is_pinned():
         "every acting menu item must be disabled in demo mode: their labels and "
         "enablement are derived from the synthetic snapshot"
     )
+
+
+def test_pet_is_reachable_without_a_terminal():
+    """The Captain's controls may never require a terminal (ruling 2026-07-17).
+
+    `--pet` is a terminal flag, and the launch-at-login item (SMAppService)
+    passes no argv — so a menu toggle that only exists once a pet already
+    exists, and a choice that does not survive a relaunch, leave the terminal
+    as the ONLY way in. Four lines carry that, each droppable in silence with
+    every other arm in this file still green.
+    """
+    src = MAIN.read_text(encoding="utf-8")
+
+    # 1. the preference is READ at launch, not merely declared
+    assert "} else if Self.deskPetPreferred {" in src, (
+        "launch must honour the remembered choice — otherwise the pet dies at "
+        "every restart and only --pet brings it back"
+    )
+    # 2. and it is WRITTEN when he toggles
+    assert "Self.deskPetPreferred = pet?.isVisible ?? false" in src, (
+        "toggling must persist, or the menu control is a one-session illusion"
+    )
+    # 3. the menu item is NOT gated on a pet already existing
+    toggle_at = src.index('#selector(toggleDeskPet)')
+    window = src[max(0, toggle_at - 600):toggle_at]
+    assert "if let pet {" not in window, (
+        "the Show/Hide Desk Pet item is gated on an existing pet again — with "
+        "no pet there is then no menu path to one"
+    )
+    # 4. a DEMO run must not leave the pet enabled forever
+    assert "if PetOptions.demoState == nil {" in src, (
+        "--pet-demo must not write the preference: it exists to photograph "
+        "forced states, not to change what the Captain sees tomorrow"
+    )
