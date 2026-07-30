@@ -38,21 +38,27 @@
  * it is threshold-free: the test asks whether ambience is a function of colour.
  */
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
+  CYCLE_CURVE,
+  CYCLE_SHADE,
+  CYCLE_TONE,
   RAMP_SHADE,
   ambienceLut,
+  ambientDepth,
   ambientLight,
   binToRgb,
-  chroma,
+  depthForSteps,
   luma,
   lutPixels,
   LUT_TEX_H,
   LUT_TEX_W,
   nativeColors,
+  quantize,
   remap,
   snapNative,
+  toneStrength,
 } from './ambience'
 import { CORPUS_PALETTE_BINS, PALETTE_NEIGHBOR_RADIUS, PALETTE_QUANT_BITS } from './corpus-palette'
 import { fnv1a } from './hash'
@@ -231,7 +237,7 @@ describe('the ambience structure law', () => {
     // shipped depth nothing is blank, and one ramp deeper something is. If a
     // re-fitted palette ever makes three ramps safe, this arm fails and the
     // docstring's table gets re-measured instead of being trusted.
-    const light = ambientLight('night')!
+    const light = ambientLight('night', 0x808080)!
     const shipped = 0.2126 * light[0] + 0.7152 * light[1] + 0.0722 * light[2]
     expect(shipped).toBeCloseTo(RAMP_SHADE * RAMP_SHADE, 2)
 
@@ -281,7 +287,7 @@ describe('the ambience structure law', () => {
     const centres = new Set(CORPUS_PALETTE_BINS)
     const native = nativeColors()
     expect(native.length).toBeGreaterThan(centres.size * 5)
-    const light = ambientLight('night')!
+    const light = ambientLight('night', 0x808080)!
     const snapTo = (pool: readonly number[], hex: number) => {
       const t = [
         Math.min(255, ((hex >> 16) & 0xff) * light[0]),
@@ -529,73 +535,226 @@ describe('the ambience derivation', () => {
     ]
   }
   const gainOf = (l: readonly number[]) => 0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2]
-  /** worst chroma any shipped ramp colour GAINS under a light factor */
-  const worstChromaGain = (l: readonly number[]) => {
-    let worst = 0
-    for (const ramp of Object.values(RAMPS)) {
-      for (const c of ramp) {
-        const before = chroma(c)
-        if (before < 1) continue
-        worst = Math.max(worst, chroma(snapNative(c, l)) / before)
-      }
-    }
-    return worst
+  /** CIE Lab b* — the yellow(+)/blue(−) axis, which is what "warm" means here */
+  const bStar = (hex: number) => {
+    const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+    const r = lin(((hex >> 16) & 0xff) / 255)
+    const g = lin(((hex >> 8) & 0xff) / 255)
+    const b = lin((hex & 0xff) / 255)
+    const f = (t: number) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116)
+    return (
+      200 *
+      (f(r * 0.2126 + g * 0.7152 + b * 0.0722) -
+        f((r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883))
+    )
   }
+  /** the blue a colour keeps over its red, in channel counts */
+  const blueOverRed = (hex: number) => (hex & 0xff) - ((hex >> 16) & 0xff)
+  const BIN = 1 << (8 - PALETTE_QUANT_BITS)
 
-  it('the hue direction comes from WINDOW_SKY, and day is the identity', () => {
-    expect(ambientLight('day')).toBeNull()
+  it('the cycle is the RULING, and it is NOT the sky table', () => {
+    // The docstring paragraph that says "do not put this back to the sky ratio"
+    // is prose; this is the sensor under it. Both halves are asserted, because
+    // only the second one catches a silent revert: the shipped depths are the
+    // ruled ones, AND dawn and dusk are far deeper than the art's sky asks. A
+    // session that "fixes" the derivation back to sky[bucket]/sky.day fails here
+    // rather than looking like a tidy-up.
+    expect(ambientDepth('day')).toBeNull()
     expect(ambienceLut('day')).toBeNull()
+    expect(ambientLight('day', 0x808080)).toBeNull()
     for (const bucket of LIT) {
-      const light = ambientLight(bucket)
-      expect(light, `${bucket} has no light factor`).not.toBeNull()
-      // the DIRECTION is the sky's: the ordering of the three channel factors
-      // survives both the depth clamp and the chroma pull-back, so the tint is
-      // still the art's statement about that hour and not a taste.
-      const order = (v: readonly number[]) => [0, 1, 2].sort((a, b) => v[a] - v[b]).join('')
-      expect(order(light!), `${bucket}: the sky's hue direction was lost`).toBe(
-        order(skyRatio(bucket))
+      expect(ambientDepth(bucket)!, `${bucket}: not the ruled depth`).toBeCloseTo(
+        Math.max(RAMP_SHADE ** CYCLE_SHADE[bucket], RAMP_SHADE * RAMP_SHADE),
+        12
       )
     }
-    // and light falls monotonically across the day
-    expect(gainOf(ambientLight('night')!)).toBeLessThan(gainOf(ambientLight('dusk')!))
-    expect(gainOf(ambientLight('dusk')!)).toBeLessThan(gainOf(ambientLight('dawn')!))
-    expect(gainOf(ambientLight('dawn')!)).toBeLessThan(1)
-  })
-
-  it('the depth is the sky ratio, floored at the art’s own deepest shade', () => {
-    for (const bucket of LIT) {
-      const want = Math.max(gainOf(skyRatio(bucket)), RAMP_SHADE * RAMP_SHADE)
-      expect(gainOf(ambientLight(bucket)!), `${bucket}: wrong depth`).toBeCloseTo(want, 2)
-    }
-    // the floor binds on NIGHT and only night — the sky says 0.19 there
-    expect(gainOf(skyRatio('night'))).toBeLessThan(RAMP_SHADE * RAMP_SHADE)
-    expect(gainOf(skyRatio('dusk'))).toBeGreaterThan(RAMP_SHADE * RAMP_SHADE)
-    expect(gainOf(skyRatio('dawn'))).toBeGreaterThan(RAMP_SHADE * RAMP_SHADE)
-  })
-
-  it('light drains colour: no tint paints harder than a neutral darkening', () => {
-    // THE CLAUSE THAT SAVED DUSK. Unbounded, the dusk sky ratio (1.215, 0.740,
-    // 0.397) turned open water olive and a grey cobble tone into a 54-chroma
-    // orange — a 6.4x chroma gain where a neutral darkening of the same depth
-    // costs 1.59. Both ends are arms: the shipped factor is within neutral, and
-    // the raw sky ratio is NOT, so the clause is doing work rather than passing.
-    for (const bucket of LIT) {
-      const light = ambientLight(bucket)!
-      const g = gainOf(light)
-      const neutral = worstChromaGain([g, g, g])
+    for (const bucket of ['dawn', 'dusk'] as const) {
       expect(
-        worstChromaGain(light),
-        `${bucket}: the tint makes a surface more colourful than a neutral ` +
-          'darkening of the same depth — that is painting, not shading'
-      ).toBeLessThanOrEqual(neutral + 1e-9)
+        gainOf(skyRatio(bucket)) - ambientDepth(bucket)!,
+        `${bucket} is back at the art's sky ratio — the Captain ruled it deeper`
+      ).toBeGreaterThan(0.15)
     }
-    const dusk = skyRatio('dusk')
-    const dg = gainOf(dusk)
+    // and light still falls monotonically across the day
+    expect(ambientDepth('night')!).toBeLessThan(ambientDepth('dusk')!)
+    expect(ambientDepth('dusk')!).toBeLessThan(ambientDepth('dawn')!)
+    expect(ambientDepth('dawn')!).toBeLessThan(1)
+  })
+
+  it('NIGHT is untouched by the ruling — still the art’s own sky, floored', () => {
+    // The Captain approved night as it stood. The ruling deepened dawn and dusk
+    // and must not have moved it by a bit: two ramps of shade is exactly what the
+    // sky-derived floor produced, and night names one illuminant twice so it is
+    // still a flat multiply. Re-derived here from WINDOW_SKY rather than pinned
+    // to a copied constant, so this is a second derivation and not an echo.
+    const raw = skyRatio('night')
+    const e = Math.log(RAMP_SHADE * RAMP_SHADE) / Math.log(gainOf(raw))
+    const sky = raw.map((v) => v ** e)
+    for (const src of [0x000000, 0x3e6e6b, 0x808080, 0xcdb98c, 0xffffff]) {
+      const light = ambientLight('night', src)!
+      for (let i = 0; i < 3; i++) {
+        expect(light[i], `night light moved at #${src.toString(16)}, channel ${i}`).toBeCloseTo(
+          sky[i],
+          9
+        )
+      }
+    }
+    expect(CYCLE_TONE.night, 'night stopped naming the art’s own sky').toEqual([
+      WINDOW_SKY.night,
+      WINDOW_SKY.night,
+    ])
+    expect(toneStrength('night'), 'night’s tint got clamped — it was not before').toBe(1)
+  })
+
+  it('the floor still clamps the ruling, at a depth no bucket ships', () => {
+    // The bound the ruling did NOT replace. It does not bind on any shipped
+    // bucket (night asks for exactly two ramps), so asserting it on the shipped
+    // buckets would prove nothing — the arm asks the clamp for three ramps
+    // directly and watches it hold at two. The knee arm above is what says WHY
+    // two: three blanks a shipped ramp.
+    const floor = RAMP_SHADE * RAMP_SHADE
+    expect(RAMP_SHADE ** 3, 'three ramps is no longer past the floor').toBeLessThan(floor)
+    expect(depthForSteps(3), 'the floor stopped clamping').toBeCloseTo(floor, 12)
+    expect(depthForSteps(9), 'the floor stopped clamping').toBeCloseTo(floor, 12)
+    expect(depthForSteps(1), 'the floor is clamping a depth it should not').toBeCloseTo(
+      RAMP_SHADE,
+      12
+    )
+    expect(depthForSteps(0)).toBeNull()
+  })
+
+  it('open water stays water — the clamp on the tint, and it bites', () => {
+    // WHAT REPLACED THE CHROMA CLAUSE, and why. The old clause compared each
+    // surface against a COLOURLESS darkening of the same depth; a colourless
+    // light casts no colour on a neutral surface, so any illuminant colour at all
+    // read as painting. Measured at the ruled depths it admits t = 0.03-0.05 — a
+    // grey cobble comes out #545454, exactly neutral. It is not a tight bound on
+    // warmth, it is a statement that ambience must be colourless, and the Captain
+    // ruled against that on 2026-07-30.
+    //
+    // The failure it was DERIVED from can be stated directly, and is: open water
+    // went olive. Three arms — the shipped buckets hold, and the two mechanisms
+    // that broke it still break it.
+    for (const bucket of LIT) {
+      const lut = ambienceLut(bucket)!
+      for (const tone of RAMPS.sea) {
+        expect(
+          blueOverRed(remap(lut, tone)),
+          `${bucket}: open water lost its blue — #${tone.toString(16)} came out ` +
+            `#${remap(lut, tone).toString(16)}`
+        ).toBeGreaterThanOrEqual(BIN)
+      }
+    }
+    // INVERTED 1 — the raw dusk sky ratio, the light that produced the olive.
+    const raw = skyRatio('dusk')
     expect(
-      worstChromaGain(dusk),
-      'the raw dusk sky ratio no longer breaks the chroma clause — the clause ' +
-        'has stopped doing work, re-measure before trusting it'
-    ).toBeGreaterThan(worstChromaGain([dg, dg, dg]))
+      Math.max(...raw),
+      'the raw dusk sky ratio no longer amplifies a channel past 1 — re-measure'
+    ).toBeGreaterThan(1)
+    expect(
+      RAMPS.sea.filter((c) => blueOverRed(snapNative(c, raw)) >= BIN),
+      'the raw dusk sky ratio no longer takes the blue out of open water'
+    ).toEqual([])
+    // INVERTED 2 — a flat warm multiply at the ruled dusk depth. This is the
+    // simpler design the ruling could have had, and the measurement that says it
+    // cannot: the sea comes out brown at every strength strong enough to see.
+    const flatWarm = [0.807, 0.48, 0.32]
+    expect(gainOf(flatWarm), 'the flat-warm fixture drifted off the ruled depth').toBeCloseTo(
+      ambientDepth('dusk')!,
+      1
+    )
+    expect(Math.max(...flatWarm), 'the flat-warm fixture started amplifying').toBeLessThanOrEqual(1)
+    expect(
+      RAMPS.sea.filter((c) => blueOverRed(snapNative(c, flatWarm)) >= BIN),
+      'a flat warm multiply no longer browns the sea — re-measure the §3 claim ' +
+        'in ambience.ts before simplifying the split away'
+    ).toEqual([])
+  })
+
+  it('the warmth actually arrives, and only on the lit half', () => {
+    // THE RULING, AS A MEASUREMENT. Against a colourless darkening of the same
+    // depth — exactly what the old clause forced — the lit tones move up the
+    // yellow axis and the shadow tones move down it. An edit that neutralizes the
+    // split collapses both numbers toward zero and fails here, which is the arm
+    // that stops "warm dawn, amber dusk" from quietly becoming grey again.
+    for (const bucket of ['dawn', 'dusk'] as const) {
+      const k = ambientDepth(bucket)!
+      const lut = ambienceLut(bucket)!
+      let lit = 0
+      let litN = 0
+      let dark = 0
+      let darkN = 0
+      for (const ramp of Object.values(RAMPS)) {
+        for (const c of ramp) {
+          const d = bStar(remap(lut, c)) - bStar(snapNative(quantize(c), [k, k, k]))
+          if (luma(c) >= 128) {
+            lit += d
+            litN++
+          } else {
+            dark += d
+            darkN++
+          }
+        }
+      }
+      expect(litN, `${bucket}: no lit tones to measure`).toBeGreaterThan(5)
+      expect(darkN, `${bucket}: no shadow tones to measure`).toBeGreaterThan(5)
+      // measured 2026-07-30: dawn +5.3 lit / -3.1 shadow, dusk +8.3 / -5.8. A
+      // neutralized split puts both at 0, so the floor fires on the whole class.
+      expect(lit / litN, `${bucket}: the lit half did not warm`).toBeGreaterThan(4)
+      expect(dark / darkN, `${bucket}: the shadow half did not cool`).toBeLessThan(-1)
+    }
+    // and the sign is the bucket's, not a constant: night's lit half goes the
+    // other way, which is the moon-tint the art's own sky asks for (-13.2).
+    const nightLut = ambienceLut('night')!
+    const nk = ambientDepth('night')!
+    const nightLit = RAMPS.sand.filter((c) => luma(c) >= 128)
+    expect(nightLit.length).toBeGreaterThan(2)
+    for (const c of nightLit) {
+      expect(
+        bStar(remap(nightLut, c)) - bStar(snapNative(quantize(c), [nk, nk, nk])),
+        'night warmed a lit tone — night is the moon, not the sun'
+      ).toBeLessThan(0)
+    }
+  })
+
+  it('the split changes hue, never depth', () => {
+    // The property that lets every luminance-shaped bound above keep working
+    // unchanged: whatever tone a pixel is, the light it stands in removes the
+    // same FRACTION of its luminance. So the ruled depth is the depth of every
+    // surface, not an average over them.
+    for (const bucket of LIT) {
+      const k = ambientDepth(bucket)!
+      for (const ramp of Object.values(RAMPS)) {
+        for (const c of ramp) {
+          // 3%, and the residual is named rather than absorbed: each end is put
+          // at the depth by the exponent walk, which lands within ~1% of it, and
+          // the lerp between two ends inherits that. Measured worst over the
+          // whole colour cube, not just these ramps: 2.4% (dusk). A split that
+          // moved the depth BY DESIGN would be far outside this.
+          expect(
+            Math.abs(gainOf(ambientLight(bucket, c)!) / k - 1),
+            `${bucket}: the split moved the depth at #${c.toString(16)}`
+          ).toBeLessThan(0.03)
+        }
+      }
+    }
+  })
+
+  it('the clamp measures the table that ships', () => {
+    // Sensor wiring. `solveStrength` gates the tint by shading the sea ramp
+    // through quantize → light → snap; the GPU reads the LUT. If those two paths
+    // could differ, the clamp would be guarding a colour nothing draws.
+    for (const bucket of LIT) {
+      const lut = ambienceLut(bucket)!
+      for (const ramp of Object.values(RAMPS)) {
+        for (const c of ramp) {
+          const q = quantize(c)
+          expect(
+            remap(lut, c),
+            `${bucket}: the LUT and the clamp disagree at #${c.toString(16)}`
+          ).toBe(snapNative(q, ambientLight(bucket, q)!))
+        }
+      }
+    }
   })
 
   it('the derived artifact the Python side reads is this module’s own output', () => {
@@ -612,35 +771,51 @@ describe('the ambience derivation', () => {
      * consumers read it. This arm is what makes it an artifact rather than a
      * fourth copy: regenerate it with
      *
-     *     npx vitest run src/lib/world/ambience.test.ts   # then fix the diff
+     *     AMBIENCE_EMIT=1 npx vitest run src/lib/world/ambience.test.ts
      *
      * It is checked in because the Python side runs in a CI job with no node.
      */
     const path = join(process.cwd(), 'src', 'lib', 'world', 'ambience-derived.json')
-    const got = JSON.parse(readFileSync(path, 'utf8')) as {
-      buckets: Record<
-        string,
-        { light: number[]; sea: number[][]; ramps: Record<string, number[][]> }
-      >
-    }
-    expect(Object.keys(got.buckets).sort()).toEqual([...LIT].sort())
     const rgb = (hex: number) => [(hex >> 16) & 0xff, (hex >> 8) & 0xff, hex & 0xff]
+    const r6 = (v: number) => +v.toFixed(6)
+    const want = {
+      _generated_by: 'cabinet/dashboard/src/lib/world/ambience.ts via ambience.test.ts',
+      curve: CYCLE_CURVE,
+      buckets: Object.fromEntries(
+        LIT.map((bucket) => {
+          const lut = ambienceLut(bucket)!
+          // the two ends of the split ARE the shipped light at black and at
+          // white — the strength is already inside them, so the artifact needs
+          // no third number and the Python twin no second derivation
+          const shadow = ambientLight(bucket, 0x000000)!
+          const highlight = ambientLight(bucket, 0xffffff)!
+          return [
+            bucket,
+            {
+              depth: r6(ambientDepth(bucket)!),
+              strength: r6(toneStrength(bucket)),
+              shadow: shadow.map(r6),
+              highlight: highlight.map(r6),
+              sea: RAMPS.sea.map((c) => rgb(remap(lut, c))),
+              ramps: Object.fromEntries(
+                Object.entries(RAMPS).map(([name, ramp]) => [name, ramp.map((c) => rgb(remap(lut, c)))])
+              ),
+            },
+          ]
+        })
+      ),
+    }
+    if (process.env.AMBIENCE_EMIT === '1') {
+      writeFileSync(path, JSON.stringify(want, null, 1) + '\n')
+    }
+    const got = JSON.parse(readFileSync(path, 'utf8'))
+    expect(Object.keys(got.buckets).sort()).toEqual([...LIT].sort())
+    expect(got, 'the artifact is stale — regenerate it, see the comment above').toEqual(want)
+    // vacuity guard: an artifact of empty arrays would satisfy nothing above
     for (const bucket of LIT) {
-      const lut = ambienceLut(bucket)!
-      const row = got.buckets[bucket]
-      expect(row.light.map((v) => +v.toFixed(6)), `${bucket}: stale light factor`).toEqual(
-        ambientLight(bucket)!.map((v) => +v.toFixed(6))
-      )
-      expect(row.sea, `${bucket}: stale sea ramp`).toEqual(RAMPS.sea.map((c) => rgb(remap(lut, c))))
-      expect(Object.keys(row.ramps).sort(), `${bucket}: ramp set changed`).toEqual(
-        Object.keys(RAMPS).sort()
-      )
-      for (const [name, ramp] of Object.entries(RAMPS)) {
-        expect(row.ramps[name], `${bucket}/${name}: stale`).toEqual(ramp.map((c) => rgb(remap(lut, c))))
-      }
-      // vacuity guard: an artifact of empty arrays would satisfy nothing above
-      expect(row.sea.length).toBe(RAMPS.sea.length)
-      expect(row.sea.flat().some((v) => v > 0)).toBe(true)
+      expect(got.buckets[bucket].sea.length).toBe(RAMPS.sea.length)
+      expect(got.buckets[bucket].sea.flat().some((v: number) => v > 0)).toBe(true)
+      expect(Object.keys(got.buckets[bucket].ramps).sort()).toEqual(Object.keys(RAMPS).sort())
     }
   })
 
