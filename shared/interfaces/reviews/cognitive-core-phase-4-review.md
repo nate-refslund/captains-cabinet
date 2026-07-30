@@ -21,7 +21,25 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 35b4ae1656c0fd3e3ebc82e410858ceab115d6241c1d4761f536e267829f7485
+Reviewed-Scope-Digest: 11b7586887b031e6677acbf4fc653a54cbb4eea971240fe09307c655d1a62d34
+(RE-BOUND 2026-07-30 on `fix/unicode-name-tokens`, previous value `35b4ae16…`.
+ONE in-scope path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` raises
+`framework_production_noncomment_lines` VISIBLY 61433 -> 61474 (+41 measured over
+this tree with cognitive-architecture-census.py, observed 76013 vs the
+then-effective 75972 — not an allowance, because a splitter that reads the
+operator's own script has no deletion gate that could ever fire). The change it
+pays for is one function pair in `framework/onboarding/salience.py`: the name
+tokenizer split on `[^0-9a-z]+`, so a name carrying no ASCII alphanumeric
+produced NO words on either side of any comparison and therefore shared none
+with ITSELF — an operator answering in Japanese, Cyrillic, Greek, Arabic,
+Hebrew, Devanagari, Thai or Korean had every window refused, including the
+folder spelled exactly like their answer. One Unicode-aware split now serves
+both `name_tokens` and `tokenize`, and its re-rank was MEASURED on a live
+665-name four-connector estate before landing: all 49 ranked clusters identical
+in order and score, vocabulary 1226 -> 1211, below-span 607 -> 608, 35 of 665
+names re-read as the word the estate writes. Census PASS at observed == maximum
+with zero headroom; ZERO new production modules, so no bijection class moves.)
 (MERGE RE-BIND, 2026-07-30, `fix/short-answer-binds` x master. Both sides
 re-bound this line, so the merge left two; ONE value stands and it is
 recomputed over this merge commit. No COG-4 implementation byte moved on

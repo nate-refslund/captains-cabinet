@@ -10,6 +10,7 @@ ranking quietly becomes an assertion nobody earned.
 from __future__ import annotations
 
 import ast
+import unicodedata
 from pathlib import Path
 
 import pytest
@@ -89,12 +90,140 @@ def test_the_ranking_vocabulary_is_exactly_the_floored_name_words():
         "BH", "QSD archive", "north-bay-website", "northbay.example", "a-b-c-d",
         "Subitems of Blue Harbour", "org/thing", "acme_corp-2026", "12/34",
         "Green Lantern brief", "x", "", None, 17, "é-ü", "ab.cd", "A" * 80,
+        # ONE splitter has to be one splitter in every script, or the identity
+        # below holds for the alphabet it was written in and nowhere else.
+        "日本", "Москва", "الشركة", "हिन्दी", "Grønlanterne", "⚙️ ops",
+        "Ελλάδα 2026",
     ]
     for name in corpus:
         assert salience.tokenize(name) == [
             token for token in salience.name_tokens(name)
             if len(token) >= salience._MIN_TOKEN_LEN
         ], name
+
+
+# --- the alphabet: a name is written in whatever script its operator uses ----
+#
+# The split was ``[^0-9a-z]+``. A name carrying no ASCII alphanumeric therefore
+# produced NO words — on both sides of every comparison, so it shared none with
+# ITSELF, and the operator who answered in their own script was told the folder
+# spelled exactly like their answer did not carry it. Every arm below is driven
+# on a name a person would actually type, and each one is red against that
+# split before it reaches its second assertion.
+
+#: (what to call it in a failure message, a name in that script). Two of them
+#: are written right to left, which is the case an alphabet rule gets wrong
+#: last: nothing here reverses anything, and it must not have to.
+_SCRIPTS = (
+    ("japanese", "日本"),
+    ("cyrillic", "Москва"),
+    ("greek", "Ελλάδα"),
+    ("arabic (right to left)", "الشركة"),
+    ("hebrew (right to left)", "חברה"),
+    ("devanagari", "हिन्दी"),
+    ("thai", "ภาษาไทย"),
+    ("hangul", "한국"),
+)
+
+#: Two names in ONE script that are genuinely different things. A splitter that
+#: shatters a script into single characters would make these share one.
+_DIFFERENT_PAIRS = (
+    ("japanese", "日本", "韓国"),
+    ("cyrillic", "Москва", "Петербург"),
+    ("greek", "Ελλάδα", "Κύπρος"),
+    ("arabic", "الشركة", "المكتبة"),
+    ("hebrew", "חברה", "ספרייה"),
+    ("devanagari", "हिन्दी", "मराठी"),
+)
+
+
+def test_a_name_in_any_script_is_made_of_words():
+    """The empty set, from the alphabet. No words means no shared word with
+    anything — including the same name — so this is the assertion the whole
+    class reduces to."""
+    for script, name in _SCRIPTS:
+        assert salience.name_tokens(name), (
+            f"{script}: {name!r} produced no words at all, so it shares none "
+            "with itself and every comparison against it refuses"
+        )
+
+
+def test_a_name_in_any_script_shares_its_words_with_itself():
+    """Both sides of the comparison the bind actually makes: an answer typed by
+    the operator against a folder spelled the same way, once lowercased by
+    whoever created it."""
+    for script, name in _SCRIPTS:
+        typed = set(salience.name_tokens(name))
+        spelled = set(salience.name_tokens(name.lower()))
+        assert typed & spelled, f"{script}: {name!r} shares no word with itself"
+
+
+def test_two_different_names_in_one_script_share_no_word():
+    """The other direction on the same alphabet. A split that shattered a script
+    into characters, or one that produced the empty set both times and called it
+    a match, would pass the arm above and fail here."""
+    for script, one, other in _DIFFERENT_PAIRS:
+        assert not (set(salience.name_tokens(one)) & set(salience.name_tokens(other))), (
+            f"{script}: {one!r} and {other!r} are different things and share a word"
+        )
+
+
+def test_a_name_with_diacritics_is_the_same_name_however_it_is_encoded():
+    """A filesystem hands back what the operator typed, decomposed. The accent
+    then lives in a separate character from the letter it belongs to, and a
+    comparison of the composed answer against the decomposed folder name is a
+    comparison of one name with itself that must not fail."""
+    for name in ("Café", "Naïve", "Tiếng", "Grün"):
+        composed = unicodedata.normalize("NFC", name)
+        decomposed = unicodedata.normalize("NFD", name)
+        assert composed != decomposed, f"{name!r} has no accent to decompose"
+        assert salience.name_tokens(composed) == salience.name_tokens(decomposed), name
+        assert salience.name_tokens(composed), name
+
+
+def test_case_folding_reaches_past_ascii():
+    """``lower`` is the ASCII habit: it leaves a German sharp s where a fold
+    writes two letters, and a Greek final sigma as a letter of its own, so the
+    same name written two ways stops matching itself. Nothing here is a locale
+    rule — it is the Unicode fold, applied to every name on both sides."""
+    assert salience.name_tokens("Straße") == salience.name_tokens("STRASSE")
+    assert "Straße".lower() != "STRASSE".lower(), (
+        "the fixture no longer discriminates: lowering must separate these two "
+        "spellings, or this arm passes on a tokenizer that only lowers"
+    )
+    assert salience.name_tokens("οδος") == salience.name_tokens("οδοσ")
+    assert "οδος".lower() != "οδοσ".lower(), (
+        "the fixture no longer discriminates: the final and medial sigma must "
+        "survive lowering as different letters"
+    )
+    assert set(salience.name_tokens("Ελλάδα")) == set(salience.name_tokens("ΕΛΛΆΔΑ"))
+
+
+def test_a_decoration_is_not_a_word_two_names_can_share():
+    """THE FAIL-OPEN THE WIDENING COULD HAVE OPENED, driven. A tracker's rows
+    are decorated with pictograms, and a pictogram carries an invisible
+    modifier. Counted as a word character in its own right, that modifier
+    becomes a one-character word every decorated row carries — so two unrelated
+    folders would share it and bind. A modifier belongs to the character it
+    follows and can never start a word."""
+    assert salience.name_tokens("⚙️") == []
+    assert not (set(salience.name_tokens("⚙️ payroll"))
+                & set(salience.name_tokens("⚙️ shipping")))
+    assert set(salience.name_tokens("⚙️ payroll")) == {"payroll"}
+
+
+def test_the_ranking_reads_a_shattered_name_as_the_one_word_it_is():
+    """THE RE-RANK, driven on the shape it was measured on. A name whose letters
+    are not all ASCII was ranked as the FRAGMENTS either side of them — a name
+    like this one produced three, none of which is the name and none of which
+    the operator would recognise, and the candidate was labelled with one of
+    them. It is one word now, so the label is what the estate calls it."""
+    rows = _spread("tracker", ["Grønlanterne plan", "Grønlanterne drift"]) + \
+        _spread("repo", ["grønlanterne-web", "grønlanterne-api"], start_day=9)
+    ranking = salience.rank(rows, now="2026-03-01T00:00:00Z")
+    labels = {cluster["label"] for cluster in ranking["clusters"]}
+    assert "grønlanterne" in labels, labels
+    assert not ({"nlanterne", "grnlanterne", "nlanterneplan"} & labels), labels
 
 
 # --- the floors, and the proof that they are MEASURED -----------------------

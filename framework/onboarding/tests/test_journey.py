@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+import unicodedata
 from copy import deepcopy
 from pathlib import Path
 
@@ -2430,16 +2431,46 @@ def _typed(tmp_path: Path, name: str, *, root: Path | None = None,
 
 
 def _plain_words(name: str) -> set[str]:
-    """The words in a name, split INDEPENDENTLY of the code under test.
+    """The words in a name, read by a mechanism the code under test does not use.
 
     A sensor that asks the implementation whether the implementation was right
-    is not a sensor. This is the naive reading — the alphanumeric runs of the
-    string, lowercased — and it is what every refusal's stated reason is graded
-    against below. It deliberately emits no compounds: the refusal only ever
-    claims that no WORD is shared, so a claim that survives this reading is a
-    claim the operator can check by eye.
+    is not a sensor — and the previous version of this function WAS one, in the
+    single way that mattered. It read ``[^0-9a-z]+``: the same ASCII alphabet as
+    the splitter it was grading. Two names in another script therefore produced
+    two EMPTY sets here, an empty set intersects nothing, and the arm below
+    certified as honest a refusal telling the operator that a folder shares no
+    word with the name it is spelled with. The one assumption that needed an
+    outside opinion was the one assumption it shared.
+
+    So the reading is derived from Python's IDENTIFIER grammar (XID_Start /
+    XID_Continue) rather than from a character class or from Unicode general
+    categories: a different table, answering a different question, reached
+    through ``str`` rather than through anything the module imports. Its
+    agreement with the module is therefore evidence, not tautology, and it is
+    RED against the ASCII split on the very first non-Latin case.
+
+    It deliberately emits no compounds: the refusal only ever claims that no
+    WORD is shared, so a claim that survives this reading is a claim the
+    operator can check by eye.
     """
-    return {word for word in re.split(r"[^0-9a-z]+", str(name).lower()) if word}
+    words, current = [], []
+    for character in unicodedata.normalize("NFKC", str(name).casefold()):
+        if character == "_":
+            starts = continues = False
+        else:
+            # XID_Continue holds the accents and vowel signs that belong to the
+            # letter before them; XID_Start does not, which is why a modifier
+            # left over from a pictogram never becomes a word of its own.
+            starts = character.isidentifier() or character.isdigit()
+            continues = ("a" + character).isidentifier()
+        if current and continues:
+            current.append(character)
+        elif starts:
+            current = [character]
+            words.append(current)
+        else:
+            current = []
+    return {"".join(word) for word in words}
 
 
 def test_a_short_answer_the_ranker_cannot_tokenize_still_binds_its_own_window(tmp_path):
@@ -2511,9 +2542,22 @@ _BIND_CASES = (
     ("ACME", "acme", True),
     ("Blue Harbour", "blue-harbour", True),
     ("Blue Harbour", "blueharbour", True),
+    # The same table, in the scripts the ASCII splitter read no word from at
+    # all. Two of them are written right to left. The permitted rows are the
+    # ones the old alphabet got wrong — every one of them was refused, with a
+    # sentence about a name the operator can see on the folder.
+    ("日本", "日本", True),
+    ("Москва", "москва", True),
+    ("Ελλάδα", "ελλάδα", True),
+    ("الشركة", "الشركة", True),
+    ("חברה", "חברה", True),
+    ("हिन्दी", "हिन्दी", True),
+    ("Café", "café", True),
     ("BH", "quarterly-tax-returns", False),
     ("QSD", "payroll", False),
     ("Blue Harbour", "quarterly-tax-returns", False),
+    ("日本", "韓国", False),
+    ("Москва", "петербург", False),
 )
 
 
@@ -2586,6 +2630,63 @@ def test_the_card_does_not_claim_an_unspent_answer_when_the_window_matches(tmp_p
     body = out["card"]["body"]
     assert "depth is not yet spent where you pointed" not in body
     assert "so that is where I spend depth" in body
+
+
+#: (answer, the folder spelled the same way, a folder that is a DIFFERENT
+#: thing in the same script). The last column is what stops a widened split
+#: from binding everything: a rule that shattered a script into characters, or
+#: one that produced two empty sets and called them equal, passes the first
+#: two assertions of the arm below and fails the third.
+_SCRIPT_CASES = (
+    ("japanese", "日本", "日本", "韓国"),
+    ("cyrillic", "Москва", "москва", "петербург"),
+    ("greek", "Ελλάδα", "ελλάδα", "κύπρος"),
+    ("arabic (right to left)", "الشركة", "الشركة", "المكتبة"),
+    ("hebrew (right to left)", "חברה", "חברה", "ספרייה"),
+    ("devanagari", "हिन्दी", "हिन्दी", "मराठी"),
+    # The accent arrives in two encodings and the operator typed one of them: a
+    # filesystem is free to hand back the letter and its accent as separate
+    # characters where the operator typed the single composed one. Compared as
+    # raw text those are different strings, and the folder named after the
+    # answer is refused for not carrying it — the same false sentence by a
+    # third route.
+    ("diacritics, decomposed by the filesystem", "Café",
+     unicodedata.normalize("NFD", "café"), "quarterly-tax-returns"),
+)
+
+
+def test_an_answer_in_any_script_binds_the_folder_spelled_like_it(tmp_path):
+    """THE DEFECT, DRIVEN, on the surface the operator uses.
+
+    The splitter read an ASCII alphabet, so an operator who answered in
+    Japanese, Cyrillic, Greek, Arabic, Hebrew or Hindi produced no wanted words
+    at all — and an empty set intersects nothing. Every window they proposed was
+    refused, INCLUDING the folder named exactly the same thing, and the refusal
+    said that folder shares no word with a name it is spelled with. A name does
+    not share a word with itself only if nothing can read either of them.
+
+    Both directions per script, on one journey each, because a bind that
+    refuses everything and a bind that accepts everything both pass a one-sided
+    table.
+    """
+    for index, (script, answer, same, different) in enumerate(_SCRIPT_CASES):
+        root = tmp_path / f"script-{index}"
+        _typed(tmp_path, answer, root=root, action_id=f"script-answer-{index}")
+
+        bound = _propose(root, _folder(root, same), action_id=f"script-on-{index}")
+        assert bound["ok"] is True, script
+        window = bound["state"]["salience"]["window"]
+        assert window["relation"] == "matched", f"{script}: {answer!r} vs “{same}”"
+        assert window["evidence"], f"{script}: bound on no evidence at all"
+        assert "so that is where I spend depth" in bound["card"]["body"], script
+
+        with pytest.raises(journey.JourneyError) as excinfo:
+            _propose(root, _folder(root, different), action_id=f"script-off-{index}")
+        assert excinfo.value.code == "salience_window_off_target", script
+        assert not _plain_words(answer) & _plain_words(different), (
+            f"{script}: the fixture is not lopsided — {answer!r} and “{different}” "
+            "share a word, so the refusal is correct for the wrong reason"
+        )
 
 
 def _starved_area_estate(tmp_path: Path) -> Path:
