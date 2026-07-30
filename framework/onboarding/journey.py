@@ -33,9 +33,8 @@ REFUSES a folder whose own name shares no word with it, unless the operator
 states which of ``WINDOW_RELATIONS`` applies; ``_window_binding`` is the one
 decision function, and every card renders what it returns, so the shipped
 sentence can never promise a binding the code does not keep.  A loop whose
-answer changes nothing is a questionnaire — and a loop that refuses every
-window is not a stricter one, it is a broken one, which is what an answer the
-RANKER could not tokenize used to produce.
+answer changes nothing is a questionnaire — and one that refuses every window
+is not stricter, it is broken, which is what an untokenizable answer produced.
 
 All state stays below ``instance/onboarding/v2`` — a surface the mission
 compiler never reads.  Events are append-only, state/artifacts are atomic,
@@ -1321,13 +1320,13 @@ def _window_binding(state: Mapping[str, Any] | dict[str, Any],
     The cost is a folder legitimately called something else, and that case has
     a named way through (``WINDOW_RELATIONS``) rather than a refusal.
 
-    WHAT IT CATCHES, EXACTLY: a window and an answer that SHARE NO WORD. It does
-    not catch a coincidental shared one — a target typed as a phrase lends every
-    word in it, so a folder carrying any of those words binds without the
-    operator being asked. That is the limit of a test on names, and every
-    sentence rendered from this function claims exactly that much and no more.
-    The only authority on what a folder actually holds is the operator, which is
-    why the escape is a statement from them rather than a better guess.
+    WHAT IT CATCHES, EXACTLY: a window and an answer whose names share no word
+    that ``salience.name_tokens`` can read. It does not catch a coincidental
+    shared one — a target typed as a phrase lends every word in it, so a folder
+    carrying any of those words binds unasked. Nor is it exact for two names
+    that tokenizer reads NO word from (RES-025): those share no word by this
+    test even spelled alike. The only authority on what a folder actually holds
+    is the operator, which is why the escape is a statement rather than a guess.
 
     IT COMPARES NAMES, NOT RANKING CANDIDATES, and the difference is not
     academic — it shipped the other way and hard-blocked every window an
@@ -1337,17 +1336,16 @@ def _window_binding(state: Mapping[str, Any] | dict[str, Any],
     CANDIDATE and wrong for deciding what a NAME says, so a two- or three-letter
     answer produced no wanted words at all, intersected nothing, and refused the
     folder spelled exactly like it while telling the operator that folder did not
-    carry the name. The refusal was reserved for short products, acronyms,
-    initialisms and short names in any language, and the shortlist path could
-    never reach it: ranked labels clear the floor by construction.
+    carry the name. The refusal was reserved for short products, acronyms and
+    initialisms, and the shortlist path could never reach it: ranked labels
+    clear the floor by construction.
 
     THE RESIDUAL, stated rather than implied: a word is shared or it is not, so a
     folder called ``northbayops`` shares no word with ``northbay`` — one name
-    written without a separator is one word. That is a real refusal an operator can hit,
-    it is what the sentence says happened, and ``WINDOW_RELATIONS`` is the way
-    through. Loosening it to substring containment is refused for the reason
-    every other near-match is refused here: "IT" inside "waiting" is not a
-    shared name, and a matcher that cannot tell the difference is a guess.
+    written without a separator is one word. That is a real refusal an operator
+    can hit, it is what the sentence says happened, and ``WINDOW_RELATIONS`` is
+    the way through. Loosening it to substring containment is refused for the
+    reason every other near-match is: "IT" inside "waiting" is not a shared name.
 
     Returns ``None`` when no target has been answered — there is nothing to
     bind to, and no claim is made either. Otherwise ``relation`` is one of:
@@ -1396,9 +1394,8 @@ def _binding_note(state: dict[str, Any]) -> str:
 
     THE SENTENCE SAYS WHAT THE TEST DID, which took a correction. It said the
     folder "does not carry that name" while the code compared WORDS — and a
-    folder named ``bh`` does carry the name ``BH``, so on the answers the binding
-    was refusing that sentence was not merely loose, it was false to the
-    operator's face about the one thing they could check.
+    folder named ``bh`` does carry the name ``BH``, so that sentence was not
+    merely loose, it was false to the operator's face about what they could see.
     """
     binding = _window_binding(state)
     if binding is None:
