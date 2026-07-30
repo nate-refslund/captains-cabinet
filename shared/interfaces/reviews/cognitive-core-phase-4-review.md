@@ -21,7 +21,16 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 11b7586887b031e6677acbf4fc653a54cbb4eea971240fe09307c655d1a62d34
+Reviewed-Scope-Digest: f136ba1492e4c81b452d22930b9c715728713ee4b3e102a983596d79ac447322
+(MERGE RE-BIND, 2026-07-30, `fix/unicode-name-tokens` x master. Both sides
+re-bound this line, so the merge left two; ONE value stands and it is
+recomputed over this merge commit. The only in-scope path either side moved
+is the contract file, whose merged ceiling is RE-MEASURED over this tree
+rather than summed on paper. Both re-bind sections are kept verbatim, because
+a re-freeze that hides what moved asserts a review that never happened. This
+branch's note follows; master's `fix/claim-surfaces` section stands at the end
+of this file.)
+
 (RE-BOUND 2026-07-30 on `fix/unicode-name-tokens`, previous value `35b4ae16…`.
 ONE in-scope path moved and NO COG-4 implementation byte did:
 `cabinet/config/cognitive-architecture-contract.yml` raises
@@ -1904,3 +1913,27 @@ ONE digest stands, `35b4ae16…`, and it is the value on the header line. The
 only in-scope path either side moved is the contract file, whose merged ceiling
 is re-measured over this tree — census PASS, observed 75972 == maximum 61433,
 zero headroom. No COG-4 implementation byte moved on either side.)
+
+---
+
+## Re-bind 2026-07-30 (`fix/claim-surfaces`)
+
+ONE in-scope path moved: `cabinet/config/cognitive-architecture-contract.yml`,
+`maximum` on `framework_production_noncomment_lines` 61433 -> 61452, +19
+measured with `cognitive-architecture-census.py` over this tree (observed 75991
+== maximum, zero headroom). No COG-4 implementation byte moved, and nothing in
+this branch's work is inside the phase-4 scope.
+
+WHAT THE +19 BUYS IS PROSE, WHICH IS THE POINT. Three public entry points
+documented properties their bodies do not enforce — `identity_candidates`
+promising EVERY account a connector reported over a body that caps at
+`MAX_IDENTITY_CANDIDATES`; a dashboard comment justifying a disclosure as
+reachable with scripting off on a client component whose content arrives from a
+fetch; and `inventory_mcp_estate` calling `sources` the paths "actually
+consulted" when a file that will not parse is read and then omitted. The census
+counts docstring lines, so the honest sentence costs real headroom and the two
+that had already been found were left unlanded for exactly that reason. Paid
+visibly here rather than shrinking the text to fit.
+
+Recorded digest: abe5fbd01d09c85b2b6005d02ce1f86b35010747d00b8c509b70b7e63dceb3ec
+Previous:        35b4ae1656c0fd3e3ebc82e410858ceab115d6241c1d4761f536e267829f7485

@@ -749,3 +749,58 @@ describe('surface parity without a World mutation fork', () => {
     expect(worldPage).not.toMatch(/fetch\(|axios\.|export\s+async\s+function\s+(POST|PUT|PATCH|DELETE)/)
   })
 })
+
+// A COMMENT IS A CLAIM SURFACE TOO, and this one shipped in a public repo. The
+// native <details> was justified on the ground that "the rest must be reachable
+// with scripting off", and the same sentence sat on IDENTITY_SHOWN. Neither was
+// ever true: this is a client component whose entire content arrives from a
+// fetch, so with scripting off there is no picker, no account list and no
+// question to disclose. The <details> is the right choice for a different
+// reason — the browser owns the open/closed bit, so it costs no hook — and
+// these arms hold the stated reason to what the component actually does.
+describe('claim surfaces — the reasons the source gives for itself', () => {
+  it('renders nothing of the identity ask before the client fetch resolves', () => {
+    scriptState({ loading: true })   // journey stays null, as it is on first paint
+    const html = render()
+    expect(html).toContain('Opening your Cabinet orientation')
+    expect(html).not.toContain('<details')
+    expect(html).not.toContain('identity')
+    expect(html).not.toContain('<form')
+  })
+
+  it('does not justify the disclosure as a no-script fallback', () => {
+    // The property that makes the old reason false, read off the source: the
+    // component is client-only and gets its content from fetch.
+    expect(component).toContain("'use client'")
+    expect(component).toContain("await fetch('/api/onboarding'")
+    expect(component).not.toMatch(/reachable with scripting off/)
+    expect(component).not.toMatch(/reachable here without scripting/)
+    expect(component).not.toMatch(/<noscript/)
+  })
+
+  it('still promises what it can keep — every offered account is on the card', () => {
+    const candidates = Array.from({ length: IDENTITY_SHOWN + 4 }, (_, index) => ({
+      identifier: `account-${index}`,
+      rows: 40 - index,
+    }))
+    const fixture = journeyFixture('welcome')
+    fixture.card.entry = identityEntry([
+      {
+        connector: 'tracker',
+        rows: 400,
+        candidates,
+        reports_no_actor: false,
+        accounts: candidates.length,
+        withheld: 0,
+        complete: true,
+        note: 'tracker: 12 account(s) appear across 400 rows, and all of them are offered here',
+      },
+    ])
+    scriptState({ journey: fixture })
+    const html = render()
+    for (const candidate of candidates) {
+      expect(html).toContain(candidate.identifier)
+    }
+    expect(html).toContain('<details')
+  })
+})
