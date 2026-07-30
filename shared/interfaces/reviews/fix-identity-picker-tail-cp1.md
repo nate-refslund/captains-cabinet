@@ -143,3 +143,46 @@ the fix there is a declared `actor_field`, not an identity, and the note says so
 The typed branch is exercised by an arm, not by a live estate — no estate here
 has more than 200 accounts on one connector, which is precisely why the branch
 exists rather than a reason to leave it out.
+
+---
+
+## Corrected 2026-07-30 — two sentences in this review were themselves over-broad
+
+Landed on `fix/claim-surfaces`. Nothing about the fix above changed; two of the
+sentences describing it did, because they claimed more than the code does and
+both shipped into a public entry point's own documentation.
+
+1. **"Frequency now ORDERS the offer and no longer decides membership. Every
+   account a connector reported is offered, up to a guardrail"** — the two halves
+   contradict each other, and `identity_candidates`' docstring shipped the first
+   half without the second: *"EVERY account identifier this connector reported"*
+   and *"FREQUENCY ORDERS THE LIST; IT NO LONGER DECIDES MEMBERSHIP."* over a body
+   that returns `ranked[:MAX_IDENTITY_CANDIDATES]`. Above the cap both sentences
+   are false and frequency decides membership again at 200 instead of at 12. The
+   guardrail is right and stays; the docstring now names it, names the caller that
+   compensates (`identity_question`, which counts the estate itself and publishes
+   `accounts`/`withheld`/`complete`), and tells a new caller where an exhaustive
+   answer actually comes from.
+
+2. **"no React state, so every offered account is reachable with scripting off"**
+   — never true of anything on that card. `journey-card.tsx` is a client component
+   whose entire content arrives from `fetch('/api/onboarding')`, so with scripting
+   off there is no picker, no account list and no question to disclose. The
+   `<details>` is still the right element for a different and true reason (the
+   browser owns the open/closed bit, so it costs no hook and keyboard and
+   assistive tech get it for free). The same false sentence also sat on
+   `IDENTITY_SHOWN`.
+
+Both were found by reviewers of the work above and left unlanded because a
+docstring line costs architecture-census headroom. The +19 lines are paid by a
+visible `maximum` raise (61433 → 61452) with the reason in the contract — the
+trade the omission was avoiding, taken the other way.
+
+New arms: 4 in `framework/onboarding/tests/` and 3 in `journey-card.test.ts`.
+FIVE of the seven fail against pre-change bytes (all four Python arms plus the
+no-script one). The remaining two are green in both directions by design — they
+assert the property that makes the old sentence false (nothing renders before
+the fetch resolves) and the one the new sentence promises (every offered account
+is on the card), neither of which my edit changes — so each was MUTATION-TESTED
+red instead of being left as an unfalsifiable pass: forcing the loading branch
+off kills the first, truncating the disclosure tail kills the second.
