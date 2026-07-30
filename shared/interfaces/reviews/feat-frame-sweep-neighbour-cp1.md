@@ -82,6 +82,17 @@ public export. `test_world_aesthetic_corpus_reach.py` pins the held set BY ID,
 so a member cannot join it silently — which would be the "partial fix that
 relabels the rest as covered" move this programme has paid for before.
 
+**A second fail-open, caught in my own first draft of this change.** The
+`ImportError` branch (Pillow builds the synthetic negatives) originally reported
+every member as held and carried on — which quietly restores the exact skip this
+change removes. It now FAILS, naming the rebuildable members it could not build,
+but only when their absence actually costs coverage: with them already on disk a
+missing Pillow is harmless, because the gates themselves are stdlib-only, and
+failing there would be an invented blocker. Both directions are pinned. The test
+also had to catch `pytest.fail.Exception` rather than `Exception` — `Failed`
+derives from `BaseException`, so `pytest.raises(Exception)` walks straight past
+it and the test reports the guard's failure as its own red.
+
 Two skips that could never legitimately fire were removed outright: `_bounds`
 skipped on a missing `calibration/clustering_bounds.json`, which is **tracked**;
 and `test_corpus_smoke` named a live capture and a LimeZu screenshot for its two
@@ -121,6 +132,7 @@ Each mutation was applied to the source, the named test re-run with
 | delete `if not pairs:` | daylight-only sweep | 1 failed |
 | delete `if not spairs:` | daylight-only sweep | 1 failed |
 | a rebuild recipe becomes HELD | 2 corpus-reach arms | 2 failed |
+| the missing-Pillow guard stops firing | the Pillow arm | 1 failed |
 | an undeclared member joins the registry | the declaration arm | 1 failed |
 | the sha256 mismatch stops being recorded | the mismatch arm | 1 failed |
 
@@ -158,7 +170,7 @@ by that one test.
 
 ## Gates run in this worktree
 
-`world-capture/tests` 89 passed · `world-aesthetic/tests` 100 passed (full
+`world-capture/tests` 89 passed · `world-aesthetic/tests` 101 passed (full
 corpus) / 97 passed + 3 skipped (fresh-checkout simulation, corpus removed) ·
 `sync-checks.py --check` 4/4 identical · `docs-track-code-sweep.sh` GREEN
 (files=64 findings=0) · `check-layer-separation.sh` new=0 · `frame-judge.py`

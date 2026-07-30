@@ -48,10 +48,22 @@ def _corpus_state(builder) -> tuple[dict, list[str], list[str]]:
         held = builder.materialise(CORPUS_DIR)
     except SystemExit as e:                       # a recipe that cannot run
         pytest.fail(f"corpus materialise refused: {e}")
-    except ImportError:
-        # Pillow builds the synthetic negatives. Absent it, those members are
-        # simply not present — reported as held, never as covered.
+    except ImportError as e:
+        # Pillow builds the synthetic negatives. The gates themselves are
+        # stdlib-only, so a missing Pillow is only fatal when it actually costs
+        # coverage — and then it IS fatal, never a quiet reversion to the skip
+        # this whole change removed. (`cabinet-ci.yml` pins pillow in this job
+        # for the same stated reason.)
         held = [i["id"] for i in json.loads(manifest.read_text())["images"]]
+        absent = [e_id for e_id, row in builder.REGISTRY.items()
+                  if row[4] is not None
+                  and not (WA_DIR / "corpus" / row[0] / row[1]).is_file()]
+        if absent:
+            pytest.fail(
+                f"Pillow is missing ({e}), so these REBUILDABLE corpus members "
+                f"could not be materialised: {', '.join(sorted(absent))}. Every "
+                "arm that reads them would skip — which is the disabled sensor "
+                "this fixture exists to prevent. `pip install pillow`.")
     data = json.loads(manifest.read_text())
     verified: dict[str, list[Path]] = {}
     mismatch, missing = [], []

@@ -33,6 +33,8 @@ from __future__ import annotations
 import hashlib
 import json
 
+import pytest
+
 # Held = the pixels exist only where they were captured or received. Pinned by
 # ID rather than by count: a count cannot tell "a positive became rebuildable"
 # from "a rebuildable negative was quietly dropped into the held pile".
@@ -115,6 +117,52 @@ def test_the_held_members_are_reported_by_name_never_relabelled_as_covered(wa):
         assert entry_id in wa.held, (
             f"{entry_id} is absent AND is not named in wa.held — an arm reading "
             f"the corpus would report a clean pass over a set it never saw")
+
+
+def test_a_missing_pillow_fails_when_it_costs_coverage_and_not_otherwise(wa):
+    """Pillow builds the synthetic negatives, and its absence must not quietly
+    restore the skip this whole fixture removed.
+
+    Two directions, because only failing one of them proves anything. Rebuildable
+    members ABSENT and no Pillow = arms would skip = a hard failure naming them.
+    Rebuildable members already ON DISK and no Pillow = nothing is lost, and the
+    stdlib-only gates must still run — the suite advertises itself as needing no
+    Pillow, so failing there would be an invented blocker.
+    """
+    import importlib.util
+    import types
+
+    spec = importlib.util.spec_from_file_location(
+        "wa_conftest_pillow_probe", wa.dir / "tests" / "conftest.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    def builder_without_pillow(registry):
+        b = types.SimpleNamespace(REGISTRY=registry)
+
+        def boom(_corpus):
+            raise ImportError("No module named 'PIL'")
+        b.materialise = boom
+        return b
+
+    absent = {"neg-fake-absent": ("negative", "neg-fake-absent.png", "p", "w",
+                                  "synthetic")}
+    # pytest.fail.Exception, NOT Exception: `Failed` derives from BaseException,
+    # so `pytest.raises(Exception)` walks straight past it — which is how a test
+    # written to catch a hard failure can report the failure as its own red and
+    # tell you nothing about the guard.
+    with pytest.raises(pytest.fail.Exception) as caught:
+        mod._corpus_state(builder_without_pillow(absent))
+    assert "neg-fake-absent" in str(caught.value), (
+        "a rebuildable member that could NOT be built was not named — the arms "
+        "reading it are skipping and nothing says so")
+
+    # Every rebuildable member IS on disk (the session fixture materialised
+    # them), so this direction must NOT fail.
+    _v, held, mismatch = mod._corpus_state(builder_without_pillow(wa.builder.REGISTRY))
+    assert not mismatch
+    assert set(REBUILDABLE) <= set(wa.builder.REGISTRY)
+    assert held, "with no Pillow every member is reported held until verified"
 
 
 def test_a_corpus_that_does_not_match_the_manifest_is_a_failure_not_a_skip(wa,
