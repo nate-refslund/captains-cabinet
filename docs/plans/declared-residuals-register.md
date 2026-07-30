@@ -489,6 +489,17 @@ cites.
 - **Anchor:** `RESIDUAL, stated rather than implied. The reachability arm is anchored to the`
 - **Retirement:** `SCAN_GLOBS` gains the dashboard's TypeScript (at minimum `cabinet/dashboard/**/*.ts` and `**/*.tsx`), and the two files above are either migrated behind `framework.frontdoor.channel` or added to `ALLOWED` under a §13 amendment naming why a dashboard route may post directly. In the SAME commit: `test_every_listed_path_is_reachable_by_the_scan` must cover the new entries, the module docstring's scoping block is deleted, and this row flips to `retired`.
 
+### RES-023 — the salience answer, and therefore its window bind, reach no shipped surface
+
+- **Phase:** onboarding salience — the answer binds depth (2026-07-30)
+- **Status:** open
+- **Closed:** the answer now CONTROLS depth in the canonical core. `journey._window_binding` refuses a First Window whose own name does not carry the ratified target, `propose_window` is the one place it is enforced, and every card that asks for depth or reports it renders what that function returns — so the shipped sentence "that is where I spend depth" is a control rather than a claim. Driven both directions with caches purged: answer one target and propose an unrelated folder ⇒ `salience_window_off_target` with nothing written; propose a folder carrying it ⇒ bound, recorded, and stated on the Charter card.
+- **Open:** `answer_salience` appears in neither `cabinet/dashboard/src/lib/onboarding/bridge.ts`'s action set nor the Telegram command table in `cabinet/dashboard/src/lib/onboarding/telegram.ts`, so no shipped surface can produce a ratified target. The bind is reachable exactly where the answer is — this module. An operator who answers through the core and then proposes a folder from Telegram receives the refusal and cannot state a `WINDOW_RELATIONS` value from that surface.
+- **Why open:** the fix is to wire the ANSWER into both surfaces, and the relation ride along with it: the escape needs the same surface as the thing it escapes. Adding `salience_relation` to a surface that cannot send `answer_salience` would ship a bypass field for state that surface cannot create — unreachable surface whose only effect is to look closed.
+- **Declared at:** `framework/onboarding/journey.py`
+- **Anchor:** `RESIDUAL, stated rather than implied: no shipped surface can send`
+- **Retirement:** `answer_salience` is in the bridge's `ACTIONS` set with its `choice`/`name` fields typed, the Telegram table carries a command that sends it, and `propose_window` on both surfaces can carry `salience_relation`. In the SAME commit this row flips to `retired`.
+
 ## Absorption — how a wave's residuals get here (COG-5 W2 done)
 
 The rule this section originally stated as a future obligation has now been
