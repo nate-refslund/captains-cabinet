@@ -71,7 +71,7 @@ as a hard failure by id, and the members that genuinely cannot be reconstructed
 are **declared and pinned**.
 
     fresh checkout, before:  91 passed,  5 skipped
-    fresh checkout, after:   97 passed,  3 skipped
+    fresh checkout, after:   98 passed,  3 skipped
 
 Four of eleven members rebuild **byte-identically** from the repo's own tracked
 owned pack (3 synthetic negatives, seeded; 1 palette member, a byte-copy of
@@ -171,7 +171,7 @@ by that one test.
 ## Gates run in this worktree
 
 `world-capture/tests` 89 passed · `world-aesthetic/tests` 101 passed (full
-corpus) / 97 passed + 3 skipped (fresh-checkout simulation, corpus removed) ·
+corpus) / 98 passed + 3 skipped (fresh-checkout simulation, corpus removed) ·
 `sync-checks.py --check` 4/4 identical · `docs-track-code-sweep.sh` GREEN
 (files=64 findings=0) · `check-layer-separation.sh` new=0 · `frame-judge.py`
 GREEN 50/50 on the 16-frame sun sweep, and the arm costs 1.4s of the judge's

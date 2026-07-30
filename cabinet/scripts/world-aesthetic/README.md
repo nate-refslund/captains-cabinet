@@ -150,7 +150,7 @@ Why that matters: the suite used to gate on "are there PNGs in
 manifest declares". Measured on ONE commit — the manifest's corpus gave
 **96 passed**, the archived pre-re-fit corpus dropped in the same place gave
 **4 failed**, and a fresh CI checkout gave **5 skipped**. A fresh checkout now
-runs 97 and skips 3, and the 3 name the held members.
+runs 98 and skips 3, and the 3 name the held members.
 
 **Re-fit 2026-07-28 (LimeZu → owned art).** The corpus was LimeZu showcase
 scenes until the Captain's "ALL OUT of LimeZu" direction. A palette fitted to
