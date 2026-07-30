@@ -366,16 +366,17 @@ def test_screen_covers_the_imperative_verbs_the_nordic_stems_miss():
 def test_screen_leaves_ordinary_danish_business_prose_alone():
     """A detector that fires on every second message is a detector nobody reads.
 
-    These are ordinary sentences from this deployment's real vocabulary — an
+    These are ordinary sentences from an operator's own vocabulary (every name
+    in them synthetic — a real one belongs in no layer of this tree) — an
     approval request, a forwarded mail, a restart, new board columns, and the
     word `regler` used about EU regulation rather than about the agent. Danish
     coverage must not be bought with noise on the operator's own inbox, which is
     why the bulk-exfil arm demands a totality word before an address counts."""
     for text in [
-        "Hej Nate, jeg har opdateret VIES-autofill og sendt den til review.",
-        "Send den til lisa@example.com når du er klar.",
+        "Hej Ada, jeg har opdateret VIES-autofill og sendt den til review.",
+        "Send den til bo@example.com når du er klar.",
         "Kan du godkende fakturaen inden fredag? Tak.",
-        "Jeg har videresendt mailen til Sean, han kigger på det i morgen.",
+        "Jeg har videresendt mailen til Otto, han kigger på det i morgen.",
         "Der er en lækage i budgettet vi skal kigge på.",
         "Nye kolonner er tilføjet til boardet.",
         "Systemet er nede, jeg genstarter det nu.",
