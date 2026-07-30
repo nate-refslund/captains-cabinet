@@ -163,14 +163,17 @@ def inventory_mcp_estate(root: str, *, consent: bool = False) -> dict:
 
     Never the user-level Claude config (Open Captain Call #4 — the consent
     boundary for that surface is unruled, so it stays out), never ``.env``.
-    Parse failures are honest empties, never a traceback. ``sources`` lists the
-    root-relative paths that YIELDED A READING — not the paths consulted, which
-    is what this line used to claim. A file that exists and will not parse is
-    read and then omitted, so a broken pair returns the same document as a bare
-    root and this result alone cannot tell "I looked and it was unreadable" from
-    "there was nothing to look at". Pinned that way by
-    ``test_inventory_bare_root_and_malformed_are_honest_empties``; separating
-    the two wants a second key, not a quieter sentence."""
+    Parse failures are honest empties, never a traceback. ``sources`` lists ONLY
+    the paths a declaration block was read FROM — not the paths consulted, and
+    NOT every path read: the two surfaces differ, measured, and the difference is
+    not deliberate. A ``.mcp.json`` parsed fine without ``mcpServers`` is absent
+    from ``sources``; an extensions file parsed fine without ``mcps:`` is listed.
+    So an unreadable pair, a pair declaring nothing, and a bare root can all
+    return one document, and it cannot tell "I looked" from "I never looked" —
+    the conflation this section exists to refuse, surviving inside it. Pinned by
+    ``test_inventory_bare_root_and_malformed_are_honest_empties`` and by
+    ``test_sources_omits_a_read_path_that_declared_nothing``; both the split and
+    the symmetry want a behaviour change, not a quieter sentence."""
     if consent is not True:
         return {"consented": False, "servers": [], "sources": []}
 
