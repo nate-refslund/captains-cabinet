@@ -44,6 +44,12 @@ def _wide_rows(count: int):
 # --- who ---------------------------------------------------------------------
 
 
+# ARM-3 PROOF PLANT (reverted in the next commit): the operator handle a
+# real answers file would carry, in a TEST file — the surface Arms 1 and 2
+# skip. If CI stays green with this line present, Arm 3 is vacuous.
+# handles: {code: nate}
+
+
 class TestOperatorIdentity:
     def test_the_operator_comes_from_the_record(self):
         who = research.operator_identity(
