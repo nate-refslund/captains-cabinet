@@ -55,6 +55,12 @@ will be produced when officers wake") instead of fake content. A delivered
 brief is honestly labeled model-knowledge (no live web at genesis); officers
 refresh it with sourced research when they wake.
 
+DERIVATIONS FOLLOW THE OPERATOR'S CURRENT ANSWERS (2026-07-30). Both artifacts
+above are idempotent by contract and neither could notice its INPUT had moved,
+so refining the answers left the briefing describing the hatch placeholder —
+the measurement, and the seam that closes it, are in the ANSWERS DIGEST block
+below ``load_answers``.
+
 THE BRIEFING READS WHAT RECALL HOLDS (2026-07-28, measured). Until this,
 NOTHING in the genesis chain ever called ``framework.sources.get_source()``:
 cards came from the answers file and the derived estate only. An agent ran the
@@ -93,6 +99,7 @@ is already secret-shape-refused upstream by generate-instance.py).
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import shutil
@@ -120,6 +127,12 @@ FIRST_BRIEFING_DIR_REL = "instance/memory"
 
 GENERATED_MARKER = "generated-by: framework.onboarding.genesis"
 IOU_LINE = "research brief queued — will be produced when officers wake"
+
+#: The digest of the answers a derivation was made FROM, recorded on every
+#: derived artifact. See ``answers_digest`` for what is hashed and why.
+ANSWERS_DIGEST_KEY = "answers_digest"
+#: The digest of a proposal row AS PROPOSED — the operator-edited test.
+ROW_DIGEST_KEY = "proposed_digest"
 
 # Default egress for the network preflight — the brief's only dependency.
 # CABINET_GENESIS_NET_HOST/_PORT override it (see _net_target) for CLIs
@@ -182,6 +195,71 @@ def load_answers(root: Path | None = None) -> dict:
         return {}
 
 
+# ---------------------------------------------------------------------------
+# THE ANSWERS DIGEST — a derivation carries the answers it was derived FROM.
+#
+# MEASURED 2026-07-30 on a live agnostic-proof hatch, through the answers
+# file's OWN sanctioned refinement path (`--defaults` hatch, edit
+# instance/config/cabinet-init.answers.yml, re-run generate-instance.py, re-run
+# `first-briefing.sh --local`): the operator replaced the placeholder lane with
+# her real one and wrote a real mission, and her first briefing STILL said "You
+# staked First Lane as a lane at genesis" while her Library baseline was a
+# multi-page research brief about the literal placeholder label "First Lane".
+# Neither artifact is re-derived, and neither is WRONG to keep by its own
+# contract — the proposals file is write-once because the Captain may have
+# edited the drafts, and a delivered brief is idempotent because a re-run must
+# not burn a CLI call. Both contracts are about the artifact; neither of them
+# had any way to notice that its INPUT had moved. So every operator who refines
+# their answers after a defaults hatch — the path the file's own header tells
+# them to take — got a first briefing about nobody's business.
+#
+# The seam: each derived artifact records the digest of the answers it was
+# derived from, and a MISMATCH (never mere existence, never a clock) is what
+# licenses re-derivation. Equal digests keep today's behaviour byte-for-byte,
+# so the idempotence both contracts were written for survives untouched and the
+# cost is bounded to genuine change.
+# ---------------------------------------------------------------------------
+def answers_digest(root: Path | None = None) -> str:
+    """sha256 of the answers file's BYTES, or "" when it cannot be read.
+
+    WHOLE-FILE, deliberately, and not a digest of the parsed subtree genesis
+    happens to consume today. A scoped digest is the better sensor exactly
+    until someone adds a read of a key it does not cover, at which point it
+    silently stops covering the thing it exists to watch — the sensor-not-wired-
+    to-the-control class this program keeps paying for. The cost of the whole
+    file is over-triggering: a comment-only edit re-derives drafts and re-runs
+    one CLI call. The cost of under-triggering is the defect above. An empty
+    digest is an honest "cannot tell", and NOTHING treats it as staleness."""
+    base = Path(root) if root else cabinet_root()
+    try:
+        return hashlib.sha256((base / ANSWERS_REL).read_bytes()).hexdigest()
+    except OSError:
+        return ""
+
+
+def _row_digest(row: dict) -> str:
+    """Digest of a proposal row AS PROPOSED — every field except the digest
+    itself, canonically serialised so key order and YAML styling cannot move
+    it. This is the operator-edited test: a comparison against what the
+    recorded derivation actually produced, rather than a marker somebody has to
+    remember to set."""
+    import json  # local: keep the module import-light
+    payload = {k: v for k, v in row.items() if k != ROW_DIGEST_KEY}
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, ensure_ascii=False,
+                   default=str).encode("utf-8")).hexdigest()
+
+
+def _stamp_row_digests(rows: list) -> list:
+    """Stamp each row with its own as-proposed digest. Called LAST, after every
+    other key is final — a digest taken before a later key is added describes a
+    row that was never written."""
+    for row in rows:
+        if isinstance(row, dict):
+            row[ROW_DIGEST_KEY] = _row_digest(row)
+    return rows
+
+
 def load_focus_text(root: Path | None = None) -> str | None:
     """The Captain's focus letter (ONBOARD-1 input), or None when it does not
     exist yet — an honest absence, never a synthesized stand-in."""
@@ -230,8 +308,33 @@ def _low_altitude(answers: dict) -> bool:
     return (_estate.altitude_of(answers) or "") in _LOW_ALTITUDES
 
 
-def _subject_proof(name: str, repos: list, low: bool) -> str:
-    """The proof line for a subject card, at the operator's altitude."""
+def _has_execution_surface(task_system: Any, repos: Any) -> bool:
+    """True when the card's OWN inputs name something to close or to ship.
+
+    MEASURED 2026-07-30 on a live agnostic-proof hatch: a lane at COMPANY
+    altitude declaring ``task_system: none`` and ``repos: []`` — an inn — was
+    handed the proof "A closed task in the lane's task system linked to the
+    shipped change" and the WHAT line "traced end-to-end: task → change →
+    verified deploy/close". The card's own inputs SAY there is no task system
+    and no repository; the proof named both anyway, so the bar an operator was
+    asked to clear came from the framework's assumptions about what work is
+    rather than from anything they declared. Exactly the failure the altitude
+    conditioning was landed for, one field over: altitude fixed WHO may decide,
+    and left WHAT the work is made of hardcoded.
+
+    Absent/unknown is read as ``none``, matching the generator's own
+    normalisation (``generate-instance.py``: ``task_system or "none"``), because
+    a key nobody filled in and a key filled in with "none" are the same
+    statement. Nothing here invents a surface the operator never named."""
+    if repos:
+        return True
+    return str(task_system or "none").strip().lower() != "none"
+
+
+def _subject_proof(name: str, repos: list, low: bool, *,
+                   task_system: Any = None) -> str:
+    """The proof line for a subject card, at the operator's altitude and over
+    the delivery surface the lane actually declared."""
     if low:
         return (
             "A written proposal about " + name + " that cites evidence "
@@ -240,6 +343,16 @@ def _subject_proof(name: str, repos: list, low: bool) -> str:
             + ", delivered to whoever owns the decision — plus what they "
             "decided. Reach and proposal quality, not permission you do not "
             "hold."
+        )
+    if not _has_execution_surface(task_system, repos):
+        # The org journal receipt is the framework's OWN completion vocabulary
+        # (it is already the second half of the line below), and it is the only
+        # half that survives an org with nothing to deploy. No new noun, and
+        # nothing here names a trade.
+        return (
+            "The action's receipt (what/why/undo) in the org journal, dated, "
+            "naming the improvement in " + name + " and how you checked it "
+            "held."
         )
     return (
         "A closed task in the lane's task system linked to the shipped "
@@ -947,9 +1060,11 @@ def _recall_subject(recall: dict | None, slug: str, name: str) -> dict | None:
 
 
 def _subject_what(name: str, low: bool, subject: dict | None = None, *,
-                  evidence_derived: bool = False) -> str:
-    """The WHAT line for a subject card, at the operator's altitude and over
-    whatever recall actually holds.
+                  evidence_derived: bool = False, task_system: Any = None,
+                  repos: Any = ()) -> str:
+    """The WHAT line for a subject card, at the operator's altitude, over
+    whatever recall actually holds, and over the delivery surface the lane
+    itself declared (``_has_execution_surface``).
 
     ALTITUDE REACHES THE WHAT, not only the proof (fixed 2026-07-28). The
     declared-lane line used to end "task → change → verified deploy/close" at
@@ -957,9 +1072,12 @@ def _subject_what(name: str, low: bool, subject: dict | None = None, *,
     failure the PROOF line had already been corrected for, reappearing one
     layer down and gating the card on a permission that belongs to the
     operator's employer."""
+    surface = _has_execution_surface(task_system, repos)
     close = ("write the one-page finding and take it to whoever owns the "
              "decision" if low else
-             "write the one-page finding, then ship the change it argues for")
+             "write the one-page finding, then ship the change it argues for"
+             if surface else
+             "write the one-page finding, then make the change it argues for")
     if subject and len(subject.get("files") or []) >= _MIN_JOIN_FILES:
         shared = subject.get("shared_terms") or []
         span = subject.get("span") or ""
@@ -982,6 +1100,10 @@ def _subject_what(name: str, low: bool, subject: dict | None = None, *,
         return (f"One reviewed, Captain-approved improvement in {name} traced "
                 f"end-to-end: evidence → written proposal → the decision it "
                 f"changed.")
+    if not surface:
+        return (f"One reviewed, Captain-approved improvement in {name} traced "
+                f"end-to-end: what changed, and the receipt showing how you "
+                f"checked it held.")
     return (f"One reviewed, Captain-approved improvement in {name} traced "
             f"end-to-end: task → change → verified deploy/close.")
 
@@ -1128,19 +1250,28 @@ def propose_outcome_cards(answers: dict, focus_text: str | None = None, *,
         while card_id in seen_ids:
             card_id, n = f"{base_id}-{n}", n + 1
         seen_ids.add(card_id)
+        # The lane's OWN declaration of what it has to close or ship. "shipped"
+        # is as software-shaped as "task" and "deploy": a lane declaring
+        # neither a task system nor a repository is told what it did in words
+        # that fit whatever its work is (see _has_execution_surface).
+        task_system = lane.get("task_system")
+        surface = _has_execution_surface(task_system, repos)
         cards.append({
             "id": card_id,
             # A card that names what recall found beats one that names the
             # lane the operator already knows they declared.
             "name": _recall_card_name(
                 name or slug, subject,
-                f"First verifiable improvement shipped in the "
-                f"{name or slug} lane"),
+                "First verifiable improvement "
+                + ("shipped in the " if surface else "in the ")
+                + f"{name or slug} lane"),
             "lane": slug or None,
             "derived_from": "recall" if subject else "answers",
-            "what": _subject_what(name or slug, low, subject),
+            "what": _subject_what(name or slug, low, subject,
+                                  task_system=task_system, repos=repos),
             "why": why,
-            "proof_expected": _subject_proof(name or slug, repos, low),
+            "proof_expected": _subject_proof(name or slug, repos, low,
+                                             task_system=task_system),
             # ONLY WHEN EARNED — a card that cited nothing carries no refs key
             # at all, so a no-recall derivation stays byte-identical to the
             # pre-recall one and an empty list can never read as a citation.
@@ -1210,7 +1341,7 @@ def propose_outcome_cards(answers: dict, focus_text: str | None = None, *,
 
 def _proposals_doc(cards: list[dict], answers: dict, *, now: str,
                    focus_present: bool, estate_present: bool = False,
-                   recall_present: bool = False) -> dict:
+                   recall_present: bool = False, digest: str = "") -> dict:
     cabinet = answers.get("cabinet") or {}
     derived = [ANSWERS_REL] + ([FOCUS_REL] if focus_present else [])
     if estate_present:
@@ -1244,14 +1375,24 @@ def _proposals_doc(cards: list[dict], answers: dict, *, now: str,
             # composed from. Absent means no note was cited, and the briefing
             # says so rather than implying one.
             **({"recall_refs": refs} if refs else {}),
+            # WHO proposed this row, at ROW level. Re-derivation rewrites only
+            # genesis's own drafts; a row another organ merged in through
+            # ``merge_proposals`` is not genesis's to replace, and a row with
+            # no stated proposer is not either.
+            **({"proposed_by": str(card["proposed_by"])}
+               if card.get("proposed_by") else {}),
         })
     return {
         "schema": "cabinet.outcomes-proposed/v1",
         "deployment": str(cabinet.get("id") or ""),
         "proposed_by": "onboarding-genesis",
         "proposed_at": now,
+        # The answers these rows were derived FROM. Absent when it could not be
+        # computed (no answers file on this root) — an absent digest is an
+        # honest "cannot tell" and never reads as staleness.
+        **({ANSWERS_DIGEST_KEY: digest} if digest else {}),
         "derived_from": derived,
-        "outcomes": outcomes,
+        "outcomes": _stamp_row_digests(outcomes),
     }
 
 
@@ -1268,23 +1409,145 @@ _PROPOSALS_HEADER = """\
 """
 
 
+def _preserved_header(raw: str) -> str:
+    """The file's existing leading comment block, so a Captain comment survives
+    a rewrite; the standard header when the file carries none."""
+    head: list[str] = []
+    for line in raw.splitlines():
+        if line.startswith("#") or not line.strip():
+            head.append(line)
+        else:
+            break
+    if any(ln.startswith("#") for ln in head):
+        return "\n".join(head).strip() + "\n"
+    return _PROPOSALS_HEADER.format(marker=GENERATED_MARKER)
+
+
+def _regeneration_safe(row: Any) -> bool:
+    """True when THIS row is genesis's own draft, exactly as genesis wrote it —
+    i.e. re-deriving it destroys nothing anybody chose.
+
+    Four conditions, and every one of them can only REMOVE a row from the
+    re-derivable set. Anything unrecognised is preserved verbatim.
+
+    * ``captain_ratified`` falsy and ``status: draft`` — the row's own
+      propose-only contract. A ratified row is the Captain's answer, never
+      genesis's draft.
+    * ``proposed_by: onboarding-genesis`` at ROW level — genesis re-derives
+      only what genesis proposed. A row another organ merged in is not
+      genesis's to replace, and neither is a row that names no proposer.
+    * a recorded ``proposed_digest`` that STILL MATCHES the row's current
+      content. This is the operator-edited test, and it is deliberately a
+      comparison against what the recorded derivation actually produced rather
+      than a marker somebody has to remember to set: reword one WHAT line, fix
+      one lane name, add one key of your own, and the digest stops matching and
+      the row is preserved verbatim. A row carrying NO digest is preserved too
+      — unknown provenance is not permission to rewrite."""
+    if not isinstance(row, dict):
+        return False
+    if row.get("captain_ratified") or row.get("status") != "draft":
+        return False
+    if str(row.get("proposed_by") or "") != "onboarding-genesis":
+        return False
+    recorded = str(row.get(ROW_DIGEST_KEY) or "")
+    return bool(recorded) and recorded == _row_digest(row)
+
+
+def _stale_proposals(base: Path, digest: str) -> dict | None:
+    """The existing proposals doc WHEN the answers it was derived from have
+    since changed — else None.
+
+    An UNKNOWN is never staleness: no answers file (empty ``digest``), an
+    unparseable or absent proposals file, or a file predating this seam and
+    therefore recording no digest at all, all return None and keep today's
+    write-once behaviour exactly. Only two digests that both exist and differ
+    license a rewrite.
+
+    An ``outcomes`` that is not a LIST is the same honest refusal
+    ``merge_proposals`` already makes (``unmergeable-existing``): the rewrite
+    below iterates that key, so a mangled one would be written back as its own
+    keys — a clobber dressed as a re-derivation, on a file this whole seam
+    exists to protect."""
+    if not digest:
+        return None
+    doc = load_proposals_doc(base)
+    if not isinstance(doc.get("outcomes"), list):
+        return None
+    recorded = str(doc.get(ANSWERS_DIGEST_KEY) or "")
+    return doc if recorded and recorded != digest else None
+
+
+def _rederive_proposals(cards: list[dict], base: Path, doc: dict, *,
+                        answers: dict | None, now: str | None,
+                        focus_present: bool, estate_present: bool,
+                        recall_present: bool, digest: str) -> dict:
+    """Rewrite the staging file from the CURRENT answers, keeping every row
+    that is not genesis's own untouched draft (see ``_regeneration_safe``).
+
+    A pristine draft whose id no longer derives is DROPPED, and that is the
+    point rather than a side effect: the measured defect was a card reading
+    "You staked First Lane as a lane at genesis" surviving the operator
+    replacing that lane, so a re-derivation that only ADDED would leave the
+    stale sentence in the briefing beside the new one. Kept rows win by id, so
+    nothing the operator or the Captain touched is duplicated or moved."""
+    import yaml  # local: keep the module import-light
+    ts = _utc_now_iso(now)
+    path = base / PROPOSALS_REL
+    kept = [r for r in (doc.get("outcomes") or []) if not _regeneration_safe(r)]
+    kept_ids = {str(r.get("id")) for r in kept if isinstance(r, dict)}
+    fresh_doc = _proposals_doc(cards, answers or {}, now=ts,
+                               focus_present=focus_present,
+                               estate_present=estate_present,
+                               recall_present=recall_present, digest=digest)
+    fresh = [r for r in fresh_doc["outcomes"] if str(r.get("id")) not in kept_ids]
+    fresh_doc["outcomes"] = kept + fresh
+    # Stated on the artifact, because an operator who opens this file after a
+    # re-run must be able to see that it WAS re-run and against what.
+    fresh_doc["rederived_at"] = ts
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        raw = ""
+    body = _preserved_header(raw) + yaml.safe_dump(
+        fresh_doc, sort_keys=False, allow_unicode=True, width=100)
+    _atomic_write(path, body)
+    return {"status": "rederived", "path": str(path), "written": True,
+            "kept": len(kept), "rederived": len(fresh)}
+
+
 def write_proposals(cards: list[dict], root: Path | None = None, *,
                     answers: dict | None = None, now: str | None = None,
                     focus_present: bool = False, force: bool = False,
                     estate_present: bool = False,
                     recall_present: bool = False) -> dict:
-    """Write the propose-only staging file. Write-once: an existing file is
-    NEVER overwritten unless ``force`` (the Captain may have edited drafts) —
-    the briefing composes from the file either way."""
+    """Write the propose-only staging file.
+
+    Write-once, WITH ONE NAMED EXCEPTION: an existing file is never overwritten
+    unless ``force``, because the Captain may have edited the drafts — EXCEPT
+    when the file records an ``answers_digest`` that no longer matches the
+    answers on disk, in which case the rows the operator refined away are stale
+    and genesis's own untouched drafts are re-derived from the current answers
+    (``_rederive_proposals``; ratified and edited rows still survive verbatim).
+    Equal or unknown digests keep the write-once behaviour byte-for-byte, so
+    re-running genesis with unchanged answers still does not touch the file."""
     base = Path(root) if root else cabinet_root()
     path = base / PROPOSALS_REL
+    digest = answers_digest(base)
     if path.exists() and not force:
-        return {"status": "kept-existing", "path": str(path), "written": False}
+        stale = _stale_proposals(base, digest)
+        if stale is None:
+            return {"status": "kept-existing", "path": str(path),
+                    "written": False}
+        return _rederive_proposals(cards, base, stale, answers=answers, now=now,
+                                   focus_present=focus_present,
+                                   estate_present=estate_present,
+                                   recall_present=recall_present,
+                                   digest=digest)
     import yaml  # local: keep the module import-light
     doc = _proposals_doc(cards, answers or {}, now=_utc_now_iso(now),
                          focus_present=focus_present,
                          estate_present=estate_present,
-                         recall_present=recall_present)
+                         recall_present=recall_present, digest=digest)
     body = _PROPOSALS_HEADER.format(marker=GENERATED_MARKER)
     body += yaml.safe_dump(doc, sort_keys=False, allow_unicode=True, width=100)
     _atomic_write(path, body)
@@ -1354,22 +1617,15 @@ def merge_proposals(cards: list[dict], root: Path | None = None, *,
                             focus_present=focus_present)["outcomes"]
     for row in shaped:
         row["proposed_at"] = ts
+    # RE-STAMP after ``proposed_at``: a digest taken before a later key is
+    # added describes a row that was never written, and the row would then read
+    # as operator-edited the moment anything checked it.
+    _stamp_row_digests(shaped)
     doc["outcomes"] = rows + shaped
     doc["last_merged_at"] = ts
 
-    # Preserve the existing leading comment block (Captain comments survive);
-    # only a file with no comment head gets the standard header stamped.
-    head_lines = []
-    for line in raw.splitlines():
-        if line.startswith("#") or not line.strip():
-            head_lines.append(line)
-        else:
-            break
-    header = ("\n".join(head_lines).strip() + "\n") if any(
-        ln.startswith("#") for ln in head_lines
-    ) else _PROPOSALS_HEADER.format(marker=GENERATED_MARKER)
-    body = header + yaml.safe_dump(doc, sort_keys=False, allow_unicode=True,
-                                   width=100)
+    body = _preserved_header(raw) + yaml.safe_dump(
+        doc, sort_keys=False, allow_unicode=True, width=100)
     _atomic_write(path, body)
     return {"status": "merged", "path": str(path), "written": True,
             "added": len(shaped), "merged": True}
@@ -1519,7 +1775,8 @@ def _default_run(argv: list[str], *, timeout: int, cwd: str, env=None):
     return subprocess.run(argv, capture_output=True, text=True, timeout=timeout, cwd=cwd, env=env)
 
 
-def _brief_text(status: str, body: str, *, now: str, reason: str | None = None) -> str:
+def _brief_text(status: str, body: str, *, now: str, reason: str | None = None,
+                digest: str = "", supersedes: str = "") -> str:
     fm = [
         "---",
         "schema: cabinet.genesis-brief/v1",
@@ -1529,23 +1786,61 @@ def _brief_text(status: str, body: str, *, now: str, reason: str | None = None) 
         "source: claude-cli-model-knowledge  # no live web at genesis; officers"
         " refresh with sourced research when they wake",
     ]
+    if digest:
+        fm.append(f"{ANSWERS_DIGEST_KEY}: {digest}")
+    if supersedes:
+        fm.append(f"supersedes: {supersedes}")
     if reason:
         fm.append(f"reason: {reason}")
     fm.append("---")
     return "\n".join(fm) + "\n\n" + body.rstrip() + "\n"
 
 
-def _existing_brief_status(path: Path) -> str | None:
+#: How much of a brief's head is read for a frontmatter field. Raised from 400
+#: when the digest and supersedes lines landed: the block already ran ~330
+#: characters, so a 400-char window could have cut the very field a re-run has
+#: to read — a sensor that silently stops seeing what it was pointed at.
+_BRIEF_HEAD_CHARS = 1200
+
+
+def _brief_field(path: Path, key: str) -> str | None:
+    """One frontmatter scalar from an existing brief, or None."""
     if not path.is_file():
         return None
     try:
-        head = path.read_text(encoding="utf-8")[:400]
+        head = path.read_text(encoding="utf-8")[:_BRIEF_HEAD_CHARS]
     except Exception:
         return None
     for line in head.splitlines():
-        if line.startswith("status:"):
+        if line.startswith(key + ":"):
             return line.split(":", 1)[1].strip()
     return None
+
+
+def _existing_brief_status(path: Path) -> str | None:
+    return _brief_field(path, "status")
+
+
+def _supersede_brief(path: Path, base: Path, *, now: str) -> str:
+    """MOVE a superseded brief into the tree's OWN supersede-archive idiom —
+    a dated ``_pre-adopt-<UTC-stamp>/`` sibling on the Library's genesis shelf,
+    exactly the shape ``generate-instance.py`` and ``formation.undo_run`` use.
+    Nothing is deleted, an earlier archive is never clobbered, and the
+    replacement brief names this path in its own ``supersedes:`` frontmatter so
+    the pointer rides the live artifact instead of a marker nobody opens."""
+    stamp = now.replace(":", "").replace("-", "")
+    dest_dir = base / LIBRARY_DIR_REL / f"_pre-adopt-{stamp}"
+    dest = dest_dir / path.name
+    n = 2
+    while dest.exists():
+        dest = dest_dir / f"{path.stem}.{n}{path.suffix}"
+        n += 1
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(path), str(dest))
+    try:
+        return str(dest.relative_to(base))
+    except ValueError:  # a root the archive is not under — say the full path
+        return str(dest)
 
 
 def research_brief(root: Path | None = None, *, run_fn=None, net_check_fn=None,
@@ -1561,23 +1856,47 @@ def research_brief(root: Path | None = None, *, run_fn=None, net_check_fn=None,
     CLI), timeout, empty output — writes the honest IOU note (``IOU_LINE``:
     "research brief queued — will be produced when officers wake") with the
     failure named (names-not-values). Idempotent: a delivered brief is never
-    overwritten; an IOU is retried/upgraded on a later run. Seams (tests):
+    overwritten WHILE IT STILL MATCHES THE ANSWERS IT WAS WRITTEN FROM; an IOU
+    is retried/upgraded on a later run. Seams (tests):
     ``run_fn(argv, timeout=, cwd=, env=)`` replaces the subprocess;
     ``net_check_fn()`` replaces the socket preflight; ``claude_path`` pins the
     binary ('auto' → shutil.which('claude'); None/'' → treated as missing).
-    """
+
+    SUPERSESSION (2026-07-30): the brief prompt is built from the answers
+    (``build_brief_prompt`` reads the cabinet id, the org shape and the lanes
+    and nothing else), so a brief written before the operator refined those
+    answers describes a deployment that no longer exists — measured: a
+    multi-page brief about the literal placeholder lane label, still the org's
+    Library baseline after the operator replaced that lane. When the delivered
+    brief records an ``answers_digest`` that no longer matches, it is MOVED to
+    the dated ``_pre-adopt`` archive (``_supersede_brief`` — nothing deleted)
+    and the brief path runs again, honest IOU included. An absent digest on
+    either side is an unknown, not staleness: an unreadable answers file or a
+    brief predating this seam keeps the delivered artifact untouched, because
+    unknown provenance is not permission to archive somebody's baseline. Cost
+    is bounded to genuine change — the replacement records the new digest, so
+    the next run matches and does nothing."""
     base = Path(root) if root else cabinet_root()
     path = base / BRIEF_REL
     ts = _utc_now_iso(now)
+    digest = answers_digest(base)
+    superseded = ""
 
     existing = _existing_brief_status(path)
     if existing == "delivered":
-        return {"status": "already-delivered", "path": str(path), "written": False}
+        recorded = str(_brief_field(path, ANSWERS_DIGEST_KEY) or "")
+        if not digest or not recorded or recorded == digest:
+            return {"status": "already-delivered", "path": str(path),
+                    "written": False}
+        superseded = _supersede_brief(path, base, now=ts)
 
     def _iou(reason: str) -> dict:
         body = f"# Genesis research brief — IOU\n\n{IOU_LINE}.\n\n(reason: {reason})\n"
-        _atomic_write(path, _brief_text("iou-queued", body, now=ts, reason=reason))
-        return {"status": "iou", "path": str(path), "reason": reason, "written": True}
+        _atomic_write(path, _brief_text("iou-queued", body, now=ts, reason=reason,
+                                        digest=digest, supersedes=superseded))
+        return {"status": "iou", "path": str(path), "reason": reason,
+                "written": True,
+                **({"superseded": superseded} if superseded else {})}
 
     answers = load_answers(base)
     if not answers:
@@ -1617,8 +1936,10 @@ def research_brief(root: Path | None = None, *, run_fn=None, net_check_fn=None,
         return _iou("claude CLI produced no output")
 
     title = "# Genesis research brief\n\n"
-    _atomic_write(path, _brief_text("delivered", title + out, now=ts))
-    return {"status": "delivered", "path": str(path), "written": True}
+    _atomic_write(path, _brief_text("delivered", title + out, now=ts,
+                                    digest=digest, supersedes=superseded))
+    return {"status": "delivered", "path": str(path), "written": True,
+            **({"superseded": superseded} if superseded else {})}
 
 
 # ---------------------------------------------------------------------------
