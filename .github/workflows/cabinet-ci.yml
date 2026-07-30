@@ -968,17 +968,20 @@ jobs:
         # failure by id, never a skip.
         run: python -m pytest cabinet/scripts/world-aesthetic/tests -q
 
-      - name: Cabinet world-capture tests (ground port + check mirror)
-        if: ${{ !cancelled() }}
-        # The capture harness's own arms: ground.py's ramps are the palette's
-        # byte for byte, every surface emits only its own ramp (so the noise
-        # substitution can move a shade but never invent one), each surface
-        # lands in the colour class world_checks.py will read it as, the
-        # mirrored checks are identical to their source, and no check imports
-        # the thing it tests. The PIXEL gate — compose a frame, run all twelve
-        # invariants, then six mutations that each turn exactly one arm red —
-        # runs in the Dashboard vitest step, which is where node lives.
-        run: python -m pytest cabinet/scripts/world-capture/tests -q
+      # MOVED to the `world-frame` job 2026-07-30, and NOT because it was
+      # failing. This job runs 22.4-24.6 min on master against its own 25-min
+      # guard (runs 30569780157 and 30571131626, measured) — it is hugging the
+      # boundary for the second time, and the comment on `timeout-minutes`
+      # above records what that costs: a CANCELLATION that reads as a red with
+      # every step green. Adding ~11s of world-capture arms tipped run
+      # 30579135074 over at 25m07. Raising the guard again would treat the
+      # symptom; moving ~80s of tests into the job that OWNS this directory
+      # (`world-frame`, ~8 min against a 15-min guard) is the fix that also
+      # removes a duplication — `world-frame` was already running
+      # test_frame_judge.py by itself, so half of this suite ran twice per PR.
+      # The tests did not become optional: `world-frame` is a required context
+      # on master (verified 2026-07-30 by `gh api .../branches/master/
+      # protection`) and now runs the WHOLE directory.
 
       # Docs-track-code sweep (G6, hardening loop 2026-07-11): dead repo-path
       # refs + dead relative links in LIVING docs fail CI — the repo rule
@@ -1414,6 +1417,10 @@ jobs:
     # MEASURED ON THIS RUNNER, not on a laptop (run 30565939095, with the
     # `surface` arm): 7m21 end to end — 9s npm ci, 2m18 capture of 16 frames,
     # 42s self-arms, 3m55 judge. (Run 30552467292 before that arm: 7m00.)
+    # 2026-07-30, with the GROUND pass: 12 more captures (28 total). Locally the
+    # capture went 1m00 -> 1m14, so budget ~2m50 here; the `soil` arm itself
+    # judges all twelve ground frames in under a second, so the judge step is
+    # unchanged. Expect ~8m.
     # 15 leaves better than 2x headroom and still kills a genuinely hung browser
     # rather than letting a cancellation read as a test result. Re-budget if it
     # creeps past ~11m rather than letting a cancellation be read as a red arm.
@@ -1424,7 +1431,16 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
         with:
-          node-version: '20'
+          # 20 -> 22, and it is a DECLARATION rather than an upgrade.
+          # `world-capture/resolve-ts.mjs` imports `registerHooks` from
+          # `node:module`, which does not exist on 20 — so `test_meadow_feather`
+          # and `test_ambience_mirror`, which shell out to `emit.ts` through it,
+          # need >= 22. They had been passing in `framework-tests`, which pins NO
+          # node at all and was therefore riding whatever ubuntu-latest happened
+          # to ship. Moving them here made the requirement visible by failing;
+          # it was always there, and the day GitHub changed that image it would
+          # have surfaced as a mystery red in a job that never mentions node.
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: cabinet/dashboard/package-lock.json
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
@@ -1459,8 +1475,19 @@ jobs:
         run: node frame-harness/shoot.mjs --out "$RUNNER_TEMP/world-frames" --killswitch 1
         working-directory: cabinet/dashboard
 
-      - name: Judge them
-        run: python -m pytest cabinet/scripts/world-capture/tests/test_frame_judge.py -q
+      - name: Judge them (every world-capture arm, moved here 2026-07-30)
+        # THE WHOLE DIRECTORY, not just test_frame_judge.py. These arms used to
+        # run in `framework-tests`, which is at 22.4-24.6 min against a 25-min
+        # guard and cancelled on its boundary when they grew; this job runs ~8
+        # min against 15 and it is the one that owns this directory. Same tests,
+        # same PR, a required context either way — and test_frame_judge.py is no
+        # longer running twice per PR. Covers: ground.py's ramps are the
+        # palette's byte for byte, every surface emits only its own ramp, each
+        # surface lands in the colour class world_checks.py will read it as, the
+        # mirrored checks are identical to their source, NO JUDGE IMPORTS THE
+        # THING IT JUDGES (all four of them, discovered rather than listed), and
+        # every frame arm red against the defect it names.
+        run: python -m pytest cabinet/scripts/world-capture/tests -q
       - name: Frame invariants over the captured sweep
         if: ${{ !cancelled() }}
         run: |

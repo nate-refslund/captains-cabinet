@@ -16,7 +16,8 @@ looking at a picture.
 
 ## What runs now
 
-    # capture — 16 real composited browser frames (~1m local, 1m50 on a runner)
+    # capture — 16 real composited browser frames + 12 sprites-free GROUND twins
+    # (~1m15 local, ~2m50 on a runner)
     cd cabinet/dashboard && node frame-harness/shoot.mjs --out /tmp/world-frames --killswitch 1
 
     # judge (~1m40 local, 4m10 on a runner)
@@ -64,7 +65,7 @@ that is correct · `✖ blocked` = would run on the frame, and cannot yet.
 | 8 | `check_era` | ▢ blueprint | Vocabulary vs era. Pure data. |
 | 9 | `check_light` — **grade** | **✔ frame** | Runs on every real DAY frame, cropped to the island (see below). The first time any of the twelve has been put in front of a browser frame. |
 | 9 | `check_light` — **lamp** | ▢ blueprint | "Lit iff the rung says lit" needs the rung. Correctly UNJUDGED on the frame path, and it does not claim the surface. |
-| 10 | `check_terrain` | ✖ blocked | Wants `frame.ground.png` and refuses to fall back to the composite — which is right, and is exactly why it cannot move yet. Its water half is covered meanwhile by `water`. |
+| 10 | `check_terrain` | ✖ blocked, **door now open** | Wants `frame.ground.png` and refuses to fall back to the composite — which is right. The browser now EMITS that layer (`groundOnly`, `?ground=1`), and `soil` is the first arm to read it; wiring `check_terrain`'s own rim/island/coast sweeps onto it is the next step and is not done here, because its `_is_water`/`_is_sand` predicates are absolute-colour and were fitted on daylight (night sea fails `b > 80`), so it would have to run day-only like `grade`. Its water half is covered meanwhile by `water`. |
 | 11 | `check_depth_order` | ✖ blocked | Needs `frame.ids.png` **and** `frame.idsrev.png`. Draw order cannot be recovered from a finished frame; it can be recovered from a forward/reverse pair, and only the renderer can emit them. |
 | 12 | `check_shadows` | ✖ blocked | Needs `ids.png` + `ground.png` to find bare ground under each foot. |
 
@@ -79,6 +80,48 @@ to point them at:
 | `grain` | ambience may not add structure the art did not draw | the dither · a pixel permutation (histogram unchanged) |
 | `water` | ambience may darken water, never brighten or saturate it | sea repainted above the derived cap |
 | `killswitch` | the red wash draws | the wash not drawing |
+| `soil` | **the content law** — the ground may not step further between two adjacent pixels than its own shipped ladder does | the 2026-07-29 dither injected into `terrainField` and re-captured, which every arm above passed |
+
+## The hole `soil` was built for, and what it closed
+
+**Every arm above compares a lit frame with its DAY TWIN, and a twin carries a CONTENT
+defect exactly as the frame does.** Proven 2026-07-30, in the real renderer rather than
+synthetically: corpus sand `(212,156,84)` on a mod-6 diagonal, injected into
+`terrainField` on land only, and the whole sweep re-captured. `determinism`, `ambience`,
+`grain`, `surface`, `grade`, `water` and `killswitch` **all stayed green**, and
+`PALETTE_FOREIGN_MASS` returns no finding on it either — every injected pixel is a
+legitimate corpus tone, which is the same reason the original veil satisfied it by
+construction. This is the 2026-07-29 defect class moved one layer down, from the
+screen-space filter into the world.
+
+`soil` reads the **sprites-free ground layer** — the shipped canvas's own `groundOnly`
+pass, `?ground=1` on the harness, one extra capture per plain cell — and asks a question
+with no second frame in it. `terrainField` quantizes a smooth noise field onto ONE
+shipped `RAMPS` ladder, so two adjacent ground pixels can differ by at most that ladder's
+own widest rung (23/channel at day, 48 dawn, 40 dusk, 40 night — read from the artifact
+`ambience.ts` emits, so a re-lit world moves the bound with it). A tile where more than
+15% of adjacent pairs step further than that is dithered; more than 45% of judged tiles
+dithered is red.
+
+| | worst lawful cell | the injected defect |
+|---|---|---|
+| day | 23.9% (z0.5) · 7.2% (z1) · 2.9% (z2) | — · **90.0%** · **88.8%** |
+| dawn | 10.7% · 2.6% · 0.5% | — · **63.2%** · **59.7%** |
+| dusk | 11.1% · 2.5% · 0.6% | — · **65.1%** · **61.1%** |
+| night | 0.0% · 0.0% · 0.0% | — · 0.3% · 0.4% |
+
+**Its two holes, measured in the same run and not deduced:**
+
+* **Night is uncovered.** The shipped night grass ladder itself steps 40 per channel —
+  `(60,52,36) → (52,60,76)`, the split-tone light plus the native snap taking the
+  mid-tones blue while the dark end stays brown — so the derived bound is wide enough
+  that the same defect reads 0.3–0.4%. Not fixable by moving a number: it needs a
+  PER-LADDER bound, which needs the ground classified per pixel, which needs the id
+  buffer the engine does not emit.
+* **z = 0.5 is unproven, in neither direction.** The injection reached only 0.27% of that
+  frame's pixels (against 5.5% at z1 and 19.9% at z2), so the ground at the widest shot is
+  substantially not `terrainField` output and that cell tested nothing. It is not
+  evidence that the arm is blind there; it is the absence of evidence either way.
 
 ## Where the numbers come from
 
@@ -145,10 +188,15 @@ the browser emits none.
 
 The engine's container tree makes the first cheap and the others real work:
 
-* **`ground.png`** — hide `propLayer`, the two shadow graphics, `placeholderG`, `dynG`, `fxG`
-  and `weatherG`, render, extract. Everything under `lit` that is ground is already one
-  subtree. This is a small, honest capture door and it unblocks the pixel halves of
-  `check_terrain`, `check_on_road` and `check_paint_fidelity`.
+* **`ground.png`** — **BUILT 2026-07-30.** `groundOnly` on `EngineCanvas` hides
+  `propLayer`, the two shadow graphics, `placeholderG`, `dynG`, `fxG` and `weatherG` at
+  boot and changes nothing else; the harness takes it off `?ground=1` and `shoot.mjs`
+  captures one per plain cell as `<stem>.ground.png`, which is the name `check_terrain`
+  already looks for. Expressed as container visibility rather than as a branch inside
+  `draw()` on purpose: every draw call, transform and filter stays exactly where it was,
+  so the ground pass is the SAME code the product runs. `soil` reads it. The pixel halves
+  of `check_terrain`, `check_on_road` and `check_paint_fidelity` are now unblocked but
+  not yet wired — see the `check_terrain` row above for what that costs.
 * **the two id buffers** — every sprite would have to be drawn as a unique flat colour in the
   same pass, in the same order, twice. Pixi `tint` multiplies a texture rather than replacing
   it, so this means swapping textures, not tinting. That is the expensive half, and it unblocks

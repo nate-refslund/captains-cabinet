@@ -197,20 +197,16 @@ async function main() {
     }
   }
 
-  for (const c of cells) {
-    const q = new URLSearchParams({
-      state: STATE,
-      hour: String(c.hour),
-      z: String(c.z),
-      w: String(W),
-      h: String(H),
-      weather: c.weather,
-      ...(c.killswitch ? { killswitch: '1' } : {}),
-    })
-    const bucket = bucketOf(c.hour)
-    const name = `${STATE}-${bucket}-h${c.hour}-z${String(c.z).replace('.', '_')}-${c.weather}${c.killswitch ? '-ks' : ''}.png`
-    const file = join(OUT, name)
-
+  /**
+   * One navigation, one settled PNG, every readiness assertion in between.
+   *
+   * Extracted so the GROUND pass goes through the identical door as the
+   * composite. A second, shorter capture path for the ground frame would be a
+   * second opinion about when the world has finished arriving — and a ground
+   * frame captured one frame early is a frame with half its terrain missing,
+   * which the vocabulary arm would read as a lawful (very small) world.
+   */
+  async function shoot(q, name, file) {
     await page.goto(`${base}/?${q}`, { waitUntil: 'load' })
     await page.waitForFunction(
       () => window.__frameBooted === true || typeof window.__frameError === 'string',
@@ -253,8 +249,39 @@ async function main() {
     if (fatal.length) throw new Error(`${name}: renderer raised ${JSON.stringify(fatal)}`)
 
     await settled(page, file)
-    frames.push({ file, state: STATE, hour: c.hour, bucket, zoom: c.z, weather: c.weather, killswitch: c.killswitch, w: W, h: H, issues })
     console.log(`  shot ${name}`)
+    return issues
+  }
+
+  for (const c of cells) {
+    const params = {
+      state: STATE,
+      hour: String(c.hour),
+      z: String(c.z),
+      w: String(W),
+      h: String(H),
+      weather: c.weather,
+      ...(c.killswitch ? { killswitch: '1' } : {}),
+    }
+    const bucket = bucketOf(c.hour)
+    const stem = `${STATE}-${bucket}-h${c.hour}-z${String(c.z).replace('.', '_')}-${c.weather}${c.killswitch ? '-ks' : ''}`
+    const name = `${stem}.png`
+    const file = join(OUT, name)
+    const issues = await shoot(new URLSearchParams(params), name, file)
+
+    /**
+     * THE GROUND TWIN — the same cell with every layer above the terrain
+     * hidden, and the only frame in this sweep that can be judged WITHOUT a
+     * comparison. Captured for the plain cells only: the killswitch wash is a
+     * screen-space pass and already has a differential arm, and a ground frame
+     * under it would carry the wash into the vocabulary the arm checks.
+     */
+    let ground = null
+    if (!c.killswitch) {
+      ground = join(OUT, `${stem}.ground.png`)
+      await shoot(new URLSearchParams({ ...params, ground: '1' }), `${stem}.ground.png`, ground)
+    }
+    frames.push({ file, ground, state: STATE, hour: c.hour, bucket, zoom: c.z, weather: c.weather, killswitch: c.killswitch, w: W, h: H, issues })
   }
 
   // ONE cell re-shot, and asserted identical. Every day-vs-bucket arm in the

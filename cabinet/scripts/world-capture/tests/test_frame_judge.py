@@ -125,8 +125,35 @@ def lit_frame(day: Path, out: Path, bucket: str) -> Path:
     return out
 
 
+GROUND_SEA = ambience_py.sea("day")
+GROUND_GRASS = ambience_py.ramps("day")["grass"]
+
+
+def ground_frame(path: Path, *, land: bool = True, mutate=None) -> Path:
+    """A lawful GROUND layer: open sea with one grass patch on it.
+
+    SHAPED LIKE `terrainField`'s OUTPUT, which is the whole subject of the soil
+    arm: a smooth field quantized onto ONE shipped ladder, so every adjacent
+    pair moves at most one rung. Anything wider than the ladder's own widest
+    rung is, by construction, not something the ground generator can draw.
+    """
+    im = Image.new("RGB", (W, H))
+    px = im.load()
+    for y in range(H):
+        for x in range(W):
+            if land and 48 <= x < W - 48 and 32 <= y < H - 32:
+                px[x, y] = GROUND_GRASS[min(len(GROUND_GRASS) - 1, (x - 48) // 48)]
+            else:
+                px[x, y] = GROUND_SEA[(x // 48 + y // 48) % len(GROUND_SEA)]
+    im.save(path)
+    if mutate:
+        mutate(path)
+    return path
+
+
 def sweep(tmp: Path, *, bucket="night", hour=2, zoom=1.0, killswitch=False,
-          mutate=None, twin_mutate=None, day_kw=None, lit_from=None) -> Path:
+          mutate=None, twin_mutate=None, day_kw=None, lit_from=None,
+          ground=True, ground_kw=None) -> Path:
     """A whole capture directory + manifest, exactly as shoot.mjs writes one."""
     d = tmp / "sweep"
     d.mkdir(exist_ok=True)
@@ -134,10 +161,19 @@ def sweep(tmp: Path, *, bucket="night", hour=2, zoom=1.0, killswitch=False,
     lit = lit_frame(day, d / "lit.png", lit_from or bucket)
     if mutate:
         mutate(lit)
+    # The ground layer is captured per cell and carries no ambience of its own
+    # here: the day cell's is the raw ladder and the lit cell's is that ladder
+    # remapped, which is what the renderer's own `groundOnly` pass produces.
+    dg = lg = None
+    if ground:
+        dg = ground_frame(d / "day.ground.png", **(ground_kw or {}))
+        lg = lit_frame(dg, d / "lit.ground.png", lit_from or bucket)
     frames = [
-        {"file": str(day), "state": "t", "hour": 13, "bucket": "day", "zoom": zoom,
+        {"file": str(day), "ground": dg and str(dg), "state": "t", "hour": 13,
+         "bucket": "day", "zoom": zoom,
          "weather": "sun", "killswitch": False, "w": W, "h": H, "issues": []},
-        {"file": str(lit), "state": "t", "hour": hour, "bucket": bucket, "zoom": zoom,
+        {"file": str(lit), "ground": lg and str(lg), "state": "t", "hour": hour,
+         "bucket": bucket, "zoom": zoom,
          "weather": "sun", "killswitch": False, "w": W, "h": H, "issues": []},
     ]
     if killswitch:
@@ -493,6 +529,81 @@ def test_a_manifest_naming_a_missing_frame_is_exit_2(tmp_path):
     (d / "lit.png").unlink()
     p = subprocess.run([sys.executable, str(JUDGE), str(d)], capture_output=True, text=True)
     assert p.returncode == 2
+
+
+# ── soil: the content law, the only arm here that needs no twin ─────────────
+def _content_dither(p: Path) -> None:
+    """THE DEFECT THIS ARM EXISTS FOR, in the shape it was measured in.
+
+    Corpus sand (212,156,84) on a mod-6 diagonal, over LAND only, drawn into
+    the CONTENT rather than over it. Measured 2026-07-30 in the real renderer
+    (injected into `terrainField` and re-captured): `ambience`, `grain`,
+    `surface`, `grade`, `water`, `killswitch` and `determinism` ALL STAYED
+    GREEN — every one of them compares a frame with its day twin, and the twin
+    carries a content defect exactly as the frame does. `PALETTE_FOREIGN_MASS`
+    returns no finding either, because every injected pixel is a legitimate
+    corpus tone. This is the arm that goes red on it.
+    """
+    im = Image.open(p).convert("RGB")
+    px = im.load()
+    sea = set(GROUND_SEA)
+    for y in range(im.size[1]):
+        for x in range(im.size[0]):
+            if (x + y) % 6 == 0 and px[x, y] not in sea:
+                px[x, y] = (212, 156, 84)
+    im.save(p)
+
+
+def test_soil_red_on_a_content_dither_no_twin_arm_can_see(tmp_path):
+    """And the other arms stay GREEN on the same sweep — which is the point."""
+    rc, rep = run(sweep(tmp_path, ground_kw={"mutate": _content_dither}))
+    assert rc != 0
+    red = [r for r in arm(rep, "soil") if not r["ok"]]
+    assert red, arm(rep, "soil")
+    # the composite is untouched, so every twin-comparing arm must still pass —
+    # a soil red that came with an ambience red would prove nothing about which
+    # arm saw the defect.
+    for other in ("ambience", "grain", "surface", "grade", "water", "determinism"):
+        assert all(r["ok"] for r in arm(rep, other)), (other, arm(rep, other))
+
+
+def test_soil_green_on_a_lawful_ground_layer(tmp_path):
+    """An arm that reds on everything is not a sensor either."""
+    rc, rep = run(sweep(tmp_path, killswitch=True,
+                        twin_mutate=lambda p: _desaturate(p, 0.35)))
+    assert [r for r in arm(rep, "soil")], rep["results"]
+    assert all(r["ok"] for r in arm(rep, "soil")), arm(rep, "soil")
+    assert rc == 0, [r for r in rep["results"] if not r["ok"]]
+
+
+def test_soil_unjudged_rather_than_green_without_a_ground_layer(tmp_path):
+    """The composite may not stand in for the sprites-free layer: props and
+    figures are ART, and art has edges. A sweep with no ground pass has not
+    asked the content question and must not report that it did."""
+    rc, rep = run(sweep(tmp_path, ground=False))
+    assert rc != 0
+    got = arm(rep, "soil")
+    assert got and all(not r["ok"] and "UNJUDGED" in r["detail"] for r in got), got
+
+
+def test_soil_unjudged_when_the_frame_holds_almost_no_ground(tmp_path):
+    """The degenerate end. A share computed over three tiles is noise, and a
+    green computed on it is a green about nothing."""
+    rc, rep = run(sweep(tmp_path, ground_kw={"land": False}))
+    assert rc != 0
+    got = arm(rep, "soil")
+    assert got and all("UNJUDGED" in r["detail"] for r in got), got
+
+
+def test_the_soil_bound_is_the_shipped_ladder_and_not_a_constant(tmp_path):
+    """The per-pair bound is DERIVED. If the ramps move, it moves with them —
+    which is the property that makes this a law rather than a tuned number."""
+    per_bucket = {b: judge._ladder_step(b) for b in ambience_py.BUCKETS}
+    assert len(set(per_bucket.values())) > 1, per_bucket
+    for b, v in per_bucket.items():
+        widest = max(max(abs(t[i + 1][k] - t[i][k]) for k in range(3))
+                     for t in ambience_py.ramps(b).values() for i in range(len(t) - 1))
+        assert v == widest, (b, v, widest)
 
 
 # ── mutations ───────────────────────────────────────────────────────────────

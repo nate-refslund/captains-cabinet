@@ -42,7 +42,9 @@ measurements: `designs/dock-pet-2026-07-30.md` in the meta workspace. Tests:
 bash cabinet/scripts/build-companion.sh
 open "bin/Cabinet Companion.app"        # menu bar only — LSUIElement, no Dock icon
 
-# with the desk pet (menu bar + a floating officer beside the Dock):
+# the desk pet (a floating officer beside the Dock) is a MENU item —
+# open the tray menu and pick "Show Desk Pet"; the choice is remembered.
+# The flag below is for scripts and proof surfaces, not for the Captain:
 "bin/Cabinet Companion.app/Contents/MacOS/cabinet-companion" --pet &
 ```
 
@@ -121,12 +123,23 @@ loop — it is click-only. One `ProcessInfo.beginActivity(.background)` token is
 held for the app's lifetime (App Nap); if throttling happens anyway, the 120s
 staleness rule renders AMBER.
 
-## The desk pet (`--pet`)
+## The desk pet
 
 A borderless, always-on-top window holding one officer's 16x32 sprite, standing
 on the Dock's top edge. The Captain chose this surface over a real
 `NSDockTile` on 2026-07-30, knowing the trade: crisper (one resample instead of
 two) and able to roam, but not literally in the Dock.
+
+**Turn it on from the menu — no terminal.** The tray menu carries
+**Show Desk Pet** whether or not a pet exists yet; the pet is born on the first
+Show, so a Captain who never wants one pays for no window, no sheet and no
+clock. The choice persists (`UserDefaults`, key `deskPetEnabled`) and is
+honoured at launch, so it survives a relaunch, a reboot and the launch-at-login
+item — which passes no argv, and is why a flag alone could never have been the
+answer. **Hide Desk Pet** stops the clock as well as hiding the window.
+
+The flags below still work and still win over the preference; they exist for
+proof surfaces and for driving the pet from a script.
 
 ```bash
 cabinet-companion --pet [--pet-officer <slug>] [--pet-scale <1..8>]

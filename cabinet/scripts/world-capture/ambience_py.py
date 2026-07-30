@@ -104,8 +104,33 @@ def ramp(bucket: str, name: str) -> list[tuple[int, int, int]]:
     """One shipped RAMPS ladder as it appears in this bucket."""
     row = derived().get(bucket)
     if row is None:
-        raise ValueError(f"{bucket} has no ambience — the ramp is unchanged")
+        return [tuple(c) for c in _ramps_day()[name]]
     return [tuple(c) for c in row["ramps"][name]]
+
+
+@lru_cache(maxsize=1)
+def _ramps_day() -> dict:
+    return json.loads(DERIVED.read_text())["ramps_day"]
+
+
+def ramps(bucket: str) -> dict[str, list[tuple[int, int, int]]]:
+    """EVERY shipped ground ladder as it appears in this bucket.
+
+    The ground layer's whole tone ladder, which is what a content check needs
+    and what a per-surface one cannot supply: `terrainField` quantizes a noise
+    field onto ONE of these, so the largest step the ground takes between two
+    adjacent pixels is bounded by the largest step inside a single ladder.
+
+    `day` returns the UNSHADED ladders (`ramps_day` in the artifact) rather than
+    raising: ambience is a no-op at day, so the day ground is the raw ladder,
+    and a caller that has to special-case the one bucket with no ambience would
+    end up re-deriving the day colours somewhere else.
+    """
+    if bucket not in BUCKETS:
+        raise ValueError(f"unknown bucket {bucket!r}")
+    row = derived().get(bucket)
+    src = _ramps_day() if row is None else row["ramps"]
+    return {name: [tuple(c) for c in tones] for name, tones in src.items()}
 
 
 # iso-terrain.ts RAMPS.sea, dark -> light. The ONE place these five tones are
