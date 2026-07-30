@@ -146,6 +146,12 @@ def test_the_operators_own_name_is_demoted_and_never_deleted():
     assert after[0]["examples"]
     # and genuinely demoted: strictly lower score than without the identity
     assert after[0]["score"] < before[0]["score"]
+    # A DEMOTION IS A PROPORTION, NOT AN ANNIHILATION. A factor of zero also
+    # satisfies "still ranked, still carries its evidence" while sorting the
+    # estate's own name below every candidate in the list — deletion by
+    # arithmetic, wearing this arm's green tick. The score staying positive is
+    # what makes the demoted candidate reachable at all.
+    assert after[0]["score"] > 0
 
 
 def test_a_name_in_one_connector_is_never_a_candidate():
@@ -434,3 +440,39 @@ def test_rows_come_from_what_was_already_granted_and_nothing_else():
     assert identities == ["Acme"]
     assert salience.rows_from_state({}) == ([], [])
     assert salience.rows_from_state(None) == ([], [])
+
+
+def test_the_owner_stamped_on_a_row_is_an_identity_string_too():
+    """UNSENSORED UNTIL NOW, and load-bearing. A connector's identity call asks
+    the CREDENTIAL who it is; the owner stamped on each row says who the estate
+    belongs to, and measured on a live estate those were different words — the
+    owner of most of one connector's rows never entered the demotion set, so the
+    estate's own name was read as a candidate rather than as its own name.
+
+    Removing this harvest left the whole salience suite green while changing the
+    live outcome, which is a disabled sensor by this program's own definition.
+    Both properties are pinned here: the owner ARRIVES, and it arrives ONCE — the
+    field is read per ROW, so an estate stamping one owner across hundreds of
+    rows must not hand its caller hundreds of copies of one fact.
+    """
+    rows = [{"connector": "repo", "name": f"quay-{i}", "actors": ["Harbour Trust"]}
+            for i in range(40)]
+    rows.append({"connector": "repo", "name": "quay-x",
+                 "actors": ["Harbour Trust", "Lantern Works"]})
+    _, identities = salience.rows_from_state(
+        {"salience_rows": {"rows": rows, "identities": ["Given Name"]}})
+    assert identities == ["Given Name", "Harbour Trust", "Lantern Works"]
+
+    # and it reaches the ranking as a DEMOTION, which is the only reason the
+    # harvest exists: the same string is the estate's own name and a real target
+    estate = _spread("tracker", ["Harbour Trust plan", "Harbour Trust ops"]) + \
+        _spread("repo", ["harbour-trust-site"], start_day=6)
+    stamped = [dict(row, actors=["Harbour Trust"]) for row in estate]
+    plain = salience.rank(estate)
+    rows_out, harvested = salience.rows_from_state(
+        {"salience_rows": {"rows": stamped}})
+    demoted = salience.rank(rows_out, identities=harvested)
+    carrying = [c for c in demoted["clusters"] if "harbour" in c["tokens"]]
+    assert carrying and carrying[0]["demoted"] is True
+    assert carrying[0]["score"] < [c for c in plain["clusters"]
+                                   if "harbour" in c["tokens"]][0]["score"]
