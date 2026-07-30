@@ -182,3 +182,26 @@ Touching `cabinet/config/cognitive-architecture-contract.yml` moves the COG-4 fr
 it is re-bound in `shared/interfaces/reviews/cognitive-core-phase-4-review.md` in the following
 commit, with a dated note naming the one in-scope path that moved and confirming no COG-4
 implementation byte did.
+
+---
+
+## 6. Addendum — cp1a, second attack pass (same branch, commit 3)
+
+The Q2 sweep above was run against the *caller*. Re-run against the **writer**, one more degenerate
+end fell out and is fixed in commit 3:
+
+`write_proposals(cards=[], …)` on a root whose answers had changed took the stale branch, KEPT every
+row it could not rewrite and REPLACED the rest with nothing — a wipe wearing a re-derivation's name.
+`run_genesis_proposal` returns `no-cards` before it can happen, and "no production caller reaches
+it" is exactly the argument this program does not accept: the rule now lives on the writer, so a
+caller that does not know it cannot break it.
+
+- Guard: `stale = _stale_proposals(base, digest) if cards else None` — a modified line, **zero**
+  net non-comment lines, so the census bump above is unchanged (`76505 <= 76505`) and the COG-4
+  binding does not move (`framework/onboarding/genesis.py` is not an in-scope path).
+- Arm: `test_an_empty_card_list_never_deletes_the_drafts`, which also asserts the SAME root still
+  re-derives with real cards, so the guard cannot pass by disabling the seam it protects.
+- Totals move to 25 new arms / 107 passed.
+
+The scope digest above binds commit 1. Commit 3 is sub-threshold (~40 changed lines) and carries no
+artifact of its own by design; this section is the record of what it changed and why.

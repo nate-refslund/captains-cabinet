@@ -1812,3 +1812,24 @@ def test_an_estate_card_gets_the_neutral_proof_too(tmp_path):
     for token in _SOFTWARE_SHAPED:
         assert token not in card["proof_expected"].lower(), card["proof_expected"]
     assert "org journal" in card["proof_expected"]
+
+
+def test_an_empty_card_list_never_deletes_the_drafts(tmp_path):
+    """Degenerate end, found by attacking the writer rather than the caller:
+    the re-derivation KEEPS what it cannot rewrite and REPLACES the rest, so an
+    empty card list would drop every pristine draft and add nothing back — a
+    wipe wearing a re-derivation's name. run_genesis_proposal returns
+    `no-cards` before it gets here; the guard is on the writer because a caller
+    that does not know the rule cannot break it."""
+    _write_answers(tmp_path, DEFAULTS_ANSWERS)
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-30T00:00:00Z")
+    path = tmp_path / genesis.PROPOSALS_REL
+    before = path.read_bytes()
+    _write_answers(tmp_path, REFINED_ANSWERS)
+    out = genesis.write_proposals([], tmp_path, answers=REFINED_ANSWERS)
+    assert out["status"] == "kept-existing", out
+    assert path.read_bytes() == before
+    # …and the same root with real cards still re-derives, so the guard cannot
+    # pass by disabling the seam.
+    assert genesis.run_genesis_proposal(
+        tmp_path, now="2026-07-30T01:00:00Z")["status"] == "rederived"

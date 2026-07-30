@@ -1534,7 +1534,12 @@ def write_proposals(cards: list[dict], root: Path | None = None, *,
     path = base / PROPOSALS_REL
     digest = answers_digest(base)
     if path.exists() and not force:
-        stale = _stale_proposals(base, digest)
+        # NOTHING TO RE-DERIVE WITH IS NOT A LICENCE TO DELETE. An empty card
+        # list would drop every pristine draft and add nothing back — a wipe,
+        # not a re-derivation. run_genesis_proposal already returns `no-cards`
+        # before it gets here, and that is exactly why this guard belongs on
+        # the writer: a caller that does not know the rule cannot break it.
+        stale = _stale_proposals(base, digest) if cards else None
         if stale is None:
             return {"status": "kept-existing", "path": str(path),
                     "written": False}
