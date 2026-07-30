@@ -195,9 +195,17 @@ def test_every_gate_job_is_present(workflow):
     the ``gitleaks`` job (cost, not coverage — see
     ``docs/plans/ci-bill-2026-07-29.md``). The count moved into the name once
     and rotted immediately; the property is the SET, so the name no longer
-    carries a number."""
+    carries a number.
+
+    ``world-frame`` joined on 2026-07-30 (PR #316): it captures 16 real
+    composited browser frames and judges them, and it carries the SAME guard
+    condition as every other gate job here, so the arms below cover it on
+    exactly the terms they cover the rest. Adding it to this set is the only
+    correct response to that test going red — the set really did change, by
+    design, and the pin exists to make that a deliberate act."""
     expected = {
         "ci", "framework-tests", "null-hatch", "cognitive-phase4", "gitleaks",
+        "world-frame",
     }
     assert set(_gate_jobs(workflow)) == expected
 
