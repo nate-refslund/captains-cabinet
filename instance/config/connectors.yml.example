@@ -15,6 +15,21 @@
 # ranked by what RECURS across your systems, and you are asked which one to open
 # first. Depth is spent only where you point.
 #
+# WHO YOU ARE IS ASKED, NEVER READ OFF THE CREDENTIAL. A token issued to an
+# integration answers "who am I" with a service account nobody sits at, so the
+# `identity:` block below is used only for what the estate calls ITSELF. Which
+# of the actors is YOU comes from you: after the sweep the cabinet lists the
+# account identifiers each connector actually stamped on its rows and asks you
+# to pick yours (`record_operator_identity`). Picked, it is matched WHOLE and
+# EXACT — never by resemblance — and every claim about your work then carries
+# its share ("3 of 56 here are yours, 53 carry another actor"). Skip a
+# connector and it keeps saying it cannot tell, which is the honest answer.
+#
+# DECLARE `actor_field` OR NOTHING THERE CAN EVER BE YOURS. A connector with no
+# actor path returns rows nobody is attached to, so even your own account
+# attributes nothing in it — the cabinet says so per connector rather than
+# leaving you to notice.
+#
 # ------------------------------------------------------------------
 # THE CEILING, which is not configurable and not negotiable
 # ------------------------------------------------------------------
@@ -117,11 +132,14 @@ connectors:
   #   page:
   #     start: 1
   #     max_pages: 6
+  #     actor_field: creator.name    # who made the thing. Declare SOMETHING here
+  #                                  # or nothing in this connector can ever be
+  #                                  # attributed to you (see the header).
   #   identity:                      # optional, and worth declaring:
   #     url: https://api.example.test/graphql   # the account/owner names the
   #     method: POST                            # ranker DEMOTES, so your own
   #     json:                                   # name does not win every rank
   #       query: "query { me { name } account { name } }"
-  #     value_paths:
-  #       - data.me.name
-  #       - data.account.name
+  #     value_paths:                            # NOT who you are: a token can
+  #       - data.me.name                        # belong to an integration, so
+  #       - data.account.name                   # attribution is asked, not read

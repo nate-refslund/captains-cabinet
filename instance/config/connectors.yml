@@ -18,10 +18,19 @@ connectors:
       url: https://api.monday.com/v2
       method: POST
       json:
-        query: "query { boards (limit: 100, page: {page}, state: active) { id name updated_at } }"
+        query: "query { boards (limit: 100, page: {page}, state: active) { id name updated_at creator { name } } }"
       items_path: data.boards
       name_field: name
       updated_field: updated_at
+      # WITHOUT AN ACTOR PATH, NOTHING HERE CAN EVER BE THE OPERATOR'S. Measured
+      # 2026-07-30: this connector returned 532 rows and zero actors, so even a
+      # recorded identity attributed nothing — "I cannot tell which of this is
+      # yours" was permanent and unfixable by answering. The account's own name
+      # is what this source stamps on a row; it is matched WHOLE and exact
+      # against what the operator picked from these very strings, never by
+      # resemblance, so a colleague whose name merely looks similar is not the
+      # operator. Still a read: one more field on the same query.
+      actor_field: creator.name
     page:
       start: 1
       size: 100
@@ -79,6 +88,12 @@ connectors:
       # about the one connector here that dates every single row.
       updated_field: updatedAt
       date_encoding: epoch_ms
+      # Same gap as the tracker above: 58 rows, no actor, so nothing here could
+      # be attributed to anyone. This path is the deployment account's own
+      # username — an account identifier rather than a display name — and it is
+      # already in the response this call returns, so it costs no extra request.
+      # A project with no deployment resolves to no actor, which stays absent.
+      actor_field: latestDeployments.0.creator.username
     page:
       start: 1
       size: 100

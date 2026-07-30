@@ -1780,6 +1780,68 @@ temporary_allowances:
       recorded source-adapter-boundary debt) so the executor, the ceiling and
       the extraction stop living beside the local probes — or COG-7 compaction
       brings production non-comment lines below the pinned baseline
+  - phase: onboarding-operator-identity
+    budget: framework_production_noncomment_lines
+    additional: 262
+    reason: >-
+      A READER WITH NO WRITER, WHICH IS AN UNREACHABLE BRANCH. The who-and-when
+      unit one landing earlier resolves the operator per connector from the
+      ONBOARDING RECORD and withholds every attribution where it cannot —
+      correct, and inert: nothing anywhere ASKED who the operator is in each
+      system, so no sequence of operator actions could put a handle in the
+      record. Measured on the live 665-row estate at 31e3d6b2: four of four
+      connectors `basis: unresolved`, `operator.names: []`, every claim withheld.
+      Honest, and it means nothing the cabinet read was known to belong to the
+      person onboarding — the strongest relevance evidence there is, unusable.
+      The same structural defect `entry_grants` carried before `_entry_registry`
+      became its writer. What the lines buy, each pinned by an arm that fails
+      against the pre-change tree (21 of 22 new arms RED at 31e3d6b2; the
+      twenty-second is the per-connector guard that must stay green in both
+      directions). (1) THE ASK — `identity_question` names every connector that
+      cannot recognise the operator and offers the ESTATE'S OWN account
+      identifiers as candidates, because the answerable form of "which of these
+      is you" is a tap on strings the sources actually stamp on rows, not a
+      spelling test; it returns None once every connector resolves, so a settled
+      question is never printed. (2) THE WRITER — journey action
+      `record_operator_identity`, refusing a connector no sweep read (a silent
+      no-op reads to the operator as "I told it who I am" while every claim stays
+      withheld), an empty or shapeless answer, and any recording before anything
+      has been read; the answer merges with the interview's answers file, later
+      statement winning, and is re-derived in the same action so it visibly goes
+      somewhere. NEVER from the credential: each connector's identity call asks
+      the TOKEN who it is, one of them on this estate answers with an
+      integration, and those strings stay what they are good for — estate
+      identity, for demotion. (3) THE SHARE TRAVELS WITH THE BASIS —
+      `attribution_share` counts mine / another actor / no actor at all per
+      connector and the statement carries the numbers, so "your top project"
+      (measured wrong on a live estate, where the busiest work was a colleague's)
+      is not a sentence this lane can produce. (4) THE DEGENERATE ENDS STAY
+      HONEST — a recorded handle matching nothing is reported as matching
+      nothing rather than repaired; a connector reporting no actor at all says
+      so; one connector resolving never resolves its neighbour. (5) EXACT, NEVER
+      A LOOK-ALIKE — `_fold` casefolds and collapses whitespace and does nothing
+      else, so `aperson-bot`, `aperson.deploy` and `not-aperson` are three other
+      accounts; a near-match works on one estate and attributes a colleague on
+      the next, and a wrong attribution reads exactly like a right one. ZERO new
+      modules and ZERO bijection-class mass: the whole unit lands in the two
+      organs that already own the question. Re-measured live after landing: four
+      connectors, 665 rows, 14 read-only calls, three connectors resolved with
+      their shares (1 of 531, 3 of 56, 28 of 58) and the fourth still withheld
+      because its only actor is an organisation identifier. +246 measured with
+      cognitive-architecture-census.py at this landing rather than carried;
+      majority docstring prose counted honestly rather than reformatted into
+      comments to duck the budget. (+246 at the first landing, +16 for two
+      defects found by attacking it: the candidate note counted the CAPPED offer
+      list, so a connector with thirty colleagues reported twelve accounts — the
+      cap described as a fact about the operator's estate — and a row carrying no
+      connector name put the empty string in the known set, so an empty key was
+      accepted as a system nobody has.)
+    owner: onboarding-plane
+    sunset: '2027-01-30'
+    deletion_gate: >-
+      the ask moves behind the shared source-adapter seam alongside the read
+      lane it belongs to (the recorded source-adapter-boundary debt), or COG-7
+      compaction brings production non-comment lines below the pinned baseline
 expansions:
   - member: framework/onboarding/salience.py
     member_class: framework_production_modules

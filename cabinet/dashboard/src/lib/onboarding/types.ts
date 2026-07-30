@@ -15,6 +15,12 @@ export type OnboardingAction =
    * a surface can trigger the read but can never widen it.
    */
   | 'gather_connectors'
+  /**
+   * Records which account is the operator in each connector. Surfaces render a
+   * PICKER over the candidates the sweep reported, never a free-text field: the
+   * estate's own account identifiers are what the core matches, exactly.
+   */
+  | 'record_operator_identity'
   | 'ratify_charter'
   | 'continue'
   | 'pause'
@@ -60,7 +66,25 @@ export interface OnboardingOption {
    * invitation's clothes, so the core says which option needs a field and
    * every surface obeys — a tap-only surface must not offer it as a button.
    */
-  input?: 'seed'
+  input?: 'seed' | 'handles'
+  /**
+   * Set on `record_operator_identity`: the connectors that still cannot
+   * recognise the operator, each with the account identifiers its own rows
+   * carried. A surface renders a PICKER over these, never a blank field —
+   * the core matches whole and exact, so a spelling the estate does not use
+   * resolves the operator and attributes nothing.
+   */
+  connectors?: OnboardingIdentityAsk[]
+}
+
+/** One connector that cannot yet tell which of its actors is the operator. */
+export interface OnboardingIdentityAsk {
+  connector: string
+  rows: number
+  candidates: Array<{ identifier: string; rows: number }>
+  /** True when the connector reported no actor at all, so no pick can help. */
+  reports_no_actor: boolean
+  note: string
 }
 
 /**
@@ -102,6 +126,12 @@ export interface OnboardingEntryPlan {
     }
   }
   cannot_know: Array<{ subject: string; verdict: string; statement: string }>
+  /** Null once every connector resolves — a settled question is never printed. */
+  identity_question: {
+    question: string
+    connectors: OnboardingIdentityAsk[]
+    is_a_question: true
+  } | null
   next_actions: OnboardingOption[]
 }
 
@@ -193,6 +223,11 @@ export interface OnboardingActionRequest {
   confirmation?: string
   /** REQUIRED by answer_seed. A sentence about the operator's work. */
   seed?: string
+  /**
+   * REQUIRED by record_operator_identity: connector name -> the operator's own
+   * account identifier(s) there. A connector the sweep never read is refused.
+   */
+  handles?: Record<string, string[]>
 }
 
 export interface OnboardingObservationRequest {
