@@ -522,6 +522,17 @@ cites.
 - **Anchor:** `RESIDUAL, THE SAME EMPTY SET FROM THE ALPHABET RATHER THAN THE FLOOR`
 - **Retirement:** DONE — one Unicode-aware split, its re-rank MEASURED on the live 665-name / four-connector estate before landing (one sweep, ranked twice, `now` pinned to the sweep instant): all 49 ranked clusters identical in order and score, ranking vocabulary 1226 → 1211 tokens, names below the span floor 607 → 608, and 35 of 665 names re-read as the word the estate actually writes instead of the fragments either side of a non-ASCII letter. The estate's own identity strings stopped being shattered too (15 fragments → 13 whole names), which is what the demotion set is built from. Seven new arms are red against the pre-change tree, the honesty arm's independent reading no longer shares the alphabet it grades, and the docstring paragraph carrying this anchor is deleted.
 
+### RES-026 — a script that writes no word separators is read by character bigrams, which is a fallback and not segmentation
+
+- **Phase:** the finding path reads any script (2026-07-30)
+- **Closed:** the finding path no longer decides what a word is with an ASCII character class. Four of them were doing it — the journey's seed terms and its join-detector content tokens, the local-folder adapter's corpus and query terms, genesis's prose and query words — plus an allow-list that refused every probe pattern built from a non-Latin word, and a recall subject list drawn only from lane display names. Measured on a live hatch with a Japanese operator's 17-file estate: zero discovery probes from her seed, zero recall hits on every subject, no quoted line on any card. All of them now read `salience.terms`, and the same estate answers.
+- **Status:** open
+- **Open:** what those consumers get for Han, Hiragana, Katakana, Thai, Lao, Khmer and Myanmar is the run plus its adjacent character BIGRAMS, and a bigram is not a word. Roughly half the bigrams of any real sentence straddle a boundary its writer would never put a gap in, so the vocabulary is noisier than the spaced one: a query matches more than it should, an IDF weight means slightly less, the join detector's two-shared-tokens bar is really a shared three-character phrase, and a seed answered in one of these scripts composes a web query carrying fragments beside words.
+- **Why open:** the alternative is a per-language word dictionary, and a hand-maintained list is what this module refuses on every other axis — three of them were deleted from this program in a single week. The bigram fallback is the standard retrieval answer for exactly this case: it needs no vocabulary, it is right for no language, and it is matchable in all of them. Closing this properly means a segmenter the framework does not own, which is a dependency decision and not a tokenizer edit.
+- **Declared at:** `framework/onboarding/salience.py`
+- **Anchor:** `RESIDUAL, named here rather than implied: a bigram is not a word. Half the`
+- **Retirement:** a stdlib-only rule that beats bigrams on a MEASURED corpus in at least two of these scripts (the bar the RES-025 landing set for itself: re-rank the live estate before landing, not correct it in review), or a ratified decision to depend on a real segmenter. Either way: shrink the docstring paragraph carrying the anchor and this row in the SAME commit, or flip this row to `retired` if nothing remains.
+
 ## Absorption — how a wave's residuals get here (COG-5 W2 done)
 
 The rule this section originally stated as a future obligation has now been
