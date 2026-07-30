@@ -22,7 +22,7 @@ Three things are pinned, and the third is the one that matters:
 
   1. the artifact is real and covers every lit bucket (vacuity guard — an empty
      or truncated artifact would satisfy every arm below);
-  2. its per-bucket light factors and shaded ramps are what ambience_py serves;
+  2. its per-bucket split-tone ends and shaded ramps are what ambience_py serves;
   3. ambience_py.remap, which is the ONE piece of ported LOGIC on this side,
      reproduces the renderer's own answer for all fifty-two shipped ramp colours
      in all three buckets. That is 156 independent comparisons against the
@@ -72,9 +72,14 @@ def test_the_artifact_is_real_and_total():
     raw = json.loads(DERIVED.read_text())["buckets"]
     assert set(raw) == set(BUCKETS), sorted(raw)
     names = _ts_ramp_names()
+    assert isinstance(json.loads(DERIVED.read_text())["curve"], (int, float))
     for b in BUCKETS:
-        assert len(raw[b]["light"]) == 3, raw[b]["light"]
-        assert all(0 < v < 2 for v in raw[b]["light"]), raw[b]["light"]
+        for end in ("shadow", "highlight"):
+            assert len(raw[b][end]) == 3, raw[b][end]
+            # a light may only REMOVE light — ambience.ts `solveStrength`
+            assert all(0 < v <= 1 for v in raw[b][end]), (b, end, raw[b][end])
+        assert 0 < raw[b]["depth"] <= 1, raw[b]["depth"]
+        assert 0 < raw[b]["strength"] <= 1, raw[b]["strength"]
         assert len(raw[b]["sea"]) >= 5, raw[b]["sea"]
         # every ramp the renderer ships is covered — a shrunk artifact is caught
         assert set(raw[b]["ramps"]) == names, sorted(set(names) ^ set(raw[b]["ramps"]))
@@ -85,7 +90,12 @@ def test_the_artifact_is_real_and_total():
 @pytest.mark.parametrize("bucket", BUCKETS)
 def test_the_reader_serves_the_artifact_unchanged(bucket):
     raw = json.loads(DERIVED.read_text())["buckets"][bucket]
-    assert list(amb.light(bucket)) == raw["light"]
+    assert amb.is_lit(bucket)
+    # the split's two ends ARE the light, at the two ends of the art's tonal
+    # range — read straight off the artifact, no re-derivation on this side
+    assert list(amb.light(bucket, (0, 0, 0))) == pytest.approx(raw["shadow"], abs=1e-6)
+    assert list(amb.light(bucket, (255, 255, 255))) == pytest.approx(
+        raw["highlight"], abs=1e-6)
     assert amb.sea(bucket) == [tuple(c) for c in raw["sea"]]
     for name, tones in raw["ramps"].items():
         assert amb.ramp(bucket, name) == [tuple(c) for c in tones], name
@@ -95,7 +105,8 @@ def test_day_is_a_no_op_on_both_sides():
     """`day` carries no ambience at all, and the reader must say so rather than
     inventing one — an ambience applied under the wrong label is a worse defect
     than an ambience that is too strong."""
-    assert amb.light("day") is None
+    assert not amb.is_lit("day")
+    assert amb.light("day", (0x6F, 0xAE, 0xA6)) is None
     assert amb.remap((0x6F, 0xAE, 0xA6), "day") == (0x6F, 0xAE, 0xA6)
     assert amb.sea("day") == [
         (0x3E, 0x6E, 0x6B), (0x48, 0x80, 0x7C), (0x54, 0x91, 0x8C),
