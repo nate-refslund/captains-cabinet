@@ -1,4 +1,4 @@
-# Cabinet Companion (menu-bar) — v0.6
+# Cabinet Companion (menu-bar + desk pet) — v0.7
 
 The Captain's hand in the macOS menu bar: renders cabinet state from cheap
 Redis reads and forwards intent to the repo's existing scripts. It is **not
@@ -14,7 +14,13 @@ Each handoff carries fresh trace and correlation IDs. The authenticated page
 records only a bounded `app_shell_handoff` observation in Evidence Recorder v1;
 no source path, credential, or app-shell state is added to the URL or ledger.
 
-Spec: `DESIGN-companion-2026-07-10.md` (Wave D / D1). Tests:
+Since v0.7 the same binary also carries the **desk pet** — a floating officer
+that stands beside the Dock and shows the same five states as a sprite
+(`--pet`, see below). `main.swift` is the brain, `pet.swift` is the body; the
+pet reads nothing of its own.
+
+Spec: `DESIGN-companion-2026-07-10.md` (Wave D / D1); pet ruling and
+measurements: `designs/dock-pet-2026-07-30.md` in the meta workspace. Tests:
 `cabinet/scripts/tests/test_build_companion.py`.
 
 ## Honesty up front
@@ -35,6 +41,9 @@ Spec: `DESIGN-companion-2026-07-10.md` (Wave D / D1). Tests:
 ```bash
 bash cabinet/scripts/build-companion.sh
 open "bin/Cabinet Companion.app"        # menu bar only — LSUIElement, no Dock icon
+
+# with the desk pet (menu bar + a floating officer beside the Dock):
+"bin/Cabinet Companion.app/Contents/MacOS/cabinet-companion" --pet &
 ```
 
 Headless smoke (works on un-hatched Macs — any honest state exits 0):
@@ -111,6 +120,69 @@ each with a 2s app-enforced kill-timeout. The doctor NEVER runs on the poll
 loop — it is click-only. One `ProcessInfo.beginActivity(.background)` token is
 held for the app's lifetime (App Nap); if throttling happens anyway, the 120s
 staleness rule renders AMBER.
+
+## The desk pet (`--pet`)
+
+A borderless, always-on-top window holding one officer's 16x32 sprite, standing
+on the Dock's top edge. The Captain chose this surface over a real
+`NSDockTile` on 2026-07-30, knowing the trade: crisper (one resample instead of
+two) and able to roam, but not literally in the Dock.
+
+```bash
+cabinet-companion --pet [--pet-officer <slug>] [--pet-scale <1..8>]
+cabinet-companion --pet-demo <GREEN|AMBER|RED|PAUSED|OFF>   # forced state, live poll OFF
+cabinet-companion --pet-selftest                            # state -> look table
+cabinet-companion --pet-render <STATE> <out.png>            # the canvas, source resolution
+```
+
+| State | Body | Chip | Motion |
+|---|---|---|---|
+| GREEN | full colour | — | roams along the Dock |
+| AMBER | desaturated | `?` | stands, breathing (idle strip) |
+| RED | desaturated | `!` | stands, breathing |
+| PAUSED | full colour | `‖` | frozen mid-stride (the world's killswitch idiom) |
+| OFF | hollow shell | `?` | stands, breathing |
+
+The rule under all five: **absence must not look like calm.** Every desk pet in
+the genre sleeps when idle, and sleeping reads as "all is well" — which, for a
+cabinet whose most common truth today is "I cannot see anything", is a lie. The
+pet also refuses GREEN when the fleet is green but *its own* officer has no
+presence row or is absent: it portrays an officer, so it must not walk
+contentedly while that officer is missing.
+
+Facts worth not re-deriving:
+
+- **Zero permissions.** No Accessibility, no Screen Recording. The Dock's
+  geometry comes from `NSScreen.frame` minus `NSScreen.visibleFrame`, which any
+  app may read. Window-edge tracking (walking along *other* apps' windows) is
+  the feature that would need Accessibility, and it is not built.
+- **Per-pixel click-through is broken on macOS 26.6** (measured: a transparent
+  window that draws nothing still takes the mouse-down across its whole frame).
+  The pet therefore sets `ignoresMouseEvents = true` and can never intercept a
+  click — the cost is that v1 is not clickable, and interaction stays in the
+  menu-bar item. Pinned by `test_pet_click_through_finding_is_pinned`; re-run
+  the probe before changing it.
+- **Integer scales only** (default 3 = a 48x96pt officer). A resampled pet is a
+  failed pet, so `--pet-scale` rejects anything outside 1..8 rather than
+  silently accepting a fractional size.
+- **Same body as the World.** Officer → sheet uses the World's own FNV-1a hash
+  over the owned `originals/characters` cast, and the strip geometry is pinned
+  against `dashboard/src/lib/world/sprites.ts` by the test suite, so the two
+  surfaces cannot drift apart silently.
+- The sprite sheets live under `cabinet/dashboard/public/world-assets/`. The pet
+  draws an unmistakable red box and logs the path when a sheet is **missing**,
+  when it **decodes at the wrong size** (a truncated or re-exported sheet is
+  refused, never resampled into the cell), and when the **frame it needs is
+  empty** — never an empty window, which would be indistinguishable from "not
+  running".
+- `--pet-demo` suppresses the live poll entirely, logs loudly, marks the
+  menu-bar tooltip `DEMO (synthetic, not a reading)`, labels the menu
+  `DEMO — synthetic <STATE>; the cabinet is NOT being read, and every action is
+  disabled`, and **disables every acting item** — the kill-switch lever, the
+  Doctor run, the fleet wrappers and the dashboard probe. Actuation was always
+  safe (the lever re-reads Redis before arming), but the lever's VERB is
+  derived from the state, and "▶ Resume Officers…" computed from a made-up
+  PAUSED is a lie in the one menu that must never lie.
 
 ## First-run expectations (one-time macOS moments)
 
