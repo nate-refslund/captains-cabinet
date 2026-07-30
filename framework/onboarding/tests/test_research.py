@@ -1,4 +1,5 @@
 """research_repo — read a LOCAL product repo into a profile. No network, no secrets."""
+import inspect
 import json
 
 from framework.onboarding import research
@@ -161,3 +162,34 @@ def test_inventory_tolerates_empty_and_null_mcps_blocks(tmp_path):
     assert research.inventory_mcp_estate(str(tmp_path), consent=True)["servers"] == []
     _mk_estate(tmp_path, extensions="plugins: []\n")     # no mcps key at all
     assert research.inventory_mcp_estate(str(tmp_path), consent=True)["servers"] == []
+
+
+# --- claim surface: `sources` says what it is, not what a reader would hope ---
+
+
+def test_sources_names_what_yielded_a_reading_not_what_was_consulted(tmp_path):
+    """The docstring promised "the root-relative paths actually consulted".
+
+    A file that exists and will not parse IS consulted — read off disk, handed
+    to a parser, thrown away — and then omitted, so a broken pair returns the
+    same document as a bare root: "I looked and it was unreadable" and "there
+    was nothing to look at" arriving as one answer. The behaviour is deliberate
+    and pinned by test_inventory_bare_root_and_malformed_are_honest_empties;
+    what was wrong was the sentence, so this arm holds the sentence to it.
+    """
+    (tmp_path / ".mcp.json").write_text('{"mcpServers": ', encoding="utf-8")
+    (tmp_path / "instance" / "config").mkdir(parents=True)
+    (tmp_path / "instance" / "config" / "extensions.yml").write_text(
+        "mcps: [unclosed", encoding="utf-8")
+
+    out = research.inventory_mcp_estate(str(tmp_path), consent=True)
+    # Both were there to consult, and neither is named in the result.
+    assert (tmp_path / ".mcp.json").is_file()
+    assert (tmp_path / "instance" / "config" / "extensions.yml").is_file()
+    assert out["sources"] == []
+    assert out == research.inventory_mcp_estate(str(tmp_path / "nothing-here"),
+                                                consent=True)
+
+    doc = " ".join(inspect.getdoc(research.inventory_mcp_estate).split())
+    assert "the root-relative paths actually consulted" not in doc
+    assert "YIELDED A READING" in doc
