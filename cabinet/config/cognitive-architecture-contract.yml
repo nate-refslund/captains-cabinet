@@ -497,7 +497,28 @@ budgets:
     # was the alternative and is exactly how these two shipped. Zero new production
     # MODULES (framework_production_modules unchanged at 248; the new arms are
     # tests). observed == maximum, zero headroom.
-    maximum: 61452
+    #
+    # 61452 -> 61455 (+3 measured 2026-07-30 with cognitive-architecture-census.py:
+    # observed 75994 vs the then-effective 75991). THE REPLACEMENT SENTENCE WAS
+    # STILL OVER-BROAD, found by running the claim-surfaces sweep against its own
+    # fix. `inventory_mcp_estate` now said `sources` names the paths that "YIELDED
+    # A READING", which is false on one of its two limbs and was proved so by
+    # execution: a `.mcp.json` that is valid JSON and parses without error but
+    # carries no `mcpServers` is READ and still absent from `sources`, while an
+    # extensions file that parses with no `mcps:` at all IS listed. One sentence
+    # cannot be true of both, and the section's own header names that exact
+    # conflation ("I looked and found nothing" vs "I never looked") as the failure
+    # it exists to refuse. The docstring now states the asymmetry, names it as not
+    # deliberate, and points at the two arms that pin it. NOT ONE LINE of behaviour
+    # moved (the AST with docstrings stripped is byte-identical): splitting the two
+    # readings wants a second key and making the limbs symmetric wants a behaviour
+    # change, and neither is smuggled in behind a doc fix.
+    # RAISED VISIBLY, never an allowance: the alternative was compressing the
+    # sentence to fit the ceiling, which is the exact move the note above records
+    # as how the false sentences shipped in the first place. Zero new production
+    # MODULES (framework_production_modules unchanged at 248; the new arm is a
+    # test). observed == maximum, zero headroom.
+    maximum: 61455
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
