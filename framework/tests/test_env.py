@@ -417,7 +417,7 @@ class TestRecipientPolicy:
          "the document cannot be audited by eye"),
         # --- rows that parse but can never MATCH (a dud reads as live) -----
         ("denylist:\n  - address: 'all-staff@acme.com,'\n", "trailing separator"),
-        ("denylist:\n  - address: 'Nate <all-staff@acme.com>'\n",
+        ("denylist:\n  - address: 'Ada <all-staff@acme.com>'\n",
          "display-name form pasted out of a mail client"),
         ("denylist:\n  - address: 'a@x.com b@y.com'\n", "two addresses in one row"),
         ("denylist:\n  - domain: '.news.acme.com'\n", "leading dot"),

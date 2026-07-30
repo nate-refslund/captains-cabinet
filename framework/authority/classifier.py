@@ -199,15 +199,15 @@ def _is_internal_recipient(recipient: str) -> bool:
 
     ALL-quantified, not last-wins. A recipient field routinely carries several
     addresses; the predicate used to `rsplit("@", 1)` the WHOLE field, so only
-    the final address decided, and `"outsider@x.com, nate@<org>"` resolved
+    the final address decided, and `"outsider@x.com, insider@<org>"` resolved
     internal_comms — off the always-gated external_comms ceiling — carrying the
     outsider along. A crafted string alone reached it; no code change.
 
     Split on address SEPARATORS only (whitespace/comma/semicolon). All other
     punctuation stays glued to its token, so a display-name form
-    (`Nate <nate@<org>>` -> domain `<org>>`) still matches no domain and still
-    classifies external as before: this can only move a recipient TOWARD the
-    ceiling, never away.
+    (`<display> <user@<org>>` -> domain `<org>>`) still matches no domain and
+    still classifies external as before: this can only move a recipient TOWARD
+    the ceiling, never away.
 
     An address is internal only if it survives BOTH carve-backs on
     _INTERNAL_DOMAINS (see _RECIPIENT_POLICY): it is not denylisted, and its

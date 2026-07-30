@@ -372,7 +372,7 @@ def _parse_recipient_exclusions(path: Path) -> dict:
         # his exclusion as live and it excludes nothing. The classifier
         # compares against tokens split on [\s,;], so any value carrying a
         # separator is inert; so is the display-name form pasted out of a mail
-        # client (`Nate <list@org>`); so is a domain written with a leading
+        # client (`<display> <list@org>`); so is a domain with a leading
         # dot, which matches neither `dom == pat` nor `dom.endswith("." + pat)`.
         # Refuse all three LOUDLY rather than silently accepting a dud.
         if _INERT_DENY_RE.search(val) or val.startswith(".") or val.endswith("."):
