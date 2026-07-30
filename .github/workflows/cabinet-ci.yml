@@ -716,7 +716,26 @@ jobs:
     # guard riding on ~10s of headroom, which the shared-runner variance law
     # says will flake. When the honest fix arrives (splitting cabinet/scripts/
     # tests, 11m13s of the 14m49s, into its own job), bring this back down.
-    timeout-minutes: 25
+    #
+    # 25 -> 40 (2026-07-30). It happened again, exactly as the paragraph above
+    # predicted, and this time it is not one unlucky run: over the 16 most
+    # recent runs of this job the median is 24m39s and TEN finish within 60
+    # SECONDS of the guard. Run 30577556956 was cancelled at 25m17s with every
+    # assertion that had executed still green — a false red on a PR whose own
+    # change was 78 lines of Swift and one grep test. At that distribution the
+    # gate is a coin flip for every session with a PR open, and a coin-flip
+    # gate teaches people to re-run rather than to read, which is how a real
+    # red gets waved through. 40 restores ~62% headroom over the median, the
+    # same margin the 15 -> 25 bump bought before the job grew into it.
+    # NOTHING here weakens an assertion: every suite still runs and still
+    # gates, and no threshold that judges anything moved. The number is a
+    # runner guard, and §7-9 says a wall-clock bound on a shared runner flakes.
+    # THE REAL FIX IS STILL THE SPLIT — this buys time for it, and the growth
+    # itself (14m49s on 2026-07-27, 24m39s median on 2026-07-30) is the thing
+    # to look at: at that rate 40 minutes is a matter of days, so a session
+    # that raises this number again without splitting the job is treating a
+    # symptom for the third time.
+    timeout-minutes: 40
     # SPIKE (hardening loop 2026-07-11): redis service closes 23 of 24 runtime
     # skips; the 5 sovereign tests need the germline hook rc=0 on a fresh empty
     # redis — unproven on a runner, hence branch-spike before master.
