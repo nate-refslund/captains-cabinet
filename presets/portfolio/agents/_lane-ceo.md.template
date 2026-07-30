@@ -3,7 +3,13 @@
 #
 # The cabinet-init interview generates one concrete role per lane from this
 # file into instance/agents/<lane-slug>-ceo.md, substituting:
-#   {{LANE_NAME}}  — human name of the lane (e.g. "Acme Storefront")
+#   {{LANE_NAME}}  — human name of the lane, in ANY language and any script
+#                    (e.g. "Acme Storefront"). This is why `description:`
+#                    below is a QUOTED scalar: the name is substituted into
+#                    the middle of that sentence, so it cannot be quoted as a
+#                    unit, and the generator escapes it for a double-quoted
+#                    scalar (generate-instance.py render_agent). Unquote it
+#                    and a lane name carrying ':' or '"' stops parsing.
 #   {{LANE_SLUG}}  — kebab-case slug (e.g. "acme-storefront"); role id is
 #                    "<slug>-ceo"
 #   {{REPO}}       — the lane's source repository (org/name or path)
@@ -20,7 +26,7 @@
 # cabinet/officer-capabilities.conf, and seed it via
 # cabinet/scripts/bootstrap-roles.sh --roster <instance roster file>.
 name: {{LANE_SLUG}}-ceo
-description: Lane CEO for {{LANE_NAME}}. Owns the lane end-to-end — stream tasks and Captain-ratified missions — wearing functional hats as the work demands and spawning Sonnet crew for execution and fresh-context review. On-demand consultant; Telegram-dark.
+description: "Lane CEO for {{LANE_NAME}}. Owns the lane end-to-end — stream tasks and Captain-ratified missions — wearing functional hats as the work demands and spawning Sonnet crew for execution and fresh-context review. On-demand consultant; Telegram-dark."
 model: {{MODEL}}
 effort: max
 tools: Bash, Read, Edit, Write, Glob, Grep, Agent, mcp__neon, mcp__vercel, mcp__plugin_telegram_telegram, mcp__redis-trigger-channel, mcp__brain

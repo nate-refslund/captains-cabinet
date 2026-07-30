@@ -156,8 +156,16 @@ Guardrails:
     "generated-by: cabinet-init" marker; an existing file without the marker
     is refused (override with --force). platform.yml is only touched inside
     the BEGIN/END marker block + the three captain_* keys.
+  * DISPLAY NAMES ACCEPT ANY SCRIPT; IDENTIFIERS DO NOT. `captain.name` and
+    every lane `name` take a name written however the operator writes it —
+    Japanese, Cyrillic, Arabic, anything — bounded only by length and control
+    characters (see DISPLAY_NAME_MAX). `cabinet.id` and lane `slug` stay
+    lowercase-latin kebab-case because they key file names, session names and
+    log lines; their refusal says that in plain words and suggests a value,
+    rather than printing a regex at someone whose language it just rejected.
   * End-of-run validation: every written YAML (and the agent frontmatter)
-    must parse; the run fails loud otherwise.
+    must parse AND every display name must round-trip out of the rendered
+    artifact byte-identically; the run fails loud otherwise.
 
 Idempotent: re-running with unchanged answers rewrites byte-identical files.
 
@@ -193,9 +201,42 @@ PLATFORM_BEGIN = "# BEGIN cabinet-init officers — generated; do not edit betwe
 PLATFORM_END = "# END cabinet-init officers"
 
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
-NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 &+._/()-]{0,79}$")
 CHAT_ID_RE = re.compile(r"^-?\d{4,20}$")
 ENV_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]{2,63}$")
+
+# DISPLAY NAMES ACCEPT ANY SCRIPT (2026-07-30). This used to be an alphabet
+# allowlist — `^[A-Za-z0-9][A-Za-z0-9 &+._/()-]{0,79}$` — applied to
+# captain.name, every lane name and --captain-name. Measured cost: an operator
+# writing her own name in Japanese was refused four times in a row by the file
+# whose header invited her to write it, and had to romanize herself and her
+# business before the product would run. The repo's own landed doctrine already
+# says the opposite (framework/onboarding/salience.py, retirement note RES-025:
+# "THE ALPHABET IS THE UNICODE DATABASE, not [0-9a-z]") — the generator was the
+# last ASCII gate in the onboarding path.
+#
+# The allowlist was standing in for TWO real constraints, and neither one is an
+# alphabet:
+#   1. a length cap (unchanged: DISPLAY_NAME_MAX characters), and
+#   2. "it is written into YAML scalars" — which the old error hint said out
+#      loud while banning ':', '#' and quotes to get it.
+# (2) is an EMISSION property, not an input property, so it is now enforced
+# where it actually lives: `_yaml_str` emits any name that would not round-trip
+# bare as a JSON-escaped double-quoted scalar (YAML's double-quoted style is a
+# JSON-string superset), `_yaml_dq_inner` does the same inside the lane-CEO
+# frontmatter, and generate() asserts every emitted name round-trips before the
+# run is called a success. With safe emission there is nothing left for an
+# alphabet to protect, so the only input rules are length and control
+# characters.
+#
+# Control characters ARE still refused, and not as a style rule: NUL, tab and
+# every newline form (including U+0085 NEL and U+2028/U+2029, which YAML also
+# treats as line breaks) either break the emitted file or make a name that
+# renders as something other than what was typed. Unicode FORMAT characters
+# (category Cf — ZWJ, ZWNJ, RLM/LRM) are deliberately NOT refused: they are
+# load-bearing in Arabic, Hebrew and Indic scripts, and banning them would
+# re-create this defect one script down.
+DISPLAY_NAME_MAX = 80
+_DISPLAY_NAME_CONTROL_RE = re.compile("[\x00-\x1f\x7f-\x9f\u2028\u2029]")
 
 # Reserved ids: the functional officer set + loader-reserved names. A lane
 # slug colliding with these would shadow hook/capability routing.
@@ -357,6 +398,112 @@ def _scan_for_secrets(value, path="answers"):
                 )
 
 
+def validate_display_name(value: str, field: str) -> str:
+    """Validate a human DISPLAY name and return it unchanged.
+
+    ONE validator for every display-name field (captain.name, each lane name,
+    --captain-name), so the rule cannot drift field by field. It enforces the
+    two constraints that are real — length and control characters — and NO
+    alphabet: see the DISPLAY_NAME_MAX note above for why the alphabet
+    allowlist this replaced was the wrong shape of rule, and where the YAML
+    constraint it was standing in for is enforced instead.
+
+    Secret shapes are NOT re-checked here: ``_scan_for_secrets`` already sweeps
+    every answer value (including these) before any field validation runs, and
+    ``default_captain_name`` feeds --captain-name through the same answers file.
+    """
+    text = str(value)
+    if not text.strip():
+        raise GenerationError(
+            f"{field} is empty. It is the name officers call you (or the lane) "
+            f"by — write it however you normally write it, in any language and "
+            f"any script."
+        )
+    bad = _DISPLAY_NAME_CONTROL_RE.search(text)
+    if bad:
+        raise GenerationError(
+            f"{field} {text!r} contains a control character "
+            f"(U+{ord(bad.group()):04X}) — a line break, a tab or a NUL. A "
+            f"display name is one line of text. Every letter, mark, accent and "
+            f"symbol is accepted, in any language and any script; only "
+            f"characters that are not text are refused."
+        )
+    if len(text) > DISPLAY_NAME_MAX:
+        raise GenerationError(
+            f"{field} is {len(text)} characters; the limit is "
+            f"{DISPLAY_NAME_MAX}. Shorten it to the name officers should "
+            f"actually address you (or the lane) by — the long form belongs in "
+            f"a description, not a name."
+        )
+    return text
+
+
+def _suggested_id(text: str, fallback: str) -> tuple[str, bool]:
+    """``(suggestion, derived)`` — a kebab-case id candidate for ``text``.
+
+    ``derived`` is False when nothing usable could be taken from what the
+    operator typed, and the caller must then say so plainly rather than pass a
+    generic id off as their name. Transliteration is NOT attempted: a machine
+    romanization of a person's or a business's name is a guess about how they
+    spell themselves in another script, and printing it as a suggestion is how
+    "just romanize yourself" gets built into a product.
+    """
+    candidate = re.sub(r"[^a-z0-9]+", "-", str(text).lower()).strip("-")[:64]
+    candidate = candidate.rstrip("-")
+    if candidate and SLUG_RE.match(candidate):
+        return candidate, True
+    return fallback, False
+
+
+def _identifier_refusal(field: str, value: object, purpose: str, fallback: str,
+                        display_field: str, display_value: object = None,
+                        ) -> GenerationError:
+    """The refusal for an ASCII-identifier field, in plain words.
+
+    Identifiers really are ASCII-only — they key file names, session names and
+    log lines — so this constraint stays. What changed (2026-07-30) is the
+    MESSAGE: it used to be the raw regex and nothing else
+    (``must match ^[a-z0-9][a-z0-9-]{0,63}$``), which tells an operator whose
+    id was refused for being written in their own language neither what the
+    field is for nor that their real name is still welcome one line above. The
+    measured result was an operator concluding the product wanted her to
+    romanize herself and her business.
+
+    The suggestion is taken from what the operator actually typed — the refused
+    value first, then the display name beside it — and falls back to a plain
+    placeholder when neither yields anything. Transliteration is deliberately
+    not attempted (see ``_suggested_id``).
+    """
+    suggestion, derived = _suggested_id(value, fallback)
+    source = "what you typed"
+    if not derived and display_value:
+        suggestion, derived = _suggested_id(display_value, fallback)
+        source = f"your {display_field}"
+    if derived:
+        why = f"built from {source}"
+    else:
+        why = ("a plain placeholder — what you typed is not written in latin "
+               "letters, and guessing at a spelling of it in another script "
+               "would be inventing your name for you")
+    if display_value:
+        display_note = (f"Your name for it is NOT affected: {display_field} "
+                        f"keeps {str(display_value)!r} and is what officers "
+                        f"show you.")
+    else:
+        display_note = (f"Display names are NOT affected: {display_field} "
+                        f"accept any language and any script, and are what "
+                        f"officers show you.")
+    return GenerationError(
+        f"{field} {value!r} cannot be used as an id.\n"
+        f"  What it is: {purpose}. It ends up in file names, session names and "
+        f"log lines, so it has to stay in plain latin characters.\n"
+        f"  What is allowed: lowercase latin letters (a-z), digits (0-9) and "
+        f"hyphens, starting with a letter or a digit, up to 64 characters.\n"
+        f"  {display_note}\n"
+        f"  Try: {field.split('.')[-1]}: {suggestion}   ({why})"
+    )
+
+
 def _req(d: dict, key: str, where: str) -> object:
     if key not in d or d[key] in (None, ""):
         raise GenerationError(f"answers missing required field: {where}.{key}")
@@ -385,11 +532,7 @@ def load_answers(path: Path, root: Path | None = None) -> dict:
     _scan_for_secrets(answers)
 
     captain = answers.get("captain") or {}
-    name = str(_req(captain, "name", "captain"))
-    if "\n" in name or not NAME_RE.match(name):
-        raise GenerationError(
-            f"captain.name {name!r} must match {NAME_RE.pattern} (plain display name)"
-        )
+    name = validate_display_name(_req(captain, "name", "captain"), "captain.name")
     tz = str(_req(captain, "timezone", "captain"))
     if tz != "UTC" and "/" not in tz:
         raise GenerationError(
@@ -436,7 +579,10 @@ def load_answers(path: Path, root: Path | None = None) -> dict:
             )
     cab_id = str(cabinet.get("id", "main"))
     if not SLUG_RE.match(cab_id):
-        raise GenerationError(f"cabinet.id {cab_id!r} must match {SLUG_RE.pattern}")
+        raise _identifier_refusal(
+            "cabinet.id", cab_id,
+            "a short internal id for this deployment, not its name", "main",
+            "captain.name and every lane name")
     model = str(cabinet.get("officer_model", DEFAULT_MODEL))
     if not re.match(r"^[a-z0-9][a-z0-9.\[\]-]{0,63}$", model):
         raise GenerationError(f"cabinet.officer_model {model!r} has an unexpected shape")
@@ -488,22 +634,25 @@ def load_answers(path: Path, root: Path | None = None) -> dict:
         if not isinstance(lane, dict):
             raise GenerationError(f"lanes[{i}] must be a mapping")
         slug = str(_req(lane, "slug", f"lanes[{i}]"))
+        # The lane's own display name, when it declared one, so the refusal
+        # below can both suggest from it and say it is keeping it. Read (not
+        # validated) here: a lane with a bad slug AND a bad name should hear
+        # about the slug it is being refused over, in the message that also
+        # tells it display names are unconstrained.
+        declared_name = lane.get("name")
         if not SLUG_RE.match(slug):
-            raise GenerationError(
-                f"lanes[{i}].slug {slug!r} refused: must match {SLUG_RE.pattern} "
-                f"(kebab-case; no slashes, dots, or path segments)"
-            )
+            raise _identifier_refusal(
+                f"lanes[{i}].slug", slug,
+                "a short internal id for this lane — it becomes the context "
+                "slug and the '<slug>-ceo' role id",
+                f"lane-{i + 1}", f"lanes[{i}].name", declared_name)
         if slug in RESERVED_SLUGS:
             raise GenerationError(f"lanes[{i}].slug {slug!r} is a reserved id")
         if slug in seen:
             raise GenerationError(f"duplicate lane slug: {slug!r}")
         seen.add(slug)
-        lname = str(_req(lane, "name", f"lanes[{i}]"))
-        if not NAME_RE.match(lname):
-            raise GenerationError(
-                f"lanes[{i}].name {lname!r} must match {NAME_RE.pattern} "
-                f"(no ':', '#', or quotes — it is written into YAML scalars)"
-            )
+        lname = validate_display_name(_req(lane, "name", f"lanes[{i}]"),
+                                      f"lanes[{i}].name")
         repos = lane.get("repos") or []
         if not isinstance(repos, list):
             raise GenerationError(f"lanes[{i}].repos must be a list")
@@ -660,7 +809,7 @@ def render_context(lane: dict) -> str:
 # active: false. No warroom rows, no officer routing, no activity start from
 # this file alone; those require explicit activation by the Captain.
 slug: {slug}
-name: {name}
+name: {_yaml_str(name)}
 capacity: {capacity}
 description: |
 {_indent_block(desc)}
@@ -727,7 +876,7 @@ def render_project(lane: dict, integrations: dict) -> str:
 # =============================================================
 
 product:
-  name: {name}
+  name: {_yaml_str(name)}
   description: {_yaml_free(lane.get('one_liner') or name + ' lane')}
   repo: {repo}
   repo_branch: {lane.get('repo_branch', 'main')}
@@ -842,16 +991,30 @@ def render_agent(template_text: str, lane: dict, model: str) -> str:
     repos = [str(r) for r in (lane.get("repos") or [])]
     boards = [str(b) for b in (lane.get("boards") or [])]
     substitutions = {
-        "{{LANE_NAME}}": lane["name"],
-        "{{LANE_SLUG}}": lane["slug"],
+        "{{LANE_NAME}}": str(lane["name"]),
+        "{{LANE_SLUG}}": str(lane["slug"]),
         "{{REPO}}": ", ".join(repos) if repos else "(no repo declared)",
         "{{BOARDS}}": ", ".join(boards) if boards else "(no boards declared)",
         # Same officer_model value render_roster stamps into roster.yml —
         # the agent frontmatter and the roster must never disagree.
         "{{MODEL}}": model,
     }
+    # TWO SUBSTITUTION REGIONS, because the file is two grammars (2026-07-30).
+    # The body is markdown and takes the lane name verbatim. The frontmatter is
+    # YAML, and the lane name lands MID-SENTENCE inside `description:` — it
+    # cannot be quoted as a unit, so it is escaped for the double-quoted scalar
+    # the template now uses. Without the split, a lane named with a ':' or a
+    # '"' produced frontmatter that does not parse — which is precisely the
+    # constraint the input alphabet used to enforce by refusing the name.
+    head, sep, body = rendered.partition("\n---\n")
+    if not sep:
+        raise GenerationError(
+            f"rendered agent for lane {lane['slug']!r} has no closing "
+            f"frontmatter delimiter — {LANE_CEO_TEMPLATE_REL} has drifted")
     for placeholder, value in substitutions.items():
-        rendered = rendered.replace(placeholder, value)
+        head = head.replace(placeholder, _yaml_dq_inner(value))
+        body = body.replace(placeholder, value)
+    rendered = head + sep + body
     leftover = re.findall(r"\{\{[A-Z_]+\}\}", rendered)
     if leftover:
         raise GenerationError(
@@ -1045,7 +1208,7 @@ def render_roster(lanes: list, model: str, root: Path) -> str:
     for lane in hired:
         lane_blocks.append(
             f"""  {lane['slug']}-ceo:
-    title: {lane['name']} CEO
+    title: {_yaml_str(str(lane['name']) + ' CEO')}
     type: consultant               # on-demand; spawned per trigger/mission, idle-stop
     model: {model}
     capabilities: {LANE_CEO_CAPABILITIES}
@@ -1239,27 +1402,144 @@ def _set_top_level_key_if_absent(text: str, key: str, value: str, comment: str =
 
 
 def _yaml_str(value: str) -> str:
-    """Render ``value`` as a YAML scalar that round-trips as EXACTLY that
-    string. Plain-safe values emit bare (byte-stable for every existing
-    config, and shell greppers — e.g. hooks/post-tool-use.sh's awk — keep
-    seeing unquoted names). Values YAML would silently retype — captain
-    names like "yes"/"Null" (bool/null), "0000" (int), "2026-01-01" (date) —
-    emit double-quoted, because a name that loads back as True is invented
-    data. Quoting needs no escaping: every call site is NAME_RE-validated,
-    and NAME_RE forbids '"' and '\\'."""
+    """Render ``value`` as a YAML mapping-value scalar that round-trips as
+    EXACTLY that string.
+
+    THIS is where the "it is written into YAML scalars" constraint lives
+    (2026-07-30). It used to live in the INPUT alphabet — display names banned
+    ':', '#' and quotes so that a bare emission could never be wrong, which
+    cost an operator the right to write her own name. Emission is the honest
+    place for an emission constraint, so this function now handles any string:
+
+    * Plain-safe values still emit BARE, and the test is the position they will
+      actually occupy: ``k: <value>`` must parse back to exactly ``{"k": value}``.
+      (The old test parsed ``value`` as a whole document, which is a different
+      grammar context — a mapping value cannot hold ': ' where a document
+      scalar can hold rather more.) Bare keeps every existing config
+      byte-identical and keeps the shell greppers — hooks/post-tool-use.sh's
+      awk, assemble-config.sh — seeing unquoted names.
+    * Everything else emits as a JSON string, which is a valid YAML
+      double-quoted scalar (YAML's double-quoted style is a JSON-string
+      superset) and therefore ESCAPES quotes and backslashes rather than
+      assuming they cannot occur. ``ensure_ascii=False`` keeps a name written
+      in Japanese, Cyrillic or Arabic readable in the file it lands in — an
+      escaped ``\\uXXXX`` soup would parse correctly and still tell the
+      operator the product could not cope with their name.
+
+    Values YAML would silently retype — names like "yes"/"Null" (bool/null),
+    "0000" (int), "2026-01-01" (date) — take the quoted branch as before,
+    because a name that loads back as True is invented data.
+    """
     try:
-        if yaml.safe_load(value) == value:
+        if yaml.safe_load(f"k: {value}\n") == {"k": value}:
             return value
     except yaml.YAMLError:
         pass
-    return f'"{value}"'
+    return json.dumps(str(value), ensure_ascii=False)
+
+
+def _frontmatter_text(content: str, where: str = "rendered agent") -> str:
+    """The YAML frontmatter of an agent .md — the text BETWEEN the opening and
+    closing ``---`` DELIMITER LINES.
+
+    ``content.split("---", 2)[1]``, which this replaces at all three call
+    sites, splits on the SUBSTRING. Any ``---`` inside the frontmatter ends the
+    slice early, and the old alphabet allowed one: a lane named ``Ada --- Prime``
+    passed ``NAME_RE`` and made the validator parse a TRUNCATED fragment
+    (``description: Lane CEO for Ada ``) that happens to be valid YAML — so the
+    gate reported the file valid having read half of it. Failing open on a
+    validator is worse than the parse error the same input produces once the
+    scalar is quoted. Delimiters are whole lines; match whole lines.
+    """
+    lines = content.split("\n")
+    if not lines or lines[0].strip() != "---":
+        raise GenerationError(f"{where} has no opening frontmatter delimiter")
+    for index in range(1, len(lines)):
+        if lines[index].strip() == "---":
+            return "\n".join(lines[1:index])
+    raise GenerationError(f"{where} has no closing frontmatter delimiter")
+
+
+def _assert_names_round_trip(outputs: list, answers: dict, lanes: list) -> None:
+    """Every display name must come back out of the rendered artifacts EXACTLY
+    as the operator wrote it, or the run fails before anything is written.
+
+    Checked per artifact kind, against the LIVE rendered content (not a
+    re-render), so this cannot pass over an emission path it does not cover:
+      * platform.yml            captain_name
+      * contexts/<slug>.yml     name
+      * projects/<slug>.yml     product.name
+      * roster.yml              title, for each HIRED lane CEO ("<name> CEO")
+      * agents/<slug>-ceo.md    frontmatter description, which carries the name
+                                mid-sentence
+    A lane the germline pair has not authorized is not in roster.yml at all
+    (roster-authz) — its absence is correct, so the roster arm checks only the
+    titles that are present and asserts each one it does find.
+    """
+    captain_name = str((answers.get("captain") or {}).get("name", ""))
+    lane_by_slug = {str(lane["slug"]): str(lane["name"]) for lane in lanes}
+
+    def _fail(path, field, want, got):
+        raise GenerationError(
+            f"NAME ROUND-TRIP FAILED for {path}: {field} was written as "
+            f"{got!r} but the answers declare {want!r}. The generated file "
+            f"parses — it just does not carry the name that was typed, which "
+            f"is the failure this check exists to catch. Nothing was written."
+        )
+
+    for path, content, kind in outputs:
+        if kind == "yaml":
+            data = yaml.safe_load(content) or {}
+            if not isinstance(data, dict):
+                continue
+            if path.name == "platform.yml" and captain_name:
+                got = data.get("captain_name")
+                if got != captain_name:
+                    _fail(path, "captain_name", captain_name, got)
+            elif path.parent.name == "contexts":
+                want = lane_by_slug.get(str(data.get("slug", "")))
+                if want is not None and data.get("name") != want:
+                    _fail(path, "name", want, data.get("name"))
+            elif path.parent.name == "projects":
+                want = lane_by_slug.get(path.stem)
+                got = (data.get("product") or {}).get("name")
+                if want is not None and got != want:
+                    _fail(path, "product.name", want, got)
+            elif path.name == "roster.yml":
+                for slug, title_want in lane_by_slug.items():
+                    row = (data.get("roster") or {}).get(f"{slug}-ceo")
+                    if not isinstance(row, dict):
+                        continue           # not hired yet — authorization-gated
+                    if row.get("title") != f"{title_want} CEO":
+                        _fail(path, f"roster.{slug}-ceo.title",
+                              f"{title_want} CEO", row.get("title"))
+        elif kind == "agent-md":
+            slug = path.stem[: -len("-ceo")] if path.stem.endswith("-ceo") else path.stem
+            want = lane_by_slug.get(slug)
+            if want is None:
+                continue
+            fm = yaml.safe_load(_frontmatter_text(content, str(path))) or {}
+            description = str(fm.get("description", ""))
+            if want not in description:
+                _fail(path, "frontmatter description", want, description)
+
+
+def _yaml_dq_inner(value: str) -> str:
+    """``value`` escaped for the INSIDE of a YAML double-quoted scalar.
+
+    For the one emission that is not a whole scalar: the lane-CEO frontmatter's
+    ``description:``, where the lane name is substituted into the MIDDLE of a
+    sentence and so cannot be quoted as a unit. ``json.dumps`` minus its own
+    outer quotes, for the same reason ``_yaml_str`` uses it — YAML's
+    double-quoted style accepts JSON's escapes exactly."""
+    return json.dumps(str(value), ensure_ascii=False)[1:-1]
 
 
 def _yaml_free(value: str) -> str:
     """A YAML double-quoted scalar for ARBITRARY FREE TEXT — one-liners, URLs,
-    bot usernames — that is NOT NAME_RE-validated. Unlike ``_yaml_str`` (which
-    assumes no ``"``/``\\`` and does NO escaping), this properly escapes quotes,
-    backslashes, and control chars so a stray quote can't abort generation and a
+    bot usernames — that is not length- or control-char-validated at all.
+    ALWAYS quoted, where ``_yaml_str`` emits plain-safe values bare; both now
+    escape via ``json.dumps``, so a stray quote can't abort generation and a
     backslash can't silently mutate the stored value (egg-hatch-engine-5).
     ``json.dumps`` output is a valid YAML double-quoted scalar (YAML's dq style
     is a JSON-string superset); ``ensure_ascii=False`` keeps unicode readable."""
@@ -1443,10 +1723,21 @@ EXAMPLE_ANSWERS = """\
 # NAMES AND IDS ONLY — never tokens, keys, or connection strings (the
 # generator refuses values that look like secrets; real values go in the
 # gitignored cabinet/.env).
+#
+# NAMES vs IDS — the one distinction worth reading before you fill this in:
+#   * A NAME (captain.name, each lane's name) is what officers call you and
+#     your work. Write it in YOUR language and YOUR script — Japanese,
+#     Cyrillic, Arabic, Greek, Hindi, anything. Nothing here asks you to
+#     spell yourself in latin letters. One line, up to 80 characters.
+#   * An ID (cabinet.id, each lane's slug) is a short internal label that
+#     ends up in file names, session names and log lines, so it must be
+#     lowercase latin letters, digits and hyphens (e.g. `main`, `lane-1`).
+#     It is never shown to you in place of your name — pick anything short.
 version: 1
 
 captain:
-  name: Ada                      # display name officers use
+  name: Ada                      # display name officers use — any language,
+                                 #  any script (e.g. 高橋 美咲, Ада, أمينة)
   timezone: Europe/Madrid        # IANA identifier
   telegram_chat_id: "12345678"   # numeric chat id (an address, not a secret)
   availability: part_time        # OPTIONAL time budget the org fits into:
@@ -1463,8 +1754,8 @@ cabinet:
   officer_model: claude-opus-4-8[1m]
 
 lanes:
-  - name: Acme Storefront
-    slug: acme-store
+  - name: Acme Storefront      # the lane's name — any language, any script
+    slug: acme-store           # its id — lowercase latin, digits, hyphens
     repos: ["acme/storefront"]   # org/name or URL; first repo becomes product.repo
     task_system: "plugin:dev-tasks"   # plugin:<name> | linear | github-issues | none
     boards: ["12345678"]       # board/team ids in the task system
@@ -1520,21 +1811,22 @@ integrations:
 
 def default_captain_name(explicit: str | None) -> str:
     """Resolve the defaults-lane captain name: --captain-name, else $USER,
-    else the honest fallback "Captain". An EXPLICIT name failing NAME_RE
-    refuses loud (the captain asked for it, so a silent substitute would be
-    invented data); an unusable ambient $USER falls back silently (it was
-    never asked for)."""
+    else the honest fallback "Captain". An EXPLICIT name failing display-name
+    validation refuses loud (the captain asked for it, so a silent substitute
+    would be invented data); an unusable ambient $USER falls back silently (it
+    was never asked for).
+
+    Both arms ride ``validate_display_name``, so --captain-name accepts any
+    script exactly like the answers file does — a captain whose name the CLI
+    would have refused could not have used --defaults at all."""
     if explicit is not None:
-        name = explicit.strip()
-        if not name or "\n" in name or not NAME_RE.match(name):
-            raise GenerationError(
-                f"--captain-name {explicit!r} must match {NAME_RE.pattern} "
-                f"(plain display name)"
-            )
-        return name
+        return validate_display_name(explicit.strip(), "--captain-name")
     ambient = (os.environ.get("USER") or "").strip()
-    if ambient and NAME_RE.match(ambient):
-        return ambient
+    if ambient:
+        try:
+            return validate_display_name(ambient, "$USER")
+        except GenerationError:
+            pass
     return DEFAULTS_CAPTAIN_FALLBACK
 
 
@@ -1884,12 +2176,18 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
             if kind == "yaml":
                 yaml.safe_load(content)
             elif kind == "agent-md":
-                parts = content.split("---", 2)
-                if len(parts) < 3:
-                    raise GenerationError(f"rendered agent {path.name} has no frontmatter")
-                yaml.safe_load(parts[1])
+                yaml.safe_load(_frontmatter_text(content, f"rendered agent {path.name}"))
         except yaml.YAMLError as e:
             raise GenerationError(f"generated content for {path} does not parse: {e}") from e
+
+    # ---- pre-write validation: every display name must ROUND-TRIP ----
+    # PARSING IS NOT THE PROPERTY (2026-07-30). `name: Yes` parses perfectly
+    # and loads back as the boolean True; `name: 高橋 美咲` parses and loads
+    # back correctly, but a future emission bug that dropped or mangled it
+    # would also still parse. Since the input alphabet no longer stands guard
+    # over emission, the emission needs a sensor that fails when the operator's
+    # name is not what came back out — not merely when the file is broken.
+    _assert_names_round_trip(outputs, answers, lanes)
 
     # ---- overwrite guard (platform.yml is marker-managed, exempt) ----
     for path, _content, _kind in outputs:
@@ -1919,7 +2217,7 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
             if kind == "yaml":
                 yaml.safe_load(on_disk)
             elif kind == "agent-md":
-                yaml.safe_load(on_disk.split("---", 2)[1])
+                yaml.safe_load(_frontmatter_text(on_disk, str(path)))
             # kind == "text" (active-project.txt): plain slug, nothing to parse
         print("validation: all generated YAML parses")
 
