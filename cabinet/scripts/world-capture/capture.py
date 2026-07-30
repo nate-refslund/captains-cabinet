@@ -21,6 +21,15 @@ The originals live in the private meta workspace; the mirror is what CI runs,
 and the sync script fails if the two ever differ, so there is exactly one
 authority and one way to notice drift.
 
+THIS PIPELINE HAS NO CLOCK, NO DAY BUCKET AND NO RENDER STAGE, and that is not
+an oversight to fix here — it is what makes it fast and deterministic. It also
+means every screen-space pass the browser composites on top of the world (the
+ambience remap, weather, the killswitch wash, the glow) is outside all twelve
+checks at every zoom, which is how a dusk veil replaced 15.6% of every pixel
+three hours a day with every arm green. That half is judged by frame-judge.py
+over real composited browser frames; see README.frame.md for which of the twelve
+transferred and which are blueprint-shaped by nature.
+
 CAPTURE AT SCALE 1.0 TO JUDGE. --scale exists for eyeballing; the checks
 carry absolute-pixel constants, so a shrunk frame is measured at a different
 relative resolution and invents defects (see --scale's help for the numbers).

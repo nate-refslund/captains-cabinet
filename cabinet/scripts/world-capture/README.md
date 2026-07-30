@@ -56,6 +56,8 @@ each other; nothing told them about the plough.
 | `states/*.json` | world-state fixtures. Every rung is a real rung of that ladder in `cabinet/world/growth-ladders.yml`. |
 | `ambient-nature.txt` | morphology that no rung entitles — trees, reeds, rocks. Hand-held on purpose. |
 | `mirror/` | byte-identical copies of the checks and the offline wharf; `sync-checks.py --check` guards them. |
+| `live-frame-probe.py` | judges ONE PNG captured off the live `/world`: is every pixel of open water still lawful water. |
+| `frame-judge.py` + `../../dashboard/frame-harness/` | the FRAME path — capture the real composited browser frame across the clock and the zoom, and judge what the blueprint cannot see. [`README.frame.md`](README.frame.md) carries the per-check table. |
 
 ## The rules it is built to
 
@@ -89,6 +91,16 @@ each other; nothing told them about the plough.
   tower moved the camp capture from "0 unchecked" to three — the camp frame never
   did verify a square, a plot or a lamp. An honest zero stays green; a silent hole
   must not.
+- **A blueprint re-draw is not the product** (2026-07-30). Everything above judges a
+  frame `raster.py` draws from `composeLayout`'s blueprint: no clock, no day bucket,
+  no PIXI stage. The ambience remap, the weather layer, the killswitch wash and the
+  glow were therefore outside all twelve checks at every zoom, and a dusk veil
+  replaced 15.6% of every pixel three hours a day with every arm green. That half is
+  now judged on real browser frames by `frame-judge.py`; the blueprint path keeps
+  every check it has, because it is fast, deterministic and catches layout defects a
+  frame cannot. See [`README.frame.md`](README.frame.md) for which of the twelve
+  transferred, which are blueprint-shaped by nature, and which are blocked on a
+  renderer capture door.
 - **Judge at scale 1.0.** `--scale` is for eyeballing. `world_checks.py` carries
   absolute-pixel constants, so a shrunk frame is measured at a different relative
   resolution: at `--scale 0.45`, a frame that is green at 1.0 invents an on-road
@@ -107,6 +119,11 @@ each other; nothing told them about the plough.
   the era-vocabulary resolution, and a 40-seed sweep asserting no structure
   stands in a tilled plot.
 - `tests/test_ground.py` — the ground port's own claims, and the mirror's identity.
+- `tests/test_frame_judge.py` + the `world-frame` job — the frame path. The job
+  captures 16 real composited frames (4 buckets x 3 zooms, plus a killswitch pair)
+  with a headless Chrome the runner already ships, and runs `frame-judge.py` over
+  them. Every arm is shown red against the defect it names, including the two that
+  would have caught the 2026-07-29 veil.
 - `tests/test_meadow_feather.py` — the meadow shading has a feather, both renderers
   read the SAME one out of the draw list, and the blur is applied to the union
   rather than per blob. Its own negative twin runs in the same file: without the
