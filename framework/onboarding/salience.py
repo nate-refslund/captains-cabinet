@@ -112,6 +112,7 @@ unearned clean negative is the defect, not the long sentence.
 from __future__ import annotations
 
 import re
+import unicodedata
 from datetime import datetime, timezone
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -183,7 +184,15 @@ _CLOCK_DISTINCT_SHARE = 0.05
 _CLOCK_MIN_DISTINCT = 3
 _CLOCK_MIN_COVERAGE = 0.5
 
-_TOKEN_SPLIT_RE = re.compile(r"[^0-9a-z]+")
+#: What a word is made of, asked of the Unicode database rather than of an
+#: alphabet. A Letter or a Number carries a word. A Mark — an accent, a vowel
+#: sign, a variation selector — belongs to the character it FOLLOWS and may
+#: never start a word: dropping that rule makes a lone selector left over from a
+#: symbol into a one-character "word", and two names decorated with the same
+#: pictogram would then share it. Everything else ends the word: punctuation,
+#: separators, symbols, and the underscore a filing system writes for a space.
+_WORD_CATEGORIES = frozenset("LN")
+_MARK_CATEGORY = "M"
 _ISO_RE = re.compile(
     r"^(\d{4})-(\d{2})-(\d{2})"
     r"(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$"
@@ -202,8 +211,48 @@ class SalienceError(Exception):
 # --- primitives -------------------------------------------------------------
 
 
+def _fold(name: Any) -> str:
+    """One name, one string, in any script.
+
+    ``casefold`` rather than ``lower`` because lowering is an ASCII habit that
+    quietly stops working: it leaves the Greek final sigma and the German sharp
+    s as distinct letters, so a name would fail to equal itself. ``NFKC``
+    afterwards because the same name arrives written two ways — a filesystem
+    hands back a decomposed accent where the operator typed a composed one, and
+    a comparison of one against the other is a comparison of a name with itself
+    that fails. Normalising AFTER folding also renormalises what folding
+    produced. Both are applied to every name on both sides of every comparison,
+    so nothing here can make two names agree that the operator would not.
+    """
+    return unicodedata.normalize("NFKC", str(name or "").casefold())
+
+
+def _split_words(text: str) -> list[str]:
+    """The words in a folded name, in order, by Unicode category.
+
+    ONE SPLITTER. Everything that scores, clusters, discounts, grades or
+    compares a name reads this, and a second one — an alphabet for ranking and
+    another for names — would drift apart within a month, which is the drift the
+    length-floor split was made to stop.
+    """
+    words: list[str] = []
+    current: list[str] = []
+    for character in text:
+        category = unicodedata.category(character)[0]
+        if category in _WORD_CATEGORIES:
+            current.append(character)
+        elif category == _MARK_CATEGORY and current:
+            current.append(character)
+        elif current:
+            words.append("".join(current))
+            current = []
+    if current:
+        words.append("".join(current))
+    return words
+
+
 def name_tokens(name: Any) -> list[str]:
-    """The ASCII words a name is written with, plus adjacent-pair compounds.
+    """The words a name is written with, plus adjacent-pair compounds.
 
     NO RANKING FLOOR. This answers "which words does this name contain", and
     :func:`tokenize` is this list above ``_MIN_TOKEN_LEN``. The two questions
@@ -236,14 +285,17 @@ def name_tokens(name: Any) -> list[str]:
     Digits are kept, because a case number or a vessel id is a perfectly good
     recurring name in an estate this module is not allowed to know the shape of.
 
-    RESIDUAL, THE SAME EMPTY SET FROM THE ALPHABET RATHER THAN THE FLOOR: the
-    split is ``[^0-9a-z]+``, so a name carrying no ASCII alphanumeric — a name
-    in another script — yields NO words here, on either side of any comparison,
-    including a comparison of that name with itself. Registered as RES-025:
-    widening the split widens the RANKING vocabulary, a decision above this one.
+    THE ALPHABET IS THE UNICODE DATABASE, not ``[0-9a-z]``, and the ASCII split
+    this replaced produced the SAME empty set from the alphabet that the length
+    floor produced from the ranking: a name carrying no ASCII alphanumeric — a
+    name written in Japanese, Cyrillic, Greek, Arabic, Hebrew, Hindi, Thai or
+    Korean — yielded no words on either side of any comparison, so it shared
+    none with ITSELF and the operator was told the folder spelled exactly like
+    their answer did not carry it. Widening it re-ranks every estate at once,
+    which is why it was measured on a real one before it landed rather than
+    corrected in a review: see the retirement note on RES-025.
     """
-    text = str(name or "").lower()
-    parts = [p for p in _TOKEN_SPLIT_RE.split(text) if p]
+    parts = _split_words(_fold(name))
     out: list[str] = []
     seen: set[str] = set()
     for part in parts:

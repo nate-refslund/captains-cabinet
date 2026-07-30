@@ -497,7 +497,82 @@ budgets:
     # was the alternative and is exactly how these two shipped. Zero new production
     # MODULES (framework_production_modules unchanged at 248; the new arms are
     # tests). observed == maximum, zero headroom.
-    maximum: 61452
+    #
+    # 61452 -> 61455 (+3 measured 2026-07-30 with cognitive-architecture-census.py:
+    # observed 75994 vs the then-effective 75991). THE REPLACEMENT SENTENCE WAS
+    # STILL OVER-BROAD, found by running the claim-surfaces sweep against its own
+    # fix. `inventory_mcp_estate` now said `sources` names the paths that "YIELDED
+    # A READING", which is false on one of its two limbs and was proved so by
+    # execution: a `.mcp.json` that is valid JSON and parses without error but
+    # carries no `mcpServers` is READ and still absent from `sources`, while an
+    # extensions file that parses with no `mcps:` at all IS listed. One sentence
+    # cannot be true of both, and the section's own header names that exact
+    # conflation ("I looked and found nothing" vs "I never looked") as the failure
+    # it exists to refuse. The docstring now states the asymmetry, names it as not
+    # deliberate, and points at the two arms that pin it. NOT ONE LINE of behaviour
+    # moved (the AST with docstrings stripped is byte-identical): splitting the two
+    # readings wants a second key and making the limbs symmetric wants a behaviour
+    # change, and neither is smuggled in behind a doc fix.
+    # RAISED VISIBLY, never an allowance: the alternative was compressing the
+    # sentence to fit the ceiling, which is the exact move the note above records
+    # as how the false sentences shipped in the first place. Zero new production
+    # MODULES (framework_production_modules unchanged at 248; the new arm is a
+    # test). observed == maximum, zero headroom.
+    # 61433 -> 61474 (+41 measured 2026-07-30 via cognitive-architecture-census.py,
+    # observed 76013 vs the then-effective 75972): A NAME DOES NOT SHARE A WORD
+    # WITH ITSELF. The name splitter was `[^0-9a-z]+`, an ASCII alphabet, so a
+    # name carrying no ASCII alphanumeric produced NO words — on BOTH sides of
+    # every comparison. An operator answering in Japanese, Cyrillic, Greek,
+    # Arabic, Hebrew, Devanagari, Thai or Korean therefore had every window
+    # refused, including the folder spelled exactly like their answer, and was
+    # told that folder shares no word with a name it visibly carries. The same
+    # empty set the length floor produced, reached through the alphabet instead;
+    # a framework primitive assuming the operator world is spelled in Latin
+    # letters, in a public repo.
+    # framework/onboarding/salience.py now splits on the UNICODE DATABASE in ONE
+    # splitter both `name_tokens` and `tokenize` read — a Letter or a Number
+    # carries a word, a Mark belongs to the character before it and may never
+    # start one (a pictogram's invisible modifier would otherwise become a word
+    # every decorated row shares, turning a false refusal into a false BIND),
+    # everything else ends the word — after a case fold that works past ASCII and
+    # an NFKC normalisation, so an accent the filesystem decomposed is still the
+    # same name.
+    # THE RE-RANK WAS MEASURED, NOT ASSUMED, because this vocabulary is what
+    # every score, cluster, discount, demotion and grade reads. One live sweep of
+    # a real 665-name / four-connector estate, ranked twice with `now` pinned to
+    # the sweep instant: all 49 ranked clusters IDENTICAL in order and score,
+    # vocabulary 1226 -> 1211 tokens, below-span names 607 -> 608, and 35 of 665
+    # names re-read as the word the estate writes rather than the fragments
+    # either side of a non-ASCII letter. The estate's own identity strings — what
+    # the demotion set is built from — went from 15 shattered fragments to 13
+    # whole names. Nothing left the shortlist and nothing entered it.
+    # RAISED VISIBLY, never an allowance: an allowance promises a deletion gate,
+    # and a splitter that reads the operator's own script is not deletable. Zero
+    # new production MODULES (framework_production_modules unchanged at 248 —
+    # `_fold` and `_split_words` land inside the existing module and the seven new
+    # arms are tests). observed == maximum, zero headroom.
+    #
+    # MERGE 2026-07-30 (fix/unicode-name-tokens over fix/claim-surfaces): the two
+    # raises above are DISJOINT — one is three public entry points in research.py
+    # whose docstrings claimed more than their bodies do, one is the name splitter
+    # in salience.py that read an ASCII alphabet and therefore refused every
+    # window for an operator writing in any other script — and they touch
+    # different functions in different modules. The merged ceiling is RE-MEASURED
+    # over this tree with cognitive-architecture-census.py rather than summed on
+    # paper. Both notes stand verbatim; neither is the other's restamp. Neither is
+    # an allowance and ZERO new modules, so no bijection class moves. MEASURED
+    # over the merged tree: observed 76032, so the merged ceiling is 61493 at
+    # zero headroom. The paper sum agrees (61433 + 19 + 41 = 61493), and the
+    # agreement is evidence FOR the measurement, never a substitute for taking it.
+    #
+    # MERGE 2026-07-30 (fix/unicode-name-tokens over fix/sources-reading-asymmetry):
+    # DISJOINT again — one is a docstring limb in research.py that was still
+    # over-broad, one is the salience name splitter — so both notes stand and the
+    # merged ceiling is RE-MEASURED over this tree rather than summed on paper:
+    # observed 76035, so the ceiling is 61496 at zero headroom. The paper sum
+    # agrees (61455 + 41 = 61496), and the agreement is evidence FOR the
+    # measurement, never a substitute for taking it.
+    maximum: 61496
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

@@ -1323,10 +1323,12 @@ def _window_binding(state: Mapping[str, Any] | dict[str, Any],
     WHAT IT CATCHES, EXACTLY: a window and an answer whose names share no word
     that ``salience.name_tokens`` can read. It does not catch a coincidental
     shared one — a target typed as a phrase lends every word in it, so a folder
-    carrying any of those words binds unasked. Nor is it exact for two names
-    that tokenizer reads NO word from (RES-025): those share no word by this
-    test even spelled alike. The only authority on what a folder actually holds
-    is the operator, which is why the escape is a statement rather than a guess.
+    carrying any of those words binds unasked. That tokenizer reads words in any
+    script the operator can type; while it read an ASCII alphabet, two names in
+    another one shared no word even spelled alike, and the refusal was false
+    about the operator's own data (RES-025, closed). The only authority on what a
+    folder actually holds is the operator, which is why the escape is a statement
+    rather than a guess.
 
     IT COMPARES NAMES, NOT RANKING CANDIDATES, and the difference is not
     academic — it shipped the other way and hard-blocked every window an
