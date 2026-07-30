@@ -1963,6 +1963,200 @@ def test_answering_salience_is_refused_when_nothing_was_offered(tmp_path):
         )
     assert excinfo.value.code == "salience_not_offered"
 
+
+# --- the answer BINDS depth: the window follows the target, or says why -----
+
+
+def _answered(tmp_path: Path, rows=None, *, choice_index: int = 0) -> str:
+    """A journey whose operator has ratified a salience target. Returns it."""
+    _connected_state(tmp_path, rows if rows is not None else _estate_rows())
+    offered = journey.salience_offer(journey.snapshot(tmp_path)["state"])
+    result = journey.act(
+        {"action": "answer_salience", "surface": "dashboard", "action_id": "bind-answer",
+         "choice": offered["options"][choice_index]["id"]},
+        tmp_path,
+    )
+    return result["state"]["salience"]["target"]
+
+
+def _folder(tmp_path: Path, name: str) -> Path:
+    """A real folder with a chosen NAME. The bind reads the folder's own name,
+    so the name is the whole fixture — and it is built under a directory this
+    test controls rather than under tmp_path's pytest-generated path, whose
+    components carry the TEST's name and would let a folder pass the bind on a
+    word the test author wrote rather than one the operator chose."""
+    folder = (tmp_path / "estates" / name).resolve()
+    folder.mkdir(parents=True)
+    (folder / "README.md").write_text("# a folder\n", encoding="utf-8")
+    return folder
+
+
+def _propose(tmp_path: Path, source: Path, *, action_id: str, **extra) -> dict:
+    return journey.act(
+        {"action": "propose_window", "ownership": "self", "surface": "dashboard",
+         "authority_basis": "my own machine, my own folder", "action_id": action_id,
+         "source": str(source), "relationship_destination": "reversible",
+         "purpose": "Find one release risk before it surprises the team.", **extra},
+        tmp_path,
+    )
+
+
+def test_a_window_that_does_not_carry_the_answer_is_refused(tmp_path):
+    """THE DEFECT, DRIVEN. Answer one target, ask for depth on a different one:
+    before this bind existed the proposal was accepted, the folder was read, and
+    the card went on saying "that is where I spend depth" — a published claim
+    with no control behind it. Nothing may be opened, and the stage may not
+    move, on a window the answer does not reach."""
+    target = _answered(tmp_path)
+    elsewhere = _folder(tmp_path, "quarterly-tax-returns")
+    with pytest.raises(journey.JourneyError) as excinfo:
+        _propose(tmp_path, elsewhere, action_id="off-target")
+    assert excinfo.value.code == "salience_window_off_target"
+    assert target in str(excinfo.value)
+    state = journey.snapshot(tmp_path)["state"]
+    assert state["stage"] == "welcome" and state["source"] is None
+    assert state["charter"] is None
+    # a refusal is an EVENT, never a silent skip: no propose_window landed
+    assert all(e.get("action") != "propose_window" for e in journey._read_events(tmp_path))
+
+
+def test_the_bind_is_lopsided_so_a_wrong_rule_cannot_pass_by_symmetry(tmp_path):
+    """Both directions, on the SAME pair. A bind that accepted everything and a
+    bind that refused everything would each pass a one-sided test; only the pair
+    shows the control is reading the target it was given."""
+    target = _answered(tmp_path)
+    assert target == "blueharbour"
+    on_target = _folder(tmp_path, "blue-harbour")
+    off_target = _folder(tmp_path, "quarterly-tax-returns")
+
+    ok = _propose(tmp_path, on_target, action_id="on-target")
+    assert ok["ok"] is True and ok["state"]["stage"] == "charter_pending"
+    window = ok["state"]["salience"]["window"]
+    assert window["relation"] == "matched"
+    assert window["root"] == str(on_target) and window["evidence"]
+    assert "so that is where I spend depth" in ok["card"]["body"]
+
+    with pytest.raises(journey.JourneyError) as excinfo:
+        _propose(tmp_path, off_target, action_id="off-target-2")
+    assert excinfo.value.code == "salience_window_off_target"
+
+
+def test_the_operator_may_say_the_folder_is_the_target_under_another_name(tmp_path):
+    """THE LEGITIMATE CASE THE BIND WOULD OTHERWISE BREAK. One thing wears a
+    different word in every system it lives in — the defect this whole ranker
+    was built around — so a folder that IS the answer under another name must
+    not be unreachable. The operator says so, the claim survives BECAUSE they
+    said so, and the word they used is learned as an alias exactly as the
+    escape hatch learns one."""
+    target = _answered(tmp_path)
+    folder = _folder(tmp_path, "bh-monorepo")
+    out = _propose(tmp_path, folder, action_id="same-thing",
+                   salience_relation="same_thing")
+    assert out["ok"] is True
+    salience = out["state"]["salience"]
+    assert salience["window"]["relation"] == "same_thing"
+    assert "monorepo" in salience["aliases"], "the folder's name taught no alias"
+    assert f"You pointed me at {target}, so that is where I spend depth" in out["card"]["body"]
+
+
+def test_a_deliberate_detour_is_allowed_and_the_depth_claim_is_dropped(tmp_path):
+    """THE OTHER LEGITIMATE CASE. An operator may want something else opened,
+    and the honest answer is not to refuse them — it is to open it and STOP
+    claiming their answer is what pointed me here. The claim and the bind are
+    the same thing; you cannot have one without the other."""
+    target = _answered(tmp_path)
+    folder = _folder(tmp_path, "quarterly-tax-returns")
+    out = _propose(tmp_path, folder, action_id="detour", salience_relation="elsewhere")
+    assert out["ok"] is True and out["state"]["stage"] == "charter_pending"
+    assert out["state"]["salience"]["window"]["relation"] == "elsewhere"
+    body = out["card"]["body"]
+    assert "so that is where I spend depth" not in body
+    assert f"You pointed me at {target}" in body and "somewhere-else you asked for" in body
+    # the detour teaches NO alias: the operator said it is not that thing
+    assert "quarterly" not in out["state"]["salience"]["aliases"]
+
+
+def test_a_stated_relation_outranks_the_name_in_the_losing_direction(tmp_path):
+    """The direction a lazy implementation gets wrong. A folder whose name
+    matches by accident is still a detour when the operator says it is — the
+    module cannot see inside the folder and they can, so their word wins even
+    when it COSTS the cabinet the claim."""
+    _answered(tmp_path)
+    folder = _folder(tmp_path, "blue-harbour")
+    out = _propose(tmp_path, folder, action_id="named-but-detour",
+                   salience_relation="elsewhere")
+    assert out["state"]["salience"]["window"]["relation"] == "elsewhere"
+    assert "so that is where I spend depth" not in out["card"]["body"]
+
+
+def test_an_unrecognised_relation_is_refused_rather_than_read_as_consent(tmp_path):
+    """DEGENERATE END. A bypass field that accepts any truthy string is not a
+    control: "yes", "" and a typo would each become an override. Only the two
+    statements the card offers are answers."""
+    _answered(tmp_path)
+    folder = _folder(tmp_path, "quarterly-tax-returns")
+    for i, relation in enumerate(["yes", "", "Same_Thing", True, ["elsewhere"], {}]):
+        with pytest.raises(journey.JourneyError) as excinfo:
+            _propose(tmp_path, folder, action_id=f"bad-relation-{i}",
+                     salience_relation=relation)
+        assert excinfo.value.code == "salience_relation_invalid"
+    assert journey.snapshot(tmp_path)["state"]["stage"] == "welcome"
+
+
+def test_with_no_answer_there_is_nothing_to_bind_and_no_claim_is_made(tmp_path):
+    """THE OTHER DEGENERATE END, and the reason this cannot break the entry
+    modes that have no ranking at all. A journey nobody has asked the salience
+    question of may open any folder — the bind constrains an ANSWER, and there
+    is none."""
+    folder = _folder(tmp_path, "quarterly-tax-returns")
+    out = _propose(tmp_path, folder, action_id="unbound")
+    assert out["ok"] is True and out["state"]["stage"] == "charter_pending"
+    assert out["state"].get("salience") is None
+    assert "spend depth" not in out["card"]["body"]
+
+
+def test_an_answer_arriving_after_the_window_does_not_claim_the_window(tmp_path):
+    """THE HOLE FROM THE OTHER SIDE. propose_window can run before any sweep,
+    so an answer can arrive pointing somewhere the open window does not reach.
+    The bind cannot retroactively refuse a read that already happened — so the
+    card stops claiming it, which is the only honest thing left to do."""
+    folder = _folder(tmp_path, "quarterly-tax-returns")
+    proposed = _propose(tmp_path, folder, action_id="window-first")
+    ratify(tmp_path, proposed, action_id="ratify-window-first")
+
+    data = tmp_path / journey.DATA_REL
+    state = json.loads((data / journey.STATE_NAME).read_text(encoding="utf-8"))
+    rows = _estate_rows()
+    state["salience_rows"] = {"rows": rows, "identities": [], "not_reached": []}
+    state["entry_grants"] = {"connectors": sorted({r["connector"] for r in rows}),
+                             "local_files": True, "web": False}
+    (data / journey.STATE_NAME).write_text(json.dumps(state), encoding="utf-8")
+
+    offered = journey.salience_offer(journey.snapshot(tmp_path)["state"])
+    out = journey.act(
+        {"action": "answer_salience", "surface": "dashboard", "action_id": "late-answer",
+         "choice": offered["options"][0]["id"]},
+        tmp_path,
+    )
+    binding = journey._window_binding(out["state"])
+    assert binding["relation"] == "off_target"
+    body = out["card"]["body"]
+    assert "so that is where I spend depth" not in body
+    assert "depth is not yet spent where you pointed" in body
+
+
+def test_the_approval_card_states_the_binding_before_the_hash_is_accepted(tmp_path):
+    """Depth is authorised on the Charter card, so that is where the binding has
+    to be legible — the welcome card the operator has already moved past is not
+    where they decide."""
+    target = _answered(tmp_path)
+    out = _propose(tmp_path, _folder(tmp_path, "blue-harbour"), action_id="charter-note")
+    assert out["state"]["stage"] == "charter_pending"
+    assert f"You pointed me at {target}" in out["card"]["body"]
+    ratified = ratify(tmp_path, out, action_id="ratify-charter-note")
+    assert f"You pointed me at {target}" in ratified["card"]["body"]
+
+
 def _starved_area_estate(tmp_path: Path) -> Path:
     """An estate shaped like the measured one: a bulk prose area that eats the
     budget, a repo area carrying the manifest, and a small tracker area that

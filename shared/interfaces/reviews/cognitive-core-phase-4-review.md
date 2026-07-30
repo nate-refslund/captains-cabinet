@@ -21,7 +21,23 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 80d1b9fed616d8bc4332d015bcedb155f3aa409b0181022f3bde359bd80b2a7b
+Reviewed-Scope-Digest: 8b6b1c9d157204e238ca3b7df2c678de1803492f02f9885c6c053167ca36f388
+
+(RE-BOUND 2026-07-30 on `fix/answer-binds-depth`, previous value `80d1b9fe…`.
+ONE in-scope path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` raises
+`framework_production_noncomment_lines` VISIBLY 60979 -> 61094 (+115 measured
+over this tree with cognitive-architecture-census.py, observed 75371 vs the
+then-effective 75256 — not an allowance, because a control that makes a
+SHIPPED sentence true has no deletion gate that could ever fire while the
+sentence ships). The unit's own work is entirely in
+`framework/onboarding/journey.py` and `framework/onboarding/salience.py`,
+outside this digest's scope: the salience answer was recorded and read by
+nothing, so an operator could answer one target and have a First Window on any
+other folder accepted, ratified and READ while the card kept publishing "that
+is where I spend depth". `_window_binding` is the control; `WINDOW_RELATIONS`
+is the named escape. Re-bound in the SAME commit as the contract raise, per the
+zero-headroom chain this artifact's RES-007 note describes.)
 (MERGE RE-BIND, 2026-07-29, `fix/connector-loader-honesty` x master. Both sides
 re-bound this line, so the merge left two; ONE value stands and it is recomputed
 over this merge commit. Every note from both sides is kept verbatim below,
