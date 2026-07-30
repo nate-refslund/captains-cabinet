@@ -165,9 +165,42 @@ def test_the_mirror_is_identical_to_its_source():
     assert r.returncode == 0, r.stdout + r.stderr
 
 
-def test_the_mirrored_checks_do_not_import_the_thing_they_test():
-    """world_checks.py's own first law, enforced from this side of the line."""
-    src = (CAPTURE / "mirror" / "checks" / "world_checks.py").read_text()
-    for forbidden in ("import raster", "import ground", "import compose", "from raster",
-                      "from ground", "from compose"):
-        assert forbidden not in src, f"a check must never import {forbidden!r}"
+FORBIDDEN = ("import raster", "import ground", "import compose",
+             "from raster", "from ground", "from compose")
+
+# EVERY judge on either path, not just the mirrored one. The law was enforced on
+# `mirror/checks/world_checks.py` alone until 2026-07-30, when a fresh-context
+# review pointed out that the newest judge in this directory — the one that runs
+# over real browser frames — was not covered by it at all. A law with a sensor on
+# one of its four subjects is a law about that one subject.
+JUDGES = ("mirror/checks/world_checks.py", "mirror/checks/verify.py",
+          "frame-judge.py", "live-frame-probe.py")
+
+
+@__import__("pytest").mark.parametrize("rel", JUDGES)
+def test_a_judge_never_imports_the_thing_it_judges(rel):
+    """world_checks.py's own first law, enforced across every judge here.
+
+    `ambience_py` is deliberately NOT on the list and the distinction is the
+    whole point: it reads `ambience-derived.json`, an ARTIFACT the renderer
+    emits and `ambience.test.ts` pins to itself, so a design change moves the
+    renderer and the expectation together and neither can drift alone. Importing
+    `raster`/`ground`/`compose` would be different in kind — those DRAW the
+    frame, so a judge that imported one would be checking a re-derivation
+    against itself, which is the defect this whole directory exists about.
+    """
+    src = (CAPTURE / rel).read_text()
+    for forbidden in FORBIDDEN:
+        assert forbidden not in src, f"{rel}: a judge must never {forbidden!r}"
+
+
+def test_the_judge_list_is_every_judge_on_disk():
+    """A thirteenth judge must not be able to arrive without a row above.
+
+    Discovered rather than listed: the guard that only covers the files someone
+    remembered is the guard that missed frame-judge.py for a week.
+    """
+    found = {p.name for p in CAPTURE.glob("*.py") if "judge" in p.name or "probe" in p.name}
+    found |= {p.name for p in (CAPTURE / "mirror" / "checks").glob("*.py")}
+    assert found == {Path(j).name for j in JUDGES}, (
+        f"on disk {sorted(found)}; covered {sorted(Path(j).name for j in JUDGES)}")

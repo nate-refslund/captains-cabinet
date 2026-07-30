@@ -40,6 +40,12 @@
  *   weather=sun|...     the weather layer, which is also outside the twelve
  *   killswitch=1        the red wash, likewise
  *   iso=0               the top-down kernel, for the bake-off path
+ *   ground=1            the GROUND ALONE — sea, terrain, shore; every layer
+ *                       above them hidden. The one frame in this harness whose
+ *                       tone vocabulary is closed, and therefore the only one
+ *                       that can be judged without a twin. Every other arm here
+ *                       compares a frame with its day twin, and a twin carries a
+ *                       CONTENT defect exactly as the frame does.
  */
 // NO StrictMode, and that is not laziness. StrictMode double-invokes effects in
 // development, and this canvas boots PixiJS in one — two boots race a destroy
@@ -172,6 +178,7 @@ async function boot() {
         weather={weather}
         tick={0}
         killswitch={p.get('killswitch') === '1'}
+        groundOnly={p.get('ground') === '1'}
         clockHour={clockHour}
         chartTable={false}
         courses={null}
