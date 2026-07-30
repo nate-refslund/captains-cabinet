@@ -208,3 +208,29 @@ commit with the exact error above.
 
 Census: `framework_production_noncomment_lines` 61198 → 61211 (+13 measured,
 observed 75488). COG-4 re-bound again in the same commit.
+
+## 8. Checkpoints 3 and 4 — two more found by attacking, not reasoning
+
+**A padded name is the same name.** `learn_merge` tested `str(item).strip()` for
+emptiness and stored the UNSTRIPPED item, so `" alpha "` entered the record in a
+shape that can never equal a ranking label: a stored merge guaranteed never to
+fire, which from outside reads exactly like one that was accepted. No caller
+reaches it today — every group is built from `tokenize` output or a cluster
+label, both already clean — which is why it needed pinning: these two are public
+API, and an inert row in the learned store is the silent half of this class.
+
+**The refusal quoted caller text unbounded.** Naming the offending strings is
+what makes `salience_merge_unknown` useful, and it is also how caller text gets
+into a message that reaches stdout and the API response. Measured against the
+previous commit: a 4000-character name produced a **4061-character refusal**,
+and an unpaired surrogate would have crashed the action out of its own audit
+trail. Each name is now scrubbed and cut to 80 characters (a real label is a
+short token, so nothing true is lost) and the offender list is cut at five WITH
+THE COUNT STATED — a refusal naming three of five while looking complete is the
+silent-shortening defect wearing the fix's clothes. The arm asserts the bound
+and the count, not merely that a refusal happened, and fails against the
+previous commit on `assert 4061 < 200`.
+
+Census across both: 61211 → 61212 (+1 measured, observed 75489). COG-4 re-bound
+in each commit that moved the contract. Final: `pytest framework/onboarding -q`
+622 passed / 1 skipped.

@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 59c9bafb460cc268d5713ec601a7840de89a1bbfdac38855a490a0f9b654143c
+Reviewed-Scope-Digest: 720e924b5a4ff3aa8da793ce37bdf4d43ee05195b20d1edbe40d6f61ce8d8e9f
 (MERGE RE-BIND, 2026-07-29, `fix/connector-loader-honesty` x master. Both sides
 re-bound this line, so the merge left two; ONE value stands and it is recomputed
 over this merge commit. Every note from both sides is kept verbatim below,
@@ -1655,3 +1655,19 @@ absorbs one of the names it joins, so validating an answer against the current
 ranking alone refused the operator's own already-taught name. Raised visibly,
 never an allowance; census PASS at observed == maximum with zero headroom; ZERO
 new production modules.
+
+
+---
+
+## Re-bind 2026-07-30 (feat/answer-merges-aliases, checkpoint 3)
+
+Recorded digest: 720e924b5a4ff3aa8da793ce37bdf4d43ee05195b20d1edbe40d6f61ce8d8e9f
+Previous:        59c9bafb460cc268d5713ec601a7840de89a1bbfdac38855a490a0f9b654143c
+
+ONE bound path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` takes
+`framework_production_noncomment_lines` 61211 -> 61212 (+1 measured, observed
+75489) for scrubbing and bounding the caller text the merge refusal quotes back
+— a 4000-character name produced a 4061-character refusal on the previous
+commit. Raised visibly, never an allowance; census PASS at observed == maximum
+with zero headroom; ZERO new production modules.

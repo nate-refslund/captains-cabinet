@@ -922,12 +922,22 @@ def _salience_merge_request(raw: Any, offer: Mapping[str, Any],
             "salience_merge_too_many",
             f"That is more than {MAX_MERGE_LABELS} names in one merge.",
         )
-    named = [str(item).strip() for item in raw if str(item).strip()]
+    # SCRUBBED AND BOUNDED BEFORE IT IS QUOTED BACK. The refusal below names the
+    # offending strings so the operator can see WHICH of their words was not
+    # ranked — and that puts caller text into a message that reaches stdout and
+    # the API response. Unpaired surrogates would crash the action out of its own
+    # audit trail; an unbounded string would ride the refusal out. Neither can:
+    # a real label is a short token, so 80 characters loses nothing true. The
+    # count is stated whenever the list is cut, because a refusal that names
+    # three of five offenders while looking complete is the silent-shortening
+    # defect wearing the fix's clothes.
+    named = [_scrub_lone_surrogates(str(i)).strip()[:80] for i in raw if str(i).strip()]
     unknown = sorted({label for label in named if label not in ranked})
     if unknown:
         raise JourneyError(
             "salience_merge_unknown",
-            "I did not rank " + ", ".join(unknown)
+            "I did not rank " + ", ".join(unknown[:5])
+            + (f" and {len(unknown) - 5} other(s)" if len(unknown) > 5 else "")
             + ", so I cannot say it is the same as anything.",
         )
     group.update(named)

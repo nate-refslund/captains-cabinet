@@ -2169,6 +2169,37 @@ def test_a_merge_naming_something_never_ranked_is_refused(tmp_path):
     assert not journey.snapshot(tmp_path)["state"].get("salience_merges")
 
 
+def test_the_refusal_quotes_caller_text_and_is_bounded_before_it_does(tmp_path):
+    """Naming the offender is what makes the refusal useful, and it is also how
+    caller text gets into a message that reaches stdout and the API response.
+    An unpaired surrogate would crash the action out of its own audit trail; an
+    unbounded string would ride the refusal out. A real label is a short token,
+    so both are bounded losing nothing true — and the count is stated whenever
+    the list is cut, because a refusal that names three of five offenders while
+    looking complete is silent shortening wearing the fix's clothes."""
+    _connected_state(tmp_path, _split_estate_rows())
+    with pytest.raises(journey.JourneyError) as excinfo:
+        journey.act(
+            {"action": "answer_salience", "choice": "ledger",
+             "same_as": ["\ud800" + "x" * 4000], "surface": "dashboard",
+             "action_id": "bad-huge"},
+            tmp_path,
+        )
+    message = str(excinfo.value)
+    assert excinfo.value.code == "salience_merge_unknown"
+    assert len(message) < 200
+    message.encode("utf-8")  # a lone surrogate would raise here
+
+    with pytest.raises(journey.JourneyError) as excinfo:
+        journey.act(
+            {"action": "answer_salience", "choice": "ledger",
+             "same_as": [f"nope{i}" for i in range(9)], "surface": "dashboard",
+             "action_id": "bad-many"},
+            tmp_path,
+        )
+    assert "and 4 other(s)" in str(excinfo.value)
+
+
 def test_answering_salience_is_refused_when_nothing_was_offered(tmp_path):
     """Fail-closed: no ranking, no choice to record — not a silently accepted
     target the cabinet then spends depth on."""

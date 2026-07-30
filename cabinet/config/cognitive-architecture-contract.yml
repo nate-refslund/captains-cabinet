@@ -347,7 +347,16 @@ budgets:
     # said at all. Names the operator has already taught are accepted as names.
     # Still bounded by what the ranking produced, at the moment it was answered
     # rather than at this one; an invented name is refused exactly as before.
-    maximum: 61211
+    #
+    # 61211 -> 61212 (+1 measured 2026-07-30 via cognitive-architecture-census.py,
+    # observed 75489 vs the then-effective 75488, SAME landing): the merge refusal
+    # NAMES the offending strings — which is what makes it useful, and is also how
+    # caller text gets into a message that reaches stdout and the API response.
+    # Unpaired surrogates would crash the action out of its own audit trail and an
+    # unbounded string would ride the refusal out, so each name is scrubbed and
+    # cut to 80 characters (a real label is a short token, so nothing true is
+    # lost) and the count is stated whenever the list itself is cut.
+    maximum: 61212
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
