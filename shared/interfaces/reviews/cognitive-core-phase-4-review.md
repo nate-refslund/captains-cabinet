@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 527a73d2da14308993639050089ec15b597720fd90d24fb137a6c798ee1e43e1
+Reviewed-Scope-Digest: 55d8c121cbb529a3c1604b9b6a4982208c720d7afe7600ddf23bf46b44408444
 (MERGE RE-BIND, 2026-07-30, `fix/unicode-name-tokens` x master. Both sides
 re-bound this line, so the merge left two; ONE value stands and it is
 recomputed over this merge commit. The only in-scope path either side moved
@@ -1974,3 +1974,19 @@ the two readings wants a second key and symmetry wants a behaviour change.
 
 Recorded digest: 6595784ffd913aadd0e47fab8fbc146e173b1a7c110f375a3435001828288a80
 Previous:        abe5fbd01d09c85b2b6005d02ce1f86b35010747d00b8c509b70b7e63dceb3ec
+
+(RE-BOUND 2026-07-30 on `feat/companion-desk-pet`, previous value `527a73d2…`.
+ONE in-scope path moved and NO COG-4 implementation byte did:
+`cabinet/scripts/egg-export-manifest.txt` gains a single line,
+`expect-present cabinet/companion/pet.swift`, beside the three companion rows
+already there — the desk pet's source is a second `.swift` in the same
+menu-bar target and the packaging pin must fail loud if it ever falls out of
+the cut. MEASURED, not asserted: the resolved scope was expanded with
+`git ls-tree -r` at master `43368393` and at this branch's HEAD and the two
+sets diffed — same entries, same paths, and exactly ONE path with a different
+blob, the manifest above. The manifest is bound because it can change what a
+COG-4 surface ships; an `expect-present` row is a verification row and adds no
+include, exclude or transform rule, so nothing about what ships changed either.
+No `framework/projection`, `framework/scheduler`, `framework/organs`,
+`cog4-*` or fixture byte is touched by this branch, whose whole diff is the
+companion app, its build script, its tests and this one manifest row.)
