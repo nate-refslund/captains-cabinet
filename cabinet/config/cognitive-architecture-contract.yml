@@ -463,7 +463,41 @@ budgets:
     # substitute for taking it. Both notes stand verbatim;
     # neither is the other's restamp. Neither is an allowance and ZERO new
     # modules, so no bijection class moves.
-    maximum: 61433
+    #
+    # 61433 -> 61452 (+19 measured 2026-07-30 with cognitive-architecture-census.py:
+    # observed 75991 vs the then-effective 75972). THREE FALSE CLAIM SURFACES IN
+    # framework/onboarding/research.py, all docstring text and NOT ONE LINE of
+    # behaviour — the census counts docstring lines, so an honest sentence that is
+    # longer than the false one it replaces costs exactly this and there is no way
+    # to pay it invisibly.
+    #   +13  `identity_candidates` opened "EVERY account identifier this connector
+    #        reported" and said frequency "no longer decides membership", while the
+    #        body returns `ranked[:MAX_IDENTITY_CANDIDATES]`. Above the cap both
+    #        sentences are false and frequency decides membership again at 200.
+    #        Nothing misbehaves today because the sole production caller counts the
+    #        estate itself and publishes accounts/withheld/complete — but the repo
+    #        is public, and a stranger writing a new surface against that function
+    #        was told the offer was exhaustive. The cap is correct and stays; the
+    #        text now names it, names the caller that compensates, and tells a new
+    #        caller where the honest offer comes from.
+    #   +6   `inventory_mcp_estate` promised "`sources` lists the root-relative
+    #        paths actually consulted". A file that exists and will not parse is
+    #        read and then omitted (proved by execution: a malformed `.mcp.json`
+    #        plus a malformed extensions file return `sources: []`, byte-identical
+    #        to a bare root). The sentence now says what the code does — paths that
+    #        YIELDED A READING — and names the arm that pins the behaviour, so the
+    #        gap is documented rather than advertised away.
+    # A third fix in the same pass is in cabinet/dashboard (a JSX comment claiming
+    # a disclosure exists so the rest is "reachable with scripting off", on a
+    # client component whose content only exists after a fetch), which is outside
+    # this budget's `framework` path and costs nothing here.
+    # RAISED VISIBLY, never an allowance: an allowance promises a deletion gate,
+    # and a public entry point's own account of what it returns is not phase
+    # scaffolding — it is never deletable. Shrinking the truth to fit the ceiling
+    # was the alternative and is exactly how these two shipped. Zero new production
+    # MODULES (framework_production_modules unchanged at 248; the new arms are
+    # tests). observed == maximum, zero headroom.
+    maximum: 61452
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

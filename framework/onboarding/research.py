@@ -163,8 +163,14 @@ def inventory_mcp_estate(root: str, *, consent: bool = False) -> dict:
 
     Never the user-level Claude config (Open Captain Call #4 — the consent
     boundary for that surface is unruled, so it stays out), never ``.env``.
-    Parse failures are honest empties, never a traceback. ``sources`` lists
-    the root-relative paths actually consulted."""
+    Parse failures are honest empties, never a traceback. ``sources`` lists the
+    root-relative paths that YIELDED A READING — not the paths consulted, which
+    is what this line used to claim. A file that exists and will not parse is
+    read and then omitted, so a broken pair returns the same document as a bare
+    root and this result alone cannot tell "I looked and it was unreadable" from
+    "there was nothing to look at". Pinned that way by
+    ``test_inventory_bare_root_and_malformed_are_honest_empties``; separating
+    the two wants a second key, not a quieter sentence."""
     if consent is not True:
         return {"consented": False, "servers": [], "sources": []}
 
@@ -1317,7 +1323,21 @@ def attribution_basis(operator, connector: str, rows=None) -> dict:
 
 
 def identity_candidates(rows, connector: str) -> list:
-    """EVERY account identifier this connector reported, busiest first.
+    """This connector's account identifiers, busiest first, capped at
+    ``MAX_IDENTITY_CANDIDATES``.
+
+    NOT NECESSARILY EVERY ACCOUNT, and nothing in the returned value says which
+    case this is. This line used to read "EVERY account identifier this
+    connector reported" and to say that frequency "no longer decides
+    membership"; both are false above the cap, where the list is a head again
+    and frequency decides membership at 200 instead of at 12. Nothing
+    misbehaves today only because the one production caller compensates:
+    :func:`identity_question` counts the estate itself (``_distinct_actors``)
+    and publishes ``accounts``, ``withheld`` and ``complete`` beside the list,
+    and the surface opens a typed field where the cap binds. A NEW caller taking
+    this list as exhaustive would present a head as the whole estate — the
+    defect the cap was raised from 12 to fix, at a bigger number. Take the offer
+    from :func:`identity_question`, or count the estate yourself.
 
     THE CANDIDATES ARE THE ESTATE'S OWN STRINGS, which is what makes the ask
     answerable with a tap instead of a spelling. An operator who types a name
@@ -1325,12 +1345,12 @@ def identity_candidates(rows, connector: str) -> list:
     returns, and where those differ a typed answer matches nothing and reads as
     "none of this is yours".
 
-    FREQUENCY ORDERS THE LIST; IT NO LONGER DECIDES MEMBERSHIP. This returned
-    the 12 busiest, and on a real estate the operator's own account was 25th of
-    30 on the connector carrying 531 of 665 rows — so the one person the
-    question is FOR was the one it could not offer. The busiest actor on a
-    shared tracker is whoever files the most tickets, which is a fact about
-    process volume and not about who is reading this card.
+    FREQUENCY ORDERS THE LIST, AND BELOW THE CAP IT NO LONGER DECIDES
+    MEMBERSHIP. This returned the 12 busiest, and on a real estate the
+    operator's own account was 25th of 30 on the connector carrying 531 of 665
+    rows — so the one person the question is FOR was the one it could not offer.
+    The busiest actor on a shared tracker is whoever files the most tickets,
+    which is a fact about process volume and not about who is reading this card.
     """
     counts: dict = {}
     for row in rows or ():
