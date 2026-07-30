@@ -50,6 +50,8 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+# The one path that must NOT follow a monkeypatched HERE.
+_SRC_DIR = Path(__file__).resolve().parent
 CORPUS = HERE / "corpus"
 REPO_ROOT = HERE.parents[2]
 ISO_PACK = (REPO_ROOT / "cabinet" / "dashboard" / "public" / "world-assets"
@@ -290,6 +292,34 @@ def make_synthetic(corpus: Path) -> None:
     print(f"wrote {_say(out)}")
 
 
+def pixels_sha256_of(p: Path) -> str:
+    """sha256 of the DECODED RGBA buffer, not of the file.
+
+    WHY BOTH DIGESTS EXIST (paid 2026-07-30, CI run 30566688025). The three
+    synthetic negatives regenerate from the tracked owned pack with identical
+    PIXELS and DIFFERENT BYTES: PNG encoding runs through whatever zlib the
+    machine's Pillow was built against, so a macOS laptop and an ubuntu runner
+    write the same picture as different files. Proven byte-identical three times
+    on one machine and byte-different on the first runner that tried — a
+    reproducibility claim measured at one operating point is a hypothesis.
+
+    So the file digest is the right invariant for a member that is TRANSPORTED
+    (the held ones — those bytes are all anyone has), and this one is the right
+    invariant for a member that is REBUILT. Decoded with the gates' own stdlib
+    PNG reader, so verifying needs no Pillow even though building does.
+    """
+    import importlib.util
+    # _SRC_DIR, never HERE: HERE is monkeypatched by the manifest test, and a
+    # helper that reads its own source through a patchable constant breaks in
+    # whichever caller patches it — found by that test, which is the point.
+    spec = importlib.util.spec_from_file_location(
+        "world_aesthetic_png_for_corpus", _SRC_DIR / "gates" / "_png.py")
+    png = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(png)
+    w, h, rgba = png.decode(p)
+    return hashlib.sha256(bytes(rgba)).hexdigest()
+
+
 def materialise(corpus: Path) -> list[str]:
     """Put every REBUILDABLE corpus member on disk, and report what is HELD.
 
@@ -378,6 +408,7 @@ def build_manifest(corpus: Path) -> None:
             "class": cls,
             "file": f"{rel}/{cls}/{filename}",
             "sha256": sha256_of(p),
+            "pixels_sha256": pixels_sha256_of(p),
             "provenance": provenance,
             "why": why,
             "rebuild": rebuild,

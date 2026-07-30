@@ -71,11 +71,23 @@ as a hard failure by id, and the members that genuinely cannot be reconstructed
 are **declared and pinned**.
 
     fresh checkout, before:  91 passed,  5 skipped
-    fresh checkout, after:   98 passed,  3 skipped
+    fresh checkout, after:   99 passed,  3 skipped
 
-Four of eleven members rebuild **byte-identically** from the repo's own tracked
-owned pack (3 synthetic negatives, seeded; 1 palette member, a byte-copy of
-`originals/iso/atlas-0.png` — verified, same sha256). The other seven are HELD:
+Four of eleven members rebuild from the repo's own tracked owned pack (3
+seeded synthetic negatives; 1 palette member, a byte-copy of
+`originals/iso/atlas-0.png`).
+
+**PIXEL-identically, not byte-identically — and that correction cost a red CI
+run.** I proved byte-equality three times on this laptop and wrote it down as a
+property. The first ubuntu runner produced the same PICTURES as different FILES
+(PNG encoding runs through whatever zlib the local Pillow was built against) and
+the verifier called a perfectly correct corpus a mismatch, reddening 74 tests.
+So the manifest now carries BOTH digests and each governs what it can: the file
+hash for a member that is TRANSPORTED (the held ones — those bytes are all
+anyone has), the pixel hash for a member that is GENERATED. A reproducibility
+claim measured at one operating point is a hypothesis; this one is now measured
+at two, and `test_a_mere_RE_ENCODE_of_a_rebuilt_member_is_not_a_mismatch` keeps
+it that way. The other seven are HELD:
 four live renderer captures, and three Captain-rejected screenshots carrying
 licensed LimeZu art that this tree may not redistribute now it is headed for a
 public export. `test_world_aesthetic_corpus_reach.py` pins the held set BY ID,
@@ -133,6 +145,8 @@ Each mutation was applied to the source, the named test re-run with
 | delete `if not spairs:` | daylight-only sweep | 1 failed |
 | a rebuild recipe becomes HELD | 2 corpus-reach arms | 2 failed |
 | the missing-Pillow guard stops firing | the Pillow arm | 1 failed |
+| the verifier goes back to file bytes only | the re-encode arm | 1 failed |
+| the pixel comparison always agrees | the mismatch arm | 1 failed |
 | an undeclared member joins the registry | the declaration arm | 1 failed |
 | the sha256 mismatch stops being recorded | the mismatch arm | 1 failed |
 
@@ -170,8 +184,9 @@ by that one test.
 
 ## Gates run in this worktree
 
-`world-capture/tests` 89 passed · `world-aesthetic/tests` 101 passed (full
-corpus) / 98 passed + 3 skipped (fresh-checkout simulation, corpus removed) ·
+`world-capture/tests` 89 passed · `world-aesthetic/tests` 102 passed (full
+corpus) / 99 passed + 3 skipped (fresh-checkout simulation, corpus removed,
+and again with the synthetics re-encoded to the cross-machine byte difference) ·
 `sync-checks.py --check` 4/4 identical · `docs-track-code-sweep.sh` GREEN
 (files=64 findings=0) · `check-layer-separation.sh` new=0 · `frame-judge.py`
 GREEN 50/50 on the 16-frame sun sweep, and the arm costs 1.4s of the judge's

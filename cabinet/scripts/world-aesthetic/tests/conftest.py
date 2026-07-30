@@ -65,6 +65,7 @@ def _corpus_state(builder) -> tuple[dict, list[str], list[str]]:
                 "arm that reads them would skip — which is the disabled sensor "
                 "this fixture exists to prevent. `pip install pillow`.")
     data = json.loads(manifest.read_text())
+    rebuildable = {e for e, row in builder.REGISTRY.items() if row[4] is not None}
     verified: dict[str, list[Path]] = {}
     mismatch, missing = [], []
     for img in data["images"]:
@@ -73,8 +74,23 @@ def _corpus_state(builder) -> tuple[dict, list[str], list[str]]:
             missing.append(img["id"])
             continue
         if hashlib.sha256(p.read_bytes()).hexdigest() != img["sha256"]:
-            mismatch.append(img["id"])
-            continue
+            # BYTES first because it is free; PIXELS only when the bytes differ
+            # AND the member is one this checkout rebuilt.
+            #
+            # A rebuilt PNG is re-encoded by the local zlib, so a macOS laptop
+            # and an ubuntu runner write the same picture as different files —
+            # measured, CI run 30566688025, after three byte-identical
+            # regenerations on one machine had made it look settled. The file
+            # digest is the right invariant for a member that is TRANSPORTED
+            # and the wrong one for a member that is GENERATED, and conflating
+            # them turns a portable corpus into a machine-specific one.
+            same_pixels = (
+                img["id"] in rebuildable
+                and img.get("pixels_sha256")
+                and builder.pixels_sha256_of(p) == img["pixels_sha256"])
+            if not same_pixels:
+                mismatch.append(img["id"])
+                continue
         verified.setdefault(img["class"], []).append(p)
     for cls in verified:
         verified[cls].sort()

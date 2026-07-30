@@ -62,6 +62,16 @@ REBUILDABLE = {
 }
 
 
+def _probe_conftest(wa):
+    """A fresh exec of conftest.py, so its verifier can be called directly."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "wa_conftest_probe", wa.dir / "tests" / "conftest.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def _manifest(wa) -> dict:
     return json.loads((wa.corpus_dir / "manifest.json").read_text())
 
@@ -86,13 +96,20 @@ def test_every_member_declares_whether_a_checkout_can_rebuild_it(wa):
                 f"a single line change in the test")
 
 
-def test_the_rebuildable_members_are_actually_on_disk_and_byte_exact(wa):
-    """THE ARM THAT MATTERS: the recipes RAN, and produced the declared bytes.
+def test_the_rebuildable_members_are_actually_on_disk_and_pixel_exact(wa):
+    """THE ARM THAT MATTERS: the recipes RAN, and produced the declared PICTURE.
 
     A recipe that has quietly stopped working leaves the same result as no
     recipe at all — the arms downstream skip — so nothing short of hashing the
-    output proves CI can see these members. Measured: all four regenerate
-    sha256-identical to the tracked manifest from the repo's own tracked pack.
+    output proves CI can see these members.
+
+    PIXELS, not bytes, and that distinction was paid for. All four regenerate
+    byte-identically on the machine that built them, three times over; the first
+    ubuntu runner that tried produced the same PICTURES as different FILES,
+    because PNG encoding runs through whatever zlib the local Pillow was built
+    against. A reproducibility claim measured at one operating point is a
+    hypothesis. The file digest still governs the HELD members — for those the
+    bytes are all anyone has.
     """
     by_id = {i["id"]: i for i in _manifest(wa)["images"]}
     for entry_id in sorted(REBUILDABLE):
@@ -102,10 +119,13 @@ def test_the_rebuildable_members_are_actually_on_disk_and_byte_exact(wa):
             f"{entry_id} is declared rebuildable and is NOT on disk after the "
             f"fixture materialised the corpus — its recipe has stopped working, "
             f"and every arm that reads it is skipping in CI right now")
-        assert hashlib.sha256(p.read_bytes()).hexdigest() == img["sha256"], (
-            f"{entry_id} rebuilt to different bytes than the manifest records — "
-            f"the recipe is no longer deterministic, so the corpus the arms "
-            f"judge is not the corpus this tree declares")
+        assert img.get("pixels_sha256"), (
+            f"{entry_id} carries no pixels_sha256; a rebuildable member verified "
+            f"by file bytes alone is a corpus that only one machine can hold")
+        assert wa.builder.pixels_sha256_of(p) == img["pixels_sha256"], (
+            f"{entry_id} rebuilt to a different PICTURE than the manifest "
+            f"records — the recipe is no longer deterministic, so the corpus "
+            f"the arms judge is not the corpus this tree declares")
 
 
 def test_the_held_members_are_reported_by_name_never_relabelled_as_covered(wa):
@@ -129,16 +149,13 @@ def test_a_missing_pillow_fails_when_it_costs_coverage_and_not_otherwise(wa):
     stdlib-only gates must still run — the suite advertises itself as needing no
     Pillow, so failing there would be an invented blocker.
     """
-    import importlib.util
     import types
 
-    spec = importlib.util.spec_from_file_location(
-        "wa_conftest_pillow_probe", wa.dir / "tests" / "conftest.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    mod = _probe_conftest(wa)
 
     def builder_without_pillow(registry):
-        b = types.SimpleNamespace(REGISTRY=registry)
+        b = types.SimpleNamespace(REGISTRY=registry,
+                                  pixels_sha256_of=wa.builder.pixels_sha256_of)
 
         def boom(_corpus):
             raise ImportError("No module named 'PIL'")
@@ -165,32 +182,67 @@ def test_a_missing_pillow_fails_when_it_costs_coverage_and_not_otherwise(wa):
     assert held, "with no Pillow every member is reported held until verified"
 
 
-def test_a_corpus_that_does_not_match_the_manifest_is_a_failure_not_a_skip(wa,
-                                                                          tmp_path):
-    """The 2026-07-30 case, reproduced: the ARCHIVED corpus dropped in place.
+def test_a_corpus_that_does_not_match_the_manifest_is_a_failure_not_a_skip(wa):
+    """The 2026-07-30 case, reproduced: a member present but not the declared one.
 
-    That is not a hypothetical — the archive ships in this tree at
+    That is not hypothetical — the archive ships in this tree at
     corpus/archive-limezu-2026-07-08/, one `cp -R` from being mistaken for the
     live corpus, and doing exactly that turned 96 green into 4 unattributable
     red. The verifier has to name the mismatching id; the old `has_corpus` glob
     could not distinguish it from the real thing in either direction.
-    """
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "wa_conftest_probe", wa.dir / "tests" / "conftest.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
 
-    man = _manifest(wa)
-    victim = next(i for i in man["images"] if i["id"] in REBUILDABLE)
+    The victim is a REBUILDABLE member with its PIXELS changed, so this arm runs
+    on a fresh checkout where the held members do not exist.
+    """
+    mod = _probe_conftest(wa)
+    victim = next(i for i in _manifest(wa)["images"] if i["id"] in REBUILDABLE)
     p = wa.dir / victim["file"]
     original = p.read_bytes()
     try:
-        p.write_bytes(original + b"\x00")          # same path, different bytes
+        w, h, buf = wa.gates._png.decode(p)
+        buf = bytearray(buf)
+        buf[0] ^= 0xFF                                  # one pixel, one channel
+        wa.gates._png.encode(p, w, h, bytes(buf))
         _verified, _held, mismatch = mod._corpus_state(wa.builder)
         assert victim["id"] in mismatch, (
-            "a member whose bytes do not match the manifest was NOT reported as "
-            "a mismatch — which is how one commit produced three different "
+            "a member whose PICTURE does not match the manifest was NOT reported "
+            "as a mismatch — which is how one commit produced three different "
             "verdicts on three machines")
+    finally:
+        p.write_bytes(original)
+
+
+def test_a_mere_RE_ENCODE_of_a_rebuilt_member_is_not_a_mismatch(wa):
+    """THE ARM FOR THE DEFECT THAT BROKE CI, and the reason two digests exist.
+
+    A rebuilt PNG is re-encoded by the local zlib, so the same picture lands as
+    different FILE bytes on a different machine. Measured: the synthetic
+    negatives regenerated byte-identically three times on one laptop and
+    byte-differently on the first ubuntu runner that tried, which reddened 74
+    tests with a corpus that was in fact correct.
+
+    Without this arm the fix is a claim. With it, a future change that goes back
+    to comparing file bytes for a GENERATED member fails here rather than in CI.
+    """
+    mod = _probe_conftest(wa)
+    victim = next(i for i in _manifest(wa)["images"] if i["id"] in REBUILDABLE)
+    p = wa.dir / victim["file"]
+    original = p.read_bytes()
+    try:
+        w, h, buf = wa.gates._png.decode(p)
+        # Same PIXELS, different FILE: _png.encode always writes ct6/filter-0
+        # with its own zlib settings, so a ct2 source comes back byte-different
+        # and decodes to the identical RGBA buffer — which is exactly the shape
+        # of the cross-machine re-encode this arm exists for.
+        wa.gates._png.encode(p, w, h, buf)
+        assert p.read_bytes() != original, (
+            "the re-encode produced identical bytes, so this arm proved nothing "
+            "— it has to actually change the file to test that the change is "
+            "tolerated")
+        _verified, _held, mismatch = mod._corpus_state(wa.builder)
+        assert victim["id"] not in mismatch, (
+            f"{victim['id']} was called a mismatch for being re-encoded — that "
+            "is the CI failure of 2026-07-30, where a correct corpus reddened "
+            "74 tests because a GENERATED member was judged by its file bytes")
     finally:
         p.write_bytes(original)

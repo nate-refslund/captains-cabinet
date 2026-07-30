@@ -937,12 +937,12 @@ jobs:
 
       - name: Cabinet world-aesthetic tests
         if: ${{ !cancelled() }}
-        # 101 tests for the world-render gate: palette, label overlap, scale
+        # 102 tests for the world-render gate: palette, label overlap, scale
         # lint, judge, PNG codec, edge continuity, clustering, runner,
         # connectivity, entrypoint, corpus reach. The calibration corpus is
         # gitignored, and the fixture MATERIALISES every member this repo can
         # rebuild from its own tracked owned pack before the arms run — so on a
-        # fresh checkout expect 98 passed + 3 SKIPPED, not the 91 + 5 it was
+        # fresh checkout expect 99 passed + 3 SKIPPED, not the 91 + 5 it was
         # before 2026-07-30. The 3 remaining skips name the held members (live
         # captures and licensed screenshots no checkout can reconstruct); a
         # corpus present but NOT matching the tracked manifest is a hard

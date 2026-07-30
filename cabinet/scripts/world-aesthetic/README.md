@@ -139,10 +139,17 @@ manifests, and derived-number calibrations are tracked.
 `"copy:<tracked path>"` mean a plain checkout can reconstruct those bytes, and
 `None` means the member is HELD — a live capture, or a Captain-rejected
 screenshot carrying licensed art this tree may not redistribute. `build_corpus.py
-materialise` puts every rebuildable member on disk (4 of 11, all byte-identical
-to the manifest), the fixture runs it before the arms, and every member present
-is sha256-checked — **a mismatch is a hard failure naming the ids, never a skip
-and never a quiet pass**. `tests/test_world_aesthetic_corpus_reach.py` pins the
+materialise` puts every rebuildable member on disk (4 of 11), the fixture runs it
+before the arms, and every member present is digest-checked — **a mismatch is a
+hard failure naming the ids, never a skip and never a quiet pass**.
+
+**Two digests, because a generated member and a transported one are not
+verifiable the same way.** `sha256` is the FILE; `pixels_sha256` is the decoded
+RGBA buffer. A rebuilt PNG is re-encoded by the local zlib, so the same picture
+lands as different bytes on a different machine — measured the hard way, when a
+correct corpus reddened 74 tests on the first ubuntu runner after three
+byte-identical rebuilds on one laptop. Held members are judged by file bytes
+(that is all anyone has of them); rebuildable ones by pixels. `tests/test_world_aesthetic_corpus_reach.py` pins the
 held set BY ID so a member cannot join it silently.
 
 Why that matters: the suite used to gate on "are there PNGs in
@@ -150,7 +157,7 @@ Why that matters: the suite used to gate on "are there PNGs in
 manifest declares". Measured on ONE commit — the manifest's corpus gave
 **96 passed**, the archived pre-re-fit corpus dropped in the same place gave
 **4 failed**, and a fresh CI checkout gave **5 skipped**. A fresh checkout now
-runs 98 and skips 3, and the 3 name the held members.
+runs 99 and skips 3, and the 3 name the held members.
 
 **Re-fit 2026-07-28 (LimeZu → owned art).** The corpus was LimeZu showcase
 scenes until the Captain's "ALL OUT of LimeZu" direction. A palette fitted to
