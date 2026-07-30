@@ -271,6 +271,22 @@ export interface EngineCanvasProps {
   courses?: Record<string, LaneCourse> | null
   /** Voyage fold (pure, server-data-driven): moored vs on-the-line boat. */
   voyage?: VoyageRender | null
+  /**
+   * THE CAPTURE DOOR — render the GROUND ALONE: sea, terrain and shore, with
+   * every layer above them hidden. Default off; nothing in `src/app` passes it.
+   *
+   * WHY IT IS IN THE RENDERER AND NOT IN THE HARNESS. The ground layer is the
+   * only surface in this canvas whose tone vocabulary is CLOSED — `terrainField`
+   * quantizes noise onto one of the shipped RAMPS and the shore draws one foam
+   * hue, so a frame of it may contain nothing else. Every check that judges a
+   * composited frame is a comparison against a DAY TWIN, and a twin carries a
+   * content defect exactly as the frame does: measured 2026-07-30, a corpus sand
+   * tone sprayed over land at 16.7% coverage passed all six of them. Judging the
+   * closed vocabulary needs the layer isolated, and only the renderer can
+   * isolate it — re-deriving the ground in Python is the very defect this
+   * directory exists about.
+   */
+  groundOnly?: boolean
   onPrimary: (target: EngineTarget | null) => void
   onSecondary: (target: EngineTarget | null) => void
   onIssues?: (issues: string[]) => void
@@ -612,6 +628,18 @@ export default function EngineCanvas(props: EngineCanvasProps) {
       app.stage.addChild(fxG)
       const weatherG: Graphics = new PIXI.Graphics() // SCREEN-space particles
       app.stage.addChild(weatherG)
+
+      // THE CAPTURE DOOR (see `groundOnly`). Read ONCE, at boot, and expressed
+      // as container visibility rather than as a branch inside draw(): the
+      // ground pass has to be the SAME code the product runs, or the frame it
+      // yields is a re-derivation again. Hiding a container leaves every draw
+      // call, every transform and every filter exactly where they were.
+      if (propsRef.current.groundOnly) {
+        for (const layer of [staticShadowG, dynShadowG, propLayer, placeholderG,
+                             dynG, fxG, weatherG]) {
+          layer.visible = false
+        }
+      }
 
       /** Opaque dither shadow at a world-px anchor (static or dynamic). */
       function drawShadow(g: Graphics, id: string, wxPx: number, wyPx: number, wPx: number) {

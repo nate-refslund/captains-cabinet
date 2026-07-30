@@ -82,14 +82,32 @@ THE ARMS, and what each would have caught
                 across open water. Measured on the shipped renderer: 0.4-5.5% of
                 tiles gain a colour legitimately (the GPU's LUT and ambience_py's
                 nearest-native snap disagree on ~14% of pixels), against 77.6%
-                for that veil — and the veil stays over 10% down to 0.05%
-                coverage, which is ~1/100th of the mass PALETTE_FOREIGN_MASS
-                needs before it can see anything at all. It also catches what
-                `ambience` and `grain` provably cannot: a LUMINANCE-MATCHED
-                chroma veil moves no edge energy and almost no histogram, so at
-                0.4% coverage both of those arms pass it and this one reads
-                0.512. And it is the only arm that judges weather and the
-                killswitch COMPOSED WITH ambience rather than as a layer.
+                for that veil. ITS FIRING FLOOR, measured rather than asserted
+                (2026-07-30, on this file's own chroma-veil fixture): the arm
+                reads 12.3% and goes RED at 0.20% coverage and reads 11.3% and
+                PASSES at 0.18%, so the floor is ~0.19% and NOT the 0.05% an
+                earlier version of this paragraph implied — that sentence quoted
+                a reading "over 10%" as if it were a detection, and 10% is under
+                the 12% limit. It is still ~1/25th of the mass
+                PALETTE_FOREIGN_MASS needs. It also catches what `ambience` and
+                `grain` provably cannot: a LUMINANCE-MATCHED chroma veil moves no
+                edge energy and almost no histogram, so at 0.4% coverage both of
+                those arms pass it and this one reads 0.512. And it is the only
+                arm that judges weather and the killswitch COMPOSED WITH
+                ambience rather than as a layer.
+
+  soil          THE CONTENT LAW, and the only arm here that compares nothing.
+                Every arm above reads a lit frame against its DAY TWIN, and a
+                twin carries a CONTENT defect exactly as the frame does —
+                measured 2026-07-30 by injecting the 2026-07-29 dither into
+                `terrainField` itself and re-capturing: corpus sand over land,
+                and determinism/ambience/grain/surface/grade/water/killswitch
+                ALL STAYED GREEN. `soil` reads the sprites-free GROUND layer
+                (the renderer's own `groundOnly` pass) and asks whether the
+                ground steps further between two adjacent pixels than its own
+                shipped ladder ever does. It went red on that build at 59.7-90.0%
+                of ground tiles against a 45% limit. Its two measured holes are
+                in its docstring and in README.frame.md.
 
   water         live-frame-probe's veil laws, run over EVERY frame in the sweep
                 rather than over one PNG someone captured by hand. Ambience may
@@ -117,11 +135,18 @@ WHAT THIS DOES NOT COVER, said here rather than discovered later
     the killswitch wash. What is still uncovered is the overlay judged against a
     frame WITHOUT it — fog is not a per-colour map of the sun frame (it reads
     13.2%), so the twin must carry the same weather.
+  * `soil` has two holes of its own, both measured in the run that built it.
+    NIGHT: the shipped night grass ladder steps 40 per channel by itself, so the
+    derived bound has no purchase and the injected defect reads 0.3-0.4% there.
+    ZOOM 0.5: the injection reached 0.27% of that frame's pixels against 19.9%
+    at z2, so the widest shot proves nothing in either direction.
   * The nine layout invariants (roads, stacking, art, traceability, era, terrain,
-    depth order, shadows) still run on the blueprint. Six of them need artifacts
-    only the renderer can emit — the sprites-free ground layer and the two id
-    buffers — and the engine has no capture door. See README.frame.md for the
-    per-check table and what building that door costs.
+    depth order, shadows) still run on the blueprint. The sprites-free ground
+    layer now HAS a capture door (`groundOnly`), which `soil` uses and which
+    unblocks the pixel halves of check_terrain / check_on_road /
+    check_paint_fidelity — none of them wired here. The two id buffers are still
+    missing, so check_depth_order and check_shadows stay blocked. See
+    README.frame.md.
   * The DOM half of /world (chips, cards, the HUD) is not on this canvas at all.
 
 EXIT 0 = every arm green, 1 = at least one red or unjudgeable, 2 = unusable
@@ -148,10 +173,19 @@ except ImportError:  # pragma: no cover - the message IS the behaviour
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import ambience_py                                    # noqa: E402
-# The twelve live in the mirror, which is what CI runs (sync-checks.py --check
-# guards it against the private source). Importing check_light rather than
-# re-deriving a grade rule is the point: this file adds a capture, not a second
-# opinion about exposure.
+# The twelve live in the mirror, which is what CI runs. Importing check_light
+# rather than re-deriving a grade rule is the point: this file adds a capture,
+# not a second opinion about exposure.
+#
+# WHAT GUARDS THE MIRROR, stated exactly rather than optimistically: an earlier
+# version of this comment said `sync-checks.py --check` guards it against the
+# private source. It does — ON A LAPTOP THAT HAS THAT SOURCE. In CI
+# `~/cabinet-meta` is absent, `--check` prints SKIPPED-NO-SOURCE and exits 0
+# without diffing anything, which is its own documented behaviour and honest on
+# its own terms. So in the environment this file actually runs in, the mirror is
+# guarded by git history and by the mirrored checks being EXERCISED here against
+# a real capture — not by that diff. (Backlog: nothing pins the mirror's
+# content in CI.)
 sys.path.insert(0, str(HERE / "mirror" / "checks"))
 import world_checks                                   # noqa: E402
 
@@ -204,6 +238,32 @@ SURFACE_TILE = 16
 # factor of 14 at the very worst and a factor of 200 in the case that was
 # actually shipped. There is nothing here to relax when a frame goes red.
 SURFACE_EXCESS = 0.12
+
+# ── the soil arm's three numbers, and the one that is DERIVED ───────────────
+# SOIL_TILE is SURFACE_TILE's reason: the world's own tile_size, so a window is
+# an authored cell.
+SOIL_TILE = 16
+# A tile counts as DITHERED when more than this share of its adjacent pixel
+# pairs step further than the ground's own ladder ever does. A sprite edge
+# crossing a 16px tile contributes ~16-32 of its 480 pairs (3-7%); a pass drawn
+# per POSITION crosses on every one of its pixels, and the 2026-07-29 dither's
+# own geometry puts a third of a tile's pairs over the bound. Measured below.
+SOIL_PAIR = 0.15
+# ...and the frame is red when more than this share of judged tiles is dithered.
+# MEASURED over all twelve ground cells of the shipped renderer — 4 buckets x 3
+# zooms — the worst was 23.9% (day z0.5, where the island is small and almost
+# every judged tile holds a coastline or a dressing sprite) and the best 0.0%.
+# The 2026-07-29 defect class re-run through the REAL ground layer — corpus sand
+# (212,156,84) on land, below the ambience filter, where every twin-comparing
+# arm is blind because the twin carries it too — reads 81.3-100% at every zoom
+# and at both mod-6 and mod-12 spacing. So the floor sits 1.9x over the worst
+# lawful frame and 1.8x under the weakest catch. NOT A DIAL: a red here is a
+# ground layer taking steps its own ladder does not take.
+SOIL_EXCESS = 0.45
+# A sweep whose ground frame yields fewer judged tiles than this has not looked
+# at the ground. Measured minimum on the shipped renderer: 248 tiles (night
+# z0.5). Never a silent pass — below the floor the arm reports UNJUDGED.
+SOIL_MIN_TILES = 100
 
 
 def _luma(c) -> float:
@@ -501,6 +561,151 @@ def arm_surface(pairs: list) -> list:
     return out
 
 
+def _ladder_step(bucket: str) -> int:
+    """The largest per-channel step INSIDE a single shipped ground ladder.
+
+    DERIVED, and the whole reason this arm has no tuned bound. `terrainField`
+    quantizes a smooth noise field onto one `RAMPS` ladder, so between two
+    adjacent ground pixels the renderer can only ever move along that ladder —
+    and the biggest move it can make is this number. Read from the artifact
+    `ambience.ts` emits, so a re-lit world moves the bound with it.
+    """
+    return max(max(abs(tones[i + 1][k] - tones[i][k]) for k in range(3))
+               for tones in ambience_py.ramps(bucket).values()
+               for i in range(len(tones) - 1))
+
+
+def _crossings(im: Image.Image, bound: int) -> Image.Image:
+    """255 where a pixel's right or lower neighbour is further than `bound`.
+
+    Whole-image ops rather than a pixel walk, and EXHAUSTIVE: a stride aliases
+    against a periodic dither, which is the defect this arm exists for.
+    """
+    w, h = im.size
+
+    def mask(a: Image.Image, b: Image.Image) -> Image.Image:
+        d = ImageChops.difference(a, b).split()
+        return ImageChops.lighter(ImageChops.lighter(d[0], d[1]), d[2]).point(
+            lambda v: 255 if v > bound else 0)
+
+    acc = Image.new("L", (w, h), 0)
+    for m, box in ((mask(im.crop((0, 0, w - 1, h)), im.crop((1, 0, w, h))), (0, 0)),
+                   (mask(im.crop((0, 0, w, h - 1)), im.crop((0, 1, w, h))), (0, 0))):
+        lay = Image.new("L", (w, h), 0)
+        lay.paste(m, box)
+        acc = ImageChops.lighter(acc, lay)
+    return acc
+
+
+def _all_sea(im: Image.Image, bucket: str) -> Image.Image:
+    """255 where the pixel is one of this bucket's sea tones.
+
+    Five image differences rather than a million dictionary lookups. The sea is
+    excluded from the soil arm's tile universe because open water is `water`'s
+    subject and a tile of it holds no ground to judge.
+    """
+    w, h = im.size
+    acc = Image.new("L", (w, h), 0)
+    for c in ambience_py.sea(bucket):
+        d = ImageChops.difference(im, Image.new("RGB", (w, h), c)).split()
+        same = ImageChops.lighter(ImageChops.lighter(d[0], d[1]), d[2]).point(
+            lambda v: 255 if v == 0 else 0)
+        acc = ImageChops.lighter(acc, same)
+    return acc
+
+
+def arm_soil(frames: list) -> list:
+    """THE CONTENT LAW, and the only arm here that needs no second frame.
+
+    WHY IT EXISTS, measured 2026-07-30 and not deduced: `ambience`, `grain`,
+    `surface` and `grade` all judge a frame against its DAY TWIN, and a twin
+    carries a CONTENT defect exactly as the frame does. A corpus sand tone
+    sprayed over LAND at 16.7% coverage — the 2026-07-29 defect moved from the
+    screen-space filter down into the world — passed all of them, at every hour
+    and every zoom, and `PALETTE_FOREIGN_MASS` returned no finding either
+    because every injected pixel was a legitimate corpus tone. `water` caught
+    the same defect on WATER and only because it is the one non-differential
+    pixel arm in the file. This is its land counterpart.
+
+    THE LAW. `terrainField` quantizes a smooth noise field onto ONE shipped
+    `RAMPS` ladder, so between two adjacent ground pixels the renderer moves
+    along that ladder and can move no further than the ladder's own largest
+    step. A pass drawn per POSITION does not move along a ladder: it lands a
+    tone from somewhere else next to every pixel it touches.
+
+    IT NEEDS THE GROUND LAYER, which is why `groundOnly` exists on the shipped
+    canvas. On the composite the law is false — props, figures and cards are
+    art, and art has edges — and a check that judged the composite here would
+    be measuring the dressing.
+
+    WHAT IT CANNOT SEE, stated rather than discovered: at NIGHT the shipped
+    grass ladder itself steps 40 per channel — (60,52,36) -> (52,60,76), the
+    split-tone light and the native snap taking the mid-tones blue while the
+    dark end stays brown — so the derived bound is wide enough that the same
+    defect reads 0.0-0.2% and this arm has no purchase there. That is a fact
+    about the world's own art measured on the artifact, not a tolerance, and it
+    is not fixable by moving a number: it needs a per-ladder bound, which needs
+    the ground CLASSIFIED per pixel, which needs the id buffer the engine does
+    not emit. Recorded in README.frame.md as the arm's own hole.
+    """
+    out = []
+    for f in frames:
+        name = f"soil[{label(f)}]"
+        g = f.get("ground")
+        if f.get("killswitch"):
+            # The wash repaints the ground on purpose, so its tones are
+            # legitimately not the ladder's. Same shape of exclusion as `grade`
+            # and `water`, said here rather than met as a flake.
+            continue
+        if not g:
+            out.append(_unjudged(name, "the manifest carries no ground layer for this cell — "
+                                       "the content law is stated over the sprites-free layer "
+                                       "and the composite may not stand in for it"))
+            continue
+        if not Path(g).exists():
+            out.append(_unjudged(name, f"the ground layer {Path(g).name} is not on disk"))
+            continue
+        im = Image.open(g).convert("RGB")
+        w, h = im.size
+        bound = _ladder_step(f["bucket"])
+        cross = _crossings(im, bound)
+        sea = _all_sea(im, f["bucket"])
+        judged = dithered = 0
+        worst = (0.0, None)
+        full = SOIL_TILE * SOIL_TILE
+        for ty in range(0, h - SOIL_TILE + 1, SOIL_TILE):
+            for tx in range(0, w - SOIL_TILE + 1, SOIL_TILE):
+                box = (tx, ty, tx + SOIL_TILE, ty + SOIL_TILE)
+                if sea.crop(box).histogram()[255] == full:
+                    continue                      # open water: `water`'s subject
+                judged += 1
+                rate = cross.crop(box).histogram()[255] / full
+                if rate > SOIL_PAIR:
+                    dithered += 1
+                if rate > worst[0]:
+                    worst = (rate, (tx, ty))
+        if judged < SOIL_MIN_TILES:
+            # The degenerate end FIRST. A share over three tiles is noise, and a
+            # green computed on it is a green about nothing.
+            out.append(_unjudged(name, f"only {judged} ground tiles in the frame (needs "
+                                       f">= {SOIL_MIN_TILES}) — there is not enough ground "
+                                       "here to judge"))
+            continue
+        share = dithered / judged
+        detail = (f"{dithered}/{judged} ground tiles step past the ladder's own "
+                  f"{bound}/channel on >{SOIL_PAIR:.0%} of their pairs ({share:.2%}"
+                  + (f", worst {worst[0]:.0%} at {worst[1]}" if worst[1] else "") + ")")
+        out.append(_red(name, detail + f" — the ground is taking steps its own ladder does "
+                                       f"not take, which is a decision per POSITION "
+                                       f"(limit {SOIL_EXCESS:.0%})")
+                   if share > SOIL_EXCESS else _ok(name, detail))
+    if not out:
+        return [_unjudged("soil", "no frame in this sweep carries a ground layer — the "
+                                  "content law is the only one here that does not compare "
+                                  "a frame with a twin, and this run did not ask it")]
+    return out
+
+
 def island_box(path: Path, bucket: str = "day") -> tuple[int, int, int, int] | None:
     """The bounding box of everything that is not open sea.
 
@@ -718,6 +923,7 @@ def main(argv: list[str]) -> int:
     results += arm_grade(frames, root)
     results += arm_water(frames)
     results += arm_killswitch(frames)
+    results += arm_soil(frames)
 
     print()
     for name, ok, detail in results:
@@ -725,10 +931,12 @@ def main(argv: list[str]) -> int:
     buckets = sorted({f["bucket"] for f in frames})
     zooms = sorted({f["zoom"] for f in frames})
     print(f"\njudged {len(frames)} real composited frames · buckets {buckets} · zooms {zooms}")
-    print("NOT CHECKED HERE — the blueprint path owns these, and six of them need a "
-          "renderer capture door that does not exist: roads, stacking, art (opacity, "
-          "cut-off, palette), state traceability, era, terrain, depth order, shadows. "
-          "See README.frame.md.")
+    print("NOT CHECKED HERE — the blueprint path owns these: roads, stacking, art "
+          "(opacity, cut-off, palette), state traceability, era, terrain, depth order, "
+          "shadows. Four of them could now read the ground layer this run captured "
+          "(check_terrain, and the pixel halves of check_on_road / check_paint_fidelity) "
+          "and none is wired to it yet; check_depth_order and check_shadows still need "
+          "the two id buffers, which the engine does not emit. See README.frame.md.")
 
     red = [r for r in results if not r[1]]
     if a.json:

@@ -821,6 +821,14 @@ describe('the ambience derivation', () => {
     const want = {
       _generated_by: 'cabinet/dashboard/src/lib/world/ambience.ts via ambience.test.ts',
       curve: CYCLE_CURVE,
+      // The UNSHADED ladders — `day`'s own ground vocabulary, since ambience is
+      // a no-op there and `buckets` therefore has no day entry. The frame
+      // judge's content arm needs the ground's tone ladder at EVERY bucket, and
+      // the alternative was a Python regex over iso-terrain.ts: a fourth copy of
+      // a colour table, which is the exact defect this artifact exists to end.
+      ramps_day: Object.fromEntries(
+        Object.entries(RAMPS).map(([name, ramp]) => [name, ramp.map((c) => rgb(c))])
+      ),
       buckets: Object.fromEntries(
         LIT.map((bucket) => {
           const lut = ambienceLut(bucket)!
@@ -852,6 +860,11 @@ describe('the ambience derivation', () => {
     expect(Object.keys(got.buckets).sort()).toEqual([...LIT].sort())
     expect(got, 'the artifact is stale — regenerate it, see the comment above').toEqual(want)
     // vacuity guard: an artifact of empty arrays would satisfy nothing above
+    expect(Object.keys(got.ramps_day).sort()).toEqual(Object.keys(RAMPS).sort())
+    for (const [name, ramp] of Object.entries(RAMPS)) {
+      expect(got.ramps_day[name].length).toBe(ramp.length)
+    }
+    expect(got.ramps_day.sea.flat().some((v: number) => v > 0)).toBe(true)
     for (const bucket of LIT) {
       expect(got.buckets[bucket].sea.length).toBe(RAMPS.sea.length)
       expect(got.buckets[bucket].sea.flat().some((v: number) => v > 0)).toBe(true)

@@ -1395,6 +1395,10 @@ jobs:
     # MEASURED ON THIS RUNNER, not on a laptop (run 30565939095, with the
     # `surface` arm): 7m21 end to end — 9s npm ci, 2m18 capture of 16 frames,
     # 42s self-arms, 3m55 judge. (Run 30552467292 before that arm: 7m00.)
+    # 2026-07-30, with the GROUND pass: 12 more captures (28 total). Locally the
+    # capture went 1m00 -> 1m14, so budget ~2m50 here; the `soil` arm itself
+    # judges all twelve ground frames in under a second, so the judge step is
+    # unchanged. Expect ~8m.
     # 15 leaves better than 2x headroom and still kills a genuinely hung browser
     # rather than letting a cancellation read as a test result. Re-budget if it
     # creeps past ~11m rather than letting a cancellation be read as a red arm.
