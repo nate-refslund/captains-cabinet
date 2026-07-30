@@ -17,8 +17,17 @@ export type OnboardingAction =
   | 'gather_connectors'
   /**
    * Records which account is the operator in each connector. Surfaces render a
-   * PICKER over the candidates the sweep reported, never a free-text field: the
-   * estate's own account identifiers are what the core matches, exactly.
+   * PICKER over the candidates the sweep reported — the estate's own account
+   * identifiers are what the core matches, exactly, so a tap beats a spelling.
+   *
+   * A typed field opens ONLY where `complete` is false. The rule used to be
+   * "never a free-text field", and it was wrong in the one direction that
+   * matters: the offer was the 12 busiest accounts, and on a real estate the
+   * operator's own was 25th of 30 on the connector holding 531 of 665 rows, so
+   * the only writer of an identity could not be handed the identifier and 80%
+   * of the estate was unresolvable by any sequence of operator actions. The
+   * offer now carries every account a connector reported, up to a guardrail;
+   * where that guardrail binds, a picker cannot be the only door.
    */
   | 'record_operator_identity'
   | 'ratify_charter'
@@ -70,9 +79,9 @@ export interface OnboardingOption {
   /**
    * Set on `record_operator_identity`: the connectors that still cannot
    * recognise the operator, each with the account identifiers its own rows
-   * carried. A surface renders a PICKER over these, never a blank field —
-   * the core matches whole and exact, so a spelling the estate does not use
-   * resolves the operator and attributes nothing.
+   * carried. A surface renders a PICKER over these — the core matches whole and
+   * exact, so a spelling the estate does not use resolves the operator and
+   * attributes nothing, and a tap on the estate's own string cannot misspell.
    */
   connectors?: OnboardingIdentityAsk[]
 }
@@ -81,9 +90,22 @@ export interface OnboardingOption {
 export interface OnboardingIdentityAsk {
   connector: string
   rows: number
+  /** Every account this connector reported, busiest first, up to the guardrail. */
   candidates: Array<{ identifier: string; rows: number }>
   /** True when the connector reported no actor at all, so no pick can help. */
   reports_no_actor: boolean
+  /** How many distinct accounts the connector reported — the estate, uncapped. */
+  accounts: number
+  /** How many of those the guardrail kept off the list. Zero is the normal case. */
+  withheld: number
+  /**
+   * True when every account the connector reported is on the list. A surface
+   * MUST obey this: complete means "none of these is you" is a true terminal
+   * state and a typed field could only introduce a spelling the estate does not
+   * use; incomplete means the picker cannot be the only door, and the surface
+   * owes the operator a way to name an account it did not offer.
+   */
+  complete: boolean
   note: string
 }
 

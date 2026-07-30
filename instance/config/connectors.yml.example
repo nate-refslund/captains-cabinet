@@ -125,16 +125,20 @@ connectors:
   #     url: https://api.example.test/graphql
   #     method: POST
   #     json:
-  #       query: "query { things (limit: 100, page: {page}) { id name updated_at } }"
+  #       query: "query { things (limit: 100, page: {page}) { id name updated_at creator { name } } }"
   #     items_path: data.things
   #     name_field: name
   #     updated_field: updated_at
+  #     actor_field: creator.name    # who made the thing. Declare SOMETHING here
+  #                                  # or nothing in this connector can ever be
+  #                                  # attributed to you (see the header). It
+  #                                  # belongs beside the other per-item paths,
+  #                                  # under `inventory:` — and the document has
+  #                                  # to SELECT the field it names, or the path
+  #                                  # resolves on nothing.
   #   page:
   #     start: 1
   #     max_pages: 6
-  #     actor_field: creator.name    # who made the thing. Declare SOMETHING here
-  #                                  # or nothing in this connector can ever be
-  #                                  # attributed to you (see the header).
   #   identity:                      # optional, and worth declaring:
   #     url: https://api.example.test/graphql   # the account/owner names the
   #     method: POST                            # ranker DEMOTES, so your own

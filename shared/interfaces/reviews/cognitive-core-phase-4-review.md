@@ -21,7 +21,23 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: c83b9b88e3a75869150222c436539d5e9737e3ee8b292612b1d8dc9f6be8ab3c
+Reviewed-Scope-Digest: 56f58f88b0ca89aedfa610a8cf95033138250685ee3987acad6dbbb41e26b0a0
+(RE-BOUND 2026-07-30 on `fix/identity-picker-tail`, previous value
+`c83b9b88…`. ONE in-scope path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` raises
+`framework_production_noncomment_lines` VISIBLY 61327 -> 61372 (+45 measured over
+this tree with cognitive-architecture-census.py, observed 75911 vs the
+then-effective 75866 — not an allowance, because an offer that cannot exclude the
+person it is addressed to has no deletion gate that could ever fire), and the
+operator-identity phase row records what the +45 bought. The unit's own work is
+in `framework/onboarding/{research,journey}.py` and the dashboard card, all
+outside this digest's scope: the identity picker offered the 12 BUSIEST accounts
+a connector reported, so on the real estate — 531 of 665 rows, 30 accounts, the
+operator's own carrying exactly one and ranking about 25th — the only writer of
+an identity could not be handed the identifier, and 80% of that estate was
+unresolvable by any sequence of operator actions. Every earlier note stands
+verbatim below. Previous header note follows.)
+
 (MERGE RE-BIND, 2026-07-30, `feat/operator-identity` x master. Both sides
 re-bound this line, so the merge left two; ONE value stands and it is recomputed
 over this merge commit. Every note from both sides is kept verbatim below,
@@ -1796,3 +1812,37 @@ side: `cabinet/config/cognitive-architecture-contract.yml` carries master's
 maximum of 61327 together, RE-MEASURED over the merged tree with
 cognitive-architecture-census.py (PASS, observed 75866 at zero headroom).
 Merged onboarding suite: 655 passed, 1 skipped.
+
+---
+
+## Re-bind 2026-07-30 (`fix/identity-picker-tail`)
+
+Recorded digest: 56f58f88b0ca89aedfa610a8cf95033138250685ee3987acad6dbbb41e26b0a0
+Previous:        c83b9b88e3a75869150222c436539d5e9737e3ee8b292612b1d8dc9f6be8ab3c
+
+ONE bound path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` raises
+`framework_production_noncomment_lines` VISIBLY 61327 -> 61372 (+45 measured over
+this tree with cognitive-architecture-census.py: PASS, observed 75911 == maximum,
+zero headroom) and the operator-identity phase row records what it bought.
+
+The unit itself lands outside this digest's scope, in
+`framework/onboarding/research.py`, `framework/onboarding/journey.py`,
+`instance/config/connectors.yml.example` and the dashboard card. The identity
+picker offered the 12 BUSIEST accounts a connector reported, and frequency
+decided membership — so on the estate this lane was built against (531 of 665
+rows on one connector, 30 accounts, the operator's own carrying exactly ONE and
+ranking about 25th) the only writer of an identity could not be handed the
+identifier, and 80% of the estate was unresolvable by any sequence of operator
+actions. Frequency now orders the offer and no longer decides membership; where a
+guardrail still binds, `complete: false` obliges the surface to accept a typed
+answer rather than present a head as the whole estate. Three smaller defects ride
+the same commit: a silently truncated identifier (refused by name now, at a bound
+tied to the sweep's own), a scalar handles value iterated per character, and the
+public connectors example teaching `actor_field` under a key nothing reads.
+
+Batteries over this commit: framework/ 7763 passed (1 known local-only red,
+reproduced identically on a clean master clone), onboarding 664 passed / 1
+skipped, cabinet/scripts 5121 passed / 34 skipped, dashboard `tsc --noEmit` clean
+and 2891 vitest passed, layer separation new=0, docs sweep and ledger parity
+green.

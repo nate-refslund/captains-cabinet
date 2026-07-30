@@ -1145,6 +1145,13 @@ def operator_identity(record) -> dict:
     legitimate outcome rather than a gap to be filled from somewhere else. An
     honest "I cannot tell which of these people is you" beats an attribution to
     whoever the token happened to be.
+
+    ONE IDENTIFIER IS A STRING, NOT AN ITERABLE OF CHARACTERS. The record is a
+    file a stranger writes by hand, and ``handles: {code: nate}`` is the
+    spelling a person reaches for first. Iterated, it becomes four accounts —
+    ``a``, ``e``, ``n``, ``t`` — none of which the estate has, and the cabinet
+    then says "I recognise you as a, e, n, t" and attributes nothing. Read as
+    the one identifier it plainly is.
     """
     operator = record.get("operator") if isinstance(record, dict) else None
     operator = operator if isinstance(operator, dict) else {}
@@ -1154,18 +1161,45 @@ def operator_identity(record) -> dict:
         names.append(operator["name"].strip())
     return {
         "names": sorted(set(names)),
-        "handles": {str(k): sorted({str(v).strip() for v in (vs or ()) if str(v).strip()})
+        "handles": {str(k): sorted({str(v).strip() for v in _one_or_many(vs) if str(v).strip()})
                     for k, vs in handles.items()},
         "basis": "onboarding_record",
     }
 
 
-#: Identifiers accepted per connector when the operator answers, and candidates
-#: offered per connector when they have not. Both caps exist for the reason the
-#: actor cap does: a connector reporting two hundred distinct actors is a body
-#: arriving through the question door.
+def _one_or_many(value) -> list:
+    """One identifier or a list of them — never a string walked per character."""
+    if value is None:
+        return []
+    if isinstance(value, (str, bytes)):
+        return [value]
+    if isinstance(value, (list, tuple, set)):
+        return list(value)
+    return [value]
+
+
+#: Identifiers accepted per connector when the operator answers, and the
+#: guardrail on how many candidates one connector may put in the question.
+#:
+#: THE CANDIDATE BOUND IS A GUARDRAIL, NOT A SHORTLIST — it was 12, and 12 is a
+#: head. Measured on a real estate: one connector carrying 531 of 665 rows
+#: reported 30 accounts, and the operator's own carried exactly ONE row, ranking
+#: about 25th. Their identifier was therefore not among the 12 offered, the
+#: picker was the only writer of an identity, and no sequence of operator
+#: actions could resolve the connector holding most of the estate. Rank must not
+#: decide whether a person can say who they are. The bound stays only because
+#: rows are themselves capped (``_DEFAULT_MAX_ITEMS`` items x
+#: ``_MAX_ACTORS_PER_ITEM`` actors is thousands of strings), and where it binds
+#: the question says so rather than presenting a head as the whole estate.
 MAX_OPERATOR_HANDLES = 8
-MAX_IDENTITY_CANDIDATES = 12
+MAX_IDENTITY_CANDIDATES = 200
+
+#: The longest identifier that can be RECORDED, which is deliberately the same
+#: bound the sweep puts on an actor string it reads (``_MAX_FIELD_CHARS``). Tied
+#: rather than chosen twice: a smaller bound here would refuse a candidate this
+#: module itself offered, and a larger one would accept a string no connector
+#: could ever have reported.
+MAX_IDENTITY_CHARS = _MAX_FIELD_CHARS
 
 
 def _fold(value) -> str:
@@ -1184,11 +1218,16 @@ def _fold(value) -> str:
 
 
 def _recorded_handles(operator, connector: str) -> list:
-    """The identifiers the operator RECORDED for one connector, in order."""
+    """The identifiers the operator RECORDED for one connector, in order.
+
+    Scalar-safe for the same reason :func:`operator_identity` is: this is
+    reachable with a raw record, and one string walked per character resolves
+    the operator to letters.
+    """
     handles = (operator or {}).get("handles") or {}
     if not isinstance(handles, dict):
         return []
-    return [str(h) for h in (handles.get(connector) or ()) if str(h).strip()]
+    return [str(h) for h in _one_or_many(handles.get(connector)) if str(h).strip()]
 
 
 def _row_actors(row) -> list:
@@ -1278,13 +1317,20 @@ def attribution_basis(operator, connector: str, rows=None) -> dict:
 
 
 def identity_candidates(rows, connector: str) -> list:
-    """The account identifiers this connector actually reported, by frequency.
+    """EVERY account identifier this connector reported, busiest first.
 
     THE CANDIDATES ARE THE ESTATE'S OWN STRINGS, which is what makes the ask
     answerable with a tap instead of a spelling. An operator who types a name
     types the one they use for themselves; a connector stores the one its API
     returns, and where those differ a typed answer matches nothing and reads as
     "none of this is yours".
+
+    FREQUENCY ORDERS THE LIST; IT NO LONGER DECIDES MEMBERSHIP. This returned
+    the 12 busiest, and on a real estate the operator's own account was 25th of
+    30 on the connector carrying 531 of 665 rows — so the one person the
+    question is FOR was the one it could not offer. The busiest actor on a
+    shared tracker is whoever files the most tickets, which is a fact about
+    process volume and not about who is reading this card.
     """
     counts: dict = {}
     for row in rows or ():
@@ -1301,11 +1347,11 @@ def identity_candidates(rows, connector: str) -> list:
 def _distinct_actors(rows, connector: str) -> int:
     """How many actors the connector reported — the TRUE count, uncapped.
 
-    Separate from :func:`identity_candidates` on purpose. That list is capped so
-    a two-hundred-actor connector cannot arrive through the question door, and a
-    note counting the capped LIST would tell an operator with thirty colleagues
-    that twelve accounts appear — a number describing the cap and reported as a
-    fact about their estate.
+    Separate from :func:`identity_candidates` on purpose. That list carries a
+    guardrail, and a note counting the OFFERED list would report the guardrail
+    as a fact about the operator's colleagues — a number describing this module.
+    It is also what makes ``withheld`` measurable, so a surface can tell whether
+    the offer it is rendering is the whole estate or part of it.
     """
     return len({" ".join(a.split()) for row in (rows or ())
                 if str(row.get("connector") or "") == connector
@@ -1328,6 +1374,15 @@ def identity_question(rows, operator) -> dict | None:
     is still listed, with ``reports_no_actor`` set: recording a handle for it is
     honest and attributes nothing, and saying so is the difference between "you
     have not told me" and "I cannot use what you tell me here".
+
+    ``complete`` IS THE FIELD A SURFACE HAS TO OBEY. Where every account the
+    connector reported is offered, "none of these is you" is a true terminal
+    state and a free-text field there can only introduce a spelling the estate
+    does not use. Where the guardrail binds and ``withheld`` accounts are not on
+    the list, a picker CANNOT be the only door — an estate with more than
+    ``MAX_IDENTITY_CANDIDATES`` distinct accounts on one connector is a large
+    company, not a pathology, and this cabinet has no right to tell the person
+    reading the card that they are not in their own estate.
     """
     connectors = sorted({str(r.get("connector") or "")
                          for r in (rows or ()) if r.get("connector")})
@@ -1337,17 +1392,20 @@ def identity_question(rows, operator) -> dict | None:
             continue
         candidates = identity_candidates(rows, connector)
         total = sum(1 for r in rows if str(r.get("connector") or "") == connector)
-        entry = {"connector": connector, "rows": total, "candidates": candidates,
-                 "reports_no_actor": not candidates}
         distinct = _distinct_actors(rows, connector)
-        more = distinct - len(candidates)
+        withheld = distinct - len(candidates)
+        entry = {"connector": connector, "rows": total, "candidates": candidates,
+                 "reports_no_actor": not candidates,
+                 "accounts": distinct, "withheld": withheld,
+                 "complete": withheld <= 0}
         entry["note"] = (
             f"{connector} reported no actor on any of its {total} rows, so until its "
             "actor path is declared, even your own account attributes nothing there"
             if not candidates else
             f"{connector}: {distinct} account(s) appear across {total} rows"
-            + (f"; the {len(candidates)} busiest are offered here, {more} are not"
-               if more > 0 else ""))
+            + (f", and I can only offer {len(candidates)} of them here — if none of "
+               f"those {len(candidates)} is you, type the account name instead"
+               if withheld > 0 else ", and all of them are offered here"))
         asking.append(entry)
     if not asking:
         return None
