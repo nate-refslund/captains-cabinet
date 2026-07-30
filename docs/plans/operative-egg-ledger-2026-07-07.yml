@@ -2391,7 +2391,7 @@ entries:
     wave: "WORLD"
     status: "todo"
     gate_cmd: "corpus manifest carries >=1 night positive; --calibrate separation proof stays green; a night candidate gets a calibrated pairwise verdict"
-    note: "Created 2026-07-09 (cozy pass: live night capture is mechanical-GREEN with the palette-lawful veil + window glows; pairwise deferred until night positives exist)."
+    note: "Created 2026-07-09 (cozy pass: live night capture is mechanical-GREEN with the palette-lawful veil + window glows; pairwise deferred until night positives exist). SUPERSEDED MECHANISM 2026-07-30: the dither veil is gone — ambience is a position-independent remap into the fitted palette (cabinet/dashboard/src/lib/world/ambience.ts, THE AMBIENCE STRUCTURE LAW). Any night positive recorded for this row must be captured through the remap; the pre-2026-07-30 night frames are unusable as positives (measured 4.2-5.8x the art's own grain)."
     rollback: "build_corpus.py REGISTRY row removal + --calibrate refit"
     last_update: "2026-07-09"
   - id: "WORLD-CEREMONIES"

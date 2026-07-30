@@ -24,11 +24,11 @@
  * that binds every sheet the ENGINE's island may draw against the REAL
  * committed manifest, and the pure scene-dynamics helpers.
  */
+import { bucketForHour } from './lighting'
 import { describe, expect, it } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import {
-  bucketOf,
   cropCut,
   motePatrolX,
   requiredOutdoorSheets,
@@ -122,11 +122,11 @@ describe('pure scene dynamics', () => {
   })
 
   it('day buckets follow the night law; missing clock renders day', () => {
-    expect(bucketOf(null)).toBe('day')
-    expect(bucketOf(7)).toBe('dawn')
-    expect(bucketOf(12)).toBe('day')
-    expect(bucketOf(19)).toBe('dusk')
-    expect(bucketOf(23)).toBe('night')
-    expect(bucketOf(2)).toBe('night')
+    expect(bucketForHour(null)).toBe('day')
+    expect(bucketForHour(7)).toBe('dawn')
+    expect(bucketForHour(12)).toBe('day')
+    expect(bucketForHour(19)).toBe('dusk')
+    expect(bucketForHour(23)).toBe('night')
+    expect(bucketForHour(2)).toBe('night')
   })
 })

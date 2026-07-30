@@ -14,7 +14,6 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  ambientVeil,
   bucketForHour,
   DEFAULT_BUCKETS,
   formatClock,
@@ -121,12 +120,11 @@ describe('lighting table (§2)', () => {
     const lightingColors = [
       ...Object.values(WINDOW_SKY),
       STAR_COLOR,
-      // the ambience VEIL replaced the alpha washes that used to be read here;
-      // its hues are what actually reach the frame, so they are what must not
-      // collide with an alarm colour. veil.test.ts bans the adrift hue too.
-      ...(['dawn', 'dusk', 'night'] as const).flatMap((b) => [
-        ...(ambientVeil(b)?.colors ?? []),
-      ]),
+      // Ambience itself is a REMAP now, so it has no hues of its own to check
+      // here — every colour it can emit is a corpus colour, and ambience.test.ts
+      // walks the whole table for reserved hues (including the adrift signal).
+      // WINDOW_SKY is checked above and is also the remap's hue SOURCE, so a sky
+      // that collided with an alarm colour would be caught at the source.
       lampGlow('night')!.color,
     ]
     for (const c of lightingColors) {

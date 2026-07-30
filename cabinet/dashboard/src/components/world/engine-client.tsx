@@ -40,7 +40,7 @@ import { renderCoverage, unrenderedReason } from '@/lib/world/law-render'
 import { creditReason, limezuSurfaces } from '@/lib/world/credit'
 import { ASSET_BASE, type WorldAssetManifest } from '@/lib/world/sprites'
 import { fnv1a } from '@/lib/world/hash'
-import { formatClock } from '@/lib/world/lighting'
+import { bucketForHour, formatClock } from '@/lib/world/lighting'
 import {
   engineStep,
   initialEngineState,
@@ -501,6 +501,7 @@ export default function EngineClient({
     return m
   }, [snapshot])
   const clockText = formatClock(snapshot?.clock)
+  const clockBucket = bucketForHour(snapshot?.clock?.hour)
 
   // ── inspect assembly ─────────────────────────────────────────────────────
   const openInspect = useCallback(
@@ -952,7 +953,22 @@ export default function EngineClient({
           title={weather.why}
           className="rounded bg-zinc-900/80 px-2 py-1 text-zinc-300"
         >
-          {weather.kind === 'sun' ? '☀' : weather.kind === 'rain' ? '🌧' : weather.kind === 'fog' ? '🌫' : '⛈'}{' '}
+          {weather.kind === 'sun'
+            ? // FAIR WEATHER IS A HEALTH READING, NOT A TIME OF DAY. `sun` means
+              // doctor GREEN and probes passing (lib/world/weather.ts), so the chip
+              // showed ☀ at 01:39 next to its own 01:39 clock and read as if the
+              // world thought it was daytime. The word stays — it is the weather
+              // kind, and renaming it would rename the state — but the glyph now
+              // comes from the SAME bucket function the frame is lit by, so the HUD
+              // cannot contradict the frame beside it.
+              clockBucket === 'night'
+              ? '🌙'
+              : '☀'
+            : weather.kind === 'rain'
+              ? '🌧'
+              : weather.kind === 'fog'
+                ? '🌫'
+                : '⛈'}{' '}
           {weather.kind}
         </span>
         {engine && engine.ladders.problems.length > 0 && (
