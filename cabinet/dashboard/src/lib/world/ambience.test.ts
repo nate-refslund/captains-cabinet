@@ -58,6 +58,7 @@ import {
   quantize,
   remap,
   snapNative,
+  strengthFor,
   toneStrength,
 } from './ambience'
 import { CORPUS_PALETTE_BINS, PALETTE_NEIGHBOR_RADIUS, PALETTE_QUANT_BITS } from './corpus-palette'
@@ -668,6 +669,45 @@ describe('the ambience derivation', () => {
       'a flat warm multiply no longer browns the sea — re-measure the §3 claim ' +
         'in ambience.ts before simplifying the split away'
     ).toEqual([])
+  })
+
+  it('the clamp itself pulls a hotter illuminant back', () => {
+    // THE ARM THAT WAS MISSING, found by mutating the module: every arm above
+    // checks the OUTPUT, and the ruled illuminants clear the law at full
+    // strength, so deleting the sea condition from `solveStrength` changed no
+    // shipped pixel and every arm stayed green. A guard that does not bind on
+    // any shipped value has to be reached with a value no bucket ships.
+    const depth = ambientDepth('dusk')!
+    for (const bucket of LIT) {
+      expect(
+        strengthFor(CYCLE_TONE[bucket][0], CYCLE_TONE[bucket][1], ambientDepth(bucket)!),
+        `${bucket}: the ruled illuminants no longer ship at full strength`
+      ).toBe(1)
+    }
+    // The clamp has TWO conditions and each is reached ALONE, because a case that
+    // trips both stays green when either one is deleted (measured by mutation —
+    // that is how this arm got written):
+    //
+    //   #c09040 as the lit end   -> a channel above 1, open water unharmed
+    //   #604020 as the shadow end -> open water browned, no channel above 1
+    //
+    // plus a case that trips both, and the shipped pair, which trips neither.
+    expect(
+      strengthFor(CYCLE_TONE.dusk[0], 0xc09040, depth),
+      'a lit end that amplifies a channel past 1 is no longer clamped'
+    ).toBeLessThan(1)
+    expect(
+      strengthFor(0x604020, CYCLE_TONE.dusk[1], depth),
+      'a shadow end that browns open water is no longer clamped'
+    ).toBeLessThan(1)
+    for (const hotter of [0xd07028, 0xff8000, 0xffa030]) {
+      expect(
+        strengthFor(CYCLE_TONE.dusk[0], hotter, depth),
+        `#${hotter.toString(16)} passed the clamp at full strength`
+      ).toBeLessThan(1)
+    }
+    // and a colourless illuminant is never clamped: the clamp costs hue, not depth
+    expect(strengthFor(WINDOW_SKY.day, WINDOW_SKY.day, depth)).toBe(1)
   })
 
   it('the warmth actually arrives, and only on the lit half', () => {

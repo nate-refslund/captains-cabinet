@@ -354,9 +354,35 @@ export function toneStrength(bucket: DayBucket): number {
   const hit = strengthCache.get(bucket)
   if (hit !== undefined) return hit
   const raw = rawEnds(bucket)
-  const value = raw === null ? 0 : solveStrength(raw)
+  const value = raw === null ? 0 : strengthFor(CYCLE_TONE[bucket][0], CYCLE_TONE[bucket][1], raw)
   strengthCache.set(bucket, value)
   return value
+}
+
+/**
+ * The clamp, reachable with illuminants no bucket ships. Split out from
+ * `toneStrength` for the same reason `depthForSteps` is split out of
+ * `ambientDepth`: a guard that does not bind on any shipped value cannot be
+ * tested through the shipped values, and an arm that only checks today's output
+ * would stay green if the guard were deleted. Measured 2026-07-30 by mutation:
+ * it did.
+ *
+ * `ends` is optional so callers that already walked the illuminants to a depth
+ * do not walk them twice; pass the depth instead and it walks them.
+ */
+export function strengthFor(
+  shadow: number,
+  highlight: number,
+  endsOrDepth: readonly [Light, Light] | number
+): number {
+  const ends: readonly [Light, Light] =
+    typeof endsOrDepth === 'number'
+      ? [
+          walkToDepth(illuminantRatio(shadow), endsOrDepth),
+          walkToDepth(illuminantRatio(highlight), endsOrDepth),
+        ]
+      : endsOrDepth
+  return solveStrength(ends)
 }
 
 /** One palette bin of channel, the finest distinction the output set can make. */

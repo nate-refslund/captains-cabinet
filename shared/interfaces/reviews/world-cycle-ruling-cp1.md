@@ -58,6 +58,23 @@ the other way; the split changes hue and never depth; the LUT and the clamp meas
 same table. The inverted dither arms (flat-pairs-split, grain-vs-art) are untouched and
 still fire on all three buckets.
 
+## Vacuity sweep (checkpoint 2)
+
+Every new arm was mutation-tested against the module rather than trusted. Five
+mutations each turn exactly one arm red: reverting `CYCLE_SHADE` to the sky-ratio
+depths, neutralizing the split, removing the depth floor, moving night off the
+art's own sky, and forcing the clamp to return 1.
+
+IT FOUND A HOLE. Deleting either condition from `solveStrength` left every arm
+GREEN, because the ruled illuminants clear both laws at full strength — so no
+shipped pixel moved and nothing was checking the guard itself, only its output.
+Fixed by splitting the clamp out as `strengthFor(shadow, highlight, depth)` (the
+same move `depthForSteps` makes for the floor) and reaching each condition ALONE:
+`#c09040` as the lit end amplifies a channel past 1 with open water unharmed,
+`#604020` as the shadow end browns open water with no channel above 1. Both
+conditions are now individually detected; a case that trips both would not have
+been.
+
 ## Pre-existing, NOT caused by this change, reported not fixed
 
 - `CLUSTER_FLAT_VOID` fails the mechanical aesthetic gate on the NIGHT frame, flat_mass
