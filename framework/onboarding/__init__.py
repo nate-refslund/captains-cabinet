@@ -9,7 +9,11 @@ genesis (ONBOARD-1/2, Perfect Cabinet Wave A): the hatch-end half — the org
 PROPOSES 2–4 outcome cards from the cabinet-init answers (propose-only,
 ``instance/config/outcomes-proposed.yml``) and attempts the genesis research
 brief into the Library shelf (claude CLI, fixed argv; honest IOU on failure).
-Feeds the LOCAL-FIRST first briefing via ``genesis_intake_items``.
+Feeds the LOCAL-FIRST first briefing via ``genesis_intake_items``. Both
+artifacts record the ``answers_digest`` they were derived from (2026-07-30), so
+refining the answers re-derives genesis's own untouched drafts and supersedes
+the brief instead of describing the hatch placeholder forever; ratified and
+operator-edited rows survive verbatim and unchanged answers change nothing.
 
 quiet_hours (Phase-2 interview question, Captain insight 2026-07-17): the
 present-the-default quiet-hours question — ``render_question`` reads the
