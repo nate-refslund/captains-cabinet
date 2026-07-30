@@ -90,6 +90,7 @@ import { STAGED_VOCAB_ELEMENTS } from '@/lib/world/sprites-outdoor'
 import InspectCard, { type InspectTarget } from './inspect-card'
 import PortraitRail from './portrait-rail'
 import KillswitchLever from './killswitch-lever'
+import { killswitchGlance } from '@/lib/world/killswitch'
 import DecisionQueueCard from './decision-queue-card'
 import LibraryCard from './library-card'
 import type { EngineTarget, WorldLabel } from './engine-canvas'
@@ -326,8 +327,12 @@ export default function EngineClient({
         setSnapshot(snap)
         snapshotRef.current = snap
         setConnected(true)
-        // killswitch → storm immediately (never waits for the next poll)
-        if (snap.killswitch && weatherRef.current.kind !== 'storm') {
+        // killswitch → storm immediately (never waits for the next poll).
+        // `=== true` on purpose: null means nobody read the stop, and a truthy
+        // test would have quietly filed that under "not engaged" — the sky
+        // then paints the unread case as the calm one. Unknown reaches the
+        // weather machine through weatherTarget's own fog branch instead.
+        if (snap.killswitch === true && weatherRef.current.kind !== 'storm') {
           weatherRef.current = weatherStep(weatherRef.current, {
             kind: 'storm',
             why: 'cabinet:killswitch active — the storm is the red wash',
@@ -356,8 +361,19 @@ export default function EngineClient({
           tickRef.current += 1
           const snap = snapshotRef.current
           // Killswitch: the world FREEZES (tick stops advancing state);
-          // the red wash + banner + lever carry the truth.
-          if (snap?.killswitch) continue
+          // the red wash + banner + lever carry the truth. An UNKNOWN reading
+          // does not freeze — freezing is the depiction of an ENGAGED stop, so
+          // freezing on null would swap one guess for the opposite one. The
+          // unknown is carried by the lever pin and the break-through banner,
+          // which is where the honesty-floor law puts it.
+          //
+          // Hoisted into a const because the life reducer downstream takes the
+          // same fact: reading `snap.killswitch` there again gives TypeScript a
+          // value already narrowed by this `continue`, which is how the life
+          // layer's own frozen branch became unreachable from this shell
+          // without anyone noticing. One name, both consumers.
+          const stopEngaged = snap?.killswitch === true
+          if (stopEngaged) continue
           // cutaway machine (pure; candidates from the current buildings)
           const host = hostRef.current
           const vp = { w: host?.clientWidth ?? 1024, h: host?.clientHeight ?? 640 }
@@ -409,7 +425,7 @@ export default function EngineClient({
               tick: tickRef.current,
               nowTsMs,
               clockHour: snap.clock?.hour ?? null,
-              killswitch: snap.killswitch,
+              killswitch: stopEngaged,
               officers,
               records: snap.chronicle ?? [],
               productLanes: new Set(feed.productLanes ?? []),
@@ -502,6 +518,20 @@ export default function EngineClient({
   }, [snapshot])
   const clockText = formatClock(snapshot?.clock)
   const clockBucket = bucketForHour(snapshot?.clock?.hour)
+  /**
+   * The emergency stop, decided ONCE for every surface in this shell.
+   *
+   * Before the SSE connects there is no snapshot at all, and that is an unknown
+   * too — the world used to render `?? false`, i.e. a confident "the stop is
+   * not engaged", during the seconds before it had asked anything. `undefined`
+   * and `null` both land in the unknown arm of `killswitchGlance`; only a real
+   * `false` on the wire produces "clear".
+   */
+  const killswitchState = killswitchGlance(
+    snapshot ? snapshot.killswitch : undefined,
+    snapshot?.killswitchUnknownReason ??
+      (snapshot ? null : 'the world has not connected to the stream yet')
+  )
 
   // ── inspect assembly ─────────────────────────────────────────────────────
   const openInspect = useCallback(
@@ -874,7 +904,7 @@ export default function EngineClient({
           cutaway={cutaway}
           weather={weather}
           tick={tick}
-          killswitch={snapshot?.killswitch ?? false}
+          killswitch={snapshot?.killswitch ?? null}
           clockHour={snapshot?.clock?.hour ?? null}
           chartTable={chartTable}
           courses={courses}
@@ -1177,15 +1207,40 @@ export default function EngineClient({
       )}
 
       {/* ── THE killswitch lever: the ONE actuator (break-through law) ── */}
-      <KillswitchLever active={snapshot?.killswitch ?? false} tick={tick} canActuate={canActuate} />
+      <KillswitchLever state={killswitchState} tick={tick} canActuate={canActuate} />
 
       {/* ── killswitch break-through: unsuppressible, above everything ── */}
-      {snapshot?.killswitch && (
+      {killswitchState.state === 'engaged' && (
         <div className="absolute inset-0 z-50 flex items-start justify-center bg-red-950/60">
           <div className="mt-20 rounded-lg border-2 border-red-500 bg-red-900 px-6 py-4 text-center">
             <div className="text-lg font-bold text-red-100">KILLSWITCH ACTIVE</div>
             <div className="text-sm text-red-200">
               fleet halted — the storm is the sky; release is the lever&apos;s ceremony
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── the same break-through for a stop nobody could READ. It is not a
+          quieter version of the banner above: "I cannot tell" is its own
+          state, it gets its own words, and it is unsuppressible for the same
+          reason the red one is. No wash — a wash would claim the fleet is
+          halted, which is exactly the guess this fix removes. ── */}
+      {killswitchState.state === 'unknown' && (
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-50 flex items-start justify-center">
+          <div
+            data-world-killswitch-unknown
+            className="mt-20 max-w-[36rem] rounded-lg border-2 border-dashed border-amber-400 bg-zinc-950/95 px-6 py-4 text-center"
+          >
+            <div className="text-lg font-bold text-amber-200">
+              KILLSWITCH STATE UNKNOWN
+            </div>
+            <div className="text-sm text-amber-100/80">
+              {killswitchState.reason}
+            </div>
+            <div className="mt-1 text-xs text-zinc-400">
+              This is not &ldquo;not engaged&rdquo; — nobody read it. Every gate
+              that acts treats an unreadable stop exactly like an active one.
             </div>
           </div>
         </div>

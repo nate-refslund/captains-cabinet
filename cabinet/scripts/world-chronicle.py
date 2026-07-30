@@ -495,7 +495,8 @@ def build_presence(activity: Dict[str, Optional[str]],
                    heartbeats: Dict[str, Optional[int]],
                    killswitch_active: bool,
                    iid_high: int,
-                   now_iso: str) -> Dict[str, Any]:
+                   now_iso: str,
+                   killswitch_verdict: str = "INDETERMINATE") -> Dict[str, Any]:
     """Pure snapshot builder. Activity values are the raw JSON strings from
     cabinet:officer:activity:<slug>; object strings are TRUNCATED and
     secret-checked (ephemeral T2 surface — durable chronicle never carries
@@ -533,7 +534,21 @@ def build_presence(activity: Dict[str, Optional[str]],
     return {
         "v": SCHEMA_VERSION,
         "ts": now_iso,
+        # LEGACY bit: verdict != CLEAR. Fail-closed for behaviour, LOSSY for
+        # reporting — it folds INDETERMINATE into the same True as a genuinely
+        # armed stop, so every downstream reader had to choose between calling
+        # an unreadable switch "engaged" or (as the dashboard did) "off". Kept
+        # because the Swift companion parses it.
         "killswitch": bool(killswitch_active),
+        # The verdict verbatim from the ONE reader (killswitch-read.sh), added
+        # 2026-07-31 so consumers can tell "stopped" from "I cannot tell" —
+        # which is what that reader's contract requires of anything that
+        # REPORTS the stop, as opposed to anything that acts on it.
+        "killswitch_verdict": (
+            killswitch_verdict
+            if killswitch_verdict in ("CLEAR", "ACTIVE", "INDETERMINATE")
+            else "INDETERMINATE"
+        ),
         "iid_high": int(iid_high),
         "officers": officers,
     }
@@ -559,9 +574,10 @@ def gather_presence(iid_high: int) -> Dict[str, Any]:
     # rather than painting it calm. It also consults the second (filesystem
     # marker) stop channel, so a stop that survives a `DEL cabinet:killswitch`
     # loop still shows up in the world and on the Captain's phone.
-    killswitch_active = _killswitch_verdict() != "CLEAR"
+    verdict = _killswitch_verdict()
+    killswitch_active = verdict != "CLEAR"
     return build_presence(activity, heartbeats, killswitch_active,
-                          iid_high, _now_iso())
+                          iid_high, _now_iso(), verdict)
 
 
 # ── state + output ───────────────────────────────────────────────────────────

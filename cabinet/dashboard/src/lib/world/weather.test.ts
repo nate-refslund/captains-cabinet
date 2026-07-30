@@ -104,3 +104,29 @@ describe('deterministic rain', () => {
     expect(rainDrops(7, 4, 0, 0)).toHaveLength(4) // never divides by zero
   })
 })
+
+describe('the unmeasured sky', () => {
+  it('opens on FOG, never on sun — sun in this module is a health reading', () => {
+    const w = initialWeather()
+    // Pre-2026-07-31 this was `sun` with why "no eval yet — default sun": a
+    // confident all-clear about a fleet nothing had asked about yet, on the
+    // same HUD strip as the killswitch lever.
+    expect(w.kind).toBe('fog')
+    expect(w.why).toMatch(/nothing has been measured/)
+    expect(w.evaluated).toBe(false)
+  })
+
+  it('the FIRST eval is adopted immediately (honesty costs no delay)', () => {
+    const s = weatherStep(initialWeather(), weatherTarget(GREEN))
+    expect(s.kind).toBe('sun')
+    expect(s.evaluated).toBe(true)
+  })
+
+  it('a hand-built state with no `evaluated` flag adopts, rather than holds', () => {
+    const s = weatherStep(
+      { kind: 'sun', why: 'stale hand-built', candKind: null, candStreak: 0 },
+      weatherTarget({ ...GREEN, doctorGreen: false })
+    )
+    expect(s.kind).toBe('rain')
+  })
+})

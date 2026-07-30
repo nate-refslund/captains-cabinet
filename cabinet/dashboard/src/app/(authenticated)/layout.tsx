@@ -4,22 +4,20 @@ import NeedsYouBadge from '@/components/needs-you-badge'
 import CommandPalette from '@/components/library/CommandPalette'
 import { getProjects, getActiveProject } from '@/actions/projects'
 import { getDashboardConfig } from '@/lib/config'
-import redis from '@/lib/redis'
-
-async function getKillSwitchState(): Promise<boolean> {
-  const value = await redis.get('cabinet:killswitch')
-  return value === 'active'
-}
+import { readKillswitch } from '@/lib/killswitch-state'
+import { glanceOf } from '@/lib/world/killswitch'
 
 export default async function AuthenticatedLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const [projects, activeProject, killSwitchActive] = await Promise.all([
+  const [projects, activeProject, killswitch] = await Promise.all([
     getProjects(),
     getActiveProject(),
-    getKillSwitchState(),
+    // Three states, never two: an unread emergency stop used to render the
+    // same "⏸ Stop All" pill as one the org had verified was not engaged.
+    readKillswitch(),
   ])
   const { consumerModeEnabled } = getDashboardConfig()
 
@@ -55,7 +53,7 @@ export default async function AuthenticatedLayout({
         min-h/min-w ensures ≥ 44pt tap target on mobile.
       */}
       <div className="fixed right-14 top-2 z-[60] md:right-3">
-        <KillSwitchHeader active={killSwitchActive} />
+        <KillSwitchHeader state={glanceOf(killswitch)} />
       </div>
 
       {/*

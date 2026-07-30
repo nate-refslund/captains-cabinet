@@ -41,11 +41,47 @@ describe('toggleKillSwitch', () => {
     expect(mockRedisDel).not.toHaveBeenCalled()
   })
 
-  it('authenticated → proceeds to flip the switch', async () => {
+  it('authenticated → proceeds to flip the switch, and reads it back', async () => {
     mockVerify.mockResolvedValue(true)
-    mockRedisGet.mockResolvedValue(null) // currently inactive
+    // Pre-read: inactive. Post-read: the write landed. Two calls now, because
+    // the action proves the write instead of assuming it.
+    mockRedisGet.mockResolvedValueOnce(null).mockResolvedValueOnce('active')
     const res = await toggleKillSwitch('activate')
     expect(res).toEqual({ success: true })
     expect(mockRedisSet).toHaveBeenCalledWith('cabinet:killswitch', 'active')
+    expect(mockRedisGet).toHaveBeenCalledTimes(2)
+  })
+
+  // ── the read-back, 2026-07-31 ───────────────────────────────────────────
+  // This action returned `{success:true}` from HAVING ISSUED the command. A
+  // store that accepted the SET and did not keep it — a read-only replica, an
+  // eviction, a competing DEL loop, a mock store standing in for a fleet that
+  // was never contacted — came back as success, and the header pill flipped to
+  // "officers halted" over a fleet that was still running. Both arms below FAIL
+  // against the pre-change code, which never issued the second GET at all.
+  it('activate that does not land → failure naming what the store actually reads', async () => {
+    mockVerify.mockResolvedValue(true)
+    mockRedisGet.mockResolvedValueOnce(null).mockResolvedValueOnce(null)
+    const res = await toggleKillSwitch('activate')
+    expect(res.success).toBe(false)
+    expect(res.error).toMatch(/did not take/)
+    expect(res.error).toMatch(/\(absent\)/)
+  })
+
+  it('deactivate that does not land → failure, never a silent success', async () => {
+    mockVerify.mockResolvedValue(true)
+    mockRedisGet.mockResolvedValueOnce('active').mockResolvedValueOnce('active')
+    const res = await toggleKillSwitch('deactivate')
+    expect(res.success).toBe(false)
+    expect(res.error).toMatch(/did not take/)
+    expect(mockRedisDel).toHaveBeenCalledWith('cabinet:killswitch')
+  })
+
+  it('an already-correct end state is still a no-op (no write, no read-back)', async () => {
+    mockVerify.mockResolvedValue(true)
+    mockRedisGet.mockResolvedValueOnce('active')
+    expect(await toggleKillSwitch('activate')).toEqual({ success: true })
+    expect(mockRedisSet).not.toHaveBeenCalled()
+    expect(mockRedisGet).toHaveBeenCalledTimes(1)
   })
 })
