@@ -21,11 +21,45 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 6595784ffd913aadd0e47fab8fbc146e173b1a7c110f375a3435001828288a80
+Reviewed-Scope-Digest: 527a73d2da14308993639050089ec15b597720fd90d24fb137a6c798ee1e43e1
+(MERGE RE-BIND, 2026-07-30, `fix/unicode-name-tokens` x master. Both sides
+re-bound this line, so the merge left two; ONE value stands and it is
+recomputed over this merge commit. The only in-scope path either side moved
+is the contract file, whose merged ceiling is RE-MEASURED over this tree.
+No COG-4 implementation byte moved on either side. Both sections stand
+verbatim below, master's first.)
+
 (RE-BIND, 2026-07-30, `fix/sources-reading-asymmetry` — see the section of that
 name at the end of this file. One in-scope path moved, the contract file, whose
 ceiling is re-measured over this tree. No COG-4 implementation byte moved. The
 prior note stands below.)
+(MERGE RE-BIND, 2026-07-30, `fix/unicode-name-tokens` x master. Both sides
+re-bound this line, so the merge left two; ONE value stands and it is
+recomputed over this merge commit. The only in-scope path either side moved
+is the contract file, whose merged ceiling is RE-MEASURED over this tree
+rather than summed on paper. Both re-bind sections are kept verbatim, because
+a re-freeze that hides what moved asserts a review that never happened. This
+branch's note follows; master's `fix/claim-surfaces` section stands at the end
+of this file.)
+
+(RE-BOUND 2026-07-30 on `fix/unicode-name-tokens`, previous value `35b4ae16…`.
+ONE in-scope path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` raises
+`framework_production_noncomment_lines` VISIBLY 61433 -> 61474 (+41 measured over
+this tree with cognitive-architecture-census.py, observed 76013 vs the
+then-effective 75972 — not an allowance, because a splitter that reads the
+operator's own script has no deletion gate that could ever fire). The change it
+pays for is one function pair in `framework/onboarding/salience.py`: the name
+tokenizer split on `[^0-9a-z]+`, so a name carrying no ASCII alphanumeric
+produced NO words on either side of any comparison and therefore shared none
+with ITSELF — an operator answering in Japanese, Cyrillic, Greek, Arabic,
+Hebrew, Devanagari, Thai or Korean had every window refused, including the
+folder spelled exactly like their answer. One Unicode-aware split now serves
+both `name_tokens` and `tokenize`, and its re-rank was MEASURED on a live
+665-name four-connector estate before landing: all 49 ranked clusters identical
+in order and score, vocabulary 1226 -> 1211, below-span 607 -> 608, 35 of 665
+names re-read as the word the estate writes. Census PASS at observed == maximum
+with zero headroom; ZERO new production modules, so no bijection class moves.)
 (MERGE RE-BIND, 2026-07-30, `fix/short-answer-binds` x master. Both sides
 re-bound this line, so the merge left two; ONE value stands and it is
 recomputed over this merge commit. No COG-4 implementation byte moved on
