@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: PENDING_RECOMPUTE_OVER_THE_MERGE_COMMIT
+Reviewed-Scope-Digest: 8343cb2177164c1439b77f0e5ef1484b9d31c1876ce16d7ee85d0965e7d1f548
 
 (MERGE RE-BIND, 2026-07-30, `feat/companion-desk-pet` x master. Both sides
 re-bound this line, so the merge left two; ONE value stands and it is
