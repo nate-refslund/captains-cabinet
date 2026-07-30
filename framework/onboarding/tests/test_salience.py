@@ -360,6 +360,12 @@ def test_a_learned_merge_is_appended_deduped_and_never_overwritten():
     assert salience.learn_merge(again, ["alpha"], now="x")["groups"] == \
         again["groups"]
     assert salience.learn_merge(None, [], now="x")["groups"] == []
+    # a padded name is the same name — otherwise it is stored in a shape that
+    # can never match a label and the row is a merge that will never fire
+    assert salience.learn_merge(again, [" alpha ", "bravo\n"],
+                                now="x")["groups"] == again["groups"]
+    assert salience.learned_merges({"groups": [{"labels": [" a b ", "c d "]}]}) == \
+        [["a b", "c d"]]
 
 
 def test_reading_the_store_survives_a_row_it_cannot_use():

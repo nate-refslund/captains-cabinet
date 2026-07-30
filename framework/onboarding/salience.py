@@ -567,7 +567,7 @@ def learn_merge(store: Any, group: Iterable[Any], *, now: str,
         for row in store.get("groups") or ():
             if isinstance(row, Mapping) and row.get("labels"):
                 rows.append(dict(row))
-    labels = sorted({str(item) for item in group or () if str(item).strip()})
+    labels = sorted({str(item).strip() for item in group or () if str(item).strip()})
     if len(labels) >= 2 and not any(
         sorted({str(x) for x in row.get("labels") or ()}) == labels for row in rows
     ):
@@ -594,7 +594,7 @@ def learned_merges(store: Any) -> list[list[str]]:
     for row in store.get("groups") or ():
         if not isinstance(row, Mapping):
             continue
-        labels = [str(item) for item in (row.get("labels") or ()) if str(item).strip()]
+        labels = [s for s in (str(i).strip() for i in row.get("labels") or ()) if s]
         if len(labels) >= 2:
             groups.append(labels)
     return groups
