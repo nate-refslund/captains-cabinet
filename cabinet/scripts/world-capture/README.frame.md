@@ -16,10 +16,10 @@ looking at a picture.
 
 ## What runs now
 
-    # capture — 16 real composited browser frames, ~45s
+    # capture — 16 real composited browser frames (~1m local, 1m50 on a runner)
     cd cabinet/dashboard && node frame-harness/shoot.mjs --out /tmp/world-frames --killswitch 1
 
-    # judge — ~1m40s
+    # judge (~1m40 local, 4m10 on a runner)
     python3.12 cabinet/scripts/world-capture/frame-judge.py /tmp/world-frames
 
 `frame-harness/` mounts the **shipped `EngineCanvas`** — its PixiJS boot, its GLSL ambience
