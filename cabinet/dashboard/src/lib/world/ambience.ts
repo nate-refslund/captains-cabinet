@@ -87,13 +87,14 @@
  *     RULING, to the last bit of its light factor — an arm pins that.
  *
  *  2. THE FLOOR still clamps the ruling. The palette can only resolve so much
- *     darkness: measured through this module over all eleven ramps (52 steps),
+ *     darkness: measured through this module's own shipping path (quantize →
+ *     light → snap) over all eleven ramps, 52 steps,
  *
  *       depth        light factor   surviving steps   thinnest ramp
- *       1 ramp           0.663          52 / 52         3 tones   <- dawn
- *       1.5 ramps        0.539          49 / 52         3 tones   <- dusk
- *       2 ramps          0.439          45 / 52         3 tones   <- night
- *       3 ramps          0.291          31 / 52         1 tone    <- blank
+ *       1 ramp           0.663          51 / 52         3 tones   <- dawn
+ *       1.5 ramps        0.539          48 / 52         3 tones   <- dusk
+ *       2 ramps          0.439          47 / 52         3 tones   <- night
+ *       3 ramps          0.291          32 / 52         1 tone    <- blank
  *
  *     TWO ramps is the deepest depth at which no shipped ramp goes BLANK, and a
  *     surface whose ramp has collapsed to one tone is not darker, it is blank. So
@@ -116,15 +117,15 @@
  *     the same failure ("dusk turned open water olive") that the chroma clause
  *     this ruling replaces was derived from. Split by tone, the warm half lands
  *     where the light actually falls: sand goes #9c5c34 → #c46c3c at dusk while
- *     the sea holds #343c4c → #4c5454. That is what a cozy pixel game does at
+ *     the sea holds #34344c → #4c5454. That is what a cozy pixel game does at
  *     golden hour, and it is still a pure function of the pixel — the source
  *     colour's own luminance picks the light, never the pixel's position, so THE
  *     AMBIENCE STRUCTURE LAW above is untouched.
  *
  *     `CYCLE_CURVE` = 2 is part of the ruling: the warm half engages on the lit
- *     tones only. Linear reaches too far down — at dusk a linear ramp takes the
- *     blue out of open water for any strength above 0.30, where the square holds
- *     the full ruled tint at 1.00.
+ *     tones only. Linear reaches too far down. Measured on the shipped dusk
+ *     illuminants, the strongest tint the clamp below admits is 0.218 at curve 1
+ *     and 0.682 at curve 1.5; at curve 2 the full ruled tint survives, 1.000.
  *
  *  4. OPEN WATER STAYS WATER — the clamp on the ruling, and what replaced the
  *     chroma clause. THE FINDING, recorded because it is the one place this
@@ -132,10 +133,11 @@
  *     make any surface MORE colourful than a neutral darkening of the same depth
  *     does. Its reference is a COLOURLESS light, which casts no colour on a
  *     neutral surface, so any illuminant colour at all registers as painting.
- *     Measured at the ruled depths, the largest tint it admits is t = 0.03–0.05:
- *     a grey cobble comes out #545454, exactly neutral. It is not a tight bound
- *     on warmth, it is a statement that ambience must be colourless — which the
- *     Captain has now ruled against. It could not be kept.
+ *     Measured on the ruled LIT illuminants at the ruled depths, the largest
+ *     tint it admits is 0.025 at dawn and 0.033 at dusk — a mid grey comes out
+ *     #545454 and #44444c, which is the neutral darkening itself. It is not a
+ *     tight bound on warmth, it is a statement that ambience must be colourless
+ *     — which the Captain has now ruled against. It could not be kept.
  *
  *     What it was derived FROM can be, and is stated directly: the failure it
  *     caught was open water going olive. So the clamp is now open water itself —

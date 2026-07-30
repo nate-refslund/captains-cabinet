@@ -40,8 +40,8 @@ never emitted; ambience is a function of the pixel and never of its position.
 
 **Replaced, with the finding stated in the module:** the chroma clause. Its reference was
 a colourless darkening of the same depth, so any illuminant colour registered as painting
-— at the ruled depths it admits t = 0.03-0.05, a grey cobble coming out #545454, exactly
-neutral. It is not a tight bound on warmth, it is a statement that ambience must be
+— at the ruled depths it admits 0.025 (dawn) and 0.033 (dusk), a mid grey coming out #545454 and
+#44444c — the neutral darkening itself. It is not a tight bound on warmth, it is a statement that ambience must be
 colourless, which the ruling contradicts. What it was DERIVED from is stated directly
 instead: open water stays water — every sea tone keeps at least one palette bin more blue
 than red, measured on the shipping path. Plus the clause it carried implicitly: a light
