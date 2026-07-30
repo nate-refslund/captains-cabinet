@@ -566,7 +566,7 @@ def _apply_ambience(im, hour: int):
     native set has thousands, and the product is what used to make this slow.
     """
     bucket = ambience_py.bucket_of(hour)
-    if ambience_py.light(bucket) is None:
+    if not ambience_py.is_lit(bucket):
         return im
     out = im.copy().convert("RGB")
     px = out.load()

@@ -17,9 +17,10 @@ nothing can reach will drift. THE AMBIENCE STRUCTURE LAW (ambience.ts) replaced
 the dither those tables described with a colour remap, and this module replaced
 the copies with one read of one artifact.
 
-The one piece of LOGIC here is the nearest-native snap, because a Python consumer
-that wants to shade an arbitrary pixel needs it and a table of 32768 entries is
-not worth committing. It is not trusted on faith: tests/test_ambience_mirror.py
+The LOGIC here is the split-tone light and the nearest-native snap, because a
+Python consumer that wants to shade an arbitrary pixel needs both and a table of
+32768 entries is not worth committing. Neither is trusted on faith:
+tests/test_ambience_mirror.py
 runs it over all fifty-two shipped ramp colours and pins the results against the
 `ramps` table the TypeScript emitted, so the port is verified against the
 authority's own output rather than against a re-reading of the authority's code.
@@ -49,12 +50,45 @@ def derived() -> dict:
     return json.loads(DERIVED.read_text())["buckets"]
 
 
-def light(bucket: str) -> tuple[float, float, float] | None:
-    """Per-channel light factor, or None for a bucket that changes nothing."""
+@lru_cache(maxsize=1)
+def _curve() -> float:
+    """Where the split-tone handover sits — ambience.ts `CYCLE_CURVE`."""
+    return json.loads(DERIVED.read_text())["curve"]
+
+
+def is_lit(bucket: str) -> bool:
+    """True when this bucket changes anything at all (`day` does not)."""
+    if bucket not in BUCKETS:
+        raise ValueError(f"unknown bucket {bucket!r}")
+    return derived().get(bucket) is not None
+
+
+def _luma(rgb: tuple[int, int, int]) -> float:
+    return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
+
+
+def light(bucket: str, rgb: tuple[int, int, int]) -> tuple[float, float, float] | None:
+    """The per-channel light factor a SOURCE TONE stands in, or None for a bucket
+    that changes nothing.
+
+    It takes the source because the Captain's cycle ruling of 2026-07-30 lights
+    dawn and dusk as a SPLIT TONE — a cool illuminant on the shadow end of the
+    art's tonal range and a warm one on the lit end, `curve` deciding where the
+    handover sits. Night names one illuminant twice, so it is still flat. This is
+    ambience.ts `lightAt`, ported; the emitted artifact carries the two ends, the
+    curve and the solved strength, and nothing else is needed to reproduce it.
+    """
     if bucket not in BUCKETS:
         raise ValueError(f"unknown bucket {bucket!r}")
     row = derived().get(bucket)
-    return None if row is None else tuple(row["light"])
+    if row is None:
+        return None
+    u = min(1.0, max(0.0, _luma(rgb) / 255.0)) ** _curve()
+    s, w = row["shadow"], row["highlight"]
+    d = [s[i] + (w[i] - s[i]) * u for i in range(3)]
+    g = 0.2126 * d[0] + 0.7152 * d[1] + 0.0722 * d[2]
+    t = row["strength"]
+    return tuple(g * (d[i] / g) ** t for i in range(3))
 
 
 def sea(bucket: str) -> list[tuple[int, int, int]]:
@@ -115,12 +149,14 @@ def remap(rgb: tuple[int, int, int], bucket: str) -> tuple[int, int, int]:
     GPU's LUT lookup does, so a Python-shaded frame and a browser-shaded frame
     agree pixel for pixel rather than nearly.
     """
-    fac = light(bucket)
-    if fac is None:
+    if not is_lit(bucket):
         return rgb
     bits = _quant_bits()
     centre = 1 << (8 - bits - 1)
     src = tuple((((c >> (8 - bits)) << (8 - bits)) | centre) for c in rgb)
+    # the light is read off the QUANTIZED source, the way the GPU's LUT entry was
+    # built — a split-tone light read off the raw pixel would land a bin out
+    fac = light(bucket, src)
     tgt = tuple(min(255.0, src[i] * fac[i]) for i in range(3))
     best, best_d = _native()[0], float("inf")
     for cand in _native():

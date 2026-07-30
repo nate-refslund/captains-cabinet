@@ -53,51 +53,105 @@
  * measures stays at zero.
  *
  * ─────────────────────────────────────────────────────────────────────────────
- * WHERE EVERY NUMBER COMES FROM (nothing here is picked)
+ * THE CAPTAIN'S CYCLE RULING, 2026-07-30 — THE DAY IS STYLIZED, NOT REPORTED.
  *
- *  1. HUE DIRECTION — `WINDOW_SKY` in lighting.ts. That table is the art's own
- *     statement of what each hour's sky is, ratified with the direction doc, and
- *     `sky[bucket] / sky['day']` per channel is therefore the art's own statement
- *     of how much light of each colour that hour has. Night's is (0.15, 0.19,
- *     0.34): dim, and relatively blue — the moon-tint §12 asks for, taken from
- *     the art rather than invented beside it.
+ * Until this ruling every number below was `WINDOW_SKY[bucket] / WINDOW_SKY.day`,
+ * the art's own sky table, and the cycle was therefore a strict function of it.
+ * Measured on live frames that put dawn at 88% and dusk at 82% of noon: the two
+ * hours that are supposed to be the most beautiful in the day were, to the eye,
+ * noon. The Captain was shown that, was told plainly that they are shallow
+ * BECAUSE the sky table says they are, and ruled:
  *
- *  2. DEPTH — the art's own deepest shade, floored by what the palette can still
- *     resolve. Every ramp in `RAMPS` is a shading ladder the art declares, and
- *     their lightest→darkest luminance ratios have median RAMP_SHADE (0.663) —
- *     one ramp of shade. Night's own sky ratio asks for 0.19, far deeper, and the
- *     palette cannot pay it, so the floor is RAMP_SHADE². TWO, and not three,
- *     because two is the deepest depth at which no shipped ramp goes BLANK, and a
- *     surface whose ramp has collapsed to one tone is not darker, it is blank.
- *     Measured through this module, over all eleven ramps (52 steps):
+ *     "deepen them so the day visibly turns — warm low light at dawn, amber at
+ *      dusk, the way the cozy pixel games we're aiming at do it. The cycle
+ *      should read at a glance."
+ *
+ * So `CYCLE_SHADE` and `CYCLE_TONE` below are a RULING, deliberately NOT the sky
+ * table, and a later session that "fixes" them back to `sky[bucket]/sky.day`
+ * because the numbers do not match has broken the thing the Captain asked for.
+ * That has happened in this codebase; hence this paragraph and the arms in
+ * ambience.test.ts that pin the ruling and the divergence from the sky together.
+ *
+ * The sky table is not wrong and is not superseded: it still draws the sky behind
+ * the window glass, which is what it was fitted for. It is simply a different
+ * quantity from the light falling on the ground. At dawn the zenith IS cool blue
+ * while the low sun on a wall is warm; a table of one cannot state the other.
+ *
+ * WHERE EVERY NUMBER COMES FROM (the two the Captain owns are marked RULED)
+ *
+ *  1. DEPTH — RULED, in the art's own unit. `CYCLE_SHADE` counts RAMPS OF SHADE:
+ *     dawn one, dusk one and a half, night two, where one ramp is RAMP_SHADE
+ *     (0.663), the median lightest→darkest ratio of the shipped terrain ramps.
+ *     The unit is the art's, the count is the Captain's. Night's two is exactly
+ *     what the sky-derived floor already produced, so NIGHT IS UNCHANGED BY THIS
+ *     RULING, to the last bit of its light factor — an arm pins that.
+ *
+ *  2. THE FLOOR still clamps the ruling. The palette can only resolve so much
+ *     darkness: measured through this module's own shipping path (quantize →
+ *     light → snap) over all eleven ramps, 52 steps,
  *
  *       depth        light factor   surviving steps   thinnest ramp
- *       1 ramp           0.663          52 / 52         3 tones
- *       2 ramps          0.439          45 / 52         3 tones   <- shipped
- *       3 ramps          0.291          31 / 52         1 tone    <- blank
- *       4 ramps          0.193          20 / 52         1 tone
+ *       1 ramp           0.663          51 / 52         3 tones   <- dawn
+ *       1.5 ramps        0.539          48 / 52         3 tones   <- dusk
+ *       2 ramps          0.439          47 / 52         3 tones   <- night
+ *       3 ramps          0.291          32 / 52         1 tone    <- blank
  *
- *     Both ends of that knee are arms in ambience.test.ts, so the choice cannot
- *     drift without the measurement moving with it. Dawn and dusk are shallower
- *     than one ramp already — their own sky ratio (0.88 / 0.82) is the whole of
- *     it, and every one of the 52 steps survives at both.
+ *     TWO ramps is the deepest depth at which no shipped ramp goes BLANK, and a
+ *     surface whose ramp has collapsed to one tone is not darker, it is blank. So
+ *     `ambientDepth` floors at RAMP_SHADE² whatever `CYCLE_SHADE` asks for. Both
+ *     ends of that knee are arms, including one that asks for three ramps and
+ *     watches the floor hold it at two.
  *
- *  3. CHROMA — a tint may not make a surface MORE colourful than a neutral
- *     darkening of the same depth already does. Light drains colour; it does not
- *     paint. The reference is neutral rather than "no gain at all" because the
- *     SNAP itself costs chroma: the palette is sparse in dark near-greys, so a
- *     grey cobble tone lands on the nearest slightly warmer native colour
- *     whatever the tint is (measured worst gain at neutral: 1.24 dawn, 1.59 dusk,
- *     1.43 night). Bounded that way, dawn and night take the sky's direction in
- *     full; dusk is pulled to 6.4% of it — (0.837, 0.811, 0.779), a neutral drain
- *     with a whisper of warmth. That is not a coincidence worth hiding: it is
- *     where the shipped dusk hues were already aimed by hand a day earlier
- *     ("warmth at dusk is the LAMPS coming on and the lit windows drawn above
- *     this pass — not a tint over the whole sea"), and it is why an unbounded
- *     sky tint is wrong rather than merely strong. Unbounded, dusk turned open
- *     water olive and a grey cobble tone into a 54-chroma orange, a 6.4x gain.
+ *  3. HUE — RULED, as a SPLIT TONE: `CYCLE_TONE` names two illuminants per
+ *     bucket, one for the shadow end of the art's tonal range and one for the lit
+ *     end, and a source colour takes the light its own luminance points at
+ *     (`CYCLE_CURVE`). Night names the same illuminant twice — the art's own moon
+ *     sky — so night is a flat multiply exactly as before.
  *
- *  4. THE OUTPUT SET — `CORPUS_PALETTE_BINS`, widened by the palette gate's own
+ *     A SPLIT AND NOT A FLAT WARM MULTIPLY, and this is the measurement that
+ *     decides it rather than a preference. A flat amber light drains blue from
+ *     every pixel it touches, and most of this frame is a blue-green sea. Every
+ *     flat warm illuminant tried, at every strength strong enough to see, turned
+ *     open water brown — the sea ramp came out #3c3424 #3c3424 #444c2c #444c34
+ *     #645434 under a mid-amber at 1.5 ramps of shade, which is mud, and it is
+ *     the same failure ("dusk turned open water olive") that the chroma clause
+ *     this ruling replaces was derived from. Split by tone, the warm half lands
+ *     where the light actually falls: sand goes #9c5c34 → #c46c3c at dusk while
+ *     the sea holds #34344c → #4c5454. That is what a cozy pixel game does at
+ *     golden hour, and it is still a pure function of the pixel — the source
+ *     colour's own luminance picks the light, never the pixel's position, so THE
+ *     AMBIENCE STRUCTURE LAW above is untouched.
+ *
+ *     `CYCLE_CURVE` = 2 is part of the ruling: the warm half engages on the lit
+ *     tones only. Linear reaches too far down. Measured on the shipped dusk
+ *     illuminants, the strongest tint the clamp below admits is 0.218 at curve 1
+ *     and 0.682 at curve 1.5; at curve 2 the full ruled tint survives, 1.000.
+ *
+ *  4. OPEN WATER STAYS WATER — the clamp on the ruling, and what replaced the
+ *     chroma clause. THE FINDING, recorded because it is the one place this
+ *     ruling could not keep an existing bound: the old clause said a tint may not
+ *     make any surface MORE colourful than a neutral darkening of the same depth
+ *     does. Its reference is a COLOURLESS light, which casts no colour on a
+ *     neutral surface, so any illuminant colour at all registers as painting.
+ *     Measured on the ruled LIT illuminants at the ruled depths, the largest
+ *     tint it admits is 0.025 at dawn and 0.033 at dusk — a mid grey comes out
+ *     #545454 and #44444c, which is the neutral darkening itself. It is not a
+ *     tight bound on warmth, it is a statement that ambience must be colourless
+ *     — which the Captain has now ruled against. It could not be kept.
+ *
+ *     What it was derived FROM can be, and is stated directly: the failure it
+ *     caught was open water going olive. So the clamp is now open water itself —
+ *     `toneStrength` pulls the tint back until every tone of the sea ramp still
+ *     comes out with at least one palette bin more blue than red, measured on the
+ *     shipping path (quantize → light → snap), plus the clause the old one
+ *     carried implicitly: a light may only REMOVE light, never amplify a channel
+ *     past 1. Both are threshold-free and both bite — the raw dusk sky ratio that
+ *     produced the olive has r = 1.215 and fails the second outright, a flat warm
+ *     multiply fails the first at every visible strength, and a hotter dusk
+ *     illuminant than the ruled one is pulled back below 1. Arms in
+ *     ambience.test.ts run all three.
+ *
+ *  5. THE OUTPUT SET — `CORPUS_PALETTE_BINS`, widened by the palette gate's own
  *     `neighbor_radius`. Every colour this module can emit is a colour the gate
  *     calls native, so ambience stays palette-lawful BY CONSTRUCTION rather than
  *     by a hue table somebody has to keep checking. This is also what keeps the
@@ -133,104 +187,240 @@ export const RAMP_SHADE: number = (() => {
   return ratios[ratios.length >> 1]
 })()
 
-/** CIE Lab chroma — how COLOURFUL a hue is, independent of how light it is. */
-export function chroma(hex: number): number {
-  const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
-  const r = lin(((hex >> 16) & 0xff) / 255)
-  const g = lin(((hex >> 8) & 0xff) / 255)
-  const b = lin((hex & 0xff) / 255)
-  const f = (t: number) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116)
-  const fx = f((r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047)
-  const fy = f(r * 0.2126 + g * 0.7152 + b * 0.0722)
-  const fz = f((r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883)
-  return Math.hypot(500 * (fx - fy), 200 * (fy - fz))
-}
-
 const LUMA_W = [0.2126, 0.7152, 0.0722] as const
 const gainOf = (l: readonly number[]) => LUMA_W[0] * l[0] + LUMA_W[1] * l[1] + LUMA_W[2] * l[2]
 
+type Light = readonly [number, number, number]
+
 /**
- * Per-channel light factor for a bucket. Three clauses, in order, each derived —
- * see the module header for where each number comes from and what it cost.
+ * RULED (Captain, 2026-07-30). How deep each hour goes, counted in the art's own
+ * RAMPS OF SHADE — one ramp is RAMP_SHADE, the median lightest→darkest ratio of
+ * the shipped terrain ramps. The unit is the art's; the count is the ruling.
  *
- *   1. the art's own sky ratio, `WINDOW_SKY[bucket] / WINDOW_SKY.day`;
- *   2. floored at the art's own deepest shade (RAMP_SHADE²) so night cannot ask
- *      for more darkness than the palette has tones for;
- *   3. and pulled back toward neutral until the tint makes no surface MORE
- *      colourful than a neutral darkening of the same depth already does.
- *
- * `null` for a bucket that changes nothing (day). Cached: clause 3 snaps every
- * shipped ramp colour, which is not free.
+ * NOT `WINDOW_SKY[bucket] / WINDOW_SKY.day`. That table put dawn at 0.88 and dusk
+ * at 0.82 — measured on live frames, indistinguishable from noon. See the header.
+ * Night's two ramps is what the sky-derived floor already produced, so night's
+ * light factor is unchanged to the last bit.
  */
-const lightCache = new Map<DayBucket, readonly [number, number, number] | null>()
-export function ambientLight(bucket: DayBucket): readonly [number, number, number] | null {
-  const hit = lightCache.get(bucket)
+export const CYCLE_SHADE: Record<DayBucket, number> = {
+  dawn: 1,
+  day: 0,
+  dusk: 1.5,
+  night: 2,
+}
+
+/**
+ * RULED (Captain, 2026-07-30). The two illuminants each hour lights by: the one
+ * that reaches its SHADOW tones and the one that reaches its LIT tones. Same
+ * units as WINDOW_SKY — a colour, read against `WINDOW_SKY.day` as noon.
+ *
+ * Night names its illuminant twice (the art's own moon sky), so night stays the
+ * flat multiply it already was. Dawn and dusk are the ruling: a cool shadow and a
+ * warm light, which is what golden hour IS and what a flat warm multiply cannot
+ * be — measured, a flat amber turns the sea brown at every visible strength.
+ */
+export const CYCLE_TONE: Record<DayBucket, readonly [number, number]> = {
+  dawn: [0x8098c8, 0xb89870],
+  day: [WINDOW_SKY.day, WINDOW_SKY.day],
+  dusk: [0x7080b8, 0xb88848],
+  night: [WINDOW_SKY.night, WINDOW_SKY.night],
+}
+
+/**
+ * RULED (Captain, 2026-07-30). Where the split sits: a source tone at relative
+ * luminance `u` takes the light `u ** CYCLE_CURVE` of the way from the shadow
+ * illuminant to the lit one. 2, not 1, so the warm half engages on the lit tones
+ * only — linear reaches too far down and takes the blue out of open water.
+ */
+export const CYCLE_CURVE = 2
+
+/**
+ * A depth in ramps of shade, floored at what the palette can still resolve.
+ * RAMP_SHADE² is the deepest depth at which no shipped ramp collapses to one
+ * tone; a ruling that asks for more gets this, not a blanked surface. `null` for
+ * a depth that changes nothing. Split out from `ambientDepth` so the floor is
+ * reachable by a test at a depth no bucket ships.
+ */
+export function depthForSteps(steps: number): number | null {
+  if (steps <= 0) return null
+  return Math.max(RAMP_SHADE ** steps, RAMP_SHADE * RAMP_SHADE)
+}
+
+/** The bucket's overall light gain — the ruled depth, floored. `null` for a
+ *  bucket that changes nothing (day). */
+export function ambientDepth(bucket: DayBucket): number | null {
+  return depthForSteps(CYCLE_SHADE[bucket])
+}
+
+/** An illuminant as a per-channel factor against noon. */
+function illuminantRatio(hex: number): Light {
+  const day = WINDOW_SKY.day
+  const ch = (h: number, shift: number) => (h >> shift) & 0xff
+  return [ch(hex, 16) / ch(day, 16), ch(hex, 8) / ch(day, 8), ch(hex, 0) / ch(day, 0)]
+}
+
+/** Walk a chromatic direction along its OWN power curve until it removes exactly
+ *  `depth` of the light. Exponent interpolation, not a lerp to white, so the hue
+ *  the illuminant states survives the depth it is put at. */
+function walkToDepth(raw: Light, depth: number): Light {
+  const e = Math.log(depth) / Math.log(gainOf(raw))
+  return [raw[0] ** e, raw[1] ** e, raw[2] ** e]
+}
+
+/** The bucket's two illuminants, each walked to the ruled depth — the split
+ *  BEFORE the clamp below has had its say. */
+const rawEndsCache = new Map<DayBucket, readonly [Light, Light] | null>()
+function rawEnds(bucket: DayBucket): readonly [Light, Light] | null {
+  const hit = rawEndsCache.get(bucket)
   if (hit !== undefined) return hit
-  const value = deriveLight(bucket)
-  lightCache.set(bucket, value)
+  const depth = ambientDepth(bucket)
+  const value: readonly [Light, Light] | null =
+    depth === null
+      ? null
+      : [
+          walkToDepth(illuminantRatio(CYCLE_TONE[bucket][0]), depth),
+          walkToDepth(illuminantRatio(CYCLE_TONE[bucket][1]), depth),
+        ]
+  rawEndsCache.set(bucket, value)
   return value
 }
 
-function deriveLight(bucket: DayBucket): readonly [number, number, number] | null {
-  const day = WINDOW_SKY.day
-  const sky = WINDOW_SKY[bucket]
-  if (sky === day) return null
-  const ch = (hex: number, shift: number) => (hex >> shift) & 0xff
-  const raw: [number, number, number] = [
-    ch(sky, 16) / ch(day, 16),
-    ch(sky, 8) / ch(day, 8),
-    ch(sky, 0) / ch(day, 0),
-  ]
+/**
+ * One end of the split at a tint strength: 0 is a colourless darkening of the
+ * same gain, 1 is the ruled illuminant in full. Applied to the ENDS and not to
+ * the interpolated result, so the shipped light is completely described by its
+ * two ends plus `CYCLE_CURVE` — which is exactly what the emitted artifact
+ * carries, and why the Python twin needs no strength of its own.
+ */
+function atStrength(end: Light, strength: number): Light {
+  const g = gainOf(end)
+  return [g * (end[0] / g) ** strength, g * (end[1] / g) ** strength, g * (end[2] / g) ** strength]
+}
 
-  // ── clause 2: the palette's floor on how dark ambience may go ─────────────
-  const skyGain = gainOf(raw)
-  const floor = RAMP_SHADE * RAMP_SHADE
-  // Walk the SAME chromatic direction back along its own power curve until it
-  // removes exactly `floor` of the light. Exponent interpolation, not a lerp to
-  // white, so the hue the sky states survives the clamp.
-  const depth =
-    skyGain >= floor
-      ? raw
-      : ([
-          raw[0] ** (Math.log(floor) / Math.log(skyGain)),
-          raw[1] ** (Math.log(floor) / Math.log(skyGain)),
-          raw[2] ** (Math.log(floor) / Math.log(skyGain)),
-        ] as [number, number, number])
+/** The light falling on ONE source tone: its own luminance picks the point
+ *  between the shadow end and the lit end. */
+function lightAt(ends: readonly [Light, Light], source: number): Light {
+  const u = Math.min(1, Math.max(0, luma(source) / 255)) ** CYCLE_CURVE
+  const [s, w] = ends
+  return [s[0] + (w[0] - s[0]) * u, s[1] + (w[1] - s[1]) * u, s[2] + (w[2] - s[2]) * u]
+}
 
-  // ── clause 3: light drains colour, it does not paint ─────────────────────
-  // `t` scales the tint's deviation from neutral at a FIXED depth: t=0 is a
-  // neutral darkening, t=1 is the sky's full direction. The reference is neutral
-  // and not zero-gain because the SNAP itself costs chroma — the palette is
-  // sparse in dark near-greys, so a grey cobble tone lands on the nearest
-  // slightly warmer native colour whatever the tint is.
-  const g = gainOf(depth)
-  const at = (t: number) => depth.map((v) => g * (v / g) ** t) as [number, number, number]
-  const worstGain = (l: readonly number[]) => {
-    let worst = 0
-    for (const ramp of Object.values(RAMPS)) {
-      for (const c of ramp) {
-        const before = chroma(c)
-        if (before < 1) continue // a pure grey has no chroma to gain FROM
-        worst = Math.max(worst, chroma(snapNative(c, l)) / before)
-      }
+/** The bucket's split as it ships: both ends, clamped. */
+const endsCache = new Map<DayBucket, readonly [Light, Light] | null>()
+function shippedEnds(bucket: DayBucket): readonly [Light, Light] | null {
+  const hit = endsCache.get(bucket)
+  if (hit !== undefined) return hit
+  const raw = rawEnds(bucket)
+  const t = toneStrength(bucket)
+  const value: readonly [Light, Light] | null =
+    raw === null ? null : [atStrength(raw[0], t), atStrength(raw[1], t)]
+  endsCache.set(bucket, value)
+  return value
+}
+
+/** A colour quantized to the palette's own bit depth — the GPU's first act, so
+ *  the clamp below and the LUT are measuring the same colour. */
+export function quantize(hex: number): number {
+  const q = (c: number) => ((c >> (8 - BITS)) << (8 - BITS)) | CENTRE
+  return (q((hex >> 16) & 0xff) << 16) | (q((hex >> 8) & 0xff) << 8) | q(hex & 0xff)
+}
+
+/** One source colour through the shipping path: quantize → light → snap. */
+function shadeWith(hex: number, ends: readonly [Light, Light]): number {
+  const q = quantize(hex)
+  return snapNative(q, lightAt(ends, q))
+}
+
+/**
+ * How much of the ruled split actually survives — the clamp on the ruling, and
+ * what replaced the chroma clause (header §4 records why that one could not be
+ * kept, with the measurement). Two conditions, both threshold-free:
+ *
+ *   OPEN WATER STAYS WATER — every tone of the sea ramp comes out with at least
+ *   one palette bin more blue than red. This is the failure the old clause was
+ *   derived from ("dusk turned open water olive"), stated directly instead of
+ *   inferred from a chroma statistic.
+ *
+ *   A LIGHT MAY ONLY REMOVE LIGHT — no channel factor above 1, checked at both
+ *   ends of the split, which bounds every colour in the cube because the split is
+ *   linear between them. The raw dusk sky ratio that produced the olive has
+ *   r = 1.215 and fails this outright.
+ *
+ * 1 when the ruling ships as stated (it does, for all three lit buckets). Cached:
+ * the search snaps the sea ramp, which is not free.
+ */
+const strengthCache = new Map<DayBucket, number>()
+export function toneStrength(bucket: DayBucket): number {
+  const hit = strengthCache.get(bucket)
+  if (hit !== undefined) return hit
+  const raw = rawEnds(bucket)
+  const value = raw === null ? 0 : strengthFor(CYCLE_TONE[bucket][0], CYCLE_TONE[bucket][1], raw)
+  strengthCache.set(bucket, value)
+  return value
+}
+
+/**
+ * The clamp, reachable with illuminants no bucket ships. Split out from
+ * `toneStrength` for the same reason `depthForSteps` is split out of
+ * `ambientDepth`: a guard that does not bind on any shipped value cannot be
+ * tested through the shipped values, and an arm that only checks today's output
+ * would stay green if the guard were deleted. Measured 2026-07-30 by mutation:
+ * it did.
+ *
+ * `ends` is optional so callers that already walked the illuminants to a depth
+ * do not walk them twice; pass the depth instead and it walks them.
+ */
+export function strengthFor(
+  shadow: number,
+  highlight: number,
+  endsOrDepth: readonly [Light, Light] | number
+): number {
+  const ends: readonly [Light, Light] =
+    typeof endsOrDepth === 'number'
+      ? [
+          walkToDepth(illuminantRatio(shadow), endsOrDepth),
+          walkToDepth(illuminantRatio(highlight), endsOrDepth),
+        ]
+      : endsOrDepth
+  return solveStrength(ends)
+}
+
+/** One palette bin of channel, the finest distinction the output set can make. */
+const PALETTE_BIN = 1 << (8 - PALETTE_QUANT_BITS)
+
+function solveStrength(raw: readonly [Light, Light]): number {
+  const ok = (t: number) => {
+    const ends: readonly [Light, Light] = [atStrength(raw[0], t), atStrength(raw[1], t)]
+    // both ends bound the whole colour cube: the split is linear between them
+    for (const end of ends) if (Math.max(...end) > 1) return false
+    for (const tone of RAMPS.sea) {
+      const out = shadeWith(tone, ends)
+      if ((out & 0xff) - ((out >> 16) & 0xff) < PALETTE_BIN) return false
     }
-    return worst
+    return true
   }
-  // The statistic is the WORST ratio and not a mean, and a second one was checked
-  // rather than assumed: mean absolute chroma increase agrees on the case that
-  // decides anything (dusk, 24.4 against neutral's 0.30) and differs only in
-  // pulling night's blue back from t=1.00 to t=0.84, where nothing is visible.
-  // Max-ratio keeps the night the art's sky asks for, so max-ratio is what runs.
-  const neutral = worstGain(at(0))
-  if (worstGain(at(1)) <= neutral) return at(1)
+  if (ok(1)) return 1
   let lo = 0
   let hi = 1
   for (let i = 0; i < 24; i++) {
     const mid = (lo + hi) / 2
-    if (worstGain(at(mid)) <= neutral) lo = mid
+    if (ok(mid)) lo = mid
     else hi = mid
   }
-  return at(lo)
+  return lo
+}
+
+/**
+ * The per-channel light factor a source colour stands in, for a bucket. `null`
+ * for a bucket that changes nothing (day).
+ *
+ * It takes the SOURCE because the light is split by tone (header §3): shadows get
+ * one illuminant, lit surfaces the other. Still a pure function of the pixel — the
+ * source colour's own luminance picks the light, never the pixel's position.
+ */
+export function ambientLight(bucket: DayBucket, source: number): Light | null {
+  const ends = shippedEnds(bucket)
+  return ends === null ? null : lightAt(ends, source)
 }
 
 const BITS = PALETTE_QUANT_BITS
@@ -273,8 +463,8 @@ export function binToRgb(key: number): number {
 }
 
 /** One colour under a light factor, snapped to the nearest native colour.
- *  The single-value form of `ambienceLut`'s inner loop, so the derivation in
- *  `deriveLight` and the table it produces cannot disagree about the metric. */
+ *  The single-value form of `ambienceLut`'s inner loop, so the clamp in
+ *  `solveStrength` and the table it gates cannot disagree about the metric. */
 export function snapNative(hex: number, light: readonly number[]): number {
   const { r: nr, g: ng, b: nb } = nativeRgb()
   const tr = Math.min(255, ((hex >> 16) & 0xff) * light[0])
@@ -334,8 +524,7 @@ const lutCache = new Map<DayBucket, Uint32Array | null>()
 export function ambienceLut(bucket: DayBucket): Uint32Array | null {
   const hit = lutCache.get(bucket)
   if (hit !== undefined) return hit
-  const light = ambientLight(bucket)
-  if (light === null) {
+  if (shippedEnds(bucket) === null) {
     lutCache.set(bucket, null)
     return null
   }
@@ -344,10 +533,14 @@ export function ambienceLut(bucket: DayBucket): Uint32Array | null {
   const out = new Uint32Array(LEVELS * LEVELS * LEVELS)
   const centre = (level: number) => (level << (8 - BITS)) | CENTRE
   for (let r = 0; r < LEVELS; r++) {
-    const sr = Math.min(255, centre(r) * light[0])
     for (let g = 0; g < LEVELS; g++) {
-      const sg = Math.min(255, centre(g) * light[1])
       for (let b = 0; b < LEVELS; b++) {
+        // the light this SOURCE TONE stands in — the split is by luminance, so
+        // it is read here, per entry, from the entry's own colour
+        const src = (centre(r) << 16) | (centre(g) << 8) | centre(b)
+        const light = ambientLight(bucket, src)!
+        const sr = Math.min(255, centre(r) * light[0])
+        const sg = Math.min(255, centre(g) * light[1])
         const sb = Math.min(255, centre(b) * light[2])
         let best = 0
         let bestD = Infinity
