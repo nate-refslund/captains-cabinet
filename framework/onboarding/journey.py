@@ -1042,7 +1042,10 @@ def entry_plan(
         # not be entered by any sequence of operator actions on a real estate.
         # The candidates ride along, because the answerable version of "which of
         # these is you" is a tap on the estate's own account identifiers, not a
-        # spelling test against strings the operator has never seen.
+        # spelling test against strings the operator has never seen. EVERY
+        # account a connector reported rides along, not the busiest few: the
+        # offer was a head of 12, and the one person the question is for was
+        # 25th of 30 on the connector holding most of a real estate.
         next_actions.append({
             "action": "record_operator_identity",
             "label": "Tell me which account is you",
@@ -3439,7 +3442,24 @@ def _act_core(
                 for entry in values:
                     if not isinstance(entry, str):
                         continue
-                    text = " ".join(_scrub_lone_surrogates(entry).split())[:MAX_SEED_CHARS]
+                    text = " ".join(_scrub_lone_surrogates(entry).split())
+                    # REFUSED BY NAME, NEVER TRUNCATED. A seed is prose and a
+                    # clipped sentence still says roughly what it said; an
+                    # identifier is matched WHOLE and EXACT, so clipping it
+                    # produces a handle that resolves the operator and then
+                    # matches nothing — the connector reads as resolved, every
+                    # share reads 0, and nothing anywhere says a character was
+                    # dropped. The bound is the one the sweep itself puts on an
+                    # actor string, so no candidate this cabinet offered can
+                    # ever be refused here.
+                    if len(text) > research.MAX_IDENTITY_CHARS:
+                        raise JourneyError(
+                            "identity_handle_too_long",
+                            f"That account name for {connector} is longer than any "
+                            f"account name I have ever read ("
+                            f"{research.MAX_IDENTITY_CHARS} characters at most). I "
+                            "would have to cut it, and a cut name matches nothing.",
+                        )
                     if text and text not in cleaned:
                         cleaned.append(text)
                 if not cleaned:

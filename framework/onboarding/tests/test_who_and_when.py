@@ -8,10 +8,37 @@ none, ask instead of assume.
 from __future__ import annotations
 
 import json
+import pathlib
+import re
 
 import pytest
+import yaml
 
 from framework.onboarding import journey, research
+
+
+def _lopsided_rows():
+    """The shape the picker was measured failing on, deliberately UNBALANCED.
+
+    Twenty-nine colleagues with ten-to-thirty-eight rows each and an operator
+    with ONE. A fixture where every actor carries the same number of rows cannot
+    discriminate a complete offer from a head — four sensors in this program
+    have passed against the defect they name for exactly that reason — so the
+    operator here is last by frequency and only a rank-independent offer reaches
+    them.
+    """
+    rows = [{"connector": "tracker", "name": f"c{i}-{r}", "updated": "2026-07-01",
+             "actors": [f"colleague-{i:02d}"]}
+            for i in range(29) for r in range(10 + i)]
+    rows.append({"connector": "tracker", "name": "mine", "updated": "2026-07-02",
+                 "actors": ["the-operator"]})
+    return rows
+
+
+def _wide_rows(count: int):
+    """``count`` distinct accounts on one connector, one row each."""
+    return [{"connector": "code", "name": f"r{i}", "updated": "2026-07-01",
+             "actors": [f"person-{i:04d}"]} for i in range(count)]
 
 
 # --- who ---------------------------------------------------------------------
@@ -23,6 +50,17 @@ class TestOperatorIdentity:
             {"operator": {"name": "A. Person", "handles": {"tracker": ["aperson"]}}})
         assert who["basis"] == "onboarding_record"
         assert who["handles"]["tracker"] == ["aperson"] and who["names"] == ["A. Person"]
+
+    def test_one_identifier_is_a_string_not_four_letters(self):
+        """`handles: {code: nate}` is what a person writes by hand in the answers
+        file. Iterated, it became the four accounts a, e, n, t — the cabinet then
+        said "I recognise you as a, e, n, t" and matched nothing anywhere."""
+        who = research.operator_identity({"operator": {"handles": {"code": "nate"}}})
+        assert who["handles"]["code"] == ["nate"]
+        assert research._recorded_handles({"handles": {"code": "nate"}}, "code") == ["nate"]
+        rows = [{"connector": "code", "name": "a", "updated": "2026-07-01",
+                 "actors": ["nate"]}]
+        assert research.attribution_share(rows, who, "code")["mine"] == 1
 
     def test_an_absent_record_resolves_to_nothing_not_to_a_guess(self):
         """The alternative to an empty answer here is falling back to whatever a
@@ -133,18 +171,53 @@ class TestTheAskThatMakesItResolvable:
         question = research.identity_question(self._rows(), who)
         assert [c["connector"] for c in question["connectors"]] == ["tracker"]
 
-    def test_the_note_counts_the_estate_not_the_capped_list(self):
-        """The offer is capped so a two-hundred-actor connector cannot arrive
-        through the question door. Counting the CAPPED list in the note reports
-        the cap as a fact about the operator's estate — a number describing this
-        module rather than their colleagues."""
-        wide = [{"connector": "code", "name": f"r{i}", "updated": "2026-07-01",
-                 "actors": [f"person-{i:02d}"]} for i in range(20)]
+    def test_the_note_counts_the_estate_not_the_offered_list(self):
+        """Counting the OFFERED list in the note reports this module's guardrail
+        as a fact about the operator's colleagues. Sized off the constant so the
+        arm cannot go stale when the guardrail moves."""
+        wide = _wide_rows(research.MAX_IDENTITY_CANDIDATES + 8)
         question = research.identity_question(wide, research.operator_identity({}))
         entry = question["connectors"][0]
-        assert len(entry["candidates"]) == research.MAX_IDENTITY_CANDIDATES
-        assert "20 account(s) appear across 20 rows" in entry["note"]
-        assert "12 busiest are offered here, 8 are not" in entry["note"]
+        offered = research.MAX_IDENTITY_CANDIDATES
+        total = offered + 8
+        assert len(entry["candidates"]) == offered
+        assert entry["accounts"] == total and entry["withheld"] == 8
+        assert f"{total} account(s) appear across {total} rows" in entry["note"]
+        assert f"I can only offer {offered} of them here" in entry["note"]
+
+    # THE DEFECT THIS UNIT EXISTS FOR. Measured on a real estate: the connector
+    # carrying 531 of 665 rows reported 30 accounts and the operator's own
+    # carried exactly ONE row, ranking about 25th. The offer was the 12 busiest,
+    # the picker was the only writer of an identity, and so no sequence of
+    # operator actions could resolve 80% of the estate — the branch-only-a-writer
+    # -can-reach defect this whole lane was built to close, still standing.
+    def test_the_operator_is_offered_even_when_they_are_the_quietest_account(self):
+        rows = _lopsided_rows()
+        candidates = research.identity_candidates(rows, "tracker")
+        offered = [c["identifier"] for c in candidates]
+        assert offered[0] == "colleague-28", "busiest still ranks first"
+        assert "the-operator" in offered, (
+            "the one person the question is FOR is not on the list it offers")
+        assert candidates[-1] == {"identifier": "the-operator", "rows": 1}
+
+    def test_a_complete_offer_says_so_and_withholds_nothing(self):
+        question = research.identity_question(_lopsided_rows(),
+                                              research.operator_identity({}))
+        entry = question["connectors"][0]
+        assert entry["accounts"] == 30 and entry["withheld"] == 0
+        assert entry["complete"] is True
+        assert "all of them are offered here" in entry["note"]
+
+    def test_an_offer_that_cannot_be_completed_says_so_rather_than_reading_whole(self):
+        """A guardrail that binds silently presents a head as the whole estate,
+        and "leave it blank if none of these is you" then reads as a settled
+        answer when it is a truncation. `complete` is what a surface obeys to
+        open a typed field, so it is a FIELD and not a paragraph."""
+        wide = _wide_rows(research.MAX_IDENTITY_CANDIDATES + 1)
+        entry = research.identity_question(
+            wide, research.operator_identity({}))["connectors"][0]
+        assert entry["complete"] is False and entry["withheld"] == 1
+        assert "type the account name instead" in entry["note"]
 
     def test_nothing_is_asked_once_every_connector_resolves(self):
         who = research.operator_identity(
@@ -273,6 +346,55 @@ class TestActorSurvivesTheSweep:
         silently attribute every unattributed row to the operator."""
         sweep = self._sweep([{"name": "alpha", "updated_at": "2026-07-01T00:00:00Z"}])
         assert sweep["rows"] and "actors" not in sweep["rows"][0]
+
+
+class TestTheShippedExampleTeachesTheKeyItCallsMandatory:
+    """The example is EXECUTED, never grepped. It ships in a public repository,
+    so a stranger builds their first spec by copying it — and both connector
+    blocks put `actor_field` where the header says it is mandatory. One of them
+    put it under `page:`, where nothing reads it, so a spec built exactly as
+    the example taught produced rows with no actor at all: the identity question
+    then reported "reported no actor on any of its N rows", which is a true
+    sentence about a wrong file."""
+
+    def _spec_from_example(self, marker: str, stop: str) -> dict:
+        text = pathlib.Path("instance/config/connectors.yml.example").read_text(
+            encoding="utf-8")
+        start = text.index(marker)
+        block = text[start:text.index(stop, start)]
+        # Uncomment it exactly as a reader would, then drop trailing prose.
+        body = "\n".join(re.sub(r"^  # ?", "  ", line).split("#")[0].rstrip()
+                         for line in block.splitlines())
+        spec = yaml.safe_load("connectors:\n" + body)["connectors"][0]
+        assert "actor_field" not in (spec.get("page") or {}), (
+            "actor_field sits under page:, where the sweep never reads it")
+        return spec
+
+    def _rows(self, spec, payload):
+        return research.sweep_connectors(
+            ".", specs=[spec], env={spec["credential_env"]: "x"},
+            ceiling={"connected": True},
+            fetch=lambda request, timeout: (200, json.dumps(payload).encode("utf-8")),
+        )["rows"]
+
+    def test_the_rest_example_yields_an_actor_as_built(self):
+        spec = self._spec_from_example("  # - name: code", "  # ------")
+        rows = self._rows(spec, [{"full_name": "alpha", "updated_at": "2026-07-01",
+                                  "owner": {"login": "the-operator"}}])
+        assert rows and rows[0].get("actors") == ["the-operator"]
+
+    def test_the_graphql_example_yields_an_actor_as_built(self):
+        """This one taught the wrong key AND asked for a document that never
+        selected the field it named, so both halves of the lesson were wrong."""
+        spec = self._spec_from_example("  # - name: tracker", "  #   identity:")
+        assert "creator" in spec["inventory"]["json"]["query"], (
+            "the document must request the field the example attributes from")
+        rows = self._rows(spec, {"data": {"things": [
+            {"id": 1, "name": "alpha", "updated_at": "2026-07-01",
+             "creator": {"name": "the-operator"}}]}})
+        assert rows and rows[0].get("actors") == ["the-operator"]
+        assert research.identity_candidates(rows, "tracker") == [
+            {"identifier": "the-operator", "rows": 1}]
 
 
 # --- end to end through the real action --------------------------------------
@@ -410,6 +532,64 @@ class TestRecordOperatorIdentity:
                 journey.act({"action": "record_operator_identity", "surface": "dashboard",
                              "action_id": f"i-{code}-{len(str(payload))}", **payload}, tmp_path)
             assert exc.value.code == code
+
+    def test_an_over_long_identifier_is_refused_by_name_never_cut(self, tmp_path, monkeypatch):
+        """It was CUT to 500 characters and recorded. A clipped seed still says
+        roughly what it said; a clipped identifier is matched whole and exact, so
+        the connector reads as resolved, every share reads 0, and nothing
+        anywhere says a character was dropped."""
+        _gathered(tmp_path, monkeypatch, _ROWS, action_id="g-12")
+        too_long = "n" * (research.MAX_IDENTITY_CHARS + 1)
+        with pytest.raises(journey.JourneyError) as exc:
+            journey.act({"action": "record_operator_identity", "surface": "dashboard",
+                         "action_id": "i-12", "handles": {"code": [too_long]}}, tmp_path)
+        assert exc.value.code == "identity_handle_too_long"
+        # The bound is the sweep's own, so the longest string a connector could
+        # ever have reported is still recordable — an offered candidate this
+        # action refuses would be a picker that cannot be answered.
+        at_the_bound = "n" * research.MAX_IDENTITY_CHARS
+        result = journey.act({"action": "record_operator_identity", "surface": "dashboard",
+                              "action_id": "i-13", "handles": {"code": [at_the_bound]}},
+                             tmp_path)
+        assert result["state"]["operator_identity"]["handles"]["code"] == [at_the_bound]
+
+    def test_every_offered_candidate_can_actually_be_recorded(self, tmp_path, monkeypatch):
+        """The picker and the writer share one bound. A candidate the question
+        offers and the action refuses is a tap that fails, which is the same dead
+        end as an unofferable operator wearing different clothes."""
+        # The tie is asserted, not assumed: the sweep clips an actor string at
+        # _MAX_FIELD_CHARS, so a smaller bound here would refuse a candidate this
+        # cabinet itself put on the card.
+        assert research.MAX_IDENTITY_CHARS >= research._MAX_FIELD_CHARS
+        longest = "x" * research.MAX_IDENTITY_CHARS
+        rows = [{"connector": "code", "name": "a", "updated": "2026-07-01",
+                 "actors": [longest]}]
+        _gathered(tmp_path, monkeypatch, rows, action_id="g-13")
+        offered = research.identity_candidates(rows, "code")[0]["identifier"]
+        result = journey.act({"action": "record_operator_identity", "surface": "dashboard",
+                              "action_id": "i-14", "handles": {"code": [offered]}}, tmp_path)
+        code = [a for a in result["state"]["connector_sweep"]["who_and_when"]["attribution"]
+                if a["connector"] == "code"][0]
+        assert code["share"]["mine"] == 1
+
+    def test_the_quietest_account_is_offered_and_resolves_the_connector(self, tmp_path, monkeypatch):
+        """End to end on the lopsided shape: the operator with one row in five
+        hundred taps their own account and the connector resolves. Before the
+        offer stopped being a head this was unreachable — the only writer of an
+        identity could not be handed the identifier."""
+        rows = _lopsided_rows()
+        result = _gathered(tmp_path, monkeypatch, rows, action_id="g-14")
+        entry = result["card"]["entry"]["identity_question"]["connectors"][0]
+        offered = [c["identifier"] for c in entry["candidates"]]
+        assert "the-operator" in offered
+        answered = journey.act({"action": "record_operator_identity", "surface": "dashboard",
+                                "action_id": "i-15",
+                                "handles": {"tracker": ["the-operator"]}}, tmp_path)
+        block = answered["state"]["connector_sweep"]["who_and_when"]
+        assert block["identity_question"] is None
+        tracker = block["attribution"][0]
+        assert tracker["basis"] == "onboarding_record"
+        assert tracker["share"] == {"rows": 697, "mine": 1, "others": 696, "no_actor": 0}
 
     def test_a_row_with_no_connector_name_is_not_a_system_you_can_claim(self, tmp_path, monkeypatch):
         """A nameless row would otherwise put "" in the known set and an empty

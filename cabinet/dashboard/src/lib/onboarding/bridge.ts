@@ -31,7 +31,9 @@ const ACTIONS = new Set([
   // Who the operator IS, per connector — their own words, never the
   // credential's. Carries a `handles` map, so it is the one action besides
   // answer_seed whose payload the core must bound (it does: unknown connector,
-  // empty list and over-long identifier are each refused by name).
+  // empty list and over-long identifier are each refused BY NAME — the last of
+  // those was silently truncated to 500 characters until 2026-07-30, which
+  // resolved the operator to a clipped string that then matched nothing).
   'record_operator_identity',
   'ratify_charter',
   'continue',

@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import type {
   OnboardingAction,
+  OnboardingIdentityAsk,
   OnboardingResponse,
   OnboardingSurface,
   OwnershipClass,
@@ -29,6 +30,11 @@ function newActionId(surface: string): string {
 // reordered fails loudly there instead of silently testing the wrong state — and
 // a fresh `{}` per render would make that assertion unsatisfiable.
 export const NO_IDENTITY_PICKS: Readonly<Record<string, string>> = Object.freeze({})
+
+// How many of a connector's accounts lead the picker before the rest go behind
+// a disclosure. A LAYOUT number and nothing else — the core decides who is
+// offered, and every account it offers is reachable here without scripting.
+export const IDENTITY_SHOWN = 8
 
 export default function OnboardingJourneyCard({
   surface = 'dashboard',
@@ -237,6 +243,36 @@ export default function OnboardingJourneyCard({
     void send('record_operator_identity', { handles: Object.fromEntries(picked) })
   }
 
+  // One account, offered as a tap. The picked value lives in the same `handles`
+  // entry a typed answer writes to, so tapping and typing are one field: type
+  // over a pick and the radio releases, tap and the text follows. Two states
+  // would let a surface submit a stale spelling the operator had corrected.
+  function identityChoice(
+    ask: OnboardingIdentityAsk,
+    candidate: { identifier: string; rows: number }
+  ) {
+    return (
+      <label
+        key={candidate.identifier}
+        className="flex min-h-11 cursor-pointer items-center gap-3 rounded-md border border-current/20 px-3 py-2"
+      >
+        <input
+          type="radio"
+          name={`${surface}-identity-${ask.connector}`}
+          value={candidate.identifier}
+          checked={handles[ask.connector] === candidate.identifier}
+          onChange={() =>
+            setHandles((current) => ({ ...current, [ask.connector]: candidate.identifier }))
+          }
+        />
+        <span>
+          {candidate.identifier}
+          <span className={`block text-xs ${muted}`}>{candidate.rows} of {ask.rows} here</span>
+        </span>
+      </label>
+    )
+  }
+
   function choose(action: OnboardingAction) {
     if (action === 'answer_seed') {
       // Focus the field rather than firing an empty action: this option exists
@@ -372,28 +408,57 @@ export default function OnboardingJourneyCard({
                   {ask.reports_no_actor ? (
                     <p className={`mt-1 text-xs ${muted}`}>{ask.note}</p>
                   ) : (
-                    <div className="mt-2 space-y-1 text-sm">
-                      {ask.candidates.map((candidate) => (
-                        <label
-                          key={candidate.identifier}
-                          className="flex min-h-11 cursor-pointer items-center gap-3 rounded-md border border-current/20 px-3 py-2"
-                        >
-                          <input
-                            type="radio"
-                            name={`${surface}-identity-${ask.connector}`}
-                            value={candidate.identifier}
-                            checked={handles[ask.connector] === candidate.identifier}
-                            onChange={() =>
-                              setHandles((current) => ({ ...current, [ask.connector]: candidate.identifier }))
-                            }
-                          />
-                          <span>
-                            {candidate.identifier}
-                            <span className={`block text-xs ${muted}`}>{candidate.rows} of {ask.rows} here</span>
+                    <>
+                      <div className="mt-2 space-y-1 text-sm">
+                        {ask.candidates.slice(0, IDENTITY_SHOWN).map((candidate) =>
+                          identityChoice(ask, candidate)
+                        )}
+                      </div>
+                      {/* THE REST OF THE ESTATE, ONE TAP AWAY AND STILL A TAP.
+                          The busiest few lead because the operator usually is
+                          one of them, but "usually" is not a gate a person can
+                          be locked out by: on the measured estate the operator's
+                          own account was 25th of 30 on the connector carrying
+                          most of it. <details> rather than React state — the
+                          rest must be reachable with scripting off. */}
+                      {ask.candidates.length > IDENTITY_SHOWN && (
+                        <details className="mt-1">
+                          <summary className={`min-h-11 cursor-pointer py-2 text-xs ${muted}`}>
+                            Show the other {ask.candidates.length - IDENTITY_SHOWN} account
+                            {ask.candidates.length - IDENTITY_SHOWN === 1 ? '' : 's'} in{' '}
+                            {ask.connector}
+                          </summary>
+                          <div className="space-y-1 text-sm">
+                            {ask.candidates.slice(IDENTITY_SHOWN).map((candidate) =>
+                              identityChoice(ask, candidate)
+                            )}
+                          </div>
+                        </details>
+                      )}
+                      {/* Only where the core says the offer CANNOT be completed.
+                          Where it is complete, "none of these is you" is a true
+                          terminal state and a typed field could only add a
+                          spelling the estate does not use — which resolves the
+                          operator and then matches nothing. */}
+                      {!ask.complete && (
+                        <label className="mt-2 block text-xs">
+                          <span className={muted}>
+                            {ask.withheld} more account{ask.withheld === 1 ? '' : 's'} in{' '}
+                            {ask.connector} than I can list. If yours is one of them, type it
+                            exactly as {ask.connector} spells it.
                           </span>
+                          <input
+                            type="text"
+                            name={`${surface}-identity-typed-${ask.connector}`}
+                            value={handles[ask.connector] ?? ''}
+                            onChange={(event) =>
+                              setHandles((current) => ({ ...current, [ask.connector]: event.target.value }))
+                            }
+                            className={`mt-1 min-h-11 w-full rounded-md border px-3 py-2 text-sm ${variant === 'world' ? 'border-stone-500 bg-amber-50' : 'border-zinc-700 bg-zinc-900'}`}
+                          />
                         </label>
-                      ))}
-                    </div>
+                      )}
+                    </>
                   )}
                 </fieldset>
               ))}
