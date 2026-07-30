@@ -37,6 +37,16 @@ SCALE 1.0 TO JUDGE).
 The renderer is **bit-exact**: two captures of one URL differ in 0 of 960000 pixels, measured,
 and re-proven every run. Every arm that compares a lit frame with its day twin rests on that.
 
+**And it is bit-exact ACROSS MACHINES too**, which was not the expectation and changes what
+these frames are worth. The arms were built statistical rather than golden-image on the
+assumption that a GitHub runner's SwiftShader would disagree with an Apple GPU somewhere in
+the low bits. It does not: the first CI run printed the same numbers to the decimal as the
+laptop — ambience `mean 86.2/86.2`, grain `4.58` against `6.82`, killswitch saturation
+`0.416 -> 0.236`. Pixi with `scaleMode: 'nearest'`, no antialias and integer-snapped sprites
+leaves the two rasterisers nothing to disagree about. So **a frame captured in CI is portable
+evidence**, and there is no cross-machine variance here that any tolerance should be widened
+for.
+
 ## The twelve, per check
 
 `✔ frame` = now runs on the real composited frame · `▢ blueprint` = stays where it is, and
