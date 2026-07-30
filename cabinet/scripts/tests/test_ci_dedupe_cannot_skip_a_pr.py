@@ -262,13 +262,24 @@ def test_every_gate_job_depends_on_the_dedupe_job(workflow):
 # --- mutation arms: the checker must fail when the guard is removed --------
 
 
-# One arm per gate job, and the list is pinned to the same set
-# test_every_gate_job_is_present asserts — so adding a job without an arm here
-# fails there, and an arm naming a job that no longer exists fails at
-# `mutated["jobs"][job_name]` rather than passing vacuously.
-@pytest.mark.parametrize("job_name", [
-    "ci", "framework-tests", "null-hatch", "cognitive-phase4", "gitleaks",
-])
+# One arm per gate job, DERIVED from the workflow rather than typed again.
+#
+# It was a second literal list until 2026-07-30, with a comment claiming the
+# two were kept in lockstep because "adding a job without an arm here fails
+# there". That claim was false, and adding `world-frame` proved it: the other
+# test compares the workflow against ITS OWN literal, so updating that one
+# literal left this one a job short and every arm green. A gate job with no
+# mutation arm is a job whose event guard nobody checks — the completeness
+# claim could not detect an omission from the set it claimed to cover, which is
+# the same defect shape this file exists to prevent one level up.
+#
+# Deriving it makes the coupling real: a new gate job gets an arm the moment it
+# appears in the YAML, and an arm can no longer name a job that does not exist.
+def _gate_job_names() -> list[str]:
+    return sorted(_gate_jobs(yaml.safe_load(_WORKFLOW.read_text())))
+
+
+@pytest.mark.parametrize("job_name", _gate_job_names())
 def test_dropping_the_event_guard_from_one_job_is_caught(workflow, job_name):
     mutated = copy.deepcopy(workflow)
     mutated["jobs"][job_name]["if"] = (
@@ -276,6 +287,19 @@ def test_dropping_the_event_guard_from_one_job_is_caught(workflow, job_name):
     )
     findings = _pr_skippable(mutated)
     assert any(job_name in f for f in findings), (job_name, findings)
+
+
+def test_the_mutation_arms_really_cover_every_gate_job(workflow):
+    """The derivation above is itself a sensor, so it needs a degenerate-end
+    arm. `parametrize` over an EMPTY list generates zero tests and reports
+    green — a workflow that failed to parse, or a `_gate_jobs` that started
+    filtering too hard, would silently delete every mutation arm above and
+    nothing would go red. Pinning the derived list to the same set the presence
+    test asserts makes zero arms impossible and keeps the two in genuine
+    lockstep rather than in a comment."""
+    covered = set(_gate_job_names())
+    assert covered, "no mutation arms were generated at all"
+    assert covered == set(_gate_jobs(workflow))
 
 
 def test_inverting_the_guard_to_always_skip_is_caught(workflow):
