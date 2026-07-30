@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>world frame harness</title>
+    <style>
+      /* The page is the frame and nothing else. No margin, no scrollbar, no
+         background of its own: a page colour behind a canvas that fails to
+         paint is a frame the checks would judge as the world. */
+      html, body { margin: 0; padding: 0; background: #000; overflow: hidden; }
+      /* EngineCanvas renders `absolute inset-0`, so its host needs a positioned
+         box with a real size. This IS the capture rectangle; main.tsx sets its
+         width and height from ?w/?h and mounts React into it. */
+      #stage { position: relative; overflow: hidden; }
+      /* EngineCanvas's own host div carries `absolute inset-0` as TAILWIND
+         classes, and this page has no Tailwind. Without these two rules the
+         host is a block div of height 0, PixiJS's `resizeTo` reads that, and
+         the capture comes back 1200x600 inside a 1200x800 stage with a black
+         band along the bottom — measured, not hypothetical. These are the same
+         two properties the product's stylesheet applies. */
+      #stage > [data-world-engine-canvas] { position: absolute; inset: 0; overflow: hidden; }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>
