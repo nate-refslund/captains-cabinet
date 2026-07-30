@@ -73,8 +73,24 @@ total IDF mass so it lands in ``0.0..1.0`` and is comparable to the
 pretend to be — it is exact-term recall over a folder, which is what a folder
 supports.
 
-LAYER SEP: stdlib only; instance paths appear ONLY as single joined string
-literals (``"instance/config/sources.yml"``), the same construction
+WHAT A TERM IS, and the reason this module imports one. Tokenizing was
+``[A-Za-z0-9_]{3,}`` — an ALPHABET, not a rule — so a folder of Japanese,
+Chinese, Thai, Russian, Greek, Arabic, Hebrew or Hindi notes was read in
+full, chunked in full, and produced NO terms on either side: ``search()``
+returned ``{"hits": []}`` for every query while ``available()`` reported the
+source live. Measured on a hatch with a Japanese operator's 17-file estate
+(2026-07-30): zero hits on every subject, and nothing anywhere said the
+alphabet was the reason. It now reads ``salience.terms`` — the framework's
+one splitter, asked of the Unicode database — so exact-term recall means
+exact terms in whatever script the operator writes, with character bigrams
+standing in for word boundaries in the scripts that have none. The ranking
+arithmetic, the caps and the hit shape are untouched.
+
+LAYER SEP: stdlib plus ONE framework import (``framework.onboarding.salience``
+— the splitter, which is stdlib-only and executes nothing on import; the
+adjacent ``vault_signals.py`` already imports two framework siblings the same
+way). Instance paths appear ONLY as single joined string literals
+(``"instance/config/sources.yml"``), the same construction
 ``framework/sources/__init__.py`` and ``framework/env.py`` use — the gate
 greps for the bare quoted token, which a joined path never matches.
 
@@ -88,6 +104,11 @@ import os
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+# The framework's ONE splitter (see the module docstring). Imported, never
+# re-implemented: a second character class here is what made this adapter
+# unable to read the very folders it was built for.
+from framework.onboarding import salience as _salience
 
 #: Text-shaped extensions. Anything else in the folder is not a note.
 SUFFIXES = (".md", ".markdown", ".txt")
@@ -105,10 +126,12 @@ MAX_CHUNKS_PER_FILE = 40
 #: Default hits returned by ``search()``.
 DEFAULT_LIMIT = 10
 
-#: Tokens shorter than this carry no retrieval signal ("a", "of", "to").
+#: Tokens shorter than this carry no retrieval signal ("a", "of", "to"). It is
+#: a floor on a SPACED script only — ``salience.terms`` never applies it to a
+#: script that writes no word separators, where a two-character token is the
+#: unit rather than a fragment of one.
 MIN_TERM_LEN = 3
 
-_WORD_RE = re.compile(r"[A-Za-z0-9_]{%d,}" % MIN_TERM_LEN)
 _HEADING_RE = re.compile(r"^#{1,6}\s+\S")
 _FRONTMATTER_DATE_RE = re.compile(
     r"^(?:date|created)\s*:\s*['\"]?(\d{4}-\d{2}-\d{2})", re.MULTILINE)
@@ -246,7 +269,13 @@ def _chunks(text: str) -> List[Tuple[str, str]]:
 
 
 def _terms(text: str) -> List[str]:
-    return [w.lower() for w in _WORD_RE.findall(text or "")]
+    """The retrieval terms of a chunk or a query, repeats kept (tf counts them).
+
+    ONE splitter for the corpus and the query — two would silently disagree
+    about what a word is, and the disagreement would look exactly like a
+    folder that holds nothing about the subject.
+    """
+    return _salience.terms(text, min_len=MIN_TERM_LEN)
 
 
 class LocalNotesSource:

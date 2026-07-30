@@ -776,3 +776,97 @@ def test_the_owner_stamped_on_a_row_is_an_identity_string_too():
     assert carrying and carrying[0]["demoted"] is True
     assert carrying[0]["score"] < [c for c in plain["clusters"]
                                    if "harbour" in c["tokens"]][0]["score"]
+
+
+# --- the segmentation seam ---------------------------------------------------
+#
+# THE FOUR CONSUMERS ARE PINNED ELSEWHERE (framework/tests/
+# test_script_agnostic_finding.py, deliberately through their PUBLIC entry
+# points so every arm there runs against the pre-change tree and fails on an
+# assertion rather than on an import). These arms pin the primitive itself.
+
+
+def test_the_unspaced_table_is_sorted_and_disjoint():
+    """The membership test is a bisect over flattened bounds, which silently
+    answers nonsense if a range overlaps its neighbour or arrives out of
+    order. The table is data and data is edited; this is what stops an edit
+    from disabling the whole layer without failing anything."""
+    highest = -1
+    for low, high in salience.UNSPACED_SCRIPT_RANGES:
+        assert low <= high, (low, high)
+        assert low > highest, f"range {(low, high)} overlaps or precedes {highest}"
+        highest = high
+
+
+def test_a_spaced_script_is_split_into_words_and_an_unspaced_one_into_bigrams():
+    assert salience.terms("payments integrations", min_len=3) == [
+        "payments", "integrations",
+    ]
+    assert salience.terms("請求書") == ["請求書", "請求", "求書"]
+    # Cyrillic is NOT unspaced: it keeps whole words and takes no bigrams.
+    assert salience.terms("платежные интеграции", min_len=3) == [
+        "платежные", "интеграции",
+    ]
+
+
+def test_a_script_boundary_inside_one_run_is_a_word_boundary():
+    """``APIの設計`` is one unbroken run of Letters, so a category split alone
+    yields neither ``api`` nor ``設計`` — the layer that makes both reachable."""
+    assert salience.segments("APIの設計") == [
+        ("api", False), ("の設計", True),
+    ]
+    assert "api" in salience.terms("APIの設計")
+    assert "設計" in salience.terms("APIの設計")
+
+
+def test_the_length_floor_never_reaches_a_script_that_has_no_alphabet():
+    """A CJK bigram is two characters BY CONSTRUCTION and a lone ideograph is
+    frequently a whole word. An alphabet's floor applied to them deletes the
+    vocabulary of the script — the defect one layer up, in miniature."""
+    assert salience.terms("日", min_len=4) == ["日"]
+    assert salience.terms("日本", min_len=4) == ["日本"]
+    assert salience.terms("of", min_len=4) == []
+
+
+def test_a_two_character_run_does_not_emit_its_own_bigram_twice():
+    """The only bigram of a two-character run IS the run, and emitting both
+    would double every frequency count downstream."""
+    assert salience.terms("日本") == ["日本"]
+
+
+def test_the_degenerate_ends_are_empty_not_noisy():
+    for junk in ("", "   ", "!!! --- ...", None, [], {}):
+        assert salience.terms(junk) == []
+        assert salience.segments(junk) == []
+    # A non-string that HAS characters keeps them, exactly as ``fold`` has
+    # always stringified its argument. That is not a degenerate end and is
+    # pinned here so the line above is not read as "anything unusual is empty".
+    assert salience.terms(17) == ["17"]
+
+
+def test_the_operators_own_spelling_survives_when_it_is_asked_to():
+    assert salience.terms("Payments API", min_len=3, folded=False) == [
+        "Payments", "API",
+    ]
+    assert salience.terms("Payments API", min_len=3) == ["payments", "api"]
+
+
+def test_the_name_tokenizer_is_unchanged_by_the_new_layer():
+    """``name_tokens`` and ``tokenize`` feed the RANKING, whose re-rank was
+    measured on a live estate before it landed. They read ``split_words``
+    directly and take no script sub-split and no bigrams, so nothing here
+    moves a single estate's ordering."""
+    assert salience.name_tokens("north-bay website") == [
+        "north", "bay", "website", "northbay", "baywebsite",
+    ]
+    assert salience.name_tokens("APIの設計") == ["apiの設計"]
+    assert salience.tokenize("日本") == []
+
+
+def test_the_word_character_predicates_answer_the_same_table_as_the_splitter():
+    assert salience.is_word_start("a") and salience.is_word_start("日")
+    assert salience.is_word_start("7") and not salience.is_word_start("_")
+    assert not salience.is_word_start("́")     # a lone combining acute
+    assert salience.is_word_character("́")     # ...which may still follow
+    assert not salience.is_word_character("/")
+    assert not salience.is_word_character(" ")

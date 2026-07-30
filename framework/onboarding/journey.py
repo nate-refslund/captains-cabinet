@@ -697,7 +697,13 @@ def _event_for_action(root: Path, action_id: str | None) -> dict[str, Any] | Non
     return None
 
 
-_SEED_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9+#._/-]{1,39}")
+#: A seed word is short enough to be a fragment below this, in a script that
+#: writes spaces. It is not applied to a script that does not — see
+#: ``salience.terms``: a single ideograph is routinely a whole word, and an
+#: alphabet's floor deletes the vocabulary of every script that has no
+#: alphabet. The floor used to live inside an ASCII character class, which
+#: made it unreachable for such a script BEFORE it could be applied.
+_MIN_SEED_TOKEN_LEN = 2
 # Ordinary English scaffolding a seed sentence is made of. Removing it is what
 # turns "I run payments integrations for a bank" into terms worth searching.
 _SEED_STOPWORDS = frozenset({
@@ -756,16 +762,33 @@ def _seed_terms(seed: Any) -> list[str]:
 
     First occurrence wins so the operator's own ordering survives, which is the
     closest thing to salience available without asking a second question.
+
+    THE ALPHABET WAS THE FILTER, not the stopwords. This read
+    ``[A-Za-z][A-Za-z0-9+#._/-]{1,39}``, so an operator who answered the seed
+    question in Japanese, Chinese, Thai, Russian, Greek, Arabic, Hebrew or
+    Hindi produced ZERO terms — measured on a live hatch 2026-07-30. Nothing
+    said so: ``seed_probes`` returned ``executable: False`` and the surface
+    reported a seed that justified no discovery, which is indistinguishable
+    from a seed that said nothing. It now reads ``salience.terms``, the same
+    splitter every name comparison in this file already used.
+
+    THE OPERATOR'S OWN SPELLING SURVIVES (``folded=False``): these terms are
+    printed back as search patterns and web queries, and lowercasing a word
+    someone typed shows them a word they did not write. Comparison — the
+    stopword test and the de-duplication — folds on both sides, so case never
+    decides whether two words are the same.
     """
     if not isinstance(seed, str) or not seed.strip():
         return []
     terms: list[str] = []
-    for match in _SEED_TOKEN_RE.finditer(seed):
-        token = match.group(0).strip("._/-")
-        if len(token) < 2 or token.lower() in _SEED_STOPWORDS:
+    seen: set[str] = set()
+    for token in _salience.terms(seed, min_len=_MIN_SEED_TOKEN_LEN,
+                                 folded=False):
+        comparable = _salience.fold(token)
+        if comparable in _SEED_STOPWORDS or comparable in seen:
             continue
-        if not any(token.lower() == existing.lower() for existing in terms):
-            terms.append(token)
+        seen.add(comparable)
+        terms.append(token)
         if len(terms) >= MAX_SEED_TERMS:
             break
     return terms
@@ -2528,7 +2551,15 @@ _COMMITMENT_RE = re.compile(
 _MARKER_PREFIX_RE = re.compile(
     r"^\s*(?:(?://+|/\*+|<!--|#{1,6}|[-*+]|\d+[.)]|\[[ xX]\])\s*)+"
 )
-_CONTENT_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9._-]{3,}")
+#: A content word carries no join signal below this, in a script that writes
+#: spaces; ``salience.terms`` does not apply it to one that does not. The
+#: ASCII class this replaced (``[A-Za-z][A-Za-z0-9._-]{3,}``) made the whole
+#: detector STRUCTURALLY DEAD on non-Latin prose: the subject token set came
+#: back empty, the length test below dropped the line, and the run reported
+#: ``ran: True`` with nothing found — a detector that looked and a detector
+#: that could not look are exactly what this function's own docstring says
+#: must never be confused.
+_MIN_CONTENT_TOKEN_LEN = 4
 #: Two shared content words. One is a coincidence between any two sentences
 #: about the same codebase; requiring two is what keeps the join's assertion
 #: ("no open row accounts for this") worth printing.
@@ -2596,10 +2627,19 @@ def _tracker_rows(entry: dict[str, Any]) -> list[dict[str, str]]:
 
 
 def _content_tokens(text: str) -> set[str]:
-    """The comparison surface for the join: content words, no scaffolding."""
+    """The comparison surface for the join: content words, no scaffolding.
+
+    In a script that writes no spaces the tokens are the run and its character
+    bigrams (``salience.terms``), so ``_JOIN_MATCH_TOKENS`` shared tokens is a
+    shared three-character phrase rather than two shared words. That is a
+    weaker join than the Latin one and it is the honest one available without
+    a per-language dictionary — the alternative on today's tree is no join at
+    all, because the set was empty.
+    """
     return {
-        token.lower() for token in _CONTENT_TOKEN_RE.findall(text)
-        if token.lower() not in _SEED_STOPWORDS
+        token for token in _salience.terms(text,
+                                           min_len=_MIN_CONTENT_TOKEN_LEN)
+        if token not in _SEED_STOPWORDS
     }
 
 
@@ -2690,7 +2730,31 @@ MAX_PROBE_ENTRIES = 5_000
 #: The operator's own words reach this pattern through ``_seed_terms``. A path
 #: separator or a parent segment would turn a NAME match into a traversal, so
 #: the shape is allow-listed rather than escaped.
-_PROBE_PATTERN_RE = re.compile(r"^[A-Za-z0-9*][A-Za-z0-9*+#._-]{0,63}$")
+#:
+#: THE ALLOW-LIST IS THE UNICODE DATABASE, NOT AN ALPHABET (2026-07-30). It was
+#: ``^[A-Za-z0-9*][A-Za-z0-9*+#._-]{0,63}$``, so once ``_seed_terms`` stopped
+#: losing non-Latin words the patterns built from them arrived here and were
+#: refused as ``pattern_unsafe`` — every one of them. That is the same wall one
+#: step further along: the operator's own language reported back to them as
+#: dangerous. What is REFUSED is unchanged and is the whole point of the
+#: allow-list — a separator, a parent segment, a control character, a quote,
+#: anything that is not a word character or one of the glob punctuation marks
+#: below, and a first character that is not a Letter, a Number or ``*`` (so a
+#: leading dot or a lone combining mark still cannot open a pattern).
+_PROBE_PATTERN_PUNCTUATION = frozenset("*+#._-")
+_PROBE_PATTERN_MAX = 64
+
+
+def _probe_pattern_ok(pattern: Any) -> bool:
+    """Is this glob safe to hand to the name walker? Allow-list, never escape."""
+    text = str(pattern or "")
+    if not text or len(text) > _PROBE_PATTERN_MAX:
+        return False
+    if text[0] != "*" and not _salience.is_word_start(text[0]):
+        return False
+    return all(character in _PROBE_PATTERN_PUNCTUATION
+               or _salience.is_word_character(character)
+               for character in text)
 
 
 def _name_matches(root: Path, pattern: str) -> tuple[list[str], bool]:
@@ -2771,7 +2835,7 @@ def _execute_probes(source_root: Any, probes: Any) -> dict[str, Any]:
                              "reason": "no_ratified_first_window"})
             continue
         pattern = str(probe.get("pattern") or "")
-        if not _PROBE_PATTERN_RE.match(pattern):
+        if not _probe_pattern_ok(pattern):
             deferred.append({**probe, "executed": False, "reason": "pattern_unsafe"})
             continue
         matches, truncated = _name_matches(root, pattern)

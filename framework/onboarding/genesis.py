@@ -101,6 +101,12 @@ import subprocess
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
+
+# The framework's ONE splitter. Module-level rather than import-light: it is a
+# stdlib-only leaf that executes nothing, and it is read on every prose line of
+# every chunk recall returns.
+from framework.onboarding import salience as _salience
 
 ANSWERS_REL = "instance/config/cabinet-init.answers.yml"
 FOCUS_REL = "instance/config/onboarding-focus.md"
@@ -442,7 +448,19 @@ _JOIN_STOPWORDS = frozenset({
     "you", "your",
 })
 
-_WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_-]{2,}")
+#: A word below this length carries no signal for the join or the prose floor,
+#: in a script that writes spaces. ``salience.terms`` does not apply it to one
+#: that does not — see ``_prose_word_count`` for what stands in there.
+#:
+#: WHAT THIS REPLACED, and why it is not a rename. It was
+#: ``[A-Za-z][A-Za-z0-9_-]{2,}``, an ALPHABET: a note written in Japanese,
+#: Chinese, Thai, Russian, Greek, Arabic, Hebrew or Hindi produced no words at
+#: all, so every line of it failed the prose floor and ``_quote_of`` returned
+#: "". The recall card then printed a citation with NO quote — the "I did not
+#: ask you for this, I read it" line, which is the entire point of the
+#: surface, silently absent for every operator who does not write in Latin.
+#: Measured on a live hatch 2026-07-30.
+_MIN_WORD_LEN = 3
 
 
 def _flatten(text: str, limit: int) -> str:
@@ -489,6 +507,27 @@ _PROSE_REJECT = (
 
 #: A prose line has to carry some actual words, or "The:" and "—" qualify.
 _MIN_PROSE_WORDS = 5
+#: THE SAME FLOOR FOR A SCRIPT THAT WRITES NO SPACES, stated rather than
+#: implied. Five words is the bar because five words is a sentence; a Japanese
+#: or Thai line has no spaces to count, and counting its BIGRAMS instead would
+#: pass a two-character fragment as prose. A word in those scripts runs one to
+#: three characters, so an unspaced run is worth ``len // 2`` words — ten
+#: characters clears the bar, "設計。" does not. It is an approximation and
+#: says so; the alternative is a per-language dictionary, which is the
+#: hand-maintained list this program keeps deleting.
+_UNSPACED_CHARS_PER_WORD = 2
+
+
+def _prose_word_count(line: str) -> int:
+    """How many words this line is worth, in any script — see
+    ``_UNSPACED_CHARS_PER_WORD`` for what an unspaced run counts as."""
+    total = 0
+    for chunk, unspaced in _salience.segments(line):
+        if unspaced:
+            total += len(chunk) // _UNSPACED_CHARS_PER_WORD
+        elif len(chunk) >= _MIN_WORD_LEN:
+            total += 1
+    return total
 
 
 def _prose_lines(text: str) -> list:
@@ -509,7 +548,7 @@ def _prose_lines(text: str) -> list:
         # paragraph, and the card then quotes the operator mid-sentence with
         # no ellipsis — measured: "…require the unlock ceremony to update on
         # an", because the next line was "armed Mac:".
-        if len(_WORD_RE.findall(line)) < _MIN_PROSE_WORDS and not running:
+        if _prose_word_count(line) < _MIN_PROSE_WORDS and not running:
             continue
         if not line.strip():
             running = False
@@ -567,7 +606,7 @@ def _quote_and_cite(ordered: list) -> dict:
 
 
 def _query_terms(text: str) -> set:
-    return {w.lower() for w in _WORD_RE.findall(text or "")}
+    return set(_salience.terms(text, min_len=_MIN_WORD_LEN))
 
 
 # CALLERS PASS ONLY THE HITS THE CARD WILL CITE (fixed 2026-07-28, reproduced
@@ -665,16 +704,53 @@ def _join_terms(cited: list, query: str) -> list:
     return shared[:_MAX_JOIN_TERMS]
 
 
+#: How many subjects may come from the operator's OWN WORDS rather than from a
+#: declared lane or a read estate. Deliberately small: they are the fallback
+#: for a lane label that names nothing in the operator's files, not a way to
+#: turn a sentence into a survey, and they queue BEHIND every declared subject
+#: so a cabinet whose lanes do answer never spends a probe slot on them.
+_MAX_OWN_WORD_SUBJECTS = 2
+
+
+def _seed_text(answers: dict, seed: Any = None) -> str:
+    """The journey's seed sentence, from the caller or from the answers file.
+
+    Tolerant by construction — a plain string, or the ``{"text": ...}`` shape
+    ``journey`` persists — because this is an OPTIONAL input and a malformed
+    one must degrade to "no seed", never to an exception on the hatch path."""
+    if isinstance(seed, str) and seed.strip():
+        return seed.strip()
+    raw = answers.get("seed") if isinstance(answers, dict) else None
+    if isinstance(raw, dict):
+        raw = raw.get("text")
+    return raw.strip() if isinstance(raw, str) and raw.strip() else ""
+
+
 def recall_probes(answers: dict, focus_text: str | None = None, *,
-                  estate: dict | None = None) -> list[dict]:
+                  estate: dict | None = None, seed: Any = None) -> list[dict]:
     """The subjects worth asking recall about, derived from what the operator
     DECLARED — never invented. ``[{'key', 'label', 'query'}]``, deduped by key,
     capped at ``_MAX_RECALL_PROBES``.
 
     Declared lanes first (the Captain's own statement), then estate entities
-    (what the cabinet read). An operator who declared nothing and granted
-    nothing yields NO probes: there is nothing to ask about, and a probe
-    invented here would be the guessing this whole direction removes."""
+    (what the cabinet read), then — capped at ``_MAX_OWN_WORD_SUBJECTS`` — the
+    words the operator used when they said what they do. An operator who
+    declared nothing, granted nothing and said nothing yields NO probes: there
+    is nothing to ask about, and a probe invented here would be the guessing
+    this whole direction removes.
+
+    WHY THEIR OWN WORDS ARE A SUBJECT AND NOT DECORATION. A lane's display name
+    is chosen at hatch time and is frequently the cabinet's spelling of the
+    subject, not the operator's — measured 2026-07-30 on a Japanese estate,
+    where every lane label was an ASCII romanisation appearing in NONE of the
+    operator's seventeen files, so all four subjects returned zero hits from a
+    folder that was full of the answer. The mission's purpose and the journey's
+    seed are the one place the operator writes in their OWN spelling, and a
+    term taken from there is still theirs — nothing here invents a noun.
+
+    The whole mission/focus sentence remains a probe of its own only when it is
+    ALL there is: appended to a subject it dilutes the query, and asked alone
+    it is a sentence rather than a subject."""
     purpose, success, _never = _mission_fields(answers)
     tail = " ".join(x for x in (purpose, success,
                                 _focus_excerpt(focus_text, 120)) if x)
@@ -702,6 +778,21 @@ def recall_probes(answers: dict, focus_text: str | None = None, *,
             name = str(ent.get("name") or slug).strip()
             if slug or name:
                 _add(slug or name, name or slug)
+    own_words = " ".join(x for x in (purpose or "",
+                                     _seed_text(answers, seed)) if x)
+    added = 0
+    for term in _salience.terms(own_words, min_len=_MIN_WORD_LEN,
+                                folded=False):
+        if added >= _MAX_OWN_WORD_SUBJECTS or len(out) >= _MAX_RECALL_PROBES:
+            break
+        # The same two filters ``_join_terms`` applies, for the same reason:
+        # "working", "help" and "2026" are things everybody's notes say, and a
+        # subject nobody's folder is ABOUT spends a probe slot to answer zero.
+        if _salience.fold(term) in _JOIN_STOPWORDS or term.isdigit():
+            continue
+        before = len(out)
+        _add(term, term)
+        added += len(out) - before
     # The mission/focus text is a probe of its own ONLY when it is all there
     # is: it is a sentence, not a subject, and it would otherwise dilute every
     # subject query it was appended to.
@@ -723,7 +814,7 @@ def _recall_enabled() -> bool:
 
 def probe_recall(answers: dict, focus_text: str | None = None, *,
                  estate: dict | None = None, source=None,
-                 root: Path | None = None) -> dict:
+                 root: Path | None = None, seed: Any = None) -> dict:
     """Ask the BOUND recall seam about each derived probe. I/O lives here.
 
     Returns ``{'consulted', 'adapter', 'available', 'binding', 'probes',
@@ -745,7 +836,7 @@ def probe_recall(answers: dict, focus_text: str | None = None, *,
     result = {"consulted": False, "adapter": "", "available": False,
               "binding": {}, "probes": [], "subjects": [], "hits_total": 0,
               "error": None}
-    probes = recall_probes(answers, focus_text, estate=estate)
+    probes = recall_probes(answers, focus_text, estate=estate, seed=seed)
     result["probes"] = [p["label"] for p in probes]
     if source is None and not _recall_enabled():
         result["error"] = "skipped: CABINET_GENESIS_RECALL=0"

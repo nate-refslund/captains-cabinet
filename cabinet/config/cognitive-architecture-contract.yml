@@ -572,7 +572,38 @@ budgets:
     # observed 76035, so the ceiling is 61496 at zero headroom. The paper sum
     # agrees (61455 + 41 = 61496), and the agreement is evidence FOR the
     # measurement, never a substitute for taking it.
-    maximum: 61496
+    #
+    # 61496 -> 61724 (+228 measured 2026-07-30 via cognitive-architecture-census.py,
+    # observed 76263 vs the then-effective 76035): fix/script-agnostic-recall —
+    # the FINDING path reads any script. Four ASCII character classes were
+    # deciding what a word is (journey._SEED_TOKEN_RE, journey._CONTENT_TOKEN_RE,
+    # local._WORD_RE, genesis._WORD_RE), plus a fifth allow-list one step further
+    # along (journey._PROBE_PATTERN_RE) and a sixth thing that was never a regex:
+    # recall's subjects came only from lane DISPLAY NAMES. Measured on a live
+    # hatch with a Japanese operator's 17-file estate: her seed produced ZERO
+    # discovery probes, recall answered ZERO hits on every subject, and no card
+    # could quote a line of her own material — with nothing anywhere saying the
+    # alphabet was the reason. All four now read salience.terms, the splitter
+    # this tree already declared its ONE splitter.
+    #
+    # ZERO NEW PRODUCTION MODULES, and that was the adjudication, not an
+    # accident. Two blind arms (Fable 5 + Opus 5, own clones, neither reading
+    # the other) were asked where the shared primitive belongs; both returned
+    # framework/onboarding/salience.py, and both gave the same decisive reason:
+    # a framework/text.py would need an expansions: row whose merge_refuted
+    # anchor refutes salience.py::split_words, and that refusal cannot be
+    # written honestly — the primitive IS that function plus one layer. The
+    # bijection class is untouched (248 <= 248) because the honest home was
+    # already a registered member.
+    #
+    # RAISED VISIBLY rather than paid by a temporary allowance: an allowance
+    # promises a deletion gate, and a splitter that reads the operator's own
+    # language is never getting deleted. Roughly two thirds of the mass is
+    # docstring — the measured symptom, the four retired character classes
+    # written out, and the honest floor for a script that writes no spaces —
+    # which is the house style and the reason the next reader will not
+    # re-narrow it.
+    maximum: 61724
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
