@@ -21,7 +21,16 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 7f842baceaa0d259e3f4a56eeb52fa39ad5a3a68d3fa42a76d101c60858c6319
+Reviewed-Scope-Digest: 8343cb2177164c1439b77f0e5ef1484b9d31c1876ce16d7ee85d0965e7d1f548
+
+(MERGE RE-BIND, 2026-07-30, `feat/companion-desk-pet` x master. Both sides
+re-bound this line, so the merge left two; ONE value stands and it is
+recomputed over this merge commit. Master's side moved
+`cabinet/config/cognitive-architecture-contract.yml`; this branch's side moved
+`cabinet/scripts/egg-export-manifest.txt` by one `expect-present` row. The two
+sets are disjoint and NO COG-4 implementation byte moved on either side —
+verified by expanding the resolved scope with `git ls-tree -r` on both parents
+and diffing. Both sections stand verbatim below, master's first.)
 (RE-BOUND 2026-07-30 on `fix/script-agnostic-recall`, previous value
 `527a73d2…`. ONE in-scope path moved and NO COG-4 implementation byte did:
 `cabinet/config/cognitive-architecture-contract.yml` raises
@@ -1994,3 +2003,19 @@ the two readings wants a second key and symmetry wants a behaviour change.
 
 Recorded digest: 6595784ffd913aadd0e47fab8fbc146e173b1a7c110f375a3435001828288a80
 Previous:        abe5fbd01d09c85b2b6005d02ce1f86b35010747d00b8c509b70b7e63dceb3ec
+
+(RE-BOUND 2026-07-30 on `feat/companion-desk-pet`, previous value `527a73d2…`.
+ONE in-scope path moved and NO COG-4 implementation byte did:
+`cabinet/scripts/egg-export-manifest.txt` gains a single line,
+`expect-present cabinet/companion/pet.swift`, beside the three companion rows
+already there — the desk pet's source is a second `.swift` in the same
+menu-bar target and the packaging pin must fail loud if it ever falls out of
+the cut. MEASURED, not asserted: the resolved scope was expanded with
+`git ls-tree -r` at master `43368393` and at this branch's HEAD and the two
+sets diffed — same entries, same paths, and exactly ONE path with a different
+blob, the manifest above. The manifest is bound because it can change what a
+COG-4 surface ships; an `expect-present` row is a verification row and adds no
+include, exclude or transform rule, so nothing about what ships changed either.
+No `framework/projection`, `framework/scheduler`, `framework/organs`,
+`cog4-*` or fixture byte is touched by this branch, whose whole diff is the
+companion app, its build script, its tests and this one manifest row.)
