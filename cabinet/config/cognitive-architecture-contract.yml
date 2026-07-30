@@ -307,7 +307,37 @@ budgets:
     # taking down the operator's whole offer in order to improve its ordering,
     # which is a worse outcome than the ordering. Recorded by exception TYPE
     # only — a judge's failure text is not this module's to carry outward.
-    maximum: 60979
+    #
+    # 60979 -> 61094 (+115 measured 2026-07-30 via cognitive-architecture-census.py,
+    # observed 75371 vs the then-effective 75256): THE ANSWER BINDS DEPTH. The
+    # salience answer was recorded and read by nothing: driven on 2026-07-30,
+    # an operator answered one target, proposed a First Window on an unrelated
+    # folder, and the proposal was accepted, the Charter ratified and the folder
+    # READ — while the card kept publishing "You pointed me at X, so that is
+    # where I spend depth — nothing else gets opened on the strength of a
+    # ranking." A published claim with no control behind it, in a public repo,
+    # and the fourth step of the design reduced to a questionnaire.
+    # framework/onboarding/journey.py gains `_window_binding` (the ONE decision
+    # function: evidence is the folder's own name, ancestors excluded so a
+    # checkout root or an account named after the thing cannot make every folder
+    # beneath it look on-target), `_binding_note` (the sentence rendered FROM
+    # that function, so text and control cannot drift), `WINDOW_RELATIONS` (the
+    # two statements an operator may make instead — this folder is that target
+    # under another name, which learns the alias and keeps the claim, or a
+    # deliberate detour, which is opened and DROPS the claim), the refusal in
+    # `propose_window`, and the binding line on the Charter and dividend cards;
+    # framework/onboarding/salience.py's module claim "depth is spent only where
+    # the operator points" is corrected from an assertion to a citation of the
+    # control that now enforces it.
+    # RAISED VISIBLY, never an allowance: an allowance promises a deletion gate,
+    # and a loop whose answer changes nothing is a questionnaire — this cannot
+    # be deleted while the sentence ships. The majority of the +115 is docstring
+    # prose carrying the reason for each invariant, per the house rule, and is
+    # NOT reformatted into # comments to duck this budget. Zero new production
+    # MODULES (framework_production_modules unchanged at 248: every function
+    # lands inside the existing journey module, and the nine new arms are
+    # tests). observed == maximum, zero headroom.
+    maximum: 61094
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

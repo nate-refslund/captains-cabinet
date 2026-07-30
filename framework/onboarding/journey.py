@@ -27,6 +27,14 @@ cannot enforce (the truth of the attestation).  Sources classified ``employer``
 or ``third_party`` are structurally observe-only and default to no-egress, and
 the record of each completed read SURVIVES a purge.
 
+THE SALIENCE ANSWER BINDS DEPTH — it is the only thing that scopes it, and it
+is enforced rather than asserted.  Once a target is ratified, ``propose_window``
+REFUSES a folder whose own name does not carry it, unless the operator states
+which of ``WINDOW_RELATIONS`` applies; ``_window_binding`` is the one decision
+function, and every card renders what it returns, so the shipped sentence can
+never promise a binding the code does not keep.  A loop whose answer changes
+nothing is a questionnaire.
+
 All state stays below ``instance/onboarding/v2`` — a surface the mission
 compiler never reads.  Events are append-only, state/artifacts are atomic,
 actions are idempotent, and a process lock serializes cross-surface races.
@@ -135,6 +143,21 @@ OWNERSHIP_LABELS = {
     "self": "mine",
     "employer": "my employer's",
     "third_party": "someone else's",
+}
+#: The two things an operator may say when the folder they chose does not carry
+#: the target they answered. Two values because they are two different facts
+#: that make two different sentences true, and collapsing them would reopen the
+#: hole from the other side: treat every override as "still the target" and a
+#: deliberate detour publishes a false claim; treat every override as a detour
+#: and the folder that IS the target under another word never teaches its alias.
+#: Neither is enforceable — the framework cannot know what a folder holds before
+#: it is allowed to open it, exactly as it cannot know whether an ownership
+#: attestation is true (``framework.authority.ownership``). What it CAN do is
+#: refuse to proceed silently, require the claim to be made, record it, and say
+#: on the card which one was made.
+WINDOW_RELATIONS = {
+    "same_thing": "the operator says this folder is that target under another name",
+    "elsewhere": "the operator says this is somewhere else they want opened",
 }
 
 # ── Three entry modes — "never a dead end" (Captain ruling, 2026-07-26) ───────
@@ -1167,6 +1190,93 @@ def _identity_note(plan: dict[str, Any]) -> str:
     return f" {question['question']}" if isinstance(question, dict) else ""
 
 
+def _window_binding(state: Mapping[str, Any] | dict[str, Any],
+                    source: Any = None) -> dict[str, Any] | None:
+    """Where depth is actually pointed, measured against the ratified target.
+
+    THE ONE DECISION FUNCTION, and that is the whole point of it. The refusal
+    inside ``propose_window`` and the sentence on the card both read this, so
+    the shipped text cannot promise a binding the code does not enforce. It did
+    exactly that: an operator could answer one target, open a window on
+    anything else, and the card still said "that is where I spend depth". A
+    loop whose answer changes nothing is a questionnaire.
+
+    EVIDENCE IS THE FOLDER'S OWN NAME, and nothing else. Reading what is inside
+    is lawful only after the Charter is approved, so before that the one signal
+    available is the name the operator gave the folder. Ancestors are excluded
+    deliberately: a checkout root, a mount point or an account named after the
+    thing would make every folder beneath it look on-target, and a control that
+    passes on its parent's name is the fail-open this function exists to close.
+    The cost is a folder legitimately called something else, and that case has
+    a named way through (``WINDOW_RELATIONS``) rather than a refusal.
+
+    WHAT IT CATCHES, EXACTLY: a window and an answer that share NO name-word.
+    It does not catch a coincidental shared one — a target typed as a phrase
+    lends every word in it, so a folder carrying any of those words binds
+    without the operator being asked. That is the limit of a test on names, and
+    the card claims no more than the test does: it says it refuses a window
+    that does not carry the name, which is precisely what happens here. The
+    only authority on what a folder actually holds is the operator, which is
+    why the escape is a statement from them rather than a better guess.
+
+    Returns ``None`` when no target has been answered — there is nothing to
+    bind to, and no claim is made either. Otherwise ``relation`` is one of:
+    ``unbound`` (answered, no window yet), ``matched`` (the folder carries the
+    target), ``off_target`` (it does not, and the operator has not said why),
+    or whichever of ``WINDOW_RELATIONS`` the operator stated.
+    """
+    answered = state.get("salience") if isinstance(state, Mapping) else None
+    if not isinstance(answered, Mapping) or not answered.get("target"):
+        return None
+    target = str(answered["target"])
+    if source is None:
+        current = state.get("source")
+        root = str((current or {}).get("root") or "") if isinstance(current, Mapping) else ""
+        recorded = answered.get("window")
+        # A relation the operator STATED outranks anything re-derived from the
+        # name: they answered a question about this exact folder, and re-running
+        # the name test would silently overrule them on the next card render.
+        if isinstance(recorded, Mapping) and root and str(recorded.get("root") or "") == root:
+            return {"target": target, "root": root,
+                    "relation": str(recorded.get("relation") or "off_target"),
+                    "evidence": [str(e) for e in (recorded.get("evidence") or ())]}
+        if not root:
+            return {"target": target, "root": None, "relation": "unbound", "evidence": []}
+        source = root
+    wanted = set(_salience.tokenize(target))
+    wanted.update(str(alias) for alias in (answered.get("aliases") or ()))
+    evidence = sorted(wanted & set(_salience.tokenize(Path(str(source)).name)))
+    return {"target": target, "root": str(source), "evidence": evidence,
+            "relation": "matched" if evidence else "off_target"}
+
+
+def _binding_note(state: dict[str, Any]) -> str:
+    """What the answer is actually doing to this window, in one sentence.
+
+    Rendered from ``_window_binding`` on every card that either asks for depth
+    or reports it, so the operator reads the enforcement rather than a promise:
+    the depth claim appears only on the branches where the code keeps it.
+    """
+    binding = _window_binding(state)
+    if binding is None:
+        return ""
+    target = binding["target"]
+    if binding["relation"] == "elsewhere":
+        note = (f" You pointed me at {target}; this window is the somewhere-else you "
+                "asked for, so nothing here was opened on the strength of a ranking.")
+    elif binding["relation"] == "off_target":
+        note = (f" You pointed me at {target} after this window was already open, and "
+                "this folder does not carry that name — so depth is not yet spent "
+                "where you pointed.")
+    else:
+        note = (f" You pointed me at {target}, so that is where I spend depth — I "
+                "refuse a window that does not carry that name unless you tell me "
+                "what it is.")
+    if state["salience"].get("from_escape_hatch"):
+        note += " I had not ranked it; I have it now."
+    return note
+
+
 def _salience_note(state: dict[str, Any], plan: dict[str, Any]) -> str:
     """The ranking, in the operator's reading order: candidates, then the cut.
 
@@ -1178,15 +1288,9 @@ def _salience_note(state: dict[str, Any], plan: dict[str, Any]) -> str:
     candidates below the cut are all named here, because the operator reads this
     sentence and not the coverage block.
     """
-    answered = state.get("salience")
-    if isinstance(answered, dict) and answered.get("target"):
-        note = (
-            f" You pointed me at {answered['target']}, so that is where I spend "
-            "depth — nothing else gets opened on the strength of a ranking."
-        )
-        if answered.get("from_escape_hatch"):
-            note += " I had not ranked it; I have it now."
-        return note
+    answered = _binding_note(state)
+    if answered:
+        return answered
     for question in plan.get("questions") or ():
         offer = question.get("offer") if isinstance(question, dict) else None
         if not isinstance(offer, dict) or not offer.get("options"):
@@ -1392,6 +1496,11 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
                 "skip secrets, personnel, pay, customer-personal, legal and corporate-finance files by name, "
                 "skip hidden/system folders, binaries, and every symlink, and make no changes. "
                 f"Charter fingerprint: {charter['hash'][:12]}."
+                # THE APPROVAL CARD IS WHERE THE BINDING HAS TO BE READABLE.
+                # This is the moment depth is authorised, so the operator sees
+                # which answered target this window serves — or that they told
+                # me it serves none — before the hash is theirs to accept.
+                + _binding_note(state)
             ),
             options=[
                 {"action": "ratify_charter", "label": "Approve and find one useful thing"},
@@ -1422,7 +1531,11 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
         common.update(
             kind="first_dividend",
             title="I found something worth your attention" if finding["quality"] == "strong" else "Your first map is ready",
-            body=egress["summary"] + disclosure + _discovery_note(state.get("discovery")),
+            # …and the binding, on the card that PUBLISHES what depth bought:
+            # a dividend read out of a window the operator said was a detour
+            # must not arrive wearing the answered target's authority.
+            body=egress["summary"] + disclosure + _binding_note(state)
+            + _discovery_note(state.get("discovery")),
             evidence=egress["citations"],
             options=[
                 {"action": "continue", "label": "See the locked next step"},
@@ -3213,8 +3326,71 @@ def _act_core(
             ingest = _open_ingest_or_refuse(
                 request.get("ownership"), request.get("authority_basis"), ts
             )
+            # THE ANSWER BINDS DEPTH — the control the shipped sentence was
+            # missing. "You pointed me at X, so that is where I spend depth" was
+            # published while an operator could answer one target and open a
+            # window on any other folder with nothing objecting. It is enforced
+            # here, at the only place depth is ever scoped, and only once a
+            # target exists: with no answer there is nothing to bind to, so
+            # every entry mode without a ranking is untouched.
+            #
+            # A REFUSAL, NOT A REWRITE. The cabinet never picks the folder for
+            # the operator and never silently retargets their choice — it stops,
+            # names the target they gave, and takes one of the two statements in
+            # WINDOW_RELATIONS. Re-answering ``answer_salience`` is the third
+            # way through and needs nothing from here: move the answer, and the
+            # window follows it.
+            #
+            # RESIDUAL, stated rather than implied: no shipped surface can send
+            # ``answer_salience`` yet — it is absent from the Dashboard bridge's
+            # action set and from the Telegram command table — so the bind, like
+            # the answer it enforces, is reachable only through this core. An
+            # operator who answers here and then proposes from Telegram gets the
+            # refusal with no way to state a relation from that surface. Wiring
+            # the ANSWER into both surfaces is the unit that also wires its
+            # relation; half-wiring the override alone would add a bypass field
+            # to a surface that cannot produce the state it bypasses.
+            binding = _window_binding(state, source)
+            if binding is not None:
+                stated = request.get("salience_relation")
+                if stated is not None:
+                    if not isinstance(stated, str) or stated not in WINDOW_RELATIONS:
+                        raise JourneyError(
+                            "salience_relation_invalid",
+                            "Say either that this folder is the thing you pointed me at "
+                            "under another name, or that it is somewhere else you want opened.",
+                        )
+                    # A stated relation WINS over the name test in both
+                    # directions. The operator knows what is in the folder and
+                    # this module does not: a name that matches by accident is
+                    # still a detour if they say so.
+                    binding = {**binding, "relation": stated}
+                elif binding["relation"] == "off_target":
+                    raise JourneyError(
+                        "salience_window_off_target",
+                        f"You pointed me at {binding['target']}, and “{source.name}” does "
+                        "not carry that name. Tell me this folder is that thing under "
+                        "another name, or that it is somewhere else you want opened — or "
+                        "point me at something new and I will follow the answer.",
+                        detail={"target": binding["target"],
+                                "window": source.name,
+                                "relations": sorted(WINDOW_RELATIONS)},
+                    )
             charter = _build_charter(source, purpose, destination, ingest)
             after = deepcopy(state)
+            if binding is not None:
+                after["salience"] = {**after["salience"],
+                                     "window": {**binding, "bound_at": ts}}
+                if binding["relation"] == "same_thing":
+                    # THE ALIAS THE RANKING COULD NOT DERIVE, learned the same
+                    # way the escape hatch learns one: the operator has just
+                    # said this folder's name and the target are one thing, so
+                    # the next ranking treats them as one instead of splitting
+                    # the candidate across two words again.
+                    after["salience"]["aliases"] = sorted(
+                        set(after["salience"].get("aliases") or ())
+                        | set(_salience.tokenize(source.name))
+                    )
             after.update(
                 stage="charter_pending",
                 purpose=purpose,
