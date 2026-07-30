@@ -145,7 +145,13 @@ the zero-question fast lane above is unchanged.
 ### 1. Captain profile
 
 Collect:
-- **Name** — display name officers use (e.g. `Ada`).
+- **Name** — display name officers use (e.g. `Ada`). **Take it in the
+  captain's own language and own script** — Japanese, Cyrillic, Arabic,
+  Greek, Hindi, anything — and never ask for a latin spelling of it.
+  The generator accepts any script and bounds only length (80
+  characters) and control characters; the ASCII-only fields are the
+  IDS below (`cabinet.id`, each lane's `slug`), which are internal
+  labels the captain never has to see in place of their name.
 - **Timezone** — IANA identifier (e.g. `Europe/Madrid`). All officer
   communication renders times in it.
 - **Telegram chat id** — the captain's numeric chat id (an address, not
@@ -245,9 +251,15 @@ a placeholder lane to get past the generator.
 
 Per declared lane:
 
-- **Name** (human, e.g. `Acme Storefront`) and **slug** (kebab-case,
-  e.g. `acme-store` — becomes the context slug and the `<slug>-ceo`
-  role id).
+- **Name** (human, e.g. `Acme Storefront`) — **in whatever language and
+  script the captain names it in**; no latin spelling is asked for or
+  needed — and **slug** (kebab-case, e.g. `acme-store` — becomes the
+  context slug and the `<slug>-ceo` role id). The slug is ASCII because
+  it lands in file names, session names and log lines; it is an
+  internal label, so when the name yields no latin form just take a
+  short placeholder (`lane-1`) rather than asking anyone to romanize
+  their product. The generator's own refusal says exactly this and
+  suggests a value.
 - **Repo(s)** — `org/name` or URL; first repo becomes `product.repo`.
 - **Task system + board ids** — e.g. `plugin:dev-tasks` with board ids,
   `linear` with a team key, `github-issues`, or `none`. When the route
@@ -452,9 +464,15 @@ placeholders only:
    `instance/config/cabinet-init.answers.yml`. Schema (also available
    via `python3 cabinet/scripts/generate-instance.py --example`):
 
+   NAMES vs IDS: `captain.name` and each lane's `name` are DISPLAY
+   names and accept any language and any script (bounded only by 80
+   characters and control characters). `cabinet.id` and each lane's
+   `slug` are internal IDS and stay lowercase-latin kebab-case — they
+   key file names, session names and log lines.
+
    ```yaml
    version: 1
-   captain: {name, timezone, telegram_chat_id,
+   captain: {name, timezone, telegram_chat_id,   # name: ANY script
              availability}                      # OPTIONAL time budget: away |
                                                 #  minimal | part_time |
                                                 #  substantial | full_time.

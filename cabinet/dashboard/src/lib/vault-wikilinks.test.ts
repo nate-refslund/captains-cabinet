@@ -150,16 +150,24 @@ describe('rewriteWikilinks — code-aware (no sentinel leak into code)', () => {
 // The verbatim WIKILINK_REGEX is quadratic on adversarial input (measured
 // ~16.5s SYNCHRONOUS on 200KB of `[` pre-fix — an event-loop-blocking DoS
 // once the graph parses the whole corpus). These tests are the teeth: the
-// guarded paths must stay in linear-time territory. Thresholds carry ~50x
-// headroom over observed times (<5ms) so CI noise never flakes them, while
-// a quadratic regression (hundreds of ms to seconds) fails loudly.
+// guarded paths must stay in linear-time territory. Timing is best-of-3:
+// a shared CI runner can stall any SINGLE run past the bound (the 150ms
+// bound measured 155.2ms on master run 30559279945, 2026-07-30), but only
+// a real quadratic regression (hundreds of ms to seconds, every run) can
+// stall all three, so the minimum keeps the sensor and sheds the noise.
 // ============================================================
 
 describe('parseWikilinksBounded — linear guards on adversarial input', () => {
+  // Best-of-3 wall clock: min over runs. Scheduler noise slows one run;
+  // a quadratic regression slows every run, so the min still fails loudly.
   const timed = (fn: () => unknown): number => {
-    const t0 = performance.now()
-    fn()
-    return performance.now() - t0
+    let best = Infinity
+    for (let i = 0; i < 3; i++) {
+      const t0 = performance.now()
+      fn()
+      best = Math.min(best, performance.now() - t0)
+    }
+    return best
   }
 
   it('★ 200KB of `[` (no `]]` anywhere) returns [] fast — the measured DoS case', () => {

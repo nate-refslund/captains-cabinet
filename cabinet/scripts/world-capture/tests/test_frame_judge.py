@@ -177,7 +177,14 @@ def test_an_honest_sweep_is_green(tmp_path):
                         twin_mutate=lambda p: _desaturate(p, 0.35)))
     assert rc == 0, [r for r in rep["results"] if not r["ok"]]
     assert arm(rep, "ambience") and arm(rep, "grain") and arm(rep, "grade")
-    assert arm(rep, "water") and arm(rep, "killswitch")
+    assert arm(rep, "water") and arm(rep, "killswitch") and arm(rep, "surface")
+    # The surface law is EXACT on an honest pair, and this is the line that says
+    # so: the lit frame here is ambience_py.remap applied per colour, and it adds
+    # a tone to precisely zero tiles. Every non-zero figure the real sweep prints
+    # (0.4-5.5%) is therefore the GPU and the Python port disagreeing, not the
+    # law bending — which is what makes SURFACE_EXCESS a floor rather than a dial.
+    assert all("0/300 tiles gained" in r["detail"] for r in arm(rep, "surface")), \
+        arm(rep, "surface")
 
 
 # ── ambience: the histogram arm ─────────────────────────────────────────────
@@ -299,6 +306,126 @@ def test_water_red_when_the_sea_is_brighter_than_any_water_this_world_draws(tmp_
     assert [r for r in arm(rep, "water") if not r["ok"]], rep["results"]
 
 
+# ── surface: the neighbour law ──────────────────────────────────────────────
+def test_surface_red_on_the_2026_07_29_dusk_dither(tmp_path):
+    """THE DEFECT, judged by the arm built for its shape rather than its size.
+
+    Every apricot pixel in that pass was a legitimate corpus sand tone, which is
+    why `PALETTE_FOREIGN_MASS` returned green: a membership test asks whether a
+    colour EXISTS in the art and never whether it belongs on the surface it
+    landed on. This arm asks the second question by counting tones per tile.
+    """
+    rc, rep = run(sweep(tmp_path, mutate=lambda p: _dither(p, 0.16, (0xE8, 0xC0, 0x90))))
+    assert rc != 0
+    assert [r for r in arm(rep, "surface") if not r["ok"]], rep["results"]
+
+
+def test_surface_catches_the_veil_ambience_and_grain_are_both_blind_to(tmp_path):
+    """THE ARM'S REASON TO EXIST, and the test that would make it decoration if
+    it failed.
+
+    A LUMINANCE-MATCHED chroma veil, at 0.4% coverage, on the island only.
+      * `grain` reads edge energy in |ΔL| — the veil preserves each pixel's
+        luminance exactly, so it adds none and grain passes.
+      * `ambience` reads the histogram — 0.4% of pixels moves mean by 0.38 and
+        saturation by 0.0025 on a real frame, both an order under the bounds.
+      * `water` covers open water only, so the island is not its surface; the
+        veil is placed there ON PURPOSE, or this test would be re-proving the
+        water probe.
+    Measured on the shipped renderer at this coverage: ambience Δmean 0.38 /
+    Δsat 0.0025 (bounds 1.5 / 0.015) and grain 4.14 against the day frame's
+    7.81 — both pass — while this arm reads 51% of tiles. Assert all three,
+    because "the new arm is red" alone would not show it sees anything new.
+    """
+    rc, rep = run(sweep(tmp_path, mutate=_chroma_veil_on_the_island(0.004)))
+    assert rc != 0
+    assert all(r["ok"] for r in arm(rep, "ambience")), arm(rep, "ambience")
+    assert all(r["ok"] for r in arm(rep, "grain")), arm(rep, "grain")
+    assert all(r["ok"] for r in arm(rep, "water")), arm(rep, "water")
+    assert [r for r in arm(rep, "surface") if not r["ok"]], rep["results"]
+
+
+def test_surface_green_when_the_pass_only_merges_tones(tmp_path):
+    """ONE-DIRECTIONAL BY INTENT, not by accident.
+
+    Ambience legitimately collapses distinct day tones onto one lit tone — the
+    real sweep merges 230-2784 tiles' worth. An arm that reddened on any change
+    to the tone count would fire on every honest frame, and the way to prove it
+    does not is to hand it a pass that ONLY merges: a hard posterise, which
+    destroys tones everywhere and creates none.
+    """
+    rc, rep = run(sweep(tmp_path, mutate=_posterise))
+    su = arm(rep, "surface")
+    assert su and all(r["ok"] for r in su), su
+    assert all("0/300 tiles gained" in r["detail"] for r in su), su
+
+
+def test_surface_unjudged_without_a_twin_carrying_the_same_overlays(tmp_path):
+    """No twin means nothing was measured, and a green would claim otherwise."""
+    d = sweep(tmp_path)
+    man = json.loads((d / "frames.json").read_text())
+    man["frames"] = [f for f in man["frames"] if f["bucket"] != "day"]
+    (d / "frames.json").write_text(json.dumps(man))
+    rc, rep = run(d)
+    assert rc != 0
+    su = arm(rep, "surface")
+    assert su and not su[0]["ok"] and "UNJUDGED" in su[0]["detail"], su
+
+
+def test_a_daylight_only_sweep_is_unjudged_by_both_pair_arms(tmp_path):
+    """A SWEEP THAT NEVER LEFT NOON, which is the one input that reaches the
+    `no pairs at all` branch of either pair arm.
+
+    Written because the two tests above it did NOT reach it. Dropping the day
+    frame from the manifest leaves the lit frame ORPHANED, and the orphan branch
+    answers first — so with `if not pairs:` and `if not spairs:` deleted outright,
+    both of those tests still passed. Proven by defeating each branch in turn:
+    the older `ambience` one had shipped in exactly that state.
+
+    `--hours 13` produces this directory, so it is a reachable invocation and not
+    a contrived one: no lit frame exists, nothing is orphaned, and both clock arms
+    have to say they looked at nothing rather than printing no line at all.
+    """
+    d = sweep(tmp_path)
+    man = json.loads((d / "frames.json").read_text())
+    man["frames"] = [f for f in man["frames"] if f["bucket"] == "day"]
+    assert man["frames"], "the fixture must still carry its day frame"
+    (d / "frames.json").write_text(json.dumps(man))
+    rc, rep = run(d)
+    assert rc != 0
+    for name in ("ambience", "surface"):
+        a = arm(rep, name)
+        assert a, f"{name} printed no line at all on a daylight-only sweep: {rep['results']}"
+        assert not a[0]["ok"] and "UNJUDGED" in a[0]["detail"], a
+
+
+def test_surface_unjudged_when_the_twin_is_a_different_size(tmp_path):
+    """Two grids that do not line up have no tile in common, and comparing tile
+    (0,0) of a 320px frame with tile (0,0) of a 160px one is comparing two
+    different parts of the world."""
+    d = sweep(tmp_path)
+    day = d / "day.png"
+    Image.open(day).convert("RGB").resize((W // 2, H // 2)).save(day)
+    rc, rep = run(d)
+    assert rc != 0
+    su = [r for r in arm(rep, "surface") if not r["ok"]]
+    assert su and "UNJUDGED" in su[0]["detail"], arm(rep, "surface")
+
+
+def test_surface_unjudged_when_the_frame_is_smaller_than_one_tile(tmp_path):
+    """THE DEGENERATE END. Zero tiles is zero denominators — a share over an
+    empty set is either a crash or a silent 0.00% green, and the second is the
+    disabled sensor this file exists to make impossible."""
+    d = sweep(tmp_path)
+    for n in ("day.png", "lit.png", "twin.png"):
+        p = d / n
+        Image.open(p).convert("RGB").resize((8, 8)).save(p)
+    rc, rep = run(d)
+    assert rc != 0
+    su = [r for r in arm(rep, "surface") if not r["ok"]]
+    assert su and "UNJUDGED" in su[0]["detail"], arm(rep, "surface")
+
+
 # ── determinism ─────────────────────────────────────────────────────────────
 @pytest.mark.parametrize("delta", [(1, 0, 0), (0, 1, 0), (0, 0, 1)])
 def test_determinism_red_when_two_captures_differ(tmp_path, delta):
@@ -378,6 +505,41 @@ def _dither(p: Path, coverage: float, hue: tuple[int, int, int]) -> None:
         for x in range(im.size[0]):
             if rnd.random() < coverage:
                 px[x, y] = hue
+    im.save(p)
+
+
+def _chroma_veil_on_the_island(coverage: float):
+    """A veil that keeps every pixel's LUMINANCE and replaces its hue.
+
+    Built to be invisible to the two arms that already exist. `grain` measures
+    |ΔL| between adjacent pixels, so a luminance-preserving pass moves it by
+    nothing; `ambience` measures the histogram, and at this coverage the shift is
+    an order under its bounds. Confined to the island band (x >= 120), which is
+    the region the water probe does not judge — so a red here cannot be the water
+    arm wearing another name.
+    """
+    def mutate(p: Path) -> None:
+        im = Image.open(p).convert("RGB")
+        px = im.load()
+        rnd = random.Random(7)
+        for y in range(20, im.size[1] - 20):
+            for x in range(120, im.size[0] - 20):
+                if rnd.random() < coverage:
+                    r, g, b = px[x, y]
+                    lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
+                    v = max(0, min(255, int(lum / (0.2126 + 0.0722))))
+                    px[x, y] = (v, 0, v)
+        im.save(p)
+    return mutate
+
+
+def _posterise(p: Path) -> None:
+    """A pass that only ever MERGES tones — the direction the surface law allows."""
+    im = Image.open(p).convert("RGB")
+    px = im.load()
+    for y in range(im.size[1]):
+        for x in range(im.size[0]):
+            px[x, y] = tuple((c >> 5) << 5 for c in px[x, y])
     im.save(p)
 
 

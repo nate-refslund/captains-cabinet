@@ -80,12 +80,12 @@ def test_palette_json_is_derived_numbers_only(wa, tmp_path):
 
 
 def test_real_corpus_positives_pass_committed_palette(wa):
-    if not wa.has_corpus:
-        pytest.skip("gitignored corpus not present")
+    wa.require("positive")
     pal_path = wa.calib_dir / "palette.json"
-    if not pal_path.is_file():
-        pytest.skip("no committed palette calibration")
-    for p in sorted((wa.corpus_dir / "positive").glob("*.png")):
+    assert pal_path.is_file(), (
+        "calibration/palette.json is TRACKED — its absence is a broken checkout, "
+        "not a reason to skip the only arm that pins the committed palette")
+    for p in wa.corpus("positive"):
         findings = wa.gates.palette_coherence.check(p, palette=pal_path)
         assert wa.errors(findings) == [], f"{p.name} flagged foreign"
 

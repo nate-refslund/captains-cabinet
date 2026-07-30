@@ -1190,24 +1190,37 @@ class TestDefaultsFastLane:
         assert (cab_root / "instance/config/active-project.txt").read_text() == "first-lane\n"
 
     def test_default_captain_name_resolution(self, monkeypatch):
-        """--captain-name wins; else $USER (if NAME_RE-valid); else 'Captain'.
-        An INVALID explicit name refuses loud; an unusable ambient $USER
-        falls back silently (it was never asked for)."""
+        """--captain-name wins; else $USER (if usable); else 'Captain'.
+        An UNUSABLE explicit name refuses loud; an unusable ambient $USER
+        falls back silently (it was never asked for).
+
+        RETARGETED 2026-07-30 with the any-script display-name change. The
+        unusable cases used to be ``bad:name`` and ``bad:user`` — values the
+        ALPHABET refused. ':' is now a perfectly good character in a name (it
+        is escaped at emission, not banned at input), so those arms were
+        asserting a rule that no longer exists; a test kept pointing at a
+        retired rule is a disabled sensor. The arms now carry values that are
+        unusable for the reasons that ARE still real — a control character, an
+        empty string, and a name past the length cap."""
         assert gi.default_captain_name("Ada") == "Ada"
         assert gi.default_captain_name("  Ada  ") == "Ada"
-        for bad in ("bad:name", "   ", "a\nb"):
+        for bad in ("a\nb", "   ", "\t", "x" * (gi.DISPLAY_NAME_MAX + 1)):
             with pytest.raises(gi.GenerationError, match="captain-name"):
                 gi.default_captain_name(bad)
+        # ANY SCRIPT, on the CLI too: a captain whose name the flag refused
+        # could not use the zero-question hatch at all.
+        for name in ("高橋 美咲", "Мария Иванова", "أمينة", "Ada: Prime", 'He said "go"'):
+            assert gi.default_captain_name(name) == name
         monkeypatch.setenv("USER", "zoe")
         assert gi.default_captain_name(None) == "zoe"
-        monkeypatch.setenv("USER", "bad:user")
+        monkeypatch.setenv("USER", "bad\nuser")
         assert gi.default_captain_name(None) == "Captain"
         monkeypatch.delenv("USER", raising=False)
         assert gi.default_captain_name(None) == "Captain"
-        # NAME_RE-valid but YAML-reserved/typed-scalar names must round-trip
-        # as the EXACT string — an unquoted `name: yes` loads back as True
-        # (silent substitute = invented data). _yaml_str quotes exactly these
-        # and leaves plain names bare (byte-stable for shell greppers).
+        # YAML-reserved/typed-scalar names must round-trip as the EXACT string
+        # — an unquoted `name: yes` loads back as True (silent substitute =
+        # invented data). _yaml_str quotes exactly these and leaves plain names
+        # bare (byte-stable for shell greppers).
         assert gi._yaml_str("Ada") == "Ada"
         assert gi._yaml_str("Dana Prime") == "Dana Prime"
         for reserved in ("yes", "Null", "true", "OFF", "0000", "2026-01-01"):
@@ -1808,3 +1821,323 @@ class TestFreeTextYamlEscaping:
         proj = yaml.safe_load(
             (cab_root / "instance/config/projects/acme-store.yml").read_text())
         assert proj["product"]["description"] == "a clean simple tagline"
+
+
+# ---------------------------------------------------------------------------
+# Display names in any script (2026-07-30)
+# ---------------------------------------------------------------------------
+
+class TestDisplayNamesAnyScript:
+    """A display name is a NAME, not an identifier — and until 2026-07-30 the
+    generator disagreed.
+
+    MEASURED DEFECT: an operator writing her own name in Japanese, following
+    the answers file's own header instructions, was refused four times in a
+    row by an alphabet allowlist (`^[A-Za-z0-9][A-Za-z0-9 &+._/()-]{0,79}$`)
+    and by two identifier refusals whose entire error message was a raw
+    regex — and had to romanize herself and her business before the product
+    would run. The repo's own landed doctrine already said the opposite
+    (framework/onboarding/salience.py retirement note RES-025: "THE ALPHABET
+    IS THE UNICODE DATABASE, not [0-9a-z]").
+
+    Both directions are pinned here: the accepted names must ROUND-TRIP (not
+    merely be accepted, and not merely parse), and the constraints that are
+    real — control characters, length, and ASCII-only IDENTIFIERS — must still
+    refuse. The identifier arms additionally pin that the refusal is teachable
+    rather than a regex.
+    """
+
+    # (label, captain name, lane name) — one arm per script family. The lane
+    # names carry script-native punctuation on purpose: CJK full-width
+    # parentheses, guillemets and the Arabic comma are exactly the characters
+    # an alphabet allowlist rejects last.
+    SCRIPTS = [
+        ("japanese", "高橋 美咲", "宿泊（本館・東館）"),
+        ("cyrillic", "Мария Иванова", "Гостиница «Ямагасуми»"),
+        ("arabic", "أمينة الفارسي", "الإقامة، المبنى الرئيسي"),
+    ]
+
+    @staticmethod
+    def _answers(captain_name: str, lane_name: str) -> dict:
+        answers = acme_answers()
+        answers["captain"]["name"] = captain_name
+        answers["lanes"] = [answers["lanes"][0]]
+        answers["lanes"][0]["name"] = lane_name
+        return answers
+
+    @pytest.mark.parametrize("label,captain_name,lane_name", SCRIPTS)
+    def test_accepted_and_round_trips_end_to_end(self, cab_root, label,
+                                                 captain_name, lane_name):
+        """Generation SUCCEEDS and every artifact carries the exact name.
+
+        Not "parses": parsing is satisfied by `name: Yes` loading as True.
+        Each assertion compares the loaded value against the string the
+        answers declared."""
+        run_gen(cab_root, self._answers(captain_name, lane_name))
+
+        platform = yaml.safe_load(
+            (cab_root / "instance/config/platform.yml").read_text(encoding="utf-8"))
+        assert platform["captain_name"] == captain_name
+
+        ctx = yaml.safe_load(
+            (cab_root / "instance/config/contexts/acme-store.yml").read_text(encoding="utf-8"))
+        assert ctx["name"] == lane_name
+        assert lane_name in ctx["description"]
+
+        proj = yaml.safe_load(
+            (cab_root / "instance/config/projects/acme-store.yml").read_text(encoding="utf-8"))
+        assert proj["product"]["name"] == lane_name
+        assert proj["product"]["description"] == f"{lane_name} lane"
+
+        roster = yaml.safe_load(
+            (cab_root / "instance/config/roster.yml").read_text(encoding="utf-8"))
+        assert roster["roster"]["acme-store-ceo"]["title"] == f"{lane_name} CEO"
+
+        agent = (cab_root / "instance/agents/acme-store-ceo.md").read_text(encoding="utf-8")
+        frontmatter = yaml.safe_load(gi._frontmatter_text(agent))
+        assert lane_name in frontmatter["description"]
+        assert f"# {lane_name} CEO" in agent          # the markdown body, verbatim
+
+    @pytest.mark.parametrize("label,captain_name,lane_name", SCRIPTS)
+    def test_every_generated_yaml_file_parses(self, cab_root, label,
+                                              captain_name, lane_name):
+        """Whole-tree parse sweep — no generated artifact is left broken by a
+        name, including the ones no assertion above names."""
+        run_gen(cab_root, self._answers(captain_name, lane_name))
+        seen = 0
+        for path in sorted((cab_root / "instance").rglob("*")):
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8")
+            if path.suffix == ".yml":
+                assert isinstance(yaml.safe_load(text), dict), path
+                seen += 1
+            elif path.suffix == ".md":
+                assert isinstance(
+                    yaml.safe_load(gi._frontmatter_text(text, str(path))), dict), path
+                seen += 1
+        assert seen >= 6, f"parse sweep covered only {seen} files"
+
+    def test_yaml_structural_characters_are_escaped_not_banned(self, cab_root):
+        """':', '#', quotes and backslashes are EMISSION problems, so they are
+        solved at emission. The old alphabet refused them at input, which is
+        what made a Japanese lane name collateral damage."""
+        captain_name = 'Ada: the "first" \\ programmer'
+        lane_name = "Lodging: main & east wing #1"
+        run_gen(cab_root, self._answers(captain_name, lane_name))
+        platform = yaml.safe_load(
+            (cab_root / "instance/config/platform.yml").read_text(encoding="utf-8"))
+        assert platform["captain_name"] == captain_name
+        ctx = yaml.safe_load(
+            (cab_root / "instance/config/contexts/acme-store.yml").read_text(encoding="utf-8"))
+        assert ctx["name"] == lane_name
+        agent = (cab_root / "instance/agents/acme-store-ceo.md").read_text(encoding="utf-8")
+        assert lane_name in yaml.safe_load(gi._frontmatter_text(agent))["description"]
+
+    def test_ascii_names_are_byte_identical_regression_pin(self, cab_root):
+        """The ASCII path must not move. Generate the Acme fixture, snapshot
+        every byte, regenerate, compare — plus the two scalars that would
+        change first if emission started quoting what it used to leave bare
+        (shell greppers read these unquoted: hooks/post-tool-use.sh's awk,
+        assemble-config.sh)."""
+        run_gen(cab_root, acme_answers())
+        snapshot = {p: p.read_bytes()
+                    for p in (cab_root / "instance").rglob("*") if p.is_file()}
+        run_gen(cab_root, acme_answers())
+        assert {p for p in (cab_root / "instance").rglob("*") if p.is_file()} == set(snapshot)
+        for path, before in snapshot.items():
+            assert path.read_bytes() == before, f"{path} changed on re-run"
+        # UNQUOTED, both of them (the fixture's platform.yml keeps a trailing
+        # comment on the captain_name line, which _set_top_level_key preserves).
+        assert "captain_name: Ada    #" in (
+            cab_root / "instance/config/platform.yml").read_text(encoding="utf-8")
+        assert "\nname: Acme Storefront\n" in (
+            cab_root / "instance/config/contexts/acme-store.yml").read_text(encoding="utf-8")
+        assert "\n    title: Acme Storefront CEO\n" in (
+            cab_root / "instance/config/roster.yml").read_text(encoding="utf-8")
+
+    # --- the constraints that ARE real -------------------------------------
+
+    @pytest.mark.parametrize("bad,why", [
+        ("Ada\nLovelace", "newline"),
+        ("Ada\tLovelace", "tab"),
+        ("Ada\x00Lovelace", "NUL"),
+        ("Ada\u0085Lovelace", "NEL - a YAML line break"),
+        ("Ada\u2028Lovelace", "line separator - a YAML line break"),
+    ])
+    def test_control_characters_still_refused(self, cab_root, bad, why):
+        for field in ("captain", "lane"):
+            answers = acme_answers()
+            if field == "captain":
+                answers["captain"]["name"] = bad
+            else:
+                answers["lanes"][0]["name"] = bad
+            with pytest.raises(gi.GenerationError, match="control character"):
+                run_gen(cab_root, answers)
+        assert not list((cab_root / "instance/config/contexts").glob("*.yml"))
+
+    def test_format_characters_are_not_refused(self, cab_root):
+        """Cf (RLM/LRM/ZWJ) are load-bearing in Arabic, Hebrew and Indic
+        scripts. Banning "invisible" characters wholesale would re-create this
+        defect one script down, so the refusal is Cc-only."""
+        lane_name = "\u200fالإقامة\u200e"
+        run_gen(cab_root, self._answers("أمينة", lane_name))
+        ctx = yaml.safe_load(
+            (cab_root / "instance/config/contexts/acme-store.yml").read_text(encoding="utf-8"))
+        assert ctx["name"] == lane_name
+
+    @pytest.mark.parametrize("field", ["captain", "lane"])
+    def test_overlong_refused_at_the_boundary(self, cab_root, field):
+        """Degenerate ends of the length rule: MAX passes, MAX+1 refuses.
+        Counted in CHARACTERS, so a CJK name gets the same 80 as a latin one
+        rather than a third of it."""
+        for length, should_pass in ((gi.DISPLAY_NAME_MAX, True),
+                                    (gi.DISPLAY_NAME_MAX + 1, False)):
+            answers = acme_answers()
+            name = "字" * length
+            if field == "captain":
+                answers["captain"]["name"] = name
+            else:
+                answers["lanes"][0]["name"] = name
+            if should_pass:
+                run_gen(cab_root, answers, force=True)
+            else:
+                with pytest.raises(gi.GenerationError, match="characters; the limit is"):
+                    run_gen(cab_root, answers, force=True)
+
+    @pytest.mark.parametrize("empty", ["", "   ", "　"])
+    def test_empty_and_whitespace_only_refused(self, cab_root, empty):
+        """Degenerate end: an absent name and a name that is only whitespace
+        (including the ideographic space) are both refused. `""` trips the
+        required-field check, blank strings trip the display-name check —
+        either way nothing is written."""
+        for field in ("captain", "lane"):
+            answers = acme_answers()
+            if field == "captain":
+                answers["captain"]["name"] = empty
+            else:
+                answers["lanes"][0]["name"] = empty
+            with pytest.raises(gi.GenerationError, match="empty|missing required field"):
+                run_gen(cab_root, answers)
+
+    def test_one_cjk_character_is_a_valid_name(self, cab_root):
+        """Degenerate end of the SHORT side: one character is a whole name in
+        CJK, and the old pattern's leading `[A-Za-z0-9]` class allowed a
+        single-character name only if it was ASCII alphanumeric."""
+        run_gen(cab_root, self._answers("霞", "宿"))
+        ctx = yaml.safe_load(
+            (cab_root / "instance/config/contexts/acme-store.yml").read_text(encoding="utf-8"))
+        assert ctx["name"] == "宿"
+        platform = yaml.safe_load(
+            (cab_root / "instance/config/platform.yml").read_text(encoding="utf-8"))
+        assert platform["captain_name"] == "霞"
+
+    def test_secret_shaped_names_still_refused(self, cab_root):
+        """The secret sweep is NOT weakened by the wider alphabet: a
+        credential-shaped display name still aborts the run."""
+        answers = acme_answers()
+        answers["captain"]["name"] = "sk-ant-api03-aaaaaaaaaaaaaaaaaaaa"
+        with pytest.raises(gi.GenerationError, match="SECRET REFUSED"):
+            run_gen(cab_root, answers)
+
+    # --- identifiers stay ASCII, but say so in words -----------------------
+
+    RAW_REGEX_FRAGMENTS = ["[a-z0-9]", "{0,63}", "must match"]
+
+    def _refusal(self, cab_root, mutate) -> str:
+        answers = acme_answers()
+        mutate(answers)
+        with pytest.raises(gi.GenerationError) as excinfo:
+            run_gen(cab_root, answers)
+        return str(excinfo.value)
+
+    def test_lane_slug_refusal_is_plain_words_not_a_regex(self, cab_root):
+        message = self._refusal(cab_root, lambda a: (
+            a["lanes"][0].update({"slug": "宿泊", "name": "宿泊（本館・東館）"})))
+        for fragment in self.RAW_REGEX_FRAGMENTS:
+            assert fragment not in message, f"refusal still prints {fragment!r}"
+        assert "lowercase latin letters (a-z)" in message
+        assert "file names, session names and log lines" in message
+        assert "宿泊（本館・東館）" in message          # their name is kept, and said so
+        assert "is what officers show you" in message
+        assert "Try: slug: lane-1" in message           # a concrete value to use
+
+    def test_cabinet_id_refusal_is_plain_words_not_a_regex(self, cab_root):
+        message = self._refusal(cab_root, lambda a: a["cabinet"].update({"id": "山霞"}))
+        for fragment in self.RAW_REGEX_FRAGMENTS:
+            assert fragment not in message, f"refusal still prints {fragment!r}"
+        assert "lowercase latin letters (a-z)" in message
+        assert "Display names are NOT affected" in message
+        assert "any language and any script" in message
+        assert "Try: id: main" in message
+
+    def test_identifier_suggestion_is_derived_when_derivable(self, cab_root):
+        """A latin-but-malformed id gets its own corrected form back, not a
+        placeholder — the suggestion is only generic when nothing is
+        derivable."""
+        message = self._refusal(cab_root, lambda a: (
+            a["lanes"][0].update({"slug": "Acme Storefront"})))
+        assert "Try: slug: acme-storefront" in message
+
+    def test_identifier_refusal_never_transliterates(self, cab_root):
+        """A machine romanization is a guess about how someone spells
+        themselves in another script. The refusal says the placeholder is a
+        placeholder instead of printing one."""
+        message = self._refusal(cab_root, lambda a: (
+            a["lanes"][0].update({"slug": "宿泊", "name": "宿泊（本館・東館）"})))
+        assert "inventing your name for you" in message
+        for romanization in ("shukuhaku", "yamagasumi", "honkan"):
+            assert romanization not in message.lower()
+
+    def test_identifiers_still_refuse_path_escapes(self, cab_root):
+        """The wider display-name rule must not have widened the id rule: the
+        path-escape refusals are re-run here against the new message path."""
+        for evil in ["../evil", "/abs/path", "a/b", "a.b", "UPPER", "..", "x x"]:
+            answers = acme_answers()
+            answers["lanes"][0]["slug"] = evil
+            with pytest.raises(gi.GenerationError, match="cannot be used as an id"):
+                run_gen(cab_root, answers)
+        assert not list((cab_root / "instance/config/contexts").glob("*.yml"))
+
+    # --- the round-trip sensor itself --------------------------------------
+
+    def test_round_trip_sensor_fails_on_a_mangled_emission(self, cab_root, monkeypatch):
+        """The sensor must FAIL when a name is silently altered on the way
+        out — otherwise it is a check that only ever passes. Break _yaml_str
+        into the pre-fix behaviour (bare, unescaped) and assert the run
+        aborts BEFORE writing anything."""
+        monkeypatch.setattr(gi, "_yaml_str", lambda value: str(value))
+        answers = self._answers("Ada", 'Lane "X": one')
+        with pytest.raises(gi.GenerationError, match="NAME ROUND-TRIP FAILED|does not parse"):
+            run_gen(cab_root, answers)
+        assert not list((cab_root / "instance/config/contexts").glob("*.yml"))
+
+    def test_round_trip_sensor_catches_yaml_retyping(self, cab_root, monkeypatch):
+        """The degenerate case the sensor exists for: content that PARSES and
+        is still wrong. `name: Yes` is valid YAML that loads as True."""
+        monkeypatch.setattr(gi, "_yaml_str", lambda value: str(value))
+        with pytest.raises(gi.GenerationError, match="NAME ROUND-TRIP FAILED"):
+            run_gen(cab_root, self._answers("Yes", "No"))
+
+    def test_frontmatter_extraction_survives_a_dashed_name(self, cab_root):
+        """FOUND BY THE ATTACK PASS on this change, and PRE-EXISTING: the
+        agent-frontmatter validator used `content.split("---", 2)[1]`, a
+        SUBSTRING split. A lane named "Ada --- Prime" — legal under the OLD
+        alphabet too — ended the slice inside `description:`, so the validator
+        parsed a truncated fragment that happens to be valid YAML and called
+        the file valid having read half of it. The delimiter is a LINE."""
+        lane_name = "Ada --- Prime"
+        run_gen(cab_root, self._answers("Ada", lane_name))
+        agent = (cab_root / "instance/agents/acme-store-ceo.md").read_text(encoding="utf-8")
+        frontmatter = yaml.safe_load(gi._frontmatter_text(agent))
+        # the WHOLE block, not a prefix of it: the keys after description: are
+        # exactly what a truncating extractor loses
+        assert lane_name in frontmatter["description"]
+        for key in ("name", "model", "tools", "skills"):
+            assert key in frontmatter, f"{key} lost — frontmatter was truncated"
+        # and the substring split really is broken on this input — it cuts the
+        # block inside `description:`, which now raises rather than silently
+        # handing back a valid-looking half. Either outcome is wrong; the point
+        # is that the retired extractor does NOT return this frontmatter.
+        with pytest.raises(yaml.YAMLError):
+            yaml.safe_load(agent.split("---", 2)[1])

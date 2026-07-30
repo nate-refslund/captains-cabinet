@@ -68,6 +68,29 @@ THE ARMS, and what each would have caught
                 lit buckets are covered by `ambience` instead, which is strictly
                 tighter than a bound would be.
 
+  surface       THE NEIGHBOUR LAW, and the one arm here that asks whether a hue
+                is plausible IN THE PLACE IT LANDED. Every screen-space pass in
+                this renderer — ambience, weather, the killswitch wash — is a
+                decision per COLOUR, so over any patch of the frame it may MERGE
+                a surface's tones and may never ADD one. Measured per 16x16 tile
+                against the twin that differs only in the pass under test.
+                This is what a membership test structurally cannot do:
+                PALETTE_FOREIGN_MASS asks whether a pixel is a corpus colour and
+                never whether it is a plausible neighbour of the surface it sits
+                on, so the 2026-07-29 dusk veil satisfied it BY CONSTRUCTION —
+                every apricot pixel was a legitimate corpus sand tone, sprayed
+                across open water. Measured on the shipped renderer: 0.4-5.5% of
+                tiles gain a colour legitimately (the GPU's LUT and ambience_py's
+                nearest-native snap disagree on ~14% of pixels), against 77.6%
+                for that veil — and the veil stays over 10% down to 0.05%
+                coverage, which is ~1/100th of the mass PALETTE_FOREIGN_MASS
+                needs before it can see anything at all. It also catches what
+                `ambience` and `grain` provably cannot: a LUMINANCE-MATCHED
+                chroma veil moves no edge energy and almost no histogram, so at
+                0.4% coverage both of those arms pass it and this one reads
+                0.512. And it is the only arm that judges weather and the
+                killswitch COMPOSED WITH ambience rather than as a layer.
+
   water         live-frame-probe's veil laws, run over EVERY frame in the sweep
                 rather than over one PNG someone captured by hand. Ambience may
                 darken water; it may never make it brighter or more colourful
@@ -88,9 +111,12 @@ WHAT THIS DOES NOT COVER, said here rather than discovered later
     therefore not remapped, so under rain the prediction drifts +0.8 mean / +0.07
     saturation and under fog +3.9 — measured, not feared. Judging them together
     would mean loosening the tolerance that makes the ambience arm worth having.
-    The overlays get their own arm instead, and the honest statement is that
-    ambience-under-weather has a sensor for the OVERLAY and none for their
-    COMPOSITION.
+    `surface` closes exactly that composition gap, because its law survives an
+    unremapped overlay: measured 0.4% of tiles gain a colour for night-under-fog
+    against its own fogged day twin, identical to the sun figure, and 0.0% for
+    the killswitch wash. What is still uncovered is the overlay judged against a
+    frame WITHOUT it — fog is not a per-colour map of the sun frame (it reads
+    13.2%), so the twin must carry the same weather.
   * The nine layout invariants (roads, stacking, art, traceability, era, terrain,
     depth order, shadows) still run on the blueprint. Six of them need artifacts
     only the renderer can emit — the sprites-free ground layer and the two id
@@ -160,6 +186,24 @@ AMB_SPAN = 8
 # far above the 0.001 the ambience pair agrees to, so a wash that stopped drawing
 # is caught and a wash that merely changed shade is not accused.
 KS_SAT_DROP = 0.045
+
+# ── the surface arm's two numbers, and why neither is a dial ────────────────
+# SURFACE_TILE is the tile the law is stated over. 16 is the world's own
+# tile_size (world.map/v1), so a tile is one authored surface cell rather than an
+# arbitrary window — which is the whole point of asking the question per SURFACE.
+SURFACE_TILE = 16
+# SURFACE_EXCESS is a NOISE FLOOR for one measured fact: the shipped GLSL filter
+# and ambience_py's nearest-native snap disagree on ~14% of pixels (measured
+# 2026-07-30 — 85.9% of a night z2 frame is EXACTLY remap(day), and where they
+# differ the difference is small and spread evenly rather than clustered on any
+# object). That disagreement lets a tile gain a tone with nothing wrong. Measured
+# over 30 legitimate cells — 3 zooms x 3 lit buckets x {sun,rain,fog,storm} x
+# {killswitch on, off} — the worst was 5.5% of tiles (dawn z2) and the best 0.4%.
+# The defect this exists for reads 77.6% at its historical strength and stays
+# over 10% at 0.05% coverage, so the gap between the floor and the failure is a
+# factor of 14 at the very worst and a factor of 200 in the case that was
+# actually shipped. There is nothing here to relax when a frame goes red.
+SURFACE_EXCESS = 0.12
 
 
 def _luma(c) -> float:
@@ -380,6 +424,83 @@ def arm_grain(pairs: list) -> list:
     return out
 
 
+def _tile_tones(path: Path, tile: int = SURFACE_TILE) -> dict:
+    """Distinct EXACT colours per tile, keyed by the tile's top-left corner.
+
+    EXACT rather than quantized, and that is what makes the law tight rather
+    than approximate: every screen-space pass here maps a colour to a colour, so
+    |pass(S)| <= |S| holds for any pixel set S with no tolerance at all. Quantize
+    first and the claim weakens — two colours in one bin may leave it on
+    different sides, which would be a bin artefact reported as a defect.
+
+    Partial tiles at the right and bottom edge are DROPPED rather than measured
+    short: a 40px-wide strip holds fewer pixels and therefore fewer tones, which
+    would make an edge tile systematically look better than a full one.
+    """
+    im = Image.open(path).convert("RGB")
+    px = im.load()
+    w, h = im.size
+    out: dict = {}
+    for ty in range(0, h - tile + 1, tile):
+        for tx in range(0, w - tile + 1, tile):
+            s = set()
+            for y in range(ty, ty + tile):
+                for x in range(tx, tx + tile):
+                    s.add(px[x, y])
+            out[(tx, ty)] = len(s)
+    return out
+
+
+def arm_surface(pairs: list) -> list:
+    """THE NEIGHBOUR LAW: a screen-space pass may merge a surface's tones, never
+    add one.
+
+    This is the arm that answers the question a membership test cannot ask. Is a
+    hue plausible? — not on its own, only in the place it landed. A corpus sand
+    tone is entirely legitimate on a beach and is the 2026-07-29 defect on open
+    water, and `PALETTE_FOREIGN_MASS` returns the same verdict for both because
+    it only ever asks whether the colour EXISTS in the art. The surface is the
+    missing half of the question, and a tile is the cheapest honest stand-in for
+    one: the world's own `tile_size`, so the window is an authored cell.
+
+    The law is not a heuristic. Ambience is a LUT indexed by colour, weather is a
+    blend, the killswitch is a wash — every one of them is a function of the
+    pixel, so none can turn one tone into two. A veil is a function of POSITION,
+    and that is exactly what shows up here.
+    """
+    out = []
+    for lit, day in pairs:
+        name = f"surface[{label(lit)}]"
+        dsz = Image.open(day["file"]).size
+        lsz = Image.open(lit["file"]).size
+        if dsz != lsz:
+            out.append(_unjudged(name, f"the twin is {dsz} and the frame is {lsz} — the tile "
+                                       "grids do not line up, so no tile has a counterpart"))
+            continue
+        d = _tile_tones(Path(day["file"]))
+        if not d:
+            # Degenerate end FIRST: a frame narrower or shorter than one tile
+            # yields no tiles at all, and a share over an empty set would be a
+            # ZeroDivisionError at best and a silent 0.0 green at worst.
+            out.append(_unjudged(name, f"the frame is {lsz}, smaller than one {SURFACE_TILE}px "
+                                       "tile — there is no surface in it to judge"))
+            continue
+        l = _tile_tones(Path(lit["file"]))
+        gained = [(k, d[k], l[k]) for k in d if l[k] > d[k]]
+        share = len(gained) / len(d)
+        worst = max(gained, key=lambda t: t[2] - t[1], default=None)
+        detail = (f"{len(gained)}/{len(d)} tiles gained a tone ({share:.2%}"
+                  + (f", worst +{worst[2] - worst[1]} at {worst[0]}" if worst else "")
+                  + f"); {sum(1 for k in d if l[k] < d[k])} merged")
+        if share > SURFACE_EXCESS:
+            out.append(_red(name, detail + f" — a pass that ADDS a tone to a surface is a "
+                                           f"decision per POSITION, not per colour "
+                                           f"(limit {SURFACE_EXCESS:.0%})"))
+        else:
+            out.append(_ok(name, detail))
+    return out
+
+
 def island_box(path: Path, bucket: str = "day") -> tuple[int, int, int, int] | None:
     """The bounding box of everything that is not open sea.
 
@@ -519,6 +640,31 @@ def pair_up(frames: list) -> tuple[list, list]:
     return pairs, orphans
 
 
+def pair_up_surface(frames: list) -> tuple[list, list]:
+    """Every lit frame with the day twin carrying its OWN weather and killswitch.
+
+    A WIDER domain than `pair_up`, and deliberately so. `ambience` and `grain`
+    have to hold the overlays out because both draw above the filter and drift
+    the histogram by their own mass. The surface law does not care: an overlay is
+    a per-colour pass too, so as long as the twin carries the same overlay the
+    claim still holds — measured 0.4% for night-under-fog against a fogged day
+    twin and 0.0% for the killswitch wash, against 13.2% when the twin is dropped
+    to weather=sun, which is the number that says the twin must match.
+
+    So this is the only pairing in the file under which the weather layer and the
+    killswitch wash are judged COMPOSED WITH ambience rather than as a layer.
+    """
+    pairs, orphans = [], []
+    days = {(f["zoom"], f["weather"], bool(f.get("killswitch"))): f
+            for f in frames if f["bucket"] == "day"}
+    for f in frames:
+        if f["bucket"] == "day":
+            continue
+        d = days.get((f["zoom"], f["weather"], bool(f.get("killswitch"))))
+        (pairs if d else orphans).append((f, d) if d else f)
+    return pairs, orphans
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("dir", help="a directory written by frame-harness/shoot.mjs")
@@ -556,6 +702,19 @@ def main(argv: list[str]) -> int:
     for f in orphans:
         results.append(_unjudged(f"ambience[{label(f)}]",
                                  "no day twin at this zoom and weather"))
+
+    spairs, sorphans = pair_up_surface(frames)
+    if not spairs:
+        results.append(_unjudged(
+            "surface", "no frame in this sweep has a day twin carrying its own weather and "
+                       "killswitch state — the neighbour law is stated against that twin, and "
+                       "a sweep that captured only daylight has not asked it"))
+    else:
+        results += arm_surface(spairs)
+    for f in sorphans:
+        results.append(_unjudged(f"surface[{label(f)}]",
+                                 "no day twin at this zoom, weather and killswitch state"))
+
     results += arm_grade(frames, root)
     results += arm_water(frames)
     results += arm_killswitch(frames)

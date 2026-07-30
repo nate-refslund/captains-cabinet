@@ -487,7 +487,7 @@ def test_build_corpus_manifest_preserves_recorded_entries(
     monkeypatch.setattr(bc, "HERE", tmp_path)
     monkeypatch.setattr(bc, "CORPUS", corpus)
     monkeypatch.setattr(bc, "REGISTRY", {
-        "pos-0": ("positive", "pos-0.png", "test prov", "test why"),
+        "pos-0": ("positive", "pos-0.png", "test prov", "test why", None),
     })
 
     bc.build_manifest(corpus)
