@@ -268,58 +268,24 @@ export function petReaction(
   return { active: true, frame: Math.floor(dt / 3) % 2 }
 }
 
-// ── honest cards (every creature answers inspect truthfully) ────────────────
-export interface FaunaCard {
-  what: string
-  now: string
-  proof: string
-  decorative: true
-}
-
-export function faunaCard(kind: FaunaKind): FaunaCard {
-  const joy = 'Carries no data — exists for joy.'
-  const cards: Record<FaunaKind, FaunaCard> = {
-    bird: {
-      what: 'A fly-by bird.',
-      now: joy,
-      proof: 'Seeded ambience (fnv1a schedule); no feed binds it.',
-      decorative: true,
-    },
-    butterfly: {
-      what: 'A meadow butterfly.',
-      now: joy,
-      proof: 'Seeded ambience (fnv1a lissajous); no feed binds it.',
-      decorative: true,
-    },
-    fish: {
-      what: 'A fish jumping in the quay roadstead.',
-      now: joy,
-      proof: 'Seeded ambience (fnv1a jump schedule); no feed binds it.',
-      decorative: true,
-    },
-    cat: {
-      what: 'The village cat.',
-      now: 'Carries no data — pets gratefully accepted.',
-      proof:
-        'Petting is a client-only seeded reaction riding the inspect click — zero state, zero writes. Exactly one cat, forever.',
-      decorative: true,
-    },
-    dog: {
-      what: 'The cabinet dog.',
-      now: joy,
-      proof: 'Decorative by law (bestiary v1a). Exactly one dog, forever.',
-      decorative: true,
-    },
-    chicken: {
-      what: 'A yard chicken.',
-      now: joy,
-      proof:
-        'Seeded ambience (fnv1a peck loop); carries no count, no data — the flock was demoted to fauna by §15.5.',
-      decorative: true,
-    },
-  }
-  return cards[kind]
-}
+// ── inspect: a creature answers through the GROUND card, and only that ──────
+//
+// THERE WAS A `faunaCard(kind)` HERE, and it was a dead twin — deleted
+// 2026-07-30 after an audit found it had no production consumer in EITHER
+// kernel, only its own tests. `PickKind` has no fauna member: no click anywhere
+// in the world can name a creature, so nothing could ever open what it built.
+// What a click on a creature actually gets is the pick's `ground` fallback,
+// whose card reads "ground / water — carries no data" and is flagged
+// `decorative: true` (engine-client.tsx) — which is the same promise
+// show-grammar.yml §15.5 makes ("carries no data — exists for joy"), minus the
+// joy, and the grammar's own `codex.represents` per species carries the rest.
+//
+// It is not stubbed and not commented out. A card function nobody can open is a
+// claim surface asserting the world answers something it does not, and this
+// programme has paid for that class repeatedly. WHEN FAUNA IS PORTED to iso
+// (BACKLOG: the fauna row), the pick kind and the card land in the SAME unit or
+// neither lands — re-deriving thirty lines of copy is free; shipping the promise
+// without the path is not.
 
 /**
  * All fauna visible at a tick — pure and deterministic. Day-only kinds

@@ -634,18 +634,37 @@ export const PICKS_MEASURED: IsoPickWants = (s) => s.role !== null
  * rather than answered, so a bush in front of the library does not turn the
  * library into bare ground — and that is also what keeps the swept solid
  * honest, since only things with a card are given a body at all.
+ *
+ * `moved` IS WHERE A STATIC ACTUALLY IS THIS FRAME, and it exists because one of
+ * them sails. `buildIsoSprites` seats every sprite at its composed position and
+ * the scene array keeps those coordinates forever — but `drawIsoVoyage` re-seats
+ * the harbour's own vessel along its course, so from 2026-07-29 until this was
+ * written a pick tested the boat AT ITS EMPTY BERTH for the whole voyage:
+ * measured in a browser with a staged port call, the drawn hull answered GROUND
+ * and a click on open water back at the mooring answered `harbor_boat`. Passing
+ * the drawn position rather than re-deriving the course here is the same
+ * handover contract `PickWorld.isoFigures` documents — a second copy of the fold
+ * would put the hit box a step behind the hull on every frame.
+ *
+ * A MOVED SPRITE KEEPS ITS COMPOSED PICK ORDER, which is exact where it matters
+ * and honest where it does not: at both ends of the fold the vessel is at its
+ * berth, which is the order the compositor sorted, and in between it is out on
+ * open water where nothing else has a body to contend with. Re-sorting the whole
+ * scene per click to chase a boat nothing overlaps would be a second depth
+ * answer, free to disagree with the one the canvas paints from.
  */
 export function pickIsoSprite(
   scene: Pick<IsoScene, 'sprites'>,
   px: number,
   py: number,
-  opts: { wants?: IsoPickWants } = {}
+  opts: { wants?: IsoPickWants; moved?: ReadonlyMap<string, { x: number; y: number }> } = {}
 ): IsoSprite | null {
   const wants = opts.wants ?? PICKS_MEASURED
   for (let i = scene.sprites.length - 1; i >= 0; i--) {
     const s = scene.sprites[i]
     if (!wants(s)) continue
-    if (pointInSprite(px, py, s.x, s.y, s.dw, s.dh)) return s
+    const at = opts.moved?.get(s.id) ?? s
+    if (pointInSprite(px, py, at.x, at.y, s.dw, s.dh)) return s
   }
   return null
 }

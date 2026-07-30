@@ -727,7 +727,26 @@ export default function EngineClient({
   const onPrimary = useCallback(
     (target: EngineTarget | null) => {
       if (dragRef.current?.moved) return
-      if (!target || target.kind === 'ground') return
+      if (!target) return
+      // AN UNMAPPED PIXEL ANSWERS, ON THE PRIMARY CHANNEL TOO.
+      //
+      // THE DEFECT, measured in a browser 2026-07-30: this line read
+      // `if (!target || target.kind === 'ground') return`, so a LEFT click on
+      // open water did nothing at all while a RIGHT click on the same pixel
+      // opened "ground / water — carries no data". The honesty branch inside
+      // `openInspect` — commented "catch-all honesty: unmapped pixels answer
+      // plainly (no dead clicks)" — was UNREACHABLE from the channel people
+      // actually use, and pick.ts's whole reason for making `ground` a PickKind
+      // member rather than a null ("a pick that returned nothing would be
+      // indistinguishable from a pick that broke") was true of the type and
+      // false of the product.
+      //
+      // The pan case is already handled one line up: a click that moved is a
+      // drag and never reaches here.
+      if (target.kind === 'ground') {
+        openInspect(target)
+        return
+      }
       if (target.kind === 'mailbox') {
         setMailboxOpen(true)
         return

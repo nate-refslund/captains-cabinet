@@ -203,3 +203,59 @@ describe('E. LimeZu art credit (ratified license condition, 2026-07-12)', () => 
     }
   })
 })
+
+/**
+ * F. NO DEAD CLICKS, ON THE CHANNEL PEOPLE USE.
+ *
+ * MEASURED IN A BROWSER 2026-07-30 and it had shipped that way: `onPrimary`
+ * opened with `if (!target || target.kind === 'ground') return`, so a LEFT click
+ * on open water did NOTHING while a RIGHT click on the same pixel opened
+ * "ground / water — carries no data". `openInspect`'s honesty branch — the one
+ * commented "catch-all honesty: unmapped pixels answer plainly (no dead
+ * clicks)" — was unreachable from the primary channel, and `pick.ts`'s reason
+ * for making `ground` a PickKind member rather than a null was true of the type
+ * and false of the product.
+ *
+ * A grep is a weak sensor and this file knows it, so the arm asserts the DEFECT
+ * SHAPE is gone rather than that some helpful string is present: the disjunctive
+ * early return must not swallow `ground`, and the primary path must route it to
+ * the card. A behavioural arm is impossible here — the shell is a 1,200-line
+ * PixiJS-bearing React closure with no test harness in the tree — which is why
+ * the browser measurement is the primary evidence and this is the ratchet.
+ */
+describe('F. an unmapped pixel answers on the primary channel too', () => {
+  const SHELL = ['components', 'world', 'engine-client.tsx'] as const
+  /**
+   * COMMENTS STRIPPED FIRST, and that is not a convenience. The fix's own
+   * comment QUOTES the shape it removed, verbatim, so a grep over the raw text
+   * fires on the prose that documents the fix — the guarded-token-in-a-doc
+   * class. A sensor that cannot tell code from a comment about code is reading
+   * the wrong file.
+   */
+  const codeOnly = (text: string) =>
+    text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+  const primaryOf = (text: string) =>
+    codeOnly(text).match(/const onPrimary = useCallback\([\s\S]*?\n  \)/)?.[0] ?? ''
+
+  it('onPrimary does not early-return on ground', () => {
+    const body = primaryOf(src(...SHELL))
+    expect(body, 'onPrimary body found').not.toBe('')
+    // the shape that shipped, in either operand order
+    expect(body).not.toMatch(/if \([^)]*kind === 'ground'[^)]*\)\s*return\b/)
+    expect(body).not.toMatch(/if \([^)]*'ground' === [^)]*\)\s*return\b/)
+  })
+
+  it('onPrimary routes a ground target to the inspect card', () => {
+    const body = primaryOf(src(...SHELL))
+    const branch = body.match(/if \(target\.kind === 'ground'\) \{[\s\S]*?\}/)?.[0]
+    expect(branch, 'ground branch exists in onPrimary').toBeTruthy()
+    expect(branch).toContain('openInspect(target)')
+  })
+
+  it('the card the ground branch opens is still the honest one', () => {
+    const text = src(...SHELL)
+    const ground = text.match(/id: 'ground',[\s\S]{0,200}/)?.[0] ?? ''
+    expect(ground).toContain('carries no data')
+    expect(ground).toContain('decorative: true')
+  })
+})

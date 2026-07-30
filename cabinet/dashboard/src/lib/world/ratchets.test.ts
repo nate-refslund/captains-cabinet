@@ -379,7 +379,6 @@ describe('ratchet 11 — dead exports in lib/world (symbol granularity, shrink-o
     'life/apprentices.ts -> apprenticeCard',
     'life/commute.ts -> COMMUTE_CODEX',
     'life/commute.ts -> bubbleBoxPx',
-    'life/fauna.ts -> faunaCard',
     'life/fauna.ts -> petReaction',
     'life/sites.ts -> CREW_CODEX',
     'life/sites.ts -> struckCodex',

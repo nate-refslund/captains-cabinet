@@ -207,6 +207,23 @@ export interface PickWorld {
    */
   isoSitePads?: readonly IsoSitePad[]
   /**
+   * Where a static sprite ACTUALLY IS this frame, by scene id — empty for all
+   * but the one that moves.
+   *
+   * THE DEFECT IT CLOSES, measured in a browser 2026-07-30 with a staged port
+   * call: the org's vessel is a composed STATIC that `drawIsoVoyage` re-seats
+   * along its course, and `scene.sprites` keeps the berth coordinates for the
+   * whole voyage. So the drawn hull out on the water answered GROUND, and a
+   * click on the EMPTY BERTH it had left answered `harbor_boat: packet_boat —
+   * metric 2`. Both halves are wrong in the same way: the world named a thing
+   * where it was not and refused to name it where it was.
+   *
+   * Handed over, never recomputed — `PickWorld.isoFigures`' contract, for the
+   * same reason: the fold is server progress and a second copy of it here would
+   * be a hit box that drifts from the hull it is meant to be.
+   */
+  isoMoved?: ReadonlyMap<string, { x: number; y: number }>
+  /**
    * Ladder elements the engine actually MEASURED this frame — `resolution
    * .elements`' own keys, or empty when nothing reached the client.
    *
@@ -340,7 +357,11 @@ function pickIso(world: PickWorld, tx: number, ty: number): PickTarget {
   // a click there is asking about. Same order as the top-down arm.
   const site = pickIsoSite(world.isoSitePads ?? [], px.x, px.y)
   if (site) return { kind: 'site', id: site.id }
-  const s = pickIsoSprite(scene, px.x, px.y, { wants: isoWants(world.chartTable) })
+  const s = pickIsoSprite(scene, px.x, px.y, {
+    wants: isoWants(world.chartTable),
+    // WHERE THE FRAME PUT THEM, not where the compositor did — the vessel sails.
+    moved: world.isoMoved,
+  })
   if (s) {
     const station = STATIONS.get(s.frame)
     if (station) return station

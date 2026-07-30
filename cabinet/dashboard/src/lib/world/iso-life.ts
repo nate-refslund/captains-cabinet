@@ -594,10 +594,32 @@ export function crewSlot(
  * used to show "this is about to change". A silent frame about a state
  * transition is the one thing this world is not allowed to be.
  *
- * It is sited on the SPRITE THE SCENE ACTUALLY DREW for that element, so the
- * mark stands on the thing whose rung is moving. An element the scene draws
- * nothing for falls back to its lot, and an element with neither is reported
- * rather than placed — the same three-way honesty as the site pads.
+ * WHERE THE CHANGE WILL LAND IS `isoSitePad`'S QUESTION, NOT A SECOND ANSWER,
+ * and this file learnt that the expensive way. Until 2026-07-30 this function
+ * looked the element up among the DRAWN SPRITES first and only fell back to the
+ * lot rule — which is precisely the "naive find the structure for this element"
+ * lookup `isoSitePad`'s own docstring names as the invisible error. MEASURED on
+ * a composed hamlet (four dwellings, six residential lots): a pending
+ * `officer_dwellings` rung pegged its plot at (833, 818) — dwelling number ONE,
+ * a house that has stood for months — while the free lot the fifth dwelling
+ * will actually be raised on sits at (593, 762) showing nothing. The world said
+ * "this is about to change" about a building that is not changing, which is
+ * fabricated state, and fabricated state is worse than absent state. Its own
+ * test pinned the defect: an arm asserted the sprite's coordinates, so putting
+ * the order right turned an arm red. THE ARM WAS THE DEFECT.
+ *
+ * So the order is: the LOT RULE first (free lot of the element's group for a
+ * count ladder, the structure itself for a single-lot upgrade — one rule, shared
+ * with the construction sites so a pending mark and the works that follow it can
+ * never disagree), and only then the drawn sprite. An element with neither is
+ * reported rather than placed — the same three-way honesty as the site pads.
+ *
+ * THE SPRITE FALLBACK IS NOT DEAD CODE, and it is what makes the mark reach the
+ * water: the harbour's kit (`berths`, `quay`, `harbor_boat`) and the lighthouse
+ * lamp are not structures raised on lots, so `SITE_LOT_GROUP` knows no group for
+ * them and `isoSitePad` returns null — measured, `isoSitePad(hamlet, 'berths')`
+ * is null while the scene draws seven mooring posts. For those the sprite the
+ * scene drew IS the only honest ground for the mark.
  */
 export interface PendingMark {
   element: string
@@ -614,6 +636,14 @@ export interface PendingSource {
   y: number
 }
 
+/**
+ * Plot half-width for a mark on HARBOUR KIT — the only things that reach the
+ * sprite fallback. It is not a lot fraction because there is no lot: a mooring
+ * post's own drawn width is ~24px and the pegged plot has to read as ground
+ * around it rather than as a box on it.
+ */
+const KIT_MARK_HW = 46
+
 export function pendingMarks(
   layout: Pick<Layout, 'structures' | 'lots'>,
   sprites: readonly PendingSource[],
@@ -622,18 +652,20 @@ export function pendingMarks(
   const marks: PendingMark[] = []
   const unplaced: string[] = []
   for (const el of pendingElements) {
-    // The scene's own spelling can be the singular of the ladder's name
+    // THE ONE RULE FOR "WHERE DOES WORK ON THIS ELEMENT LAND", first.
+    const spot = isoSitePad(layout, el)
+    if (spot) {
+      marks.push({ element: el, x: spot.c.x, y: spot.c.y, hw: spot.rx * 0.8 })
+      continue
+    }
+    // Only harbour kit and the lamp reach here — nothing the layout raises on a
+    // lot. The scene's own spelling can be the singular of the ladder's name
     // (`officer_dwelling` vs `officer_dwellings`) — the same alias iso-scene
     // has carried since it was written. Matched on both, never fuzzily.
     const singular = el.replace(/s$/, '')
     const s = sprites.find((sp) => sp.role === el || sp.role === singular)
     if (s) {
-      marks.push({ element: el, x: s.x, y: s.y, hw: 46 })
-      continue
-    }
-    const spot = isoSitePad(layout, el)
-    if (spot) {
-      marks.push({ element: el, x: spot.c.x, y: spot.c.y, hw: spot.rx * 0.8 })
+      marks.push({ element: el, x: s.x, y: s.y, hw: KIT_MARK_HW })
       continue
     }
     unplaced.push(el)
