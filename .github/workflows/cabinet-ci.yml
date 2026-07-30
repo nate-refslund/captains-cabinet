@@ -1412,7 +1412,16 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
         with:
-          node-version: '20'
+          # 20 -> 22, and it is a DECLARATION rather than an upgrade.
+          # `world-capture/resolve-ts.mjs` imports `registerHooks` from
+          # `node:module`, which does not exist on 20 — so `test_meadow_feather`
+          # and `test_ambience_mirror`, which shell out to `emit.ts` through it,
+          # need >= 22. They had been passing in `framework-tests`, which pins NO
+          # node at all and was therefore riding whatever ubuntu-latest happened
+          # to ship. Moving them here made the requirement visible by failing;
+          # it was always there, and the day GitHub changed that image it would
+          # have surfaced as a mystery red in a job that never mentions node.
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: cabinet/dashboard/package-lock.json
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
