@@ -149,3 +149,12 @@ answerable only over what is on screen cannot reach the split it exists to fix.
 shortlist — which is the point, and is indistinguishable from the answer having
 been ignored. The card says what was merged, and the offer echoes what was
 already learned, so the loop cannot re-ask a question the operator settled.
+
+**Found by attacking the fix, same landing.** A merge ABSORBS one of the names
+it joins, so validating an answer against the *current* ranking alone told an
+operator who re-typed their own true answer "I did not rank that" — and refused
+the extension outright: once `a` is absorbed into `b`, "a is also c" is the
+natural way to add a third name and could not be said at all. Names the operator
+has already taught are accepted as names. The widening is still bounded by what
+the ranking produced — at the moment it was answered rather than at this one —
+and an invented name is refused exactly as before.

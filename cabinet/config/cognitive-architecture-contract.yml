@@ -336,7 +336,18 @@ budgets:
     # MODULES (framework_production_modules unchanged at 248 — every function
     # lands inside framework/onboarding/{salience,journey}.py and the new arms
     # are tests). observed == maximum, zero headroom.
-    maximum: 61198
+    #
+    # 61198 -> 61211 (+13 measured 2026-07-30 via cognitive-architecture-census.py,
+    # observed 75488 vs the then-effective 75475, SAME landing): a defect found by
+    # attacking the row above rather than by reasoning about it. A merge ABSORBS
+    # one of the names it joins, so validating an answer against the CURRENT
+    # ranking alone told an operator who re-typed their own true answer "I did not
+    # rank that" — and refused the extension outright: once `a` is absorbed into
+    # `b`, "a is also c" is the natural way to add a third name and could not be
+    # said at all. Names the operator has already taught are accepted as names.
+    # Still bounded by what the ranking produced, at the moment it was answered
+    # rather than at this one; an invented name is refused exactly as before.
+    maximum: 61211
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

@@ -57,7 +57,7 @@ ever claimed:
 
 | Part | Where | What it does |
 |---|---|---|
-| `same_as` on `answer_salience` | `journey._salience_merge_request` | the operator names the candidates that are one thing; validated against what the ranking actually PRODUCED, refused by name otherwise |
+| `same_as` on `answer_salience` | `journey._salience_merge_request` | the operator names the candidates that are one thing; validated against what the ranking PRODUCED — now or at the moment an earlier answer was given (§7) — refused by name otherwise |
 | `merge_ask` | `salience.merge_ask`, carried on `offer` and on the `answer_salience` next-action | the question, over EVERY ranked candidate — not the shown three |
 | `learn_merge` / `learned_merges` | `salience`, stored at `state["salience_merges"]` | accumulating instance state: appended, deduped by label-set, never overwritten |
 | `_closed_alias_groups` | `salience` | reduces each answer to the labels it names, then unions overlapping answers |
@@ -106,8 +106,9 @@ Same loop, after:
 
 ## 4. Sensors, and the proof they can fail
 
-Nine new arms. Each was run against PRE-CHANGE code in a separate pristine
-clone of `origin/master`, caches purged:
+Ten new arms. Each was run against PRE-CHANGE code in a separate pristine
+clone of `origin/master`, caches purged (the last against this branch's own
+first commit, which is the code that carried the defect it names):
 
 | Arm | Pre-change |
 |---|---|
@@ -120,6 +121,7 @@ clone of `origin/master`, caches purged:
 | `test_the_merge_question_offers_every_ranked_candidate` | FAILS — no merge block |
 | `test_a_merge_naming_something_never_ranked_is_refused` | FAILS — DID NOT RAISE |
 | `test_an_answer_naming_one_candidate_or_none_joins_nothing` | **passes** — a regression guard, stated as one: it pins UNCHANGED degenerate-end behaviour so the closure cannot loosen it |
+| `test_a_name_the_operator_already_taught_survives_being_absorbed` | FAILS against **this branch's own first commit** — `JourneyError: I did not rank quayside` (see §7) |
 
 **The fixtures are lopsided on purpose.** The ranker-level estate carries
 candidates of 4 / 3 / 2 rows, so the union keeps `alpha` — which is *not* the
@@ -168,3 +170,41 @@ mechanism right for an estate of products, of clients or of collections. The
 one taxonomy guard in the suite
 (`test_the_module_contains_no_taxonomy_of_entity_kinds`) is green and was not
 touched.
+
+## 7. Checkpoint 2 — a defect found by attacking the fix
+
+The first commit was driven on the happy path and on its refusals, and passed.
+Attacking it — walking the paths the headline test does not — found this in the
+third case tried:
+
+```
+C. the operator re-confirms the merge they just taught
+   -> JourneyError: I did not rank lantern, so I cannot say it is
+      the same as anything.
+```
+
+**Why.** A merge ABSORBS one of the names it joins: once `lantern` is part of
+`quayside`, it is no longer a ranked candidate. Validating `same_as` against the
+current ranking alone therefore told an operator that their own true, already
+accepted answer was a name that does not exist. The re-confirmation is the mild
+half. The severe half is the **extension**: with `lantern` absorbed, "lantern is
+also beacon" is the natural way to add a third name to the same thing, and it
+could not be said at all — the closure that makes overlapping answers transitive
+was reachable only through the surviving label.
+
+**Fix.** Names the operator has already taught are accepted as names alongside
+the ones the ranking is offering now. The widening is bounded by construction:
+every learned label was produced by the ranking at the moment it was answered,
+so no unbounded string enters the vocabulary, and an invented name is refused
+exactly as before — asserted in the same arm.
+
+**Arm.** `test_a_name_the_operator_already_taught_survives_being_absorbed`
+covers re-confirmation (accepted, and records no second row), extension through
+the absorbed name (all three rank as one), and the bound (an untaught name is
+still `salience_merge_unknown`). It reads which of the two names the union
+absorbed rather than hardcoding it, so the label rule can change without the arm
+quietly stopping testing absorption. It FAILS against this branch's own first
+commit with the exact error above.
+
+Census: `framework_production_noncomment_lines` 61198 → 61211 (+13 measured,
+observed 75488). COG-4 re-bound again in the same commit.

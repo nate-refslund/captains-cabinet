@@ -2089,6 +2089,59 @@ def test_the_merge_question_offers_every_ranked_candidate(tmp_path):
     assert shown < nameable, "the merge could not reach below the cut"
 
 
+def test_a_name_the_operator_already_taught_survives_being_absorbed(tmp_path):
+    """FOUND BY ATTACKING THE FIX, not by reasoning about it.
+
+    A merge ABSORBS one of the names it joined, so the moment `lantern` becomes
+    part of `quayside` it stops being a ranked candidate. Validating an answer
+    against the current ranking alone then told an operator who re-typed their
+    own true answer "I did not rank that" — and refused the EXTENSION outright:
+    with `lantern` absorbed, "lantern is also beacon" is the natural way to add a
+    third name, and it could not be said at all.
+
+    What has already been learned is accepted as a name. Still bounded by what
+    the ranking produced — at the moment it was answered rather than at this one.
+    """
+    _connected_state(tmp_path, _split_estate_rows())
+    journey.act(
+        {"action": "answer_salience", "choice": "quayside",
+         "same_as": ["lantern"], "surface": "dashboard", "action_id": "abs-1"},
+        tmp_path,
+    )
+    standing = _labels(journey.salience_offer(journey.snapshot(tmp_path)["state"]))
+    gone = [name for name in ("lantern", "quayside") if name not in standing]
+    kept = [name for name in ("lantern", "quayside") if name in standing]
+    assert len(gone) == 1 and len(kept) == 1, "the merge absorbed nothing"
+
+    # (1) re-confirming the same merge is accepted, and records nothing new
+    again = journey.act(
+        {"action": "answer_salience", "choice": kept[0],
+         "same_as": gone, "surface": "dashboard", "action_id": "abs-2"},
+        tmp_path,
+    )
+    assert len(again["state"]["salience_merges"]["groups"]) == 1
+
+    # (2) EXTENDING it through the absorbed name reaches the whole component
+    grown = journey.act(
+        {"action": "answer_salience", "choice": "beacon",
+         "same_as": gone, "surface": "dashboard", "action_id": "abs-3"},
+        tmp_path,
+    )
+    offer = journey.salience_offer(grown["state"])
+    joined = [o for o in offer["options"]
+              if {"lantern", "quayside", "beacon"} <= set(o.get("aliases") or ())]
+    assert joined, "the extension through an absorbed name was lost"
+    # and an invented name is STILL refused — the widening is bounded
+    with pytest.raises(journey.JourneyError) as excinfo:
+        journey.act(
+            {"action": "answer_salience", "choice": "ledger",
+             "same_as": ["never-taught-this"], "surface": "dashboard",
+             "action_id": "abs-4"},
+            tmp_path,
+        )
+    assert excinfo.value.code == "salience_merge_unknown"
+
+
 def test_a_merge_naming_something_never_ranked_is_refused(tmp_path):
     """A merge is a gate too. An unvalidated string entering the ranking's own
     vocabulary is how a taught identity becomes a guess — so an invented name is

@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: aadee358cd344264da512138552918b2763ab43b033738ce979860fdf0c3f090
+Reviewed-Scope-Digest: 59c9bafb460cc268d5713ec601a7840de89a1bbfdac38855a490a0f9b654143c
 (MERGE RE-BIND, 2026-07-29, `fix/connector-loader-honesty` x master. Both sides
 re-bound this line, so the merge left two; ONE value stands and it is recomputed
 over this merge commit. Every note from both sides is kept verbatim below,
@@ -1638,3 +1638,20 @@ the accumulating `salience_merges` store and the alias-group closure, all inside
 `framework/onboarding/{salience,journey}.py`. Raised visibly, never an
 allowance; census PASS at observed == maximum with zero headroom; ZERO new
 production modules, so no bijection class moves.
+
+
+---
+
+## Re-bind 2026-07-30 (feat/answer-merges-aliases, checkpoint 2)
+
+Recorded digest: 59c9bafb460cc268d5713ec601a7840de89a1bbfdac38855a490a0f9b654143c
+Previous:        aadee358cd344264da512138552918b2763ab43b033738ce979860fdf0c3f090
+
+ONE bound path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` takes
+`framework_production_noncomment_lines` 61198 -> 61211 (+13 measured, observed
+75488) for a defect found by attacking the checkpoint-1 landing — a merge
+absorbs one of the names it joins, so validating an answer against the current
+ranking alone refused the operator's own already-taught name. Raised visibly,
+never an allowance; census PASS at observed == maximum with zero headroom; ZERO
+new production modules.

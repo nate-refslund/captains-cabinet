@@ -877,7 +877,9 @@ MAX_MERGE_LABELS = 50
 
 def _salience_merge_request(raw: Any, offer: Mapping[str, Any],
                             target_label: str,
-                            typed_tokens: Sequence[str]) -> tuple[list[str], list[str]]:
+                            typed_tokens: Sequence[str],
+                            learned: Sequence[Sequence[str]] = ()) -> tuple[list[str],
+                                                                            list[str]]:
     """What the operator said is one thing, checked against what was ranked.
 
     Returns ``(named, group)``: ``named`` is non-empty only when the operator
@@ -891,9 +893,20 @@ def _salience_merge_request(raw: Any, offer: Mapping[str, Any],
     operator would have no way to tell their answer was ignored. A merge naming
     one thing is refused for the same reason: it joins nothing, and recording it
     would put a row in the learned store that can never fire.
+
+    A NAME THE OPERATOR ALREADY TAUGHT IS STILL A NAME, and leaving it out was a
+    defect found by attacking this function rather than by reasoning about it.
+    A merge ABSORBS one of the names it joined, so validating against the current
+    ranking alone told an operator who re-typed their own true answer "I did not
+    rank that" — and, far worse, refused the extension: with `a` absorbed into
+    `b`, "a is also c" is the natural way to add a third name and it could not be
+    said at all. What has already been learned is therefore accepted too. It is
+    still bounded by what the ranking produced, just at the moment it was
+    answered rather than at this one; no unbounded string gets in either way.
     """
     ranked = {str(c.get("id") or "")
               for c in ((offer.get("merge") or {}).get("candidates") or ())}
+    ranked |= {str(label) for group in learned or () for label in group or ()}
     group = {t for t in typed_tokens if t in ranked}
     if target_label in ranked:
         group.add(target_label)
@@ -3072,6 +3085,7 @@ def _act_core(
             merged_labels, merge_group = _salience_merge_request(
                 request.get("same_as"), offer, target if not escaped else "",
                 aliases if escaped else [],
+                _salience.learned_merges(state.get("salience_merges")),
             )
             after = deepcopy(state)
             after["salience"] = {
