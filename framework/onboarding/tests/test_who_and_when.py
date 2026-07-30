@@ -53,14 +53,14 @@ class TestOperatorIdentity:
         assert who["handles"]["tracker"] == ["aperson"] and who["names"] == ["A. Person"]
 
     def test_one_identifier_is_a_string_not_four_letters(self):
-        """`handles: {code: nate}` is what a person writes by hand in the answers
-        file. Iterated, it became the four accounts a, e, n, t — the cabinet then
-        said "I recognise you as a, e, n, t" and matched nothing anywhere."""
-        who = research.operator_identity({"operator": {"handles": {"code": "nate"}}})
-        assert who["handles"]["code"] == ["nate"]
-        assert research._recorded_handles({"handles": {"code": "nate"}}, "code") == ["nate"]
+        """`handles: {code: abcd}` is what a person writes by hand in the answers
+        file. Iterated, it became the four accounts a, b, c, d — the cabinet then
+        said "I recognise you as a, b, c, d" and matched nothing anywhere."""
+        who = research.operator_identity({"operator": {"handles": {"code": "abcd"}}})
+        assert who["handles"]["code"] == ["abcd"]
+        assert research._recorded_handles({"handles": {"code": "abcd"}}, "code") == ["abcd"]
         rows = [{"connector": "code", "name": "a", "updated": "2026-07-01",
-                 "actors": ["nate"]}]
+                 "actors": ["abcd"]}]
         assert research.attribution_share(rows, who, "code")["mine"] == 1
 
     def test_an_absent_record_resolves_to_nothing_not_to_a_guess(self):

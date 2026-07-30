@@ -532,7 +532,7 @@ _CORPUS = (
     "outsider@partner-external.example; bo@testburg.example",
     "outsider@partner-external.example\nbo@testburg.example",
     "bo@testburg.example, outsider@partner-external.example",
-    "Nate <bo@testburg.example>",
+    "Bo <bo@testburg.example>",
     "outsider@gmail.example",
     # adversarial near-misses: a DOTLESS suffix match would swallow both, and
     # they are what makes the frozen-reference property arm bite.

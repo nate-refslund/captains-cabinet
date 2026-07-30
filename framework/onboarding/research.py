@@ -1153,10 +1153,10 @@ def operator_identity(record) -> dict:
     whoever the token happened to be.
 
     ONE IDENTIFIER IS A STRING, NOT AN ITERABLE OF CHARACTERS. The record is a
-    file a stranger writes by hand, and ``handles: {code: nate}`` is the
+    file a stranger writes by hand, and ``handles: {code: abcd}`` is the
     spelling a person reaches for first. Iterated, it becomes four accounts —
-    ``a``, ``e``, ``n``, ``t`` — none of which the estate has, and the cabinet
-    then says "I recognise you as a, e, n, t" and attributes nothing. Read as
+    ``a``, ``b``, ``c``, ``d`` — none of which the estate has, and the cabinet
+    then says "I recognise you as a, b, c, d" and attributes nothing. Read as
     the one identifier it plainly is.
     """
     operator = record.get("operator") if isinstance(record, dict) else None

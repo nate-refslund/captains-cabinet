@@ -217,12 +217,22 @@ stays authoritative — `cabinet/scripts/check-layer-separation.sh` catches
 `framework`→`instance` imports and path coupling;
 `framework/tests/test_no_launcher_hardcode.py` is a shrink-only ratchet over
 banned literals. Both answer "does this text contain a token I already know to
-ban?" The tracked patterns in that ratchet are **synthetic placeholders** by
-design, precisely so the shipped source names nobody real, and its real-token
-half lives in an untracked, gitignored file. So a brand-new real-world proper
-noun landing in `framework/` today is invisible to every tracked sensor. The
-ban-list *is* the answer being sought — which is the shape of question a reader
-can answer and a pattern-matcher cannot.
+ban?" The tracked Arm 1 patterns in that ratchet are **synthetic placeholders**
+by design, precisely so the shipped source names nobody real, and its
+real-token half lives in an untracked, gitignored file.
+
+**Narrowed 2026-07-30 — and only narrowed.** That ratchet's Arm 2 derives its
+vendor vocabulary from the tree, and its new Arm 3 derives the **operator's own
+identity** from what the repository and its instance layer declare about
+themselves (licence copyright holder, repository owner handle, declared
+`captain_name` / onboarding identity), then forbids those tokens anywhere under
+`framework/`. So a new vendor label and the launching operator's real name are
+no longer invisible. Everything else still is: a colleague, a customer, a
+counterparty, an industry verb, a role name, a unit, a cadence. A brand-new
+real-world proper noun **that is not the operator's own** landing in
+`framework/` today remains invisible to every tracked sensor, and the ban-list
+*is* the answer being sought — the shape of question a reader can answer and a
+pattern-matcher cannot.
 
 ### Where it must never go
 

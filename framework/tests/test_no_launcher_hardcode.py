@@ -19,7 +19,7 @@ files skipped) and goes RED on any launcher literal that is not covered by the
 documented, shrink-only allowlist below. A NEW hardcoded launcher literal in
 framework is a CI failure — not a review note.
 
-TWO ARMS, one home. **Arm 1** (this docstring, the checks below) is the
+THREE ARMS, one home. **Arm 1** (this docstring, the checks below) is the
 launcher/product IDENTITY ratchet described here. **Arm 2** — the SPECIFICS
 ratchet — is the second half of the same promise: the framework is the seed for
 ANY captain, in ANY industry, with ANY tool, so no third-party VENDOR, SERVICE
@@ -30,6 +30,18 @@ FROM THE TREE (a self-join on the hosts the repository itself names) rather
 than from any list. Its doctrine, its scan set, its one hand-maintained
 exclusion and — read this before treating green as coverage — the class of
 specific it CANNOT see are all documented at the ``ARM 2`` banner below.
+
+**Arm 3** — the PERSON ratchet — closes the hole Arm 1 left in ITSELF. Arm 1's
+captain check pins ``Testburg``, a SYNTHETIC token, so it could only ever prove
+the placeholder absent: fifteen occurrences of the launching deployment's REAL
+operator name sat in framework/ with Arm 1 green over every one (measured
+2026-07-30, the commit that added Arm 3 removed them). Arm 3 derives the
+operator identity the way Arm 2 derives vendors — from what the repository and
+its INSTANCE layer declare about themselves (the licence copyright holder, the
+repository owner handle, the declared ``captain_name`` / onboarding identity)
+— and forbids those tokens anywhere under framework/, tests and undated docs
+included. Its doctrine, its three declaration surfaces, its capped exclusions
+and the classes of person literal it CANNOT see are at the ``ARM 3`` banner.
 
 Two enforcement halves, by design:
 
@@ -1326,6 +1338,589 @@ class TestSpecificsRatchetIsNonVacuous:
         assert [x for x in after if specifics_key(x) not in known] == []
 
 
+# ===========================================================================
+# ARM 3 — THE PERSON RATCHET  (added 2026-07-30)
+# ===========================================================================
+# THE DEFECT THIS EXISTS FOR, stated plainly because this file was itself
+# guilty of it. Arm 1 pins a SYNTHETIC placeholder — the demo captain
+# `Testburg`. That token is not, and never was, the launching deployment's
+# operator, so the sensor guarding agnosticism was blind to the exact thing it
+# exists to catch: measured 2026-07-30, FIFTEEN occurrences of the real
+# operator's name sat inside framework/ — a module docstring, five lines of one
+# test, the authority classifier, its tests, the acting tests, the env resolver
+# and two further test modules — with Arm 1 green over every one of them. A
+# gate that can only see the placeholder proves the placeholder is absent.
+#
+# THE RULE, DERIVED — never a list of names. A list of names inside framework/
+# would BE the leak this arm prevents, one level up, and it could only ever
+# name the people somebody already thought of.
+#
+#   PERSON_LITERAL — a word-bounded occurrence, anywhere under framework/, of a
+#       token from the OPERATOR IDENTITY that this repository and its instance
+#       layer DECLARE about themselves. Three declaration surfaces, all
+#       structured, all OUTSIDE framework/ — so cleaning framework can never
+#       blind the rule (the seed does not live in the thing being cleaned;
+#       Arm 2 earns its teeth the same way):
+#         * THE LICENCE COPYRIGHT HOLDER. A licence must name its holder, so
+#           this is the one place in a public tree where a real person's name
+#           is not merely allowed but REQUIRED. That makes it the ideal seed
+#           and framework/ the ideal subject: one name, one tree, one file
+#           where it belongs and one layer where it never does.
+#         * THE REPOSITORY OWNER HANDLE in the plugin/marketplace manifests
+#           (`github.com/<owner>/…`, `"repo": "<owner>/…"`), split on its
+#           separators — which is how a handle teaches the gate a diminutive
+#           that no dictionary would derive from a legal name.
+#         * THE INSTANCE LAYER, which is where an operator's identity belongs
+#           and the surface this unit was told to derive from: a declared
+#           `captain_name`, and `name` / `names` under a `captain:` or
+#           `operator:` block of the onboarding answers record. In the scrubbed
+#           public tree these are placeholders or absent, so they contribute
+#           nothing HERE and everything in a live deployment. The asymmetry is
+#           the point: the arm has teeth in CI from the LICENCE alone, and
+#           grows more the moment a real cabinet declares whose it is.
+#
+# THE RESOLVER'S OWN DEFAULT IS NOT AN IDENTITY. `captain_name` falls back to a
+# generic role word, and the tracked platform.yml carries exactly that word.
+# Seeded, it would forbid the role vocabulary framework is SUPPOSED to speak,
+# everywhere, and the arm would be unlandable. The default is read out of the
+# resolver's own signature in framework/env.py and subtracted — derived, one
+# value, no list — and `test_the_captain_name_default_is_still_derivable` goes
+# RED if that read ever stops resolving, so the subtraction cannot silently
+# widen into "seeds nothing".
+#
+# NO BASELINE, NO DEBT LEDGER, NO ALLOWLIST. Arm 2 ratchets against recorded
+# debt because a framework already speaking to a dozen vendors cannot be
+# cleaned in one commit. There is no equivalent here: the target is ZERO and
+# the tree is AT zero as of this commit. A person literal in the universal
+# layer is never acceptable debt, so there is nothing an exemption could hold.
+#
+# WHAT THIS CANNOT SEE — read this before treating green as coverage. Every
+# number below was measured on the tree this arm landed with.
+#   1. A PROPER NOUN THAT IS NOT THE OPERATOR'S. A colleague, a customer, a
+#      counterparty. Nothing declares them, so nothing derives them, and no
+#      shape separates a real first name from a synthetic one: framework's own
+#      fidelity fixtures carry 27 display-name literals (`Otto <u@x>`,
+#      `Ada <n@x>`, `Bo <b@x>`) this arm reads as green and could not tell from
+#      real ones. Detecting an arbitrary person name needs a dictionary or a
+#      model — the hand-maintained list, one level up.
+#   2. A GLUED COMPOUND. The match is word-bounded, so an underscore or
+#      camel-case compound never fires — deliberately, mirroring Arm 1, whose
+#      docstring makes the same promise about `testburg_model`. Measured: 95
+#      such occurrences across 23 framework files, every one an external
+#      brain-artifact identifier. They ARE an agnosticism defect; they are a
+#      coordinated-rename unit with a byte-compat surface, not something to
+#      bury inside this scan's blast radius. Un-gluing one to hide it would be
+#      caught the moment it was un-glued.
+#   3. A NAME IN A NON-LATIN SCRIPT, or a transliteration of one. Tokens are
+#      `[A-Za-z]` runs on BOTH sides of the join, so a Cyrillic, CJK, Hebrew or
+#      Arabic identity derives nothing AND matches nothing — it fails silent,
+#      not loud. `test_a_non_latin_identity_is_invisible_and_says_so` pins that
+#      honestly, and proves it WITHOUT reusing this module's own splitter.
+#   4. A NAME ASSEMBLED FROM FRAGMENTS. This reads source TEXT; a name that
+#      never appears whole on one line is not seen.
+#   5. A NAME IN A DATED DESIGN SNAPSHOT under framework/docs/. Excluded on the
+#      predicate Arm 2 already uses, for the reason the egg manifest ratified
+#      (R162 + R145): those files are the launching deployment's own minutes,
+#      they are archived OUT of the egg, and rewording a dated record falsifies
+#      it. Measured: 70 operator-name occurrences live in the three of them. A
+#      stranger never receives those bytes; a reader of the public repository
+#      does.
+#   6. A TOKEN SHORTER THAN _PERSON_MIN_TOKEN_LEN, in any position.
+#   7. A DECLARATION THE KEY-LINE READER CANNOT SEE. The instance seed reads
+#      declared key LINES (stdlib only — this module still imports nothing and
+#      executes nothing). A flow-style `captain: {name: X}`, a quoted
+#      multi-line scalar, an identity under a key this gate does not name, or a
+#      `handles:` value that is an account rather than a name, derive nothing.
+#   8. ANYTHING OUTSIDE framework/. The operating layer, the presets and the
+#      packs are the deployment's own and are entitled to name it.
+#
+# WHAT IT CAN GET WRONG, the mirror of the above, stated because a stranger
+# will meet it before I do: a deployment whose operator's name collides with
+# ordinary framework vocabulary — or with one of framework's own synthetic
+# fixture people — goes RED on a tree they never touched. The remedy is the
+# capped exclusion set below (EMPTY today), exactly as in Arm 2, and the
+# failure message names both the token and the surface it was derived FROM, so
+# the diagnosis is one read long.
+#
+# Green here means "framework/ does not name the operator this deployment
+# declares". It does not mean "framework/ names nobody".
+
+_PERSON_MIN_TOKEN_LEN = 4  # below this a token is initials or grammar, not a name
+
+# THE SUBJECT FLOOR, Arm 2's law again: a scan that visited nothing reports the
+# same green as a clean tree. An order of magnitude below the live count (624
+# files walked, measured 2026-07-30) because the FINDING count is meant to stay
+# at zero forever while the file count is not.
+_PERSON_SCAN_FLOOR = 200
+
+# The identity DECLARATION surfaces, by path: root-level files plus the
+# instance layer, never framework/ itself — the subject cannot be allowed to
+# teach the gate what to forgive.
+_LICENSE_FILES = ("LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING")
+_OWNER_MANIFESTS = (".claude-plugin/plugin.json", ".claude-plugin/marketplace.json")
+_INSTANCE_CONFIG_DIR = "instance/config"
+_CAPTAIN_NAME_RESOLVER = "framework/env.py"
+
+_COPYRIGHT_RX = re.compile(
+    r"\bCopyright\b\s*(?:\((?:c|C)\)|©)?\s*(?:\d{4}(?:\s*[-–,]\s*\d{4})*)?\s*(.+)")
+_OWNER_URL_RX = re.compile(r"github\.com[/:]([A-Za-z0-9][A-Za-z0-9._-]*)/")
+_OWNER_FIELD_RX = re.compile(r'"repo"\s*:\s*"([A-Za-z0-9][A-Za-z0-9._-]*)/')
+_NAME_WORD_RX = re.compile(r"[A-Za-z]+")
+_TOP_KEY_RX = re.compile(r"\A([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(.*)\Z")
+_LEAF_KEY_RX = re.compile(r"\A\s+([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(.*)\Z")
+_LIST_ITEM_RX = re.compile(r"\A\s*-\s*(.+)\Z")
+# The resolver's own fallback, read from its signature rather than repeated.
+_CAPTAIN_DEFAULT_RX = re.compile(
+    r"def\s+captain_name\s*\(\s*default\s*:\s*str\s*=\s*[\"']([^\"']+)[\"']")
+
+_IDENTITY_TOP_KEYS = ("captain", "operator")
+_IDENTITY_LEAF_KEYS = ("name", "names")
+_IDENTITY_SCALAR_KEYS = ("captain_name",)
+
+# GRAMMAR, NOT NAMES. The tail of a copyright line is as often prose as a
+# person ("Copyright (c) 2026 The Cabinet Contributors"), and an entity suffix
+# names an organisation rather than the operator. Every member is an article or
+# a legal-entity/collective word — none is anybody's name, which is what keeps
+# this from being the list this arm forbids. It SUBTRACTS, so growing it
+# weakens the gate: capped and shrink-only, like the collision set below.
+_NON_IDENTITY_WORDS = frozenset({
+    "gmbh", "corp", "corporation", "company", "contributors", "contributor",
+    "authors", "author", "project", "team", "rights", "reserved", "holders",
+    "holder", "foundation",
+})
+_NON_IDENTITY_WORDS_MAX = 15  # may only be LOWERED
+
+# THE ONE NAME-SHAPED HAND-MAINTAINED ELEMENT IN ARM 3 — and it is an
+# EXCLUSION, so growing it WEAKENS the gate; hence the cap and the required
+# justification, mirroring Arm 2's _COLLISION_TOKENS. An entry belongs here
+# only when a DERIVED identity token is also ordinary vocabulary in this
+# repository's own prose. EMPTY: no derived token collides today.
+_PERSON_COLLISION_TOKENS: Dict[str, str] = {}
+_PERSON_COLLISION_TOKENS_MAX = 0  # may only be LOWERED
+
+PersonFinding = Tuple[str, int, str]  # (display_path, line_no, token)
+
+
+def _scalar(value: str) -> str:
+    """A declared scalar, minus a trailing comment and matched quotes."""
+    v = value.split(" #", 1)[0].strip()
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+        v = v[1:-1]
+    return v.strip()
+
+
+def _name_tokens(text: str) -> "frozenset[str]":
+    """The name-shaped tokens of a declared identity string. Latin letters only
+    — WHAT THIS CANNOT SEE item 3, which is measured rather than assumed."""
+    return frozenset(
+        w.lower() for w in _NAME_WORD_RX.findall(text)
+        if len(w) >= _PERSON_MIN_TOKEN_LEN and w.lower() not in _NON_IDENTITY_WORDS)
+
+
+def _declared_identity_values(text: str) -> List[str]:
+    """Values declared under an identity key, read as DECLARED KEY LINES rather
+    than parsed as YAML: this module imports nothing and executes nothing, and
+    a second code path behind a `try: import yaml` would be a second behaviour
+    to keep true. Item 7 above states exactly what this reader cannot see."""
+    out = []  # type: List[str]
+    top = None  # type: Optional[str]
+    leaf = None  # type: Optional[str]
+    for raw in text.splitlines():
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        m_top = _TOP_KEY_RX.match(raw)
+        if m_top:
+            top, leaf = m_top.group(1).lower(), None
+            if top in _IDENTITY_SCALAR_KEYS:
+                out.append(_scalar(m_top.group(2)))
+            continue
+        if top not in _IDENTITY_TOP_KEYS:
+            continue
+        m_leaf = _LEAF_KEY_RX.match(raw)
+        if m_leaf:
+            leaf = m_leaf.group(1).lower()
+            if leaf in _IDENTITY_LEAF_KEYS:
+                out.append(_scalar(m_leaf.group(2)))
+            continue
+        m_item = _LIST_ITEM_RX.match(raw)
+        if m_item and leaf in _IDENTITY_LEAF_KEYS:
+            out.append(_scalar(m_item.group(1)))
+    return [v for v in out if v]
+
+
+def captain_name_default(root) -> Optional[str]:
+    """The generic fallback `framework.env.captain_name()` returns when a
+    deployment declares nothing — read out of the resolver's own signature so
+    this file never repeats it. None when the read stops resolving, which
+    subtracts nothing and so fails toward a NOISIER gate, never a quieter one;
+    the live test pins that it still resolves."""
+    txt = _read_text_file(Path(root) / _CAPTAIN_NAME_RESOLVER)
+    if txt is None:
+        return None
+    m = _CAPTAIN_DEFAULT_RX.search(txt)
+    return m.group(1) if m else None
+
+
+def derive_operator_identity(root) -> Dict[str, str]:
+    """THE DERIVATION: token -> the surface that declared it. Nothing here is a
+    list of names; every token comes from a structured declaration this
+    repository or its instance layer makes ABOUT ITSELF, and every surface sits
+    outside framework/ so the subject cannot teach the gate to forgive it."""
+    root = Path(root)
+    vocab = {}  # type: Dict[str, str]
+
+    def _add(tokens, why: str) -> None:
+        for t in tokens:
+            vocab.setdefault(t, why)
+
+    for rel in _LICENSE_FILES:
+        txt = _read_text_file(root / rel)
+        if txt is None:
+            continue
+        for line in txt.splitlines():
+            m = _COPYRIGHT_RX.search(line)
+            if m:
+                _add(_name_tokens(m.group(1)), "%s copyright holder" % rel)
+
+    for rel in _OWNER_MANIFESTS:
+        txt = _read_text_file(root / rel)
+        if txt is None:
+            continue
+        for rx in (_OWNER_URL_RX, _OWNER_FIELD_RX):
+            for m in rx.finditer(txt):
+                _add(_name_tokens(m.group(1).replace("-", " ").replace("_", " ")),
+                     "repository owner handle in %s" % rel)
+
+    cfg = root / _INSTANCE_CONFIG_DIR
+    default = (captain_name_default(root) or "").strip().lower()
+    if cfg.is_dir():
+        for p in sorted(cfg.iterdir()):
+            # A shipped `*.example` is a placeholder, not a declaration.
+            if not p.is_file() or p.suffix == ".example":
+                continue
+            if p.suffix not in (".yml", ".yaml"):
+                continue
+            txt = _read_text_file(p)
+            if txt is None:
+                continue
+            for value in _declared_identity_values(txt):
+                if default and value.strip().lower() == default:
+                    continue  # the resolver's own role word declares nobody
+                _add(_name_tokens(value),
+                     "declared operator identity in %s/%s" % (_INSTANCE_CONFIG_DIR, p.name))
+
+    for tok in _PERSON_COLLISION_TOKENS:
+        vocab.pop(tok, None)
+    return vocab
+
+
+def _person_vocabulary_regex(vocabulary) -> "Optional[re.Pattern[str]]":
+    """Word-bounded in the FULL identifier sense — `_` is inside the boundary
+    class, not outside it, so a glued compound never matches (item 2). Arm 2's
+    regex deliberately excludes `_` because a vendor label glued into an
+    identifier still names the vendor; a person token glued into an artifact
+    identifier is a different, separately-owned defect."""
+    if not vocabulary:
+        return None
+    alts = "|".join(re.escape(v) for v in sorted(vocabulary, key=lambda s: (-len(s), s)))
+    return re.compile(r"(?<![A-Za-z0-9_])(" + alts + r")(?![A-Za-z0-9_])", re.IGNORECASE)
+
+
+def iter_person_files(root: Path) -> Iterator[Path]:
+    """The scan set: every text file under the tree INCLUDING its tests — five
+    of the fifteen literals this arm was built for lived in a single test file,
+    framework tests SHIP in the egg, and a name in a fixture publishes exactly
+    as widely as a name in a module. Dated design snapshots under docs/ are the
+    one exclusion (item 5)."""
+    for dirpath, dirnames, filenames in os.walk(str(root)):
+        dirnames[:] = sorted(d for d in dirnames
+                             if d != "__pycache__" and d not in _SEED_SKIP_DIRS)
+        for name in sorted(filenames):
+            p = Path(dirpath) / name
+            rel = p.relative_to(root).as_posix()
+            if rel.startswith("docs/") and _DATED_DESIGN_DOC_RX.search(name):
+                continue
+            yield p
+
+
+def scan_person_literals(root, vocabulary=None, rel_to=None) -> List[PersonFinding]:
+    """Read-only scan of ``root`` for a declared operator-identity token.
+    Returns (display_path, line_no, token), sorted, one entry per token per
+    line. Symlink escapes are refused, never followed (realpath containment,
+    mirroring Arms 1 and 2)."""
+    root = Path(root)
+    base = Path(rel_to) if rel_to is not None else root
+    if vocabulary is None:
+        vocabulary = derive_operator_identity(base)
+    rx = _person_vocabulary_regex(set(vocabulary))
+    real_root = os.path.realpath(str(root))
+    found = []  # type: List[PersonFinding]
+    for p in iter_person_files(root):
+        try:
+            display = p.relative_to(base).as_posix()
+        except ValueError:
+            display = p.as_posix()
+        rp = os.path.realpath(str(p))
+        if rp != real_root and not rp.startswith(real_root + os.sep):
+            found.append((display, 0, "symlink escape — refused"))
+            continue
+        if rx is None:
+            continue
+        txt = _read_text_file(p)
+        if txt is None:
+            continue
+        for i, line in enumerate(txt.splitlines(), 1):
+            seen = set()
+            for m in rx.finditer(line):
+                tok = m.group(1).lower()
+                if tok not in seen:
+                    seen.add(tok)
+                    found.append((display, i, tok))
+    return sorted(found)
+
+
+_PERSON_HINT = (
+    "framework/ is the universal layer — it may not name the person this "
+    "deployment belongs to. An EXAMPLE takes an obviously-synthetic "
+    "placeholder (`<display>`, `abcd`, the demo identity); a value that has to "
+    "be real lives in the instance layer and reaches framework only through a "
+    "resolver (framework.env.captain_name()). There is no allowlist and no "
+    "baseline here: a person literal in the universal layer is not debt to be "
+    "recorded, it is a leak to be removed")
+
+
+class TestPersonRatchet:
+    """Arm 3 over the live tree."""
+
+    def test_framework_names_no_person(self):
+        """THE RATCHET: no token of the operator identity this repository and
+        its instance layer DECLARE may appear anywhere under framework/."""
+        vocabulary = derive_operator_identity(_REPO_ROOT)
+        findings = scan_person_literals(_REPO_ROOT / "framework",
+                                        vocabulary=vocabulary, rel_to=_REPO_ROOT)
+        assert findings == [], "%s\nOffenders: %s\nDerived from: %s" % (
+            _PERSON_HINT,
+            ["%s:%d (%s)" % f for f in findings[:40]],
+            sorted({vocabulary.get(f[2], "?") for f in findings}))
+
+    def test_the_operator_identity_is_derived_and_non_empty(self):
+        """Non-vacuity of the SEED. An empty vocabulary makes the ratchet a
+        no-op that still reports green — the sensor-tests-nothing failure this
+        program keeps finding, aimed at this file. A repository declaring no
+        owner anywhere (no copyright holder, no owner handle, no instance
+        identity) cannot be policed, and has to say so rather than pass."""
+        vocabulary = derive_operator_identity(_REPO_ROOT)
+        assert vocabulary, (
+            "no operator identity could be derived — every declaration surface "
+            "(%s, %s, %s) came back empty, so PERSON_LITERAL is inert while "
+            "still reporting green. Name the copyright holder in the LICENCE."
+            % (_LICENSE_FILES[0], _OWNER_MANIFESTS[0], _INSTANCE_CONFIG_DIR))
+        assert all(len(t) >= _PERSON_MIN_TOKEN_LEN for t in vocabulary), vocabulary
+        assert not (set(_PERSON_COLLISION_TOKENS) & set(vocabulary))
+
+    def test_the_person_scan_actually_visits_the_subject(self):
+        """Non-vacuity of the SUBJECT. The ratchet asserts an EMPTY finding
+        set, and a walk that visited no file produces exactly that. A floor on
+        files VISITED — never on findings, which are meant to stay at zero — is
+        what separates the two greens."""
+        subject = _REPO_ROOT / "framework"
+        assert subject.is_dir(), (
+            "the scan subject %s does not exist — every person assertion below "
+            "it is vacuously true" % subject)
+        visited = sum(1 for _ in iter_person_files(subject))
+        assert visited >= _PERSON_SCAN_FLOOR, (
+            "the person scan visited only %d files (floor %d) — the walk is "
+            "broken (wrong root? skip-dirs?), and an EMPTY finding set is green "
+            "no matter what the tree contains" % (visited, _PERSON_SCAN_FLOOR))
+
+    def test_the_captain_name_default_is_still_derivable(self):
+        """The subtraction's own wiring. The resolver's generic fallback is
+        read out of framework/env.py so this file never repeats it; were that
+        read to stop resolving, the role word would be seeded as an identity
+        and the arm would go red everywhere. Silent is the failure mode worth
+        pinning, so this goes RED on the rename instead."""
+        default = captain_name_default(_REPO_ROOT)
+        assert default and default.strip(), (
+            "could not read the captain_name fallback out of %s — the "
+            "role-word subtraction is unwired" % _CAPTAIN_NAME_RESOLVER)
+
+    def test_person_exclusion_sets_only_shrink_and_are_justified(self):
+        """Both subtracting sets are capped. They WEAKEN the gate as they grow,
+        which is the opposite pressure from a blocklist, and is why neither may
+        widen without lowering the other side of a visible diff."""
+        assert len(_PERSON_COLLISION_TOKENS) <= _PERSON_COLLISION_TOKENS_MAX, (
+            "person-collision exclusions grew (%d > %d) — reword the framework "
+            "text or narrow the derivation; do not widen the exclusion"
+            % (len(_PERSON_COLLISION_TOKENS), _PERSON_COLLISION_TOKENS_MAX))
+        thin = [k for k, why in _PERSON_COLLISION_TOKENS.items() if len(why) < 40]
+        assert thin == [], "unjustified person-collision exclusions: %s" % thin
+        assert len(_NON_IDENTITY_WORDS) <= _NON_IDENTITY_WORDS_MAX, (
+            "the copyright-grammar stop set grew (%d > %d) — it subtracts from "
+            "the vocabulary, so growth is a quieter gate"
+            % (len(_NON_IDENTITY_WORDS), _NON_IDENTITY_WORDS_MAX))
+        dead = sorted(w for w in _NON_IDENTITY_WORDS if len(w) < _PERSON_MIN_TOKEN_LEN)
+        assert dead == [], (
+            "these stop words are already dropped by the length filter, so they "
+            "are dead cover that makes the set look larger than it is: %s" % dead)
+
+
+class TestPersonEngine:
+    """Hermetic proofs on own tmp trees — never the live vocabulary."""
+
+    @staticmethod
+    def _write(p: Path, body: str) -> None:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(body, encoding="utf-8")
+
+    def _tree(self, tmp_path, files: Dict[str, str], fw=None):
+        for rel, body in files.items():
+            self._write(tmp_path / rel, body)
+        for rel, body in (fw or {}).items():
+            self._write(tmp_path / "framework" / rel, body)
+        return derive_operator_identity(tmp_path)
+
+    def test_identity_is_derived_from_the_licence(self, tmp_path):
+        v = self._tree(tmp_path, {
+            "LICENSE": "MIT License\n\nCopyright (c) 2026 Quillon Marrowby\n"})
+        assert set(v) == {"quillon", "marrowby"}
+        assert "LICENSE" in v["quillon"]
+
+    def test_identity_is_derived_from_the_repository_owner_handle(self, tmp_path):
+        """The diminutive no dictionary derives from a legal name: the OWNER
+        segment of the repository's own manifest, split on its separators."""
+        v = self._tree(tmp_path, {
+            ".claude-plugin/plugin.json":
+                '{"homepage": "https://github.com/quill-marrowby/some-repo"}\n'})
+        assert {"quill", "marrowby"} <= set(v)
+        assert "some" not in v and "repo" not in v  # the OWNER segment, not the repo
+
+    def test_identity_is_derived_from_the_instance_layer(self, tmp_path):
+        """The surface this arm was told to derive from. Absent in a scrubbed
+        public tree, present in a live cabinet — teeth exactly where the real
+        name is."""
+        v = self._tree(tmp_path, {
+            "instance/config/cabinet-init.answers.yml":
+                "version: 1\n\ncaptain:\n  name: Quillon   # display name\n"
+                "  timezone: Europe/Madrid\n",
+            "instance/config/platform.yml": "captain_role: Head-of-Something\n"})
+        assert "quillon" in v and "instance/config" in v["quillon"]
+        assert not ({"europe", "madrid", "version", "head", "something"} & set(v))
+
+    def test_a_names_list_and_an_operator_block_are_read(self, tmp_path):
+        v = self._tree(tmp_path, {
+            "instance/config/who.yml":
+                "operator:\n  names:\n    - Quillon Marrowby\n    - Marrow\n"})
+        assert {"quillon", "marrowby", "marrow"} <= set(v)
+
+    def test_the_resolver_default_is_not_an_identity(self, tmp_path):
+        """The role word the resolver falls back to declares nobody. Seeding it
+        would forbid framework's own agnostic vocabulary everywhere."""
+        v = self._tree(tmp_path, {
+            "framework/env.py":
+                'def captain_name(default: str = "Skipper") -> str:\n    return default\n',
+            "instance/config/platform.yml": "captain_name: Skipper\n"})
+        assert "skipper" not in v
+        v2 = self._tree(tmp_path, {"instance/config/platform.yml": "captain_name: Quillon\n"})
+        assert "quillon" in v2  # a real declaration on the same key still derives
+
+    def test_an_example_file_declares_no_identity(self, tmp_path):
+        """A shipped `.example` is a placeholder, not a declaration."""
+        v = self._tree(tmp_path, {
+            "instance/config/platform.yml.example": "captain_name: Quillon\n"})
+        assert "quillon" not in v
+
+    def test_copyright_grammar_is_not_an_identity(self, tmp_path):
+        v = self._tree(tmp_path, {"LICENSE": "Copyright (c) 2026 The Cabinet Contributors\n"})
+        assert not ({"the", "contributors"} & set(v))
+        assert "cabinet" in v  # a declared holder token still derives
+
+    def test_flags_a_planted_person_literal_in_a_module(self, tmp_path):
+        v = self._tree(tmp_path, {"LICENSE": "Copyright (c) 2026 Quillon Marrowby\n"},
+                       fw={"m.py": "# ask Quillon before shipping\n"})
+        f = scan_person_literals(tmp_path / "framework", vocabulary=v, rel_to=tmp_path)
+        assert ("framework/m.py", 1, "quillon") in f
+
+    def test_flags_a_planted_person_literal_in_a_test_and_in_a_doc(self, tmp_path):
+        """The scan set Arms 1 and 2 deliberately skip. Five of the fifteen
+        literals this arm was built for lived in ONE test file."""
+        v = self._tree(tmp_path, {"LICENSE": "Copyright (c) 2026 Quillon Marrowby\n"},
+                       fw={"tests/test_x.py": 'CASE = "Quillon <q@x.example>"\n',
+                           "docs/work-model.md": "reviewed by Marrowby\n"})
+        f = scan_person_literals(tmp_path / "framework", vocabulary=v, rel_to=tmp_path)
+        assert ("framework/tests/test_x.py", 1, "quillon") in f
+        assert ("framework/docs/work-model.md", 1, "marrowby") in f
+
+    def test_case_and_punctuation_do_not_hide_a_literal(self, tmp_path):
+        v = self._tree(tmp_path, {"LICENSE": "Copyright (c) 2026 Quillon Marrowby\n"},
+                       fw={"m.py": "# QUILLON, quillon; (Quillon) -Quillon-\n"})
+        f = scan_person_literals(tmp_path / "framework", vocabulary=v, rel_to=tmp_path)
+        assert f == [("framework/m.py", 1, "quillon")]  # one per token per line
+
+    def test_a_glued_compound_is_not_flagged_and_that_is_declared(self, tmp_path):
+        """Item 2, pinned in BOTH directions so the limit is a measured
+        property and not a hope: the glued form passes, the un-glued form on
+        the very next line does not."""
+        v = self._tree(tmp_path, {"LICENSE": "Copyright (c) 2026 Quillon Marrowby\n"},
+                       fw={"m.py": "quillon_model = 1\nowed_to_quillon = 2\n"})
+        assert scan_person_literals(tmp_path / "framework", vocabulary=v,
+                                    rel_to=tmp_path) == []
+        self._write(tmp_path / "framework" / "m.py", "quillon_model = 1\n# ask Quillon\n")
+        assert scan_person_literals(tmp_path / "framework", vocabulary=v,
+                                    rel_to=tmp_path) == [("framework/m.py", 2, "quillon")]
+
+    def test_a_short_token_is_not_derived(self, tmp_path):
+        """Item 6. A three-letter name is initials-shaped and would collide with
+        grammar everywhere; it is not derived, and that is the trade stated."""
+        v = self._tree(tmp_path, {"LICENSE": "Copyright (c) 2026 Ada Lovelace\n"})
+        assert "ada" not in v and "lovelace" in v
+
+    def test_a_non_latin_identity_is_invisible_and_says_so(self, tmp_path):
+        """Item 3, proven WITHOUT reusing the module's own splitter — an
+        honesty arm sharing the assumption it checks passes vacuously, which
+        this program has paid for five times. The independent check is a raw
+        substring read of the bytes on disk: the name IS in the file, and the
+        scan still returns nothing."""
+        name = "Квиллон"
+        v = self._tree(tmp_path, {"LICENSE": "Copyright (c) 2026 %s\n" % name},
+                       fw={"m.py": "# ask %s before shipping\n" % name})
+        planted = (tmp_path / "framework" / "m.py").read_text(encoding="utf-8")
+        assert name in planted, "the fixture never planted the name"
+        assert v == {}, "a non-Latin identity derives nothing — say so, do not imply teeth"
+        assert scan_person_literals(tmp_path / "framework", vocabulary=v,
+                                    rel_to=tmp_path) == []
+
+    def test_a_dated_design_snapshot_is_excluded(self, tmp_path):
+        """Item 5 — the egg archives those bytes out (R162/R145), so policing
+        them is churn a stranger never benefits from. Pinned in both
+        directions: dated is skipped, undated beside it is not."""
+        v = self._tree(tmp_path, {"LICENSE": "Copyright (c) 2026 Quillon Marrowby\n"},
+                       fw={"docs/design-2026-06-19.md": "Quillon decided this\n",
+                           "docs/work-model.md": "Quillon decided this\n"})
+        f = scan_person_literals(tmp_path / "framework", vocabulary=v, rel_to=tmp_path)
+        assert f == [("framework/docs/work-model.md", 1, "quillon")]
+
+    def test_an_empty_vocabulary_scans_nothing_rather_than_everything(self, tmp_path):
+        """The degenerate end. With no declared identity the rule is inert by
+        construction; the live tree is protected from that state by
+        test_the_operator_identity_is_derived_and_non_empty, not by hope."""
+        v = self._tree(tmp_path, {}, fw={"m.py": "# anybody at all\n"})
+        assert v == {}
+        assert scan_person_literals(tmp_path / "framework", vocabulary=v,
+                                    rel_to=tmp_path) == []
+
+    def test_a_symlink_escape_is_refused_not_followed(self, tmp_path):
+        v = self._tree(tmp_path, {"LICENSE": "Copyright (c) 2026 Quillon Marrowby\n"},
+                       fw={"m.py": "ok\n"})
+        outside = tmp_path / "outside.py"
+        outside.write_text("# Quillon\n", encoding="utf-8")
+        try:
+            os.symlink(str(outside), str(tmp_path / "framework" / "link.py"))
+        except (OSError, NotImplementedError):  # pragma: no cover — no symlink support
+            return
+        f = scan_person_literals(tmp_path / "framework", vocabulary=v, rel_to=tmp_path)
+        assert ("framework/link.py", 0, "symlink escape — refused") in f
+
+
 # CLI mode: `python3 framework/tests/test_no_launcher_hardcode.py` prints every
 # offender and exits non-zero — usable under the system python without pytest.
 if __name__ == "__main__":  # pragma: no cover
@@ -1346,10 +1941,27 @@ if __name__ == "__main__":  # pragma: no cover
               "green no matter what the tree contains" % (_visited, _SPECIFICS_SCAN_FLOOR))
         sys.exit(1)
 
+    # Arm 3's own two floors, for the same reason: an empty finding set is the
+    # green a broken walk and an underived identity both print.
+    _pvisited = sum(1 for _ in iter_person_files(_REPO_ROOT / "framework"))
+    if _pvisited < _PERSON_SCAN_FLOOR:
+        print("FAIL: the person scan visited only %d files (floor %d) — the walk "
+              "is broken; an EMPTY finding set is green no matter what the tree "
+              "contains" % (_pvisited, _PERSON_SCAN_FLOOR))
+        sys.exit(1)
+    identity = derive_operator_identity(_REPO_ROOT)
+    if not identity:
+        print("FAIL: no operator identity could be derived (licence holder, "
+              "owner handle, instance declaration all empty) — PERSON_LITERAL "
+              "is inert while still reporting green")
+        sys.exit(1)
+
     offenders = scan_tree(_REPO_ROOT / "framework", rel_to=_REPO_ROOT)
     vocabulary = derive_vendor_vocabulary(_REPO_ROOT)
     specifics = scan_specifics(_REPO_ROOT / "framework", vocabulary=vocabulary,
                                rel_to=_REPO_ROOT)
+    persons = scan_person_literals(_REPO_ROOT / "framework", vocabulary=identity,
+                                   rel_to=_REPO_ROOT)
     baseline = load_specifics_baseline()
 
     if mode == "--update-baseline":
@@ -1376,15 +1988,22 @@ if __name__ == "__main__":  # pragma: no cover
               % (len(specifics), len(specifics) - len(new_specifics),
                  len(new_specifics), len(vocabulary)))
 
-    bad = bool(offenders) or bool(new_specifics)
+    for path, line, token in persons:
+        print("arm3 %s:%d  PERSON_LITERAL  %s  (declared by: %s)"
+              % (path, line, token, identity.get(token, "symlink containment")))
+
+    bad = bool(offenders) or bool(new_specifics) or bool(persons)
     if offenders:
         print("FAIL (arm1): %s" % _HINT)
     if new_specifics:
         print("FAIL (arm2): %s" % _SPECIFICS_HINT)
+    if persons:
+        print("FAIL (arm3): %s" % _PERSON_HINT)
     if not bad:
-        print("OK: framework/ is launcher-agnostic and carries no NEW specific "
+        print("OK: framework/ is launcher-agnostic, carries no NEW specific "
               "(%d known debt keys over %d occurrences, cap %d; vocabulary %d "
-              "derived labels)"
+              "derived labels) and names no person (%d identity tokens derived "
+              "over %d files)"
               % (len({specifics_key(f) for f in specifics}), len(specifics),
-                 _SPECIFICS_BASELINE_MAX, len(vocabulary)))
+                 _SPECIFICS_BASELINE_MAX, len(vocabulary), len(identity), _pvisited))
     sys.exit(1 if (bad and mode != "--report") else 0)

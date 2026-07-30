@@ -17,13 +17,22 @@ framework->instance imports and path coupling, and
 `framework/tests/test_no_launcher_hardcode.py` is a shrink-only ratchet over a
 list of banned literals. Both answer "does this text contain a token I already
 know to ban?" Neither can answer "is this noun specific?", and by construction
-neither ever will: that ratchet's tracked patterns are SYNTHETIC placeholders
+neither ever will: that ratchet's Arm 1 patterns are SYNTHETIC placeholders
 (`Testburg` / `bakery` / `testburg.example`) precisely so the shipped source
 names nobody real, and its real-token half lives in an untracked, gitignored
-`instance/config/publish-scan-patterns.local`. So a brand-new real-world proper
-noun arriving in `framework/` today is invisible to every tracked sensor. The
-ban-list IS the answer being sought, which is exactly the shape of question a
-grep cannot answer and a reader can.
+`instance/config/publish-scan-patterns.local`.
+
+NARROWED 2026-07-30, and only narrowed. That ratchet's Arm 2 now DERIVES its
+vendor vocabulary from the tree, and its Arm 3 derives the OPERATOR'S OWN
+identity from what the repository and its instance layer declare (licence
+holder, owner handle, declared `captain_name`) — so a new vendor label, and the
+launching operator's real name, are no longer invisible. Everything else still
+is: a colleague, a customer, a counterparty, an industry verb, a role name, a
+unit or a cadence carries no token any tracked sensor can derive. A brand-new
+real-world proper noun that is not the operator's own arriving in `framework/`
+today remains invisible to every tracked sensor, and the ban-list IS the answer
+being sought — exactly the shape of question a grep cannot answer and a reader
+can.
 
 WHERE THIS MUST NEVER GO. Not a required status check, not a CI job, and not
 in front of any question a deterministic check can answer — a digest, a set
