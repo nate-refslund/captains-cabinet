@@ -493,12 +493,23 @@ cites.
 
 - **Phase:** onboarding salience — the answer binds depth (2026-07-30)
 - **Status:** open
-- **Closed:** the answer now CONTROLS depth in the canonical core. `journey._window_binding` refuses a First Window whose own name does not carry the ratified target, `propose_window` is the one place it is enforced, and every card that asks for depth or reports it renders what that function returns — so the shipped sentence "that is where I spend depth" is a control rather than a claim. Driven both directions with caches purged: answer one target and propose an unrelated folder ⇒ `salience_window_off_target` with nothing written; propose a folder carrying it ⇒ bound, recorded, and stated on the Charter card.
+- **Closed:** the answer now CONTROLS depth in the canonical core. `journey._window_binding` refuses a First Window whose own name shares no word with the ratified target, `propose_window` is the one place it is enforced, and every card that asks for depth or reports it renders what that function returns — so the shipped sentence "that is where I spend depth" is a control rather than a claim. Driven both directions with caches purged: answer one target and propose an unrelated folder ⇒ `salience_window_off_target` with nothing written; propose a folder carrying it ⇒ bound, recorded, and stated on the Charter card.
 - **Open:** `answer_salience` appears in neither `cabinet/dashboard/src/lib/onboarding/bridge.ts`'s action set nor the Telegram command table in `cabinet/dashboard/src/lib/onboarding/telegram.ts`, so no shipped surface can produce a ratified target. The bind is reachable exactly where the answer is — this module. An operator who answers through the core and then proposes a folder from Telegram receives the refusal and cannot state a `WINDOW_RELATIONS` value from that surface.
 - **Why open:** the fix is to wire the ANSWER into both surfaces, and the relation ride along with it: the escape needs the same surface as the thing it escapes. Adding `salience_relation` to a surface that cannot send `answer_salience` would ship a bypass field for state that surface cannot create — unreachable surface whose only effect is to look closed.
 - **Declared at:** `framework/onboarding/journey.py`
 - **Anchor:** `RESIDUAL, stated rather than implied: no shipped surface can send`
 - **Retirement:** `answer_salience` is in the bridge's `ACTIONS` set with its `choice`/`name` fields typed, the Telegram table carries a command that sends it, and `propose_window` on both surfaces can carry `salience_relation`. In the SAME commit this row flips to `retired`.
+
+### RES-024 — the window bind reads WORDS, so a name written without a separator around the target is not a match
+
+- **Phase:** onboarding salience — a short answer is still an answer (2026-07-30)
+- **Closed:** the bind no longer borrows the RANKING length floor, which was hard-blocking every window for any operator whose answer had no ranking token. `salience.name_tokens` is the words a name is made of, `salience.tokenize` is that list above the floor, and `journey._window_binding` compares names with the first. Driven both directions with caches purged: answer `BH`, propose the folder named `bh` ⇒ bound and stated on the Charter card; propose an unrelated folder ⇒ `salience_window_off_target` with nothing written. Every sentence rendered from the bind now states the test that actually ran — "shares no word with it" — and carries the two word sets it compared.
+- **Status:** open
+- **Open:** a word is shared or it is not, so a folder whose name embeds the target without a separator shares no word with it (`northbayops` against `northbay`) and is refused. The refusal is honest about what it tested, and `WINDOW_RELATIONS` is the way through, but the operator still has to make a statement for a folder a reader would call obviously on-target.
+- **Why open:** the alternative is substring containment, and that is a guess this module refuses everywhere else for the same reason it refuses a stem table and a fuzzy threshold: `it` inside `waiting` is not a shared name, and a rule that cannot tell those apart would bind windows on coincidences while looking stricter. The only authority on what a folder actually holds is the operator, and before the Charter is ratified the folder's own name is the only signal the framework may read at all.
+- **Declared at:** `framework/onboarding/journey.py`
+- **Anchor:** `THE RESIDUAL, stated rather than implied: a word is shared or it is not`
+- **Retirement:** a sub-word rule DERIVED from the estate's own names rather than from a threshold (so it stays estate-independent), or a signal that is not the name — content read after the Charter is ratified is lawful and is a different control point. Either way: shrink the docstring paragraph and this row in the SAME commit, or flip this row to `retired` if nothing remains.
 
 ## Absorption — how a wave's residuals get here (COG-5 W2 done)
 

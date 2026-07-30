@@ -425,7 +425,45 @@ budgets:
     # unchanged at 248 — every change lands inside
     # framework/onboarding/{research,journey}.py and the ten new arms are tests).
     # observed == maximum, zero headroom.
-    maximum: 61372
+    # 61327 -> 61388 (+61 measured 2026-07-30 via cognitive-architecture-census.py,
+    # observed 75927 vs the then-effective 75866): A SHORT ANSWER IS STILL AN
+    # ANSWER. The window binding landed above derived BOTH sides of its name test
+    # with the RANKING tokenizer, which drops every part and every compound below
+    # a four-character floor — so an operator whose target was a short product, an
+    # acronym or an initialism (two or three letters, a short name in any language)
+    # produced zero wanted words, an empty set intersects nothing, and the control
+    # that exists to refuse ONE window refused EVERY window. Driven end to end on
+    # 2026-07-30: answer "BH", propose the folder literally named `bh`, refused —
+    # and told "“bh” does not carry that name", a sentence that is false about the
+    # one thing the operator can check. Ranked labels clear the floor by
+    # construction, so the shortlist path could never surface it.
+    # framework/onboarding/salience.py splits the floor out of the primitive:
+    # `name_tokens` is the words a name is made of, `tokenize` is that list above
+    # the ranking floor (output pinned byte-identical over a 60k-name corpus, and
+    # by a test), so the ranker keeps its floor and a NAME comparison stops
+    # borrowing it. framework/onboarding/journey.py's `_window_binding` compares
+    # names with `name_tokens`, returns the two word sets it compared so a refusal
+    # can carry the evidence for its own claim, and every sentence rendered from it
+    # now states the test that ran ("shares no word with it") instead of a
+    # containment the code never tested.
+    # RAISED VISIBLY, never an allowance: an allowance promises a deletion gate,
+    # and neither the binding nor the operator's own words are deletable while the
+    # depth sentence ships. Zero new production MODULES (framework_production_
+    # modules unchanged at 248 — both functions land inside existing modules and
+    # the six new arms are tests). observed == maximum, zero headroom.
+    #
+    # MERGE 2026-07-30 (fix/short-answer-binds over fix/identity-picker-tail): the
+    # two raises above are DISJOINT — one is the identity picker that can finally
+    # offer the operator their own account, one is the window bind that stopped
+    # hard-refusing every window for a short answer — and they touch different
+    # functions in different modules. The merged ceiling is therefore RE-MEASURED
+    # over this tree with cognitive-architecture-census.py rather than summed on
+    # paper: observed 75972 at zero headroom. The paper sum agrees (61327 + 45 +
+    # 61 = 61433), and the agreement is evidence FOR the measurement, never a
+    # substitute for taking it. Both notes stand verbatim;
+    # neither is the other's restamp. Neither is an allowance and ZERO new
+    # modules, so no bijection class moves.
+    maximum: 61433
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

@@ -134,6 +134,9 @@ ESCAPE_OPTION_ID = "other"
 #: not a discount, and the difference is that it applies before there is anything
 #: to discount — a two-character fragment is not a candidate that lost, it is a
 #: substring that was never a name.
+#:
+#: ITS SCOPE IS THE RANKING, and reading it as "the words in a name" is the
+#: mistake it has already caused once: see :func:`name_tokens`.
 _MIN_TOKEN_LEN = 4
 #: A token in more than this share of ONE connector's rows is that connector's
 #: furniture, and its occurrences INSIDE that connector are explained by it.
@@ -199,8 +202,29 @@ class SalienceError(Exception):
 # --- primitives -------------------------------------------------------------
 
 
-def tokenize(name: Any) -> list[str]:
-    """Split a name into ranking tokens, plus the compounds of adjacent pairs.
+def name_tokens(name: Any) -> list[str]:
+    """The words a name is made of, plus the compounds of adjacent pairs.
+
+    NO RANKING FLOOR. This answers "which words does this name contain", and
+    :func:`tokenize` is this list above ``_MIN_TOKEN_LEN``. The two questions
+    have different right answers and collapsing them cost an operator every
+    window they could open: ``journey._window_binding`` compares an ANSWER
+    against a FOLDER NAME, derived both sides with the ranking tokenizer, and an
+    operator who answered a short word, an acronym or an initialism — two or
+    three letters, a short name in any language — got an empty set of wanted
+    words. An empty
+    set intersects nothing, so every window they proposed was refused, including
+    the folder named after their own answer, and the refusal told them that
+    folder did not carry the name it was literally spelled with. Shortlist
+    candidates are ranked labels and clear the floor by construction, so the
+    happy path never showed it.
+
+    The floor is right where it lives. A two-character fragment is not a
+    candidate that lost, it is a substring that was never a name — but a
+    three-letter ANSWER is a name, because the operator typed it and meant it.
+    One implementation with the floor named at the ranking's own door is what
+    keeps those two facts from drifting apart again; two tokenizers with two
+    floors would drift the same way in a month.
 
     The compounds are not decoration. A name written ``north-bay-website`` and a
     name written ``northbay.example`` refer to the same thing, and a word-only
@@ -211,24 +235,36 @@ def tokenize(name: Any) -> list[str]:
     is mechanical, needs no dictionary, and is what lets the specific token beat
     its own generic fragments.
 
-    Tokens shorter than ``_MIN_TOKEN_LEN`` are dropped here; digits are kept,
-    because a case number or a vessel id is a perfectly good recurring token in
-    an estate this module is not allowed to know the shape of.
+    Digits are kept, because a case number or a vessel id is a perfectly good
+    recurring name in an estate this module is not allowed to know the shape of.
     """
     text = str(name or "").lower()
     parts = [p for p in _TOKEN_SPLIT_RE.split(text) if p]
     out: list[str] = []
     seen: set[str] = set()
     for part in parts:
-        if len(part) >= _MIN_TOKEN_LEN and part not in seen:
+        if part not in seen:
             seen.add(part)
             out.append(part)
     for left, right in zip(parts, parts[1:]):
         joined = left + right
-        if len(joined) >= _MIN_TOKEN_LEN and joined not in seen:
+        if joined not in seen:
             seen.add(joined)
             out.append(joined)
     return out
+
+
+def tokenize(name: Any) -> list[str]:
+    """The RANKING vocabulary: :func:`name_tokens` above ``_MIN_TOKEN_LEN``.
+
+    Everything that scores, clusters, discounts, demotes, merges or grades reads
+    this one and only this one — :func:`check` says so outright, because an
+    oracle that credits the ranking with a word the ranking could not itself
+    have produced is an instrument that reports success. Output is unchanged by
+    the split above: a compound short enough to be dropped is shorter than both
+    its parts, so no filtered part can ever have masked a surviving compound.
+    """
+    return [token for token in name_tokens(name) if len(token) >= _MIN_TOKEN_LEN]
 
 
 def _parse_iso(value: Any) -> datetime | None:

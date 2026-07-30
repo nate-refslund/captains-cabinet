@@ -54,6 +54,49 @@ def test_tokens_are_not_invented_for_an_empty_or_junk_name():
         )
 
 
+def test_the_words_in_a_name_survive_the_floor_that_the_ranking_applies():
+    """THE SPLIT, AND WHY IT EXISTS. ``tokenize`` answers "what may be ranked";
+    ``name_tokens`` answers "which words is this name made of". They were one
+    function, and ``journey._window_binding`` — a comparison of an ANSWER against
+    a FOLDER NAME, which is the second question — got the first one's answer:
+    nothing at all for a short product, an acronym or an initialism, so a control
+    meant to refuse one window refused every window.
+
+    Both directions are pinned, because a floor lifted everywhere is the same
+    defect from the other side: the ranker would then rank two-letter fragments.
+    """
+    assert salience.tokenize("BH") == []
+    assert salience.name_tokens("BH") == ["bh"]
+    assert salience.name_tokens("qsd-archive") == ["qsd", "archive", "qsdarchive"]
+    # the compounds are still emitted, and are still what joins a hyphenated
+    # name to a solid one
+    assert "northbay" in salience.name_tokens("north-bay-website")
+    # and a name with nothing in it invents nothing either way
+    for junk in (None, "", "   ", 17, {"x": 1}):
+        assert salience.name_tokens(junk) == [] or all(
+            t.isalnum() for t in salience.name_tokens(junk)
+        )
+
+
+def test_the_ranking_vocabulary_is_exactly_the_floored_name_words():
+    """The regression fence on the other side of the split. Every score, every
+    cluster, every discount and the oracle itself read ``tokenize``, so a change
+    that leaked the floor-free list into the ranker would re-rank a real estate
+    silently. The relationship is pinned as an identity over a corpus of the
+    shapes this ranker actually meets, rather than as a sentence in a docstring.
+    """
+    corpus = [
+        "BH", "QSD archive", "north-bay-website", "northbay.example", "a-b-c-d",
+        "Subitems of Blue Harbour", "org/thing", "acme_corp-2026", "12/34",
+        "Green Lantern brief", "x", "", None, 17, "é-ü", "ab.cd", "A" * 80,
+    ]
+    for name in corpus:
+        assert salience.tokenize(name) == [
+            token for token in salience.name_tokens(name)
+            if len(token) >= salience._MIN_TOKEN_LEN
+        ], name
+
+
 # --- the floors, and the proof that they are MEASURED -----------------------
 
 

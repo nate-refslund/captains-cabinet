@@ -21,7 +21,16 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 56f58f88b0ca89aedfa610a8cf95033138250685ee3987acad6dbbb41e26b0a0
+Reviewed-Scope-Digest: 35b4ae1656c0fd3e3ebc82e410858ceab115d6241c1d4761f536e267829f7485
+(MERGE RE-BIND, 2026-07-30, `fix/short-answer-binds` x master. Both sides
+re-bound this line, so the merge left two; ONE value stands and it is
+recomputed over this merge commit. No COG-4 implementation byte moved on
+either side — the only in-scope path is the contract file, whose ceiling is
+RE-MEASURED over the merged tree rather than summed on paper. Both re-bind
+sections are kept verbatim at the end of this file, because a re-freeze that
+hides what moved asserts a review that never happened. Master's note from
+this same day follows.)
+
 (RE-BOUND 2026-07-30 on `fix/identity-picker-tail`, previous value
 `c83b9b88…`. ONE in-scope path moved and NO COG-4 implementation byte did:
 `cabinet/config/cognitive-architecture-contract.yml` raises
@@ -1846,3 +1855,34 @@ reproduced identically on a clean master clone), onboarding 664 passed / 1
 skipped, cabinet/scripts 5121 passed / 34 skipped, dashboard `tsc --noEmit` clean
 and 2891 vitest passed, layer separation new=0, docs sweep and ledger parity
 green.
+
+
+---
+
+## Re-bind 2026-07-30 (fix/short-answer-binds)
+
+Recorded digest: ea42d51ba95ed81bcd1fa3018b1503d659ce5dfa1a428a67a6b8985df4ce2238
+Previous:        c83b9b88e3a75869150222c436539d5e9737e3ee8b292612b1d8dc9f6be8ab3c
+
+ONE bound path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` takes
+`framework_production_noncomment_lines` 61327 -> 61388 (+61 measured, observed
+75927 vs the then-effective 75866) for a regression the window bind shipped
+with — it derived BOTH sides of its name test with the RANKING tokenizer, whose
+length floor drops every part and every compound below four characters, so an
+operator whose answer was a short product, an acronym or an initialism had zero
+wanted words, and a control built to refuse ONE window refused EVERY window
+while telling them the folder "does not carry that name" — false of the folder
+spelled exactly like their answer. `salience.name_tokens` splits the floor out
+of the primitive (`tokenize` output pinned byte-identical), the bind compares
+names with it and returns the word sets it compared, and every sentence
+rendered from the bind now states the test that ran. Raised visibly, never an
+allowance; census PASS at observed == maximum with zero headroom; ZERO new
+production modules, so no bijection class moves.
+
+(MERGE RE-BIND, 2026-07-30, `fix/short-answer-binds` x master: the two sections
+above each recorded their own value on their own branch; over the merge commit
+ONE digest stands, `35b4ae16…`, and it is the value on the header line. The
+only in-scope path either side moved is the contract file, whose merged ceiling
+is re-measured over this tree — census PASS, observed 75972 == maximum 61433,
+zero headroom. No COG-4 implementation byte moved on either side.)
