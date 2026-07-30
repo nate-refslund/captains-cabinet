@@ -119,7 +119,51 @@ that operator was actually shown. The score is unchanged except that its volume
 term counts the occurrences the discount left standing, and the connector span
 is counted over those too.
 
-## 8. Superseded again, 2026-07-30 — the operator's own answer could not merge
+## 8. Superseded in part, 2026-07-30 — the answer bound nothing
+
+§5 above says the consumer was "proven by EXECUTION … the action committed".
+Both halves are true and together they hid the defect: the action committed a
+target, and *nothing downstream read it*. Driven on 2026-07-30 — answer one
+candidate, then `propose_window` on an unrelated folder — the proposal was
+accepted, the Charter was ratified, the folder was read, and the card went on
+saying "You pointed me at X, so that is where I spend depth — nothing else gets
+opened on the strength of a ranking." A published claim with no control behind
+it, in a public repo, and the fourth step of the design ("go deeper where the
+answer points") was a questionnaire.
+
+Two honest closes were available. **Narrowing the claim** — stop asserting
+control the code does not have — is cheaper and would have been honest, and it
+was REFUSED: it leaves the loop spineless, and this program's own record is that
+the way to lose a control is to relabel the hole as covered. **Binding the
+answer** is what landed, because it is the only close that makes the shipped
+sentence true rather than smaller.
+
+The bind is in `journey._window_binding`, called at the one place depth is ever
+scoped (`propose_window`) and by every card that asks for depth or reports it,
+so the text and the control cannot drift apart. Evidence is the folder's OWN
+name — nothing may be read before the Charter, so the name is the only lawful
+signal — and ancestors are excluded deliberately: a checkout root, a mount point
+or an account named after the thing would make every folder beneath it look
+on-target, which is the fail-open the bind exists to close.
+
+That conservative test does break a legitimate case: the entity wearing a
+different word in every system it lives in — §7's own finding — whose folder is
+called something the ranking never saw. Forcing it would be wrong, so the escape
+is NAMED rather than absent, and it is two statements rather than one because
+they are two different facts: `same_thing` (this folder is that target under
+another name — the alias is learned exactly as the escape hatch learns one, and
+the depth claim survives *because the operator asserted it*), and `elsewhere`
+(a deliberate detour — it is opened, and the card stops claiming the answer
+sent me there). Collapsing them reopens the hole from one side or the other.
+Re-answering `answer_salience` is the third way through and needs nothing new:
+move the answer, and the window follows it.
+
+Not enforceable, and stated as such: the framework cannot know what a folder
+holds before it is allowed to open it, exactly as it cannot know whether an
+ownership attestation is true. What it can do is refuse to proceed silently,
+require the claim, record it, and print which one was made.
+
+## 9. Superseded again, 2026-07-30 — the operator's own answer could not merge
 
 §7 fixed the *judgment* seam and left the *operator* seam exactly as §5 had
 described it, and §5's description was wrong in a way re-execution shows

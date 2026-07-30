@@ -7,7 +7,10 @@ findings, one needed more than one file and ZERO needed more than one system),
 so this module never reads content. It reads NAMES AND COUNTS, ranks what
 recurs, and hands the operator a short list to point at. Ranking is not ingest:
 the expensive, risky, revocable part is DEPTH, and depth is spent only where
-the operator points.
+the operator points — ENFORCED, not asserted. This sentence shipped while an
+operator could answer one target and open a window on any other folder with
+nothing objecting; ``journey._window_binding`` is the control that now makes it
+true, and ``journey.WINDOW_RELATIONS`` is what they may say instead.
 
 NO TAXONOMY. Nowhere below is there a list of entity kinds — no product, no
 project, no client, no campaign, no case. The primitive is a ``row``:

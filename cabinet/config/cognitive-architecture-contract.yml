@@ -308,6 +308,36 @@ budgets:
     # which is a worse outcome than the ordering. Recorded by exception TYPE
     # only — a judge's failure text is not this module's to carry outward.
     #
+    # 60979 -> 61094 (+115 measured 2026-07-30 via cognitive-architecture-census.py,
+    # observed 75371 vs the then-effective 75256): THE ANSWER BINDS DEPTH. The
+    # salience answer was recorded and read by nothing: driven on 2026-07-30,
+    # an operator answered one target, proposed a First Window on an unrelated
+    # folder, and the proposal was accepted, the Charter ratified and the folder
+    # READ — while the card kept publishing "You pointed me at X, so that is
+    # where I spend depth — nothing else gets opened on the strength of a
+    # ranking." A published claim with no control behind it, in a public repo,
+    # and the fourth step of the design reduced to a questionnaire.
+    # framework/onboarding/journey.py gains `_window_binding` (the ONE decision
+    # function: evidence is the folder's own name, ancestors excluded so a
+    # checkout root or an account named after the thing cannot make every folder
+    # beneath it look on-target), `_binding_note` (the sentence rendered FROM
+    # that function, so text and control cannot drift), `WINDOW_RELATIONS` (the
+    # two statements an operator may make instead — this folder is that target
+    # under another name, which learns the alias and keeps the claim, or a
+    # deliberate detour, which is opened and DROPS the claim), the refusal in
+    # `propose_window`, and the binding line on the Charter and dividend cards;
+    # framework/onboarding/salience.py's module claim "depth is spent only where
+    # the operator points" is corrected from an assertion to a citation of the
+    # control that now enforces it.
+    # RAISED VISIBLY, never an allowance: an allowance promises a deletion gate,
+    # and a loop whose answer changes nothing is a questionnaire — this cannot
+    # be deleted while the sentence ships. The majority of the +115 is docstring
+    # prose carrying the reason for each invariant, per the house rule, and is
+    # NOT reformatted into # comments to duck this budget. Zero new production
+    # MODULES (framework_production_modules unchanged at 248: every function
+    # lands inside the existing journey module, and the nine new arms are
+    # tests). observed == maximum, zero headroom.
+    #
     # 60979 -> 61198 (+219 measured 2026-07-30 via cognitive-architecture-census.py,
     # observed 75475 vs the then-effective 75256): the escape hatch could not do
     # the one job the whole read-don't-ask design rests on. Driven on the real
@@ -356,7 +386,18 @@ budgets:
     # unbounded string would ride the refusal out, so each name is scrubbed and
     # cut to 80 characters (a real label is a short token, so nothing true is
     # lost) and the count is stated whenever the list itself is cut.
-    maximum: 61212
+    #
+    # MERGE 2026-07-30 (feat/answer-merges-aliases over fix/answer-binds-depth):
+    # the two raises above are DISJOINT — one is the window binding that makes
+    # the depth claim enforced, one is the merge channel that makes the answer
+    # able to join two names for one thing — so the merged ceiling is RE-MEASURED
+    # over this tree with cognitive-architecture-census.py rather than summed on
+    # paper: observed 75604 at zero headroom. The paper sum agrees here
+    # (60979 + 115 + 233), and the agreement is evidence FOR the measurement,
+    # never a substitute for taking it — a merge has been two lines off before.
+    # Both notes stand verbatim; neither is the other's restamp. Neither is an
+    # allowance and ZERO new modules, so no bijection class moves.
+    maximum: 61327
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

@@ -21,7 +21,23 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 720e924b5a4ff3aa8da793ce37bdf4d43ee05195b20d1edbe40d6f61ce8d8e9f
+Reviewed-Scope-Digest: 7c7b036c211fb79c09a23948dc9b420f4eea397de585de1c4150fe1974372299
+
+(RE-BOUND 2026-07-30 on `fix/answer-binds-depth`, previous value `80d1b9fe…`.
+ONE in-scope path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` raises
+`framework_production_noncomment_lines` VISIBLY 60979 -> 61094 (+115 measured
+over this tree with cognitive-architecture-census.py, observed 75371 vs the
+then-effective 75256 — not an allowance, because a control that makes a
+SHIPPED sentence true has no deletion gate that could ever fire while the
+sentence ships). The unit's own work is entirely in
+`framework/onboarding/journey.py` and `framework/onboarding/salience.py`,
+outside this digest's scope: the salience answer was recorded and read by
+nothing, so an operator could answer one target and have a First Window on any
+other folder accepted, ratified and READ while the card kept publishing "that
+is where I spend depth". `_window_binding` is the control; `WINDOW_RELATIONS`
+is the named escape. Re-bound in the SAME commit as the contract raise, per the
+zero-headroom chain this artifact's RES-007 note describes.)
 (MERGE RE-BIND, 2026-07-29, `fix/connector-loader-honesty` x master. Both sides
 re-bound this line, so the merge left two; ONE value stands and it is recomputed
 over this merge commit. Every note from both sides is kept verbatim below,
@@ -1671,3 +1687,27 @@ ONE bound path moved and NO COG-4 implementation byte did:
 — a 4000-character name produced a 4061-character refusal on the previous
 commit. Raised visibly, never an allowance; census PASS at observed == maximum
 with zero headroom; ZERO new production modules.
+
+
+---
+
+## Re-bind 2026-07-30 (merge of origin/master 589565ea into feat/answer-merges-aliases)
+
+Recorded digest: 7c7b036c211fb79c09a23948dc9b420f4eea397de585de1c4150fe1974372299
+Previous:        720e924b5a4ff3aa8da793ce37bdf4d43ee05195b20d1edbe40d6f61ce8d8e9f
+                 (this branch) / 8b6b1c9d157204e238ca3b7df2c678de1803492f02f9885c6c053167ca36f388 (master)
+
+Both sides re-bound this digest the same day and neither is the other's
+restamp: master's `fix/answer-binds-depth` made the depth claim ENFORCED, this
+branch made the answer able to JOIN two names for one thing. Master's copy of
+this file is taken wholesale so nothing it carries is dropped, and this
+branch's notes stand verbatim beside it.
+
+ONE bound path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` carries BOTH sides' mass
+raises verbatim under a merged `framework_production_noncomment_lines` of
+61327, RE-MEASURED over this merge tree with cognitive-architecture-census.py
+(observed 75604, zero headroom) rather than summed on paper — the paper sum
+agrees, and the agreement is evidence for the measurement, not a substitute for
+taking it. Neither is an allowance; ZERO new modules, so no bijection class
+moves.
