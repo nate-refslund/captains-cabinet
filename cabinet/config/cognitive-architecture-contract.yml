@@ -661,7 +661,52 @@ budgets:
     # (framework_production_modules unchanged at 248: every helper lands inside
     # the existing genesis module, and the 24 new arms are tests).
     # observed == maximum, zero headroom.
-    maximum: 61966
+    # 61724 -> 61891 (+167 measured 2026-07-30 via cognitive-architecture-census.py,
+    # observed 76430 vs the then-effective 76263): fix/detector-vocabulary-as-data —
+    # the DETECTOR LABELS are data. The finding path could read any script as of
+    # the raise above, and then hit a second wall one step further along: every
+    # detector LABEL was an inline English literal, so a folder written in any
+    # other language reached the strongest negative this module prints ("no
+    # contradiction, broken documented command, or explicit urgent marker") by
+    # being unreadable rather than by being clean. Measured on the same live
+    # 17-file Japanese estate: 至急, 期限, 完了 and a CSV headed 件名/状態 could
+    # not fire ANY of the four detectors, and the dividend came back
+    # orientation_map. What lands is one table in journey.py — one entry per
+    # SEMANTIC ROLE, labels grouped by language tag purely as organisation —
+    # which the detectors consume as a union; not one detector body names a
+    # language, and the arm that proves it empties a role and requires the
+    # detector to go silent, because a source grep cannot tell a docstring from
+    # a decision.
+    #
+    # ZERO NEW PRODUCTION MODULES (248 <= 248) and zero new layer-separation
+    # violations. The table lives with the detectors that read it: it is
+    # detector semantics rather than a text primitive, and a module holding
+    # nothing but nine tuples would need an expansion row whose merge_refuted
+    # anchor cannot honestly refute the functions that are its only caller.
+    # The instance extension point is a non-.py optional YAML, which the census
+    # counts as zero by construction — a blind spot this contract already
+    # records, and the reason the SET pins below exist.
+    #
+    # RAISED VISIBLY rather than paid by an allowance: an allowance promises a
+    # deletion gate, and a table of the words an operator's own folder is
+    # written in has no deletion gate that could ever fire. Roughly half the
+    # mass is the table itself; the rest is the loader, the fold-once
+    # resolution and the alternation builder whose empty-role branch is the
+    # degenerate end that would otherwise turn a role nobody filled into a
+    # detector that fires on every line.
+    #
+    # MERGE 2026-07-30 (fix/detector-vocabulary-as-data x master): DISJOINT —
+    # master's side is genesis's answers digest and its declaration-conditioned
+    # proof language, this side is the detector label table in journey.py, and
+    # the two touch different modules. Both notes stand verbatim, master's
+    # first; neither is the other's restamp. The merged ceiling is RE-MEASURED
+    # over this tree with cognitive-architecture-census.py rather than summed
+    # on paper: observed 76672, so the ceiling is MERGED_MAXIMUM at
+    # zero headroom. The paper sum agrees (61724 + 242 + 167 = 62133), and the
+    # agreement is evidence FOR the measurement, never a substitute for taking
+    # it. ZERO new production modules on either side, so no bijection class
+    # moves.
+    maximum: 62133
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

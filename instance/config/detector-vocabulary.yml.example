@@ -1,0 +1,81 @@
+# detector-vocabulary.yml — the words YOUR folder uses for the things the
+# First Window looks for. Copy this file to `detector-vocabulary.yml` next to
+# it and edit; leave it absent and nothing is lost.
+#
+# WHY THIS EXISTS. The framework ships a label table (one entry per semantic
+# role, in `framework/onboarding/journey.py`) so that "urgent" is not a
+# property of English. It ships the languages it could verify word by word —
+# no more, because a wrong label does not sit quietly: it fires on a real line
+# of your material and spends your trust. This file is how you add the words
+# your own estate is written in without waiting for the framework.
+#
+# WHAT IT CAN DO: ADD labels. What it CANNOT do: remove or replace one. There
+# is no key that deletes a shipped label — a deployment that could drop "done"
+# from the closed set would turn every finished tracker row back into an open
+# commitment and hand you the noise as a judgement. Add generously; you cannot
+# break the defaults from here.
+#
+# RULES OF THUMB for a good label:
+#   * it is a MARKER, not a word — something a line is LABELLED with, at the
+#     start of the line or as a status field, never a word that shows up in
+#     ordinary prose. "urgent" is a marker; "important" is a mood.
+#   * matching folds case and width, so TODO / todo / ＴＯＤＯ are one label
+#     and you only write it once.
+#   * a label may be followed by `:` `：` `-` or a closing bracket — you do
+#     not write the punctuation here.
+#
+# A ROLE YOU LEAVE OUT KEEPS ITS SHIPPED LABELS. A role name this cabinet does
+# not know is ignored rather than guessed at.
+#
+# Either shape works. Group by language if it helps you read it later:
+#
+#   attention:
+#     da: ["haster", "kritisk"]
+#     de: ["dringend"]
+#
+# or just list them:
+#
+#   attention: ["haster", "kritisk", "dringend"]
+
+# ── the roles ────────────────────────────────────────────────────────────────
+
+# A line explicitly marked as needing attention NOW.
+#   e.g. "URGENT: the lease renewal expires Friday"
+attention: []
+
+# The FIELD NAME in a "<field>: <attention label>" line.
+#   e.g. "Status: blocked"  ->  the field is "Status"
+attention_field: []
+
+# An explicit open-work marker. TODO / FIXME / XXX ship already and are
+# written the same way in most languages.
+#   e.g. "TODO: chase the survey"
+open_work: []
+
+# The prefix of a commitment written in prose. These are the lines weighed
+# against the open rows of a tracker export, so the finding reads "someone
+# wrote this down and no open row accounts for it".
+#   e.g. "FOLLOW-UP: confirm the handover date"
+commitment_prefix: []
+
+# A tracker row in one of these states is FINISHED and stops accounting for
+# anything. An unrecognised state counts as open, which is the safe direction:
+# a missed closed-label makes noise you can see, the reverse hides a finding.
+#   e.g. "Done", "Shipped"
+closed_status: []
+
+# The left-hand side of a dated commitment two sources can disagree about.
+# This is the one role where the VALUE is compared as an opaque string — two
+# spellings of the same date read as a contradiction, so keep the labels to
+# things your estate really writes dates after.
+#   e.g. "Deadline: 2026-08-12" in one file, "Deadline: 2026-08-25" in another
+contradiction_key: []
+
+# Column headers in a tracker export (CSV / TSV / JSON). An export is
+# recognised by SHAPE — it needs a title-ish and a status-ish column — never
+# by its filename. The first recognised header wins, and shipped labels are
+# checked before yours, so adding here can never change how an export that
+# already parsed is read.
+export_title_column: []
+export_status_column: []
+export_id_column: []
