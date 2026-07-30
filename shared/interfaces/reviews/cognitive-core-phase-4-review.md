@@ -21,7 +21,11 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: abe5fbd01d09c85b2b6005d02ce1f86b35010747d00b8c509b70b7e63dceb3ec
+Reviewed-Scope-Digest: 6595784ffd913aadd0e47fab8fbc146e173b1a7c110f375a3435001828288a80
+(RE-BIND, 2026-07-30, `fix/sources-reading-asymmetry` — see the section of that
+name at the end of this file. One in-scope path moved, the contract file, whose
+ceiling is re-measured over this tree. No COG-4 implementation byte moved. The
+prior note stands below.)
 (MERGE RE-BIND, 2026-07-30, `fix/short-answer-binds` x master. Both sides
 re-bound this line, so the merge left two; ONE value stands and it is
 recomputed over this merge commit. No COG-4 implementation byte moved on
@@ -1910,3 +1914,29 @@ visibly here rather than shrinking the text to fit.
 
 Recorded digest: abe5fbd01d09c85b2b6005d02ce1f86b35010747d00b8c509b70b7e63dceb3ec
 Previous:        35b4ae1656c0fd3e3ebc82e410858ceab115d6241c1d4761f536e267829f7485
+
+---
+
+## Re-bind 2026-07-30 (`fix/sources-reading-asymmetry`)
+
+ONE in-scope path moved: `cabinet/config/cognitive-architecture-contract.yml`,
+`maximum` on `framework_production_noncomment_lines` 61452 -> 61455, +3 measured
+with `cognitive-architecture-census.py` over this tree (observed 75994 ==
+maximum, zero headroom). No COG-4 implementation byte moved, and nothing in this
+branch's work is inside the phase-4 scope.
+
+WHAT THE +3 BUYS: the claim-surfaces sweep run against its own fix. The sentence
+that replaced "the root-relative paths actually consulted" in
+`inventory_mcp_estate` said `sources` names the paths that YIELDED A READING —
+false on one of its two limbs, proved by execution rather than by reading the
+branch: a `.mcp.json` that is valid JSON and parses without error but declares no
+`mcpServers` is read and still absent from `sources`, while an extensions file
+that parses with no `mcps:` at all is listed. One sentence cannot be true of
+both, and the section's own header names that conflation ("I looked and found
+nothing" vs "I never looked") as the failure it exists to refuse. The docstring
+now states the asymmetry and calls it undeliberate; the behaviour is untouched
+(AST with docstrings stripped is byte-identical to `534e8aba`), because splitting
+the two readings wants a second key and symmetry wants a behaviour change.
+
+Recorded digest: 6595784ffd913aadd0e47fab8fbc146e173b1a7c110f375a3435001828288a80
+Previous:        abe5fbd01d09c85b2b6005d02ce1f86b35010747d00b8c509b70b7e63dceb3ec
