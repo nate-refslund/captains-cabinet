@@ -1375,3 +1375,461 @@ def test_the_headline_dates_only_the_notes_that_carry_a_date():
     assert "(2026-07-21)" not in name, (
         "the headline dates all three notes while two are undated: " + name
     )
+
+
+# ---------------------------------------------------------------------------
+# 2026-07-30 — DERIVATIONS FOLLOW THE OPERATOR'S CURRENT ANSWERS.
+#
+# Both defects below were measured on a live agnostic-proof hatch, through the
+# answers file's OWN sanctioned refinement path: `--defaults` hatch, edit
+# instance/config/cabinet-init.answers.yml, re-run generate-instance.py, re-run
+# `first-briefing.sh --local`.
+#
+#   M7  Neither derived artifact could notice its INPUT had moved. The
+#       proposals file is write-once (the Captain may have edited the drafts)
+#       and a delivered brief is idempotent (a re-run must not burn a CLI
+#       call), so after the operator replaced the placeholder lane with her
+#       real one the briefing still said "You staked First Lane as a lane at
+#       genesis" over a Library baseline researching the placeholder label.
+#   M8  The proof language was software-shaped whatever the org was. A lane at
+#       COMPANY altitude declaring `task_system: none` and `repos: []` was
+#       handed "traced end-to-end: task → change → verified deploy/close" and
+#       "A closed task in the lane's task system linked to the shipped change"
+#       — named by the framework, contradicted by the card's own inputs.
+# ---------------------------------------------------------------------------
+DEFAULTS_ANSWERS = {
+    "version": 1,
+    "captain": {"name": "Ada", "timezone": "UTC", "telegram_chat_id": "12345678"},
+    "cabinet": {"id": "main", "mode": "single", "org_shape": "portfolio"},
+    # The `--defaults` lane, verbatim in shape: a placeholder name, no
+    # repository and no task system (generate-instance.render_default_answers).
+    "lanes": [{"name": "First Lane", "slug": "first-lane", "repos": [],
+               "task_system": "none", "boards": []}],
+    "autonomy": {"posture": "propose_first", "flavor": "org"},
+}
+REFINED_ANSWERS = {
+    **DEFAULTS_ANSWERS,
+    "lanes": [{"name": "The Kitchen", "slug": "kitchen", "repos": [],
+               "task_system": "none", "boards": []}],
+    "mission": {"purpose": "Guests leave rested and fed.",
+                "altitude": "company"},
+}
+
+
+def _rows(root):
+    return yaml.safe_load((root / genesis.PROPOSALS_REL).read_text())["outcomes"]
+
+
+def _doc(root):
+    return yaml.safe_load((root / genesis.PROPOSALS_REL).read_text())
+
+
+def _hatch_then_refine(root, refined=None):
+    """The measured path: hatch on the defaults, then refine the answers."""
+    _write_answers(root, DEFAULTS_ANSWERS)
+    genesis.run_genesis_proposal(root, now="2026-07-30T00:00:00Z")
+    _write_answers(root, refined if refined is not None else REFINED_ANSWERS)
+    return genesis.run_genesis_proposal(root, now="2026-07-30T01:00:00Z")
+
+
+# --- M7: the proposals file ------------------------------------------------
+def test_refined_answers_rederive_the_cards_from_the_current_lane(tmp_path):
+    """THE MEASURED DEFECT. The stale card must GO, not merely be joined by a
+    fresh one: a briefing that carries both tells the operator about a lane she
+    deleted, beside the one she wrote."""
+    out = _hatch_then_refine(tmp_path)
+    assert out["status"] == "rederived", out
+    ids = [r["id"] for r in _rows(tmp_path)]
+    assert "proposed-kitchen-first-proof" in ids, ids
+    assert "proposed-first-lane-first-proof" not in ids, ids
+    blob = " ".join(f"{r['name']} {r['why']}" for r in _rows(tmp_path))
+    assert "First Lane" not in blob, blob
+    assert "You staked The Kitchen as a lane at genesis" in blob, blob
+    assert "Guests leave rested and fed." in blob, blob
+
+
+def test_unchanged_answers_rederive_nothing(tmp_path):
+    """Idempotence is the contract this seam had to leave standing: an equal
+    digest must not touch a byte, or every re-run churns the file and burns a
+    CLI call for nothing."""
+    _write_answers(tmp_path, DEFAULTS_ANSWERS)
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-30T00:00:00Z")
+    path = tmp_path / genesis.PROPOSALS_REL
+    before, mtime = path.read_bytes(), path.stat().st_mtime_ns
+    out = genesis.run_genesis_proposal(tmp_path, now="2026-07-30T02:00:00Z")
+    assert out["status"] == "kept-existing", out
+    assert path.read_bytes() == before
+    assert path.stat().st_mtime_ns == mtime, "the file was rewritten in place"
+    assert "rederived_at" not in _doc(tmp_path)
+
+
+def test_the_digest_is_recorded_on_the_proposals_and_on_every_row(tmp_path):
+    """A seam whose sensor is not written down cannot fire on the next run."""
+    _write_answers(tmp_path, DEFAULTS_ANSWERS)
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-30T00:00:00Z")
+    doc = _doc(tmp_path)
+    assert doc[genesis.ANSWERS_DIGEST_KEY] == genesis.answers_digest(tmp_path)
+    assert len(doc[genesis.ANSWERS_DIGEST_KEY]) == 64
+    for row in doc["outcomes"]:
+        assert len(str(row[genesis.ROW_DIGEST_KEY])) == 64, row["id"]
+        assert row["proposed_by"] == "onboarding-genesis", row["id"]
+
+
+def test_a_ratified_row_survives_rederivation_byte_identical(tmp_path):
+    """A ratified row is the Captain's answer, never genesis's draft."""
+    _write_answers(tmp_path, DEFAULTS_ANSWERS)
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-30T00:00:00Z")
+    doc = _doc(tmp_path)
+    doc["outcomes"][0]["captain_ratified"] = True
+    ratified = dict(doc["outcomes"][0])
+    (tmp_path / genesis.PROPOSALS_REL).write_text(
+        yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+
+    _write_answers(tmp_path, REFINED_ANSWERS)
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-30T01:00:00Z")
+    rows = _rows(tmp_path)
+    kept = [r for r in rows if r["id"] == ratified["id"]]
+    assert kept == [ratified], kept
+    assert any(r["id"] == "proposed-kitchen-first-proof" for r in rows)
+
+
+def test_an_operator_edited_draft_survives_rederivation(tmp_path):
+    """"Operator-edited" is defined as "no longer what the recorded derivation
+    produced" — a comparison, not a marker anybody has to remember to set."""
+    _write_answers(tmp_path, DEFAULTS_ANSWERS)
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-30T00:00:00Z")
+    doc = _doc(tmp_path)
+    lane_row = next(r for r in doc["outcomes"] if r["lane"] == "first-lane")
+    lane_row["what"] = "Rewritten by hand: teach one new dish, start to finish."
+    edited = dict(lane_row)
+    (tmp_path / genesis.PROPOSALS_REL).write_text(
+        yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+
+    _write_answers(tmp_path, REFINED_ANSWERS)
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-30T01:00:00Z")
+    rows = _rows(tmp_path)
+    assert [r for r in rows if r["id"] == edited["id"]] == [edited]
+    assert any(r["id"] == "proposed-kitchen-first-proof" for r in rows)
+
+
+def test_a_row_with_no_recorded_digest_is_never_rewritten(tmp_path):
+    """Unknown provenance is not permission to rewrite — the back-compat end,
+    and the same rule that protects a row another organ merged in."""
+    _write_answers(tmp_path, DEFAULTS_ANSWERS)
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-30T00:00:00Z")
+    doc = _doc(tmp_path)
+    for row in doc["outcomes"]:
+        row.pop(genesis.ROW_DIGEST_KEY, None)
+    before = [dict(r) for r in doc["outcomes"]]
+    (tmp_path / genesis.PROPOSALS_REL).write_text(
+        yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+
+    _write_answers(tmp_path, REFINED_ANSWERS)
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-30T01:00:00Z")
+    rows = _rows(tmp_path)
+    assert rows[:len(before)] == before, "an undigested row was rewritten"
+
+
+def test_a_file_predating_the_seam_keeps_the_write_once_behaviour(tmp_path):
+    """No recorded document digest ⇒ staleness is UNKNOWN, and unknown is not
+    stale: the file is left exactly as write-once always left it."""
+    _write_answers(tmp_path, DEFAULTS_ANSWERS)
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-30T00:00:00Z")
+    doc = _doc(tmp_path)
+    doc.pop(genesis.ANSWERS_DIGEST_KEY)
+    (tmp_path / genesis.PROPOSALS_REL).write_text(
+        yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+    path = tmp_path / genesis.PROPOSALS_REL
+    before = path.read_bytes()
+
+    _write_answers(tmp_path, REFINED_ANSWERS)
+    out = genesis.run_genesis_proposal(tmp_path, now="2026-07-30T01:00:00Z")
+    assert out["status"] == "kept-existing", out
+    assert path.read_bytes() == before
+
+
+def test_an_unparseable_answers_file_never_wipes_the_drafts(tmp_path):
+    """Degenerate end. The bytes still hash — so the digest MOVES — but there
+    are no answers to derive from, and a re-derivation from nothing would
+    replace real drafts with an empty file."""
+    _write_answers(tmp_path, DEFAULTS_ANSWERS)
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-30T00:00:00Z")
+    path = tmp_path / genesis.PROPOSALS_REL
+    before = path.read_bytes()
+    (tmp_path / genesis.ANSWERS_REL).write_text("lanes: [unclosed\n",
+                                                encoding="utf-8")
+    out = genesis.run_genesis_proposal(tmp_path, now="2026-07-30T01:00:00Z")
+    assert out["status"] == "no-answers", out
+    assert path.read_bytes() == before
+
+
+def test_an_absent_answers_file_yields_no_digest_and_no_rewrite(tmp_path):
+    """Degenerate end. "" is an honest cannot-tell and never reads as
+    staleness — the check that stops an empty root from clearing a real file."""
+    assert genesis.answers_digest(tmp_path) == ""
+    _write_answers(tmp_path, DEFAULTS_ANSWERS)
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-30T00:00:00Z")
+    path = tmp_path / genesis.PROPOSALS_REL
+    before = path.read_bytes()
+    (tmp_path / genesis.ANSWERS_REL).unlink()
+    assert genesis.write_proposals(
+        [], tmp_path)["status"] == "kept-existing"
+    assert path.read_bytes() == before
+
+
+def test_refining_the_lanes_away_leaves_no_lane_card_behind(tmp_path):
+    """Degenerate end: an EMPTY lanes list. The re-derivation drops the stale
+    lane card and proposes the leftover-question card in its place — the
+    2-4 band holds and nothing about the deleted lane survives."""
+    out = _hatch_then_refine(tmp_path, {**DEFAULTS_ANSWERS, "lanes": []})
+    assert out["status"] == "rederived", out
+    rows = _rows(tmp_path)
+    assert [r["id"] for r in rows] == ["proposed-read-your-world",
+                                       "proposed-library-grounding",
+                                       "proposed-captain-loop"]
+    assert "First Lane" not in yaml.safe_dump(rows)
+
+
+# --- M7: the research brief ------------------------------------------------
+def _delivered(root, body="A brief about the FIRST LANE.", now=None,
+               claude_path="/nonexistent/claude-stub"):
+    return genesis.research_brief(
+        root, run_fn=lambda a, *, timeout, cwd, env=None: _Proc(0, body),
+        net_check_fn=lambda: True, claude_path=claude_path, now=now)
+
+
+def test_refined_answers_supersede_the_delivered_brief(tmp_path):
+    """The Library baseline researched the placeholder label and stayed the
+    org's baseline after the operator replaced it. Superseded, never
+    overwritten: the old brief is MOVED to the dated _pre-adopt archive and the
+    replacement names it."""
+    _write_answers(tmp_path, DEFAULTS_ANSWERS)
+    first = _delivered(tmp_path, now="2026-07-30T00:00:00Z")
+    assert first["status"] == "delivered"
+    assert genesis.answers_digest(tmp_path) in (tmp_path / genesis.BRIEF_REL).read_text()
+
+    _write_answers(tmp_path, REFINED_ANSWERS)
+    again = _delivered(tmp_path, body="A brief about THE KITCHEN.",
+                       now="2026-07-30T01:00:00Z")
+    assert again["status"] == "delivered", again
+    archived = tmp_path / again["superseded"]
+    assert archived.is_file(), again
+    assert "_pre-adopt-" in again["superseded"], again["superseded"]
+    assert "FIRST LANE" in archived.read_text()          # nothing deleted
+    live = (tmp_path / genesis.BRIEF_REL).read_text()
+    assert "THE KITCHEN" in live
+    assert f"supersedes: {again['superseded']}" in live
+    assert genesis.answers_digest(tmp_path) in live
+
+
+def test_an_unchanged_answers_file_never_re_runs_the_brief(tmp_path):
+    """The cost bound. A second run on unchanged answers must not touch the
+    file and must not reach the CLI at all."""
+    _write_answers(tmp_path, DEFAULTS_ANSWERS)
+    _delivered(tmp_path, now="2026-07-30T00:00:00Z")
+    path = tmp_path / genesis.BRIEF_REL
+    before, mtime = path.read_bytes(), path.stat().st_mtime_ns
+
+    def must_not_run(*a, **kw):  # pragma: no cover — the assertion IS the test
+        raise AssertionError("the CLI was invoked for unchanged answers")
+
+    out = genesis.research_brief(tmp_path, run_fn=must_not_run,
+                                 net_check_fn=lambda: True,
+                                 claude_path="/nonexistent/claude-stub",
+                                 now="2026-07-30T02:00:00Z")
+    assert out["status"] == "already-delivered", out
+    assert path.read_bytes() == before
+    assert path.stat().st_mtime_ns == mtime
+
+
+def test_a_delivered_brief_with_no_recorded_digest_is_left_intact(tmp_path):
+    """Degenerate end. Unknown provenance is not permission to archive
+    somebody's Library baseline."""
+    _write_answers(tmp_path, DEFAULTS_ANSWERS)
+    _delivered(tmp_path, now="2026-07-30T00:00:00Z")
+    path = tmp_path / genesis.BRIEF_REL
+    path.write_text("\n".join(
+        ln for ln in path.read_text().splitlines()
+        if not ln.startswith(genesis.ANSWERS_DIGEST_KEY + ":")), encoding="utf-8")
+    before = path.read_bytes()
+    _write_answers(tmp_path, REFINED_ANSWERS)
+    out = _delivered(tmp_path, body="never written", now="2026-07-30T01:00:00Z")
+    assert out["status"] == "already-delivered", out
+    assert path.read_bytes() == before
+
+
+def test_an_absent_brief_writes_normally_even_with_a_digest_on_file(tmp_path):
+    """Degenerate end: the proposals file records a digest but the brief was
+    deleted. Nothing to supersede — the ordinary write path runs."""
+    _write_answers(tmp_path, DEFAULTS_ANSWERS)
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-30T00:00:00Z")
+    assert not (tmp_path / genesis.BRIEF_REL).exists()
+    out = _delivered(tmp_path, now="2026-07-30T01:00:00Z")
+    assert out["status"] == "delivered" and "superseded" not in out, out
+
+
+def test_a_superseded_brief_falls_back_to_the_honest_iou(tmp_path):
+    """The re-run rides the SAME path, honest IOU included: no CLI means the
+    IOU note, with the archive still named. Never fake content, and never a
+    brief about a deployment that no longer exists."""
+    _write_answers(tmp_path, DEFAULTS_ANSWERS)
+    _delivered(tmp_path, now="2026-07-30T00:00:00Z")
+    _write_answers(tmp_path, REFINED_ANSWERS)
+    out = genesis.research_brief(tmp_path, run_fn=lambda *a, **k: _Proc(1),
+                                 net_check_fn=lambda: True, claude_path=None,
+                                 now="2026-07-30T01:00:00Z")
+    assert out["status"] == "iou", out
+    assert (tmp_path / out["superseded"]).is_file()
+    live = (tmp_path / genesis.BRIEF_REL).read_text()
+    assert genesis.IOU_LINE in live
+    assert "FIRST LANE" not in live
+
+
+# --- M8: the proof language derives from what the org declared -------------
+_SOFTWARE_SHAPED = ("task", "deploy", "shipped", "repo")
+
+
+def _lane_card(answers, **kw):
+    cards = genesis.propose_outcome_cards(answers, **kw)
+    return next(c for c in cards if c.get("lane"))
+
+
+def test_a_lane_with_no_task_system_and_no_repos_gets_neutral_proof():
+    """MEASURED: an inn at COMPANY altitude, `task_system: none`, `repos: []`,
+    told its proof was "A closed task in the lane's task system linked to the
+    shipped change" and its WHAT "task → change → verified deploy/close". The
+    card's own inputs SAY there is neither."""
+    card = _lane_card(REFINED_ANSWERS)
+    text = f"{card['name']} {card['what']} {card['proof_expected']}".lower()
+    for token in _SOFTWARE_SHAPED:
+        assert token not in text, f"{token!r} survives in: {text}"
+    # It still asks for something observable and verifiable, in the framework's
+    # own completion vocabulary — a neutral card is not a vague one.
+    assert "receipt" in card["proof_expected"]
+    assert "org journal" in card["proof_expected"]
+    assert "how you checked it held" in card["proof_expected"]
+
+
+def test_a_declared_task_system_keeps_todays_wording_byte_identical():
+    """The regression pin. Conditioning on the card's inputs must not touch a
+    deployment that declared a task system and a repository."""
+    card = _lane_card(ANSWERS)
+    assert card["proof_expected"] == (
+        "A closed task in the lane's task system linked to the shipped change "
+        "in acme/storefront, plus the action's receipt (what/why/undo) in the "
+        "org journal.")
+    assert card["what"] == (
+        "One reviewed, Captain-approved improvement in Acme Storefront traced "
+        "end-to-end: task → change → verified deploy/close.")
+    assert card["name"] == (
+        "First verifiable improvement shipped in the Acme Storefront lane")
+
+
+@pytest.mark.parametrize("lane,software", [
+    ({"name": "L", "slug": "l", "repos": [], "task_system": "none"}, False),
+    ({"name": "L", "slug": "l", "repos": []}, False),               # absent key
+    ({"name": "L", "slug": "l", "repos": [], "task_system": "None"}, False),
+    ({"name": "L", "slug": "l", "repos": ["a/b"], "task_system": "none"}, True),
+    ({"name": "L", "slug": "l", "repos": [], "task_system": "linear"}, True),
+])
+def test_each_declared_surface_maps_to_exactly_one_proof_shape(lane, software):
+    """Absent is read as `none` — the generator's own normalisation — so a key
+    nobody filled in and a key filled in with "none" say the same thing, and
+    invisible case never flips the shape."""
+    card = _lane_card({**DEFAULTS_ANSWERS, "lanes": [lane]})
+    assert ("closed task" in card["proof_expected"]) is software, card
+
+
+def test_the_rendered_briefing_card_carries_the_neutral_language(tmp_path):
+    """Through the surface the operator actually reads — the composed intake
+    item — not only the derivation that feeds it."""
+    _write_answers(tmp_path, REFINED_ANSWERS)
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-30T00:00:00Z")
+    items = genesis.genesis_intake_items(tmp_path, now="2026-07-30T00:00:00Z")
+    lane_item = next(i["payload"]["summary"] for i in items
+                     if "The Kitchen" in i["payload"]["summary"])
+    for token in _SOFTWARE_SHAPED:
+        assert token not in lane_item.lower(), f"{token!r} in: {lane_item}"
+    assert "PROOF-expected: The action's receipt" in lane_item
+
+
+def test_an_unreadable_proposals_file_is_refused_not_rewritten(tmp_path):
+    """Degenerate end, found by attacking the rewrite: the re-derivation
+    ITERATES `outcomes`, so a doc carrying a live digest and a mangled
+    `outcomes` would be written back as its own keys — a clobber dressed as a
+    re-derivation. Same honest refusal merge_proposals already makes."""
+    _write_answers(tmp_path, DEFAULTS_ANSWERS)
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-30T00:00:00Z")
+    doc = _doc(tmp_path)
+    doc["outcomes"] = {"not": "a list"}
+    path = tmp_path / genesis.PROPOSALS_REL
+    path.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+    before = path.read_bytes()
+
+    _write_answers(tmp_path, REFINED_ANSWERS)
+    out = genesis.run_genesis_proposal(tmp_path, now="2026-07-30T01:00:00Z")
+    assert out["status"] == "kept-existing", out
+    assert path.read_bytes() == before
+
+    path.write_text("outcomes: [unclosed\n", encoding="utf-8")
+    assert genesis.run_genesis_proposal(
+        tmp_path, now="2026-07-30T02:00:00Z")["status"] == "kept-existing"
+    assert path.read_text() == "outcomes: [unclosed\n"
+
+
+def test_the_row_digest_round_trips_through_a_non_latin_lane(tmp_path):
+    """The pristine test is a comparison across a YAML round-trip, so it is
+    only as good as that round-trip. A lane written in the operator's own
+    script (allow_unicode on the way out, ensure_ascii=False in the digest) has
+    to still read as untouched, or every non-Latin deployment would have its
+    own genesis drafts treated as hand-edited and never re-derived."""
+    jp = {**DEFAULTS_ANSWERS,
+          "lanes": [{"name": "焼き菓子の棚", "slug": "tana", "repos": [],
+                     "task_system": "none"}]}
+    _write_answers(tmp_path, jp)
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-30T00:00:00Z")
+    row = next(r for r in _rows(tmp_path) if r["lane"] == "tana")
+    assert "焼き菓子の棚" in row["name"]
+    assert genesis._regeneration_safe(row), row
+
+    _write_answers(tmp_path, REFINED_ANSWERS)
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-30T01:00:00Z")
+    assert "tana" not in [r["lane"] for r in _rows(tmp_path)]
+
+
+def test_an_estate_card_gets_the_neutral_proof_too(tmp_path):
+    """The helper is shared, so the fix has to be judged on every card that
+    calls it. An entity the cabinet READ declares no task system and no
+    repository — the software-shaped proof was unearned there before this
+    change too, and leaving it would be a partial fix relabelled as covered."""
+    from framework.onboarding import estate as estate_mod
+    _write_answers(tmp_path, {**DEFAULTS_ANSWERS, "lanes": []})
+    estate_mod.write_estate(ESTATE_DOC, tmp_path)
+    card = next(c for c in genesis.propose_outcome_cards(
+        {**DEFAULTS_ANSWERS, "lanes": []},
+        estate=estate_mod.load_estate(tmp_path)) if c.get("lane"))
+    assert card["derived_from"] == "estate", card
+    for token in _SOFTWARE_SHAPED:
+        assert token not in card["proof_expected"].lower(), card["proof_expected"]
+    assert "org journal" in card["proof_expected"]
+
+
+def test_an_empty_card_list_never_deletes_the_drafts(tmp_path):
+    """Degenerate end, found by attacking the writer rather than the caller:
+    the re-derivation KEEPS what it cannot rewrite and REPLACES the rest, so an
+    empty card list would drop every pristine draft and add nothing back — a
+    wipe wearing a re-derivation's name. run_genesis_proposal returns
+    `no-cards` before it gets here; the guard is on the writer because a caller
+    that does not know the rule cannot break it."""
+    _write_answers(tmp_path, DEFAULTS_ANSWERS)
+    genesis.run_genesis_proposal(tmp_path, now="2026-07-30T00:00:00Z")
+    path = tmp_path / genesis.PROPOSALS_REL
+    before = path.read_bytes()
+    _write_answers(tmp_path, REFINED_ANSWERS)
+    out = genesis.write_proposals([], tmp_path, answers=REFINED_ANSWERS)
+    assert out["status"] == "kept-existing", out
+    assert path.read_bytes() == before
+    # …and the same root with real cards still re-derives, so the guard cannot
+    # pass by disabling the seam.
+    assert genesis.run_genesis_proposal(
+        tmp_path, now="2026-07-30T01:00:00Z")["status"] == "rederived"
