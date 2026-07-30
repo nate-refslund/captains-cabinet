@@ -134,6 +134,24 @@ Three classes, `corpus/{positive,negative,palette}/`:
 `corpus/manifest.json` (sha256 + provenance per image). Only code, the
 manifests, and derived-number calibrations are tracked.
 
+**So the test suite MATERIALISES what it can and VERIFIES what it finds**
+(2026-07-30). Every REGISTRY row carries a `rebuild` field: `"synthetic"` and
+`"copy:<tracked path>"` mean a plain checkout can reconstruct those bytes, and
+`None` means the member is HELD — a live capture, or a Captain-rejected
+screenshot carrying licensed art this tree may not redistribute. `build_corpus.py
+materialise` puts every rebuildable member on disk (4 of 11, all byte-identical
+to the manifest), the fixture runs it before the arms, and every member present
+is sha256-checked — **a mismatch is a hard failure naming the ids, never a skip
+and never a quiet pass**. `tests/test_world_aesthetic_corpus_reach.py` pins the
+held set BY ID so a member cannot join it silently.
+
+Why that matters: the suite used to gate on "are there PNGs in
+`corpus/positive/`?", which is a different question from "is this the corpus the
+manifest declares". Measured on ONE commit — the manifest's corpus gave
+**96 passed**, the archived pre-re-fit corpus dropped in the same place gave
+**4 failed**, and a fresh CI checkout gave **5 skipped**. A fresh checkout now
+runs 97 and skips 3, and the 3 name the held members.
+
 **Re-fit 2026-07-28 (LimeZu → owned art).** The corpus was LimeZu showcase
 scenes until the Captain's "ALL OUT of LimeZu" direction. A palette fitted to
 LimeZu measured owned frames at 57-90% foreign against a 5% limit — the gate
@@ -152,9 +170,10 @@ from `.gitignore`'s wildcard-free prefixes, so a sibling `corpus-*/` needs its
 own ignore rule and reads as a NEW organ of memory against a zero-headroom
 budget. An archived corpus is not a new organ — it is this organ's own history.
 
-* `build_corpus.py synthetic|manifest|verify [--corpus DIR] [--manifest PATH]` — regenerate the
-  synthetic negatives (cut from the repo's own tracked owned atlas, so they
-  rebuild from a plain checkout + Pillow), rebuild the manifest, verify bytes
+* `build_corpus.py synthetic|materialise|manifest|verify [--corpus DIR] [--manifest PATH]` —
+  regenerate the synthetic negatives (cut from the repo's own tracked owned
+  atlas, so they rebuild from a plain checkout + Pillow), put every rebuildable
+  member on disk and NAME the held ones, rebuild the manifest, verify bytes
   against it. Current corpus 11/11 OK; archive 16/16 OK.
 * `calibrate.py palette|clustering|prove|all` — fit `calibration/*.json`
   from the corpus. Palette floor semantics: a quantized bin joins the
