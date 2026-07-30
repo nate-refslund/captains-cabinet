@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 80d1b9fed616d8bc4332d015bcedb155f3aa409b0181022f3bde359bd80b2a7b
+Reviewed-Scope-Digest: aadee358cd344264da512138552918b2763ab43b033738ce979860fdf0c3f090
 (MERGE RE-BIND, 2026-07-29, `fix/connector-loader-honesty` x master. Both sides
 re-bound this line, so the merge left two; ONE value stands and it is recomputed
 over this merge commit. Every note from both sides is kept verbatim below,
@@ -1620,3 +1620,21 @@ raises verbatim — master's +29 connector-loader honesty row and this branch's
 ranker rows — under a merged `maximum` of 60979 that is RE-MEASURED over this
 tree (observed 75256, zero headroom) rather than summed on paper. Neither is an
 allowance; ZERO new modules, so no bijection class moves.
+
+
+---
+
+## Re-bind 2026-07-30 (feat/answer-merges-aliases)
+
+Recorded digest: aadee358cd344264da512138552918b2763ab43b033738ce979860fdf0c3f090
+Previous:        80d1b9fed616d8bc4332d015bcedb155f3aa409b0181022f3bde359bd80b2a7b
+
+ONE bound path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` takes
+`framework_production_noncomment_lines` 60979 -> 61198 (+219 measured, observed
+75475 vs the then-effective 75256) for the merge channel the escape hatch was
+documented to have and did not — `same_as` on `answer_salience`, `merge_ask`,
+the accumulating `salience_merges` store and the alias-group closure, all inside
+`framework/onboarding/{salience,journey}.py`. Raised visibly, never an
+allowance; census PASS at observed == maximum with zero headroom; ZERO new
+production modules, so no bijection class moves.

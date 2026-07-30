@@ -65,7 +65,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator, Mapping
+from typing import Any, Iterator, Mapping, Sequence
 
 from framework import env
 from framework.authority.ownership import (
@@ -813,13 +813,30 @@ def _salience_ranking(state: Mapping[str, Any] | dict[str, Any] | None,
     rows, identities = _salience.rows_from_state(state)
     if len({row["connector"] for row in _salience.normalize_rows(rows)}) < 2:
         return None
-    answered = state.get("salience")
-    aliases = []
-    if isinstance(answered, Mapping) and answered.get("aliases"):
-        aliases = [list(answered["aliases"])]
-    ranking = _salience.rank(rows, identities=identities, aliases=aliases,
-                             join=join, now=now)
+    ranking = _salience.rank(rows, identities=identities,
+                             aliases=_learned_merges(state), join=join, now=now)
     return ranking if ranking["clusters"] else None
+
+
+def _learned_merges(state: Mapping[str, Any]) -> list[list[str]]:
+    """Every "these are the same thing" this operator has ever answered.
+
+    THE STORE IS READ, NOT THE LAST ANSWER. Before this, the only merge in play
+    was whatever the CURRENT answer's own words happened to name, so a second
+    answer erased the first: the operator taught a merge, answered again, and the
+    ranking silently reverted to the split they had already fixed. The learned
+    set is separate from the answer for exactly that reason — the target moves
+    every time the operator changes their mind about where depth goes, and what
+    the estate is called does not.
+
+    The last answer's own tokens are still read alongside the store, so a state
+    written before the store existed keeps the merge it taught.
+    """
+    groups = _salience.learned_merges(state.get("salience_merges"))
+    answered = state.get("salience")
+    if isinstance(answered, Mapping) and answered.get("aliases"):
+        groups.append([str(a) for a in answered["aliases"]])
+    return groups
 
 
 def salience_offer(state: Mapping[str, Any] | dict[str, Any] | None,
@@ -846,7 +863,67 @@ def salience_offer(state: Mapping[str, Any] | dict[str, Any] | None,
     supplied = state.get("salience_rows")
     extra = [str(n) for n in (supplied or {}).get("not_reached") or ()] \
         if isinstance(supplied, Mapping) else []
-    return _salience.offer(ranking, not_reached=extra)
+    return _salience.offer(ranking, not_reached=extra,
+                           learned=_salience.learned_merges(
+                               state.get("salience_merges")))
+
+
+#: The most candidates one answer may join at once. Not a tuning knob: every
+#: entry is checked against the ranking's own labels, so the cap exists only so
+#: an unbounded list cannot arrive through the action surface. It sits well above
+#: the widest split ever measured (five names for one entity).
+MAX_MERGE_LABELS = 50
+
+
+def _salience_merge_request(raw: Any, offer: Mapping[str, Any],
+                            target_label: str,
+                            typed_tokens: Sequence[str]) -> tuple[list[str], list[str]]:
+    """What the operator said is one thing, checked against what was ranked.
+
+    Returns ``(named, group)``: ``named`` is non-empty only when the operator
+    answered the merge question outright, and ``group`` is everything that will
+    be learned — the explicit answer, the candidate they picked, and the ranked
+    names their typed answer used, together.
+
+    REFUSED RATHER THAN TRIMMED, in both directions. A name the ranking never
+    produced is rejected by name instead of being dropped from the list, because
+    a silently shortened merge looks identical to one that worked and the
+    operator would have no way to tell their answer was ignored. A merge naming
+    one thing is refused for the same reason: it joins nothing, and recording it
+    would put a row in the learned store that can never fire.
+    """
+    ranked = {str(c.get("id") or "")
+              for c in ((offer.get("merge") or {}).get("candidates") or ())}
+    group = {t for t in typed_tokens if t in ranked}
+    if target_label in ranked:
+        group.add(target_label)
+    if raw is None:
+        return [], sorted(group)
+    if isinstance(raw, (str, bytes)) or not isinstance(raw, (list, tuple)):
+        raise JourneyError(
+            "salience_merge_invalid",
+            "Name the candidates that are the same thing, as a list.",
+        )
+    if len(raw) > MAX_MERGE_LABELS:
+        raise JourneyError(
+            "salience_merge_too_many",
+            f"That is more than {MAX_MERGE_LABELS} names in one merge.",
+        )
+    named = [str(item).strip() for item in raw if str(item).strip()]
+    unknown = sorted({label for label in named if label not in ranked})
+    if unknown:
+        raise JourneyError(
+            "salience_merge_unknown",
+            "I did not rank " + ", ".join(unknown)
+            + ", so I cannot say it is the same as anything.",
+        )
+    group.update(named)
+    if len(group) < 2:
+        raise JourneyError(
+            "salience_merge_joins_nothing",
+            "A merge needs two names I ranked; that one joins nothing.",
+        )
+    return sorted(group), sorted(group)
 
 
 def entry_plan(
@@ -928,6 +1005,12 @@ def entry_plan(
             "label": "Point me at the one to open first",
             "input": "choice",
             "options": deepcopy(list(offer["options"])),
+            # THE MERGE TRAVELS WITH THE PICK. It is the same answer — "this one,
+            # and by the way it is also the one you called that" — so putting it
+            # behind a second action would make the operator answer twice to fix
+            # a split they can see in one glance. Carried on the action because a
+            # field the surface never renders is a field nobody can answer.
+            "merge": deepcopy(dict(offer.get("merge") or {})),
             "not_reached": offer.get("not_reached", ""),
         })
     payload = {
@@ -1125,7 +1208,7 @@ def _salience_note(state: dict[str, Any], plan: dict[str, Any]) -> str:
         )
         if answered.get("from_escape_hatch"):
             note += " I had not ranked it; I have it now."
-        return note
+        return note + _merges_note(state)
     for question in plan.get("questions") or ():
         offer = question.get("offer") if isinstance(question, dict) else None
         if not isinstance(offer, dict) or not offer.get("options"):
@@ -1135,10 +1218,29 @@ def _salience_note(state: dict[str, Any], plan: dict[str, Any]) -> str:
             if str(o.get("id")) != _salience.ESCAPE_OPTION_ID
         )
         note = f" Ranking what recurs across your sources, these come up first: {named}."
+        note += _merges_note(state)
         if offer.get("not_reached"):
             note += " " + str(offer["not_reached"])
         return note
     return ""
+
+
+def _merges_note(state: Mapping[str, Any]) -> str:
+    """What the operator taught the ranking, said back to them.
+
+    THE ONLY PLACE A MERGE IS VISIBLE. Once two candidates are one, the second
+    name is gone from the shortlist — which is the point, and is also
+    indistinguishable from the answer having been dropped. Without this sentence
+    an operator who joined two names sees a list one shorter and no reason why,
+    and the honest reading of that is "it ignored me".
+    """
+    groups = _salience.learned_merges(state.get("salience_merges"))
+    if not groups:
+        return ""
+    listed = "; ".join(" = ".join(group) for group in groups[:3])
+    more = f" (+{len(groups) - 3} more)" if len(groups) > 3 else ""
+    return (f" You told me these are the same thing, so I rank them as one: "
+            f"{listed}{more}.")
 
 
 def _discovery_note(executed: Any) -> str:
@@ -2953,6 +3055,24 @@ def _act_core(
                 target = str(options[choice].get("label") or choice)
                 aliases = [str(a) for a in (options[choice].get("aliases") or ())]
                 evidence = str(options[choice].get("why") or "")
+            # THE MERGE THE OPERATOR TEACHES, which is the one thing no matcher
+            # here can derive. Measured on a real estate: one product ranked
+            # TWICE under two names at two positions, and answering left the
+            # shortlist byte-identical, because the only merge in play was
+            # whatever words the answer itself happened to contain. `same_as` is
+            # the operator saying it outright.
+            #
+            # NAMED AGAINST THE WHOLE RANKING, not the shown three. The twin of
+            # the top candidate was measured at ranks 11 and 33, so a merge
+            # reachable only from what is on screen cannot fix the split it
+            # exists for. It is still bounded by what the ranking PRODUCED —
+            # a name it never ranked is refused, exactly as an invented judge
+            # answer is, because an unvalidated string entering the ranking's own
+            # vocabulary is how a merge becomes a guess.
+            merged_labels, merge_group = _salience_merge_request(
+                request.get("same_as"), offer, target if not escaped else "",
+                aliases if escaped else [],
+            )
             after = deepcopy(state)
             after["salience"] = {
                 "target": target,
@@ -2963,6 +3083,19 @@ def _act_core(
                 "evidence": evidence,
                 "answered_at": ts,
             }
+            if merged_labels:
+                after["salience"]["merged_with"] = merged_labels
+            # KEPT, NOT APPLIED-AND-FORGOTTEN. The store accumulates across every
+            # answer and every later sweep; the answer above is replaced by the
+            # next one. Both the explicit `same_as` and the words of a typed
+            # escape-hatch name land here, because both are the operator saying
+            # two names are one thing and both must outlive the answer.
+            if merge_group:
+                after["salience_merges"] = _salience.learn_merge(
+                    state.get("salience_merges"), merge_group, now=ts,
+                    answer=target,
+                    source="named" if merged_labels else "typed",
+                )
             # THE ANSWER GRADES THE RANKING, on the operator's estate and in the
             # operator's words. A ranking nobody checks is an assertion, and the
             # only check that is not tuned to one estate is the one the operator

@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -1947,6 +1948,172 @@ def test_the_offer_refuses_an_answer_it_never_made(tmp_path):
                 tmp_path,
             )
         assert excinfo.value.code == code
+
+
+# --- the answer that MERGES a split candidate -------------------------------
+
+
+def _split_estate_rows():
+    """The measured shape: ONE thing under two names sharing no substring.
+
+    The tracker and the handbook call it ``lantern``; the code, the database and
+    the hosting call it ``quayside``. No stem, no abbreviation, no shared
+    substring — the join a token matcher provably cannot make and a reader makes
+    instantly. ``ledger`` and ``beacon`` are genuinely separate things, so the
+    fixture is LOPSIDED: a rule that merged everything would be as wrong here as
+    a rule that merged nothing.
+    """
+    per = {
+        "tracker": ["Lantern rollout", "Lantern billing", "Lantern pricing",
+                    "Ledger reconcile", "Ledger export", "Beacon onboarding"],
+        "docs": ["Lantern handbook", "Lantern runbook", "Ledger notes"],
+        "repo": ["quayside-web", "quayside-api", "ledger-core", "beacon-app"],
+        "db": ["quayside-prod", "ledger-prod"],
+        "host": ["quayside-live", "ledger-live"],
+    }
+    rows, day = [], 1
+    for connector, names in per.items():
+        for name in names:
+            rows.append({"connector": connector, "name": name,
+                         "updated": f"2026-07-{day:02d}T09:00:00Z"})
+            day += 1
+    return rows
+
+
+def _labels(offer):
+    return [o["id"] for o in offer["options"]
+            if o["id"] != journey._salience.ESCAPE_OPTION_ID]
+
+
+def test_answering_merges_a_split_candidate_and_the_shortlist_changes(tmp_path):
+    """THE ESCAPE HATCH'S ONLY JOB, driven through the real action.
+
+    Measured before this: the same product ranked TWICE under two names at two
+    positions, and after the operator answered, the shortlist was byte-identical
+    — the only merge in play was whatever words the answer happened to contain,
+    so an operator who picked a candidate taught nothing at all.
+
+    Here the operator says it outright, and the ranking changes: one candidate
+    now carries both names and spans every system the thing lives in, while the
+    things that genuinely are separate stay separate.
+    """
+    _connected_state(tmp_path, _split_estate_rows())
+    before = journey.salience_offer(journey.snapshot(tmp_path)["state"])
+    assert {"quayside", "lantern"} <= set(_labels(before)), "no split to fix"
+
+    result = journey.act(
+        {"action": "answer_salience", "choice": "quayside",
+         "same_as": ["lantern"], "surface": "dashboard", "action_id": "sal-mrg"},
+        tmp_path,
+    )
+    assert result["ok"] is True
+    assert result["state"]["salience"]["merged_with"] == ["lantern", "quayside"]
+
+    after = journey.salience_offer(result["state"])
+    assert after["ranked"] == before["ranked"] - 1
+    joined = [o for o in after["options"]
+              if {"lantern", "quayside"} <= set(o.get("aliases") or ())]
+    assert len(joined) == 1, "the shortlist did not change"
+    assert set(joined[0]["connectors"]) == {"db", "docs", "host", "repo", "tracker"}
+    # the things that are NOT the same thing were not swept up with it
+    assert "ledger" in _labels(after)
+    assert "ledger" not in joined[0]["aliases"]
+    # and the operator can see it took, which is the only way they can
+    assert "so I rank them as one" in result["card"]["body"]
+
+
+def test_a_learned_merge_outlives_the_answer_that_taught_it(tmp_path):
+    """PERSISTENCE IS THE POINT, not the ordering.
+
+    An answer that changes only the shortlist in front of the operator is a
+    filter. Two things must not undo it: answering again (the target moves; what
+    the estate is CALLED does not), and sweeping again (the rows are re-read; the
+    operator's answer is not). Re-asking a question they already settled is the
+    "never ask what it could have looked up" failure one turn later.
+    """
+    _connected_state(tmp_path, _split_estate_rows())
+    journey.act(
+        {"action": "answer_salience", "choice": "quayside",
+         "same_as": ["lantern"], "surface": "dashboard", "action_id": "sal-m1"},
+        tmp_path,
+    )
+
+    # (1) the operator changes their mind about where depth goes
+    again = journey.act(
+        {"action": "answer_salience", "choice": "ledger",
+         "surface": "dashboard", "action_id": "sal-m2"},
+        tmp_path,
+    )
+    assert again["state"]["salience"]["target"] == "ledger"
+    still = journey.salience_offer(again["state"])
+    assert [o for o in still["options"]
+            if {"lantern", "quayside"} <= set(o.get("aliases") or ())]
+
+    # (2) the connectors are READ AGAIN — the real action, which replaces the
+    # rows wholesale. Driven for real (an estate declaring nothing sweeps to the
+    # honest empty without leaving the machine) so the survival is a property of
+    # the production handler and not of a fixture that mimics it.
+    swept = journey.act(
+        {"action": "gather_connectors", "surface": "dashboard",
+         "action_id": "sal-m3"},
+        tmp_path,
+    )
+    assert swept["state"]["salience_rows"]["rows"] == []
+    assert swept["state"]["salience_merges"]["groups"][0]["labels"] == \
+        ["lantern", "quayside"]
+
+    # and when the next sweep does find the estate again, the answer is applied
+    # to the fresh rows rather than asked for a second time
+    refreshed = deepcopy(swept["state"])
+    refreshed["salience_rows"] = {"rows": _split_estate_rows(),
+                                  "identities": [], "not_reached": []}
+    offer = journey.salience_offer(refreshed)
+    assert [o for o in offer["options"]
+            if {"lantern", "quayside"} <= set(o.get("aliases") or ())], \
+        "the merge did not survive the next sweep"
+    assert "lantern" not in _labels(offer) or "quayside" not in _labels(offer)
+
+
+def test_the_merge_question_offers_every_ranked_candidate(tmp_path):
+    """A field the surface never renders is a field nobody can answer. It
+    travels with the pick because it is the same answer — "this one, and it is
+    also the one you called that" — and it reaches PAST the shown three, because
+    the twin of the top candidate was measured at ranks 11 and 33."""
+    _connected_state(tmp_path, _split_estate_rows())
+    card = journey.snapshot(tmp_path)["card"]
+    action = [a for a in card["options"] if a["action"] == "answer_salience"][0]
+    shown = {o["id"] for o in action["options"]
+             if o["id"] != journey._salience.ESCAPE_OPTION_ID}
+    nameable = {c["id"] for c in action["merge"]["candidates"]}
+    assert action["merge"]["field"] == "same_as"
+    assert shown < nameable, "the merge could not reach below the cut"
+
+
+def test_a_merge_naming_something_never_ranked_is_refused(tmp_path):
+    """A merge is a gate too. An unvalidated string entering the ranking's own
+    vocabulary is how a taught identity becomes a guess — so an invented name is
+    refused BY NAME rather than dropped from the list, because a silently
+    shortened merge looks exactly like one that worked."""
+    _connected_state(tmp_path, _split_estate_rows())
+    for request, code in (
+        ({"choice": "ledger", "same_as": ["never-ranked-this"]},
+         "salience_merge_unknown"),
+        ({"choice": "ledger", "same_as": ["ledger"]},
+         "salience_merge_joins_nothing"),
+        ({"choice": "ledger", "same_as": "ledger"}, "salience_merge_invalid"),
+        ({"choice": "ledger", "same_as": {"ledger": 1}}, "salience_merge_invalid"),
+        ({"choice": "ledger", "same_as": ["ledger"] * 51},
+         "salience_merge_too_many"),
+    ):
+        with pytest.raises(journey.JourneyError) as excinfo:
+            journey.act(
+                {"action": "answer_salience", "surface": "dashboard",
+                 "action_id": f"bad-{code}-{len(str(request))}", **request},
+                tmp_path,
+            )
+        assert excinfo.value.code == code
+    # and nothing was learned from any of them
+    assert not journey.snapshot(tmp_path)["state"].get("salience_merges")
 
 
 def test_answering_salience_is_refused_when_nothing_was_offered(tmp_path):

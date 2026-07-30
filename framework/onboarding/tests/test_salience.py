@@ -276,7 +276,129 @@ def test_an_alias_only_merges_what_the_ranking_already_named():
                for c in warm["clusters"] if c is not merged)
 
 
+def _three_names_for_one_thing():
+    """A LOPSIDED estate: three candidates of deliberately different weights.
+
+    Row counts are 4 / 3 / 2 so no symmetric rule can produce the right answer
+    by accident — the union keeps the WIDEST name, which is ``alpha`` and is not
+    the name the second answer is anchored on. That asymmetry is the whole point
+    of the fixture: it is what makes the second answer fall on the floor when
+    answers are applied one at a time instead of being unioned first.
+    """
+    return (
+        _rows(("tracker", "alpha-plan", None), ("tracker", "alpha-ops", None),
+              ("repo", "alpha-web", None), ("repo", "alpha-api", None),
+              ("docs", "bravo-handbook", None), ("docs", "bravo-runbook", None),
+              ("db", "bravo-store", None),
+              ("host", "charlie-live", None), ("queue", "charlie-jobs", None))
+    )
+
+
+def test_two_answers_about_one_thing_are_one_answer():
+    """THE ANSWER THAT WAS SILENTLY LOST. A union keeps ONE of the names it
+    joined, so an operator who says "alpha is bravo" and later "bravo is
+    charlie" leaves the second answer pointed at a label the first answer
+    consumed — and applying answers one at a time drops it on the floor while
+    the shortlist looks fine.
+
+    Identity is transitive because that is what "the same thing" MEANS, not
+    because two strings resembled each other: nothing here compares names, the
+    components are built from the operator's own answers.
+    """
+    rows = _three_names_for_one_thing()
+    cold = {c["label"] for c in salience.rank(rows)["clusters"]}
+    assert {"alpha", "bravo", "charlie"} <= cold
+
+    warm = salience.rank(rows, aliases=[["alpha", "bravo"], ["bravo", "charlie"]])
+    carrying = [c for c in warm["clusters"]
+                if {"alpha", "bravo", "charlie"} <= set(c["tokens"])]
+    assert len(carrying) == 1, "the second answer was dropped"
+    assert len(carrying[0]["connectors"]) == 6
+    assert not [c for c in warm["clusters"] if c is not carrying[0]
+                and {"bravo", "charlie"} & set(c["tokens"])]
+
+    # ORDER-INDEPENDENT, which is the property that makes it a closure rather
+    # than a lucky sequence: the same answers in the other order, same result.
+    other_way = salience.rank(rows, aliases=[["charlie", "bravo"], ["bravo", "alpha"]])
+    assert [c["tokens"] for c in other_way["clusters"]] == \
+        [c["tokens"] for c in warm["clusters"]]
+
+
+def test_an_answer_naming_one_candidate_or_none_joins_nothing():
+    """THE DEGENERATE END of the union. A typed word matching a single candidate
+    is a target, not a merge, and a word matching none is neither — both leave
+    the ranking exactly as the names left it rather than quietly forming a
+    one-member group that changes a label."""
+    rows = _three_names_for_one_thing()
+    cold = salience.rank(rows)
+    for nothing in ([["alpha"]], [["nothing-here"]], [[]], [["alpha", "alpha"]]):
+        warm = salience.rank(rows, aliases=nothing)
+        assert [c["tokens"] for c in warm["clusters"]] == \
+            [c["tokens"] for c in cold["clusters"]]
+
+
+def test_a_learned_merge_is_appended_deduped_and_never_overwritten():
+    """The store is what makes an answer outlive the answer after it. Appending
+    is the whole contract; the dedup is there because a loop that re-offers the
+    same estate would otherwise grow one row per re-confirmation."""
+    first = salience.learn_merge(None, ["alpha", "bravo"], now="2026-07-30T00:00:00Z",
+                                 answer="alpha")
+    assert first["schema"] == salience.SALIENCE_MERGE_SCHEMA
+    assert first["groups"][0]["labels"] == ["alpha", "bravo"]
+
+    second = salience.learn_merge(first, ["charlie", "delta"],
+                                  now="2026-07-31T00:00:00Z", answer="charlie")
+    assert [row["labels"] for row in second["groups"]] == \
+        [["alpha", "bravo"], ["charlie", "delta"]]
+
+    # the same fact answered twice, in the other order, is still one row
+    again = salience.learn_merge(second, ["bravo", "alpha"],
+                                 now="2026-08-01T00:00:00Z")
+    assert len(again["groups"]) == 2
+
+    # and a group that joins nothing never enters the record
+    assert salience.learn_merge(again, ["alpha"], now="x")["groups"] == \
+        again["groups"]
+    assert salience.learn_merge(None, [], now="x")["groups"] == []
+
+
+def test_reading_the_store_survives_a_row_it_cannot_use():
+    """READ FORGIVINGLY, because this is read on every render of the operator's
+    card: a card that refuses to draw over one unusable historical row takes the
+    whole surface down to protect an ordering."""
+    assert salience.learned_merges(None) == []
+    assert salience.learned_merges({"groups": "not a list"}) == []
+    assert salience.learned_merges({"groups": [
+        {"labels": ["alpha", "bravo"]},
+        {"labels": ["only-one"]},
+        {"labels": []},
+        "not a row",
+        {"no_labels": True},
+    ]}) == [["alpha", "bravo"]]
+
+
 # --- the ask, and its degenerate ends ---------------------------------------
+
+
+def test_the_merge_question_reaches_past_the_cut_and_echoes_what_it_learned():
+    """THE SPLIT IS USUALLY NOT ON SCREEN. Measured, one entity stood as five
+    candidates at ranks 6, 11, 21, 33 and 34 — so a merge answerable only over
+    the shown three cannot reach the split it exists to fix. Every ranked
+    candidate is nameable, and what has already been learned is said back,
+    because once two candidates are one the second name is gone from the
+    shortlist and that is indistinguishable from the answer being ignored.
+    """
+    ranking = salience.rank(_three_names_for_one_thing())
+    ask = salience.offer(ranking, top=1,
+                         learned=[["alpha", "bravo"], ["short"]])
+    shown = [o["id"] for o in ask["options"]
+             if o["id"] != salience.ESCAPE_OPTION_ID]
+    nameable = [c["id"] for c in ask["merge"]["candidates"]]
+    assert len(shown) == 1 and len(nameable) == len(ranking["clusters"]) >= 3
+    assert set(shown) < set(nameable)
+    assert ask["merge"]["field"] == "same_as"
+    # echoed back — and a stored group that joins nothing is not echoed as one
+    assert ask["merge"]["learned"] == [{"labels": ["alpha", "bravo"]}]
 
 
 def test_an_offer_refuses_to_exist_without_a_record_of_what_was_read():
