@@ -91,7 +91,7 @@ describe('surfaces stay inside the one-door contract', () => {
     expect(text).toMatch(/QueueDecisionCard/)
   })
 
-  it('badge: single-argument GET fetch only, hidden at zero, links to /queue', () => {
+  it('badge: single-argument GET fetch only, hidden at a MEASURED zero, links to /queue', () => {
     const text = fs.readFileSync(BADGE, 'utf8')
     const calls = text.match(/fetch\(([^)]*)\)/g) ?? []
     expect(calls.length).toBeGreaterThan(0)
@@ -100,7 +100,11 @@ describe('surfaces stay inside the one-door contract', () => {
     }
     expect(text).not.toMatch(/method\s*:/i)
     expect(text).not.toMatch(/['"]use server['"]/)
-    expect(text).toMatch(/count <= 0/)
+    // Was `count <= 0`, i.e. "hidden at zero" — which hid an UNMEASURED count
+    // too, and hiding is itself a claim that nothing is waiting (2026-07-30).
+    // The three-way decision is now a driven pure function; the zero-test that
+    // remains lives in badgeState and is unit-tested there.
+    expect(text).toMatch(/badgeState\(/)
     expect(text).toMatch(/href="\/queue"/)
   })
 })

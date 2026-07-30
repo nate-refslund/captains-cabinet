@@ -166,20 +166,37 @@ class RealProbe(Probe):
         except Exception:
             return None
 
-    def launchctl_list(self) -> dict:
+    # WHY None AND {} ARE DIFFERENT (2026-07-30). Collapsing them into {} is
+    # what let the 2026-07-25 teardown pass as a launchd blind spot for five
+    # days: with every label disabled, booted out and its plist removed,
+    # `launchctl list` answered perfectly well with zero cabinet rows, and the
+    # registry read that as "cannot see launchd" and switched off BOTH launchd
+    # arms — including declared-but-not-loaded, the one check written for
+    # exactly that event. An answered scan holding nothing is a measurement,
+    # and a very loud one: every declared service is unloaded.
+    #
+    # THE MIRROR-IMAGE FAILURE, closed at the same time: `launchctl list`
+    # reports the CALLER'S domain. The fleet lives in `gui/$(id -u)` (every
+    # plist under cabinet/launchd is a user agent), so the same command run as
+    # root — a LaunchDaemon, a sudo invocation, a root cron — answers cleanly
+    # with zero cabinet labels on a perfectly healthy box. Under the new
+    # contract that would page "declared in services.yml but not loaded" for
+    # every row: a false alarm with a false reason, which is how a real one
+    # stops being read. Root therefore reports NOT OBSERVABLE, because from
+    # root's domain it genuinely is not.
+    def launchctl_list(self) -> Optional[dict]:
         """ONE `launchctl list` call → every com.cabinet.* label with its pid +
         last exit status (lane-ops 2026-07-04, feeds the no-silent-cron exit-
         status + declared-but-not-loaded checks). Output rows are
-        `PID\\tStatus\\tLabel` where PID is '-' when not currently running and
-        Status is the LAST exit code (negative = killed by signal). Any parse
-        or subprocess failure degrades to {} — the registry treats {} as
-        "launchd not observable" and self-disables both launchd checks rather
-        than false-failing (same contract as every other Probe method)."""
+        `PID\\tStatus\\tLabel`. None = launchd could not be asked; {} = it
+        answered and knows no com.cabinet.* label at all."""
         try:
+            if os.geteuid() == 0:
+                return None
             r = subprocess.run(["launchctl", "list"],
                                capture_output=True, text=True, timeout=10)
             if r.returncode != 0:
-                return {}
+                return None
             out: dict = {}
             for line in r.stdout.splitlines():
                 parts = line.split()
@@ -194,7 +211,7 @@ class RealProbe(Probe):
                 out[label] = {"pid": pid, "status": status}
             return out
         except Exception:
-            return {}
+            return None
 
     def trigger_chair(self, message: str) -> bool:
         """Push a trigger to the Chair's stream via the SAME mechanism as

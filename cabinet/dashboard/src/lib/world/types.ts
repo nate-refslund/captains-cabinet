@@ -81,9 +81,14 @@ export interface WorldSnapshot {
   /**
    * pending_captain_items (world-spec §14 P1): |Decisions| incl. overflow
    * from the attention census — the ONE int the HUD chip, lantern gantry,
-   * and mailbox flag all render. 0 when the census is dark (chip hidden).
+   * and mailbox flag all render.
+   *
+   * NULL when the census is dark: nobody counted, so there is no number to
+   * draw. 0 means the org counted and nothing is waiting, and only a live
+   * reading may say that — a dark census rendering 0 is the defect fixed on
+   * 2026-07-30 (see lib/attention/queue.ts).
    */
-  pendingCaptainItems?: number
+  pendingCaptainItems?: number | null
 }
 
 export interface GrammarStatus {

@@ -32,10 +32,15 @@ class FakeProbe(Probe):
         self._files = files or {}
         self._mtimes = mtimes or {}
         self._redis = redis or {}
-        # launchctl surface (lane-ops 2026-07-04): {} = "not observable" —
-        # matches the base-Probe default, so tests that don't care exercise
-        # the self-disabled path exactly like a non-Mac host.
-        self._launchctl = launchctl or {}
+        # launchctl surface: None = "not observable" (the base-Probe default,
+        # so tests that don't care exercise the self-disabled path exactly like
+        # a non-Mac host); {} = launchd answered and knows no cabinet label.
+        #
+        # `launchctl or {}` used to collapse those two, which meant NO fixture
+        # could express the shape of the 2026-07-25 outage — an answered scan
+        # holding nothing. The double encoded the same conflation as the code,
+        # so the suite could not have caught it.
+        self._launchctl = launchctl
         # side-effect capture
         self.triggers: list[str] = []
         self.drift: list[tuple[str, str]] = []
@@ -678,6 +683,105 @@ def test_cron_declared_but_not_loaded_caught():
     res = reg.verify_no_silent_cron_failure(probe)
     assert res.ok is False
     assert "memory-worker" in res.detail and "not loaded" in res.detail
+
+
+def test_cron_whole_fleet_booted_out_is_the_loudest_alarm():
+    """THE 2026-07-25 OUTAGE SHAPE — and the input no fixture ever supplied.
+
+    Every com.cabinet.* label was disabled, booted out, and its plist removed,
+    so `launchctl list` answered cleanly with ZERO cabinet rows. The scan was
+    working perfectly; the fleet was gone. Because {} also stood for "launchd
+    not observable", the check self-disabled and returned GREEN every 30
+    minutes for five days while the org it watches did not run.
+
+    An answered scan holding nothing is a measurement — of total absence — and
+    it must page for every declared row. Note what this test does that none of
+    the others did: it supplies the DEGENERATE INPUT (an empty answer) rather
+    than checking the output of a populated one. Every launchd fixture in this
+    file passes a non-empty dict, which is why the suite was green through the
+    outage it was written to catch.
+    """
+    now = dt.datetime(2026, 7, 4, 12, 0, tzinfo=dt.timezone.utc)
+    probe = _mini_probe(now, launchctl={})
+    res = reg.verify_no_silent_cron_failure(probe)
+    assert res.ok is False
+    # every manifest row, not just one
+    for name in ("retro-trigger", "frontdoor-briefing", "actfirst-canary"):
+        assert name in res.detail, f"{name} missing from: {res.detail}"
+    assert "not loaded" in res.detail
+    # and it must NOT be mistaken for the self-disabled path
+    assert "launchd scan unavailable" not in res.detail
+
+
+def test_cron_launchd_unobservable_still_self_disables():
+    """The other half of the same distinction: None (non-Mac host, launchctl
+    error, older Probe stub) is NOT an observation and must never page."""
+    now = dt.datetime(2026, 7, 4, 12, 0, tzinfo=dt.timezone.utc)
+    res = reg.verify_no_silent_cron_failure(_mini_probe(now, launchctl=None))
+    assert res.ok is True
+    assert "launchd scan unavailable" in res.detail
+
+
+def test_real_probe_reports_unobservable_when_running_as_root():
+    """THE MIRROR-IMAGE FALSE PAGE, closed before it could fire.
+
+    `launchctl list` answers for the CALLER'S domain, and the fleet is a user
+    agent in `gui/$(id -u)`. Run as root — a LaunchDaemon, sudo, root cron —
+    the same command returns zero cabinet labels on a perfectly healthy box.
+    Under the new contract that would page "declared in services.yml but not
+    loaded" for EVERY row, with a reason that is false. Root must therefore
+    report not-observable, because from root's domain it is not.
+
+    Not wired that way today (the watchdog is installed as a user agent), which
+    is exactly why it needs an arm: a latent false page fires the first time
+    someone reaches for sudo.
+
+    NOTE the class under test: `RealProbe`, not `Probe`. The first draft of this
+    arm asked `chk.Probe()` — the ABSTRACT base, whose default is already None —
+    so it passed with the guard deleted. A test pointed at the wrong twin is the
+    house's most-repeated defect, and it caught this file too.
+    """
+    import framework.watchdog.check as chk
+
+    real_geteuid = chk.os.geteuid
+    real_run = chk.subprocess.run
+    calls: list[str] = []
+    try:
+        chk.os.geteuid = lambda: 0  # type: ignore[assignment]
+
+        def _spy(*a, **k):
+            calls.append("ran")
+            return real_run(*a, **k)
+
+        chk.subprocess.run = _spy  # type: ignore[assignment]
+        assert chk.RealProbe().launchctl_list() is None
+        assert calls == [], "root must not even ask launchd"
+    finally:
+        chk.os.geteuid = real_geteuid  # type: ignore[assignment]
+        chk.subprocess.run = real_run  # type: ignore[assignment]
+
+
+def test_real_probe_answers_with_a_dict_when_it_can_ask():
+    """The positive control for the arm above: as this uid, the real probe does
+    ask launchd and returns a DICT — possibly empty, which is the whole point.
+    Without this, the root arm could pass on a probe that never answers at all
+    (skipped on non-Darwin, where launchctl legitimately does not exist)."""
+    import platform
+
+    import framework.watchdog.check as chk
+
+    if platform.system() != "Darwin":
+        return  # launchctl absent → None is correct and already covered
+    out = chk.RealProbe().launchctl_list()
+    assert isinstance(out, dict), f"expected a measurement, got {out!r}"
+
+
+def test_cron_probe_default_is_unobservable_not_empty():
+    """The base Probe (and any older stub) must degrade to None. If its default
+    were {} the fix above would turn every non-Mac host into a false page —
+    the mirror-image failure, and the reason the two values must stay distinct
+    at the source rather than only at the call site."""
+    assert reg.Probe().launchctl_list() is None
 
 
 def test_cron_nonzero_exit_status_caught_officers_excluded():

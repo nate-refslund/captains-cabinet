@@ -21,7 +21,16 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 4cd364990b28c4974f67ed389c815a7210c6fab242b38096657cddbca7b4e701
+Reviewed-Scope-Digest: 0606d9d7c9878b42c7cf69ea789f38ab040f0f7c1cb95ef96a07651ea5a0fe13
+
+(MERGE RE-BIND, 2026-07-31, `fix/stale-census-unknown` x master, recomputed
+over the merge commit — the note below is master's, kept verbatim, and its
+reasoning carries: this branch's contract row (`unmeasured-is-not-zero`, +3
+non-comment lines for three plain-language strings) is disjoint from every
+other raise, and its only other in-scope blob is
+`framework/watchdog/registry.py`'s launchd observability contract, which no
+COG-4 surface reads. The artifact is excluded from its own digest, so writing
+this line does not move it.)
 
 (MERGE RE-BIND, 2026-07-30, `fix/detector-vocabulary-as-data` x master —
 the SECOND such merge on this branch, both recorded. Both sides re-bound
@@ -2093,3 +2102,38 @@ include, exclude or transform rule, so nothing about what ships changed either.
 No `framework/projection`, `framework/scheduler`, `framework/organs`,
 `cog4-*` or fixture byte is touched by this branch, whose whole diff is the
 companion app, its build script, its tests and this one manifest row.)
+
+
+(RE-BOUND 2026-07-30 on `fix/stale-census-unknown`, previous value `47360479…`.
+TWO in-scope paths moved and NEITHER is a COG-4 surface. MEASURED, not
+asserted: the resolved scope was expanded with `git ls-tree -r` at
+origin/master and at this branch's HEAD and the two sets diffed — 114 paths on
+both sides, none added, none removed, and exactly TWO with a different blob.
+
+1. `framework/watchdog/registry.py` — three behavioural lines, all in the
+   launchd OBSERVABILITY contract: `Probe.launchctl_list()` defaults to `None`
+   instead of `{}`, `verify_no_silent_cron_failure` gates on `ll is not None`
+   instead of `if ll:`, and its OK text tests the same. The reason is the
+   2026-07-25 outage: `{}` meant BOTH "launchd could not be asked" and
+   "launchd answered and knows zero cabinet labels", so a fleet that had been
+   entirely disabled, booted out and unlinked switched off the one check
+   written for that event. Nothing else in the file is touched, and nothing in
+   it is read by `framework/projection`, `framework/scheduler` or
+   `framework/organs` — this is the cron/liveness registry, orthogonal to the
+   cognitive core the COG-4 review adjudicated. Its own suite (78 arms) is
+   green, with the new degenerate-input arm proven red against master.
+
+2. `cabinet/config/cognitive-architecture-contract.yml` — ONE
+   `temporary_allowances` row, `unmeasured-is-not-zero`, `additional: 3`,
+   with owner, sunset and deletion gate. It adds no budget ceiling, removes no
+   pin, and changes no baseline: the three lines are the plain-language strings
+   for the UNKNOWN attention face, which must live in
+   `framework/attention/plain.py` because a pytest drift guard pins the
+   dashboard's `plain.json` to that module. The explanatory prose that would
+   otherwise have cost 27 lines was moved into `#` comments rather than
+   allowanced.
+
+No `framework/projection`, `framework/scheduler`, `framework/organs`,
+`cognitive-trajectory.v2.schema.json`, `cog4-*` script or COG-4 fixture byte is
+touched by this branch, whose diff is otherwise entirely the dashboard's
+attention surfaces and their tests.)

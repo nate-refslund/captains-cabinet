@@ -168,15 +168,23 @@ class Probe:
         """True/False if a launchd label is loaded; None if undeterminable."""
         raise NotImplementedError
 
-    def launchctl_list(self) -> dict:
+    # Same None-vs-[] contract as listdir() below, and it is spelled out twice
+    # because these two were ONE value ({}) until 2026-07-30: a fleet entirely
+    # booted out was indistinguishable from a host where launchd cannot be
+    # seen, so the ONE check written for that event (declared-but-not-loaded)
+    # switched itself off at exactly the moment it was needed. Real impl in
+    # check.py — which also reports None when running as root, since
+    # `launchctl list` answers for the CALLER'S domain and the fleet is a user
+    # agent.
+    def launchctl_list(self) -> Optional[dict]:
         """`launchctl list` filtered to com.cabinet.* labels, as
         {label: {"pid": Optional[int], "status": Optional[int]}} where status is
-        the job's LAST EXIT STATUS. Defaults to {} (not NotImplementedError, the
-        same deliberate degrade-safe choice as tz_ok): on a non-Mac test host or
-        an older Probe stub the scan simply self-disables instead of crashing
-        the sweep — {} means "launchd not observable", and the verify treats
-        that as unverifiable-skip, never as failure. Real impl in check.py."""
-        return {}
+        the job's LAST EXIT STATUS. None = NOT OBSERVABLE (non-Mac host,
+        launchctl error, older Probe stub) → the launchd checks self-disable
+        rather than false-fail. {} = launchd ANSWERED and knows zero
+        com.cabinet.* labels: an affirmative observation, and a very loud one —
+        every declared service is unloaded."""
+        return None
 
     def listdir(self, path: str) -> Optional[list[str]]:
         """Sorted entries of a directory, or None when NOT OBSERVABLE
@@ -1163,11 +1171,24 @@ def verify_no_silent_cron_failure(probe: "Probe") -> CheckResult:
                 f"{idle_s / 3600:.1f}h (> {oe['max_staleness_s'] / 3600:.1f}h "
                 "declared floor) — the organ is silent inside a live runner"))
 
-    # launchctl surface — {} means "not observable here" (non-Mac host, test
+    # launchctl surface — None means "not observable here" (non-Mac host, test
     # stub, launchctl error): both launchd checks self-disable rather than
     # false-fail, per the Probe degrade-safe contract.
+    #
+    # {} does NOT mean that. It means launchd answered and knows no
+    # com.cabinet.* label at all, i.e. the whole fleet is unloaded — the single
+    # loudest thing this check can observe. It used to fall in the same branch
+    # as "not observable", so on 2026-07-25, when every label was disabled,
+    # booted out and its plist removed, BOTH launchd arms switched themselves
+    # off — including declared-but-not-loaded, the one check written for
+    # exactly that event — and the row's own OK text said "launchd scan
+    # unavailable — log floors only" while the fleet was gone. (Whether the
+    # overall row was green on any given sweep depended on the unrelated log
+    # arms; what is certain, and what this fixes, is that the launchd checks
+    # stopped looking at the moment they mattered.) An absent measurement is
+    # not a pass.
     ll = probe.launchctl_list()
-    if ll:
+    if ll is not None:
         # (c) last-exit-status: any com.cabinet.* label whose last run exited
         # non-zero — INCLUDING labels not (yet) in the manifest, so a stray or
         # freshly-installed agent is still covered. Officer labels excluded
@@ -1259,7 +1280,8 @@ def verify_no_silent_cron_failure(probe: "Probe") -> CheckResult:
         return CheckResult(eid, False, detail)
     return CheckResult(eid, True,
                       f"{len(watched)} manifest services producing clean output"
-                      + ("" if ll else " (launchd scan unavailable — log floors only)"))
+                      + ("" if ll is not None
+                         else " (launchd scan unavailable — log floors only)"))
 
 
 # Pipe freshness — the brain's ingestion pipes must be writing within cadence.
