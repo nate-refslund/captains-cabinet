@@ -851,7 +851,7 @@ def salience_offer(state: Mapping[str, Any] | dict[str, Any] | None,
 
 def entry_plan(
     grants: Any = None, *, seed: Any = None, executed: Any = None,
-    offer: Any = None, gather: Any = False,
+    offer: Any = None, gather: Any = False, identity: Any = None,
 ) -> dict[str, Any]:
     """The opening move for whatever the operator has actually granted.
 
@@ -912,6 +912,20 @@ def entry_plan(
             "label": "Tell me in a sentence, and I will go look",
             "input": "seed",
         })
+    if isinstance(identity, Mapping) and identity.get("connectors"):
+        # THE ASK THAT MAKES ATTRIBUTION REACHABLE. Who the operator is per
+        # connector is settled from what they TELL the cabinet, and nothing
+        # asked — so the resolved branch of the whole who-and-when lane could
+        # not be entered by any sequence of operator actions on a real estate.
+        # The candidates ride along, because the answerable version of "which of
+        # these is you" is a tap on the estate's own account identifiers, not a
+        # spelling test against strings the operator has never seen.
+        next_actions.append({
+            "action": "record_operator_identity",
+            "label": "Tell me which account is you",
+            "input": "handles",
+            "connectors": deepcopy(list(identity["connectors"])),
+        })
     questions = [deepcopy(q) for q in asks]
     if isinstance(offer, Mapping) and offer.get("options"):
         # THE QUESTION THAT NOW HAS CANDIDATES. Salience stops being a blank
@@ -939,6 +953,8 @@ def entry_plan(
         "questions": questions,
         "discovery": discovery,
         "cannot_know": _cannot_know(mode),
+        "identity_question": deepcopy(dict(identity))
+        if isinstance(identity, Mapping) and identity.get("connectors") else None,
         "next_actions": next_actions,
     }
     if not payload["next_actions"]:  # pragma: no cover — structurally unreachable
@@ -967,6 +983,33 @@ def _onboarding_record(root: Path) -> dict[str, Any]:
     except Exception:
         return {}
     return doc if isinstance(doc, dict) else {}
+
+
+def _operator_record(root: Path, state: dict[str, Any]) -> dict[str, Any]:
+    """Everything the operator has TOLD this cabinet about who they are.
+
+    Two sources, both of them the operator's own words: the interview's answers
+    file, and the identity this journey recorded (``record_operator_identity``).
+    Never a third — no credential, no display name a sweep found lying around,
+    no neighbouring connector's answer.
+
+    THE JOURNEY WINS ON A COLLISION, because it is the later statement and
+    because it is the only one that can be made AFTER a sweep exists: the
+    connectors and their account identifiers are not known at interview time, so
+    an answers file written before the first read cannot name them. A key the
+    journey does not carry falls through to the file untouched, so an interview
+    that DID record handles keeps them.
+    """
+    record = _onboarding_record(root)
+    operator = record.get("operator")
+    operator = dict(operator) if isinstance(operator, dict) else {}
+    recorded = state.get("operator_identity")
+    if isinstance(recorded, dict) and isinstance(recorded.get("handles"), dict):
+        handles = operator.get("handles")
+        handles = dict(handles) if isinstance(handles, dict) else {}
+        handles.update(recorded["handles"])
+        operator["handles"] = handles
+    return {**record, "operator": operator}
 
 
 def _entry_grants(state: dict[str, Any]) -> dict[str, Any]:
@@ -1079,12 +1122,18 @@ def _entry_plan_for(state: dict[str, Any]) -> dict[str, Any]:
         declared = int(state.get("connectors_declared") or 0)
     except (TypeError, ValueError):
         declared = 0
+    sweep = state.get("connector_sweep")
+    who_when = sweep.get("who_and_when") if isinstance(sweep, dict) else None
     return entry_plan(
         _entry_grants(state),
         seed=seed.get("text") if isinstance(seed, dict) else None,
         executed=state.get("discovery"),
         offer=salience_offer(state),
         gather=declared > 0 or bool(state.get("connectors_unreadable")),
+        # Read off the committed sweep rather than recomputed, so the card and
+        # the action answer the SAME question: a plan that re-derives it would
+        # need the record, and the card is built in places that hold no root.
+        identity=who_when.get("identity_question") if isinstance(who_when, dict) else None,
     )
 
 
@@ -1104,6 +1153,18 @@ def _probe_note(state: dict[str, Any]) -> str:
         for row in refused[:3]
     )
     return f" I looked for these and they did not answer: {named}."
+
+
+def _identity_note(plan: dict[str, Any]) -> str:
+    """The unanswered "which of these accounts is you", in the card itself.
+
+    It goes AHEAD of the ranking sentence deliberately: what the cabinet is
+    allowed to call the operator's own work bounds every claim that follows, and
+    a shortlist read before it lands as "these are yours" when the honest
+    reading is "these are here". Silent once the connectors resolve.
+    """
+    question = plan.get("identity_question")
+    return f" {question['question']}" if isinstance(question, dict) else ""
 
 
 def _salience_note(state: dict[str, Any], plan: dict[str, Any]) -> str:
@@ -1297,6 +1358,7 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
             body=(
                 _entry_body(plan)
                 + _probe_note(state)
+                + _identity_note(plan)
                 + _salience_note(state, plan)
                 + _discovery_note(state.get("discovery"))
                 + " Whatever you approve, I show you exactly what I would read first; "
@@ -3017,7 +3079,7 @@ def _act_core(
             # from them ("that was my holiday") invalidate an inference that no
             # amount of further reading would have corrected.
             sweep = research.sweep_connectors(base)
-            record = _onboarding_record(base)
+            record = _operator_record(base, state)
             who_when = research.who_and_when(sweep["rows"], record)
             after = deepcopy(state)
             after["connector_sweep"] = {
@@ -3038,6 +3100,96 @@ def _act_core(
                 # typical, is an unearned clean negative wearing a caveat.
                 "not_reached": deepcopy(sweep["not_reached"])
                 + research.who_and_when_lines(who_when),
+            }
+            return _commit(
+                base, state, after, action=action, action_id=action_id,
+                surface=surface, trace_id=trace_id,
+                correlation_id=correlation_id, now=ts,
+            )
+        if action == "record_operator_identity":
+            # THE ANSWER TO "WHICH OF THESE IS YOU". The reader for it landed
+            # with the who-and-when lane and had NO WRITER anywhere in the tree:
+            # nothing ever asked, so on a real estate the record resolved
+            # nothing, every connector reported an unresolved basis, and all
+            # attribution was correctly and permanently withheld. Measured that
+            # way on 665 rows across four connectors — honest, and useless,
+            # because nothing the cabinet had read was known to be the
+            # operator's.
+            #
+            # FROM THE OPERATOR, NEVER FROM THE CREDENTIAL. Each connector's
+            # identity call asks the TOKEN who it is, and a token issued to an
+            # integration answers with a service account nobody sits at; on this
+            # estate one of them does exactly that. Those strings stay what they
+            # are good for — what the estate calls ITSELF, for demotion — and
+            # they are not consulted here, not even as a default to confirm.
+            #
+            # AND NEVER A LOOK-ALIKE. The identifier is stored as given and
+            # matched whole and exact (framework.onboarding.research._fold): an
+            # account that merely resembles the operator's name is somebody
+            # else, and attributing their work is the one failure this lane
+            # cannot detect afterwards.
+            supplied = state.get("salience_rows")
+            rows = list((supplied or {}).get("rows") or ()) \
+                if isinstance(supplied, dict) else []
+            if not rows:
+                raise JourneyError(
+                    "identity_not_offered",
+                    "I have not read your connectors yet, so I do not know which "
+                    "systems to ask you about.",
+                )
+            known = {str(row.get("connector") or "") for row in rows}
+            raw = request.get("handles")
+            if not isinstance(raw, dict) or not raw:
+                raise JourneyError(
+                    "identity_handles_required",
+                    "Tell me which account is yours, per system.",
+                )
+            handles: dict[str, list[str]] = {}
+            for key, value in raw.items():
+                connector = str(key).strip()
+                # A HANDLE FOR A SYSTEM THAT IS NOT THERE IS A SILENT NO-OP, and
+                # a silent no-op here reads to the operator as "I told it who I
+                # am" while every claim stays withheld. Refused by name instead.
+                if connector not in known:
+                    raise JourneyError(
+                        "identity_connector_unknown",
+                        f"I have not read anything called “{connector}”.",
+                    )
+                values = [value] if isinstance(value, str) else list(value or ())
+                cleaned = []
+                for entry in values:
+                    if not isinstance(entry, str):
+                        continue
+                    text = " ".join(_scrub_lone_surrogates(entry).split())[:MAX_SEED_CHARS]
+                    if text and text not in cleaned:
+                        cleaned.append(text)
+                if not cleaned:
+                    raise JourneyError(
+                        "identity_handle_empty",
+                        f"Give me at least one account name for {connector}.",
+                    )
+                handles[connector] = cleaned[:research.MAX_OPERATOR_HANDLES]
+            after = deepcopy(state)
+            after["operator_identity"] = {
+                "handles": deepcopy(handles),
+                "recorded_at": ts,
+                "basis": "the operator said so during onboarding",
+            }
+            # RE-DERIVED IMMEDIATELY, so the answer visibly goes somewhere: the
+            # same rows, read again against the record that now recognises them.
+            # A recorded handle that matches NOTHING is not repaired here — it
+            # is reported as matching nothing, which is the honest reading and
+            # the one that tells the operator they gave the wrong spelling.
+            who_when = research.who_and_when(rows, _operator_record(base, after))
+            sweep_block = after.get("connector_sweep")
+            if isinstance(sweep_block, dict):
+                sweep_block["who_and_when"] = deepcopy(who_when)
+                base_lines = list(sweep_block.get("not_reached") or ())
+            else:
+                base_lines = []
+            after["salience_rows"] = {
+                **{k: v for k, v in (supplied or {}).items()},
+                "not_reached": base_lines + research.who_and_when_lines(who_when),
             }
             return _commit(
                 base, state, after, action=action, action_id=action_id,

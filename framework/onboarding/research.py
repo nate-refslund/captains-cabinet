@@ -1160,23 +1160,187 @@ def operator_identity(record) -> dict:
     }
 
 
-def attribution_basis(operator, connector: str) -> dict:
+#: Identifiers accepted per connector when the operator answers, and candidates
+#: offered per connector when they have not. Both caps exist for the reason the
+#: actor cap does: a connector reporting two hundred distinct actors is a body
+#: arriving through the question door.
+MAX_OPERATOR_HANDLES = 8
+MAX_IDENTITY_CANDIDATES = 12
+
+
+def _fold(value) -> str:
+    """One identifier, normalised for COMPARISON only — never for display.
+
+    Whitespace-collapsed and casefolded, and that is the whole normalisation.
+    What this deliberately is NOT is a similarity: no substring, no prefix, no
+    edit distance, no "starts with the same word". A display-name near-match was
+    measured working on one live estate and is fragile by construction — the
+    failure it produces is an attribution to the WRONG PERSON, which reads
+    exactly like a right one and is therefore never noticed by the reader who
+    would care. An identifier the operator did not give is not theirs, however
+    much it looks like it.
+    """
+    return " ".join(str(value or "").split()).casefold()
+
+
+def _recorded_handles(operator, connector: str) -> list:
+    """The identifiers the operator RECORDED for one connector, in order."""
+    handles = (operator or {}).get("handles") or {}
+    if not isinstance(handles, dict):
+        return []
+    return [str(h) for h in (handles.get(connector) or ()) if str(h).strip()]
+
+
+def _row_actors(row) -> list:
+    return [str(a) for a in (row.get("actors") or ()) if str(a).strip()]
+
+
+def attribution_share(rows, operator, connector: str) -> dict:
+    """How much of ONE connector's reading is the operator's, counted.
+
+    THE NUMBERS ARE THE HONEST FORM OF THE CLAIM. "Your top project" was
+    measured wrong on a live estate — the operator believed the busiest work was
+    his and the rows carried a colleague — and no amount of further reading
+    corrects it, because the sentence never said what it rested on. "3 of 56
+    there are yours, 52 carry someone else" is the same reading and cannot
+    mislead in that direction: the reader sees the share and can contradict it.
+
+    ``no_actor`` is its own number rather than folded into ``others``, because
+    "somebody else did this" and "this connector reports nobody at all" are
+    opposite facts about the estate that would otherwise print identically.
+    """
+    wanted = {_fold(h) for h in _recorded_handles(operator, connector)}
+    total = mine = blank = 0
+    for row in rows or ():
+        if str(row.get("connector") or "") != connector:
+            continue
+        total += 1
+        actors = _row_actors(row)
+        if not actors:
+            blank += 1
+        elif wanted & {_fold(a) for a in actors}:
+            mine += 1
+    return {"rows": total, "mine": mine, "others": total - mine - blank,
+            "no_actor": blank}
+
+
+def _share_phrase(share) -> str:
+    """The share as a sentence fragment, or "" when there is nothing to say."""
+    rows, mine, others = share["rows"], share["mine"], share["others"]
+    if not rows:
+        return ""
+    if share["no_actor"] == rows:
+        return (f"though that connector reported no actor on any of its {rows} "
+                "rows, so nothing there can be attributed to anyone yet")
+    if mine:
+        # EVERY ROW IS ACCOUNTED FOR, or the reader silently subtracts. Measured
+        # on a live estate: 58 rows, 28 the operator's, 13 a colleague's — and
+        # 17 that name nobody at all, which a two-number sentence turns into a
+        # gap the reader fills with whichever of the two they were thinking of.
+        tail = f", and {others} carry another actor" if others else ""
+        blank = f", and {share['no_actor']} report no actor at all" if share["no_actor"] else ""
+        return f"that is {mine} of the {rows} rows I read there{tail}{blank}"
+    return (f"though none of the {rows} rows I read there carry it, so I am "
+            "still not claiming any of that activity is yours")
+
+
+def attribution_basis(operator, connector: str, rows=None) -> dict:
     """What any claim about who-did-what in this connector rests on.
 
     Returned WITH the claim, always. "Who did what" read off a shared integration
     credential is the most confidently wrong fact a sweep can produce, and it
     looks exactly like a correct one — so the basis travels with the claim rather
     than being available on request.
+
+    PER CONNECTOR, AND ONLY THIS ONE. An estate where the record names the
+    operator in one system and not in another resolves the first and withholds
+    the second; nothing here fails a whole sweep because one connector could not
+    be resolved, and nothing here borrows a neighbouring connector's answer.
+
+    ``rows`` is optional and, when given, the claim carries its numbers — a
+    resolved identity that matches NOTHING the connector reported is a real and
+    common outcome (a handle typed for a system whose rows name no actor at all),
+    and it must not read as attribution.
     """
-    handles = (operator or {}).get("handles") or {}
-    names = list(handles.get(connector) or ()) if isinstance(handles, dict) else []
+    names = _recorded_handles(operator, connector)
+    share = attribution_share(rows, operator, connector) if rows is not None else None
+    phrase = _share_phrase(share) if share else ""
     if names:
+        statement = (f"in {connector} I recognise you as {', '.join(names)}, "
+                     "because that is what the onboarding record says")
         return {"connector": connector, "basis": "onboarding_record", "identifies": names,
-                "statement": f"in {connector} I recognise you as {', '.join(names)}, "
-                             "because that is what the onboarding record says"}
+                "statement": statement + (f" — {phrase}" if phrase else ""),
+                **({"share": share} if share else {})}
     return {"connector": connector, "basis": "unresolved", "identifies": [],
             "statement": f"in {connector} I cannot tell which actor is you, so I am not "
-                         "claiming any of that activity is yours"}
+                         "claiming any of that activity is yours",
+            **({"share": share} if share else {})}
+
+
+def identity_candidates(rows, connector: str) -> list:
+    """The account identifiers this connector actually reported, by frequency.
+
+    THE CANDIDATES ARE THE ESTATE'S OWN STRINGS, which is what makes the ask
+    answerable with a tap instead of a spelling. An operator who types a name
+    types the one they use for themselves; a connector stores the one its API
+    returns, and where those differ a typed answer matches nothing and reads as
+    "none of this is yours".
+    """
+    counts: dict = {}
+    for row in rows or ():
+        if str(row.get("connector") or "") != connector:
+            continue
+        for actor in _row_actors(row):
+            text = " ".join(actor.split())
+            counts[text] = counts.get(text, 0) + 1
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    return [{"identifier": name, "rows": count}
+            for name, count in ranked[:MAX_IDENTITY_CANDIDATES]]
+
+
+def identity_question(rows, operator) -> dict | None:
+    """The connectors that still cannot recognise the operator, as a QUESTION.
+
+    ``operator_identity`` has had a reader since it landed and never had a
+    WRITER: no question anywhere asked who the operator is in each system, so on
+    every real estate the record resolved nothing, all attribution was withheld,
+    and the withholding was correct and permanent. This is the ask that ends
+    that — the same structural defect the entry grants once had, where a branch
+    that only a writer could reach was unreachable in production by any sequence
+    of operator actions.
+
+    ``None`` when every connector is already resolved, so a surface that renders
+    this never prints a settled question. A connector whose rows carry NO actor
+    is still listed, with ``reports_no_actor`` set: recording a handle for it is
+    honest and attributes nothing, and saying so is the difference between "you
+    have not told me" and "I cannot use what you tell me here".
+    """
+    connectors = sorted({str(r.get("connector") or "")
+                         for r in (rows or ()) if r.get("connector")})
+    asking = []
+    for connector in connectors:
+        if _recorded_handles(operator, connector):
+            continue
+        candidates = identity_candidates(rows, connector)
+        total = sum(1 for r in rows if str(r.get("connector") or "") == connector)
+        entry = {"connector": connector, "rows": total, "candidates": candidates,
+                 "reports_no_actor": not candidates}
+        entry["note"] = (
+            f"{connector} reported no actor on any of its {total} rows, so until its "
+            "actor path is declared, even your own account attributes nothing there"
+            if not candidates else
+            f"{connector}: {len(candidates)} account(s) appear across {total} rows")
+        asking.append(entry)
+    if not asking:
+        return None
+    named = ", ".join(entry["connector"] for entry in asking)
+    return {
+        "question": f"I cannot tell which of the actors I read is you in {named}. "
+                    "Which account is yours in each? Until you say, I am claiming "
+                    "none of that work is yours.",
+        "connectors": asking,
+        "is_a_question": True,
+    }
 
 
 def _day(value):
@@ -1217,16 +1381,15 @@ def presence_question(rows, operator, period, *, quiet_days: int = QUIET_DAYS):
     is not evidence about the operator, and treating it as such is precisely the
     unearned negative this lane exists to avoid.
     """
-    handles = (operator or {}).get("handles") or {}
     mine: dict = {}
     for row in rows or ():
         connector = str(row.get("connector") or "")
-        wanted = {h.lower() for h in (handles.get(connector) or ())}
+        wanted = {_fold(h) for h in _recorded_handles(operator, connector)}
         # ANY of the row's actors being the operator makes the row theirs. A row
         # names everyone the declared paths resolved, and the operator is often
         # the second name in it — matching only a single actor field would report
         # a quiet fortnight that the data contradicts.
-        if not wanted or not wanted & {str(a).lower() for a in (row.get("actors") or ())}:
+        if not wanted or not wanted & {_fold(a) for a in _row_actors(row)}:
             continue
         day = _day(row.get("updated"))
         if day:
@@ -1269,7 +1432,12 @@ def who_and_when(rows, record=None) -> dict:
     return {
         "operator": operator,
         "period": period,
-        "attribution": [attribution_basis(operator, c) for c in connectors],
+        # ROWS TRAVEL WITH THE BASIS, so a resolved connector states its SHARE
+        # rather than the bare fact of recognition. A basis without numbers
+        # licenses "your top project"; with them the only sentence available is
+        # the one that says how much of this is actually the operator's.
+        "attribution": [attribution_basis(operator, c, rows) for c in connectors],
+        "identity_question": identity_question(rows, operator),
         "presence_question": presence_question(rows, operator, period),
     }
 
@@ -1291,12 +1459,25 @@ def who_and_when_lines(block) -> list:
             "and I am assuming that period is representative of your work")
     else:
         lines.append("nothing I read carried a date, so this has no period at all")
-    unresolved = [a["connector"] for a in (block or {}).get("attribution") or ()
-                  if a.get("basis") == "unresolved"]
+    attribution = list((block or {}).get("attribution") or ())
+    # THE RESOLVED HALF IS DISCLOSED TOO, and it used to be silent. Only the
+    # unresolved connectors got a sentence, so a reader was told what could not
+    # be attributed and never what WAS — which is the half that can be wrong,
+    # and the half a person can correct in four words. Each resolved line
+    # carries its share, so "yours" always arrives as a proportion.
+    for entry in attribution:
+        if entry.get("basis") != "unresolved":
+            lines.append(entry["statement"])
+    unresolved = [a["connector"] for a in attribution if a.get("basis") == "unresolved"]
     if unresolved:
         lines.append(
             "I cannot tell which actor is you in " + ", ".join(unresolved)
             + ", so I am not claiming any of that activity is yours")
+    identity = (block or {}).get("identity_question")
+    if identity:
+        lines.append(identity["question"])
+        lines.extend(entry["note"] for entry in identity["connectors"]
+                     if entry.get("reports_no_actor"))
     question = (block or {}).get("presence_question")
     if question:
         lines.append(question["question"])

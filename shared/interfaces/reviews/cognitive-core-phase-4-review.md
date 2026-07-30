@@ -21,7 +21,12 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 80d1b9fed616d8bc4332d015bcedb155f3aa409b0181022f3bde359bd80b2a7b
+Reviewed-Scope-Digest: df74c54be382546821d5cec711bf7f8d136af9196d62be04f30b0f50110f59f9
+(RE-BOUND 2026-07-30 on `feat/operator-identity`, previous value `80d1b9fe…`.
+ONE bound path moved — `cabinet/config/cognitive-architecture-contract.yml`,
+which takes a +246 non-comment-line phase row for the operator-identity unit —
+and NO COG-4 implementation byte did. The note for it is appended at the end of
+this file; every earlier note stands verbatim. Previous header note follows.)
 (MERGE RE-BIND, 2026-07-29, `fix/connector-loader-honesty` x master. Both sides
 re-bound this line, so the merge left two; ONE value stands and it is recomputed
 over this merge commit. Every note from both sides is kept verbatim below,
@@ -1620,3 +1625,22 @@ raises verbatim — master's +29 connector-loader honesty row and this branch's
 ranker rows — under a merged `maximum` of 60979 that is RE-MEASURED over this
 tree (observed 75256, zero headroom) rather than summed on paper. Neither is an
 allowance; ZERO new modules, so no bijection class moves.
+
+---
+
+## Re-bind 2026-07-30 (feat/operator-identity — the ask that makes attribution reachable)
+
+One bound path changed: `cabinet/config/cognitive-architecture-contract.yml`,
+which takes a +246 non-comment-line phase row for the unit that gives
+`operator_identity` the writer it never had. NO COG-4 implementation path moved
+— no organ, no projection, no scheduler byte — so the review's findings are
+untouched by this landing. The contract sits inside this digest's scope
+precisely so that a budget row cannot ride in unnoticed behind a frozen review;
+ZERO new modules ride here, so no bijection class moves, and the ceiling is
+RE-MEASURED over this tree (observed 75502, zero headroom) rather than added on
+paper.
+
+Recorded digest: df74c54be382546821d5cec711bf7f8d136af9196d62be04f30b0f50110f59f9
+Previous:        80d1b9fed616d8bc4332d015bcedb155f3aa409b0181022f3bde359bd80b2a7b
+
+Re-bound at landing by the integrator, in the SAME commit as the change, per §15.

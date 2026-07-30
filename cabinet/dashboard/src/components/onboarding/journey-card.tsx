@@ -23,6 +23,13 @@ function newActionId(surface: string): string {
   return `${surface}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
+// The identity picker's empty starting value, module-level and frozen so it has
+// a STABLE identity. journey-card.test.ts scripts the hook order and asserts
+// each initial value with Object.is — deliberately, so a hook added, removed or
+// reordered fails loudly there instead of silently testing the wrong state — and
+// a fresh `{}` per render would make that assertion unsatisfiable.
+export const NO_IDENTITY_PICKS: Readonly<Record<string, string>> = Object.freeze({})
+
 export default function OnboardingJourneyCard({
   surface = 'dashboard',
   variant = 'dashboard',
@@ -51,6 +58,11 @@ export default function OnboardingJourneyCard({
   // go and the discovery path they are supposed to start could never start.
   const [seed, setSeed] = useState('')
   const [feedbackRecorded, setFeedbackRecorded] = useState<string | null>(null)
+  // Which account is the operator, per connector. Empty until they pick: the
+  // core resolves the operator ONLY from what they say, so pre-selecting the
+  // likeliest-looking candidate here would answer for them — and a wrong
+  // attribution reads exactly like a right one.
+  const [handles, setHandles] = useState<Readonly<Record<string, string>>>(NO_IDENTITY_PICKS)
   const effectiveSurface = useRef<Extract<OnboardingSurface, 'dashboard' | 'world' | 'companion'>>(surface)
   const handoffIds = useRef<{ trace_id?: string; correlation_id?: string }>({})
   const seedFieldRef = useRef<HTMLTextAreaElement | null>(null)
@@ -216,6 +228,15 @@ export default function OnboardingJourneyCard({
     void send('answer_seed', { seed })
   }
 
+  function submitIdentity(event: FormEvent) {
+    event.preventDefault()
+    const picked = Object.entries(handles)
+      .filter(([, identifier]) => identifier.trim())
+      .map(([connector, identifier]) => [connector, [identifier.trim()]] as const)
+    if (picked.length === 0) return
+    void send('record_operator_identity', { handles: Object.fromEntries(picked) })
+  }
+
   function choose(action: OnboardingAction) {
     if (action === 'answer_seed') {
       // Focus the field rather than firing an empty action: this option exists
@@ -335,6 +356,57 @@ export default function OnboardingJourneyCard({
                 className={`mt-2 min-h-11 rounded-md border px-3 py-2 text-sm font-medium disabled:opacity-50 ${variant === 'world' ? 'border-stone-600 bg-amber-100' : 'border-zinc-600 bg-zinc-800'}`}
               >
                 Go and look
+              </button>
+            </form>
+          )}
+
+          {journey.card.entry?.identity_question && (
+            <form
+              className={`mt-4 rounded-lg border p-3 ${variant === 'world' ? 'border-stone-500/70 bg-amber-50/40' : 'border-zinc-700 bg-zinc-950'}`}
+              onSubmit={submitIdentity}
+            >
+              <h3 className="text-sm font-semibold">{journey.card.entry.identity_question.question}</h3>
+              {journey.card.entry.identity_question.connectors.map((ask) => (
+                <fieldset key={ask.connector} className="mt-3">
+                  <legend className="text-sm font-medium">{ask.connector}</legend>
+                  {ask.reports_no_actor ? (
+                    <p className={`mt-1 text-xs ${muted}`}>{ask.note}</p>
+                  ) : (
+                    <div className="mt-2 space-y-1 text-sm">
+                      {ask.candidates.map((candidate) => (
+                        <label
+                          key={candidate.identifier}
+                          className="flex min-h-11 cursor-pointer items-center gap-3 rounded-md border border-current/20 px-3 py-2"
+                        >
+                          <input
+                            type="radio"
+                            name={`${surface}-identity-${ask.connector}`}
+                            value={candidate.identifier}
+                            checked={handles[ask.connector] === candidate.identifier}
+                            onChange={() =>
+                              setHandles((current) => ({ ...current, [ask.connector]: candidate.identifier }))
+                            }
+                          />
+                          <span>
+                            {candidate.identifier}
+                            <span className={`block text-xs ${muted}`}>{candidate.rows} of {ask.rows} here</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </fieldset>
+              ))}
+              <p className={`mt-2 text-xs ${muted}`}>
+                Leave a system blank if none of these is you. I will keep saying I cannot
+                tell, rather than guessing at a name that looks close.
+              </p>
+              <button
+                type="submit"
+                disabled={working || Object.values(handles).every((value) => !value.trim())}
+                className={`mt-2 min-h-11 rounded-md border px-3 py-2 text-sm font-medium disabled:opacity-50 ${variant === 'world' ? 'border-stone-600 bg-amber-100' : 'border-zinc-600 bg-zinc-800'}`}
+              >
+                That one is me
               </button>
             </form>
           )}

@@ -28,6 +28,11 @@ const ACTIONS = new Set([
   // no payload: what may be read is declared in instance/config/connectors.yml,
   // never in a request, so no surface can widen the read by sending a field.
   'gather_connectors',
+  // Who the operator IS, per connector — their own words, never the
+  // credential's. Carries a `handles` map, so it is the one action besides
+  // answer_seed whose payload the core must bound (it does: unknown connector,
+  // empty list and over-long identifier are each refused by name).
+  'record_operator_identity',
   'ratify_charter',
   'continue',
   'pause',
