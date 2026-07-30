@@ -21,7 +21,18 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 47360479cf3453cf4ed462d63d55f1b604242e7bd9c5f1edb8291591682717f4
+Reviewed-Scope-Digest: 4cd364990b28c4974f67ed389c815a7210c6fab242b38096657cddbca7b4e701
+
+(MERGE RE-BIND, 2026-07-30, `fix/detector-vocabulary-as-data` x master —
+the SECOND such merge on this branch, both recorded. Both sides re-bound
+this line again, so ONE value stands and it is RECOMPUTED over this merge
+commit rather than picked from either parent. Master's side moved
+`cabinet/config/cognitive-architecture-contract.yml` (the genesis landing);
+this branch's side moved the same file, and the two raises are DISJOINT —
+different modules, different defects — so both notes stand in the contract
+and the merged ceiling there is re-measured rather than summed. NO COG-4
+implementation byte moved on either side. Every section below stands
+verbatim; none is another's restamp.)
 
 (MERGE RE-BIND, 2026-07-30, `fix/genesis-derives-from-current-answers` x
 master. Both sides re-bound this line, so the merge left two; ONE value stands
@@ -33,6 +44,33 @@ parent. Master's side moved `cabinet/scripts/egg-export-manifest.txt` by one
 NO COG-4 implementation byte moved on either side. Both sections stand verbatim
 below, master's first; the arm counts in this branch's section are corrected to
 25/19, the branch having grown one arm after that note was written.)
+
+(MERGE RE-BIND, 2026-07-30, `fix/detector-vocabulary-as-data` x master. Both
+sides re-bound this line, so the merge left two; ONE value stands and it is
+RECOMPUTED over this merge commit rather than picked from either parent.
+Master's side moved `cabinet/scripts/egg-export-manifest.txt` by one
+`expect-present` row (the desk-pet landing); this branch's side moved
+`cabinet/config/cognitive-architecture-contract.yml`. The two sets are
+DISJOINT and NO COG-4 implementation byte moved on either side. Every section
+below stands verbatim; none is another's restamp.)
+
+(RE-BOUND 2026-07-30 on `fix/detector-vocabulary-as-data`, previous value
+`7f842bac…`. THE SAME ONE in-scope path moved and NO COG-4 implementation byte
+did: `cabinet/config/cognitive-architecture-contract.yml` raises
+`framework_production_noncomment_lines` VISIBLY 61724 -> 61891 (+167 measured
+over this tree with cognitive-architecture-census.py, observed 76430 vs the
+then-effective 76263 — never an allowance, because a table of the words an
+operator's own folder is written in has no deletion gate that could ever
+fire). What it pays for is the wall one step past the raise below: the
+splitter made the operator's TOKENS reachable, and then every detector LABEL
+was still an inline English literal, so a seventeen-file Japanese estate
+returned `orientation_map` — "no contradiction, broken documented command, or
+explicit urgent marker" — over a folder holding all three. The labels are now
+one table, one entry per semantic role, that a deployment extends through an
+optional instance config and that no detector body names a language in; the
+arm proving that empties a role and requires the detector to go silent. Census
+PASS at observed == maximum with zero headroom; ZERO new production modules
+(248 <= 248), so no bijection class moves; layer separation new=0.)
 
 (MERGE RE-BIND, 2026-07-30, `feat/companion-desk-pet` x master. Both sides
 re-bound this line, so the merge left two; ONE value stands and it is

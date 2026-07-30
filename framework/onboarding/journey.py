@@ -2432,19 +2432,240 @@ def _command_drift(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return findings
 
 
-def _contradictions(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+# ── The detector vocabulary ──────────────────────────────────────────────────
+# THE LABELS ARE DATA, for the same reason the unspaced-script table one module
+# over is data: the framework can state what a status marker DOES without
+# naming a language, and it can never state the WORDS without naming one. Every
+# detector below carried its labels as inline English literals, so a folder
+# written in any other language reached the strongest negative this module can
+# print — "no contradiction, broken documented command, or explicit urgent
+# marker" — by being unreadable rather than by being clean. Measured on a live
+# hatch 2026-07-30 over a seventeen-file Japanese estate: 至急 (urgent), 期限
+# (deadline), 完了 (done) and a CSV headed 件名/状態 could not fire a single
+# detector, and the card said the folder held nothing worth the Captain's
+# attention. That is the same defect class as the person-name literals removed
+# from this layer the same morning, one step further in.
+#
+# ONE ENTRY PER SEMANTIC ROLE, and THE LANGUAGE TAGS ARE ORGANISATION ONLY —
+# the detectors below consume the union and not one of them names a tag, which
+# is what makes "agnostic" a property of the code instead of a promise in a
+# comment. Adding a language is adding rows here; it is never a code change,
+# and a reader can check that claim by grepping the detector bodies for a
+# language name and finding none.
+#
+# WHAT IS ABSENT IS DELIBERATE. Only the two languages this landing could
+# verify word by word ship here. A wrong label does not sit inert — it fires
+# falsely on somebody's real folder, and a detector that cries wolf in a
+# language its operator speaks is worse than one that is honestly silent.
+# The instance extension point below is how a deployment adds its own without
+# waiting for the framework.
+DETECTOR_VOCABULARY: dict[str, dict[str, tuple[str, ...]]] = {
+    # A line that explicitly marks something as needing attention now.
+    "attention": {
+        "en": ("urgent", "blocked", "overdue", "needs action", "action required"),
+        "ja": ("至急", "緊急", "要対応", "要確認", "対応必要"),
+    },
+    # The FIELD name in a "<field>: <attention label>" status line.
+    "attention_field": {
+        "en": ("status", "state", "priority"),
+        "ja": ("状態", "ステータス", "優先度"),
+    },
+    # An explicit open-work marker. TODO / FIXME / XXX are cross-language and
+    # are not repeated per tag — a Japanese source writes them exactly so.
+    "open_work": {
+        "en": ("todo", "fixme", "xxx"),
+        "ja": ("未対応", "要修正", "持ち越し", "宿題"),
+    },
+    # The prefix of a commitment written in prose, which the join detector
+    # weighs against the open rows of a tracker export.
+    "commitment_prefix": {
+        "en": ("todo", "fixme", "blocked", "blocker", "action required",
+               "needs action", "follow-up", "follow up"),
+        "ja": ("至急", "要対応", "未対応", "申し送り", "フォローアップ"),
+    },
+    # A tracker row in one of these states is not an open commitment.
+    "closed_status": {
+        "en": ("done", "closed", "complete", "completed", "resolved", "shipped",
+               "merged", "cancelled", "canceled", "wontfix", "won't fix",
+               "released", "archived"),
+        "ja": ("完了", "済", "対応済", "対応済み", "解決済み", "却下",
+               "取り下げ", "保留解除"),
+    },
+    # The left-hand side of a dated commitment two sources can disagree about.
+    # The English spellings the old regex reached through optional groups
+    # (`go[- ]?live(?:\s+date)?`) are written out, because a table of labels
+    # cannot carry an optional group and the key normalisation below folds all
+    # three spellings onto one key exactly as it always did.
+    "contradiction_key": {
+        "en": ("launch", "launch date", "go-live", "go live", "golive",
+               "go-live date", "go live date", "golive date", "deadline",
+               "delivery date"),
+        "ja": ("期限", "納期", "締切", "締め切り", "提出期限", "発売日", "公開日"),
+    },
+    # Tracker-export column headers. DECLARATION ORDER IS THE PREFERENCE ORDER
+    # for these three roles — the first recognised header wins — so a re-sort
+    # here silently changes which column a multi-column export is read by.
+    "export_title_column": {
+        "en": ("title", "summary", "name", "subject", "task", "issue"),
+        "ja": ("件名", "タイトル", "題名", "案件名", "作業名"),
+    },
+    "export_status_column": {
+        "en": ("status", "state", "stage", "resolution"),
+        "ja": ("状態", "ステータス", "進捗", "状況"),
+    },
+    "export_id_column": {
+        "en": ("id", "key", "ticket", "number", "ref"),
+        "ja": ("番号", "整理番号", "管理番号", "id"),
+    },
+}
+#: Where a deployment ADDS its own labels. Optional by construction: the
+#: framework defaults above serve a fresh hatch on their own, and this file is
+#: absent from every egg.
+INSTANCE_VOCABULARY_REL = "instance/config/detector-vocabulary.yml"
+#: CJK bracket pairs do the job `[` and `(` do in a Latin line — 【至急】 is
+#: [URGENT] written in another script. NFKC (applied by ``salience.fold``
+#: before any of these patterns sees a character) already folds the FULL-WIDTH
+#: forms ：（）－＃＊ onto their ASCII twins, so only the CJK-specific pair
+#: needs naming here. An opening mark is scaffolding and is stripped; a closing
+#: mark closes a label and joins the separator class. Neither character can
+#: occur in an English corpus, so the Latin grammar is untouched by their
+#: presence — which is the whole reason they are a separate constant and not a
+#: widening of the ASCII classes.
+_CJK_BRACKET_OPEN = "【〔「『〈《"
+_CJK_BRACKET_CLOSE = "】〕」』〉》"
+
+
+def _instance_vocabulary(root: Path | str | None) -> dict[str, list[str]]:
+    """An instance's ADDITIONS to the table above. Absent or broken ⇒ none.
+
+    EXTEND, NEVER REPLACE, and that is structural rather than polite: this
+    returns additions, the caller only ever unions them, and there is no shape
+    a config file can take that removes a framework label. A deployment able to
+    delete ``done`` from the closed set would turn every finished tracker row
+    back into an open commitment, and the operator would read that noise as the
+    cabinet's judgement of their folder.
+
+    FAIL-OPEN TO EMPTY. A missing file is the ordinary case — a fresh hatch has
+    none and must still detect everything the framework ships — and a malformed
+    one is a config mistake that must not take a Charter-ratified read down
+    with it. Both land on the defaults, which finds less than it could rather
+    than nothing at all.
+
+    Accepts ``role: [labels]`` and ``role: {tag: [labels]}``; a role this
+    module does not define is skipped, because honouring it would mean
+    promising a detector that does not exist.
+    """
+    path = Path(root) if root else cabinet_root()
+    path = path / INSTANCE_VOCABULARY_REL
+    try:
+        if not path.is_file():
+            return {}
+        import yaml  # local: this module stays import-light
+
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(doc, dict):
+        return {}
+    out: dict[str, list[str]] = {}
+    for role, value in doc.items():
+        if role not in DETECTOR_VOCABULARY:
+            continue
+        groups = list(value.values()) if isinstance(value, dict) else [value]
+        labels = [
+            item
+            for group in groups
+            if isinstance(group, (list, tuple))
+            for item in group
+            if isinstance(item, str)
+        ]
+        if labels:
+            out[str(role)] = labels
+    return out
+
+
+def detector_vocabulary(root: Path | str | None = None) -> dict[str, tuple[str, ...]]:
+    """The labels each detector matches on: framework defaults, then additions.
+
+    Folded ONCE here with ``salience.fold`` — the NFKC-then-casefold the
+    segmentation seam already applies — so every detector compares normalised
+    text against normalised labels and no detector has to remember to. That is
+    what makes a full-width ＴＯＤＯ and a full-width colon work without a
+    single detector knowing they exist.
+
+    DECLARATION ORDER SURVIVES, and it is load-bearing for the three export
+    column roles where the first recognised header wins; the regex roles
+    re-sort longest-first at the point of use instead. Instance labels are
+    appended last, so an addition can never outrank a framework default for a
+    column that carries both.
+    """
+    additions = _instance_vocabulary(root)
+    out: dict[str, tuple[str, ...]] = {}
+    for role, by_tag in DETECTOR_VOCABULARY.items():
+        ordered: dict[str, None] = {}
+        for labels in list(by_tag.values()) + [additions.get(role, [])]:
+            for label in labels:
+                folded = _salience.fold(label).strip()
+                if folded:
+                    ordered.setdefault(folded, None)
+        out[role] = tuple(ordered)
+    return out
+
+
+def _label_alternation(labels: Sequence[str]) -> str:
+    """One regex alternation over a role's labels, longest label first.
+
+    Longest-first so a label containing another wins the match instead of
+    losing it to its own prefix (提出期限 over 期限, ``launch date`` over
+    ``launch``). Internal whitespace becomes ``\\s+``, which is what the
+    English patterns this replaced already did for the two labels that needed
+    it and is not a property any label should have to spell.
+
+    AN EMPTY ROLE MATCHES NOTHING. The empty alternation ``(?:)`` matches the
+    empty string, so a role nobody filled would become a detector that fires on
+    every line of every file — the degenerate end that makes a data-driven
+    detector dangerous rather than merely quiet.
+    """
+    if not labels:
+        return r"(?!)"
+    return "|".join(
+        r"\s+".join(re.escape(part) for part in label.split())
+        for label in sorted(labels, key=lambda label: (-len(label), label))
+    )
+
+
+def _contradictions(
+    entries: list[dict[str, Any]],
+    *,
+    vocabulary: Mapping[str, Sequence[str]] | None = None,
+) -> list[dict[str, Any]]:
+    vocabulary = vocabulary if vocabulary is not None else detector_vocabulary()
     labeled: dict[str, list[tuple[str, dict[str, Any], int, str]]] = {}
     label_re = re.compile(
-        r"^\s*(?:[-*]\s*)?(launch(?:\s+date)?|go[- ]?live(?:\s+date)?|deadline|delivery\s+date)\s*[:=-]\s*(.+?)\s*$",
-        re.I,
+        r"^\s*(?:[-*]\s*)?"
+        rf"({_label_alternation(vocabulary['contradiction_key'])})"
+        r"\s*[:=-]\s*(.+?)\s*$"
     )
     for entry in entries:
         for line_no, line in enumerate(entry["lines"], start=1):
-            match = label_re.match(line)
+            # Folded before matching, never for the citation: the operator is
+            # shown the line they wrote, and only the comparison is normalised.
+            match = label_re.match(_salience.fold(line))
             if not match:
                 continue
-            key = re.sub(r"[^a-z]", "", match.group(1).lower())
-            value = " ".join(match.group(2).lower().split())
+            key = "".join(
+                character for character in match.group(1)
+                if _salience.is_word_character(character)
+            )
+            # THE VALUE STAYS AN OPAQUE STRING. Two dates that differ conflict;
+            # what they MEAN is a calendar question this module has no business
+            # answering, and every parser it could reach for is a locale
+            # assumption dressed as arithmetic. Normalisation is the same fold
+            # already applied above, so ２０２６-０８-１２ and 2026-08-12 are one
+            # date rather than a manufactured contradiction.
+            value = " ".join(match.group(2).split())
+            if not key:
+                continue
             labeled.setdefault(key, []).append((value, entry, line_no, line))
     out: list[dict[str, Any]] = []
     for key, rows in labeled.items():
@@ -2472,26 +2693,43 @@ def _contradictions(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-def _risk_markers(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _risk_markers(
+    entries: list[dict[str, Any]],
+    *,
+    vocabulary: Mapping[str, Sequence[str]] | None = None,
+) -> list[dict[str, Any]]:
     # A strong claim needs an explicit status marker, not a word appearing in
     # ordinary prose.  The former substring regex treated "hook-blocked" in a
     # technical document as a blocked work item and made the headline dividend
     # lie.  Accept familiar Markdown prefixes and status labels, then require
     # the marker at the start of the meaningful text.
+    #
+    # THE GRAMMAR IS THE SAME; only the labels moved out of it. Each line is
+    # folded before it is matched, which is what makes a full-width ＴＯＤＯ and
+    # a full-width ： work without either pattern mentioning them, and the
+    # `re.I` these patterns carried is gone because casefolding already
+    # happened one step earlier and doing it twice hides which step does it.
+    vocabulary = vocabulary if vocabulary is not None else detector_vocabulary()
+    attention = _label_alternation(vocabulary["attention"])
     markdown_prefix = re.compile(
         r"^\s*(?:(?:#{1,6}|[-*+]|\d+[.)]|\[[ xX]\])\s+|[*_`]+)*"
     )
     urgent = re.compile(
-        r"^(?:(?:urgent|blocked|overdue|needs action|action required)\s*(?::|[-–—]\s|$)"
-        r"|(?:status|state|priority)\s*:\s*(?:urgent|blocked|overdue|needs action|action required)\b)",
-        re.I,
+        rf"^(?:(?:{attention})\s*(?::|[-–—]\s|[{_CJK_BRACKET_CLOSE}]|$)"
+        rf"|(?:{_label_alternation(vocabulary['attention_field'])})"
+        rf"\s*:\s*(?:{attention})\b)"
     )
     comment_prefix = re.compile(r"^\s*(?:(?://+|/\*+|<!--|#+|[-*+]|\[[ xX]\])\s*)+")
-    todo = re.compile(r"^(?:todo|fixme|xxx)\s*(?::|[-–—(]|$)", re.I)
+    todo = re.compile(
+        rf"^(?:{_label_alternation(vocabulary['open_work'])})"
+        rf"\s*(?::|[-–—({_CJK_BRACKET_CLOSE}]|$)"
+    )
+    strip = "*_`" + _CJK_BRACKET_OPEN
     out: list[dict[str, Any]] = []
     for entry in entries:
         for line_no, line in enumerate(entry["lines"], start=1):
-            meaningful = markdown_prefix.sub("", line).lstrip("*_`")
+            folded = _salience.fold(line)
+            meaningful = markdown_prefix.sub("", folded).lstrip(strip)
             if urgent.search(meaningful):
                 out.append({
                     "score": 80,
@@ -2503,7 +2741,7 @@ def _risk_markers(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     ),
                     "citations": [_citation(entry, line_no, line)],
                 })
-            open_work = comment_prefix.sub("", line).lstrip("*_`")
+            open_work = comment_prefix.sub("", folded).lstrip(strip)
             if not urgent.search(meaningful) and todo.search(open_work):
                 out.append({
                     "score": 50,
@@ -2520,7 +2758,10 @@ def _risk_markers(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
 # negative (docs/persona-employee-slice-2026-07-26.md): of four findings, ONE
 # needed more than one FILE and ZERO needed more than one SYSTEM; three of the
 # four were the operator's own handwriting; and two of the three detectors above
-# are reproduced exactly by ``git grep -E 'TODO|FIXME|URGENT|BLOCKED'``. The
+# were reproduced exactly by ``git grep -E 'TODO|FIXME|URGENT|BLOCKED'`` — true
+# of the English-only label set they carried until 2026-07-30, and no longer
+# literally true now that the labels are a table any language can extend, which
+# changes nothing about the adjudication below. The
 # adjudicated consequence is that THE VALUE IS THE JOIN, NOT THE VAULT — so what
 # lands here is ONE join between two named sources, two parsers and a
 # comparison, with no index, belief store or ingest engine anywhere near it.
@@ -2533,21 +2774,12 @@ def _risk_markers(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
 # export is what makes ``entry_mode`` return ``connected``, and this is what
 # that mode then asserts, with a citation on BOTH sides.
 MAX_EXPORT_ROWS = 2000
-_EXPORT_TITLE_COLUMNS = ("title", "summary", "name", "subject", "task", "issue")
-_EXPORT_STATUS_COLUMNS = ("status", "state", "stage", "resolution")
-_EXPORT_ID_COLUMNS = ("id", "key", "ticket", "number", "ref")
-#: A row in one of these states is not an open commitment. Anything unrecognised
-#: counts as OPEN: mis-reading an open row as closed suppresses a real finding
-#: silently, while the reverse is visible and correctable by the operator.
-_CLOSED_STATUSES = frozenset({
-    "done", "closed", "complete", "completed", "resolved", "shipped", "merged",
-    "cancelled", "canceled", "wontfix", "won't fix", "released", "archived",
-})
-_COMMITMENT_RE = re.compile(
-    r"^(?:todo|fixme|blocked|blocker|action required|needs action|follow[- ]up)"
-    r"\s*[:\-–—]\s*(.+)$",
-    re.I,
-)
+#: The column headers, the closed states and the commitment prefixes this join
+#: reads all live in ``DETECTOR_VOCABULARY`` above. A row in an UNRECOGNISED
+#: state counts as OPEN: mis-reading an open row as closed suppresses a real
+#: finding silently, while the reverse is visible and correctable by the
+#: operator — which is also why the closed set is the one role where an
+#: unverified label would do real damage.
 _MARKER_PREFIX_RE = re.compile(
     r"^\s*(?:(?://+|/\*+|<!--|#{1,6}|[-*+]|\d+[.)]|\[[ xX]\])\s*)+"
 )
@@ -2566,22 +2798,34 @@ _MIN_CONTENT_TOKEN_LEN = 4
 _JOIN_MATCH_TOKENS = 2
 
 
-def _export_column(fieldnames: Any, candidates: tuple[str, ...]) -> Any:
-    lowered = {str(f or "").strip().lower(): f for f in (fieldnames or ())}
+def _export_column(fieldnames: Any, candidates: Sequence[str]) -> Any:
+    # Folded rather than lowered, so 件名 written half-width, a header padded
+    # with an ideographic space, and a full-width ＩＤ all reach the same key
+    # the vocabulary was folded onto.
+    folded = {_salience.fold(f).strip(): f for f in (fieldnames or ())}
     for candidate in candidates:
-        if candidate in lowered:
-            return lowered[candidate]
+        if candidate in folded:
+            return folded[candidate]
     return None
 
 
-def _tracker_rows(entry: dict[str, Any]) -> list[dict[str, str]]:
+def _tracker_rows(
+    entry: dict[str, Any],
+    *,
+    vocabulary: Mapping[str, Sequence[str]] | None = None,
+) -> list[dict[str, str]]:
     """Parse one entry as a structured tracker export. Not one ⇒ no rows.
 
     Recognised by SHAPE, never by filename: a delimited or JSON table carrying
     BOTH a title-ish and a status-ish column. Guessing from a name would let a
     ``tasks.csv`` full of prose count as a connected tracker, and the connected
     mode would then assert against a source that answers nothing.
+
+    Which headers are title-ish and status-ish is vocabulary, not grammar, and
+    it lives in ``DETECTOR_VOCABULARY`` — an export headed 件名/状態 is the same
+    shape as one headed title/status and used to be invisible.
     """
+    vocabulary = vocabulary if vocabulary is not None else detector_vocabulary()
     suffix = Path(entry["path"]).suffix.lower()
     if suffix not in {".csv", ".tsv", ".json"}:
         return []
@@ -2608,11 +2852,11 @@ def _tracker_rows(entry: dict[str, Any]) -> list[dict[str, str]]:
             records = [row for _, row in zip(range(MAX_EXPORT_ROWS), reader)]
         except (csv.Error, ValueError):
             return []
-    title_col = _export_column(fields, _EXPORT_TITLE_COLUMNS)
-    status_col = _export_column(fields, _EXPORT_STATUS_COLUMNS)
+    title_col = _export_column(fields, vocabulary["export_title_column"])
+    status_col = _export_column(fields, vocabulary["export_status_column"])
     if title_col is None or status_col is None:
         return []
-    id_col = _export_column(fields, _EXPORT_ID_COLUMNS)
+    id_col = _export_column(fields, vocabulary["export_id_column"])
     rows: list[dict[str, str]] = []
     for record in records:
         title = str(record.get(title_col) or "").strip()
@@ -2621,7 +2865,9 @@ def _tracker_rows(entry: dict[str, Any]) -> list[dict[str, str]]:
         rows.append({
             "id": str(record.get(id_col) or "").strip() if id_col is not None else "",
             "title": title,
-            "status": str(record.get(status_col) or "").strip().lower(),
+            # The status is the one CELL compared against a label set, so it is
+            # folded on the same terms the labels were.
+            "status": _salience.fold(record.get(status_col)).strip(),
         })
     return rows
 
@@ -2644,7 +2890,9 @@ def _content_tokens(text: str) -> set[str]:
 
 
 def _untracked_commitment(
-    entries: list[dict[str, Any]]
+    entries: list[dict[str, Any]],
+    *,
+    vocabulary: Mapping[str, Sequence[str]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """A commitment in prose that NO open tracker row accounts for.
 
@@ -2656,16 +2904,22 @@ def _untracked_commitment(
     command-drift detector disabled by an absent manifest). The caller turns
     ``ran: False`` into a sentence the operator reads.
     """
+    vocabulary = vocabulary if vocabulary is not None else detector_vocabulary()
+    commitment_re = re.compile(
+        rf"^(?:{_label_alternation(vocabulary['commitment_prefix'])})"
+        rf"\s*[:\-–—{_CJK_BRACKET_CLOSE}]\s*(.+)$"
+    )
+    closed_statuses = frozenset(vocabulary["closed_status"])
     exports: list[dict[str, Any]] = []
     open_titles: list[set[str]] = []
     open_rows = 0
     for entry in entries:
-        rows = _tracker_rows(entry)
+        rows = _tracker_rows(entry, vocabulary=vocabulary)
         if not rows:
             continue
         exports.append(entry)
         for row in rows:
-            if row["status"] in _CLOSED_STATUSES:
+            if row["status"] in closed_statuses:
                 continue
             open_rows += 1
             open_titles.append(_content_tokens(f"{row['id']} {row['title']}"))
@@ -2680,8 +2934,9 @@ def _untracked_commitment(
         if Path(entry["path"]).suffix.lower() not in _PROSE_SUFFIXES:
             continue
         for line_no, line in enumerate(entry["lines"], start=1):
-            match = _COMMITMENT_RE.match(
-                _MARKER_PREFIX_RE.sub("", line).lstrip("*_`")
+            match = commitment_re.match(
+                _MARKER_PREFIX_RE.sub("", _salience.fold(line))
+                .lstrip("*_`" + _CJK_BRACKET_OPEN)
             )
             if not match:
                 continue
@@ -2889,14 +3144,23 @@ def _detector_roster(
     return ran, skipped
 
 
-def _first_dividend(manifest: dict[str, Any], entries: list[dict[str, Any]], now: str) -> dict[str, Any]:
-    join_findings, join_state = _untracked_commitment(entries)
+def _first_dividend(
+    manifest: dict[str, Any],
+    entries: list[dict[str, Any]],
+    now: str,
+    *,
+    root: Path | str | None = None,
+) -> dict[str, Any]:
+    # Resolved ONCE and threaded, so the four detectors read one table and a
+    # config file is opened once per dividend rather than once per entry.
+    vocabulary = detector_vocabulary(root)
+    join_findings, join_state = _untracked_commitment(entries, vocabulary=vocabulary)
     detectors_ran, detectors_skipped = _detector_roster(entries, join_state)
     findings = (
         _command_drift(entries)
         + join_findings
-        + _contradictions(entries)
-        + _risk_markers(entries)
+        + _contradictions(entries, vocabulary=vocabulary)
+        + _risk_markers(entries, vocabulary=vocabulary)
     )
     findings.sort(
         key=lambda item: (
@@ -3734,7 +3998,7 @@ def _act_core(
                         "scan_statistics": manifest.get("scan_statistics"),
                     },
                 )
-            dividend = _first_dividend(manifest, entries, ts)
+            dividend = _first_dividend(manifest, entries, ts, root=base)
             # The record of the read outlives the read (and the purge).
             _write_access_record(base, state, manifest, now=ts)
             after = deepcopy(state)
@@ -3749,10 +4013,11 @@ def _act_core(
             # tracker export is real means whether its rows PARSE, and reading
             # file contents is lawful only inside the Charter the Captain just
             # approved. Paths and counts only — no row ever leaves the scan.
+            export_vocabulary = detector_vocabulary(base)
             after["tracker_exports"] = [
                 {"path": entry["path"], "rows": len(rows)}
                 for entry in entries
-                for rows in (_tracker_rows(entry),)
+                for rows in (_tracker_rows(entry, vocabulary=export_vocabulary),)
                 if rows
             ]
             return _commit(
