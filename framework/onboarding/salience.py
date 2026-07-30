@@ -108,9 +108,24 @@ answer was the fourth, that is a confident wrong. :func:`offer` therefore
 REFUSES to build an ask without a coverage block, always carries an escape
 hatch that takes a typed name, and always states what was NOT reached — an
 unearned clean negative is the defect, not the long sentence.
+
+THE SPLITTER IS ALSO THE FRAMEWORK'S, and that is not scope creep — it is the
+"ONE SPLITTER" rule on :func:`split_words` being kept rather than quietly
+broken. This module never reads content and still does not; what it publishes
+is the primitive (:func:`fold`, :func:`split_words`, :func:`segments`,
+:func:`terms`) that the modules which DO read content now share. Measured
+2026-07-30 on a live hatch with a Japanese operator's folder: four separate
+ASCII-only regexes in the finding path — a seed's terms, a join detector's
+content tokens, the local-folder adapter's corpus and query terms, genesis's
+prose and query words — each returned an EMPTY set on her material, so the
+seed produced no probes, recall answered zero hits on every subject and no
+card could quote her. Each was a second splitter wearing a different
+character class, which is exactly what that rule forbids, and the fix was to
+have one.
 """
 from __future__ import annotations
 
+import bisect
 import re
 import unicodedata
 from datetime import datetime, timezone
@@ -193,6 +208,45 @@ _CLOCK_MIN_COVERAGE = 0.5
 #: separators, symbols, and the underscore a filing system writes for a space.
 _WORD_CATEGORIES = frozenset("LN")
 _MARK_CATEGORY = "M"
+_WORD_OR_MARK_CATEGORIES = _WORD_CATEGORIES | frozenset(_MARK_CATEGORY)
+
+#: THE SCRIPTS THAT WRITE NO SPACES, as codepoint ranges. This is DATA, not a
+#: rule: the Unicode database says what a letter is (``_WORD_CATEGORIES``
+#: above) but not whether that letter's writing system puts gaps between its
+#: words, and the categories alone therefore read a whole Japanese sentence as
+#: ONE word. The table names the standard unspaced blocks — CJK ideographs and
+#: their radicals, the Japanese kana, Thai, Lao, Khmer, Myanmar — and nothing
+#: else; Hangul is absent on purpose, because modern Korean IS spaced.
+#:
+#: It is a table rather than a segmenter because a real word segmenter for
+#: these scripts needs a dictionary per language, and a dictionary is the
+#: hand-maintained list this program has deleted three of. What
+#: :func:`segments` does instead is the standard retrieval fallback: emit the
+#: run and its character BIGRAMS, which needs no vocabulary, is right for no
+#: language and matchable in all of them.
+UNSPACED_SCRIPT_RANGES = (
+    (0x0E00, 0x0EFF),    # Thai, Lao
+    (0x1000, 0x109F),    # Myanmar
+    (0x1780, 0x17FF),    # Khmer
+    (0x2E80, 0x2FDF),    # CJK radicals supplement, Kangxi radicals
+    (0x3005, 0x3007),    # ideographic iteration marks, 〇
+    (0x3040, 0x30FF),    # Hiragana, Katakana
+    (0x31F0, 0x31FF),    # Katakana phonetic extensions
+    (0x3400, 0x4DBF),    # CJK unified ideographs extension A
+    (0x4E00, 0x9FFF),    # CJK unified ideographs
+    (0xA9E0, 0xA9FF),    # Myanmar extended-B
+    (0xAA60, 0xAA7F),    # Myanmar extended-A
+    (0xF900, 0xFAFF),    # CJK compatibility ideographs
+    (0xFF66, 0xFF9F),    # halfwidth Katakana (NFKC folds these to fullwidth)
+    (0x20000, 0x323AF),  # CJK ideograph extensions B..H, compatibility supp.
+)
+#: The ranges flattened into ascending half-open boundaries, so membership is
+#: one bisect rather than fourteen comparisons per character — this runs over
+#: every character of every note a folder holds.
+_UNSPACED_BOUNDS = tuple(
+    bound for low, high in UNSPACED_SCRIPT_RANGES for bound in (low, high + 1)
+)
+
 _ISO_RE = re.compile(
     r"^(\d{4})-(\d{2})-(\d{2})"
     r"(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$"
@@ -211,7 +265,7 @@ class SalienceError(Exception):
 # --- primitives -------------------------------------------------------------
 
 
-def _fold(name: Any) -> str:
+def fold(name: Any) -> str:
     """One name, one string, in any script.
 
     ``casefold`` rather than ``lower`` because lowering is an ASCII habit that
@@ -227,13 +281,22 @@ def _fold(name: Any) -> str:
     return unicodedata.normalize("NFKC", str(name or "").casefold())
 
 
-def _split_words(text: str) -> list[str]:
+def split_words(text: str) -> list[str]:
     """The words in a folded name, in order, by Unicode category.
 
     ONE SPLITTER. Everything that scores, clusters, discounts, grades or
     compares a name reads this, and a second one — an alphabet for ranking and
     another for names — would drift apart within a month, which is the drift the
     length-floor split was made to stop.
+
+    PUBLIC SINCE 2026-07-30, and that is the same rule, not a relaxation of it.
+    Four ASCII-only tokenizers were living in the FINDING path — the journey's
+    seed terms and content tokens, the local-folder adapter's corpus and query
+    terms, genesis's prose and query words — and each was a second splitter in
+    everything but name. They now read this one. The module a generic text
+    primitive lives in is the module that already declared itself its only
+    home; moving it out would have created the second implementation this
+    docstring exists to forbid.
     """
     words: list[str] = []
     current: list[str] = []
@@ -249,6 +312,105 @@ def _split_words(text: str) -> list[str]:
     if current:
         words.append("".join(current))
     return words
+
+
+def _is_unspaced(character: str) -> bool:
+    """Is this character written in a script that puts no gaps between words?"""
+    return bisect.bisect_right(_UNSPACED_BOUNDS, ord(character)) % 2 == 1
+
+
+def is_word_start(character: str) -> bool:
+    """May this character OPEN a word? A Letter or a Number, never a Mark."""
+    return unicodedata.category(character)[0] in _WORD_CATEGORIES
+
+
+def is_word_character(character: str) -> bool:
+    """May this character sit INSIDE a word? A Letter, a Number or a Mark.
+
+    Published for the one caller that validates a string the splitter never
+    gets to see: ``journey._probe_pattern_ok`` allow-lists the shape of a
+    filename glob built from the operator's own words, and an allow-list
+    written from ``[A-Za-z0-9]`` refuses every word they did not write in
+    Latin. It asks the same table the splitter asks, so the two cannot answer
+    differently about the same character.
+    """
+    return unicodedata.category(character)[0] in _WORD_OR_MARK_CATEGORIES
+
+
+def segments(text: Any, *, folded: bool = True) -> list[tuple[str, bool]]:
+    """Every word run in ``text``, sub-split at script boundaries.
+
+    ``[(chunk, unspaced)]`` in order, where ``unspaced`` says the chunk is
+    written in one of ``UNSPACED_SCRIPT_RANGES``. This is :func:`split_words`
+    plus ONE layer, and the layer is what a category split cannot do on its
+    own: ``APIの設計`` is a single unbroken run of Letters, so the words ``api``
+    and ``設計`` are both invisible to a splitter that only asks the category.
+    Sub-splitting at the script change surfaces both, mechanically, with no
+    dictionary anywhere.
+
+    ``folded=False`` keeps the operator's own spelling — the seed a person
+    typed becomes a search pattern they will read back, and lowercasing it
+    there would show them a word they did not write. Everything that COMPARES
+    still folds; only what is displayed does not.
+    """
+    source = fold(text) if folded else str(text or "")
+    out: list[tuple[str, bool]] = []
+    for word in split_words(source):
+        current: list[str] = []
+        current_unspaced = False
+        for character in word:
+            unspaced = _is_unspaced(character)
+            if current and unspaced != current_unspaced:
+                out.append(("".join(current), current_unspaced))
+                current = []
+            current.append(character)
+            current_unspaced = unspaced
+        if current:
+            out.append(("".join(current), current_unspaced))
+    return out
+
+
+def terms(text: Any, *, min_len: int = 1,
+          folded: bool = True) -> list[str]:
+    """The RETRIEVAL vocabulary of a piece of free text, in order, with repeats.
+
+    Repeats are kept because a caller counting term frequency needs them and a
+    caller wanting a set can build one; the reverse is not recoverable.
+
+    THE FLOOR APPLIES TO SPACED SCRIPTS ONLY, and this is the whole reason the
+    two questions are separated. ``min_len`` exists because a one- or
+    two-letter fragment of an alphabetic word carries no retrieval signal
+    ("a", "of", "to"). A CJK bigram is two characters BY CONSTRUCTION, and a
+    single ideograph is frequently a whole word, so applying an alphabet's
+    floor to them deletes the entire vocabulary of the script — which is
+    exactly what the four ASCII regexes this replaced did, one step earlier.
+
+    An unspaced run yields itself AND its adjacent character bigrams: the run
+    for the reader who typed the whole phrase, the bigrams so a phrase written
+    once as ``請求書の移行`` is still reachable from ``移行``. The bigrams are
+    skipped for a two-character run, where the only bigram IS the run and
+    emitting both would double-count it in every frequency table downstream.
+
+    RESIDUAL, named here rather than implied: a bigram is not a word. Half the
+    bigrams of any real sentence straddle a boundary its writer would never
+    put a gap in, so this vocabulary is noisier than the spaced one — a query
+    matches more, an IDF weight means slightly less, and a seed answered in
+    one of these scripts composes a web query carrying fragments as well as
+    words. It is the standard n-gram fallback and it is chosen over the
+    alternative rather than mistaken for the answer: real segmentation for
+    these scripts wants a dictionary per language, which is the
+    hand-maintained list this module refuses everywhere else.
+    """
+    out: list[str] = []
+    for chunk, unspaced in segments(text, folded=folded):
+        if not unspaced:
+            if len(chunk) >= min_len:
+                out.append(chunk)
+            continue
+        out.append(chunk)
+        if len(chunk) > 2:
+            out.extend(chunk[i:i + 2] for i in range(len(chunk) - 1))
+    return out
 
 
 def name_tokens(name: Any) -> list[str]:
@@ -295,7 +457,7 @@ def name_tokens(name: Any) -> list[str]:
     which is why it was measured on a real one before it landed rather than
     corrected in a review: see the retirement note on RES-025.
     """
-    parts = _split_words(_fold(name))
+    parts = split_words(fold(name))
     out: list[str] = []
     seen: set[str] = set()
     for part in parts:

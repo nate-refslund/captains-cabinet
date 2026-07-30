@@ -21,7 +21,36 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 55d8c121cbb529a3c1604b9b6a4982208c720d7afe7600ddf23bf46b44408444
+Reviewed-Scope-Digest: PENDING_RECOMPUTE_OVER_THE_MERGE_COMMIT
+
+(MERGE RE-BIND, 2026-07-30, `feat/companion-desk-pet` x master. Both sides
+re-bound this line, so the merge left two; ONE value stands and it is
+recomputed over this merge commit. Master's side moved
+`cabinet/config/cognitive-architecture-contract.yml`; this branch's side moved
+`cabinet/scripts/egg-export-manifest.txt` by one `expect-present` row. The two
+sets are disjoint and NO COG-4 implementation byte moved on either side —
+verified by expanding the resolved scope with `git ls-tree -r` on both parents
+and diffing. Both sections stand verbatim below, master's first.)
+(RE-BOUND 2026-07-30 on `fix/script-agnostic-recall`, previous value
+`527a73d2…`. ONE in-scope path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` raises
+`framework_production_noncomment_lines` VISIBLY 61496 -> 61724 (+228 measured
+over this tree with cognitive-architecture-census.py, observed 76263 vs the
+then-effective 76035 — never an allowance, because a splitter that reads the
+operator's own script has no deletion gate that could ever fire). What it pays
+for is four ASCII character classes in the FINDING path — the journey's seed
+terms and its join-detector content tokens, the local-folder adapter's corpus
+and query terms, genesis's prose and query words — plus the probe-pattern
+allow-list and the recall subject list downstream of them. Measured on a live
+hatch with a Japanese operator's 17-file estate: zero discovery probes from her
+seed, zero recall hits on every subject, no quoted line on any card. All of
+them now read `salience.terms`, the splitter this tree already declared its ONE
+splitter; PLACEMENT was adjudicated by two blind arms (Fable 5 + Opus 5, own
+clones) which both refused a new `framework/text.py` on the ground that its
+`merge_refuted` anchor could not honestly refute `salience.py::split_words`.
+Census PASS at observed == maximum with zero headroom; ZERO new production
+modules, so no bijection class moves.)
+
 (MERGE RE-BIND, 2026-07-30, `fix/unicode-name-tokens` x master. Both sides
 re-bound this line, so the merge left two; ONE value stands and it is
 recomputed over this merge commit. The only in-scope path either side moved
