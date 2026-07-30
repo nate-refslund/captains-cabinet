@@ -21,8 +21,13 @@ HOLDOUT_SEEDS = (99, 23, 47)     # never used for fitting (fit uses 11..16)
 
 def _bounds(wa):
     p = wa.calib_dir / "clustering_bounds.json"
-    if not p.is_file():
-        pytest.skip("no committed clustering bounds calibration")
+    # ASSERT, never skip: this file is TRACKED (`git ls-files` lists it), so the
+    # skip it used to take could not fire on any real checkout and could only
+    # ever hide a deleted calibration. A guard that cannot legitimately fire is
+    # a disabled sensor wearing a condition.
+    assert p.is_file(), (
+        f"{p} is tracked and missing — every clustering arm below is calibrated "
+        "against it, so its absence is a broken checkout, not a reason to pass")
     return json.loads(p.read_text())
 
 
@@ -71,22 +76,26 @@ def test_clustered_holdout_maps_pass_committed_bounds(wa):
 # --------------------------------------------------- prove-it: IMAGE side
 
 def test_corpus_negative_renders_fail(wa):
-    neg_dir = wa.corpus_dir / "negative"
-    negs = sorted(neg_dir.glob("*.png")) if neg_dir.is_dir() else []
-    if not negs:
-        pytest.skip("gitignored corpus negatives not present")
+    """Every negative the manifest declares AND this checkout can verify.
+
+    Three of the six negatives are HELD (Captain-rejected screenshots carrying
+    licensed art), so on a fresh checkout this runs over the three synthetic
+    owned-art negatives, which build_corpus rebuilds byte-identically from the
+    repo's own tracked pack. That is the difference between an arm that runs in
+    CI and an arm that skips there — and `wa.held` names what it did not see.
+    """
+    wa.require("negative")
     b = _bounds(wa)
-    for p in negs:
+    for p in wa.corpus("negative"):
         findings = wa.gates.clustering.check(image_path=p, bounds=b)
         codes = [f["code"] for f in wa.errors(findings)]
         assert "CLUSTER_FLAT_VOID" in codes, f"{p.name} not caught: {codes}"
 
 
 def test_corpus_positive_renders_pass(wa):
-    if not wa.has_corpus:
-        pytest.skip("gitignored corpus not present")
+    wa.require("positive")
     b = _bounds(wa)
-    for p in sorted((wa.corpus_dir / "positive").glob("*.png")):
+    for p in wa.corpus("positive"):
         findings = wa.gates.clustering.check(image_path=p, bounds=b)
         assert wa.errors(findings) == [], (p.name, wa.codes(findings))
 

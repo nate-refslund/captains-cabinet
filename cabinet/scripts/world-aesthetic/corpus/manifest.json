@@ -19,7 +19,8 @@
       "file": "corpus/negative/neg-city-street-void.png",
       "sha256": "5a2cf8befca95d511bc1dd6989c7d9a6afa339f10e57382f4572d981cf0fddbe",
       "provenance": "Captain-rejected Cabinet World build screenshot 2026-07-08 (~/.claude/image-cache/e55f9b5f-b7cf-469f-af48-89a202a8cc4a/6.png, Street Z1)",
-      "why": "Ground-truth rejection: buildings against black void, garbled road-marking tiling, near-empty street \u2014 incomplete scene assembly."
+      "why": "Ground-truth rejection: buildings against black void, garbled road-marking tiling, near-empty street \u2014 incomplete scene assembly.",
+      "rebuild": null
     },
     {
       "id": "neg-grey-wardroom",
@@ -27,7 +28,8 @@
       "file": "corpus/negative/neg-grey-wardroom.png",
       "sha256": "18ee5f4bbe1e479d858505bbb1e9d7af1562b8a52ae7e4c1ae8c766c38e2127a",
       "provenance": "Captain-rejected Cabinet World build screenshot 2026-07-08 (~/.claude/image-cache/e55f9b5f-b7cf-469f-af48-89a202a8cc4a/7.png, Wardroom Z2)",
-      "why": "Ground-truth rejection: vast grey floor, one desk strip, scattered orphan chairs/props \u2014 an unfurnished room, not a composed interior."
+      "why": "Ground-truth rejection: vast grey floor, one desk strip, scattered orphan chairs/props \u2014 an unfurnished room, not a composed interior.",
+      "rebuild": null
     },
     {
       "id": "neg-island-void",
@@ -35,7 +37,8 @@
       "file": "corpus/negative/neg-island-void.png",
       "sha256": "8c182b90d037cdfe96c3918c0b1efffa859192d88da1c0cc74f5cd2154a40f3f",
       "provenance": "Captain-rejected Cabinet World build screenshot 2026-07-08 (~/.claude/image-cache/e55f9b5f-b7cf-469f-af48-89a202a8cc4a/5.png, Island Z0)",
-      "why": "Ground-truth rejection: sparse props floating on flat green void \u2014 no terrain variation, no paths, no shore, buildings unanchored."
+      "why": "Ground-truth rejection: sparse props floating on flat green void \u2014 no terrain variation, no paths, no shore, buildings unanchored.",
+      "rebuild": null
     },
     {
       "id": "neg-owned-scatter-dense",
@@ -43,7 +46,8 @@
       "file": "corpus/negative/neg-owned-scatter-dense.png",
       "sha256": "ba1653cf742abbfb9de3c88ae7298ccb9e8c4f0a4891c40d6db209dca34facff",
       "provenance": "Synthetic (build_corpus.py synthetic, seed 1337, 90 props): owned atlas frames scattered on the world's own ground colour",
-      "why": "Same failure mode at high density: clutter without composition still fails \u2014 density alone must not fool the judge."
+      "why": "Same failure mode at high density: clutter without composition still fails \u2014 density alone must not fool the judge.",
+      "rebuild": "synthetic"
     },
     {
       "id": "neg-owned-scatter-sparse",
@@ -51,7 +55,8 @@
       "file": "corpus/negative/neg-owned-scatter-sparse.png",
       "sha256": "f66712c66900b79adf2ab4584c3e17fc4eb9602079933a330213f9e1a6830655",
       "provenance": "Synthetic (build_corpus.py synthetic, seed 42, 18 props): owned atlas frames scattered on the world's own ground colour",
-      "why": "Reproduces the rejected failure mode at low density in owned art: unrelated props dropped on an untextured field with no grounding."
+      "why": "Reproduces the rejected failure mode at low density in owned art: unrelated props dropped on an untextured field with no grounding.",
+      "rebuild": "synthetic"
     },
     {
       "id": "neg-owned-void",
@@ -59,7 +64,8 @@
       "file": "corpus/negative/neg-owned-void.png",
       "sha256": "8547d20382dd51180df6dd312ac4335a2218af4533c5a1ed73b58eef59ffd7e8",
       "provenance": "Synthetic (build_corpus.py synthetic, seed 5150): owned atlas buildings on the world's own flat ground colour, no terrain",
-      "why": "The island-void rejection rebuilt in owned art: real buildings, real palette, no terrain variation, no paths, nothing anchored."
+      "why": "The island-void rejection rebuilt in owned art: real buildings, real palette, no terrain variation, no paths, nothing anchored.",
+      "rebuild": "synthetic"
     },
     {
       "id": "pal-owned-atlas",
@@ -67,7 +73,8 @@
       "file": "corpus/palette/pal-owned-atlas.png",
       "sha256": "88dea7194171d37d5115db01e03980d211bad63477f69d0bcaa5c72c4c7be52d",
       "provenance": "Copy of the repo's own TRACKED owned isometric atlas (cabinet/dashboard/public/world-assets/originals/iso/atlas-0.png, 2048x2048, 182 frames) \u2014 the one corpus member reconstructible from a plain checkout with a single cp",
-      "why": "Defines every colour the owned sprites may draw, independently of which sprites a chosen render happens to contain. Without it an all-owned-sprite frame reads foreign (6.52% vs 1.23% measured)."
+      "why": "Defines every colour the owned sprites may draw, independently of which sprites a chosen render happens to contain. Without it an all-owned-sprite frame reads foreign (6.52% vs 1.23% measured).",
+      "rebuild": "copy:cabinet/dashboard/public/world-assets/originals/iso/atlas-0.png"
     },
     {
       "id": "pos-owned-interior-cutaway",
@@ -75,7 +82,8 @@
       "file": "corpus/positive/pos-owned-interior-cutaway.png",
       "sha256": "56793e7ef4b6f8c539943186bd9d48bbd99c98bb9f7342326bb6d63c4fb5ff43",
       "provenance": "Owned isometric roof-off capture, post alpha-hole fix (cabinet-meta designs/world-iso-roof-off-great-house-close-FIXED-2026-07-28.png, 1440x960)",
-      "why": "Roof-off interior: floors, walls, furniture. The frame whose alpha holes the Captain diagnosed, AFTER the cutout fix \u2014 so the corpus records the corrected interior, never the bug."
+      "why": "Roof-off interior: floors, walls, furniture. The frame whose alpha holes the Captain diagnosed, AFTER the cutout fix \u2014 so the corpus records the corrected interior, never the bug.",
+      "rebuild": null
     },
     {
       "id": "pos-owned-island-camp",
@@ -83,7 +91,8 @@
       "file": "corpus/positive/pos-owned-island-camp.png",
       "sha256": "3cc3d0f3cada4d62753b2eb12a037b5d750df9932b981100b6028e23135652c5",
       "provenance": "Owned isometric live capture (cabinet-meta designs/world-camp-overgrown-2026-07-27.png, 2400x1760)",
-      "why": "Wide island in the wilderness/camp era \u2014 the Captain's subtractive-clearing inversion. Different terrain mix from the hamlet, so the palette covers overgrowth and not only cleared ground."
+      "why": "Wide island in the wilderness/camp era \u2014 the Captain's subtractive-clearing inversion. Different terrain mix from the hamlet, so the palette covers overgrowth and not only cleared ground.",
+      "rebuild": null
     },
     {
       "id": "pos-owned-island-hamlet",
@@ -91,7 +100,8 @@
       "file": "corpus/positive/pos-owned-island-hamlet.png",
       "sha256": "0fa085e969dab55982545ef42025209814aa3e2ef6fbaeb9945ddff908eeba6a",
       "provenance": "Owned isometric live capture (cabinet-meta designs/world-iso-hamlet-island-2026-07-28.png, 2400x1760)",
-      "why": "Wide island at today's org state: computed fbm+dither ground, worn lanes, districts, quay. The default frame every renderer change is judged on."
+      "why": "Wide island at today's org state: computed fbm+dither ground, worn lanes, districts, quay. The default frame every renderer change is judged on.",
+      "rebuild": null
     },
     {
       "id": "pos-owned-square-close",
@@ -99,7 +109,8 @@
       "file": "corpus/positive/pos-owned-square-close.png",
       "sha256": "af81e14682d23a08e115526037456af72241484064bff3ef3cd2df712e1c0ba9",
       "provenance": "Owned isometric live capture, close zoom (cabinet-meta designs/cabinet-world-iso-v24-zoom-square-2026-07-25.png, 1200x800)",
-      "why": "Close-zoom village square: paving, benches, lamp posts at texture level. Carries the plaza colours no wide frame exercises."
+      "why": "Close-zoom village square: paving, benches, lamp posts at texture level. Carries the plaza colours no wide frame exercises.",
+      "rebuild": null
     }
   ]
 }

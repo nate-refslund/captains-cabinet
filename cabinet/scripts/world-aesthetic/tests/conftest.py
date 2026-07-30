@@ -3,10 +3,25 @@
 Loads the gates package + runner + calibrate via importlib under UNIQUE
 module names (world_aesthetic_*) — never as top-level "gates", which is the
 pre-existing cabinet/scripts/gates package. No sys.path mutation.
+
+THE CORPUS IS VERIFIED HERE, and that is not housekeeping. Until 2026-07-30 the
+corpus arms gated on `has_corpus` — "are there any PNGs in corpus/positive?" —
+which is a different question from "is this the corpus the tracked manifest
+declares". Measured on ONE commit: the manifest's corpus gives 96 passed; the
+ARCHIVED pre-re-fit corpus dropped into the same directory gives 4 failed; a
+fresh CI checkout gives 5 skipped. Three verdicts from one tree, and nothing in
+the suite could tell them apart — so the reds were unattributable and the greens
+were unearned. Now every member present on disk is sha256-checked against the
+manifest and a MISMATCH IS A HARD FAILURE naming the ids, never a skip and never
+a quiet pass; every member the repo can rebuild is materialised first, so the
+arms actually run in CI instead of skipping; and the members that genuinely
+cannot be reconstructed are declared, pinned, and reported by name rather than
+relabelled as covered.
 """
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import sys
@@ -18,6 +33,40 @@ import pytest
 WA_DIR = Path(__file__).resolve().parents[1]
 CORPUS_DIR = WA_DIR / "corpus"
 CALIB_DIR = WA_DIR / "calibration"
+
+
+def _corpus_state(builder) -> tuple[dict, list[str], list[str]]:
+    """(verified paths by class, held ids, mismatching ids).
+
+    `builder` is the loaded build_corpus module — the ONE place that knows how a
+    member is rebuilt, so this file never carries a second copy of that list.
+    """
+    manifest = CORPUS_DIR / "manifest.json"
+    if not manifest.is_file():
+        return {}, [], []
+    try:
+        held = builder.materialise(CORPUS_DIR)
+    except SystemExit as e:                       # a recipe that cannot run
+        pytest.fail(f"corpus materialise refused: {e}")
+    except ImportError:
+        # Pillow builds the synthetic negatives. Absent it, those members are
+        # simply not present — reported as held, never as covered.
+        held = [i["id"] for i in json.loads(manifest.read_text())["images"]]
+    data = json.loads(manifest.read_text())
+    verified: dict[str, list[Path]] = {}
+    mismatch, missing = [], []
+    for img in data["images"]:
+        p = WA_DIR / img["file"]
+        if not p.is_file():
+            missing.append(img["id"])
+            continue
+        if hashlib.sha256(p.read_bytes()).hexdigest() != img["sha256"]:
+            mismatch.append(img["id"])
+            continue
+        verified.setdefault(img["class"], []).append(p)
+    for cls in verified:
+        verified[cls].sort()
+    return verified, sorted(set(held) | set(missing)), sorted(mismatch)
 
 
 def _load(name: str, path: Path):
@@ -41,6 +90,39 @@ def wa():
     gates = loader.load_gates()
     runner = _load("world_aesthetic_runner", WA_DIR / "aesthetic_gates.py")
     calibrate = _load("world_aesthetic_calibrate", WA_DIR / "calibrate.py")
+    builder = _load("world_aesthetic_build_corpus", WA_DIR / "build_corpus.py")
+
+    verified, held, mismatch = _corpus_state(builder)
+    if mismatch:
+        # NOT a skip. A corpus that is present but is not the one the manifest
+        # records makes every verdict below meaningless in an unattributable
+        # direction — it is how the same commit produced 96 green on one machine
+        # and 4 red on another, with no line anywhere saying why.
+        pytest.fail("corpus members on disk do NOT match the tracked manifest: "
+                    + ", ".join(mismatch)
+                    + " — re-assemble per provenance or re-record the manifest; "
+                      "a corpus the suite cannot identify proves nothing either way")
+
+    def corpus(cls: str) -> list[Path]:
+        """Only members verified against the manifest. Never a bare glob.
+
+        A glob is a set that cannot detect removal from itself: drop a positive
+        and the loop simply runs one fewer time, green. The manifest is the
+        declared set, so a member that goes missing is reported as held rather
+        than silently unchecked.
+        """
+        return list(verified.get(cls, []))
+
+    def require(cls: str):
+        """Skip ONLY for members the repo genuinely cannot reconstruct, and say
+        which ones. Any other absence is a failure."""
+        if corpus(cls):
+            return
+        if held:
+            pytest.skip(f"no verified {cls} member: the whole {cls} class is HELD "
+                        f"(cannot be rebuilt from a checkout) — {', '.join(held)}")
+        pytest.fail(f"no verified {cls} member and nothing is declared held — "
+                    "the corpus is neither present nor honestly absent")
 
     def base_map(w=8, h=8):
         return {
@@ -86,11 +168,12 @@ def wa():
 
     return SimpleNamespace(
         dir=WA_DIR, gates=gates, runner=runner, calibrate=calibrate,
+        builder=builder,
         png=gates._png, common=gates._common, synth=gates._synth,
         base_map=base_map, blob=blob,
         SOLID_DIRT=SOLID_DIRT, SOLID_GRASS=SOLID_GRASS,
         errors=errors, codes=codes, write_json=write_json,
         corpus_dir=CORPUS_DIR, calib_dir=CALIB_DIR,
-        has_corpus=(CORPUS_DIR / "positive").is_dir()
-        and any((CORPUS_DIR / "positive").glob("*.png")),
+        corpus=corpus, require=require, held=held,
+        has_corpus=bool(verified.get("positive")),
     )

@@ -937,11 +937,16 @@ jobs:
 
       - name: Cabinet world-aesthetic tests
         if: ${{ !cancelled() }}
-        # 92 tests for the world-render gate: palette, label overlap, scale
+        # 100 tests for the world-render gate: palette, label overlap, scale
         # lint, judge, PNG codec, edge continuity, clustering, runner,
-        # connectivity, entrypoint. 5 of them skip whenever the gitignored
-        # render corpus is absent — always true on a fresh CI checkout, so
-        # expect 87 passed + 5 skipped here.
+        # connectivity, entrypoint, corpus reach. The calibration corpus is
+        # gitignored, and the fixture MATERIALISES every member this repo can
+        # rebuild from its own tracked owned pack before the arms run — so on a
+        # fresh checkout expect 97 passed + 3 SKIPPED, not the 91 + 5 it was
+        # before 2026-07-30. The 3 remaining skips name the held members (live
+        # captures and licensed screenshots no checkout can reconstruct); a
+        # corpus present but NOT matching the tracked manifest is a hard
+        # failure by id, never a skip.
         run: python -m pytest cabinet/scripts/world-aesthetic/tests -q
 
       - name: Cabinet world-capture tests (ground port + check mirror)
