@@ -670,6 +670,7 @@ expect-present cabinet/dashboard/src/app/api/health/route.ts
 # enters a HEAD cut. Rows are verification, not inclusion: the export FAILS
 # LOUDLY if the companion source ever falls out of the cut.
 expect-present cabinet/companion/main.swift
+expect-present cabinet/companion/pet.swift
 expect-present cabinet/companion/Info.plist
 expect-present cabinet/scripts/build-companion.sh
 
