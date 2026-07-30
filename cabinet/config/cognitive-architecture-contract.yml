@@ -1692,7 +1692,7 @@ temporary_allowances:
       brings production non-comment lines below the pinned baseline
   - phase: onboarding-operator-identity
     budget: framework_production_noncomment_lines
-    additional: 246
+    additional: 262
     reason: >-
       A READER WITH NO WRITER, WHICH IS AN UNREACHABLE BRANCH. The who-and-when
       unit one landing earlier resolves the operator per connector from the
@@ -1740,7 +1740,12 @@ temporary_allowances:
       because its only actor is an organisation identifier. +246 measured with
       cognitive-architecture-census.py at this landing rather than carried;
       majority docstring prose counted honestly rather than reformatted into
-      comments to duck the budget.
+      comments to duck the budget. (+246 at the first landing, +16 for two
+      defects found by attacking it: the candidate note counted the CAPPED offer
+      list, so a connector with thirty colleagues reported twelve accounts — the
+      cap described as a fact about the operator's estate — and a row carrying no
+      connector name put the empty string in the known set, so an empty key was
+      accepted as a system nobody has.)
     owner: onboarding-plane
     sunset: '2027-01-30'
     deletion_gate: >-

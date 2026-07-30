@@ -1298,6 +1298,20 @@ def identity_candidates(rows, connector: str) -> list:
             for name, count in ranked[:MAX_IDENTITY_CANDIDATES]]
 
 
+def _distinct_actors(rows, connector: str) -> int:
+    """How many actors the connector reported — the TRUE count, uncapped.
+
+    Separate from :func:`identity_candidates` on purpose. That list is capped so
+    a two-hundred-actor connector cannot arrive through the question door, and a
+    note counting the capped LIST would tell an operator with thirty colleagues
+    that twelve accounts appear — a number describing the cap and reported as a
+    fact about their estate.
+    """
+    return len({" ".join(a.split()) for row in (rows or ())
+                if str(row.get("connector") or "") == connector
+                for a in _row_actors(row)})
+
+
 def identity_question(rows, operator) -> dict | None:
     """The connectors that still cannot recognise the operator, as a QUESTION.
 
@@ -1325,11 +1339,15 @@ def identity_question(rows, operator) -> dict | None:
         total = sum(1 for r in rows if str(r.get("connector") or "") == connector)
         entry = {"connector": connector, "rows": total, "candidates": candidates,
                  "reports_no_actor": not candidates}
+        distinct = _distinct_actors(rows, connector)
+        more = distinct - len(candidates)
         entry["note"] = (
             f"{connector} reported no actor on any of its {total} rows, so until its "
             "actor path is declared, even your own account attributes nothing there"
             if not candidates else
-            f"{connector}: {len(candidates)} account(s) appear across {total} rows")
+            f"{connector}: {distinct} account(s) appear across {total} rows"
+            + (f"; the {len(candidates)} busiest are offered here, {more} are not"
+               if more > 0 else ""))
         asking.append(entry)
     if not asking:
         return None

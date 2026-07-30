@@ -3137,7 +3137,11 @@ def _act_core(
                     "I have not read your connectors yet, so I do not know which "
                     "systems to ask you about.",
                 )
-            known = {str(row.get("connector") or "") for row in rows}
+            # Falsy names are DROPPED rather than admitted: a row that carries
+            # no connector would otherwise put "" in the known set, and an empty
+            # key in the request would be accepted as a system.
+            known = {name for name in (str(row.get("connector") or "") for row in rows)
+                     if name}
             raw = request.get("handles")
             if not isinstance(raw, dict) or not raw:
                 raise JourneyError(

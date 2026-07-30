@@ -21,8 +21,10 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: df74c54be382546821d5cec711bf7f8d136af9196d62be04f30b0f50110f59f9
-(RE-BOUND 2026-07-30 on `feat/operator-identity`, previous value `80d1b9fe…`.
+Reviewed-Scope-Digest: 8666074818270283cb3f7773b7f3b5334b8b83bce7bd0e44041661994d06c1bb
+(RE-BOUND 2026-07-30 on `feat/operator-identity` — twice, the second time for the
+two defects that branch was caught with by attacking its own landing; previous
+values `df74c54b…` and before it `80d1b9fe…`.
 ONE bound path moved — `cabinet/config/cognitive-architecture-contract.yml`,
 which takes a +246 non-comment-line phase row for the operator-identity unit —
 and NO COG-4 implementation byte did. The note for it is appended at the end of
@@ -1640,7 +1642,14 @@ ZERO new modules ride here, so no bijection class moves, and the ceiling is
 RE-MEASURED over this tree (observed 75502, zero headroom) rather than added on
 paper.
 
-Recorded digest: df74c54be382546821d5cec711bf7f8d136af9196d62be04f30b0f50110f59f9
-Previous:        80d1b9fed616d8bc4332d015bcedb155f3aa409b0181022f3bde359bd80b2a7b
+Recorded digest: 8666074818270283cb3f7773b7f3b5334b8b83bce7bd0e44041661994d06c1bb
+Previous:        df74c54be382546821d5cec711bf7f8d136af9196d62be04f30b0f50110f59f9
+Before that:     80d1b9fed616d8bc4332d015bcedb155f3aa409b0181022f3bde359bd80b2a7b
+
+Two commits, one bound path both times: the phase row was measured +246 at the
+first and re-measured +262 at the second, when attacking the landing found the
+candidate note counting the CAPPED offer list and an empty connector key being
+accepted as a system. Still no COG-4 implementation byte, still zero new
+modules, still zero headroom (observed 75518).
 
 Re-bound at landing by the integrator, in the SAME commit as the change, per §15.

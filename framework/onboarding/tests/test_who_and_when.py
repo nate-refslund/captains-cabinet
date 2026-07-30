@@ -133,6 +133,19 @@ class TestTheAskThatMakesItResolvable:
         question = research.identity_question(self._rows(), who)
         assert [c["connector"] for c in question["connectors"]] == ["tracker"]
 
+    def test_the_note_counts_the_estate_not_the_capped_list(self):
+        """The offer is capped so a two-hundred-actor connector cannot arrive
+        through the question door. Counting the CAPPED list in the note reports
+        the cap as a fact about the operator's estate — a number describing this
+        module rather than their colleagues."""
+        wide = [{"connector": "code", "name": f"r{i}", "updated": "2026-07-01",
+                 "actors": [f"person-{i:02d}"]} for i in range(20)]
+        question = research.identity_question(wide, research.operator_identity({}))
+        entry = question["connectors"][0]
+        assert len(entry["candidates"]) == research.MAX_IDENTITY_CANDIDATES
+        assert "20 account(s) appear across 20 rows" in entry["note"]
+        assert "12 busiest are offered here, 8 are not" in entry["note"]
+
     def test_nothing_is_asked_once_every_connector_resolves(self):
         who = research.operator_identity(
             {"operator": {"handles": {"code": ["aperson"], "tracker": ["aperson"]}}})
@@ -397,6 +410,16 @@ class TestRecordOperatorIdentity:
                 journey.act({"action": "record_operator_identity", "surface": "dashboard",
                              "action_id": f"i-{code}-{len(str(payload))}", **payload}, tmp_path)
             assert exc.value.code == code
+
+    def test_a_row_with_no_connector_name_is_not_a_system_you_can_claim(self, tmp_path, monkeypatch):
+        """A nameless row would otherwise put "" in the known set and an empty
+        key in the request would be accepted as a system nobody has."""
+        rows = _ROWS + [{"connector": "", "name": "orphan", "updated": "2026-07-01"}]
+        _gathered(tmp_path, monkeypatch, rows, action_id="g-11")
+        with pytest.raises(journey.JourneyError) as exc:
+            journey.act({"action": "record_operator_identity", "surface": "dashboard",
+                         "action_id": "i-11", "handles": {"": ["me"]}}, tmp_path)
+        assert exc.value.code == "identity_connector_unknown"
 
     def test_nothing_can_be_recorded_before_anything_has_been_read(self, tmp_path):
         data = tmp_path / journey.DATA_REL
