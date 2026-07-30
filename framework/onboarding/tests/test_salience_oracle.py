@@ -50,7 +50,8 @@ def _day(i: int) -> str:
 
 
 def _estate(seed: int, *, connectors: int = 4, per_connector: int = 24,
-            plant_spans: tuple[tuple[int, ...], ...] = ((0, 1), (2, 3))) -> dict:
+            plant_spans: tuple[tuple[int, ...], ...] = ((0, 1), (2, 3)),
+            plant_extra: tuple[int, ...] = ()) -> dict:
     """One synthetic estate with a known answer planted in it.
 
     * every connector gets its own FURNITURE word on more than a quarter of its
@@ -61,6 +62,12 @@ def _estate(seed: int, *, connectors: int = 4, per_connector: int = 24,
       recurring in the connectors named by ``plant_spans``, so their union is
       the widest-spanning thing in the estate and neither fragment alone is;
     * everything else is unique noise.
+
+    ``plant_extra`` gives fragment *i* that many ADDITIONAL rows in the first
+    connector of its span, which is the only way to make the two planted
+    candidates differ in size. A property about WHICH of two joined candidates
+    names the union cannot be observed while both are the same size, and the
+    default generator makes them identical — see the arm that uses this.
     """
     rng = random.Random(seed)
     taken: set[str] = set()
@@ -85,12 +92,16 @@ def _estate(seed: int, *, connectors: int = 4, per_connector: int = 24,
             rows.append({"connector": names[other],
                          "name": f"{furniture[index]}-{_word(rng, taken)}",
                          "updated": _day(stamp)})
-    for fragment, span in zip(fragments, plant_spans):
-        for where in span:
-            stamp += 1
-            rows.append({"connector": names[where],
-                         "name": f"{fragment}-{_word(rng, taken)}",
-                         "updated": _day(stamp)})
+    for index, (fragment, span) in enumerate(zip(fragments, plant_spans)):
+        repeats = [1] * len(span)
+        if index < len(plant_extra) and span:
+            repeats[0] += int(plant_extra[index])
+        for where, times in zip(span, repeats):
+            for _ in range(times):
+                stamp += 1
+                rows.append({"connector": names[where],
+                             "name": f"{fragment}-{_word(rng, taken)}",
+                             "updated": _day(stamp)})
     rng.shuffle(rows)
     return {"rows": rows, "fragments": fragments, "furniture": furniture,
             "connectors": names}
@@ -312,18 +323,36 @@ def test_a_dead_judgment_never_carries_its_own_message_outward():
     assert "s3cret-looking-detail" not in json.dumps(joined)
 
 
-def test_the_union_keeps_a_name_the_operator_would_recognise():
+@pytest.mark.parametrize("seed", range(12))
+def test_the_union_keeps_a_name_the_operator_would_recognise(seed):
     """Measured: the first working join labelled the union with the two-row
     scrap nobody calls it, because the label rule prefers the RAREST member —
     correct inside a cluster the row sets built, wrong across candidates a
-    judgment joined. The widest of the joined candidates names the union."""
-    estate = _estate(8)
+    judgment joined. The widest of the joined candidates names the union.
+
+    THE FIXTURE HAD TO BE MADE ABLE TO SEE THAT. Written against the default
+    generator this arm passed against the rarest rule as well as the widest
+    one — both planted candidates carry the same two rows, so "the widest names
+    the union" and "the rarest names it" pick from an identical pair and every
+    assertion holds either way. A sensor that cannot fail against the defect it
+    names is the disabled-sensor class this program keeps finding in its own
+    tests, so the plant is now DELIBERATELY LOPSIDED and the arm asserts the
+    lopsidedness before it asserts anything about the label.
+    """
+    estate = _estate(seed, plant_extra=(4,))
     cold = salience.rank(estate["rows"], now=_NOW)
     labels = [_label_carrying(cold, f) for f in estate["fragments"]]
+    assert all(labels), "the generator failed to plant two rankable fragments"
     sizes = {c["label"]: c["rows"] for c in cold["clusters"]}
+    widest, narrowest = sorted(labels, key=lambda label: -sizes[label])
+    assert sizes[widest] > sizes[narrowest], (
+        "the two joined candidates are the same size, so this arm cannot tell "
+        "the widest-names-the-union rule from the rarest-names-it rule it "
+        "exists to refuse")
     joined = salience.rank(estate["rows"], join=_joiner(labels),
                            now=_NOW)
     union = next(c for c in joined["clusters"]
                  if all(f in c["tokens"] for f in estate["fragments"]))
-    assert union["label"] in labels
-    assert sizes[union["label"]] == max(sizes[label] for label in labels)
+    assert union["label"] == widest, (
+        f"the union was named {union['label']!r}; the estate mostly calls it "
+        f"{widest!r}")

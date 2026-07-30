@@ -380,10 +380,20 @@ def gather_loop_readout(*, now: Optional[str] = None,
     # Channel-flatline verdict off the SAME rows (no second read). Its own
     # error arm: a broken alarm must cost the Captain a question, never the
     # digest — so the verdict is simply absent and the reason lands in errors.
+    #
+    # ON THE SAME CLOCK AS THE REST OF THE READOUT. ``now`` was not threaded in
+    # here, so an injected instant governed the card rates and the undo trend
+    # while the flatline verdict was computed against the wall clock — two
+    # instants in one readout. Live callers pass nothing and are unaffected
+    # (``now_s`` is the wall clock, and ``evaluate(now=None)`` reads the same
+    # one), which is why nothing observed it until a fixture aged: the arm
+    # below pinned a 2026-07-26 series and went red the day the real clock
+    # walked past the detector's staleness window. A test that only passes
+    # while the calendar cooperates is measuring the calendar.
     try:
         from framework.frontdoor import card_flatline
         out["flatline"] = card_flatline.evaluate(
-            series, gates=card_flatline.read_gates())
+            series, now=nowdt, gates=card_flatline.read_gates())
     except Exception as e:  # noqa: BLE001
         out["errors"].append(f"card_flatline: {str(e)[:120]}")
     return out
