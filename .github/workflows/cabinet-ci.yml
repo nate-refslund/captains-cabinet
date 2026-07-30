@@ -716,7 +716,31 @@ jobs:
     # guard riding on ~10s of headroom, which the shared-runner variance law
     # says will flake. When the honest fix arrives (splitting cabinet/scripts/
     # tests, 11m13s of the 14m49s, into its own job), bring this back down.
-    timeout-minutes: 25
+    #
+    # 25 -> 40 (2026-07-30). THE SAME FAILURE, and this time it stopped being a
+    # flake: the guard is now under the job's ordinary duration, so it kills
+    # runs whose every assertion has already passed. Measured over the last ten
+    # pull_request runs of this workflow rather than guessed — 20.4, 22.7, 23.1,
+    # 24.6, 24.9, 25.1, 25.3, 25.3, 25.4 minutes — with FOUR cancellations at
+    # the boundary across THREE independent branches in a single day, each with
+    # every completed step green and the run killed inside the same step
+    # (cabinet/scripts/tests, 18m36s of one measured 25m job). A gate that
+    # reports red on work that passed trains its readers to re-run rather than
+    # to read it, which is worse than no gate. NOTHING HERE WEAKENS AN
+    # ASSERTION: every suite still runs, still gates, and still fails the job on
+    # a real red — the wall-clock number is a runner guard, never a claim about
+    # the code. Raised to 40 rather than to 26 deliberately: the 2026-07-27 note
+    # above records that ~10s of headroom is what produced this class in the
+    # first place, so the new value carries ~15 minutes of it.
+    #
+    # WHY NOT THE SPLIT THE NOTE ABOVE NAMES, still: master's branch protection
+    # requires a FIXED SET of six job names (ci, framework-tests, null-hatch,
+    # gitleaks, world-frame, cognitive-phase4). A new job is not in that set, so
+    # splitting cabinet/scripts/tests out would move ~19 minutes of assertions
+    # OUT of what gates a merge — coverage silently traded for wall-clock, which
+    # is the opposite of the fix. The split needs the protection list updated in
+    # the same act, and that is a repo-admin switch, not a workflow edit.
+    timeout-minutes: 40
     # SPIKE (hardening loop 2026-07-11): redis service closes 23 of 24 runtime
     # skips; the 5 sovereign tests need the germline hook rc=0 on a fresh empty
     # redis — unproven on a runner, hence branch-spike before master.
