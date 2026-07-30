@@ -162,3 +162,43 @@ Not enforceable, and stated as such: the framework cannot know what a folder
 holds before it is allowed to open it, exactly as it cannot know whether an
 ownership attestation is true. What it can do is refuse to proceed silently,
 require the claim, record it, and print which one was made.
+
+## 9. Superseded again, 2026-07-30 — the operator's own answer could not merge
+
+§7 fixed the *judgment* seam and left the *operator* seam exactly as §5 had
+described it, and §5's description was wrong in a way re-execution shows
+immediately. Driven on the real loop rather than argued:
+
+| Claim | What driving the loop measured | What replaced it |
+|---|---|---|
+| §5 / `_merge_aliases`, "the answer merges aliases (teaching that these two names are one thing)" | One product ranked TWICE — `quayside` at rank 2, `lantern` at rank 3, no shared substring — and after the operator answered, the shortlist came back **byte-identical**. The only merge in play was whatever words the answer itself happened to contain, so picking a candidate taught nothing at all, and typing one of the two names taught nothing either. | `same_as` on `answer_salience`: the operator names the candidates that are one thing, validated against what the ranking actually produced, and the next ranking treats them as one. |
+| §5, "the alias learned from the escape hatch changed the next ranking" (as re-stated in §7) | It changed *that* ranking and no other. The alias lived on the answer, and the next answer replaced the answer — so an operator who taught a merge and then changed their mind about where depth goes silently reverted to the split they had already fixed. | `salience_merges` is a separate accumulating store (`learn_merge` / `learned_merges`), read on every ranking. It outlives the next answer and the next sweep. |
+| — (never claimed, and load-bearing) | A merge keeps ONE of the names it joined, so a second answer anchored on the consumed name matched a label that no longer existed and was dropped on the floor. Two true answers about one thing produced one merge. | `_closed_alias_groups` unions overlapping answers into connected components before applying any of them. Transitive because identity is transitive — not because two strings resembled each other. |
+
+**What is NOT in the fix, and why each is refused by name.** No stemming table,
+no fuzzy-match threshold, no translation table, no alias list shipped in the
+framework. All four are hand-maintained lists in disguise, correct for the
+estate they were tuned on; this program has deleted five of them in a week.
+Reduction of an answer to the candidates it names is a **set intersection
+against the ranking's own labels** — an exact match on a token the ranker itself
+produced — so the merge is learned from the operator and never inferred by a
+framework rule. The escape hatch's typed name still merges by the same route it
+always did, and now persists like any other answer.
+
+**Reach.** The merge question spans EVERY ranked candidate, not the shown three:
+the twin of the top candidate was measured at ranks 11 and 33, so a merge
+answerable only over what is on screen cannot reach the split it exists to fix.
+
+**Visibility.** Once two candidates are one, the second name is gone from the
+shortlist — which is the point, and is indistinguishable from the answer having
+been ignored. The card says what was merged, and the offer echoes what was
+already learned, so the loop cannot re-ask a question the operator settled.
+
+**Found by attacking the fix, same landing.** A merge ABSORBS one of the names
+it joins, so validating an answer against the *current* ranking alone told an
+operator who re-typed their own true answer "I did not rank that" — and refused
+the extension outright: once `a` is absorbed into `b`, "a is also c" is the
+natural way to add a third name and could not be said at all. Names the operator
+has already taught are accepted as names. The widening is still bounded by what
+the ranking produced — at the moment it was answered rather than at this one —
+and an invented name is refused exactly as before.

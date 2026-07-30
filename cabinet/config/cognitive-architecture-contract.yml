@@ -337,7 +337,67 @@ budgets:
     # MODULES (framework_production_modules unchanged at 248: every function
     # lands inside the existing journey module, and the nine new arms are
     # tests). observed == maximum, zero headroom.
-    maximum: 61094
+    #
+    # 60979 -> 61198 (+219 measured 2026-07-30 via cognitive-architecture-census.py,
+    # observed 75475 vs the then-effective 75256): the escape hatch could not do
+    # the one job the whole read-don't-ask design rests on. Driven on the real
+    # loop: one product ranked TWICE under two names at two positions, the
+    # operator answered, and the shortlist came back byte-identical — because the
+    # only merge in play was whatever words the answer itself happened to
+    # contain, so an operator who PICKED a candidate taught nothing at all, and a
+    # second answer erased whatever the first had taught. Three parts, all in
+    # existing modules: (1) `merge_ask` puts the question on the offer, over
+    # EVERY ranked candidate rather than the shown three — the twin of the top
+    # candidate was measured at ranks 11 and 33, so a merge reachable only from
+    # what is on screen cannot fix the split it exists for; (2) `learn_merge` /
+    # `learned_merges` keep the answer, so it outlives the next answer and the
+    # next sweep — an answer that changes only the shortlist in front of the
+    # operator is a filter, not learning; (3) `_closed_alias_groups` unions
+    # answers that overlap, because a merge keeps ONE of the names it joined and
+    # a later answer anchored on the consumed name was being dropped on the
+    # floor. Nothing compares two strings anywhere on the path: reduction is a
+    # set intersection against the ranking's own labels, and the union is
+    # transitive because identity is. NO stemming table, NO fuzzy threshold, NO
+    # translation table, NO shipped alias list — all four are hand-maintained
+    # lists in disguise and this program has deleted five of those in a week.
+    # RAISED VISIBLY, never an allowance: an allowance promises a deletion gate,
+    # and the only channel by which an operator can teach the mechanism an
+    # identity it provably cannot derive is permanent. Zero new production
+    # MODULES (framework_production_modules unchanged at 248 — every function
+    # lands inside framework/onboarding/{salience,journey}.py and the new arms
+    # are tests). observed == maximum, zero headroom.
+    #
+    # 61198 -> 61211 (+13 measured 2026-07-30 via cognitive-architecture-census.py,
+    # observed 75488 vs the then-effective 75475, SAME landing): a defect found by
+    # attacking the row above rather than by reasoning about it. A merge ABSORBS
+    # one of the names it joins, so validating an answer against the CURRENT
+    # ranking alone told an operator who re-typed their own true answer "I did not
+    # rank that" — and refused the extension outright: once `a` is absorbed into
+    # `b`, "a is also c" is the natural way to add a third name and could not be
+    # said at all. Names the operator has already taught are accepted as names.
+    # Still bounded by what the ranking produced, at the moment it was answered
+    # rather than at this one; an invented name is refused exactly as before.
+    #
+    # 61211 -> 61212 (+1 measured 2026-07-30 via cognitive-architecture-census.py,
+    # observed 75489 vs the then-effective 75488, SAME landing): the merge refusal
+    # NAMES the offending strings — which is what makes it useful, and is also how
+    # caller text gets into a message that reaches stdout and the API response.
+    # Unpaired surrogates would crash the action out of its own audit trail and an
+    # unbounded string would ride the refusal out, so each name is scrubbed and
+    # cut to 80 characters (a real label is a short token, so nothing true is
+    # lost) and the count is stated whenever the list itself is cut.
+    #
+    # MERGE 2026-07-30 (feat/answer-merges-aliases over fix/answer-binds-depth):
+    # the two raises above are DISJOINT — one is the window binding that makes
+    # the depth claim enforced, one is the merge channel that makes the answer
+    # able to join two names for one thing — so the merged ceiling is RE-MEASURED
+    # over this tree with cognitive-architecture-census.py rather than summed on
+    # paper: observed 75604 at zero headroom. The paper sum agrees here
+    # (60979 + 115 + 233), and the agreement is evidence FOR the measurement,
+    # never a substitute for taking it — a merge has been two lines off before.
+    # Both notes stand verbatim; neither is the other's restamp. Neither is an
+    # allowance and ZERO new modules, so no bijection class moves.
+    maximum: 61327
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

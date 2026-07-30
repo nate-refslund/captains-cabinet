@@ -74,9 +74,18 @@ mis-join the next, which is a hand-maintained list in disguise — this program
 has deleted three of those. So :func:`rank` emits the candidate names UNMODIFIED
 (:func:`join_proposal`) and takes an optional ``join`` judgment that reads them
 and answers which are one thing. The module validates that an answer only names
-candidates it actually produced, and records that the union was judged. The
-operator answering through the escape hatch is the same channel by another
-route.
+candidates it actually produced, and records that the union was judged.
+
+THE OPERATOR IS THE OTHER JUDGE, and theirs is the answer that has to survive.
+:func:`merge_ask` puts the question on the offer itself — every ranked candidate
+is nameable there, not only the shown three, because the twin of the top
+candidate was measured at ranks 11 and 33 — and :func:`learn_merge` keeps the
+answer, so the next ranking after the next sweep already knows it. An answer that
+changes only the shortlist in front of the operator is a filter, not learning,
+and re-asking a settled question is the same defect as asking one the estate
+could have answered. Overlapping answers are unioned
+(:func:`_closed_alias_groups`) because identity is transitive; nothing anywhere
+compares two names to decide it.
 
 HOW ANYONE KNOWS THIS WORKS. :func:`check` grades a ranking against answers the
 OPERATOR supplies — never a list living in here, which would be right for one
@@ -111,6 +120,7 @@ SALIENCE_ROW_SCHEMA = "cabinet.salience-rows/v1"
 SALIENCE_OFFER_SCHEMA = "cabinet.salience-offer/v1"
 SALIENCE_JOIN_SCHEMA = "cabinet.salience-join-proposal/v1"
 SALIENCE_CHECK_SCHEMA = "cabinet.salience-check/v1"
+SALIENCE_MERGE_SCHEMA = "cabinet.salience-merges/v1"
 
 #: The escape hatch's option id. It is not a candidate: it is the admission
 #: that the ranking may be wrong, and it carries a text field so the answer can
@@ -443,6 +453,44 @@ def _labelled(groups: Sequence[Sequence[str]],
     return [(_label(group, index), list(group)) for group in groups]
 
 
+def _closed_alias_groups(labelled: Sequence[tuple[str, Sequence[str]]],
+                         aliases: Iterable[Iterable[Any]]) -> list[list[str]]:
+    """Every answer reduced to the candidates it names, then UNIONED.
+
+    REDUCTION IS A SET INTERSECTION against the ranking's own labels, never a
+    string comparison, and that is what keeps this path free of the four things
+    the module refuses — a stem table, an edit distance, a translation table, a
+    shipped alias list. An answer can only pick out words the ranking itself
+    produced, so the junk in a typed sentence ("...which the repos CALL...")
+    reduces to nothing. Fewer than two survivors joins nothing and is dropped: a
+    typed name matching one candidate is a target, not a merge.
+
+    TWO ANSWERS ABOUT ONE THING ARE ONE ANSWER, and skipping the union loses the
+    second one. A merge keeps ONE of the names it joined (see
+    :func:`_merge_aliases`), so an operator who says "a is b" and later "b is c"
+    leaves the second answer pointed at a label the first consumed — and the
+    ranking silently drops the merge they just taught. Closing the answers into
+    connected components first makes the result independent of which name each
+    union kept and of the order the answers arrived in. It is transitive because
+    IDENTITY is transitive, not because two strings resembled each other.
+    """
+    labels = set(name for name, _ in labelled)
+    components: list[set[str]] = []
+    for alias in aliases or ():
+        named: set[str] = set()
+        for item in alias or ():
+            named.update(tokenize(item))
+        named &= labels
+        if len(named) < 2:
+            continue
+        overlapping = [c for c in components if c & named]
+        for component in overlapping:
+            named |= component
+        components = [c for c in components if c not in overlapping]
+        components.append(named)
+    return [sorted(component) for component in components]
+
+
 def _merge_aliases(labelled: Sequence[tuple[str, Sequence[str]]],
                    index: Mapping[str, set[int]],
                    aliases: Iterable[Iterable[Any]]) -> list[tuple[str, list[str]]]:
@@ -469,12 +517,11 @@ def _merge_aliases(labelled: Sequence[tuple[str, Sequence[str]]],
     happened to contain that word, and the junk cluster ranked second. An
     operator can only join things the ranking already NAMED to them; a typed
     word matching nothing is a target, not a merge, and is handled as one.
+    Reduction to those labels, and the union of answers that overlap, happen in
+    :func:`_closed_alias_groups` — which is where the reason lives.
     """
     labelled = [(name, list(group)) for name, group in labelled]
-    for alias in aliases or ():
-        wanted: set[str] = set()
-        for item in alias or ():
-            wanted.update(tokenize(item))
+    for wanted in _closed_alias_groups(labelled, aliases):
         hit = [row for row in labelled if row[0] in wanted]
         if len(hit) < 2:
             continue
@@ -493,6 +540,67 @@ def _merge_aliases(labelled: Sequence[tuple[str, Sequence[str]]],
                                            row[0]))
         labelled.append((widest[0], union))
     return labelled
+
+
+# --- what the operator taught, kept ------------------------------------------
+#
+# An answer that changes only the shortlist in front of the operator is not
+# learning, it is a filter. The merge has to OUTLIVE the answer that taught it —
+# the next answer, the next sweep, the next session — or the loop re-asks a
+# question the operator already settled, which is the "never ask what it could
+# have looked up" failure one turn later. So the answers accumulate, and this is
+# the store shape they accumulate in. It lives here rather than in the caller
+# because it is the ranker's own vocabulary being kept: label groups, nothing
+# else. No kind, no type, no noun — an identity and when it was learned.
+
+
+def learn_merge(store: Any, group: Iterable[Any], *, now: str,
+                answer: str = "", source: str = "named") -> dict[str, Any]:
+    """Append one "these are the same thing" to the store. Never overwrites.
+
+    DEDUPED BY THE SET, not by the row. Two answers naming the same pair are one
+    fact learned twice — an operator re-confirming a merge is not a second merge
+    — and appending both would grow the store without bound across sessions on a
+    loop that re-offers the same estate. A group naming fewer than two things is
+    refused entry: it joins nothing, and a row that can never fire is noise in a
+    record the next reader has to trust.
+    """
+    rows: list[dict[str, Any]] = []
+    if isinstance(store, Mapping):
+        for row in store.get("groups") or ():
+            if isinstance(row, Mapping) and row.get("labels"):
+                rows.append(dict(row))
+    labels = sorted({str(item).strip() for item in group or () if str(item).strip()})
+    if len(labels) >= 2 and not any(
+        sorted({str(x) for x in row.get("labels") or ()}) == labels for row in rows
+    ):
+        rows.append({
+            "labels": labels,
+            "learned_at": str(now),
+            "answer": str(answer),
+            "source": str(source),
+        })
+    return {"schema": SALIENCE_MERGE_SCHEMA, "groups": rows}
+
+
+def learned_merges(store: Any) -> list[list[str]]:
+    """The stored answers, in the shape :func:`rank` takes as ``aliases``.
+
+    Reading is deliberately forgiving — a row whose ``labels`` are unusable is
+    skipped, not raised on. This store is read on every render of the operator's
+    card, and a card that refuses to draw because one historical row is
+    malformed would take the whole surface down to protect an ordering.
+    """
+    groups: list[list[str]] = []
+    if not isinstance(store, Mapping):
+        return groups
+    for row in store.get("groups") or ():
+        if not isinstance(row, Mapping):
+            continue
+        labels = [s for s in (str(i).strip() for i in row.get("labels") or ()) if s]
+        if len(labels) >= 2:
+            groups.append(labels)
+    return groups
 
 
 def _assemble(
@@ -1017,11 +1125,54 @@ def not_reached_line(
     return "What I did not reach: " + "; ".join(bits) + "."
 
 
+def merge_ask(ranking: Mapping[str, Any], learned: Any = ()) -> dict[str, Any]:
+    """The second question, and the only one a matcher provably cannot answer.
+
+    "Which of these should I open first?" assumes the candidates are distinct
+    things. Measured, they are not: one entity stood as FIVE candidates at ranks
+    6, 11, 21, 33 and 34 because each system writes it differently. An offer that
+    asks only the first question hands the operator a shortlist they can see is
+    wrong and no way to say so.
+
+    EVERY RANKED CANDIDATE IS NAMEABLE HERE, not just the shown three, and that
+    is the whole reason this block exists separately from the options. The twin
+    of the candidate at the top routinely sits below the cut — at ranks 11 and 33
+    in the measured case — so a merge restricted to what is on screen cannot
+    reach the split it exists to fix.
+
+    WHAT IS ALREADY LEARNED IS ECHOED BACK, because the alternative is asking a
+    question the operator already answered. It is also the only place the merge
+    is VISIBLE: once two candidates are one, the second name is no longer in the
+    ranking, and without this line the operator cannot tell whether their answer
+    took or was dropped.
+    """
+    candidates = [
+        {
+            "id": str(cluster.get("label") or ""),
+            "label": str(cluster.get("label") or ""),
+            "connectors": list(cluster.get("connectors") or ()),
+        }
+        for cluster in (ranking.get("clusters") or ())
+    ]
+    return {
+        "field": "same_as",
+        "question": "Are any two of these the same thing under different names? "
+                    "Name them together and I will treat them as one from now on.",
+        "candidates": candidates,
+        "learned": [
+            {"labels": list(group)}
+            for group in (learned or ())
+            if len(list(group)) >= 2
+        ],
+    }
+
+
 def offer(
     ranking: Mapping[str, Any],
     *,
     top: int = 3,
     not_reached: Sequence[str] = (),
+    learned: Any = (),
 ) -> dict[str, Any]:
     """Turn a ranking into the ask: candidates, evidence, and an escape hatch.
 
@@ -1034,6 +1185,10 @@ def offer(
     estate, the correct answer can sit outside the top three, and an offer with
     no way to say "none of these" converts that into a wrong answer the operator
     had to accept.
+
+    ``merge`` carries the second question — see :func:`merge_ask`. It is part of
+    the offer rather than a separate surface because an affordance the operator
+    is never shown is not an escape hatch, it is a parameter.
     """
     if not isinstance(ranking, Mapping) or ranking.get("schema") != SALIENCE_SCHEMA:
         raise SalienceError("ranking_invalid", "That is not a salience ranking.")
@@ -1065,6 +1220,7 @@ def offer(
         "schema": SALIENCE_OFFER_SCHEMA,
         "prompt": "Of everything I found, which should I go deep on first?",
         "options": options,
+        "merge": merge_ask(ranking, learned),
         "not_reached": not_reached_line(ranking, not_reached, shown=len(clusters)),
         "ranked": len(ranking.get("clusters") or ()),
     }

@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: e19c72599f83d6ccb03be390974d611157b23e4ea432a711cbb397f742a42b5a
+Reviewed-Scope-Digest: c83b9b88e3a75869150222c436539d5e9737e3ee8b292612b1d8dc9f6be8ab3c
 (MERGE RE-BIND, 2026-07-30, `feat/operator-identity` x master. Both sides
 re-bound this line, so the merge left two; ONE value stands and it is recomputed
 over this merge commit. Every note from both sides is kept verbatim below,
@@ -1651,6 +1651,80 @@ ranker rows — under a merged `maximum` of 60979 that is RE-MEASURED over this
 tree (observed 75256, zero headroom) rather than summed on paper. Neither is an
 allowance; ZERO new modules, so no bijection class moves.
 
+
+---
+
+## Re-bind 2026-07-30 (feat/answer-merges-aliases)
+
+Recorded digest: aadee358cd344264da512138552918b2763ab43b033738ce979860fdf0c3f090
+Previous:        80d1b9fed616d8bc4332d015bcedb155f3aa409b0181022f3bde359bd80b2a7b
+
+ONE bound path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` takes
+`framework_production_noncomment_lines` 60979 -> 61198 (+219 measured, observed
+75475 vs the then-effective 75256) for the merge channel the escape hatch was
+documented to have and did not — `same_as` on `answer_salience`, `merge_ask`,
+the accumulating `salience_merges` store and the alias-group closure, all inside
+`framework/onboarding/{salience,journey}.py`. Raised visibly, never an
+allowance; census PASS at observed == maximum with zero headroom; ZERO new
+production modules, so no bijection class moves.
+
+
+---
+
+## Re-bind 2026-07-30 (feat/answer-merges-aliases, checkpoint 2)
+
+Recorded digest: 59c9bafb460cc268d5713ec601a7840de89a1bbfdac38855a490a0f9b654143c
+Previous:        aadee358cd344264da512138552918b2763ab43b033738ce979860fdf0c3f090
+
+ONE bound path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` takes
+`framework_production_noncomment_lines` 61198 -> 61211 (+13 measured, observed
+75488) for a defect found by attacking the checkpoint-1 landing — a merge
+absorbs one of the names it joins, so validating an answer against the current
+ranking alone refused the operator's own already-taught name. Raised visibly,
+never an allowance; census PASS at observed == maximum with zero headroom; ZERO
+new production modules.
+
+
+---
+
+## Re-bind 2026-07-30 (feat/answer-merges-aliases, checkpoint 3)
+
+Recorded digest: 720e924b5a4ff3aa8da793ce37bdf4d43ee05195b20d1edbe40d6f61ce8d8e9f
+Previous:        59c9bafb460cc268d5713ec601a7840de89a1bbfdac38855a490a0f9b654143c
+
+ONE bound path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` takes
+`framework_production_noncomment_lines` 61211 -> 61212 (+1 measured, observed
+75489) for scrubbing and bounding the caller text the merge refusal quotes back
+— a 4000-character name produced a 4061-character refusal on the previous
+commit. Raised visibly, never an allowance; census PASS at observed == maximum
+with zero headroom; ZERO new production modules.
+
+
+---
+
+## Re-bind 2026-07-30 (merge of origin/master 589565ea into feat/answer-merges-aliases)
+
+Recorded digest: 7c7b036c211fb79c09a23948dc9b420f4eea397de585de1c4150fe1974372299
+Previous:        720e924b5a4ff3aa8da793ce37bdf4d43ee05195b20d1edbe40d6f61ce8d8e9f
+                 (this branch) / 8b6b1c9d157204e238ca3b7df2c678de1803492f02f9885c6c053167ca36f388 (master)
+
+Both sides re-bound this digest the same day and neither is the other's
+restamp: master's `fix/answer-binds-depth` made the depth claim ENFORCED, this
+branch made the answer able to JOIN two names for one thing. Master's copy of
+this file is taken wholesale so nothing it carries is dropped, and this
+branch's notes stand verbatim beside it.
+
+ONE bound path moved and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` carries BOTH sides' mass
+raises verbatim under a merged `framework_production_noncomment_lines` of
+61327, RE-MEASURED over this merge tree with cognitive-architecture-census.py
+(observed 75604, zero headroom) rather than summed on paper — the paper sum
+agrees, and the agreement is evidence for the measurement, not a substitute for
+taking it. Neither is an allowance; ZERO new modules, so no bijection class
+moves.
 ---
 
 ## Re-bind 2026-07-30 (feat/operator-identity — the ask that makes attribution reachable)
@@ -1699,3 +1773,26 @@ kept.
 Recorded digest: e19c72599f83d6ccb03be390974d611157b23e4ea432a711cbb397f742a42b5a
 Previous (this branch):  8666074818270283cb3f7773b7f3b5334b8b83bce7bd0e44041661994d06c1bb
 Previous (master):       8b6b1c9d157204e238ca3b7df2c678de1803492f02f9885c6c053167ca36f388
+
+
+---
+
+## Re-bind 2026-07-30 (merge of origin/master ee8e5366 into feat/answer-merges-aliases)
+
+Recorded digest: c83b9b88e3a75869150222c436539d5e9737e3ee8b292612b1d8dc9f6be8ab3c
+Previous (this branch): 7c7b036c211fb79c09a23948dc9b420f4eea397de585de1c4150fe1974372299
+Previous (master):      e19c72599f83d6ccb03be390974d611157b23e4ea432a711cbb397f742a42b5a
+
+Master's `feat/operator-identity` landed while this branch was in CI. The two do
+NOT overlap: master's is the identity ask that gives `operator_identity` a
+writer, this branch's is the merge channel that lets an operator say two names
+are one thing. Both sides' notes stand verbatim above and below; neither is the
+other's restamp, and the header's earlier parentheticals are kept for the same
+reason.
+
+ONE bound path is in scope and NO COG-4 implementation byte moved on either
+side: `cabinet/config/cognitive-architecture-contract.yml` carries master's
++246 phase row and this branch's `framework_production_noncomment_lines`
+maximum of 61327 together, RE-MEASURED over the merged tree with
+cognitive-architecture-census.py (PASS, observed 75866 at zero headroom).
+Merged onboarding suite: 655 passed, 1 skipped.
