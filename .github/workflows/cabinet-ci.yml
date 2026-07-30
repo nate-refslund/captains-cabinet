@@ -949,17 +949,20 @@ jobs:
         # failure by id, never a skip.
         run: python -m pytest cabinet/scripts/world-aesthetic/tests -q
 
-      - name: Cabinet world-capture tests (ground port + check mirror)
-        if: ${{ !cancelled() }}
-        # The capture harness's own arms: ground.py's ramps are the palette's
-        # byte for byte, every surface emits only its own ramp (so the noise
-        # substitution can move a shade but never invent one), each surface
-        # lands in the colour class world_checks.py will read it as, the
-        # mirrored checks are identical to their source, and no check imports
-        # the thing it tests. The PIXEL gate — compose a frame, run all twelve
-        # invariants, then six mutations that each turn exactly one arm red —
-        # runs in the Dashboard vitest step, which is where node lives.
-        run: python -m pytest cabinet/scripts/world-capture/tests -q
+      # MOVED to the `world-frame` job 2026-07-30, and NOT because it was
+      # failing. This job runs 22.4-24.6 min on master against its own 25-min
+      # guard (runs 30569780157 and 30571131626, measured) — it is hugging the
+      # boundary for the second time, and the comment on `timeout-minutes`
+      # above records what that costs: a CANCELLATION that reads as a red with
+      # every step green. Adding ~11s of world-capture arms tipped run
+      # 30579135074 over at 25m07. Raising the guard again would treat the
+      # symptom; moving ~80s of tests into the job that OWNS this directory
+      # (`world-frame`, ~8 min against a 15-min guard) is the fix that also
+      # removes a duplication — `world-frame` was already running
+      # test_frame_judge.py by itself, so half of this suite ran twice per PR.
+      # The tests did not become optional: `world-frame` is a required context
+      # on master (verified 2026-07-30 by `gh api .../branches/master/
+      # protection`) and now runs the WHOLE directory.
 
       # Docs-track-code sweep (G6, hardening loop 2026-07-11): dead repo-path
       # refs + dead relative links in LIVING docs fail CI — the repo rule
@@ -1444,8 +1447,19 @@ jobs:
         run: node frame-harness/shoot.mjs --out "$RUNNER_TEMP/world-frames" --killswitch 1
         working-directory: cabinet/dashboard
 
-      - name: Judge them
-        run: python -m pytest cabinet/scripts/world-capture/tests/test_frame_judge.py -q
+      - name: Judge them (every world-capture arm, moved here 2026-07-30)
+        # THE WHOLE DIRECTORY, not just test_frame_judge.py. These arms used to
+        # run in `framework-tests`, which is at 22.4-24.6 min against a 25-min
+        # guard and cancelled on its boundary when they grew; this job runs ~8
+        # min against 15 and it is the one that owns this directory. Same tests,
+        # same PR, a required context either way — and test_frame_judge.py is no
+        # longer running twice per PR. Covers: ground.py's ramps are the
+        # palette's byte for byte, every surface emits only its own ramp, each
+        # surface lands in the colour class world_checks.py will read it as, the
+        # mirrored checks are identical to their source, NO JUDGE IMPORTS THE
+        # THING IT JUDGES (all four of them, discovered rather than listed), and
+        # every frame arm red against the defect it names.
+        run: python -m pytest cabinet/scripts/world-capture/tests -q
       - name: Frame invariants over the captured sweep
         if: ${{ !cancelled() }}
         run: |
