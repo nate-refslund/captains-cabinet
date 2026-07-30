@@ -699,8 +699,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if let demo = PetOptions.demoState {
                 CompanionLog.shared.line("pet: DEMO MODE — rendering a SYNTHETIC \(demo.rawValue) snapshot; the live poll is suppressed and the menu says so. Nothing here is a reading of the cabinet.")
             }
-            pet = PetController(root: rootInfo.path, slug: PetOptions.slug,
-                                scale: PetOptions.scale, initial: displayedSnapshot())
+            makePet()
+        } else if Self.deskPetPreferred {
+            // The Captain turned the pet on from the menu in an earlier run.
+            // Without this the ONLY way to get a pet is a terminal flag, and
+            // the launch-at-login item passes no argv — so his own control
+            // would not survive a restart of his own machine.
+            makePet()
         }
         pollNow()
         scheduleTimer(interval: Const.pollInterval)
@@ -973,12 +978,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refresh.isEnabled = rootOK
         menu.addItem(refresh)
 
-        if let pet {
-            let toggle = actionItem(pet.isVisible ? "Hide Desk Pet" : "Show Desk Pet",
-                                    #selector(toggleDeskPet))
-            toggle.toolTip = "the floating officer beside the Dock; it cannot be clicked (per-pixel click-through is broken on this macOS — see pet.swift)"
-            menu.addItem(toggle)
-        }
+        // ALWAYS offered, whether or not a pet exists yet: the Captain's
+        // controls are not allowed to require a terminal, and `--pet` is one.
+        let petOn = pet?.isVisible ?? false
+        let toggle = actionItem(petOn ? "Hide Desk Pet" : "Show Desk Pet",
+                                #selector(toggleDeskPet))
+        toggle.state = petOn ? .on : .off
+        toggle.toolTip = "the floating officer beside the Dock; the choice is remembered across relaunches. It cannot be clicked (per-pixel click-through is broken on this macOS — see pet.swift)"
+        menu.addItem(toggle)
         menu.addItem(.separator())
 
         let login = actionItem("Launch at Login", #selector(toggleLoginItem))
@@ -1051,9 +1058,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func refreshNow() { pollNow() }
 
+    // MARK: - Desk pet (pet.swift) — a MENU control, not a terminal flag
+
+    /// Persisted so the Captain's own choice survives a relaunch and a reboot.
+    /// UserDefaults, not a repo file: this is a preference of HIS copy of the
+    /// app, and the companion never writes into the cabinet.
+    static let deskPetDefaultsKey = "deskPetEnabled"
+    static var deskPetPreferred: Bool {
+        get { UserDefaults.standard.bool(forKey: deskPetDefaultsKey) }
+        set { UserDefaults.standard.set(newValue, forKey: deskPetDefaultsKey) }
+    }
+
+    private func makePet() {
+        guard pet == nil else { return }
+        pet = PetController(root: rootInfo.path, slug: PetOptions.slug,
+                            scale: PetOptions.scale, initial: displayedSnapshot())
+    }
+
     @objc private func toggleDeskPet() {
-        guard let pet else { return }
-        pet.setVisible(!pet.isVisible)
+        // Lazily born on the first "Show Desk Pet", so a Captain who never
+        // wants one never pays for the window, the sheet or the clock.
+        if pet == nil {
+            makePet()
+        } else if let pet {
+            pet.setVisible(!pet.isVisible)
+        }
+        // A DEMO run exists to photograph forced states; it must not silently
+        // leave the pet enabled forever afterwards.
+        if PetOptions.demoState == nil {
+            Self.deskPetPreferred = pet?.isVisible ?? false
+        }
         render()
     }
 
