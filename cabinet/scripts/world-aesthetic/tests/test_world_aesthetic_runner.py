@@ -216,9 +216,10 @@ def test_fit_map_bounds_margins(wa):
 def test_calibrate_prove_real_corpus(wa, capsys):
     """The offline separation proof over the REAL corpus: every negative
     trips, every positive passes, against the COMMITTED calibrations."""
-    neg = wa.corpus_dir / "negative"
-    if not (wa.has_corpus and neg.is_dir() and any(neg.glob("*.png"))):
-        pytest.skip("gitignored corpus not present")
+    # `prove` reads the corpus DIRECTORY, so it needs both classes present —
+    # and the positive class is held in full on a fresh checkout.
+    wa.require("negative")
+    wa.require("positive")
     rc = wa.calibrate.main(["prove"])
     out = capsys.readouterr().out
     assert rc == 0
