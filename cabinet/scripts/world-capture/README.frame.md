@@ -58,7 +58,7 @@ that is correct · `✖ blocked` = would run on the frame, and cannot yet.
 | 2 | `check_stacking` | ▢ blueprint | Rect overlap between declared sprites. It reads geometry, not pixels; a frame adds nothing. |
 | 3 | `check_sprite_opacity` | ▢ blueprint | Reads the ART FILES, never the frame. **Stated gap:** it therefore cannot see a sprite the renderer tints or fades at draw time. |
 | 4 | `check_sprite_cutoff` | ▢ blueprint | Same — the asset, not the composite. |
-| 5 | `check_palette` | ▢ blueprint + a real gap | Asset-level membership. And membership is the wrong question for a frame: `PALETTE_FOREIGN_MASS` asks whether a pixel is a corpus colour, never whether it is a plausible NEIGHBOUR of the surface it landed on. The dusk veil satisfied it **by construction** — every apricot pixel was a legitimate corpus sand tone, sprayed across open water. The frame-side answer is not a membership test at all; it is `ambience` + `grain` + `water` below, which the veil fails on all three. |
+| 5 | `check_palette` | ▢ blueprint + **`surface` on the frame** | Asset-level membership, and membership is the wrong question for a frame: `PALETTE_FOREIGN_MASS` asks whether a pixel is a corpus colour, never whether it is a plausible NEIGHBOUR of the surface it landed on. The dusk veil satisfied it **by construction** — every apricot pixel was a legitimate corpus sand tone, sprayed across open water. The frame-side answer is the `surface` arm, which asks the second half of the question by counting tones per tile, plus `ambience` + `grain` + `water`. |
 | 6 | `check_state_traceable` | ▢ blueprint | Declared-vs-measured. No pixels at all; the declaration IS the subject. |
 | 7 | `check_paint_fidelity` | ▢ blueprint + ✖ blocked | "A declared sprite that left no mark" needs the declaration. Its pixel half needs `ground.png` to fit this frame's own grade. |
 | 8 | `check_era` | ▢ blueprint | Vocabulary vs era. Pure data. |
@@ -74,6 +74,7 @@ to point them at:
 | arm | law | proven red against |
 |---|---|---|
 | `determinism` | two captures of one URL are identical | one pixel, in each channel separately |
+| `surface` | **the neighbour law** — a screen-space pass may MERGE a surface's tones, never add one | the 2026-07-29 dither · a luminance-matched chroma veil at 0.4% that `ambience` and `grain` both pass |
 | `ambience` | the shipped grade **is** the grade `ambience.ts` predicts for that hour | filter never applied · wrong bucket for the hour · the real 2026-07-29 dither |
 | `grain` | ambience may not add structure the art did not draw | the dither · a pixel permutation (histogram unchanged) |
 | `water` | ambience may darken water, never brighten or saturate it | sea repainted above the derived cap |
@@ -118,9 +119,18 @@ never from a hand-picked rectangle.
   design, which is the drained-of-colour failure `grade` exists to catch, and it repaints the
   sea so the water probe reports the frame unjudgeable. Both exclusions are coverage
   statements, not conveniences.
-* **The weather layer has no arm of its own yet** — only the exclusion above. Rain and storm
-  change 100% of pixels and fog 24%, so a twin-difference arm in the shape of `killswitch` is
-  the obvious next one.
+* **The weather layer is judged by `surface` and by nothing else.** It has no arm reading the
+  overlay's own mass, and `ambience`/`grain` still hold it out; what `surface` adds is the
+  COMPOSITION — an overlay is a per-colour pass too, so night-under-fog against a fogged day
+  twin obeys the same law (measured 0.4%, identical to sun) and the killswitch wash measures
+  exactly 0.0%. The twin has to carry the same weather: judged against a `sun` twin, fog reads
+  13.2% and the law does not apply, because fog is not a per-colour map of the sun frame.
+* **`surface` runs on the sun sweep only in CI**, because that is the sweep the job captures.
+  Run `shoot.mjs --weather rain,fog,storm --killswitch 1` and it judges those too — measured
+  green on all 18 of those cells. Two things go red on that sweep and are recorded rather than
+  fixed here: `water` reports UNJUDGED on every rain and storm frame (both repaint the sea, so
+  the probe finds no sea-ramp window), and `grade` reds on `day/storm` at mean L 94 against its
+  floor of 95, which is daylight bounds meeting a deliberately darkened sky.
 * **The DOM half of `/world`** — chips, cards, the HUD — is not on this canvas at all.
 * **Six of the twelve are blocked on a capture door** (next section).
 * **One state.** The sweep runs `hamlet`; `camp` and every future fixture are one `--state`
