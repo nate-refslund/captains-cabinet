@@ -57,7 +57,7 @@ _PACKAGES = {
         "rollback_extra": ("golden evals 011-019",),
         # Decision-B backfill must be a paste-ready markdown block
         "blocks": ((r"```markdown\n(## DECISION B.*?)```",
-                    ("**What:**", "**Why:**", "**Captain:** Nate",
+                    ("**What:**", "**Why:**", "**Captain:**",
                      "chflags schg", "germline-lock.sh")),),
         # rulings referenced · ACT-AND-DRAFT encoded · supersessions + dark
         # lane named (cabinet-init §4 / evals wording / eval-014 letter /
@@ -96,7 +96,7 @@ _PACKAGES = {
         "rollback_extra": ("eval-020",),
         # paste-ready apply record
         "blocks": ((r"```markdown\n(## CABINET AXES APPLIED.*?)```",
-                    ("**What:**", "**Why:**", "**Captain:** Nate",
+                    ("**What:**", "**Why:**", "**Captain:**",
                      "apply cabinet axes")),),
         # non-entries documented · instance-scoped external comms ·
         # byte-parity/opt-in promises · per-directory pytest evidence pack ·
@@ -144,7 +144,7 @@ _PACKAGES = {
         "rollback_extra": ("relock",),
         # paste-ready apply record for the Captain's decision ledger
         "blocks": ((r"```markdown\n(## CANDOR LAW APPLIED.*?)```",
-                    ("**What:**", "**Why:**", "**Captain:** Nate",
+                    ("**What:**", "**Why:**", "**Captain:**",
                      "apply candor law")),),
         # candor clauses pinned · riders named · dark-lane branch named ·
         # non-germline enforcement half referenced · ceremony script named
@@ -248,6 +248,15 @@ def test_rollback_names_every_germline_file(pkg):
         assert extra in rollback, f"{pkg}: rollback missing {extra!r}"
 
 
+#: A ``**Captain:**`` attribution whose value is actually there. The anchors
+#: above check the FIELD, deliberately without the name: this is the universal
+#: layer, and the operator's name spelled here would be the very leak the
+#: person ratchet (framework/tests/test_no_launcher_hardcode.py, Arm 3)
+#: exists to stop. Field-only would have been a weaker test, so the value is
+#: pinned separately, by shape — non-empty, on the same line, not a bare label.
+_ATTRIBUTED_RX = re.compile(r"\*\*Captain:\*\*[ \t]*(\S.*)$", re.M)
+
+
 @pytest.mark.parametrize("pkg", _PKG_IDS)
 def test_paste_ready_blocks_parse(pkg):
     spec = _PACKAGES[pkg]
@@ -258,6 +267,10 @@ def test_paste_ready_blocks_parse(pkg):
         for anchor in anchors:
             assert anchor in m.group(1), \
                 f"{pkg}: paste-ready block missing {anchor!r}"
+        if any("**Captain:**" in a for a in anchors):
+            attributed = _ATTRIBUTED_RX.search(m.group(1))
+            assert attributed and attributed.group(1).strip(), \
+                f"{pkg}: paste-ready block has a Captain field naming nobody"
 
 
 @pytest.mark.parametrize("pkg", _PKG_IDS)

@@ -33,7 +33,10 @@ export const NO_IDENTITY_PICKS: Readonly<Record<string, string>> = Object.freeze
 
 // How many of a connector's accounts lead the picker before the rest go behind
 // a disclosure. A LAYOUT number and nothing else — the core decides who is
-// offered, and every account it offers is reachable here without scripting.
+// offered, and every account it offers is rendered on this card: the ones past
+// this number sit behind a disclosure, never behind a second request. The line
+// here used to promise no-script reachability, which was never true of anything
+// on this card — see the disclosure comment beside the <details> for why.
 export const IDENTITY_SHOWN = 8
 
 export default function OnboardingJourneyCard({
@@ -419,8 +422,15 @@ export default function OnboardingJourneyCard({
                           one of them, but "usually" is not a gate a person can
                           be locked out by: on the measured estate the operator's
                           own account was 25th of 30 on the connector carrying
-                          most of it. <details> rather than React state — the
-                          rest must be reachable with scripting off. */}
+                          most of it. <details> rather than component state
+                          because the browser already owns this behaviour: the
+                          open/closed bit lives in the DOM, so it costs no hook,
+                          and keyboard and assistive tech get it for free.
+                          NOT a no-script fallback, which is the reason that
+                          used to stand here and was never true — this card is
+                          a client component whose content arrives from a fetch,
+                          so with scripting off the picker, the accounts and the
+                          question itself do not render at all. */}
                       {ask.candidates.length > IDENTITY_SHOWN && (
                         <details className="mt-1">
                           <summary className={`min-h-11 cursor-pointer py-2 text-xs ${muted}`}>

@@ -7,6 +7,7 @@ none, ask instead of assume.
 """
 from __future__ import annotations
 
+import inspect
 import json
 import pathlib
 import re
@@ -52,14 +53,14 @@ class TestOperatorIdentity:
         assert who["handles"]["tracker"] == ["aperson"] and who["names"] == ["A. Person"]
 
     def test_one_identifier_is_a_string_not_four_letters(self):
-        """`handles: {code: nate}` is what a person writes by hand in the answers
-        file. Iterated, it became the four accounts a, e, n, t — the cabinet then
-        said "I recognise you as a, e, n, t" and matched nothing anywhere."""
-        who = research.operator_identity({"operator": {"handles": {"code": "nate"}}})
-        assert who["handles"]["code"] == ["nate"]
-        assert research._recorded_handles({"handles": {"code": "nate"}}, "code") == ["nate"]
+        """`handles: {code: abcd}` is what a person writes by hand in the answers
+        file. Iterated, it became the four accounts a, b, c, d — the cabinet then
+        said "I recognise you as a, b, c, d" and matched nothing anywhere."""
+        who = research.operator_identity({"operator": {"handles": {"code": "abcd"}}})
+        assert who["handles"]["code"] == ["abcd"]
+        assert research._recorded_handles({"handles": {"code": "abcd"}}, "code") == ["abcd"]
         rows = [{"connector": "code", "name": "a", "updated": "2026-07-01",
-                 "actors": ["nate"]}]
+                 "actors": ["abcd"]}]
         assert research.attribution_share(rows, who, "code")["mine"] == 1
 
     def test_an_absent_record_resolves_to_nothing_not_to_a_guess(self):
@@ -697,3 +698,60 @@ class TestIdentityIsDemotedNotFloored:
                  if "northbay" in c["tokens"]]
         assert named, "the undeclared token was deleted rather than discounted"
         assert named[0]["rows"] == 10  # every occurrence still counted and shown
+
+
+# --- claim surfaces: what a public entry point says about what it returns -----
+#
+# A DOCSTRING ON A PUBLIC FUNCTION IS A CONTRACT, and this repo is a public
+# export — the reader of these sentences is a stranger writing a NEW surface,
+# who has no way to notice that the one production caller compensates for a
+# promise the body does not keep. `identity_candidates` opened with "EVERY
+# account identifier this connector reported" and stated that frequency "no
+# longer decides membership", while the body returns
+# `ranked[:MAX_IDENTITY_CANDIDATES]`: above the cap both sentences are false and
+# frequency decides membership again, at 200 instead of at 12.
+#
+# These arms hold the SENTENCE to the measured behaviour in both directions —
+# remove the cap and the first arm fails until the summary line stops naming
+# one; put the totality claim back and it fails immediately.
+class TestTheCandidateOfferDescribesItselfHonestly:
+
+    def test_the_offer_is_capped_and_the_summary_line_says_so(self):
+        # The estate is counted HERE, with a plain set over the fixture's own
+        # rows, rather than through the module's `_distinct_actors` — an arm
+        # that borrows the helper it is checking shares the assumption that
+        # made the claim wrong, which is how five sensors in this program have
+        # passed against the defect they name.
+        rows = _wide_rows(research.MAX_IDENTITY_CANDIDATES + 3)
+        estate = len({actor for row in rows for actor in row["actors"]})
+        offered = research.identity_candidates(rows, "code")
+        assert estate == research.MAX_IDENTITY_CANDIDATES + 3
+        assert len(offered) == research.MAX_IDENTITY_CANDIDATES < estate
+
+        summary = inspect.getdoc(research.identity_candidates).split("\n\n")[0]
+        assert not re.match(r"\s*(?:EVERY|ALL)\b", summary), (
+            f"the summary line opens by promising the whole estate while the "
+            f"body returned {len(offered)} of {estate}: {summary!r}")
+        assert "MAX_IDENTITY_CANDIDATES" in summary, (
+            "a capped return has to name its cap in the line a reader stops "
+            f"at, and this one returned {len(offered)} of {estate}: {summary!r}")
+
+    def test_the_rank_free_membership_claim_is_qualified_by_the_cap(self):
+        """Frequency stops deciding membership only BELOW the cap. Above it the
+        list is a head again, so the unqualified sentence is exactly as wrong as
+        the 12 it was written to retire — just at a number nobody reaches by
+        accident."""
+        doc = " ".join(inspect.getdoc(research.identity_candidates).split())
+        assert "FREQUENCY ORDERS THE LIST; IT NO LONGER DECIDES MEMBERSHIP." not in doc
+        assert "BELOW THE CAP IT NO LONGER DECIDES MEMBERSHIP" in doc
+
+    def test_the_docstring_sends_a_new_caller_to_the_offer_that_is_complete(self):
+        """Naming the cap is half of it. The other half is where an exhaustive
+        answer actually comes from: `identity_question` counts the estate itself
+        and publishes accounts/withheld/complete beside the list (pinned by
+        TestIdentity::test_the_note_counts_the_estate_not_the_offered_list and
+        ::test_an_offer_that_cannot_be_completed_says_so_rather_than_reading_whole)."""
+        doc = " ".join(inspect.getdoc(research.identity_candidates).split())
+        assert "identity_question" in doc
+        for field in ("accounts", "withheld", "complete"):
+            assert field in doc, f"the compensating caller's {field} is unnamed"
