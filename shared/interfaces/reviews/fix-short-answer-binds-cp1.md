@@ -152,3 +152,26 @@ own words are deletable while the depth sentence ships. ZERO new production
 modules (`framework_production_modules` unchanged at 248: both functions land
 inside existing modules, and the six new arms are tests), so no bijection class
 moves.
+
+## Merge 2026-07-30 — `fix/short-answer-binds` x master (`fix/identity-picker-tail`)
+
+Two conflicts, both in the shared append surfaces this program has raced on
+before, both resolved by keeping BOTH sides verbatim and re-measuring the one
+number that is not additive by construction:
+
+* `cabinet/config/cognitive-architecture-contract.yml` — two disjoint visible
+  raises on the same budget (+45 the identity picker, +61 this unit). Both notes
+  stand; the merged ceiling is **re-measured over the merged tree**
+  (`cognitive-architecture-census.py`: PASS, observed 75972 == maximum 61433,
+  zero headroom). The paper sum agrees (61327 + 45 + 61 = 61433), which is
+  evidence FOR the measurement and not a substitute for taking it.
+* `shared/interfaces/reviews/cognitive-core-phase-4-review.md` — both sides
+  re-bound the digest line. ONE value stands, recomputed over the merge commit;
+  both re-bind sections are kept verbatim at the end of the file.
+
+`framework/onboarding/journey.py` auto-merged and was read rather than trusted:
+master's change is in `entry_plan`'s comment and the `record_operator_identity`
+handle-length refusal; this unit's is `_window_binding`, `_binding_note`, the
+`propose_window` refusal and the module docstring. Disjoint functions.
+
+Full local gate set re-run on the merged tree — see the table above, re-measured.

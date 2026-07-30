@@ -35,7 +35,11 @@ import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createElement, type ComponentProps } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { OnboardingResponse } from '@/lib/onboarding/types'
+import type {
+  OnboardingEntryPlan,
+  OnboardingIdentityAsk,
+  OnboardingResponse,
+} from '@/lib/onboarding/types'
 
 // Hook-scripted state injection: react-dom/server renders initial state only,
 // so stateful scenarios (purge armed, feedback recorded) are reached by
@@ -84,7 +88,7 @@ vi.mock('react', async (importOriginal) => {
   }
 })
 
-import OnboardingJourneyCard, { NO_IDENTITY_PICKS } from './journey-card'
+import OnboardingJourneyCard, { IDENTITY_SHOWN, NO_IDENTITY_PICKS } from './journey-card'
 
 afterEach(() => {
   hookScript.steps = null
@@ -125,6 +129,28 @@ function journeyFixture(stage: string): OnboardingResponse {
       evidence: [],
       options: [],
     },
+  }
+}
+
+/** An entry plan whose only content is the identity ask, for picker arms. */
+function identityEntry(connectors: OnboardingIdentityAsk[]): OnboardingEntryPlan {
+  return {
+    schema: 'cabinet.onboarding-entry-plan/v1',
+    mode: 'connected',
+    opening_move: 'sweep_and_assert',
+    grants: { connectors: connectors.map((ask) => ask.connector), local_files: true, web: false },
+    seed_question: null,
+    questions: [],
+    discovery: { terms: [], probes: [], executable: false },
+    cannot_know: [],
+    identity_question: {
+      question: 'I cannot tell which of the actors I read is you.',
+      is_a_question: true,
+      connectors,
+    },
+    next_actions: [
+      { action: 'record_operator_identity', label: 'Tell me which account is you', input: 'handles' },
+    ],
   }
 }
 
@@ -448,13 +474,19 @@ describe('rendered component — accessible shell', () => {
               { identifier: 'aperson', rows: 3 },
             ],
             reports_no_actor: false,
-            note: 'code: 2 account(s) appear across 56 rows',
+            accounts: 2,
+            withheld: 0,
+            complete: true,
+            note: 'code: 2 account(s) appear across 56 rows, and all of them are offered here',
           },
           {
             connector: 'tracker',
             rows: 531,
             candidates: [],
             reports_no_actor: true,
+            accounts: 0,
+            withheld: 0,
+            complete: true,
             note: 'tracker reported no actor on any of its 531 rows, so until its actor path is declared, even your own account attributes nothing there',
           },
         ],
@@ -474,6 +506,62 @@ describe('rendered component — accessible shell', () => {
     // A connector that reported nobody offers no radio to press and says why.
     expect(html).not.toContain('name="dashboard-identity-tracker"')
     expect(html).toContain('even your own account attributes nothing there')
+  })
+
+  // THE OPERATOR IS NOT ALWAYS THE BUSIEST ACCOUNT, and on the estate this was
+  // measured against they were 25th of 30 on the connector carrying 531 of 665
+  // rows. The core now offers every account a connector reported; this surface
+  // must make all of them reachable, so the quiet ones go behind a disclosure
+  // rather than off the card. Lopsided on purpose — a fixture where the
+  // operator sits in the visible head cannot tell a complete offer from a head.
+  it('keeps the quietest account reachable instead of showing only the busiest', () => {
+    const busiest = Array.from({ length: IDENTITY_SHOWN }, (_, index) => ({
+      identifier: `colleague-${index}`,
+      rows: 50 - index,
+    }))
+    const fixture = journeyFixture('welcome')
+    fixture.card.entry = identityEntry([
+      {
+        connector: 'tracker',
+        rows: 531,
+        candidates: [...busiest, { identifier: 'the-operator', rows: 1 }],
+        reports_no_actor: false,
+        accounts: IDENTITY_SHOWN + 1,
+        withheld: 0,
+        complete: true,
+        note: 'tracker: 9 account(s) appear across 531 rows, and all of them are offered here',
+      },
+    ])
+    scriptState({ journey: fixture })
+    const html = render()
+    expect(html).toContain('colleague-0')
+    // Present in the markup — a disclosure, never a truncation.
+    expect(html).toContain('the-operator')
+    expect(html).toContain('Show the other 1 account in tracker')
+    expect(html).toContain('<details')
+    // No typed field: the offer is COMPLETE, so "none of these" is a true
+    // terminal state and a free-text box could only add a wrong spelling.
+    expect(html).not.toContain('name="dashboard-identity-typed-tracker"')
+  })
+
+  it('opens a typed field only where the core says the offer cannot be completed', () => {
+    const fixture = journeyFixture('welcome')
+    fixture.card.entry = identityEntry([
+      {
+        connector: 'tracker',
+        rows: 4000,
+        candidates: [{ identifier: 'colleague-0', rows: 900 }],
+        reports_no_actor: false,
+        accounts: 203,
+        withheld: 202,
+        complete: false,
+        note: 'tracker: 203 account(s) appear across 4000 rows, and I can only offer 1 of them here — if none of those 1 is you, type the account name instead',
+      },
+    ])
+    scriptState({ journey: fixture })
+    const html = render()
+    expect(html).toContain('name="dashboard-identity-typed-tracker"')
+    expect(html).toContain('202 more accounts in tracker than I can list')
   })
 
   it('asks nothing about identity once every connector resolves', () => {
