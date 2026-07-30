@@ -21,7 +21,21 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 8b6b1c9d157204e238ca3b7df2c678de1803492f02f9885c6c053167ca36f388
+Reviewed-Scope-Digest: e19c72599f83d6ccb03be390974d611157b23e4ea432a711cbb397f742a42b5a
+(MERGE RE-BIND, 2026-07-30, `feat/operator-identity` x master. Both sides
+re-bound this line, so the merge left two; ONE value stands and it is recomputed
+over this merge commit. Every note from both sides is kept verbatim below,
+because a re-freeze that hides what moved asserts a review that never happened.
+No COG-4 implementation byte moved on either side — the only in-scope path is the
+contract file, whose ceiling is RE-MEASURED over the merged tree rather than
+summed on paper.)
+(RE-BOUND 2026-07-30 on `feat/operator-identity` — twice, the second time for the
+two defects that branch was caught with by attacking its own landing; previous
+values `df74c54b…` and before it `80d1b9fe…`.
+ONE bound path moved — `cabinet/config/cognitive-architecture-contract.yml`,
+which takes a +246 non-comment-line phase row for the operator-identity unit —
+and NO COG-4 implementation byte did. The note for it is appended at the end of
+this file; every earlier note stands verbatim. Previous header note follows.)
 
 (RE-BOUND 2026-07-30 on `fix/answer-binds-depth`, previous value `80d1b9fe…`.
 ONE in-scope path moved and NO COG-4 implementation byte did:
@@ -1636,3 +1650,52 @@ raises verbatim — master's +29 connector-loader honesty row and this branch's
 ranker rows — under a merged `maximum` of 60979 that is RE-MEASURED over this
 tree (observed 75256, zero headroom) rather than summed on paper. Neither is an
 allowance; ZERO new modules, so no bijection class moves.
+
+---
+
+## Re-bind 2026-07-30 (feat/operator-identity — the ask that makes attribution reachable)
+
+One bound path changed: `cabinet/config/cognitive-architecture-contract.yml`,
+which takes a +246 non-comment-line phase row for the unit that gives
+`operator_identity` the writer it never had. NO COG-4 implementation path moved
+— no organ, no projection, no scheduler byte — so the review's findings are
+untouched by this landing. The contract sits inside this digest's scope
+precisely so that a budget row cannot ride in unnoticed behind a frozen review;
+ZERO new modules ride here, so no bijection class moves, and the ceiling is
+RE-MEASURED over this tree (observed 75502, zero headroom) rather than added on
+paper.
+
+Recorded digest: 8666074818270283cb3f7773b7f3b5334b8b83bce7bd0e44041661994d06c1bb
+Previous:        df74c54be382546821d5cec711bf7f8d136af9196d62be04f30b0f50110f59f9
+Before that:     80d1b9fed616d8bc4332d015bcedb155f3aa409b0181022f3bde359bd80b2a7b
+
+Two commits, one bound path both times: the phase row was measured +246 at the
+first and re-measured +262 at the second, when attacking the landing found the
+candidate note counting the CAPPED offer list and an empty connector key being
+accepted as a system. Still no COG-4 implementation byte, still zero new
+modules, still zero headroom (observed 75518).
+
+Re-bound at landing by the integrator, in the SAME commit as the change, per §15.
+
+---
+
+## Merge re-bind 2026-07-30 (feat/operator-identity x master 589565ea)
+
+Both sides re-bound this digest the same day; one value stands and it is
+recomputed over this merge commit. Every note above is verbatim from its own
+side and none is another's restamp.
+
+ONE bound path moved on either side and NO COG-4 implementation byte did:
+`cabinet/config/cognitive-architecture-contract.yml` carries master's VISIBLE
+`framework_production_noncomment_lines` maximum raise (60979 -> 61094, the
+answer-binds-depth control) AND this branch's +262 operator-identity phase row,
+RE-MEASURED over the merged tree with cognitive-architecture-census.py —
+observed 75633, zero headroom — rather than summed on paper. ZERO new modules on
+either side, so no bijection class moves. The two branches' framework work does
+not overlap: master's is the window binding, this branch's is the identity ask,
+and the one textual collision was two functions added at the same line, both
+kept.
+
+Recorded digest: e19c72599f83d6ccb03be390974d611157b23e4ea432a711cbb397f742a42b5a
+Previous (this branch):  8666074818270283cb3f7773b7f3b5334b8b83bce7bd0e44041661994d06c1bb
+Previous (master):       8b6b1c9d157204e238ca3b7df2c678de1803492f02f9885c6c053167ca36f388

@@ -84,7 +84,7 @@ vi.mock('react', async (importOriginal) => {
   }
 })
 
-import OnboardingJourneyCard from './journey-card'
+import OnboardingJourneyCard, { NO_IDENTITY_PICKS } from './journey-card'
 
 afterEach(() => {
   hookScript.steps = null
@@ -143,6 +143,7 @@ function scriptState(overrides: {
   authorityBasis?: string
   seed?: string
   feedbackRecorded?: string | null
+  handles?: Readonly<Record<string, string>>
 }) {
   hookScript.cursor = 0
   hookScript.steps = [
@@ -161,6 +162,7 @@ function scriptState(overrides: {
     { initial: '', value: overrides.authorityBasis ?? '' }, // authorityBasis
     { initial: '', value: overrides.seed ?? '' }, // seed — the seed question's field
     { initial: null, value: overrides.feedbackRecorded ?? null }, // feedbackRecorded
+    { initial: NO_IDENTITY_PICKS, value: overrides.handles ?? NO_IDENTITY_PICKS }, // handles — which account is the operator, per connector
   ]
 }
 
@@ -381,6 +383,7 @@ describe('rendered component — accessible shell', () => {
       cannot_know: [
         { subject: 'grant_rights', verdict: 'never', statement: 'Not in the data.' },
       ],
+      identity_question: null,
       next_actions: [{ action: 'propose_window', label: 'Choose a folder I may read' }],
     }
     scriptState({ journey: fixture })
@@ -405,6 +408,7 @@ describe('rendered component — accessible shell', () => {
       questions: [],
       discovery: { terms: [], probes: [], executable: false },
       cannot_know: [],
+      identity_question: null,
       next_actions: [
         { action: 'propose_window', label: 'Choose a folder I may read' },
         { action: 'answer_seed', label: 'Tell me in a sentence', input: 'seed' },
@@ -415,6 +419,79 @@ describe('rendered component — accessible shell', () => {
     expect(html).toContain('What do you do, and how can I best serve you?')
     expect(html).toContain('id="dashboard-seed"')
     expect(html).toContain('Go and look')
+  })
+
+  // WHO THE OPERATOR IS IS ASKED, AND THE ASK NEEDS A FIELD. The core resolves
+  // attribution only from what the operator says, so a surface that prints the
+  // question and offers no way to answer it makes the resolved branch
+  // unreachable — the exact defect the seed field was added to close.
+  it('renders the identity picker over the connectors own account identifiers', () => {
+    const fixture = journeyFixture('welcome')
+    fixture.card.entry = {
+      schema: 'cabinet.onboarding-entry-plan/v1',
+      mode: 'connected',
+      opening_move: 'sweep_and_assert',
+      grants: { connectors: ['code'], local_files: true, web: false },
+      seed_question: null,
+      questions: [],
+      discovery: { terms: [], probes: [], executable: false },
+      cannot_know: [],
+      identity_question: {
+        question: 'I cannot tell which of the actors I read is you in code, tracker.',
+        is_a_question: true,
+        connectors: [
+          {
+            connector: 'code',
+            rows: 56,
+            candidates: [
+              { identifier: 'an-org', rows: 52 },
+              { identifier: 'aperson', rows: 3 },
+            ],
+            reports_no_actor: false,
+            note: 'code: 2 account(s) appear across 56 rows',
+          },
+          {
+            connector: 'tracker',
+            rows: 531,
+            candidates: [],
+            reports_no_actor: true,
+            note: 'tracker reported no actor on any of its 531 rows, so until its actor path is declared, even your own account attributes nothing there',
+          },
+        ],
+      },
+      next_actions: [
+        { action: 'record_operator_identity', label: 'Tell me which account is you', input: 'handles' },
+      ],
+    }
+    scriptState({ journey: fixture })
+    const html = render()
+    expect(html).toContain('I cannot tell which of the actors I read is you')
+    // The candidates are the ESTATE's own strings, with how much of the
+    // connector each accounts for, so the pick is a tap and not a spelling test.
+    expect(html).toContain('an-org')
+    expect(html).toContain('52 of 56 here')
+    expect(html).toContain('name="dashboard-identity-code"')
+    // A connector that reported nobody offers no radio to press and says why.
+    expect(html).not.toContain('name="dashboard-identity-tracker"')
+    expect(html).toContain('even your own account attributes nothing there')
+  })
+
+  it('asks nothing about identity once every connector resolves', () => {
+    const fixture = journeyFixture('welcome')
+    fixture.card.entry = {
+      schema: 'cabinet.onboarding-entry-plan/v1',
+      mode: 'connected',
+      opening_move: 'sweep_and_assert',
+      grants: { connectors: ['code'], local_files: true, web: false },
+      seed_question: null,
+      questions: [],
+      discovery: { terms: [], probes: [], executable: false },
+      cannot_know: [],
+      identity_question: null,
+      next_actions: [{ action: 'propose_window', label: 'Choose a folder I may read' }],
+    }
+    scriptState({ journey: fixture })
+    expect(render()).not.toContain('That one is me')
   })
 
   it('renders no seed input when the core asks no seed question', () => {
@@ -428,6 +505,7 @@ describe('rendered component — accessible shell', () => {
       questions: [],
       discovery: { terms: [], probes: [], executable: false },
       cannot_know: [],
+      identity_question: null,
       next_actions: [{ action: 'propose_window', label: 'Choose a folder I may read' }],
     }
     scriptState({ journey: fixture })
@@ -463,6 +541,7 @@ describe('rendered component — accessible shell', () => {
         },
       },
       cannot_know: [],
+      identity_question: null,
       next_actions: [{ action: 'propose_window', label: 'Choose a folder I may read' }],
     }
     scriptState({ journey: fixture })
@@ -500,6 +579,7 @@ describe('rendered component — accessible shell', () => {
         },
       },
       cannot_know: [],
+      identity_question: null,
       next_actions: [{ action: 'propose_window', label: 'Choose a folder I may read' }],
     }
     scriptState({ journey: fixture })
