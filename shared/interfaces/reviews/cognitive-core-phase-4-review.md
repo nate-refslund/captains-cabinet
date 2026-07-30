@@ -21,7 +21,18 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: f136ba1492e4c81b452d22930b9c715728713ee4b3e102a983596d79ac447322
+Reviewed-Scope-Digest: 527a73d2da14308993639050089ec15b597720fd90d24fb137a6c798ee1e43e1
+(MERGE RE-BIND, 2026-07-30, `fix/unicode-name-tokens` x master. Both sides
+re-bound this line, so the merge left two; ONE value stands and it is
+recomputed over this merge commit. The only in-scope path either side moved
+is the contract file, whose merged ceiling is RE-MEASURED over this tree.
+No COG-4 implementation byte moved on either side. Both sections stand
+verbatim below, master's first.)
+
+(RE-BIND, 2026-07-30, `fix/sources-reading-asymmetry` — see the section of that
+name at the end of this file. One in-scope path moved, the contract file, whose
+ceiling is re-measured over this tree. No COG-4 implementation byte moved. The
+prior note stands below.)
 (MERGE RE-BIND, 2026-07-30, `fix/unicode-name-tokens` x master. Both sides
 re-bound this line, so the merge left two; ONE value stands and it is
 recomputed over this merge commit. The only in-scope path either side moved
@@ -1937,3 +1948,29 @@ visibly here rather than shrinking the text to fit.
 
 Recorded digest: abe5fbd01d09c85b2b6005d02ce1f86b35010747d00b8c509b70b7e63dceb3ec
 Previous:        35b4ae1656c0fd3e3ebc82e410858ceab115d6241c1d4761f536e267829f7485
+
+---
+
+## Re-bind 2026-07-30 (`fix/sources-reading-asymmetry`)
+
+ONE in-scope path moved: `cabinet/config/cognitive-architecture-contract.yml`,
+`maximum` on `framework_production_noncomment_lines` 61452 -> 61455, +3 measured
+with `cognitive-architecture-census.py` over this tree (observed 75994 ==
+maximum, zero headroom). No COG-4 implementation byte moved, and nothing in this
+branch's work is inside the phase-4 scope.
+
+WHAT THE +3 BUYS: the claim-surfaces sweep run against its own fix. The sentence
+that replaced "the root-relative paths actually consulted" in
+`inventory_mcp_estate` said `sources` names the paths that YIELDED A READING —
+false on one of its two limbs, proved by execution rather than by reading the
+branch: a `.mcp.json` that is valid JSON and parses without error but declares no
+`mcpServers` is read and still absent from `sources`, while an extensions file
+that parses with no `mcps:` at all is listed. One sentence cannot be true of
+both, and the section's own header names that conflation ("I looked and found
+nothing" vs "I never looked") as the failure it exists to refuse. The docstring
+now states the asymmetry and calls it undeliberate; the behaviour is untouched
+(AST with docstrings stripped is byte-identical to `534e8aba`), because splitting
+the two readings wants a second key and symmetry wants a behaviour change.
+
+Recorded digest: 6595784ffd913aadd0e47fab8fbc146e173b1a7c110f375a3435001828288a80
+Previous:        abe5fbd01d09c85b2b6005d02ce1f86b35010747d00b8c509b70b7e63dceb3ec

@@ -192,4 +192,39 @@ def test_sources_names_what_yielded_a_reading_not_what_was_consulted(tmp_path):
 
     doc = " ".join(inspect.getdoc(research.inventory_mcp_estate).split())
     assert "the root-relative paths actually consulted" not in doc
-    assert "YIELDED A READING" in doc
+    assert "the paths a declaration block was read FROM" in doc
+
+
+def test_sources_omits_a_read_path_that_declared_nothing(tmp_path):
+    """The replacement sentence was over-broad too, one grain finer.
+
+    It said ``sources`` names the paths that yielded a reading. A ``.mcp.json``
+    that is VALID JSON and parsed without error, carrying no ``mcpServers``,
+    yielded a reading and is still absent — while an extensions file parsed with
+    no ``mcps:`` at all is listed. One sentence cannot be true of both limbs, so
+    the asymmetry is measured HERE and stated in the docstring rather than
+    described away. The behaviour is untouched: what ships wrong is the sentence.
+
+    The asymmetry is derived by EXECUTION over two roots that differ only in
+    which surface declares nothing — never by reading the branch structure the
+    docstring is being held to, which is the assumption under audit.
+    """
+    empty_mcp = tmp_path / "declares-nothing"
+    (empty_mcp / "instance" / "config").mkdir(parents=True)
+    (empty_mcp / ".mcp.json").write_text("{}", encoding="utf-8")
+    (empty_mcp / "instance" / "config" / "extensions.yml").write_text(
+        "plugins: []\n", encoding="utf-8")
+    out = research.inventory_mcp_estate(str(empty_mcp), consent=True)
+
+    # Both files exist, both parse, neither declares a server.
+    assert (empty_mcp / ".mcp.json").is_file()
+    assert json.loads((empty_mcp / ".mcp.json").read_text(encoding="utf-8")) == {}
+    assert out["servers"] == []
+    # ...and the two surfaces are reported differently for the same situation.
+    assert ".mcp.json" not in out["sources"]
+    assert out["sources"] == ["instance/config/extensions.yml"]
+
+    doc = " ".join(inspect.getdoc(research.inventory_mcp_estate).split())
+    assert "NOT every path read" in doc
+    assert "``.mcp.json`` parsed fine without ``mcpServers`` is absent" in doc
+    assert "``mcps:`` is listed" in doc
