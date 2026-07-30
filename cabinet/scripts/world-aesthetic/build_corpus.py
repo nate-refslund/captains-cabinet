@@ -9,6 +9,7 @@ corpus without committing the pixels.
 
 Usage (python3.12; `synthetic` needs Pillow — e.g. a venv with `pip install pillow`):
     build_corpus.py synthetic            # regenerate the 3 synthetic negatives
+    build_corpus.py materialise          # + every member a checkout can rebuild
     build_corpus.py manifest             # hash corpus images + write manifest
     build_corpus.py verify [--corpus D]  # check files against a tracked manifest
 
@@ -49,6 +50,8 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+# The one path that must NOT follow a monkeypatched HERE.
+_SRC_DIR = Path(__file__).resolve().parent
 CORPUS = HERE / "corpus"
 REPO_ROOT = HERE.parents[2]
 ISO_PACK = (REPO_ROOT / "cabinet" / "dashboard" / "public" / "world-assets"
@@ -71,7 +74,20 @@ VOID_BUILDINGS = ["great_house", "officer_house_a", "officer_house_b",
                   "library", "workshop"]
 
 # id -> (class, filename, provenance, why-it-belongs)
-REGISTRY: dict[str, tuple[str, str, str, str]] = {
+# Each row: (class, filename, provenance, why, REBUILD).
+#
+# REBUILD is the field that decides whether CI can SEE this member. "synthetic"
+# = build_corpus.py regenerates it byte-identically from the repo's own tracked
+# owned pack; "copy:<tracked path>" = it IS a tracked file. None = HELD: the
+# pixels exist only on the machine that captured or was given them, and no
+# checkout can reconstruct them.
+#
+# WHY THE FIELD EXISTS. The suite gated on "are there PNGs in corpus/positive?",
+# which is not the same question as "is this the corpus the manifest declares".
+# Measured 2026-07-30 on one commit: the manifest's corpus -> 96 pass; the
+# ARCHIVED LimeZu corpus dropped in the same place -> 4 fail; a fresh CI
+# checkout -> 5 skip. Three verdicts, and the suite could not tell them apart.
+REGISTRY: dict[str, tuple[str, str, str, str, str | None]] = {
     # ── POSITIVES: owned isometric art, Captain-seen. Chosen to span the
     #    renderer's whole colour production, not just its prettiest frame:
     #    two wide island states (two terrain eras), one close zoom (paving and
@@ -85,6 +101,7 @@ REGISTRY: dict[str, tuple[str, str, str, str]] = {
         "Wide island at today's org state: computed fbm+dither ground, worn "
         "lanes, districts, quay. The default frame every renderer change is "
         "judged on.",
+        None  # HELD: a live capture; no checkout can reproduce these pixels,
     ),
     "pos-owned-island-camp": (
         "positive", "pos-owned-island-camp.png",
@@ -93,6 +110,7 @@ REGISTRY: dict[str, tuple[str, str, str, str]] = {
         "Wide island in the wilderness/camp era — the Captain's subtractive-"
         "clearing inversion. Different terrain mix from the hamlet, so the "
         "palette covers overgrowth and not only cleared ground.",
+        None  # HELD: a live capture; no checkout can reproduce these pixels,
     ),
     "pos-owned-square-close": (
         "positive", "pos-owned-square-close.png",
@@ -100,6 +118,7 @@ REGISTRY: dict[str, tuple[str, str, str, str]] = {
         "designs/cabinet-world-iso-v24-zoom-square-2026-07-25.png, 1200x800)",
         "Close-zoom village square: paving, benches, lamp posts at texture "
         "level. Carries the plaza colours no wide frame exercises.",
+        None  # HELD: a live capture; no checkout can reproduce these pixels,
     ),
     "pos-owned-interior-cutaway": (
         "positive", "pos-owned-interior-cutaway.png",
@@ -109,6 +128,7 @@ REGISTRY: dict[str, tuple[str, str, str, str]] = {
         "Roof-off interior: floors, walls, furniture. The frame whose alpha "
         "holes the Captain diagnosed, AFTER the cutout fix — so the corpus "
         "records the corrected interior, never the bug.",
+        None  # HELD: a live capture; no checkout can reproduce these pixels,
     ),
 
     # ── PALETTE SOURCE: the art itself, not a render of it. ─────────────────
@@ -121,6 +141,7 @@ REGISTRY: dict[str, tuple[str, str, str, str]] = {
         "Defines every colour the owned sprites may draw, independently of "
         "which sprites a chosen render happens to contain. Without it an "
         "all-owned-sprite frame reads foreign (6.52% vs 1.23% measured).",
+        "copy:cabinet/dashboard/public/world-assets/originals/iso/atlas-0.png",
     ),
 
     # ── NEGATIVES: Captain rulings on our OWN builds. Kept across the re-fit
@@ -131,6 +152,7 @@ REGISTRY: dict[str, tuple[str, str, str, str]] = {
         "(~/.claude/image-cache/e55f9b5f-b7cf-469f-af48-89a202a8cc4a/5.png, Island Z0)",
         "Ground-truth rejection: sparse props floating on flat green void — no terrain "
         "variation, no paths, no shore, buildings unanchored.",
+        None  # HELD: a LimeZu-bearing screenshot; licensed art, not redistributable,
     ),
     "neg-city-street-void": (
         "negative", "neg-city-street-void.png",
@@ -138,6 +160,7 @@ REGISTRY: dict[str, tuple[str, str, str, str]] = {
         "(~/.claude/image-cache/e55f9b5f-b7cf-469f-af48-89a202a8cc4a/6.png, Street Z1)",
         "Ground-truth rejection: buildings against black void, garbled road-marking "
         "tiling, near-empty street — incomplete scene assembly.",
+        None  # HELD: a LimeZu-bearing screenshot; licensed art, not redistributable,
     ),
     "neg-grey-wardroom": (
         "negative", "neg-grey-wardroom.png",
@@ -145,6 +168,7 @@ REGISTRY: dict[str, tuple[str, str, str, str]] = {
         "(~/.claude/image-cache/e55f9b5f-b7cf-469f-af48-89a202a8cc4a/7.png, Wardroom Z2)",
         "Ground-truth rejection: vast grey floor, one desk strip, scattered orphan "
         "chairs/props — an unfurnished room, not a composed interior.",
+        None  # HELD: a LimeZu-bearing screenshot; licensed art, not redistributable,
     ),
 
     # ── NEGATIVES: the same failure mode rebuilt in the OWNED art family, so
@@ -158,6 +182,7 @@ REGISTRY: dict[str, tuple[str, str, str, str]] = {
         "frames scattered on the world's own ground colour",
         "Reproduces the rejected failure mode at low density in owned art: "
         "unrelated props dropped on an untextured field with no grounding.",
+        "synthetic",
     ),
     "neg-owned-scatter-dense": (
         "negative", "neg-owned-scatter-dense.png",
@@ -165,6 +190,7 @@ REGISTRY: dict[str, tuple[str, str, str, str]] = {
         "atlas frames scattered on the world's own ground colour",
         "Same failure mode at high density: clutter without composition still "
         "fails — density alone must not fool the judge.",
+        "synthetic",
     ),
     "neg-owned-void": (
         "negative", "neg-owned-void.png",
@@ -172,6 +198,7 @@ REGISTRY: dict[str, tuple[str, str, str, str]] = {
         "buildings on the world's own flat ground colour, no terrain",
         "The island-void rejection rebuilt in owned art: real buildings, real "
         "palette, no terrain variation, no paths, nothing anchored.",
+        "synthetic",
     ),
 }
 
@@ -215,6 +242,18 @@ def _atlas_cutter():
     return cut, pack["frames"]
 
 
+def _say(p: Path) -> str:
+    """A path to PRINT. Never `relative_to(HERE)` unguarded — that raises
+    ValueError for any --corpus outside this directory, which is exactly the
+    invocation a test fixture or a CI step makes (measured: `synthetic --corpus
+    /tmp/x` died after writing one of three files, leaving a half-built corpus
+    behind and a traceback instead of a corpus)."""
+    try:
+        return str(p.relative_to(HERE))
+    except ValueError:
+        return str(p)
+
+
 def make_synthetic(corpus: Path) -> None:
     from PIL import Image
 
@@ -239,7 +278,7 @@ def make_synthetic(corpus: Path) -> None:
         out = _corpus_path(corpus, "negative", name)
         out.parent.mkdir(parents=True, exist_ok=True)
         canvas.save(out)
-        print(f"wrote {out.relative_to(HERE)}")
+        print(f"wrote {_say(out)}")
 
     rng = random.Random(5150)
     canvas = Image.new("RGB", CANVAS, OWNED_GROUND)
@@ -250,7 +289,76 @@ def make_synthetic(corpus: Path) -> None:
         canvas.paste(s, (x, y), s)
     out = _corpus_path(corpus, "negative", "neg-owned-void.png")
     canvas.save(out)
-    print(f"wrote {out.relative_to(HERE)}")
+    print(f"wrote {_say(out)}")
+
+
+def pixels_sha256_of(p: Path) -> str:
+    """sha256 of the DECODED RGBA buffer, not of the file.
+
+    WHY BOTH DIGESTS EXIST (paid 2026-07-30, CI run 30566688025). The three
+    synthetic negatives regenerate from the tracked owned pack with identical
+    PIXELS and DIFFERENT BYTES: PNG encoding runs through whatever zlib the
+    machine's Pillow was built against, so a macOS laptop and an ubuntu runner
+    write the same picture as different files. Proven byte-identical three times
+    on one machine and byte-different on the first runner that tried — a
+    reproducibility claim measured at one operating point is a hypothesis.
+
+    So the file digest is the right invariant for a member that is TRANSPORTED
+    (the held ones — those bytes are all anyone has), and this one is the right
+    invariant for a member that is REBUILT. Decoded with the gates' own stdlib
+    PNG reader, so verifying needs no Pillow even though building does.
+    """
+    import importlib.util
+    # _SRC_DIR, never HERE: HERE is monkeypatched by the manifest test, and a
+    # helper that reads its own source through a patchable constant breaks in
+    # whichever caller patches it — found by that test, which is the point.
+    spec = importlib.util.spec_from_file_location(
+        "world_aesthetic_png_for_corpus", _SRC_DIR / "gates" / "_png.py")
+    png = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(png)
+    w, h, rgba = png.decode(p)
+    return hashlib.sha256(bytes(rgba)).hexdigest()
+
+
+def materialise(corpus: Path) -> list[str]:
+    """Put every REBUILDABLE corpus member on disk, and report what is HELD.
+
+    This is what lets CI run the corpus arms at all. Without it those arms
+    skipped on every fresh checkout, so the one environment that runs them was
+    the one where they could not run — and a test that skips itself into green
+    is the failure class this repo keeps finding in its own sensors.
+
+    It does NOT invent the held members and it does not pretend they are
+    covered. It returns their ids so the caller has to say, out loud, which
+    arms are running on a partial corpus and why.
+    """
+    built, held = [], []
+    want_synth = False
+    for entry_id, (cls, filename, _prov, _why, rebuild) in sorted(REGISTRY.items()):
+        dest = _corpus_path(corpus, cls, filename)
+        if rebuild is None:
+            if not dest.exists():
+                held.append(entry_id)
+            continue
+        if dest.exists():
+            continue
+        if rebuild == "synthetic":
+            want_synth = True
+        elif rebuild.startswith("copy:"):
+            src = REPO_ROOT / rebuild[len("copy:"):]
+            if not src.exists():
+                sys.exit(f"{entry_id}: rebuild names {src}, which is not in this "
+                         f"checkout — a recipe that cannot run is worse than no "
+                         f"recipe, because it reads as coverage")
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(src.read_bytes())
+            built.append(entry_id)
+        else:
+            sys.exit(f"{entry_id}: unknown rebuild recipe {rebuild!r}")
+    if want_synth:
+        make_synthetic(corpus)
+        built += [e for e, r in REGISTRY.items() if r[4] == "synthetic"]
+    return held
 
 
 # --------------------------------------------------------------- manifest
@@ -290,7 +398,7 @@ def build_manifest(corpus: Path) -> None:
     manifest = corpus / "manifest.json"
     rel = corpus.name
     images, missing = [], []
-    for entry_id, (cls, filename, provenance, why) in sorted(REGISTRY.items()):
+    for entry_id, (cls, filename, provenance, why, rebuild) in sorted(REGISTRY.items()):
         p = _corpus_path(corpus, cls, filename)
         if not p.exists():
             missing.append(entry_id)
@@ -300,8 +408,10 @@ def build_manifest(corpus: Path) -> None:
             "class": cls,
             "file": f"{rel}/{cls}/{filename}",
             "sha256": sha256_of(p),
+            "pixels_sha256": pixels_sha256_of(p),
             "provenance": provenance,
             "why": why,
+            "rebuild": rebuild,
         })
     if missing:
         sys.exit(f"missing corpus files for: {', '.join(missing)} "
@@ -368,7 +478,8 @@ def main(argv=None) -> None:
     ap = argparse.ArgumentParser(
         prog="build_corpus.py", description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["synthetic", "manifest", "verify"])
+    ap.add_argument("cmd", choices=["synthetic", "materialise", "manifest",
+                                    "verify"])
     ap.add_argument("--corpus", default=str(CORPUS),
                     help="corpus dir (default corpus/; pass "
                          "corpus/archive-limezu-2026-07-08 to verify the archive)")
@@ -382,6 +493,10 @@ def main(argv=None) -> None:
     corpus = Path(args.corpus).resolve()
     if args.cmd == "synthetic":
         make_synthetic(corpus)
+    elif args.cmd == "materialise":
+        held = materialise(corpus)
+        print(f"materialised into {corpus}; HELD and therefore NOT covered here: "
+              f"{', '.join(held) if held else '(none — the whole corpus is present)'}")
     elif args.cmd == "manifest":
         build_manifest(corpus)
     else:

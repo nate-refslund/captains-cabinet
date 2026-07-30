@@ -91,21 +91,28 @@ def test_rejects_interlace_and_16bit_and_bombs(wa, tmp_path):
 
 
 def test_corpus_smoke(wa):
-    # The corpus itself is gitignored, so "no corpus at all" is a legitimate
-    # skip. A corpus that EXISTS but is missing a named image is not — that is
-    # a corpus/test mismatch, and skipping it is how this sensor went quiet
-    # through the 2026-07-28 re-fit (it named LimeZu positives that no longer
-    # exist). Assert instead, so a corpus change has to update its readers.
-    if not wa.has_corpus:
-        pytest.skip("gitignored corpus not present on this checkout")
-    rgb = wa.corpus_dir / "positive" / "pos-owned-square-close.png"  # ct2
-    rgba = wa.corpus_dir / "negative" / "neg-city-street-void.png"   # ct6
+    # Both PNG colour types the decoder has to handle, on REAL corpus bytes.
+    #
+    # Re-pointed 2026-07-30 onto two members a plain checkout REBUILDS — the
+    # synthetic void negative (ct2, generated from the tracked owned pack) and
+    # the palette atlas (ct6, a byte-copy of a tracked file). It used to name a
+    # live capture and a LimeZu screenshot, neither of which any checkout can
+    # reconstruct, so this arm skipped in the only environment that runs it.
+    # Same two colour types, same assertion, now actually executed in CI.
+    rgb = wa.corpus_dir / "negative" / "neg-owned-void.png"      # ct2
+    rgba = wa.corpus_dir / "palette" / "pal-owned-atlas.png"     # ct6
     for p in (rgb, rgba):
         assert p.exists(), (
-            f"{p.name} is named by this test but not in the corpus — "
-            f"re-point the test at a current corpus image (both PNG colour "
-            f"types must stay covered: ct2 truecolour and ct6 truecolour+alpha)")
+            f"{p.name} is named by this test but not in the corpus — it is "
+            f"declared REBUILDABLE in build_corpus.REGISTRY, so its absence "
+            f"means the rebuild recipe stopped working (both PNG colour types "
+            f"must stay covered: ct2 truecolour and ct6 truecolour+alpha)")
         w, h, buf = wa.png.decode(p)
         assert (w, h) == wa.png.read_size(p)
         assert len(buf) == w * h * 4
-        assert any(buf[i + 3] for i in range(0, 400, 4))  # some opacity
+        # SOME opacity, over the WHOLE buffer. Scanning only the first 100
+        # pixels was fine for a screenshot and wrong for a sprite atlas, whose
+        # top-left corner is empty by construction — the claim is that the
+        # decoder produced real alpha data, not that pixel 0 is opaque.
+        assert any(buf[i] for i in range(3, len(buf), 4)), (
+            f"{p.name} decoded to a fully transparent buffer")
