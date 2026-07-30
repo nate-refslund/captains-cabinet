@@ -21,7 +21,18 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 8343cb2177164c1439b77f0e5ef1484b9d31c1876ce16d7ee85d0965e7d1f548
+Reviewed-Scope-Digest: 47360479cf3453cf4ed462d63d55f1b604242e7bd9c5f1edb8291591682717f4
+
+(MERGE RE-BIND, 2026-07-30, `fix/genesis-derives-from-current-answers` x
+master. Both sides re-bound this line, so the merge left two; ONE value stands
+and it is RECOMPUTED over this merge commit rather than picked from either
+parent. Master's side moved `cabinet/scripts/egg-export-manifest.txt` by one
+`expect-present` row; this branch's side moved
+`cabinet/config/cognitive-architecture-contract.yml`, raising
+`framework_production_noncomment_lines` visibly. The two sets are DISJOINT and
+NO COG-4 implementation byte moved on either side. Both sections stand verbatim
+below, master's first; the arm counts in this branch's section are corrected to
+25/19, the branch having grown one arm after that note was written.)
 
 (MERGE RE-BIND, 2026-07-30, `feat/companion-desk-pet` x master. Both sides
 re-bound this line, so the merge left two; ONE value stands and it is
@@ -31,6 +42,31 @@ recomputed over this merge commit. Master's side moved
 sets are disjoint and NO COG-4 implementation byte moved on either side —
 verified by expanding the resolved scope with `git ls-tree -r` on both parents
 and diffing. Both sections stand verbatim below, master's first.)
+
+(RE-BOUND 2026-07-30 on `fix/genesis-derives-from-current-answers`, previous
+value `7f842bac…`. ONE in-scope path moved and NO COG-4 implementation byte
+did: `cabinet/config/cognitive-architecture-contract.yml` raises
+`framework_production_noncomment_lines` VISIBLY 61724 -> 61966 (+242 measured
+over this tree with cognitive-architecture-census.py, observed 76505 vs the
+then-effective 76263 — never an allowance, because neither half has a deletion
+gate that could ever fire). What it pays for is two defects measured on a live
+agnostic-proof hatch, through the answers file's OWN sanctioned refinement
+path, both inside framework/onboarding/genesis.py. (1) Every genesis
+derivation is idempotent by contract and NEITHER could notice its INPUT had
+moved, so an operator who replaced the placeholder lane with her real one
+still read "You staked First Lane as a lane at genesis" over a Library
+baseline researching the placeholder label; each artifact now records the
+digest of the answers it was derived from, and a mismatch re-derives genesis's
+own untouched drafts and supersedes the brief into the tree's dated
+_pre-adopt archive, while ratified rows, operator-edited rows and every
+UNKNOWN keep today's behaviour byte-for-byte. (2) A lane declaring
+`task_system: none` and `repos: []` was handed a proof naming both; the proof,
+the WHAT line and the headline now derive from what the lane declared, falling
+back to this tree's existing org-journal receipt vocabulary rather than a new
+noun, with a declared task system byte-identical and pinned. Census PASS at
+observed == maximum with zero headroom; ZERO new production modules, so no
+bijection class moves. 25 new arms, 19 of which fail against pre-change bytes
+in a separate pristine clone. The prior notes stand below.)
 (RE-BOUND 2026-07-30 on `fix/script-agnostic-recall`, previous value
 `527a73d2…`. ONE in-scope path moved and NO COG-4 implementation byte did:
 `cabinet/config/cognitive-architecture-contract.yml` raises

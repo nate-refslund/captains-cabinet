@@ -603,7 +603,65 @@ budgets:
     # written out, and the honest floor for a script that writes no spaces —
     # which is the house style and the reason the next reader will not
     # re-narrow it.
-    maximum: 61724
+    #
+    # 61724 -> 61966 (+242 measured 2026-07-30 via cognitive-architecture-census.py,
+    # observed 76505 vs the then-effective 76263):
+    # fix/genesis-derives-from-current-answers — two defects measured on a live
+    # agnostic-proof hatch, through the answers file's OWN sanctioned refinement
+    # path (--defaults hatch, edit the answers, re-run generate-instance.py,
+    # re-run first-briefing.sh --local), both in framework/onboarding/genesis.py.
+    #   +~165 THE ANSWERS DIGEST. Every genesis derivation is idempotent by
+    #         contract — the proposals file is write-once because the Captain
+    #         may have edited the drafts, a delivered brief is never re-fetched
+    #         so a re-run cannot burn a CLI call — and NEITHER had any way to
+    #         notice that the answers underneath it had moved. So an operator
+    #         who replaced the placeholder lane with her real one and wrote a
+    #         real mission still read "You staked First Lane as a lane at
+    #         genesis" in her first briefing, over a Library baseline
+    #         researching the placeholder label. Every operator who refines
+    #         after a defaults hatch got a briefing about nobody's business.
+    #         Each artifact now records the digest of the answers it was
+    #         derived from; a MISMATCH — never mere existence, never a clock —
+    #         re-derives genesis's own untouched drafts and supersedes the brief
+    #         into the tree's dated _pre-adopt archive. Ratified rows, rows the
+    #         operator edited (detected by comparing the row against the digest
+    #         of what the recorded derivation produced, not by a marker anyone
+    #         has to remember to set) and rows another organ merged in all
+    #         survive verbatim, and every UNKNOWN — no answers file, no recorded
+    #         digest, an unparseable answers file — keeps today's behaviour
+    #         byte-for-byte, so the idempotence both contracts were written for
+    #         is untouched and the cost is bounded to genuine change.
+    #   +~40  PROOF LANGUAGE FROM WHAT THE ORG DECLARED. A lane at COMPANY
+    #         altitude declaring task_system: none and repos: [] — an inn — was
+    #         handed "traced end-to-end: task → change → verified deploy/close"
+    #         and "A closed task in the lane's task system linked to the shipped
+    #         change". The card's own inputs SAY there is neither. Same failure
+    #         the altitude conditioning was landed for, one field over: altitude
+    #         fixed WHO may decide and left WHAT the work is made of hardcoded.
+    #         The proof is now conditioned on the lane's own declaration and
+    #         falls back to this tree's existing completion vocabulary (the
+    #         action's receipt in the org journal) rather than a new noun. A
+    #         declared task system keeps today's wording byte-identical, pinned
+    #         by an arm that asserts the exact strings.
+    #   +~37  the shared helpers the two halves need (the digest itself, the
+    #         row digest, the preserved-header extraction the merge writer
+    #         already had inline and now shares) plus the guard the landing
+    #         self-review found by attacking the rewrite: a doc carrying a live
+    #         digest and a MANGLED outcomes key would have been written back as
+    #         its own keys — a clobber dressed as a re-derivation, on the file
+    #         this seam exists to protect. Refused now, exactly the way
+    #         merge_proposals already refuses an unreadable file.
+    # RAISED VISIBLY, never a temporary allowance: an allowance promises a
+    # deletion gate, and neither a derivation that follows its own inputs nor a
+    # proof line an operator outside one trade can reach is ever getting
+    # deleted. Roughly two thirds of the mass is docstring — the measurement,
+    # the four conditions under which a row is safe to re-derive, and what each
+    # degenerate end does — which is the house style and NOT reformatted into
+    # # comments to duck this budget. Zero new production MODULES
+    # (framework_production_modules unchanged at 248: every helper lands inside
+    # the existing genesis module, and the 24 new arms are tests).
+    # observed == maximum, zero headroom.
+    maximum: 61966
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
