@@ -21,7 +21,16 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: RECOMPUTED-BELOW
+Reviewed-Scope-Digest: 0606d9d7c9878b42c7cf69ea789f38ab040f0f7c1cb95ef96a07651ea5a0fe13
+
+(MERGE RE-BIND, 2026-07-31, `fix/stale-census-unknown` x master, recomputed
+over the merge commit — the note below is master's, kept verbatim, and its
+reasoning carries: this branch's contract row (`unmeasured-is-not-zero`, +3
+non-comment lines for three plain-language strings) is disjoint from every
+other raise, and its only other in-scope blob is
+`framework/watchdog/registry.py`'s launchd observability contract, which no
+COG-4 surface reads. The artifact is excluded from its own digest, so writing
+this line does not move it.)
 
 (MERGE RE-BIND, 2026-07-30, `fix/detector-vocabulary-as-data` x master —
 the SECOND such merge on this branch, both recorded. Both sides re-bound
