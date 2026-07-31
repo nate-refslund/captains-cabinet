@@ -11,6 +11,7 @@
 import { NextResponse } from 'next/server'
 import { verifySession } from '@/lib/auth'
 import { getDashboardConfig } from '@/lib/config'
+import { isNoAuthPosture } from '@/lib/auth-posture'
 
 /** Session user context extracted from cookie */
 export interface SessionUser {
@@ -72,25 +73,16 @@ export async function requireProvisioningAccess(): Promise<
 }
 
 /**
- * The explicit no-auth posture that middleware.ts ALSO bypasses (its first
- * check): MOCK_DATA=true (the demo/kiosk toggle) or development with no
- * password set. Kept identical to the middleware so page navigation and
- * action dispatch share ONE auth posture — otherwise a demo build would let
- * pages render but return "Unauthorized" from every button.
+ * The no-auth posture, SHARED with middleware.ts rather than copied.
  *
- * This NEVER opens a production deploy: MOCK_DATA is a dev/demo affordance, so
- * it is honoured ONLY when NODE_ENV !== 'production' (mirrored by the
- * middleware's first check). If MOCK_DATA is somehow set on a production
- * build, this gate stays false and the signed-session check below is enforced
- * — a single env var can never re-open a production deploy. The dev
- * no-password branch is already production-inert (it requires
- * NODE_ENV === 'development').
+ * Page navigation and action dispatch must agree, or a no-auth build renders
+ * pages and returns "Unauthorized" from every button. They used to agree by
+ * hand — two copies of one predicate, each commented "keep identical to the
+ * other" — which is a rule with a drift date. The decision now lives in
+ * lib/auth-posture.ts, and `MOCK_DATA` is no longer one of its triggers.
  */
-function isNoAuthPosture(): boolean {
-  return (
-    (process.env.MOCK_DATA === 'true' && process.env.NODE_ENV !== 'production') ||
-    (!process.env.DASHBOARD_PASSWORD && process.env.NODE_ENV === 'development')
-  )
+function noAuthPosture(): boolean {
+  return isNoAuthPosture(process.env)
 }
 
 /**
@@ -108,6 +100,6 @@ function isNoAuthPosture(): boolean {
  * primitive is introduced.
  */
 export async function requireDashboardAuth(): Promise<boolean> {
-  if (isNoAuthPosture()) return true
+  if (noAuthPosture()) return true
   return verifySession()
 }
