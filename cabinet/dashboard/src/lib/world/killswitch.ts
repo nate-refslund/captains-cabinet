@@ -171,9 +171,22 @@ export function fallbackCommandFor(intent: 'activate' | 'deactivate'): string {
 const NO_STORE_REASON =
   'no store was reached — the world could not ask anything about the emergency stop'
 
-/** The reason for a dashboard running on fabricated data. */
-export const MOCK_STORE_REASON =
-  'this dashboard has no store configured (REDIS_URL unset) — it is showing demo data, not the fleet'
+/**
+ * The reason for a dashboard that is not talking to the fleet's store.
+ *
+ * Split in two (2026-07-31) because the single string became FALSE for half
+ * the cases it covered. It read "…it is showing demo data, not the fleet" and
+ * was used for BOTH postures — but an unconfigured dashboard no longer shows
+ * demo data at all, it shows honest absences, so the banner was making a claim
+ * about the page that the page had stopped being true of. A wrong sentence in
+ * the unknown-reason slot is the same defect one level down.
+ */
+export const NO_STORE_CONFIGURED_REASON =
+  'this dashboard has no store configured (REDIS_URL unset), so it has never asked the fleet anything about the emergency stop'
+
+export const DEMO_STORE_REASON =
+  'this dashboard is showing demo data (an explicit non-production opt-in), not the fleet — nothing here was read from your cabinet'
+
 
 /**
  * The reading carried by the chronicle daemon's presence snapshot.

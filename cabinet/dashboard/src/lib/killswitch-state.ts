@@ -25,16 +25,24 @@
 // importing it from a `'use client'` component breaks the client bundle at
 // build time, loudly. The pure half every client component needs lives in
 // `lib/world/killswitch.ts`, which imports nothing at all.
-import redis, { isMockRedis } from '@/lib/redis'
+import redis, { isMockRedis, storeReading } from '@/lib/redis'
 import {
-  MOCK_STORE_REASON,
+  DEMO_STORE_REASON,
+  NO_STORE_CONFIGURED_REASON,
   readingFromKey,
   unknownKillswitch,
   type KillswitchReading,
 } from '@/lib/world/killswitch'
 
 export async function readKillswitch(): Promise<KillswitchReading> {
-  if (isMockRedis) return unknownKillswitch(MOCK_STORE_REASON)
+  // Both not-live postures are unknown, and each says which one it is. They
+  // used to share one sentence that claimed the page was showing demo data —
+  // true of one posture and false of the other.
+  if (isMockRedis) {
+    return unknownKillswitch(
+      storeReading.fabricated ? DEMO_STORE_REASON : NO_STORE_CONFIGURED_REASON
+    )
+  }
   try {
     // `contacted: true` is earned: ioredis REJECTS on NOAUTH / NOPERM /
     // WRONGTYPE / LOADING rather than resolving them as data (which is what

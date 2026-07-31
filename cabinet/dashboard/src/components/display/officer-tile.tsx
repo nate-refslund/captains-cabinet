@@ -3,6 +3,7 @@
  *
  * Big status dot + slug + title + current task + WIP badge, sized to be
  * legible from across a room. Status colors:
+ *   unreadable        → dashed amber (heartbeat unparseable or future-dated)
  *   online            → green  (heartbeat < 15min)
  *   alive-but-stale   → amber  (heartbeat present but ≥ 15min old)
  *   offline           → zinc   (no heartbeat)
@@ -17,17 +18,19 @@ interface OfficerTileProps {
 }
 
 export default function OfficerTile({ officer, title }: OfficerTileProps) {
-  const { online, stale, wipCount, currentTaskTitle, blockedCount } = officer
+  const { online, stale, unknown, wipCount, currentTaskTitle, blockedCount } = officer
 
   // Status → palette
-  const dotColor = online ? 'bg-green-500' : stale ? 'bg-amber-500' : 'bg-zinc-600'
+  // `unknown` leads every ternary: an unreadable heartbeat may never fall out
+  // the green end of a chain on a wall nobody is standing next to.
+  const dotColor = unknown ? 'bg-amber-400' : online ? 'bg-green-500' : stale ? 'bg-amber-500' : 'bg-zinc-600'
   const dotGlow = online
     ? 'shadow-[0_0_16px_3px_rgba(34,197,94,0.6)]'
     : stale
       ? 'shadow-[0_0_16px_3px_rgba(245,158,11,0.5)]'
       : ''
-  const statusLabel = online ? 'online' : stale ? 'stale' : 'offline'
-  const statusText = online ? 'text-green-400' : stale ? 'text-amber-400' : 'text-zinc-500'
+  const statusLabel = unknown ? '? unreadable' : online ? 'online' : stale ? 'stale' : 'offline'
+  const statusText = unknown ? 'text-amber-300' : online ? 'text-green-400' : stale ? 'text-amber-400' : 'text-zinc-500'
   const ring = online
     ? 'border-green-500/30'
     : stale
@@ -41,7 +44,7 @@ export default function OfficerTile({ officer, title }: OfficerTileProps) {
       {/* Header row: dot + slug + status label */}
       <div className="flex items-center gap-4">
         <span
-          className={`inline-block h-5 w-5 shrink-0 rounded-full ${dotColor} ${dotGlow} ${online ? 'animate-pulse' : ''}`}
+          className={`inline-block h-5 w-5 shrink-0 rounded-full ${dotColor} ${dotGlow} ${online && !unknown ? 'animate-pulse' : ''}`}
           aria-hidden
         />
         <div className="min-w-0 flex-1">

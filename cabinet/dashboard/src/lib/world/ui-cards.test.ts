@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import {
   formatMicro,
   freshSeconds,
+  MAX_SKEW_S,
   parseActionCard,
   railOrder,
   RING_FRESH_S,
@@ -58,6 +59,35 @@ describe('freshness + strict cost-viz', () => {
     expect(freshSeconds('2026-07-09T11:59:00Z', now)).toBe(60)
     expect(freshSeconds(undefined, now)).toBeNull()
     expect(freshSeconds('not-a-date', now)).toBeNull()
+  })
+
+  describe('FUTURE-DATED activity was a PERMANENT green ring', () => {
+    // `Math.max(0, …)` clamped arbitrary forward skew to 0, and ringFor reads
+    // 0 as maximally fresh — so a skewed or stopped writer painted ✓ "active"
+    // on an officer that had done nothing, and nothing aged it out.
+    const now = Date.parse('2026-07-09T12:00:00Z')
+
+    it('a stamp beyond tolerated skew is null, not 0', () => {
+      expect(freshSeconds('2026-07-09T13:00:00Z', now)).toBeNull()
+      expect(freshSeconds('2030-01-01T00:00:00Z', now)).toBeNull()
+    })
+
+    it('small forward skew is still tolerated (rounding, not invention)', () => {
+      expect(freshSeconds(new Date(now + 30_000).toISOString(), now)).toBe(0)
+    })
+
+    it('the boundary is exactly MAX_SKEW_S', () => {
+      expect(freshSeconds(new Date(now + MAX_SKEW_S * 1000).toISOString(), now)).toBe(0)
+      expect(
+        freshSeconds(new Date(now + (MAX_SKEW_S + 1) * 1000 + 1).toISOString(), now)
+      ).toBeNull()
+    })
+
+    it('CONSEQUENCE: the ring is no longer green for a future stamp', () => {
+      const freshS = freshSeconds('2030-01-01T00:00:00Z', now)
+      expect(ringFor({ freshS, expected: true, present: true }).ring).not.toBe('green')
+      expect(ringFor({ freshS, expected: false, present: true }).ring).toBe('grey')
+    })
   })
   it('formatMicro renders $X.XX; absence is the grey em-dash, never $0.00', () => {
     expect(formatMicro(7_683_389)).toBe('$7.68')

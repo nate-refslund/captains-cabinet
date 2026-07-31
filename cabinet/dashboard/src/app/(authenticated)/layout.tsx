@@ -6,6 +6,8 @@ import { getProjects, getActiveProject } from '@/actions/projects'
 import { getDashboardConfig } from '@/lib/config'
 import { readKillswitch } from '@/lib/killswitch-state'
 import { glanceOf } from '@/lib/world/killswitch'
+import StorePostureBanner from '@/components/store-posture-banner'
+import { storeReading } from '@/lib/redis'
 
 export default async function AuthenticatedLayout({
   children,
@@ -69,6 +71,17 @@ export default async function AuthenticatedLayout({
       {/* Main content area */}
       <main className="pt-14 md:pl-64 md:pt-0">
         <div className="mx-auto max-w-6xl px-6 py-8 sm:px-10 lg:px-12">
+          {/*
+            What produced the numbers below — on EVERY authenticated page, above
+            everything, before the Captain reads a single figure. Zero pixels
+            when the store is live. A dashboard with no REDIS_URL used to be
+            pixel-indistinguishable from a healthy org; the fabrication is gone
+            now, but "nothing was measured" still has to SAY so rather than
+            leaving the Captain to infer it from empty cards.
+          */}
+          <div className="mb-6 empty:mb-0">
+            <StorePostureBanner reading={storeReading} />
+          </div>
           {children}
         </div>
       </main>

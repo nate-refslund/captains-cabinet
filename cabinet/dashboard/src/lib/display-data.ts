@@ -21,6 +21,7 @@ import { listClaudeNativeTasks, countDrift } from '@/lib/claude-native-tasks'
 import { dockerExec } from '@/lib/docker'
 import { getActiveProjectSlug } from '@/lib/config'
 import redis from '@/lib/redis'
+import { freshnessOf } from '@/lib/liveness'
 
 // ---------------------------------------------------------------------------
 // Public shape
@@ -31,6 +32,9 @@ export interface DisplayOfficer {
   online: boolean
   /** true when alive (heartbeat present) but stale (>15min) — amber state */
   stale: boolean
+  /** true when the heartbeat could not be READ (unparseable / future-dated).
+   *  Neither online nor offline: the wall must not pick one. */
+  unknown: boolean
   wipCount: number
   currentTaskTitle: string | null
   blockedCount: number
@@ -95,11 +99,19 @@ async function resolveActiveContext(): Promise<string> {
   }
 }
 
-/** officer_slug → { online, stale } from heartbeat keys (<15min = online). */
+/**
+ * officer_slug → { online, stale, unknown } from heartbeat keys (<15min = online).
+ *
+ * `ageMs < TH` was TRUE for every future-dated stamp, so clock skew painted a
+ * dead officer online on the office wall permanently; and an unparseable stamp
+ * made `ageMs` NaN, so BOTH comparisons were false and the officer rendered
+ * with no state at all rather than an honest one. `unknown` is now its own
+ * answer and travels to the tile.
+ */
 async function getOfficerOnlineStatus(): Promise<
-  Record<string, { online: boolean; stale: boolean }>
+  Record<string, { online: boolean; stale: boolean; unknown: boolean }>
 > {
-  const out: Record<string, { online: boolean; stale: boolean }> = {}
+  const out: Record<string, { online: boolean; stale: boolean; unknown: boolean }> = {}
   try {
     const heartbeatKeys = await redis.keys('cabinet:heartbeat:*')
     const now = Date.now()
@@ -108,11 +120,11 @@ async function getOfficerOnlineStatus(): Promise<
         const slug = key.replace('cabinet:heartbeat:', '')
         if (slug.includes(':')) return
         const val = await redis.get(key)
-        if (val) {
-          const ageMs = now - new Date(val).getTime()
-          out[slug] = { online: ageMs < OFFLINE_THRESHOLD_MS, stale: ageMs >= OFFLINE_THRESHOLD_MS }
-        } else {
-          out[slug] = { online: false, stale: false }
+        const f = freshnessOf(val, now, OFFLINE_THRESHOLD_MS)
+        out[slug] = {
+          online: f.state === 'fresh',
+          stale: f.state === 'stale',
+          unknown: f.state === 'unknown',
         }
       })
     )
@@ -125,8 +137,12 @@ async function getOfficerOnlineStatus(): Promise<
 /** Compact relative age from an ISO timestamp. "—" handled by caller (null). */
 function relativeAge(iso: string | null): string | null {
   if (!iso) return null
+  // A future stamp used to clamp to "0s" — a fabricated recency on the wall.
+  // Unreadable AND future both return null, which the caller already renders
+  // as the honest em-dash.
+  const f = freshnessOf(iso, Date.now(), Number.MAX_SAFE_INTEGER)
+  if (f.state !== 'fresh' && f.state !== 'stale') return null
   const then = new Date(iso).getTime()
-  if (Number.isNaN(then)) return null
   const sec = Math.max(0, Math.floor((Date.now() - then) / 1000))
   if (sec < 60) return `${sec}s`
   const min = Math.floor(sec / 60)
@@ -276,11 +292,12 @@ export async function getDisplayData(): Promise<DisplayData> {
   const officers: DisplayOfficer[] = officerSlugs.map((slug) => {
     const board = boards[slug]
     const wip = board?.wip ?? []
-    const st = status[slug] ?? { online: false, stale: false }
+    const st = status[slug] ?? { online: false, stale: false, unknown: false }
     return {
       slug,
       online: st.online,
       stale: st.stale,
+      unknown: st.unknown,
       wipCount: wip.length,
       currentTaskTitle: currentTaskOf(wip),
       blockedCount: wip.filter((t) => t.blocked).length,

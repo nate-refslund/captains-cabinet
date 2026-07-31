@@ -1,4 +1,19 @@
-const IS_MOCK = !process.env.REDIS_URL || process.env.MOCK_DATA === 'true'
+import {
+  isNotLiveStore,
+  resolveStorePosture,
+  type StoreReading,
+} from './store-posture'
+
+/**
+ * What produced everything this module hands out. See `lib/store-posture.ts`
+ * for the ruling; the short version is that `!REDIS_URL` used to be a licence
+ * to INVENT five officers and a randomised 30-day cost history, and is now an
+ * EMPTY store instead.
+ */
+export const storeReading: StoreReading = resolveStorePosture(process.env)
+
+/** Only an explicit, non-production opt-in reaches the seeded data below. */
+const IS_FABRICATED = storeReading.fabricated
 
 // Generate date strings for last N days
 function daysAgo(n: number): string {
@@ -13,6 +28,12 @@ const officers = ['cos', 'cto', 'cpo', 'cro', 'coo']
 const dailyCosts = [4250, 3800, 5100, 4700, 3200, 4900, 4450, 3600, 5200, 4100, 3900, 4600, 5000, 3700, 4300, 4800, 3500, 5300, 4000, 3100, 4400, 4950, 3850, 5050, 4150, 3650, 4550, 4750, 3350, 5150]
 const officerWeights: Record<string, number> = { cos: 0.30, cto: 0.25, cpo: 0.20, cro: 0.15, coo: 0.10 }
 
+/**
+ * The seeded demo store. Reachable ONLY from the explicit non-production
+ * opt-in — `IS_FABRICATED` gates whether it is ever installed as the client.
+ * In the `unconfigured` posture the store is a structurally EMPTY twin of this
+ * object, so every consumer takes its absent branch instead of reading a lie.
+ */
 const mockStore: Record<string, string> = {
   'cabinet:heartbeat:cos': new Date().toISOString(),
   'cabinet:heartbeat:cto': new Date(Date.now() - 120000).toISOString(),
@@ -52,7 +73,11 @@ const mockStore: Record<string, string> = {
 const mockHashStore: Record<string, Record<string, string>> = {}
 
 // Populate mock token cost data — 30 days for getCostHistory backfill.
-for (let i = 0; i < 30; i++) {
+// Gated: in the `unconfigured` posture these keys are never written, so there
+// is no fabricated dollar figure in this process for anything to reach. The
+// gate is at the WRITE, not at the read, on purpose — a value that was never
+// created cannot be surfaced by a future consumer that forgets to check.
+for (let i = 0; IS_FABRICATED && i < 30; i++) {
   const dateStr = daysAgo(i)
   const hash: Record<string, string> = {}
   for (const role of officers) {
@@ -74,7 +99,7 @@ for (let i = 0; i < 30; i++) {
 
 // Mock context window data per officer (for health page)
 const mockContextPcts: Record<string, number> = { cos: 38.2, cto: 67.5, cpo: 22.1, cro: 45.8, coo: 81.4 }
-for (const role of officers) {
+for (const role of IS_FABRICATED ? officers : []) {
   const pct = mockContextPcts[role]
   mockHashStore[`cabinet:cost:tokens:${role}`] = {
     last_context_pct: String(pct),
@@ -94,14 +119,53 @@ const mockRedis = {
       ...Object.keys(mockHashStore).filter(k => k.startsWith(prefix)),
     ]
   },
-  hgetall: async (key: string) => mockHashStore[key] || null,
+  hgetall: async (key: string): Promise<Record<string, string> | null> =>
+    mockHashStore[key] || null,
+}
+
+/**
+ * The `unconfigured` client: the same shape, holding nothing.
+ *
+ * NOT a real ioredis client pointed at a default endpoint — an ioredis client
+ * with nothing behind it QUEUES commands rather than failing, which would swap
+ * a lie for a hang on every page. An empty store answers `null` / `[]`
+ * immediately, so every consumer takes the branch it already has for absence.
+ *
+ * Writes are accepted and kept in-process for the life of the request handler,
+ * because refusing them would turn a disclosed no-store dashboard into a pile
+ * of 500s; nothing here is persisted, and `storeReading` is what tells the
+ * surface not to believe any of it.
+ */
+const emptyStore: Record<string, string> = {}
+const unconfiguredRedis = {
+  get: async (key: string) => emptyStore[key] ?? null,
+  set: async (key: string, value: string) => {
+    emptyStore[key] = value
+    return 'OK'
+  },
+  del: async (key: string) => {
+    delete emptyStore[key]
+    return 1
+  },
+  keys: async (pattern: string) => {
+    const prefix = pattern.replace('*', '')
+    return Object.keys(emptyStore).filter((k) => k.startsWith(prefix))
+  },
+  hgetall: async (_key: string): Promise<Record<string, string> | null> => null,
 }
 
 let redis: typeof mockRedis
 
-if (IS_MOCK) {
-  console.log('[dashboard] Using mock Redis (set REDIS_URL to connect to real Redis)')
+if (IS_FABRICATED) {
+  console.log(
+    '[dashboard] DEMO DATA: every officer, heartbeat and dollar figure is invented (MOCK_DATA / CABINET_DEMO_DATA is set, and this is not production)'
+  )
   redis = mockRedis
+} else if (storeReading.posture === 'unconfigured') {
+  console.log(
+    '[dashboard] NO STORE: REDIS_URL is unset — every reading renders as an honest unknown. Nothing is invented.'
+  )
+  redis = unconfiguredRedis
 } else {
   const Redis = require('ioredis')
   const realRedis = new Redis(process.env.REDIS_URL)
@@ -109,23 +173,106 @@ if (IS_MOCK) {
 }
 
 /**
- * TRUE when this process is serving FABRICATED data from `mockStore`, not the
- * fleet's store. Exported (2026-07-31) because the killswitch readers must be
- * able to say so: with `REDIS_URL` unset, `get('cabinet:killswitch')` returns
- * the seeded `''`, which `=== 'active'` turned into a confident "the emergency
- * stop is not engaged" — an invented reading about the org's emergency stop,
- * from a store that does not exist. Surfaces that report a SAFETY state must
- * render this as unknown; the wider "mock mode discloses nothing anywhere"
- * problem is bigger than this file and is filed, not fixed here.
+ * TRUE when this process is NOT talking to the fleet's store — `demo` OR
+ * `unconfigured`.
+ *
+ * Exported (2026-07-31) because the killswitch readers must be able to say so:
+ * with `REDIS_URL` unset, `get('cabinet:killswitch')` used to return the seeded
+ * `''`, which `=== 'active'` turned into a confident "the emergency stop is not
+ * engaged" — an invented reading about the org's emergency stop, from a store
+ * that does not exist.
+ *
+ * It still covers BOTH not-live postures after the seeded store was gated
+ * behind an explicit opt-in, and that is deliberate: the empty `unconfigured`
+ * store answers `null`, and `readingFromKey(null, contacted: true)` is a
+ * MEASURED "clear". An empty store is not a measurement, so it must never earn
+ * `contacted`.
  */
-export const isMockRedis = IS_MOCK
+export const isMockRedis = isNotLiveStore(storeReading)
 
 export default redis
 
 export interface DailyCostEntry {
   date: string
-  total: number
+  /**
+   * NULL = no cost record exists for this date, or one exists and cannot be
+   * totalled. A MEASURED zero is `0`.
+   *
+   * This was `number` and every failure produced `0`, which the surfaces then
+   * printed as `$0.00` — a confident claim about money, from a store that had
+   * answered nothing. The type is the enforcement: `formatCents(total)` no
+   * longer compiles, so a consumer cannot forget the case the way `|| 0` let
+   * it.
+   */
+  total: number | null
+  /** Per-officer cents. EMPTY when `total` is null — never a zeroed roster. */
   officers: Record<string, number>
+  /** Plain words for why nothing was measured. Null on a measured reading. */
+  unmeasuredReason: string | null
+}
+
+/**
+ * Total ONE day's cost hash — pure, exported, and driven directly.
+ *
+ * Lifted out of `getCostHistory` (2026-07-31) for the same reason
+ * `lib/world/killswitch.ts` holds `readingFromKey`: the degenerate ends of a
+ * money reading — absent hash, empty hash, a field that is not a number — are
+ * where the defect lived, and they must be testable without standing up a
+ * store. A test that can only reach this logic through a live client is a test
+ * that will not be written for the ends that matter.
+ */
+export function sumDailyCost(
+  hash: Record<string, string> | null | undefined,
+  officers: string[]
+): Omit<DailyCostEntry, 'date'> {
+  // No record for this date is NOT a day that cost nothing. It is a day nobody
+  // wrote down.
+  if (!hash || Object.keys(hash).length === 0) {
+    return {
+      total: null,
+      officers: {},
+      unmeasuredReason: 'no cost record was written for this date',
+    }
+  }
+  const officerCosts: Record<string, number> = {}
+  let total = 0
+  let malformedField: string | null = null
+
+  // FW-072 / S3 (Pool Phase 1A): the cost field shape is either legacy
+  // `<officer>_cost_micro` (pre-pool) OR per-project
+  // `<officer>_<project>_cost_micro` (pool mode). Sum both shapes per officer.
+  for (const role of officers) {
+    let micro = 0
+    for (const [field, value] of Object.entries(hash)) {
+      if (
+        field === `${role}_cost_micro` ||
+        (field.startsWith(`${role}_`) && field.endsWith('_cost_micro'))
+      ) {
+        // `parseInt(value || '0', 10) || 0` swallowed a non-numeric field into
+        // a MEASURED zero, so a corrupt row silently shrank the total the
+        // Captain reads as his spend. A total missing one of its parts is a
+        // wrong number, and about money a wrong number is worse than none.
+        const n = Number.parseInt(value ?? '', 10)
+        if (!Number.isFinite(n)) {
+          malformedField = malformedField ?? field
+          continue
+        }
+        micro += n
+      }
+    }
+    const cents = Math.round(micro / 10000)
+    officerCosts[role] = cents
+    total += cents
+  }
+
+  if (malformedField) {
+    return {
+      total: null,
+      officers: {},
+      unmeasuredReason: `the cost record for this date holds a value that is not a number (${malformedField}), so it cannot be totalled`,
+    }
+  }
+  return { total, officers: officerCosts, unmeasuredReason: null }
 }
 
 export async function getCostHistory(days: number): Promise<DailyCostEntry[]> {
@@ -146,33 +293,7 @@ export async function getCostHistory(days: number): Promise<DailyCostEntry[]> {
     const dateStr = d.toISOString().split('T')[0]
 
     const hash = await redis.hgetall(`cabinet:cost:tokens:daily:${dateStr}`)
-    const officerCosts: Record<string, number> = {}
-    let total = 0
-    // FW-072 / S3 (Pool Phase 1A): cost field shape is now either legacy
-    // `<officer>_cost_micro` (pre-pool) OR per-project
-    // `<officer>_<project>_cost_micro` (pool mode). Sum both shapes per
-    // officer by scanning hash keys. One match in pre-pool, N matches in
-    // pool mode (one per project the officer touched today). Hash field
-    // naming is the only source-of-truth — legacy callsites reading the
-    // single field would silently miss pool-mode totals.
-    for (const role of officers) {
-      let micro = 0
-      if (hash) {
-        for (const [field, value] of Object.entries(hash)) {
-          if (
-            field === `${role}_cost_micro` ||
-            (field.startsWith(`${role}_`) && field.endsWith('_cost_micro'))
-          ) {
-            micro += parseInt(value || '0', 10) || 0
-          }
-        }
-      }
-      const cents = Math.round(micro / 10000)
-      officerCosts[role] = cents
-      total += cents
-    }
-
-    entries.push({ date: dateStr, total, officers: officerCosts })
+    entries.push({ date: dateStr, ...sumDailyCost(hash, officers) })
   }
 
   return entries
@@ -187,7 +308,8 @@ export interface TokenCostEntry {
     cacheRead: number
     costMicro: number
   }>
-  totalCostMicro: number
+  /** NULL = no token record for this date. A measured zero is `0`. */
+  totalCostMicro: number | null
 }
 
 export async function getTokenCostHistory(days: number): Promise<TokenCostEntry[]> {
@@ -205,6 +327,10 @@ export async function getTokenCostHistory(days: number): Promise<TokenCostEntry[
     const dateStr = d.toISOString().split('T')[0]
 
     const hash = await redis.hgetall(`cabinet:cost:tokens:daily:${dateStr}`)
+    if (!hash || Object.keys(hash).length === 0) {
+      entries.push({ date: dateStr, officers: {}, totalCostMicro: null })
+      continue
+    }
     const officerData: TokenCostEntry['officers'] = {}
     let totalCostMicro = 0
 
@@ -212,7 +338,6 @@ export async function getTokenCostHistory(days: number): Promise<TokenCostEntry[
     // `<officer>_<dim>` (pre-pool) OR per-project `<officer>_<project>_<dim>`
     // (pool mode). Sum both shapes per officer per dimension.
     for (const role of officers) {
-      if (!hash || Object.keys(hash).length === 0) continue
       const dims = ['input', 'output', 'cache_write', 'cache_read', 'cost_micro']
       const sums: Record<string, number> = { input: 0, output: 0, cache_write: 0, cache_read: 0, cost_micro: 0 }
       for (const [field, value] of Object.entries(hash)) {

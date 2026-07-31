@@ -116,7 +116,8 @@ interface EnginePayload {
   evalPrev: EngineEval | null
   eval: EngineEval | null
   weather: WeatherSignals
-  orgEventsTotal: number
+  /** null = the keyframe arrived without this field — NOT a day-zero org. */
+  orgEventsTotal: number | null
   /** Isle berth bindings (instance world-state, server-folded — Wave G).
    * Absent/empty ⇒ slots render mist (honest absence, no invented names). */
   berths?: (string | null)[]
@@ -468,6 +469,9 @@ export default function EngineClient({
   const geo: WorldGeo = useMemo(
     () =>
       buildWorldGeo({
+        // The geometry still needs a number; the ANNOUNCEMENT is what was
+        // missing. `orgEventsUnknown` below carries it to the badge so an
+        // unmeasured island is never drawn silently at day-zero size.
         orgEventsTotal: engine?.orgEventsTotal ?? 0,
         lanes: engine?.eval?.lanes ?? {},
         berths: engine?.berths ?? [],
@@ -1009,6 +1013,15 @@ export default function EngineClient({
         {engine && !engine.eval && (
           <span data-world-census-badge className="rounded bg-amber-900/80 px-2 py-1 font-medium text-amber-200">
             census unavailable — the world renders its egg
+          </span>
+        )}
+        {engine && engine.eval && engine.orgEventsTotal === null && (
+          <span
+            data-world-census-badge="field-missing"
+            className="rounded bg-amber-900/80 px-2 py-1 font-medium text-amber-200"
+          >
+            island size unmeasured — the census keyframe carries no event total,
+            so this is the egg, not a small org
           </span>
         )}
         {grammar?.pending !== false && (

@@ -22,7 +22,8 @@ import {
   killswitchTitle,
   killswitchWord,
   measuredKillswitch,
-  MOCK_STORE_REASON,
+  DEMO_STORE_REASON,
+  NO_STORE_CONFIGURED_REASON,
   PRESENCE_MAX_AGE_MS,
   PRESENCE_MAX_SKEW_MS,
   readingFromKey,
@@ -255,12 +256,18 @@ describe('readingFromKey — the direct GET path', () => {
     expect(readingFromKey('', true).engaged).toBeNull()
   })
 
-  it('a caller can name its own not-contacted reason (mock mode does)', () => {
-    expect(readingFromKey(null, false, MOCK_STORE_REASON).unknownReason).toBe(
-      MOCK_STORE_REASON
-    )
-    expect(MOCK_STORE_REASON).toMatch(/REDIS_URL/)
-    expect(MOCK_STORE_REASON).toMatch(/demo data/)
+  it('a caller can name its own not-contacted reason, per store posture', () => {
+    // Two reasons, not one (2026-07-31). The single string said "it is showing
+    // demo data" and was used for BOTH not-live postures — but an unconfigured
+    // dashboard shows honest absences, not demo data, so half the time the
+    // banner made a false claim about the page it was printed on.
+    for (const reason of [NO_STORE_CONFIGURED_REASON, DEMO_STORE_REASON]) {
+      expect(readingFromKey(null, false, reason).unknownReason).toBe(reason)
+      expect(reason.toLowerCase()).not.toMatch(/not engaged|inactive|clear/)
+    }
+    expect(NO_STORE_CONFIGURED_REASON).toMatch(/REDIS_URL/)
+    expect(NO_STORE_CONFIGURED_REASON).not.toMatch(/showing demo data/)
+    expect(DEMO_STORE_REASON).toMatch(/demo data/)
   })
 })
 

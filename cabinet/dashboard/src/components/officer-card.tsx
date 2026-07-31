@@ -4,7 +4,9 @@ import { useTransition } from 'react'
 import Link from 'next/link'
 import { startOfficer, stopOfficer, restartOfficer } from '@/actions/officers'
 
-type OfficerStatus = 'running' | 'stopped' | 'no-heartbeat'
+/** `unknown` = the heartbeat could not be read at all (unparseable, or stamped
+ *  in the future). Not running, not stopped — unread. */
+type OfficerStatus = 'running' | 'stopped' | 'no-heartbeat' | 'unknown'
 
 interface OfficerCardProps {
   role: string
@@ -43,12 +45,14 @@ function StatusBadge({ status }: { status: OfficerStatus }) {
     running: 'bg-green-900/50 text-green-500 border-green-500/30',
     stopped: 'bg-red-900/50 text-red-500 border-red-500/30',
     'no-heartbeat': 'bg-amber-900/50 text-amber-500 border-amber-500/30',
+    unknown: 'border-dashed bg-amber-900/20 text-amber-300 border-amber-400/60',
   }
 
   const labels = {
     running: 'Running',
     stopped: 'Stopped',
     'no-heartbeat': 'No heartbeat',
+    unknown: '? Heartbeat unreadable',
   }
 
   return (
@@ -183,7 +187,7 @@ export default function OfficerCard({
             Start
           </button>
         )}
-        {(status === 'running' || status === 'no-heartbeat') && (
+        {(status === 'running' || status === 'no-heartbeat' || status === 'unknown') && (
           <>
             <button
               onClick={handleStop}

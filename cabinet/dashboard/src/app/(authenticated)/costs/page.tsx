@@ -7,8 +7,19 @@ function formatCents(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`
 }
 
+/** Unmeasured money renders as the em-dash, never as $0.00 (world-rail dialect). */
+function formatCentsOrDash(cents: number | null | undefined): string {
+  if (cents === null || cents === undefined) return '—'
+  return formatCents(cents)
+}
+
 function formatMicro(micro: number): string {
   return `$${(micro / 1000000).toFixed(2)}`
+}
+
+function formatMicroOrDash(micro: number | null | undefined): string {
+  if (micro === null || micro === undefined) return '—'
+  return formatMicro(micro)
 }
 
 function formatTokens(tokens: number): string {
@@ -23,13 +34,28 @@ export default async function CostsPage() {
     getTokenCostHistory(7),
   ])
   const today = history[0]
-  const last7 = history.slice(0, 7).reverse()
-  const monthlyTotal = history.reduce((sum, d) => sum + d.total, 0)
+  // A day with NO cost record is not a day that cost nothing. Every aggregate
+  // below is computed over the MEASURED days only, and the count of days it
+  // could not read is printed next to it — a 30-day total that silently
+  // summed absences as zeros is a wrong number about money.
+  const measured = history.filter(
+    (d): d is typeof d & { total: number } => d.total !== null
+  )
+  const unmeasuredDays = history.length - measured.length
+  const last7 = measured.slice(0, 7).reverse()
+  const monthlyTotal =
+    measured.length > 0 ? measured.reduce((sum, d) => sum + d.total, 0) : null
 
   // Token-based data
   const tokenToday = tokenHistory.length > 0 ? tokenHistory[0] : null
-  const tokenLast7 = tokenHistory.slice(0, 7).reverse()
-  const token7dTotal = tokenHistory.reduce((sum, d) => sum + d.totalCostMicro, 0)
+  const tokenMeasured = tokenHistory.filter(
+    (d): d is typeof d & { totalCostMicro: number } => d.totalCostMicro !== null
+  )
+  const tokenLast7 = tokenMeasured.slice(0, 7).reverse()
+  const token7dTotal =
+    tokenMeasured.length > 0
+      ? tokenMeasured.reduce((sum, d) => sum + d.totalCostMicro, 0)
+      : null
 
   // Derive officer list from data (not hardcoded)
   const allOfficers = new Set<string>()
@@ -45,11 +71,17 @@ export default async function CostsPage() {
   const officerList = Array.from(allOfficers).sort()
 
   // Per-officer totals for today
-  const officerTodayData = today
-    ? Object.entries(today.officers)
-        .map(([role, value]) => ({ label: role.toUpperCase(), value, role }))
-        .sort((a, b) => b.value - a.value)
-    : []
+  const officerTodayData =
+    today && today.total !== null
+      ? Object.entries(today.officers)
+          .map(([role, value]) => ({ label: role.toUpperCase(), value, role }))
+          .sort((a, b) => b.value - a.value)
+      : []
+
+  const sevenDayAverage =
+    last7.length > 0
+      ? Math.round(last7.reduce((s, d) => s + d.total, 0) / last7.length)
+      : null
 
   // 7-day trend data
   const trendData = last7.map((d) => ({
@@ -79,28 +111,40 @@ export default async function CostsPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-xl border border-zinc-800 bg-zinc-900" style={{ padding: '24px' }}>
           <span className="text-sm text-zinc-500">Today</span>
+          {/* This literal was `'$0.00'` — a hardcoded dollar figure standing in
+              for "no reading". It is the only place in the app that asserted an
+              amount with nothing behind it at all. */}
           <p className="mt-1 text-3xl font-bold text-white">
-            {today ? formatCents(today.total) : '$0.00'}
+            {formatCentsOrDash(today?.total)}
           </p>
+          {today && today.total === null && (
+            <p className="mt-1 text-xs text-amber-300">
+              {today.unmeasuredReason ?? 'no cost reading — this is not $0.00'}
+            </p>
+          )}
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900" style={{ padding: '24px' }}>
           <span className="text-sm text-zinc-500">7-Day Average</span>
           <p className="mt-1 text-3xl font-bold text-white">
-            {formatCents(
-              Math.round(last7.reduce((s, d) => s + d.total, 0) / Math.max(last7.length, 1))
-            )}
+            {formatCentsOrDash(sevenDayAverage)}
           </p>
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900" style={{ padding: '24px' }}>
           <span className="text-sm text-zinc-500">Monthly Total (30d)</span>
           <p className="mt-1 text-3xl font-bold text-white">
-            {formatCents(monthlyTotal)}
+            {formatCentsOrDash(monthlyTotal)}
           </p>
+          {unmeasuredDays > 0 && (
+            <p className="mt-1 text-xs text-amber-300">
+              {unmeasuredDays} of {history.length} days have no cost reading and
+              are not counted — absent, not zero.
+            </p>
+          )}
         </div>
       </div>
 
       {/* Token-based real costs (from stop hook) */}
-      {tokenToday && tokenToday.totalCostMicro > 0 && (
+      {tokenToday && tokenToday.totalCostMicro !== null && tokenToday.totalCostMicro > 0 && (
         <>
           <div>
             <h2 className="text-lg font-semibold text-white">Real Token Usage</h2>
@@ -119,15 +163,20 @@ export default async function CostsPage() {
             <div className="rounded-xl border border-emerald-800/50 bg-emerald-950/30" style={{ padding: '24px' }}>
               <span className="text-sm text-emerald-400/70">7-Day Average</span>
               <p className="mt-1 text-3xl font-bold text-emerald-400">
-                {formatMicro(
-                  Math.round(tokenHistory.reduce((s, d) => s + d.totalCostMicro, 0) / Math.max(tokenHistory.length, 1))
+                {formatMicroOrDash(
+                  tokenMeasured.length > 0
+                    ? Math.round(
+                        tokenMeasured.reduce((s, d) => s + d.totalCostMicro, 0) /
+                          tokenMeasured.length
+                      )
+                    : null
                 )}
               </p>
             </div>
             <div className="rounded-xl border border-emerald-800/50 bg-emerald-950/30" style={{ padding: '24px' }}>
               <span className="text-sm text-emerald-400/70">7-Day Total</span>
               <p className="mt-1 text-3xl font-bold text-emerald-400">
-                {formatMicro(token7dTotal)}
+                {formatMicroOrDash(token7dTotal)}
               </p>
             </div>
           </div>
@@ -223,12 +272,25 @@ export default async function CostsPage() {
               {history.map((day) => (
                 <tr key={day.date} className="border-b border-zinc-800/50">
                   <td className="text-zinc-300" style={{ padding: '10px 12px' }}>{day.date}</td>
-                  <td className="font-medium text-white" style={{ padding: '10px 12px' }}>
-                    {formatCents(day.total)}
+                  <td
+                    className={
+                      day.total === null
+                        ? 'font-medium text-amber-300'
+                        : 'font-medium text-white'
+                    }
+                    style={{ padding: '10px 12px' }}
+                    title={day.unmeasuredReason ?? undefined}
+                  >
+                    {formatCentsOrDash(day.total)}
                   </td>
                   {officerList.map((role) => (
                     <td key={role} className="text-zinc-400" style={{ padding: '10px 12px' }}>
-                      {formatCents(day.officers[role] || 0)}
+                      {/* `day.officers[role] || 0` printed $0.00 for an officer
+                          with no row on a day nobody recorded. When the day
+                          itself is unmeasured every cell is the em-dash. */}
+                      {day.total === null
+                        ? '—'
+                        : formatCentsOrDash(day.officers[role] ?? null)}
                     </td>
                   ))}
                 </tr>

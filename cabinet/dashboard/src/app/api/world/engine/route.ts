@@ -284,7 +284,13 @@ export async function GET(_req: NextRequest) {
       ? buildEval(latestKf, census.firstDate, census.lineCount, outcomes, embedQueueLen)
       : null,
     weather,
-    orgEventsTotal: num(latestKf, 'org_events_total') ?? 0,
+    // `?? 0` folded a PRESENT keyframe that is MISSING this one field into a
+    // day-zero island: `landRadius(0)` is the smallest world there is, so the
+    // island silently shrank while the "census unavailable" badge stayed
+    // quiet — it only fires when `eval` is null, i.e. when the whole keyframe
+    // is absent, never for a per-field hole inside one that arrived. Null
+    // travels now, and the client draws the egg WITH the announcement.
+    orgEventsTotal: num(latestKf, 'org_events_total') ?? null,
     // Isle berth bindings (instance world-state — Wave G): slot i ← the
     // i-th lane by BIRTH ORDER (first ratified appearance in outcomes.yml,
     // = the fold's key order) that is a declared context lane. Undeclared
