@@ -770,11 +770,20 @@ if [ "$((CALL_COUNT % 50))" -eq "0" ] 2>/dev/null; then
     # 50th tool call until the key was overwritten. Sonnet adversary
     # identified the symmetric site on commit 7f719b5.
     if echo "$LAST_EXPERIENCE" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$'; then
-      EXP_EPOCH=$(date -d "$LAST_EXPERIENCE" +%s 2>/dev/null || echo "0")
+      # BSD leg, identical to the LAST_CALL site 40 lines up. Without it
+      # `date -d` fails on macOS, EXP_EPOCH=0, SINCE_LAST_RECORD becomes the
+      # whole unix epoch and the "PROACTIVE WORK CHECK" flood this comment
+      # block describes fires on EVERY 50th tool call — the exact symptom the
+      # symmetric fix above was written to stop, left un-ported here.
+      EXP_EPOCH=$(date -d "$LAST_EXPERIENCE" +%s 2>/dev/null \
+        || date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "${LAST_EXPERIENCE%%.*}Z" +%s 2>/dev/null \
+        || echo "0")
       NOW_EPOCH=$(date -u +%s)
       SINCE_LAST_RECORD=$((NOW_EPOCH - EXP_EPOCH))
-      # If no experience record in 2+ hours, officer is likely just polling
-      if [ "$SINCE_LAST_RECORD" -gt 7200 ] 2>/dev/null; then
+      # If no experience record in 2+ hours, officer is likely just polling.
+      # EXP_EPOCH=0 means UNPARSEABLE, not "idle since 1970" — the same guard
+      # the LAST_CALL site carries.
+      if [ "$EXP_EPOCH" != "0" ] && [ "$SINCE_LAST_RECORD" -gt 7200 ] 2>/dev/null; then
         echo ""
         echo "⚠️ PROACTIVE WORK CHECK: Your last experience record was $((SINCE_LAST_RECORD / 3600))h ago. You may be polling without doing real work."
         echo "  Re-read your role definition (.claude/agents/${OFFICER}.md) and execute your proactive responsibilities NOW."

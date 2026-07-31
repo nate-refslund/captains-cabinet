@@ -130,7 +130,9 @@ if is_voice and file_id and msg_id:
 
     # Cache hit (24h TTL per Spec 046 AC #9)?
     if [ -f "$CACHE_FILE" ]; then
-      cache_age=$(( $(date +%s) - $(stat -f %m "$CACHE_FILE" 2>/dev/null || stat -c %Y "$CACHE_FILE" 2>/dev/null || echo 0) ))
+      # GNU FIRST: `stat -f` on GNU SUCCEEDS (it means "file system") and would
+      # print a mount point into this arithmetic; `stat -c` fails cleanly on BSD.
+      cache_age=$(( $(date +%s) - $(stat -c %Y "$CACHE_FILE" 2>/dev/null || stat -f %m "$CACHE_FILE" 2>/dev/null || echo 0) ))
       if [ "$cache_age" -lt 86400 ]; then
         TRANSCRIPT="$(cat "$CACHE_FILE" 2>/dev/null)"
       fi
@@ -161,7 +163,7 @@ except Exception:
             # Cache + cost log per Spec 046 AC #4 + #10.
             printf '%s' "$TRANSCRIPT" > "$CACHE_FILE"
             mkdir -p "$REPO_ROOT/cabinet/logs" 2>/dev/null
-            AUDIO_BYTES="$(stat -f %z "$TMP_AUDIO" 2>/dev/null || stat -c %s "$TMP_AUDIO" 2>/dev/null || echo 0)"
+            AUDIO_BYTES="$(stat -c %s "$TMP_AUDIO" 2>/dev/null || stat -f %z "$TMP_AUDIO" 2>/dev/null || echo 0)"
             VOICE_LOG="$(jq -cn \
               --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
               --arg message_id "$MSG_ID" \

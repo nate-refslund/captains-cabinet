@@ -1,7 +1,8 @@
 'use server'
 
 import { cabinetPath } from '@/lib/cabinet-root'
-import { dockerExec } from '@/lib/docker'
+import { assertRuntimeWritesAllowed, dockerExec } from '@/lib/docker'
+import { writeYamlScalar } from '@/lib/config-write'
 import { requireDashboardAuth } from '@/lib/provisioning/guard'
 import { revalidatePath } from 'next/cache'
 import { resolveStorePosture } from '@/lib/store-posture'
@@ -55,8 +56,6 @@ export async function updateProjectConfig(
       return { success: false, error: `Section not allowed: ${section}` }
     }
 
-    // Sanitise value for shell interpolation
-    const safeValue = value.replace(/'/g, "'\\''")
     const slug = await getActiveSlug()
     if (!slug) {
       // Refusing beats writing. With no resolvable active project the old code
@@ -76,22 +75,16 @@ export async function updateProjectConfig(
     }
 
     const parts = path.split('.')
-
-    if (parts.length === 1) {
-      // Simple field directly under the section, e.g. product.name or linear.team_key
-      const field = parts[0]
-      await dockerExec(
-        `sed -i '/^${section}:/,/^[a-z]/{s/^  ${field}: .*/  ${field}: ${safeValue}/}' ${projectFile}`
-      )
-    } else if (parts.length === 2) {
-      // Nested field, e.g. notion.dashboard.page_id
-      const [sub, field] = parts
-      await dockerExec(
-        `sed -i '/^${section}:/,/^[a-z]/{/^  ${sub}:/,/^  [a-z]/{s/^    ${field}: .*/    ${field}: ${safeValue}/}}' ${projectFile}`
-      )
-    } else {
+    if (parts.length > 2) {
       return { success: false, error: `Path too deep: ${path} (max 2 levels)` }
     }
+
+    assertRuntimeWritesAllowed(`set ${section}.${path} in ${slug}.yml`)
+    // One walk down [section, ...parts] instead of two `sed` dialects, and the
+    // value is no longer interpolated into a shell script. Neither sed ever ran
+    // here: BSD sed's `-i` suffix is mandatory, so both exited 1 and left the
+    // project YAML untouched on the only machine this is deployed to.
+    await writeYamlScalar(projectFile, [section, ...parts], value)
 
     // Reassemble product.yml from platform + project sources
     await dockerExec(`bash ${ASSEMBLE_SCRIPT}`)

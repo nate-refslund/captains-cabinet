@@ -102,7 +102,11 @@ sys.stdout.write(m.group(1).strip() if m else "")
 if [ -n "$MSG_ID" ]; then
   CACHE_FILE="$CABINET_ROOT/cabinet/cache/voice-transcripts/$MSG_ID.txt"
   if [ -f "$CACHE_FILE" ]; then
-    cache_age=$(( $(date +%s) - $(stat -f %m "$CACHE_FILE" 2>/dev/null || stat -c %Y "$CACHE_FILE" 2>/dev/null || echo 0) ))
+    # GNU FIRST, deliberately: on GNU coreutils `stat -f` is "file system" and
+    # SUCCEEDS, printing a mount point, so a BSD-first `||` chain never falls
+    # through and feeds that string into arithmetic. `stat -c` simply fails on
+    # BSD, so this order is the only one that is right on both.
+    cache_age=$(( $(date +%s) - $(stat -c %Y "$CACHE_FILE" 2>/dev/null || stat -f %m "$CACHE_FILE" 2>/dev/null || echo 0) ))
     if [ "$cache_age" -lt 86400 ]; then
       TRANSCRIPT="$(cat "$CACHE_FILE" 2>/dev/null)"
       if [ -n "$TRANSCRIPT" ]; then

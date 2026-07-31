@@ -12,6 +12,9 @@
  * enforcing posture pinned (MOCK_DATA unset, NODE_ENV=test).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import nodePath from 'node:path'
 
 const {
   mockVerify,
@@ -20,6 +23,7 @@ const {
   mockCreateSession,
   mockDestroySession,
   mockDockerExec,
+  mockWriteGuard,
   mockRedisGet,
   mockRedisSet,
   mockRedisDel,
@@ -31,6 +35,7 @@ const {
   mockCreateSession: vi.fn(),
   mockDestroySession: vi.fn(),
   mockDockerExec: vi.fn(),
+  mockWriteGuard: vi.fn(),
   mockRedisGet: vi.fn(),
   mockRedisSet: vi.fn(),
   mockRedisDel: vi.fn(),
@@ -47,7 +52,17 @@ vi.mock('@/lib/auth', () => ({
   createSession: mockCreateSession,
   destroySession: mockDestroySession,
 }))
-vi.mock('@/lib/docker', () => ({ dockerExec: mockDockerExec, getEnvVars: vi.fn() }))
+// `assertRuntimeWritesAllowed` is the in-process half of the same gate: the
+// config/env editors no longer shell out (they edit the documents with node:fs
+// — lib/config-write.ts, because `sed -i` never ran on this platform), so
+// "never reached the write path" is now asserted on BOTH transports. A mock
+// that only knew about `dockerExec` would go green for an unauthenticated call
+// that reached the filesystem.
+vi.mock('@/lib/docker', () => ({
+  dockerExec: mockDockerExec,
+  assertRuntimeWritesAllowed: mockWriteGuard,
+  getEnvVars: vi.fn(),
+}))
 vi.mock('@/lib/redis', () => ({
   default: { get: mockRedisGet, set: mockRedisSet, del: mockRedisDel },
 }))
@@ -77,16 +92,51 @@ beforeEach(() => {
   vi.stubEnv('MOCK_DATA', '')
   vi.stubEnv('NODE_ENV', 'test')
   mockDockerExec.mockResolvedValue({ stdout: '', stderr: '' })
+  makeRoot()
 })
 
-afterEach(() => vi.unstubAllEnvs())
+afterEach(() => {
+  vi.unstubAllEnvs()
+  dropRoot()
+})
+
+
+/**
+ * A temp checkout for the actions that now write with node:fs.
+ *
+ * CABINET_ROOT is owned here and the destination is ASSERTED to be inside it
+ * before any test runs — a previous pass proved that a sweep which overrode the
+ * root but not every path-steering variable appends to the live cabinet/.env.
+ */
+const PRODUCT_YML_BEFORE = 'product:\n  name: Before\n  repo: owner/repo\nlinear:\n  enabled: false\n'
+let testRoot = ''
+const productYml = () =>
+  readFileSync(nodePath.join(testRoot, 'instance', 'config', 'product.yml'), 'utf8')
+
+function makeRoot(): void {
+  testRoot = mkdtempSync(nodePath.join(tmpdir(), 'actions-auth-'))
+  mkdirSync(nodePath.join(testRoot, 'instance', 'config'), { recursive: true })
+  writeFileSync(nodePath.join(testRoot, 'instance', 'config', 'product.yml'), PRODUCT_YML_BEFORE)
+  vi.stubEnv('CABINET_ROOT', testRoot)
+  const dest = nodePath.join(testRoot, 'instance', 'config', 'product.yml')
+  if (!dest.startsWith(testRoot + nodePath.sep)) {
+    throw new Error('refusing to run: the config path is outside the temp tree')
+  }
+}
+
+function dropRoot(): void {
+  if (testRoot) rmSync(testRoot, { recursive: true, force: true })
+  testRoot = ''
+}
 
 describe('mutating actions refuse the unauthenticated caller', () => {
   beforeEach(() => mockVerify.mockResolvedValue(false))
 
-  it('config.updateProductConfig → Unauthorized, no shell exec', async () => {
+  it('config.updateProductConfig → Unauthorized, and the write path is never reached', async () => {
     expect(await updateProductConfig('name', 'evil')).toEqual({ success: false, error: 'Unauthorized' })
     expect(mockDockerExec).not.toHaveBeenCalled()
+    expect(mockWriteGuard).not.toHaveBeenCalled()
+    expect(productYml()).toBe(PRODUCT_YML_BEFORE)
   })
 
   it('config.updateLinearConfig → Unauthorized, no shell exec', async () => {
@@ -165,10 +215,13 @@ describe('operational-data reads refuse the unauthenticated caller (no data leak
 describe('authenticated caller proceeds', () => {
   beforeEach(() => mockVerify.mockResolvedValue(true))
 
-  it('config.updateProductConfig reaches the write path', async () => {
+  it('config.updateProductConfig reaches the write path AND lands the bytes', async () => {
     const res = await updateProductConfig('name', 'Acme')
     expect(res).toEqual({ success: true })
-    expect(mockDockerExec).toHaveBeenCalled()
+    expect(mockWriteGuard).toHaveBeenCalled()
+    // The FILE, not the mock. `expect(mockDockerExec).toHaveBeenCalled()` was
+    // true of a `sed -i` that exited 1 and changed nothing.
+    expect(productYml()).toContain('  name: Acme')
   })
 
   it('gaps.approveGap reaches the org-runtime CLI for a valid id', async () => {
