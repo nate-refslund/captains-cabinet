@@ -210,4 +210,16 @@ silently carried. Each is the same class this unit exists to remove:
   that mentions December is not a December note, and letting the stated date
   date the document would poison the retrodiction fence
   (`framework/fidelity/tests/test_window_clocks_fence.py` is the arm that
-  keeps them apart).
+  keeps them apart). The two renderings now NAME which clock they mean —
+  "(the notes carry no date of their own)" in the headline, "(no date on the
+  note)" on a citation — because "(undated)" was read as "this file holds no
+  dates" beside a file stating a filing cutoff seven days out.
+- **The clock join is a RENDER-TIME join, never a persisted field.** The
+  proposal rows are derived before any window is ratified (the real order is
+  edit-answers → generator → journey → briefing) and correctly never
+  re-derive afterwards, so anything about the window baked into a row is
+  baked empty. `genesis_intake_items` reads `estate.load_window_clocks()` at
+  render time and joins on each row's `recall_refs`; a superseded window
+  removes the artifact and the lines with it. Residual: an estate-derived
+  card that recall did not answer for carries no refs, so it gets no clock
+  lines even though the manifest knows its evidence paths.

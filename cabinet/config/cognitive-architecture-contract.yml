@@ -754,7 +754,37 @@ budgets:
     # was taken over the rows that survive the spine trim rather than over the
     # rows found, so a rota that resolved nothing reported nothing unresolved.
     # observed == maximum, zero headroom.
-    maximum: 62603
+    #
+    # 62603 -> 62630 (+27 measured 2026-07-31 via cognitive-architecture-census.py,
+    # observed 77172 vs the then-effective 77145): the clock lines never
+    # reached the operator. Measured on a fresh hatch from master 065f78b4
+    # over the archived estate: a perfect 37-row artifact on disk and ZERO
+    # clock lines in the briefing. TWO defects, both in the join and neither
+    # in the extraction.
+    #   (a) THE ORDER. The real order is edit-answers -> generate -> journey
+    #       -> briefing, so the proposal rows are derived BEFORE any window
+    #       exists, and they correctly never re-derive afterwards (the answers
+    #       digest has not moved, and an edited row is not genesis's to
+    #       rewrite). A line baked at derivation is therefore always the empty
+    #       one. The join moved to RENDER time in genesis_intake_items,
+    #       against whatever the window holds when the briefing is read, which
+    #       makes staleness impossible by construction rather than managed:
+    #       a superseded window deletes its artifact and the lines go with it.
+    #   (b) THE REFERENCE SHAPE. Recall does not cite a path — it cites
+    #       `<file>.md#<heading>`. Comparing whole basenames missed every
+    #       reference recall actually produces, so the join was empty even
+    #       where a window existed.
+    #   Plus the naming half the same measurement exposed: "(undated)" is a
+    #   statement about when a NOTE WAS WRITTEN and was read as "this file
+    #   holds no dates", beside a file stating a filing cutoff seven days out.
+    #   Both renderings now name which clock they mean.
+    # NET SHAPE: the derivation-time parameter, the persisted `clocks` key and
+    # its passthrough are DELETED; what is added is the render-time join, the
+    # reference-name helper, the briefing's own forward-window item, and ONE
+    # renderer shared by the approval card and the briefing so the two cannot
+    # drift. Zero new production modules (248 <= 248).
+    # observed == maximum, zero headroom.
+    maximum: 62630
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

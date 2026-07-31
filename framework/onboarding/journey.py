@@ -3331,14 +3331,24 @@ def _window_clocks(
 
 
 def _clocks_note(state: dict[str, Any]) -> str:
+    """The dividend card's clock sentence, read off journey state."""
+    return clocks_note(state.get("window_clocks"))
+
+
+def clocks_note(clocks: Any) -> str:
     """The forward window, bounded, saying what it did not print.
+
+    PUBLIC AND TAKING THE PAYLOAD, not the journey's state, because there are
+    now TWO surfaces that must say this and they may not disagree: the
+    dividend card the operator approves, and the genesis briefing they read
+    afterwards. A second implementation of one sentence drifts within a month
+    — the rule this tree applies to its splitter, applied to a renderer.
 
     EMPTY WHEN THERE IS NOTHING TO SAY, and that is load-bearing rather than
     tidy: a window whose files state no date renders exactly the sentence it
     rendered before this capability existed, so nothing anywhere had to be
     re-pinned for folders that carry no clock.
     """
-    clocks = state.get("window_clocks")
     if not isinstance(clocks, dict):
         return ""
     forward = [row for row in (clocks.get("rows") or [])
