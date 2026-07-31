@@ -570,3 +570,146 @@ def test_the_inbound_poller_pulses_only_after_an_answered_poll():
     err_guard = src.index('log(f"getUpdates error:')
     assert ok_guard < pulse_at, "the pulse precedes the ok-guard it depends on"
     assert err_guard < pulse_at, "the pulse precedes the error path that skips it"
+
+
+# ── the arms added after the merged watcher was found inert (2026-07-31) ────
+#
+# All four fail against the tree that shipped. The feature merged clean — six CI
+# jobs green per job, 17/17 mutations killed — and could not execute one pass on
+# any deployment. What every existing arm had in common is what let it through:
+# they all handed in an explicit ``root=`` or set the env override, so the branch
+# the fleet actually takes was never run.
+
+def test_status_fails_when_the_store_resolver_cannot_answer():
+    """FAILS AGAINST THE SHIPPED ``status()``, which reported
+    ``armed=True local=True external=True`` on a deployment whose very next
+    command died in the store resolver.
+
+    It answered from config and slugs alone and never touched the one code path
+    a pass cannot start without. The single function built to answer "is this
+    absence-detector itself absent?" fail-OPEN on precisely that — the worst
+    fail-open there is, in the place it must not be. An arming check that does
+    not execute the thing it arms is a disabled sensor."""
+    def broken_resolver(_base=""):
+        raise NameError("name '_env_module' is not defined")
+
+    st = fw.status(cfg={"expect": {"outcome-watchdog": 5400}, "_present": True},
+                   deadman_status=lambda: {"events": {fw.EVENT_FLEET_ALIVE:
+                                                      "ready"}},
+                   pulse_dir_resolver=broken_resolver)
+    assert st["store"] is False
+    assert st["store_reason"].startswith("resolver-failed"), st
+    assert st["armed"] is False, (
+        "status reported ARMED on a watcher that cannot resolve its store")
+
+
+def test_status_is_unarmed_when_the_store_resolves_to_nothing():
+    """The degenerate end of the same leg: a resolver that answers, with
+    nothing. An empty store path means no verdict can ever be written and no
+    scan can ever be aimed — that is unarmed, not armed-with-an-empty-string."""
+    st = fw.status(cfg={"expect": {"s": 60}, "_present": True},
+                   deadman_status=lambda: {"events": {}},
+                   pulse_dir_resolver=lambda _b="": "")
+    assert st["store"] is False and st["store_reason"] == "no-state-dir"
+    assert st["armed"] is False
+
+
+def test_a_broken_resolver_is_UNKNOWN_and_never_a_traceback(monkeypatch):
+    """FAILS AGAINST THE SHIPPED ``check()``, whose ``base = root or
+    state_dir()`` was unguarded, so the watcher died with a traceback and
+    exited 1 — the code its own template plist documents as "a true report
+    about the fleet, not a broken job". A crashed watcher was indistinguishable
+    from a measured death.
+
+    A resolver that cannot answer is "I cannot see the fleet". That is UNKNOWN,
+    which starves the external watcher exactly as DEAD does, and it is never
+    ALIVE and never an exception."""
+    def boom(_default=""):
+        raise NameError("name '_env_module' is not defined")
+
+    monkeypatch.setattr(fw, "state_dir", boom)
+    v = fw.check(cfg={"expect": {"outcome-watchdog": 5400}},
+                 allow_side_effects=False)
+    assert v["state"] == fw.STATE_UNKNOWN
+    assert v["reason"] == "state-dir-unresolvable"
+    assert fw.decide_ping(v) is False
+    assert fw._EXIT[v["state"]] == 2, "a crash must not spend the DEAD exit code"
+
+
+def test_no_launchd_environment_can_move_the_pulse_store():
+    """THE ARM THAT WOULD HAVE CAUGHT THE SECOND FATAL DEFECT, and the one that
+    keeps catching it as sources are added.
+
+    The writers and the reader are different processes started by different
+    launchd plists. Any variable one plist sets and another omits splits the
+    store in two: the fleet pulses into one directory, the watcher scans the
+    other, finds nothing, and reports a confident permanent DEAD. That is what
+    shipped — ``com.cabinet.officer.cos-inbound`` sets ``CABINET_ENV=runtime``,
+    ``com.cabinet.outcome-watchdog`` sets no environment at all, and 43 of 51
+    archived plists set none either, so every future pulse source would have
+    inherited it silently.
+
+    So this does not check one plist. It resolves the store under the
+    environment EVERY cabinet plist establishes and asserts they are all the
+    same directory — the class, not the instance. A new plist that introduces a
+    steering variable goes red here on the commit that adds it."""
+    import plistlib
+    import re as _re
+    from framework import env as _env
+
+    launchd = _os.path.join(_ROOT, "cabinet", "launchd")
+    plists = sorted(f for f in _os.listdir(launchd) if f.endswith(".plist"))
+    # Degenerate-end floor: an empty or unreadable directory must not pass as
+    # "every environment agrees".
+    assert len(plists) >= 5, f"only {len(plists)} plists found in {launchd}"
+
+    fixed = {"HOME": "/Users/fixture", "USER": "fixture",
+             "REPO_ROOT": "/repo", "PYTHONPATH": "/repo"}
+
+    def expand(value):
+        return _re.sub(r"\$\{(\w+)\}", lambda m: fixed.get(m.group(1), ""),
+                       str(value))
+
+    seen, environments = {}, 0
+    for name in plists:
+        raw = open(_os.path.join(launchd, name), "rb").read()
+        try:
+            obj = plistlib.loads(raw)
+        except Exception:
+            continue  # templates with un-substituted placeholders are covered
+        envvars = obj.get("EnvironmentVariables") or {}
+        candidate = dict(_os.environ)
+        candidate.pop("CABINET_FLEETWATCH_STATE_DIR", None)
+        candidate.pop("CABINET_ENV", None)
+        candidate["HOME"] = fixed["HOME"]
+        for k, v in envvars.items():
+            candidate[k] = expand(v)
+        environments += 1
+        with _mock_environ(candidate):
+            seen[name] = _env.fleet_liveness_dir()
+
+    assert environments >= 2, "fewer than two plist environments were exercised"
+    distinct = sorted(set(seen.values()))
+    assert len(distinct) == 1, (
+        "cabinet plists resolve the pulse store to more than one directory, so "
+        "the fleet's writers and the out-of-fleet reader would not meet: "
+        + json.dumps(seen, indent=2, sort_keys=True))
+
+
+class _mock_environ:
+    """Swap ``os.environ`` wholesale for the duration of a block. A plist's
+    environment is a REPLACEMENT, not an overlay, so patching keys one at a time
+    would leave this process's own variables steering the result."""
+
+    def __init__(self, mapping):
+        self._new = dict(mapping)
+
+    def __enter__(self):
+        self._old = dict(_os.environ)
+        _os.environ.clear()
+        _os.environ.update(self._new)
+
+    def __exit__(self, *exc):
+        _os.environ.clear()
+        _os.environ.update(self._old)
+        return False

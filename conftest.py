@@ -211,3 +211,30 @@ def _cabinet_root_env_fence():
             os.environ.pop("CABINET_ROOT", None)
         else:
             os.environ["CABINET_ROOT"] = prev
+
+
+@pytest.fixture(autouse=True)
+def _no_test_may_reach_the_real_liveness_store(tmp_path_factory, monkeypatch):
+    """FENCE. No test, anywhere, may write a fleet pulse into a real
+    ``~/.cabinet/liveness``.
+
+    A pulse is a claim that a fleet source was alive just now, and the watcher
+    believes it. A suite that leaves one in the deployment's store can therefore
+    certify a genuinely dead fleet as ALIVE for a full expectation window — a
+    false all-clear produced by running the tests, which is the single worst
+    thing this component could do.
+
+    It was not hypothetical. ``check.run(dry_run=False)`` began emitting a pulse
+    when the dead-man was wired into it, and
+    ``test_full_run_with_fake_probe_routes_only_failures`` — an end-to-end arm
+    that predates the dead-man and had no reason to think about liveness paths —
+    silently started writing into a real ``~/.cabinet`` on every run. Found by
+    looking at the box, not by any gate.
+
+    So the store override is pinned per test rather than left to each author to
+    remember: a test that WANTS the production resolver (there is one, and it
+    matters) deletes the variable itself and owns HOME instead. Path-steering
+    variables are the test framework's job to contain, because "every author
+    remembers" is not a control."""
+    monkeypatch.setenv("CABINET_FLEETWATCH_STATE_DIR",
+                       str(tmp_path_factory.mktemp("liveness-sandbox")))

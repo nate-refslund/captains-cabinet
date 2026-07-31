@@ -47,6 +47,14 @@ rm alone does NOT stop a loaded job (measured 2026-07-31). Bootout first.
 EXIT STATUS IS THE VERDICT: 0 ALIVE, 1 DEAD, 2 UNKNOWN. A standing 1 in
 launchctl list is a true report about the fleet, not a broken job.
 
+That claim is only safe because the watcher now REFUSES to spend exit 1 on its
+own failure (corrected 2026-07-31 — it shipped exiting 1 out of an uncaught
+NameError, so a crashed watcher was documented as a truthful death report).
+Anything the watcher cannot do — resolve its store, complete a pass, survive an
+unexpected error — is UNKNOWN and exits 2. So: 1 means the fleet, 2 means the
+watcher or the question. Neither pings, so the external check alarms either way;
+the distinction is for whoever reads launchctl.
+
 NO SECRETS HERE. The external ping URL and slug live in
 instance/config/liveness.yml; this plist carries paths and PATH only.
 -->

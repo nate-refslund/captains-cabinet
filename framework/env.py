@@ -1837,40 +1837,46 @@ def fleetwatch_config_path(default: str = "") -> str:
 
 
 def fleet_liveness_dir(default: str = "") -> str:
-    """Where fleet pulses and the fleet verdict live.
+    """Where fleet pulses and the fleet verdict live. ONE store per box:
+    ``CABINET_FLEETWATCH_STATE_DIR`` (explicit, ``~``-expanded) →
+    ``~/.cabinet/liveness``.
 
-    DELIBERATELY OUTSIDE THE REPO and outside any service. The store has to
-    outlive every process that writes to it — that is the entire premise of a
-    dead-man — so it cannot sit in a datastore (any datastore is itself a
-    watched process on the watched box) and it must not sit in a working tree
-    that a clone, a checkout or a worktree can move under it.
+    DELIBERATELY OUTSIDE THE REPO and outside any service. The store must outlive
+    every process that writes to it — the entire premise of a dead-man — so it
+    cannot sit in a datastore (any datastore is itself a watched process on the
+    watched box) nor in a working tree a clone or worktree can move under it.
 
-    Resolution: ``CABINET_FLEETWATCH_STATE_DIR`` (explicit, ``~``-expanded) →
-    ``~/.cabinet/liveness`` (``-dev`` outside the runtime).
+    IT IS STEERED BY NOTHING A LAUNCHD PLIST MAY OR MAY NOT CARRY, and both
+    halves of that rule were paid for. It does not ride ``ledger_dir()``, which
+    honours ``CABINET_EVENT_LOG_DIR`` — set by the fleet's plists, not the
+    watcher's (caught while attacking this function, before it shipped). And it
+    no longer rides ``CABINET_ENV``, which shipped splitting the fleet's own
+    writers from EACH OTHER: ``officer.cos-inbound`` sets it and pulsed to
+    ``liveness/``; ``outcome-watchdog`` carries no ``EnvironmentVariables`` dict
+    at all and pulsed to ``liveness-dev/``; the watcher scanned ``liveness/``. A
+    maximally healthy fleet therefore read a confident, permanent DEAD. That was
+    defended in this docstring as failing safe — "a false page, never a false
+    all-clear" — which measured against the real plists is not conservative but
+    non-functional, and 43 of 51 archived plists would have inherited it.
 
-    IT DOES NOT RIDE ``ledger_dir()``, AND THAT IS THE WHOLE POINT (found by
-    attacking this function, 2026-07-31, before it shipped). ``ledger_dir()``
-    honours ``CABINET_EVENT_LOG_DIR``, which the fleet's own launchd plists SET
-    and the out-of-fleet watcher's plist does not. Deriving from it would have
-    put the writers and the reader in two different directories: the fleet would
-    pulse into one, the watcher would scan the other, find nothing, and report a
-    permanent — and perfectly confident — DEAD. A pulse store steered by a
-    variable that differs between the process that writes it and the process
-    that reads it is not a store; it is two.
+    Setting the variable on the writers was the obvious repair and was REJECTED:
+    ``CABINET_ENV`` also gates ``allow_sends()`` and ``ledger_dir()``, so arming
+    the dead-man that way would switch on outbound sends and move the consequence
+    ledger for a job that asked for neither. A liveness fix may not smuggle in an
+    outward-facing behaviour change.
 
-    The dev/runtime split is KEPT, because a dev run pulsing into the runtime's
-    store would certify a dead runtime fleet as alive. ``CABINET_ENV`` is the
-    only variable left steering this path, and it fails in the SAFE direction:
-    a fleet job without it pulses to ``-dev`` while a runtime watcher reads the
-    runtime dir and says DEAD. A false page, never a false all-clear — and the
-    verdict names the directory it scanned, so the mismatch is visible rather
-    than mysterious."""
+    THE COST OF ONE STORE IS ACCEPTED AND BOUNDED: a hand-run sweep can hold a
+    source "fresh" for at most its expected window, and staleness reclaims it.
+    The pulse records the tree that wrote it and the verdict reports it, so a
+    pulse from a clone is visible. It is deliberately NOT filtered on — rejecting
+    foreign origins would put the watcher's own tree back into the resolution,
+    which is this defect wearing a new variable. Isolation stays EXPLICIT via
+    ``CABINET_FLEETWATCH_STATE_DIR``, which every test already uses."""
     override = (os.environ.get("CABINET_FLEETWATCH_STATE_DIR") or "").strip()
     if override:
         return os.path.expanduser(override)
     try:
-        base = Path.home() / ".cabinet"
-        return str(base / ("liveness" if is_runtime() else "liveness-dev"))
+        return str(Path.home() / ".cabinet" / "liveness")
     except Exception:
         return str(default)
 

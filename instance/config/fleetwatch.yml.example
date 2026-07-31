@@ -3,7 +3,7 @@
 # =============================================================
 # EXAMPLE / TEMPLATE. Copy to instance/config/fleetwatch.yml and fill in for
 # YOUR deployment. With this file absent — or with an empty `expect:` block —
-# framework/liveness/fleetwatch.py expects nothing, and a watcher that expects
+# cabinet/scripts/fleet-deadman.py expects nothing, and a watcher that expects
 # nothing reports UNKNOWN/`unarmed`. It NEVER reports ALIVE, and it never pings.
 #
 # WHAT THIS IS. The fleet writes one small file per source saying "I was alive
@@ -32,7 +32,8 @@
 #               macOS notification on a state change. Survives the fleet.
 #   external  = instance/config/liveness.yml `fleet_alive:` slug. Survives the
 #               whole box, because it lives off it.
-# `python3.12 -m framework.liveness.fleetwatch --status` reports both. Local-only
+# `python3.12 cabinet/scripts/fleet-deadman.py --status` reports all three legs
+# (local, external, store). Local-only
 # is a real posture; it is not the same as armed, and it will say so.
 #
 # PARSER CONTRACT. Read by a NARROW stdlib parser (no PyYAML — a watcher that

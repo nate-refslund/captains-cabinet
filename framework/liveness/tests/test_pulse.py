@@ -103,17 +103,87 @@ def test_fleet_alive_is_a_known_deadman_event():
     assert deadman.EVENT_FLEET_ALIVE in deadman.KNOWN_EVENTS
 
 
-def test_pulse_store_still_separates_dev_from_runtime(monkeypatch):
-    """The one variable still steering the path, kept on purpose: a dev run
-    pulsing into the runtime's store would certify a dead runtime fleet as
-    alive. It fails in the safe direction (a false page, never a false green)."""
+def test_the_store_does_not_move_when_CABINET_ENV_does(monkeypatch):
+    """FAILS AGAINST THE DEFECT THIS SHIPPED WITH, and against the test that
+    used to stand here asserting the opposite.
+
+    That test pinned a dev/runtime split on ``CABINET_ENV`` and defended it as
+    failing in the safe direction. Measured against the real plists on
+    2026-07-31 it did not fail safe, it failed TOTAL: this fleet's own writers
+    disagreed with each other — ``com.cabinet.officer.cos-inbound`` sets
+    ``CABINET_ENV=runtime`` and pulsed to ``liveness/``, while
+    ``com.cabinet.outcome-watchdog`` carries no ``EnvironmentVariables`` dict at
+    all and pulsed to ``liveness-dev/`` — so a maximally healthy fleet read a
+    confident, permanent DEAD.
+
+    The store may be steered by ONE thing only: the explicit
+    ``CABINET_FLEETWATCH_STATE_DIR``, which a test or a second instance sets
+    deliberately and owns end to end. Anything a launchd plist might or might
+    not carry is disqualified by construction."""
     from framework import env
 
     monkeypatch.delenv(fw.STATE_ENV, raising=False)
     monkeypatch.setenv("CABINET_ENV", "runtime")
     runtime = env.fleet_liveness_dir()
     monkeypatch.setenv("CABINET_ENV", "dev")
-    assert env.fleet_liveness_dir() != runtime
+    assert env.fleet_liveness_dir() == runtime
+    monkeypatch.delenv("CABINET_ENV", raising=False)
+    assert env.fleet_liveness_dir() == runtime, (
+        "the pulse store moved when CABINET_ENV was absent; the fleet's plists "
+        "do not agree on that variable, so the writers would split from each "
+        "other and from the reader")
+
+
+def test_the_production_resolver_runs_at_all(monkeypatch, tmp_path):
+    """FAILS AGAINST THE DEFECT THAT MADE THE WHOLE FEATURE INERT.
+
+    The watcher shipped merged, green on six CI jobs and 17/17 mutations, with
+    ``state_dir()`` calling an ``_env_module()`` helper that existed nowhere in
+    the repository — the census refactor moved the function and left the helper
+    in the module it deleted. EVERY shipped arm steered around the branch that
+    calls it with an explicit ``root=`` or the env override, so the production
+    path — the one every fleet job takes — had never been executed once, by the
+    suite, by the mutation sweep, or by the end-to-end proof.
+
+    So this arm takes NO override and NO ``root=``. It owns HOME instead, and
+    asserts the resolved destination is inside ``tmp_path`` BEFORE writing
+    anything, because a production-path arm that steers nothing is exactly how a
+    build once wrote a pulse into a real ``~/.cabinet``."""
+    monkeypatch.delenv(fw.STATE_ENV, raising=False)
+    monkeypatch.delenv("CABINET_ENV", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(os.path, "expanduser",
+                        lambda p: p.replace("~", str(tmp_path), 1)
+                        if p.startswith("~") else p)
+
+    resolved = fw.state_dir()
+    assert resolved, "state_dir() resolved to nothing on the production path"
+    assert str(tmp_path) in resolved, (
+        f"sandbox breach: production resolver pointed at {resolved}, "
+        f"outside {tmp_path}")
+    assert str(tmp_path) in fw.pulse_dir()
+
+    res = fw.pulse("probe")
+    assert res["wrote"] is True, res
+    assert str(tmp_path) in res["path"], res
+    assert json.loads(open(res["path"]).read())["source"] == "probe"
+
+
+def test_a_pulse_records_the_tree_it_was_written_from(tmp_path):
+    """A dev clone's pulse must be VISIBLE, not indistinguishable.
+
+    Dropping the CABINET_ENV split means a hand-run sweep writes into the same
+    store the watcher reads. That is bounded (staleness reclaims it) but it must
+    not be invisible, so the pulse names its origin. It is reported and never
+    filtered on — filtering would put the watcher's own tree back into the
+    resolution, which is the divergence class this store exists to foreclose."""
+    root = _root(tmp_path)
+    res = fw.pulse("origin-probe", root=root)
+    assert str(tmp_path) in res["path"]
+    obj = json.loads(open(res["path"]).read())
+    assert obj["origin"], "pulse carries no origin"
+    assert obj["origin"].endswith("captains-cabinet") or os.path.isdir(
+        obj["origin"]), obj["origin"]
 
 
 def test_a_dry_run_sweep_does_not_pulse(tmp_path, monkeypatch):
