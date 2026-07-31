@@ -87,10 +87,13 @@ export default function KillswitchLever({
     if (!out.fire || firing.current) return
     const intent = explicitIntent ?? defaultIntent
     if (!intent) {
-      // Unreachable by construction: under an unknown reading the pin's tap
-      // only ever ARMS, and each dialog verb passes its own intent. Refusing
-      // rather than picking one keeps the guess out even if a future edit
-      // wires a bare tap straight to fire.
+      // Reached only if a bare `tap` fires while the reading is unknown. In
+      // today's UI that cannot happen — under an unknown reading the pin's
+      // first tap ARMS and opens the dialog, whose overlay (z-70) sits above
+      // the pin (z-60), so the pin is not clickable again, and each dialog verb
+      // passes its own intent. That is a Z-ORDER argument, not a structural
+      // one, which is exactly why this branch REFUSES instead of picking a
+      // direction: the guess must stay out even when the layout changes.
       dispatch({
         type: 'result',
         ok: false,
