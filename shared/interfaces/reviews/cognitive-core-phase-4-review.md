@@ -21,7 +21,21 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: b60bec24719c6caf3d68fcf4cb8bb806fddf0dbf20ba11fecabbf3f939d85c24
+Reviewed-Scope-Digest: 80c37c0bcc9a883d7810590ad4f818f4246e22615ff5639dcf400af1c10acd86
+
+(RE-BIND, 2026-07-31, `feat/fleet-deadman`, recomputed over this branch's HEAD.
+ONE in-scope path moved and it is NOT a COG-4 surface:
+`cabinet/config/cognitive-architecture-contract.yml`, raising
+`framework_production_noncomment_lines` 62630 -> 62761 visibly for the fleet
+dead-man's EMITTER half (+131 non-comment lines added to
+`framework/liveness/deadman.py`). DISJOINT from every raise noted below —
+different module, different defect, and the raise carries its own reason in the
+contract. ZERO new framework production modules (248 <= 248) and zero expansion
+rows, so no bijection class moved. No COG-4 implementation byte moved: the
+watcher is `cabinet/scripts/fleet-deadman.py`, which no COG-4 surface reads and
+which is not in the scope set. MEASURED, not asserted — the recomputed digest
+above is the tool's own output over HEAD, and the artifact is excluded from its
+own digest, so writing this note does not move it.)
 
 (MERGE RE-BIND, 2026-07-31, `fix/stale-census-unknown` x master, recomputed
 over the merge commit — the note below is master's, kept verbatim, and its
