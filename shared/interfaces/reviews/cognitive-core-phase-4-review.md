@@ -21,21 +21,24 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 80c37c0bcc9a883d7810590ad4f818f4246e22615ff5639dcf400af1c10acd86
+Reviewed-Scope-Digest: PENDING
 
-(RE-BIND, 2026-07-31, `feat/fleet-deadman`, recomputed over this branch's HEAD.
-ONE in-scope path moved and it is NOT a COG-4 surface:
-`cabinet/config/cognitive-architecture-contract.yml`, raising
+(MERGE RE-BIND, 2026-07-31, `feat/fleet-deadman` x master. Both sides re-bound
+this line, so ONE value stands and it is RECOMPUTED over this merge commit
+rather than picked from either parent. Master's side (`fix/egg-selfaudit-word-
+boundary`) moved `cabinet/scripts/tests/test_egg_export.py`; this branch's side
+moved `cabinet/config/cognitive-architecture-contract.yml`, raising
 `framework_production_noncomment_lines` 62630 -> 62761 visibly for the fleet
 dead-man's EMITTER half (+131 non-comment lines added to
-`framework/liveness/deadman.py`). DISJOINT from every raise noted below —
-different module, different defect, and the raise carries its own reason in the
-contract. ZERO new framework production modules (248 <= 248) and zero expansion
-rows, so no bijection class moved. No COG-4 implementation byte moved: the
-watcher is `cabinet/scripts/fleet-deadman.py`, which no COG-4 surface reads and
-which is not in the scope set. MEASURED, not asserted — the recomputed digest
-above is the tool's own output over HEAD, and the artifact is excluded from its
-own digest, so writing this note does not move it.)
+`framework/liveness/deadman.py`). The two sets are DISJOINT — different files,
+different defects — so both notes stand and neither is the other's restamp.
+ZERO new framework production modules (248 <= 248) and zero expansion rows on
+this side, so no bijection class moved. NO COG-4 implementation byte moved on
+either side: this branch's watcher is `cabinet/scripts/fleet-deadman.py`, which
+no COG-4 surface reads and which is not in the scope set. MEASURED, not
+asserted — the digest above is the tool's own output over the merge commit, and
+the artifact is excluded from its own digest, so writing this note does not move
+it.)
 
 (MERGE RE-BIND, 2026-07-31, `fix/stale-census-unknown` x master, recomputed
 over the merge commit — the note below is master's, kept verbatim, and its
@@ -2173,6 +2176,16 @@ touched by this branch, whose diff is otherwise entirely
 `framework/onboarding/`, its suites and fixture, one fidelity suite, and two
 onboarding design docs.)
 
+(MERGE RE-BIND, 2026-07-31, `fix/egg-selfaudit-word-boundary` (PR #337) x master `065f78b4`:
+MECHANICAL-DELTA — one in-scope blob changed, `cabinet/scripts/tests/test_egg_export.py`.
+The captain-value self-audit's match rule gains word boundaries for word-shaped values
+after the live 2026-07-31 window measured the audit red-flagging the deployment because a
+4-letter captain value matched inside the English word "coordinate" in both scanned files.
+Sensor teeth re-proven both directions in the same commit: engulfing-word arm red under
+the old rule; planted standalone value and separator-joined forms still trip; non-word
+values keep substring semantics. No production bytes moved; no threshold moved; the
+`Reviewed-Scope-Digest:` line above is recomputed over this branch's HEAD per the
+2026-07-26/27/30 merge re-bind precedents.)
 
 (RE-BOUND 2026-07-31 on `fix/clocks-render-time-join`, previous value
 `8384f5e2…`. ONE in-scope path moved and it is NOT a COG-4 surface.
@@ -2193,3 +2206,10 @@ No `framework/projection`, `framework/scheduler`, `framework/organs`,
 `cognitive-trajectory.v2.schema.json`, `cog4-*` script or COG-4 fixture byte is
 touched by this branch, whose diff is otherwise `framework/onboarding/`, its
 suite, two onboarding design docs and one review artifact.)
+
+(MERGE RE-BIND, 2026-07-31, `fix/egg-selfaudit-word-boundary` (PR #337) x master `619e7dca`:
+both parents' re-bind notes above are kept verbatim; the `Reviewed-Scope-Digest:` line is
+recomputed ONCE over this merge's HEAD, which unions the two mechanical deltas — the
+self-audit test blob (this branch) and the render-time-join blob set (PR #338). No further
+in-scope bytes moved in the merge itself.)
+

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -1177,12 +1178,50 @@ def test_gate_generic_id_pattern_keeps_teeth(tmp_path: Path):
     assert proc.returncode == 1, (proc.returncode, out, proc.stderr)
 
 
+def _pattern_value_leaks(value: str, *texts_lower: str) -> bool:
+    """Does a live pattern value appear in a tracked source?
+
+    Word-shaped values (letters/digits/underscore only) match on WORD
+    BOUNDARIES: a short name must not be found inside an ordinary word —
+    measured 2026-07-31 on the live deployment, where a 4-letter captain
+    name failed this audit by matching inside "coordinate", a false alarm
+    the audit can never stop raising under bare substring rules. A
+    boundary-adjacent hit (the value joined by '-'/'@'/'.') still trips,
+    which is the case that matters. Values carrying any other character
+    (ids, emails, tokens, path fragments) keep the raw substring match —
+    they cannot occur inside an English word by accident."""
+    low = value.lower()
+    if re.fullmatch(r"\w+", low):
+        return any(re.search(rf"\b{re.escape(low)}\b", t) for t in texts_lower)
+    return any(low in t for t in texts_lower)
+
+
+def test_pattern_value_leak_rule_both_directions():
+    """The audit's match rule keeps its teeth and loses its false alarm.
+    Values here are synthetic (qz- prefixed or plain-word) — never a real
+    captain value, per the rule the audit itself enforces."""
+    # a word-shaped value is NOT found inside an engulfing English word
+    assert not _pattern_value_leaks("qzed", "well coordinated text")
+    assert not _pattern_value_leaks("nate", "stall coordinate + the row")
+    # ...but IS found as a standalone word, and joined by separators
+    assert _pattern_value_leaks("qzed", "the qzed value")
+    assert _pattern_value_leaks("qzed", "clone qzed-refslund/repo")
+    assert _pattern_value_leaks("qzed", "mail qzed@example.com")
+    # non-word values keep raw substring semantics
+    assert _pattern_value_leaks("qz.token", "prefixqz.tokensuffix")
+    # degenerate ends: empty and single-char values match nothing wordy
+    assert not _pattern_value_leaks("qzabsent", "plain text")
+
+
 def test_gate_source_carries_no_captain_pattern_values():
     """Self-audit (the R166 point): none of the REAL captain-specific
     pattern values may appear in the tracked gate source or the synthetic
     .example twin. Values are read at runtime from the live patterns file —
     this test source carries none of them — so the test runs only on a
-    configured captain machine and SKIPS where the file is absent (CI)."""
+    configured captain machine and SKIPS where the file is absent (CI).
+    Matching is word-boundary for word-shaped values (see
+    _pattern_value_leaks): the audit polices the captain's values, not the
+    English words that happen to contain them."""
     live = _REPO_ROOT / "instance" / "config" / "publish-scan-patterns.local"
     if not live.is_file():
         pytest.skip("no live publish-scan-patterns.local on this machine "
@@ -1204,7 +1243,7 @@ def test_gate_source_carries_no_captain_pattern_values():
                    "publish-scan-patterns.local.example").read_text(
                        encoding="utf-8").lower()
     leaked = [v for v in values if len(v) >= 3
-              and (v.lower() in gate_low or v.lower() in example_low)]
+              and _pattern_value_leaks(v, gate_low, example_low)]
     assert not leaked, (
         f"{len(leaked)} captain-specific value(s) leaked into tracked "
         "sources (values withheld from this assertion output by design — "
