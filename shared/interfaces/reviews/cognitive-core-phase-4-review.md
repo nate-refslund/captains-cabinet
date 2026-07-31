@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: PENDING
+Reviewed-Scope-Digest: bfb8655bfc322ebb7176b3f34ccabbcdde84b88656552bef3d7b34b60e68af87
 
 (MERGE RE-BIND, 2026-07-31, `feat/fleet-deadman` x master. Both sides re-bound
 this line, so ONE value stands and it is RECOMPUTED over this merge commit
