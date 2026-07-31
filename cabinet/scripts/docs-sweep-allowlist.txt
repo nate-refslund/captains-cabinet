@@ -272,3 +272,16 @@ instance/config/evidence-signing.yml
 # diagram references it by that runtime-tree-relative path; the token
 # happens to collide with this repo's real top-level shared/ dir name.
 shared/cabinet.env
+# The fleet dead-man's two deployment-local configs. BOTH ship as .example
+# twins only, and the hatch errand (cabinet/scripts/hatch-lib/errands.sh,
+# "Fleet dead-man — arm it") is the step that copies each twin to its live
+# name and fills it in. Deliberately ABSENT from the repo: a shipped live
+# fleetwatch.yml would arm expectations for services a fresh hatch may not
+# run — a permanent false alarm, and a permanent false alarm is how a real
+# one stops being read — and a shipped live liveness.yml would carry either a
+# default endpoint that silently phones a stranger's host or a shared slug
+# that makes a DEAD instance indistinguishable from a QUIET one.
+# docs/runbooks/fleet-deadman.md references them by their live names because
+# that is what the operator ends up with.
+instance/config/fleetwatch.yml
+instance/config/liveness.yml
