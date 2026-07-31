@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: b60bec24719c6caf3d68fcf4cb8bb806fddf0dbf20ba11fecabbf3f939d85c24
+Reviewed-Scope-Digest: 3efe89ae02d8fb3c71867e8a27cc36c78988036064b3fd397bd34861002db47d
 
 (MERGE RE-BIND, 2026-07-31, `fix/stale-census-unknown` x master, recomputed
 over the merge commit — the note below is master's, kept verbatim, and its
@@ -2159,6 +2159,16 @@ touched by this branch, whose diff is otherwise entirely
 `framework/onboarding/`, its suites and fixture, one fidelity suite, and two
 onboarding design docs.)
 
+(MERGE RE-BIND, 2026-07-31, `fix/egg-selfaudit-word-boundary` (PR #337) x master `065f78b4`:
+MECHANICAL-DELTA — one in-scope blob changed, `cabinet/scripts/tests/test_egg_export.py`.
+The captain-value self-audit's match rule gains word boundaries for word-shaped values
+after the live 2026-07-31 window measured the audit red-flagging the deployment because a
+4-letter captain value matched inside the English word "coordinate" in both scanned files.
+Sensor teeth re-proven both directions in the same commit: engulfing-word arm red under
+the old rule; planted standalone value and separator-joined forms still trip; non-word
+values keep substring semantics. No production bytes moved; no threshold moved; the
+`Reviewed-Scope-Digest:` line above is recomputed over this branch's HEAD per the
+2026-07-26/27/30 merge re-bind precedents.)
 
 (RE-BOUND 2026-07-31 on `fix/clocks-render-time-join`, previous value
 `8384f5e2…`. ONE in-scope path moved and it is NOT a COG-4 surface.
@@ -2179,3 +2189,10 @@ No `framework/projection`, `framework/scheduler`, `framework/organs`,
 `cognitive-trajectory.v2.schema.json`, `cog4-*` script or COG-4 fixture byte is
 touched by this branch, whose diff is otherwise `framework/onboarding/`, its
 suite, two onboarding design docs and one review artifact.)
+
+(MERGE RE-BIND, 2026-07-31, `fix/egg-selfaudit-word-boundary` (PR #337) x master `619e7dca`:
+both parents' re-bind notes above are kept verbatim; the `Reviewed-Scope-Digest:` line is
+recomputed ONCE over this merge's HEAD, which unions the two mechanical deltas — the
+self-audit test blob (this branch) and the render-time-join blob set (PR #338). No further
+in-scope bytes moved in the merge itself.)
+
