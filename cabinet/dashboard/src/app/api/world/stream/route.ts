@@ -35,6 +35,7 @@ import type {
   WorldOfficer,
   WorldSnapshot,
 } from '@/lib/world/types'
+import { REQUEST_CLIENT_OPTIONS, SUBSCRIBER_CLIENT_OPTIONS } from '@/lib/store-reachability'
 
 export const dynamic = 'force-dynamic'
 
@@ -310,12 +311,10 @@ export async function GET(req: NextRequest) {
           // its pre-connect state indefinitely, which is precisely the moment
           // it most needs to be told the emergency stop is unreadable. A
           // bounded read turns an infinite silence into a prompt honest null.
-          dataClient = new Redis(REDIS_URL, {
-            lazyConnect: true,
-            maxRetriesPerRequest: 1,
-            connectTimeout: 900,
-            enableOfflineQueue: false,
-          }) as unknown as RedisLike
+          dataClient = new Redis(
+            REDIS_URL,
+            REQUEST_CLIENT_OPTIONS
+          ) as unknown as RedisLike
         } catch {
           dataClient = null
         }
@@ -332,7 +331,7 @@ export async function GET(req: NextRequest) {
       if (REDIS_URL) {
         try {
           const { default: Redis } = await import('ioredis')
-          const sub = new Redis(REDIS_URL)
+          const sub = new Redis(REDIS_URL, SUBSCRIBER_CLIENT_OPTIONS)
           subClient = sub
 
           sub.subscribe('cabinet:world:updated').catch((err: unknown) => {

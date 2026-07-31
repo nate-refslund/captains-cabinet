@@ -88,9 +88,14 @@ export default async function OfficerDetailPage({
 }) {
   const { role } = await params
 
-  // Validate role exists
-  const expectedKeys = await redis.keys('cabinet:officer:expected:*')
-  const heartbeatKeys = await redis.keys('cabinet:heartbeat:*')
+  // Validate role exists. A store that did not answer contributes no roles —
+  // the static KNOWN_ROLES floor still resolves, so an unreachable store gives
+  // the Captain a page saying nothing was measured rather than a 500 or, worse,
+  // a `notFound()` implying the officer does not exist.
+  const [expectedKeys, heartbeatKeys] = await Promise.all([
+    redis.keys('cabinet:officer:expected:*').catch(() => [] as string[]),
+    redis.keys('cabinet:heartbeat:*').catch(() => [] as string[]),
+  ])
   const knownRoles = new Set<string>(KNOWN_ROLES)
   for (const key of expectedKeys) {
     knownRoles.add(key.replace('cabinet:officer:expected:', ''))
@@ -111,8 +116,8 @@ export default async function OfficerDetailPage({
     claudeAliveResult,
     telegramResult,
   ] = await Promise.all([
-    redis.get(`cabinet:heartbeat:${role}`),
-    redis.get(`cabinet:officer:expected:${role}`),
+    redis.get(`cabinet:heartbeat:${role}`).catch(() => null),
+    redis.get(`cabinet:officer:expected:${role}`).catch(() => null),
     getTmuxWindows(),
     isClaudeAlive(role),
     isTelegramConnected(role),
@@ -120,7 +125,9 @@ export default async function OfficerDetailPage({
 
   // Get daily cost
   const today = new Date().toISOString().split('T')[0]
-  const dailyCost = await redis.get(`cabinet:cost:officer:${role}:${today}`)
+  const dailyCost = await redis
+    .get(`cabinet:cost:officer:${role}:${today}`)
+    .catch(() => null)
 
   // Determine status
   const isRunning = runningWindows.includes(role)

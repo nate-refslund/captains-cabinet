@@ -36,7 +36,24 @@ interface OfficerInfo {
   lastHeartbeat: string | null
 }
 
+/**
+ * An unreachable store yields NO officers, not officers reported stopped.
+ *
+ * The roster comes entirely from the store; if the store did not answer, the
+ * honest render is an empty roster under the store-posture banner. Falling
+ * through with `status: 'stopped'` per officer would be a claim about the fleet
+ * derived from a failure to ask — the census defect, one surface over. There are
+ * no error boundaries in this app, so letting it throw is a blank 500 instead.
+ */
 async function getOfficerData(): Promise<OfficerInfo[]> {
+  try {
+    return await readOfficerData()
+  } catch {
+    return []
+  }
+}
+
+async function readOfficerData(): Promise<OfficerInfo[]> {
   // Get all expected officers
   const expectedKeys = await redis.keys('cabinet:officer:expected:*')
   const heartbeatKeys = await redis.keys('cabinet:heartbeat:*')

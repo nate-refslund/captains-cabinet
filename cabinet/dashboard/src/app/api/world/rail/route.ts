@@ -21,6 +21,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import yaml from 'js-yaml'
 import { freshSeconds, railOrder, ringFor } from '@/lib/world/ui-cards'
+import { REQUEST_CLIENT_OPTIONS } from '@/lib/store-reachability'
 
 export const dynamic = 'force-dynamic'
 
@@ -121,7 +122,7 @@ export async function GET(_req: NextRequest) {
   let redis: RedisLike | null = null
   try {
     const { default: Redis } = await import('ioredis')
-    redis = new Redis(REDIS_URL) as unknown as RedisLike
+    redis = new Redis(REDIS_URL, REQUEST_CLIENT_OPTIONS) as unknown as RedisLike
     const [activityKeys, expectedKeys, costHash] = await Promise.all([
       redis.keys('cabinet:officer:activity:*'),
       redis.keys('cabinet:officer:expected:*'),

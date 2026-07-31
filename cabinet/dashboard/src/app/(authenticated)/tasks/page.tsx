@@ -37,17 +37,25 @@ const OFFLINE_THRESHOLD_MS = 15 * 60 * 1000
  * reader with that arm; only a genuinely fresh reading counts as online.
  */
 async function getOfficerOnlineStatus(): Promise<Record<string, boolean>> {
-  const heartbeatKeys = await redis.keys('cabinet:heartbeat:*')
   const now = Date.now()
   const result: Record<string, boolean> = {}
 
-  await Promise.all(
-    heartbeatKeys.map(async (key) => {
-      const slug = key.replace('cabinet:heartbeat:', '')
-      const val = await redis.get(key)
-      result[slug] = freshnessOf(val, now, OFFLINE_THRESHOLD_MS).state === 'fresh'
-    })
-  )
+  try {
+    const heartbeatKeys = await redis.keys('cabinet:heartbeat:*')
+    await Promise.all(
+      heartbeatKeys.map(async (key) => {
+        const slug = key.replace('cabinet:heartbeat:', '')
+        const val = await redis.get(key)
+        result[slug] = freshnessOf(val, now, OFFLINE_THRESHOLD_MS).state === 'fresh'
+      })
+    )
+  } catch {
+    // An unreachable store yields NO entries — never entries set to `false`,
+    // which the strip would draw as "measured offline". An absent slug renders
+    // no online marker at all, and the page banner says why. Uncaught, this
+    // would 500 the whole tasks page (no error boundaries exist in this app).
+    return {}
+  }
   return result
 }
 

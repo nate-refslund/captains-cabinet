@@ -66,6 +66,7 @@ const { mockRedisInstance, mockIoredisDefault } = vi.hoisted(() => {
 vi.mock('ioredis', () => ({ default: mockIoredisDefault }))
 
 import { GET } from './route'
+import { SUBSCRIBER_CLIENT_OPTIONS } from '@/lib/store-reachability'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -490,10 +491,14 @@ describe('GET provisioning-status — terminal state auto-close', () => {
 // ---------------------------------------------------------------------------
 
 describe('GET provisioning-status — Redis Pub/Sub', () => {
-  it('calls ioredis constructor with REDIS_URL', async () => {
+  it('calls ioredis constructor with REDIS_URL and the shared subscriber bounds', async () => {
     const res = await GET(makeReq(), makeParams())
     const { reader } = await startStreamAndFlush(res.body!)
-    expect(mockIoredisDefault).toHaveBeenCalledWith('redis://localhost:6379')
+    expect(mockIoredisDefault).toHaveBeenCalledWith(
+      'redis://localhost:6379',
+      SUBSCRIBER_CLIENT_OPTIONS
+    )
+    expect(SUBSCRIBER_CLIENT_OPTIONS.connectTimeout).toBeTypeOf('number')
     await reader.cancel()
   })
 

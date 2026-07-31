@@ -22,7 +22,17 @@ interface OfficerInfo {
   lastHeartbeat: string | null
 }
 
+/** Same rule as the home page: no answer from the store means no roster, and
+ *  the store-posture banner above says so — never a roster of invented states. */
 async function getOfficerData(): Promise<OfficerInfo[]> {
+  try {
+    return await readOfficerData()
+  } catch {
+    return []
+  }
+}
+
+async function readOfficerData(): Promise<OfficerInfo[]> {
   // Get all expected officers
   const expectedKeys = await redis.keys('cabinet:officer:expected:*')
   const heartbeatKeys = await redis.keys('cabinet:heartbeat:*')

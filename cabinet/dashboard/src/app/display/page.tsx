@@ -23,7 +23,7 @@ import AutoRefresh from '@/components/display/auto-refresh'
 import LiveClock from '@/components/display/live-clock'
 import OfficerTile from '@/components/display/officer-tile'
 import StorePostureBanner from '@/components/store-posture-banner'
-import { storeReading } from '@/lib/redis'
+import { currentStoreReading } from '@/lib/redis'
 
 // Always render fresh; the AutoRefresh island re-pulls every 15s.
 export const dynamic = 'force-dynamic'
@@ -86,6 +86,10 @@ export default async function DisplayPage() {
     )
   }
 
+  // Probed, not read off the import-time constant — a kiosk pointed at a store
+  // that has died must say so on the wall, and the environment cannot know it.
+  const store = await currentStoreReading()
+
   const { timezone, captainName } = readPlatformMeta()
   const onlineCount = data.officers.filter((o) => o.online).length
   const totalOfficers = data.officers.length
@@ -119,7 +123,7 @@ export default async function DisplayPage() {
         office wall all day. A kiosk showing invented officers to whoever walks
         past is the disclosure gap that matters most, not the least.
       */}
-      <StorePostureBanner reading={storeReading} compact />
+      <StorePostureBanner reading={store} compact />
 
       {/* ===== Header strip ===== */}
       <header className="flex flex-wrap items-center justify-between gap-6 rounded-2xl border border-zinc-800 bg-zinc-900/60 px-8 py-5">

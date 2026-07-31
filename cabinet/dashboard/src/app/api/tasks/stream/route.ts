@@ -11,6 +11,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { SUBSCRIBER_CLIENT_OPTIONS } from '@/lib/store-reachability'
 
 export const dynamic = 'force-dynamic'
 
@@ -93,7 +94,7 @@ export async function GET(req: NextRequest) {
       if (REDIS_URL) {
         try {
           const { default: Redis } = await import('ioredis')
-          const sub = new Redis(REDIS_URL)
+          const sub = new Redis(REDIS_URL, SUBSCRIBER_CLIENT_OPTIONS)
           subClient = sub
 
           sub.subscribe('cabinet:tasks:updated').catch((err: unknown) => {

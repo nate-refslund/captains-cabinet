@@ -50,6 +50,7 @@ vi.mock('next/headers', () => ({
 }))
 
 import { GET } from './route'
+import { SUBSCRIBER_CLIENT_OPTIONS } from '@/lib/store-reachability'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -237,10 +238,17 @@ describe('GET tasks/stream — initial connected event', () => {
 // ---------------------------------------------------------------------------
 
 describe('GET tasks/stream — Redis Pub/Sub', () => {
-  it('calls ioredis constructor with REDIS_URL when REDIS_URL is set', async () => {
+  it('calls ioredis constructor with REDIS_URL and the shared subscriber bounds', async () => {
+    // The bounds are asserted, not just the URL. An unbounded subscriber against
+    // a store that accepts the connection and never answers leaves this stream
+    // silently half-alive forever — the same hang, one channel over.
     const res = await GET(makeReq())
     const { reader } = await startStreamAndFlush(res.body!)
-    expect(mockIoredisDefault).toHaveBeenCalledWith(process.env.REDIS_URL)
+    expect(mockIoredisDefault).toHaveBeenCalledWith(
+      process.env.REDIS_URL,
+      SUBSCRIBER_CLIENT_OPTIONS
+    )
+    expect(SUBSCRIBER_CLIENT_OPTIONS.connectTimeout).toBeTypeOf('number')
     await reader.cancel()
   })
 

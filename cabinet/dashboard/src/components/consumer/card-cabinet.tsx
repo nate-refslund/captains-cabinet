@@ -67,6 +67,17 @@ interface OfficerRow {
 }
 
 async function buildOfficerRows(): Promise<OfficerRow[]> {
+  try {
+    return await readOfficerRows()
+  } catch {
+    // No rows, never rows marked offline. "Offline" is a measurement of the
+    // officer; a store that did not answer measured nothing about anyone. The
+    // card's empty state plus the store-posture banner is the honest render.
+    return []
+  }
+}
+
+async function readOfficerRows(): Promise<OfficerRow[]> {
   const expectedKeys = await redis.keys('cabinet:officer:expected:*')
   const heartbeatKeys = await redis.keys('cabinet:heartbeat:*')
   const roles = new Set<string>()
