@@ -1,4 +1,4 @@
-"""Fleet dead-man tests.
+"""Fleet dead-man tests — the WATCHER half (cabinet/scripts/fleet-deadman.py).
 
 THE BAR THESE ARMS ARE WRITTEN TO. This program has found, repeatedly, that the
 expensive defect is not a wrong answer but a SENSOR THAT CANNOT FAIL. So every
@@ -32,7 +32,14 @@ import os
 
 import pytest
 
-from framework.liveness import fleetwatch as fw
+import importlib.util as _ilu
+import os as _os
+_ROOT = _os.path.dirname(_os.path.dirname(_os.path.dirname(
+    _os.path.dirname(_os.path.abspath(__file__)))))
+_S = _ilu.spec_from_file_location(
+    'fleet_deadman', _os.path.join(_ROOT, 'cabinet/scripts/fleet-deadman.py'))
+fw = _ilu.module_from_spec(_S)
+_S.loader.exec_module(fw)
 
 NOW = 1_000_000.0
 
@@ -249,22 +256,12 @@ def test_unknown_state_name_does_not_ping():
 
 def test_pulse_writes_and_scan_reads_it_back(tmp_path):
     root = _root(tmp_path)
-    res = fw.pulse("outcome-watchdog", root=root, now=lambda: NOW)
+    res = fw.deadman.pulse("outcome-watchdog", root=root, now=lambda: NOW)
     assert res["wrote"] is True and res["reason"] == "ok"
     assert res["path"].startswith(str(tmp_path)), "sandbox escape"
     s = _scan(root)
     assert s["observed"] is True
     assert s["pulses"]["outcome-watchdog"]["ts"] == NOW
-
-
-def test_pulse_refuses_a_source_name_that_would_escape_the_directory(tmp_path):
-    root = _root(tmp_path)
-    for bad in ("../../etc/passwd", "a/b", "", ".", "..", "x" * 65, ".hidden"):
-        res = fw.pulse(bad, root=root)
-        assert res["wrote"] is False, f"{bad!r} was accepted as a filename"
-        assert res["reason"] == "bad-source"
-    assert not os.path.exists(fw.pulse_dir(root)) or \
-        os.listdir(fw.pulse_dir(root)) == []
 
 
 def test_scan_ignores_a_file_whose_name_is_not_a_safe_source(tmp_path):
@@ -276,41 +273,6 @@ def test_scan_ignores_a_file_whose_name_is_not_a_safe_source(tmp_path):
     with open(os.path.join(d, "notes.txt"), "w") as fh:
         fh.write("x")
     assert _scan(root)["pulses"] == {}
-
-
-def test_pulse_never_raises_when_the_write_fails(tmp_path):
-    def boom(_p, _t):
-        raise OSError("disk full")
-
-    res = fw.pulse("s", root=_root(tmp_path), writer=boom)
-    assert res["wrote"] is False and res["reason"] == "write-failed"
-
-
-def test_pulse_with_no_state_dir_is_inert_not_an_error(tmp_path, monkeypatch):
-    monkeypatch.setenv(fw.STATE_ENV, "")
-    monkeypatch.setattr(fw, "state_dir", lambda default="": "")
-    res = fw.pulse("s")
-    assert res["wrote"] is False and res["reason"] == "no-state-dir"
-
-
-def test_pulse_write_is_atomic_no_partial_file_is_ever_visible(tmp_path, monkeypatch):
-    """A reader must never see a half-written pulse and call it corrupt — that
-    would turn a healthy fleet into an UNKNOWN on a timing coincidence. So the
-    final name may only ever appear via a rename of an already-complete file."""
-    root = _root(tmp_path)
-    seen = []
-    real_replace = os.replace
-
-    def spy_replace(src, dst):
-        with open(src, "r", encoding="utf-8") as fh:
-            seen.append((json.loads(fh.read()), os.path.basename(str(dst))))
-        real_replace(src, dst)
-
-    monkeypatch.setattr(os, "replace", spy_replace)
-    fw.pulse("s", root=root, now=lambda: NOW)
-    assert seen, "pulse did not go through os.replace — the write is not atomic"
-    payload, name = seen[0]
-    assert payload["ts"] == NOW and name == "s.json"
 
 
 # ── notification: transition-only, and injection-proof ─────────────────────
@@ -353,7 +315,7 @@ def test_notify_command_passes_strings_as_arguments_never_as_script_text():
         seen["argv"], seen["input"] = a, kw.get("input")
         return R()
 
-    import framework.liveness.fleetwatch as mod
+    mod = fw
     real = mod.subprocess.run
     mod.subprocess.run = spy
     try:
@@ -379,7 +341,7 @@ def test_verdict_round_trips_and_lands_inside_the_sandbox(tmp_path):
 def test_read_verdict_returns_None_rather_than_a_guess(tmp_path):
     root = _root(tmp_path)
     assert fw.read_verdict(root=root) is None
-    with open(os.path.join(root, fw.VERDICT_NAME), "w") as fh:
+    with open(os.path.join(root, fw.FLEET_STATE_FILE), "w") as fh:
         fh.write("[]")
     assert fw.read_verdict(root=root) is None
 
@@ -388,7 +350,7 @@ def test_read_verdict_returns_None_rather_than_a_guess(tmp_path):
 
 def test_check_end_to_end_alive_pings_once(tmp_path):
     root = _root(tmp_path)
-    fw.pulse("s", root=root, now=lambda: NOW)
+    fw.deadman.pulse("s", root=root, now=lambda: NOW)
     pings, notes = [], []
     v = fw.check(root=root, cfg={"expect": {"s": 3600}}, now=lambda: NOW,
                  emit=lambda e: pings.append(e) or {"emitted": True, "reason": "ok"},
@@ -401,7 +363,7 @@ def test_check_end_to_end_alive_pings_once(tmp_path):
 
 def test_check_end_to_end_dead_does_not_ping_and_notifies_once(tmp_path):
     root = _root(tmp_path)
-    fw.pulse("s", root=root, now=lambda: NOW - 99999)
+    fw.deadman.pulse("s", root=root, now=lambda: NOW - 99999)
     pings, notes = [], []
 
     def run():
@@ -421,7 +383,7 @@ def test_check_reports_what_it_actually_did_not_what_it_attempted(tmp_path):
     """A failed ping must read as a failed ping. "The alarm was sent" is exactly
     the class of claim this program has found false over and over."""
     root = _root(tmp_path)
-    fw.pulse("s", root=root, now=lambda: NOW)
+    fw.deadman.pulse("s", root=root, now=lambda: NOW)
     v = fw.check(root=root, cfg={"expect": {"s": 3600}}, now=lambda: NOW,
                  emit=lambda e: {"emitted": False, "reason": "transport-error"},
                  notify=lambda t, b: True)
@@ -431,19 +393,19 @@ def test_check_reports_what_it_actually_did_not_what_it_attempted(tmp_path):
 
 def test_check_dry_run_touches_nothing(tmp_path):
     root = _root(tmp_path)
-    fw.pulse("s", root=root, now=lambda: NOW)
+    fw.deadman.pulse("s", root=root, now=lambda: NOW)
     pings = []
     v = fw.check(root=root, cfg={"expect": {"s": 3600}}, now=lambda: NOW,
                  emit=lambda e: pings.append(e) or {"emitted": True},
                  notify=lambda t, b: True, allow_side_effects=False)
     assert v["state"] == fw.STATE_ALIVE
     assert pings == [] and v["pinged"] is False
-    assert not os.path.exists(os.path.join(root, fw.VERDICT_NAME))
+    assert not os.path.exists(os.path.join(root, fw.FLEET_STATE_FILE))
 
 
 def test_check_survives_a_deadman_that_raises(tmp_path):
     root = _root(tmp_path)
-    fw.pulse("s", root=root, now=lambda: NOW)
+    fw.deadman.pulse("s", root=root, now=lambda: NOW)
 
     def boom(_e):
         raise RuntimeError("network gone")
@@ -488,11 +450,6 @@ def test_status_survives_a_broken_deadman(tmp_path):
                    deadman_status=boom)
     assert st["external"] is False
     assert st["external_reason"] == "deadman-unavailable"
-
-
-def test_fleet_alive_is_a_known_deadman_event():
-    from framework.liveness import deadman
-    assert deadman.EVENT_FLEET_ALIVE in deadman.KNOWN_EVENTS
 
 
 # ── config parsing ─────────────────────────────────────────────────────────
@@ -540,7 +497,7 @@ def test_pulse_store_does_not_ride_the_event_log_dir(monkeypatch):
     scans the other, finds nothing, and reports a confident permanent DEAD."""
     from framework import env
 
-    monkeypatch.delenv(fw.STATE_ENV, raising=False)
+    monkeypatch.delenv(fw.deadman.STATE_ENV, raising=False)
     monkeypatch.delenv("CABINET_EVENT_LOG_DIR", raising=False)
     a = env.fleet_liveness_dir()
     monkeypatch.setenv("CABINET_EVENT_LOG_DIR",
@@ -550,22 +507,9 @@ def test_pulse_store_does_not_ride_the_event_log_dir(monkeypatch):
                     "the fleet sets that variable and the watcher does not")
 
 
-def test_pulse_store_still_separates_dev_from_runtime(monkeypatch):
-    """The one variable still steering the path, kept on purpose: a dev run
-    pulsing into the runtime's store would certify a dead runtime fleet as
-    alive. It fails in the safe direction (a false page, never a false green)."""
-    from framework import env
-
-    monkeypatch.delenv(fw.STATE_ENV, raising=False)
-    monkeypatch.setenv("CABINET_ENV", "runtime")
-    runtime = env.fleet_liveness_dir()
-    monkeypatch.setenv("CABINET_ENV", "dev")
-    assert env.fleet_liveness_dir() != runtime
-
-
 def test_verdict_names_the_directory_it_scanned(tmp_path):
     root = _root(tmp_path)
-    fw.pulse("s", root=root, now=lambda: NOW)
+    fw.deadman.pulse("s", root=root, now=lambda: NOW)
     v = fw.check(root=root, cfg={"expect": {"s": 3600}}, now=lambda: NOW,
                  emit=lambda e: {"emitted": True}, notify=lambda t, b: True)
     assert v["pulse_dir"] == fw.pulse_dir(root)
@@ -591,7 +535,7 @@ def test_the_real_watchdog_sweep_actually_pulses(tmp_path, monkeypatch):
     from framework.watchdog.tests.test_registry import FakeProbe
 
     store = tmp_path / "liveness"
-    monkeypatch.setenv(fw.STATE_ENV, str(store))
+    monkeypatch.setenv(fw.deadman.STATE_ENV, str(store))
     assert fw.pulse_dir().startswith(str(tmp_path)), "sandbox escape"
     assert not os.path.exists(fw.pulse_dir())
 
@@ -609,24 +553,6 @@ def test_the_real_watchdog_sweep_actually_pulses(tmp_path, monkeypatch):
     assert s["pulses"]["outcome-watchdog"]["ts"] is not None
 
 
-def test_a_dry_run_sweep_does_not_pulse(tmp_path, monkeypatch):
-    """A rehearsal must not certify a fleet as alive — the same reason dry-run
-    does not stamp the heartbeat beside it."""
-    import datetime as dt
-
-    from framework.watchdog import check
-    from framework.watchdog.tests.test_registry import FakeProbe
-
-    monkeypatch.setenv(fw.STATE_ENV, str(tmp_path / "liveness"))
-    now = dt.datetime(2026, 6, 29, 6, 30, tzinfo=dt.timezone.utc)
-    local = dt.datetime(2026, 6, 29, 8, 30,
-                        tzinfo=dt.timezone(dt.timedelta(hours=2)))
-    check.run(probe=FakeProbe(now=now, local=local, files={}, mtimes={},
-                              redis={}),
-              dry_run=True)
-    assert fw.scan(fw.pulse_dir())["pulses"] == {}
-
-
 def test_the_inbound_poller_pulses_only_after_an_answered_poll():
     """The poller's pulse must sit AFTER the `ok` check, so a lane stuck in a
     retry loop reads as dead rather than as a spinning process.
@@ -639,7 +565,7 @@ def test_the_inbound_poller_pulses_only_after_an_answered_poll():
         os.path.dirname(os.path.abspath(__file__)))))
     src = open(os.path.join(root, "cabinet/scripts/officer-inbound-poller.py"),
                encoding="utf-8").read()
-    pulse_at = src.index('fleetwatch.pulse("officer-inbound")')
+    pulse_at = src.index('_dm.pulse("officer-inbound")')
     ok_guard = src.index('log(f"getUpdates not ok:')
     err_guard = src.index('log(f"getUpdates error:')
     assert ok_guard < pulse_at, "the pulse precedes the ok-guard it depends on"

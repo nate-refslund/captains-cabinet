@@ -1,210 +1,119 @@
-"""Fleet dead-man — the fleet proves it is alive, and SILENCE is the alarm.
+#!/usr/bin/env python3.12
+"""fleet-deadman.py — is the fleet ALIVE, DEAD, or can I not tell?
 
-WHAT THIS IS. Two halves that never share a failure domain:
+Runs OUTSIDE the fleet. Reads the pulse files that fleet jobs write through
+``framework.liveness.deadman.pulse`` and answers with exactly one of three
+states. When — and only when — the answer is ALIVE it pings an off-machine
+watcher, so the off-machine watcher alarms on the ABSENCE of a ping.
 
-  * ``pulse(source)`` runs INSIDE the fleet. It writes one small file saying
-    "``source`` was alive at ``ts``". That is all it does. No network, no
-    datastore, no decision.
-  * ``assess()`` runs OUTSIDE the fleet. It looks at those files and returns
-    ALIVE / DEAD / UNKNOWN. When — and only when — it says ALIVE it pings an
-    off-machine watcher, so the off-machine watcher alarms on the ABSENCE of a
-    ping.
+WHY IT EXISTS. On 2026-07-25 every ``com.cabinet.*`` launchd label on the live
+box was unloaded. Every in-repo sensor was a job in that same set, so the fault
+and its detectors were removed in one act, and every escalation tier terminated
+at the Chair — itself a supervised officer. Nothing reported anything for five
+days while the dashboard rendered and every gate stayed green.
 
-WHY THAT SHAPE. A watcher that must NOTICE a failure fails with it; a watcher
-that must be REASSURED does not. Chaining it as "ping only on ALIVE" means one
-signal covers three different deaths:
+WHY THE PING IS ON ALIVE AND NOT ON FAILURE. A watcher that must NOTICE a
+failure fails with it; a watcher that must be REASSURED does not. Chained this
+way, one signal covers three different deaths:
 
-  * the fleet dies            → assess says DEAD → no ping → external alarm
-  * this watcher dies         → nothing pings    → external alarm
-  * the whole box dies        → nothing pings    → external alarm
+  * the fleet dies      → this says DEAD  → no ping → external alarm
+  * this watcher dies   → nothing pings            → external alarm
+  * the whole box dies  → nothing pings            → external alarm
 
-The third is why the external leg cannot be replaced by anything local, and the
-second is why the watcher pinging on its own behalf would be a lie: an ALIVE
-ping asserts a measured fact about the fleet, never "I ran".
+The third is why no local surface can replace the external leg, and the second
+is why this must never ping on its own behalf: an ALIVE ping asserts a measured
+fact about the fleet, never "I ran".
 
 THREE STATES, AND THE ONE THAT IS ALWAYS GOT WRONG.
 
-  ALIVE    every expected source pulsed recently. Measured.
+  ALIVE    every expected source pulsed inside its limit. Measured.
   DEAD     the pulse store ANSWERED, and a source is stale or has never pulsed.
-  UNKNOWN  the pulse store could not be asked, or a pulse could not be read, or
-           the clock disagrees, or nothing is configured to expect.
+  UNKNOWN  the store could not be asked, or a pulse could not be believed, or
+           the clocks disagree, or nothing is configured to expect.
 
-The failure this module exists to not repeat: on 2026-07-25 every launchd label
-in the fleet was unloaded, and the in-repo check written for exactly that event
-read "``launchctl list`` returned no cabinet rows" as "I cannot see launchd" and
-switched ITSELF off. An answered scan holding nothing is a MEASUREMENT, and a
-very loud one. So here: a readable pulse directory containing no pulse for an
-expected source is DEAD, not UNKNOWN. Only a store that could not be READ AT ALL
-is UNKNOWN — and the two are told apart by whether the store's PARENT is
-readable, which is the one observation that distinguishes "the fleet wrote
-nothing" from "I cannot see where the fleet writes".
+The failure this file exists to not repeat: with every label unloaded,
+``launchctl list`` answered perfectly well with zero cabinet rows, and the check
+written for exactly that event read it as "I cannot see launchd" and switched
+ITSELF off. An answered scan holding nothing is a MEASUREMENT, and a very loud
+one. So here: a readable pulse store containing no pulse for an expected source
+is DEAD, not UNKNOWN. Only a store that could not be READ AT ALL is UNKNOWN —
+and the two are told apart by whether the store's PARENT is readable, the one
+observation that distinguishes "the fleet wrote nothing" from "I cannot see
+where the fleet writes".
 
 UNKNOWN NEVER PINGS. ``decide_ping`` is ``state == ALIVE``, deliberately not
-``state != DEAD``: an emitter that pings while it cannot tell converts every
-future blind spot into a silent all-clear, which is the same fail-open in a
-different costume.
+``state != DEAD``: pinging while you cannot tell converts every future blind
+spot into a silent all-clear.
+
+WHY THIS PLANE. It sits beside ``ledger-liveness-check.py`` and
+``healthchecks-drill.py`` — the cabinet's other operational dead-men — because
+that is what it is: a scheduled runner that looks at this box and pings out. The
+EMITTER is universal and lives in ``framework/liveness/deadman.py`` with the
+Captain-contact heartbeats; the scanning, the decision and the notification are
+operations.
+
+WHY PYTHON AND NOT SHELL. CI is ubuntu and its only shell coverage is
+``bash -n``, a syntax check that executes nothing, so a shell watcher would be
+untested by construction on the one platform that exists. Everything decidable
+without launchd is a pure function, exercised by
+``cabinet/scripts/tests/test_fleet_deadman.py`` on the CI runner.
 
 INERT BY DEFAULT, AND VISIBLY SO. With no config there is nothing to expect, so
-the verdict is UNKNOWN/``unarmed`` — never ALIVE. ``status()`` answers "is this
-armed, and which legs" offline, because an absence detector that is itself
-silently absent produces exactly the same observable (no pings) as a dead fleet.
+the verdict is UNKNOWN/``unarmed`` — never ALIVE. ``--status`` answers "armed,
+and which legs" offline, because an absence detector that is itself silently
+absent produces the same observable — no pings — as a dead fleet.
 
-SURVIVAL CONTRACT. Standard library only, and a PLAIN FILE as the store. Any
-datastore process is itself a supervised service on the watched box, so a
-watcher reading one cannot tell "the fleet is gone" from "the store is gone" —
-which is the exact conflation this module exists to refuse. No yaml, and no
-import of anything this watches. The one framework import (``framework.env``, a
-pure path resolver) is guarded exactly as ``deadman`` guards it. Every I/O
-boundary is an injectable seam so the whole decision surface is testable on any
-platform — including the CI runner, which is not macOS.
-
-FAIL DIRECTION. ``pulse`` never raises: it is called from live fleet jobs and a
-heartbeat failure must never cost the work. ``assess`` never raises: its whole
-job is to produce a state, and an internal error is itself an UNKNOWN.
+STANDARD LIBRARY ONLY, and no import of anything it watches. The single
+framework import is the emitter package, which is itself stdlib-only and
+guarded.
 """
 from __future__ import annotations
 
 import json
 import os
 import subprocess
-import tempfile
+import sys
 import time
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__)))))
+
+from framework.liveness import deadman  # noqa: E402
 
 STATE_ALIVE = "ALIVE"
 STATE_DEAD = "DEAD"
 STATE_UNKNOWN = "UNKNOWN"
 
-# Config path override, same per-process idiom as CABINET_LIVENESS_CONFIG.
+EVENT_FLEET_ALIVE = deadman.EVENT_FLEET_ALIVE
 CONFIG_ENV = "CABINET_FLEETWATCH_CONFIG"
-# Where pulses land. Override exists so a test (or a second instance) owns the
-# whole path, rather than steering it through HOME and hoping.
-STATE_ENV = "CABINET_FLEETWATCH_STATE_DIR"
+FLEET_STATE_FILE = "fleet-state.json"
 
-PULSE_SUBDIR = "pulse"
-VERDICT_NAME = "verdict.json"
-
-# A source name becomes a FILENAME, so it is validated as one rather than
-# escaped-and-hoped. Anything outside this set is refused at write time and
-# ignored at read time — a name needing quoting is an operator typo.
-_SAFE_SOURCE = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
-
-# Defaults chosen to be LOOSER than any real cadence, so the first alarm a
-# deployment ever sees is a real one. Overridden per source in the config.
+# Defaults chosen LOOSER than any real cadence, so the first alarm a deployment
+# ever sees is a real one. Overridden per source in the config.
 DEFAULT_MAX_AGE_S = 5400          # 90 min
 # A pulse dated meaningfully in the future means the two clocks disagree, and a
 # staleness judgement across disagreeing clocks is not a measurement.
 DEFAULT_CLOCK_TOLERANCE_S = 300
 
-
-# ── paths ──────────────────────────────────────────────────────────────────
-
-def _env_module():
-    """``framework.env`` or None. GUARDED and lazy on purpose: this module must
-    stay importable — and inert — on a tree where the framework is broken, since
-    the whole promise is that it survives what it measures."""
-    try:
-        from framework import env as _env
-        return _env
-    except Exception:
-        return None
-
-
-def state_dir(default: str = "") -> str:
-    """Root of the liveness state store. Env override wins; otherwise the
-    deployment location from ``framework.env``; otherwise ``default``."""
-    override = (os.environ.get(STATE_ENV) or "").strip()
-    if override:
-        return os.path.expanduser(override)
-    env = _env_module()
-    if env is not None:
-        try:
-            return str(env.fleet_liveness_dir(default))
-        except Exception:
-            pass
-    return str(default)
-
-
-def pulse_dir(root: str = "") -> str:
-    """The directory pulses are written into. Empty root ⇒ empty (inert)."""
-    base = root or state_dir()
-    return os.path.join(base, PULSE_SUBDIR) if base else ""
+# Re-exported so this file reads as one surface; both resolve in the emitter,
+# which is the half the fleet jobs import.
+pulse_dir = deadman.pulse_dir
+state_dir = deadman.state_dir
+safe_source = deadman.safe_source
+_atomic_write = deadman._atomic_write
 
 
 def config_path(default: str = "") -> str:
-    """Resolve the fleetwatch config path through the ratified env seam."""
+    """Resolve this watcher's config path through the ratified env seam."""
     override = (os.environ.get(CONFIG_ENV) or "").strip()
     if override:
         return os.path.expanduser(override)
-    env = _env_module()
-    if env is not None:
-        try:
-            return str(env.fleetwatch_config_path(default))
-        except Exception:
-            pass
-    return str(default)
-
-
-def safe_source(name: str) -> bool:
-    """Is ``name`` usable as a pulse filename? Bounded, no separators, no dots
-    leading (so '..' can never address a parent)."""
-    if not name or len(name) > 64:
-        return False
-    if name.startswith(".") or name.endswith("."):
-        return False
-    return all(ch in _SAFE_SOURCE for ch in name)
-
-
-# ── the fleet side: prove you are alive ────────────────────────────────────
-
-def pulse(source: str, *, root: str = "", now=None, makedirs=None,
-          writer=None) -> dict:
-    """Record that ``source`` was alive. NEVER raises, NEVER blocks on network.
-
-    Returns ``{"wrote": bool, "reason": str, "path": str, "ts": float}``. Every
-    non-write carries a machine-readable reason (``bad-source`` / ``no-state-dir``
-    / ``mkdir-failed`` / ``write-failed``) because a heartbeat that looks emitted
-    and is not is the precise failure this whole module exists to kill.
-
-    The write is ATOMIC (temp file in the same directory, then ``os.replace``):
-    a reader must never see a half-written pulse and call it corrupt, which
-    would turn a healthy fleet into an UNKNOWN."""
-    ts = float(now() if now else time.time())
     try:
-        if not safe_source(source):
-            return {"wrote": False, "reason": "bad-source", "path": "", "ts": ts}
-        d = pulse_dir(root)
-        if not d:
-            return {"wrote": False, "reason": "no-state-dir", "path": "", "ts": ts}
-        try:
-            (makedirs or os.makedirs)(d, exist_ok=True)
-        except Exception:
-            return {"wrote": False, "reason": "mkdir-failed", "path": d, "ts": ts}
-        path = os.path.join(d, source + ".json")
-        payload = json.dumps({"source": source, "ts": ts, "pid": os.getpid(),
-                              "iso": time.strftime("%Y-%m-%dT%H:%M:%SZ",
-                                                   time.gmtime(ts))})
-        try:
-            (writer or _atomic_write)(path, payload)
-        except Exception:
-            return {"wrote": False, "reason": "write-failed", "path": path, "ts": ts}
-        return {"wrote": True, "reason": "ok", "path": path, "ts": ts}
-    except Exception:  # pragma: no cover - belt: pulse must NEVER raise
-        return {"wrote": False, "reason": "internal-error", "path": "", "ts": ts}
+        from framework import env as _env
 
-
-def _atomic_write(path: str, text: str) -> None:
-    d = os.path.dirname(path)
-    fd, tmp = tempfile.mkstemp(dir=d, prefix=".tmp-", suffix=".json")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(text)
-        os.replace(tmp, path)
+        return str(_env.fleetwatch_config_path(default))
     except Exception:
-        try:
-            os.unlink(tmp)
-        except Exception:
-            pass
-        raise
+        return str(default)
 
 
 # ── the watcher side: could I ask, and what did it say ─────────────────────
@@ -410,7 +319,7 @@ def write_verdict(verdict: dict, *, root: str = "", now=None, writer=None,
             (makedirs or os.makedirs)(base, exist_ok=True)
         except Exception:
             return {"wrote": False, "reason": "mkdir-failed", "path": base}
-        path = os.path.join(base, VERDICT_NAME)
+        path = os.path.join(base, FLEET_STATE_FILE)
         stamped = dict(verdict)
         ts = float(now() if now else time.time())
         stamped["checked_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts))
@@ -431,7 +340,7 @@ def read_verdict(*, root: str = "", reader=None) -> dict | None:
     if not base:
         return None
     try:
-        raw = (reader or _read_text)(os.path.join(base, VERDICT_NAME))
+        raw = (reader or _read_text)(os.path.join(base, FLEET_STATE_FILE))
         obj = json.loads(raw)
         return obj if isinstance(obj, dict) else None
     except Exception:
@@ -493,9 +402,10 @@ def parse_config(text: str) -> dict:
     return cfg
 
 
-def _strip_comment(value: str) -> str:
-    import re
-    return re.split(r"\s+#", value, maxsplit=1)[0].strip().strip('"').strip("'")
+# The comment-stripper is the EMITTER's, not a second copy: two dead-man configs
+# parsed by two subtly different narrow parsers is how one of them silently stops
+# honouring a comment convention the operator relies on.
+_strip_comment = deadman._strip_comment
 
 
 def load_config(path: str | None = None) -> dict:
@@ -541,8 +451,6 @@ def status(*, cfg: dict | None = None, config_path_override: str | None = None,
     external = False
     try:
         if deadman_status is None:
-            from framework.liveness import deadman
-
             deadman_status = deadman.status
         st = deadman_status()
         ext_reason = (st.get("events") or {}).get(EVENT_FLEET_ALIVE, "no-event")
@@ -553,14 +461,6 @@ def status(*, cfg: dict | None = None, config_path_override: str | None = None,
             "external_reason": ext_reason,
             "expect": dict(conf.get("expect") or {}),
             "config_present": bool(conf.get("_present"))}
-
-
-# Imported here rather than at module top so a broken ``deadman`` cannot stop
-# this module loading — the survival contract applies to its own package too.
-try:  # pragma: no cover - trivial
-    from framework.liveness.deadman import EVENT_FLEET_ALIVE
-except Exception:  # pragma: no cover
-    EVENT_FLEET_ALIVE = "fleet_alive"
 
 
 # ── one pass ───────────────────────────────────────────────────────────────
@@ -607,8 +507,6 @@ def check(*, root: str = "", cfg: dict | None = None, now=None,
         else:
             try:
                 if emit is None:
-                    from framework.liveness import deadman
-
                     emit = deadman.emit
                 res = emit(EVENT_FLEET_ALIVE)
                 verdict["pinged"] = bool(res.get("emitted"))
@@ -628,7 +526,7 @@ def main(argv: list | None = None) -> int:
     import argparse
 
     ap = argparse.ArgumentParser(
-        prog="fleetwatch",
+        prog="fleet-deadman",
         description="Fleet dead-man: ALIVE / DEAD / UNKNOWN. Exit 0/1/2.")
     ap.add_argument("--status", action="store_true",
                     help="report arming state only; no scan, no ping, no write")

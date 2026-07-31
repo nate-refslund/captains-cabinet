@@ -784,7 +784,36 @@ budgets:
     # renderer shared by the approval card and the briefing so the two cannot
     # drift. Zero new production modules (248 <= 248).
     # observed == maximum, zero headroom.
-    maximum: 62630
+    #
+    # 62630 -> 62761 (+131 measured 2026-07-31 via cognitive-architecture-census.py,
+    # observed 77303 vs the then-effective 77172): the FLEET PULSE emitter, added
+    # to framework/liveness/deadman.py beside the Captain-contact heartbeats it
+    # already holds. RAISED VISIBLY, and the instrument is deliberate: this is
+    # MASS, not a new organ. ZERO new production modules (248 <= 248) and zero
+    # new expansion rows — the emitter joins the module whose entire subject is
+    # liveness signals leaving this failure domain, and the SCANNER, the decision
+    # and the notification live in cabinet/scripts/fleet-deadman.py beside
+    # ledger-liveness-check.py and healthchecks-drill.py, which is where this
+    # tree already keeps scheduled runners that look at the box and ping out.
+    #
+    # WHY IT WAS BUILT AT ALL: on 2026-07-25 every com.cabinet.* launchd label
+    # was unloaded, every in-repo sensor was a job in that same set, and nothing
+    # reported anything for five days while the dashboard rendered and every gate
+    # stayed green. What is added here is only the emitter half — pulse(), the
+    # store resolvers, the filename guard and the atomic write — because a
+    # dead-man's whole premise is that the thing being watched actively proves it
+    # is alive and SILENCE is the alarm. A watcher that must notice a failure
+    # fails with it.
+    #
+    # HONEST ACCOUNTING: most of these lines are docstring prose carrying the
+    # reason for each invariant (why a plain file and not a datastore, why the
+    # write is atomic, why a source name is validated as a filename, why the
+    # store must not ride CABINET_EVENT_LOG_DIR). They are NOT reformatted into
+    # # comments to duck this budget — the counter excludes comments, so that
+    # would be optimising the number instead of the thing. The three suites and
+    # the install tool's fixtures are tests and cost this budget nothing.
+    # observed == maximum, zero headroom.
+    maximum: 62761
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

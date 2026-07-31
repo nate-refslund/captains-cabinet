@@ -1386,9 +1386,9 @@ def main() -> int:
         if _now_p - _last_pulse_at[0] >= 60:
             _last_pulse_at[0] = _now_p
             try:
-                from framework.liveness import fleetwatch
+                from framework.liveness import deadman as _dm
 
-                fleetwatch.pulse("officer-inbound")
+                _dm.pulse("officer-inbound")
             except Exception:
                 pass  # a heartbeat must never cost an inbound message
 

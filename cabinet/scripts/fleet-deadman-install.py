@@ -28,7 +28,7 @@ import re
 import subprocess
 import sys
 
-LABEL = "com.cabinet-liveness.fleetwatch"
+LABEL = "com.cabinet-liveness.fleet-deadman"
 TEMPLATE_REL = f"cabinet/launchd/{LABEL}.template.plist"
 LAUNCH_AGENTS = "~/Library/LaunchAgents"
 
@@ -89,7 +89,7 @@ def validate(rendered: str) -> dict:
 def main(argv: list | None = None) -> int:
     here = os.path.dirname(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__))))
-    ap = argparse.ArgumentParser(prog="fleetwatch-install")
+    ap = argparse.ArgumentParser(prog="fleet-deadman-install")
     ap.add_argument("--repo-root", default=here)
     ap.add_argument("--output-dir", default="",
                     help="render here instead of printing (never loads)")
@@ -151,7 +151,7 @@ def main(argv: list | None = None) -> int:
     print(f"  launchctl bootstrap gui/$(id -u) {dest}")
     print("")
     print("Then confirm both legs are armed:")
-    print("  python3.12 -m framework.liveness.fleetwatch --status")
+    print("  python3.12 cabinet/scripts/fleet-deadman.py --status")
     return 0
 
 

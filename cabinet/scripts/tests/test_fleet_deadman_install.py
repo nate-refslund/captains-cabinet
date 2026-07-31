@@ -20,7 +20,7 @@ import pytest
 _HERE = os.path.dirname(os.path.abspath(__file__))          # cabinet/scripts/tests
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(_HERE)))  # repo root
 _SPEC = importlib.util.spec_from_file_location(
-    "fleetwatch_install", os.path.join(_ROOT, "cabinet/scripts/fleetwatch-install.py"))
+    "fleet_deadman_install", os.path.join(_ROOT, "cabinet/scripts/fleet-deadman-install.py"))
 fwi = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(fwi)
 
@@ -49,7 +49,7 @@ def test_the_shipped_template_renders_and_validates(tmp_path):
     obj = fwi.validate(fwi.render(tpl, _values(tmp_path)))
     assert obj["Label"] == fwi.LABEL
     assert obj["StartInterval"] > 0
-    assert obj["ProgramArguments"][-1] == "framework.liveness.fleetwatch"
+    assert obj["ProgramArguments"][-1].endswith("cabinet/scripts/fleet-deadman.py")
 
 
 def test_validate_rejects_a_com_cabinet_label(tmp_path):
@@ -111,7 +111,7 @@ def test_installer_never_executes_launchctl():
     other than the control, which is this program's most-paid defect class."""
     import ast
 
-    with open(os.path.join(_ROOT, "cabinet/scripts/fleetwatch-install.py"),
+    with open(os.path.join(_ROOT, "cabinet/scripts/fleet-deadman-install.py"),
               encoding="utf-8") as fh:
         tree = ast.parse(fh.read())
 

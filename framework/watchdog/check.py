@@ -488,9 +488,9 @@ def run(probe: Optional[RealProbe] = None, *, dry_run: bool = False) -> dict:
         # "the fleet is gone" from "Redis is gone". A file survives both. Wrapped
         # because a heartbeat must never cost the sweep that earned it.
         try:
-            from framework.liveness import fleetwatch
+            from framework.liveness import deadman as _dm
 
-            fleetwatch.pulse("outcome-watchdog")
+            _dm.pulse("outcome-watchdog")
         except Exception:
             pass
 

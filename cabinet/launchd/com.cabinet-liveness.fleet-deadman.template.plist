@@ -6,7 +6,7 @@ Fleet dead-man watcher.
 (No double hyphen may appear anywhere in this comment. XML forbids it inside a
 comment; launchd tolerates it and strict parsers do not, and two live plists in
 this tree already carry that bug. Long flags are therefore named in prose, and
-cabinet/scripts/fleetwatch-install.py prints the exact command lines.)
+cabinet/scripts/fleet-deadman-install.py prints the exact command lines.)
 
 WHY THE LABEL IS NOT com.cabinet.something. READ THIS BEFORE RENAMING IT.
 The whole fleet is torn down, and was torn down on 2026-07-25, by unloading
@@ -29,18 +29,18 @@ ONLY when it has measured the fleet ALIVE, so the external watcher alarms on
 absence whether the fleet died, this job died, or the box died. Configure it in
 instance/config/liveness.yml under the fleet_alive slug, and confirm both legs:
 
-    python3.12 -m framework.liveness.fleetwatch   (with the status flag)
+    python3.12 cabinet/scripts/fleet-deadman.py   (with the status flag)
 
 INSTALL, a human act. Nothing in the repo bootstraps this for you:
 
-    python3.12 cabinet/scripts/fleetwatch-install.py   (with the install flag)
+    python3.12 cabinet/scripts/fleet-deadman-install.py   (with the install flag)
 
 then run the launchctl bootstrap line it prints. It never runs it for you.
 
 DISABLE:
 
-    launchctl bootout gui/$(id -u)/com.cabinet-liveness.fleetwatch
-    rm ~/Library/LaunchAgents/com.cabinet-liveness.fleetwatch.plist
+    launchctl bootout gui/$(id -u)/com.cabinet-liveness.fleet-deadman
+    rm ~/Library/LaunchAgents/com.cabinet-liveness.fleet-deadman.plist
 
 rm alone does NOT stop a loaded job (measured 2026-07-31). Bootout first.
 
@@ -53,14 +53,13 @@ instance/config/liveness.yml; this plist carries paths and PATH only.
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.cabinet-liveness.fleetwatch</string>
+  <string>com.cabinet-liveness.fleet-deadman</string>
 
   <key>ProgramArguments</key>
   <array>
     <string>/usr/bin/env</string>
     <string>python3.12</string>
-    <string>-m</string>
-    <string>framework.liveness.fleetwatch</string>
+    <string>${REPO_ROOT}/cabinet/scripts/fleet-deadman.py</string>
   </array>
 
   <key>WorkingDirectory</key>
@@ -83,8 +82,8 @@ instance/config/liveness.yml; this plist carries paths and PATH only.
   <true/>
 
   <key>StandardOutPath</key>
-  <string>${HOME}/.cabinet/logs/fleetwatch.log</string>
+  <string>${HOME}/.cabinet/logs/fleet-deadman.log</string>
   <key>StandardErrorPath</key>
-  <string>${HOME}/.cabinet/logs/fleetwatch.log</string>
+  <string>${HOME}/.cabinet/logs/fleet-deadman.log</string>
 </dict>
 </plist>

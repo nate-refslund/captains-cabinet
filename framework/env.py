@@ -1820,7 +1820,7 @@ def liveness_config_path(default: str = "") -> str:
 
 def fleetwatch_config_path(default: str = "") -> str:
     """The path to the FLEET dead-man's expectation table — the sibling seam to
-    ``liveness_config_path``, so ``framework/liveness/fleetwatch`` carries no
+    ``liveness_config_path``, so ``cabinet/scripts/fleet-deadman.py`` carries no
     instance path tokens either.
 
     Resolution order: ``CABINET_FLEETWATCH_CONFIG`` → ``<root>/instance/config/

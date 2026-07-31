@@ -81,10 +81,10 @@ cp instance/config/liveness.yml.example  instance/config/liveness.yml
 $EDITOR instance/config/liveness.yml     # instance_id, base_url, the three slugs
 $EDITOR instance/config/fleetwatch.yml   # keep only the sources you actually run
 
-python3.12 -m framework.liveness.fleetwatch --status    # expect local + external
-python3.12 -m framework.liveness.fleetwatch --dry-run   # expect a verdict, no writes
+python3.12 cabinet/scripts/fleet-deadman.py --status    # expect local + external
+python3.12 cabinet/scripts/fleet-deadman.py --dry-run   # expect a verdict, no writes
 
-python3.12 cabinet/scripts/fleetwatch-install.py --install
+python3.12 cabinet/scripts/fleet-deadman-install.py --install
 # then run the two launchctl lines it prints — it never runs them for you
 ```
 
@@ -101,15 +101,15 @@ A dead-man you have never starved is an assumption, not a control.
 
 ```bash
 # 1. confirm ALIVE while the fleet runs
-python3.12 -m framework.liveness.fleetwatch --json
+python3.12 cabinet/scripts/fleet-deadman.py --json
 
 # 2. starve one source: stop it, or backdate its pulse past max_age_s
-python3.12 -c "import json,os,time; from framework.liveness import fleetwatch as f; \
+python3.12 -c "import json,os,time; from framework.liveness import deadman as f; \
 p=os.path.join(f.pulse_dir(),'outcome-watchdog.json'); \
 o=json.load(open(p)); o['ts']-=10**5; json.dump(o,open(p,'w'))"
 
 # 3. it must flip to DEAD, stop pinging, and notify ONCE
-python3.12 -m framework.liveness.fleetwatch ; echo "exit=$?"    # expect exit=1
+python3.12 cabinet/scripts/fleet-deadman.py ; echo "exit=$?"    # expect exit=1
 
 # 4. the external check must go DOWN within its grace, and the alert must ARRIVE
 ```
@@ -120,7 +120,7 @@ Step 4 is the one people skip and it is the only one that proves delivery.
 
 ## Reading it
 
-- **verdict file** — `<fleet_liveness_dir>/verdict.json`. The standing signal: a
+- **verdict file** — `<fleet_liveness_dir>/fleet-state.json`. The standing signal: a
   plain file, readable with everything else on the box down.
 - **notification** — fires on a *state change* only. A watcher that notifies
   every poll trains its reader to dismiss it; one that notifies once and goes
@@ -142,7 +142,11 @@ Step 4 is the one people skip and it is the only one that proves delivery.
 - **The macOS notification path is not exercised by CI**, which is ubuntu. Its
   argv construction is asserted there; the `osascript` call itself is covered
   only by the manual verification above.
-- **`framework/liveness/deadman.py` remains the CONTACT dead-man** and is a
-  different object: it proves the Captain lane, not fleet health, and it lives
-  inside the send path it measures. The two are complementary; neither replaces
-  the other.
+- **`framework/liveness/deadman.py` holds BOTH emitters** — the Captain-contact
+  heartbeats and `pulse()` — because both are called from inside the thing they
+  measure and both must never cost the work that earned them. The scanning, the
+  decision and the notification live in `cabinet/scripts/fleet-deadman.py`,
+  beside `ledger-liveness-check.py` and `healthchecks-drill.py`, because that is
+  what they are: a scheduled runner that looks at this box and pings out. The
+  contact legs prove the Captain lane, not fleet health; complementary, and
+  neither replaces the other.

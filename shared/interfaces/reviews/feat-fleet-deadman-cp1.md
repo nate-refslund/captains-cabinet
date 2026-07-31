@@ -1,6 +1,6 @@
 # Checkpoint review — feat/fleet-deadman cp1
 
-Reviewed-Scope-Digest: 36c5d351e1fe30a25a77e646be668e3ca12d251fe2aaa2586cac996dcef4c8cf
+Reviewed-Scope-Digest: 1120c4c2c256f2ab9e0900b90683ebc8e0c09dfb04093111c9ceddb6f04d01ad
 
 ## What is under review
 
@@ -40,10 +40,47 @@ weight here.
    `~/Library/LaunchAgents`). Booting out the `com.cabinet.*` label left the
    watcher **loaded and running**; it flipped to DEAD and stopped pinging. Both
    booted out afterwards; `launchctl list` verified clean.
-4. **Gate batteries as CI runs them**, not a hand-picked subset:
+4. **The two red CI jobs reproduced locally and driven green** (both had the same
+   root cause, the census above).
+5. **Gate batteries as CI runs them**, not a hand-picked subset:
    `pytest framework/ -q`, `pytest cabinet/scripts/tests -q`,
    `check-layer-separation.sh`, `bash -n` + `shellcheck -S error` on the one
    shell file touched, `plutil -lint` on the rendered plist.
+
+## Finding F0 — CI refused the module boundary, and CI was right
+
+The first push went red on the architecture census: `framework_production_modules`
+248 → 249, `framework/liveness/fleetwatch.py` an **unregistered set member**. That
+class is a bijection whose members the expansion registry names, and an expansion
+row **structurally requires two independently-run model arms** — the direction-gate
+law made mechanical. **A new framework organ is a direction-gate-class decision and
+I am one model**, so I could not satisfy it, and buying it with a mass allowance is
+exactly what the contract forbids by name.
+
+The answer was not to relax the gate but to fix the composition, and the tree
+already had the right shape:
+
+| half | where it now lives | why |
+|---|---|---|
+| emitter — `pulse()`, the store resolvers, the filename guard, the atomic write | `framework/liveness/deadman.py` | it is a liveness signal emitted from inside what it measures, which is that module's entire subject; it also removes a duplicated config-comment parser I had copied |
+| watcher — scan, assess, notify, ping, CLI | `cabinet/scripts/fleet-deadman.py` | a scheduled runner that looks at this box and pings out, beside `ledger-liveness-check.py` and `healthchecks-drill.py`, its two exact siblings |
+
+Zero new framework modules, zero expansion rows, and the layering is better than
+what I first wrote: universal emitter in `framework`, operations in `cabinet`.
+The one budget still owed is MASS (+131 non-comment lines), raised visibly with
+its reason — the sanctioned instrument for mass, per the contract's own text.
+
+**Stated plainly so a later session can reopen it:** the module boundary was
+decided *partly* by a gate I could not clear alone. If a future session with two
+model arms judges the watcher deserves its own `framework/` module, the
+adjudication is theirs to run — and it would be arguing against the placement
+above, not against a summary of it.
+
+A second, smaller find from the same gate: `VERDICT_NAME` — a filename constant —
+matched the `framework_verdict_vocabulary_members` symbol pattern and grew a
+*decision vocabulary* budget by one for a string holding `"verdict.json"`. Renamed
+to `FLEET_STATE_FILE`; budget back to 70/70. Raising a vocabulary ceiling for a
+filename would have been a lie in a ledger built to make vocabulary growth visible.
 
 ## Findings — two real defects, both found by attacking my own diff, both fixed
 
