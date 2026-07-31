@@ -531,79 +531,153 @@ def test_the_estate_loader_refuses_clocks_from_a_different_manifest(tmp_path):
     assert _estate.load_window_clocks(root) == {}
 
 
-# ── genesis — clock lines beside the citations ─────────────────────────────
+# ── genesis — the REAL operator order ──────────────────────────────────────
+#
+# THE ORDER PRODUCTION ACTUALLY RUNS, and the one the first landing of this
+# capability did not test. An operator edits the answers, re-runs the
+# generator (which re-derives the proposal rows — recall is live, so quotes
+# and citations bake in), and only THEN grants a folder and ratifies a window.
+# The rows correctly never re-derive afterwards: the answers digest has not
+# moved, and a row the operator may have edited is not genesis's to rewrite.
+# So anything derived from the window at derivation time is derived from
+# nothing. Measured on a live hatch: zero clock lines reached the briefing
+# while a perfect 37-row artifact sat on disk. The join is at RENDER time now,
+# and these arms drive the real order rather than the convenient one.
 
 
-def _recall(files):
-    return {
-        "consulted": True, "available": True, "adapter": "local",
-        "hits_total": len(files), "probes": ["宿泊"],
-        "subjects": [{
-            "key": "lodging", "subject": "宿泊", "slug": "lodging", "name": "宿泊",
-            "files": list(files), "refs": list(files), "span": "",
-            "dated_files": 0, "shared_terms": [], "quote": "",
-            "quote_cite": "", "top_cite": files[0] if files else "",
-        }],
-    }
-
-
-def _clocks_payload(tmp_path):
-    root = tmp_path / "cabinet"
-    _ratify(root, _dated_source(tmp_path))
-    return _estate.load_window_clocks(root)
-
-
-def test_a_subject_card_carries_the_dates_of_the_files_it_cites(tmp_path):
-    clocks = _clocks_payload(tmp_path)
-    answers = {"cabinet": {"id": "yamagasumi"},
-               "lanes": [{"slug": "lodging", "name": "宿泊"}]}
-    cards = genesis.propose_outcome_cards(
-        answers, None, recall=_recall(["消防点検通知.md"]), clocks=clocks)
-    lane = cards[0]
-    assert lane["clocks"], "the cited file states three dates"
-    assert any("2026-08-12" in line and "消防点検通知.md:43" in line
-               for line in lane["clocks"])
-    for card in cards[1:]:
-        assert "clocks" not in card, "org cards cite nothing and stay unchanged"
-
-
-def test_a_card_whose_files_state_no_date_is_byte_identical(tmp_path):
-    clocks = _clocks_payload(tmp_path)
-    answers = {"cabinet": {"id": "yamagasumi"},
-               "lanes": [{"slug": "lodging", "name": "宿泊"}]}
-    recall = _recall(["引継ぎノート.md"])
-    with_clocks = genesis.propose_outcome_cards(answers, None, recall=recall,
-                                                clocks=clocks)
-    without = genesis.propose_outcome_cards(answers, None, recall=recall)
-    assert with_clocks == without
-    assert all("clocks" not in card for card in with_clocks)
-
-
-def test_the_briefing_renders_the_clock_lines_beside_the_citations(tmp_path):
-    root = tmp_path / "cabinet"
-    _ratify(root, _dated_source(tmp_path))
-    clocks = _estate.load_window_clocks(root)
-    answers = {"cabinet": {"id": "yamagasumi"},
-               "lanes": [{"slug": "lodging", "name": "宿泊"}]}
-    cards = genesis.propose_outcome_cards(
-        answers, None, recall=_recall(["消防点検通知.md"]), clocks=clocks)
-    doc = genesis._proposals_doc(cards, answers, now=NOW, focus_present=False)
-    row = doc["outcomes"][0]
-    assert row["clocks"] == cards[0]["clocks"]
-
+def _hatch(tmp_path):
+    """A cabinet root with answers on file and a recall seam over the estate."""
+    from framework.sources.local import LocalNotesSource
     import yaml
-    proposals = root / genesis.PROPOSALS_REL
-    proposals.parent.mkdir(parents=True, exist_ok=True)
-    proposals.write_text(
-        yaml.safe_dump(doc, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
-    # THE REAL RENDER, not a re-implementation of it: the briefing composer's
-    # own item builder is what the operator reads.
-    items = genesis.genesis_intake_items(root, now=NOW)
-    summaries = [item["payload"]["summary"] for item in items
-                 if item["kind"] == "outcome-proposal"]
-    subject = next(s for s in summaries if "FROM YOUR NOTES:" in s)
-    assert "DATES IN THOSE FILES:" in subject
-    assert "2026-08-12" in subject and "消防点検通知.md:43" in subject
-    notes_at = subject.index("FROM YOUR NOTES:")
-    assert subject.index("DATES IN THOSE FILES:") > notes_at, "beside, after"
+    root = tmp_path / "cabinet"
+    (root / "instance/config").mkdir(parents=True, exist_ok=True)
+    source = _dated_source(tmp_path)
+    (root / genesis.ANSWERS_REL).write_text(yaml.safe_dump({
+        "cabinet": {"id": "yamagasumi", "org_shape": "solo"},
+        "captain": {"name": "高橋 美咲"},
+        "lanes": [{"slug": "lodging", "name": "宿泊（本館・東館）",
+                   "task_system": "none", "repos": []}],
+        "mission": {"purpose": "城崎温泉の旅館を続ける", "altitude": "company"},
+    }, allow_unicode=True), encoding="utf-8")
+    return root, source, LocalNotesSource(str(source))
+
+
+def _briefing(root, notes):
+    items = genesis.genesis_intake_items(root, now=NOW, source=notes)
+    return "\n".join(item["payload"]["summary"] for item in items)
+
+
+def test_the_real_order_puts_the_clocks_in_front_of_the_operator(tmp_path):
+    """Derive FIRST with no window, ratify SECOND, read THIRD.
+
+    This is the arm the first landing was missing. It fails against a build
+    that joins clocks at derivation time, because at derivation time there is
+    nothing to join.
+    """
+    root, source, notes = _hatch(tmp_path)
+
+    derived = genesis.run_genesis_proposal(root, now=NOW, source=notes)
+    assert derived["status"] == "written"
+    assert derived["recall"]["hits_total"] > 0, "recall must be live for a cite"
+    rows = genesis._load_proposal_rows(root)
+    assert all("clocks" not in row for row in rows), (
+        "nothing about the window may be baked into a persisted row"
+    )
+    assert _briefing(root, notes).count("DATES IN THOSE FILES") == 0
+
+    _ratify(root, source)
+
+    body = _briefing(root, notes)
+    assert "DATES IN THOSE FILES:" in body
+    # The fire-inspection filing cutoff — the date the 2/3 briefing missed.
+    assert "2026-08-12" in body and "消防点検通知.md:43" in body
+    # ...and the window's own forward list, on the briefing rather than only
+    # on the approval card the operator has already dismissed.
+    assert "Dates your files state that are still ahead:" in body
+    assert "not printed here" in body
+
+
+def test_a_recall_reference_names_a_heading_and_still_joins():
+    """The shape recall ACTUALLY produces, which whole-basename matching missed.
+
+    Measured on a live hatch: `消防点検通知.md#消防法第4条に基づく…`. Comparing
+    the whole basename made the join silently empty on every real citation.
+    """
+    rows = [{"raw": "令和8年8月12日", "iso": "2026-08-12", "line_no": 43,
+             "ref": {"path": "消防点検通知.md", "line": 43}, "direction": "future",
+             "year_from": "clause", "spine": False}]
+    with_heading = genesis._clock_lines(
+        {"rows": rows}, ["消防点検通知.md#消防法第4条に基づく立入検査の実施について（通知）"])
+    assert with_heading and "2026-08-12" in with_heading[0]
+    assert genesis._clock_lines({"rows": rows}, ["消防点検通知.md"]) == with_heading
+    assert genesis._clock_lines({"rows": rows}, ["別の通知.md#見出し"]) == []
+
+
+def test_a_card_whose_cited_files_state_no_date_renders_unchanged(tmp_path):
+    """The earned rule, at the surface that now applies it."""
+    rows = [{"raw": "令和8年8月12日", "iso": "2026-08-12", "line_no": 43,
+             "ref": {"path": "消防点検通知.md", "line": 43}, "direction": "future",
+             "year_from": "clause", "spine": False}]
+    assert genesis._clock_lines({"rows": rows}, ["引継ぎノート.md#7-16"]) == []
+    assert genesis._clock_lines({"rows": rows}, []) == []
+    assert genesis._clock_lines({}, ["消防点検通知.md"]) == []
+    assert genesis._clock_lines(None, ["消防点検通知.md"]) == []
+
+
+def test_a_superseded_window_takes_its_clock_lines_off_the_briefing(tmp_path):
+    """Staleness impossible BY CONSTRUCTION, which is why the join moved.
+
+    A baked line would survive the window it came from. A render-time join
+    reads whatever is bound at read time, so replacing the window removes the
+    dates in the same breath as it removes the artifact.
+    """
+    root, source, notes = _hatch(tmp_path)
+    genesis.run_genesis_proposal(root, now=NOW, source=notes)
+    _ratify(root, source)
+    assert "DATES IN THOSE FILES:" in _briefing(root, notes)
+
+    other = tmp_path / "sources" / "elsewhere"
+    other.mkdir(parents=True)
+    (other / "a.md").write_text("nothing dated in here\n", encoding="utf-8")
+    journey.act(
+        {"action": "propose_window", "ownership": "self",
+         "authority_basis": "mine", "action_id": "propose-again",
+         "surface": "dashboard", "source": str(other),
+         "purpose": "Another look.", "relationship_destination": "reversible"},
+        root, now=NOW)
+
+    after = _briefing(root, notes)
+    assert "DATES IN THOSE FILES:" not in after
+    assert "2026-08-12" not in after
+    assert "Dates your files state" not in after
+
+
+def test_the_card_headline_says_which_clock_it_means(tmp_path):
+    """"(undated)" is true of the NOTE and was read as true of the FILE.
+
+    An operator saw "3 of your own notes (undated)" above three files, one of
+    which states a filing cutoff seven days out. The headline is about when
+    the notes were WRITTEN; the line below it is about what they SAY.
+    """
+    root, source, notes = _hatch(tmp_path)
+    genesis.run_genesis_proposal(root, now=NOW, source=notes)
+    _ratify(root, source)
+    body = _briefing(root, notes)
+    assert "(undated)" not in body
+    assert "the notes carry no date of their own" in body
+    headline = next(line for line in body.splitlines()
+                    if line.startswith("📜 Proposed outcome: 宿泊"))
+    dates = next(line for line in body.splitlines()
+                 if line.startswith("DATES IN THOSE FILES:"))
+    assert body.index(headline) < body.index(dates), "the answer follows the caveat"
+
+
+def test_the_briefing_and_the_card_render_one_sentence(tmp_path):
+    """Two surfaces, one renderer — a second copy drifts."""
+    root, source, notes = _hatch(tmp_path)
+    genesis.run_genesis_proposal(root, now=NOW, source=notes)
+    card_body = _ratify(root, source)["card"]["body"]
+    sentence = journey.clocks_note(_estate.load_window_clocks(root)).strip()
+    assert sentence and sentence in card_body
+    assert sentence in _briefing(root, notes)

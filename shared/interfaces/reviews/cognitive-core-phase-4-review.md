@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: a36b0f71d2587a5183e35c7a18a72907d7ce8d0cc0d55b54c294221b1331ea89
+Reviewed-Scope-Digest: 3efe89ae02d8fb3c71867e8a27cc36c78988036064b3fd397bd34861002db47d
 
 (MERGE RE-BIND, 2026-07-31, `fix/stale-census-unknown` x master, recomputed
 over the merge commit — the note below is master's, kept verbatim, and its
@@ -2169,3 +2169,30 @@ the old rule; planted standalone value and separator-joined forms still trip; no
 values keep substring semantics. No production bytes moved; no threshold moved; the
 `Reviewed-Scope-Digest:` line above is recomputed over this branch's HEAD per the
 2026-07-26/27/30 merge re-bind precedents.)
+
+(RE-BOUND 2026-07-31 on `fix/clocks-render-time-join`, previous value
+`8384f5e2…`. ONE in-scope path moved and it is NOT a COG-4 surface.
+MEASURED, not asserted: the resolved scope was expanded with `git ls-tree -r`
+at origin/master and at this branch's HEAD and the two sets diffed — 114 paths
+on both sides, none added, none removed, exactly ONE with a different blob.
+
+1. `cabinet/config/cognitive-architecture-contract.yml` — the
+   `framework_production_noncomment_lines` maximum, raised 62603 -> 62630 with
+   its dated measurement note. No budget added, no pin removed, no baseline
+   changed, no other key touched: the branch is a join that moved from
+   derivation time to render time inside `framework/onboarding/`, adding 27
+   net non-comment lines and ZERO production modules
+   (`framework_production_modules` unchanged at 248), so the ratchet re-pins at
+   observed==max exactly as the zero-headroom law requires.
+
+No `framework/projection`, `framework/scheduler`, `framework/organs`,
+`cognitive-trajectory.v2.schema.json`, `cog4-*` script or COG-4 fixture byte is
+touched by this branch, whose diff is otherwise `framework/onboarding/`, its
+suite, two onboarding design docs and one review artifact.)
+
+(MERGE RE-BIND, 2026-07-31, `fix/egg-selfaudit-word-boundary` (PR #337) x master `619e7dca`:
+both parents' re-bind notes above are kept verbatim; the `Reviewed-Scope-Digest:` line is
+recomputed ONCE over this merge's HEAD, which unions the two mechanical deltas — the
+self-audit test blob (this branch) and the render-time-join blob set (PR #338). No further
+in-scope bytes moved in the merge itself.)
+

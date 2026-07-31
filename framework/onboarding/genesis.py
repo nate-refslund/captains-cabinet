@@ -367,6 +367,20 @@ def _subject_proof(name: str, repos: list, low: bool, *,
 _MAX_CARD_CLOCKS = 3
 
 
+def _file_name(ref: Any) -> str:
+    """The FILE a reference names, without its folder or its heading.
+
+    A recall reference is not a path. Measured on a live hatch through the
+    real order: recall cites ``消防点検通知.md#消防法第4条に基づく立入検査の実施
+    について（通知）`` — file, then ``#``, then the markdown heading the hit sat
+    under. The first landing of this join compared whole basenames, so every
+    reference recall actually produces missed every clock row, and the join
+    was silently empty on the one estate it was built for.
+    """
+    text = str(ref or "").replace("\\", "/")
+    return text.rsplit("/", 1)[-1].split("#", 1)[0].strip()
+
+
 def _clock_lines(clocks: dict | None, refs: list) -> list[str]:
     """The dates stated INSIDE the files this card already cites.
 
@@ -385,15 +399,15 @@ def _clock_lines(clocks: dict | None, refs: list) -> list[str]:
     shape it could take that would: the rows it reads carry no such field.
     """
     rows = (clocks or {}).get("rows") or []
-    wanted = {str(ref).replace("\\", "/").rsplit("/", 1)[-1]
-              for ref in (refs or []) if str(ref).strip()}
+    wanted = {_file_name(ref) for ref in (refs or []) if str(ref).strip()}
+    wanted.discard("")
     if not wanted or not rows:
         return []
     hits = []
     for row in rows:
         ref = row.get("ref") if isinstance(row, dict) else None
-        path = str((ref or {}).get("path") or "")
-        if not path or path.replace("\\", "/").rsplit("/", 1)[-1] not in wanted:
+        name = _file_name((ref or {}).get("path"))
+        if not name or name not in wanted:
             continue
         hits.append(row)
     # Ahead of the run first, then by date: a briefing is read forwards.
@@ -415,8 +429,7 @@ def _clock_lines(clocks: dict | None, refs: list) -> list[str]:
 
 def _estate_subject_cards(estate: dict, taken: set, seen_ids: set, *,
                           purpose: str | None, low: bool, limit: int,
-                          recall: dict | None = None,
-                          clocks: dict | None = None) -> list[dict]:
+                          recall: dict | None = None) -> list[dict]:
     """Subject cards derived from what the cabinet READ, each carrying the
     citation that produced it. Entities whose slug already came from a
     declared lane are skipped: the Captain's own declaration wins over a
@@ -442,8 +455,6 @@ def _estate_subject_cards(estate: dict, taken: set, seen_ids: set, *,
         why += _recall_why(subject)
         if purpose:
             why += f' The mission it serves: "{purpose}"'
-        clock_lines = _clock_lines(
-            clocks, cites + list((subject or {}).get("refs") or []))
         base_id = f"proposed-{slug or 'entity'}-first-proof"
         card_id, n = base_id, 2
         while card_id in seen_ids:
@@ -473,10 +484,6 @@ def _estate_subject_cards(estate: dict, taken: set, seen_ids: set, *,
             "proof_expected": _subject_proof(name or slug, [], low),
             **({"recall_refs": list(subject.get("refs") or [])}
                if subject and subject.get("refs") else {}),
-            # ONLY WHEN EARNED, exactly like the refs above: a card whose own
-            # cited files state no date carries no clocks key at all, so a
-            # dateless folder derives byte-identically to before this existed.
-            **({"clocks": clock_lines} if clock_lines else {}),
         })
     return cards
 
@@ -757,12 +764,18 @@ def _quote_of(hit: dict) -> str:
 def _cite(hit: dict) -> str:
     """``path#heading (dated YYYY-MM-DD)`` — the handle the operator opens.
 
-    An absent ``content_ts`` renders "(undated)" rather than a guess: the local
-    adapter refuses to derive a date from mtime, and inventing one here would
-    put a fabricated timestamp on a card the operator is asked to trust."""
+    An absent ``content_ts`` says so rather than guessing: the local adapter
+    refuses to derive a date from mtime, and inventing one here would put a
+    fabricated timestamp on a card the operator is asked to trust.
+
+    IT NAMES WHICH CLOCK. The phrase was "(undated)", which is true of the
+    NOTE — nobody can say when it was written — and read as though the file
+    held no dates at all, beside a file stating a filing cutoff seven days
+    out. Window clocks answer the other question and print underneath; the two
+    must not sound like one."""
     ref = str(hit.get("ref") or hit.get("path") or "?")
     ts = str(hit.get("content_ts") or "")
-    return f"{ref} (dated {ts[:10]})" if ts else f"{ref} (undated)"
+    return f"{ref} (dated {ts[:10]})" if ts else f"{ref} (no date on the note)"
 
 
 def _quote_and_cite(ordered: list) -> dict:
@@ -1210,7 +1223,13 @@ def _recall_card_name(name: str, subject: dict | None, fallback: str) -> str:
     elif span:
         when = f" ({span})"
     else:
-        when = " (undated)"
+        # WHICH CLOCK, named. "(undated)" was true and unreadable: it means the
+        # NOTES carry no date of their own — no frontmatter date, no dated
+        # filename — and an operator read it beside files that state a filing
+        # cutoff seven days out. The two clocks are different questions (see
+        # docs/plans/briefing-consumes-recall-2026-07-28.md), and the dates
+        # those files STATE are printed directly below this line.
+        when = " (the notes carry no date of their own)"
     # The shared wording is NOT repeated up here. It is printed in full in the
     # WHAT line beside the citations that make it checkable, and a headline
     # that parrots four generic words amplifies the weakest part of the card.
@@ -1237,8 +1256,7 @@ def _recall_why(subject: dict | None) -> str:
 # ---------------------------------------------------------------------------
 def propose_outcome_cards(answers: dict, focus_text: str | None = None, *,
                           estate: dict | None = None,
-                          recall: dict | None = None,
-                          clocks: dict | None = None) -> list[dict]:
+                          recall: dict | None = None) -> list[dict]:
     """PURE derivation: the derived estate + cabinet-init answers (+ optional
     focus letter) → 2–4 proposed outcome cards.
 
@@ -1314,7 +1332,6 @@ def propose_outcome_cards(answers: dict, focus_text: str | None = None, *,
         # is as software-shaped as "task" and "deploy": a lane declaring
         # neither a task system nor a repository is told what it did in words
         # that fit whatever its work is (see _has_execution_surface).
-        clock_lines = _clock_lines(clocks, list((subject or {}).get("refs") or []))
         task_system = lane.get("task_system")
         surface = _has_execution_surface(task_system, repos)
         cards.append({
@@ -1338,13 +1355,12 @@ def propose_outcome_cards(answers: dict, focus_text: str | None = None, *,
             # pre-recall one and an empty list can never read as a citation.
             **({"recall_refs": list(subject.get("refs") or [])}
                if subject and subject.get("refs") else {}),
-            **({"clocks": clock_lines} if clock_lines else {}),
         })
 
     if len(cards) < _MAX_LANE_CARDS and isinstance(estate, dict):
         cards.extend(_estate_subject_cards(
             estate, taken_slugs, seen_ids, purpose=purpose, low=low,
-            limit=_MAX_LANE_CARDS - len(cards), recall=recall, clocks=clocks))
+            limit=_MAX_LANE_CARDS - len(cards), recall=recall))
     if not cards:
         cards.append(_residual_card(estate, low, recall))
 
@@ -1437,12 +1453,6 @@ def _proposals_doc(cards: list[dict], answers: dict, *, now: str,
             # composed from. Absent means no note was cited, and the briefing
             # says so rather than implying one.
             **({"recall_refs": refs} if refs else {}),
-            # The dates the card's own cited files state. Same rule as the
-            # refs: present only when earned, so a row for a dateless folder
-            # is byte-identical to the row this file wrote before clocks
-            # existed.
-            **({"clocks": [str(c) for c in (card.get("clocks") or [])]}
-               if card.get("clocks") else {}),
             # WHO proposed this row, at ROW level. Re-derivation rewrites only
             # genesis's own drafts; a row another organ merged in through
             # ``merge_proposals`` is not genesis's to replace, and a row with
@@ -1730,12 +1740,14 @@ def run_genesis_proposal(root: Path | None = None, *, now: str | None = None,
     estate = derived if usable else None
     recall = probe_recall(answers, focus, estate=estate, source=source,
                           root=base)
-    # I/O lives here, beside the estate load, for the identical reason: the
-    # binding check is the estate module's and ``propose_outcome_cards`` stays
-    # pure by receiving the rows as data.
-    clocks = _estate.load_window_clocks(base)
-    cards = propose_outcome_cards(answers, focus, estate=estate, recall=recall,
-                                  clocks=clocks)
+    # NO CLOCKS HERE, and the absence is the fix rather than an omission. The
+    # real operator order is edit-answers -> generate -> journey -> briefing,
+    # so at THIS point no window has been ratified and no clock exists; baking
+    # a line derived now would bake an empty one, and the rows correctly never
+    # re-derive afterwards (the answers digest has not moved). Clocks are
+    # joined at RENDER time in ``genesis_intake_items``, against whatever the
+    # window holds when the operator actually reads the briefing.
+    cards = propose_outcome_cards(answers, focus, estate=estate, recall=recall)
     if not cards:
         return {"status": "no-cards", "path": None, "cards": 0, "recall": recall}
     res = write_proposals(cards, base, answers=answers, now=now,
@@ -2050,6 +2062,17 @@ def genesis_intake_items(root: Path | None = None, now: str | None = None, *,
     items: list[dict] = []
 
     proposal_rows = _load_proposal_rows(base)
+    # THE CLOCKS ARE READ HERE, NOT BAKED INTO THE ROWS. The proposal rows are
+    # derived once, before any window is ratified, and correctly never
+    # re-derive afterwards — the answers digest has not moved, and a row the
+    # operator may have edited is not genesis's to rewrite. So a clock line
+    # baked at derivation is always the empty one. Joining at render time
+    # against the CURRENT window makes staleness impossible by construction:
+    # the briefing shows what the window holds at the moment it is read, and a
+    # superseded window (whose artifact is deleted and whose manifest hash no
+    # longer binds) contributes nothing rather than something stale.
+    from framework.onboarding import estate as _estate_clocks  # local: import-light
+    window_clocks = _estate_clocks.load_window_clocks(base)
     for row in proposal_rows:
         name = str(row.get("name") or row.get("id") or "").strip()
         if not name:
@@ -2057,6 +2080,7 @@ def genesis_intake_items(root: Path | None = None, now: str | None = None, *,
         # LITERAL COUPLING: cabinet/scripts/first-briefing.sh's receipt gate
         # greps 'Proposed outcome:' — reword BOTH sides in the same commit.
         refs = [str(r) for r in (row.get("recall_refs") or []) if str(r).strip()]
+        clock_lines = _clock_lines(window_clocks, refs)
         summary = (
             f"📜 Proposed outcome: {name}\n"
             f"WHAT: {row.get('what') or '—'}\n"
@@ -2068,9 +2092,8 @@ def genesis_intake_items(root: Path | None = None, now: str | None = None, *,
             + (f"FROM YOUR NOTES: {', '.join(refs)}\n" if refs else "")
             # Beside the citations, never instead of them: a date is only
             # checkable if the operator can open the line it was read from.
-            + (("DATES IN THOSE FILES: "
-                + "; ".join(str(c) for c in (row.get("clocks") or [])) + "\n")
-               if row.get("clocks") else "")
+            + (("DATES IN THOSE FILES: " + "; ".join(clock_lines) + "\n")
+               if clock_lines else "")
             + f"Status: draft — propose-only, captain_ratified: false "
               f"(draft row: {PROPOSALS_REL}, id: {row.get('id') or '?'})"
         )
@@ -2211,6 +2234,26 @@ def genesis_intake_items(root: Path | None = None, now: str | None = None, *,
             "ts": ts, "urgency_tier": "fyi",
             "payload": {"summary": body},
             "context": {"why": why},
+        })
+
+    # THE FORWARD WINDOW, on the briefing the operator actually reads. The
+    # dividend card carries this sentence at approval time, and the briefing is
+    # read later and separately — an operator who approved a window last week
+    # and reads a briefing today would otherwise see the dates only on a card
+    # they have already dismissed. Same renderer as the card (journey owns the
+    # artifact and its one rendering), so the two cannot disagree.
+    clock_sentence = ""
+    if window_clocks:
+        from framework.onboarding import journey as _journey  # local: import-light
+        clock_sentence = _journey.clocks_note(window_clocks).strip()
+    if clock_sentence:
+        items.append({
+            "source": "onboarding-genesis", "kind": "genesis-clocks",
+            "ts": ts, "urgency_tier": "fyi",
+            "payload": {"summary": "🕐 " + clock_sentence},
+            "context": {"why": "dates your own files STATE, read out of the "
+                               "window you approved — not a schedule anyone "
+                               "set, and nothing here acts on them"},
         })
 
     if (base / FOCUS_REL).is_file():

@@ -161,7 +161,10 @@ The first slice lives under compiler-unreadable `instance/onboarding/v2/`:
   A bare month-day takes its year ONLY from a full date in the same file; with
   no such anchor the row keeps its text and states no year, because both
   available guesses (the run's year, the nearest future year) are wrong in
-  cases a business folder produces routinely;
+  cases a business folder produces routinely. Surfaces JOIN this artifact at
+  render time and never copy rows into their own persisted state: the
+  briefing's proposal rows are derived before a window exists and do not
+  re-derive after it, so a copy is a copy of nothing;
 - `../purge-receipts/`: content-free purge proof.
 
 `framework/onboarding/journey.py` is the sole writer and card builder. It uses a
