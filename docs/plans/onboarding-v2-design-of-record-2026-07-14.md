@@ -151,6 +151,17 @@ The first slice lives under compiler-unreadable `instance/onboarding/v2/`:
 - `orientation-charter.json`: payload, hash, and status;
 - `first-window-manifest.json`: scope and file hashes, no raw contents;
 - `first-dividend.json`: finding and cited redacted lines;
+- `window-clocks.json`: the dates the window's own files STATE, one row per
+  date, bound to the same `manifest_hash` as the dividend beside it. A row is
+  the text as written, the resolved ISO date or `null`, the line, a citation,
+  whether it is behind or ahead of the run, where its year came from, and
+  whether the file it sits in is calendar-shaped. There is no field for what a
+  date relates to, and that is structural rather than pending: relating two
+  dated statements is a judgment, and this artifact is the deterministic half.
+  A bare month-day takes its year ONLY from a full date in the same file; with
+  no such anchor the row keeps its text and states no year, because both
+  available guesses (the run's year, the nearest future year) are wrong in
+  cases a business folder produces routinely;
 - `../purge-receipts/`: content-free purge proof.
 
 `framework/onboarding/journey.py` is the sole writer and card builder. It uses a

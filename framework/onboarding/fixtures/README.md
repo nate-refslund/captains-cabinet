@@ -20,6 +20,23 @@ These are small, deterministic First Window estates, not polished demos.
   measurement; see docs/persona-employee-slice-2026-07-26.md. Do not
   "fix" this fixture by adding content the detectors can see.
 
+- `dated-estate/` is a 17-file business estate (a Japanese ryokan) authored
+  BLIND on 2026-07-30 — its author was forbidden from reading any cabinet code,
+  so it models a real inn rather than the detectors. It is here as the CLOCK
+  PRECISION ceiling: every date the clock extractor emits from it must be a
+  genuine date statement, and one invented date fails the suite
+  (`test_window_clocks.py`). There is deliberately NO recall floor on it — a
+  missed date is a smaller lie than an invented one — so do NOT add an
+  assertion that a particular date is found, and do NOT edit the files to make
+  more dates reachable. Its formats were not the source of the held-out format
+  matrix, which is authored independently in the same suite. ONE byte-level
+  deviation from the archived original, recorded here because a fixture whose
+  provenance is unclear is not evidence: a named search platform in the
+  review-summary file was replaced with a generic label, because `framework/`
+  may not carry a third-party vendor token and its own ratchet says so. That
+  file states no date and contributes no clock row, so the precision
+  measurement is unchanged by the edit.
+
 The first three estates are registered in `evaluate_personas.PERSONAS` and run
 by the acceptance harness. `enterprise-employee/` is NOT, and the reason is
 mechanical rather than editorial: `evaluate_personas.py` is a framework

@@ -495,7 +495,17 @@ def test_act_event_stream_diverges_from_premigration_only_at_the_ownership_ceili
             f"step {label!r}: the live arm dropped files the pre arm wrote"
         )
         for rel in new_paths:
-            assert rel.startswith("instance/onboarding/access-records/"), (
+            # The ENUMERATED set of files the live arm may add that the
+            # pre-migration arm never wrote. Each entry is a landing that was
+            # adjudicated on its own; the gate stays a gate because an
+            # unnamed new file still fails here.
+            assert rel.startswith((
+                "instance/onboarding/access-records/",
+                # window clocks (2026-07-31): the dates the ratified window's
+                # own files state, derived in the same pass and bound to the
+                # same manifest hash.
+                f"instance/onboarding/v2/{journey.CLOCKS_NAME}",
+            )), (
                 f"step {label!r}: unexplained new file {rel}"
             )
         for rel in sorted(set(expected["tree"]) & set(actual["tree"])):

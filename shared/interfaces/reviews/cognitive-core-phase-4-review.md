@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 0606d9d7c9878b42c7cf69ea789f38ab040f0f7c1cb95ef96a07651ea5a0fe13
+Reviewed-Scope-Digest: 8384f5e2918c624c9f1b99d7126eb7f50e8906a56b8de6e7167dadc3e142dfd0
 
 (MERGE RE-BIND, 2026-07-31, `fix/stale-census-unknown` x master, recomputed
 over the merge commit — the note below is master's, kept verbatim, and its
@@ -2137,3 +2137,24 @@ No `framework/projection`, `framework/scheduler`, `framework/organs`,
 `cognitive-trajectory.v2.schema.json`, `cog4-*` script or COG-4 fixture byte is
 touched by this branch, whose diff is otherwise entirely the dashboard's
 attention surfaces and their tests.)
+
+
+(RE-BOUND 2026-07-31 on `feat/window-clocks`, previous value `0606d9d7…`.
+ONE in-scope path moved and it is NOT a COG-4 surface. MEASURED, not asserted:
+the resolved scope was expanded with `git ls-tree -r` at origin/master and at
+this branch's HEAD and the two sets diffed — 114 paths on both sides, none
+added, none removed, and exactly ONE with a different blob.
+
+1. `cabinet/config/cognitive-architecture-contract.yml` — the
+   `framework_production_noncomment_lines` maximum, raised 62133 -> 62603 with
+   its dated measurement note. It adds no budget, removes no pin, changes no
+   baseline and touches no other key: the branch adds ~470 non-comment lines
+   to three existing onboarding modules and ZERO production modules
+   (`framework_production_modules` unchanged at 248), so the ratchet re-pins at
+   observed==max exactly as the zero-headroom law requires.
+
+No `framework/projection`, `framework/scheduler`, `framework/organs`,
+`cognitive-trajectory.v2.schema.json`, `cog4-*` script or COG-4 fixture byte is
+touched by this branch, whose diff is otherwise entirely
+`framework/onboarding/`, its suites and fixture, one fidelity suite, and two
+onboarding design docs.)

@@ -706,7 +706,55 @@ budgets:
     # agreement is evidence FOR the measurement, never a substitute for taking
     # it. ZERO new production modules on either side, so no bijection class
     # moves.
-    maximum: 62133
+    #
+    # 62133 -> 62603 (+470 measured 2026-07-31 via cognitive-architecture-census.py,
+    # observed 77145 vs the then-effective 76675): feat/window-clocks — the
+    # dates inside a ratified First Window, extracted as DATA. The briefing
+    # rendered "(undated)" beside a fire-inspection filing cutoff seven days
+    # out, in a file the window had read: nothing in the finding path turned a
+    # written date into a comparable one, and the native formats a business
+    # folder actually uses (2026年8月12日, 令和8年8月12日, 8月12日) were
+    # unreachable by any grammar in the tree.
+    #   +~300 framework/onboarding/salience.py — the clock section: the marker
+    #         and era-calendar TABLES (data in the detector-vocabulary idiom,
+    #         one entry per semantic role, language tags as organisation only,
+    #         no function naming a tag), the length-preserving digit/separator
+    #         normaliser that lets a match's span still point at the operator's
+    #         own characters where NFKC could not, the ordered grammar
+    #         alternation, the anchor-else-refuse year rule, the spine
+    #         measurement and the row builder.
+    #   +~110 framework/onboarding/journey.py — the derivation invoked from the
+    #         window pass (the one place every admitted file body is in memory
+    #         under a ratified charter), the manifest-hash-bound artifact
+    #         beside first-dividend.json, its lifecycle in _sync_artifacts, and
+    #         the bounded forward-window note on the dividend card that states
+    #         how many rows it did not print.
+    #   +~56  framework/onboarding/genesis.py + estate.py — the bound loader
+    #         (same three-part charter/manifest/hash gate the first dividend
+    #         passes) and the clock lines that ride a subject card beside the
+    #         citations it already prints.
+    # ZERO NEW PRODUCTION MODULES (248 <= 248), and that was the adjudication
+    # rather than an accident: two blind arms were asked where the extraction
+    # belongs and the module census decided it — salience.py already declared
+    # itself the tree's ONE home for a pure text primitive, and a module
+    # holding a date table would need an expansion row whose refutation anchor
+    # cannot honestly refute the functions that are its only caller.
+    # RAISED VISIBLY rather than paid by a temporary allowance: an allowance
+    # promises a deletion gate, and a grammar that reads the dates in an
+    # operator's own writing system has none that could ever fire. Roughly two
+    # thirds of the mass is docstring — the measured refusals (why no bare
+    # slashed form, why no month names, why not NFKC), the two banned year
+    # guesses with the case each gets wrong, and what every degenerate end
+    # does — which is the house style and is NOT reformatted into # comments to
+    # duck this budget. The estate fixture, the two suites and the format
+    # matrix are tests and fixtures and cost this budget nothing.
+    # The last +4 are the landing self-review's own two findings, fixed in the
+    # same commit: an unusable run clock answered "ahead of you" for every row
+    # (a string compare against an empty date), and the unresolved-date count
+    # was taken over the rows that survive the spine trim rather than over the
+    # rows found, so a rota that resolved nothing reported nothing unresolved.
+    # observed == maximum, zero headroom.
+    maximum: 62603
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
