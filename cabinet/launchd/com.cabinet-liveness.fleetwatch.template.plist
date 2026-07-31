@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+Fleet dead-man watcher.
+
+(No double hyphen may appear anywhere in this comment. XML forbids it inside a
+comment; launchd tolerates it and strict parsers do not, and two live plists in
+this tree already carry that bug. Long flags are therefore named in prose, and
+cabinet/scripts/fleetwatch-install.py prints the exact command lines.)
+
+WHY THE LABEL IS NOT com.cabinet.something. READ THIS BEFORE RENAMING IT.
+The whole fleet is torn down, and was torn down on 2026-07-25, by unloading
+every com.cabinet.* label at once. A watcher inside that label space is removed
+by the same command that removes what it watches, which is the exact failure
+this job exists to survive. The prefix is deliberately different, and
+cabinet/scripts/deploy-mac.sh and generate-plists.py, which render and install
+the fleet, do not know this file exists. That is the point, not an oversight.
+
+AND BE HONEST ABOUT WHAT THAT BUYS. macOS offers no privilege-free domain
+isolation: gui/<uid> is the only domain a non-root user can bootstrap into
+(bootstrapping user/<uid> or system returns "Bootstrap failed: 5" without root,
+measured 2026-07-31), so this job shares a domain with the fleet and survives
+only because the teardown names a prefix. A broader teardown, a logout, or a
+reboot without login takes it too.
+
+So this is the SECOND leg, never the only one. The leg that actually survives
+this machine is the off-machine dead-man: this job pings an external watcher
+ONLY when it has measured the fleet ALIVE, so the external watcher alarms on
+absence whether the fleet died, this job died, or the box died. Configure it in
+instance/config/liveness.yml under the fleet_alive slug, and confirm both legs:
+
+    python3.12 -m framework.liveness.fleetwatch   (with the status flag)
+
+INSTALL, a human act. Nothing in the repo bootstraps this for you:
+
+    python3.12 cabinet/scripts/fleetwatch-install.py   (with the install flag)
+
+then run the launchctl bootstrap line it prints. It never runs it for you.
+
+DISABLE:
+
+    launchctl bootout gui/$(id -u)/com.cabinet-liveness.fleetwatch
+    rm ~/Library/LaunchAgents/com.cabinet-liveness.fleetwatch.plist
+
+rm alone does NOT stop a loaded job (measured 2026-07-31). Bootout first.
+
+EXIT STATUS IS THE VERDICT: 0 ALIVE, 1 DEAD, 2 UNKNOWN. A standing 1 in
+launchctl list is a true report about the fleet, not a broken job.
+
+NO SECRETS HERE. The external ping URL and slug live in
+instance/config/liveness.yml; this plist carries paths and PATH only.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cabinet-liveness.fleetwatch</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/env</string>
+    <string>python3.12</string>
+    <string>-m</string>
+    <string>framework.liveness.fleetwatch</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>${REPO_ROOT}</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>${HOME}</string>
+    <key>USER</key><string>${USER}</string>
+    <key>PYTHONPATH</key><string>${REPO_ROOT}</string>
+    <key>CABINET_ENV</key><string>runtime</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>LANG</key><string>en_US.UTF-8</string>
+  </dict>
+
+  <key>StartInterval</key>
+  <integer>900</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>${HOME}/.cabinet/logs/fleetwatch.log</string>
+  <key>StandardErrorPath</key>
+  <string>${HOME}/.cabinet/logs/fleetwatch.log</string>
+</dict>
+</plist>

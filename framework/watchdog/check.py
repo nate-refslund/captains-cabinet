@@ -482,6 +482,17 @@ def run(probe: Optional[RealProbe] = None, *, dry_run: bool = False) -> dict:
     # the survivor catches). In dry-run we don't stamp.
     if not dry_run:
         probe.stamp_heartbeat()
+        # FILE pulse for the out-of-fleet fleetwatch dead-man. Deliberately a
+        # SECOND store rather than a second reader of the Redis key above: Redis
+        # is a live service on this box, and a watcher that reads it cannot tell
+        # "the fleet is gone" from "Redis is gone". A file survives both. Wrapped
+        # because a heartbeat must never cost the sweep that earned it.
+        try:
+            from framework.liveness import fleetwatch
+
+            fleetwatch.pulse("outcome-watchdog")
+        except Exception:
+            pass
 
     return {
         "ts": probe.now().strftime("%Y-%m-%dT%H:%M:%SZ"),

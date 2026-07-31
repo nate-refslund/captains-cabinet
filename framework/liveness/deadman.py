@@ -75,10 +75,16 @@ import re
 import urllib.error
 import urllib.request
 
-# Events this emitter knows. Both are CONTACT events, not machinery events.
+# Events this emitter knows. The first two are CONTACT events, not machinery
+# events. The third is the FLEET event and is different in kind: it is emitted
+# by `fleetwatch` from OUTSIDE the fleet, and only after a positive measurement
+# that every expected fleet source pulsed recently. It therefore says "the fleet
+# is alive", never "the watcher ran" — an emitter that pings on its own behalf
+# would make the ping mean nothing about the thing it is supposed to prove.
 EVENT_CAPTAIN_OUTBOUND = "captain_outbound"
 EVENT_CAPTAIN_INBOUND = "captain_inbound"
-KNOWN_EVENTS = (EVENT_CAPTAIN_OUTBOUND, EVENT_CAPTAIN_INBOUND)
+EVENT_FLEET_ALIVE = "fleet_alive"
+KNOWN_EVENTS = (EVENT_CAPTAIN_OUTBOUND, EVENT_CAPTAIN_INBOUND, EVENT_FLEET_ALIVE)
 
 # Config path override (mirrors CABINET_WATCHDOG_CONFIG's per-process override
 # idiom). Consulted BEFORE framework.env so the emitter still resolves a config

@@ -1328,6 +1328,10 @@ def main() -> int:
         raw_inject(build_captain_channel_relay(tag_chat_id, mid, text,
                                                note=note, quoted=quoted))
 
+    # Mutable cell so the fleet-pulse throttle below survives loop iterations
+    # without reaching for `nonlocal` inside this already-long main().
+    _last_pulse_at = [0.0]
+
     while True:
         try:
             params = urllib.parse.urlencode({
@@ -1368,6 +1372,25 @@ def main() -> int:
 
         if not data.get("ok"):
             log(f"getUpdates not ok: {data.get('description')}"); time.sleep(5); continue
+
+        # FLEET PULSE — the intake lane proving it is alive to the out-of-fleet
+        # dead-man. Placed HERE, after a getUpdates round-trip that Telegram
+        # actually answered ok, so the pulse means "the Captain can reach this
+        # cabinet" and not merely "a process is spinning". Every failure path
+        # above `continue`s without pulsing, which is the point: a poller stuck
+        # in a retry loop is a dead intake lane and must read as one.
+        # Throttled to one write a minute — the loop turns every ~25s and the
+        # staleness limits are in hours, so a per-iteration write would be churn
+        # with no extra signal.
+        _now_p = time.time()
+        if _now_p - _last_pulse_at[0] >= 60:
+            _last_pulse_at[0] = _now_p
+            try:
+                from framework.liveness import fleetwatch
+
+                fleetwatch.pulse("officer-inbound")
+            except Exception:
+                pass  # a heartbeat must never cost an inbound message
 
         retry_onboarding = False
         for upd in data.get("result", []):

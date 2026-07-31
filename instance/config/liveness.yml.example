@@ -73,3 +73,15 @@ events:
   # full week of silence means either the inbound lane died or the Captain
   # vanished, and both are worth knowing.
   captain_inbound: ""
+
+  # THE FLEET LEG, and different in kind from the two above. Fired by
+  # framework/liveness/fleetwatch.py — which runs OUTSIDE the fleet — and only
+  # when it has positively measured that every source in
+  # instance/config/fleetwatch.yml pulsed inside its limit. It never fires on
+  # DEAD and never on UNKNOWN, so the absence of this ping means one of exactly
+  # three things, all of which you want to be woken for:
+  #   the fleet is down · the watcher is down · the machine is down.
+  # Suggested watcher period: ~1 hour with a ~30 min grace. Tighter than the
+  # contact legs because this one measures machinery, and machinery going quiet
+  # for an hour is already an outage.
+  fleet_alive: ""

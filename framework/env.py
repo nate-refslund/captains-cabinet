@@ -1818,6 +1818,63 @@ def liveness_config_path(default: str = "") -> str:
         return str(default)
 
 
+def fleetwatch_config_path(default: str = "") -> str:
+    """The path to the FLEET dead-man's expectation table — the sibling seam to
+    ``liveness_config_path``, so ``framework/liveness/fleetwatch`` carries no
+    instance path tokens either.
+
+    Resolution order: ``CABINET_FLEETWATCH_CONFIG`` → ``<root>/instance/config/
+    fleetwatch.yml`` → ``default``. Path only; the watcher owns its stdlib parse
+    and its UNARMED fail-safe, so an absent file means "expect nothing", which
+    reads as UNKNOWN/``unarmed`` and never as a fleet that is alive."""
+    env_override = (os.environ.get("CABINET_FLEETWATCH_CONFIG") or "").strip()
+    if env_override:
+        return os.path.expanduser(env_override)
+    try:
+        return str(_cabinet_root() / "instance/config/fleetwatch.yml")
+    except Exception:
+        return str(default)
+
+
+def fleet_liveness_dir(default: str = "") -> str:
+    """Where fleet pulses and the fleet verdict live.
+
+    DELIBERATELY OUTSIDE THE REPO and outside any service. The store has to
+    outlive every process that writes to it — that is the entire premise of a
+    dead-man — so it cannot sit in a datastore (any datastore is itself a
+    watched process on the watched box) and it must not sit in a working tree
+    that a clone, a checkout or a worktree can move under it.
+
+    Resolution: ``CABINET_FLEETWATCH_STATE_DIR`` (explicit, ``~``-expanded) →
+    ``~/.cabinet/liveness`` (``-dev`` outside the runtime).
+
+    IT DOES NOT RIDE ``ledger_dir()``, AND THAT IS THE WHOLE POINT (found by
+    attacking this function, 2026-07-31, before it shipped). ``ledger_dir()``
+    honours ``CABINET_EVENT_LOG_DIR``, which the fleet's own launchd plists SET
+    and the out-of-fleet watcher's plist does not. Deriving from it would have
+    put the writers and the reader in two different directories: the fleet would
+    pulse into one, the watcher would scan the other, find nothing, and report a
+    permanent — and perfectly confident — DEAD. A pulse store steered by a
+    variable that differs between the process that writes it and the process
+    that reads it is not a store; it is two.
+
+    The dev/runtime split is KEPT, because a dev run pulsing into the runtime's
+    store would certify a dead runtime fleet as alive. ``CABINET_ENV`` is the
+    only variable left steering this path, and it fails in the SAFE direction:
+    a fleet job without it pulses to ``-dev`` while a runtime watcher reads the
+    runtime dir and says DEAD. A false page, never a false all-clear — and the
+    verdict names the directory it scanned, so the mismatch is visible rather
+    than mysterious."""
+    override = (os.environ.get("CABINET_FLEETWATCH_STATE_DIR") or "").strip()
+    if override:
+        return os.path.expanduser(override)
+    try:
+        base = Path.home() / ".cabinet"
+        return str(base / ("liveness" if is_runtime() else "liveness-dev"))
+    except Exception:
+        return str(default)
+
+
 def active_preset(default: str = "work") -> str:
     """The ACTIVE preset slug for this deployment — the resolver that lifts the
     ``instance/config/active-preset`` read OUT of universal-base ``framework``
