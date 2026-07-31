@@ -813,7 +813,34 @@ budgets:
     # would be optimising the number instead of the thing. The three suites and
     # the install tool's fixtures are tests and cost this budget nothing.
     # observed == maximum, zero headroom.
-    maximum: 62761
+    #
+    # 62761 -> 62794 (+33 measured 2026-07-31 via cognitive-architecture-census.py,
+    # observed 77336 vs the then-effective 77303): REPAIRING the dead-man landed
+    # directly above, which merged green on six CI jobs and 17/17 mutations and
+    # could not execute one pass on any deployment. Two independent fatal
+    # defects, both reproduced on the merged tip before a line was changed:
+    # state_dir() called an _env_module() helper the census refactor left behind
+    # in the module it deleted, so every production call died with a NameError
+    # (the fleet wrote no pulse, forever; the watcher exited 1 out of a
+    # traceback); and the store rode CABINET_ENV, which this fleet's own writers
+    # disagree on, so a maximally healthy fleet read a confident permanent DEAD.
+    # The lines are: the guarded lazy import, the resolver guard in check() and
+    # the top-level guard in main() (an internal failure is UNKNOWN/2, never the
+    # DEAD exit code the plist documents as truthful), the store leg in status()
+    # so an arming check executes the thing it arms, and _origin() so a pulse
+    # from a dev clone is visible now that one store serves writers and reader.
+    #
+    # HONEST ACCOUNTING, AND A DECLARED VIOLATION OF THE RULE ABOVE. The first
+    # cut of this repair moved ~50 lines of that prose from docstrings into #
+    # comments and passed the census at 77287 — 16 under budget. That is exactly
+    # the ducking this block forbids, and it did measurable harm beyond the
+    # dishonesty: the headroom DISABLED the census's own growth-mutant arm
+    # (test_structural_compaction_baseline_growth_mutants_fail[line-...]), which
+    # adds one line and requires the gate to go red. A slack ratchet is a
+    # disabled sensor. The prose was restored to the docstrings, trimmed on its
+    # merits rather than relocated, and the remainder is bought here in the open.
+    # observed == maximum, zero headroom.
+    maximum: 62794
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

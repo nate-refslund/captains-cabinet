@@ -61,7 +61,17 @@ without launchd is a pure function, exercised by
 INERT BY DEFAULT, AND VISIBLY SO. With no config there is nothing to expect, so
 the verdict is UNKNOWN/``unarmed`` — never ALIVE. ``--status`` answers "armed,
 and which legs" offline, because an absence detector that is itself silently
-absent produces the same observable — no pings — as a dead fleet.
+absent produces the same observable — no pings — as a dead fleet. It reports
+THREE legs (local, external, store) and exits non-zero when not armed: it once
+reported all-armed on a deployment where the next command died in the store
+resolver, because it answered from config alone and never ran the path a pass
+cannot start without.
+
+THE EXIT CODE IS A CLAIM, SO A CRASH MAY NOT SPEND IT. 1 means the fleet is
+dead. Anything this watcher itself cannot do — resolve the store, complete a
+pass, survive an unexpected error — is UNKNOWN and exits 2. Both starve the
+external watcher; the distinction is for whoever reads ``launchctl list``, which
+the template plist tells to read a standing 1 as a true report about the fleet.
 
 STANDARD LIBRARY ONLY, and no import of anything it watches. The single
 framework import is the emitter package, which is itself stdlib-only and
@@ -181,7 +191,12 @@ def _read_pulse(path: str, reader=None) -> dict:
         ts = float(obj["ts"])
     except Exception:
         return {"ts": None, "reason": "unparseable"}
-    return {"ts": ts, "reason": "ok"}
+    origin = ""
+    try:
+        origin = str(obj.get("origin") or "")
+    except Exception:
+        origin = ""
+    return {"ts": ts, "reason": "ok", "origin": origin}
 
 
 def _read_text(path: str) -> str:
@@ -209,9 +224,12 @@ def assess(scanned: dict, expect: dict, now: float, *,
         dead: list = []
         unknown: list = []
         ages: dict = {}
+        origins: dict = {}
         for source in sorted(expect):
             max_age = expect[source]
             entry = pulses.get(source)
+            if entry is not None:
+                origins[source] = entry.get("origin") or ""
             if entry is None:
                 dead.append(f"{source}: no pulse (store answered, nothing there)")
                 ages[source] = None
@@ -230,20 +248,27 @@ def assess(scanned: dict, expect: dict, now: float, *,
                 dead.append(f"{source}: {int(age)}s stale (limit {int(max_age)}s)")
         if dead:
             return _verdict(STATE_DEAD, "stale-or-missing", dead + unknown,
-                            "; ".join(dead + unknown), ages=ages)
+                            "; ".join(dead + unknown), ages=ages,
+                            origins=origins)
         if unknown:
             return _verdict(STATE_UNKNOWN, "unreadable-pulse", unknown,
-                            "; ".join(unknown), ages=ages)
+                            "; ".join(unknown), ages=ages, origins=origins)
         return _verdict(STATE_ALIVE, "ok", [],
-                        f"{len(expect)} source(s) fresh", ages=ages)
+                        f"{len(expect)} source(s) fresh", ages=ages,
+                        origins=origins)
     except Exception as exc:  # pragma: no cover - belt: assess must NEVER raise
         return _verdict(STATE_UNKNOWN, "internal-error", [], type(exc).__name__)
 
 
 def _verdict(state: str, reason: str, findings: list, detail: str,
-             ages: dict | None = None) -> dict:
+             ages: dict | None = None, origins: dict | None = None) -> dict:
+    # ``origins`` names the TREE each counted pulse was written from. Reported so
+    # a pulse emitted by a dev clone is visible instead of silently indis-
+    # tinguishable from the deployment's own; never used to accept or reject one
+    # (see framework.liveness.deadman._origin for why filtering would re-open the
+    # writer/reader divergence this store exists to foreclose).
     return {"state": state, "reason": reason, "findings": list(findings),
-            "detail": detail, "ages_s": ages or {}}
+            "detail": detail, "ages_s": ages or {}, "origins": origins or {}}
 
 
 def decide_ping(verdict: dict) -> bool:
@@ -430,7 +455,7 @@ def load_config(path: str | None = None) -> dict:
 # ── arming state ───────────────────────────────────────────────────────────
 
 def status(*, cfg: dict | None = None, config_path_override: str | None = None,
-           deadman_status=None) -> dict:
+           deadman_status=None, pulse_dir_resolver=None) -> dict:
     """Is this watcher armed, and WHICH LEGS — offline, no network, no alarm.
 
     Two legs, reported separately because they fail separately and cover
@@ -440,11 +465,24 @@ def status(*, cfg: dict | None = None, config_path_override: str | None = None,
                    written where the desk pet reads it. Survives the fleet.
       ``external`` the dead-man emitter has a ``fleet_alive`` slug, so ABSENCE
                    is alarmed from off this machine. Survives the box.
+      ``store``    the pulse store RESOLVES. Without it the other two legs are
+                   claims about a watcher that cannot run.
 
     Local-only is a real and useful posture; it is not equivalent to armed, and
-    saying so is the whole reason this function reports two booleans instead of
-    one. Registering the external check needs an account and a slug — an
-    external act, never something this code does on its own."""
+    saying so is the whole reason this function reports booleans instead of one.
+    Registering the external check needs an account and a slug — an external act,
+    never something this code does on its own.
+
+    THE STORE LEG IS NOT DECORATION, IT IS THE ARMING CHECK (added 2026-07-31).
+    Without it this function reported ``armed=True local=True external=True`` on
+    a deployment where the very next command — the pass it is supposed to be
+    certifying — died in the store resolver with an uncaught ``NameError``. It
+    answered from config and slugs only and never touched the one code path a
+    pass cannot start without, so the single function built to answer "is this
+    absence-detector itself absent?" fail-OPEN on exactly that. An arming check
+    that does not execute the thing it arms is a disabled sensor. So this now
+    RESOLVES the store for real, and a resolver that fails or yields nothing
+    makes ``armed`` False no matter what the config says."""
     conf = cfg if cfg is not None else load_config(config_path_override)
     local = bool(conf.get("expect"))
     ext_reason = "not-checked"
@@ -457,8 +495,24 @@ def status(*, cfg: dict | None = None, config_path_override: str | None = None,
         external = ext_reason == "ready"
     except Exception:
         ext_reason = "deadman-unavailable"
-    return {"armed": local or external, "local": local, "external": external,
-            "external_reason": ext_reason,
+
+    # Exercise the production resolver — no override handed in, nothing steered.
+    store = False
+    store_reason = "unresolved"
+    store_path = ""
+    try:
+        store_path = (pulse_dir_resolver or pulse_dir)("")
+        if store_path:
+            store, store_reason = True, "ok"
+        else:
+            store_reason = "no-state-dir"
+    except Exception as exc:
+        store, store_reason = False, f"resolver-failed:{type(exc).__name__}"
+
+    return {"armed": bool(store and (local or external)),
+            "local": local, "external": external, "store": store,
+            "external_reason": ext_reason, "store_reason": store_reason,
+            "store_path": store_path,
             "expect": dict(conf.get("expect") or {}),
             "config_present": bool(conf.get("_present"))}
 
@@ -475,8 +529,26 @@ def check(*, root: str = "", cfg: dict | None = None, now=None,
     repeatedly found to be false."""
     conf = cfg if cfg is not None else load_config()
     ts = float(now() if now else time.time())
-    base = root or state_dir()
-    scanned = (scanner or scan)(pulse_dir(base))
+    # RESOLVE DEFENSIVELY. A watcher that dies on the way to its own measurement
+    # reports nothing at all, and its launchd exit code then lies about the
+    # fleet: this shipped exiting 1 — documented as "a true report about the
+    # fleet" — out of an uncaught NameError in the resolver. A resolver that
+    # cannot answer is "I cannot see the fleet", which is UNKNOWN, and UNKNOWN
+    # starves the external watcher exactly as DEAD does. It is never ALIVE and
+    # never a traceback.
+    try:
+        base = root or state_dir()
+        scan_target = pulse_dir(base)
+    except Exception as exc:
+        v = _verdict(STATE_UNKNOWN, "state-dir-unresolvable", [],
+                     f"the pulse store could not be resolved "
+                     f"({type(exc).__name__})")
+        v.update({"scan_reason": "state-dir-unresolvable", "observed": False,
+                  "pulse_dir": "", "verdict_written": False, "verdict_path": "",
+                  "notified": False, "pinged": False,
+                  "ping_reason": "not-alive"})
+        return v
+    scanned = (scanner or scan)(scan_target)
     verdict = assess(scanned, conf.get("expect") or {}, ts,
                      clock_tolerance_s=conf.get("clock_tolerance_s",
                                                 DEFAULT_CLOCK_TOLERANCE_S))
@@ -485,7 +557,7 @@ def check(*, root: str = "", cfg: dict | None = None, now=None,
     # Name the directory that was actually scanned. A dead-man whose writers and
     # reader resolve different stores reports a confident, permanent DEAD with no
     # way to see why; printing the path turns that from a mystery into a diff.
-    verdict["pulse_dir"] = pulse_dir(base)
+    verdict["pulse_dir"] = scan_target
 
     previous = read_verdict(root=base)
     if allow_side_effects:
@@ -539,10 +611,23 @@ def main(argv: list | None = None) -> int:
         st = status()
         print(json.dumps(st, indent=2, sort_keys=True) if args.json
               else f"armed={st['armed']} local={st['local']} "
-                   f"external={st['external']} ({st['external_reason']})")
-        return 0
+                   f"external={st['external']} ({st['external_reason']}) "
+                   f"store={st['store']} ({st['store_reason']})")
+        # Exit NON-ZERO when not armed. The hatch errand runs this as its arming
+        # step, and a step that always exits 0 cannot fail a hatch.
+        return 0 if st["armed"] else 2
 
-    v = check(allow_side_effects=not args.dry_run)
+    # The launchd exit code is a PUBLIC CLAIM (the template plist tells the
+    # operator a standing 1 is a true report about the fleet), so an unexpected
+    # failure in here must never be able to spend it. Anything unhandled becomes
+    # UNKNOWN — exit 2 — which starves the external watcher just as DEAD does.
+    try:
+        v = check(allow_side_effects=not args.dry_run)
+    except Exception as exc:
+        v = _verdict(STATE_UNKNOWN, "watcher-internal-error", [],
+                     f"{type(exc).__name__}: {exc}")
+        v.update({"pinged": False, "ping_reason": "not-alive", "notified": False,
+                  "verdict_written": False, "pulse_dir": ""})
     if args.json:
         print(json.dumps(v, indent=2, sort_keys=True))
     else:

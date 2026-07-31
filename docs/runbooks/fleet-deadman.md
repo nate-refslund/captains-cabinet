@@ -50,12 +50,21 @@ yet into a silent all-clear.
 
 ---
 
-## The two legs, and what each survives
+## The three legs, and what each survives
 
 | leg | what it is | survives | does **not** survive |
 |---|---|---|---|
 | **local** | `instance/config/fleetwatch.yml` + a LaunchAgent under `com.cabinet-liveness.*` | a `com.cabinet.*` fleet teardown; writes a verdict file and posts a macOS notification on a state change | logout · reboot without login · a broader teardown · the machine being off |
 | **external** | the `fleet_alive` slug in `instance/config/liveness.yml` | everything above, **including the whole machine** | the ping account being deleted |
+| **store** | the pulse store RESOLVES, so a pass can start at all | — | nothing; it is a precondition, not a survivor |
+
+**Why `store` is a leg and not an assumption.** `--status` shipped reporting
+`armed=True local=True external=True` on a deployment where the very next
+command died in the store resolver. It answered from config and slugs only and
+never executed the one path a pass cannot start without, so the single function
+built to answer *is this absence-detector itself absent?* fail-open on exactly
+that. It now resolves the store for real, `armed` is false when it cannot, and
+`--status` **exits 2 when unarmed** so the arming step can fail.
 
 **Be honest about the local leg.** macOS offers no privilege-free domain
 isolation: `gui/<uid>` is the only domain a non-root user can bootstrap into —
@@ -64,7 +73,7 @@ Input/output error` without root (measured 2026-07-31). So the watcher shares a
 domain with the fleet and survives only because the teardown names a *prefix*.
 That is real but weak. **The external leg is the one that actually survives this
 box, and a deployment with only the local leg is not covered.**
-`--status` reports the two separately for exactly that reason.
+`--status` reports them separately for exactly that reason.
 
 A LaunchDaemon or a `user/<uid>` agent would give true isolation and needs
 `sudo` — a Captain act, not a delegable one. The user crontab is a genuinely
@@ -81,7 +90,8 @@ cp instance/config/liveness.yml.example  instance/config/liveness.yml
 $EDITOR instance/config/liveness.yml     # instance_id, base_url, the three slugs
 $EDITOR instance/config/fleetwatch.yml   # keep only the sources you actually run
 
-python3.12 cabinet/scripts/fleet-deadman.py --status    # expect local + external
+python3.12 cabinet/scripts/fleet-deadman.py --status    # expect local+external+store; exit 0
+#   exit 2 means UNARMED — silent, which looks exactly like healthy. Do not skip past it.
 python3.12 cabinet/scripts/fleet-deadman.py --dry-run   # expect a verdict, no writes
 
 python3.12 cabinet/scripts/fleet-deadman-install.py --install
@@ -127,7 +137,15 @@ Step 4 is the one people skip and it is the only one that proves delivery.
   quiet is indistinguishable from a fixed problem. Hence: transition notifies,
   file and external ping stand.
 - **exit status** — a standing `1` next to the label in `launchctl list` is a
-  true report about the fleet, not a broken job.
+  true report about the fleet, not a broken job. That holds only because the
+  watcher refuses to spend `1` on its own failure: anything it cannot do —
+  resolve the store, finish a pass, survive an unexpected error — is `UNKNOWN`
+  and exits `2`. `1` means the fleet; `2` means the watcher or the question.
+  It shipped exiting `1` from an uncaught `NameError` (corrected 2026-07-31),
+  which documented a crashed watcher as a truthful death report.
+- **`origins`** — each counted pulse names the tree it was written from, so a
+  pulse left by a hand-run sweep in a clone is visible rather than
+  indistinguishable from the deployment's own.
 
 ---
 
@@ -136,6 +154,29 @@ Step 4 is the one people skip and it is the only one that proves delivery.
 - **It measures the sources it is told to expect, and nothing else.** A service
   running with no `pulse()` call site is invisible to it. Two are wired today
   (`outcome-watchdog`, `officer-inbound`); adding a third is one guarded call.
+- **THE OFFICERS AND THE CHAIR ARE NOT PULSE SOURCES, so the thing that died
+  first is not covered.** This is the most important limit on the page and it is
+  stated here because it is not obvious from a green verdict. The two wired
+  sources are a launchd sweep and the inbound poller. An officer session can be
+  wedged — process alive, its channel backed up, ACKing nothing — while both
+  sources keep pulsing on schedule, and this watcher will correctly, honestly
+  report ALIVE and keep pinging. Measured on the live box while writing this:
+  four officer PIDs up, six days of `ConnectionRefused` against a dead proxy,
+  356 messages queued on the Chair's trigger channel with 0 ACKed and the oldest
+  idle 8.8 days — and a fleet in that state reads ALIVE here. **This answers "is
+  the machinery turning", not "is the work getting done".** Queue-depth and
+  ACK-age are a different sensor and are not built.
+- **A pulse says a process was alive, not that it was correct.** `pulse()` is
+  called on the success path of each source, so it is stronger than "the process
+  exists" and weaker than "the outcome happened". The outcome layer is
+  `framework.watchdog.check`, which is itself one of the sources here.
+- **A hand-run sweep writes into the same store the watcher reads** (since the
+  `CABINET_ENV` split was removed on 2026-07-31 — it was splitting the fleet's
+  own writers from each other). It can therefore hold a source "fresh" for up to
+  that source's `max_age_s` and no longer. The pulse records the tree it was
+  written from and the verdict reports it under `origins`, so a pulse from a
+  clone is visible; use `CABINET_FLEETWATCH_STATE_DIR` to keep a dev run out of
+  the deployment's store entirely.
 - **The local leg cannot report the box being off.** Only the external leg can.
 - **`rm` on a plist does not stop a loaded job** (measured 2026-07-31) — a
   removed plist with the job still resident keeps pulsing. `bootout` first.

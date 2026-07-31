@@ -80,7 +80,8 @@ import urllib.request
 
 # Events this emitter knows. The first two are CONTACT events, not machinery
 # events. The third is the FLEET event and is different in kind: it is emitted
-# by `fleetwatch` from OUTSIDE the fleet, and only after a positive measurement
+# by cabinet/scripts/fleet-deadman.py from OUTSIDE the fleet, and only after a
+# positive measurement
 # that every expected fleet source pulsed recently. It therefore says "the fleet
 # is alive", never "the watcher ran" — an emitter that pings on its own behalf
 # would make the ping mean nothing about the thing it is supposed to prove.
@@ -373,18 +374,34 @@ _SAFE_SOURCE = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
                    "0123456789-_.")
 
 def state_dir(default: str = "") -> str:
-    """Root of the liveness state store. Env override wins; otherwise the
-    deployment location from ``framework.env``; otherwise ``default``."""
+    """Root of the liveness state store, or ``default``. NEVER RAISES — it is on
+    the path of a heartbeat that must never cost the work that earned it, and
+    every caller treats a failure as "no store" rather than as an exception.
+
+    IT SHIPPED RAISING FOR ONE COMMIT, and that made the whole feature inert: the
+    census refactor moved this function here and left its ``_env_module()``
+    helper in the module it deleted, so every production call — any call without
+    the env override, which is every fleet job — died with a ``NameError``.
+    ``pulse()`` swallowed it into ``internal-error`` and the fleet silently wrote
+    nothing; the watcher took it as an uncaught traceback and exited 1, the code
+    its plist documents as a true report about the fleet. Every shipped arm
+    steered around this branch with an explicit ``root=`` or the env override, so
+    the production path had never once been executed — not by the suite, not by
+    the mutation sweep, not by the end-to-end proof.
+
+    The framework import is inline, lazy and GUARDED, the same idiom
+    ``config_path()`` uses, because this module must stay importable and inert on
+    a tree where ``framework.env`` is broken: the promise is that it survives
+    what it measures."""
     override = (os.environ.get(STATE_ENV) or "").strip()
     if override:
         return os.path.expanduser(override)
-    env = _env_module()
-    if env is not None:
-        try:
-            return str(env.fleet_liveness_dir(default))
-        except Exception:
-            pass
-    return str(default)
+    try:
+        from framework import env as _env  # lazy + guarded on purpose
+
+        return str(_env.fleet_liveness_dir(default))
+    except Exception:
+        return str(default)
 
 
 def pulse_dir(root: str = "") -> str:
@@ -404,6 +421,22 @@ def safe_source(name: str) -> bool:
 
 
 # ── the fleet side: prove you are alive ────────────────────────────────────
+
+def _origin() -> str:
+    """The tree this pulse was written from. Best-effort; never raises.
+
+    Recorded so a pulse emitted by a dev clone is VISIBLE in the verdict rather
+    than indistinguishable from the deployment's own — the accepted, bounded cost
+    of one shared store. REPORTED, NEVER FILTERED ON: refusing pulses whose
+    origin differs from the watcher's tree would put a second path back into the
+    resolution, one that can legitimately differ between a fleet job and an
+    out-of-fleet watcher, which is the divergence this store forecloses."""
+    try:
+        return os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))))
+    except Exception:
+        return ""
+
 
 def pulse(source: str, *, root: str = "", now=None, makedirs=None,
           writer=None) -> dict:
@@ -430,6 +463,7 @@ def pulse(source: str, *, root: str = "", now=None, makedirs=None,
             return {"wrote": False, "reason": "mkdir-failed", "path": d, "ts": ts}
         path = os.path.join(d, source + ".json")
         payload = json.dumps({"source": source, "ts": ts, "pid": os.getpid(),
+                              "origin": _origin(),
                               "iso": time.strftime("%Y-%m-%dT%H:%M:%SZ",
                                                    time.gmtime(ts))})
         try:

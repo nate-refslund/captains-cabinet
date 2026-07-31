@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import os
 
 from framework.env import captain_name
 from framework.watchdog import registry as reg
@@ -1025,10 +1026,23 @@ def test_autofix_decline_falls_back_to_escalation():
     assert "auto-fix declined" in action or "could not" in action.lower()
 
 
-def test_full_run_with_fake_probe_routes_only_failures():
+def test_full_run_with_fake_probe_routes_only_failures(tmp_path, monkeypatch):
     """End-to-end check.run() over the real registry with a FakeProbe whose
-    state makes EXACTLY the briefing fail (everything else healthy)."""
+    state makes EXACTLY the briefing fail (everything else healthy).
+
+    THE SANDBOX IS LOAD-BEARING HERE, and it was missing (added 2026-07-31 after
+    catching this arm writing into a real ``~/.cabinet``). A non-dry-run sweep
+    now emits a fleet pulse, so this test acquired a write to a path steered by
+    HOME the moment the dead-man was wired into ``check.run`` — and after the
+    pulse store was unified it landed in the LIVE store, where a test-authored
+    "outcome-watchdog is fresh" can certify a genuinely dead fleet as alive for
+    a full expectation window. A test must own EVERY path-steering variable and
+    assert the destination is inside its own tmp before anything is written."""
+    from framework.liveness import deadman as _dm
     from framework.watchdog import check
+
+    monkeypatch.setenv(_dm.STATE_ENV, str(tmp_path / "liveness"))
+    assert str(tmp_path) in _dm.pulse_dir(), "sandbox did not take"
     now = dt.datetime(2026, 6, 29, 6, 30, tzinfo=dt.timezone.utc)
     local = dt.datetime(2026, 6, 29, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=2)))
     # briefing: failed send (fresh)
@@ -1050,6 +1064,10 @@ def test_full_run_with_fake_probe_routes_only_failures():
         redis={},  # no officer worked → reflection passes
     )
     report = check.run(probe=probe, dry_run=False)
+    # The sweep pulsed, and it pulsed HERE — proving both the wiring and the
+    # sandbox in the same assertion.
+    assert os.path.exists(os.path.join(_dm.pulse_dir(),
+                                       "outcome-watchdog.json"))
     # 6 since the Captain's 2026-07-26 arming ceremony uncommented
     # evidence-store-invariants on this deployment (the 5 original rows + it);
     # with no store the extra row returns skipped=True, so `failed` is

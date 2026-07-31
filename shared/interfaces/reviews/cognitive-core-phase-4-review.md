@@ -21,7 +21,25 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: bfb8655bfc322ebb7176b3f34ccabbcdde84b88656552bef3d7b34b60e68af87
+Reviewed-Scope-Digest: 0241cfba02c6d5296e99fa4f678285a59c7b3028d83688623641d4a8fb4146a7
+
+(RE-BIND, 2026-07-31, `fix/fleet-deadman-inert-by-crash`, recomputed over this
+branch's HEAD. ONE in-scope path moved and it is NOT a COG-4 surface:
+`cabinet/config/cognitive-architecture-contract.yml`, raising
+`framework_production_noncomment_lines` 62761 -> 62794 for the REPAIR of the
+fleet dead-man landed at `0f25fdf0`, which merged green on six CI jobs and a
+17/17 mutation sweep and could not execute one pass on any deployment — a
+`NameError` in the store resolver on every production call, and a store steered
+by `CABINET_ENV`, which that fleet's own writers disagree on. The +33 carries its
+own reason in the contract, including a declared and reverted violation of that
+block's own anti-ducking rule. DISJOINT from every raise noted below: different
+defect, different files. ZERO new framework production modules (248 <= 248) and
+zero expansion rows, so no bijection class moved. No COG-4 implementation byte
+moved — the watcher is `cabinet/scripts/fleet-deadman.py` and the emitter is
+`framework/liveness/deadman.py`; no COG-4 surface reads either and neither is in
+the scope set. MEASURED, not asserted: the digest above is the tool's own output
+over HEAD, and the artifact is excluded from its own digest, so writing this note
+does not move it.)
 
 (MERGE RE-BIND, 2026-07-31, `feat/fleet-deadman` x master. Both sides re-bound
 this line, so ONE value stands and it is RECOMPUTED over this merge commit
