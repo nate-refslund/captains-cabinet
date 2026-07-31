@@ -218,7 +218,8 @@ export default function ArchiveConfirm({ cabinetName, cabinetId, onClose, onSucc
             <p className="text-sm text-red-300 font-medium">Ready to archive</p>
             <p className="mt-1 text-xs text-zinc-400">
               Name confirmed. Re-authentication passed. Click &ldquo;Archive Cabinet&rdquo; to proceed.
-              This action stops containers and removes peers.yml entries — data is preserved.
+              This marks the cabinet archived and preserves its data. It does NOT stop its
+              containers or remove its peers.yml entry yet — do both by hand.
             </p>
           </div>
         )}

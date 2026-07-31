@@ -128,18 +128,38 @@ export class CommandNotExecutedError extends Error {
  * posture is plainly the wrong sensor for "is there a runtime here" (a
  * Mac-native box with a checkout and tmux can run commands whether or not Redis
  * is configured): because widening what THIS module runs — `tmux kill-window`,
- * `rm -f`, `sed -i` on config, `create-officer.sh` — on a deployment nobody has
- * verified is a change nobody asked for, while refusing is one env var away
- * from being resolved (`start-dashboard.sh` already defaults `REDIS_URL`).
+ * `rm -f`, `create-officer.sh` — on a deployment nobody has verified is a change
+ * nobody asked for, while refusing is one env var away from being resolved
+ * (`start-dashboard.sh` already defaults `REDIS_URL`). (The `sed -i` config
+ * edits that used to be on that list are gone: they never ran on this platform
+ * at all, and now edit the documents in-process — `lib/config-write.ts`.)
  *
- * SCOPE, stated because the claim is otherwise false of the app: this is the
- * only shell transport that consults the store posture at all. `lib/crontab.ts`,
- * `lib/attention/verdict.ts`, `lib/evidence/read.ts`, `lib/library.ts`,
- * `lib/onboarding/bridge.ts` and the `/posture` page shell out with NO posture
- * gate, and always did — they are unaffected by this change and remain open.
- * Replacing the coupling with a real runtime probe, and deciding what those six
- * should do, is the right long-term answer and is deliberately NOT smuggled in
- * here.
+ * SCOPE, stated because the claim is otherwise false of the app. This module is
+ * the only shell transport that consults the store posture — plus
+ * `assertRuntimeWritesAllowed` below, which is the same decision for the
+ * config/env writers now that they use `node:fs` instead of a `sed -i` that
+ * never ran. `lib/crontab.ts`, `lib/attention/verdict.ts`, `lib/evidence/read.ts`,
+ * `lib/library.ts`, `lib/onboarding/bridge.ts` and the `/posture` page shell out
+ * with NO posture gate, and always did.
+ *
+ * Each of those six was characterised on 2026-07-31 and NONE of them should get
+ * this gate: five shell to the local checkout or a local interpreter and are
+ * right to run whether or not Redis is configured — the store posture is the
+ * wrong sensor for "is there a runtime here", exactly as the paragraph above
+ * says. `lib/crontab.ts`, `lib/evidence/read.ts` and `lib/onboarding/bridge.ts`
+ * already surface an unrun command as an honest absence with a reason.
+ * `lib/attention/verdict.ts` was NOT reading its bridge's exit code and now
+ * does. Two remain open and are NOT fixed here, because both need more than a
+ * gate: `lib/library.ts` fire-and-forgets a `redis-cli` addressed at
+ * `REDIS_HOST` (the compose service name) rather than the configured
+ * `REDIS_URL`, so on this deployment the cross-system mirror always fails and
+ * `createRecord` returns the same value either way; and the `/posture` page
+ * renders a failed probe as the badge `guardian` rather than as unmeasured.
+ *
+ * One more exec in THIS file does not reach the gate either: `readCronSchedule`
+ * uses the raw promisified `exec` for `docker exec … crontab -l`. It lands
+ * honestly (`unreadable`, with the reason), so it is not a defect — but the
+ * sentence above would be false without saying so.
  */
 function notExecutedReason(): string {
   if (isUnconfiguredInProduction(process.env)) {
@@ -163,6 +183,29 @@ function notExecutedReason(): string {
  * store has no business shelling into a runtime, and — the part that was
  * missing — no business answering as though it had.
  */
+/**
+ * The same refusal, for a writer that does NOT shell out.
+ *
+ * `actions/config.ts`, `actions/env.ts`, `actions/project-config.ts` and
+ * `deleteOfficer` used to reach the filesystem THROUGH `dockerExec` (a `sed -i`
+ * that never ran on this platform — see `lib/config-write.ts`). They now edit
+ * the documents in-process with `node:fs`, which is correct and also removes
+ * their shell-interpolation surface, but it would have silently dropped them out
+ * of this gate: a dashboard with no store would go back to editing the
+ * cabinet's config and secrets for real.
+ *
+ * So the decision stays in ONE place and both transports call it. A future
+ * writer that reaches the checkout by any means has one function to call, and
+ * the sweep in `lib/unexecuted-command.test.ts` drives the real actions rather
+ * than this function, so it notices if one forgets.
+ */
+export function assertRuntimeWritesAllowed(what: string): void {
+  if (NOT_LIVE) {
+    console.log(`[no-store] refused to write (nothing changed): ${what}`)
+    throw new CommandNotExecutedError(storeReading.posture, what, notExecutedReason())
+  }
+}
+
 export async function dockerExec(command: string): Promise<{ stdout: string; stderr: string }> {
   if (NOT_LIVE) {
     console.log(`[no-store] refused to exec (nothing ran): ${command}`)

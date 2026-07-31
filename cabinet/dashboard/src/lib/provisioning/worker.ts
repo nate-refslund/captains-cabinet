@@ -55,6 +55,30 @@ interface WorkerCabinetRow {
 // State transition helper — updates DB + writes audit event
 // ----------------------------------------------------------------
 
+/**
+ * A TRANSITION THE DATABASE REFUSED. Thrown, never returned.
+ *
+ * Same shape and same reason as `lib/docker.ts:CommandNotExecutedError`: a
+ * rejection is the only value a caller cannot mistake for success, and every
+ * caller of `transitionState` in this file is already inside a try/catch that
+ * turns a throw into the honest failure path.
+ */
+export class StateTransitionNotAppliedError extends Error {
+  readonly cabinet_id: string
+  readonly from: CabinetState
+  readonly to: CabinetState
+  constructor(cabinet_id: string, from: CabinetState, to: CabinetState) {
+    super(
+      `${cabinet_id} was not in "${from}" when the move to "${to}" was written, so nothing ` +
+        'changed and nothing was recorded — something else moved this cabinet first.'
+    )
+    this.name = 'StateTransitionNotAppliedError'
+    this.cabinet_id = cabinet_id
+    this.from = from
+    this.to = to
+  }
+}
+
 async function transitionState(opts: {
   cabinet_id: string
   from: CabinetState
@@ -69,12 +93,35 @@ async function transitionState(opts: {
     throw new Error(check.reason)
   }
 
-  await query(
+  // THE GUARD'S ANSWER, READ. This UPDATE is guarded — `AND state = $3` — and
+  // its whole purpose is to detect that somebody else moved the row first. The
+  // result used to be discarded (`await query(...)` with no binding), and
+  // `lib/db.ts:query` returns `result.rows`, so `rowCount` was not merely
+  // ignored, it was structurally unreachable. A transition that matched ZERO
+  // rows therefore left the database untouched and still wrote a permanent
+  // audit row saying it had happened.
+  //
+  // `getDbPool()` is used rather than `query()` because it returns the full pg
+  // result. It is already imported and already used in this file
+  // (`runProvisioningSteps`), so nothing new is introduced and the 14 other
+  // importers of `lib/db.ts` keep their `Promise<T[]>` contract.
+  const pool = getDbPool()
+  const updated = await pool.query(
     `UPDATE cabinets
      SET state = $1, state_entered_at = now()
      WHERE cabinet_id = $2 AND state = $3`,
     [opts.to, opts.cabinet_id, opts.from]
   )
+
+  if (!updated.rowCount) {
+    // The row was not in `opts.from` by the time the write ran. That is the
+    // race `runProvisioningSteps` already anticipated in a catch ("If the row
+    // was already moved by a concurrent sweep, swallow") for a throw that could
+    // never fire, because nothing checked. Throwing is what makes that catch
+    // real. NOTHING is audited: an event here would assert a transition the
+    // database refused.
+    throw new StateTransitionNotAppliedError(opts.cabinet_id, opts.from, opts.to)
+  }
 
   await writeTransitionEvent({
     cabinet_id: opts.cabinet_id,

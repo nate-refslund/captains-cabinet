@@ -1,7 +1,8 @@
 'use server'
 
 import { cabinetPath } from '@/lib/cabinet-root'
-import { dockerExec, getEnvVars as dockerGetEnvVars } from '@/lib/docker'
+import { assertRuntimeWritesAllowed, getEnvVars as dockerGetEnvVars } from '@/lib/docker'
+import { readEnvDocument, removeEnvKey, writeEnvValue } from '@/lib/config-write'
 import { requireDashboardAuth } from '@/lib/provisioning/guard'
 import { revalidatePath } from 'next/cache'
 
@@ -9,7 +10,12 @@ import { revalidatePath } from 'next/cache'
 // otherwise resolved from CABINET_ROOT (set by deploy-mac.sh /
 // start-officer-mac.sh / start-dashboard.sh) so the env-var editor writes the
 // file the cabinet reads.
-const ENV_PATH = process.env.CABINET_ENV_PATH || cabinetPath('cabinet/.env')
+//
+// A FUNCTION, not a module constant, for the reason `lib/cabinet-root.ts` gives:
+// the variable is honoured per call, so a process that resolves the checkout
+// after this module loads — and any test that sandboxes its writes — edits the
+// path that is live at write time rather than at import time.
+const envPath = () => process.env.CABINET_ENV_PATH || cabinetPath('cabinet/.env')
 
 export async function getEnvVarsAction(): Promise<Record<string, string>> {
   // Reads real cabinet/.env secrets — no error channel in the return type, so
@@ -26,8 +32,8 @@ export async function deleteEnvVar(key: string) {
     if (!/^[A-Z_][A-Z0-9_]*$/.test(key)) {
       return { success: false, error: 'Invalid environment variable name' }
     }
-    const safeKey = key.replace(/'/g, "'\\''")
-    await dockerExec(`sed -i '/^${safeKey}=/d' ${ENV_PATH}`)
+    assertRuntimeWritesAllowed(`delete ${key} from cabinet/.env`)
+    await removeEnvKey(envPath(), key)
     revalidatePath('/integrations')
     return { success: true }
   } catch (err) {
@@ -46,15 +52,15 @@ export async function addEnvVar(key: string, value: string) {
     if (!/^[A-Z_][A-Z0-9_]*$/.test(key)) {
       return { success: false, error: 'Invalid name — use UPPER_SNAKE_CASE' }
     }
-    // Check if already exists
-    const { stdout: exists } = await dockerExec(
-      `grep -c "^${key}=" ${ENV_PATH} 2>/dev/null || echo 0`
-    )
-    if (parseInt(exists.trim()) > 0) {
+    assertRuntimeWritesAllowed(`add ${key} to cabinet/.env`)
+    // The duplicate check now reads the same document the write edits, in this
+    // process. It used to be `grep -c` through the shell — a second read of the
+    // file with a gap in between, and a `parseInt` of whatever the shell said.
+    const existing = await readEnvDocument(envPath())
+    if (key in existing) {
       return { success: false, error: `${key} already exists — edit it instead` }
     }
-    const safeValue = value.replace(/'/g, "'\\''")
-    await dockerExec(`echo '${key}=${safeValue}' >> ${ENV_PATH}`)
+    await writeEnvValue(envPath(), key, value, { createIfMissing: true })
     revalidatePath('/integrations')
     return { success: true }
   } catch (err) {
@@ -74,26 +80,12 @@ export async function updateEnvVar(key: string, value: string) {
     if (!/^[A-Z_][A-Z0-9_]*$/.test(key)) {
       return { success: false, error: 'Invalid environment variable name' }
     }
-
-    const safeValue = value.replace(/'/g, "'\\''")
-    const safeKey = key.replace(/'/g, "'\\''")
-
-    // Check if key already exists
-    const { stdout: exists } = await dockerExec(
-      `grep -c "^${safeKey}=" ${ENV_PATH} 2>/dev/null || echo 0`
-    )
-
-    if (parseInt(exists.trim()) > 0) {
-      // Update existing line
-      await dockerExec(
-        `sed -i 's|^${safeKey}=.*|${safeKey}=${safeValue}|' ${ENV_PATH}`
-      )
-    } else {
-      // Append new line
-      await dockerExec(
-        `echo '${safeKey}=${safeValue}' >> ${ENV_PATH}`
-      )
-    }
+    assertRuntimeWritesAllowed(`set ${key} in cabinet/.env`)
+    // Set-or-append in one read → transform → atomic write → read-back. The old
+    // shape ran `grep -c` and then either `sed -i 's|^KEY=.*|KEY=v|'` — which
+    // exits 1 and changes nothing under BSD sed, i.e. on the only machine this
+    // runs on — or an `echo >>` that interpolated the value into a shell string.
+    await writeEnvValue(envPath(), key, value, { createIfMissing: true })
 
     revalidatePath('/integrations')
     return { success: true }

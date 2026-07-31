@@ -314,7 +314,10 @@ yml_path="$SANDBOX/instance/config/projects/${YAML_SLUG}.yml"
 if [ -f "$yml_path" ]; then
   # Structural YAML validity: no leading tabs (YAML forbids them),
   # product: section present. Avoids pyyaml dependency.
-  has_tabs=$(grep -P '^\t' "$yml_path" 2>/dev/null && echo "YES" || echo "NO")
+  # `grep -P` does not exist in BSD grep: it exited 2, the `||` branch ran, and
+  # this assertion answered "NO" for a file that DID contain leading tabs — a
+  # check that could not fail. awk's \t is portable.
+  has_tabs=$(awk '/^\t/{found=1} END{exit !found}' "$yml_path" 2>/dev/null && echo "YES" || echo "NO")
   has_product=$(grep -q '^product:' "$yml_path" 2>/dev/null && echo "YES" || echo "NO")
   assert "T7: yml has no leading tabs (YAML valid)"    "$has_tabs"      "NO"
   assert "T7: yml has product: section"                "$has_product"   "YES"

@@ -62,7 +62,8 @@ DURATION_MIN="${1:-5}"
 INTERVAL_SEC="${2:-15}"
 START_TS=$(date -u +%s)
 END_TS=$((START_TS + DURATION_MIN * 60))
-AFTER_ISO=$(date -u -d "@$START_TS" +%Y-%m-%dT%H:%M:%SZ)
+# `date -d @epoch` is GNU-only; `date -u -r epoch` is the BSD spelling.
+AFTER_ISO=$(date -u -d "@$START_TS" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$START_TS" +%Y-%m-%dT%H:%M:%SZ)
 APP_FIRST_OPEN_DEADLINE=$((START_TS + 60))
 declare -A FIRST_SEEN
 ALARMED=0
@@ -70,7 +71,7 @@ ALARMED=0
 echo "Watching $HOST project $PROJECT_ID for ${DURATION_MIN}min (poll every ${INTERVAL_SEC}s)."
 echo "After: $AFTER_ISO"
 echo "Events: ${EVENTS[*]}"
-echo "Alarm: app_first_open must appear by $(date -u -d "@$APP_FIRST_OPEN_DEADLINE" +%H:%M:%SZ)"
+echo "Alarm: app_first_open must appear by $(date -u -d "@$APP_FIRST_OPEN_DEADLINE" +%H:%M:%SZ 2>/dev/null || date -u -r "$APP_FIRST_OPEN_DEADLINE" +%H:%M:%SZ)"
 echo "---"
 
 while [ "$(date -u +%s)" -lt "$END_TS" ]; do
