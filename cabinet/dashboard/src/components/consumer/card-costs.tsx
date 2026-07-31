@@ -80,30 +80,51 @@ export default async function CardCosts() {
   const dayOfMonth = now.getUTCDate()
   const daysInMonth = new Date(now.getUTCFullYear(), now.getUTCMonth() + 1, 0).getUTCDate()
 
-  // Fetch today's token cost hash
+  // Fetch today's token cost hash.
+  //
+  // NULL is not zero. `todayCostMicro` started at 0 and stayed there when the
+  // store answered nothing, so "the org has spent $0.00 today" and "nobody has
+  // asked the store anything" were the same card — with a GREEN 0% budget ring
+  // over the top, which is an all-clear about money nobody measured.
   const todayHash = await redis.hgetall(`cabinet:cost:tokens:daily:${today}`)
-
-  // Sum today's cost from per-officer cost_micro fields
-  let todayCostMicro = 0
-  if (todayHash) {
+  let todayCostMicro: number | null = null
+  if (todayHash && Object.keys(todayHash).length > 0) {
+    let sum = 0
     for (const [key, val] of Object.entries(todayHash)) {
       if (key.endsWith('_cost_micro')) {
-        todayCostMicro += parseInt(val, 10) || 0
+        const n = Number.parseInt(val ?? '', 10)
+        // A non-numeric field is a hole in the total, not a zero contribution.
+        if (!Number.isFinite(n)) {
+          sum = Number.NaN
+          break
+        }
+        sum += n
       }
     }
+    todayCostMicro = Number.isFinite(sum) ? sum : null
   }
 
   // Sum month-to-date by iterating daily hashes
   let monthCostMicro = 0
+  let monthMalformed = false
+  const monthMeasuredDays = new Set<string>()
   const monthFetches: Promise<void>[] = []
   for (let i = 0; i < dayOfMonth; i++) {
     const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), dayOfMonth - i))
     const ds = d.toISOString().split('T')[0]
     monthFetches.push(
       redis.hgetall(`cabinet:cost:tokens:daily:${ds}`).then((h) => {
-        if (!h) return
+        if (!h || Object.keys(h).length === 0) return
         for (const [key, val] of Object.entries(h)) {
-          if (key.endsWith('_cost_micro')) monthCostMicro += parseInt(val, 10) || 0
+          if (key.endsWith('_cost_micro')) {
+            const n = Number.parseInt(val ?? '', 10)
+            if (!Number.isFinite(n)) {
+              monthMalformed = true
+              continue
+            }
+            monthCostMicro += n
+            monthMeasuredDays.add(ds)
+          }
         }
       })
     )
@@ -112,16 +133,22 @@ export default async function CardCosts() {
 
   const hasBudget = monthlyBudgetUsd > 0
   const monthlyBudgetMicro = monthlyBudgetUsd * 1_000_000
+  const monthTotalMicro: number | null =
+    monthMalformed || monthMeasuredDays.size === 0 ? null : monthCostMicro
 
-  // Daily anomaly detection (COO 32.4)
+  // Daily anomaly detection (COO 32.4). An UNMEASURED day has no ratio — a
+  // 0 ratio would render "on track", which is a verdict about spend nobody read.
   const dailyAverageMicro = hasBudget ? monthlyBudgetMicro / 30 : 0
-  const dailyAnomalyRatio = dailyAverageMicro > 0 ? todayCostMicro / dailyAverageMicro : 0
+  const dailyAnomalyRatio =
+    dailyAverageMicro > 0 && todayCostMicro !== null
+      ? todayCostMicro / dailyAverageMicro
+      : 0
 
   // Monthly pace ratio: (spent so far) / (budget × fraction of month elapsed)
   const monthFractionElapsed = dayOfMonth / daysInMonth
   const monthlyPaceRatio =
-    hasBudget && monthFractionElapsed > 0
-      ? monthCostMicro / (monthlyBudgetMicro * monthFractionElapsed)
+    hasBudget && monthFractionElapsed > 0 && monthTotalMicro !== null
+      ? monthTotalMicro / (monthlyBudgetMicro * monthFractionElapsed)
       : 0
 
   const effectiveRatio = Math.max(monthlyPaceRatio, dailyAnomalyRatio)
@@ -129,7 +156,12 @@ export default async function CardCosts() {
   const dailyAnomaly3x = dailyAnomalyRatio >= 3
   const dailyAnomaly10x = dailyAnomalyRatio >= 10
 
-  const noData = todayCostMicro === 0 && monthCostMicro === 0
+  // MEASURED zero (the org really did spend nothing) vs NOTHING MEASURED — the
+  // card used to say "Nothing to report yet" for both, and only the first of
+  // those is a report.
+  const nothingMeasured = todayCostMicro === null && monthTotalMicro === null
+  const noData =
+    !nothingMeasured && todayCostMicro === 0 && monthTotalMicro === 0
 
   // Budget ring color label
   const ringLabel = hasBudget
@@ -155,7 +187,21 @@ export default async function CardCosts() {
         </a>
       </div>
 
-      {noData && !hasBudget ? (
+      {nothingMeasured ? (
+        /* Nothing was measured. Not "$0.00", not "on track", no ring. */
+        <div
+          className="rounded-lg border border-dashed border-amber-400/60 bg-amber-900/10 px-3 py-2"
+          data-costs-unmeasured="true"
+        >
+          <p className="text-sm font-semibold text-amber-300">
+            No cost reading &mdash; this is not $0.00
+          </p>
+          <p className="mt-0.5 text-xs text-amber-100/70">
+            Nothing has been recorded for today or this month, so spend cannot
+            be shown and pace-vs-budget cannot be judged.
+          </p>
+        </div>
+      ) : noData && !hasBudget ? (
         /* No data + no budget */
         <div className="py-2">
           <p className="text-sm text-zinc-400">
@@ -185,7 +231,7 @@ export default async function CardCosts() {
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Today</p>
               <p className="mt-1 text-xl font-bold text-white">
-                {formatMicro(todayCostMicro)}
+                {todayCostMicro === null ? '—' : formatMicro(todayCostMicro)}
                 {dailyAnomaly3x && (
                   <span className="ml-1.5 text-sm text-amber-400" title="Today is elevated vs daily average">
                     {dailyAnomaly10x ? '⚠' : '▲'}
@@ -197,7 +243,9 @@ export default async function CardCosts() {
               <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
                 This Month
               </p>
-              <p className="mt-1 text-xl font-bold text-white">{formatMicro(monthCostMicro)}</p>
+              <p className="mt-1 text-xl font-bold text-white">
+                {monthTotalMicro === null ? '—' : formatMicro(monthTotalMicro)}
+              </p>
             </div>
           </div>
 
@@ -218,7 +266,7 @@ export default async function CardCosts() {
           )}
 
           {/* Pace ring — only when budget configured */}
-          {hasBudget ? (
+          {hasBudget && monthTotalMicro !== null ? (
             <BudgetRing
               ratio={effectiveRatio}
               label={ringLabel}

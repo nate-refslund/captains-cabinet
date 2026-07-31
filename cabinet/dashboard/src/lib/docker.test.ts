@@ -1,6 +1,10 @@
-// docker.ts — dev/mock-path contract for the exported runtime-probe helpers.
-// Module captures IS_MOCK at load from REDIS_URL+MOCK_DATA. With
-// REDIS_URL unset (default vitest env), mock path runs end-to-end.
+// docker.ts — the DEMO-path contract for the exported runtime-probe helpers.
+//
+// This file ASKS FOR the fabricated answers (2026-07-31). It used to get them
+// by leaving REDIS_URL unset — which is exactly how a dashboard with no store
+// came to report "Officers: 4/5 running". The invented roster now requires an
+// explicit non-production opt-in; the honest no-store behaviour of these same
+// helpers is driven by `no-store-honesty.test.ts`.
 //
 // dockerWriteFile/dockerReadFile are GONE (Wave B): repo-file I/O moved to
 // real node:fs in governance.ts/files.ts — the mock write here used to
@@ -13,9 +17,10 @@
 
 import { beforeAll, describe, it, expect } from 'vitest'
 
-// Ensure mock path is active before dynamic import
+// Ensure the DEMO path is active before dynamic import.
 delete process.env.REDIS_URL
 delete process.env.MOCK_DATA
+process.env.CABINET_DEMO_DATA = 'true'
 
 type Mod = typeof import('./docker')
 let mod: Mod

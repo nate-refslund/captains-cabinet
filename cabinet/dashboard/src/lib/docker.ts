@@ -1,11 +1,28 @@
 import { exec as execCb } from 'child_process'
 import { promisify } from 'util'
 import { cabinetRoot } from './cabinet-root'
+import { isNotLiveStore, resolveStorePosture } from './store-posture'
 
 const exec = promisify(execCb)
 const prefix = process.env.CABINET_PREFIX || 'cabinet'
 const container = `${prefix}-officers`
-const IS_MOCK = process.env.MOCK_DATA === 'true' || !process.env.REDIS_URL
+/**
+ * Two different questions, which used to share one flag (2026-07-31).
+ *
+ *   IS_FABRICATED — may this module INVENT an answer? Only from the explicit,
+ *     non-production demo opt-in. `getTmuxWindows()` returning the five-officer
+ *     roster is what rendered "Officers: 4/5 running" on a dashboard that had
+ *     contacted nothing.
+ *   NOT_LIVE — should this module refrain from shelling into a runtime that is
+ *     not there? True for `unconfigured` as well. This one is a NO-OP GUARD,
+ *     not a fabrication: its sentinel makes every caller take its empty branch.
+ *
+ * Collapsing them was the defect. An absent `REDIS_URL` is a reason not to
+ * exec; it was never a reason to answer.
+ */
+const storeReading = resolveStorePosture(process.env)
+const IS_FABRICATED = storeReading.fabricated
+const NOT_LIVE = isNotLiveStore(storeReading)
 
 // ---------------------------------------------------------------------------
 // Runtime mode: Docker (Hetzner) vs Mac-native (Mac mini).
@@ -50,12 +67,17 @@ export const isNativeRuntime = () => RUNTIME_MODE === 'native'
  * - Docker mode: `docker exec -u cabinet <container> bash -c '<cmd>'`
  * - Native mode: runs the command directly in a shell with cwd = CABINET_ROOT.
  *
- * Mock mode (no REDIS_URL / MOCK_DATA=true) short-circuits for local dev.
+ * NOT_LIVE (demo OR unconfigured) short-circuits: a dashboard that has not
+ * contacted a store has no business shelling into a runtime. The sentinel it
+ * returns is a NO-OP marker every caller below already branches on — it is not
+ * an answer, and no caller may render it.
  */
+export const MOCK_EXEC_SENTINEL = 'mock: command executed'
+
 export async function dockerExec(command: string): Promise<{ stdout: string; stderr: string }> {
-  if (IS_MOCK) {
-    console.log(`[mock docker] Would exec: ${command}`)
-    return { stdout: 'mock: command executed', stderr: '' }
+  if (NOT_LIVE) {
+    console.log(`[no-store] would exec (not run): ${command}`)
+    return { stdout: MOCK_EXEC_SENTINEL, stderr: '' }
   }
 
   if (RUNTIME_MODE === 'native') {
@@ -76,7 +98,11 @@ export async function dockerExec(command: string): Promise<{ stdout: string; std
 }
 
 export async function getTmuxWindows(): Promise<string[]> {
-  if (IS_MOCK) {
+  // The roster below is INVENTED. It is what rendered "Officers: 4/5 running"
+  // on a dashboard that had contacted nothing, so it is reachable only from
+  // the explicit non-production demo opt-in. Unconfigured falls through to the
+  // exec path, whose sentinel yields an empty roster — an honest absence.
+  if (IS_FABRICATED) {
     return ['cos', 'cto', 'cpo', 'cro', 'coo']
   }
   try {
@@ -104,7 +130,7 @@ export async function getTmuxWindows(): Promise<string[]> {
 }
 
 export async function isClaudeAlive(role: string): Promise<boolean> {
-  if (IS_MOCK) {
+  if (IS_FABRICATED) {
     // In mock mode, most officers are alive except coo
     return role !== 'coo'
   }
@@ -142,7 +168,7 @@ export interface CronJob {
 // used to console-log no-op a Captain's save while the action claimed success.
 
 export async function getCronSchedule(): Promise<CronJob[]> {
-  if (IS_MOCK) {
+  if (IS_FABRICATED) {
     return [
       { schedule: '*/5 * * * *', command: 'health-check.sh', description: 'Health check' },
       { schedule: '*/15 * * * *', command: 'token-refresh.sh', description: 'Token refresh' },
@@ -161,7 +187,13 @@ export async function getCronSchedule(): Promise<CronJob[]> {
       const { stdout } = await dockerExec(
         `launchctl list 2>/dev/null | grep -i 'com.cabinet' || true`
       )
-      const lines = stdout.trim().split('\n').filter(Boolean)
+      // The no-op sentinel is not a launchd label. Rendering it would print
+      // "mock: command executed" as a scheduled job — a fabricated row grown
+      // from a guard, which is the same class of defect one layer down.
+      const lines = stdout
+        .trim()
+        .split('\n')
+        .filter((l: string) => Boolean(l) && l.trim() !== MOCK_EXEC_SENTINEL)
       return lines.map((line: string) => {
         // launchctl list cols: PID  Status  Label
         const parts = line.trim().split(/\s+/)
@@ -188,7 +220,7 @@ export async function getCronSchedule(): Promise<CronJob[]> {
 }
 
 export async function getEnvVars(): Promise<Record<string, string>> {
-  if (IS_MOCK) {
+  if (IS_FABRICATED) {
     return {
       ANTHROPIC_API_KEY: 'sk-ant-...mock1234',
       ELEVENLABS_API_KEY: 'el-...mock5678',
@@ -229,7 +261,7 @@ export async function getEnvVars(): Promise<Record<string, string>> {
 }
 
 export async function isTelegramConnected(role: string): Promise<boolean> {
-  if (IS_MOCK) {
+  if (IS_FABRICATED) {
     // In mock mode, most officers are connected except coo
     return role !== 'coo'
   }

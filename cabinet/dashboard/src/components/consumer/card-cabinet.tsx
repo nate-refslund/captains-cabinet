@@ -16,6 +16,7 @@
 
 import Link from 'next/link'
 import redis from '@/lib/redis'
+import { freshnessOf } from '@/lib/liveness'
 
 const OFFLINE_THRESHOLD_MS = 15 * 60 * 1000 // 15 min → offline
 const STALE_ACTIVITY_MS = 30 * 60 * 1000 // 30 min → show investigate link
@@ -60,7 +61,7 @@ interface ActivityPayload {
 interface OfficerRow {
   role: string
   activityText: string
-  status: 'online' | 'stale' | 'offline'
+  status: 'online' | 'stale' | 'offline' | 'unknown'
   showInvestigateLink: boolean
   elapsedText: string | null
 }
@@ -81,16 +82,25 @@ async function buildOfficerRows(): Promise<OfficerRow[]> {
         redis.get(`cabinet:officer:activity:${role}`),
       ])
 
-      // Determine online/offline
-      let isOffline = true
-      let offlineDurationMs = 0
-      if (heartbeatRaw) {
-        const hbTime = new Date(heartbeatRaw).getTime()
-        if (!isNaN(hbTime)) {
-          offlineDurationMs = now - hbTime
-          isOffline = offlineDurationMs > OFFLINE_THRESHOLD_MS
+      // Determine online/offline.
+      //
+      // The NaN guard was already here; the FUTURE one was not. A stamp ahead
+      // of this clock made `offlineDurationMs` negative, which is under the
+      // threshold, so a dead officer rendered "between tasks" with a green dot
+      // forever and nothing aged it out. `freshnessOf` carries both arms, and
+      // an unreadable stamp is now its own row rather than a healthy one.
+      const hb = freshnessOf(heartbeatRaw, now, OFFLINE_THRESHOLD_MS)
+      if (hb.state === 'unknown') {
+        return {
+          role,
+          activityText: `${role.toUpperCase()} — heartbeat unreadable`,
+          status: 'unknown' as const,
+          showInvestigateLink: true,
+          elapsedText: null,
         }
       }
+      const isOffline = hb.state !== 'fresh'
+      const offlineDurationMs = hb.state === 'stale' ? hb.ageMs : 0
 
       if (isOffline) {
         return {
@@ -162,7 +172,14 @@ async function buildOfficerRows(): Promise<OfficerRow[]> {
   return rows
 }
 
-function StatusIndicator({ status }: { status: 'online' | 'stale' | 'offline' }) {
+function StatusIndicator({
+  status,
+}: {
+  status: 'online' | 'stale' | 'offline' | 'unknown'
+}) {
+  // `unknown` is checked FIRST and dual-coded with a glyph that carries no
+  // health claim — a card that loses a branch cannot fall out the green end.
+  if (status === 'unknown') return <span className="text-amber-300 text-sm">❓</span>
   if (status === 'online') return <span className="text-green-400 text-sm">🟢</span>
   if (status === 'stale') return <span className="text-amber-400 text-sm">🟡</span>
   return <span className="text-red-400 text-sm">🔴</span>

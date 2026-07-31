@@ -52,13 +52,28 @@ export function ringFor(input: RingInput): { ring: RingState; glyph: string } {
   return { ring: 'grey', glyph: '·' }
 }
 
-/** Seconds between an ISO stamp and nowMs; null when unparseable/absent.
- * (nowMs is passed by the SERVER route — lib/world never reads a clock.) */
+/**
+ * Seconds between an ISO stamp and nowMs; null when unparseable, absent, or
+ * FUTURE-DATED beyond tolerated skew.
+ *
+ * The `Math.max(0, …)` used to swallow arbitrary forward skew: a stamp an hour
+ * ahead of this clock clamped to `0`, and `ringFor` reads 0 as maximally fresh,
+ * so a skewed or stopped writer painted a PERMANENT green ✓ "active" ring on an
+ * officer that had done nothing. The clamp survives only inside the tolerated
+ * window, where it is rounding rather than invention — beyond it the age is not
+ * knowable, which `null` says and a `0` does not.
+ *
+ * (nowMs is passed by the SERVER route — lib/world never reads a clock.)
+ */
+export const MAX_SKEW_S = 90
+
 export function freshSeconds(sinceIso: string | undefined | null, nowMs: number): number | null {
   if (!sinceIso) return null
   const t = Date.parse(sinceIso)
   if (!Number.isFinite(t)) return null
-  return Math.max(0, Math.round((nowMs - t) / 1000))
+  const secs = Math.round((nowMs - t) / 1000)
+  if (secs < -MAX_SKEW_S) return null
+  return Math.max(0, secs)
 }
 
 /**

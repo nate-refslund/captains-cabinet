@@ -12,7 +12,7 @@
 #      packages; npm ci only installs the lockfile if node_modules is absent)
 #      as a dev server bound to 127.0.0.1 on a scratch port,
 #   3. with an ALLOWLIST environment (env -i): the server inherits no shell
-#      secrets, cabinet/.env is never sourced, REDIS_URL is absent so every
+#      secrets, cabinet/.env is never sourced, CABINET_DEMO_DATA=true so every
 #      lib/redis.ts consumer stays on its built-in mock branch (IS_MOCK),
 #      and the file surfaces the /receipts + config readers use point into
 #      the stage:
@@ -237,9 +237,15 @@ if [ ! -d "$DASH_DIR/node_modules" ]; then
 fi
 
 # Allowlist environment: env -i means NOTHING leaks in from this shell (no
-# tokens, no REDIS_URL → every lib/redis.ts consumer stays on its mock
-# branch; the /world engine route's own client is the known exception —
-# header). PATH/HOME/TMPDIR are what node+npm legitimately need.
+# tokens, no REDIS_URL). CABINET_DEMO_DATA=true is what now selects the
+# fabricated store: since 2026-07-31 an ABSENT REDIS_URL renders honest
+# unknowns instead of inventing officers and costs, so a demo that wants the
+# rich vocabulary has to ASK for it — and every page it serves then carries the
+# "DEMO DATA — this is not your cabinet" banner, which is correct for a demo
+# and was the whole point of the change. CABINET_DEMO_DATA is the STORE-only
+# opt-in: unlike MOCK_DATA it does not waive the login below.
+# (The /world engine route's own client is the known exception — header.)
+# PATH/HOME/TMPDIR are what node+npm legitimately need.
 echo "demo-dashboard: starting on http://127.0.0.1:$PORT (stage $STAGE)"
 cd "$DASH_DIR"
 set -m   # own process group per job, so --stop can take down next's workers
@@ -247,6 +253,7 @@ env -i \
   PATH="$PATH" HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" \
   CABINET_ROOT="$REPO_ROOT" \
   CABINET_RUNTIME_MODE=native \
+  CABINET_DEMO_DATA=true \
   CONFIG_PATH="$STAGE/config/product.yml" \
   CABINET_UNDO_DIR="$STAGE/undo" \
   CABINET_WORLD_OUT_DIR="$STAGE/world" \
@@ -290,8 +297,10 @@ demo-dashboard: up. Testburg demo estate (synthetic — cabinet/fixtures/testbur
   NOT demo-safe: /world — its engine route reads THIS checkout's live world
   surfaces through its own redis client (localhost default), never the
   fixture; do not open or screenshot it in a public demo. The nav project
-  selector shows built-in mock vocabulary, not the fixture — frame captures
-  on the content region (hero-demo runbook A6).
+  selector shows built-in demo vocabulary, not the fixture — frame captures
+  on the content region (hero-demo runbook A6). Every page also carries the
+  "DEMO DATA — this is not your cabinet" banner: that is deliberate, and it is
+  what makes the capture safe to publish.
 
   log         $LOG_FILE
   stop        bash cabinet/scripts/demo-dashboard.sh --stop

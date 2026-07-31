@@ -12,6 +12,7 @@ import { resolveActiveContext } from '@/lib/active-context'
 import { getAllOfficerBoards, getBoardStats, WIP_CAP } from '@/lib/tasks'
 import { getLinearFounderActions } from '@/lib/linear-tasks'
 import redis from '@/lib/redis'
+import { freshnessOf } from '@/lib/liveness'
 import { OfficerColumn } from '@/components/tasks/officer-column'
 import { CaptainColumn } from '@/components/tasks/captain-column'
 import TasksClientRefresh from '@/components/tasks/tasks-client-refresh'
@@ -27,7 +28,14 @@ export const dynamic = 'force-dynamic'
 
 const OFFLINE_THRESHOLD_MS = 15 * 60 * 1000
 
-/** Returns a map of officer_slug → is_online (heartbeat < 15min) */
+/**
+ * officer_slug → is_online (heartbeat < 15min).
+ *
+ * `now - hbTime < OFFLINE_THRESHOLD_MS` was TRUE for every future-dated stamp
+ * (a negative age is under every threshold there is), so a clock-skewed writer
+ * painted a dead officer online here permanently. `freshnessOf` is the one
+ * reader with that arm; only a genuinely fresh reading counts as online.
+ */
 async function getOfficerOnlineStatus(): Promise<Record<string, boolean>> {
   const heartbeatKeys = await redis.keys('cabinet:heartbeat:*')
   const now = Date.now()
@@ -37,12 +45,7 @@ async function getOfficerOnlineStatus(): Promise<Record<string, boolean>> {
     heartbeatKeys.map(async (key) => {
       const slug = key.replace('cabinet:heartbeat:', '')
       const val = await redis.get(key)
-      if (val) {
-        const hbTime = new Date(val).getTime()
-        result[slug] = now - hbTime < OFFLINE_THRESHOLD_MS
-      } else {
-        result[slug] = false
-      }
+      result[slug] = freshnessOf(val, now, OFFLINE_THRESHOLD_MS).state === 'fresh'
     })
   )
   return result

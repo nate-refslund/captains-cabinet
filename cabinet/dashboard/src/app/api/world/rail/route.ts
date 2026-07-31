@@ -162,17 +162,28 @@ export async function GET(_req: NextRequest) {
       }
       // Cost: dual-shape sum (legacy <slug>_cost_micro + pool-mode
       // <slug>_<project>_cost_micro) — mirrors lib/redis.ts FW-072 logic.
+      // ABSENT stays null (the rail already renders that as the honest '—').
+      // PRESENT-BUT-GARBAGE used to become a measured $0.00: `parseInt('x') || 0`
+      // contributed a zero and the `?? 0` promoted null to a real number, so a
+      // corrupt cost field printed a confident nothing-spent for that officer.
       let micro: number | null = null
+      let costMalformed = false
       if (costHash) {
         for (const [field, value] of Object.entries(costHash)) {
           if (
             field === `${slug}_cost_micro` ||
             (field.startsWith(`${slug}_`) && field.endsWith('_cost_micro'))
           ) {
-            micro = (micro ?? 0) + (parseInt(value || '0', 10) || 0)
+            const n = Number.parseInt(value ?? '', 10)
+            if (!Number.isFinite(n)) {
+              costMalformed = true
+              continue
+            }
+            micro = (micro ?? 0) + n
           }
         }
       }
+      if (costMalformed) micro = null
       if (micro !== null) dayMax = Math.max(dayMax ?? 0, micro)
       const freshS = freshSeconds(since, nowMs)
       const { ring, glyph } = ringFor({ freshS, expected: expected.has(slug), present })

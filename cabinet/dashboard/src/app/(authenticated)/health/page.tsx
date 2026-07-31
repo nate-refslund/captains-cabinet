@@ -1,4 +1,5 @@
 import redis from '@/lib/redis'
+import { freshnessOf, livenessTitle, type Freshness } from '@/lib/liveness'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,22 +13,49 @@ interface OfficerHealth {
   contextUpdated: string | null
 }
 
-type StatusLevel = 'green' | 'yellow' | 'red'
+/**
+ * FOUR levels, not three. `unknown` is the one that was missing, and its
+ * absence is why an unparseable heartbeat rendered "Active": `NaN > 900000` is
+ * false, so a malformed stamp fell through the staleness guard and out the
+ * green end at `return 'green'`. A future-dated stamp did the same thing
+ * permanently, since a negative age is under every threshold there is.
+ */
+type StatusLevel = 'green' | 'yellow' | 'red' | 'unknown'
+
+const HEARTBEAT_MAX_AGE_MS = 15 * 60 * 1000
+const TOOLCALL_MAX_AGE_MS = 5 * 60 * 1000
 
 function getStatus(health: OfficerHealth, now: number): StatusLevel {
-  if (!health.heartbeat) return 'red'
-  const hbAge = now - new Date(health.heartbeat).getTime()
-  if (hbAge > 15 * 60 * 1000) return 'red'
-  if (!health.lastToolCall) return 'yellow'
-  const tcAge = now - new Date(health.lastToolCall).getTime()
-  if (tcAge > 5 * 60 * 1000) return 'yellow'
+  const hb = freshnessOf(health.heartbeat, now, HEARTBEAT_MAX_AGE_MS)
+  // A heartbeat nobody can read is not evidence of health OR of death. Red
+  // would be as invented as green here — it says the officer is down, which
+  // nothing measured.
+  if (hb.state === 'unknown') return 'unknown'
+  if (hb.state === 'absent' || hb.state === 'stale') return 'red'
+  const tc = freshnessOf(health.lastToolCall, now, TOOLCALL_MAX_AGE_MS)
+  if (tc.state === 'unknown') return 'unknown'
+  if (tc.state === 'absent' || tc.state === 'stale') return 'yellow'
   return 'green'
+}
+
+/** The reason line for an unknown card — never blank, never "off". */
+function unknownReasonOf(health: OfficerHealth, now: number): string | null {
+  const hb = freshnessOf(health.heartbeat, now, HEARTBEAT_MAX_AGE_MS)
+  if (hb.state === 'unknown') return livenessTitle(hb)
+  const tc = freshnessOf(health.lastToolCall, now, TOOLCALL_MAX_AGE_MS)
+  if (tc.state === 'unknown') return `last tool call — ${livenessTitle(tc)}`
+  return null
 }
 
 function formatRelative(isoTs: string | null, now: number): string {
   if (!isoTs) return '—'
+  // An unreadable or future stamp used to print "0s ago" (NaN floors to NaN,
+  // negatives floor downward) — a fabricated recency. `?` is the honest mark,
+  // the same one the emergency-stop glance uses.
+  const f: Freshness = freshnessOf(isoTs, now, Number.MAX_SAFE_INTEGER)
+  if (f.state === 'unknown') return '? unreadable'
   const diffMs = now - new Date(isoTs).getTime()
-  const diffSec = Math.floor(diffMs / 1000)
+  const diffSec = Math.max(0, Math.floor(diffMs / 1000))
   if (diffSec < 60) return `${diffSec}s ago`
   const diffMin = Math.floor(diffSec / 60)
   if (diffMin < 60) return `${diffMin}m ago`
@@ -125,7 +153,7 @@ export default async function HealthPage() {
       </div>
 
       {/* Summary badges */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div className="rounded-xl border border-zinc-800 bg-zinc-900" style={{ padding: '20px' }}>
           <div className="flex items-center gap-2">
             <span
@@ -171,6 +199,22 @@ export default async function HealthPage() {
           </div>
           <p className="mt-1 text-3xl font-bold text-white">{statusCounts.red || 0}</p>
         </div>
+        {/* Officers whose heartbeat could not be read at all. Folding these
+            into Active is what this page used to do; folding them into Down
+            would be the same invention with the sign flipped. */}
+        <div
+          className="rounded-xl border border-dashed border-amber-400/60 bg-amber-900/10"
+          style={{ padding: '20px' }}
+          data-health-unknown="tile"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-amber-300">?</span>
+            <span className="text-sm text-amber-200/70">Unknown</span>
+          </div>
+          <p className="mt-1 text-3xl font-bold text-amber-300">
+            {statusCounts.unknown || 0}
+          </p>
+        </div>
       </div>
 
       {/* Officer cards */}
@@ -191,10 +235,24 @@ export default async function HealthPage() {
                 ? '#10b981'
                 : status === 'yellow'
                   ? '#f59e0b'
-                  : '#ef4444'
+                  : status === 'unknown'
+                    ? '#fbbf24'
+                    : '#ef4444'
 
+            // The WORD can never be "Active" for a reading nobody could take:
+            // the unknown arm is checked first and returns a string that does
+            // not carry the healthy vocabulary at all.
             const statusLabel =
-              status === 'green' ? 'Active' : status === 'yellow' ? 'Idle' : 'Down'
+              status === 'unknown'
+                ? 'Unknown'
+                : status === 'green'
+                  ? 'Active'
+                  : status === 'yellow'
+                    ? 'Idle'
+                    : 'Down'
+
+            const unknownReason =
+              status === 'unknown' ? unknownReasonOf(officer, now) : null
 
             const ctxPct = officer.contextPct ?? 0
             const ctxBarColor =
@@ -207,8 +265,13 @@ export default async function HealthPage() {
             return (
               <div
                 key={officer.role}
-                className="rounded-xl border border-zinc-800 bg-zinc-900"
+                className={
+                  status === 'unknown'
+                    ? 'rounded-xl border border-dashed border-amber-400/60 bg-amber-900/10'
+                    : 'rounded-xl border border-zinc-800 bg-zinc-900'
+                }
                 style={{ padding: '24px' }}
+                data-officer-status={status}
               >
                 {/* Card header */}
                 <div
@@ -244,6 +307,10 @@ export default async function HealthPage() {
                     </span>
                   </div>
                 </div>
+
+                {unknownReason && (
+                  <p className="mb-4 text-xs text-amber-100/70">{unknownReason}</p>
+                )}
 
                 {/* Stats */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -394,6 +461,13 @@ export default async function HealthPage() {
             />
             <span className="text-xs text-zinc-400">
               Down — heartbeat expired (15 min TTL) or missing
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span className="text-amber-300">?</span>
+            <span className="text-xs text-zinc-400">
+              Unknown — the heartbeat could not be read (unparseable, or stamped
+              in the future). Not up and not down: unread.
             </span>
           </div>
         </div>

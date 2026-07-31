@@ -22,6 +22,8 @@ import { getOfficerConfig } from '@/lib/config'
 import AutoRefresh from '@/components/display/auto-refresh'
 import LiveClock from '@/components/display/live-clock'
 import OfficerTile from '@/components/display/officer-tile'
+import StorePostureBanner from '@/components/store-posture-banner'
+import { storeReading } from '@/lib/redis'
 
 // Always render fresh; the AutoRefresh island re-pulls every 15s.
 export const dynamic = 'force-dynamic'
@@ -87,6 +89,9 @@ export default async function DisplayPage() {
   const { timezone, captainName } = readPlatformMeta()
   const onlineCount = data.officers.filter((o) => o.online).length
   const totalOfficers = data.officers.length
+  // An officer whose heartbeat cannot be read is in neither number. "4/5" with
+  // a silent unreadable in the denominator is a claim about the fifth.
+  const unreadableCount = data.officers.filter((o) => o.unknown).length
   const { subagentActivity: sub } = data
 
   const updatedLabel = (() => {
@@ -107,6 +112,14 @@ export default async function DisplayPage() {
     <main className="flex min-h-screen flex-col gap-6 bg-zinc-950 p-8 xl:p-10">
       {/* Client islands (render nothing visible except the clock value) */}
       <AutoRefresh intervalMs={15000} />
+
+      {/*
+        /display sits OUTSIDE (authenticated)/layout.tsx, so the layout banner
+        never reaches it — and this is the surface that runs unattended on an
+        office wall all day. A kiosk showing invented officers to whoever walks
+        past is the disclosure gap that matters most, not the least.
+      */}
+      <StorePostureBanner reading={storeReading} compact />
 
       {/* ===== Header strip ===== */}
       <header className="flex flex-wrap items-center justify-between gap-6 rounded-2xl border border-zinc-800 bg-zinc-900/60 px-8 py-5">
@@ -131,6 +144,11 @@ export default async function DisplayPage() {
             <span className="text-xs font-semibold uppercase tracking-widest text-zinc-500">
               officers online
             </span>
+            {unreadableCount > 0 && (
+              <span className="text-xs font-semibold uppercase tracking-widest text-amber-300">
+                · {unreadableCount} unreadable
+              </span>
+            )}
           </div>
 
           <div className="text-4xl xl:text-5xl">

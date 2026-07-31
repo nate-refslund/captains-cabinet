@@ -1,7 +1,11 @@
-// redis.ts — mockRedis backend + cost/token/schedule readers.
-// Module captures IS_MOCK at load time from REDIS_URL+MOCK_DATA. With
-// REDIS_URL unset (default in vitest env), IS_MOCK=true routes through
-// the mockStore + mockHashStore, so we test the mock path end-to-end.
+// redis.ts — the DEMO (fabricated) backend + cost/token/schedule readers.
+//
+// This file ASKS FOR the fabricated store, and that is the point (2026-07-31).
+// It used to get it by leaving REDIS_URL unset, which was the defect: absence
+// of configuration was a licence to invent. The seeded store now requires an
+// explicit non-production opt-in, so a suite that wants it has to say so — and
+// a suite that does NOT say so gets the honest empty store, which is what
+// `no-store-honesty.test.ts` drives.
 //
 // mockHashStore is populated via Math.random at module load (30 days
 // of cost data) — we assert structural invariants (length, shape,
@@ -10,9 +14,12 @@
 
 import { beforeAll, describe, it, expect } from 'vitest'
 
-// Ensure mock path is active before dynamic import (module reads env at load)
+// Ensure the DEMO path is active before dynamic import (module reads env at
+// load). CABINET_DEMO_DATA is the store-only opt-in: unlike MOCK_DATA it
+// carries no auth semantics.
 delete process.env.REDIS_URL
 delete process.env.MOCK_DATA
+process.env.CABINET_DEMO_DATA = 'true'
 
 type RedisShape = {
   get: (key: string) => Promise<string | null>
@@ -152,8 +159,12 @@ describe('getCostHistory(days)', () => {
       expect(entry).toHaveProperty('date')
       expect(entry).toHaveProperty('total')
       expect(entry).toHaveProperty('officers')
+      expect(entry).toHaveProperty('unmeasuredReason')
       expect(typeof entry.date).toBe('string')
+      // A SEEDED day has a real total. `total` is `number | null` now; null is
+      // reserved for a day nobody recorded (see no-store-honesty.test.ts).
       expect(typeof entry.total).toBe('number')
+      expect(entry.unmeasuredReason).toBeNull()
       expect(typeof entry.officers).toBe('object')
     }
   })
@@ -172,21 +183,29 @@ describe('getCostHistory(days)', () => {
     }
   })
 
+  it('the DEMO store is seeded, so no day inside the backfill is unmeasured', async () => {
+    const result = await mod.getCostHistory(30)
+    expect(result.every((e) => e.total !== null)).toBe(true)
+  })
+
   it('officers keys include the 5 default officer roles', async () => {
     const result = await mod.getCostHistory(1)
+    expect(result[0].total).not.toBeNull()
     const roles = Object.keys(result[0].officers)
     for (const expected of ['cos', 'cto', 'cpo', 'cro', 'coo']) {
       expect(roles).toContain(expected)
     }
   })
 
-  it('entries past the 30-day mock backfill have zero totals', async () => {
+  it('entries past the 30-day backfill are UNMEASURED, not zero', async () => {
+    // This assertion was `toBe(0)` and it encoded the defect as a fixture: a
+    // day the store has no record of is not a day the org spent nothing, and
+    // "$0.00" is a claim about money nobody made.
     const result = await mod.getCostHistory(60)
-    // last entries (index ≥ 30) date further back than seeded data,
-    // so hash is null → all officer costs = 0
     const oldest = result[59]
-    expect(oldest.total).toBe(0)
-    for (const v of Object.values(oldest.officers)) expect(v).toBe(0)
+    expect(oldest.total).toBeNull()
+    expect(oldest.officers).toEqual({})
+    expect(oldest.unmeasuredReason).toBeTruthy()
   })
 
   // FW-072 / S3 (Pool Phase 1A): pool-mode field shape (per-project
@@ -236,12 +255,16 @@ describe('getTokenCostHistory(days)', () => {
     }
   })
 
-  it('missing hash (beyond 30-day backfill) gives empty officers object', async () => {
-    // Index 30+ is past the mock backfill, so hash is null → no officer keys added
+  it('a seeded day is never null', async () => {
+    const result = await mod.getTokenCostHistory(7)
+    expect(result.every((e) => e.totalCostMicro !== null)).toBe(true)
+  })
+
+  it('missing hash (beyond backfill) is an UNMEASURED total, not zero', async () => {
     const result = await mod.getTokenCostHistory(60)
     const beyondBackfill = result[59]
     expect(Object.keys(beyondBackfill.officers)).toHaveLength(0)
-    expect(beyondBackfill.totalCostMicro).toBe(0)
+    expect(beyondBackfill.totalCostMicro).toBeNull()
   })
 
   it('date[0] is today', async () => {

@@ -5,6 +5,7 @@ import { getOfficerConfig, getConfig, getDashboardConfig } from '@/lib/config'
 import { getProjects } from '@/actions/projects'
 import { readKillswitch } from '@/lib/killswitch-state'
 import { KILLSWITCH_CHECK_COMMAND } from '@/lib/world/killswitch'
+import { freshnessOf } from '@/lib/liveness'
 import OfficerCard from '@/components/officer-card'
 import { StackedBarChart, HorizontalBars, ChartLegend } from '@/components/cost-chart'
 import ConsumerFrontPage from '@/components/consumer/consumer-front-page'
@@ -17,7 +18,12 @@ import { cookies } from 'next/headers'
 
 export const dynamic = 'force-dynamic'
 
-type OfficerStatus = 'running' | 'stopped' | 'no-heartbeat'
+/**
+ * `unknown` added 2026-07-31. `now - new Date(hb).getTime() > 10*60*1000` is
+ * FALSE for `NaN`, so an unparseable heartbeat fell out of the ternary's
+ * healthy end and the card said "Running"; a future-dated stamp did it forever.
+ */
+type OfficerStatus = 'running' | 'stopped' | 'no-heartbeat' | 'unknown'
 
 interface OfficerInfo {
   role: string
@@ -71,13 +77,13 @@ async function getOfficerData(): Promise<OfficerInfo[]> {
 
       let status: OfficerStatus
       if (isRunning) {
-        if (heartbeat) {
-          const hbTime = new Date(heartbeat).getTime()
-          const now = Date.now()
-          status = now - hbTime > 10 * 60 * 1000 ? 'no-heartbeat' : 'running'
-        } else {
-          status = 'no-heartbeat'
-        }
+        const hb = freshnessOf(heartbeat, Date.now(), 10 * 60 * 1000)
+        status =
+          hb.state === 'fresh'
+            ? 'running'
+            : hb.state === 'unknown'
+              ? 'unknown'
+              : 'no-heartbeat'
       } else if (expected === 'stopped') {
         status = 'stopped'
       } else if (expected === 'active') {
@@ -107,6 +113,16 @@ async function getOfficerData(): Promise<OfficerInfo[]> {
 
 function formatCents(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`
+}
+
+/**
+ * The one that may be handed a null. `—` is the mark the world rail already
+ * uses for an unmeasured amount (`lib/world/ui-cards.ts formatMicro`,
+ * `lib/attention/glance.ts UNMEASURED_GLYPH`) — same dialect, not a new one.
+ */
+function formatCentsOrDash(cents: number | null | undefined): string {
+  if (cents === null || cents === undefined) return '—'
+  return formatCents(cents)
 }
 
 /**
@@ -175,19 +191,33 @@ export default async function DashboardPage() {
 
   const runningCount = officers.filter((o) => o.status === 'running').length
   const totalCount = officers.length
+  // Officers whose heartbeat could not be read are neither running nor not —
+  // "4/5 running" with a silent unknown in the denominator is a claim about
+  // the fifth that nothing measured.
+  const unknownCount = officers.filter((o) => o.status === 'unknown').length
 
   const today = costHistory[0]
-  const todayCost = today?.total || 0
+  // `today?.total || 0` printed "$0.00" for a day nobody recorded — a measured
+  // claim about money from an unanswered store. Null now survives to the pixel.
+  const todayCost = today?.total ?? null
+  const todayUnmeasuredReason = today?.unmeasuredReason ?? null
 
-  // Per-officer breakdown for today
-  const officerCostData = today
-    ? Object.entries(today.officers)
-        .map(([role, value]) => ({ label: role.toUpperCase(), value, role }))
-        .sort((a, b) => b.value - a.value)
-    : []
+  // Per-officer breakdown for today. A null total means there is no breakdown
+  // either — a zeroed roster reads as "every officer spent nothing".
+  const officerCostData =
+    today && today.total !== null
+      ? Object.entries(today.officers)
+          .map(([role, value]) => ({ label: role.toUpperCase(), value, role }))
+          .sort((a, b) => b.value - a.value)
+      : []
 
-  // 7-day trend (stacked by officer)
-  const trendData = costHistory
+  // 7-day trend (stacked by officer). Days with NO reading are DROPPED, not
+  // plotted at zero: a zero-height bar is a claim that the day cost nothing.
+  const measuredDays = costHistory.filter(
+    (d): d is typeof d & { total: number } => d.total !== null
+  )
+  const unmeasuredDayCount = costHistory.length - measuredDays.length
+  const trendData = measuredDays
     .slice()
     .reverse()
     .map((d) => ({
@@ -212,13 +242,20 @@ export default async function DashboardPage() {
         <div className="flex items-center gap-3">
           <div className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm">
             <span className="text-zinc-500">Daily cost: </span>
-            <span className="font-medium text-white">{formatCents(todayCost)}</span>
+            <span className="font-medium text-white">
+              {formatCentsOrDash(todayCost)}
+            </span>
           </div>
           <div className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm">
             <span className="text-zinc-500">Officers: </span>
             <span className="font-medium text-white">
               {runningCount}/{totalCount} running
             </span>
+            {unknownCount > 0 && (
+              <span className="ml-2 text-amber-300">
+                · {unknownCount} unreadable
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -288,7 +325,15 @@ export default async function DashboardPage() {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold text-white">Today&apos;s Cost</h2>
-              <p className="mt-1 text-2xl font-bold text-white">{formatCents(todayCost)}</p>
+              <p className="mt-1 text-2xl font-bold text-white">
+                {formatCentsOrDash(todayCost)}
+              </p>
+              {todayCost === null && (
+                <p className="mt-1 text-xs text-amber-300">
+                  {todayUnmeasuredReason ??
+                    'no cost reading — this is not $0.00'}
+                </p>
+              )}
             </div>
             <Link
               href="/costs"
@@ -317,6 +362,12 @@ export default async function DashboardPage() {
               <StackedBarChart data={trendData} height={180} />
             ) : (
               <p className="text-sm text-zinc-600">No cost data available.</p>
+            )}
+            {unmeasuredDayCount > 0 && (
+              <p className="mt-2 text-xs text-amber-300">
+                {unmeasuredDayCount} of the last {costHistory.length} days have
+                no cost reading and are not plotted — absent, not zero.
+              </p>
             )}
           </div>
         </div>
