@@ -70,15 +70,24 @@ reason, never a false all-clear on a neighbour's slug.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
+import tempfile
+import time
 import urllib.error
 import urllib.request
 
-# Events this emitter knows. Both are CONTACT events, not machinery events.
+# Events this emitter knows. The first two are CONTACT events, not machinery
+# events. The third is the FLEET event and is different in kind: it is emitted
+# by `fleetwatch` from OUTSIDE the fleet, and only after a positive measurement
+# that every expected fleet source pulsed recently. It therefore says "the fleet
+# is alive", never "the watcher ran" — an emitter that pings on its own behalf
+# would make the ping mean nothing about the thing it is supposed to prove.
 EVENT_CAPTAIN_OUTBOUND = "captain_outbound"
 EVENT_CAPTAIN_INBOUND = "captain_inbound"
-KNOWN_EVENTS = (EVENT_CAPTAIN_OUTBOUND, EVENT_CAPTAIN_INBOUND)
+EVENT_FLEET_ALIVE = "fleet_alive"
+KNOWN_EVENTS = (EVENT_CAPTAIN_OUTBOUND, EVENT_CAPTAIN_INBOUND, EVENT_FLEET_ALIVE)
 
 # Config path override (mirrors CABINET_WATCHDOG_CONFIG's per-process override
 # idiom). Consulted BEFORE framework.env so the emitter still resolves a config
@@ -326,3 +335,122 @@ def status(cfg: dict | None = None,
         "instance_id": instance,
         "events": events,
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# THE FLEET PULSE — the emitter half of the fleet dead-man
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# WHY IT LIVES HERE. This module is the cabinet's one place for liveness signals
+# that must cross the failure domain, and this is the second such signal: fleet
+# jobs call `pulse(source)` to say "I was alive at ts". Everything above proves
+# CONTACT with the Captain; this proves the MACHINERY is turning. Both are
+# emitters, both are called from inside the thing they measure, and both must
+# never cost the work that earned them.
+#
+# THE READER IS SOMEWHERE ELSE, ON PURPOSE. Nothing here scans, decides or
+# alarms. `cabinet/scripts/fleet-deadman.py` runs OUTSIDE the fleet, reads these
+# files, and pings the off-machine watcher only when it has measured every
+# expected source fresh — so the absence of that ping means the fleet died, the
+# watcher died, or the box died. A watcher that must NOTICE a failure fails with
+# it; a watcher that must be REASSURED does not.
+#
+# A PLAIN FILE, NOT A DATASTORE. Any datastore process is itself a supervised
+# service on the watched box, so a reader consulting one cannot tell "the fleet
+# is gone" from "the store is gone" — the exact conflation the whole design
+# refuses. A file outlives every process that writes to it, which is the entire
+# premise of a dead-man.
+
+# Where pulses land. The override exists so a test — or a second instance — owns
+# the whole path rather than steering it through HOME and hoping.
+STATE_ENV = "CABINET_FLEETWATCH_STATE_DIR"
+PULSE_SUBDIR = "pulse"
+
+# A source name becomes a FILENAME, so it is validated as one rather than
+# escaped-and-hoped. Anything outside this set is refused at write time and
+# ignored at read time — a name that needs quoting is an operator typo.
+_SAFE_SOURCE = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                   "0123456789-_.")
+
+def state_dir(default: str = "") -> str:
+    """Root of the liveness state store. Env override wins; otherwise the
+    deployment location from ``framework.env``; otherwise ``default``."""
+    override = (os.environ.get(STATE_ENV) or "").strip()
+    if override:
+        return os.path.expanduser(override)
+    env = _env_module()
+    if env is not None:
+        try:
+            return str(env.fleet_liveness_dir(default))
+        except Exception:
+            pass
+    return str(default)
+
+
+def pulse_dir(root: str = "") -> str:
+    """The directory pulses are written into. Empty root ⇒ empty (inert)."""
+    base = root or state_dir()
+    return os.path.join(base, PULSE_SUBDIR) if base else ""
+
+
+def safe_source(name: str) -> bool:
+    """Is ``name`` usable as a pulse filename? Bounded, no separators, no dots
+    leading (so '..' can never address a parent)."""
+    if not name or len(name) > 64:
+        return False
+    if name.startswith(".") or name.endswith("."):
+        return False
+    return all(ch in _SAFE_SOURCE for ch in name)
+
+
+# ── the fleet side: prove you are alive ────────────────────────────────────
+
+def pulse(source: str, *, root: str = "", now=None, makedirs=None,
+          writer=None) -> dict:
+    """Record that ``source`` was alive. NEVER raises, NEVER blocks on network.
+
+    Returns ``{"wrote": bool, "reason": str, "path": str, "ts": float}``. Every
+    non-write carries a machine-readable reason (``bad-source`` / ``no-state-dir``
+    / ``mkdir-failed`` / ``write-failed``) because a heartbeat that looks emitted
+    and is not is the precise failure this whole module exists to kill.
+
+    The write is ATOMIC (temp file in the same directory, then ``os.replace``):
+    a reader must never see a half-written pulse and call it corrupt, which
+    would turn a healthy fleet into an UNKNOWN."""
+    ts = float(now() if now else time.time())
+    try:
+        if not safe_source(source):
+            return {"wrote": False, "reason": "bad-source", "path": "", "ts": ts}
+        d = pulse_dir(root)
+        if not d:
+            return {"wrote": False, "reason": "no-state-dir", "path": "", "ts": ts}
+        try:
+            (makedirs or os.makedirs)(d, exist_ok=True)
+        except Exception:
+            return {"wrote": False, "reason": "mkdir-failed", "path": d, "ts": ts}
+        path = os.path.join(d, source + ".json")
+        payload = json.dumps({"source": source, "ts": ts, "pid": os.getpid(),
+                              "iso": time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                                   time.gmtime(ts))})
+        try:
+            (writer or _atomic_write)(path, payload)
+        except Exception:
+            return {"wrote": False, "reason": "write-failed", "path": path, "ts": ts}
+        return {"wrote": True, "reason": "ok", "path": path, "ts": ts}
+    except Exception:  # pragma: no cover - belt: pulse must NEVER raise
+        return {"wrote": False, "reason": "internal-error", "path": "", "ts": ts}
+
+
+def _atomic_write(path: str, text: str) -> None:
+    d = os.path.dirname(path)
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=".tmp-", suffix=".json")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+        raise

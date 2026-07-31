@@ -21,7 +21,24 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 3efe89ae02d8fb3c71867e8a27cc36c78988036064b3fd397bd34861002db47d
+Reviewed-Scope-Digest: bfb8655bfc322ebb7176b3f34ccabbcdde84b88656552bef3d7b34b60e68af87
+
+(MERGE RE-BIND, 2026-07-31, `feat/fleet-deadman` x master. Both sides re-bound
+this line, so ONE value stands and it is RECOMPUTED over this merge commit
+rather than picked from either parent. Master's side (`fix/egg-selfaudit-word-
+boundary`) moved `cabinet/scripts/tests/test_egg_export.py`; this branch's side
+moved `cabinet/config/cognitive-architecture-contract.yml`, raising
+`framework_production_noncomment_lines` 62630 -> 62761 visibly for the fleet
+dead-man's EMITTER half (+131 non-comment lines added to
+`framework/liveness/deadman.py`). The two sets are DISJOINT — different files,
+different defects — so both notes stand and neither is the other's restamp.
+ZERO new framework production modules (248 <= 248) and zero expansion rows on
+this side, so no bijection class moved. NO COG-4 implementation byte moved on
+either side: this branch's watcher is `cabinet/scripts/fleet-deadman.py`, which
+no COG-4 surface reads and which is not in the scope set. MEASURED, not
+asserted — the digest above is the tool's own output over the merge commit, and
+the artifact is excluded from its own digest, so writing this note does not move
+it.)
 
 (MERGE RE-BIND, 2026-07-31, `fix/stale-census-unknown` x master, recomputed
 over the merge commit — the note below is master's, kept verbatim, and its

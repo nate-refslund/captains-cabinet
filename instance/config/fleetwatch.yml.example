@@ -1,0 +1,73 @@
+# =============================================================
+# instance/config/fleetwatch.yml — the FLEET dead-man's expectations
+# =============================================================
+# EXAMPLE / TEMPLATE. Copy to instance/config/fleetwatch.yml and fill in for
+# YOUR deployment. With this file absent — or with an empty `expect:` block —
+# framework/liveness/fleetwatch.py expects nothing, and a watcher that expects
+# nothing reports UNKNOWN/`unarmed`. It NEVER reports ALIVE, and it never pings.
+#
+# WHAT THIS IS. The fleet writes one small file per source saying "I was alive
+# at <ts>". A watcher OUTSIDE the fleet reads those files and answers exactly
+# one of three things:
+#
+#   ALIVE    every source below pulsed inside its limit.  → pings the off-machine
+#                                                            dead-man
+#   DEAD     the pulse store answered, and a source is stale or has never
+#            pulsed.                                      → no ping; the external
+#                                                            watcher alarms
+#   UNKNOWN  the store could not be read, a pulse could not be believed, the
+#            clocks disagree, or nothing is expected.     → no ping; UNKNOWN is
+#                                                            NOT an all-clear
+#
+# WHY SILENCE IS THE ALARM. A watcher that has to NOTICE a failure dies in the
+# same event as the thing it watches — that is precisely what happened on
+# 2026-07-25, when every supervised sensor went down with the fleet it watched
+# and no one heard anything for five days. A watcher that has to be REASSURED
+# does not: the outage removes the reassurance, and absence is what the external
+# leg alarms on. Chain them and one signal covers three deaths — the fleet dying,
+# the watcher dying, and the whole machine dying.
+#
+# THE TWO LEGS ARE CONFIGURED SEPARATELY, ON PURPOSE.
+#   local     = this file. Produces the verdict file the desk pet reads and the
+#               macOS notification on a state change. Survives the fleet.
+#   external  = instance/config/liveness.yml `fleet_alive:` slug. Survives the
+#               whole box, because it lives off it.
+# `python3.12 -m framework.liveness.fleetwatch --status` reports both. Local-only
+# is a real posture; it is not the same as armed, and it will say so.
+#
+# PARSER CONTRACT. Read by a NARROW stdlib parser (no PyYAML — a watcher that
+# dies of a missing dependency is worse than none). Edit ONLY in the shapes used
+# below: top-level `key: value` scalars, and 2-space `key: value` entries under
+# `expect:`. Unknown lines are ignored; an unparseable file degrades to UNARMED.
+# A bad config can only ever silence this watcher, never make it claim a fleet
+# is alive.
+
+# Master switch. `false` empties the expectation set, which reads as UNKNOWN/
+# `unarmed` — use it to park the watcher without deleting your sources.
+enabled: true
+
+# Default staleness limit, in seconds, for any source below that gives no
+# number of its own.
+max_age_s: 5400
+
+# How far a pulse may sit in the FUTURE before this watcher stops trusting its
+# own arithmetic and reports UNKNOWN rather than guessing. Two disagreeing
+# clocks do not make a measurement.
+clock_tolerance_s: 300
+
+# The sources this deployment expects to hear from, and how long each may go
+# quiet before it counts as dead. A source listed here that has NEVER pulsed is
+# DEAD, not unknown — a readable store holding nothing is an answer.
+#
+# Only list sources you actually run. An expectation for a service this
+# deployment does not have is a permanent false alarm, and a permanent false
+# alarm is how a real one stops being read.
+expect:
+  # framework/watchdog/check.py, after each completed sweep. Fleet cadence is
+  # every 10 min, so 90 min tolerates several missed runs before it pages.
+  outcome-watchdog: 5400
+
+  # cabinet/scripts/officer-inbound-poller.py, after each getUpdates round-trip
+  # Telegram answered. Proves the Captain can still REACH this cabinet, which is
+  # a different fact from the fleet's machinery running.
+  officer-inbound: 5400
