@@ -1,0 +1,51 @@
+# GNU-only shell primitives that are SAFE where they are.
+#
+# Format:  <repo-relative path> :: <rule id> :: <why it is safe here>
+#
+# Read by cabinet/scripts/lib/tests/test_bsd_portability.py, which fails on any
+# hit that is not listed here AND on any row here that no longer matches
+# anything. The second half is the one an allowlist usually forgets: without it
+# the file rots into a list of things that used to be true, and a row keeps
+# excusing a line somebody already fixed.
+#
+# A row is a claim that the primitive CANNOT bite on the macOS deployment —
+# because it runs inside a Linux container, because it is a string in a policy
+# fixture rather than a command, or because a capability probe or a validated
+# fallback covers it. "We have not fixed it yet" is NOT one of those reasons and
+# does not belong here; that is a backlog row and a red test.
+
+# --- Container-only: hardcodes /opt/founders-cabinet or the compose DNS name --
+cabinet/scripts/list-officers.sh :: grep-P :: Container-only — CABINET_ROOT is hardcoded to /opt/founders-cabinet and REDIS_HOST defaults to the compose service name `redis`; that directory does not exist on the Mac, so the loop body never runs there. The host counterpart is officer-supervisor-mac.sh, which uses no -oP.
+cabinet/scripts/list-officers.sh :: date-d-unpaired :: Container-only, same evidence as the grep-P row above.
+cabinet/scripts/officer-supervisor.sh :: grep-P :: Container-only — the file header says "Background loop inside the Officers container" and it reads /opt/founders-cabinet directly. officer-supervisor-mac.sh is the host counterpart and uses no -oP.
+cabinet/scripts/org-health-audit.sh :: date-d-unpaired :: Container-only — CABINET_ROOT hardcoded to /opt/founders-cabinet, REDIS_HOST defaults to `redis`.
+cabinet/scripts/restart-all-officers-oneshot.sh :: sed-i :: Linux-only branch — guarded by `[ -f /etc/crontab ]` one line above, and macOS has no /etc/crontab, so the sed is unreachable on the deployment.
+
+# --- Policy fixtures: the primitive is TEST DATA, never executed --------------
+cabinet/scripts/run-golden-evals.sh :: sed-i :: Command STRINGS fed to the hook-policy evaluator as probe inputs (does the guard block a write to a germline path?). They are arguments, never run.
+cabinet/scripts/run-golden-evals.sh :: bare-timeout :: Same — `timeout 60 git push origin main` is a probe string for the push-policy guard, not a command this script executes.
+cabinet/tests/hook-regression/fw040-hotfix5.sh :: sed-i :: Probe string handed to the PreToolUse guard; the guard's verdict is the assertion.
+cabinet/tests/hook-regression/fw076-pool-mode.sh :: sed-i :: Probe strings for the pool-mode write guard; never executed.
+cabinet/tests/hook-regression/germline-bash-write.sh :: sed-i :: Probe strings for the germline write guard; never executed.
+cabinet/tests/hook-regression/germline-bash-write.sh :: bare-timeout :: Probe string for the germline read guard; never executed.
+cabinet/tests/hook-regression/fw042-v37-adversary.sh :: bare-timeout :: Probe strings for the dangerous-command guard; never executed.
+cabinet/tests/hook-regression/fw043-adversary.sh :: bare-timeout :: Probe string for the push guard; never executed.
+cabinet/tests/hook-regression/fw045-pass7-adversary.sh :: bare-timeout :: Probe string for the push guard; never executed.
+
+# --- Guarded by a capability probe -------------------------------------------
+cabinet/scripts/hooks/pre-captain-dm.sh :: bare-timeout :: Both calls sit inside `if command -v timeout` / `elif command -v gtimeout`, with a background+poll+kill else-branch that is what actually runs on this Mac. That is the shape `run_bounded` generalises.
+cabinet/scripts/audit-framework-backlog-drift.sh :: date-d-unpaired :: `DATE_PARSE='date -u -d'` is assigned only inside `if date -u -d "1970-01-01" +%s >/dev/null 2>&1`, a real capability probe with a BSD `date -j -u -f` else-branch.
+cabinet/scripts/meta-cognition/anomaly-scan.sh :: date-d-unpaired :: Reached only from the GNU branch of the `if date -v-"${i}"d >/dev/null 2>&1` capability probe a few lines above.
+cabinet/scripts/test-audit-framework-backlog-drift.sh :: date-d-unpaired :: Body of `if date -u -d "$days days ago" … >/dev/null 2>&1; then`, with a BSD `date -v` else-branch.
+cabinet/scripts/test-pre-push-hook.sh :: date-d-unpaired :: Body of `if date -u -d "$expression" … >/dev/null 2>&1; then`, with a BSD else-branch.
+
+# --- stat: the leg that is only reached after the other dialect's failed ------
+# `stat -f` FIRST and `stat -c` second is the order that fails silently on GNU
+# (`stat -f` there means "file system" and SUCCEEDS, printing a mount point).
+# The two BSD-first rows below are safe ONLY because the result is
+# pattern-checked before it is used, so a GNU mount-point string is rejected
+# rather than consumed. The two GNU-first rows are the correct order already.
+cabinet/scripts/dashboard-password.sh :: stat-c-unpaired :: Second leg of a BSD-first chain whose result is validated by `case … ''|*[!0-7]*)` before use, so a GNU `stat -f` mount-point string cannot get through.
+cabinet/scripts/egress-guard.sh :: stat-c-unpaired :: Both sites are second legs of BSD-first chains validated by `case … ''|*[!0-9]*)`.
+cabinet/scripts/cabinet-doctor.sh :: stat-c-unpaired :: GNU-first `stat -c '%Y'`, with the BSD `stat -f '%m'` re-run a few lines below guarded by `if [ -z "$newest" ]`; the comment above it names this exact trap.
+cabinet/scripts/runtime-provision.sh :: stat-c-unpaired :: GNU-first `stat -c '%Y %n' || stat -f '%m %N' || true`; the comment cites the measured Linux CI failure that forced this order.

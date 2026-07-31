@@ -14,10 +14,12 @@ SENTINEL="/tmp/.session-task-injected-${OFFICER}"
 # marks work_item_started -> IN_PROGRESS (A2) and it drops out of ready_tasks.
 DEBOUNCE_S="${SESSION_TASK_INJECT_DEBOUNCE_S:-90}"
 
-# Debounce on the sentinel's mtime (portable: BSD stat -f %m / GNU stat -c %Y).
+# Debounce on the sentinel's mtime. GNU FIRST: `stat -f` on GNU means "file
+# system" and SUCCEEDS printing a mount point, so the old BSD-first order was
+# not portable at all in the GNU direction, which is what the comment claimed.
 if [ -f "$SENTINEL" ]; then
   _now=$(date +%s)
-  _last=$(stat -f %m "$SENTINEL" 2>/dev/null || stat -c %Y "$SENTINEL" 2>/dev/null || echo 0)
+  _last=$(stat -c %Y "$SENTINEL" 2>/dev/null || stat -f %m "$SENTINEL" 2>/dev/null || echo 0)
   [ $((_now - _last)) -lt "$DEBOUNCE_S" ] && exit 0
 fi
 

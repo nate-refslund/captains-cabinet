@@ -193,8 +193,12 @@ export async function POST(
     return NextResponse.json({
       ok: true,
       state: 'archiving',
+      // WHAT IS ACTUALLY DONE, not what the finished feature will do. The old
+      // sentence promised a container stop and a peers.yml removal that are
+      // both `console.info` stubs; the Captain read it, the modal closed on
+      // success, and the cabinet's entry was still in peers.yml afterwards.
       message:
-        'Cabinet archival started. Containers will stop and peers.yml entries will be removed. Row data is preserved.',
+        'Cabinet marked for archival. The row and its data are preserved. Its containers are NOT stopped and its peers.yml entry is NOT removed yet — do both by hand, or the cabinet stays reachable to its peers.',
     })
   } catch (err) {
     await client.query('ROLLBACK')
@@ -233,21 +237,49 @@ function startArchivalWorker(cabinetId: string, actor: string): void {
     })
 }
 
-async function runArchivalSteps(cabinetId: string, actor: string): Promise<void> {
+/**
+ * THE TWO STEPS THAT ARE NOT IMPLEMENTED, NAMED IN THE AUDIT TRAIL.
+ *
+ * `runArchivalSteps` used to `console.info` "would stop containers (stub)" and
+ * "would remove peers.yml entry (atomic rename stub)", move the row to the
+ * terminal `archived` state, and write an audit row whose payload asserted
+ *
+ *     peers_yml_atomic: true
+ *     note: 'Atomic rename pattern (POSIX rename(2)). …'
+ *
+ * for a write that never happened. An audit trail recording an ATOMICITY
+ * GUARANTEE for an operation nothing performed is worse than no audit trail:
+ * it is the one surface that is supposed to be re-readable later as evidence,
+ * and it was the most confident thing in the system about the least real thing.
+ * Reproduced against the route: `instance/config/peers.yml` byte-identical, the
+ * cabinet's entry still in it, the row `archived`, and the caller told
+ * "Containers will stop and peers.yml entries will be removed".
+ *
+ * The honest shape, with no schema and no response-contract change: the state
+ * still moves (the Captain asked for the archival and the row IS archived), but
+ * the payload records what was NOT done instead of certifying what was, and the
+ * unperformed steps are enumerated rather than described in a comment. When
+ * they are implemented, this constant empties and the payload says so on its
+ * own — the row cannot go quiet while the work is still missing.
+ */
+const UNPERFORMED_ARCHIVAL_STEPS = [
+  'stop the containers (docker compose -p <cabinet> stop)',
+  'remove the cabinet entry from instance/config/peers.yml',
+] as const
+
+// Exported so the honesty arm in `lib/unperformed-work.test.ts` drives the
+// REAL worker rather than a copy of it — the existing route test asserts only
+// that the 200 came back, and stayed green when both archival steps were
+// replaced by throws and again when the worker call was deleted outright.
+export async function runArchivalSteps(cabinetId: string, actor: string): Promise<void> {
   try {
-    // Step 1: Stop Docker containers (stub — real exec in Phase 3)
-    // In production: exec(`docker compose -p ${cabinetId} stop`)
-    // Skipped here because the worker runs inside the dashboard container
-    // which doesn't have Docker socket access in the Vercel/hosted path.
-    console.info(`[archive-worker] ${cabinetId}: would stop containers (stub)`)
+    // NOT DONE. Kept as one list so the audit row below and this code cannot
+    // drift apart — the previous version described the unwritten rename in a
+    // comment and asserted it as a fact in the payload.
+    console.warn(
+      `[archive-worker] ${cabinetId}: NOT performed — ${UNPERFORMED_ARCHIVAL_STEPS.join('; ')}`
+    )
 
-    // Step 2: Remove peers.yml entries atomically
-    // Pattern: read peers.yml → remove cabinet entry → write peers.yml.new → rename
-    // fs.rename() is atomic on POSIX (rename(2) is guaranteed atomic on same fs).
-    // Phase 3 extends this to multi-host two-phase RPC via Cabinet MCP.
-    console.info(`[archive-worker] ${cabinetId}: would remove peers.yml entry (atomic rename stub)`)
-
-    // Step 3: Transition archiving → archived
     await query(
       `UPDATE cabinets SET state = 'archived', state_entered_at = now() WHERE cabinet_id = $1 AND state = 'archiving'`,
       [cabinetId]
@@ -260,12 +292,17 @@ async function runArchivalSteps(cabinetId: string, actor: string): Promise<void>
       from: 'archiving',
       to: 'archived',
       payload: {
-        peers_yml_atomic: true,
-        note: 'Atomic rename pattern (POSIX rename(2)). Multi-host two-phase RPC is Phase 3.',
+        // No `peers_yml_atomic`. The field asserted a durability property of a
+        // write that did not occur; a reader of this row now learns the
+        // opposite, which is the true thing.
+        unperformed: UNPERFORMED_ARCHIVAL_STEPS,
+        note:
+          'Row state only. The container stop and the peers.yml removal are not implemented, ' +
+          'so this cabinet may still be running and is still listed to its peers.',
       },
     })
 
-    console.info(`[archive-worker] ${cabinetId}: archived successfully`)
+    console.info(`[archive-worker] ${cabinetId}: row archived (steps above still outstanding)`)
   } catch (err) {
     console.error(`[archive-worker] ${cabinetId}: archival failed`, err)
     // Best-effort: mark failed so Captain can see the problem

@@ -37,6 +37,34 @@
 
 set -uo pipefail
 
+# --- Bounded run, without GNU `timeout` -------------------------------------
+# macOS ships NEITHER `timeout` NOR `gtimeout`, and this box is the only
+# deployment there is. A bare `timeout N cmd` therefore exits 127 (command not
+# found) before `cmd` is ever started. Probed on this machine:
+#   command -v timeout  -> (nothing)   timeout 1 true -> exit 127
+# Prefer the real thing when it exists (Docker/Linux/CI), otherwise background
+# the command, poll, and kill it. Returns 124 on the deadline, like GNU timeout.
+run_bounded() {  # $1 = seconds, rest = command
+  local _secs="$1"; shift
+  if command -v timeout >/dev/null 2>&1; then timeout "$_secs" "$@"; return $?; fi
+  if command -v gtimeout >/dev/null 2>&1; then gtimeout "$_secs" "$@"; return $?; fi
+  "$@" &
+  local _pid=$! _i=0 _limit=$((_secs * 10))
+  while [ "$_i" -lt "$_limit" ]; do
+    if ! kill -0 "$_pid" 2>/dev/null; then wait "$_pid"; return $?; fi
+    sleep 0.1
+    _i=$((_i + 1))
+  done
+  # Braced + redirected: bash reports "Terminated" for an async job when it
+  # reaps it, and that notice comes from the SHELL, so a redirect on the child
+  # alone does not silence it.
+  { kill -TERM "$_pid" 2>/dev/null
+    sleep 0.2
+    kill -KILL "$_pid" 2>/dev/null
+    wait "$_pid"; } 2>/dev/null
+  return 124
+}
+
 # ---------------------------------------------------------------------------
 # Parse arguments
 # ---------------------------------------------------------------------------
@@ -350,7 +378,7 @@ step_preflight() {
       local peer_host peer_port
       peer_host=$(echo "$peer_entry" | cut -d: -f2)
       peer_port=$(echo "$peer_entry" | cut -d: -f3)
-      if ! timeout 5 bash -c "echo > /dev/tcp/${peer_host}/${peer_port}" 2>/dev/null; then
+      if ! run_bounded 5 bash -c "echo > /dev/tcp/${peer_host}/${peer_port}" 2>/dev/null; then
         err "Peer cabinet not reachable at ${peer_host}:${peer_port}"
         err "  Entry: $peer_entry"
         err "  Verify peer host/port before bootstrapping"

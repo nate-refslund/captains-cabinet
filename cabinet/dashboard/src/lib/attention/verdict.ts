@@ -324,7 +324,16 @@ export function spawnBridge(request: object): Promise<BridgeResult> {
         windowsHide: true,
       },
       (err, stdout) => {
-        if (err && !stdout) {
+        // THE EXIT CODE IS PART OF THE ANSWER. `if (err && !stdout)` was the
+        // whole failure branch, so a bridge that printed a well-formed
+        // `{"ok": true, "plain_result": "Approved — done."}` and THEN died —
+        // having submitted nothing through the binder wire — resolved as a
+        // success, and the route handed the Captain a completed act.
+        // Reproduced with a shim that does exactly that; the two sibling
+        // transports already read it (`lib/onboarding/bridge.ts` rejects
+        // `core_exit` on any non-zero, `lib/evidence/read.ts` refuses any exit
+        // outside {0,3,4}), so this is the house standard rather than a new one.
+        if (err) {
           resolve({ ok: false, code: 'bridge_fail', message: MESSAGES.bridge_fail })
           return
         }
