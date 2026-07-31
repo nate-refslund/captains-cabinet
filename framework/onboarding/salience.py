@@ -1478,3 +1478,399 @@ def offer(
         "not_reached": not_reached_line(ranking, not_reached, shown=len(clusters)),
         "ranked": len(ranking.get("clusters") or ()),
     }
+
+
+# --- clocks: the dates a file STATES, extracted as DATA ----------------------
+#
+# WHY THIS LIVES IN THE SPLITTER'S MODULE. A first briefing rendered "(undated)"
+# beside files that carried a filing cutoff seven days out, because nothing in
+# the finding path turned a written date into a comparable one. The extraction
+# is the same KIND of primitive the four tokenizers above were consolidated
+# into — a pure function of one line, no I/O, no state, no judgment — and the
+# segmentation seam is where this tree already declared such a primitive lives.
+# A module holding nothing but a date table would need an expansion row whose
+# refutation anchor cannot honestly refute the functions that are its only
+# caller, which is the same argument that kept ``split_words`` here.
+#
+# WHAT A CLOCK ROW MAY SAY, AND WHAT IT STRUCTURALLY CANNOT. A row states that
+# THIS text, on THIS line, is a date, and what that date resolves to. There is
+# no field for what the date is about, what it collides with, what it blocks,
+# or which other row it relates to — ``CLOCK_ROW_FIELDS`` is the whole schema
+# and a test pins it. That is deliberate: relating two dated statements is a
+# judgment, the deterministic ceiling for it was measured (four true joins
+# inside fifty-two same-shaped candidates), and a schema that cannot express a
+# relation cannot quietly grow one that is wrong 92% of the time.
+
+#: The schema name a persisted clock row is written under.
+CLOCK_ROW_SCHEMA = "cabinet.window-clock-row/v1"
+
+#: EVERY field a clock row carries. Named as data, and asserted as a set by the
+#: suite, because "no relation semantics" is only true if it is checkable: a
+#: reviewer can read this tuple in one glance and a test can fail on a row that
+#: grew an eighth key.
+CLOCK_ROW_FIELDS = (
+    "raw", "iso", "line_no", "ref", "direction", "year_from", "spine",
+)
+
+#: THE DATE MARKERS ARE DATA, exactly as the detector labels are: the framework
+#: can say what a year marker DOES without naming a language, and it can never
+#: say WHICH character without naming one. One entry per semantic role; the
+#: language tags are ORGANISATION ONLY — the grammar builder below consumes the
+#: union and no function in this module names a tag. Adding a writing system is
+#: adding rows here.
+#:
+#: EXTEND, NEVER REPLACE, and only what was verified character by character.
+#: A wrong marker does not sit inert: it fires on somebody's real folder and
+#: dates a line that states no date, which on a precision-first surface is the
+#: only failure that matters.
+CLOCK_VOCABULARY: dict[str, dict[str, tuple[str, ...]]] = {
+    # The character that closes a written year: 2026年 / 2026년.
+    "year_marker": {"cjk": ("年",), "ko": ("년",)},
+    # ...a month: 8月 / 8월.
+    "month_marker": {"cjk": ("月",), "ko": ("월",)},
+    # ...and a day: 12日 / 12일.
+    "day_marker": {"cjk": ("日",), "ko": ("일",)},
+    # The word a calendar writes instead of the digit 1 for an era's first
+    # year (令和元年 = 令和1年). A marker, not a number, so it is data here
+    # rather than a special case in the parser.
+    "era_year_one": {"ja": ("元",)},
+}
+
+#: ERA CALENDARS, as ``label -> (gregorian year of era year 0, last era year)``.
+#: Era year N is ``offset + N``: 令和1年 is 2019, so the offset is 2018. The
+#: LAST year is what makes 平成50年 — an era year that never existed — refuse
+#: rather than resolve to a confident 2038; an open-ended era carries ``None``.
+#: Verified against the published era boundaries, and shipped only for the eras
+#: this landing could check. Same rule as the markers: extend, never replace.
+CLOCK_ERAS: dict[str, dict[str, tuple[int, int | None]]] = {
+    "ja": {"令和": (2018, None), "平成": (1988, 31), "昭和": (1925, 64)},
+}
+
+#: Separators that are the same separator written wide. NFKC folds these, and
+#: this module deliberately does NOT run NFKC over a line before matching: NFKC
+#: is not length-preserving (one ligature or one 株式会社 glyph shifts every
+#: offset after it), so a match's span would no longer point at the operator's
+#: own characters and ``raw`` would show them text they did not write. What
+#: replaces it is a per-character map that IS length-preserving by construction
+#: — asserted by a test — covering exactly the characters these grammars read.
+_CLOCK_SEPARATORS = {"／": "/", "－": "-"}
+
+#: A file whose lines are MOSTLY dated is a calendar, a rota or a ledger: its
+#: dates are its structure, not its news. Enumerating one floods every surface
+#: downstream with a hundred true and worthless rows, so such a file is marked
+#: and aggregated instead. Both numbers are floors on the same measurement —
+#: the share says "mostly dated", the minimum says "there are enough lines for
+#: a share to mean anything", which is the same sample-size rule the furniture
+#: discount above needed.
+_SPINE_DATED_SHARE = 0.5
+_SPINE_MIN_LINES = 8
+
+_CLOCK_PATTERN: re.Pattern[str] | None = None
+
+
+def _clock_normalize(text: str) -> str:
+    """Digits and wide separators onto their ASCII twins, LENGTH-PRESERVING.
+
+    Every Unicode DECIMAL digit answers for its own value — ８ (full-width),
+    ٨ (Arabic-Indic), ८ (Devanagari) — because "what is a digit" is a question
+    for the Unicode database and not for ``[0-9]``, and an alphabet here would
+    reproduce, one layer down, the exact defect the four ASCII tokenizers
+    above were consolidated to remove. Non-decimal number characters (a
+    superscript, a circled numeral) are NOT digits and are left alone.
+
+    One character in, one character out — so a match's span in the normalised
+    line is the same span in the original, and ``raw`` is the operator's own
+    substring rather than a normalised rendering of it.
+    """
+    out: list[str] = []
+    for character in str(text or ""):
+        if unicodedata.category(character) == "Nd":
+            out.append(str(unicodedata.digit(character)))
+        else:
+            out.append(_CLOCK_SEPARATORS.get(character, character))
+    return "".join(out)
+
+
+def _marker_alternation(labels: Iterable[str]) -> str:
+    """One regex alternation over a marker role, longest first, escaped."""
+    ordered = sorted({str(label) for label in labels if str(label)},
+                     key=lambda label: (-len(label), label))
+    return "|".join(re.escape(label) for label in ordered) if ordered else r"(?!)"
+
+
+def _clock_pattern() -> re.Pattern[str]:
+    """The ordered grammar alternation, built ONCE from the tables above.
+
+    ORDER IS SEMANTIC, not cosmetic. At any one starting position the first
+    alternative that matches wins, so the fuller form has to be offered first:
+    an era date must be tried before a plain marked date, and a marked date
+    before a bare month-day, or a longer statement would be read as its own
+    tail. The scan itself is left-to-right and non-overlapping, so a date is
+    never counted twice.
+
+    NO BARE SLASHED FORM IS HERE, and that refusal is the single largest
+    precision decision in this unit. ``8/12`` is the shape of a date, a ratio,
+    a fraction, a range, a rota column and a reference number, and nothing in
+    the characters tells them apart — measured on a seventeen-file business
+    estate where ``8/1``…``8/31`` fill two spreadsheets, ``12/12`` counts
+    rooms, ``18:00／19:30`` is a pair of seating times that normalises to
+    ``18:00/19:30``, and ``11/6`` is a season opening. A grammar that reads
+    those as dates buys recall with false statements, and one invented clock
+    costs more than every missed one: a slashed form is read only when it
+    carries a four-digit year, which fixes both the order and the fact that it
+    is a date at all.
+
+    NO MONTH NAMES either, for a checkable reason rather than an oversight:
+    the English month set contains ``may`` and ``march``, which are a modal
+    and a verb, so a month-name grammar in that language fires on ordinary
+    prose. Naming what is absent is how the next reader knows it was decided.
+    """
+    global _CLOCK_PATTERN
+    if _CLOCK_PATTERN is not None:
+        return _CLOCK_PATTERN
+    vocabulary = {
+        role: [label for labels in by_tag.values() for label in labels]
+        for role, by_tag in CLOCK_VOCABULARY.items()
+    }
+    year_marker = _marker_alternation(vocabulary["year_marker"])
+    month_marker = _marker_alternation(vocabulary["month_marker"])
+    day_marker = _marker_alternation(vocabulary["day_marker"])
+    one = _marker_alternation(vocabulary["era_year_one"])
+    era = _marker_alternation(
+        label for by_tag in CLOCK_ERAS.values() for label in by_tag
+    )
+    # A four-digit year never starts with a zero. That one rule is what stops
+    # every landline area code in a folder — 0796-32-4141 — from reading as a
+    # year, and it costs nothing a business document would ever write.
+    year4 = r"[1-9][0-9]{3}"
+    small = r"[0-9]{1,2}"
+    gap = r"\s*"
+    parts = (
+        rf"(?P<era>(?:{era}){gap}(?P<era_n>{small}|(?:{one})){gap}(?:{year_marker})"
+        rf"{gap}(?P<era_m>{small}){gap}(?:{month_marker})"
+        rf"{gap}(?P<era_d>{small}){gap}(?:{day_marker}))",
+        rf"(?P<marked>(?<![0-9])(?P<mk_y>{year4}){gap}(?:{year_marker})"
+        rf"{gap}(?P<mk_m>{small}){gap}(?:{month_marker})"
+        rf"{gap}(?P<mk_d>{small}){gap}(?:{day_marker}))",
+        rf"(?P<iso>(?<![0-9])(?P<iso_y>{year4})-(?P<iso_m>{small})-(?P<iso_d>{small})(?![0-9]))",
+        rf"(?P<ymd>(?<![0-9])(?P<ymd_y>{year4})/(?P<ymd_m>{small})/(?P<ymd_d>{small})(?![0-9]))",
+        rf"(?P<xxy>(?<![0-9])(?P<xxy_a>{small})/(?P<xxy_b>{small})/(?P<xxy_y>{year4})(?![0-9]))",
+        rf"(?P<md>(?<![0-9])(?P<md_m>{small}){gap}(?:{month_marker})"
+        rf"{gap}(?P<md_d>{small}){gap}(?:{day_marker}))",
+    )
+    _CLOCK_PATTERN = re.compile("|".join(parts))
+    return _CLOCK_PATTERN
+
+
+def _era_year(label: str, written: str) -> int | None:
+    """An era year resolved against the era table, or ``None``.
+
+    ``None`` for an era year past the era's own end — 平成50年 is not a date
+    that happened, and answering 2038 for it would be the module inventing a
+    calendar rather than reading one.
+    """
+    for by_tag in CLOCK_ERAS.values():
+        row = by_tag.get(label)
+        if row is None:
+            continue
+        offset, last = row
+        ones = {
+            token for labels in CLOCK_VOCABULARY["era_year_one"].values()
+            for token in labels
+        }
+        number = 1 if written in ones else int(written)
+        if number < 1 or (last is not None and number > last):
+            return None
+        return offset + number
+    return None
+
+
+def _day_fits(month: int, day: int, year: int | None) -> bool:
+    """Is this a day the calendar has? Leap-tolerant when the year is unknown.
+
+    With a year, the calendar answers exactly. Without one the question has no
+    exact answer, so the check is the widest month — a 29 February with no
+    stated year is a date statement whose resolution is simply not available
+    yet, and refusing it here would refuse it before the anchor is consulted.
+    """
+    if not (1 <= month <= 12 and 1 <= day <= 31):
+        return False
+    if year is None:
+        import calendar  # local: the module stays import-light
+
+        return day <= calendar.monthrange(2000, month)[1]
+    try:
+        datetime(year, month, day, tzinfo=timezone.utc)
+    except ValueError:
+        return False
+    return True
+
+
+def clock_matches(line: Any) -> list[dict[str, Any]]:
+    """Every date STATEMENT on one line, in order. Pure; no I/O, no state.
+
+    Each match is ``{raw, year|None, month, day, year_from}`` where
+    ``year_from`` is ``"clause"`` when the text itself stated the year and
+    ``None`` when it did not — a bare month-day. The caller decides what to do
+    with a yearless match; this function never guesses one, because the two
+    guesses available (the run's year, the nearest future year) are both wrong
+    in ordinary cases a business folder produces every December.
+
+    ``raw`` is the operator's own substring: the normalisation above is
+    length-preserving, so the span found in the normalised line is the span in
+    the line they wrote.
+    """
+    text = str(line or "")
+    normalised = _clock_normalize(text)
+    out: list[dict[str, Any]] = []
+    for match in _clock_pattern().finditer(normalised):
+        # ``lastgroup`` names the LAST group that matched, which for these
+        # nested alternatives is an inner digit group, not the arm. The arm is
+        # resolved by asking which top-level name participated.
+        kind = next(
+            (name for name in ("era", "marked", "iso", "ymd", "xxy", "md")
+             if match.group(name) is not None),
+            None,
+        )
+        if kind is None:  # pragma: no cover — the alternation has no other arm
+            continue
+        year: int | None = None
+        if kind == "era":
+            year = _era_year(_era_label(match.group(0)), match.group("era_n"))
+            month, day = int(match.group("era_m")), int(match.group("era_d"))
+            if year is None:
+                continue
+        elif kind == "marked":
+            year = int(match.group("mk_y"))
+            month, day = int(match.group("mk_m")), int(match.group("mk_d"))
+        elif kind == "iso":
+            year = int(match.group("iso_y"))
+            month, day = int(match.group("iso_m")), int(match.group("iso_d"))
+        elif kind == "ymd":
+            year = int(match.group("ymd_y"))
+            month, day = int(match.group("ymd_m")), int(match.group("ymd_d"))
+        elif kind == "xxy":
+            year = int(match.group("xxy_y"))
+            first, second = int(match.group("xxy_a")), int(match.group("xxy_b"))
+            # A slashed pair around a stated year resolves only when exactly
+            # ONE ordering is a date. 8/25/2026 can only be month-then-day;
+            # 25/8/2026 can only be day-then-month; 8/12/2026 is both, and a
+            # module that picks one is picking a locale it was never told.
+            forward = _day_fits(first, second, year)
+            backward = _day_fits(second, first, year)
+            if forward == backward:
+                continue
+            month, day = (first, second) if forward else (second, first)
+        else:
+            year = None
+            month, day = int(match.group("md_m")), int(match.group("md_d"))
+        if not _day_fits(month, day, year):
+            continue
+        out.append({
+            "raw": text[match.start():match.end()],
+            "year": year,
+            "month": month,
+            "day": day,
+            "year_from": "clause" if year is not None else None,
+        })
+    return out
+
+
+def _era_label(raw: str) -> str:
+    """The era name a matched era clause opens with."""
+    for by_tag in CLOCK_ERAS.values():
+        for label in sorted(by_tag, key=len, reverse=True):
+            if raw.startswith(label):
+                return label
+    return ""
+
+
+def document_anchor_year(scanned: Sequence[Sequence[Mapping[str, Any]]]) -> int | None:
+    """The ONE year this document states, or ``None``.
+
+    ANCHOR-ELSE-REFUSE. A bare month-day may take its year from a full date
+    written in the SAME file — the letterhead, the frontmatter, any line that
+    spelled a year out — and from nowhere else. Two different stated years
+    means the file has no single year to lend, and it lends none: a folder
+    holding both last year's review and this year's notice would otherwise
+    date every bare month-day in it to whichever year happened to appear
+    first, which is a confident wrong on exactly the file that proves the rule
+    matters.
+    """
+    years = {
+        match["year"]
+        for matches in scanned for match in matches
+        if match.get("year") is not None
+    }
+    return next(iter(years)) if len(years) == 1 else None
+
+
+def file_clocks(lines: Sequence[Any], *, now: str,
+                cite: Any = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Every clock row a file states, plus what the file itself turned out to be.
+
+    Returns ``(rows, meta)``. A row carries exactly ``CLOCK_ROW_FIELDS``:
+    the text as written, the resolved ISO date or ``None``, the line, the
+    caller's citation handle, whether the date is behind or ahead of the run,
+    where its year came from, and whether the file it sits in is a spine.
+
+    ``direction`` is measured against the run's own day, and a date landing ON
+    that day counts as ahead: the day has not finished, and a filing cutoff
+    today is the most live thing a briefing could carry. It is ``None``
+    whenever ``iso`` is — a date with no year has no position in time, and
+    inventing one is the thing this unit refuses.
+
+    ``cite`` is called as ``cite(line_no, line)`` and its return rides the row
+    as ``ref``. It is the CALLER's, deliberately: the redaction rules that
+    decide what may appear in a quoted line live with the surface that renders
+    them, and this module is not the place for a second copy of them.
+    """
+    scanned = [
+        (number, str(line or ""), clock_matches(line))
+        for number, line in enumerate(lines or (), start=1)
+    ]
+    anchor = document_anchor_year(
+        [matches for _number, _line, matches in scanned]
+    )
+    non_empty = sum(1 for _n, line, _m in scanned if line.strip())
+    dated = sum(1 for _n, _line, matches in scanned if matches)
+    spine = bool(
+        non_empty >= _SPINE_MIN_LINES
+        and dated / non_empty > _SPINE_DATED_SHARE
+    )
+    # A RUN CLOCK THAT DOES NOT PARSE LEAVES EVERY DIRECTION UNKNOWN. The
+    # degenerate end here is an empty or malformed ``now``: a string compare
+    # against "" answers "future" for every row, which would put the whole
+    # folder on a forward list on the strength of a missing argument.
+    today = str(now or "")[:10]
+    if _parse_iso(today) is None:
+        today = ""
+    rows: list[dict[str, Any]] = []
+    for number, line, matches in scanned:
+        for match in matches:
+            year = match["year"]
+            year_from = match["year_from"]
+            if year is None and anchor is not None:
+                year, year_from = anchor, "document_anchor"
+            iso: str | None = None
+            if year is not None and _day_fits(match["month"], match["day"], year):
+                iso = f"{year:04d}-{match['month']:02d}-{match['day']:02d}"
+            if iso is None:
+                year_from = None
+            rows.append({
+                "raw": match["raw"],
+                "iso": iso,
+                "line_no": number,
+                "ref": cite(number, line) if callable(cite) else None,
+                "direction": None if (iso is None or not today) else (
+                    "future" if iso >= today else "past"
+                ),
+                "year_from": year_from,
+                "spine": spine,
+            })
+    return rows, {
+        "spine": spine,
+        "lines": non_empty,
+        "dated_lines": dated,
+        "anchor_year": anchor,
+    }

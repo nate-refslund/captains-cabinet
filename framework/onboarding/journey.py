@@ -111,6 +111,7 @@ CARD_SCHEMA = "cabinet.onboarding-card/v1"
 CHARTER_SCHEMA = "cabinet.orientation-charter/v1"
 MANIFEST_SCHEMA = "cabinet.first-window-manifest/v1"
 DIVIDEND_SCHEMA = "cabinet.first-dividend/v1"
+CLOCKS_SCHEMA = "cabinet.window-clocks/v1"
 PROBE_RESULT_SCHEMA = "cabinet.onboarding-probe-result/v1"
 EVENT_SCHEMA = "cabinet.onboarding-event/v1"
 
@@ -128,6 +129,11 @@ EVENTS_NAME = "events.jsonl"
 CHARTER_NAME = "orientation-charter.json"
 MANIFEST_NAME = "first-window-manifest.json"
 DIVIDEND_NAME = "first-dividend.json"
+#: The clocks the ratified window's own files state, beside the dividend and
+#: bound to the same manifest hash. A separate artifact rather than a field on
+#: the dividend because the dividend is ONE finding and these are facts about
+#: every file — folding them in would make the card's headline a list.
+CLOCKS_NAME = "window-clocks.json"
 
 DESTINATIONS = {
     "earn": "Earn every responsibility",
@@ -473,6 +479,7 @@ def _fresh_state(now: str | None = None, *, stage: str = "welcome") -> dict[str,
         "source": None,
         "charter": None,
         "first_dividend": None,
+        "window_clocks": None,
         "created_at": ts,
         "updated_at": ts,
     }
@@ -1724,6 +1731,7 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
             # a dividend read out of a window the operator said was a detour
             # must not arrive wearing the answered target's authority.
             body=egress["summary"] + disclosure + _binding_note(state)
+            + _clocks_note(state)
             + _discovery_note(state.get("discovery")),
             evidence=egress["citations"],
             options=[
@@ -3244,12 +3252,133 @@ def _first_dividend(
     return {**payload, "dividend_hash": _hash(payload)}
 
 
+#: How many rows the artifact keeps from ONE spine file, and how many forward
+#: clocks the card prints. Both are ceilings on what is RENDERED, never on what
+#: was found: every count below is reported in full so a bounded list can never
+#: read as a complete one.
+_SPINE_ROWS_KEPT = 3
+_CARD_CLOCKS_SHOWN = 5
+
+
+def _window_clocks(
+    manifest: dict[str, Any],
+    entries: list[dict[str, Any]],
+    now: str,
+) -> dict[str, Any]:
+    """The dates the ratified window's own files STATE, as rows.
+
+    THE WINDOW IS THE ONLY SOURCE. Every file the Charter admitted is already
+    in memory here, which is the one place in this program where a folder's
+    CSVs, its notes and its letters are all readable under one ratified grant —
+    recall is not consulted and cannot be: its adapter indexes a suffix list,
+    so half of a real estate is structurally invisible to it.
+
+    A SPINE FILE IS AGGREGATED, NEVER ENUMERATED. A rota or a booking ledger is
+    dated on most of its lines by construction; those dates are its shape, not
+    its news, and printing a hundred of them buries the one letter that carries
+    a filing cutoff. Such a file contributes its span, its count and at most
+    ``_SPINE_ROWS_KEPT`` of its forward rows, and the rows it did not
+    contribute are counted rather than dropped silently.
+    """
+    rows: list[dict[str, Any]] = []
+    spine_files: list[dict[str, Any]] = []
+    found = 0
+    undated = 0
+    for entry in entries:
+        file_rows, meta = _salience.file_clocks(
+            entry["lines"], now=now,
+            cite=lambda line_no, line, _entry=entry: _citation(_entry, line_no, line),
+        )
+        found += len(file_rows)
+        # COUNTED OVER EVERY ROW FOUND, not over the rows that survive the
+        # spine trim. The trim keeps forward rows only, so a yearless date in
+        # a calendar-shaped file would otherwise vanish from a number whose
+        # whole job is to say how much was not resolved.
+        undated += sum(1 for row in file_rows if row["iso"] is None)
+        if not file_rows:
+            continue
+        if not meta["spine"]:
+            rows.extend(file_rows)
+            continue
+        dated = sorted(r["iso"] for r in file_rows if r["iso"])
+        forward = [r for r in file_rows if r["direction"] == "future"]
+        kept = forward[:_SPINE_ROWS_KEPT]
+        rows.extend(kept)
+        spine_files.append({
+            "path": entry["path"],
+            "rows": len(file_rows),
+            "rows_kept": len(kept),
+            "earliest": dated[0] if dated else None,
+            "latest": dated[-1] if dated else None,
+        })
+    rows.sort(key=lambda row: (
+        row["iso"] or "9999-99-99", str(row["ref"]["path"]) if row["ref"] else "",
+        int(row["line_no"]),
+    ))
+    payload = {
+        "schema": CLOCKS_SCHEMA,
+        "generated_at": now,
+        "manifest_hash": manifest["manifest_hash"],
+        "rows": rows,
+        # FOUND, KEPT, OMITTED — three numbers because a reader who only has
+        # the list cannot tell a small folder from an aggregated one.
+        "rows_found": found,
+        "rows_omitted": found - len(rows),
+        "spine_files": spine_files,
+        "undated_rows": undated,
+    }
+    return {**payload, "clocks_hash": _hash(payload)}
+
+
+def _clocks_note(state: dict[str, Any]) -> str:
+    """The forward window, bounded, saying what it did not print.
+
+    EMPTY WHEN THERE IS NOTHING TO SAY, and that is load-bearing rather than
+    tidy: a window whose files state no date renders exactly the sentence it
+    rendered before this capability existed, so nothing anywhere had to be
+    re-pinned for folders that carry no clock.
+    """
+    clocks = state.get("window_clocks")
+    if not isinstance(clocks, dict):
+        return ""
+    forward = [row for row in (clocks.get("rows") or [])
+               if row.get("direction") == "future"]
+    if not forward:
+        return ""
+    shown = forward[:_CARD_CLOCKS_SHOWN]
+    listed = "; ".join(
+        f"{row['iso']} — {row['ref']['path']}:{row['ref']['line']}"
+        if row.get("ref") else str(row["iso"])
+        for row in shown
+    )
+    note = (f" Dates your files state that are still ahead: {listed}.")
+    hidden = len(forward) - len(shown)
+    undated = int(clocks.get("undated_rows") or 0)
+    tail = []
+    if hidden:
+        tail.append(f"{hidden} more forward date(s) are in the folder and not printed here")
+    if clocks.get("rows_omitted"):
+        tail.append(
+            f"{clocks['rows_omitted']} row(s) come from calendar-shaped files "
+            "and are summarised rather than listed"
+        )
+    if undated:
+        tail.append(
+            f"{undated} date(s) name a month and a day but no year, and no "
+            "file they sit in states one, so I did not guess"
+        )
+    if tail:
+        note += " " + "; ".join(tail) + "."
+    return note
+
+
 def _sync_artifacts(root: Path, state: dict[str, Any], *, manifest: dict[str, Any] | None = None) -> None:
     data = _data_dir(root)
     _secure_dir(data)
     charter_path = data / CHARTER_NAME
     manifest_path = data / MANIFEST_NAME
     dividend_path = data / DIVIDEND_NAME
+    clocks_path = data / CLOCKS_NAME
     if state.get("charter"):
         _atomic_json(charter_path, state["charter"])
     elif charter_path.exists():
@@ -3262,6 +3391,13 @@ def _sync_artifacts(root: Path, state: dict[str, Any], *, manifest: dict[str, An
         _atomic_json(dividend_path, state["first_dividend"])
     elif dividend_path.exists():
         dividend_path.unlink()
+    # The clocks live and die with the dividend they sit beside: a superseded
+    # window must not leave a file of dates bound to a manifest hash nothing
+    # on disk still carries.
+    if state.get("window_clocks"):
+        _atomic_json(clocks_path, state["window_clocks"])
+    elif clocks_path.exists():
+        clocks_path.unlink()
 
 
 def _current_manifest(root: Path, state: dict[str, Any]) -> dict[str, Any] | None:
@@ -3958,6 +4094,7 @@ def _act_core(
                 },
                 charter=charter,
                 first_dividend=None,
+                window_clocks=None,
             )
             return _commit(
                 base, state, after, action=action, action_id=action_id,
@@ -4009,6 +4146,11 @@ def _act_core(
             after["charter"]["status"] = "ratified"
             after["charter"]["ratified_at"] = ts
             after["first_dividend"] = dividend
+            # DERIVED FROM THE SAME BYTES, IN THE SAME BREATH. The window
+            # pass holds every admitted file body exactly once; deriving the
+            # clocks anywhere else would mean a second read under a charter
+            # that authorised one.
+            after["window_clocks"] = _window_clocks(manifest, entries, ts)
             # THE ONE CONNECTOR ONLY A CHARTER-BOUND READ CAN PROVE. Whether a
             # tracker export is real means whether its rows PARSE, and reading
             # file contents is lawful only inside the Charter the Captain just

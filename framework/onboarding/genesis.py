@@ -361,9 +361,62 @@ def _subject_proof(name: str, repos: list, low: bool, *,
     )
 
 
+#: Clock lines a single card may carry. A card is a proposal, not a calendar:
+#: past the third line the operator is reading a list instead of a claim, and
+#: the count of what was withheld is printed beside them.
+_MAX_CARD_CLOCKS = 3
+
+
+def _clock_lines(clocks: dict | None, refs: list) -> list[str]:
+    """The dates stated INSIDE the files this card already cites.
+
+    MATCHED BY FILE NAME, and the reason is worth stating because a fuzzy join
+    is exactly what this layer refuses everywhere else. The two surfaces reach
+    the same folder by different roots — the window by the path the Captain
+    granted, recall by whatever its own binding resolves — so the file name is
+    the only handle both of them carry. The risk that buys is a same-named file
+    in a different folder, and it is contained rather than argued away: every
+    line NAMES the file and the line number the date came from, so the operator
+    can open it, and a wrong attachment is visible instead of silent.
+
+    NOTHING IS INVENTED HERE AND NOTHING IS RELATED. A line says a date, where
+    it is written, and — when the file it sits in never states a year — that
+    the year is not known. It never says what the date is for, and there is no
+    shape it could take that would: the rows it reads carry no such field.
+    """
+    rows = (clocks or {}).get("rows") or []
+    wanted = {str(ref).replace("\\", "/").rsplit("/", 1)[-1]
+              for ref in (refs or []) if str(ref).strip()}
+    if not wanted or not rows:
+        return []
+    hits = []
+    for row in rows:
+        ref = row.get("ref") if isinstance(row, dict) else None
+        path = str((ref or {}).get("path") or "")
+        if not path or path.replace("\\", "/").rsplit("/", 1)[-1] not in wanted:
+            continue
+        hits.append(row)
+    # Ahead of the run first, then by date: a briefing is read forwards.
+    hits.sort(key=lambda row: (row.get("direction") != "future",
+                               str(row.get("iso") or "9999-99-99"),
+                               str((row.get("ref") or {}).get("path") or "")))
+    lines = []
+    for row in hits[:_MAX_CARD_CLOCKS]:
+        ref = row.get("ref") or {}
+        where = f"{ref.get('path')}:{ref.get('line')}"
+        if row.get("iso"):
+            lines.append(f"{row['iso']} ({row['raw']}) — {where}")
+        else:
+            lines.append(f"{row['raw']} (no year stated in that file) — {where}")
+    if len(hits) > len(lines):
+        lines.append(f"…and {len(hits) - len(lines)} more date(s) in those files")
+    return lines
+
+
 def _estate_subject_cards(estate: dict, taken: set, seen_ids: set, *,
                           purpose: str | None, low: bool, limit: int,
-                          recall: dict | None = None) -> list[dict]:
+                          recall: dict | None = None,
+                          clocks: dict | None = None) -> list[dict]:
     """Subject cards derived from what the cabinet READ, each carrying the
     citation that produced it. Entities whose slug already came from a
     declared lane are skipped: the Captain's own declaration wins over a
@@ -389,6 +442,8 @@ def _estate_subject_cards(estate: dict, taken: set, seen_ids: set, *,
         why += _recall_why(subject)
         if purpose:
             why += f' The mission it serves: "{purpose}"'
+        clock_lines = _clock_lines(
+            clocks, cites + list((subject or {}).get("refs") or []))
         base_id = f"proposed-{slug or 'entity'}-first-proof"
         card_id, n = base_id, 2
         while card_id in seen_ids:
@@ -418,6 +473,10 @@ def _estate_subject_cards(estate: dict, taken: set, seen_ids: set, *,
             "proof_expected": _subject_proof(name or slug, [], low),
             **({"recall_refs": list(subject.get("refs") or [])}
                if subject and subject.get("refs") else {}),
+            # ONLY WHEN EARNED, exactly like the refs above: a card whose own
+            # cited files state no date carries no clocks key at all, so a
+            # dateless folder derives byte-identically to before this existed.
+            **({"clocks": clock_lines} if clock_lines else {}),
         })
     return cards
 
@@ -1178,7 +1237,8 @@ def _recall_why(subject: dict | None) -> str:
 # ---------------------------------------------------------------------------
 def propose_outcome_cards(answers: dict, focus_text: str | None = None, *,
                           estate: dict | None = None,
-                          recall: dict | None = None) -> list[dict]:
+                          recall: dict | None = None,
+                          clocks: dict | None = None) -> list[dict]:
     """PURE derivation: the derived estate + cabinet-init answers (+ optional
     focus letter) → 2–4 proposed outcome cards.
 
@@ -1254,6 +1314,7 @@ def propose_outcome_cards(answers: dict, focus_text: str | None = None, *,
         # is as software-shaped as "task" and "deploy": a lane declaring
         # neither a task system nor a repository is told what it did in words
         # that fit whatever its work is (see _has_execution_surface).
+        clock_lines = _clock_lines(clocks, list((subject or {}).get("refs") or []))
         task_system = lane.get("task_system")
         surface = _has_execution_surface(task_system, repos)
         cards.append({
@@ -1277,12 +1338,13 @@ def propose_outcome_cards(answers: dict, focus_text: str | None = None, *,
             # pre-recall one and an empty list can never read as a citation.
             **({"recall_refs": list(subject.get("refs") or [])}
                if subject and subject.get("refs") else {}),
+            **({"clocks": clock_lines} if clock_lines else {}),
         })
 
     if len(cards) < _MAX_LANE_CARDS and isinstance(estate, dict):
         cards.extend(_estate_subject_cards(
             estate, taken_slugs, seen_ids, purpose=purpose, low=low,
-            limit=_MAX_LANE_CARDS - len(cards), recall=recall))
+            limit=_MAX_LANE_CARDS - len(cards), recall=recall, clocks=clocks))
     if not cards:
         cards.append(_residual_card(estate, low, recall))
 
@@ -1375,6 +1437,12 @@ def _proposals_doc(cards: list[dict], answers: dict, *, now: str,
             # composed from. Absent means no note was cited, and the briefing
             # says so rather than implying one.
             **({"recall_refs": refs} if refs else {}),
+            # The dates the card's own cited files state. Same rule as the
+            # refs: present only when earned, so a row for a dateless folder
+            # is byte-identical to the row this file wrote before clocks
+            # existed.
+            **({"clocks": [str(c) for c in (card.get("clocks") or [])]}
+               if card.get("clocks") else {}),
             # WHO proposed this row, at ROW level. Re-derivation rewrites only
             # genesis's own drafts; a row another organ merged in through
             # ``merge_proposals`` is not genesis's to replace, and a row with
@@ -1662,7 +1730,12 @@ def run_genesis_proposal(root: Path | None = None, *, now: str | None = None,
     estate = derived if usable else None
     recall = probe_recall(answers, focus, estate=estate, source=source,
                           root=base)
-    cards = propose_outcome_cards(answers, focus, estate=estate, recall=recall)
+    # I/O lives here, beside the estate load, for the identical reason: the
+    # binding check is the estate module's and ``propose_outcome_cards`` stays
+    # pure by receiving the rows as data.
+    clocks = _estate.load_window_clocks(base)
+    cards = propose_outcome_cards(answers, focus, estate=estate, recall=recall,
+                                  clocks=clocks)
     if not cards:
         return {"status": "no-cards", "path": None, "cards": 0, "recall": recall}
     res = write_proposals(cards, base, answers=answers, now=now,
@@ -1993,6 +2066,11 @@ def genesis_intake_items(root: Path | None = None, now: str | None = None, *,
             # checkable is worse than no card, so the refs ride the card body
             # rather than sitting only in the staging file.
             + (f"FROM YOUR NOTES: {', '.join(refs)}\n" if refs else "")
+            # Beside the citations, never instead of them: a date is only
+            # checkable if the operator can open the line it was read from.
+            + (("DATES IN THOSE FILES: "
+                + "; ".join(str(c) for c in (row.get("clocks") or [])) + "\n")
+               if row.get("clocks") else "")
             + f"Status: draft — propose-only, captain_ratified: false "
               f"(draft row: {PROPOSALS_REL}, id: {row.get('id') or '?'})"
         )
