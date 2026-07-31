@@ -1,6 +1,6 @@
 'use server'
 
-import redis from '@/lib/redis'
+import redis, { isMockRedis, storeReading } from '@/lib/redis'
 import { requireDashboardAuth } from '@/lib/provisioning/guard'
 import { revalidatePath } from 'next/cache'
 
@@ -25,11 +25,36 @@ import { revalidatePath } from 'next/cache'
  * against one endpoint, with no second filesystem channel — but it closes the
  * gap that matters here: the write is verified to have LANDED in the store this
  * process talks to before the surface is allowed to claim it did.
+ *
+ * WHAT THE READ-BACK COULD NOT REACH, closed 2026-07-31. A read-back cannot see
+ * a write that never left the process. With no `REDIS_URL` the client is an
+ * in-process object (`lib/redis.ts:emptyStore`), so `set` then `get` returns
+ * exactly what was just written and the proof above PASSES over a fleet this
+ * dashboard has never contacted — the emergency stop reporting a halt it did
+ * not achieve, on a posture that (unlike `demo`) is reachable on a production
+ * deploy that simply forgot the store. `actions/crons.ts` closed this for its
+ * timers and named this file as still carrying it; `actions/officers.ts` closed
+ * it for the fleet. This is the same gate, in the same words, on the surface
+ * where being wrong costs the most.
+ *
+ * The gate is BEFORE the pre-read, not after: `redis.get` against the empty
+ * store answers `null`, which the code below would read as "not currently
+ * engaged" and then act on.
  */
+const notLiveRefusal = (): { success: false; error: string } | null =>
+  isMockRedis
+    ? {
+        success: false,
+        error: `this dashboard is not connected to a cabinet, so the emergency stop was NOT changed and the fleet was not halted — ${storeReading.source}`,
+      }
+    : null
+
 export async function toggleKillSwitch(intent?: 'activate' | 'deactivate') {
   if (!(await requireDashboardAuth())) {
     return { success: false, error: 'Unauthorized' }
   }
+  const notLive = notLiveRefusal()
+  if (notLive) return notLive
   try {
     const current = await redis.get('cabinet:killswitch')
     const isActive = current === 'active'

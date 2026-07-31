@@ -48,18 +48,18 @@ export interface CapabilityGap {
 /**
  * Fetch the capability-gaps ledger from the org-runtime CLI.
  *
- * Degrades gracefully: any error, mock output, or non-array payload → [].
+ * Degrades gracefully: any error — including a command this dashboard refused
+ * to run because it has no store — or a non-array payload → [].
  */
 export async function listCapabilityGaps(): Promise<CapabilityGap[]> {
   const cmd = 'python3 cabinet/scripts/org-runtime.py gaps list --json'
 
   try {
     const { stdout } = await dockerExec(cmd)
-    if (!stdout || stdout === 'mock: command executed') {
-      // Mock mode (Mac-native dashboard without REDIS_URL, container offline,
-      // or the `gaps` subcommand not shipped yet).
-      return []
-    }
+    // An UNRUN command now rejects (lib/docker.ts CommandNotExecutedError) and
+    // is handled by the catch below; the sentinel-literal check that used to
+    // sit here is gone with the sentinel. Empty output is still no rows.
+    if (!stdout) return []
     const parsed = JSON.parse(stdout)
     if (!Array.isArray(parsed)) return []
     return parsed as CapabilityGap[]

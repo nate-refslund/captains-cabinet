@@ -189,19 +189,31 @@ describe('the runtime probes invent no officers', () => {
     }
   })
 
-  it('getCronSchedule returns nothing — and never the no-op sentinel as a job', async () => {
+  it('the schedule is UNREADABLE, not "0 jobs" — and never a fabricated row', async () => {
     // CABINET_RUNTIME_MODE=native is REQUIRED here, and finding that out is
     // why this arm exists in its current form: without it `RUNTIME_MODE`
     // resolves to 'docker', whose branch never calls `dockerExec` at all — so
     // the first version of this test passed against a deliberately
     // re-introduced defect, because the mutated line was unreachable. A fence
     // that cannot reach the code it names is a disabled sensor.
+    //
+    // STRENGTHENED 2026-07-31. It used to assert only `jobs === []` plus "the
+    // sentinel is not among them" — both of which the OLD code satisfied, by
+    // filtering the no-op away and then returning `unreadable: null`. That is
+    // the sentence "0 scheduled jobs" as a FACT about a machine nothing asked.
+    // Empty AND unreadable-with-a-reason is the honest pair.
     process.env.CABINET_RUNTIME_MODE = 'native'
     try {
-      const { getCronSchedule, MOCK_EXEC_SENTINEL } = await import('./docker')
-      const jobs = await getCronSchedule()
-      expect(jobs).toEqual([])
-      expect(jobs.some((j) => j.command.includes(MOCK_EXEC_SENTINEL))).toBe(false)
+      const { readCronSchedule } = await import('./docker')
+      const reading = await readCronSchedule()
+      expect(reading.jobs).toEqual([])
+      expect(reading.unreadable).toBeTruthy()
+      expect(reading.unreadable).toMatch(/could not be read/i)
+      // The old `jobs.some(...)` line here was VACUOUS — it ran after
+      // `toEqual([])`, so it could never be the assertion that fired. What is
+      // worth asserting is that the REASON does not smuggle the dead no-op
+      // string into the Captain's sentence.
+      expect(reading.unreadable).not.toMatch(/mock: command executed/)
     } finally {
       delete process.env.CABINET_RUNTIME_MODE
     }

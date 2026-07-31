@@ -57,10 +57,8 @@ export async function listClaudeNativeTasks(
 
   try {
     const { stdout } = await dockerExec(cmd)
-    if (!stdout || stdout === 'mock: command executed') {
-      // Mock mode (Mac-native dashboard without REDIS_URL, or container offline)
-      return []
-    }
+    // Unrun commands reject and land in the catch below; empty output is no rows.
+    if (!stdout) return []
     const parsed = JSON.parse(stdout)
     if (Array.isArray(parsed)) return parsed as ClaudeNativeTask[]
     return []

@@ -260,8 +260,9 @@ def test_the_receipt_guard_matches_the_writer_and_rejects_a_mock(store):
     assert re.search(pattern, proc.stdout), (
         f"the action requires {pattern!r} before reporting success, but the writer "
         f"prints {proc.stdout!r} — the guard would reject every real save")
-    # lib/docker.ts returns this string from its mock branch having written
-    # nothing. It must never satisfy the guard.
+    # The string lib/docker.ts used to RETURN for a command it declined to run.
+    # It rejects now, so this can no longer arrive as stdout — the assertion
+    # stays as a ratchet: any output that is not the receipt is not a save.
     assert not re.search(pattern, "mock: command executed")
     assert not re.search(pattern, "")
 

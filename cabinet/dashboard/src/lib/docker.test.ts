@@ -29,19 +29,58 @@ beforeAll(async () => {
   mod = await import('./docker')
 })
 
-describe('dockerExec — mock path', () => {
-  it('returns the fixed mock stdout + empty stderr', async () => {
-    const result = await mod.dockerExec('echo hi')
-    expect(result).toEqual({ stdout: 'mock: command executed', stderr: '' })
+describe('dockerExec — an unrun command REJECTS, it never answers', () => {
+  // This block used to assert `resolves.toEqual({ stdout: 'mock: command
+  // executed' })` — it pinned the defect as the contract. 19 write actions read
+  // that resolved value as success for work that never happened.
+  it('rejects rather than resolving a fabricated stdout', async () => {
+    await expect(mod.dockerExec('echo hi')).rejects.toThrow()
+    await expect(mod.dockerExec('echo hi')).rejects.not.toThrow(
+      /mock: command executed/
+    )
   })
 
-  it('does not throw on empty command', async () => {
-    await expect(mod.dockerExec('')).resolves.toBeDefined()
+  it('the rejection says nothing ran, in words a Captain can act on', async () => {
+    // These messages are rendered VERBATIM by the callers' catch blocks.
+    await expect(mod.dockerExec('echo hi')).rejects.toThrow(
+      /nothing was run and nothing was changed/i
+    )
   })
 
-  it('does not throw on shell metacharacters in mock path', async () => {
-    // Real path does single-quote escaping; mock short-circuits before escape
-    await expect(mod.dockerExec("echo 'a' && echo 'b'")).resolves.toBeDefined()
+  it('and it names DEMO, not a misconfigured deploy — the two sentences differ', async () => {
+    // `/nothing was run/` alone matches BOTH refusal texts, so it could not tell
+    // the demo sentence from the production-misconfiguration one. This module is
+    // in the demo posture (top of file); the wrong sentence here would send a
+    // developer who typed the flag off to check REDIS_URL on a real deploy.
+    await expect(mod.dockerExec('echo hi')).rejects.toThrow(/demo data/i)
+    await expect(mod.dockerExec('echo hi')).rejects.not.toThrow(/misconfiguration/i)
+  })
+
+  it('carries the posture and the command it did not run', async () => {
+    const err = await mod.dockerExec('rm -rf /nope').then(
+      () => null,
+      (e: unknown) => e as InstanceType<typeof mod.CommandNotExecutedError>
+    )
+    expect(err).toBeInstanceOf(mod.CommandNotExecutedError)
+    expect(err!.name).toBe('CommandNotExecutedError')
+    expect(err!.posture).toBe('demo')
+    expect(err!.command).toBe('rm -rf /nope')
+  })
+
+  it('an EMPTY command is refused too — the degenerate end is still not a run', async () => {
+    await expect(mod.dockerExec('')).rejects.toThrow(/nothing was run/i)
+  })
+
+  it('shell metacharacters change nothing — the refusal is before any escaping', async () => {
+    await expect(mod.dockerExec("echo 'a' && echo 'b'")).rejects.toThrow(
+      /nothing was run/i
+    )
+  })
+
+  it('the no-op sentinel string is gone from the module surface entirely', () => {
+    // A constant that still exists is a constant a new caller can compare
+    // against, which is how three read paths came to carry dead string checks.
+    expect('MOCK_EXEC_SENTINEL' in mod).toBe(false)
   })
 })
 

@@ -48,6 +48,14 @@
 # Other pages render mock or honest-empty data. Login password:
 # testburg-demo (local demo only, printed below — NOT a secret).
 #
+# THE BUTTONS REFUSE, and that is deliberate (2026-07-31). Every write action
+# that shells out — officer start/stop/create, env-var edits, the settings and
+# project-config field editors, gap approve/decline, the emergency stop — now
+# returns a visible refusal naming the demo posture instead of the confirmed-
+# looking success it used to return while running nothing. A demo that claims
+# it created an officer is the defect this closed, not a feature of the demo.
+# Read-only pages are what this kit is for; the controls are for a real cabinet.
+#
 # Usage:
 #   bash cabinet/scripts/demo-dashboard.sh              start (port 3199)
 #   bash cabinet/scripts/demo-dashboard.sh --port 4000  start on a port

@@ -9,19 +9,29 @@ import { revalidatePath } from 'next/cache'
 /**
  * A DASHBOARD THAT HAS NOT CONTACTED A CABINET MAY NOT SAY IT STOPPED ONE.
  *
- * `dockerExec` short-circuits whenever the store is not live — demo OR
+ * `dockerExec` short-circuited whenever the store was not live — demo OR
  * `unconfigured` — returning the string `mock: command executed` instead of
- * running anything (`lib/docker.ts`). No action below branched on that, so with
- * `REDIS_URL` unset the Captain pressed Stop on an officer, nothing was
- * executed, `redis.set(expected:stopped)` landed in an in-process object, and
- * the card read "stopped" over an autonomous agent that was still running and
- * still acting. `unconfigured` has no production exclusion, so that is
- * reachable on a real deploy that simply forgot the store.
+ * running anything. No action below branched on that, so with `REDIS_URL` unset
+ * the Captain pressed Stop on an officer, nothing was executed,
+ * `redis.set(expected:stopped)` landed in an in-process object, and the card
+ * read "stopped" over an autonomous agent that was still running and still
+ * acting.
  *
  * This is the crons defect and the emergency-stop defect on the officer fleet.
  * The read-back that fixes the killswitch cannot fix it — the in-process store
  * echoes back whatever was written — so the posture is the gate, exactly as in
  * `actions/crons.ts`.
+ *
+ * SINCE 2026-07-31 the source refuses too: an unrun command REJECTS with
+ * `CommandNotExecutedError` (`lib/docker.ts`), so an action IN THIS FILE THAT
+ * SHELLS OUT cannot report success even if it forgets this guard. An action
+ * that only wrote to the store would still need the guard — the in-process
+ * store answers happily — which is the other half of why it stays. `createOfficer` WAS that action — the one
+ * hole in this patch, found by sweeping the enabler, and it accepted a live
+ * Telegram bot token before rendering "Officer Created". Both belts are worn
+ * deliberately: the guard means no exec is attempted and the Captain gets one
+ * sentence, the rejection means the next action added to this file is safe on
+ * the day it is written rather than on the day somebody remembers.
  */
 function notLiveRefusal(): { success: false; error: string } | null {
   return isMockRedis
@@ -185,6 +195,11 @@ export async function createOfficer(
   if (!title || !domain || !botUsername || !botToken) {
     return { error: 'Title, domain, bot username, and bot token are required' }
   }
+
+  // Validate first, refuse second: the form should still tell the Captain his
+  // input is malformed rather than blaming the store for it.
+  const notLive = notLiveRefusal()
+  if (notLive) return { error: notLive.error }
 
   // Build optional flags
   const flags: string[] = []

@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   isNotLiveStore,
+  isUnconfiguredInProduction,
   resolveStorePosture,
   storeBannerAttr,
   storeBannerHint,
@@ -161,5 +162,49 @@ describe('the banner', () => {
   it('the demo wording says the figures are invented', () => {
     const r = resolveStorePosture({ MOCK_DATA: 'true', NODE_ENV: 'test' })
     expect(r.source).toMatch(/invented/i)
+  })
+})
+
+describe('isUnconfiguredInProduction — the exclusion `demo` had and this posture did not', () => {
+  it('production with no store is TRUE — the case the exec plane spent as a licence', () => {
+    expect(isUnconfiguredInProduction({ NODE_ENV: 'production' })).toBe(true)
+  })
+
+  it('production with a store is FALSE', () => {
+    expect(
+      isUnconfiguredInProduction({ REDIS_URL: 'redis://x', NODE_ENV: 'production' })
+    ).toBe(false)
+  })
+
+  it('outside production it is FALSE — unconfigured there is somebody mid-setup', () => {
+    expect(isUnconfiguredInProduction({})).toBe(false)
+    expect(isUnconfiguredInProduction({ NODE_ENV: 'development' })).toBe(false)
+    expect(isUnconfiguredInProduction({ NODE_ENV: 'test' })).toBe(false)
+  })
+
+  it('REDIS_URL="" in production is TRUE — present but empty is not a store', () => {
+    // The degenerate end that coerces to a falsy default: `REDIS_URL=` in a
+    // .env file is a MISSING value that happens to be set.
+    expect(isUnconfiguredInProduction({ REDIS_URL: '', NODE_ENV: 'production' })).toBe(
+      true
+    )
+  })
+
+  it('MOCK_DATA=true in production is TRUE — the demo opt-in cannot buy its way out', () => {
+    // Fabrication is refused in production, so the posture stays `unconfigured`
+    // and the deploy is still misconfigured. An implementation that read the
+    // flag before the posture would answer false here.
+    expect(
+      isUnconfiguredInProduction({ MOCK_DATA: 'true', NODE_ENV: 'production' })
+    ).toBe(true)
+    expect(
+      isUnconfiguredInProduction({ CABINET_DEMO_DATA: 'true', NODE_ENV: 'production' })
+    ).toBe(true)
+  })
+
+  it('demo outside production is FALSE — it is a mode, not a broken deploy', () => {
+    expect(isUnconfiguredInProduction({ MOCK_DATA: 'true', NODE_ENV: 'test' })).toBe(
+      false
+    )
   })
 })

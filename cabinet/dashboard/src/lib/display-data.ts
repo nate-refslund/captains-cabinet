@@ -180,7 +180,7 @@ async function getOviSnapshot(productSlug: string): Promise<DisplayOvi> {
     const slug = productSlug.replace(/[^a-z0-9_-]/g, '')
     const cmd = `python3 cabinet/scripts/org-runtime.py org-event list --product-slug '${slug}' --limit 50`
     const { stdout } = await dockerExec(cmd)
-    if (!stdout || stdout === 'mock: command executed') return { score: null, trend: null }
+    if (!stdout) return { score: null, trend: null }
 
     // Output is newline-delimited JSON (one event per line), newest first.
     const lines = stdout.split('\n').map((l) => l.trim()).filter(Boolean)
@@ -235,7 +235,7 @@ async function getRecentEvents(productSlug: string, limit = 8): Promise<DisplayE
     const slug = productSlug.replace(/[^a-z0-9_-]/g, '')
     const cmd = `python3 cabinet/scripts/org-runtime.py org-event list --product-slug '${slug}' --limit ${limit}`
     const { stdout } = await dockerExec(cmd)
-    if (!stdout || stdout === 'mock: command executed') return []
+    if (!stdout) return []
     const lines = stdout.split('\n').map((l) => l.trim()).filter(Boolean)
     const events: DisplayEvent[] = []
     for (const line of lines) {
