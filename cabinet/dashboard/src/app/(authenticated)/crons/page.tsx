@@ -1,14 +1,15 @@
-import { getCronSchedule } from '@/lib/docker'
+import { readCronSchedule } from '@/lib/docker'
 import { getScheduleLastRuns } from '@/lib/redis'
 import CronTable from './cron-table'
 
 export const dynamic = 'force-dynamic'
 
 export default async function CronsPage() {
-  const [cronJobs, lastRuns] = await Promise.all([
-    getCronSchedule(),
+  const [schedule, lastRuns] = await Promise.all([
+    readCronSchedule(),
     getScheduleLastRuns(),
   ])
+  const { jobs: cronJobs, unreadable } = schedule
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
@@ -19,7 +20,7 @@ export default async function CronsPage() {
         </p>
       </div>
 
-      <CronTable cronJobs={cronJobs} lastRuns={lastRuns} />
+      <CronTable cronJobs={cronJobs} lastRuns={lastRuns} unreadable={unreadable} />
     </div>
   )
 }

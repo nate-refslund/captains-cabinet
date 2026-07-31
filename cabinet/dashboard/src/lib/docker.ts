@@ -167,18 +167,57 @@ export interface CronJob {
 // (governance.ts, files.ts) now do real node:fs I/O — the mock branch here
 // used to console-log no-op a Captain's save while the action claimed success.
 
+/**
+ * The schedule, WITH whether it could be read.
+ *
+ * `getCronSchedule()` swallowed every failure into `[]`, so a crontab the
+ * dashboard could not read rendered as the sentence "0 jobs" — a measurement
+ * claim about a machine it had just failed to ask. That is the same shape as
+ * the emergency stop reading "fleet running" from a store it never contacted,
+ * on the read side of this page rather than the write side.
+ *
+ * `unreadable` is the reason, in plain words, or null when the number is real.
+ * An EMPTY crontab is not unreadable: zero jobs and no error is a fact.
+ */
+export interface CronScheduleReading {
+  jobs: CronJob[]
+  unreadable: string | null
+}
+
+/**
+ * The name shown in the "Job" column.
+ *
+ * `command.split('/').pop()` on a line ending `>> /var/log/watchdog/cron.log
+ * 2>&1` yields "cron.log 2>&1" — which every job with a log redirect shares, so
+ * the table showed three identical names and the Captain could not tell which
+ * row they were about to delete. The redirect is stripped first.
+ */
+export function cronJobName(command: string): string {
+  const withoutRedirect = command.split(/\s+\d?[<>]/)[0].trim() || command
+  const first = withoutRedirect.split(/\s+/)[0] || withoutRedirect
+  return first.split('/').pop() || first
+}
+
+/** The schedule only. Kept for callers that have no way to render a reason. */
 export async function getCronSchedule(): Promise<CronJob[]> {
+  return (await readCronSchedule()).jobs
+}
+
+export async function readCronSchedule(): Promise<CronScheduleReading> {
   if (IS_FABRICATED) {
-    return [
-      { schedule: '*/5 * * * *', command: 'health-check.sh', description: 'Health check' },
-      { schedule: '*/15 * * * *', command: 'token-refresh.sh', description: 'Token refresh' },
-      { schedule: '0 6 * * *', command: 'morning-briefing.sh', description: 'Morning briefing (07:00 CET)' },
-      { schedule: '0 18 * * *', command: 'evening-briefing.sh', description: 'Evening briefing (19:00 CET)' },
-      { schedule: '0 */4 * * *', command: 'research-sweep.sh', description: 'Research sweep' },
-      { schedule: '0 */12 * * *', command: 'backlog-refinement.sh', description: 'Backlog refinement' },
-      { schedule: '30 6 * * *', command: 'retrospective.sh', description: 'Retrospective (07:30 CET)' },
-      { schedule: '0 19 * * *', command: 'cost-dashboard.sh', description: 'Cost dashboard (20:00 CET)' },
-    ]
+    return {
+      unreadable: null,
+      jobs: [
+        { schedule: '*/5 * * * *', command: 'health-check.sh', description: 'Health check' },
+        { schedule: '*/15 * * * *', command: 'token-refresh.sh', description: 'Token refresh' },
+        { schedule: '0 6 * * *', command: 'morning-briefing.sh', description: 'Morning briefing (07:00 CET)' },
+        { schedule: '0 18 * * *', command: 'evening-briefing.sh', description: 'Evening briefing (19:00 CET)' },
+        { schedule: '0 */4 * * *', command: 'research-sweep.sh', description: 'Research sweep' },
+        { schedule: '0 */12 * * *', command: 'backlog-refinement.sh', description: 'Backlog refinement' },
+        { schedule: '30 6 * * *', command: 'retrospective.sh', description: 'Retrospective (07:30 CET)' },
+        { schedule: '0 19 * * *', command: 'cost-dashboard.sh', description: 'Cost dashboard (20:00 CET)' },
+      ],
+    }
   }
   try {
     if (RUNTIME_MODE === 'native') {
@@ -194,28 +233,44 @@ export async function getCronSchedule(): Promise<CronJob[]> {
         .trim()
         .split('\n')
         .filter((l: string) => Boolean(l) && l.trim() !== MOCK_EXEC_SENTINEL)
-      return lines.map((line: string) => {
-        // launchctl list cols: PID  Status  Label
-        const parts = line.trim().split(/\s+/)
-        const label = parts[parts.length - 1] || line
-        const name = label.replace('com.cabinet.', '')
-        return { schedule: 'launchd', command: label, description: name }
-      })
+      return {
+        unreadable: null,
+        jobs: lines.map((line: string) => {
+          // launchctl list cols: PID  Status  Label
+          const parts = line.trim().split(/\s+/)
+          const label = parts[parts.length - 1] || line
+          const name = label.replace('com.cabinet.', '')
+          return { schedule: 'launchd', command: label, description: name }
+        }),
+      }
     }
     const watchdogContainer = `${prefix}-watchdog`
-    const { stdout } = await exec(
-      `docker exec ${watchdogContainer} crontab -l 2>/dev/null`
-    )
+    // stderr is NOT discarded any more: `2>/dev/null` threw away the only
+    // sentence that could distinguish "no jobs" from "could not ask".
+    const { stdout } = await exec(`docker exec ${watchdogContainer} crontab -l`)
     const lines = stdout.trim().split('\n').filter((l: string) => l && !l.startsWith('#'))
-    return lines.map((line: string) => {
-      const parts = line.trim().split(/\s+/)
-      const schedule = parts.slice(0, 5).join(' ')
-      const command = parts.slice(5).join(' ')
-      const scriptName = command.split('/').pop() || command
-      return { schedule, command, description: scriptName }
-    })
-  } catch {
-    return []
+    return {
+      unreadable: null,
+      jobs: lines.map((line: string) => {
+        const parts = line.trim().split(/\s+/)
+        const schedule = parts.slice(0, 5).join(' ')
+        const command = parts.slice(5).join(' ')
+        return { schedule, command, description: cronJobName(command) }
+      }),
+    }
+  } catch (err) {
+    // "no crontab for <user>" is an empty schedule, not a failed read — the
+    // same distinction `lib/crontab.ts` makes before it will write anything.
+    const detail = err instanceof Error ? err.message : String(err)
+    if (/no crontab for/i.test(detail)) return { unreadable: null, jobs: [] }
+    return {
+      unreadable: `the schedule could not be read — ${detail
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .slice(-1)[0] || detail}`,
+      jobs: [],
+    }
   }
 }
 
