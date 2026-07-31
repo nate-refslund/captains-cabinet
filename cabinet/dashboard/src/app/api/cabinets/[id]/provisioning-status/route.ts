@@ -28,6 +28,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireProvisioningAccess } from '@/lib/provisioning/guard'
 import { query } from '@/lib/db'
 import { getAuditEvents } from '@/lib/provisioning/audit'
+import { SUBSCRIBER_CLIENT_OPTIONS } from '@/lib/store-reachability'
 
 export const dynamic = 'force-dynamic'
 
@@ -155,7 +156,7 @@ export async function GET(
         try {
           const { default: Redis } = await import('ioredis')
           // Create a dedicated subscriber connection (ioredis requires separate connection for SUBSCRIBE)
-          const sub = new Redis(REDIS_URL)
+          const sub = new Redis(REDIS_URL, SUBSCRIBER_CLIENT_OPTIONS)
           subClient = sub
 
           // ioredis subscribe returns a promise when no callback is provided

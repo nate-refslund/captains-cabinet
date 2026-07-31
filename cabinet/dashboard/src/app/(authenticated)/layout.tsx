@@ -7,19 +7,24 @@ import { getDashboardConfig } from '@/lib/config'
 import { readKillswitch } from '@/lib/killswitch-state'
 import { glanceOf } from '@/lib/world/killswitch'
 import StorePostureBanner from '@/components/store-posture-banner'
-import { storeReading } from '@/lib/redis'
+import { currentStoreReading } from '@/lib/redis'
 
 export default async function AuthenticatedLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const [projects, activeProject, killswitch] = await Promise.all([
+  const [projects, activeProject, killswitch, store] = await Promise.all([
     getProjects(),
     getActiveProject(),
     // Three states, never two: an unread emergency stop used to render the
     // same "⏸ Stop All" pill as one the org had verified was not engaged.
     readKillswitch(),
+    // A PROBE, not a re-read of the import-time constant. `storeReading` is
+    // decided from the environment and cannot know that the host it names has
+    // died — which is the ordinary shape of an outage, and used to hang this
+    // page rather than disclose anything.
+    currentStoreReading(),
   ])
   const { consumerModeEnabled } = getDashboardConfig()
 
@@ -80,7 +85,7 @@ export default async function AuthenticatedLayout({
             leaving the Captain to infer it from empty cards.
           */}
           <div className="mb-6 empty:mb-0">
-            <StorePostureBanner reading={storeReading} />
+            <StorePostureBanner reading={store} />
           </div>
           {children}
         </div>

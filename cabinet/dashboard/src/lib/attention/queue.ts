@@ -51,6 +51,7 @@ import {
   type DecisionQueueItem,
 } from '@/lib/world/ui-cards'
 import { UNMEASURED_GLYPH } from './glance'
+import { REQUEST_CLIENT_OPTIONS } from '@/lib/store-reachability'
 
 // Re-exported so server callers have ONE import site, while `'use client'`
 // components take them from ./glance (this module reads the filesystem and
@@ -483,7 +484,10 @@ export async function readPendingCardsResult(): Promise<LiveCardsRead> {
   let redis: RedisLike | null = null
   try {
     const { default: Redis } = await import('ioredis')
-    redis = new Redis(REDIS_URL) as unknown as RedisLike
+    // Bounded — this client is why /queue hung for 45s against a store that
+    // accepts the connection and never answers. The try/catch below already
+    // turns a rejection into an honest `ok: false`; it just never got one.
+    redis = new Redis(REDIS_URL, REQUEST_CLIENT_OPTIONS) as unknown as RedisLike
     const keys: string[] = []
     let cursor = '0'
     let passes = 0

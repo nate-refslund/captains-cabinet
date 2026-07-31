@@ -43,6 +43,7 @@ import {
 } from '@/lib/world/killswitch'
 import { loadLifeGrammar } from '@/lib/world/life/life-grammar'
 import type { WorkSite } from '@/lib/world/life/sites'
+import { REQUEST_CLIENT_OPTIONS } from '@/lib/store-reachability'
 
 export const dynamic = 'force-dynamic'
 
@@ -226,11 +227,10 @@ export async function GET(_req: NextRequest) {
   let redis: RedisLike | null = null
   try {
     const { default: Redis } = await import('ioredis')
-    redis = new Redis(REDIS_URL, {
-      lazyConnect: true,
-      maxRetriesPerRequest: 1,
-      connectTimeout: 900,
-    }) as unknown as RedisLike
+    // One shared option set (lib/store-reachability). The local dialect that
+    // was here carried no `commandTimeout`, so the mute-accept shape — TCP
+    // accepted, no reply ever — walked straight past it and hung.
+    redis = new Redis(REDIS_URL, REQUEST_CLIENT_OPTIONS) as unknown as RedisLike
     killswitch = readingFromKey(await redis.get('cabinet:killswitch'), true)
     const hb = await redis.get('cabinet:doctor:heartbeat')
     if (hb) {

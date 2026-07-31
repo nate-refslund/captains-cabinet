@@ -58,8 +58,18 @@
  * `env` argument, never off the global, so this file is pure.
  */
 
-/** live = a store was configured · demo = fabricated on request · unconfigured = nothing was configured. */
-export type StorePosture = 'live' | 'demo' | 'unconfigured'
+/**
+ * live = a store was configured AND answers · demo = fabricated on request ·
+ * unconfigured = nothing was configured · unreachable = a store was configured
+ * and did not answer.
+ *
+ * `unreachable` is the one posture that is NOT a function of the environment —
+ * it is a runtime fact, discovered by asking. `resolveStorePosture` therefore
+ * never returns it; `lib/redis.ts` composes it from the breaker in
+ * `lib/store-reachability.ts`. Keeping the env decision pure is what lets every
+ * other end of it be tested without a store.
+ */
+export type StorePosture = 'live' | 'demo' | 'unconfigured' | 'unreachable'
 
 /** A reading about the READINGS: what produced everything else on the page. */
 export interface StoreReading {
@@ -90,6 +100,22 @@ export const DEMO_SOURCE =
 export const LIVE_SOURCE = 'the configured store'
 
 /**
+ * The `unreachable` reading, built WITH the reason the store gave — there is no
+ * zero-argument constant to reach for, the same rule `unknownKillswitch` follows,
+ * so the reason cannot be forgotten by a caller in a hurry.
+ */
+export function unreachableReading(detail: string): StoreReading {
+  return {
+    posture: 'unreachable',
+    source: `the store this dashboard is configured to read (REDIS_URL) did not answer — ${detail}. Nothing below was measured from your cabinet.`,
+    // NOT fabricated. Nothing was invented; nothing was obtained either. The
+    // flag means "these numbers are made up", and reusing it here would send
+    // every consumer that branches on it down the demo path.
+    fabricated: false,
+  }
+}
+
+/**
  * The one place the posture is decided.
  *
  * Order matters and is the ruling: the explicit opt-in is checked FIRST so it
@@ -117,8 +143,8 @@ export function resolveStorePosture(env: StoreEnv): StoreReading {
 }
 
 /**
- * TRUE when this process is NOT talking to the fleet's store — demo OR
- * unconfigured.
+ * TRUE when this process is NOT talking to the fleet's store — demo,
+ * unconfigured OR unreachable.
  *
  * Deliberately covers both, and the emergency stop is why. `readKillswitch`
  * takes `contacted: true` as its licence to report a MEASURED "clear"; an empty
@@ -135,6 +161,9 @@ export function isNotLiveStore(r: StoreReading): boolean {
 export function storeBannerTitle(r: StoreReading): string | null {
   if (r.posture === 'live') return null
   if (r.posture === 'demo') return 'DEMO DATA — this is not your cabinet'
+  if (r.posture === 'unreachable') {
+    return 'STORE UNREACHABLE — nothing here is a measurement'
+  }
   return 'NO STORE CONFIGURED — nothing here is a measurement'
 }
 
@@ -152,6 +181,9 @@ export function storeBannerHint(r: StoreReading): string | null {
   if (r.posture === 'live') return null
   if (r.posture === 'demo') {
     return 'Unset MOCK_DATA / CABINET_DEMO_DATA and set REDIS_URL to see your cabinet. Demo data is refused in production.'
+  }
+  if (r.posture === 'unreachable') {
+    return 'The dashboard keeps trying; it will start measuring again on its own the moment the store answers. To check from a terminal: redis-cli -u "$REDIS_URL" ping'
   }
   return 'Set REDIS_URL to your cabinet’s store (start-dashboard.sh defaults it to redis://localhost:6379).'
 }

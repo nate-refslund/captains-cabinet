@@ -5,8 +5,20 @@ import { dockerExec } from '@/lib/docker'
 import redis from '@/lib/redis'
 import { requireDashboardAuth } from '@/lib/provisioning/guard'
 import { revalidatePath } from 'next/cache'
+import { resolveStorePosture } from '@/lib/store-posture'
 
-const IS_MOCK = process.env.MOCK_DATA === 'true' || !process.env.REDIS_URL
+/**
+ * FABRICATION, not "no store". `!REDIS_URL` used to send every function here
+ * down a branch that invented a project called "Widgets" — measured rendering
+ * in the nav header of a dashboard whose store was merely unreachable. A
+ * project identifier is not a measurement of health, money or attention, which
+ * is why it survived the last pass; it is still a name for something that does
+ * not exist, presented as this cabinet's.
+ *
+ * Only the explicit, non-production demo opt-in fabricates now. Everything else
+ * reads the real sources and renders honest absence when they answer nothing.
+ */
+const FABRICATED = resolveStorePosture(process.env).fabricated
 
 export interface ProjectInfo {
   slug: string
@@ -19,8 +31,8 @@ export async function switchProject(slug: string): Promise<{ success: boolean; e
     return { success: false, error: 'Unauthorized' }
   }
   try {
-    if (IS_MOCK) {
-      console.log(`[mock] Would switch to project: ${slug}`)
+    if (FABRICATED) {
+      console.log(`[demo] Would switch to project: ${slug}`)
       return { success: true }
     }
     const safeSlug = slug.replace(/[^a-z0-9_-]/g, '')
@@ -38,24 +50,32 @@ export async function switchProject(slug: string): Promise<{ success: boolean; e
 
 export async function getActiveProject(): Promise<string> {
   if (!(await requireDashboardAuth())) return ''
-  if (IS_MOCK) {
+  if (FABRICATED) {
     return 'widgets'
   }
   try {
     const redisValue = await redis.get('cabinet:active-project')
     if (redisValue) return redisValue
-    const { stdout } = await dockerExec(
-      `cat ${cabinetPath('instance/config/active-project.txt')} 2>/dev/null || echo widgets`
-    )
-    return stdout.trim() || 'widgets'
   } catch {
-    return 'widgets'
+    // The store did not answer. The file below is an independent source, so
+    // fall through to it rather than giving up — but never to a made-up name.
+  }
+  try {
+    const { stdout } = await dockerExec(
+      `cat ${cabinetPath('instance/config/active-project.txt')} 2>/dev/null`
+    )
+    // `|| echo widgets` used to live in that shell command, so a box with no
+    // active-project file reported a project it does not have. An empty string
+    // is the honest answer; the nav renders no project rather than a fiction.
+    return stdout.trim()
+  } catch {
+    return ''
   }
 }
 
 export async function getProjects(): Promise<ProjectInfo[]> {
   if (!(await requireDashboardAuth())) return []
-  if (IS_MOCK) {
+  if (FABRICATED) {
     return [
       { slug: 'widgets', name: 'Widgets', active: true },
       { slug: 'demo-project', name: 'Demo Project', active: false },
@@ -86,12 +106,19 @@ export async function getProjects(): Promise<ProjectInfo[]> {
         }
       })
 
-    if (projects.length === 0) {
-      return [{ slug: 'widgets', name: 'Widgets', active: true }]
-    }
-
+    // EMPTY, never a placeholder project.
+    //
+    // These two fallbacks are where "Widgets" ACTUALLY came from on a real box:
+    // not the demo branch, but the real path's own catch. A cabinet whose
+    // project listing failed, or which has no projects yet, rendered
+    // "Captain's Cabinet / Widgets" in the nav header — a name for something
+    // that does not exist, presented as this Captain's. Measured in the built
+    // app while fixing the store-unreachable hang, which is how it was found.
+    //
+    // The nav renders the project chip only when the list is non-empty, so an
+    // empty list is an honest blank rather than a broken layout.
     return projects
   } catch {
-    return [{ slug: 'widgets', name: 'Widgets', active: true }]
+    return []
   }
 }

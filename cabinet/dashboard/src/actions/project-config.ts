@@ -4,8 +4,9 @@ import { cabinetPath } from '@/lib/cabinet-root'
 import { dockerExec } from '@/lib/docker'
 import { requireDashboardAuth } from '@/lib/provisioning/guard'
 import { revalidatePath } from 'next/cache'
+import { resolveStorePosture } from '@/lib/store-posture'
 
-const IS_MOCK = process.env.MOCK_DATA === 'true' || !process.env.REDIS_URL
+const FABRICATED = resolveStorePosture(process.env).fabricated
 
 const ASSEMBLE_SCRIPT = cabinetPath('cabinet/scripts/assemble-config.sh')
 const PROJECTS_DIR = cabinetPath('instance/config/projects')
@@ -17,14 +18,18 @@ const ALLOWED_SECTIONS = ['product', 'notion', 'linear', 'neon', 'telegram']
  * Resolve the active project slug so we know which YAML to edit.
  */
 async function getActiveSlug(): Promise<string> {
-  if (IS_MOCK) return 'widgets'
+  if (FABRICATED) return 'widgets'
   try {
     const { stdout } = await dockerExec(
-      `cat ${cabinetPath('instance/config/active-project.txt')} 2>/dev/null || echo widgets`
+      `cat ${cabinetPath('instance/config/active-project.txt')} 2>/dev/null`
     )
-    return stdout.trim() || 'widgets'
+    // EMPTY, never 'widgets'. The invented fallback did not just mislabel the
+    // page: this slug is interpolated into `${PROJECTS_DIR}/${slug}.yml`, so a
+    // box with no active project had its config edits written into a file named
+    // after a project it does not have. The caller refuses instead.
+    return stdout.trim()
   } catch {
-    return 'widgets'
+    return ''
   }
 }
 
@@ -53,10 +58,19 @@ export async function updateProjectConfig(
     // Sanitise value for shell interpolation
     const safeValue = value.replace(/'/g, "'\\''")
     const slug = await getActiveSlug()
+    if (!slug) {
+      // Refusing beats writing. With no resolvable active project the old code
+      // built `${PROJECTS_DIR}/.yml` and edited that.
+      return {
+        success: false,
+        error:
+          'no active project could be resolved on this box, so there is no config file to edit',
+      }
+    }
     const projectFile = `${PROJECTS_DIR}/${slug}.yml`
 
-    if (IS_MOCK) {
-      console.log(`[mock] Would update ${section}.${path} = ${value} in ${projectFile}`)
+    if (FABRICATED) {
+      console.log(`[demo] Would update ${section}.${path} = ${value} in ${projectFile}`)
       revalidatePath('/project')
       return { success: true }
     }

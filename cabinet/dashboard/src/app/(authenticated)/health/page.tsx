@@ -65,7 +65,25 @@ function formatRelative(isoTs: string | null, now: number): string {
   return `${diffDay}d ago`
 }
 
+/**
+ * A store that did not answer returns NO officers, not officers with no health.
+ *
+ * There are no error boundaries anywhere in this app, so an uncaught throw in a
+ * server component is a blank 500 rather than a disclosure. The honest render is
+ * an empty roster under the store-posture banner, which says in plain words that
+ * nothing below was measured — the same shape the unconfigured posture produces.
+ * Inventing rows here (one per officer, all "unknown") would be a roster nobody
+ * read, which is the defect this class keeps producing one level down.
+ */
 async function getHealthData(): Promise<OfficerHealth[]> {
+  try {
+    return await readHealthData()
+  } catch {
+    return []
+  }
+}
+
+async function readHealthData(): Promise<OfficerHealth[]> {
   // Discover officers dynamically from expected keys
   const officerKeys = await redis.keys('cabinet:officer:expected:*')
   const roles = officerKeys

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isNoAuthPosture } from '@/lib/auth-posture'
 
 /**
  * Constant-time comparison of two hex strings. The middleware runs in the Edge
@@ -39,10 +40,15 @@ async function verify(
 }
 
 export async function middleware(request: NextRequest) {
-  // Skip auth in mock/dev mode when no password is configured. MOCK_DATA is a
-  // dev/demo affordance, honoured ONLY outside production so a single env var
-  // can never re-open a production deploy (mirrors guard.ts isNoAuthPosture).
-  if ((process.env.MOCK_DATA === 'true' && process.env.NODE_ENV !== 'production') || (!process.env.DASHBOARD_PASSWORD && process.env.NODE_ENV === 'development')) {
+  // The no-auth posture, decided ONCE in lib/auth-posture.ts and shared with
+  // guard.ts — these two used to carry hand-copied twins of the same predicate,
+  // each with a comment saying it must match the other.
+  //
+  // `MOCK_DATA=true` no longer reaches here. It meant "invent the data" AND "no
+  // login", and one name for two unrelated powers is how a flag somebody sets to
+  // look at a chart ends up removing the door. The explicit opt-in is
+  // DASHBOARD_NO_AUTH. Neither opening can affect a production deploy.
+  if (isNoAuthPosture(process.env)) {
     return NextResponse.next()
   }
 

@@ -1,8 +1,15 @@
 import {
   isNotLiveStore,
   resolveStorePosture,
+  unreachableReading,
   type StoreReading,
 } from './store-posture'
+import {
+  guardCommands,
+  LIVE_CLIENT_OPTIONS,
+  StoreBreaker,
+  StoreUnreachableError,
+} from './store-reachability'
 
 /**
  * What produced everything this module hands out. See `lib/store-posture.ts`
@@ -121,6 +128,10 @@ const mockRedis = {
   },
   hgetall: async (key: string): Promise<Record<string, string> | null> =>
     mockHashStore[key] || null,
+  // The reachability probe (`currentStoreReading`) issues this. It never runs
+  // against the in-process stores — they return early — but the shape has to
+  // exist or the default export's type loses the method the live client needs.
+  ping: async (): Promise<string> => 'PONG',
 }
 
 /**
@@ -152,7 +163,54 @@ const unconfiguredRedis = {
     return Object.keys(emptyStore).filter((k) => k.startsWith(prefix))
   },
   hgetall: async (_key: string): Promise<Record<string, string> | null> => null,
+  ping: async (): Promise<string> => 'PONG',
 }
+
+/**
+ * Every command the dashboard issues on the default export.
+ *
+ * An explicit list rather than a Proxy: a Proxy over an ioredis client has to
+ * guess which properties are commands and which are internals it must not
+ * rebind, and a guess that is wrong in the permissive direction leaves an
+ * UNGUARDED path — which is the hang, back again, on whichever call nobody
+ * listed. `xrevrange` is here because `api/world/stream/route.ts` casts past the
+ * declared type to reach it; a command that is reachable is a command that can
+ * hang.
+ */
+const GUARDED_COMMANDS = [
+  'get',
+  'set',
+  'del',
+  'keys',
+  'hgetall',
+  'xrevrange',
+  'ping',
+] as const
+
+/**
+ * The live store's reachability, for the life of this process.
+ *
+ * Module-scoped on purpose: the whole point is that ONE failed call spares the
+ * next thirty from paying their own timeout, and a per-request breaker cannot do
+ * that. It closes itself the moment any call succeeds.
+ */
+const liveBreaker = new StoreBreaker()
+
+/**
+ * The bounds the LIVE client is actually carrying, or null when there is no live
+ * client. Read off the constructed object, not off the constant.
+ *
+ * This exists because the first version of the fence was a FALSE GREEN, caught
+ * by mutation rather than by review: reverting `new Redis(url, LIVE_CLIENT_OPTIONS)`
+ * back to `new Redis(url)` — the exact original defect — left the end-to-end arm
+ * PASSING, because `guardCommands`' own deadline caught the hang either way. The
+ * arm named "the options" was measuring the wrapper. Two independent controls
+ * cannot be tested through one of them; this is the door to the other.
+ */
+export function liveClientBounds(): Record<string, unknown> | null {
+  return liveBounds
+}
+let liveBounds: Record<string, unknown> | null = null
 
 let redis: typeof mockRedis
 
@@ -168,8 +226,27 @@ if (IS_FABRICATED) {
   redis = unconfiguredRedis
 } else {
   const Redis = require('ioredis')
-  const realRedis = new Redis(process.env.REDIS_URL)
-  redis = realRedis as typeof mockRedis
+  // The options are the fix for the SET-but-unreachable hang; the reasons and
+  // the measurements behind each number are in `lib/store-reachability.ts`.
+  // Unbounded, two of the three unreachable shapes never settled at all.
+  const realRedis = new Redis(process.env.REDIS_URL, LIVE_CLIENT_OPTIONS)
+  const o = realRedis.options as Record<string, unknown>
+  liveBounds = {
+    connectTimeout: o.connectTimeout,
+    commandTimeout: o.commandTimeout,
+    maxRetriesPerRequest: o.maxRetriesPerRequest,
+    enableOfflineQueue: o.enableOfflineQueue,
+  }
+  // ioredis prints "[ioredis] Unhandled error event" on every reconnect attempt
+  // when nothing is listening — once per attempt, forever, for a dead store.
+  // The command promises carry the error we act on; this only stops the log
+  // flood from burying whatever else the server is saying.
+  realRedis.on('error', () => {})
+  redis = guardCommands(
+    realRedis,
+    GUARDED_COMMANDS as unknown as readonly (keyof typeof realRedis & string)[],
+    liveBreaker
+  ) as typeof mockRedis
 }
 
 /**
@@ -189,6 +266,37 @@ if (IS_FABRICATED) {
  * `contacted`.
  */
 export const isMockRedis = isNotLiveStore(storeReading)
+
+/**
+ * The posture AS OF NOW — the configured one, unless the store has stopped
+ * answering.
+ *
+ * `storeReading` is decided from the environment at import time and cannot know
+ * whether the host it names is alive. This asks. On a configured store it costs
+ * one `PING` (measured p50 0.057ms, p99 0.122ms against the cabinet's own
+ * store); on a dead one it costs one timeout, and the breaker makes every later
+ * call in the next few seconds free.
+ *
+ * It is a PROBE rather than a read of whatever the page happened to do first,
+ * because a banner whose accuracy depends on some other component having run
+ * before it is a sensor wired to render order. `/display` and the authenticated
+ * layout both mount the banner from this.
+ */
+export async function currentStoreReading(): Promise<StoreReading> {
+  if (storeReading.posture !== 'live') return storeReading
+  try {
+    await redis.ping()
+    return storeReading
+  } catch (err) {
+    return unreachableReading(
+      err instanceof StoreUnreachableError
+        ? err.reason
+        : err instanceof Error
+          ? err.message
+          : 'unknown error'
+    )
+  }
+}
 
 export default redis
 
@@ -275,14 +383,56 @@ export function sumDailyCost(
   return { total, officers: officerCosts, unmeasuredReason: null }
 }
 
+/**
+ * Plain words for a store that did not answer — deliberately DIFFERENT from
+ * "no cost record was written for this date".
+ *
+ * The two are not the same claim and the difference is the whole point of this
+ * change: one says the cabinet spent nothing worth recording, the other says
+ * nobody asked it. Reusing the absence sentence for an unreachable store would
+ * put a false statement in the slot built to hold the true one.
+ */
+function storeFailureReason(err: unknown): string {
+  if (err instanceof StoreUnreachableError) {
+    return `this figure was never read: ${err.reason}`
+  }
+  return `this figure was never read: the store failed (${
+    err instanceof Error ? err.message : 'unknown error'
+  })`
+}
+
+/** N days of "nobody asked", each carrying the same reason. */
+function unreadCostHistory(days: number, reason: string): DailyCostEntry[] {
+  const entries: DailyCostEntry[] = []
+  for (let i = 0; i < days; i++) {
+    const d = new Date()
+    d.setDate(d.getDate() - i)
+    entries.push({
+      date: d.toISOString().split('T')[0],
+      total: null,
+      officers: {},
+      unmeasuredReason: reason,
+    })
+  }
+  return entries
+}
+
 export async function getCostHistory(days: number): Promise<DailyCostEntry[]> {
   // FW-016: read cabinet:cost:tokens:daily:<date> HSET; sum *_cost_micro
   // per officer and convert microdollars → cents (1 cent = 10000 micro).
   // Legacy cabinet:cost:daily:* and cabinet:cost:officer:*:* keys are gone.
-  const officerKeys = await redis.keys('cabinet:officer:expected:*')
-  const officers = officerKeys
-    .map(k => k.replace('cabinet:officer:expected:', ''))
-    .filter(k => !k.includes(':'))
+  let officers: string[]
+  try {
+    const officerKeys = await redis.keys('cabinet:officer:expected:*')
+    officers = officerKeys
+      .map(k => k.replace('cabinet:officer:expected:', ''))
+      .filter(k => !k.includes(':'))
+  } catch (err) {
+    // Losing the roster loses the whole window: without officers there is
+    // nothing to sum, and returning an empty history would render 30 days of
+    // silence as 30 days of nothing spent.
+    return unreadCostHistory(days, storeFailureReason(err))
+  }
   if (officers.length === 0) officers.push('cos', 'cto', 'cpo', 'cro', 'coo')
 
   const entries: DailyCostEntry[] = []
@@ -292,8 +442,17 @@ export async function getCostHistory(days: number): Promise<DailyCostEntry[]> {
     d.setDate(d.getDate() - i)
     const dateStr = d.toISOString().split('T')[0]
 
-    const hash = await redis.hgetall(`cabinet:cost:tokens:daily:${dateStr}`)
-    entries.push({ date: dateStr, ...sumDailyCost(hash, officers) })
+    try {
+      const hash = await redis.hgetall(`cabinet:cost:tokens:daily:${dateStr}`)
+      entries.push({ date: dateStr, ...sumDailyCost(hash, officers) })
+    } catch (err) {
+      entries.push({
+        date: dateStr,
+        total: null,
+        officers: {},
+        unmeasuredReason: storeFailureReason(err),
+      })
+    }
   }
 
   return entries
@@ -312,11 +471,31 @@ export interface TokenCostEntry {
   totalCostMicro: number | null
 }
 
+/** N days of "nobody asked", in the token shape. `null` total, empty officers. */
+function unreadTokenHistory(days: number): TokenCostEntry[] {
+  const entries: TokenCostEntry[] = []
+  for (let i = 0; i < days; i++) {
+    const d = new Date()
+    d.setDate(d.getDate() - i)
+    entries.push({
+      date: d.toISOString().split('T')[0],
+      officers: {},
+      totalCostMicro: null,
+    })
+  }
+  return entries
+}
+
 export async function getTokenCostHistory(days: number): Promise<TokenCostEntry[]> {
-  const officerKeys = await redis.keys('cabinet:officer:expected:*')
-  const officers = officerKeys
-    .map(k => k.replace('cabinet:officer:expected:', ''))
-    .filter(k => !k.includes(':'))
+  let officers: string[]
+  try {
+    const officerKeys = await redis.keys('cabinet:officer:expected:*')
+    officers = officerKeys
+      .map(k => k.replace('cabinet:officer:expected:', ''))
+      .filter(k => !k.includes(':'))
+  } catch {
+    return unreadTokenHistory(days)
+  }
   if (officers.length === 0) officers.push('cos', 'cto', 'cpo', 'cro', 'coo')
 
   const entries: TokenCostEntry[] = []
@@ -326,7 +505,15 @@ export async function getTokenCostHistory(days: number): Promise<TokenCostEntry[
     d.setDate(d.getDate() - i)
     const dateStr = d.toISOString().split('T')[0]
 
-    const hash = await redis.hgetall(`cabinet:cost:tokens:daily:${dateStr}`)
+    let hash: Record<string, string> | null
+    try {
+      hash = await redis.hgetall(`cabinet:cost:tokens:daily:${dateStr}`)
+    } catch {
+      // Same rule as `getCostHistory`: a day nobody could ask about is null,
+      // never a zeroed roster that plots as a real bar of height zero.
+      entries.push({ date: dateStr, officers: {}, totalCostMicro: null })
+      continue
+    }
     if (!hash || Object.keys(hash).length === 0) {
       entries.push({ date: dateStr, officers: {}, totalCostMicro: null })
       continue
@@ -366,13 +553,28 @@ export async function getTokenCostHistory(days: number): Promise<TokenCostEntry[
 }
 
 export async function getScheduleLastRuns(): Promise<Record<string, string>> {
-  const keys = await redis.keys('cabinet:schedule:last-run:*')
+  let keys: string[]
+  try {
+    keys = await redis.keys('cabinet:schedule:last-run:*')
+  } catch {
+    // An empty map renders every job's last run as absent, which the cron table
+    // already draws honestly; the page-level banner says why. Letting the throw
+    // out would 500 the whole page — there are no error boundaries in this app,
+    // so an uncaught throw in a server component is a blank screen, not a
+    // disclosure.
+    return {}
+  }
   const result: Record<string, string> = {}
   for (const key of keys) {
-    const val = await redis.get(key)
-    if (val) {
-      const shortKey = key.replace('cabinet:schedule:last-run:', '')
-      result[shortKey] = val
+    try {
+      const val = await redis.get(key)
+      if (val) {
+        const shortKey = key.replace('cabinet:schedule:last-run:', '')
+        result[shortKey] = val
+      }
+    } catch {
+      // One unreadable key must not lose the ones that DID answer.
+      continue
     }
   }
   return result

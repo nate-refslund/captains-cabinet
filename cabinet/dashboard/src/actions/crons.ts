@@ -5,15 +5,32 @@ import { promisify } from 'util'
 import { revalidatePath } from 'next/cache'
 import redis from '@/lib/redis'
 import { requireDashboardAuth } from '@/lib/provisioning/guard'
+import { resolveStorePosture } from '@/lib/store-posture'
 
 const exec = promisify(execCb)
 const prefix = process.env.CABINET_PREFIX || 'cabinet'
 const watchdog = `${prefix}-watchdog`
-const IS_MOCK = process.env.MOCK_DATA === 'true' || !process.env.REDIS_URL
+/**
+ * FABRICATION, not "no store" — and here the old trigger was not merely
+ * mislabelled, it was a FALSE SUCCESS CLAIM about a write.
+ *
+ * `!REDIS_URL` sent every mutation below down a branch that returned
+ * `{ success: true }` without touching the watchdog's crontab. So on any
+ * deployment with no store configured — which is a normal, supported posture
+ * since the no-store fix — the Captain edited a schedule, was told it worked,
+ * and nothing changed. That is the shape PR #330 closed for the emergency stop
+ * ("returned success from having ISSUED a command it never confirmed"),
+ * reproduced on the scheduler.
+ *
+ * Crons live in the watchdog container and have nothing to do with the store at
+ * all; only the explicit demo opt-in short-circuits them now. Everything else
+ * runs the real command and reports the real error.
+ */
+const FABRICATED = resolveStorePosture(process.env).fabricated
 
 async function watchdogExec(command: string): Promise<string> {
-  if (IS_MOCK) {
-    console.log(`[mock watchdog] Would exec: ${command}`)
+  if (FABRICATED) {
+    console.log(`[demo watchdog] Would exec: ${command}`)
     return ''
   }
   const { stdout } = await exec(
@@ -43,7 +60,7 @@ export async function updateCronSchedule(
     return { error: 'Cron expression must have exactly 5 fields (minute hour day month weekday)' }
   }
 
-  if (IS_MOCK) {
+  if (FABRICATED) {
     revalidatePath('/crons')
     return { success: true }
   }
@@ -83,7 +100,7 @@ export async function addCronJob(
     return { error: 'Cron expression must have exactly 5 fields' }
   }
 
-  if (IS_MOCK) {
+  if (FABRICATED) {
     revalidatePath('/crons')
     return { success: true }
   }
@@ -118,7 +135,7 @@ export async function deleteCronJob(
     return { error: 'Schedule and command are required to identify the job' }
   }
 
-  if (IS_MOCK) {
+  if (FABRICATED) {
     revalidatePath('/crons')
     return { success: true }
   }

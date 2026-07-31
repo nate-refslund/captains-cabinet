@@ -18,6 +18,7 @@ import path from 'node:path'
 import { query, getDbPool } from '@/lib/db'
 import redis from '@/lib/redis'
 import { cabinetRoot } from '@/lib/cabinet-root'
+import { REQUEST_CLIENT_OPTIONS } from '@/lib/store-reachability'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -155,7 +156,7 @@ async function broadcastTasksUpdate(officerSlug: string): Promise<void> {
     const REDIS_URL = process.env.REDIS_URL
     if (!REDIS_URL) return
     const { default: Redis } = await import('ioredis')
-    const pub = new Redis(REDIS_URL)
+    const pub = new Redis(REDIS_URL, REQUEST_CLIENT_OPTIONS)
     await pub.publish(
       'cabinet:tasks:updated',
       JSON.stringify({ officer_slug: officerSlug, timestamp: new Date().toISOString() })
@@ -219,8 +220,13 @@ export async function getOfficerBoard(
 export async function getAllOfficerBoards(
   contextSlug: string
 ): Promise<Record<string, OfficerTasksBoard>> {
-  // Discover officers from Redis expected keys
-  const expectedKeys = await redis.keys('cabinet:officer:expected:*')
+  // Discover officers from Redis expected keys. A store that did not answer
+  // falls through to the static list below rather than 500ing the tasks page —
+  // measured: this exact call is what made `/tasks` a 500 against an
+  // unreachable store once the client started rejecting instead of hanging.
+  const expectedKeys = await redis
+    .keys('cabinet:officer:expected:*')
+    .catch(() => [] as string[])
   const officerSlugs = expectedKeys
     .map((k) => k.replace('cabinet:officer:expected:', ''))
     .filter((s) => !s.includes(':'))

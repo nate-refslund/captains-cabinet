@@ -86,7 +86,15 @@ export default async function CardCosts() {
   // store answered nothing, so "the org has spent $0.00 today" and "nobody has
   // asked the store anything" were the same card — with a GREEN 0% budget ring
   // over the top, which is an all-clear about money nobody measured.
-  const todayHash = await redis.hgetall(`cabinet:cost:tokens:daily:${today}`)
+  //
+  // A store that did not ANSWER lands in the same `null` as a store that
+  // answered "no record", and takes the same "nothing measured" branch below —
+  // deliberately, because the card's job is to not claim a figure. Which of the
+  // two it was is stated once, by the store-posture banner, rather than guessed
+  // at per card. Uncaught, this throw would 500 the whole home page.
+  const todayHash = await redis
+    .hgetall(`cabinet:cost:tokens:daily:${today}`)
+    .catch(() => null)
   let todayCostMicro: number | null = null
   if (todayHash && Object.keys(todayHash).length > 0) {
     let sum = 0
@@ -107,13 +115,24 @@ export default async function CardCosts() {
   // Sum month-to-date by iterating daily hashes
   let monthCostMicro = 0
   let monthMalformed = false
+  // A day the store could not ANSWER for. Distinct from a day with no record:
+  // the second is a real zero contribution, the first is a hole. A month total
+  // missing one of its days is a wrong number about money, and about money a
+  // wrong number is worse than none — the same rule `sumDailyCost` applies to a
+  // malformed field, extended to a day that never arrived.
+  let monthUnread = false
   const monthMeasuredDays = new Set<string>()
   const monthFetches: Promise<void>[] = []
   for (let i = 0; i < dayOfMonth; i++) {
     const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), dayOfMonth - i))
     const ds = d.toISOString().split('T')[0]
     monthFetches.push(
-      redis.hgetall(`cabinet:cost:tokens:daily:${ds}`).then((h) => {
+      // The catch is BEFORE the `.then`, so one unreachable day marks the total
+      // unread instead of rejecting the whole Promise.all and 500ing the page.
+      redis.hgetall(`cabinet:cost:tokens:daily:${ds}`).catch(() => {
+        monthUnread = true
+        return null
+      }).then((h) => {
         if (!h || Object.keys(h).length === 0) return
         for (const [key, val] of Object.entries(h)) {
           if (key.endsWith('_cost_micro')) {
@@ -134,7 +153,9 @@ export default async function CardCosts() {
   const hasBudget = monthlyBudgetUsd > 0
   const monthlyBudgetMicro = monthlyBudgetUsd * 1_000_000
   const monthTotalMicro: number | null =
-    monthMalformed || monthMeasuredDays.size === 0 ? null : monthCostMicro
+    monthMalformed || monthUnread || monthMeasuredDays.size === 0
+      ? null
+      : monthCostMicro
 
   // Daily anomaly detection (COO 32.4). An UNMEASURED day has no ratio — a
   // 0 ratio would render "on track", which is a verdict about spend nobody read.

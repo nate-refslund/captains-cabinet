@@ -56,14 +56,41 @@ describe('enforcing posture — delegates to verifySession', () => {
 })
 
 describe('no-auth posture — bypasses without consulting a session', () => {
-  it('MOCK_DATA=true → true, verifySession never called', async () => {
+  it('MOCK_DATA=true is NO LONGER a bypass — it means fabricated data, nothing else', async () => {
+    // This test asserted the opposite until 2026-07-31. One name meant "invent
+    // the data" AND "no login", so a flag somebody set to look at a chart took
+    // the door off. The data half was split first (CABINET_DEMO_DATA); this is
+    // the auth half. Severing it is the whole point of the change, so the arm
+    // that pinned the coupling is inverted rather than deleted — a deleted arm
+    // leaves nothing watching the direction it used to hold.
     vi.stubEnv('MOCK_DATA', 'true')
+    vi.stubEnv('NODE_ENV', 'test')
+    vi.stubEnv('DASHBOARD_PASSWORD', 'a-real-password')
+    mockVerify.mockResolvedValue(false)
+    expect(await requireDashboardAuth()).toBe(false)
+    expect(mockVerify).toHaveBeenCalledOnce()
+  })
+
+  it('DASHBOARD_NO_AUTH=true → true, verifySession never called', async () => {
+    vi.stubEnv('MOCK_DATA', '')
+    vi.stubEnv('DASHBOARD_NO_AUTH', 'true')
+    vi.stubEnv('NODE_ENV', 'test')
     expect(await requireDashboardAuth()).toBe(true)
     expect(mockVerify).not.toHaveBeenCalled()
   })
 
+  it('DASHBOARD_NO_AUTH=true in PRODUCTION is inert — the door stays on', async () => {
+    vi.stubEnv('DASHBOARD_NO_AUTH', 'true')
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('DASHBOARD_PASSWORD', 'a-real-password')
+    mockVerify.mockResolvedValue(false)
+    expect(await requireDashboardAuth()).toBe(false)
+    expect(mockVerify).toHaveBeenCalledOnce()
+  })
+
   it('development with no password → true, verifySession never called', async () => {
     vi.stubEnv('MOCK_DATA', '')
+    vi.stubEnv('DASHBOARD_NO_AUTH', '')
     vi.stubEnv('NODE_ENV', 'development')
     vi.stubEnv('DASHBOARD_PASSWORD', '')
     expect(await requireDashboardAuth()).toBe(true)
@@ -72,6 +99,7 @@ describe('no-auth posture — bypasses without consulting a session', () => {
 
   it('development WITH a password → enforcing again (delegates to verifySession)', async () => {
     vi.stubEnv('MOCK_DATA', '')
+    vi.stubEnv('DASHBOARD_NO_AUTH', '')
     vi.stubEnv('NODE_ENV', 'development')
     vi.stubEnv('DASHBOARD_PASSWORD', 'set')
     mockVerify.mockResolvedValue(false)
