@@ -25,6 +25,29 @@
 
 set -euo pipefail
 
+# --- Insert a line after line N, without `sed -i` ---------------------------
+# BSD `sed` takes the in-place suffix as a MANDATORY argument, and this box is
+# the only deployment there is. `sed -i "5a\\    cto: x" f` therefore read the
+# script as the suffix and the filename as the script:
+#   sed: 1: "product.yml\n": command c expects \ followed by text   exit 1
+# So every officer created here was missing his telegram entry, his voice id,
+# his model, his stability, his speed and his role-registry row — the file was
+# byte-identical afterwards, and the script logged "Added ... to product.yml".
+# `awk` + a same-directory temp + `mv` is the shape already used a few lines
+# below for naturalize_prompts; this makes all seven sites use it.
+# The text goes through ENVIRON, not `-v`: awk expands escape sequences in a
+# `-v` assignment, so a voice prompt containing a backslash would be mangled.
+insert_after_line() {  # $1 = file, $2 = line number, $3 = text to insert
+  local _f="$1" _n="$2" _tmp="$1.tmp.$$"
+  cp -p "$_f" "$_tmp" || return 1
+  if ENTRY="$3" awk -v line="$_n" 'NR==line{print; print ENVIRON["ENTRY"]; next}1' "$_f" > "$_tmp"; then
+    mv "$_tmp" "$_f"
+  else
+    rm -f "$_tmp"
+    return 1
+  fi
+}
+
 # --- Parse required arguments ---
 OFFICER="${1:?Usage: create-officer.sh <abbreviation> <title> <domain> <bot-username> <bot-token> [options]}"
 TITLE="${2:?Missing title (e.g. 'Chief Marketing Officer')}"
@@ -221,41 +244,41 @@ else
   # telegram.officers
   LAST_OFFICER_LINE=$(grep -n "^    [a-z]*:.*bot" "$CONFIG_FILE" | tail -1 | cut -d: -f1)
   if [ -n "$LAST_OFFICER_LINE" ]; then
-    sed -i "${LAST_OFFICER_LINE}a\\    ${OFFICER}: ${BOT_USERNAME}" "$CONFIG_FILE"
+    insert_after_line "$CONFIG_FILE" "$LAST_OFFICER_LINE" "    ${OFFICER}: ${BOT_USERNAME}"
   fi
 
   # voice.naturalize_prompts
   LAST_PROMPT_LINE=$(awk '/^voice:/{v=1} v && /^  naturalize_prompts:/{found=1} found && /^    [a-z]+:/{last=NR} found && /^  [a-z]/ && !/^  naturalize_prompts:/{exit} END{print last}' "$CONFIG_FILE")
   if [ -n "$LAST_PROMPT_LINE" ]; then
     ESCAPED_PROMPT=$(echo "$VOICE_PROMPT" | sed 's/"/\\"/g')
-    awk -v line="$LAST_PROMPT_LINE" -v entry="    ${OFFICER}: \"${ESCAPED_PROMPT}\"" 'NR==line{print; print entry; next}1' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+    insert_after_line "$CONFIG_FILE" "$LAST_PROMPT_LINE" "    ${OFFICER}: \"${ESCAPED_PROMPT}\""
   fi
 
   # voice.models
   LAST_MODEL_LINE=$(awk '/^voice:/{v=1} v && /^  models:/{found=1} found && /^    [a-z]+:/{last=NR} found && /^  [a-z]/ && !/^  models:/{exit} END{print last}' "$CONFIG_FILE")
   if [ -n "$LAST_MODEL_LINE" ]; then
-    sed -i "${LAST_MODEL_LINE}a\\    ${OFFICER}: eleven_v3" "$CONFIG_FILE"
+    insert_after_line "$CONFIG_FILE" "$LAST_MODEL_LINE" "    ${OFFICER}: eleven_v3"
   fi
 
   # voice.stability
   LAST_STAB_LINE=$(awk '/^voice:/{v=1} v && /^  stability:/{found=1} found && /^    [a-z]+:/{last=NR} found && /^  [a-z]/ && !/^  stability:/{exit} END{print last}' "$CONFIG_FILE")
   if [ -n "$LAST_STAB_LINE" ]; then
-    sed -i "${LAST_STAB_LINE}a\\    ${OFFICER}: ${VOICE_STABILITY}" "$CONFIG_FILE"
+    insert_after_line "$CONFIG_FILE" "$LAST_STAB_LINE" "    ${OFFICER}: ${VOICE_STABILITY}"
   fi
 
   # voice.speeds
   LAST_SPEED_LINE=$(awk '/^voice:/{v=1} v && /^  speeds:/{found=1} found && /^    [a-z]+:/{last=NR} found && /^  [a-z]/ && !/^  speeds:/{exit} END{print last}' "$CONFIG_FILE")
   if [ -n "$LAST_SPEED_LINE" ]; then
-    sed -i "${LAST_SPEED_LINE}a\\    ${OFFICER}: ${VOICE_SPEED}" "$CONFIG_FILE"
+    insert_after_line "$CONFIG_FILE" "$LAST_SPEED_LINE" "    ${OFFICER}: ${VOICE_SPEED}"
   fi
 
   # voice.voices
   LAST_VOICE_LINE=$(awk '/^voice:/{v=1} v && /^  voices:/{found=1} found && /^    [a-z]+:/{last=NR} found && /^  [a-z]/ && !/^  voices:/ && !/^    #/{exit} END{print last}' "$CONFIG_FILE")
   if [ -n "$LAST_VOICE_LINE" ]; then
     if [ -n "$VOICE_ID" ]; then
-      sed -i "${LAST_VOICE_LINE}a\\    ${OFFICER}: \"${VOICE_ID}\"" "$CONFIG_FILE"
+      insert_after_line "$CONFIG_FILE" "$LAST_VOICE_LINE" "    ${OFFICER}: \"${VOICE_ID}\""
     else
-      sed -i "${LAST_VOICE_LINE}a\\    ${OFFICER}: \"\"                        # Set voice_id from ElevenLabs" "$CONFIG_FILE"
+      insert_after_line "$CONFIG_FILE" "$LAST_VOICE_LINE" "    ${OFFICER}: \"\"                        # Set voice_id from ElevenLabs"
     fi
   fi
 
@@ -269,7 +292,7 @@ else
   log "Adding $OFFICER to instance/config/role-registry.md..."
   LAST_ROW=$(grep -n "^|.*Active" "$REGISTRY_FILE" | tail -1 | cut -d: -f1)
   if [ -n "$LAST_ROW" ]; then
-    sed -i "${LAST_ROW}a\\| ${TITLE} (${OFFICER_UPPER}) | ${TITLE} | See instance/config/product.yml | ${DOMAIN} | Active |" "$REGISTRY_FILE"
+    insert_after_line "$REGISTRY_FILE" "$LAST_ROW" "| ${TITLE} (${OFFICER_UPPER}) | ${TITLE} | See instance/config/product.yml | ${DOMAIN} | Active |"
   fi
   log "Added to instance/config/role-registry.md"
 fi

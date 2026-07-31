@@ -292,6 +292,37 @@ def _source_row(charter: dict, manifest: dict, now: str) -> dict:
     return row
 
 
+#: The journey's clock artifact, read here for the same reason the dividend is:
+#: this module already owns the ONE manifest-hash binding check, and a second
+#: reader that forgot it would hand a briefing dates from a superseded window.
+CLOCKS_NAME = "window-clocks.json"
+
+
+def load_window_clocks(root: Path | None = None) -> dict:
+    """The ratified window's clock rows, or ``{}``.
+
+    BOUND OR NOTHING. The rows are returned only when the charter is
+    ``ratified``, the manifest on disk was bound to THAT charter hash, and the
+    clocks were derived from THAT manifest — the identical three-part gate the
+    first dividend passes twenty lines up. A window that was superseded leaves
+    dates on disk that describe files the operator never approved reading in
+    this form, and a briefing quoting them would be citing a scope that no
+    longer exists.
+    """
+    base = Path(root) if root else cabinet_root()
+    jdir = base / JOURNEY_DIR_REL
+    charter = _read_json(jdir / "orientation-charter.json")
+    manifest = _read_json(jdir / "first-window-manifest.json")
+    clocks = _read_json(jdir / CLOCKS_NAME)
+    if str(charter.get("status") or "") != "ratified":
+        return {}
+    if not charter.get("hash") or manifest.get("charter_hash") != charter.get("hash"):
+        return {}
+    if not clocks or clocks.get("manifest_hash") != manifest.get("manifest_hash"):
+        return {}
+    return clocks
+
+
 def derive_estate(root: Path | None = None, *, answers: dict | None = None,
                   run_id: str | None = None, now: str | None = None) -> dict:
     """Structure the ratified First Window into the derived-estate document.

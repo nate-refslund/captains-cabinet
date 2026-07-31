@@ -4,7 +4,9 @@
 # Usage: bash cost-delta.sh [baseline-date] [compare-date]
 # Default: compares yesterday vs today.
 
-BASELINE="${1:-$(date -u -d '1 day ago' +%Y-%m-%d)}"
+# BSD leg: macOS `date` has no -d, so the GNU-only form produced an EMPTY
+# baseline here and every comparison silently ran against "".
+BASELINE="${1:-$(date -u -d '1 day ago' +%Y-%m-%d 2>/dev/null || date -u -v-1d +%Y-%m-%d)}"
 COMPARE="${2:-$(date -u +%Y-%m-%d)}"
 
 REDIS_HOST="${REDIS_HOST:-redis}"

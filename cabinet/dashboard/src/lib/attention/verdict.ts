@@ -324,7 +324,16 @@ export function spawnBridge(request: object): Promise<BridgeResult> {
         windowsHide: true,
       },
       (err, stdout) => {
-        if (err && !stdout) {
+        // THE EXIT CODE IS PART OF THE ANSWER. `if (err && !stdout)` was the
+        // whole failure branch, so a bridge that printed a well-formed
+        // `{"ok": true, "plain_result": "Approved — done."}` and THEN died —
+        // having submitted nothing through the binder wire — resolved as a
+        // success, and the route handed the Captain a completed act.
+        // Reproduced with a shim that does exactly that; the two sibling
+        // transports already read it (`lib/onboarding/bridge.ts` rejects
+        // `core_exit` on any non-zero, `lib/evidence/read.ts` refuses any exit
+        // outside {0,3,4}), so this is the house standard rather than a new one.
+        if (err) {
           resolve({ ok: false, code: 'bridge_fail', message: MESSAGES.bridge_fail })
           return
         }
@@ -340,7 +349,21 @@ export function spawnBridge(request: object): Promise<BridgeResult> {
         resolve({ ok: false, code: 'bridge_fail', message: MESSAGES.bridge_fail })
       }
     )
-    child.stdin?.end(JSON.stringify(request))
+    // A BRIDGE THAT DIED BEFORE WE FINISHED ASKING MUST NOT TAKE THE PROCESS
+    // WITH IT. Writing to the stdin of an exited child raises EPIPE on the
+    // stream, and an unhandled stream error is fatal to the Node process — so
+    // the same crash this function now REPORTS could, one line later, kill the
+    // dashboard instead. Found by the arm above on the CI runner, where the
+    // child exits fast enough to lose the race; on the slower path it never
+    // fired, which is what a platform-dependent unhandled rejection looks like.
+    // The `err` callback resolves this promise either way, so swallowing here
+    // loses nothing: the failure is already on its way to the caller.
+    child.stdin?.on('error', () => {})
+    try {
+      child.stdin?.end(JSON.stringify(request))
+    } catch {
+      /* the child is already gone; the execFile callback reports it */
+    }
   })
 }
 

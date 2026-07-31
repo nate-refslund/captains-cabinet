@@ -201,3 +201,13 @@ silently carried. Each is the same class this unit exists to remove:
 - **The headline span covers only the DATED cites.** Three cited files with one
   `content_ts` renders *"3 of your own notes (2026-07-21)"*; the other two say
   `(undated)` in the citation line, but the headline dates all three.
+  STILL OPEN after window clocks landed (2026-07-31), and the distinction is
+  the point: `(undated)` here means the file has no derivable `content_ts` —
+  no frontmatter date, no dated filename — i.e. nobody can say WHEN IT WAS
+  WRITTEN. Window clocks answer a different question, WHAT DATES IT STATES,
+  and a subject card now prints those beside its citations
+  (`DATES IN THOSE FILES:`). The two must not be merged: a note written in June
+  that mentions December is not a December note, and letting the stated date
+  date the document would poison the retrodiction fence
+  (`framework/fidelity/tests/test_window_clocks_fence.py` is the arm that
+  keeps them apart).

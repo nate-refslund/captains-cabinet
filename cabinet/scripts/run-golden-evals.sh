@@ -99,7 +99,7 @@ cleanup() {
   # rm uses $$ scope — the glob could race against a concurrent eval run
   # and delete a peer's in-flight transcript, so we only rm this run's file.
   _ET_TODAY=$(date -u +%Y-%m-%d)
-  _ET_YDAY=$(date -u -d 'yesterday' +%Y-%m-%d 2>/dev/null)
+  _ET_YDAY=$(date -u -d 'yesterday' +%Y-%m-%d 2>/dev/null || date -u -v-1d +%Y-%m-%d 2>/dev/null)
   for _ET_DT in "$_ET_TODAY" "$_ET_YDAY"; do
     [ -z "$_ET_DT" ] && continue
     redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HDEL "cabinet:cost:tokens:daily:$_ET_DT" \
@@ -540,7 +540,7 @@ if [ -f "$STOP_HOOK" ]; then
   # defend against a midnight-boundary flip between our pre-clean and
   # the hook's internal TODAY compute.
   EVAL_PRE_TODAY=$(date -u +%Y-%m-%d)
-  EVAL_PRE_YDAY=$(date -u -d 'yesterday' +%Y-%m-%d 2>/dev/null)
+  EVAL_PRE_YDAY=$(date -u -d 'yesterday' +%Y-%m-%d 2>/dev/null || date -u -v-1d +%Y-%m-%d 2>/dev/null)
   for _EV_DT in "$EVAL_PRE_TODAY" "$EVAL_PRE_YDAY"; do
     [ -z "$_EV_DT" ] && continue
     redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HDEL "cabinet:cost:tokens:daily:$_EV_DT" \

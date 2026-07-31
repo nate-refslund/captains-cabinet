@@ -1,7 +1,8 @@
 'use server'
 
 import { cabinetPath } from '@/lib/cabinet-root'
-import { dockerExec } from '@/lib/docker'
+import { assertRuntimeWritesAllowed, dockerExec } from '@/lib/docker'
+import { removeEnvKey, removeYamlKey } from '@/lib/config-write'
 import redis, { isMockRedis, storeReading } from '@/lib/redis'
 import { requireDashboardAuth } from '@/lib/provisioning/guard'
 import { revalidatePath } from 'next/cache'
@@ -135,19 +136,22 @@ export async function deleteOfficer(role: string) {
     await dockerExec(`rm -f ${cabinetPath('.claude/agents')}/${role}.md`)
     await dockerExec(`rm -f ${cabinetPath('cabinet/loop-prompts')}/${role}.txt`)
 
-    // Remove from product.yml voice sections
-    const CONFIG_PATH = cabinetPath('instance/config/product.yml')
+    // Remove from product.yml voice sections, then the telegram entry.
+    //
+    // These seven `sed -i` deletions never ran: BSD sed's in-place suffix is
+    // mandatory, so each exited 1 and left product.yml unchanged — a deleted
+    // officer kept his voice, his prompt and his Telegram routing on the only
+    // machine this is deployed to. `removeYamlKey` tolerates an ABSENT key on
+    // purpose (an officer with no voice configured has no such line, and
+    // refusing to delete him over it would be rigour with the wrong sign).
+    const configPath = cabinetPath('instance/config/product.yml')
     const sections = ['voices', 'naturalize_prompts', 'stability', 'speeds', 'models']
+    assertRuntimeWritesAllowed(`remove officer ${role} from product.yml`)
     for (const section of sections) {
-      await dockerExec(
-        `sed -i '/^voice:/,/^[a-z]/{/^  ${section}:/,/^  [a-z]/{/^    ${role}: /d}}' ${CONFIG_PATH}`
-      )
+      await removeYamlKey(configPath, ['voice', section, role])
     }
 
-    // Remove telegram officer entry
-    await dockerExec(
-      `sed -i '/^telegram:/,/^[a-z]/{/^  officers:/,/^  [a-z]/{/^    ${role}: /d}}' ${CONFIG_PATH}`
-    )
+    await removeYamlKey(configPath, ['telegram', 'officers', role])
 
     // Clean up Redis state
     await redis.del(`cabinet:officer:expected:${role}`)
@@ -155,8 +159,9 @@ export async function deleteOfficer(role: string) {
 
     // Remove bot token from .env
     const upperRole = role.toUpperCase()
-    await dockerExec(
-      `sed -i '/^TELEGRAM_${upperRole}_TOKEN=/d' ${cabinetPath('cabinet/.env')}`
+    await removeEnvKey(
+      process.env.CABINET_ENV_PATH || cabinetPath('cabinet/.env'),
+      `TELEGRAM_${upperRole}_TOKEN`
     )
 
     revalidatePath('/officers')
