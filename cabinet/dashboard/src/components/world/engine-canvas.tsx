@@ -261,7 +261,13 @@ export interface EngineCanvasProps {
   cutaway: CutawayState
   weather: WeatherState
   tick: number
-  killswitch: boolean
+  /**
+   * The emergency stop: true = engaged · false = VERIFIED not engaged ·
+   * null = nobody could read it. The wash paints on `=== true` only — a
+   * truthy test would paint nothing for null, which is correct, but the
+   * TYPE is what stops a future `?? false` upstream from re-flattening it.
+   */
+  killswitch: boolean | null
   clockHour: number | null
   /** Direction surface (grammar v4): the chart table renders only when
    * directions exist on this deployment (honest-absent otherwise). */
@@ -3037,7 +3043,11 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         seaSprite.tint = 0xffffff // ambience is the remap now — never tint
         // killswitch red wash — SCREEN-space (the storm is the whole sky),
         // dual-coded with the DOM banner
-        if (p.killswitch) weatherG.rect(0, 0, vw, vh).fill({ color: 0xcc2222, alpha: 0.14 })
+        // `=== true`: red is reserved for a stop the org has actually SEEN.
+        // An unknown reading gets no wash here — it breaks through as the
+        // amber lever pin + banner in the DOM layer, never as a claim that
+        // the fleet is halted.
+        if (p.killswitch === true) weatherG.rect(0, 0, vw, vh).fill({ color: 0xcc2222, alpha: 0.14 })
       }
 
       function draw(p: EngineCanvasProps) {

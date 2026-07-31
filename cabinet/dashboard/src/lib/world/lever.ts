@@ -55,10 +55,14 @@ export interface LeverTransition {
   fire: boolean
 }
 
-/** The exact honest-degradation fallback the dialog must print on failure. */
-export function fallbackCommand(killswitchActive: boolean): string {
-  return `cabinet/scripts/kill-switch.sh ${killswitchActive ? 'deactivate' : 'activate'}`
-}
+/* `fallbackCommand(killswitchActive: boolean)` lived here until 2026-07-31. It
+ * DERIVED the CLI verb from the rendered state, which is fine for a boolean and
+ * wrong for a three-state reading: with the stop unreadable there is no state to
+ * derive from, and printing "run: kill-switch.sh activate" would be the same
+ * guess in the fallback text. Its replacement takes the INTENT the surface
+ * actually chose — `fallbackCommandFor(intent)` in lib/world/killswitch.ts.
+ * Deleted rather than left dead: ratchet 11 is right that a dead export is how
+ * a superseded decision gets re-adopted. */
 
 export function leverReduce(
   state: LeverState,

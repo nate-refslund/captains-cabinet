@@ -108,6 +108,18 @@ if (IS_MOCK) {
   redis = realRedis as typeof mockRedis
 }
 
+/**
+ * TRUE when this process is serving FABRICATED data from `mockStore`, not the
+ * fleet's store. Exported (2026-07-31) because the killswitch readers must be
+ * able to say so: with `REDIS_URL` unset, `get('cabinet:killswitch')` returns
+ * the seeded `''`, which `=== 'active'` turned into a confident "the emergency
+ * stop is not engaged" — an invented reading about the org's emergency stop,
+ * from a store that does not exist. Surfaces that report a SAFETY state must
+ * render this as unknown; the wider "mock mode discloses nothing anywhere"
+ * problem is bigger than this file and is filed, not fixed here.
+ */
+export const isMockRedis = IS_MOCK
+
 export default redis
 
 export interface DailyCostEntry {

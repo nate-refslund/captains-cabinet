@@ -36,6 +36,11 @@ import { berthLanes } from '@/lib/world/world-geo'
 import { readDirections, readPortCalls } from '@/lib/world/directions'
 import { laneCourseState } from '@/lib/world/course'
 import type { WeatherSignals } from '@/lib/world/weather'
+import {
+  readingFromKey,
+  unknownKillswitch,
+  type KillswitchReading,
+} from '@/lib/world/killswitch'
 import { loadLifeGrammar } from '@/lib/world/life/life-grammar'
 import type { WorkSite } from '@/lib/world/life/sites'
 
@@ -204,7 +209,17 @@ export async function GET(_req: NextRequest) {
   })
 
   // ── live signals (best-effort; every failure degrades to honest null) ────
-  let killswitch = false
+  // The emergency stop degrades to null like everything else here. It used to
+  // be the ONE signal in this block that degraded to a confident value: `let
+  // killswitch = false` survived the catch below, so an unreachable store
+  // produced "the stop is not engaged" while every neighbour honestly said "I
+  // do not know". `Boolean(await get(...))` was also a SECOND truth function —
+  // it called any non-empty string true (so a NOAUTH error text read as armed)
+  // while layout.tsx's `=== 'active'` called the same string false. One reader,
+  // one closed enum, in lib/world/killswitch.ts.
+  let killswitch: KillswitchReading = unknownKillswitch(
+    'the world could not reach the store that holds the emergency stop'
+  )
   let doctorAgeSecs: number | null = null
   let doctorGreen: boolean | null = null
   let embedQueueLen: number | null = null
@@ -216,7 +231,7 @@ export async function GET(_req: NextRequest) {
       maxRetriesPerRequest: 1,
       connectTimeout: 900,
     }) as unknown as RedisLike
-    killswitch = Boolean(await redis.get('cabinet:killswitch'))
+    killswitch = readingFromKey(await redis.get('cabinet:killswitch'), true)
     const hb = await redis.get('cabinet:doctor:heartbeat')
     if (hb) {
       // "<iso8601> GREEN|DEAD:<n>" (cabinet-doctor.sh contract)
@@ -242,7 +257,8 @@ export async function GET(_req: NextRequest) {
   }
 
   const weather: WeatherSignals = {
-    killswitch,
+    killswitch: killswitch.engaged,
+    killswitchUnknownReason: killswitch.unknownReason,
     doctorAgeSecs,
     doctorGreen,
     // No probe feed is wired to weather yet — null is the honest value

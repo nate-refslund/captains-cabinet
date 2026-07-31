@@ -35,7 +35,19 @@ export interface OfficerPresence {
 export interface PresenceSnapshot {
   v: number
   ts: string
+  /**
+   * LEGACY emergency-stop bit: `verdict != CLEAR`. Fail-closed for behaviour
+   * but lossy for reporting — it folds INDETERMINATE into the same `true` as a
+   * genuinely armed stop. Kept for back-compat (the Swift companion parses it);
+   * `killswitch_verdict` is the field to read.
+   */
   killswitch: boolean
+  /**
+   * The verdict from the ONE emergency-stop reader
+   * (`cabinet/scripts/hooks/killswitch-read.sh`), written verbatim since
+   * 2026-07-31. Absent on snapshots written by an older daemon.
+   */
+  killswitch_verdict?: 'CLEAR' | 'ACTIVE' | 'INDETERMINATE'
   iid_high: number
   officers: Record<string, OfficerPresence>
 }
@@ -64,7 +76,18 @@ export interface SnapshotClock {
 /** Snapshot event payload sent on SSE connect. */
 export interface WorldSnapshot {
   connectedAt: string
-  killswitch: boolean
+  /**
+   * The emergency stop: true = engaged · false = VERIFIED not engaged ·
+   * NULL = nobody obtained a reading.
+   *
+   * It used to be a plain boolean whose every failure path produced `false`, so
+   * an unreadable stop drew the lever UP — pixel-identical to one the org had
+   * checked. Consumers must render through `lib/world/killswitch.ts`
+   * (`killswitchGlance`) and never `?? false`: null is not off.
+   */
+  killswitch: boolean | null
+  /** Why the emergency stop could not be read. Null on a measured reading. */
+  killswitchUnknownReason: string | null
   iidHigh: number
   officers: WorldOfficer[]
   /** Most recent chronicle records, oldest→newest (already scrubbed). */

@@ -23,6 +23,11 @@ import path from 'node:path'
 import yaml from 'js-yaml'
 import { loadGrammar } from '@/lib/world/grammar'
 import { censusCountOrNull } from '@/lib/attention/queue'
+import {
+  readingFromPresence,
+  unknownKillswitch,
+  type KillswitchReading,
+} from '@/lib/world/killswitch'
 import type {
   ChronicleRecord,
   PresenceSnapshot,
@@ -129,6 +134,21 @@ type RedisLike = {
  */
 const pendingCaptainItems = censusCountOrNull
 
+/**
+ * The emergency stop is NEVER `false` by default.
+ *
+ * Both branches below used to hand the world a confident `false` — one when no
+ * Redis client existed at all (`killswitch: false`), one when the presence read
+ * threw or returned nothing (`presence?.killswitch ?? false`). Neither had
+ * asked anything, and `false` draws the lever UP: an unread emergency stop and
+ * a verified-clear one were the same picture. The decision lives in
+ * `lib/world/killswitch.ts` rather than inline here for the reason the census
+ * fix paid for — a helper inside a route file cannot be unit-tested, and an
+ * adversarial review reverted exactly such a helper with the suite still green.
+ */
+const NO_CLIENT_REASON =
+  'the world could not reach the store that holds the emergency stop'
+
 async function readSnapshot(redis: RedisLike | null): Promise<WorldSnapshot> {
   const grammarLoaded = loadGrammar()
   const grammar = {
@@ -138,9 +158,11 @@ async function readSnapshot(redis: RedisLike | null): Promise<WorldSnapshot> {
     codexCoverage: grammarLoaded.codexCoverage,
   }
   if (!redis) {
+    const unread = unknownKillswitch(NO_CLIENT_REASON)
     return {
       connectedAt: new Date().toISOString(),
-      killswitch: false,
+      killswitch: unread.engaged,
+      killswitchUnknownReason: unread.unknownReason,
       iidHigh: 0,
       officers: [],
       chronicle: [],
@@ -150,11 +172,22 @@ async function readSnapshot(redis: RedisLike | null): Promise<WorldSnapshot> {
     }
   }
   let presence: PresenceSnapshot | null = null
+  let killswitch: KillswitchReading = unknownKillswitch(NO_CLIENT_REASON)
   try {
     const raw = await redis.get('cabinet:world:presence')
-    if (raw) presence = JSON.parse(raw) as PresenceSnapshot
+    // An absent key is not an absent world: the daemon may be dead while Redis
+    // is fine. Either way nobody read the stop, so both go through the same
+    // parser rather than one of them quietly becoming `false`.
+    const parsed: unknown = raw ? JSON.parse(raw) : null
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      presence = parsed as PresenceSnapshot
+    }
+    killswitch = readingFromPresence(parsed, Date.now())
   } catch {
     presence = null
+    killswitch = unknownKillswitch(
+      'the presence snapshot could not be read from the store'
+    )
   }
   const officers: WorldOfficer[] = []
   if (presence?.officers) {
@@ -187,7 +220,8 @@ async function readSnapshot(redis: RedisLike | null): Promise<WorldSnapshot> {
   }
   return {
     connectedAt: new Date().toISOString(),
-    killswitch: presence?.killswitch ?? false,
+    killswitch: killswitch.engaged,
+    killswitchUnknownReason: killswitch.unknownReason,
     iidHigh: presence?.iid_high ?? 0,
     officers,
     chronicle,
@@ -269,7 +303,19 @@ export async function GET(req: NextRequest) {
       if (REDIS_URL) {
         try {
           const { default: Redis } = await import('ioredis')
-          dataClient = new Redis(REDIS_URL) as unknown as RedisLike
+          // BOUNDED, like the engine route's client. With ioredis defaults an
+          // unreachable store makes the first `get` below hang instead of
+          // rejecting, so `readSnapshot` never returns and the stream emits
+          // NOTHING — no snapshot, no reason, forever. The world then renders
+          // its pre-connect state indefinitely, which is precisely the moment
+          // it most needs to be told the emergency stop is unreadable. A
+          // bounded read turns an infinite silence into a prompt honest null.
+          dataClient = new Redis(REDIS_URL, {
+            lazyConnect: true,
+            maxRetriesPerRequest: 1,
+            connectTimeout: 900,
+            enableOfflineQueue: false,
+          }) as unknown as RedisLike
         } catch {
           dataClient = null
         }

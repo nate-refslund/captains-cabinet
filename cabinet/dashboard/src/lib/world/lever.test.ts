@@ -8,7 +8,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   ARM_EXPIRE_TICKS,
-  fallbackCommand,
   LEVER_IDLE,
   leverReduce,
   type LeverState,
@@ -88,8 +87,7 @@ describe('killswitch lever two-tap machine', () => {
     expect(out.fire).toBe(false)
   })
 
-  it('honest-degradation fallback names the exact CLI command per direction', () => {
-    expect(fallbackCommand(false)).toBe('cabinet/scripts/kill-switch.sh activate')
-    expect(fallbackCommand(true)).toBe('cabinet/scripts/kill-switch.sh deactivate')
-  })
+  // The CLI-fallback arm moved with the function: it is now keyed on the INTENT
+  // the surface chose rather than on a state it might not have.
+  // See `fallbackCommandFor` in lib/world/killswitch.test.ts.
 })

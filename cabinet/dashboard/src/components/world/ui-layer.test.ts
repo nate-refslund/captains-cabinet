@@ -114,13 +114,28 @@ describe('D. killswitch lever ceremony', () => {
     expect(text).not.toMatch(/Date\.now\s*\(/)
     expect(text).not.toMatch(/Math\.random\s*\(/)
   })
-  it('actuation is cookie-gated and intent-pinned to the rendered state', () => {
+  it('actuation is cookie-gated and intent-pinned — NEVER derived from a guess', () => {
     const text = src(...LEVER)
     expect(text).toMatch(/disabled=\{!canActuate\}/)
-    expect(text).toMatch(/toggleKillSwitch\(active \? 'deactivate' : 'activate'\)/)
+    // The intent used to be `active ? 'deactivate' : 'activate'`, which under
+    // an UNKNOWN reading picks a direction out of the guess the reading does
+    // not have. It now comes from `intentFor`, which returns null for unknown,
+    // and the dialog asks. This grep is a spelling check, not the behaviour
+    // test — that lives in lib/world/killswitch.test.ts and the surfaces suite.
+    expect(text).toMatch(/toggleKillSwitch\(intent\)/)
+    expect(text).not.toMatch(/active \? 'deactivate' : 'activate'/)
+    expect(text).toMatch(/intentFor/)
   })
   it('failure prints the exact CLI fallback (honest degradation)', () => {
-    expect(src(...LEVER)).toMatch(/fallbackCommand\(/)
+    expect(src(...LEVER)).toMatch(/fallbackCommandFor\(/)
+  })
+  it('the lever takes a three-state reading, never a boolean', () => {
+    const text = src(...LEVER)
+    // A boolean prop has nowhere to put "nobody could read it", and `?? false`
+    // then files it under "verified not engaged" — the whole defect.
+    expect(text).toMatch(/state: KillswitchGlance/)
+    expect(text).not.toMatch(/active: boolean/)
+    expect(text).toMatch(/killswitchWord\(state\)/)
   })
   it('consequence copy states next-tool-invocation semantics verbatim', () => {
     expect(src(...LEVER)).toMatch(

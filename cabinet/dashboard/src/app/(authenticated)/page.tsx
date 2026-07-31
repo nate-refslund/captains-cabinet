@@ -3,6 +3,8 @@ import redis, { getCostHistory } from '@/lib/redis'
 import { getTmuxWindows, isClaudeAlive, isTelegramConnected } from '@/lib/docker'
 import { getOfficerConfig, getConfig, getDashboardConfig } from '@/lib/config'
 import { getProjects } from '@/actions/projects'
+import { readKillswitch } from '@/lib/killswitch-state'
+import { KILLSWITCH_CHECK_COMMAND } from '@/lib/world/killswitch'
 import OfficerCard from '@/components/officer-card'
 import { StackedBarChart, HorizontalBars, ChartLegend } from '@/components/cost-chart'
 import ConsumerFrontPage from '@/components/consumer/consumer-front-page'
@@ -102,10 +104,6 @@ async function getOfficerData(): Promise<OfficerInfo[]> {
   return officers
 }
 
-async function getKillSwitchState(): Promise<boolean> {
-  const value = await redis.get('cabinet:killswitch')
-  return value === 'active'
-}
 
 function formatCents(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`
@@ -158,9 +156,9 @@ export default async function DashboardPage() {
   }
 
   // --- Advanced Mode (zero regression from pre-Spec-032 dashboard) ---
-  const [officers, killSwitchActive, costHistory, projects] = await Promise.all([
+  const [officers, killswitch, costHistory, projects] = await Promise.all([
     getOfficerData(),
-    getKillSwitchState(),
+    readKillswitch(),
     getCostHistory(7),
     getProjects(),
   ])
@@ -226,13 +224,32 @@ export default async function DashboardPage() {
       </div>
 
       {/* Kill switch status shown in Advanced mode — the header pill is always present */}
-      {killSwitchActive && (
+      {killswitch.engaged === true && (
         <div className="rounded-xl border border-red-500/50 bg-red-900/20 px-5 py-4">
           <p className="text-sm font-semibold text-red-400">
             Kill switch is ACTIVE &mdash; all officer operations are halted.
           </p>
           <p className="mt-0.5 text-xs text-zinc-500">
             Use the Stop All button in the header to resume.
+          </p>
+        </div>
+      )}
+
+      {/* An UNREAD emergency stop gets its own banner. Silence here used to be
+          the claim "not engaged": the ACTIVE banner is absent in exactly the
+          same way when the org has verified the stop is clear and when nobody
+          could read it at all. */}
+      {killswitch.engaged === null && (
+        <div className="rounded-xl border border-dashed border-amber-400/60 bg-amber-900/10 px-5 py-4">
+          <p className="text-sm font-semibold text-amber-300">
+            Kill switch state is UNKNOWN &mdash; nobody could read it.
+          </p>
+          <p className="mt-0.5 text-xs text-amber-100/70">
+            {killswitch.unknownReason}
+          </p>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            This is not &ldquo;not engaged&rdquo;. Verify with{' '}
+            <code className="font-mono">{KILLSWITCH_CHECK_COMMAND}</code>.
           </p>
         </div>
       )}

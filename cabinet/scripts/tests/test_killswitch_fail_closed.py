@@ -447,3 +447,76 @@ def test_no_reader_compares_a_raw_get_to_active():
     assert not offenders, (
         "these still read the switch themselves instead of using "
         "cabinet/scripts/hooks/killswitch-read.sh:\n" + "\n".join(offenders))
+
+
+def test_the_dashboard_reads_the_switch_through_one_decision():
+    """The coverage sweep above scans `cabinet/scripts` and `framework` — and
+    for that reason never saw the FOUR readers in cabinet/dashboard, two of
+    which disagreed with each other while a third rendered every failure as a
+    confident "not engaged" (the 2026-07-31 incident: an emergency stop whose
+    state was unknown was drawn as one that was off).
+
+    A `grep` for `GET cabinet:killswitch` cannot find them — TypeScript spells
+    it `redis.get('cabinet:killswitch')` — so this arm scans for the TS spelling
+    and requires every hit to be one of the sanctioned readers. It is a
+    coverage fence, not a behaviour test: the behaviour is driven in
+    cabinet/dashboard/src/lib/world/killswitch.test.ts and
+    src/app/api/world/killswitch-surfaces.test.ts, which call the real handlers.
+    """
+    out = subprocess.run(
+        ["git", "grep", "-n", "-E", r"""(get|GET)\(['"]cabinet:killswitch""", "--",
+         "cabinet/dashboard/src"],
+        capture_output=True, text=True, cwd=str(REPO)).stdout
+    # The invariant is the DECISION, not the filename: a read is fine anywhere
+    # so long as its result goes straight into `readingFromKey`, which is the
+    # one place `active` / absent / anything-else becomes engaged / clear /
+    # unknown. The write action is allowed by name because it must read the key
+    # to know which way to toggle and to read its own write back.
+    WRITER = "cabinet/dashboard/src/actions/killswitch.ts"
+    offenders = []
+    for line in out.splitlines():
+        parts = line.split(":", 2)
+        path, body = parts[0], (parts[2] if len(parts) > 2 else "")
+        if path == WRITER or "test" in path:
+            continue
+        stripped = body.strip()
+        if stripped.startswith(("#", "*", "//", "/*", '"""')):
+            continue  # prose that NAMES the key is not a reader
+        if "readingFromKey(" in body:
+            continue
+        offenders.append(line)
+    assert not offenders, (
+        "a new dashboard reader of the emergency stop — route it through "
+        "lib/killswitch-state.readKillswitch() so the three-state decision in "
+        "lib/world/killswitch.ts is the only one there is:\n" + "\n".join(offenders))
+
+
+def test_no_dashboard_surface_defaults_the_switch_to_off():
+    """`?? false`, `|| false` and `= false` on the emergency stop are the
+    literal shape of the 2026-07-31 defect: they turn "nobody could read it"
+    into "verified not engaged", which draws the lever UP. Null is the only
+    honest default, and it must carry a reason."""
+    out = subprocess.run(
+        # POSIX ERE — `git grep -E` is NOT PCRE, and `\s` there matches a
+        # literal backslash-then-s, i.e. nothing. Written as `\s` first, this
+        # fence reported GREEN against a deliberately re-introduced
+        # `killswitch ?? false`; the mutation run is what caught it. Character
+        # classes only.
+        ["git", "grep", "-n", "-E",
+         r"killswitch[A-Za-z]*[[:space:]]*(\?\?|\|\|)[[:space:]]*false"
+         r"|killswitch:[[:space:]]*false",
+         "--", "cabinet/dashboard/src"],
+        capture_output=True, text=True, cwd=str(REPO)).stdout
+    offenders = []
+    for line in out.splitlines():
+        parts = line.split(":", 2)
+        path, body = parts[0], (parts[2] if len(parts) > 2 else "")
+        if "/tests/" in path or path.endswith((".test.ts", ".test.tsx", ".md")):
+            continue
+        stripped = body.strip()
+        if stripped.startswith(("*", "//", "/*", "{/*", "#")):
+            continue  # prose QUOTING the old shape (the docstrings do) is not it
+        offenders.append(line)
+    assert not offenders, (
+        "an emergency stop defaulted to OFF — use killswitchGlance()/null with "
+        "an unknownReason instead:\n" + "\n".join(offenders))
