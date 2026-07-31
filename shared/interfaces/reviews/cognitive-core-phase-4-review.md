@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 8384f5e2918c624c9f1b99d7126eb7f50e8906a56b8de6e7167dadc3e142dfd0
+Reviewed-Scope-Digest: a36b0f71d2587a5183e35c7a18a72907d7ce8d0cc0d55b54c294221b1331ea89
 
 (MERGE RE-BIND, 2026-07-31, `fix/stale-census-unknown` x master, recomputed
 over the merge commit — the note below is master's, kept verbatim, and its
@@ -2158,3 +2158,14 @@ No `framework/projection`, `framework/scheduler`, `framework/organs`,
 touched by this branch, whose diff is otherwise entirely
 `framework/onboarding/`, its suites and fixture, one fidelity suite, and two
 onboarding design docs.)
+
+(MERGE RE-BIND, 2026-07-31, `fix/egg-selfaudit-word-boundary` (PR #337) x master `065f78b4`:
+MECHANICAL-DELTA — one in-scope blob changed, `cabinet/scripts/tests/test_egg_export.py`.
+The captain-value self-audit's match rule gains word boundaries for word-shaped values
+after the live 2026-07-31 window measured the audit red-flagging the deployment because a
+4-letter captain value matched inside the English word "coordinate" in both scanned files.
+Sensor teeth re-proven both directions in the same commit: engulfing-word arm red under
+the old rule; planted standalone value and separator-joined forms still trip; non-word
+values keep substring semantics. No production bytes moved; no threshold moved; the
+`Reviewed-Scope-Digest:` line above is recomputed over this branch's HEAD per the
+2026-07-26/27/30 merge re-bind precedents.)
