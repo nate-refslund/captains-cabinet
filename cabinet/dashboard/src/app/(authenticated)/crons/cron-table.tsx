@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useActionState } from 'react'
 import { updateCronSchedule, addCronJob, deleteCronJob, resetTaskTimer, deleteTaskTimer, createTaskTimer } from '@/actions/crons'
+import type { CronActionState } from '@/actions/crons'
 import type { CronJob } from '@/lib/docker'
 
 function formatSchedule(cron: string): string {
@@ -35,7 +36,10 @@ function formatTimestamp(ts: string): string {
 function EditRow({ job, onCancel }: { job: CronJob; onCancel: () => void }) {
   const [state, formAction, isPending] = useActionState(updateCronSchedule, null)
 
-  if (state?.success) {
+  // A success carrying a `note` is a write that was deliberately NOT made
+  // (demo mode). Closing the form on it would hide the disclosure and leave
+  // exactly the silent "saved" this change exists to remove.
+  if (state?.success && !state?.note) {
     onCancel()
   }
 
@@ -56,7 +60,7 @@ function EditRow({ job, onCancel }: { job: CronJob; onCancel: () => void }) {
               <div className="mt-1 text-sm text-zinc-400 font-mono truncate">{job.command}</div>
             </div>
           </div>
-          {state?.error && <p className="text-xs text-red-500">{state.error}</p>}
+          <ActionMessage state={state} />
           <div className="flex gap-2">
             <button type="submit" disabled={isPending}
               className="rounded bg-white px-3 py-1 text-xs font-semibold text-zinc-900 hover:bg-zinc-200 disabled:opacity-50">
@@ -73,10 +77,20 @@ function EditRow({ job, onCancel }: { job: CronJob; onCancel: () => void }) {
   )
 }
 
+/**
+ * A refusal nobody renders is a silent failure with extra steps.
+ *
+ * This component used to be `const [, formAction] = useActionState(...)` — the
+ * action's result was DESTRUCTURED AWAY, so a delete that failed looked exactly
+ * like a delete that worked: the confirm buttons closed either way. Honest
+ * errors in the action are only worth anything if the screen can show them, and
+ * the same held for the Reset/Delete buttons on the officer-task rows below,
+ * which threw their result away with `await resetTaskTimer(...)`.
+ */
 function DeleteButton({ job }: { job: CronJob }) {
   const [confirming, setConfirming] = useState(false)
   const [isPending, startTransition] = useTransition()
-  const [, formAction] = useActionState(deleteCronJob, null)
+  const [state, formAction] = useActionState(deleteCronJob, null)
 
   if (confirming) {
     return (
@@ -98,18 +112,36 @@ function DeleteButton({ job }: { job: CronJob }) {
   }
 
   return (
-    <button onClick={() => setConfirming(true)}
-      className="rounded border border-red-800 px-2 py-0.5 text-xs text-red-400 hover:bg-red-900/30">
-      Delete
-    </button>
+    <div className="flex flex-col gap-1">
+      <button onClick={() => setConfirming(true)}
+        className="self-start rounded border border-red-800 px-2 py-0.5 text-xs text-red-400 hover:bg-red-900/30">
+        Delete
+      </button>
+      <ActionMessage state={state} />
+    </div>
   )
+}
+
+/**
+ * The one place a cron action's outcome is rendered. `error` is a refusal or an
+ * unproven write; `note` is a write deliberately not made (demo mode), which is
+ * a success the Captain still has to be told about.
+ */
+function ActionMessage({ state }: { state: CronActionState | null }) {
+  if (state?.error) {
+    return <p className="max-w-md text-xs text-red-500" role="alert" data-cron-error>{state.error}</p>
+  }
+  if (state?.note) {
+    return <p className="max-w-md text-xs text-amber-500" data-cron-note>{state.note}</p>
+  }
+  return null
 }
 
 function AddJobForm() {
   const [open, setOpen] = useState(false)
   const [state, formAction, isPending] = useActionState(addCronJob, null)
 
-  if (state?.success) {
+  if (state?.success && !state?.note) {
     setOpen(false)
   }
 
@@ -144,7 +176,7 @@ function AddJobForm() {
           <input name="command" placeholder="/opt/watchdog/my-script.sh" required
             className="mt-1 block w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white font-mono placeholder-zinc-600 focus:border-zinc-500 focus:outline-none" />
         </div>
-        {state?.error && <p className="text-xs text-red-500">{state.error}</p>}
+        <ActionMessage state={state} />
         <div className="flex gap-2">
           <button type="submit" disabled={isPending}
             className="rounded bg-white px-4 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-200 disabled:opacity-50">
@@ -163,9 +195,12 @@ function AddJobForm() {
 export default function CronTable({
   cronJobs,
   lastRuns,
+  unreadable = null,
 }: {
   cronJobs: CronJob[]
   lastRuns: Record<string, string>
+  /** Why the schedule could not be read, or null when the count below is real. */
+  unreadable?: string | null
 }) {
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
 
@@ -175,8 +210,18 @@ export default function CronTable({
       <div className="rounded-xl border border-zinc-800 bg-zinc-900" style={{ padding: '24px' }}>
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-white">Cron Schedule</h2>
-          <span className="text-xs text-zinc-600">{cronJobs.length} jobs</span>
+          {/* "0 jobs" over a crontab nobody could read is a measurement claim
+              about a machine that was never successfully asked. */}
+          <span className="text-xs text-zinc-600">
+            {unreadable ? 'not readable' : `${cronJobs.length} jobs`}
+          </span>
         </div>
+        {unreadable && (
+          <p className="mt-3 rounded border border-amber-700/50 bg-amber-950/30 px-3 py-2 text-xs text-amber-400"
+            role="alert" data-cron-unreadable>
+            {unreadable} — this table is not a list of what is scheduled.
+          </p>
+        )}
         <div className="mt-4 overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>
@@ -272,6 +317,9 @@ export default function CronTable({
 function TaskRow({ officer, task, lastRun }: { officer: string; task: string; lastRun: string }) {
   const [isPending, startTransition] = useTransition()
   const [confirming, setConfirming] = useState(false)
+  // Both buttons used to `await` the action and drop what it returned, so a
+  // refusal and a proven write were the same pixel.
+  const [state, setState] = useState<CronActionState | null>(null)
 
   return (
     <tr className="border-b border-zinc-800/50">
@@ -285,35 +333,38 @@ function TaskRow({ officer, task, lastRun }: { officer: string; task: string; la
         {formatTimestamp(lastRun)}
       </td>
       <td style={{ padding: '10px 12px' }}>
-        <div className="flex gap-2">
-          <button
-            onClick={() => startTransition(async () => { await resetTaskTimer(officer, task) })}
-            disabled={isPending}
-            className="rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-white disabled:opacity-50"
-            title="Reset timer to now"
-          >
-            {isPending ? '...' : 'Reset'}
-          </button>
-          {confirming ? (
-            <div className="flex gap-1">
-              <button
-                onClick={() => { startTransition(async () => { await deleteTaskTimer(officer, task) }); setConfirming(false) }}
-                disabled={isPending}
-                className="rounded bg-red-600 px-2 py-0.5 text-xs text-white hover:bg-red-700 disabled:opacity-50"
-              >
-                Confirm
-              </button>
-              <button onClick={() => setConfirming(false)}
-                className="rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-400 hover:bg-zinc-800">
-                No
-              </button>
-            </div>
-          ) : (
-            <button onClick={() => setConfirming(true)}
-              className="rounded border border-red-800 px-2 py-0.5 text-xs text-red-400 hover:bg-red-900/30">
-              Delete
+        <div className="flex flex-col gap-1">
+          <div className="flex gap-2">
+            <button
+              onClick={() => startTransition(async () => { setState(await resetTaskTimer(officer, task)) })}
+              disabled={isPending}
+              className="rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-white disabled:opacity-50"
+              title="Reset timer to now"
+            >
+              {isPending ? '...' : 'Reset'}
             </button>
-          )}
+            {confirming ? (
+              <div className="flex gap-1">
+                <button
+                  onClick={() => { startTransition(async () => { setState(await deleteTaskTimer(officer, task)) }); setConfirming(false) }}
+                  disabled={isPending}
+                  className="rounded bg-red-600 px-2 py-0.5 text-xs text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  Confirm
+                </button>
+                <button onClick={() => setConfirming(false)}
+                  className="rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-400 hover:bg-zinc-800">
+                  No
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => setConfirming(true)}
+                className="rounded border border-red-800 px-2 py-0.5 text-xs text-red-400 hover:bg-red-900/30">
+                Delete
+              </button>
+            )}
+          </div>
+          <ActionMessage state={state} />
         </div>
       </td>
     </tr>
@@ -324,7 +375,7 @@ function AddTaskForm() {
   const [open, setOpen] = useState(false)
   const [state, formAction, isPending] = useActionState(createTaskTimer, null)
 
-  if (state?.success) {
+  if (state?.success && !state?.note) {
     setOpen(false)
   }
 
@@ -354,7 +405,7 @@ function AddTaskForm() {
             <p className="mt-1 text-xs text-zinc-600">lowercase with dashes</p>
           </div>
         </div>
-        {state?.error && <p className="text-xs text-red-500">{state.error}</p>}
+        <ActionMessage state={state} />
         <div className="flex gap-2">
           <button type="submit" disabled={isPending}
             className="rounded bg-white px-4 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-200 disabled:opacity-50">

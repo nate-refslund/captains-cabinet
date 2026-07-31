@@ -2,9 +2,35 @@
 
 import { cabinetPath } from '@/lib/cabinet-root'
 import { dockerExec } from '@/lib/docker'
-import redis from '@/lib/redis'
+import redis, { isMockRedis, storeReading } from '@/lib/redis'
 import { requireDashboardAuth } from '@/lib/provisioning/guard'
 import { revalidatePath } from 'next/cache'
+
+/**
+ * A DASHBOARD THAT HAS NOT CONTACTED A CABINET MAY NOT SAY IT STOPPED ONE.
+ *
+ * `dockerExec` short-circuits whenever the store is not live — demo OR
+ * `unconfigured` — returning the string `mock: command executed` instead of
+ * running anything (`lib/docker.ts`). No action below branched on that, so with
+ * `REDIS_URL` unset the Captain pressed Stop on an officer, nothing was
+ * executed, `redis.set(expected:stopped)` landed in an in-process object, and
+ * the card read "stopped" over an autonomous agent that was still running and
+ * still acting. `unconfigured` has no production exclusion, so that is
+ * reachable on a real deploy that simply forgot the store.
+ *
+ * This is the crons defect and the emergency-stop defect on the officer fleet.
+ * The read-back that fixes the killswitch cannot fix it — the in-process store
+ * echoes back whatever was written — so the posture is the gate, exactly as in
+ * `actions/crons.ts`.
+ */
+function notLiveRefusal(): { success: false; error: string } | null {
+  return isMockRedis
+    ? {
+        success: false,
+        error: `this dashboard is not connected to a cabinet, so nothing was done — ${storeReading.source}`,
+      }
+    : null
+}
 
 /** `source cabinet/.env && export … && bash <script> <args>` against the
  *  resolved checkout root (dockerExec native mode already cwd's there, but
@@ -18,6 +44,8 @@ export async function startOfficer(role: string) {
   if (!(await requireDashboardAuth())) {
     return { success: false, error: 'Unauthorized' }
   }
+  const notLive = notLiveRefusal()
+  if (notLive) return notLive
   try {
     await dockerExec(envAndRun('cabinet/scripts/start-officer.sh', role))
     await redis.set(`cabinet:officer:expected:${role}`, 'active')
@@ -36,6 +64,8 @@ export async function stopOfficer(role: string) {
   if (!(await requireDashboardAuth())) {
     return { success: false, error: 'Unauthorized' }
   }
+  const notLive = notLiveRefusal()
+  if (notLive) return notLive
   try {
     await dockerExec(`tmux kill-window -t cabinet:officer-${role}`)
     await redis.set(`cabinet:officer:expected:${role}`, 'stopped')
@@ -54,6 +84,8 @@ export async function restartOfficer(role: string) {
   if (!(await requireDashboardAuth())) {
     return { success: false, error: 'Unauthorized' }
   }
+  const notLive = notLiveRefusal()
+  if (notLive) return notLive
   try {
     await dockerExec(`tmux kill-window -t cabinet:officer-${role}`)
     // Brief delay to let tmux clean up
@@ -75,6 +107,8 @@ export async function deleteOfficer(role: string) {
   if (!(await requireDashboardAuth())) {
     return { success: false, error: 'Unauthorized' }
   }
+  const notLive = notLiveRefusal()
+  if (notLive) return notLive
   try {
     if (!/^[a-z]{2,4}$/.test(role)) {
       return { success: false, error: 'Invalid role identifier' }
