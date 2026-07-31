@@ -569,3 +569,78 @@ def test_verdict_names_the_directory_it_scanned(tmp_path):
     v = fw.check(root=root, cfg={"expect": {"s": 3600}}, now=lambda: NOW,
                  emit=lambda e: {"emitted": True}, notify=lambda t, b: True)
     assert v["pulse_dir"] == fw.pulse_dir(root)
+
+
+# ── the call sites: is the sensor wired to the LIVE artifact ───────────────
+
+def test_the_real_watchdog_sweep_actually_pulses(tmp_path, monkeypatch):
+    """Not "the call is in the file" — the real ``check.run()`` sweep, driven the
+    way its own end-to-end test drives it, must leave a pulse on disk.
+
+    This is the question the week keeps punishing people for skipping: a fence
+    can be perfect and point at a twin nobody runs. Here the arm runs the LIVE
+    sweep and then looks in the LIVE store, so a call site that is deleted,
+    moved behind a branch that never executes, or left in dry-run goes red.
+
+    Sandbox: the pulse store is steered entirely by the module's own env
+    override to a directory under ``tmp_path``, asserted before the sweep."""
+    import datetime as dt
+
+    from framework.watchdog import check
+    from framework.watchdog import registry as reg
+    from framework.watchdog.tests.test_registry import FakeProbe
+
+    store = tmp_path / "liveness"
+    monkeypatch.setenv(fw.STATE_ENV, str(store))
+    assert fw.pulse_dir().startswith(str(tmp_path)), "sandbox escape"
+    assert not os.path.exists(fw.pulse_dir())
+
+    now = dt.datetime(2026, 6, 29, 6, 30, tzinfo=dt.timezone.utc)
+    local = dt.datetime(2026, 6, 29, 8, 30,
+                        tzinfo=dt.timezone(dt.timedelta(hours=2)))
+    probe = FakeProbe(now=now, local=local, files={}, mtimes={}, redis={})
+
+    check.run(probe=probe, dry_run=False)
+
+    s = fw.scan(fw.pulse_dir())
+    assert s["observed"] is True
+    assert "outcome-watchdog" in s["pulses"], \
+        "the live sweep did not pulse — the fleet dead-man is watching nothing"
+    assert s["pulses"]["outcome-watchdog"]["ts"] is not None
+
+
+def test_a_dry_run_sweep_does_not_pulse(tmp_path, monkeypatch):
+    """A rehearsal must not certify a fleet as alive — the same reason dry-run
+    does not stamp the heartbeat beside it."""
+    import datetime as dt
+
+    from framework.watchdog import check
+    from framework.watchdog.tests.test_registry import FakeProbe
+
+    monkeypatch.setenv(fw.STATE_ENV, str(tmp_path / "liveness"))
+    now = dt.datetime(2026, 6, 29, 6, 30, tzinfo=dt.timezone.utc)
+    local = dt.datetime(2026, 6, 29, 8, 30,
+                        tzinfo=dt.timezone(dt.timedelta(hours=2)))
+    check.run(probe=FakeProbe(now=now, local=local, files={}, mtimes={},
+                              redis={}),
+              dry_run=True)
+    assert fw.scan(fw.pulse_dir())["pulses"] == {}
+
+
+def test_the_inbound_poller_pulses_only_after_an_answered_poll():
+    """The poller's pulse must sit AFTER the `ok` check, so a lane stuck in a
+    retry loop reads as dead rather than as a spinning process.
+
+    Asserted structurally over the source: the pulse call must appear after the
+    `getUpdates not ok` guard and after the exception handler's `continue`, both
+    of which skip it. A poller that pulsed at the top of the loop would have
+    reported the 6-day ConnectionRefused wedge as a healthy intake lane."""
+    root = os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__)))))
+    src = open(os.path.join(root, "cabinet/scripts/officer-inbound-poller.py"),
+               encoding="utf-8").read()
+    pulse_at = src.index('fleetwatch.pulse("officer-inbound")')
+    ok_guard = src.index('log(f"getUpdates not ok:')
+    err_guard = src.index('log(f"getUpdates error:')
+    assert ok_guard < pulse_at, "the pulse precedes the ok-guard it depends on"
+    assert err_guard < pulse_at, "the pulse precedes the error path that skips it"
