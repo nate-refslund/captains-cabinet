@@ -1,7 +1,12 @@
 import { exec as execCb } from 'child_process'
 import { promisify } from 'util'
 import { cabinetRoot } from './cabinet-root'
-import { isNotLiveStore, resolveStorePosture } from './store-posture'
+import {
+  isNotLiveStore,
+  isUnconfiguredInProduction,
+  resolveStorePosture,
+  type StorePosture,
+} from './store-posture'
 
 const exec = promisify(execCb)
 const prefix = process.env.CABINET_PREFIX || 'cabinet'
@@ -14,11 +19,13 @@ const container = `${prefix}-officers`
  *     roster is what rendered "Officers: 4/5 running" on a dashboard that had
  *     contacted nothing.
  *   NOT_LIVE — should this module refrain from shelling into a runtime that is
- *     not there? True for `unconfigured` as well. This one is a NO-OP GUARD,
- *     not a fabrication: its sentinel makes every caller take its empty branch.
+ *     not there? True for `unconfigured` as well. This one is a REFUSAL: the
+ *     call REJECTS, and each caller's existing `catch` is what turns it into
+ *     that caller's honest empty value.
  *
  * Collapsing them was the defect. An absent `REDIS_URL` is a reason not to
- * exec; it was never a reason to answer.
+ * exec; it was never a reason to answer — which is what the no-op sentinel this
+ * guard used to RETURN did, for 19 write actions, until 2026-07-31.
  */
 const storeReading = resolveStorePosture(process.env)
 const IS_FABRICATED = storeReading.fabricated
@@ -62,22 +69,108 @@ const ENV_PATH = process.env.CABINET_ENV_PATH || `${CABINET_ROOT}/cabinet/.env`
 export const isNativeRuntime = () => RUNTIME_MODE === 'native'
 
 /**
+ * A COMMAND THAT WAS NOT RUN. Thrown — never returned.
+ *
+ * WHAT THIS REPLACED, AND WHY THE SHAPE IS THE FIX. This function used to
+ * answer `{ stdout: 'mock: command executed', stderr: '' }` whenever the store
+ * was not live. That is a well-formed SUCCESS for work that never happened, and
+ * the docstring above it claimed "every caller below already branches on it" —
+ * a claim about `docker.ts`'s own three readers, which was never true of the
+ * 39 call sites outside this file. Counted 2026-07-31: **19 of them turned that
+ * value straight into `{ success: true }`**, and two rendered the sentinel
+ * itself as data (an active-project name in the nav, and a filename that config
+ * edits were then written into).
+ *
+ * Reproduced end to end against the BUILT app in `NODE_ENV=production` with
+ * `REDIS_URL` unset, driving the real handlers through a real browser:
+ *   · `/officers/create` → "Officer Created · the officer is booting and will
+ *     announce on the warroom shortly", with `create-officer.sh` never invoked.
+ *   · `/integrations` → the add-secret modal closed on `{success:true}` with
+ *     `cabinet/.env` byte-identical afterwards.
+ * Both screens rendered underneath this app's own banner: "NO STORE CONFIGURED
+ * — nothing here is a measurement". The page disclosed that it had measured
+ * nothing and claimed an act in the same frame.
+ *
+ * A REJECTION IS THE ONLY SHAPE A CALLER CANNOT MISTAKE FOR SUCCESS. A
+ * discriminated `{ executed: false }` return would have been compiler-enforced,
+ * but it would also have forced 39 call sites to be edited in one pass — and
+ * "fix every site at once without a per-site reproduction" is how silent holes
+ * become green ones. Throwing lands the honest sentence in the failure branch
+ * all 19 already had — `catch (err) { return { …, error: err.message } }`,
+ * whose flag is `success: false` in most files, `ok: false` in `actions/gaps.ts`
+ * and a bare `{ error }` in `createOfficer` — so ONE change at the source closes
+ * them, and every read path that already meant "absent" keeps meaning absent
+ * through the catch it already had.
+ *
+ * The message is written to be READ BY THE CAPTAIN, because it is rendered
+ * verbatim by those callers.
+ */
+export class CommandNotExecutedError extends Error {
+  readonly posture: StorePosture
+  readonly command: string
+  constructor(posture: StorePosture, command: string, message: string) {
+    super(message)
+    this.name = 'CommandNotExecutedError'
+    this.posture = posture
+    this.command = command
+  }
+}
+
+/**
+ * Why nothing ran, in plain words.
+ *
+ * Production + `unconfigured` gets its own sentence and that is the production
+ * exclusion this plane was missing (`store-posture.ts:isUnconfiguredInProduction`
+ * carries the reasoning). Note what is NOT conditional on the environment: the
+ * REFUSAL. Both sides refuse; only the diagnosis differs.
+ *
+ * WHY THIS TRANSPORT DOES NOT SIMPLY EXECUTE IN PRODUCTION, since the store
+ * posture is plainly the wrong sensor for "is there a runtime here" (a
+ * Mac-native box with a checkout and tmux can run commands whether or not Redis
+ * is configured): because widening what THIS module runs — `tmux kill-window`,
+ * `rm -f`, `sed -i` on config, `create-officer.sh` — on a deployment nobody has
+ * verified is a change nobody asked for, while refusing is one env var away
+ * from being resolved (`start-dashboard.sh` already defaults `REDIS_URL`).
+ *
+ * SCOPE, stated because the claim is otherwise false of the app: this is the
+ * only shell transport that consults the store posture at all. `lib/crontab.ts`,
+ * `lib/attention/verdict.ts`, `lib/evidence/read.ts`, `lib/library.ts`,
+ * `lib/onboarding/bridge.ts` and the `/posture` page shell out with NO posture
+ * gate, and always did — they are unaffected by this change and remain open.
+ * Replacing the coupling with a real runtime probe, and deciding what those six
+ * should do, is the right long-term answer and is deliberately NOT smuggled in
+ * here.
+ */
+function notExecutedReason(): string {
+  if (isUnconfiguredInProduction(process.env)) {
+    return (
+      'this deployment has no store configured (REDIS_URL is unset on a production build), ' +
+      'so nothing was run and nothing was changed. That is a misconfiguration of this ' +
+      'dashboard rather than a mode it is in — set REDIS_URL to your cabinet’s store ' +
+      '(start-dashboard.sh defaults it to redis://localhost:6379) and try again.'
+    )
+  }
+  return `nothing was run and nothing was changed — ${storeReading.source}`
+}
+
+/**
  * Run a shell command against the cabinet runtime.
  *
  * - Docker mode: `docker exec -u cabinet <container> bash -c '<cmd>'`
  * - Native mode: runs the command directly in a shell with cwd = CABINET_ROOT.
  *
- * NOT_LIVE (demo OR unconfigured) short-circuits: a dashboard that has not
- * contacted a store has no business shelling into a runtime. The sentinel it
- * returns is a NO-OP marker every caller below already branches on — it is not
- * an answer, and no caller may render it.
+ * NOT_LIVE (demo OR unconfigured) REFUSES: a dashboard that has not contacted a
+ * store has no business shelling into a runtime, and — the part that was
+ * missing — no business answering as though it had.
  */
-export const MOCK_EXEC_SENTINEL = 'mock: command executed'
-
 export async function dockerExec(command: string): Promise<{ stdout: string; stderr: string }> {
   if (NOT_LIVE) {
-    console.log(`[no-store] would exec (not run): ${command}`)
-    return { stdout: MOCK_EXEC_SENTINEL, stderr: '' }
+    console.log(`[no-store] refused to exec (nothing ran): ${command}`)
+    throw new CommandNotExecutedError(
+      storeReading.posture,
+      command,
+      notExecutedReason()
+    )
   }
 
   if (RUNTIME_MODE === 'native') {
@@ -101,7 +194,8 @@ export async function getTmuxWindows(): Promise<string[]> {
   // The roster below is INVENTED. It is what rendered "Officers: 4/5 running"
   // on a dashboard that had contacted nothing, so it is reachable only from
   // the explicit non-production demo opt-in. Unconfigured falls through to the
-  // exec path, whose sentinel yields an empty roster — an honest absence.
+  // exec path, which REFUSES; the catch below yields an empty roster — an
+  // honest absence, and no longer one grown from a fabricated string.
   if (IS_FABRICATED) {
     return ['cos', 'cto', 'cpo', 'cro', 'coo']
   }
@@ -141,7 +235,10 @@ export async function isClaudeAlive(role: string): Promise<boolean> {
     const { stdout: panePid } = await dockerExec(
       `tmux list-panes -t ${target} -F '#{pane_pid}' 2>/dev/null | head -1`
     )
-    if (!panePid || panePid === 'mock: command executed') return false
+    // No sentinel check any more: an unrun command REJECTS, and the catch below
+    // is what turns it into "not alive". A dead branch left here would tell the
+    // next reader the sentinel still exists.
+    if (!panePid) return false
     const pid = panePid.trim()
     if (!pid) return false
 
@@ -226,13 +323,15 @@ export async function readCronSchedule(): Promise<CronScheduleReading> {
       const { stdout } = await dockerExec(
         `launchctl list 2>/dev/null | grep -i 'com.cabinet' || true`
       )
-      // The no-op sentinel is not a launchd label. Rendering it would print
-      // "mock: command executed" as a scheduled job — a fabricated row grown
-      // from a guard, which is the same class of defect one layer down.
+      // The sentinel filter that used to live here is gone with the sentinel.
+      // It also hid something worse: filtering the no-op away left
+      // `{ unreadable: null, jobs: [] }` — the sentence "0 jobs" as a FACT
+      // about a machine this process never asked. An unrun `launchctl list`
+      // now rejects, and the catch below reports it as unreadable, with why.
       const lines = stdout
         .trim()
         .split('\n')
-        .filter((l: string) => Boolean(l) && l.trim() !== MOCK_EXEC_SENTINEL)
+        .filter((l: string) => Boolean(l))
       return {
         unreadable: null,
         jobs: lines.map((line: string) => {
@@ -327,7 +426,7 @@ export async function isTelegramConnected(role: string): Promise<boolean> {
       `grep "^TELEGRAM_${upperRole}_TOKEN=" '${ENV_PATH}' 2>/dev/null | cut -d= -f2`
     )
     const trimmedToken = token.trim()
-    if (!trimmedToken || trimmedToken === 'mock: command executed') return false
+    if (!trimmedToken) return false
 
     // Call Telegram getMe to verify the token is valid and bot is reachable
     const { stdout: response } = await dockerExec(

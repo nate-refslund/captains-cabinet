@@ -143,6 +143,37 @@ export function resolveStorePosture(env: StoreEnv): StoreReading {
 }
 
 /**
+ * TRUE when a PRODUCTION build has no store configured.
+ *
+ * THE ASYMMETRY THIS NAMES. `demo` carries a production exclusion — no env var
+ * can make a real deploy fabricate — and that exclusion is the reason the
+ * fabrication rule above is stronger than labelling. `unconfigured` had none.
+ * So the one posture that IS reachable on a production deploy was also the one
+ * nothing diagnosed, and `lib/docker.ts` spent it as a licence to no-op every
+ * actuator in the app and answer `mock: command executed` — measured
+ * 2026-07-31 against the built app in `NODE_ENV=production` with `REDIS_URL`
+ * unset: "Officer Created · the officer is booting and will announce on the
+ * warroom shortly", underneath this module's own "NO STORE CONFIGURED —
+ * nothing here is a measurement" banner, with `create-officer.sh` never run.
+ *
+ * Outside production, unconfigured is an ordinary state: somebody has not
+ * finished setting up. In production it is a MISCONFIGURATION, and saying so is
+ * the whole value of this predicate — the refusal a caller renders should name
+ * the deploy as broken rather than describe a mode.
+ *
+ * It deliberately does NOT gate behaviour on `NODE_ENV`: nothing here is
+ * allowed in one environment and refused in another. Both environments refuse;
+ * only the sentence differs. A rule that changes what the code DOES between dev
+ * and production is a rule whose production side is never exercised.
+ */
+export function isUnconfiguredInProduction(env: StoreEnv): boolean {
+  return (
+    resolveStorePosture(env).posture === 'unconfigured' &&
+    env.NODE_ENV === 'production'
+  )
+}
+
+/**
  * TRUE when this process is NOT talking to the fleet's store — demo,
  * unconfigured OR unreachable.
  *

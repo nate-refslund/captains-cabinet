@@ -58,11 +58,12 @@ const AVAILABILITY_WRITER = cabinetPath('cabinet/scripts/lib/captain_availabilit
 
 // The writer's receipt, e.g.
 //   recorded 30 min/day (part_time) -> /…/instance/config/captain-availability.yml
-// REQUIRED before this action reports success. dockerExec's mock branch returns
-// "mock: command executed" having written nothing, and that exact shape — a
-// save the dashboard called done while nothing reached disk — is why
-// dockerWriteFile/dockerReadFile were deleted (see lib/docker.ts). A write is
-// claimed only when the writer says it wrote.
+// REQUIRED before this action reports success: a write is claimed only when the
+// writer says it wrote. This is an OUTPUT-SHAPE control and is deliberately
+// independent of the store posture — `lib/docker.ts` now rejects a command it
+// declined to run, which covers the not-live case for every action in this
+// file, but a writer that genuinely ran and printed something else is a
+// different failure and this is the only thing that catches it.
 const AVAILABILITY_RECEIPT = /recorded \d+ min\/day \([a-z_]+\) -> \S/
 
 /**

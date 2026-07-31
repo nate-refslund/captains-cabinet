@@ -16,10 +16,11 @@
  *     smuggled into a shell;
  *   * `away` / `0` are real rulings, not absences — the degenerate end has to
  *     pass, or the control cannot express "leave me alone";
- *   * success is claimed only against the writer's receipt. dockerExec's mock
- *     branch returns "mock: command executed" having written nothing, and a
- *     save reported as done while nothing reached disk is exactly why
- *     dockerWriteFile/dockerReadFile were deleted (lib/docker.ts).
+ *   * success is claimed only against the writer's receipt — an output-shape
+ *     control that is INDEPENDENT of the store posture, and stays that way on
+ *     purpose. `lib/docker.ts` no longer answers "mock: command executed" for a
+ *     command it declined to run (it rejects), but a real writer that runs and
+ *     prints something else is a different failure, and this is its sensor.
  *
  * The real requireDashboardAuth runs — only verifySession is mocked — with the
  * enforcing posture pinned (MOCK_DATA unset, NODE_ENV=test), the same harness
@@ -173,11 +174,35 @@ describe('a value the dial cannot hold is refused, never repaired', () => {
 describe('success is claimed only against the writer receipt', () => {
   beforeEach(() => mockVerify.mockResolvedValue(true))
 
-  it('a mock/no-op exec cannot report a save', async () => {
-    mockDockerExec.mockResolvedValue({ stdout: 'mock: command executed', stderr: '' })
+  it('output that is not the receipt cannot report a save', async () => {
+    // Historically this stood in for `dockerExec`'s no-op sentinel. That
+    // sentinel is gone (an unrun command rejects — see the arm below), so what
+    // this now pins is the independent half: a writer that RAN and said
+    // something other than the receipt is not a save either.
+    mockDockerExec.mockResolvedValue({ stdout: 'wrote something, probably', stderr: '' })
     const res = await updateCaptainAvailability('part_time')
     expect(res.success).toBe(false)
     expect(res.error).toContain('nothing was recorded')
+    expect(mockRevalidate).not.toHaveBeenCalled()
+  })
+
+  it('a command that was never run surfaces its own reason, not "nothing was recorded"', async () => {
+    // The refusal from `lib/docker.ts` has to reach the Captain intact: "the
+    // cabinet did not confirm the change" would send him looking at the writer
+    // when the problem is that this dashboard has no cabinet.
+    //
+    // HONEST LIMIT: this arm does NOT go red against pre-change code. `dockerExec`
+    // is mocked here and `config.ts`'s catch already returned `err.message`, so
+    // it pins a property that was already true rather than sensing the change.
+    // The sensor for the change is `lib/unexecuted-command.test.ts`, which drives
+    // the real module. Kept because the property is worth pinning; labelled
+    // because an arm that cannot fail must not be counted as coverage.
+    mockDockerExec.mockRejectedValue(
+      new Error('nothing was run and nothing was changed — no store is configured (REDIS_URL unset)')
+    )
+    const res = await updateCaptainAvailability('part_time')
+    expect(res.success).toBe(false)
+    expect(res.error).toMatch(/nothing was run and nothing was changed/)
     expect(mockRevalidate).not.toHaveBeenCalled()
   })
 
