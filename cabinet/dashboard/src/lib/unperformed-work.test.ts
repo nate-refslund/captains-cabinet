@@ -179,7 +179,11 @@ afterEach(() => {
 /** Prints a well-formed success, then dies. Nothing reached the binder wire. */
 const CRASHES_AFTER_PRINTING = [
   '#!/bin/sh',
-  'cat > /dev/null',
+  // `while read` is a BUILTIN. PATH is clamped to the temp shim dir, so `cat`
+  // is not on it — the shim used to exit instantly, and whether the parent's
+  // stdin write lost the race was a property of the machine. It raised an
+  // unhandled EPIPE on the CI runner and not on this Mac.
+  'while read -r _line; do :; done',
   `printf '%s\\n' '{"ok": true, "plain_result": "Approved — done.", "receipt_seq": 42}'`,
   'exit 1',
   '',
@@ -188,13 +192,44 @@ const CRASHES_AFTER_PRINTING = [
 /** The same success, and a clean exit. */
 const SUCCEEDS = [
   '#!/bin/sh',
-  'cat > /dev/null',
+  // `while read` is a BUILTIN. PATH is clamped to the temp shim dir, so `cat`
+  // is not on it — the shim used to exit instantly, and whether the parent's
+  // stdin write lost the race was a property of the machine. It raised an
+  // unhandled EPIPE on the CI runner and not on this Mac.
+  'while read -r _line; do :; done',
   `printf '%s\\n' '{"ok": true, "plain_result": "Approved — done.", "receipt_seq": 42}'`,
   'exit 0',
   '',
 ].join('\n')
 
 describe("the Captain's verdict is not confirmed by a bridge that died", () => {
+  it('a bridge that is GONE before the request is written fails, and does not crash us', async () => {
+    // The degenerate end of the same race, made deterministic: the child exits
+    // before reading a byte, so `child.stdin.end()` writes to a dead pipe.
+    // Unhandled, that EPIPE is fatal to the whole Node process — the dashboard,
+    // not just this request.
+    // DETERMINISTIC ON BOTH PLATFORMS, and it took three tries to get there.
+    // A bare `exit 3` reproduced on the Linux runner and NOT on this Mac: the
+    // parent usually finished its small write before the child's shell had even
+    // started, so the arm passed with the guard removed — a fence that cannot
+    // fail on the machine you are running it on is not a fence. `exec 0<&-` did
+    // not fix that, for the same reason. What does is a request LARGER than the
+    // pipe buffer: the write cannot complete in one go, so it is still in
+    // flight when the child exits, and the dead pipe is reached on any platform.
+    shim('python3.12', ['#!/bin/sh', 'exit 3', ''].join('\n'))
+    const { spawnBridge } = await import('@/lib/attention/verdict')
+    const r = await spawnBridge({
+      op: 'fire',
+      pid: 'p1',
+      verb: 'approve',
+      revision: 'r1',
+      // 2 MiB — comfortably past the 64 KiB pipe buffer on macOS and Linux.
+      _pad: 'x'.repeat(2 * 1024 * 1024),
+    })
+    expect(r.ok).toBe(false)
+    expect(r.code).toBe('bridge_fail')
+  })
+
   it('a bridge that exits non-zero is a failure, however well-formed its stdout', async () => {
     shim('python3.12', CRASHES_AFTER_PRINTING)
     const { spawnBridge } = await import('@/lib/attention/verdict')
