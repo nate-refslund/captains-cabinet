@@ -30,12 +30,75 @@ export type OnboardingAction =
    * where that guardrail binds, a picker cannot be the only door.
    */
   | 'record_operator_identity'
+  /**
+   * Points the depth budget at ONE of the things the sweep ranked. Surfaces
+   * render a PICKER over `offer.options` plus the escape hatch that always
+   * ends it — measured, the right answer can sit outside the top three, and an
+   * offer with no way to say "none of these" turns that into a wrong answer the
+   * operator had to accept. The escape option carries `input: 'seed'`, so it
+   * needs a FIELD (`name`) beside the choice, and `same_as` optionally carries
+   * the merge the operator can see and the ranking could not derive.
+   */
+  | 'answer_salience'
   | 'ratify_charter'
   | 'continue'
   | 'pause'
   | 'revoke'
   | 'undo'
   | 'purge'
+
+/**
+ * The same vocabulary as DATA, because a type is erased at runtime and the
+ * drift this list exists to catch is with a Python file no TypeScript compiler
+ * reads. `parity.test.ts` asserts this array is exactly the action-dispatch
+ * chain in `framework/onboarding/journey.py`; the compile-time assertion below
+ * fails `tsc --noEmit` the moment the array and the documented union above
+ * part, so neither can be updated alone.
+ */
+export const ONBOARDING_ACTIONS = [
+  'propose_window',
+  'answer_seed',
+  'answer_salience',
+  'gather_connectors',
+  'record_operator_identity',
+  'ratify_charter',
+  'continue',
+  'pause',
+  'revoke',
+  'undo',
+  'purge',
+] as const
+
+/**
+ * Both directions, deliberately: a one-way `extends` passes whenever one side
+ * is a strict subset, which is exactly the drift ("the union gained a member the
+ * array never did", or the reverse) this pins.
+ */
+type ActionsAgree = [OnboardingAction] extends [(typeof ONBOARDING_ACTIONS)[number]]
+  ? [(typeof ONBOARDING_ACTIONS)[number]] extends [OnboardingAction]
+    ? true
+    : never
+  : never
+
+export const ONBOARDING_ACTIONS_MATCH_UNION: ActionsAgree = true
+
+/**
+ * How a proposed window relates to the salience answer, when the two names
+ * share no word. The core refuses an off-target window rather than retargeting
+ * it silently, and takes ONE of these two statements — they are two different
+ * facts making two different sentences true, so they are never collapsed.
+ *
+ * Mirrored from `WINDOW_RELATIONS` in `framework/onboarding/journey.py` and
+ * pinned key-for-key by `parity.test.ts`: the operator has to be offered the
+ * relations to state one, and a surface that offers a value the core does not
+ * accept is a refusal wearing a button's clothes.
+ */
+export const WINDOW_RELATIONS = {
+  same_thing: 'the operator says this folder is that target under another name',
+  elsewhere: 'the operator says this is somewhere else they want opened',
+} as const
+
+export type WindowRelation = keyof typeof WINDOW_RELATIONS
 
 export type OwnershipClass = 'self' | 'employer' | 'third_party'
 
@@ -65,6 +128,44 @@ export interface OnboardingEgress {
   approved: string[]
 }
 
+/** One thing the sweep ranked, with the names that produced it. */
+export interface OnboardingSalienceOption {
+  id: string
+  label: string
+  /** The evidence line — the NAMES behind the rank, never an unauditable score. */
+  why: string
+  connectors?: string[]
+  rows?: number
+  aliases?: string[]
+  /** Only on the escape hatch: this option needs a typed name beside the pick. */
+  input?: 'seed'
+}
+
+/**
+ * The second question, and the only one a matcher provably cannot answer: are
+ * two of these candidates one thing under different names? `candidates` is
+ * EVERY ranked name, not the shown three — the twin of the top candidate
+ * routinely sits below the cut, so a merge reachable only from what is on
+ * screen cannot fix the split it exists for.
+ */
+export interface OnboardingSalienceMerge {
+  field: 'same_as'
+  question: string
+  candidates: Array<{ id: string; label: string; connectors?: string[] }>
+  /** Merges already taught, echoed back — the only place one is VISIBLE. */
+  learned: Array<{ labels: string[] }>
+}
+
+export interface OnboardingSalienceOffer {
+  schema: 'cabinet.onboarding-salience-offer/v1'
+  prompt: string
+  options: OnboardingSalienceOption[]
+  merge?: OnboardingSalienceMerge
+  /** What the sweep did NOT reach. An unearned clean negative is the defect. */
+  not_reached?: string
+  ranked?: number
+}
+
 export interface OnboardingOption {
   action: OnboardingAction
   label: string
@@ -74,8 +175,16 @@ export interface OnboardingOption {
    * core prints with no way to answer it is a dead end wearing an
    * invitation's clothes, so the core says which option needs a field and
    * every surface obeys — a tap-only surface must not offer it as a button.
+   *
+   * `choice` means a pick from `options` below, and — where the picked option
+   * is itself marked `input` — a field beside it.
    */
-  input?: 'seed' | 'handles'
+  input?: 'seed' | 'handles' | 'choice'
+  /** Set on `answer_salience`: the candidates, escape hatch last. */
+  options?: OnboardingSalienceOption[]
+  /** Set on `answer_salience`: the merge question, carried WITH the pick. */
+  merge?: OnboardingSalienceMerge
+  not_reached?: string
   /**
    * Set on `record_operator_identity`: the connectors that still cannot
    * recognise the operator, each with the account identifiers its own rows
@@ -122,6 +231,13 @@ export interface OnboardingEntryQuestion {
   prompt: string
   why: string
   required: boolean
+  /**
+   * Present on the `salience` question once a ranking exists. Salience stops
+   * being a blank field the moment there are candidates — and a question
+   * printed with options and no way to send one is the dead end this whole
+   * surface exists to abolish.
+   */
+  offer?: OnboardingSalienceOffer
 }
 
 export interface OnboardingEntryPlan {
@@ -201,6 +317,28 @@ export interface OnboardingState {
   first_dividend: null | Record<string, unknown>
   /** The seed answer, when one was given. A starting point, never the data. */
   seed?: { text: string; answered_at: string }
+  /**
+   * Where the depth budget is pointed, once the operator has answered. `window`
+   * appears when a First Window has been proposed against it, carrying the
+   * relation the operator stated (or the name test the core ran itself).
+   */
+  salience?: {
+    target: string
+    aliases?: string[]
+    from_escape_hatch?: boolean
+    offered?: string[]
+    not_reached?: string
+    evidence?: string
+    answered_at?: string
+    merged_with?: string[]
+    window?: {
+      relation: string
+      target?: string
+      root?: string
+      evidence?: string
+      bound_at?: string
+    }
+  }
   /** Written by the core's connector registry on every commit and snapshot. */
   entry_grants?: { connectors: string[]; local_files: boolean; web: boolean }
   connector_probes?: {
@@ -220,6 +358,8 @@ export interface OnboardingResponse {
   purged?: boolean
   error?: string
   code?: string
+  /** Only on a refusal, and only the allowlisted fields. */
+  detail?: OnboardingRefusalDetail
   evidence?: {
     trial_id: string
     trace_id: string
@@ -250,6 +390,42 @@ export interface OnboardingActionRequest {
    * account identifier(s) there. A connector the sweep never read is refused.
    */
   handles?: Record<string, string[]>
+  /**
+   * REQUIRED by answer_salience: the id of one offered candidate, or `other`
+   * for the escape hatch. A bare answer_salience is refused BY THE CORE
+   * (`salience_choice_required`) — the bridge admits it so the operator gets
+   * the core's own sentence, not a surface-invented one.
+   */
+  choice?: string
+  /** REQUIRED when `choice` is the escape hatch: what to open instead. */
+  name?: string
+  /**
+   * Optional on answer_salience: ranked names the operator says are one thing.
+   * Bounded by what the ranking PRODUCED — a name it never ranked is refused,
+   * because an unvalidated string entering the ranking's own vocabulary is how
+   * a merge becomes a guess.
+   */
+  same_as?: string[]
+  /**
+   * Optional on propose_window, and the only way past an off-target refusal:
+   * the operator stating how this folder relates to the target they answered.
+   * The cabinet never retargets their choice silently.
+   */
+  salience_relation?: WindowRelation
+}
+
+/**
+ * The allowlisted fields a refusal may carry back to a surface.
+ *
+ * A refusal that only says no leaves the operator with nothing to do about it;
+ * `salience_window_off_target` names the target, the window and the relations
+ * that resolve it. The route is a trust boundary, so this is an explicit
+ * allowlist and never a spread of whatever the core printed.
+ */
+export interface OnboardingRefusalDetail {
+  target?: string
+  window?: string
+  relations?: string[]
 }
 
 export interface OnboardingObservationRequest {
