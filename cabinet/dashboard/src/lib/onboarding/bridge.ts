@@ -62,6 +62,13 @@ export const ACTIONS: ReadonlySet<string> = new Set([
   'revoke',
   'undo',
   'purge',
+  // The way back in after a deletion. Payload-free, and NOT destructive: the
+  // core mints a new journey only when the current one was purged, and refuses
+  // it outright on a live journey (`start_again_unavailable`), so admitting it
+  // here can never cost a running orientation. Absent from this set, the purged
+  // card's only option would be refused as `action_invalid` before the core saw
+  // it — the same live dead end `answer_salience` was.
+  'start_again',
 ])
 
 export class OnboardingBridgeError extends Error {

@@ -167,6 +167,7 @@ function scriptState(overrides: {
   purgeArmed?: boolean
   purgeConfirmation?: string
   source?: string
+  sourceEdited?: boolean
   ownership?: string
   authorityBasis?: string
   seed?: string
@@ -188,6 +189,10 @@ function scriptState(overrides: {
     { initial: false, value: overrides.purgeArmed ?? false }, // purgeArmed
     { initial: '', value: overrides.purgeConfirmation ?? '' }, // purgeConfirmation
     { initial: '~/Documents', value: overrides.source ?? '~/Documents' }, // source
+    // sourceEdited — has the operator touched the folder field? `source` alone
+    // cannot say (its default is a real path someone might type), and the answer
+    // is what stops a pre-fill overwriting their text.
+    { initial: false, value: overrides.sourceEdited ?? false }, // sourceEdited
     { initial: 'Find one useful thing I may be missing.' }, // purpose
     { initial: 'reversible' }, // destination
     { initial: '', value: overrides.ownership ?? '' }, // ownership — no default BY DESIGN
@@ -301,17 +306,21 @@ function findByText(tree: TreeElement[], type: string, text: string): TreeElemen
 
 /** Indices into the component's useState order (guarded by scriptState). */
 // Indices track the useState order in journey-card.tsx; the ownership pair
-// landed between destination (10) and feedbackRecorded, which moved to 13. The
-// four salience/relation hooks were APPENDED after handles (15) so every index
-// above stayed put.
+// landed between destination and feedbackRecorded. The four salience/relation
+// hooks were APPENDED after handles so every index above stayed put. The
+// `sourceEdited` flag landed at 9, immediately after the field it describes, so
+// everything from `purpose` down shifted by one.
 const STATE = {
   error: 3,
-  ownership: 11,
-  authorityBasis: 12,
-  seed: 13,
-  feedbackRecorded: 14,
-  salienceChoice: 16,
-  relationAsk: 19,
+  editScope: 5,
+  source: 8,
+  sourceEdited: 9,
+  ownership: 12,
+  authorityBasis: 13,
+  seed: 14,
+  feedbackRecorded: 15,
+  salienceChoice: 17,
+  relationAsk: 20,
 } as const
 
 function settersFor(index: number): unknown[] {
@@ -1220,5 +1229,193 @@ describe('rendered component — withheld citations are disclosed', () => {
     ]
     scriptState({ journey: fixture })
     expect(render()).not.toContain('holding back the words')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// THE FOLDER FIELD — root-caused by execution, not by reading.
+//
+// Measured on a fresh hatch (2026-07-30, CDP-driven): the folder field lost a
+// programmatically-set value while every sibling field kept it, and the
+// submitted proposal carried the '~/Documents' DEFAULT — the operator approved
+// a Charter over a folder they never chose. The report attributed it to an
+// effect re-syncing the field on a polling refresh.
+//
+// THE COMPONENT HAS NO POLL AND NO SUCH EFFECT. `load()` runs once on mount and
+// again only on a 409, and neither writes this field; the arms below execute
+// that rather than assert it. What the arms DO establish is the mechanism: the
+// field is controlled, the submitted payload is read from STATE, and state has
+// exactly four writers. A programmatic write that does not reach React's
+// onChange therefore leaves state at its default, any later re-render repaints
+// the stale value over the DOM (the "reverted within seconds"), and the submit
+// carries the default (the "sticky" ~/Documents). That is an automation
+// artifact of a controlled input, not a poll — and a human typing cannot hit
+// it, because a keystroke IS the onChange.
+//
+// The pre-fill clobber is real regardless and is fixed: re-opening the scope
+// form used to overwrite whatever the operator had entered with the stored
+// proposal, unconditionally.
+// ---------------------------------------------------------------------------
+
+/** charter_pending, holding a proposal over a folder that is NOT what is typed. */
+function journeyWithProposal(root: string): OnboardingResponse {
+  const fixture = journeyFixture('charter_pending')
+  fixture.state.source = {
+    kind: 'folder',
+    root,
+    label: root.split('/').pop() || root,
+    status: 'proposed',
+    ownership: 'self',
+    authority_basis: 'my own machine',
+  }
+  fixture.state.purpose = 'Find one useful thing I may be missing.'
+  fixture.card.options = [
+    { action: 'ratify_charter', label: 'Approve and find one useful thing' },
+    { action: 'propose_window', label: 'Change it' },
+    { action: 'purge', label: 'Delete onboarding data', danger: true },
+  ] as OnboardingOption[]
+  return fixture
+}
+
+function clickOption(label: string, overrides: Parameters<typeof scriptState>[0]): void {
+  scriptState(overrides)
+  const button = findByText(driveTree(), 'button', label)
+  ;(button.props.onClick as () => void)()
+}
+
+describe('driven component — a typed folder survives the scope form re-opening', () => {
+  it('NEVER overwrites a folder the operator has entered', () => {
+    clickOption('Change it', {
+      journey: journeyWithProposal('/var/data/somewhere-else'),
+      source: '/home/me/quarterly-review',
+      sourceEdited: true,
+    })
+    expect(
+      settersFor(STATE.source),
+      'the operator had typed a folder; re-opening the form replaced it with the ' +
+        'stored proposal, and the next submit would carry a path they never chose'
+    ).toEqual([])
+    // …and the form still opens. A no-clobber rule that closed the door instead
+    // would be the same dead end by a quieter route.
+    expect(settersFor(STATE.editScope)).toEqual([true])
+  })
+
+  it('still pre-fills from the last proposal while the field is PRISTINE', () => {
+    clickOption('Change it', {
+      journey: journeyWithProposal('/var/data/somewhere-else'),
+      sourceEdited: false,
+    })
+    expect(
+      settersFor(STATE.source),
+      '"Change it" must start from what is already approved, or the operator ' +
+        'retypes a path the cabinet already knows'
+    ).toEqual(['/var/data/somewhere-else'])
+  })
+})
+
+describe('driven component — the folder that is submitted is the folder in state', () => {
+  it('sends the state value verbatim, which is why a write that misses onChange is lost', async () => {
+    const fetchSpy = vi.fn(async (url: RequestInfo | URL, _init?: RequestInit) => (
+      String(url).endsWith('/api/onboarding/evidence')
+        ? { ok: true, json: async () => ({ ok: true }) }
+        : { ok: true, status: 200, json: async () => ({ ok: true, card: { stage: 'charter_pending' } }) }
+    ))
+    vi.stubGlobal('fetch', fetchSpy)
+    scriptState({ journey: journeyFixture('welcome'), source: '/home/me/quarterly-review' })
+    const form = driveTree().find(
+      (el) => el.type === 'form' && typeof el.props.onSubmit === 'function' && !el.props.ref
+    )
+    expect(form, 'the scope form is not in the tree').toBeDefined()
+    ;(form!.props.onSubmit as (e: object) => void)({ preventDefault: () => undefined })
+    await flush(); await flush()
+    const action = fetchSpy.mock.calls.find(([url]) => String(url).endsWith('/api/onboarding'))
+    expect(action, 'the proposal was never POSTed').toBeDefined()
+    const body = String((action![1] as RequestInit | undefined)?.body ?? '')
+    expect(body).toContain('"action":"propose_window"')
+    expect(body).toContain('"source":"/home/me/quarterly-review"')
+  })
+
+  it('has no recurring refresh at all, so no timer can repaint the field', () => {
+    // The measured symptom was blamed on a poll. There is none: assert it on
+    // the source, both as the absence of a scheduler and as the enumeration of
+    // every writer of the field.
+    expect(component).not.toMatch(/setInterval|requestAnimationFrame/)
+    const writers = [...component.matchAll(/setSource\(/g)]
+    expect(
+      writers.length,
+      'setSource has exactly four sanctioned writers: the field\'s own onChange, ' +
+        'the explicit "Use my Documents" reset, the pristine-only pre-fill, and ' +
+        'the reset after the journey it belonged to is deleted or restarted'
+    ).toBe(4)
+    expect(component).toContain('if (!sourceEdited && journey?.state.source?.root) setSource(')
+  })
+})
+
+describe('rendered + driven component — a purge is survivable', () => {
+  /** The purged card, exactly as the core composes it. */
+  function purgedJourney(): OnboardingResponse {
+    const fixture = journeyFixture('purged')
+    fixture.card.title = 'Onboarding data was deleted'
+    fixture.card.body =
+      'The Charter, onboarding history, bounded manifest, derived excerpts, and live ' +
+      'evidence trial were removed. Stale actions cannot reopen them. You can start a ' +
+      'new orientation whenever you like.'
+    fixture.card.status = 'complete'
+    fixture.card.options = [
+      { action: 'start_again', label: 'Start a new orientation' },
+    ] as OnboardingOption[]
+    return fixture
+  }
+
+  it('renders the way back in on the purged card', () => {
+    scriptState({ journey: purgedJourney() })
+    const html = render()
+    expect(
+      html,
+      'the purged card offered nothing at all, so deleting your data ended ' +
+        'onboarding on the instance'
+    ).toContain('Start a new orientation')
+  })
+
+  it('POSTs start_again when that control is used', async () => {
+    const fetchSpy = vi.fn(async (url: RequestInfo | URL, _init?: RequestInit) => (
+      String(url).endsWith('/api/onboarding/evidence')
+        ? { ok: true, json: async () => ({ ok: true }) }
+        : { ok: true, status: 200, json: async () => ({ ok: true, card: { stage: 'welcome' } }) }
+    ))
+    vi.stubGlobal('fetch', fetchSpy)
+    clickOption('Start a new orientation', { journey: purgedJourney() })
+    await flush(); await flush()
+    const body = String(fetchSpy.mock.calls
+      .map(([, init]) => (init as RequestInit | undefined)?.body ?? '')
+      .find((value) => String(value).includes('/api/onboarding') || String(value).includes('start_again')) ?? '')
+    expect(body).toContain('"action":"start_again"')
+  })
+
+  it('the confirm dialog says what is destroyed, what is kept, and what comes after', () => {
+    scriptState({ journey: journeyFixture('dividend_ready'), purgeArmed: true })
+    const html = render()
+    expect(html).toContain('Destroyed, permanently')
+    expect(html).toContain('Kept on purpose')
+    expect(html).toContain('the content-free record that a read happened')
+    expect(
+      html,
+      'the operator armed an irreversible deletion without being told they ' +
+        'could ever onboard again — and for a while they could not'
+    ).toContain('you can start a new orientation')
+  })
+})
+
+describe('rendered component — the Charter names the folder it will read', () => {
+  it('wraps the card body so a long path is never clipped out of view', () => {
+    const fixture = journeyFixture('charter_pending')
+    fixture.card.body =
+      'Read-only access to “deep” (/Users/someone/a/very/long/nested/path/to/deep) ' +
+      'for this purpose: find one useful thing.'
+    scriptState({ journey: fixture })
+    const html = render()
+    expect(html).toContain('/Users/someone/a/very/long/nested/path/to/deep')
+    // The sentence the read is consented to must reflow, not overflow.
+    expect(html).toMatch(/class="[^"]*break-words[^"]*"[^>]*>Read-only access to/)
   })
 })

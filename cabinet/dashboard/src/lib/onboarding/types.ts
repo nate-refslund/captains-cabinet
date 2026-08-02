@@ -46,6 +46,12 @@ export type OnboardingAction =
   | 'revoke'
   | 'undo'
   | 'purge'
+  /**
+   * Begins a NEW journey after a purge — the affordance the purged card had
+   * none of. Payload-free and never destructive: on a live journey the core
+   * refuses it (`start_again_unavailable`) rather than resetting anything.
+   */
+  | 'start_again'
 
 /**
  * The same vocabulary as DATA, because a type is erased at runtime and the
@@ -67,6 +73,7 @@ export const ONBOARDING_ACTIONS = [
   'revoke',
   'undo',
   'purge',
+  'start_again',
 ] as const
 
 /**

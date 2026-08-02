@@ -1846,6 +1846,14 @@ def file_clocks(lines: Sequence[Any], *, now: str,
     if _parse_iso(today) is None:
         today = ""
     rows: list[dict[str, Any]] = []
+    # ONE DATE, STATED TWICE, IS ONE DATE. A cell that writes the same day in
+    # two formats ("2026-08-14 (14 Aug 2026)") matches twice on one line and
+    # emitted two rows resolving to the same ISO day at the same line — a
+    # duplicate in every forward-clock list and an inflated `found` count.
+    # Deduped by (resolved day, line) at EMISSION so no consumer has to know.
+    # Only when the day RESOLVED: two unresolved raws on one line are two
+    # different unknowns, and collapsing them would hide one of them.
+    seen: set[tuple[str, int]] = set()
     for number, line, matches in scanned:
         for match in matches:
             year = match["year"]
@@ -1857,6 +1865,10 @@ def file_clocks(lines: Sequence[Any], *, now: str,
                 iso = f"{year:04d}-{match['month']:02d}-{match['day']:02d}"
             if iso is None:
                 year_from = None
+            elif (iso, number) in seen:
+                continue
+            else:
+                seen.add((iso, number))
             rows.append({
                 "raw": match["raw"],
                 "iso": iso,

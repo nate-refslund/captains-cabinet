@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 0241cfba02c6d5296e99fa4f678285a59c7b3028d83688623641d4a8fb4146a7
+Reviewed-Scope-Digest: dce6836a2fee735ede868707177fd5b02f5234d6b181f506d827e7ca2e5f83a4
 
 (RE-BIND, 2026-07-31, `fix/fleet-deadman-inert-by-crash`, recomputed over this
 branch's HEAD. ONE in-scope path moved and it is NOT a COG-4 surface:
@@ -2231,3 +2231,28 @@ recomputed ONCE over this merge's HEAD, which unions the two mechanical deltas �
 self-audit test blob (this branch) and the render-time-join blob set (PR #338). No further
 in-scope bytes moved in the merge itself.)
 
+(RE-BOUND 2026-08-02 on `fix/stranger-path-defects`, previous value
+`0241cfba…`. ONE in-scope path moved and it is NOT a COG-4 surface.
+MEASURED, not asserted: the resolved scope was expanded with `git ls-tree -r`
+at `origin/master` and at this branch's HEAD and the two sets diffed — 114
+paths on both sides, none added, none removed, exactly ONE with a different
+blob.
+
+1. `cabinet/config/cognitive-architecture-contract.yml` — the
+   `framework_production_noncomment_lines` maximum, raised 62794 -> 62861 with
+   its dated measurement note (observed 77403 vs the then-effective 77336). No
+   budget added, no pin removed, no baseline changed, no other key touched. The
+   +67 buys the stranger-path defect fixes inside `framework/onboarding/`: a
+   purge that ends a JOURNEY instead of ending onboarding on the instance
+   (measured on a fresh hatch — every later action on every surface, the CLI
+   included, refused `onboarding_purged` and the purged card offered nothing),
+   the Charter sentence naming the resolved path rather than the folder's
+   basename, and a (day, line) dedup in `file_clocks`. ZERO production modules
+   (`framework_production_modules` unchanged at 248), so the ratchet re-pins at
+   observed==max exactly as the zero-headroom law requires.
+
+No `framework/projection`, `framework/scheduler`, `framework/organs`,
+`cognitive-trajectory.v2.schema.json`, `cog4-*` script or COG-4 fixture byte is
+touched by this branch, whose diff is otherwise `framework/onboarding/`, its
+suites, the dashboard onboarding surfaces, two onboarding docs and one FW-019
+review artifact.)
