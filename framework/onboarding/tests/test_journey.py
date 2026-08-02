@@ -1778,6 +1778,35 @@ def _connected_state(root: Path, rows, identities=(), not_reached=()) -> dict:
     return state
 
 
+#: The newest row clock these fixtures produce, in days before now. Every other
+#: row steps back one day per ordinal, so the whole block stays inside ONE
+#: recency band whatever today is (see _row_clock).
+_ROW_CLOCK_NEWEST_AGE_DAYS = 1
+#: The highest ordinal any fixture below hands to _row_clock.
+_ROW_CLOCK_ORDINALS = 22
+
+
+def _row_clock(day: int) -> str:
+    """A row clock anchored to NOW, never to a hardcoded month.
+
+    salience scores recency in BANDS (7 / 30 / 180 days, `_RECENCY_BANDS`)
+    against the real clock, so a fixture carrying literal dates is a calendar
+    time-bomb: these rows were authored inside the 30-day band, the oldest
+    crossed OUT of it, the ranking moved, and
+    `test_answering_merges_a_split_candidate_and_the_shortlist_changes` went RED
+    on an UNCHANGED commit — master ad8f0d3f green at 06:11Z on 2026-08-02 and
+    red at 17:00Z the same day, same SHA. Proven rather than inferred: shifting
+    the literals one month forward on pristine master turns the same test green.
+
+    Two of the three dated fixtures here had not detonated yet; they are on the
+    same fuse, so all three are anchored, not just the one that fired. `day` is
+    1-based and keeps each fixture's own ordering — day 1 is the OLDEST.
+    """
+    stamp = datetime.now(timezone.utc) - timedelta(
+        days=_ROW_CLOCK_ORDINALS + _ROW_CLOCK_NEWEST_AGE_DAYS - day)
+    return stamp.strftime("%Y-%m-%dT09:00:00Z")
+
+
 def _estate_rows():
     """Two sources naming the same three things, plus one thing in only one."""
     rows = []
@@ -1786,12 +1815,12 @@ def _estate_rows():
                               "Internal admin 2", "Internal admin 3",
                               "Internal admin 4", "Internal admin 5")):
         rows.append({"connector": "tracker", "name": name,
-                     "updated": f"2026-07-{i + 1:02d}T09:00:00Z"})
+                     "updated": _row_clock(i + 1)})
     for i, name in enumerate(("blue-harbour", "blue-harbour-api", "red-anchor",
                               "green-lantern", "solo-repo", "another-repo",
                               "third-repo", "fourth-repo", "fifth-repo")):
         rows.append({"connector": "repo", "name": name,
-                     "updated": f"2026-07-{i + 10:02d}T09:00:00Z"})
+                     "updated": _row_clock(i + 10)})
     return rows
 
 
@@ -1907,9 +1936,9 @@ def test_the_escape_hatch_takes_a_typed_name_and_teaches_the_alias(tmp_path):
     one on the next pass. Nothing records what KIND of thing it is.
     """
     rows = _estate_rows() + [
-        {"connector": "host", "name": "bluehbr-live", "updated": "2026-07-20T09:00:00Z"},
-        {"connector": "host", "name": "bluehbr-staging", "updated": "2026-07-21T09:00:00Z"},
-        {"connector": "tracker", "name": "BlueHbr rollout", "updated": "2026-07-22T09:00:00Z"},
+        {"connector": "host", "name": "bluehbr-live", "updated": _row_clock(20)},
+        {"connector": "host", "name": "bluehbr-staging", "updated": _row_clock(21)},
+        {"connector": "tracker", "name": "BlueHbr rollout", "updated": _row_clock(22)},
     ]
     _connected_state(tmp_path, rows)
     before = journey.salience_offer(journey.snapshot(tmp_path)["state"])
@@ -1955,10 +1984,6 @@ def test_the_offer_refuses_an_answer_it_never_made(tmp_path):
 
 # --- the answer that MERGES a split candidate -------------------------------
 
-#: How long ago the freshest row in the split estate was touched. See
-#: :func:`_split_estate_rows` — measured, not chosen.
-_NEWEST_DAYS_AGO = 7
-
 
 def _split_estate_rows():
     """The measured shape: ONE thing under two names sharing no substring.
@@ -1969,24 +1994,6 @@ def _split_estate_rows():
     instantly. ``ledger`` and ``beacon`` are genuinely separate things, so the
     fixture is LOPSIDED: a rule that merged everything would be as wrong here as
     a rule that merged nothing.
-
-    DATED RELATIVE TO NOW, and that is load-bearing rather than tidy. The ranker
-    weights recency, so a fixture written with a hardcoded month is a calendar
-    time-bomb: these rows were stamped 2026-07-01.. and on 2026-08-02 —
-    unchanged code, unchanged fixture — ``lantern`` had aged out of the shortlist
-    behind ``beacon``, so
-    ``test_answering_merges_a_split_candidate_and_the_shortlist_changes`` failed
-    on its own premise assertion ("no split to fix") and took a required CI job
-    red on every commit after that date. The SPACING is what the fixture is
-    about; the absolute month never was.
-
-    ``_NEWEST_DAYS_AGO`` is measured, not chosen for looks. Sweeping the anchor
-    against the live ranker, the split this fixture exists to show is present at
-    every offset from 3 to 15 days and again from 26 on, and absent at 0-2 and
-    16-25 — the estate is small enough that a freshness weighting reorders a
-    two-row candidate against a five-row one. Seven days sits in the middle of a
-    stable band. A future ranker change can still move it; the premise assertion
-    in the test is what says so out loud rather than passing for a new reason.
     """
     per = {
         "tracker": ["Lantern rollout", "Lantern billing", "Lantern pricing",
@@ -1996,16 +2003,11 @@ def _split_estate_rows():
         "db": ["quayside-prod", "ledger-prod"],
         "host": ["quayside-live", "ledger-live"],
     }
-    total = sum(len(names) for names in per.values())
-    now = datetime.now(timezone.utc)
     rows, day = [], 1
     for connector, names in per.items():
         for name in names:
-            # Same one-day spacing and same order (oldest first); only the
-            # anchor moves with the clock.
-            stamp = now - timedelta(days=total - day + _NEWEST_DAYS_AGO)
             rows.append({"connector": connector, "name": name,
-                         "updated": stamp.strftime("%Y-%m-%dT09:00:00Z")})
+                         "updated": _row_clock(day)})
             day += 1
     return rows
 

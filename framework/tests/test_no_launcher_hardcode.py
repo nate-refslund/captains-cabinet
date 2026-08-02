@@ -118,6 +118,8 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Tuple
 
@@ -806,9 +808,50 @@ _MIN_LABEL_LEN = 4  # below this a host label is URL grammar (api, www, io, x), 
 # green, never toward a false red, so a root that does not exist in a hatched
 # cabinet or an egg cut costs nothing.
 #
-# Determinism is the reason this is a walk over declared roots rather than a
-# tracked-file listing: it must produce the same vocabulary in CI, in a hatched
-# cabinet with no git metadata, and in a dirty dev checkout.
+# THE CORPUS IS THE SHIPPED TREE — the walk is filtered through tracked_paths()
+# below, and this paragraph is the correction of a claim that shipped false.
+#
+# It used to read: "Determinism is the reason this is a walk over declared roots
+# rather than a tracked-file listing: it must produce the same vocabulary in CI,
+# in a hatched cabinet with no git metadata, and in a dirty dev checkout." The
+# third clause was never true, and nothing tested it. A raw filesystem walk
+# reads whatever is ON DISK, and a working checkout carries three classes of
+# byte that no gate should ever be taught by, ALL of them absent from the
+# `actions/checkout` tree that decides merges:
+#
+#   * BUILD OUTPUT — a generated, gitignored type-reference file under the
+#     dashboard, rewritten by every dev/build invocation, whose one comment
+#     line carries the generator's documentation URL.
+#   * RUNTIME LOGS — the hook-fire JSONL under cabinet/logs/, ignored
+#     wholesale, carrying whatever URLs the day's work mentioned.
+#   * NESTED WORKTREES — other waves' checkouts of THIS repository under
+#     .claude/worktrees/, i.e. the seed walk descending into a second copy of
+#     the tree plus every doc that copy carries.
+#
+# Measured on the launching deployment 2026-08-02: 48 derived labels from the
+# committed tree, 72 from the same commit's working checkout. The 24-label
+# delta lit 19 VENDOR_TOKEN findings in framework/ that no baseline row covers
+# — a RED that is unreproducible in CI, cannot be fixed by touching framework/,
+# and is the exact pressure that gets a gate deleted. Reproduced from a SINGLE
+# planted build artifact in a depth-1 clone (arm B of the CI-shape harness in
+# the landing PR), so it is one `npm run dev` away for every contributor.
+#
+# So: when git metadata is available the seed is the TRACKED set; when it is
+# not — a hatched cabinet, an egg cut, an unpacked tarball — everything present
+# IS the delivered tree and the whole walk is correct. Same commit, same
+# vocabulary, in CI, in a hatch, and in a dirty dev checkout: the property the
+# old paragraph asserted, now actually held and pinned by
+# TestSpecificsSeedCorpus.
+#
+# THE DIRECTION IT FAILS. Filtering can only SHRINK the vocabulary, so an
+# untracked seed file no longer teaches the gate: a contributor who writes a new
+# vendor URL and a new framework mention in the same uncommitted change sees
+# green locally and RED in CI the moment both are committed. That asymmetry is
+# deliberate and is the safe one — the gate's subject is what SHIPS, and being
+# weaker than CI before a commit is recoverable, while a local-only red nobody
+# can reproduce is not. The SCAN set (iter_specifics_files) deliberately does
+# NOT get the same treatment: an uncommitted framework file should be scanned,
+# because there the early warning is the whole point.
 _SEED_ROOTS = (
     "framework", "cabinet", "docs", "packs", "memory", "shared",
     ".claude", ".claude-plugin", ".github",
@@ -883,11 +926,63 @@ def _read_text_file(path: Path) -> Optional[str]:
     return raw.decode("utf-8", "replace")
 
 
+def tracked_paths(root) -> "Optional[frozenset[str]]":
+    """The SHIPPED corpus of ``root``: every path git tracks there, as POSIX
+    relatives — or ``None`` when this tree carries no usable git metadata, which
+    is the honest answer for a hatched cabinet, an egg cut or an unpacked
+    tarball, and means "take the whole walk" (everything present is what was
+    delivered). See the _SEED_ROOTS comment for the defect this exists for.
+
+    TOTAL BY CONSTRUCTION — six ways to have no answer, one return value. A
+    missing `git` binary, a directory that is not a repository, a directory
+    whose toplevel is an ANCESTOR repository (a tmp fixture under a checkout,
+    or a hatch unpacked inside one — that index says nothing about THIS tree),
+    a non-zero `ls-files`, a timeout, and an EMPTY listing all yield ``None``.
+    The empty case is the one that matters: a `frozenset()` is falsy but is NOT
+    None, and letting it through would blank the vocabulary and hand Arm 2 the
+    inert green that `test_the_live_vocabulary_is_derived_and_non_empty` exists
+    to refuse — the sensor reporting on nothing, one layer down.
+
+    DELIBERATELY UNCACHED. A memo keyed on the path would be read-once state in
+    a process that plants files and re-derives inside a single test; this file's
+    own hermetic arms add a file and re-ask in the next statement, and a warm
+    cache would certify the pre-change answer. `git ls-files` is one process on
+    a tree this size; correctness is worth more than the milliseconds.
+    """
+    key = os.path.realpath(str(root))
+    if shutil.which("git") is None:
+        return None
+    try:
+        top = subprocess.run(["git", "-C", key, "rev-parse", "--show-toplevel"],
+                             capture_output=True, text=True, timeout=60)
+        if top.returncode != 0 or os.path.realpath(top.stdout.strip()) != key:
+            return None
+        ls = subprocess.run(["git", "-C", key, "ls-files", "-z", "--cached"],
+                            capture_output=True, text=True, timeout=60)
+        if ls.returncode != 0:
+            return None
+        names = frozenset(n for n in ls.stdout.split("\0") if n)
+        return names or None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
 def iter_seed_files(root: Path) -> Iterator[Path]:
     """Every text file the vocabulary may be derived from: root-level files plus
     the declared _SEED_ROOTS (see the comment there for why it is an include
-    list, and which layers are deliberately absent)."""
+    list, which layers are deliberately absent, and why the result is filtered
+    to the SHIPPED tree)."""
     root = Path(root)
+    tracked = tracked_paths(root)
+
+    def _ships(p: Path) -> bool:
+        if tracked is None:  # no git metadata: everything present was delivered
+            return True
+        try:
+            return p.relative_to(root).as_posix() in tracked
+        except ValueError:  # outside the root entirely — never ours to seed
+            return False
+
     def _files_under(base: Path, recurse: bool) -> Iterator[Path]:
         if not base.is_dir():
             return
@@ -900,6 +995,8 @@ def iter_seed_files(root: Path) -> Iterator[Path]:
                     if p.is_symlink() or p.stat().st_size > _SEED_MAX_BYTES:
                         continue
                 except OSError:
+                    continue
+                if not _ships(p):
                     continue
                 yield p
     for p in _files_under(root, recurse=False):
@@ -1276,6 +1373,159 @@ class TestSpecificsEngine:
             return
         f = scan_specifics(root, vocabulary=frozenset(), rel_to=tmp_path)
         assert any(x[1] == "SYMLINK_ESCAPE" for x in f)
+
+
+_GIT = shutil.which("git")
+
+
+class TestSpecificsSeedCorpus:
+    """THE CORPUS MUST BE THE SHIPPED TREE, identically in every environment.
+
+    The defect these pin, measured 2026-08-02 and reproduced from ONE planted
+    file in a depth-1 clone: the seed walk read the filesystem, so a working
+    checkout's build output, runtime logs and nested worktrees taught the gate
+    24 labels the committed tree does not carry, and 19 framework/ lines went
+    RED in a way CI could not reproduce and framework/ could not fix. The
+    counterpart failure — a filter so eager it seeds nothing — is pinned too:
+    an empty listing must degrade to the walk, never to an empty vocabulary.
+    """
+
+    @staticmethod
+    def _git(cwd: Path, *args: str) -> None:
+        env = dict(os.environ,
+                   HOME=str(cwd), GIT_CONFIG_NOSYSTEM="1",
+                   GIT_TERMINAL_PROMPT="0")
+        subprocess.run(["git", "-C", str(cwd)] + list(args), check=True,
+                       capture_output=True, text=True, timeout=60, env=env)
+
+    def _repo(self, tmp_path: Path) -> Path:
+        """A real git tree. `git add` alone is enough — `ls-files --cached`
+        reads the INDEX, so no commit and no identity config is needed, which
+        keeps the fixture usable on a runner with no git user configured."""
+        self._git(tmp_path, "init", "-q")
+        return tmp_path
+
+    @staticmethod
+    def _write(p: Path, body: str) -> None:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(body, encoding="utf-8")
+
+    @pytest.mark.skipif(_GIT is None, reason="no git binary in this environment")
+    def test_an_untracked_seed_file_does_not_teach_the_gate(self, tmp_path):
+        """The arm, and its control in the same test so neither can pass alone:
+        the SAME bytes seed or do not seed purely on whether git tracks them."""
+        repo = self._repo(tmp_path)
+        self._write(repo / "cabinet" / "shipped.md", "https://api.vendorx.io/v2\n")
+        self._git(repo, "add", "cabinet/shipped.md")
+        self._write(repo / "cabinet" / "scratch.md", "https://api.vendory.io/v2\n")
+        v = derive_vendor_vocabulary(repo)
+        assert "vendorx" in v, "a TRACKED seed file stopped seeding — the filter ate the corpus"
+        assert "vendory" not in v, (
+            "an UNTRACKED seed file taught the gate a label the shipped tree "
+            "does not carry — the corpus is the filesystem again")
+        # CONTROL: track the very same bytes; the label must appear.
+        self._git(repo, "add", "cabinet/scratch.md")
+        assert "vendory" in derive_vendor_vocabulary(repo)
+
+    @pytest.mark.skipif(_GIT is None, reason="no git binary in this environment")
+    def test_a_gitignored_build_artifact_cannot_red_the_framework(self, tmp_path):
+        """The measured defect END TO END, as a regression: a generated,
+        gitignored file under a seed root carries a vendor's documentation URL,
+        and a framework module mentions that label as an ordinary word. Before
+        the corpus filter this was a finding; after it, it is not — and the
+        control proves the pair would still fire if the artifact SHIPPED."""
+        repo = self._repo(tmp_path)
+        self._write(repo / ".gitignore", "generated/\n")
+        self._write(repo / "framework" / "detect.py", "STACKS = ('vendorz',)\n")
+        self._git(repo, "add", ".gitignore", "framework/detect.py")
+        self._write(repo / "cabinet" / "generated" / "artifact.d.ts",
+                    "// see https://vendorz.io/docs for more information\n")
+        v = derive_vendor_vocabulary(repo)
+        assert scan_specifics(repo / "framework", vocabulary=v, rel_to=repo) == [], (
+            "a gitignored build artifact still reds framework/ — the RED that "
+            "cannot be reproduced in CI is back")
+        # CONTROL: the identical URL in a file that SHIPS must still fire, or
+        # this arm is passing because the engine stopped working.
+        self._write(repo / "cabinet" / "shipped.md",
+                    "// see https://vendorz.io/docs for more information\n")
+        self._git(repo, "add", "cabinet/shipped.md")
+        v2 = derive_vendor_vocabulary(repo)
+        assert [x[1] for x in scan_specifics(repo / "framework", vocabulary=v2,
+                                             rel_to=repo)] == ["VENDOR_TOKEN"]
+
+    def test_without_git_metadata_the_whole_walk_is_the_corpus(self, tmp_path):
+        """The hatch / egg / tarball path: nothing is "tracked" there, and
+        everything present was delivered. A filter that returned an empty set
+        here would silently empty the vocabulary — the inert-sensor green — so
+        the fallback is asserted, not assumed."""
+        assert not (tmp_path / ".git").exists()
+        self._write(tmp_path / "cabinet" / "notes.md", "https://api.vendorx.io/v2\n")
+        assert tracked_paths(tmp_path) is None
+        assert "vendorx" in derive_vendor_vocabulary(tmp_path)
+
+    @pytest.mark.skipif(_GIT is None, reason="no git binary in this environment")
+    def test_a_repository_with_an_empty_index_falls_back_to_the_walk(self, tmp_path):
+        """THE DEGENERATE END, and the one place where "empty" must not mean
+        "nothing ships". A tree that is a repository but stages nothing yields
+        an EMPTY listing; honouring it would filter the seed down to zero files
+        and leave VENDOR_TOKEN matching against an empty vocabulary — green,
+        forever, over any tree. The fallback fails toward MORE vocabulary, i.e.
+        toward a red somebody has to look at, which is the only acceptable
+        direction for a sensor's degenerate case. Deliberately in tension with
+        test_an_untracked_seed_file_does_not_teach_the_gate above: there the
+        index says what ships, here it says nothing at all."""
+        repo = self._repo(tmp_path)
+        self._write(repo / "cabinet" / "notes.md", "https://api.vendorx.io/v2\n")
+        assert tracked_paths(repo) is None, (
+            "an empty index was treated as the shipped corpus — the seed walk "
+            "now yields nothing and Arm 2 matches against an empty vocabulary")
+        assert "vendorx" in derive_vendor_vocabulary(repo)
+
+    @pytest.mark.skipif(_GIT is None, reason="no git binary in this environment")
+    def test_an_ancestor_repository_never_speaks_for_a_nested_tree(self, tmp_path):
+        """A hatch unpacked inside a checkout, or a fixture under one: the
+        ancestor's index tracks none of those paths, so a naive `ls-files` would
+        report "tracked: nothing" and seed NOTHING. The toplevel check makes
+        that case the fallback instead of an empty corpus."""
+        repo = self._repo(tmp_path)
+        nested = repo / "unpacked"
+        self._write(nested / "cabinet" / "notes.md", "https://api.vendorx.io/v2\n")
+        assert tracked_paths(nested) is None
+        assert "vendorx" in derive_vendor_vocabulary(nested)
+
+    def test_the_live_seed_corpus_carries_nothing_the_tree_does_not_ship(self):
+        """THE LIVE WIRING ARM — the one that was red on the launching
+        deployment and green in CI, which is the whole point. Every file the
+        vocabulary is derived from must be a file the repository ships."""
+        tracked = tracked_paths(_REPO_ROOT)
+        if tracked is None:  # an egg cut or a hatch: the walk IS the corpus
+            return
+        strays = []
+        for p in iter_seed_files(_REPO_ROOT):
+            rel = p.relative_to(_REPO_ROOT).as_posix()
+            if rel not in tracked:
+                strays.append(rel)
+        assert strays == [], (
+            "the vendor vocabulary is being derived from %d file(s) this "
+            "repository does not ship — build output, runtime logs or a nested "
+            "worktree are teaching a gate that decides merges: %s"
+            % (len(strays), strays[:10]))
+
+    def test_the_corpus_filter_is_live_wherever_it_can_be(self):
+        """Non-vacuity of the filter itself, stated as a biconditional so there
+        is no environment in which it quietly does nothing: git metadata plus a
+        git binary means the shipped corpus is RESOLVED, and the absence of
+        either means the documented fallback — never a silent third state."""
+        resolvable = (_REPO_ROOT / ".git").exists() and _GIT is not None
+        tracked = tracked_paths(_REPO_ROOT)
+        assert (tracked is not None) == resolvable, (
+            "shipped-corpus resolution disagrees with the environment "
+            "(.git present=%s, git binary=%s, resolved=%s)"
+            % ((_REPO_ROOT / ".git").exists(), _GIT is not None, tracked is not None))
+        if tracked is not None:
+            assert "LICENSE" in tracked, (
+                "the tracked listing resolved but does not contain the one file "
+                "every cut of this repository carries — it is not this tree's")
 
 
 class TestSpecificsRatchetIsNonVacuous:

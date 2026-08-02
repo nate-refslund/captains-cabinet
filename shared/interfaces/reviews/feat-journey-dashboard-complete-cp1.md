@@ -11,7 +11,7 @@ Reviewed against the working diff, 2026-08-02. Branch off `ad8f0d3f`.
 | U2 | `bridge.ts` (`refusalDetail`), `route.ts`, `journey-card.tsx` | `salience_window_off_target` arrived as a sentence with no control able to state either relation the core accepts. |
 | U4 | `journey-card.tsx` | The Dashboard rendered citations without disclosing that some had been withheld. Telegram has said so since the verdict existed. |
 | — | `docs/plans/declared-residuals-register.md` | RES-023 updated (surface half closed, anchor still live so it stays open); RES-027 added for the inert detail lane. The register gate caught the new declaration and refused the commit until it had a row — working as designed. |
-| — | `framework/onboarding/tests/test_journey.py` | Calendar time-bomb in `_split_estate_rows` (see "unplanned fix"). |
+| — | (withdrawn) | A calendar time-bomb in `_split_estate_rows` was found and fixed here, then landed independently on master as `fc0efa9d` while this branch was in CI. Master's version is strictly better; mine was dropped at the merge. See "concurrent writer". |
 
 ## Dissent from the brief, on record
 
@@ -113,22 +113,34 @@ here — and both parsers refuse input they cannot read rather than skipping it.
   spread; strings are cut at 300 chars, lists at 8 members, non-string members
   dropped. Tested with a 5,000-char target and a 40-member list.
 
-## Unplanned fix, and why it is in this PR
+## Concurrent writer — a fix of mine that is correctly NOT in this PR
 
-`framework/onboarding/tests/test_journey.py::_split_estate_rows` stamped its rows
-`2026-07-01..17`. The ranker weights recency, so on unchanged code the fixture
-aged out of its own premise: `test_answering_merges_a_split_candidate_and_the
-_shortlist_changes` fails its `"no split to fix"` assertion once the newest row
-passes 16 days. Master's `framework-tests` job was green at 2026-08-02T06:11Z
-(15.9 days) and red locally the same day at ~18:00Z (16.4 days) — a required job
-hours from going red on a commit nobody touched. Anchored to
-`now - _NEWEST_DAYS_AGO`; the offset is measured (the split is present at 3-15
-and 26+ days, absent at 0-2 and 16-25) and 7 sits mid-band. Spacing and order
-are byte-for-byte what they were; only the anchor moves.
+`_split_estate_rows` in `framework/onboarding/tests/test_journey.py` stamped its
+rows `2026-07-01..17`. The ranker scores recency, so on unchanged code the
+fixture aged out of its own premise and
+`test_answering_merges_a_split_candidate_and_the_shortlist_changes` failed its
+`"no split to fix"` assertion — a required job going red on a commit nobody
+touched. I root-caused it, measured the stable band, anchored the fixture to
+`now`, and committed it here because a green PR was otherwise impossible.
 
-`framework/fidelity/tests/test_retro_shim.py::test_reexports_constants` also
-fails locally (`claude-sonnet-5` vs a pinned `claude-sonnet-4-6`). **Deliberately
-NOT touched**: that constant is re-exported from an out-of-repo personal pipe,
+**Another session landed the same fix first**, as `fc0efa9d`, while this branch
+was in CI. Theirs is strictly better and I took it whole at the merge: it names
+the mechanism exactly (`salience._RECENCY_BANDS` at 7/30/180 days, so the
+literals were authored inside the 30-day band and the oldest rows crossed out of
+it), it anchors ALL THREE dated fixtures rather than only the one that fired
+("fixing only the red one is how a silent hole becomes a green one"), it makes
+the row AGES constant by construction rather than re-tuning an offset, and it
+names a measured residual — three more tests in `test_who_and_when.py` on the
+same fuse about a month out.
+
+`git checkout --theirs` on that file; `git diff origin/master` over it is empty,
+so nothing of mine survives in it. This is the class-8 case working as intended:
+the other writer's fix made mine *wrong to keep*, not merely redundant, because
+two anchoring schemes in one file would be worse than either.
+
+`framework/fidelity/tests/test_retro_shim.py` also fails locally
+(`claude-sonnet-5` vs a pinned `claude-sonnet-4-6`). **Deliberately NOT touched**:
+that constant is re-exported from an out-of-repo personal pipe,
 `framework/fidelity/tests/conftest.py` skips the suite where the pipe is absent,
 and master's CI is green on it. Changing the pin would be adapting the repo to
 this laptop.
@@ -139,7 +151,7 @@ this laptop.
 |---|---|
 | `npx tsc --noEmit` | clean |
 | `npx vitest run` (full dashboard) | 3282 passed, 1 skipped (was 3225 — 57 new) |
-| `pytest framework/onboarding/tests -q` | 842 passed, 1 skipped |
+| `pytest framework/onboarding/tests -q` | 842 passed, 1 skipped (re-run post-merge on master's anchoring) |
 | `pytest framework/ -q` | 8013 passed, 25 skipped; 1 environment-local failure documented above |
 | `pytest cabinet/scripts/tests -q` | 5226 passed, 34 skipped |
 | `check-layer-separation.sh` | OK — new=0 |
