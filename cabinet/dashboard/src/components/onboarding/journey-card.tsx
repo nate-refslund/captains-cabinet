@@ -1,12 +1,15 @@
 'use client'
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
+import { WINDOW_RELATIONS } from '@/lib/onboarding/types'
 import type {
   OnboardingAction,
   OnboardingIdentityAsk,
   OnboardingResponse,
+  OnboardingSalienceOption,
   OnboardingSurface,
   OwnershipClass,
+  WindowRelation,
 } from '@/lib/onboarding/types'
 
 // A dedup/idempotency id that works in every context. crypto.randomUUID is
@@ -30,6 +33,34 @@ function newActionId(surface: string): string {
 // reordered fails loudly there instead of silently testing the wrong state — and
 // a fresh `{}` per render would make that assertion unsatisfiable.
 export const NO_IDENTITY_PICKS: Readonly<Record<string, string>> = Object.freeze({})
+
+/** The merge picker's empty starting value — stable for the same reason. */
+export const NO_MERGE: readonly string[] = Object.freeze([])
+
+/**
+ * What the operator has to state when the folder they proposed shares no word
+ * with the target they answered. The core refuses that window rather than
+ * retargeting it silently, and takes ONE of two statements; this is the shape
+ * the card renders them from.
+ */
+interface RelationAsk {
+  target: string
+  window: string
+  relations: WindowRelation[]
+}
+
+/**
+ * Never through the prototype chain: the relations arrive from a refusal, and
+ * `'constructor' in WINDOW_RELATIONS` is true.
+ */
+function isWindowRelation(value: string): value is WindowRelation {
+  return Object.prototype.hasOwnProperty.call(WINDOW_RELATIONS, value)
+}
+
+/** The folder's own name — what the core's name test compares, and what it names back. */
+function folderName(path: string): string {
+  return path.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || path
+}
 
 // How many of a connector's accounts lead the picker before the rest go behind
 // a disclosure. A LAYOUT number and nothing else — the core decides who is
@@ -72,9 +103,27 @@ export default function OnboardingJourneyCard({
   // likeliest-looking candidate here would answer for them — and a wrong
   // attribution reads exactly like a right one.
   const [handles, setHandles] = useState<Readonly<Record<string, string>>>(NO_IDENTITY_PICKS)
+  // Which of the ranked candidates to open first. Empty until they pick, for
+  // the same reason `ownership` has no default: the whole point of the ranking
+  // is that it is a guess, so pre-selecting its top answer would spend the
+  // depth budget on the cabinet's opinion while looking like the operator's.
+  const [salienceChoice, setSalienceChoice] = useState('')
+  // The escape hatch's typed name. Measured on a real estate, the correct answer
+  // can sit outside the shown three, so this field is a real path and not a
+  // polite one.
+  const [salienceName, setSalienceName] = useState('')
+  // The merge the operator can see and no matcher can derive: two ranked names
+  // that are one thing.
+  const [salienceMerge, setSalienceMerge] = useState<readonly string[]>(NO_MERGE)
+  // Set only by an off-target refusal. A refusal the surface cannot answer is
+  // the dead end this card exists to abolish, so the two statements the core
+  // accepts are rendered from it.
+  const [relationAsk, setRelationAsk] = useState<RelationAsk | null>(null)
   const effectiveSurface = useRef<Extract<OnboardingSurface, 'dashboard' | 'world' | 'companion'>>(surface)
   const handoffIds = useRef<{ trace_id?: string; correlation_id?: string }>({})
   const seedFieldRef = useRef<HTMLTextAreaElement | null>(null)
+  const salienceFormRef = useRef<HTMLFormElement | null>(null)
+  const identityFormRef = useRef<HTMLFormElement | null>(null)
 
   const reportEvidence = useCallback(async (
     phase: 'transport' | 'ui' | 'feedback',
@@ -181,9 +230,34 @@ export default function OnboardingJourneyCard({
         const body = (await response.json()) as OnboardingResponse
         if (!response.ok || !body.ok) {
           if (response.status === 409) await load()
+          // THE ONE REFUSAL THAT CARRIES ITS OWN WAY OUT. The operator pointed
+          // depth at one thing and proposed a window somewhere else; the core
+          // will not retarget their answer silently, so it asks which of two
+          // statements is true. Everything needed to ask that is already here —
+          // the answered target is on state and the folder is what was just
+          // submitted — so the control renders whether or not the refusal
+          // carried its detail block, and the detail is preferred where present
+          // because the core's own words beat a surface's reconstruction.
+          if (body.code === 'salience_window_off_target') {
+            const detail = body.detail || {}
+            const proposed = typeof extra.source === 'string' ? extra.source : ''
+            const offered = detail.relations?.length
+              ? detail.relations
+              : Object.keys(WINDOW_RELATIONS)
+            setRelationAsk({
+              target: detail.target || journey.state.salience?.target || '',
+              window: detail.window || folderName(proposed),
+              // Only relations this surface can actually state. One it does not
+              // know would render a button that can only earn
+              // salience_relation_invalid; parity.test.ts keeps the two
+              // vocabularies equal so the filter never silently empties.
+              relations: offered.filter(isWindowRelation),
+            })
+          }
           throw new Error(body.error || 'That choice could not be completed.')
         }
         setJourney(body)
+        setRelationAsk(null)
         setEditScope(false)
         setPurgeArmed(false)
         setPurgeConfirmation('')
@@ -221,15 +295,53 @@ export default function OnboardingJourneyCard({
     }
   }
 
-  function submitScope(event: FormEvent) {
-    event.preventDefault()
-    void send('propose_window', {
+  // The ranked question exactly as the core offers it. The candidates, the
+  // escape hatch and the merge all ride on this ONE option, because an
+  // affordance a surface is never handed is not an escape hatch, it is a
+  // parameter — and a merge behind a second action would make the operator
+  // answer twice to fix a split they can see in one glance.
+  const salienceOption = journey?.card.options.find(
+    (option) => option.action === 'answer_salience'
+  )
+  const salienceOptions: OnboardingSalienceOption[] = salienceOption?.options ?? []
+  const salienceAsksName =
+    salienceOptions.find((option) => option.id === salienceChoice)?.input === 'seed'
+
+  function windowPayload(): Record<string, unknown> {
+    return {
       source,
       purpose,
       relationship_destination: destination,
       ownership: ownership || undefined,
       authority_basis: authorityBasis,
-    })
+    }
+  }
+
+  function submitScope(event: FormEvent) {
+    event.preventDefault()
+    void send('propose_window', windowPayload())
+  }
+
+  /**
+   * The same proposal, now carrying the statement the operator made about it.
+   * A stated relation wins over the core's name test in both directions — they
+   * know what is in the folder and the matcher does not.
+   */
+  function submitRelation(relation: WindowRelation) {
+    void send('propose_window', { ...windowPayload(), salience_relation: relation })
+  }
+
+  function submitSalience(event: FormEvent) {
+    event.preventDefault()
+    if (!salienceChoice) return
+    const picked = salienceOptions.find((option) => option.id === salienceChoice)
+    const extra: Record<string, unknown> = { choice: salienceChoice }
+    // The escape hatch is the one option that needs words beside the pick, and
+    // the core says which one that is rather than the surface assuming it is
+    // the last.
+    if (picked?.input === 'seed') extra.name = salienceName.trim()
+    if (salienceMerge.length > 0) extra.same_as = [...salienceMerge]
+    void send('answer_salience', extra)
   }
 
   function submitSeed(event: FormEvent) {
@@ -281,6 +393,26 @@ export default function OnboardingJourneyCard({
       // Focus the field rather than firing an empty action: this option exists
       // to point at the input, and sending it bare would only earn a refusal.
       seedFieldRef.current?.focus()
+      return
+    }
+    // THE TWO OPTIONS THAT USED TO FALL THROUGH TO A BARE SEND. Both carry a
+    // payload the core requires, so the bare send could only ever be refused —
+    // `answer_salience` did not even reach the core (the bridge refused it as an
+    // unknown action), which made a live button at the ranked question a
+    // guaranteed error. Each now points at the control that can answer it.
+    //
+    // The interception is CONDITIONAL on that control existing. Where it does
+    // not, the bare send still goes, so the operator gets the core's own
+    // sentence about what is missing instead of a button that silently does
+    // nothing — a quiet no-op is the same dead end by a politer route.
+    if (action === 'answer_salience' && salienceOptions.length > 0) {
+      salienceFormRef.current?.scrollIntoView?.({ block: 'nearest' })
+      salienceFormRef.current?.querySelector?.('input')?.focus()
+      return
+    }
+    if (action === 'record_operator_identity' && journey?.card.entry?.identity_question) {
+      identityFormRef.current?.scrollIntoView?.({ block: 'nearest' })
+      identityFormRef.current?.querySelector?.('input')?.focus()
       return
     }
     if (action === 'propose_window') {
@@ -401,6 +533,7 @@ export default function OnboardingJourneyCard({
 
           {journey.card.entry?.identity_question && (
             <form
+              ref={identityFormRef}
               className={`mt-4 rounded-lg border p-3 ${variant === 'world' ? 'border-stone-500/70 bg-amber-50/40' : 'border-zinc-700 bg-zinc-950'}`}
               onSubmit={submitIdentity}
             >
@@ -486,6 +619,116 @@ export default function OnboardingJourneyCard({
             </form>
           )}
 
+          {salienceOptions.length > 0 && (
+            <form
+              ref={salienceFormRef}
+              className={`mt-4 rounded-lg border p-3 ${variant === 'world' ? 'border-stone-500/70 bg-amber-50/40' : 'border-zinc-700 bg-zinc-950'}`}
+              onSubmit={submitSalience}
+            >
+              <h3 className="text-sm font-semibold">{salienceOption?.label}</h3>
+              <div className="mt-2 space-y-1 text-sm">
+                {salienceOptions.map((option) => (
+                  <label
+                    key={option.id}
+                    className="flex min-h-11 cursor-pointer items-start gap-3 rounded-md border border-current/20 px-3 py-2"
+                  >
+                    <input
+                      type="radio"
+                      name={`${surface}-salience`}
+                      value={option.id}
+                      checked={salienceChoice === option.id}
+                      onChange={() => setSalienceChoice(option.id)}
+                      className="mt-1"
+                    />
+                    <span>
+                      {option.label}
+                      {/* The NAMES behind the rank, never a score. A number the
+                          operator cannot audit is not evidence, and this is the
+                          only thing they have to judge the ranking by. */}
+                      <span className={`block text-xs ${muted}`}>{option.why}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              {/* The escape hatch's field, open only where the core marked the
+                  picked option as needing one. Not always visible, because a
+                  field beside a chosen candidate would invite a name that
+                  contradicts the pick. */}
+              {salienceAsksName && (
+                <label className="mt-2 block text-xs">
+                  <span className={muted}>What should I open instead? A word or two.</span>
+                  <input
+                    type="text"
+                    name={`${surface}-salience-name`}
+                    value={salienceName}
+                    onChange={(event) => setSalienceName(event.target.value)}
+                    autoComplete="off"
+                    className={`mt-1 min-h-11 w-full rounded-md border px-3 py-2 text-sm ${variant === 'world' ? 'border-stone-500 bg-amber-50' : 'border-zinc-700 bg-zinc-900'}`}
+                  />
+                </label>
+              )}
+              {/* THE MERGE TRAVELS WITH THE PICK — it is the same answer ("this
+                  one, and by the way it is also the one you called that"), and
+                  it names the WHOLE ranking rather than the shown three: the
+                  twin of the top candidate routinely sits below the cut, so a
+                  merge reachable only from what is on screen cannot fix the
+                  split it exists for. */}
+              {salienceOption?.merge?.candidates && salienceOption.merge.candidates.length > 1 && (
+                <details className="mt-3">
+                  <summary className={`min-h-11 cursor-pointer py-2 text-xs ${muted}`}>
+                    Are two of these the same thing under different names?
+                  </summary>
+                  <p className={`text-xs ${muted}`}>{salienceOption.merge.question}</p>
+                  <div className="mt-1 space-y-1 text-sm">
+                    {salienceOption.merge.candidates.map((candidate) => (
+                      <label
+                        key={candidate.id}
+                        className="flex min-h-11 cursor-pointer items-center gap-3 rounded-md border border-current/20 px-3 py-2"
+                      >
+                        <input
+                          type="checkbox"
+                          name={`${surface}-salience-merge`}
+                          value={candidate.id}
+                          checked={salienceMerge.includes(candidate.id)}
+                          onChange={() =>
+                            setSalienceMerge((current) =>
+                              current.includes(candidate.id)
+                                ? current.filter((id) => id !== candidate.id)
+                                : [...current, candidate.id]
+                            )
+                          }
+                        />
+                        <span>{candidate.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {/* What is already learned, echoed back. Once two candidates
+                      are one, the second name leaves the ranking — without this
+                      the operator cannot tell whether their answer took. */}
+                  {salienceOption.merge.learned?.length > 0 && (
+                    <p className={`mt-2 text-xs ${muted}`}>
+                      Already one thing: {salienceOption.merge.learned
+                        .map((group) => group.labels.join(' = '))
+                        .join('; ')}
+                    </p>
+                  )}
+                </details>
+              )}
+              {/* An unearned clean negative is the defect this line exists for:
+                  the shortlist is only as good as what the sweep reached. */}
+              {salienceOption?.not_reached && (
+                <p className={`mt-2 text-xs ${muted}`}>{salienceOption.not_reached}</p>
+              )}
+              <button
+                type="submit"
+                disabled={working || !salienceChoice || (salienceAsksName && !salienceName.trim())}
+                className={`mt-2 min-h-11 rounded-md border px-3 py-2 text-sm font-medium disabled:opacity-50 ${variant === 'world' ? 'border-stone-600 bg-amber-100' : 'border-zinc-600 bg-zinc-800'}`}
+              >
+                Go deep on that one
+              </button>
+            </form>
+          )}
+
           {journey.card.entry?.discovery?.executed && (
             <div className={`mt-4 rounded-lg border p-3 ${variant === 'world' ? 'border-stone-500/70 bg-amber-50/40' : 'border-zinc-700 bg-zinc-950'}`}>
               <h3 className="text-sm font-semibold">What I went and looked for</h3>
@@ -542,6 +785,23 @@ export default function OnboardingJourneyCard({
                   </li>
                 ))}
               </ul>
+              {/* WHAT IS NOT ON THE RECEIPT. The core replaces the words of any
+                  citation whose source is not the operator's, and until now this
+                  surface rendered the survivors and said nothing — a receipt
+                  that looks complete while part of it was held back is a
+                  quieter lie than one that refuses. Telegram has said this since
+                  the verdict existed; the Dashboard did not. The count only,
+                  never the withheld text: this renders the core's verdict and
+                  must never reconstruct what it withheld. */}
+              {journey.card.egress && journey.card.egress.withheld > 0 && (
+                <p className={`mt-2 text-xs ${muted}`}>
+                  I am holding back the words of {journey.card.egress.withheld} of{' '}
+                  {journey.card.egress.items} citation
+                  {journey.card.egress.items === 1 ? '' : 's'}: this source is not yours to
+                  send. The file and line are above so you can open them yourself, or
+                  reclassify the source if I have it wrong.
+                </p>
+              )}
             </div>
           )}
 
@@ -675,6 +935,42 @@ export default function OnboardingJourneyCard({
                 {working ? 'Preparing the Charter…' : 'Show me the Charter first'}
               </button>
             </form>
+          )}
+
+          {/* THE REFUSAL THAT CARRIES ITS OWN WAY OUT. The core will not open a
+              folder the answer does not reach and will not retarget the answer
+              for the operator, so it stops and asks which of two things is
+              true. Before this block the refusal arrived as a sentence in the
+              error line with nothing able to state either one, which made a
+              correct control an unanswerable one. Re-answering the ranked
+              question is the third way through and needs nothing from here. */}
+          {relationAsk && (
+            <div className={`mt-4 rounded-lg border p-3 ${variant === 'world' ? 'border-stone-500/70 bg-amber-50/40' : 'border-zinc-700 bg-zinc-950'}`}>
+              <h3 className="text-sm font-semibold">
+                You pointed me at {relationAsk.target}, and “{relationAsk.window}” shares no
+                word with it.
+              </h3>
+              <p className={`mt-1 text-xs ${muted}`}>
+                I cannot know what is in a folder before I am allowed to open it, so this is
+                yours to say. Whichever you choose is recorded and shown on the Charter.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {relationAsk.relations.map((relation) => (
+                  <button
+                    key={relation}
+                    type="button"
+                    name={`${surface}-relation-${relation}`}
+                    disabled={working}
+                    onClick={() => submitRelation(relation)}
+                    className={`min-h-11 rounded-md border px-3 py-2 text-sm font-medium disabled:opacity-50 ${variant === 'world' ? 'border-stone-700 bg-amber-100' : 'border-zinc-600 bg-zinc-800 hover:bg-zinc-700'}`}
+                  >
+                    {relation === 'same_thing'
+                      ? `“${relationAsk.window}” IS ${relationAsk.target}, under another name`
+                      : `That is somewhere else I want opened`}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
 
           {!showForm && !purgeArmed && journey.card.options.length > 0 && (

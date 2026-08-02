@@ -12,7 +12,8 @@ vi.mock('@/lib/onboarding/bridge', () => {
     constructor(
       public readonly code: string,
       message: string,
-      public readonly status = 400
+      public readonly status = 400,
+      public readonly detail: Record<string, unknown> = {}
     ) {
       super(message)
     }
@@ -158,5 +159,41 @@ describe('POST /api/onboarding', () => {
     const response = await POST(post({ action: 'pause' }))
     expect(response.status).toBe(409)
     expect(await response.json()).toMatchObject({ code: 'revision_conflict' })
+  })
+
+  it('carries a refusal detail through so the card can build the fix-up', async () => {
+    applyMock.mockRejectedValueOnce(
+      new OnboardingBridgeError(
+        'salience_window_off_target',
+        'You pointed me at blueharbour…',
+        400,
+        { target: 'blueharbour', window: 'quarterly-tax-returns', relations: ['elsewhere', 'same_thing'] }
+      )
+    )
+    const response = await POST(post({ action: 'propose_window', source: '/tmp/x' }))
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({
+      ok: false,
+      code: 'salience_window_off_target',
+      error: 'You pointed me at blueharbour…',
+      detail: { target: 'blueharbour', window: 'quarterly-tax-returns', relations: ['elsewhere', 'same_thing'] },
+    })
+  })
+
+  it('omits the key entirely when a refusal carries nothing, so absent never reads as blank', async () => {
+    applyMock.mockRejectedValueOnce(
+      new OnboardingBridgeError('purpose_too_long', 'Keep it under 300 characters.', 400)
+    )
+    const response = await POST(post({ action: 'propose_window', source: '/tmp/x' }))
+    const body = await response.json() as Record<string, unknown>
+    expect('detail' in body).toBe(false)
+  })
+
+  it('never invents a detail for a failure the bridge did not classify', async () => {
+    applyMock.mockRejectedValueOnce(new Error('/private/secret/path'))
+    const response = await POST(post({ action: 'pause' }))
+    const body = await response.json() as Record<string, unknown>
+    expect('detail' in body).toBe(false)
+    expect(JSON.stringify(body)).not.toContain('/private/secret/path')
   })
 })

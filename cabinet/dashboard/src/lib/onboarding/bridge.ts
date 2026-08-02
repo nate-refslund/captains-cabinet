@@ -13,6 +13,7 @@ import type {
   OnboardingActionRequest,
   OnboardingObservationRequest,
   OnboardingObservationResponse,
+  OnboardingRefusalDetail,
   OnboardingResponse,
   OnboardingSurface,
 } from './types'
@@ -21,7 +22,18 @@ const MODULE = 'framework.onboarding.journey'
 const TIMEOUT_MS = 30_000
 const MAX_OUTPUT_BYTES = 2 * 1024 * 1024
 
-const ACTIONS = new Set([
+/**
+ * Exported as a ReadonlySet so `parity.test.ts` can compare the LIVE gate with
+ * the Python dispatch chain rather than a text mirror of it — a sensor pointed
+ * at a copy of the control is the failure class this program keeps finding in
+ * its own tests. Readonly because this set IS the admission gate: a caller able
+ * to `.add()` could widen what crosses the process boundary.
+ *
+ * Deliberately a separate literal from `ONBOARDING_ACTIONS` in ./types rather
+ * than derived from it. Deriving would make a new type member auto-admit itself
+ * here; a core action reaches this surface only when someone writes it down.
+ */
+export const ACTIONS: ReadonlySet<string> = new Set([
   'propose_window',
   'answer_seed',
   // Credentialed READ-ONLY connector sweep (Captain ruling 2026-07-29). Carries
@@ -35,6 +47,15 @@ const ACTIONS = new Set([
   // those was silently truncated to 500 characters until 2026-07-30, which
   // resolved the operator to a clipped string that then matched nothing).
   'record_operator_identity',
+  // Where the depth budget is pointed. It carries a `choice` (one offered
+  // candidate id, or the escape hatch), a `name` when the escape hatch is
+  // picked, and an optional `same_as` merge. Absent from this set until
+  // 2026-08-02, which made the ranked question a LIVE DEAD END: the core
+  // printed the candidates on the card, the surface rendered them, and the
+  // send was refused here as `action_invalid` before the core ever saw it.
+  // A bare send is still refused — by the CORE, as `salience_choice_required`,
+  // which is the operator-answerable sentence rather than a surface's guess.
+  'answer_salience',
   'ratify_charter',
   'continue',
   'pause',
@@ -47,10 +68,60 @@ export class OnboardingBridgeError extends Error {
   constructor(
     public readonly code: string,
     message: string,
-    public readonly status = 400
+    public readonly status = 400,
+    /** Allowlisted refusal fields only — see `refusalDetail`. */
+    public readonly detail: OnboardingRefusalDetail = {}
   ) {
     super(message)
   }
+}
+
+/** Longest single relation/target/window string a refusal may carry back. */
+const MAX_DETAIL_CHARS = 300
+const MAX_DETAIL_ITEMS = 8
+
+function boundedString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim()
+    ? value.slice(0, MAX_DETAIL_CHARS)
+    : undefined
+}
+
+/**
+ * The refusal fields a surface may see, taken ONE BY ONE and never spread.
+ *
+ * A refusal that only says no leaves the operator with nothing to do about it:
+ * `salience_window_off_target` names the answered target, the folder that
+ * missed it, and the two relations that resolve it — the material the fix-up
+ * control is built from. But this is the process boundary between a Python
+ * core that can put anything in a refusal and a browser, so widening it is a
+ * deliberate act: an unrecognised key never crosses, a string is bounded, and a
+ * list is bounded in both length and element size.
+ *
+ * RESIDUAL, stated rather than implied: as of this change the core's CLI
+ * (`framework/onboarding/journey.py::_cli`) prints `{ok, code, error}` and
+ * DROPS `JourneyError.detail`, so nothing reaches this function in production
+ * yet — the surface therefore builds the same fix-up from the state it already
+ * holds (see `relationFixUp` in journey-card.tsx) and treats this as
+ * enrichment. This is the receiving half, tested against a core that does emit
+ * it; teaching the CLI to emit it is a germline+cognitive-contract unit of its
+ * own, and doing it here would have been a half-wire in the other direction.
+ */
+export function refusalDetail(raw: unknown): OnboardingRefusalDetail {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const source = raw as Record<string, unknown>
+  const detail: OnboardingRefusalDetail = {}
+  const target = boundedString(source.target)
+  if (target) detail.target = target
+  const window = boundedString(source.window)
+  if (window) detail.window = window
+  if (Array.isArray(source.relations)) {
+    const relations = source.relations
+      .map(boundedString)
+      .filter((value): value is string => Boolean(value))
+      .slice(0, MAX_DETAIL_ITEMS)
+    if (relations.length > 0) detail.relations = relations
+  }
+  return detail
 }
 
 type CoreCommand = 'snapshot' | 'act' | 'observe'
@@ -129,7 +200,12 @@ function run<T extends OnboardingResponse | OnboardingObservationResponse>(
         return
       }
       if (!parsed.ok) {
-        reject(new OnboardingBridgeError(parsed.code || 'action_refused', parsed.error || 'That onboarding action was refused.', 400))
+        reject(new OnboardingBridgeError(
+          parsed.code || 'action_refused',
+          parsed.error || 'That onboarding action was refused.',
+          400,
+          refusalDetail((parsed as { detail?: unknown }).detail)
+        ))
         return
       }
       if (code !== 0) {
@@ -163,6 +239,20 @@ export function applyOnboardingAction(
   // outer bound so a paste never crosses the process boundary at all.
   if (request.seed && request.seed.length > 2_000) {
     throw new OnboardingBridgeError('seed_too_long', 'A sentence or two is enough.')
+  }
+  // The salience answer, bounded the same way and for the same reason: the core
+  // validates `choice` against the offer it built and `same_as` against what it
+  // ranked (both refuse by name, which is the operator-answerable behaviour and
+  // must not be pre-empted here). These are only the cheap outer bounds so a
+  // paste never crosses the process boundary at all.
+  if (request.choice && request.choice.length > 300) {
+    throw new OnboardingBridgeError('choice_too_long', 'That is not one of the candidates.')
+  }
+  if (request.name && request.name.length > 2_000) {
+    throw new OnboardingBridgeError('name_too_long', 'A word or two is enough.')
+  }
+  if (request.same_as && request.same_as.length > 64) {
+    throw new OnboardingBridgeError('merge_too_many', 'That is too many names in one merge.')
   }
   return run<OnboardingResponse>('act', {
     ...request,
