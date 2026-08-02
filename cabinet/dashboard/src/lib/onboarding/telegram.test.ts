@@ -20,6 +20,7 @@ vi.mock('./bridge', () => {
   }
 })
 
+import { OnboardingBridgeError } from './bridge'
 import {
   formatTelegramOnboarding,
   handleTelegramOnboarding,
@@ -247,5 +248,189 @@ describe('Telegram standalone journey', () => {
       'telegram'
     )
     expect(reply[0].text).toContain('Feedback recorded')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// THE TWO ACTIONS THE COMMAND TABLE DID NOT CARRY.
+//
+// journey.py said so in its own source: "no shipped surface can send
+// answer_salience yet — it is absent from the Dashboard bridge's action set and
+// from the Telegram command table". A card printing candidates on a channel
+// with no command able to send one is a dead end wearing an invitation's
+// clothes, and parity.test.ts now fails whenever a new one appears.
+// ---------------------------------------------------------------------------
+
+const RANKED = {
+  ...WELCOME,
+  card: {
+    ...WELCOME.card,
+    options: [
+      { action: 'propose_window', label: 'Choose a folder' },
+      { action: 'gather_connectors', label: "Read what I'm connected to" },
+      {
+        action: 'answer_salience',
+        label: 'Point me at the one to open first',
+        input: 'choice',
+        options: [
+          { id: 'blueharbour', label: 'blueharbour', why: 'repo: blue-harbour; tracker: Blue Harbour plan' },
+          { id: 'other', label: 'None of these — I will name it', why: 'a name you type beats a name I guessed', input: 'seed' },
+        ],
+        not_reached: 'two workspaces refused the read',
+      },
+    ],
+  },
+}
+
+describe('Telegram — the ranked question', () => {
+  it('prints the candidates AS COMMANDS, since the channel has no picker', () => {
+    const message = formatTelegramOnboarding(RANKED as never)
+    expect(message.text).toContain('/onboard salience blueharbour')
+    expect(message.text).toContain('repo: blue-harbour')
+    expect(message.text).toContain('/onboard salience other <what to open instead>')
+  })
+
+  it('never offers it as a TAP — a tap carries no choice', () => {
+    // Read past the welcome stage, which returns no buttons at all by design
+    // (an ownership class cannot ride a tap), so the assertion is about the
+    // callback table rather than about that early return.
+    const offered = {
+      ...RANKED,
+      state: { ...RANKED.state, stage: 'orientation_offered' },
+      card: { ...RANKED.card, stage: 'orientation_offered' },
+    }
+    const taps = (formatTelegramOnboarding(offered as never).buttons || [])
+      .flat()
+      .map((button) => button.callback_data)
+    expect(taps).not.toContain('onboard:salience')
+    // The sweep is the one discovery action a tap MAY carry: it is payload-free
+    // by construction, so a tap can start it and can never widen it.
+    expect(taps).toContain('onboard:gather')
+  })
+
+  it('sends a ranked pick to the core', async () => {
+    await handleTelegramOnboarding('/onboard salience blueharbour', 'tg-sal')
+    expect(applyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'answer_salience', choice: 'blueharbour' }),
+      'telegram'
+    )
+  })
+
+  it('sends the escape hatch with the rest of the line as the name', async () => {
+    await handleTelegramOnboarding('/onboard salience other Harbour Yard', 'tg-esc')
+    expect(applyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'answer_salience', choice: 'other', name: 'Harbour Yard' }),
+      'telegram'
+    )
+  })
+
+  it('does not invent a choice for a bare command — the core names what is missing', async () => {
+    await handleTelegramOnboarding('/onboard salience', 'tg-bare')
+    expect(applyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'answer_salience', choice: '' }),
+      'telegram'
+    )
+  })
+})
+
+describe('Telegram — the connector sweep', () => {
+  it('runs it from a command and from its tap, both payload-free', async () => {
+    await handleTelegramOnboarding('/onboard gather', 'tg-gather')
+    expect(applyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'gather_connectors' }),
+      'telegram'
+    )
+    const sent = applyMock.mock.calls[0][0] as Record<string, unknown>
+    expect('handles' in sent || 'source' in sent).toBe(false)
+
+    applyMock.mockClear()
+    await handleTelegramOnboardingCallback('onboard:gather', 'tg-gather-tap')
+    expect(applyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'gather_connectors' }),
+      'telegram'
+    )
+  })
+
+  it('names both new commands in the unrecognised-choice reply', async () => {
+    const reply = await handleTelegramOnboarding('/onboard wat', 'tg-unknown')
+    expect(reply[0].text).toContain('/onboard gather')
+    expect(reply[0].text).toContain('/onboard salience')
+  })
+})
+
+describe('Telegram — the off-target window is answerable here too', () => {
+  it('carries a stated relation on the folder command', async () => {
+    await handleTelegramOnboarding(
+      '/onboard folder /srv/tax | close the quarter | mine: my own laptop | elsewhere',
+      'tg-rel'
+    )
+    expect(applyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'propose_window',
+        source: '/srv/tax',
+        ownership: 'self',
+        salience_relation: 'elsewhere',
+      }),
+      'telegram'
+    )
+  })
+
+  it('leaves the other segments intact when a relation rides along', async () => {
+    await handleTelegramOnboarding(
+      '/onboard folder /srv/tax | close the quarter | mine: my own laptop | sovereign | same_thing',
+      'tg-rel-2'
+    )
+    const sent = applyMock.mock.calls[0][0] as Record<string, unknown>
+    expect(sent).toMatchObject({
+      source: '/srv/tax',
+      purpose: 'close the quarter',
+      ownership: 'self',
+      authority_basis: 'my own laptop',
+      relationship_destination: 'sovereign',
+      salience_relation: 'same_thing',
+    })
+  })
+
+  it('sends NOTHING for a relation the vocabulary does not carry', async () => {
+    await handleTelegramOnboarding(
+      '/onboard folder /srv/tax | close the quarter | mine: my own laptop | probably',
+      'tg-rel-3'
+    )
+    const sent = applyMock.mock.calls[0][0] as Record<string, unknown>
+    // Absent means absent — this surface never guesses which statement was
+    // meant. The unrecognised segment is not quietly swallowed either: it stays
+    // in the string, so the ownership tail no longer parses and the core
+    // refuses with `ownership_unclassified`, whose reply carries the syntax.
+    // A parser that dropped what it could not read would send a proposal the
+    // operator did not write.
+    expect(sent.salience_relation).toBeUndefined()
+    expect(sent.ownership).toBeUndefined()
+    expect(String(sent.purpose)).toContain('probably')
+  })
+
+  it('answers an off-target refusal with the syntax that resolves it', async () => {
+    applyMock.mockRejectedValueOnce(
+      new OnboardingBridgeError(
+        'salience_window_off_target',
+        'You pointed me at blueharbour, and “tax” shares no word with it.'
+      )
+    )
+    const [reply] = await handleTelegramOnboarding(
+      '/onboard folder /srv/tax | close the quarter | mine: my own laptop',
+      'tg-rel-refused'
+    )
+    expect(reply.text).toContain('shares no word with it')
+    expect(reply.text).toContain('| same_thing')
+    expect(reply.text).toContain('elsewhere')
+    expect(reply.text).toContain('/onboard salience')
+  })
+
+  it('still answers an ownership refusal with the OWNERSHIP syntax, not this one', async () => {
+    applyMock.mockRejectedValueOnce(
+      new OnboardingBridgeError('ownership_unclassified', 'Say whose data this is.')
+    )
+    const [reply] = await handleTelegramOnboarding('/onboard folder /srv/tax', 'tg-own')
+    expect(reply.text).toContain('mine, employer, or client')
+    expect(reply.text).not.toContain('| same_thing')
   })
 })

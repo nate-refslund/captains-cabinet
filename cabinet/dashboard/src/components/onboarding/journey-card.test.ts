@@ -38,6 +38,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type {
   OnboardingEntryPlan,
   OnboardingIdentityAsk,
+  OnboardingOption,
   OnboardingResponse,
 } from '@/lib/onboarding/types'
 
@@ -88,7 +89,7 @@ vi.mock('react', async (importOriginal) => {
   }
 })
 
-import OnboardingJourneyCard, { IDENTITY_SHOWN, NO_IDENTITY_PICKS } from './journey-card'
+import OnboardingJourneyCard, { IDENTITY_SHOWN, NO_IDENTITY_PICKS, NO_MERGE } from './journey-card'
 
 afterEach(() => {
   hookScript.steps = null
@@ -155,7 +156,7 @@ function identityEntry(connectors: OnboardingIdentityAsk[]): OnboardingEntryPlan
 }
 
 /**
- * Script the component's 12 useState calls, in source order, with overrides.
+ * Script the component's useState calls, in source order, with overrides.
  * Initial values are asserted against the component's real ones so drift is
  * loud (see hookScript mock above).
  */
@@ -165,11 +166,16 @@ function scriptState(overrides: {
   working?: boolean
   purgeArmed?: boolean
   purgeConfirmation?: string
+  source?: string
   ownership?: string
   authorityBasis?: string
   seed?: string
   feedbackRecorded?: string | null
   handles?: Readonly<Record<string, string>>
+  salienceChoice?: string
+  salienceName?: string
+  salienceMerge?: readonly string[]
+  relationAsk?: unknown
 }) {
   hookScript.cursor = 0
   hookScript.steps = [
@@ -181,7 +187,7 @@ function scriptState(overrides: {
     { initial: false }, // editScope
     { initial: false, value: overrides.purgeArmed ?? false }, // purgeArmed
     { initial: '', value: overrides.purgeConfirmation ?? '' }, // purgeConfirmation
-    { initial: '~/Documents' }, // source
+    { initial: '~/Documents', value: overrides.source ?? '~/Documents' }, // source
     { initial: 'Find one useful thing I may be missing.' }, // purpose
     { initial: 'reversible' }, // destination
     { initial: '', value: overrides.ownership ?? '' }, // ownership — no default BY DESIGN
@@ -189,6 +195,10 @@ function scriptState(overrides: {
     { initial: '', value: overrides.seed ?? '' }, // seed — the seed question's field
     { initial: null, value: overrides.feedbackRecorded ?? null }, // feedbackRecorded
     { initial: NO_IDENTITY_PICKS, value: overrides.handles ?? NO_IDENTITY_PICKS }, // handles — which account is the operator, per connector
+    { initial: '', value: overrides.salienceChoice ?? '' }, // salienceChoice — no default BY DESIGN: the ranking is a guess
+    { initial: '', value: overrides.salienceName ?? '' }, // salienceName — the escape hatch's typed target
+    { initial: NO_MERGE, value: overrides.salienceMerge ?? NO_MERGE }, // salienceMerge — ranked names the operator says are one thing
+    { initial: null, value: overrides.relationAsk ?? null }, // relationAsk — set only by an off-target refusal
   ]
 }
 
@@ -291,8 +301,18 @@ function findByText(tree: TreeElement[], type: string, text: string): TreeElemen
 
 /** Indices into the component's useState order (guarded by scriptState). */
 // Indices track the useState order in journey-card.tsx; the ownership pair
-// landed between destination (10) and feedbackRecorded, which moved to 13.
-const STATE = { error: 3, ownership: 11, authorityBasis: 12, seed: 13, feedbackRecorded: 14 } as const
+// landed between destination (10) and feedbackRecorded, which moved to 13. The
+// four salience/relation hooks were APPENDED after handles (15) so every index
+// above stayed put.
+const STATE = {
+  error: 3,
+  ownership: 11,
+  authorityBasis: 12,
+  seed: 13,
+  feedbackRecorded: 14,
+  salienceChoice: 16,
+  relationAsk: 19,
+} as const
 
 function settersFor(index: number): unknown[] {
   return hookScript.setterCalls.filter((call) => call.index === index).map((call) => call.value)
@@ -802,5 +822,403 @@ describe('claim surfaces — the reasons the source gives for itself', () => {
       expect(html).toContain(candidate.identifier)
     }
     expect(html).toContain('<details')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// THE RANKED QUESTION, AND THE TWO BUTTONS THAT USED TO GO NOWHERE.
+//
+// `answer_salience` was printed on the card as an option, the surface rendered
+// it as a button, and `choose()` fell through to a bare send that the bridge
+// refused as `action_invalid` before the core ever saw it — a live dead end at
+// the one question that decides where the depth budget is spent.
+// `record_operator_identity` fell through the same path onto a core refusal.
+// Both arms below FAIL against the pre-change component.
+// ---------------------------------------------------------------------------
+
+/** The offer as the core builds it: three ranked names, escape hatch last. */
+function salienceOfferOption(): OnboardingOption {
+  return {
+    action: 'answer_salience',
+    label: 'Point me at the one to open first',
+    input: 'choice',
+    options: [
+      {
+        id: 'blueharbour',
+        label: 'blueharbour',
+        why: 'repo: blue-harbour, blue-harbour-api; tracker: Blue Harbour plan',
+        connectors: ['repo', 'tracker'],
+        rows: 4,
+        aliases: ['blue', 'harbour'],
+      },
+      {
+        id: 'redanchor',
+        label: 'redanchor',
+        why: 'repo: red-anchor; tracker: Red Anchor',
+        connectors: ['repo', 'tracker'],
+        rows: 2,
+        aliases: ['red', 'anchor'],
+      },
+      {
+        id: 'other',
+        label: 'None of these — I will name it',
+        why: 'The ranking can be wrong; a name you type beats a name I guessed.',
+        input: 'seed',
+      },
+    ],
+    merge: {
+      field: 'same_as',
+      question: 'Are any two of these the same thing under different names?',
+      candidates: [
+        { id: 'blueharbour', label: 'blueharbour', connectors: ['repo'] },
+        { id: 'redanchor', label: 'redanchor', connectors: ['repo'] },
+        { id: 'harbouryard', label: 'harbouryard', connectors: ['tracker'] },
+      ],
+      learned: [{ labels: ['greenlantern', 'lantern'] }],
+    },
+    not_reached: 'Ranked names only, never contents: 9 from repo, 9 from tracker.',
+  }
+}
+
+function rankedFixture(): OnboardingResponse {
+  const fixture = journeyFixture('orientation_offered')
+  fixture.card.options = [
+    salienceOfferOption(),
+    { action: 'propose_window', label: 'Choose a folder I may read' },
+  ]
+  return fixture
+}
+
+describe('rendered component — the ranked question is answerable', () => {
+  it('renders every candidate with the names behind its rank, escape hatch last', () => {
+    scriptState({ journey: rankedFixture() })
+    const html = render()
+    expect(html).toContain('Point me at the one to open first')
+    expect(html).toContain('value="blueharbour"')
+    expect(html).toContain('value="redanchor"')
+    expect(html).toContain('value="other"')
+    // The evidence line, not a score: a number the operator cannot audit is not
+    // evidence, and it is the only thing they have to judge the ranking by.
+    expect(html).toContain('blue-harbour-api')
+    expect(html).toContain('None of these')
+    expect(html).toContain('Go deep on that one')
+  })
+
+  it('states what the sweep did not reach — an unearned clean negative is the defect', () => {
+    scriptState({ journey: rankedFixture() })
+    expect(render()).toContain('Ranked names only, never contents')
+  })
+
+  it('opens the typed field ONLY where the core marked the picked option as needing one', () => {
+    scriptState({ journey: rankedFixture(), salienceChoice: 'blueharbour' })
+    expect(render()).not.toContain('dashboard-salience-name')
+    scriptState({ journey: rankedFixture(), salienceChoice: 'other' })
+    expect(render()).toContain('dashboard-salience-name')
+  })
+
+  it('keeps the submit disabled until there is an answer to send', () => {
+    const submitTag = (html: string): string => {
+      const label = html.indexOf('Go deep on that one')
+      return html.slice(html.lastIndexOf('<button', label), label)
+    }
+    scriptState({ journey: rankedFixture() })
+    expect(submitTag(render()), 'no pick').toMatch(DISABLED_ATTR)
+    scriptState({ journey: rankedFixture(), salienceChoice: 'other' })
+    expect(submitTag(render()), 'escape hatch with no name').toMatch(DISABLED_ATTR)
+    scriptState({ journey: rankedFixture(), salienceChoice: 'other', salienceName: 'Harbour Yard' })
+    expect(submitTag(render()), 'escape hatch with a name').not.toMatch(DISABLED_ATTR)
+    scriptState({ journey: rankedFixture(), salienceChoice: 'blueharbour' })
+    expect(submitTag(render()), 'a ranked pick').not.toMatch(DISABLED_ATTR)
+  })
+
+  it('offers the merge over the WHOLE ranking, not the shown three, and echoes what is learned', () => {
+    scriptState({ journey: rankedFixture() })
+    const html = render()
+    // harbouryard is a merge candidate the picker never showed — the twin of a
+    // top candidate routinely sits below the cut, so a merge reachable only
+    // from what is on screen cannot fix the split it exists for.
+    expect(html).toContain('harbouryard')
+    expect(html).toContain('Already one thing: greenlantern = lantern')
+  })
+})
+
+describe('driven component — the ranked answer reaches the core', () => {
+  function postBodies(spy: ReturnType<typeof vi.fn>): string[] {
+    return spy.mock.calls
+      .filter(([url]) => String(url).endsWith('/api/onboarding'))
+      .map(([, init]) => String((init as RequestInit | undefined)?.body ?? ''))
+  }
+
+  function stubFetch(): ReturnType<typeof vi.fn> {
+    const spy = vi.fn(async (url: RequestInfo | URL) => (
+      String(url).endsWith('/api/onboarding/evidence')
+        ? { ok: true, json: async () => ({ ok: true }) }
+        : { ok: true, status: 200, json: async () => ({ ok: true, card: { stage: 'welcome', revision: 4 } }) }
+    ))
+    vi.stubGlobal('fetch', spy)
+    return spy
+  }
+
+  it('sends the pick, and never a bare action the core would only refuse', async () => {
+    const spy = stubFetch()
+    scriptState({ journey: rankedFixture(), salienceChoice: 'blueharbour' })
+    // ONE driveTree per scriptState: each render walks the scripted hook order
+    // from the cursor it left, so a second invocation runs off the end.
+    const tree = driveTree()
+    expect(findByText(tree, 'button', 'Go deep on that one')).toBeDefined()
+    const form = tree.find((el) => el.type === 'form')
+    ;(form!.props.onSubmit as (e: object) => void)({ preventDefault: () => undefined })
+    await flush(); await flush()
+    const [body] = postBodies(spy)
+    expect(body).toContain('"action":"answer_salience"')
+    expect(body).toContain('"choice":"blueharbour"')
+    expect(body).not.toContain('"name"')
+  })
+
+  it('sends the typed name with the escape hatch, plus the merge when one is given', async () => {
+    const spy = stubFetch()
+    scriptState({
+      journey: rankedFixture(),
+      salienceChoice: 'other',
+      salienceName: 'Harbour Yard',
+      salienceMerge: ['blueharbour', 'harbouryard'],
+    })
+    const form = driveTree().find((el) => el.type === 'form')
+    ;(form!.props.onSubmit as (e: object) => void)({ preventDefault: () => undefined })
+    await flush(); await flush()
+    const [body] = postBodies(spy)
+    expect(body).toContain('"choice":"other"')
+    expect(body).toContain('"name":"Harbour Yard"')
+    expect(body).toContain('"same_as":["blueharbour","harbouryard"]')
+  })
+
+  it('the option button POINTS AT the picker instead of firing a bare answer', async () => {
+    const spy = stubFetch()
+    scriptState({ journey: rankedFixture() })
+    const option = findByText(driveTree(), 'button', 'Point me at the one to open first')
+    ;(option.props.onClick as () => void)()
+    await flush(); await flush()
+    expect(
+      postBodies(spy),
+      'a bare answer_salience was POSTed — that is the dead end, not the fix'
+    ).toEqual([])
+  })
+
+  it('the identity option POINTS AT its picker instead of firing a bare handles-less action', async () => {
+    const spy = stubFetch()
+    const fixture = journeyFixture('orientation_offered')
+    fixture.card.entry = identityEntry([
+      {
+        connector: 'tracker',
+        rows: 400,
+        candidates: [{ identifier: 'a.operator@example.com', rows: 300 }],
+        reports_no_actor: false,
+        accounts: 1,
+        withheld: 0,
+        complete: true,
+        note: 'tracker: 1 account across 400 rows',
+      },
+    ])
+    fixture.card.options = [
+      { action: 'record_operator_identity', label: 'Tell me which account is you', input: 'handles' },
+    ]
+    scriptState({ journey: fixture })
+    const option = findByText(driveTree(), 'button', 'Tell me which account is you')
+    ;(option.props.onClick as () => void)()
+    await flush(); await flush()
+    expect(
+      postBodies(spy),
+      'a bare record_operator_identity was POSTed — the core can only refuse it'
+    ).toEqual([])
+  })
+
+  it('still sends bare when the control does not exist, so the core says what is missing', async () => {
+    // A quiet no-op is the same dead end by a politer route: with no picker on
+    // the card the operator must get the core's own sentence about why not.
+    const spy = stubFetch()
+    const fixture = journeyFixture('orientation_offered')
+    fixture.card.options = [
+      { action: 'answer_salience', label: 'Point me at the one to open first', input: 'choice' },
+    ]
+    scriptState({ journey: fixture })
+    const option = findByText(driveTree(), 'button', 'Point me at the one to open first')
+    ;(option.props.onClick as () => void)()
+    await flush(); await flush()
+    expect(postBodies(spy)[0]).toContain('"action":"answer_salience"')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// THE OFF-TARGET REFUSAL, AND THE TWO STATEMENTS THAT ANSWER IT.
+// ---------------------------------------------------------------------------
+
+describe('driven component — an off-target window is answerable', () => {
+  function refusingFetch(payload: Record<string, unknown>): ReturnType<typeof vi.fn> {
+    const spy = vi.fn(async (url: RequestInfo | URL) => (
+      String(url).endsWith('/api/onboarding/evidence')
+        ? { ok: true, json: async () => ({ ok: true }) }
+        : { ok: false, status: 400, json: async () => payload }
+    ))
+    vi.stubGlobal('fetch', spy)
+    return spy
+  }
+
+  function proposeOffTarget(payload: Record<string, unknown>): void {
+    const fixture = journeyFixture('welcome')
+    fixture.state.salience = { target: 'blueharbour' }
+    scriptState({ journey: fixture, source: '/Users/x/quarterly-tax-returns' })
+    const form = driveTree().find((el) => el.type === 'form')
+    ;(form!.props.onSubmit as (e: object) => void)({ preventDefault: () => undefined })
+  }
+
+  it('builds the ask from the state it already holds when the refusal carries no detail', async () => {
+    // What production returns today: journey._cli prints {ok, code, error} and
+    // drops JourneyError.detail, so a surface that could only render from a
+    // detail block would render nothing at the one refusal that needs it.
+    refusingFetch({ ok: false, code: 'salience_window_off_target', error: 'You pointed me at blueharbour…' })
+    proposeOffTarget({})
+    await flush(); await flush()
+    expect(settersFor(STATE.relationAsk)).toEqual([
+      { target: 'blueharbour', window: 'quarterly-tax-returns', relations: ['same_thing', 'elsewhere'] },
+    ])
+  })
+
+  it("prefers the core's own words when the refusal does carry them", async () => {
+    refusingFetch({
+      ok: false,
+      code: 'salience_window_off_target',
+      error: 'You pointed me at blueharbour…',
+      detail: { target: 'harbour yard', window: 'tax-2026', relations: ['elsewhere'] },
+    })
+    proposeOffTarget({})
+    await flush(); await flush()
+    expect(settersFor(STATE.relationAsk)).toEqual([
+      { target: 'harbour yard', window: 'tax-2026', relations: ['elsewhere'] },
+    ])
+  })
+
+  it('drops a relation this surface cannot state rather than offering a button that must fail', async () => {
+    refusingFetch({
+      ok: false,
+      code: 'salience_window_off_target',
+      error: '…',
+      detail: { relations: ['elsewhere', 'probably', 'constructor', '__proto__'] },
+    })
+    proposeOffTarget({})
+    await flush(); await flush()
+    expect(settersFor(STATE.relationAsk)).toEqual([
+      { target: 'blueharbour', window: 'quarterly-tax-returns', relations: ['elsewhere'] },
+    ])
+  })
+
+  it('asks nothing on any OTHER refusal', async () => {
+    refusingFetch({ ok: false, code: 'purpose_too_long', error: 'Keep it under 300 characters.' })
+    proposeOffTarget({})
+    await flush(); await flush()
+    expect(settersFor(STATE.relationAsk)).toEqual([])
+    // send() clears the previous error before every action, so the trailing
+    // value is the refusal and the leading null is that clear.
+    expect(settersFor(STATE.error)).toEqual([null, 'Keep it under 300 characters.'])
+  })
+
+  it('re-proposes the same window carrying the statement the operator made', async () => {
+    const spy = vi.fn(async (url: RequestInfo | URL, _init?: RequestInit) => (
+      String(url).endsWith('/api/onboarding/evidence')
+        ? { ok: true, json: async () => ({ ok: true }) }
+        : { ok: true, status: 200, json: async () => ({ ok: true, card: { stage: 'charter_pending', revision: 4 } }) }
+    ))
+    vi.stubGlobal('fetch', spy)
+    const fixture = journeyFixture('welcome')
+    fixture.state.salience = { target: 'blueharbour' }
+    scriptState({
+      journey: fixture,
+      source: '/Users/x/quarterly-tax-returns',
+      relationAsk: {
+        target: 'blueharbour',
+        window: 'quarterly-tax-returns',
+        relations: ['same_thing', 'elsewhere'],
+      },
+    })
+    const button = driveTree().find(
+      (el) => el.type === 'button' && el.props.name === 'dashboard-relation-elsewhere'
+    )
+    expect(button, 'the elsewhere statement had no control').toBeDefined()
+    ;(button!.props.onClick as () => void)()
+    await flush(); await flush()
+    const body = spy.mock.calls
+      .filter(([url]) => String(url).endsWith('/api/onboarding'))
+      .map(([, init]) => String((init as RequestInit | undefined)?.body ?? ''))[0]
+    expect(body).toContain('"action":"propose_window"')
+    expect(body).toContain('"salience_relation":"elsewhere"')
+    expect(body).toContain('/Users/x/quarterly-tax-returns')
+  })
+
+  it('renders both statements, naming the target and the folder', () => {
+    const fixture = journeyFixture('welcome')
+    fixture.state.salience = { target: 'blueharbour' }
+    scriptState({
+      journey: fixture,
+      relationAsk: {
+        target: 'blueharbour',
+        window: 'quarterly-tax-returns',
+        relations: ['same_thing', 'elsewhere'],
+      },
+    })
+    const html = render()
+    expect(html).toContain('name="dashboard-relation-same_thing"')
+    expect(html).toContain('name="dashboard-relation-elsewhere"')
+    expect(html).toContain('blueharbour')
+    expect(html).toContain('quarterly-tax-returns')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// THE PART OF THE RECEIPT THAT IS NOT THERE.
+//
+// The core replaces the words of any citation whose source is not the
+// operator's and says so on the card (`card.egress.withheld`). Telegram has
+// rendered that since the verdict existed; this surface showed the survivors
+// and said nothing, which is a quieter lie than a refusal.
+// ---------------------------------------------------------------------------
+
+describe('rendered component — withheld citations are disclosed', () => {
+  function withEgress(withheld: number, items: number): OnboardingResponse {
+    const fixture = journeyFixture('dividend_ready')
+    fixture.card.evidence = [
+      { path: 'notes/release.md', line: 12, excerpt: 'a line the operator owns', sha256: 'a'.repeat(64) },
+      { path: 'client/contract.md', line: 3, excerpt: '', sha256: 'b'.repeat(64), withheld_reason: 'THE-WITHHELD-EXCERPT' },
+    ]
+    fixture.card.egress = {
+      ownership: 'third_party',
+      disposition: 'per_item_approval',
+      items,
+      withheld,
+      approved: [],
+    }
+    return fixture
+  }
+
+  it('says how much is held back, and never reconstructs it', () => {
+    scriptState({ journey: withEgress(1, 2) })
+    const html = render()
+    expect(html).toContain('holding back the words of 1 of 2 citation')
+    expect(html).toContain('reclassify the source if I have it wrong')
+    // The verdict is RENDERED, never decided or undone here: the count crosses,
+    // the withheld words never do.
+    expect(html).not.toContain('THE-WITHHELD-EXCERPT')
+  })
+
+  it('says nothing when nothing was withheld — a false alarm is its own defect', () => {
+    scriptState({ journey: withEgress(0, 2) })
+    expect(render()).not.toContain('holding back the words')
+  })
+
+  it('says nothing when the core attached no verdict at all', () => {
+    const fixture = journeyFixture('dividend_ready')
+    fixture.card.evidence = [
+      { path: 'notes/release.md', line: 12, excerpt: 'mine', sha256: 'a'.repeat(64) },
+    ]
+    scriptState({ journey: fixture })
+    expect(render()).not.toContain('holding back the words')
   })
 })

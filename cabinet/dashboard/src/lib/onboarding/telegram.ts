@@ -9,6 +9,7 @@ import type {
   OnboardingAction,
   OnboardingResponse,
   OwnershipClass,
+  WindowRelation,
 } from './types'
 
 type RelationshipDestination = 'earn' | 'reversible' | 'sovereign'
@@ -68,6 +69,31 @@ const OWNERSHIP_REFUSAL_CODES = new Set([
   'authority_basis_too_long',
 ])
 
+/**
+ * The two statements a folder that misses the answered target may carry.
+ * Mirrored from `WINDOW_RELATIONS` in the core and pinned by parity.test.ts:
+ * a word this surface accepts and the core does not is a refusal in disguise.
+ */
+const RELATION_SYNTAX =
+  'Say how that folder relates to what you pointed me at, as the last segment:\n' +
+  '/onboard folder /full/path | what you want made easier | mine: my own laptop | same_thing\n' +
+  'Use same_thing (it IS that, under another name) or elsewhere (somewhere else you want opened).\n' +
+  'Or send /onboard salience <candidate> again and the window follows the answer.'
+
+/**
+ * Take a trailing `| same_thing` / `| elsewhere`. Stripped FIRST, so it is the
+ * innermost segment and the destination and ownership parsers below see the
+ * command shape they always did.
+ */
+function takeRelation(value: string): { value: string; relation?: WindowRelation } {
+  const match = value.match(/\|\s*(same_thing|elsewhere)\s*$/i)
+  if (!match) return { value }
+  return {
+    value: value.slice(0, match.index).trim(),
+    relation: match[1].toLowerCase() as WindowRelation,
+  }
+}
+
 export interface TelegramInlineButton {
   text: string
   callback_data: string
@@ -88,6 +114,10 @@ export function isOnboardingIntent(text: string): boolean {
 function buttonsFor(result: OnboardingResponse): TelegramInlineButton[][] {
   const stage = result.card.stage
   const callback: Partial<Record<OnboardingAction, string>> = {
+    // Payload-free by construction — the estate is declared in config, so a tap
+    // can trigger the read and can never widen it. That is what makes it the one
+    // discovery action a button may carry.
+    gather_connectors: 'onboard:gather',
     ratify_charter: 'onboard:accept',
     continue: 'onboard:continue',
     pause: 'onboard:pause',
@@ -141,6 +171,21 @@ export function formatTelegramOnboarding(result: OnboardingResponse): TelegramOn
       `I am holding back the words of ${egress.withheld} of ${egress.items} citation(s): ` +
         'this source is not yours to send. The file and line are above so you can open ' +
         'them yourself, or reclassify the source if I have it wrong.'
+    )
+  }
+  // THE RANKED QUESTION, WITH THE WORDS THAT ANSWER IT. The core marks this
+  // option `input: 'choice'`, so `buttonsFor` must not offer it as a tap — a tap
+  // carries no choice. Telegram's field is the command, and the candidate ids
+  // have to be printed or the command cannot be typed: the body names the
+  // candidates in prose, which is not the same as saying what to send.
+  const salience = result.card.options.find((option) => option.action === 'answer_salience')
+  if (salience?.options?.length) {
+    lines.push('', salience.label)
+    for (const candidate of salience.options) {
+      lines.push(`• /onboard salience ${candidate.id} — ${candidate.why}`)
+    }
+    lines.push(
+      'The last one takes a name: /onboard salience other <what to open instead>.'
     )
   }
   if (result.card.stage === 'welcome') {
@@ -235,7 +280,12 @@ function refusal(error: unknown): TelegramOnboardingMessage {
   const code = error instanceof OnboardingBridgeError ? error.code : undefined
   const tail = code && OWNERSHIP_REFUSAL_CODES.has(code)
     ? `${OWNERSHIP_SYNTAX}\n\nSend /onboard to see the current card.`
-    : 'Send /onboard to see the current card.'
+    // Same shape, same reason: an off-target window is not a failure to explain
+    // away, it is a question the operator has not answered, and the core will
+    // never retarget their answer for them.
+    : code === 'salience_window_off_target' || code === 'salience_relation_invalid'
+      ? `${RELATION_SYNTAX}\n\nSend /onboard to see the current card.`
+      : 'Send /onboard to see the current card.'
   return {
     text: `${message}\n\n${tail}`,
     plain: true,
@@ -252,7 +302,8 @@ export async function handleTelegramOnboarding(
       return [formatTelegramOnboarding(await getOnboarding())]
     }
     if (/^documents(?:\s|$)/i.test(command)) {
-      const selected = takeDestination(command.replace(/^documents/i, ''))
+      const related = takeRelation(command.replace(/^documents/i, ''))
+      const selected = takeDestination(related.value)
       const owned = takeOwnership(selected.value)
       const purpose = owned.value.replace(/^\s*\|?\s*/, '').trim()
       const result = await action('propose_window', actionId, {
@@ -261,11 +312,18 @@ export async function handleTelegramOnboarding(
         relationship_destination: selected.destination,
         ownership: owned.ownership,
         authority_basis: owned.authorityBasis,
+        salience_relation: related.relation,
       })
       return [formatTelegramOnboarding(result)]
     }
     if (/^folder\s+/i.test(command)) {
-      const selected = takeDestination(command.replace(/^folder\s+/i, ''))
+      // THE ESCAPE NEEDS THE SAME SURFACE AS THE THING IT ESCAPES. Now that
+      // this channel can send the salience answer, it must also be able to
+      // state how a folder relates to it — otherwise answering here and then
+      // proposing a folder here earns a refusal with no way out of it, which is
+      // the dead end this whole unit exists to close, one turn later.
+      const related = takeRelation(command.replace(/^folder\s+/i, ''))
+      const selected = takeDestination(related.value)
       const owned = takeOwnership(selected.value)
       const parsed = purposeAfterPipe(owned.value)
       const result = await action('propose_window', actionId, {
@@ -273,6 +331,7 @@ export async function handleTelegramOnboarding(
         relationship_destination: selected.destination,
         ownership: owned.ownership,
         authority_basis: owned.authorityBasis,
+        salience_relation: related.relation,
       })
       return [formatTelegramOnboarding(result)]
     }
@@ -291,6 +350,27 @@ export async function handleTelegramOnboarding(
       const seed = command.replace(/^seed\s+/i, '').trim()
       return [formatTelegramOnboarding(await action('answer_seed', actionId, { seed }))]
     }
+    // The read the whole connected path opens with. No payload: what may be
+    // read is declared in the operator's own config, so this command can start
+    // the sweep and can never widen it.
+    if (/^(gather|connectors)$/i.test(command)) {
+      return [formatTelegramOnboarding(await action('gather_connectors', actionId))]
+    }
+    // Where the depth budget is pointed. `other` is the escape hatch and takes
+    // the rest of the line as the name — measured, the ranking's top three hold
+    // the right answer only most of the time, and an offer with no way to say
+    // "none of these" turns the remainder into a wrong answer nobody could
+    // correct. An empty choice is NOT filled in here: the core refuses it by
+    // name (`salience_choice_required`) and that sentence is the one the
+    // operator can act on.
+    if (/^salience\b/i.test(command)) {
+      const rest = command.replace(/^salience\b/i, '').trim()
+      const escape = rest.match(/^other\b\s*(.*)$/i)
+      const payload = escape
+        ? { choice: 'other', name: escape[1].trim() }
+        : { choice: rest }
+      return [formatTelegramOnboarding(await action('answer_salience', actionId, payload))]
+    }
     if (/^continue$/i.test(command)) return [formatTelegramOnboarding(await action('continue', actionId))]
     if (/^pause$/i.test(command)) return [formatTelegramOnboarding(await action('pause', actionId))]
     if (/^revoke$/i.test(command)) return [formatTelegramOnboarding(await action('revoke', actionId))]
@@ -308,7 +388,7 @@ export async function handleTelegramOnboarding(
       }]
     }
     return [{
-      text: 'I did not recognize that onboarding choice. Send /onboard to see the current card, or use:\n/onboard folder /full/path | what you want made easier',
+      text: 'I did not recognize that onboarding choice. Send /onboard to see the current card, or use:\n/onboard folder /full/path | what you want made easier\n/onboard gather — read what I am connected to\n/onboard salience <candidate> — point me at the one to open first',
       plain: true,
     }]
   } catch (error) {
@@ -327,6 +407,7 @@ export async function handleTelegramOnboardingCallback(
     // answers with the question instead.
     return [{ text: OWNERSHIP_SYNTAX, plain: true }]
   }
+  if (command === 'gather') return handleTelegramOnboarding('/onboard gather', actionId)
   if (command === 'accept') return handleTelegramOnboarding('/onboard accept', actionId)
   if (command === 'continue') return handleTelegramOnboarding('/onboard continue', actionId)
   if (command === 'pause') return handleTelegramOnboarding('/onboard pause', actionId)

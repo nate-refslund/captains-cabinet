@@ -133,8 +133,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         console.error('[onboarding-api] transport evidence unavailable')
       }
     }
+    // The refusal's own material, when it has any. A refusal that only says no
+    // leaves the operator with nothing to do about it — `salience_window_off_target`
+    // names the answered target and the relations that resolve it, and the card
+    // builds its fix-up control from them. Already reduced to an allowlist by
+    // `refusalDetail` in the bridge; the key is omitted entirely when empty so
+    // no surface can read an absent detail as a present-but-blank one.
+    const detail = known?.detail && Object.keys(known.detail).length > 0
+      ? { detail: known.detail }
+      : {}
     return noStore(
-      { ok: false, code: known?.code || 'action_failed', error: known?.message || 'The onboarding action could not be completed.' },
+      {
+        ok: false,
+        code: known?.code || 'action_failed',
+        error: known?.message || 'The onboarding action could not be completed.',
+        ...detail,
+      },
       { status }
     )
   }
