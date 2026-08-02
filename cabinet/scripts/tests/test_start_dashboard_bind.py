@@ -162,6 +162,82 @@ def test_defaults_when_nothing_configured(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# FIRST-RUN branch — the one the probes above deliberately skip.
+#
+# _probe() pre-creates node_modules/ and .next/ so the real script reaches the
+# exec line fast. That convenience hid a shipped bug for as long as the script
+# has existed: NODE_ENV=production is exported before `npm ci`, and npm honors
+# it by OMITTING devDependencies — where the whole build toolchain lives
+# (@tailwindcss/postcss, tailwindcss, typescript). Measured 2026-08-02 on a real
+# `git archive HEAD` export: 201 of 244 packages installed, then
+# "Cannot find module '@tailwindcss/postcss'" and `build failed`. Nobody saw it
+# because nothing ran that branch unattended until hatch.sh started the
+# dashboard for the operator at the end of a hatch.
+#
+# So: drive it with NO node_modules and NO .next, and assert the install keeps
+# the toolchain.
+# ---------------------------------------------------------------------------
+
+def _probe_first_run(tmp_path: Path) -> str:
+    """The real script on a tree with neither node_modules nor .next, under an
+    npm shim that records argv and materializes .next so `build` 'succeeds'."""
+    root = tmp_path / "root"
+    dash = root / "cabinet" / "dashboard"
+    dash.mkdir(parents=True)  # NO .next, NO node_modules — the fresh-hatch tree
+    (root / "cabinet" / ".env").write_text("SOME_OTHER_VAR=1\n", encoding="utf-8")
+    shim_dir = tmp_path / "shims"
+    shim_dir.mkdir()
+    npm = shim_dir / "npm"
+    npm.write_text(
+        "#!/bin/bash\n"
+        'echo "npm-argv: $@"\n'
+        # `npm ci` must not fool the build branch into thinking a build exists;
+        # only `run build` materializes .next.
+        'if [ "$1" = "run" ] && [ "$2" = "build" ]; then mkdir -p .next; fi\n',
+        encoding="utf-8",
+    )
+    npm.chmod(0o755)
+
+    env = dict(os.environ)
+    for k in ("CABINET_DASHBOARD_PORT", "CABINET_DASHBOARD_HOST", "CABINET_ROOT"):
+        env.pop(k, None)
+    env["CABINET_ROOT"] = str(root)
+    env["PATH"] = f"{shim_dir}:{env['PATH']}"
+    p = subprocess.run(
+        ["bash", str(_SCRIPT)],
+        cwd=_REPO_ROOT, env=env, capture_output=True, text=True, timeout=60,
+    )
+    assert p.returncode == 0, (p.stdout, p.stderr)
+    return p.stdout
+
+
+def test_first_run_install_keeps_the_build_toolchain(tmp_path):
+    """NODE_ENV=production drops devDependencies unless --include=dev is
+    explicit. Without it the build cannot resolve @tailwindcss/postcss and a
+    fresh hatch ends with a dead dashboard."""
+    out = _probe_first_run(tmp_path)
+    assert "npm-argv: ci --include=dev" in out, (
+        "first-run install must force devDependencies — NODE_ENV=production is "
+        "exported above it and npm omits devDeps under it: " + out
+    )
+    # …and it still builds, then serves with the resolved port/bind.
+    assert "npm-argv: run build" in out, out
+    assert "npm-argv: start -- --port 3100 --hostname 127.0.0.1" in out, out
+
+
+def test_production_node_env_is_still_exported_for_the_server(tmp_path):
+    """The fix must not weaken what NODE_ENV is actually FOR: the served app
+    runs in production mode. Only the install opts back into devDeps."""
+    text = _SCRIPT.read_text(encoding="utf-8")
+    assert 'export NODE_ENV="production"' in text, (
+        "the served dashboard must still run in production mode"
+    )
+    assert text.index('export NODE_ENV="production"') < text.index("npm ci --include=dev"), (
+        "the --include=dev override only matters because NODE_ENV is set first"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Dead-name gate — program-wide (Wave D ownership contract): the loopback
 # surface has ONE canonical var; the dead spellings appear NOWHERE.
 # ---------------------------------------------------------------------------

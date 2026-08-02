@@ -140,6 +140,15 @@ Flags:
                        --with-launchd / --with-drill.
   --dry-run            Print the full numbered plan + errand notes, execute
                        nothing, exit 0.
+  --no-browser         Skip the browser handover at the very end: do not start
+                       the dashboard, do not wait on it, do not touch the
+                       clipboard, open nothing. The chain and every gate are
+                       identical either way — this only removes the convenience
+                       tail. HATCH_NO_BROWSER=1 does the same thing (what CI
+                       sets); --clean-room already skips the tail entirely.
+                       HATCH_NO_OPEN=1 is the narrower knob: still start the
+                       dashboard and hand over the password, just don't open a
+                       browser window.
   --with-launchd       Run the move-in (runbook section 6): deploy the Chair,
                        render + lint + bootstrap the measurement-plane plists,
                        health-check. Default is --no-launchd: move-in prints
@@ -163,11 +172,16 @@ EOF
 # ---- flags -------------------------------------------------------------------
 DEFAULTS=0; CLEAN_ROOM=0; DRY_RUN=0; WITH_LAUNCHD=0; WITH_DRILL=0
 FLIGHT_LOG_ARG=""; ALTITUDE_ARG=""
+# The browser handover is opt-OUT: a hatch that ends in a terminal instruction
+# was the thing this replaced. Env default so CI (and any headless caller that
+# cannot pass a flag) can suppress it without touching the invocation.
+NO_BROWSER="${HATCH_NO_BROWSER:-0}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --defaults)     DEFAULTS=1 ;;
     --clean-room)   CLEAN_ROOM=1 ;;
     --dry-run)      DRY_RUN=1 ;;
+    --no-browser)   NO_BROWSER=1 ;;
     --with-launchd) WITH_LAUNCHD=1 ;;
     --no-launchd)   WITH_LAUNCHD=0 ;;   # the v0 default, accepted explicitly
     --with-drill)   WITH_DRILL=1 ;;
@@ -208,7 +222,7 @@ TELEGRAM_NAMED="$(telegram_named)"
 emit_plan() {
   echo "==== HATCH PLAN v0 — orchestrates the rehearsed chain, reimplements nothing ===="
   echo "spec of record: docs/runbooks/mini-hatch-tonight-2026-07-07.md"
-  echo "mode: defaults=$DEFAULTS clean-room=$CLEAN_ROOM with-launchd=$WITH_LAUNCHD with-drill=$WITH_DRILL"
+  echo "mode: defaults=$DEFAULTS clean-room=$CLEAN_ROOM with-launchd=$WITH_LAUNCHD with-drill=$WITH_DRILL no-browser=$NO_BROWSER"
   echo ""
   if [ "$DEFAULTS" = "1" ]; then
     echo " 1. [setup-env]     bash cabinet/scripts/setup-env.sh --defaults"
@@ -280,7 +294,10 @@ emit_plan() {
   else
     echo "15. [move-in]       DEFERRED (v0 default --no-launchd) — printed as an errand note"
   fi
-  echo "16. [app-feel]      dashboard URL + Add-to-Dock hints; --with-launchd: probe + open + .webloc"
+  echo "16. [app-feel]      dashboard: start it (--no-launchd) or probe it (--with-launchd), wait on"
+  echo "                    /api/health, copy the password to the clipboard (never printed), drop"
+  echo "                    the .webloc + Add-to-Dock hints, then open /onboarding in the browser"
+  echo "                    (--no-browser or --clean-room skip the whole tail; it is never a gate)"
   echo ""
   echo "Flight recorder: per-step timings + stamps -> flight log; summary table,"
   echo "TTFR and total time print at the end."
@@ -839,6 +856,7 @@ fi
 DASH_PORT="${DASH_PORT:-3100}"; DASH_URL="http://127.0.0.1:${DASH_PORT}/"
 echo "==== WHERE THINGS LIVE (minute one) ===="
 echo "First briefing:        ${RECEIPT_LANDING:-see $RECEIPT_LOG}"
+echo "                       (read it in the browser: ${DASH_URL}briefing)"
 echo "DEMO receipt:          ${DEMO_LANDING:-see $DEMO_LOG}"
 echo "                       (labeled demo — receipt anatomy; reply-to-undo works on real receipts only)"
 echo "How it's governed:     docs/how-your-cabinet-is-governed.md  (one page, plain language)"
@@ -859,15 +877,50 @@ fi
 # ---- app-feel (Wave D) — bookmark + auto-open; convenience tail, NEVER a gate ----
 # EOF is reached only on the GREEN path (step_fail exits 1 earlier). This tail
 # must preserve exit 0: every branch returns 0; invocation carries || fallback.
+#
+# 2026-08-02 (hatch-to-browser). The DEFAULT --no-launchd path used to stop at
+# "dashboard not started" — a hatch whose last act was telling a person to go
+# back to a terminal. It now starts the dashboard itself, waits on its health
+# endpoint, hands the password over via the clipboard (dashboard-password.sh
+# writes only to pbcopy; the password stays unprinted, unlogged, out of argv)
+# and lands the operator on /onboarding. Three ways out, all honest:
+#   * --clean-room  = CI = headless: skips the ENTIRE tail, unchanged from
+#     before — no server started, no clipboard touched, nothing opened;
+#   * --no-browser / HATCH_NO_BROWSER=1: same skip on a normal run, for a
+#     caller that wants the chain without a server;
+#   * HATCH_NO_OPEN=1 / SSH: the narrow one — still start, still wait, still
+#     hand over the password, just don't raise a browser window.
+# The started dashboard OUTLIVES this script (that is the point), so the line
+# that reports it also says where its log is and how to stop it.
+DASH_LANDING="${DASH_URL}onboarding"
+DASH_LOG="${HATCH_LOG_DIR:-${TMPDIR:-/tmp}}/step-dashboard.log"
+DASH_SCRIPTS="${SCRIPT_DIR:-$PWD/cabinet/scripts}"
 app_feel() {
-  local webloc ok
+  local webloc ok tries waited dash_pid
   if [ "$CLEAN_ROOM" = "1" ]; then
     echo "[app-feel] clean-room: skipped (no browser, no ~/Applications writes)"; return 0
   fi
-  if [ "$WITH_LAUNCHD" != "1" ]; then
-    echo "[app-feel] dashboard not started (--no-launchd default). Start: bash cabinet/scripts/start-dashboard.sh"
-    echo "           then open $DASH_URL — no bookmark dropped for a server that isn't running."
+  if [ "$NO_BROWSER" = "1" ]; then
+    echo "[app-feel] --no-browser: dashboard not started, clipboard untouched, nothing opened."
+    echo "           Start it yourself: bash cabinet/scripts/start-dashboard.sh — then visit $DASH_LANDING"
     return 0
+  fi
+  # A launchd move-in already started the dashboard; the v0 default did not, so
+  # start it here. Either way the probe below is what decides it is really up.
+  tries=60
+  if [ "$WITH_LAUNCHD" != "1" ]; then
+    if curl -fsS --max-time 2 "${DASH_URL}api/health" >/dev/null 2>&1; then
+      echo "[app-feel] dashboard already serving at $DASH_URL — reusing it"
+    else
+      : > "$DASH_LOG" 2>/dev/null || true
+      nohup bash "$DASH_SCRIPTS/start-dashboard.sh" >>"$DASH_LOG" 2>&1 &
+      dash_pid=$!
+      echo "[app-feel] dashboard starting (pid $dash_pid, log: $DASH_LOG). It keeps running after this script."
+      echo "           Stop it later with: kill \$(lsof -ti tcp:$DASH_PORT)"
+      # A first run does npm ci + next build before it serves anything: minutes,
+      # not seconds. 150 x (2s curl cap + 2s sleep) bounds the wait at ~10 min.
+      tries=150
+    fi
   fi
   webloc="$HOME/Applications/Captain's Cabinet.webloc"
   if mkdir -p "$HOME/Applications" \
@@ -880,17 +933,37 @@ app_feel() {
     echo "[app-feel] bookmark skipped: could not write/validate $webloc (non-fatal)"
   fi
   ok=0
-  for _ in $(seq 1 60); do
+  waited=0
+  echo "[app-feel] waiting for the dashboard to answer ${DASH_URL}api/health ..."
+  for _ in $(seq 1 "$tries"); do
     curl -fsS --max-time 2 "${DASH_URL}api/health" >/dev/null 2>&1 && { ok=1; break; } || true
     sleep 2
+    waited=$((waited + 2))
+    # Say what is being waited on, and how to not wait next time. A silent
+    # multi-minute pause at the end of a hatch reads as a hang.
+    if [ "$((waited % 60))" = "0" ]; then
+      echo "[app-feel] still building/starting (${waited}s elapsed; a first run compiles the dashboard)."
+      echo "           Skip this next time: bash cabinet/scripts/hatch.sh --no-browser"
+    fi
   done
-  if [ "$ok" = "1" ] && [ -z "${SSH_CONNECTION:-}" ] && [ "${HATCH_NO_OPEN:-0}" != "1" ]; then
-    open "$DASH_URL" || echo "[app-feel] auto-open failed — open $DASH_URL manually"
+  # Password handover. dashboard-password.sh NEVER prints the password — it
+  # copies to the clipboard and says only that it did. That stays true here.
+  if [ "$ok" = "1" ]; then
+    bash "$DASH_SCRIPTS/dashboard-password.sh" --copy \
+      || echo "[app-feel] password not copied — get it with: bash cabinet/scripts/dashboard-password.sh --copy"
+  fi
+  if [ "$ok" = "1" ] && [ -z "${SSH_CONNECTION:-}" ] && [ "${HATCH_NO_OPEN:-0}" != "1" ] \
+     && command -v open >/dev/null 2>&1; then
+    open "$DASH_LANDING" || echo "[app-feel] auto-open failed — visit $DASH_LANDING manually"
   elif [ "$ok" = "1" ]; then
-    echo "[app-feel] dashboard is UP — open $DASH_URL (auto-open skipped: SSH/HATCH_NO_OPEN)"
+    echo "[app-feel] dashboard is UP — visit $DASH_LANDING (auto-open skipped: SSH/HATCH_NO_OPEN/no opener)"
   else
-    echo "[app-feel] AMBER: dashboard not reachable yet at ${DASH_URL}api/health (first build ~1-2 min)."
-    echo "           Check: launchctl print gui/\$(id -u)/com.cabinet.dashboard — then open $DASH_URL"
+    echo "[app-feel] AMBER: dashboard not reachable yet at ${DASH_URL}api/health (first build ~1-3 min)."
+    if [ "$WITH_LAUNCHD" = "1" ]; then
+      echo "           Check: launchctl print gui/\$(id -u)/com.cabinet.dashboard — then visit $DASH_LANDING"
+    else
+      echo "           Check the log: $DASH_LOG — then visit $DASH_LANDING"
+    fi
   fi
   return 0
 }

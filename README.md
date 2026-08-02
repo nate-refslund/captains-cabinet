@@ -102,6 +102,8 @@ bash cabinet/scripts/hatch.sh --defaults
 
 One command orchestrates the rehearsed chain: host setup → instance generation → activation → proof gates (null-hatch, clean-room ratchets, dry renders) → **your first briefing — the first receipt**, with a flight log timing every step. The few human-only steps (BotFather token, germline scope lines, TCC grants) print as numbered **errand notes** — the hatch never automates them.
 
+**The hatch ends in a browser, not in the terminal.** Once the chain is green it starts the dashboard, waits for it to answer (a first run compiles it — a couple of minutes, and it says so while it waits), copies the dashboard password to your clipboard without ever printing it, and opens `http://127.0.0.1:3100/onboarding`. Paste the password and you are in. Your first briefing and the genesis research brief — the two documents the hatch just wrote — are readable at `/briefing`, linked from Orientation. The dashboard keeps running after the script exits; the hatch prints its log path and how to stop it. Pass `--no-browser` (or set `HATCH_NO_BROWSER=1`) to skip the handover entirely, `HATCH_NO_OPEN=1` to start everything but not raise a window; `--clean-room` never does any of it.
+
 By default the hatch stops short of launchd: nothing goes live until you run the printed move-in instructions (or re-run with `--with-launchd`). `--dry-run` prints the full plan without executing anything. Full flag table and what v0 skips: [`docs/runbooks/hatch-v0-2026-07-09.md`](./docs/runbooks/hatch-v0-2026-07-09.md); the step-by-step manual path is in the [appendix](#appendix-manual-hatch).
 
 ### After hatch: earn the first responsibility

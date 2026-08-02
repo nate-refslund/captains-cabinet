@@ -67,9 +67,22 @@ cd "$DASH_DIR"
 if [ ! -d "$DASH_DIR/.next" ]; then
   echo "start-dashboard: no build found — building (first run, ~1-2 min)..."
   if [ ! -d "$DASH_DIR/node_modules" ]; then
-    npm ci 2>&1 | tail -5 || { echo "start-dashboard: npm ci failed" >&2; exit 1; }
+    # --include=dev is LOAD-BEARING. NODE_ENV=production is exported above
+    # because the SERVER needs it, and npm honors that by OMITTING
+    # devDependencies — where the entire build toolchain lives
+    # (@tailwindcss/postcss, tailwindcss, typescript). A plain `npm ci` here
+    # installs 201 of 244 packages and the build below then dies with
+    # "Cannot find module '@tailwindcss/postcss'". Latent since this script
+    # was written: nothing ran the first-run branch unattended until hatch.sh
+    # started the dashboard for the operator, and the bind tests pre-created
+    # node_modules/.next precisely to skip it (measured 2026-08-02, on a real
+    # `git archive HEAD` export).
+    npm ci --include=dev 2>&1 | tail -5 || { echo "start-dashboard: npm ci failed" >&2; exit 1; }
   fi
-  npm run build 2>&1 | tail -10 || { echo "start-dashboard: build failed" >&2; exit 1; }
+  # tail -30, not -10: this now runs unattended at the end of a hatch, and a
+  # 10-line tail cut the actual "Cannot find module" line off the top of the
+  # turbopack trace, leaving an operator with "build failed" and nothing else.
+  npm run build 2>&1 | tail -30 || { echo "start-dashboard: build failed" >&2; exit 1; }
 fi
 
 echo "start-dashboard: serving on http://127.0.0.1:$PORT  (display: /display; bind: $HOST)"
