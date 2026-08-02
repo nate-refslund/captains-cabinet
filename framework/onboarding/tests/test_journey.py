@@ -14,6 +14,7 @@ import subprocess
 import sys
 import unicodedata
 from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -1777,6 +1778,35 @@ def _connected_state(root: Path, rows, identities=(), not_reached=()) -> dict:
     return state
 
 
+#: The newest row clock these fixtures produce, in days before now. Every other
+#: row steps back one day per ordinal, so the whole block stays inside ONE
+#: recency band whatever today is (see _row_clock).
+_ROW_CLOCK_NEWEST_AGE_DAYS = 1
+#: The highest ordinal any fixture below hands to _row_clock.
+_ROW_CLOCK_ORDINALS = 22
+
+
+def _row_clock(day: int) -> str:
+    """A row clock anchored to NOW, never to a hardcoded month.
+
+    salience scores recency in BANDS (7 / 30 / 180 days, `_RECENCY_BANDS`)
+    against the real clock, so a fixture carrying literal dates is a calendar
+    time-bomb: these rows were authored inside the 30-day band, the oldest
+    crossed OUT of it, the ranking moved, and
+    `test_answering_merges_a_split_candidate_and_the_shortlist_changes` went RED
+    on an UNCHANGED commit — master ad8f0d3f green at 06:11Z on 2026-08-02 and
+    red at 17:00Z the same day, same SHA. Proven rather than inferred: shifting
+    the literals one month forward on pristine master turns the same test green.
+
+    Two of the three dated fixtures here had not detonated yet; they are on the
+    same fuse, so all three are anchored, not just the one that fired. `day` is
+    1-based and keeps each fixture's own ordering — day 1 is the OLDEST.
+    """
+    stamp = datetime.now(timezone.utc) - timedelta(
+        days=_ROW_CLOCK_ORDINALS + _ROW_CLOCK_NEWEST_AGE_DAYS - day)
+    return stamp.strftime("%Y-%m-%dT09:00:00Z")
+
+
 def _estate_rows():
     """Two sources naming the same three things, plus one thing in only one."""
     rows = []
@@ -1785,12 +1815,12 @@ def _estate_rows():
                               "Internal admin 2", "Internal admin 3",
                               "Internal admin 4", "Internal admin 5")):
         rows.append({"connector": "tracker", "name": name,
-                     "updated": f"2026-07-{i + 1:02d}T09:00:00Z"})
+                     "updated": _row_clock(i + 1)})
     for i, name in enumerate(("blue-harbour", "blue-harbour-api", "red-anchor",
                               "green-lantern", "solo-repo", "another-repo",
                               "third-repo", "fourth-repo", "fifth-repo")):
         rows.append({"connector": "repo", "name": name,
-                     "updated": f"2026-07-{i + 10:02d}T09:00:00Z"})
+                     "updated": _row_clock(i + 10)})
     return rows
 
 
@@ -1906,9 +1936,9 @@ def test_the_escape_hatch_takes_a_typed_name_and_teaches_the_alias(tmp_path):
     one on the next pass. Nothing records what KIND of thing it is.
     """
     rows = _estate_rows() + [
-        {"connector": "host", "name": "bluehbr-live", "updated": "2026-07-20T09:00:00Z"},
-        {"connector": "host", "name": "bluehbr-staging", "updated": "2026-07-21T09:00:00Z"},
-        {"connector": "tracker", "name": "BlueHbr rollout", "updated": "2026-07-22T09:00:00Z"},
+        {"connector": "host", "name": "bluehbr-live", "updated": _row_clock(20)},
+        {"connector": "host", "name": "bluehbr-staging", "updated": _row_clock(21)},
+        {"connector": "tracker", "name": "BlueHbr rollout", "updated": _row_clock(22)},
     ]
     _connected_state(tmp_path, rows)
     before = journey.salience_offer(journey.snapshot(tmp_path)["state"])
@@ -1977,7 +2007,7 @@ def _split_estate_rows():
     for connector, names in per.items():
         for name in names:
             rows.append({"connector": connector, "name": name,
-                         "updated": f"2026-07-{day:02d}T09:00:00Z"})
+                         "updated": _row_clock(day)})
             day += 1
     return rows
 
