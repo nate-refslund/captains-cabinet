@@ -306,8 +306,14 @@ def test_no_launchd_starts_dashboard_waits_copies_password_and_opens(tmp_path):
 
     curl_fail_first=1 → the first probe (is one already serving?) fails, so
     the tail starts one; a later probe succeeds, so it really is up.
+
+    plutil is SHIMMED here so the bookmark branch completes on Linux too:
+    /usr/bin/plutil is macOS-only, and this arm is about the branch being
+    REACHED on the --no-launchd path at all (it used to return before it), not
+    about plist validity — that is the darwin-only sibling's job.
     """
-    p, home, shims = _run_tail(tmp_path, with_launchd="0", curl_fail_first=1)
+    p, home, shims = _run_tail(tmp_path, with_launchd="0", curl_fail_first=1,
+                               plutil_exit=0)
     assert p.returncode == 0, (p.stdout, p.stderr)
     started = _start_calls(shims)
     assert len(started) == 1, f"expected exactly one dashboard start, got {started}"
@@ -324,8 +330,10 @@ def test_no_launchd_starts_dashboard_waits_copies_password_and_opens(tmp_path):
     assert _calls(shims, "open") == [_LANDING], (
         "the hatch must land the operator on /onboarding, not the dashboard root"
     )
-    # the bookmark is honest now that a server really is running
+    # the bookmark is honest now that a server really is running — the
+    # --no-launchd path used to return before ever reaching this step
     assert _webloc(home).is_file()
+    assert "bookmark:" in p.stdout
 
 
 def test_no_launchd_reuses_an_already_serving_dashboard(tmp_path):
