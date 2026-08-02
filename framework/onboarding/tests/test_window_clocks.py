@@ -306,8 +306,13 @@ ESTATE_ROWS = (
     "灯籠流し案内.md|22|8月14日|2026-08-14",
     "灯籠流し案内.md|35|8月14日|2026-08-14",
     "灯籠流し案内.md|3|2026年7月25日|2026-07-25",
+    # ONE ROW, not two. Line 2 of this CSV writes the same day in two formats
+    # ("作成 2026/7/31 …,… 2026年7月31日時点 …"), which emitted a duplicate into
+    # every forward-clock list and inflated rows_found. Deduped by (resolved
+    # day, line) at emission, first spelling kept — see
+    # test_one_day_written_twice_on_one_line_is_one_row below, which pins both
+    # directions.
     "秋会席_原価表.csv|2|2026/7/31|2026-07-31",
-    "秋会席_原価表.csv|2|2026年7月31日|2026-07-31",
     "税理士より.md|22|令和8年8月31日|2026-08-31",
     "税理士より.md|27|8月20日|2026-08-20",
     "税理士より.md|33|8月17日|2026-08-17",
@@ -681,3 +686,31 @@ def test_the_briefing_and_the_card_render_one_sentence(tmp_path):
     sentence = journey.clocks_note(_estate.load_window_clocks(root)).strip()
     assert sentence and sentence in card_body
     assert sentence in _briefing(root, notes)
+
+
+def test_one_day_written_twice_on_one_line_is_one_row():
+    """A cell that states the same day twice states one day.
+
+    Measured on a real dated estate: `作成 2026/7/31 …,… 2026年7月31日時点 …`
+    matched twice on one line and produced two rows resolving to the same day,
+    so the forward-clock list carried a visible duplicate and `rows_found`
+    over-counted. Both directions are pinned here, because a dedup that also
+    collapses two DIFFERENT days on one line would hide one of them — which is
+    a worse defect than the duplicate it removes.
+    """
+    same_day, _ = salience.file_clocks(
+        ["created 2026/7/31, priced as of 2026年7月31日"], now=NOW
+    )
+    assert [(row["raw"], row["iso"]) for row in same_day] == [("2026/7/31", "2026-07-31")]
+
+    two_days, _ = salience.file_clocks(
+        ["- 退職日　2026年8月31日付（**最終出勤日 2026年8月15日**）"], now=NOW
+    )
+    assert [row["iso"] for row in two_days] == ["2026-08-31", "2026-08-15"]
+
+    # Unresolved days are never collapsed. With no year anywhere in the file
+    # there is no anchor, so neither date has a position in time — and a dedup
+    # keyed on "no position" would erase one unknown with another.
+    unresolved, _ = salience.file_clocks(["納品 8月15日 と 9月2日"], now=NOW)
+    assert [row["iso"] for row in unresolved] == [None, None]
+    assert [row["raw"] for row in unresolved] == ["8月15日", "9月2日"]

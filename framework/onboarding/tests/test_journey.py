@@ -729,7 +729,12 @@ def test_purge_requires_typed_confirmation_and_removes_sensitive_history(tmp_pat
     assert purged["state"]["stage"] == "purged"
     assert purged["state"]["source"] is None
     assert purged["card"]["status"] == "complete"
-    assert purged["card"]["options"] == []
+    # The purged card offers ONE thing and it is not a way back into the dead
+    # journey: starting a NEW one. It used to offer nothing at all, which ended
+    # onboarding on the instance (see test_purge_is_survivable_* below).
+    assert purged["card"]["options"] == [
+        {"action": "start_again", "label": "Start a new orientation"}
+    ]
     persisted = "\n".join(
         p.read_text(errors="replace")
         for p in (tmp_path / journey.DATA_REL).parent.rglob("*")
@@ -762,6 +767,192 @@ def test_purge_requires_typed_confirmation_and_removes_sensitive_history(tmp_pat
         }, tmp_path)
     assert observe_exc.value.code == "onboarding_purged"
     assert verify_store(tmp_path / journey.EVIDENCE_REL)["trial_count"] == 0
+
+
+def _purge_after_ratified_read(tmp_path: Path, *, action_id: str = "purge-then") -> dict:
+    """A completed First Window, then the Captain's typed purge."""
+    source = estate(tmp_path, "software-product")
+    ready = ratify(tmp_path, propose(tmp_path, source))
+    purged = journey.act(
+        {"action": "purge", "action_id": action_id, "surface": "dashboard", "confirmation": "PURGE"},
+        tmp_path,
+    )
+    return {"source": source, "ready": ready, "purged": purged}
+
+
+def test_purge_is_survivable_a_new_journey_starts_and_the_dead_one_stays_dead(tmp_path):
+    """The defect this closes: deleting your data ended onboarding on the instance.
+
+    Measured on a fresh hatch 2026-07-30 — after the dashboard purge EVERY later
+    action on every surface (including the CLI) refused ``onboarding_purged``,
+    and the purged card offered nothing at all. Purge finality is about the
+    purged TRIAL, not about the operator's ability to onboard, and the two were
+    fused. Both halves are pinned here in one test so neither can be satisfied
+    alone: a new journey really starts, AND nothing from the dead one comes back.
+    """
+    before = _purge_after_ratified_read(tmp_path)
+    old_journey_id = before["ready"]["state"]["journey_id"]
+    old_charter_hash = before["ready"]["state"]["charter"]["hash"]
+    old_trial = before["purged"]["evidence"]["trial_id"]
+
+    restarted = journey.act(
+        {
+            "action": "answer_seed",
+            "action_id": "seed-after-purge",
+            "surface": "cli",
+            "seed": "I run releases for a small product team.",
+        },
+        tmp_path,
+    )
+
+    assert restarted["ok"] is True
+    assert restarted["state"]["journey_id"] != old_journey_id
+    assert restarted["state"]["evidence_trial_id"] != old_trial
+    assert restarted["state"]["seed"]["text"].startswith("I run releases")
+    assert journey.snapshot(tmp_path)["state"]["stage"] != "purged"
+
+    # …and the purged trial is still dead. Not "not offered" — GONE: its
+    # artifacts, its evidence trial, its charter hash, and every byte of the
+    # source it read.
+    assert not (tmp_path / journey.EVIDENCE_REL / "trials" / old_trial).exists()
+    assert not (tmp_path / journey.DATA_REL / journey.CHARTER_NAME).exists()
+    assert not (tmp_path / journey.DATA_REL / journey.MANIFEST_NAME).exists()
+    def joined(base: Path) -> str:
+        return "\n".join(p.read_text(errors="replace") for p in base.rglob("*") if p.is_file())
+
+    # Nowhere under instance/onboarding: no source path, no source content. The
+    # content-free access record survives BY DESIGN and keeps the charter hash
+    # and a journey-id HASH — that is the audit trail, and it is why the
+    # narrower scan below is the right one for the identifiers.
+    everywhere = joined((tmp_path / journey.DATA_REL).parent)
+    assert str(before["source"].resolve()) not in everywhere
+    assert "deploy:prod" not in everywhere
+    live = joined(tmp_path / journey.DATA_REL)
+    assert old_charter_hash not in live
+    assert old_journey_id not in live
+    assert verify_store(tmp_path / journey.EVIDENCE_REL)["ok"] is True
+
+
+def test_purge_still_refuses_a_stale_card_action_and_every_lifecycle_action(tmp_path):
+    """"Stale actions cannot reopen them" stays literally true.
+
+    The two refusals that survive: an action composed against the DELETED
+    journey's card (it carries that card's revision), and the lifecycle actions
+    that have no meaning without a live journey. Everything else now starts a
+    new one, so this is the whole remaining reach of ``onboarding_purged``.
+    """
+    before = _purge_after_ratified_read(tmp_path)
+    stale_revision = before["ready"]["state"]["revision"]
+    assert stale_revision != before["purged"]["state"]["revision"]
+
+    with pytest.raises(journey.JourneyError) as stale:
+        journey.act(
+            {
+                "action": "answer_seed",
+                "action_id": "stale-seed-after-purge",
+                "surface": "world",
+                "seed": "a sentence from a card that no longer exists",
+                "expected_revision": stale_revision,
+            },
+            tmp_path,
+        )
+    assert stale.value.code == "onboarding_purged"
+
+    for action in sorted(journey.PURGE_TERMINAL_ACTIONS):
+        with pytest.raises(journey.JourneyError) as exc:
+            journey.act(
+                {"action": action, "action_id": f"terminal-{action}", "surface": "telegram",
+                 "confirmation": "PURGE"},
+                tmp_path,
+            )
+        assert exc.value.code == "onboarding_purged", action
+
+    # Nothing above started a journey — the refusals are refusals, not a
+    # side-effecting restart wearing an error message.
+    assert journey.snapshot(tmp_path)["state"]["stage"] == "purged"
+    assert verify_store(tmp_path / journey.EVIDENCE_REL)["trial_count"] == 0
+
+
+def test_start_again_is_the_purged_cards_own_action_and_never_wipes_a_live_journey(tmp_path):
+    before = _purge_after_ratified_read(tmp_path)
+    card = before["purged"]["card"]
+    assert [option["action"] for option in card["options"]] == ["start_again"]
+    # The card SAYS what survives and what does not, because the confirm dialog
+    # that armed this never did.
+    assert "start a new orientation" in card["body"].lower()
+    assert "content-free record" in card["body"].lower()
+
+    fresh = journey.act(
+        {"action": "start_again", "action_id": "again-1", "surface": "dashboard",
+         "expected_revision": card["revision"]},
+        tmp_path,
+    )
+    assert fresh["restarted"] is True
+    assert fresh["state"]["stage"] == "welcome"
+    assert fresh["state"]["journey_id"] != before["ready"]["state"]["journey_id"]
+
+    # On a LIVE journey it is inert: a surface must never be able to destroy a
+    # running orientation by sending the word "again".
+    proposed = propose(tmp_path, before["source"], action_id="propose-after-restart")
+    with pytest.raises(journey.JourneyError) as exc:
+        journey.act(
+            {"action": "start_again", "action_id": "again-2", "surface": "world"},
+            tmp_path,
+        )
+    assert exc.value.code == "start_again_unavailable"
+    assert journey.snapshot(tmp_path)["state"]["charter"]["hash"] == proposed["state"]["charter"]["hash"]
+
+
+def test_second_purge_never_relabels_the_first_purges_access_record(tmp_path):
+    """The audit link a survivable purge made reachable.
+
+    An access record survives the purge that redacted it and carries THAT
+    receipt. A second journey means a second purge, and a blind re-stamp would
+    point the first read's record at a deletion that never touched it.
+    """
+    first = _purge_after_ratified_read(tmp_path, action_id="purge-one")
+    records = sorted((tmp_path / journey.ACCESS_RECORDS_REL).glob("access-*.json"))
+    assert len(records) == 1
+    first_receipt = json.loads(records[0].read_text())["purge_receipt"]
+    assert first_receipt == "purge-one"
+
+    second_source = estate(tmp_path, "client-services")
+    ratify(
+        tmp_path,
+        propose(tmp_path, second_source, action_id="propose-two"),
+        action_id="ratify-two",
+    )
+    journey.act(
+        {"action": "purge", "action_id": "purge-two", "surface": "dashboard", "confirmation": "PURGE"},
+        tmp_path,
+    )
+
+    stamped = {
+        json.loads(path.read_text())["purge_receipt"]
+        for path in sorted((tmp_path / journey.ACCESS_RECORDS_REL).glob("access-*.json"))
+    }
+    assert stamped == {"purge-one", "purge-two"}
+
+
+def test_charter_names_the_resolved_path_not_only_the_folders_last_segment(tmp_path):
+    """The one moment the operator confirms WHAT will be read.
+
+    Fix-proof both ways: the basename alone must NOT be the whole of what the
+    approval sentence says about the source, because two different folders whose
+    last segment matches make the same sentence — which is exactly how a window
+    over the wrong ~/Documents read as a window over the right one.
+    """
+    source = estate(tmp_path, "software-product")
+    proposed = propose(tmp_path, source)
+    body = proposed["card"]["body"]
+    resolved = str(source.resolve())
+
+    assert resolved in body
+    assert f"“{source.name}” ({resolved})" in body
+    # The arm that fails against the pre-fix component: strike the full path and
+    # the sentence still reads as a complete grant of access to "software-product".
+    assert "Read-only access to “software-product” for this purpose" not in body
+    assert proposed["state"]["charter"]["payload"]["source"]["root"] == resolved
 
 
 def test_inner_action_lock_refuses_stale_action_after_concurrent_purge(tmp_path):

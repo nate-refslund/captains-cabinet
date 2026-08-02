@@ -242,3 +242,34 @@ def test_every_relation_the_core_publishes_is_one_it_accepts(estate: Path):
         out = _window(root, _folder(root, f"unrelated-{index}"), salience_relation=relation)
         assert out["ok"] is True, f"{relation} is published but refused"
         assert out["state"]["salience"]["window"]["relation"] == relation
+
+
+def test_a_purged_instance_can_be_onboarded_again_through_the_process_boundary(estate: Path):
+    """The measured complaint was "including the CLI".
+
+    Driven on a fresh hatch 2026-07-30, every surface refused after the purge —
+    and this boundary is the one all three web surfaces sit behind, so an
+    in-process arm alone would not have caught it. What must arrive through
+    stdout: the purged card's own way back in, and a genuinely new journey.
+    """
+    ratified = _run(estate, "act", {
+        "action": "ratify_charter", "surface": "cli", "action_id": "cli-ratify",
+        "charter_hash": _window(estate, _folder(estate, "release-notes"))["state"]["charter"]["hash"],
+    })
+    assert ratified["ok"] is True
+    old_journey = ratified["state"]["journey_id"]
+
+    purged = _run(estate, "act", {
+        "action": "purge", "surface": "cli", "action_id": "cli-purge",
+        "confirmation": "PURGE",
+    })
+    assert purged["ok"] is True
+    assert [option["action"] for option in purged["card"]["options"]] == ["start_again"]
+
+    again = _run(estate, "act", {
+        "action": "start_again", "surface": "cli", "action_id": "cli-again",
+    })
+    assert again["ok"] is True, again
+    assert again["state"]["stage"] == "welcome"
+    assert again["state"]["journey_id"] != old_journey
+    assert _run(estate, "snapshot")["state"]["stage"] == "welcome"

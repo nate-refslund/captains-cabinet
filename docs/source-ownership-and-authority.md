@@ -77,6 +77,11 @@ behind. You can erase what was read; the fact that a read happened, against whos
 data and under what claimed right, stays. The record holds fingerprints and
 counts, never file contents, so keeping it does not keep the data.
 
+A record is stamped by the purge that redacted it and by no later one, so a
+second journey's deletion cannot relabel the first read's audit link. The
+purge dialog now says all of this before you type `PURGE`: what is destroyed,
+what is kept, and that you can start a new orientation afterwards.
+
 ## What this CANNOT enforce
 
 **The cabinet cannot verify that your answer is true.** Nothing stops you from

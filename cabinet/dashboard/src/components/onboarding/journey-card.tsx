@@ -86,6 +86,14 @@ export default function OnboardingJourneyCard({
   const [purgeArmed, setPurgeArmed] = useState(false)
   const [purgeConfirmation, setPurgeConfirmation] = useState('')
   const [source, setSource] = useState('~/Documents')
+  // WHETHER THE OPERATOR HAS TOUCHED THE FOLDER FIELD. `source` alone cannot
+  // answer that — its default is a real path someone might also type — and
+  // without the answer the only sync into this field (re-opening the scope form
+  // over an existing proposal) overwrote whatever they had entered with the
+  // last-proposed value. State rather than a ref deliberately: it is part of the
+  // form's logical state, it must survive a re-render, and it is reachable by
+  // the hook-scripted tests that pin the no-clobber rule.
+  const [sourceEdited, setSourceEdited] = useState(false)
   const [purpose, setPurpose] = useState('Find one useful thing I may be missing.')
   const [destination, setDestination] = useState<'earn' | 'reversible' | 'sovereign'>('reversible')
   // No initial value, deliberately: an unclassified source is REFUSED by the
@@ -262,6 +270,15 @@ export default function OnboardingJourneyCard({
         setPurgeArmed(false)
         setPurgeConfirmation('')
         setFeedbackRecorded(null)
+        // The field is only "theirs" until it has been committed or discarded.
+        // A landed proposal means state now HOLDS what they typed (resolved), so
+        // the next pre-fill is correct rather than a clobber; a purge or a fresh
+        // start means the journey it belonged to is gone.
+        if (action === 'propose_window') setSourceEdited(false)
+        if (action === 'purge' || action === 'start_again') {
+          setSourceEdited(false)
+          setSource('~/Documents')
+        }
         if (action !== 'purge') {
           void reportEvidence('ui', 'succeeded', { action, rendered_stage: body.card.stage }, body.evidence || ids)
         }
@@ -416,7 +433,14 @@ export default function OnboardingJourneyCard({
       return
     }
     if (action === 'propose_window') {
-      if (journey?.state.source?.root) setSource(journey.state.source.root)
+      // PRE-FILL, NEVER OVERWRITE. Re-opening the scope form syncs it from the
+      // last proposal so "Change it" starts from what is already approved — but
+      // only while the field is PRISTINE. It used to sync unconditionally, so
+      // any text the operator had already entered was silently replaced by the
+      // stored value and the form then submitted a folder they had not chosen.
+      // The explicit reset ("Use my Documents") is how they ask for a value they
+      // did not type; nothing else may put one there.
+      if (!sourceEdited && journey?.state.source?.root) setSource(journey.state.source.root)
       if (journey?.state.purpose) setPurpose(journey.state.purpose)
       if (journey?.state.relationship_destination) {
         setDestination(journey.state.relationship_destination)
@@ -499,7 +523,12 @@ export default function OnboardingJourneyCard({
             </div>
           </div>
 
-          <p className={`mt-3 text-sm leading-6 ${muted}`}>{journey.card.body}</p>
+          {/* `break-words` is load-bearing, not cosmetic: the Charter sentence
+              names the FULL resolved folder path, and a long unbroken path in a
+              narrow column would otherwise overflow its container — the one
+              sentence the operator confirms the read against must wrap, never
+              be clipped out of view. */}
+          <p className={`mt-3 break-words text-sm leading-6 ${muted}`}>{journey.card.body}</p>
 
           {journey.card.entry?.seed_question && (
             <form
@@ -830,14 +859,23 @@ export default function OnboardingJourneyCard({
                   <input
                     id={`${surface}-source`}
                     value={source}
-                    onChange={(event) => setSource(event.target.value)}
+                    onChange={(event) => {
+                      setSourceEdited(true)
+                      setSource(event.target.value)
+                    }}
                     className={`min-h-11 flex-1 rounded-md border px-3 py-2 text-sm outline-none ${input}`}
                     autoComplete="off"
                     required
                   />
                   <button
                     type="button"
-                    onClick={() => setSource('~/Documents')}
+                    onClick={() => {
+                      // The one explicit reset. It clears the edited flag too,
+                      // because asking for the default IS saying the field is
+                      // no longer yours.
+                      setSourceEdited(false)
+                      setSource('~/Documents')
+                    }}
                     className={`min-h-11 rounded-md border px-3 text-sm font-medium ${variant === 'world' ? 'border-stone-600 bg-amber-100' : 'border-zinc-600 bg-zinc-800'}`}
                   >
                     Use my Documents
@@ -1006,8 +1044,25 @@ export default function OnboardingJourneyCard({
               <label htmlFor={`${surface}-purge-confirmation`} className="block text-sm font-semibold">
                 Type PURGE to permanently delete this onboarding record
               </label>
+              {/* WHAT IS DESTROYED, WHAT IS KEPT, AND WHAT HAPPENS NEXT. This
+                  copy said only "permanently delete this onboarding record" —
+                  it named neither the audit record that deliberately survives
+                  nor what the operator could do afterwards, and the answer to
+                  the second one used to be "nothing, ever". Both are now
+                  stated here, on the dialog that arms the deletion, because a
+                  consequence discovered after the fact is not a consent. */}
               <p className={`mt-1 text-xs ${muted}`}>
-                This removes the Charter, onboarding history, evidence trial, manifest, and derived excerpts. Explicitly exported review bundles are kept until you delete them.
+                Destroyed, permanently: the Charter, onboarding history, evidence trial,
+                manifest, and derived excerpts. None of it comes back.
+              </p>
+              <p className={`mt-1 text-xs ${muted}`}>
+                Kept on purpose: the content-free record that a read happened — whose data,
+                under what claimed right — with the folder path removed and no content in it.
+                Explicitly exported review bundles are kept until you delete them.
+              </p>
+              <p className={`mt-1 text-xs ${muted}`}>
+                Afterwards: you can start a new orientation whenever you like. It begins from
+                nothing, with a new evidence trail, and cannot see anything deleted here.
               </p>
               <input
                 id={`${surface}-purge-confirmation`}

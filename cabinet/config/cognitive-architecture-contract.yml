@@ -840,7 +840,35 @@ budgets:
     # disabled sensor. The prose was restored to the docstrings, trimmed on its
     # merits rather than relocated, and the remainder is bought here in the open.
     # observed == maximum, zero headroom.
-    maximum: 62794
+    #
+    # 62794 -> 62861 (+67 measured 2026-08-02 via cognitive-architecture-census.py,
+    # observed 77403 vs the then-effective 77336): the stranger-path defect fixes
+    # found by driving the REAL browser journey on a fresh hatch.
+    #   * framework/onboarding/journey.py — a purge ENDS A JOURNEY and no longer
+    #     ends onboarding on the instance. Measured on the hatch: after "Delete
+    #     onboarding data" every later action on every surface, the CLI included,
+    #     refused `onboarding_purged`, and the purged card offered nothing at
+    #     all, so deleting your own data bricked the instance permanently. The
+    #     lines are `_restart_after_purge` (mints a new journey and trial, or
+    #     refuses a stale action), the `start_again` dispatch branch, the
+    #     `PURGE_TERMINAL_ACTIONS` set, the purged card's option and its honest
+    #     body, the already-redacted guard in `_annotate_access_records` (a
+    #     second purge must not relabel the first read's audit link — reachable
+    #     only now that a second journey exists), and the Charter sentence
+    #     naming the RESOLVED PATH rather than the folder's basename.
+    #     `_expected_revision` is a net SHRINK: one parser now serves the commit
+    #     boundary and the post-purge stale check, where two would drift.
+    #   * framework/onboarding/salience.py — `file_clocks` dedupes by (resolved
+    #     day, line) at emission, so one cell writing the same day in two
+    #     formats stops emitting two identical forward-clock rows and inflating
+    #     `rows_found`.
+    # A MAXIMUM BUMP, deliberately not a temporary_allowances row: an allowance
+    # promises a deletion gate, and none of this is a phase. Being able to
+    # onboard after deleting your data is permanent, and so is a Charter that
+    # names what it will read. Zero new production MODULES
+    # (framework_production_modules unchanged at 248) — every line lands inside
+    # a module the tree already carried. observed == maximum, zero headroom.
+    maximum: 62861
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

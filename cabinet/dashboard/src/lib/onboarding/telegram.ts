@@ -124,8 +124,12 @@ function buttonsFor(result: OnboardingResponse): TelegramInlineButton[][] {
     revoke: 'onboard:revoke',
     undo: 'onboard:undo',
     purge: 'onboard:purge_prompt',
+    // Payload-free, so a tap can carry it — and the purged card is the one
+    // place it is offered. Before this, `stage === 'purged'` returned no
+    // buttons because there was nothing to offer; now the one thing the card
+    // offers is the way back in.
+    start_again: 'onboard:start_again',
   }
-  if (stage === 'purged') return []
   if (stage === 'welcome') {
     // The one-tap Documents buttons are GONE, deliberately. A tap cannot carry
     // whose data the folder is, and the core refuses an unclassified source, so
@@ -198,7 +202,11 @@ export function formatTelegramOnboarding(result: OnboardingResponse): TelegramOn
     )
   }
   if (result.card.stage === 'purged') {
-    lines.push('', 'No action from an older Dashboard, Telegram message, or World card can recreate that evidence trial.')
+    lines.push(
+      '',
+      'No action from an older Dashboard, Telegram message, or World card can recreate that evidence trial.',
+      'To begin a new orientation from nothing, send: /onboard again'
+    )
   }
   if (result.card.stage === 'charter_pending') {
     lines.push('', `Charter fingerprint: ${result.state.charter?.hash.slice(0, 12)}`)
@@ -375,6 +383,10 @@ export async function handleTelegramOnboarding(
     if (/^pause$/i.test(command)) return [formatTelegramOnboarding(await action('pause', actionId))]
     if (/^revoke$/i.test(command)) return [formatTelegramOnboarding(await action('revoke', actionId))]
     if (/^undo$/i.test(command)) return [formatTelegramOnboarding(await action('undo', actionId))]
+    // The way back in after a deletion. `start` is already taken by the status
+    // alias above, so the word is `again` (with `restart` as its synonym) —
+    // both are what an operator staring at a deleted card would type.
+    if (/^(again|restart)$/i.test(command)) return [formatTelegramOnboarding(await action('start_again', actionId))]
     if (/^useful$/i.test(command)) return feedback('useful', actionId)
     if (/^not[ _-]?useful$/i.test(command)) return feedback('not_useful', actionId)
     if (/^(wrong|correction)$/i.test(command)) return feedback('corrected', actionId)
@@ -383,7 +395,13 @@ export async function handleTelegramOnboarding(
     }
     if (/^purge/i.test(command)) {
       return [{
-        text: 'Purging permanently removes the Charter, onboarding event history, manifest, and derived excerpts. To confirm, send exactly:\n/onboard purge PURGE',
+        text:
+          'Purging permanently removes the Charter, onboarding event history, manifest, derived ' +
+          'excerpts and this journey\'s evidence trial. None of it comes back.\n' +
+          'Kept deliberately: the content-free record that a read happened — whose data, under ' +
+          'what claimed right — with no path and no content.\n' +
+          'You can start a new orientation afterwards (/onboard again); it begins from nothing.\n' +
+          'To confirm, send exactly:\n/onboard purge PURGE',
         plain: true,
       }]
     }
@@ -414,6 +432,7 @@ export async function handleTelegramOnboardingCallback(
   if (command === 'revoke') return handleTelegramOnboarding('/onboard revoke', actionId)
   if (command === 'undo') return handleTelegramOnboarding('/onboard undo', actionId)
   if (command === 'purge_prompt') return handleTelegramOnboarding('/onboard purge', actionId)
+  if (command === 'start_again') return handleTelegramOnboarding('/onboard again', actionId)
   if (command === 'feedback:useful') return feedback('useful', actionId)
   if (command === 'feedback:not_useful') return feedback('not_useful', actionId)
   if (command === 'feedback:corrected') return feedback('corrected', actionId)

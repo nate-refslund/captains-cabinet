@@ -192,6 +192,18 @@ Purge requires literal `PURGE`, removes all journey content, and cannot be
 undone. Revoke stops future reads while retaining derived artifacts until undo
 or purge. Undo is event-backed.
 
+A purge ends that JOURNEY; it does not end onboarding on the instance (fixed
+2026-08-02, after a fresh-hatch run measured every later action on every surface
+— including the CLI — refused `onboarding_purged` with no way to begin again).
+The purged card offers `start_again`, and the next action that can legitimately
+begin a journey mints a new `journey_id` with a new evidence trial. Nothing from
+the purged journey returns. Two refusals survive and keep "stale actions cannot
+reopen them" literally true: an action carrying the deleted card's
+`expected_revision`, and the lifecycle actions in `PURGE_TERMINAL_ACTIONS`
+(`continue`, `pause`, `revoke`, `undo`, `ratify_charter`, `purge`), which have no
+meaning without a live journey. `_act_core` keeps its own unconditional purged
+guard for an action already in flight when a concurrent purge landed.
+
 ## 5. Validation personas
 
 1. **Software product development — primary dogfood.** Repository, release docs,

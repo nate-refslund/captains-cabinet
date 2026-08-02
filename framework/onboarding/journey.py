@@ -167,6 +167,37 @@ WINDOW_RELATIONS = {
     "elsewhere": "the operator says this is somewhere else they want opened",
 }
 
+# ── A purge ENDS a journey; it does not end onboarding ────────────────────────
+# Measured on a fresh hatch (2026-07-30): after "Delete onboarding data" every
+# later action on every surface — Dashboard, Telegram, World, CLI — refused
+# ``onboarding_purged``, and the purged card offered nothing at all. Deleting
+# your data bricked the instance, and the confirm copy never said so.
+#
+# Two things were fused that are not the same thing. Purge FINALITY is about the
+# purged TRIAL: its state, events, manifests, charter, derived excerpts and
+# evidence trial are gone and no later action may reopen them. That property is
+# right (privacy + evidence integrity) and is unchanged. Being able to onboard
+# AT ALL is about the INSTANCE, and nothing about deletion should cost it.
+#
+# So a purged journey is terminal, and the next action that can legitimately
+# BEGIN one mints a brand-new journey_id with a brand-new evidence trial. The
+# dead trial's bytes are not resurrected: they were removed, and the fresh
+# journey starts from ``_fresh_state`` with no link back except the content-free
+# purge receipt.
+#
+# Two refusals survive, and they are what keeps "stale actions cannot reopen
+# them" literally true:
+#   * an action carrying an ``expected_revision`` that is not the purged card's
+#     was composed against the DELETED journey's card — refused; and
+#   * the lifecycle actions below, which have no meaning without a live journey
+#     (there is nothing to continue, pause, revoke, undo, ratify or delete).
+# ``_act_core`` additionally keeps its own unconditional purged guard: it is the
+# commit boundary for an action that was already in flight when a concurrent
+# purge landed, whose evidence has already been written into the dead trial.
+PURGE_TERMINAL_ACTIONS = frozenset(
+    {"continue", "pause", "revoke", "undo", "ratify_charter", "purge"}
+)
+
 # ── Three entry modes — "never a dead end" (Captain ruling, 2026-07-26) ───────
 # The welcome card used to offer exactly one move: choose a folder. An operator
 # with no folder to grant had no path at all, and the deep-orientation card was
@@ -600,6 +631,67 @@ def _finish_purge(
     }
     _atomic_json(receipt_path, completed)
     return fresh, completed
+
+
+def _expected_revision(value: Any) -> int | None:
+    """The caller's optimistic-concurrency revision, or None when absent.
+
+    One parser for the two places that read it (``_act_core``'s conflict check
+    and the post-purge stale-action check), so a card revision the commit
+    boundary would reject can never be silently accepted by the other.
+    """
+    if value is None:
+        return None
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, str))
+        or (isinstance(value, str) and not re.fullmatch(r"[0-9]+", value))
+    ):
+        raise JourneyError("revision_invalid", "The onboarding card revision is invalid.")
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise JourneyError("revision_invalid", "The onboarding card revision is invalid.") from exc
+
+
+def _restart_after_purge(
+    root: Path,
+    state: dict[str, Any],
+    request: Mapping[str, Any],
+    *,
+    action: str,
+    surface: str,
+    now: str,
+) -> dict[str, Any]:
+    """Begin a NEW journey after a purge, or refuse a stale action.
+
+    See ``PURGE_TERMINAL_ACTIONS`` for why this exists and which two refusals
+    survive. Nothing from the purged journey is restored: the fresh state is
+    ``_fresh_state``, with a new ``journey_id`` and a new ``evidence_trial_id``,
+    and the restart event carries no projection so the crash-replay in
+    ``_load_state`` cannot resurrect a dead revision.
+    """
+    if action in PURGE_TERMINAL_ACTIONS or _expected_revision(
+        request.get("expected_revision")
+    ) not in (None, int(state["revision"])):
+        raise JourneyError(
+            "onboarding_purged",
+            "Onboarding data was purged. No later action can reopen its evidence trial. "
+            "Start a new orientation instead — the deleted one stays deleted.",
+        )
+    fresh = _fresh_state(now)
+    _atomic_json(_state_path(root), fresh)
+    _append_event(root, {
+        "schema": EVENT_SCHEMA,
+        "event_id": f"evt-{uuid.uuid4().hex}",
+        "action_id": f"restart-{uuid.uuid4().hex}",
+        "action": "start_again",
+        "surface": surface,
+        "ts": now,
+        "reversible": False,
+        "note": "A new journey began after a purge; the purged trial stays deleted.",
+    })
+    return fresh
 
 
 def _recover_pending_purge(root: Path) -> None:
@@ -1673,10 +1765,20 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
             title="Onboarding data was deleted",
             body=(
                 "The Charter, onboarding history, bounded manifest, derived excerpts, "
-                "and live evidence trial were removed. Stale actions cannot reopen them."
+                "and live evidence trial were removed. Stale actions cannot reopen them. "
+                # …AND THE WAY BACK IN. Without this sentence and the option
+                # below, deleting your data ended onboarding on this instance
+                # for good: every later action refused and the card offered
+                # nothing. What was deleted stays deleted; a new orientation is
+                # a NEW journey with a new evidence trail, starting from
+                # nothing.
+                "You can start a new orientation whenever you like — it begins from "
+                "nothing, with a new evidence trail, and cannot see anything above. "
+                "The content-free record that a read happened (whose data, under what "
+                "claimed right) is kept deliberately and is not part of this."
             ),
             status="complete",
-            options=[],
+            options=[{"action": "start_again", "label": "Start a new orientation"}],
         )
     elif stage == "charter_pending":
         charter = state["charter"]
@@ -1685,7 +1787,16 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
             kind="orientation_charter",
             title="Your First Window is ready for approval",
             body=(
-                f"Read-only access to “{source['label']}” for this purpose: {state['purpose']}. "
+                # THE PATH, NOT JUST ITS LAST SEGMENT. This sentence is the one
+                # moment the operator confirms WHAT will be read, and it used to
+                # name only the folder's basename — the least identifying form
+                # of it. Measured on a fresh hatch (2026-07-30): a proposal that
+                # carried ~/Documents when the operator had chosen somewhere
+                # else read "Read-only access to “Documents”", so the wrong
+                # folder and the right one made the same sentence. Consent to a
+                # basename is not consent to a path.
+                f"Read-only access to “{source['label']}” ({source['root']}) "
+                f"for this purpose: {state['purpose']}. "
                 f"You told me this source is {OWNERSHIP_LABELS.get(str(source.get('ownership')), 'unclassified')} "
                 f"({source.get('authority_basis')}). "
                 f"I will inspect at most {MAX_FILES} supported text files ({MAX_TOTAL_BYTES // 1024 // 1024} MB total), "
@@ -3603,6 +3714,13 @@ def _annotate_access_records(root: Path, receipt: dict[str, Any]) -> None:
             record = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(record, dict):
                 continue
+            # ALREADY REDACTED BY AN EARLIER PURGE — leave it alone. Now that a
+            # purge can be followed by a new journey and a second purge, a blind
+            # re-stamp would overwrite the FIRST purge's receipt link with the
+            # second's, pointing the audit trail at a deletion that never
+            # touched this read.
+            if record.get("source_root_redacted_by_purge"):
+                continue
             root_value = str(record.get("source_root") or "")
             if root_value:
                 record["source_root_sha256"] = hashlib.sha256(
@@ -3668,25 +3786,28 @@ def _act_core(
                 raise JourneyError("action_id_reused", "That onboarding action id was already used for a different action.")
             current = _load_state(base)
             return {"ok": True, "duplicate": True, "event_id": duplicate.get("event_id"), "state": current, "card": _card(current)}
-        expected = request.get("expected_revision")
-        if expected is not None:
-            if (
-                isinstance(expected, bool)
-                or not isinstance(expected, (int, str))
-                or (isinstance(expected, str) and not re.fullmatch(r"[0-9]+", expected))
-            ):
-                raise JourneyError("revision_invalid", "The onboarding card revision is invalid.")
-            try:
-                expected_revision = int(expected)
-            except (TypeError, ValueError) as exc:
-                raise JourneyError("revision_invalid", "The onboarding card revision is invalid.") from exc
-            if expected_revision != int(state["revision"]):
-                raise JourneyError("revision_conflict", "This card changed on another surface. I refreshed it; please use the current choice.")
+        expected_revision = _expected_revision(request.get("expected_revision"))
+        if expected_revision is not None and expected_revision != int(state["revision"]):
+            raise JourneyError("revision_conflict", "This card changed on another surface. I refreshed it; please use the current choice.")
         if action == "purge":
             return _purge(
                 base, state, request, surface=surface, trace_id=trace_id,
                 correlation_id=correlation_id, now=ts,
             )
+        if action == "start_again":
+            # THE WAY BACK IN AFTER A DELETION. By the time this runs, ``act``
+            # has already minted the new journey (see ``_restart_after_purge``),
+            # so this branch has nothing left to do but hand back the card the
+            # operator asked for. It is deliberately NOT destructive on a live
+            # journey — a surface must never be able to wipe a running
+            # orientation by sending the word "again" — so a journey that has
+            # already moved is refused rather than reset.
+            if state["stage"] != "welcome" or int(state["revision"]) != 0:
+                raise JourneyError(
+                    "start_again_unavailable",
+                    "Onboarding is already open. Delete it first if you want to start over.",
+                )
+            return {"ok": True, "restarted": True, "state": state, "card": _card(state)}
         if action == "answer_seed":
             # THE FIELD THE SEED QUESTION NEVER HAD. "What do you do, and how
             # can I best serve you?" was printed on the welcome card with no
@@ -4311,20 +4432,26 @@ def act(
 ) -> dict[str, Any]:
     """Record and apply one canonical action across every onboarding surface."""
     base = Path(root) if root else cabinet_root()
-    with _locked(base):
-        state = _load_state(base)
-        trial_id = str(state["evidence_trial_id"])
-        if state.get("stage") == "purged":
-            raise JourneyError(
-                "onboarding_purged",
-                "Onboarding data was purged. No later action can reopen its evidence trial.",
-            )
-
     raw = request if isinstance(request, dict) else {}
     requested_surface = str(raw.get("surface") or "unknown")
     surface = requested_surface if requested_surface in {
         "dashboard", "telegram", "world", "companion", "cli", "test", "unknown"
     } else "unknown"
+
+    with _locked(base):
+        state = _load_state(base)
+        if state.get("stage") == "purged":
+            # A purge ends a JOURNEY, not onboarding. This either refuses a
+            # stale action or mints a brand-new journey (and trial) to run the
+            # incoming one against — before the evidence lifecycle opens below,
+            # so the action's events land in the LIVE trial rather than the
+            # deleted one.
+            state = _restart_after_purge(
+                base, state, raw,
+                action=str(raw.get("action") or "").strip(),
+                surface=surface, now=_now(now),
+            )
+        trial_id = str(state["evidence_trial_id"])
     # The action name is free text until the core validates it; scrub lone
     # surrogates so it can be hashed into evidence (and echoed in a refusal)
     # instead of crashing canonicalization with a raw UnicodeEncodeError.
