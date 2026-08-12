@@ -28,7 +28,8 @@
 #                            --with-launchd runs runbook section 6)
 #
 # GERMLINE steps (cabinet/mcp-scope.yml, cabinet/officer-capabilities.conf)
-# are NEVER automated — they print as numbered ERRAND NOTES for the human,
+# are NEVER automated — they print as a numbered end-of-run CHECKLIST for the
+# human (hatch-lib/errands.sh; "errand notes" in the code, plain words on screen),
 # exactly like BotFather tokens and TCC clicks (design doc §3). And because
 # they are never automated, the hatch must never DEPEND on them: since
 # roster-authz (2026-07-26) generate-instance.py rosters a lane CEO only once
@@ -76,11 +77,23 @@
 # table, TTFR (proofs-done -> first-receipt) and total time print at the end.
 #
 # Failure honesty: any failed step prints the exact failed command + its log
-# path and exits non-zero. The only documented warn-and-continue: a missing
+# path and exits non-zero. Two documented warn-and-continues: a missing
 # TELEGRAM_COS_TOKEN name in cabinet/.env (the Chair boots Telegram-dark —
-# rehearsal-verified behavior).
+# rehearsal-verified behavior), and the whole of step 6 (below).
 #
-# Exit codes: 0 = chain green · 1 = a step failed · 64 = usage error.
+# THE FRONT DOOR ALWAYS OPENS (2026-08-12). The operator-facing product is the
+# dashboard + onboarding. Step 6 (move-in / launchd) is the advanced step and
+# the one most likely to fail on an unfamiliar Mac — so it is NON-FATAL: a
+# failure there is recorded, said plainly, and the run still starts the
+# dashboard, hands over the password and opens the browser. Real gates —
+# host setup, instance, activation, the proofs, the first receipt — still stop
+# the run, because without them there is no product to open.
+#
+# Exit codes: 0 = chain green · 1 = a step failed · 64 = usage error ·
+#   75 = hatched and the front door opened, but an OPTIONAL background helper
+#        (step 6) did not start. Scripting that only cares "is there a working
+#        cabinet" treats 0 and 75 alike; scripting that manages the fleet
+#        treats 75 as "retry the move-in" (sysexits EX_TEMPFAIL).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -102,9 +115,13 @@ Usage: bash cabinet/scripts/hatch.sh [flags]
 
 One command to hatch a Captain's Cabinet: host setup -> instance ->
 activation -> proof gates -> first receipt (the genesis briefing) -> one
-LABELED demo receipt (receipt anatomy, emit-demo-receipt.sh), with a
-flight log timing every step. v0 stops short of launchd by default and
-prints numbered ERRAND NOTES for every human-only step.
+LABELED demo receipt (receipt anatomy, emit-demo-receipt.sh) -> your
+Cabinet open in a browser, with a flight log timing every step. v0 stops
+short of launchd by default, and the few steps only a human can do print
+as a numbered checklist at the end.
+
+Starting background helpers (--with-launchd) is never fatal: if it fails
+the run says so plainly, opens the browser anyway, and exits 75.
 
 Flags:
   --defaults           Non-interactive everywhere: setup-env.sh --defaults,
@@ -138,8 +155,8 @@ Flags:
                        tar -x; a plain clone refuses identically), or set
                        HATCH_ALLOW_TRACKED_INSTANCE=1 to override. Refuses
                        --with-launchd / --with-drill.
-  --dry-run            Print the full numbered plan + errand notes, execute
-                       nothing, exit 0.
+  --dry-run            Print the full numbered plan + the human-only
+                       checklist, execute nothing, exit 0.
   --no-browser         Skip the browser handover at the very end: do not start
                        the dashboard, do not wait on it, do not touch the
                        clipboard, open nothing. The chain and every gate are
@@ -149,10 +166,12 @@ Flags:
                        HATCH_NO_OPEN=1 is the narrower knob: still start the
                        dashboard and hand over the password, just don't open a
                        browser window.
-  --with-launchd       Run the move-in (runbook section 6): deploy the Chair,
-                       render + lint + bootstrap the measurement-plane plists,
-                       health-check. Default is --no-launchd: move-in prints
-                       as an errand note instead.
+  --with-launchd       Start the background helpers (runbook section 6):
+                       deploy the Chair, render + lint + bootstrap the
+                       measurement-plane plists, health-check. NEVER FATAL —
+                       a failure is recorded, said plainly, and the browser
+                       still opens (exit 75). Default is --no-launchd: it
+                       becomes a checklist item instead.
   --with-drill         Include proof P-d, the kill-switch drill (activate ->
                        assert ACTIVE -> deactivate -> assert INACTIVE) against
                        REDIS_URL (default redis://localhost:6379). It HALTS a
@@ -205,10 +224,17 @@ fi
 PY="python3.12"
 CLEANROOM_REDIS_PORT="${HATCH_CLEANROOM_REDIS_PORT:-6399}"  # deliberately-unused port
 
+# The run's exit disposition, decided as the chain goes and honoured by the
+# LAST line of this file. 0 = everything green. 75 = the cabinet hatched and
+# the front door opened, but an OPTIONAL background helper did not start (see
+# the move-in block); a real gate failure still exits 1 from step_fail, long
+# before this matters.
+HATCH_EXIT=0
+
 # Telegram-dark check — NAME presence only; the value is never read, echoed,
 # or logged (values-in-env, names-in-files). A function because the answer
 # can change mid-run: the interactive setup-mac.sh wizard may write the name
-# into cabinet/.env, so the final errand notes recompute it.
+# into cabinet/.env, so the final checklist recomputes it.
 telegram_named() {
   if [ -f cabinet/.env ] && grep -q '^TELEGRAM_COS_TOKEN=..*' cabinet/.env 2>/dev/null; then
     echo 1
@@ -291,12 +317,15 @@ emit_plan() {
     echo "                    plutil -lint + launchctl bootout (idempotent re-run) + bootstrap"
     echo "                    gui/\$(id -u) for each generated plist"
     echo "                    bash cabinet/scripts/health-check.sh"
+    echo "                    NEVER FATAL: the first failure here stops the rest of the"
+    echo "                    move-in, is recorded, and the run continues to step 16 —"
+    echo "                    the front door opens anyway (exit 75 instead of 0)"
   else
-    echo "15. [move-in]       DEFERRED (v0 default --no-launchd) — printed as an errand note"
+    echo "15. [move-in]       DEFERRED (v0 default --no-launchd) — printed in the checklist"
   fi
-  echo "16. [app-feel]      dashboard: start it (--no-launchd) or probe it (--with-launchd), wait on"
-  echo "                    /api/health, copy the password to the clipboard (never printed), drop"
-  echo "                    the .webloc + Add-to-Dock hints, then open /onboarding in the browser"
+  echo "16. [open]          start your Cabinet (or reuse a running one / a successful move-in's),"
+  echo "                    wait on /api/health, copy the password to the clipboard (never printed),"
+  echo "                    save the .webloc shortcut, then open /onboarding in the browser"
   echo "                    (--no-browser or --clean-room skip the whole tail; it is never a gate)"
   echo ""
   echo "Flight recorder: per-step timings + stamps -> flight log; summary table,"
@@ -690,34 +719,43 @@ fi
 
 flight_init "$LOG_DIR" "$FLIGHT_LOG"
 flight_stamp HATCH_START
-echo "==== HATCH v0 — recording to $LOG_DIR (flight-recorder rule) ===="
+# The first thing a person sees. Plain, and it answers the two questions
+# somebody watching a wall of scrolling text actually has: how long, and do I
+# have to do anything?
+echo "==== SETTING UP YOUR CABINET ===="
+echo "This takes a few minutes. You don't need to do anything — leave this window"
+echo "open and it will open in your browser when it's ready."
+echo "A record of everything it does is being kept in: $LOG_DIR"
+echo ""
 if [ "$CLEAN_ROOM" = "1" ]; then
   echo "==== CLEAN-ROOM — CABINET_RUNTIME_DIR -> $CABINET_RUNTIME_DIR ===="
   echo "     (scratch-routed runtime dir: the live /tmp/cabinet-runtime is never written)"
   flight_line "CLEAN_ROOM_RUNTIME_DIR $CABINET_RUNTIME_DIR"
 fi
+echo "The technical plan, for the record — nothing here needs your attention:"
 emit_plan
 
 if [ "$TELEGRAM_NAMED" = "0" ]; then
   echo ""
-  echo "WARN: TELEGRAM_COS_TOKEN is not named in cabinet/.env — the Chair will"
-  echo "      boot Telegram-dark (documented warn-and-continue; errand note below)."
+  echo "Heads up: there's no Telegram bot token yet, so your Cabinet won't be able"
+  echo "      to message you on Telegram. Everything else works, and you can add"
+  echo "      one later — it's in the checklist at the end (TELEGRAM_COS_TOKEN)."
   flight_line "WARN telegram-dark (TELEGRAM_COS_TOKEN name absent)"
 fi
 
 # 1. host bootstrap
 if [ "$DEFAULTS" = "1" ]; then
-  run_step setup-env "seed cabinet/.env non-interactively (boot-path contract)" \
+  run_step setup-env "getting your settings file ready" \
     bash cabinet/scripts/setup-env.sh --defaults
 fi
 if [ "$CLEAN_ROOM" = "1" ]; then
-  run_step setup-mac "host preflight (clean-room: check only, no installs)" \
+  run_step setup-mac "checking this Mac has what it needs (checking only, installing nothing)" \
     bash cabinet/scripts/setup-mac.sh --check
   echo "    clean-room: install/service phases skipped (deps verified present);"
   echo "    launchd, the live Redis, and the live /tmp/cabinet-runtime are never"
   echo "    touched in this mode (runtime dir scratch-routed — see banner above)."
 else
-  run_step setup-mac "host bootstrap (boot-path fast lane)" \
+  run_step setup-mac "checking this Mac has what it needs, and installing anything missing" \
     bash cabinet/scripts/setup-mac.sh --fast
 fi
 
@@ -734,18 +772,17 @@ command -v "$PY" >/dev/null 2>&1 || {
 do_generate_instance
 
 # 3. activation (runbook step 4)
-run_step preset "select the active preset (runbook 4.1)" do_set_preset
+run_step preset "choosing the layout that matches your answers" do_set_preset
 echo ""
-echo "NOTE: germline activation edits (runbook 4.2) are NOT automated — see the"
-echo "      numbered errand notes at the end (mcp-scope.yml + officer-capabilities.conf)."
-echo "      They are OPTIONAL: the roster hires only officers those two files"
-echo "      already authorize, so this chain completes without them."
-run_step roles "seed the durable roster (runbook 4.4)" do_bootstrap_roles
+echo "Note: two settings files are only ever edited by hand, on purpose — they"
+echo "      are in the checklist at the end. They are OPTIONAL and nothing here"
+echo "      is waiting on them."
+run_step roles "creating the roles your Cabinet will use" do_bootstrap_roles
 if [ "$CLEAN_ROOM" = "1" ]; then
-  run_step load-preset "assemble the runtime (clean-room: Redis marks -> unused port $CLEANROOM_REDIS_PORT)" \
+  run_step load-preset "putting it all together (clean-room: Redis marks -> unused port $CLEANROOM_REDIS_PORT)" \
     env REDIS_HOST=127.0.0.1 REDIS_PORT="$CLEANROOM_REDIS_PORT" bash cabinet/scripts/load-preset.sh
 else
-  run_step load-preset "assemble the runtime (runbook 4.5)" \
+  run_step load-preset "putting it all together" \
     bash cabinet/scripts/load-preset.sh
 fi
 
@@ -755,20 +792,20 @@ fi
 # egg, so it cannot live inside null-hatch (whose sandbox deliberately carries
 # no deployment-local state). It fires the lockstep module's live arm, which
 # skips on a bare checkout and asserts here because roster.yml now exists.
-run_step roster-authz "roster authorization: every hired officer has capability + MCP-scope rows" \
+run_step roster-authz "safety check: every role is properly authorised" \
   "$PY" -m pytest framework/tests/test_roster_conf_lockstep.py -q
-run_step proof-a "P-a null-hatch gate (egg boots with NO captain data)" \
+run_step proof-a "safety check: a brand-new Cabinet starts with none of your data in it" \
   bash cabinet/scripts/null-hatch.sh
-run_step proof-b "P-b clean-room ratchets (pytest subset)" \
+run_step proof-b "safety check: nothing personal leaked into the shared parts" \
   "$PY" -m pytest framework/tests/test_clean_room.py \
     framework/tests/test_no_screenpipe_in_core.py \
     framework/tests/test_no_launcher_hardcode.py -q
-run_step proof-c1 "P-c dry render: officer boot command assembly (zero side effects)" \
+run_step proof-c1 "safety check: rehearsing the start-up, without starting anything" \
   bash cabinet/scripts/start-officer-mac.sh cos --dry-run
-run_step proof-c2 "P-c dry render: plist render plan (zero side effects)" \
+run_step proof-c2 "safety check: rehearsing the background schedule, without installing it" \
   bash cabinet/scripts/deploy-mac.sh --officer cos --dry-run
 if [ "$WITH_DRILL" = "1" ]; then
-  run_step proof-d "P-d kill-switch drill (fail-closed store)" do_drill
+  run_step proof-d "safety check: the emergency stop switch really stops things" do_drill
 else
   echo ""
   echo "==> [proof-d] SKIPPED (enable with --with-drill; it writes the Redis kill"
@@ -780,7 +817,7 @@ fi
 flight_stamp HATCH_PROOFS_DONE
 
 # 5. FIRST RECEIPT — the genesis briefing
-run_step first-receipt "FIRST RECEIPT: the genesis briefing (first-briefing.sh --local)" \
+run_step first-receipt "writing your first briefing" \
   do_first_receipt
 flight_stamp FIRST_RECEIPT_DONE
 RECEIPT_LOG="$HATCH_LOG_DIR/step-first-receipt.log"
@@ -802,16 +839,53 @@ fi
 # 5b. DEMO receipt — one labeled receipt-anatomy example beside the briefing
 # (Wave B day-1 legibility). Same wiring discipline as the first receipt: the
 # script's own machine-readable DEMO_RECEIPT= line is the contract.
-run_step demo-receipt "DEMO receipt: seed one labeled receipt-anatomy example (emit-demo-receipt.sh)" \
+run_step demo-receipt "adding one clearly-labelled example receipt, so you can see what they look like" \
   bash cabinet/scripts/emit-demo-receipt.sh
 DEMO_LOG="$HATCH_LOG_DIR/step-demo-receipt.log"
 DEMO_LANDING="$(sed -n 's/^DEMO_RECEIPT=//p' "$DEMO_LOG" 2>/dev/null | tail -1 || true)"
 
-# 6. move-in (runbook section 6) — deferred by default
+# 6. background helpers (runbook section 6, "move-in") — deferred by default,
+#    and NEVER fatal.
+#
+# 2026-08-12, never-strand fix. A real operator double-clicked the app on his
+# own Mac. Everything above succeeded; `deploy-mac.sh --officer cos` then died
+# with launchd's "Bootstrap failed: 5: Input/output error". Because each
+# move-in step was a hard `run_step`, hatch.sh exited 1 right there — BEFORE
+# the verdict and before the browser handover — so no dashboard started, no
+# password reached the clipboard, nothing opened, and the Terminal window said
+# "Process completed". He was stranded with a working cabinet he could not see.
+#
+# The rule that follows from it: the operator-facing PRODUCT is the dashboard
+# and onboarding; starting background helpers is the advanced step and the one
+# most likely to fail on an unfamiliar machine. A helper that will not start is
+# a note, not a dead end. So these steps run soft: the first failure stops the
+# REST of the sequence (each step depends on the one before it), is recorded in
+# the flight log with its exact command and step log, and the chain carries on
+# to the front door. HATCH_EXIT becomes 75 so scripting can still tell this
+# apart from a clean run — see the exit-code block at the end of the file.
+MOVEIN_OK=1
+MOVEIN_FAILED_LOG=""
 if [ "$WITH_LAUNCHD" = "1" ]; then
-  run_step movein-chair "move-in: deploy the Chair (launchd)" \
+  # movein_step <id> <desc> <argv...> — run_step_soft that records the first
+  # failure, skips every later move-in step, and ALWAYS returns 0. Nothing in
+  # this block may end the run: that is the whole point of the fix.
+  movein_step() {
+    local id="$1" desc="$2"; shift 2
+    local rc=0
+    [ "$MOVEIN_OK" = "1" ] || return 0
+    run_step_soft "$id" "$desc" "$@" || rc=$?
+    [ "$rc" -eq 0 ] && return 0
+    MOVEIN_OK=0
+    MOVEIN_FAILED_LOG="$HATCH_LOG_DIR/step-${id}.log"
+    flight_line "MOVEIN_FAILED [$id] rc=$rc (not fatal — the front door still opens)"
+    echo ""
+    echo "    That step didn't work on this Mac. It is optional, so setup keeps"
+    echo "    going: your Cabinet still opens in your browser in a moment."
+    return 0
+  }
+  movein_step movein-chair "start the helper that runs your Cabinet in the background" \
     bash cabinet/scripts/deploy-mac.sh --officer cos
-  run_step movein-plists "move-in: render measurement-plane plists" \
+  movein_step movein-plists "write the background schedule" \
     "$PY" cabinet/scripts/generate-plists.py
   do_movein_load() {
     local p found=0
@@ -828,13 +902,18 @@ if [ "$WITH_LAUNCHD" = "1" ]; then
     done
     [ "$found" = "1" ] || { echo "no plists under cabinet/launchd/generated/"; return 1; }
   }
-  run_step movein-load "move-in: lint + bootstrap measurement-plane plists (bootout-first, idempotent)" \
+  movein_step movein-load "put the background schedule in place" \
     do_movein_load
-  run_step movein-health "move-in: health check" \
+  movein_step movein-health "check the background helpers answered" \
     bash cabinet/scripts/health-check.sh
-  echo ""
-  echo "Move-in done. FINAL acceptance gate (run when the Chair is up):"
-  echo "    bash cabinet/scripts/cabinet-doctor.sh   # exit 0 required"
+  if [ "$MOVEIN_OK" = "1" ]; then
+    echo ""
+    echo "Your Cabinet's background helpers are running."
+    echo "You can check on them any time with:"
+    echo "    bash cabinet/scripts/cabinet-doctor.sh"
+  else
+    HATCH_EXIT=75
+  fi
 fi
 
 # ---- verdict --------------------------------------------------------------------
@@ -854,24 +933,37 @@ if [ -z "$DASH_PORT" ] && [ -f cabinet/.env ]; then
   DASH_PORT="$(sed -n 's/^CABINET_DASHBOARD_PORT=//p' cabinet/.env | tail -1)" || DASH_PORT=""
 fi
 DASH_PORT="${DASH_PORT:-3100}"; DASH_URL="http://127.0.0.1:${DASH_PORT}/"
-echo "==== WHERE THINGS LIVE (minute one) ===="
-echo "First briefing:        ${RECEIPT_LANDING:-see $RECEIPT_LOG}"
-echo "                       (read it in the browser: ${DASH_URL}briefing)"
-echo "DEMO receipt:          ${DEMO_LANDING:-see $DEMO_LOG}"
-echo "                       (labeled demo — receipt anatomy; reply-to-undo works on real receipts only)"
+echo "==== WHERE THINGS ARE ===="
+echo "Your first briefing:   ${RECEIPT_LANDING:-see $RECEIPT_LOG}"
+echo "                       (easier to read in your browser: ${DASH_URL}briefing)"
+echo "An example receipt:    ${DEMO_LANDING:-see $DEMO_LOG}"
+echo "                       (clearly labelled as an example, so you can see what a receipt looks like)"
 echo "How it's governed:     docs/how-your-cabinet-is-governed.md  (one page, plain language)"
-echo "Menu-bar companion:    bash cabinet/scripts/build-companion.sh && open \"bin/Cabinet Companion.app\""
-echo "Dashboard:             ${DASH_URL} (wall display: ${DASH_URL}display)"
-echo "App feel:              Safari File>Add to Dock, or Chrome menu > Cast, save and share > Install page as app"
+echo "Small menu-bar app:    bash cabinet/scripts/build-companion.sh && open \"bin/Cabinet Companion.app\""
+echo "Your Cabinet:          ${DASH_URL} (big-screen view: ${DASH_URL}display)"
+echo "Keep it in your Dock:  Safari File > Add to Dock, or Chrome menu > Cast, save and share > Install page as app"
 echo ""
-echo "==== HATCH VERDICT: GREEN (v0 chain complete) ===="
-if [ "$WITH_LAUNCHD" = "1" ]; then
-  echo "Host + instance + activation + proofs + first receipt + move-in: all green."
-  echo "Final acceptance stays cabinet-doctor.sh GREEN (see above)."
+echo "==== YOUR CABINET IS READY ===="
+if [ "$WITH_LAUNCHD" = "1" ] && [ "$MOVEIN_OK" = "1" ]; then
+  echo "Everything is set up, and the background helpers are running."
+  echo "It's about to open in your browser."
+elif [ "$WITH_LAUNCHD" = "1" ]; then
+  # The never-strand case. Plain, calm, in context — and NOT the raw launchd
+  # error, which is already in the step log for whoever needs it.
+  echo "Everything you need is set up, and it's about to open in your browser."
+  echo ""
+  echo "One thing to know: a background helper didn't start on this Mac. That's"
+  echo "fine — it only lets your Cabinet keep working while you're away, and"
+  echo "nothing you do in the browser needs it. To try it again later, run:"
+  echo "    bash cabinet/scripts/hatch.sh --with-launchd"
+  echo "If you'd like the details (or want to show someone), they're in:"
+  echo "    ${MOVEIN_FAILED_LOG:-$HATCH_LOG_DIR}"
 else
-  echo "Host + instance + activation + proofs + first receipt: all green."
-  echo "The org is NOT live yet — v0 defaults to --no-launchd. Move in via the"
-  echo "errand note above, or re-run: bash cabinet/scripts/hatch.sh --with-launchd"
+  echo "Everything is set up, and it's about to open in your browser."
+  echo ""
+  echo "Your Cabinet isn't working in the background yet — that's the deliberate"
+  echo "default. When you want it to, run:"
+  echo "    bash cabinet/scripts/hatch.sh --with-launchd"
 fi
 
 # ---- app-feel (Wave D) — bookmark + auto-open; convenience tail, NEVER a gate ----
@@ -892,31 +984,46 @@ fi
 #     hand over the password, just don't raise a browser window.
 # The started dashboard OUTLIVES this script (that is the point), so the line
 # that reports it also says where its log is and how to stop it.
+#
+# 2026-08-12 (never-strand). Two changes here, both from one real operator's
+# run: (1) a FAILED launchd move-in means nothing started the dashboard, so
+# this step starts it itself — the front door opens on every path where the
+# cabinet actually hatched; (2) every line a person reads here is plain now.
+# The technical detail did not go anywhere: it is in the flight log and the
+# per-step logs, which is where a diagnosis belongs.
 DASH_LANDING="${DASH_URL}onboarding"
 DASH_LOG="${HATCH_LOG_DIR:-${TMPDIR:-/tmp}}/step-dashboard.log"
 DASH_SCRIPTS="${SCRIPT_DIR:-$PWD/cabinet/scripts}"
 app_feel() {
-  local webloc ok tries waited dash_pid
+  local webloc ok tries waited dash_pid self_start pw_copied
   if [ "$CLEAN_ROOM" = "1" ]; then
-    echo "[app-feel] clean-room: skipped (no browser, no ~/Applications writes)"; return 0
+    echo "[opening] clean-room: skipped (no browser, no ~/Applications writes)"; return 0
   fi
   if [ "$NO_BROWSER" = "1" ]; then
-    echo "[app-feel] --no-browser: dashboard not started, clipboard untouched, nothing opened."
-    echo "           Start it yourself: bash cabinet/scripts/start-dashboard.sh — then visit $DASH_LANDING"
+    echo "[opening] --no-browser: your Cabinet was not started and nothing was opened."
+    echo "          To start it yourself: bash cabinet/scripts/start-dashboard.sh"
+    echo "          Then go to: $DASH_LANDING"
     return 0
   fi
-  # A launchd move-in already started the dashboard; the v0 default did not, so
-  # start it here. Either way the probe below is what decides it is really up.
+  # Who starts it? A SUCCESSFUL background move-in already did. Every other
+  # path — the default, or a move-in that failed on this machine — starts it
+  # right here. MOVEIN_OK defaults to 1 so this stays correct when the tail is
+  # driven on its own. Either way the health probe below decides it is really up.
+  self_start=1
+  if [ "$WITH_LAUNCHD" = "1" ] && [ "${MOVEIN_OK:-1}" = "1" ]; then
+    self_start=0
+  fi
   tries=60
-  if [ "$WITH_LAUNCHD" != "1" ]; then
+  if [ "$self_start" = "1" ]; then
     if curl -fsS --max-time 2 "${DASH_URL}api/health" >/dev/null 2>&1; then
-      echo "[app-feel] dashboard already serving at $DASH_URL — reusing it"
+      echo "[opening] your Cabinet is already running at $DASH_URL — using that one"
     else
       : > "$DASH_LOG" 2>/dev/null || true
       nohup bash "$DASH_SCRIPTS/start-dashboard.sh" >>"$DASH_LOG" 2>&1 &
       dash_pid=$!
-      echo "[app-feel] dashboard starting (pid $dash_pid, log: $DASH_LOG). It keeps running after this script."
-      echo "           Stop it later with: kill \$(lsof -ti tcp:$DASH_PORT)"
+      echo "[opening] starting your Cabinet (id $dash_pid). It keeps running after this window closes."
+      echo "          Notes for later, if anything looks wrong: $DASH_LOG"
+      echo "          To stop it: kill \$(lsof -ti tcp:$DASH_PORT)"
       # A first run does npm ci + next build before it serves anything: minutes,
       # not seconds. 150 x (2s curl cap + 2s sleep) bounds the wait at ~10 min.
       tries=150
@@ -927,14 +1034,14 @@ app_feel() {
      && printf '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n\t<key>URL</key>\n\t<string>%s</string>\n</dict>\n</plist>\n' "$DASH_URL" > "$webloc.tmp" \
      && plutil -lint "$webloc.tmp" >/dev/null \
      && mv "$webloc.tmp" "$webloc"; then
-    echo "[app-feel] bookmark: $webloc (opens in your default browser)"
+    echo "[opening] shortcut saved: $webloc (double-click it any time)"
   else
     rm -f "$webloc.tmp" || true
-    echo "[app-feel] bookmark skipped: could not write/validate $webloc (non-fatal)"
+    echo "[opening] shortcut skipped: could not save $webloc. Nothing else is affected."
   fi
   ok=0
   waited=0
-  echo "[app-feel] waiting for the dashboard to answer ${DASH_URL}api/health ..."
+  echo "[opening] waiting for your Cabinet to answer. You don't need to do anything."
   for _ in $(seq 1 "$tries"); do
     curl -fsS --max-time 2 "${DASH_URL}api/health" >/dev/null 2>&1 && { ok=1; break; } || true
     sleep 2
@@ -942,29 +1049,53 @@ app_feel() {
     # Say what is being waited on, and how to not wait next time. A silent
     # multi-minute pause at the end of a hatch reads as a hang.
     if [ "$((waited % 60))" = "0" ]; then
-      echo "[app-feel] still building/starting (${waited}s elapsed; a first run compiles the dashboard)."
-      echo "           Skip this next time: bash cabinet/scripts/hatch.sh --no-browser"
+      echo "[opening] still starting (${waited}s so far — the first time, it builds itself). This is normal."
+      echo "          Skip this next time: bash cabinet/scripts/hatch.sh --no-browser"
     fi
   done
   # Password handover. dashboard-password.sh NEVER prints the password — it
   # copies to the clipboard and says only that it did. That stays true here.
+  #
+  # On a FRESH cabinet there is nothing to copy: since the first-run password
+  # feature the operator CHOOSES their password on the dashboard's first screen,
+  # so a refusal here is the normal first-run case, not a fault. The script
+  # prints the precise reason itself (no password yet / no clipboard / bad
+  # permissions), so this line never contradicts it — it points at it.
+  pw_copied=0
   if [ "$ok" = "1" ]; then
-    bash "$DASH_SCRIPTS/dashboard-password.sh" --copy \
-      || echo "[app-feel] password not copied — get it with: bash cabinet/scripts/dashboard-password.sh --copy"
+    if bash "$DASH_SCRIPTS/dashboard-password.sh" --copy; then
+      pw_copied=1
+    else
+      echo "[opening] nothing was copied to your clipboard — the line above says why."
+      echo "          A brand-new Cabinet asks you to choose a password on its first screen."
+    fi
   fi
   if [ "$ok" = "1" ] && [ -z "${SSH_CONNECTION:-}" ] && [ "${HATCH_NO_OPEN:-0}" != "1" ] \
      && command -v open >/dev/null 2>&1; then
-    open "$DASH_LANDING" || echo "[app-feel] auto-open failed — visit $DASH_LANDING manually"
-  elif [ "$ok" = "1" ]; then
-    echo "[app-feel] dashboard is UP — visit $DASH_LANDING (auto-open skipped: SSH/HATCH_NO_OPEN/no opener)"
-  else
-    echo "[app-feel] AMBER: dashboard not reachable yet at ${DASH_URL}api/health (first build ~1-3 min)."
-    if [ "$WITH_LAUNCHD" = "1" ]; then
-      echo "           Check: launchctl print gui/\$(id -u)/com.cabinet.dashboard — then visit $DASH_LANDING"
+    echo "[opening] Your Cabinet is open in your browser."
+    if [ "$pw_copied" = "1" ]; then
+      echo "          Sign in with the password we just copied for you — paste it in."
     else
-      echo "           Check the log: $DASH_LOG — then visit $DASH_LANDING"
+      echo "          If it asks you to choose a password, pick one you'll remember —"
+      echo "          that's the first screen on a brand-new Cabinet."
+    fi
+    open "$DASH_LANDING" || echo "[opening] couldn't open your browser — go to $DASH_LANDING yourself"
+  elif [ "$ok" = "1" ]; then
+    echo "[opening] your Cabinet is ready — go to $DASH_LANDING (we didn't open a window for you)"
+  else
+    echo "[opening] your Cabinet is taking longer than expected to answer."
+    echo "          Nothing is broken and nothing is lost — give it a minute, then go to:"
+    echo "          $DASH_LANDING"
+    if [ "$self_start" = "1" ]; then
+      echo "          If it still doesn't load, the notes are in: $DASH_LOG"
+    else
+      echo "          If it still doesn't load, run: bash cabinet/scripts/start-dashboard.sh"
     fi
   fi
   return 0
 }
-app_feel || echo "[app-feel] non-fatal: app-feel step hit an unexpected error; the hatch verdict above stands"
+app_feel || echo "[opening] something unexpected happened while opening your browser; your Cabinet is still set up"
+# The run's exit code, and the ONLY thing that may follow the tail: 0 = all
+# green · 75 = hatched and the front door opened, but an optional background
+# helper did not start. A real gate failure exited 1 from step_fail long ago.
+exit "$HATCH_EXIT"

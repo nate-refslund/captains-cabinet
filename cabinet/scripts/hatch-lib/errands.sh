@@ -1,12 +1,19 @@
 # shellcheck shell=bash
-# hatch-lib/errands.sh — the ERRAND NOTES printer for hatch.sh (sourced, not run).
+# hatch-lib/errands.sh — the end-of-run CHECKLIST printer for hatch.sh
+# (sourced, not run).
 #
 # External-by-nature and germline steps are NEVER automated by hatch.sh —
-# they are printed as clearly-numbered errand notes for the human, exactly
+# they are printed as a clearly-numbered checklist for the human, exactly
 # the way docs/plans/world-onboarding-hatching-2026-07-09.md §3 treats
 # BotFather and TCC, and the way the mini-hatch runbook keeps the germline
-# copy-paste edits in the Captain's hands. Each note says WHERE the errand
-# happens (plainly, off-hatch), WHY it cannot be automated, and WHAT to do.
+# copy-paste edits in the Captain's hands. Each item says WHERE it happens
+# (plainly, off-hatch), WHY it cannot be automated, and WHAT to do.
+#
+# WORDING (2026-08-12, never-strand pass): these lines are read by whoever
+# double-clicked the app, so they are written for a person and not for this
+# codebase. Technical names survive only where the person has to TYPE them
+# (a filename, a command, an env-var NAME). The reasoning stays — it is what
+# makes the checklist trustworthy rather than bossy.
 #
 # Sources of record: docs/runbooks/mini-hatch-tonight-2026-07-07.md
 # (steps 4.2 + 6, "Mini-manual steps") and the design doc §3 errand table.
@@ -14,11 +21,11 @@
 
 ERRAND_N=0
 
-# errand <title> — begin a numbered errand note
+# errand <title> — begin a numbered checklist item
 errand() {
   ERRAND_N=$((ERRAND_N + 1))
   echo ""
-  echo "  ERRAND $ERRAND_N — $1"
+  echo "  $ERRAND_N. $1"
 }
 errand_line() { echo "    $1"; }
 
@@ -30,91 +37,96 @@ print_errand_notes() {
   local with_launchd="$1" telegram_named="$2" gen_log="$3"
   ERRAND_N=0
   echo ""
-  echo "==== ERRAND NOTES (human-only steps — hatch.sh never automates these) ===="
+  echo "==== YOUR CHECKLIST — the few things only you can do ===="
+  echo "None of them are needed to start using your Cabinet today."
 
-  errand "Germline scope lines (lane-CEO entries) — Captain's hands only, OPTIONAL"
-  errand_line "WHERE: your editor, at this clone:"
-  errand_line "       cabinet/mcp-scope.yml            (agents: block)"
-  errand_line "       cabinet/officer-capabilities.conf (capability rows)"
-  errand_line "WHY:   germline discipline — hatch.sh NEVER writes germline files."
-  errand_line "       On a FRESH clone they are not schg-locked; plain edits work"
-  errand_line "       (runbook step 4.2)."
-  errand_line "STATE: NOT BLOCKING. The hatch above already completed Chair-only:"
-  errand_line "       generate-instance.py rosters a lane CEO only once BOTH files"
-  errand_line "       authorize it (roster-authz), so no unauthorized officer is"
-  errand_line "       ever hired and no proof gate waits on this errand."
+  errand "Add a second team lead — only if you want one. OPTIONAL."
+  errand_line "Where: two settings files, in your text editor, in this folder:"
+  errand_line "       cabinet/mcp-scope.yml"
+  errand_line "       cabinet/officer-capabilities.conf"
+  errand_line "Why:   these two decide what your Cabinet is allowed to do, so"
+  errand_line "       nothing edits them automatically — not even the setup you"
+  errand_line "       just ran. They are yours."
+  errand_line "Now:   nothing is waiting on this. Your Cabinet is set up and works"
+  errand_line "       with the one lead it already has."
   if [ -n "$gen_log" ]; then
-    errand_line "WHAT:  to HIRE a lane CEO, copy-paste the exact rows"
-    errand_line "       generate-instance.py printed — see: $gen_log"
-    errand_line "       — then re-run: python3.12 cabinet/scripts/generate-instance.py"
-    errand_line "       and bash cabinet/scripts/bootstrap-roles.sh --roster instance/config/roster.yml"
+    errand_line "To do it: copy the exact lines the setup printed for you —"
+    errand_line "       they are saved in: $gen_log"
+    errand_line "       — then run these two, in order:"
+    errand_line "         python3.12 cabinet/scripts/generate-instance.py"
+    errand_line "         bash cabinet/scripts/bootstrap-roles.sh --roster instance/config/roster.yml"
   else
-    errand_line "WHAT:  to HIRE a lane CEO, copy-paste the exact rows"
-    errand_line "       generate-instance.py prints in its 'Next steps' block"
-    errand_line "       (captured in the gen step log), then re-run the generator"
+    errand_line "To do it: copy the exact lines the setup prints under 'Next steps'"
+    errand_line "       (they are saved in the setup log), then run the generator"
     errand_line "       and bootstrap-roles.sh --roster instance/config/roster.yml."
   fi
 
-  errand "Chair bot token — BotFather -> cabinet/.env"
-  errand_line "WHERE: Telegram -> @BotFather -> /newbot (a human conversation)."
-  errand_line "WHY:   tokens never ship in the repo (values-in-env, names-in-files)."
-  errand_line "WHAT:  put the token in cabinet/.env as TELEGRAM_COS_TOKEN=<token>"
-  errand_line "       (chmod 600). Optional but recommended: VOYAGE_API_KEY=<key>"
-  errand_line "       alongside it — without it org-memory search degrades honestly"
-  errand_line "       to keyword-only (keyless fail-soft, verified 2026-07-07)."
+  errand "Let your Cabinet message you on Telegram"
+  errand_line "Where: Telegram, in a chat with @BotFather: send /newbot."
+  errand_line "Why:   only you can create a bot, and passwords and keys are never"
+  errand_line "       shipped inside this software — they stay on your machine."
+  errand_line "To do it: paste what BotFather gives you into the file cabinet/.env"
+  errand_line "       on a line reading TELEGRAM_COS_TOKEN=<the token>, then run"
+  errand_line "       chmod 600 cabinet/.env so only you can read it."
+  errand_line "       While you are there, VOYAGE_API_KEY=<key> is worth adding:"
+  errand_line "       without it, searching your Cabinet's memory still works but"
+  errand_line "       matches words rather than meaning."
   if [ "$telegram_named" = "1" ]; then
-    errand_line "STATE: TELEGRAM_COS_TOKEN is named in cabinet/.env — done."
+    errand_line "Now:   done — a token is already in cabinet/.env."
   else
-    errand_line "STATE: not yet named in cabinet/.env — the Chair boots"
-    errand_line "       Telegram-dark until this lands (documented warn-and-continue)."
+    errand_line "Now:   not set up yet, so your Cabinet won't message you on"
+    errand_line "       Telegram. Everything else works without it."
   fi
 
-  errand "TCC grants — ONLY if calendar/computer-use is wanted (skip for base hatch)"
-  errand_line "WHERE: System Settings -> Privacy & Security, walked by:"
+  errand "Mac permissions — only if you want calendar or screen access. OPTIONAL."
+  errand_line "Where: System Settings > Privacy & Security. This walks you through it:"
   errand_line "       bash cabinet/scripts/grant-mac-permissions.sh"
-  errand_line "WHY:   macOS requires human clicks; grants are responsible-process-"
-  errand_line "       scoped. NOT in the base hatch path (runbook Mini-manual 2)."
+  errand_line "Why:   macOS only accepts these from a person clicking, by design."
+  errand_line "Now:   not needed for anything you have set up so far."
 
   if [ "$with_launchd" != "1" ]; then
-    errand "MOVE-IN — raise the fleet (deferred: hatch.sh v0 defaults to --no-launchd)"
-    errand_line "WHERE: this terminal, when you are ready to trust the org"
-    errand_line "       (or re-run: bash cabinet/scripts/hatch.sh --with-launchd)."
-    errand_line "WHY:   loading launchd agents starts a live org; v0 leaves that a"
-    errand_line "       deliberate human step (runbook section 6)."
-    errand_line "WHAT (in order):"
+    errand "Let your Cabinet keep working while you're away"
+    errand_line "Where: this window, whenever you're ready. The one-line way is to"
+    errand_line "       run: bash cabinet/scripts/hatch.sh --with-launchd"
+    errand_line "Why:   this is what makes your Cabinet run in the background instead"
+    errand_line "       of only while you're watching, so it waits for you to say go."
+    errand_line "Now:   not on. Everything in your browser works without it."
+    errand_line "The long way, if you prefer to run the steps yourself:"
     errand_line "  bash cabinet/scripts/deploy-mac.sh --officer cos"
     errand_line "  python3.12 cabinet/scripts/generate-plists.py"
     errand_line "  for p in cabinet/launchd/generated/*.plist; do plutil -lint \"\$p\"; done"
     errand_line "  # bootout-first = idempotent on re-runs (no-op on a fresh box):"
     errand_line "  for p in cabinet/launchd/generated/*.plist; do launchctl bootout gui/\$(id -u) \"\$p\" 2>/dev/null || true; launchctl bootstrap gui/\$(id -u) \"\$p\"; done"
     errand_line "  bash cabinet/scripts/health-check.sh"
-    errand_line "  bash cabinet/scripts/cabinet-doctor.sh   # the FINAL acceptance gate"
+    errand_line "  bash cabinet/scripts/cabinet-doctor.sh   # the final all-clear check"
   fi
 
-  errand "Healthchecks.io dead-man registration"
-  errand_line "WHERE: your healthchecks.io account."
-  errand_line "WHY:   needs the account owner; API-created checks ship with EMPTY"
-  errand_line "       alert-channel lists (2026-07-02 drill) — assign channels."
-  errand_line "WHAT:  create checks per cabinet/services.yml expected-floors (at"
-  errand_line "       minimum verifier + drill-failed), ASSIGN ALERT CHANNELS, put"
-  errand_line "       ping/API keys in cabinet/.env (names-not-values everywhere else)."
-  errand_line "       ALSO create the three LIVENESS checks and paste their slugs"
-  errand_line "       into instance/config/liveness.yml (see next errand):"
+  errand "Get told if your Cabinet ever goes quiet (healthchecks.io)"
+  errand_line "Where: your own healthchecks.io account (free)."
+  errand_line "Why:   only the account owner can set this up, and a check created"
+  errand_line "       through the API arrives with NOBODY on its alert list — so it"
+  errand_line "       watches silently and tells no one. Set the alerts yourself."
+  errand_line "To do it: create one check per expected-floor row in"
+  errand_line "       cabinet/services.yml (at minimum verifier + drill-failed),"
+  errand_line "       ADD YOURSELF TO EACH ALERT LIST, and put the keys in"
+  errand_line "       cabinet/.env."
+  errand_line "       Also create these three and paste their slugs into"
+  errand_line "       instance/config/liveness.yml (see the next item):"
   errand_line "         fleet_alive       period ~1h,  grace ~30m"
   errand_line "         captain_outbound  period ~1.5d, grace ~6h"
   errand_line "         captain_inbound   period ~7d,   grace ~1d"
-  errand_line "       Slugs MUST be per-instance: N cabinets sharing one slug make"
-  errand_line "       a DEAD instance look like a QUIET one."
+  errand_line "       Give each cabinet its OWN slugs: if two share one, a cabinet"
+  errand_line "       that has died looks just like one that is merely quiet."
 
-  errand "Fleet dead-man — arm it, or this cabinet cannot report its own death"
-  errand_line "WHERE: this terminal + your editor, at this clone."
-  errand_line "WHY:   every in-tree sensor is supervised by the same launchd"
-  errand_line "       domain as the fleet, so a fleet teardown removes the fault"
-  errand_line "       AND its detector in one act. That happened on 2026-07-25 and"
-  errand_line "       nothing was heard for five days. The two files below are the"
-  errand_line "       only wiring that survives it. UNARMED IS NOT SAFE-BY-DEFAULT:"
-  errand_line "       it is silent, which looks exactly like healthy."
-  errand_line "WHAT (in order):"
+  errand "Turn that warning on — until you do, silence looks exactly like healthy"
+  errand_line "Where: this window and your text editor, in this folder."
+  errand_line "Why:   every warning your Cabinet can raise about itself runs inside"
+  errand_line "       your Cabinet — so if the whole thing stops, the warning stops"
+  errand_line "       with it. That really happened here once, and nothing was heard"
+  errand_line "       for five days. The two files below are the part that keeps"
+  errand_line "       watching from outside. Leaving this off is not the safe choice:"
+  errand_line "       it is the silent one, and silence looks exactly like fine."
+  errand_line "To do it, in order:"
   errand_line "  cp instance/config/fleetwatch.yml.example instance/config/fleetwatch.yml"
   errand_line "  cp instance/config/liveness.yml.example  instance/config/liveness.yml"
   errand_line "  \$EDITOR instance/config/liveness.yml    # instance_id, base_url, slugs"
@@ -123,18 +135,18 @@ print_errand_notes() {
   errand_line "  python3.12 cabinet/scripts/fleet-deadman.py --dry-run  # expect a verdict"
   errand_line "  python3.12 cabinet/scripts/fleet-deadman-install.py --install"
   errand_line "  # then run the two launchctl lines it prints (it never runs them)"
-  errand_line "VERIFY: DO NOT trust a green. Stop one expected source, wait past its"
-  errand_line "       max_age_s, and confirm the watcher flips to DEAD and the"
-  errand_line "       external check goes down. A dead-man you have never starved"
-  errand_line "       is an assumption."
+  errand_line "Then test it: don't trust a green. Switch one thing off, wait, and"
+  errand_line "       confirm you actually get told. A warning you have never seen"
+  errand_line "       fire is a hope, not a warning."
 
-  errand "Germline lock — post-hatch Captain act (fresh clones start unlocked)"
-  errand_line "WHERE: this terminal, with sudo:"
+  errand "Lock the files that decide what your Cabinet may do"
+  errand_line "Where: this window. It asks for your Mac password:"
   errand_line "       sudo bash cabinet/scripts/germline-lock.sh lock"
-  errand_line "WHY:   unlock/lock is Captain sudo by doctrine; never part of the"
-  errand_line "       automated hatch. Posture upgrades ride the same ritual"
-  errand_line "       (cabinet/docs/mac-mini-setup.md section 2.6)."
+  errand_line "Why:   after this, those files can only be changed by you, deliberately"
+  errand_line "       — nothing your Cabinet runs can rewrite its own rules. Setup"
+  errand_line "       never does this for you, because it needs your password."
+  errand_line "       Details: cabinet/docs/mac-mini-setup.md section 2.6."
 
   echo ""
-  echo "==== END ERRAND NOTES ===="
+  echo "==== END OF CHECKLIST ===="
 }

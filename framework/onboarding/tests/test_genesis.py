@@ -182,6 +182,27 @@ def test_run_genesis_proposal_carries_mission_into_staging(tmp_path):
         assert row["captain_ratified"] is False
 
 
+def test_cards_condition_on_role_and_dream_seams():
+    """The stepped first run collects role and dream as two clean questions, and
+    each lands on the seam genesis ALREADY reads: role -> the journey seed, dream
+    -> mission.purpose. So genesis conditions on BOTH — richer than the one blurred
+    seed — with no parallel field invented. Proven where own-words drive the
+    probes (no lanes to fill them first): the dream conditions the probes when it
+    is present, and the role conditions them on its own."""
+    with_dream = {**ANSWERS, "lanes": [],
+                  "mission": {"purpose": "A thriving ryokan by the quiet sea."},
+                  "seed": "careful innkeeping"}
+    dream_labels = " ".join(p["label"].lower() for p in genesis.recall_probes(
+        with_dream, seed="careful innkeeping"))
+    assert "ryokan" in dream_labels          # the dream (mission.purpose) conditions
+
+    role_only = {**ANSWERS, "lanes": [], "seed": "careful innkeeping"}
+    role_labels = " ".join(p["label"].lower() for p in genesis.recall_probes(
+        role_only, seed="careful innkeeping"))
+    assert "innkeeping" in role_labels       # the role (journey seed) conditions
+    assert "ryokan" not in role_labels       # and the dream genuinely ADDS a subject
+
+
 # ---------------------------------------------------------------------------
 # ONBOARD-1 — the staging file (propose-only, structurally inert)
 # ---------------------------------------------------------------------------

@@ -66,7 +66,10 @@ validated on three NON-founder personas — and that **its output fed nothing.**
    grant? · of what you saw, what matters this week? · what must this never
    touch?* — plus the human-shaped seed question (*what do you do / how can I
    best serve you*) for an operator who has connected nothing. A cabinet with
-   no sources must still never be a dead end.
+   no sources must still never be a dead end. (Split 2026-07-30 into three
+   stepped questions — role, dream, and where-to-begin — see the 2026-07-30
+   addendum in `onboarding-v2-design-of-record-2026-07-14.md`; the core still
+   carries the seed and `mission.purpose` seams unchanged.)
 5. **Altitude reaches two live surfaces or it is decoration.**
    `mission.altitude` ∈ {contributor, project, team, function, company}:
    * **preset SELECTION** — `resolve_preset()` is now the ONE resolution

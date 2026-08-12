@@ -3809,12 +3809,21 @@ def _act_core(
                 )
             return {"ok": True, "restarted": True, "state": state, "card": _card(state)}
         if action == "answer_seed":
-            # THE FIELD THE SEED QUESTION NEVER HAD. "What do you do, and how
-            # can I best serve you?" was printed on the welcome card with no
-            # action that could carry an answer, so the Captain's ruling — take
-            # a few words as a SEED for discovery, not as the data — had no
-            # entry point in any surface. This is it, and it runs the probes in
-            # the same action so the answer visibly goes somewhere.
+            # THE THREE QUESTIONS THE ONE SEED BLURRED. "What do you do, and how
+            # can I best serve you?" asked role, dream and where-to-start in one
+            # breath, and the stepped first run splits them — but the SEAMS stay
+            # the ones the rest of the tree already reads, never a parallel set:
+            #  - ``seed`` is what the operator does (their role). It is the
+            #    journey seed genesis conditions recall on, unchanged in shape.
+            #  - ``purpose`` is the dream for the cabinet, stored under
+            #    ``mission.purpose`` — the exact block ``genesis._mission_fields``
+            #    quotes on every proposal card. Composed onto that seam, not
+            #    forked beside it.
+            #  - ``start_preference`` is the only genuinely new field: point-me
+            #    (folder + Charter) vs go-find-it (read a connected source).
+            # None is treated as the answer; each is where I start looking. A
+            # question printed with no way to answer it is the dead end this
+            # action exists to abolish — now it carries three.
             raw_seed = request.get("seed")
             if not isinstance(raw_seed, str) or not raw_seed.strip():
                 raise JourneyError(
@@ -3824,11 +3833,31 @@ def _act_core(
             seed_text = " ".join(_scrub_lone_surrogates(raw_seed).split())[:MAX_SEED_CHARS]
             after = deepcopy(state)
             after["seed"] = {"text": seed_text, "answered_at": ts}
-            # The probes are derived from the CURRENT grants, so the seed can
-            # never conjure a reach the operator has not granted: no local
-            # grant, no local probe; no web grant, no web probe.
+            # The dream, in the mission.purpose shape genesis reads. Absent or
+            # blank writes nothing, so a role-only answer conditions cards
+            # byte-identically to a missionless one — an empty mission block
+            # would be a claim the operator never made.
+            raw_purpose = request.get("purpose")
+            purpose_text = (
+                " ".join(_scrub_lone_surrogates(raw_purpose).split())[:MAX_SEED_CHARS]
+                if isinstance(raw_purpose, str) and raw_purpose.strip() else ""
+            )
+            if purpose_text:
+                after["mission"] = {"purpose": purpose_text}
+            # Recorded only when it is one of the two the surface offers. An
+            # unknown value is dropped, never stored, so no branch downstream can
+            # read a preference the operator never expressed.
+            raw_pref = request.get("start_preference")
+            if raw_pref in ("point", "decide"):
+                after["start_preference"] = raw_pref
+            # Discovery reads role AND dream: both are the operator's own words,
+            # so a term from either is theirs, and the two together search wider
+            # than the role alone did. Still bounded by the CURRENT grants — no
+            # local grant, no local probe; no web grant, no web probe — so the
+            # seed can never conjure a reach the operator has not granted.
+            discovery_seed = " ".join(x for x in (seed_text, purpose_text) if x)
             probed = _with_registry(base, after)
-            plan = entry_plan(_entry_grants(probed), seed=seed_text)
+            plan = entry_plan(_entry_grants(probed), seed=discovery_seed)
             source_state = probed.get("source") or {}
             after["discovery"] = _execute_probes(
                 source_state.get("root")

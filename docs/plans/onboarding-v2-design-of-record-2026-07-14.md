@@ -20,6 +20,31 @@ result. The high ceiling is a self-organizing Cabinet with ratified Direction,
 source-aware officers, per-lane authority, verification, receipts, and earned
 graduation.
 
+**Addendum, 2026-07-30 — the first run is three questions, stepped.** The one
+seed question that opened the front ("What do you do, and how can I best serve
+you?") was three questions in one breath, and the dashboard rendered it as a
+single dense card. It is now a guided, stepped flow — one idea per step, a
+visible progress rail, plain Back/Next — asking, in order:
+
+1. **your role** — *"Tell me about you and your work. What do you do?"* Free
+   text, any language. Stored as the journey **seed**, the seam genesis reads.
+2. **the dream** — *"What would you love this Cabinet to become? Think bigger
+   than today."* Free text, optional. Stored under **`mission.purpose`**, the
+   seam the genesis proposal tree already conditions its cards on — composed,
+   never forked. A role-only answer stays byte-identical to a missionless one.
+3. **where to begin** — *"point me somewhere, or go and find where I am most
+   useful?"* The new field **`start_preference`** (`point` | `decide`). `point`
+   runs the folder + Charter flow below; `decide` is self-exploration, which
+   **requires a connected source to read** — where one is connected it sweeps it
+   read-only, and where none is it says so plainly and routes to the folder as
+   the concrete start rather than pretending to look at nothing.
+
+The core seams are `framework/onboarding/journey.py::answer_seed` (role/dream/
+start_preference) and genesis's existing `mission.purpose` + seed conditioning.
+The Charter → scan → dividend → briefing back half is unchanged. **Known gap:**
+there is no onboarding-integrated connect-a-source UX yet — `decide` is honest
+about needing one, and the missing connect flow is its own unit.
+
 ## 2. Product doctrine
 
 ### One core, three surfaces
