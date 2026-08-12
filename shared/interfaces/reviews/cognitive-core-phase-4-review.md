@@ -21,7 +21,22 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: dce6836a2fee735ede868707177fd5b02f5234d6b181f506d827e7ca2e5f83a4
+Reviewed-Scope-Digest: 3199ac703b477910d0ebe95ee2ca15219a47434cf16182a991b716032cb71b1e
+
+(RE-BIND, 2026-07-30, `feat/onboarding-stepped-flow`, recomputed over this
+branch's HEAD. ONE in-scope path moved and it is NOT a COG-4 surface:
+`cabinet/config/cognitive-architecture-contract.yml`, raising
+`framework_production_noncomment_lines` 62861 -> 62872 for the three-question
+first run — the one blurred seed question splits into role (the journey seed),
+the dream (stored under `mission.purpose`, the seam genesis conditions its cards
+on), and one new field `start_preference`. Every implementation line lands in
+`framework/onboarding/journey.py::answer_seed`, which is NOT in the COG-4 scope
+set (nor is any of `framework/onboarding/`), so no COG-4 implementation byte
+moved. ZERO new framework production modules (248 <= 248) and zero expansion
+rows. DISJOINT from every raise noted below: different feature, different files.
+MEASURED, not asserted: the digest above is the tool's own output over HEAD, and
+the artifact is excluded from its own digest, so writing this note does not move
+it.)
 
 (RE-BIND, 2026-07-31, `fix/fleet-deadman-inert-by-crash`, recomputed over this
 branch's HEAD. ONE in-scope path moved and it is NOT a COG-4 surface:

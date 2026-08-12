@@ -868,7 +868,17 @@ budgets:
     # names what it will read. Zero new production MODULES
     # (framework_production_modules unchanged at 248) — every line lands inside
     # a module the tree already carried. observed == maximum, zero headroom.
-    maximum: 62861
+    #
+    # 62861 -> 62872 (+11 measured 2026-08-12 via cognitive-architecture-census.py,
+    # observed 77414 vs the then-effective 77403): the three-question first run.
+    # The one blurred seed question ("What do you do, and how can I best serve
+    # you?") splits into three in framework/onboarding/journey.py::answer_seed —
+    # role (the journey seed), the dream (stored under mission.purpose, the seam
+    # genesis conditions its cards on), and the one new field start_preference
+    # (point-me vs go-find-it). No parallel seam invented; every line lands
+    # inside journey.py, which the tree already carried (modules unchanged at
+    # 248). observed == maximum, zero headroom.
+    maximum: 62872
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

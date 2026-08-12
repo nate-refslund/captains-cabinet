@@ -9,11 +9,13 @@ export default function OnboardingPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-6">
-        <p className="text-sm font-medium text-purple-300">Start small, grow without a ceiling</p>
-        <h1 className="mt-1 text-3xl font-bold text-white">Orient your Cabinet</h1>
-        <p className="mt-2 max-w-2xl text-zinc-400">
-          Start wherever you actually are. Connect a source and it reads first and asks second; connect nothing and it
-          asks what you do, then goes looking; grant nothing at all and it tells you plainly what it cannot know.
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-300/90">
+          Start small, grow without a ceiling
+        </p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">Orient your Cabinet</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
+          Three short questions, then one folder to read. Nothing is opened until you approve
+          a Charter — you always see exactly what it would read first.
         </p>
       </div>
       {/* The door to /briefing. The hatch lands the operator here, and the
@@ -23,7 +25,7 @@ export default function OnboardingPage() {
           journey state machine, this is a sibling link with no state. */}
       <Link
         href="/briefing"
-        className="mb-4 flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-sm transition-colors hover:border-purple-800 hover:bg-zinc-900"
+        className="group mb-4 flex items-center justify-between gap-4 rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-sm transition-colors hover:border-violet-700/70 hover:bg-zinc-900"
       >
         <span>
           <strong className="block text-zinc-200">Read your first briefing</strong>
@@ -31,7 +33,7 @@ export default function OnboardingPage() {
             What the Cabinet proposed first, and what it read before proposing it.
           </span>
         </span>
-        <span aria-hidden className="ml-4 text-purple-300">
+        <span aria-hidden className="ml-2 text-violet-300 transition-transform group-hover:translate-x-0.5">
           →
         </span>
       </Link>

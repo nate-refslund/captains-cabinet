@@ -322,8 +322,26 @@ export interface OnboardingState {
     ratified_at?: string
   }
   first_dividend: null | Record<string, unknown>
-  /** The seed answer, when one was given. A starting point, never the data. */
+  /**
+   * The seed answer, when one was given — the operator's ROLE ("what you do").
+   * A starting point for discovery, never the data itself.
+   */
   seed?: { text: string; answered_at: string }
+  /**
+   * The DREAM for the Cabinet, when one was given — "what would you love this
+   * to become?". Stored in the `mission.purpose` shape the genesis proposal
+   * tree already conditions its cards on, so it composes that seam rather than
+   * forking a parallel one. Absent means the operator stated no dream, and the
+   * cards derive byte-identically to a missionless answer.
+   */
+  mission?: { purpose: string }
+  /**
+   * Where the operator asked me to begin: `point` (they name a folder and I read
+   * it under a Charter) or `decide` (I go find where I am most useful, which
+   * needs a connected source to read). Absent until they answer the third
+   * question.
+   */
+  start_preference?: 'point' | 'decide'
   /**
    * Where the depth budget is pointed, once the operator has answered. `window`
    * appears when a First Window has been proposed against it, carrying the
@@ -382,6 +400,12 @@ export interface OnboardingActionRequest {
   correlation_id?: string
   expected_revision?: number
   source?: string
+  /**
+   * On propose_window: the per-window purpose ("what should I make easier
+   * first?"). On answer_seed: the DREAM for the Cabinet, which the core stores
+   * under `mission.purpose` — the seam genesis conditions its cards on. Two
+   * different seams read by two different actions; both stay under 300 chars.
+   */
   purpose?: string
   relationship_destination?: 'earn' | 'reversible' | 'sovereign'
   /** REQUIRED by propose_window. An unclassified source is refused, not defaulted. */
@@ -390,8 +414,18 @@ export interface OnboardingActionRequest {
   authority_basis?: string
   charter_hash?: string
   confirmation?: string
-  /** REQUIRED by answer_seed. A sentence about the operator's work. */
+  /**
+   * REQUIRED by answer_seed. A sentence about what the operator DOES — their
+   * role. The core stores it as the journey seed; genesis reads it there.
+   */
   seed?: string
+  /**
+   * Optional on answer_seed: where to begin. `point` runs the folder + Charter
+   * flow; `decide` asks me to go find where I am most useful (which needs a
+   * connected source). An unrecognised value is dropped by the core, never
+   * stored.
+   */
+  start_preference?: 'point' | 'decide'
   /**
    * REQUIRED by record_operator_identity: connector name -> the operator's own
    * account identifier(s) there. A connector the sweep never read is refused.
