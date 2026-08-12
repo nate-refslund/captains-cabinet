@@ -93,3 +93,70 @@ describe('isLocalRequest — the first password may be set from the box only', (
     expect(isLocalRequest(h({}))).toBe(false)
   })
 })
+
+// The mock bags above never carried the headers Next SYNTHESISES, so the gate
+// tested green while the live control refused the on-box operator. These two
+// fixtures are the ACTUAL `await headers()` bags captured from a real Next 16
+// `next start` server action (2026-08-12): a genuine loopback curl POST to
+// /login, and a remote hop simulated tailscale-serve style (X-Forwarded-* set to
+// a tailnet peer, Origin matched so Next's action check passed and the action
+// ran). They are transcribed verbatim from the server's own header dump, not
+// hand-authored — this is the regression the unit mock could not see.
+describe('isLocalRequest — REAL Next 16 runtime header bags (captured, not mocked)', () => {
+  const bag = (pairs: [string, string][]) => new Headers(pairs)
+
+  // Captured verbatim from the running server on a direct 127.0.0.1 POST. Next
+  // injected x-forwarded-host/-port/-proto/-for itself, all with LOOPBACK values.
+  const REAL_LOCAL: [string, string][] = [
+    ['host', '127.0.0.1:3197'],
+    ['origin', 'http://127.0.0.1:3197'],
+    ['x-forwarded-host', '127.0.0.1:3197'],
+    ['x-forwarded-port', '3197'],
+    ['x-forwarded-proto', 'http'],
+    ['x-forwarded-for', '127.0.0.1'],
+  ]
+
+  // Captured verbatim when the same POST arrived carrying a proxy's forwarded
+  // headers; Next PRESERVED them, so the non-loopback client is visible.
+  const REAL_REMOTE: [string, string][] = [
+    ['host', '127.0.0.1:3197'],
+    ['origin', 'http://cabinet.tail1234.ts.net'],
+    ['x-forwarded-host', 'cabinet.tail1234.ts.net'],
+    ['x-forwarded-for', '100.64.0.9'],
+    ['x-real-ip', '100.64.0.9'],
+    ['x-forwarded-port', '3197'],
+    ['x-forwarded-proto', 'http'],
+  ]
+
+  it('true for the real on-box loopback bag (the bug: was refused)', () => {
+    expect(isLocalRequest(bag(REAL_LOCAL))).toBe(true)
+  })
+
+  it('false for the real remote-proxied bag (security still holds)', () => {
+    expect(isLocalRequest(bag(REAL_REMOTE))).toBe(false)
+  })
+
+  it('IPv6 loopback with Next-injected forwarded headers is still local', () => {
+    expect(
+      isLocalRequest(
+        bag([
+          ['host', '[::1]:3197'],
+          ['x-forwarded-host', '[::1]:3197'],
+          ['x-forwarded-for', '::1'],
+        ])
+      )
+    ).toBe(true)
+  })
+
+  it('a remote hop anywhere in a multi-hop X-Forwarded-For fails', () => {
+    // client (remote) → proxy (loopback): the chain must be all-loopback.
+    expect(
+      isLocalRequest(
+        bag([
+          ['host', '127.0.0.1:3197'],
+          ['x-forwarded-for', '100.64.0.9, 127.0.0.1'],
+        ])
+      )
+    ).toBe(false)
+  })
+})
