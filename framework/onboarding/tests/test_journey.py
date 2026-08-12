@@ -1863,6 +1863,91 @@ def test_a_seed_of_nothing_is_not_turned_into_discovery():
     assert journey.entry_plan({"web": True}, seed="")["next_actions"]
 
 
+def test_answer_seed_splits_into_role_dream_and_start_preference(tmp_path):
+    """The one seed question is three now, and each lands on the seam the rest of
+    the tree already reads: role -> the journey seed, dream -> mission.purpose,
+    and the one new field, start_preference."""
+    result = journey.act(
+        {
+            "action": "answer_seed",
+            "action_id": "seed-three",
+            "surface": "dashboard",
+            "seed": "I run a small ryokan on the coast.",
+            "purpose": "Guests who leave feeling looked after, and a calmer front desk.",
+            "start_preference": "point",
+        },
+        tmp_path,
+        now="2026-07-14T10:00:00Z",
+    )
+    state = result["state"]
+    assert state["seed"]["text"].startswith("I run a small ryokan")
+    # The dream in the mission.purpose SHAPE genesis conditions cards on — the
+    # exact block _mission_fields quotes, never a parallel key.
+    assert state["mission"]["purpose"].startswith("Guests who leave feeling")
+    assert state["start_preference"] == "point"
+
+
+def test_answer_seed_role_only_makes_no_claim_it_was_not_given(tmp_path):
+    """Honesty preserved: a role-only answer writes NO mission block and NO
+    preference. An empty mission.purpose would be a dream the operator never
+    stated, and genesis must condition on a missionless answer byte-identically."""
+    result = journey.act(
+        {
+            "action": "answer_seed",
+            "action_id": "seed-role-only",
+            "surface": "dashboard",
+            "seed": "I look after payments releases.",
+        },
+        tmp_path,
+        now="2026-07-14T10:00:00Z",
+    )
+    state = result["state"]
+    assert state["seed"]["text"].startswith("I look after payments")
+    assert "mission" not in state
+    assert "start_preference" not in state
+
+
+def test_answer_seed_drops_an_unrecognised_start_preference(tmp_path):
+    """The degenerate end: only the two the surface offers are stored. Anything
+    else is dropped, never persisted, so no branch reads a choice never made."""
+    result = journey.act(
+        {
+            "action": "answer_seed",
+            "action_id": "seed-bad-pref",
+            "surface": "dashboard",
+            "seed": "I keep the books for a two-clinic practice.",
+            "start_preference": "somewhere-clever",
+        },
+        tmp_path,
+        now="2026-07-14T10:00:00Z",
+    )
+    assert "start_preference" not in result["state"]
+
+
+def test_answer_seed_discovery_reads_the_dream_not_only_the_role(tmp_path):
+    """Both are the operator's own words, so discovery searches for terms from
+    the dream as well as the role. Proven against a ratified folder, where a
+    grant makes the probes executable: a dream-only term appears in what ran,
+    which it could not if the role alone seeded the search."""
+    source = estate(tmp_path, "software-product")
+    ratify(tmp_path, propose(tmp_path, source))
+    result = journey.act(
+        {
+            "action": "answer_seed",
+            "action_id": "seed-discovery",
+            "surface": "dashboard",
+            "seed": "I maintain widgets.",
+            "purpose": "A calmer quarterly rollout for the whole team.",
+            "start_preference": "decide",
+        },
+        tmp_path,
+        now="2026-07-14T10:00:05Z",
+    )
+    executed = result["state"]["discovery"]["executed"]
+    patterns = " ".join(str(probe.get("pattern") or "") for probe in executed).lower()
+    assert "calmer" in patterns  # a dream word, absent from the role sentence
+
+
 def test_ungranted_mode_says_plainly_what_it_cannot_know():
     """Mode 3: the residual questions, and no pretending."""
     plan = journey.entry_plan({})
