@@ -670,7 +670,9 @@ def test_python_312_check_runs_after_setup_mac_bootstrap():
     interpreter rather than accepting an arbitrary generic python3."""
     hatch = _HATCH.read_text(encoding="utf-8")
     setup = (_REPO_ROOT / "cabinet/scripts/setup-mac.sh").read_text(encoding="utf-8")
-    setup_step = hatch.index('run_step setup-mac "host bootstrap')
+    # matched on the step ID, not its human description: the descriptions are
+    # operator copy and were rewritten 2026-08-12, the ordering contract was not
+    setup_step = hatch.index('run_step setup-mac "checking this Mac')
     python_check = hatch.index('command -v "$PY"', setup_step)
     generate = hatch.index("do_generate_instance", python_check)
     assert setup_step < python_check < generate

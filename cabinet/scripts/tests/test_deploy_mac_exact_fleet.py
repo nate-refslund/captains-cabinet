@@ -130,9 +130,11 @@ if args[0] == "print":
 if args[0] == "bootstrap":
     with open(args[-1], "rb") as fh: label = plistlib.load(fh)["Label"]
     fail_label = os.environ.get("FAKE_FAIL_BOOTSTRAP_ONCE", "")
-    fail_marker = state.with_suffix(".failed-once")
-    if label == fail_label and not fail_marker.exists():
-        fail_marker.write_text(label); raise SystemExit(5)
+    fail_times = int(os.environ.get("FAKE_FAIL_BOOTSTRAP_TIMES", "1"))
+    counter = state.with_suffix(".failed-count")
+    seen = int(counter.read_text()) if counter.exists() else 0
+    if label == fail_label and seen < fail_times:
+        counter.write_text(str(seen + 1)); raise SystemExit(5)
     labels.add(label); save(); raise SystemExit(0)
 if args[0] == "bootout":
     target = args[-1]
@@ -245,6 +247,13 @@ def test_all_dry_run_is_write_free_but_shows_exact_reconciliation(tmp_path: Path
 
 
 def test_bootstrap_failure_restores_previous_plist_and_loaded_job(tmp_path: Path):
+    """A PERSISTENT bootstrap failure still rolls back, unchanged.
+
+    TIMES=2 since 2026-08-12: install_plist_file now retries once after an
+    unconditional bootout, so a single failure is recovered (the sibling test
+    below) and only a failure that survives the retry reaches the rollback.
+    The rollback's own bootstrap — the third — succeeds, as before.
+    """
     root, home, env = _seed(tmp_path)
     alpha = home / "Library" / "LaunchAgents" / "com.cabinet.alpha.plist"
     _plist(alpha, "com.cabinet.alpha")
@@ -252,6 +261,7 @@ def test_bootstrap_failure_restores_previous_plist_and_loaded_job(tmp_path: Path
     state = Path(env["FAKE_LAUNCHCTL_STATE"])
     state.write_text(state.read_text() + "com.cabinet.alpha\n", encoding="utf-8")
     env["FAKE_FAIL_BOOTSTRAP_ONCE"] = "com.cabinet.alpha"
+    env["FAKE_FAIL_BOOTSTRAP_TIMES"] = "2"
 
     proc = _run(root, env, "--all")
     assert proc.returncode == 2
@@ -259,6 +269,32 @@ def test_bootstrap_failure_restores_previous_plist_and_loaded_job(tmp_path: Path
     assert alpha.read_bytes() == alpha_before
     assert "com.cabinet.alpha" in state.read_text().split()
     assert "ROLLBACK FAILED" not in proc.stderr
+
+
+def test_transient_bootstrap_failure_recovers_via_bootout_retry(tmp_path: Path):
+    """The measured operator failure, end to end through the real script.
+
+    launchd's `Bootstrap failed: 5` on an already-loaded label used to fail the
+    whole officer deploy — which, on the app path, ended the hatch before the
+    browser handover. One bootout-first retry recovers it; the NEW plist is
+    what stays installed, and no rollback runs.
+    """
+    root, home, env = _seed(tmp_path)
+    alpha = home / "Library" / "LaunchAgents" / "com.cabinet.alpha.plist"
+    _plist(alpha, "com.cabinet.alpha")
+    alpha_before = alpha.read_bytes()
+    state = Path(env["FAKE_LAUNCHCTL_STATE"])
+    state.write_text(state.read_text() + "com.cabinet.alpha\n", encoding="utf-8")
+    env["FAKE_FAIL_BOOTSTRAP_ONCE"] = "com.cabinet.alpha"  # TIMES defaults to 1
+
+    proc = _run(root, env, "--all")
+    assert proc.returncode == 0, (proc.stdout, proc.stderr)
+    assert "after a bootout-first retry" in proc.stdout
+    assert "attempting per-service rollback" not in proc.stderr
+    assert "com.cabinet.alpha" in state.read_text().split(), "job must end up loaded"
+    assert alpha.read_bytes() != alpha_before, (
+        "the freshly rendered plist must be what survives a recovered deploy"
+    )
 
 
 def test_generator_refuses_runtime_launchagents_output_without_touching_it(tmp_path: Path):

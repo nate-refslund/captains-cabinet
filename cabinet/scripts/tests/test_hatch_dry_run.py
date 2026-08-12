@@ -85,9 +85,14 @@ def test_dry_run_defaults_prints_plan_and_exits_zero(tmp_path):
     assert "HATCH_PROOFS_DONE" in out
     assert "FIRST_RECEIPT_DONE" in out
     assert "TTFR" in out
-    # errand notes present and numbered
-    assert "ERRAND NOTES" in out
-    assert "ERRAND 1" in out
+    # the human-only checklist is present and numbered, in plain words
+    # (renamed from "ERRAND NOTES" 2026-08-12 — nobody double-clicking an app
+    # knows what an errand note is)
+    assert "YOUR CHECKLIST" in out
+    assert "\n  1. " in out, "the checklist must number its items"
+    assert "ERRAND" not in out, (
+        "the operator-facing copy must not carry this codebase's vocabulary"
+    )
     assert "mcp-scope.yml" in out
     assert "officer-capabilities.conf" in out
     # v0 default: move-in deferred, not run

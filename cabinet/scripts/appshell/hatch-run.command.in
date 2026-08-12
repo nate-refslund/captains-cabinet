@@ -6,7 +6,15 @@
 # in Terminal via Launch Services. Orchestration only — zero hatch logic: it
 # wraps the engine (cabinet/scripts/hatch.sh) in script(1) so the full
 # Terminal transcript is self-recorded beside the engine's own flight log.
-# Never invokes kill-switch.sh or start-dashboard.sh; opens no ports.
+# Never invokes the kill switch or the dashboard starter; opens no ports.
+#
+# WORDING (2026-08-12, never-strand pass): these are the first lines the
+# operator reads after double-clicking, so they say what is happening, how
+# long, and that they need do nothing. Paths stay — they are what a person
+# hands to whoever is helping them. The end-of-run notice is still exactly
+# ONE (spec: exit code + log paths, no other chrome), now phrased for a
+# person and aware of exit 75: hatched, browser open, an optional background
+# helper did not start.
 set -euo pipefail
 
 PREFIX="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,14 +31,14 @@ if [ -f "$ARGS_FILE" ]; then
     hatch)                  MODE="hatch" ;;
     "hatch --with-launchd") MODE="hatch"; WITH_LAUNCHD=1 ;;
     doctor)                 MODE="doctor" ;;
-    *) echo "hatch-run: unrecognized request '$REQUEST' — running plain hatch (no move-in)." ;;
+    *) echo "Didn't recognise that request, so setting up the ordinary way (nothing will run in the background)." ;;
   esac
 fi
 
 cd "$PREFIX"
 
 if [ "$MODE" = "doctor" ]; then
-  echo "hatch-run: cabinet doctor (probe-only, read-only) in $PREFIX"
+  echo "Checking over the Cabinet in $PREFIX. This only looks — it changes nothing."
   exec /bin/bash "$PREFIX/cabinet/scripts/cabinet-doctor.sh"
 fi
 
@@ -40,14 +48,17 @@ mkdir -p "$LOG_DIR"
 TRANSCRIPT="$LOG_DIR/terminal-transcript.txt"
 FLIGHT_LOG="$LOG_DIR/flight.log"
 
-echo "hatch-run: engine     $PREFIX/cabinet/scripts/hatch.sh"
+echo "Setting up Captain's Cabinet."
+echo "This takes a few minutes. You don't need to do anything — leave this window"
+echo "open, and your Cabinet will open in your browser when it's ready."
+echo ""
 if [ "$WITH_LAUNCHD" = "1" ]; then
-  echo "hatch-run: flags      --defaults --with-launchd (move-in confirmed in the app)"
+  echo "It will also keep working in the background, as you chose."
 else
-  echo "hatch-run: flags      --defaults (move-in deferred; the engine prints it as an errand note)"
+  echo "It won't keep working in the background yet — the checklist at the end"
+  echo "says how to turn that on whenever you want it."
 fi
-echo "hatch-run: transcript $TRANSCRIPT"
-echo "hatch-run: flight log $FLIGHT_LOG"
+echo "A record of this run is kept in: $LOG_DIR"
 echo ""
 
 # Fixed argv throughout: the only variable flag is the literal --with-launchd,
@@ -61,7 +72,7 @@ if [ -t 0 ]; then
     /usr/bin/script -q "$TRANSCRIPT" /bin/bash "$PREFIX/cabinet/scripts/hatch.sh" --defaults --flight-log "$FLIGHT_LOG"
   fi
 else
-  echo "hatch-run: no tty — transcript recording skipped (flight log still written)."
+  echo "No terminal attached, so the on-screen transcript isn't recorded. The full record is still written."
   if [ "$WITH_LAUNCHD" = "1" ]; then
     /bin/bash "$PREFIX/cabinet/scripts/hatch.sh" --defaults --with-launchd --flight-log "$FLIGHT_LOG"
   else
@@ -71,7 +82,17 @@ fi
 RC=$?
 set -e
 
-# The shell's exactly-one post-run notice: exit code and paths only (spec 3.5).
+# The shell's exactly-one post-run notice: exit code and paths only (spec 3.5),
+# in plain words. Exit 75 is the engine's "hatched, front door open, an
+# optional background helper did not start" code — calm, not a failure.
 echo ""
-echo "hatch.sh exited $RC — transcript + flight log: $LOG_DIR/"
+case "$RC" in
+  0)  echo "Done — your Cabinet is set up. (code 0)" ;;
+  75) echo "Done — your Cabinet is set up and open in your browser. One background"
+      echo "helper didn't start on this Mac; that part is optional and safe to sort"
+      echo "out later. (code 75)" ;;
+  *)  echo "Setup stopped before it finished. Nothing on your Mac is broken — the"
+      echo "record below shows how far it got. (code $RC)" ;;
+esac
+echo "Record of this run: $LOG_DIR/"
 exit "$RC"

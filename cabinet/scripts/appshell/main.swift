@@ -8,6 +8,14 @@
 // instead. It never re-unpacks, never overwrites, and never claims the
 // WORLD-ONBOARDING-V1B stranger bars (claims-lint.sh enforces the strings).
 //
+// WORDING (2026-08-12, never-strand pass): every string below is read by
+// whoever double-clicked this icon, and by nobody else. So they are written
+// for a person: what is about to happen, how long it takes, what they need to
+// do (usually nothing), and what to do if something is in the way. The
+// vocabulary of this codebase — hatch, move-in, egg, launch agents, First
+// Mate, errand notes — stays out of them. Identifiers, comments, requests and
+// the allowlist keep it, because that is where it belongs.
+//
 // Modes:
 //   default              native dialogs (NSAlert), then Terminal handoff
 //   HATCH_APP_SMOKE=1    headless CI smoke: unpack + engine --dry-run --defaults
@@ -140,19 +148,20 @@ func dialogMain(prefix: String) -> Int32 {
             // Honest wording: ANY non-empty prefix lands here — a real
             // install, or a partial tree left by an interrupted unpack.
             let choice = ask(
-                "Cabinet already present",
-                "The folder at\n\(prefix)\nis not empty — an existing cabinet install, "
-                + "or a partial one left by an interrupted unpack.\n\n"
-                + "This launcher never re-unpacks or overwrites it. "
-                + "Doctor runs the read-only health probes (cabinet-doctor.sh) in Terminal.",
-                buttons: ["Run doctor in Terminal", "Quit"])
+                "Your Cabinet is already here",
+                "There is already something in\n\(prefix)\n\n"
+                + "That is either a Cabinet you set up before, or a setup that was "
+                + "interrupted partway. This app never writes over it.\n\n"
+                + "\u{201C}Check it over\u{201D} opens a Terminal window and looks at how it is "
+                + "doing. It only reads — it changes nothing.",
+                buttons: ["Check it over", "Quit"])
             guard choice == 0 else { return 0 }
             guard FileManager.default.isExecutableFile(atPath: prefix + "/hatch-run.command") else {
-                _ = ask("Runner missing",
-                        "hatch-run.command was not found in \(prefix).\n\n"
-                        + "If that folder is a partial install left by an interrupted "
-                        + "unpack, remove it and launch this app again. Otherwise run "
-                        + "doctor manually in Terminal:\n"
+                _ = ask("Something is missing",
+                        "The file that runs setup was not found in\n\(prefix)\n\n"
+                        + "If that folder is a setup that was interrupted partway, move it "
+                        + "to the Trash and open this app again.\n\n"
+                        + "Otherwise you can run the check yourself in Terminal:\n"
                         + "  bash \(prefix)/cabinet/scripts/cabinet-doctor.sh",
                         buttons: ["Quit"])
                 return 1
@@ -166,13 +175,17 @@ func dialogMain(prefix: String) -> Int32 {
         var request: String?
         while request == nil {
             let choice = ask(
-                "Hatch Cabinet \(appVersion)",
-                "Double-clickable entry to the technical-captain face.\n\n"
-                + "This unpacks the bundled cabinet egg to\n\(prefix)\n"
-                + "and opens Terminal running the hatch engine, with the full run "
-                + "self-recorded under ~/hatch-logs/. First receipt in minutes once hatched.\n\n"
-                + "Move-in (launch agents) stays OFF unless you explicitly enable it on the next confirm.",
-                buttons: ["Hatch", "Hatch + move-in", "Cancel"])
+                "Set up Captain's Cabinet",
+                "This will take a few minutes and open in your browser when it is ready. "
+                + "You can leave it running.\n\n"
+                + "A Terminal window will open and scroll while it works. That is normal — "
+                + "you do not need to type anything.\n\n"
+                + "Everything goes in this folder, and a record of the run is kept in "
+                + "~/hatch-logs:\n\(prefix)\n\n"
+                + "The second button also lets your Cabinet keep working while you are "
+                + "away. It asks you to confirm first.\n\n"
+                + "Captain's Cabinet setup, version \(appVersion)",
+                buttons: ["Set up", "Set up, and keep it running", "Cancel"])
             switch choice {
             case 0:
                 request = "hatch"
@@ -182,13 +195,15 @@ func dialogMain(prefix: String) -> Int32 {
                 // arming --with-launchd always takes a deliberate click,
                 // never a reflex default-accept.
                 let confirm = ask(
-                    "Confirm move-in (--with-launchd)",
-                    "Move-in runs hatch.sh --with-launchd: the engine deploys the First Mate and the "
-                    + "measurement-plane launch agents, and macOS will show a "
-                    + "\u{201C}Background Items Added\u{201D} notification.\n\n"
-                    + "Plain Hatch skips this — the engine then prints move-in as an errand note "
-                    + "you can run later.",
-                    buttons: ["Back", "Enable move-in"])
+                    "Let it keep working while you are away?",
+                    "Your Cabinet will keep running in the background instead of only while "
+                    + "you are watching it. macOS will show a "
+                    + "\u{201C}Background Items Added\u{201D} notification when it does.\n\n"
+                    + "You can decide this later instead: choose Back, and setup will tell "
+                    + "you the one command that turns it on whenever you want it.\n\n"
+                    + "Either way, if it cannot start on this Mac, setup says so plainly and "
+                    + "still opens your Cabinet in your browser.",
+                    buttons: ["Back", "Yes, keep it running"])
                 if confirm == 1 { request = "hatch --with-launchd" }
             default:
                 return 0
@@ -199,10 +214,12 @@ func dialogMain(prefix: String) -> Int32 {
         try openTerminal(onRunnerIn: prefix)
         return 0
     } catch {
-        _ = ask("Hatch Cabinet — error",
-                "\(error)\n\nNothing further was started. Any logs are under ~/hatch-logs/.\n\n"
-                + "If an unpack failed partway, remove the partial folder at\n\(prefix)\n"
-                + "before relaunching (this app refuses to unpack over a non-empty folder).",
+        _ = ask("Setup could not start",
+                "\(error)\n\nNothing was started, and nothing else on your Mac was changed. "
+                + "Any notes are in ~/hatch-logs.\n\n"
+                + "If setup stopped partway, move this folder to the Trash before trying "
+                + "again — this app will not write over a folder that already has "
+                + "something in it:\n\(prefix)",
                 buttons: ["Quit"])
         return 1
     }

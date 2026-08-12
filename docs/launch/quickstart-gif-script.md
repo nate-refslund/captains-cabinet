@@ -91,8 +91,10 @@ No new command — the tail of the same run. Expected screen: the proof
 gates reporting green — null-hatch (P-a), the clean-room pytest subset
 (P-b), dry renders (P-c) — then the printed flight summary table with
 per-step timings and the **TTFR** line (proofs-done → first receipt,
-measured 1–2 s), plus the numbered errand notes (the human-only steps the
-hatch refuses to automate: bot token, germline scope lines, TCC grants).
+measured 1–2 s), plus the numbered end-of-run checklist — headed **"YOUR
+CHECKLIST — the few things only you can do"** since 2026-08-12 — of the
+human-only steps the hatch refuses to automate: bot token, germline scope
+lines, TCC grants.
 
 Hold 2 s on the summary table so the TTFR line is readable.
 

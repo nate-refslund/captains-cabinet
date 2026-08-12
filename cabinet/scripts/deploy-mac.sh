@@ -151,6 +151,23 @@ install_plist_file() {
     return 0
   fi
 
+  # BOOTOUT-FIRST RETRY (2026-08-12). launchd's "Bootstrap failed: 5:
+  # Input/output error" is its catch-all, and by far its commonest cause is
+  # "that label is already loaded" — which the `launchctl print` probe above
+  # does not always agree with, so `was_loaded` can be false while the job is
+  # very much there and no bootout ran. hatch.sh's own plist loader has done an
+  # UNCONDITIONAL bootout-first since it was written, for exactly this; the
+  # officer leg went through here and did not, and a real operator's hatch died
+  # on it. One unconditional bootout + one retry, on the ALREADY-FAILING path
+  # only: it cannot change any deploy that currently succeeds. If this is not
+  # the cause, the retry fails the same way and the rollback below runs as
+  # before.
+  "$LAUNCHCTL" bootout "gui/$(id -u)" "$final" 2>/dev/null || true
+  if wait_for_unloaded "$label" && "$LAUNCHCTL" bootstrap "gui/$(id -u)" "$final"; then
+    echo "deployed: $label (after a bootout-first retry)"
+    return 0
+  fi
+
   echo "deploy-mac.sh: bootstrap failed for $label — attempting per-service rollback" >&2
   if [ "$had_final" = true ]; then
     cp "$backup" "$final"
