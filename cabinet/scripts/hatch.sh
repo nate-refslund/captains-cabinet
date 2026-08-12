@@ -995,7 +995,7 @@ DASH_LANDING="${DASH_URL}onboarding"
 DASH_LOG="${HATCH_LOG_DIR:-${TMPDIR:-/tmp}}/step-dashboard.log"
 DASH_SCRIPTS="${SCRIPT_DIR:-$PWD/cabinet/scripts}"
 app_feel() {
-  local webloc ok tries waited dash_pid self_start
+  local webloc ok tries waited dash_pid self_start pw_copied
   if [ "$CLEAN_ROOM" = "1" ]; then
     echo "[opening] clean-room: skipped (no browser, no ~/Applications writes)"; return 0
   fi
@@ -1055,14 +1055,30 @@ app_feel() {
   done
   # Password handover. dashboard-password.sh NEVER prints the password — it
   # copies to the clipboard and says only that it did. That stays true here.
+  #
+  # On a FRESH cabinet there is nothing to copy: since the first-run password
+  # feature the operator CHOOSES their password on the dashboard's first screen,
+  # so a refusal here is the normal first-run case, not a fault. The script
+  # prints the precise reason itself (no password yet / no clipboard / bad
+  # permissions), so this line never contradicts it — it points at it.
+  pw_copied=0
   if [ "$ok" = "1" ]; then
-    bash "$DASH_SCRIPTS/dashboard-password.sh" --copy \
-      || echo "[opening] password not copied — get it with: bash cabinet/scripts/dashboard-password.sh --copy"
+    if bash "$DASH_SCRIPTS/dashboard-password.sh" --copy; then
+      pw_copied=1
+    else
+      echo "[opening] nothing was copied to your clipboard — the line above says why."
+      echo "          A brand-new Cabinet asks you to choose a password on its first screen."
+    fi
   fi
   if [ "$ok" = "1" ] && [ -z "${SSH_CONNECTION:-}" ] && [ "${HATCH_NO_OPEN:-0}" != "1" ] \
      && command -v open >/dev/null 2>&1; then
-    echo "[opening] Your Cabinet is open in your browser. Sign in with the password we"
-    echo "          just copied for you — paste it in."
+    echo "[opening] Your Cabinet is open in your browser."
+    if [ "$pw_copied" = "1" ]; then
+      echo "          Sign in with the password we just copied for you — paste it in."
+    else
+      echo "          If it asks you to choose a password, pick one you'll remember —"
+      echo "          that's the first screen on a brand-new Cabinet."
+    fi
     open "$DASH_LANDING" || echo "[opening] couldn't open your browser — go to $DASH_LANDING yourself"
   elif [ "$ok" = "1" ]; then
     echo "[opening] your Cabinet is ready — go to $DASH_LANDING (we didn't open a window for you)"

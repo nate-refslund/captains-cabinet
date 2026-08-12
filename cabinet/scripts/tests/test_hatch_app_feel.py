@@ -429,14 +429,40 @@ def test_forced_open_failure_stays_green_with_honest_line(tmp_path):
     assert f"go to {_LANDING} yourself" in p.stdout
 
 
-def test_forced_password_failure_stays_green_with_honest_line(tmp_path):
-    """dashboard-password.sh refuses on an absent / bad-permission .env. That
-    is the operator's problem to fix, never a reason to recolor the hatch."""
+def test_password_refusal_reads_as_the_first_run_case_and_stays_green(tmp_path):
+    """dashboard-password.sh exits non-zero whenever it has nothing to hand
+    over — and since the first-run-password feature, the COMMONEST reason is
+    that a fresh cabinet has no password yet: the operator chooses one on the
+    dashboard's own first screen. So this must never read as a fault, must
+    never tell them to re-run the command that just refused, and must never
+    contradict the precise reason that script printed itself."""
     p, _home, shims = _run_tail(tmp_path, bash_exit=1)
     assert p.returncode == 0, (p.stdout, p.stderr)
-    assert "password not copied" in p.stdout
-    assert "dashboard-password.sh --copy" in p.stdout
+    assert "choose a password" in p.stdout, (
+        "the operator must be told what the first screen will ask of them"
+    )
+    assert "the line above says why" in p.stdout, (
+        "hatch must defer to the password script's own reason, not guess one"
+    )
+    assert "password not copied — get it with" not in p.stdout, (
+        "never send the operator back to the command that just refused"
+    )
+    assert "paste it in" not in p.stdout, (
+        "there is no password on the clipboard — do not tell them to paste one"
+    )
     # …and it still finishes the handover
+    assert _calls(shims, "open") == [_LANDING]
+
+
+def test_password_copied_tells_them_to_paste_it(tmp_path):
+    """The inverse arm: a Captain who HAS set a password gets it on the
+    clipboard and is told so."""
+    p, _home, shims = _run_tail(tmp_path, bash_exit=0)
+    assert p.returncode == 0, (p.stdout, p.stderr)
+    assert "paste it in" in p.stdout
+    assert "choose a password" not in p.stdout, (
+        "do not offer the first-run instruction when a password already exists"
+    )
     assert _calls(shims, "open") == [_LANDING]
 
 

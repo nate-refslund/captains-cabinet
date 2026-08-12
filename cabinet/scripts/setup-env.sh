@@ -17,10 +17,12 @@
 #   (no args)        Interactive wizard. Skips keys already filled.
 #   --defaults       Non-interactive: write a minimal cabinet/.env with
 #                    local defaults + auto-generated values only
-#                    (DASHBOARD_PASSWORD, POSTGRES_PASSWORD,
-#                    TELEGRAM_WEBHOOK_SECRET); leaves all
-#                    optional keys unset. Exit 0. Used by setup-mac.sh when
-#                    stdin is not a TTY (hatch engine / CI).
+#                    (POSTGRES_PASSWORD, TELEGRAM_WEBHOOK_SECRET); leaves all
+#                    optional keys unset. DASHBOARD_PASSWORD is deliberately
+#                    left UNSET — the operator chooses it on first open of the
+#                    dashboard (the login page shows a "create a password"
+#                    screen while none is set). Exit 0. Used by setup-mac.sh
+#                    when stdin is not a TTY (hatch engine / CI).
 #   --check          Validate cabinet/.env: exit 1 only if the file is
 #                    missing; otherwise report missing recommended keys as
 #                    warnings and exit 0 (nothing cloud is boot-critical).
@@ -290,19 +292,22 @@ fi
 apply_runtime_defaults() {
   local existing GEN_PWD
 
-  # Dashboard password
+  # Dashboard password — NOT generated (2026-08-12 Captain ruling). A fresh
+  # instance boots with NO password so the operator chooses their own on first
+  # open of the dashboard: the login page shows a "create a password" screen
+  # while none is set. setup-env.sh must never mint or print a secret for them.
+  # Any leftover placeholder is normalized to empty so that first-run screen
+  # shows; dashboard-password.sh is now only the reset/inspect helper.
   existing="$(current_value "DASHBOARD_PASSWORD")"
-  if [ -z "$existing" ] || [ "$existing" = "changeme" ] || [ "$existing" = "changeme_secure_password" ]; then
-    GEN_PWD="$(openssl rand -base64 24 2>/dev/null | tr -d '/+=' | head -c 24)"
-    if [ -n "$GEN_PWD" ]; then
-      set_env_key "DASHBOARD_PASSWORD" "$GEN_PWD"
-      ok "DASHBOARD_PASSWORD auto-generated (24 chars, base64)"
-      info "To sign in, copy it securely: bash cabinet/scripts/dashboard-password.sh --copy"
-    fi
-  else
-    ok "DASHBOARD_PASSWORD already set"
-    info "To sign in, copy it securely: bash cabinet/scripts/dashboard-password.sh --copy"
-  fi
+  case "$existing" in
+    ""|changeme|changeme_secure_password)
+      set_env_key "DASHBOARD_PASSWORD" ""
+      ok "DASHBOARD_PASSWORD left unset — you choose it on first open of the dashboard"
+      ;;
+    *)
+      ok "DASHBOARD_PASSWORD already set"
+      ;;
+  esac
 
   # Local postgres password (used by provision-local-postgres.sh for the
   # default LOCAL work store; harmless if you later paste a Neon string).
