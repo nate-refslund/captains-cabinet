@@ -20,7 +20,12 @@ clones, not the shared tree):
     copies the password and opens /onboarding; --clean-room and --no-browser
     skip all of it; FORCED-FAILURE cases (open exit 1, plutil exit 1,
     password exit 1, probe timeout) keep exit 0 and print the honest fallback
-    lines; SSH / HATCH_NO_OPEN skip only the auto-open.
+    lines; SSH / HATCH_NO_OPEN skip only the auto-open;
+  * MOVEIN_OK=0 (2026-08-12, never-strand): a --with-launchd run whose move-in
+    FAILED has nothing serving, so the tail must start the dashboard itself
+    rather than probe a port launchd never opened. Before this the tail
+    trusted --with-launchd to mean "already running", which on a failed
+    move-in meant a 2-minute wait, no browser, and a stranded operator.
 
 The password script is invoked through a SHIMMED `bash` on purpose: the real
 dashboard-password.sh would read the running checkout's cabinet/.env and put
@@ -46,7 +51,8 @@ _HATCH = _SCRIPTS_DIR / "hatch.sh"
 
 _START_MARKER = "# ---- app-feel (Wave D) — bookmark + auto-open; convenience tail, NEVER a gate ----"
 _INVOCATION = "app_feel || echo"
-_PLAN_LINE = "[app-feel]      dashboard: start it (--no-launchd) or probe it (--with-launchd), wait on"
+_EXIT_LINE = 'exit "$HATCH_EXIT"'
+_PLAN_LINE = "[open]          start your Cabinet (or reuse a running one / a successful move-in's),"
 _PORT = "3177"
 _URL = f"http://127.0.0.1:{_PORT}/"
 _LANDING = f"{_URL}onboarding"
@@ -114,8 +120,9 @@ def _calls(shim_dir: Path, name: str) -> list[str]:
 
 
 def _run_tail(tmp_path: Path, *, clean_room="0", with_launchd="1", no_browser="0",
-              curl_exit=0, curl_fail_first=0, open_exit=0, bash_exit=0,
-              plutil_exit: int | None = None, extra_env: dict | None = None):
+              movein_ok=None, curl_exit=0, curl_fail_first=0, open_exit=0,
+              bash_exit=0, plutil_exit: int | None = None,
+              extra_env: dict | None = None):
     """Run the extracted tail under set -euo pipefail with shims.
 
     plutil_exit None = the REAL plutil (macOS) stays on PATH; an int shims
@@ -137,6 +144,10 @@ def _run_tail(tmp_path: Path, *, clean_room="0", with_launchd="1", no_browser="0
     if plutil_exit is not None:
         _make_shim(shim_dir, "plutil", plutil_exit)
 
+    # MOVEIN_OK left UNSET by default on purpose: the tail must read it as
+    # "${MOVEIN_OK:-1}" so it is correct when driven on its own, and every
+    # pre-2026-08-12 arm below exercises exactly that.
+    movein_line = "" if movein_ok is None else f"MOVEIN_OK={movein_ok}\n"
     script = tmp_path / "app-feel-extract.sh"
     script.write_text(
         "#!/bin/bash\n"
@@ -144,7 +155,10 @@ def _run_tail(tmp_path: Path, *, clean_room="0", with_launchd="1", no_browser="0
         f"CLEAN_ROOM={clean_room}\n"
         f"WITH_LAUNCHD={with_launchd}\n"
         f"NO_BROWSER={no_browser}\n"
-        f"DASH_PORT={_PORT}\n"
+        # the tail's last line is `exit "$HATCH_EXIT"` — hatch.sh seeds it 0
+        "HATCH_EXIT=0\n"
+        + movein_line
+        + f"DASH_PORT={_PORT}\n"
         f'DASH_URL="{_URL}"\n'
         f'HATCH_LOG_DIR="{logdir}"\n'
         + _tail_source(),
@@ -193,10 +207,19 @@ def test_bash_syntax_clean():
 
 def test_tail_wiring_guards_precede_writes_and_open():
     tail = _tail_source()
-    # non-fatal invocation is the LAST line of the file
+    # The non-fatal invocation is the second-to-last COMMAND, and the ONLY
+    # thing allowed after it is the exit-code selection (2026-08-12): the tail
+    # must still be unable to change the run's disposition, but the run now
+    # has two green dispositions to choose between (0 and 75).
     assert _INVOCATION in tail, "app_feel invocation lost its || fallback"
-    assert tail.rstrip().splitlines()[-1].startswith(_INVOCATION), (
-        "the guarded invocation must end the file — nothing may run after it"
+    code = [ln for ln in tail.splitlines()
+            if ln.strip() and not ln.lstrip().startswith("#")]
+    assert code[-1] == _EXIT_LINE, (
+        f"the file must end with {_EXIT_LINE} — got {code[-1]!r}"
+    )
+    assert code[-2].startswith(_INVOCATION), (
+        "the guarded invocation must be the last thing that RUNS; only the "
+        f"exit-code selection may follow it — got {code[-2]!r}"
     )
     # clean-room guard is the first branch: before the webloc write, the
     # probe, the dashboard start, and the open
@@ -211,8 +234,15 @@ def test_tail_wiring_guards_precede_writes_and_open():
         "--no-browser must be checked before the dashboard is started"
     )
     # the start branch precedes the webloc write
-    assert tail.index('if [ "$WITH_LAUNCHD" != "1" ]') < tail.index("webloc="), (
-        "the --no-launchd start branch must precede the webloc write"
+    assert tail.index('if [ "$self_start" = "1" ]') < tail.index("webloc="), (
+        "the self-start branch must precede the webloc write"
+    )
+    # …and who self-starts is decided from BOTH knobs: a --with-launchd run
+    # whose move-in failed has nothing serving, so it must start one itself.
+    # Reading MOVEIN_OK with a :-1 default keeps the tail correct standalone.
+    assert 'if [ "$WITH_LAUNCHD" = "1" ] && [ "${MOVEIN_OK:-1}" = "1" ]' in tail, (
+        "self_start must be 0 only when a SUCCESSFUL move-in already started "
+        "the dashboard — a failed move-in must not suppress the start"
     )
     # validate-then-move: lint the tmp BEFORE mv
     assert tail.index('plutil -lint "$webloc.tmp"') < tail.index('mv "$webloc.tmp" "$webloc"'), (
@@ -317,15 +347,18 @@ def test_no_launchd_starts_dashboard_waits_copies_password_and_opens(tmp_path):
     assert p.returncode == 0, (p.stdout, p.stderr)
     started = _start_calls(shims)
     assert len(started) == 1, f"expected exactly one dashboard start, got {started}"
-    assert "dashboard starting" in p.stdout
+    assert "starting your Cabinet" in p.stdout
     assert "step-dashboard.log" in p.stdout, (
         "a backgrounded server must say where its log is"
     )
-    assert "Stop it later with" in p.stdout, (
+    assert "To stop it:" in p.stdout, (
         "a process that outlives the script must say how to stop it"
     )
     # waited on health, then handed the password over, then opened /onboarding
-    assert "waiting for the dashboard to answer" in p.stdout
+    assert "waiting for your Cabinet to answer" in p.stdout
+    assert "You don't need to do anything" in p.stdout, (
+        "a multi-minute wait must tell the person they are not blocking it"
+    )
     assert len(_password_calls(shims)) == 1, "the password must be copied exactly once"
     assert _calls(shims, "open") == [_LANDING], (
         "the hatch must land the operator on /onboarding, not the dashboard root"
@@ -333,7 +366,7 @@ def test_no_launchd_starts_dashboard_waits_copies_password_and_opens(tmp_path):
     # the bookmark is honest now that a server really is running — the
     # --no-launchd path used to return before ever reaching this step
     assert _webloc(home).is_file()
-    assert "bookmark:" in p.stdout
+    assert "shortcut saved:" in p.stdout
 
 
 def test_no_launchd_reuses_an_already_serving_dashboard(tmp_path):
@@ -341,7 +374,7 @@ def test_no_launchd_reuses_an_already_serving_dashboard(tmp_path):
     port — the first probe answering is proof one is already there."""
     p, _home, shims = _run_tail(tmp_path, with_launchd="0")  # first curl succeeds
     assert p.returncode == 0, (p.stdout, p.stderr)
-    assert "already serving" in p.stdout
+    assert "already running" in p.stdout
     assert _start_calls(shims) == [], "must not start a second dashboard"
     assert _calls(shims, "open") == [_LANDING]
 
@@ -350,7 +383,8 @@ def test_wait_loop_says_what_it_waits_for_and_how_to_skip(tmp_path):
     """A silent multi-minute pause at the end of a hatch reads as a hang."""
     p, _home, shims = _run_tail(tmp_path, with_launchd="0", curl_exit=1)
     assert p.returncode == 0, (p.stdout, p.stderr)
-    assert "still building/starting" in p.stdout
+    assert "still starting" in p.stdout
+    assert "This is normal" in p.stdout, "a long silent wait reads as a hang"
     assert "--no-browser" in p.stdout, "the wait must say how to skip it next time"
     # the no-launchd wait is the long one (a first run compiles the dashboard)
     assert len(_calls(shims, "curl")) == 151, (
@@ -367,7 +401,7 @@ def test_with_launchd_writes_valid_webloc_and_opens(tmp_path):
     assert p.returncode == 0, (p.stdout, p.stderr)
     webloc = _webloc(home)
     assert webloc.is_file(), "webloc bookmark missing"
-    assert f"bookmark: {webloc}" in p.stdout
+    assert f"shortcut saved: {webloc}" in p.stdout
     # valid plist whose URL is the loopback dashboard HOME (not the landing)
     lint = subprocess.run(["/usr/bin/plutil", "-lint", str(webloc)],
                           capture_output=True, text=True)
@@ -391,8 +425,8 @@ def test_forced_open_failure_stays_green_with_honest_line(tmp_path):
         "a failing `open` must never change hatch's exit code",
         p.stdout, p.stderr,
     )
-    assert "auto-open failed" in p.stdout
-    assert f"visit {_LANDING} manually" in p.stdout
+    assert "couldn't open your browser" in p.stdout
+    assert f"go to {_LANDING} yourself" in p.stdout
 
 
 def test_forced_password_failure_stays_green_with_honest_line(tmp_path):
@@ -412,7 +446,7 @@ def test_forced_plutil_failure_skips_bookmark_and_stays_green(tmp_path):
         "a failing plutil must never change hatch's exit code",
         p.stdout, p.stderr,
     )
-    assert "bookmark skipped" in p.stdout
+    assert "shortcut skipped" in p.stdout
     webloc = _webloc(home)
     assert not webloc.exists(), "an unvalidated webloc must not be installed"
     assert not webloc.with_name(webloc.name + ".tmp").exists(), (
@@ -425,12 +459,17 @@ def test_forced_plutil_failure_skips_bookmark_and_stays_green(tmp_path):
 def test_probe_timeout_prints_amber_and_stays_green(tmp_path):
     p, _home, shims = _run_tail(tmp_path, curl_exit=1)  # sleep shimmed: fast
     assert p.returncode == 0, (p.stdout, p.stderr)
-    assert "AMBER: dashboard not reachable yet" in p.stdout
-    assert "api/health" in p.stdout
+    # Plain, not "AMBER" (2026-08-12): the person reading this line did not
+    # ask for a traffic-light vocabulary, and a slow first build is not an
+    # emergency. It must still be HONEST and say where to look.
+    assert "taking longer than expected" in p.stdout
+    assert "Nothing is broken" in p.stdout
+    assert _LANDING in p.stdout, "must still say where the door is"
+    assert "AMBER" not in p.stdout, "operator copy must not carry gate jargon"
     assert len(_calls(shims, "curl")) == 60, "probe loop must try 60 times"
     assert _calls(shims, "open") == [], "never open a dead URL"
     assert _password_calls(shims) == [], "never hand a password to a dead server"
-    # AMBER is the tail's honesty, not a chain failure
+    # a slow dashboard is the tail's honesty, not a chain failure
     assert "HATCH FAILED" not in p.stdout + p.stderr
 
 
@@ -441,7 +480,7 @@ def test_ssh_and_hatch_no_open_skip_auto_open(tmp_path):
         sub.mkdir()
         p, _home, shims = _run_tail(sub, extra_env=extra)
         assert p.returncode == 0, (extra, p.stdout, p.stderr)
-        assert "auto-open skipped" in p.stdout, extra
+        assert "we didn't open a window for you" in p.stdout, extra
         assert _calls(shims, "open") == [], f"{extra} must suppress auto-open"
         # narrower than --no-browser: the password still changes hands
         assert len(_password_calls(shims)) == 1, extra
@@ -450,14 +489,69 @@ def test_ssh_and_hatch_no_open_skip_auto_open(tmp_path):
 def test_where_things_live_hints_are_wired():
     """The hint lines + hoisted port resolution live before the tail: the
     dashboard URL must be resolved (env > cabinet/.env > 3100) BEFORE the
-    WHERE-THINGS-LIVE hints that print it."""
+    WHERE-THINGS-ARE hints that print it."""
     text = _HATCH.read_text(encoding="utf-8")
     resolve = text.index('DASH_PORT="${CABINET_DASHBOARD_PORT:-}"')
-    where = text.index("==== WHERE THINGS LIVE")
-    hint = text.index('echo "Dashboard:             ${DASH_URL}')
+    where = text.index("==== WHERE THINGS ARE")
+    hint = text.index('echo "Your Cabinet:          ${DASH_URL}')
     assert resolve < where < hint < text.index(_START_MARKER)
-    assert 'echo "App feel:' in text, "Add-to-Dock/Install hint line missing"
+    assert 'echo "Keep it in your Dock:' in text, "Add-to-Dock/Install hint line missing"
     # the briefing the hatch just wrote is reachable in the browser
     assert "${DASH_URL}briefing" in text, (
         "WHERE THINGS LIVE must point at the in-browser briefing reader"
+    )
+
+
+# ---------------------------------------------------------------------------
+# A FAILED move-in must not suppress the front door (never-strand, 2026-08-12)
+# ---------------------------------------------------------------------------
+
+def test_failed_movein_still_starts_the_dashboard_and_opens_the_browser(tmp_path):
+    """--with-launchd + MOVEIN_OK=0: launchd never started anything, so the
+    tail must start the dashboard itself and still land the browser.
+
+    Before the fix the tail read --with-launchd as "something is already
+    serving", so a failed move-in meant 60 dead probes, no start, no password
+    and no browser — on top of a hatch.sh that had already exited 1 before
+    reaching here. This arm is the second half of that failure.
+    """
+    p, home, shims = _run_tail(tmp_path, with_launchd="1", movein_ok="0",
+                               curl_fail_first=1, plutil_exit=0)
+    assert p.returncode == 0, (p.stdout, p.stderr)
+    started = _start_calls(shims)
+    assert len(started) == 1, (
+        f"a failed move-in must self-start the dashboard, got {started}"
+    )
+    assert len(_password_calls(shims)) == 1, "the password must still change hands"
+    assert _calls(shims, "open") == [_LANDING], (
+        "the operator must still land on /onboarding after a failed move-in"
+    )
+    assert _webloc(home).is_file()
+
+
+def test_successful_movein_does_not_start_a_second_dashboard(tmp_path):
+    """The inverse arm — without it the test above would pass on a tail that
+    simply always starts one, stacking a second server on the port."""
+    p, _home, shims = _run_tail(tmp_path, with_launchd="1", movein_ok="1",
+                                plutil_exit=0)
+    assert p.returncode == 0, (p.stdout, p.stderr)
+    assert _start_calls(shims) == [], (
+        "a successful move-in already started it — never stack a second one"
+    )
+    assert _calls(shims, "open") == [_LANDING]
+
+
+def test_failed_movein_wait_advice_points_at_the_log_it_started(tmp_path):
+    """Degenerate end: the dashboard the tail started never answers. The
+    advice must name the log of THAT process, not a launchd job that was
+    never loaded."""
+    p, _home, shims = _run_tail(tmp_path, with_launchd="1", movein_ok="0",
+                                curl_exit=1, plutil_exit=0)
+    assert p.returncode == 0, (p.stdout, p.stderr)
+    assert "step-dashboard.log" in p.stdout, (
+        "after self-starting, the fallback must point at the started process's log"
+    )
+    assert "launchctl" not in p.stdout, (
+        "a move-in that failed left no launchd job to inspect — do not send "
+        "the operator to one"
     )

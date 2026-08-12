@@ -13,7 +13,7 @@
 - A **double-clickable entry to the technical-captain face** — the documented Terminal
   fallback face of `hatch.sh` ("same engine, second face"). Terminal is deliberate: the
   engine has no native-UI mode yet, and a progress window over a headless run would hide
-  errand notes and failures (fake status). The engine's errand notes render verbatim in
+  the checklist and failures (fake status). The engine's checklist renders verbatim in
   Terminal; the shell adds no chrome beyond one end-of-run notice (exit code + log paths).
 - The run is **self-recorded**: the runner wraps the engine in `script(1)`, writing
   `~/hatch-logs/hatch-<UTCstamp>/terminal-transcript.txt` beside the engine's own
@@ -98,14 +98,16 @@ ditto -x -k "hatch-cabinet-0.5.1.zip" ~/Applications/
 this artifact yet — record the observed outcome here after the manual matrix run.
 
 ## Launch flows
-- **First launch** (prefix absent/empty) — dialog offers exactly:
-  - **[Hatch]** (default): engine `--defaults`; move-in stays off (the engine prints it as
-    an errand note).
-  - **[Hatch + move-in]** → a SECOND explicit confirm naming `--with-launchd` and the
-    macOS "Background Items Added" notification (one-actuator rule: never one accidental
-    click; on the confirm, **Back is the default/Return button** — arming move-in always
-    takes a deliberate click). `--with-drill` is NEVER offered (halts a live fleet);
-    `--clean-room` is not offered (dev/test face).
+- **First launch** (prefix absent/empty) — dialog "Set up Captain's Cabinet" offers
+  exactly:
+  - **[Set up]** (default): engine `--defaults`; move-in stays off (it becomes a checklist
+    item instead).
+  - **[Set up, and keep it running]** → a SECOND explicit confirm ("Let it keep working
+    while you are away?") naming the macOS "Background Items Added" notification
+    (one-actuator rule: never one accidental click; on the confirm, **Back is the
+    default/Return button** — arming move-in always takes a deliberate click).
+    `--with-drill` is NEVER offered (halts a live fleet); `--clean-room` is not offered
+    (dev/test face).
   - **[Cancel]**.
   Then: payload unpacked to the prefix (`ditto`), quarantine stripped **on the extracted
   payload only** (never on the .app — no Gatekeeper evasion), runner installed, Terminal
@@ -113,11 +115,11 @@ this artifact yet — record the observed outcome here after the manual matrix r
   Apple-events automation of Terminal** (verify once per target: no automation/TCC prompt
   should appear).
 - **Re-launch** (prefix non-empty — a real install OR a partial tree left by an
-  interrupted unpack; the dialog says so honestly): "Cabinet already present" →
-  **[Run doctor in Terminal]** (`cabinet-doctor.sh`, probe-only/read-only) / **[Quit]**.
+  interrupted unpack; the dialog says so honestly): "Your Cabinet is already here" →
+  **[Check it over]** (`cabinet-doctor.sh`, probe-only/read-only) / **[Quit]**.
   Never re-unpacks, never overwrites, no world claims. The runner-missing and error
-  alerts name the recovery step for a partial tree: remove the partial folder, then
-  relaunch.
+  alerts name the recovery step for a partial tree: move the partial folder to the Trash,
+  then relaunch.
 - **Kill-switch**: no control surface in this shell, by absence; `kill-switch.sh` is never
   invoked by any v0.5 path.
 - **Headless smoke** (CI): `HATCH_APP_SMOKE=1 CABINET_HATCH_PREFIX=$TMPDIR/prefix
@@ -128,7 +130,19 @@ this artifact yet — record the observed outcome here after the manual matrix r
 Every hatch run mints `~/hatch-logs/hatch-<UTCstamp>/` with `terminal-transcript.txt`
 (script(1) full transcript; skipped with an honest note when there is no tty) and
 `flight.log` (the engine's own flight log). The one shell-added notice at end of run
-reports exit code + these paths, nothing else.
+reports exit code + these paths, nothing else — still exactly one notice, phrased for a
+person since 2026-08-12, with a branch for each of the engine's three dispositions:
+`0` set up · `75` set up and open in the browser, one OPTIONAL background helper did not
+start (calm, not a failure) · anything else, stopped before finishing.
+
+## Operator copy (2026-08-12)
+Every string the operator reads — the dialogs above and the runner's first and last lines
+— is written for whoever double-clicked the icon and for nobody else: what is about to
+happen, how long, that they need do nothing, and what to do if something is in the way.
+This codebase's vocabulary (hatch, move-in, egg, launch agents, First Mate, errand notes)
+stays in identifiers, comments and the allowlisted request strings, where it belongs. The
+bundle is still named `Hatch Cabinet.app` — renaming the artifact touches the builder,
+the gate, the manifest rows and this runbook, and is deliberately NOT part of that pass.
 
 ## Dashboard bind status — honest, as of this build (2026-07-10, base 2d8f99d9)
 - The shell opens **no ports and no URLs** and never invokes `start-dashboard.sh`. Even
@@ -162,7 +176,7 @@ reports exit code + these paths, nothing else.
 
 ## Manual verification checklist (once per target)
 1. Double-click → first-launch dialog appears with the three buttons above.
-2. Hatch → Terminal opens on the runner; engine plan + errand notes render in Terminal.
+2. Set up → Terminal opens on the runner; engine plan + checklist render in Terminal.
 3. Confirm **no automation/TCC prompt** appears for Terminal (Launch Services handoff).
 4. `~/hatch-logs/hatch-<stamp>/terminal-transcript.txt` is non-empty after the run; the
    end-of-run notice shows the exit code + paths.
