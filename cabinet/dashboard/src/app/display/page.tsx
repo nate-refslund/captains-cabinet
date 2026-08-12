@@ -19,6 +19,7 @@ import yaml from 'js-yaml'
 import { cabinetPath } from '@/lib/cabinet-root'
 import { getDisplayData, WIP_CAP, type DisplayData } from '@/lib/display-data'
 import { getOfficerConfig } from '@/lib/config'
+import { officerTitle } from '@/lib/officer-title'
 import AutoRefresh from '@/components/display/auto-refresh'
 import LiveClock from '@/components/display/live-clock'
 import OfficerTile from '@/components/display/officer-tile'
@@ -48,9 +49,9 @@ function readPlatformMeta(): { timezone: string; captainName: string } {
 /** Officer slug → human title, best-effort via getOfficerConfig (never throws). */
 function titleFor(slug: string): string {
   try {
-    return getOfficerConfig(slug).title || slug.toUpperCase()
+    return getOfficerConfig(slug).title || officerTitle(slug)
   } catch {
-    return slug.toUpperCase()
+    return officerTitle(slug)
   }
 }
 

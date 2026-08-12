@@ -13,6 +13,7 @@ import path from 'path'
 import yaml from 'js-yaml'
 import { headers } from 'next/headers'
 import { cabinetPath } from '@/lib/cabinet-root'
+import { OFFICER_TITLES, officerTitle } from '@/lib/officer-title'
 import { requireDashboardAuth } from '@/lib/provisioning/guard'
 
 // ----------------------------------------------------------------
@@ -176,7 +177,9 @@ export interface OfficerSlot {
  * beginning with '#' in the YAML are comment-skipped by the YAML parser).
  * Parses each agent .md file for the first H1 heading to extract a title.
  *
- * Falls back to role.toUpperCase() if the agent file is missing.
+ * A known officer's title is the one configured source of truth (the
+ * coordinator is "First Mate"); a custom lane takes its title from its agent
+ * .md H1, degrading to readable Title Case if the file is missing.
  * Returns empty array if preset not found.
  */
 export async function getPresetOfficers(presetSlug: string): Promise<OfficerSlot[]> {
@@ -193,14 +196,18 @@ export async function getPresetOfficers(presetSlug: string): Promise<OfficerSlot
     return archetypes
       .filter((a): a is string => typeof a === 'string')
       .map((role) => {
-        let title = role.toUpperCase()
-        try {
-          const mdPath = path.join(agentsDir, `${role}.md`)
-          const mdContent = fs.readFileSync(mdPath, 'utf8')
-          const match = mdContent.match(/^#\s+(.+)/m)
-          if (match) title = match[1].trim()
-        } catch {
-          // Agent file missing — use role slug as title
+        // Known officer → the configured title (never the raw slug). Custom
+        // lane → its agent-definition H1, else a readable Title Case degrade.
+        let title = officerTitle(role)
+        if (!OFFICER_TITLES[role]) {
+          try {
+            const mdPath = path.join(agentsDir, `${role}.md`)
+            const mdContent = fs.readFileSync(mdPath, 'utf8')
+            const match = mdContent.match(/^#\s+(.+)/m)
+            if (match) title = match[1].trim()
+          } catch {
+            // Agent file missing — keep the readable slug degrade.
+          }
         }
         return { role, title }
       })

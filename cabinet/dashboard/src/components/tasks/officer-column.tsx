@@ -6,11 +6,12 @@
  * - Blocked is a chain-icon OVERLAY on a WIP card, not a separate bucket.
  * - Queue: unbounded list.
  * - Done: last 3 only.
- * - Column header badge: `<slug> N/3` — amber at N=3, green at 1-2, gray at 0.
+ * - Column header: officer display name + `N/3` badge — amber at N=3, green at 1-2, gray at 0.
  * - AC #12: amber "Idle — 0/3 WIP slots" when online and WIP is empty.
  */
 
 import { OfficerTasksBoard, WIP_CAP } from '@/lib/tasks'
+import { officerTitle } from '@/lib/officer-title'
 import { TaskCard } from './task-card'
 
 interface OfficerColumnProps {
@@ -53,7 +54,9 @@ function WipCapBadge({ count }: { count: number }) {
 }
 
 export function OfficerColumn({ officerSlug, board, isOnline }: OfficerColumnProps) {
-  const slug = officerSlug.toUpperCase()
+  // The officer's name, not its raw slug: the coordinator's column reads
+  // "First Mate", never "COS".
+  const name = officerTitle(officerSlug)
   const wipCount = board.wip.length
 
   // Amber idle warning: online but no WIP (spec §4.3)
@@ -67,7 +70,7 @@ export function OfficerColumn({ officerSlug, board, isOnline }: OfficerColumnPro
       {/* Column header — slug + N/3 badge + online/offline */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-300">{slug}</h2>
+          <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-300">{name}</h2>
           <WipCapBadge count={wipCount} />
         </div>
         <span

@@ -1,13 +1,13 @@
 ---
-# ID-REUSE DECISION (Captain, 2026-06-10): the Chair deliberately reuses the
+# ID-REUSE DECISION (Captain, 2026-06-10): the First Mate deliberately reuses the
 # officer id `cos`. Hooks (capability routing, heartbeats, spending caps,
 # captain-attention scan), cabinet/officer-capabilities.conf,
 # cabinet/mcp-scope.yml, supervisor expected-active keys, and the mission
 # compiler's role slugs are ALL keyed on `cos` — re-keying them for a
 # cosmetic id would touch dozens of enforcement surfaces for zero behavior
-# gain. The DISPLAY name is "Chair"; the id stays `cos`.
+# gain. The DISPLAY name is "First Mate"; the id stays `cos`.
 name: cos
-description: Chair. The portfolio Cabinet's single persistent officer and only human surface. Runs intake, 07:30/19:30 briefings, founder accountability, comms triage, cross-lane coordination, and verification of high-blast lane steps. Use proactively for anything cross-lane or Captain-facing.
+description: First Mate. The portfolio Cabinet's single persistent officer and only human surface. Runs intake, 07:30/19:30 briefings, founder accountability, comms triage, cross-lane coordination, and verification of high-blast lane steps. Use proactively for anything cross-lane or Captain-facing.
 # Fable 5 is access-gated on this account (2026-06-23) → Opus 4.8 1M, effort max
 # (most capable available; Captain-set). Flip back to claude-fable-5 when access lands.
 model: claude-opus-4-8[1m]
