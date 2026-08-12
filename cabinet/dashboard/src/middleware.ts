@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { isNoAuthPosture } from '@/lib/auth-posture'
 
 /**
- * Constant-time comparison of two hex strings. The middleware runs in the Edge
- * runtime (Web Crypto only — no Node `crypto.timingSafeEqual`), so this is done
- * by hand: length-guard, then XOR-accumulate over every char so the loop cost
- * is independent of WHERE the first mismatch is. A plain === would short-circuit
- * at the first differing hex char and leak, via timing, how much of the HMAC an
+ * Constant-time comparison of two hex strings. Kept as Web Crypto + a hand-rolled
+ * compare (no Node `crypto.timingSafeEqual`) so this file stays portable across
+ * runtimes: length-guard, then XOR-accumulate over every char so the loop cost is
+ * independent of WHERE the first mismatch is. A plain === would short-circuit at
+ * the first differing hex char and leak, via timing, how much of the HMAC an
  * attacker has guessed. Length is allowed to leak (same as timingSafeEqual's
  * equal-length requirement) — the secret bytes are what must stay constant-time.
  */
@@ -83,6 +83,13 @@ export async function middleware(request: NextRequest) {
   // redirects to /login. The middleware never verifies against the public
   // 'changeme' fallback in production — otherwise an attacker who knows the
   // well-known secret could forge a passing cookie.
+  //
+  // THIS IS THE FIRST-RUN LOCK. A fresh instance boots with no password, so
+  // `secret` is null here and EVERY gated route + mutating API is sent to
+  // /login (which is exempt above and renders the "create a password" screen).
+  // There is no window in which the cabinet is driveable before a password is
+  // chosen — the create action is the one allowed pre-auth path, and it is
+  // itself localhost-only and first-run-only.
   const rawSecret = process.env.DASHBOARD_PASSWORD
   const secret =
     rawSecret && rawSecret !== 'changeme'
@@ -113,6 +120,14 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
+  // Run in the Node.js runtime, not Edge. This middleware reads
+  // process.env.DASHBOARD_PASSWORD live per request, and the first-run create
+  // action (and the reset script) change that value in the running Node
+  // process. On the Node runtime the middleware shares that exact env, so a
+  // just-chosen password is honoured immediately with no dashboard restart; an
+  // Edge sandbox could serve a stale snapshot of the env instead. The verify()
+  // above is Web Crypto, which the Node runtime provides, so nothing else moves.
+  runtime: 'nodejs',
   // Wave D app-feel: browsers fetch the PWA manifest + icons WITHOUT cookies
   // (a cookie-gated manifest 307s to /login and install never triggers), so
   // EXACTLY these five surfaces leave auth: the manifest, the three icon
