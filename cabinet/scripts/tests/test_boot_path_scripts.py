@@ -7,11 +7,16 @@ Covers the critical-path-diet + de-cloud + telegram-errand contracts:
     unknown-flag refusal. The heavy default run is NOT executed here (it
     installs things); --check is exercised for real (side-effect free).
   * cabinet/scripts/setup-env.sh        — --defaults (non-interactive local
-    boot: .env created chmod 600, passwords auto-generated, every account
-    key left unset, idempotent, exit 0), --check de-cloud semantics (exit 1
+    boot: .env created chmod 600, POSTGRES/webhook secrets auto-generated,
+    DASHBOARD_PASSWORD deliberately left UNSET so the operator chooses it on
+    first open of the dashboard, every account key left unset, idempotent,
+    exit 0), --check de-cloud semantics (exit 1
     only when .env missing), wizard live-validation wiring (valid token
     saved + username confirmed; rejected token NOT saved; token never
     echoed anywhere).
+  * cabinet/scripts/dashboard-password.sh — --reset clears the password and
+    returns the dashboard to its first-run screen; --copy inspects an existing
+    one without printing it. Neither is the way in anymore.
   * cabinet/scripts/provision-local-postgres.sh — --check read-only paths
     (no brew, no network): missing .env, remote string accepted unprobed,
     local string without/with a (shimmed) pg_isready, probe uses the port
@@ -214,15 +219,19 @@ class TestSetupEnvDefaults:
         assert stat.S_IMODE(env_file.stat().st_mode) == 0o600
         text = env_file.read_text()
         # auto-generated runtime values present
-        dash = [l for l in text.splitlines() if l.startswith("DASHBOARD_PASSWORD=")][0]
         pg = [l for l in text.splitlines() if l.startswith("POSTGRES_PASSWORD=")][0]
         webhook = [l for l in text.splitlines() if l.startswith("TELEGRAM_WEBHOOK_SECRET=")][0]
-        assert len(dash.split("=", 1)[1]) >= 20
         assert len(pg.split("=", 1)[1]) >= 30
         webhook_value = webhook.split("=", 1)[1]
         assert len(webhook_value) == 64
         assert webhook_value not in r.stdout + r.stderr
-        assert "dashboard-password.sh --copy" in r.stdout
+        # DASHBOARD_PASSWORD is deliberately LEFT UNSET (2026-08-12 ruling): the
+        # operator chooses it on first open of the dashboard. --defaults must
+        # never mint one, nor advertise the old clipboard-recovery command.
+        dash = [l for l in text.splitlines() if l.startswith("DASHBOARD_PASSWORD=")][0]
+        assert dash.split("=", 1)[1] == "", "a fresh instance must boot with no dashboard password"
+        assert "dashboard-password.sh --copy" not in r.stdout
+        assert "auto-generated" not in dash
         # every account key left unset — the de-cloud boot promise
         for key in ("TELEGRAM_COS_TOKEN", "CAPTAIN_TELEGRAM_ID", "TELEGRAM_HQ_CHAT_ID",
                     "GITHUB_PAT", "NEON_CONNECTION_STRING", "VOYAGE_API_KEY"):
@@ -245,15 +254,31 @@ class TestSetupEnvDefaults:
         assert "boot-critical" in r.stdout
 
 
+def _set_dashboard_password(env_file: Path, password: str) -> None:
+    """Simulate the operator having chosen a password on the first-run screen:
+    the create action wrote DASHBOARD_PASSWORD into cabinet/.env (0600)."""
+    lines = env_file.read_text().splitlines()
+    out, seen = [], False
+    for line in lines:
+        if line.startswith("DASHBOARD_PASSWORD="):
+            out.append(f"DASHBOARD_PASSWORD={password}")
+            seen = True
+        else:
+            out.append(line)
+    if not seen:
+        out.append(f"DASHBOARD_PASSWORD={password}")
+    env_file.write_text("\n".join(out) + "\n")
+    env_file.chmod(0o600)
+
+
 class TestDashboardPasswordRecovery:
     def test_copies_without_printing_secret(self, cab_root, tmp_path):
         env = base_env(cab_root)
         assert run(["bash", str(SETUP_ENV), "--defaults"], env=env).returncode == 0
-        password = next(
-            line.split("=", 1)[1]
-            for line in (cab_root / "cabinet" / ".env").read_text().splitlines()
-            if line.startswith("DASHBOARD_PASSWORD=")
-        )
+        # --defaults leaves the password unset now; the operator has since chosen
+        # one on the first-run screen. --copy is the inspect helper for that.
+        password = "chosen-by-operator-2026"
+        _set_dashboard_password(cab_root / "cabinet" / ".env", password)
         fake_bin = tmp_path / "fake-bin"
         fake_bin.mkdir()
         copied = tmp_path / "clipboard"
@@ -297,6 +322,75 @@ class TestDashboardPasswordRecovery:
         assert copied.read_text() == password
         assert not marker.exists(), "cabinet/.env content must never be sourced or evaluated"
         assert password not in result.stdout + result.stderr
+
+
+class TestDashboardPasswordReset:
+    """--reset clears the password and returns the dashboard to first-run. The
+    launchd restart is always SHIMMED here — a real kickstart would target the
+    system label com.cabinet.dashboard and could bounce the developer's own live
+    dashboard."""
+
+    @staticmethod
+    def _fake_launchctl(fake_bin: Path, log: Path, exit_code: int) -> dict:
+        fake_bin.mkdir(exist_ok=True)
+        lc = fake_bin / "launchctl"
+        lc.write_text(f'#!/bin/bash\necho "$@" >> "{log}"\nexit {exit_code}\n')
+        lc.chmod(0o755)
+        return {"path": f"{fake_bin}:{MIN_PATH}"}
+
+    def test_reset_clears_password_and_restarts_only_the_dashboard(self, cab_root, tmp_path):
+        env_file = cab_root / "cabinet" / ".env"
+        run(["bash", str(SETUP_ENV), "--defaults"], env=base_env(cab_root))
+        _set_dashboard_password(env_file, "chosen-by-operator-2026")
+        log = tmp_path / "launchctl.log"
+        env = base_env(cab_root, **self._fake_launchctl(tmp_path / "bin", log, 0))
+        result = run(["bash", str(DASHBOARD_PASSWORD), "--reset"], env=env)
+        assert result.returncode == 0, result.stdout + result.stderr
+        dash = [l for l in env_file.read_text().splitlines() if l.startswith("DASHBOARD_PASSWORD=")][0]
+        assert dash.split("=", 1)[1] == "", "reset must clear the stored password"
+        assert "cleared" in result.stdout.lower()
+        # No secret is ever revealed by a reset.
+        assert "chosen-by-operator-2026" not in result.stdout + result.stderr
+        # The restart targets the dashboard's OWN launchd label, nothing else.
+        assert log.exists() and "com.cabinet.dashboard" in log.read_text()
+
+    def test_reset_stays_honest_when_restart_fails(self, cab_root, tmp_path):
+        env_file = cab_root / "cabinet" / ".env"
+        run(["bash", str(SETUP_ENV), "--defaults"], env=base_env(cab_root))
+        _set_dashboard_password(env_file, "chosen-by-operator-2026")
+        log = tmp_path / "launchctl.log"
+        env = base_env(cab_root, **self._fake_launchctl(tmp_path / "bin", log, 1))
+        result = run(["bash", str(DASHBOARD_PASSWORD), "--reset"], env=env)
+        # Restart could not be triggered — the password is STILL cleared and the
+        # operator is told plainly to reopen the dashboard. Exit stays 0.
+        assert result.returncode == 0, result.stdout + result.stderr
+        dash = [l for l in env_file.read_text().splitlines() if l.startswith("DASHBOARD_PASSWORD=")][0]
+        assert dash.split("=", 1)[1] == ""
+        assert "reopen" in result.stdout.lower()
+
+    def test_reset_refuses_loose_permissions(self, cab_root, tmp_path):
+        env_file = cab_root / "cabinet" / ".env"
+        run(["bash", str(SETUP_ENV), "--defaults"], env=base_env(cab_root))
+        _set_dashboard_password(env_file, "chosen-by-operator-2026")
+        env_file.chmod(0o644)
+        log = tmp_path / "launchctl.log"
+        env = base_env(cab_root, **self._fake_launchctl(tmp_path / "bin", log, 0))
+        result = run(["bash", str(DASHBOARD_PASSWORD), "--reset"], env=env)
+        assert result.returncode == 1
+        assert "permissions are 600" in result.stderr
+        assert not log.exists(), "must refuse BEFORE touching the running dashboard"
+
+    def test_reset_adds_the_key_when_absent(self, cab_root, tmp_path):
+        env_file = cab_root / "cabinet" / ".env"
+        env_file.write_text("OTHER_KEY=keep\n")
+        env_file.chmod(0o600)
+        log = tmp_path / "launchctl.log"
+        env = base_env(cab_root, **self._fake_launchctl(tmp_path / "bin", log, 0))
+        result = run(["bash", str(DASHBOARD_PASSWORD), "--reset"], env=env)
+        assert result.returncode == 0, result.stdout + result.stderr
+        text = env_file.read_text()
+        assert "OTHER_KEY=keep" in text
+        assert "DASHBOARD_PASSWORD=" in text and "DASHBOARD_PASSWORD=x" not in text
 
 
 class TestWizardTelegramValidation:

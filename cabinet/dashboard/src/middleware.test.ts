@@ -81,3 +81,43 @@ describe('middleware auth exemptions (production posture)', () => {
     expect(res.headers.get('location')).toContain('/login')
   })
 })
+
+/**
+ * THE FIRST-RUN LOCK. Between the hatch finishing and the operator choosing a
+ * password, DASHBOARD_PASSWORD is unset. In that window the cabinet must not be
+ * driveable: every gated route and mutating API is redirected to /login (which
+ * renders the "create a password" screen), and ONLY /login is reachable. This is
+ * the property the "choose your own password on first run" flow rests on — the
+ * create action is the sole allowed pre-auth path and is itself localhost-only.
+ */
+describe('first-run lock — no password configured yet', () => {
+  beforeEach(() => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('DASHBOARD_PASSWORD', '') // unset — the fresh-instance state
+    vi.stubEnv('MOCK_DATA', '')
+    vi.stubEnv('DASHBOARD_NO_AUTH', '')
+  })
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('refuses a protected API with no password set — redirected to /login, never served', async () => {
+    for (const p of ['/api/library/search?q=x', '/api/tasks', '/api/world/stream']) {
+      const res = await middleware(req(p))
+      expect(res.status).toBe(307)
+      expect(res.headers.get('location')).toContain('/login')
+    }
+  })
+
+  it('refuses a normal gated page with no password set', async () => {
+    const res = await middleware(req('/'))
+    expect(res.status).toBe(307)
+    expect(res.headers.get('location')).toContain('/login')
+  })
+
+  it('lets ONLY /login through, so the create-password screen is reachable', async () => {
+    const res = await middleware(req('/login'))
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+  })
+})
