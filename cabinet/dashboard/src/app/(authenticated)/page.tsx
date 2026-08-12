@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import redis, { getCostHistory } from '@/lib/redis'
 import { getTmuxWindows, isClaudeAlive, isTelegramConnected } from '@/lib/docker'
 import { getOfficerConfig, getConfig, getDashboardConfig } from '@/lib/config'
@@ -8,6 +9,7 @@ import { KILLSWITCH_CHECK_COMMAND } from '@/lib/world/killswitch'
 import { freshnessOf } from '@/lib/liveness'
 import OfficerCard from '@/components/officer-card'
 import { StackedBarChart, HorizontalBars, ChartLegend } from '@/components/cost-chart'
+import { isOnboardingComplete } from '@/lib/onboarding/completion'
 import ConsumerFrontPage from '@/components/consumer/consumer-front-page'
 import CardProducts from '@/components/consumer/card-products'
 import CardCabinet from '@/components/consumer/card-cabinet'
@@ -162,6 +164,15 @@ async function getServerMode(): Promise<'consumer' | 'advanced'> {
 }
 
 export default async function DashboardPage() {
+  // An operator who has not finished onboarding lands here and is "totally
+  // confused about what to do now" (Captain). Send them to the one place that
+  // tells them — before either mode renders. Completion is the onboarding
+  // core's own ratified-charter + first-dividend signal; anything short of it
+  // (never started, charter pending, purged) routes to /onboarding.
+  if (!(await isOnboardingComplete())) {
+    redirect('/onboarding')
+  }
+
   const { consumerModeEnabled } = getDashboardConfig()
 
   // --- Consumer Mode branch ---

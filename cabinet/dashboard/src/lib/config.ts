@@ -1,6 +1,7 @@
 import fs from 'fs'
 import yaml from 'js-yaml'
 import { cabinetPath } from './cabinet-root'
+import { OFFICER_TITLES, officerTitle, titleCaseSlug } from './officer-title'
 
 const CONFIG_PATH = process.env.CONFIG_PATH || cabinetPath('instance/config/product.yml')
 const PROJECTS_DIR = process.env.PROJECTS_DIR || cabinetPath('instance/config/projects')
@@ -232,7 +233,7 @@ export interface OfficerConfig {
 
 const mockOfficerConfigs: Record<string, OfficerConfig> = {
   cos: {
-    title: 'First Mate (CoS)',
+    title: OFFICER_TITLES.cos,
     botUsername: 'cabinet_cos_bot',
     voiceId: 'pFZP5JQG7iQjIQuC4Bku',
     voicePrompt: 'Speak as a calm, composed first mate. Brief and decisive.',
@@ -243,7 +244,7 @@ const mockOfficerConfigs: Record<string, OfficerConfig> = {
     roleDefinition: '# First Mate (CoS)\n\nYou are the First Mate...',
   },
   cto: {
-    title: 'Chief Technology Officer (CTO)',
+    title: OFFICER_TITLES.cto,
     botUsername: 'cabinet_cto_bot',
     voiceId: 'TX3LPaxmHKxFdv7VOQHJ',
     voicePrompt: 'Speak as a sharp, technical CTO. Concise and precise.',
@@ -254,7 +255,7 @@ const mockOfficerConfigs: Record<string, OfficerConfig> = {
     roleDefinition: '# Chief Technology Officer (CTO)\n\nYou are the CTO...',
   },
   cpo: {
-    title: 'Chief Product Officer (CPO)',
+    title: OFFICER_TITLES.cpo,
     botUsername: 'cabinet_cpo_bot',
     voiceId: 'EXAVITQu4vr4xnSDxMaL',
     voicePrompt: 'Speak as a thoughtful product leader. User-focused and strategic.',
@@ -265,7 +266,7 @@ const mockOfficerConfigs: Record<string, OfficerConfig> = {
     roleDefinition: '# Chief Product Officer (CPO)\n\nYou are the CPO...',
   },
   cro: {
-    title: 'Chief Research Officer (CRO)',
+    title: OFFICER_TITLES.cro,
     botUsername: 'cabinet_cro_bot',
     voiceId: 'onwK4e9ZLuTAKqWW03F9',
     voicePrompt: 'Speak as a curious, analytical researcher. Data-driven and thorough.',
@@ -276,7 +277,7 @@ const mockOfficerConfigs: Record<string, OfficerConfig> = {
     roleDefinition: '# Chief Research Officer (CRO)\n\nYou are the CRO...',
   },
   coo: {
-    title: 'Chief Operations Officer (COO)',
+    title: OFFICER_TITLES.coo,
     botUsername: 'cabinet_coo_bot',
     voiceId: '',
     voicePrompt: '',
@@ -296,10 +297,14 @@ function readFileOrEmpty(filePath: string): string {
   }
 }
 
+// Only reached for a lane NOT in OFFICER_TITLES (getOfficerConfig short-circuits
+// known officers to their configured title). A custom lane's title is its
+// agent-definition H1; with none, degrade to readable Title Case — never a raw
+// uppercased slug shouted as a name.
 function extractTitle(roleDefinition: string, role: string): string {
   const match = roleDefinition.match(/^#\s+(.+)/m)
   if (match) return match[1].trim()
-  return role.toUpperCase()
+  return titleCaseSlug(role)
 }
 
 function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
@@ -315,7 +320,7 @@ function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
 export function getOfficerConfig(role: string): OfficerConfig {
   if (IS_MOCK) {
     return mockOfficerConfigs[role] || {
-      title: role.toUpperCase(),
+      title: officerTitle(role),
       botUsername: '',
       voiceId: '',
       voicePrompt: '',
@@ -330,7 +335,11 @@ export function getOfficerConfig(role: string): OfficerConfig {
   const config = getConfig()
   const roleDefinition = readFileOrEmpty(`${AGENTS_DIR}/${role}.md`)
   const loopPrompt = readFileOrEmpty(`${LOOP_PROMPTS_DIR}/${role}.txt`)
-  const title = extractTitle(roleDefinition, role)
+  // A KNOWN officer's title is the one configured source of truth, never
+  // whatever heading its generated agent file happens to carry (the portfolio
+  // preset has no H1, so this path used to fall through to "COS"). A custom
+  // lane still takes its title from its own agent definition.
+  const title = OFFICER_TITLES[role] || extractTitle(roleDefinition, role)
 
   const botUsername = (getNestedValue(config, `telegram.officers.${role}`) as string) || ''
   const voiceId = (getNestedValue(config, `voice.voices.${role}`) as string) || ''

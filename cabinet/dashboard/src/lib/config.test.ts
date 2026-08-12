@@ -54,9 +54,10 @@ describe('getDashboardConfig — consumer mode gate', () => {
 })
 
 describe('getOfficerConfig(role) — known roles', () => {
-  it('returns the First Mate (CoS) config with calm-composed prompt', () => {
+  it('returns the First Mate (coordinator) config with calm-composed prompt', () => {
     const result = mod.getOfficerConfig('cos')
-    expect(result.title).toBe('First Mate (CoS)')
+    // The coordinator's clean display name — not "COS", not the parenthetical.
+    expect(result.title).toBe('First Mate')
     expect(result.botUsername).toBe('cabinet_cos_bot')
     expect(result.voicePrompt).toContain('calm')
   })
@@ -84,9 +85,10 @@ describe('getOfficerConfig(role) — known roles', () => {
     }
   })
 
-  it('unknown role falls back to uppercase title + empty fields', () => {
+  it('unknown role degrades to readable Title Case (never a raw slug shout) + empty fields', () => {
     const result = mod.getOfficerConfig('xyz')
-    expect(result.title).toBe('XYZ')
+    // NOT 'XYZ' — a machine id shouted as a name is exactly the defect.
+    expect(result.title).toBe('Xyz')
     expect(result.botUsername).toBe('')
     expect(result.voiceId).toBe('')
     expect(result.voiceStability).toBe(0.5)

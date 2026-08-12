@@ -17,6 +17,7 @@
 import Link from 'next/link'
 import redis from '@/lib/redis'
 import { freshnessOf } from '@/lib/liveness'
+import { officerTitle } from '@/lib/officer-title'
 
 const OFFLINE_THRESHOLD_MS = 15 * 60 * 1000 // 15 min → offline
 const STALE_ACTIVITY_MS = 30 * 60 * 1000 // 30 min → show investigate link
@@ -93,6 +94,10 @@ async function readOfficerRows(): Promise<OfficerRow[]> {
         redis.get(`cabinet:officer:activity:${role}`),
       ])
 
+      // The human name, never the raw slug: "First Mate is offline", not "COS
+      // is offline" (the line the Captain saw and rejected).
+      const name = officerTitle(role)
+
       // Determine online/offline.
       //
       // The NaN guard was already here; the FUTURE one was not. A stamp ahead
@@ -104,7 +109,7 @@ async function readOfficerRows(): Promise<OfficerRow[]> {
       if (hb.state === 'unknown') {
         return {
           role,
-          activityText: `${role.toUpperCase()} — heartbeat unreadable`,
+          activityText: `${name} — heartbeat unreadable`,
           status: 'unknown' as const,
           showInvestigateLink: true,
           elapsedText: null,
@@ -116,7 +121,7 @@ async function readOfficerRows(): Promise<OfficerRow[]> {
       if (isOffline) {
         return {
           role,
-          activityText: `${role.toUpperCase()} is offline`,
+          activityText: `${name} is offline`,
           status: 'offline' as const,
           showInvestigateLink: true,
           elapsedText: offlineDurationMs > 0 ? elapsedLabel(offlineDurationMs) : null,
@@ -124,7 +129,7 @@ async function readOfficerRows(): Promise<OfficerRow[]> {
       }
 
       // Parse activity
-      let activityText = `${role.toUpperCase()} is working`
+      let activityText = `${name} is working`
       let isStale = false
       let elapsedText: string | null = null
 
@@ -145,25 +150,25 @@ async function readOfficerRows(): Promise<OfficerRow[]> {
 
         if (payload.blocker_type === 'captain_approval') {
           const obj = payload.object ? truncate40(escapeHtml(payload.object)) : 'Captain approval'
-          activityText = `${role.toUpperCase()} is waiting for ${obj}`
+          activityText = `${name} is waiting for ${obj}`
         } else if (payload.blocker_type === 'founder_action') {
           const obj = payload.object ? truncate40(escapeHtml(payload.object)) : 'a founder action'
-          activityText = `${role.toUpperCase()} is blocked on ${obj}`
+          activityText = `${name} is blocked on ${obj}`
         } else if (payload.verb) {
           const verb = ALLOWED_VERBS.has(payload.verb) ? payload.verb : 'working'
           if (payload.object) {
             const obj = truncate40(escapeHtml(payload.object))
-            activityText = `${role.toUpperCase()} is ${verb} ${obj}`
+            activityText = `${name} is ${verb} ${obj}`
           } else {
-            activityText = `${role.toUpperCase()} is ${verb}`
+            activityText = `${name} is ${verb}`
           }
         } else {
           // Online heartbeat, no structured activity → "between tasks"
-          activityText = `${role.toUpperCase()} is between tasks`
+          activityText = `${name} is between tasks`
         }
       } else {
         // Online but no activity key at all → "between tasks"
-        activityText = `${role.toUpperCase()} is between tasks`
+        activityText = `${name} is between tasks`
       }
 
       const showInvestigateLink = isStale
