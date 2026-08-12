@@ -156,8 +156,9 @@ Installs missing deps, starts Redis, creates directories, runs the key
 wizard into `cabinet/.env` (chmod 600; every key recommended or optional —
 nothing critical-tier; headless: `bash cabinet/scripts/setup-env.sh
 --defaults`, or `SKIP_ENV_WIZARD=1 bash cabinet/scripts/setup-mac.sh`),
-copies the generated dashboard password securely with
-`bash cabinet/scripts/dashboard-password.sh --copy` when you need to sign in,
+leaves the dashboard password for you to choose on first open (the login page
+shows a "create a password" screen while none is set; reset a forgotten one by
+double-clicking "Reset Cabinet Password" in the Cabinet folder — no Terminal),
 provisions the LOCAL work store when no connection string is configured
 (`provision-local-postgres.sh` — PostgreSQL 16 + pgvector; Neon = cloud
 alternative), loads the preset, and runs the FAST proofs (null-hatch +

@@ -78,9 +78,12 @@ Verify: `bash cabinet/scripts/setup-mac.sh --check` returns exit 0.
 > keys): `bash cabinet/scripts/setup-env.sh --force`. Headless (CI/clone):
 > `bash cabinet/scripts/setup-env.sh --defaults`, or
 > `SKIP_ENV_WIZARD=1 bash cabinet/scripts/setup-mac.sh` to skip the wizard
-> and fill `.env` yourself. To sign in without printing the generated
-> dashboard password, run `bash cabinet/scripts/dashboard-password.sh --copy`
-> on the Cabinet Mac and paste from the clipboard.
+> and fill `.env` yourself. The dashboard password is NOT generated — you
+> choose it on the dashboard's first-open "create a password" screen. Forgot
+> it? Double-click "Reset Cabinet Password" in the Cabinet folder to clear it
+> and choose a new one (no Terminal). On-box helpers behind that:
+> `bash cabinet/scripts/dashboard-password.sh --reset` (clear) and `--copy`
+> (put a set password on the clipboard without printing it).
 
 ## 4. Configuration
 
