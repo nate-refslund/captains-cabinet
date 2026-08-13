@@ -327,9 +327,30 @@ describe('rendered component — the stepped front', () => {
     const html = render()
     expect(html).toContain('Where should I begin?')
     expect(html).toContain('Point me somewhere')
-    expect(html).toContain('Go find where you are most useful')
+    expect(html).toContain('Go and find where I am most useful')
     const continueTag = html.slice(html.lastIndexOf('<button', html.indexOf('Continue')), html.indexOf('Continue'))
     expect(continueTag).toMatch(DISABLED_ATTR)
+  })
+
+  // ONE VOICE, pinned. This step is where the card flipped into the operator's
+  // voice on a live run — the intro said "You can point me at one folder", and
+  // the two answers directly under it said "I name one folder, and you read
+  // it". Both readings of "I" in one paragraph. The wording below is the
+  // Captain's own (2026-08-13); the arms after it are the general rule, so a
+  // later edit that re-flips any of the four strings fails here rather than
+  // reaching an operator.
+  it('speaks in the Cabinet voice throughout the where-to-begin step', () => {
+    scriptState({ journey: journeyFixture('welcome'), wizardStep: 'start', role: 'a shopkeeper', startPreference: '' })
+    const html = render()
+    expect(html).toContain('You name one folder, and I read it under a Charter you approve.')
+    expect(html).toContain('I look across what you have connected and propose where to start.')
+    // The flipped forms, gone — including the label that made "you" the Cabinet
+    // one line above a description where "you" is the operator.
+    expect(html).not.toContain('I name one folder')
+    expect(html).not.toContain('You look across what I have connected')
+    expect(html).not.toContain('Go find where you are most useful')
+    // The intro this step's answers have to agree with, unchanged.
+    expect(html).toContain('You can point me at one folder to read')
   })
 
   it('renders the progress rail with the phase for the current step lit', () => {
