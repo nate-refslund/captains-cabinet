@@ -10,7 +10,7 @@
 # patient lists, catalogues or shipments.
 #
 # TWO WAYS TO FILL THIS FILE. Hand-write an entry below, or let onboarding do it:
-# the "Connect a tool" step offers a curated pick-list drawn from
+# the "Connect a tool" step offers a curated, browsable catalog drawn from
 # instance/config/connector-templates.yml.example, and writing an entry there is
 # the same as writing one here — it declares a credential env NAME and a
 # read-only inventory call, and the entry it appends is exactly the shape below.

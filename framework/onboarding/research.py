@@ -519,7 +519,7 @@ def probe_connectors(root, *, source_root=None, ratified=False, exports=(),
 # path that never did is named as itself.
 CONNECTOR_SWEEP_SCHEMA = "cabinet.connector-sweep/v1"
 CONNECTORS_REL = "instance/config/connectors.yml"
-#: The curated pick-list onboarding offers, shipped as DATA in the instance
+#: The curated catalog onboarding offers, shipped as DATA in the instance
 #: layer (it ships as an ``.example`` twin; the framework names no vendor). Read
 #: as a full one-string path so the layer-separation gate, which flags a bare
 #: ``"instance"`` token, does not read this as a framework->instance coupling —
@@ -1049,7 +1049,7 @@ def load_connector_specs(root, *, not_reached=None) -> list:
 # --- DECLARING a connector from onboarding: the write half of the read lane ---
 #
 # The read lane above takes connectors as given. This is how one gets there
-# WITHOUT a hand-edit of the config: onboarding offers a curated pick-list
+# WITHOUT a hand-edit of the config: onboarding offers a curated catalog
 # (``instance/config/connector-templates.yml.example`` — DATA, so the framework
 # still knows no vendor), the operator picks one and supplies a credential and
 # at most a field or two, and the entry is written into the same
@@ -1073,13 +1073,13 @@ class ConnectorDeclarationError(ValueError):
 
 
 def load_connector_templates(root) -> dict:
-    """The curated pick-list, keyed by id. Absent or unreadable ⇒ ``{}``.
+    """The curated catalog, keyed by id. Absent or unreadable ⇒ ``{}``.
 
     This is a CONVENIENCE library, not operator config: a hatch that deleted it
     simply offers no shortcuts, and a shipped pack that will not parse must not
     take onboarding down with it. So unlike ``load_connector_specs`` — where an
     unreadable file is an operator error worth naming — every problem here is an
-    empty pick-list, and the open-ended ``rest`` template a good pack carries is
+    empty catalog, and the open-ended ``rest`` template a good pack carries is
     what keeps "no shortcut for your tool" from meaning "no way to connect it".
     """
     path = Path(root).expanduser() / TEMPLATES_REL
@@ -1175,6 +1175,30 @@ def build_connector_from_template(templates: dict, template_id: str, *,
         if "\n" in text or "\r" in text:
             raise ConnectorDeclarationError(
                 f"“{field.get('label') or key}” cannot contain a line break.")
+        # THE OPERATOR SUPPLIES A NAME, NOT AN ADDRESS. Where a template's list
+        # lives under the operator's own workspace slug, region or account, the
+        # honest question is "what is your workspace called" — and asking a
+        # non-technical operator to paste a whole API URL instead is how a
+        # connect step turns back into a config file. `into_format` is the
+        # TEMPLATE AUTHOR's sentence with one hole in it; the operator fills the
+        # hole and nothing else.
+        #
+        # AND THE SCHEME STAYS THE AUTHOR'S. The format must begin with the
+        # literal `https://`, so no operator value can choose the scheme and no
+        # pack edit can quietly introduce a plaintext one. Where the format also
+        # pins the host (`https://<host>/…/{value}/…`) the value lands
+        # after the authority component is already closed, so nothing inside it
+        # can move the request elsewhere; where the value IS the host (a
+        # self-hosted install), the operator is naming their own server, which is
+        # the same consent the open template already takes. Checked here rather
+        # than assumed, because a pack edit is data and this is the only place
+        # that can refuse a bad one.
+        shape = str(field.get("into_format") or "")
+        if shape:
+            if "{value}" not in shape or not shape.startswith("https://"):
+                raise ConnectorDeclarationError(
+                    "That tool's setup is malformed, so it was not set up.")
+            text = shape.replace("{value}", text)
         _set_dotted(entry, str(field.get("into") or ""), text)
 
     label = " ".join(str(name or "").split())[:_MAX_CONNECTOR_NAME_CHARS] or str(template_id).strip()

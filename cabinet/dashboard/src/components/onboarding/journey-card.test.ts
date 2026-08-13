@@ -100,24 +100,33 @@ const serverActions = vi.hoisted(() => ({
       success: true,
     })
   ),
-  getConnectorTemplates: vi.fn(async () => [] as ConnectorTemplateChoice[]),
+  getConnectorCatalog: vi.fn(
+    async (): Promise<ConnectorCatalog> => ({ templates: [], categories: [] })
+  ),
 }))
 vi.mock('@/actions/env', () => ({
   saveConnectorCredential: serverActions.saveConnectorCredential,
 }))
 vi.mock('@/actions/connectors', () => ({
-  getConnectorTemplates: serverActions.getConnectorTemplates,
+  getConnectorCatalog: serverActions.getConnectorCatalog,
 }))
 
-import OnboardingJourneyCard, { IDENTITY_SHOWN, NO_FIELDS, NO_IDENTITY_PICKS, NO_MERGE } from './journey-card'
-import type { ConnectorTemplateChoice } from '@/lib/onboarding/types'
+import OnboardingJourneyCard, {
+  IDENTITY_SHOWN,
+  NO_FIELDS,
+  NO_IDENTITY_PICKS,
+  NO_MERGE,
+  plainReason,
+  sweepLine,
+} from './journey-card'
+import type { ConnectorCatalog, OnboardingSweptConnector } from '@/lib/onboarding/types'
 
 afterEach(() => {
   hookScript.steps = null
   hookScript.cursor = 0
   hookScript.setterCalls = []
   serverActions.saveConnectorCredential.mockClear()
-  serverActions.getConnectorTemplates.mockClear()
+  serverActions.getConnectorCatalog.mockClear()
   vi.unstubAllGlobals()
 })
 
@@ -156,33 +165,70 @@ function journeyFixture(stage: string): OnboardingResponse {
   }
 }
 
-/** The connect pick-list a loaded fetch would return: one single-credential
- *  tool, and the open template that asks for its own fields. */
-function connectTemplates(): ConnectorTemplateChoice[] {
-  return [
-    {
-      id: 'github',
-      label: 'GitHub',
-      summary: 'The repositories your account can see, most-recently-updated first.',
-      host: 'api.github.com',
-      credential_env: 'GITHUB_TOKEN',
-      credential_help: 'A GitHub personal access token.',
-      fields: [],
-    },
-    {
-      id: 'rest',
-      label: 'Another REST list',
-      summary: 'Any HTTPS GET that returns a JSON list.',
-      host: '',
-      credential_env: 'REST_API_TOKEN',
-      credential_help: 'The bearer token the endpoint expects.',
-      fields: [
-        { key: 'url', label: 'List URL', help: 'The full https:// URL.', placeholder: 'https://…', required: true },
-        { key: 'name_field', label: 'Name field', help: 'Dotted path.', placeholder: 'name', required: true },
-        { key: 'updated_field', label: 'Updated field', help: 'Dotted path.', placeholder: 'updated_at', required: true },
-      ],
-    },
-  ]
+/** The catalog a loaded fetch would return: two named tools on two shelves —
+ *  one single-credential, one with its own how-to steps — and the open template
+ *  that asks for its own fields. */
+function connectCatalog(): ConnectorCatalog {
+  return {
+    templates: [
+      {
+        id: 'github',
+        label: 'GitHub',
+        summary: 'The repositories your account can see, most-recently-updated first.',
+        host: 'api.github.com',
+        credential_env: 'GITHUB_TOKEN',
+        credential_help: 'A GitHub personal access token.',
+        fields: [],
+        category: 'code',
+        category_label: 'Where your code lives',
+        how_to_connect: [
+          'Open Settings, then Developer settings, then Personal access tokens.',
+          'Generate a fine-grained token with Read-only access and nothing else.',
+        ],
+        key_looks_like: 'starts with github_pat_',
+      },
+      {
+        id: 'stripe',
+        label: 'Stripe',
+        summary: 'The products in your Stripe account.',
+        host: 'api.stripe.com',
+        credential_env: 'STRIPE_API_KEY',
+        credential_help: 'A Stripe restricted API key.',
+        fields: [],
+        category: 'finance',
+        category_label: 'Money in and out',
+        how_to_connect: ['Create a restricted key and set Products to Read.'],
+        key_looks_like: 'starts with rk_live_',
+      },
+      {
+        id: 'rest',
+        label: 'Another REST list',
+        summary: 'Any HTTPS GET that returns a JSON list.',
+        host: '',
+        credential_env: 'REST_API_TOKEN',
+        credential_help: 'The bearer token the endpoint expects.',
+        fields: [
+          { key: 'url', label: 'List URL', help: 'The full https:// URL.', placeholder: 'https://…', required: true },
+          { key: 'name_field', label: 'Name field', help: 'Dotted path.', placeholder: 'name', required: true },
+          { key: 'updated_field', label: 'Updated field', help: 'Dotted path.', placeholder: 'updated_at', required: true },
+        ],
+        category: 'other',
+        category_label: 'Anything else',
+        how_to_connect: [],
+        key_looks_like: '',
+      },
+    ],
+    categories: [
+      { id: 'code', label: 'Where your code lives', count: 1 },
+      { id: 'finance', label: 'Money in and out', count: 1 },
+      { id: 'other', label: 'Anything else', count: 1 },
+    ],
+  }
+}
+
+/** One connector as a sweep found it — connected, or refused with its reason. */
+function sweptRow(over: Partial<OnboardingSweptConnector> & { name: string }): OnboardingSweptConnector {
+  return { connected: true, items: 12, calls: 2, latest: '2026-08-11T09:00:00Z', actors: 3, ...over }
 }
 
 /** An entry plan whose only content is the identity ask, for picker arms. */
@@ -233,10 +279,13 @@ function scriptState(overrides: {
   salienceName?: string
   salienceMerge?: readonly string[]
   relationAsk?: unknown
-  connectorTemplates?: readonly ConnectorTemplateChoice[] | null
+  connectorCatalog?: ConnectorCatalog | null
   connectPick?: string
   connectCredential?: string
   connectFields?: Readonly<Record<string, string>>
+  connectSearch?: string
+  connectCategory?: string
+  exploring?: boolean
 }) {
   hookScript.cursor = 0
   hookScript.steps = [
@@ -267,11 +316,14 @@ function scriptState(overrides: {
     // The connect step (discover branch). connectorTemplates is null until the
     // client fetch lands — and that fetch is a useEffect, which this scripted
     // renderer does NOT run, so a test that wants tiles must pass them here.
-    { initial: null, value: overrides.connectorTemplates ?? null }, // 24 connectorTemplates
+    { initial: null, value: overrides.connectorCatalog ?? null }, // 24 connectorCatalog
     { initial: '', value: overrides.connectPick ?? '' }, // 25 connectPick
     { initial: '', value: overrides.connectCredential ?? '' }, // 26 connectCredential
     { initial: NO_FIELDS, value: overrides.connectFields ?? NO_FIELDS }, // 27 connectFields
     { initial: null }, // 28 connectError
+    { initial: '', value: overrides.connectSearch ?? '' }, // 29 connectSearch
+    { initial: '', value: overrides.connectCategory ?? '' }, // 30 connectCategory
+    { initial: false, value: overrides.exploring ?? false }, // 31 exploring
   ]
 }
 
@@ -387,11 +439,11 @@ describe('rendered component — the stepped front', () => {
     expect(html).toContain('Read what I am connected to')
   })
 
-  it('draws the connect pick-list on the decide branch when tools are available', () => {
+  it('draws the connect catalog on the decide branch when tools are available', () => {
     scriptState({
       journey: journeyFixture('welcome'),
       wizardStep: 'discover',
-      connectorTemplates: connectTemplates(),
+      connectorCatalog: connectCatalog(),
     })
     const html = render()
     expect(html).toContain('GitHub')
@@ -405,7 +457,7 @@ describe('rendered component — the stepped front', () => {
     scriptState({
       journey: journeyFixture('welcome'),
       wizardStep: 'discover',
-      connectorTemplates: connectTemplates(),
+      connectorCatalog: connectCatalog(),
       connectPick: 'github',
     })
     const html = render()
@@ -415,7 +467,7 @@ describe('rendered component — the stepped front', () => {
     // confirmation the custody model owes the operator.
     expect(html).toContain('api.github.com')
     // Connect stays disabled until a credential is entered.
-    const idx = html.indexOf('Connect GitHub')
+    const idx = html.lastIndexOf('Connect GitHub')
     const connectTag = html.slice(html.lastIndexOf('<button', idx), idx)
     expect(connectTag).toMatch(DISABLED_ATTR)
   })
@@ -424,12 +476,12 @@ describe('rendered component — the stepped front', () => {
     scriptState({
       journey: journeyFixture('welcome'),
       wizardStep: 'discover',
-      connectorTemplates: connectTemplates(),
+      connectorCatalog: connectCatalog(),
       connectPick: 'github',
       connectCredential: 'ghp_secret_token',
     })
     const html = render()
-    const idx = html.indexOf('Connect GitHub')
+    const idx = html.lastIndexOf('Connect GitHub')
     const connectTag = html.slice(html.lastIndexOf('<button', idx), idx)
     expect(connectTag).not.toMatch(DISABLED_ATTR)
   })
@@ -438,12 +490,205 @@ describe('rendered component — the stepped front', () => {
     scriptState({
       journey: journeyFixture('welcome'),
       wizardStep: 'discover',
-      connectorTemplates: connectTemplates(),
+      connectorCatalog: connectCatalog(),
       connectPick: 'rest',
     })
     const html = render()
     expect(html).toContain('List URL')
     expect(html).toContain('id="dashboard-connect-url"')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// THE CATALOG — browsable, searchable, and honest about what it is holding back
+// ---------------------------------------------------------------------------
+describe('rendered component — the connector catalog', () => {
+  it('draws a search field and one shelf per populated category', () => {
+    scriptState({
+      journey: journeyFixture('welcome'),
+      wizardStep: 'discover',
+      connectorCatalog: connectCatalog(),
+    })
+    const html = render()
+    expect(html).toContain('id="dashboard-connect-search"')
+    expect(html).toContain('Where your code lives')
+    expect(html).toContain('Money in and out')
+    expect(html).toContain('Everything')
+    // Every tool in a small pack is on the page; nothing is picked yet, so no
+    // credential field is revealed.
+    expect(html).toContain('GitHub')
+    expect(html).toContain('Stripe')
+    expect(html).not.toContain('id="dashboard-connect-credential"')
+  })
+
+  it('narrows to one shelf without hiding that it has narrowed', () => {
+    scriptState({
+      journey: journeyFixture('welcome'),
+      wizardStep: 'discover',
+      connectorCatalog: connectCatalog(),
+      connectCategory: 'finance',
+    })
+    const html = render()
+    expect(html).toContain('Stripe')
+    expect(html).not.toContain('The repositories your account can see')
+    expect(html).toContain('1 of 3 tools')
+  })
+
+  it('searches over what a tool holds, not only its name', () => {
+    scriptState({
+      journey: journeyFixture('welcome'),
+      wizardStep: 'discover',
+      connectorCatalog: connectCatalog(),
+      connectSearch: 'repositories',
+    })
+    const html = render()
+    expect(html).toContain('GitHub')
+    expect(html).not.toContain('The products in your Stripe account')
+  })
+
+  it('routes a search that matches nothing to the open template, never a dead end', () => {
+    scriptState({
+      journey: journeyFixture('welcome'),
+      wizardStep: 'discover',
+      connectorCatalog: connectCatalog(),
+      connectSearch: 'no-such-tool-anywhere',
+    })
+    const html = render()
+    expect(html).toContain('Nothing here matches that')
+    expect(html).toContain('Another REST list')
+  })
+
+  it('shows the steps for getting the key, and what a right key looks like', () => {
+    scriptState({
+      journey: journeyFixture('welcome'),
+      wizardStep: 'discover',
+      connectorCatalog: connectCatalog(),
+      connectPick: 'github',
+    })
+    const html = render()
+    expect(html).toContain('How to get the key')
+    // An ordered list, because the steps are a sequence — the key cannot be
+    // copied before it is made.
+    expect(html).toContain('<ol')
+    expect(html).toContain('Generate a fine-grained token with Read-only access')
+    expect(html).toContain('starts with github_pat_')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// MANY TOOLS — the step stays open, and each tool carries its own state
+// ---------------------------------------------------------------------------
+describe('rendered component — connecting many tools', () => {
+  it('lists what is connected with each tool own sweep state, and offers the look across all of them', () => {
+    const fixture = journeyFixture('welcome')
+    fixture.card.options = [{ action: 'gather_connectors', label: 'Read what I am connected to' }]
+    fixture.state.connector_sweep = {
+      schema: 'cabinet.connector-sweep/v1',
+      swept_at: '2026-08-13T09:30:00Z',
+      declared: 3,
+      calls: 6,
+      connectors: [
+        sweptRow({ name: 'github', items: 12 }),
+        sweptRow({ name: 'stripe', items: 4, latest: '2026-08-12T10:00:00Z' }),
+        sweptRow({ name: 'rest', connected: false, items: 0, reason: 'http_401' }),
+      ],
+    }
+    scriptState({
+      journey: fixture,
+      wizardStep: 'discover',
+      connectorCatalog: connectCatalog(),
+    })
+    const html = render()
+    expect(html).toContain('Connected so far (3)')
+    expect(html).toContain('read 12 things')
+    expect(html).toContain('newest 2026-08-12')
+    // The refused key is reported against ITS tool, with a plain retry, while
+    // the other two report their counts beside it.
+    expect(html).toContain('the key was refused')
+    expect(html).toContain('Try a different key')
+    // One act covers all three, and the button says so.
+    expect(html).toContain('Go look across all 3')
+  })
+
+  it('keeps the catalog open after a connect instead of replacing it with the results', () => {
+    const fixture = journeyFixture('welcome')
+    fixture.card.options = [{ action: 'gather_connectors', label: 'Read what I am connected to' }]
+    fixture.state.connector_sweep = {
+      schema: 'cabinet.connector-sweep/v1',
+      swept_at: '2026-08-13T09:30:00Z',
+      declared: 1,
+      calls: 2,
+      connectors: [sweptRow({ name: 'github' })],
+    }
+    fixture.card.entry = identityEntry([
+      { connector: 'github', rows: 4, candidates: [{ identifier: 'ada', rows: 4 }], reports_no_actor: false, accounts: 1, withheld: 0, complete: true, note: '' },
+    ])
+    scriptState({
+      journey: fixture,
+      wizardStep: 'discover',
+      connectorCatalog: connectCatalog(),
+    })
+    const html = render()
+    // The step is still the step: another tool can still be added.
+    expect(html).toContain('Connect another tool')
+    expect(html).toContain('id="dashboard-connect-search"')
+    // …and the post-look sections have NOT taken over yet.
+    expect(html).not.toContain('What I found across')
+  })
+
+  it('shows the aggregate, per connector, once the operator asks for the look', () => {
+    const fixture = journeyFixture('welcome')
+    fixture.state.connector_sweep = {
+      schema: 'cabinet.connector-sweep/v1',
+      swept_at: '2026-08-13T09:30:00Z',
+      declared: 2,
+      calls: 4,
+      connectors: [
+        sweptRow({ name: 'github', items: 12, actors: 3 }),
+        sweptRow({ name: 'stripe', connected: false, items: 0, reason: 'credential_absent' }),
+      ],
+    }
+    scriptState({
+      journey: fixture,
+      wizardStep: 'discover',
+      exploring: true,
+      connectorCatalog: connectCatalog(),
+    })
+    const html = render()
+    expect(html).toContain('What I found across all 2')
+    expect(html).toContain('read 12 things')
+    expect(html).toContain('3 accounts')
+    expect(html).toContain('no key is stored for it yet')
+    expect(html).toContain('Read 2026-08-13')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The sweep sentence, unit-tested — a diagnostic code is not an explanation.
+// ---------------------------------------------------------------------------
+describe('sweep state, in the operator words', () => {
+  it('translates the reasons an operator can act on', () => {
+    expect(plainReason('credential_absent')).toContain('no key')
+    expect(plainReason('http_401')).toContain('refused')
+    expect(plainReason('http_403')).toContain('refused')
+    expect(plainReason('http_404')).toContain('not found')
+    expect(plainReason('http_503')).toContain('error of its own')
+    expect(plainReason('egress_closed')).toContain('switched off')
+    expect(plainReason('read_only_refused:url_not_https')).toContain('not a read')
+  })
+
+  it('passes an unrecognised reason through readably rather than swallowing it', () => {
+    // An unknown code printed plainly is still a fact; a generic "something
+    // went wrong" is not, and is how a diagnosable failure becomes a mystery.
+    expect(plainReason('some_new_reason')).toBe('some new reason')
+    expect(plainReason('')).toBe('it did not answer')
+  })
+
+  it('counts what was read, and says nothing it did not measure', () => {
+    expect(sweepLine({ name: 'x', connected: true, items: 1, calls: 1, latest: null }))
+      .toBe('read 1 thing')
+    expect(sweepLine({ name: 'x', connected: true, items: 9, calls: 1, latest: '2026-08-01T00:00:00Z', actors: 2 }))
+      .toBe('read 9 things · newest 2026-08-01 · 2 accounts')
   })
 })
 
@@ -564,7 +809,7 @@ describe('driven component — the three questions round-trip into the core', ()
     scriptState({
       journey: journeyFixture('welcome'),
       wizardStep: 'discover',
-      connectorTemplates: connectTemplates(),
+      connectorCatalog: connectCatalog(),
       connectPick: 'github',
       connectCredential: 'ghp_the_secret_value',
     })
@@ -769,7 +1014,7 @@ describe('rendered component — accessible shell', () => {
       identity_question: null,
       next_actions: [],
     }
-    scriptState({ journey: fixture, wizardStep: 'discover' })
+    scriptState({ journey: fixture, wizardStep: 'discover', exploring: true })
     const html = render()
     expect(html).toContain('What I cannot work out for myself')
     expect(html).toContain('yours to give me read access to')
@@ -810,7 +1055,7 @@ function salienceJourney(): OnboardingResponse {
 
 describe('rendered component — the ranked question is answerable', () => {
   it('renders every candidate with the names behind its rank, escape hatch last', () => {
-    scriptState({ journey: salienceJourney(), wizardStep: 'discover' })
+    scriptState({ journey: salienceJourney(), wizardStep: 'discover', exploring: true })
     const html = render()
     expect(html).toContain('Point me at the one to open first')
     expect(html).toContain('Acme migration')
@@ -820,14 +1065,14 @@ describe('rendered component — the ranked question is answerable', () => {
   })
 
   it('opens the typed field ONLY where the picked option needs one', () => {
-    scriptState({ journey: salienceJourney(), wizardStep: 'discover', salienceChoice: 'acme' })
+    scriptState({ journey: salienceJourney(), wizardStep: 'discover', exploring: true, salienceChoice: 'acme' })
     expect(render()).not.toContain('What should I open instead?')
-    scriptState({ journey: salienceJourney(), wizardStep: 'discover', salienceChoice: 'other' })
+    scriptState({ journey: salienceJourney(), wizardStep: 'discover', exploring: true, salienceChoice: 'other' })
     expect(render()).toContain('What should I open instead?')
   })
 
   it('offers the merge over the WHOLE ranking and echoes what is learned', () => {
-    scriptState({ journey: salienceJourney(), wizardStep: 'discover' })
+    scriptState({ journey: salienceJourney(), wizardStep: 'discover', exploring: true })
     const html = render()
     expect(html).toContain('Are two of these the same thing under different names?')
     expect(html).toContain('Project Acme')                        // a candidate below the shown three
@@ -836,7 +1081,7 @@ describe('rendered component — the ranked question is answerable', () => {
   })
 
   it('keeps the submit disabled until there is an answer to send', () => {
-    scriptState({ journey: salienceJourney(), wizardStep: 'discover', salienceChoice: '' })
+    scriptState({ journey: salienceJourney(), wizardStep: 'discover', exploring: true, salienceChoice: '' })
     const html = render()
     const tag = html.slice(html.lastIndexOf('<button', html.indexOf('Go deep on that one')), html.indexOf('Go deep on that one'))
     expect(tag).toMatch(DISABLED_ATTR)
@@ -854,7 +1099,7 @@ describe('driven component — the ranked answer reaches the core', () => {
   it('sends the pick, and never a bare action the core would only refuse', async () => {
     stubOk()
     const fetchSpy = globalThis.fetch as unknown as ReturnType<typeof vi.fn>
-    scriptState({ journey: salienceJourney(), wizardStep: 'discover', salienceChoice: 'acme' })
+    scriptState({ journey: salienceJourney(), wizardStep: 'discover', exploring: true, salienceChoice: 'acme' })
     const forms = driveTree().filter((el) => el.type === 'form')
     const salienceForm = forms.find((f) => {
       let found = false
@@ -893,7 +1138,7 @@ describe('rendered component — the identity picker', () => {
         note: '',
       },
     ])
-    scriptState({ journey: fixture, wizardStep: 'discover' })
+    scriptState({ journey: fixture, wizardStep: 'discover', exploring: true })
     const html = render()
     expect(html).toContain('I cannot tell which of the actors I read is you.')
     expect(html).toContain('ada@acme.test')
@@ -907,7 +1152,7 @@ describe('rendered component — the identity picker', () => {
     fixture.card.entry = identityEntry([
       { connector: 'linear', rows: 200, candidates: many, reports_no_actor: false, accounts: many.length, withheld: 0, complete: true, note: '' },
     ])
-    scriptState({ journey: fixture, wizardStep: 'discover' })
+    scriptState({ journey: fixture, wizardStep: 'discover', exploring: true })
     const html = render()
     expect(html).toContain(`user${IDENTITY_SHOWN + 2}@acme.test`)          // behind the disclosure, still present
     expect(html).toContain(`Show the other 3 accounts in linear`)
@@ -918,7 +1163,7 @@ describe('rendered component — the identity picker', () => {
     fixture.card.entry = identityEntry([
       { connector: 'linear', rows: 665, candidates: [{ identifier: 'a@x.test', rows: 5 }], reports_no_actor: false, accounts: 30, withheld: 22, complete: false, note: '' },
     ])
-    scriptState({ journey: fixture, wizardStep: 'discover' })
+    scriptState({ journey: fixture, wizardStep: 'discover', exploring: true })
     expect(render()).toContain('type it exactly as linear spells it')
   })
 })
@@ -958,7 +1203,7 @@ describe('rendered component — discovery is disclosed honestly', () => {
   }
 
   it('renders what the probes found AND what did not run', () => {
-    scriptState({ journey: discoveryFixture(), wizardStep: 'discover' })
+    scriptState({ journey: discoveryFixture(), wizardStep: 'discover', exploring: true })
     const html = render()
     expect(html).toContain('What I went and looked for')
     expect(html).toContain('*payments*')
@@ -967,7 +1212,7 @@ describe('rendered component — discovery is disclosed honestly', () => {
   })
 
   it('says when a search stopped at its limit instead of implying it finished', () => {
-    scriptState({ journey: discoveryFixture(), wizardStep: 'discover' })
+    scriptState({ journey: discoveryFixture(), wizardStep: 'discover', exploring: true })
     expect(render()).toContain('stopped at my limit before the end of the folder')
   })
 })

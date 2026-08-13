@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import threading
+from copy import deepcopy
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -75,17 +76,25 @@ def _github_inventory(n: int) -> list:
 
 # --------------------------------------------- the shipped pack is read-only
 def test_every_shipped_template_builds_a_read_only_connector(tmp_path):
-    """The pick-list the operator is offered cannot carry a write."""
+    """The catalog the operator is offered cannot carry a write."""
     templates = research.load_connector_templates(_sandbox(tmp_path))
     assert set(templates) >= {"github", "vercel", "monday", "rest"}, templates
     fills = {
         "rest": {"url": "https://api.example.test/v1/things?page={page}",
                  "name_field": "name", "updated_field": "updated_at"},
     }
-    for tid in templates:
+    for tid, tpl in templates.items():
+        # A template that asks the operator something is answered with ITS OWN
+        # placeholder — the string the pack tells the operator to type. Filling
+        # required fields with nothing would refuse the build and pass this arm
+        # for the wrong reason, which is how a whole pack could go unchecked.
+        answers = dict(fills.get(tid) or {})
+        for field in tpl.get("fields") or ():
+            key, placeholder = str(field.get("key") or ""), str(field.get("placeholder") or "")
+            if key and placeholder:
+                answers.setdefault(key, placeholder)
         entry = research.build_connector_from_template(
-            templates, tid, name=tid, credential_env="TEST_TOKEN",
-            fields=fills.get(tid, {}))
+            templates, tid, name=tid, credential_env="TEST_TOKEN", fields=answers)
         # The BUILT inventory is a read — refused otherwise, before any write.
         research.assert_read_only(entry["inventory"])
         assert entry["credential_env"] == "TEST_TOKEN"
@@ -151,6 +160,141 @@ def test_the_connect_path_declares_then_sweeps_to_connected_mode(tmp_path, monke
     offered = {o["action"] for o in swept["card"].get("options", [])}
     assert "propose_window" in offered, offered
     assert "record_operator_identity" in offered, offered
+
+
+# -------------------------------------------------- MANY tools, ONE sweep --
+def test_three_tools_connect_and_one_sweep_covers_all_of_them(tmp_path, monkeypatch):
+    """The Captain's second ask: connect MANY, then look across everything.
+
+    POINTED AT THE AGGREGATE, not at three separate reads. `gather_connectors`
+    is payload-free and sweeps whatever is declared, so the arm that matters is
+    whether ONE act after three declarations returns three rows, ranks over all
+    three, and keeps them distinguishable. A per-connector loop would pass while
+    the real UX (one button, everything) stayed broken.
+    """
+    root = _sandbox(tmp_path)
+    journey.act({"action": "answer_seed", "surface": "cli",
+                 "action_id": "act-seed" + "x" * 16,
+                 "seed": "I run billing for an engineering team",
+                 "start_preference": "decide"}, root=root)
+
+    for template, env in (("github", "GITHUB_TOKEN"),
+                          ("vercel", "VERCEL_API_TOKEN"),
+                          ("monday", "MONDAY_API_TOKEN")):
+        out = _declare(root, template, name=template, credential_env=env,
+                       action_id=f"act-{template}{'y' * 16}")
+        assert out["ok"] is True, template
+        monkeypatch.setenv(env, CRED)
+    assert [s["name"] for s in research.load_connector_specs(root)] == \
+        ["github", "vercel", "monday"]
+
+    # ONE tool's credential is wrong. Its host answers 401; the other two answer
+    # normally — which is the whole point: a refused key is that tool's fact.
+    def fetch(request, timeout):
+        host = request["url"].split("://", 1)[1].split("/", 1)[0]
+        if host == "api.vercel.com":
+            return 401, b'{"error":{"message":"invalid token"}}'
+        if host == "api.github.com":
+            if request["url"].rstrip("/").endswith("/user"):
+                return 200, json.dumps({"login": "user-me"}).encode()
+            return 200, json.dumps(_github_inventory(4)).encode()
+        if host == "api.monday.com":
+            return 200, json.dumps({"data": {"boards": [
+                {"name": f"Board {i}", "updated_at": "2026-08-02T00:00:00Z",
+                 "creator": {"name": "Ada"}} for i in range(3)]}}).encode()
+        raise AssertionError(f"the sweep reached an undeclared host: {host}")
+
+    monkeypatch.setattr(research, "_http_fetch", fetch)
+
+    swept = journey.act({"action": "gather_connectors", "surface": "cli",
+                         "action_id": "act-" + "m" * 20}, root=root)
+    rows = {c["name"]: c for c in swept["state"]["connector_sweep"]["connectors"]}
+
+    assert set(rows) == {"github", "vercel", "monday"}, rows
+    assert rows["github"]["connected"] is True and rows["github"]["items"] == 4
+    assert rows["monday"]["connected"] is True and rows["monday"]["items"] == 3
+    # THE ISOLATION THIS ARM EXISTS FOR: the bad key is reported against its own
+    # tool, by its own reason, and takes nothing else down with it.
+    assert rows["vercel"]["connected"] is False
+    assert rows["vercel"]["reason"] == "http_401", rows["vercel"]
+    assert rows["vercel"]["items"] == 0
+
+    # And the ranking is drawn from BOTH working connectors, not just the first.
+    ranked = swept["state"]["salience_rows"]["rows"]
+    assert {r["connector"] for r in ranked} == {"github", "monday"}, ranked
+    blob = json.dumps(swept["state"])
+    assert CRED not in blob and "CONFIDENTIAL-ROW-BODY" not in blob
+
+
+def test_a_second_sweep_after_a_fourth_tool_covers_the_fourth_too(tmp_path, monkeypatch):
+    """Connect another, look again — the sweep is the AGGREGATE every time.
+
+    The defect this catches is a sweep that reports only what changed, or a UI
+    state that remembers the first result: after adding a tool, the one act must
+    still describe every declared connector, including the ones already read.
+    """
+    root = _sandbox(tmp_path)
+    _declare(root, "github", name="github", credential_env="GITHUB_TOKEN")
+    monkeypatch.setenv("GITHUB_TOKEN", CRED)
+    monkeypatch.setenv("SHORTCUT_API_TOKEN", CRED)
+
+    def fetch(request, timeout):
+        host = request["url"].split("://", 1)[1].split("/", 1)[0]
+        if host == "api.github.com":
+            if request["url"].rstrip("/").endswith("/user"):
+                return 200, json.dumps({"login": "user-me"}).encode()
+            return 200, json.dumps(_github_inventory(2)).encode()
+        return 200, json.dumps([
+            {"name": "Epic one", "updated_at": "2026-08-09T00:00:00Z"}]).encode()
+
+    monkeypatch.setattr(research, "_http_fetch", fetch)
+    first = journey.act({"action": "gather_connectors", "surface": "cli",
+                         "action_id": "act-" + "n" * 20}, root=root)
+    assert [c["name"] for c in first["state"]["connector_sweep"]["connectors"]] == ["github"]
+
+    _declare(root, "shortcut", name="shortcut", credential_env="SHORTCUT_API_TOKEN",
+             action_id="act-shortcut" + "z" * 12)
+    second = journey.act({"action": "gather_connectors", "surface": "cli",
+                          "action_id": "act-" + "o" * 20}, root=root)
+    rows = {c["name"]: c for c in second["state"]["connector_sweep"]["connectors"]}
+    assert set(rows) == {"github", "shortcut"}, rows
+    assert rows["github"]["items"] == 2 and rows["shortcut"]["items"] == 1
+
+
+def test_a_template_field_may_ask_for_a_name_instead_of_a_whole_address(tmp_path):
+    """`into_format`: the operator answers "acme", the shape gets the URL.
+
+    The failure it removes is a connect step that hands a non-technical operator
+    a URL to assemble. The property that must survive it is that the SCHEME is
+    the template author's — an operator value can never make the call plaintext.
+    """
+    root = _sandbox(tmp_path)
+    templates = research.load_connector_templates(root)
+    # Found by SHAPE, never by name: this file is under framework/, which names
+    # no vendor, and an arm pinned to one pack entry would also break the moment
+    # that entry is curated away.
+    tid, tpl, field = next(
+        (tid, tpl, f)
+        for tid, tpl in sorted(templates.items())
+        for f in (tpl.get("fields") or ())
+        if f.get("into_format"))
+    shape = str(field["into_format"])
+    entry = research.build_connector_from_template(
+        templates, tid, name="shaped", credential_env="SHAPED_TOKEN",
+        fields={str(field["key"]): "acme"})
+    assert entry["inventory"]["url"] == shape.replace("{value}", "acme")
+    assert "{value}" not in entry["inventory"]["url"]
+    research.assert_read_only(entry["inventory"])
+
+    # A pack whose format does not pin https is refused rather than sent.
+    broken = deepcopy(tpl)
+    for candidate in broken["fields"]:
+        if candidate.get("into_format"):
+            candidate["into_format"] = "http://{value}/x"
+    with pytest.raises(research.ConnectorDeclarationError):
+        research.build_connector_from_template(
+            {tid: broken}, tid, name="shaped", credential_env="SHAPED_TOKEN",
+            fields={str(field["key"]): "acme"})
 
 
 # ------------------------------------------------------------- the ceiling

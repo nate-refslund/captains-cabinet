@@ -45,7 +45,7 @@ The Charter → scan → dividend → briefing back half is unchanged.
 
 **Connect-a-source, LIVE (Captain 2026-08-13).** The `decide` branch now
 connects a tool from inside onboarding, closing the gap this doc used to name.
-The dashboard's discover panel draws a pick-list from a curated, agnostic
+The dashboard's discover panel draws a catalog from a curated, agnostic
 template pack shipped as DATA (`instance/config/connector-templates.yml.example`;
 the framework names no vendor — it consumes the pack generically). The operator
 picks a tool, pastes a credential and supplies at most a field or two; the
@@ -63,6 +63,49 @@ naming the host, both declares and activates. A delegated (operator ≠ captain)
 future needs a ratification step before activation; that is the named follow-up.
 **Out of v1:** MCP connectors (adding an MCP server is a sudo/germline-gated
 code-exec grant), honest-disabled and filed, never faked.
+
+**A catalog, and many tools at once (Captain 2026-08-13, same evening).** Two
+asks on the live product: *"can we expand this to like hundreds of connectors
+and also include HOW to connect for each?"* and *"I want to connect MANY
+connectors at once, not just one."* Both are answered in DATA and in the step's
+shape, not in new machinery.
+
+- **The pack is the catalog.** Every template now also carries `category` (a
+  shelf, resolved through a `categories:` map in the same file),
+  `how_to_connect` (2-5 steps in that product's own words — where its key screen
+  is, which read-only scope to tick, what will go wrong) and `key_looks_like`
+  (so a wrong paste is caught by eye rather than by a puzzling 401 later). The
+  surface reads them through `actions/connectors.ts::getConnectorCatalog`, which
+  also projects the shelves; a tool whose category is undeclared lands on
+  "Anything else" rather than disappearing. **Growth is data-only**: adding a
+  hundred more entries is edits to one YAML file with no code change, which is
+  what "hundreds" means here. What ships is what was VERIFIED against each
+  provider's current public API reference; popular tools are absent where their
+  list endpoint cannot meet the ceiling (a non-GraphQL POST, HTTP Basic needing
+  a hand-encoded pair, an OAuth round trip, or no timestamp on the items), and
+  the open `rest` template covers everything not named.
+- **`fields[].into_format`** (`research.build_connector_from_template`) lets a
+  template ask for "acme" where the shape needs a whole URL: the format is the
+  template author's sentence with one `{value}` hole, and it must start with a
+  literal `https://` so no operator value can choose the scheme. Without it,
+  every per-tenant tool made a non-technical operator assemble an API address.
+- **The connect step no longer closes itself.** It used to be replaced by its
+  own results the moment a sweep produced anything to rank, which made
+  connecting a one-shot. Now it holds a "Connected so far" list — each tool with
+  its own count, freshest stamp, or its own refusal reason — beside the catalog,
+  and hands over only when the operator presses *go look*. One
+  `gather_connectors` act sweeps every declared connector, so that one press
+  covers however many are on the list; a refused key is reported against its own
+  tool and takes nothing else down with it, and re-picking a connected tool
+  replaces its credential rather than being refused as a duplicate name.
+- **Sensors:** `framework/onboarding/tests/test_connector_catalog.py` checks the
+  SHIPPED pack (shape, custody of operator answers, host-consent truth, the
+  read-only ceiling on every built call, and an adversarial pass over the prose:
+  no step may walk an operator into a write-scoped key unremarked) and includes
+  arms proving that checker can fail. `test_connector_declare.py` drives three
+  tools + one bad credential through one sweep;
+  `cabinet/dashboard/src/actions/connectors.test.ts` pins the projection against
+  degenerate packs.
 
 ## 2. Product doctrine
 

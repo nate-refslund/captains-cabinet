@@ -21,7 +21,31 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 14c4fccc71a84a96d73bb115f244c3981b1b075eb950ada1b350cf2bf475d1f3
+Reviewed-Scope-Digest: 9cdaa9315edd1162218286d39beb074eb27bb47a372cdf01ffa633c4567b2423
+
+(RE-BIND, 2026-08-13, `feat/connector-catalog-and-multi-connect`, recomputed over
+this branch's HEAD. ONE in-scope path moved and it is NOT a COG-4 surface:
+`cabinet/config/cognitive-architecture-contract.yml`, raising
+`framework_production_noncomment_lines` 63090 -> 63096 (effective 77632 -> 77638)
+for the connector CATALOG — the Captain's same-evening asks for hundreds of
+connectors with per-tool how-to-connect, and for connecting many at once. Almost
+all of that lands OUTSIDE framework/ by design: 55 verified tool shapes, their
+shelves, their setup steps and their key hints are DATA in
+`instance/config/connector-templates.yml.example`, and the browsable catalog plus
+the many-tools UX is in the dashboard. The SIX lines are
+`research.build_connector_from_template`'s `into_format`, which lets a template
+ask an operator for "acme" instead of making them assemble an API address and
+refuses any format that does not pin a literal https:// around one {value} hole.
+`framework/onboarding/research.py` is NOT in the COG-4 scope set (nor is any of
+`framework/onboarding/`), so no COG-4 implementation byte moved. ZERO new
+framework production modules (208 <= 208 for this landing) and zero expansion
+rows. DISJOINT from every raise noted below, including the 2026-08-13
+connect-a-source note directly under this one: different feature, different
+files, and this one adds no vendor literal to framework/ — the specifics ratchet
+caught one in a comment during the build and it was reworded rather than
+baselined. MEASURED, not asserted: the digest above is the tool's own output over
+HEAD, and the artifact is excluded from its own digest, so writing this note does
+not move it.)
 
 (RE-BIND, 2026-08-13, `feat/onboarding-connect-a-source`, recomputed over this
 branch's HEAD. ONE in-scope path moved and it is NOT a COG-4 surface:
