@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { EventEmitter } from 'node:events'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -81,6 +82,46 @@ describe('onboarding core invocation', () => {
     expect(source).toMatch(/child\.stdin\.end\(input \? JSON\.stringify\(input\)/)
     expect(source).not.toMatch(/exec\s*\(/)
     expect(source).not.toMatch(/execSync\s*\(/)
+  })
+})
+
+// The read lane resolves a connector's credential_env NAME against the spawned
+// core's environment. A credential the operator JUST connected was written to
+// cabinet/.env after this dashboard started, so it is not in process.env — and
+// without reading the file fresh at spawn, the very sweep that connect triggers
+// reports it credential_absent. These arms fail against a bridge that only
+// forwards process.env.
+describe('the bridge feeds the core the freshly-declared credentials', () => {
+  it('reads cabinet/.env at spawn so a just-connected credential reaches the core', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-env-'))
+    const envFile = path.join(dir, '.env')
+    fs.writeFileSync(envFile, 'REST_API_TOKEN=freshly-connected-value\nUNRELATED=1\n')
+    const previous = process.env.CABINET_ENV_PATH
+    process.env.CABINET_ENV_PATH = envFile
+    try {
+      stubCore(OK)
+      await applyOnboardingAction({ action: 'gather_connectors' }, 'dashboard')
+      const env = (spawnMock.mock.calls[0]![2] as { env: Record<string, string> }).env
+      expect(env.REST_API_TOKEN).toBe('freshly-connected-value')
+      // The env NAME the read lane will resolve is present; the credential never
+      // needed a dashboard restart to become readable.
+    } finally {
+      process.env.CABINET_ENV_PATH = previous
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('is unbothered by an absent env file (a fresh hatch has none)', async () => {
+    const previous = process.env.CABINET_ENV_PATH
+    process.env.CABINET_ENV_PATH = path.join(os.tmpdir(), `no-such-${Date.now()}`, '.env')
+    try {
+      stubCore(OK)
+      await expect(
+        applyOnboardingAction({ action: 'gather_connectors' }, 'dashboard')
+      ).resolves.toBeDefined()
+    } finally {
+      process.env.CABINET_ENV_PATH = previous
+    }
   })
 })
 

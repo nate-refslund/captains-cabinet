@@ -1,0 +1,201 @@
+# =============================================================
+# connector-templates.yml — the pick-list onboarding offers, shipped as DATA
+# =============================================================
+# A TEMPLATE is a connector with everything filled in except the one or two
+# things only you can supply: a credential, and — for the open-ended one at the
+# bottom — where your list lives. Onboarding reads this file to draw the "Connect
+# a tool" pick-list; when you choose one and paste a credential, the cabinet
+# writes the matching entry into instance/config/connectors.yml and reads it
+# ONCE, read-only, exactly as instance/config/connectors.yml.example describes.
+#
+# WHY THIS FILE NAMES TOOLS AND THE FRAMEWORK DOES NOT. The framework knows no
+# vendor: it consumes whatever read shapes it finds here, generically. The names
+# below (and the URLs beside them) are DATA — a convenience library of shapes
+# that already work — living in the instance layer, never compiled into the
+# framework. Delete the ones you will never use, add your own, and the pick-list
+# changes with no code change. The open-ended `rest` template at the bottom
+# reads any HTTPS list at all, so nothing here is a closed set.
+#
+# EVERY SHAPE OBEYS THE ONE CEILING. Each `connector.inventory` is a GET, or a
+# POST carrying a GraphQL READ document — the same limit the executor enforces
+# mechanically before a socket exists (see connectors.yml.example). A template
+# whose inventory could write is refused at declaration time, so this file
+# cannot become a way around the ceiling.
+#
+# This is an EXAMPLE twin (it ships; the live instance values do not). It is read
+# as-is — you do not copy it to a live name. Curate it in place.
+#
+# ------------------------------------------------------------------
+# THE SHAPE OF A TEMPLATE
+# ------------------------------------------------------------------
+#   id:              stable key the pick-list and the writer use. lower_snake.
+#   label:           what the operator sees in the list.
+#   summary:         one line: what a sweep of this will actually show you.
+#   host:            the host the credential is sent to (shown for consent).
+#   credential_env:  the env var NAME the credential is stored under, in
+#                    cabinet/.env. The VALUE never enters this file or that one.
+#   credential_help: what kind of credential to paste, in the operator's words.
+#   fields:          what the operator still has to supply, [] for none. Each:
+#                      key/label/help/placeholder, required (bool), and `into` —
+#                      the dotted path in `connector` the pasted value is written
+#                      to. Only these declared paths ever take an operator value.
+#   connector:       the connector entry, minus the credential. inventory/page/
+#                    identity are exactly as connectors.yml.example defines them.
+# =============================================================
+
+schema: cabinet.connector-templates/v1
+
+templates:
+  # ---------------------------------------------------------------
+  # A single-Bearer GET over a JSON list — the simplest real shape.
+  # ---------------------------------------------------------------
+  - id: github
+    label: GitHub
+    summary: The repositories your account can see, most-recently-updated first.
+    host: api.github.com
+    credential_env: GITHUB_TOKEN
+    credential_help: >-
+      A GitHub personal access token. A fine-grained read-only token, or a
+      classic token with no scopes, is enough — the cabinet only lists.
+    fields: []
+    connector:
+      inventory:
+        url: https://api.github.com/user/repos?per_page=100&sort=updated&page={page}
+        method: GET
+        auth_format: "Bearer {credential}"
+        headers:
+          Accept: application/vnd.github+json
+          X-GitHub-Api-Version: "2022-11-28"
+          User-Agent: captains-cabinet-onboarding
+        items_path: ""
+        name_field: full_name
+        updated_field: updated_at
+        actor_field: owner.login
+      page:
+        start: 1
+        size: 100
+        max_pages: 3
+      identity:
+        url: https://api.github.com/user
+        method: GET
+        auth_format: "Bearer {credential}"
+        headers:
+          Accept: application/vnd.github+json
+          User-Agent: captains-cabinet-onboarding
+        value_paths:
+          - login
+          - name
+
+  # ---------------------------------------------------------------
+  # A GET whose clock is epoch-milliseconds — DECLARED, so it reads.
+  # ---------------------------------------------------------------
+  - id: vercel
+    label: Vercel
+    summary: Your projects and when each last deployed.
+    host: api.vercel.com
+    credential_env: VERCEL_API_TOKEN
+    credential_help: A Vercel access token (Account Settings → Tokens). Read access is enough.
+    fields: []
+    connector:
+      inventory:
+        url: https://api.vercel.com/v9/projects?limit=100
+        method: GET
+        auth_format: "Bearer {credential}"
+        items_path: projects
+        name_field: name
+        updated_field: updatedAt
+        date_encoding: epoch_ms
+        actor_field: latestDeployments.0.creator.username
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+      identity:
+        url: https://api.vercel.com/v2/user
+        method: GET
+        auth_format: "Bearer {credential}"
+        value_paths:
+          - user.username
+          - user.name
+
+  # ---------------------------------------------------------------
+  # A POST carrying a GraphQL READ document — one query, a list back.
+  # ---------------------------------------------------------------
+  - id: monday
+    label: monday.com
+    summary: Your active boards and who created each.
+    host: api.monday.com
+    credential_env: MONDAY_API_TOKEN
+    credential_help: A monday.com API token (Admin → API, or your personal token).
+    fields: []
+    connector:
+      inventory:
+        url: https://api.monday.com/v2
+        method: POST
+        json:
+          query: "query { boards (limit: 100, page: {page}, state: active) { id name updated_at creator { name } } }"
+        items_path: data.boards
+        name_field: name
+        updated_field: updated_at
+        actor_field: creator.name
+      page:
+        start: 1
+        size: 100
+        max_pages: 8
+      identity:
+        url: https://api.monday.com/v2
+        method: POST
+        json:
+          query: "query { me { name } account { name slug } }"
+        value_paths:
+          - data.me.name
+          - data.account.name
+          - data.account.slug
+
+  # ---------------------------------------------------------------
+  # THE OPEN ONE. Any HTTPS list, with the operator naming the paths.
+  # It keeps the pick-list from being a closed set: whatever answers
+  # "a GET, a list, a name and a date on each" is a connector.
+  # ---------------------------------------------------------------
+  - id: rest
+    label: Another REST list
+    summary: Any HTTPS GET that returns a JSON list with a name and a timestamp on each item.
+    host: ""
+    credential_env: REST_API_TOKEN
+    credential_help: The bearer token or API key the endpoint expects.
+    fields:
+      - key: url
+        label: List URL
+        help: The full https:// URL that returns the list. Put {page} where the page number belongs.
+        placeholder: https://api.example.com/v1/things?per_page=100&page={page}
+        required: true
+        into: inventory.url
+      - key: items_path
+        label: Path to the list
+        help: Dotted path to the array inside the response. Leave blank if the response is the list itself.
+        placeholder: data.things
+        required: false
+        into: inventory.items_path
+      - key: name_field
+        label: Name field
+        help: Dotted path to each item's name.
+        placeholder: name
+        required: true
+        into: inventory.name_field
+      - key: updated_field
+        label: Updated field
+        help: Dotted path to each item's last-updated timestamp.
+        placeholder: updated_at
+        required: true
+        into: inventory.updated_field
+    connector:
+      inventory:
+        method: GET
+        auth_format: "Bearer {credential}"
+        items_path: ""
+        name_field: name
+        updated_field: updated_at
+      page:
+        start: 1
+        size: 100
+        max_pages: 3

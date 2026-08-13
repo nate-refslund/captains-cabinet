@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { WINDOW_RELATIONS } from '@/lib/onboarding/types'
 import type {
+  ConnectorTemplateChoice,
   OnboardingAction,
   OnboardingIdentityAsk,
   OnboardingResponse,
@@ -11,6 +12,8 @@ import type {
   OwnershipClass,
   WindowRelation,
 } from '@/lib/onboarding/types'
+import { getConnectorTemplates } from '@/actions/connectors'
+import { saveConnectorCredential } from '@/actions/env'
 import {
   activePhaseIndex,
   canAdvance,
@@ -47,6 +50,9 @@ export const NO_IDENTITY_PICKS: Readonly<Record<string, string>> = Object.freeze
 
 /** The merge picker's empty starting value — stable for the same reason. */
 export const NO_MERGE: readonly string[] = Object.freeze([])
+
+/** The connect step's empty template-field answers — stable for the same reason. */
+export const NO_FIELDS: Readonly<Record<string, string>> = Object.freeze({})
 
 /**
  * What the operator has to state when the folder they proposed shares no word
@@ -181,10 +187,28 @@ export default function OnboardingJourneyCard({
   const [salienceMerge, setSalienceMerge] = useState<readonly string[]>(NO_MERGE)
   // Set only by an off-target refusal.
   const [relationAsk, setRelationAsk] = useState<RelationAsk | null>(null)
+  // The connect step, on the discover branch. `null` means the pick-list has
+  // not loaded yet (it is fetched once, client-side); `[]` means no pack ships,
+  // and the step falls back to the folder. These stay the LAST hooks so adding
+  // them leaves every index above unchanged.
+  const [connectorTemplates, setConnectorTemplates] =
+    useState<readonly ConnectorTemplateChoice[] | null>(null)
+  // Which tool the operator picked, the credential they pasted (kept only until
+  // the connect completes, then cleared), and their answers to the template's
+  // own fields. The credential's setter is what wipes it from memory after use.
+  const [connectPick, setConnectPick] = useState('')
+  const [connectCredential, setConnectCredential] = useState('')
+  const [connectFields, setConnectFields] =
+    useState<Readonly<Record<string, string>>>(NO_FIELDS)
+  const [connectError, setConnectError] = useState<string | null>(null)
   const effectiveSurface = useRef<Extract<OnboardingSurface, 'dashboard' | 'world' | 'companion'>>(surface)
   const handoffIds = useRef<{ trace_id?: string; correlation_id?: string }>({})
   const salienceFormRef = useRef<HTMLFormElement | null>(null)
   const identityFormRef = useRef<HTMLFormElement | null>(null)
+  // Guards the connect flow's three server round-trips against a re-entrant
+  // submit — the credential write must never fire twice for one click, whatever
+  // the `working` flag does between the calls.
+  const connectingRef = useRef(false)
 
   const t = themeOf(variant)
 
@@ -277,9 +301,30 @@ export default function OnboardingJourneyCard({
     }
   }, [reportEvidence])
 
+  // The connect step's pick-list, fetched once. It reads a shipped DATA file
+  // (never a secret), so a failure is an empty list and the folder path, not an
+  // error — the discover branch stays usable with no tools to offer.
+  useEffect(() => {
+    let cancelled = false
+    void getConnectorTemplates()
+      .then((list) => { if (!cancelled) setConnectorTemplates(list) })
+      .catch(() => { if (!cancelled) setConnectorTemplates([]) })
+    return () => { cancelled = true }
+  }, [])
+
   const send = useCallback(
-    async (action: OnboardingAction, extra: Record<string, unknown> = {}): Promise<boolean> => {
-      if (!journey) return false
+    async (
+      action: OnboardingAction,
+      extra: Record<string, unknown> = {},
+      // The revision to send AS. Defaults to the card in this render's closure —
+      // but a handler that fires two actions back to back (declare then gather)
+      // holds a STALE closure between them: the first bumps the revision and the
+      // second would collide (revision_conflict) unless it is told the fresh one
+      // the first returned. Measured live 2026-08-13: the connect flow declared,
+      // then its gather was refused as a conflict, so the sweep never ran.
+      expectedRevisionOverride?: number
+    ): Promise<OnboardingResponse | null> => {
+      if (!journey) return null
       setWorking(true)
       setError(null)
       const ids = {
@@ -295,7 +340,7 @@ export default function OnboardingJourneyCard({
           body: JSON.stringify({
             action,
             ...ids,
-            expected_revision: journey.card.revision,
+            expected_revision: expectedRevisionOverride ?? journey.card.revision,
             surface: effectiveSurface.current,
             ...extra,
           }),
@@ -340,13 +385,13 @@ export default function OnboardingJourneyCard({
         if (action !== 'purge') {
           void reportEvidence('ui', 'succeeded', { action, rendered_stage: body.card.stage }, body.evidence || ids)
         }
-        return true
+        return body
       } catch (err) {
         setError(err instanceof Error ? err.message : 'That choice could not be completed.')
         if (action !== 'purge') {
           void reportEvidence('transport', 'failed', { action, error_code: 'action_request_failed' }, ids)
         }
-        return false
+        return null
       } finally {
         setWorking(false)
       }
@@ -446,6 +491,55 @@ export default function OnboardingJourneyCard({
     void send('record_operator_identity', { handles: Object.fromEntries(picked) })
   }
 
+  // CONNECT A TOOL, right here in onboarding — the write half of the read lane.
+  // Three server steps, in order: the credential VALUE goes to cabinet/.env by
+  // the safe writer (and ONLY there); the connector is declared with the env var
+  // NAME (never the value); and the sweep runs, flowing straight into the
+  // salience question below. The credential is wiped from memory the instant the
+  // declaration lands.
+  async function submitConnect(event: FormEvent) {
+    event.preventDefault()
+    const template = (connectorTemplates ?? []).find((tpl) => tpl.id === connectPick)
+    if (!template || !connectCredential.trim() || connectingRef.current) return
+    const missingRequired = template.fields.some(
+      (field) => field.required && !(connectFields[field.key] ?? '').trim()
+    )
+    if (missingRequired) return
+    connectingRef.current = true
+    setConnectError(null)
+    setWorking(true)
+    try {
+      const stored = await saveConnectorCredential(template.credential_env, connectCredential)
+      if (!stored.success) {
+        setConnectError(stored.error || 'That credential could not be stored, so nothing was connected.')
+        return
+      }
+      const answers: Record<string, string> = {}
+      for (const field of template.fields) {
+        const value = (connectFields[field.key] ?? '').trim()
+        if (value) answers[field.key] = value
+      }
+      const declared = await send('declare_connector', {
+        template: template.id,
+        name: template.id,
+        credential_env: template.credential_env,
+        fields: answers,
+      })
+      if (!declared) return // send() put the refusal on the card
+      setConnectCredential('')
+      setConnectPick('')
+      setConnectFields(NO_FIELDS)
+      // Read with the revision the declaration just produced, not the stale one
+      // in this closure — otherwise the sweep collides with the write above.
+      await send('gather_connectors', {}, declared.card.revision)
+    } catch (err) {
+      setConnectError(err instanceof Error ? err.message : 'That tool could not be connected.')
+    } finally {
+      connectingRef.current = false
+      setWorking(false)
+    }
+  }
+
   // One account, offered as a tap. The picked value lives in the same `handles`
   // entry a typed answer writes to, so tapping and typing are one field.
   function identityChoice(
@@ -533,6 +627,13 @@ export default function OnboardingJourneyCard({
   const hasSweepContent =
     salienceOptions.length > 0 || Boolean(journey?.card.entry?.identity_question)
   const showDiscoverPanel = inDiscover && !hasSweepContent
+  // The connect step's derived state: the tool in hand, and whether the operator
+  // has given enough to connect it (a credential, and every required field).
+  const pickedTemplate = (connectorTemplates ?? []).find((tpl) => tpl.id === connectPick) ?? null
+  const canConnect =
+    pickedTemplate != null &&
+    connectCredential.trim() !== '' &&
+    pickedTemplate.fields.every((field) => !field.required || (connectFields[field.key] ?? '').trim() !== '')
 
   if (variant === 'world' && collapsed) {
     return (
@@ -740,17 +841,140 @@ export default function OnboardingJourneyCard({
             <div className={`mt-6 p-4 ${t.panel}`}>
               <h3 className={`text-lg font-semibold ${t.title}`}>Let me go and find where I fit</h3>
               <p className={`mt-2 text-sm leading-6 ${t.muted}`}>
-                To find where I am most useful, I need something to read. Connect a tool and
-                I will look across it read-only and propose where to start — or point me at a
-                single folder now, which works today with nothing connected.
+                To find where I am most useful, I need something to read. Connect a tool below
+                and I will read across it — only ever read — then tell you where to start. Or
+                point me at a single folder now, which works with nothing connected.
               </p>
+
+              {/* THE CONNECT STEP. Pick a tool, paste a credential, and the
+                  cabinet gains a source it reads read-only. The credential goes
+                  only to cabinet/.env; the declaration carries its NAME. */}
+              {connectorTemplates === null ? (
+                <p className={`mt-4 text-sm ${t.faint}`}>Finding the tools you can connect…</p>
+              ) : connectorTemplates.length > 0 ? (
+                <form onSubmit={submitConnect} aria-label="Connect a tool" className="mt-4">
+                  <div role="radiogroup" aria-label="Choose a tool to connect" className="space-y-2">
+                    {connectorTemplates.map((tpl) => {
+                      const on = connectPick === tpl.id
+                      return (
+                        <label
+                          key={tpl.id}
+                          className={`flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors motion-reduce:transition-none ${on ? t.choiceOn : t.choice}`}
+                        >
+                          <input
+                            type="radio"
+                            name={`${surface}-connect-template`}
+                            value={tpl.id}
+                            checked={on}
+                            onChange={() => {
+                              setConnectPick(tpl.id)
+                              setConnectFields(NO_FIELDS)
+                              setConnectError(null)
+                            }}
+                            className="mt-1"
+                          />
+                          <span className="min-w-0">
+                            <span className={`block font-medium ${t.title}`}>{tpl.label}</span>
+                            <span className={`mt-0.5 block text-sm ${t.muted}`}>{tpl.summary}</span>
+                          </span>
+                        </label>
+                      )
+                    })}
+                  </div>
+
+                  {pickedTemplate && (
+                    <div className={`mt-3 space-y-3 rounded-xl border p-4 ${t.panel}`}>
+                      {pickedTemplate.fields.map((field) => (
+                        <div key={field.key}>
+                          <label
+                            htmlFor={`${surface}-connect-${field.key}`}
+                            className={`block text-sm font-medium ${t.title}`}
+                          >
+                            {field.label}
+                            {!field.required && (
+                              <span className={`ml-1 text-xs font-normal ${t.faint}`}>optional</span>
+                            )}
+                          </label>
+                          <input
+                            id={`${surface}-connect-${field.key}`}
+                            type="text"
+                            value={connectFields[field.key] ?? ''}
+                            onChange={(e) =>
+                              setConnectFields({ ...connectFields, [field.key]: e.target.value })
+                            }
+                            placeholder={field.placeholder}
+                            autoComplete="off"
+                            spellCheck={false}
+                            className={`mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none ${t.input}`}
+                          />
+                          {field.help && <p className={`mt-1 text-xs ${t.faint}`}>{field.help}</p>}
+                        </div>
+                      ))}
+
+                      <div>
+                        <label
+                          htmlFor={`${surface}-connect-credential`}
+                          className={`block text-sm font-medium ${t.title}`}
+                        >
+                          Credential
+                        </label>
+                        <input
+                          id={`${surface}-connect-credential`}
+                          type="password"
+                          value={connectCredential}
+                          onChange={(e) => setConnectCredential(e.target.value)}
+                          placeholder="Paste your token or key"
+                          autoComplete="off"
+                          spellCheck={false}
+                          className={`mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none ${t.input}`}
+                        />
+                        {pickedTemplate.credential_help && (
+                          <p className={`mt-1 text-xs ${t.faint}`}>{pickedTemplate.credential_help}</p>
+                        )}
+                      </div>
+
+                      <p className={`text-xs leading-5 ${t.muted}`}>
+                        {pickedTemplate.host ? (
+                          <>
+                            This sends your credential to{' '}
+                            <span className={`font-medium ${t.title}`}>{pickedTemplate.host}</span>, and
+                            reads only — I list what is there, and never write.
+                          </>
+                        ) : (
+                          <>This sends your credential only to the address you enter above, and reads only — I list what is there, and never write.</>
+                        )}
+                      </p>
+
+                      {connectError && (
+                        <p
+                          role="alert"
+                          className={`text-xs font-medium ${variant === 'world' ? 'text-red-800' : 'text-red-300'}`}
+                        >
+                          {connectError}
+                        </p>
+                      )}
+
+                      <button
+                        type="submit"
+                        disabled={working || !canConnect}
+                        className={`min-h-11 w-full rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50 disabled:shadow-none ${t.primary}`}
+                      >
+                        {working ? 'Connecting…' : `Connect ${pickedTemplate.label}`}
+                      </button>
+                    </div>
+                  )}
+                </form>
+              ) : null}
+
+              {/* Already connected elsewhere, or would rather not connect a tool
+                  at all — both stay one tap away. */}
               <div className="mt-4 flex flex-wrap gap-2">
                 {gatherOption && (
                   <button
                     type="button"
                     onClick={() => choose('gather_connectors')}
                     disabled={working}
-                    className={`min-h-11 rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50 ${t.primary}`}
+                    className={`min-h-11 rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50 ${t.secondary}`}
                   >
                     {gatherOption.label}
                   </button>
@@ -759,14 +983,12 @@ export default function OnboardingJourneyCard({
                   type="button"
                   onClick={() => setWizardStep('window')}
                   disabled={working}
-                  className={`min-h-11 rounded-xl px-4 py-2 text-sm font-medium disabled:opacity-50 ${gatherOption ? t.secondary : t.primary}`}
+                  className={`min-h-11 rounded-xl px-4 py-2 text-sm font-medium disabled:opacity-50 ${t.ghost}`}
                 >
                   Point me at a folder instead
                 </button>
               </div>
-              <p className={`mt-3 text-xs ${t.faint}`}>
-                You connect tools in Integrations. I never write to anything I read.
-              </p>
+
               <button
                 type="button"
                 onClick={retreat}

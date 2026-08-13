@@ -4375,6 +4375,69 @@ def _act_core(
                 reversible=False, undo_of=str(target["event_id"]),
                 manifest=target.get("before_manifest"),
             )
+        if action == "declare_connector":
+            # THE WRITE HALF OF THE READ LANE, right here in onboarding (Captain
+            # 2026-08-13): the operator picks a tool, pastes a credential, and
+            # the cabinet gains a connector it can then GATHER through — the
+            # ordering the Captain has asked for repeatedly (connect, then read,
+            # then come to know the estate). What lands is contents-free: the
+            # connector's shape comes from the curated template, only the fields
+            # the template asked for take an operator value, and the built call
+            # is held to the SAME read-only ceiling the sweep enforces before a
+            # single byte reaches instance/config/connectors.yml.
+            #
+            # THE CREDENTIAL VALUE DOES NOT ARRIVE HERE. This action is handed a
+            # template id, a label, an env var NAME and at most a field or two.
+            # The value itself is placed in cabinet/.env by the dashboard's own
+            # safe writer, so it never crosses this boundary, never enters the
+            # config, and never enters an event. Only the NAME is written.
+            templates = research.load_connector_templates(base)
+            if not templates:
+                raise JourneyError(
+                    "no_connector_templates",
+                    "There are no tools to connect from here yet.",
+                )
+            raw_fields = request.get("fields")
+            if raw_fields is not None and not isinstance(raw_fields, dict):
+                raise JourneyError(
+                    "connector_fields_invalid",
+                    "The details for this tool were not readable.",
+                )
+            try:
+                entry = research.build_connector_from_template(
+                    templates,
+                    str(request.get("template") or ""),
+                    name=str(request.get("name") or ""),
+                    credential_env=str(request.get("credential_env") or ""),
+                    fields=raw_fields or {},
+                )
+                declared = research.write_connector_declaration(base, entry)
+            except research.ConnectorDeclarationError as exc:
+                # The message is operator-facing and contents-free by
+                # construction (research.ConnectorDeclarationError) — pass it
+                # through as the refusal, never a credential or a body.
+                raise JourneyError("connector_declaration", str(exc)) from None
+            after = deepcopy(state)
+            # A contents-free provenance trail: what was connected, where its
+            # credential goes, and when. No value, no body — the same discipline
+            # the sweep row holds to. `_commit` re-derives the registry from the
+            # file just written, so the returned card can now offer the gather.
+            # NB: NOT ``connectors_declared`` — that key is the registry's own
+            # integer COUNT (``_with_registry``), and a list under it would be
+            # overwritten and mis-typed. This is a separate provenance list.
+            log = list(after.get("connector_declarations") or ())
+            log.append({
+                "name": declared["name"],
+                "host": declared["host"],
+                "template": str(request.get("template") or "").strip(),
+                "declared_at": ts,
+            })
+            after["connector_declarations"] = log
+            return _commit(
+                base, state, after, action=action, action_id=action_id,
+                surface=surface, trace_id=trace_id,
+                correlation_id=correlation_id, now=ts,
+            )
         raise JourneyError("action_unknown", f"Unknown onboarding action: {action}.")
 
 

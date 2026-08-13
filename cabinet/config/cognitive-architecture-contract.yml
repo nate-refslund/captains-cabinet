@@ -878,7 +878,24 @@ budgets:
     # (point-me vs go-find-it). No parallel seam invented; every line lands
     # inside journey.py, which the tree already carried (modules unchanged at
     # 248). observed == maximum, zero headroom.
-    maximum: 62872
+    #
+    # 62872 -> 63090 (+218 measured 2026-08-13 via cognitive-architecture-census.py,
+    # observed 77632 vs the then-effective 77414): CONNECT A TOOL in onboarding —
+    # the write half of the read lane the tree already carried read-only. The
+    # declare_connector act in framework/onboarding/journey.py::_act_core (resolve
+    # a curated template, refuse anything that would not be a read, write the
+    # entry into instance/config/connectors.yml, never the credential value) plus
+    # its resolver/writer in framework/onboarding/research.py
+    # (load_connector_templates, build_connector_from_template, _set_dotted,
+    # _host_of, write_connector_declaration). The vendor names live in the DATA
+    # pack instance/config/connector-templates.yml.example, never in framework/,
+    # so the specifics ratchet stays green. Zero new production MODULES (every
+    # line lands inside research.py/journey.py, which the tree already carried;
+    # framework_production_modules unchanged at 248). RAISED VISIBLY, never a
+    # temporary allowance: the connect step ships and is permanent, so an
+    # allowance would promise a deletion gate that will never fire.
+    # observed == maximum, zero headroom.
+    maximum: 63090
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

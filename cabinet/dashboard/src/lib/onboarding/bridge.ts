@@ -8,7 +8,10 @@
  */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { cabinetRoot } from '@/lib/cabinet-root'
+import { parseEnvDocument } from '@/lib/config-write'
 import type {
   OnboardingActionRequest,
   OnboardingObservationRequest,
@@ -36,6 +39,15 @@ const MAX_OUTPUT_BYTES = 2 * 1024 * 1024
 export const ACTIONS: ReadonlySet<string> = new Set([
   'propose_window',
   'answer_seed',
+  // Declares ONE connector from a curated template + a credential, in onboarding
+  // (Captain 2026-08-13). Carries a `template` id, a `name` label, a
+  // `credential_env` NAME and an optional `fields` map — bounded below. It never
+  // carries a credential VALUE: the dashboard's safe .env writer stores that,
+  // so the value never reaches the core. The core does not print this on a card
+  // (a credential paste belongs on the local surface), so it needs no Telegram
+  // branch; it is reachable only where a surface writes the send, which is why
+  // it lives in this admission set at all.
+  'declare_connector',
   // Credentialed READ-ONLY connector sweep (Captain ruling 2026-07-29). Carries
   // no payload: what may be read is declared in instance/config/connectors.yml,
   // never in a request, so no surface can widen the read by sending a field.
@@ -145,6 +157,25 @@ export function invocation(command: CoreCommand): {
   }
 }
 
+// The connector credentials the operator has declared, read FRESH from
+// cabinet/.env at spawn time. The read lane resolves a connector's
+// `credential_env` NAME against the process environment, and a credential the
+// operator just connected was written to that file AFTER this dashboard
+// started — so it is absent from `process.env` and, without this, the very
+// sweep that connect triggers reports it `credential_absent`. (Measured live
+// 2026-08-13.) Reading the file at each spawn means a just-connected tool is
+// readable immediately, with no dashboard restart. Absent file ⇒ nothing added.
+// The values feed the trusted onboarding core, which never emits a credential
+// value in its output; only the env NAME ever leaves it.
+function credentialsFromEnvFile(cwd: string): Record<string, string> {
+  const envPath = process.env.CABINET_ENV_PATH || path.join(cwd, 'cabinet/.env')
+  try {
+    return parseEnvDocument(readFileSync(envPath, 'utf8'))
+  } catch {
+    return {}
+  }
+}
+
 function run<T extends OnboardingResponse | OnboardingObservationResponse>(
   command: CoreCommand,
   input?: object
@@ -155,7 +186,7 @@ function run<T extends OnboardingResponse | OnboardingObservationResponse>(
     try {
       child = spawn(spec.executable, spec.argv, {
         cwd: spec.cwd,
-        env: { ...process.env, CABINET_ROOT: spec.cwd },
+        env: { ...process.env, ...credentialsFromEnvFile(spec.cwd), CABINET_ROOT: spec.cwd },
         shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],
       })
@@ -260,6 +291,20 @@ export function applyOnboardingAction(
   }
   if (request.same_as && request.same_as.length > 64) {
     throw new OnboardingBridgeError('merge_too_many', 'That is too many names in one merge.')
+  }
+  // declare_connector's own inputs. The core resolves the template, validates
+  // the env var NAME, bounds each field value and refuses an unknown field key
+  // BY NAME — these are only the cheap outer bounds so a paste never crosses the
+  // process boundary. A credential VALUE is deliberately not among them: it does
+  // not travel on this request at all.
+  if (request.template && request.template.length > 64) {
+    throw new OnboardingBridgeError('template_invalid', 'That is not a tool I can set up.')
+  }
+  if (request.credential_env && request.credential_env.length > 128) {
+    throw new OnboardingBridgeError('credential_env_too_long', 'That credential name is too long.')
+  }
+  if (request.fields && JSON.stringify(request.fields).length > 8_192) {
+    throw new OnboardingBridgeError('fields_too_long', 'Those details are too long.')
   }
   return run<OnboardingResponse>('act', {
     ...request,

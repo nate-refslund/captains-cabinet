@@ -519,6 +519,23 @@ def probe_connectors(root, *, source_root=None, ratified=False, exports=(),
 # path that never did is named as itself.
 CONNECTOR_SWEEP_SCHEMA = "cabinet.connector-sweep/v1"
 CONNECTORS_REL = "instance/config/connectors.yml"
+#: The curated pick-list onboarding offers, shipped as DATA in the instance
+#: layer (it ships as an ``.example`` twin; the framework names no vendor). Read
+#: as a full one-string path so the layer-separation gate, which flags a bare
+#: ``"instance"`` token, does not read this as a framework->instance coupling —
+#: the same reason ``CONNECTORS_REL`` above is written this way.
+TEMPLATES_REL = "instance/config/connector-templates.yml.example"
+CONNECTOR_TEMPLATES_SCHEMA = "cabinet.connector-templates/v1"
+#: An env var NAME the credential is stored under. The SAME anchor the dashboard
+#: env-var editor enforces (actions/env.ts), so a name accepted here is one the
+#: safe .env writer will also accept.
+_ENV_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
+#: The longest an operator-supplied template field (a custom URL, a dotted path)
+#: may be. A list URL with query args is the long case; a body has no business
+#: arriving through a path field, so this is generous, not unbounded.
+_MAX_DECLARED_FIELD_CHARS = 2000
+#: The longest a connector label may be. It is shown, never parsed.
+_MAX_CONNECTOR_NAME_CHARS = 120
 
 #: The only verbs reachable from this module. POST is admitted solely because a
 #: read-only GraphQL query cannot be expressed as a GET on most endpoints.
@@ -1027,6 +1044,247 @@ def load_connector_specs(root, *, not_reached=None) -> list:
             + " was skipped, so nothing in it was read: a connector needs a "
               "non-empty `name` and an `inventory:` mapping saying what to read")
     return out
+
+
+# --- DECLARING a connector from onboarding: the write half of the read lane ---
+#
+# The read lane above takes connectors as given. This is how one gets there
+# WITHOUT a hand-edit of the config: onboarding offers a curated pick-list
+# (``instance/config/connector-templates.yml.example`` — DATA, so the framework
+# still knows no vendor), the operator picks one and supplies a credential and
+# at most a field or two, and the entry is written into the same
+# ``instance/config/connectors.yml`` the sweep reads. Three properties are load-
+# bearing and each is enforced below, not promised:
+#
+#   * THE SHAPE COMES FROM THE TEMPLATE, not the caller. Only paths the template
+#     author declared under ``fields[].into`` ever take an operator value, so a
+#     surface cannot smuggle an arbitrary connector shape through this door.
+#   * IT IS STILL A READ. ``assert_read_only`` runs on the BUILT inventory before
+#     anything is written, so a template that could write — or a custom URL that
+#     is not https — is refused at declaration, exactly as the sweep would refuse
+#     it, and the config never gains an entry that could not be swept anyway.
+#   * THE CREDENTIAL VALUE NEVER ARRIVES HERE. Only its env var NAME is written;
+#     the value is placed in ``cabinet/.env`` by the dashboard's own safe writer.
+
+
+class ConnectorDeclarationError(ValueError):
+    """A connector could not be declared. The message is operator-facing and
+    contents-free — it names what to fix, never echoes a credential or a body."""
+
+
+def load_connector_templates(root) -> dict:
+    """The curated pick-list, keyed by id. Absent or unreadable ⇒ ``{}``.
+
+    This is a CONVENIENCE library, not operator config: a hatch that deleted it
+    simply offers no shortcuts, and a shipped pack that will not parse must not
+    take onboarding down with it. So unlike ``load_connector_specs`` — where an
+    unreadable file is an operator error worth naming — every problem here is an
+    empty pick-list, and the open-ended ``rest`` template a good pack carries is
+    what keeps "no shortcut for your tool" from meaning "no way to connect it".
+    """
+    path = Path(root).expanduser() / TEMPLATES_REL
+    if not path.is_file():
+        return {}
+    try:
+        import yaml  # local: keep the module import-light
+
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    declared = (doc.get("templates") or []) if isinstance(doc, dict) else []
+    if not isinstance(declared, list):
+        return {}
+    out: dict = {}
+    for tpl in declared:
+        if not isinstance(tpl, dict):
+            continue
+        tid = str(tpl.get("id") or "").strip()
+        connector = tpl.get("connector")
+        # A template is usable only if it carries an id and a connector whose
+        # inventory is a mapping — the same floor the loader holds a declared
+        # connector to. A malformed one is dropped from the list, never surfaced
+        # half-built for the operator to trip over.
+        if tid and isinstance(connector, dict) and isinstance(connector.get("inventory"), dict):
+            out.setdefault(tid, tpl)
+    return out
+
+
+def _set_dotted(obj: dict, dotted: str, value) -> None:
+    """Write ``value`` at a dotted path, making intermediate mappings as needed.
+
+    The path is the template author's, never the operator's — that is what keeps
+    an operator value confined to the field it was collected for.
+    """
+    parts = [p for p in str(dotted).split(".") if p]
+    if not parts:
+        return
+    cur = obj
+    for part in parts[:-1]:
+        nxt = cur.get(part)
+        if not isinstance(nxt, dict):
+            nxt = {}
+            cur[part] = nxt
+        cur = nxt
+    cur[parts[-1]] = value
+
+
+def build_connector_from_template(templates: dict, template_id: str, *,
+                                  name: str, credential_env: str,
+                                  fields=None) -> dict:
+    """Resolve a template + the operator's answers into one connector entry.
+
+    Raises :class:`ConnectorDeclarationError` — operator-facing, contents-free —
+    on anything that would not be a lawful read. The returned entry carries the
+    env var NAME under ``credential_env`` and never a credential value.
+    """
+    from copy import deepcopy
+
+    tpl = templates.get(str(template_id or "").strip())
+    if not isinstance(tpl, dict):
+        raise ConnectorDeclarationError(
+            "That is not a tool I know how to set up. Pick one from the list, or "
+            "use “Another REST list” to describe your own.")
+    entry = deepcopy(tpl.get("connector") or {})
+    if not isinstance(entry.get("inventory"), dict):
+        raise ConnectorDeclarationError(
+            "That template is missing its read shape, so it cannot be set up.")
+
+    declared = {}
+    for field in tpl.get("fields") or []:
+        if isinstance(field, dict) and str(field.get("key") or "").strip():
+            declared[str(field.get("key")).strip()] = field
+    supplied = fields or {}
+    if not isinstance(supplied, dict):
+        raise ConnectorDeclarationError("The details for this tool were not readable.")
+    # An answer to a question this template never asked is refused rather than
+    # written somewhere: the operator fills the fields on offer, nothing else.
+    for key in supplied:
+        if str(key) not in declared:
+            raise ConnectorDeclarationError(f"“{key}” is not something this tool asks for.")
+    for key, field in declared.items():
+        raw = supplied.get(key)
+        text = "" if raw is None else str(raw).strip()
+        if not text:
+            if field.get("required"):
+                label = str(field.get("label") or key)
+                raise ConnectorDeclarationError(f"{label} is needed to set this up.")
+            continue  # blank optional ⇒ keep the template's own default
+        if len(text) > _MAX_DECLARED_FIELD_CHARS:
+            raise ConnectorDeclarationError(
+                f"“{field.get('label') or key}” is too long.")
+        if "\n" in text or "\r" in text:
+            raise ConnectorDeclarationError(
+                f"“{field.get('label') or key}” cannot contain a line break.")
+        _set_dotted(entry, str(field.get("into") or ""), text)
+
+    label = " ".join(str(name or "").split())[:_MAX_CONNECTOR_NAME_CHARS] or str(template_id).strip()
+    entry["name"] = label
+    cred = str(credential_env or "").strip()
+    if not _ENV_NAME_RE.match(cred):
+        raise ConnectorDeclarationError(
+            "The credential name must be UPPER_SNAKE_CASE (letters, digits, "
+            "underscore), so it is a valid environment variable.")
+    entry["credential_env"] = cred
+
+    # THE CEILING, on the BUILT call, before a byte is written. A template whose
+    # inventory could write, or a custom URL that is not https, is refused here
+    # with the same verdict the sweep would give it — so the config can never
+    # gain an entry the read lane would then reject.
+    try:
+        assert_read_only(entry.get("inventory"))
+    except ReadOnlyViolation as exc:
+        raise ConnectorDeclarationError(
+            f"That would not be a read-only connection ({exc}), so it was not "
+            "set up. The cabinet only ever lists; it never writes.") from None
+    return entry
+
+
+def _host_of(entry: dict) -> str:
+    """The host a connector's credential will reach — for the consent line."""
+    url = str((entry.get("inventory") or {}).get("url") or "")
+    if "://" not in url:
+        return ""
+    return url.split("://", 1)[1].split("/", 1)[0].split("?", 1)[0]
+
+
+def write_connector_declaration(root, entry: dict) -> dict:
+    """Add one built entry to ``instance/config/connectors.yml``, never clobbering.
+
+    Create-if-absent, append-if-present, and REFUSE a name already declared —
+    existing entries (and any comments the operator wrote beside them) are left
+    byte-for-byte. The write is validated by re-parsing the whole file before it
+    lands and re-reading it after, so a green return is a measured fact rather
+    than a hopeful one. Returns ``{"name", "host"}`` — contents-free.
+    """
+    import yaml  # local: keep the module import-light
+
+    # LAST LINE OF DEFENSE before a write, for a caller that reached here without
+    # going through build_connector_from_template. Surfaced as the same operator-
+    # facing, contents-free error every other declaration refusal uses.
+    try:
+        assert_read_only(entry.get("inventory"))
+    except ReadOnlyViolation as exc:
+        raise ConnectorDeclarationError(
+            f"That would not be a read-only connection ({exc}), so it was not "
+            "written.") from None
+    root_path = Path(root).expanduser()
+    path = root_path / CONNECTORS_REL
+    name = str(entry.get("name") or "").strip()
+    if not name:
+        raise ConnectorDeclarationError("A connector needs a name.")
+    existing = load_connector_specs(root_path)
+    if any(str(s.get("name") or "").strip() == name for s in existing):
+        raise ConnectorDeclarationError(
+            f"A connector named “{name}” is already set up. Choose a different name.")
+
+    block = yaml.safe_dump([entry], sort_keys=False, allow_unicode=True,
+                           default_flow_style=False)
+    indented = "".join((("  " + line) if line.strip() else line) + "\n"
+                       for line in block.splitlines())
+    if path.is_file():
+        base = path.read_text(encoding="utf-8")
+        if base and not base.endswith("\n"):
+            base += "\n"
+        new_text = base + indented
+    else:
+        new_text = (
+            "# This deployment's declared connectors — READ-ONLY inventory calls.\n"
+            "# Shape, ceiling and rationale: instance/config/connectors.yml.example.\n"
+            "# Written by onboarding when you connect a tool. Credentials are env\n"
+            "# var NAMES; the values live in cabinet/.env and never enter this file.\n"
+            "#\n"
+            "# The egg export drops this file (live instance values never ship); a\n"
+            "# fresh cabinet starts with no connectors and the .example twin to copy.\n\n"
+            "schema: cabinet.connectors/v1\n\n"
+            "connectors:\n"
+            + indented
+        )
+
+    # PARSE THE WHOLE REBUILT FILE BEFORE IT LANDS. An append that produced a
+    # document the loader would reject, or one that did not round-trip the entry
+    # intact, is refused here rather than written and discovered by a later
+    # sweep. Both are internal invariants (the caller already validated the
+    # entry), so a failure is this function's bug, named as one.
+    doc = yaml.safe_load(new_text)
+    parsed = doc.get("connectors") if isinstance(doc, dict) else None
+    if not isinstance(parsed, list):
+        raise ConnectorDeclarationError(
+            "The connector could not be written cleanly, so nothing was changed.")
+    landed = [e for e in parsed if isinstance(e, dict)
+              and str(e.get("name") or "").strip() == name]
+    if len(parsed) != len(existing) + 1 or len(landed) != 1 or landed[0] != entry:
+        raise ConnectorDeclarationError(
+            "The connector could not be written cleanly, so nothing was changed.")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(new_text, encoding="utf-8")
+
+    # MEASURED, NOT REPORTED. Read it back through the same loader a sweep uses.
+    reloaded = load_connector_specs(root_path)
+    if not any(str(s.get("name") or "").strip() == name for s in reloaded):
+        raise ConnectorDeclarationError(
+            "The connector did not persist, so it will not be read. Try again.")
+    return {"name": name, "host": _host_of(entry)}
 
 
 def sweep_connectors(root, *, specs=None, env=None, fetch=None, now=None,

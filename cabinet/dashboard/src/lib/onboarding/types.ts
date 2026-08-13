@@ -10,6 +10,16 @@ export type OnboardingAction =
   /** Answers the seed question. Carries free text, so surfaces render a FIELD. */
   | 'answer_seed'
   /**
+   * Declares ONE connector from a curated template plus a credential, right in
+   * onboarding. Carries a template id, a label, an env var NAME and at most a
+   * field or two — NEVER a credential value: the dashboard's own safe .env
+   * writer stores that, so the value never crosses to the core. Dashboard-
+   * surface only in practice — a credential paste belongs on the local surface,
+   * not a chat one — so the core never prints this on a card, and it needs no
+   * Telegram branch. The gather that follows is the existing read.
+   */
+  | 'declare_connector'
+  /**
    * Reads every connector the operator declared — read-only, contents-free.
    * Payload-free: the estate is declared in instance/config/connectors.yml, so
    * a surface can trigger the read but can never widen it.
@@ -64,6 +74,7 @@ export type OnboardingAction =
 export const ONBOARDING_ACTIONS = [
   'propose_window',
   'answer_seed',
+  'declare_connector',
   'answer_salience',
   'gather_connectors',
   'record_operator_identity',
@@ -88,6 +99,37 @@ type ActionsAgree = [OnboardingAction] extends [(typeof ONBOARDING_ACTIONS)[numb
   : never
 
 export const ONBOARDING_ACTIONS_MATCH_UNION: ActionsAgree = true
+
+/**
+ * One field a connector template still needs the operator to supply — the open
+ * `rest` template asks for a URL and a couple of paths; a single-credential tool
+ * asks for none. The dashboard renders these; the core validates them.
+ */
+export interface ConnectorTemplateField {
+  key: string
+  label: string
+  help: string
+  placeholder: string
+  required: boolean
+}
+
+/**
+ * One entry in the "Connect a tool" pick-list, projected to what the surface
+ * draws — never the connector body. The read shape (URLs, paths, the identity
+ * call) stays server-side; a surface is handed the id to send back, the label
+ * and summary to show, the host the credential reaches (for the consent line),
+ * the env var NAME it lands under, and the fields still to fill. The vendor
+ * names live in the DATA pack this is read from, never in the framework.
+ */
+export interface ConnectorTemplateChoice {
+  id: string
+  label: string
+  summary: string
+  host: string
+  credential_env: string
+  credential_help: string
+  fields: ConnectorTemplateField[]
+}
 
 /**
  * How a proposed window relates to the salience answer, when the two names
@@ -453,6 +495,25 @@ export interface OnboardingActionRequest {
    * The cabinet never retargets their choice silently.
    */
   salience_relation?: WindowRelation
+  /**
+   * REQUIRED by declare_connector: the id of a template from the pick-list
+   * (`instance/config/connector-templates.yml.example`). An id the pack does
+   * not carry is refused BY THE CORE.
+   */
+  template?: string
+  /**
+   * REQUIRED by declare_connector: the env var NAME the credential is stored
+   * under in cabinet/.env. UPPER_SNAKE_CASE, validated by the core. The
+   * credential VALUE is never in this request — the dashboard's safe .env
+   * writer stores it separately, so it never crosses to the core.
+   */
+  credential_env?: string
+  /**
+   * Optional on declare_connector: the operator's answers to the template's own
+   * fields, keyed by the template's field keys. A key the template never asked
+   * for is refused by the core, and each value is bounded there.
+   */
+  fields?: Record<string, string>
 }
 
 /**
