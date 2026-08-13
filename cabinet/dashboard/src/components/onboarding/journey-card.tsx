@@ -313,8 +313,18 @@ export default function OnboardingJourneyCard({
   }, [])
 
   const send = useCallback(
-    async (action: OnboardingAction, extra: Record<string, unknown> = {}): Promise<boolean> => {
-      if (!journey) return false
+    async (
+      action: OnboardingAction,
+      extra: Record<string, unknown> = {},
+      // The revision to send AS. Defaults to the card in this render's closure —
+      // but a handler that fires two actions back to back (declare then gather)
+      // holds a STALE closure between them: the first bumps the revision and the
+      // second would collide (revision_conflict) unless it is told the fresh one
+      // the first returned. Measured live 2026-08-13: the connect flow declared,
+      // then its gather was refused as a conflict, so the sweep never ran.
+      expectedRevisionOverride?: number
+    ): Promise<OnboardingResponse | null> => {
+      if (!journey) return null
       setWorking(true)
       setError(null)
       const ids = {
@@ -330,7 +340,7 @@ export default function OnboardingJourneyCard({
           body: JSON.stringify({
             action,
             ...ids,
-            expected_revision: journey.card.revision,
+            expected_revision: expectedRevisionOverride ?? journey.card.revision,
             surface: effectiveSurface.current,
             ...extra,
           }),
@@ -375,13 +385,13 @@ export default function OnboardingJourneyCard({
         if (action !== 'purge') {
           void reportEvidence('ui', 'succeeded', { action, rendered_stage: body.card.stage }, body.evidence || ids)
         }
-        return true
+        return body
       } catch (err) {
         setError(err instanceof Error ? err.message : 'That choice could not be completed.')
         if (action !== 'purge') {
           void reportEvidence('transport', 'failed', { action, error_code: 'action_request_failed' }, ids)
         }
-        return false
+        return null
       } finally {
         setWorking(false)
       }
@@ -519,7 +529,9 @@ export default function OnboardingJourneyCard({
       setConnectCredential('')
       setConnectPick('')
       setConnectFields(NO_FIELDS)
-      await send('gather_connectors')
+      // Read with the revision the declaration just produced, not the stale one
+      // in this closure — otherwise the sweep collides with the write above.
+      await send('gather_connectors', {}, declared.card.revision)
     } catch (err) {
       setConnectError(err instanceof Error ? err.message : 'That tool could not be connected.')
     } finally {

@@ -571,8 +571,14 @@ describe('driven component — the three questions round-trip into the core', ()
     expect(declare!.body).toContain('"credential_env":"GITHUB_TOKEN"')
     expect(declare!.body).toContain('"template":"github"')
     expect(declare!.body).not.toContain('ghp_the_secret_value')
-    // 3. The sweep ran straight after, so the found-summary can render.
-    expect(posts.some((p) => p.body.includes('"action":"gather_connectors"'))).toBe(true)
+    // 3. The sweep ran straight after — and with the FRESH revision the declare
+    //    returned (4), not the stale one this closure opened with (3). Measured
+    //    live 2026-08-13: without this, the gather collided with the declare as a
+    //    revision_conflict and the sweep never ran.
+    const gather = posts.find((p) => p.body.includes('"action":"gather_connectors"'))
+    expect(gather, 'gather_connectors was never POSTed').toBeDefined()
+    expect(declare!.body).toContain('"expected_revision":3') // the opening revision
+    expect(gather!.body).toContain('"expected_revision":4') // the one declare produced
     // 4. The credential was wiped from state once the declaration landed.
     expect(settersFor(STATE.connectCredential)).toContain('')
   })

@@ -8,7 +8,10 @@
  */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { cabinetRoot } from '@/lib/cabinet-root'
+import { parseEnvDocument } from '@/lib/config-write'
 import type {
   OnboardingActionRequest,
   OnboardingObservationRequest,
@@ -154,6 +157,25 @@ export function invocation(command: CoreCommand): {
   }
 }
 
+// The connector credentials the operator has declared, read FRESH from
+// cabinet/.env at spawn time. The read lane resolves a connector's
+// `credential_env` NAME against the process environment, and a credential the
+// operator just connected was written to that file AFTER this dashboard
+// started — so it is absent from `process.env` and, without this, the very
+// sweep that connect triggers reports it `credential_absent`. (Measured live
+// 2026-08-13.) Reading the file at each spawn means a just-connected tool is
+// readable immediately, with no dashboard restart. Absent file ⇒ nothing added.
+// The values feed the trusted onboarding core, which never emits a credential
+// value in its output; only the env NAME ever leaves it.
+function credentialsFromEnvFile(cwd: string): Record<string, string> {
+  const envPath = process.env.CABINET_ENV_PATH || path.join(cwd, 'cabinet/.env')
+  try {
+    return parseEnvDocument(readFileSync(envPath, 'utf8'))
+  } catch {
+    return {}
+  }
+}
+
 function run<T extends OnboardingResponse | OnboardingObservationResponse>(
   command: CoreCommand,
   input?: object
@@ -164,7 +186,7 @@ function run<T extends OnboardingResponse | OnboardingObservationResponse>(
     try {
       child = spawn(spec.executable, spec.argv, {
         cwd: spec.cwd,
-        env: { ...process.env, CABINET_ROOT: spec.cwd },
+        env: { ...process.env, ...credentialsFromEnvFile(spec.cwd), CABINET_ROOT: spec.cwd },
         shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],
       })
