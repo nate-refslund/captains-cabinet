@@ -7,6 +7,7 @@ import {
   resolveStorePosture,
   type StorePosture,
 } from './store-posture'
+import { envValueUnliteral } from './config-write'
 
 const exec = promisify(execCb)
 const prefix = process.env.CABINET_PREFIX || 'cabinet'
@@ -447,7 +448,10 @@ export async function getEnvVars(): Promise<Record<string, string>> {
       const eqIdx = line.indexOf('=')
       if (eqIdx > 0) {
         const key = line.substring(0, eqIdx).trim()
-        const value = line.substring(eqIdx + 1).trim()
+        // Decode a safe-quoted value back to its logical string, the same as
+        // `source` would — a value the writer single-quoted (config-write.ts)
+        // must display as itself, not as `'…'`.
+        const value = envValueUnliteral(line.substring(eqIdx + 1).trim())
         vars[key] = value
       }
     }

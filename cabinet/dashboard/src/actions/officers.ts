@@ -43,12 +43,19 @@ function notLiveRefusal(): { success: false; error: string } | null {
     : null
 }
 
-/** `source cabinet/.env && export … && bash <script> <args>` against the
+/** `set -a; source cabinet/.env; set +a; bash <script> <args>` against the
  *  resolved checkout root (dockerExec native mode already cwd's there, but
- *  absolute paths keep docker mode + explicit invocations working). */
+ *  absolute paths keep docker mode + explicit invocations working).
+ *
+ *  `set -a` around the `source` is what exports the sourced keys to the child
+ *  `bash`. The prior `export $(grep -v "^#" … | xargs)` re-parsed the file a
+ *  second time through `xargs`, whose quote rules are not bash's — a safe-quoted
+ *  value (config-write.ts single-quotes anything shell-unsafe) would be mangled
+ *  by xargs and then override the value `source` had already set correctly. The
+ *  `set -a` form has no second parser and is what every other boot script uses. */
 function envAndRun(script: string, args: string): string {
   const envFile = cabinetPath('cabinet/.env')
-  return `source ${envFile} && export $(grep -v "^#" ${envFile} | xargs) && bash ${cabinetPath(script)} ${args}`
+  return `set -a && source ${envFile} && set +a && bash ${cabinetPath(script)} ${args}`
 }
 
 export async function startOfficer(role: string) {

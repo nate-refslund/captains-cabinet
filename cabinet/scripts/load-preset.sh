@@ -311,7 +311,8 @@ log "Assembled safety boundaries → $RUNTIME_DIR/safety-boundaries.md"
 CONN="${NEON_CONNECTION_STRING:-}"
 if [ -z "$CONN" ] && [ -f "$CABINET_ROOT/cabinet/.env" ]; then
   CONN="$(grep -E '^NEON_CONNECTION_STRING=' "$CABINET_ROOT/cabinet/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
-  CONN="${CONN%\"}"; CONN="${CONN#\"}"   # tolerate a quoted value
+  CONN="${CONN%\"}"; CONN="${CONN#\"}"   # tolerate a "quoted" value
+  CONN="${CONN%\'}"; CONN="${CONN#\'}"   # ...or a 'single-quoted' one (safe-quote on write)
 fi
 if [ -n "$CONN" ]; then
   for schema in \
