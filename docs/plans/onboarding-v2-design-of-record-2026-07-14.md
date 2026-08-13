@@ -41,9 +41,28 @@ visible progress rail, plain Back/Next — asking, in order:
 
 The core seams are `framework/onboarding/journey.py::answer_seed` (role/dream/
 start_preference) and genesis's existing `mission.purpose` + seed conditioning.
-The Charter → scan → dividend → briefing back half is unchanged. **Known gap:**
-there is no onboarding-integrated connect-a-source UX yet — `decide` is honest
-about needing one, and the missing connect flow is its own unit.
+The Charter → scan → dividend → briefing back half is unchanged.
+
+**Connect-a-source, LIVE (Captain 2026-08-13).** The `decide` branch now
+connects a tool from inside onboarding, closing the gap this doc used to name.
+The dashboard's discover panel draws a pick-list from a curated, agnostic
+template pack shipped as DATA (`instance/config/connector-templates.yml.example`;
+the framework names no vendor — it consumes the pack generically). The operator
+picks a tool, pastes a credential and supplies at most a field or two; the
+credential VALUE goes only to `cabinet/.env` via the dashboard's safe writer
+(`actions/env.ts::saveConnectorCredential`), while a new core act
+`declare_connector` (`journey.py::_act_core` → `research.build_connector_from_template`
++ `research.write_connector_declaration`) writes the connector entry — the env
+var NAME, never the value — into `instance/config/connectors.yml`, refusing at
+declaration anything `assert_read_only` would refuse at the sweep. The existing
+`gather_connectors` read then runs and the flow reaches the salience/window
+question it always could once a connector existed. **Custody:** `connectors.yml`
+is captain-custody; v1 is propose-then-activate — in the personal hatch the
+operator IS the captain, so one explicit "Connect" click, with a consent line
+naming the host, both declares and activates. A delegated (operator ≠ captain)
+future needs a ratification step before activation; that is the named follow-up.
+**Out of v1:** MCP connectors (adding an MCP server is a sudo/germline-gated
+code-exec grant), honest-disabled and filed, never faked.
 
 ## 2. Product doctrine
 

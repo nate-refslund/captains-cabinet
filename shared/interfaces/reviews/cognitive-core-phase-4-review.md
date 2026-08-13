@@ -21,7 +21,23 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 3199ac703b477910d0ebe95ee2ca15219a47434cf16182a991b716032cb71b1e
+Reviewed-Scope-Digest: 14c4fccc71a84a96d73bb115f244c3981b1b075eb950ada1b350cf2bf475d1f3
+
+(RE-BIND, 2026-08-13, `feat/onboarding-connect-a-source`, recomputed over this
+branch's HEAD. ONE in-scope path moved and it is NOT a COG-4 surface:
+`cabinet/config/cognitive-architecture-contract.yml`, raising
+`framework_production_noncomment_lines` 62872 -> 63090 (effective 77414 ->
+77632) for the connect-a-tool onboarding step — the write half of the read lane,
+`declare_connector` in `framework/onboarding/journey.py::_act_core` plus its
+resolver/writer in `framework/onboarding/research.py`. Every implementation line
+lands in `journey.py`/`research.py`, which are NOT in the COG-4 scope set (nor is
+any of `framework/onboarding/`), so no COG-4 implementation byte moved. The
+vendor names live in the DATA pack `instance/config/connector-templates.yml.example`,
+never in framework code. ZERO new framework production modules (248 <= 248) and
+zero expansion rows. DISJOINT from every raise noted below: different feature,
+different files. MEASURED, not asserted: the digest above is the tool's own
+output over HEAD, and the artifact is excluded from its own digest, so writing
+this note does not move it.)
 
 (RE-BIND, 2026-07-30, `feat/onboarding-stepped-flow`, recomputed over this
 branch's HEAD. ONE in-scope path moved and it is NOT a COG-4 surface:

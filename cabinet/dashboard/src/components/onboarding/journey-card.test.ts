@@ -89,12 +89,35 @@ vi.mock('react', async (importOriginal) => {
   }
 })
 
-import OnboardingJourneyCard, { IDENTITY_SHOWN, NO_IDENTITY_PICKS, NO_MERGE } from './journey-card'
+// The two server actions the connect step calls. Mocked so a driven test can
+// assert the ORCHESTRATION (credential stored, then declared, then swept)
+// without a real filesystem or auth — the credential value must reach
+// saveConnectorCredential and NOT the declare_connector fetch body, and that is
+// exactly what these let us check.
+const serverActions = vi.hoisted(() => ({
+  saveConnectorCredential: vi.fn(
+    async (_key: string, _value: string): Promise<{ success: boolean; error?: string }> => ({
+      success: true,
+    })
+  ),
+  getConnectorTemplates: vi.fn(async () => [] as ConnectorTemplateChoice[]),
+}))
+vi.mock('@/actions/env', () => ({
+  saveConnectorCredential: serverActions.saveConnectorCredential,
+}))
+vi.mock('@/actions/connectors', () => ({
+  getConnectorTemplates: serverActions.getConnectorTemplates,
+}))
+
+import OnboardingJourneyCard, { IDENTITY_SHOWN, NO_FIELDS, NO_IDENTITY_PICKS, NO_MERGE } from './journey-card'
+import type { ConnectorTemplateChoice } from '@/lib/onboarding/types'
 
 afterEach(() => {
   hookScript.steps = null
   hookScript.cursor = 0
   hookScript.setterCalls = []
+  serverActions.saveConnectorCredential.mockClear()
+  serverActions.getConnectorTemplates.mockClear()
   vi.unstubAllGlobals()
 })
 
@@ -131,6 +154,35 @@ function journeyFixture(stage: string): OnboardingResponse {
       options: [],
     },
   }
+}
+
+/** The connect pick-list a loaded fetch would return: one single-credential
+ *  tool, and the open template that asks for its own fields. */
+function connectTemplates(): ConnectorTemplateChoice[] {
+  return [
+    {
+      id: 'github',
+      label: 'GitHub',
+      summary: 'The repositories your account can see, most-recently-updated first.',
+      host: 'api.github.com',
+      credential_env: 'GITHUB_TOKEN',
+      credential_help: 'A GitHub personal access token.',
+      fields: [],
+    },
+    {
+      id: 'rest',
+      label: 'Another REST list',
+      summary: 'Any HTTPS GET that returns a JSON list.',
+      host: '',
+      credential_env: 'REST_API_TOKEN',
+      credential_help: 'The bearer token the endpoint expects.',
+      fields: [
+        { key: 'url', label: 'List URL', help: 'The full https:// URL.', placeholder: 'https://…', required: true },
+        { key: 'name_field', label: 'Name field', help: 'Dotted path.', placeholder: 'name', required: true },
+        { key: 'updated_field', label: 'Updated field', help: 'Dotted path.', placeholder: 'updated_at', required: true },
+      ],
+    },
+  ]
 }
 
 /** An entry plan whose only content is the identity ask, for picker arms. */
@@ -181,6 +233,10 @@ function scriptState(overrides: {
   salienceName?: string
   salienceMerge?: readonly string[]
   relationAsk?: unknown
+  connectorTemplates?: readonly ConnectorTemplateChoice[] | null
+  connectPick?: string
+  connectCredential?: string
+  connectFields?: Readonly<Record<string, string>>
 }) {
   hookScript.cursor = 0
   hookScript.steps = [
@@ -208,6 +264,14 @@ function scriptState(overrides: {
     { initial: '', value: overrides.salienceName ?? '' }, // 21 salienceName
     { initial: NO_MERGE, value: overrides.salienceMerge ?? NO_MERGE }, // 22 salienceMerge
     { initial: null, value: overrides.relationAsk ?? null }, // 23 relationAsk
+    // The connect step (discover branch). connectorTemplates is null until the
+    // client fetch lands — and that fetch is a useEffect, which this scripted
+    // renderer does NOT run, so a test that wants tiles must pass them here.
+    { initial: null, value: overrides.connectorTemplates ?? null }, // 24 connectorTemplates
+    { initial: '', value: overrides.connectPick ?? '' }, // 25 connectPick
+    { initial: '', value: overrides.connectCredential ?? '' }, // 26 connectCredential
+    { initial: NO_FIELDS, value: overrides.connectFields ?? NO_FIELDS }, // 27 connectFields
+    { initial: null }, // 28 connectError
   ]
 }
 
@@ -301,6 +365,65 @@ describe('rendered component — the stepped front', () => {
     const html = render()
     expect(html).toContain('Read what I am connected to')
   })
+
+  it('draws the connect pick-list on the decide branch when tools are available', () => {
+    scriptState({
+      journey: journeyFixture('welcome'),
+      wizardStep: 'discover',
+      connectorTemplates: connectTemplates(),
+    })
+    const html = render()
+    expect(html).toContain('GitHub')
+    expect(html).toContain('The repositories your account can see')
+    expect(html).toContain('Another REST list')
+    // Nothing picked yet ⇒ no credential field is revealed.
+    expect(html).not.toContain('id="dashboard-connect-credential"')
+  })
+
+  it('reveals a password credential field and a host consent line once a tool is picked', () => {
+    scriptState({
+      journey: journeyFixture('welcome'),
+      wizardStep: 'discover',
+      connectorTemplates: connectTemplates(),
+      connectPick: 'github',
+    })
+    const html = render()
+    expect(html).toContain('id="dashboard-connect-credential"')
+    expect(html).toContain('type="password"')
+    // The consent line NAMES the host the credential will reach — the honest
+    // confirmation the custody model owes the operator.
+    expect(html).toContain('api.github.com')
+    // Connect stays disabled until a credential is entered.
+    const idx = html.indexOf('Connect GitHub')
+    const connectTag = html.slice(html.lastIndexOf('<button', idx), idx)
+    expect(connectTag).toMatch(DISABLED_ATTR)
+  })
+
+  it('enables Connect once a credential is present', () => {
+    scriptState({
+      journey: journeyFixture('welcome'),
+      wizardStep: 'discover',
+      connectorTemplates: connectTemplates(),
+      connectPick: 'github',
+      connectCredential: 'ghp_secret_token',
+    })
+    const html = render()
+    const idx = html.indexOf('Connect GitHub')
+    const connectTag = html.slice(html.lastIndexOf('<button', idx), idx)
+    expect(connectTag).not.toMatch(DISABLED_ATTR)
+  })
+
+  it('asks the open template for its own fields', () => {
+    scriptState({
+      journey: journeyFixture('welcome'),
+      wizardStep: 'discover',
+      connectorTemplates: connectTemplates(),
+      connectPick: 'rest',
+    })
+    const html = render()
+    expect(html).toContain('List URL')
+    expect(html).toContain('id="dashboard-connect-url"')
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -350,6 +473,9 @@ const STATE = {
   feedbackRecorded: 18,
   salienceChoice: 20,
   relationAsk: 23,
+  connectPick: 25,
+  connectCredential: 26,
+  connectFields: 27,
 } as const
 
 function settersFor(index: number): unknown[] {
@@ -405,6 +531,50 @@ describe('driven component — the three questions round-trip into the core', ()
       .find((call) => call.url.endsWith('/api/onboarding'))
     expect(action!.body).toContain('"start_preference":"decide"')
     expect(action!.body).not.toContain('"purpose"')
+  })
+
+  it('connect stores the credential via the safe writer, declares the NAME, then sweeps', async () => {
+    const fetchSpy = vi.fn(async (url: RequestInfo | URL, _init?: RequestInit) => (
+      String(url).endsWith('/api/onboarding/evidence')
+        ? { ok: true, json: async () => ({ ok: true }) }
+        : { ok: true, status: 200, json: async () => ({ ok: true, card: { stage: 'welcome', revision: 4 }, state: { stage: 'welcome' } }) }
+    ))
+    vi.stubGlobal('fetch', fetchSpy)
+    scriptState({
+      journey: journeyFixture('welcome'),
+      wizardStep: 'discover',
+      connectorTemplates: connectTemplates(),
+      connectPick: 'github',
+      connectCredential: 'ghp_the_secret_value',
+    })
+    const form = driveTree().find(
+      (el) => el.type === 'form' && el.props['aria-label'] === 'Connect a tool'
+    )
+    expect(form, 'the connect form was not rendered').toBeDefined()
+    await (form!.props.onSubmit as (e: { preventDefault(): void }) => Promise<void>)({
+      preventDefault() {},
+    })
+    await flush(); await flush(); await flush()
+
+    // 1. The credential VALUE went to the safe .env writer, under the template's
+    //    env var NAME — and ONLY there.
+    expect(serverActions.saveConnectorCredential).toHaveBeenCalledWith(
+      'GITHUB_TOKEN',
+      'ghp_the_secret_value'
+    )
+    const posts = fetchSpy.mock.calls
+      .map(([url, init]) => ({ url: String(url), body: String((init as RequestInit | undefined)?.body ?? '') }))
+      .filter((call) => call.url.endsWith('/api/onboarding'))
+    // 2. declare_connector was POSTed carrying the env var NAME, NEVER the value.
+    const declare = posts.find((p) => p.body.includes('"action":"declare_connector"'))
+    expect(declare, 'declare_connector was never POSTed').toBeDefined()
+    expect(declare!.body).toContain('"credential_env":"GITHUB_TOKEN"')
+    expect(declare!.body).toContain('"template":"github"')
+    expect(declare!.body).not.toContain('ghp_the_secret_value')
+    // 3. The sweep ran straight after, so the found-summary can render.
+    expect(posts.some((p) => p.body.includes('"action":"gather_connectors"'))).toBe(true)
+    // 4. The credential was wiped from state once the declaration landed.
+    expect(settersFor(STATE.connectCredential)).toContain('')
   })
 
   it('Next moves the step WITHOUT clearing the role already entered', () => {

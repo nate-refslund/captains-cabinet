@@ -36,6 +36,15 @@ const MAX_OUTPUT_BYTES = 2 * 1024 * 1024
 export const ACTIONS: ReadonlySet<string> = new Set([
   'propose_window',
   'answer_seed',
+  // Declares ONE connector from a curated template + a credential, in onboarding
+  // (Captain 2026-08-13). Carries a `template` id, a `name` label, a
+  // `credential_env` NAME and an optional `fields` map — bounded below. It never
+  // carries a credential VALUE: the dashboard's safe .env writer stores that,
+  // so the value never reaches the core. The core does not print this on a card
+  // (a credential paste belongs on the local surface), so it needs no Telegram
+  // branch; it is reachable only where a surface writes the send, which is why
+  // it lives in this admission set at all.
+  'declare_connector',
   // Credentialed READ-ONLY connector sweep (Captain ruling 2026-07-29). Carries
   // no payload: what may be read is declared in instance/config/connectors.yml,
   // never in a request, so no surface can widen the read by sending a field.
@@ -260,6 +269,20 @@ export function applyOnboardingAction(
   }
   if (request.same_as && request.same_as.length > 64) {
     throw new OnboardingBridgeError('merge_too_many', 'That is too many names in one merge.')
+  }
+  // declare_connector's own inputs. The core resolves the template, validates
+  // the env var NAME, bounds each field value and refuses an unknown field key
+  // BY NAME — these are only the cheap outer bounds so a paste never crosses the
+  // process boundary. A credential VALUE is deliberately not among them: it does
+  // not travel on this request at all.
+  if (request.template && request.template.length > 64) {
+    throw new OnboardingBridgeError('template_invalid', 'That is not a tool I can set up.')
+  }
+  if (request.credential_env && request.credential_env.length > 128) {
+    throw new OnboardingBridgeError('credential_env_too_long', 'That credential name is too long.')
+  }
+  if (request.fields && JSON.stringify(request.fields).length > 8_192) {
+    throw new OnboardingBridgeError('fields_too_long', 'Those details are too long.')
   }
   return run<OnboardingResponse>('act', {
     ...request,

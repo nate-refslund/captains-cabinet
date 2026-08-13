@@ -9,6 +9,12 @@
 # that shape is a connector, whether it holds boards, repositories, case files,
 # patient lists, catalogues or shipments.
 #
+# TWO WAYS TO FILL THIS FILE. Hand-write an entry below, or let onboarding do it:
+# the "Connect a tool" step offers a curated pick-list drawn from
+# instance/config/connector-templates.yml.example, and writing an entry there is
+# the same as writing one here — it declares a credential env NAME and a
+# read-only inventory call, and the entry it appends is exactly the shape below.
+#
 # WHAT THE CABINET DOES WITH IT. At onboarding it runs the `gather_connectors`
 # action: every declared connector is read ONCE, read-only, and what comes back
 # is names, dates, actors and counts — never bodies, never rows. Those names are
