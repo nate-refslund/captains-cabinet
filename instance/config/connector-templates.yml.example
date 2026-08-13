@@ -1,10 +1,10 @@
 # =============================================================
-# connector-templates.yml — the pick-list onboarding offers, shipped as DATA
+# connector-templates.yml — the catalog onboarding offers, shipped as DATA
 # =============================================================
 # A TEMPLATE is a connector with everything filled in except the one or two
 # things only you can supply: a credential, and — for the open-ended one at the
 # bottom — where your list lives. Onboarding reads this file to draw the "Connect
-# a tool" pick-list; when you choose one and paste a credential, the cabinet
+# a tool" catalog; when you choose one and paste a credential, the cabinet
 # writes the matching entry into instance/config/connectors.yml and reads it
 # ONCE, read-only, exactly as instance/config/connectors.yml.example describes.
 #
@@ -12,9 +12,10 @@
 # vendor: it consumes whatever read shapes it finds here, generically. The names
 # below (and the URLs beside them) are DATA — a convenience library of shapes
 # that already work — living in the instance layer, never compiled into the
-# framework. Delete the ones you will never use, add your own, and the pick-list
+# framework. Delete the ones you will never use, add your own, and the catalog
 # changes with no code change. The open-ended `rest` template at the bottom
-# reads any HTTPS list at all, so nothing here is a closed set.
+# reads any HTTPS list at all, so nothing here is a closed set. THAT is how this
+# file grows to hundreds: by adding data, never by shipping code.
 #
 # EVERY SHAPE OBEYS THE ONE CEILING. Each `connector.inventory` is a GET, or a
 # POST carrying a GraphQL READ document — the same limit the executor enforces
@@ -22,41 +23,97 @@
 # whose inventory could write is refused at declaration time, so this file
 # cannot become a way around the ceiling.
 #
+# WHAT "VERIFIED" MEANS FOR AN ENTRY HERE. Every shape below was checked against
+# that provider's CURRENT public API reference: the endpoint, the auth header,
+# the path to the list, and the name and date fields on each item. Popular tools
+# are ABSENT where their list endpoint could not meet the ceiling — a list that
+# is a non-GraphQL POST, an auth scheme that needs the operator to base64 a
+# pair, a credential that only exists after an OAuth round trip, or a list with
+# no timestamp on its items. An entry that 401s or 404s confusingly is worse
+# than no entry: the open `rest` template covers everything not named here.
+#
+# READ SCOPE, STATED HONESTLY. Where a provider offers a read-only scope or key
+# type, `how_to_connect` names it exactly and tells you to pick only that. Where
+# one does not exist, the last step SAYS SO — because a step list that quietly
+# has you mint a key with write powers, next to a promise that the cabinet only
+# reads, is the kind of half-truth this whole lane exists to refuse.
+#
 # This is an EXAMPLE twin (it ships; the live instance values do not). It is read
 # as-is — you do not copy it to a live name. Curate it in place.
 #
 # ------------------------------------------------------------------
 # THE SHAPE OF A TEMPLATE
 # ------------------------------------------------------------------
-#   id:              stable key the pick-list and the writer use. lower_snake.
+#   id:              stable key the catalog and the writer use. lower_snake.
 #   label:           what the operator sees in the list.
+#   category:        which shelf of the catalog it sits on. One of the keys in
+#                    `categories` below; anything else falls to "Anything else".
 #   summary:         one line: what a sweep of this will actually show you.
 #   host:            the host the credential is sent to (shown for consent).
+#                    Empty when the operator supplies the address themselves.
 #   credential_env:  the env var NAME the credential is stored under, in
 #                    cabinet/.env. The VALUE never enters this file or that one.
 #   credential_help: what kind of credential to paste, in the operator's words.
+#   key_looks_like:  the shape of a right-looking key, so a wrong paste is
+#                    caught by eye rather than by a puzzling 401 later.
+#   how_to_connect:  2-4 steps, in that product's own words: where its key
+#                    screen is, WHICH read-only scope to tick, and the gotcha.
+#                    Written for someone who has never seen an API.
 #   fields:          what the operator still has to supply, [] for none. Each:
 #                      key/label/help/placeholder, required (bool), and `into` —
 #                      the dotted path in `connector` the pasted value is written
 #                      to. Only these declared paths ever take an operator value.
+#                      `into_format` (optional) is the TEMPLATE AUTHOR's sentence
+#                      with one `{value}` hole in it, so the operator can answer
+#                      "acme" where the shape needs a whole URL. It must start
+#                      with a literal https:// — the scheme is never the
+#                      operator's to choose.
 #   connector:       the connector entry, minus the credential. inventory/page/
 #                    identity are exactly as connectors.yml.example defines them.
 # =============================================================
 
 schema: cabinet.connector-templates/v1
 
+# The shelves the catalog is browsed by. Named for what an operator KEEPS in
+# them, never for an industry or a job title — the framework serves a solicitor,
+# a bakery and a satellite firm with the same words.
+categories:
+  code: Where your code lives
+  tracker: Work and tasks
+  docs: Documents and notes
+  content: Sites, forms and content
+  design: Design files
+  crm: Customers and deals
+  support: Support and inboxes
+  comms: Conversations
+  calendar: Calendars and bookings
+  finance: Money in and out
+  commerce: Selling online
+  marketing: Audiences and campaigns
+  people: Hiring and people
+  time: Time and projects
+  analytics: Traffic and numbers
+  infra: Where things run
+
 templates:
   # ---------------------------------------------------------------
-  # A single-Bearer GET over a JSON list — the simplest real shape.
+  # WHERE YOUR CODE LIVES
   # ---------------------------------------------------------------
+  # A single-Bearer GET over a JSON list — the simplest real shape.
   - id: github
     label: GitHub
+    category: code
     summary: The repositories your account can see, most-recently-updated first.
     host: api.github.com
     credential_env: GITHUB_TOKEN
     credential_help: >-
       A GitHub personal access token. A fine-grained read-only token, or a
       classic token with no scopes, is enough — the cabinet only lists.
+    key_looks_like: "starts with github_pat_ (fine-grained) or ghp_ (classic)"
+    how_to_connect:
+      - "In GitHub, open Settings, then Developer settings, then Personal access tokens, then Fine-grained tokens."
+      - "Choose Generate new token, pick which repositories it may see, and leave every permission on Read-only. A classic token with no scopes ticked also works and lists your public repositories."
+      - "Copy the token when it appears — GitHub shows it only once."
     fields: []
     connector:
       inventory:
@@ -86,47 +143,93 @@ templates:
           - login
           - name
 
-  # ---------------------------------------------------------------
-  # A GET whose clock is epoch-milliseconds — DECLARED, so it reads.
-  # ---------------------------------------------------------------
-  - id: vercel
-    label: Vercel
-    summary: Your projects and when each last deployed.
-    host: api.vercel.com
-    credential_env: VERCEL_API_TOKEN
-    credential_help: A Vercel access token (Account Settings → Tokens). Read access is enough.
+  # A credential in a header that is NOT Authorization — declared, so it reads.
+  - id: gitlab
+    label: GitLab
+    category: code
+    summary: The projects your account is a member of, most-recently-active first.
+    host: gitlab.com
+    credential_env: GITLAB_TOKEN
+    credential_help: A GitLab personal access token with the read_api scope.
+    key_looks_like: "starts with glpat- followed by a long random string"
+    how_to_connect:
+      - "In GitLab, click your avatar (top right), choose Edit profile, then Access tokens."
+      - "Add a new token, tick read_api and nothing else, set an expiry, and generate it."
+      - "Copy the token straight away — once you leave or refresh the page you cannot view it again."
     fields: []
     connector:
       inventory:
-        url: https://api.vercel.com/v9/projects?limit=100
+        url: https://gitlab.com/api/v4/projects?membership=true&per_page=100&order_by=last_activity_at&page={page}
         method: GET
-        auth_format: "Bearer {credential}"
-        items_path: projects
-        name_field: name
-        updated_field: updatedAt
-        date_encoding: epoch_ms
-        actor_field: latestDeployments.0.creator.username
+        auth_header: PRIVATE-TOKEN
+        auth_format: "{credential}"
+        items_path: ""
+        name_field: path_with_namespace
+        updated_field: last_activity_at
       page:
         start: 1
         size: 100
-        max_pages: 1
+        max_pages: 3
       identity:
-        url: https://api.vercel.com/v2/user
+        url: https://gitlab.com/api/v4/user
         method: GET
-        auth_format: "Bearer {credential}"
+        auth_header: PRIVATE-TOKEN
+        auth_format: "{credential}"
         value_paths:
-          - user.username
-          - user.name
+          - username
+          - name
+
+  # A tool you host YOURSELF — the address is yours, so you supply it.
+  - id: gitea
+    label: Gitea
+    category: code
+    summary: The repositories your Gitea account owns, with when each was last updated.
+    host: ""
+    credential_env: GITEA_TOKEN
+    credential_help: A Gitea access token with the read:repository permission.
+    key_looks_like: "a 40-character string of digits and letters a-f"
+    how_to_connect:
+      - "Open your own Gitea server and go to Settings, then Applications (the address ends in /user/settings/applications)."
+      - "Under Manage Access Tokens, name the token, open Select permissions, and set repository to read:repository — leave everything else unticked."
+      - "Copy the token from the message that appears immediately: it is shown once and cannot be displayed again."
+    fields:
+      - key: server
+        label: Your Gitea address
+        help: The address you open Gitea at, with no https:// in front and no slash on the end.
+        placeholder: git.example.com
+        required: true
+        into: inventory.url
+        into_format: https://{value}/api/v1/user/repos?limit=50&page={page}
+    connector:
+      inventory:
+        url: https://gitea.example.com/api/v1/user/repos?limit=50&page={page}
+        method: GET
+        auth_format: "token {credential}"
+        items_path: ""
+        name_field: full_name
+        updated_field: updated_at
+        actor_field: owner.login
+      page:
+        start: 1
+        size: 50
+        max_pages: 3
 
   # ---------------------------------------------------------------
-  # A POST carrying a GraphQL READ document — one query, a list back.
+  # WORK AND TASKS
   # ---------------------------------------------------------------
+  # A POST carrying a GraphQL READ document — one query, a list back.
   - id: monday
     label: monday.com
+    category: tracker
     summary: Your active boards and who created each.
     host: api.monday.com
     credential_env: MONDAY_API_TOKEN
     credential_help: A monday.com API token (Admin → API, or your personal token).
+    key_looks_like: "a very long string beginning with eyJ"
+    how_to_connect:
+      - "In monday.com, click your avatar, then Developers, then My access tokens."
+      - "Copy your personal API token. An admin can instead issue one under Administration, then API."
+      - "monday.com has no read-only token — it can do whatever your own account can. The cabinet only ever lists, but the token itself is not limited."
     fields: []
     connector:
       inventory:
@@ -152,17 +255,1606 @@ templates:
           - data.account.name
           - data.account.slug
 
+  - id: linear
+    label: Linear
+    category: tracker
+    summary: Your Linear issues, most-recently-updated first.
+    host: api.linear.app
+    credential_env: LINEAR_API_KEY
+    credential_help: A Linear personal API key restricted to Read.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "In Linear, open Settings, then Account, then Security and access."
+      - "Create a personal API key and set its permission to Read only — do not give it Write or Admin."
+      - "Copy the key when it is shown. If you cannot create one, member API keys have been switched off for your workspace."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.linear.app/graphql
+        method: POST
+        json:
+          query: "query Issues { issues(first: 100, orderBy: updatedAt) { nodes { identifier title updatedAt assignee { name } } } }"
+        items_path: data.issues.nodes
+        name_field: title
+        updated_field: updatedAt
+        actor_field: assignee.name
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+      identity:
+        url: https://api.linear.app/graphql
+        method: POST
+        json:
+          query: "query Me { viewer { name email } }"
+        auth_format: "{credential}"
+        value_paths:
+          - data.viewer.name
+          - data.viewer.email
+
+  - id: asana
+    label: Asana
+    category: tracker
+    summary: Your Asana projects and when each project's own details last changed.
+    host: app.asana.com
+    credential_env: ASANA_ACCESS_TOKEN
+    credential_help: An Asana personal access token from the Asana developer console.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "Sign in to Asana and open the developer console at app.asana.com/0/my-apps."
+      - "Create a new personal access token, name it, and copy it when it appears."
+      - "Asana has no read-only token — it has exactly the access to Asana that you do, including changing things. The cabinet only ever lists, but the token itself is not limited."
+    fields: []
+    connector:
+      inventory:
+        url: https://app.asana.com/api/1.0/projects?limit=100&opt_fields=name,modified_at
+        method: GET
+        auth_format: "Bearer {credential}"
+        items_path: data
+        name_field: name
+        updated_field: modified_at
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+      identity:
+        url: https://app.asana.com/api/1.0/users/me
+        method: GET
+        auth_format: "Bearer {credential}"
+        value_paths:
+          - data.name
+          - data.email
+
+  - id: shortcut
+    label: Shortcut
+    category: tracker
+    summary: The epics in your Shortcut workspace, with when each was last updated.
+    host: api.app.shortcut.com
+    credential_env: SHORTCUT_API_TOKEN
+    credential_help: A Shortcut API token from your account settings.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "In Shortcut, go to Settings, then Your Account, then API Tokens."
+      - "Type a name for the token — the Generate Token button stays greyed out until you do — then generate it and copy it."
+      - "Shortcut has no read-only token: tokens give complete access to your Shortcut account. The cabinet only ever lists, but the token itself is not limited."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.app.shortcut.com/api/v3/epics
+        method: GET
+        auth_header: Shortcut-Token
+        auth_format: "{credential}"
+        items_path: ""
+        name_field: name
+        updated_field: updated_at
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+
+  - id: todoist
+    label: Todoist
+    category: tracker
+    summary: Your Todoist projects and when each was last updated.
+    host: api.todoist.com
+    credential_env: TODOIST_API_TOKEN
+    credential_help: Your personal Todoist API token from the Developer tab in settings.
+    key_looks_like: "a 40-character string of digits and letters a-f"
+    how_to_connect:
+      - "In Todoist, click your avatar at the top left and choose Settings."
+      - "Open the Integrations tab, then the Developer tab at the top, and click Copy API token."
+      - "Todoist has no read-only token — this one can also change your Todoist data, and issuing a new one cancels the old. The cabinet only ever lists, but the token itself is not limited."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.todoist.com/api/v1/projects?limit=100
+        method: GET
+        auth_format: "Bearer {credential}"
+        items_path: results
+        name_field: name
+        updated_field: updated_at
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+
+  # ---------------------------------------------------------------
+  # DOCUMENTS AND NOTES
+  # ---------------------------------------------------------------
+  - id: coda
+    label: Coda
+    category: docs
+    summary: The docs in your Coda account, most-recently-updated first.
+    host: coda.io
+    credential_env: CODA_API_TOKEN
+    credential_help: A Coda API token from your account settings.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "In Coda, click your avatar in the lower-left corner of any page, then Account settings."
+      - "Scroll to API settings, click Generate API token, name it, and add a restriction if you want to narrow it."
+      - "Copy the token. Coda has no read-only token — it can also change things in Coda. The cabinet only ever lists, but the token itself is not limited."
+    fields: []
+    connector:
+      inventory:
+        url: https://coda.io/apis/v1/docs?limit=100
+        method: GET
+        auth_format: "Bearer {credential}"
+        items_path: items
+        name_field: name
+        updated_field: updatedAt
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+      identity:
+        url: https://coda.io/apis/v1/whoami
+        method: GET
+        auth_format: "Bearer {credential}"
+        value_paths:
+          - name
+          - loginId
+
+  - id: gitbook
+    label: GitBook
+    category: docs
+    summary: The spaces in your GitBook organization, with when each was last updated.
+    host: api.gitbook.com
+    credential_env: GITBOOK_API_TOKEN
+    credential_help: A GitBook personal access token from your developer settings.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "Go to app.gitbook.com/account/developer and create a personal access token."
+      - "Copy it, and keep it out of emails and chat — GitBook asks you not to share it."
+      - "GitBook has no read-only token: it acts as you and can also change things there. The cabinet only ever lists, but the token itself is not limited."
+      - "Open your organization in GitBook and copy the id out of the web address for the box below."
+    fields:
+      - key: organization
+        label: Your GitBook organization ID
+        help: The id in your GitBook organization web address.
+        placeholder: "-Mabc123def456"
+        required: true
+        into: inventory.url
+        into_format: https://api.gitbook.com/v1/orgs/{value}/spaces?limit=100
+    connector:
+      inventory:
+        url: https://api.gitbook.com/v1/orgs/your-organization/spaces?limit=100
+        method: GET
+        auth_format: "Bearer {credential}"
+        items_path: items
+        name_field: title
+        updated_field: updatedAt
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+      identity:
+        url: https://api.gitbook.com/v1/user
+        method: GET
+        auth_format: "Bearer {credential}"
+        value_paths:
+          - displayName
+          - email
+
+  - id: nuclino
+    label: Nuclino
+    category: docs
+    summary: The items in one Nuclino workspace, with when each was last updated.
+    host: api.nuclino.com
+    credential_env: NUCLINO_API_KEY
+    credential_help: A Nuclino API key from your profile settings.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "In Nuclino, click your profile image in the top right and select Profile."
+      - "Go to the API Keys section and click Create API key, then copy it immediately — it is shown once and cannot be retrieved later."
+      - "Nuclino has no read-only key — it can also change things there. The cabinet only ever lists, but the key itself is not limited."
+      - "Open the workspace you want listed and copy its id out of the web address for the box below."
+    fields:
+      - key: workspace
+        label: Your Nuclino workspace ID
+        help: The id in the web address of the workspace you want listed.
+        placeholder: aaf6d580-1e5f-4c2b-9a1e-1234567890ab
+        required: true
+        into: inventory.url
+        into_format: https://api.nuclino.com/v0/items?workspaceId={value}&limit=100
+    connector:
+      inventory:
+        url: https://api.nuclino.com/v0/items?workspaceId=your-workspace&limit=100
+        method: GET
+        auth_format: "{credential}"
+        items_path: data.results
+        name_field: title
+        updated_field: lastUpdatedAt
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+
+  - id: slite
+    label: Slite
+    category: docs
+    summary: The notes in your Slite workspace, most-recently-edited first.
+    host: api.slite.com
+    credential_env: SLITE_API_KEY
+    credential_help: A Slite API key from your organization settings.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "Open your organization's menu at the top left of Slite, then Settings."
+      - "In the left panel click API, then Create a new key, and copy it — it is displayed only once."
+      - "Slite has no read-only key — it can also change things there. The cabinet only ever lists, but the key itself is not limited."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.slite.com/v1/notes?orderBy=lastEditedAt_DESC
+        method: GET
+        auth_header: x-slite-api-key
+        auth_format: "{credential}"
+        items_path: notes
+        name_field: title
+        updated_field: updatedAt
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+
+  # ---------------------------------------------------------------
+  # SITES, FORMS AND CONTENT
+  # ---------------------------------------------------------------
+  - id: typeform
+    label: Typeform
+    category: content
+    summary: The forms in your Typeform account, most-recently-updated first.
+    host: api.typeform.com
+    credential_env: TYPEFORM_ACCESS_TOKEN
+    credential_help: A Typeform personal access token from your account settings.
+    key_looks_like: "starts with tfp_ followed by a long string of letters and digits"
+    how_to_connect:
+      - "In Typeform, open the Account dropdown at the top left, then Personal tokens."
+      - "Click Generate a new token and name it."
+      - "Tick only forms:read — that is the read scope this needs — and leave every scope ending in :write unticked, then copy the token."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.typeform.com/forms?page_size=200&sort_by=last_updated_at&order_by=desc&page={page}
+        method: GET
+        auth_format: "Bearer {credential}"
+        items_path: items
+        name_field: title
+        updated_field: last_updated_at
+      page:
+        start: 1
+        size: 200
+        max_pages: 3
+
+  - id: tally
+    label: Tally
+    category: content
+    summary: The forms in your Tally account, with when each was last updated.
+    host: api.tally.so
+    credential_env: TALLY_API_KEY
+    credential_help: A Tally API key from your Tally settings.
+    key_looks_like: "starts with tly- followed by a long random string"
+    how_to_connect:
+      - "In Tally, go to Settings, then API keys."
+      - "Click Create API key, then copy and store it immediately — you will not be able to see it again."
+      - "Tally has no read-only key: it inherits your own permissions and can also change things there. The cabinet only ever lists, but the key itself is not limited."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.tally.so/forms?limit=100&page={page}
+        method: GET
+        auth_format: "Bearer {credential}"
+        items_path: items
+        name_field: name
+        updated_field: updatedAt
+      page:
+        start: 1
+        size: 100
+        max_pages: 3
+
+  - id: webflow
+    label: Webflow
+    category: content
+    summary: The Webflow sites your token can reach, with when each was last updated.
+    host: api.webflow.com
+    credential_env: WEBFLOW_SITE_TOKEN
+    credential_help: A Webflow Site API token from that site's settings.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "In your Webflow workspace, click the gear icon on the site to open its settings. You must be a site administrator."
+      - "In the left sidebar choose Apps and integrations, scroll to API access, and click Generate API token."
+      - "Set every scope to read-only or no access — sites:read is the only one this needs — then generate and copy the token."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.webflow.com/v2/sites
+        method: GET
+        auth_format: "Bearer {credential}"
+        items_path: sites
+        name_field: displayName
+        updated_field: lastUpdated
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+
+  # A credential that is READ-ONLY BY CONSTRUCTION — the happy case, and the
+  # one worth reading the steps of when you write a template of your own.
+  - id: contentful
+    label: Contentful
+    category: content
+    summary: The content types defined in one Contentful space, with when each was last updated.
+    host: cdn.contentful.com
+    credential_env: CONTENTFUL_DELIVERY_TOKEN
+    credential_help: A Contentful Content Delivery API access token for the space you want listed.
+    key_looks_like: "a long random string of letters and digits"
+    how_to_connect:
+      - "In Contentful, open the space you want (the space selector is at the top left), then Settings, then API keys."
+      - "Create an API key and copy the Content Delivery API access token. This token is read-only by design: it can read the environments you tick and cannot change anything."
+      - "Check the environment you want is ticked — usually master — and copy the Space ID from the same screen for the box below."
+    fields:
+      - key: space
+        label: Your Contentful space ID
+        help: Shown on the same API keys screen as the token.
+        placeholder: cfexampleapi
+        required: true
+        into: inventory.url
+        into_format: https://cdn.contentful.com/spaces/{value}/environments/master/content_types?limit=100
+    connector:
+      inventory:
+        url: https://cdn.contentful.com/spaces/your-space/environments/master/content_types?limit=100
+        method: GET
+        auth_format: "Bearer {credential}"
+        items_path: items
+        name_field: name
+        updated_field: sys.updatedAt
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+
+  - id: sanity
+    label: Sanity
+    category: content
+    summary: The Sanity projects your token can see, and the date each was created.
+    host: api.sanity.io
+    credential_env: SANITY_API_TOKEN
+    credential_help: A Sanity robot token with the Viewer role.
+    key_looks_like: "starts with sk followed by a long random string"
+    how_to_connect:
+      - "Go to sanity.io/manage, open your project, then Settings, then API, then Tokens."
+      - "Click Add new token, name it, and pick the Viewer role — Sanity describes Viewer tokens as read-only. Do not pick Editor or Administrator."
+      - "Copy the token now: it is displayed exactly once and cannot be recovered. If you set an expiry, note that you cannot remove one later."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.sanity.io/v2021-06-07/projects
+        method: GET
+        auth_format: "Bearer {credential}"
+        items_path: ""
+        name_field: displayName
+        updated_field: createdAt
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+
+  # ---------------------------------------------------------------
+  # DESIGN FILES
+  # ---------------------------------------------------------------
+  - id: figma
+    label: Figma
+    category: design
+    summary: The files in one Figma folder, with when each was last modified.
+    host: api.figma.com
+    credential_env: FIGMA_ACCESS_TOKEN
+    credential_help: A Figma personal access token from your account security settings.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "In Figma, open the menu at the top left of the file browser, go to Settings, then Security, and find Personal access tokens."
+      - "Click Generate new token, set an expiration, and tick only the read scopes: folders:read and current_user:read. Leave every write scope off."
+      - "Copy the token now — this is your only chance, and it stops working on the expiry date you set."
+      - "Open the folder you want listed in Figma and copy its id out of the web address for the box below."
+    fields:
+      - key: folder
+        label: Your Figma folder ID
+        help: The id in the web address of the Figma folder (project) you want listed.
+        placeholder: "123456789"
+        required: true
+        into: inventory.url
+        into_format: https://api.figma.com/v2/folders/{value}/files
+    connector:
+      inventory:
+        url: https://api.figma.com/v2/folders/your-folder/files
+        method: GET
+        auth_header: X-Figma-Token
+        auth_format: "{credential}"
+        items_path: files
+        name_field: name
+        updated_field: last_modified
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+      identity:
+        url: https://api.figma.com/v1/me
+        method: GET
+        auth_header: X-Figma-Token
+        auth_format: "{credential}"
+        value_paths:
+          - handle
+          - email
+
+  # ---------------------------------------------------------------
+  # CUSTOMERS AND DEALS
+  # ---------------------------------------------------------------
+  - id: hubspot
+    label: HubSpot
+    category: crm
+    summary: The companies in your HubSpot account, with when each was last updated.
+    host: api.hubapi.com
+    credential_env: HUBSPOT_PRIVATE_APP_TOKEN
+    credential_help: A HubSpot private app access token from your own HubSpot account.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "In HubSpot, open Development, then Legacy apps, then Create legacy app, and choose Private. You must be a super admin."
+      - "On the Scopes tab click Add new scope and tick only crm.objects.companies.read. Do not tick anything ending in .write."
+      - "Click Create app, open the Auth tab, click Show token, and copy it."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.hubapi.com/crm/v3/objects/companies?limit=50&properties=name
+        method: GET
+        auth_format: "Bearer {credential}"
+        headers:
+          Accept: application/json
+        items_path: results
+        name_field: properties.name
+        updated_field: updatedAt
+      page:
+        start: 1
+        size: 50
+        max_pages: 1
+
+  - id: attio
+    label: Attio
+    category: crm
+    summary: The lists in your Attio workspace, and the date each was created.
+    host: api.attio.com
+    credential_env: ATTIO_ACCESS_TOKEN
+    credential_help: An Attio workspace access token from your workspace settings.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "In Attio, open the dropdown beside your workspace name, click Workspace settings, then the Developers tab. You must be a workspace admin."
+      - "Click New access token and give it a name."
+      - "Under Scopes tick only list_configuration:read — the read-only scope this needs — then save and click the token to copy it."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.attio.com/v2/lists
+        method: GET
+        auth_format: "Bearer {credential}"
+        headers:
+          Accept: application/json
+        items_path: data
+        name_field: name
+        updated_field: created_at
+      page:
+        start: 1
+        size: 50
+        max_pages: 1
+
+  - id: pipedrive
+    label: Pipedrive
+    category: crm
+    summary: The open deals in your Pipedrive account, most-recently-updated first.
+    host: ""
+    credential_env: PIPEDRIVE_API_TOKEN
+    credential_help: Your personal Pipedrive API token.
+    key_looks_like: "a 40-character string of digits and letters a-f"
+    how_to_connect:
+      - "In Pipedrive, click your account name at the top right, then Company settings, then Personal preferences, then the API tab."
+      - "Copy the personal API token shown there."
+      - "Pipedrive has no read-only key — this token is tied to you and can also change things in Pipedrive. The cabinet only ever lists, but the token itself is not limited."
+    fields:
+      - key: company
+        label: Your Pipedrive address
+        help: The part before .pipedrive.com in the address you sign in at.
+        placeholder: acme
+        required: true
+        into: inventory.url
+        into_format: https://{value}.pipedrive.com/api/v2/deals?limit=50&sort_by=update_time&sort_direction=desc
+    connector:
+      inventory:
+        url: https://your-company.pipedrive.com/api/v2/deals?limit=50&sort_by=update_time&sort_direction=desc
+        method: GET
+        auth_header: x-api-token
+        auth_format: "{credential}"
+        headers:
+          Accept: application/json
+        items_path: data
+        name_field: title
+        updated_field: update_time
+      page:
+        start: 1
+        size: 50
+        max_pages: 1
+
+  # ---------------------------------------------------------------
+  # SUPPORT AND INBOXES
+  # ---------------------------------------------------------------
+  - id: intercom
+    label: Intercom
+    category: support
+    summary: The people in your Intercom workspace, with when each was last updated.
+    host: api.intercom.io
+    credential_env: INTERCOM_ACCESS_TOKEN
+    credential_help: An Intercom access token for an app on your own workspace.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "In Intercom, open the Developer Hub and create an app on your own workspace."
+      - "Open Configure, then Authentication, and copy the Access Token."
+      - "Intercom offers no read-only workspace token — this one can also change things in Intercom. The cabinet only ever lists, but the token itself is not limited. Never hand it to a third party."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.intercom.io/contacts?per_page=50
+        method: GET
+        auth_format: "Bearer {credential}"
+        headers:
+          Accept: application/json
+          Intercom-Version: "2.15"
+        items_path: data
+        name_field: name
+        updated_field: updated_at
+        date_encoding: epoch_s
+      page:
+        start: 1
+        size: 50
+        max_pages: 1
+      identity:
+        url: https://api.intercom.io/me
+        method: GET
+        auth_format: "Bearer {credential}"
+        value_paths:
+          - name
+          - email
+
+  - id: front
+    label: Front
+    category: support
+    summary: The conversations in your Front company, most-recently-updated first.
+    host: api2.frontapp.com
+    credential_env: FRONT_API_TOKEN
+    credential_help: A Front API token created in your company's Front settings.
+    key_looks_like: "a long string in three parts separated by dots"
+    how_to_connect:
+      - "In Front, go to Settings, then Developers, then the API Tokens tab, and click Create API token. You must be an admin."
+      - "Name it, choose the Access resources feature, and under Permissions grant only Read — leave Write, Delete and Send unticked."
+      - "Create it, then open the token and click Reveal or Copy."
+    fields: []
+    connector:
+      inventory:
+        url: https://api2.frontapp.com/conversations?limit=50
+        method: GET
+        auth_format: "Bearer {credential}"
+        headers:
+          Accept: application/json
+        items_path: _results
+        name_field: subject
+        updated_field: updated_at
+        date_encoding: epoch_s
+      page:
+        start: 1
+        size: 50
+        max_pages: 1
+
+  - id: plain
+    label: Plain
+    category: support
+    summary: The customers in your Plain workspace, with when each was last updated.
+    host: core-api.uk.plain.com
+    credential_env: PLAIN_API_KEY
+    credential_help: A Plain API key belonging to a Machine User in your workspace.
+    key_looks_like: "starts with plainApiKey_"
+    how_to_connect:
+      - "In Plain, go to Settings, then Machine Users, and click Add Machine User."
+      - "Click Add API Key and tick only customer:read — Plain has fine-grained read permissions, so grant nothing that writes."
+      - "Copy the key straight away and store it safely; you cannot see it again once you navigate away."
+    fields: []
+    connector:
+      inventory:
+        url: https://core-api.uk.plain.com/graphql/v1
+        method: POST
+        json:
+          query: "query cabinetInventory { customers(first: 50) { edges { node { id fullName updatedAt { iso8601 } } } } }"
+        auth_format: "Bearer {credential}"
+        items_path: data.customers.edges
+        name_field: node.fullName
+        updated_field: node.updatedAt.iso8601
+      page:
+        start: 1
+        size: 50
+        max_pages: 1
+
+  # ---------------------------------------------------------------
+  # CONVERSATIONS
+  # ---------------------------------------------------------------
+  - id: slack
+    label: Slack
+    category: comms
+    summary: The public channels in your Slack workspace, with when each was last updated.
+    host: slack.com
+    credential_env: SLACK_BOT_TOKEN
+    credential_help: A Slack bot token from an app you installed into your own workspace.
+    key_looks_like: "starts with xoxb-"
+    how_to_connect:
+      - "Go to api.slack.com/apps and create a new Slack app in your workspace."
+      - "Open OAuth and Permissions and add only the channels:read bot token scope — that scope is read-only. Add groups:read as well only if you also want private channels listed."
+      - "Click Install to Workspace, then copy the Bot User OAuth Token beginning xoxb from that same page. Treat it like a password."
+    fields: []
+    connector:
+      inventory:
+        url: https://slack.com/api/conversations.list?limit=50&exclude_archived=true&types=public_channel
+        method: GET
+        auth_format: "Bearer {credential}"
+        headers:
+          Accept: application/json
+        items_path: channels
+        name_field: name
+        updated_field: updated
+        date_encoding: epoch_ms
+      page:
+        start: 1
+        size: 50
+        max_pages: 1
+
+  - id: mattermost
+    label: Mattermost
+    category: comms
+    summary: The teams you belong to on your Mattermost server, with when each was last updated.
+    host: ""
+    credential_env: MATTERMOST_ACCESS_TOKEN
+    credential_help: A Mattermost personal access token for your own account.
+    key_looks_like: "a 26-character string of lowercase letters and digits"
+    how_to_connect:
+      - "Personal access tokens must first be switched on for the server in System Console, Integrations, Integration Management, and your account allowed to make them under User Management, Users, Manage Roles."
+      - "Signed in as yourself, go to Profile, then Security, then Personal Access Tokens, and click Create Token."
+      - "Copy the token immediately — you will not be able to see it again."
+      - "Mattermost has no read-only token: it carries your own account's permissions and can also change things there. The cabinet only ever lists, but the token itself is not limited."
+    fields:
+      - key: server
+        label: Your Mattermost address
+        help: The address you open Mattermost at, with no https:// in front and no slash on the end.
+        placeholder: chat.example.com
+        required: true
+        into: inventory.url
+        into_format: https://{value}/api/v4/users/me/teams
+    connector:
+      inventory:
+        url: https://chat.example.com/api/v4/users/me/teams
+        method: GET
+        auth_format: "Bearer {credential}"
+        headers:
+          Accept: application/json
+        items_path: ""
+        name_field: display_name
+        updated_field: update_at
+        date_encoding: epoch_ms
+      page:
+        start: 1
+        size: 50
+        max_pages: 1
+
+  # Two operator answers: one names the server, one rides in a header the
+  # template author declared. Neither is a secret; the credential is separate.
+  - id: discourse
+    label: Discourse
+    category: comms
+    summary: The most recently active topics on your Discourse forum, with when each was last posted to.
+    host: ""
+    credential_env: DISCOURSE_API_KEY
+    credential_help: A Discourse API key from your forum's admin panel.
+    key_looks_like: "a 64-character string of digits and letters a-f"
+    how_to_connect:
+      - "In Discourse, go to Admin, then Advanced, then API Keys, and click Add API key. You must be an admin."
+      - "Describe it, set User Level to Single User and enter your own username, then set Scope to Read-only — that limits the key to reading."
+      - "Save and copy the key straight away: the full key is shown only once. Keys unused for 180 days are revoked automatically."
+    fields:
+      - key: server
+        label: Your forum address
+        help: The address you open your forum at, with no https:// in front and no slash on the end.
+        placeholder: forum.example.com
+        required: true
+        into: inventory.url
+        into_format: https://{value}/latest.json
+      - key: username
+        label: Your Discourse username
+        help: The username the API key was made for. Not a secret.
+        placeholder: jane
+        required: true
+        into: inventory.headers.Api-Username
+    connector:
+      inventory:
+        url: https://forum.example.com/latest.json
+        method: GET
+        auth_header: Api-Key
+        auth_format: "{credential}"
+        headers:
+          Accept: application/json
+          Api-Username: system
+        items_path: topic_list.topics
+        name_field: title
+        updated_field: bumped_at
+      page:
+        start: 1
+        size: 50
+        max_pages: 1
+
+  - id: fireflies
+    label: Fireflies.ai
+    category: comms
+    summary: The meetings Fireflies recorded for you, and the date each was held.
+    host: api.fireflies.ai
+    credential_env: FIREFLIES_API_KEY
+    credential_help: A Fireflies API key.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "Log in at fireflies.ai and open Integrations, then Fireflies API."
+      - "Copy your API key and store it securely."
+      - "Fireflies has no read-only key — the one you use can also change things there. The cabinet only ever lists, but the key itself is not limited."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.fireflies.ai/graphql
+        method: POST
+        auth_format: "Bearer {credential}"
+        json:
+          query: "query { transcripts(limit: 25) { title dateString } }"
+        items_path: data.transcripts
+        name_field: title
+        updated_field: dateString
+      page:
+        start: 1
+        size: 25
+        max_pages: 1
+
+  # ---------------------------------------------------------------
+  # CALENDARS AND BOOKINGS
+  # ---------------------------------------------------------------
+  - id: calcom
+    label: Cal.com
+    category: calendar
+    summary: The meetings booked through your Cal.com links, most-recently-changed first.
+    host: api.cal.com
+    credential_env: CALCOM_API_KEY
+    credential_help: A Cal.com API key.
+    key_looks_like: "starts with cal_live_ (test keys start with cal_)"
+    how_to_connect:
+      - "In Cal.com open Settings, then Security, where your API keys are listed."
+      - "Create a new API key and copy it — keep it secret, it carries wide privileges."
+      - "Cal.com keys have no read-only setting; the one you make can also change things there. The cabinet only ever lists, but the key itself is not limited."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.cal.com/v2/bookings?limit=100&sortUpdatedAt=desc
+        method: GET
+        auth_format: "Bearer {credential}"
+        headers:
+          cal-api-version: "2026-05-01"
+        items_path: data
+        name_field: title
+        updated_field: updatedAt
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+
+  # ---------------------------------------------------------------
+  # MONEY IN AND OUT
+  # ---------------------------------------------------------------
+  # A clock in epoch SECONDS — declared, so it reads as a date.
+  - id: stripe
+    label: Stripe
+    category: finance
+    summary: The products in your Stripe account, most-recently-created first.
+    host: api.stripe.com
+    credential_env: STRIPE_API_KEY
+    credential_help: A Stripe restricted API key with Products set to Read.
+    key_looks_like: "starts with rk_live_ for a restricted key (or sk_live_ for a full one)"
+    how_to_connect:
+      - "In the Stripe Dashboard, open the API keys page under Developers."
+      - "Click Create restricted key, name it, and set Products to Read — leave every other permission on None."
+      - "Complete the two-factor check, then click the key to copy it. Save it now; you cannot retrieve it later."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.stripe.com/v1/products?limit=100
+        method: GET
+        auth_format: "Bearer {credential}"
+        items_path: data
+        name_field: name
+        updated_field: updated
+        date_encoding: epoch_s
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+
+  - id: paddle
+    label: Paddle
+    category: finance
+    summary: The products in your Paddle catalogue, with when each was last changed.
+    host: api.paddle.com
+    credential_env: PADDLE_API_KEY
+    credential_help: A Paddle API key with the product.read permission.
+    key_looks_like: "starts with pdl_live_apikey_ and is 69 characters long"
+    how_to_connect:
+      - "In Paddle, go to Developer Tools, then Authentication, and open the API keys tab."
+      - "Click New API key, name it, and tick only read permissions — product.read is the one this uses."
+      - "Set an expiry date, save, then copy the key immediately — Paddle shows it only once."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.paddle.com/products?per_page=200
+        method: GET
+        auth_format: "Bearer {credential}"
+        headers:
+          Paddle-Version: "1"
+        items_path: data
+        name_field: name
+        updated_field: updated_at
+      page:
+        start: 1
+        size: 200
+        max_pages: 1
+
+  - id: lemon_squeezy
+    label: Lemon Squeezy
+    category: finance
+    summary: The products in your Lemon Squeezy store, with when each was last changed.
+    host: api.lemonsqueezy.com
+    credential_env: LEMON_SQUEEZY_API_KEY
+    credential_help: A Lemon Squeezy API key from your account settings.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "In Lemon Squeezy, open Settings, then API."
+      - "Create a new API key and give it a clear name — names cannot be changed later."
+      - "Copy the key immediately: it is shown only once, and keys stop working after a year."
+      - "Lemon Squeezy has no read-only key — it can also change things in your store. The cabinet only ever lists, but the key itself is not limited."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.lemonsqueezy.com/v1/products?page[size]=100&page[number]={page}
+        method: GET
+        auth_format: "Bearer {credential}"
+        headers:
+          Accept: application/vnd.api+json
+        items_path: data
+        name_field: attributes.name
+        updated_field: attributes.updated_at
+      page:
+        start: 1
+        size: 100
+        max_pages: 3
+      identity:
+        url: https://api.lemonsqueezy.com/v1/users/me
+        method: GET
+        auth_format: "Bearer {credential}"
+        headers:
+          Accept: application/vnd.api+json
+        value_paths:
+          - data.attributes.name
+          - data.attributes.email
+
+  # ---------------------------------------------------------------
+  # SELLING ONLINE
+  # ---------------------------------------------------------------
+  - id: square
+    label: Square
+    category: commerce
+    summary: The items in your Square catalogue, with when each was last changed.
+    host: connect.squareup.com
+    credential_env: SQUARE_ACCESS_TOKEN
+    credential_help: A Square production access token from the Developer Console.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "Sign in to the Square Developer Console and open (or create) an application."
+      - "In the left pane click Credentials, choose Production at the top, then click Show in the Production Access token box and copy it."
+      - "Square has no read-only token — a personal access token gives unrestricted access to your Square account. The cabinet only ever lists, but the token itself is not limited."
+    fields: []
+    connector:
+      inventory:
+        url: https://connect.squareup.com/v2/catalog/list?types=ITEM
+        method: GET
+        auth_format: "Bearer {credential}"
+        headers:
+          Square-Version: "2026-07-15"
+        items_path: objects
+        name_field: item_data.name
+        updated_field: updated_at
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+
+  - id: bigcommerce
+    label: BigCommerce
+    category: commerce
+    summary: The products in your BigCommerce store, with when each was last changed.
+    host: api.bigcommerce.com
+    credential_env: BIGCOMMERCE_ACCESS_TOKEN
+    credential_help: A BigCommerce store-level API account access token with Products read-only.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "In your BigCommerce control panel, go to Settings, then Store-level API accounts, and create an API account."
+      - "Name it, then in the OAuth scopes list set Products to read-only and leave every other scope on none."
+      - "Save. A text file downloads with the access token and an API path — copy the access token, it is not shown again."
+      - "Your store hash is the code between /stores/ and /v3/ in that API path. Put it in the box below."
+    fields:
+      - key: store_hash
+        label: Your store hash
+        help: The code between /stores/ and /v3/ in the API path from your API account.
+        placeholder: abc123def
+        required: true
+        into: inventory.url
+        into_format: https://api.bigcommerce.com/stores/{value}/v3/catalog/products?limit=250&page={page}
+    connector:
+      inventory:
+        url: https://api.bigcommerce.com/stores/your-store/v3/catalog/products?limit=250&page={page}
+        method: GET
+        auth_header: X-Auth-Token
+        auth_format: "{credential}"
+        headers:
+          Accept: application/json
+        items_path: data
+        name_field: name
+        updated_field: date_modified
+      page:
+        start: 1
+        size: 250
+        max_pages: 3
+
+  - id: squarespace
+    label: Squarespace Commerce
+    category: commerce
+    summary: The products in your Squarespace store, most-recently-changed first.
+    host: api.squarespace.com
+    credential_env: SQUARESPACE_API_KEY
+    credential_help: A Squarespace Developer API key with the Products API set to Read Only.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "In your Squarespace site, click Settings, then Advanced, then Developer API Keys."
+      - "Click Generate Key, name it, and under Permissions select the Products API with the Read Only level."
+      - "Copy the key now — this is the only time it is visible, and permissions cannot be changed afterwards."
+      - "This needs a Squarespace Commerce Advanced plan."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.squarespace.com/v2/commerce/products
+        method: GET
+        auth_format: "Bearer {credential}"
+        headers:
+          User-Agent: captains-cabinet-onboarding
+        items_path: products
+        name_field: name
+        updated_field: modifiedOn
+      page:
+        start: 1
+        size: 50
+        max_pages: 1
+
+  # ---------------------------------------------------------------
+  # AUDIENCES AND CAMPAIGNS
+  # ---------------------------------------------------------------
+  - id: klaviyo
+    label: Klaviyo
+    category: marketing
+    summary: The lists in your Klaviyo account, with when each was last changed.
+    host: a.klaviyo.com
+    credential_env: KLAVIYO_API_KEY
+    credential_help: A Klaviyo private API key with Read-only access.
+    key_looks_like: "starts with pk_ followed by a longer string of letters and digits"
+    how_to_connect:
+      - "In Klaviyo click your organization name at the bottom left, then Settings, then API keys."
+      - "Click Create Private API Key and choose the Read-only access level — it can view data but cannot change anything. Do not choose Full."
+      - "Copy the key now: once created you cannot view it again."
+    fields: []
+    connector:
+      inventory:
+        url: https://a.klaviyo.com/api/lists/
+        method: GET
+        auth_format: "Klaviyo-API-Key {credential}"
+        headers:
+          revision: "2026-07-15"
+          accept: application/json
+        items_path: data
+        name_field: attributes.name
+        updated_field: attributes.updated
+      page:
+        start: 1
+        size: 10
+        max_pages: 1
+
+  - id: kit
+    label: Kit
+    category: marketing
+    summary: The signup forms in your Kit account, and the date each was created.
+    host: api.kit.com
+    credential_env: KIT_API_KEY
+    credential_help: A Kit V4 API key.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "In Kit open account settings, then the Developer tab."
+      - "Click Add a new key, give it an internal name, and save the key immediately — if you lose it you have to reset it."
+      - "Kit keys have no read-only option or scopes — the one you make can also change things there. The cabinet only ever lists, but the key itself is not limited."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.kit.com/v4/forms?per_page=100
+        method: GET
+        auth_header: X-Kit-Api-Key
+        auth_format: "{credential}"
+        items_path: forms
+        name_field: name
+        updated_field: created_at
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+
+  - id: brevo
+    label: Brevo
+    category: marketing
+    summary: The email campaigns in your Brevo account, with when each was last modified.
+    host: api.brevo.com
+    credential_env: BREVO_API_KEY
+    credential_help: A Brevo API key.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "In Brevo open your account dropdown, then Settings, then SMTP and API, then the API keys tab."
+      - "Click Generate a new API key, name it, choose an expiry, and copy it at that moment — it cannot be copied again."
+      - "Brevo keys have no read-only option; the one you make can also change things there. The cabinet only ever lists, but the key itself is not limited."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.brevo.com/v3/emailCampaigns?limit=100&offset=0
+        method: GET
+        auth_header: api-key
+        auth_format: "{credential}"
+        items_path: campaigns
+        name_field: name
+        updated_field: modifiedAt
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+
+  # ---------------------------------------------------------------
+  # HIRING AND PEOPLE
+  # ---------------------------------------------------------------
+  - id: workable
+    label: Workable
+    category: people
+    summary: The jobs on your Workable account, with when each was last changed.
+    host: ""
+    credential_env: WORKABLE_API_TOKEN
+    credential_help: A Workable API access token with the r_jobs scope.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "In Workable, click your profile icon at the top right and go to Settings, then Integrations, then Apps. You must be an Admin."
+      - "In API Access Tokens click Generate API token and tick only the read scope r_jobs — do not tick any scope beginning w_."
+      - "Copy the token straight away: it is shown once and cannot be viewed again."
+      - "In the box below, put the name in your Workable address — the part before .workable.com."
+    fields:
+      - key: company
+        label: Your Workable address
+        help: The part before .workable.com in the address you sign in at.
+        placeholder: acme
+        required: true
+        into: inventory.url
+        into_format: https://{value}.workable.com/spi/v3/jobs?limit=100
+    connector:
+      inventory:
+        url: https://your-company.workable.com/spi/v3/jobs?limit=100
+        method: GET
+        auth_format: "Bearer {credential}"
+        items_path: jobs
+        name_field: title
+        updated_field: updated_at
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+
+  - id: humaans
+    label: Humaans
+    category: people
+    summary: The people in your Humaans directory, with when each profile was last changed.
+    host: app.humaans.io
+    credential_env: HUMAANS_ACCESS_TOKEN
+    credential_help: A Humaans API access token with View public data only.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "In Humaans, click your name in the sidebar, then API access tokens, then Generate new token."
+      - "For scopes tick only View public data — it covers names, job titles, teams and departments. Do not tick anything that says Modify."
+      - "Name the token, create it, and copy it before leaving the screen."
+    fields: []
+    connector:
+      inventory:
+        url: https://app.humaans.io/api/people?$limit=100
+        method: GET
+        auth_format: "Bearer {credential}"
+        items_path: data
+        name_field: firstName
+        updated_field: updatedAt
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+
+  # ---------------------------------------------------------------
+  # TIME AND PROJECTS
+  # ---------------------------------------------------------------
+  # A SECOND answer that is not a secret rides in a header the template
+  # author declared — the credential still travels on its own.
+  - id: harvest
+    label: Harvest
+    category: time
+    summary: The projects you track time against, with when each was last changed.
+    host: api.harvestapp.com
+    credential_env: HARVEST_ACCESS_TOKEN
+    credential_help: A Harvest personal access token.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "Go to id.getharvest.com/developers, sign in, and create a Personal Access Token."
+      - "Copy both the token and the Account ID shown beside it — the Account ID goes in the box below."
+      - "Harvest has no read-only token: personal access tokens get full access to all of your accounts. The cabinet only ever lists, but the token itself is not limited."
+    fields:
+      - key: account_id
+        label: Your Harvest Account ID
+        help: The number shown next to your token on the Harvest developers page. Not a secret.
+        placeholder: "1234567"
+        required: true
+        into: inventory.headers.Harvest-Account-Id
+    connector:
+      inventory:
+        url: https://api.harvestapp.com/v2/projects?per_page=100&page={page}
+        method: GET
+        auth_format: "Bearer {credential}"
+        headers:
+          User-Agent: captains-cabinet-onboarding
+          Harvest-Account-Id: "0"
+        items_path: projects
+        name_field: name
+        updated_field: updated_at
+      page:
+        start: 1
+        size: 100
+        max_pages: 3
+
+  # ---------------------------------------------------------------
+  # TRAFFIC AND NUMBERS
+  # ---------------------------------------------------------------
+  - id: posthog
+    label: PostHog
+    category: analytics
+    summary: Your PostHog organizations and when each was last changed.
+    host: ""
+    credential_env: POSTHOG_PERSONAL_API_KEY
+    credential_help: A PostHog personal API key.
+    key_looks_like: "starts with phx_ followed by a long random string"
+    how_to_connect:
+      - "In PostHog, open your account settings and find Personal API keys."
+      - "Choose Create a personal API key, label it, and tick only the read scope organization:read."
+      - "Copy the key immediately — PostHog never shows it again after you refresh the page."
+      - "In the box below, put us.posthog.com if you sign in to US Cloud, or eu.posthog.com for EU Cloud."
+    fields:
+      - key: region
+        label: Your PostHog address
+        help: us.posthog.com for US Cloud, eu.posthog.com for EU Cloud.
+        placeholder: us.posthog.com
+        required: true
+        into: inventory.url
+        into_format: https://{value}/api/organizations/?limit=100
+    connector:
+      inventory:
+        url: https://us.posthog.com/api/organizations/?limit=100
+        method: GET
+        auth_format: "Bearer {credential}"
+        items_path: results
+        name_field: name
+        updated_field: updated_at
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+
+  - id: fathom
+    label: Fathom Analytics
+    category: analytics
+    summary: The sites in your Fathom account, and the date each was created.
+    host: api.usefathom.com
+    credential_env: FATHOM_API_TOKEN
+    credential_help: A Fathom Analytics API token.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "In Fathom, open the API page and click Create new."
+      - "Name the token and set permissions to read only (all sites) — do not pick Admin."
+      - "Click Save changes and write the token down now; you cannot retrieve it once you navigate away."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.usefathom.com/v1/sites
+        method: GET
+        auth_format: "Bearer {credential}"
+        headers:
+          Accept: application/json
+        items_path: data
+        name_field: name
+        updated_field: created_at
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+
+  # ---------------------------------------------------------------
+  # WHERE THINGS RUN
+  # ---------------------------------------------------------------
+  # A GET whose clock is epoch-milliseconds — DECLARED, so it reads.
+  - id: vercel
+    label: Vercel
+    category: infra
+    summary: Your projects and when each last deployed.
+    host: api.vercel.com
+    credential_env: VERCEL_API_TOKEN
+    credential_help: A Vercel access token (Account Settings → Tokens). Read access is enough.
+    key_looks_like: "a 24-character string of letters and digits"
+    how_to_connect:
+      - "In Vercel, open Account Settings, then Tokens."
+      - "Create a token, choose its scope and an expiry, and create it."
+      - "Copy it now — Vercel shows it once. Vercel has no read-only token; the one you make can also change things there. The cabinet only ever lists, but the token itself is not limited."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.vercel.com/v9/projects?limit=100
+        method: GET
+        auth_format: "Bearer {credential}"
+        items_path: projects
+        name_field: name
+        updated_field: updatedAt
+        date_encoding: epoch_ms
+        actor_field: latestDeployments.0.creator.username
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+      identity:
+        url: https://api.vercel.com/v2/user
+        method: GET
+        auth_format: "Bearer {credential}"
+        value_paths:
+          - user.username
+          - user.name
+
+  - id: netlify
+    label: Netlify
+    category: infra
+    summary: Your Netlify sites and when each last changed.
+    host: api.netlify.com
+    credential_env: NETLIFY_AUTH_TOKEN
+    credential_help: A Netlify personal access token.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "In Netlify, go to Applications, then Personal access tokens, and select New access token."
+      - "Enter a descriptive name, choose an expiration date, and generate it."
+      - "Copy the token now — once you navigate away you cannot see it again. Netlify has no read-only token; the one you make can also change things there. The cabinet only ever lists, but the token itself is not limited."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.netlify.com/api/v1/sites?per_page=100&page={page}
+        method: GET
+        auth_format: "Bearer {credential}"
+        items_path: ""
+        name_field: name
+        updated_field: updated_at
+      page:
+        start: 1
+        size: 100
+        max_pages: 3
+      identity:
+        url: https://api.netlify.com/api/v1/user
+        method: GET
+        auth_format: "Bearer {credential}"
+        value_paths:
+          - slug
+          - full_name
+
+  - id: render
+    label: Render
+    category: infra
+    summary: Your Render services and when each last changed.
+    host: api.render.com
+    credential_env: RENDER_API_KEY
+    credential_help: A Render API key.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "In the Render Dashboard, open your Account Settings page and find the API keys section."
+      - "Create a new API key and copy it — a key is displayed in full only when it is created."
+      - "Render has no read-only API key — the one you make can also change things there. The cabinet only ever lists, but the key itself is not limited."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.render.com/v1/services?limit=100
+        method: GET
+        auth_format: "Bearer {credential}"
+        headers:
+          Accept: application/json
+        items_path: ""
+        name_field: service.name
+        updated_field: service.updatedAt
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+
+  - id: neon
+    label: Neon
+    category: infra
+    summary: Your Neon database projects and when each last changed.
+    host: console.neon.tech
+    credential_env: NEON_API_KEY
+    credential_help: A Neon personal API key.
+    key_looks_like: "starts with napi_ followed by a long random string"
+    how_to_connect:
+      - "In the Neon Console, open the user menu, then Account settings, then API keys."
+      - "Create a key and copy the secret straight away — it is displayed only once and cannot be retrieved later."
+      - "Neon has no read-only API key: a personal key reaches everything your account can. The cabinet only ever lists, but the key itself is not limited."
+    fields: []
+    connector:
+      inventory:
+        url: https://console.neon.tech/api/v2/projects?limit=100
+        method: GET
+        auth_format: "Bearer {credential}"
+        items_path: projects
+        name_field: name
+        updated_field: updated_at
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+
+  - id: cloudflare
+    label: Cloudflare
+    category: infra
+    summary: Your Cloudflare domains and when each was last modified.
+    host: api.cloudflare.com
+    credential_env: CLOUDFLARE_API_TOKEN
+    credential_help: A Cloudflare API token.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "From the Cloudflare dashboard, go to My Profile, then API Tokens, and select Create Token."
+      - "Choose the Read All Resources template — it grants every read permission and nothing that can change anything."
+      - "Continue to summary, create the token, and copy the secret to a safe place."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.cloudflare.com/client/v4/zones?per_page=50&page={page}
+        method: GET
+        auth_format: "Bearer {credential}"
+        items_path: result
+        name_field: name
+        updated_field: modified_on
+      page:
+        start: 1
+        size: 50
+        max_pages: 3
+
+  - id: heroku
+    label: Heroku
+    category: infra
+    summary: Your Heroku apps and when each was last updated.
+    host: api.heroku.com
+    credential_env: HEROKU_API_KEY
+    credential_help: A Heroku API key from your account settings.
+    key_looks_like: "a string of five dash-separated blocks, like 01234567-89ab-cdef-0123-456789abcdef"
+    how_to_connect:
+      - "In the Heroku Dashboard, open Account settings, find the API Key section, reveal it and copy it."
+      - "If your account uses single sign-on the Dashboard offers no API key — you need a non-SSO account instead."
+      - "The key stops working whenever your account password changes, so a password change means reconnecting."
+      - "Heroku has no read-only API key: this one carries your full account access. The cabinet only ever lists, but the key itself is not limited."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.heroku.com/apps
+        method: GET
+        auth_format: "Bearer {credential}"
+        headers:
+          Accept: "application/vnd.heroku+json; version=3"
+        items_path: ""
+        name_field: name
+        updated_field: updated_at
+      page:
+        start: 1
+        size: 200
+        max_pages: 1
+
+  - id: linode
+    label: Linode
+    category: infra
+    summary: Your Linode servers and when each was last updated.
+    host: api.linode.com
+    credential_env: LINODE_API_TOKEN
+    credential_help: A Linode personal access token, set to Read Only.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "In Cloud Manager, click your username at the top, select API Tokens, then Create a Personal Access Token."
+      - "Label it, choose an expiry, and set every product to Read Only — do not choose Read Write for anything."
+      - "Create the token and save it now; after you close the pop-up you cannot view it again."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.linode.com/v4/linode/instances?page={page}&page_size=100
+        method: GET
+        auth_format: "Bearer {credential}"
+        items_path: data
+        name_field: label
+        updated_field: updated
+      page:
+        start: 1
+        size: 100
+        max_pages: 3
+
+  - id: digitalocean
+    label: DigitalOcean Apps
+    category: infra
+    summary: Your DigitalOcean App Platform apps and when each was last updated.
+    host: api.digitalocean.com
+    credential_env: DIGITALOCEAN_TOKEN
+    credential_help: A DigitalOcean personal access token with Read Only scope.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "In the DigitalOcean Control Panel, click Account, then API, to open Applications and API on the Tokens tab."
+      - "Under Personal access tokens click Generate New Token, name it, and choose an expiration."
+      - "For Scopes choose Read Only — it grants read access to everything and nothing that can change it — then copy the token."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.digitalocean.com/v2/apps?page={page}&per_page=100
+        method: GET
+        auth_format: "Bearer {credential}"
+        items_path: apps
+        name_field: spec.name
+        updated_field: updated_at
+      page:
+        start: 1
+        size: 100
+        max_pages: 3
+
+  - id: railway
+    label: Railway
+    category: infra
+    summary: Your Railway projects and when each last changed.
+    host: backboard.railway.com
+    credential_env: RAILWAY_API_TOKEN
+    credential_help: A Railway account or workspace token.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "In Railway, open your account settings and go to the tokens page."
+      - "Create an account token, or pick a workspace in the dropdown to limit the token to it, then copy it."
+      - "Railway has no read-only token — the one you make can also change things there. The cabinet only ever lists, but the token itself is not limited."
+    fields: []
+    connector:
+      inventory:
+        url: https://backboard.railway.com/graphql/v2
+        method: POST
+        auth_format: "Bearer {credential}"
+        json:
+          query: "query { projects { edges { node { id name createdAt updatedAt } } } }"
+        items_path: data.projects.edges
+        name_field: node.name
+        updated_field: node.updatedAt
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+
+  - id: supabase
+    label: Supabase
+    category: infra
+    summary: Your Supabase projects and the date each was created.
+    host: api.supabase.com
+    credential_env: SUPABASE_ACCESS_TOKEN
+    credential_help: A Supabase personal access token.
+    key_looks_like: "starts with sbp_ followed by a long random string"
+    how_to_connect:
+      - "In the Supabase dashboard, open your account page and go to Access Tokens."
+      - "Generate a token, name it, and copy it when it is shown."
+      - "Supabase personal access tokens have no read-only option — they carry the same privileges as your user account. The cabinet only ever lists, but the token itself is not limited."
+    fields: []
+    connector:
+      inventory:
+        url: https://api.supabase.com/v1/projects
+        method: GET
+        auth_format: "Bearer {credential}"
+        items_path: ""
+        name_field: name
+        updated_field: created_at
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+
+  - id: sentry
+    label: Sentry
+    category: infra
+    summary: Your Sentry projects and the date each was created.
+    host: sentry.io
+    credential_env: SENTRY_AUTH_TOKEN
+    credential_help: A Sentry personal auth token with read scopes only.
+    key_looks_like: "no fixed shape — a long random string"
+    how_to_connect:
+      - "In Sentry, open User settings, then Personal Tokens."
+      - "Create a token and tick only the read scopes org:read and project:read — do not tick org:write or org:admin."
+      - "Copy the token, then put your organization's short name in the box below — it is the part after /organizations/ in your Sentry web address."
+    fields:
+      - key: organization
+        label: Your Sentry organization
+        help: The short name after /organizations/ in your Sentry web address.
+        placeholder: acme
+        required: true
+        into: inventory.url
+        into_format: https://sentry.io/api/0/organizations/{value}/projects/?per_page=100
+    connector:
+      inventory:
+        url: https://sentry.io/api/0/organizations/your-organization/projects/?per_page=100
+        method: GET
+        auth_format: "Bearer {credential}"
+        items_path: ""
+        name_field: name
+        updated_field: dateCreated
+      page:
+        start: 1
+        size: 100
+        max_pages: 1
+
   # ---------------------------------------------------------------
   # THE OPEN ONE. Any HTTPS list, with the operator naming the paths.
-  # It keeps the pick-list from being a closed set: whatever answers
-  # "a GET, a list, a name and a date on each" is a connector.
+  # It keeps the catalog from being a closed set: whatever answers
+  # "a GET, a list, a name and a date on each" is a connector — which
+  # is why a tool missing from the shelves above is never a dead end.
   # ---------------------------------------------------------------
   - id: rest
     label: Another REST list
-    summary: Any HTTPS GET that returns a JSON list with a name and a timestamp on each item.
+    category: other
+    summary: Anything with a REST API and a key — any HTTPS list carrying a name and a timestamp on each item.
     host: ""
     credential_env: REST_API_TOKEN
     credential_help: The bearer token or API key the endpoint expects.
+    key_looks_like: "whatever that tool issues — usually a long random string"
+    how_to_connect:
+      - "In that tool's own settings, find where API keys are made and create one. If it offers a read-only key or scope, choose that."
+      - "In its documentation, find the endpoint that LISTS things — projects, records, orders — and copy the web address."
+      - "Fill in the address below, plus the names it gives each item's title and last-changed date. Put {page} in the address where the page number goes."
     fields:
       - key: url
         label: List URL

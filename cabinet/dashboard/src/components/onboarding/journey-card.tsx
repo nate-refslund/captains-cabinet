@@ -3,16 +3,18 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { WINDOW_RELATIONS } from '@/lib/onboarding/types'
 import type {
+  ConnectorCatalog,
   ConnectorTemplateChoice,
   OnboardingAction,
   OnboardingIdentityAsk,
   OnboardingResponse,
   OnboardingSalienceOption,
   OnboardingSurface,
+  OnboardingSweptConnector,
   OwnershipClass,
   WindowRelation,
 } from '@/lib/onboarding/types'
-import { getConnectorTemplates } from '@/actions/connectors'
+import { getConnectorCatalog } from '@/actions/connectors'
 import { saveConnectorCredential } from '@/actions/env'
 import {
   activePhaseIndex,
@@ -53,6 +55,61 @@ export const NO_MERGE: readonly string[] = Object.freeze([])
 
 /** The connect step's empty template-field answers — stable for the same reason. */
 export const NO_FIELDS: Readonly<Record<string, string>> = Object.freeze({})
+
+/**
+ * How many tools the catalog shows before the operator has narrowed it. A
+ * LAYOUT number: every tool in the pack is reachable by search or by shelf, and
+ * the count above the grid says how many are being held back, so nothing is
+ * hidden without saying so. A pack of three is unaffected; a pack of three
+ * hundred does not become a scroll.
+ */
+export const CATALOG_SHOWN = 12
+
+/**
+ * Why a connector came back with nothing, in the operator's words.
+ *
+ * The sweep's own reason strings are diagnostic and stable (`credential_absent`,
+ * `http_401`, `read_only_refused:<verdict>`) — good in a log, useless on a card.
+ * This translates the ones an operator can ACT on and passes anything else
+ * through readably rather than swallowing it: an unrecognised reason printed
+ * plainly is still a fact, while a generic "something went wrong" is not.
+ */
+export function plainReason(reason: string): string {
+  const code = String(reason || '').trim()
+  if (!code) return 'it did not answer'
+  if (code === 'credential_absent') return 'no key is stored for it yet'
+  if (code === 'inventory_returned_no_items') return 'it answered, and there is nothing in it yet'
+  if (code === 'http_401' || code === 'http_403') {
+    return 'the key was refused — check you pasted the whole key, and that it has read access'
+  }
+  if (code === 'http_404') return 'that address answered “not found”'
+  if (code === 'http_429') return 'it asked me to slow down — try again in a minute'
+  if (code.startsWith('http_5')) return 'the other side had an error of its own'
+  if (code.startsWith('http_')) return `it answered ${code.slice(5)}`
+  if (code.startsWith('unreachable')) return 'I could not reach it'
+  if (code.startsWith('egress_')) return 'outbound calls are switched off for this cabinet'
+  if (code.startsWith('read_only_refused')) return 'that shape is not a read, so I did not run it'
+  if (code.startsWith('name_path_missed')) return 'I read it, but found no names where I was told to look'
+  if (code === 'response_not_json') return 'what came back was not a list I can read'
+  if (code === 'response_too_large') return 'what came back was too big to read'
+  return code.replaceAll('_', ' ')
+}
+
+/** The date half of a sweep stamp. ISO in, `2026-08-13` out, locale-free. */
+function dayOf(stamp: string | null | undefined): string {
+  const match = /^\d{4}-\d{2}-\d{2}/.exec(String(stamp ?? ''))
+  return match ? match[0] : ''
+}
+
+/** What one connector's last sweep amounts to, in one sentence. */
+export function sweepLine(row: OnboardingSweptConnector): string {
+  if (!row.connected) return plainReason(String(row.reason ?? ''))
+  const parts = [`read ${row.items} thing${row.items === 1 ? '' : 's'}`]
+  const day = dayOf(row.latest)
+  if (day) parts.push(`newest ${day}`)
+  if (row.actors) parts.push(`${row.actors} account${row.actors === 1 ? '' : 's'}`)
+  return parts.join(' · ')
+}
 
 /**
  * What the operator has to state when the folder they proposed shares no word
@@ -187,12 +244,11 @@ export default function OnboardingJourneyCard({
   const [salienceMerge, setSalienceMerge] = useState<readonly string[]>(NO_MERGE)
   // Set only by an off-target refusal.
   const [relationAsk, setRelationAsk] = useState<RelationAsk | null>(null)
-  // The connect step, on the discover branch. `null` means the pick-list has
-  // not loaded yet (it is fetched once, client-side); `[]` means no pack ships,
-  // and the step falls back to the folder. These stay the LAST hooks so adding
-  // them leaves every index above unchanged.
-  const [connectorTemplates, setConnectorTemplates] =
-    useState<readonly ConnectorTemplateChoice[] | null>(null)
+  // The connect step, on the discover branch. `null` means the catalog has
+  // not loaded yet (it is fetched once, client-side); an empty one means no pack
+  // ships, and the step falls back to the folder. These stay the LAST hooks so
+  // adding them leaves every index above unchanged.
+  const [connectorCatalog, setConnectorCatalog] = useState<ConnectorCatalog | null>(null)
   // Which tool the operator picked, the credential they pasted (kept only until
   // the connect completes, then cleared), and their answers to the template's
   // own fields. The credential's setter is what wipes it from memory after use.
@@ -201,6 +257,17 @@ export default function OnboardingJourneyCard({
   const [connectFields, setConnectFields] =
     useState<Readonly<Record<string, string>>>(NO_FIELDS)
   const [connectError, setConnectError] = useState<string | null>(null)
+  // How the operator is narrowing a catalog that is meant to grow: free text
+  // over the names, and one shelf at a time. Both are pure view state — nothing
+  // here reaches the core, and clearing them restores the whole pack.
+  const [connectSearch, setConnectSearch] = useState('')
+  const [connectCategory, setConnectCategory] = useState('')
+  // WHETHER THE OPERATOR HAS SAID "that is enough, go and look". Connecting is
+  // deliberately not a one-shot: a cabinet reads across MANY tools, so the step
+  // stays open — connect, see what each one reads, connect another — until they
+  // ask for the look. Without this the first successful sweep replaced the step
+  // with its own results and the second tool could never be added.
+  const [exploring, setExploring] = useState(false)
   const effectiveSurface = useRef<Extract<OnboardingSurface, 'dashboard' | 'world' | 'companion'>>(surface)
   const handoffIds = useRef<{ trace_id?: string; correlation_id?: string }>({})
   const salienceFormRef = useRef<HTMLFormElement | null>(null)
@@ -301,14 +368,14 @@ export default function OnboardingJourneyCard({
     }
   }, [reportEvidence])
 
-  // The connect step's pick-list, fetched once. It reads a shipped DATA file
-  // (never a secret), so a failure is an empty list and the folder path, not an
-  // error — the discover branch stays usable with no tools to offer.
+  // The connect step's catalog, fetched once. It reads a shipped DATA file
+  // (never a secret), so a failure is an empty catalog and the folder path, not
+  // an error — the discover branch stays usable with no tools to offer.
   useEffect(() => {
     let cancelled = false
-    void getConnectorTemplates()
-      .then((list) => { if (!cancelled) setConnectorTemplates(list) })
-      .catch(() => { if (!cancelled) setConnectorTemplates([]) })
+    void getConnectorCatalog()
+      .then((catalog) => { if (!cancelled) setConnectorCatalog(catalog) })
+      .catch(() => { if (!cancelled) setConnectorCatalog({ templates: [], categories: [] }) })
     return () => { cancelled = true }
   }, [])
 
@@ -491,15 +558,70 @@ export default function OnboardingJourneyCard({
     void send('record_operator_identity', { handles: Object.fromEntries(picked) })
   }
 
+  // ------------------------------------------------------------------ CONNECT
+  // What the catalog holds, what is already connected, and what the operator can
+  // see right now. Derived above the handlers because both read them.
+  const templates = connectorCatalog?.templates ?? []
+  const shelves = connectorCatalog?.categories ?? []
+  // EVERY declared connector as the last sweep found it — the authority on what
+  // exists, because it is read from the config rather than from what this
+  // session happens to have done. `connector_declarations` adds the ones
+  // declared since the last sweep, so a tool connected a second ago is not
+  // offered again as if it were new.
+  const swept: OnboardingSweptConnector[] = journey?.state.connector_sweep?.connectors ?? []
+  const declaredNames = new Set<string>([
+    ...swept.map((row) => row.name),
+    ...(journey?.state.connector_declarations ?? []).map((row) => row.name),
+  ])
+  // The connected list, in the order they were connected, each with the state
+  // the sweep gave it. A tool declared but not yet swept shows as pending rather
+  // than as a failure — those are opposite facts.
+  const connected = [...declaredNames].map((name) => {
+    const row = swept.find((entry) => entry.name === name)
+    return {
+      name,
+      row,
+      label: templates.find((tpl) => tpl.id === name)?.label ?? name,
+    }
+  })
+  const pickedTemplate = templates.find((tpl) => tpl.id === connectPick) ?? null
+  const canConnect =
+    pickedTemplate != null &&
+    connectCredential.trim() !== '' &&
+    pickedTemplate.fields.every((field) => !field.required || (connectFields[field.key] ?? '').trim() !== '')
+  // Free text over everything an operator might type: the tool's name, what it
+  // is for, the shelf it sits on, and the host — so "invoice", "billing" and
+  // "stripe.com" all find the same card.
+  const needle = connectSearch.trim().toLowerCase()
+  const matches = templates.filter((tpl) => {
+    if (connectCategory && tpl.category !== connectCategory) return false
+    if (!needle) return true
+    return [tpl.label, tpl.summary, tpl.category_label, tpl.host, tpl.id]
+      .join(' ')
+      .toLowerCase()
+      .includes(needle)
+  })
+  // Narrowed lists are shown WHOLE — a search that hides its own tail is worse
+  // than no search. Only the unnarrowed catalog is capped, and the count says so.
+  const narrowed = needle !== '' || connectCategory !== ''
+  const shown = narrowed ? matches : matches.slice(0, CATALOG_SHOWN)
+
   // CONNECT A TOOL, right here in onboarding — the write half of the read lane.
   // Three server steps, in order: the credential VALUE goes to cabinet/.env by
   // the safe writer (and ONLY there); the connector is declared with the env var
-  // NAME (never the value); and the sweep runs, flowing straight into the
-  // salience question below. The credential is wiped from memory the instant the
-  // declaration lands.
+  // NAME (never the value); and the sweep runs, so the operator sees what that
+  // tool actually reads before deciding whether to add another. The credential is
+  // wiped from memory the instant the declaration lands.
+  //
+  // A TOOL ALREADY DECLARED IS A RETRY, NOT A SECOND TOOL. The commonest failure
+  // on this step is a key pasted short or made with the wrong scope: the
+  // connector exists, the sweep says the key was refused, and the fix is a new
+  // key under the SAME name. Declaring again would be refused as a duplicate
+  // name and read to the operator as "you cannot fix this", so the declare is
+  // skipped and the credential is simply replaced.
   async function submitConnect(event: FormEvent) {
     event.preventDefault()
-    const template = (connectorTemplates ?? []).find((tpl) => tpl.id === connectPick)
+    const template = templates.find((tpl) => tpl.id === connectPick)
     if (!template || !connectCredential.trim() || connectingRef.current) return
     const missingRequired = template.fields.some(
       (field) => field.required && !(connectFields[field.key] ?? '').trim()
@@ -514,30 +636,45 @@ export default function OnboardingJourneyCard({
         setConnectError(stored.error || 'That credential could not be stored, so nothing was connected.')
         return
       }
-      const answers: Record<string, string> = {}
-      for (const field of template.fields) {
-        const value = (connectFields[field.key] ?? '').trim()
-        if (value) answers[field.key] = value
+      let revision = journey?.card.revision
+      if (!declaredNames.has(template.id)) {
+        const answers: Record<string, string> = {}
+        for (const field of template.fields) {
+          const value = (connectFields[field.key] ?? '').trim()
+          if (value) answers[field.key] = value
+        }
+        const declared = await send('declare_connector', {
+          template: template.id,
+          name: template.id,
+          credential_env: template.credential_env,
+          fields: answers,
+        })
+        if (!declared) return // send() put the refusal on the card
+        revision = declared.card.revision
       }
-      const declared = await send('declare_connector', {
-        template: template.id,
-        name: template.id,
-        credential_env: template.credential_env,
-        fields: answers,
-      })
-      if (!declared) return // send() put the refusal on the card
       setConnectCredential('')
       setConnectPick('')
       setConnectFields(NO_FIELDS)
+      setConnectSearch('')
       // Read with the revision the declaration just produced, not the stale one
       // in this closure — otherwise the sweep collides with the write above.
-      await send('gather_connectors', {}, declared.card.revision)
+      // ONE sweep covers EVERY declared connector, so this both proves the tool
+      // just connected and refreshes the state of the ones connected before it.
+      await send('gather_connectors', {}, revision)
     } catch (err) {
       setConnectError(err instanceof Error ? err.message : 'That tool could not be connected.')
     } finally {
       connectingRef.current = false
       setWorking(false)
     }
+  }
+
+  /** Re-open the setup sheet for one tool, with its old credential not reused. */
+  function reconnect(templateId: string) {
+    setConnectPick(templateId)
+    setConnectCredential('')
+    setConnectFields(NO_FIELDS)
+    setConnectError(null)
   }
 
   // One account, offered as a tap. The picked value lives in the same `handles`
@@ -616,24 +753,17 @@ export default function OnboardingJourneyCard({
   const showWindowForm =
     editScope || (stage === 'welcome' && !editScope && wizardStep === 'window')
   const inDiscover = stage === 'welcome' && !editScope && wizardStep === 'discover'
-  // The sweep results (rank, identity, discovery, evidence) surface once the
-  // front is behind us: in the discover branch, and in every server stage.
-  const showSweep = !inFrontQuestions && !showWindowForm && !purgeArmed
   const gatherOption = journey?.card.options.find((o) => o.action === 'gather_connectors')
-  // The honest discover panel shows when the decide branch has NOTHING to
-  // explore yet — no ranking, no identity to settle. The moment a connected
-  // source produces either, the sweep sections below speak instead, and this
-  // steps aside rather than talking over a real result.
-  const hasSweepContent =
-    salienceOptions.length > 0 || Boolean(journey?.card.entry?.identity_question)
-  const showDiscoverPanel = inDiscover && !hasSweepContent
-  // The connect step's derived state: the tool in hand, and whether the operator
-  // has given enough to connect it (a credential, and every required field).
-  const pickedTemplate = (connectorTemplates ?? []).find((tpl) => tpl.id === connectPick) ?? null
-  const canConnect =
-    pickedTemplate != null &&
-    connectCredential.trim() !== '' &&
-    pickedTemplate.fields.every((field) => !field.required || (connectFields[field.key] ?? '').trim() !== '')
+  // THE CONNECT STEP STAYS OPEN UNTIL THE OPERATOR CLOSES IT. It used to close
+  // itself the moment a sweep produced anything to rank — which made connecting
+  // a one-shot: the first tool's results replaced the step, and a second tool
+  // could never be added. Now the step holds the catalog and the connected list
+  // together, and only "go look" hands over to the results below.
+  const showDiscoverPanel = inDiscover && !exploring
+  // The sweep results (rank, identity, discovery, evidence) surface once the
+  // front is behind us and the connect step has been left: in the discover
+  // branch after the look, and in every server stage.
+  const showSweep = !inFrontQuestions && !showWindowForm && !purgeArmed && !showDiscoverPanel
 
   if (variant === 'world' && collapsed) {
     return (
@@ -841,50 +971,189 @@ export default function OnboardingJourneyCard({
             <div className={`mt-6 p-4 ${t.panel}`}>
               <h3 className={`text-lg font-semibold ${t.title}`}>Let me go and find where I fit</h3>
               <p className={`mt-2 text-sm leading-6 ${t.muted}`}>
-                To find where I am most useful, I need something to read. Connect a tool below
-                and I will read across it — only ever read — then tell you where to start. Or
-                point me at a single folder now, which works with nothing connected.
+                To find where I am most useful, I need something to read. Connect as many tools
+                as you like below and I will read across all of them — only ever read — then
+                tell you where to start. Or point me at a single folder now, which works with
+                nothing connected.
               </p>
 
-              {/* THE CONNECT STEP. Pick a tool, paste a credential, and the
-                  cabinet gains a source it reads read-only. The credential goes
-                  only to cabinet/.env; the declaration carries its NAME. */}
-              {connectorTemplates === null ? (
-                <p className={`mt-4 text-sm ${t.faint}`}>Finding the tools you can connect…</p>
-              ) : connectorTemplates.length > 0 ? (
-                <form onSubmit={submitConnect} aria-label="Connect a tool" className="mt-4">
-                  <div role="radiogroup" aria-label="Choose a tool to connect" className="space-y-2">
-                    {connectorTemplates.map((tpl) => {
-                      const on = connectPick === tpl.id
+              {/* CONNECTED SO FAR — every tool the cabinet has been given, each
+                  with what the last sweep actually got from it. One sweep covers
+                  them all, so a key refused on one tool sits beside the counts
+                  from the others instead of reading as a failed sweep. */}
+              {connected.length > 0 && (
+                <div className="mt-4">
+                  <h4 className={`text-sm font-semibold ${t.title}`}>
+                    Connected so far ({connected.length})
+                  </h4>
+                  <ul className="mt-2 space-y-1.5">
+                    {connected.map(({ name, row, label }) => {
+                      const ok = row?.connected === true
+                      const pending = row === undefined
                       return (
-                        <label
-                          key={tpl.id}
-                          className={`flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors motion-reduce:transition-none ${on ? t.choiceOn : t.choice}`}
+                        <li
+                          key={name}
+                          className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border px-3 py-2 ${t.choice}`}
                         >
-                          <input
-                            type="radio"
-                            name={`${surface}-connect-template`}
-                            value={tpl.id}
-                            checked={on}
-                            onChange={() => {
-                              setConnectPick(tpl.id)
-                              setConnectFields(NO_FIELDS)
-                              setConnectError(null)
-                            }}
-                            className="mt-1"
-                          />
-                          <span className="min-w-0">
-                            <span className={`block font-medium ${t.title}`}>{tpl.label}</span>
-                            <span className={`mt-0.5 block text-sm ${t.muted}`}>{tpl.summary}</span>
+                          <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${ok ? 'bg-emerald-500' : pending ? 'bg-amber-500' : 'bg-red-500'}`} />
+                          <span className={`font-medium ${t.title}`}>{label}</span>
+                          <span className={`text-sm ${ok || pending ? t.faint : variant === 'world' ? 'text-red-800' : 'text-red-300'}`}>
+                            {pending ? 'not read yet' : sweepLine(row)}
                           </span>
-                        </label>
+                          {!ok && !pending && (
+                            <button
+                              type="button"
+                              onClick={() => reconnect(name)}
+                              disabled={working}
+                              className={`ml-auto min-h-11 rounded-lg px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${t.secondary}`}
+                            >
+                              Try a different key
+                            </button>
+                          )}
+                        </li>
                       )
                     })}
-                  </div>
+                  </ul>
+                </div>
+              )}
 
-                  {pickedTemplate && (
-                    <div className={`mt-3 space-y-3 rounded-xl border p-4 ${t.panel}`}>
-                      {pickedTemplate.fields.map((field) => (
+              {/* THE CATALOG. Pick a tool, follow its own steps to make a key,
+                  paste it, and the cabinet gains a source it reads read-only.
+                  The credential goes only to cabinet/.env; the declaration
+                  carries its NAME. The pack is DATA, so this list grows without
+                  a line of code changing. */}
+              {connectorCatalog === null ? (
+                <p className={`mt-4 text-sm ${t.faint}`}>Finding the tools you can connect…</p>
+              ) : templates.length > 0 && !pickedTemplate ? (
+                <div className="mt-5">
+                  <label
+                    htmlFor={`${surface}-connect-search`}
+                    className={`block text-sm font-medium ${t.title}`}
+                  >
+                    {connected.length > 0 ? 'Connect another tool' : 'Connect a tool'}
+                  </label>
+                  <input
+                    id={`${surface}-connect-search`}
+                    type="search"
+                    value={connectSearch}
+                    onChange={(e) => setConnectSearch(e.target.value)}
+                    placeholder="Search by name, or by what it holds"
+                    autoComplete="off"
+                    className={`mt-1.5 w-full rounded-lg border px-3 py-2 text-sm outline-none ${t.input}`}
+                  />
+
+                  {shelves.length > 1 && (
+                    <div className="mt-2.5 flex flex-wrap gap-1.5" role="group" aria-label="Filter by kind of tool">
+                      <button
+                        type="button"
+                        aria-pressed={connectCategory === ''}
+                        onClick={() => setConnectCategory('')}
+                        className={`min-h-11 rounded-full border px-3 py-1 text-xs font-medium ${connectCategory === '' ? t.railOn : t.choice}`}
+                      >
+                        Everything
+                      </button>
+                      {shelves.map((shelf) => (
+                        <button
+                          key={shelf.id}
+                          type="button"
+                          aria-pressed={connectCategory === shelf.id}
+                          onClick={() => setConnectCategory(connectCategory === shelf.id ? '' : shelf.id)}
+                          className={`min-h-11 rounded-full border px-3 py-1 text-xs font-medium ${connectCategory === shelf.id ? t.railOn : t.choice}`}
+                        >
+                          {shelf.label} <span className="opacity-60">{shelf.count}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {shown.map((tpl) => {
+                      const already = declaredNames.has(tpl.id)
+                      return (
+                        <li key={tpl.id}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setConnectPick(tpl.id)
+                              setConnectFields(NO_FIELDS)
+                              setConnectCredential('')
+                              setConnectError(null)
+                            }}
+                            className={`flex h-full w-full flex-col items-start gap-1 rounded-xl border p-3 text-left transition-colors motion-reduce:transition-none ${t.choice}`}
+                          >
+                            <span className={`flex w-full items-baseline justify-between gap-2 font-medium ${t.title}`}>
+                              {tpl.label}
+                              {already && (
+                                <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[0.65rem] font-medium ${t.badge}`}>
+                                  connected
+                                </span>
+                              )}
+                            </span>
+                            <span className={`text-sm leading-5 ${t.muted}`}>{tpl.summary}</span>
+                          </button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+
+                  {matches.length === 0 ? (
+                    <p className={`mt-3 text-sm ${t.muted}`}>
+                      Nothing here matches that. Every tool with a web address and a key can still
+                      be connected — choose{' '}
+                      <button
+                        type="button"
+                        onClick={() => { setConnectSearch(''); setConnectCategory(''); setConnectPick('rest') }}
+                        className={`underline underline-offset-2 ${t.title}`}
+                      >
+                        Another REST list
+                      </button>{' '}
+                      and describe it yourself.
+                    </p>
+                  ) : (
+                    <p className={`mt-2.5 text-xs ${t.faint}`}>
+                      {narrowed
+                        ? `${matches.length} of ${templates.length} tools`
+                        : matches.length > shown.length
+                          ? `Showing ${shown.length} of ${templates.length} tools — search or pick a kind to see the rest.`
+                          : `${templates.length} tools`}
+                    </p>
+                  )}
+                </div>
+              ) : null}
+
+              {templates.length > 0 && pickedTemplate ? (
+                <form onSubmit={submitConnect} aria-label="Connect a tool" className="mt-5">
+                  <div className={`space-y-3 rounded-xl border p-4 ${t.panel}`}>
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <h4 className={`text-base font-semibold ${t.title}`}>
+                        Connect {pickedTemplate.label}
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => { setConnectPick(''); setConnectCredential(''); setConnectError(null) }}
+                        className={`min-h-11 rounded-lg px-2 py-1 text-xs font-medium ${t.ghost}`}
+                      >
+                        Choose a different tool
+                      </button>
+                    </div>
+
+                    {/* WHERE THE KEY COMES FROM, in that product's own words. An
+                        ordered list because the steps ARE one — the key cannot be
+                        copied before it is made — and because the scope named in
+                        step two is the difference between handing over a reader
+                        and handing over a writer. */}
+                    {pickedTemplate.how_to_connect.length > 0 && (
+                      <div>
+                        <p className={`text-sm font-medium ${t.title}`}>How to get the key</p>
+                        <ol className={`mt-1.5 list-decimal space-y-1 pl-5 text-sm leading-6 ${t.muted}`}>
+                          {pickedTemplate.how_to_connect.map((step, index) => (
+                            <li key={`${pickedTemplate.id}-step-${index}`}>{step}</li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
+
+                    {pickedTemplate.fields.map((field) => (
                         <div key={field.key}>
                           <label
                             htmlFor={`${surface}-connect-${field.key}`}
@@ -931,6 +1200,11 @@ export default function OnboardingJourneyCard({
                         {pickedTemplate.credential_help && (
                           <p className={`mt-1 text-xs ${t.faint}`}>{pickedTemplate.credential_help}</p>
                         )}
+                        {pickedTemplate.key_looks_like && (
+                          <p className={`mt-1 text-xs ${t.faint}`}>
+                            A right-looking key: {pickedTemplate.key_looks_like}.
+                          </p>
+                        )}
                       </div>
 
                       <p className={`text-xs leading-5 ${t.muted}`}>
@@ -961,22 +1235,27 @@ export default function OnboardingJourneyCard({
                       >
                         {working ? 'Connecting…' : `Connect ${pickedTemplate.label}`}
                       </button>
-                    </div>
-                  )}
+                  </div>
                 </form>
               ) : null}
 
-              {/* Already connected elsewhere, or would rather not connect a tool
-                  at all — both stay one tap away. */}
-              <div className="mt-4 flex flex-wrap gap-2">
+              {/* THE LOOK, over everything connected — and the two ways out that
+                  never depended on connecting anything. `gather_connectors`
+                  sweeps EVERY declared connector in one act, so this one button
+                  covers however many tools are on the list above. */}
+              <div className="mt-5 flex flex-wrap gap-2">
                 {gatherOption && (
                   <button
                     type="button"
-                    onClick={() => choose('gather_connectors')}
+                    onClick={() => { setExploring(true); choose('gather_connectors') }}
                     disabled={working}
-                    className={`min-h-11 rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50 ${t.secondary}`}
+                    className={`min-h-11 rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50 ${connected.length > 0 ? t.primary : t.secondary}`}
                   >
-                    {gatherOption.label}
+                    {connected.length > 1
+                      ? `Go look across all ${connected.length}`
+                      : connected.length === 1
+                        ? 'Go look at what I can read'
+                        : gatherOption.label}
                   </button>
                 )}
                 <button
@@ -1005,6 +1284,35 @@ export default function OnboardingJourneyCard({
               speaks here. */}
           {!inFrontQuestions && !inDiscover && !showWindowForm && (
             <p className={`mt-5 break-words text-sm leading-6 ${t.muted}`}>{journey.card.body}</p>
+          )}
+
+          {/* WHAT ONE SWEEP FOUND, PER TOOL. The aggregate of the look: every
+              declared connector on its own row, counts and freshest stamp where
+              it read, its own reason where it did not. Contents-free by
+              construction — the core never puts a row's body on this state. */}
+          {swept.length > 0 && showSweep && (
+            <div className={`mt-5 p-4 ${t.panel}`}>
+              <h3 className={`text-sm font-semibold ${t.title}`}>
+                What I found across {swept.length === 1 ? 'it' : `all ${swept.length}`}
+              </h3>
+              <ul className="mt-2 space-y-1.5 text-sm">
+                {swept.map((row) => (
+                  <li key={row.name} className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
+                    <span aria-hidden className={`h-2 w-2 shrink-0 self-center rounded-full ${row.connected ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                    <span className={`font-medium ${t.title}`}>{row.name}</span>
+                    <span className={row.connected ? t.faint : variant === 'world' ? 'text-red-800' : 'text-red-300'}>
+                      {sweepLine(row)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {journey.state.connector_sweep?.swept_at && (
+                <p className={`mt-2 text-xs ${t.faint}`}>
+                  Read {dayOf(journey.state.connector_sweep.swept_at)}. I list what is there and
+                  never write, and none of what is in them is stored here.
+                </p>
+              )}
+            </div>
           )}
 
           {journey.card.entry?.identity_question && showSweep && (

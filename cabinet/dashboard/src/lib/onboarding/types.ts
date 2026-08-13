@@ -114,7 +114,7 @@ export interface ConnectorTemplateField {
 }
 
 /**
- * One entry in the "Connect a tool" pick-list, projected to what the surface
+ * One entry in the "Connect a tool" catalog, projected to what the surface
  * draws — never the connector body. The read shape (URLs, paths, the identity
  * call) stays server-side; a surface is handed the id to send back, the label
  * and summary to show, the host the credential reaches (for the consent line),
@@ -129,6 +129,47 @@ export interface ConnectorTemplateChoice {
   credential_env: string
   credential_help: string
   fields: ConnectorTemplateField[]
+  /**
+   * Which shelf of the catalog this sits on — the pack's own id, resolved to a
+   * label through `categories` below. A tool whose pack entry names no category,
+   * or names one the pack never declared, lands in `other`: a browsable list is
+   * only browsable if every entry is somewhere.
+   */
+  category: string
+  category_label: string
+  /**
+   * The steps to take IN THAT PRODUCT to produce the credential — where its key
+   * screen is, which read-only scope to tick, and what will go wrong. An ordered
+   * sequence, because they are one: the key cannot be copied before it is made.
+   */
+  how_to_connect: string[]
+  /** What a right-looking key looks like, so a wrong paste is caught by eye. */
+  key_looks_like: string
+}
+
+/**
+ * The catalog as one browsable object: the tools, and the shelf labels they sort
+ * onto. Both come from the same DATA pack, so a new shelf is a data edit.
+ */
+export interface ConnectorCatalog {
+  templates: ConnectorTemplateChoice[]
+  categories: Array<{ id: string; label: string; count: number }>
+}
+
+/**
+ * One connector as the LAST sweep found it — the contents-free row
+ * `research.sweep_connectors` writes, projected to what a surface may draw.
+ * `connected` is the fact; `reason` is why not, in the sweep's own words.
+ */
+export interface OnboardingSweptConnector {
+  name: string
+  connected: boolean
+  items: number
+  calls: number
+  host?: string
+  latest?: string | null
+  actors?: number
+  reason?: string
 }
 
 /**
@@ -413,6 +454,35 @@ export interface OnboardingState {
     connected: Array<{ kind: string; name: string; evidence?: string }>
     refused: Array<{ kind: string; name: string; reason: string }>
   }
+  /**
+   * What the last `gather_connectors` found, per connector. One sweep covers
+   * EVERY declared connector, so this is the aggregate the connect step reads
+   * back: each tool with its own count, freshest stamp and — where it failed —
+   * its own reason, which is what keeps one bad credential from reading as a
+   * failed sweep.
+   */
+  connector_sweep?: {
+    schema: 'cabinet.connector-sweep/v1'
+    swept_at: string
+    declared: number
+    calls: number
+    connectors: OnboardingSweptConnector[]
+    not_reached?: string[]
+  }
+  /**
+   * Contents-free provenance: what was connected from inside onboarding, in
+   * order. Written by `declare_connector`; carries the env var NAME and never a
+   * value. A connector declared before onboarding is NOT here — the sweep above
+   * is the authority on what exists.
+   */
+  connector_declarations?: Array<{
+    name: string
+    host: string
+    template: string
+    declared_at: string
+  }>
+  /** Written by the core's connector registry: how many connectors are declared. */
+  connectors_declared?: number
   created_at: string
   updated_at: string
 }
@@ -496,7 +566,7 @@ export interface OnboardingActionRequest {
    */
   salience_relation?: WindowRelation
   /**
-   * REQUIRED by declare_connector: the id of a template from the pick-list
+   * REQUIRED by declare_connector: the id of a template from the catalog
    * (`instance/config/connector-templates.yml.example`). An id the pack does
    * not carry is refused BY THE CORE.
    */
