@@ -895,7 +895,29 @@ budgets:
     # temporary allowance: the connect step ships and is permanent, so an
     # allowance would promise a deletion gate that will never fire.
     # observed == maximum, zero headroom.
-    maximum: 63090
+    #
+    # 63090 -> 63096 (+6 measured 2026-08-13 via cognitive-architecture-census.py,
+    # observed 77638 vs the then-effective 77632): the connector CATALOG, on the
+    # Captain's same-evening asks ("expand this to like hundreds of connectors
+    # and also include HOW to connect for each" / "i want to connect MANY
+    # connectors at once"). Almost all of that lands OUTSIDE framework/ by
+    # design — the 55 tool shapes, their shelves, their how-to-connect steps and
+    # their key hints are DATA in instance/config/connector-templates.yml.example,
+    # and the browsable catalog plus the many-tools UX is in the dashboard. The
+    # six lines are the one thing that could not be data:
+    # research.build_connector_from_template's `into_format`, which lets a
+    # template ask an operator for "acme" instead of making them assemble an API
+    # address, and refuses any format that does not pin a literal https:// around
+    # one {value} hole — so no operator answer can choose the scheme of a call
+    # their credential is about to ride on. Zero new production MODULES
+    # (framework_production_modules unchanged at 208 for this landing; every line
+    # is inside research.py, which the tree already carried) and zero new vendor
+    # literals in framework/ — the specifics ratchet caught one in a comment
+    # during the build and it was reworded rather than baselined. RAISED VISIBLY
+    # for the same reason as the row above: permanent organ, so an allowance
+    # would promise a deletion gate that will never fire.
+    # observed == maximum, zero headroom.
+    maximum: 63096
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
