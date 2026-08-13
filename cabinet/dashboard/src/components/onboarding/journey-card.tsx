@@ -908,10 +908,19 @@ export default function OnboardingJourneyCard({
                 You can point me at one folder to read, or ask me to go and find where I
                 am most useful. Either way, nothing is read until you approve a Charter.
               </p>
+              {/* ONE VOICE. Every word on this card is the CABINET speaking to
+                  the operator: "I" is the Cabinet, "you" is the person reading.
+                  These two rows had flipped into the operator's voice — "I name
+                  one folder, and you read it" — so three lines of the same
+                  paragraph disagreed about who "I" was (Captain, 2026-08-13,
+                  from a live run; the two descriptions are his wording). The
+                  labels are held to the same rule: the branch above says "Point
+                  me somewhere", so this one cannot say "where YOU are useful"
+                  and mean the Cabinet. */}
               <div className="mt-4 grid gap-3">
                 {([
-                  ['point', 'Point me somewhere', 'I name one folder, and you read it under a Charter I approve.'],
-                  ['decide', 'Go find where you are most useful', 'You look across what I have connected and propose where to start.'],
+                  ['point', 'Point me somewhere', 'You name one folder, and I read it under a Charter you approve.'],
+                  ['decide', 'Go and find where I am most useful', 'I look across what you have connected and propose where to start.'],
                 ] as const).map(([value, label, detail]) => {
                   const on = startPreference === value
                   return (

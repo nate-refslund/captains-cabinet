@@ -111,9 +111,12 @@ this artifact yet — record the observed outcome here after the manual matrix r
   - **[Cancel]**.
   Then: payload unpacked to the prefix (`ditto`), quarantine stripped **on the extracted
   payload only** (never on the .app — no Gatekeeper evasion), runner installed, Terminal
-  opened on `hatch-run.command` via Launch Services (`open -a Terminal`) — **no
-  Apple-events automation of Terminal** (verify once per target: no automation/TCC prompt
-  should appear).
+  opened on `hatch-run.command` via Launch Services (`open -a Terminal`) — **the stub
+  sends Terminal no Apple events** (verify once per target: no automation/TCC prompt
+  should appear). One app driving another is the pairing macOS asks consent for, and the
+  handoff never does it. The runner's own end-of-run self-close (see Logs) is a different
+  thing: it runs *inside* the window it closes, which is a self-send and prompts for
+  nothing.
 - **Re-launch** (prefix non-empty — a real install OR a partial tree left by an
   interrupted unpack; the dialog says so honestly): "Your Cabinet is already here" →
   **[Check it over]** (`cabinet-doctor.sh`, probe-only/read-only) / **[Quit]**.
@@ -130,15 +133,42 @@ this artifact yet — record the observed outcome here after the manual matrix r
 Every hatch run mints `~/hatch-logs/hatch-<UTCstamp>/` with `terminal-transcript.txt`
 (script(1) full transcript; skipped with an honest note when there is no tty) and
 `flight.log` (the engine's own flight log). The one shell-added notice at end of run
-reports exit code + these paths, nothing else — still exactly one notice, phrased for a
+reports exit code + these paths — still exactly one notice, phrased for a
 person since 2026-08-12, with a branch for each of the engine's three dispositions:
 `0` set up · `75` set up and open in the browser, one OPTIONAL background helper did not
 start (calm, not a failure) · anything else, stopped before finishing.
 
-## Operator copy (2026-08-12)
+### Saying goodbye, and closing (2026-08-13)
+The notice used to end there, and the window sat on "[Process completed]" — an operator on
+a live run did not know it was finished with, or that it was theirs to close. Two answers:
+
+- **The sign-off**, on every path, the last thing printed. Hatched (`0`/`75`):
+  "✅ All done — your Cabinet is open in your browser. You can close this window."
+  Anything else: "You can close this window once you have read the above." This is the
+  half that always works — no permission, nothing to fail.
+- **The self-close**, only where it is safe. The runner resolves *its own* Terminal window
+  from *its own* tty and closes **that one, by id**, 8s after the shell exits (detached, so
+  the window is idle by then and Terminal never asks whether to terminate anything). It
+  refuses — silently, leaving the window open — on a run that did not hatch, outside
+  Apple's Terminal (another emulator, a pipe, headless/CI: no tty, `TERM_PROGRAM` unset),
+  and when no window id resolves or the id is not a plain number.
+
+  Measured on macOS 27, 2026-08-13: the hatched run's own window closed ~8s after exit
+  with every other window untouched, a failed run's window was still open 23s later, and
+  **no automation prompt appeared and no TCC decision was evaluated at all** — Terminal
+  addressing itself is a self-send, which macOS exempts. If a future macOS does prompt and
+  the operator declines, the command fails, the detached helper dies, and the window stays
+  open with the sign-off on it.
+
+  `cabinet/scripts/tests/test_appshell_build.py` runs the shipped notice bytes for each
+  disposition and pins the guard's shape and the id validation; the window physically
+  closing is manual-checklist item 7 below, because no test can drive Terminal.app.
+
+## Operator copy (2026-08-12; sign-off 2026-08-13)
 Every string the operator reads — the dialogs above and the runner's first and last lines
 — is written for whoever double-clicked the icon and for nobody else: what is about to
-happen, how long, that they need do nothing, and what to do if something is in the way.
+happen, how long, that they need do nothing, what to do if something is in the way, and
+(since the sign-off) that the window is finished with and theirs to close.
 This codebase's vocabulary (hatch, move-in, egg, launch agents, First Mate, errand notes)
 stays in identifiers, comments and the allowlisted request strings, where it belongs. The
 bundle is still named `Hatch Cabinet.app` — renaming the artifact touches the builder,
@@ -182,3 +212,8 @@ the gate, the manifest rows and this runbook, and is deliberately NOT part of th
    end-of-run notice shows the exit code + paths.
 5. Re-launch the .app → doctor/quit dialog (no re-unpack offered).
 6. AirDrop-transport row of the Gatekeeper matrix on a 26.2 box — record outcome above.
+7. **The sign-off and the self-close** (the half no test can reach). On a hatched run:
+   the ✅ line is the last thing printed, still **no** automation/TCC prompt appears, and
+   ~8s later **that window and only that window** closes — any other Terminal window open
+   at the time is still there. Then force a non-hatched exit and confirm the window
+   **stays open** with its note readable.

@@ -15,6 +15,14 @@
 # ONE (spec: exit code + log paths, no other chrome), now phrased for a
 # person and aware of exit 75: hatched, browser open, an optional background
 # helper did not start.
+#
+# GOODBYE (2026-08-13, from a live operator run): the notice ended and the
+# window sat there on "[Process completed]". Nothing had gone wrong and
+# nothing said so — the operator did not know the window was finished with,
+# nor that it was theirs to close. The notice now ends with a sign-off that
+# says both, and on a run that actually hatched the window then closes
+# itself. See the scoping comment on that block: it closes ITS OWN window by
+# id and nothing else, and a run that stopped early never closes at all.
 set -euo pipefail
 
 PREFIX="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -85,14 +93,80 @@ set -e
 # The shell's exactly-one post-run notice: exit code and paths only (spec 3.5),
 # in plain words. Exit 75 is the engine's "hatched, front door open, an
 # optional background helper did not start" code — calm, not a failure.
+#
+# HATCHED records whether this run got the operator all the way in, and gates
+# BOTH the sign-off and the auto-close below: a run that stopped early keeps
+# its window, because that window is where the person can see how far it got.
+HATCHED=0
 echo ""
 case "$RC" in
-  0)  echo "Done — your Cabinet is set up. (code 0)" ;;
+  0)  echo "Done — your Cabinet is set up. (code 0)"; HATCHED=1 ;;
   75) echo "Done — your Cabinet is set up and open in your browser. One background"
       echo "helper didn't start on this Mac; that part is optional and safe to sort"
-      echo "out later. (code 75)" ;;
+      echo "out later. (code 75)"; HATCHED=1 ;;
   *)  echo "Setup stopped before it finished. Nothing on your Mac is broken — the"
       echo "record below shows how far it got. (code $RC)" ;;
 esac
 echo "Record of this run: $LOG_DIR/"
+
+# The sign-off. Printed on EVERY path, because it is the half that always
+# works: it needs no permission, cannot fail, and answers the operator's
+# question on its own even where the close below refuses.
+echo ""
+if [ "$HATCHED" = "1" ]; then
+  echo "✅ All done — your Cabinet is open in your browser. You can close this window."
+else
+  echo "You can close this window once you have read the above."
+fi
+
+# …and then, where it is safe, close it for them. SCOPE IS THE WHOLE DESIGN:
+# resolve OUR OWN window from OUR OWN tty and close THAT ONE, BY ID — never
+# "every window", never "quit", never a window this run did not open. Every
+# refusal is silent and leaves the window open:
+#   * a run that did not hatch — the note above has to stay readable;
+#   * anything but Apple's Terminal around us (another emulator, a pipe, a
+#     headless or CI run: no tty, and TERM_PROGRAM unset);
+#   * a window id we could not resolve, or that is not a plain number.
+# The handoff rule is untouched: the .app stub still opens Terminal through
+# Launch Services and sends it no Apple events (that is the pairing macOS
+# would prompt about). This is Terminal addressing ITSELF from inside its own
+# window — the self-send macOS exempts from the automation consent prompt.
+# Measured 2026-08-13 on macOS 27: the window closed, no prompt appeared, and
+# no automation decision was evaluated at all. Should a future macOS prompt
+# and the operator decline, the command fails, the helper below dies, and the
+# window simply stays open with the sign-off on it.
+if [ "$HATCHED" = "1" ] && [ -t 1 ] && [ "${TERM_PROGRAM:-}" = "Apple_Terminal" ]; then
+  OWN_TTY="$(tty 2>/dev/null || true)"
+  OWN_WINDOW=""
+  if [ -n "$OWN_TTY" ]; then
+    OWN_WINDOW="$(/usr/bin/osascript \
+      -e 'on run argv' \
+      -e 'tell application "Terminal"' \
+      -e 'repeat with w in windows' \
+      -e 'repeat with tb in tabs of w' \
+      -e 'try' \
+      -e 'if tty of tb is (item 1 of argv) then return (id of w) as text' \
+      -e 'end try' \
+      -e 'end repeat' \
+      -e 'end repeat' \
+      -e 'end tell' \
+      -e 'return ""' \
+      -e 'end run' "$OWN_TTY" 2>/dev/null || true)"
+  fi
+  # A window id is a plain number or it is nothing. This value is the one
+  # thing interpolated into the helper below, so anything else is dropped
+  # here rather than passed on.
+  case "$OWN_WINDOW" in
+    ''|*[!0-9]*) OWN_WINDOW="" ;;
+  esac
+  if [ -n "$OWN_WINDOW" ]; then
+    echo "   (it will also close itself in a few seconds)"
+    # Detached, and deliberately after this shell is gone: closing a window
+    # whose script is still running makes Terminal ask whether to terminate
+    # it — the confirmation sheet this whole block exists to spare them.
+    /usr/bin/nohup /bin/sh -c \
+      "sleep 8; /usr/bin/osascript -e 'tell application \"Terminal\" to close (every window whose id is $OWN_WINDOW)'" \
+      </dev/null >/dev/null 2>&1 &
+  fi
+fi
 exit "$RC"

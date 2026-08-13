@@ -248,15 +248,110 @@ def test_bash_syntax_clean() -> None:
         assert res.returncode == 0, f"bash -n failed for {script}: {res.stderr}"
 
 
-def test_no_osascript_or_applescript_in_shell_sources() -> None:
-    # Hard rule: handoff is Launch Services only. No Apple-events automation.
+def test_no_apple_events_in_the_handoff_sources() -> None:
+    # THE HANDOFF RULE, UNCHANGED: the .app stub reaches Terminal through
+    # Launch Services and sends it no Apple events. One app driving another is
+    # exactly the pairing macOS puts an automation consent prompt in front of,
+    # and the runbook's per-target check is that no such prompt appears.
+    #
+    # The RUNNER TEMPLATE is the one deliberate exception (2026-08-13), and it
+    # is not an exception to the rule above: the runner is already INSIDE the
+    # Terminal window it closes, so its close is Terminal addressing itself —
+    # a self-send, which macOS exempts from the consent prompt (measured on
+    # macOS 27: the window closed, no prompt, no automation decision logged).
+    # Proving the runner safe by ABSENCE would have been the weaker guard
+    # anyway; the two tests below pin the properties that actually matter
+    # (hatched-only, own window, by validated id) instead.
+    #
+    # Every other file in the area — including any added later — stays in
+    # scope, which is why this iterates the directory rather than a list.
     for src in sorted(_APPSHELL.iterdir()):
-        if not src.is_file():
+        if not src.is_file() or src == _RUNNER_IN:
             continue
         text = src.read_text(encoding="utf-8", errors="replace").lower()
         assert "osascript" not in text, f"osascript reference in {src}"
         assert "applescript" not in text, f"AppleScript reference in {src}"
         assert "nsapplescript" not in text, f"NSAppleScript reference in {src}"
+
+
+# ---------------------------------------------------------------------------
+# the end-of-run goodbye + the auto-close (2026-08-13)
+# ---------------------------------------------------------------------------
+#
+# From a live operator run: the notice ended, the window sat on "[Process
+# completed]", and the operator did not know it was finished with or that it
+# was theirs to close. Two answers ship — a sign-off printed on every path,
+# and a self-close on the paths that actually hatched.
+#
+# WHAT THESE TESTS PROVE, and what they cannot: the behavioural test below
+# runs the SHIPPED bytes of the notice block (sliced out of the template at
+# the engine's own `RC=$?` line, so it exercises the real thing rather than a
+# copy) and pins which sign-off each disposition prints and that the exit code
+# survives. The static test pins that the close is gated on the SAME flag and
+# can only ever name one window, by a number this script resolved for its own
+# tty. Neither can drive Terminal.app, so THE WINDOW ACTUALLY CLOSING is
+# human-verified: measured by hand on macOS 27 (2026-08-13) — a hatched run's
+# own window closed ~8s after exit, every other window untouched, and a failed
+# run's window still open 23s later.
+
+
+def _notice_block(rc: int, tmp_path: Path) -> Path:
+    """The runner's post-run notice, with the engine stubbed to exit ``rc``."""
+    template = _RUNNER_IN.read_text(encoding="utf-8")
+    marker = "RC=$?\n"
+    assert marker in template, "runner no longer captures the engine's exit code"
+    tail = template[template.index(marker) + len(marker):]
+    assert "case \"$RC\" in" in tail, "the notice is no longer after the engine call"
+    script = tmp_path / f"notice-{rc}.sh"
+    script.write_text(
+        "#!/bin/bash\nset -euo pipefail\n"
+        f'LOG_DIR="{tmp_path}/logs"\nmkdir -p "$LOG_DIR"\nRC={rc}\n' + tail
+    )
+    script.chmod(0o755)
+    return script
+
+
+_SIGNOFF = "✅ All done — your Cabinet is open in your browser. You can close this window."
+_STAY = "You can close this window once you have read the above."
+
+
+@pytest.mark.parametrize("rc,hatched", [(0, True), (75, True), (1, False), (2, False)])
+def test_notice_signs_off_on_every_path_and_keeps_the_exit_code(
+    tmp_path: Path, rc: int, hatched: bool
+) -> None:
+    # Both dispositions that got the operator all the way in say the same
+    # goodbye; anything else keeps its window and says so without claiming the
+    # Cabinet is up. Exit 75 is hatched-with-a-caveat, never a failure.
+    res = _run(["bash", str(_notice_block(rc, tmp_path))])
+    assert res.returncode == rc, f"the notice must not swallow the exit code: {res}"
+    if hatched:
+        assert _SIGNOFF in res.stdout, res.stdout
+        assert _STAY not in res.stdout, res.stdout
+    else:
+        assert _STAY in res.stdout, res.stdout
+        assert _SIGNOFF not in res.stdout, res.stdout
+    # No tty and no TERM_PROGRAM here (a pipe, as in CI): the close never arms,
+    # on any disposition, and the sign-off still lands.
+    assert "close itself" not in res.stdout, res.stdout
+
+
+def test_autoclose_is_hatched_only_and_can_only_name_its_own_window() -> None:
+    code = _code_lines(_RUNNER_IN)
+    # Only the two hatched dispositions arm anything at all.
+    assert code.count("HATCHED=1") == 2, "a third disposition started counting as hatched"
+    # …and the close hangs off that same flag, plus a real Terminal around us.
+    assert (
+        'if [ "$HATCHED" = "1" ] && [ -t 1 ] && [ "${TERM_PROGRAM:-}" = "Apple_Terminal" ]; then'
+        in code
+    ), "the auto-close guard changed shape"
+    # ONE window, named by id. The blunt instruments must never appear.
+    assert "close (every window whose id is $OWN_WINDOW)" in code
+    for blunt in ("to quit", "close every window", "close front window",
+                  "close first window", "close windows"):
+        assert blunt not in code, f"unscoped Terminal command in the runner: {blunt}"
+    # The id is the ONLY value interpolated into the closer, so it is a plain
+    # number or it is nothing — anything else is dropped before it gets there.
+    assert '\'\'|*[!0-9]*) OWN_WINDOW="" ;;' in code, "the window id is no longer validated"
 
 
 def test_no_dead_dashboard_env_names_anywhere() -> None:
