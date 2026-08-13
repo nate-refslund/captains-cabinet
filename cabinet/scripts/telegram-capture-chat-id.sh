@@ -86,24 +86,54 @@ if ! printf '%s' "$VAR_NAME" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*$'; then
   exit 64
 fi
 
-# Read current value of KEY=... from .env. Empty string if unset.
-current_value() {
-  local key="$1"
-  grep -E "^${key}=" "$ENV_FILE" 2>/dev/null | head -1 | sed "s/^${key}=//; s/^\"//; s/\"$//"
+# --- .env value quoting (a value here is `source`d by bash in 30+ scripts) ---
+# _env_quote emits provably-literal values BARE (the common case: tokens, ids,
+# keys round-trip byte-for-byte) and SINGLE-QUOTES anything else (' -> '\''), so
+# `FOO=$(rm -rf ~)` becomes inert text on source instead of a command run at
+# assignment. _env_unquote inverts it for reads that parse the value's TEXT.
+# sed does the ' escaping (bash 3.2's ${//} replacement mishandles it).
+_env_quote() {
+  case "$1" in
+    '') printf '%s' "$1" ;;
+    *[!A-Za-z0-9_.:/=+@%,-]*)
+      printf "'"; printf '%s' "$1" | sed "s/'/'\\\\''/g"; printf "'" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+_env_unquote() {
+  local v="$1"
+  case "$v" in
+    "'"*"'") v="${v#\'}"; v="${v%\'}"; v="$(printf '%s' "$v" | sed "s/'\\\\''/'/g")" ;;
+    '"'*'"') v="${v#\"}"; v="${v%\"}" ;;
+  esac
+  printf '%s' "$v"
 }
 
-# Update KEY=value in .env (adds the line if KEY absent) — same awk pattern
-# as setup-env.sh.
+# Read current value of KEY=... from .env. Empty string if unset. Decodes a
+# safe-quoted value back to its logical string (the same as `source` would).
+current_value() {
+  local key="$1" line
+  line="$(grep -E "^${key}=" "$ENV_FILE" 2>/dev/null | head -1)"
+  [ -n "$line" ] || return 0
+  _env_unquote "${line#"${key}="}"
+}
+
+# Update KEY=value in .env (adds the line if KEY absent) — same quoting as
+# setup-env.sh: the value is written through _env_quote so it can never execute
+# when cabinet/.env is sourced.
 set_env_key() {
-  local key="$1" value="$2"
+  local key="$1" value="$2" qval
+  qval="$(_env_quote "$value")"
   local tmp; tmp="$(mktemp)"
   if grep -qE "^${key}=" "$ENV_FILE"; then
-    awk -v k="$key" -v v="$value" \
-      'BEGIN { FS="="; OFS="=" } $1 == k { print k "=" v; next } { print }' \
+    # awk reads the quoted value from the ENVIRON (never -v: -v processes the
+    # backslashes in '\''); FS/OFS "=" keeps the match on the key alone.
+    qval="$qval" awk -v k="$key" \
+      'BEGIN { FS="="; OFS="="; q=ENVIRON["qval"] } $1 == k { print k "=" q; next } { print }' \
       "$ENV_FILE" > "$tmp"
   else
     cat "$ENV_FILE" > "$tmp"
-    echo "${key}=${value}" >> "$tmp"
+    printf '%s\n' "${key}=${qval}" >> "$tmp"
   fi
   mv "$tmp" "$ENV_FILE"
   chmod 600 "$ENV_FILE"
@@ -125,7 +155,7 @@ fill_if_empty() {
 TOKEN="${!VAR_NAME:-}"
 if [ -z "$TOKEN" ] && [ -f "$ENV_FILE" ]; then
   TOKEN="$(grep -E "^${VAR_NAME}=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)"
-  TOKEN="${TOKEN%\"}"; TOKEN="${TOKEN#\"}"
+  TOKEN="$(_env_unquote "$TOKEN")"
 fi
 if [ -z "$TOKEN" ]; then
   fail "no token in \$$VAR_NAME or cabinet/.env — set the bot token first (setup-env.sh)"

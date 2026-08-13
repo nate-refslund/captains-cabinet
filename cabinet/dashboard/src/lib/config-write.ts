@@ -365,7 +365,57 @@ export function mustParseAsYaml(text: string): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Set `KEY=value`, appending when absent if asked.
+ * The safe-bare set: bytes that are LITERAL in an unquoted bash assignment RHS
+ * (`KEY=<here>`) under `set -a; source cabinet/.env`. None of them triggers
+ * command substitution, parameter/arithmetic/tilde expansion or word-splitting,
+ * and none ends the assignment word. `$ backtick ' " space ; & | < > ( ) { } ~
+ * # ! * ? [ ] \` and every other byte are DELIBERATELY excluded — a value that
+ * carries one is single-quoted instead. (`/` is escaped only for the regex.)
+ */
+const ENV_BARE_SAFE = /^[A-Za-z0-9_.:\/=+@%,-]+$/
+
+/**
+ * The exact bytes to write after `KEY=` so the value is INERT when cabinet/.env
+ * is `source`d — for ANY input. THIS is the fix for "a .env value can execute
+ * on source".
+ *
+ * cabinet/.env is bash-`source`d by 30+ scripts (several under `set -a`), so
+ * every line becomes a shell assignment and `FOO=$(rm -rf ~)` EXECUTES on
+ * assignment — command substitution runs before the value is ever used. A value
+ * that is provably literal unquoted (the common case: API keys, tokens, ids,
+ * plain secrets, connection strings without query args) is emitted BARE, so it
+ * round-trips byte-for-byte and every hand-parser that reads it is unaffected.
+ * Anything else is SINGLE-QUOTED with `'` escaped as `'\''`; bash treats the
+ * whole of a single-quoted string literally, so no `$()`, `${}`, backtick, `~`,
+ * glob or word-split survives. Empty is bare (`KEY=`). A newline is still the
+ * one REFUSED input — single-quoting would make it inert on source, but it would
+ * still split this line-oriented file — and that refusal lives in `setEnvValue`.
+ */
+export function envValueLiteral(value: string): string {
+  if (value === '' || ENV_BARE_SAFE.test(value)) return value
+  return `'${value.replace(/'/g, "'\\''")}'`
+}
+
+/**
+ * Invert `envValueLiteral` for the hand-parsers that read a value's TEXT rather
+ * than sourcing it (dashboard display, the wizard's idempotency reads). A
+ * single-quoted wrapper is stripped and `'\''` decoded back to `'`; a legacy
+ * double-quoted one is stripped; a bare value is returned unchanged. `source`
+ * itself needs none of this — bash unquotes natively.
+ */
+export function envValueUnliteral(raw: string): string {
+  if (raw.length >= 2 && raw.startsWith("'") && raw.endsWith("'")) {
+    return raw.slice(1, -1).replace(/'\\''/g, "'")
+  }
+  if (raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"')) {
+    return raw.slice(1, -1)
+  }
+  return raw
+}
+
+/**
+ * Set `KEY=value`, appending when absent if asked. The value is emitted through
+ * `envValueLiteral` so it can never execute when cabinet/.env is sourced.
  *
  * A line break in the value is REFUSED rather than escaped. `echo 'K=v' >> .env`
  * with a newline in `v` wrote a second, attacker-chosen line into the file that
@@ -379,17 +429,18 @@ export function setEnvValue(
   options: { createIfMissing?: boolean } = {}
 ): Transform {
   refuseUnwritable(value, key)
+  const literal = envValueLiteral(value)
   const lines = text.split('\n')
   let matched = 0
   for (let i = 0; i < lines.length; i++) {
     if (lines[i].startsWith(`${key}=`)) {
-      lines[i] = `${key}=${value}`
+      lines[i] = `${key}=${literal}`
       matched++
     }
   }
   if (matched === 0 && options.createIfMissing) {
     const body = text.length && !text.endsWith('\n') ? `${text}\n` : text
-    return { text: `${body}${key}=${value}\n`, matched: 1 }
+    return { text: `${body}${key}=${literal}\n`, matched: 1 }
   }
   return { text: lines.join('\n'), matched }
 }
@@ -401,14 +452,19 @@ export function deleteEnvKey(text: string, key: string): Transform {
   return { text: kept.join('\n'), matched: lines.length - kept.length }
 }
 
-/** Parse a `.env` document into a map. Comments and blanks are skipped. */
+/**
+ * Parse a `.env` document into a map. Comments and blanks are skipped, and each
+ * value is passed through `envValueUnliteral` so a safe-quoted value reads back
+ * as its logical string rather than as `'…'` — the inverse of what the writer
+ * emits, and what `source` would have produced.
+ */
 export function parseEnvDocument(text: string): Record<string, string> {
   const vars: Record<string, string> = {}
   for (const line of text.split('\n')) {
     const trimmed = line.trim()
     if (!trimmed || trimmed.startsWith('#')) continue
     const eq = line.indexOf('=')
-    if (eq > 0) vars[line.slice(0, eq).trim()] = line.slice(eq + 1).trim()
+    if (eq > 0) vars[line.slice(0, eq).trim()] = envValueUnliteral(line.slice(eq + 1).trim())
   }
   return vars
 }
