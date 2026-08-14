@@ -52,6 +52,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -184,6 +185,73 @@ def apply_answer(choice, *, answers_path: "Path | str | None" = None) -> dict:
             + " — run cabinet/scripts/generate-instance.py to stamp it into "
               "instance/config/platform.yml")
     return receipt(True, note)
+
+
+#: What the operator is CALLED, and the two constraints on it. The authority is
+#: ``cabinet/scripts/generate-instance.py::validate_display_name`` — length and
+#: control characters, and deliberately NO alphabet (a name written in any
+#: script is a name; see the RES-025 retirement note in salience.py). Restated
+#: rather than imported because ``framework/`` never imports ``cabinet/``; the
+#: cap is the generator's own, so a name accepted here can never be one the
+#: generator then refuses.
+_NAME_SECTION = "captain"
+_NAME_KEY = "name"
+NAME_MAX = 80
+_NAME_CONTROL_RE = re.compile("[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029]")
+
+
+def record_captain_name(name, *, answers_path: "Path | str | None" = None) -> dict:
+    """Record what the operator is called into ``captain.name``.
+
+    THE SAME WRITE PATH AS THE AVAILABILITY VERB, and that is the whole reason
+    it lives here: the answers file's ``captain:`` block gets exactly one writer,
+    which reads before it writes, refuses a file it cannot parse rather than
+    destroying an interview's work, and replaces atomically. ``platform.yml`` is
+    a marker-managed generator output and is NOT touched — the generator stamps
+    ``captain_name`` from this file on its next run, so onboarding never fights
+    it.
+
+    AN EXISTING NAME IS REPLACED, and the receipt says what it was. A fresh
+    hatch writes ``captain.name`` from ``$USER`` before anyone has been asked, so
+    refusing to overwrite would mean the operator's own answer to "what is your
+    name?" loses to a Unix account. Same-value is an honest no-op.
+    """
+    # STRIPPED, THEN CHECKED, THEN COLLAPSED — in that order, and the order is
+    # the whole point. Collapsing first would turn a two-line paste into one
+    # plausible line and store it, so the control-character rule the generator
+    # enforces could never fire here: the check would run on a string from which
+    # the offending character had just been removed. A name is one line of text;
+    # a paste that is two is refused rather than silently repaired.
+    text = str(name if name is not None else "").strip()
+    if not text:
+        raise AvailabilityError("a name is one line of text — refused, nothing written")
+    bad = _NAME_CONTROL_RE.search(text)
+    if bad:
+        raise AvailabilityError(
+            f"that name contains a control character (U+{ord(bad.group()):04X}) — "
+            f"refused, nothing written")
+    if len(text) > NAME_MAX:
+        raise AvailabilityError(
+            f"that name is {len(text)} characters; the limit is {NAME_MAX} — "
+            f"refused, nothing written")
+    text = " ".join(text.split())
+    path = Path(answers_path) if answers_path else env.cabinet_init_answers_path()
+    doc = _read_answers(path)
+    section = doc.get(_NAME_SECTION)
+    if section is not None and not isinstance(section, dict):
+        raise AvailabilityError(
+            f"answers file at {path} has a non-mapping '{_NAME_SECTION}:' block "
+            f"— refused, nothing written")
+    section = dict(section or {})
+    previous = section.get(_NAME_KEY)
+    if previous == text:
+        return {"name": text, "written": False, "previous": previous,
+                "note": "answers already record that name — honest no-op"}
+    section[_NAME_KEY] = text
+    doc[_NAME_SECTION] = section
+    _write_answers(path, doc)
+    return {"name": text, "written": True, "previous": previous,
+            "note": f"recorded {_NAME_SECTION}.{_NAME_KEY}"}
 
 
 def main(argv=None) -> int:

@@ -26,8 +26,10 @@ you?") was three questions in one breath, and the dashboard rendered it as a
 single dense card. It is now a guided, stepped flow — one idea per step, a
 visible progress rail, plain Back/Next — asking, in order:
 
-1. **your role** — *"Tell me about you and your work. What do you do?"* Free
-   text, any language. Stored as the journey **seed**, the seam genesis reads.
+1. **who you are, and your role** — *"What is your name? And tell me about you
+   and your work."* One step, two fields. The NAME (2026-08-14, below) is
+   optional and lands under `captain.name`; the free text is any language and is
+   stored as the journey **seed**, the seam genesis reads.
 2. **the dream** — *"What would you love this Cabinet to become? Think bigger
    than today."* Free text, optional. Stored under **`mission.purpose`**, the
    seam the genesis proposal tree already conditions its cards on — composed,
@@ -177,6 +179,102 @@ it is not clear from the text or connected tools."*
   the whole path. `test_connector_catalog.py` gained the search-lane arms
   (shape, custody under `search.`, the label-vs-shape check, the disclosure that
   the operator's own words are sent, and the GET-only property of the open one).
+
+**The First Mate speaks (Captain 2026-08-14, same day, second session).** He
+drove the whole connected flow — four real connectors plus a search tool — and
+returned seven findings. Not one is about truthfulness; every one is about
+PRESENTATION or INITIATIVE, and each fix therefore LAYERS the honesty ledger and
+never deletes a word of it.
+
+- **Short first, details fold.** *"this is way too much text. make it short and
+  simple."* The connected-mode card opened with ~350 words of cannot-know,
+  coverage and ranking caveats as one paragraph. The card now carries three
+  fields instead of one blob: `headline` (at most three short sentences — what I
+  read, what recurs, the ONE thing needed now), `details` (the same ledger cut
+  into named sections), and `body`, which is **exactly the join of `details`**.
+  That equality is the whole safety property and it is asserted in both
+  directions (`test_first_mate_speaks.py::test_the_body_is_exactly_the_join_of_the_sections`
+  plus an arm proving the join can fail), so a surface that cannot fold —
+  Telegram, a log, a plain reader — is handed the identical text it always was.
+  The dashboard renders headline + a `How I worked this out — every caveat`
+  disclosure. Same treatment on the dividend.
+- **Never re-ask what was already answered.** *"'What should I open instead? A
+  word or two.' this question i actually already answered in the second question
+  about purpose."* `_answers_already_given` reads the role, the dream and the
+  organisation back onto the ranked offer: each candidate gains `you_said` (the
+  operator's own words its name carries), and where EXACTLY ONE candidate
+  matches, the offer gains `confirm` — the open ask becomes *"you said X — start
+  with Y?"*, one tap. Two matches is a choice, not a confirmation, and stays one.
+  The escape hatch's field pre-fills from `prefill`: a word they gave that the
+  ranking never produced, taken from the DREAM before the role (question two is
+  where a target is named; question one is where "small" is). Nothing is
+  recorded by reading their answers back — they still answer.
+- **Name first, then guess.** *"if the very first question is 'What is your
+  name?' then it may more intelligently guess the user account across the
+  tools."* Question one gains the name as its opening line (optional — a cabinet
+  that will not start without your name is an interview). It lands under
+  `captain.name` through `availability.record_captain_name`, so the answers file's
+  `captain:` block keeps exactly ONE writer and the generator stamps it on its
+  next run; a failed write does not cost the operator their answer. With a name
+  on record, `research.identity_guess` proposes one account per connector under
+  three STATED rules over the one tokenizer — the whole name, every word of it,
+  or a joined form (`nathanielrefslund`, `nrefslund`). No prefix, no edit
+  distance, no similarity: those produce a wrong-person match that reads exactly
+  like a right one. Two matches on one connector produces NO guess and says so.
+  The surface renders a confirm chip per connector; **nothing is recorded
+  without the operator's tap**, through the same `record_operator_identity` act a
+  pick from the list uses.
+- **Probes run without asking.** *"'What I went and looked for' it should just
+  autonomously look for it without asking."* The gap was ordering: the probes
+  were derived and deferred (`no_search_tool_connected`) when the seed was
+  typed, a search tool was connected afterwards, and nothing re-ran them. The
+  look-up now re-fires inside `declare_connector` (search lane only, seed
+  present, and only when the last run actually stopped for want of a search
+  tool) and inside `gather_connectors`. `_run_seed_probes` is the one
+  composition all four callers share.
+- **Findings speak as the First Mate.** *"if it is from the first mate, make it
+  look like a message from first mate."* The card carries `speaker:
+  "coordinator"` — a ROLE, never a name: the framework does not know what a
+  deployment calls its coordinating officer, and the surface resolves the title
+  through `lib/officer-title.ts` (`COORDINATOR_ROLE` + `officerTitle`). The
+  dividend leads with the finding's plain meaning and puts the receipt,
+  coverage, binding, clocks and look-ups in the fold. Presentation only: the
+  finding's content and citations are byte-identical to the core's.
+- **A broad window, with informed consent.** *"i really want the cabinet to
+  fully control the entire mac!! so this option should be possible (not just
+  home folder)."* The flat home-folder refusal is gone. The whole home folder is
+  ALLOWED; the Charter states the trade-off before it is approved — still
+  read-only, still skipping secrets/personnel/pay/customer-personal/legal/
+  corporate-finance by name, and the honest part: the First Window still opens
+  at most `MAX_FILES` files ranked most-informative, so a wider root makes the
+  FIRST look SHALLOWER, not deeper. What stays refused is refused for OWNERSHIP,
+  not size: the whole disk, a directory that holds other people's home folders,
+  and a named set of OS-owned roots — for each, the operator's ownership answer
+  cannot honestly be "mine". A specific folder inside any of them is an ordinary
+  window. The deeper desire — the cabinet CONTROLLING the Mac — is the trust
+  ladder's, and the copy says where control actually comes from rather than
+  faking it here.
+- **A finished operator is told so.** *"i believe i've answered everything and am
+  now stuck and can't continue again?"* — measured on his own instance, with a
+  ratified Charter, a delivered dividend, a recorded target and a recorded
+  identity. The `orientation_offered` card titled itself *"Deeper Orientation has
+  not started"* and offered three options that all led back INTO onboarding.
+  It now leads with completion (`card.completion`, gated on the same two fields
+  the home redirect reads — a ratified charter and a first dividend) and carries
+  two ways OUT, named as cabinet concepts (`briefing`, `cabinet`) that each
+  surface maps to its own door. The deeper offer is demoted, not deleted, and
+  the "has not started" disclosure is unchanged in the fold. `journeyIsComplete`
+  in `lib/onboarding/wizard.ts` is the ONE rule; `completion.ts` (the redirect)
+  and the card both read it, and a test pins the core's own verdict to it — two
+  spellings of "finished" is how a router stops redirecting while the page still
+  offers only more questions.
+- **Sensors:** `framework/onboarding/tests/test_first_mate_speaks.py` (46 arms
+  across all seven, each layering arm paired with a losslessness arm, plus the
+  degenerate ends: no sweep, no name, two lookalikes, no seed, an incomplete
+  journey, and a whole-home window that still refuses a sensitive file), and the
+  dashboard arms in `journey-card.test.ts` — the fold carries every section, a
+  guess sends nothing until it is tapped, and the completion block agrees with
+  the redirect's predicate.
 
 ## 2. Product doctrine
 

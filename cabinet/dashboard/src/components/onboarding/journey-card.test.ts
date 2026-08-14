@@ -120,6 +120,17 @@ import OnboardingJourneyCard, {
   sweepLine,
 } from './journey-card'
 import type { ConnectorCatalog, OnboardingSweptConnector } from '@/lib/onboarding/types'
+import { COORDINATOR_ROLE, officerTitle } from '@/lib/officer-title'
+import { journeyIsComplete } from '@/lib/onboarding/wizard'
+
+/** An /api/onboarding POST that succeeds, for arms that drive a control. */
+function stubOkAction() {
+  vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL, _init?: RequestInit) => (
+    String(url).endsWith('/api/onboarding/evidence')
+      ? { ok: true, json: async () => ({ ok: true }) }
+      : { ok: true, status: 200, json: async () => ({ ok: true, card: { stage: 'welcome' }, state: {} }) }
+  )))
+}
 
 afterEach(() => {
   hookScript.steps = null
@@ -290,6 +301,8 @@ function scriptState(overrides: {
   exploring?: boolean
   refusedAction?: string | null
   organization?: string
+  name?: string
+  salienceNameEdited?: boolean
 }) {
   hookScript.cursor = 0
   hookScript.steps = [
@@ -333,6 +346,10 @@ function scriptState(overrides: {
     // anywhere else renumbers every index below it and this script goes red —
     // which is the sensor working, not an inconvenience.
     { initial: '', value: overrides.organization ?? '' }, // 33 organization
+    // What the operator is CALLED — question one's opening line. Appended, per
+    // the note above: an insert renumbers every index below it.
+    { initial: '', value: overrides.name ?? '' }, // 34 name
+    { initial: false, value: overrides.salienceNameEdited ?? false }, // 35 salienceNameEdited
   ]
 }
 
@@ -358,7 +375,11 @@ describe('rendered component — the stepped front', () => {
   it('opens on question one — what you do — with a textarea and a disabled Next', () => {
     scriptState({ journey: journeyFixture('welcome'), wizardStep: 'role', role: '' })
     const html = render()
-    expect(html).toContain('Tell me about you and your work.')
+    expect(html).toContain('What is your name? And tell me about you and your work.')
+    // The name is asked FIRST and stays OPTIONAL — the role alone still
+    // advances, so this never becomes a cabinet that will not start
+    // without your name.
+    expect(html).toContain(`id="dashboard-name"`)
     expect(html).toContain(`id="dashboard-role"`)
     // Next cannot advance an empty role — it is the seed the core will not skip.
     const nextTag = html.slice(html.lastIndexOf('<button', html.indexOf('Next')), html.indexOf('Next'))
@@ -1592,8 +1613,8 @@ describe('surface parity without a World mutation fork', () => {
   it('World renders the same component with its own skin', () => {
     scriptState({ journey: journeyFixture('welcome'), wizardStep: 'role' })
     const html = render({ surface: 'world', variant: 'world' })
-    expect(html).toContain('Tell me about you and your work.')   // same question
-    expect(html).toContain('read-only')                          // same promise
+    expect(html).toContain('And tell me about you and your work.') // same question
+    expect(html).toContain('read-only')                            // same promise
   })
 })
 
@@ -1649,5 +1670,319 @@ describe('onboarding journey accessibility floor', () => {
   it('stores nothing in the browser — onboarding state lives in the core', () => {
     const src = fs.readFileSync(path.join(__dirname, 'journey-card.tsx'), 'utf8')
     expect(src).not.toMatch(/localStorage|sessionStorage|document\.cookie/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// THE FIRST MATE SPEAKS — short first, and the caveats one click behind.
+//
+// Six live findings from the Captain driving the full connected onboarding
+// (2026-08-14). Every arm below is paired with a LOSSLESSNESS arm: layering is
+// a rendering choice, so the fold has to carry the whole ledger the blob did.
+// ---------------------------------------------------------------------------
+function spokenJourney(over: Partial<OnboardingResponse['card']> = {}): OnboardingResponse {
+  const fixture = journeyFixture('welcome')
+  fixture.card = {
+    ...fixture.card,
+    speaker: 'coordinator',
+    headline: [
+      'I read across your 4 connected tools — 666 items.',
+      'The names that come up most across them: yoyaku, kaigan.',
+      'First: confirm which account is you in code.',
+    ],
+    details: [
+      { id: 'opening', title: 'How I will start', text: 'I will read them first.' },
+      {
+        id: 'cannot_know',
+        title: 'What I cannot know without access',
+        text: ' Which sources are yours to grant is not written anywhere I can read.',
+      },
+      { id: 'promise', title: 'Before anything is opened', text: ' Nothing is opened until you approve that Charter.' },
+    ],
+    body:
+      'I will read them first. Which sources are yours to grant is not written anywhere I can read.' +
+      ' Nothing is opened until you approve that Charter.',
+    ...over,
+  }
+  return fixture
+}
+
+describe('rendered component — the card reads as a message, and hides nothing', () => {
+  it('leads with the headline and names its sender through the resolver', () => {
+    scriptState({ journey: spokenJourney(), wizardStep: 'discover', exploring: true })
+    const html = render()
+    expect(html).toContain('I read across your 4 connected tools — 666 items.')
+    // The TITLE, resolved — never a literal in this component. A hardcoded
+    // "First Mate" here is a second place the Captain's naming ruling has to be
+    // applied, and the one that gets missed when it changes.
+    expect(html).toContain(officerTitle(COORDINATOR_ROLE))
+    const src = fs.readFileSync(path.join(__dirname, 'journey-card.tsx'), 'utf8')
+    expect(src).not.toContain('First Mate')
+  })
+
+  it('keeps every section of the ledger, in the fold, with its heading', () => {
+    scriptState({ journey: spokenJourney(), wizardStep: 'discover', exploring: true })
+    const html = render()
+    expect(html).toContain('How I worked this out — every caveat')
+    for (const section of spokenJourney().card.details ?? []) {
+      expect(html, `${section.id} lost`).toContain(section.title)
+      expect(html, `${section.id} text lost`).toContain(section.text.trim())
+    }
+  })
+
+  it('renders the blob unchanged when the core sends no headline', () => {
+    // Every stage that has not been layered — a charter, a pause — must keep
+    // reading exactly as it did. A surface that only renders headlines would
+    // drop those cards entirely.
+    scriptState({ journey: journeyFixture('charter_pending') })
+    const html = render()
+    expect(html).toContain('Test card body.')
+    expect(html).not.toContain('How I worked this out')
+  })
+})
+
+describe('rendered component — the identity guess is a proposal, never a claim', () => {
+  const guessed = (): OnboardingResponse => {
+    const fixture = journeyFixture('welcome')
+    fixture.card.entry = identityEntry([
+      {
+        connector: 'code',
+        rows: 531,
+        candidates: [
+          { identifier: 'buildbot', rows: 400 },
+          { identifier: 'htanaka', rows: 1 },
+        ],
+        reports_no_actor: false,
+        accounts: 2,
+        withheld: 0,
+        complete: true,
+        note: '',
+        guess: {
+          identifier: 'htanaka',
+          rows: 1,
+          rule: 'joined_words',
+          matched_name: 'Hanako Tanaka',
+          evidence: ['htanaka'],
+          why: '“htanaka” reads as your name run together (htanaka)',
+        },
+      },
+    ])
+    return fixture
+  }
+
+  it('asks the guess as a question, with the reason it is asking', () => {
+    scriptState({ journey: guessed(), wizardStep: 'discover', exploring: true })
+    const html = render()
+    expect(html).toContain('In code, are you')
+    expect(html).toContain('htanaka')
+    expect(html).toContain('reads as your name run together')
+    expect(html).toContain('1 of 531 rows here.')
+    expect(html).toContain('That’s me')
+    expect(html).toContain('No, someone else')
+    // The full list is NOT drawn while the guess stands — that is the whole
+    // point of the guess — but it is one tap away behind "someone else".
+    expect(html).not.toContain('400 of 531 here')
+  })
+
+  it('records the confirmation through the same act a pick goes through', async () => {
+    stubOkAction()
+    const fetchSpy = globalThis.fetch as unknown as ReturnType<typeof vi.fn>
+    scriptState({ journey: guessed(), wizardStep: 'discover', exploring: true })
+    const chip = driveTree().find((el) => el.props?.name === 'dashboard-identity-confirm-code')
+    expect(chip, 'confirm chip not rendered').toBeDefined()
+    ;(chip!.props.onClick as () => void)()
+    await flush(); await flush()
+    const action = (fetchSpy.mock.calls as unknown[][])
+      .map((call) => ({ url: String(call[0]), body: String((call[1] as RequestInit | undefined)?.body ?? '') }))
+      .find((c) => c.url.endsWith('/api/onboarding'))
+    expect(action!.body).toContain('"action":"record_operator_identity"')
+    expect(action!.body).toContain('"handles":{"code":["htanaka"]}')
+  })
+
+  it('sends NOTHING until the operator taps — a guess is never a silent claim', () => {
+    stubOkAction()
+    const fetchSpy = globalThis.fetch as unknown as ReturnType<typeof vi.fn>
+    scriptState({ journey: guessed(), wizardStep: 'discover', exploring: true })
+    render()
+    const posts = (fetchSpy.mock.calls as unknown[][])
+      .map((call) => String(call[0]))
+      .filter((url) => url.endsWith('/api/onboarding'))
+    expect(posts, 'rendering a guess wrote an identity').toEqual([])
+  })
+
+  it('falls back to the whole list when the operator says it is someone else', () => {
+    scriptState({
+      journey: guessed(), wizardStep: 'discover', exploring: true,
+      handles: { code: '' },
+    })
+    const html = render()
+    expect(html).not.toContain('In code, are you')
+    expect(html).toContain('400 of 531 here')
+    expect(html).toContain('That one is me')
+  })
+
+  it('shows the reason there is no guess when two accounts look like the name', () => {
+    const fixture = journeyFixture('welcome')
+    fixture.card.entry = identityEntry([
+      {
+        connector: 'tracker', rows: 12,
+        candidates: [{ identifier: 'hanako.tanaka', rows: 8 }, { identifier: 'tanaka hanako', rows: 4 }],
+        reports_no_actor: false, accounts: 2, withheld: 0, complete: true, note: '',
+        guess: null,
+        guess_note: '2 accounts here are spelled like your name (hanako.tanaka, tanaka hanako), so I am not guessing between them — tell me which one is you.',
+      },
+    ])
+    scriptState({ journey: fixture, wizardStep: 'discover', exploring: true })
+    const html = render()
+    expect(html).toContain('so I am not guessing between them')
+    expect(html).toContain('hanako.tanaka')
+  })
+})
+
+describe('rendered component — what the operator already answered is not asked again', () => {
+  const confirmable = (): OnboardingResponse => {
+    const fixture = salienceJourney()
+    const action = fixture.card.options[0]
+    action.options![0].you_said = ['acme']
+    action.confirm = {
+      option: 'acme',
+      label: 'Acme migration',
+      words: ['acme'],
+      question: 'You said acme — start with Acme migration?',
+    }
+    action.prefill = 'onsen'
+    return fixture
+  }
+
+  it('turns the open ask into a confirm the operator can take in one tap', () => {
+    scriptState({ journey: confirmable(), wizardStep: 'discover', exploring: true })
+    const html = render()
+    expect(html).toContain('You said acme — start with Acme migration?')
+    expect(html).toContain('Yes — start with Acme migration')
+    expect(html).toContain('you said acme')
+    // The full list stays: a confirmation is not a corner.
+    expect(html).toContain('Zephyr rollout')
+  })
+
+  it('answers with the same act the picker uses', async () => {
+    stubOkAction()
+    const fetchSpy = globalThis.fetch as unknown as ReturnType<typeof vi.fn>
+    scriptState({ journey: confirmable(), wizardStep: 'discover', exploring: true })
+    const button = driveTree().find((el) => el.props?.name === 'dashboard-salience-confirm')
+    expect(button, 'confirm button not rendered').toBeDefined()
+    ;(button!.props.onClick as () => void)()
+    await flush(); await flush()
+    const action = (fetchSpy.mock.calls as unknown[][])
+      .map((call) => ({ url: String(call[0]), body: String((call[1] as RequestInit | undefined)?.body ?? '') }))
+      .find((c) => c.url.endsWith('/api/onboarding'))
+    expect(action!.body).toContain('"action":"answer_salience"')
+    expect(action!.body).toContain('"choice":"acme"')
+  })
+
+  it('pre-fills the name-your-own field from a word the operator gave', () => {
+    scriptState({
+      journey: confirmable(), wizardStep: 'discover', exploring: true,
+      salienceChoice: 'other',
+    })
+    const html = render()
+    expect(html).toContain('I have started from a word you already gave me')
+    expect(html).toContain('value="onsen"')
+  })
+
+  it('lets the pre-fill be cleared — it is a start, not an answer', () => {
+    scriptState({
+      journey: confirmable(), wizardStep: 'discover', exploring: true,
+      salienceChoice: 'other', salienceName: '', salienceNameEdited: true,
+    })
+    const html = render()
+    expect(html).not.toContain('value="onsen"')
+  })
+
+  it('asks plainly when there is nothing already answered to confirm', () => {
+    scriptState({
+      journey: salienceJourney(), wizardStep: 'discover', exploring: true,
+      salienceChoice: 'other',
+    })
+    const html = render()
+    expect(html).not.toContain('Yes — start with')
+    expect(html).toContain('What should I open instead? A word or two.')
+  })
+})
+
+describe('rendered component — a finished operator is told so, and given the door', () => {
+  const finished = (): OnboardingResponse => {
+    const fixture = journeyFixture('orientation_offered')
+    fixture.state.charter = { hash: 'abc', status: 'ratified', payload: {} }
+    fixture.state.first_dividend = { finding: { summary: 'x' } }
+    fixture.card.title = 'Want me to go deeper?'
+    fixture.card.speaker = 'coordinator'
+    fixture.card.headline = [
+      'You are set up — you approved a Charter, I read it, and your first result is done.',
+      'That look cited 3 places in “notes” you can open yourself.',
+      'Read your first briefing when you are ready — or ask me to go deeper below.',
+    ]
+    fixture.card.details = [
+      { id: 'deeper', title: 'About going deeper', text: 'That work is disabled and has not started.' },
+    ]
+    fixture.card.body = 'That work is disabled and has not started.'
+    fixture.card.completion = {
+      complete: true,
+      citations: 3,
+      window: 'notes',
+      next_steps: [
+        { id: 'briefing', label: 'Read your first briefing' },
+        { id: 'cabinet', label: 'Go to your Cabinet' },
+      ],
+    }
+    fixture.card.options = [{ action: 'propose_window', label: 'Choose a folder I may read' }]
+    return fixture
+  }
+
+  it('leads with completion and offers both ways OUT of onboarding', () => {
+    scriptState({ journey: finished() })
+    const html = render()
+    expect(html).toContain('You are set up')
+    expect(html).toContain('href="/briefing"')
+    expect(html).toContain('Read your first briefing')
+    expect(html).toContain('href="/"')
+    expect(html).toContain('Go to your Cabinet')
+    // Demoted, not deleted — and still honest about what has not started.
+    expect(html).toContain('Anything below this is optional')
+    expect(html).toContain('Choose a folder I may read')
+    expect(html).toContain('That work is disabled and has not started.')
+  })
+
+  it('never congratulates a journey the core has not called complete', () => {
+    scriptState({ journey: journeyFixture('orientation_offered') })
+    const html = render()
+    expect(html).not.toContain('href="/briefing"')
+    expect(html).not.toContain('You are set up')
+  })
+
+  it('agrees with the predicate the home redirect uses', () => {
+    // TWO SPELLINGS OF "FINISHED" is how a router stops redirecting while the
+    // page still offers only more questions. The core publishes its verdict;
+    // `journeyIsComplete` is what `completion.ts` redirects on; they are pinned
+    // to each other here, across the process boundary.
+    const done = finished()
+    expect(journeyIsComplete(done.state)).toBe(done.card.completion!.complete)
+    const notDone = journeyFixture('orientation_offered')
+    expect(journeyIsComplete(notDone.state)).toBe(false)
+    expect(notDone.card.completion).toBeUndefined()
+  })
+})
+
+describe('rendered component — a broad window is allowed, with the cost stated', () => {
+  it('names the trade-off rather than refusing the home folder', () => {
+    scriptState({ journey: journeyFixture('welcome'), wizardStep: 'window' })
+    const html = render()
+    expect(html).toContain('You can point me at')
+    expect(html).toContain('whole home folder')
+    expect(html).toContain('only skim the surface')
+    // …and the two things that ARE refused, with the reason.
+    expect(html).toContain('The whole disk')
+    expect(html).toContain('belong to the system or to other people')
+    // The old copy taught that breadth is forbidden. It is not.
+    expect(html).not.toContain('The whole home folder is refused')
   })
 })

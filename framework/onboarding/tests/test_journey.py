@@ -656,7 +656,18 @@ def test_continue_moves_dividend_to_deep_orientation(tmp_path):
     out = journey.act({"action": "continue", "action_id": "cont-1", "surface": "dashboard"}, tmp_path)
     assert out["state"]["stage"] == "orientation_offered"
     assert out["card"]["kind"] == "deep_orientation"
-    assert out["card"]["title"] == "Deeper Orientation has not started"
+    # THE MILESTONE IS NOT A SHORTFALL. This stage is reached only after a
+    # ratified Charter and a delivered dividend, and it used to title itself
+    # "Deeper Orientation has not started" — an operator who had answered
+    # everything read a page announcing what had NOT happened, with three
+    # options that all led back into onboarding (measured live, 2026-08-14).
+    # The offer stays offered; what leads is that the thing they came for is
+    # done, and the disclosure below is unchanged.
+    assert out["card"]["title"] == "Want me to go deeper?"
+    assert out["card"]["completion"]["complete"] is True
+    assert [step["id"] for step in out["card"]["completion"]["next_steps"]] == [
+        "briefing", "cabinet"]
+    assert "You are set up" in out["card"]["headline"][0]
     assert "disabled and has not started" in out["card"]["body"]
     assert "No new access or authority was granted" in out["card"]["body"]
     # continue is unavailable from the fresh welcome stage

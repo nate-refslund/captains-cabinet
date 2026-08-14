@@ -954,7 +954,36 @@ budgets:
     # card showed "I&#x27;ve" where an apostrophe belongs; decoded BEFORE the
     # scrub, so an entity-encoded tag still loses its brackets).
     # observed == maximum, zero headroom.
-    maximum: 63700
+    #
+    # 63700 -> 64244 (+544 measured 2026-08-14 via cognitive-architecture-census.py,
+    # observed 78786 vs the then-effective 78242): THE FIRST MATE SPEAKS. The
+    # Captain drove the full connected onboarding — four real connectors and a
+    # search tool — and returned six findings, none of them about truthfulness
+    # and all of them about presentation or initiative. Three organs, all
+    # permanent:
+    #   * journey.py +~430 — the card LAYER (`_entry_sections`, `_joined`,
+    #     `_entry_headline` and the read/themes/ask sentences it composes, the
+    #     dividend's message shape, `_completion_block`), the answers-already-
+    #     given reader that turns the ranked question into a confirm
+    #     (`_answers_already_given`), the breadth vocabulary that replaces the
+    #     flat home-folder refusal with an informed-consent path
+    #     (`window_breadth`, `window_refusal`, `_breadth_note`), the name write
+    #     path, and the one composition four callers now share for the seed's
+    #     probes (`_run_seed_probes`, `_probes_await_a_search_tool`).
+    #   * research.py +~95 — the identity GUESS: three stated match rules over
+    #     the one tokenizer (`_name_forms`, `identity_matches`,
+    #     `identity_guess`), wired into `identity_question` as a proposal that
+    #     only an operator's tap can record.
+    #   * availability.py +~45 — `record_captain_name`, so the answers file's
+    #     `captain:` block keeps exactly one writer.
+    # The honesty ledger is not shortened by any of this: `card.body` is the
+    # JOIN of `card.details`, asserted equal in both directions
+    # (test_first_mate_speaks.py), so layering is a rendering choice and never a
+    # shorter truth. Zero new production MODULES (every organ lives in a file
+    # the tree already carried) and zero expansion rows. RAISED VISIBLY rather
+    # than paid by a temporary allowance, same reason as every row above.
+    # observed == maximum, zero headroom.
+    maximum: 64244
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { cabinetPath } from '@/lib/cabinet-root'
+import { journeyIsComplete } from './wizard'
 
 /**
  * Has the operator FINISHED onboarding — received their first cited result
@@ -39,11 +40,11 @@ export async function isOnboardingComplete(): Promise<boolean> {
   }
 
   try {
-    const state = JSON.parse(raw) as {
-      charter?: { status?: string } | null
-      first_dividend?: unknown
-    }
-    return state?.charter?.status === 'ratified' && state.first_dividend != null
+    // The predicate itself lives in `./wizard` — framework-free, so the
+    // onboarding CARD can import it too. A router that has stopped redirecting
+    // and a page that still says "not started" is the stuck state this shares
+    // one rule to prevent.
+    return journeyIsComplete(JSON.parse(raw))
   } catch {
     return false // unreadable state → cannot prove completion
   }

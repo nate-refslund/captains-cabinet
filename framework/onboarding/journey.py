@@ -101,6 +101,10 @@ from framework.evidence import (
     remint_trial,
     valid_id_or_none,
 )
+# The ONE writer of the cabinet-init answers file's ``captain:`` block. Imported
+# rather than re-spelled for the reason that module already states: a second
+# writer of a generator input fights the generator.
+from framework.onboarding import availability
 # The connector registry. It is imported, never re-implemented: the probe
 # vocabulary and the grant derivation have exactly one home, so a surface
 # cannot invent a connector this module would not recognise.
@@ -841,6 +845,20 @@ _SEED_STOPWORDS = frozenset({
     "things", "this", "to", "up", "us", "very", "want", "was", "we", "well",
     "what", "when", "where", "which", "who", "will", "with", "work", "working",
     "would", "you", "your",
+    # Discourse adverbs and intensifiers — the words people reach for when they
+    # are telling you what MATTERS, which is why they cluster in exactly the
+    # answer this list is applied to. Measured on a live drive (2026-08-14):
+    # "the onsen rota is what actually hurts" put ACTUALLY into a search query
+    # and then offered it back as the pre-filled name of a thing to open. They
+    # are stopwords by the same rule as everything above — scaffolding, not
+    # names — and dropping them costs a seed nothing it could have found.
+    # Only genuine function words go in: a VERB from the sentence that
+    # motivated this would be a stopword list fitted to one fixture, and the
+    # operator can edit a pre-fill they dislike — they cannot recover a word
+    # this list decided was not a word.
+    "actually", "again", "also", "always", "even", "ever", "instead", "least",
+    "maybe", "most", "never", "now", "often", "only", "quite", "rather",
+    "than", "too", "usually",
 })
 MAX_SEED_TERMS = 8
 MAX_SEED_PROBES = 6
@@ -1134,9 +1152,78 @@ def salience_offer(state: Mapping[str, Any] | dict[str, Any] | None,
     supplied = state.get("salience_rows")
     extra = [str(n) for n in (supplied or {}).get("not_reached") or ()] \
         if isinstance(supplied, Mapping) else []
-    return _salience.offer(ranking, not_reached=extra,
-                           learned=_salience.learned_merges(
-                               state.get("salience_merges")))
+    mission = state.get("mission")
+    return _answers_already_given(
+        _salience.offer(ranking, not_reached=extra,
+                        learned=_salience.learned_merges(
+                            state.get("salience_merges"))),
+        _discovery_seed(state),
+        # THE DREAM FIRST, for the pre-fill. This question asks what to open,
+        # and the operator answered a version of it at question two — "a month
+        # from now, what should be true?" — while question one asks what they
+        # DO. Offering "small" out of "I run a small inn" back to them would be
+        # their own word and a useless one; the words that name a target are in
+        # the dream, which is exactly the answer the Captain said he had
+        # already given.
+        str(mission.get("purpose") or "") if isinstance(mission, Mapping) else "")
+
+
+def _answers_already_given(offer: dict[str, Any], said: str,
+                           prefer: str = "") -> dict[str, Any]:
+    """Read the operator's OWN earlier answers back onto the ranked offer.
+
+    THE COMPLAINT THIS CLOSES, verbatim (Captain, 2026-08-14): *"'What should I
+    open instead? A word or two.' this question i actually already answered in
+    the second question about purpose"*. The role, the dream and the
+    organisation are already on this journey; the ranking was built without
+    reading a word of them, so a candidate the operator had NAMED arrived
+    looking exactly like one nothing had ever mentioned.
+
+    THREE THINGS LAND, and none of them answers for the operator:
+      * ``you_said`` — the words of THEIR answers this candidate's name carries,
+        so the ranking can say why it ranks in their language, not only in its
+        own recurrence arithmetic;
+      * ``confirm`` — set only when EXACTLY ONE candidate matches, which is what
+        turns the open ask into "you said X — start there?". Two matches is not
+        a confirmation, it is a choice, and it stays one;
+      * ``prefill`` — a word they gave that the ranking never produced, offered
+        to the escape hatch so the "name your own" field starts from their own
+        vocabulary instead of a blank.
+
+    Nothing here is recorded. The operator still answers; this only stops the
+    cabinet asking for something it was already told.
+    """
+    words = set(_salience.name_tokens(said))
+    if not words or not offer.get("options"):
+        return offer
+    matched: list[dict[str, Any]] = []
+    ranked_words: set[str] = set()
+    for option in offer["options"]:
+        if str(option.get("id")) == _salience.ESCAPE_OPTION_ID:
+            continue
+        own = set(_salience.name_tokens(option.get("label")))
+        own.update(str(alias) for alias in (option.get("aliases") or ()))
+        ranked_words |= own
+        shared = sorted(words & own)
+        if shared:
+            option["you_said"] = shared
+            matched.append(option)
+    if len(matched) == 1:
+        offer["confirm"] = {
+            "option": str(matched[0]["id"]),
+            "label": str(matched[0]["label"]),
+            "words": list(matched[0]["you_said"]),
+            "question": (f"You said {', '.join(matched[0]['you_said'][:2])} — "
+                         f"start with {matched[0]['label']}?"),
+        }
+    def _spare(text: str) -> list[str]:
+        return [term for term in _seed_terms(text)
+                if _salience.fold(term) not in ranked_words]
+
+    spare = _spare(prefer) or _spare(said)
+    if spare:
+        offer["prefill"] = spare[0]
+    return offer
 
 
 #: The most candidates one answer may join at once. Not a tuning knob: every
@@ -1350,6 +1437,12 @@ def entry_plan(
             # field the surface never renders is a field nobody can answer.
             "merge": deepcopy(dict(offer.get("merge") or {})),
             "not_reached": offer.get("not_reached", ""),
+            # AND WHAT THE OPERATOR ALREADY SAID, on the action they answer with.
+            # The offer is also carried on the question, but a surface builds the
+            # control from the ACTION — leaving these there only would have put
+            # the confirm and the pre-fill somewhere nothing renders.
+            "confirm": deepcopy(dict(offer.get("confirm") or {})) or None,
+            "prefill": offer.get("prefill", ""),
         })
     payload = {
         "schema": ENTRY_PLAN_SCHEMA,
@@ -1394,6 +1487,37 @@ def _onboarding_record(root: Path) -> dict[str, Any]:
     return doc if isinstance(doc, dict) else {}
 
 
+def _record_operator_name(name: Any) -> dict[str, Any]:
+    """Store what the operator is called, and say whether it landed.
+
+    THE GENERATOR'S OWN INPUT, never its output: the write goes to the
+    cabinet-init answers file through the ONE writer of that file's ``captain:``
+    block (``availability.record_captain_name``), so the next
+    ``generate-instance.py`` run stamps ``captain_name`` from it and onboarding
+    never fights a marker-managed file.
+
+    A FAILED WRITE IS NOT A FAILED ANSWER. A read-only deployment, an
+    unparseable answers file or a name the generator would refuse must not cost
+    the operator the sentence they typed — the name still lands on this journey
+    (which is what the identity guess and every card read), and the receipt says
+    it was not persisted. The alternative is refusing the whole first step
+    because of a config file the operator has never seen.
+    """
+    # The WRITER validates; this only bounds and scrubs what crosses the action
+    # boundary. Collapsing here would defeat the writer's control-character rule
+    # exactly as it would inside it, so the raw (stripped) text goes across and
+    # comes back normalised or refused.
+    text = _scrub_lone_surrogates(str(name)).strip()[:availability.NAME_MAX]
+    receipt: dict[str, Any] = {"name": " ".join(text.split()), "stored": False}
+    try:
+        written = availability.record_captain_name(text)
+        receipt["stored"] = True
+        receipt["already"] = not written["written"]
+    except Exception as exc:  # noqa: BLE001 — a config refusal is not the answer's
+        receipt["not_stored_because"] = type(exc).__name__
+    return receipt
+
+
 def _operator_record(root: Path, state: dict[str, Any]) -> dict[str, Any]:
     """Everything the operator has TOLD this cabinet about who they are.
 
@@ -1412,6 +1536,18 @@ def _operator_record(root: Path, state: dict[str, Any]) -> dict[str, Any]:
     record = _onboarding_record(root)
     operator = record.get("operator")
     operator = dict(operator) if isinstance(operator, dict) else {}
+    # THE NAME LIVES UNDER ``captain:``, and the identity lane reads ``operator:``.
+    # Bridged here rather than written twice, so the answer to "what is your
+    # name?" is one string in one place: whatever this journey recorded wins
+    # (the later statement), then the answers file's captain name, then whatever
+    # an ``operator:`` block already carried.
+    named = state.get("operator_name")
+    named = str(named.get("name") or "") if isinstance(named, Mapping) else ""
+    if not named:
+        captain = record.get("captain")
+        named = str((captain or {}).get("name") or "") if isinstance(captain, dict) else ""
+    if named and not str(operator.get("name") or "").strip():
+        operator["name"] = named
     recorded = state.get("operator_identity")
     if isinstance(recorded, dict) and isinstance(recorded.get("handles"), dict):
         handles = operator.get("handles")
@@ -1883,12 +2019,13 @@ def _discovery_note(executed: Any) -> str:
     return note
 
 
-def _entry_body(plan: dict[str, Any]) -> str:
-    """The mode's opening move in the operator's words, plus what it cannot know.
+def _entry_opening(plan: dict[str, Any]) -> str:
+    """The mode's opening move, in the operator's words.
 
-    The cannot-know line is not decoration: a cabinet that quietly omits the
-    limits of its own sight is the same failure as a sweep claiming a negative
-    it never earned, one surface up.
+    Split from the cannot-know line it used to be glued to, so the card can put
+    the move in the HEADLINE and the limits in the fold without either being
+    rewritten twice. ``_entry_body`` still composes the two, byte for byte, and
+    is what every non-layering surface renders.
     """
     mode = plan["mode"]
     if mode == ENTRY_MODE_CONNECTED:
@@ -1909,8 +2046,24 @@ def _entry_body(plan: dict[str, Any]) -> str:
             f"pretend to know your work. {plan['seed_question']} "
             "Then give me one folder to read, and I will stop asking."
         )
+    return opening
+
+
+def _cannot_know_line(plan: dict[str, Any]) -> str:
+    """What this cabinet cannot know, in one sentence.
+
+    Not decoration: a cabinet that quietly omits the limits of its own sight is
+    the same failure as a sweep claiming a negative it never earned, one surface
+    up. It moves BEHIND a fold on surfaces that layer, and it is never dropped —
+    ``_entry_body`` and every section list carry it verbatim.
+    """
     limits = " ".join(row["statement"] for row in plan["cannot_know"][:2])
-    return f"{opening} What I cannot know without access: {limits}"
+    return f" What I cannot know without access: {limits}"
+
+
+def _entry_body(plan: dict[str, Any]) -> str:
+    """The opening move plus the limits — the one blob non-layering surfaces read."""
+    return _entry_opening(plan) + _cannot_know_line(plan)
 
 
 def _egress_for_card(state: dict[str, Any], finding: dict[str, Any]) -> dict[str, Any]:
@@ -1970,6 +2123,224 @@ def _egress_for_card(state: dict[str, Any], finding: dict[str, Any]) -> dict[str
     }
 
 
+#: Who is speaking on an onboarding card. A ROLE, never a name and never an
+#: officer id: the framework does not know what this deployment calls its
+#: coordinating officer, and a surface that renders the sender resolves the
+#: title through its own officer-title resolver. Carried so the finding reads as
+#: a MESSAGE from someone rather than as output from a machine (Captain,
+#: 2026-08-14: "if it is from the first mate, make it look like a message from
+#: first mate").
+SPEAKER_COORDINATOR = "coordinator"
+
+#: The most sentences a headline may carry (Captain, 2026-08-14: "this is way
+#: too much text. make it short and simple."). A CEILING, checked by its own
+#: arm — the honesty ledger it summarises is not deleted, it moves one click
+#: behind, and ``card["body"]`` still carries every word of it.
+MAX_HEADLINE_LINES = 3
+
+#: The promise that closes the welcome card. Named because the section list and
+#: the body join both read it, and a tail typed twice is a tail that drifts.
+_APPROVAL_TAIL = (
+    " Whatever you approve, I show you exactly what I would read first; "
+    "nothing is opened until you approve that Charter."
+)
+
+
+def _sections(rows: Sequence[tuple[str, str, str]]) -> list[dict[str, str]]:
+    """``(id, title, text)`` triples as sections, dropping the empty ones.
+
+    An empty section is a heading with nothing under it, which reads as a fact
+    withheld. The JOIN over these is the card body, so nothing can be in one
+    view and absent from the other.
+    """
+    return [{"id": row[0], "title": row[1], "text": row[2]}
+            for row in rows if str(row[2] or "").strip()]
+
+
+def _joined(sections: Sequence[Mapping[str, Any]]) -> str:
+    """The body every non-layering surface renders: the sections, in order."""
+    return "".join(str(section["text"]) for section in sections)
+
+
+def _entry_sections(state: dict[str, Any], plan: dict[str, Any],
+                    *, tail: str = "") -> list[dict[str, str]]:
+    """The welcome card's honesty ledger, cut into named sections.
+
+    LAYERING, NEVER DELETION. Each of these was a clause of one ~350-word
+    paragraph that opened the connected-mode card, and the Captain read the
+    paragraph rather than the answer inside it. They are the same strings, in
+    the same order, with a heading each — so a surface can put the headline in
+    front and the whole ledger one click behind, and ``_joined`` reproduces the
+    old blob exactly for a surface that cannot fold.
+    """
+    return _sections((
+        ("opening", "How I will start", _entry_opening(plan)),
+        ("cannot_know", "What I cannot know without access", _cannot_know_line(plan)),
+        ("probes", "What I looked for and could not reach", _probe_note(state)),
+        ("identity", "Which account is you", _identity_note(plan)),
+        ("salience", "How I ranked what to open first", _salience_note(state, plan)),
+        ("discovery", "What I went and looked up", _discovery_note(state.get("discovery"))),
+        ("promise", "Before anything is opened", tail),
+    ))
+
+
+def _read_line(state: dict[str, Any]) -> str:
+    """What has actually been READ, in one short sentence, or ``""``.
+
+    Counted off the committed sweep, never off the declarations: a tool declared
+    and never swept has been read zero times, and saying otherwise is the
+    unearned claim this program keeps finding. A connector that refused is
+    excluded from the count and its reason is in the fold.
+    """
+    sweep = state.get("connector_sweep")
+    rows = list((sweep or {}).get("connectors") or ()) if isinstance(sweep, dict) else []
+    live = [row for row in rows if row.get("connected")]
+    if not live:
+        return ""
+    try:
+        items = sum(int(row.get("items") or 0) for row in live)
+    except (TypeError, ValueError):  # pragma: no cover — defensive
+        items = 0
+    refused = len(rows) - len(live)
+    note = (f"I read across your {len(live)} connected tool"
+            f"{'' if len(live) == 1 else 's'} — {items} item"
+            f"{'' if items == 1 else 's'}.")
+    if refused:
+        note = note[:-1] + f", and {refused} did not answer."
+    return note
+
+
+def _themes_line(state: dict[str, Any], plan: dict[str, Any]) -> str:
+    """The recurring names, or where depth is already pointed — one sentence."""
+    answered = state.get("salience")
+    if isinstance(answered, Mapping) and answered.get("target"):
+        return f"You pointed me at {answered['target']}, so that is where I go deep."
+    for question in plan.get("questions") or ():
+        offer = question.get("offer") if isinstance(question, dict) else None
+        if not isinstance(offer, dict) or not offer.get("options"):
+            continue
+        named = ", ".join(
+            str(option["label"]) for option in offer["options"][:3]
+            if str(option.get("id")) != _salience.ESCAPE_OPTION_ID
+        )
+        if named:
+            return f"The names that come up most across them: {named}."
+    return ""
+
+
+def _ask_line(plan: dict[str, Any]) -> str:
+    """The ONE thing needed from the operator now, in one sentence.
+
+    ORDERED BY WHAT UNBLOCKS THE REST, not by what is most interesting: who they
+    are bounds every claim about whose work this is, the target bounds where
+    depth goes, and a folder is the floor that always works. One line, because a
+    card that asks for four things at once is the paragraph this replaces.
+    """
+    identity = plan.get("identity_question")
+    if isinstance(identity, Mapping) and identity.get("connectors"):
+        named = ", ".join(str(row.get("connector"))
+                          for row in identity["connectors"][:3])
+        return f"First: confirm which account is you in {named}."
+    actions = {str(row.get("action")) for row in plan.get("next_actions") or ()}
+    if "answer_salience" in actions:
+        return "First: point me at the one to open first."
+    if "answer_organization" in actions:
+        return "First: tell me whose work this is."
+    if "answer_seed" in actions:
+        return "First: tell me in a sentence what you do."
+    return "Next: choose a folder I may read, and I will show you the Charter before I open it."
+
+
+def _entry_headline(state: dict[str, Any], plan: dict[str, Any]) -> list[str]:
+    """At most three short sentences: what I read, what recurs, what I need.
+
+    THE FOLD BEHIND IT IS COMPLETE, which is the whole licence for this being
+    short. Nothing here replaces a disclosure — ``_entry_sections`` carries
+    every caveat verbatim and ``card["body"]`` still joins them — so a surface
+    that renders only the headline is a surface with a bug, not a surface that
+    was handed a shorter truth.
+    """
+    lines = [line for line in (
+        _read_line(state) or _entry_opening(plan),
+        _themes_line(state, plan),
+        _ask_line(plan),
+    ) if str(line or "").strip()]
+    return lines[:MAX_HEADLINE_LINES]
+
+
+def _first_sentence(text: Any, *, limit: int = 240) -> str:
+    """The first sentence of a paragraph, for a headline. Never a truncation
+    that changes the claim: where no sentence break is found inside ``limit``
+    the whole text is returned, so a headline is always something that was
+    actually said."""
+    body = " ".join(str(text or "").split())
+    if not body:
+        return ""
+    for index, character in enumerate(body):
+        if character in ".!?" and index + 1 < len(body) and body[index + 1] == " ":
+            if index + 1 <= limit:
+                return body[: index + 1]
+            break
+        if character in ".!?" and index + 1 == len(body):
+            return body
+    return body
+
+
+def _journey_complete(state: Mapping[str, Any] | dict[str, Any]) -> bool:
+    """Has onboarding DELIVERED — a ratified Charter and a cited first result?
+
+    THE SAME TWO FIELDS the Dashboard's home redirect reads
+    (``cabinet/dashboard/src/lib/onboarding/completion.ts``), and they are the
+    two the core itself writes at ``ratify_charter``. Stated here because the
+    card that reports "you are set up" and the router that stops sending the
+    operator back to onboarding must never disagree about what finished — an
+    operator who has answered everything, on a page that offers only more
+    questions, is stuck with nothing telling them so (measured live on the
+    Captain's own instance, 2026-08-14: "i believe i've answered everything and
+    am now stuck and can't continue again?").
+    """
+    charter = state.get("charter")
+    ratified = isinstance(charter, Mapping) and str(charter.get("status")) == "ratified"
+    return bool(ratified and state.get("first_dividend"))
+
+
+def _completion_block(state: dict[str, Any]) -> dict[str, Any]:
+    """What EXISTS now that onboarding is done, and the two ways onward.
+
+    The steps are named as CABINET CONCEPTS, never as a surface's routes: a
+    briefing and the cabinet itself mean the same thing on a phone, a terminal
+    and a dashboard, and each surface maps them to its own door.
+    """
+    dividend = state.get("first_dividend") or {}
+    finding = dividend.get("finding") if isinstance(dividend, Mapping) else None
+    finding = finding if isinstance(finding, Mapping) else {}
+    citations = len(finding.get("citations") or ())
+    source = state.get("source") if isinstance(state.get("source"), Mapping) else {}
+    return {
+        "complete": True,
+        "citations": citations,
+        "window": str((source or {}).get("label") or ""),
+        "next_steps": [
+            {"id": "briefing", "label": "Read your first briefing"},
+            {"id": "cabinet", "label": "Go to your Cabinet"},
+        ],
+    }
+
+
+def _completion_headline(state: dict[str, Any]) -> list[str]:
+    """"You are set up" — the sentence a finished operator never got told."""
+    block = _completion_block(state)
+    where = f" in “{block['window']}”" if block["window"] else ""
+    return [
+        "You are set up — you approved a Charter, I read it, and your first result is done.",
+        (f"That look cited {block['citations']} place"
+         f"{'' if block['citations'] == 1 else 's'}{where} you can open yourself."
+         if block["citations"] else
+         "Nothing further is needed from you to start using your Cabinet."),
+        "Read your first briefing when you are ready — or ask me to go deeper below.",
+    ][:MAX_HEADLINE_LINES]
+
+
 def _card(state: dict[str, Any]) -> dict[str, Any]:
     stage = str(state["stage"])
     suffix = ""
@@ -1988,18 +2359,14 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
     }
     if stage == "welcome":
         plan = _entry_plan_for(state)
+        sections = _entry_sections(state, plan, tail=_APPROVAL_TAIL)
         common.update(
             kind="first_window",
             title="Let me earn my first responsibility",
-            body=(
-                _entry_body(plan)
-                + _probe_note(state)
-                + _identity_note(plan)
-                + _salience_note(state, plan)
-                + _discovery_note(state.get("discovery"))
-                + " Whatever you approve, I show you exactly what I would read first; "
-                "nothing is opened until you approve that Charter."
-            ),
+            speaker=SPEAKER_COORDINATOR,
+            headline=_entry_headline(state, plan),
+            details=sections,
+            body=_joined(sections),
             entry=plan,
             options=list(plan["next_actions"]),
         )
@@ -2052,7 +2419,13 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
                 # which answered target this window serves — or that they told
                 # me it serves none — before the hash is theirs to accept.
                 + _binding_note(state)
+                # …AND WHERE BREADTH IS PAID FOR. A whole-home window is lawful
+                # and the operator's to choose; what it costs them is the depth
+                # of the FIRST look, and that has to be said before the
+                # fingerprint is accepted rather than discovered afterwards.
+                + _breadth_note(state)
             ),
+            speaker=SPEAKER_COORDINATOR,
             options=[
                 {"action": "ratify_charter", "label": "Approve and find one useful thing"},
                 {"action": "propose_window", "label": "Change it"},
@@ -2079,15 +2452,35 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
                 # about. See unopened_areas_phrase for the measurement.
                 + unopened_areas_phrase(coverage)
             )
-        common.update(
-            kind="first_dividend",
-            title="I found something worth your attention" if finding["quality"] == "strong" else "Your first map is ready",
+        # A MESSAGE, NOT A DUMP (Captain, 2026-08-14: "the information is not
+        # super useful and it is too much and honestly i don't even know what
+        # kind of information this is"). The finding's PLAIN meaning leads; the
+        # epistemics — coverage, binding, clocks, what was looked up — are the
+        # same strings one click behind, and the body still joins all of them.
+        summary = egress["summary"]
+        sections = _sections((
+            ("finding", "What I found", summary),
+            ("coverage", "How much of the folder I opened", disclosure),
             # …and the binding, on the card that PUBLISHES what depth bought:
             # a dividend read out of a window the operator said was a detour
             # must not arrive wearing the answered target's authority.
-            body=egress["summary"] + disclosure + _binding_note(state)
-            + _clocks_note(state)
-            + _discovery_note(state.get("discovery")),
+            ("binding", "Where depth was spent", _binding_note(state)),
+            ("clocks", "Dates your files state", _clocks_note(state)),
+            ("discovery", "What I went and looked up", _discovery_note(state.get("discovery"))),
+        ))
+        common.update(
+            kind="first_dividend",
+            title="I found something worth your attention" if finding["quality"] == "strong" else "Your first map is ready",
+            speaker=SPEAKER_COORDINATOR,
+            headline=[line for line in (
+                _first_sentence(summary),
+                _first_sentence(disclosure),
+                f"The receipt below gives the file and line for {len(egress['citations'])} "
+                f"place{'' if len(egress['citations']) == 1 else 's'} you can open yourself."
+                if egress["citations"] else "",
+            ) if str(line or "").strip()][:MAX_HEADLINE_LINES],
+            details=sections,
+            body=_joined(sections),
             evidence=egress["citations"],
             options=[
                 {"action": "continue", "label": "See the locked next step"},
@@ -2098,18 +2491,34 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
         )
     elif stage == "orientation_offered":
         plan = _entry_plan_for(state)
+        done = _journey_complete(state)
+        # THE MILESTONE THIS CARD KEPT CALLING A SHORTFALL. Reached only after a
+        # Charter is ratified and a dividend delivered, it announced "Deeper
+        # Orientation has not started" and offered three ways back into
+        # onboarding and no way out — so an operator who had answered
+        # everything read a page that only asked for more (measured live on the
+        # Captain's own instance, 2026-08-14). Deeper orientation is genuinely
+        # not started and that stays said, in the fold; what leads is that the
+        # thing they came for is DONE.
+        offer = _sections((
+            ("deeper", "About going deeper",
+             "A later, separately approved step could spend longer learning how your work fits together, "
+             "reflect back priorities and conflicts, suggest a useful AI team, and show concrete examples "
+             "of what each officer may observe, propose, or do. That work is disabled and has not started. "
+             "No new access or authority was granted. What I can do now instead: "),
+            ("opening", "How I would start", _entry_opening(plan)),
+            ("cannot_know", "What I cannot know without access", _cannot_know_line(plan)),
+            ("probes", "What I looked for and could not reach", _probe_note(state)),
+            ("discovery", "What I went and looked up", _discovery_note(state.get("discovery"))),
+        ))
         common.update(
             kind="deep_orientation",
-            title="Deeper Orientation has not started",
-            body=(
-                "A later, separately approved step could spend longer learning how your work fits together, "
-                "reflect back priorities and conflicts, suggest a useful AI team, and show concrete examples "
-                "of what each officer may observe, propose, or do. That work is disabled and has not started. "
-                "No new access or authority was granted. What I can do now instead: "
-                + _entry_body(plan)
-                + _probe_note(state)
-                + _discovery_note(state.get("discovery"))
-            ),
+            title="Want me to go deeper?" if done else "Deeper Orientation has not started",
+            speaker=SPEAKER_COORDINATOR,
+            headline=(_completion_headline(state) if done
+                      else _entry_headline(state, plan)),
+            details=offer,
+            body=_joined(offer),
             entry=plan,
             # ``propose_window`` is what stops this card being terminal. It was
             # pause/revoke/purge only — three ways to stop and none to continue —
@@ -2120,6 +2529,13 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
                 {"action": "purge", "label": "Delete onboarding data", "danger": True},
             ],
         )
+        if done:
+            # THE ONWARD PATH, published as data. Every option above leads back
+            # INTO onboarding; these two lead out of it, and without them this
+            # stage is an act-surface with no exit — the eleventh this program
+            # has found and the first one an operator hit after answering
+            # everything correctly.
+            common["completion"] = _completion_block(state)
     elif stage == "paused":
         common.update(
             kind="paused",
@@ -2164,6 +2580,96 @@ def snapshot(root: Path | str | None = None) -> dict[str, Any]:
         return {"ok": True, "state": deepcopy(state), "card": _card(state)}
 
 
+#: How broad the proposed window is. A whole-home window is ALLOWED and
+#: DISCLOSED, never refused (Captain, 2026-08-14: "i really want the cabinet to
+#: fully control the entire mac!! so this option should be possible (not just
+#: home folder)"). The flat refusal it replaces taught the operator that breadth
+#: is forbidden, when the true cost is not permission at all — it is DEPTH. The
+#: First Window opens at most ``MAX_FILES`` files ranked most-informative, so a
+#: wider root makes the FIRST result SHALLOWER rather than deeper. That is a
+#: trade-off the operator is entitled to make with their eyes open, which is why
+#: the charter card states it in the same breath as the fingerprint.
+BREADTH_WHOLE_HOME = "whole_home"
+BREADTH_FOLDER = "folder"
+
+#: Roots that stay refused — and the reason is NOT breadth, it is OWNERSHIP. A
+#: directory of home folders holds other people's data; an OS-owned root holds
+#: files that no answer to "whose data is in this folder?" can honestly cover,
+#: because the honest answer is "the machine's". EXACT-PATH EQUALITY ONLY: a
+#: specific folder inside any of these is an ordinary window and is untouched,
+#: which is what lets this list be short and stated rather than a heuristic
+#: about depth that would refuse real folders it had never heard of.
+_SYSTEM_ROOTS = frozenset({
+    "/Applications", "/Library", "/System", "/Volumes", "/bin", "/boot",
+    "/dev", "/etc", "/lib", "/opt", "/private", "/proc", "/root", "/sbin",
+    "/sys", "/usr", "/var",
+})
+
+
+def _home_dir() -> Path | None:
+    """The operator's own home, resolved — or None when there is no answer."""
+    try:
+        return Path.home().resolve()
+    except (OSError, RuntimeError):  # pragma: no cover — defensive
+        return None
+
+
+def window_breadth(resolved: Path) -> str:
+    """How broad this window is: the operator's whole home, or one folder."""
+    home = _home_dir()
+    return BREADTH_WHOLE_HOME if home is not None and resolved == home else BREADTH_FOLDER
+
+
+def window_refusal(resolved: Path) -> str:
+    """Why this root cannot be a First Window at all, or ``""`` when it can.
+
+    THREE REFUSALS, AND NONE OF THEM IS "THAT IS TOO MUCH". The whole disk, a
+    directory that holds other people's home folders, and an OS-owned root are
+    refused because of WHOSE data is in them — the operator's ownership answer
+    cannot honestly be "mine" for any of the three, and that answer is the gate
+    every window passes through. Everything else, the operator's own home
+    included, is theirs to open with the depth trade-off stated.
+    """
+    home = _home_dir()
+    if resolved == Path(resolved.anchor):
+        return ("That is the whole disk — it holds the operating system and "
+                "every account on this machine, and none of that is yours to "
+                "hand me. Choose your home folder or something inside it.")
+    if home is not None and home != resolved and home.is_relative_to(resolved):
+        return (f"“{resolved}” holds other people's home folders as well as "
+                f"yours, so I would be reading data that is not yours to give. "
+                f"Your own home folder ({home}) is allowed.")
+    if str(resolved) in _SYSTEM_ROOTS:
+        return (f"“{resolved}” is a system folder — it belongs to the machine, "
+                "not to you, so nothing in it can honestly be classified as "
+                "yours. Choose your home folder or something inside it.")
+    return ""
+
+
+def _breadth_note(state: Mapping[str, Any] | dict[str, Any]) -> str:
+    """The whole-home trade-off, said BEFORE the fingerprint is approved.
+
+    Silent for an ordinary folder: a caveat printed on every window is a caveat
+    nobody reads by the third one. It fires only where the honest cost is real,
+    and it names the cost rather than the permission — the read stays read-only,
+    the sensitivity skips stay on, and the FIRST look gets shallower.
+    """
+    source = state.get("source") if isinstance(state, Mapping) else None
+    root = str((source or {}).get("root") or "") if isinstance(source, Mapping) else ""
+    if not root or window_breadth(Path(root)) != BREADTH_WHOLE_HOME:
+        return ""
+    return (
+        f" This is your whole home folder, and I can start here — read-only, "
+        f"with the same skips for secrets, personnel, pay, customer-personal, "
+        f"legal and corporate-finance files. The honest cost is depth, not "
+        f"permission: my First Window still opens at most {MAX_FILES} files, "
+        "ranked most-informative first, so a window this wide makes my FIRST "
+        "look SHALLOWER rather than deeper — a specific folder gives you a "
+        "sharper first result. Breadth grows by earning trust, not by a bigger "
+        "window."
+    )
+
+
 def _validate_source(raw: Any) -> Path:
     if not isinstance(raw, str) or not raw.strip():
         raise JourneyError("source_required", "Choose a folder before continuing.")
@@ -2187,9 +2693,9 @@ def _validate_source(raw: Any) -> Path:
         ) from exc
     if candidate.is_symlink():
         raise JourneyError("source_symlink", "Choose the real folder, not a shortcut or symlink.")
-    home = Path.home().resolve()
-    if resolved == Path(resolved.anchor) or resolved == home:
-        raise JourneyError("source_too_broad", "Choose a specific folder, not the whole disk or home folder.")
+    refusal = window_refusal(resolved)
+    if refusal:
+        raise JourneyError("source_too_broad", refusal)
     return resolved
 
 
@@ -3536,6 +4042,41 @@ def _discovery_block(root: Path, source_root: Any, probes: Any) -> dict[str, Any
     }
 
 
+def _run_seed_probes(base: Path, probed: dict[str, Any],
+                     seeded: dict[str, Any]) -> dict[str, Any]:
+    """The seed's probes, run against the grants this journey currently proves.
+
+    ONE COMPOSITION, four callers. ``answer_seed`` runs it because the sentence
+    was just typed; ``run_discovery`` runs it because the operator asked again;
+    ``declare_connector`` and ``gather_connectors`` run it because the thing that
+    was MISSING has just arrived. Four hand-written copies of "derive the plan,
+    then execute it" would drift, and the one that drifted would be the one that
+    quietly searched a narrower set.
+    """
+    plan = entry_plan(_entry_grants(probed), seed=_discovery_seed(seeded))
+    source_state = probed.get("source") or {}
+    return _discovery_block(
+        base,
+        source_state.get("root")
+        if source_state.get("status") == "ratified_read_only"
+        else None,
+        plan["discovery"]["probes"],
+    )
+
+
+def _probes_await_a_search_tool(state: Mapping[str, Any] | dict[str, Any]) -> bool:
+    """Did the last look-up stop for the want of a search tool?
+
+    The precise question, not "were any deferred": a probe deferred because
+    egress is closed is not fixed by connecting a search tool, and re-running on
+    that would send the same refusal out on every declaration.
+    """
+    executed = state.get("discovery")
+    rows = executed.get("deferred") or () if isinstance(executed, Mapping) else ()
+    return any(str(row.get("reason") or "") == research.NO_SEARCH_TOOL
+               for row in rows)
+
+
 def _detector_roster(
     entries: list[dict[str, Any]], join_state: dict[str, Any]
 ) -> tuple[list[str], list[dict[str, str]]]:
@@ -4139,6 +4680,18 @@ def _act_core(
             seed_text = " ".join(_scrub_lone_surrogates(raw_seed).split())[:MAX_SEED_CHARS]
             after = deepcopy(state)
             after["seed"] = {"text": seed_text, "answered_at": ts}
+            # WHAT THE OPERATOR IS CALLED, asked FIRST because it is the cheapest
+            # question in the interview and the one that makes the next several
+            # answerable (Captain, 2026-08-14: "if the very first question is
+            # 'What is your name?' then it may more intelligently guess the user
+            # account across the tools"). It lands where the generator reads it
+            # (``captain.name``) and on this journey, where the identity guess
+            # reads it. Optional: a journey with no name behaves exactly as it
+            # did, asking which account is which rather than proposing one.
+            raw_name = request.get("name")
+            if isinstance(raw_name, str) and raw_name.strip():
+                after["operator_name"] = {**_record_operator_name(raw_name),
+                                          "answered_at": ts}
             # The dream, in the mission.purpose shape genesis reads. Absent or
             # blank writes nothing, so a role-only answer conditions cards
             # byte-identically to a missionless one — an empty mission block
@@ -4162,8 +4715,6 @@ def _act_core(
             # local grant, no local probe; no web grant, no web probe — so the
             # seed can never conjure a reach the operator has not granted.
             probed = _with_registry(base, after)
-            plan = entry_plan(_entry_grants(probed), seed=_discovery_seed(after))
-            source_state = probed.get("source") or {}
             # AND THE OUTWARD HALF RUNS HERE TOO. Answering the seed question is
             # already an operator act, on the record, inside the action lock —
             # so it is the right place for the look-up, and making the operator
@@ -4172,13 +4723,7 @@ def _act_core(
             # It reaches only when a search tool is declared and credentialed;
             # otherwise every outward probe comes back deferred with the reason
             # and the card says what to do about it.
-            after["discovery"] = _discovery_block(
-                base,
-                source_state.get("root")
-                if source_state.get("status") == "ratified_read_only"
-                else None,
-                plan["discovery"]["probes"],
-            )
+            after["discovery"] = _run_seed_probes(base, probed, after)
             return _commit(
                 base, state, after, action=action, action_id=action_id,
                 surface=surface, trace_id=trace_id,
@@ -4204,16 +4749,8 @@ def _act_core(
                     "discovery_has_no_seed",
                     "Tell me what you do first, and then I will know what to look up.",
                 )
-            plan = entry_plan(_entry_grants(probed), seed=seed)
             after = deepcopy(state)
-            source_state = probed.get("source") or {}
-            after["discovery"] = _discovery_block(
-                base,
-                source_state.get("root")
-                if source_state.get("status") == "ratified_read_only"
-                else None,
-                plan["discovery"]["probes"],
-            )
+            after["discovery"] = _run_seed_probes(base, probed, probed)
             return _commit(
                 base, state, after, action=action, action_id=action_id,
                 surface=surface, trace_id=trace_id,
@@ -4411,6 +4948,14 @@ def _act_core(
                 "not_reached": deepcopy(sweep["not_reached"])
                 + research.who_and_when_lines(who_when),
             }
+            # THE SECOND PLACE THE LOOK-UP RE-FIRES. "Go and look" is the
+            # operator asking to be read for — and a search tool connected since
+            # the seed was typed makes the outward half reachable for the first
+            # time. Same three conditions as the declaration path, so it cannot
+            # re-send a refusal that connecting nothing would fix.
+            if _discovery_seed(after).strip() and _probes_await_a_search_tool(after):
+                after["discovery"] = _run_seed_probes(
+                    base, _with_registry(base, after), after)
             return _commit(
                 base, state, after, action=action, action_id=action_id,
                 surface=surface, trace_id=trace_id,
@@ -4626,6 +5171,12 @@ def _act_core(
                     "status": "proposed",
                     "ownership": ingest["ownership"],
                     "authority_basis": ingest["authority_basis"],
+                    # HOW BROAD, recorded beside whose and under what right. A
+                    # whole-home window is lawful and disclosed; the surface
+                    # reads this rather than re-deriving "is that their home?"
+                    # from a path, which is the second implementation this key
+                    # exists to prevent.
+                    "breadth": window_breadth(source),
                 },
                 charter=charter,
                 first_dividend=None,
@@ -4808,6 +5359,21 @@ def _act_core(
                 "declared_at": ts,
             })
             after["connector_declarations"] = log
+            # AND THE LOOK-UP RE-FIRES ITSELF (Captain, 2026-08-14: "it should
+            # just autonomously look for it without asking"). The probes derived
+            # from the operator's own sentence were deferred because nothing
+            # here could search; a search tool has just arrived, and nothing was
+            # re-running them — so the answer to the question they already
+            # answered sat behind a button they had to find. Narrow on purpose:
+            # only a SEARCH connector, only with a seed to search for, and only
+            # when the last run actually stopped for the want of one, so an
+            # inventory connector or a closed egress ceiling does not re-send
+            # the same refusal on every declaration.
+            if (research.connector_kind(entry) == research.CONNECTOR_KIND_SEARCH
+                    and _discovery_seed(after).strip()
+                    and _probes_await_a_search_tool(after)):
+                after["discovery"] = _run_seed_probes(
+                    base, _with_registry(base, after), after)
             return _commit(
                 base, state, after, action=action, action_id=action_id,
                 surface=surface, trace_id=trace_id,

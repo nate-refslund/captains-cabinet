@@ -19,6 +19,15 @@ export type WizardStepId = 'role' | 'dream' | 'start' | 'window' | 'discover'
 
 /** What the three questions collect, before any of it crosses to the core. */
 export interface WizardValues {
+  /**
+   * Question one's OPENING LINE — what the operator is called (Captain,
+   * 2026-08-14: "if the very first question is 'What is your name?' then it may
+   * more intelligently guess the user account across the tools"). Optional: a
+   * cabinet that refuses to start without a name is an interview. Given, it
+   * lands under `captain.name` and turns "which of these thirty accounts is
+   * you?" into one confirm chip per tool.
+   */
+  name: string
   /** Question one — what the operator does. Becomes the journey seed. */
   role: string
   /** Question two — the dream for the Cabinet. Becomes `mission.purpose`. */
@@ -33,6 +42,7 @@ export interface WizardValues {
  * render would defeat the hook-order assertions the tests script.
  */
 export const EMPTY_WIZARD: Readonly<WizardValues> = Object.freeze({
+  name: '',
   role: '',
   dream: '',
   startPreference: '',
@@ -127,6 +137,7 @@ export function prevStep(step: WizardStepId): WizardStepId | null {
  */
 export function seedRequest(values: WizardValues): {
   seed: string
+  name?: string
   purpose?: string
   start_preference: 'point' | 'decide'
 } | null {
@@ -134,11 +145,40 @@ export function seedRequest(values: WizardValues): {
   if (!seed) return null
   if (values.startPreference !== 'point' && values.startPreference !== 'decide') return null
   const dream = values.dream.trim()
+  // An unstated name is OMITTED, not sent blank — the same rule the dream
+  // follows, and for the same reason: the core would otherwise record a
+  // `captain.name` the operator never gave, over whatever the generator's
+  // defaults lane already wrote there.
+  const name = values.name.trim()
   return {
     seed,
+    ...(name ? { name } : {}),
     ...(dream ? { purpose: dream } : {}),
     start_preference: values.startPreference,
   }
+}
+
+/**
+ * Has onboarding DELIVERED — a ratified Charter and a cited first result?
+ *
+ * THE ONE RULE, read by the home redirect (`./completion.ts`, which is
+ * server-side because it reads state.json off disk) AND by the card that tells
+ * the operator they are done. Two spellings of "finished" is how a router stops
+ * sending someone back to onboarding while the onboarding page still offers
+ * them nothing but more questions — which is exactly what happened (measured
+ * live on the Captain's own instance, 2026-08-14: "i believe i've answered
+ * everything and am now stuck and can't continue again?").
+ *
+ * The core writes both fields at `ratify_charter` and publishes its own
+ * verdict as `card.completion`; `journey-card.test.ts` asserts the two agree,
+ * so a change on either side of the process boundary is caught rather than
+ * discovered by an operator.
+ */
+export function journeyIsComplete(state: {
+  charter?: { status?: string } | null
+  first_dividend?: unknown
+} | null | undefined): boolean {
+  return state?.charter?.status === 'ratified' && state?.first_dividend != null
 }
 
 /**

@@ -18,6 +18,16 @@
  * The coordinator is "First Mate" (Captain ruling: not "COS", not "Chief of
  * Staff", not "Chair"; the clean name, no parenthetical).
  */
+/**
+ * The COORDINATING officer's machine id. Frozen for the reason above — dozens
+ * of enforcement, launchd and redis surfaces key on it — and exported so a
+ * surface that needs to say who is speaking resolves the NAME through
+ * `officerTitle` instead of writing one down. A hardcoded "First Mate" in a
+ * component is a second place the Captain's naming ruling has to be applied,
+ * and the one that will be missed when it changes.
+ */
+export const COORDINATOR_ROLE = 'cos'
+
 export const OFFICER_TITLES: Record<string, string> = {
   cos: 'First Mate',
   cto: 'Chief Technology Officer (CTO)',
