@@ -10,6 +10,8 @@ import { freshnessOf } from '@/lib/liveness'
 import OfficerCard from '@/components/officer-card'
 import { StackedBarChart, HorizontalBars, ChartLegend } from '@/components/cost-chart'
 import { isOnboardingComplete } from '@/lib/onboarding/completion'
+import { getTelegramStatus } from '@/actions/telegram-connect'
+import TelegramPowerUpCard from '@/components/telegram/power-up-card'
 import ConsumerFrontPage from '@/components/consumer/consumer-front-page'
 import CardProducts from '@/components/consumer/card-products'
 import CardCabinet from '@/components/consumer/card-cabinet'
@@ -175,6 +177,16 @@ export default async function DashboardPage() {
 
   const { consumerModeEnabled } = getDashboardConfig()
 
+  // THE POWER-UP, on the first screen after onboarding. It renders NOTHING when
+  // Telegram is already connected or when the operator has said "not now", so
+  // an unreadable status must not turn into a permanent offer: a failed read is
+  // treated as connected, which is the quiet end of the ambiguity.
+  const telegram = await getTelegramStatus().catch(() => ({
+    tokenStored: false,
+    chatId: null,
+    connected: true,
+  }))
+
   // --- Consumer Mode branch ---
   // Feature flag gate at the PAGE level (not inside ConsumerFrontPage) so the
   // consumer card tree is structurally absent when the flag is off — no hooks,
@@ -185,13 +197,16 @@ export default async function DashboardPage() {
     if (serverMode === 'consumer') {
       // Render consumer cards. KillSwitchHeader is in layout.tsx.
       return (
-        <ConsumerFrontPage>
-          <CardProducts />
-          <CardCabinet />
-          <CardCosts />
-          <CardTasks />
-          <CardLibrary />
-        </ConsumerFrontPage>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <TelegramPowerUpCard connected={telegram.connected} />
+          <ConsumerFrontPage>
+            <CardProducts />
+            <CardCabinet />
+            <CardCosts />
+            <CardTasks />
+            <CardLibrary />
+          </ConsumerFrontPage>
+        </div>
       )
     }
     // If server-side mode is 'advanced', fall through to the advanced render.
@@ -258,6 +273,8 @@ export default async function DashboardPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+      <TelegramPowerUpCard connected={telegram.connected} />
+
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>

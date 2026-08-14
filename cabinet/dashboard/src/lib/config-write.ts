@@ -1,4 +1,4 @@
-import { readFile, writeFile, rename, stat, chmod, unlink } from 'node:fs/promises'
+import { access, readFile, writeFile, rename, stat, chmod, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import { randomBytes } from 'node:crypto'
 import yaml from 'js-yaml'
@@ -308,8 +308,23 @@ function refuseUnwritable(value: string, what: string): void {
   }
 }
 
-/** Replace the scalar at `keyPath`. `matched` is 0 when the field is not there. */
-export function setYamlScalar(text: string, keyPath: string[], value: string): Transform {
+/**
+ * Replace the scalar at `keyPath`. `matched` is 0 when the field is not there.
+ *
+ * `quoted` forces a double-quoted scalar even when the value would be plain-safe.
+ * The one caller that needs it writes a key a GENERATOR also writes: an id like
+ * `4242424242` is plain-safe, so it would land bare and load back as an INT,
+ * while `generate-instance.py` emits it quoted. Both are legal YAML and both
+ * read correctly — but writing the generator's own bytes means a regenerate is a
+ * no-op rather than a re-quote, and the type a consumer sees never depends on
+ * which of the two wrote last.
+ */
+export function setYamlScalar(
+  text: string,
+  keyPath: string[],
+  value: string,
+  options: { quoted?: boolean } = {}
+): Transform {
   refuseUnwritable(value, keyPath.join('.'))
   const lines = text.split('\n')
   const hit = locate(lines, keyPath)
@@ -329,7 +344,10 @@ export function setYamlScalar(text: string, keyPath: string[], value: string): T
     if (c) comment = c[1]
   }
 
-  lines[hit.index] = `${m[1]}${m[2]}: ${yamlScalar(value)}${comment}`
+  // JSON's string form IS a valid YAML double-quoted scalar (YAML's dq style is
+  // a JSON-string superset) — the same equivalence generate-instance.py leans on.
+  const scalar = options.quoted ? JSON.stringify(value) : yamlScalar(value)
+  lines[hit.index] = `${m[1]}${m[2]}: ${scalar}${comment}`
   return { text: lines.join('\n'), matched: 1 }
 }
 
@@ -498,6 +516,33 @@ export async function removeYamlKey(filePath: string, keyPath: string[]): Promis
     requireMatch: false,
     validate: mustParseAsYaml,
   })
+}
+
+/**
+ * Create a `.env` with owner-only (0600) perms if it is not there yet.
+ *
+ * `editDocument` edits an EXISTING file — it reads, then atomically writes, and
+ * throws on a missing one — and a fresh hatch has no cabinet/.env until the
+ * first credential is stored. So the first write of a cabinet's life fails
+ * without this, which is exactly the write a guided setup flow makes.
+ *
+ * `wx` refuses to clobber, so a concurrent creator racing us is not an error;
+ * `chmod` then pins the perms regardless of umask, because this file holds every
+ * credential the org has. A file that already exists is left exactly as it is,
+ * perms included.
+ */
+export async function ensureEnvFile(filePath: string): Promise<void> {
+  try {
+    await access(filePath)
+    return
+  } catch {
+    try {
+      await writeFile(filePath, '', { mode: 0o600, flag: 'wx' })
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code !== 'EEXIST') throw err
+    }
+    await chmod(filePath, 0o600).catch(() => {})
+  }
 }
 
 /** Set (or append) a key in a `.env` file. */
