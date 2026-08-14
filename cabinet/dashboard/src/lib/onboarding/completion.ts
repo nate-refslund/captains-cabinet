@@ -1,12 +1,22 @@
-import { readFile } from 'node:fs/promises'
-import { cabinetPath } from '@/lib/cabinet-root'
+/** The only two fields the predicate reads. */
+export interface CompletableJourney {
+  charter?: { status?: string } | null
+  first_dividend?: unknown
+}
 
 /**
- * Has the operator FINISHED onboarding — received their first cited result
- * under a ratified Charter?
+ * Has this journey DELIVERED what onboarding promises — a first cited result
+ * under a Charter the operator approved?
  *
- * This reads the onboarding core's OWN durable record, not a flag invented
- * here. `framework/onboarding/journey.py` persists the journey to
+ * THE ONE COMPLETION PREDICATE, and the reason it is exported as a pure
+ * function rather than living inside the file read below: two surfaces gate on
+ * it and they must never disagree. The home page redirects an unfinished
+ * operator into /onboarding; the arrival screen announces "Your Cabinet is
+ * ready". Two copies of "is it done?" would eventually answer differently, and
+ * the operator would be told both.
+ *
+ * It reads the onboarding core's OWN durable record, not a flag invented here.
+ * `framework/onboarding/journey.py` persists the journey to
  * instance/onboarding/v2/state.json, and the `ratify_charter` action is the
  * moment onboarding delivers its promise: it stamps
  *   charter.status   = "ratified"
@@ -17,34 +27,20 @@ import { cabinetPath } from '@/lib/cabinet-root'
  * operator to /onboarding:
  *   - no state.json at all           → onboarding never started;
  *   - stage charter_pending          → charter proposed, not yet ratified;
- *   - a purged / paused / revoked     → fresh or halted state carries no
- *     ratified charter and no dividend;
+ *   - purged / paused before the read → no ratified charter, no dividend;
  *   - an unreadable/blank state       → we cannot prove completion, so we don't.
  *
- * A false read here costs one redirect an operator can navigate out of; the
- * opposite default — dropping a not-yet-oriented operator on a confusing home —
- * is the exact bug this fixes, so uncertainty resolves to "not complete".
+ * A REVOKED journey that had already arrived stays complete, and that is
+ * deliberate: taking access back stops future reads, it does not erase the
+ * Charter that was approved or the result that was given. Bouncing an operator
+ * into the wizard for exercising a control would punish them for using it.
+ * What stops the ARRIVAL SCREEN rendering there is the card's kind, not this.
  *
- * `ONBOARDING_STATE_PATH` overrides the location (tests; alternate layouts).
+ * The core mirrors this predicate as `journey_has_arrived`. Both are asserted
+ * against the shared table in
+ * framework/onboarding/tests/data/completion-parity.json, so neither can drift
+ * alone.
  */
-export async function isOnboardingComplete(): Promise<boolean> {
-  const statePath =
-    process.env.ONBOARDING_STATE_PATH || cabinetPath('instance/onboarding/v2/state.json')
-
-  let raw: string
-  try {
-    raw = await readFile(statePath, 'utf8')
-  } catch {
-    return false // no journey state on disk → onboarding has not run
-  }
-
-  try {
-    const state = JSON.parse(raw) as {
-      charter?: { status?: string } | null
-      first_dividend?: unknown
-    }
-    return state?.charter?.status === 'ratified' && state.first_dividend != null
-  } catch {
-    return false // unreadable state → cannot prove completion
-  }
+export function journeyIsComplete(state: CompletableJourney | null | undefined): boolean {
+  return state?.charter?.status === 'ratified' && state.first_dividend != null
 }

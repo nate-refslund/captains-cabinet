@@ -30,7 +30,12 @@ let mockIsMockRedis = false
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/auth', () => ({ verifySession: mockVerify }))
-vi.mock('@/lib/onboarding/completion', () => ({ isOnboardingComplete: mockOnboardingComplete }))
+// The state-file half. `completion.ts` became the PURE predicate while this
+// branch was in flight (the arrival screen is a client component, and gating it
+// on a module importing node:fs/promises 500'd /onboarding), so the disk read
+// this mock stands in for now lives next door. Mocking the module the action
+// does NOT import would leave the real disk read live behind a green mock.
+vi.mock('@/lib/onboarding/completion-state-file', () => ({ isOnboardingComplete: mockOnboardingComplete }))
 vi.mock('@/lib/redis', () => ({
   default: { set: mockRedisSet, del: mockRedisDel },
   get isMockRedis() {

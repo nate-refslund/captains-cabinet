@@ -1,11 +1,37 @@
 import Link from 'next/link'
 import OnboardingJourneyCard from '@/components/onboarding/journey-card'
+import { isOnboardingComplete } from '@/lib/onboarding/completion-state-file'
 
 export const metadata = {
   title: 'Orientation · Cabinet',
 }
 
-export default function OnboardingPage() {
+/**
+ * THE PAGE FRAMES THE FLOW, so it has to stop framing it once the flow is over.
+ *
+ * "Three short questions, then one folder to read" is an accurate promise to
+ * someone who has not started and a confusing one to someone who finished ten
+ * minutes ago — and it sat directly above the screen announcing they were done.
+ * Same for the Now/Next/Over-time trio: a roadmap for a journey, printed under
+ * its ending. On a finished journey the page gets out of the way and the
+ * arrival screen (which carries its own summary and its own briefing link) is
+ * the whole page.
+ *
+ * It gates on the SAME predicate the home-page redirect uses, so the page
+ * chrome and the screen inside it can never disagree about whether onboarding
+ * is done.
+ */
+export default async function OnboardingPage() {
+  const complete = await isOnboardingComplete()
+
+  if (complete) {
+    return (
+      <div className="mx-auto max-w-4xl">
+        <OnboardingJourneyCard />
+      </div>
+    )
+  }
+
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-6">

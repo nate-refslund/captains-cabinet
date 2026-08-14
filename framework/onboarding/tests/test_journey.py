@@ -650,19 +650,187 @@ def test_revoke_then_undo_restores_previous_read_only_state(tmp_path):
     assert restored["state"]["first_dividend"] == dividend["state"]["first_dividend"]
 
 
-def test_continue_moves_dividend_to_deep_orientation(tmp_path):
+def test_continue_moves_dividend_to_the_arrival(tmp_path):
+    """The flow has an ENDING (Captain, 2026-08-14).
+
+    This test used to be ``test_continue_moves_dividend_to_deep_orientation``
+    and pinned the defect: ``continue`` landed on ``orientation_offered``, whose
+    card announced "Deeper Orientation has not started" — so a finished operator
+    read, as his last screen, the name of something that never began. It is
+    replaced here rather than deleted, and the two honesty clauses it guarded
+    are asserted BYTE-IDENTICALLY below: the deeper step is still disabled, and
+    still grants nothing. Only the mood changed — from a stage title asserting
+    a non-start, to an offer made from a finished state.
+    """
     source = estate(tmp_path, "software-product")
-    ratify(tmp_path, propose(tmp_path, source))
+    ratified = ratify(tmp_path, propose(tmp_path, source))
     out = journey.act({"action": "continue", "action_id": "cont-1", "surface": "dashboard"}, tmp_path)
-    assert out["state"]["stage"] == "orientation_offered"
-    assert out["card"]["kind"] == "deep_orientation"
-    assert out["card"]["title"] == "Deeper Orientation has not started"
+    assert out["state"]["stage"] == journey.COMPLETE_STAGE == "complete"
+    assert out["card"]["kind"] == journey.ARRIVAL_KIND == "arrival"
+    assert out["card"]["title"] == "Your Cabinet is ready."
+    assert out["card"]["status"] == "complete"
+    # NOT ONE DISCLOSURE DELETED — the same two sentences, on a card that no
+    # longer pretends the operator is mid-journey.
     assert "disabled and has not started" in out["card"]["body"]
     assert "No new access or authority was granted" in out["card"]["body"]
+    # …and the citations travel with the claim. The arrival repeats what was
+    # found, so it carries the same openable evidence — and the same egress
+    # disposition block — the dividend card carried. A summary that dropped its
+    # citations would be the unsourced claim this product refuses everywhere
+    # else, introduced by the screen whose whole job is to be trustworthy.
+    assert ratified["card"]["evidence"], "fixture check: the dividend card cited something"
+    assert out["card"]["evidence"] == ratified["card"]["evidence"]
+    assert out["card"]["egress"] == ratified["card"]["egress"]
     # continue is unavailable from the fresh welcome stage
     with pytest.raises(journey.JourneyError) as exc:
         journey.act({"action": "continue", "action_id": "cont-x", "surface": "dashboard"}, tmp_path / "fresh")
     assert exc.value.code == "continue_unavailable"
+
+
+def test_arrival_is_assembled_from_recorded_answers_and_invents_nothing(tmp_path):
+    """Every clause of the arrival summary traces to something the operator said.
+
+    The summary is the easiest place in the whole product to invent, because
+    prose is expected there. So each clause is asserted to carry the RECORDED
+    value, and a journey missing an answer is asserted to carry no clause about
+    it — silence, never a plausible filler.
+    """
+    source = estate(tmp_path, "software-product")
+    journey.act(
+        {
+            "action": "answer_seed",
+            "action_id": "seed-1",
+            "surface": "dashboard",
+            "seed": "I run a small ryokan on the coast",
+            "start_preference": "point",
+        },
+        tmp_path,
+    )
+    journey.act(
+        {
+            "action": "answer_organization",
+            "action_id": "org-1",
+            "surface": "dashboard",
+            "organization": "Hoshiyama Ryokan",
+        },
+        tmp_path,
+    )
+    ratify(tmp_path, propose(tmp_path, source))
+    card = journey.act(
+        {"action": "continue", "action_id": "cont-1", "surface": "dashboard"}, tmp_path
+    )["card"]
+    body = card["body"]
+    assert "I run a small ryokan on the coast" in body
+    assert "Hoshiyama Ryokan" in body
+    assert str(source) in body  # the PATH, not just its last segment
+    assert "Orientation is done." in body
+
+    # …and the same journey WITHOUT those answers says nothing about them.
+    bare = tmp_path / "bare"
+    bare_source = estate(bare, "software-product")
+    ratify(bare, propose(bare, bare_source))
+    bare_body = journey.act(
+        {"action": "continue", "action_id": "cont-2", "surface": "dashboard"}, bare
+    )["card"]["body"]
+    assert "You told me:" not in bare_body
+    assert "This Cabinet is for" not in bare_body
+    assert "Orientation is done." in bare_body
+
+
+def test_a_legacy_orientation_offered_journey_renders_the_arrival_untouched(tmp_path):
+    """The Captain's live instance, and every journey like it.
+
+    A journey persisted at ``orientation_offered`` is read as arrived. The
+    stored state file is NOT rewritten — the event log is a record of what
+    happened, and editing history to fix a rendering bug destroys the only
+    thing it is for — so this asserts both halves: the card is the arrival, and
+    the stage on disk is still the one the older build wrote.
+    """
+    source = estate(tmp_path, "software-product")
+    ratify(tmp_path, propose(tmp_path, source))
+    journey.act({"action": "continue", "action_id": "cont-1", "surface": "dashboard"}, tmp_path)
+    state_path = journey._state_path(tmp_path)
+    stored = json.loads(state_path.read_text(encoding="utf-8"))
+    stored["stage"] = "orientation_offered"  # what a pre-2026-08-14 build wrote
+    state_path.write_text(json.dumps(stored), encoding="utf-8")
+
+    out = journey.snapshot(tmp_path)
+    assert out["card"]["kind"] == journey.ARRIVAL_KIND
+    assert out["card"]["title"] == "Your Cabinet is ready."
+    assert out["state"]["stage"] == "orientation_offered"
+    assert json.loads(state_path.read_text(encoding="utf-8"))["stage"] == "orientation_offered"
+
+
+def test_a_complete_stage_without_the_facts_cannot_render_an_arrival(tmp_path):
+    """THE FALSE ARRIVAL, refused at the card.
+
+    A stage value is one string in one file. If that alone could make the
+    product announce "Your Cabinet is ready", then a hand-edited state, a
+    half-restored backup, or a future bug in any transition would produce a
+    success screen with nothing behind it. Both facts the arrival claims — an
+    approved Charter and a delivered result — are required to render it.
+    """
+    source = estate(tmp_path, "software-product")
+    ratify(tmp_path, propose(tmp_path, source))
+    journey.act({"action": "continue", "action_id": "cont-1", "surface": "dashboard"}, tmp_path)
+    state_path = journey._state_path(tmp_path)
+
+    for field in ("charter", "first_dividend"):
+        stored = json.loads(state_path.read_text(encoding="utf-8"))
+        assert stored["stage"] == journey.COMPLETE_STAGE
+        stored[field] = None
+        state_path.write_text(json.dumps(stored), encoding="utf-8")
+        card = journey._card(stored)
+        assert card["kind"] != journey.ARRIVAL_KIND, field
+        assert card["title"] != "Your Cabinet is ready.", field
+
+    # And the transition itself refuses, so the state above is unreachable by
+    # any sequence of actions rather than merely unrenderable.
+    stored = json.loads(state_path.read_text(encoding="utf-8"))
+    stored.update(stage="dividend_ready", first_dividend=None)
+    state_path.write_text(json.dumps(stored), encoding="utf-8")
+    with pytest.raises(journey.JourneyError) as exc:
+        journey.act({"action": "continue", "action_id": "cont-2", "surface": "dashboard"}, tmp_path)
+    assert exc.value.code == "continue_unavailable"
+
+
+def test_every_declared_stage_renders_its_own_card(tmp_path):
+    """``journey.STAGES`` is a live control, not a copy of one.
+
+    The dashboard's rail registry is pinned against this tuple, so a stage that
+    is declared here and has no branch in ``_card`` would give the operator a
+    progress rail pointing at a screen nobody designed — and the generic status
+    card ("Current stage: x.") is exactly what that looks like. Every declared
+    stage must produce a card of its own kind.
+    """
+    source = estate(tmp_path, "software-product")
+    ratify(tmp_path, propose(tmp_path, source))
+    base = json.loads(journey._state_path(tmp_path).read_text(encoding="utf-8"))
+    for stage in journey.STAGES:
+        card = journey._card({**deepcopy(base), "stage": stage})
+        assert card["kind"] != "status", (
+            f"stage {stage!r} falls through to the generic status card"
+        )
+        assert card["stage"] == stage
+
+
+def test_completion_parity_table(tmp_path):
+    """The shared table the dashboard's own suite asserts against.
+
+    ``journey_has_arrived`` and the dashboard's ``journeyIsComplete`` answer the
+    same question in two languages. Nothing but this table stops them drifting,
+    and a drift is not cosmetic: one side would say "Your Cabinet is ready"
+    while the other bounced the operator back into the wizard.
+    """
+    table = json.loads(
+        (Path(__file__).parent / "data" / "completion-parity.json").read_text(encoding="utf-8")
+    )
+    cases = table["cases"]
+    assert len(cases) >= 10, "the table is the sensor; a thin one proves little"
+    for case in cases:
+        assert journey.journey_has_arrived(case["state"]) is case["complete"], (
+            f"{case['name']}: {case['why']}"
+        )
 
 
 def test_propose_validation_rejects_carry_specific_codes(tmp_path):
@@ -2042,12 +2210,20 @@ def test_the_welcome_card_is_no_longer_a_single_locked_door(tmp_path):
     assert whose["input"] == "organization"
 
 
-def test_deep_orientation_is_no_longer_terminal(tmp_path):
+def test_the_arrival_is_not_terminal(tmp_path):
     """It offered pause, revoke and purge — three ways to stop, none to go on.
 
     After a ratified First Window the operator HAS granted local files, so the
-    card now classifies as seeded, asks the human-shaped question, and carries
-    a forward move.
+    card classifies as seeded, asks the human-shaped question, and carries a
+    forward move. The forward move is what this arm has always guarded, and it
+    survives the arrival unchanged: an operator who wants to give MORE never has
+    to abandon onboarding to do it.
+
+    ``pause`` is deliberately no longer OFFERED here (nothing is left running to
+    pause, and a pause control on a finished flow says "you are still
+    mid-journey"). The action still accepts an arrived journey — pinned by
+    ``test_pause_still_accepts_an_arrived_journey`` — so no capability was taken
+    away, only a proposal withdrawn.
     """
     source = estate(tmp_path, "software-product")
     ratified = ratify(tmp_path, propose(tmp_path, source))
@@ -2057,12 +2233,33 @@ def test_deep_orientation_is_no_longer_terminal(tmp_path):
         tmp_path,
     )
     card = out["card"]
-    assert card["stage"] == "orientation_offered"
+    assert card["stage"] == journey.COMPLETE_STAGE
     actions = [option["action"] for option in card["options"]]
     assert "propose_window" in actions
-    assert {"pause", "revoke", "purge"} <= set(actions)
+    assert {"revoke", "purge"} <= set(actions)
+    assert "pause" not in actions
     assert card["entry"]["mode"] == journey.ENTRY_MODE_SEEDED
     assert "has not started" in card["body"]
+
+
+def test_pause_still_accepts_an_arrived_journey(tmp_path):
+    """A surface holding a card printed before the arrival landed keeps working.
+
+    Withdrawing a proposal is not the same as removing a capability, and a
+    button that has already been rendered somewhere must not start refusing.
+    """
+    source = estate(tmp_path, "software-product")
+    ratify(tmp_path, propose(tmp_path, source))
+    journey.act({"action": "continue", "action_id": "continue-1", "surface": "dashboard"}, tmp_path)
+    out = journey.act({"action": "pause", "action_id": "pause-1", "surface": "telegram"}, tmp_path)
+    assert out["state"]["stage"] == "paused"
+    # …and continuing from the pause lands back on the arrival, not on a
+    # half-finished stage the operator has already been through.
+    resumed = journey.act(
+        {"action": "continue", "action_id": "continue-2", "surface": "telegram"}, tmp_path
+    )
+    assert resumed["state"]["stage"] == journey.COMPLETE_STAGE
+    assert resumed["card"]["kind"] == journey.ARRIVAL_KIND
 
 
 def test_a_revoked_source_stops_counting_as_a_local_grant(tmp_path):

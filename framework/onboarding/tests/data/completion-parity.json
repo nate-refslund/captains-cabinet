@@ -1,0 +1,128 @@
+{
+  "_schema": "cabinet.onboarding-completion-parity/v1",
+  "_why": [
+    "ONE COMPLETION PREDICATE, TWO RUNTIMES. The core decides whether a journey",
+    "has arrived (framework/onboarding/journey.py :: journey_has_arrived) and the",
+    "dashboard decides whether to redirect an operator into onboarding",
+    "(cabinet/dashboard/src/lib/onboarding/completion.ts :: journeyIsComplete).",
+    "They answer the same question and they are written in different languages,",
+    "so nothing but a shared table can stop them drifting — and a drift here is",
+    "not cosmetic: one side would announce 'Your Cabinet is ready' while the",
+    "other bounced the operator back into the wizard.",
+    "",
+    "Each case below is asserted by BOTH suites:",
+    "  framework/onboarding/tests/test_journey.py::test_completion_parity_table",
+    "  cabinet/dashboard/src/lib/onboarding/completion.test.ts",
+    "A case added here with no matching behaviour turns one of them red.",
+    "",
+    "THE STATES ARE PARTIAL ON PURPOSE. Both predicates read exactly two fields;",
+    "a case carrying a whole journey would test the fixture builder rather than",
+    "the predicate, and would hide which field decided the answer."
+  ],
+  "cases": [
+    {
+      "name": "empty",
+      "why": "no journey at all — onboarding has not run",
+      "state": {},
+      "complete": false
+    },
+    {
+      "name": "welcome",
+      "why": "the three questions are open; nothing has been granted or read",
+      "state": { "stage": "welcome", "charter": null, "first_dividend": null },
+      "complete": false
+    },
+    {
+      "name": "charter_pending",
+      "why": "the Charter is proposed and NOT approved — no byte has been read",
+      "state": {
+        "stage": "charter_pending",
+        "charter": { "status": "proposed", "hash": "h", "payload": {} },
+        "first_dividend": null
+      },
+      "complete": false
+    },
+    {
+      "name": "ratified_without_dividend",
+      "why": "both halves are required: a grant with nothing delivered is not an arrival",
+      "state": {
+        "stage": "dividend_ready",
+        "charter": { "status": "ratified", "hash": "h", "payload": {} },
+        "first_dividend": null
+      },
+      "complete": false
+    },
+    {
+      "name": "dividend_without_charter",
+      "why": "a result with no approved grant behind it is the one shape that must never read as done",
+      "state": {
+        "stage": "dividend_ready",
+        "charter": null,
+        "first_dividend": { "finding": { "summary": "one cited useful thing" } }
+      },
+      "complete": false
+    },
+    {
+      "name": "dividend_ready",
+      "why": "the promise is kept the moment the read happens under the approved Charter",
+      "state": {
+        "stage": "dividend_ready",
+        "charter": { "status": "ratified", "ratified_at": "2026-08-01T00:00:00Z", "hash": "h", "payload": {} },
+        "first_dividend": { "finding": { "summary": "one cited useful thing" } }
+      },
+      "complete": true
+    },
+    {
+      "name": "complete",
+      "why": "the terminal stage, with the facts behind it",
+      "state": {
+        "stage": "complete",
+        "charter": { "status": "ratified", "hash": "h", "payload": {} },
+        "first_dividend": { "finding": { "summary": "one cited useful thing" } }
+      },
+      "complete": true
+    },
+    {
+      "name": "complete_stage_without_the_facts",
+      "why": "THE FALSE ARRIVAL. A stage value alone can be hand-edited, half-restored or written by a buggy build; it must never be enough to announce a success the product cannot show.",
+      "state": { "stage": "complete", "charter": null, "first_dividend": null },
+      "complete": false
+    },
+    {
+      "name": "orientation_offered",
+      "why": "the legacy terminal stage — the Captain's own live journey — reads as arrived without its stored state being rewritten",
+      "state": {
+        "stage": "orientation_offered",
+        "charter": { "status": "ratified", "hash": "h", "payload": {} },
+        "first_dividend": { "finding": { "summary": "one cited useful thing" } }
+      },
+      "complete": true
+    },
+    {
+      "name": "paused_before_the_read",
+      "why": "halted with nothing delivered",
+      "state": {
+        "stage": "paused",
+        "charter": { "status": "proposed", "hash": "h", "payload": {} },
+        "first_dividend": null
+      },
+      "complete": false
+    },
+    {
+      "name": "revoked_after_arriving",
+      "why": "TAKING ACCESS BACK DOES NOT UN-DELIVER THE RESULT. Revoke stops future reads; it does not erase the Charter that was approved or the result that was given, so this journey stays finished and the operator is not shoved back into the wizard for exercising a control. What stops the arrival SCREEN here is the card kind (revoked), not this predicate.",
+      "state": {
+        "stage": "revoked",
+        "charter": { "status": "ratified", "hash": "h", "payload": {} },
+        "first_dividend": { "finding": { "summary": "one cited useful thing" } }
+      },
+      "complete": true
+    },
+    {
+      "name": "purged",
+      "why": "what _fresh_state(stage='purged') writes — the record is gone",
+      "state": { "stage": "purged", "charter": null, "first_dividend": null },
+      "complete": false
+    }
+  ]
+}

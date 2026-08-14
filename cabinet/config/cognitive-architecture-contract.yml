@@ -954,7 +954,35 @@ budgets:
     # card showed "I&#x27;ve" where an apostrophe belongs; decoded BEFORE the
     # scrub, so an entity-encoded tag still loses its brackets).
     # observed == maximum, zero headroom.
-    maximum: 63700
+    #
+    # 63700 -> 63777 (+77 measured 2026-08-14 via cognitive-architecture-census.py
+    # against origin/master 268ccdd, observed 78319 vs the then-effective 78242):
+    # THE FLOW GETS AN ENDING. journey.py had no terminal success state, so
+    # `continue` from the first dividend landed on `orientation_offered`, whose
+    # card was headed "Deeper Orientation has not started" over a menu of more
+    # onboarding. Measured on the Captain's own live instance: Charter ratified,
+    # dividend delivered, objectively finished — and he reported "i believe i've
+    # answered everything and am now stuck and can't continue again?". A
+    # finished operator and a stuck one were the same screen.
+    #   * the `complete` stage, `COMPLETE_STAGES` (which reads the legacy
+    #     `orientation_offered` as complete without rewriting one stored state
+    #     file), `ARRIVAL_KIND`, and the `STAGES` declaration that two sensors
+    #     are pinned to — one proving every stage has a live card branch, one
+    #     proving every stage maps to exactly one stop on the operator's rail;
+    #   * `journey_has_arrived`, the ONE completion predicate, checked at the
+    #     transition AND at the card so a hand-edited stage can never announce a
+    #     success the product cannot show — the dashboard mirrors it and both
+    #     assert against one shared fixture table;
+    #   * `_arrival_summary`, which assembles the ending from the operator's own
+    #     recorded answers and emits NOTHING for an answer that is absent.
+    # Zero new production MODULES (all of it lives in journey.py, which the tree
+    # already carried) and zero expansion rows. RAISED VISIBLY rather than paid
+    # by a temporary allowance, same reason as every row above: a flow's ending
+    # is a permanent organ, and an allowance would promise a deletion gate that
+    # will never fire. Compressing the branch to dodge the ratchet was the
+    # alternative and would have been gaming the budget rather than paying it.
+    # observed == maximum, zero headroom.
+    maximum: 63777
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

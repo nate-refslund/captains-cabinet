@@ -473,6 +473,13 @@ export interface OnboardingState {
    */
   mission?: { purpose: string }
   /**
+   * Whose work this cabinet is for, when the operator said. Written by
+   * `answer_organization` and NEVER derived — not from a folder name, not from
+   * a credential, not from a search result. Absent means nobody has answered
+   * it, which is why the arrival summary omits the clause rather than guessing.
+   */
+  organization?: { name: string; answered_at: string }
+  /**
    * Where the operator asked me to begin: `point` (they name a folder and I read
    * it under a Charter) or `decide` (I go find where I am most useful, which
    * needs a connected source to read). Absent until they answer the third
