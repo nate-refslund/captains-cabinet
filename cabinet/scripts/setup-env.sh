@@ -423,9 +423,10 @@ if [ "$MODE" = "defaults" ]; then
   info "All account keys left unset — the Cabinet boots without them:"
   info "  work store  → local PostgreSQL 16 + pgvector (setup-mac.sh Step 3.5)"
   info "  task board  → local (no external PM tool required)"
-  info "  Telegram    → connect after your first briefing:"
-  info "                bash cabinet/scripts/setup-env.sh          (paste bot token, live-validated)"
-  info "                bash cabinet/scripts/telegram-capture-chat-id.sh --write  (capture your chat id)"
+  info "  Telegram    → connect after your first briefing, in the dashboard:"
+  info "                Integrations > Telegram — four guided steps, no terminal."
+  info "                (The terminal way still works: this wizard for the token,"
+  info "                 then telegram-capture-chat-id.sh --write for the chat id.)"
   echo ""
   exit 0
 fi
@@ -477,7 +478,7 @@ for officer_token in TELEGRAM_COS_TOKEN TELEGRAM_CTO_TOKEN TELEGRAM_CPO_TOKEN TE
 done
 
 prompt_key "CAPTAIN_TELEGRAM_ID" \
-  "Your personal Telegram user ID (numeric). Officers verify it's you on incoming DMs. Easiest capture: set the bot token, message your bot once, then run: bash cabinet/scripts/telegram-capture-chat-id.sh --write" \
+  "Your personal Telegram user ID (numeric). Officers verify it's you on incoming DMs. Easiest capture: the dashboard's Integrations > Telegram flow does the whole thing (token, chat id, and a test message) with no terminal. From here instead: set the bot token, message your bot once, then run bash cabinet/scripts/telegram-capture-chat-id.sh --write" \
   "https://t.me/userinfobot" \
   "RECOMMENDED" \
   "all officers (default-deny on inbound DMs)"

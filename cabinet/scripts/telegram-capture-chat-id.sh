@@ -28,6 +28,14 @@
 # If another poller or a webhook holds the token, Telegram answers 409
 # Conflict — reported honestly, nothing stolen.
 #
+# THE NO-TERMINAL PATH (2026-08-14): the dashboard's Integrations > Telegram
+# flow does all of this — token, capture, confirm, and a test message — and it
+# also writes captain.telegram_chat_id into the interview answers so a later
+# generate-instance.py re-derives the address instead of clobbering it. Its
+# capture logic is a port of this script's:
+# cabinet/dashboard/src/lib/telegram/connect.ts. This script stays as the
+# terminal-only route and for the pre-dashboard hatching window.
+#
 # Usage:
 #   telegram-capture-chat-id.sh              report captured ids only
 #   telegram-capture-chat-id.sh --write      also fill CAPTAIN_TELEGRAM_ID

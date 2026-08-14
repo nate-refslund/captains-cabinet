@@ -1,9 +1,8 @@
 'use server'
 
-import { access, chmod, writeFile } from 'node:fs/promises'
 import { cabinetPath } from '@/lib/cabinet-root'
 import { assertRuntimeWritesAllowed, getEnvVars as dockerGetEnvVars } from '@/lib/docker'
-import { readEnvDocument, removeEnvKey, writeEnvValue } from '@/lib/config-write'
+import { ensureEnvFile, readEnvDocument, removeEnvKey, writeEnvValue } from '@/lib/config-write'
 import { requireDashboardAuth } from '@/lib/provisioning/guard'
 import { revalidatePath } from 'next/cache'
 
@@ -69,28 +68,6 @@ export async function addEnvVar(key: string, value: string) {
       success: false,
       error: err instanceof Error ? err.message : 'Failed to add environment variable',
     }
-  }
-}
-
-// Create cabinet/.env with owner-only (0600) perms if it is not there yet. The
-// safe writer edits an EXISTING file (it reads-then-atomic-writes and throws on
-// a missing one), and a fresh hatch has no .env until the first credential is
-// stored — so onboarding would fail its very first write without this. A file
-// that already exists is left exactly as it is, perms included.
-async function ensureEnvFile(path: string): Promise<void> {
-  try {
-    await access(path)
-    return
-  } catch {
-    // Not there — create it empty and 0600. `wx` refuses to clobber, so a
-    // concurrent creator racing us is not an error; chmod then pins the perms
-    // regardless of umask, because this file holds every credential.
-    try {
-      await writeFile(path, '', { mode: 0o600, flag: 'wx' })
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException)?.code !== 'EEXIST') throw err
-    }
-    await chmod(path, 0o600).catch(() => {})
   }
 }
 

@@ -45,9 +45,17 @@ RESIDUAL, stated rather than implied. The reachability arm is anchored to the
 two lists, so a narrowing that drops only trees NO listed path lives in is
 still green — and the opening sentence's "anywhere else is CI-red" is
 therefore scoped to SCAN_GLOBS, which are python and shell only. Live
-counter-example in the tree today: ``cabinet/dashboard/src/lib/docker.ts`` and
-``cabinet/dashboard/src/app/api/telegram/provisioning-webhook/route.ts`` both
-carry the raw host, are on no list, and this ratchet has never seen them.
+counter-examples in the tree today — all THREE carry the raw host, are on no
+list, and this ratchet has never seen them:
+  * ``cabinet/dashboard/src/lib/docker.ts``
+  * ``cabinet/dashboard/src/app/api/telegram/provisioning-webhook/route.ts``
+  * ``cabinet/dashboard/src/lib/telegram/connect.ts`` (added 2026-08-14 by the
+    guided Telegram connect: getMe + a no-offset getUpdates + ONE sendMessage,
+    the same read-only probe class as the two allowlisted shell errand helpers
+    plus the one message that proves the round trip to the operator. It is
+    deliberately the flow's ONLY caller — the step components import
+    ``lib/telegram/contract.ts``, which has no transport — so a later widening
+    of this scan to TypeScript has one file to rule on rather than a scatter.)
 Widening the scan to the dashboard's TypeScript is a separate unit with its
 own allowlist decision; until it lands, "anywhere else" means anywhere else
 SCAN_GLOBS reaches.
