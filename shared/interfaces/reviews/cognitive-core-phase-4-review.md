@@ -21,7 +21,27 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 2f743441e27e99b8c8afb711e7458c2ec2afd559e3ba046605198e9ee454081c
+Reviewed-Scope-Digest: 6e87bdd2b77640fe0f0e75d66d55b19e0c25959d2c3fe9e5d9b037de4c51a586
+
+(RE-BIND, 2026-08-14, `feat/first-mate-speaks-short`, recomputed over this
+branch's HEAD with `cognitive-phase4-review-scope.py --print`. ONE in-scope path
+moved and it is again NOT a COG-4 surface:
+`cabinet/config/cognitive-architecture-contract.yml`, raising
+`framework_production_noncomment_lines` 63700 -> 64247 (effective 78242 -> 78789;
+the last +3 is the stopword fix the live drive itself produced)
+for THE FIRST MATE SPEAKING — the Captain's seven findings from driving the full
+connected onboarding on his own instance. The +544 is three permanent organs,
+every one inside a file the tree already carried: `journey.py` (the card layer —
+headline, named sections, and the join that makes `body` their sum — plus the
+answers-already-given reader, the window-breadth vocabulary, the name write path
+and the one probe composition four callers share), `research.py` (the identity
+guess: three stated match rules over the one tokenizer, wired into
+`identity_question` as a proposal only a tap can record) and `availability.py`
+(`record_captain_name`, so the answers file's `captain:` block keeps exactly one
+writer). `framework/onboarding/` is NOT in the COG-4 scope set, so no COG-4
+implementation byte moved. ZERO new framework production modules (248 <= 248 for
+this landing) and zero expansion rows. DISJOINT from every raise noted below.
+The prior re-bind's own note follows verbatim.)
 
 (RE-BIND, 2026-08-14, `feat/web-probes-run`, recomputed over this branch's HEAD
 after the same landing's live-run fixes moved the contract a second time

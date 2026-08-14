@@ -983,7 +983,17 @@ budgets:
     # the tree already carried) and zero expansion rows. RAISED VISIBLY rather
     # than paid by a temporary allowance, same reason as every row above.
     # observed == maximum, zero headroom.
-    maximum: 64244
+    #
+    # 64244 -> 64247 (+3, SAME landing, measured after the live drive found the
+    # defect by being used): the seed stopword list gained the discourse adverbs
+    # and intensifiers. "the onsen rota is what actually hurts" put ACTUALLY into
+    # a web search query and then offered it back as the pre-filled NAME OF A
+    # THING TO OPEN. They are stopwords by the rule the list already applies —
+    # scaffolding, not names — and only genuine function words went in: a verb
+    # from the one sentence that motivated this would be a stopword list fitted
+    # to a fixture, which is worse than a pre-fill the operator can edit.
+    # observed == maximum, zero headroom.
+    maximum: 64247
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
