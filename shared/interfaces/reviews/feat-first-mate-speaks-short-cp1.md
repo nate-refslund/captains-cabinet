@@ -151,3 +151,27 @@ defect this program hunts in everything else. Replaced with the property it was
 meant to state: a recorded NAME produces a guess on every connector and
 attributes ZERO — every basis `unresolved`, every share `0`. That is now the
 sharpest single statement of the law in the branch.
+
+## The merge with `feat/onboarding-arrival` (2026-08-14)
+
+Both branches were driven from the SAME live report and both wrote an ending.
+Theirs landed first and is better: a first-class `arrival` stage, a summary
+assembled from recorded answers with each clause's provenance beside it, a
+management view, a false-arrival guard, and a completion-parity fixture shared
+between the core and the dashboard. So U7 here was DELETED, not merged beside
+it — `_journey_complete`, `_completion_block`, `_completion_headline`,
+`journeyIsComplete` in `wizard.ts`, `card.completion` in the types, the two-exit
+handoff in the card, its arms, and the screenshot of a card that no longer
+exists. Keeping two "is it finished?" predicates would have been the exact drift
+both branches wrote one to prevent.
+
+What this branch contributes to their card instead: the layering. The arrival
+now carries a `speaker`, a headline built from `_arrival_clauses` — their
+summary, split so the headline shows the operator's recorded sentences verbatim
+rather than a sentence written for the occasion — and `details` whose join is
+byte-identical to the body they published.
+
+Re-measured over the merge tree: onboarding 996, dashboard vitest 3701, tsc
+clean, census PASS at 64282 (the SUM of two disjoint raises off one base,
+measured not added), layer-sep new=0, null-hatch exit 0, COG-4 re-bound to the
+merged bytes.
