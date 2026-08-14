@@ -41,10 +41,16 @@ Six states now, where there were two (`cabinet/dashboard/src/lib/crew.ts`):
 | `awake` | fresh heartbeat | 🟢 what it is doing |
 | `not-awake-yet` | no heartbeat, no installed helper | ○ `Not awake yet` — calm, no colour |
 | `resting` | stopped on purpose, no beat since | ○ `Asleep` — calm |
-| `on-call` | roster `type: consultant` | ○ `On call` — calm, folded |
+| `on-call` | roster `type: consultant`, not reporting right now | ○ `On call` — calm, folded |
 | `quiet` | helper installed / beat went stale, nothing reporting | 🔴 has stopped reporting |
 | `stop-failed` | asked to stop, still beating | 🔴 the other alarm |
 | `unknown` | a reading could not be taken | ❓ with the reason |
+
+The ORDER is part of the argument. `on-call` is answered above the staleness
+arm, because a consultant is spawned per trigger and stops when the mission
+ends — its heartbeat going stale is the normal end of a mission, not a death,
+and it has no keepalive job to have failed. Below that arm, every completed
+consultant mission became a red alarm fifteen minutes later.
 
 The degenerate end is its own answer: an install reading that could not be
 taken does **not** buy the calm state. It cannot distinguish the two cases

@@ -117,16 +117,24 @@ export interface CrewMemberReading {
 }
 
 /**
- * The ONE decision. Ordered so that every arm is defensible on its own:
+ * The ONE decision. Ordered so that every arm is defensible on its own, and
+ * the order is the argument:
  *
- *  1. a current heartbeat outranks every expectation — an officer that is
- *     reporting IS working, whatever any marker says;
- *  2. an unreadable heartbeat is unknown, never a health claim;
- *  3. a STALE heartbeat proves it ran, so its absence of life is a fault (or a
- *     deliberate stop) — never "never started";
- *  4. with no heartbeat at all, the expectation marker, then the roster shape,
- *     then the install reading decide; and only a MEASURED absence of the
- *     install buys the calm never-started answer.
+ *  1. an unreadable heartbeat is `unknown` FIRST — no arm below may treat
+ *     "we could not read it" as evidence in either direction;
+ *  2. a stop the operator asked for changes the QUESTION, so it is answered
+ *     before liveness: a beat older than the request is a leftover of a
+ *     successful stop, a beat newer than it means the stop did not take;
+ *  3. otherwise a current heartbeat wins — an officer that is reporting IS
+ *     working, whatever any marker says;
+ *  4. an on-demand consultant that is not reporting is ON CALL, not dead. It
+ *     is answered above the staleness arm because a consultant's heartbeat
+ *     going stale after a mission is the normal end of a mission, and
+ *     `cabinet-doctor.sh` SKIPs the same rows for the same reason;
+ *  5. a STALE heartbeat on an always-on officer proves it ran, so its silence
+ *     is a fault — never "never started";
+ *  6. with no heartbeat at all, only a MEASURED absence of the installed
+ *     helper buys the calm never-started answer.
  */
 export function crewState(input: CrewMemberInput): CrewMemberReading {
   const { slug, heartbeat, expected, install, onDemand, stoppedAtMs, nowMs } = input
@@ -158,6 +166,19 @@ export function crewState(input: CrewMemberInput): CrewMemberReading {
 
   if (heartbeat.state === 'fresh') return { slug, state: 'awake', reason: '' }
 
+  // ABOVE the staleness arm, deliberately. A consultant is spawned per
+  // trigger and stops when the mission ends, so its heartbeat going stale is
+  // the normal end of a mission rather than a death — and it has no keepalive
+  // job to have failed. Below the staleness arm, every finished consultant
+  // mission turned into a red alarm fifteen minutes later.
+  if (onDemand) {
+    return {
+      slug,
+      state: 'on-call',
+      reason: 'this one is on call — it starts when there is work for it',
+    }
+  }
+
   if (heartbeat.state === 'stale') {
     return {
       slug,
@@ -167,14 +188,6 @@ export function crewState(input: CrewMemberInput): CrewMemberReading {
   }
 
   // No heartbeat at all from here down.
-
-  if (onDemand) {
-    return {
-      slug,
-      state: 'on-call',
-      reason: 'this one is on call — it starts when there is work for it',
-    }
-  }
 
   if (install.state === 'absent') {
     return {

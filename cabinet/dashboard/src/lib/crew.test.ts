@@ -170,6 +170,25 @@ describe('deliberate quiet is not a fault', () => {
     expect(isAlarming(r.state)).toBe(false)
   })
 
+  it('a consultant whose heartbeat went STALE finished a mission — it did not die', () => {
+    // A consultant is spawned per trigger and stops when the work is done, and
+    // it has no keepalive job to have failed. Below the staleness arm, every
+    // completed consultant mission became a red alarm fifteen minutes later.
+    const r = crewState(member({ onDemand: true, heartbeat: stale, install: { state: 'absent' } }))
+    expect(r.state).toBe('on-call')
+    expect(isAlarming(r.state)).toBe(false)
+  })
+
+  it('a consultant that IS reporting is awake — on-call never hides live work', () => {
+    expect(crewState(member({ onDemand: true, heartbeat: fresh })).state).toBe('awake')
+  })
+
+  it('an ALWAYS-ON officer with a stale heartbeat is still the alarm', () => {
+    // The inverse of the arm above: the consultant exemption must not leak on
+    // to the crew the wake flow is responsible for.
+    expect(crewState(member({ onDemand: false, heartbeat: stale })).state).toBe('quiet')
+  })
+
   it('a REPORTING officer with no stop marker is simply awake', () => {
     // The marker is what changes the question. Without one, a fresh beat is a
     // working officer and nothing competes with it.
@@ -196,12 +215,13 @@ describe('the fold — hides expected quiet, never a fault', () => {
   })
 
   it('anything WORKING or WRONG is never folded, however it got onto the list', () => {
-    for (const hb of [fresh, stale]) {
-      const input = member({ slug: 'stray-ceo', hired: false, onDemand: true, heartbeat: hb })
-      const reading = crewState(input)
-      expect(['awake', 'quiet']).toContain(reading.state)
-      expect(isFolded(input, reading)).toBe(false)
-    }
+    const working = member({ slug: 'stray-ceo', hired: false, onDemand: true, heartbeat: fresh })
+    expect(crewState(working).state).toBe('awake')
+    expect(isFolded(working, crewState(working))).toBe(false)
+
+    const broken = member({ slug: 'stray', hired: false, onDemand: false, heartbeat: stale })
+    expect(crewState(broken).state).toBe('quiet')
+    expect(isFolded(broken, crewState(broken))).toBe(false)
   })
 
   it('an UNKNOWN reading is never folded either — it needs a human, not a fold', () => {
