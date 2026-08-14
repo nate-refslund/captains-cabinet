@@ -156,7 +156,9 @@ export default function Arrival({
 
       <h2
         id="onboarding-arrival-title"
-        className={`mt-6 text-3xl font-semibold tracking-tight sm:text-4xl ${t.title}`}
+        className={`mt-6 font-semibold tracking-tight ${
+          variant === 'world' ? 'text-2xl' : 'text-3xl sm:text-4xl'
+        } ${t.title}`}
       >
         Your Cabinet is ready.
       </h2>
@@ -247,7 +249,12 @@ export default function Arrival({
           shown what the Cabinet may read, what it found, what it is
           connected to, and how to take any of it back.
       ---------------------------------------------------------------- */}
-      <div className="mt-10 grid max-w-3xl gap-3 sm:grid-cols-2">
+      {/* One column inside the World's ~30rem overlay panel; two on the page. */}
+      <div
+        className={`mt-10 grid max-w-3xl gap-3 ${
+          variant === 'world' ? '' : 'sm:grid-cols-2'
+        }`}
+      >
         <Section t={t} title="What I may read">
           {source ? (
             <>

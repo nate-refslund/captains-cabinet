@@ -1834,6 +1834,27 @@ describe('rendered component — the arrival', () => {
     }
   })
 
+  it('keeps the World overlay a panel — shell, collapse control, one column', () => {
+    // The World renders this card as a FIXED overlay over the pixel map
+    // (app/(authenticated)/world/page.tsx). Dropping the card chrome there —
+    // which the dashboard arrival deliberately does, because on /onboarding the
+    // arrival IS the page — would leave loose text floating on the map and take
+    // away the one control that gets the overlay out of the way.
+    scriptState({ journey: arrivedFixture() })
+    const world = render({ surface: 'world', variant: 'world' })
+    expect(world).toContain('Your Cabinet is ready.')
+    expect(world).toContain('border-4 border-amber-900')       // the panel shell
+    expect(world).toContain('Hide orientation card')            // the collapse control
+    expect(world).not.toContain('sm:grid-cols-2')               // one column in ~30rem
+
+    // …and the dashboard keeps none of that: full width, no frame around a frame.
+    scriptState({ journey: arrivedFixture() })
+    const dashboard = render()
+    expect(dashboard).not.toContain('border-4 border-amber-900')
+    expect(dashboard).not.toContain('Hide orientation card')
+    expect(dashboard).toContain('sm:grid-cols-2')
+  })
+
   it('yields the screen to the two management sub-flows that have their own forms', () => {
     // Changing what may be read opens the folder form…
     scriptState({ journey: arrivedFixture(), editScope: true })

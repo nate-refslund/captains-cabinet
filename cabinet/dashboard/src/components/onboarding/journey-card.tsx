@@ -784,8 +784,27 @@ export default function OnboardingJourneyCard({
   const showArrival = arrived && !editScope && !purgeArmed && !wantsFullSurface()
 
   if (journey && showArrival) {
+    // THE DASHBOARD DROPS THE CARD CHROME; THE WORLD CANNOT. On /onboarding the
+    // arrival IS the page, so the boxed shell would be a frame around a frame.
+    // On the World it is a fixed overlay panel floating over the pixel map —
+    // without the shell it renders as loose text on the map, and without the
+    // header the operator loses the one control that gets it out of the way.
+    const inWorld = variant === 'world'
     return (
-      <section className="w-full">
+      <section className={inWorld ? `p-6 sm:p-7 ${t.shell}` : 'w-full'}>
+        {inWorld && (
+          <div className="mb-2 flex justify-end">
+            <button
+              type="button"
+              aria-label="Hide orientation card"
+              aria-expanded="true"
+              onClick={() => setCollapsed(true)}
+              className="min-h-11 min-w-11 rounded-md border border-stone-600 text-lg"
+            >
+              −
+            </button>
+          </div>
+        )}
         <Arrival
           journey={journey}
           t={t}
