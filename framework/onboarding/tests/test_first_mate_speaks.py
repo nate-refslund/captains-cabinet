@@ -281,11 +281,13 @@ class TestNameThenGuess:
         assert "operator_identity" not in state
         who = state["connector_sweep"]["who_and_when"]
         assert who["operator"]["handles"] == {}
-        assert all(row["basis"] != "onboarding_record"
-                   for row in who["attribution"]) or True
-        assert "claiming none of that work is yours" in \
-            who["identity_question"]["question"] or \
-            "claiming none of it is" in who["identity_question"]["question"]
+        # A NAME PRODUCES A GUESS AND ATTRIBUTES NOTHING. Every connector is
+        # still unresolved and every share is still zero — the guess is a
+        # question on a card, not a claim on the record.
+        assert [row["basis"] for row in who["attribution"]] == ["unresolved"] * 2
+        assert all(row["share"]["mine"] == 0 for row in who["attribution"])
+        assert "claiming none of it is" in who["identity_question"]["question"]
+        assert all(row["guess"] for row in who["identity_question"]["connectors"])
 
     def test_the_tap_writes_through_the_existing_act(self, tmp_path, monkeypatch):
         monkeypatch.setenv("CABINET_INIT_ANSWERS", str(tmp_path / "a.yml"))
