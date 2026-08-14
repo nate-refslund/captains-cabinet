@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest'
 
 import { ARRIVAL_CLAUSE_LIMIT, arrivalClauses, readPath, type ArrivalClause } from './arrival'
 import type { OnboardingState } from './types'
+import { fullSurfaceHref, wantsFullSurface } from '@/components/onboarding/arrival'
 
 /** A journey that answered everything — the maximal clause set. */
 const FULL = {
@@ -192,5 +193,44 @@ describe('THE SENSOR FIRES', () => {
       },
     ]
     expect(() => assertNoInvention(FULL, dead)).toThrow()
+  })
+})
+
+/**
+ * The link to the full orientation surface must not cost the operator their
+ * page state. This card also renders as the World's overlay, where the query
+ * string IS the camera — a bare `?more=1` would answer one question by throwing
+ * away their view of their own map.
+ */
+describe('the full-surface link keeps the query it found', () => {
+  const withSearch = (search: string, run: () => void) => {
+    const original = (globalThis as { window?: unknown }).window
+    ;(globalThis as { window?: unknown }).window = { location: { search } }
+    try { run() } finally {
+      if (original === undefined) delete (globalThis as { window?: unknown }).window
+      else (globalThis as { window?: unknown }).window = original
+    }
+  }
+
+  it('adds the flag to the World camera instead of replacing it', () => {
+    withSearch('?z=1.00&x=56.7&y=6.7&iso=1', () => {
+      const href = fullSurfaceHref()
+      for (const key of ['z=1.00', 'x=56.7', 'y=6.7', 'iso=1', 'more=1']) {
+        expect(href).toContain(key)
+      }
+    })
+  })
+
+  it('is a bare flag when there is nothing to keep', () => {
+    withSearch('', () => expect(fullSurfaceHref()).toBe('?more=1'))
+  })
+
+  it('does not duplicate the flag when it is already set', () => {
+    withSearch('?more=1', () => expect(fullSurfaceHref()).toBe('?more=1'))
+  })
+
+  it('is safe during SSR, where there is no window at all', () => {
+    expect(fullSurfaceHref()).toBe('?more=1')
+    expect(wantsFullSurface()).toBe(false)
   })
 })

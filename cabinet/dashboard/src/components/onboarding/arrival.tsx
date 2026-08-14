@@ -68,6 +68,22 @@ export function wantsFullSurface(): boolean {
 }
 
 /**
+ * The link to the full surface, KEEPING whatever query the page already
+ * carries. A bare `?more=1` replaces the whole query string, and this card also
+ * renders as the World's overlay — where the query is the camera (`z`, `x`,
+ * `y`, `iso`), so a bare link would answer a question by throwing away the
+ * operator's view of their own map.
+ */
+export function fullSurfaceHref(): string {
+  const params =
+    typeof window === 'undefined'
+      ? new URLSearchParams()
+      : new URLSearchParams(window.location.search)
+  params.set(FULL_SURFACE_PARAM, '1')
+  return `?${params.toString()}`
+}
+
+/**
  * The four stops, settled. Not the progress rail — a finished flow has no
  * progress left to report — but a quiet confirmation that all four happened.
  * No numbers, no labels, no connecting lines, and one short settle on mount
@@ -231,7 +247,7 @@ export default function Arrival({
         {asks.length > 0 && (
           <p className="mt-3 text-sm">
             <a
-              href={`?${FULL_SURFACE_PARAM}=1`}
+              href={fullSurfaceHref()}
               className={`font-medium underline underline-offset-4 ${t.title}`}
             >
               I still have {asks.length} question{asks.length === 1 ? '' : 's'} for you
