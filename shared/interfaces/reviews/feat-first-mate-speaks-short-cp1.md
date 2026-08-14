@@ -133,5 +133,7 @@ egress ceiling produces a different reason so it does not re-trigger.
   exemption in `parity.test.ts` — a picker cannot fit in 64 bytes of callback
   data). The confirm chip does not change that: a Telegram identity confirm is its
   own unit.
-* The completion handoff names two destinations by CONCEPT; only the dashboard
-  maps them to routes. Telegram and the World do not yet.
+* The completion handoff names two destinations by CONCEPT, and the component maps
+  them to dashboard routes. The World skin renders the SAME component, so its two
+  exits are dashboard links that navigate out of the world canvas — the right
+  destinations, not world-native ones. Telegram has no branch for them at all.
