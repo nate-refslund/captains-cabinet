@@ -254,20 +254,19 @@ never deletes a word of it.
   window. The deeper desire — the cabinet CONTROLLING the Mac — is the trust
   ladder's, and the copy says where control actually comes from rather than
   faking it here.
-- **A finished operator is told so.** *"i believe i've answered everything and am
-  now stuck and can't continue again?"* — measured on his own instance, with a
-  ratified Charter, a delivered dividend, a recorded target and a recorded
-  identity. The `orientation_offered` card titled itself *"Deeper Orientation has
-  not started"* and offered three options that all led back INTO onboarding.
-  It now leads with completion (`card.completion`, gated on the same two fields
-  the home redirect reads — a ratified charter and a first dividend) and carries
-  two ways OUT, named as cabinet concepts (`briefing`, `cabinet`) that each
-  surface maps to its own door. The deeper offer is demoted, not deleted, and
-  the "has not started" disclosure is unchanged in the fold. `journeyIsComplete`
-  in `lib/onboarding/wizard.ts` is the ONE rule; `completion.ts` (the redirect)
-  and the card both read it, and a test pins the core's own verdict to it — two
-  spellings of "finished" is how a router stops redirecting while the page still
-  offers only more questions.
+- **A finished operator is told so** — answered by `feat/onboarding-arrival`,
+  which landed the same day and first. The two branches diagnosed one live
+  report (*"i believe i've answered everything and am now stuck and can't
+  continue again?"*) and both wrote an ending; the arrival screen is the one
+  that ships, with its own stage, summary-from-recorded-answers, management view
+  and a shared completion-parity fixture. What this branch contributes to it is
+  the LAYERING every other card here gained: the arrival card carries a
+  `speaker`, a headline built from `_arrival_clauses` — the operator's own
+  recorded sentences, never re-authored — and `details` whose join is the body
+  the core already published. The duplicate predicate this branch had added
+  (`journeyIsComplete` in `wizard.ts`) was deleted in the merge: `completion.ts`
+  and `journey_has_arrived` are the one rule, and two spellings of "finished" is
+  how a router stops redirecting while a page still offers only more questions.
 - **Sensors:** `framework/onboarding/tests/test_first_mate_speaks.py` (46 arms
   across all seven, each layering arm paired with a losslessness arm, plus the
   degenerate ends: no sweep, no name, two lookalikes, no seed, an incomplete
@@ -447,6 +446,50 @@ diagnostics, export, and purge. See
 Purge requires literal `PURGE`, removes all journey content, and cannot be
 undone. Revoke stops future reads while retaining derived artifacts until undo
 or purge. Undo is event-backed.
+
+### The flow has an ending (added 2026-08-14)
+
+The first slice had no terminal success state. `continue` from `dividend_ready`
+landed on `orientation_offered`, a stage whose card was headed "Deeper
+Orientation has not started" over a menu of more onboarding — so an operator who
+had finished was, on screen, indistinguishable from one who was stuck. Measured
+live: the Captain's own journey sat there with the Charter ratified and the
+dividend delivered, and he reported "i believe i've answered everything and am
+now stuck and can't continue again?".
+
+- `complete` is the terminal stage. `continue` lands there, and only when
+  `journey_has_arrived(state)` holds — a ratified Charter AND a delivered first
+  dividend. A stage value alone can never announce a success the product cannot
+  show.
+- `orientation_offered` **is** `complete` (`COMPLETE_STAGES`): journeys
+  persisted at the older stage render the same arrival and route the same way.
+  Stored state files are NOT rewritten — the event log records what happened,
+  and editing history to fix a rendering bug destroys the one thing it is for.
+- Both stages emit `kind: "arrival"`, titled "Your Cabinet is ready.", carrying
+  the dividend's citations and egress disposition (a summary without its
+  citations would be an unsourced claim on the screen whose job is to be
+  trustworthy). The deeper-orientation content becomes an OFFER from the
+  finished state, with both of its disclosures intact — "That work is disabled
+  and has not started", "No new access or authority was granted". `pause` is no
+  longer offered there (nothing is running) but is still accepted, so a card
+  printed by an older build keeps working.
+- `journey.STAGES` declares every stage the card builder renders. It is pinned
+  in both directions: `test_every_declared_stage_renders_its_own_card` proves
+  each has a live branch, and the dashboard's rail registry
+  (`cabinet/dashboard/src/lib/onboarding/flow-rail.ts`) proves each maps to
+  exactly one of four monotonic stops — You · Access · First look · Done. The
+  six-stop rail it replaced mapped `orientation_offered` two stops BACKWARD from
+  `dividend_ready`; that mapping is kept in `flow-rail.test.ts` so the monotonic
+  arm is proven able to fail.
+- The dashboard mirrors `journey_has_arrived` as `journeyIsComplete`
+  (`lib/onboarding/completion.ts`), which gates BOTH the home-page redirect and
+  the arrival screen. Both implementations assert against one shared table,
+  `framework/onboarding/tests/data/completion-parity.json`, so the two runtimes
+  cannot drift into telling the operator different things. Re-entering
+  `/onboarding` after completion renders the arrival and its management view
+  (what may be read, what was found, connected tools, stop/delete); the wizard
+  is structurally unreachable, because its questions are gated on the `welcome`
+  stage.
 
 A purge ends that JOURNEY; it does not end onboarding on the instance (fixed
 2026-08-02, after a fresh-hatch run measured every later action on every surface

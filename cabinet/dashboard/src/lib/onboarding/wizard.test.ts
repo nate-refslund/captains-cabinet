@@ -11,14 +11,12 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  activePhaseIndex,
   canAdvance,
   EMPTY_WIZARD,
   nextStep,
   prevStep,
   resumeStep,
   seedRequest,
-  WIZARD_PHASES,
   type WizardValues,
 } from './wizard'
 
@@ -117,28 +115,11 @@ describe('the answer_seed payload carries the three seams and no invented one', 
   })
 })
 
-describe('the progress rail and resume', () => {
-  it('lights the phase that matches the stage and step', () => {
-    expect(activePhaseIndex('welcome', 'role')).toBe(0)
-    expect(activePhaseIndex('welcome', 'dream')).toBe(1)
-    expect(activePhaseIndex('welcome', 'start')).toBe(2)
-    expect(activePhaseIndex('welcome', 'window')).toBe(3)
-    expect(activePhaseIndex('welcome', 'discover')).toBe(3)
-    expect(activePhaseIndex('charter_pending', 'role')).toBe(4)
-    expect(activePhaseIndex('dividend_ready', 'role')).toBe(5)
-  })
-
-  it('drops off the rail for stages outside the linear arc', () => {
-    for (const stage of ['paused', 'revoked', 'purged']) {
-      expect(activePhaseIndex(stage, 'role')).toBe(-1)
-    }
-  })
-
-  it('has one phase per rail node and never a negative default in-arc', () => {
-    expect(WIZARD_PHASES).toHaveLength(6)
-    expect(activePhaseIndex('welcome', 'role')).toBeGreaterThanOrEqual(0)
-  })
-
+describe('resume', () => {
+  // The rail's own arms moved to flow-rail.test.ts with the rail itself — see
+  // the note at the top of wizard.ts. They are not deleted: they are stated
+  // there over four stops instead of six, plus the monotonic law the six-stop
+  // mapping failed.
   it('resumes a journey that already carries answers at its branch step', () => {
     expect(resumeStep(false, undefined)).toBe('role')
     expect(resumeStep(true, 'point')).toBe('window')

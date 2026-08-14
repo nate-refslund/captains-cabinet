@@ -504,18 +504,6 @@ export interface OnboardingCard {
    * title through `officerTitle`.
    */
   speaker?: 'coordinator'
-  /**
-   * Present only when onboarding has DELIVERED — a ratified Charter and a cited
-   * first result. Carries the ways ONWARD, named as cabinet concepts so each
-   * surface maps them to its own door. Without it this stage is an act-surface
-   * whose every option leads back into onboarding.
-   */
-  completion?: {
-    complete: boolean
-    citations: number
-    window: string
-    next_steps: Array<{ id: string; label: string }>
-  }
   status: string
   evidence: OnboardingCitation[]
   options: OnboardingOption[]
@@ -576,6 +564,13 @@ export interface OnboardingState {
    * cards derive byte-identically to a missionless answer.
    */
   mission?: { purpose: string }
+  /**
+   * Whose work this cabinet is for, when the operator said. Written by
+   * `answer_organization` and NEVER derived — not from a folder name, not from
+   * a credential, not from a search result. Absent means nobody has answered
+   * it, which is why the arrival summary omits the clause rather than guessing.
+   */
+  organization?: { name: string; answered_at: string }
   /**
    * Where the operator asked me to begin: `point` (they name a folder and I read
    * it under a Charter) or `decide` (I go find where I am most useful, which

@@ -49,46 +49,15 @@ export const EMPTY_WIZARD: Readonly<WizardValues> = Object.freeze({
 })
 
 /**
- * The arc, in order: three questions, then the first window, the Charter the
- * operator approves, and the one useful result. This IS a sequence — each phase
- * genuinely precedes the next — so a numbered rail encodes something true
- * rather than decorating the card. The rail reads these; nothing here styles.
+ * THE RAIL MOVED OUT OF THIS MODULE (2026-08-14). `WIZARD_PHASES` and
+ * `activePhaseIndex` used to live here: six phases, and a mapping that sent the
+ * stage AFTER the first result back to phase four, so an operator's last act
+ * visibly moved the rail two stops backward. The rail spans the whole flow
+ * including its ending, which is not this module's subject — it owns the
+ * stepped FRONT — so it now lives in `./flow-rail.ts` as four stops with a
+ * monotonic law that is tested, and the mapping it replaced is kept in
+ * `flow-rail.test.ts` purely so that law can be proven to fire against it.
  */
-export interface WizardPhase {
-  id: string
-  label: string
-  hint: string
-}
-
-export const WIZARD_PHASES: readonly WizardPhase[] = Object.freeze([
-  { id: 'role', label: 'You', hint: 'What you do' },
-  { id: 'dream', label: 'Purpose', hint: 'What this becomes' },
-  { id: 'start', label: 'Start', hint: 'Where I begin' },
-  { id: 'window', label: 'Window', hint: 'What I may read' },
-  { id: 'charter', label: 'Charter', hint: 'You approve' },
-  { id: 'result', label: 'Result', hint: 'One useful thing' },
-])
-
-/**
- * Which phase is lit, given the server stage and the client step. The welcome
- * stage maps to the three questions plus the window/discover branch; the server
- * stages own the rest. A stage off the linear arc (paused, revoked, purged)
- * returns -1, and the rail hides rather than lying about progress.
- */
-export function activePhaseIndex(stage: string, step: WizardStepId): number {
-  if (stage === 'welcome') {
-    if (step === 'role') return 0
-    if (step === 'dream') return 1
-    if (step === 'start') return 2
-    return 3 // window | discover — the first-window phase
-  }
-  if (stage === 'charter_pending') return 4
-  if (stage === 'dividend_ready') return 5
-  // Deeper orientation is another first-window ask, so it sits at the window
-  // phase rather than off the rail.
-  if (stage === 'orientation_offered') return 3
-  return -1
-}
 
 /**
  * May the operator move on from this step? Role is required — it is the seed
@@ -158,28 +127,6 @@ export function seedRequest(values: WizardValues): {
   }
 }
 
-/**
- * Has onboarding DELIVERED — a ratified Charter and a cited first result?
- *
- * THE ONE RULE, read by the home redirect (`./completion.ts`, which is
- * server-side because it reads state.json off disk) AND by the card that tells
- * the operator they are done. Two spellings of "finished" is how a router stops
- * sending someone back to onboarding while the onboarding page still offers
- * them nothing but more questions — which is exactly what happened (measured
- * live on the Captain's own instance, 2026-08-14: "i believe i've answered
- * everything and am now stuck and can't continue again?").
- *
- * The core writes both fields at `ratify_charter` and publishes its own
- * verdict as `card.completion`; `journey-card.test.ts` asserts the two agree,
- * so a change on either side of the process boundary is caught rather than
- * discovered by an operator.
- */
-export function journeyIsComplete(state: {
-  charter?: { status?: string } | null
-  first_dividend?: unknown
-} | null | undefined): boolean {
-  return state?.charter?.status === 'ratified' && state?.first_dividend != null
-}
 
 /**
  * Where to resume the front when a journey already carries answers — a reload

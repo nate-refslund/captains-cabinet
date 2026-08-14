@@ -21,14 +21,16 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 6e87bdd2b77640fe0f0e75d66d55b19e0c25959d2c3fe9e5d9b037de4c51a586
+Reviewed-Scope-Digest: e595d23278697bf3fdbccc3305eb98496d59dda61c8b26bd8f26b96e90da347c
 
 (RE-BIND, 2026-08-14, `feat/first-mate-speaks-short`, recomputed over this
 branch's HEAD with `cognitive-phase4-review-scope.py --print`. ONE in-scope path
 moved and it is again NOT a COG-4 surface:
 `cabinet/config/cognitive-architecture-contract.yml`, raising
-`framework_production_noncomment_lines` 63700 -> 64247 (effective 78242 -> 78789;
-the last +3 is the stopword fix the live drive itself produced)
+`framework_production_noncomment_lines` 63700 -> 64282 (effective 78242 -> 78824).
+That ceiling is the MERGE of two disjoint raises off the same base — this
+branch's +547 for the card layer, and `feat/onboarding-arrival`'s +77 for the
+ending — RE-MEASURED over the merge tree rather than added on paper
 for THE FIRST MATE SPEAKING — the Captain's seven findings from driving the full
 connected onboarding on his own instance. The +544 is three permanent organs,
 every one inside a file the tree already carried: `journey.py` (the card layer —
@@ -2361,3 +2363,32 @@ No `framework/projection`, `framework/scheduler`, `framework/organs`,
 touched by this branch, whose diff is otherwise `framework/onboarding/`, its
 suites, the dashboard onboarding surfaces, two onboarding docs and one FW-019
 review artifact.)
+
+(RE-BOUND 2026-08-14 on `feat/onboarding-arrival` (PR #357), previous value
+`2f743441e27e99b8c8afb711e7458c2ec2afd559e3ba046605198e9ee454081c…`. ONE in-scope path moved and it is NOT a COG-4 surface.
+MEASURED, not asserted: the resolved scope was expanded with `git ls-tree -r`
+at `origin/master` (268ccdd) and at this branch's HEAD and the two sets
+diffed — 114 paths on both sides, none added, none removed, exactly ONE with a
+different blob.
+
+1. `cabinet/config/cognitive-architecture-contract.yml` — the
+   `framework_production_noncomment_lines` maximum, raised 63700 -> 63777 with
+   its dated measurement note (observed 78319 vs the then-effective 78242,
+   which master already sat exactly on). No budget added, no pin removed, no
+   baseline changed, no other key touched. The +77 buys onboarding's ENDING
+   inside `framework/onboarding/journey.py`: the terminal `complete` stage
+   (`continue` had no success state to move to, so a finished operator's last
+   screen was headed "Deeper Orientation has not started" — measured on the
+   Captain's own live journey, Charter ratified and dividend delivered, and
+   reported as being stuck), the `COMPLETE_STAGES` rule that reads a legacy
+   `orientation_offered` journey as arrived WITHOUT rewriting one stored state
+   file, the `STAGES` declaration two sensors are pinned to, the one
+   completion predicate `journey_has_arrived`, and `_arrival_summary`. ZERO
+   production modules (`framework_production_modules` unchanged), so the
+   ratchet re-pins at observed==max exactly as the zero-headroom law requires.
+
+No `framework/projection`, `framework/scheduler`, `framework/organs`,
+`cognitive-trajectory.v2.schema.json`, `cog4-*` script or COG-4 fixture byte is
+touched by this branch, whose diff is otherwise `framework/onboarding/`, its
+suite, the dashboard onboarding surfaces, one onboarding design doc, four
+screenshots and one FW-019 review artifact.)

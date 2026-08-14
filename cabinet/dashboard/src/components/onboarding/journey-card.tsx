@@ -18,17 +18,17 @@ import { getConnectorCatalog } from '@/actions/connectors'
 import { saveConnectorCredential } from '@/actions/env'
 import { COORDINATOR_ROLE, officerTitle } from '@/lib/officer-title'
 import {
-  activePhaseIndex,
   canAdvance,
   EMPTY_WIZARD,
-  journeyIsComplete,
   nextStep,
   prevStep,
   resumeStep,
   seedRequest,
-  WIZARD_PHASES,
   type WizardStepId,
 } from '@/lib/onboarding/wizard'
+import { FLOW_STOPS, stopIndex } from '@/lib/onboarding/flow-rail'
+import { journeyIsComplete } from '@/lib/onboarding/completion'
+import Arrival, { wantsFullSurface } from './arrival'
 
 // A dedup/idempotency id that works in every context. crypto.randomUUID is
 // SECURE-CONTEXT ONLY — undefined over plain HTTP on a LAN/tailnet address,
@@ -67,51 +67,11 @@ export const NO_FIELDS: Readonly<Record<string, string>> = Object.freeze({})
  */
 export const CATALOG_SHOWN = 12
 
-/**
- * Why a connector came back with nothing, in the operator's words.
- *
- * The sweep's own reason strings are diagnostic and stable (`credential_absent`,
- * `http_401`, `read_only_refused:<verdict>`) — good in a log, useless on a card.
- * This translates the ones an operator can ACT on and passes anything else
- * through readably rather than swallowing it: an unrecognised reason printed
- * plainly is still a fact, while a generic "something went wrong" is not.
- */
-export function plainReason(reason: string): string {
-  const code = String(reason || '').trim()
-  if (!code) return 'it did not answer'
-  if (code === 'credential_absent') return 'no key is stored for it yet'
-  if (code === 'inventory_returned_no_items') return 'it answered, and there is nothing in it yet'
-  if (code === 'http_401' || code === 'http_403') {
-    return 'the key was refused — check you pasted the whole key, and that it has read access'
-  }
-  if (code === 'http_404') return 'that address answered “not found”'
-  if (code === 'http_429') return 'it asked me to slow down — try again in a minute'
-  if (code.startsWith('http_5')) return 'the other side had an error of its own'
-  if (code.startsWith('http_')) return `it answered ${code.slice(5)}`
-  if (code.startsWith('unreachable')) return 'I could not reach it'
-  if (code.startsWith('egress_')) return 'outbound calls are switched off for this cabinet'
-  if (code.startsWith('read_only_refused')) return 'that shape is not a read, so I did not run it'
-  if (code.startsWith('name_path_missed')) return 'I read it, but found no names where I was told to look'
-  if (code === 'response_not_json') return 'what came back was not a list I can read'
-  if (code === 'response_too_large') return 'what came back was too big to read'
-  return code.replaceAll('_', ' ')
-}
-
-/** The date half of a sweep stamp. ISO in, `2026-08-13` out, locale-free. */
-function dayOf(stamp: string | null | undefined): string {
-  const match = /^\d{4}-\d{2}-\d{2}/.exec(String(stamp ?? ''))
-  return match ? match[0] : ''
-}
-
-/** What one connector's last sweep amounts to, in one sentence. */
-export function sweepLine(row: OnboardingSweptConnector): string {
-  if (!row.connected) return plainReason(String(row.reason ?? ''))
-  const parts = [`read ${row.items} thing${row.items === 1 ? '' : 's'}`]
-  const day = dayOf(row.latest)
-  if (day) parts.push(`newest ${day}`)
-  if (row.actors) parts.push(`${row.actors} account${row.actors === 1 ? '' : 's'}`)
-  return parts.join(' · ')
-}
+// The sweep's card language. Re-exported so this module stays the one import
+// site the card's own tests already point at; the implementation moved to
+// lib/onboarding/sweep-line.ts when the arrival became a second consumer.
+import { dayOf, plainReason, sweepLine } from '@/lib/onboarding/sweep-line'
+export { plainReason, sweepLine }
 
 /**
  * What the operator has to state when the folder they proposed shares no word
@@ -824,11 +784,6 @@ export default function OnboardingJourneyCard({
     .join('')
   const headline = journey?.card.headline ?? []
   const details = journey?.card.details ?? []
-  // THE CORE'S VERDICT, not a second one derived here. `journeyIsComplete` is
-  // the same rule the home redirect uses and is asserted equal to this block in
-  // journey-card.test.ts — a page that says "you are done" while the router
-  // keeps sending the operator back is the stuck state both exist to prevent.
-  const completion = journey?.card.completion
   const stage = journey?.card.stage ?? ''
   const inFrontQuestions =
     stage === 'welcome' && !editScope &&
@@ -861,7 +816,59 @@ export default function OnboardingJourneyCard({
     )
   }
 
-  const activePhase = activePhaseIndex(stage, wizardStep)
+  const activePhase = stopIndex(stage, wizardStep)
+
+  // THE ENDING. A finished journey gets the arrival screen and its management
+  // view INSTEAD of the flow — screens replace each other, they do not stack —
+  // and the two conditions are deliberately separate. `kind === 'arrival'` is
+  // the core saying where the operator is; `journeyIsComplete` is the same
+  // predicate the home-page redirect gates on, saying what they were actually
+  // given. A state file that claims the stage without carrying the facts (hand
+  // edited, half restored, written by a future bug) renders the ordinary card,
+  // never a success screen with nothing behind it.
+  //
+  // Two sub-flows are allowed to take the screen back, because both are
+  // management acts with forms that already exist below: changing what may be
+  // read, and the typed purge confirmation.
+  const arrived = !!journey && journey.card.kind === 'arrival' && journeyIsComplete(journey.state)
+  const showArrival = arrived && !editScope && !purgeArmed && !wantsFullSurface()
+
+  if (journey && showArrival) {
+    // THE DASHBOARD DROPS THE CARD CHROME; THE WORLD CANNOT. On /onboarding the
+    // arrival IS the page, so the boxed shell would be a frame around a frame.
+    // On the World it is a fixed overlay panel floating over the pixel map —
+    // without the shell it renders as loose text on the map, and without the
+    // header the operator loses the one control that gets it out of the way.
+    const inWorld = variant === 'world'
+    return (
+      <section className={inWorld ? `p-6 sm:p-7 ${t.shell}` : 'w-full'}>
+        {inWorld && (
+          <div className="mb-2 flex justify-end">
+            <button
+              type="button"
+              aria-label="Hide orientation card"
+              aria-expanded="true"
+              onClick={() => setCollapsed(true)}
+              className="min-h-11 min-w-11 rounded-md border border-stone-600 text-lg"
+            >
+              −
+            </button>
+          </div>
+        )}
+        <Arrival
+          journey={journey}
+          t={t}
+          variant={variant}
+          working={working}
+          choose={choose}
+        />
+        <div aria-live="polite" className="mt-4 min-h-5 text-sm">
+          {working && <span className={t.muted}>The Cabinet is working on that…</span>}
+          {error && <span className="font-medium text-red-500 dark:text-red-300">{error}</span>}
+        </div>
+      </section>
+    )
+  }
 
   return (
     <section
@@ -901,29 +908,37 @@ export default function OnboardingJourneyCard({
             </div>
           </div>
 
+          {/* FOUR STOPS, AND IT NEVER GOES BACKWARDS. The six-stop rail this
+              replaces mapped the stage AFTER the result back to stop four, so
+              an operator's last act visibly moved them two stops backward —
+              "it is like it goes a step back" (Captain, 2026-08-14). The
+              mapping and the monotonic law it now obeys live in
+              lib/onboarding/flow-rail.ts, where both are testable without a
+              DOM. */}
           {activePhase >= 0 && (
             <ol
               className="mt-5 flex items-center gap-1.5"
-              aria-label={`Onboarding progress: step ${activePhase + 1} of ${WIZARD_PHASES.length}`}
+              aria-label={`Onboarding progress: step ${activePhase + 1} of ${FLOW_STOPS.length}`}
               role="list"
             >
-              {WIZARD_PHASES.map((phase, index) => {
+              {FLOW_STOPS.map((stop, index) => {
                 const done = index < activePhase
                 const current = index === activePhase
                 return (
-                  <li key={phase.id} className="flex flex-1 flex-col items-center gap-1.5" aria-current={current ? 'step' : undefined}>
+                  <li key={stop.id} className="flex flex-1 flex-col items-center gap-1.5" aria-current={current ? 'step' : undefined}>
                     <div className="flex w-full items-center gap-1.5">
                       <span
+                        title={stop.hint}
                         className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border text-xs font-semibold transition-colors motion-reduce:transition-none ${current ? t.railOn : done ? t.railDone : t.railOff}`}
                       >
                         {done ? '✓' : index + 1}
                       </span>
-                      {index < WIZARD_PHASES.length - 1 && (
+                      {index < FLOW_STOPS.length - 1 && (
                         <span className={`h-px flex-1 ${index < activePhase ? t.railLineDone : t.railLine}`} />
                       )}
                     </div>
                     <span className={`hidden text-center text-[0.65rem] font-medium sm:block ${current ? t.eyebrow : t.faint}`}>
-                      {phase.label}
+                      {stop.label}
                     </span>
                   </li>
                 )
@@ -1469,33 +1484,6 @@ export default function OnboardingJourneyCard({
             )
           )}
 
-          {/* YOU ARE SET UP — and the two doors out of onboarding. Every option
-              the core prints below this leads back INTO orientation; without
-              these two an operator who had answered everything had no onward
-              path at all, which is exactly how it read live. Rendered from the
-              core's own completion block, so a page cannot congratulate someone
-              whose Charter was never ratified. */}
-          {completion?.complete && showSweep && (
-            <div className={`mt-5 p-4 ${t.panel}`}>
-              <div className="flex flex-wrap gap-2">
-                <a
-                  href="/briefing"
-                  className={`inline-flex min-h-11 items-center rounded-xl px-4 py-2 text-sm font-semibold ${t.primary}`}
-                >
-                  {completion.next_steps[0]?.label ?? 'Read your first briefing'}
-                </a>
-                <a
-                  href="/"
-                  className={`inline-flex min-h-11 items-center rounded-xl px-4 py-2 text-sm font-medium ${t.secondary}`}
-                >
-                  {completion.next_steps[1]?.label ?? 'Go to your Cabinet'}
-                </a>
-              </div>
-              <p className={`mt-2.5 text-xs ${t.faint}`}>
-                Anything below this is optional — you can come back to it whenever you like.
-              </p>
-            </div>
-          )}
 
           {/* WHAT ONE SWEEP FOUND, PER TOOL. The aggregate of the look: every
               declared connector on its own row, counts and freshest stamp where

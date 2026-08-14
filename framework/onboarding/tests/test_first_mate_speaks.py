@@ -17,7 +17,10 @@ the join of the layers is asserted equal to the blob that used to be printed.
   U6  the whole home folder was REFUSED. Now: allowed, with the depth cost
       stated before the Charter is approved.
   U7  a finished operator was shown "Deeper Orientation has not started" and
-      three ways back into onboarding. Now: you are set up, and two ways out.
+      three ways back into onboarding. Answered by `feat/onboarding-arrival`,
+      which landed the arrival screen first and carries its own suite plus a
+      cross-surface parity fixture; what survives from this branch is the
+      LAYERING applied to that card (see test_journey.py's arrival arms).
 
 Hermetic: tmp_path for every mutable root, fixture estates for every read.
 """
@@ -508,64 +511,6 @@ class TestBroadWindowsWithOpenEyes:
         assert "readme.md" in opened
         assert "salaries.csv" not in opened and ".env" not in opened
         assert out["state"]["stage"] == "dividend_ready"
-
-
-# --- U7 · the finished operator is told so ------------------------------------
-
-
-class TestYouAreSetUp:
-    def test_a_completed_journey_leads_with_completion_and_two_exits(self, tmp_path):
-        source = estate(tmp_path, "software-product")
-        ratify(tmp_path, propose(tmp_path, source))
-        card = journey.act({"action": "continue", "action_id": "c-1",
-                            "surface": "dashboard"}, tmp_path)["card"]
-        assert card["title"] == "Want me to go deeper?"
-        assert card["completion"]["complete"] is True
-        assert [s["id"] for s in card["completion"]["next_steps"]] == ["briefing", "cabinet"]
-        assert card["headline"][0].startswith("You are set up")
-
-    def test_the_deeper_offer_is_demoted_not_deleted(self, tmp_path):
-        source = estate(tmp_path, "software-product")
-        ratify(tmp_path, propose(tmp_path, source))
-        card = journey.act({"action": "continue", "action_id": "c-1",
-                            "surface": "dashboard"}, tmp_path)["card"]
-        assert "disabled and has not started" in card["body"]
-        assert "No new access or authority was granted" in card["body"]
-        assert card["body"] == "".join(s["text"] for s in card["details"])
-
-    def test_an_incomplete_journey_is_never_congratulated(self, tmp_path):
-        assert journey._journey_complete(journey._load_state(tmp_path)) is False
-        assert "completion" not in journey.snapshot(tmp_path)["card"]
-
-    def test_completion_needs_both_a_ratified_charter_and_a_dividend(self, tmp_path):
-        """The degenerate ends of the predicate, both directions."""
-        assert journey._journey_complete({}) is False
-        assert journey._journey_complete({"charter": {"status": "pending"},
-                                          "first_dividend": {"x": 1}}) is False
-        assert journey._journey_complete({"charter": {"status": "ratified"},
-                                          "first_dividend": None}) is False
-        assert journey._journey_complete({"charter": {"status": "ratified"},
-                                          "first_dividend": {"x": 1}}) is True
-
-    def test_no_act_surface_is_a_dead_end(self, tmp_path):
-        """THE SWEEP, extended. Every stage this journey can reach offers at
-        least one way onward — and the completed one, which offered three ways
-        back into onboarding and no way out, now carries two doors out of it."""
-        source = estate(tmp_path, "software-product")
-        ratify(tmp_path, propose(tmp_path, source))
-        seen = {}
-        for index, action in enumerate(
-                ("continue", "pause", "continue", "revoke", "undo", "purge")):
-            request = {"action": action, "action_id": f"sweep-{index}",
-                       "surface": "dashboard"}
-            if action == "purge":
-                request["confirmation"] = "PURGE"
-            card = journey.act(request, tmp_path)["card"]
-            seen[card["stage"]] = card
-        for stage, card in seen.items():
-            assert card["options"], f"{stage} offers nothing at all"
-        assert seen["orientation_offered"]["completion"]["next_steps"]
-        assert any(o["action"] == "start_again" for o in seen["purged"]["options"])
 
 
 # --- the answers-file writer --------------------------------------------------

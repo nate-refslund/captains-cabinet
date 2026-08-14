@@ -38,7 +38,11 @@
 import { revalidatePath } from 'next/cache'
 import redis, { isMockRedis, storeReading } from '@/lib/redis'
 import { requireDashboardAuth } from '@/lib/provisioning/guard'
-import { isOnboardingComplete } from '@/lib/onboarding/completion'
+// The disk read moved out of `completion.ts` while this branch was in flight:
+// that module is now the PURE predicate, because the arrival screen is a client
+// component and gating it on a module that imports node:fs/promises 500'd
+// /onboarding for every operator. Server callers take the state-file half.
+import { isOnboardingComplete } from '@/lib/onboarding/completion-state-file'
 import { readRoster } from '@/lib/crew-roster'
 import { officerNameSources } from '@/lib/crew-roster'
 import { officerTitle } from '@/lib/officer-title'
