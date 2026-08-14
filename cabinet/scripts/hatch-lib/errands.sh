@@ -62,17 +62,18 @@ print_errand_notes() {
   fi
 
   errand "Let your Cabinet message you on Telegram"
-  errand_line "Where: Telegram, in a chat with @BotFather: send /newbot."
-  errand_line "Why:   only you can create a bot, and passwords and keys are never"
-  errand_line "       shipped inside this software — they stay on your machine."
-  errand_line "To do it: paste what BotFather gives you into the file cabinet/.env"
-  errand_line "       on a line reading TELEGRAM_COS_TOKEN=<the token>, then run"
-  errand_line "       chmod 600 cabinet/.env so only you can read it."
-  errand_line "       While you are there, VOYAGE_API_KEY=<key> is worth adding:"
+  errand_line "Where: your browser. Open your Cabinet and go to Integrations >"
+  errand_line "       Telegram, or click 'Connect Telegram' on the front page."
+  errand_line "Why:   only you can create a bot — Telegram will not hand one to a"
+  errand_line "       program — and keys are never shipped inside this software."
+  errand_line "To do it: the four steps on that page walk you through it. It sends"
+  errand_line "       you a message at the end so you can see it worked. No"
+  errand_line "       terminal, no files to edit, nothing to copy into this window."
+  errand_line "       While you are in Integrations, a Voyage key is worth adding:"
   errand_line "       without it, searching your Cabinet's memory still works but"
   errand_line "       matches words rather than meaning."
   if [ "$telegram_named" = "1" ]; then
-    errand_line "Now:   done — a token is already in cabinet/.env."
+    errand_line "Now:   done — a token is already saved."
   else
     errand_line "Now:   not set up yet, so your Cabinet won't message you on"
     errand_line "       Telegram. Everything else works without it."

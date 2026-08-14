@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useState, useTransition } from 'react'
 import { EditableField, MaskedField } from '@/components/editable-field'
 import { updateNotionConfig, updateLinearConfig } from '@/actions/config'
@@ -13,10 +14,36 @@ export function TelegramSection({ envVars }: TelegramSectionProps) {
   const hqChatId = envVars['TELEGRAM_HQ_CHAT_ID'] || ''
   const captainId = envVars['CAPTAIN_TELEGRAM_ID'] || ''
   const botTokenKeys = Object.keys(envVars).filter((k) => k.startsWith('TELEGRAM_') && k.endsWith('_TOKEN'))
+  // Both halves present = the Cabinet has somewhere to send and someone to send
+  // to. Either half missing and the guided flow is the offer, not the fields:
+  // the fields below assume you already have a token and know your numeric
+  // address, which is exactly what a first-time operator does not.
+  const connected = Boolean(captainId.trim()) && botTokenKeys.some((k) => envVars[k]?.trim())
 
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-900" style={{ padding: '24px' }}>
       <h2 className="text-lg font-semibold text-white">Telegram</h2>
+      <Link
+        href="/integrations/telegram"
+        className="group mt-4 flex items-center justify-between gap-4 rounded-xl border border-zinc-800 bg-zinc-950/50 px-4 py-3 text-sm transition-colors hover:border-violet-700/70 hover:bg-zinc-900"
+      >
+        <span>
+          <strong className="block text-zinc-200">
+            {connected ? 'Telegram is connected' : 'Connect Telegram in four steps'}
+          </strong>
+          <span className="text-zinc-500">
+            {connected
+              ? 'Change the bot, or send yourself another test message.'
+              : 'Make a bot, paste the token, say hi — I capture your address and send you a message to prove it works.'}
+          </span>
+        </span>
+        <span aria-hidden className="ml-2 text-violet-300 transition-transform group-hover:translate-x-0.5">
+          →
+        </span>
+      </Link>
+      <p className="mt-3 text-xs text-zinc-500">
+        The fields below are the same values, for when you already know them.
+      </p>
       <div className="mt-4 space-y-4">
         <MaskedField
           label="HQ Chat ID"
