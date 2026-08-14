@@ -50,6 +50,24 @@ export type OnboardingAction =
    * the merge the operator can see and the ranking could not derive.
    */
   | 'answer_salience'
+  /**
+   * Sends the seed's outward probes AGAIN, through whatever search tool the
+   * operator has connected. Payload-free — what goes out is derived from words
+   * they already gave this journey — so a tap can carry it and no surface can
+   * widen what is searched. `answer_seed` already runs them once; this exists
+   * for everything that changes AFTERWARDS (a tool connected, a key pasted, an
+   * organisation named), and the core offers it only when a search tool is
+   * declared, so it is never a button that cannot work.
+   */
+  | 'run_discovery'
+  /**
+   * Records which company or organization this cabinet is for — or that it is
+   * just the operator. Carries an `organization` string, bounded by the core.
+   * Asked only when nothing has answered it (no estate identity from a sweep,
+   * no name in the seed), never required, and never derived: the one source is
+   * the operator's own sentence.
+   */
+  | 'answer_organization'
   | 'ratify_charter'
   | 'continue'
   | 'pause'
@@ -78,6 +96,8 @@ export const ONBOARDING_ACTIONS = [
   'answer_salience',
   'gather_connectors',
   'record_operator_identity',
+  'run_discovery',
+  'answer_organization',
   'ratify_charter',
   'continue',
   'pause',
@@ -328,6 +348,13 @@ export interface OnboardingEntryQuestion {
    * surface exists to abolish.
    */
   offer?: OnboardingSalienceOffer
+  /**
+   * Present on a question the operator can actually ANSWER. Only the earned
+   * organisation question carries it today; the other residuals are printed
+   * with no field, which is a real gap and not one this type papers over.
+   */
+  action?: OnboardingAction
+  input?: string
 }
 
 export interface OnboardingEntryPlan {
@@ -348,8 +375,29 @@ export interface OnboardingEntryPlan {
      */
     executed?: {
       schema: 'cabinet.onboarding-probe-result/v1'
-      executed: Array<{ kind: string; pattern?: string; matches: string[]; truncated: boolean }>
-      deferred: Array<{ kind: string; reason: string }>
+      /**
+       * TWO PLANES, ONE LIST. A local probe carries `matches` (names inside the
+       * ratified window); an outward one carries the `query` that left the
+       * machine, the `provider` it went to, and `results`.
+       *
+       * EVERY FIELD OF A RESULT IS UNTRUSTED TEXT — it was written by whoever
+       * ranked well for the operator's own words, which an adversary can
+       * arrange to be. The core scrubs and caps each one (control characters,
+       * angle brackets, lone surrogates, length, and a non-http address is
+       * dropped to an empty string), so what arrives here is a caption. Render
+       * it as TEXT. Never as markup, never as a template, never as anything a
+       * click or a script can reach beyond an ordinary link.
+       */
+      executed: Array<{
+        kind: string
+        pattern?: string
+        matches?: string[]
+        truncated: boolean
+        query?: string
+        provider?: string
+        results?: Array<{ title: string; url: string; snippet?: string }>
+      }>
+      deferred: Array<{ kind: string; reason: string; query?: string }>
       complete: boolean
     }
   }
@@ -360,6 +408,12 @@ export interface OnboardingEntryPlan {
     connectors: OnboardingIdentityAsk[]
     is_a_question: true
   } | null
+  /**
+   * What is known about whose work this is: the operator's own answer, and what
+   * the connected tools call themselves. Either one present means the earned
+   * organisation question is not asked.
+   */
+  organization: { answer?: string | null; estate?: string[] } | null
   next_actions: OnboardingOption[]
 }
 
@@ -531,6 +585,13 @@ export interface OnboardingActionRequest {
    * role. The core stores it as the journey seed; genesis reads it there.
    */
   seed?: string
+  /**
+   * REQUIRED by answer_organization. The company or organization this cabinet
+   * is for — or the operator saying it is just them, which is a real answer and
+   * stored as typed. Never derived from a folder, a credential or a search
+   * result: the one source is what they said.
+   */
+  organization?: string
   /**
    * Optional on answer_seed: where to begin. `point` runs the folder + Charter
    * flow; `decide` asks me to go find where I am most useful (which needs a

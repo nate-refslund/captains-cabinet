@@ -355,6 +355,75 @@ describe('Telegram — the connector sweep', () => {
     const reply = await handleTelegramOnboarding('/onboard wat', 'tg-unknown')
     expect(reply[0].text).toContain('/onboard gather')
     expect(reply[0].text).toContain('/onboard salience')
+    expect(reply[0].text).toContain('/onboard look')
+    expect(reply[0].text).toContain('/onboard org')
+  })
+})
+
+describe('Telegram — going and looking it up', () => {
+  it('runs the look-up from a command and from its tap, both payload-free', async () => {
+    await handleTelegramOnboarding('/onboard look', 'tg-look')
+    expect(applyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'run_discovery' }),
+      'telegram'
+    )
+    const sent = applyMock.mock.calls[0][0] as Record<string, unknown>
+    expect('seed' in sent || 'source' in sent).toBe(false)
+
+    applyMock.mockClear()
+    await handleTelegramOnboardingCallback('onboard:look', 'tg-look-tap')
+    expect(applyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'run_discovery' }),
+      'telegram'
+    )
+  })
+
+  it('sends the organisation as typed, including "just me"', async () => {
+    await handleTelegramOnboarding('/onboard org just me', 'tg-org')
+    expect(applyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'answer_organization', organization: 'just me' }),
+      'telegram'
+    )
+  })
+
+  it('renders the results with their addresses, since the body carries only the query', () => {
+    const looked = {
+      ...RANKED,
+      card: {
+        ...RANKED.card,
+        entry: {
+          ...(RANKED.card as { entry?: Record<string, unknown> }).entry,
+          discovery: {
+            terms: [],
+            probes: [],
+            executable: true,
+            executed: {
+              schema: 'cabinet.onboarding-probe-result/v1',
+              executed: [{
+                kind: 'web_search',
+                query: 'tech lead STEP Network',
+                provider: 'brave search',
+                truncated: false,
+                results: [{
+                  title: 'STEP Network',
+                  url: 'https://stepnetwork.example/',
+                  snippet: 'A media network in Copenhagen.',
+                }],
+              }],
+              deferred: [],
+              complete: true,
+            },
+          },
+        },
+      },
+    }
+    const message = formatTelegramOnboarding(looked as never)
+    expect(message.text).toContain('Searched: tech lead STEP Network')
+    expect(message.text).toContain('STEP Network — https://stepnetwork.example/')
+    expect(message.text).toContain('A media network in Copenhagen.')
+    // PLAIN, with no parse mode — so a hostile result cannot forge formatting
+    // or an entity on its way to the operator's phone.
+    expect(message.plain).toBe(true)
   })
 })
 

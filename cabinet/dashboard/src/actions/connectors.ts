@@ -77,13 +77,17 @@ export async function getConnectorCatalog(): Promise<ConnectorCatalog> {
     const id = text(tpl.id)
     const connector = tpl.connector as Record<string, unknown> | undefined
     // The same floor the core's loader holds a template to: an id, and a
-    // connector whose inventory is a mapping. A half-built one is dropped, so
-    // the surface never offers a tool the core would then refuse to build.
+    // connector declaring a read call in one of the two lanes — `inventory:`
+    // for a list of the operator's own things, `search:` for a question sent
+    // out. A half-built one is dropped, so the surface never offers a tool the
+    // core would then refuse to build. MIRRORED, not derived: the core is the
+    // authority (`research._spec_kind`), and this file exists on the other side
+    // of a process boundary, so it re-states the floor rather than importing it.
     const usable =
       id !== '' &&
       connector != null &&
       typeof connector === 'object' &&
-      typeof connector.inventory === 'object'
+      (typeof connector.inventory === 'object' || typeof connector.search === 'object')
     if (!usable) continue
 
     const fields: ConnectorTemplateField[] = (Array.isArray(tpl.fields) ? tpl.fields : [])

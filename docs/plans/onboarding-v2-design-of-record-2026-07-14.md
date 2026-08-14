@@ -107,6 +107,77 @@ shape, not in new machinery.
   `cabinet/dashboard/src/actions/connectors.test.ts` pins the projection against
   degenerate packs.
 
+**The Cabinet can actually go and look (Captain 2026-08-14).** Three asks on the
+live product, all from one session: the catalog had no way to connect a search
+key at all; the seed question's outward probes still rendered *"web_search — did
+not run — no egress in the onboarding core"* while egress is allow-all by
+default; and *"maybe even also … ask which company the person is working for if
+it is not clear from the text or connected tools."*
+
+- **A search shelf, in DATA.** `categories.search` plus five VERIFIED search
+  templates and one open GET-only escape hatch. They are a NEW template kind:
+  a search tool holds no estate, so instead of `inventory:` it carries
+  `search:` — how to send a query (`url` with one `{query}` hole, or a POST
+  `json` skeleton with the hole at one key) and where the answers are
+  (`results_path`, `title_field`, `url_field`, optional `snippet_field`). The
+  lane is read off the SHAPE (`research._spec_kind`), never off the `kind:`
+  label, so a template cannot pick its own ceiling by claiming one.
+- **A second ceiling, not a wider one.** `research.assert_search_read_only` is a
+  separate function from `assert_read_only` and the inventory rule did not move
+  a byte. The reason is exact: the inventory lane admits a POST only when the
+  body is a GraphQL read document, because a GraphQL document declares its own
+  verb; a REST search body declares nothing, so admitting it under that rule
+  would have admitted every REST write with it. The search rule admits a bounded
+  query envelope (scalars, short scalar lists, one nesting, a size cap) and is
+  STRICTER than the inventory rule everywhere else — a broader write-verb refusal
+  over the address and the body, the injected credential header checked for
+  method overrides, and exactly one `{query}` hole counted across url + body. It
+  does not, and does not claim to, prove that a hand-declared endpoint will not
+  mutate; what it proves is that the call is a query envelope, names no write,
+  cannot be redirected, and reached the wire through a slot only the probe
+  executor reads. That paragraph is in the code, at the function.
+- **The probes RUN, in the plane that holds egress.** The core still holds no
+  socket: `_execute_probes` matches names inside the ratified window and defers
+  everything else, and `journey._discovery_block` hands those deferrals to
+  `research.run_search_probes`, which either runs them or replaces the
+  placeholder with what actually stopped them (`no_search_tool_connected`,
+  `search_credential_absent`, `egress_…`, `http_401`, …). It runs inside
+  `answer_seed` — so the answer to the question the operator just answered
+  arrives with the card — and again from a new payload-free act `run_discovery`,
+  offered only once a search tool is declared. Caps: three probes, one call
+  each, a 12s timeout, five results per probe, per-field length caps and a total
+  byte budget over the run. The QUERY is shown on the card, because that is the
+  operator's own words leaving their machine.
+- **A result is untrusted text.** It is written by whoever ranked well for the
+  operator's own sentence, which an adversary can arrange to be. Every field
+  passes `_untrusted_text` / `_untrusted_url` at the one place results enter:
+  control characters, line separators and angle brackets become spaces, lone
+  surrogates are replaced (they are legal in decoded JSON, illegal in UTF-8, and
+  would crash the CLI printing the state), lengths are capped, and an address
+  that is not http/https is dropped to empty. The card BODY carries only the
+  operator's own query — third-party text never enters the string that travels to
+  a messenger — and the results ride the structured block, rendered as text with
+  their source beside them. Nothing downstream interprets them: the pipeline is
+  deterministic, so there is nothing for an instruction to instruct.
+- **Whose work is this.** `RESIDUAL_QUESTIONS` still never asks what the company
+  is; the amendment is narrower. `_organization_unclear` asks only when nothing
+  has answered it — no operator answer, no estate identity from a sweep, and no
+  capitalised non-initial term in the seed — and the question is optional, has
+  its own field and act (`answer_organization`), and "just me" is a complete
+  answer. The stated cost of the seed half: it over-detects English title case
+  and cannot fire in a script without letter case, so it errs toward asking,
+  which is the cheap direction. The answer joins the discovery seed, so the next
+  look-up searches the name the operator gave.
+- **Sensors:** `framework/onboarding/tests/test_search_probes.py` — the ceiling
+  in both directions (including an arm that goes red if the two ceilings are
+  ever merged), every degenerate end, the untrusted-text scrubs, the wire
+  request including query encoding, a REAL socket proving the fetch layer and
+  that a 30x is not followed, and end-to-end arms driving `journey.act` with only
+  the socket stubbed — plus an adversarial arm feeding a hostile result through
+  the whole path. `test_connector_catalog.py` gained the search-lane arms
+  (shape, custody under `search.`, the label-vs-shape check, the disclosure that
+  the operator's own words are sent, and the GET-only property of the open one).
+
 ## 2. Product doctrine
 
 ### One core, three surfaces

@@ -68,6 +68,17 @@ export const ACTIONS: ReadonlySet<string> = new Set([
   // A bare send is still refused — by the CORE, as `salience_choice_required`,
   // which is the operator-answerable sentence rather than a surface's guess.
   'answer_salience',
+  // Sends the seed's outward probes again through whatever search tool the
+  // operator connected. PAYLOAD-FREE, like the sweep and for the same reason:
+  // what leaves the machine is derived from words already given to this journey,
+  // so a surface can trigger the look-up and can never widen it. The core
+  // refuses it outright when no seed has been given (`discovery_has_no_seed`),
+  // which is the operator-answerable sentence rather than a guess made here.
+  'run_discovery',
+  // Whose work this is. Carries an `organization` string — bounded below only as
+  // the cheap outer limit; the core caps and stores it, and refuses an empty one
+  // by name.
+  'answer_organization',
   'ratify_charter',
   'continue',
   'pause',
@@ -291,6 +302,12 @@ export function applyOnboardingAction(
   }
   if (request.same_as && request.same_as.length > 64) {
     throw new OnboardingBridgeError('merge_too_many', 'That is too many names in one merge.')
+  }
+  if (request.organization && request.organization.length > 2_000) {
+    throw new OnboardingBridgeError(
+      'organization_too_long',
+      'The name of a company is shorter than that.'
+    )
   }
   // declare_connector's own inputs. The core resolves the template, validates
   // the env var NAME, bounds each field value and refuses an unknown field key

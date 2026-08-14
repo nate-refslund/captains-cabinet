@@ -95,8 +95,11 @@ def test_every_shipped_template_builds_a_read_only_connector(tmp_path):
                 answers.setdefault(key, placeholder)
         entry = research.build_connector_from_template(
             templates, tid, name=tid, credential_env="TEST_TOKEN", fields=answers)
-        # The BUILT inventory is a read — refused otherwise, before any write.
-        research.assert_read_only(entry["inventory"])
+        # The BUILT call is a read — refused otherwise, before any write. The
+        # lane comes from the shape the entry carries, so a search template is
+        # held to the search ceiling and a list template to the GraphQL-only
+        # one; neither can be checked by the other's rule.
+        research.assert_declaration_read_only(entry)
         assert entry["credential_env"] == "TEST_TOKEN"
 
 

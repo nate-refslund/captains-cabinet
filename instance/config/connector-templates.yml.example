@@ -46,6 +46,12 @@
 # ------------------------------------------------------------------
 #   id:              stable key the catalog and the writer use. lower_snake.
 #   label:           what the operator sees in the list.
+#   kind:            `inventory` (the default, omitted below) or `search`. It is
+#                    DOCUMENTATION: the framework reads the lane off the call the
+#                    template actually carries (`connector.inventory` vs
+#                    `connector.search`), so a wrong label cannot move a shape
+#                    into the wrong ceiling — the catalog test refuses one that
+#                    disagrees with the shape beside it.
 #   category:        which shelf of the catalog it sits on. One of the keys in
 #                    `categories` below; anything else falls to "Anything else".
 #   summary:         one line: what a sweep of this will actually show you.
@@ -70,6 +76,44 @@
 #                      operator's to choose.
 #   connector:       the connector entry, minus the credential. inventory/page/
 #                    identity are exactly as connectors.yml.example defines them.
+#
+# ------------------------------------------------------------------
+# THE SHAPE OF A SEARCH TEMPLATE (kind: search)
+# ------------------------------------------------------------------
+# A search tool is not an estate. It holds nothing of yours, there is no
+# inventory to sweep and no clock to read — so instead of `inventory:` it
+# carries `search:`, which says how to ASK a question and where the answers
+# live. It never enters the "connected sources" count and never makes the
+# cabinet claim it has read your world; what it grants is the ability to run the
+# look-ups the seed question already proposes.
+#
+#   url:             the endpoint, with `{query}` where the words go. Percent-
+#                    encoded into the address by the framework, so nothing in a
+#                    sentence can add a parameter or walk the path.
+#   method:          GET, or POST when that provider's search only answers a
+#                    POST. A POST body must be a bounded parameter bag (scalars,
+#                    short scalar lists, at most one nested mapping) and is
+#                    refused if it names a write verb anywhere.
+#   auth_header /
+#   auth_format:     exactly as the inventory lane. The credential VALUE lives in
+#                    cabinet/.env and never in this file.
+#   json:            the POST body skeleton, with `{query}` at ONE key. Exactly
+#                    one `{query}` may exist across the url and the body.
+#   results_path:    dotted path to the list of results in the response.
+#   title_field /
+#   url_field:       dotted path, per result. Both required — a result with
+#                    neither a name nor an address is not a citation.
+#   snippet_field:   optional dotted path to one line of description. A result
+#                    without one still shows.
+#
+# WHAT LEAVES THE MACHINE, and why each entry's setup steps say so out loud: the
+# sentence you typed about your work becomes the search query. That is a real
+# disclosure, not a formality — it goes to a third party — so connecting a
+# search tool IS the consent for it, the query is printed back on the card
+# before and after it runs, and no look-up happens at all while no search tool
+# is connected. What comes BACK is treated as untrusted text everywhere: it is
+# displayed with its source beside it and matched as strings, and nothing reads
+# it for instructions.
 # =============================================================
 
 schema: cabinet.connector-templates/v1
@@ -78,6 +122,7 @@ schema: cabinet.connector-templates/v1
 # them, never for an industry or a job title — the framework serves a solicitor,
 # a bakery and a satellite firm with the same words.
 categories:
+  search: Search the web
   code: Where your code lives
   tracker: Work and tasks
   docs: Documents and notes
@@ -1836,6 +1881,244 @@ templates:
         start: 1
         size: 100
         max_pages: 1
+
+  # ---------------------------------------------------------------
+  # SEARCH THE WEB
+  # ---------------------------------------------------------------
+  # The one shelf whose tools hold nothing of yours. Everything above answers
+  # "what is in MY systems"; these answer "what is out there", which is the
+  # first thing a new colleague would go and find out about the place they have
+  # just joined — and, until these existed, the one thing this cabinet said it
+  # would do and then reported as *did not run*.
+  #
+  # ONE IS ENOUGH. A look-up uses the first search tool declared, so connecting
+  # a second is a replacement rather than a widening; the cabinet does not send
+  # your sentence to several providers at once.
+  #
+  # ALL FIVE SHAPES BELOW WERE CHECKED against the provider's current public API
+  # reference: the endpoint, the auth header, the path to the result list, and
+  # the title / address / description field on each result. Two of them answer
+  # only a POST, which the inventory lane refuses by design — a search POST goes
+  # through its own narrower ceiling (see the search-template section of the
+  # header above), never through the list-reading one.
+  - id: brave_search
+    label: Brave Search
+    kind: search
+    category: search
+    summary: Web results for a question — a title, an address and a line of description for each.
+    host: api.search.brave.com
+    credential_env: BRAVE_SEARCH_API_KEY
+    credential_help: >-
+      A Brave Search subscription token. The free tier is plenty: a look-up
+      sends at most three queries.
+    key_looks_like: "a single long random string, around 30 characters"
+    how_to_connect:
+      - "Go to the Brave Search API site, subscribe to a plan (the free one is enough), and open the API Keys page of your dashboard."
+      - "Create a key for the Web Search endpoint and copy it. A subscription token queries the search index and cannot reach anything of yours."
+      - "Note what connecting this means: the sentence you told me about your work is sent to Brave as a search query. I print every query I send on the card, before and after it runs."
+    fields: []
+    connector:
+      search:
+        # text_decorations=0 because the default wraps every matched word in
+        # markup, and a description is read as a caption here, not rendered as
+        # a document. Verified against a live answer, 2026-08-14.
+        url: https://api.search.brave.com/res/v1/web/search?q={query}&count=5&text_decorations=0
+        method: GET
+        auth_header: X-Subscription-Token
+        auth_format: "{credential}"
+        headers:
+          Accept: application/json
+        results_path: web.results
+        title_field: title
+        url_field: url
+        snippet_field: description
+
+  - id: google_search
+    label: Google Programmable Search
+    kind: search
+    category: search
+    summary: Web results from a Programmable Search Engine you set up — a title, an address and a snippet for each.
+    host: www.googleapis.com
+    credential_env: GOOGLE_SEARCH_API_KEY
+    credential_help: A Google API key with the Custom Search API turned on.
+    key_looks_like: "starts with AIza followed by a long random string"
+    how_to_connect:
+      - "In the Google Cloud console, turn on the Custom Search API for a project, then open Credentials and create an API key. An API key returns search results and nothing else."
+      - "At programmablesearchengine.google.com create a search engine, set it to search the whole web, and copy its Search engine ID."
+      - "Paste the key here and put the Search engine ID in the box below."
+      - "Note what connecting this means: the sentence you told me about your work is sent to Google as a search query. I print every query I send on the card."
+    fields:
+      - key: engine_id
+        label: Search engine ID
+        help: The Programmable Search Engine ID (shown as cx) from your search engine's setup page.
+        placeholder: a1b2c3d4e5f6g7h8i
+        required: true
+        into: search.url
+        into_format: https://www.googleapis.com/customsearch/v1?cx={value}&num=5&q={query}
+    connector:
+      search:
+        url: https://www.googleapis.com/customsearch/v1?cx=your-search-engine-id&num=5&q={query}
+        method: GET
+        auth_header: X-goog-api-key
+        auth_format: "{credential}"
+        headers:
+          Accept: application/json
+        results_path: items
+        title_field: title
+        url_field: link
+        snippet_field: snippet
+
+  # A POST search. Its body is a parameter bag — a query, how many results, and
+  # a request for one highlighted line per result — which is what the search
+  # ceiling admits and the list-reading ceiling does not.
+  - id: exa_search
+    label: Exa
+    kind: search
+    category: search
+    summary: Web results chosen by meaning rather than keywords, each with a title, an address and a highlighted line.
+    host: api.exa.ai
+    credential_env: EXA_API_KEY
+    credential_help: An Exa API key.
+    key_looks_like: "a dashed UUID-shaped string"
+    how_to_connect:
+      - "Sign in to the Exa dashboard and open the API Keys page."
+      - "Create a key and copy it. An Exa key queries their search index; there is nothing of yours for it to reach."
+      - "Note what connecting this means: the sentence you told me about your work is sent to Exa as a search query. I print every query I send on the card."
+    fields: []
+    connector:
+      search:
+        url: https://api.exa.ai/search
+        method: POST
+        auth_header: x-api-key
+        auth_format: "{credential}"
+        headers:
+          Accept: application/json
+        json:
+          query: "{query}"
+          numResults: 5
+          contents:
+            highlights: true
+        results_path: results
+        title_field: title
+        url_field: url
+        snippet_field: highlights.0
+
+  - id: perplexity_search
+    label: Perplexity Search
+    kind: search
+    category: search
+    summary: Web results from Perplexity's search index, each with a title, an address and a snippet.
+    host: api.perplexity.ai
+    credential_env: PERPLEXITY_API_KEY
+    credential_help: A Perplexity API key.
+    key_looks_like: "starts with pplx- followed by a long random string"
+    how_to_connect:
+      - "In your Perplexity settings, open the API section. Keys there are billed per request, so add a payment method if you have not already."
+      - "Generate an API key and copy it."
+      - "Note what connecting this means: the sentence you told me about your work is sent to Perplexity as a search query. I print every query I send on the card."
+    fields: []
+    connector:
+      search:
+        url: https://api.perplexity.ai/search
+        method: POST
+        auth_format: "Bearer {credential}"
+        headers:
+          Accept: application/json
+        json:
+          query: "{query}"
+          max_results: 5
+        results_path: results
+        title_field: title
+        url_field: url
+        snippet_field: snippet
+
+  - id: tavily_search
+    label: Tavily
+    kind: search
+    category: search
+    summary: Web results from Tavily's search index, each with a title, an address and a short description.
+    host: api.tavily.com
+    credential_env: TAVILY_API_KEY
+    credential_help: A Tavily API key.
+    key_looks_like: "starts with tvly- followed by a long random string"
+    how_to_connect:
+      - "Sign in to the Tavily dashboard — an API key is waiting for you on the overview page."
+      - "Copy the key. A Tavily key queries their own index and reaches nothing of yours."
+      - "Note what connecting this means: the sentence you told me about your work is sent to Tavily as a search query. I print every query I send on the card."
+    fields: []
+    connector:
+      search:
+        url: https://api.tavily.com/search
+        method: POST
+        auth_format: "Bearer {credential}"
+        headers:
+          Accept: application/json
+        json:
+          query: "{query}"
+          max_results: 5
+        results_path: results
+        title_field: title
+        url_field: url
+        snippet_field: content
+
+  # THE OPEN SEARCH ONE, and it is GET-only on purpose. The five above are POST
+  # or GET because each was checked against a published reference; a shape typed
+  # into a form under time pressure has had no such check, and a POST body is
+  # the one place a mistake stops looking like a search. So this template lets
+  # any GET search endpoint in — which keeps the shelf open — and a provider
+  # that only answers a POST is added HERE, in this file, where it is read once
+  # and held to the ceiling by the catalog's own test.
+  - id: search_rest
+    label: Another search API
+    kind: search
+    category: search
+    summary: Any search API with a key that answers a GET — you name the address and which field holds each result's title and link.
+    host: ""
+    credential_env: SEARCH_API_TOKEN
+    credential_help: The bearer token or API key that search endpoint expects.
+    key_looks_like: "whatever that service issues — usually a long random string"
+    how_to_connect:
+      - "In that service's own settings, create an API key. If it offers a search-only or read-only key, choose that one."
+      - "In its documentation find the search endpoint that answers a GET, and copy the web address. Put {query} in it where the search words belong."
+      - "Fill in the address below, plus the names its response gives the result list and each result's title and link. Note that connecting this sends the sentence you told me about your work to that service as a search query."
+    fields:
+      - key: url
+        label: Search URL
+        help: The full https:// address that returns results. Put {query} where the search words belong.
+        placeholder: https://api.example.com/v1/search?q={query}&limit=5
+        required: true
+        into: search.url
+      - key: results_path
+        label: Path to the results
+        help: Dotted path to the array of results inside the response. Leave blank if the response is the array itself.
+        placeholder: data.results
+        required: false
+        into: search.results_path
+      - key: title_field
+        label: Title field
+        help: Dotted path to each result's title.
+        placeholder: title
+        required: true
+        into: search.title_field
+      - key: url_field
+        label: Link field
+        help: Dotted path to each result's web address.
+        placeholder: url
+        required: true
+        into: search.url_field
+      - key: snippet_field
+        label: Description field
+        help: Dotted path to each result's one-line description. Optional — a result without one still shows.
+        placeholder: snippet
+        required: false
+        into: search.snippet_field
+    connector:
+      search:
+        method: GET
+        auth_format: "Bearer {credential}"
+        results_path: ""
+        title_field: title
+        url_field: url
 
   # ---------------------------------------------------------------
   # THE OPEN ONE. Any HTTPS list, with the operator naming the paths.

@@ -432,9 +432,20 @@ def test_every_printed_seed_question_carries_the_action_that_answers_it(grants):
 
 
 def test_the_connected_mode_asks_no_seed_question_and_offers_no_seed_field():
+    """No seed field in connected mode — the organisation ask is not one.
+
+    The organisation question rides here when nothing has answered it (see
+    ``test_the_organization_question_is_earned_and_disappears_when_answered``),
+    so this arm pins what it was always FOR: the seed question and its field
+    stay absent in connected mode. Naming the extra action explicitly keeps the
+    equality strict, so an unrelated option appearing here still fails.
+    """
     plan = journey.entry_plan({"connectors": ["tracker_export:x.csv"]})
     assert plan["seed_question"] is None
-    assert [a["action"] for a in plan["next_actions"]] == ["propose_window"]
+    assert not [a for a in plan["next_actions"] if a["action"] == "answer_seed"]
+    assert [a["action"] for a in plan["next_actions"]] == [
+        "propose_window", "answer_organization",
+    ]
 
 
 def test_answering_the_seed_runs_the_probes_and_records_what_they_found(tmp_path):

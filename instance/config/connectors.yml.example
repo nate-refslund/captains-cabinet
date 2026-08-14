@@ -21,6 +21,17 @@
 # ranked by what RECURS across your systems, and you are asked which one to open
 # first. Depth is spent only where you point.
 #
+# TWO KINDS OF ENTRY LIVE HERE. Everything above describes the `inventory:` kind
+# — a list of YOUR things. An entry may instead carry `search:`, which is a
+# SEARCH TOOL: it holds nothing of yours, it is never swept, and it never counts
+# as a connected source. What it does is let the cabinet run the look-ups the
+# opening question already proposes — you say what you do, and it goes and finds
+# out about the words you used. That sends YOUR SENTENCE to that provider, which
+# is why connecting one is the consent for it and why the query is printed back
+# on the card. The shape is documented in the search-template section of
+# instance/config/connector-templates.yml.example; a search call is held to its
+# own read-only ceiling, which refuses any address or body naming a write.
+#
 # WHO YOU ARE IS ASKED, NEVER READ OFF THE CREDENTIAL. A token issued to an
 # integration answers "who am I" with a service account nobody sits at, so the
 # `identity:` block below is used only for what the estate calls ITSELF. Which
