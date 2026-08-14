@@ -2,29 +2,18 @@
  * /posture — RENDER-ONLY autonomy-posture tile [AX-7].
  *
  * Shows the JSON emitted by `cabinet/scripts/posture-status.py` (the ONE
- * posture resolver chain — this page never re-derives axis state). By
+ * posture resolver chain — this page never re-derives axis state), read
+ * through `lib/posture-status.ts` so the wake flow's consent screen and this
+ * tile cannot drift into two different answers about the same setting. By
  * Corridor constraint (axes spec §1 + axes-contract §3) this surface has NO
  * state-changing control: a dashboard "go sovereign" button is a forge
  * vector, so the upgrade section prints the attested ritual verbatim and the
  * downgrade section prints the Captain's Telegram binder verb — text only,
  * no buttons, no server actions.
  */
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
-import path from 'node:path'
+import { readPosture } from '@/lib/posture-status'
 
 export const dynamic = 'force-dynamic'
-
-const execFileAsync = promisify(execFile)
-
-type PostureStatus = {
-  level: string
-  flavor: string | null
-  target: string | null
-  attested: boolean
-  narrow_cap: string | null
-  error?: string
-}
 
 const LEVEL_BADGE: Record<string, string> = {
   guardian: 'bg-blue-500/15 text-blue-300 border-blue-500/30',
@@ -38,29 +27,6 @@ $EDITOR instance/config/posture.yml                 # posture: sovereign (preset
 git add -A && git commit
 sudo bash cabinet/scripts/germline-lock.sh lock     # the lock IS the signature`
 
-async function getPostureStatus(): Promise<PostureStatus> {
-  // Fixed script path under CABINET_ROOT — no request input reaches the exec.
-  const root = process.env.CABINET_ROOT ?? path.resolve(process.cwd(), '..', '..')
-  const script = path.join(root, 'cabinet', 'scripts', 'posture-status.py')
-  try {
-    const { stdout } = await execFileAsync('python3', [script], {
-      timeout: 10_000,
-      env: { ...process.env, CABINET_ROOT: root },
-    })
-    return JSON.parse(stdout) as PostureStatus
-  } catch (err) {
-    // Fail-closed shape: guardian IS the resolver's answer to every ambiguity.
-    return {
-      level: 'guardian',
-      flavor: null,
-      target: null,
-      attested: false,
-      narrow_cap: null,
-      error: err instanceof Error ? err.message : 'posture-status.py unavailable',
-    }
-  }
-}
-
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between border-b border-zinc-800 py-2 last:border-b-0">
@@ -71,7 +37,7 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 export default async function PosturePage() {
-  const status = await getPostureStatus()
+  const status = await readPosture()
   const badge = LEVEL_BADGE[status.level] ?? LEVEL_BADGE.guardian
 
   return (

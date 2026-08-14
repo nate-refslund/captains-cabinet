@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import TelegramConnectFlow from '@/components/telegram/connect-flow'
 import { getTelegramStatus } from '@/actions/telegram-connect'
+import { readCrew } from '@/lib/crew-state'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,6 +16,11 @@ export const metadata = {
  */
 export default async function TelegramConnectPage() {
   const status = await getTelegramStatus()
+  // Whether the officers on this machine are actually reporting. Step 4 tells
+  // the operator what replying to the bot does today, and that answer depends
+  // on it — a screen that says "switch this on next" to somebody who already
+  // has is the same class of wrong as the red dot this release removed.
+  const crew = await readCrew()
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -30,7 +36,7 @@ export default async function TelegramConnectPage() {
           no terminal, and a message on your phone at the end to prove it works.
         </p>
       </div>
-      <TelegramConnectFlow initialStatus={status} />
+      <TelegramConnectFlow initialStatus={status} crewAwake={crew.anyAwake} />
     </div>
   )
 }

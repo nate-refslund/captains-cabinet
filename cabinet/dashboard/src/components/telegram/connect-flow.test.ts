@@ -235,6 +235,32 @@ describe('step 4 — the round trip, and what is honestly not there yet', () => 
     expect(out).toContain('What does not work yet')
     expect(out).toContain('Replying to the bot')
     expect(out).toContain('running in the background')
+    // And WHERE, now that there is a control rather than a runbook command.
+    expect(out).toContain('home page')
+  })
+
+  it('an AWAKE cabinet is not told to switch on the thing it already switched on', () => {
+    // The line used to end "that is the next thing to switch on" for everyone.
+    // On a cabinet whose crew is running that is simply false, and it was the
+    // same shape of wrong as the red dot: a screen asserting a state it had
+    // not measured.
+    const awake = html(
+      createElement(StepConnected, {
+        botUsername: 'ada_hq_bot',
+        chatId: '4242424242',
+        wrote: [],
+        notes: [],
+        crewAwake: true,
+        onRestart: noop,
+      })
+    )
+    expect(awake).toContain('awake in the background')
+    expect(awake).not.toContain('only read once your Cabinet is')
+  })
+
+  it('a caller that does not know the crew\'s state must not claim it is awake', () => {
+    // The default. `out` above passes no `crewAwake` at all.
+    expect(out).not.toContain('awake in the background')
   })
 
   it('shows the captured address and where it was saved', () => {
