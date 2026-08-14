@@ -409,18 +409,30 @@ export function StepSayHi({
   )
 }
 
-/** STEP 4 — the round trip, and an honest account of what happens next. */
+/**
+ * STEP 4 — the round trip, and an honest account of what happens next.
+ *
+ * `crewAwake` is the state of the officers on this machine, read server-side.
+ * The "what does not work yet" panel used to end "that is the next thing to
+ * switch on" unconditionally — which is FALSE on a cabinet whose crew is
+ * already awake, and the sentence was written before there was any way to
+ * switch it on from a screen. It now says which of the two the operator is
+ * actually looking at. It defaults to `false` because a caller that does not
+ * know the crew's state must not claim it is awake.
+ */
 export function StepConnected({
   botUsername,
   chatId,
   wrote,
   notes,
+  crewAwake = false,
   onRestart,
 }: {
   botUsername: string
   chatId: string
   wrote: string[]
   notes: string[]
+  crewAwake?: boolean
   onRestart: () => void
 }) {
   const handle = botUsername ? `@${botUsername}` : 'your bot'
@@ -454,8 +466,19 @@ export function StepConnected({
         <div className={`p-4 ${T.panel}`}>
           <h4 className={`text-sm font-semibold ${T.title}`}>What does not work yet</h4>
           <p className={`mt-1.5 text-sm leading-6 ${T.muted}`}>
-            Replying to the bot. Messages you send back are only read once your Cabinet is running in
-            the background and has someone awake to answer — that is the next thing to switch on.
+            {crewAwake ? (
+              <>
+                Replying to the bot. Your Cabinet is awake in the background, so there is
+                someone to answer — the lane that carries your replies back to them is the
+                part still being built.
+              </>
+            ) : (
+              <>
+                Replying to the bot. Messages you send back are only read once your Cabinet is
+                running in the background and has someone awake to answer — you can switch that
+                on from your home page, under Your Cabinet.
+              </>
+            )}
           </p>
         </div>
       </div>
@@ -495,8 +518,10 @@ export function StepConnected({
  */
 export default function TelegramConnectFlow({
   initialStatus,
+  crewAwake = false,
 }: {
   initialStatus: TelegramStatus
+  crewAwake?: boolean
 }) {
   const [step, setStep] = useState<StepId>(initialStatus.connected ? 'done' : 'bot')
   const [token, setToken] = useState('')
@@ -645,6 +670,7 @@ export default function TelegramConnectFlow({
           chatId={chatId}
           wrote={wrote}
           notes={notes}
+          crewAwake={crewAwake}
           onRestart={() => void restart()}
         />
       )}

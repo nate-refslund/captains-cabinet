@@ -728,8 +728,21 @@ fi
 # ===========================================================
 # Below the dry-run gate ON PURPOSE: --dry-run must write nothing (no Redis
 # keys, no tmux, no files) — it only prints the assembled command.
+#
+# THE VALUE IS ISO-8601, and it was `date -u +%s` until 2026-08-14.
+# officer-supervisor.sh and the post-tool-use hook have always written
+# ISO-8601 into this same key, so the fleet disagreed with itself about the
+# format of its own liveness stamp. No shell reader noticed — they all test
+# PRESENCE and let the 900s TTL do the freshness work — but the dashboard
+# parses it (`lib/liveness.ts freshnessOf` → `Date.parse`), and
+# `Date.parse('1786719742')` is NaN. That is the module's `unknown` arm, so
+# the first thing an operator saw after starting an officer was
+# "heartbeat unreadable" in amber, until the supervisor's next pass
+# overwrote it with a stamp in the other format. A just-started officer
+# reading as unreadable is the same class of defect as a never-started one
+# reading as offline: the render is scarier than the fact.
 redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" \
-  SETEX "cabinet:heartbeat:$OFFICER" 900 "$(date -u +%s)" > /dev/null 2>&1 || true
+  SETEX "cabinet:heartbeat:$OFFICER" 900 "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /dev/null 2>&1 || true
 
 # ===========================================================
 # tmux session + claude launch
