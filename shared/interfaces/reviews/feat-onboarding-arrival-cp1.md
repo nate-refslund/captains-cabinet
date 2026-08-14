@@ -212,3 +212,46 @@ but PR2 should decide whether the ending deserves to be shown once.
 Reviewed by the author against the class-11 discipline; the bundle-boundary
 defect above is the honest evidence that the mechanical gates alone were not
 sufficient here.
+
+---
+
+## Addendum — four more defects, none of them caught by a gate
+
+Written after the artifact above, and kept as a separate section because the
+pattern is the finding: every one of these was green under `tsc --noEmit` and
+the full vitest suite, and every one was found by *looking at the thing* or by
+asking who else touches it.
+
+1. **The bundle boundary** (in the body above). `/onboarding` returned 500 for
+   every operator. Found by opening the page. Now a permanent sensor.
+2. **Two voices for one row.** The arrival's "Connected tools" rendered
+   `row.reason` directly — the raw `credential_absent` the rest of the product
+   translates — and a different sentence from the journey card for a tool that
+   *did* answer. `plainReason`/`sweepLine`/`dayOf` extracted to
+   `lib/onboarding/sweep-line.ts`; both surfaces call them. Verified live.
+3. **The World overlay.** This same component renders as a fixed panel over the
+   pixel map. The dashboard arrival deliberately drops the card chrome; the same
+   early return left loose text on the map with no panel and no collapse
+   control. Found by asking who else renders the component. The World branch
+   keeps its shell, its "−" button and a one-column layout; the arm was proven
+   to fail against the shell-less version.
+4. **A query string that is a camera.** The full-surface link was a bare
+   `?more=1`, which replaces the whole query — on the World that is `z/x/y/iso`,
+   so answering a question would have thrown away the operator's view of their
+   own map. `fullSurfaceHref()` keeps what it finds.
+
+Plus one merge defect, after `feat/wake-the-crew` (#359) landed: their new
+`crew.ts` imports `isOnboardingComplete` from the module this branch split. The
+merge was textually clean and every test passed; only `tsc` saw it. Both the
+import and the test's `vi.mock` are repointed — and the mock is the half that
+mattered, because a mock aimed at a module the action no longer imports leaves
+the real disk read live behind a green pass.
+
+**The honest conclusion for this unit:** the mechanical gates were necessary and
+were nowhere near sufficient. Four of the five defects above are invisible to
+every gate this repo runs, and the one class-11 question that earned its keep
+was "what does the test environment guarantee that production does not?".
+
+Gates re-run green on the merged tree: `pytest framework/onboarding/tests` 954
+passed · `tsc --noEmit` clean · `vitest` 3685 passed · layer-sep new=0 · census
+PASS · COG-4 binding OK · null-hatch PASS.
