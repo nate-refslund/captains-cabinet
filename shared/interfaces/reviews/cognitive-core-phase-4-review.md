@@ -21,9 +21,13 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 07c3d69db5c84d3dbad352ddb0a46f44787e8acbfd6291a81dcb65cd08ed23d5
+Reviewed-Scope-Digest: 2f743441e27e99b8c8afb711e7458c2ec2afd559e3ba046605198e9ee454081c
 
-(RE-BIND, 2026-08-14, `feat/web-probes-run`, recomputed over this branch's HEAD.
+(RE-BIND, 2026-08-14, `feat/web-probes-run`, recomputed over this branch's HEAD
+after the same landing's live-run fixes moved the contract a second time
+(63664 -> 63700, +36: the name query and its sentence reader, and the
+HTML-entity decode — both defects the live provider and the rendered card
+found by being used).
 ONE in-scope path moved and it is NOT a COG-4 surface:
 `cabinet/config/cognitive-architecture-contract.yml`, raising
 `framework_production_noncomment_lines` 63096 -> 63664 (effective 77638 -> 78206)
