@@ -275,6 +275,10 @@ export default function OnboardingJourneyCard({
   // that fired it, in addition to the shared line. Cleared at the start of every
   // send, so a stale refusal can never sit under a control that just succeeded.
   const [refusedAction, setRefusedAction] = useState<OnboardingAction | null>(null)
+  // Whose work this is. Empty until they say — never pre-filled from a folder
+  // name, a credential or a search result, because the core stores this as the
+  // operator's own statement and a default would put words in their mouth.
+  const [organization, setOrganization] = useState('')
   const effectiveSurface = useRef<Extract<OnboardingSurface, 'dashboard' | 'world' | 'companion'>>(surface)
   const handoffIds = useRef<{ trace_id?: string; correlation_id?: string }>({})
   const salienceFormRef = useRef<HTMLFormElement | null>(null)
@@ -563,6 +567,13 @@ export default function OnboardingJourneyCard({
     if (picked?.input === 'seed') extra.name = salienceName.trim()
     if (salienceMerge.length > 0) extra.same_as = [...salienceMerge]
     void send('answer_salience', extra)
+  }
+
+  function submitOrganization(event: FormEvent) {
+    event.preventDefault()
+    const said = organization.trim()
+    if (!said) return
+    void send('answer_organization', { organization: said })
   }
 
   function submitIdentity(event: FormEvent) {
@@ -1532,25 +1543,107 @@ export default function OnboardingJourneyCard({
           {journey.card.entry?.discovery?.executed && showSweep && (
             <div className={`mt-5 p-4 ${t.panel}`}>
               <h3 className={`text-sm font-semibold ${t.title}`}>What I went and looked for</h3>
-              <ul className="mt-2 space-y-1.5 text-sm">
-                {journey.card.entry.discovery.executed.executed.map((probe) => (
-                  <li key={`ran-${probe.kind}-${probe.pattern ?? ''}`}>
-                    <code className="font-mono text-[0.8rem]">{probe.pattern ?? probe.kind}</code>
-                    <span className={`block ${t.faint}`}>
-                      {probe.matches.length > 0 ? probe.matches.join(', ') : 'nothing matched by name'}
-                      {probe.truncated && ' — stopped at my limit before the end of the folder'}
-                    </span>
+              <ul className="mt-2 space-y-3 text-sm">
+                {/*
+                  TWO KINDS OF PROBE, ONE LIST. A local one shows the name
+                  pattern it matched inside the ratified folder; an outward one
+                  shows the QUERY that left this machine and the results that
+                  came back.
+
+                  EVERY STRING FROM A RESULT IS RENDERED AS TEXT, never as
+                  markup and never as a template. The core scrubs and caps each
+                  field before it gets here (control characters, angle brackets,
+                  lone surrogates, a length cap, and an address that is not
+                  http/https reduced to an empty string) precisely because
+                  whoever ranks well for the operator's own words could be an
+                  adversary. Keep it this way: `dangerouslySetInnerHTML`, a
+                  markdown renderer, or trusting `found.url` without the
+                  emptiness check below would each undo that at a stroke.
+                */}
+                {journey.card.entry.discovery.executed.executed.map((probe, index) => (
+                  <li key={`ran-${probe.kind}-${probe.pattern ?? probe.query ?? index}`}>
+                    <code className="font-mono text-[0.8rem]">
+                      {probe.pattern ?? (probe.query ? `“${probe.query}”` : probe.kind)}
+                    </code>
+                    {probe.results ? (
+                      <>
+                        <span className={`block text-xs ${t.faint}`}>
+                          searched the web{probe.provider ? ` with ${probe.provider}` : ''}
+                          {probe.truncated && ' — more results than I show'}
+                        </span>
+                        <ul className="mt-1.5 space-y-1.5">
+                          {probe.results.map((found, position) => (
+                            <li key={`${found.url || found.title}-${position}`}>
+                              {found.url ? (
+                                <a
+                                  href={found.url}
+                                  target="_blank"
+                                  rel="noreferrer noopener"
+                                  className="underline underline-offset-2"
+                                >
+                                  {found.title || found.url}
+                                </a>
+                              ) : (
+                                <span>{found.title}</span>
+                              )}
+                              {found.url && (
+                                <span className={`block text-xs ${t.faint}`}>{found.url}</span>
+                              )}
+                              {found.snippet && (
+                                <span className={`block text-xs ${t.faint}`}>{found.snippet}</span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : (
+                      <span className={`block ${t.faint}`}>
+                        {(probe.matches?.length ?? 0) > 0
+                          ? probe.matches?.join(', ')
+                          : 'nothing matched by name'}
+                        {probe.truncated && ' — stopped at my limit before the end of the folder'}
+                      </span>
+                    )}
                   </li>
                 ))}
                 {journey.card.entry.discovery.executed.deferred.map((probe, index) => (
                   <li key={`skipped-${probe.kind}-${index}`}>
-                    <code className="font-mono text-[0.8rem]">{probe.kind}</code>
+                    <code className="font-mono text-[0.8rem]">
+                      {probe.query ? `“${probe.query}”` : probe.kind}
+                    </code>
                     <span className={`block ${t.faint}`}>
                       did not run — {probe.reason.replaceAll('_', ' ')}
                     </span>
                   </li>
                 ))}
               </ul>
+              {/*
+                THE RE-RUN, where the results are. The core offers this action
+                only once a search tool is declared, so this button never
+                appears unable to work — and when it is absent the deferral
+                line above says what to connect.
+              */}
+              {journey.card.entry.next_actions.some((a) => a.action === 'run_discovery') && (
+                <button
+                  type="button"
+                  disabled={working}
+                  onClick={() => void send('run_discovery', {})}
+                  className={`mt-3 min-h-11 rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50 ${t.secondary}`}
+                >
+                  {journey.card.entry.next_actions.find((a) => a.action === 'run_discovery')?.label}
+                </button>
+              )}
+              {/* The refusal lands AT the control that fired it. This panel can
+                  sit several screens above the shared error line, and a look-up
+                  that silently did nothing reads as a broken button. */}
+              {refusedAction === 'run_discovery' && error && (
+                <p
+                  role="alert"
+                  className={`mt-2 text-xs font-medium ${variant === 'world' ? 'text-red-800' : 'text-red-300'}`}
+                >
+                  {error}
+                </p>
+              )}
             </div>
           )}
 
@@ -1562,6 +1655,43 @@ export default function OnboardingJourneyCard({
                   <li key={question.id}>
                     {question.prompt}
                     <span className={`block ${t.faint}`}>{question.why}</span>
+                    {/*
+                      A QUESTION WITH A FIELD, where the core says there is one.
+                      Only the earned organisation ask carries an action today —
+                      the other residuals are printed with no way to answer them,
+                      which is a real gap and is NOT hidden here by rendering a
+                      field that would send nothing.
+                    */}
+                    {question.action === 'answer_organization' && (
+                      <form className="mt-2 flex flex-col gap-2 sm:flex-row" onSubmit={submitOrganization}>
+                        <input
+                          type="text"
+                          name={`${surface}-organization`}
+                          value={organization}
+                          onChange={(event) => setOrganization(event.target.value)}
+                          placeholder="A company name, or “just me”"
+                          autoComplete="organization"
+                          className={`min-h-11 flex-1 rounded-lg border px-3 py-2 text-sm outline-none ${t.input}`}
+                        />
+                        <button
+                          type="submit"
+                          disabled={working || !organization.trim()}
+                          className={`min-h-11 rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50 ${t.secondary}`}
+                        >
+                          Remember that
+                        </button>
+                      </form>
+                    )}
+                    {question.id === 'organization' &&
+                      refusedAction === 'answer_organization' &&
+                      error && (
+                        <p
+                          role="alert"
+                          className={`mt-2 text-xs font-medium ${variant === 'world' ? 'text-red-800' : 'text-red-300'}`}
+                        >
+                          {error}
+                        </p>
+                      )}
                   </li>
                 ))}
               </ul>

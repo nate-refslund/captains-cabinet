@@ -113,6 +113,11 @@ def _answers(tpl: dict) -> dict:
     return out
 
 
+def _lane(tpl: dict) -> str:
+    """The lane the template's SHAPE puts it in — never the label it claims."""
+    return research._spec_kind(tpl.get("connector") or {})
+
+
 def _check_shape(tpl: dict, categories: dict) -> None:
     """Every key a surface renders or the core consumes, present and sane."""
     tid = str(tpl.get("id") or "")
@@ -130,19 +135,56 @@ def _check_shape(tpl: dict, categories: dict) -> None:
     for step in steps:
         assert isinstance(step, str) and len(step.strip()) > 20, \
             f"{tid}: a how_to_connect step is empty or a stub: {step!r}"
+    # THE LABEL MAY NOT DISAGREE WITH THE SHAPE. `kind:` is documentation and
+    # the framework never reads it, so a template that SAYS search while
+    # carrying a list call (or the reverse) would be a comment pointing at the
+    # wrong ceiling — exactly the kind of quiet lie the pack has no type system
+    # to catch.
+    lane = _lane(tpl)
+    assert lane, f"{tid}: carries neither an inventory: nor a search: call"
+    assert str(tpl.get("kind") or research.CONNECTOR_KIND_INVENTORY) == lane, \
+        f"{tid}: declares kind {tpl.get('kind')!r} but its call shape is {lane}"
+    if lane == research.CONNECTOR_KIND_SEARCH:
+        # A search tool holds no estate, so it has no clock and no items to
+        # sweep — the checks below are about the list lane and would be vacuous
+        # here. What a search template must carry instead is checked by
+        # `_check_search_shape`.
+        return
     inventory = (tpl.get("connector") or {}).get("inventory") or {}
     encoding = str(inventory.get("date_encoding") or "iso")
     assert encoding in research._DATE_ENCODINGS, \
         f"{tid}: date_encoding {encoding!r} is one the sweep refuses by name"
 
 
-def _check_custody(tpl: dict) -> None:
-    """An operator answer lands under `inventory.` and nowhere else."""
+def _check_search_shape(tpl: dict) -> None:
+    """A search template says how to ASK and where the answers are.
+
+    The disclosure arm is the one that is not mechanical anywhere else: a search
+    sends the operator's own sentence to a third party, and the pack is where
+    that is said in the operator's words. A step list that walks someone through
+    minting a key without ever mentioning what leaves their machine is the same
+    class of half-truth as one that quietly mints a write scope.
+    """
     tid = str(tpl.get("id") or "")
+    call = (tpl.get("connector") or {}).get("search") or {}
+    problem = research._search_shape_problem(call)
+    assert not problem, f"{tid}: search call declares no {problem}"
+    assert str(call.get("results_path") or "") == "" or \
+        str(call.get("results_path")).strip(), f"{tid}: results_path is whitespace"
+    said = " ".join(str(s).lower() for s in tpl.get("how_to_connect") or ())
+    assert "sent to" in said or "sends the" in said, (
+        f"{tid}: no setup step tells the operator that their own words are sent "
+        "to this service — that disclosure is the consent this lane runs on")
+
+
+def _check_custody(tpl: dict) -> None:
+    """An operator answer lands under its own lane's call and nowhere else."""
+    tid = str(tpl.get("id") or "")
+    prefix = (_lane(tpl) or research.CONNECTOR_KIND_INVENTORY) + "."
     for field in tpl.get("fields") or []:
         into = str(field.get("into") or "")
-        assert into.startswith("inventory."), \
-            f"{tid}: field {field.get('key')!r} writes to {into!r}, outside inventory"
+        assert into.startswith(prefix), \
+            f"{tid}: field {field.get('key')!r} writes to {into!r}, outside {prefix}"
         shape = str(field.get("into_format") or "")
         if shape:
             assert shape.startswith("https://") and "{value}" in shape, \
@@ -200,10 +242,20 @@ def test_every_shipped_template_has_the_shape_a_surface_renders():
     for tpl in doc["templates"]:
         _check_shape(tpl, categories)
         _check_custody(tpl)
+        if _lane(tpl) == research.CONNECTOR_KIND_SEARCH:
+            _check_search_shape(tpl)
 
 
 def test_every_shipped_template_builds_into_a_read_only_connector():
-    """The ceiling, on the built call, for the whole pack at shipping size."""
+    """The ceiling, on the built call, for the whole pack at shipping size.
+
+    EACH LANE AGAINST ITS OWN CEILING, and neither borrowing the other's. A
+    search shape held to the inventory rule would be refused (a search POST is
+    not a GraphQL document) and an inventory shape held to the search rule would
+    be admitted too easily — so `assert_declaration_read_only` picks the gate
+    from the call the entry carries, and that dispatch is what is exercised here
+    at shipping size.
+    """
     templates = research.load_connector_templates(_repo_root())
     doc = _pack()
     assert len(templates) == len(doc["templates"]), \
@@ -212,6 +264,10 @@ def test_every_shipped_template_builds_into_a_read_only_connector():
         entry = research.build_connector_from_template(
             templates, tid, name=tid, credential_env="TEST_TOKEN",
             fields=_answers(tpl))
+        research.assert_declaration_read_only(entry)
+        if research._spec_kind(entry) == research.CONNECTOR_KIND_SEARCH:
+            research.assert_search_read_only(entry["search"])
+            continue
         research.assert_read_only(entry["inventory"])
         identity = entry.get("identity")
         if isinstance(identity, dict):
@@ -220,6 +276,31 @@ def test_every_shipped_template_builds_into_a_read_only_connector():
         inventory = entry["inventory"]
         assert str(inventory.get("name_field") or "").strip(), f"{tid}: no name path"
         assert str(inventory.get("updated_field") or "").strip(), f"{tid}: no date path"
+
+
+def test_the_catalog_ships_a_way_to_search_the_web():
+    """The Captain's 2026-08-14 ask, as a floor on the DATA.
+
+    Named providers, not a count of one: an operator whose key is for a service
+    the pack never verified falls back to the open GET template, and a pack that
+    shipped only that open one would be a shelf with no shortcuts on it.
+    """
+    doc = _pack()
+    searchers = [t for t in doc["templates"]
+                 if _lane(t) == research.CONNECTOR_KIND_SEARCH]
+    assert len(searchers) >= 4, (
+        f"the catalog ships {len(searchers)} search tools — the shelf the "
+        "Captain asked for is not a shelf below that")
+    assert "search" in doc["categories"], "search has no shelf to be browsed on"
+    assert any(str(t.get("id")) == "search_rest" for t in searchers), \
+        "the open search template is missing, so the shelf is a closed set"
+    # THE OPEN ONE IS GET-ONLY, and it is enforced by custody rather than
+    # promised: no field may write to `search.method`, so an operator filling
+    # this form cannot produce a POST whose body nobody verified.
+    openish = next(t for t in searchers if str(t.get("id")) == "search_rest")
+    assert str((openish["connector"]["search"]).get("method", "GET")).upper() == "GET"
+    assert not [f for f in openish.get("fields") or []
+                if str(f.get("into") or "").endswith(".method")]
 
 
 def test_a_declared_host_is_the_host_the_credential_actually_reaches():

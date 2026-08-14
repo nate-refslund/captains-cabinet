@@ -19,6 +19,15 @@ verb set is unreachable-by-construction, and nothing about any tool, vendor or
 industry is known to this module. See the section header above it for the full
 contract and for why the module's former "no network, no credentials" law was
 superseded rather than merely relaxed.
+
+AND to the SEARCH PLANE (``run_search_probes``), which is where the seed
+question's outward probes actually RUN. The onboarding core proposes them and
+holds no socket; this module holds the socket, so a few words from the operator
+become a real look outward instead of a plan nobody executed. Same shape as the
+read lane above and the same law: the operator declares a search tool in
+``instance/config/connectors.yml``, this module knows only "a query goes HERE
+and results come back THERE", and every answer that comes back is UNTRUSTED
+TEXT which is displayed and matched, never interpreted.
 """
 from __future__ import annotations
 
@@ -986,8 +995,42 @@ def _sweep_one(spec, credential, *, fetch, timeout, max_items, budget) -> dict:
     return row
 
 
-def load_connector_specs(root, *, not_reached=None) -> list:
+#: The two lanes a declared connector can belong to, decided by the CALL it
+#: carries and never by a label it claims. ``inventory`` is the estate sweep;
+#: ``search`` is the outward query the seed question's probes ride. A label
+#: would let a declaration choose its own ceiling, and the search ceiling is
+#: the looser of the two on body shape — so the lane is read off the slot the
+#: author actually filled in, which is the one thing they cannot fake by
+#: writing a word.
+CONNECTOR_KIND_INVENTORY = "inventory"
+CONNECTOR_KIND_SEARCH = "search"
+
+
+def _spec_kind(entry) -> str:
+    """Which lane a declared connector belongs to, or ``""`` for neither.
+
+    ``inventory`` wins when both are present, so every connector declared
+    before the search lane existed keeps the exact lane it had.
+    """
+    if not isinstance(entry, dict):
+        return ""
+    if isinstance(entry.get(CONNECTOR_KIND_INVENTORY), dict):
+        return CONNECTOR_KIND_INVENTORY
+    if isinstance(entry.get(CONNECTOR_KIND_SEARCH), dict):
+        return CONNECTOR_KIND_SEARCH
+    return ""
+
+
+def load_connector_specs(root, *, not_reached=None,
+                         kind=CONNECTOR_KIND_INVENTORY) -> list:
     """Connectors the OPERATOR declared. Absent file = an honest empty list.
+
+    ``kind`` selects the lane (see ``_spec_kind``). A lawful connector of the
+    OTHER lane is FILTERED, never refused: it is somebody else's business, and
+    reporting it as broken would put a false repair job in front of an operator
+    whose config is correct — the same defect this function's refusal messages
+    exist to avoid, inverted. Only an entry that is a connector of no lane at
+    all is named.
 
     No connector is built in. A cabinet that has been told about nothing reads
     nothing, and says so — which is the correct behaviour for a fresh hatch and
@@ -1036,13 +1079,17 @@ def load_connector_specs(root, *, not_reached=None) -> list:
     out = []
     for position, entry in enumerate(declared, start=1):
         name = str(entry.get("name") or "").strip() if isinstance(entry, dict) else ""
-        if name and isinstance(entry.get("inventory"), dict):
+        found = _spec_kind(entry) if name else ""
+        if found == kind:
             out.append(entry)
             continue
+        if found:
+            continue  # a lawful connector of the other lane — not this caller's
         refused.append(
             f"{CONNECTORS_REL} entry {position}" + (f" ({name})" if name else "")
             + " was skipped, so nothing in it was read: a connector needs a "
-              "non-empty `name` and an `inventory:` mapping saying what to read")
+              "non-empty `name` and either an `inventory:` mapping saying what "
+              "to list or a `search:` mapping saying how to send a query")
     return out
 
 
@@ -1100,11 +1147,11 @@ def load_connector_templates(root) -> dict:
             continue
         tid = str(tpl.get("id") or "").strip()
         connector = tpl.get("connector")
-        # A template is usable only if it carries an id and a connector whose
-        # inventory is a mapping — the same floor the loader holds a declared
-        # connector to. A malformed one is dropped from the list, never surfaced
-        # half-built for the operator to trip over.
-        if tid and isinstance(connector, dict) and isinstance(connector.get("inventory"), dict):
+        # A template is usable only if it carries an id and a connector that
+        # declares a read call in one of the two lanes — the same floor the
+        # loader holds a declared connector to. A malformed one is dropped from
+        # the list, never surfaced half-built for the operator to trip over.
+        if tid and isinstance(connector, dict) and _spec_kind(connector):
             out.setdefault(tid, tpl)
     return out
 
@@ -1145,7 +1192,8 @@ def build_connector_from_template(templates: dict, template_id: str, *,
             "That is not a tool I know how to set up. Pick one from the list, or "
             "use “Another REST list” to describe your own.")
     entry = deepcopy(tpl.get("connector") or {})
-    if not isinstance(entry.get("inventory"), dict):
+    lane = _spec_kind(entry)
+    if not lane:
         raise ConnectorDeclarationError(
             "That template is missing its read shape, so it cannot be set up.")
 
@@ -1213,9 +1261,14 @@ def build_connector_from_template(templates: dict, template_id: str, *,
     # THE CEILING, on the BUILT call, before a byte is written. A template whose
     # inventory could write, or a custom URL that is not https, is refused here
     # with the same verdict the sweep would give it — so the config can never
-    # gain an entry the read lane would then reject.
+    # gain an entry the read lane would then reject. Each lane is held to ITS
+    # OWN ceiling: a search shape may not be admitted by the inventory rule (it
+    # would be refused — a search POST is not a GraphQL document) and an
+    # inventory shape may not borrow the search rule, which is looser on body
+    # shape. ``_spec_kind`` reads the slot that was filled, so neither can be
+    # chosen by the template author writing a word.
     try:
-        assert_read_only(entry.get("inventory"))
+        assert_declaration_read_only(entry)
     except ReadOnlyViolation as exc:
         raise ConnectorDeclarationError(
             f"That would not be a read-only connection ({exc}), so it was not "
@@ -1224,8 +1277,14 @@ def build_connector_from_template(templates: dict, template_id: str, *,
 
 
 def _host_of(entry: dict) -> str:
-    """The host a connector's credential will reach — for the consent line."""
-    url = str((entry.get("inventory") or {}).get("url") or "")
+    """The host a connector's credential will reach — for the consent line.
+
+    Reads whichever lane the entry declared: a search tool has no inventory
+    call, and printing an empty consent line beside a credential that is about
+    to leave the machine is the one sentence in this flow that must be true.
+    """
+    call = entry.get(_spec_kind(entry)) if isinstance(entry, dict) else None
+    url = str((call or {}).get("url") or "")
     if "://" not in url:
         return ""
     return url.split("://", 1)[1].split("/", 1)[0].split("?", 1)[0]
@@ -1246,7 +1305,7 @@ def write_connector_declaration(root, entry: dict) -> dict:
     # going through build_connector_from_template. Surfaced as the same operator-
     # facing, contents-free error every other declaration refusal uses.
     try:
-        assert_read_only(entry.get("inventory"))
+        assert_declaration_read_only(entry)
     except ReadOnlyViolation as exc:
         raise ConnectorDeclarationError(
             f"That would not be a read-only connection ({exc}), so it was not "
@@ -1256,7 +1315,13 @@ def write_connector_declaration(root, entry: dict) -> dict:
     name = str(entry.get("name") or "").strip()
     if not name:
         raise ConnectorDeclarationError("A connector needs a name.")
-    existing = load_connector_specs(root_path)
+    # BOTH LANES, because the name has to be unique in the FILE and not merely
+    # in one caller's view of it. Loading only the inventory lane would let a
+    # search tool and a list connector share a name, and the round-trip check
+    # below (which counts entries) would then be comparing against a partial
+    # census of what is already there.
+    existing = (load_connector_specs(root_path, kind=CONNECTOR_KIND_INVENTORY)
+                + load_connector_specs(root_path, kind=CONNECTOR_KIND_SEARCH))
     if any(str(s.get("name") or "").strip() == name for s in existing):
         raise ConnectorDeclarationError(
             f"A connector named “{name}” is already set up. Choose a different name.")
@@ -1304,7 +1369,7 @@ def write_connector_declaration(root, entry: dict) -> dict:
     path.write_text(new_text, encoding="utf-8")
 
     # MEASURED, NOT REPORTED. Read it back through the same loader a sweep uses.
-    reloaded = load_connector_specs(root_path)
+    reloaded = load_connector_specs(root_path, kind=_spec_kind(entry))
     if not any(str(s.get("name") or "").strip() == name for s in reloaded):
         raise ConnectorDeclarationError(
             "The connector did not persist, so it will not be read. Try again.")
@@ -1398,6 +1463,472 @@ def sweep_connectors(root, *, specs=None, env=None, fetch=None, now=None,
         "identities": sorted(set(identities)),
         "not_reached": not_reached,
     }
+
+
+# ---------------------------------------------------------------------------
+# THE SEARCH PLANE — the seed's own words, sent OUT, once, on the record.
+# ---------------------------------------------------------------------------
+# WHAT THIS IS. The onboarding core turns "what do you do?" into typed probes
+# and then holds no socket to run them with, so the outward half of every seed
+# answer arrived on the operator's card as *did not run*. That was honest and
+# useless: a cabinet told it serves a named organisation could not go and find
+# out what that organisation IS, which is the first thing a colleague would do.
+# This is the executor for those probes, living beside the read lane because
+# the two answer the same law — the operator declares what may be reached, the
+# framework knows only the SHAPE, and every failure is named rather than
+# collapsed into a clean negative.
+#
+# CONSENT IS THE CONNECT STEP, and it is not implied by the egress ceiling. A
+# search sends the operator's OWN SENTENCE to a third party, which is a
+# different act from listing their own estate through their own credential.
+# What makes it lawful is that the operator went and connected a search tool
+# for exactly this purpose; the catalog's setup steps say so in the operator's
+# words, the query is printed back on the card, and no probe runs when no
+# search tool is declared.
+#
+# THE CEILING, all of it enforced below rather than promised:
+#   * READ ONLY, under ``assert_search_read_only`` — a SEPARATE gate from the
+#     inventory lane's, narrower everywhere except body shape. See its
+#     docstring for what it proves and, more importantly, what it does not.
+#   * NO REDIRECTS — ``_http_fetch``'s opener refuses them, so the credential
+#     reaches the declared origin or nowhere.
+#   * THE EGRESS CEILING FIRST — ``_probe_web`` is consulted before a socket
+#     exists, exactly as the sweep does it.
+#   * BOUNDED — at most ``_MAX_SEARCH_PROBES`` probes, one call each, a short
+#     timeout, ``_MAX_SEARCH_RESULTS`` results per probe, every field capped,
+#     and a total byte budget across the whole run.
+#   * THE QUERY IS PERCENT-ENCODED into a URL and JSON-ENCODED into a body, so
+#     an operator sentence cannot add a parameter, a path segment or a field.
+#
+# AND WHAT COMES BACK IS UNTRUSTED TEXT. It is written by whoever ranked well
+# for the operator's own words — an adversary can arrange to be one of those
+# results. Two things make that safe here and they are both structural: the
+# pipeline that consumes it is deterministic (no model reads it, nothing
+# branches on it, nothing executes it), and every field is scrubbed and capped
+# by ``_untrusted_text`` / ``_untrusted_url`` at the ONE place results enter.
+# What a result can do is be displayed and be string-matched. What it cannot do
+# is instruct anything, because nothing downstream takes instructions.
+SEARCH_PROBE_SCHEMA = "cabinet.search-probe-result/v1"
+#: The probe kind the core emits for an outward look. Named here, next to its
+#: executor, so the core and the plane cannot drift on the spelling.
+SEARCH_PROBE_KIND = "web_search"
+#: The hole a template author leaves for the operator's words. Exactly one, and
+#: the ceiling counts them.
+SEARCH_QUERY_HOLE = "{query}"
+
+#: How many outward probes one look-up may send. PUBLIC, because the core's
+#: planner reads it: a plan that proposes more queries than this executor
+#: will run reports the surplus as "did not run", which is an honest
+#: sentence about a shortfall nobody needed to have.
+MAX_SEARCH_PROBES = 3
+_MAX_SEARCH_PROBES = MAX_SEARCH_PROBES
+_MAX_SEARCH_RESULTS = 5
+_MAX_SEARCH_TITLE = 160
+_MAX_SEARCH_URL = 300
+_MAX_SEARCH_SNIPPET = 300
+#: Total displayed characters across a whole run. A per-field cap bounds one
+#: result; this bounds the RUN, so a provider that answers every probe with the
+#: maximum cannot grow the journey's state without limit.
+_MAX_SEARCH_CHARS = 8 * 1024
+_MAX_SEARCH_QUERY_CHARS = 200
+#: Shorter than the sweep's, deliberately: this runs inside the onboarding
+#: action lock while the operator waits on a card, and a search that has not
+#: answered in twelve seconds is not going to make the card better.
+_SEARCH_TIMEOUT = 12.0
+_MAX_SEARCH_BODY_KEYS = 12
+_MAX_SEARCH_BODY_BYTES = 2048
+#: One nested mapping is allowed (a provider's "and give me an excerpt" block);
+#: two is a document, and a document is what the GraphQL rule exists to bound.
+_MAX_SEARCH_BODY_DEPTH = 2
+_MAX_SEARCH_LIST_ITEMS = 10
+#: Broader than the inventory lane's GraphQL token set, because a REST body
+#: announces no verb of its own: if a declared search call NAMES a mutation
+#: anywhere in its address or its skeleton, it is refused. Whole words, so a
+#: host or a path segment that merely contains one of them is not caught by
+#: accident.
+_SEARCH_WRITE_TOKEN_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(mutation|subscription|insert|update|delete|destroy|"
+    r"remove|create|drop|write|upsert|patch|truncate|execute|revoke|grant)"
+    r"(?![A-Za-z0-9_])", re.IGNORECASE)
+#: Control characters, the two line separators a JSON string may legally
+#: carry that break a rendered line anyway, and the two angle brackets.
+#: Written as escapes, never as the characters themselves: a literal U+2028
+#: in this file would end the source line for every tool that reads it, this
+#: module's own editors included.
+#:
+#: THE ANGLE BRACKETS ARE NOT PARANOIA — measured 2026-08-14. A live provider
+#: returns its snippets with the matched words wrapped in markup by default,
+#: so the very first real answer this plane received carried tags. On today's
+#: two surfaces that is inert (one escapes its text nodes, the other sends
+#: plain messages), which is exactly the sort of safety that quietly stops
+#: being true when a third surface is added by someone who never read this
+#: file. A result is a CAPTION, so the cost of dropping brackets is a rare
+#: "a < b" reading "a   b" — and what it buys is that no future renderer can
+#: be handed markup by a stranger who ranked well for the operator's own words.
+_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029<>]")
+
+
+def assert_search_read_only(call) -> None:
+    """Mechanically refuse anything in the SEARCH slot that is not a query.
+
+    A SEPARATE CEILING from :func:`assert_read_only`, deliberately not a
+    widening of it. The inventory lane admits a POST only when the body is a
+    GraphQL READ document, and that rule is sound for exactly one reason: a
+    GraphQL document declares its own verb, so ``mutation`` can be refused by
+    name. A REST search body declares nothing. Loosening the inventory rule to
+    let search endpoints through would have admitted every REST write with
+    them, so the search slot got its own gate and the inventory gate did not
+    move a byte.
+
+    WHAT THIS PROVES: the address is HTTPS and has a host; nothing this module
+    can put on the wire asks the far end to treat the request as another verb
+    (the injected credential header is checked too, which is where the
+    inventory ceiling was once found open); no write verb is NAMED in the
+    address or in the skeleton the template author wrote; the body is a bounded
+    parameter bag rather than a document; and the operator's words go in at
+    exactly ONE declared hole, counted here, so a call cannot quietly send the
+    seed twice or send it somewhere the card does not show.
+
+    WHAT IT DOES NOT PROVE, said plainly because a ceiling that implies a proof
+    it does not have is worse than no ceiling: a flat JSON body cannot be told
+    apart from a create payload by inspection. ``{"title": "…"}`` is a search
+    parameter bag and an issue-creation payload in the same bytes. What stands
+    between that and a write is WHERE this gate sits — a call reaches it only
+    through a connector's ``search:`` slot, which nothing but the probe
+    executor below ever reads, and the shipped catalog's shapes are verified
+    against each provider's published reference. An operator who hand-writes a
+    mutating endpoint into that slot has told their own cabinet to POST a
+    search query at it. The framework refuses everything it can see; this
+    paragraph is the honest edge of what it can see.
+    """
+    if not isinstance(call, dict):
+        raise ReadOnlyViolation("call_not_a_mapping")
+    url = str(call.get("url") or "").strip()
+    if not url.lower().startswith("https://"):
+        raise ReadOnlyViolation("url_not_https")
+    if len(url.split("://", 1)[1].split("/", 1)[0].strip()) == 0:
+        raise ReadOnlyViolation("url_has_no_host")
+    method = str(call.get("method") or "GET").strip().upper()
+    if method not in _READ_METHODS:
+        raise ReadOnlyViolation(f"method_not_read_only:{method}")
+    headers = call.get("headers") or {}
+    if not isinstance(headers, dict):
+        raise ReadOnlyViolation("headers_not_a_mapping")
+    for key in (*headers, str(call.get("auth_header") or "Authorization")):
+        if str(key).strip().lower() in _METHOD_OVERRIDE_HEADERS:
+            raise ReadOnlyViolation(f"method_override_header:{key}")
+    if _SEARCH_WRITE_TOKEN_RE.search(url):
+        raise ReadOnlyViolation("write_token_in_url")
+    body = call.get("json")
+    if method == "GET":
+        if body is not None:
+            raise ReadOnlyViolation("get_with_body")
+        serialized = ""
+    else:
+        if not isinstance(body, dict):
+            raise ReadOnlyViolation("post_body_not_a_query_envelope")
+        if not body or len(body) > _MAX_SEARCH_BODY_KEYS:
+            raise ReadOnlyViolation("post_body_not_a_query_envelope")
+        if not _query_envelope_ok(body, 1):
+            raise ReadOnlyViolation("post_body_not_a_query_envelope")
+        serialized = json.dumps(body, ensure_ascii=False)
+        if len(serialized.encode("utf-8")) > _MAX_SEARCH_BODY_BYTES:
+            raise ReadOnlyViolation("post_body_too_large")
+        if _SEARCH_WRITE_TOKEN_RE.search(serialized):
+            raise ReadOnlyViolation("write_token_in_body")
+    # EXACTLY ONE HOLE, across the whole declaration. Zero means the operator's
+    # words never leave and the probe would search the template's placeholder;
+    # more than one means the card shows a query that went to two places.
+    holes = url.count(SEARCH_QUERY_HOLE) + serialized.count(SEARCH_QUERY_HOLE)
+    if holes != 1:
+        raise ReadOnlyViolation(f"query_placeholder_count:{holes}")
+
+
+def _query_envelope_ok(value, depth: int) -> bool:
+    """A bounded parameter bag: scalars, short scalar lists, one nesting."""
+    if isinstance(value, dict):
+        if depth > _MAX_SEARCH_BODY_DEPTH or len(value) > _MAX_SEARCH_BODY_KEYS:
+            return False
+        return all(isinstance(k, str) and k.strip()
+                   and _query_envelope_ok(v, depth + 1)
+                   for k, v in value.items())
+    if isinstance(value, (list, tuple)):
+        if len(value) > _MAX_SEARCH_LIST_ITEMS:
+            return False
+        return all(_query_envelope_ok(v, _MAX_SEARCH_BODY_DEPTH + 1)
+                   for v in value)
+    return value is None or isinstance(value, (str, int, float, bool))
+
+
+def assert_declaration_read_only(entry) -> None:
+    """Hold ONE declared connector to the ceiling of the lane it is in.
+
+    The lane comes from ``_spec_kind`` — the slot the author actually filled —
+    so a declaration cannot pick the looser gate by claiming a label. An entry
+    that is a connector of no lane at all is refused rather than passed through
+    unchecked, which is the difference between a gate and a lookup.
+    """
+    lane = _spec_kind(entry)
+    if lane == CONNECTOR_KIND_SEARCH:
+        assert_search_read_only(entry.get(CONNECTOR_KIND_SEARCH))
+        return
+    if lane == CONNECTOR_KIND_INVENTORY:
+        assert_read_only(entry.get(CONNECTOR_KIND_INVENTORY))
+        return
+    raise ReadOnlyViolation("connector_declares_no_read_call")
+
+
+def _untrusted_text(value, limit: int) -> str:
+    """One field of a third party's answer, made safe to DISPLAY and no more.
+
+    THE ONE PLACE A SEARCH RESULT ENTERS THIS SYSTEM, and everything downstream
+    of it treats the output as a caption. Containers return empty rather than
+    being flattened (the same rule ``_scalar`` holds for the read lane: a
+    stringified object is a body arriving through a name field). Control
+    characters — including the newline that would let one result forge a second
+    line on a card, and the line separators JSON permits inside a string —
+    become spaces. A lone surrogate is replaced rather than carried: it is legal
+    in a decoded JSON string, illegal in UTF-8, and would crash the CLI that
+    prints this state as JSON — the result taking the whole action down with it.
+    """
+    if value is None or isinstance(value, (dict, list, tuple, set, bool)):
+        return ""
+    import html as _html  # local: keep the module import-light
+
+    # ENTITIES ARE DECODED BEFORE THE SCRUB, NEVER AFTER, AND EXACTLY ONCE.
+    # Providers return their snippets HTML-escaped, so an operator was shown
+    # "I&#x27;ve" and "&quot;" where their own eyes expected an apostrophe and a
+    # quote — found by LOOKING at a real answer, 2026-08-14, not by reasoning
+    # about one. The ORDER is the safety: a tag arriving as `&lt;script&gt;`
+    # decodes to angle brackets and is then dropped by the scrub below, whereas
+    # decoding afterwards would hand it through intact. One pass only, so a
+    # doubly-encoded tag decodes to inert text rather than to markup.
+    text = _CONTROL_RE.sub(" ", _html.unescape(str(value)))
+    text = text.encode("utf-8", "replace").decode("utf-8", "replace")
+    return " ".join(text.split())[:max(0, int(limit))]
+
+
+def _untrusted_url(value) -> str:
+    """A result's address, or nothing. An ALLOW-LIST of two schemes.
+
+    This is what stops a result from handing a surface something that is not a
+    web address at all: a rendered link is the one place a caption becomes a
+    click, and a scheme that executes in the page ("javascript:") or carries
+    its own payload ("data:") reaches the operator as an ordinary-looking
+    citation. Anything that is not http/https, or that still contains a space
+    after collapsing, is dropped — a result with no address is displayed
+    without one rather than with a dangerous one.
+    """
+    text = _untrusted_text(value, _MAX_SEARCH_URL)
+    low = text.lower()
+    if not (low.startswith("https://") or low.startswith("http://")):
+        return ""
+    return "" if " " in text else text
+
+
+def _search_request(call, credential: str, query: str) -> dict:
+    """A declared search call + a credential + the operator's words -> the wire.
+
+    THE QUERY IS ENCODED FOR THE SLOT IT LANDS IN, and that is the whole reason
+    substitution lives in one function. Into a URL it is percent-encoded with an
+    empty safe set, so no character in an operator's sentence can add a
+    parameter, close the query string or walk the path. Into a body it is placed
+    as a JSON VALUE and serialized, so quoting is the encoder's problem and not
+    a string-concatenation hazard. Never logged.
+    """
+    import urllib.parse  # local: keep the module import-light
+
+    headers = {str(k): str(v) for k, v in (call.get("headers") or {}).items()}
+    auth_header = str(call.get("auth_header") or "Authorization")
+    auth_format = str(call.get("auth_format") or "{credential}")
+    headers[auth_header] = auth_format.replace("{credential}", credential)
+    url = str(call["url"]).replace(
+        SEARCH_QUERY_HOLE, urllib.parse.quote(query, safe=""))
+    body = None
+    method = str(call.get("method") or "GET").strip().upper()
+    if method == "POST":
+        headers.setdefault("Content-Type", "application/json")
+        body = json.dumps(_query_filled(call.get("json") or {}, query),
+                          ensure_ascii=False).encode("utf-8")
+    return {"url": url, "method": method, "headers": headers, "body": body}
+
+
+def _query_filled(value, query: str):
+    """Substitute the query hole inside a declared body. Str-replace, never
+    ``format`` — a provider's parameter names are not a format string."""
+    if isinstance(value, str):
+        return value.replace(SEARCH_QUERY_HOLE, query)
+    if isinstance(value, dict):
+        return {k: _query_filled(v, query) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_query_filled(v, query) for v in value]
+    return value
+
+
+def _search_results(doc, call, *, max_results: int, budget: dict) -> tuple:
+    """``(results, truncated)`` from one answered search call.
+
+    Contents-free is the WRONG law here and the read lane's rule is deliberately
+    not copied: a search result IS its title, address and one line — that is the
+    citation, and stripping it would leave the operator a count. What replaces
+    the contents-free rule is the untrusted-text rule above plus these caps, so
+    what lands is bounded and inert rather than absent.
+    """
+    found = _dig(doc, call.get("results_path"))
+    if isinstance(found, dict):
+        found = [found]
+    if not isinstance(found, list):
+        return [], False
+    out = []
+    truncated = len(found) > max_results
+    for item in found[:max_results]:
+        title = _untrusted_text(_dig(item, call.get("title_field")),
+                                _MAX_SEARCH_TITLE)
+        link = _untrusted_url(_dig(item, call.get("url_field")))
+        # OPTIONAL BY DESIGN. Several providers return a title and an address
+        # and nothing else unless a second, heavier call is made; a result with
+        # no line under it is still a citation, and refusing it would lose the
+        # finding to keep the decoration.
+        snippet = _untrusted_text(_dig(item, call.get("snippet_field")),
+                                  _MAX_SEARCH_SNIPPET) \
+            if call.get("snippet_field") else ""
+        if not title and not link:
+            continue
+        cost = len(title) + len(link) + len(snippet)
+        if budget["left"] - cost < 0:
+            truncated = True
+            break
+        budget["left"] -= cost
+        row = {"title": title, "url": link}
+        if snippet:
+            row["snippet"] = snippet
+        out.append(row)
+    return out, truncated
+
+
+def _search_shape_problem(call) -> str:
+    """What a declared search call is MISSING, by name, or ``""``.
+
+    Separate from the ceiling on purpose: a call with no ``title_field`` is not
+    dangerous, it is unfinished, and telling an operator "refused" about a
+    typo sends them looking for a security problem they do not have.
+    """
+    if not isinstance(call, dict):
+        return "no search call"
+    if not str(call.get("title_field") or "").strip():
+        return "title_field"
+    if not str(call.get("url_field") or "").strip():
+        return "url_field"
+    return ""
+
+
+def run_search_probes(root, probes, *, specs=None, env=None, fetch=None,
+                      ceiling=None, timeout=_SEARCH_TIMEOUT,
+                      max_probes=_MAX_SEARCH_PROBES,
+                      max_results=_MAX_SEARCH_RESULTS) -> dict:
+    """RUN the seed's outward probes through the operator's own search tool.
+
+    Returns ``{"schema", "executed", "deferred", "provider"}``. Every probe
+    lands in exactly one of the two lists and a deferred one always carries the
+    reason it did not run — ``no_search_tool_connected`` and ``http_401`` and
+    ``egress_closed_no_allowed_hosts`` are different facts with different fixes,
+    and collapsing them is how "I found nothing" gets confused with "I never
+    looked" at the one moment the operator is deciding whether this thing works.
+
+    THE FIRST DECLARED SEARCH TOOL RUNS THE WHOLE SET. Deterministic (config
+    order), recorded on every executed row as ``provider``, and one tool per run
+    so a cabinet with three of them declared does not send the operator's
+    sentence to all three.
+    """
+    root_path = Path(root).expanduser()
+    if specs is None:
+        specs = load_connector_specs(root_path, kind=CONNECTOR_KIND_SEARCH)
+    else:
+        specs = list(specs)
+    env = os.environ if env is None else env
+    fetch = _http_fetch if fetch is None else fetch
+
+    wanted = [p for p in (probes or ())
+              if isinstance(p, dict)
+              and str(p.get("kind") or "") == SEARCH_PROBE_KIND
+              and str(p.get("query") or "").strip()]
+    result = {"schema": SEARCH_PROBE_SCHEMA, "executed": [], "deferred": [],
+              "provider": None}
+
+    def _defer(rows, reason):
+        for row in rows:
+            result["deferred"].append({
+                "kind": SEARCH_PROBE_KIND,
+                "query": str(row.get("query") or "")[:_MAX_SEARCH_QUERY_CHARS],
+                "executed": False, "reason": reason})
+
+    if not wanted:
+        return result
+    if not specs:
+        _defer(wanted, "no_search_tool_connected")
+        return result
+    spec = specs[0]
+    name = str(spec.get("name") or "").strip() or "search"
+    call = spec.get(CONNECTOR_KIND_SEARCH)
+    result["provider"] = name
+
+    ceiling = _probe_web(root_path) if ceiling is None else ceiling
+    if not ceiling.get("connected"):
+        _defer(wanted, f"egress_{str(ceiling.get('reason') or 'closed')}")
+        return result
+    try:
+        assert_search_read_only(call)
+    except ReadOnlyViolation as exc:
+        _defer(wanted, f"search_call_refused:{exc}")
+        return result
+    problem = _search_shape_problem(call)
+    if problem:
+        _defer(wanted, f"search_declares_no:{problem}")
+        return result
+    credential = str((env.get(str(spec.get("credential_env") or "")) or "")).strip()
+    if not credential:
+        # The env var NAME is reported; the value never exists in a result, a
+        # log or an exception message anywhere in this plane.
+        _defer(wanted, "search_credential_absent")
+        return result
+
+    budget = {"left": _MAX_SEARCH_CHARS}
+    for index, probe in enumerate(wanted):
+        query = " ".join(str(probe.get("query")).split())[:_MAX_SEARCH_QUERY_CHARS]
+        if index >= max(0, int(max_probes)):
+            _defer([probe], "probe_budget_spent")
+            continue
+        request = _search_request(call, credential, query)
+        try:
+            status, payload = fetch(request, timeout)
+        except Exception as exc:
+            _defer([probe], f"unreachable:{type(exc).__name__}")
+            continue
+        if status != 200:
+            _defer([probe], f"http_{status}")
+            continue
+        if len(payload) > _MAX_RESPONSE_BYTES:
+            _defer([probe], "response_too_large")
+            continue
+        try:
+            doc = json.loads(payload.decode("utf-8", errors="replace"))
+        except Exception:
+            _defer([probe], "response_not_json")
+            continue
+        results, truncated = _search_results(doc, call, max_results=max_results,
+                                             budget=budget)
+        if not results:
+            # A SEARCH THAT ANSWERED WITH NOTHING is not the same as one that
+            # never ran, and it is not the same as a mistyped results_path
+            # either — but from here those last two are the same bytes, so the
+            # reason names the declared path rather than asserting an empty web.
+            _defer([probe], "search_returned_nothing_at:"
+                            f"{call.get('results_path') or '(root)'}")
+            continue
+        result["executed"].append({
+            "kind": SEARCH_PROBE_KIND, "query": query, "executed": True,
+            "provider": name, "results": results, "truncated": truncated})
+    return result
 
 
 # --- WHO, AND WHEN: the two claims a sweep makes without noticing -----------

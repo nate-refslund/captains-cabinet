@@ -917,7 +917,44 @@ budgets:
     # for the same reason as the row above: permanent organ, so an allowance
     # would promise a deletion gate that will never fire.
     # observed == maximum, zero headroom.
-    maximum: 63096
+    #
+    # 63096 -> 63664 (+568 measured 2026-08-14 via cognitive-architecture-census.py,
+    # observed 78206 vs the then-effective 77638): THE CABINET CAN ACTUALLY GO
+    # AND LOOK. The Captain, on the live product: the seed question's outward
+    # probes still rendered "web_search — did not run — no egress in the
+    # onboarding core", while egress is allow-all by default and he had just
+    # told it he is a tech lead at a named organisation. Two organs, both
+    # permanent:
+    #   * research.py +363 — the SEARCH PLANE. Its own read-only ceiling
+    #     (assert_search_read_only, deliberately a SECOND function rather than a
+    #     widening of the inventory one: a search POST body is a parameter bag,
+    #     which the GraphQL-only rule must go on refusing), the executor with its
+    #     caps and named deferrals, and the untrusted-text/untrusted-url scrubs
+    #     every result passes through once.
+    #   * journey.py +205 — the two-plane merge (_discovery_block), the two new
+    #     actions (run_discovery, answer_organization), the earned organisation
+    #     question and its heuristic, and the card sentences that report a
+    #     look-up in the operator's own words.
+    # Everything vendor-shaped stayed OUT of framework/: the five verified search
+    # providers, their endpoints, auth headers, result paths and setup steps are
+    # DATA in instance/config/connector-templates.yml.example, and the specifics
+    # ratchet is green with no new baseline entry. Zero new production MODULES
+    # (framework_production_modules unchanged at 208 for this landing: both organs
+    # live inside files the tree already carried) and zero expansion rows. RAISED
+    # VISIBLY rather than paid for by a temporary allowance, same reason as every
+    # row above: a search plane that ships is a permanent organ, and an allowance
+    # would promise a deletion gate that will never fire.
+    #
+    # 63664 -> 63700 (+36, SAME landing, measured after two defects the live
+    # look-up found by being LOOKED AT): the name query (`_seed_names` plus the
+    # sentence-boundary reader it needs — the first real run searched "tech lead
+    # STEP Network" and came back with pages about being a tech lead, because
+    # the role words are common and the name is not), and the HTML-entity decode
+    # in `_untrusted_text` (a real provider returns its snippets escaped, so the
+    # card showed "I&#x27;ve" where an apostrophe belongs; decoded BEFORE the
+    # scrub, so an entity-encoded tag still loses its brackets).
+    # observed == maximum, zero headroom.
+    maximum: 63700
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

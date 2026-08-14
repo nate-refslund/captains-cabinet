@@ -118,6 +118,9 @@ function buttonsFor(result: OnboardingResponse): TelegramInlineButton[][] {
     // can trigger the read and can never widen it. That is what makes it the one
     // discovery action a button may carry.
     gather_connectors: 'onboard:gather',
+    // Payload-free for the same reason the sweep is: the query is derived from
+    // words the operator already gave this journey, so a tap can send it.
+    run_discovery: 'onboard:look',
     ratify_charter: 'onboard:accept',
     continue: 'onboard:continue',
     pause: 'onboard:pause',
@@ -191,6 +194,32 @@ export function formatTelegramOnboarding(result: OnboardingResponse): TelegramOn
     lines.push(
       'The last one takes a name: /onboard salience other <what to open instead>.'
     )
+  }
+  // WHAT THE LOOK-UP FOUND, with its source beside it. The card BODY carries
+  // only the operator's own query — third-party text never enters the string
+  // that travels as a sentence — so without this Telegram would say "I found 3
+  // results" and show none of them. Every field here was scrubbed and capped by
+  // the core (control characters, angle brackets, lone surrogates, length, and a
+  // non-web address dropped), and these messages are sent PLAIN with no parse
+  // mode, so a result cannot forge formatting or an entity either.
+  const looked = result.card.entry?.discovery?.executed?.executed?.filter(
+    (probe) => probe.results?.length
+  )
+  if (looked?.length) {
+    lines.push('', 'What I went and looked up')
+    for (const probe of looked) {
+      lines.push(`Searched: ${probe.query}`)
+      for (const found of probe.results ?? []) {
+        lines.push(`• ${found.title || '(untitled)'}${found.url ? ` — ${found.url}` : ''}`)
+        if (found.snippet) lines.push(`  ${found.snippet}`)
+      }
+    }
+  }
+  const organization = result.card.options.find(
+    (option) => option.action === 'answer_organization'
+  )
+  if (organization) {
+    lines.push('', `${organization.label}: /onboard org <company name, or "just me">`)
   }
   if (result.card.stage === 'welcome') {
     lines.push(
@@ -364,6 +393,19 @@ export async function handleTelegramOnboarding(
     if (/^(gather|connectors)$/i.test(command)) {
       return [formatTelegramOnboarding(await action('gather_connectors', actionId))]
     }
+    // Go and look the seed up again, through whatever search tool is connected.
+    // Payload-free like `gather`, so it is also one of the few a TAP may carry.
+    if (/^(look|search|discover)$/i.test(command)) {
+      return [formatTelegramOnboarding(await action('run_discovery', actionId))]
+    }
+    // Whose work this is. A typed answer, so it is a command and never a button
+    // — "just me" is as valid as a company name and both need words.
+    if (/^org\s+/i.test(command)) {
+      const organization = command.replace(/^org\s+/i, '').trim()
+      return [formatTelegramOnboarding(
+        await action('answer_organization', actionId, { organization })
+      )]
+    }
     // Where the depth budget is pointed. `other` is the escape hatch and takes
     // the rest of the line as the name — measured, the ranking's top three hold
     // the right answer only most of the time, and an offer with no way to say
@@ -406,7 +448,7 @@ export async function handleTelegramOnboarding(
       }]
     }
     return [{
-      text: 'I did not recognize that onboarding choice. Send /onboard to see the current card, or use:\n/onboard folder /full/path | what you want made easier\n/onboard gather — read what I am connected to\n/onboard salience <candidate> — point me at the one to open first',
+      text: 'I did not recognize that onboarding choice. Send /onboard to see the current card, or use:\n/onboard folder /full/path | what you want made easier\n/onboard gather — read what I am connected to\n/onboard salience <candidate> — point me at the one to open first\n/onboard look — go and look up what you told me\n/onboard org <company, or "just me"> — whose work this is',
       plain: true,
     }]
   } catch (error) {
@@ -426,6 +468,7 @@ export async function handleTelegramOnboardingCallback(
     return [{ text: OWNERSHIP_SYNTAX, plain: true }]
   }
   if (command === 'gather') return handleTelegramOnboarding('/onboard gather', actionId)
+  if (command === 'look') return handleTelegramOnboarding('/onboard look', actionId)
   if (command === 'accept') return handleTelegramOnboarding('/onboard accept', actionId)
   if (command === 'continue') return handleTelegramOnboarding('/onboard continue', actionId)
   if (command === 'pause') return handleTelegramOnboarding('/onboard pause', actionId)

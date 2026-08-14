@@ -1812,14 +1812,62 @@ def test_connected_mode_does_not_ask_what_the_data_answers():
     that good is a fine shortlist and a bad oracle, so the sweep RANKS and the
     operator still CHOOSES. What connected mode still refuses to ask is the
     seed question — that part of the premise held.
+
+    EXTENDED 2026-08-14 with the earned organisation question. It is NOT a
+    counter-example to this test's own law: connected mode refuses to ask what
+    the data ANSWERS, and here the data answered nothing — no seed, no sweep
+    identities — so which organisation this cabinet serves is genuinely unknown.
+    The inverse arm is the one that matters and it is directly below: hand the
+    plan an estate identity and the question is gone.
     """
     plan = journey.entry_plan({"connectors": ["tracker", "repo"]})
     assert plan["opening_move"] == "sweep_and_assert"
     assert plan["seed_question"] is None
     assert [q["id"] for q in plan["questions"]] == [
-        "rights", "salience", "limits", "purpose"
+        "rights", "salience", "limits", "purpose", "organization"
     ]
     assert plan["grants"]["connectors"] == ["repo", "tracker"]
+
+
+def test_the_organization_question_is_earned_and_disappears_when_answered():
+    """Ask only when nothing has answered it — all three ways it can be known.
+
+    THE SENSOR MUST FAIL IN BOTH DIRECTIONS or it is decoration: the arm above
+    proves the question APPEARS when the organisation is unknown, and each arm
+    here proves it VANISHES for one of the three things that can answer it. A
+    condition that never suppresses would make this an unconditional fifth
+    residual question wearing the word "earned".
+    """
+    unknown = journey.entry_plan({"connectors": ["tracker"]})
+    assert "organization" in [q["id"] for q in unknown["questions"]]
+    assert "answer_organization" in [a["action"] for a in unknown["next_actions"]]
+
+    # 1. The operator said so — including "just me", which is an answer.
+    for said in ("Acme Bakery", "just me"):
+        told = journey.entry_plan({"connectors": ["tracker"]},
+                                  organization={"answer": said})
+        assert "organization" not in [q["id"] for q in told["questions"]]
+        assert "answer_organization" not in [a["action"] for a in told["next_actions"]]
+
+    # 2. A connected tool named an estate.
+    swept = journey.entry_plan({"connectors": ["tracker"]},
+                               organization={"estate": ["acme-bakery"]})
+    assert "organization" not in [q["id"] for q in swept["questions"]]
+
+    # 3. The seed already carries a name — a term that is not the first word and
+    #    starts upper-case. The lower-case twin still asks, which is what proves
+    #    the case test is the thing deciding rather than the word count.
+    named = journey.entry_plan({"local_files": True},
+                               seed="I keep the books for Harbour Dental")
+    assert "organization" not in [q["id"] for q in named["questions"]]
+    plain = journey.entry_plan({"local_files": True},
+                               seed="i keep the books for a dental practice")
+    assert "organization" in [q["id"] for q in plain["questions"]]
+    # An empty estate list and a blank answer are NOT answers — the degenerate
+    # end, where a fail-open would read as "somebody told me".
+    empty = journey.entry_plan({"connectors": ["tracker"]},
+                               organization={"answer": "  ", "estate": ["", " "]})
+    assert "organization" in [q["id"] for q in empty["questions"]]
 
 
 def test_seeded_mode_asks_the_human_question_and_turns_it_into_discovery():
@@ -1952,7 +2000,9 @@ def test_ungranted_mode_says_plainly_what_it_cannot_know():
     """Mode 3: the residual questions, and no pretending."""
     plan = journey.entry_plan({})
     assert plan["opening_move"] == "residual_questions"
-    assert [q["id"] for q in plan["questions"]] == ["rights", "salience", "limits", "purpose"]
+    assert [q["id"] for q in plan["questions"]] == [
+        "rights", "salience", "limits", "purpose", "organization"
+    ]
     subjects = {row["subject"] for row in plan["cannot_know"]}
     assert {"grant_rights", "products", "customers", "teams", "company"} <= subjects
     assert all(row["statement"] for row in plan["cannot_know"])
@@ -1981,10 +2031,15 @@ def test_the_welcome_card_is_no_longer_a_single_locked_door(tmp_path):
     assert journey.SEED_QUESTION in card["body"]
     assert "cannot know" in card["body"]
     assert [option["action"] for option in card["options"]] == [
-        "propose_window", "answer_seed",
+        "propose_window", "answer_seed", "answer_organization",
     ]
     answering = next(o for o in card["options"] if o["action"] == "answer_seed")
     assert answering["input"] == "seed"
+    # Same rule for the organisation ask, added 2026-08-14: it is a typed
+    # answer, so it declares a field and a tap-only surface cannot render it as
+    # a button that sends nothing.
+    whose = next(o for o in card["options"] if o["action"] == "answer_organization")
+    assert whose["input"] == "organization"
 
 
 def test_deep_orientation_is_no_longer_terminal(tmp_path):

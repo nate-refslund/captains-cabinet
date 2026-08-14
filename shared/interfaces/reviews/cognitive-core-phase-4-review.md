@@ -21,7 +21,37 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 9cdaa9315edd1162218286d39beb074eb27bb47a372cdf01ffa633c4567b2423
+Reviewed-Scope-Digest: 2f743441e27e99b8c8afb711e7458c2ec2afd559e3ba046605198e9ee454081c
+
+(RE-BIND, 2026-08-14, `feat/web-probes-run`, recomputed over this branch's HEAD
+after the same landing's live-run fixes moved the contract a second time
+(63664 -> 63700, +36: the name query and its sentence reader, and the
+HTML-entity decode — both defects the live provider and the rendered card
+found by being used).
+ONE in-scope path moved and it is NOT a COG-4 surface:
+`cabinet/config/cognitive-architecture-contract.yml`, raising
+`framework_production_noncomment_lines` 63096 -> 63664 (effective 77638 -> 78206)
+for THE CABINET GOING AND LOOKING — the Captain's 2026-08-14 asks for search keys
+in the catalog, for the seed's web probes to actually run, and for the earned
+"which company is this for" question. The +568 is two permanent organs, both
+inside files the tree already carried: `framework/onboarding/research.py` +363
+(the search plane — its own read-only ceiling, deliberately a SECOND function
+rather than a widening of the inventory one, the bounded executor, and the
+untrusted-text scrubs every result passes through) and
+`framework/onboarding/journey.py` +205 (the two-plane probe merge, the
+`run_discovery` and `answer_organization` acts, and the earned organisation
+question). `framework/onboarding/` is NOT in the COG-4 scope set, so no COG-4
+implementation byte moved. Everything vendor-shaped stayed OUT of framework/:
+the five verified search providers, their endpoints, auth headers, result paths
+and setup steps are DATA in
+`instance/config/connector-templates.yml.example`, and the specifics ratchet is
+green with no new baseline entry. ZERO new framework production modules (208 <=
+208 for this landing) and zero expansion rows. DISJOINT from every raise noted
+below, the two 2026-08-13 connector notes included: different feature, different
+files. MEASURED, not asserted: the digest above is
+`cabinet/scripts/cognitive-phase4-review-scope.py --print` over this branch's
+HEAD, and the artifact is excluded from its own digest, so writing this note does
+not move it.)
 
 (RE-BIND, 2026-08-13, `feat/connector-catalog-and-multi-connect`, recomputed over
 this branch's HEAD. ONE in-scope path moved and it is NOT a COG-4 surface:

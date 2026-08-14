@@ -174,6 +174,39 @@ ${entry({ id: 'rest', label: 'Another REST list', category: 'code' })}${entry({ 
     expect(await getConnectorCatalog()).toEqual({ templates: [], categories: [] })
   })
 
+  it('offers a search tool, which declares no inventory at all', async () => {
+    // The floor is "a read call in one of the two lanes". Before the search
+    // lane existed this file required `inventory:` specifically, so every
+    // search template in the pack would have been silently dropped and the
+    // shelf the Captain asked for would have rendered empty with no error.
+    pack(`schema: cabinet.connector-templates/v1
+categories:
+  search: Search the web
+templates:
+  - id: finder
+    label: Finder
+    kind: search
+    category: search
+    summary: Web results for a question.
+    host: api.finder.test
+    credential_env: FINDER_TOKEN
+    key_looks_like: a long random string
+    how_to_connect:
+      - "Make a key on the API page and copy it."
+      - "Your sentence is sent to Finder as a search query."
+    connector:
+      search:
+        url: https://api.finder.test/search?q={query}
+        method: GET
+        results_path: results
+        title_field: title
+        url_field: url
+`)
+    const catalog = await getConnectorCatalog()
+    expect(catalog.templates.map((t) => t.id)).toEqual(['finder'])
+    expect(catalog.categories).toEqual([{ id: 'search', label: 'Search the web', count: 1 }])
+  })
+
   it('treats a stepless or single-string how_to_connect as data, not a crash', async () => {
     pack(`schema: cabinet.connector-templates/v1
 categories:

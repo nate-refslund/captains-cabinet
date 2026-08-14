@@ -51,9 +51,14 @@ tombstones the LIVE evidence trial, the journey re-mints a fresh trial (its
 genesis event links the tombstone hash) so onboarding keeps recording instead
 of wedging — purge finality still holds for a purged journey.
 
-No network, subprocess, connector, write into a granted source, or LLM call is
-possible in this module.  The dividend detectors are deterministic so their
-claims can be tested and cited rather than performed.
+No socket, subprocess, write into a granted source, or LLM call exists in this
+module.  Where onboarding has to REACH — the credentialed connector sweep, and
+the seed question's outward probes — it does so by DELEGATING to
+``framework.onboarding.research``, from a named action, on the record, never
+from a card render or a snapshot.  The boundary is what matters and it is
+unchanged: the module that decides is not the module that reaches, so a surface
+cannot cause an outbound request by looking at anything.  The dividend detectors
+are deterministic so their claims can be tested and cited rather than performed.
 """
 from __future__ import annotations
 
@@ -257,6 +262,27 @@ RESIDUAL_QUESTIONS = (
         "required": False,
     },
 )
+
+# THE ONE ORG QUESTION, AND IT IS EARNED — never a member of the set above.
+# The paragraph over RESIDUAL_QUESTIONS still stands: asking every operator what
+# their company is teaches them this is an interview, and at most altitudes the
+# answer is either obvious or not theirs to give. The Captain's 2026-08-14
+# amendment is narrower and does not disturb it — ask *"if it is not clear from
+# the text or connected tools"* — so this question appears only when
+# ``_organization_unclear`` says nothing has answered it. It is never required:
+# "just me" is a complete answer, and so is silence.
+ORG_QUESTION = {
+    "id": "organization",
+    "prompt": "Which company or organization is this for — or is it just you?",
+    "why": (
+        "Whose work this is changes what I should care about, and nothing you "
+        "have told me or connected has said yet. “Just me” is a complete answer."
+    ),
+    "required": False,
+}
+#: An organisation NAME, which is a few words. Bounded before it is stored or
+#: rendered, on the same rule as the seed.
+MAX_ORG_CHARS = 120
 
 # What a read-only sweep may honestly DERIVE, versus what it must ASK — the
 # 2026-07-26 adjudication, verbatim in effect. "partial" is the dangerous
@@ -908,8 +934,25 @@ def seed_probes(seed: Any, grants: Any) -> dict[str, Any]:
     if terms:
         joined = " ".join(terms[:4])
         if normalized["web"]:
-            for query in (joined, f"{joined} how it works", f"{joined} common problems"):
-                probes.append({"kind": "web_search", "query": query})
+            # THE NAMES GO OUT ON THEIR OWN, AND FIRST. Measured against a live
+            # provider, 2026-08-14: the seed "I am tech lead at STEP Network"
+            # produced the query "tech lead STEP Network", and what came back was
+            # pages about being a tech lead — the role words are common, the name
+            # is not, and a search engine ranks the common half. The operator
+            # asked what that ORGANISATION is; a name searched alone answers
+            # that, and the same name inside a sentence answers the sentence.
+            # Same signal as `_organization_unclear` and the same stated limit:
+            # in a script without letter case this cannot fire, so that operator
+            # simply gets the queries below, which is what everyone got before.
+            names = " ".join(_seed_names(seed)[:4])
+            queries = [joined, f"{joined} how it works", f"{joined} common problems"]
+            if names and names != joined:
+                queries.insert(0, names)
+            # Never propose more than the executor will send. A plan with a
+            # surplus reports it as "did not run", which is a true sentence about
+            # a shortfall that did not have to exist.
+            for query in queries[:research.MAX_SEARCH_PROBES]:
+                probes.append({"kind": research.SEARCH_PROBE_KIND, "query": query})
         if normalized["local_files"]:
             for term in terms[:3]:
                 probes.append({"kind": "local_name_match", "pattern": f"*{term}*"})
@@ -919,6 +962,88 @@ def seed_probes(seed: Any, grants: Any) -> dict[str, Any]:
         "probes": probes[:MAX_SEED_PROBES],
         "executable": bool(probes),
     }
+
+
+#: Where one statement ends and the next begins. Sentence-initial capitals carry
+#: no signal about names, so they have to be found and skipped — and everything
+#: the operator has said is composed into ONE string (``_discovery_seed``), so
+#: without this the second statement's first word reads as a name. Measured
+#: 2026-08-14 on a live look-up: the dream "Give me back my mornings", appended
+#: to a role sentence, sent the query "STEP Network Give".
+_SENTENCE_BREAK_RE = re.compile(r"[.!?;\n\r]+")
+
+
+def _seed_names(seed: Any) -> list[str]:
+    """The words the operator treated as NAMES, from their own capitalisation.
+
+    Per sentence, the first term is dropped (every sentence starts with a
+    capital, so that one carries no signal) and what is left that begins
+    upper-case is a name — which, in a script that HAS letter case, is what a
+    name looks like. Order is the operator's own.
+
+    TWO READERS SHARE THIS, which is the point of it being one function: the
+    query planner sends the names as a query of their own (a name searched alone
+    answers what that thing IS; the same name inside a sentence answers the
+    sentence), and ``_organization_unclear`` reads it as "something here has
+    already named an organisation, so do not ask". Two spellings of "what looks
+    like a name" would let the cabinet ask about an organisation it had just
+    gone and searched for.
+
+    THE LIMITS, stated where they are relied on: an English title-case job title
+    reads as a name here, and in a script with no letter case nothing does. Both
+    readers are built to be harmless when it is wrong — one extra query, or one
+    extra question that is optional and takes a tap to dismiss.
+    """
+    if not isinstance(seed, str):
+        return []
+    names: list[str] = []
+    for sentence in _SENTENCE_BREAK_RE.split(seed):
+        # THE SENTENCE'S REAL OPENER, read from the raw text rather than from
+        # the filtered terms. Dropping the first SURVIVING term instead was
+        # wrong wherever the stopwords had already removed the opener: "I work
+        # at Acme" filters to ["Acme"], so the only name in the sentence was
+        # treated as the capital that begins every sentence and thrown away.
+        raw = _salience.terms(sentence, min_len=1, folded=False)
+        opener = raw[0] if raw else ""
+        skipped = False
+        for term in _seed_terms(sentence):
+            if not skipped and term == opener:
+                skipped = True
+                continue
+            if term[:1] and term[:1] != term[:1].lower():
+                names.append(term)
+    return names
+
+
+def _organization_unclear(seed: Any, organization: Any) -> bool:
+    """Is the operating ORGANISATION still unknown? Simple, stated, fail-to-ask.
+
+    Three ways it can already be known, in order of authority:
+
+    1. THE OPERATOR ANSWERED IT. Nothing outranks that.
+    2. A CONNECTED TOOL NAMED AN ESTATE. The sweep's ``identities`` are what the
+       operator's own systems call themselves; a cabinet holding one of those
+       has been told, by the estate, whose it is.
+    3. THE SEED ALREADY CARRIES A NAME — read as: a term the operator typed that
+       starts with an upper-case letter and is not the first word of what they
+       said. That is what a name looks like in a script that HAS letter case.
+
+    THE COST OF (3), because a one-line heuristic that hides its errors is worse
+    than one that states them. It over-detects an English title-case job title
+    ("… a Tech Lead") and reads it as a name, so that operator is not asked; and
+    in a script with no letter case — most of the world's — it can never fire at
+    all, so that operator IS asked. Those two errors point in opposite
+    directions and the second one is the safe one: an unnecessary question costs
+    a tap on a question marked optional, and a question never asked costs a fact
+    nobody has. Nothing here guesses an organisation from the seed; it only
+    decides whether to ask.
+    """
+    block = organization if isinstance(organization, Mapping) else {}
+    if str(block.get("answer") or "").strip():
+        return False
+    if any(str(name).strip() for name in (block.get("estate") or ())):
+        return False
+    return not _seed_names(seed)
 
 
 def _cannot_know(mode: str) -> list[dict[str, str]]:
@@ -1098,6 +1223,7 @@ def _salience_merge_request(raw: Any, offer: Mapping[str, Any],
 def entry_plan(
     grants: Any = None, *, seed: Any = None, executed: Any = None,
     offer: Any = None, gather: Any = False, identity: Any = None,
+    search: Any = False, organization: Any = None,
 ) -> dict[str, Any]:
     """The opening move for whatever the operator has actually granted.
 
@@ -1158,6 +1284,19 @@ def entry_plan(
             "label": "Tell me in a sentence, and I will go look",
             "input": "seed",
         })
+    if search and any(str(p.get("kind") or "") == research.SEARCH_PROBE_KIND
+                      for p in discovery["probes"]):
+        # THE RE-RUN. ``answer_seed`` already sends these the moment they are
+        # derived, so this is not the only way they run — it is the way they run
+        # AFTER something changed that was not the seed: a search tool connected,
+        # a key pasted, an organisation named. Without it the operator's only
+        # route back to a look-up was to retype the sentence they already gave.
+        # Offered only when a search tool is declared, because a button that
+        # cannot work is the dead end this surface exists to abolish.
+        next_actions.append({
+            "action": "run_discovery",
+            "label": "Go and look these up",
+        })
     if isinstance(identity, Mapping) and identity.get("connectors"):
         # THE ASK THAT MAKES ATTRIBUTION REACHABLE. Who the operator is per
         # connector is settled from what they TELL the cabinet, and nothing
@@ -1176,6 +1315,19 @@ def entry_plan(
             "connectors": deepcopy(list(identity["connectors"])),
         })
     questions = [deepcopy(q) for q in asks]
+    if _organization_unclear(seed, organization):
+        # EARNED, and it carries its own field. Every other residual question is
+        # printed with no way to send an answer — a real gap, and not this
+        # unit's to close — but adding a fifth one in that state would be adding
+        # a dead end on purpose. This one has an action.
+        questions.append({**deepcopy(ORG_QUESTION),
+                          "action": "answer_organization",
+                          "input": "organization"})
+        next_actions.append({
+            "action": "answer_organization",
+            "label": "Tell me whose work this is",
+            "input": "organization",
+        })
     if isinstance(offer, Mapping) and offer.get("options"):
         # THE QUESTION THAT NOW HAS CANDIDATES. Salience stops being a blank
         # field the moment a ranking exists, and gains the action that carries
@@ -1210,6 +1362,8 @@ def entry_plan(
         "cannot_know": _cannot_know(mode),
         "identity_question": deepcopy(dict(identity))
         if isinstance(identity, Mapping) and identity.get("connectors") else None,
+        "organization": deepcopy(dict(organization))
+        if isinstance(organization, Mapping) else None,
         "next_actions": next_actions,
     }
     if not payload["next_actions"]:  # pragma: no cover — structurally unreachable
@@ -1358,6 +1512,18 @@ def _with_registry(root: Path, state: dict[str, Any]) -> dict[str, Any]:
     # declared something and I could not read it", which is the case where
     # being told matters most.
     refreshed["connectors_unreadable"] = unreadable
+    # HOW MANY SEARCH TOOLS ARE DECLARED — the same bounded local parse, over
+    # the other lane. It gates one thing: whether the card offers to go and look
+    # the seed up again. It is deliberately NOT part of ``entry_grants``, for
+    # the reason the registry already gives about web reachability — a search
+    # tool names no estate, so it must never put this cabinet into the mode
+    # where it claims to have READ the operator's world.
+    try:
+        refreshed["search_tools_declared"] = len(
+            research.load_connector_specs(
+                root, kind=research.CONNECTOR_KIND_SEARCH))
+    except Exception:  # pragma: no cover — defensive; the loader is fail-soft
+        refreshed["search_tools_declared"] = 0
     refreshed["connector_probes"] = {
         "schema": registry["schema"],
         "connected": deepcopy(registry["connected"]),
@@ -1366,25 +1532,78 @@ def _with_registry(root: Path, state: dict[str, Any]) -> dict[str, Any]:
     return refreshed
 
 
+def _estate_identities(state: Mapping[str, Any] | dict[str, Any]) -> list[str]:
+    """What the connected tools call THEMSELVES, from the committed sweep.
+
+    Read off ``salience_rows``, which is where ``gather_connectors`` persists
+    them — not off ``connector_sweep``, which carries the per-connector summary
+    and never held this key. Getting that wrong is the class of defect this
+    program keeps finding: a reader pointed at a plausible neighbour of the
+    thing it means, permanently returning the empty answer.
+    """
+    rows = state.get("salience_rows")
+    found = rows.get("identities") if isinstance(rows, Mapping) else None
+    return [str(name) for name in (found or ()) if str(name).strip()]
+
+
+def _discovery_seed(state: Mapping[str, Any] | dict[str, Any]) -> str:
+    """Everything the operator has said IN THEIR OWN WORDS, for discovery.
+
+    The role they typed, the dream they typed, and the organisation they named
+    — all three are theirs, so a term from any of them is a term they chose, and
+    the three together search wider than the role alone. ONE HOME, because
+    ``answer_seed`` composes this to run the probes and the card composes it to
+    report which terms were searched: two spellings of "the seed" meant the card
+    could name terms no probe ever used.
+    """
+    seed = state.get("seed")
+    mission = state.get("mission")
+    org = state.get("organization")
+    parts = [
+        seed.get("text") if isinstance(seed, Mapping) else None,
+        mission.get("purpose") if isinstance(mission, Mapping) else None,
+        org.get("name") if isinstance(org, Mapping) else None,
+    ]
+    # JOINED AS SENTENCES, not with a space. These are three separate statements
+    # and `_seed_names` skips each sentence's opening word; run together with a
+    # space they become one sentence, and the dream's first word starts reading
+    # as the name of an organisation (measured on a live look-up, 2026-08-14).
+    return ". ".join(str(part).rstrip(" .") for part in parts
+                     if str(part or "").strip())
+
+
 def _entry_plan_for(state: dict[str, Any]) -> dict[str, Any]:
     """The entry plan for a persisted journey: grants, seed, and what ran.
 
     One place, so a card can never be built from grants that skipped the
     registry or from a seed whose probes were never executed.
     """
-    seed = state.get("seed")
     try:
         declared = int(state.get("connectors_declared") or 0)
     except (TypeError, ValueError):
         declared = 0
     sweep = state.get("connector_sweep")
     who_when = sweep.get("who_and_when") if isinstance(sweep, dict) else None
+    try:
+        searchable = int(state.get("search_tools_declared") or 0)
+    except (TypeError, ValueError):
+        searchable = 0
     return entry_plan(
         _entry_grants(state),
-        seed=seed.get("text") if isinstance(seed, dict) else None,
+        seed=_discovery_seed(state),
         executed=state.get("discovery"),
         offer=salience_offer(state),
         gather=declared > 0 or bool(state.get("connectors_unreadable")),
+        search=searchable > 0,
+        organization={
+            "answer": (state.get("organization") or {}).get("name")
+            if isinstance(state.get("organization"), dict) else None,
+            # What the operator's OWN SYSTEMS call themselves, read off the
+            # committed sweep's own persisted block. Not a claim that this IS
+            # the organisation — it is evidence that something has already named
+            # one, which is all the question needs in order to stop asking.
+            "estate": _estate_identities(state),
+        },
         # Read off the committed sweep rather than recomputed, so the card and
         # the action answer the SAME question: a plan that re-derives it would
         # need the record, and the card is built in places that hold no root.
@@ -1615,16 +1834,30 @@ def _discovery_note(executed: Any) -> str:
     """
     if not isinstance(executed, dict):
         return ""
-    hits = sorted({m for row in executed.get("executed") or () for m in row.get("matches") or ()})
-    stopped = [row for row in executed.get("executed") or () if row.get("truncated")]
+    rows = executed.get("executed") or ()
+    hits = sorted({m for row in rows for m in row.get("matches") or ()})
+    stopped = [row for row in rows if row.get("truncated")]
     deferred = executed.get("deferred") or []
+    searched = [row for row in rows if row.get("results")]
     if hits:
         shown = ", ".join(hits[:5])
         note = f" From what you told me I went looking and found {len(hits)} file(s): {shown}."
-    elif executed.get("executed"):
+    elif any(row.get("matches") is not None for row in rows):
         note = " From what you told me I went looking in that folder and nothing matched by name."
     else:
         note = ""
+    if searched:
+        # THE QUERIES, NEVER THE ANSWERS. What is quoted here is the operator's
+        # own words going out — which is the thing they have a right to see
+        # before it leaves, and the thing that is safe to put in a sentence that
+        # travels to a messenger. The results themselves are third-party text;
+        # they ride the structured block instead, where every surface renders
+        # them as captions with their source beside them.
+        found = sum(len(row.get("results") or ()) for row in searched)
+        queries = "; ".join(f"“{row.get('query')}”" for row in searched[:3])
+        note += (
+            f" I searched the web for {queries} and found {found} result(s) —"
+            " they are listed with their addresses so you can check them.")
     if stopped:
         note += (
             f" {len(stopped)} search(es) stopped at my limit before the end of that folder, "
@@ -1636,6 +1869,17 @@ def _discovery_note(executed: Any) -> str:
             f" {len(deferred)} probe(s) did not run ({', '.join(r.replace('_', ' ') for r in reasons)}), "
             "so this is not everywhere I said I would look."
         )
+        # A REASON THE OPERATOR CAN ACT ON, in the sentence that reports it.
+        # "no search tool connected" is a fact; "connect one and I will look
+        # these up" is the same fact with the next move attached, and the
+        # difference is the whole complaint that produced this unit — an honest
+        # deferral that read like a permanent incapacity.
+        if any(str(row.get("reason") or "") == "no_search_tool_connected"
+               for row in deferred):
+            note += (
+                " Connect a search tool under “Search the web” and I can look"
+                " these up for you."
+            )
     return note
 
 
@@ -3184,10 +3428,16 @@ def _execute_probes(source_root: Any, probes: Any) -> dict[str, Any]:
 
     What runs is strictly WEAKER than the Charter the Captain already approved:
     it matches NAMES inside the ratified First Window and opens nothing, so it
-    can reveal nothing a bounded read of that same folder could not. Web probes
-    are not run — this module holds no egress and never will — and are reported
-    as DEFERRED with their reason rather than dropped, so "found nothing" is
-    never claimed on behalf of a probe class that did not run.
+    can reveal nothing a bounded read of that same folder could not.
+
+    ANYTHING THAT NEEDS A SOCKET IS DEFERRED FROM HERE — this function holds no
+    egress and never will — with the reason recorded rather than dropped, so
+    "found nothing" is never claimed on behalf of a probe class that did not
+    run. ``no_egress_in_the_onboarding_core`` is a HAND-OFF, not a verdict:
+    ``_discovery_block`` takes every probe deferred under it to the research
+    plane, which either runs it or replaces this placeholder with what actually
+    stopped it. A run that never reaches that plane keeps the placeholder, which
+    is still the honest answer for it.
     """
     executed: list[dict[str, Any]] = []
     deferred: list[dict[str, Any]] = []
@@ -3202,7 +3452,7 @@ def _execute_probes(source_root: Any, probes: Any) -> dict[str, Any]:
             continue
         if str(probe.get("kind") or "") != "local_name_match":
             deferred.append({**probe, "executed": False,
-                             "reason": "no_egress_in_the_onboarding_core"})
+                             "reason": DEFERRED_TO_THE_RESEARCH_PLANE})
             continue
         if root is None or not root.is_dir():
             deferred.append({**probe, "executed": False,
@@ -3227,6 +3477,62 @@ def _execute_probes(source_root: Any, probes: Any) -> dict[str, Any]:
         # here let a folder of thousands of files report a complete search.
         "complete": bool(executed) and not deferred
         and not any(row["truncated"] for row in executed),
+    }
+
+
+#: The placeholder ``_execute_probes`` leaves on a probe it cannot run itself.
+#: Named, because ``_discovery_block`` below matches on it to decide what to
+#: hand outward, and a hand-off keyed to a string literal typed in two places is
+#: a hand-off that silently stops happening when one of them is reworded.
+DEFERRED_TO_THE_RESEARCH_PLANE = "no_egress_in_the_onboarding_core"
+
+
+def _discovery_block(root: Path, source_root: Any, probes: Any) -> dict[str, Any]:
+    """Every probe the plan proposed, RUN wherever it can be run.
+
+    TWO PLANES, ONE ANSWER. Names are matched here, inside the ratified window,
+    by a function that opens no socket; queries are sent by
+    ``framework.onboarding.research``, which holds the socket and the ceiling.
+    The operator sees one list either way, because "what did you actually go and
+    look for" is one question and answering it out of two shapes would put the
+    seam in front of the person instead of behind them.
+
+    THIS IS WHERE THE CAPTAIN'S "did not run" WENT AWAY (2026-08-14). Every web
+    probe used to end at ``no_egress_in_the_onboarding_core`` — true of this
+    module, and read by the operator as "this cabinet cannot look anything up",
+    which was false the moment a search tool was connected. The core still
+    refuses to reach; it now hands the refusal somewhere that can.
+
+    A FAILURE IN THE OUTWARD PLANE IS NOT ALLOWED TO COST THE LOCAL ONE. The
+    delegation is wrapped, and a plane that raises leaves its probes deferred
+    with a named reason — the same rule ``_entry_registry`` holds: an unreachable
+    outside is an UNGRANTED one, which is honest and fail-closed at once.
+    """
+    here = _execute_probes(source_root, probes)
+    outward = {"executed": [], "deferred": []}
+    handed = [row for row in here["deferred"]
+              if str(row.get("reason") or "") == DEFERRED_TO_THE_RESEARCH_PLANE]
+    if handed:
+        try:
+            outward = research.run_search_probes(root, handed)
+        except Exception:  # pragma: no cover — defensive; the plane is fail-soft
+            outward = {"executed": [],
+                       "deferred": [{**row, "reason": "search_plane_failed"}
+                                    for row in handed]}
+    kept = [row for row in here["deferred"]
+            if str(row.get("reason") or "") != DEFERRED_TO_THE_RESEARCH_PLANE]
+    executed = [*here["executed"], *outward.get("executed", ())]
+    deferred = [*kept, *outward.get("deferred", ())]
+    return {
+        "schema": PROBE_RESULT_SCHEMA,
+        "executed": executed,
+        "deferred": deferred,
+        # Same three conditions as the local block, over the merged set: a run
+        # is complete only when something ran, nothing was deferred, and nothing
+        # stopped at a cap. A search that came back truncated searched PART of
+        # what it offered, exactly as a name walk that hit its limit did.
+        "complete": bool(executed) and not deferred
+        and not any(row.get("truncated") for row in executed),
     }
 
 
@@ -3855,16 +4161,85 @@ def _act_core(
             # than the role alone did. Still bounded by the CURRENT grants — no
             # local grant, no local probe; no web grant, no web probe — so the
             # seed can never conjure a reach the operator has not granted.
-            discovery_seed = " ".join(x for x in (seed_text, purpose_text) if x)
             probed = _with_registry(base, after)
-            plan = entry_plan(_entry_grants(probed), seed=discovery_seed)
+            plan = entry_plan(_entry_grants(probed), seed=_discovery_seed(after))
             source_state = probed.get("source") or {}
-            after["discovery"] = _execute_probes(
+            # AND THE OUTWARD HALF RUNS HERE TOO. Answering the seed question is
+            # already an operator act, on the record, inside the action lock —
+            # so it is the right place for the look-up, and making the operator
+            # press a second button to get the answer to the question they just
+            # answered would be the interview-that-goes-nowhere in a new costume.
+            # It reaches only when a search tool is declared and credentialed;
+            # otherwise every outward probe comes back deferred with the reason
+            # and the card says what to do about it.
+            after["discovery"] = _discovery_block(
+                base,
                 source_state.get("root")
                 if source_state.get("status") == "ratified_read_only"
                 else None,
                 plan["discovery"]["probes"],
             )
+            return _commit(
+                base, state, after, action=action, action_id=action_id,
+                surface=surface, trace_id=trace_id,
+                correlation_id=correlation_id, now=ts,
+            )
+        if action == "run_discovery":
+            # GO AND LOOK, AGAIN. Same probes, same planes, same ceilings as the
+            # run inside answer_seed — this exists because the things that make
+            # a look-up possible change AFTER the sentence is typed: a search
+            # tool gets connected, a key gets pasted, an organisation gets named.
+            # Without it the only way back to a look-up was to retype the seed.
+            #
+            # IT IS AN ACTION, for the reason the sweep is one: it leaves the
+            # machine. Never inside a snapshot, a card render or a probe refresh.
+            # PAYLOAD-FREE, so a surface cannot widen what is searched by sending
+            # a field — what goes out is derived from words the operator already
+            # gave this journey and nothing else, which is also why a tap can
+            # carry it.
+            probed = _with_registry(base, state)
+            seed = _discovery_seed(probed)
+            if not seed.strip():
+                raise JourneyError(
+                    "discovery_has_no_seed",
+                    "Tell me what you do first, and then I will know what to look up.",
+                )
+            plan = entry_plan(_entry_grants(probed), seed=seed)
+            after = deepcopy(state)
+            source_state = probed.get("source") or {}
+            after["discovery"] = _discovery_block(
+                base,
+                source_state.get("root")
+                if source_state.get("status") == "ratified_read_only"
+                else None,
+                plan["discovery"]["probes"],
+            )
+            return _commit(
+                base, state, after, action=action, action_id=action_id,
+                surface=surface, trace_id=trace_id,
+                correlation_id=correlation_id, now=ts,
+            )
+        if action == "answer_organization":
+            # WHOSE WORK THIS IS (Captain, 2026-08-14). Asked only when nothing
+            # has answered it — see ``_organization_unclear`` — and never
+            # required: "just me" is stored exactly as typed, because a sole
+            # operator saying so is a real answer and not an empty one.
+            #
+            # IT IS RECORDED, NOT DERIVED. Nothing here guesses an organisation
+            # from a folder name, a credential or a search result: the one
+            # source is the operator's own sentence, which is the same law the
+            # identity lane holds for "which of these accounts is you". The
+            # answer joins the discovery seed (``_discovery_seed``), so the next
+            # look-up searches the name they gave rather than around it.
+            raw = request.get("organization")
+            if not isinstance(raw, str) or not raw.strip():
+                raise JourneyError(
+                    "organization_required",
+                    "Name the company or organization, or tell me it is just you.",
+                )
+            named = " ".join(_scrub_lone_surrogates(raw).split())[:MAX_ORG_CHARS]
+            after = deepcopy(state)
+            after["organization"] = {"name": named, "answered_at": ts}
             return _commit(
                 base, state, after, action=action, action_id=action_id,
                 surface=surface, trace_id=trace_id,

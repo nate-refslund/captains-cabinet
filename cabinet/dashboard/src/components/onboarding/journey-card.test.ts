@@ -242,6 +242,7 @@ function identityEntry(connectors: OnboardingIdentityAsk[]): OnboardingEntryPlan
     questions: [],
     discovery: { terms: [], probes: [], executable: false },
     cannot_know: [],
+    organization: null,
     identity_question: {
       question: 'I cannot tell which of the actors I read is you.',
       is_a_question: true,
@@ -288,6 +289,7 @@ function scriptState(overrides: {
   connectCategory?: string
   exploring?: boolean
   refusedAction?: string | null
+  organization?: string
 }) {
   hookScript.cursor = 0
   hookScript.steps = [
@@ -327,6 +329,10 @@ function scriptState(overrides: {
     { initial: '', value: overrides.connectCategory ?? '' }, // 30 connectCategory
     { initial: false, value: overrides.exploring ?? false }, // 31 exploring
     { initial: null, value: overrides.refusedAction ?? null }, // 32 refusedAction
+    // Whose work this is. LAST, per the note in journey-card.tsx: a hook added
+    // anywhere else renumbers every index below it and this script goes red —
+    // which is the sensor working, not an inconvenience.
+    { initial: '', value: overrides.organization ?? '' }, // 33 organization
   ]
 }
 
@@ -1014,6 +1020,7 @@ describe('rendered component — accessible shell', () => {
       ],
       discovery: { terms: [], probes: [], executable: false },
       cannot_know: [],
+      organization: null,
       identity_question: null,
       next_actions: [],
     }
@@ -1324,6 +1331,7 @@ describe('rendered component — discovery is disclosed honestly', () => {
         },
       },
       cannot_know: [],
+      organization: null,
       identity_question: null,
       next_actions: [],
     }
@@ -1342,6 +1350,114 @@ describe('rendered component — discovery is disclosed honestly', () => {
   it('says when a search stopped at its limit instead of implying it finished', () => {
     scriptState({ journey: discoveryFixture(), wizardStep: 'discover', exploring: true })
     expect(render()).toContain('stopped at my limit before the end of the folder')
+  })
+
+  /** The same fixture, with the outward half of the run answered. */
+  function lookedUpFixture(over: Partial<{ url: string; title: string; snippet: string }> = {}) {
+    const fixture = discoveryFixture()
+    fixture.card.entry!.discovery.executed!.executed.push({
+      kind: 'web_search',
+      query: 'tech lead STEP Network',
+      provider: 'brave search',
+      truncated: false,
+      results: [{
+        title: over.title ?? 'STEP Network — media network',
+        url: over.url ?? 'https://stepnetwork.example/',
+        snippet: over.snippet ?? 'A media network in Copenhagen.',
+      }],
+    })
+    return fixture
+  }
+
+  it('shows the QUERY it sent and the results it got back, each with its address', () => {
+    scriptState({ journey: lookedUpFixture(), wizardStep: 'discover', exploring: true })
+    const html = render()
+    // The operator sees exactly what left the machine.
+    expect(html).toContain('tech lead STEP Network')
+    expect(html).toContain('searched the web with brave search')
+    // …and the citation: a title that links, and the address written out.
+    expect(html).toContain('STEP Network — media network')
+    expect(html).toContain('href="https://stepnetwork.example/"')
+    expect(html).toContain('A media network in Copenhagen.')
+  })
+
+  it('never turns a result into a live link unless it is a web address', () => {
+    // The core reduces a non-http address to an empty string; this arm proves
+    // the surface then renders TEXT rather than an anchor with an empty href,
+    // which is the half-fix that would look identical in a screenshot.
+    scriptState({
+      journey: lookedUpFixture({ url: '', title: 'No address here' }),
+      wizardStep: 'discover',
+      exploring: true,
+    })
+    const html = render()
+    expect(html).toContain('No address here')
+    expect(html).not.toContain('href=""')
+  })
+
+  it('offers the re-run only when the core says a search tool is connected', () => {
+    const without = lookedUpFixture()
+    scriptState({ journey: without, wizardStep: 'discover', exploring: true })
+    expect(render()).not.toContain('Go and look these up')
+
+    const with_ = lookedUpFixture()
+    with_.card.entry!.next_actions = [
+      { action: 'run_discovery', label: 'Go and look these up' },
+    ]
+    scriptState({ journey: with_, wizardStep: 'discover', exploring: true })
+    expect(render()).toContain('Go and look these up')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Whose work this is — the earned organisation question, and its field.
+// ---------------------------------------------------------------------------
+describe('rendered component — the organisation question is answerable', () => {
+  function organizationFixture(withAction: boolean): OnboardingResponse {
+    const fixture = journeyFixture('welcome')
+    fixture.card.entry = {
+      schema: 'cabinet.onboarding-entry-plan/v1',
+      mode: 'ungranted',
+      opening_move: 'residual_questions',
+      grants: { connectors: [], local_files: false, web: false },
+      seed_question: null,
+      questions: [
+        { id: 'rights', prompt: 'Which sources are yours?', why: 'Not in the data.', required: true },
+        {
+          id: 'organization',
+          prompt: 'Which company or organization is this for — or is it just you?',
+          why: 'Nothing has said yet.',
+          required: false,
+          ...(withAction
+            ? { action: 'answer_organization' as const, input: 'organization' }
+            : {}),
+        },
+      ],
+      discovery: { terms: [], probes: [], executable: false },
+      cannot_know: [],
+      organization: null,
+      identity_question: null,
+      next_actions: [],
+    }
+    return fixture
+  }
+
+  it('renders a field for the question the core says can be answered', () => {
+    scriptState({ journey: organizationFixture(true), wizardStep: 'discover', exploring: true })
+    const html = render()
+    expect(html).toContain('Which company or organization is this for')
+    expect(html).toContain('name="dashboard-organization"')
+    expect(html).toContain('just me')
+  })
+
+  it('renders NO field for a question the core gave no action — the honest gap', () => {
+    // The other three residuals are printed with no way to answer them. That is
+    // a real gap, and this arm exists so a future edit cannot paper over it with
+    // a field that would send nothing.
+    scriptState({ journey: organizationFixture(false), wizardStep: 'discover', exploring: true })
+    const html = render()
+    expect(html).toContain('Which company or organization is this for')
+    expect(html).not.toContain('name="dashboard-organization"')
   })
 })
 
