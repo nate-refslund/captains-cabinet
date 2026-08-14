@@ -8,7 +8,7 @@ with every battery re-run here rather than trusted from a build log.
 
 | Gate | Command | Result |
 |---|---|---|
-| onboarding core | `python3.12 -m pytest framework/onboarding/tests -q` | 995 passed, 1 skipped |
+| onboarding core | `python3.12 -m pytest framework/onboarding/tests -q` | 995 passed, 1 skipped (47 of them new) |
 | whole framework | `python3.12 -m pytest framework -q` | 8167 passed, 30 skipped, 2 failed — see "pre-existing" below |
 | dashboard | `npm ci && npx vitest run` | 3548 passed, 1 skipped, 170 files |
 | types + parity union | `npx tsc --noEmit` | clean |
@@ -26,11 +26,16 @@ the authority and is checked before merge.
 
 ## The census raise
 
-`framework_production_noncomment_lines` 63700 → 64244 (+544, measured, observed ==
-maximum, zero headroom). Raised VISIBLY rather than paid by a temporary allowance,
-for the reason every row above it gives: these are permanent organs and an
-allowance would promise a deletion gate that never fires. Zero new production
-modules — every organ lives in a file the tree already carried.
+`framework_production_noncomment_lines` 63700 → 64247 (+547 in two measured steps:
++544 for the seven units, then +3 for the stopword fix the live drive itself
+produced — noted separately in the contract because it was found by USING the
+thing, not by reading it). Observed == maximum, zero headroom. Raised VISIBLY
+rather than paid by a temporary allowance, for the reason every row above it
+gives: these are permanent organs and an allowance would promise a deletion gate
+that never fires. Zero new production modules — every organ lives in a file the
+tree already carried. The COG-4 review digest is re-bound in the same branch: the
+contract is the only in-scope path that moved, and `framework/onboarding/` is not
+a COG-4 surface.
 
 ## Class-11: does each new sensor test the control?
 
@@ -137,3 +142,12 @@ egress ceiling produces a different reason so it does not re-trigger.
   them to dashboard routes. The World skin renders the SAME component, so its two
   exits are dashboard links that navigate out of the world canvas — the right
   destinations, not world-native ones. Telegram has no branch for them at all.
+
+## One sensor I had to fix in my own suite
+
+`test_a_guess_is_never_recorded_without_the_operator_s_tap` shipped its first
+draft with `assert ... or True` — a disabled sensor wearing a pass, which is the
+defect this program hunts in everything else. Replaced with the property it was
+meant to state: a recorded NAME produces a guess on every connector and
+attributes ZERO — every basis `unresolved`, every share `0`. That is now the
+sharpest single statement of the law in the branch.
