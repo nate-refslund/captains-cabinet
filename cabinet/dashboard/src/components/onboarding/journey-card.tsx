@@ -268,6 +268,13 @@ export default function OnboardingJourneyCard({
   // ask for the look. Without this the first successful sweep replaced the step
   // with its own results and the second tool could never be added.
   const [exploring, setExploring] = useState(false)
+  // WHICH act the visible refusal belongs to. There is one `error` line, and it
+  // sits at the FOOT of a card that is several screens long — so a refusal of an
+  // answer given near the top is a message the operator never sees, which reads
+  // as the act doing nothing at all. This lets the reason render AT the control
+  // that fired it, in addition to the shared line. Cleared at the start of every
+  // send, so a stale refusal can never sit under a control that just succeeded.
+  const [refusedAction, setRefusedAction] = useState<OnboardingAction | null>(null)
   // Whose work this is. Empty until they say — never pre-filled from a folder
   // name, a credential or a search result, because the core stores this as the
   // operator's own statement and a default would put words in their mouth.
@@ -398,6 +405,7 @@ export default function OnboardingJourneyCard({
       if (!journey) return null
       setWorking(true)
       setError(null)
+      setRefusedAction(null)
       const ids = {
         action_id: newActionId(effectiveSurface.current),
         trace_id: newActionId('trace'),
@@ -459,6 +467,7 @@ export default function OnboardingJourneyCard({
         return body
       } catch (err) {
         setError(err instanceof Error ? err.message : 'That choice could not be completed.')
+        setRefusedAction(action)
         if (action !== 'purge') {
           void reportEvidence('transport', 'failed', { action, error_code: 'action_request_failed' }, ids)
         }
@@ -523,6 +532,13 @@ export default function OnboardingJourneyCard({
   const salienceOptions: OnboardingSalienceOption[] = salienceOption?.options ?? []
   const salienceAsksName =
     salienceOptions.find((option) => option.id === salienceChoice)?.input === 'seed'
+  // WHAT THE CORE ALREADY HOLDS, read back at the control that sent it. The
+  // ranked question keeps its candidates on the card after it is answered (the
+  // operator may re-point at any time), so without this the form is
+  // byte-identical before and after a successful answer — the radios, the typed
+  // name and the button all unchanged. Read from committed state, never from the
+  // local field, so it says what the CORE recorded rather than what was typed.
+  const answeredTarget = journey?.state.salience?.target ?? ''
 
   function windowPayload(): Record<string, unknown> {
     return {
@@ -1301,8 +1317,17 @@ export default function OnboardingJourneyCard({
 
           {/* The server's own sentence, on every stage past the front. The front
               speaks for itself above; a charter, a dividend or a paused card
-              speaks here. */}
-          {!inFrontQuestions && !inDiscover && !showWindowForm && (
+              speaks here.
+
+              GATED ON THE CONNECT PANEL, NOT ON THE BRANCH — the same predicate
+              the sweep results use. Gated on `inDiscover` it stayed hidden for
+              the WHOLE discover branch, including after the look, and this
+              sentence is the only place the card reports an answered salience
+              target ("You pointed me at X, so that is where I spend depth").
+              Measured live 2026-08-13: the operator named their own focus, the
+              core accepted it (HTTP 200, revision bumped, target recorded), and
+              the page did not change by one character. */}
+          {!inFrontQuestions && !showDiscoverPanel && !showWindowForm && (
             <p className={`mt-5 break-words text-sm leading-6 ${t.muted}`}>{journey.card.body}</p>
           )}
 
@@ -1494,8 +1519,24 @@ export default function OnboardingJourneyCard({
                 disabled={working || !salienceChoice || (salienceAsksName && !salienceName.trim())}
                 className={`mt-3 min-h-11 rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50 ${t.secondary}`}
               >
-                Go deep on that one
+                {answeredTarget ? 'Point me somewhere else' : 'Go deep on that one'}
               </button>
+              {/* EVERY ANSWER LANDS SOMEWHERE THE OPERATOR CAN SEE — one of these
+                  two always renders once an answer has been sent: what the core
+                  recorded, or why it refused. Silence here is the defect. */}
+              {refusedAction === 'answer_salience' && error ? (
+                <p
+                  role="alert"
+                  className={`mt-2 text-xs font-medium ${variant === 'world' ? 'text-red-800' : 'text-red-300'}`}
+                >
+                  {error}
+                </p>
+              ) : answeredTarget ? (
+                <p role="status" className={`mt-2 text-xs ${t.faint}`}>
+                  I am pointed at {answeredTarget}. Choose the folder that holds it below —
+                  if it is called something else there, I will ask you what it is.
+                </p>
+              ) : null}
             </form>
           )}
 
@@ -1858,8 +1899,16 @@ export default function OnboardingJourneyCard({
 
           {/* The server card's own options — ratify, change, continue, pause,
               revoke, purge, start again — on the stages that carry them. The
-              front and the window form own their own buttons above. */}
-          {!inFrontQuestions && !inDiscover && !showWindowForm && !purgeArmed && journey.card.options.length > 0 && (
+              front and the window form own their own buttons above.
+
+              THE SAME GATE AS THE SENTENCE ABOVE, and for a harder reason: on
+              the discover branch after the look, this row holds the ONLY way
+              onward ("Choose a folder I may read"). Gated on `inDiscover` it
+              never rendered — the connect panel had already handed over, so its
+              own two buttons were gone too, and an operator who had just told
+              the Cabinet what to open had no control left on the page. That is
+              the "I cannot continue" half of the live report. */}
+          {!inFrontQuestions && !showDiscoverPanel && !showWindowForm && !purgeArmed && journey.card.options.length > 0 && (
             <div className="mt-6 flex flex-wrap gap-2">
               {journey.card.options.map((option) => (
                 <button
