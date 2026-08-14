@@ -19,6 +19,15 @@ export type WizardStepId = 'role' | 'dream' | 'start' | 'window' | 'discover'
 
 /** What the three questions collect, before any of it crosses to the core. */
 export interface WizardValues {
+  /**
+   * Question one's OPENING LINE — what the operator is called (Captain,
+   * 2026-08-14: "if the very first question is 'What is your name?' then it may
+   * more intelligently guess the user account across the tools"). Optional: a
+   * cabinet that refuses to start without a name is an interview. Given, it
+   * lands under `captain.name` and turns "which of these thirty accounts is
+   * you?" into one confirm chip per tool.
+   */
+  name: string
   /** Question one — what the operator does. Becomes the journey seed. */
   role: string
   /** Question two — the dream for the Cabinet. Becomes `mission.purpose`. */
@@ -33,6 +42,7 @@ export interface WizardValues {
  * render would defeat the hook-order assertions the tests script.
  */
 export const EMPTY_WIZARD: Readonly<WizardValues> = Object.freeze({
+  name: '',
   role: '',
   dream: '',
   startPreference: '',
@@ -96,6 +106,7 @@ export function prevStep(step: WizardStepId): WizardStepId | null {
  */
 export function seedRequest(values: WizardValues): {
   seed: string
+  name?: string
   purpose?: string
   start_preference: 'point' | 'decide'
 } | null {
@@ -103,12 +114,19 @@ export function seedRequest(values: WizardValues): {
   if (!seed) return null
   if (values.startPreference !== 'point' && values.startPreference !== 'decide') return null
   const dream = values.dream.trim()
+  // An unstated name is OMITTED, not sent blank — the same rule the dream
+  // follows, and for the same reason: the core would otherwise record a
+  // `captain.name` the operator never gave, over whatever the generator's
+  // defaults lane already wrote there.
+  const name = values.name.trim()
   return {
     seed,
+    ...(name ? { name } : {}),
     ...(dream ? { purpose: dream } : {}),
     start_preference: values.startPreference,
   }
 }
+
 
 /**
  * Where to resume the front when a journey already carries answers — a reload

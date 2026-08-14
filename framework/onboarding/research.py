@@ -37,6 +37,12 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+# ONE tokenizer, in the module that declares itself its only home. The identity
+# guess compares a NAME against an account identifier, and a second fold/split
+# written here would drift from the ranking's within a month — the exact drift
+# ``salience.split_words`` was made public to stop.
+from framework.onboarding import salience
+
 # package.json dependency name (exact or prefix) → stack tag
 _DEP_STACK = {
     "next": "nextjs", "@neondatabase": "neon", "@vercel": "vercel",
@@ -1005,6 +1011,23 @@ def _sweep_one(spec, credential, *, fetch, timeout, max_items, budget) -> dict:
 CONNECTOR_KIND_INVENTORY = "inventory"
 CONNECTOR_KIND_SEARCH = "search"
 
+#: Why a look-up did not leave the machine: there is nothing here that can
+#: search. NAMED, because the journey re-fires the probes the moment a search
+#: tool is declared and it decides that on this exact reason — a hand-off keyed
+#: to a string typed in two places is a hand-off that silently stops happening
+#: when one of them is reworded (the same trap ``DEFERRED_TO_THE_RESEARCH_PLANE``
+#: is named for, one module up).
+NO_SEARCH_TOOL = "no_search_tool_connected"
+
+
+def connector_kind(entry) -> str:
+    """Which lane a built connector entry belongs to — the public reader.
+
+    The caller that needs it is the journey action that has just declared one
+    and must decide whether the seed's look-ups can now reach.
+    """
+    return _spec_kind(entry)
+
 
 def _spec_kind(entry) -> str:
     """Which lane a declared connector belongs to, or ``""`` for neither.
@@ -1865,7 +1888,7 @@ def run_search_probes(root, probes, *, specs=None, env=None, fetch=None,
     if not wanted:
         return result
     if not specs:
-        _defer(wanted, "no_search_tool_connected")
+        _defer(wanted, NO_SEARCH_TOOL)
         return result
     spec = specs[0]
     name = str(spec.get("name") or "").strip() or "search"
@@ -2194,6 +2217,113 @@ def _distinct_actors(rows, connector: str) -> int:
                 for a in _row_actors(row)})
 
 
+#: The THREE ways a name is allowed to match an account identifier, and there
+#: are exactly three because every one of them is a rule an operator can read
+#: back off the two strings. No edit distance, no prefix, no "starts with the
+#: same letters", no similarity score: those produce a wrong-person match that
+#: reads exactly like a right one, which is the failure ``_fold`` refuses for
+#: RECORDING and which is refused here too. What is different here is that
+#: nothing this produces is ever recorded — it is a QUESTION with a proposed
+#: answer, and only the operator's tap writes anything.
+GUESS_WHOLE = "whole_name"
+GUESS_EVERY_WORD = "every_word"
+GUESS_JOINED = "joined_words"
+
+#: Bounds on the guess: how many words of a name it will consider (a long
+#: display name is still a name, but the pair walk below is quadratic) and the
+#: shortest word a JOINED form may end in. A two-letter tail would let "nr"
+#: claim any account written "nr".
+_MAX_GUESS_NAME_WORDS = 6
+_MIN_JOINED_TAIL = 3
+
+
+def _name_forms(name) -> tuple[set, set, list]:
+    """``(words, joined, ordered_words)`` for one name, folded.
+
+    ``joined`` is every ``a + b`` and ``a[0] + b`` over ORDERED pairs of
+    distinct name words — the two ways a person's own name is habitually
+    compressed into a handle (``nathanielrefslund``, ``nrefslund``). It is
+    mechanical, dictionary-free, and produces nothing that is not spelled out of
+    the operator's own name.
+    """
+    words = salience.split_words(salience.fold(name))[:_MAX_GUESS_NAME_WORDS]
+    joined = set()
+    for left in words:
+        for right in words:
+            if left == right or len(right) < _MIN_JOINED_TAIL:
+                continue
+            joined.add(left + right)
+            joined.add(left[0] + right)
+    return set(words), joined, words
+
+
+def identity_matches(candidates, names) -> list:
+    """Every offered account whose identifier matches one of the given names.
+
+    ONE MATCH IS A PROPOSAL; TWO ARE A REFUSAL TO PROPOSE. Both cases are
+    returned in full, because the caller has to be able to say WHY it is not
+    guessing on a connector where two accounts are spelled like the operator —
+    silence there reads as "your name matched nothing", which is the opposite of
+    what happened.
+    """
+    wanted = [str(n) for n in (names or ()) if str(n).strip()]
+    if not wanted:
+        return []
+    found = []
+    for candidate in candidates or ():
+        identifier = str((candidate or {}).get("identifier") or "")
+        if not identifier.strip():
+            continue
+        folded = salience.fold(identifier)
+        parts = set(salience.split_words(folded))
+        for name in wanted:
+            words, joined, _ordered = _name_forms(name)
+            if not words:
+                continue
+            if folded == salience.fold(name):
+                rule, evidence = GUESS_WHOLE, [identifier]
+            elif words <= parts:
+                rule, evidence = GUESS_EVERY_WORD, sorted(words)
+            elif parts & joined:
+                rule, evidence = GUESS_JOINED, sorted(parts & joined)
+            else:
+                continue
+            found.append({
+                "identifier": identifier,
+                "rows": int((candidate or {}).get("rows") or 0),
+                "rule": rule,
+                "matched_name": name,
+                "evidence": evidence,
+            })
+            break
+    return found
+
+
+def identity_guess(candidates, names) -> dict | None:
+    """The ONE account that matches the operator's name, or nothing.
+
+    NEVER RECORDED WITHOUT A TAP. This is the proposal half of "which of these
+    is you": the operator confirms it and ``record_operator_identity`` writes
+    what they confirmed, exactly as it writes a pick from the list. Nothing in
+    this module or its callers may store a guess — an attribution the operator
+    never made is the one failure in this lane that cannot be detected
+    afterwards, because it reads exactly like a correct one.
+    """
+    found = identity_matches(candidates, names)
+    if len(found) != 1:
+        return None
+    guess = dict(found[0])
+    shown = ", ".join(guess["evidence"][:3])
+    guess["why"] = (
+        f"“{guess['identifier']}” is how you spell your own name here"
+        if guess["rule"] == GUESS_WHOLE else
+        f"“{guess['identifier']}” carries every word of your name ({shown})"
+        if guess["rule"] == GUESS_EVERY_WORD else
+        f"“{guess['identifier']}” reads as your name run together ({shown})"
+    )
+    return guess
+
+
 def identity_question(rows, operator) -> dict | None:
     """The connectors that still cannot recognise the operator, as a QUESTION.
 
@@ -2234,6 +2364,19 @@ def identity_question(rows, operator) -> dict | None:
                  "reports_no_actor": not candidates,
                  "accounts": distinct, "withheld": withheld,
                  "complete": withheld <= 0}
+        # THE GUESS, WHERE A NAME MAKES ONE POSSIBLE. With a name on record this
+        # stops being a spelling test over dozens of strangers and becomes one
+        # tap — and where two accounts here are spelled like the operator, it
+        # says THAT rather than picking one, because a guess that could be two
+        # people is not a guess.
+        matched = identity_matches(candidates, (operator or {}).get("names") or ())
+        entry["guess"] = identity_guess(candidates, (operator or {}).get("names") or ())
+        entry["guess_note"] = (
+            "" if entry["guess"] or not matched else
+            f"{len(matched)} accounts here are spelled like your name "
+            f"({', '.join(row['identifier'] for row in matched[:3])}), so I am "
+            "not guessing between them — tell me which one is you."
+        )
         entry["note"] = (
             f"{connector} reported no actor on any of its {total} rows, so until its "
             "actor path is declared, even your own account attributes nothing there"
@@ -2246,10 +2389,23 @@ def identity_question(rows, operator) -> dict | None:
     if not asking:
         return None
     named = ", ".join(entry["connector"] for entry in asking)
-    return {
-        "question": f"I cannot tell which of the actors I read is you in {named}. "
+    guessed = [entry["connector"] for entry in asking if entry.get("guess")]
+    unguessed = [entry["connector"] for entry in asking if not entry.get("guess")]
+    if guessed and unguessed:
+        question = (f"I think I have found you in {', '.join(guessed)} — confirm "
+                    f"that, and tell me which account is yours in "
+                    f"{', '.join(unguessed)}. Until you say, I am claiming none "
+                    "of that work is yours.")
+    elif guessed:
+        question = (f"I think I have found you in {', '.join(guessed)}. Confirm "
+                    "it and I will treat that work as yours; until you do, I am "
+                    "claiming none of it is.")
+    else:
+        question = (f"I cannot tell which of the actors I read is you in {named}. "
                     "Which account is yours in each? Until you say, I am claiming "
-                    "none of that work is yours.",
+                    "none of that work is yours.")
+    return {
+        "question": question,
         "connectors": asking,
         "is_a_question": True,
     }

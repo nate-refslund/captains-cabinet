@@ -21,6 +21,7 @@ import {
 } from './wizard'
 
 const filled = (over: Partial<WizardValues> = {}): WizardValues => ({
+  name: 'Hanako',
   role: 'I run a small ryokan',
   dream: 'A calmer front desk',
   startPreference: 'point',
@@ -68,13 +69,15 @@ describe('which answers a step requires', () => {
 })
 
 describe('the answer_seed payload carries the three seams and no invented one', () => {
-  it('maps role -> seed, dream -> purpose, and the chosen preference', () => {
+  it('maps name -> name, role -> seed, dream -> purpose, and the chosen preference', () => {
     expect(seedRequest(filled({
+      name: '  Hanako Tanaka  ',
       role: '  I keep the books  ',
       dream: '  fewer late nights  ',
       startPreference: 'decide',
     }))).toEqual({
       seed: 'I keep the books',
+      name: 'Hanako Tanaka',
       purpose: 'fewer late nights',
       start_preference: 'decide',
     })
@@ -84,7 +87,25 @@ describe('the answer_seed payload carries the three seams and no invented one', 
     const payload = seedRequest(filled({ dream: '   ', startPreference: 'point' }))
     expect(payload).not.toBeNull()
     expect(payload).not.toHaveProperty('purpose')
-    expect(payload).toEqual({ seed: 'I run a small ryokan', start_preference: 'point' })
+    expect(payload).toEqual({
+      seed: 'I run a small ryokan',
+      name: 'Hanako',
+      start_preference: 'point',
+    })
+  })
+
+  // A NAME NOBODY GAVE IS NEVER SENT. The core would write it to
+  // `captain.name`, over whatever the generator's defaults lane already put
+  // there — so a blank field has to be an omission, not an empty string.
+  it('OMITS name when none was given, and never sends a blank one', () => {
+    const payload = seedRequest(filled({ name: '   ' }))
+    expect(payload).not.toBeNull()
+    expect(payload).not.toHaveProperty('name')
+  })
+
+  it('does not require a name — the role alone is enough to start', () => {
+    expect(canAdvance('role', filled({ name: '', role: 'a shopkeeper' }))).toBe(true)
+    expect(canAdvance('role', filled({ name: 'Hanako', role: '' }))).toBe(false)
   })
 
   it('is null until the answers are complete enough to send', () => {

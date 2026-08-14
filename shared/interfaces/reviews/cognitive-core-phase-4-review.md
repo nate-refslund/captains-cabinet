@@ -21,7 +21,29 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 1fe68a749c70677406626a6c580a8b0cb5522c58282450686ab9631013f9e218
+Reviewed-Scope-Digest: e595d23278697bf3fdbccc3305eb98496d59dda61c8b26bd8f26b96e90da347c
+
+(RE-BIND, 2026-08-14, `feat/first-mate-speaks-short`, recomputed over this
+branch's HEAD with `cognitive-phase4-review-scope.py --print`. ONE in-scope path
+moved and it is again NOT a COG-4 surface:
+`cabinet/config/cognitive-architecture-contract.yml`, raising
+`framework_production_noncomment_lines` 63700 -> 64282 (effective 78242 -> 78824).
+That ceiling is the MERGE of two disjoint raises off the same base — this
+branch's +547 for the card layer, and `feat/onboarding-arrival`'s +77 for the
+ending — RE-MEASURED over the merge tree rather than added on paper
+for THE FIRST MATE SPEAKING — the Captain's seven findings from driving the full
+connected onboarding on his own instance. The +544 is three permanent organs,
+every one inside a file the tree already carried: `journey.py` (the card layer —
+headline, named sections, and the join that makes `body` their sum — plus the
+answers-already-given reader, the window-breadth vocabulary, the name write path
+and the one probe composition four callers share), `research.py` (the identity
+guess: three stated match rules over the one tokenizer, wired into
+`identity_question` as a proposal only a tap can record) and `availability.py`
+(`record_captain_name`, so the answers file's `captain:` block keeps exactly one
+writer). `framework/onboarding/` is NOT in the COG-4 scope set, so no COG-4
+implementation byte moved. ZERO new framework production modules (248 <= 248 for
+this landing) and zero expansion rows. DISJOINT from every raise noted below.
+The prior re-bind's own note follows verbatim.)
 
 (RE-BIND, 2026-08-14, `feat/web-probes-run`, recomputed over this branch's HEAD
 after the same landing's live-run fixes moved the contract a second time

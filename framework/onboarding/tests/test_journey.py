@@ -671,6 +671,9 @@ def test_continue_moves_dividend_to_the_arrival(tmp_path):
     assert out["card"]["status"] == "complete"
     # NOT ONE DISCLOSURE DELETED — the same two sentences, on a card that no
     # longer pretends the operator is mid-journey.
+    assert out["card"]["speaker"] == journey.SPEAKER_COORDINATOR
+    assert out["card"]["headline"][0] == "Orientation is done."
+    assert out["card"]["body"] == "".join(s["text"] for s in out["card"]["details"])
     assert "disabled and has not started" in out["card"]["body"]
     assert "No new access or authority was granted" in out["card"]["body"]
     # …and the citations travel with the claim. The arrival repeats what was

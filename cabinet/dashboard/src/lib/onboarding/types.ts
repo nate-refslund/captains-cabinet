@@ -249,6 +249,13 @@ export interface OnboardingSalienceOption {
   aliases?: string[]
   /** Only on the escape hatch: this option needs a typed name beside the pick. */
   input?: 'seed'
+  /**
+   * The words of the operator's OWN earlier answers — role, dream, organisation
+   * — that this candidate's name carries. Present only where there is a match,
+   * so a surface can say why this ranks in the operator's language rather than
+   * only in the ranking's recurrence arithmetic.
+   */
+  you_said?: string[]
 }
 
 /**
@@ -274,6 +281,20 @@ export interface OnboardingSalienceOffer {
   /** What the sweep did NOT reach. An unearned clean negative is the defect. */
   not_reached?: string
   ranked?: number
+  /**
+   * Set when EXACTLY ONE ranked candidate matches words the operator already
+   * gave (their role, their dream, the organisation they named). The open ask
+   * becomes a CONFIRM — "you said X, start there?" — because re-asking for
+   * something already answered is the complaint this closes. Two matches is a
+   * choice, not a confirmation, and stays an open ask.
+   */
+  confirm?: { option: string; label: string; words: string[]; question: string }
+  /**
+   * A word the operator gave that the ranking never produced, for the escape
+   * hatch's "name your own" field. Their vocabulary, not a guess: it is one of
+   * the terms they typed, offered back so the field does not start blank.
+   */
+  prefill?: string
 }
 
 export interface OnboardingOption {
@@ -295,6 +316,15 @@ export interface OnboardingOption {
   /** Set on `answer_salience`: the merge question, carried WITH the pick. */
   merge?: OnboardingSalienceMerge
   not_reached?: string
+  /**
+   * Set on `answer_salience` when ONE ranked candidate matches words the
+   * operator already gave. Carried on the ACTION as well as the question,
+   * because a surface builds the control from the action — on the question
+   * alone it would be a confirmation nothing renders.
+   */
+  confirm?: OnboardingSalienceOffer['confirm']
+  /** Set on `answer_salience`: their own word, for the escape hatch's field. */
+  prefill?: string
   /**
    * Set on `record_operator_identity`: the connectors that still cannot
    * recognise the operator, each with the account identifiers its own rows
@@ -326,6 +356,28 @@ export interface OnboardingIdentityAsk {
    */
   complete: boolean
   note: string
+  /**
+   * The ONE account whose identifier matches the operator's name, when a name
+   * is on record and exactly one account matches it. A PROPOSAL: the surface
+   * renders it as a confirm chip, and nothing is recorded until the operator
+   * taps. A guess written without that tap is an attribution the operator never
+   * made, which reads exactly like a correct one and is therefore never caught.
+   */
+  guess?: {
+    identifier: string
+    rows: number
+    rule: 'whole_name' | 'every_word' | 'joined_words'
+    matched_name: string
+    evidence: string[]
+    why: string
+  } | null
+  /**
+   * Why there is no guess even though the name matched here: two or more
+   * accounts are spelled like the operator. Said out loud, because silence
+   * reads as "your name matched nothing", which is the opposite of what
+   * happened.
+   */
+  guess_note?: string
 }
 
 /**
@@ -417,6 +469,13 @@ export interface OnboardingEntryPlan {
   next_actions: OnboardingOption[]
 }
 
+/** One named part of a card's honesty ledger — a heading and its own text. */
+export interface OnboardingCardSection {
+  id: string
+  title: string
+  text: string
+}
+
 export interface OnboardingCard {
   schema: 'cabinet.onboarding-card/v1'
   id: string
@@ -425,7 +484,26 @@ export interface OnboardingCard {
   stage: string
   kind: string
   title: string
+  /**
+   * THE WHOLE LEDGER, still. `body` is the join of `details` in order, so a
+   * surface that cannot fold (Telegram, a log, a plain reader) loses nothing.
+   * Layering is a rendering choice; it is never a shorter truth.
+   */
   body: string
+  /**
+   * At most three short sentences: what was read, what recurs, what is needed
+   * from the operator now. A SUMMARY of `details`, never a replacement — a
+   * surface rendering only this is a surface with a bug.
+   */
+  headline?: string[]
+  /** The same ledger `body` joins, cut into named sections for a disclosure. */
+  details?: OnboardingCardSection[]
+  /**
+   * Who is speaking. A ROLE, never a name: the framework does not know what
+   * this deployment calls its coordinating officer, so a surface resolves the
+   * title through `officerTitle`.
+   */
+  speaker?: 'coordinator'
   status: string
   evidence: OnboardingCitation[]
   options: OnboardingOption[]
@@ -451,6 +529,13 @@ export interface OnboardingState {
     manifest_hash?: string
     ownership?: OwnershipClass
     authority_basis?: string
+    /**
+     * How broad this window is. `whole_home` is LAWFUL and disclosed — the
+     * operator may open their whole home folder, read-only, with the
+     * sensitivity skips intact; what it costs them is the DEPTH of the first
+     * look, which the Charter card states before they approve.
+     */
+    breadth?: 'whole_home' | 'folder'
   }
   charter: null | {
     hash: string
@@ -464,6 +549,13 @@ export interface OnboardingState {
    * A starting point for discovery, never the data itself.
    */
   seed?: { text: string; answered_at: string }
+  /**
+   * What the operator is called, when they said. `stored` is whether it reached
+   * the cabinet-init answers file (`captain.name`); a failed write does not
+   * cost the operator their answer, so the name is on the journey either way
+   * and the identity guess still uses it.
+   */
+  operator_name?: { name: string; stored: boolean; answered_at: string }
   /**
    * The DREAM for the Cabinet, when one was given — "what would you love this
    * to become?". Stored in the `mission.purpose` shape the genesis proposal
@@ -618,7 +710,16 @@ export interface OnboardingActionRequest {
    * the core's own sentence, not a surface-invented one.
    */
   choice?: string
-  /** REQUIRED when `choice` is the escape hatch: what to open instead. */
+  /**
+   * REQUIRED when `choice` is the escape hatch: what to open instead.
+   *
+   * ALSO on answer_seed, where it is what the OPERATOR is called. The core
+   * records it under `captain.name` in the cabinet-init answers file — the
+   * generator's own input — and on the journey, where the identity guess reads
+   * it to propose "in github, are you @…?" instead of asking the operator to
+   * pick their own account out of thirty strangers. Optional there: a journey
+   * with no name asks exactly as it did before.
+   */
   name?: string
   /**
    * Optional on answer_salience: ranked names the operator says are one thing.

@@ -16,6 +16,7 @@ import type {
 } from '@/lib/onboarding/types'
 import { getConnectorCatalog } from '@/actions/connectors'
 import { saveConnectorCredential } from '@/actions/env'
+import { COORDINATOR_ROLE, officerTitle } from '@/lib/officer-title'
 import {
   canAdvance,
   EMPTY_WIZARD,
@@ -240,6 +241,16 @@ export default function OnboardingJourneyCard({
   // name, a credential or a search result, because the core stores this as the
   // operator's own statement and a default would put words in their mouth.
   const [organization, setOrganization] = useState('')
+  // What the operator is CALLED — question one's opening line. Optional, and
+  // never invented: an operator who leaves it blank is asked which account is
+  // theirs exactly as before. NEW HOOKS GO HERE, at the end, for the reason the
+  // note above says: an insert renumbers every index the test script pins.
+  const [name, setName] = useState('')
+  // Whether the operator has touched the escape hatch's name field. `salienceName`
+  // alone cannot answer that, and without the answer the pre-fill (their OWN
+  // earlier word, offered back rather than asked for again) could not be
+  // cleared — typing over it would fight the default on every render.
+  const [salienceNameEdited, setSalienceNameEdited] = useState(false)
   const effectiveSurface = useRef<Extract<OnboardingSurface, 'dashboard' | 'world' | 'companion'>>(surface)
   const handoffIds = useRef<{ trace_id?: string; correlation_id?: string }>({})
   const salienceFormRef = useRef<HTMLFormElement | null>(null)
@@ -294,6 +305,7 @@ export default function OnboardingJourneyCard({
       // operator their own words rather than a blank.
       if (body.card.stage === 'welcome' && body.state.seed) {
         setRole(body.state.seed.text)
+        setName(body.state.operator_name?.name ?? '')
         setDream(body.state.mission?.purpose ?? '')
         setStartPreference(body.state.start_preference ?? '')
         setWizardStep(resumeStep(true, body.state.start_preference))
@@ -419,6 +431,7 @@ export default function OnboardingJourneyCard({
           setSource('~/Documents')
           setWizardStep('role')
           setRole('')
+          setName('')
           setDream('')
           setStartPreference('')
         }
@@ -458,7 +471,7 @@ export default function OnboardingJourneyCard({
     }
   }
 
-  const wizardValues = { role, dream, startPreference }
+  const wizardValues = { name, role, dream, startPreference }
 
   // Question three, both answers, sent as ONE action so role, dream and the
   // preference all land before the window opens. On success the front hands off
@@ -500,6 +513,14 @@ export default function OnboardingJourneyCard({
   // name and the button all unchanged. Read from committed state, never from the
   // local field, so it says what the CORE recorded rather than what was typed.
   const answeredTarget = journey?.state.salience?.target ?? ''
+  // WHAT THE OPERATOR ALREADY TOLD ME, read back at the question that was about
+  // to ask for it again. The core matches their role/dream/organisation words
+  // against the ranked names: one match becomes a CONFIRM, and a word of theirs
+  // the ranking never produced pre-fills the "name your own" field so it starts
+  // from their vocabulary rather than a blank.
+  const salienceConfirm = salienceOption?.confirm
+  const saliencePrefill = salienceOption?.prefill ?? ''
+  const salienceNameValue = salienceNameEdited ? salienceName : salienceName || saliencePrefill
 
   function windowPayload(): Record<string, unknown> {
     return {
@@ -520,14 +541,18 @@ export default function OnboardingJourneyCard({
     void send('propose_window', { ...windowPayload(), salience_relation: relation })
   }
 
+  function answerSalience(choice: string) {
+    const picked = salienceOptions.find((option) => option.id === choice)
+    const extra: Record<string, unknown> = { choice }
+    if (picked?.input === 'seed') extra.name = salienceNameValue.trim()
+    if (salienceMerge.length > 0) extra.same_as = [...salienceMerge]
+    void send('answer_salience', extra)
+  }
+
   function submitSalience(event: FormEvent) {
     event.preventDefault()
     if (!salienceChoice) return
-    const picked = salienceOptions.find((option) => option.id === salienceChoice)
-    const extra: Record<string, unknown> = { choice: salienceChoice }
-    if (picked?.input === 'seed') extra.name = salienceName.trim()
-    if (salienceMerge.length > 0) extra.same_as = [...salienceMerge]
-    void send('answer_salience', extra)
+    answerSalience(salienceChoice)
   }
 
   function submitOrganization(event: FormEvent) {
@@ -535,6 +560,18 @@ export default function OnboardingJourneyCard({
     const said = organization.trim()
     if (!said) return
     void send('answer_organization', { organization: said })
+  }
+
+  /**
+   * One tap on a confirm chip = one recorded identity. It goes through the SAME
+   * act a pick from the list goes through, with the same payload shape — the
+   * chip is a shortcut to an answer, never a second way of storing one. The
+   * local pick is kept too, so the field reads back what was just sent.
+   */
+  function confirmIdentity(connector: string, identifier: string) {
+    if (!identifier.trim()) return
+    setHandles((current) => ({ ...current, [connector]: identifier }))
+    void send('record_operator_identity', { handles: { [connector]: [identifier] } })
   }
 
   function submitIdentity(event: FormEvent) {
@@ -734,6 +771,19 @@ export default function OnboardingJourneyCard({
     void send(action)
   }
 
+  // WHO IS SPEAKING, resolved and never written down. The core says only that
+  // the sender is the COORDINATING officer; what this deployment calls that
+  // officer is the resolver's answer, so the Captain's naming ruling is applied
+  // in one place instead of copied into a component.
+  const speakerName = officerTitle(COORDINATOR_ROLE)
+  const speakerInitials = speakerName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase() ?? '')
+    .join('')
+  const headline = journey?.card.headline ?? []
+  const details = journey?.card.details ?? []
   const stage = journey?.card.stage ?? ''
   const inFrontQuestions =
     stage === 'welcome' && !editScope &&
@@ -904,9 +954,35 @@ export default function OnboardingJourneyCard({
           {inFrontQuestions && wizardStep === 'role' && (
             <div className="mt-6">
               <h3 className={`text-xl font-semibold tracking-tight sm:text-2xl ${t.title}`}>
-                Tell me about you and your work.
+                What is your name? And tell me about you and your work.
               </h3>
-              <p className={`mt-2 text-sm leading-6 ${t.muted}`}>
+              {/* THE NAME COMES FIRST because it is the cheapest answer in the
+                  whole interview and it makes the next several answerable: with
+                  it I can propose "in that tool, are you @…?" instead of asking
+                  you to find yourself among thirty strangers. It stays optional
+                  — a cabinet that will not start without your name is an
+                  interview, and every question below works without it. */}
+              <label
+                htmlFor={`${surface}-name`}
+                className={`mt-4 block text-sm font-medium ${t.title}`}
+              >
+                Your name
+                <span className={`ml-1.5 text-xs font-normal ${t.faint}`}>
+                  optional — it is how I address you, and how I recognise your accounts
+                </span>
+              </label>
+              <input
+                id={`${surface}-name`}
+                type="text"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                maxLength={80}
+                autoFocus
+                autoComplete="name"
+                placeholder="However you write it"
+                className={`mt-1.5 min-h-11 w-full rounded-xl border px-4 py-2.5 text-base outline-none transition-colors motion-reduce:transition-none ${t.input}`}
+              />
+              <p className={`mt-5 text-sm leading-6 ${t.muted}`}>
                 What do you do? A sentence in your own words — a shopkeeper, a team lead,
                 a researcher. I take it as where to start looking, never as the answer.
               </p>
@@ -917,7 +993,6 @@ export default function OnboardingJourneyCard({
                 onChange={(event) => setRole(event.target.value)}
                 rows={3}
                 maxLength={500}
-                autoFocus
                 placeholder="I run a small ryokan on the coast…"
                 className={`mt-4 w-full rounded-xl border px-4 py-3 text-base leading-6 outline-none transition-colors motion-reduce:transition-none ${t.input}`}
               />
@@ -926,8 +1001,14 @@ export default function OnboardingJourneyCard({
 
           {inFrontQuestions && wizardStep === 'dream' && (
             <div className="mt-6">
+              {/* ADDRESSED BY NAME FROM THE MOMENT IT IS GIVEN. It is the
+                  cheapest proof that an answer went somewhere — and the
+                  opposite, asking for a name and never using it, is what makes
+                  a form feel like a form. */}
               <h3 className={`text-xl font-semibold tracking-tight sm:text-2xl ${t.title}`}>
-                What would you love this Cabinet to become?
+                {name.trim()
+                  ? `${name.trim()}, what would you love this Cabinet to become?`
+                  : 'What would you love this Cabinet to become?'}
               </h3>
               <p className={`mt-2 text-sm leading-6 ${t.muted}`}>
                 Think bigger than today. This is the one thing no amount of reading can
@@ -1349,8 +1430,60 @@ export default function OnboardingJourneyCard({
               core accepted it (HTTP 200, revision bumped, target recorded), and
               the page did not change by one character. */}
           {!inFrontQuestions && !showDiscoverPanel && !showWindowForm && (
-            <p className={`mt-5 break-words text-sm leading-6 ${t.muted}`}>{journey.card.body}</p>
+            headline.length > 0 ? (
+              /* A MESSAGE FROM THE FIRST MATE, not a wall of prose (Captain,
+                 2026-08-14: "this is way too much text. make it short and
+                 simple." and "if it is from the first mate, make it look like a
+                 message from first mate"). The sender is resolved through the
+                 officer-title resolver — never written down here — the plain
+                 meaning leads in two or three sentences, and the honesty ledger
+                 sits one click behind, COMPLETE. `card.body` is still the join
+                 of those sections, so nothing was shortened, only folded. */
+              <div className={`mt-5 p-4 ${t.panel}`}>
+                <div className="flex items-center gap-2.5">
+                  <span
+                    aria-hidden
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[0.65rem] font-bold tracking-tight ${t.railOn}`}
+                  >
+                    {speakerInitials}
+                  </span>
+                  <span className={`text-sm font-semibold ${t.title}`}>{speakerName}</span>
+                </div>
+                <div className="mt-3 space-y-2">
+                  {headline.map((line, index) => (
+                    <p
+                      key={`headline-${index}`}
+                      className={`break-words leading-6 ${index === 0 ? `text-base ${t.title}` : `text-sm ${t.muted}`}`}
+                    >
+                      {line}
+                    </p>
+                  ))}
+                </div>
+                {details.length > 0 && (
+                  <details className="mt-3">
+                    <summary className={`min-h-11 cursor-pointer py-2 text-xs font-medium ${t.faint}`}>
+                      How I worked this out — every caveat
+                    </summary>
+                    <div className="space-y-3 pt-1">
+                      {details.map((section) => (
+                        <div key={section.id}>
+                          <h4 className={`text-xs font-semibold uppercase tracking-wider ${t.eyebrow}`}>
+                            {section.title}
+                          </h4>
+                          <p className={`mt-0.5 break-words text-sm leading-6 ${t.muted}`}>
+                            {section.text.trim()}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </div>
+            ) : (
+              <p className={`mt-5 break-words text-sm leading-6 ${t.muted}`}>{journey.card.body}</p>
+            )
           )}
+
 
           {/* WHAT ONE SWEEP FOUND, PER TOOL. The aggregate of the look: every
               declared connector on its own row, counts and freshest stamp where
@@ -1393,8 +1526,50 @@ export default function OnboardingJourneyCard({
                   <legend className="text-sm font-medium">{ask.connector}</legend>
                   {ask.reports_no_actor ? (
                     <p className={`mt-1 text-xs ${t.faint}`}>{ask.note}</p>
+                  ) : ask.guess && handles[ask.connector] === undefined ? (
+                    /* A GUESS, PUT AS A QUESTION. With a name on record the core
+                       matches it against this tool's own account identifiers and
+                       proposes ONE — so the ask is a tap, not a spelling test
+                       over dozens of strangers. Nothing is recorded until the
+                       operator answers: "No, someone else" opens the full list
+                       rather than storing anything, and leaving the card alone
+                       stores nothing at all. */
+                    <div className="mt-2">
+                      <p className={`text-sm ${t.title}`}>
+                        In {ask.connector}, are you{' '}
+                        <span className="font-semibold">{ask.guess.identifier}</span>?
+                      </p>
+                      <p className={`mt-0.5 text-xs ${t.faint}`}>
+                        {ask.guess.why} — {ask.guess.rows} of {ask.rows} rows here.
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          name={`${surface}-identity-confirm-${ask.connector}`}
+                          disabled={working}
+                          onClick={() => confirmIdentity(ask.connector, ask.guess?.identifier ?? '')}
+                          className={`min-h-11 rounded-xl px-3 py-2 text-sm font-semibold disabled:opacity-50 ${t.primary}`}
+                        >
+                          That&rsquo;s me
+                        </button>
+                        <button
+                          type="button"
+                          name={`${surface}-identity-reject-${ask.connector}`}
+                          disabled={working}
+                          onClick={() =>
+                            setHandles((current) => ({ ...current, [ask.connector]: '' }))
+                          }
+                          className={`min-h-11 rounded-xl px-3 py-2 text-sm font-medium disabled:opacity-50 ${t.secondary}`}
+                        >
+                          No, someone else
+                        </button>
+                      </div>
+                    </div>
                   ) : (
                     <>
+                      {ask.guess_note && (
+                        <p className={`mt-1 text-xs ${t.faint}`}>{ask.guess_note}</p>
+                      )}
                       <div className="mt-2 space-y-1.5 text-sm">
                         {ask.candidates.slice(0, IDENTITY_SHOWN).map((candidate) =>
                           identityChoice(ask, candidate)
@@ -1456,7 +1631,26 @@ export default function OnboardingJourneyCard({
               className={`mt-5 p-4 ${t.panel}`}
               onSubmit={submitSalience}
             >
-              <h3 className={`text-sm font-semibold ${t.title}`}>{salienceOption?.label}</h3>
+              <h3 className={`text-sm font-semibold ${t.title}`}>
+                {salienceConfirm && !answeredTarget ? salienceConfirm.question : salienceOption?.label}
+              </h3>
+              {/* ASKED ONCE, NOT TWICE (Captain, 2026-08-14: "this question i
+                  actually already answered in the second question about
+                  purpose"). Where exactly one ranked candidate carries words
+                  the operator already gave, the open ask becomes a confirm they
+                  can take in one tap — and the full list stays right below it,
+                  because a confirmation is not a corner. */}
+              {salienceConfirm && !answeredTarget && (
+                <button
+                  type="button"
+                  name={`${surface}-salience-confirm`}
+                  disabled={working}
+                  onClick={() => answerSalience(salienceConfirm.option)}
+                  className={`mt-2 min-h-11 rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50 ${t.primary}`}
+                >
+                  Yes — start with {salienceConfirm.label}
+                </button>
+              )}
               <div className="mt-2 space-y-1.5 text-sm">
                 {salienceOptions.map((option) => {
                   const on = salienceChoice === option.id
@@ -1475,6 +1669,11 @@ export default function OnboardingJourneyCard({
                       />
                       <span>
                         {option.label}
+                        {option.you_said && option.you_said.length > 0 && (
+                          <span className={`ml-2 rounded-full border px-2 py-0.5 text-[0.65rem] font-medium ${t.badge}`}>
+                            you said {option.you_said.slice(0, 2).join(', ')}
+                          </span>
+                        )}
                         <span className={`block text-xs ${t.faint}`}>{option.why}</span>
                       </span>
                     </label>
@@ -1483,12 +1682,19 @@ export default function OnboardingJourneyCard({
               </div>
               {salienceAsksName && (
                 <label className="mt-2 block text-xs">
-                  <span className={t.faint}>What should I open instead? A word or two.</span>
+                  <span className={t.faint}>
+                    {saliencePrefill
+                      ? `What should I open instead? I have started from a word you already gave me — change it if it is wrong.`
+                      : 'What should I open instead? A word or two.'}
+                  </span>
                   <input
                     type="text"
                     name={`${surface}-salience-name`}
-                    value={salienceName}
-                    onChange={(event) => setSalienceName(event.target.value)}
+                    value={salienceNameValue}
+                    onChange={(event) => {
+                      setSalienceNameEdited(true)
+                      setSalienceName(event.target.value)
+                    }}
                     autoComplete="off"
                     className={`mt-1 min-h-11 w-full rounded-lg border px-3 py-2 text-sm outline-none ${t.input}`}
                   />
@@ -1537,7 +1743,7 @@ export default function OnboardingJourneyCard({
               )}
               <button
                 type="submit"
-                disabled={working || !salienceChoice || (salienceAsksName && !salienceName.trim())}
+                disabled={working || !salienceChoice || (salienceAsksName && !salienceNameValue.trim())}
                 className={`mt-3 min-h-11 rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50 ${t.secondary}`}
               >
                 {answeredTarget ? 'Point me somewhere else' : 'Go deep on that one'}
@@ -1803,7 +2009,19 @@ export default function OnboardingJourneyCard({
                     Use my Documents
                   </button>
                 </div>
-                <p className={`mt-1.5 text-xs ${t.faint}`}>Choose one specific folder. The whole home folder is refused.</p>
+                {/* BREADTH IS ALLOWED; DEPTH IS WHAT IT COSTS. This line used
+                    to read "The whole home folder is refused", which taught the
+                    operator that breadth was forbidden when the real trade-off
+                    is that a wider window makes the FIRST look shallower. The
+                    Charter states the same trade-off again before it is
+                    approved. */}
+                <p className={`mt-1.5 text-xs ${t.faint}`}>
+                  One specific folder gives you a sharper first result. You can point me at
+                  your whole home folder if you like — still read-only, still skipping
+                  secrets and personal files — but my first look will only skim the surface.
+                  The whole disk, and folders that belong to the system or to other people,
+                  I cannot take.
+                </p>
               </div>
 
               <div>
