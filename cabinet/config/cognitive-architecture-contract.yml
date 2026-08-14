@@ -944,8 +944,17 @@ budgets:
     # VISIBLY rather than paid for by a temporary allowance, same reason as every
     # row above: a search plane that ships is a permanent organ, and an allowance
     # would promise a deletion gate that will never fire.
+    #
+    # 63664 -> 63700 (+36, SAME landing, measured after two defects the live
+    # look-up found by being LOOKED AT): the name query (`_seed_names` plus the
+    # sentence-boundary reader it needs — the first real run searched "tech lead
+    # STEP Network" and came back with pages about being a tech lead, because
+    # the role words are common and the name is not), and the HTML-entity decode
+    # in `_untrusted_text` (a real provider returns its snippets escaped, so the
+    # card showed "I&#x27;ve" where an apostrophe belongs; decoded BEFORE the
+    # scrub, so an entity-encoded tag still loses its brackets).
     # observed == maximum, zero headroom.
-    maximum: 63664
+    maximum: 63700
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"

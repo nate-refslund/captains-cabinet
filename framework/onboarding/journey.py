@@ -934,8 +934,25 @@ def seed_probes(seed: Any, grants: Any) -> dict[str, Any]:
     if terms:
         joined = " ".join(terms[:4])
         if normalized["web"]:
-            for query in (joined, f"{joined} how it works", f"{joined} common problems"):
-                probes.append({"kind": "web_search", "query": query})
+            # THE NAMES GO OUT ON THEIR OWN, AND FIRST. Measured against a live
+            # provider, 2026-08-14: the seed "I am tech lead at STEP Network"
+            # produced the query "tech lead STEP Network", and what came back was
+            # pages about being a tech lead — the role words are common, the name
+            # is not, and a search engine ranks the common half. The operator
+            # asked what that ORGANISATION is; a name searched alone answers
+            # that, and the same name inside a sentence answers the sentence.
+            # Same signal as `_organization_unclear` and the same stated limit:
+            # in a script without letter case this cannot fire, so that operator
+            # simply gets the queries below, which is what everyone got before.
+            names = " ".join(_seed_names(seed)[:4])
+            queries = [joined, f"{joined} how it works", f"{joined} common problems"]
+            if names and names != joined:
+                queries.insert(0, names)
+            # Never propose more than the executor will send. A plan with a
+            # surplus reports it as "did not run", which is a true sentence about
+            # a shortfall that did not have to exist.
+            for query in queries[:research.MAX_SEARCH_PROBES]:
+                probes.append({"kind": research.SEARCH_PROBE_KIND, "query": query})
         if normalized["local_files"]:
             for term in terms[:3]:
                 probes.append({"kind": "local_name_match", "pattern": f"*{term}*"})
@@ -945,6 +962,57 @@ def seed_probes(seed: Any, grants: Any) -> dict[str, Any]:
         "probes": probes[:MAX_SEED_PROBES],
         "executable": bool(probes),
     }
+
+
+#: Where one statement ends and the next begins. Sentence-initial capitals carry
+#: no signal about names, so they have to be found and skipped — and everything
+#: the operator has said is composed into ONE string (``_discovery_seed``), so
+#: without this the second statement's first word reads as a name. Measured
+#: 2026-08-14 on a live look-up: the dream "Give me back my mornings", appended
+#: to a role sentence, sent the query "STEP Network Give".
+_SENTENCE_BREAK_RE = re.compile(r"[.!?;\n\r]+")
+
+
+def _seed_names(seed: Any) -> list[str]:
+    """The words the operator treated as NAMES, from their own capitalisation.
+
+    Per sentence, the first term is dropped (every sentence starts with a
+    capital, so that one carries no signal) and what is left that begins
+    upper-case is a name — which, in a script that HAS letter case, is what a
+    name looks like. Order is the operator's own.
+
+    TWO READERS SHARE THIS, which is the point of it being one function: the
+    query planner sends the names as a query of their own (a name searched alone
+    answers what that thing IS; the same name inside a sentence answers the
+    sentence), and ``_organization_unclear`` reads it as "something here has
+    already named an organisation, so do not ask". Two spellings of "what looks
+    like a name" would let the cabinet ask about an organisation it had just
+    gone and searched for.
+
+    THE LIMITS, stated where they are relied on: an English title-case job title
+    reads as a name here, and in a script with no letter case nothing does. Both
+    readers are built to be harmless when it is wrong — one extra query, or one
+    extra question that is optional and takes a tap to dismiss.
+    """
+    if not isinstance(seed, str):
+        return []
+    names: list[str] = []
+    for sentence in _SENTENCE_BREAK_RE.split(seed):
+        # THE SENTENCE'S REAL OPENER, read from the raw text rather than from
+        # the filtered terms. Dropping the first SURVIVING term instead was
+        # wrong wherever the stopwords had already removed the opener: "I work
+        # at Acme" filters to ["Acme"], so the only name in the sentence was
+        # treated as the capital that begins every sentence and thrown away.
+        raw = _salience.terms(sentence, min_len=1, folded=False)
+        opener = raw[0] if raw else ""
+        skipped = False
+        for term in _seed_terms(sentence):
+            if not skipped and term == opener:
+                skipped = True
+                continue
+            if term[:1] and term[:1] != term[:1].lower():
+                names.append(term)
+    return names
 
 
 def _organization_unclear(seed: Any, organization: Any) -> bool:
@@ -975,11 +1043,7 @@ def _organization_unclear(seed: Any, organization: Any) -> bool:
         return False
     if any(str(name).strip() for name in (block.get("estate") or ())):
         return False
-    for term in _seed_terms(seed)[1:]:
-        first = term[:1]
-        if first and first != first.lower():
-            return False
-    return True
+    return not _seed_names(seed)
 
 
 def _cannot_know(mode: str) -> list[dict[str, str]]:
@@ -1500,7 +1564,12 @@ def _discovery_seed(state: Mapping[str, Any] | dict[str, Any]) -> str:
         mission.get("purpose") if isinstance(mission, Mapping) else None,
         org.get("name") if isinstance(org, Mapping) else None,
     ]
-    return " ".join(str(part) for part in parts if str(part or "").strip())
+    # JOINED AS SENTENCES, not with a space. These are three separate statements
+    # and `_seed_names` skips each sentence's opening word; run together with a
+    # space they become one sentence, and the dream's first word starts reading
+    # as the name of an organisation (measured on a live look-up, 2026-08-14).
+    return ". ".join(str(part).rstrip(" .") for part in parts
+                     if str(part or "").strip())
 
 
 def _entry_plan_for(state: dict[str, Any]) -> dict[str, Any]:

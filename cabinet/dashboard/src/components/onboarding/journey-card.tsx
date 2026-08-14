@@ -1633,6 +1633,17 @@ export default function OnboardingJourneyCard({
                   {journey.card.entry.next_actions.find((a) => a.action === 'run_discovery')?.label}
                 </button>
               )}
+              {/* The refusal lands AT the control that fired it. This panel can
+                  sit several screens above the shared error line, and a look-up
+                  that silently did nothing reads as a broken button. */}
+              {refusedAction === 'run_discovery' && error && (
+                <p
+                  role="alert"
+                  className={`mt-2 text-xs font-medium ${variant === 'world' ? 'text-red-800' : 'text-red-300'}`}
+                >
+                  {error}
+                </p>
+              )}
             </div>
           )}
 
@@ -1667,10 +1678,20 @@ export default function OnboardingJourneyCard({
                           disabled={working || !organization.trim()}
                           className={`min-h-11 rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50 ${t.secondary}`}
                         >
-                          Save
+                          Remember that
                         </button>
                       </form>
                     )}
+                    {question.id === 'organization' &&
+                      refusedAction === 'answer_organization' &&
+                      error && (
+                        <p
+                          role="alert"
+                          className={`mt-2 text-xs font-medium ${variant === 'world' ? 'text-red-800' : 'text-red-300'}`}
+                        >
+                          {error}
+                        </p>
+                      )}
                   </li>
                 ))}
               </ul>

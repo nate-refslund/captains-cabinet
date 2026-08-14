@@ -1516,7 +1516,12 @@ SEARCH_PROBE_KIND = "web_search"
 #: the ceiling counts them.
 SEARCH_QUERY_HOLE = "{query}"
 
-_MAX_SEARCH_PROBES = 3
+#: How many outward probes one look-up may send. PUBLIC, because the core's
+#: planner reads it: a plan that proposes more queries than this executor
+#: will run reports the surplus as "did not run", which is an honest
+#: sentence about a shortfall nobody needed to have.
+MAX_SEARCH_PROBES = 3
+_MAX_SEARCH_PROBES = MAX_SEARCH_PROBES
 _MAX_SEARCH_RESULTS = 5
 _MAX_SEARCH_TITLE = 160
 _MAX_SEARCH_URL = 300
@@ -1688,7 +1693,17 @@ def _untrusted_text(value, limit: int) -> str:
     """
     if value is None or isinstance(value, (dict, list, tuple, set, bool)):
         return ""
-    text = _CONTROL_RE.sub(" ", str(value))
+    import html as _html  # local: keep the module import-light
+
+    # ENTITIES ARE DECODED BEFORE THE SCRUB, NEVER AFTER, AND EXACTLY ONCE.
+    # Providers return their snippets HTML-escaped, so an operator was shown
+    # "I&#x27;ve" and "&quot;" where their own eyes expected an apostrophe and a
+    # quote — found by LOOKING at a real answer, 2026-08-14, not by reasoning
+    # about one. The ORDER is the safety: a tag arriving as `&lt;script&gt;`
+    # decodes to angle brackets and is then dropped by the scrub below, whereas
+    # decoding afterwards would hand it through intact. One pass only, so a
+    # doubly-encoded tag decodes to inert text rather than to markup.
+    text = _CONTROL_RE.sub(" ", _html.unescape(str(value)))
     text = text.encode("utf-8", "replace").decode("utf-8", "replace")
     return " ".join(text.split())[:max(0, int(limit))]
 

@@ -110,6 +110,60 @@ def _answers(rows):
     return fetch
 
 
+# ------------------------------------------------------- what gets searched --
+def test_the_names_go_out_on_their_own_and_first():
+    """MEASURED, not reasoned about (2026-08-14, live provider).
+
+    The seed "I am tech lead at STEP Network" produced one query — "tech lead
+    STEP Network" — and what came back was pages about being a tech lead. The
+    role words are common and the name is not, so the engine ranked the common
+    half and the operator's actual question ("what kind of business is that?")
+    went unanswered. The names now go out as a query of their own, FIRST, so
+    they survive the executor's probe budget.
+    """
+    queries = [p["query"] for p in journey.seed_probes(
+        "I am tech lead at STEP Network", {"web": True})["probes"]]
+    assert queries[0] == "STEP Network"
+    assert any("tech lead" in q for q in queries), "the whole seed is still searched"
+
+
+def test_a_second_statement_does_not_donate_its_first_word_as_a_name():
+    """The dream is appended to the role, so without a sentence boundary its
+    opening capital reads as part of the organisation's name — which is exactly
+    what the first live run sent: "STEP Network Give"."""
+    seed = "I am tech lead at STEP Network. Give me back my mornings"
+    assert journey._seed_names(seed) == ["STEP", "Network"]
+    assert [p["query"] for p in journey.seed_probes(seed, {"web": True})["probes"]][0] \
+        == "STEP Network"
+
+
+def test_a_name_that_is_the_only_surviving_term_is_still_a_name():
+    """"I work at Acme" filters to ["Acme"], so dropping the first SURVIVING
+    term threw away the only name in the sentence. The opener is read from the
+    raw text instead."""
+    assert journey._seed_names("I work at Acme") == ["Acme"]
+    assert journey._organization_unclear("I work at Acme", None) is False
+
+
+def test_a_seed_in_a_script_without_letter_case_still_searches():
+    """The name signal cannot fire without letter case. What must NOT happen is
+    that such a seed loses its web probes as well — it gets the same queries
+    everybody got before names existed, and the organisation question."""
+    seed = "私は請求書の移行を管理しています"
+    assert journey._seed_names(seed) == []
+    probes = journey.seed_probes(seed, {"web": True})["probes"]
+    assert probes and all(p["kind"] == research.SEARCH_PROBE_KIND for p in probes)
+    assert journey._organization_unclear(seed, None) is True
+
+
+def test_the_plan_never_proposes_more_queries_than_the_executor_will_send():
+    """A surplus is reported to the operator as "did not run", which is a true
+    sentence about a shortfall that did not have to exist."""
+    probes = journey.seed_probes("I am tech lead at STEP Network", {"web": True})["probes"]
+    web = [p for p in probes if p["kind"] == research.SEARCH_PROBE_KIND]
+    assert len(web) <= research.MAX_SEARCH_PROBES
+
+
 # ------------------------------------------------------------- the ceiling ---
 @pytest.mark.parametrize("broken, why", [
     ({**SEARCH_GET, "url": "http://search.example.test/?q={query}"}, "url_not_https"),
@@ -220,6 +274,22 @@ def test_the_lane_comes_from_the_shape_not_from_a_label():
 ])
 def test_a_hostile_result_field_is_scrubbed_not_trusted(hostile, expected):
     assert research._untrusted_text(hostile, 200) == expected
+
+
+def test_an_html_escaped_snippet_reads_as_the_words_the_operator_expects():
+    """MEASURED by looking at a real answer, 2026-08-14.
+
+    Providers return snippets HTML-escaped, so the card showed "I&#x27;ve" and
+    "&quot;" where an apostrophe and a quote belong. Decoding happens BEFORE the
+    scrub, which is what keeps it safe: an entity-encoded tag decodes to angle
+    brackets and is then dropped, where decoding afterwards would hand it
+    through intact.
+    """
+    assert research._untrusted_text("I&#x27;ve &quot;done&quot; it &amp; more", 200) \
+        == "I've \"done\" it & more"
+    # The order arm — this is the one that fails if decode and scrub swap.
+    assert "<" not in research._untrusted_text("&lt;script&gt;alert(1)&lt;/script&gt;", 200)
+    assert ">" not in research._untrusted_text("&lt;img onerror=1&gt;", 200)
 
 
 def test_a_lone_surrogate_cannot_take_the_action_down_with_it():

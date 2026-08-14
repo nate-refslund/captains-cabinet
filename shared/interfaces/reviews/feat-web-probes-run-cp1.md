@@ -180,11 +180,26 @@ exa_search: 5 result(s), truncated=False
    • STEP Network - CVR-nr 25506227 - Odense | https://www.proff.dk/firma/step-network/… | … Se Regnskaber, Roller og mere
 ```
 
-**The live call earned its keep:** the first run came back with `<strong>` markup
-wrapped around every matched word. Two fixes followed — `text_decorations=0` on
-the shipped Brave shape, and angle brackets added to the scrub set so no future
-surface can be handed markup regardless of what a provider sends. Neither was
-predictable from the documentation.
+**The live calls and the live screens earned their keep — four defects, none of
+them predictable from documentation or reasoning:**
+
+1. Snippets arrived wrapped in `<strong>` markup. Fixed twice: `text_decorations=0`
+   on the shipped shape, and angle brackets added to the scrub so no future
+   surface can be handed markup whatever a provider sends.
+2. The seed "I am tech lead at STEP Network" produced one query — "tech lead
+   STEP Network" — and Brave returned pages about being a tech lead. The role
+   words are common, the name is not, and the engine ranked the common half, so
+   the operator's actual question went unanswered. The names now go out as a
+   query of their own, first.
+3. Composing the dream onto the role made "Give me back my mornings" donate its
+   opening capital: the query became "STEP Network Give". `_seed_names` now
+   skips each SENTENCE's opener, and `_discovery_seed` joins with a boundary.
+4. Reading the rendered card: snippets showed `I&#x27;ve` and `&quot;` — providers
+   HTML-escape them. Decoded before the scrub (so an entity-encoded tag still
+   loses its brackets), pinned by an order arm that fails if the two swap.
+
+Three of the four are invisible to a test suite written from the design; all
+four are pinned by arms now.
 
 The same case is pinned in the suite without a network by
 `test_answering_the_seed_goes_and_looks_it_up`, which also asserts the operator's
@@ -196,13 +211,13 @@ old sentence — *"did not run — no egress in the onboarding core"* — is gon
 
 | Gate | Result |
 |---|---|
-| `python3.12 -m pytest framework/onboarding/tests -q` | 942 passed, 1 skipped |
+| `python3.12 -m pytest framework/onboarding/tests -q` | 948 passed, 1 skipped |
 | `python3.12 -m pytest framework/ -q` | 8115 passed, 30 skipped, **1 pre-existing failure** |
 | dashboard `npx tsc --noEmit` | clean |
-| dashboard `npx vitest run` | 3434 passed, 1 skipped (167 files) |
+| dashboard `npx vitest run` | 3441 passed, 1 skipped (167 files) |
 | `check-layer-separation.sh` | OK — new=0 |
 | specifics ratchet (`test_no_launcher_hardcode.py`) | 74 passed, no new baseline entry |
-| `cognitive-architecture-census.py --check` | PASS after a visible `framework_production_noncomment_lines` raise (63096 → 63664, +568), reasoned in the contract |
+| `cognitive-architecture-census.py --check` | PASS after a visible `framework_production_noncomment_lines` raise (63096 → 63700, +604), reasoned in the contract |
 | `docs-track-code-sweep.sh` | GREEN (65 files, 0 findings) |
 | guarded-token grep | no guarded literal added |
 
