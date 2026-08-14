@@ -25,6 +25,7 @@ import Link from 'next/link'
 
 import { arrivalClauses, ARRIVAL_CLAUSE_LIMIT } from '@/lib/onboarding/arrival'
 import { FLOW_STOPS } from '@/lib/onboarding/flow-rail'
+import { sweepLine } from '@/lib/onboarding/sweep-line'
 import type { OnboardingAction, OnboardingResponse } from '@/lib/onboarding/types'
 
 /**
@@ -337,10 +338,12 @@ export default function Arrival({
               {swept.map((row) => (
                 <li key={row.name}>
                   <span className={t.title}>{row.name}</span>
-                  <span className={t.faint}>
-                    {' '}
-                    — {row.connected ? `${row.items} items read` : row.reason || 'not reached'}
-                  </span>
+                  {/* The SAME sentence the journey card prints. This first
+                      rendered `row.reason` directly, which would have shown an
+                      operator the raw diagnostic string every other surface
+                      translates — two surfaces describing one row two ways is
+                      how a product stops speaking in one voice. */}
+                  <span className={t.faint}> — {sweepLine(row)}</span>
                 </li>
               ))}
             </ul>
