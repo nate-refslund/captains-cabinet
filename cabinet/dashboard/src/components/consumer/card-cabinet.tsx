@@ -1,25 +1,48 @@
 /**
- * Card 1: YOUR CABINET — Spec 032 Consumer Mode.
+ * Card 1: YOUR CABINET — Spec 032 Consumer Mode. Server component.
  *
- * Shows plain-English status for each officer. Server component.
+ * WHAT CHANGED, AND WHY (2026-08-14). A freshly hatched cabinet showed
+ * `🔴 First Mate is offline · See details`. Red plus "offline" reads as BROKEN,
+ * and nothing was broken: the hatch stops short of launchd, so nobody had ever
+ * started that officer. An officer that has never been asked to run is a
+ * different fact from one that ran and died, and this card now says so — and,
+ * because a state with no way out is just a nicer dead end, it carries the one
+ * control that resolves it.
+ *
+ * Three renderings where there used to be one:
+ *   NEVER STARTED   a quiet neutral chip and one primary action, "Wake your
+ *                   Cabinet". No colour, because there is no fault.
+ *   ASLEEP          the operator stopped it. Also quiet, also no fault.
+ *   STOPPED REPORTING  it ran, or its helper is installed, and it is silent.
+ *                   That is the red alarm, and it keeps "See details".
+ *
+ * The reading itself — including WHY a heartbeat alone cannot tell the first
+ * from the third — is in `lib/crew.ts` and `lib/crew-state.ts`.
+ *
+ * AND THE CREW NOBODY CHOSE. A portfolio hatch generates a lane CEO for the
+ * placeholder lane; it is an on-demand consultant with no keepalive job, so it
+ * is silent BY DESIGN. It used to sit beside the First Mate with a red dot and
+ * a title-cased slug for a name. It is now named after its lane (see
+ * `lib/officer-title.ts`) and lives under a fold, which never hides anything
+ * that is working or wrong.
  *
  * Data sources:
- *   - cabinet:heartbeat:<role> — last heartbeat timestamp (15 min TTL → offline)
- *   - cabinet:officer:activity:<role> — JSON {verb, object, since, blocker_type?}
- *   - cabinet:officer:expected:* — which officers exist
+ *   - cabinet:heartbeat:<slug>            last heartbeat (SETEX 900)
+ *   - cabinet:officer:activity:<slug>     JSON {verb, object, since, blocker_type?}
+ *   - cabinet:officer:expected:<slug>     what the operator last asked for
+ *   - instance/config/roster.yml          who was hired, and what they are called
+ *   - ~/Library/LaunchAgents/…            who has ever been started here
  *
- * CRO v3 amendments:
- *   - Activity objects HTML-escaped and visually truncated at 40 chars with ellipsis
- *   - "Investigate in Advanced →" link when offline 15+ min OR activity stale 30+ min
- *   - "between tasks" ONLY when no blockers; blocker_type renders as "waiting for..."
+ * CRO v3 amendments, unchanged: activity objects HTML-escaped and visually
+ * truncated at 40 chars; "Investigate in Advanced →" only for genuinely
+ * abnormal states; "between tasks" ONLY when no blockers.
  */
 
 import Link from 'next/link'
-import redis from '@/lib/redis'
-import { freshnessOf } from '@/lib/liveness'
-import { officerTitle } from '@/lib/officer-title'
+import { readCrew, type CrewMember } from '@/lib/crew-state'
+import { readPosture, postureSentence, POSTURE_ALWAYS } from '@/lib/posture-status'
+import CrewWake from './crew-wake'
 
-const OFFLINE_THRESHOLD_MS = 15 * 60 * 1000 // 15 min → offline
 const STALE_ACTIVITY_MS = 30 * 60 * 1000 // 30 min → show investigate link
 const STALE_DISPLAY_MS = 5 * 60 * 1000 // 5 min → append elapsed time
 
@@ -59,150 +82,187 @@ interface ActivityPayload {
   blocker_type?: 'captain_approval' | 'founder_action' | null
 }
 
-interface OfficerRow {
-  role: string
-  activityText: string
-  status: 'online' | 'stale' | 'offline' | 'unknown'
-  showInvestigateLink: boolean
-  elapsedText: string | null
+interface Line {
+  slug: string
+  text: string
+  /** Dual-coded mark. Colour never carries the meaning on its own. */
+  glyph: string
+  glyphClass: string
+  /** A calm state gets no chip; a fault does. */
+  chip: string | null
+  chipClass: string
+  investigate: boolean
+  elapsed: string | null
 }
 
-async function buildOfficerRows(): Promise<OfficerRow[]> {
-  try {
-    return await readOfficerRows()
-  } catch {
-    // No rows, never rows marked offline. "Offline" is a measurement of the
-    // officer; a store that did not answer measured nothing about anyone. The
-    // card's empty state plus the store-posture banner is the honest render.
-    return []
+const CALM_MARK = {
+  glyph: '○',
+  glyphClass: 'text-zinc-500',
+  chipClass: 'border-zinc-700 bg-zinc-800/60 text-zinc-400',
+}
+
+/**
+ * The chip word for each calm state. It carries the state ON ITS OWN, and the
+ * line beside it is then just the officer's name: "First Mate is not awake yet
+ * · Not awake yet" said the same thing twice, once to the eye and once to a
+ * screen reader.
+ */
+const CALM_CHIP: Record<string, string> = {
+  'not-awake-yet': 'Not awake yet',
+  resting: 'Asleep',
+  'on-call': 'On call',
+}
+
+/**
+ * One crew member as a line of text.
+ *
+ * Note what does NOT happen in the calm branches: no red, no "offline", and no
+ * "See details" — a link that offers to investigate a non-event teaches the
+ * operator that this card cries wolf.
+ */
+function lineFor(member: CrewMember, now: number): Line {
+  const name = member.name
+
+  const calm = CALM_CHIP[member.state]
+  if (calm) {
+    return {
+      slug: member.slug,
+      text: name,
+      ...CALM_MARK,
+      chip: calm,
+      investigate: false,
+      elapsed: null,
+    }
+  }
+
+  if (member.state === 'unknown') {
+    return {
+      slug: member.slug,
+      text: `${name} — ${member.reason}`,
+      glyph: '❓',
+      glyphClass: 'text-amber-300',
+      chip: null,
+      chipClass: '',
+      investigate: true,
+      elapsed: null,
+    }
+  }
+
+  if (member.state === 'stop-failed') {
+    // The rarest row, and the one that must never be quiet: the operator asked
+    // for a stop and the officer is still acting.
+    return {
+      slug: member.slug,
+      text: `${name} was asked to stop and is still working`,
+      glyph: '🔴',
+      glyphClass: 'text-red-400',
+      chip: null,
+      chipClass: '',
+      investigate: true,
+      elapsed: null,
+    }
+  }
+
+  if (member.state === 'quiet') {
+    const stale = member.heartbeat.state === 'stale' ? member.heartbeat.ageMs : 0
+    return {
+      slug: member.slug,
+      text: `${name} has stopped reporting`,
+      glyph: '🔴',
+      glyphClass: 'text-red-400',
+      chip: null,
+      chipClass: '',
+      investigate: true,
+      elapsed: stale > 0 ? elapsedLabel(stale) : null,
+    }
+  }
+
+  // Awake — the activity phrasing, unchanged.
+  let text = `${name} is working`
+  let isStale = false
+  let elapsed: string | null = null
+
+  if (member.activityRaw) {
+    let payload: ActivityPayload = {}
+    try {
+      payload = JSON.parse(member.activityRaw) as ActivityPayload
+    } catch {
+      // malformed JSON — treat as no activity
+    }
+
+    const sinceMs = payload.since ? now - new Date(payload.since).getTime() : 0
+    isStale = sinceMs > STALE_ACTIVITY_MS
+    if (sinceMs > STALE_DISPLAY_MS) elapsed = elapsedLabel(sinceMs)
+
+    if (payload.blocker_type === 'captain_approval') {
+      const obj = payload.object ? truncate40(escapeHtml(payload.object)) : 'Captain approval'
+      text = `${name} is waiting for ${obj}`
+    } else if (payload.blocker_type === 'founder_action') {
+      const obj = payload.object ? truncate40(escapeHtml(payload.object)) : 'a founder action'
+      text = `${name} is blocked on ${obj}`
+    } else if (payload.verb) {
+      const verb = ALLOWED_VERBS.has(payload.verb) ? payload.verb : 'working'
+      text = payload.object
+        ? `${name} is ${verb} ${truncate40(escapeHtml(payload.object))}`
+        : `${name} is ${verb}`
+    } else {
+      text = `${name} is between tasks`
+    }
+  } else {
+    text = `${name} is between tasks`
+  }
+
+  return {
+    slug: member.slug,
+    text,
+    glyph: isStale ? '🟡' : '🟢',
+    glyphClass: isStale ? 'text-amber-400' : 'text-green-400',
+    chip: null,
+    chipClass: '',
+    investigate: isStale,
+    elapsed,
   }
 }
 
-async function readOfficerRows(): Promise<OfficerRow[]> {
-  const expectedKeys = await redis.keys('cabinet:officer:expected:*')
-  const heartbeatKeys = await redis.keys('cabinet:heartbeat:*')
-  const roles = new Set<string>()
-  for (const k of expectedKeys) roles.add(k.replace('cabinet:officer:expected:', ''))
-  for (const k of heartbeatKeys) roles.add(k.replace('cabinet:heartbeat:', ''))
-
-  const now = Date.now()
-
-  const rows: OfficerRow[] = await Promise.all(
-    Array.from(roles).map(async (role) => {
-      const [heartbeatRaw, activityRaw] = await Promise.all([
-        redis.get(`cabinet:heartbeat:${role}`),
-        redis.get(`cabinet:officer:activity:${role}`),
-      ])
-
-      // The human name, never the raw slug: "First Mate is offline", not "COS
-      // is offline" (the line the Captain saw and rejected).
-      const name = officerTitle(role)
-
-      // Determine online/offline.
-      //
-      // The NaN guard was already here; the FUTURE one was not. A stamp ahead
-      // of this clock made `offlineDurationMs` negative, which is under the
-      // threshold, so a dead officer rendered "between tasks" with a green dot
-      // forever and nothing aged it out. `freshnessOf` carries both arms, and
-      // an unreadable stamp is now its own row rather than a healthy one.
-      const hb = freshnessOf(heartbeatRaw, now, OFFLINE_THRESHOLD_MS)
-      if (hb.state === 'unknown') {
-        return {
-          role,
-          activityText: `${name} — heartbeat unreadable`,
-          status: 'unknown' as const,
-          showInvestigateLink: true,
-          elapsedText: null,
-        }
-      }
-      const isOffline = hb.state !== 'fresh'
-      const offlineDurationMs = hb.state === 'stale' ? hb.ageMs : 0
-
-      if (isOffline) {
-        return {
-          role,
-          activityText: `${name} is offline`,
-          status: 'offline' as const,
-          showInvestigateLink: true,
-          elapsedText: offlineDurationMs > 0 ? elapsedLabel(offlineDurationMs) : null,
-        }
-      }
-
-      // Parse activity
-      let activityText = `${name} is working`
-      let isStale = false
-      let elapsedText: string | null = null
-
-      if (activityRaw) {
-        let payload: ActivityPayload = {}
-        try {
-          payload = JSON.parse(activityRaw) as ActivityPayload
-        } catch {
-          // malformed JSON — treat as no activity
-        }
-
-        const sinceMs = payload.since ? now - new Date(payload.since).getTime() : 0
-        isStale = sinceMs > STALE_ACTIVITY_MS
-
-        if (sinceMs > STALE_DISPLAY_MS) {
-          elapsedText = elapsedLabel(sinceMs)
-        }
-
-        if (payload.blocker_type === 'captain_approval') {
-          const obj = payload.object ? truncate40(escapeHtml(payload.object)) : 'Captain approval'
-          activityText = `${name} is waiting for ${obj}`
-        } else if (payload.blocker_type === 'founder_action') {
-          const obj = payload.object ? truncate40(escapeHtml(payload.object)) : 'a founder action'
-          activityText = `${name} is blocked on ${obj}`
-        } else if (payload.verb) {
-          const verb = ALLOWED_VERBS.has(payload.verb) ? payload.verb : 'working'
-          if (payload.object) {
-            const obj = truncate40(escapeHtml(payload.object))
-            activityText = `${name} is ${verb} ${obj}`
-          } else {
-            activityText = `${name} is ${verb}`
-          }
-        } else {
-          // Online heartbeat, no structured activity → "between tasks"
-          activityText = `${name} is between tasks`
-        }
-      } else {
-        // Online but no activity key at all → "between tasks"
-        activityText = `${name} is between tasks`
-      }
-
-      const showInvestigateLink = isStale
-
-      return {
-        role,
-        activityText,
-        status: isStale ? ('stale' as const) : ('online' as const),
-        showInvestigateLink,
-        elapsedText,
-      }
-    })
+function Row({ line }: { line: Line }) {
+  return (
+    <div className="flex items-start gap-2">
+      <span className={`text-sm ${line.glyphClass}`} aria-hidden>
+        {line.glyph}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm leading-snug text-zinc-200">
+          {line.text}
+          {line.elapsed && <span className="ml-1 text-zinc-500">({line.elapsed})</span>}
+          {line.chip && (
+            <span
+              className={`ml-2 rounded-full border px-2 py-0.5 align-middle text-[0.65rem] font-medium ${line.chipClass}`}
+            >
+              {line.chip}
+            </span>
+          )}
+        </p>
+        {line.investigate && (
+          <Link
+            href={`/officers/${line.slug}`}
+            className="mt-0.5 inline-flex items-center gap-1 text-xs text-zinc-500 transition-colors hover:text-zinc-300"
+          >
+            See details
+            <span aria-hidden="true">&rarr;</span>
+          </Link>
+        )}
+      </div>
+    </div>
   )
-
-  // Sort alphabetically
-  rows.sort((a, b) => a.role.localeCompare(b.role))
-  return rows
-}
-
-function StatusIndicator({
-  status,
-}: {
-  status: 'online' | 'stale' | 'offline' | 'unknown'
-}) {
-  // `unknown` is checked FIRST and dual-coded with a glyph that carries no
-  // health claim — a card that loses a branch cannot fall out the green end.
-  if (status === 'unknown') return <span className="text-amber-300 text-sm">❓</span>
-  if (status === 'online') return <span className="text-green-400 text-sm">🟢</span>
-  if (status === 'stale') return <span className="text-amber-400 text-sm">🟡</span>
-  return <span className="text-red-400 text-sm">🔴</span>
 }
 
 export default async function CardCabinet() {
-  const rows = await buildOfficerRows()
+  const now = Date.now()
+  const crew = await readCrew(now)
+  const posture = await readPosture()
+
+  const shown = crew.members.filter((m) => !m.folded)
+  const folded = crew.members.filter((m) => m.folded)
 
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
@@ -212,44 +272,54 @@ export default async function CardCabinet() {
         </h2>
       </div>
 
-      {rows.length === 0 ? (
+      {crew.members.length === 0 ? (
         <div className="py-4 text-center">
-          <p className="text-sm text-zinc-500">
-            Welcome to your Cabinet.
-          </p>
+          <p className="text-sm text-zinc-500">Welcome to your Cabinet.</p>
           <p className="mt-1 text-xs text-zinc-600">
             Your officers will appear here once they come online.
           </p>
-          {/* PENDING CAPTAIN APPROVAL: empty-state copy */}
         </div>
       ) : (
-        <div className="space-y-3">
-          {rows.map((row) => (
-            <div key={row.role}>
-              <div className="flex items-start gap-2">
-                <StatusIndicator status={row.status} />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm leading-snug text-zinc-200">
-                    {row.activityText}
-                    {row.elapsedText && (
-                      <span className="ml-1 text-zinc-500">({row.elapsedText})</span>
-                    )}
+        <>
+          <div className="space-y-3">
+            {shown.map((member) => (
+              <Row key={member.slug} line={lineFor(member, now)} />
+            ))}
+          </div>
+
+          {/* The one control. It is absent when there is nothing to control:
+              a store that answered nothing cannot be acted on honestly. */}
+          {!crew.unreadable && crew.wakeable.length > 0 && (
+            <CrewWake
+              awake={crew.anyAwake}
+              names={shown.filter((m) => crew.wakeable.includes(m.slug)).map((m) => m.name)}
+              posture={{
+                sentence: postureSentence(posture),
+                unreadable: Boolean(posture.error),
+                always: POSTURE_ALWAYS,
+              }}
+            />
+          )}
+
+          {folded.length > 0 && (
+            <details className="mt-4">
+              <summary className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-300">
+                {folded.length === 1
+                  ? '1 more crew member who does not need waking'
+                  : `${folded.length} more crew members who do not need waking`}
+              </summary>
+              <div className="mt-3 space-y-2">
+                {folded.map((member) => (
+                  <p key={member.slug} className="text-sm leading-snug text-zinc-400">
+                    <span className="text-zinc-200">{member.name}</span>
+                    {member.reason ? ` — ${member.reason}` : ''}
+                    {!member.hired && ' (not hired yet)'}
                   </p>
-                  {/* Contextual "Investigate in Advanced" — only for genuinely abnormal states */}
-                  {row.showInvestigateLink && (
-                    <Link
-                      href={`/officers/${row.role}`}
-                      className="mt-0.5 inline-flex items-center gap-1 text-xs text-zinc-500 transition-colors hover:text-zinc-300"
-                    >
-                      See details
-                      <span aria-hidden="true">&rarr;</span>
-                    </Link>
-                  )}
-                </div>
+                ))}
               </div>
-            </div>
-          ))}
-        </div>
+            </details>
+          )}
+        </>
       )}
     </div>
   )
