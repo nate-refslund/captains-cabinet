@@ -21,7 +21,7 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 2f743441e27e99b8c8afb711e7458c2ec2afd559e3ba046605198e9ee454081c
+Reviewed-Scope-Digest: 1fe68a749c70677406626a6c580a8b0cb5522c58282450686ab9631013f9e218
 
 (RE-BIND, 2026-08-14, `feat/web-probes-run`, recomputed over this branch's HEAD
 after the same landing's live-run fixes moved the contract a second time
@@ -2341,3 +2341,32 @@ No `framework/projection`, `framework/scheduler`, `framework/organs`,
 touched by this branch, whose diff is otherwise `framework/onboarding/`, its
 suites, the dashboard onboarding surfaces, two onboarding docs and one FW-019
 review artifact.)
+
+(RE-BOUND 2026-08-14 on `feat/onboarding-arrival` (PR #357), previous value
+`2f743441e27e99b8c8afb711e7458c2ec2afd559e3ba046605198e9ee454081c…`. ONE in-scope path moved and it is NOT a COG-4 surface.
+MEASURED, not asserted: the resolved scope was expanded with `git ls-tree -r`
+at `origin/master` (268ccdd) and at this branch's HEAD and the two sets
+diffed — 114 paths on both sides, none added, none removed, exactly ONE with a
+different blob.
+
+1. `cabinet/config/cognitive-architecture-contract.yml` — the
+   `framework_production_noncomment_lines` maximum, raised 63700 -> 63777 with
+   its dated measurement note (observed 78319 vs the then-effective 78242,
+   which master already sat exactly on). No budget added, no pin removed, no
+   baseline changed, no other key touched. The +77 buys onboarding's ENDING
+   inside `framework/onboarding/journey.py`: the terminal `complete` stage
+   (`continue` had no success state to move to, so a finished operator's last
+   screen was headed "Deeper Orientation has not started" — measured on the
+   Captain's own live journey, Charter ratified and dividend delivered, and
+   reported as being stuck), the `COMPLETE_STAGES` rule that reads a legacy
+   `orientation_offered` journey as arrived WITHOUT rewriting one stored state
+   file, the `STAGES` declaration two sensors are pinned to, the one
+   completion predicate `journey_has_arrived`, and `_arrival_summary`. ZERO
+   production modules (`framework_production_modules` unchanged), so the
+   ratchet re-pins at observed==max exactly as the zero-headroom law requires.
+
+No `framework/projection`, `framework/scheduler`, `framework/organs`,
+`cognitive-trajectory.v2.schema.json`, `cog4-*` script or COG-4 fixture byte is
+touched by this branch, whose diff is otherwise `framework/onboarding/`, its
+suite, the dashboard onboarding surfaces, one onboarding design doc, four
+screenshots and one FW-019 review artifact.)
