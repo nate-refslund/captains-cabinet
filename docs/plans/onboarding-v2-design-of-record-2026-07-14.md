@@ -350,6 +350,50 @@ Purge requires literal `PURGE`, removes all journey content, and cannot be
 undone. Revoke stops future reads while retaining derived artifacts until undo
 or purge. Undo is event-backed.
 
+### The flow has an ending (added 2026-08-14)
+
+The first slice had no terminal success state. `continue` from `dividend_ready`
+landed on `orientation_offered`, a stage whose card was headed "Deeper
+Orientation has not started" over a menu of more onboarding — so an operator who
+had finished was, on screen, indistinguishable from one who was stuck. Measured
+live: the Captain's own journey sat there with the Charter ratified and the
+dividend delivered, and he reported "i believe i've answered everything and am
+now stuck and can't continue again?".
+
+- `complete` is the terminal stage. `continue` lands there, and only when
+  `journey_has_arrived(state)` holds — a ratified Charter AND a delivered first
+  dividend. A stage value alone can never announce a success the product cannot
+  show.
+- `orientation_offered` **is** `complete` (`COMPLETE_STAGES`): journeys
+  persisted at the older stage render the same arrival and route the same way.
+  Stored state files are NOT rewritten — the event log records what happened,
+  and editing history to fix a rendering bug destroys the one thing it is for.
+- Both stages emit `kind: "arrival"`, titled "Your Cabinet is ready.", carrying
+  the dividend's citations and egress disposition (a summary without its
+  citations would be an unsourced claim on the screen whose job is to be
+  trustworthy). The deeper-orientation content becomes an OFFER from the
+  finished state, with both of its disclosures intact — "That work is disabled
+  and has not started", "No new access or authority was granted". `pause` is no
+  longer offered there (nothing is running) but is still accepted, so a card
+  printed by an older build keeps working.
+- `journey.STAGES` declares every stage the card builder renders. It is pinned
+  in both directions: `test_every_declared_stage_renders_its_own_card` proves
+  each has a live branch, and the dashboard's rail registry
+  (`cabinet/dashboard/src/lib/onboarding/flow-rail.ts`) proves each maps to
+  exactly one of four monotonic stops — You · Access · First look · Done. The
+  six-stop rail it replaced mapped `orientation_offered` two stops BACKWARD from
+  `dividend_ready`; that mapping is kept in `flow-rail.test.ts` so the monotonic
+  arm is proven able to fail.
+- The dashboard mirrors `journey_has_arrived` as `journeyIsComplete`
+  (`lib/onboarding/completion.ts`), which gates BOTH the home-page redirect and
+  the arrival screen. Both implementations assert against one shared table,
+  `framework/onboarding/tests/data/completion-parity.json`, so the two runtimes
+  cannot drift into telling the operator different things. Re-entering
+  `/onboarding` after completion renders the arrival and its management view
+  (what may be read, what was found, connected tools, stop/delete); the wizard
+  is structurally unreachable, because its questions are gated on the `welcome`
+  stage.
+
 A purge ends that JOURNEY; it does not end onboarding on the instance (fixed
 2026-08-02, after a fresh-hatch run measured every later action on every surface
 — including the CLI — refused `onboarding_purged` with no way to begin again).

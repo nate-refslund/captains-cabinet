@@ -17,16 +17,17 @@ import type {
 import { getConnectorCatalog } from '@/actions/connectors'
 import { saveConnectorCredential } from '@/actions/env'
 import {
-  activePhaseIndex,
   canAdvance,
   EMPTY_WIZARD,
   nextStep,
   prevStep,
   resumeStep,
   seedRequest,
-  WIZARD_PHASES,
   type WizardStepId,
 } from '@/lib/onboarding/wizard'
+import { FLOW_STOPS, stopIndex } from '@/lib/onboarding/flow-rail'
+import { journeyIsComplete } from '@/lib/onboarding/completion'
+import Arrival, { wantsFullSurface } from './arrival'
 
 // A dedup/idempotency id that works in every context. crypto.randomUUID is
 // SECURE-CONTEXT ONLY — undefined over plain HTTP on a LAN/tailnet address,
@@ -805,7 +806,40 @@ export default function OnboardingJourneyCard({
     )
   }
 
-  const activePhase = activePhaseIndex(stage, wizardStep)
+  const activePhase = stopIndex(stage, wizardStep)
+
+  // THE ENDING. A finished journey gets the arrival screen and its management
+  // view INSTEAD of the flow — screens replace each other, they do not stack —
+  // and the two conditions are deliberately separate. `kind === 'arrival'` is
+  // the core saying where the operator is; `journeyIsComplete` is the same
+  // predicate the home-page redirect gates on, saying what they were actually
+  // given. A state file that claims the stage without carrying the facts (hand
+  // edited, half restored, written by a future bug) renders the ordinary card,
+  // never a success screen with nothing behind it.
+  //
+  // Two sub-flows are allowed to take the screen back, because both are
+  // management acts with forms that already exist below: changing what may be
+  // read, and the typed purge confirmation.
+  const arrived = !!journey && journey.card.kind === 'arrival' && journeyIsComplete(journey.state)
+  const showArrival = arrived && !editScope && !purgeArmed && !wantsFullSurface()
+
+  if (journey && showArrival) {
+    return (
+      <section className="w-full">
+        <Arrival
+          journey={journey}
+          t={t}
+          variant={variant}
+          working={working}
+          choose={choose}
+        />
+        <div aria-live="polite" className="mt-4 min-h-5 text-sm">
+          {working && <span className={t.muted}>The Cabinet is working on that…</span>}
+          {error && <span className="font-medium text-red-500 dark:text-red-300">{error}</span>}
+        </div>
+      </section>
+    )
+  }
 
   return (
     <section
@@ -845,29 +879,37 @@ export default function OnboardingJourneyCard({
             </div>
           </div>
 
+          {/* FOUR STOPS, AND IT NEVER GOES BACKWARDS. The six-stop rail this
+              replaces mapped the stage AFTER the result back to stop four, so
+              an operator's last act visibly moved them two stops backward —
+              "it is like it goes a step back" (Captain, 2026-08-14). The
+              mapping and the monotonic law it now obeys live in
+              lib/onboarding/flow-rail.ts, where both are testable without a
+              DOM. */}
           {activePhase >= 0 && (
             <ol
               className="mt-5 flex items-center gap-1.5"
-              aria-label={`Onboarding progress: step ${activePhase + 1} of ${WIZARD_PHASES.length}`}
+              aria-label={`Onboarding progress: step ${activePhase + 1} of ${FLOW_STOPS.length}`}
               role="list"
             >
-              {WIZARD_PHASES.map((phase, index) => {
+              {FLOW_STOPS.map((stop, index) => {
                 const done = index < activePhase
                 const current = index === activePhase
                 return (
-                  <li key={phase.id} className="flex flex-1 flex-col items-center gap-1.5" aria-current={current ? 'step' : undefined}>
+                  <li key={stop.id} className="flex flex-1 flex-col items-center gap-1.5" aria-current={current ? 'step' : undefined}>
                     <div className="flex w-full items-center gap-1.5">
                       <span
+                        title={stop.hint}
                         className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border text-xs font-semibold transition-colors motion-reduce:transition-none ${current ? t.railOn : done ? t.railDone : t.railOff}`}
                       >
                         {done ? '✓' : index + 1}
                       </span>
-                      {index < WIZARD_PHASES.length - 1 && (
+                      {index < FLOW_STOPS.length - 1 && (
                         <span className={`h-px flex-1 ${index < activePhase ? t.railLineDone : t.railLine}`} />
                       )}
                     </div>
                     <span className={`hidden text-center text-[0.65rem] font-medium sm:block ${current ? t.eyebrow : t.faint}`}>
-                      {phase.label}
+                      {stop.label}
                     </span>
                   </li>
                 )

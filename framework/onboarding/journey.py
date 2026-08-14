@@ -146,6 +146,51 @@ DESTINATIONS = {
     "sovereign": "Aim for broad autonomy after it is earned",
 }
 ORIENTATION_MODE = "observe_only"
+
+# ── THE FLOW HAS AN ENDING ────────────────────────────────────────────────────
+# Measured live (Captain, 2026-08-14): his journey sat at ``orientation_offered``
+# with the Charter RATIFIED and the first dividend delivered — objectively
+# finished — and the page said "Deeper Orientation has not started" over a menu
+# of more onboarding. His own words: "i believe i've answered everything and am
+# now stuck and can't continue again?" An operator who finishes was, on screen,
+# indistinguishable from one who is stuck, because the stage machine had no
+# terminal success state to move to.
+#
+# ``complete`` is that state. ``continue`` from the first dividend lands HERE.
+COMPLETE_STAGE = "complete"
+#: ``orientation_offered`` IS ``complete`` — the interpretation rule, in code.
+#:
+#: It was never a destination: it named a step that has not started and never
+#: will start from here, and every journey that reached it had already been
+#: handed everything onboarding promises. Journeys persisted at that stage (the
+#: Captain's live instance among them) are read as arrived rather than rewritten
+#: — a stored state file is a record of what happened, and editing history to
+#: fix a rendering bug would destroy the one thing the event log is for. Both
+#: stages render the SAME arrival card and route the same way; nothing on disk
+#: changes, and a journey written by an older build keeps working untouched.
+COMPLETE_STAGES: frozenset[str] = frozenset({COMPLETE_STAGE, "orientation_offered"})
+#: The card kind every arrived journey carries, on every surface. Surfaces
+#: switch on this rather than re-implementing the equivalence above, so the rule
+#: lives in exactly one place.
+ARRIVAL_KIND = "arrival"
+#: Every stage ``_card`` renders a real card for. Declared rather than inferred
+#: because two sensors are pinned to it and both must fail loudly on drift:
+#: ``test_every_declared_stage_renders_its_own_card`` proves each value here has
+#: a live branch (a stage that falls through to the generic status card is a
+#: screen nobody designed), and the dashboard's rail registry
+#: (cabinet/dashboard/src/lib/onboarding/flow-rail.test.ts) proves each one maps
+#: to exactly one stop on the operator's progress rail — a stage with no stop is
+#: a rail that lies about where the operator is.
+STAGES: tuple[str, ...] = (
+    "welcome",
+    "charter_pending",
+    "dividend_ready",
+    COMPLETE_STAGE,
+    "orientation_offered",
+    "paused",
+    "revoked",
+    "purged",
+)
 #: What a citation from a non-owned source renders as until it is approved.
 WITHHELD_EXCERPT = "[withheld: not the operator's content to send]"
 #: Plain-language rendering of the ownership class on the approval card. The
@@ -1970,6 +2015,71 @@ def _egress_for_card(state: dict[str, Any], finding: dict[str, Any]) -> dict[str
     }
 
 
+def journey_has_arrived(state: Mapping[str, Any]) -> bool:
+    """Has this journey actually DELIVERED what onboarding promises?
+
+    THE ONE COMPLETION PREDICATE. A ratified Charter plus a first dividend is
+    the moment the promise is kept: the operator granted a read, the read
+    happened under the grant they approved, and one cited result came back.
+    Everything short of it is unfinished — never started, Charter proposed and
+    not approved, purged, revoked, paused before the read.
+
+    IT IS SEPARATE FROM THE STAGE ON PURPOSE, and both are required to render an
+    arrival. The stage says where the operator navigated to; this says what they
+    were actually given. A state file that carries ``stage: "complete"`` and no
+    dividend — hand-edited, half-restored, or written by a build that had a bug —
+    must not be able to make the product announce a success it cannot show, so
+    the card falls back to the plain status card instead.
+
+    The dashboard mirrors this predicate in
+    ``cabinet/dashboard/src/lib/onboarding/completion.ts`` — it is what decides
+    the home-page redirect, and the arrival screen gates on the SAME function so
+    the two surfaces can never disagree about whether onboarding is done. The
+    two implementations are held together by a shared fixture table
+    (``tests/data/completion-parity.json``) that both suites assert against.
+    """
+    charter = state.get("charter")
+    return (
+        isinstance(charter, Mapping)
+        and charter.get("status") == "ratified"
+        and state.get("first_dividend") is not None
+    )
+
+
+def _arrival_summary(state: Mapping[str, Any]) -> str:
+    """What is now true, in the operator's own recorded answers.
+
+    EVERY CLAUSE IS CITABLE OR ABSENT. Nothing here is derived, inferred or
+    filled in: a clause exists exactly when the answer behind it exists in the
+    journey state, and its words come from that answer. An arrival that
+    described a Cabinet the operator never described would be the invention this
+    whole surface is built to refuse — and it is the easiest place in the
+    product to commit it, because a summary is the one screen where prose is
+    expected.
+    """
+    parts: list[str] = ["Orientation is done."]
+    seed = state.get("seed")
+    if isinstance(seed, Mapping) and str(seed.get("text") or "").strip():
+        parts.append(f"You told me: “{str(seed['text']).strip()}”.")
+    org = state.get("organization")
+    if isinstance(org, Mapping) and str(org.get("name") or "").strip():
+        parts.append(f"This Cabinet is for {str(org['name']).strip()}.")
+    source = state.get("source") or {}
+    if isinstance(source, Mapping) and source.get("root"):
+        parts.append(
+            f"You approved read-only access to {source['root']}, and nothing else."
+        )
+    dividend = state.get("first_dividend")
+    finding = dividend.get("finding") if isinstance(dividend, Mapping) else None
+    if isinstance(finding, Mapping) and str(finding.get("summary") or "").strip():
+        cited = len(finding.get("citations") or ())
+        parts.append(
+            f"I read it once and told you one thing, with {cited} place"
+            f"{'' if cited == 1 else 's'} you can open yourself."
+        )
+    return " ".join(parts)
+
+
 def _card(state: dict[str, Any]) -> dict[str, Any]:
     stage = str(state["stage"])
     suffix = ""
@@ -2096,26 +2206,58 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
                 {"action": "purge", "label": "Delete onboarding data", "danger": True},
             ],
         )
-    elif stage == "orientation_offered":
+    elif stage in COMPLETE_STAGES and journey_has_arrived(state):
+        # THE ENDING. One card for ``complete`` and for every journey persisted
+        # at ``orientation_offered`` — see COMPLETE_STAGES for why the older
+        # stage is read as arrived rather than rewritten on disk.
+        #
+        # WHAT WAS A STAGE TITLE IS NOW AN OFFER. "Deeper Orientation has not
+        # started" was a true sentence in the wrong grammatical mood: it
+        # answered "where am I?" with the name of something that never began,
+        # and the operator read it as being stuck. The deeper step is still
+        # disabled, still unstarted, still separately approved — every one of
+        # those disclosures is below, word for word — but it is offered from a
+        # finished state instead of standing in for one.
         plan = _entry_plan_for(state)
+        # THE CITATIONS TRAVEL WITH THE CLAIM. The arrival repeats back what was
+        # found, so it owes the same openable evidence the dividend card carried
+        # — a summary without its citations is exactly the unsourced claim this
+        # product refuses everywhere else, and it would have been introduced by
+        # the screen whose job is to be trustworthy. Screened by the SAME egress
+        # gate, so a third party's words are withheld here too.
+        arrival_egress = _egress_for_card(state, state["first_dividend"]["finding"])
+        common["egress"] = arrival_egress["disposition_block"]
         common.update(
-            kind="deep_orientation",
-            title="Deeper Orientation has not started",
+            kind=ARRIVAL_KIND,
+            title="Your Cabinet is ready.",
+            evidence=arrival_egress["citations"],
             body=(
+                _arrival_summary(state)
+                + " Nothing is running now, and nothing opens without your approval. "
                 "A later, separately approved step could spend longer learning how your work fits together, "
                 "reflect back priorities and conflicts, suggest a useful AI team, and show concrete examples "
                 "of what each officer may observe, propose, or do. That work is disabled and has not started. "
-                "No new access or authority was granted. What I can do now instead: "
+                "No new access or authority was granted. If you want to give me more to read: "
                 + _entry_body(plan)
                 + _probe_note(state)
                 + _discovery_note(state.get("discovery"))
             ),
+            # The journey is finished; the card says so rather than staying
+            # "open" forever. Surfaces that only ever knew two statuses read
+            # this exactly as they read the purged card's.
+            status="complete",
             entry=plan,
             # ``propose_window`` is what stops this card being terminal. It was
             # pause/revoke/purge only — three ways to stop and none to continue —
             # so an operator who wanted to give MORE had to abandon onboarding.
+            #
+            # "Pause here" is NOT offered any more: there is nothing left
+            # running to pause, and a pause control on a finished flow is
+            # another way of saying "you are still mid-journey". The ACTION
+            # still accepts an arrived journey (a surface holding an older card
+            # can still send it), so nothing an operator could already do is
+            # taken away — it is just no longer proposed.
             options=list(plan["next_actions"]) + [
-                {"action": "pause", "label": "Pause here"},
                 {"action": "revoke", "label": "Revoke folder access"},
                 {"action": "purge", "label": "Delete onboarding data", "danger": True},
             ],
@@ -4703,17 +4845,30 @@ def _act_core(
                 correlation_id=correlation_id, now=ts, manifest=manifest,
             )
         if action == "continue":
-            if state["stage"] not in {"dividend_ready", "paused", "orientation_offered"}:
+            if state["stage"] not in {"dividend_ready", "paused"} | COMPLETE_STAGES:
+                raise JourneyError("continue_unavailable", "There is nothing ready to continue yet.")
+            # ARRIVAL IS EARNED, NEVER ASSERTED. Every stage above implies a
+            # ratified Charter and a delivered dividend today — but "implies"
+            # is an argument about the current transition graph, and the graph
+            # is what changes. The predicate the arrival card and the dashboard
+            # redirect both gate on is checked HERE too, so no future edge into
+            # this branch can move a journey into a success state it has not
+            # actually reached.
+            if not journey_has_arrived(state):
                 raise JourneyError("continue_unavailable", "There is nothing ready to continue yet.")
             after = deepcopy(state)
-            after["stage"] = "orientation_offered"
+            after["stage"] = COMPLETE_STAGE
             return _commit(
                 base, state, after, action=action, action_id=action_id,
                 surface=surface, trace_id=trace_id,
                 correlation_id=correlation_id, now=ts,
             )
         if action == "pause":
-            if state["stage"] not in {"dividend_ready", "orientation_offered"}:
+            # An arrived journey no longer OFFERS pause (there is nothing left
+            # running to pause), but it still accepts it: a surface holding a
+            # card printed before the arrival landed must not have its button
+            # break, and taking a capability away is not this change's job.
+            if state["stage"] not in {"dividend_ready"} | COMPLETE_STAGES:
                 raise JourneyError("pause_unavailable", "This journey is not currently running.")
             after = deepcopy(state)
             after["stage"] = "paused"

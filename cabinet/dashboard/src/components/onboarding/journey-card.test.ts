@@ -414,11 +414,19 @@ describe('rendered component — the stepped front', () => {
     expect(html).toContain('You can point me at one folder to read')
   })
 
-  it('renders the progress rail with the phase for the current step lit', () => {
+  it('renders the four-stop rail with the stop for the current step lit', () => {
+    // FOUR STOPS, not six (2026-08-14). The three questions are one stop —
+    // "You" — because they are one subject, and the rail's job is to say where
+    // the operator is in the FLOW, not how many text fields are behind them.
+    // The mapping and its monotonic law are pinned in flow-rail.test.ts.
     scriptState({ journey: journeyFixture('welcome'), wizardStep: 'start' })
     const html = render()
-    expect(html).toContain('Onboarding progress: step 3 of 6')
+    expect(html).toContain('Onboarding progress: step 1 of 4')
     expect(html).toContain('aria-current="step"')
+    expect(html).toContain('>You<')
+    expect(html).toContain('>Access<')
+    expect(html).toContain('>First look<')
+    expect(html).toContain('>Done<')
   })
 
   it('shows the folder form as the point branch, with the consent facts intact', () => {
@@ -1611,11 +1619,11 @@ describe('onboarding journey accessibility floor', () => {
     expect(html).toContain('min-h-11')   // 44px tap targets
   })
 
-  it('marks the progress rail with the current step for assistive tech', () => {
+  it('marks the progress rail with the current stop for assistive tech', () => {
     scriptState({ journey: journeyFixture('welcome'), wizardStep: 'dream' })
     const html = render()
     expect(html).toContain('aria-current="step"')
-    expect(html).toContain('Onboarding progress: step 2 of 6')
+    expect(html).toContain('Onboarding progress: step 1 of 4')
   })
 
   it('requires a typed destructive confirmation instead of a one-tap prompt', () => {
@@ -1649,5 +1657,194 @@ describe('onboarding journey accessibility floor', () => {
   it('stores nothing in the browser — onboarding state lives in the core', () => {
     const src = fs.readFileSync(path.join(__dirname, 'journey-card.tsx'), 'utf8')
     expect(src).not.toMatch(/localStorage|sessionStorage|document\.cookie/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// THE ENDING — the arrival screen, and the management view a revisit gets.
+//
+// The defect these arms exist for shipped and was reported live: a finished
+// operator's last screen was headed "Deeper Orientation has not started" over a
+// menu of more onboarding, so being done and being stuck looked the same. The
+// arms below pin the ending itself, the two ways it can be faked, and the one
+// thing that must be unreachable once it has landed.
+// ---------------------------------------------------------------------------
+
+/** A journey that has arrived: ratified Charter, delivered dividend, answers. */
+function arrivedFixture(stage = 'complete'): OnboardingResponse {
+  const fixture = journeyFixture(stage)
+  fixture.state = {
+    ...fixture.state,
+    seed: { text: 'I run a small ryokan on the coast', answered_at: '2026-08-14T09:00:00Z' },
+    organization: { name: 'Hoshiyama Ryokan', answered_at: '2026-08-14T09:01:00Z' },
+    source: {
+      kind: 'folder',
+      root: '/Users/host/Documents/ryokan',
+      label: 'ryokan',
+      status: 'ratified_read_only',
+      ownership: 'self',
+    },
+    charter: { hash: 'abcdef0123456789', status: 'ratified', payload: {} },
+    first_dividend: {
+      finding: {
+        summary:
+          'Two documents disagree about the check-in time. One says 15:00, the other 16:00.',
+        citations: [{ path: 'front-desk.md', line: 12, excerpt: 'check-in 15:00' }],
+      },
+    },
+    connector_sweep: {
+      schema: 'cabinet.connector-sweep/v1',
+      swept_at: '2026-08-14T09:05:00Z',
+      declared: 1,
+      calls: 1,
+      connectors: [{ name: 'calendar', connected: true, items: 40, calls: 1 }],
+    },
+  } as OnboardingResponse['state']
+  fixture.card = {
+    ...fixture.card,
+    stage,
+    kind: 'arrival',
+    title: 'Your Cabinet is ready.',
+    status: 'complete',
+    evidence: [{ path: 'front-desk.md', line: 12, excerpt: 'check-in 15:00', sha256: 'x' }],
+    options: [
+      { action: 'propose_window', label: 'Choose a folder I may read' },
+      { action: 'answer_salience', label: 'Point me at the one to open first', input: 'choice' },
+      { action: 'revoke', label: 'Revoke folder access' },
+      { action: 'purge', label: 'Delete onboarding data', danger: true },
+    ],
+  } as OnboardingResponse['card']
+  return fixture
+}
+
+describe('rendered component — the arrival', () => {
+  it('announces the ending and hands off, instead of naming what has not started', () => {
+    scriptState({ journey: arrivedFixture() })
+    const html = render()
+    expect(html).toContain('Your Cabinet is ready.')
+    expect(html).toContain('Go to your Cabinet')
+    expect(html).toContain('href="/"')
+    expect(html).toContain('Read the full briefing')
+    expect(html).toContain('href="/briefing"')
+    // The old dead end, as a HEADLINE, is gone.
+    expect(html).not.toContain('Deeper Orientation has not started')
+  })
+
+  it('assembles the summary from recorded answers, each beside the act that recorded it', () => {
+    scriptState({ journey: arrivedFixture() })
+    const html = render()
+    expect(html).toContain('I run a small ryokan on the coast')   // the seed
+    expect(html).toContain('Hoshiyama Ryokan')                    // the organisation
+    expect(html).toContain('/Users/host/Documents/ryokan')        // the PATH approved
+    expect(html).toContain('Two documents disagree about the check-in time.')
+    // The provenance labels are the point: every clause says where it came from.
+    expect(html).toContain('you told me')
+    expect(html).toContain('you approved')
+    expect(html).toContain('I found')
+  })
+
+  it('shows four settled stops and no progress rail', () => {
+    scriptState({ journey: arrivedFixture() })
+    const html = render()
+    expect(html).toContain('All four steps are done')
+    expect(html).not.toContain('Onboarding progress: step')
+  })
+
+  it('deletes no honesty: every disclosure of the card it replaces is still here', () => {
+    scriptState({ journey: arrivedFixture() })
+    const html = render()
+    // The deeper step, verbatim from the core's own card body.
+    expect(html).toContain('That work is disabled and has not')
+    expect(html).toContain('No new access or authority was granted.')
+    // The finding IN FULL, not only the headline the summary shows.
+    expect(html).toContain('One says 15:00, the other 16:00.')
+    // The citation, and the read-only promise on what may be read.
+    expect(html).toContain('front-desk.md:12')
+    expect(html).toContain('read-only')
+    expect(html).toContain('Charter fingerprint: abcdef012345')
+  })
+
+  it('is a management view: what may be read, what was found, tools, and how to stop', () => {
+    scriptState({ journey: arrivedFixture() })
+    const html = render()
+    expect(html).toContain('What I may read')
+    expect(html).toContain('What I found')
+    expect(html).toContain('Connected tools')
+    expect(html).toContain('Stop or delete')
+    expect(html).toContain('Change it')
+    expect(html).toContain('Revoke folder access')
+    expect(html).toContain('Delete onboarding data')
+    expect(html).toContain('calendar')
+  })
+
+  it('never offers a button it cannot carry the answer for', () => {
+    scriptState({ journey: arrivedFixture() })
+    const html = render()
+    // `answer_salience` needs a picker this screen does not draw, so it is NOT
+    // a button here — it is named, and linked to the surface that does draw it.
+    // A question printed with no way to send an answer is the dead end this
+    // whole flow exists to abolish, and so is a button that opens nothing.
+    expect(html).not.toContain('Point me at the one to open first</button>')
+    expect(html).toContain('I still have 1 question for you')
+    expect(html).toContain('?more=1')
+    // …while the tap-only offer IS a button, because this screen can carry it.
+    expect(html).toContain('Choose a folder I may read</button>')
+  })
+
+  it('THE WIZARD IS UNREACHABLE once the journey has arrived', () => {
+    // Every welcome-stage question, at every client step, including the one a
+    // stale URL or a stale client state would try to force.
+    for (const wizardStep of ['role', 'dream', 'start', 'window', 'discover']) {
+      scriptState({ journey: arrivedFixture(), wizardStep })
+      const html = render()
+      expect(html, wizardStep).not.toContain('Tell me about you and your work.')
+      expect(html, wizardStep).not.toContain('What would you love this Cabinet to become?')
+      expect(html, wizardStep).not.toContain('Where should I begin?')
+      expect(html, wizardStep).not.toContain('Which folder may I read?')
+      expect(html, wizardStep).toContain('Your Cabinet is ready.')
+    }
+  })
+
+  it('reads the legacy terminal stage as arrived, exactly like the new one', () => {
+    // The Captain's own live journey. The core renders it with the arrival
+    // kind; the surface must not second-guess that with a stage check of its own.
+    scriptState({ journey: arrivedFixture('orientation_offered') })
+    expect(render()).toContain('Your Cabinet is ready.')
+  })
+
+  it('A FALSE ARRIVAL CANNOT RENDER: the kind alone is never enough', () => {
+    for (const missing of ['charter', 'first_dividend'] as const) {
+      const fixture = arrivedFixture()
+      // The card still SAYS arrival — this is the state a hand-edited file, a
+      // half-restored backup or a future transition bug would produce.
+      ;(fixture.state as unknown as Record<string, unknown>)[missing] = null
+      scriptState({ journey: fixture })
+      const html = render()
+      expect(html, missing).not.toContain('Go to your Cabinet')
+      expect(html, missing).not.toContain('All four steps are done')
+    }
+  })
+
+  it('no unfinished or halted stage renders the arrival', () => {
+    for (const stage of ['welcome', 'charter_pending', 'dividend_ready', 'paused', 'revoked', 'purged']) {
+      const fixture = arrivedFixture(stage)
+      fixture.card.kind = stage === 'dividend_ready' ? 'first_dividend' : stage
+      scriptState({ journey: fixture })
+      expect(render(), stage).not.toContain('Go to your Cabinet')
+    }
+  })
+
+  it('yields the screen to the two management sub-flows that have their own forms', () => {
+    // Changing what may be read opens the folder form…
+    scriptState({ journey: arrivedFixture(), editScope: true })
+    const changing = render()
+    expect(changing).toContain('Folder to look through')
+    expect(changing).not.toContain('Go to your Cabinet')
+
+    // …and deleting still goes through the typed confirmation, unchanged.
+    scriptState({ journey: arrivedFixture(), purgeArmed: true })
+    const deleting = render()
+    expect(deleting).toContain('Type PURGE to permanently delete this onboarding record')
+    expect(DISABLED_ATTR.test(purgeSubmitTag(deleting))).toBe(true)
   })
 })
