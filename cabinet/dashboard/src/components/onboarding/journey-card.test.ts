@@ -262,6 +262,7 @@ function scriptState(overrides: {
   journey?: OnboardingResponse
   loading?: boolean
   working?: boolean
+  error?: string | null
   editScope?: boolean
   wizardStep?: string
   role?: string
@@ -286,13 +287,14 @@ function scriptState(overrides: {
   connectSearch?: string
   connectCategory?: string
   exploring?: boolean
+  refusedAction?: string | null
 }) {
   hookScript.cursor = 0
   hookScript.steps = [
     { initial: null, value: overrides.journey ?? null }, // 0 journey
     { initial: true, value: overrides.loading ?? false }, // 1 loading
     { initial: false, value: overrides.working ?? false }, // 2 working
-    { initial: null }, // 3 error
+    { initial: null, value: overrides.error ?? null }, // 3 error
     { initial: false }, // 4 collapsed
     { initial: false, value: overrides.editScope ?? false }, // 5 editScope
     { initial: 'role', value: overrides.wizardStep ?? 'role' }, // 6 wizardStep
@@ -324,6 +326,7 @@ function scriptState(overrides: {
     { initial: '', value: overrides.connectSearch ?? '' }, // 29 connectSearch
     { initial: '', value: overrides.connectCategory ?? '' }, // 30 connectCategory
     { initial: false, value: overrides.exploring ?? false }, // 31 exploring
+    { initial: null, value: overrides.refusedAction ?? null }, // 32 refusedAction
   ]
 }
 
@@ -1088,6 +1091,108 @@ describe('rendered component — the ranked question is answerable', () => {
   })
 })
 
+// ---------------------------------------------------------------------------
+// THE DEAD END A LIVE RUN WALKED INTO (2026-08-13): on the discover branch the
+// operator picked "None of these — I will name it", typed the name of something
+// the ranking had missed and pressed the button. The core ACCEPTED it — HTTP
+// 200, revision 2 -> 3, target recorded — and the page did not change by one
+// character, with no control left to continue from. (The name below is a
+// fixture, not the estate's: nothing in this repo names a real product.)
+// Both halves were render gates in this file: the card's own
+// sentence (the only place an answered target is reported) and the card's option
+// row (the only remaining way onward) were both gated on `inDiscover`, which
+// stays true for the whole branch, instead of on the connect panel actually
+// being open. Every arm below FAILS against the tree that shipped that.
+// ---------------------------------------------------------------------------
+/** The salience card as the live run produced it: the ranked question AND the
+ *  folder option the operator continues through, on the discover branch. */
+function sweptDiscoverJourney(): OnboardingResponse {
+  const fixture = salienceJourney()
+  fixture.card.body =
+    'You pointed me at brightwater, so that is where I spend depth. I had not ranked it; I have it now.'
+  fixture.card.options = [
+    { action: 'propose_window', label: 'Choose a folder I may read' },
+    ...fixture.card.options,
+  ]
+  return fixture
+}
+
+describe('rendered component — answering the ranked question is never a dead end', () => {
+  it('shows the card own sentence and the way onward after the look, not just the results', () => {
+    scriptState({ journey: sweptDiscoverJourney(), wizardStep: 'discover', exploring: true })
+    const html = render()
+    // The sentence that reports what the core did with the answer.
+    expect(html).toContain('You pointed me at brightwater')
+    // And the control that continues the journey — with the connect panel
+    // handed over, this row is the ONLY one left on the page.
+    expect(html).toContain('Choose a folder I may read')
+  })
+
+  it('still hides both while the connect panel is the step the operator is on', () => {
+    // The gate is "the panel is open", not "we are past the branch" — so the
+    // fix must not leak the server card into the connect step it replaced.
+    scriptState({ journey: sweptDiscoverJourney(), wizardStep: 'discover', exploring: false })
+    const html = render()
+    expect(html).not.toContain('You pointed me at brightwater')
+    expect(html).not.toContain('Choose a folder I may read')
+  })
+
+  it('reads the answered target back at the control that sent it', () => {
+    const answered = sweptDiscoverJourney()
+    answered.state.salience = { target: 'brightwater', from_escape_hatch: true }
+    scriptState({
+      journey: answered, wizardStep: 'discover', exploring: true,
+      salienceChoice: 'other', salienceName: 'brightwater',
+    })
+    const html = render()
+    // The ranked question keeps its candidates after it is answered, so without
+    // this the form is byte-identical before and after a successful send.
+    expect(html).toContain('I am pointed at brightwater')
+    expect(html).toContain('Point me somewhere else')
+  })
+
+  it('says nothing about a target before one is answered', () => {
+    // DEGENERATE END: no answer yet, so no claim either — and the original
+    // label stands.
+    scriptState({ journey: sweptDiscoverJourney(), wizardStep: 'discover', exploring: true })
+    const html = render()
+    expect(html).not.toContain('I am pointed at')
+    expect(html).toContain('Go deep on that one')
+  })
+
+  it('renders a refused answer AT the control, not only at the foot of the card', () => {
+    const answered = sweptDiscoverJourney()
+    answered.state.salience = { target: 'brightwater' }
+    scriptState({
+      journey: answered, wizardStep: 'discover', exploring: true,
+      salienceChoice: 'other', salienceName: 'brightwater',
+      error: 'That is not one of the candidates I offered.',
+      refusedAction: 'answer_salience',
+    })
+    const html = render()
+    expect(html).toContain('That is not one of the candidates I offered.')
+    expect(html).toContain('role="alert"')
+    // A refusal replaces the acknowledgement — never both, which would say the
+    // answer both landed and did not.
+    expect(html).not.toContain('I am pointed at brightwater')
+  })
+
+  it('leaves another action refusal out of the ranked question own panel', () => {
+    const answered = sweptDiscoverJourney()
+    answered.state.salience = { target: 'brightwater' }
+    scriptState({
+      journey: answered, wizardStep: 'discover', exploring: true,
+      error: 'That folder could not be read.',
+      refusedAction: 'propose_window',
+    })
+    const html = render()
+    const panel = html.slice(html.indexOf('Point me at the one to open first'))
+    expect(panel.slice(0, panel.indexOf('</form>'))).not.toContain('That folder could not be read.')
+    // It still reaches the operator on the shared line — never swallowed.
+    expect(html).toContain('That folder could not be read.')
+  })
+})
+
 describe('driven component — the ranked answer reaches the core', () => {
   function stubOk() {
     vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL, _init?: RequestInit) => (
@@ -1114,6 +1219,29 @@ describe('driven component — the ranked answer reaches the core', () => {
       .find((c) => c.url.endsWith('/api/onboarding'))
     expect(action!.body).toContain('"action":"answer_salience"')
     expect(action!.body).toContain('"choice":"acme"')
+  })
+
+  it('sends the escape hatch as choice + typed name — the path that dead-ended live', async () => {
+    stubOk()
+    const fetchSpy = globalThis.fetch as unknown as ReturnType<typeof vi.fn>
+    scriptState({
+      journey: salienceJourney(), wizardStep: 'discover', exploring: true,
+      salienceChoice: 'other', salienceName: '  brightwater  ',
+    })
+    const forms = driveTree().filter((el) => el.type === 'form')
+    const salienceForm = forms.find((f) => {
+      let found = false
+      for (const el of walk(f)) if (el.props?.name === 'dashboard-salience') found = true
+      return found
+    })
+    ;(salienceForm!.props.onSubmit as (e: object) => void)({ preventDefault: () => undefined })
+    await flush(); await flush()
+    const action = (fetchSpy.mock.calls as unknown[][])
+      .map((call) => ({ url: String(call[0]), body: String((call[1] as RequestInit | undefined)?.body ?? '') }))
+      .find((c) => c.url.endsWith('/api/onboarding'))
+    expect(action!.body).toContain('"choice":"other"')
+    // Trimmed, and present — the core refuses `salience_name_required` without it.
+    expect(action!.body).toContain('"name":"brightwater"')
   })
 })
 
