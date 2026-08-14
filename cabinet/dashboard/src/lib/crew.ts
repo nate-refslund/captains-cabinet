@@ -199,7 +199,14 @@ export function crewState(input: CrewMemberInput): CrewMemberReading {
   }
 }
 
-/** TRUE only for a state that should draw the operator's eye as a FAULT. */
+/**
+ * TRUE only for a state that should draw the operator's eye as a FAULT.
+ *
+ * ONE predicate, three consumers: the card's red mark, the card's "See
+ * details" link, and `isFolded` below. Restating "quiet or stop-failed" at
+ * each of them is how a fourth state gets added and quietly renders calm at
+ * one of the three.
+ */
 export function isAlarming(state: CrewState): boolean {
   return state === 'quiet' || state === 'stop-failed'
 }
@@ -220,8 +227,10 @@ export function isAlarming(state: CrewState): boolean {
  * never folded: the fold hides expected quiet, never a fault.
  */
 export function isFolded(input: CrewMemberInput, reading: CrewMemberReading): boolean {
-  const visible: CrewState[] = ['awake', 'quiet', 'stop-failed', 'unknown']
-  if (visible.includes(reading.state)) return false
+  // Working, wrong, or unmeasured is never folded — the fold hides expected
+  // quiet, never a fault and never a thing nobody could read.
+  if (reading.state === 'awake' || reading.state === 'unknown') return false
+  if (isAlarming(reading.state)) return false
   return input.onDemand || !input.hired
 }
 
@@ -252,7 +261,9 @@ export interface CrewOpOutcome {
 }
 
 /**
- * How many of the always-on crew a wake would actually start.
+ * Which of the crew a wake would actually start — used by `readCrew` to fill
+ * `CrewReading.wakeable`, which is what decides whether the card offers the
+ * control at all.
  *
  * Consultants are excluded because `deploy-mac.sh` REFUSES them without
  * `--force` (a keepalive LaunchAgent contradicts the on-demand lifecycle), so

@@ -20,7 +20,15 @@ import os from 'node:os'
 import path from 'node:path'
 import redis from './redis'
 import { freshnessOf, type Freshness } from './liveness'
-import { crewState, isFolded, type CrewMemberInput, type CrewState, type ExpectedMark, type InstallReading } from './crew'
+import {
+  crewState,
+  isFolded,
+  wakeableSlugs,
+  type CrewMemberInput,
+  type CrewState,
+  type ExpectedMark,
+  type InstallReading,
+} from './crew'
 import { officerNameSources, readRoster, type RosterMember } from './crew-roster'
 import { officerTitle } from './officer-title'
 
@@ -173,6 +181,7 @@ export async function readCrew(nowMs: number = Date.now()): Promise<CrewReading>
 
   const names = officerNameSources(roster)
 
+  const inputs: CrewMemberInput[] = []
   const members: CrewMember[] = await Promise.all(
     Array.from(slugs).map(async (slug) => {
       const [heartbeatRaw, expectedRaw, activityRaw, stoppedRaw] = await Promise.all([
@@ -195,6 +204,7 @@ export async function readCrew(nowMs: number = Date.now()): Promise<CrewReading>
         stoppedAtMs: Number.isFinite(stoppedAt) ? stoppedAt : null,
         nowMs,
       }
+      inputs.push(input)
       const reading = crewState(input)
       return {
         slug,
@@ -215,7 +225,10 @@ export async function readCrew(nowMs: number = Date.now()): Promise<CrewReading>
   const crew = members.filter((m) => !m.folded)
   return {
     members,
-    wakeable: roster.filter((m) => !m.onDemand).map((m) => m.slug),
+    // From the SAME inputs the states were read from, via the same predicate
+    // the tests drive — not a second derivation off the roster that could
+    // disagree with the rows on screen.
+    wakeable: wakeableSlugs(inputs).sort(),
     anyAwake: members.some((m) => m.state === 'awake'),
     neverWoken: crew.length > 0 && crew.every((m) => m.state === 'not-awake-yet'),
     unreadable: false,

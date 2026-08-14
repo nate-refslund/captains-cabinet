@@ -39,6 +39,7 @@
  */
 
 import Link from 'next/link'
+import { isAlarming } from '@/lib/crew'
 import { readCrew, type CrewMember } from '@/lib/crew-state'
 import { readPosture, postureSentence, POSTURE_ALWAYS } from '@/lib/posture-status'
 import CrewWake from './crew-wake'
@@ -148,26 +149,17 @@ function lineFor(member: CrewMember, now: number): Line {
     }
   }
 
-  if (member.state === 'stop-failed') {
-    // The rarest row, and the one that must never be quiet: the operator asked
-    // for a stop and the officer is still acting.
-    return {
-      slug: member.slug,
-      text: `${name} was asked to stop and is still working`,
-      glyph: '🔴',
-      glyphClass: 'text-red-400',
-      chip: null,
-      chipClass: '',
-      investigate: true,
-      elapsed: null,
-    }
-  }
-
-  if (member.state === 'quiet') {
+  // The two faults. Both take their red and their link from `isAlarming`
+  // rather than restating the condition, so a state added later cannot render
+  // calm here while the predicate says otherwise.
+  if (isAlarming(member.state)) {
     const stale = member.heartbeat.state === 'stale' ? member.heartbeat.ageMs : 0
     return {
       slug: member.slug,
-      text: `${name} has stopped reporting`,
+      text:
+        member.state === 'stop-failed'
+          ? `${name} was asked to stop and is still working`
+          : `${name} has stopped reporting`,
       glyph: '🔴',
       glyphClass: 'text-red-400',
       chip: null,

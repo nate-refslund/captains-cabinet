@@ -210,6 +210,17 @@ describe('the fold — hides expected quiet, never a fault', () => {
   })
 })
 
+describe('the predicates are the LIVE ones, not twins', () => {
+  it('isAlarming is what decides the red mark, the link, and the fold', () => {
+    // Pinned as a set rather than per-state, so a state added later has to be
+    // classified deliberately instead of defaulting to calm.
+    const alarming = (
+      ['awake', 'quiet', 'not-awake-yet', 'resting', 'stop-failed', 'on-call', 'unknown'] as const
+    ).filter(isAlarming)
+    expect(alarming.sort()).toEqual(['quiet', 'stop-failed'])
+  })
+})
+
 describe('what a wake would actually start', () => {
   it('only the hired, always-on crew — consultants are refused by the deploy script', () => {
     const crew = [
