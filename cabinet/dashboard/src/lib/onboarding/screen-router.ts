@@ -190,7 +190,12 @@ export function screenFor(input: RouteInput): ScreenId {
       // a time and hands the screen back when they run out.
       if (!input.arrived || input.kind !== 'arrival') return 'status'
       if (!input.fullSurface) return 'arrival'
-      return input.refusedAsk ?? firstOpenAsk(input.asks, input.skipped) ?? 'arrival'
+      // SKIPS DO NOT APPLY HERE. Asking a finished journey for its remaining
+      // questions IS the operator un-skipping them: the arrival's own link says
+      // "I still have N questions for you", and honouring an earlier skip would
+      // make that link route straight back to the screen it was clicked from —
+      // a dead end reachable in two taps.
+      return input.refusedAsk ?? firstOpenAsk(input.asks) ?? 'arrival'
     }
     default:
       return 'status'

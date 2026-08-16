@@ -226,9 +226,18 @@ describe('the ending is a management view, never the wizard', () => {
   it('asking a finished journey for its remaining questions opens them one at a time', () => {
     const base = { stage: 'complete', kind: 'arrival', arrived: true, fullSurface: true } as const
     expect(screenFor(input({ ...base, asks: OPEN({ identity: true }) }))).toBe('identity')
-    expect(screenFor(input({ ...base, asks: OPEN({ identity: true }), skipped: ['identity'] })))
-      .toBe('arrival')
     expect(screenFor(input({ ...base }))).toBe('arrival')
+  })
+
+  it('asking for them again OVERRIDES an earlier skip, or the link is a dead end', () => {
+    // Two taps from the arrival: "I still have N questions for you" -> the ask
+    // -> skip -> back to the arrival, whose link now does nothing. Honouring a
+    // skip on the surface whose whole purpose is to re-open the questions is
+    // the one place `skipped` must NOT be read.
+    const base = { stage: 'complete', kind: 'arrival', arrived: true, fullSurface: true } as const
+    expect(
+      screenFor(input({ ...base, asks: OPEN({ identity: true }), skipped: ['identity'] }))
+    ).toBe('identity')
   })
 
   it('no URL and no step can put a finished operator back at question one', () => {
