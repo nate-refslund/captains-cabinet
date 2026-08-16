@@ -1025,8 +1025,39 @@ budgets:
     # merge tree with cognitive-architecture-census.py rather than added on
     # paper. Neither is an allowance; both are permanent, so the ratchet
     # re-pins at zero headroom.
+    #
+    # 64282 -> 64740 (+458 measured 2026-08-16 via cognitive-architecture-census.py
+    # against origin/master a209e4d1; journey.py +319, research.py +139, and
+    # nothing else in framework/ moved): THE SEARCH LOOKS FOR THE OPERATOR.
+    # Measured on the Captain's own live run: his name and his organisation were
+    # both on the journey, and the three probes that went out were
+    # "Tech Intelligence Lead STEP" / "… how it works" / "… common problems" —
+    # role words diluting the query, the organisation SPLIT by a four-term cap
+    # ("STEP" survived, "Network" did not), his name never used, and fifteen
+    # generic tech-leadership articles listed as though they were an answer. His
+    # verdict: "none of the searches found me… we should improve it somehow."
+    #   * `_search_queries` + `_search_phrase` + `_ROLE_WORDS` — what the
+    #     operator NAMED composes the query, phrase-quoted so a multi-word
+    #     organisation cannot be split, and a query of nothing but a job title
+    #     is never sent;
+    #   * `judge_search_results` / `result_mentions` / `text_mentions` — every
+    #     result judged verbatim against the operator's own words at the one
+    #     place results enter, so a count stops standing in for a finding, and
+    #     `_search_verdict` + `_discovery_note` say the miss out loud;
+    #   * `read_operator_link` — the page the operator pastes when the web could
+    #     not find them, actually READ on the same read-only rails (no
+    #     credential, https only, one page, capped, refusals by name), because
+    #     an ask whose answer is never read is the interview-that-goes-nowhere;
+    #   * the two earned follow-ups and their actions (`answer_org_link`,
+    #     `confirm_organization_domain`), plus the automatic re-look on
+    #     `answer_organization` / `answer_salience` — the answers that CHANGE
+    #     what is searched for, which nothing re-ran on.
+    # Zero new production MODULES and zero expansion rows. RAISED VISIBLY rather
+    # than paid by a temporary allowance, same reason as every row above: a
+    # search that can tell "I found you" from "I found something" is a permanent
+    # organ, and an allowance would promise a deletion gate that will never fire.
     # observed == maximum, zero headroom.
-    maximum: 64282
+    maximum: 64740
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
