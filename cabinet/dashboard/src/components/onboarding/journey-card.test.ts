@@ -116,6 +116,7 @@ import OnboardingJourneyCard, {
   NO_FIELDS,
   NO_IDENTITY_PICKS,
   NO_MERGE,
+  NO_SKIPPED,
   plainReason,
   sweepLine,
 } from './journey-card'
@@ -302,6 +303,10 @@ function scriptState(overrides: {
   organization?: string
   name?: string
   salienceNameEdited?: boolean
+  skipped?: readonly string[]
+  scanning?: boolean
+  scanLine?: number
+  correction?: string
   orgLink?: string
 }) {
   hookScript.cursor = 0
@@ -312,7 +317,7 @@ function scriptState(overrides: {
     { initial: null, value: overrides.error ?? null }, // 3 error
     { initial: false }, // 4 collapsed
     { initial: false, value: overrides.editScope ?? false }, // 5 editScope
-    { initial: 'role', value: overrides.wizardStep ?? 'role' }, // 6 wizardStep
+    { initial: 'welcome', value: overrides.wizardStep ?? 'welcome' }, // 6 wizardStep
     { initial: '', value: overrides.role ?? '' }, // 7 role — question one
     { initial: '', value: overrides.dream ?? '' }, // 8 dream — question two
     { initial: '', value: overrides.startPreference ?? '' }, // 9 startPreference — question three
@@ -320,39 +325,46 @@ function scriptState(overrides: {
     { initial: '', value: overrides.purgeConfirmation ?? '' }, // 11 purgeConfirmation
     { initial: '~/Documents', value: overrides.source ?? '~/Documents' }, // 12 source
     { initial: false, value: overrides.sourceEdited ?? false }, // 13 sourceEdited
-    { initial: 'Find one useful thing I may be missing.' }, // 14 purpose (per-window)
-    { initial: 'reversible' }, // 15 destination
-    { initial: '', value: overrides.ownership ?? '' }, // 16 ownership — no default BY DESIGN
-    { initial: '', value: overrides.authorityBasis ?? '' }, // 17 authorityBasis
-    { initial: null, value: overrides.feedbackRecorded ?? null }, // 18 feedbackRecorded
-    { initial: NO_IDENTITY_PICKS, value: overrides.handles ?? NO_IDENTITY_PICKS }, // 19 handles
-    { initial: '', value: overrides.salienceChoice ?? '' }, // 20 salienceChoice — no default BY DESIGN
-    { initial: '', value: overrides.salienceName ?? '' }, // 21 salienceName
-    { initial: NO_MERGE, value: overrides.salienceMerge ?? NO_MERGE }, // 22 salienceMerge
-    { initial: null, value: overrides.relationAsk ?? null }, // 23 relationAsk
+    // 14 purpose and 15 destination are GONE — the two field cuts the 2026-08-14
+    // ruling ordered. The purpose re-asked the dream one screen later (it is now
+    // seeded from it), and the trust-destination radio granted nothing, which its
+    // own helper text admitted. Their removal renumbers everything below, which
+    // is this script working rather than an inconvenience.
+    { initial: '', value: overrides.ownership ?? '' }, // 14 ownership — no default BY DESIGN
+    { initial: '', value: overrides.authorityBasis ?? '' }, // 15 authorityBasis
+    { initial: null, value: overrides.feedbackRecorded ?? null }, // 16 feedbackRecorded
+    { initial: NO_IDENTITY_PICKS, value: overrides.handles ?? NO_IDENTITY_PICKS }, // 17 handles
+    { initial: '', value: overrides.salienceChoice ?? '' }, // 18 salienceChoice — no default BY DESIGN
+    { initial: '', value: overrides.salienceName ?? '' }, // 19 salienceName
+    { initial: NO_MERGE, value: overrides.salienceMerge ?? NO_MERGE }, // 20 salienceMerge
+    { initial: null, value: overrides.relationAsk ?? null }, // 21 relationAsk
     // The connect step (discover branch). connectorTemplates is null until the
     // client fetch lands — and that fetch is a useEffect, which this scripted
     // renderer does NOT run, so a test that wants tiles must pass them here.
-    { initial: null, value: overrides.connectorCatalog ?? null }, // 24 connectorCatalog
-    { initial: '', value: overrides.connectPick ?? '' }, // 25 connectPick
-    { initial: '', value: overrides.connectCredential ?? '' }, // 26 connectCredential
-    { initial: NO_FIELDS, value: overrides.connectFields ?? NO_FIELDS }, // 27 connectFields
-    { initial: null }, // 28 connectError
-    { initial: '', value: overrides.connectSearch ?? '' }, // 29 connectSearch
-    { initial: '', value: overrides.connectCategory ?? '' }, // 30 connectCategory
-    { initial: false, value: overrides.exploring ?? false }, // 31 exploring
-    { initial: null, value: overrides.refusedAction ?? null }, // 32 refusedAction
+    { initial: null, value: overrides.connectorCatalog ?? null }, // 22 connectorCatalog
+    { initial: '', value: overrides.connectPick ?? '' }, // 23 connectPick
+    { initial: '', value: overrides.connectCredential ?? '' }, // 24 connectCredential
+    { initial: NO_FIELDS, value: overrides.connectFields ?? NO_FIELDS }, // 25 connectFields
+    { initial: null }, // 26 connectError
+    { initial: '', value: overrides.connectSearch ?? '' }, // 27 connectSearch
+    { initial: '', value: overrides.connectCategory ?? '' }, // 28 connectCategory
+    { initial: false, value: overrides.exploring ?? false }, // 29 exploring
+    { initial: null, value: overrides.refusedAction ?? null }, // 30 refusedAction
     // Whose work this is. LAST, per the note in journey-card.tsx: a hook added
     // anywhere else renumbers every index below it and this script goes red —
     // which is the sensor working, not an inconvenience.
-    { initial: '', value: overrides.organization ?? '' }, // 33 organization
+    { initial: '', value: overrides.organization ?? '' }, // 31 organization
     // What the operator is CALLED — question one's opening line. Appended, per
     // the note above: an insert renumbers every index below it.
-    { initial: '', value: overrides.name ?? '' }, // 34 name
-    { initial: false, value: overrides.salienceNameEdited ?? false }, // 35 salienceNameEdited
+    { initial: '', value: overrides.name ?? '' }, // 32 name
+    { initial: false, value: overrides.salienceNameEdited ?? false }, // 33 salienceNameEdited
+    { initial: NO_SKIPPED, value: overrides.skipped ?? NO_SKIPPED }, // 34 skipped asks
+    { initial: false, value: overrides.scanning ?? false }, // 35 scanning
+    { initial: 0, value: overrides.scanLine ?? 0 }, // 36 scanLine
+    { initial: '', value: overrides.correction ?? '' }, // 37 correction
     // The page the operator pastes when a look-up found nothing about their
     // organisation. Appended, per the note above.
-    { initial: '', value: overrides.orgLink ?? '' }, // 36 orgLink
+    { initial: '', value: overrides.orgLink ?? '' }, // 38 orgLink
   ]
 }
 
@@ -378,15 +390,18 @@ describe('rendered component — the stepped front', () => {
   it('opens on question one — what you do — with a textarea and a disabled Next', () => {
     scriptState({ journey: journeyFixture('welcome'), wizardStep: 'role', role: '' })
     const html = render()
-    expect(html).toContain('What is your name? And tell me about you and your work.')
+    expect(html).toContain('First — who am I working for?')
     // The name is asked FIRST and stays OPTIONAL — the role alone still
     // advances, so this never becomes a cabinet that will not start
     // without your name.
     expect(html).toContain(`id="dashboard-name"`)
     expect(html).toContain(`id="dashboard-role"`)
     // Next cannot advance an empty role — it is the seed the core will not skip.
-    const nextTag = html.slice(html.lastIndexOf('<button', html.indexOf('Next')), html.indexOf('Next'))
+    // The primary is refused AND says why — a mute disabled control is the
+    // defect the screens exist to remove.
+    const nextTag = html.slice(html.lastIndexOf('<button', html.indexOf('Continue')), html.indexOf('Continue'))
     expect(nextTag).toMatch(DISABLED_ATTR)
+    expect(html).toContain('Tell me what you do first')
   })
 
   it('enables Next once a role is entered', () => {
@@ -435,7 +450,7 @@ describe('rendered component — the stepped front', () => {
     expect(html).not.toContain('You look across what I have connected')
     expect(html).not.toContain('Go find where you are most useful')
     // The intro this step's answers have to agree with, unchanged.
-    expect(html).toContain('You can point me at one folder to read')
+    expect(html).toContain('You name one folder, and I read it under a Charter you approve.')
   })
 
   it('renders the four-stop rail with the stop for the current step lit', () => {
@@ -459,13 +474,13 @@ describe('rendered component — the stepped front', () => {
     expect(html).toContain('Which folder may I read?')
     expect(html).toContain('Whose data is in this folder?')       // ownership, un-derivable
     expect(html).toContain('Under what right?')                    // authority basis
-    expect(html).toContain('Show me the Charter first')
+    expect(html).toContain('Show me what you would read')
   })
 
   it('is honest on the decide branch when nothing is connected, and routes to the folder', () => {
     scriptState({ journey: journeyFixture('welcome'), wizardStep: 'discover' })
     const html = render()
-    expect(html).toContain('Let me go and find where I fit')
+    expect(html).toContain('What do you already use?')
     expect(html).toContain('I need something to read')
     expect(html).toContain('Point me at a folder instead')
     // No connector is offered, so no gather button is fabricated.
@@ -696,7 +711,7 @@ describe('rendered component — connecting many tools', () => {
       connectorCatalog: connectCatalog(),
     })
     const html = render()
-    expect(html).toContain('What I found across all 2')
+    expect(html).toContain('I read across 1 of 2.')
     expect(html).toContain('read 12 things')
     expect(html).toContain('3 accounts')
     expect(html).toContain('no key is stored for it yet')
@@ -741,6 +756,18 @@ interface TreeElement {
   props: { children?: unknown; [key: string]: unknown }
 }
 
+/**
+ * EXPANDS SCREEN COMPONENTS AS IT WALKS. The router renders one SCREEN, and a
+ * screen is a child component — so its controls are not in the element tree
+ * until something renders it. Every screen and every piece of screen chrome is
+ * HOOK-FREE by construction (stated in screen-chrome.tsx and enforced by the
+ * hook script in this file, which would throw on an unscripted useState), so
+ * calling one here is safe and produces exactly what React would.
+ *
+ * The alternative — asserting on `renderToStaticMarkup` strings only — would
+ * have lost every DRIVEN arm in this file: the handlers are what those tests
+ * invoke, and a handler on an unexpanded element is unreachable.
+ */
 function* walk(node: unknown): Generator<TreeElement> {
   if (node === null || node === undefined) return
   if (typeof node !== 'object') return
@@ -751,6 +778,12 @@ function* walk(node: unknown): Generator<TreeElement> {
   const el = node as TreeElement
   if (!('props' in el) || typeof el.props !== 'object' || el.props === null) return
   yield el
+  if (typeof el.type === 'function') {
+    // A function component: render it once and walk what it returned. Guarded
+    // so a component that throws surfaces as a test failure rather than as a
+    // silently missing subtree.
+    yield* walk((el.type as (p: object) => unknown)(el.props))
+  }
   yield* walk(el.props.children)
 }
 
@@ -776,13 +809,16 @@ const STATE = {
   startPreference: 9,
   source: 12,
   sourceEdited: 13,
-  ownership: 16,
-  feedbackRecorded: 18,
-  salienceChoice: 20,
-  relationAsk: 23,
-  connectPick: 25,
-  connectCredential: 26,
-  connectFields: 27,
+  ownership: 14,
+  feedbackRecorded: 16,
+  salienceChoice: 18,
+  relationAsk: 21,
+  connectPick: 23,
+  connectCredential: 24,
+  connectFields: 25,
+  skipped: 34,
+  scanning: 35,
+  correction: 37,
 } as const
 
 function settersFor(index: number): unknown[] {
@@ -892,7 +928,7 @@ describe('driven component — the three questions round-trip into the core', ()
 
   it('Next moves the step WITHOUT clearing the role already entered', () => {
     scriptState({ journey: journeyFixture('welcome'), wizardStep: 'role', role: 'I run a small ryokan' })
-    ;(findByText(driveTree(), 'button', 'Next').props.onClick as () => void)()
+    ;(findByText(driveTree(), 'button', 'Continue').props.onClick as () => void)()
     expect(settersFor(STATE.wizardStep)).toEqual(['dream'])
     expect(settersFor(STATE.role)).toEqual([])       // the answer is untouched
   })
@@ -945,7 +981,7 @@ describe('rendered component — feedback claim gate', () => {
   it('never claims feedback was recorded before the confirmed state exists', () => {
     scriptState({ journey: journeyFixture('dividend_ready'), feedbackRecorded: null })
     const html = render()
-    expect(html).toContain('Did this earn its keep?')
+    expect(html).toContain('Was that any use?')
     expect(html).toContain('Yes, useful')
     expect(html).not.toContain('Feedback recorded:')
   })
@@ -953,7 +989,7 @@ describe('rendered component — feedback claim gate', () => {
   it('claims recording only from the endpoint-confirmed state', () => {
     scriptState({ journey: journeyFixture('dividend_ready'), feedbackRecorded: 'useful' })
     const html = render()
-    expect(html).toContain('Feedback recorded: useful.')
+    expect(html).toContain('recorded as “useful”')
     expect(html).not.toContain('Yes, useful')
   })
 })
@@ -1035,7 +1071,8 @@ describe('rendered component — accessible shell', () => {
     const html = render()
     expect(html).toContain('aria-labelledby="onboarding-card-title"')
     expect(html).toContain('id="onboarding-card-title"')
-    expect(html).toContain('Test card title')
+    // The consent screen's own heading — the terms below it are the card's.
+    expect(html).toContain('Here is what I would read.')
     expect(html).toContain('aria-live="polite"')
   })
 
@@ -1158,7 +1195,9 @@ function sweptDiscoverJourney(): OnboardingResponse {
 
 describe('rendered component — answering the ranked question is never a dead end', () => {
   it('shows the card own sentence and the way onward after the look, not just the results', () => {
-    scriptState({ journey: sweptDiscoverJourney(), wizardStep: 'discover', exploring: true })
+    const answered = sweptDiscoverJourney()
+    answered.state.salience = { target: 'brightwater' }
+    scriptState({ journey: answered, wizardStep: 'discover', exploring: true })
     const html = render()
     // The sentence that reports what the core did with the answer.
     expect(html).toContain('You pointed me at brightwater')
@@ -1186,7 +1225,7 @@ describe('rendered component — answering the ranked question is never a dead e
     const html = render()
     // The ranked question keeps its candidates after it is answered, so without
     // this the form is byte-identical before and after a successful send.
-    expect(html).toContain('I am pointed at brightwater')
+    expect(html).toContain('You pointed me at brightwater')
     expect(html).toContain('Point me somewhere else')
   })
 
@@ -1766,7 +1805,7 @@ describe('surface parity without a World mutation fork', () => {
   it('World renders the same component with its own skin', () => {
     scriptState({ journey: journeyFixture('welcome'), wizardStep: 'role' })
     const html = render({ surface: 'world', variant: 'world' })
-    expect(html).toContain('And tell me about you and your work.') // same question
+    expect(html).toContain('First — who am I working for?') // same question
     expect(html).toContain('read-only')                            // same promise
   })
 })
@@ -1793,7 +1832,14 @@ describe('onboarding journey accessibility floor', () => {
   })
 
   it('requires a typed destructive confirmation instead of a one-tap prompt', () => {
-    const src = fs.readFileSync(path.join(__dirname, 'journey-card.tsx'), 'utf8')
+    // THE SCAN FOLLOWS THE CODE. The destructive confirmation lives on the
+    // screen that owns it now; a source arm pointed at the router alone would
+    // have gone green over a deleted gate.
+    const router = fs.readFileSync(path.join(__dirname, 'journey-card.tsx'), 'utf8')
+    const screens = fs
+      .readdirSync(path.join(__dirname, 'screens'))
+      .map((file) => fs.readFileSync(path.join(__dirname, 'screens', file), 'utf8'))
+    const src = [router, ...screens].join('\n')
     expect(src).not.toMatch(/window\.confirm/)
     expect(src).toContain('Type PURGE')
   })
@@ -1861,6 +1907,10 @@ function spokenJourney(over: Partial<OnboardingResponse['card']> = {}): Onboardi
 }
 
 describe('rendered component — the card reads as a message, and hides nothing', () => {
+  /** The screen the welcome stage's message lands on: after the look, with no
+   *  earned ask still open. Scripted once so every arm below reads the same. */
+  const afterTheLook = { wizardStep: 'discover', exploring: true } as const
+
   it('leads with the headline and names its sender through the resolver', () => {
     scriptState({ journey: spokenJourney(), wizardStep: 'discover', exploring: true })
     const html = render()
@@ -1876,7 +1926,7 @@ describe('rendered component — the card reads as a message, and hides nothing'
   it('keeps every section of the ledger, in the fold, with its heading', () => {
     scriptState({ journey: spokenJourney(), wizardStep: 'discover', exploring: true })
     const html = render()
-    expect(html).toContain('How I worked this out — every caveat')
+    expect(html).toContain('How I know this — and what I could not see')
     for (const section of spokenJourney().card.details ?? []) {
       expect(html, `${section.id} lost`).toContain(section.title)
       expect(html, `${section.id} text lost`).toContain(section.text.trim())
@@ -1890,7 +1940,7 @@ describe('rendered component — the card reads as a message, and hides nothing'
     scriptState({ journey: journeyFixture('charter_pending') })
     const html = render()
     expect(html).toContain('Test card body.')
-    expect(html).not.toContain('How I worked this out')
+    expect(html).not.toContain('How I know this — and what I could not see')
   })
 })
 
@@ -2066,7 +2116,10 @@ describe('rendered component — a broad window is allowed, with the cost stated
   it('names the trade-off rather than refusing the home folder', () => {
     scriptState({ journey: journeyFixture('welcome'), wizardStep: 'window' })
     const html = render()
-    expect(html).toContain('You can point me at')
+    // The caveat is LAYERED now — its summary invites the question and the
+    // answer is one click behind. Both halves are asserted, so folding cannot
+    // become a way to drop it.
+    expect(html).toContain('Can I point you at something bigger?')
     expect(html).toContain('whole home folder')
     expect(html).toContain('only skim the surface')
     // …and the two things that ARE refused, with the reason.
@@ -2282,7 +2335,7 @@ describe('rendered component — the arrival', () => {
     // …and deleting still goes through the typed confirmation, unchanged.
     scriptState({ journey: arrivedFixture(), purgeArmed: true })
     const deleting = render()
-    expect(deleting).toContain('Type PURGE to permanently delete this onboarding record')
+    expect(deleting).toContain('Type PURGE to confirm')
     expect(DISABLED_ATTR.test(purgeSubmitTag(deleting))).toBe(true)
   })
 })

@@ -41,8 +41,12 @@ describe('the front is exactly three questions, then the window', () => {
     expect(nextStep('discover', v)).toBeNull()
   })
 
-  it('walks Back the way it came, and never past the first question', () => {
-    expect(prevStep('role')).toBeNull()
+  it('walks Back the way it came, and never past the door', () => {
+    // The door is the first step now, so Back from question one lands there
+    // rather than nowhere — a flow whose first screen is a form has already
+    // asked the operator to work out where they are.
+    expect(prevStep('welcome')).toBeNull()
+    expect(prevStep('role')).toBe('welcome')
     expect(prevStep('dream')).toBe('role')
     expect(prevStep('start')).toBe('dream')
     expect(prevStep('window')).toBe('start')
@@ -121,7 +125,7 @@ describe('resume', () => {
   // there over four stops instead of six, plus the monotonic law the six-stop
   // mapping failed.
   it('resumes a journey that already carries answers at its branch step', () => {
-    expect(resumeStep(false, undefined)).toBe('role')
+    expect(resumeStep(false, undefined)).toBe('welcome')
     expect(resumeStep(true, 'point')).toBe('window')
     expect(resumeStep(true, 'decide')).toBe('discover')
     // A journey seeded before the preference existed resumes at the folder.

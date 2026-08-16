@@ -21,7 +21,30 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: cfa182e91b23329578ee8212a9b955ad18f43ac4fe411284bf4737bfa544f4c5
+Reviewed-Scope-Digest: 322c06ff85aefe107d8635a39e978d199d3a06c7ab11130b0384efa9fe80af00
+
+(RE-BIND, 2026-08-16, `feat/onboarding-screens-replace` MERGE COMMIT,
+recomputed over the merge tree rather than added on paper. The same one in-scope
+path moved on both sides — `cabinet/config/cognitive-architecture-contract.yml`,
+this branch's +108 for the disclosure model and `fix/search-that-finds-you`'s
+raise for search relevance — and the two raises are DISJOINT rows against
+different work, so the merged ceiling is re-measured at 79391 with
+`cognitive-architecture-census.py --check` rather than summed. Neither side
+moved a COG-4 implementation byte. Both parents' re-bind notes follow verbatim.)
+
+(RE-BIND, 2026-08-16, `feat/onboarding-screens-replace`, recomputed over this
+branch's HEAD with `cognitive-phase4-review-scope.py --print`. ONE in-scope path
+moved and it is again NOT a COG-4 surface:
+`cabinet/config/cognitive-architecture-contract.yml`, raising
+`framework_production_noncomment_lines` by a +108 `temporary_allowances` row
+(78824 -> 78932) for the onboarding card's disclosure model — `card.disclosures[]`
+as the ONE authored list, with `headline`/`details`/`body` becoming projections
+of it, the Charter's paragraph cut into approvable rows, and the headline ceiling
+moved 3 -> 2 in the single place it is applied. `framework/onboarding/` is NOT in
+the COG-4 scope set, so no COG-4 implementation byte moved. ZERO new framework
+production modules (248 <= 248) and zero expansion rows; `_sections` was DELETED
+in the same landing rather than left beside `_disclosures`. DISJOINT from every
+raise noted below. The prior re-bind's own note follows verbatim.)
 
 (RE-BIND, 2026-08-14, `feat/first-mate-speaks-short`, recomputed over this
 branch's HEAD with `cognitive-phase4-review-scope.py --print`. ONE in-scope path

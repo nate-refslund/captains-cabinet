@@ -13,9 +13,12 @@
  * map of the questions, not a second copy of the core's rules.
  */
 
-/** The client-driven steps of the welcome front. `window`/`discover` are the
- *  two branches of the third question; both then hand off to a core action. */
-export type WizardStepId = 'role' | 'dream' | 'start' | 'window' | 'discover'
+/** The client-driven steps of the welcome front. `welcome` is the door — the
+ *  one screen that asks nothing, added when the flow became screens that
+ *  replace each other (an operator who lands mid-sentence in a form has already
+ *  been asked to work out where they are). `window`/`discover` are the two
+ *  branches of the third question; both then hand off to a core action. */
+export type WizardStepId = 'welcome' | 'role' | 'dream' | 'start' | 'window' | 'discover'
 
 /** What the three questions collect, before any of it crosses to the core. */
 export interface WizardValues {
@@ -67,6 +70,7 @@ export const EMPTY_WIZARD: Readonly<WizardValues> = Object.freeze({
  * answers chosen. Window and discover are terminal client steps.
  */
 export function canAdvance(step: WizardStepId, values: WizardValues): boolean {
+  if (step === 'welcome') return true
   if (step === 'role') return values.role.trim().length > 0
   if (step === 'dream') return true
   if (step === 'start') {
@@ -82,6 +86,7 @@ export function canAdvance(step: WizardStepId, values: WizardValues): boolean {
  * else to the folder.
  */
 export function nextStep(step: WizardStepId, values: WizardValues): WizardStepId | null {
+  if (step === 'welcome') return 'role'
   if (step === 'role') return 'dream'
   if (step === 'dream') return 'start'
   if (step === 'start') return values.startPreference === 'decide' ? 'discover' : 'window'
@@ -91,10 +96,32 @@ export function nextStep(step: WizardStepId, values: WizardValues): WizardStepId
 /** The previous step, or null at the first one. Back never crosses a branch it
  *  cannot see — window and discover both return to the third question. */
 export function prevStep(step: WizardStepId): WizardStepId | null {
+  if (step === 'role') return 'welcome'
   if (step === 'dream') return 'role'
   if (step === 'start') return 'dream'
   if (step === 'window' || step === 'discover') return 'start'
   return null
+}
+
+/**
+ * WHY a step will not advance, in the operator's words — or '' when it will.
+ *
+ * THE POINT OF THE PAIR. A disabled control with no reason is a dead end that
+ * looks like a bug: the operator presses it, nothing happens, and there is
+ * nothing on the screen that says what is missing (measured live, Captain
+ * 2026-08-14: "i clicked ... but nothing happens now and i cant continue").
+ * A wrong input is meant to be impossible here rather than corrected
+ * afterwards, and "impossible" is only humane when it is also explained.
+ *
+ * It is the same predicate as `canAdvance`, inverted, in one place — two
+ * copies of "may they continue?" would eventually disagree, and the operator
+ * would be shown a reason for a button that works.
+ */
+export function blockedReason(step: WizardStepId, values: WizardValues): string {
+  if (canAdvance(step, values)) return ''
+  if (step === 'role') return 'Tell me what you do first — one sentence is enough.'
+  if (step === 'start') return 'Choose one of the two above and I will start there.'
+  return ''
 }
 
 /**
@@ -134,6 +161,6 @@ export function seedRequest(values: WizardValues): {
  * at question one. A journey with no seed yet resumes at the first question.
  */
 export function resumeStep(seedAnswered: boolean, preference: string | undefined): WizardStepId {
-  if (!seedAnswered) return 'role'
+  if (!seedAnswered) return 'welcome'
   return preference === 'decide' ? 'discover' : 'window'
 }

@@ -84,6 +84,9 @@ export const OFF_RAIL: Readonly<Record<string, string>> = Object.freeze({
  * two halves of the second.
  */
 const WELCOME_STEP_STOPS: Readonly<Record<WizardStepId, number>> = Object.freeze({
+  // The door. It asks nothing, so it is the first stop rather than a stop of
+  // its own — a rail that counts a greeting as progress is padding.
+  welcome: 0,
   role: 0,
   dream: 0,
   start: 0,
@@ -114,6 +117,7 @@ export function stopIndex(stage: string, step: WizardStepId): number {
  * build wrote, which is where the reversal used to happen.
  */
 export const FORWARD_PATH: readonly (readonly [string, WizardStepId])[] = Object.freeze([
+  ['welcome', 'welcome'],
   ['welcome', 'role'],
   ['welcome', 'dream'],
   ['welcome', 'start'],

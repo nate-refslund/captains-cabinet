@@ -537,6 +537,37 @@ export interface OnboardingCardSection {
   text: string
 }
 
+/**
+ * The three layers a disclosure row can sit on. A LAYER IS A RENDERING
+ * INSTRUCTION, NEVER AN EDIT: `headline` leads, `fold` opens in place at the
+ * claim it qualifies, `ledger` is the complete record behind it. Which layer a
+ * row is on changes where the operator reads it and never whether they can.
+ */
+export type DisclosureLayer = 'headline' | 'fold' | 'ledger'
+
+/**
+ * ONE AUTHORED ROW of what the Cabinet is telling the operator.
+ *
+ * THE CARD USED TO AUTHOR TWO THINGS — a headline list and a section list whose
+ * join was the body — and nothing checked that a headline sentence was a
+ * sentence of the ledger it summarised. The core now authors ONE list and
+ * projects `headline`/`details`/`body` out of it, so those three cannot drift
+ * from each other or from this. `framework/onboarding/journey.py` `_layered`.
+ */
+export interface OnboardingDisclosure {
+  id: string
+  layer: DisclosureLayer
+  /** The question this row answers. Empty on a headline row, which leads. */
+  title: string
+  text: string
+  /**
+   * Keys (`path:line`) into `card.evidence` for the citations this row's claim
+   * rests on. REFERENCES, never copies — so a citation the egress gate withheld
+   * cannot be released by a second copy riding on a row.
+   */
+  cites: string[]
+}
+
 export interface OnboardingCard {
   schema: 'cabinet.onboarding-card/v1'
   id: string
@@ -559,6 +590,12 @@ export interface OnboardingCard {
   headline?: string[]
   /** The same ledger `body` joins, cut into named sections for a disclosure. */
   details?: OnboardingCardSection[]
+  /**
+   * THE AUTHORED LIST the other three are views of. A surface that lays out
+   * the three layers reads this; `headline`, `details` and `body` remain for
+   * the surfaces written before it existed, and are projections of it.
+   */
+  disclosures?: OnboardingDisclosure[]
   /**
    * Who is speaking. A ROLE, never a name: the framework does not know what
    * this deployment calls its coordinating officer, so a surface resolves the
@@ -604,7 +641,14 @@ export interface OnboardingState {
     payload: Record<string, unknown>
     ratified_at?: string
   }
-  first_dividend: null | Record<string, unknown>
+  first_dividend: null | (Record<string, unknown> & { delivered_at?: string })
+  /**
+   * WHICH ACCOUNT IS THE OPERATOR, per connector, as THEY answered it —
+   * written only by `record_operator_identity` and never derived. Present with
+   * a non-empty `handles` is what makes the identity question answered, which
+   * is how the router knows to stop asking it.
+   */
+  operator_identity?: { handles: Record<string, string[]>; answered_at?: string }
   /**
    * The seed answer, when one was given — the operator's ROLE ("what you do").
    * A starting point for discovery, never the data itself.
