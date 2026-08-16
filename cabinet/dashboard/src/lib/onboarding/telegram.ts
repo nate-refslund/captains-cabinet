@@ -127,6 +127,9 @@ function buttonsFor(result: OnboardingResponse): TelegramInlineButton[][] {
     revoke: 'onboard:revoke',
     undo: 'onboard:undo',
     purge: 'onboard:purge_prompt',
+    // Payload-free like the two above: the core re-derives the address from its
+    // own committed look-up, so the tap can only confirm what a search returned.
+    confirm_organization_domain: 'onboard:confirm_site',
     // Payload-free, so a tap can carry it — and the purged card is the one
     // place it is offered. Before this, `stage === 'purged'` returned no
     // buttons because there was nothing to offer; now the one thing the card
@@ -205,12 +208,26 @@ export function formatTelegramOnboarding(result: OnboardingResponse): TelegramOn
   const looked = result.card.entry?.discovery?.executed?.executed?.filter(
     (probe) => probe.results?.length
   )
+  // WHAT THE JUDGMENT WAS AGAINST. Empty means the run was never judged, and
+  // every honest-miss sentence below stays unwritten rather than claiming a
+  // clean negative nobody measured.
+  const lookedFor = result.card.entry?.discovery?.executed?.looked_for?.[0] ?? ''
   if (looked?.length) {
     lines.push('', 'What I went and looked up')
     for (const probe of looked) {
-      lines.push(`Searched: ${probe.query}`)
-      for (const found of probe.results ?? []) {
+      lines.push(probe.query ? `Searched: ${probe.query}` : `Read: ${probe.url ?? ''}`)
+      // A COUNT IS NOT A FINDING. The results that name what the operator told
+      // me lead and say why; the rest are still listed — folded, never dropped —
+      // under a line saying they may be about something else entirely.
+      if (lookedFor && probe.relevant === 0) {
+        lines.push(`  None of this looks like your ${lookedFor} — it may be unrelated.`)
+      }
+      const ordered = [...(probe.results ?? [])]
+      for (const found of ordered) {
         lines.push(`• ${found.title || '(untitled)'}${found.url ? ` — ${found.url}` : ''}`)
+        if (found.matched?.length) {
+          lines.push(`  names ${found.matched.map((hit) => hit.term).join(', ')}`)
+        }
         if (found.snippet) lines.push(`  ${found.snippet}`)
       }
     }
@@ -220,6 +237,19 @@ export function formatTelegramOnboarding(result: OnboardingResponse): TelegramOn
   )
   if (organization) {
     lines.push('', `${organization.label}: /onboard org <company name, or "just me">`)
+  }
+  // THE TWO EARNED FOLLOW-UPS, each with the exact thing to send. A question
+  // printed with no way to answer it is the dead end this surface exists to
+  // close, and on Telegram the way to answer is a command, not a field.
+  const link = result.card.options.find((option) => option.action === 'answer_org_link')
+  if (link) {
+    lines.push('', `${link.label}: /onboard link https://…`)
+  }
+  const site = result.card.options.find(
+    (option) => option.action === 'confirm_organization_domain'
+  )
+  if (site) {
+    lines.push('', `${site.label}: /onboard confirm`)
   }
   if (result.card.stage === 'welcome') {
     lines.push(
@@ -406,6 +436,21 @@ export async function handleTelegramOnboarding(
         await action('answer_organization', actionId, { organization })
       )]
     }
+    // The page the operator points at when a look-up found nothing about their
+    // organisation. A typed answer, so it is a command and never a button — an
+    // address cannot ride a tap. The core refuses anything that is not https BY
+    // NAME, so a typo comes back as a sentence rather than a silent no-op.
+    if (/^link\s+/i.test(command)) {
+      const url = command.replace(/^link\s+/i, '').trim()
+      return [formatTelegramOnboarding(await action('answer_org_link', actionId, { url }))]
+    }
+    // The other outcome: a search DID return something that names their
+    // organisation, and this is them saying that address is theirs. Payload-free
+    // on purpose — the core re-derives the candidate from the committed look-up,
+    // so neither a tap nor a typed word can record an address no search returned.
+    if (/^(confirm|mine)$/i.test(command)) {
+      return [formatTelegramOnboarding(await action('confirm_organization_domain', actionId))]
+    }
     // Where the depth budget is pointed. `other` is the escape hatch and takes
     // the rest of the line as the name — measured, the ranking's top three hold
     // the right answer only most of the time, and an offer with no way to say
@@ -448,7 +493,7 @@ export async function handleTelegramOnboarding(
       }]
     }
     return [{
-      text: 'I did not recognize that onboarding choice. Send /onboard to see the current card, or use:\n/onboard folder /full/path | what you want made easier\n/onboard gather — read what I am connected to\n/onboard salience <candidate> — point me at the one to open first\n/onboard look — go and look up what you told me\n/onboard org <company, or "just me"> — whose work this is',
+      text: 'I did not recognize that onboarding choice. Send /onboard to see the current card, or use:\n/onboard folder /full/path | what you want made easier\n/onboard gather — read what I am connected to\n/onboard salience <candidate> — point me at the one to open first\n/onboard look — go and look up what you told me\n/onboard org <company, or "just me"> — whose work this is\n/onboard link https://… — a page about it I should read\n/onboard confirm — yes, that address is ours',
       plain: true,
     }]
   } catch (error) {
@@ -476,6 +521,7 @@ export async function handleTelegramOnboardingCallback(
   if (command === 'undo') return handleTelegramOnboarding('/onboard undo', actionId)
   if (command === 'purge_prompt') return handleTelegramOnboarding('/onboard purge', actionId)
   if (command === 'start_again') return handleTelegramOnboarding('/onboard again', actionId)
+  if (command === 'confirm_site') return handleTelegramOnboarding('/onboard confirm', actionId)
   if (command === 'feedback:useful') return feedback('useful', actionId)
   if (command === 'feedback:not_useful') return feedback('not_useful', actionId)
   if (command === 'feedback:corrected') return feedback('corrected', actionId)

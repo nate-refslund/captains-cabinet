@@ -307,6 +307,7 @@ function scriptState(overrides: {
   scanning?: boolean
   scanLine?: number
   correction?: string
+  orgLink?: string
 }) {
   hookScript.cursor = 0
   hookScript.steps = [
@@ -361,6 +362,9 @@ function scriptState(overrides: {
     { initial: false, value: overrides.scanning ?? false }, // 35 scanning
     { initial: 0, value: overrides.scanLine ?? 0 }, // 36 scanLine
     { initial: '', value: overrides.correction ?? '' }, // 37 correction
+    // The page the operator pastes when a look-up found nothing about their
+    // organisation. Appended, per the note above.
+    { initial: '', value: overrides.orgLink ?? '' }, // 38 orgLink
   ]
 }
 
@@ -1462,6 +1466,86 @@ describe('rendered component — discovery is disclosed honestly', () => {
     expect(html).not.toContain('href=""')
   })
 
+  // ── IS ANY OF THIS ABOUT YOU? (Captain, 2026-08-15) ──────────────────────
+  //
+  // He ran the real flow and got fifteen generic tech-leadership articles
+  // presented as an answer: "none of the searches found me… we should improve
+  // it somehow." A count is not a finding, so the core judges each result
+  // against his OWN words and this surface renders that judgment.
+
+  /** A run judged against the operator's own organisation and name. */
+  function judgedFixture(relevant: number) {
+    const fixture = discoveryFixture()
+    fixture.card.entry!.discovery.executed!.looked_for = ['STEP Network', 'Nathaniel Refslund']
+    fixture.card.entry!.discovery.executed!.executed.push({
+      kind: 'web_search',
+      query: '"STEP Network"',
+      provider: 'brave search',
+      truncated: false,
+      relevant,
+      results: relevant
+        ? [
+            {
+              title: 'STEP Network A/S',
+              url: 'https://stepnetwork.example/',
+              snippet: 'An adtech agency.',
+              matched: [{ term: 'STEP Network', kind: 'organization', where: 'title' }],
+            },
+            { title: 'What a tech lead does', url: 'https://blog.example/lead' },
+          ]
+        : [
+            { title: 'What a tech lead does', url: 'https://blog.example/lead' },
+            { title: 'Tech lead salaries', url: 'https://blog.example/pay' },
+          ],
+    })
+    return fixture
+  }
+
+  it('says WHY a result counts, quoting the operator own words back', () => {
+    scriptState({ journey: judgedFixture(1), wizardStep: 'discover', exploring: true })
+    const html = render()
+    expect(html).toContain('names STEP Network')
+    expect(html).toContain('STEP Network A/S')
+  })
+
+  it('says it found nothing about you instead of counting what it found', () => {
+    scriptState({ journey: judgedFixture(0), wizardStep: 'discover', exploring: true })
+    const html = render()
+    expect(html).toContain('none of this looks like YOUR STEP Network')
+    // FOLDED, NEVER DELETED: the misses are still on the page, under a summary
+    // that says what they are.
+    expect(html).toContain('What a tech lead does')
+    expect(html).toContain('result(s) that name nothing you told me')
+  })
+
+  it('an unjudged run is never rendered as a judged one that found nothing', () => {
+    // DEGENERATE END. Without `looked_for` nothing was checked, and the honest
+    // sentence for that is silence — not "none of this is you".
+    const fixture = judgedFixture(0)
+    delete fixture.card.entry!.discovery.executed!.looked_for
+    for (const probe of fixture.card.entry!.discovery.executed!.executed) {
+      delete probe.relevant
+    }
+    scriptState({ journey: fixture, wizardStep: 'discover', exploring: true })
+    const html = render()
+    expect(html).not.toContain('none of this looks like YOUR')
+    expect(html).toContain('What a tech lead does')
+  })
+
+  it('shows a page the operator handed over as read, not as searched', () => {
+    const fixture = discoveryFixture()
+    fixture.card.entry!.discovery.executed!.executed.push({
+      kind: 'web_read',
+      url: 'https://stepnetwork.example/about',
+      truncated: false,
+      results: [{ title: 'About STEP Network', url: 'https://stepnetwork.example/about' }],
+    })
+    scriptState({ journey: fixture, wizardStep: 'discover', exploring: true })
+    const html = render()
+    expect(html).toContain('read the page you gave me')
+    expect(html).toContain('About STEP Network')
+  })
+
   it('offers the re-run only when the core says a search tool is connected', () => {
     const without = lookedUpFixture()
     scriptState({ journey: without, wizardStep: 'discover', exploring: true })
@@ -1525,6 +1609,68 @@ describe('rendered component — the organisation question is answerable', () =>
     const html = render()
     expect(html).toContain('Which company or organization is this for')
     expect(html).not.toContain('name="dashboard-organization"')
+  })
+
+  // ── THE TWO EARNED FOLLOW-UPS ────────────────────────────────────────────
+  //
+  // A look-up that found nothing about the operator's organisation used to end
+  // the conversation: the cabinet had nothing further to say and no way to be
+  // corrected. It now asks for exactly one thing, and the shape of the ask
+  // depends on which way the look-up went.
+  type FollowUp = 'answer_org_link' | 'confirm_organization_domain'
+  function followUpFixture(
+    question: { id: string; prompt: string; action: FollowUp },
+    action: { action: FollowUp; label: string; domain?: string }
+  ): OnboardingResponse {
+    const fixture = organizationFixture(false)
+    fixture.card.entry!.questions = [
+      { ...question, why: 'Because the search missed.', required: false, input: 'url' },
+    ]
+    fixture.card.entry!.next_actions = [action]
+    return fixture
+  }
+
+  it('asks for a page when the search found nothing about the organisation', () => {
+    scriptState({
+      journey: followUpFixture(
+        {
+          id: 'org_link',
+          prompt: 'Do you have a website or a page about STEP Network I should read? Paste a link if so.',
+          action: 'answer_org_link',
+        },
+        { action: 'answer_org_link', label: 'Give me a link about STEP Network' }
+      ),
+      wizardStep: 'discover',
+      exploring: true,
+    })
+    const html = render()
+    expect(html).toContain('a page about STEP Network I should read')
+    expect(html).toContain('name="dashboard-org-link"')
+    expect(html).toContain('Read that page')
+  })
+
+  it('offers a confirm chip only when the core carried a domain on the action', () => {
+    scriptState({
+      journey: followUpFixture(
+        {
+          id: 'org_domain',
+          prompt: 'Is this your STEP Network? stepnetwork.example',
+          action: 'confirm_organization_domain',
+        },
+        {
+          action: 'confirm_organization_domain',
+          label: 'Yes, stepnetwork.example is STEP Network',
+          domain: 'stepnetwork.example',
+        }
+      ),
+      wizardStep: 'discover',
+      exploring: true,
+    })
+    const html = render()
+    expect(html).toContain('Is this your STEP Network? stepnetwork.example')
+    expect(html).toContain('Yes, stepnetwork.example is STEP Network')
+    // A chip is a TAP, never a field: the address is the core's, not typed.
+    expect(html).not.toContain('name="dashboard-org-domain"')
   })
 })
 

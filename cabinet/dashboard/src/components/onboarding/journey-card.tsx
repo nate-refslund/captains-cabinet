@@ -302,9 +302,13 @@ export default function OnboardingJourneyCard({
   // read is one round-trip and the client cannot see inside it.
   const [scanLine, setScanLine] = useState(0)
   // What the operator says is wrong with a finding — travels with their rating.
-  // NEW HOOKS GO HERE, at the end: an insert renumbers every index the test
-  // script pins, which is the sensor working rather than an inconvenience.
   const [correction, setCorrection] = useState('')
+  // A page about their organisation, for the follow-up a missed look-up earns.
+  // Empty until they paste one, and never guessed from a search result — the
+  // whole reason that question exists is that the search found nothing to guess
+  // from. NEW HOOKS GO HERE, at the end: an insert renumbers every index the
+  // test script pins, which is the sensor working rather than an inconvenience.
+  const [orgLink, setOrgLink] = useState('')
   const effectiveSurface = useRef<Extract<OnboardingSurface, 'dashboard' | 'world' | 'companion'>>(surface)
   const handoffIds = useRef<{ trace_id?: string; correlation_id?: string }>({})
   // Guards the connect flow's three server round-trips against a re-entrant
@@ -595,7 +599,14 @@ export default function OnboardingJourneyCard({
   const answeredTarget = journey?.state.salience?.target ?? ''
   const saliencePrefill = salienceOption?.prefill ?? ''
   const salienceNameValue = salienceNameEdited ? salienceName : salienceName || saliencePrefill
-
+  // WHAT THE LOOK-UP WAS JUDGED AGAINST, named so the miss can be said out loud.
+  // Empty means the run was not judged at all, and every sentence below that
+  // would claim "none of this is you" stays unwritten — "I did not check" and "I
+  // checked and none of it was you" are different facts.
+  const lookedFor = journey?.card.entry?.discovery?.executed?.looked_for?.[0] ?? ''
+  const confirmDomain = journey?.card.entry?.next_actions.find(
+    (option) => option.action === 'confirm_organization_domain'
+  )
   /**
    * THE WINDOW'S PURPOSE, without a field that asks for it.
    * Recorded-window > the dream they gave > the mission the core stored > the
@@ -649,6 +660,19 @@ export default function OnboardingJourneyCard({
     const said = organization.trim()
     if (!said) return
     void send('answer_organization', { organization: said })
+  }
+
+  /**
+   * The page the operator points at when the web could not find their
+   * organisation. Sent as typed — the core is the one that refuses a non-https
+   * address, BY NAME, so the operator reads a sentence they can act on instead
+   * of a rule this surface invented.
+   */
+  function submitOrgLink(event: FormEvent) {
+    event.preventDefault()
+    const link = orgLink.trim()
+    if (!link) return
+    void send('answer_org_link', { url: link })
   }
 
   /**
@@ -859,6 +883,23 @@ export default function OnboardingJourneyCard({
 
   const activePhase = stopIndex(card?.stage ?? '', wizardStep)
   const shared = { t, variant, working, surface }
+  // The two follow-ups a missed look-up earns, wired once and rendered wherever
+  // the residual questions are: a page to read, or a domain one of my own
+  // searches returned. Both are the CORE's offers — this surface never invents
+  // either — and their refusals land on the question that fired them.
+  const residualAsks = {
+    confirmDomain,
+    orgLink,
+    onOrgLink: setOrgLink,
+    onSubmitOrgLink: submitOrgLink,
+    onConfirmDomain: (domain: string | undefined) =>
+      void send('confirm_organization_domain', { domain }),
+    error:
+      (refusedAction === 'answer_org_link' ||
+        refusedAction === 'confirm_organization_domain') && error
+        ? error
+        : '',
+  }
   const refusalFor = (action: OnboardingAction) =>
     refusedAction === action && error ? error : ''
 
@@ -1092,7 +1133,7 @@ export default function OnboardingJourneyCard({
             onRerun={() => void send('run_discovery')}
             error={refusalFor('run_discovery')}
           />
-          <OpenQuestions t={t} questions={card?.entry?.questions} />
+          <OpenQuestions {...shared} {...residualAsks} questions={card?.entry?.questions} />
           </>
         )}
 
@@ -1215,7 +1256,7 @@ export default function OnboardingJourneyCard({
               onRerun={() => void send('run_discovery')}
               error={refusalFor('run_discovery')}
             />
-            <OpenQuestions t={t} questions={card.entry?.questions} />
+            <OpenQuestions {...shared} {...residualAsks} questions={card.entry?.questions} />
           </>
         )}
 
@@ -1247,7 +1288,7 @@ export default function OnboardingJourneyCard({
               onRerun={() => void send('run_discovery')}
               error={refusalFor('run_discovery')}
             />
-            <OpenQuestions t={t} questions={card.entry?.questions} />
+            <OpenQuestions {...shared} {...residualAsks} questions={card.entry?.questions} />
           </>
         )}
 

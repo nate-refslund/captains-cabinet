@@ -425,6 +425,107 @@ describe('Telegram — going and looking it up', () => {
     // or an entity on its way to the operator's phone.
     expect(message.plain).toBe(true)
   })
+
+  // ── IS ANY OF IT ABOUT YOU? (Captain, 2026-08-15) ────────────────────────
+  function judged(relevant: number, extra: Record<string, unknown> = {}) {
+    return {
+      ...RANKED,
+      card: {
+        ...RANKED.card,
+        options: [...((RANKED.card as { options?: unknown[] }).options ?? []),
+                  ...((extra.options as unknown[]) ?? [])],
+        entry: {
+          ...(RANKED.card as { entry?: Record<string, unknown> }).entry,
+          discovery: {
+            terms: [],
+            probes: [],
+            executable: true,
+            executed: {
+              schema: 'cabinet.onboarding-probe-result/v1',
+              looked_for: ['STEP Network'],
+              executed: [{
+                kind: 'web_search',
+                query: '"STEP Network"',
+                provider: 'brave search',
+                truncated: false,
+                relevant,
+                results: relevant
+                  ? [{
+                      title: 'STEP Network A/S',
+                      url: 'https://stepnetwork.example/',
+                      matched: [{ term: 'STEP Network', kind: 'organization', where: 'title' }],
+                    }]
+                  : [{ title: 'What a tech lead does', url: 'https://blog.example/lead' }],
+              }],
+              deferred: [],
+              complete: true,
+            },
+          },
+        },
+      },
+    }
+  }
+
+  it('says the miss out loud rather than counting what came back', () => {
+    const message = formatTelegramOnboarding(judged(0) as never)
+    expect(message.text).toContain('None of this looks like your STEP Network')
+    // FOLDED, NEVER DELETED — a chat surface has no fold, so it still lists them.
+    expect(message.text).toContain('What a tech lead does')
+  })
+
+  it('says WHY a result counts, and stays silent when nothing was judged', () => {
+    expect(formatTelegramOnboarding(judged(1) as never).text)
+      .toContain('names STEP Network')
+    const unjudged = judged(0)
+    const block = (unjudged.card.entry as { discovery: { executed: Record<string, unknown> } })
+      .discovery.executed
+    delete block.looked_for
+    delete (block.executed as Array<Record<string, unknown>>)[0].relevant
+    expect(formatTelegramOnboarding(unjudged as never).text)
+      .not.toContain('None of this looks like')
+  })
+
+  it('prints the exact command for each earned follow-up', () => {
+    const asked = judged(0, {
+      options: [{ action: 'answer_org_link', label: 'Give me a link about STEP Network' }],
+    })
+    expect(formatTelegramOnboarding(asked as never).text)
+      .toContain('Give me a link about STEP Network: /onboard link https://…')
+    const chip = judged(1, {
+      options: [{
+        action: 'confirm_organization_domain',
+        label: 'Yes, stepnetwork.example is STEP Network',
+        domain: 'stepnetwork.example',
+      }],
+    })
+    expect(formatTelegramOnboarding(chip as never).text)
+      .toContain('Yes, stepnetwork.example is STEP Network: /onboard confirm')
+  })
+
+  it('sends a pasted page as typed, and confirms a domain payload-free', async () => {
+    await handleTelegramOnboarding('/onboard link https://stepnetwork.example/about', 'tg-link')
+    expect(applyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'answer_org_link',
+        url: 'https://stepnetwork.example/about',
+      }),
+      'telegram'
+    )
+    applyMock.mockClear()
+    // PAYLOAD-FREE: the core re-derives the candidate from its own committed
+    // look-up, so neither this command nor its tap can record an address that
+    // no search returned.
+    await handleTelegramOnboarding('/onboard confirm', 'tg-confirm')
+    const sent = applyMock.mock.calls[0][0] as Record<string, unknown>
+    expect(sent.action).toBe('confirm_organization_domain')
+    expect('domain' in sent).toBe(false)
+    applyMock.mockClear()
+    await handleTelegramOnboardingCallback('onboard:confirm_site', 'tg-confirm-tap')
+    expect(applyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'confirm_organization_domain' }),
+      'telegram'
+    )
+  })
 })
 
 describe('Telegram — the off-target window is answerable here too', () => {

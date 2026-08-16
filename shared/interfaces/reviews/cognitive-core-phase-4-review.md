@@ -2406,3 +2406,32 @@ No `framework/projection`, `framework/scheduler`, `framework/organs`,
 touched by this branch, whose diff is otherwise `framework/onboarding/`, its
 suite, the dashboard onboarding surfaces, one onboarding design doc, four
 screenshots and one FW-019 review artifact.)
+
+(RE-BOUND 2026-08-16 on `fix/search-that-finds-you`, previous value
+`e595d23278697bf3fdbccc3305eb98496d59dda61c8b26bd8f26b96e90da347c`. ONE in-scope
+path moved and it is NOT a COG-4 surface.
+
+MEASURED, not asserted: the resolved scope was expanded with `git ls-tree -r` at
+`origin/master` (a209e4d1) and at this branch's HEAD and the two sets diffed —
+85 scope entries resolving to 114 blobs on BOTH sides, none added, none removed,
+exactly ONE with a different blob.
+
+1. `cabinet/config/cognitive-architecture-contract.yml` — the
+   `framework_production_noncomment_lines` maximum, raised 64282 -> 64741 with
+   its dated measurement note. No budget added, no pin removed, no baseline
+   changed, no other key touched. The +459 buys the onboarding look-up's ability
+   to tell "I found you" from "I found something", inside
+   `framework/onboarding/journey.py` (+319) and `framework/onboarding/research.py`
+   (+140): the query hierarchy composed from what the operator NAMED and
+   phrase-quoted so a multi-word organisation cannot be split, the verbatim
+   relevance judgment at the one place results enter, the honest headline when
+   nothing that came back names them, the read of a page they paste, and the two
+   earned follow-ups. ZERO production modules
+   (`framework_production_modules` unchanged at 248), so the ratchet re-pins at
+   observed==max exactly as the zero-headroom law requires.
+
+No `framework/projection`, `framework/scheduler`, `framework/organs`,
+`cognitive-trajectory.v2.schema.json`, `cog4-*` script or COG-4 fixture byte is
+touched by this branch, whose diff is otherwise `framework/onboarding/`, its
+suite, the dashboard onboarding surfaces, one onboarding design doc and one
+FW-019 review artifact.)

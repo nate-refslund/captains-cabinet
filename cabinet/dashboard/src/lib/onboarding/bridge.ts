@@ -79,6 +79,14 @@ export const ACTIONS: ReadonlySet<string> = new Set([
   // the cheap outer limit; the core caps and stores it, and refuses an empty one
   // by name.
   'answer_organization',
+  // The page the operator pasted about their organization, and the address one
+  // of my own searches returned that they say is theirs. Both are EARNED — the
+  // core offers exactly one of them, and only after a look-up ran and either
+  // missed or hit. Their payloads (`url`, `domain`) are bounded below as the
+  // cheap outer limit; the core validates both, and refuses a domain no search
+  // returned rather than trusting the field.
+  'answer_org_link',
+  'confirm_organization_domain',
   'ratify_charter',
   'continue',
   'pause',
@@ -308,6 +316,17 @@ export function applyOnboardingAction(
       'organization_too_long',
       'The name of a company is shorter than that.'
     )
+  }
+  // The two earned follow-ups. Cheap outer bounds only: the core refuses a
+  // non-https address BY NAME (so the operator gets a sentence they can act on
+  // rather than a length error), and refuses a domain no search returned by
+  // re-deriving the candidate from the committed look-up rather than trusting
+  // this field at all.
+  if (request.url && request.url.length > 2_048) {
+    throw new OnboardingBridgeError('url_too_long', 'That address is too long.')
+  }
+  if (request.domain && request.domain.length > 300) {
+    throw new OnboardingBridgeError('domain_too_long', 'That is not a web address.')
   }
   // declare_connector's own inputs. The core resolves the template, validates
   // the env var NAME, bounds each field value and refuses an unknown field key
