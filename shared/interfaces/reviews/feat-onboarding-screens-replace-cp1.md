@@ -138,7 +138,32 @@ green on master because the runner has no such pipe dir. Not this branch's, and
 not fixed here — touching it would be a change to a surface this PR has no
 business in.
 
-## 5. Where I would attack this next
+## 5. The merge with `fix/search-that-finds-you` (#361)
+
+That branch landed on master while this one was in CI and touched five of the
+same files. It taught the look-up to JUDGE each result against the operator's own
+words, and earned two follow-up questions — a page to read when the web found
+nothing (`answer_org_link`) and a domain one of the cabinet's own searches
+returned (`confirm_organization_domain`). All of it arrived as controls on the
+accumulating card this branch removes, so it was PORTED rather than merged
+textually:
+
+- the relevance judgment, the matched-first ordering and the folded
+  names-nothing tail moved into `screens/residuals.tsx::ProbeLog` — the probe log
+  is furniture, so it stays outside the First Mate's container;
+- both new questions got their controls inside `OpenQuestions`, filtered exactly
+  as `answer_organization` is. **This was the risk of the merge**: taking their
+  file wholesale would have kept the card, and taking mine wholesale would have
+  turned two answerable questions into printed dead ends — the exact defect both
+  branches exist to abolish;
+- `orgLink` is APPENDED after this branch's four hooks, per the rule both files
+  state, and the hook script renumbers to match.
+
+Their arms pass against these screens unchanged. Both contract raises are
+disjoint rows and the census was RE-MEASURED over the merge (79391) rather than
+summed on paper; the COG-4 digest is re-bound over the merge tree.
+
+## 6. Where I would attack this next
 
 - **The core's `_ask_line` can go stale.** On the sweep screen after answering
   salience, the headline still reads "First: point me at the one to open first."
