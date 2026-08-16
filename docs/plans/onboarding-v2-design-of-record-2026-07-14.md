@@ -20,11 +20,40 @@ result. The high ceiling is a self-organizing Cabinet with ratified Direction,
 source-aware officers, per-lane authority, verification, receipts, and earned
 graduation.
 
-**Addendum, 2026-07-30 — the first run is three questions, stepped.** The one
-seed question that opened the front ("What do you do, and how can I best serve
-you?") was three questions in one breath, and the dashboard rendered it as a
-single dense card. It is now a guided, stepped flow — one idea per step, a
-visible progress rail, plain Back/Next — asking, in order:
+**Addendum, 2026-08-16 — the flow is SCREENS THAT REPLACE EACH OTHER.** The
+dashboard surface was one ~2,000-line card whose panels appeared by additive
+predicates and never left, so a connected run ended with a sweep table, an
+identity picker, a ranked question, a discovery log, a residuals list, a receipt
+and eight buttons on one page. It is now a ROUTER over one screen at a time
+(`cabinet/dashboard/src/lib/onboarding/screen-router.ts`, pure and testable
+without a DOM) plus one component per screen:
+
+| # | Screen | The one idea |
+|---|---|---|
+| S1 | `welcome` | the door: what this is, what it costs, one tap to start |
+| S2 | `you` | your name (optional) and what you do |
+| S3 | `dream` | what you would love this Cabinet to become |
+| S4 | `begin` | point me at a folder, or go and find where I am useful |
+| S5A | `folder` | the folder, whose data it is, under what right |
+| S5B | `connect` | the tool catalog, what is connected, and the look |
+| — | `sweep` | what one sweep found, per tool, and the way onward |
+| — | `identity` / `salience` / `organization` | the earned asks — each fires ONLY while unanswered, one at a time |
+| S6 | `approve` | the Charter's terms, every one of them unfolded |
+| S7 | `look` | the read running, in plain words, flowing into S8 with no click |
+| S8 | `find` | the first result, as a message from the First Mate |
+| S9 | `arrival` | what is now true, and the management view a revisit gets |
+
+Nothing survives a screen change except the four-stop rail and one standing
+read-only line. The page frame around it says nothing at all: a frame that
+describes the product differently from the product is what an operator trusts
+least. Every screen carries its ONE primary action, and an act-firing control
+that cannot fire is disabled WITH ITS REASON on the screen — wrong input is
+impossible rather than corrected. Two fields were CUT by the same ruling: the
+per-window purpose (it re-asked the dream, which now seeds it) and the
+trust-destination radio (it granted nothing, as its own helper text admitted;
+where authority grows is the trust ladder).
+
+The three questions themselves are unchanged, and are asked in this order:
 
 1. **who you are, and your role** — *"What is your name? And tell me about you
    and your work."* One step, two fields. The NAME (2026-08-14, below) is

@@ -1,0 +1,86 @@
+{
+  "welcome_bare": {
+    "kind": "first_window",
+    "body": "Nothing is connected and I cannot look anywhere yet, so I will not pretend to know your work. What do you do, and how can I best serve you? Then give me one folder to read, and I will stop asking. What I cannot know without access: Which sources are yours to grant is not written anywhere I can read, at any level of access. It is the one thing I must ask. Without a source I can read, products are not something I can know. I looked for these and they did not answer: repo (no ratified source); web (egress config absent). Whatever you approve, I show you exactly what I would read first; nothing is opened until you approve that Charter.",
+    "section_ids": [
+      "opening",
+      "cannot_know",
+      "probes",
+      "promise"
+    ],
+    "headline": [
+      "Nothing is connected and I cannot look anywhere yet, so I will not pretend to know your work. What do you do, and how can I best serve you? Then give me one folder to read, and I will stop asking.",
+      "First: tell me whose work this is."
+    ]
+  },
+  "welcome_swept": {
+    "kind": "first_window",
+    "body": "You have connected sources, so I will read them first and tell you what I found with a citation you can correct. I will not ask you for anything they already answer. What I cannot know without access: Which sources are yours to grant is not written anywhere I can read, at any level of access. It is the one thing I must ask. Roles, seniority and who decides are not in the data. If I stated them I would be inventing them. I looked for these and they did not answer: repo (no ratified source); web (egress config absent). I cannot tell which of the actors I read is you in code, tracker. Which account is yours in each? Until you say, I am claiming none of that work is yours. Ranking what recurs across your sources, these come up first: kaiganryokan, yoyaku. What I did not reach: Ranked names only, never contents: 2 from code, 2 from connector, 2 from tracker; 2 name(s) recur inside a single system only, so nothing here ranks them against anything; no usable last-touched clock on code, connector, tracker, so nothing there is ranked by how recent it is. Whatever you approve, I show you exactly what I would read first; nothing is opened until you approve that Charter.",
+    "section_ids": [
+      "opening",
+      "cannot_know",
+      "probes",
+      "identity",
+      "salience",
+      "promise"
+    ],
+    "headline": [
+      "I read across your 2 connected tools — 666 items.",
+      "The names that come up most across them: kaiganryokan, yoyaku.",
+      "First: confirm which account is you in code, tracker."
+    ]
+  },
+  "charter_pending": {
+    "kind": "orientation_charter",
+    "body": "Read-only access to “software-product” (<SOURCE>) for this purpose: Find one release risk before it surprises the team.. You told me this source is mine (my own machine, my own folder). I will inspect at most 200 supported text files (2 MB total), skip secrets, personnel, pay, customer-personal, legal and corporate-finance files by name, skip hidden/system folders, binaries, and every symlink, and make no changes. Charter fingerprint: <HASH>.",
+    "section_ids": [],
+    "headline": []
+  },
+  "dividend_ready": {
+    "kind": "first_dividend",
+    "body": "The documentation tells someone to run “deploy:prod”, but no package.json in the approved folder declares that script. That can break onboarding or a release at the exact moment someone follows the documented path. Dates your files state that are still ahead: 2026-08-12 — README.md:9; 2026-08-19 — docs/release-checklist.md:3.",
+    "section_ids": [
+      "finding",
+      "clocks"
+    ],
+    "headline": [
+      "The documentation tells someone to run “deploy:prod”, but no package.json in the approved folder declares that script.",
+      "The receipt below gives the file and line for 1 place you can open yourself."
+    ]
+  },
+  "arrival": {
+    "kind": "arrival",
+    "body": "Orientation is done. You told me: “I run a small inn on the coast”. You approved read-only access to <SOURCE>, and nothing else. I read it once and told you one thing, with 1 place you can open yourself. Nothing is running now, and nothing opens without your approval. A later, separately approved step could spend longer learning how your work fits together, reflect back priorities and conflicts, suggest a useful AI team, and show concrete examples of what each officer may observe, propose, or do. That work is disabled and has not started. No new access or authority was granted. If you want to give me more to read: Nothing is connected yet, but I can look. What do you do, and how can I best serve you? A sentence is enough — I will take it as a starting point and go find out the rest, not as the answer. What I cannot know without access: Which sources are yours to grant is not written anywhere I can read, at any level of access. It is the one thing I must ask. Without a source I can read, products are not something I can know. I looked for these and they did not answer: repo (no git dir); web (egress config absent).",
+    "section_ids": [
+      "arrival",
+      "running",
+      "deeper",
+      "opening",
+      "cannot_know",
+      "probes"
+    ],
+    "headline": [
+      "Orientation is done.",
+      "You told me: “I run a small inn on the coast”.",
+      "You approved read-only access to <SOURCE>, and nothing else."
+    ]
+  },
+  "paused": {
+    "kind": "paused",
+    "body": "Your First Window will not be read again while paused. You can continue, revoke access, undo, or purge.",
+    "section_ids": [],
+    "headline": []
+  },
+  "revoked": {
+    "kind": "revoked",
+    "body": "The Cabinet will not read this source again without a new First Window you approve. Derived onboarding artifacts remain until you undo or purge them.",
+    "section_ids": [],
+    "headline": []
+  },
+  "purged": {
+    "kind": "purged",
+    "body": "The Charter, onboarding history, bounded manifest, derived excerpts, and live evidence trial were removed. Stale actions cannot reopen them. You can start a new orientation whenever you like — it begins from nothing, with a new evidence trail, and cannot see anything above. The content-free record that a read happened (whose data, under what claimed right) is kept deliberately and is not part of this.",
+    "section_ids": [],
+    "headline": []
+  }
+}

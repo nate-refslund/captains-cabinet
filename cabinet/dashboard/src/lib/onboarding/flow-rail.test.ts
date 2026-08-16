@@ -45,6 +45,11 @@ const CORE = path.join(REPO_ROOT, 'framework', 'onboarding', 'journey.py')
  */
 const LEGACY_PHASE_INDEX = (stage: string, step: WizardStepId): number => {
   if (stage === 'welcome') {
+    // The door did not exist in the six-phase mapping. Its honest legacy
+    // position is the first question's — anything else would make this replay
+    // fail for a reason the mapping it replaces never had, and the arm below
+    // is about the REVERSAL, not about a step nobody had written yet.
+    if (step === 'welcome') return 0
     if (step === 'role') return 0
     if (step === 'dream') return 1
     if (step === 'start') return 2

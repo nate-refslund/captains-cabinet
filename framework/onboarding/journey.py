@@ -2181,7 +2181,29 @@ SPEAKER_COORDINATOR = "coordinator"
 #: too much text. make it short and simple."). A CEILING, checked by its own
 #: arm — the honesty ledger it summarises is not deleted, it moves one click
 #: behind, and ``card["body"]`` still carries every word of it.
-MAX_HEADLINE_LINES = 3
+#:
+#: TWO, NOT THREE (2026-08-16). The ruling asks for "one to two sentences, the
+#: number that matters", and a ceiling is only worth setting where the build
+#: FAILS it: the connected welcome card composes THREE candidate lines, so this
+#: bites on real data rather than describing what already happens. The line it
+#: drops is the ranked-names summary, and it is dropped where an ask exists
+#: because the names it summarises are rendered as the CHOICES one screen
+#: later — a summary of a list shown in full beside it is exactly the
+#: accumulation this ceiling exists to stop. Proven able to fire by
+#: ``test_first_mate_speaks.py`` against the unclipped candidate list.
+MAX_HEADLINE_LINES = 2
+
+#: The three layers every disclosure row is assigned to. A ROW'S LAYER IS A
+#: RENDERING INSTRUCTION, NEVER AN EDIT: ``headline`` leads, ``fold`` opens in
+#: place at the claim it qualifies, ``ledger`` is the complete record. Which
+#: layer a row sits on changes where the operator reads it and never whether
+#: they can. The ORDER of the rows is independent of the layer, and the
+#: non-headline rows in order ARE ``card["body"]`` byte for byte, so a surface
+#: that cannot fold (Telegram, a log, a plain reader) loses nothing.
+DISCLOSURE_HEADLINE = "headline"
+DISCLOSURE_FOLD = "fold"
+DISCLOSURE_LEDGER = "ledger"
+DISCLOSURE_LAYERS = (DISCLOSURE_HEADLINE, DISCLOSURE_FOLD, DISCLOSURE_LEDGER)
 
 #: The promise that closes the welcome card. Named because the section list and
 #: the body join both read it, and a tail typed twice is a tail that drifts.
@@ -2191,42 +2213,114 @@ _APPROVAL_TAIL = (
 )
 
 
-def _sections(rows: Sequence[tuple[str, str, str]]) -> list[dict[str, str]]:
-    """``(id, title, text)`` triples as sections, dropping the empty ones.
-
-    An empty section is a heading with nothing under it, which reads as a fact
-    withheld. The JOIN over these is the card body, so nothing can be in one
-    view and absent from the other.
-    """
-    return [{"id": row[0], "title": row[1], "text": row[2]}
-            for row in rows if str(row[2] or "").strip()]
-
-
 def _joined(sections: Sequence[Mapping[str, Any]]) -> str:
     """The body every non-layering surface renders: the sections, in order."""
     return "".join(str(section["text"]) for section in sections)
 
 
-def _entry_sections(state: dict[str, Any], plan: dict[str, Any],
-                    *, tail: str = "") -> list[dict[str, str]]:
-    """The welcome card's honesty ledger, cut into named sections.
+def _disclosures(
+    rows: Sequence[tuple[str, str, str, str]],
+    *,
+    cites: Mapping[str, Sequence[str]] | None = None,
+) -> list[dict[str, Any]]:
+    """``(id, layer, title, text)`` rows as disclosure records, empties dropped.
+
+    THE ONE AUTHORED SURFACE. The card used to author two things that had to be
+    kept in step by hand — a headline list and a section list whose join was the
+    body — and nothing checked that a sentence in one was a sentence of the
+    other. Here a card authors ONE list; ``_layered`` projects the three fields
+    every existing consumer reads out of it, so headline ⊆ rows and
+    body == join(non-headline rows) by construction rather than by promise.
+
+    An empty row is dropped for the same reason an empty section always was: a
+    heading with nothing under it reads as a fact withheld.
+
+    ``cites`` maps a row id to the citation keys (``path:line``) that row's
+    claim rests on. The citations themselves stay on ``card["evidence"]`` —
+    these are references into it, never a second copy, so a citation cannot be
+    withheld by the egress gate in one place and released in the other.
+    """
+    refs: Mapping[str, Sequence[str]] = cites or {}
+    out: list[dict[str, Any]] = []
+    for row_id, layer, title, text in rows:
+        if layer not in DISCLOSURE_LAYERS:  # pragma: no cover — programming error
+            raise ValueError(f"unknown disclosure layer {layer!r} on row {row_id!r}")
+        if not str(text or "").strip():
+            continue
+        out.append({
+            "id": row_id,
+            "layer": layer,
+            "title": title,
+            "text": text,
+            "cites": list(refs.get(row_id) or ()),
+        })
+    return out
+
+
+def _layered(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """The four card fields one disclosure list projects into.
+
+    ``disclosures`` is the authored list; the other three are views of it and
+    are what every surface written before this model existed still reads:
+
+      headline  the ``headline`` rows' text, capped — the lead
+      details   the non-headline rows as ``{id, title, text}`` — the fold
+      body      those same rows joined, in order — the whole ledger, unfolded
+
+    The cap is applied HERE and nowhere else, so a card cannot quietly exceed
+    it, and it can only ever drop a ``headline`` row: dropping one loses a
+    summary sentence, never a disclosure, because every other layer is
+    projected uncapped.
+
+    A CAPPED ROW LEAVES ``disclosures`` TOO. A row that ships on the card and
+    renders nowhere is a hidden row wearing a disclosure's name, which is worse
+    than either showing it or not emitting it — so the list a surface receives
+    is exactly the list a surface renders.
+    """
+    lead = [r for r in rows if r["layer"] == DISCLOSURE_HEADLINE][:MAX_HEADLINE_LINES]
+    rest = [r for r in rows if r["layer"] != DISCLOSURE_HEADLINE]
+    return {
+        "disclosures": lead + rest,
+        "headline": [str(r["text"]) for r in lead],
+        "details": [{"id": r["id"], "title": r["title"], "text": r["text"]} for r in rest],
+        "body": _joined(rest),
+    }
+
+
+def _citation_keys(citations: Sequence[Mapping[str, Any]]) -> list[str]:
+    """``path:line`` for each citation — the key a disclosure row cites by."""
+    return [f"{c.get('path')}:{c.get('line')}" for c in citations]
+
+
+def _entry_rows(state: dict[str, Any], plan: dict[str, Any],
+                *, tail: str = "") -> tuple[tuple[str, str, str, str], ...]:
+    """The welcome card's honesty ledger, cut into named disclosure rows.
 
     LAYERING, NEVER DELETION. Each of these was a clause of one ~350-word
     paragraph that opened the connected-mode card, and the Captain read the
     paragraph rather than the answer inside it. They are the same strings, in
-    the same order, with a heading each — so a surface can put the headline in
-    front and the whole ledger one click behind, and ``_joined`` reproduces the
-    old blob exactly for a surface that cannot fold.
+    the same order, with a heading and a layer each — so a surface can put the
+    headline in front, the qualifying facts one click behind, and the whole
+    record behind that, while ``_layered`` reproduces the old blob exactly for a
+    surface that cannot fold.
+
+    THE ORDER IS THE BODY'S ORDER and is not the layer's. ``fold`` and
+    ``ledger`` here answer "would the operator want this AT the claim, or when
+    they go looking for the record?" — never "is this worth keeping?".
     """
-    return _sections((
-        ("opening", "How I will start", _entry_opening(plan)),
-        ("cannot_know", "What I cannot know without access", _cannot_know_line(plan)),
-        ("probes", "What I looked for and could not reach", _probe_note(state)),
-        ("identity", "Which account is you", _identity_note(plan)),
-        ("salience", "How I ranked what to open first", _salience_note(state, plan)),
-        ("discovery", "What I went and looked up", _discovery_note(state.get("discovery"))),
-        ("promise", "Before anything is opened", tail),
-    ))
+    return (
+        ("opening", DISCLOSURE_FOLD, "How I will start", _entry_opening(plan)),
+        ("cannot_know", DISCLOSURE_FOLD, "What I cannot know without access",
+         _cannot_know_line(plan)),
+        ("probes", DISCLOSURE_LEDGER, "What I looked for and could not reach",
+         _probe_note(state)),
+        ("identity", DISCLOSURE_LEDGER, "Which account is you", _identity_note(plan)),
+        ("salience", DISCLOSURE_LEDGER, "How I ranked what to open first",
+         _salience_note(state, plan)),
+        ("discovery", DISCLOSURE_LEDGER, "What I went and looked up",
+         _discovery_note(state.get("discovery"))),
+        ("promise", DISCLOSURE_FOLD, "Before anything is opened", tail),
+    )
 
 
 def _read_line(state: dict[str, Any]) -> str:
@@ -2297,20 +2391,29 @@ def _ask_line(plan: dict[str, Any]) -> str:
 
 
 def _entry_headline(state: dict[str, Any], plan: dict[str, Any]) -> list[str]:
-    """At most three short sentences: what I read, what recurs, what I need.
+    """The headline CANDIDATES, in priority order: what I read, what I need,
+    what recurs.
+
+    Uncapped on purpose — ``_layered`` applies ``MAX_HEADLINE_LINES`` in the one
+    place, so this function's output is what a test can compare the cap against
+    and the cap can be proven to bite rather than merely to exist.
+
+    THE ORDER IS THE PRIORITY. What was read is the measurement; the ask is what
+    the operator has to do next; the ranked names come third because the screen
+    that would show them shows the names themselves as the choices, which is
+    the accumulation the ceiling exists to stop.
 
     THE FOLD BEHIND IT IS COMPLETE, which is the whole licence for this being
-    short. Nothing here replaces a disclosure — ``_entry_sections`` carries
-    every caveat verbatim and ``card["body"]`` still joins them — so a surface
-    that renders only the headline is a surface with a bug, not a surface that
-    was handed a shorter truth.
+    short. Nothing here replaces a disclosure — ``_entry_rows`` carries every
+    caveat verbatim and ``card["body"]`` still joins them — so a surface that
+    renders only the headline is a surface with a bug, not a surface that was
+    handed a shorter truth.
     """
-    lines = [line for line in (
+    return [line for line in (
         _read_line(state) or _entry_opening(plan),
-        _themes_line(state, plan),
         _ask_line(plan),
+        _themes_line(state, plan),
     ) if str(line or "").strip()]
-    return lines[:MAX_HEADLINE_LINES]
 
 
 def _first_sentence(text: Any, *, limit: int = 240) -> str:
@@ -2425,46 +2528,63 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
     }
     if stage == "welcome":
         plan = _entry_plan_for(state)
-        sections = _entry_sections(state, plan, tail=_APPROVAL_TAIL)
+        rows = _disclosures(
+            tuple(
+                (f"lead_{index}", DISCLOSURE_HEADLINE, "", line)
+                for index, line in enumerate(_entry_headline(state, plan))
+            )
+            + _entry_rows(state, plan, tail=_APPROVAL_TAIL)
+        )
         common.update(
             kind="first_window",
             title="Let me earn my first responsibility",
             speaker=SPEAKER_COORDINATOR,
-            headline=_entry_headline(state, plan),
-            details=sections,
-            body=_joined(sections),
             entry=plan,
             options=list(plan["next_actions"]),
+            **_layered(rows),
         )
     elif stage == "purged":
         common.update(
             kind="purged",
             title="Onboarding data was deleted",
-            body=(
-                "The Charter, onboarding history, bounded manifest, derived excerpts, "
-                "and live evidence trial were removed. Stale actions cannot reopen them. "
-                # …AND THE WAY BACK IN. Without this sentence and the option
-                # below, deleting your data ended onboarding on this instance
-                # for good: every later action refused and the card offered
-                # nothing. What was deleted stays deleted; a new orientation is
-                # a NEW journey with a new evidence trail, starting from
-                # nothing.
-                "You can start a new orientation whenever you like — it begins from "
-                "nothing, with a new evidence trail, and cannot see anything above. "
-                "The content-free record that a read happened (whose data, under what "
-                "claimed right) is kept deliberately and is not part of this."
-            ),
             status="complete",
             options=[{"action": "start_again", "label": "Start a new orientation"}],
+            **_layered(_disclosures((
+                ("gone", DISCLOSURE_FOLD, "What was deleted",
+                 "The Charter, onboarding history, bounded manifest, derived excerpts, "
+                 "and live evidence trial were removed. Stale actions cannot reopen them. "),
+                # …AND THE WAY BACK IN. Without this row and the option below,
+                # deleting your data ended onboarding on this instance for good:
+                # every later action refused and the card offered nothing. What
+                # was deleted stays deleted; a new orientation is a NEW journey
+                # with a new evidence trail, starting from nothing.
+                ("again", DISCLOSURE_FOLD, "What happens next",
+                 "You can start a new orientation whenever you like — it begins from "
+                 "nothing, with a new evidence trail, and cannot see anything above. "),
+                ("kept", DISCLOSURE_LEDGER, "What is kept on purpose",
+                 "The content-free record that a read happened (whose data, under what "
+                 "claimed right) is kept deliberately and is not part of this."),
+            ))),
         )
     elif stage == "charter_pending":
         charter = state["charter"]
         source = state["source"]
+        # THE CONSENT SCREEN INVERTS THE LAYERING: every row here is a FACT the
+        # operator is about to grant, so the screen shows them all unfolded, and
+        # the card carries them as separate rows rather than as one paragraph
+        # precisely so it can. The join is byte-for-byte the paragraph it
+        # replaces, so a surface that cannot lay them out loses nothing.
         common.update(
             kind="orientation_charter",
             title="Your First Window is ready for approval",
-            body=(
-                # THE PATH, NOT JUST ITS LAST SEGMENT. This sentence is the one
+            speaker=SPEAKER_COORDINATOR,
+            options=[
+                {"action": "ratify_charter", "label": "Approve and find one useful thing"},
+                {"action": "propose_window", "label": "Change it"},
+                {"action": "purge", "label": "Delete onboarding data", "danger": True},
+            ],
+            **_layered(_disclosures((
+                # THE PATH, NOT JUST ITS LAST SEGMENT. This row is the one
                 # moment the operator confirms WHAT will be read, and it used to
                 # name only the folder's basename — the least identifying form
                 # of it. Measured on a fresh hatch (2026-07-30): a proposal that
@@ -2472,31 +2592,33 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
                 # else read "Read-only access to “Documents”", so the wrong
                 # folder and the right one made the same sentence. Consent to a
                 # basename is not consent to a path.
-                f"Read-only access to “{source['label']}” ({source['root']}) "
-                f"for this purpose: {state['purpose']}. "
-                f"You told me this source is {OWNERSHIP_LABELS.get(str(source.get('ownership')), 'unclassified')} "
-                f"({source.get('authority_basis')}). "
-                f"I will inspect at most {MAX_FILES} supported text files ({MAX_TOTAL_BYTES // 1024 // 1024} MB total), "
-                "skip secrets, personnel, pay, customer-personal, legal and corporate-finance files by name, "
-                "skip hidden/system folders, binaries, and every symlink, and make no changes. "
-                f"Charter fingerprint: {charter['hash'][:12]}."
+                ("grant", DISCLOSURE_FOLD, "What I may read",
+                 f"Read-only access to “{source['label']}” ({source['root']}) "
+                 f"for this purpose: {state['purpose']}. "),
+                ("ownership", DISCLOSURE_FOLD, "Whose it is, and under what right",
+                 f"You told me this source is "
+                 f"{OWNERSHIP_LABELS.get(str(source.get('ownership')), 'unclassified')} "
+                 f"({source.get('authority_basis')}). "),
+                ("limits", DISCLOSURE_FOLD, "What I will not do",
+                 f"I will inspect at most {MAX_FILES} supported text files "
+                 f"({MAX_TOTAL_BYTES // 1024 // 1024} MB total), "
+                 "skip secrets, personnel, pay, customer-personal, legal and corporate-finance files by name, "
+                 "skip hidden/system folders, binaries, and every symlink, and make no changes. "),
+                ("fingerprint", DISCLOSURE_LEDGER, "The exact thing you are approving",
+                 f"Charter fingerprint: {charter['hash'][:12]}."),
                 # THE APPROVAL CARD IS WHERE THE BINDING HAS TO BE READABLE.
                 # This is the moment depth is authorised, so the operator sees
                 # which answered target this window serves — or that they told
                 # me it serves none — before the hash is theirs to accept.
-                + _binding_note(state)
+                ("binding", DISCLOSURE_FOLD, "Where depth will be spent",
+                 _binding_note(state)),
                 # …AND WHERE BREADTH IS PAID FOR. A whole-home window is lawful
                 # and the operator's to choose; what it costs them is the depth
                 # of the FIRST look, and that has to be said before the
                 # fingerprint is accepted rather than discovered afterwards.
-                + _breadth_note(state)
-            ),
-            speaker=SPEAKER_COORDINATOR,
-            options=[
-                {"action": "ratify_charter", "label": "Approve and find one useful thing"},
-                {"action": "propose_window", "label": "Change it"},
-                {"action": "purge", "label": "Delete onboarding data", "danger": True},
-            ],
+                ("breadth", DISCLOSURE_FOLD, "What breadth costs you",
+                 _breadth_note(state)),
+            ))),
         )
     elif stage == "dividend_ready":
         dividend = state["first_dividend"]
@@ -2524,30 +2646,36 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
         # epistemics — coverage, binding, clocks, what was looked up — are the
         # same strings one click behind, and the body still joins all of them.
         summary = egress["summary"]
-        sections = _sections((
-            ("finding", "What I found", summary),
-            ("coverage", "How much of the folder I opened", disclosure),
-            # …and the binding, on the card that PUBLISHES what depth bought:
-            # a dividend read out of a window the operator said was a detour
-            # must not arrive wearing the answered target's authority.
-            ("binding", "Where depth was spent", _binding_note(state)),
-            ("clocks", "Dates your files state", _clocks_note(state)),
-            ("discovery", "What I went and looked up", _discovery_note(state.get("discovery"))),
-        ))
+        # THE CITATIONS BELONG TO THE CLAIM THAT RESTS ON THEM. They are
+        # REFERENCED by key, never copied: ``card["evidence"]`` stays the one
+        # place a citation's words live, so the egress gate that withholds a
+        # third party's excerpt cannot be bypassed by a second copy on a row.
+        finding_cites = _citation_keys(egress["citations"])
         common.update(
             kind="first_dividend",
             title="I found something worth your attention" if finding["quality"] == "strong" else "Your first map is ready",
             speaker=SPEAKER_COORDINATOR,
-            headline=[line for line in (
-                _first_sentence(summary),
-                _first_sentence(disclosure),
-                f"The receipt below gives the file and line for {len(egress['citations'])} "
-                f"place{'' if len(egress['citations']) == 1 else 's'} you can open yourself."
-                if egress["citations"] else "",
-            ) if str(line or "").strip()][:MAX_HEADLINE_LINES],
-            details=sections,
-            body=_joined(sections),
             evidence=egress["citations"],
+            **_layered(_disclosures(
+                (
+                    ("lead_0", DISCLOSURE_HEADLINE, "", _first_sentence(summary)),
+                    ("lead_1", DISCLOSURE_HEADLINE, "", _first_sentence(disclosure)),
+                    ("finding", DISCLOSURE_FOLD, "What I found", summary),
+                    ("coverage", DISCLOSURE_FOLD, "How much of the folder I opened",
+                     disclosure),
+                    # …and the binding, on the card that PUBLISHES what depth
+                    # bought: a dividend read out of a window the operator said
+                    # was a detour must not arrive wearing the answered target's
+                    # authority.
+                    ("binding", DISCLOSURE_LEDGER, "Where depth was spent",
+                     _binding_note(state)),
+                    ("clocks", DISCLOSURE_LEDGER, "Dates your files state",
+                     _clocks_note(state)),
+                    ("discovery", DISCLOSURE_LEDGER, "What I went and looked up",
+                     _discovery_note(state.get("discovery"))),
+                ),
+                cites={"lead_0": finding_cites, "finding": finding_cites},
+            )),
             options=[
                 {"action": "continue", "label": "See the locked next step"},
                 {"action": "pause", "label": "Pause here"},
@@ -2580,28 +2708,37 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
         # operator's own arrival clauses in front and the deeper-orientation
         # disclosure one click behind. ``_joined`` reproduces the blob exactly,
         # so a surface that cannot fold loses nothing.
-        arrival = _sections((
-            ("arrival", "What is now true", _arrival_summary(state)),
-            ("running", "What is running",
-             " Nothing is running now, and nothing opens without your approval. "),
-            ("deeper", "About going deeper",
-             "A later, separately approved step could spend longer learning how your work fits together, "
-             "reflect back priorities and conflicts, suggest a useful AI team, and show concrete examples "
-             "of what each officer may observe, propose, or do. That work is disabled and has not started. "
-             "No new access or authority was granted. If you want to give me more to read: "),
-            ("opening", "How I would start", _entry_opening(plan)),
-            ("cannot_know", "What I cannot know without access", _cannot_know_line(plan)),
-            ("probes", "What I looked for and could not reach", _probe_note(state)),
-            ("discovery", "What I went and looked up", _discovery_note(state.get("discovery"))),
-        ))
+        arrival_cites = _citation_keys(arrival_egress["citations"])
         common.update(
             kind=ARRIVAL_KIND,
             title="Your Cabinet is ready.",
             speaker=SPEAKER_COORDINATOR,
-            headline=_arrival_clauses(state)[:MAX_HEADLINE_LINES],
-            details=arrival,
             evidence=arrival_egress["citations"],
-            body=_joined(arrival),
+            **_layered(_disclosures(
+                tuple(
+                    (f"lead_{index}", DISCLOSURE_HEADLINE, "", line)
+                    for index, line in enumerate(_arrival_clauses(state))
+                )
+                + (
+                    ("arrival", DISCLOSURE_FOLD, "What is now true",
+                     _arrival_summary(state)),
+                    ("running", DISCLOSURE_FOLD, "What is running",
+                     " Nothing is running now, and nothing opens without your approval. "),
+                    ("deeper", DISCLOSURE_LEDGER, "About going deeper",
+                     "A later, separately approved step could spend longer learning how your work fits together, "
+                     "reflect back priorities and conflicts, suggest a useful AI team, and show concrete examples "
+                     "of what each officer may observe, propose, or do. That work is disabled and has not started. "
+                     "No new access or authority was granted. If you want to give me more to read: "),
+                    ("opening", DISCLOSURE_LEDGER, "How I would start", _entry_opening(plan)),
+                    ("cannot_know", DISCLOSURE_LEDGER, "What I cannot know without access",
+                     _cannot_know_line(plan)),
+                    ("probes", DISCLOSURE_LEDGER, "What I looked for and could not reach",
+                     _probe_note(state)),
+                    ("discovery", DISCLOSURE_LEDGER, "What I went and looked up",
+                     _discovery_note(state.get("discovery"))),
+                ),
+                cites={"arrival": arrival_cites},
+            )),
             # The journey is finished; the card says so rather than staying
             # "open" forever. Surfaces that only ever knew two statuses read
             # this exactly as they read the purged card's.
@@ -2626,31 +2763,42 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
         common.update(
             kind="paused",
             title="Onboarding is paused",
-            body="Your First Window will not be read again while paused. You can continue, revoke access, undo, or purge.",
             options=[
                 {"action": "continue", "label": "Continue"},
                 {"action": "revoke", "label": "Revoke folder access"},
                 {"action": "undo", "label": "Undo last choice"},
                 {"action": "purge", "label": "Delete onboarding data", "danger": True},
             ],
+            **_layered(_disclosures((
+                ("paused", DISCLOSURE_FOLD, "What is happening",
+                 "Your First Window will not be read again while paused. "
+                 "You can continue, revoke access, undo, or purge."),
+            ))),
         )
     elif stage == "revoked":
         common.update(
             kind="revoked",
             title="Folder access is revoked",
-            body="The Cabinet will not read this source again without a new First Window you approve. Derived onboarding artifacts remain until you undo or purge them.",
             options=[
                 {"action": "undo", "label": "Restore the previous state"},
                 {"action": "propose_window", "label": "Choose another folder"},
                 {"action": "purge", "label": "Delete onboarding data", "danger": True},
             ],
+            **_layered(_disclosures((
+                ("revoked", DISCLOSURE_FOLD, "What is happening",
+                 "The Cabinet will not read this source again without a new First Window "
+                 "you approve. Derived onboarding artifacts remain until you undo or "
+                 "purge them."),
+            ))),
         )
     else:
         common.update(
             kind="status",
             title="Onboarding status",
-            body=f"Current stage: {stage}.",
             options=[{"action": "undo", "label": "Undo last choice"}],
+            **_layered(_disclosures((
+                ("status", DISCLOSURE_FOLD, "Where you are", f"Current stage: {stage}."),
+            ))),
         )
     return common
 
