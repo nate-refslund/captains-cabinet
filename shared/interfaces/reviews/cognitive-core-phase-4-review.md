@@ -21,7 +21,16 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 6248e16a8288df110ed7e694ba3fbafdb88096649a44163ace132439d7500d4d
+Reviewed-Scope-Digest: 322c06ff85aefe107d8635a39e978d199d3a06c7ab11130b0384efa9fe80af00
+
+(RE-BIND, 2026-08-16, `feat/onboarding-screens-replace` MERGE COMMIT,
+recomputed over the merge tree rather than added on paper. The same one in-scope
+path moved on both sides — `cabinet/config/cognitive-architecture-contract.yml`,
+this branch's +108 for the disclosure model and `fix/search-that-finds-you`'s
+raise for search relevance — and the two raises are DISJOINT rows against
+different work, so the merged ceiling is re-measured at 79391 with
+`cognitive-architecture-census.py --check` rather than summed. Neither side
+moved a COG-4 implementation byte. Both parents' re-bind notes follow verbatim.)
 
 (RE-BIND, 2026-08-16, `feat/onboarding-screens-replace`, recomputed over this
 branch's HEAD with `cognitive-phase4-review-scope.py --print`. ONE in-scope path
