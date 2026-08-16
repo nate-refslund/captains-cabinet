@@ -21,7 +21,21 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: e595d23278697bf3fdbccc3305eb98496d59dda61c8b26bd8f26b96e90da347c
+Reviewed-Scope-Digest: 6248e16a8288df110ed7e694ba3fbafdb88096649a44163ace132439d7500d4d
+
+(RE-BIND, 2026-08-16, `feat/onboarding-screens-replace`, recomputed over this
+branch's HEAD with `cognitive-phase4-review-scope.py --print`. ONE in-scope path
+moved and it is again NOT a COG-4 surface:
+`cabinet/config/cognitive-architecture-contract.yml`, raising
+`framework_production_noncomment_lines` by a +108 `temporary_allowances` row
+(78824 -> 78932) for the onboarding card's disclosure model — `card.disclosures[]`
+as the ONE authored list, with `headline`/`details`/`body` becoming projections
+of it, the Charter's paragraph cut into approvable rows, and the headline ceiling
+moved 3 -> 2 in the single place it is applied. `framework/onboarding/` is NOT in
+the COG-4 scope set, so no COG-4 implementation byte moved. ZERO new framework
+production modules (248 <= 248) and zero expansion rows; `_sections` was DELETED
+in the same landing rather than left beside `_disclosures`. DISJOINT from every
+raise noted below. The prior re-bind's own note follows verbatim.)
 
 (RE-BIND, 2026-08-14, `feat/first-mate-speaks-short`, recomputed over this
 branch's HEAD with `cognitive-phase4-review-scope.py --print`. ONE in-scope path
