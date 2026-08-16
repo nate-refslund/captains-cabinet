@@ -68,6 +68,27 @@ export type OnboardingAction =
    * the operator's own sentence.
    */
   | 'answer_organization'
+  /**
+   * Records a page the operator pastes about their organization, and READS it.
+   * Carries a `url` (https only — the core refuses anything else by name). It
+   * is EARNED: offered only after a look-up ran through a connected search tool
+   * and nothing that came back named the organization, which is the one moment
+   * "do you have a website I should read?" is a useful question rather than an
+   * interview. The address is the consent — the operator typed that exact page
+   * for that exact purpose — and it is read on the same read-only rails as a
+   * search: no credential, one page, capped, refusals by name.
+   */
+  | 'answer_org_link'
+  /**
+   * The operator confirming that an address a search actually returned is their
+   * organization's. Carries the `domain` the core offered. NOTHING IS CLAIMED
+   * WITHOUT THE TAP: a search result is a stranger's page, and recording its
+   * address because it ranked well would be a fact about the operator that they
+   * never stated and that reads exactly like a correct one. The core re-derives
+   * the candidate from the committed look-up, so a domain no search returned is
+   * refused (`organization_domain_not_offered`).
+   */
+  | 'confirm_organization_domain'
   | 'ratify_charter'
   | 'continue'
   | 'pause'
@@ -98,6 +119,8 @@ export const ONBOARDING_ACTIONS = [
   'record_operator_identity',
   'run_discovery',
   'answer_organization',
+  'answer_org_link',
+  'confirm_organization_domain',
   'ratify_charter',
   'continue',
   'pause',
@@ -310,7 +333,7 @@ export interface OnboardingOption {
    * `choice` means a pick from `options` below, and — where the picked option
    * is itself marked `input` — a field beside it.
    */
-  input?: 'seed' | 'handles' | 'choice'
+  input?: 'seed' | 'handles' | 'choice' | 'organization' | 'url' | 'domain'
   /** Set on `answer_salience`: the candidates, escape hatch last. */
   options?: OnboardingSalienceOption[]
   /** Set on `answer_salience`: the merge question, carried WITH the pick. */
@@ -333,6 +356,13 @@ export interface OnboardingOption {
    * attributes nothing, and a tap on the estate's own string cannot misspell.
    */
   connectors?: OnboardingIdentityAsk[]
+  /**
+   * Set on `confirm_organization_domain`: the address one of my own searches
+   * returned. Carried on the ACTION because a surface builds its control from
+   * the action, and a value it has to re-derive from the results list is a
+   * value it can derive differently.
+   */
+  domain?: string
 }
 
 /** One connector that cannot yet tell which of its actors is the operator. */
@@ -447,10 +477,41 @@ export interface OnboardingEntryPlan {
         truncated: boolean
         query?: string
         provider?: string
-        results?: Array<{ title: string; url: string; snippet?: string }>
+        /**
+         * A page the OPERATOR pasted, read rather than searched (`web_read`).
+         * Same shape, because "what did you actually go and look at" is one
+         * question and answering it out of two shapes would put the seam in
+         * front of the person instead of behind them.
+         */
+        url?: string
+        results?: Array<{
+          title: string
+          url: string
+          snippet?: string
+          /**
+           * WHY this result counts as being about the operator: which of their
+           * own words it says, and in which field. The core matches verbatim
+           * over tokens (`research.result_mentions`), so `term` may be quoted
+           * back to them as the reason. Absent means it matched nothing they
+           * said — which is not a reason to hide it, only to fold it.
+           */
+          matched?: Array<{ term: string; kind: string; where: string }>
+        }>
+        /**
+         * How many of this probe's results name something the operator said.
+         * ABSENT means the run was never judged (nothing to look for), which is
+         * a different fact from `0` — "I did not check" versus "I checked and
+         * none of it was you". A surface must not render one as the other.
+         */
+        relevant?: number
       }>
-      deferred: Array<{ kind: string; reason: string; query?: string }>
+      deferred: Array<{ kind: string; reason: string; query?: string; url?: string }>
       complete: boolean
+      /**
+       * What the judgment was made AGAINST — the operator's own organization and
+       * name, in their spelling. Empty means unjudged; see `relevant` above.
+       */
+      looked_for?: string[]
     }
   }
   cannot_know: Array<{ subject: string; verdict: string; statement: string }>
@@ -570,7 +631,19 @@ export interface OnboardingState {
    * a credential, not from a search result. Absent means nobody has answered
    * it, which is why the arrival summary omits the clause rather than guessing.
    */
-  organization?: { name: string; answered_at: string }
+  organization?: {
+    name: string
+    answered_at: string
+    /** A page the operator pasted about it. Re-read on every look-up. */
+    link?: string
+    link_answered_at?: string
+    /**
+     * The address the operator CONFIRMED is theirs, from a result one of my own
+     * searches returned. Never written without their tap.
+     */
+    domain?: string
+    domain_confirmed_at?: string
+  }
   /**
    * Where the operator asked me to begin: `point` (they name a folder and I read
    * it under a Charter) or `decide` (I go find where I am most useful, which
@@ -691,6 +764,18 @@ export interface OnboardingActionRequest {
    * result: the one source is what they said.
    */
   organization?: string
+  /**
+   * REQUIRED by answer_org_link. A page about the organization, https only —
+   * the core refuses anything else BY NAME so the operator can fix a typo in a
+   * keystroke rather than read a probe reason two screens later.
+   */
+  url?: string
+  /**
+   * REQUIRED by confirm_organization_domain: the address the core offered on
+   * the action itself. Anything a search did not return is refused by the core,
+   * so this cannot be used to record an address the operator never saw.
+   */
+  domain?: string
   /**
    * Optional on answer_seed: where to begin. `point` runs the folder + Charter
    * flow; `decide` asks me to go find where I am most useful (which needs a

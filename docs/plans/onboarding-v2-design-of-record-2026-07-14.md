@@ -170,6 +170,36 @@ it is not clear from the text or connected tools."*
   and cannot fire in a script without letter case, so it errs toward asking,
   which is the cheap direction. The answer joins the discovery seed, so the next
   look-up searches the name the operator gave.
+- **The search looks for the OPERATOR** (Captain, 2026-08-15, after a live run:
+  *"none of the searches found me… we should improve it somehow"*). Four defects
+  in one screen, and four answers:
+  - *The query is composed from what the operator NAMED*, not parsed back out of
+    their prose. `_search_queries` ranks `"<name>" "<organization>"` ·
+    `"<organization>"` · `"<name>" <salience target>`, and the seed's own terms
+    fill what is left. A multi-word organisation is PHRASE-QUOTED
+    (`_search_phrase`) so no cap can split it — his was searched under half its
+    name — and a query of nothing but a job title (`_ROLE_WORDS`) is never sent,
+    because a title is the common half of any sentence and an engine ranks the
+    common half. A lone personal name is never a query in any arrangement.
+  - *Every result is JUDGED*, at the one place results enter
+    (`research.judge_search_results` / `result_mentions` / `text_mentions`):
+    verbatim over tokens, all of a term's tokens or none, plus the glued form an
+    address spells without a space. Matches lead and carry the operator's own
+    string back as the reason; misses are FOLDED, never dropped. A run with
+    nothing to look for is left UNJUDGED — `relevant` absent, not zero, because
+    "I did not check" and "I checked and none of it was you" are different facts.
+  - *The honest headline.* When nothing that came back names what the operator
+    named, `_discovery_note` says so first and stops reporting a count as a
+    finding — and it only claims "I searched for X" when X really was a query.
+  - *One earned follow-up, never two.* A miss asks for a page
+    (`answer_org_link`) and READS it (`research.read_operator_link`: https only,
+    no credential, one page, capped, refusals by name, the egress ceiling first,
+    re-read on every later look-up); a hit offers a confirm chip
+    (`confirm_organization_domain`) whose candidate is re-derived from the
+    committed run, so no surface can record an address a search never returned.
+  - *It re-fires itself.* `answer_organization` and `answer_salience` change what
+    would be searched, so they re-run the look-up when a search tool is declared
+    — the operator presses nothing for the initial probes.
 - **Sensors:** `framework/onboarding/tests/test_search_probes.py` — the ceiling
   in both directions (including an arm that goes red if the two ceilings are
   ever merged), every degenerate end, the untrusted-text scrubs, the wire

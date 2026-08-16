@@ -1845,10 +1845,108 @@ def _search_shape_problem(call) -> str:
     return ""
 
 
+def _match_tokens(value) -> list[str]:
+    """One of the operator's own words, folded into comparable tokens.
+
+    The SAME tokenizer every name comparison in this file already uses, so a
+    seed answered in a script without spaces is judged by the same rule as an
+    English one. A second spelling of "are these the same words" would let the
+    card say a result names the operator's organisation while the ranking
+    disagreed.
+    """
+    return [token for token in salience.terms(value, min_len=1, folded=True)
+            if token]
+
+
+def text_mentions(text, term) -> bool:
+    """Does ``text`` say ``term``, verbatim? TWO RULES, both mechanical.
+
+    1. EVERY token of the term is present. All of them, never any — "Network"
+       alone is a word half the web uses, and the whole point of this judgment
+       is that a result naming the operator's actual organisation is
+       distinguishable from one that merely shares a word.
+    2. The term's tokens GLUED (``two`` + ``words`` -> ``twowords``) appear as
+       a token. That is what a domain looks like, and it is the one shape rule
+       1 structurally cannot see. Written with placeholder words on purpose:
+       this layer names no organisation, not even in an example.
+
+    Verbatim by construction: nothing here stems, expands, translates or scores.
+    A caller may quote the term back to the operator as the reason, because the
+    term is the operator's own string and the match is exact over its tokens.
+    """
+    wanted = _match_tokens(term)
+    tokens = set(_match_tokens(text))
+    if not wanted or not tokens:
+        return False
+    if all(token in tokens for token in wanted):
+        return True
+    return len(wanted) > 1 and "".join(wanted) in tokens
+
+
+def result_mentions(result, term) -> str:
+    """WHERE a result says ``term``, or ``""``. See :func:`text_mentions`."""
+    if not isinstance(result, dict):
+        return ""
+    for field, where in (("title", "title"), ("url", "address"),
+                         ("snippet", "line")):
+        if text_mentions(result.get(field), term):
+            return where
+    return ""
+
+
+def judge_search_results(rows, wanted) -> list:
+    """Say which results actually name what the operator said, and lead with them.
+
+    THE FAILURE THIS CLOSES, measured on the Captain's own run 2026-08-15: three
+    probes went out, fifteen results came back, every one of them about a job
+    title rather than about him or his organisation, and the surface listed all
+    fifteen as though that were an answer. A search plane that cannot tell "I
+    found you" from "I found something" makes the operator do the judging, which
+    is the work they connected a cabinet to stop doing.
+
+    WHAT IT DOES NOT DO: delete anything. A result that matches nothing is still
+    the web's answer to the operator's own query, and dropping it would replace
+    an honest miss with a silent one. It is marked and ordered, and the surface
+    folds it under a sentence saying so.
+
+    ``wanted`` is ``[{"term": ..., "kind": ...}]`` — the operator's own name and
+    organisation, in their own spelling. Empty ``wanted`` returns the rows
+    untouched and stamps nothing: an unjudged run must not read as a judged one
+    that found nothing.
+    """
+    terms = [row for row in (wanted or ())
+             if isinstance(row, dict) and str(row.get("term") or "").strip()]
+    out = []
+    for row in rows or ():
+        if not isinstance(row, dict) or not isinstance(row.get("results"), list):
+            out.append(row)
+            continue
+        if not terms:
+            out.append(row)
+            continue
+        judged = []
+        for result in row["results"]:
+            matched = []
+            for entry in terms:
+                where = result_mentions(result, entry["term"])
+                if where:
+                    matched.append({"term": str(entry["term"]),
+                                    "kind": str(entry.get("kind") or "term"),
+                                    "where": where})
+            judged.append({**result, "matched": matched} if matched else dict(result))
+        # STABLE, so a provider's own ranking survives inside each half. The
+        # only thing this reorders is "the ones that name you" ahead of "the
+        # ones that do not".
+        judged.sort(key=lambda item: 0 if item.get("matched") else 1)
+        out.append({**row, "results": judged,
+                    "relevant": sum(1 for item in judged if item.get("matched"))})
+    return out
+
+
 def run_search_probes(root, probes, *, specs=None, env=None, fetch=None,
                       ceiling=None, timeout=_SEARCH_TIMEOUT,
                       max_probes=_MAX_SEARCH_PROBES,
-                      max_results=_MAX_SEARCH_RESULTS) -> dict:
+                      max_results=_MAX_SEARCH_RESULTS, wanted=None) -> dict:
     """RUN the seed's outward probes through the operator's own search tool.
 
     Returns ``{"schema", "executed", "deferred", "provider"}``. Every probe
@@ -1862,6 +1960,11 @@ def run_search_probes(root, probes, *, specs=None, env=None, fetch=None,
     order), recorded on every executed row as ``provider``, and one tool per run
     so a cabinet with three of them declared does not send the operator's
     sentence to all three.
+
+    ``wanted`` carries the operator's own name and organisation so the run is
+    JUDGED here, at the one place results enter, rather than by whichever
+    surface renders them: two renderers judging separately is two answers to
+    "did this find you". See :func:`judge_search_results`.
     """
     root_path = Path(root).expanduser()
     if specs is None:
@@ -1871,7 +1974,7 @@ def run_search_probes(root, probes, *, specs=None, env=None, fetch=None,
     env = os.environ if env is None else env
     fetch = _http_fetch if fetch is None else fetch
 
-    wanted = [p for p in (probes or ())
+    runnable = [p for p in (probes or ())
               if isinstance(p, dict)
               and str(p.get("kind") or "") == SEARCH_PROBE_KIND
               and str(p.get("query") or "").strip()]
@@ -1885,10 +1988,10 @@ def run_search_probes(root, probes, *, specs=None, env=None, fetch=None,
                 "query": str(row.get("query") or "")[:_MAX_SEARCH_QUERY_CHARS],
                 "executed": False, "reason": reason})
 
-    if not wanted:
+    if not runnable:
         return result
     if not specs:
-        _defer(wanted, NO_SEARCH_TOOL)
+        _defer(runnable, NO_SEARCH_TOOL)
         return result
     spec = specs[0]
     name = str(spec.get("name") or "").strip() or "search"
@@ -1897,26 +2000,26 @@ def run_search_probes(root, probes, *, specs=None, env=None, fetch=None,
 
     ceiling = _probe_web(root_path) if ceiling is None else ceiling
     if not ceiling.get("connected"):
-        _defer(wanted, f"egress_{str(ceiling.get('reason') or 'closed')}")
+        _defer(runnable, f"egress_{str(ceiling.get('reason') or 'closed')}")
         return result
     try:
         assert_search_read_only(call)
     except ReadOnlyViolation as exc:
-        _defer(wanted, f"search_call_refused:{exc}")
+        _defer(runnable, f"search_call_refused:{exc}")
         return result
     problem = _search_shape_problem(call)
     if problem:
-        _defer(wanted, f"search_declares_no:{problem}")
+        _defer(runnable, f"search_declares_no:{problem}")
         return result
     credential = str((env.get(str(spec.get("credential_env") or "")) or "")).strip()
     if not credential:
         # The env var NAME is reported; the value never exists in a result, a
         # log or an exception message anywhere in this plane.
-        _defer(wanted, "search_credential_absent")
+        _defer(runnable, "search_credential_absent")
         return result
 
     budget = {"left": _MAX_SEARCH_CHARS}
-    for index, probe in enumerate(wanted):
+    for index, probe in enumerate(runnable):
         query = " ".join(str(probe.get("query")).split())[:_MAX_SEARCH_QUERY_CHARS]
         if index >= max(0, int(max_probes)):
             _defer([probe], "probe_budget_spent")
@@ -1951,7 +2054,96 @@ def run_search_probes(root, probes, *, specs=None, env=None, fetch=None,
         result["executed"].append({
             "kind": SEARCH_PROBE_KIND, "query": query, "executed": True,
             "provider": name, "results": results, "truncated": truncated})
+    result["executed"] = judge_search_results(result["executed"], wanted)
     return result
+
+
+# --- THE PAGE THE OPERATOR HANDED OVER --------------------------------------
+#
+# When the look-up finds nothing that names the operator's organisation, the
+# honest next move is to ASK: "do you have a page about it I should read?" That
+# question is worth nothing unless the answer is actually read, which is the
+# interview-that-goes-nowhere failure this whole flow exists to abolish — so a
+# pasted link becomes a real, bounded, read-only GET.
+#
+# WHAT MAKES IT LAWFUL is narrower than the search lane, not wider: the operator
+# typed this exact address for this exact purpose, so the consent is the paste
+# itself. What makes it SAFE is that nothing is sent — no credential, no header
+# the operator did not cause, no body — and what comes back is one scrubbed
+# caption on the same untrusted-text rails as a search result.
+LINK_PROBE_KIND = "web_read"
+#: A page is read for its TITLE, so the whole document never has to be held.
+_MAX_LINK_BYTES = 512 * 1024
+_LINK_TIMEOUT = 12.0
+_TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+#: Hosts that are not a public web page. Refused BY NAME rather than fetched:
+#: an address on this machine or its network is not "a page about your company",
+#: and a cabinet that will fetch one on request is a cabinet that can be asked
+#: to knock on doors only it can reach.
+_PRIVATE_HOST_RE = re.compile(
+    r"^(localhost|127\.|0\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1\]?)",
+    re.IGNORECASE)
+
+
+def _link_refusal(url: str, reason: str) -> dict:
+    return {"kind": LINK_PROBE_KIND, "url": url, "executed": False,
+            "reason": reason}
+
+
+def read_operator_link(root, url, *, fetch=None, ceiling=None,
+                       timeout=_LINK_TIMEOUT) -> dict:
+    """Read ONE page the operator pasted. Read-only, credential-free, capped.
+
+    Returns an executed row in the same shape a search probe returns — the
+    address and the page's own title as a single result — or a refusal carrying
+    the reason BY NAME, on the rule this whole module holds: "I could not reach
+    it" and "it is not there" are different facts with different fixes.
+
+    THE CEILING IS THE SAME ONE. ``_probe_web`` is consulted before a socket
+    exists, so an operator running with egress enforced sees "add this host"
+    rather than a silent failure; redirects are refused by the shared opener, so
+    the address the operator typed is the address that is read or none is.
+    """
+    root_path = Path(root).expanduser()
+    fetch = _http_fetch if fetch is None else fetch
+    address = _untrusted_text(url, _MAX_SEARCH_URL)
+    low = address.lower()
+    if not low.startswith("https://"):
+        # HTTPS ONLY, and stricter than a search RESULT's address on purpose:
+        # a result is displayed, this one is fetched.
+        return _link_refusal(address, "link_not_https")
+    host = address[len("https://"):].split("/", 1)[0].split("?", 1)[0]
+    if "@" in host:
+        # Credentials in an address are never carried onto a socket by this
+        # module, and a host hidden behind userinfo is not the host it reads as.
+        return _link_refusal(address, "link_has_userinfo")
+    if not host:
+        return _link_refusal(address, "link_has_no_host")
+    if _PRIVATE_HOST_RE.match(host):
+        return _link_refusal(address, "link_host_not_public")
+    ceiling = _probe_web(root_path) if ceiling is None else ceiling
+    if not ceiling.get("connected"):
+        return _link_refusal(address,
+                             f"egress_{str(ceiling.get('reason') or 'closed')}")
+    request = {"url": address, "method": "GET", "headers": {}, "body": None}
+    try:
+        status, payload = fetch(request, timeout)
+    except Exception as exc:  # noqa: BLE001 — a transport failure is a reason
+        return _link_refusal(address, f"unreachable:{type(exc).__name__}")
+    if status != 200:
+        return _link_refusal(address, f"http_{status}")
+    text = payload[:_MAX_LINK_BYTES].decode("utf-8", errors="replace")
+    found = _TITLE_RE.search(text)
+    title = _untrusted_text(found.group(1) if found else "", _MAX_SEARCH_TITLE)
+    return {
+        "kind": LINK_PROBE_KIND, "url": address, "executed": True,
+        "truncated": len(payload) > _MAX_LINK_BYTES,
+        # THE HOST IS THE FALLBACK, never an invented description: a page with
+        # no title still proves the address answered, and claiming anything
+        # about its contents from a document nobody parsed would be the
+        # fabrication this plane is built to make impossible.
+        "results": [{"title": title or host, "url": address}],
+    }
 
 
 # --- WHO, AND WHEN: the two claims a sweep makes without noticing -----------

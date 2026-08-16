@@ -6,6 +6,7 @@ import type {
   ConnectorCatalog,
   ConnectorTemplateChoice,
   OnboardingAction,
+  OnboardingCard,
   OnboardingIdentityAsk,
   OnboardingResponse,
   OnboardingSalienceOption,
@@ -251,6 +252,11 @@ export default function OnboardingJourneyCard({
   // earlier word, offered back rather than asked for again) could not be
   // cleared — typing over it would fight the default on every render.
   const [salienceNameEdited, setSalienceNameEdited] = useState(false)
+  // A page about their organisation, for the follow-up a missed look-up earns.
+  // Empty until they paste one, and never guessed from a search result — the
+  // whole reason that question exists is that the search found nothing to guess
+  // from. NEW HOOKS GO AT THE END; see the note above `name`.
+  const [orgLink, setOrgLink] = useState('')
   const effectiveSurface = useRef<Extract<OnboardingSurface, 'dashboard' | 'world' | 'companion'>>(surface)
   const handoffIds = useRef<{ trace_id?: string; correlation_id?: string }>({})
   const salienceFormRef = useRef<HTMLFormElement | null>(null)
@@ -521,6 +527,55 @@ export default function OnboardingJourneyCard({
   const salienceConfirm = salienceOption?.confirm
   const saliencePrefill = salienceOption?.prefill ?? ''
   const salienceNameValue = salienceNameEdited ? salienceName : salienceName || saliencePrefill
+  // WHAT THE LOOK-UP WAS JUDGED AGAINST, named so the miss can be said out loud.
+  // Empty means the run was not judged at all, and every sentence below that
+  // would claim "none of this is you" stays unwritten — "I did not check" and "I
+  // checked and none of it was you" are different facts.
+  const lookedFor = journey?.card.entry?.discovery?.executed?.looked_for?.[0] ?? ''
+  const confirmDomain = journey?.card.entry?.next_actions.find(
+    (option) => option.action === 'confirm_organization_domain'
+  )
+  /**
+   * ONE result, rendered identically whether it named the operator or not.
+   *
+   * EVERY STRING HERE IS UNTRUSTED TEXT and stays a React text node — the core
+   * scrubbed and capped it (control characters, angle brackets, lone
+   * surrogates, a length cap, and an address that is not http/https reduced to
+   * an empty string), and the emptiness check below is why a dropped address
+   * never becomes a live link. `matched[].term` is the OPERATOR's own string,
+   * quoted back as the reason, so the "why" can never be a claim the core did
+   * not make.
+   */
+  const renderFound = (
+    found: NonNullable<
+      NonNullable<
+        NonNullable<OnboardingCard['entry']>['discovery']['executed']
+      >['executed'][number]['results']
+    >[number],
+    position: number
+  ) => (
+    <li key={`${found.url || found.title}-${position}`}>
+      {found.url ? (
+        <a
+          href={found.url}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="underline underline-offset-2"
+        >
+          {found.title || found.url}
+        </a>
+      ) : (
+        <span>{found.title}</span>
+      )}
+      {(found.matched?.length ?? 0) > 0 && (
+        <span className={`block text-xs font-medium ${t.title}`}>
+          names {found.matched?.map((hit) => hit.term).join(', ')}
+        </span>
+      )}
+      {found.url && <span className={`block text-xs ${t.faint}`}>{found.url}</span>}
+      {found.snippet && <span className={`block text-xs ${t.faint}`}>{found.snippet}</span>}
+    </li>
+  )
 
   function windowPayload(): Record<string, unknown> {
     return {
@@ -560,6 +615,19 @@ export default function OnboardingJourneyCard({
     const said = organization.trim()
     if (!said) return
     void send('answer_organization', { organization: said })
+  }
+
+  /**
+   * The page the operator points at when the web could not find their
+   * organisation. Sent as typed — the core is the one that refuses a non-https
+   * address, BY NAME, so the operator reads a sentence they can act on instead
+   * of a rule this surface invented.
+   */
+  function submitOrgLink(event: FormEvent) {
+    event.preventDefault()
+    const link = orgLink.trim()
+    if (!link) return
+    void send('answer_org_link', { url: link })
   }
 
   /**
@@ -1788,40 +1856,62 @@ export default function OnboardingJourneyCard({
                   emptiness check below would each undo that at a stroke.
                 */}
                 {journey.card.entry.discovery.executed.executed.map((probe, index) => (
-                  <li key={`ran-${probe.kind}-${probe.pattern ?? probe.query ?? index}`}>
+                  <li key={`ran-${probe.kind}-${probe.pattern ?? probe.query ?? probe.url ?? index}`}>
                     <code className="font-mono text-[0.8rem]">
-                      {probe.pattern ?? (probe.query ? `“${probe.query}”` : probe.kind)}
+                      {probe.pattern ??
+                        (probe.query ? `“${probe.query}”` : probe.url ?? probe.kind)}
                     </code>
                     {probe.results ? (
                       <>
                         <span className={`block text-xs ${t.faint}`}>
-                          searched the web{probe.provider ? ` with ${probe.provider}` : ''}
+                          {probe.url && !probe.query
+                            ? 'read the page you gave me'
+                            : `searched the web${probe.provider ? ` with ${probe.provider}` : ''}`}
                           {probe.truncated && ' — more results than I show'}
                         </span>
+                        {/*
+                          A COUNT IS NOT A FINDING (Captain, 2026-08-15). Fifteen
+                          results about a job title were once listed here as
+                          though they answered the question. The core judges each
+                          result against the operator's OWN words and orders the
+                          ones that name them first; this renders that judgment
+                          instead of a list. `relevant === undefined` means the
+                          run was never judged — a different fact from zero, and
+                          rendering it as "nothing matched" would be the
+                          unearned negative in a new place.
+                        */}
+                        {lookedFor && probe.relevant === 0 && (
+                          <span className={`block text-xs font-medium ${t.title}`}>
+                            I looked, but none of this looks like YOUR {lookedFor} — these
+                            may be unrelated.
+                          </span>
+                        )}
                         <ul className="mt-1.5 space-y-1.5">
-                          {probe.results.map((found, position) => (
-                            <li key={`${found.url || found.title}-${position}`}>
-                              {found.url ? (
-                                <a
-                                  href={found.url}
-                                  target="_blank"
-                                  rel="noreferrer noopener"
-                                  className="underline underline-offset-2"
-                                >
-                                  {found.title || found.url}
-                                </a>
-                              ) : (
-                                <span>{found.title}</span>
-                              )}
-                              {found.url && (
-                                <span className={`block text-xs ${t.faint}`}>{found.url}</span>
-                              )}
-                              {found.snippet && (
-                                <span className={`block text-xs ${t.faint}`}>{found.snippet}</span>
-                              )}
-                            </li>
-                          ))}
+                          {probe.results
+                            .filter((found) => (found.matched?.length ?? 0) > 0)
+                            .map(renderFound)}
                         </ul>
+                        {/*
+                          FOLDED, NEVER DELETED. A result that matches nothing is
+                          still the web's answer to the operator's own query, and
+                          dropping it would replace an honest miss with a silent
+                          one.
+                        */}
+                        {probe.results.some((found) => !found.matched?.length) && (
+                          <details className="mt-1.5">
+                            <summary className={`cursor-pointer text-xs ${t.faint}`}>
+                              {probe.results.filter((found) => !found.matched?.length).length}{' '}
+                              {lookedFor
+                                ? `result(s) that name nothing you told me`
+                                : `result(s)`}
+                            </summary>
+                            <ul className="mt-1.5 space-y-1.5">
+                              {probe.results
+                                .filter((found) => !found.matched?.length)
+                                .map(renderFound)}
+                            </ul>
+                          </details>
+                        )}
                       </>
                     ) : (
                       <span className={`block ${t.faint}`}>
@@ -1909,8 +1999,57 @@ export default function OnboardingJourneyCard({
                         </button>
                       </form>
                     )}
-                    {question.id === 'organization' &&
-                      refusedAction === 'answer_organization' &&
+                    {/*
+                      THE PAGE, when the web could not find them. The core
+                      offers this only after a look-up ran and nothing that came
+                      back named their organisation, so this field never appears
+                      on a search that was never made.
+                    */}
+                    {question.action === 'answer_org_link' && (
+                      <form className="mt-2 flex flex-col gap-2 sm:flex-row" onSubmit={submitOrgLink}>
+                        <input
+                          type="url"
+                          name={`${surface}-org-link`}
+                          value={orgLink}
+                          onChange={(event) => setOrgLink(event.target.value)}
+                          placeholder="https://…"
+                          inputMode="url"
+                          className={`min-h-11 flex-1 rounded-lg border px-3 py-2 text-sm outline-none ${t.input}`}
+                        />
+                        <button
+                          type="submit"
+                          disabled={working || !orgLink.trim()}
+                          className={`min-h-11 rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50 ${t.secondary}`}
+                        >
+                          Read that page
+                        </button>
+                      </form>
+                    )}
+                    {/*
+                      THE CHIP, for the other outcome. One tap records an address
+                      one of my OWN searches returned — carried on the action, so
+                      the surface never picks a domain out of the results itself.
+                    */}
+                    {question.action === 'confirm_organization_domain' && confirmDomain && (
+                      <button
+                        type="button"
+                        disabled={working}
+                        onClick={() =>
+                          void send('confirm_organization_domain', {
+                            domain: confirmDomain.domain,
+                          })
+                        }
+                        className={`mt-2 min-h-11 rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50 ${t.secondary}`}
+                      >
+                        {confirmDomain.label}
+                      </button>
+                    )}
+                    {(question.id === 'organization' ||
+                      question.id === 'org_link' ||
+                      question.id === 'org_domain') &&
+                      (refusedAction === 'answer_organization' ||
+                        refusedAction === 'answer_org_link' ||
+                        refusedAction === 'confirm_organization_domain') &&
                       error && (
                         <p
                           role="alert"
