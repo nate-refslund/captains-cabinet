@@ -64,7 +64,7 @@ the case this closes.
 | `npm ci && npx vitest run` (dashboard) | 3711 passed, 1 skipped |
 | `npx tsc --noEmit` | clean |
 | `check-layer-separation.sh` | OK — 0 new |
-| `cognitive-architecture-census.py` | PASS after the +458 raise, zero headroom |
+| `cognitive-architecture-census.py` | PASS after the +459 raise, zero headroom |
 | `docs-track-code-sweep.sh` | GREEN (65 files, 0 findings) |
 | `ledger-status-parity.sh` | GREEN (353 ids) |
 
@@ -114,8 +114,8 @@ search returned was refused `organization_domain_not_offered`.
   the lib-less install where that branch is not taken. It fails identically on a clean
   checkout of origin/master and is untouched by this unit.
 
-**Census.** `framework_production_noncomment_lines` 64282 → 64740 (+458, measured
-against origin/master a209e4d1: journey.py +319, research.py +139, nothing else in
+**Census.** `framework_production_noncomment_lines` 64282 → 64741 (+459, measured
+against origin/master a209e4d1: journey.py +319, research.py +140, nothing else in
 `framework/` moved). Raised visibly rather than paid by a temporary allowance: a search
 that can tell "I found you" from "I found something" is a permanent organ, and an
 allowance would promise a deletion gate that will never fire.

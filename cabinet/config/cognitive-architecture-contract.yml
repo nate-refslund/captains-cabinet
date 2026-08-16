@@ -1026,8 +1026,8 @@ budgets:
     # paper. Neither is an allowance; both are permanent, so the ratchet
     # re-pins at zero headroom.
     #
-    # 64282 -> 64740 (+458 measured 2026-08-16 via cognitive-architecture-census.py
-    # against origin/master a209e4d1; journey.py +319, research.py +139, and
+    # 64282 -> 64741 (+459 measured 2026-08-16 via cognitive-architecture-census.py
+    # against origin/master a209e4d1; journey.py +319, research.py +140, and
     # nothing else in framework/ moved): THE SEARCH LOOKS FOR THE OPERATOR.
     # Measured on the Captain's own live run: his name and his organisation were
     # both on the journey, and the three probes that went out were
@@ -1057,7 +1057,7 @@ budgets:
     # search that can tell "I found you" from "I found something" is a permanent
     # organ, and an allowance would promise a deletion gate that will never fire.
     # observed == maximum, zero headroom.
-    maximum: 64740
+    maximum: 64741
   named_compiler_modules:
     path: framework
     pattern: "*compiler*.py"
