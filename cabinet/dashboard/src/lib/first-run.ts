@@ -21,23 +21,66 @@
  * Plain-language floor. Short and honest: this is the operator's OWN machine,
  * not an account with a breach history, so the bar is "not trivially guessable",
  * not an enterprise policy. Stated to the operator in plain words on screen.
+ *
+ * Lowered from 12 to 8 (Captain, 2026-08-25) together with dropping the charset
+ * gate below: a floor people accept and a keyboard they can use whole beat a
+ * longer floor typed around.
  */
-export const PASSWORD_MIN_LENGTH = 12
+export const PASSWORD_MIN_LENGTH = 8
 
 /**
- * The characters a chosen password may contain.
- *
- * cabinet/.env is SOURCED by bash at every dashboard and officer start
- * (start-dashboard.sh / start-all-officers.sh do `set -a; . cabinet/.env`), so
- * the stored value becomes a shell assignment. A value carrying a space or a
- * shell metacharacter ($ ` ; & | ( ) < > # ' " \ and friends) would break that
- * assignment — or, with backticks or $(), EXECUTE on every restart. The
- * previously generated password was base64 alphanumeric and dodged this by
- * construction; a human-chosen one must be constrained to a set that is safe
- * unquoted on one assignment line. Letters, numbers and a handful of safe
- * symbols clear the 12-char floor with room to spare.
+ * The ceiling, in CODE POINTS. Not a security bound — a sanity one, so a paste
+ * accident or a stuck key cannot push a novel into the file every script reads.
+ * Anything an operator types deliberately is far below it.
  */
-const ALLOWED_PASSWORD = /^[A-Za-z0-9._,:@%^+=-]+$/
+export const PASSWORD_MAX_LENGTH = 128
+
+/*
+ * THE CHARSET GATE IS GONE (Captain, 2026-08-25: "allow all symbols").
+ *
+ * What used to be here: `/^[A-Za-z0-9._,:@%^+=-]+$/`, refusing spaces and every
+ * shell metacharacter. Its stated reason was real at the time — cabinet/.env is
+ * bash-`source`d by 30+ scripts under `set -a`, so a stored `$(…)` EXECUTED on
+ * the next start, and a space broke the assignment.
+ *
+ * That reason no longer holds, and it is worth being precise about why rather
+ * than trusting the deletion. The problem was never the password; it was that
+ * the WRITER emitted values raw. `lib/config-write.envValueLiteral` now emits a
+ * value bare only when it is provably literal unquoted, and SINGLE-QUOTES
+ * everything else (`'` escaped as `'\''`), which bash treats as inert text — no
+ * command substitution, no expansion, no word-splitting. That is proven against
+ * a real bash in `lib/env-source-safety.test.ts`, and proven end-to-end from
+ * this screen in `actions/create-password.test.ts`, where a chosen
+ * `$(touch …)` password is written, sourced by bash, and comes back as the exact
+ * literal with no side effect. Keeping the charset gate on top of a writer that
+ * is already safe would only be making the operator pay for a fixed bug.
+ *
+ * So the remaining rules are the ones that are about the PASSWORD, not about the
+ * file: long enough, not blank, not absurd, and no control characters.
+ */
+
+/**
+ * The one refused class: Unicode control characters — C0 (including tab, CR and
+ * LF), DEL, and C1.
+ *
+ * WHY THESE AND NOTHING ELSE. A control character cannot be typed into a
+ * password box on purpose — Tab moves focus and Enter submits — so one that
+ * arrives is always an accident of pasting (a copied line brings its newline
+ * with it). It would be stored invisibly, and the operator would then be unable
+ * to reproduce a password they cannot see. A newline is additionally impossible
+ * to store at all: cabinet/.env is line-oriented, and the writer refuses one
+ * outright, so accepting it here would only move the refusal somewhere with a
+ * worse error message.
+ */
+// Written as explicit ranges rather than `\p{Cc}`: the same set, with no
+// dependency on the Unicode-property-escape target level. C0 + DEL + C1.
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\u0000-\u001F\u007F-\u009F]/
+
+/** Code points, not UTF-16 units — an emoji is one character to the person typing it. */
+function codePointLength(s: string): number {
+  return Array.from(s).length
+}
 
 export type PasswordCheck = { ok: true } | { ok: false; error: string }
 
@@ -55,22 +98,40 @@ export function hasRealPassword(env?: { DASHBOARD_PASSWORD?: string }): boolean 
 /**
  * Validate a freshly chosen password + its confirmation. Plain-language errors,
  * no "credential"/"policy"/"complexity" jargon — the reader is not technical.
+ *
+ * The password is taken EXACTLY as typed and is never trimmed, lower-cased or
+ * normalised. A space at either end is part of the password, because the login
+ * box will send it too and the comparison is byte-for-byte; silently eating one
+ * here would lock the operator out of the password they just chose.
  */
 export function validateChosenPassword(
   password: string,
   confirm: string
 ): PasswordCheck {
-  if (!password || password.length < PASSWORD_MIN_LENGTH) {
+  const length = codePointLength(password)
+  if (length < PASSWORD_MIN_LENGTH) {
     return {
       ok: false,
       error: `Please choose at least ${PASSWORD_MIN_LENGTH} characters, so it is not easy to guess.`,
     }
   }
-  if (!ALLOWED_PASSWORD.test(password)) {
+  if (length > PASSWORD_MAX_LENGTH) {
+    return {
+      ok: false,
+      error: `That is longer than ${PASSWORD_MAX_LENGTH} characters. Please shorten it a little.`,
+    }
+  }
+  if (CONTROL_CHARS.test(password)) {
     return {
       ok: false,
       error:
-        'Please use only letters, numbers, and these symbols: . _ - , : @ % ^ + = (no spaces).',
+        'That has a line break or another invisible character in it — probably from pasting. Those cannot be typed on purpose, so please type the password instead.',
+    }
+  }
+  if (!password.trim()) {
+    return {
+      ok: false,
+      error: 'That is only spaces. Please use something you could tell apart from an empty box.',
     }
   }
   if (password !== confirm) {

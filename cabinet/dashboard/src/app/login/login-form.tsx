@@ -3,7 +3,13 @@
 import { useActionState } from 'react'
 import { login } from '@/actions/auth'
 
-/** The returning-operator form: a password already exists; sign in with it. */
+/**
+ * The returning-operator form: a password already exists; sign in with it.
+ *
+ * The hint matters more than it looks: a chosen password may contain spaces and
+ * symbols, and it is compared exactly as typed — nothing is trimmed or
+ * corrected. Someone who put a space at the end has to type that space here too.
+ */
 export default function LoginForm() {
   const [state, formAction, isPending] = useActionState(login, null)
 
@@ -31,6 +37,9 @@ export default function LoginForm() {
           className="mt-1.5 block w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-white placeholder-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
           placeholder="Enter password"
         />
+        <p className="mt-1.5 text-xs text-zinc-500">
+          Type it exactly as you chose it — spaces and symbols count.
+        </p>
       </div>
 
       <button
