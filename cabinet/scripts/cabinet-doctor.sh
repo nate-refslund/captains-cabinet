@@ -1215,6 +1215,66 @@ case "$CFL_PROBE" in
 esac
 
 # ============================================================
+# CAN THIS CABINET REACH ITS CAPTAIN?
+# ============================================================
+# The last check, and until 2026-08-25 the missing one. This script carried
+# ~200 checks and not one of them asked the question, so an officer that booted
+# with no channel logged an error, kept running, and stayed GREEN here while its
+# one escalation sat unread for five days.
+#
+# DEAD, not WARN, when a channel is configured and does not answer. A cabinet
+# that believes it can reach the Captain and cannot is in a worse state than one
+# that knows it cannot: everything it has to say is going nowhere and nothing
+# else on this page can tell you that. An unconfigured cabinet is a WARN --
+# a fresh one legitimately has no channel yet, and calling that BROKEN is how a
+# first run teaches an operator to ignore this whole page.
+#
+# The round trip is the proof. A credential present in a file is NOT reach --
+# that is exactly the state of the five silent days, where every variable name
+# existed and every value was empty.
+REACH_PROBE="$("$PY" - <<'REACHPY' 2>/dev/null || echo "ERROR probe-failed"
+import os, sys
+sys.path.insert(0, os.getcwd())
+try:
+    from framework.probes.operator_reach import configured_channels, probe
+except Exception as exc:                       # noqa: BLE001 - reported, never raised
+    print(f"ERROR {exc}"); raise SystemExit(0)
+
+def ask(channel: str) -> bool:
+    """One round trip, through the deployment's own front door.
+
+    Deliberately does not open a socket here: the front door owns the
+    transport, and a second copy of it in this script would be a second thing
+    to keep true.
+    """
+    try:
+        from framework.frontdoor import channel as door
+    except Exception:
+        return False
+    for name in ("operator_reachable", "can_reach_operator", "healthcheck"):
+        fn = getattr(door, name, None)
+        if callable(fn):
+            try:
+                return bool(fn(channel))
+            except Exception:
+                return False
+    # No reachability entry point exists yet. UNPROVEN is not the same as
+    # working, and it must not read as working.
+    return False
+
+result = probe(configured_channels(), ask)
+print(f"{result[\'state\'].upper()} {result[\'say\']}")
+REACHPY
+)"
+case "$REACH_PROBE" in
+  REACHABLE*)   ok "captain-reach — this cabinet can reach the Captain" ;;
+  MUTE*)        dead "captain-reach — a way to reach the Captain IS configured and does NOT answer, so everything this cabinet needs to tell him is going nowhere; ${REACH_PROBE#MUTE }" ;;
+  UNCONFIGURED*) warn "captain-reach — no way to reach the Captain is set up yet, so this cabinet cannot tell him when something goes wrong; ${REACH_PROBE#UNCONFIGURED }" ;;
+  ERROR*)       warn "captain-reach — the check itself could not run (${REACH_PROBE#ERROR }); an unmeasured channel is not a healthy one" ;;
+  *)            warn "captain-reach — probe output unparseable: $REACH_PROBE" ;;
+esac
+
+# ============================================================
 # verdict + heartbeat
 # ============================================================
 TOTAL=$((N_OK + N_WARN + N_WAIVED + ${#DEAD[@]}))
