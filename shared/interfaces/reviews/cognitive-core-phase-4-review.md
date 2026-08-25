@@ -21,7 +21,18 @@ below, every one).
 comment was trusted un-run. 74 independent panel probes + the full committed batteries; the clone worktree was
 byte-clean (`git status --porcelain` empty) after every run.
 
-Reviewed-Scope-Digest: 322c06ff85aefe107d8635a39e978d199d3a06c7ab11130b0384efa9fe80af00
+Reviewed-Scope-Digest: 723f18d1d276a630c61924202d2d0e93d1bd89a6352d384ed5fca5d8aba73be3
+
+(RE-BIND, 2026-08-25, `feat/app-is-a-launcher`. Two bound paths moved and
+neither is COG-4 behavior: `cabinet/services.yml` (the com.cabinet.dashboard
+`expected:` string now names the health endpoint's IDENTITY marker instead of a
+bare "HTTP 200 on :3100" — a foreign app on the port answers 200 too, measured
+on a live Mac) and `cabinet/scripts/egg-export-manifest.txt` (two
+`expect-present` rows so the everyday opener and the shared port/identity
+resolver cannot silently fall out of an egg). No COG-4 surface, no threshold and
+no fixture moved; the digest is recomputed over HEAD with
+`cabinet/scripts/cognitive-phase4-review-scope.py --print` rather than asserted.
+Previous: 322c06ff85aefe107d8635a39e978d199d3a06c7ab11130b0384efa9fe80af00)
 
 (RE-BIND, 2026-08-16, `feat/onboarding-screens-replace` MERGE COMMIT,
 recomputed over the merge tree rather than added on paper. The same one in-scope
