@@ -932,7 +932,20 @@ echo ""
 # (A port is config, not a secret — values-in-env doctrine concerns tokens.)
 # One resolver for the whole tree, so a probe and the server it probes can
 # never disagree about which door is the door (cabinet/scripts/lib/dashboard.sh).
-DASH_PORT="$(cabinet_dash_port "$REPO_ROOT")"; DASH_URL="http://127.0.0.1:${DASH_PORT}/"
+#
+# DEFENSIVE RESOLUTION, and it is not decoration: everything from here down is
+# ALSO driven standalone by its tests (the move-in slice and the app-feel tail
+# are extracted into temp scripts under `set -u` with only a handful of
+# variables seeded). In the real run REPO_ROOT is exported and the lib was
+# sourced at the top; in a slice neither is true, and a bare "$REPO_ROOT" makes
+# the whole extract die on an unbound variable. A second source of a pure
+# function library is a no-op.
+DASH_ROOT="${CABINET_ROOT:-${REPO_ROOT:-$PWD}}"
+if ! command -v cabinet_dash_port >/dev/null 2>&1; then
+  # shellcheck source=cabinet/scripts/lib/dashboard.sh
+  . "${SCRIPT_DIR:-$PWD/cabinet/scripts}/lib/dashboard.sh"
+fi
+DASH_PORT="$(cabinet_dash_port "$DASH_ROOT")"; DASH_URL="http://127.0.0.1:${DASH_PORT}/"
 echo "==== WHERE THINGS ARE ===="
 echo "Your first briefing:   ${RECEIPT_LANDING:-see $RECEIPT_LOG}"
 echo "                       (easier to read in your browser: ${DASH_URL}briefing)"
@@ -1003,10 +1016,10 @@ fi
 DASH_LANDING="${DASH_URL}onboarding"
 DASH_LOG="${HATCH_LOG_DIR:-${TMPDIR:-/tmp}}/step-dashboard.log"
 DASH_SCRIPTS="${SCRIPT_DIR:-$PWD/cabinet/scripts}"
-DASH_ROOT="${CABINET_ROOT:-$PWD}"
-# The tail is also driven standalone by its tests, which start below this
-# marker; make sure the shared probe is in scope either way (a second source
-# of a pure function library is a no-op).
+# Same defensive pair as above, for the app-feel tail's own extract (its slice
+# starts below the marker, so it does not carry the lines above). Keeps an
+# already-resolved value when there is one.
+DASH_ROOT="${DASH_ROOT:-${CABINET_ROOT:-$PWD}}"
 if ! command -v cabinet_dash_state >/dev/null 2>&1; then
   # shellcheck source=cabinet/scripts/lib/dashboard.sh
   . "$DASH_SCRIPTS/lib/dashboard.sh"

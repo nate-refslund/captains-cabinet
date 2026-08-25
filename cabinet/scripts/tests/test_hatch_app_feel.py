@@ -542,7 +542,7 @@ def test_where_things_live_hints_are_wired():
     dashboard URL must be resolved (env > cabinet/.env > 3100) BEFORE the
     WHERE-THINGS-ARE hints that print it."""
     text = _HATCH.read_text(encoding="utf-8")
-    resolve = text.index('DASH_PORT="$(cabinet_dash_port "$REPO_ROOT")"')
+    resolve = text.index('DASH_PORT="$(cabinet_dash_port "$DASH_ROOT")"')
     where = text.index("==== WHERE THINGS ARE")
     hint = text.index('echo "Your Cabinet:          ${DASH_URL}')
     assert resolve < where < hint < text.index(_START_MARKER)

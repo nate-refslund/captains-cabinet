@@ -104,7 +104,12 @@ def _drive(tmp_path: Path, *, deploy_rc: int, with_launchd: str = "1",
   *deploy-mac.sh*) echo "{_LAUNCHD_EIO}" >&2; exit {deploy_rc} ;;
 esac
 exit 0''')
-    _shim(shims, "curl", "exit 0")      # dashboard answers immediately
+    # "answers immediately" now means answers AS THE CABINET: the probe matches
+    # the dashboard's identity marker, not a bare 200 (identity-probe area,
+    # 2026-08-25). A shim that only exits 0 models a foreign app on the port,
+    # which is a different branch entirely.
+    _shim(shims, "curl",
+          "printf '%s' '{\"ok\":true,\"service\":\"cabinet-dashboard\"}'; exit 0")
     _shim(shims, "open", "exit 0")
     _shim(shims, "sleep", "exit 0")
     _shim(shims, "nohup", "exit 0")
