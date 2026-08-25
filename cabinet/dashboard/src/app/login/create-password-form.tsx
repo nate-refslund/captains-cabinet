@@ -7,6 +7,13 @@ import { PASSWORD_MIN_LENGTH } from '@/lib/first-run'
 /**
  * First-run form: no password exists yet, so the operator chooses their own.
  * Their own machine — no email, no username, just a password only they know.
+ *
+ * The only rule shown is the length floor, because it is the only one a person
+ * can trip over on purpose: every character a keyboard produces is accepted
+ * (spaces, symbols, accents, emoji), and the server states the rest in plain
+ * words if it ever fires. `minLength` here is the browser's own nudge and counts
+ * UTF-16 units, so it can only ever be looser than the server's code-point
+ * count — the server stays the authority, and never the other way round.
  */
 export default function CreatePasswordForm() {
   const [state, formAction, isPending] = useActionState(createPassword, null)
@@ -37,7 +44,8 @@ export default function CreatePasswordForm() {
           placeholder="Your new password"
         />
         <p className="mt-1.5 text-xs text-zinc-500">
-          At least {PASSWORD_MIN_LENGTH} characters, so it is not easy to guess.
+          At least {PASSWORD_MIN_LENGTH} characters. Anything you can type is
+          allowed — spaces, symbols and accents included.
         </p>
       </div>
 
