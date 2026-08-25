@@ -108,6 +108,8 @@ export REPO_ROOT
 . "$SCRIPT_DIR/hatch-lib/flight-recorder.sh"
 # shellcheck source=cabinet/scripts/hatch-lib/errands.sh
 . "$SCRIPT_DIR/hatch-lib/errands.sh"
+# shellcheck source=cabinet/scripts/lib/dashboard.sh
+. "$SCRIPT_DIR/lib/dashboard.sh"
 
 usage() {
   cat <<'EOF'
@@ -928,11 +930,9 @@ flight_summary
 echo ""
 # app-feel: dashboard port — explicit env wins; else cabinet/.env; else 3100.
 # (A port is config, not a secret — values-in-env doctrine concerns tokens.)
-DASH_PORT="${CABINET_DASHBOARD_PORT:-}"
-if [ -z "$DASH_PORT" ] && [ -f cabinet/.env ]; then
-  DASH_PORT="$(sed -n 's/^CABINET_DASHBOARD_PORT=//p' cabinet/.env | tail -1)" || DASH_PORT=""
-fi
-DASH_PORT="${DASH_PORT:-3100}"; DASH_URL="http://127.0.0.1:${DASH_PORT}/"
+# One resolver for the whole tree, so a probe and the server it probes can
+# never disagree about which door is the door (cabinet/scripts/lib/dashboard.sh).
+DASH_PORT="$(cabinet_dash_port "$REPO_ROOT")"; DASH_URL="http://127.0.0.1:${DASH_PORT}/"
 echo "==== WHERE THINGS ARE ===="
 echo "Your first briefing:   ${RECEIPT_LANDING:-see $RECEIPT_LOG}"
 echo "                       (easier to read in your browser: ${DASH_URL}briefing)"
@@ -991,11 +991,28 @@ fi
 # cabinet actually hatched; (2) every line a person reads here is plain now.
 # The technical detail did not go anywhere: it is in the flight log and the
 # per-step logs, which is where a diagnosis belongs.
+#
+# 2026-08-25 (identity probe). The probe below used to be `curl -fsS
+# .../api/health` and treat ANY 200 as "the cabinet is up". On a Mac where an
+# unrelated local dev server held the port, that answered 200 with HTML and the
+# hatch happily "reused" it — a wrong-sensor bug measured on a real machine.
+# Every probe here now matches the dashboard's own identity marker, and a
+# foreign occupant is its OWN state: the hatch does not stop it and does not
+# serve on top of it, it moves to a free door and writes that door into
+# cabinet/.env so every other reader agrees.
 DASH_LANDING="${DASH_URL}onboarding"
 DASH_LOG="${HATCH_LOG_DIR:-${TMPDIR:-/tmp}}/step-dashboard.log"
 DASH_SCRIPTS="${SCRIPT_DIR:-$PWD/cabinet/scripts}"
+DASH_ROOT="${CABINET_ROOT:-$PWD}"
+# The tail is also driven standalone by its tests, which start below this
+# marker; make sure the shared probe is in scope either way (a second source
+# of a pure function library is a no-op).
+if ! command -v cabinet_dash_state >/dev/null 2>&1; then
+  # shellcheck source=cabinet/scripts/lib/dashboard.sh
+  . "$DASH_SCRIPTS/lib/dashboard.sh"
+fi
 app_feel() {
-  local webloc ok tries waited dash_pid self_start pw_copied
+  local webloc ok tries waited dash_pid self_start pw_copied dash_state new_port
   if [ "$CLEAN_ROOM" = "1" ]; then
     echo "[opening] clean-room: skipped (no browser, no ~/Applications writes)"; return 0
   fi
@@ -1015,11 +1032,32 @@ app_feel() {
   fi
   tries=60
   if [ "$self_start" = "1" ]; then
-    if curl -fsS --max-time 2 "${DASH_URL}api/health" >/dev/null 2>&1; then
+    # Three answers, not two. "mine" = reuse it. "other" = somebody else's
+    # program has this port: never stop it, never serve on top of it — take a
+    # free door and write it down before anything starts, so the browser open
+    # below and every later reader use the same number.
+    dash_state="$(cabinet_dash_state "$DASH_URL")"
+    if [ "$dash_state" = "other" ]; then
+      echo "[opening] port $DASH_PORT is in use by another app on this Mac. Nothing of theirs was changed."
+      new_port="$(cabinet_dash_pick_port 3100 3199)"
+      if [ -n "$new_port" ] && cabinet_dash_record_port "$DASH_ROOT" "$new_port" \
+           "port $DASH_PORT was in use by another app at setup; your Cabinet answers on $new_port."; then
+        DASH_PORT="$new_port"
+        DASH_URL="http://127.0.0.1:${DASH_PORT}/"
+        DASH_LANDING="${DASH_URL}onboarding"
+        echo "[opening] your Cabinet will answer at $DASH_URL instead, and that is written down for next time."
+        dash_state="down"
+      else
+        echo "[opening] couldn't find a free port between 3100 and 3199, so your Cabinet was not started."
+        echo "          Close the program using port $DASH_PORT, then run: bash cabinet/scripts/open-cabinet.sh"
+        return 0
+      fi
+    fi
+    if [ "$dash_state" = "mine" ]; then
       echo "[opening] your Cabinet is already running at $DASH_URL — using that one"
     else
       : > "$DASH_LOG" 2>/dev/null || true
-      nohup bash "$DASH_SCRIPTS/start-dashboard.sh" >>"$DASH_LOG" 2>&1 &
+      CABINET_DASHBOARD_PORT="$DASH_PORT" nohup bash "$DASH_SCRIPTS/start-dashboard.sh" >>"$DASH_LOG" 2>&1 &
       dash_pid=$!
       echo "[opening] starting your Cabinet (id $dash_pid). It keeps running after this window closes."
       echo "          Notes for later, if anything looks wrong: $DASH_LOG"
@@ -1043,7 +1081,9 @@ app_feel() {
   waited=0
   echo "[opening] waiting for your Cabinet to answer. You don't need to do anything."
   for _ in $(seq 1 "$tries"); do
-    curl -fsS --max-time 2 "${DASH_URL}api/health" >/dev/null 2>&1 && { ok=1; break; } || true
+    # Only MY dashboard counts as an answer: a foreign app returning 200 is
+    # not this Cabinet coming up.
+    [ "$(cabinet_dash_state "$DASH_URL")" = "mine" ] && { ok=1; break; } || true
     sleep 2
     waited=$((waited + 2))
     # Say what is being waited on, and how to not wait next time. A silent

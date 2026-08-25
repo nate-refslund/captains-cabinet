@@ -104,6 +104,22 @@ One command orchestrates the rehearsed chain: host setup → instance generation
 
 **The hatch ends in a browser, not in the terminal.** Once the chain is green it starts the dashboard, waits for it to answer (a first run compiles it — a couple of minutes, and it says so while it waits), and opens `http://127.0.0.1:3100/onboarding`. On first open you choose your own dashboard password on a "create a password" screen — no generated secret to copy, nothing to paste — and you are in. (Forgot it later? Double-click "Reset Cabinet Password" in the Cabinet folder; no Terminal.) Your first briefing and the genesis research brief — the two documents the hatch just wrote — are readable at `/briefing`, linked from Orientation. The dashboard keeps running after the script exits; the hatch prints its log path and how to stop it. Pass `--no-browser` (or set `HATCH_NO_BROWSER=1`) to skip the handover entirely, `HATCH_NO_OPEN=1` to start everything but not raise a window; `--clean-room` never does any of it. Everything the run prints on screen is written for the person watching it; the technical record lives in the flight log beside it.
 
+**Opening it again is a double-click, every time.** After the first setup, running
+`Hatch Cabinet.app` again offers **Open my Cabinet** — it starts the dashboard if nothing
+is serving, waits for it, opens your browser, and closes its own Terminal window. It never
+sets up a second time by accident. **Start completely fresh…** is there too, and it moves
+your old Cabinet to a dated `archived-…` folder beside it rather than deleting anything —
+you have to type the words to get there. From a terminal the same everyday path is
+`bash cabinet/scripts/open-cabinet.sh`.
+
+**Your Cabinet knows which door is its own.** Every probe matches the dashboard's identity
+(`service: cabinet-dashboard` on `/api/health`), not a bare HTTP 200 — so another app of
+yours listening on the same port is recognised as somebody else's program rather than
+mistaken for your Cabinet. If that happens, nothing of theirs is stopped: your Cabinet
+takes the first free port in 3100-3199, records it as `CABINET_DASHBOARD_PORT` in
+`cabinet/.env` (appended, never rewritten), and tells you the new address in one line.
+That recorded port is the single source of truth every script reads.
+
 **A background helper that will not start never costs you the front door.** Starting the launch agents (`--with-launchd`) is the advanced step and the one most likely to fail on an unfamiliar Mac. If it does, the run says so once in plain words, keeps the exact error in its step log, starts the dashboard itself, and still lands you in onboarding — then exits `75` instead of `0` so a script can tell the two apart. The real gates are not softened: a failed proof or a missing first briefing still stops the run at `1`, because without them there is nothing to open.
 
 By default the hatch stops short of launchd: nothing goes live until you run the printed move-in instructions (or re-run with `--with-launchd`). `--dry-run` prints the full plan without executing anything. Full flag table and what v0 skips: [`docs/runbooks/hatch-v0-2026-07-09.md`](./docs/runbooks/hatch-v0-2026-07-09.md); the step-by-step manual path is in the [appendix](#appendix-manual-hatch).

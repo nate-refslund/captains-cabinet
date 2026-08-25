@@ -1,4 +1,4 @@
-# Hatch Cabinet.app v0.5.1 — thin-shell runbook (HATCH-APPSHELL-V05)
+# Hatch Cabinet.app v0.6.0 — thin-shell runbook (HATCH-APPSHELL-V05)
 
 - **Status**: shipped with Wave D on `feat/perfect-cabinet` (survey base 2d8f99d9).
 - **Design of record for the STRANGER launcher**: `docs/plans/world-onboarding-hatching-2026-07-09.md`
@@ -117,17 +117,61 @@ this artifact yet — record the observed outcome here after the manual matrix r
   handoff never does it. The runner's own end-of-run self-close (see Logs) is a different
   thing: it runs *inside* the window it closes, which is a self-send and prompts for
   nothing.
-- **Re-launch** (prefix non-empty — a real install OR a partial tree left by an
-  interrupted unpack; the dialog says so honestly): "Your Cabinet is already here" →
+- **Re-launch over a Cabinet that finished setting up** — "Your Cabinet is already set
+  up here" → **[Open my Cabinet]** (default) / **[Start completely fresh…]** /
   **[Check it over]** (`cabinet-doctor.sh`, probe-only/read-only) / **[Quit]**.
-  Never re-unpacks, never overwrites, no world claims. The runner-missing and error
-  alerts name the recovery step for a partial tree: move the partial folder to the Trash,
-  then relaunch.
+
+  *Open* writes the `open` request and hands off to the runner, which runs
+  `cabinet/scripts/open-cabinet.sh`: identity-probe the dashboard on the port recorded in
+  `cabinet/.env`; already mine → browser; nothing there → start it, wait on the identity
+  probe with the first-build message, then browser; **someone else's app on the port** →
+  never stop it and never serve on top of it — take the first free port in 3100-3199,
+  append it to `cabinet/.env`, start there, and say so in one line. Then the sign-off and
+  the self-close.
+
+  Until 2026-08-25 there was no *Open* at all — a second double-click could only offer a
+  read-only check or Quit, and the check `exec`ed its engine so the runner's closing
+  sentence never ran. A live re-launch printed nothing and opened nothing. Both halves are
+  pinned by tests: the detection arms (`HATCH_APP_PROBE=1`) and the
+  no-branch-exits-in-silence arms in `test_appshell_build.py`.
+
+- **Re-launch over anything else** (a partial tree from an interrupted unpack, or a
+  folder that is not a Cabinet at all — the dialog says so honestly): "There is something
+  else in this folder" → **[Start completely fresh…]** / **[Quit]**. Never re-unpacks,
+  never overwrites.
+
+- **Start completely fresh** — the only path that touches an existing install, and it
+  **moves, it never deletes**. It states what is in the folder, requires the operator to
+  TYPE `START FRESH` (a wrong answer changes nothing and says so), asks the old Cabinet's
+  own `deploy-mac.sh --stop all` to stop anything it had running, renames the whole tree to
+  a dated sibling `…/archived-<UTCstamp>` (counting up rather than landing on an existing
+  name), and only then runs the ordinary first-time setup. The new run's Terminal window
+  names where the old one went. `removeItem` appears exactly once in the stub — on the
+  app's own handoff script — and a test fails if a second delete-shaped call appears
+  anywhere.
+
+  The detection predicate is deliberately narrow: a prefix counts as a Cabinet only when
+  `cabinet/scripts/hatch.sh` is there AND a marker only a finished hatch writes
+  (`instance/config/active-preset`, non-empty, or `cabinet/.env`) is there too. Both
+  markers are gitignored, so neither can arrive from an unpack — which is what keeps the
+  launcher off a half-written tree.
+
+- **The runner is refreshed on every handoff** (not only on a first install). It is the
+  app's own orchestration script, versioned with the app; an install made by an older app
+  carries an older runner that would not understand a newer request and would fall through
+  to a full setup. The payload is never re-unpacked and nothing of the operator's is
+  touched.
 - **Kill-switch**: no control surface in this shell, by absence; `kill-switch.sh` is never
   invoked by any v0.5 path.
 - **Headless smoke** (CI): `HATCH_APP_SMOKE=1 CABINET_HATCH_PREFIX=$TMPDIR/prefix
   "Hatch Cabinet.app/Contents/MacOS/HatchCabinet"` → unpack + `hatch.sh --dry-run
-  --defaults`, exit 0, no dialogs, no Terminal.
+  --defaults`, exit 0, no dialogs, no Terminal. `HATCH_APP_SMOKE=fresh` does the same
+  after archiving an existing prefix (the move half of *start completely fresh*, run for
+  real); it deliberately never asks anything to stop, because `deploy-mac.sh --stop all`
+  would boot out LaunchAgents on whatever Mac the suite happens to run on.
+- **Headless probe** (read-only): `HATCH_APP_PROBE=1 CABINET_HATCH_PREFIX=…` prints
+  `state=absent|empty|cabinet|occupied` and exits. It looks and nothing else — there is a
+  test that diffs the prefix across a probe.
 
 ## Logs
 Every hatch run mints `~/hatch-logs/hatch-<UTCstamp>/` with `terminal-transcript.txt`
