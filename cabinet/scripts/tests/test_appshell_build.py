@@ -53,6 +53,7 @@ _RUNBOOK = _REPO_ROOT / "docs" / "runbooks" / "hatch-appshell-v05-2026-07-10.md"
 _BUILD_TIMEOUT = 600  # fresh egg cut + swiftc; generous for cold runners
 _SMOKE_TIMEOUT = 300
 _LINT_TIMEOUT = 60
+_APP_VERSION = "0.6.0"
 
 # Dev-Mac only: the builder needs xcrun/ditto/plutil/codesign beyond swiftc,
 # so a bare `swiftc` on PATH is NOT enough — GitHub's ubuntu runners ship a
@@ -475,6 +476,20 @@ def test_bundle_structure(built_app: Path) -> None:
     assert (built_app / "Contents" / "_CodeSignature").is_dir(), "bundle unsealed"
 
 
+def test_the_app_version_is_declared_once() -> None:
+    """It used to live as a literal in Info.plist.in and as a variable in the
+    builder; the two drifted the first time one of them moved."""
+    plist_in = (_APPSHELL / "Info.plist.in").read_text(encoding="utf-8")
+    assert "@APP_VERSION@" in plist_in
+    assert _APP_VERSION not in plist_in, "the plist template hardcodes a version again"
+    builder = _BUILDER.read_text(encoding="utf-8")
+    assert f'APP_VERSION="{_APP_VERSION}"' in builder
+    swift = (_APPSHELL / "main.swift").read_text(encoding="utf-8")
+    assert f'let appVersion = "{_APP_VERSION}"' in swift, (
+        "the stub's dialogs would name a different version than the bundle"
+    )
+
+
 def test_info_plist_contract(built_app: Path) -> None:
     plist_path = built_app / "Contents" / "Info.plist"
     res = _run(["/usr/bin/plutil", "-lint", str(plist_path)])
@@ -482,7 +497,7 @@ def test_info_plist_contract(built_app: Path) -> None:
     with plist_path.open("rb") as fh:
         plist = plistlib.load(fh)
     assert plist["CFBundleIdentifier"] == "org.captainscabinet.hatch"
-    assert plist["CFBundleShortVersionString"] == "0.6.0"
+    assert plist["CFBundleShortVersionString"] == _APP_VERSION
     assert plist["LSMinimumSystemVersion"] == "14.0"
     assert plist["CFBundleExecutable"] == "HatchCabinet"
     # template placeholders must be rendered away
@@ -511,7 +526,7 @@ def test_payload_sha_matches_payload_info(built_app: Path) -> None:
     assert re.fullmatch(r"[0-9a-f]{40}", info["source_head"]), info["source_head"]
     assert re.fullmatch(r"[0-9a-f]{64}", info["egg_manifest_sha256"])
     assert info["source_branch"], "empty source_branch"
-    assert info["app_version"] == "0.6.0"
+    assert info["app_version"] == _APP_VERSION
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", info["built_utc"])
     assert int(info["egg_file_count"]) > 0
 
@@ -853,7 +868,9 @@ def test_starting_fresh_moves_the_whole_install_and_keeps_every_byte(
     assert not (prefix / "vault" / "notes.md").exists()
     # …and a fresh cabinet was unpacked in its place
     assert (prefix / "cabinet" / "scripts" / "hatch.sh").stat().st_size > 100
-    assert f"archived: {archive}" in res.stdout
+    # The stub standardizes the path (macOS resolves /private/var <-> /var), so
+    # pin the NAME it reported rather than a spelling of the same directory.
+    assert "archived: " in res.stdout and archive.name in res.stdout, res.stdout[-400:]
 
 
 def test_the_app_carries_the_opener_for_a_cabinet_that_predates_it(tmp_path: Path) -> None:

@@ -91,7 +91,10 @@ CONTENTS="$APP/Contents"
 mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources/payload"
 BUILD_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 BUNDLE_VERSION="$(date -u +%Y%m%d.%H%M%S)"
+# APP_VERSION is templated too (2026-08-25): it used to be a literal in
+# Info.plist.in AND a variable here, and the two drifted the moment one moved.
 sed -e "s/@BUNDLE_VERSION@/$BUNDLE_VERSION/g" -e "s/@BUILD_UTC@/$BUILD_UTC/g" \
+    -e "s/@APP_VERSION@/$APP_VERSION/g" \
   "$SCRIPT_DIR/Info.plist.in" > "$CONTENTS/Info.plist"
 sed -e "s/@APP_VERSION@/$APP_VERSION/g" -e "s/@BUILD_UTC@/$BUILD_UTC/g" \
   "$SCRIPT_DIR/hatch-run.command.in" > "$CONTENTS/Resources/hatch-run.command"
