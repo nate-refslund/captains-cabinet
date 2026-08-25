@@ -484,7 +484,7 @@ if [ "$WITH_DASHBOARD" -eq 1 ]; then
     ( cd "$DASH_DIR" \
       && { [ -d node_modules ] || npm ci >/dev/null 2>&1; } \
       && npm run build >/dev/null 2>&1 ) \
-      && ok "Dashboard built (serve: cabinet/scripts/start-dashboard.sh → :3100/display)" \
+      && ok "Dashboard built (serve: cabinet/scripts/start-dashboard.sh — it prints its own address, /display for the wall)" \
       || warn "Dashboard build failed — start-dashboard.sh will retry at launch"
   else
     warn "Dashboard dir or npm missing — skipping build"

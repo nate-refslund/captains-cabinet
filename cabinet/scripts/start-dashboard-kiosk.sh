@@ -15,8 +15,15 @@
 
 set -uo pipefail
 
-PORT="${CABINET_DASHBOARD_PORT:-3100}"
-URL="http://localhost:${PORT}/display"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=cabinet/scripts/lib/dashboard.sh
+. "$SCRIPT_DIR/lib/dashboard.sh"
+
+# One resolver for the port (explicit env > cabinet/.env > 3100) so a moved
+# dashboard does not become invisible to its own wall display.
+PORT="$(cabinet_dash_port)"
+BASE="http://127.0.0.1:${PORT}/"
+URL="${BASE}display"
 PROFILE_DIR="${CABINET_KIOSK_PROFILE_DIR:-$HOME/.cabinet-kiosk-profile}"
 
 CHROME_APP="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
@@ -27,15 +34,23 @@ if [ ! -x "$CHROME_APP" ]; then
 fi
 
 # Wait up to 120s for the dashboard to come up (first-run build can be slow).
+# IDENTITY, not a bare 200: another program on this port answers 200 too, and
+# a kiosk pointed at somebody else's dev server is worse than a blank screen.
 echo "start-dashboard-kiosk: waiting for $URL ..."
 for _ in $(seq 1 60); do
-  if curl -fsS --max-time 3 "http://localhost:${PORT}/display" >/dev/null 2>&1; then
+  if [ "$(cabinet_dash_state "$BASE")" = "mine" ]; then
     break
   fi
   sleep 2
 done
 
-if ! curl -fsS --max-time 3 "http://localhost:${PORT}/display" >/dev/null 2>&1; then
+KIOSK_STATE="$(cabinet_dash_state "$BASE")"
+if [ "$KIOSK_STATE" = "other" ]; then
+  echo "start-dashboard-kiosk: port $PORT is answering, but it is not this Cabinet —" >&2
+  echo "  another program has that port. Nothing of theirs was changed." >&2
+  exit 1
+fi
+if [ "$KIOSK_STATE" != "mine" ]; then
   echo "start-dashboard-kiosk: dashboard not reachable after 120s — is com.cabinet.dashboard running?" >&2
   exit 1
 fi

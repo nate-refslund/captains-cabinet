@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import os
 import plistlib
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -93,19 +94,36 @@ def _make_shim(shim_dir: Path, name: str, exit_code: int = 0) -> Path:
     return log
 
 
-def _make_curl_shim(shim_dir: Path, *, fail_first: int, exit_code: int) -> Path:
-    """A counting curl shim: the first `fail_first` calls exit 1, the rest exit
-    `exit_code`. Lets a drive distinguish "already serving" (call 1 succeeds)
-    from "started it, then it came up" (call 1 fails, a later one succeeds)."""
+# What the dashboard's /api/health actually returns. The probe matches the
+# `service` field, not the status code (identity-probe area, 2026-08-25): a
+# shim that only exits 0 would model the very bug that area exists to close,
+# since a foreign app on the port answers 200 too.
+_IDENTITY_BODY = '{"ok":true,"service":"cabinet-dashboard","ts":"2026-08-25T00:00:00Z"}'
+_FOREIGN_BODY = "<!DOCTYPE html><html>somebody else's dev server</html>"
+# 7 is curl's "couldn't connect" — the honest code for nothing-listening, and
+# the one the probe reads as "down" rather than "occupied".
+_REFUSED = 7
+
+
+def _make_curl_shim(shim_dir: Path, *, fail_first: int, exit_code: int,
+                    body: str = _IDENTITY_BODY, script: str | None = None) -> Path:
+    """A counting curl shim: the first `fail_first` calls are refused, the rest
+    answer `body` and exit `exit_code`. Lets a drive distinguish "already
+    serving" (call 1 succeeds) from "started it, then it came up" (call 1 is
+    refused, a later one answers). `script` replaces the body/exit logic with
+    bash that can see $n, for arms that need a different answer per call."""
     log = shim_dir / "curl.log"
     count = shim_dir / "curl.count"
     shim = shim_dir / "curl"
+    if script is None:
+        script = (f"if [ \"$n\" -le {fail_first} ]; then exit {_REFUSED}; fi\n"
+                  f"printf '%s' {shlex.quote(body)}\n"
+                  f"exit {exit_code}")
     shim.write_text(
         "#!/bin/bash\n"
         f"echo \"$@\" >> \"{log}\"\n"
         f"n=$(cat \"{count}\" 2>/dev/null || echo 0); n=$((n+1)); echo \"$n\" > \"{count}\"\n"
-        f"if [ \"$n\" -le {fail_first} ]; then exit 1; fi\n"
-        f"exit {exit_code}\n",
+        + script + "\n",
         encoding="utf-8",
     )
     shim.chmod(0o755)
@@ -122,6 +140,7 @@ def _calls(shim_dir: Path, name: str) -> list[str]:
 def _run_tail(tmp_path: Path, *, clean_room="0", with_launchd="1", no_browser="0",
               movein_ok=None, curl_exit=0, curl_fail_first=0, open_exit=0,
               bash_exit=0, plutil_exit: int | None = None,
+              curl_body: str = _IDENTITY_BODY, curl_script: str | None = None,
               extra_env: dict | None = None):
     """Run the extracted tail under set -euo pipefail with shims.
 
@@ -137,7 +156,8 @@ def _run_tail(tmp_path: Path, *, clean_room="0", with_launchd="1", no_browser="0
     shim_dir = tmp_path / "shims"
     shim_dir.mkdir(exist_ok=True)
     _make_shim(shim_dir, "open", open_exit)
-    _make_curl_shim(shim_dir, fail_first=curl_fail_first, exit_code=curl_exit)
+    _make_curl_shim(shim_dir, fail_first=curl_fail_first, exit_code=curl_exit,
+                    body=curl_body, script=curl_script)
     _make_shim(shim_dir, "sleep", 0)  # timeout loop must not take minutes
     _make_shim(shim_dir, "nohup", 0)  # never actually start a dashboard
     _make_shim(shim_dir, "bash", bash_exit)  # the password script, never for real
@@ -225,7 +245,12 @@ def test_tail_wiring_guards_precede_writes_and_open():
     # probe, the dashboard start, and the open
     clean_guard = tail.index('if [ "$CLEAN_ROOM" = "1" ]')
     assert clean_guard < tail.index("webloc="), "clean-room guard must precede the webloc write"
-    assert clean_guard < tail.index("curl -fsS"), "clean-room guard must precede the probe"
+    # The probe is the shared identity probe now (2026-08-25), not a bare curl;
+    # point the ordering pin at the live call rather than a string a comment
+    # could satisfy.
+    assert clean_guard < tail.index('dash_state="$(cabinet_dash_state "$DASH_URL")"'), (
+        "clean-room guard must precede the probe"
+    )
     assert clean_guard < tail.index("nohup bash"), "clean-room guard must precede the dashboard start"
     assert clean_guard < tail.index("open "), "clean-room guard must precede auto-open"
     # --no-browser is the second guard: also before any start/write/open
@@ -381,7 +406,7 @@ def test_no_launchd_reuses_an_already_serving_dashboard(tmp_path):
 
 def test_wait_loop_says_what_it_waits_for_and_how_to_skip(tmp_path):
     """A silent multi-minute pause at the end of a hatch reads as a hang."""
-    p, _home, shims = _run_tail(tmp_path, with_launchd="0", curl_exit=1)
+    p, _home, shims = _run_tail(tmp_path, with_launchd="0", curl_exit=7)
     assert p.returncode == 0, (p.stdout, p.stderr)
     assert "still starting" in p.stdout
     assert "This is normal" in p.stdout, "a long silent wait reads as a hang"
@@ -483,7 +508,7 @@ def test_forced_plutil_failure_skips_bookmark_and_stays_green(tmp_path):
 
 
 def test_probe_timeout_prints_amber_and_stays_green(tmp_path):
-    p, _home, shims = _run_tail(tmp_path, curl_exit=1)  # sleep shimmed: fast
+    p, _home, shims = _run_tail(tmp_path, curl_exit=7)  # sleep shimmed: fast
     assert p.returncode == 0, (p.stdout, p.stderr)
     # Plain, not "AMBER" (2026-08-12): the person reading this line did not
     # ask for a traffic-light vocabulary, and a slow first build is not an
@@ -517,7 +542,7 @@ def test_where_things_live_hints_are_wired():
     dashboard URL must be resolved (env > cabinet/.env > 3100) BEFORE the
     WHERE-THINGS-ARE hints that print it."""
     text = _HATCH.read_text(encoding="utf-8")
-    resolve = text.index('DASH_PORT="${CABINET_DASHBOARD_PORT:-}"')
+    resolve = text.index('DASH_PORT="$(cabinet_dash_port "$DASH_ROOT")"')
     where = text.index("==== WHERE THINGS ARE")
     hint = text.index('echo "Your Cabinet:          ${DASH_URL}')
     assert resolve < where < hint < text.index(_START_MARKER)
@@ -572,7 +597,7 @@ def test_failed_movein_wait_advice_points_at_the_log_it_started(tmp_path):
     advice must name the log of THAT process, not a launchd job that was
     never loaded."""
     p, _home, shims = _run_tail(tmp_path, with_launchd="1", movein_ok="0",
-                                curl_exit=1, plutil_exit=0)
+                                curl_exit=7, plutil_exit=0)
     assert p.returncode == 0, (p.stdout, p.stderr)
     assert "step-dashboard.log" in p.stdout, (
         "after self-starting, the fallback must point at the started process's log"
@@ -581,3 +606,68 @@ def test_failed_movein_wait_advice_points_at_the_log_it_started(tmp_path):
         "a move-in that failed left no launchd job to inspect — do not send "
         "the operator to one"
     )
+
+
+# ---------------------------------------------------------------------------
+# The port is MINE or it is somebody else's (identity probe, 2026-08-25)
+# ---------------------------------------------------------------------------
+#
+# Measured on the Captain's Mac: an unrelated local dev server held 3100 and
+# answered 200 with HTML. The old probe read that as "already running", so the
+# hatch "reused" a stranger's app, opened the browser at it, and left the real
+# dashboard unstarted. These arms pin the three-way answer and what the tail
+# does with each.
+
+
+def _root_with_env(tmp_path):
+    root = tmp_path / "root"
+    (root / "cabinet").mkdir(parents=True, exist_ok=True)
+    (root / "cabinet" / ".env").write_text("DASHBOARD_PASSWORD=hunter2\n")
+    return root
+
+
+def test_a_foreign_app_on_the_port_is_never_reused_as_the_cabinet(tmp_path):
+    """It moves to a free door, writes that door down, and starts there."""
+    root = _root_with_env(tmp_path)
+    script = (
+        # call 1: the recorded door (3177) answers, but it is not ours
+        f'if [ "$n" -eq 1 ]; then printf "%s" {shlex.quote(_FOREIGN_BODY)}; exit 0; fi\n'
+        # call 2: picking a free door — 3100 is refused, so 3100 it is
+        f'if [ "$n" -eq 2 ]; then exit {_REFUSED}; fi\n'
+        # from then on our dashboard is up on the new door
+        f'printf "%s" {shlex.quote(_IDENTITY_BODY)}; exit 0'
+    )
+    p, _home, shims = _run_tail(tmp_path, with_launchd="0", curl_script=script,
+                                extra_env={"CABINET_ROOT": str(root)})
+    assert p.returncode == 0, (p.stdout, p.stderr)
+    assert "already running" not in p.stdout, (
+        "a stranger's 200 must never be read as this Cabinet already serving"
+    )
+    assert f"port {_PORT} is in use by another app" in p.stdout
+    assert "http://127.0.0.1:3100/ instead" in p.stdout
+    # started, and the browser landed on the NEW door, never on theirs
+    assert len(_start_calls(shims)) == 1
+    assert _calls(shims, "open") == ["http://127.0.0.1:3100/onboarding"]
+    # written down, append-only, secrets intact
+    env_text = (root / "cabinet" / ".env").read_text()
+    assert env_text.startswith("DASHBOARD_PASSWORD=hunter2\n")
+    assert "CABINET_DASHBOARD_PORT=3100" in env_text
+
+
+def test_a_normal_run_never_rewrites_the_env(tmp_path):
+    root = _root_with_env(tmp_path)
+    before = (root / "cabinet" / ".env").read_bytes()
+    p, _home, shims = _run_tail(tmp_path, with_launchd="0", curl_fail_first=1,
+                                extra_env={"CABINET_ROOT": str(root)})
+    assert p.returncode == 0, (p.stdout, p.stderr)
+    assert (root / "cabinet" / ".env").read_bytes() == before, (
+        "nothing was in the way, so nothing about the port should have changed"
+    )
+    assert _calls(shims, "open") == [_LANDING]
+
+
+def test_reuse_requires_the_identity_not_just_a_two_hundred(tmp_path):
+    # The happy path still reuses a dashboard that IS ours.
+    p, _home, shims = _run_tail(tmp_path, with_launchd="0")
+    assert "already running at" in p.stdout
+    assert _start_calls(shims) == [], "an already-serving Cabinet must not be restarted"

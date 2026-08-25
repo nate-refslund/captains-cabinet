@@ -3,10 +3,10 @@
 # Rendered from cabinet/scripts/appshell/hatch-run.command.in (HATCH-APPSHELL-V05).
 #
 # Installed into the cabinet prefix by the Hatch Cabinet.app stub and opened
-# in Terminal via Launch Services. Orchestration only — zero hatch logic: it
-# wraps the engine (cabinet/scripts/hatch.sh) in script(1) so the full
-# Terminal transcript is self-recorded beside the engine's own flight log.
-# Never invokes the kill switch or the dashboard starter; opens no ports.
+# in Terminal via Launch Services. Orchestration only — zero cabinet logic: it
+# wraps the engines (cabinet/scripts/hatch.sh to set up, open-cabinet.sh to
+# open, cabinet-doctor.sh to check) and owns nothing but the window they run
+# in. Never invokes the kill switch, opens no ports, starts no server itself.
 #
 # WORDING (2026-08-12, never-strand pass): these are the first lines the
 # operator reads after double-clicking, so they say what is happening, how
@@ -21,8 +21,16 @@
 # nothing said so — the operator did not know the window was finished with,
 # nor that it was theirs to close. The notice now ends with a sign-off that
 # says both, and on a run that actually hatched the window then closes
-# itself. See the scoping comment on that block: it closes ITS OWN window by
-# id and nothing else, and a run that stopped early never closes at all.
+# itself. See the scoping comment on close_own_window: it closes ITS OWN
+# window by id and nothing else, and a run that stopped early never closes.
+#
+# NO SILENT EXIT (2026-08-25, from the second live operator run). The doctor
+# branch used to `exec` the checker, which REPLACED this shell — so the
+# sign-off below could never run, and the window's last line was whatever the
+# other program happened to print, or nothing. Every branch now runs its
+# engine as a CHILD, keeps its exit code, and ends with a sentence in plain
+# words. That property is the point of this file and there is a test that
+# walks every exit here to prove it.
 set -euo pipefail
 
 PREFIX="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -32,23 +40,137 @@ ARGS_FILE="$PREFIX/.hatch-run-args"
 # degrades to a plain hatch (no move-in) with an honest note.
 MODE="hatch"
 WITH_LAUNCHD=0
+ARCHIVED=""
 if [ -f "$ARGS_FILE" ]; then
   REQUEST="$(head -n 1 "$ARGS_FILE" || true)"
+  # Line 2, when the stub sends one, is where a previous Cabinet was moved to.
+  ARCHIVED="$(sed -n '2p' "$ARGS_FILE" || true)"
   rm -f "$ARGS_FILE"
   case "$REQUEST" in
     hatch)                  MODE="hatch" ;;
     "hatch --with-launchd") MODE="hatch"; WITH_LAUNCHD=1 ;;
     doctor)                 MODE="doctor" ;;
+    open)                   MODE="open" ;;
     *) echo "Didn't recognise that request, so setting up the ordinary way (nothing will run in the background)." ;;
+  esac
+  # An absolute path or nothing. This value is only ever echoed, never run.
+  case "$ARCHIVED" in
+    /*) : ;;
+    *)  ARCHIVED="" ;;
   esac
 fi
 
 cd "$PREFIX"
 
+# HATCHED records whether this run got the operator all the way in, and gates
+# the self-close: a run that stopped early keeps its window, because that
+# window is where the person can see how far it got.
+HATCHED=0
+
+# >>> WINDOW-CLOSE BEGIN (sliced out by test_appshell_build.py — keep markers)
+# Where it is safe, close the window for them. SCOPE IS THE WHOLE DESIGN:
+# resolve OUR OWN window from OUR OWN tty and close THAT ONE, BY ID — never
+# "every window", never "quit", never a window this run did not open. Every
+# refusal is silent and leaves the window open:
+#   * a run that did not finish — the note above has to stay readable;
+#   * anything but Apple's Terminal around us (another emulator, a pipe, a
+#     headless or CI run: no tty, and TERM_PROGRAM unset);
+#   * a window id we could not resolve, or that is not a plain number.
+# The handoff rule is untouched: the .app stub still opens Terminal through
+# Launch Services and sends it no Apple events (that is the pairing macOS
+# would prompt about). This is Terminal addressing ITSELF from inside its own
+# window — the self-send macOS exempts from the automation consent prompt.
+# Measured 2026-08-13 on macOS 27: the window closed, no prompt appeared, and
+# no automation decision was evaluated at all. Should a future macOS prompt
+# and the operator decline, the command fails, the helper below dies, and the
+# window simply stays open with the sign-off on it.
+close_own_window() {
+  local own_tty own_window
+  if [ "$HATCHED" = "1" ] && [ -t 1 ] && [ "${TERM_PROGRAM:-}" = "Apple_Terminal" ]; then
+    own_tty="$(tty 2>/dev/null || true)"
+    own_window=""
+    if [ -n "$own_tty" ]; then
+      own_window="$(/usr/bin/osascript \
+        -e 'on run argv' \
+        -e 'tell application "Terminal"' \
+        -e 'repeat with w in windows' \
+        -e 'repeat with tb in tabs of w' \
+        -e 'try' \
+        -e 'if tty of tb is (item 1 of argv) then return (id of w) as text' \
+        -e 'end try' \
+        -e 'end repeat' \
+        -e 'end repeat' \
+        -e 'end tell' \
+        -e 'return ""' \
+        -e 'end run' "$own_tty" 2>/dev/null || true)"
+    fi
+    # A window id is a plain number or it is nothing. This value is the one
+    # thing interpolated into the helper below, so anything else is dropped
+    # here rather than passed on.
+    case "$own_window" in
+      ''|*[!0-9]*) own_window="" ;;
+    esac
+    if [ -n "$own_window" ]; then
+      echo "   (it will also close itself in a few seconds)"
+      # Detached, and deliberately after this shell is gone: closing a window
+      # whose script is still running makes Terminal ask whether to terminate
+      # it — the confirmation sheet this whole block exists to spare them.
+      /usr/bin/nohup /bin/sh -c \
+        "sleep 8; /usr/bin/osascript -e 'tell application \"Terminal\" to close (every window whose id is $own_window)'" \
+        </dev/null >/dev/null 2>&1 &
+    fi
+  fi
+  return 0
+}
+# <<< WINDOW-CLOSE END
+
+# ---- check it over ---------------------------------------------------------------
+# Read-only. Runs as a CHILD (never exec) so this shell survives to say the
+# closing sentence, and the window stays open because a report nobody can read
+# is not a report.
 if [ "$MODE" = "doctor" ]; then
   echo "Checking over the Cabinet in $PREFIX. This only looks — it changes nothing."
-  exec /bin/bash "$PREFIX/cabinet/scripts/cabinet-doctor.sh"
+  echo ""
+  set +e
+  /bin/bash "$PREFIX/cabinet/scripts/cabinet-doctor.sh"
+  DOCTOR_RC=$?
+  set -e
+  echo ""
+  echo "That is the whole check, and nothing was changed by it."
+  echo "You can close this window once you have read the above."
+  exit "$DOCTOR_RC"
 fi
+
+# ---- take me to my Cabinet -------------------------------------------------------
+# The everyday path. open-cabinet.sh owns all of it — is it running, start it
+# if not, which door, open the browser — and prints its own plain lines. This
+# shell adds only the sign-off and the window close.
+if [ "$MODE" = "open" ]; then
+  # The Cabinet's own opener wins — a newer Cabinet may have a newer one. The
+  # app-owned copy beside this runner is the fallback, and it is the whole
+  # reason a Cabinet set up before the opener existed can still be opened.
+  OPENER="$PREFIX/cabinet/scripts/open-cabinet.sh"
+  [ -f "$OPENER" ] || OPENER="$PREFIX/.hatch-open.command"
+  echo "Opening your Cabinet."
+  echo ""
+  set +e
+  /bin/bash "$OPENER"
+  OPEN_RC=$?
+  set -e
+  echo ""
+  if [ "$OPEN_RC" = "0" ]; then
+    HATCHED=1
+    echo "✅ All done — your Cabinet is open in your browser. You can close this window."
+  else
+    echo "Your Cabinet did not open this time. Nothing on your Mac is broken, and"
+    echo "nothing was changed. The lines above say what happened and where to look."
+    echo "You can close this window once you have read the above."
+  fi
+  close_own_window
+  exit "$OPEN_RC"
+fi
+
+# ---- set it up -------------------------------------------------------------------
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 LOG_DIR="$HOME/hatch-logs/hatch-$STAMP"
@@ -56,6 +178,11 @@ mkdir -p "$LOG_DIR"
 TRANSCRIPT="$LOG_DIR/terminal-transcript.txt"
 FLIGHT_LOG="$LOG_DIR/flight.log"
 
+if [ -n "$ARCHIVED" ]; then
+  echo "Your previous Cabinet was moved here, and nothing in it was deleted:"
+  echo "    $ARCHIVED"
+  echo ""
+fi
 echo "Setting up Captain's Cabinet."
 echo "This takes a few minutes. You don't need to do anything — leave this window"
 echo "open, and your Cabinet will open in your browser when it's ready."
@@ -90,14 +217,10 @@ fi
 RC=$?
 set -e
 
+# >>> NOTICE BEGIN (sliced out by test_appshell_build.py — keep markers)
 # The shell's exactly-one post-run notice: exit code and paths only (spec 3.5),
 # in plain words. Exit 75 is the engine's "hatched, front door open, an
 # optional background helper did not start" code — calm, not a failure.
-#
-# HATCHED records whether this run got the operator all the way in, and gates
-# BOTH the sign-off and the auto-close below: a run that stopped early keeps
-# its window, because that window is where the person can see how far it got.
-HATCHED=0
 echo ""
 case "$RC" in
   0)  echo "Done — your Cabinet is set up. (code 0)"; HATCHED=1 ;;
@@ -111,62 +234,13 @@ echo "Record of this run: $LOG_DIR/"
 
 # The sign-off. Printed on EVERY path, because it is the half that always
 # works: it needs no permission, cannot fail, and answers the operator's
-# question on its own even where the close below refuses.
+# question on its own even where the close refuses.
 echo ""
 if [ "$HATCHED" = "1" ]; then
   echo "✅ All done — your Cabinet is open in your browser. You can close this window."
 else
   echo "You can close this window once you have read the above."
 fi
-
-# …and then, where it is safe, close it for them. SCOPE IS THE WHOLE DESIGN:
-# resolve OUR OWN window from OUR OWN tty and close THAT ONE, BY ID — never
-# "every window", never "quit", never a window this run did not open. Every
-# refusal is silent and leaves the window open:
-#   * a run that did not hatch — the note above has to stay readable;
-#   * anything but Apple's Terminal around us (another emulator, a pipe, a
-#     headless or CI run: no tty, and TERM_PROGRAM unset);
-#   * a window id we could not resolve, or that is not a plain number.
-# The handoff rule is untouched: the .app stub still opens Terminal through
-# Launch Services and sends it no Apple events (that is the pairing macOS
-# would prompt about). This is Terminal addressing ITSELF from inside its own
-# window — the self-send macOS exempts from the automation consent prompt.
-# Measured 2026-08-13 on macOS 27: the window closed, no prompt appeared, and
-# no automation decision was evaluated at all. Should a future macOS prompt
-# and the operator decline, the command fails, the helper below dies, and the
-# window simply stays open with the sign-off on it.
-if [ "$HATCHED" = "1" ] && [ -t 1 ] && [ "${TERM_PROGRAM:-}" = "Apple_Terminal" ]; then
-  OWN_TTY="$(tty 2>/dev/null || true)"
-  OWN_WINDOW=""
-  if [ -n "$OWN_TTY" ]; then
-    OWN_WINDOW="$(/usr/bin/osascript \
-      -e 'on run argv' \
-      -e 'tell application "Terminal"' \
-      -e 'repeat with w in windows' \
-      -e 'repeat with tb in tabs of w' \
-      -e 'try' \
-      -e 'if tty of tb is (item 1 of argv) then return (id of w) as text' \
-      -e 'end try' \
-      -e 'end repeat' \
-      -e 'end repeat' \
-      -e 'end tell' \
-      -e 'return ""' \
-      -e 'end run' "$OWN_TTY" 2>/dev/null || true)"
-  fi
-  # A window id is a plain number or it is nothing. This value is the one
-  # thing interpolated into the helper below, so anything else is dropped
-  # here rather than passed on.
-  case "$OWN_WINDOW" in
-    ''|*[!0-9]*) OWN_WINDOW="" ;;
-  esac
-  if [ -n "$OWN_WINDOW" ]; then
-    echo "   (it will also close itself in a few seconds)"
-    # Detached, and deliberately after this shell is gone: closing a window
-    # whose script is still running makes Terminal ask whether to terminate
-    # it — the confirmation sheet this whole block exists to spare them.
-    /usr/bin/nohup /bin/sh -c \
-      "sleep 8; /usr/bin/osascript -e 'tell application \"Terminal\" to close (every window whose id is $OWN_WINDOW)'" \
-      </dev/null >/dev/null 2>&1 &
-  fi
-fi
+close_own_window
 exit "$RC"
+# <<< NOTICE END

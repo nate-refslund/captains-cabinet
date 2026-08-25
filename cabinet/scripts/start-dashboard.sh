@@ -1,8 +1,10 @@
 #!/bin/bash
 # start-dashboard.sh — run the Cabinet dashboard (Next.js) Mac-native.
 #
-# Serves on http://127.0.0.1:3100. The office wall-display lives at
-# http://127.0.0.1:3100/display (read-only, unauthenticated by design).
+# Serves on http://127.0.0.1:<CABINET_DASHBOARD_PORT> (default 3100). The
+# office wall-display lives at /display (read-only, unauthenticated by design).
+# The port is CONFIG, not a constant: everything that probes or links to the
+# dashboard reads the same recorded value (cabinet/scripts/lib/dashboard.sh).
 #
 # Port/bind config (Wave D app-feel, D4): CABINET_DASHBOARD_PORT (default
 # 3100) and CABINET_DASHBOARD_HOST (default 127.0.0.1 — loopback-only; the

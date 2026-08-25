@@ -427,7 +427,10 @@ services:
     kind: daemon
     command: bash cabinet/scripts/start-dashboard.sh
     schedule: keepalive
-    expected: "HTTP 200 on :3100/api/health"
+    # Identity, not a bare 200 (2026-08-25, measured): a foreign app on the
+    # port answers 200 too. The port comes from CABINET_DASHBOARD_PORT in
+    # cabinet/.env (default 3100) — never hardcoded in a probe.
+    expected: "GET /api/health on CABINET_DASHBOARD_PORT (cabinet/.env, default 3100) returns the cabinet-dashboard identity marker"
 
   # ── F0.13 weekly drill + B2.12 memory worker (added 2026-07-03) ─────────────
   - name: healthchecks-drill

@@ -1,5 +1,5 @@
 #!/bin/bash
-# build-hatch-app.sh — build "Hatch Cabinet.app" (thin shell v0.5.1, HATCH-APPSHELL-V05).
+# build-hatch-app.sh — build "Hatch Cabinet.app" (thin shell v0.6.0, HATCH-APPSHELL-V05).
 #
 # Dev-Mac tool: cuts a FRESH egg via egg-export.sh (never ships this working
 # tree), zips it into the bundle payload, compiles the single-file Swift stub
@@ -26,7 +26,7 @@ EOF
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-APP_VERSION="0.5.1"
+APP_VERSION="0.6.0"
 
 OUT_ARG=""
 FORCE=0
@@ -91,12 +91,27 @@ CONTENTS="$APP/Contents"
 mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources/payload"
 BUILD_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 BUNDLE_VERSION="$(date -u +%Y%m%d.%H%M%S)"
+# APP_VERSION is templated too (2026-08-25): it used to be a literal in
+# Info.plist.in AND a variable here, and the two drifted the moment one moved.
 sed -e "s/@BUNDLE_VERSION@/$BUNDLE_VERSION/g" -e "s/@BUILD_UTC@/$BUILD_UTC/g" \
+    -e "s/@APP_VERSION@/$APP_VERSION/g" \
   "$SCRIPT_DIR/Info.plist.in" > "$CONTENTS/Info.plist"
 sed -e "s/@APP_VERSION@/$APP_VERSION/g" -e "s/@BUILD_UTC@/$BUILD_UTC/g" \
   "$SCRIPT_DIR/hatch-run.command.in" > "$CONTENTS/Resources/hatch-run.command"
 chmod 0755 "$CONTENTS/Resources/hatch-run.command"
 bash -n "$CONTENTS/Resources/hatch-run.command"
+# The app carries the everyday opener and the probe lib too — the SAME bytes
+# the egg ships, taken from the cut rather than from this working tree. They
+# are what lets the app open a Cabinet that was set up before the opener
+# existed (dropped at the TOP of the install, never into cabinet/scripts/).
+for pair in "cabinet/scripts/open-cabinet.sh:open-cabinet.sh" \
+            "cabinet/scripts/lib/dashboard.sh:lib-dashboard.sh"; do
+  src="$SCRATCH/egg/${pair%%:*}"
+  [ -f "$src" ] || { echo "build-hatch-app: the egg cut is missing ${pair%%:*}" >&2; exit 1; }
+  cp "$src" "$CONTENTS/Resources/${pair##*:}"
+  chmod 0755 "$CONTENTS/Resources/${pair##*:}"
+  bash -n "$CONTENTS/Resources/${pair##*:}"
+done
 
 step "(4/6) compile stub (swiftc, ad-hoc linker signature)"
 swiftc -O "$SCRIPT_DIR/main.swift" -o "$CONTENTS/MacOS/HatchCabinet"

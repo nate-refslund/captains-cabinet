@@ -664,6 +664,12 @@ expect-present cabinet/dashboard/src/app/manifest.ts
 expect-present cabinet/dashboard/src/app/icon.svg
 expect-present cabinet/dashboard/public/icons/icon-512.png
 expect-present cabinet/dashboard/src/app/api/health/route.ts
+# LAUNCHER (2026-08-25): the everyday "take me to my Cabinet" path and the one
+# identity/port resolver every probe reads. These RIDE the egg — a hatched
+# cabinet must be able to open itself without the dev-side app around. (The
+# app shell that builds the vehicle stays excluded; see the APPSHELL rows.)
+expect-present cabinet/scripts/open-cabinet.sh
+expect-present cabinet/scripts/lib/dashboard.sh
 # PC-D-COMPANION (Wave D companion, DESIGN-companion-2026-07-10 §3/§9): the
 # menu-bar companion ships as SOURCE + on-target build script, calread-style —
 # the built "bin/Cabinet Companion.app" bundle is gitignored so it never
