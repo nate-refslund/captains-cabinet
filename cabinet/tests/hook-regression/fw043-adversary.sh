@@ -33,6 +33,15 @@ EQ="="
 REDIR=">"
 BT='`'
 
+# Verdict vocabulary, and why it is THIS one. This harness used to mark a
+# failing probe **FAIL-${ec}**, which matched no alternative in
+# run-hook-regression.sh's failure regex ('-' is not [:=], '0' is not [1-9]),
+# and it ended on a bare echo so its exit code was 0 whatever the probes did.
+# Both signals the runner reads were dead, so the suite was green by
+# construction for as long as it existed. FAIL(bypass)/FAIL(FP) is the shape
+# the runner counts — the same one its sibling fw051-adversary.sh speaks.
+PASS=0; FAIL=0
+
 test_cto() {
   local label="$1"; local cmd="$2"; local expect="$3"
   local json
@@ -40,7 +49,15 @@ test_cto() {
   echo "$json" | PATH="$TEST_BIN:$PATH" OFFICER_NAME=cto bash "$HOOK" >/dev/null 2>&1
   local ec=$?
   local status="OK"
-  [ "$ec" != "$expect" ] && status="**FAIL-${ec}**"
+  if [ "$ec" = "$expect" ]; then
+    PASS=$((PASS + 1))
+  else
+    # expect=2 means the probe should have been BLOCKED; anything else got
+    # through. expect=0 means it should have passed through; a block is a
+    # false positive.
+    if [ "$expect" = "2" ]; then status="FAIL(bypass)"; else status="FAIL(FP)"; fi
+    FAIL=$((FAIL + 1))
+  fi
   printf "  [%s] %-22s %-90s expect=%s got=%s\n" "$status" "$label" "$cmd" "$expect" "$ec"
 }
 
@@ -110,6 +127,7 @@ test_cto "ctl-sudo-push"      "sudo $PH1A $PH1B origin m""ain"                  
 test_cto "ctl-timeout-push"   "timeout 30s $PH1A $PH1B origin m""ain"                              2
 
 echo ""
-echo "=== Summary ==="
+echo "=== Summary: PASS=$PASS  FAIL=$FAIL ==="
 echo "FW-043 f7a231b Pass-2 empirical adversary. Exit 2 = BLOCKED. Exit 0 = PASS-THROUGH."
 echo "FAILs indicate bypass (got 0 when expected 2) or false-block (got 2 when expected 0)."
+exit "$FAIL"

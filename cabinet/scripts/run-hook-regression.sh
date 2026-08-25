@@ -9,8 +9,10 @@
 # Exit 0: all harnesses passed
 # Exit 1: one or more harnesses reported failures (check output)
 #
-# Harness contract: each harness prints its own PASS/FAIL summary line.
-# This runner counts "FAIL" lines + checks non-zero exit as regression signal.
+# Harness contract: each harness prints its own PASS/FAIL verdict lines and
+# exits non-zero when a probe failed. This runner counts failure lines + checks
+# non-zero exit as regression signal, and requires at least one recognised
+# verdict line — see the vocabularies below.
 
 set -u
 
@@ -18,6 +20,63 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 REGRESSION_DIR="$(cd "$SCRIPT_DIR/../tests/hook-regression" && pwd)"
 LOG_DIR="${REGRESSION_DIR}/.last-run"
+
+# ---------------------------------------------------------------------------
+# The two vocabularies a harness is read by.
+# ---------------------------------------------------------------------------
+# A harness is only ever as loud as the runner's ear. fw043-adversary.sh and
+# fw045-pass7-adversary.sh emitted **FAIL-N**, which matched NONE of the
+# alternatives below as they originally stood ('-' is not [:=], '0' is not
+# [1-9]) — and both ended on a bare echo, so their exit code was 0 whatever the
+# probes did. Two suites reporting green while checking nothing, for as long as
+# they existed. The failure vocabulary therefore covers every shape a harness
+# in this directory actually speaks, and stays TOKEN-shaped on purpose: prose
+# that merely contains the word ("FAILs indicate bypass", "=== FAIL CLOSED
+# ==="), or a zero count ("FAIL=0"), must not match, or a green harness turns
+# red on its own commentary.
+FAIL_LINE_RE='FAIL[[:space:]]*[:=]?[[:space:]]*[1-9]'                # FAIL: 3 / FAIL=3
+FAIL_LINE_RE="${FAIL_LINE_RE}"'|FAIL[[:space:]]*-[[:space:]]*[0-9]'  # FAIL-0 / **FAIL-2**
+FAIL_LINE_RE="${FAIL_LINE_RE}"'|FAIL\([^)]*\)'                       # FAIL(bypass) / FAIL(FP)
+FAIL_LINE_RE="${FAIL_LINE_RE}"'|\[[[:space:]]*FAIL[[:space:]]*\]'    # [FAIL]
+FAIL_LINE_RE="${FAIL_LINE_RE}"'|\*\*FAIL'                            # any emphasised marker
+FAIL_LINE_RE="${FAIL_LINE_RE}"'|^FAIL[[:space:]]*\|'                 # FAIL   | label | exit=0
+FAIL_LINE_RE="${FAIL_LINE_RE}"'|^FAIL[[:space:]]*\['                 # FAIL   [exit=0 expect=...]
+
+# Proof the harness spoke at all. A harness that dies before its first probe
+# prints no verdict and can still leave exit 0 behind a trailing echo, which
+# reads exactly like a clean run. Silence is a failure, not a pass. This one is
+# deliberately BROAD — a false match here only costs detection of the silent
+# case, while a false miss would turn a healthy harness red.
+VERDICT_LINE_RE='\[[^]]*(PASS|FAIL|OK)[^]]*\]'                     # [OK] / [PASS] / [exit=2 PASS]
+VERDICT_LINE_RE="${VERDICT_LINE_RE}"'|(^|[[:space:]])(PASS|FAIL|OK)([[:space:]]|[|:=]|$)'
+
+# classify_harness <exit-code> <log-path> <tolerance>
+# Prints "PASS <n>" / "FAIL <n>" / "FAIL no-verdict"; returns 0 on pass, 1 on fail.
+classify_harness() {
+  local ec="$1" log="$2" tolerate="$3"
+  local fails verdicts
+  fails=$(grep -cE "$FAIL_LINE_RE" "$log")
+  verdicts=$(grep -cE "$VERDICT_LINE_RE" "$log")
+  if [ "$verdicts" -eq 0 ]; then
+    printf 'FAIL no-verdict\n'
+    return 1
+  fi
+  if [ "$fails" -le "$tolerate" ] && [ "$ec" -le "$tolerate" ]; then
+    printf 'PASS %s\n' "$fails"
+    return 0
+  fi
+  printf 'FAIL %s\n' "$fails"
+  return 1
+}
+
+# Sourceable as a library — `CABINET_HOOK_REGRESSION_LIB=1 . run-hook-regression.sh`
+# hands over the vocabularies and classify_harness without running the suite, so
+# runner-vocabulary.sh can test the runner's OWN regexes instead of a copy that
+# would drift away from them and re-open this hole from the other side.
+if [ "${CABINET_HOOK_REGRESSION_LIB:-0}" = "1" ]; then
+  return 0 2>/dev/null || exit 0
+fi
+
 mkdir -p "$LOG_DIR"
 
 HARNESSES=(
@@ -43,6 +102,10 @@ HARNESSES=(
   # complete toolchain, which is the one environment in which the hook cannot
   # fail open — this one builds the deprived environment itself.
   "dependency-preflight.sh"
+  # This runner's own ear. Every harness above is invisible to the suite unless
+  # the vocabularies at the top of this file can hear it; two of them were not,
+  # for their whole lives, and nothing was watching the ear itself.
+  "runner-vocabulary.sh"
 )
 
 OVERALL_FAIL=0
@@ -70,7 +133,6 @@ for harness in "${HARNESSES[@]}"; do
 
   # Extract summary: last non-blank line commonly holds PASS/FAIL counts
   summary=$(grep -Ei '^(===|Summary|PASS:|FAIL:)' "$log" | tail -3 | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g')
-  fail_signal=$(grep -cE 'FAIL[[:space:]]*[:=]?[[:space:]]*[1-9]|FAIL\(bypass\)|FAIL\(FP\)' "$log")
 
   # Per-harness tolerance for intentional/documented FAILs:
   # - fw044-verify.sh: tolerance=0 (FW-051 closures flipped ALLOW→BLOCK in
@@ -84,15 +146,22 @@ for harness in "${HARNESSES[@]}"; do
   esac
   # Accept ec up to the tolerance count (some harnesses exit with FAIL count
   # as their exit code). ec=0 always OK; ec>tolerate is a real regression.
-  if [ "$fail_signal" -le "$tolerate" ] && [ "$ec" -le "$tolerate" ]; then
-    if [ -n "$note" ] && { [ "$fail_signal" -gt 0 ] || [ "$ec" -gt 0 ]; }; then
+  verdict=$(classify_harness "$ec" "$log" "$tolerate")
+  outcome="${verdict%% *}"
+  detail="${verdict#* }"
+
+  if [ "$outcome" = "PASS" ]; then
+    if [ -n "$note" ] && { [ "$detail" != "0" ] || [ "$ec" -gt 0 ]; }; then
       status="PASS ($note)"
     else
       status="PASS"
     fi
     PASSED=$((PASSED + 1))
+  elif [ "$detail" = "no-verdict" ]; then
+    status="FAIL (no verdict emitted)"
+    OVERALL_FAIL=1
   else
-    status="FAIL (ec=$ec fail-lines=$fail_signal)"
+    status="FAIL (ec=$ec fail-lines=$detail)"
     OVERALL_FAIL=1
   fi
 

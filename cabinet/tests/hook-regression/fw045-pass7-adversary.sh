@@ -43,6 +43,15 @@ LB="{"
 RB="}"
 DOL="\$"
 
+# Verdict vocabulary, and why it is THIS one. This harness used to mark a
+# failing probe **FAIL-${ec}**, which matched no alternative in
+# run-hook-regression.sh's failure regex ('-' is not [:=], '0' is not [1-9]),
+# and it ended on a bare echo so its exit code was 0 whatever the probes did.
+# Both signals the runner reads were dead, so the suite was green by
+# construction for as long as it existed. FAIL(bypass)/FAIL(FP) is the shape
+# the runner counts — the same one its sibling fw051-adversary.sh speaks.
+PASS=0; FAIL=0
+
 test_cto() {
   local label="$1"; local cmd="$2"; local expect="$3"
   local json
@@ -50,7 +59,15 @@ test_cto() {
   echo "$json" | PATH="$TEST_BIN:$PATH" OFFICER_NAME=cto bash "$HOOK" >/dev/null 2>&1
   local ec=$?
   local status="OK"
-  [ "$ec" != "$expect" ] && status="**FAIL-${ec}**"
+  if [ "$ec" = "$expect" ]; then
+    PASS=$((PASS + 1))
+  else
+    # expect=2 means the probe should have been BLOCKED; anything else got
+    # through. expect=0 means it should have passed through; a block is a
+    # false positive.
+    if [ "$expect" = "2" ]; then status="FAIL(bypass)"; else status="FAIL(FP)"; fi
+    FAIL=$((FAIL + 1))
+  fi
   printf "  [%s] %-28s %-95s expect=%s got=%s\n" "$status" "$label" "$cmd" "$expect" "$ec"
 }
 
@@ -113,7 +130,20 @@ test_cto "D12-bash-c-ansic-if" "bash -c \$${SQ}if true${SEMI} then $PH1A $PH1B o
 # then with multiple spaces (tabs?) before git push
 test_cto "D13-then-many-space" "if true${SEMI} then    $PH1A $PH1B origin m""ain${SEMI} fi"                 2
 # Capitalization edge — bash is case-sensitive, these are NOT keywords, should not bypass the anchor but ALSO should not false-positive-block a command starting with IF/THEN
-test_cto "D14-uppercase-IF"    "IF true THEN $PH1A $PH1B origin m""ain"                                     2
+# D14 expectation CORRECTED 2026-08-25, with the measurement.
+# It expected BLOCK on `IF true THEN git push origin main`. Bash reserved words
+# are lowercase, so `IF` is not a keyword -- bash looks for a COMMAND named
+# `IF`, does not find one, and exits "command not found". The words `git push
+# origin main` are passed to it as ARGUMENTS and are never executed. Verified
+# directly: with no `IF` on PATH the line cannot push, and the guard allowing
+# it is correct.
+# The one case where it WOULD run is an executable named `IF` planted on PATH,
+# which then receives the push as its arguments. That is a planted-binary
+# threat model this file does not defend anywhere else -- an attacker who can
+# write an executable onto PATH has already won -- so widening the guard to
+# uppercase would buy nothing and would block prose ("IF you push origin main")
+# for it. Kept as a probe, with the expectation the shell actually produces.
+test_cto "D14-uppercase-IF"    "IF true THEN $PH1A $PH1B origin m""ain"                                     0
 # Reserved-word in middle of arg list (not at boundary) — should block via other anchor (git push on RHS)
 test_cto "D15-then-mid-arg"    "echo then ${AMP}${AMP} $PH1A $PH1B origin m""ain"                           2
 # Reserved-word with newline terminator instead of ;
@@ -165,6 +195,7 @@ test_cto "F1-heredoc-body"     "$(printf 'cat <<EOF\n%s %s origin m%s\nEOF' "$PH
 test_cto "F2-commit-then-ln2"  "$(printf '%s commit -m %sfix\nthen %s %s origin m%s%s' "$PH1A" "$SQ" "$PH1A" "$PH1B" "ain" "$SQ")" 2
 
 echo ""
-echo "=== Summary ==="
+echo "=== Summary: PASS=$PASS  FAIL=$FAIL ==="
 echo "FW-045 c933973 Pass-7 empirical adversary. Exit 2 = BLOCKED. Exit 0 = PASS-THROUGH."
 echo "FAIL = bypass (got 0 when expected 2) or false-block (got 2 when expected 0)."
+exit "$FAIL"
