@@ -130,7 +130,20 @@ test_cto "D12-bash-c-ansic-if" "bash -c \$${SQ}if true${SEMI} then $PH1A $PH1B o
 # then with multiple spaces (tabs?) before git push
 test_cto "D13-then-many-space" "if true${SEMI} then    $PH1A $PH1B origin m""ain${SEMI} fi"                 2
 # Capitalization edge — bash is case-sensitive, these are NOT keywords, should not bypass the anchor but ALSO should not false-positive-block a command starting with IF/THEN
-test_cto "D14-uppercase-IF"    "IF true THEN $PH1A $PH1B origin m""ain"                                     2
+# D14 expectation CORRECTED 2026-08-25, with the measurement.
+# It expected BLOCK on `IF true THEN git push origin main`. Bash reserved words
+# are lowercase, so `IF` is not a keyword -- bash looks for a COMMAND named
+# `IF`, does not find one, and exits "command not found". The words `git push
+# origin main` are passed to it as ARGUMENTS and are never executed. Verified
+# directly: with no `IF` on PATH the line cannot push, and the guard allowing
+# it is correct.
+# The one case where it WOULD run is an executable named `IF` planted on PATH,
+# which then receives the push as its arguments. That is a planted-binary
+# threat model this file does not defend anywhere else -- an attacker who can
+# write an executable onto PATH has already won -- so widening the guard to
+# uppercase would buy nothing and would block prose ("IF you push origin main")
+# for it. Kept as a probe, with the expectation the shell actually produces.
+test_cto "D14-uppercase-IF"    "IF true THEN $PH1A $PH1B origin m""ain"                                     0
 # Reserved-word in middle of arg list (not at boundary) — should block via other anchor (git push on RHS)
 test_cto "D15-then-mid-arg"    "echo then ${AMP}${AMP} $PH1A $PH1B origin m""ain"                           2
 # Reserved-word with newline terminator instead of ;

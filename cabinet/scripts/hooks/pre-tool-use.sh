@@ -1128,6 +1128,67 @@ if [ "$TOOL_NAME" = "Bash" ]; then
   # all derive from CMD_NORM so no surface is missed.
   CMD_NORM=$(printf '%s' "$CMD" | sed -e 's/\\"/"/g' -e "s/\\\\'/'/g")
 
+  # ------------------------------------------------------------------------
+  # DATAFLOW REJOIN (2026-08-25). Two shapes this file has carried as
+  # acknowledged scope-gaps since FW-040 -- see the "Remaining scope-gaps"
+  # list in section 3, entries (a) and (b). Both were confirmed LIVE by
+  # fw043-adversary.sh the first day that harness was capable of failing:
+  #
+  #     echo origin main | xargs git push      expect BLOCK, got ALLOW
+  #     X=git; $X push origin main             expect BLOCK, got ALLOW
+  #
+  # The gaps were real, and the reason given was that a flat regex cannot
+  # bridge a dataflow boundary. That is true of the GENERAL case and not of
+  # these two: both are single-step, purely lexical rejoins that can be done
+  # BEFORE the regexes run, in the same normalising spirit as the quote-strip
+  # and heredoc-strip below. What is deliberately NOT attempted here is the
+  # general case -- dot-source, `bash -s`, `perl -e` -- which still needs a
+  # parse-aware gate and stays on the list.
+  #
+  # ORDER MATTERS: variables first, then xargs. `X=git; echo origin main |
+  # xargs $X push` needs the assignment resolved before the rejoin, and the
+  # reverse order would miss it.
+  #
+  # SAFETY. Both rewrites only ever ADD a clause to the scanned text; the
+  # original is left in place. A rewrite can therefore cause a false BLOCK but
+  # can never cause a false ALLOW, and the file's existing false-positive
+  # escape (the reviewed-ACK re-SET retry documented for FW-043) applies
+  # unchanged.
+
+  # (b) Single-level literal variable expansion. `X=git; $X push origin main`
+  #     becomes `... git push origin main` appended. Only LITERAL right-hand
+  #     sides with no metacharacters are resolved -- a value that is itself a
+  #     substitution is left alone, because guessing at it is how a
+  #     normaliser starts inventing commands that were never run.
+  CMD_REJOIN="$CMD_NORM"
+  if printf '%s' "$CMD_NORM" | grep -qE '[A-Za-z_][A-Za-z0-9_]*=[A-Za-z0-9_./-]+' \
+     && printf '%s' "$CMD_NORM" | grep -qE '\$\{?[A-Za-z_][A-Za-z0-9_]*\}?'; then
+    _expanded=$(printf '%s' "$CMD_NORM" | perl -0777 -pe '
+      my %v;
+      while (/(?:^|[;&|(\s])([A-Za-z_]\w*)=([A-Za-z0-9_.\/-]+)/g) { $v{$1} = $2 }
+      for my $k (keys %v) { s/\$\{\Q$k\E\}/$v{$k}/g; s/\$\Q$k\E\b/$v{$k}/g }
+    ' 2>/dev/null)
+    [ -n "$_expanded" ] && CMD_REJOIN="$CMD_REJOIN
+$_expanded"
+  fi
+
+  # (a) xargs rejoin. `echo origin main | xargs git push` runs `git push` with
+  #     the left-hand words as arguments, so the verb and its refspec are real
+  #     but sit on opposite sides of a pipe. Rejoined as `git push origin main`
+  #     on its own line. Flags between `xargs` and the command are dropped, the
+  #     way xargs itself ignores them for this purpose.
+  if printf '%s' "$CMD_REJOIN" | grep -qE '\|[[:space:]]*xargs\b'; then
+    _rejoined=$(printf '%s' "$CMD_REJOIN" | perl -0777 -pe '
+      s{([^\n|]*?)\|\s*xargs\b((?:\s+-[^\s]+(?:\s+[^\s-][^\s]*)?)*)\s+([^\n|]+)}
+       {my ($lhs,$cmd)=($1,$3);
+        $lhs =~ s/^\s*(?:echo|printf|cat|seq|ls)\s+//;
+        $lhs =~ s/^["'"'"']|["'"'"']$//g;
+        "$&\n$cmd $lhs"}ge;
+    ' 2>/dev/null)
+    [ -n "$_rejoined" ] && CMD_REJOIN="$_rejoined"
+  fi
+  CMD_NORM="$CMD_REJOIN"
+
   # (a) Strip data-context quotes. sed -e runs each independently to survive
   #     malformed quotes. Order: \$'...' then '...' then "...". Double-quote
   #     strip preserves spans containing `$` or backtick (code-substitution
