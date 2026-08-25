@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import stat
 import subprocess
 from pathlib import Path
@@ -322,6 +323,104 @@ class TestDashboardPasswordRecovery:
         assert copied.read_text() == password
         assert not marker.exists(), "cabinet/.env content must never be sourced or evaluated"
         assert password not in result.stdout + result.stderr
+
+
+# ---------------------------------------------------------------------------
+# The stored form of a chosen password, mirrored from the writer.
+# ---------------------------------------------------------------------------
+# cabinet/dashboard/src/lib/config-write.ts `envValueLiteral` is what actually
+# writes DASHBOARD_PASSWORD: a value that is provably literal in an unquoted
+# bash assignment is stored BARE, anything else is SINGLE-QUOTED with an
+# embedded `'` escaped as `'\''`. Since 2026-08-25 the operator may choose any
+# character at all (8 or more, every symbol allowed), so `--copy` has to be the
+# exact inverse of this — and the apostrophe case is the one that used to come
+# back mangled.
+_ENV_BARE_SAFE = re.compile(r"^[A-Za-z0-9_.:/=+@%,-]+$")
+
+
+def _env_literal(value: str) -> str:
+    """The bytes the dashboard writes after `DASHBOARD_PASSWORD=`."""
+    if value == "" or _ENV_BARE_SAFE.match(value):
+        return value
+    return "'" + value.replace("'", "'\\''") + "'"
+
+
+class TestDashboardPasswordAnySymbols:
+    """--copy must hand back the EXACT password the operator chose, for every
+    character they are now allowed to choose.
+
+    The failure this pins: the reader stripped the outer single quotes but never
+    decoded `'\''` back to `'`, so a password with an apostrophe reached the
+    clipboard as `O'\''Brien` — a string that does not open the door. Nothing
+    caught it because every fixture password was alphanumeric.
+    """
+
+    @staticmethod
+    def _clipboard_env(cab_root: Path, tmp_path: Path) -> tuple:
+        fake_bin = tmp_path / "fake-bin"
+        fake_bin.mkdir(exist_ok=True)
+        copied = tmp_path / "clipboard"
+        pbcopy = fake_bin / "pbcopy"
+        pbcopy.write_text('#!/bin/bash\ncat > "$FAKE_PBCOPY_OUT"\n')
+        pbcopy.chmod(0o755)
+        env = base_env(
+            cab_root,
+            path=f"{fake_bin}:{MIN_PATH}",
+            FAKE_PBCOPY_OUT=str(copied),
+        )
+        return env, copied
+
+    @pytest.mark.parametrize(
+        "password",
+        [
+            pytest.param("O'Brien's cabinet", id="apostrophes-and-spaces"),
+            pytest.param("double''quote-cabinet", id="two-apostrophes-in-a-row"),
+            pytest.param('say "hello" cabinet', id="double-quotes"),
+            pytest.param("back\\slash\\pass", id="backslashes"),
+            pytest.param("  padded password  ", id="leading-and-trailing-spaces"),
+            pytest.param("blåbærgrød 2026", id="danish-letters"),
+            pytest.param("100%-secure €uro", id="percent-and-euro"),
+            pytest.param("chosen-by-operator-2026", id="plain-bare-value"),
+        ],
+    )
+    def test_copy_returns_the_exact_password(self, cab_root, tmp_path, password):
+        env_file = cab_root / "cabinet" / ".env"
+        env_file.write_text(f"DASHBOARD_PASSWORD={_env_literal(password)}\nOTHER_KEY=keep\n")
+        env_file.chmod(0o600)
+        env, copied = self._clipboard_env(cab_root, tmp_path)
+        result = run(["bash", str(DASHBOARD_PASSWORD), "--copy"], env=env)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert copied.read_text() == password, "the clipboard must hold the password as typed"
+        assert password not in result.stdout + result.stderr
+
+    def test_copy_reads_a_shell_payload_as_text_even_when_it_is_quoted(self, cab_root, tmp_path):
+        """The writer's quoted form is the normal shape now, so the "never
+        evaluate the file" property has to hold for it too — not only for the
+        bare legacy shape the older arm covers."""
+        marker = tmp_path / "must-not-exist"
+        password = f"pw$(touch {marker})yz"
+        env_file = cab_root / "cabinet" / ".env"
+        env_file.write_text(f"DASHBOARD_PASSWORD={_env_literal(password)}\n")
+        env_file.chmod(0o600)
+        assert env_file.read_text().startswith("DASHBOARD_PASSWORD='"), "fixture must be the quoted shape"
+        env, copied = self._clipboard_env(cab_root, tmp_path)
+        result = run(["bash", str(DASHBOARD_PASSWORD), "--copy"], env=env)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert copied.read_text() == password
+        assert not marker.exists(), "cabinet/.env content must never be sourced or evaluated"
+
+    def test_copy_still_reads_a_legacy_double_quoted_value(self, cab_root, tmp_path):
+        """Values written before the safe-quote layer landed are double-quoted;
+        an instance that has been running since then must not lose its password
+        to this change."""
+        password = "legacy quoted 2026"
+        env_file = cab_root / "cabinet" / ".env"
+        env_file.write_text(f'DASHBOARD_PASSWORD="{password}"\n')
+        env_file.chmod(0o600)
+        env, copied = self._clipboard_env(cab_root, tmp_path)
+        result = run(["bash", str(DASHBOARD_PASSWORD), "--copy"], env=env)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert copied.read_text() == password
 
 
 class TestDashboardPasswordReset:

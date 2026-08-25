@@ -109,13 +109,60 @@ if [ "$MODE" = "reset" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Turn one stored .env value back into the string the operator typed.
+#
+# The dashboard writes this value through its safe-quote layer
+# (cabinet/dashboard/src/lib/config-write.ts, envValueLiteral): a value that is
+# provably literal in an unquoted assignment is stored BARE, and anything else
+# is SINGLE-QUOTED with an embedded `'` written as `'\''`. Since the operator may
+# now choose any character at all (8 or more, every symbol allowed), stripping
+# the outer quotes is no longer enough: a password with an apostrophe in it would
+# reach the clipboard as `O'\''Brien` instead of `O'Brien` and would not open the
+# door. This walks the body once and decodes that one escape — the exact inverse
+# of the writer, and what bash itself does on `source`, with nothing evaluated.
+#
+# It is a pure text transform on purpose. cabinet/.env is NEVER sourced here: a
+# value that was written before the safe-quote layer landed can still hold a raw
+# `$(...)`, and `--copy` must hand that over as text rather than run it.
+# ---------------------------------------------------------------------------
+unliteral_env_value() {
+  local raw="$1"
+  local body rest out
+  case "$raw" in
+    \'*\')
+      body="${raw#\'}"
+      body="${body%\'}"
+      out=""
+      rest="$body"
+      while [ -n "$rest" ]; do
+        case "$rest" in
+          "'\\''"*)
+            out="$out'"
+            rest="${rest#"'\\''"}"
+            ;;
+          *)
+            out="$out${rest:0:1}"
+            rest="${rest:1}"
+            ;;
+        esac
+      done
+      printf '%s' "$out"
+      ;;
+    \"*\")
+      # Legacy shape: values written before the safe-quote layer landed.
+      body="${raw#\"}"
+      printf '%s' "${body%\"}"
+      ;;
+    *)
+      printf '%s' "$raw"
+      ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
 # --copy : hand the current password to the clipboard without printing it.
 # ---------------------------------------------------------------------------
-password="$(sed -n 's/^DASHBOARD_PASSWORD=//p' "$ENV_FILE" | head -n 1)"
-case "$password" in
-  \"*\") password="${password#\"}"; password="${password%\"}" ;;
-  \'*\') password="${password#\'}"; password="${password%\'}" ;;
-esac
+password="$(unliteral_env_value "$(sed -n 's/^DASHBOARD_PASSWORD=//p' "$ENV_FILE" | head -n 1)")"
 if [ -z "$password" ] || [ "$password" = "changeme" ] || [ "$password" = "changeme_secure_password" ]; then
   unset password
   echo "No password is set yet. Open the dashboard and choose one on the first screen." >&2

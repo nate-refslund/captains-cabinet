@@ -4,6 +4,7 @@
 
 import { describe, it, expect } from 'vitest'
 import {
+  PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
   hasRealPassword,
   validateChosenPassword,
@@ -25,18 +26,15 @@ describe('hasRealPassword — one definition of "a password is configured"', () 
   })
 })
 
-describe('validateChosenPassword — plain-language floor + shell safety', () => {
-  const good = 'sunshine-cabinet-2026'
+describe('validateChosenPassword — a floor people accept, and a keyboard they can use whole', () => {
+  const good = 'sunshine cabinet'
+
+  /** One character by code. Used instead of escapes so every hostile character
+   *  below is unambiguous in the source and none of them is invisible. */
+  const ch = (code: number) => String.fromCharCode(code)
 
   it('accepts a reasonable password typed identically twice', () => {
     expect(validateChosenPassword(good, good)).toEqual({ ok: true })
-  })
-
-  it(`rejects anything under ${PASSWORD_MIN_LENGTH} characters`, () => {
-    const short = 'a'.repeat(PASSWORD_MIN_LENGTH - 1)
-    const r = validateChosenPassword(short, short)
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toMatch(/at least/i)
   })
 
   it('rejects a mismatched confirmation', () => {
@@ -45,25 +43,145 @@ describe('validateChosenPassword — plain-language floor + shell safety', () =>
     if (!r.ok) expect(r.error).toMatch(/do not match/i)
   })
 
-  // cabinet/.env is SOURCED by bash at officer/dashboard start, so a value with
-  // a space or a shell metacharacter would break — or, with $()/backticks,
-  // EXECUTE — on restart. The charset gate is the wall against that.
+  // -------------------------------------------------------------------------
+  // THE FLOOR AND THE CEILING, AT THEIR EXACT EDGES. An off-by-one on an
+  // inclusive bound is invisible to a test that only probes the middle, and
+  // "8 characters" on screen has to mean 8 accepted and 7 refused.
+  // -------------------------------------------------------------------------
+  const a = (n: number) => 'a'.repeat(n)
+
   it.each([
-    ['a space', 'my pass word 12'],
-    ['a dollar sign', 'passwordwith$FOO'],
-    ['a backtick', 'password`whoami`x'],
-    ['command substitution', 'pw$(touch /tmp/x)yz'],
-    ['a semicolon', 'password;rm-rf-x'],
-    ['a single quote', "password'orx'yz"],
-    ['a double quote', 'password"orx"yz'],
-  ])('rejects a password containing %s', (_label, pw) => {
+    ['an empty box', ''],
+    ['a single character', a(1)],
+    [`${PASSWORD_MIN_LENGTH - 1} characters — one under the floor`, a(PASSWORD_MIN_LENGTH - 1)],
+  ])('rejects %s as too short', (_label, pw) => {
     const r = validateChosenPassword(pw, pw)
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toMatch(/letters, numbers/i)
+    if (!r.ok) expect(r.error).toMatch(/at least/i)
   })
 
-  it('accepts the safe symbol subset', () => {
-    const pw = 'Cabinet.2026_ok-@%^+=:,'
+  it(`accepts EXACTLY ${PASSWORD_MIN_LENGTH} characters — the floor is inclusive`, () => {
+    const pw = a(PASSWORD_MIN_LENGTH)
+    expect(validateChosenPassword(pw, pw)).toEqual({ ok: true })
+  })
+
+  it(`accepts EXACTLY ${PASSWORD_MAX_LENGTH} characters — the ceiling is inclusive`, () => {
+    const pw = a(PASSWORD_MAX_LENGTH)
+    expect(validateChosenPassword(pw, pw)).toEqual({ ok: true })
+  })
+
+  it(`rejects ${PASSWORD_MAX_LENGTH + 1} characters, in plain words`, () => {
+    const pw = a(PASSWORD_MAX_LENGTH + 1)
+    const r = validateChosenPassword(pw, pw)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toMatch(/longer than/i)
+  })
+
+  // JavaScript's `.length` counts UTF-16 units, so an emoji counts as TWO. A
+  // floor written that way would accept SEVEN emoji as "14 characters" — a
+  // password shorter than the screen promises — and a ceiling written that way
+  // would refuse 65 emoji the operator can see are 65 characters. Both ends are
+  // counted in CODE POINTS instead, and both ends are pinned here.
+  describe('length is counted the way the person typing counts it', () => {
+    const LOCK = '🔐' // one code point, two UTF-16 units
+
+    it(`rejects ${PASSWORD_MIN_LENGTH - 1} emoji even though .length reads ${(PASSWORD_MIN_LENGTH - 1) * 2}`, () => {
+      const pw = LOCK.repeat(PASSWORD_MIN_LENGTH - 1)
+      expect(pw.length).toBe((PASSWORD_MIN_LENGTH - 1) * 2) // the trap itself
+      const r = validateChosenPassword(pw, pw)
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.error).toMatch(/at least/i)
+    })
+
+    it(`accepts ${PASSWORD_MIN_LENGTH} emoji`, () => {
+      const pw = LOCK.repeat(PASSWORD_MIN_LENGTH)
+      expect(validateChosenPassword(pw, pw)).toEqual({ ok: true })
+    })
+
+    it(`accepts ${PASSWORD_MAX_LENGTH} emoji and refuses one more`, () => {
+      const atCeiling = LOCK.repeat(PASSWORD_MAX_LENGTH)
+      expect(atCeiling.length).toBe(PASSWORD_MAX_LENGTH * 2) // the trap at the other end
+      expect(validateChosenPassword(atCeiling, atCeiling)).toEqual({ ok: true })
+      const over = LOCK.repeat(PASSWORD_MAX_LENGTH + 1)
+      const r = validateChosenPassword(over, over)
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.error).toMatch(/longer than/i)
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // EVERY CHARACTER A KEYBOARD PRODUCES IS ALLOWED (Captain, 2026-08-25:
+  // "allow all symbols"). Every row below was REFUSED before this change, by a
+  // charset gate that existed because cabinet/.env is bash-`source`d and the
+  // writer used to emit values raw. The writer now emits them through
+  // `config-write.envValueLiteral`, which single-quotes anything not provably
+  // literal — proven inert against a real bash in `env-source-safety.test.ts`,
+  // and proven end-to-end from this screen (set → source → sign in) in
+  // `actions/create-password.test.ts`. These rows are the sensor that the gate
+  // stays gone.
+  // -------------------------------------------------------------------------
+
+  /** Every printable ASCII character, space (32) through tilde (126), at once —
+   *  so no symbol can be quietly re-banned without this row going red. */
+  const ALL_PRINTABLE_ASCII = Array.from({ length: 126 - 32 + 1 }, (_, i) => ch(32 + i)).join('')
+
+  it.each([
+    ['a single quote', "O'Brien's cabinet"],
+    ['a double quote', 'say "hello" cabinet'],
+    ['a backslash', 'back' + ch(92) + 'slash' + ch(92) + 'pass'],
+    ['a dollar sign', '$HOME-is-where-it-is'],
+    ['a backtick', '`whoami`-cabinet'],
+    ['command substitution', 'pw$(id)-cabinet'],
+    ['a semicolon chain', 'pw;touch nope;x'],
+    ['interior spaces', 'correct horse battery staple'],
+    ['leading and trailing spaces', '  padded password  '],
+    ['a percent sign', '100%-secure-please'],
+    ['Danish letters', 'blåbærgrød-2026'],
+    ['a euro sign', '€uro-cabinet-2026'],
+    ['emoji', '🔐🔐-cabinet-2026'],
+    ['every printable ASCII character at once', ALL_PRINTABLE_ASCII],
+  ])('accepts a password containing %s', (_label, pw) => {
+    expect(validateChosenPassword(pw, pw)).toEqual({ ok: true })
+  })
+
+  it('a space at either end is PART of the password, never trimmed away', () => {
+    const padded = '  padded password  '
+    expect(validateChosenPassword(padded, padded)).toEqual({ ok: true })
+    // The trimmed form is therefore a DIFFERENT password: confirming with it
+    // must fail, which is what proves nothing silently ate the spaces.
+    const r = validateChosenPassword(padded, padded.trim())
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toMatch(/do not match/i)
+  })
+
+  // -------------------------------------------------------------------------
+  // THE TWO THINGS STILL REFUSED. Both are about the PASSWORD — one that could
+  // never be re-typed, or one indistinguishable from an empty box — and not
+  // about the file it lands in.
+  // -------------------------------------------------------------------------
+  it.each([
+    ['a newline (the paste accident)', 'pasted-line' + ch(10) + 'cabinet'],
+    ['a carriage return', 'pasted-line' + ch(13) + 'cabinet'],
+    ['a tab', 'tabbed' + ch(9) + 'cabinet-2026'],
+    ['a NUL', 'nul' + ch(0) + 'cabinet-2026'],
+    ['an escape', 'esc' + ch(27) + 'cabinet-2026'],
+    ['DEL', 'del' + ch(127) + 'cabinet-2026'],
+    ['a C1 control', 'c1' + ch(133) + 'cabinet-2026'],
+  ])('rejects %s — it cannot be typed on purpose', (_label, pw) => {
+    const r = validateChosenPassword(pw, pw)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toMatch(/invisible character/i)
+  })
+
+  it('rejects a password that is only spaces, however long', () => {
+    const pw = ' '.repeat(PASSWORD_MIN_LENGTH + 4)
+    const r = validateChosenPassword(pw, pw)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toMatch(/only spaces/i)
+  })
+
+  it('but spaces are fine as long as something else is there too', () => {
+    const pw = '        x'
     expect(validateChosenPassword(pw, pw)).toEqual({ ok: true })
   })
 })
