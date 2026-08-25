@@ -28,6 +28,7 @@ import os
 import socket
 import subprocess
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -344,9 +345,24 @@ def _shim(shim_dir: Path, name: str, rc: int = 0) -> None:
     (shim_dir / name).chmod(0o755)
 
 
-def _log(shim_dir: Path, name: str) -> list[str]:
+def _log(shim_dir: Path, name: str, expect: int = 0) -> list[str]:
+    """Lines a shim recorded.
+
+    `expect` waits, briefly, for that many lines. The starter is launched with
+    `&` and outlives the script that launched it — that is the product's whole
+    point — so its shim can still be writing when the parent exits. Reading
+    once raced green on an idle Mac and red under load (measured 2026-08-25,
+    one arm in a 12-minute full-suite run); a bounded wait is the honest read
+    of an asynchronous side effect, and 0 keeps the old semantics for the
+    "nothing should have happened" assertions.
+    """
     p = shim_dir / f"{name}.log"
-    return p.read_text().splitlines() if p.is_file() else []
+    deadline = time.monotonic() + 5.0
+    while True:
+        lines = p.read_text().splitlines() if p.is_file() else []
+        if len(lines) >= expect or time.monotonic() > deadline:
+            return lines
+        time.sleep(0.05)
 
 
 def _run_open(root: Path, tmp_path: Path, curl_script: str, tries: str = "1"):
@@ -387,7 +403,7 @@ def test_down_starts_it_on_the_recorded_port(tmp_path: Path):
                          f'if [ "$n" -le 1 ]; then {_REFUSED}; else {_MINE}; fi', tries="5")
     assert p.returncode == 0, p.stdout + p.stderr
     assert "isn't running" in p.stdout
-    started = _log(shims, "nohup")
+    started = _log(shims, "nohup", expect=1)
     assert len(started) == 1 and "start-dashboard.sh" in started[0]
     assert _log(shims, "open") == ["http://127.0.0.1:3141/"]
     # the recorded port was not changed: nothing was in the way
@@ -416,7 +432,7 @@ def test_a_foreign_app_on_the_door_moves_the_cabinet_and_says_so(tmp_path: Path)
     assert "CABINET_DASHBOARD_PORT=3101" in after
     assert "hunter2" in after
     # and it was started on the NEW port, never on theirs
-    started = _log(shims, "nohup")
+    started = _log(shims, "nohup", expect=1)
     assert len(started) == 1 and "start-dashboard.sh" in started[0]
 
 

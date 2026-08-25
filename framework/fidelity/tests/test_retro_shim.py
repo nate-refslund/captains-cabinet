@@ -5,6 +5,17 @@ import pytest
 from framework.fidelity import retro
 
 
+def _load_retro_lib():
+    """The pipe module the shim wraps, loaded the same way the shim loads it."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "_retro_lib_under_test", retro.RETRO_PIPE_DIR / "lib.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 class TestRetroShim:
     def test_reexports_scoring_symbols(self):
         for name in (
@@ -20,7 +31,17 @@ class TestRetroShim:
         assert isinstance(retro.JUDGE_SYSTEM, str) and retro.JUDGE_SYSTEM
         assert isinstance(retro.BASELINE_SYSTEM, str) and retro.BASELINE_SYSTEM
         assert isinstance(retro.RETRO_ADDENDUM, str) and retro.RETRO_ADDENDUM
-        assert retro.LLM_MODEL == "claude-sonnet-4-6"
+        # LLM_MODEL is RE-EXPORTED from the retrodiction pipe, which lives
+        # OUTSIDE this repo (RETRO_PIPE_DIR). Pinning its literal value here
+        # pinned somebody else's file: the pipe moved to a newer model and this
+        # arm went red on a tree that had not changed, on a machine that has the
+        # pipe, while CI — which does not — never saw it. What this shim owes is
+        # that it hands back what the source holds, so that is what is asserted.
+        assert isinstance(retro.LLM_MODEL, str) and retro.LLM_MODEL
+        source = _load_retro_lib()
+        assert retro.LLM_MODEL == source.LLM_MODEL, (
+            "the shim re-exports a DIFFERENT model id than the pipe it wraps"
+        )
 
     def test_judge_system_is_decision_only(self):
         # The decision-only contract is the sacred reuse boundary (style is
