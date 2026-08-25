@@ -131,3 +131,54 @@ over the appshell sources, both hatch runbooks and README · layer separation
 `new=0` · `test_dashboard_identity_probe.py` · `test_appshell_build.py` ·
 `test_hatch_app_feel.py` · full `cabinet/scripts/tests` · null-hatch (hatch
 surfaces changed) · appshell gate (fresh egg cut + build + smoke + lint).
+
+---
+
+## Post-review findings (same branch, after the full batteries ran)
+
+The first pass was green on the batteries I had chosen. The FULL
+`cabinet/scripts/tests` run found two more, and both are named classes in this
+repo's own evidence discipline — recorded here because the review is only worth
+what it admits.
+
+**1. My battery was not the gate's battery (class 3).** `hatch.sh`'s tail is
+EXTRACTED into temp scripts by two test modules — the move-in slice
+(`test_hatch_movein_nonfatal.py`) and the app-feel tail
+(`test_hatch_app_feel.py`) — and run under `set -u` with a handful of variables
+seeded. Resolving the dashboard port through `"$REPO_ROOT"` and a library
+sourced 200 lines above the slice killed every one of those extracts on an
+unbound variable. Six arms red. Both are resolved defensively at the point of
+use now; the real run is byte-identical in behavior.
+
+**2. A stub that encodes the wrong contract is a fixture asserting the wrong
+thing (class 11).** The move-in harness shimmed `curl` as a bare `exit 0` and
+called it "the dashboard answers immediately". Under an identity probe that is
+not the Cabinet answering — it is *precisely* the foreign-app-on-the-port case
+— so the tail correctly took the other branch and the arms went red. The shim
+returns what the dashboard returns now. The failure was the fixture's, and it
+is the same shape as the bug this whole area exists to close.
+
+**3. A bound path moved that nobody would have guessed.** `cabinet/services.yml`
+and `cabinet/scripts/egg-export-manifest.txt` are inside the COG-4 frozen review
+scope, so the digest had to be recomputed over HEAD and re-bound rather than
+left claiming bytes that no longer exist. No COG-4 surface, threshold or fixture
+moved. Verified with the gate's own `--verify`, not by hand.
+
+**4. A claim that lived only in a comment is now a sensor.** `deploy-mac.sh
+--stop all` boots out every installed cabinet LaunchAgent. The docstring said it
+was a dialog-path act; nothing enforced that. A static pin now holds it to ONE
+call site, inside the typed-confirmation flow, after the phrase matched, guarded
+on the prefix being a Cabinet, with fixed argv — and proves neither headless
+mode can reach it.
+
+## CI
+
+Not run, and not because of this branch: GitHub Actions refused every job with
+"the job was not started because your account is locked due to a billing issue".
+The same lock red-lined master's own scheduled run earlier the same day, so no
+CI has executed on this repository since 2026-08-24. The PR is consequently
+BLOCKED on its required checks, and it has NOT been merged — an override is the
+one thing that is never the answer to a red or unrun gate.
+
+Every CI job's local equivalent was run instead, on the branch tip, and each is
+named with its command in the gates line above.
