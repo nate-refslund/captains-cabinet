@@ -449,3 +449,72 @@ def test_no_branch_stops_or_kills_anything():
     code = "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("#"))
     for banned in ("kill ", "pkill", "launchctl", "lsof -ti", "kill-switch"):
         assert banned not in code, f"open-cabinet.sh must never {banned!r}"
+
+
+# ---------------------------------------------------------------------------
+# 4) the bash reader and the python reader must agree
+# ---------------------------------------------------------------------------
+#
+# There are two implementations of "which port does this Cabinet answer on":
+# cabinet_dash_port in the bash lib, and _dashboard_url_from_env_file in the
+# Telegram poller (which builds the links the operator taps). Two copies of one
+# rule drift; these arms are what keeps them honest.
+
+
+def _python_port(root: Path, env: dict | None = None) -> str:
+    src = (_SCRIPTS / "officer-inbound-poller.py").read_text()
+    start = src.index("def _dashboard_url_from_env_file")
+    end = src.index("\ndef ", start + 10)
+    code = "import os\n" + src[start:end]
+    prog = (
+        code
+        + "\nimport json,sys\nprint(_dashboard_url_from_env_file())\n"
+    )
+    e = {k: v for k, v in os.environ.items() if k != "CABINET_DASHBOARD_PORT"}
+    e["CABINET_ROOT"] = str(root)
+    e.update(env or {})
+    res = subprocess.run(["python3.12", "-c", prog], capture_output=True, text=True,
+                         timeout=_TIMEOUT, env=e)
+    assert res.returncode == 0, res.stderr
+    return res.stdout.strip().rsplit(":", 1)[1]
+
+
+@pytest.mark.parametrize("body,expected", [
+    ("CABINET_DASHBOARD_PORT=3141\n", "3141"),
+    ("X=1\n", "3100"),
+    ("CABINET_DASHBOARD_PORT=3100\nX=1\nCABINET_DASHBOARD_PORT=3101\n", "3101"),
+    ("CABINET_DASHBOARD_PORT=not-a-port\n", "3100"),
+    ("CABINET_DASHBOARD_PORT=999999999\n", "3100"),
+])
+def test_the_two_port_readers_agree(tmp_path: Path, body: str, expected: str):
+    root = _root_with_env(tmp_path, body)
+    assert _port_for(root) == expected, "the bash reader disagrees"
+    assert _python_port(root) == expected, "the python reader disagrees"
+
+
+def test_both_readers_let_an_explicit_env_win(tmp_path: Path):
+    root = _root_with_env(tmp_path, "CABINET_DASHBOARD_PORT=3141\n")
+    assert _port_for(root, env={"CABINET_DASHBOARD_PORT": "3199"}) == "3199"
+    assert _python_port(root, env={"CABINET_DASHBOARD_PORT": "3199"}) == "3199"
+
+
+def test_no_probe_or_opener_hardcodes_the_default_port():
+    """A hardcoded 3100 in a probe is how a moved dashboard becomes invisible
+    to its own tooling. The default belongs in the resolvers and nowhere else."""
+    resolvers = {
+        _SCRIPTS / "lib" / "dashboard.sh",          # the bash resolver
+        _SCRIPTS / "start-dashboard.sh",            # the server's own default
+        _SCRIPTS / "officer-inbound-poller.py",     # the python twin
+    }
+    offenders = []
+    for src in sorted(_SCRIPTS.glob("*.sh")) + sorted(_SCRIPTS.glob("lib/*.sh")):
+        if src in resolvers:
+            continue
+        for i, line in enumerate(src.read_text(errors="replace").splitlines(), 1):
+            code = line.split("#", 1)[0]
+            if "3100" in code and "pick_port" not in code and "3199" not in code:
+                offenders.append(f"{src.name}:{i}: {line.strip()}")
+    assert not offenders, (
+        "a port literal outside the resolvers — derive it from "
+        "cabinet_dash_port instead:\n" + "\n".join(offenders)
+    )

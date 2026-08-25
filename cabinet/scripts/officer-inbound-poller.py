@@ -87,6 +87,35 @@ if _REPO_ROOT not in sys.path:
 # Captain DM silently failed capture from 2026-06-23 until this fix. We now emit
 # the tag the hooks already parse, sourcing chat_id from the SAME config they read
 # so the match holds for the generated/sane config format.
+def _dashboard_url_from_env_file() -> str:
+    """The dashboard's own recorded door, not a guess.
+
+    CABINET_DASHBOARD_PORT in cabinet/.env is the single source of truth for
+    which port this deployment answers on (start-dashboard.sh honors it, and
+    the launcher writes it there when another app has taken 3100). A link built
+    from a hardcoded 3100 sends the operator to somebody else's app — or to
+    nothing at all — the moment the Cabinet moves. Bash twin:
+    cabinet/scripts/lib/dashboard.sh -> cabinet_dash_port.
+    """
+    port = os.environ.get("CABINET_DASHBOARD_PORT", "")
+    if not port.isdigit():
+        root = os.environ.get("CABINET_ROOT") or os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..", ".."
+        )
+        env_path = os.path.join(root, "cabinet", ".env")
+        try:
+            with open(env_path, encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    if line.startswith("CABINET_DASHBOARD_PORT="):
+                        # last assignment wins — the file is append-only
+                        port = "".join(c for c in line.split("=", 1)[1] if c.isdigit())
+        except OSError:
+            port = ""
+    if not port.isdigit() or not (1 <= int(port) <= 65535):
+        port = "3100"
+    return f"http://127.0.0.1:{port}"
+
+
 def _neutralize_channel_tag(s: str) -> str:
     """Defang any literal ``<channel …>`` opener/closer in human-facing prefix
     text (the reply-preview / binder note) by swapping its ASCII ``<`` for ‹
@@ -1167,7 +1196,7 @@ def main() -> int:
     api = f"https://api.telegram.org/bot{token}"
     file_api = f"https://api.telegram.org/file/bot{token}"  # file downloads use /file/bot<token>/<path>
     redis_host = os.environ.get("REDIS_HOST", "localhost")
-    dashboard_url = os.environ.get("CABINET_DASHBOARD_URL", "http://127.0.0.1:3100")
+    dashboard_url = os.environ.get("CABINET_DASHBOARD_URL") or _dashboard_url_from_env_file()
     onboarding_webhook_secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
     log(f"started officer={officer} session={session} captain={captain} offset={offset}")
 
