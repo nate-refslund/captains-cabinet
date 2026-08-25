@@ -950,3 +950,32 @@ def test_the_opener_runs_from_the_prefix_root_too(tmp_path: Path) -> None:
     # it read the port out of the install's own .env, from the prefix root
     assert "http://127.0.0.1:3141/" in res.stdout
     assert (shim / "open.log").read_text().strip() == "http://127.0.0.1:3141/"
+
+
+def test_the_fleet_stop_is_reachable_from_exactly_one_place() -> None:
+    """`deploy-mac.sh --stop all` boots out every installed cabinet LaunchAgent.
+
+    It is the right thing to do before moving a Cabinet aside and the wrong
+    thing to do anywhere else — above all in a headless mode, which would boot
+    out the fleet on whatever Mac a test suite happens to run on. So: one
+    definition, one call site, inside the typed-confirmation flow, guarded on
+    the prefix actually being a Cabinet, with fixed argv."""
+    swift = (_APPSHELL / "main.swift").read_text(encoding="utf-8")
+    code = "\n".join(ln for ln in swift.splitlines() if not ln.lstrip().startswith("//"))
+    assert code.count("stopOldCabinet") == 2, (
+        "the fleet-stop has more than one call site — every one of them is a "
+        "chance to boot out a fleet nobody asked to stop"
+    )
+    fresh = code[code.index("func startFresh"):code.index("func dialogMain")]
+    assert "if isCabinet { _ = stopOldCabinet(at: prefix) }" in fresh, (
+        "the fleet-stop moved out of the typed-confirmation flow, or lost its guard"
+    )
+    # …after the typed phrase matched, never before it
+    assert fresh.index("guard typed == freshConfirmPhrase") < fresh.index("stopOldCabinet")
+    # fixed argv, no interpolation, no shell
+    assert 'run("/bin/bash", [script, "--stop", "all"], cwd: prefix)' in code
+    # and no headless mode can reach it
+    for fn in ("func smokeMain", "func probeMain"):
+        body = code[code.index(fn):]
+        body = body[: body.index("\n}\n") + 3]
+        assert "stopOldCabinet" not in body, f"{fn} can stop a live fleet"

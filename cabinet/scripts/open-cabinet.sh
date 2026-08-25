@@ -87,7 +87,9 @@ MOVED_DOOR=""
 open_browser() {
   # $1 = url. Prints its own sentence either way; never fatal.
   if [ "$NO_BROWSER" = "1" ]; then
-    echo "Your Cabinet is ready at $1 (no browser window was opened, as you asked)."
+    # Neutral wording on purpose: --no-browser is a choice, an SSH session is
+    # not — "as you asked" would be false half the time it printed.
+    echo "Your Cabinet is ready at $1 — no browser window was opened."
     return 0
   fi
   if ! command -v open >/dev/null 2>&1; then
