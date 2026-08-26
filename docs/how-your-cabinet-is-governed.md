@@ -47,8 +47,20 @@ committed, and locked system-immutable (`instance/config/posture.yml` +
 ## The trust ladder
 
 Under earn_up, autonomy is climbed in named rungs — *would-like-to* (propose
-first) → *intend-to* (announce, act unless vetoed) → *ive-done* (act, report
-after) → *ive-been-doing* (fully graduated). A rung is **earned** by a track
+first) → *intend-to* (**proposes today**, see below) → *ive-done* (act, report
+after) → *ive-been-doing* (fully graduated).
+
+**What *intend-to* actually does right now (2026-08-26).** It is named for
+"announce, then act unless you veto", and that is not built: nothing sends the
+announcement and nothing accepts a stop. Rather than act without the warning it
+promises, the action lane deliberately leaves this verdict out of its act-set,
+so work at this rung **proposes**, exactly like the rung below it. You get a
+proposal, not a surprise.
+
+So the rung is currently a name without new behaviour — earning it changes
+nothing until the announcement and the stop handle are wired. That is the safe
+direction to be wrong in, and it is written down here rather than left for you
+to discover from the absence of a message you were told to expect. A rung is **earned** by a track
 record of confirmed outcomes, but it is **never self-granted**: the org can
 only surface "this rung looks earned — grant it?" and you grant it by
 writing a row into the Captain-locked `instance/config/trust-ladder.yml`.
