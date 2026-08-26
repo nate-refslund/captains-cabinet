@@ -6,11 +6,31 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockVerify, mockRedisGet, mockRedisSet, mockRedisDel } = vi.hoisted(() => ({
-  mockVerify: vi.fn<() => Promise<boolean>>(),
-  mockRedisGet: vi.fn(),
-  mockRedisSet: vi.fn(),
-  mockRedisDel: vi.fn(),
+const { mockVerify, mockRedisGet, mockRedisSet, mockRedisDel, mockExecFile } =
+  vi.hoisted(() => ({
+    mockVerify: vi.fn<() => Promise<boolean>>(),
+    mockRedisGet: vi.fn(),
+    mockRedisSet: vi.fn(),
+    mockRedisDel: vi.fn(),
+    mockExecFile: vi.fn(),
+  }))
+
+// The arm direction now goes through cabinet/scripts/kill-switch.sh so the halt
+// leaves a row naming who pulled it. `execFile` is mocked in its CALLBACK form
+// because the action promisifies it, and promisify reads the callback -- a mock
+// returning a promise directly would be tested against a shape the code never
+// uses.
+vi.mock('node:child_process', () => ({
+  execFile: (
+    file: string,
+    args: string[],
+    opts: Record<string, unknown>,
+    cb: (err: unknown, out?: { stdout: string; stderr: string }) => void,
+  ) => {
+    const outcome = mockExecFile(file, args, opts)
+    if (outcome instanceof Error) return cb(outcome)
+    return cb(null, { stdout: '', stderr: '' })
+  },
 }))
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
@@ -170,5 +190,75 @@ describe('toggleKillSwitch — a dashboard with no cabinet may not report a halt
     mockRedisGet.mockResolvedValueOnce(null).mockResolvedValueOnce('active')
     expect(await toggle('activate')).toEqual({ success: true })
     expect(mockRedisSet).toHaveBeenCalledWith('cabinet:killswitch', 'active')
+  })
+})
+
+
+describe('the halt records who pulled it', () => {
+  beforeEach(() => {
+    mockVerify.mockResolvedValue(true)
+    mockRedisGet.mockResolvedValueOnce(null)      // not currently engaged
+    mockRedisGet.mockResolvedValueOnce('active')  // read-back proves it landed
+    mockExecFile.mockReturnValue(undefined)       // script runs clean
+  })
+
+  it('arms through the ledger script, never a shell string', async () => {
+    // A shell string on the emergency stop is the one place a stray character
+    // in the environment must not be able to become a command.
+    await toggleKillSwitch('activate')
+    expect(mockExecFile).toHaveBeenCalledTimes(1)
+    const [file, args] = mockExecFile.mock.calls[0]
+    expect(file).toBe('bash')
+    expect(Array.isArray(args)).toBe(true)
+    expect(args[args.length - 1]).toBe('activate')
+    expect(String(args[0])).toContain('kill-switch.sh')
+  })
+
+  it('names the dashboard as the actor', async () => {
+    await toggleKillSwitch('activate')
+    const [, , opts] = mockExecFile.mock.calls[0]
+    expect((opts as { env: Record<string, string> }).env.CABINET_OFFICER).toBe(
+      'captain-dashboard',
+    )
+  })
+
+  it('still halts when there is no script, and says the halt is unrecorded', async () => {
+    // Stopping matters more than knowing who stopped it. But an unrecorded
+    // stop is a different event from a recorded one and must not be presented
+    // as a plain success.
+    const enoent = Object.assign(new Error('not found'), { code: 'ENOENT' })
+    mockExecFile.mockReturnValue(enoent)
+    const res = await toggleKillSwitch('activate')
+    expect(res.success).toBe(true)
+    expect((res as { unattributed?: string }).unattributed).toMatch(/nothing recorded who/)
+    expect(mockRedisSet).toHaveBeenCalled()
+  })
+
+  it('refuses, and writes nothing, when the script runs and fails', async () => {
+    // It reached the machinery and the machinery said no. Writing the key
+    // behind its back would override the check that just refused.
+    mockExecFile.mockReturnValue(Object.assign(new Error('rc=1'), { code: 1 }))
+    const res = await toggleKillSwitch('activate')
+    expect(res.success).toBe(false)
+    expect(mockRedisSet).not.toHaveBeenCalled()
+  })
+
+  it('does not spawn anything when the switch is already engaged', async () => {
+    mockRedisGet.mockReset()
+    mockRedisGet.mockResolvedValue('active')
+    const res = await toggleKillSwitch('activate')
+    expect(res).toEqual({ success: true })
+    expect(mockExecFile).not.toHaveBeenCalled()
+  })
+
+  it('leaves the clear direction alone', async () => {
+    // Converging the resume onto the script too would put a second authority
+    // over the same state. Only the ARM gained a ledger row.
+    mockRedisGet.mockReset()
+    mockRedisGet.mockResolvedValueOnce('active')
+    mockRedisGet.mockResolvedValueOnce(null)
+    await toggleKillSwitch('deactivate')
+    expect(mockExecFile).not.toHaveBeenCalled()
+    expect(mockRedisDel).toHaveBeenCalled()
   })
 })
