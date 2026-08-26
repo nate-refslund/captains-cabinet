@@ -85,8 +85,16 @@ def verdict(*, series_path: "Path | None" = None,
     to an ERROR verdict carrying only the exception CLASS name (never a
     message, which can echo a path or a config value)."""
     try:
-        return card_flatline.evaluate(read_series(series_path),
-                                      gates=card_flatline.read_gates(root=root))
+        # THE FLEET AUDIENCE. This probe feeds the standing health page, not a
+        # question put to the Captain -- and until 2026-08-26 his declared
+        # absence turned it green for the whole of an absence, so anything that
+        # broke while he was away was found on his return. The absence is the
+        # worst moment to stop looking. A parked producer still silences it;
+        # a Captain who is not reading does not.
+        return card_flatline.evaluate(
+            read_series(series_path),
+            gates=card_flatline.read_gates(
+                root=root, audience=card_flatline.AUDIENCE_FLEET))
     except Exception as e:  # noqa: BLE001
         return {"state": "error", "announce": False, "silent_since": None,
                 "silent_hours": None, "latest_date": None, "latest_cards": None,
