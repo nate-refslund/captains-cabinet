@@ -2588,6 +2588,31 @@ temporary_allowances:
       +108 measured with cognitive-architecture-census.py at this landing
       (78824 -> 78932); prose counted honestly rather than reformatted into
       comments to duck the budget.
+  - phase: nine-approved-fixes-2026-08-26
+    budget: framework_production_noncomment_lines
+    additional: 82
+    owner: cognitive-core-program
+    sunset: '2027-02-28'
+    deletion_gate: >-
+      Four unmeasurable-reads-as-safe guards. Each retires when its subject
+      does: the citation floor when the action lane stops taking evidence refs
+      as free text; the unreadable-clock sentinel when every ledger row is
+      written through a stamped writer that cannot emit an unparseable date;
+      the audience split when the fleet watch and the Captain's question stop
+      sharing one reader; the wrong-class floor when judge calibration is
+      generated from a corpus guaranteed to contain wrong work.
+    reason: >-
+      THE SAME DEFECT IN FOUR PLACES, and every one returned the SAFE-LOOKING
+      answer for the case it could not measure. An empty citation read as "a
+      source was cited". An unreadable timestamp read as "never went wrong".
+      The Captain's declared absence read as "the fleet is fine". Agreement on
+      work that was fine read as "fit to call something wrong". Each fix gives
+      the unmeasurable case its own third answer instead of folding it into the
+      good one, and that is what costs the lines - a two-state read is cheaper
+      than a three-state one, and the cheapness is precisely how the defects
+      survived. The Captain approved all four individually on 2026-08-26 after
+      being shown each in plain words. Approved per the 2026-07-07 full-autonomy
+      grant plus the 2026-08-26 Captain approvals.
 expansions:
   - member: framework/onboarding/salience.py
     member_class: framework_production_modules

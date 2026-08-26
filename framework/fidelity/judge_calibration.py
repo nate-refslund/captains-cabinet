@@ -89,6 +89,26 @@ from framework.fidelity.consequence import (
 # ---------------------------------------------------------------------------
 
 JUDGE_HARD_BAR = 0.80        # >= 80% agreement required (0.80 exactly passes)
+
+# THE WRONG-CLASS FLOOR (2026-08-26). The bar above scores POOLED agreement, so
+# a judge that has only ever been shown work that was fine can clear it on
+# agreement alone -- ten confirmations and the door opens. The permission it
+# wins is the right to call something WRONG, which is the one thing that
+# evidence never tested.
+#
+# The data to catch it was already being written and never read: the 2x2
+# confusion block records how many times the judge said "wrong". This floor
+# reads it, and asks for a minimum number of wrong calls before the permission
+# is granted at all -- and, among those, the same 80% the pooled bar asks for,
+# reusing JUDGE_HARD_BAR rather than inventing a second rate.
+#
+# THE PRICE, stated as intended behaviour rather than left as a surprise: a
+# judge shown nothing but clean work can never open this door, however long it
+# agrees. That is correct. The door is "may overrule", and a reviewer with no
+# observed wrong call has no evidence for it. Breaking the deadlock means
+# putting genuinely wrong work in front of it, which is the work that should
+# have been done before granting the permission in the first place.
+MIN_WRONG_CALLS = 5
 MIN_PAIRS = 10               # below this the measurement is not evidence —
                              # 100% agreement on 3 pairs proves nothing; the
                              # flag stays closed until real volume exists.
@@ -353,6 +373,37 @@ def calibration_status(
         return {"allowed": False,
                 "reason": (f"calibration proof stale "
                            f"({age_days:.1f}d > {STATUS_MAX_AGE_DAYS}d)"),
+                "status": body}
+
+    # Last rung, and deliberately last: it is only ever evaluated on inputs
+    # that would previously have been allowed, so no existing refusal changes
+    # its reason string.
+    confusion = body.get("confusion")
+    if not isinstance(confusion, dict):
+        return {"allowed": False,
+                "reason": "no confusion detail, so the judge has never been "
+                          "observed calling anything wrong",
+                "status": body}
+    try:
+        judge_wrong = int(confusion["hc_jw"]) + int(confusion["hw_jw"])
+        agreed_wrong = int(confusion["hw_jw"])
+    except (KeyError, TypeError, ValueError):
+        # Malformed reads as CLOSED, never as allowed. A permission granted
+        # off a block nobody could parse is a permission granted off nothing.
+        return {"allowed": False,
+                "reason": "malformed confusion detail", "status": body}
+    if judge_wrong < MIN_WRONG_CALLS:
+        return {"allowed": False,
+                "reason": (f"the judge has called something wrong {judge_wrong} "
+                           f"time(s), below the {MIN_WRONG_CALLS} needed to "
+                           f"judge it on the thing this permission allows"),
+                "status": body}
+    wrong_precision = agreed_wrong / judge_wrong
+    if wrong_precision < JUDGE_HARD_BAR:
+        return {"allowed": False,
+                "reason": (f"when the judge called something wrong a human "
+                           f"agreed {wrong_precision:.3f} of the time, below "
+                           f"the hard bar {JUDGE_HARD_BAR}"),
                 "status": body}
 
     return {"allowed": True,

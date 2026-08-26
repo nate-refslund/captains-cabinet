@@ -374,3 +374,53 @@ class TestBarReadFromYaml:
         dbar = graduation._bar_for_action_type("local_edit")
         assert dbar["samples"] == 20
         assert dbar["match_rate"] == 0.85
+
+
+
+class TestUnreadableClockIsNotACleanStreak:
+    """A mistake we cannot date had not been proven old, and the code said it
+    was clean.
+
+    `_days_since_last_wrong` returned None for BOTH "never wrong" and "wrong,
+    but the stamp will not parse". None means clean, so a well-seasoned cell
+    whose most recent mistake carried an unreadable timestamp read `graduated`
+    -- the record called a stretch of work clean while a mistake sat inside it.
+    """
+
+    def rows(self, last_wrong_ts):
+        now = datetime(2026, 8, 26, tzinfo=timezone.utc)
+        old = (now - timedelta(days=90)).isoformat()
+        rows = [{"ts": old, "review": {"verdict": "confirmed"}, "cell": ["a", "b"]}
+                for _ in range(40)]
+        rows.append({"ts": last_wrong_ts, "review": {"verdict": "wrong"}, "cell": ["a", "b"]})
+        return rows, now
+
+    def test_an_unreadable_stamp_is_a_third_answer_not_None(self):
+        rows, now = self.rows("not-a-timestamp-at-all")
+        assert graduation._days_since_last_wrong(rows, now) is graduation.UNREADABLE_CLOCK
+
+    def test_never_wrong_still_answers_exactly_None(self):
+        # The anchor. If this drifts, a never-wrong cell stops graduating and
+        # the fix has broken the thing it was protecting.
+        now = datetime(2026, 8, 26, tzinfo=timezone.utc)
+        clean = [{"ts": (now - timedelta(days=90)).isoformat(),
+                  "review": {"verdict": "confirmed"}, "cell": ["a", "b"]} for _ in range(40)]
+        assert graduation._days_since_last_wrong(clean, now) is None
+
+    def test_a_readable_stamp_still_answers_a_number(self):
+        now = datetime(2026, 8, 26, tzinfo=timezone.utc)
+        rows, now = self.rows((now - timedelta(days=3)).isoformat())
+        got = graduation._days_since_last_wrong(rows, now)
+        assert isinstance(got, float) and 2.5 < got < 3.5
+
+    def test_the_sentinel_is_falsy_and_is_not_None(self):
+        # Falsy so any surviving truth-test reads it as "no usable measurement"
+        # rather than as a duration; not None so it cannot be mistaken for the
+        # never-wrong answer, which is the whole defect.
+        assert not graduation.UNREADABLE_CLOCK
+        assert graduation.UNREADABLE_CLOCK is not None
+
+    def test_the_readout_never_shows_a_number_nobody_measured(self):
+        # No-silent-caps: inventing "0 days ago" would put a measurement in the
+        # evidence that was never taken.
+        assert not isinstance(graduation.UNREADABLE_CLOCK, (int, float))

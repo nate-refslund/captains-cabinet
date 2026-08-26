@@ -196,6 +196,27 @@ def _fresh_direct_demote(rows: list[dict[str, Any]]) -> bool:
     return any(DIRECT_DEMOTE_REF in (e.get("refs") or []) for e in last)
 
 
+class _UnreadableClock:
+    """The cell was wrong, and when is unknowable.
+
+    A distinct third answer beside a number and None, because those two mean
+    "wrong this long ago" and "never wrong" -- and an unreadable stamp is
+    neither. Falsy on purpose so any surviving truth-test treats it as
+    "no usable measurement" rather than as a duration.
+    """
+
+    __slots__ = ()
+
+    def __bool__(self) -> bool:
+        return False
+
+    def __repr__(self) -> str:
+        return "UNREADABLE_CLOCK"
+
+
+UNREADABLE_CLOCK = _UnreadableClock()
+
+
 def _days_since_last_wrong(
     rows: list[dict[str, Any]], now: datetime
 ) -> Optional[float]:
@@ -210,7 +231,18 @@ def _days_since_last_wrong(
         return None
     last_wrong_ts = _parse_ts(wrongs[-1].get("ts", ""))
     if last_wrong_ts is None:
-        return None
+        # A wrong call WITH AN UNREADABLE CLOCK is not the same fact as never
+        # having been wrong, and returning None said it was. A seasoned cell
+        # whose most recent mistake carried a stamp the parser refuses read as
+        # an unbroken clean streak and graduated -- the record called a stretch
+        # of work clean while a mistake sat inside it.
+        #
+        # It does not become a number here. Inventing "0 days ago" would put a
+        # measurement in the evidence readout that nobody took, and this
+        # module's own no-silent-caps rule forbids showing a figure it did not
+        # measure. The caller branches on the sentinel and the readout says
+        # what actually happened.
+        return UNREADABLE_CLOCK
     return (now - last_wrong_ts).total_seconds() / 86400.0
 
 
@@ -309,7 +341,12 @@ def evaluate(
         "review_confirmed_rate": ratios.review_confirmed_rate,
         "divergent_last10": divergent_last10,
         "fabrication_demote": fabrication_demote,
-        "days_since_last_wrong": days_since_wrong,
+        # Never a number this module did not measure. `None` still means
+        # never wrong; the string names the third state rather than hiding it
+        # behind either of the other two.
+        "days_since_last_wrong": (
+            "unreadable-clock" if days_since_wrong is UNREADABLE_CLOCK
+            else days_since_wrong),
         "days_since_last_sample": days_since_sample,
         "cell_age_days": cell_age,
         "seasoning_days": _SEASONING_DAYS,
@@ -365,6 +402,11 @@ def evaluate(
     #    wording.) A cell re-earning the streak after a wrong is `eligible`
     #    (proven-but-not-yet-auto), not `graduated`.
     need_clean = bar["recency_clean_days"]
+    if days_since_wrong is UNREADABLE_CLOCK:
+        # Fail-closed: a mistake we cannot date has not been proven old. The
+        # cell stays `eligible` -- proven-but-not-yet-auto -- which is exactly
+        # the state a cell re-earning its streak sits in.
+        return {"state": "eligible", "evidence": evidence}
     if days_since_wrong is not None and days_since_wrong < need_clean:
         # a recent wrong call: not yet clean — eligible, re-earning the streak.
         return {"state": "eligible", "evidence": evidence}

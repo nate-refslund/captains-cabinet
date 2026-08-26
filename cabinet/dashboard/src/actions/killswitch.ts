@@ -1,8 +1,78 @@
 'use server'
 
+import { execFile } from 'node:child_process'
+import path from 'node:path'
+import { promisify } from 'node:util'
+
 import redis, { isMockRedis, storeReading } from '@/lib/redis'
 import { requireDashboardAuth } from '@/lib/provisioning/guard'
 import { revalidatePath } from 'next/cache'
+
+const run = promisify(execFile)
+
+/**
+ * WHO PULLED IT, added 2026-08-26.
+ *
+ * `cabinet/scripts/kill-switch.sh` exists partly to leave a ledger row naming
+ * the actor -- its own header records an incident where the switch read
+ * INACTIVE and no record could say who cleared it. The dashboard never called
+ * it. It wrote the key directly, so a Captain hitting Stop All halted the
+ * fleet and left no row saying it was him.
+ *
+ * The arm now goes through the script. Deliberately argv-only: `execFile`
+ * with an array, never a shell string, so nothing in the environment can be
+ * read as a command on the one surface where being wrong costs the most.
+ *
+ * The direct write survives as the FALLBACK, not the path. Some deployments
+ * have no script to run (a container built from the app alone), and refusing
+ * to halt a fleet because the audit trail is unavailable would be the wrong
+ * trade on an emergency stop: stopping matters more than knowing who stopped
+ * it. When that happens the caller is told, in the return value, that the halt
+ * landed unattributed -- an unrecorded stop is not the same event as a
+ * recorded one and the surface must not present them as one.
+ *
+ * A script that RUNS AND FAILS is the opposite case and is fatal. It reached
+ * the machinery and the machinery said no; writing the key behind its back
+ * would be overriding the very check that just refused.
+ */
+const KILL_SWITCH_ACTOR = 'captain-dashboard'
+
+type ArmOutcome =
+  | { armed: true; attributed: true }
+  | { armed: true; attributed: false; why: string }
+  | { armed: false; error: string }
+
+async function armThroughLedger(): Promise<ArmOutcome> {
+  const root =
+    process.env.CABINET_ROOT ?? path.resolve(process.cwd(), '..', '..')
+  const script = path.join(root, 'cabinet', 'scripts', 'kill-switch.sh')
+  try {
+    await run('bash', [script, 'activate'], {
+      env: { ...process.env, CABINET_OFFICER: KILL_SWITCH_ACTOR },
+      timeout: 30_000,
+    })
+    return { armed: true, attributed: true }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code
+    if (code === 'ENOENT') {
+      // No script to run here. The halt still happens; it just goes
+      // unrecorded, and the caller is told so rather than shown a plain
+      // success.
+      return {
+        armed: true,
+        attributed: false,
+        why: 'no ledger script on this deployment',
+      }
+    }
+    return {
+      armed: false,
+      error:
+        err instanceof Error
+          ? `the emergency stop script refused: ${err.message}`
+          : 'the emergency stop script refused',
+    }
+  }
+}
 
 /**
  * Toggle (or intent-pin) the fleet killswitch.
@@ -67,9 +137,26 @@ export async function toggleKillSwitch(intent?: 'activate' | 'deactivate') {
       return { success: true } // already the intended state — no-op
     }
     const wanted = isActive ? 'clear' : 'active'
+    let unattributed = ''
     if (isActive) {
+      // The clear direction stays a direct write. Converging it onto the
+      // script would put a second authority over the same state, and the
+      // ratified rule is that there is one law -- see the receipt behind this
+      // change. Only the ARM gained a ledger row here.
       await redis.del('cabinet:killswitch')
     } else {
+      const outcome = await armThroughLedger()
+      if (!outcome.armed) {
+        // Reached the machinery and it refused. Writing the key behind its
+        // back would override the check that just said no.
+        return { success: false, error: outcome.error }
+      }
+      if (!outcome.attributed) {
+        unattributed = outcome.why
+      }
+      // Either the script already set it, or there is no script here. The
+      // write is idempotent and the read-back below is what proves the halt
+      // either way.
       await redis.set('cabinet:killswitch', 'active')
     }
     // Prove it. A store that accepted the command and did not keep it, a
@@ -86,6 +173,15 @@ export async function toggleKillSwitch(intent?: 'activate' | 'deactivate') {
       }
     }
     revalidatePath('/')
+    if (unattributed) {
+      // Halted, and the record does not name who did it. Said out loud rather
+      // than folded into a plain success: an unrecorded stop is a different
+      // event from a recorded one.
+      return {
+        success: true,
+        unattributed: `the fleet is halted, but nothing recorded who did it — ${unattributed}`,
+      }
+    }
     return { success: true }
   } catch (err) {
     return {

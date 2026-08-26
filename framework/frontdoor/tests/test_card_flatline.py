@@ -402,3 +402,62 @@ def test_the_wording_lives_in_exactly_one_place():
            + __import__("pathlib").Path(run_briefing.__file__).read_text(
                encoding="utf-8"))
     assert "has been silent since" not in src
+
+
+# ---------------------------------------------------------------------------
+# The Captain's absence is a reason not to bother HIM, never a reason to stop
+# watching the fleet. Until 2026-08-26 one flag did both, so a failure that
+# began during an absence was only discovered on his return -- the absence
+# being precisely the worst moment to stop looking.
+# ---------------------------------------------------------------------------
+
+def _away(monkeypatch):
+    import framework.env as env
+    monkeypatch.setattr(env, "captain_availability",
+                        lambda: {"mode": "away"}, raising=False)
+
+
+def test_away_still_spares_the_captain_the_question(tmp_path, monkeypatch):
+    _away(monkeypatch)
+    got = cf.read_gates(root=tmp_path)
+    assert got["deliberate"] is True
+    assert any("away" in r for r in got["reasons"])
+
+
+def test_away_does_not_silence_the_fleet_watch(tmp_path, monkeypatch):
+    # THE arm. Same world, same flag, and the standing check keeps looking.
+    _away(monkeypatch)
+    got = cf.read_gates(root=tmp_path,
+                                   audience=cf.AUDIENCE_FLEET)
+    assert got["deliberate"] is False
+
+
+def test_the_away_reason_is_still_reported_to_the_fleet(tmp_path, monkeypatch):
+    # It stops voting; it does not disappear. Hiding a fact to change a verdict
+    # is how a gate becomes unauditable.
+    _away(monkeypatch)
+    got = cf.read_gates(root=tmp_path,
+                                   audience=cf.AUDIENCE_FLEET)
+    assert any("away" in r for r in got["reasons"])
+
+
+def test_a_parked_producer_still_silences_both(tmp_path, monkeypatch):
+    _away(monkeypatch)
+    manifest = tmp_path.joinpath(*cf._SERVICES_REL)
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text("services:\n  - name: action-lane\n    disabled: true\n",
+                        encoding="utf-8")
+    for audience in (cf.AUDIENCE_CAPTAIN, cf.AUDIENCE_FLEET):
+        got = cf.read_gates(root=tmp_path, audience=audience)
+        assert got["deliberate"] is True, audience
+
+
+def test_the_default_audience_is_unchanged(tmp_path, monkeypatch):
+    # Every existing caller passes no audience and must behave exactly as it
+    # did. The return SHAPE is unchanged too -- no new key -- because the
+    # existing assertions compare this dict exactly.
+    _away(monkeypatch)
+    assert cf.read_gates(root=tmp_path) == \
+        cf.read_gates(root=tmp_path,
+                                 audience=cf.AUDIENCE_CAPTAIN)
+    assert set(cf.read_gates(root=tmp_path)) == {"deliberate", "reasons"}

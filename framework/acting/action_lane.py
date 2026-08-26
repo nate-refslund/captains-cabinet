@@ -491,6 +491,64 @@ def _tainted_refs(signals_text: str) -> set:
     return tainted
 
 
+# ---------------------------------------------------------------------------
+# Does this proposal cite a source that ACTUALLY EXISTS in the bundle?
+# ---------------------------------------------------------------------------
+#
+# The fence below it (`_refs_intersect_tainted`) asks the opposite question --
+# does the evidence touch a POISONED ref -- and its containment tolerance is
+# safe there because over-matching only forces the propose-only default.
+#
+# This one has the opposite polarity and the same tolerance would be a
+# fail-open: an over-match here says "yes, a real source was cited" and lets
+# the action go ahead alone. Measured before the fix: an evidence tuple of
+# ("",) satisfied the check, because `"" in anything` is True. The main gate on
+# acting without the Captain accepted a citation of nothing.
+#
+# So the tolerance is kept -- a model may quote a real ref with a leading `./`,
+# a namespace prefix, a "see " lead-in or a `#fragment`, and those must still
+# count -- and the degenerate comparands are refused explicitly:
+#   * an empty or whitespace-only citation is never a match;
+#   * a containment win is only honoured when the SHORTER side is at least
+#     _CITATION_FLOOR characters, so a one-character citation cannot claim
+#     every ref in the bundle.
+
+_CITATION_FLOOR = 4
+
+
+def bundle_refs(signals_text: str) -> set:
+    """Every ref the bundle actually fences. Pure, I/O-free."""
+    return {m.group(1) for m in _FENCE_RE.finditer(signals_text or "")}
+
+
+def cites_a_real_ref(evidence_refs, bundle: set) -> bool:
+    """True when at least one citation names a ref the bundle really carries.
+
+    An empty bundle answers False for every citation: with nothing to cite,
+    nothing can have been cited, and answering True there would restore the
+    exact hole this exists to close.
+    """
+    if not bundle:
+        return False
+    for raw in (evidence_refs or ()):
+        cite = str(raw or "").strip()
+        if len(cite) < _CITATION_FLOOR:
+            continue                      # degenerate: "", " ", "/", "a"
+        for ref in bundle:
+            known = str(ref or "").strip()
+            if len(known) < _CITATION_FLOOR:
+                continue
+            if known == cite:
+                return True
+            # Containment both ways, as the sibling does -- but only when the
+            # shorter side clears the floor, so the tolerance cannot be turned
+            # into a wildcard.
+            shorter = known if len(known) <= len(cite) else cite
+            if len(shorter) >= _CITATION_FLOOR and (known in cite or cite in known):
+                return True
+    return False
+
+
 def _refs_intersect_tainted(evidence_refs: set, tainted: set) -> bool:
     """A proposal's evidence cites a screen-hit signal. Paths are compared with
     containment both ways (the LLM may quote a ref with surrounding noise);

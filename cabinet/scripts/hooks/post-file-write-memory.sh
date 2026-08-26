@@ -139,15 +139,40 @@ pfwm_queue_captain_decisions() {
     slug=$(printf '%s\n' "$title" | tr '[:upper:]' '[:lower:]' \
       | LC_ALL=C sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' | cut -c1-64)
     [ -z "$slug" ] && slug="entry"
+    # WHOSE WORDS ARE THESE? (2026-08-26)
+    #
+    # The split above is on '^## ' alone, so a '### officer-note … [trust:officer]'
+    # block -- which lives INSIDE an H2 region -- was fused into the Captain's
+    # entry, stamped trust:captain, and dated with his entry's date. The team's
+    # own observations were filed as his rulings, and nothing downstream reading
+    # this record could tell a decision he made from a note somebody wrote about
+    # it.
+    #
+    # cabinet/scripts/memory-distill.py already parses it correctly: it breaks
+    # at the first '### officer-note' and never treats that region as law. This
+    # converges onto that existing rule rather than inventing a second one.
+    #
+    # The notes are not dropped -- they are queued as their own rows at
+    # trust:officer. Losing them would trade one wrong attribution for a
+    # different kind of missing record.
+    body=$(printf '%s\n' "$entry" | awk '/^### officer-note/{exit} {print}')
+    notes=$(printf '%s\n' "$entry" | awk '/^### officer-note/{seen=1} seen{print}')
     meta=$(jq -nc --arg date "$date" --arg writer "$writer" \
       '{date: $date, writer: $writer, trust: "captain"}')
+    if [ -n "$notes" ]; then
+      note_meta=$(jq -nc --arg date "$date" --arg writer "$writer" \
+        '{date: $date, writer: $writer, trust: "officer"}')
+      memory_queue_embed "captain_decision_note" "${date:-undated}-${slug}-notes" \
+        "officer" "officer" "$notes" "$note_meta" \
+        "${date:+${date}T00:00:00Z}" || true
+    fi
     if [ -n "$date" ]; then
       memory_queue_embed "captain_decision" "${date}-${slug}" "captain" "captain" \
-        "$entry" "$meta" "${date}T00:00:00Z" && queued=$((queued+1))
+        "$body" "$meta" "${date}T00:00:00Z" && queued=$((queued+1))
     else
       # Undated entry: still capture it; content time is honestly absent.
       memory_queue_embed "captain_decision" "undated-${slug}" "captain" "captain" \
-        "$entry" "$meta" "" && queued=$((queued+1))
+        "$body" "$meta" "" && queued=$((queued+1))
     fi
   done < <(awk '/^## /{printf "\036"} {print}' "$f"; printf '\036')
   echo "$queued"

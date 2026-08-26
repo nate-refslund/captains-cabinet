@@ -332,18 +332,40 @@ def _services_disabled_rows(text: str, names: "tuple[str, ...]") -> List[str]:
     return found
 
 
-def read_gates(*, root: "Path | None" = None) -> Dict[str, Any]:
+# Who is being spared the question. The Captain's declared absence is a reason
+# not to BOTHER HIM; it was never a reason to stop watching the fleet, and
+# until 2026-08-26 it did both — one flag turned the standing fleet check green
+# for the whole of an absence, so a failure that began while he was away was
+# only discovered on his return. The absence is the worst moment to stop
+# looking, which is what made it worth splitting rather than tolerating.
+AUDIENCE_CAPTAIN = "captain"
+AUDIENCE_FLEET = "fleet"
+
+
+def read_gates(*, root: "Path | None" = None,
+               audience: str = AUDIENCE_CAPTAIN) -> Dict[str, Any]:
     """The reasons this channel is legitimately quiet RIGHT NOW. Never raises.
 
     Two gates, both about the PRODUCER rather than about the reader: the
     ``action-lane`` fleet row carrying ``disabled: true`` (an ABSENCE-DISABLE
     annotation or a staging park), and the Captain's own declared ``away``.
 
+    THE AUDIENCE DECIDES WHICH ONES SILENCE THE QUESTION.
+
+      ``captain``  both gates. Asking him whether his own declared absence was
+                   deliberate is the loud failure this ordering exists to
+                   prevent, and it stays prevented.
+      ``fleet``    the producer-row gate ALONE. A parked producer is a real
+                   reason the channel is quiet; the Captain being away is not —
+                   the fleet does not stop working when he stops reading.
+
+    ``reasons`` stays COMPLETE for both. The away reason is still reported to
+    the fleet audience, it simply no longer votes: a caller must be able to see
+    every fact, and hiding one to change a verdict is how a gate becomes
+    unauditable.
+
     Each reason is independent and best-effort: a gate that cannot be read
-    contributes nothing (it does not manufacture an excuse), and any gate that
-    CAN be read and says "deliberate" suppresses the question. The failure
-    this ordering prevents is the loud one — asking the Captain whether his own
-    declared absence was deliberate."""
+    contributes nothing (it does not manufacture an excuse)."""
     root = root or _repo_root()
     reasons: List[str] = []
 
@@ -364,6 +386,10 @@ def read_gates(*, root: "Path | None" = None) -> Dict[str, Any]:
     # correct, and it would also have parked the alarm permanently green on
     # every box where the probe runs outside the runtime.
 
+    # Everything above this line is a PRODUCER reason: the thing that makes
+    # cards is switched off. Those silence the question for everyone.
+    producer_reasons = list(reasons)
+
     try:
         from framework import env as _env
         reading = _env.captain_availability() or {}
@@ -373,7 +399,12 @@ def read_gates(*, root: "Path | None" = None) -> Dict[str, Any]:
     except Exception:  # noqa: BLE001
         pass
 
-    return {"deliberate": bool(reasons), "reasons": reasons}
+    # The return shape does NOT gain an `audience` key. A caller already knows
+    # what it asked for, and every existing assertion compares this dict
+    # exactly -- widening it would have broken them for no information anyone
+    # lacked. Caught by the acceptance criterion rather than by a rerun.
+    deciding = producer_reasons if audience == AUDIENCE_FLEET else reasons
+    return {"deliberate": bool(deciding), "reasons": reasons}
 
 
 # ---------------------------------------------------------------------------

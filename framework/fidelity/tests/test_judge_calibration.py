@@ -174,12 +174,22 @@ def test_zero_pairs_is_visible_none_not_zero():
     assert rep["bar_met"] is False
 
 
-def _pairs(n_agree, n_disagree):
+def _pairs(n_agree, n_disagree, n_judge_wrong=0):
+    """Note what this builder did NOT produce until 2026-08-26.
+
+    Both original limbs have the judge saying "confirmed" -- agreements and
+    disagreements alike. So every fixture in this file modelled a judge that
+    has never once called anything wrong, which is exactly the finding: the
+    calibration data as constructed could never test the permission it grants.
+    `n_judge_wrong` adds the missing limb, agreed by a human.
+    """
     rows = []
     for i in range(n_agree):
         rows += [_human(f"a{i}", "confirmed"), _judge(f"a{i}", "confirmed")]
     for i in range(n_disagree):
         rows += [_human(f"d{i}", "wrong"), _judge(f"d{i}", "confirmed")]
+    for i in range(n_judge_wrong):
+        rows += [_human(f"w{i}", "wrong"), _judge(f"w{i}", "wrong")]
     return collect_pairs(rows=rows)
 
 
@@ -207,11 +217,59 @@ def test_flag_closed_when_no_status_file(tmp_path):
 
 def test_flag_open_only_on_fresh_passing_proof(tmp_path):
     p = tmp_path / "status.json"
-    rep = compute_agreement(_pairs(9, 1))          # 0.9 over 10
+    # 14 agreements / 1 disagreement, and FIVE of the agreements are the judge
+    # calling something wrong with a human agreeing. Before 2026-08-26 this
+    # fixture had none of those and still opened the door.
+    rep = compute_agreement(_pairs(9, 1, n_judge_wrong=5))
     write_status(rep, since="2026-06-01", until=None, path=p, now=NOW)
     assert judge_verdicts_may_demote(path=p, now=NOW) is True
     st = calibration_status(path=p, now=NOW)
-    assert st["allowed"] is True and "0.900" in st["reason"]
+    assert st["allowed"] is True and "0.933" in st["reason"]
+
+
+def test_agreement_on_clean_work_alone_never_opens_the_flag(tmp_path):
+    """The defect, pinned. Perfect agreement, plenty of pairs, fresh proof --
+    and the judge has never been observed calling anything wrong, which is the
+    only thing the permission it wants actually does."""
+    p = tmp_path / "status.json"
+    rep = compute_agreement(_pairs(20, 0))
+    write_status(rep, since="2026-06-01", until=None, path=p, now=NOW)
+    assert rep["bar_met"] is True, "the pooled bar is unchanged and still met"
+    assert judge_verdicts_may_demote(path=p, now=NOW) is False
+    st = calibration_status(path=p, now=NOW)
+    assert "called something wrong 0 time(s)" in st["reason"]
+
+
+def test_a_judge_that_cries_wolf_is_refused(tmp_path):
+    """Enough wrong calls, and humans mostly disagreed with them. The count
+    alone was never the point -- being RIGHT about it is."""
+    p = tmp_path / "status.json"
+    rows = []
+    for i in range(40):
+        rows += [_human(f"a{i}", "confirmed"), _judge(f"a{i}", "confirmed")]
+    for i in range(6):          # judge says wrong, human says it was fine
+        rows += [_human(f"x{i}", "confirmed"), _judge(f"x{i}", "wrong")]
+    for i in range(1):          # and once it was right
+        rows += [_human(f"y{i}", "wrong"), _judge(f"y{i}", "wrong")]
+    rep = compute_agreement(collect_pairs(rows=rows))
+    write_status(rep, since="2026-06-01", until=None, path=p, now=NOW)
+    assert judge_verdicts_may_demote(path=p, now=NOW) is False
+    st = calibration_status(path=p, now=NOW)
+    assert "a human agreed" in st["reason"]
+
+
+def test_a_missing_confusion_block_reads_as_closed(tmp_path):
+    """Malformed must never read as allowed. A permission granted off a block
+    nobody could parse is a permission granted off nothing."""
+    import json as _json
+
+    p = tmp_path / "status.json"
+    rep = compute_agreement(_pairs(9, 1, n_judge_wrong=5))
+    write_status(rep, since="2026-06-01", until=None, path=p, now=NOW)
+    body = _json.loads(p.read_text())
+    body.pop("confusion")
+    p.write_text(_json.dumps(body))
+    assert judge_verdicts_may_demote(path=p, now=NOW) is False
 
 
 def test_flag_closed_on_below_bar_proof(tmp_path):
@@ -319,7 +377,14 @@ def _write_ledger(ledger_dir: Path, rows) -> None:
             f.write(json.dumps(r) + "\n")
 
 
-def test_cli_bar_met_exit_0_and_flag_opens(tmp_path):
+def test_cli_agreement_alone_no_longer_opens_the_flag(tmp_path):
+    """Ten agreements on work that was FINE, and the door stays shut.
+
+    This arm used to assert the opposite, and that was the defect: the
+    permission being granted is the right to call something WRONG, and this
+    judge has never been observed doing it. Agreement on clean work is not
+    evidence about the thing the permission allows.
+    """
     ledger = tmp_path / "events"
     rows = []
     for i in range(10):
@@ -331,9 +396,33 @@ def test_cli_bar_met_exit_0_and_flag_opens(tmp_path):
         env=_fenced_env(ledger), capture_output=True, text=True,
         cwd=str(REPO_ROOT),
     )
-    assert proc.returncode == 0, proc.stderr
     out = json.loads(proc.stdout)
     assert out["pairs"] == 10 and out["agreement_rate"] == 1.0
+    assert out["bar_met"] is True, "the pooled bar is unchanged and still met"
+    assert out["judge_verdicts_may_demote"] is False, (
+        "a judge never observed calling anything wrong must not win the right "
+        "to overrule work")
+
+
+def test_cli_bar_met_exit_0_and_flag_opens(tmp_path):
+    ledger = tmp_path / "events"
+    rows = []
+    for i in range(10):
+        rows += [_human(f"c{i}", "confirmed"), _judge(f"c{i}", "confirmed")]
+    # ...and enough observed WRONG calls, agreed by a human, to have been
+    # judged on the thing the permission actually allows.
+    for i in range(5):
+        rows += [_human(f"w{i}", "wrong"), _judge(f"w{i}", "wrong")]
+    _write_ledger(ledger, rows)
+
+    proc = subprocess.run(
+        [sys.executable, str(CLI), "--json"],
+        env=_fenced_env(ledger), capture_output=True, text=True,
+        cwd=str(REPO_ROOT),
+    )
+    assert proc.returncode == 0, proc.stderr
+    out = json.loads(proc.stdout)
+    assert out["pairs"] == 15 and out["agreement_rate"] == 1.0
     assert out["bar_met"] is True
     assert out["judge_verdicts_may_demote"] is True
     status_file = ledger / "judge-calibration-status.json"
